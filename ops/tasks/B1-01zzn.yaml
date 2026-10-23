@@ -1,0 +1,26 @@
+id: B1-01zzn
+repo: rebate-platform
+title: staging deploy.sh 迁移成功后跑 db:seed（幂等；种子失败按迁移失败处理，不切换进程）
+type: impl
+# 2026-10-24 入账（ops 线，编排裁定 D10-299 B）。起因：staging 的 deploy.sh 只跑迁移、从不跑 `pnpm db:seed`，db/seeds 下的
+# 0001–0004（配置默认值、佣金规则、Agent 工具开关）从没进过 staging；B3-08j 合并后两开关仍 0 行，10-24 由 ops 在节点上手工跑了一次
+# （D10-299 A，config_items 34 → 65）。做法：deploy.sh 第 1 步的一次性容器在迁移成功后接着跑 packages/db/scripts/seed.ts
+# （同一次 `docker run`，用 `sh -c 'migrate && seed'`：仍只挂 staging-migrator.env 与数据库 CA，不新增 docker run——冻结的
+# dirty-recovery / current-compose-validation 夹具把每次 docker run 记为一条 migrate 并精确比对调用序列）；种子失败与迁移失败一样
+# 在切换前停下，正在运行的进程不受影响；日志照旧不打印连接串口令。README §3 第 2 步同步写明。种子都必须可重复执行（db/seeds/README）。
+# 不在本任务：prod、种子内容本身。风险：infra/staging → RV2；规则测试由独立 Claude 写（Codex 不可用至 10-30，test/spec/infra/staging/** 只新增）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'infra/staging/deploy.sh'
+  - 'infra/staging/README.md'
+test_paths:
+  - 'test/spec/infra/staging/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/infra/staging/**'
+status: todo
+pr: null
