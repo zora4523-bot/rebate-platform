@@ -209,6 +209,7 @@ it('[AC-B1-19b#17] a confirmed Taobao media sibling does not authorize an unconf
     platform: 'taobao',
     union_account_id: account.id,
     pid: 'mm_100_200_300',
+    pid_scene: 'share',
     status: 'active',
   });
   const pid = await seedPid(h, {
