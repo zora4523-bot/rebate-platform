@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
 import { createDb, destroyDb, type DB } from '@couli/db';
-import type { TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import { expect } from 'vitest';
 
@@ -11,7 +10,13 @@ export const AT = new Date('2026-10-23T08:00:00Z');
 export const LATER = new Date('2026-10-23T09:00:00Z');
 
 // Only the integration entry imports the database factory as a value.
-export async function createKit(factory: () => Promise<TestDatabase>) {
+/** The slice of @couli/db/testing's TestDatabase this kit uses (no import: dependency rule). */
+export interface FixtureDatabase {
+  urlFor(role: string): string;
+  drop(): Promise<void>;
+}
+
+export async function createKit(factory: () => Promise<FixtureDatabase>) {
   const database = await factory();
   const app = createDb({ connectionString: database.urlFor('couli_app') });
   const readonly = createDb({ connectionString: database.urlFor('couli_readonly') });
@@ -20,9 +25,11 @@ export async function createKit(factory: () => Promise<TestDatabase>) {
     const result = await sql<{ kind: string }>`
       SELECT c.relkind::text AS kind FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'app' AND c.relname = 'rule_chunks'
+      WHERE n.nspname = 'app' AND c.relname = 'agent_rule_chunks'
     `.execute(app);
-    expect(result.rows, 'B3-08e must create app.rule_chunks before DML').toEqual([{ kind: 'r' }]);
+    expect(result.rows, 'B3-08e must create app.agent_rule_chunks before DML').toEqual([
+      { kind: 'r' },
+    ]);
   }
 
   async function article(
@@ -52,20 +59,19 @@ export async function createKit(factory: () => Promise<TestDatabase>) {
 
   async function insert(row: Row, db: Kysely<DB> = app) {
     const names = Object.keys(row);
-    return sql`INSERT INTO app.rule_chunks (${sql.join(names.map((name) => sql.ref(name)))})
+    return sql`INSERT INTO app.agent_rule_chunks (${sql.join(names.map((name) => sql.ref(name)))})
       VALUES (${sql.join(names.map((name) => row[name]))})`.execute(db);
   }
 
   async function update(id: unknown, patch: Row, db: Kysely<DB> = app) {
-    return sql`UPDATE app.rule_chunks SET
+    return sql`UPDATE app.agent_rule_chunks SET
       ${sql.join(Object.entries(patch).map(([name, value]) => sql`${sql.ref(name)} = ${value}`))}
       WHERE chunk_id = ${id}`.execute(db);
   }
 
   async function stored(id: unknown) {
-    const result = await sql<Row>`SELECT * FROM app.rule_chunks WHERE chunk_id = ${id}`.execute(
-      app,
-    );
+    const result =
+      await sql<Row>`SELECT * FROM app.agent_rule_chunks WHERE chunk_id = ${id}`.execute(app);
     expect(result.rows).toHaveLength(1);
     return result.rows[0]!;
   }

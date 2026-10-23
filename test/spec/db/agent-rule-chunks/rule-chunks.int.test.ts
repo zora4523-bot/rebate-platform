@@ -103,7 +103,7 @@ it('[AC-B3-08e#4][BR-AI-04][BR-AI-07] validated FK targets app.articles(id, vers
     c.confdeltype::text AS on_delete, c.confupdtype::text AS on_update, c.convalidated AS validated
     FROM pg_constraint c JOIN pg_class t ON t.oid = c.confrelid
     JOIN pg_namespace n ON n.oid = t.relnamespace
-    WHERE c.conrelid = to_regclass('app.rule_chunks') AND c.contype = 'f'`.execute(kit.app);
+    WHERE c.conrelid = to_regclass('app.agent_rule_chunks') AND c.contype = 'f'`.execute(kit.app);
   expect(result.rows).toContainEqual({
     source: ['article_id', 'published_version'],
     target: ['id', 'version'],
@@ -184,10 +184,10 @@ it('[AC-B3-08e#6][BR-AI-04][BR-AI-07] couli_app cannot DELETE or TRUNCATE chunks
   const before = await kit.stored(row['chunk_id']);
   expect(
     await sqlState(
-      sql`DELETE FROM app.rule_chunks WHERE chunk_id = ${row['chunk_id']}`.execute(kit.app),
+      sql`DELETE FROM app.agent_rule_chunks WHERE chunk_id = ${row['chunk_id']}`.execute(kit.app),
     ),
   ).toBe('42501');
-  expect(await sqlState(sql`TRUNCATE app.rule_chunks`.execute(kit.app))).toBe('42501');
+  expect(await sqlState(sql`TRUNCATE app.agent_rule_chunks`.execute(kit.app))).toBe('42501');
   expect(await kit.stored(row['chunk_id'])).toEqual(before);
 });
 
@@ -196,7 +196,7 @@ it('[AC-B3-08e#7][BR-AI-04][BR-AI-07] readonly reads metadata but cannot read ti
   await kit.insert(row);
   const before = await kit.stored(row['chunk_id']);
   const metadata = await sql`SELECT chunk_id, app_id, article_id, published_version,
-    seq, status, created_at, retired_at FROM app.rule_chunks
+    seq, status, created_at, retired_at FROM app.agent_rule_chunks
     WHERE chunk_id = ${row['chunk_id']}`.execute(kit.readonly);
   expect(metadata.rows).toEqual([
     {
@@ -212,7 +212,9 @@ it('[AC-B3-08e#7][BR-AI-04][BR-AI-07] readonly reads metadata but cannot read ti
   ]);
   for (const column of ['title', 'text']) {
     expect(
-      await sqlState(sql`SELECT ${sql.ref(column)} FROM app.rule_chunks`.execute(kit.readonly)),
+      await sqlState(
+        sql`SELECT ${sql.ref(column)} FROM app.agent_rule_chunks`.execute(kit.readonly),
+      ),
     ).toBe('42501');
   }
   expect(await sqlState(kit.insert({ ...row, chunk_id: randomUUID(), seq: 1 }, kit.readonly))).toBe(
@@ -225,10 +227,12 @@ it('[AC-B3-08e#7][BR-AI-04][BR-AI-07] readonly reads metadata but cannot read ti
   ).toBe('42501');
   expect(
     await sqlState(
-      sql`DELETE FROM app.rule_chunks WHERE chunk_id = ${row['chunk_id']}`.execute(kit.readonly),
+      sql`DELETE FROM app.agent_rule_chunks WHERE chunk_id = ${row['chunk_id']}`.execute(
+        kit.readonly,
+      ),
     ),
   ).toBe('42501');
-  expect(await sqlState(sql`TRUNCATE app.rule_chunks`.execute(kit.readonly))).toBe('42501');
+  expect(await sqlState(sql`TRUNCATE app.agent_rule_chunks`.execute(kit.readonly))).toBe('42501');
   expect(await kit.stored(row['chunk_id'])).toEqual(before);
 });
 
@@ -246,14 +250,14 @@ for (const role of ['couli_payout', 'couli_maint']) {
       'MAINTAIN',
     ]) {
       const result = await sql<{ allowed: boolean }>`
-        SELECT has_table_privilege(${role}, 'app.rule_chunks', ${privilege}) AS allowed`.execute(
+        SELECT has_table_privilege(${role}, 'app.agent_rule_chunks', ${privilege}) AS allowed`.execute(
         kit.app,
       );
       expect(result.rows, `${role} ${privilege}`).toEqual([{ allowed: false }]);
     }
     for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'REFERENCES']) {
       const result = await sql<{ allowed: boolean }>`
-        SELECT has_any_column_privilege(${role}, 'app.rule_chunks', ${privilege}) AS allowed`.execute(
+        SELECT has_any_column_privilege(${role}, 'app.agent_rule_chunks', ${privilege}) AS allowed`.execute(
         kit.app,
       );
       expect(result.rows, `${role} column ${privilege}`).toEqual([{ allowed: false }]);
@@ -270,7 +274,7 @@ it('[AC-B3-08e#8][BR-AI-04][BR-AI-07] exact enumerated columns, no vector, and o
     default_value: string | null;
   }>`
     SELECT column_name AS name, udt_name AS type, is_nullable AS nullable, column_default AS default_value
-    FROM information_schema.columns WHERE table_schema = 'app' AND table_name = 'rule_chunks'
+    FROM information_schema.columns WHERE table_schema = 'app' AND table_name = 'agent_rule_chunks'
     ORDER BY column_name`.execute(kit.app);
   const expected: [string, string][] = [
     ['chunk_id', 'uuid'],
@@ -311,13 +315,13 @@ it('[AC-B3-08e#8][BR-AI-04][BR-AI-07] keeps the pre-task extension set and app/s
     SELECT a.attname::text FROM unnest(i.indkey::smallint[]) WITH ORDINALITY k(num, ord)
     JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.num
     WHERE k.ord <= i.indnkeyatts ORDER BY k.ord
-  ) AS columns FROM pg_index i WHERE i.indrelid = to_regclass('app.rule_chunks')
+  ) AS columns FROM pg_index i WHERE i.indrelid = to_regclass('app.agent_rule_chunks')
     AND i.indisvalid AND i.indisready AND i.indpred IS NULL`.execute(kit.app);
   expect(indexes.rows).toContainEqual({ columns: ['app_id', 'status'] });
   const primary = await sql<{ columns: string[] }>`SELECT ARRAY(
     SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY k(num, ord)
     JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.num ORDER BY k.ord
-  ) AS columns FROM pg_constraint c WHERE c.conrelid = to_regclass('app.rule_chunks') AND c.contype = 'p'`.execute(
+  ) AS columns FROM pg_constraint c WHERE c.conrelid = to_regclass('app.agent_rule_chunks') AND c.contype = 'p'`.execute(
     kit.app,
   );
   expect(primary.rows).toEqual([{ columns: ['chunk_id'] }]);
