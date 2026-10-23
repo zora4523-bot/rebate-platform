@@ -151,8 +151,13 @@ it('[AC-F1-10fa-BROWSER#2] 浏览器连续停用和启用都弹动态码，确�
     const named = currentRow().getByRole('button', {
       name: operation === 'disable' ? /停用/ : /启用/,
     });
-    // Both a labelled button and an accessible switch are valid controls.
-    const control = named.elements().length > 0 ? named : currentRow().getByRole('switch');
+    const toggle = currentRow().getByRole('switch');
+    // Both a labelled button and an accessible switch are valid controls. Wait until the row
+    // shows one of them (it can be re-rendering after the previous write) before choosing.
+    await expect
+      .poll(() => named.elements().length + toggle.elements().length, FIRST)
+      .toBeGreaterThan(0);
+    const control = named.elements().length > 0 ? named : toggle;
     await control.click();
     let modal = page.getByRole('dialog');
     await expect.element(modal, FIRST).toBeVisible();

@@ -1,0 +1,19 @@
+id: F1-06zt
+repo: rebate-platform
+title: F1-10fa 规则测试同步（CI 偶发超时）——admin-risk-rules pages.browser.test.ts [AC-F1-10fa-BROWSER#2] 选择停用 / 启用控件前先轮询等行内出现带名按钮或开关，再选；只改等待，用例名、条数、全部断言不变
+type: test-change
+# 2026-10-23 入账（前端线 f1-frontend-7，编排 19:27「偶发 / 请查」）。CI 偶发失败：locator.click 超时（约 39s），等的是 currentRow() 内的 getByRole('switch')（pages.browser.test.ts:156）。
+# 原因：循环里 named.elements().length 是同步取值；第一次写入后行正在重渲染 / 清单重读时，带名的「启用」按钮还没出现，于是退回开关定位器，而实现（apps/admin/src/pages/risk/**）只有带名按钮，点击一直等到超时。
+# 改法：选控件前用 expect.poll（沿用 FIRST 超时）等行内带名按钮或开关至少出现一个，再按原规则选择；两种控件仍都接受，所有 expect / 断言、用例名、条数不变。同文件的「动态码」同步判断无同样竞态，保持不动。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件（approvals 第 12 条），第二家评审为全新独立 Claude 只读会话，合并需 #24 标签。
+refs: []
+refs_hash: {}
+deps: [F1-10fa]
+paths:
+  - 'test/spec/frontend/admin-risk-rules/pages.browser.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
