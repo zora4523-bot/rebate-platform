@@ -9,17 +9,22 @@ import {
 import { useHarness } from '../../admin/auth/kit.ts';
 import { expectNoSecrets } from '../admin-accounts/kit.ts';
 import {
+  MAX_PHONES,
   accepted,
   audits,
   configRow,
   history,
   idOf,
   masked,
+  mobile,
   mobiles,
   phonesOf,
   rejected,
+  seedPhones,
   serialized,
   setup,
+  signIn,
+  snapshot,
 } from './kit.ts';
 
 const h = useHarness();
@@ -87,4 +92,52 @@ it('[B1-22g][BR-ID-33] 明文号码不出现在响应、错误、审计与日志
     expect(serialized(response)).not.toContain(cipher);
     expect(serialized(response)).not.toContain('cipher');
   }
+});
+
+it('[B1-22g][BR-ID-33] 被拒的新增（已满 10 个、号码不合格、缺或无效动态码、缺权限点）也不把输入的号码写进日志或错误', async () => {
+  const s = await setup(h);
+  const viewer = await signIn(h, s.f, s.appId, { grants: [] });
+  const numbers = mobiles(MAX_PHONES + 3);
+  const [extra, stepped, denied] = [numbers.pop()!, numbers.pop()!, numbers.pop()!];
+  await seedPhones(s, numbers, 3);
+  const short = mobile().slice(0, 10);
+  const invalid = `+852 ${short}`;
+  const before = await snapshot(s);
+  const responses: unknown[] = [];
+  const keep = (response: Awaited<ReturnType<typeof s.listPhones>>) => {
+    responses.push(response.json());
+    return response;
+  };
+
+  // At the limit (a new number).
+  for (const phone of [extra, `+86 ${extra}`]) {
+    await rejected(keep(await s.add({ phone, expected_version: 3 })), 'add', 20001, {
+      fields: ['phone'],
+    });
+  }
+  // Not a mainland number after BR-ID-05 normalization.
+  await rejected(keep(await s.add({ phone: invalid, expected_version: 3 })), 'add', 20001, {
+    fields: ['phone'],
+    reason: 'phone_invalid',
+  });
+  // Step-up missing or invalid.
+  for (const token of [null, 'invalid-step-up-token']) {
+    await rejected(
+      keep(await s.add({ phone: stepped, expected_version: 3 }, { token })),
+      'add',
+      10003,
+      { tier: 'totp' },
+    );
+  }
+  // No union.account_auth, with or without a step-up token.
+  const body = { phone: denied, expected_version: 3 };
+  for (const call of [() => viewer.add(body), () => viewer.add(body, { token: null })]) {
+    await rejected(keep(await call()), 'add', 10403, { reason: 'admin_permission_denied' });
+  }
+  expect(responses).toHaveLength(7);
+  expect(await snapshot(s)).toEqual(before);
+
+  const secrets = [extra, `+86 ${extra}`, invalid, short, stepped, denied];
+  expectNoSecrets([responses, s.f.lines], secrets);
+  expect(s.f.lines.length).toBeGreaterThan(0);
 });

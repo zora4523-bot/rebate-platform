@@ -45,6 +45,23 @@ for (const grants of [[], ['union.pid', 'union.binding_reset']]) {
       expect(await snapshot(s), op).toEqual(before);
     }
   });
+
+  it(`[B1-22g][F-ADM-16] 缺 union.account_auth（授予 ${JSON.stringify(grants)}）且不带动态码：增删仍是 10403，权限点先于二次验证`, async () => {
+    const s = await setup(h, { grants });
+    const [kept, fresh] = mobiles(2);
+    await seedPhones(s, [kept!], 2);
+    const keptId = alertPhoneId(s.h.fields, kept!);
+    const before = await snapshot(s);
+    const calls: [Op, () => ReturnType<Scenario['listPhones']>][] = [
+      ['add', () => s.add({ phone: fresh, expected_version: 2 }, { token: null })],
+      ['add', () => s.add({ phone: '12800138000', expected_version: 2 }, { token: null })],
+      ['remove', () => s.remove({ phone_id: keptId, expected_version: 2 }, { token: null })],
+    ];
+    for (const [op, call] of calls) {
+      await rejected(await call(), op, 10403, { reason: 'admin_permission_denied' });
+      expect(await snapshot(s), op).toEqual(before);
+    }
+  });
 }
 
 it('[B1-22g][F-ADM-16] 超管不勾权限点也能查看与增删（增删仍要动态码）', async () => {
