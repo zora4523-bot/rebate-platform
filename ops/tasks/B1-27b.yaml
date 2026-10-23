@@ -31,5 +31,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/admin-profile/**'
-status: todo
-pr: null
+status: done
+pr: 1424

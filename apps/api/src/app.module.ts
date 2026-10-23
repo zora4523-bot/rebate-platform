@@ -2425,7 +2425,21 @@ export class AppModule {
           : []),
         // identity's /admin/v1 user reveal (F1-07a, BR-ID-33): guarded by AdminOperationGuard,
         // audited through the global AUDIT_PORT before the value is returned.
-        ...(options.entry === 'admin' ? [IdentityAdminModule.forAdmin()] : []),
+        // The edit of member information (B1-27b, BR-ID-44): the user fields, the old phone's
+        // deleted identity, identity's revocation of every session of the user (with the push
+        // token unbinding, as for a ban) and the audit row (admin's writer bound to the save's
+        // transaction) commit together; risk's blocklist refuses a listed number (44001).
+        ...(options.entry === 'admin'
+          ? [
+              IdentityAdminModule.forAdmin({
+                auditWriter: (db, clock) =>
+                  createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                revokeSessions: (clock) => (trx, input) =>
+                  revokeSessionsByUser(trx, input, clock, unbindRevoked(sessionPushTokens(clock))),
+                blocklist: (deps) => createBlocklistService(deps),
+              }),
+            ]
+          : []),
         // linking's /admin/v1 union authorization management (F1-07c, BR-ID-20): guarded by
         // AdminOperationGuard; each change and its audit row (admin's writer bound to the change's
         // transaction) commit together; the reset's cooldown reads content's configuration.

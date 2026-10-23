@@ -11238,7 +11238,6 @@ paths:
         an audit record. The response is the user as GET /admin/v1/users/{user_id} returns it
         now, phone number masked. No compare-and-set value and no Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
