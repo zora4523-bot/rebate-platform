@@ -7671,24 +7671,23 @@ paths:
       summary: Send a code to the new verify phone of the signed-in account (step-up)
       description: |
         First step of registering or changing the signed-in account's own verify phone on its
-        「我的账号」 page (BR-ID-34 细则「验证手机号的登记与更换」① ⑤). Any signed-in admin account,
+        「我的账号」 page (BR-ID-45 ① ⑤). Any signed-in admin account,
         super admins included (no permission point). Step-up: totp tier, checked here when the
         change is started (without a valid totp-tier `X-Step-Up-Token` → 10003 with
         `data.tier=totp`).
         `phone` is normalised (BR-ID-05 细则「手机号规范化」; not a mainland mobile number → 20001
         with `data.fields=[phone]` and `data.reason=phone_invalid`); the account's current verify
         phone is 20001 with `data.fields=[phone]`. The phone is not checked for uniqueness among
-        admin accounts (BR-ID-34 sets no such rule). A verification code is sent to that new
+        admin accounts (BR-ID-45 sets no such rule). A verification code is sent to that new
         phone and submitted with PUT /admin/v1/me/verify-phone. Only the new phone and the
         authenticator are verified: no code goes to the old phone, so losing it does not block
         the change (②). Sending again replaces the earlier pending code. Until the change
         succeeds the current verify phone stays valid and sms-tier step-up codes (POST
         /admin/v1/auth/step-up/sms-codes) keep going to it. Sending too often is 42901 with
         Retry-After; the send limits and the code validity are those of POST
-        /admin/v1/auth/step-up/sms-codes (not fixed by BR-ID-34), the response states the values
+        /admin/v1/auth/step-up/sms-codes (not fixed by BR-ID-45), the response states the values
         in force.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -7754,8 +7753,8 @@ paths:
         - admin-auth
       summary: Register or change the signed-in account's verify phone with the new phone's code
       description: |
-        Second step of the change started by POST /admin/v1/me/verify-phone/sms-codes (BR-ID-34
-        细则「验证手机号的登记与更换」①). Any signed-in admin account; the step-up was made when the
+        Second step of the change started by POST /admin/v1/me/verify-phone/sms-codes (BR-ID-45
+        ①). Any signed-in admin account; the step-up was made when the
         code was sent, so no step-up token is checked here. `phone` is normalised as for sending.
         `code` must be the pending code sent to this `phone` for this account: a wrong code is
         20002 without a reason; no pending code for this account and phone, an expired code or
@@ -7769,7 +7768,6 @@ paths:
         admin_verify_phone_change with the masked phones before and after. The response carries
         the masked phone only. No Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -8827,7 +8825,7 @@ paths:
       summary: Send a code to the new verify phone of another admin account (super admin, step-up)
       description: |
         First step of a super admin registering or changing another account's verify phone on
-        its holder's behalf (BR-ID-34 细则「验证手机号的登记与更换」③). Super admin only
+        its holder's behalf (BR-ID-45 ③). Super admin only
         (otherwise 10403 with `data.reason=admin_permission_denied`). Step-up: totp tier, checked
         here when the change is started (without a valid totp-tier `X-Step-Up-Token` → 10003
         with `data.tier=totp`). An unknown `admin_id` is 20001 with `data.fields=[admin_id]`.
@@ -8838,17 +8836,16 @@ paths:
         `phone` is normalised (BR-ID-05 细则「手机号规范化」; not a mainland mobile number → 20001
         with `data.fields=[phone]` and `data.reason=phone_invalid`); the account's current verify
         phone is 20001 with `data.fields=[phone]`. The phone is not checked for uniqueness among
-        admin accounts (BR-ID-34 sets no such rule). A verification code is sent to that new
+        admin accounts (BR-ID-45 sets no such rule). A verification code is sent to that new
         phone; the holder reads it to the super admin, who submits it with PUT
         /admin/v1/admins/{admin_id}/verify-phone. A change without the new phone's code is not
         possible. Sending again for the same account replaces the earlier pending code. Until the
         change succeeds the current verify phone stays valid and sms-tier step-up codes keep
         going to it. Sending too often is 42901 with Retry-After; the send limits and the code
-        validity are those of POST /admin/v1/auth/step-up/sms-codes (not fixed by BR-ID-34), the
+        validity are those of POST /admin/v1/auth/step-up/sms-codes (not fixed by BR-ID-45), the
         response states the values in force. Audit: action admin_verify_phone_code_send with the
         target and the masked new phone.
       x-auth: super
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -8918,7 +8915,7 @@ paths:
       summary: Register or change another admin account's verify phone with the new phone's code (super admin)
       description: |
         Second step of the change started by POST /admin/v1/admins/{admin_id}/verify-phone/sms-codes
-        (BR-ID-34 细则「验证手机号的登记与更换」③). Super admin only (otherwise 10403 with
+        (BR-ID-45 ③). Super admin only (otherwise 10403 with
         `data.reason=admin_permission_denied`); the step-up was made when the code was sent, so
         no step-up token is checked here. Targets as for sending: an unknown `admin_id` is 20001
         with `data.fields=[admin_id]`, the caller's own account and other super admins are 10403
@@ -8935,7 +8932,6 @@ paths:
         and after and that a super admin made it. The response is the account as it is now
         (masked phone only). No Idempotency-Key (04 §6.6).
       x-auth: super
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
