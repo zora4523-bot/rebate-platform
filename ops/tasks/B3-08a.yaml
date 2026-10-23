@@ -19,7 +19,7 @@ paths:
 test_paths:
   - 'test/spec/agent/tools-orders/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/agent/tools-orders/**'
