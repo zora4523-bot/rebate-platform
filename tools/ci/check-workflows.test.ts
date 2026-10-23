@@ -115,8 +115,8 @@ it('rejects a required summary job that can be skipped', () => {
   const root = fixture((edit) =>
     edit('.github/workflows/ci.yml', (t) =>
       t.replace(
-        '    if: always()\n    needs: [verify-fast',
-        '    if: success()\n    needs: [verify-fast',
+        '    if: always()\n    needs:\n      - verify-static',
+        '    if: success()\n    needs:\n      - verify-static',
       ),
     ),
   );
