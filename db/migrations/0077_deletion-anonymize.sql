@@ -31,6 +31,16 @@
 --     the five identifiers, bank_name, payee_name), added to the 0009 grants (is_current,
 --     row_version, updated_at). No DELETE; id, app_id, user_id, payout_method and created_at stay
 --     immutable for couli_app.
+--   payout_accounts_anonymize_only (D10-269): the column grants above alone would let couli_app
+--     rewrite the payee account of a live row, which 0009 forbade. A BEFORE UPDATE row trigger
+--     (function app.payout_accounts_reject_identifier_update, same shape as 0076's
+--     pay_orders_reject_immutable_update) keeps that rule in the database:
+--       ① alipay_logon_id_cipher, alipay_hmac, bank_card_no_cipher, bank_card_hmac, bank_name,
+--         card_bin and payee_name may differ from OLD only in the one UPDATE that anonymizes the
+--         row (OLD.anonymized_at IS NULL and NEW.anonymized_at IS NOT NULL);
+--       ② once anonymized_at is set it never changes again, including back to NULL.
+--     is_current, row_version and updated_at keep their 0009 behaviour. 0009 to 0076 put no
+--     trigger on this table, so nothing is replaced (a new guard, not a changed one).
 --
 -- app.realname (D10-137 ②: a member with a successful withdrawal keeps the real-name ciphertext
 -- for tax purposes, read-only, and is marked; everyone else is cleared):
@@ -90,6 +100,42 @@ GRANT UPDATE (
   card_bin,
   payee_name
 ) ON app.payout_accounts TO couli_app;
+
+CREATE FUNCTION app.payout_accounts_reject_identifier_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF OLD.anonymized_at IS NOT NULL
+    AND NEW.anonymized_at IS DISTINCT FROM OLD.anonymized_at
+  THEN
+    RAISE EXCEPTION 'payout_accounts anonymized_at cannot be changed once set'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NOT (OLD.anonymized_at IS NULL AND NEW.anonymized_at IS NOT NULL)
+    AND (
+      NEW.alipay_logon_id_cipher IS DISTINCT FROM OLD.alipay_logon_id_cipher
+      OR NEW.alipay_hmac IS DISTINCT FROM OLD.alipay_hmac
+      OR NEW.bank_card_no_cipher IS DISTINCT FROM OLD.bank_card_no_cipher
+      OR NEW.bank_card_hmac IS DISTINCT FROM OLD.bank_card_hmac
+      OR NEW.bank_name IS DISTINCT FROM OLD.bank_name
+      OR NEW.card_bin IS DISTINCT FROM OLD.card_bin
+      OR NEW.payee_name IS DISTINCT FROM OLD.payee_name
+    )
+  THEN
+    RAISE EXCEPTION 'payout_accounts account columns can only change in the anonymizing update'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+REVOKE ALL ON FUNCTION app.payout_accounts_reject_identifier_update() FROM PUBLIC;
+
+CREATE TRIGGER payout_accounts_anonymize_only
+  BEFORE UPDATE ON app.payout_accounts
+  FOR EACH ROW EXECUTE FUNCTION app.payout_accounts_reject_identifier_update();
 
 ALTER TABLE app.realname ADD COLUMN tax_retained boolean NOT NULL DEFAULT false;
 

@@ -630,6 +630,40 @@ $$;
 
 
 --
+-- Name: payout_accounts_reject_identifier_update(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.payout_accounts_reject_identifier_update() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF OLD.anonymized_at IS NOT NULL
+    AND NEW.anonymized_at IS DISTINCT FROM OLD.anonymized_at
+  THEN
+    RAISE EXCEPTION 'payout_accounts anonymized_at cannot be changed once set'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NOT (OLD.anonymized_at IS NULL AND NEW.anonymized_at IS NOT NULL)
+    AND (
+      NEW.alipay_logon_id_cipher IS DISTINCT FROM OLD.alipay_logon_id_cipher
+      OR NEW.alipay_hmac IS DISTINCT FROM OLD.alipay_hmac
+      OR NEW.bank_card_no_cipher IS DISTINCT FROM OLD.bank_card_no_cipher
+      OR NEW.bank_card_hmac IS DISTINCT FROM OLD.bank_card_hmac
+      OR NEW.bank_name IS DISTINCT FROM OLD.bank_name
+      OR NEW.card_bin IS DISTINCT FROM OLD.card_bin
+      OR NEW.payee_name IS DISTINCT FROM OLD.payee_name
+    )
+  THEN
+    RAISE EXCEPTION 'payout_accounts account columns can only change in the anonymizing update'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
 -- Name: reject_agent_card_rewrite(); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -8453,6 +8487,13 @@ CREATE TRIGGER payout_account_changes_append_only BEFORE DELETE OR UPDATE ON app
 
 
 --
+-- Name: payout_accounts payout_accounts_anonymize_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER payout_accounts_anonymize_only BEFORE UPDATE ON app.payout_accounts FOR EACH ROW EXECUTE FUNCTION app.payout_accounts_reject_identifier_update();
+
+
+--
 -- Name: product_key_aliases product_key_aliases_append_only; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -9841,6 +9882,13 @@ REVOKE ALL ON FUNCTION app.pay_orders_reject_immutable_update() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION app.pay_refunds_reject_immutable_update() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION payout_accounts_reject_identifier_update(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.payout_accounts_reject_identifier_update() FROM PUBLIC;
 
 
 --
