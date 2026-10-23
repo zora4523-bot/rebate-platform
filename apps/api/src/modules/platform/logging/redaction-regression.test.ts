@@ -102,8 +102,8 @@ it('[AC-B1-01c#4] free-text context follows arrays and objects and nonprimitive 
 });
 
 // CT-06zr: builds the api Nest app (createHttpApp + init) and injects one request; on main in CI it
-// took 2.0–3.5 s (12 green verify-fast runs, 2026-10-22/23) and passed the 5 s default now and then
-// (#1320, #1381). 15 s is the 5 s seen when it failed × 3; assertions are unchanged.
+// took 2.0–3.5 s (12 green verify-fast runs, 2026-10-22/23) and exceeded the 5 s default on PR runs
+// now and then (#1320, #1381). 15 s is the 5 s seen when it failed × 3; assertions are unchanged.
 const INJECT_CASE_TIMEOUT = 15_000;
 it(
   '[AC-B1-01c#5] Fastify inject keeps access-log request and response fields without listening',
