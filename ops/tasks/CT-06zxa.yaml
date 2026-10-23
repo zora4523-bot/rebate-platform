@@ -7,7 +7,7 @@ type: guard-change
 # （PROP_RUNS=100000 固定种子、再一轮由提交 SHA 前 8 位派生的种子），每轮 `pnpm --filter @couli/spec-tests run test --shard=i/2`
 # （同 verify-spec-1 / -2 的写法）；setup-node 改 `cache: pnpm`；各 timeout 60；上传 verified-verify-props-<i>-<tree>。
 # verify-reuse 的作业清单与 ci-gate 的 needs / 判定 / 摘要改认两个新名，复用条件不变。PROP_SEED / PROP_RUNS 照旧。
-# 分支基于 CT-06zx（#1444）头，#1444 合并后变基到主干再开 PR。
+# 先在 CT-06zx（#1444）头上备好，#1444 合并后变基到主干开 PR；独立 Claude 逐项对照 r1 pass 0/0/1（两片约 62%/38%，合并后观察一天）。
 refs: []
 refs_hash: {}
 deps: []
