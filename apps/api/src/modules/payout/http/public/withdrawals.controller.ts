@@ -45,11 +45,13 @@ import type { Kysely } from 'kysely';
 import {
   IDEMPOTENCY,
   CLOCK,
+  ROOT_LOGGER,
   contractRouteSchema,
   fieldsErrorEnvelope,
   tokenPrincipal,
   type CheckedRequest,
   type Clock,
+  type RootLogger,
   type HandlerResult,
   type Idempotency,
   type IdempotentResponse,
@@ -180,6 +182,7 @@ export class WithdrawalsController {
   readonly #stepUp: WithdrawStepUp | null;
   readonly #reads: DecryptWithdrawalAccount | null;
   readonly #clock: Clock | null;
+  readonly #logger: RootLogger | null;
 
   constructor(
     service: WithdrawRulesService | null,
@@ -189,6 +192,7 @@ export class WithdrawalsController {
     stepUp?: WithdrawStepUp | null,
     reads?: DecryptWithdrawalAccount | null,
     clock?: Clock | null,
+    logger?: RootLogger | null,
   ) {
     this.#service = service;
     this.#handle = handle;
@@ -197,6 +201,7 @@ export class WithdrawalsController {
     this.#stepUp = stepUp ?? null;
     this.#reads = reads ?? null;
     this.#clock = clock ?? null;
+    this.#logger = logger ?? null;
   }
 
   async listWithdrawals(
@@ -321,8 +326,14 @@ export class WithdrawalsController {
   }
 
   /** CT-20b: the response instant for the BR-WDR-25 branches; no Clock registered → row time. */
-  #projectionContext(): { readonly now?: Date } {
-    return this.#clock === null ? {} : { now: this.#clock.now() };
+  #projectionContext(): {
+    readonly now?: Date;
+    readonly logger?: { warn(fields: Record<string, unknown>, message: string): void };
+  } {
+    return {
+      ...(this.#clock === null ? {} : { now: this.#clock.now() }),
+      ...(this.#logger === null ? {} : { logger: this.#logger.child({ module: 'payout' }) }),
+    };
   }
 
   #actor(request: { readonly id: string; readonly principal?: TokenPrincipal }): WithdrawActor {
@@ -350,6 +361,8 @@ export class WithdrawalsController {
   Inject(WITHDRAW_READS)(WithdrawalsController, undefined, 5);
   Optional()(WithdrawalsController, undefined, 6);
   Inject(CLOCK)(WithdrawalsController, undefined, 6);
+  Optional()(WithdrawalsController, undefined, 7);
+  Inject(ROOT_LOGGER)(WithdrawalsController, undefined, 7);
   const list = Object.getOwnPropertyDescriptor(prototype, 'listWithdrawals')!;
   const detail = Object.getOwnPropertyDescriptor(prototype, 'getWithdrawal')!;
   Req()(prototype, 'listWithdrawals', 0);

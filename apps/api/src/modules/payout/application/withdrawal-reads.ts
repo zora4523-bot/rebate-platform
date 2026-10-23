@@ -62,6 +62,8 @@ export type WithdrawalRecordRow = Pick<
 export interface WithdrawalProjectionContext {
   readonly now?: Date;
   readonly firstAttemptAt?: Date | null;
+  /** Warns when no BR-WDR-25 row matched and processing stands in (编排 2026-10-23 20:07). */
+  readonly logger?: { warn(fields: Record<string, unknown>, message: string): void };
 }
 
 /** In-memory decryption port; the cleartext must be masked before crossing the read boundary. */
@@ -170,7 +172,22 @@ function branchOf(
     channel_state: (row.channel_state ?? null) as WithdrawalDisplayRow['channel_state'],
     confirm_deadline: row.confirm_deadline ?? null,
   };
-  return subTextBranch(display, context.now ?? row.created_at) ?? 'processing';
+  const branch = subTextBranch(display, context.now ?? row.created_at);
+  if (branch !== null) return branch;
+  // The table of BR-WDR-25 left this combination out: fall back to「处理中」, but say so in the
+  // log (ids and state only: no amounts, no payee data) so the gap is noticed rather than hidden.
+  context.logger?.warn(
+    {
+      withdrawal_id: row.id,
+      status: row.status,
+      review_mode: display.review_mode,
+      channel_state: display.channel_state,
+      needs_manual: display.needs_manual,
+      manual_resolution: display.manual_resolution,
+    },
+    'withdrawal_sub_text_fallback',
+  );
+  return 'processing';
 }
 
 export function projectWithdrawalSummary(
