@@ -3,9 +3,12 @@
 // adding a Taobao conversion port with its own authorization. The re-check core itself knows no
 // authorization; jd opens are served exactly as before, pdd opens get the Pinduoduo filing check
 // (B1-06v, link-open-pdd-auth.ts).
-// Order of one Taobao open: ownership (10001 / 30144, owner stage) → convert.enabled.taobao and
-// path admission (50301) → the scene's active promotion slot (50301 with a warning) →
-// authorization (30153 / 30101 / 30102) → re-check price (30141 / 30602 / 50303) → instruction.
+// Order of one Taobao open (BR-ATTR-05 细则「open 业务校验的先后」; B1-22m, D10-239 T2 + T3c):
+// ownership (10001 / 30144, owner stage) → convert.enabled.taobao and path admission (50301) →
+// the account this open uses (no Taobao union account at all → 50301 with a warning) →
+// authorization (30153 / 30101 / 30102) → the active promotion slot of that account, read only on
+// the branch authorization lets through (none → 50301 with a warning) → re-check price
+// (30141 / 30602 / 50303) → instruction. A refusal never reads a slot.
 // Authorization (BR-ATTR-05, BR-ID-17, BR-ID-18, BR-ID-24 ④) is judged on the identity snapshot's
 // user (the sharer on another user's share link):
 // - another user's share link whose sharer has no active binding (any status, blocked included,
@@ -33,6 +36,10 @@
 // union_accounts created_at, id ascending) — read with the union port's account filter, so
 // another account's earlier-activated slot never wins and never stands in when the account has
 // none (50301). taobaoTaoke's account check stays as the last line.
+// B1-22m: the slot is read after the authorization gate, on the allowed branches only (active,
+// after its relation_id; blocked + no_rebate; no_rebate under a usable site authorization). The
+// cached instruction is still read only after authorize returns (link-open-requote.ts), with the
+// same cache key and tag (R-12).
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { UnionPidRow } from '../../union/index.ts';
@@ -202,24 +209,22 @@ function createTaobaoConversion(
   }
 
   /**
-   * The scene's active promotion slot of the account in use (B1-19d); no account, none, or not a
-   * Taobao pid → 50301 with a warning. Never another account's slot nor another scene's.
+   * The scene's active promotion slot of the account in use (B1-19d); none, or not a Taobao pid
+   * → 50301 with a warning. Never another account's slot nor another scene's. Read only on an
+   * allowed branch of authorize (B1-22m).
    */
   async function activePid(
     appId: string,
     pidScene: string,
-    accountId: string | null,
+    accountId: string,
   ): Promise<UnionPidRow> {
-    const row =
-      accountId === null
-        ? null
-        : await pids.getActivePid({
-            appId,
-            platform: PLATFORM,
-            pidScene: pidScene as PidScene,
-            purpose: 'convert',
-            unionAccountId: accountId,
-          });
+    const row = await pids.getActivePid({
+      appId,
+      platform: PLATFORM,
+      pidScene: pidScene as PidScene,
+      purpose: 'convert',
+      unionAccountId: accountId,
+    });
     if (
       row === null ||
       row.status !== 'active' ||
@@ -283,8 +288,22 @@ function createTaobaoConversion(
         ? { status: 'unbound', accountId: null }
         : await reads.binding(appId, subject, PLATFORM);
     const accountId = await reads.authAccountId(appId, PLATFORM, bound);
-    const slot = await activePid(appId, noRebate ? 'self_buy' : snapshot.pid_scene, accountId);
-    const unattributed: TaobaoAuthorized = { relationId: null, bindingAccountId: null, slot };
+    // D10-239 T3c: no Taobao union account at all is a paused conversion, never 30101 / 30102.
+    if (accountId === null) {
+      logger.warn(
+        { event: 'linking.open.no_union_account', app_id: appId, platform: PLATFORM },
+        'linking: no taobao union account for the open',
+      );
+      throw paused('linking: no taobao union account');
+    }
+    // ⑦ The slot of the account in use, read only once the gate below lets the open through.
+    const slotScene = noRebate ? 'self_buy' : snapshot.pid_scene;
+    const slotOf = () => activePid(appId, slotScene, accountId);
+    const unattributed = async (): Promise<TaobaoAuthorized> => ({
+      relationId: null,
+      bindingAccountId: null,
+      slot: await slotOf(),
+    });
     if (subject === null) {
       // Only a guest's unclaimed share link can name no user: its sharer has no binding.
       if (sharedByOther)
@@ -295,7 +314,10 @@ function createTaobaoConversion(
     if (status === 'active') {
       // no_rebate carries no user parameter, so it needs no relation_id.
       const relation = noRebate ? null : await activeRelation(executor, appId, subject);
-      authorized.set(owner, relation === null ? unattributed : { ...relation, slot });
+      authorized.set(
+        owner,
+        relation === null ? await unattributed() : { ...relation, slot: await slotOf() },
+      );
       return { kind: 'allowed' };
     }
     // BR-ATTR-05 细则「别人的分享 link 不可用」: the sharer's status is never disclosed.
@@ -305,7 +327,7 @@ function createTaobaoConversion(
     if (status === 'blocked') {
       // BR-ID-18: an explicit no_rebate purchase goes out; the reason is the server's.
       if (noRebate) {
-        authorized.set(owner, unattributed);
+        authorized.set(owner, await unattributed());
         return { kind: 'allowed', noRebateReason: 'binding_blocked' };
       }
       // A banned user has no session (BR-ID-31); one still reaching here asks to log in.
@@ -318,7 +340,7 @@ function createTaobaoConversion(
       return { kind: 'refused', code, data: { reason: 'auth_unavailable' } };
     }
     if (noRebate) {
-      authorized.set(owner, unattributed);
+      authorized.set(owner, await unattributed());
       return { kind: 'allowed' };
     }
     return issue(executor, caller, owner, subject, code);
