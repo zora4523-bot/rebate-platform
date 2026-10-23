@@ -281,15 +281,9 @@ export const errorCodes = {
     retry: "刷新后",
     retry_kind: "after_action",
     retry_kind_by_reason: {},
-<<<<<<< HEAD
-    data: {"resource":["order","order_attribution","withdrawal","settle_batch","platform_icon","config_item","kill_switch","user_risk_state","union_binding","page","agreement","article","dict_item","claim_item","app_version","risk_rule","union_pid","admin_account"]},
+    data: {"resource":["order","order_attribution","withdrawal","settle_batch","platform_icon","config_item","kill_switch","user_risk_state","union_binding","page","agreement","article","dict_item","claim_item","app_version","risk_rule","union_pid","admin_account","pay_order","pay_refund"]},
     headers: [],
-    sources: ["BR-FUND-01","BR-FUND-04","BR-ATTR-20","BR-WDR-08","BR-ID-36","BR-WDR-17","BR-INV-21","BR-ID-12","BR-TEXT-13","BR-TEXT-12","BR-ID-01","BR-ATTR-02","BR-ID-34"],
-=======
-    data: {"resource":["order","order_attribution","withdrawal","settle_batch","platform_icon","config_item","kill_switch","user_risk_state","union_binding","page","agreement","article","dict_item","claim_item","app_version","risk_rule","union_pid","pay_order","pay_refund"]},
-    headers: [],
-    sources: ["BR-FUND-01","BR-FUND-04","BR-ATTR-20","BR-WDR-08","BR-ID-36","BR-WDR-17","BR-INV-21","BR-ID-12","BR-TEXT-13","BR-TEXT-12","BR-ID-01","BR-ATTR-02","BR-PAY-02","BR-PAY-06"],
->>>>>>> 6985ddeb (CT-21b: payment enums (contracts/enums/pay.yaml: pay_channel, pay_order_status, pay_refund_status, pay_refund_target_type, pay_query_attempt_kind, pay_ledger_type, pay_refund_reason, pay_unavailable_reason), recon_diff_type gains pay_mismatch / pay_anomaly, error codes 30901 / 30902 / 50306 and 20902 resources pay_order / pay_refund, texts (error.30901 / 30902 / 50306, admin dictionaries), fund-term-keys classification, regenerated contracts-ts)
+    sources: ["BR-FUND-01","BR-FUND-04","BR-ATTR-20","BR-WDR-08","BR-ID-36","BR-WDR-17","BR-INV-21","BR-ID-12","BR-TEXT-13","BR-TEXT-12","BR-ID-01","BR-ATTR-02","BR-ID-34","BR-PAY-02","BR-PAY-06"],
     phase: null,
     deprecated: false,
   },

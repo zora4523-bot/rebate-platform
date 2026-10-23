@@ -231,12 +231,9 @@ codes:
         - app_version
         - risk_rule
         - union_pid
-<<<<<<< HEAD
         - admin_account
-=======
         - pay_order
         - pay_refund
->>>>>>> 6985ddeb (CT-21b: payment enums (contracts/enums/pay.yaml: pay_channel, pay_order_status, pay_refund_status, pay_refund_target_type, pay_query_attempt_kind, pay_ledger_type, pay_refund_reason, pay_unavailable_reason), recon_diff_type gains pay_mismatch / pay_anomaly, error codes 30901 / 30902 / 50306 and 20902 resources pay_order / pay_refund, texts (error.30901 / 30902 / 50306, admin dictionaries), fund-term-keys classification, regenerated contracts-ts)
     sources:
       - BR-FUND-01
       - BR-FUND-04
@@ -250,12 +247,9 @@ codes:
       - BR-TEXT-12
       - BR-ID-01
       - BR-ATTR-02
-<<<<<<< HEAD
       - BR-ID-34
-=======
       - BR-PAY-02
       - BR-PAY-06
->>>>>>> 6985ddeb (CT-21b: payment enums (contracts/enums/pay.yaml: pay_channel, pay_order_status, pay_refund_status, pay_refund_target_type, pay_query_attempt_kind, pay_ledger_type, pay_refund_reason, pay_unavailable_reason), recon_diff_type gains pay_mismatch / pay_anomaly, error codes 30901 / 30902 / 50306 and 20902 resources pay_order / pay_refund, texts (error.30901 / 30902 / 50306, admin dictionaries), fund-term-keys classification, regenerated contracts-ts)
   - code: 20903
     http: 409
     meaning: 幂等键已作废（需要二次验证的四个操作中结果未知的一次提交已被用户放弃，作废接口在该键没有记录时写入作废记录；之后带同一个键的请求在幂等检查一步返回本码，不比较请求体、不执行业务；业务结果写入时发现该键已作废也整笔回滚并返回本码）
