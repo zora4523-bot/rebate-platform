@@ -52,17 +52,14 @@ afterAll(async () => {
   }
 });
 
-// 为 CT-26c 让路：CT-26c 给收款账号响应加必返 payout_account_id（当前收款账号行的编号）。
-// 只按响应对象有没有该键确定性判定：没有 → 期望与改前完全相同；有 → 期望原对象加上该键，
-// 值必须等于给定的当前收款账号行编号。CT-26c 合并后收紧为单态（恒带该键）。
+// CT-26c 起收款账号响应必返 payout_account_id（当前收款账号行的编号，契约 PayoutAccount*）。
+// 期望值必须是确定的行编号（字符串）；响应缺该键或值不同都让 toEqual 失败。
 function withPayoutAccountId(
-  actual: unknown,
   expected: Record<string, unknown>,
   currentId: string | undefined,
 ): Record<string, unknown> {
-  const carries =
-    typeof actual === 'object' && actual !== null && Object.hasOwn(actual, 'payout_account_id');
-  return carries ? { payout_account_id: currentId, ...expected } : expected;
+  expect(currentId).toEqual(expect.any(String));
+  return { payout_account_id: currentId, ...expected };
 }
 
 it('[AC-B1-13f#1] PUT 去 planned，契约声明错误码且开户行由服务端 BIN 带出', async () => {
@@ -93,7 +90,6 @@ it.each([12, 16, 19])(
     const currentId = (await state(kit, f)).accounts.find((row) => row.is_current)?.id;
     expect(data).toEqual(
       withPayoutAccountId(
-        data,
         {
           payout_method: 'bank_card',
           masked_account: `尾号 ${digits.slice(-4)}`,
