@@ -513,6 +513,7 @@ export class AdminAuthModule {
                 enable: refuse,
                 resetTotp: refuse,
                 rename: refuse,
+                savePermissions: refuse,
               };
             }
             return createAdminAccountsWriter({

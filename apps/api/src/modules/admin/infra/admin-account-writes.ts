@@ -12,6 +12,12 @@
 // account is re-read inside the transaction for the answer. Admin accounts have no generated
 // state machine (not in specs/state-machines): status moves only by the conditional UPDATEs here.
 //
+// B1-34k adds the permission point save (adminSaveAdminPermissions): the same lock, then a CAS on
+// the caller's expected_row_version (20902 admin_account when it differs), the set difference of
+// admin_permissions deleted and inserted (kept rows untouched), row_version + 1 and one audit row
+// with the points before and after and the added and removed keys. Sessions are not voided: the
+// permission guard reads the points on every request.
+//
 // Pure module (no decorators, erasable syntax, type-only imports from the platform barrel).
 import type { DB } from '@couli/db';
 import type { Kysely, Transaction } from 'kysely';
@@ -31,6 +37,7 @@ export const ADMIN_ACCOUNT_AUDIT = Object.freeze({
   enable: 'admin_account_enable',
   reset: 'admin_totp_reset',
   rename: 'admin_display_name_update',
+  permissions: 'admin_permissions_save',
 });
 
 /** Why a write was refused (nothing written). */
@@ -76,6 +83,16 @@ export interface AdminAccountWrites {
   enable(input: Target): Promise<AccountWriteResult>;
   resetTotp(input: Target & { readonly reason: string }): Promise<AccountWriteResult>;
   rename(input: Target & { readonly displayName: string }): Promise<AccountWriteResult>;
+  /**
+   * Replaces the ticked points of an ordinary account with `permissions` (known keys, each once,
+   * already checked by the caller) when its row_version is `expectedRowVersion`.
+   */
+  savePermissions(
+    input: Target & {
+      readonly permissions: readonly string[];
+      readonly expectedRowVersion: number;
+    },
+  ): Promise<AccountWriteResult>;
 }
 
 interface LockedRow {
@@ -89,6 +106,31 @@ interface LockedRow {
 }
 
 const targetOf = (adminId: string): string => `admin_users:${adminId}`;
+
+export interface PermissionDiff {
+  /** The ticked keys before the save (sorted, every stored key, known or not). */
+  readonly before: string[];
+  /** The ticked keys after the save (sorted). */
+  readonly after: string[];
+  /** Keys of `after` not held before (sorted): inserted. */
+  readonly added: string[];
+  /** Keys held before and not in `after` (sorted): deleted. */
+  readonly removed: string[];
+}
+
+/** The set difference of a whole-set save; rows of keys in both sets stay untouched. */
+export function permissionDiff(held: Iterable<string>, wanted: Iterable<string>): PermissionDiff {
+  const before = [...new Set(held)].sort();
+  const after = [...new Set(wanted)].sort();
+  const had = new Set(before);
+  const has = new Set(after);
+  return {
+    before,
+    after,
+    added: after.filter((key) => !had.has(key)),
+    removed: before.filter((key) => !has.has(key)),
+  };
+}
 
 /** Thrown inside a transaction to roll it back with a refusal. */
 class Refused extends Error {
@@ -346,6 +388,64 @@ export function createAdminAccountWrites(deps: {
             target: targetOf(input.adminId),
             before: { display_name: row.display_name },
             after: { admin_id: input.adminId, display_name: input.displayName },
+            ip: input.ip,
+          });
+        },
+      );
+    },
+
+    savePermissions(input) {
+      return onTarget(
+        input,
+        (row) =>
+          ordinaryOnly(input, row) ??
+          (row.row_version === input.expectedRowVersion ? null : 'conflict'),
+        async (trx, row, now) => {
+          const held = (
+            await trx
+              .selectFrom('admin_permissions')
+              .select('permission_key')
+              .where('app_id', '=', input.appId)
+              .where('admin_id', '=', input.adminId)
+              .execute()
+          ).map((item) => item.permission_key);
+          const diff = permissionDiff(held, input.permissions);
+          if (diff.removed.length > 0) {
+            await trx
+              .deleteFrom('admin_permissions')
+              .where('app_id', '=', input.appId)
+              .where('admin_id', '=', input.adminId)
+              .where('permission_key', 'in', diff.removed)
+              .execute();
+          }
+          if (diff.added.length > 0) {
+            await trx
+              .insertInto('admin_permissions')
+              .values(
+                diff.added.map((permission_key) => ({
+                  app_id: input.appId,
+                  admin_id: input.adminId,
+                  permission_key,
+                  granted_by: input.actor,
+                  granted_at: now,
+                  created_at: now,
+                })),
+              )
+              .execute();
+          }
+          await update(trx, input, row, {}, now);
+          await audit(trx).append({
+            appId: input.appId,
+            actor: input.actor,
+            action: ADMIN_ACCOUNT_AUDIT.permissions,
+            target: targetOf(input.adminId),
+            before: { permissions: diff.before },
+            after: {
+              admin_id: input.adminId,
+              permissions: diff.after,
+              added: diff.added,
+              removed: diff.removed,
+            },
             ip: input.ip,
           });
         },

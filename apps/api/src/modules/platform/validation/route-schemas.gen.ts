@@ -7839,6 +7839,70 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "adminSaveAdminPermissions": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "admin_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "admin_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "permissions",
+        "expected_row_version"
+      ],
+      "properties": {
+        "permissions": {
+          "type": "array",
+          "description": "The whole set of ticked points afterwards (enum admin_permission); empty unticks all.",
+          "uniqueItems": true,
+          "maxItems": 200,
+          "items": {
+            "type": "string",
+            "description": "A value of contracts/enums/admin.yaml `admin_permission` (04 §11). Kept a string here so the\nlist lives in one place; clients ignore keys they do not know.\n",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z_]*(\\.[a-z_]+)*$"
+          }
+        },
+        "expected_row_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "row_version of the row as read (users' risk state, a union binding, an admin account);\nplus 1 on every change. The CAS value `expected_row_version` of the writes.\n"
+        }
+      }
+    }
+  },
   "adminResetAdminTotp": {
     "headers": {
       "type": "object",

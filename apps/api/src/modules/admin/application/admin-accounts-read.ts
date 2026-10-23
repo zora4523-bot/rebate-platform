@@ -24,7 +24,7 @@ export interface AdminAccountView {
   readonly lockedUntil: Date | null;
   readonly permissions: AdminPermission[];
   readonly createdAt: Date;
-  /** CAS value; the reads do not answer it, B1-34h's write responses do. */
+  /** CAS value (admin_users.row_version); answered by the reads and the writes. */
   readonly rowVersion: number;
 }
 

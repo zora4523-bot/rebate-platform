@@ -10,10 +10,15 @@
 // The initial password is returned to the caller once and never logged, audited or stored in
 // clear (only its hash); the caller answers it with Cache-Control: no-store.
 //
+// B1-34k adds the permission point save (adminSaveAdminPermissions, totp-tier step-up in the
+// controller): every key must be in the permission catalog (specs/permissions.yaml, the enum
+// admin_permission) and appear once, else 20001 [permissions] before anything is read.
+//
 // Pure module (no decorators, erasable syntax).
 import { randomUUID } from 'node:crypto';
 import type { Clock, FieldCrypto } from '../../platform/index.ts';
 import { isAdminId } from '../domain/admin-view.ts';
+import { getAdminPermissionCatalog } from '../domain/permission-catalog.ts';
 import { generateAdminInitialPassword } from '../domain/initial-password.ts';
 import type { AccountRefusal, AdminAccountWrites } from '../infra/admin-account-writes.ts';
 import type { AdminDirectoryRow } from '../infra/admin-directory.ts';
@@ -54,6 +59,20 @@ export interface AdminAccountsWriter {
   enable(actor: AdminActor, adminId: string): Promise<AccountAnswer>;
   resetTotp(actor: AdminActor, adminId: string, reason: string): Promise<AccountAnswer>;
   rename(actor: AdminActor, adminId: string, displayName: string): Promise<AccountAnswer>;
+  savePermissions(
+    actor: AdminActor,
+    adminId: string,
+    body: { readonly permissions: readonly string[]; readonly expected_row_version: number },
+  ): Promise<AccountAnswer>;
+}
+
+const KNOWN_PERMISSIONS: ReadonlySet<string> = new Set(
+  getAdminPermissionCatalog().map((entry) => entry.key),
+);
+
+/** Every key is a catalog point and none appears twice (contract: 20001 [permissions]). */
+export function permissionsOk(keys: readonly string[]): boolean {
+  return new Set(keys).size === keys.length && keys.every((key) => KNOWN_PERMISSIONS.has(key));
 }
 
 /** The display name as stored: trimmed, 1–32 characters (code points); null when invalid. */
@@ -155,6 +174,18 @@ export function createAdminAccountsWriter(deps: {
       if (normalized === null) return fields('display_name');
       if (!isAdminId(adminId)) return fields('admin_id');
       return answer(await writes.rename({ ...target(actor, adminId), displayName: normalized }));
+    },
+
+    async savePermissions(actor, adminId, body) {
+      if (!permissionsOk(body.permissions)) return fields('permissions');
+      if (!isAdminId(adminId)) return fields('admin_id');
+      return answer(
+        await writes.savePermissions({
+          ...target(actor, adminId),
+          permissions: body.permissions,
+          expectedRowVersion: body.expected_row_version,
+        }),
+      );
     },
   };
 }
