@@ -788,6 +788,41 @@ $$;
 
 
 --
+-- Name: reject_rule_chunk_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_rule_chunk_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF ROW(NEW.chunk_id, NEW.app_id, NEW.article_id, NEW.published_version, NEW.seq, NEW.title,
+         NEW."text", NEW.created_at)
+      IS DISTINCT FROM
+      ROW(OLD.chunk_id, OLD.app_id, OLD.article_id, OLD.published_version, OLD.seq, OLD.title,
+          OLD."text", OLD.created_at)
+    OR NOT (
+      (
+        NEW.status IS NOT DISTINCT FROM OLD.status
+        AND NEW.retired_at IS NOT DISTINCT FROM OLD.retired_at
+      )
+      OR (
+        OLD.status = 'active'
+        AND OLD.retired_at IS NULL
+        AND NEW.status = 'retired'
+        AND NEW.retired_at IS NOT NULL
+      )
+    )
+  THEN
+    RAISE EXCEPTION 'rule_chunks content is immutable; status may only go active -> retired together with retired_at'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
 -- Name: reject_union_auth_session_rewrite(); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -3912,6 +3947,30 @@ CREATE TABLE app.risk_rules (
 
 
 --
+-- Name: rule_chunks; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.rule_chunks (
+    chunk_id uuid NOT NULL,
+    app_id text NOT NULL,
+    article_id uuid NOT NULL,
+    published_version integer NOT NULL,
+    seq integer NOT NULL,
+    title text NOT NULL,
+    text text NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    retired_at timestamp with time zone,
+    CONSTRAINT rule_chunks_published_version_check CHECK ((published_version >= 1)),
+    CONSTRAINT rule_chunks_retired_at_check CHECK (((status = 'retired'::text) = (retired_at IS NOT NULL))),
+    CONSTRAINT rule_chunks_seq_check CHECK ((seq >= 0)),
+    CONSTRAINT rule_chunks_status_check CHECK ((status = ANY (ARRAY['active'::text, 'retired'::text]))),
+    CONSTRAINT rule_chunks_text_check CHECK (((text <> ''::text) AND (char_length(text) <= 200))),
+    CONSTRAINT rule_chunks_title_check CHECK ((title <> ''::text))
+);
+
+
+--
 -- Name: sessions; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -5935,6 +5994,22 @@ ALTER TABLE ONLY app.risk_rules
 
 
 --
+-- Name: rule_chunks rule_chunks_article_id_published_version_seq_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.rule_chunks
+    ADD CONSTRAINT rule_chunks_article_id_published_version_seq_key UNIQUE (article_id, published_version, seq);
+
+
+--
+-- Name: rule_chunks rule_chunks_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.rule_chunks
+    ADD CONSTRAINT rule_chunks_pkey PRIMARY KEY (chunk_id);
+
+
+--
 -- Name: sessions sessions_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -7122,6 +7197,13 @@ CREATE INDEX risk_hits_user_idx ON app.risk_hits USING btree (app_id, user_id) W
 
 
 --
+-- Name: rule_chunks_app_id_status_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX rule_chunks_app_id_status_idx ON app.rule_chunks USING btree (app_id, status);
+
+
+--
 -- Name: sessions_device_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -7672,6 +7754,13 @@ CREATE TRIGGER product_refs_no_key_rewrite BEFORE UPDATE ON app.product_refs FOR
 --
 
 CREATE TRIGGER relation_change_logs_append_only BEFORE DELETE OR UPDATE ON app.relation_change_logs FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: rule_chunks rule_chunks_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER rule_chunks_no_rewrite BEFORE UPDATE ON app.rule_chunks FOR EACH ROW EXECUTE FUNCTION app.reject_rule_chunk_rewrite();
 
 
 --
@@ -8638,6 +8727,14 @@ ALTER TABLE ONLY app.risk_judgements
 
 
 --
+-- Name: rule_chunks rule_chunks_article_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.rule_chunks
+    ADD CONSTRAINT rule_chunks_article_fkey FOREIGN KEY (article_id, published_version) REFERENCES app.articles(id, version);
+
+
+--
 -- Name: sessions sessions_device_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -9021,6 +9118,13 @@ REVOKE ALL ON FUNCTION app.reject_order_rewrite() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION app.reject_product_ref_key_rewrite() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION reject_rule_chunk_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_rule_chunk_rewrite() FROM PUBLIC;
 
 
 --
@@ -12256,6 +12360,71 @@ GRANT UPDATE(row_version) ON TABLE app.risk_rules TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.risk_rules TO couli_app;
+
+
+--
+-- Name: TABLE rule_chunks; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.rule_chunks TO couli_app;
+
+
+--
+-- Name: COLUMN rule_chunks.chunk_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(chunk_id) ON TABLE app.rule_chunks TO couli_readonly;
+
+
+--
+-- Name: COLUMN rule_chunks.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_id) ON TABLE app.rule_chunks TO couli_readonly;
+
+
+--
+-- Name: COLUMN rule_chunks.article_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(article_id) ON TABLE app.rule_chunks TO couli_readonly;
+
+
+--
+-- Name: COLUMN rule_chunks.published_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(published_version) ON TABLE app.rule_chunks TO couli_readonly;
+
+
+--
+-- Name: COLUMN rule_chunks.seq; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(seq) ON TABLE app.rule_chunks TO couli_readonly;
+
+
+--
+-- Name: COLUMN rule_chunks.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.rule_chunks TO couli_app;
+GRANT SELECT(status) ON TABLE app.rule_chunks TO couli_readonly;
+
+
+--
+-- Name: COLUMN rule_chunks.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE app.rule_chunks TO couli_readonly;
+
+
+--
+-- Name: COLUMN rule_chunks.retired_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(retired_at) ON TABLE app.rule_chunks TO couli_app;
+GRANT SELECT(retired_at) ON TABLE app.rule_chunks TO couli_readonly;
 
 
 --

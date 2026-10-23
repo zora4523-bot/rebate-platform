@@ -1445,6 +1445,19 @@ export interface RiskRules {
   version: number;
 }
 
+export interface RuleChunks {
+  app_id: string;
+  article_id: string;
+  chunk_id: string;
+  created_at: Generated<Timestamp>;
+  published_version: number;
+  retired_at: Timestamp | null;
+  seq: number;
+  status: Generated<string>;
+  text: string;
+  title: string;
+}
+
 export interface Sessions {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -1842,6 +1855,7 @@ export interface DB {
   risk_hits: RiskHits;
   risk_judgements: RiskJudgements;
   risk_rules: RiskRules;
+  rule_chunks: RuleChunks;
   sessions: Sessions;
   settle_adjust_batches: SettleAdjustBatches;
   settle_adjustments: SettleAdjustments;
