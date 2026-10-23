@@ -9,7 +9,7 @@ type: impl
 # 另一新鲜独立 Claude 复审「不削弱」，落地时编排按 #24 加标签。D10-305：第 6 处 consentReader 纳入；module.test.ts / mount.int 两文件只改 db 交接断言。风险 RV2。
 refs: [BR-AI-02]
 refs_hash:
-  BR-AI-02: 61014cc4d222
+  BR-AI-02: d14ca044d0e7
 deps: []
 paths:
   - 'apps/api/src/modules/agent/agent.module.ts'
