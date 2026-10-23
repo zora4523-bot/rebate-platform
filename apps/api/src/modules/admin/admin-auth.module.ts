@@ -9,7 +9,10 @@
 // here without the rest of the export worker. Disable, reset and regeneration void the account's
 // admin_tokens, login tickets and step-up tokens through one Redis voiding instant
 // (infra/admin-revocations.ts), which the request check, the login steps and the step-up checks
-// read. Loaded on the admin entry only (app.module).
+// read. And the verify phone registration and change of the holder (「我的账号」) and of a super
+// admin on an ordinary account's behalf (B1-34i, /admin/v1/me/verify-phone and
+// /admin/v1/admins/{admin_id}/verify-phone; primary database, the step-up Redis namespace and the
+// SMS sender below). Loaded on the admin entry only (app.module).
 //
 // Step-up and me/permissions (F1-06l) live here too: POST auth/step-up/sms-codes, POST
 // auth/step-up and GET me/permissions, over the same accounts, sessions and Redis; the SMS sender
@@ -55,6 +58,10 @@ import { createAdminExports, type AdminExports } from './application/admin-expor
 import { createExportCanceller } from './application/export-worker.ts';
 import { AdminOperationGuardImpl } from './application/admin-operation-guard.ts';
 import { createAuditLogsReader, type AuditLogsReader } from './application/audit-logs-read.ts';
+import {
+  createAdminVerifyPhoneService,
+  type AdminVerifyPhoneService,
+} from './application/admin-verify-phone.ts';
 import { createAdminRequestCheck } from './application/admin-check.ts';
 import { createAdminAuthService, type AdminAuthService } from './application/admin-login.ts';
 import {
@@ -81,6 +88,7 @@ import {
   ADMIN_HTTP_POLICY,
   ADMIN_STEP_UP,
   ADMIN_STEP_UP_GATE,
+  ADMIN_VERIFY_PHONE,
 } from './application/tokens.ts';
 import type { ConfigPermissions } from './domain/audit-log-view.ts';
 import { createIpAllowlist } from './domain/login-policy.ts';
@@ -90,8 +98,10 @@ import { AdminAuditLogsController } from './http/admin/audit-logs.controller.ts'
 import { AdminAuthController } from './http/admin/auth.controller.ts';
 import { AdminExportsController } from './http/admin/exports.controller.ts';
 import { AdminStepUpController } from './http/admin/step-up.controller.ts';
+import { AdminVerifyPhoneController } from './http/admin/verify-phone.controller.ts';
 import { createAdminAccountWrites } from './infra/admin-account-writes.ts';
 import { createAdminAccounts, type AdminAccounts } from './infra/admin-accounts.ts';
+import { createAdminVerifyPhoneWrites } from './infra/admin-verify-phone-writes.ts';
 import { createAdminDirectory } from './infra/admin-directory.ts';
 import { createAdminDisplayNameReader } from './infra/admin-display-names.ts';
 import {
@@ -106,6 +116,7 @@ import { createAdminSessions, type AdminSessions } from './infra/admin-sessions.
 import { createLoginTickets } from './infra/login-tickets.ts';
 import { createPgTotpReplayStore } from './infra/totp-replay-pg.ts';
 import { createStepUpSmsCodes } from './infra/step-up-sms-codes.ts';
+import { createVerifyPhoneCodes } from './infra/verify-phone-codes.ts';
 
 /** What app.module hands the admin entry's module. */
 export interface AdminAuthOptions {
@@ -194,6 +205,7 @@ export class AdminAuthModule {
         AdminAccountsController,
         AdminAuditLogsController,
         AdminExportsController,
+        AdminVerifyPhoneController,
       ],
       providers: [
         ...(sender === undefined ? [] : [sender]),
@@ -513,6 +525,40 @@ export class AdminAuthModule {
                 exports: createExportCanceller({ clock, sensitiveKeys: SENSITIVE_KEYS }),
                 revocations: stores.revocations(),
               }),
+            });
+          },
+        },
+        {
+          provide: ADMIN_VERIFY_PHONE,
+          // B1-34i: primary database (couli_app); pending codes in the step-up namespace.
+          inject: [
+            CLOCK,
+            ADMIN_STORES,
+            ADMIN_SMS_SENDER,
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            stores: AdminStores,
+            sender: AdminSmsSender,
+            db?: Kysely<Database>,
+            crypto?: FieldCrypto,
+          ): AdminVerifyPhoneService => {
+            if (db === undefined || crypto === undefined) {
+              const refuse = (): Promise<never> =>
+                Promise.reject(
+                  new Error('admin verify phone: needs the database and the field cipher'),
+                );
+              return { sendMine: refuse, sendFor: refuse, changeMine: refuse, changeFor: refuse };
+            }
+            return createAdminVerifyPhoneService({
+              clock,
+              profiles: createAdminProfiles({ db }),
+              codes: createVerifyPhoneCodes({ redis: stores.stepUp() }),
+              sender,
+              writes: createAdminVerifyPhoneWrites({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+              crypto,
             });
           },
         },

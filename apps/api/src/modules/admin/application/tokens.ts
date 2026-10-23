@@ -19,3 +19,5 @@ export const ADMIN_EXPORTS = Symbol('ADMIN_EXPORTS');
 export const ADMIN_ACCOUNTS_WRITE = Symbol('ADMIN_ACCOUNTS_WRITE');
 /** AdminStepUpGate (./permission-guard.ts; B1-34h super-only writes, admin entry only). */
 export const ADMIN_STEP_UP_GATE = Symbol('ADMIN_STEP_UP_GATE');
+/** AdminVerifyPhoneService (./admin-verify-phone.ts; B1-34i, admin entry only). */
+export const ADMIN_VERIFY_PHONE = Symbol('ADMIN_VERIFY_PHONE');
