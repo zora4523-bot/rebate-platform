@@ -1,0 +1,18 @@
+id: B1-02zk
+repo: rebate-platform
+title: 测试修改（D10-265）：[AC-B1-02y#19]（#18 同理一并核）「封禁、无 x-step-up-token」的断言改用 deletion 等仍按 BR-ID-01 全局顺序的接口作载体，保留「⑤ 先于 ⑫」含义；另加 / 改写一条只针对 POST /v1/withdrawals：同情形回 10003（08 BR-WDR-03 细则「提交接口的检查顺序」），带有效令牌仍回 10006 且令牌不被占用
+type: test-change
+# 草稿 2026-10-23（身份与风控线 identity-lane）。编排 19:22 D10-265 取 A：提现接口顺序以 BR-WDR-03 细则（D10-217 / D10-233 ①，SPEC_REF 已含）为准，withdraw B2-05d 不改；本 test-change 合并后 B2-05d 变基落地。
+# 独立 Claude 改（approvals #36），新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签。只改 test/spec/identity/step-up-verify/order.int.test.ts 的这几处（kit.ts 若需新载体辅助也在 paths 内，只增不改既有导出）。
+refs: []
+refs_hash: {}
+deps: [B1-02y]
+paths:
+  - 'test/spec/identity/step-up-verify/order.int.test.ts'
+  - 'test/spec/identity/step-up-verify/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/step-up-verify/**'
+status: todo
