@@ -4,7 +4,7 @@
 // group of F1-02zj + the BR-INV-24 growth.invite_reward.* group of F1-02zn / F1-02zx), #3 reads an
 // enum item's seed as a JSON string, #56 pins SETTLE, #57 the five invite reward keys and #58
 // growth.invite_reward.eligibility_days right after ip_window_hours. F1-02zt：过渡已收紧, every group present.
-// B2-06bz (D10-244 ②、D10-296): the eight payout.* keys follow the growth group (PAYOUT below).
+// B2-06bz (D10-244 ②、D10-296): the eight payout.* keys follow the growth group (kit PAYOUT).
 import { expect, it } from 'vitest';
 import {
   configItemSpecOf,
@@ -21,10 +21,10 @@ import {
   FUND_FLAGS,
   INVITE_CFG,
   INVITE_ELIG,
+  PAYOUT,
   SETTLE,
   UNREGISTERED,
   expectedNow,
-  type Expected,
   inviteNow,
   jsonTypeOf,
   presentOf,
@@ -33,26 +33,6 @@ import {
 
 const sorted = <T>(items: readonly T[]): T[] => [...items].sort();
 const EXTRA = ['agent.page_guide.routes', 'external_hosts'];
-// B2-06bz (D10-244 ②、D10-296): the B2-06b payout channel keys, appended right after the growth
-// group in this order; independent of the registry under test. The two caps and the watermark are
-// integers (number), biz_scene a string, the other four JSON (object); all config.business,
-// editable, options null.
-const payout = (key: string, valueType: Expected['valueType']): Expected => ({
-  key,
-  valueType,
-  permission: 'config.business',
-  adminEditable: true,
-});
-const PAYOUT: readonly Expected[] = [
-  payout('payout.single_cap_fen', 'number'),
-  payout('payout.daily_cap_fen', 'number'),
-  payout('payout.watermark_usable_bp', 'number'),
-  payout('payout.biz_scene', 'string'),
-  payout('payout.query_schedule', 'object'),
-  payout('payout.definite_fail_codes', 'object'),
-  payout('payout.payer_side_codes', 'object'),
-  payout('payout.query_status_map', 'object'),
-];
 
 function registered(key: string): ConfigItemSpec {
   const found = configRegistry().filter((spec) => spec.key === key);

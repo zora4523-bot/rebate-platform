@@ -16,6 +16,7 @@ paths:
   - 'test/spec/content/invite-reward-config/seeds.test.ts'
   - 'test/spec/content/config-items/read.int.test.ts'
   - 'test/spec/content/config-settle/writes.int.test.ts'
+  - 'test/spec/content/config-items/kit.ts'
   - 'apps/api/src/modules/content/domain/config-registry.ts'
   - 'apps/api/src/modules/content/domain/config-registry.test.ts'
   - 'apps/api/src/modules/content/application/config-item-admin.test.ts'

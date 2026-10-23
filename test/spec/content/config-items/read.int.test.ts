@@ -8,6 +8,7 @@ import { signedIn, useHarness } from '../../admin/auth/kit.ts';
 import {
   EXPECTED,
   KEYS,
+  PAYOUT,
   ROW_AT,
   UNREGISTERED,
   call,
@@ -28,18 +29,6 @@ import {
   written,
 } from './kit.ts';
 
-// B2-06bz (D10-244 ②、D10-296): the eight payout.* keys registered after expectedNow()'s groups.
-const PAYOUT_KEYS = [
-  'payout.single_cap_fen',
-  'payout.daily_cap_fen',
-  'payout.watermark_usable_bp',
-  'payout.biz_scene',
-  'payout.query_schedule',
-  'payout.definite_fail_codes',
-  'payout.payer_side_codes',
-  'payout.query_status_map',
-];
-
 const h = useHarness();
 
 it('[AC-F1-10e#10] 列表按注册表顺序列出每个配置项，未写过的 value=null、version=0、无作者与时间', async () => {
@@ -48,8 +37,10 @@ it('[AC-F1-10e#10] 列表按注册表顺序列出每个配置项，未写过的 
   expect(items.map((item) => item.key)).toStrictEqual(configRegistry().map((spec) => spec.key));
   expect(items.map(normalized)).toStrictEqual(configRegistry().map((spec) => unwritten(spec.key)));
   // F1-02zt：过渡已收紧, EXPECTED + settle.* + invite; B2-06bz: + the eight payout.* keys.
-  expect(items).toHaveLength(expectedNow().length + PAYOUT_KEYS.length);
-  expect(items.slice(-PAYOUT_KEYS.length).map((item) => item.key)).toStrictEqual(PAYOUT_KEYS);
+  expect(items).toHaveLength(expectedNow().length + PAYOUT.length);
+  expect(items.slice(-PAYOUT.length).map((item) => item.key)).toStrictEqual(
+    PAYOUT.map((entry) => entry.key),
+  );
 });
 
 it('[AC-F1-10e#11] 列表与单项给出写过的当前值、version、作者快照与时间；种子行照常列出', async () => {
