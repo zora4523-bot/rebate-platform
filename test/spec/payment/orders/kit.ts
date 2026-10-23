@@ -9,12 +9,6 @@ import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { createDb, destroyDb, type DB } from '@couli/db';
-import {
-  acquireTestRedis,
-  createTestDatabase,
-  type TestDatabase,
-  type TestRedis,
-} from '@couli/db/testing';
 import { sql, type Insertable, type Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, vi } from 'vitest';
 import {
@@ -47,6 +41,30 @@ export const OUT_TRADE_NO = /^P[0-9A-Z]{20}$/;
 
 const ROOT = new URL('../../../../', import.meta.url);
 const requireApi = createRequire(new URL('apps/api/package.json', ROOT));
+
+// The test-database and test-redis helpers are imported at run time (computed URL), like
+// identity/sms-codes/kit.ts and identity/registration/kit.ts: this kit must not depend on
+// @couli/db/testing statically (depcruise rule testcontainers-only-in-int-tests).
+interface TestDatabase {
+  urlFor(role: string): string;
+  drop(): Promise<void>;
+}
+interface TestRedis {
+  url: string;
+  stop(): Promise<void>;
+}
+async function createTestDatabase(): Promise<TestDatabase> {
+  const testing = (await import(
+    new URL('../../../../packages/db/src/testing/index.ts', import.meta.url).href
+  )) as { createTestDatabase(): Promise<TestDatabase> };
+  return testing.createTestDatabase();
+}
+async function acquireTestRedis(): Promise<TestRedis> {
+  const testing = (await import(
+    new URL('../../../../packages/db/src/testing/index.ts', import.meta.url).href
+  )) as { acquireTestRedis(): Promise<TestRedis> };
+  return testing.acquireTestRedis();
+}
 
 // ---------------------------------------------------------------------------------------------
 // Database of one test file.
