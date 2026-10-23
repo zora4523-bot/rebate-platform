@@ -4,6 +4,7 @@ import type { Kysely, Selectable, Transaction } from 'kysely';
 import type { Clock, EventBus } from '../../platform/index.ts';
 import type { RegisteredPlatform, UnionOrder } from '../../union/index.ts';
 import type { BindingRow } from '../domain/attribution.ts';
+import type { OrderBlacklistDeps, OrderBlacklistRebatePort } from './blacklist-step.ts';
 import type { StatusMap } from '../domain/status-map.ts';
 import type { CommissionSnapshotPort, SnapshotOutcome } from './commission-snapshot-step.ts';
 import type { OrderSyncWindow, SyncLogger } from './sync-ports.ts';
@@ -75,7 +76,13 @@ export interface OrderPipelineDeps {
   };
   readonly rebate: {
     onImported(trx: Transaction<DB>, order: ImportedOrder): Promise<void>;
+    /** B1-09b 第 ③ 步命中且未入账（BR-ATTR-26 → BR-FUND-01 R6）；接线在资金线。 */
+    onBlacklistHit?: OrderBlacklistRebatePort['onBlacklistHit'];
   };
+  /**
+   * 第 ③ 步黑名单（B1-09b，BR-ATTR-26）：risk 订单侧名单端口与尾号维度开关。未注入时整步跳过。
+   */
+  readonly blacklist?: OrderBlacklistDeps;
   /**
    * 分佣快照端口（B1-08k，BR-ATTR-01 ⑥ / BR-CALC-10）：首次入库即已归因且 PAID+ 时，在 history、待处理之后、
    * rebate.onImported 之前同事务调用；抛错整事务回滚。未注入时整步跳过（不调用、不写来源与待处理，

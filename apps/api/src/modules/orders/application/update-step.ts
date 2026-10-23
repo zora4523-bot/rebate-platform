@@ -90,6 +90,7 @@ import {
   type SnapshotRetryAlert,
 } from './snapshot-retry-step.ts';
 import { backfillOrderSource, sourceColumns } from './source-backfill.ts';
+import type { OrderBlacklistDeps, OrderBlacklistRebatePort } from './blacklist-step.ts';
 import type {
   OrderPipelineContext,
   OrderPipelineDeps,
@@ -154,7 +155,11 @@ export interface OrderUpdateDeps extends Pick<
       info: UnmappedOrderInfo,
       source: OrderStatusSource,
     ): Promise<void>;
+    /** B1-09b 第 ③ 步命中且未入账（BR-ATTR-26 → BR-FUND-01 R6）；接线在资金线。 */
+    onBlacklistHit?: OrderBlacklistRebatePort['onBlacklistHit'];
   };
+  /** 第 ③ 步黑名单（B1-09b）；同 OrderPipelineDeps.blacklist，未注入时整步跳过。 */
+  readonly blacklist?: OrderBlacklistDeps;
   /** 领域事件 order.updated 与三个告警事件共用的总线；与本次写库同一事务入队，抛错整事务回滚。 */
   readonly events: Pick<EventBus, 'publish'>;
   readonly regressionHold?: (platform: Parameters<OrderPipelineDeps['statusMaps']>[0]) => boolean;
