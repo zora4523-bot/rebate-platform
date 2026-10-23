@@ -1,7 +1,9 @@
 // 收款账号 (规划/08 BR-WDR-02, BR-WDR-01, BR-ID-31, BR-ID-33; 04 §6.1; task B1-13e §9.2).
 //
 // createPayoutAccountReader — GET /v1/me/payout-account: the current row (is_current) of the user
-// in the app, masked (BR-ID-33 细则「收款账号的脱敏格式」), plus change_remaining_this_month =
+// in the app, masked (BR-ID-33 细则「收款账号的脱敏格式」), with payout_account_id = that row's id
+// (the step-up summary of a withdrawal, CT-26c; a change writes a new row, so the id changes),
+// plus change_remaining_this_month =
 // max(0, monthly limit − rows of payout_account_changes of this user and app whose changed_at lies
 // in the +08:00 natural month of the injected Clock). No current row → {} (EmptyData). The
 // decrypted logon id or card number lives only in memory long enough to be masked.
@@ -316,6 +318,7 @@ function projectAlipay(
 ): components['schemas']['PayoutAccountAlipay'] {
   const logon = crypto.decrypt(cipherText(row.alipay_logon_id_cipher), ALIPAY_CONTEXT);
   return {
+    payout_account_id: row.id,
     payout_method: 'alipay',
     masked_account: maskAlipayLogonId(logon),
     masked_payee_name: maskPayeeName(row.payee_name),
@@ -334,6 +337,7 @@ export function project(
     const cardNo = crypto.decrypt(cipherText(row.bank_card_no_cipher), BANK_CARD_CONTEXT);
     if (row.bank_name === null) throw new Error('identity: bank card row without bank_name');
     return {
+      payout_account_id: row.id,
       payout_method: 'bank_card',
       masked_account: maskBankCardTail(cardNo),
       bank_name: row.bank_name,
@@ -509,8 +513,9 @@ interface AccountColumns {
 /**
  * The writes of a change or first binding (inside a savepoint): the old current row is set
  * is_current=false (row_version CAS) with one payout_account_changes row, then the new current row.
- * 'occupied' when the method's partial unique index saw a concurrent binding (rolled back to the
- * savepoint, the caller's transaction stays usable).
+ * Returns the new current row's id (payout_account_id, CT-26c), or 'occupied' when the method's
+ * partial unique index saw a concurrent binding (rolled back to the savepoint, the caller's
+ * transaction stays usable).
  */
 async function writeAccount(
   trx: Kysely<DB>,
@@ -518,8 +523,9 @@ async function writeAccount(
   target: PayoutAccountTarget,
   open: { readonly current: CurrentAccount | undefined; readonly now: Date },
   columns: AccountColumns,
-): Promise<'written' | 'occupied'> {
+): Promise<{ readonly id: string } | 'occupied'> {
   const { current, now } = open;
+  const id = newUuidV7(now);
   await sql`SAVEPOINT ${SAVEPOINT}`.execute(trx);
   try {
     if (current !== undefined) {
@@ -553,7 +559,7 @@ async function writeAccount(
     await trx
       .insertInto('payout_accounts')
       .values({
-        id: newUuidV7(now),
+        id,
         app_id: subject.appId,
         user_id: subject.userId,
         payout_method: target.method,
@@ -573,7 +579,7 @@ async function writeAccount(
     await sql`RELEASE SAVEPOINT ${SAVEPOINT}`.execute(trx);
     return 'occupied';
   }
-  return 'written';
+  return { id };
 }
 
 /** The masked projection of a stored bank-card row. */
@@ -644,6 +650,7 @@ export function createPayoutAccountService(
       return {
         code: 0,
         data: {
+          payout_account_id: written.id,
           payout_method: 'alipay',
           masked_account: maskAlipayLogonId(logon),
           masked_payee_name: maskPayeeName(target.payeeName),
@@ -701,6 +708,7 @@ export function createPayoutAccountService(
       return {
         code: 0,
         data: {
+          payout_account_id: written.id,
           payout_method: 'bank_card',
           masked_account: maskBankCardTail(cardNo),
           bank_name: command.bankName,

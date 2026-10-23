@@ -486,7 +486,7 @@ export const CONTRACT_ROUTE_SCHEMAS = {
     },
     "body": {
       "type": "object",
-      "description": "`action` is required exactly for purpose=step_up. purpose=payout_bind is for WeChat only\nand carries no `action`. The oneOf branches declare the properties they constrain (strict\nAjv2020, ADR-0001 §4.2 #15).\n",
+      "description": "`action` is required exactly for purpose=step_up. purpose=payout_bind is for WeChat only\nand carries no `action`. purpose=reverify (re-verification of a recycled phone, BR-WDR-01\n细则) carries no `action`. The oneOf branches declare the properties they constrain (strict\nAjv2020, ADR-0001 §4.2 #15).\n",
       "additionalProperties": false,
       "required": [
         "provider",
@@ -508,7 +508,8 @@ export const CONTRACT_ROUTE_SCHEMAS = {
           "enum": [
             "login",
             "step_up",
-            "payout_bind"
+            "payout_bind",
+            "reverify"
           ]
         },
         "action": {
@@ -581,6 +582,39 @@ export const CONTRACT_ROUTE_SCHEMAS = {
           "required": [
             "purpose",
             "provider"
+          ],
+          "not": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "action": {
+                "type": "string",
+                "description": "Action a step_up_token is bound to; one per x-step-up operation (04 §2.5, §5).",
+                "enum": [
+                  "withdraw",
+                  "payout_account_change",
+                  "phone_change",
+                  "account_deletion"
+                ]
+              }
+            },
+            "required": [
+              "action"
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "purpose": {
+              "type": "string",
+              "enum": [
+                "reverify"
+              ]
+            }
+          },
+          "required": [
+            "purpose"
           ],
           "not": {
             "type": "object",
@@ -966,6 +1000,98 @@ export const CONTRACT_ROUTE_SCHEMAS = {
             "code": {
               "type": "string",
               "pattern": "^[0-9]{6}$"
+            },
+            "summary": {
+              "description": "The business summary bound into a withdraw or payout_account_change step-up token\n(BR-ID-08 细则「绑定业务摘要」): a withdrawal (payout_account_id of GET\n/v1/me/payout-account and amount_fen), or the new payout account to be saved. Which shape\ngoes with which action is checked by the server (20001 data.fields=[summary]). No payee\nname and no client-computed fingerprint.\n",
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_account_id",
+                    "amount_fen"
+                  ],
+                  "properties": {
+                    "payout_account_id": {
+                      "type": "string",
+                      "description": "Entity id, a UUIDv7 string (04 §5).",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "amount_fen": {
+                      "type": "integer",
+                      "format": "int64",
+                      "minimum": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_method",
+                    "alipay_logon_id"
+                  ],
+                  "properties": {
+                    "payout_method": {
+                      "type": "string",
+                      "enum": [
+                        "alipay"
+                      ]
+                    },
+                    "alipay_logon_id": {
+                      "type": "string",
+                      "description": "As it will be sent to PUT /v1/me/payout-account; normalised by the server.",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_method",
+                    "card_no"
+                  ],
+                  "properties": {
+                    "payout_method": {
+                      "type": "string",
+                      "enum": [
+                        "bank_card"
+                      ]
+                    },
+                    "card_no": {
+                      "type": "string",
+                      "description": "As it will be sent to PUT /v1/me/payout-account; normalised by the server.",
+                      "minLength": 1,
+                      "maxLength": 32
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_method",
+                    "attempt_id"
+                  ],
+                  "properties": {
+                    "payout_method": {
+                      "type": "string",
+                      "enum": [
+                        "wechat"
+                      ]
+                    },
+                    "attempt_id": {
+                      "type": "string",
+                      "description": "Entity id, a UUIDv7 string (04 §5).",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                }
+              ]
             }
           }
         },
@@ -1006,6 +1132,98 @@ export const CONTRACT_ROUTE_SCHEMAS = {
               "description": "An authorization credential from the provider SDK; never stored or logged.",
               "minLength": 1,
               "maxLength": 4096
+            },
+            "summary": {
+              "description": "The business summary bound into a withdraw or payout_account_change step-up token\n(BR-ID-08 细则「绑定业务摘要」): a withdrawal (payout_account_id of GET\n/v1/me/payout-account and amount_fen), or the new payout account to be saved. Which shape\ngoes with which action is checked by the server (20001 data.fields=[summary]). No payee\nname and no client-computed fingerprint.\n",
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_account_id",
+                    "amount_fen"
+                  ],
+                  "properties": {
+                    "payout_account_id": {
+                      "type": "string",
+                      "description": "Entity id, a UUIDv7 string (04 §5).",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "amount_fen": {
+                      "type": "integer",
+                      "format": "int64",
+                      "minimum": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_method",
+                    "alipay_logon_id"
+                  ],
+                  "properties": {
+                    "payout_method": {
+                      "type": "string",
+                      "enum": [
+                        "alipay"
+                      ]
+                    },
+                    "alipay_logon_id": {
+                      "type": "string",
+                      "description": "As it will be sent to PUT /v1/me/payout-account; normalised by the server.",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_method",
+                    "card_no"
+                  ],
+                  "properties": {
+                    "payout_method": {
+                      "type": "string",
+                      "enum": [
+                        "bank_card"
+                      ]
+                    },
+                    "card_no": {
+                      "type": "string",
+                      "description": "As it will be sent to PUT /v1/me/payout-account; normalised by the server.",
+                      "minLength": 1,
+                      "maxLength": 32
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_method",
+                    "attempt_id"
+                  ],
+                  "properties": {
+                    "payout_method": {
+                      "type": "string",
+                      "enum": [
+                        "wechat"
+                      ]
+                    },
+                    "attempt_id": {
+                      "type": "string",
+                      "description": "Entity id, a UUIDv7 string (04 §5).",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                }
+              ]
             }
           }
         },
@@ -1053,6 +1271,98 @@ export const CONTRACT_ROUTE_SCHEMAS = {
               "description": "An authorization credential from the provider SDK; never stored or logged.",
               "minLength": 1,
               "maxLength": 4096
+            },
+            "summary": {
+              "description": "The business summary bound into a withdraw or payout_account_change step-up token\n(BR-ID-08 细则「绑定业务摘要」): a withdrawal (payout_account_id of GET\n/v1/me/payout-account and amount_fen), or the new payout account to be saved. Which shape\ngoes with which action is checked by the server (20001 data.fields=[summary]). No payee\nname and no client-computed fingerprint.\n",
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_account_id",
+                    "amount_fen"
+                  ],
+                  "properties": {
+                    "payout_account_id": {
+                      "type": "string",
+                      "description": "Entity id, a UUIDv7 string (04 §5).",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "amount_fen": {
+                      "type": "integer",
+                      "format": "int64",
+                      "minimum": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_method",
+                    "alipay_logon_id"
+                  ],
+                  "properties": {
+                    "payout_method": {
+                      "type": "string",
+                      "enum": [
+                        "alipay"
+                      ]
+                    },
+                    "alipay_logon_id": {
+                      "type": "string",
+                      "description": "As it will be sent to PUT /v1/me/payout-account; normalised by the server.",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_method",
+                    "card_no"
+                  ],
+                  "properties": {
+                    "payout_method": {
+                      "type": "string",
+                      "enum": [
+                        "bank_card"
+                      ]
+                    },
+                    "card_no": {
+                      "type": "string",
+                      "description": "As it will be sent to PUT /v1/me/payout-account; normalised by the server.",
+                      "minLength": 1,
+                      "maxLength": 32
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_method",
+                    "attempt_id"
+                  ],
+                  "properties": {
+                    "payout_method": {
+                      "type": "string",
+                      "enum": [
+                        "wechat"
+                      ]
+                    },
+                    "attempt_id": {
+                      "type": "string",
+                      "description": "Entity id, a UUIDv7 string (04 §5).",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                }
+              ]
             }
           }
         },
@@ -1093,6 +1403,98 @@ export const CONTRACT_ROUTE_SCHEMAS = {
               "description": "An authorization credential from the provider SDK; never stored or logged.",
               "minLength": 1,
               "maxLength": 4096
+            },
+            "summary": {
+              "description": "The business summary bound into a withdraw or payout_account_change step-up token\n(BR-ID-08 细则「绑定业务摘要」): a withdrawal (payout_account_id of GET\n/v1/me/payout-account and amount_fen), or the new payout account to be saved. Which shape\ngoes with which action is checked by the server (20001 data.fields=[summary]). No payee\nname and no client-computed fingerprint.\n",
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_account_id",
+                    "amount_fen"
+                  ],
+                  "properties": {
+                    "payout_account_id": {
+                      "type": "string",
+                      "description": "Entity id, a UUIDv7 string (04 §5).",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "amount_fen": {
+                      "type": "integer",
+                      "format": "int64",
+                      "minimum": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_method",
+                    "alipay_logon_id"
+                  ],
+                  "properties": {
+                    "payout_method": {
+                      "type": "string",
+                      "enum": [
+                        "alipay"
+                      ]
+                    },
+                    "alipay_logon_id": {
+                      "type": "string",
+                      "description": "As it will be sent to PUT /v1/me/payout-account; normalised by the server.",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_method",
+                    "card_no"
+                  ],
+                  "properties": {
+                    "payout_method": {
+                      "type": "string",
+                      "enum": [
+                        "bank_card"
+                      ]
+                    },
+                    "card_no": {
+                      "type": "string",
+                      "description": "As it will be sent to PUT /v1/me/payout-account; normalised by the server.",
+                      "minLength": 1,
+                      "maxLength": 32
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "payout_method",
+                    "attempt_id"
+                  ],
+                  "properties": {
+                    "payout_method": {
+                      "type": "string",
+                      "enum": [
+                        "wechat"
+                      ]
+                    },
+                    "attempt_id": {
+                      "type": "string",
+                      "description": "Entity id, a UUIDv7 string (04 §5).",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                }
+              ]
             }
           }
         }

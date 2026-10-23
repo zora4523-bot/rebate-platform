@@ -720,8 +720,20 @@ export const oauth_attempt_purpose = [
   "login", // 登录
   "step_up", // 二次验证
   "payout_bind", // 收款授权（只用于绑定微信零钱收款账号；不登录、不签发令牌，BR-ID-04 细则「收款授权」）
+  "reverify", // 旧号加验（须登录、不带 action，绑定 uid、device_id 与 provider，只能被 POST /v1/me/reverify/oauth 消费，不签发令牌，BR-WDR-01 细则）
 ] as const;
 export type OauthAttemptPurpose = (typeof oauth_attempt_purpose)[number];
+
+/**
+ * 旧号加验（核实身份）的方式，按优先级只给一种（BR-WDR-01 细则「旧手机号被二次放号时的提现加验」）
+ * Source: 规划/04 §2.5；BR-WDR-01 (contracts/enums/identity.yaml).
+ */
+export const reverify_method = [
+  "id_number", // 身份证号核对（可信身份含实名）
+  "oauth", // 第三方重新授权（可信身份不含实名、含第三方身份）
+  "manual", // 人工处理（可信身份都没有，或连续失败已达上限、当天锁定；只提示联系客服）
+] as const;
+export type ReverifyMethod = (typeof reverify_method)[number];
 
 /**
  * access_token 的 scp；登录与刷新按这次请求的客户端版本判定，含义与可调用的接口见 BR-ID-01 细则「受限会话」
@@ -1823,6 +1835,7 @@ export const enums = {
   login_provider,
   device_id_source,
   oauth_attempt_purpose,
+  reverify_method,
   session_scope,
   h5_token_scope,
   sms_purpose,

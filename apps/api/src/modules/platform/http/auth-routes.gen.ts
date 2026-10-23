@@ -248,6 +248,21 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/me/reverify",
+    "auth": "login"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/me/reverify/id-number",
+    "auth": "login"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/me/reverify/oauth",
+    "auth": "login"
+  },
+  {
+    "method": "GET",
     "path": "/v1/me/payout-account",
     "auth": "realname"
   },

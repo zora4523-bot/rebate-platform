@@ -154,6 +154,7 @@ const command: BankCardSubmitCommand = {
 const SAVED: SaveBankCardResult = {
   code: 0,
   data: {
+    payout_account_id: '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a81',
     payout_method: 'bank_card',
     masked_account: '尾号 0019',
     bank_name: '示例银行',
@@ -559,6 +560,7 @@ it('[AC-B1-13f] the same card as the current binding answers it without any veri
   expect(await f.submit()).toEqual({
     code: 0,
     data: {
+      payout_account_id: 'acc-1',
       payout_method: 'bank_card',
       masked_account: '尾号 0019',
       bank_name: '示例银行',

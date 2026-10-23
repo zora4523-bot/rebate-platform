@@ -172,7 +172,13 @@ export interface paths {
          *     and is bound to the user, this device_id and this app's WeChat AppID; the openid it yields
          *     is only stored on the payout account — it creates no account, writes no third-party login
          *     binding and issues or refreshes no token. It is consumed by the payout account save, not by
-         *     a login or step-up submission. Storage unavailable → 50001.
+         *     a login or step-up submission. purpose=reverify (no `action`) is the re-verification of a
+         *     recycled phone (旧号加验, BR-WDR-01 细则): it requires a logged-in user (otherwise 10001), is
+         *     bound to the user, this device_id and the provider, is consumed only by
+         *     `POST /v1/me/reverify/oauth`, is available to an account with a bound phone too, and issues
+         *     no token; a provider that is not among the account's trusted identities → 20001 with
+         *     `data.fields=[provider]`. A deletion_only session is not accepted for it (10405).
+         *     Storage unavailable → 50001.
          *     Version gate (conditional): not applied when purpose=login, or purpose=step_up with
          *     action=account_deletion; applied otherwise. Session scopes: a deletion_only session is
          *     accepted only for purpose=login and for purpose=step_up with action=account_deletion. Both
@@ -326,6 +332,20 @@ export interface paths {
          *     When action=phone_change and the phone change switch is off, 30414 is returned early: after
          *     10405 and before the SMS code (or third-party credential) is checked (BR-ID-06 细则); the
          *     30414 of the phone change operation itself stays the final check.
+         *     Business summary (BR-ID-08 细则「绑定业务摘要」): for action withdraw or
+         *     payout_account_change the body must carry `summary` (any of the four ways); its shape pairs
+         *     with the action — withdraw takes `payout_account_id` and `amount_fen`, payout_account_change
+         *     takes the new account to be saved (alipay `alipay_logon_id`, bank_card `card_no`, wechat
+         *     the payout_bind `attempt_id`; no payee_name, no client fingerprint: the server normalises the
+         *     account and computes its HMAC). A missing summary for these two actions, a shape that does
+         *     not pair with the action, or a summary with any other action (phone_change,
+         *     account_deletion are not bound) → 20001 with data.fields=[summary]; the schema leaves
+         *     `summary` optional and the server decides. The server writes it into the token as one
+         *     string claim (withdraw `w:<payout_account_id>:<amount_fen>`, payout account change
+         *     `p:<payout_method>:<HMAC of the normalised account>`, wechat `p:wechat:<attempt_id>`).
+         *     The withdrawal or the payout account save compares it inside the business lock: a mismatch
+         *     is 10003, the token's jti reservation is released and the token is not consumed; an
+         *     idempotent replay is not compared.
          */
         post: operations["stepUp"];
         delete?: never;
@@ -1081,7 +1101,10 @@ export interface paths {
          *     the rules again without submitting (BR-WDR-07 细则「前置步骤的回流」); late or out-of-order
          *     responses are dropped by the client by account, page instance, request number and amount
          *     (BR-WDR-04 细则「估算响应的归属」). block_reason carries data.reason of block_code 30303
-         *     (enum withdraw_condition_reason) and is null otherwise.
+         *     (enum withdraw_condition_reason) and is null otherwise. The re-verification step (BR-WDR-03
+         *     ③b) is not skipped: an account flagged for re-verification on a device not yet re-verified
+         *     gives block_code 10010 with block_reason null; the Reverify page takes the method from
+         *     GET /v1/me/reverify (BR-WDR-01 细则「位置与返回码」).
          */
         get: operations["getWithdrawRules"];
         put?: never;
@@ -1122,6 +1145,11 @@ export interface paths {
          *     细则「前置步骤的回流」, BR-ID-10 细则「敏感操作的幂等键」). Needs X-Step-Up-Token for action
          *     withdraw. The user cannot cancel after submitting (customer service rejects with
          *     USER_REQUEST, 拍板第二批 FUND-20); review_mode is decided after submission (BR-WDR-30).
+         *     An account flagged for re-verification (旧号加验) on a device not yet re-verified → 10010
+         *     with data.method (BR-WDR-03 ③b: after ③a the blacklist 44001, before ④ not realname
+         *     30304; BR-WDR-01 细则「位置与返回码」). 10010 is a 1xxxx code: no idempotency result is
+         *     written and the step-up token is not consumed; after re-verifying on Reverify the user
+         *     submits again with a new Idempotency-Key, nothing is replayed (BR-WDR-07).
          *     Version gate: applied.
          */
         post: operations["createWithdrawal"];
@@ -1352,6 +1380,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/reverify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Re-verification (旧号加验) state and method for this device
+         * @description For the Reverify page (opened only by a page that got 10010; BR-WDR-01 细则「旧手机号被二次
+         *     放号时的提现加验」). `required` is false when the account has no re-verification flag or
+         *     this device is already re-verified; then `method`, `fail_limit` and `fail_remaining` are
+         *     null and `providers` is empty. Otherwise `method` (reverify_method) is the one available
+         *     way by priority (trusted identities with a real name → id_number; else with a third-party
+         *     identity → oauth; else manual; also manual once the failure limit is reached for the day),
+         *     `providers` lists the trusted third-party identities when method=oauth (empty otherwise),
+         *     and `fail_limit` / `fail_remaining` give the consecutive failure limit and what is left
+         *     today (+08:00), null for manual.
+         */
+        get: operations["getReverify"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/reverify/id-number": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-verify this device with the ID number (旧号加验)
+         * @description Compares `id_no` with the stored real name of the trusted identities fixed when the
+         *     account was flagged (BR-WDR-01 细则「加验依据」); no SMS is sent. A malformed ID number →
+         *     20001 with data.fields=[id_no] (judged by the server, not by the request schema). Passed →
+         *     `{passed: true}`, this device is recorded as re-verified and the failure count is cleared;
+         *     an account without the flag, or a device already re-verified, also gets `{passed: true}`.
+         *     A mismatch → 20005 with data.fail_limit and data.fail_remaining. No real name among the
+         *     trusted identities, the failure limit reached or today locked → 10010 with the current
+         *     method. After passing the user goes back to the original page and submits again with a
+         *     new Idempotency-Key (no replay).
+         *     Every comparison actually run that fails counts once against the account (not per device,
+         *     not per Idempotency-Key: a retry with the same key counts again; D10-149); ID-number and
+         *     third-party comparisons share one count, which resets at +08:00 midnight and on a pass.
+         *     The count is reserved atomically before comparing (only below the limit; none left → 10010
+         *     with the current method) and released when no comparison ran (20004, 50305), only for the
+         *     same natural day and only if the count was not reset meanwhile, never below 0 (D10-161).
+         *     20005 and 10010 write no idempotency result (BR-WDR-07).
+         *     Version gate: applied.
+         */
+        post: operations["reverifyByIdNumber"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/reverify/oauth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-verify this device with a third-party re-authorization (旧号加验)
+         * @description `provider`, `attempt_id` (an attempt of POST /v1/auth/oauth-attempts with purpose=reverify)
+         *     and the credential fields of that provider's login (WeChat `code`, Apple `identity_token`
+         *     and `authorization_code`, Huawei `authorization_code`); no `action`. The server checks the
+         *     credential as at login; the identity obtained must be the trusted third-party identity of
+         *     that provider fixed when the account was flagged (BR-WDR-01 细则「加验依据」). Open also to
+         *     an account with a bound phone; issues no step_up_token and replaces none. Passed →
+         *     `{passed: true}`, this device is recorded as re-verified and the failure count is cleared;
+         *     an account without the flag, or a device already re-verified, also gets `{passed: true}`.
+         *     An invalid, expired or used credential or attempt → 20004 (not counted); the provider
+         *     unavailable → 50305 (not counted); a different identity → 20005 with data.fail_limit and
+         *     data.fail_remaining. No third-party identity among the trusted identities, the failure
+         *     limit reached or today locked → 10010 with the current method. After passing the user goes
+         *     back to the original page and submits again with a new Idempotency-Key (no replay).
+         *     Every comparison actually run that fails counts once against the account (not per device,
+         *     not per Idempotency-Key: a retry with the same key counts again; D10-149); ID-number and
+         *     third-party comparisons share one count, which resets at +08:00 midnight and on a pass.
+         *     The count is reserved atomically before comparing (only below the limit; none left → 10010
+         *     with the current method) and released when no comparison ran (20004, 50305), only for the
+         *     same natural day and only if the count was not reset meanwhile, never below 0 (D10-161).
+         *     20005 and 10010 write no idempotency result (BR-WDR-07).
+         *     Version gate: applied.
+         */
+        post: operations["reverifyByOauth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/payout-account": {
         parameters: {
             query?: never;
@@ -1361,8 +1493,10 @@ export interface paths {
         };
         /**
          * My current payout account (masked)
-         * @description Only payout_method, masked_account, bank_name (bank card only), masked_payee_name and
-         *     change_remaining_this_month (changes left this natural month, BR-WDR-02 ④, never below 0);
+         * @description Only payout_account_id (the id of the current payout account row; a change creates a new
+         *     row, so the id changes with it; used for the `summary` of the withdraw step-up, never to
+         *     pick an account), payout_method, masked_account, bank_name (bank card only),
+         *     masked_payee_name and change_remaining_this_month (changes left this natural month, BR-WDR-02 ④, never below 0);
          *     an empty object when nothing is bound. Never the ID number, the full logon id or card
          *     number, the card BIN or the full name; masking is done by the server (BR-ID-33 细则
          *     「收款账号的脱敏格式」).
@@ -1394,7 +1528,12 @@ export interface paths {
          *     without comparing the body or running the business; a business write that finds it
          *     abandoned is rolled back with 20903 (04 §5「幂等」). Not realname → 30304; after a blocking
          *     precondition the request is not replayed, the user saves again on the payout-account page
-         *     (BR-WDR-07 细则「前置步骤的回流」). Version gate: applied.
+         *     (BR-WDR-07 细则「前置步骤的回流」). An account flagged for re-verification (旧号加验) on
+         *     a device not yet re-verified → 10010 with data.method, checked after the step-up token
+         *     (BR-WDR-01 细则「位置与返回码」); 10010 writes no idempotency result and does not consume
+         *     the token; after re-verifying the user saves again with a new Idempotency-Key (BR-WDR-07).
+         *     The step-up token of this action is bound to the account being saved (its `summary`, see
+         *     POST /v1/auth/step-up); a different account → 10003. Version gate: applied.
          */
         put: operations["savePayoutAccount"];
         post?: never;
@@ -1434,7 +1573,10 @@ export interface paths {
          *     after verified passes 10005 / 10004 and then answers 200 with the stored masked name,
          *     ignoring the submitted values, without a vendor call or an attempt. A mismatch leaves the
          *     user's realname_status failed. The name and the ID number never go into logs. The client
-         *     fetches GET /v1/me again after success. Version gate: applied.
+         *     fetches GET /v1/me again after success. An account flagged for re-verification (旧号加验)
+         *     on a device not yet re-verified → 10010 with data.method on the first real-name
+         *     verification (BR-WDR-01 细则「位置与返回码」); no idempotency result is written (BR-WDR-07).
+         *     Version gate: applied.
          */
         post: operations["submitRealname"];
         delete?: never;
@@ -1635,8 +1777,13 @@ export interface paths {
          *     Success starts the 7-day cooling period and returns the request. An abandoned
          *     Idempotency-Key is 20903 at the idempotency check, without comparing the body or running
          *     the business; a business write that finds it abandoned is rolled back with 20903
-         *     (04 §5「幂等」). Version gate: not applied (申请注销, BR-ID-01 细则). Session scopes:
-         *     accepts deletion_only.
+         *     (04 §5「幂等」). An account flagged for re-verification (旧号加验) on a device not yet
+         *     re-verified → 10010, checked after the step-up token (BR-WDR-01 细则「位置与返回码」;
+         *     BR-ID-27: the balance waived must be the owner's); 10010 writes no idempotency result and
+         *     does not consume the token. In a deletion_only session and in the deletion inside the ban
+         *     whitelist (BR-ID-31) no self-service re-verification is offered: 10010 always carries
+         *     data.method=manual, and neither whitelist gains an operation. Version gate: not applied
+         *     (申请注销, BR-ID-01 细则). Session scopes: accepts deletion_only.
          */
         post: operations["requestDeletion"];
         delete?: never;
@@ -6476,10 +6623,11 @@ export interface components {
          * @description What a third-party authorization attempt is for (enum oauth_attempt_purpose).
          * @enum {string}
          */
-        OauthAttemptPurpose: "login" | "step_up" | "payout_bind";
+        OauthAttemptPurpose: "login" | "step_up" | "payout_bind" | "reverify";
         /**
          * @description `action` is required exactly for purpose=step_up. purpose=payout_bind is for WeChat only
-         *     and carries no `action`. The oneOf branches declare the properties they constrain (strict
+         *     and carries no `action`. purpose=reverify (re-verification of a recycled phone, BR-WDR-01
+         *     细则) carries no `action`. The oneOf branches declare the properties they constrain (strict
          *     Ajv2020, ADR-0001 §4.2 #15).
          */
         CreateOauthAttemptRequest: {
@@ -6498,6 +6646,9 @@ export interface components {
             purpose: "payout_bind";
             /** @enum {string} */
             provider: "wechat";
+        } | {
+            /** @enum {string} */
+            purpose: "reverify";
         });
         OauthAttemptData: {
             attempt_id: components["schemas"]["Id"];
@@ -6539,6 +6690,7 @@ export interface components {
         StepUpBySmsRequest: {
             action: components["schemas"]["StepUpAction"];
             code: string;
+            summary?: components["schemas"]["StepUpSummary"];
         };
         StepUpByWechatRequest: {
             action: components["schemas"]["StepUpAction"];
@@ -6546,6 +6698,7 @@ export interface components {
             provider: "wechat";
             attempt_id: components["schemas"]["Id"];
             code: components["schemas"]["OauthCredential"];
+            summary?: components["schemas"]["StepUpSummary"];
         };
         StepUpByAppleRequest: {
             action: components["schemas"]["StepUpAction"];
@@ -6554,6 +6707,7 @@ export interface components {
             attempt_id: components["schemas"]["Id"];
             identity_token: components["schemas"]["OauthCredential"];
             authorization_code: components["schemas"]["OauthCredential"];
+            summary?: components["schemas"]["StepUpSummary"];
         };
         StepUpByHuaweiRequest: {
             action: components["schemas"]["StepUpAction"];
@@ -6561,6 +6715,37 @@ export interface components {
             provider: "huawei";
             attempt_id: components["schemas"]["Id"];
             authorization_code: components["schemas"]["OauthCredential"];
+            summary?: components["schemas"]["StepUpSummary"];
+        };
+        /**
+         * @description The business summary bound into a withdraw or payout_account_change step-up token
+         *     (BR-ID-08 细则「绑定业务摘要」): a withdrawal (payout_account_id of GET
+         *     /v1/me/payout-account and amount_fen), or the new payout account to be saved. Which shape
+         *     goes with which action is checked by the server (20001 data.fields=[summary]). No payee
+         *     name and no client-computed fingerprint.
+         */
+        StepUpSummary: components["schemas"]["StepUpSummaryWithdraw"] | components["schemas"]["StepUpSummaryAlipay"] | components["schemas"]["StepUpSummaryBankCard"] | components["schemas"]["StepUpSummaryWechat"];
+        StepUpSummaryWithdraw: {
+            payout_account_id: components["schemas"]["Id"];
+            /** Format: int64 */
+            amount_fen: number;
+        };
+        StepUpSummaryAlipay: {
+            /** @enum {string} */
+            payout_method: "alipay";
+            /** @description As it will be sent to PUT /v1/me/payout-account; normalised by the server. */
+            alipay_logon_id: string;
+        };
+        StepUpSummaryBankCard: {
+            /** @enum {string} */
+            payout_method: "bank_card";
+            /** @description As it will be sent to PUT /v1/me/payout-account; normalised by the server. */
+            card_no: string;
+        };
+        StepUpSummaryWechat: {
+            /** @enum {string} */
+            payout_method: "wechat";
+            attempt_id: components["schemas"]["Id"];
         };
         /**
          * @description Exactly one way of second verification: an SMS code, or a new authorization with one
@@ -6568,6 +6753,67 @@ export interface components {
          *     closed object, so a body mixing two ways matches none.
          */
         StepUpRequest: components["schemas"]["StepUpBySmsRequest"] | components["schemas"]["StepUpByWechatRequest"] | components["schemas"]["StepUpByAppleRequest"] | components["schemas"]["StepUpByHuaweiRequest"];
+        /**
+         * @description Re-verification method (enum reverify_method, BR-WDR-01 细则).
+         * @enum {string}
+         */
+        ReverifyMethod: "id_number" | "oauth" | "manual";
+        ReverifyStatusData: {
+            /** @description false when the account has no flag or this device is already re-verified. */
+            required: boolean;
+            /** @description The available method; null when not required. */
+            method: components["schemas"]["ReverifyMethod"] | null;
+            /** @description Trusted third-party identities usable when method=oauth; empty otherwise. */
+            providers: components["schemas"]["LoginProvider"][];
+            /** Format: int32 */
+            fail_limit: number | null;
+            /** Format: int32 */
+            fail_remaining: number | null;
+        };
+        ReverifyStatusResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["ReverifyStatusData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        ReverifyByIdNumberRequest: {
+            /** @description The resident ID number; its format is judged by the server (20001 data.fields=[id_no]). */
+            id_no: string;
+        };
+        ReverifyByOauthWechat: {
+            /** @enum {string} */
+            provider: "wechat";
+            attempt_id: components["schemas"]["Id"];
+            code: components["schemas"]["OauthCredential"];
+        };
+        ReverifyByOauthApple: {
+            /** @enum {string} */
+            provider: "apple";
+            attempt_id: components["schemas"]["Id"];
+            identity_token: components["schemas"]["OauthCredential"];
+            authorization_code: components["schemas"]["OauthCredential"];
+        };
+        ReverifyByOauthHuawei: {
+            /** @enum {string} */
+            provider: "huawei";
+            attempt_id: components["schemas"]["Id"];
+            authorization_code: components["schemas"]["OauthCredential"];
+        };
+        /**
+         * @description One provider with that provider's login credential fields and an attempt with
+         *     purpose=reverify; no `action`. Each branch is a closed object.
+         */
+        ReverifyByOauthRequest: components["schemas"]["ReverifyByOauthWechat"] | components["schemas"]["ReverifyByOauthApple"] | components["schemas"]["ReverifyByOauthHuawei"];
+        ReverifyPassedData: {
+            /** @enum {boolean} */
+            passed: true;
+        };
+        ReverifyPassedResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["ReverifyPassedData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
         StepUpData: {
             step_up_token: string;
             /** Format: date-time */
@@ -7194,6 +7440,7 @@ export interface components {
         /** @description The current payout account, by payout_method (bank_name only for a bank card). */
         PayoutAccount: components["schemas"]["PayoutAccountAlipay"] | components["schemas"]["PayoutAccountBankCard"];
         PayoutAccountAlipay: {
+            payout_account_id: components["schemas"]["Id"];
             /** @enum {string} */
             payout_method: "alipay";
             /** @description Masked by the server (BR-ID-33 细则「收款账号的脱敏格式」). */
@@ -7203,6 +7450,7 @@ export interface components {
             change_remaining_this_month: number;
         };
         PayoutAccountBankCard: {
+            payout_account_id: components["schemas"]["Id"];
             /** @enum {string} */
             payout_method: "bank_card";
             /** @description Masked by the server (BR-ID-33 细则「收款账号的脱敏格式」). */
@@ -15566,6 +15814,195 @@ export interface operations {
             "5XX": components["responses"]["ServerError"];
         };
     };
+    getReverify: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The re-verification state. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReverifyStatusResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    reverifyByIdNumber: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "id_no": "11010519491231002X"
+                 *     }
+                 */
+                "application/json": components["schemas"]["ReverifyByIdNumberRequest"];
+            };
+        };
+        responses: {
+            /** @description Passed; this device is now re-verified. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "passed": true
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ReverifyPassedResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    reverifyByOauth: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "provider": "wechat",
+                 *       "attempt_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a71",
+                 *       "code": "example-wechat-auth-code"
+                 *     }
+                 */
+                "application/json": components["schemas"]["ReverifyByOauthRequest"];
+            };
+        };
+        responses: {
+            /** @description Passed; this device is now re-verified. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "passed": true
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ReverifyPassedResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
     getPayoutAccount: {
         parameters: {
             query?: never;
@@ -15668,6 +16105,7 @@ export interface operations {
                      *       "code": 0,
                      *       "msg": "",
                      *       "data": {
+                     *         "payout_account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a81",
                      *         "payout_method": "bank_card",
                      *         "masked_account": "尾号 0009",
                      *         "bank_name": "示例银行",

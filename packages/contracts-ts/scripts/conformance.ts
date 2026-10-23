@@ -53,6 +53,7 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   H5TokenScope: 'h5_token_scope',
   LoginProvider: 'login_provider',
   OauthAttemptPurpose: 'oauth_attempt_purpose',
+  ReverifyMethod: 'reverify_method',
   LinkKind: 'link_kind',
   AppealStatus: 'appeal_status',
   AdminStepUpTier: 'admin_step_up_tier',

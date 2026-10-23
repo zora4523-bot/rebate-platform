@@ -346,6 +346,7 @@ export interface components {
         };
         RouteLedgerParams: Record<string, never>;
         RouteRealNameParams: Record<string, never>;
+        RouteReverifyParams: Record<string, never>;
         RoutePayoutAccountParams: Record<string, never>;
         RouteLaborAgreementParams: Record<string, never>;
         RouteSettingsParams: Record<string, never>;
@@ -1317,6 +1318,23 @@ export const routes = {
     "agent_guide": false,
     "agent_guide_account": "fund"
   },
+  "Reverify": {
+    "kind": "native",
+    "h5_path": null,
+    "auth": "login",
+    "phase": "M-内测",
+    "since": {
+      "ios": null,
+      "android": null,
+      "harmony": null
+    },
+    "debug_only": false,
+    "entry": [
+      "in_app"
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
+  },
   "PayoutAccount": {
     "kind": "native",
     "h5_path": null,
@@ -1770,7 +1788,7 @@ export const routes = {
 } as const;
 export type RouteName = keyof typeof routes;
 /** Routes kept in release builds (debug_only routes are dropped there, TECH-11). */
-export const releaseRouteNames = ["Launch","BasicMode","Login","BindPhone","Home","Search","HotRankList","ProductDetail","ProductShare","ShareHub","Favorites","AuthSheet","JumpTip","AgentChat","AgentConsent","OrderList","OrderDetail","FindOrder","Me","Wallet","Withdraw","WithdrawRecords","Ledger","RealName","PayoutAccount","LaborAgreement","Settings","PrivacyCenter","DeleteAccount","RiskNotice","Appeal","ForceUpdate","About","Messages","InviteShare","InviteBackfill","InviteLink","Rules","Help","Notice","Agreement","WebPage","ExternalPage","InvitedFriends","LevelUpgrade","LinkLanding","Earnings","AuthManage"] as const;
+export const releaseRouteNames = ["Launch","BasicMode","Login","BindPhone","Home","Search","HotRankList","ProductDetail","ProductShare","ShareHub","Favorites","AuthSheet","JumpTip","AgentChat","AgentConsent","OrderList","OrderDetail","FindOrder","Me","Wallet","Withdraw","WithdrawRecords","Ledger","RealName","Reverify","PayoutAccount","LaborAgreement","Settings","PrivacyCenter","DeleteAccount","RiskNotice","Appeal","ForceUpdate","About","Messages","InviteShare","InviteBackfill","InviteLink","Rules","Help","Notice","Agreement","WebPage","ExternalPage","InvitedFriends","LevelUpgrade","LinkLanding","Earnings","AuthManage"] as const;
 /** Routes an Agent page_guide card or earnings_summary button may open (agent_guide, 04 §10, D31); the client checks its bundled list (03 §7.4). */
 export const agentGuideRouteNames = ["OrderList","Wallet","WithdrawRecords","Messages","InviteShare","AuthManage"] as const;
 export interface RouteParams {
@@ -1798,6 +1816,7 @@ export interface RouteParams {
   WithdrawRecords: components['schemas']["RouteWithdrawRecordsParams"];
   Ledger: components['schemas']["RouteLedgerParams"];
   RealName: components['schemas']["RouteRealNameParams"];
+  Reverify: components['schemas']["RouteReverifyParams"];
   PayoutAccount: components['schemas']["RoutePayoutAccountParams"];
   LaborAgreement: components['schemas']["RouteLaborAgreementParams"];
   Settings: components['schemas']["RouteSettingsParams"];
@@ -1825,7 +1844,7 @@ export interface RouteParams {
   AuthManage: components['schemas']["RouteAuthManageParams"];
 }
 /** A jump target shared by banners, push, messages, SDUI, Agent cards and nav.open. */
-export type RouteWithOptionalParams = "Launch" | "BasicMode" | "Login" | "BindPhone" | "Home" | "Search" | "HotRankList" | "ShareHub" | "Favorites" | "AgentChat" | "AgentConsent" | "OrderList" | "FindOrder" | "Me" | "Wallet" | "Withdraw" | "WithdrawRecords" | "Ledger" | "RealName" | "PayoutAccount" | "LaborAgreement" | "Settings" | "PrivacyCenter" | "DeleteAccount" | "RiskNotice" | "Appeal" | "ForceUpdate" | "About" | "Messages" | "InviteShare" | "InviteBackfill" | "Rules" | "Help" | "Notice" | "Agreement" | "InvitedFriends" | "LevelUpgrade" | "Earnings" | "AuthManage";
+export type RouteWithOptionalParams = "Launch" | "BasicMode" | "Login" | "BindPhone" | "Home" | "Search" | "HotRankList" | "ShareHub" | "Favorites" | "AgentChat" | "AgentConsent" | "OrderList" | "FindOrder" | "Me" | "Wallet" | "Withdraw" | "WithdrawRecords" | "Ledger" | "RealName" | "Reverify" | "PayoutAccount" | "LaborAgreement" | "Settings" | "PrivacyCenter" | "DeleteAccount" | "RiskNotice" | "Appeal" | "ForceUpdate" | "About" | "Messages" | "InviteShare" | "InviteBackfill" | "Rules" | "Help" | "Notice" | "Agreement" | "InvitedFriends" | "LevelUpgrade" | "Earnings" | "AuthManage";
 export type RouteTarget = { [N in RouteName]: N extends RouteWithOptionalParams ? { route: N; params?: RouteParams[N] } : { route: N; params: RouteParams[N] } }[RouteName];
 
 /** External target apps (contracts/apps.json); the only targets of ext.openApp. */
