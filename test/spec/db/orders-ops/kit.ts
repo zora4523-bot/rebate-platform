@@ -3,7 +3,7 @@
 // Enum values are contracts/enums/order.yaml (CT-24n). The new tables are not in db.gen.ts when
 // these tests are written, so every statement is raw SQL; tests assert object shapes and
 // behaviour, never migration file names or constraint / index names.
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
@@ -62,6 +62,18 @@ export const ASSIGNMENT_SOURCE = ['claim', 'admin'] as const;
 
 export const FROM = new Date('2026-10-21T16:00:00.000Z');
 export const TO = new Date('2026-10-22T16:00:00.000Z');
+export const FINISHED = new Date('2026-10-22T16:05:00.000Z');
+
+/** A fresh filter digest shaped like a sha256 hex (64 lowercase hex characters). */
+export function digest(): string {
+  return createHash('sha256').update(randomUUID()).digest('hex');
+}
+
+/** Ended fixtures (done / failed) carry finished_at; queued / running ones leave it empty. */
+function finishedFor(values: Record<string, unknown>): Record<string, unknown> {
+  const status = values['status'];
+  return status === 'done' || status === 'failed' ? { finished_at: FINISHED } : {};
+}
 
 let app: Kysely<DB>;
 
@@ -264,7 +276,8 @@ export function syncRequest(values: Record<string, unknown> = {}) {
     status_filter: null,
     order_nos: null,
     status: 'queued',
-    filter_digest: unique('digest'),
+    filter_digest: digest(),
+    ...finishedFor(values),
     ...values,
   });
 }
@@ -280,6 +293,7 @@ export function rightsImport(values: Record<string, unknown> = {}) {
     to: TO,
     file_path: `rights-imports/${randomUUID()}.xlsx`,
     status: 'queued',
+    ...finishedFor(values),
     ...values,
   });
 }

@@ -8,14 +8,15 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
   ORDER_SYNC_MODE,
   ORDER_SYNC_STATUS,
+  FINISHED,
   columns,
   connect,
+  digest as newDigest,
   expectCheckLists,
   insert,
   requireTable,
   sqlState,
   syncRequest,
-  unique,
   uniqueIndexesOn,
 } from './kit.ts';
 
@@ -37,10 +38,20 @@ async function add(values: Record<string, unknown>): Promise<string> {
   return sqlState(insert(app, TABLE, await syncRequest(values)));
 }
 
+// Ended requests carry finished_at, live ones do not.
 async function setStatus(id: unknown, status: string): Promise<string> {
+  const finishedAt = status === 'done' || status === 'failed' ? FINISHED : null;
   return sqlState(
-    sql`UPDATE app.order_sync_requests SET status = ${status} WHERE id = ${id}`.execute(app),
+    sql`UPDATE app.order_sync_requests SET status = ${status}, finished_at = ${finishedAt}
+        WHERE id = ${id}`.execute(app),
   );
+}
+
+/** One order number in whatever shape order_nos is stored (array, json or text). */
+function orderNos(type: string | undefined, orderNo: string): unknown {
+  if (type !== undefined && type.startsWith('_')) return [orderNo];
+  if (type === 'jsonb' || type === 'json') return JSON.stringify([orderNo]);
+  return orderNo;
 }
 
 it('[B1-09e] order_sync_requests 有 04 §3.2 的全部列，另有 app_id 与非空的 filter_digest', async () => {
@@ -72,11 +83,25 @@ it('[B1-09e] order_sync_requests 有 04 §3.2 的全部列，另有 app_id 与�
     filter_digest: false,
     status: false,
     mode: false,
+    from: true,
+    to: true,
     status_filter: true,
     order_nos: true,
     error: true,
     finished_at: true,
   });
+});
+
+it('[B1-09e] mode=order_nos 的请求（按订单号同步、【同步此单】）from / to 为空可以写入', async () => {
+  await requireTable(app, TABLE);
+  const type = (await columns(TABLE)).find((c) => c.name === 'order_nos')?.type;
+  const row = await syncRequest({
+    mode: 'order_nos',
+    from: null,
+    to: null,
+    order_nos: orderNos(type, '3051234567890123456'),
+  });
+  expect(await sqlState(insert(app, TABLE, row))).toBe('no error');
 });
 
 it('[B1-09e] (app_id, filter_digest) 唯一索引是部分索引，谓词只含 queued / running', async () => {
@@ -100,7 +125,7 @@ it.each<[string, string]>([
   '[B1-09e] 同一 app 同一筛选摘要：已有 %s 时再插入 %s 被唯一约束拒绝（23505）',
   async (first, second) => {
     await requireTable(app, TABLE);
-    const digest = unique('digest');
+    const digest = newDigest();
     expect(await add({ filter_digest: digest, status: first })).toBe('no error');
     expect(await add({ filter_digest: digest, status: second })).toBe('23505');
   },
@@ -108,7 +133,7 @@ it.each<[string, string]>([
 
 it('[B1-09e] done / failed 的请求不占筛选摘要：同摘要可有多条已结束请求，并可再排一条 queued', async () => {
   await requireTable(app, TABLE);
-  const digest = unique('digest');
+  const digest = newDigest();
   for (const status of ['done', 'failed', 'done', 'failed', 'queued'] as const) {
     expect(await add({ filter_digest: digest, status }), status).toBe('no error');
   }
@@ -119,7 +144,7 @@ it.each(['done', 'failed'] as const)(
   '[B1-09e] 排队请求经 running 结束为 %s 后，同一筛选摘要可以再排队',
   async (end) => {
     await requireTable(app, TABLE);
-    const digest = unique('digest');
+    const digest = newDigest();
     const first = await syncRequest({ filter_digest: digest, status: 'queued' });
     expect(await sqlState(insert(app, TABLE, first))).toBe('no error');
     expect(await add({ filter_digest: digest })).toBe('23505');
@@ -132,7 +157,7 @@ it.each(['done', 'failed'] as const)(
 
 it('[B1-09e] 已结束请求改回 running 时，与正在排队的同摘要请求冲突（23505）', async () => {
   await requireTable(app, TABLE);
-  const digest = unique('digest');
+  const digest = newDigest();
   const finished = await syncRequest({ filter_digest: digest, status: 'done' });
   expect(await sqlState(insert(app, TABLE, finished))).toBe('no error');
   expect(await add({ filter_digest: digest, status: 'queued' })).toBe('no error');
@@ -141,10 +166,10 @@ it('[B1-09e] 已结束请求改回 running 时，与正在排队的同摘要请�
 
 it('[B1-09e] 排队期间唯一按 app 与摘要分开：不同 app 同摘要、同 app 不同摘要都可并存', async () => {
   await requireTable(app, TABLE);
-  const digest = unique('digest');
+  const digest = newDigest();
   expect(await add({ filter_digest: digest })).toBe('no error');
   expect(await add({ app_id: 'couli_two', filter_digest: digest })).toBe('no error');
-  expect(await add({ filter_digest: unique('digest') })).toBe('no error');
+  expect(await add({ filter_digest: newDigest() })).toBe('no error');
 });
 
 it('[B1-09e] status 的 CHECK 照 CT-24n order_sync_status：枚举值都能写，枚举外的值 23514', async () => {

@@ -142,6 +142,15 @@ it.each(['rights', 'punish'])(
   },
 );
 
+it('[B1-09e] 同一 file_path 的两条导入任务都能写入（BR-FUND-06：同一文件重复上传生成新任务）', async () => {
+  await requireTable(app, IMPORTS);
+  const filePath = `rights-imports/${randomUUID()}.xlsx`;
+  expect(await addImport(await rightsImport({ file_path: filePath, status: 'done' }))).toBe(
+    'no error',
+  );
+  expect(await addImport(await rightsImport({ file_path: filePath }))).toBe('no error');
+});
+
 it('[B1-09e] kind 的 CHECK 照 CT-24n rights_import_kind：枚举外的值 23514', async () => {
   await requireTable(app, IMPORTS);
   await expectCheckLists(IMPORTS, 'kind', RIGHTS_IMPORT_KIND);
