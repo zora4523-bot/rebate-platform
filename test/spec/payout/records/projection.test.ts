@@ -20,6 +20,8 @@ const row: WithdrawalRecordRow = {
   fail_code: null,
   created_at: new Date('2026-10-22T16:00:00.000Z'),
   channel_order_id: 'synthetic-channel-order',
+  executed_at: new Date('2026-10-22T16:00:30.000Z'),
+  paid_at: new Date('2026-10-22T16:01:00.000Z'),
 };
 
 it('[AC-B2-05f#3] 列表投影精确匹配契约，保留固化金额、时区、脱敏且不泄露内部字段', () => {
@@ -39,6 +41,18 @@ it('[AC-B2-05f#3] 列表投影精确匹配契约，保留固化金额、时区�
     reason_code: null,
     fail_action: null,
     created_at: '2026-10-23T00:00:00.000+08:00',
+    // review_mode=auto：无人工审核期限；支付宝单：无微信确认态与确认期限。
+    review_deadline: null,
+    executed_at: '2026-10-23T00:00:30.000+08:00',
+    // payout_attempts 读端口接上前为 null，见 B2-06a
+    first_attempt_at: null,
+    paid_at: '2026-10-23T00:01:00.000+08:00',
+    channel_state: null,
+    confirm_deadline: null,
+    // BR-WDR-25 分支表「PAID_API / PAID_MANUAL」行，按状态分开：PAID_API → paid_api。
+    sub_text_branch: 'paid_api',
+    // W10 未实现（B2-09）。
+    hold_days: null,
   });
   expect(decrypt).toHaveBeenCalledExactlyOnceWith(row.payee_account_cipher, 'alipay');
 });

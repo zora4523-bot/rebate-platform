@@ -107,6 +107,38 @@ it(
               : null,
         fail_action: row.status === 'FAILED' ? 'change_payout_account' : null,
         created_at: `2026-10-18T${String(14 - index).padStart(2, '0')}:00:00.000+08:00`,
+        // seedRecord 夹具未设 review_deadline / executed_at / channel_state / confirm_deadline（均为 null）。
+        review_deadline: null,
+        executed_at: null,
+        // payout_attempts 读端口接上前为 null，见 B2-06a
+        first_attempt_at: null,
+        // 夹具 paid_at：PAID_* 行为插入时的 kit.clock.now()，其余为 null；按 +08:00 投影。
+        paid_at:
+          row.paid_at === null
+            ? null
+            : new Date(row.paid_at.getTime() + 8 * 3_600_000).toISOString().replace('Z', '+08:00'),
+        channel_state: null,
+        confirm_deadline: null,
+        // BR-WDR-25 分支表逐行（夹具 auto_decision=null、needs_manual=false、无 T、支付宝 / 银行卡单）；
+        // 各行都不依赖 now，故直接调用（now=created_at）与 HTTP（now=FixedClock）同值。
+        sub_text_branch: (
+          {
+            // 「PENDING_REVIEW 且自动判定尚未完成（auto_decision 为空）」
+            PENDING_REVIEW: 'processing',
+            // 「非微信零钱单，review_mode=auto，APPROVED …，needs_manual=false，auto_decision 无 execute_blocked」
+            APPROVED: 'auto_expected_soon',
+            // review_mode=manual、needs_manual=false、无 T（executed_at 与 first_attempt_at 均 null）→「PAYING（< T+2h）」
+            PAYING: 'channel_processing',
+            PAID_API: 'paid_api',
+            PAID_MANUAL: 'paid_manual',
+            // reject_reason_code=USER_REQUEST（非 NEGATIVE_BALANCE）
+            REJECTED: 'rejected',
+            // fail_code=PAYEE_NOT_EXIST（账号类）、manual_resolution=null（W6）
+            FAILED: 'failed_account',
+          } as Record<string, string>
+        )[row.status],
+        // W10 未实现（B2-09）。
+        hold_days: null,
       })),
     );
     for (const item of data.items) {
