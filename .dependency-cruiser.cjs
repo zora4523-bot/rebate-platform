@@ -148,13 +148,17 @@ module.exports = {
     {
       name: 'agent-no-relay-outside-modules',
       comment:
-        'No relay: the agent module must not depend on any repo file outside apps/api/src/modules ' +
-        '(apps, test, tools, specs, db; a non-module file could re-export a forbidden value, ' +
-        'CT-06zo / CT-06zq reviews). Workspace packages are covered by packages-not-on-apps ' +
-        '(CT-06zq).',
+        'No relay: the agent module depends only on apps/api/src/modules, workspace packages and ' +
+        'npm / node built-ins; any other repo file (root, apps, test, tools, config, docs, ops …) ' +
+        'could re-export a forbidden value (CT-06zo / CT-06zq reviews). Packages are covered by ' +
+        'packages-not-on-apps (CT-06zq).',
       severity: 'error',
       from: { path: '^apps/api/src/modules/agent/' },
-      to: { path: '^(apps|test|tools|specs|db)/', pathNot: '^apps/api/src/modules/' },
+      to: {
+        pathNot: ['^apps/api/src/modules/', '^packages/', '(^|/)node_modules/'],
+        couldNotResolve: false,
+        dependencyTypesNot: ['core'],
+      },
     },
     {
       name: 'agent-allowed-indexes-no-value-relay',
@@ -167,9 +171,9 @@ module.exports = {
         path: '^apps/api/src/modules/(parsing|catalog|linking|orders|content|taolijin|identity|platform|union)/index\\.ts$',
       },
       to: {
-        path: '^apps/api/src/modules/',
-        pathNot: '^apps/api/src/modules/$1/',
-        dependencyTypesNot: ['type-only'],
+        pathNot: ['^apps/api/src/modules/$1/', '^packages/', '(^|/)node_modules/'],
+        couldNotResolve: false,
+        dependencyTypesNot: ['core', 'type-only'],
       },
     },
     {
@@ -183,10 +187,10 @@ module.exports = {
         path: '^apps/api/src/modules/(parsing|catalog|linking|orders|content|taolijin|identity|platform|union)/',
       },
       to: {
-        path: '^apps/api/src/modules/',
-        pathNot: '^apps/api/src/modules/$1/',
+        pathNot: ['^apps/api/src/modules/$1/', '^packages/', '(^|/)node_modules/'],
+        couldNotResolve: false,
         dependencyTypes: ['export'],
-        dependencyTypesNot: ['type-only'],
+        dependencyTypesNot: ['core', 'type-only'],
       },
     },
     {
