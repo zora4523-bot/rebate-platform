@@ -15,7 +15,14 @@ import {
   type AgentStreamAssemblyFactory,
   type AgentStreamProvidedPorts,
 } from '../../../../apps/api/src/modules/agent/stream/mount/index.ts';
-import { framesOf, message, openSession, send, usePgEach } from '../stream-mount/kit.ts';
+import {
+  contentReaderFor,
+  framesOf,
+  message,
+  openSession,
+  send,
+  usePgEach,
+} from '../stream-mount/kit.ts';
 import { APP, fixture, passInput } from '../stream-assembly/kit.ts';
 import { callTool } from '../stream-assembly/regression-kit.ts';
 
@@ -74,6 +81,7 @@ it('[AC-B3-03n#3][BR-AI-05] 生产装配的结果集是 PG 版：两个 stream r
         db: pg.db,
         clock: f.time.clock,
         logger: f.logs.logger,
+        contentReader: contentReaderFor(pg.db, f.time.clock),
         consentReader: f.consentReader,
         assembly: factory,
       },

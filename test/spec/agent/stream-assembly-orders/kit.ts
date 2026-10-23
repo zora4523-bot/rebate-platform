@@ -31,6 +31,7 @@ import { fixture } from '../stream-assembly/kit.ts';
 import {
   APP,
   consent,
+  contentReaderFor,
   openSession,
   rig,
   setConfig,
@@ -79,8 +80,8 @@ export async function hasConfigRow(db: Kysely<DB>, appId: string, key: string): 
 }
 
 /**
- * Makes content's configValue of `key` reject for every reader built from now on (the production
- * assembly builds its reader inside createProductionStreamAssembly); other keys read through.
+ * Makes content's configValue of `key` reject for every reader built from now on (build() builds
+ * the production assembly's content reader when called; B3-08k); other keys read through.
  */
 export function failConfigRead(key: string): void {
   const original = content.createContentReader;
@@ -150,6 +151,8 @@ export async function ordersFixture(
       clock: f.time.clock,
       logger: f.logs.logger,
       scheduler: f.time.scheduler,
+      // B3-08k: content's reads come in (as app.module provides them), built here at build time.
+      contentReader: contentReaderFor(db, f.time.clock),
       ports,
     });
   }

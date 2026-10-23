@@ -25,12 +25,20 @@ import {
   runTimingsDefaults,
 } from '../../../../apps/api/src/modules/agent/stream/pg/index.ts';
 import {
+  agentConsentReaderToken,
+  agentContentReaderToken,
   agentStreamProvider,
   agentStreamToken,
   type AgentStreamRuntime,
 } from '../../../../apps/api/src/modules/agent/stream/mount/index.ts';
 import { ports } from '../../risk/freeze-expiry/kit.ts';
-import { LEVEL, fileErrorMsg, loadConsentReader } from './kit.ts';
+import {
+  LEVEL,
+  bindConsentReader,
+  contentReaderFor,
+  fileErrorMsg,
+  loadConsentReader,
+} from './kit.ts';
 
 const databases: Kysely<DB>[] = [];
 afterEach(async () => {
@@ -259,9 +267,15 @@ it('[AC-B3-03f#15][BR-AI-13] agentStreamProvider(options)：provide 为 agentStr
   expect(typeof token).toBe('symbol');
   expect(agentStreamToken()).toBe(token);
   const identityReader = await loadConsentReader();
-  const consentReader = vi.fn(identityReader);
-  const provider = agentStreamProvider({ consentReader });
+  const queries: string[] = [];
+  const db = compileOnlyDb(queries);
+  // B3-08k: app.module binds identity's reader to its own handle and provides it (and content's
+  // reads) by token; the provider injects both tokens instead of taking a reader in its options.
+  const consentReader = vi.fn(bindConsentReader(identityReader, db));
+  const provider = agentStreamProvider({});
   expect(provider.provide).toBe(token);
+  expect(provider.inject).toContain(agentContentReaderToken());
+  expect(provider.inject).toContain(agentConsentReaderToken());
   const factory = provider.useFactory as (...args: unknown[]) => unknown;
 
   const p = await ports();
@@ -270,13 +284,20 @@ it('[AC-B3-03f#15][BR-AI-13] agentStreamProvider(options)：provide 为 agentStr
   expect(lines().filter((l) => l.msg === 'agent_stream_disabled')).toHaveLength(1);
   expect(consentReader).not.toHaveBeenCalled();
 
-  const queries: string[] = [];
-  const db = compileOnlyDb(queries);
-  const runtime = factory(p.clock, p.logger, db, undefined) as AgentStreamRuntime;
+  const contentReader = contentReaderFor(db, p.clock);
+  const runtime = factory(
+    p.clock,
+    p.logger,
+    db,
+    undefined,
+    undefined,
+    contentReader,
+    consentReader,
+  ) as AgentStreamRuntime;
   expect(typeof runtime.http.createSession).toBe('function');
   expect(consentReader).toHaveBeenCalledTimes(1);
   const [options] = consentReader.mock.calls[0]!;
-  expect(options.db).toBe(db);
+  expect(options).not.toHaveProperty('db');
   expect(typeof options.currentVersion).toBe('function');
   expect(queries).toEqual([]);
 });
