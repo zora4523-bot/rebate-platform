@@ -46,6 +46,7 @@ import {
   isWithinSkew,
   signatureMatches,
 } from '../domain/request-signature.ts';
+import type { RedisGenerationGate } from './redis-generation.ts';
 
 /** What stage ① reads of a request: the platform's request check input. */
 export type SignatureRequest = RequestCheckInput;
@@ -67,6 +68,11 @@ export interface SignatureDependencies {
   readonly clock: Clock;
   /** Missing/unavailable Redis fails closed after signature verification. */
   readonly redis?: Pick<RedisHandle, 'namespace'>;
+  /**
+   * R-04 (B1-02zi): the Redis generation gate, asked after the HMAC check and before the nonce
+   * reservation; a refusal reserves no nonce and is answered 50001. Absent: no gate.
+   */
+  readonly generation?: RedisGenerationGate;
 }
 
 /** Nest token of the DeviceSigningKeys port (provided by identity, assembled by app.module). */
