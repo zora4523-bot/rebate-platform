@@ -287,10 +287,13 @@ jobs:
           path: ~/apt-archives/*.deb
           key: apt-debs-${{ steps.apt-key.outputs.image }}-${{ steps.apt-key.outputs.packages }}
       # apt (and the apt-get that `playwright install-deps` runs) reads its options from an
-      # apt.conf.d file: downloads go to ~/apt-archives and are kept; a stalled download is dropped
-      # after 30 s and retried up to 5 times instead of hanging for 20 minutes. The step has its
-      # own 10-minute limit so a mirror that stays slow fails the job early (rerun it) instead of
-      # eating the job's 60 minutes; the job limit and the tests are unchanged.
+      # apt.conf.d file: downloads go to ~/apt-archives and are kept; a download that receives
+      # nothing for 30 s is dropped and retried up to 5 times (a slow but moving download is not
+      # cut by this; the cache and the step limit are what bound it). The step has its own
+      # 10-minute limit so a mirror that stays slow fails the job early (rerun it) instead of eating
+      # the job's 60 minutes: a run where this step alone took 10–25 minutes used to pass and now
+      # fails, by design; `apt-get update` is not cached and counts against the same 10 minutes.
+      # The job limit and the tests are unchanged.
       - name: Install Chromium and the CJK fonts for the browser tests
         id: apt-install
         timeout-minutes: 10
