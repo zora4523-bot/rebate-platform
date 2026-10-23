@@ -1,0 +1,24 @@
+id: B3-08j
+repo: rebate-platform
+title: 种子补 agent.tools.search_products.enabled 与 agent.tools.get_rebate_quote.enabled = true（ON CONFLICT DO NOTHING，不覆盖已有行）
+type: impl
+# 2026-10-23 agent 线入账（编排裁定 D10-273 ①）。起因：B3-08g 只给四个新工具写了开关种子，search_products / get_rebate_quote 两个开关不在
+# 任何种子里；注册表读不到开关按关（BR-AI-02 细则），新建的 staging / 本地库里 Agent 商品搜索与返利查询默认关闭。
+# 依据：08 BR-AI-02 细则「MVP 工具默认 on」、04 §10.2 agent.tools.<name>.enabled 默认 on。做法照 db/seeds/0003_agent-tool-switches.sql：
+# 新种子文件、值 jsonb true、ON CONFLICT (app_id, key) DO NOTHING，重复执行不覆盖人工改动。staging 现有库是否已有这两行由 ops 只读核对（D10-273）。
+# Codex 至 10-30 不可用：规则测试由新鲜独立 Claude 写（approvals #36）。风险 RV2（db/**）。
+refs: [BR-AI-02]
+refs_hash:
+  BR-AI-02: 61014cc4d222
+deps: [B3-08g]
+paths:
+  - 'db/seeds/**'
+test_paths:
+  - 'test/spec/agent/seeds-core-switches/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/seeds-core-switches/**'
+status: todo
+pr: null
