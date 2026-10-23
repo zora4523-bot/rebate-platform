@@ -31,3 +31,27 @@ export class ChannelDisabledError extends Error {
     throw new Error('NotImplemented: ChannelDisabledError');
   }
 }
+
+/** Missing injected credentials or payout.biz_scene: fail closed before any transport call. */
+export class PayoutChannelNotConfiguredError extends Error {
+  constructor() {
+    super('PAYOUT_CHANNEL_NOT_CONFIGURED');
+    throw new Error('NotImplemented: PayoutChannelNotConfiguredError');
+  }
+}
+
+/** FakeChannel exists only for PAYOUT_MODE=dry_run. */
+export class PayoutModeMustBeDryRunError extends Error {
+  constructor() {
+    super('PAYOUT_MODE_MUST_BE_DRY_RUN');
+    throw new Error('NotImplemented: PayoutModeMustBeDryRunError');
+  }
+}
+
+/** BR-WDR-22: the payee name is always sent; empty or blank names never reach the transport. */
+export class PayoutPayeeNameRequiredError extends Error {
+  constructor() {
+    super('PAYOUT_PAYEE_NAME_REQUIRED');
+    throw new Error('NotImplemented: PayoutPayeeNameRequiredError');
+  }
+}

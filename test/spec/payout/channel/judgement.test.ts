@@ -6,21 +6,42 @@ import {
 import { EMPTY_LISTS, VERIFIED_TEST_LISTS } from './fixtures.ts';
 
 it.each([
-  { code: '10000', subCode: undefined, kind: 'success', pause: false },
-  { code: '40004', subCode: 'TEST_CONFIRMED_FAIL', kind: 'fail', pause: false },
-  { code: '40004', subCode: 'TEST_PAYER_SIDE', kind: 'payer_side', pause: true },
-  { code: '40004', subCode: 'TEST_UNRECOGNIZED', kind: 'unknown', pause: true },
-])('[AC-B2-06b#1] transfer $code/$subCode -> $kind using only configured lists', (row) => {
-  const raw = {
-    code: row.code,
-    ...(row.subCode ? { subCode: row.subCode } : {}),
-    msg: 'test evidence',
-  };
-  const result = judgeTransfer(raw, VERIFIED_TEST_LISTS);
-  expect(result.kind).toBe(row.kind);
-  expect(result.pauseQueue === true).toBe(row.pause);
-  expect(result.raw).toStrictEqual(raw);
-});
+  { code: '10000', subCode: undefined, status: 'SUCCESS', kind: 'success', pause: false },
+  // 10000 without a SUCCESS status is not proof of payment (BR-WDR-22 ⑤ pending verification).
+  { code: '10000', subCode: undefined, status: undefined, kind: 'unknown', pause: false },
+  { code: '10000', subCode: undefined, status: 'DEALING', kind: 'unknown', pause: false },
+  { code: '10000', subCode: undefined, status: 'FAIL', kind: 'unknown', pause: false },
+  { code: '10000', subCode: undefined, status: 'success', kind: 'unknown', pause: false },
+  { code: '40004', subCode: 'TEST_CONFIRMED_FAIL', status: undefined, kind: 'fail', pause: false },
+  {
+    code: '40004',
+    subCode: 'TEST_PAYER_SIDE',
+    status: undefined,
+    kind: 'payer_side',
+    pause: true,
+  },
+  {
+    code: '40004',
+    subCode: 'TEST_UNRECOGNIZED',
+    status: undefined,
+    kind: 'unknown',
+    pause: true,
+  },
+  { code: '40004', subCode: 'TEST_UNRECOGNIZED', status: 'SUCCESS', kind: 'unknown', pause: true },
+])(
+  '[AC-B2-06b#1] transfer $code/$subCode/status=$status -> $kind using only configured lists',
+  (row) => {
+    const raw = {
+      code: row.code,
+      ...(row.subCode ? { subCode: row.subCode } : {}),
+      msg: 'test evidence',
+    };
+    const result = judgeTransfer(raw, row.status, VERIFIED_TEST_LISTS);
+    expect(result.kind).toBe(row.kind);
+    expect(result.pauseQueue === true).toBe(row.pause);
+    expect(result.raw).toStrictEqual(raw);
+  },
+);
 
 it.each([
   'PAYEE_NOT_EXIST',
@@ -29,14 +50,14 @@ it.each([
   'UNKNOWN_NEW_CODE',
 ])('[AC-B2-06b#2] unverified example %s remains unknown and pauses the queue', (subCode) => {
   const raw = { code: '40004', subCode, msg: 'synthetic, not a platform recording' };
-  const result = judgeTransfer(raw, EMPTY_LISTS);
+  const result = judgeTransfer(raw, undefined, EMPTY_LISTS);
   expect(result).toMatchObject({ kind: 'unknown', pauseQueue: true, raw });
 });
 
 it.each(['20000', '40004', '10001', '10000 ', 'success'])(
   '[AC-B2-06b#3] no broad success inference from business code %s',
   (code) => {
-    expect(judgeTransfer({ code }, EMPTY_LISTS)).toMatchObject({
+    expect(judgeTransfer({ code }, 'SUCCESS', EMPTY_LISTS)).toMatchObject({
       kind: 'unknown',
       pauseQueue: true,
     });
@@ -50,7 +71,7 @@ it('[AC-B2-06b#4] fail/payer lists match subCode exactly, not code or message su
     { code: '40004', subCode: 'test_confirmed_fail' },
     { code: '40004', subCode: 'TEST_CONFIRMED_FAIL_EXTRA' },
   ]) {
-    expect(judgeTransfer(raw, VERIFIED_TEST_LISTS)).toMatchObject({
+    expect(judgeTransfer(raw, undefined, VERIFIED_TEST_LISTS)).toMatchObject({
       kind: 'unknown',
       pauseQueue: true,
     });

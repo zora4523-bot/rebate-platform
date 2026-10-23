@@ -1,4 +1,4 @@
-/** ASCII key ordering, unescaped values; omit the signature itself, retain sign_type=RSA2. */
+/** ASCII key ordering, unescaped values; omit the signature and empty values, retain sign_type=RSA2. */
 export function canonicalAlipayParams(params: Readonly<Record<string, string>>): string {
   void params;
   throw new Error('NotImplemented: canonicalAlipayParams');

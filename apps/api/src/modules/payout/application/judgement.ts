@@ -36,12 +36,17 @@ export function readPayoutChannelConfig(
   throw new Error('NotImplemented: readPayoutChannelConfig');
 }
 
-/** Only verified business responses reach this function; transport errors are handled outside. */
+/**
+ * Only verified business responses reach this function; transport errors are handled outside.
+ * Success needs code 10000 and status SUCCESS; 10000 with another or no status stays unknown.
+ */
 export function judgeTransfer(
   raw: ChannelRaw,
+  status: string | undefined,
   lists: JudgementLists,
 ): { kind: TransferKind; raw: ChannelRaw; pauseQueue?: boolean } {
   void raw;
+  void status;
   void lists;
   throw new Error('NotImplemented: judgeTransfer');
 }

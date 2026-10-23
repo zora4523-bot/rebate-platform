@@ -1,5 +1,8 @@
 import { expect, it, vi } from 'vitest';
-import { ChannelDisabledError } from '../../../../apps/api/src/modules/payout/domain/channel-result.ts';
+import {
+  ChannelDisabledError,
+  PayoutModeMustBeDryRunError,
+} from '../../../../apps/api/src/modules/payout/domain/channel-result.ts';
 import { BankCardChannel } from '../../../../apps/api/src/modules/payout/infra/channels/bank-card-channel.ts';
 import { FakeChannel } from '../../../../apps/api/src/modules/payout/infra/channels/fake-channel.ts';
 import { WechatChannel } from '../../../../apps/api/src/modules/payout/infra/channels/wechat-channel.ts';
@@ -19,13 +22,16 @@ it('[AC-B2-06b#33] fake channel consumes per-order/per-operation scripts, record
             {
               kind: 'response',
               raw: { code: '10000' },
+              status: 'SUCCESS',
               channelOrderId: 'fake_order',
               paidAt: '2026-10-23T12:00:00+08:00',
             },
           ],
           query: [{ kind: 'response', raw: { code: '10000' }, status: 'SUCCESS' }],
         },
-        another_order: { transfer: [{ kind: 'response', raw: { code: '10000' } }] },
+        another_order: {
+          transfer: [{ kind: 'response', raw: { code: '10000' }, status: 'SUCCESS' }],
+        },
       },
     });
     const channel: PayoutChannel = fake;
@@ -86,7 +92,10 @@ it('[AC-B2-06b#36] fake timeout step throws a timeout, consumes one step, and re
     lists: EMPTY_LISTS,
     script: {
       [REQUEST.outBizNo]: {
-        transfer: [{ kind: 'timeout' }, { kind: 'response', raw: { code: '10000' } }],
+        transfer: [
+          { kind: 'timeout' },
+          { kind: 'response', raw: { code: '10000' }, status: 'SUCCESS' },
+        ],
       },
     },
   });
@@ -98,7 +107,7 @@ it('[AC-B2-06b#36] fake timeout step throws a timeout, consumes one step, and re
 
 it('[AC-B2-06b#37] FakeChannel cannot be selected with live mode', () => {
   expect(() => new FakeChannel({ mode: 'live', lists: EMPTY_LISTS, script: {} })).toThrow(
-    'PAYOUT_MODE_MUST_BE_DRY_RUN',
+    PayoutModeMustBeDryRunError,
   );
 });
 
