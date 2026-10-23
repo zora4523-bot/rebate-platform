@@ -148,18 +148,20 @@ module.exports = {
     {
       name: 'agent-no-relay-outside-modules',
       comment:
-        'No relay: the agent module must not depend on apps/api/src files outside the modules ' +
-        '(a non-module file could re-export a forbidden value, CT-06zo review) (CT-06zq).',
+        'No relay: the agent module must not depend on any repo file outside apps/api/src/modules ' +
+        '(apps, test, tools, specs, db; a non-module file could re-export a forbidden value, ' +
+        'CT-06zo / CT-06zq reviews). Workspace packages are covered by packages-not-on-apps ' +
+        '(CT-06zq).',
       severity: 'error',
       from: { path: '^apps/api/src/modules/agent/' },
-      to: { path: '^apps/api/src/', pathNot: '^apps/api/src/modules/' },
+      to: { path: '^(apps|test|tools|specs|db)/', pathNot: '^apps/api/src/modules/' },
     },
     {
       name: 'agent-allowed-indexes-no-value-relay',
       comment:
-        'No relay: the index.ts of a module the agent may import must not re-export values of ' +
-        'another module (export … from / export * from), or the agent could reach linking / ' +
-        'orders / identity values or a forbidden module through it (CT-06zq).',
+        'No relay: the index.ts of a module the agent may import has no value dependency on ' +
+        'another module at all (types only), so it cannot import-then-export or wrap another ' +
+        "module's values for the agent (CT-06zq, tightened after its review).",
       severity: 'error',
       from: {
         path: '^apps/api/src/modules/(parsing|catalog|linking|orders|content|taolijin|identity|platform|union)/index\\.ts$',
@@ -167,9 +169,34 @@ module.exports = {
       to: {
         path: '^apps/api/src/modules/',
         pathNot: '^apps/api/src/modules/$1/',
+        dependencyTypesNot: ['type-only'],
+      },
+    },
+    {
+      name: 'agent-allowed-modules-no-value-reexport',
+      comment:
+        'No relay: no file of a module the agent may import re-exports values of another module ' +
+        '(export … from / export * from), so its index cannot pass them on through an inner file ' +
+        '(CT-06zq review).',
+      severity: 'error',
+      from: {
+        path: '^apps/api/src/modules/(parsing|catalog|linking|orders|content|taolijin|identity|platform|union)/',
+      },
+      to: {
+        path: '^apps/api/src/modules/',
+        pathNot: '^apps/api/src/modules/$1/',
         dependencyTypes: ['export'],
         dependencyTypesNot: ['type-only'],
       },
+    },
+    {
+      name: 'packages-not-on-apps',
+      comment:
+        'Workspace packages never depend on the apps (layering; also closes a relay of module ' +
+        'values to the agent module through a package, CT-06zq review).',
+      severity: 'error',
+      from: { path: '^packages/' },
+      to: { path: '^apps/' },
     },
     {
       name: 'pg-boss-only-behind-job-queue',

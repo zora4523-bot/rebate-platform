@@ -7,6 +7,7 @@ type: guard-change
 # 禁非模块文件、白名单模块 index 不得再导出别模块的值）。白名单在 BR 原文之外多两项：platform（基础设施内核，agent 现有 39 处引用）与
 # union（tools/quote 1 处类型引用）——均为现状，报编排决定是否回写 BR-AI-02 ③。主干全仓 depcruise 0 违规；违规样例 6 种全被拦、合法样例
 # 3 种不误伤（PR 说明列出）。未覆盖：`import Def, { type T }` 被判 type-only（依赖检查局限，需 eslint 规则，eslint 配置属第二类保护另议）。
+# 评审后收紧（同 PR）：白名单模块 index 对别模块不许有非类型依赖；白名单模块任一文件不许再导出别模块的值；禁中转扩到 apps|test|tools|specs|db 的非 modules 文件；新增 packages-not-on-apps。均主干 0 违规。
 # 改 .dependency-cruiser.cjs 属第二类保护路径；收紧改动由编排按 approvals #24 核对后加标签（D10-266 / D10-273）。非 task 分支，不带证据文件。
 refs: [BR-AI-02]
 refs_hash:
