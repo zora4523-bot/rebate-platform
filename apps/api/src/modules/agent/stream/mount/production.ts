@@ -10,6 +10,12 @@
 // B3-03n: the input review budget is agent.safety.timeout_ms of each request's app through the same
 // content reader (createStreamReview's config), and the one result store is the PG version
 // (agent/store/results createPgResultSetStore over context.db), shared by every runtime instance.
+// B3-08g (rule tests: test/spec/agent/stream-assembly-orders/**): with the ports' orders,
+// claimEntries and dailyCounter, the registry also holds handoff_to_human, prefill_claim,
+// list_my_orders and explain_order (registered = specs/agent-tools.allowlist exactly; search_rules
+// waits for B3-08e / B3-08i), each behind agent.tools.<name>.enabled through the same content
+// reader; card_id references read agent_cards (createOrderCardRefs over context.db) and the
+// by-number budget is createOrderNoQuota over ports.dailyCounter (./orders.ts).
 import { bridge } from '@couli/contracts-ts';
 import { createContentReader } from '../../../content/index.ts';
 import { systemScheduler } from '../../../platform/index.ts';

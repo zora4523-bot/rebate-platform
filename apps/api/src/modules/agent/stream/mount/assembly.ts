@@ -29,7 +29,9 @@ import {
   type ResultSetStore,
   type ResultsDeps,
 } from '../../orchestrator/results/index.ts';
+import type { ClaimDraftDeps } from '../../tools/claim/index.ts';
 import type { MatchDeps } from '../../tools/match/index.ts';
+import type { OrderToolsDeps } from '../../tools/orders/index.ts';
 import {
   createLinkQuoteRunner,
   createRebateQuoteHandler,
@@ -47,6 +49,7 @@ import {
   createSearchProductsHandler,
   type SearchProductsDeps,
 } from '../../tools/search/index.ts';
+import type { DailyCounter } from './orders.ts';
 
 /**
  * What the composition root (app.module, stream entry) provides from union / catalog / linking /
@@ -59,6 +62,12 @@ export interface AgentStreamProvidedPorts {
   readonly readProduct: RebateQuoteDeps['catalog']['readProduct'];
   readonly parsing: ParsingOptions;
   readonly cards: AgentStreamBusinessPorts['cards'];
+  /** B3-08g: orders' read-only queries (createOrderQueries, the same deps as orders.module). */
+  readonly orders?: OrderToolsDeps['orders'];
+  /** B3-08g: linking's link_logs reader for prefill_claim / explain_order (createClaimEntryReader). */
+  readonly claimEntries?: ClaimDraftDeps['clicks'];
+  /** B3-08g: the explain_order-by-number daily counter (Redis; no Redis rejects). */
+  readonly dailyCounter?: DailyCounter;
 }
 
 export interface AgentStreamAssemblyContext {
