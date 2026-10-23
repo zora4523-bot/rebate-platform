@@ -20,7 +20,7 @@ paths:
 test_paths:
   - 'test/spec/agent/stream-assembly-orders/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/agent/stream-assembly-orders/**'
