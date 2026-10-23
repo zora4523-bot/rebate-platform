@@ -18,7 +18,7 @@ test_paths:
   - 'test/spec/payout/auto-decision/**'
   - 'test/properties/domain/payout/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payout/auto-decision/**'
