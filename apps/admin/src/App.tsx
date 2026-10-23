@@ -46,6 +46,7 @@ import { HomeConfigPage } from './pages/home-config/index.ts';
 import { KillSwitchesPage } from './pages/kill-switches/index.ts';
 import { OrderDetailPage, OrdersPage } from './pages/orders/index.ts';
 import { PlatformIconsPage } from './pages/platform-icons/index.ts';
+import { RiskPage } from './pages/risk/index.ts';
 import {
   UnionOAuthCallbackPage,
   UnionOAuthCallbackSignedOut,
@@ -576,6 +577,9 @@ function ShellFrame({
       content = <KillSwitchesPage access={access} />;
     } else if (match !== undefined && match.item.id === 'config') {
       content = <ConfigCenterPage access={access} />;
+    } else if (match !== undefined && match.item.id === 'risk') {
+      // 风控: the 规则清单 tab needs config.risk on top of the risk.* keys that show the menu.
+      content = <RiskPage access={access} />;
     } else if (match !== undefined && match.item.id === 'pages') {
       content = <HomeConfigPage access={access} />;
     } else if (match !== undefined && match.item.id === CLAIMS_MENU_ID) {
