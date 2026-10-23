@@ -92,7 +92,7 @@ describe('[AC-B1-09b#5] 已入账命中 → after_credit（order.blacklist_hit_a
   });
 });
 
-describe('[AC-B1-09b#6] VOID / CLAWED_BACK 不处理', () => {
+describe('[AC-B1-09b#6] VOID / CLAWED_BACK 不处理：不处置，也不写任何 risk_hits（含 manual_review）', () => {
   const combos = [[channel], [suffix], [channel, suffix]];
   it.each(
     grid(['VOID', 'CLAWED_BACK']).flatMap(([state, flag]) =>
@@ -100,8 +100,7 @@ describe('[AC-B1-09b#6] VOID / CLAWED_BACK 不处理', () => {
     ),
   )('%s（尾号开关 %s）：%j', (state, flag, matches) => {
     const plan = planBlacklistHit({ matches, rebate_status: state, suffix_void_enabled: flag });
-    expect(plan.disposition).toBe('none');
-    expect(plan.hits.some((hit) => hit.risk_action === 'void_commission')).toBe(false);
+    expect(plan).toEqual({ disposition: 'none', hits: [] });
   });
 });
 

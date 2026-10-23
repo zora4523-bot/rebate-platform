@@ -132,17 +132,24 @@ it('[AC-B1-09b#21] 已入账订单命中（例 S6，退款触发更新）：不�
   await expectOwnershipKept(f);
 });
 
-describe('[AC-B1-09b#22] rebate_status 已为 VOID 或 CLAWED_BACK：不处理', () => {
-  it.each(['VOID', 'CLAWED_BACK'])('%s', async (status) => {
-    const f = await existing(db, status);
+describe('[AC-B1-09b#22] rebate_status 已为 VOID 或 CLAWED_BACK：不处理，不写任何 risk_hits（含 manual_review）', () => {
+  it.each([
+    ['VOID', '渠道'],
+    ['CLAWED_BACK', '渠道'],
+    ['VOID', '渠道 + 尾号（开关关）'],
+    ['CLAWED_BACK', '渠道 + 尾号（开关关）'],
+  ] as const)('%s：%s命中', async (status, label) => {
+    const withSuffix = label !== '渠道';
+    const f = await existing(db, status, withSuffix ? { parent_order_id: PARENT_HIT } : {});
     await seedChannel(db, f);
+    if (withSuffix) await seedSuffix(db, f);
     expect(await f.update()).toMatchObject({ ok: true, value: { kind: 'updated' } });
     expect(f.match).toHaveBeenCalledTimes(1);
     expect(f.onBlacklistHit).not.toHaveBeenCalled();
     expect(afterCredit(f)).toHaveLength(0);
     expect(f.onUpdated).toHaveBeenCalledTimes(1);
-    const after = await f.read();
-    expect(after.hits.every((row) => row.risk_action !== 'void_commission')).toBe(true);
+    expect(f.recordHit).not.toHaveBeenCalled();
+    expect((await f.read()).hits).toHaveLength(0);
     await expectOwnershipKept(f);
   });
 });

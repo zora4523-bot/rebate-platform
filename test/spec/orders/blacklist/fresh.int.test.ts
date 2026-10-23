@@ -6,8 +6,10 @@ import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import type { Kysely } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
+import { createOrderPipeline } from '../../../../apps/api/src/modules/orders/index.ts';
 import {
   ATTR_AT,
+  capture,
   expectSafeLogs,
   hitView,
   ownership,
@@ -260,15 +262,96 @@ it('[AC-B1-09b#17] 首次入库即已 VOID（入库同事务按 R6 作废，P13�
       .execute();
   });
   expect(await f.run()).toMatchObject({ ok: true, value: { kind: 'inserted' } });
-  const row = (await f.read()).orders[0]!;
+  const after = await f.read();
+  const row = after.orders[0]!;
   expect(f.match).toHaveBeenCalledTimes(1);
   expect(f.onBlacklistHit).not.toHaveBeenCalled();
   expect(publishedOf(f, AFTER_CREDIT)).toHaveLength(0);
+  expect(after.hits).toHaveLength(0);
   expect(ownership(row)).toMatchObject({
     user_id: f.userId,
     buy_type: 'share',
     rebate_status: 'VOID',
     reason: 'REFUND',
+  });
+});
+
+/** 同样未归因、不经第 ③ 步（B1-08h 的 deps）入库的订单的归属列：黑名单命中后应与它相同。 */
+async function unattributedOwnership() {
+  const base = await setup(db, {}, { unattributed: true });
+  const made = await capture(() =>
+    createOrderPipeline(base.plainDeps).process(base.incoming, base.ctx),
+  );
+  expect(made).toMatchObject({ ok: true, value: { kind: 'inserted' } });
+  const row = (await base.read()).orders[0]!;
+  expect(row).toMatchObject({ user_id: null, rebate_status: 'UNATTRIBUTED', reason: null });
+  return ownership(row);
+}
+
+describe('[AC-B1-09b#27] 未归因订单（② 失败、user_id 为空）照样执行第 ③ 步（BR-ATTR-01：② 失败继续 ③④⑦）', () => {
+  it('渠道命中 → 同一事务经返利端口 BLACKLIST_HIT（R6），记 void_commission，user_id 仍为空', async () => {
+    const expected = await unattributedOwnership();
+    const f = await setup(db, {}, { unattributed: true });
+    await seedChannel(db, f);
+    expect(await f.run()).toMatchObject({ ok: true, value: { kind: 'inserted' } });
+    const after = await f.read();
+    expect(after.orders).toHaveLength(1);
+    const row = after.orders[0]!;
+
+    expect(f.match).toHaveBeenCalledTimes(1);
+    expect(f.match.mock.calls[0]?.[1]).toMatchObject({
+      app_id: f.ctx.app_id,
+      platform: 'taobao',
+      relation_id: CHANNEL,
+      union_account_id: f.ctx.union_account_id,
+      attr_at: ATTR_AT,
+    });
+    expect(f.onBlacklistHit).toHaveBeenCalledTimes(1);
+    const [hitTrx, hit] = f.onBlacklistHit.mock.calls[0]!;
+    expect(hitTrx).toBe(f.onImported.mock.calls[0]?.[0]);
+    expect(hit).toMatchObject({ app_id: f.ctx.app_id, order_id: row.order_id, attr_at: ATTR_AT });
+    expect(after.hits.map(hitView)).toEqual([
+      {
+        user_id: null,
+        rule_id: 'BLACKLIST_HIT',
+        risk_action: 'void_commission',
+        dimension: 'channel',
+        value_hmac: f.hmac('channel', CHANNEL),
+        ref_type: 'order',
+        ref_id: row.order_id,
+      },
+    ]);
+    expect(ownership(row)).toEqual(expected);
+    expect(publishedOf(f, AFTER_CREDIT)).toHaveLength(0);
+  });
+
+  it('尾号命中（开关关）→ 只记 manual_review，不经返利端口，user_id 仍为空', async () => {
+    const expected = await unattributedOwnership();
+    const f = await setup(
+      db,
+      { parent_order_id: PARENT_HIT },
+      { unattributed: true, suffixOn: false },
+    );
+    await seedSuffix(db, f);
+    expect(await f.run()).toMatchObject({ ok: true, value: { kind: 'inserted' } });
+    const after = await f.read();
+    const row = after.orders[0]!;
+    expect(f.match).toHaveBeenCalledTimes(1);
+    expect(f.match.mock.calls[0]?.[1]).toMatchObject({ trade_parent_id: PARENT_HIT });
+    expect(after.hits.map(hitView)).toEqual([
+      {
+        user_id: null,
+        rule_id: 'BLACKLIST_HIT',
+        risk_action: 'manual_review',
+        dimension: 'order_no_suffix',
+        value_hmac: f.hmac('order_no_suffix', SUFFIX),
+        ref_type: 'order',
+        ref_id: row.order_id,
+      },
+    ]);
+    expect(f.onBlacklistHit).not.toHaveBeenCalled();
+    expect(publishedOf(f, AFTER_CREDIT)).toHaveLength(0);
+    expect(ownership(row)).toEqual(expected);
   });
 });
 
