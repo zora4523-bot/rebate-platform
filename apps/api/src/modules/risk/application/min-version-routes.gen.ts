@@ -436,6 +436,46 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "createPayOrder",
+    "method": "POST",
+    "path": "/v1/pay/orders",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
+    "operationId": "getPayOrder",
+    "method": "GET",
+    "path": "/v1/pay/orders/:pay_order_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "payOrderReturned",
+    "method": "POST",
+    "path": "/v1/pay/orders/:pay_order_id/returned",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "cancelPayOrder",
+    "method": "POST",
+    "path": "/v1/pay/orders/:pay_order_id/cancel",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "getMe",
     "method": "GET",
     "path": "/v1/me",

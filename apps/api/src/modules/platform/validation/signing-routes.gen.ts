@@ -212,6 +212,26 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "POST",
+    "path": "/v1/pay/orders",
+    "signed": true
+  },
+  {
+    "method": "GET",
+    "path": "/v1/pay/orders/:pay_order_id",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/v1/pay/orders/:pay_order_id/returned",
+    "signed": true
+  },
+  {
+    "method": "POST",
+    "path": "/v1/pay/orders/:pay_order_id/cancel",
+    "signed": true
+  },
+  {
     "method": "GET",
     "path": "/v1/me",
     "signed": false

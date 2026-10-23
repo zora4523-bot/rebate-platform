@@ -1187,6 +1187,129 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/pay/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a pay order and get the channel launch parameters
+         * @description Native app only: the request is made by the user's own native app (iOS / Android /
+         *     HarmonyOS) with a valid access token, a request signature and an Idempotency-Key; H5,
+         *     JSBridge and the Agent must not call it, and the Agent never places or pays an order for
+         *     the user (BR-PAY-01 ②; the path is in neither contracts/bridge.schema.json nor
+         *     specs/agent-tools.allowlist). The body names only the registered business type
+         *     (biz_type), its business object (biz_ref) and the channel (pay_channel); it carries no
+         *     amount or title: the server prices the order from the business type (BR-PAY-01 ①), and
+         *     any other field (amount, amount_fen, …) → 20001. The order belongs to the caller: biz_ref
+         *     must be the caller's own business object.
+         *
+         *     Checks (BR-PAY-01 ④): pay.enabled off → 30901 reason=pay_disabled;
+         *     pay.channel_enabled.<pay_channel> off → 30901 reason=channel_disabled; the client platform
+         *     (X-Platform) not in pay.biz.<biz_type>.platforms → 30901 reason=platform_not_allowed; the
+         *     business type or object cannot be sold → 30901 reason=biz_not_sellable. The business
+         *     object already has a PAID order → 30902 with data.pay_order_id (BR-PAY-02). It already
+         *     has a PENDING order on the same channel → that existing (original) order is returned with
+         *     launch parameters instead of a new one. On another channel the request puts the original
+         *     order into the closing flow (BR-PAY-05) and a new order is created only after the original
+         *     one is CLOSED; which code answers the request meanwhile is not yet fixed in 08. A state
+         *     CAS that affects no row → 20902 with data.resource=pay_order. Placing the order with the
+         *     channel fails or times out → 50306 with data.pay_channel; the order stays PENDING and a
+         *     retry with the same business object gets launch parameters for it (BR-PAY-03).
+         *
+         *     The response is the pay order plus `launch`, the parameters the channel SDK needs, one
+         *     branch per pay_channel. They are signed by the server; no private key, API key or
+         *     certificate ever reaches the client. Version gate: applied.
+         */
+        post: operations["createPayOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pay/orders/{pay_order_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One of my pay orders
+         * @description The pay order's status for the result page (BR-PAY-04). Only the owner can read it: an
+         *     unknown pay_order_id or someone else's order → HTTP 404 with the common not-found code
+         *     30701 (the two are not told apart). The launch parameters are never returned again here.
+         *     A PENDING order shows PAID only after the server has confirmed the payment from a
+         *     verified channel notification or its own query, never from the client SDK result.
+         */
+        get: operations["getPayOrder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pay/orders/{pay_order_id}/returned": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tell the server the client came back from the channel SDK
+         * @description Called once when the app comes back from the channel SDK, whatever the SDK said. It
+         *     triggers a single immediate query to the channel and nothing else (BR-PAY-04: the
+         *     client's SDK result decides only what the page shows and is not used as evidence). The
+         *     request has no body and carries no SDK result; the response data is an empty object and
+         *     says nothing about the outcome: the client polls GET /v1/pay/orders/{pay_order_id}.
+         *     Calling it again does not queue more queries. Unknown or someone else's order → 30701.
+         *     Version gate: applied.
+         */
+        post: operations["payOrderReturned"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pay/orders/{pay_order_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel my pending pay order
+         * @description The user gives up a PENDING order in the app (BR-PAY-05). The order enters the closing
+         *     flow: one that never reached the channel and never got launch parameters is closed at
+         *     once; otherwise the server first queries the channel and then closes the order with the
+         *     channel (a paid order becomes PAID instead, and 「单据不存在」 is not taken as closed). The
+         *     result is asynchronous: the response is the pay order as it stands (usually still
+         *     PENDING), and the client follows it with GET /v1/pay/orders/{pay_order_id}; the business
+         *     object is released only after CLOSED. An order that is not PENDING (PAID or CLOSED) →
+         *     20902 with data.resource=pay_order. Unknown or someone else's order → 30701. Turning
+         *     payment off does not block this operation. Version gate: applied.
+         */
+        post: operations["cancelPayOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me": {
         parameters: {
             query?: never;
@@ -8724,6 +8847,119 @@ export interface components {
             data: components["schemas"]["Withdrawal"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /**
+         * @description Collection channel (enum pay_channel, BR-PAY-01); unrelated to payout_channel.
+         * @enum {string}
+         */
+        PayChannelCode: "wechat_pay" | "alipay";
+        /**
+         * @description pay_orders.status (enum pay_order_status, BR-PAY-02); PAID and CLOSED are final.
+         * @enum {string}
+         */
+        PayOrderStatus: "PENDING" | "PAID" | "CLOSED";
+        /**
+         * @description A business type registered for payment (BR-PAY-01 ①); none is registered yet, so the
+         *     server refuses every value with 30901 reason=biz_not_sellable until one is.
+         */
+        PayBizType: string;
+        /** @description The business object of biz_type the order pays for (one purchase per object, BR-PAY-02). */
+        PayBizRef: string;
+        /**
+         * Format: int64
+         * @description Amount in fen set by the server from the business type's price, positive and never changed (BR-PAY-02).
+         */
+        PayAmountFen: number;
+        /** @description No amount, title or identity field; the server prices the order (BR-PAY-01 ①). */
+        CreatePayOrderRequest: {
+            biz_type: components["schemas"]["PayBizType"];
+            biz_ref: components["schemas"]["PayBizRef"];
+            pay_channel: components["schemas"]["PayChannelCode"];
+        };
+        /**
+         * @description A pay order as the user sees it. No channel-side user identifier (openid, buyer id, …)
+         *     and no merchant secret is ever part of it (BR-PAY-08 ④).
+         */
+        PayOrder: {
+            pay_order_id: components["schemas"]["Id"];
+            biz_type: components["schemas"]["PayBizType"];
+            biz_ref: components["schemas"]["PayBizRef"];
+            pay_channel: components["schemas"]["PayChannelCode"];
+            amount_fen: components["schemas"]["PayAmountFen"];
+            refunded_fen: components["schemas"]["Fen"];
+            status: components["schemas"]["PayOrderStatus"];
+            /** Format: date-time */
+            expire_at: string;
+            /** Format: date-time */
+            paid_at: string | null;
+            /** Format: date-time */
+            closed_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        PayOrderResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["PayOrder"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description WeChat Pay APP payment: the fields of the SDK's PayReq (appId, partnerId, prepayId,
+         *     packageValue, nonceStr, timeStamp, sign) as in the official WeChat Pay APP payment
+         *     documentation, signed by the server; package is the fixed value Sign=WXPay and timestamp
+         *     is Unix seconds as a string. 待 CAP-X-16 实测 (field names and values not yet verified
+         *     against a real merchant account).
+         */
+        PayLaunchWechatPay: {
+            appid: string;
+            partnerid: string;
+            prepayid: string;
+            package: string;
+            noncestr: string;
+            timestamp: string;
+            sign: string;
+        };
+        /**
+         * @description Alipay App payment: order_str is the complete signed order string the SDK's payOrder /
+         *     pay takes, as in the official Alipay App payment documentation. 待 CAP-X-17 实测 (not yet
+         *     verified against a real merchant account).
+         */
+        PayLaunchAlipay: {
+            order_str: string;
+        };
+        /**
+         * @description Launch parameters for the channel SDK, the branch of the order's pay_channel (wechat_pay
+         *     → PayLaunchWechatPay, alipay → PayLaunchAlipay). Field names follow the official channel
+         *     documentation and are 待实测 (pending verification: WeChat Pay CAP-X-16, Alipay
+         *     CAP-X-17). They are signed on the server; no private key, API key or certificate is
+         *     sent. Sensitive: not written to logs by the server or the clients (x-no-log), only kept in
+         *     memory long enough to call the SDK.
+         */
+        PayLaunch: components["schemas"]["PayLaunchWechatPay"] | components["schemas"]["PayLaunchAlipay"];
+        /** @description PayOrder plus launch. */
+        CreatePayOrderData: {
+            pay_order_id: components["schemas"]["Id"];
+            biz_type: components["schemas"]["PayBizType"];
+            biz_ref: components["schemas"]["PayBizRef"];
+            pay_channel: components["schemas"]["PayChannelCode"];
+            amount_fen: components["schemas"]["PayAmountFen"];
+            refunded_fen: components["schemas"]["Fen"];
+            status: components["schemas"]["PayOrderStatus"];
+            /** Format: date-time */
+            expire_at: string;
+            /** Format: date-time */
+            paid_at: string | null;
+            /** Format: date-time */
+            closed_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            launch: components["schemas"]["PayLaunch"];
+        };
+        CreatePayOrderResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["CreatePayOrderData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
         EmptyData: Record<string, never>;
         EmptyResponse: {
             code: components["schemas"]["SuccessCode"];
@@ -13099,6 +13335,8 @@ export interface components {
         TraceId: components["schemas"]["TraceId"];
         /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
         DeviceId: components["schemas"]["Id"];
+        /** @description pay_orders.id of one of the caller's pay orders (UUIDv7). */
+        PayOrderId: string;
         /** @description device_id issued by POST /v1/devices, when the device is registered. */
         OptionalDeviceId: components["schemas"]["Id"];
         /** @description The ETag of the client's last good response (LKG); a match gets 304. */
@@ -16198,6 +16436,264 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["WithdrawalResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    createPayOrder: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "biz_type": "placeholder_biz",
+                 *       "biz_ref": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                 *       "pay_channel": "wechat_pay"
+                 *     }
+                 */
+                "application/json": components["schemas"]["CreatePayOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description The pay order (new, or the existing PENDING one on the same channel) with launch parameters. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatePayOrderResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getPayOrder: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                /** @description pay_orders.id of one of the caller's pay orders (UUIDv7). */
+                pay_order_id: components["parameters"]["PayOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The pay order. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "pay_order_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b10",
+                     *         "biz_type": "placeholder_biz",
+                     *         "biz_ref": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *         "pay_channel": "wechat_pay",
+                     *         "amount_fen": 600,
+                     *         "refunded_fen": 0,
+                     *         "status": "PAID",
+                     *         "expire_at": "2026-10-22T09:15:00+08:00",
+                     *         "paid_at": "2026-10-22T09:01:30+08:00",
+                     *         "closed_at": null,
+                     *         "created_at": "2026-10-22T09:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PayOrderResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    payOrderReturned: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+            };
+            path: {
+                /** @description pay_orders.id of one of the caller's pay orders (UUIDv7). */
+                pay_order_id: components["parameters"]["PayOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted; no result is returned. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    cancelPayOrder: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+            };
+            path: {
+                /** @description pay_orders.id of one of the caller's pay orders (UUIDv7). */
+                pay_order_id: components["parameters"]["PayOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The pay order; closing goes on asynchronously. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "pay_order_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b10",
+                     *         "biz_type": "placeholder_biz",
+                     *         "biz_ref": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *         "pay_channel": "wechat_pay",
+                     *         "amount_fen": 600,
+                     *         "refunded_fen": 0,
+                     *         "status": "PENDING",
+                     *         "expire_at": "2026-10-22T09:15:00+08:00",
+                     *         "paid_at": null,
+                     *         "closed_at": null,
+                     *         "created_at": "2026-10-22T09:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PayOrderResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];
