@@ -1,0 +1,112 @@
+{
+  "risk_note": "RV2 (db/migrations/** funds path). Migration pay-core: pay_orders, pay_notifications, pay_query_attempts, pay_refunds, pay_anomalies, pay_fulfillments (04 §3.2 rows plus pay_fulfillments per orchestrator ruling D10-168 ②), named constraints and indexes, partial unique (app_id, biz_type, biz_ref) WHERE status IN (PENDING, PAID), immutable-column triggers on out_trade_no / amount_fen / out_refund_no, insert-only guards, grants to couli_app only; db/schema.sql and packages/db/src/db.gen.ts regenerated on the test machine; the funds lock list of tools/ci/lint-migrations.test.ts gains the six tables (class-3 path allowed by the ledger, as B2-02c). Rule tests by Codex (18 connected cases), red on the AWS test machine; spec-test review by a fresh Claude subagent (pass); implementation (SQL only) by a Claude Opus 5.5 subagent; Codex money review round 1 pass. Depends on B2-15g (pay_ prefix). Orchestrated by pay-acct4 (Claude Fable 5.1). Ledger PR #1187.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass (couli-runs/B2-15a/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagent, round 1 pass; 1 S2 moved to out_of_scope by validate-output (packages/db/src/testing), 35 out-of-scope entries"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "B2-15a",
+  "spec_commit": "428e35220b92ccaf8c0383ec126bf844fe9d6c4b",
+  "spec_ref": "be49fe9b54beaa6d8e552f6766e9ae2d4d513705",
+  "red_tests": [
+    "test/spec/db/pay/core/access.int.test.ts > [AC-B2-15a#15] app 只有读、插入和可变列 UPDATE，readonly 只读，payout 与 maint 无收款表权限",
+    "test/spec/db/pay/core/access.int.test.ts > [AC-B2-15a#16] app 实际可插入六表并更新结果列，退款累计更新不改变支付状态",
+    "test/spec/db/pay/core/access.int.test.ts > [AC-B2-15a#17] app 不可更改单号、金额、业务归属；只插入表不可 UPDATE 或 DELETE",
+    "test/spec/db/pay/core/access.int.test.ts > [AC-B2-15a#18] 使用真实业务角色连接：readonly 读得到但不能写，payout 和 maint 连读取都被拒绝",
+    "test/spec/db/pay/core/constraints.int.test.ts > [AC-B2-15a#1] 金额为正整数分，退款累计支持零、部分与全额但不能越界，bigint 不丢精度",
+    "test/spec/db/pay/core/constraints.int.test.ts > [AC-B2-15a#2] 商户支付与退款单号只接受一至三十二位 ASCII 字母数字",
+    "test/spec/db/pay/core/constraints.int.test.ts > [AC-B2-15a#3] 支付、退款、通知、查询与异常的枚举接受全部规定值并拒绝非法值和 NULL",
+    "test/spec/db/pay/core/constraints.int.test.ts > [AC-B2-15a#4] 通知至少关联一个商户单号，查询记录恰好关联支付单或退款单之一",
+    "test/spec/db/pay/core/constraints.int.test.ts > [AC-B2-15a#5] 用户、异常单和查询记录的外键拒绝不存在及其他 app 的对象",
+    "test/spec/db/pay/core/schema.int.test.ts > [AC-B2-15a#11] 六表字段类型、租户与主键非空，业务时间无 SQL 时钟默认值",
+    "test/spec/db/pay/core/schema.int.test.ts > [AC-B2-15a#12] 用户列表、过期扫描和两类查询流水具备按 app 开头的有效索引",
+    "test/spec/db/pay/core/schema.int.test.ts > [AC-B2-15a#13] 同一建表迁移显式命名约束和索引，不用 squawk 忽略且设置正超时",
+    "test/spec/db/pay/core/schema.int.test.ts > [AC-B2-15a#14] 不可变列和只插入保护为启用的 BEFORE ROW 触发器，独立于角色授权",
+    "test/spec/db/pay/core/uniqueness.int.test.ts > [AC-B2-15a#6] 支付单号在同 app 内跨业务与渠道唯一，关闭也不释放单号",
+    "test/spec/db/pay/core/uniqueness.int.test.ts > [AC-B2-15a#7] PENDING 和 PAID 都占用业务唯一键，CLOSED 释放且重新激活会冲突",
+    "test/spec/db/pay/core/uniqueness.int.test.ts > [AC-B2-15a#8] 并发创建同业务对象只有一条成功，由 PG 唯一约束裁决",
+    "test/spec/db/pay/core/uniqueness.int.test.ts > [AC-B2-15a#9] 通知和异常按 app、渠道、渠道标识去重，渠道或 app 不同可以并存",
+    "test/spec/db/pay/core/uniqueness.int.test.ts > [AC-B2-15a#10] 退款商户单号与幂等键各自唯一，业务开通记录按 app 与业务对象唯一"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "428e35220b92ccaf8c0383ec126bf844fe9d6c4b",
+      "tree": "c7ca695aa25b7f4c6066724b64ed7ed1fb2e262e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T12:33:09Z",
+      "finished_at": "2026-10-23T12:33:19Z",
+      "red_tests": [
+        "test/spec/db/pay/core/access.int.test.ts > [AC-B2-15a#15] app 只有读、插入和可变列 UPDATE，readonly 只读，payout 与 maint 无收款表权限",
+        "test/spec/db/pay/core/access.int.test.ts > [AC-B2-15a#16] app 实际可插入六表并更新结果列，退款累计更新不改变支付状态",
+        "test/spec/db/pay/core/access.int.test.ts > [AC-B2-15a#17] app 不可更改单号、金额、业务归属；只插入表不可 UPDATE 或 DELETE",
+        "test/spec/db/pay/core/access.int.test.ts > [AC-B2-15a#18] 使用真实业务角色连接：readonly 读得到但不能写，payout 和 maint 连读取都被拒绝",
+        "test/spec/db/pay/core/constraints.int.test.ts > [AC-B2-15a#1] 金额为正整数分，退款累计支持零、部分与全额但不能越界，bigint 不丢精度",
+        "test/spec/db/pay/core/constraints.int.test.ts > [AC-B2-15a#2] 商户支付与退款单号只接受一至三十二位 ASCII 字母数字",
+        "test/spec/db/pay/core/constraints.int.test.ts > [AC-B2-15a#3] 支付、退款、通知、查询与异常的枚举接受全部规定值并拒绝非法值和 NULL",
+        "test/spec/db/pay/core/constraints.int.test.ts > [AC-B2-15a#4] 通知至少关联一个商户单号，查询记录恰好关联支付单或退款单之一",
+        "test/spec/db/pay/core/constraints.int.test.ts > [AC-B2-15a#5] 用户、异常单和查询记录的外键拒绝不存在及其他 app 的对象",
+        "test/spec/db/pay/core/schema.int.test.ts > [AC-B2-15a#11] 六表字段类型、租户与主键非空，业务时间无 SQL 时钟默认值",
+        "test/spec/db/pay/core/schema.int.test.ts > [AC-B2-15a#12] 用户列表、过期扫描和两类查询流水具备按 app 开头的有效索引",
+        "test/spec/db/pay/core/schema.int.test.ts > [AC-B2-15a#13] 同一建表迁移显式命名约束和索引，不用 squawk 忽略且设置正超时",
+        "test/spec/db/pay/core/schema.int.test.ts > [AC-B2-15a#14] 不可变列和只插入保护为启用的 BEFORE ROW 触发器，独立于角色授权",
+        "test/spec/db/pay/core/uniqueness.int.test.ts > [AC-B2-15a#6] 支付单号在同 app 内跨业务与渠道唯一，关闭也不释放单号",
+        "test/spec/db/pay/core/uniqueness.int.test.ts > [AC-B2-15a#7] PENDING 和 PAID 都占用业务唯一键，CLOSED 释放且重新激活会冲突",
+        "test/spec/db/pay/core/uniqueness.int.test.ts > [AC-B2-15a#8] 并发创建同业务对象只有一条成功，由 PG 唯一约束裁决",
+        "test/spec/db/pay/core/uniqueness.int.test.ts > [AC-B2-15a#9] 通知和异常按 app、渠道、渠道标识去重，渠道或 app 不同可以并存",
+        "test/spec/db/pay/core/uniqueness.int.test.ts > [AC-B2-15a#10] 退款商户单号与幂等键各自唯一，业务开通记录按 app 与业务对象唯一"
+      ],
+      "expected": [
+        "test/spec/db/pay/core/access.int.test.ts",
+        "test/spec/db/pay/core/constraints.int.test.ts",
+        "test/spec/db/pay/core/schema.int.test.ts",
+        "test/spec/db/pay/core/uniqueness.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "afa053805b99bcae45e40e5db43a1429b4b8363e74d6603604a6b7c1fb855898"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "b37bc0a384c5e2b76f2fedebb02830b1ea1e0e8e",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "614eef6e4c7fa33422e0e86e9cfa4ed3718b3a42",
+    "specs": "b9b8c7957aa786feb1b71c8ccc35e6fd7341add0"
+  }
+}
