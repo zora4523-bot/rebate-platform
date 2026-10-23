@@ -49,6 +49,26 @@ export async function findSnapshot(
 }
 
 /**
+ * The snapshot row by id, locked FOR UPDATE on `trx` (the confirm transaction): waits for any
+ * other transaction holding it and returns the row as committed after that wait (READ COMMITTED
+ * re-reads it). Undefined when no such row of the app exists.
+ */
+export async function lockSnapshot(
+  trx: Transaction<DB>,
+  appId: string,
+  snapshotId: string,
+): Promise<SnapshotRow | undefined> {
+  return trx
+    .withSchema('app')
+    .selectFrom('asset_snapshots')
+    .select(['id', 'waiting_comparable'])
+    .where('app_id', '=', appId)
+    .where('id', '=', snapshotId)
+    .forUpdate()
+    .executeTakeFirst();
+}
+
+/**
  * USER_BALANCE accounts of the app, from entries dated ≤ D (not the account_balances cache, not
  * booked_at). Per account the available net is taken first, then split by sign: a user balance
  * is −Σ amount_fen, so a negative entry sum is a positive balance. Frozen is −Σ of the frozen

@@ -13,13 +13,22 @@
 // transaction first locks the day's row and reads it again; already comparable → returns with no
 // alert; only after the lock is held does it read the Clock and decide comparable vs timed out.
 import type { EventBus } from '../../platform/index.ts';
-import type { AssetSnapshotDependencies, AssetSnapshotRunner } from './asset-snapshot.ts';
+import { createAssetSnapshotAlertQueue } from '../infra/asset-snapshot-alert-queue.ts';
+import {
+  createAssetSnapshot,
+  type AssetSnapshotDependencies,
+  type AssetSnapshotRunner,
+} from './asset-snapshot.ts';
 
 export interface AssetSnapshotAssembly extends Omit<AssetSnapshotDependencies, 'alertQueue'> {
   readonly eventBus: EventBus;
 }
 
+// TODO(规划/11 §4.2): R-03 启动自检把 EVENT_BUS 列入生产必需清单 — blocked on R-03 启动自检尚未落地（platform/events 与 ledger 之外，另开任务）
 export function assembleAssetSnapshot(assembly: AssetSnapshotAssembly): AssetSnapshotRunner {
-  void assembly;
-  throw new Error('NotImplemented: assembleAssetSnapshot');
+  // Refuses synchronously (LedgerError INVALID_INPUT) before anything else runs.
+  const alertQueue = createAssetSnapshotAlertQueue(assembly.eventBus);
+  const { eventBus: _eventBus, ...dependencies } = assembly;
+  void _eventBus;
+  return createAssetSnapshot({ ...dependencies, alertQueue });
 }

@@ -10,6 +10,7 @@ import {
   findSnapshot,
   insertReceivables,
   insertSnapshotIfAbsent,
+  lockSnapshot,
   markComparable,
   sumReceivables,
   sumUserBalances,
@@ -77,7 +78,9 @@ export interface AssetSnapshotDependencies {
   getAdvanceAlertFen(appId: string): Promise<bigint | null>;
   /**
    * Durable alerts, enqueued on the snapshot's write transaction (BR-FUND-20 once per app per
-   * day; BR-FUND-18 timeout). Optional like EVENT_BUS; without it alerts are log lines only.
+   * day; BR-FUND-18 timeout). Optional only on this low-level factory (the B2-04w rule tests
+   * build it without one; alerts are then log lines only); entries assemble the runner through
+   * assembleAssetSnapshot, which requires the EVENT_BUS and builds this port over it (B2-04wa).
    */
   readonly alertQueue?: AssetSnapshotAlertQueue;
 }
@@ -113,6 +116,7 @@ export interface AssetSnapshotStatus {
 const STORE: SnapshotWriteStore = {
   insertSnapshotIfAbsent,
   insertReceivables,
+  lockSnapshot,
   markComparable,
   findSnapshot,
 };
@@ -172,9 +176,11 @@ export function createAssetSnapshot(dependencies: AssetSnapshotDependencies): As
       try {
         // Replay of a written day: same snapshot, no source read, amounts never rewritten. A
         // comparable row is left as is. A row still false was written late or never confirmed
-        // (the confirming delivery failed or stopped): confirm it now if still before the
-        // deadline, otherwise it stays false and the day's timeout alert is enqueued again
-        // under its key (at least once; consumers dedup).
+        // (the confirming delivery failed or stopped), or another delivery is confirming it
+        // right now: the confirmation locks the row and reads it again, so it waits for that
+        // delivery and returns if it made the row comparable; otherwise it confirms now if still
+        // before the deadline, else the row stays false and the day's timeout alert is enqueued
+        // again under its key (at least once; consumers dedup).
         const existing = await findSnapshot(db, appId, day);
         if (existing !== undefined) {
           if (!existing.waiting_comparable) await confirm(transact, appId, day, existing.id);

@@ -45,6 +45,10 @@ export const EVENT_NAMES: readonly string[] = Object.freeze([
   // the manual hand-off mark (B1-08u; last in 02 §11, after order.blacklist_hit_after_credit;
   // D10-81, D10-105).
   'order.snapshot_retry_exhausted',
+  // Finance alerts of the asset daily snapshot, published by ledger on the snapshot's transaction
+  // (B2-04wa; BR-FUND-18, BR-FUND-20; last in 02 §11, after user.realname_corrected; D10-188).
+  'asset_snapshot.timed_out',
+  'union_receivable.exposure_exceeded',
 ]);
 
 export interface EventSubscription {

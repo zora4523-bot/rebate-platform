@@ -37,10 +37,10 @@ export interface AssetSnapshotAlert {
 
 /**
  * Durable alert queue (BR-FUND-20 "告警财务 1 次", BR-FUND-18 超时告警): `enqueue` runs on the
- * snapshot's write transaction, so an alert exists exactly when the day's row is committed.
- * Optional like EVENT_BUS; implementations must dedup on `eventId` / `key`.
+ * snapshot's write (or confirm) transaction, so an alert exists exactly when that transaction
+ * commits. Implemented over the platform event bus by infra/asset-snapshot-alert-queue.ts and
+ * required by assembleAssetSnapshot (B2-04wa); implementations dedup on `eventId` / `key`.
  */
-// TODO(规划/11 §4.2): AssetSnapshotAlertQueue 的持久化实现与必需注入 — blocked on B2-04wa
 export interface AssetSnapshotAlertQueue {
   enqueue(
     trx: Transaction<DB>,
@@ -57,6 +57,12 @@ export interface SnapshotWriteStore {
     snapshotId: string,
     rows: readonly PlatformReceivable[],
   ): Promise<void>;
+  /** The row by id, locked FOR UPDATE on `trx` and read again after any wait for that lock. */
+  lockSnapshot(
+    trx: Transaction<DB>,
+    appId: string,
+    snapshotId: string,
+  ): Promise<SnapshotRow | undefined>;
   /** false → true only; resolves true when this call changed the row. */
   markComparable(
     trx: Transaction<DB>,
@@ -175,10 +181,12 @@ export interface ConfirmOutcome {
 }
 
 /**
- * BR-FUND-18 confirmation, on a new transaction after the write has committed: the clock is
- * read inside it; strictly before D+1 00:30 the row goes false → true (guarded, so a repeat is a
- * no-op), at or after the deadline the row is left false and the timeout alert is enqueued under
- * the day's key (consumers dedup). Errors propagate unchanged; the row then stays false.
+ * BR-FUND-18 confirmation, on a new transaction after the write has committed. It first locks the
+ * day's row and reads it again (waiting for a concurrent confirming delivery to commit or roll
+ * back): already comparable → returns confirmed with no alert and no clock read. Only once the
+ * lock is held is the clock read: strictly before D+1 00:30 the row goes false → true, at or after
+ * the deadline the row is left false and the timeout alert is enqueued under the day's key
+ * (consumers dedup). Errors propagate unchanged; the row then stays false.
  */
 export async function confirmSnapshotDay(
   transact: Transact,
@@ -186,6 +194,12 @@ export async function confirmSnapshotDay(
   day: UnconfirmedDay,
 ): Promise<ConfirmOutcome> {
   return transact(async (trx) => {
+    const row = await context.store.lockSnapshot(trx, day.appId, day.snapshotId);
+    if (row === undefined) {
+      throw new Error(`asset snapshot ${day.appId} ${day.day} is not visible to its confirmation`);
+    }
+    if (row.waiting_comparable) return { confirmed: true, alerts: [] };
+    // Read only now, with the lock held: a wait for another delivery may have crossed 00:30.
     const at = context.clock.now();
     if (isPastDeadline(at, day.day)) {
       const timeout = timeoutAlert(day.appId, day.day, 'not_confirmed');
