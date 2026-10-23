@@ -49,3 +49,26 @@ export {
   isWithdrawalApplication,
 } from './application/withdraw-switch-check.ts';
 export type { WithdrawSwitchCheckOptions } from './application/withdraw-switch-check.ts';
+export {
+  createWithdrawalCommands,
+  WithdrawalConflictError,
+} from './application/withdrawal-commands.ts';
+export type {
+  WithdrawalAttemptsPort,
+  WithdrawalCommands,
+  WithdrawalCommandsOptions,
+  WithdrawalCommand,
+  RejectWithdrawalCommand,
+  WithdrawalCommandResult,
+} from './application/withdrawal-commands.ts';
+export { createWithdrawHolds } from './application/withdraw-holds.ts';
+export { createWithdrawalInFlightReader } from './application/withdrawal-in-flight.ts';
+export { createWentNegativeConsumer, WENT_NEGATIVE_CONSUMER } from './application/went-negative.ts';
+export type { WentNegativeConsumer, WentNegativeOptions } from './application/went-negative.ts';
+export type {
+  WithdrawHolds,
+  WithdrawHoldsOptions,
+  AddWithdrawHold,
+} from './application/withdraw-holds.ts';
+export type { WithdrawalReaders } from './application/withdrawal-in-flight.ts';
+export type { PayoutWorkerOptions } from './payout.module.ts';

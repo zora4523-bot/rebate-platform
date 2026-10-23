@@ -8,8 +8,22 @@
 import type { DynamicModule, FactoryProvider } from '@nestjs/common';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
-import { DB as DB_TOKEN } from '../platform/index.ts';
-import type { WithdrawApplyService } from './application/withdraw-apply.ts';
+import { createLedger } from '../ledger/index.ts';
+import {
+  CLOCK,
+  DB as DB_TOKEN,
+  EVENT_BUS,
+  JOB_QUEUE,
+  ROOT_LOGGER,
+  registerEventConsumer,
+  type Clock,
+  type EventBus,
+  type QueueRuntime,
+  type RootLogger,
+} from '../platform/index.ts';
+import { WENT_NEGATIVE_CONSUMER, createWentNegativeConsumer } from './application/went-negative.ts';
+import type { WithdrawalAttemptsPort } from './application/withdrawal-commands.ts';
+import type { WithdrawApplyOptions, WithdrawApplyService } from './application/withdraw-apply.ts';
 import type { WithdrawRulesService } from './application/withdraw-rules.ts';
 import {
   WithdrawalsController,
@@ -57,7 +71,69 @@ function isApplyService(
   return typeof (value as WithdrawApplyService).apply === 'function';
 }
 
+/** The negative balance consumer's registration token (worker entry). */
+export const WENT_NEGATIVE_CONSUMER_TOKEN = Symbol('PAYOUT_WENT_NEGATIVE_CONSUMER');
+
+export interface PayoutWorkerOptions {
+  /** identity's users row lock (dependency inversion: app.module hands it in). */
+  lockUsersForUpdate: WithdrawApplyOptions['lockUsersForUpdate'];
+  /** payout_attempts reads; until B2-06 app.module hands in a port that reports none. */
+  attempts: WithdrawalAttemptsPort;
+}
+
 export class PayoutModule {
+  /**
+   * B2-05e: the worker entry's account.went_negative consumer on queue evt.payout-went-negative
+   * (registerEventConsumer: processed_events claim and the locked recheck in one transaction).
+   * Registration runs no statement; without a database or queue nothing is registered and one
+   * info line `went_negative_consumer_disabled` is logged.
+   */
+  static forWorker(options: PayoutWorkerOptions): DynamicModule {
+    return {
+      module: PayoutModule,
+      providers: [
+        {
+          provide: WENT_NEGATIVE_CONSUMER_TOKEN,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB_TOKEN, optional: true },
+            { token: JOB_QUEUE, optional: true },
+            { token: EVENT_BUS, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<DB>,
+            queue?: QueueRuntime,
+            eventBus?: EventBus,
+          ): boolean => {
+            if (db === undefined || queue === undefined || eventBus === undefined) {
+              logger.info({ consumer: WENT_NEGATIVE_CONSUMER }, 'went_negative_consumer_disabled');
+              return false;
+            }
+            const consumer = createWentNegativeConsumer({
+              db,
+              logger: logger.child({ module: 'payout' }),
+              clock,
+              ledger: createLedger({ clock, eventBus }),
+              lockUsersForUpdate: options.lockUsersForUpdate,
+              attempts: options.attempts,
+              eventBus,
+            });
+            registerEventConsumer(queue, {
+              consumer: WENT_NEGATIVE_CONSUMER,
+              db,
+              logger,
+              handler: (event, trx) => consumer.handle(event, trx),
+            });
+            return true;
+          },
+        },
+      ],
+    };
+  }
+
   static forRoot(options?: PayoutModuleOptions): DynamicModule {
     const rulesProvider = provider(WITHDRAW_RULES, options?.rules, isRulesService);
     const applyProvider = provider(WITHDRAW_APPLY, options?.apply, isApplyService);

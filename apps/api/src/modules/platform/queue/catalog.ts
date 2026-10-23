@@ -28,6 +28,8 @@ export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
     'evt.notification-appeal-result',
     // Event queue of notification's claim.resolved consumer (B1-12r); events/types.ts.
     'evt.notification-claim-result',
+    // Event queue of payout's account.went_negative consumer (B2-05e, BR-WDR-05 (a)); events/types.ts.
+    'evt.payout-went-negative',
     'pool-refresh',
     // Scheduled page publish due jobs (F1-09p): content's ContentWorkerModule, worker only.
     'page-schedule',
@@ -82,6 +84,8 @@ export const ENTRY_PLAN: EntryPlan = Object.freeze({
     work('evt.notification-risk-state', 5),
     work('evt.notification-appeal-result', 5),
     work('evt.notification-claim-result', 5),
+    // One worker: the member's withdrawals are re-checked under the users lock, serially.
+    work('evt.payout-went-negative', 1),
     work('pool-refresh', 1),
     work('page-schedule', 1),
     work('poster', 2, 0.5),
