@@ -5,7 +5,7 @@ type: impl
 # 入账（union 线，CT-24h 合并后）。依据 08 BR-ID-24 ③ 与细则「后台联盟账号列表」「后台告警手机号与重新授权会话」「各平台 reauth_mode 的取法」（D10-152 / 159 / 164 / 176 / 196）；04 §6.6 union-accounts；契约 CT-24h（#1203）。用例层复用 B1-22c createSiteReauth；manual 录入加密写 union_credentials、到期按平台 Key 有效期估算（文档 365 天，待 CAP-JD-12）。
 refs: [BR-ID-24]
 refs_hash:
-  BR-ID-24: daf1ab27a6cd
+  BR-ID-24: 4cba1bd5dd15
 deps: [B1-22b, B1-22c, CT-24h]
 paths:
   - 'apps/api/src/modules/union/**'

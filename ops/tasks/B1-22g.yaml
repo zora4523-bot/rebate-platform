@@ -5,7 +5,7 @@ type: impl
 # 入账（union 线）。依据 08 BR-ID-24 ② 与细则「后台告警手机号与重新授权会话」（D10-152 ④、D10-176 ②③）、BR-ID-33（加密存储、脱敏显示）、BR-ID-05（规范化）；04 §6.6、§10.1；02 §4.1（union 不直接写 config_items）。编解码复用 B1-22b encodeAlertPhones / alertPhoneId。前置：content 提供写入端口（notices 已请）。
 refs: [BR-ID-24]
 refs_hash:
-  BR-ID-24: daf1ab27a6cd
+  BR-ID-24: 4cba1bd5dd15
 deps: [B1-22b, CT-24h]
 paths:
   - 'apps/api/src/modules/union/**'
