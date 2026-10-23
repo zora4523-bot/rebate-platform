@@ -1,0 +1,24 @@
+id: B2-05k
+repo: rebate-platform
+title: payout 实现 ledger 的回正清理端口 BalanceRecoveredPort（BR-WDR-05 (a)：使 available_fen 由负变为非负的那笔记账事务内，清空该用户提现单上的 blocked_reason=NEGATIVE_BALANCE）并在 app.module 装配时注入 ledger（createLedger 的 balanceRecoveredHook）；替换 B2-05e 消费者「重验时清理」的过渡做法；端到端规则测试：回正的 post 提交后阻断即清、post 回滚则不清、未回正不清、端口抛错整张凭证回滚
+type: impl
+# 2026-10-23 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。规则测试与资金评审由独立 Claude（claude-run.sh，engine claude-independent；Codex 至 10-30 不可用）。
+# 来源：D10-220（先 B 后 A）：B2-05e 过渡口径先落地，ledger 挂点 B2-04ka（#1345 已合并）导出 BalanceRecoveredHook（类即注入 token、缺省空实现）与 BalanceRecoveredInput {appId, userId, accountId, availableBefore, availableAfter, voucherId}；本任务在 payout 实现并注入，不改金额与分录。
+# 状态备注：等 B2-05e 合并（消费者与 blocked_reason 写法在它里面）。
+refs: [BR-WDR-05, BR-FUND-10]
+refs_hash:
+  BR-WDR-05: 99e2e2654ce0
+  BR-FUND-10: 5dbb4715dec2
+deps: [B2-05e, B2-04ka]
+paths:
+  - 'apps/api/src/modules/payout/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/payout/recovered/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/recovered/**'
+status: todo
+pr: null
