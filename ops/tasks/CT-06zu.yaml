@@ -20,7 +20,8 @@ type: guard-change
 #   不另算语句，THEN DELETE / THEN INSERT 同理）。读：FROM（含逗号列表）/ JOIN / USING 后须为
 #   app.agent_x、裸 agent_x 或同一 SQL 里 WITH x AS 定义的 CTE 名；括号子查询 / VALUES / 列清单与函数调用（unnest(…) 等）放行；
 #   IS [NOT] DISTINCT FROM 与 extract / substring / substr / trim / overlay / position 括号内的 FROM 不算表。ALTER / DROP / CREATE /
-#   GRANT / REVOKE / COPY / LOCK / CALL 只在语句开头一律违规（文本开头、; 或 ( 之后、$tag$ 块开头、<<标签>> 之后，或 BEGIN / THEN /
+#   GRANT / REVOKE / COPY / LOCK / CALL 只在语句开头一律违规（文本开头、; 或 ( 之后、$tag$ 块开头、<<标签>> 之后、看不透的插值之后
+#   （${head} DROP …，head 可能自带 ;）、EXPLAIN [ANALYZE | VERBOSE]… 或 EXPLAIN (…) 之后，或 BEGIN / THEN /
 #   ELSE / LOOP / DO / ATOMIC / INSTEAD / ALSO 之后，DO 块里同样适用），作列名 / 别名（WHERE lock = 1、AS drop）不算；set_config
 #   出现即违规，语句级 SET [LOCAL|SESSION] ROLE / SESSION AUTHORIZATION 一律违规。插值
 #   ${sql.table/id/raw('字面量')} 计入文本，其余插值看不透，落在表名位置即违规。
@@ -31,7 +32,13 @@ type: guard-change
 #   不再按名字判断「交给 agent 端口」：交给 agent 的只能是 agent_ 或清单里已知的别模块用途。
 # ⑤ agent 里不绕过构造器：标识符 executeQuery / CompiledQuery 出现即违规；接收者像数据库句柄（名单同 ②）时取 .schema（db.schema.createTable、
 #   const s = trx.schema、db['schema']）或从中解构 schema（含参数类型名像句柄，如 ({ schema }: Kysely<DB>)）即违规，tool.schema.properties、
-#   X.schema.parse() 不算；表方法、withSchema 以非直接调用方式出现（解构、.call / .bind / .apply、取出传递）即违规，唯一例外是作为调用实参的
+#   X.schema.parse() 不算；另外不论接收者叫什么，接收链经过 .schema / ['schema'] 后调用 Kysely SchemaModule 的 DDL 方法（createTable /
+#   dropTable / alterTable / renameTable / createIndex / dropIndex / createView / dropView / refreshMaterializedView / createSchema /
+#   dropSchema / createType / dropType，含 ['dropView'] 下标）一律违规（t.schema.dropTable、getDb().schema.createTable、
+#   (db as any).schema…、this.store.schema.alterTable、x.schema.withSchema('app').dropTable）；本地名 schema、从 schema 解构出的本地名
+#   （含无类型回调 ({ schema }) => schema.dropTable、{ schema: s }）、以 .schema 初始化的变量（const s = t.schema）上调用这些方法同样违规；
+#   tool.schema.properties、X.schema.parse() 等非 DDL 方法仍不算；表方法、withSchema 以非直接调用方式出现（解构、.call / .bind /
+#   .apply、取出传递）即违规，唯一例外是作为调用实参的
 #   回调在参数里不改名地解构（.where(({ exists, selectFrom }) => …)），这样解构出的本地名只许直接调用，按标识符调用 selectFrom('x') 也按 ① 查
 #   表名；namespace 只在接收者名（或被解构对象名、参数类型名）含 redis（如 RedisHandle）时，非直接调用地取出或解构才违规，config.namespace、
 #   ({ namespace }: Options) 不算；数据库句柄名或含 redis 的接收者用非字面量下标（db[m]）即违规；sql 本地名除作模板标签与 sql.x 外被引用
@@ -42,13 +49,17 @@ type: guard-change
 #   platform 导出的建连接函数（属依赖规则）；以及第 2 轮评审 S2-1..4、7 列出的：Kysely 读方法实参是 sql 原生片段再 .as()（如
 #   selectFrom(sql.table('orders').as('o'))、sql`app.users`.as('u')、先存变量再 .as）当表表达式；分步构造查询时另起一句的 .from / .using
 #   （qb = qb.from('orders')、dq = dq.using('orders')）；CTE 名的作用范围过大（Kysely 侧按整个文件收集 .with 名，SQL 侧按整段文本收集
-#   WITH 名，同名真表会被放行）；单引号字符串里的 SQL（DO '…' / DO E'…' 匿名块、query_to_xml / query_to_xml_and_xmlschema /
-#   cursor_to_xml 执行字符串 SQL）；Redis 的 Lua 脚本越过命名空间访问别的键（eval 里 redis.call 任意键，含 app.module 的
+#   WITH 名，同名真表会被放行）；单引号字符串里的 SQL（DO '…' / DO E'…' 匿名块、DO 块里 EXECUTE 'DROP TABLE app.orders' /
+#   EXECUTE format('UPDATE app.orders …') 动态 SQL、query_to_xml / query_to_xml_and_xmlschema / cursor_to_xml 执行字符串 SQL）；
+#   Redis 的 Lua 脚本越过命名空间访问别的键（eval 里 redis.call 任意键，含 app.module 的
 #   AGENT_DAILY_COUNTER_SCRIPT）；app.module 把 redis 交给别模块的工厂（如 createClaimCounter(redis)）再转交 agent；清单里的 catalog-cache
 #   被直接交给 agent 端口（如 agentStreamPorts({ cache: redis.namespace(PRODUCT_CACHE_NAMESPACE) })，④ 只看命名空间值不看交给谁）；
 #   接收者先做类型断言再用非字面量下标（(db as any)['execute' + 'Query']、app.module 里 (redis as any)[k]）；Redis 句柄改名成不含 redis
-#   的名字后间接取 namespace（cache.namespace.bind(cache)）。
-# 已知仍从严（误报方向，不构成漏洞）：CASE … THEN lock / ELSE drop 这类 THEN / ELSE 后的裸列名仍按语句开头判；app.module 里非直接调用地取
+#   的名字后间接取 namespace（cache.namespace.bind(cache)）；以及第 3 轮评审 out_of_scope 与第 4 轮补记的：计算属性键解构取方法
+#   （const { [k]: put } = db; put('orders')）；SchemaModule 以不叫 schema、也非解构自 schema 的形参或变量传入后再调 DDL 方法
+#   （(m: SchemaModule) => m.dropTable('orders')）。
+# 已知仍从严（误报方向，不构成漏洞）：CASE … THEN lock / ELSE drop 这类 THEN / ELSE 后的裸列名、看不透的插值后紧跟的不带 AS 的
+#   裸别名（SELECT ${col} lock）仍按语句开头判；.schema 接收链上任意位置调用 DDL 同名方法（x.schema.parse(y).dropTable）也报；app.module 里非直接调用地取
 #   namespace 仍不看接收者一律违规。
 # 主干现状：Kysely 写 7 张、读 6 张，SQL 写 8 张、读 3 张，全是 agent_* 表（另有 unnest 函数读）；命名空间 agent_cancel、
 # app.module 里 agent_daily 与 catalog-cache——上线即绿。测试 6 条 [AC-CT-06zu#1..6]，各自先断言主干零违规、再断言确实扫到东西、再跑

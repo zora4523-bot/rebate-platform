@@ -36,7 +36,8 @@
 //    DISTINCT and inside extract / substring / substr / trim / overlay / position is not a table.
 //    ALTER / DROP / CREATE / GRANT / REVOKE / COPY / LOCK / CALL are violations whatever follows
 //    when they start a statement: at the text start, after ; or (, at the start of a $tag$ body,
-//    after a <<label>>, or after BEGIN / THEN / ELSE / LOOP / DO / ATOMIC / INSTEAD / ALSO;
+//    after a <<label>>, after an opaque substitution (${head} DROP …), after EXPLAIN [ANALYZE |
+//    VERBOSE]… or EXPLAIN (…), or after BEGIN / THEN / ELSE / LOOP / DO / ATOMIC / INSTEAD / ALSO;
 //    elsewhere (WHERE lock = 1, AS drop) they are names. set_config anywhere and a statement SET
 //    [LOCAL | SESSION] ROLE / SESSION AUTHORIZATION are violations. A substitution
 //    ${sql.table('…')}, ${sql.id('…'[, '…'])} or ${sql.raw('…')} with literal arguments
@@ -48,7 +49,12 @@
 //    or is on the caller's list of other modules' namespaces; anything unresolved is a violation.
 //    Accessing .namespace other than by a direct call is a violation.
 //  ⑤ Bypasses in agent code: the identifiers executeQuery and CompiledQuery anywhere; db.schema.…
-//    (.schema on a database-handle receiver as in ②, or destructured from one); a Kysely table
+//    (.schema on a database-handle receiver as in ②, or destructured from one); a SchemaModule
+//    DDL method (SCHEMA_DDL) on any receiver chain that reaches .schema / ['schema']
+//    (t.schema.dropTable, getDb().schema.createTable, (db as any).schema…,
+//    x.schema.withSchema('app').dropTable) or on a local named schema, destructured from schema
+//    (({ schema }) => schema.dropTable, { schema: s }) or initialised from .schema (const s =
+//    t.schema); tool.schema.properties and X.schema.parse() are not DDL; a Kysely table
 //    method or withSchema accessed other than by a direct call (destructuring, .call / .bind /
 //    .apply, passing it on), except that a Kysely expression-builder callback may destructure one
 //    without renaming it (.where(({ exists, selectFrom }) => …)): that local is then only called
@@ -161,6 +167,29 @@ const FORBIDDEN_STATEMENTS = new Set([
   'lock',
   'call',
 ]);
+/**
+ * Kysely SchemaModule DDL methods (createTable, dropTable, alterTable, renameTable, createIndex,
+ * dropIndex, createView, dropView, refreshMaterializedView, createSchema, dropSchema, createType,
+ * dropType): a violation on any receiver chain that reaches .schema, whatever the receiver is
+ * named.
+ */
+const SCHEMA_DDL = new Set([
+  'createTable',
+  'dropTable',
+  'alterTable',
+  'renameTable',
+  'createIndex',
+  'dropIndex',
+  'createView',
+  'dropView',
+  'refreshMaterializedView',
+  'createSchema',
+  'dropSchema',
+  'createType',
+  'dropType',
+]);
+/** EXPLAIN [ANALYZE | ANALYSE | VERBOSE]… right before a statement. */
+const EXPLAIN_LEAD = /\bexplain(?:\s+(?:analy[sz]e|verbose))*$/iu;
 /** Functions whose argument syntax uses FROM. */
 const FROM_FUNCTIONS = new Set(['extract', 'substring', 'substr', 'trim', 'overlay', 'position']);
 /** Words that end a FROM item instead of aliasing it. */
@@ -465,12 +494,35 @@ function wordBefore(text: string, index: number): string {
   return (/([A-Za-z_]+)\s*$/u.exec(text.slice(0, index))?.[1] ?? '').toLowerCase();
 }
 
+/** Index of the ( that opens the group closing at `close`, or -1. */
+function openParen(text: string, close: number): number {
+  let depth = 0;
+  for (let i = close; i >= 0; i -= 1) {
+    if (text[i] === ')') depth += 1;
+    else if (text[i] === '(') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** Whether `before` (trimmed) ends with EXPLAIN [ANALYZE | VERBOSE]… or EXPLAIN (…). */
+function afterExplain(before: string): boolean {
+  if (EXPLAIN_LEAD.test(before)) return true;
+  if (!before.endsWith(')')) return false;
+  const open = openParen(before, before.length - 1);
+  return open !== -1 && /\bexplain\s*$/iu.test(before.slice(0, open));
+}
+
 /** Whether `index` is where a statement starts. */
 function atStatementStart(text: string, index: number): boolean {
   const before = text.slice(0, index).trimEnd();
   if (before === '' || before.endsWith(';') || before.endsWith('(') || before.endsWith('>>')) {
     return true;
   }
+  // An opaque substitution may itself end a statement (${head} where head is sql`SELECT 1;`).
+  if (before.endsWith(OPAQUE) || afterExplain(before)) return true;
   return STATEMENT_LEADS.has(wordBefore(text, index));
 }
 
@@ -679,6 +731,70 @@ function inBuilderChain(callee: ts.Expression): boolean {
   }
 }
 
+/** Parentheses, !, as, satisfies and <T> assertions stripped. */
+function unwrapAll(expr: ts.Expression): ts.Expression {
+  let out = expr;
+  while (
+    ts.isParenthesizedExpression(out) ||
+    ts.isNonNullExpression(out) ||
+    ts.isAsExpression(out) ||
+    ts.isSatisfiesExpression(out) ||
+    ts.isTypeAssertionExpression(out)
+  ) {
+    out = out.expression;
+  }
+  return out;
+}
+
+function isSchemaAccess(expr: ts.Expression): boolean {
+  const inner = unwrapAll(expr);
+  return (
+    (ts.isPropertyAccessExpression(inner) && inner.name.text === 'schema') ||
+    (ts.isElementAccessExpression(inner) && literal(inner.argumentExpression) === 'schema')
+  );
+}
+
+/** Locals that may hold a SchemaModule: destructured from schema, or initialised from .schema. */
+function schemaLocals(source: ts.SourceFile): Set<string> {
+  const out = new Set<string>(['schema']);
+  const visit = (node: ts.Node): void => {
+    if (ts.isBindingElement(node) && ts.isIdentifier(node.name)) {
+      const key = node.propertyName ?? node.name;
+      if ((ts.isIdentifier(key) || ts.isStringLiteral(key)) && key.text === 'schema') {
+        out.add(node.name.text);
+      }
+    } else if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer !== undefined &&
+      isSchemaAccess(node.initializer)
+    ) {
+      out.add(node.name.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return out;
+}
+
+/** Whether a receiver chain reaches .schema / ['schema'] or starts at a SchemaModule local. */
+function reachesSchema(expr: ts.Expression, locals: ReadonlySet<string>): boolean {
+  let up = expr;
+  for (;;) {
+    up = unwrapAll(up);
+    if (isSchemaAccess(up)) return true;
+    if (
+      ts.isPropertyAccessExpression(up) ||
+      ts.isElementAccessExpression(up) ||
+      ts.isCallExpression(up)
+    ) {
+      up = up.expression;
+    } else {
+      return ts.isIdentifier(up) && locals.has(up.text);
+    }
+  }
+}
+
 /** The identifier is a reference (not a property name, import name, declaration name, …). */
 function isReference(node: ts.Identifier): boolean {
   const parent = node.parent;
@@ -717,6 +833,7 @@ export function scanAgent(files: readonly SourceFile[]): AgentScan {
     const { source, where } = parse(file);
     const names = sqlNames(source);
     const ctes = kyselyCtes(source);
+    const schemas = schemaLocals(source);
     const report = (kind: Kind, node: ts.Node, what: string): void => {
       violations.push(`${kind} ${where(node)} ${what}`);
     };
@@ -829,6 +946,9 @@ export function scanAgent(files: readonly SourceFile[]): AgentScan {
         if (name === 'schema') {
           // db.schema.createTable, const s = trx.schema; tool.schema.properties is not a database.
           if (isDbHandleName(receiver)) report('⑤', node, `${receiver ?? ''}.schema`);
+        } else if (SCHEMA_DDL.has(name) && reachesSchema(node.expression, schemas)) {
+          // t.schema.dropTable, getDb().schema.createTable, ({ schema }) => schema.dropTable.
+          report('⑤', node, `schema.${name}`);
         } else if (DIRECT_ONLY.has(name)) {
           if (isDirectCallee(node)) directCalls += 1;
           else if (name !== 'namespace' || isRedisName(receiver)) {
@@ -841,6 +961,8 @@ export function scanAgent(files: readonly SourceFile[]): AgentScan {
         if (key !== null) {
           if (key === 'schema' && isDbHandleName(receiver)) {
             report('⑤', node, `${receiver ?? ''}['schema']`);
+          } else if (SCHEMA_DDL.has(key) && reachesSchema(node.expression, schemas)) {
+            report('⑤', node, `schema['${key}']`);
           } else if (
             DIRECT_ONLY.has(key) &&
             !isDirectCallee(node) &&

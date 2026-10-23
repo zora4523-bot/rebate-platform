@@ -156,6 +156,14 @@ it('[AC-CT-06zu#2][BR-AI-02] agent/** 的 SQL 文本（sql 模板含别名与命
     'await q.query(sql`MERGE INTO app.agent_cards c USING app.agent_runs r ON c.id = r.id WHEN MATCHED THEN UPDATE SET x = (SELECT y FROM app.orders)`);',
     'await q.query(sql`MERGE INTO app.agent_cards c USING app.agent_runs r ON c.id = r.id WHEN MATCHED THEN DELETE; UPDATE app.orders SET x = 1`);',
     'await q.query(sql`DO $$ BEGIN IF true THEN UPDATE app.orders SET x = 1; END IF; END $$`);',
+    // After an opaque substitution (it may end a statement) and after EXPLAIN [ANALYZE] / (…).
+    'await q.query(sql`${head} DROP TABLE app.orders`);',
+    'await q.query(sql`${head} ALTER TABLE app.orders DROP COLUMN x`);',
+    'await q.query(sql`SELECT 1 ${sep} LOCK TABLE app.orders`);',
+    'await q.query(sql`EXPLAIN ANALYZE CREATE TABLE app.orders_copy AS SELECT * FROM app.agent_runs`);',
+    'await q.query(sql`EXPLAIN (ANALYZE) CREATE MATERIALIZED VIEW app.mv AS SELECT * FROM app.agent_runs`);',
+    'await q.query(sql`EXPLAIN (ANALYZE, BUFFERS) CREATE TABLE app.agent_x AS SELECT 1`);',
+    'await q.query(sql`explain analyse verbose create table app.agent_x as select 1`);',
   ]);
   expectClean([
     'await q.query(sql`UPDATE app.agent_runs SET x = ${v} WHERE id = ${id}`);',
@@ -182,6 +190,9 @@ it('[AC-CT-06zu#2][BR-AI-02] agent/** 的 SQL 文本（sql 模板含别名与命
     // Forbidden keywords away from a statement start are column names or aliases.
     'await q.query(sql`SELECT x AS drop, y AS create FROM app.agent_runs WHERE lock = 1 AND copy IS NULL ORDER BY call`);',
     'await q.query(sql`UPDATE app.agent_runs SET lock = false, alter = 1 WHERE drop IS NULL`);',
+    'await q.query(sql`SELECT ${col} AS drop, x AS create FROM app.agent_runs WHERE lock = ${v}`);',
+    'await q.query(sql`EXPLAIN SELECT x AS drop FROM app.agent_runs WHERE lock = 1`);',
+    'await q.query(sql`EXPLAIN (ANALYZE, COSTS OFF) SELECT * FROM app.agent_runs WHERE copy IS NULL`);',
     // MERGE … WHEN MATCHED THEN UPDATE SET / DELETE / INSERT are actions on the MERGE target.
     'await q.query(sql`MERGE INTO app.agent_cards c USING app.agent_runs r ON c.id = r.id WHEN MATCHED THEN UPDATE SET data = r.data WHEN NOT MATCHED THEN INSERT (id) VALUES (r.id)`);',
     'await q.query(sql`MERGE INTO app.agent_cards c USING app.agent_runs r ON c.id = r.id WHEN MATCHED AND r.gone THEN DELETE`);',
@@ -367,6 +378,24 @@ it('[AC-CT-06zu#6][BR-AI-02] agent/** 不绕过构造器：executeQuery / Compil
     "await db.selectFrom('agent_runs').where(({ selectFrom }) => run({ selectFrom })).execute();",
     "function reader({ selectFrom }: Kysely<DB>) { return selectFrom('agent_runs'); }",
     "const read = ({ selectFrom }: Kysely<DB>) => selectFrom('agent_runs');",
+    // A SchemaModule DDL method after .schema, whatever the receiver is named or how it is reached.
+    "await db.transaction().execute(async (t) => t.schema.dropTable('orders').execute());",
+    "await db.transaction().execute(async ({ schema }) => schema.dropTable('orders').execute());",
+    "await getDb().schema.createTable('app.x').execute();",
+    "const d = (db as any).schema.dropTable('orders');",
+    "await this.store.schema.alterTable('orders').renameTo('o').execute();",
+    "async function f(k: Transaction<DB>) { await k.schema.dropTable('orders').execute(); }",
+    "const g = ({ schema }: Transaction<DB>) => schema.createIndex('i').on('orders').column('x');",
+    "await t.schema.withSchema('app').dropTable('orders').execute();",
+    "await t.schema['dropView']('v').execute();",
+    "const v = (t['schema'] as SchemaModule).createView('v').as(q);",
+    "const { schema: s } = getDb();\nawait s.createSchema('x').execute();",
+    "const s = this.store.schema;\nawait s.refreshMaterializedView('mv').execute();",
+    "await k.schema.createType('mood').asEnum(['a']).execute();",
+    "await k.schema.dropType('mood').execute();",
+    "await k.schema.dropIndex('i').execute();",
+    "await k.schema.dropSchema('x').execute();",
+    "await k.schema.renameTable('orders', 'o').execute();",
   ]);
   expectClean([
     "await db.selectFrom('agent_runs').selectAll().execute();",
@@ -379,6 +408,11 @@ it('[AC-CT-06zu#6][BR-AI-02] agent/** 不绕过构造器：executeQuery / Compil
     'const props = tool.schema.properties; const t = def.parameters.schema.type;',
     'const v = Message.schema.parse(x); const { schema } = tool;',
     'function register({ schema }: ToolDef) { return schema; }',
+    // Non-DDL methods after .schema on any receiver stay clean.
+    'const props = t.schema.properties; const ok = getDb().schema.parse(x);',
+    'const r = (tool as any).schema.safeParse(x); const k = this.store.schema.keys();',
+    'const h = ({ schema }) => schema.parse(x); const s = def.schema;\ns.validate(y);',
+    "const v = schema.extend({ a: z.string() }); const c = search.createIndex('docs');",
     // .namespace on anything that is not a redis handle.
     'const ns = config.namespace; log.info({ namespace: opts.namespace });',
     'function f({ namespace }: Options) { return namespace; }\nconst g = ({ namespace }) => namespace;',
