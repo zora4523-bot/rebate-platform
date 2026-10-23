@@ -1,0 +1,28 @@
+id: B2-06d
+repo: rebate-platform
+title: payout 进程：payout 队列转账任务 handler（concurrency=1）：① 状态 ≠ PAYING 或 execute_seq 不一致 → 结束；② 已有 kind=transfer 尝试 → 不转账、转入查询；③ pg_advisory_xact_lock('payout_daily') 内按序复核 payout_disabled → queue_paused → channel_disabled → member_blocked → single_cap → daily_cap（当日 transfer 尝试 result ∈ {pending, success, unknown} 的 net 合计），不过 → W9（HOLD 回 APPROVED，写 hold_reason / hold_at，清 executor_id / executed_at，保留 batch_id；member_blocked 时同事务入队负余额处理任务）；④ 同锁内写 payout_attempts(transfer, pending) 并提交；⑤ 发起转账；同步结果按 BR-WDR-28 判定：成功 → W5（CHANNEL_SUCCESS，paid_at、channel_order_id，同事务 WITHDRAW:SUCCESS:CASH_<channel> 凭证）；definite_fail → W6（CHANNEL_FAIL + WITHDRAW:RETURN）；payer_side → W9 + 置 payout.queue_paused 并告警；清单外码 → 未知 + 暂停队列 + 告警；其余未知保持 PAYING 并按 query_schedule 投递查询任务
+type: impl
+# 2026-10-23 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。Codex 写规则测试（含「崩溃 3 次后只有 1 笔转账」的先记后发用例，用 FakeChannel 计数）、Codex money 评审（资金类）。
+# 任务不自动重试转账：payout 队列沿用目录 retryLimit，重试进入即被 ② 转为查询（先记后发的本意）；若编排裁定要字面 retryLimit=0，改 QUEUE_CATALOG 走冻结契约两态（先例 B2-05h）。
+# queue_paused / channel_paused 的系统置位经 content 的系统写入口（systemWritten 键），写审计与告警事件；payout 进程不连 Redis，开关直读 PG（ADR-0001 §4.2 第 20 项）。
+# 状态备注：等 B2-06b、B2-06c 合并。
+refs: [BR-WDR-13, BR-WDR-14, BR-WDR-17, BR-WDR-28, BR-WDR-09]
+refs_hash:
+  BR-WDR-13: 11b5c3e1a9b3
+  BR-WDR-14: 6328f3cda2e6
+  BR-WDR-17: f6119a685e00
+  BR-WDR-28: 96789506486c
+  BR-WDR-09: 68225c9af85f
+deps: [B2-06b, B2-06c]
+paths:
+  - 'apps/api/src/modules/payout/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/payout/process/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/process/**'
+status: todo
+pr: null

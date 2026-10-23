@@ -1,0 +1,29 @@
+id: B2-06a
+repo: rebate-platform
+title: 迁移：建 app.payout_batches（kind ∈ {manual, auto}，created_by 可空）、app.payout_batch_items（result ∈ {paying, skipped, blocked, moved_out}、reason、moved_to_batch_id；只插入）、app.payout_attempts（execute_seq、kind ∈ {transfer, query, cancel}、脱敏请求摘要、响应、resp_code / resp_sub_code、result ∈ {pending, success, fail, unknown}、latency_ms；只插入、禁 UPDATE / DELETE 触发器）与 app.payout_watermarks（通道、可用余额、取数时刻、录入人；BR-WDR-18 验证前财务手工录入）；lint-migrations 资金表清单加三表
+type: migration
+# 2026-10-23 提现线（withdraw-acct4，账号 4，模型 Claude Fable 5.1）。形状只按 04 §3.2 payout_batches / payout_batch_items / payout_attempts 行与 §2.4 枚举，取值按 08；按 db/AGENTS.md 分两段：本线先写 SQL，测试机跑迁移、db:snapshot、db.gen.ts 后提交生成物。
+# 迁移号按 D10-116：落地时取主干最大 +1、占迁移槽、合并即放；规则测试不写死迁移号。
+# payout_watermarks 是代理补全的默认（04 未列，BR-WDR-18 只写「财务手工录入并记录时间」）：已在 notices 请编排裁定，不同意则改为配置键 payout.watermark_fen / watermark_at 并删本表。
+# 状态备注：等 B2-05b 合并（withdrawals 表）。
+refs: [BR-WDR-11, BR-WDR-12, BR-WDR-13, BR-WDR-18]
+refs_hash:
+  BR-WDR-11: 9193f1c7ed27
+  BR-WDR-12: 15d982e09f01
+  BR-WDR-13: 11b5c3e1a9b3
+  BR-WDR-18: 092dc3b19c1c
+deps: [B2-05b]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+test_paths:
+  - 'test/spec/db/payout/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/payout/**'
+status: todo
+pr: null

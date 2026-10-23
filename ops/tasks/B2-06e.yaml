@@ -1,0 +1,25 @@
+id: B2-06e
+repo: rebate-platform
+title: payout 进程：查询任务 handler 与结果判定（每个时点最多 3 次、间隔 10 秒，不计转账次数；以首次转账尝试 T 为基准 T+1 分、+5 分、+30 分、+2 小时，之后每 2 小时；结果按 query_status_map 判 W5 / W6 / 继续，「订单不存在」与处理中为未知；T+24 小时仍未知 → needs_manual=true、告警、停止自动查询，迟到结果只记 payout_attempts 不迁移状态）；崩溃恢复：进程启动与每小时扫描 PAYING 且无在途查询任务的单补投查询任务；payout.enabled=off 不影响查询
+type: impl
+# 2026-10-23 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。Codex 写规则测试（时间用注入 Clock 推进，不等真实时间）、Codex money 评审（W5 / W6 写分录）。
+# 查询任务与转账任务同在 payout 队列（concurrency=1，BR-WDR-13），job name 区分 transfer / query；去重键 {withdrawal_id}:{execute_seq}:q{n}，旧 execute_seq 的任务进入即结束。
+# 微信「等用户确认」「撤销中」中间态与撤销（BR-WDR-33）不在本任务，随微信通道任务做。
+# 状态备注：等 B2-06d 合并。
+refs: [BR-WDR-14, BR-WDR-15, BR-WDR-28]
+refs_hash:
+  BR-WDR-14: 6328f3cda2e6
+  BR-WDR-15: cb20b486d97b
+  BR-WDR-28: 96789506486c
+deps: [B2-06d]
+paths:
+  - 'apps/api/src/modules/payout/**'
+test_paths:
+  - 'test/spec/payout/query/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/query/**'
+status: todo
+pr: null

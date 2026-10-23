@@ -1,0 +1,29 @@
+id: B2-06c
+repo: rebate-platform
+title: payout 模块：EXECUTE 命令（executeBatch）：批次级 ①（payout.enabled、queue_paused）→ 逐单 ②（仍 APPROVED、无提现阻断 BR-WDR-05、无 kind=transfer 尝试、快照通道已开通）→ ③ 可执行集合的水位检查（W 最新录入且 t_W ≤ 2 小时、W ≥ P、Σ 本批 + Σ PAYING + Σ t_W 后已付 ≤ W × watermark_usable_bp / 10000，不满足整批拒绝）；通过后逐单 CAS → PAYING（execute_seq + 1、executor_id、batch_id、executed_at），同事务写 payout_batch_items（paying / skipped / blocked 与原因）并入队 payout 转账任务（去重键 {withdrawal_id}:{execute_seq}）；人工组批时已挂别批的 APPROVED 单同事务 CAS 改挂、原批记 moved_out；自动批次（kind=auto，单单成批）复用同一命令
+type: impl
+# 2026-10-23 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。Codex 写规则测试（含属性测试：任意 EXECUTE / W9 序列下同一单的转账任务去重键严格递增、不重复投递）、Codex money 评审。
+# 只提供模块命令，不做后台接口（B2-09 接线、step-up 与审计）；自动到账判定与 kind=auto 建批由 B2-11 调用本命令。
+# 水位 P = 近 7 个完整自然日（+08:00）withdrawals.amount_fen 日均 × 3（不含 REJECTED），round_half_up 经 @couli/money；W 取 payout_watermarks 最新一行（无记录按「数据过期」整批拒绝，fail-close）。
+# 状态备注：等 B2-06a、B2-05e 合并。
+refs: [BR-WDR-11, BR-WDR-12, BR-WDR-18, BR-WDR-05]
+refs_hash:
+  BR-WDR-11: 9193f1c7ed27
+  BR-WDR-12: 15d982e09f01
+  BR-WDR-18: 092dc3b19c1c
+  BR-WDR-05: cd7130978c70
+deps: [B2-06a, B2-05e]
+paths:
+  - 'apps/api/src/modules/payout/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/payout/execute/**'
+  - 'test/properties/domain/payout/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/execute/**'
+  - 'test/properties/domain/payout/**'
+status: todo
+pr: null
