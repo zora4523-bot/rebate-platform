@@ -15,7 +15,7 @@ export const MAX_EVENT_VERSION = 999;
 
 /**
  * Event names of 规划/02 §11 (section 1), in its order. Names 02 §11 lists but no task publishes yet
- * (order.reassigned, order.blacklist_hit_after_credit) are added, at their 02 position, by the task
+ * (order.reassigned) are added, at their 02 position, by the task
  * that needs them.
  */
 export const EVENT_NAMES: readonly string[] = Object.freeze([
@@ -41,6 +41,9 @@ export const EVENT_NAMES: readonly string[] = Object.freeze([
   'order.attr_param_changed',
   'order.illegal_transition',
   'order.attr_binding_conflict',
+  // A credited order hitting the order-side blacklist: no automatic clawback, enqueued in the sync
+  // transaction for manual review (B1-09b; BR-ATTR-26; 02 §11, D10-48).
+  'order.blacklist_hit_after_credit',
   // Alert of the commission snapshot compensation retry still failing after 24 hours, enqueued with
   // the manual hand-off mark (B1-08u; last in 02 §11, after order.blacklist_hit_after_credit;
   // D10-81, D10-105).

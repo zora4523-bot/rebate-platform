@@ -14,6 +14,10 @@
 //   paid_at_source（随 INSERT 写），history、待处理之后、rebate.onImported 之前同事务调端口
 //   （application/commission-snapshot-step.ts）；结果经 ImportedOrder.snapshot 交 settlement。未注入时整步跳过，
 //   ImportedOrder 不带 snapshot 字段（与 B1-08h 一致，D10-69）。
+// - ③ 黑名单（B1-09b，BR-ATTR-26）：注入 blacklist 时，② 之后经 risk 名单端口同事务查询（只读）；rebate.onImported
+//   之后按重读的返利状态处置（application/blacklist-step.ts）：写命中 → 未入账经 rebate.onBlacklistHit（R6）、
+//   已入账入队 order.blacklist_hit_after_credit、VOID / CLAWED_BACK 不处理。将经 R6 作废的订单不生成快照。
+//   不改 user_id、buy_type；未注入时整步跳过。
 // 日志只打平铺字段（platform、app_id、reason、outcome），不打子订单号与买家参数。
 import { accountingDate } from '@couli/domain';
 import type { DB } from '@couli/db';
@@ -45,6 +49,13 @@ import {
 } from '../infra/pipeline-store.ts';
 import { publishBindingConflict, publishIllegalTransition } from './alert-events.ts';
 import { attributeOrderUser } from './attribute-user.ts';
+import {
+  applyOrderBlacklist,
+  blacklistVoids,
+  checkOrderBlacklist,
+  type OrderBlacklistCheck,
+  type OrderBlacklistRebatePort,
+} from './blacklist-step.ts';
 import { runCommissionSnapshot, type SnapshotOutcome } from './commission-snapshot-step.ts';
 import { backfillOrderSource, sourceColumns } from './source-backfill.ts';
 import type {
@@ -70,6 +81,7 @@ const IMPORTED_REBATE_STATUS = 'UNATTRIBUTED';
 // TODO(规划/11 §4.5): 淘宝 SITE_MISMATCH 判定 — blocked on 淘宝订单映射（无 site_id）。
 export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
   const log = deps.logger;
+  const onBlacklistHit = deps.rebate.onBlacklistHit;
 
   async function drop(
     trx: Transaction<DB>,
@@ -242,6 +254,20 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
         'taobao binding conflict',
       );
     }
+    // ③ 黑名单（BR-ATTR-26）：② 之后、④ 之前查询（只读）；未归因订单同样检查（② 失败继续 ③④⑦）。
+    const blacklist: OrderBlacklistCheck | null =
+      deps.blacklist === undefined
+        ? null
+        : await checkOrderBlacklist(trx, deps.blacklist, {
+            app_id: ctx.app_id,
+            platform,
+            trade_parent_id: order.parent_order_id ?? null,
+            relation_id: params.relation_id,
+            union_account_id: ctx.union_account_id,
+            attr_at: attrAt,
+          });
+    // 将经 R6 作废：第 ⑥ 步按作废后的返利状态判资格（BR-ATTR-01 ⑥「未作废」），不生成快照。
+    const voiding = blacklistVoids(blacklist, IMPORTED_REBATE_STATUS, deps.rebate);
     // ④ buy_type / scene_basis（BR-ATTR-08）；未归因订单也写。
     if (!isKnownPidScene(pidRow.pid_scene)) {
       log?.warn(
@@ -290,7 +316,7 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
       after: {
         user_id: user.user_id,
         platform_status: plan.platform_status,
-        rebate_status_before: IMPORTED_REBATE_STATUS,
+        rebate_status_before: voiding ? 'VOID' : IMPORTED_REBATE_STATUS,
       },
       order: {
         app_id: ctx.app_id,
@@ -419,6 +445,31 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
       received_at: plan.received_at,
       ...(snapshot === undefined ? {} : { snapshot }),
     });
+    // ③ 黑名单的处置：R6 的来源状态由首次入库（R1 / R2）给出，所以在 onImported 之后、按重读的返利状态。
+    if (blacklist !== null && deps.blacklist !== undefined) {
+      const stored = await readOrder(trx, {
+        order_id: orderId,
+        app_id: ctx.app_id,
+        attr_at: attrAt,
+      });
+      if (stored === undefined) throw new Error('ORDER_ROW_MISSING: 首次入库后重读不到订单行');
+      await applyOrderBlacklist(
+        trx,
+        {
+          blacklist: deps.blacklist,
+          ...(onBlacklistHit === undefined
+            ? {}
+            : ({
+                onBlacklistHit: (t, hit) => onBlacklistHit.call(deps.rebate, t, hit),
+              } satisfies Pick<OrderBlacklistRebatePort, 'onBlacklistHit'>)),
+          ...(deps.events === undefined ? {} : { events: deps.events }),
+          ...(log === undefined ? {} : { logger: log }),
+        },
+        { app_id: ctx.app_id, order_id: orderId, user_id: user.user_id, platform, attr_at: attrAt },
+        blacklist,
+        stored.rebate_status,
+      );
+    }
     // B1-08i（D10-41 第 1 条；02 §11）：注入 events 时，order.created 与首次入库同一事务入队。
     await deps.events?.publish(trx, {
       appId: ctx.app_id,

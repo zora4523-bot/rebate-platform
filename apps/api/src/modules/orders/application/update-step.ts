@@ -28,6 +28,11 @@
 //   ⑥ 条件、库内有未转人工的 open 快照类待处理行 → 在同一位置重试一次；成功与处置待处理同事务，结果经
 //   change.snapshot 交 settlement；满 24 小时仍失败记转人工标记，紧接着同事务入队 order.snapshot_retry_exhausted
 //   （B1-08u，入队抛错整事务回滚），并打一次告警日志（与事件并存作冗余）。
+// - ③ 黑名单（B1-09b，BR-ATTR-26）：注入 blacklist 时，② 之后经 risk 名单端口同事务查询（只读，订单父单号、
+//   relation_id 取本次 UPDATE 之后的值，attr_at 不变）；CAS 写入成功后、history 与待处理之后按库内（本次迁移前）
+//   返利状态处置（application/blacklist-step.ts）：未入账经 rebate.onBlacklistHit（R6），先于 settlement 端口；
+//   已入账入队 order.blacklist_hit_after_credit；VOID / CLAWED_BACK 不处理。将经 R6 作废的不生成快照、不补偿重试。
+//   只在 content_hash 变化时运行（同内容已被流水线短路），不回扫；不改 user_id、buy_type。
 // - 返利状态、hold、order_rights、order_settlements 只由 settlement 经端口决定；本模块不写这些列。
 //   端口除 change / info 外另带本次报文的来源（映射事件与原始码），settlement 据此区分维权与处罚（P8）。
 // 日志只打平铺字段（platform、app_id、reason、outcome、rule、event），不打子订单号与买家参数。
@@ -90,7 +95,15 @@ import {
   type SnapshotRetryAlert,
 } from './snapshot-retry-step.ts';
 import { backfillOrderSource, sourceColumns } from './source-backfill.ts';
-import type { OrderBlacklistDeps, OrderBlacklistRebatePort } from './blacklist-step.ts';
+import {
+  applyOrderBlacklist,
+  blacklistVoids,
+  checkOrderBlacklist,
+  type OrderBlacklistCheck,
+  type OrderBlacklistDeps,
+  type OrderBlacklistRebatePort,
+  type OrderBlacklistStepDeps,
+} from './blacklist-step.ts';
 import type {
   OrderPipelineContext,
   OrderPipelineDeps,
@@ -194,6 +207,21 @@ export function createOrderUpdateStep(
   deps: OrderUpdateDeps,
 ): NonNullable<OrderPipelineDeps['updateStep']> {
   const log = deps.logger;
+  const rebatePort = deps.rebate;
+  const onBlacklistHit = rebatePort.onBlacklistHit;
+  const blacklistStep: OrderBlacklistStepDeps | null =
+    deps.blacklist === undefined
+      ? null
+      : {
+          blacklist: deps.blacklist,
+          ...(onBlacklistHit === undefined
+            ? {}
+            : ({
+                onBlacklistHit: (trx, hit) => onBlacklistHit.call(rebatePort, trx, hit),
+              } satisfies Pick<OrderBlacklistRebatePort, 'onBlacklistHit'>)),
+          events: deps.events,
+          ...(log === undefined ? {} : { logger: log }),
+        };
 
   /** 整条报文不落 orders：只写待处理并告警；同键 open 记录只刷新 detected_at。 */
   async function reject(
@@ -396,6 +424,24 @@ export function createOrderUpdateStep(
       backfilled = source.source_match;
     }
 
+    // ③ 黑名单（BR-ATTR-26）：判定阶段只读查询；处置在 CAS 写入成功之后。
+    const blacklist: OrderBlacklistCheck | null =
+      blacklistStep === null
+        ? null
+        : await checkOrderBlacklist(trx, blacklistStep.blacklist, {
+            app_id: current.app_id,
+            platform,
+            trade_parent_id: columns.parent_order_id,
+            relation_id: set.relation_id !== undefined ? set.relation_id : current.relation_id,
+            union_account_id: ctx.union_account_id,
+            attr_at: current.attr_at,
+          });
+    // 将经 R6 作废：第 ⑥ 步与补偿重试都按作废后的返利状态判资格（BR-ATTR-01 ⑥「未作废」）。
+    const rebateAfterBlacklist =
+      blacklistStep !== null && blacklistVoids(blacklist, current.rebate_status, blacklistStep)
+        ? 'VOID'
+        : current.rebate_status;
+
     // ⑥ 分佣快照（B1-08k）：判定先于写库。before = 库内现值；after = 本次迁移与归属之后（rebate_status 不由本模块
     // 写，用库内值：UNATTRIBUTED + 本次写入 user_id 的 R3a 算资格，VOID 的 R3b 不算）；金额取本次将写入的列。
     const snapshots = deps.snapshots;
@@ -409,7 +455,7 @@ export function createOrderUpdateStep(
     const eligibilityAfter = {
       user_id: set.user_id ?? current.user_id,
       platform_status: plan.platform_status,
-      rebate_status_before: current.rebate_status,
+      rebate_status_before: rebateAfterBlacklist,
     };
     if (
       snapshots !== undefined &&
@@ -481,6 +527,22 @@ export function createOrderUpdateStep(
         detail: pendingDetail(plan, from),
       });
     }
+    // ③ 黑名单的处置：R6 的来源是本次迁移前的返利状态（库内值，锁内读）；先于 ⑥ 与 settlement 端口。
+    if (blacklistStep !== null && blacklist !== null) {
+      await applyOrderBlacklist(
+        trx,
+        blacklistStep,
+        {
+          app_id: current.app_id,
+          order_id: current.order_id,
+          user_id: set.user_id ?? current.user_id,
+          platform,
+          attr_at: current.attr_at,
+        },
+        blacklist,
+        current.rebate_status,
+      );
+    }
     // ⑥ 分佣快照：history、待处理之后、settlement 端口之前；端口抛错不吞，整事务回滚。
     let snapshot: SnapshotOutcome | undefined;
     let retryAlert: SnapshotRetryAlert | null = null;
@@ -501,7 +563,7 @@ export function createOrderUpdateStep(
         isSnapshotEligible({
           user_id: eligibilityAfter.user_id,
           platform_status: eligibilityAfter.platform_status,
-          rebate_status: current.rebate_status,
+          rebate_status: rebateAfterBlacklist,
         })
       ) {
         // B1-08t 补偿重试：本次没有跨入资格、仍满足 ⑥ 条件、库内还有 open 的快照类待处理行 → 重试一次。

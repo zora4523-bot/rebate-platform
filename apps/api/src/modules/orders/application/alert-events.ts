@@ -140,3 +140,32 @@ export async function publishSnapshotRetryExhausted(
     eventId: derivedEventId(name, alert.app_id, payload),
   });
 }
+
+/**
+ * B1-09b（BR-ATTR-26；02 §11）：已入账订单命中黑名单，不自动扣回，同事务入队 order.blacklist_hit_after_credit
+ * 进人工复核。载荷只放订单 id、平台与命中维度名，不放名单值、父订单号与子订单号。事件 ID 由（事件名、App、载荷）
+ * 派生：同一订单同样维度的命中再次随同步判出时只算重复，不另起一单复核。
+ */
+export async function publishBlacklistAfterCredit(
+  bus: OrderEvents,
+  trx: Transaction<DB>,
+  alert: {
+    readonly appId: string;
+    readonly orderId: string;
+    readonly platform: string;
+    readonly dimensions: readonly string[];
+  },
+): Promise<void> {
+  const name = 'order.blacklist_hit_after_credit';
+  const payload = {
+    order_id: alert.orderId,
+    platform: alert.platform,
+    dimensions: [...new Set(alert.dimensions)].sort(),
+  };
+  await bus.publish(trx, {
+    appId: alert.appId,
+    name,
+    payload,
+    eventId: derivedEventId(name, alert.appId, payload),
+  });
+}
