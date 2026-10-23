@@ -267,7 +267,11 @@ export function hash(state: string) {
 }
 
 export function expectNoSecrets(value: unknown, secrets: string[]) {
-  const serialized = JSON.stringify(value);
+  // audit_logs.id is int8, which @couli/db returns as BigInt (ADR-0001 §4.2 #3); JSON.stringify
+  // cannot serialize BigInt, so write it as its decimal string. Assertions unchanged.
+  const serialized = JSON.stringify(value, (_key, v: unknown) =>
+    typeof v === 'bigint' ? v.toString() : v,
+  );
   for (const secret of secrets) {
     expect(serialized).not.toContain(secret);
     // pg bytea/Buffer JSON representation must not hide a plaintext from the assertion.
