@@ -29,8 +29,7 @@ export interface FakeChannelOptions {
 }
 
 export type FakeCall =
-  | { kind: 'transfer'; request: TransferRequest }
-  | { kind: 'query'; outBizNo: string };
+  { kind: 'transfer'; request: TransferRequest } | { kind: 'query'; outBizNo: string };
 
 const NO_SCRIPT: ChannelRaw = { code: 'FAKE_NO_SCRIPT' };
 

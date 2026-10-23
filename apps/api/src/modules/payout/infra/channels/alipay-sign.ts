@@ -32,7 +32,11 @@ export function verifyAlipayResponse(
   try {
     const verifier = createVerify('RSA-SHA256');
     verifier.update(responseNode, 'utf8');
-    return verifier.verify({ key: publicKey, padding: constants.RSA_PKCS1_PADDING }, signature, 'base64');
+    return verifier.verify(
+      { key: publicKey, padding: constants.RSA_PKCS1_PADDING },
+      signature,
+      'base64',
+    );
   } catch {
     // A malformed key or signature is a verification failure, not an exception for the caller.
     return false;

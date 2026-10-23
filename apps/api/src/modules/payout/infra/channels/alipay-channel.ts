@@ -183,7 +183,8 @@ export class AlipayChannel implements PayoutChannel {
   async transfer(request: TransferRequest): Promise<TransferResult> {
     if (request.payee.name.replace(/\s/g, '') === '') throw new PayoutPayeeNameRequiredError();
     // Money arithmetic and formatting only through @couli/money; a non-positive amount never leaves.
-    if (typeof request.netFen !== 'bigint' || request.netFen <= 0n) throw new PayoutAmountInvalidError();
+    if (typeof request.netFen !== 'bigint' || request.netFen <= 0n)
+      throw new PayoutAmountInvalidError();
     const started = this.options.clock.now();
     const bizContent = {
       out_biz_no: request.outBizNo,
@@ -198,7 +199,13 @@ export class AlipayChannel implements PayoutChannel {
         name: request.payee.name,
       },
     };
-    const outcome = await this.call('transfer', TRANSFER_METHOD, bizContent, started, request.outBizNo);
+    const outcome = await this.call(
+      'transfer',
+      TRANSFER_METHOD,
+      bizContent,
+      started,
+      request.outBizNo,
+    );
     const latencyMs = Math.max(0, this.options.clock.now().getTime() - started.getTime());
     const masked = maskLogonId(request.payee.identity);
     if (outcome.kind === 'transport') {

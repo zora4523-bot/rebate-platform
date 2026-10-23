@@ -80,7 +80,8 @@ function parseStatusMap(value: unknown): Record<string, QueryKind> | null {
 function parseSchedule(value: unknown): PayoutChannelConfig['querySchedule'] | null {
   if (!isPlainObject(value)) return null;
   const points = value['points_min'];
-  if (!Array.isArray(points) || points.length === 0 || !points.every(isPositiveInteger)) return null;
+  if (!Array.isArray(points) || points.length === 0 || !points.every(isPositiveInteger))
+    return null;
   if (!isPositiveInteger(value['interval_min']) || !isPositiveInteger(value['manual_after_min']))
     return null;
   return {
@@ -140,7 +141,8 @@ export function judgeTransfer(
     return status === 'SUCCESS' ? { kind: 'success', raw } : { kind: 'unknown', raw };
   }
   const subCode = raw.subCode;
-  if (subCode !== undefined && lists.definiteFailCodes.includes(subCode)) return { kind: 'fail', raw };
+  if (subCode !== undefined && lists.definiteFailCodes.includes(subCode))
+    return { kind: 'fail', raw };
   if (subCode !== undefined && lists.payerSideCodes.includes(subCode))
     return { kind: 'payer_side', raw, pauseQueue: true };
   // BR-WDR-28: an unrecognised business code is unknown and pauses the queue.
