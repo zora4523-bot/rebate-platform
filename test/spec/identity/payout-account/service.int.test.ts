@@ -51,6 +51,19 @@ afterAll(async () => {
   }
 });
 
+// 为 CT-26c 让路：CT-26c 给收款账号响应加必返 payout_account_id（当前收款账号行的编号）。
+// 只按响应对象有没有该键确定性判定：没有 → 期望与改前完全相同；有 → 期望原对象加上该键，
+// 值必须等于给定的当前收款账号行编号。CT-26c 合并后收紧为单态（恒带该键）。
+function withPayoutAccountId(
+  actual: unknown,
+  expected: Record<string, unknown>,
+  currentId: string | undefined,
+): Record<string, unknown> {
+  const carries =
+    typeof actual === 'object' && actual !== null && Object.hasOwn(actual, 'payout_account_id');
+  return carries ? { payout_account_id: currentId, ...expected } : expected;
+}
+
 interface Vector {
   input: string;
   note: string;
@@ -101,16 +114,22 @@ it.each([
 
 it('[AC-B1-13e#2] 首绑返回脱敏账号，不计次；存储时刻取注入 Clock', async () => {
   const f = await fixture(kit);
-  expect(await save(kit, f)).toEqual({
-    code: 0,
-    data: {
-      payout_method: 'alipay',
-      masked_account: 'zh***@example.com',
-      masked_payee_name: MASKED_NAME,
-      change_remaining_this_month: 2,
-    },
-  });
+  const result = await save(kit, f);
   const rows = await state(kit, f);
+  const data = 'data' in result ? result.data : undefined;
+  expect(result).toEqual({
+    code: 0,
+    data: withPayoutAccountId(
+      data,
+      {
+        payout_method: 'alipay',
+        masked_account: 'zh***@example.com',
+        masked_payee_name: MASKED_NAME,
+        change_remaining_this_month: 2,
+      },
+      rows.accounts.find((row) => row.is_current)?.id,
+    ),
+  });
   expect(rows.changes).toEqual([]);
   expect(rows.accounts).toHaveLength(1);
   expect(rows.accounts[0]).toMatchObject({
@@ -263,19 +282,24 @@ it('[AC-B1-13e#10] 银行卡切支付宝共用计数，方法不同即使摘要�
 
 it('[AC-B1-13e#11] 同账号在上限后仍成功，保留账号与变更记录；姓名与黑名单仍校验', async () => {
   const f = await fixture(kit);
-  await account(kit, f, '13800138000');
+  const current = await account(kit, f, '13800138000');
   await change(kit, f);
   await change(kit, f);
   const before = await state(kit, f);
   const input = { alipayLogonId: '＋８６ １３８-００１３-８０００' };
-  expect(await save(kit, f, input)).toEqual({
+  const same = await save(kit, f, input);
+  expect(same).toEqual({
     code: 0,
-    data: {
-      payout_method: 'alipay',
-      masked_account: '138****8000',
-      masked_payee_name: MASKED_NAME,
-      change_remaining_this_month: 0,
-    },
+    data: withPayoutAccountId(
+      'data' in same ? same.data : undefined,
+      {
+        payout_method: 'alipay',
+        masked_account: '138****8000',
+        masked_payee_name: MASKED_NAME,
+        change_remaining_this_month: 0,
+      },
+      current.id,
+    ),
   });
   expect(await state(kit, f)).toEqual(before);
   expect(await save(kit, f, { ...input, payeeName: '错误姓名' })).toEqual({ code: 30307 });

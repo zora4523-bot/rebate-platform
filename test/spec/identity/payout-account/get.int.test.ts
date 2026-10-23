@@ -48,6 +48,19 @@ afterAll(async () => {
   }
 });
 
+// 为 CT-26c 让路：CT-26c 给收款账号响应加必返 payout_account_id（当前收款账号行的编号）。
+// 只按响应对象有没有该键确定性判定：没有 → 期望与改前完全相同；有 → 期望原对象加上该键，
+// 值必须等于给定的当前收款账号行编号。CT-26c 合并后收紧为单态（恒带该键）。
+function withPayoutAccountId(
+  actual: unknown,
+  expected: Record<string, unknown>,
+  currentId: string | undefined,
+): Record<string, unknown> {
+  const carries =
+    typeof actual === 'object' && actual !== null && Object.hasOwn(actual, 'payout_account_id');
+  return carries ? { payout_account_id: currentId, ...expected } : expected;
+}
+
 it('[AC-B1-13e#20] GET 去 planned、realname 鉴权且真实 AppModule 可达；PUT 保持 planned', async () => {
   const operation = kit.document.paths[PATH]!;
   expect(operation['get']!['x-implementation']).not.toBe('planned');
@@ -95,12 +108,19 @@ it.each([
     const before = await state(kit, f);
     kit.lines.length = 0;
     const response = await f.get();
-    expect(envelope(kit, response)).toEqual({
-      payout_method: 'alipay',
-      masked_account: masked,
-      masked_payee_name: MASKED_NAME,
-      change_remaining_this_month: 1,
-    });
+    const data = envelope(kit, response);
+    expect(data).toEqual(
+      withPayoutAccountId(
+        data,
+        {
+          payout_method: 'alipay',
+          masked_account: masked,
+          masked_payee_name: MASKED_NAME,
+          change_remaining_this_month: 1,
+        },
+        row.id,
+      ),
+    );
     privateDataAbsent(
       kit,
       [response.json()],
@@ -121,13 +141,20 @@ it('[AC-B1-13e#23] 银行卡 GET 仅尾号、银行名和脱敏姓名，不下�
   const value = '6222021234567890123';
   const row = await account(kit, f, value, { method: 'bank_card' });
   const response = await f.get();
-  expect(envelope(kit, response)).toEqual({
-    payout_method: 'bank_card',
-    masked_account: '尾号 0123',
-    bank_name: '招商银行',
-    masked_payee_name: MASKED_NAME,
-    change_remaining_this_month: 2,
-  });
+  const data = envelope(kit, response);
+  expect(data).toEqual(
+    withPayoutAccountId(
+      data,
+      {
+        payout_method: 'bank_card',
+        masked_account: '尾号 0123',
+        bank_name: '招商银行',
+        masked_payee_name: MASKED_NAME,
+        change_remaining_this_month: 2,
+      },
+      row.id,
+    ),
+  );
   privateDataAbsent(
     kit,
     [response.json()],
