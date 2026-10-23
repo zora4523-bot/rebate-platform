@@ -172,6 +172,10 @@ export async function fixture(db: Kysely<DB>, table: Table, overrides: Row = {})
     app_id: appId,
     user_id: null,
     install_secret_cipher: Buffer.from('synthetic-purge-secret'),
+    device_hash: deviceId.replaceAll('-', '').repeat(2),
+    id_source: 'idfv',
+    platform: 'ios',
+    app_version: 'synthetic@1',
     last_seen_at: AT,
   });
   const sessionId = randomUUID();
