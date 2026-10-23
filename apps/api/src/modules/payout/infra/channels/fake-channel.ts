@@ -1,5 +1,14 @@
-import type { JudgementLists } from '../../application/judgement.ts';
-import type { ChannelRaw, QueryResult, TransferResult } from '../../domain/channel-result.ts';
+// B2-06b: the scripted channel for PAYOUT_MODE=dry_run (rule tests and staging without sandbox
+// credentials). It never touches the network, records every call, judges scripted responses with
+// the same lists as the real adapter and answers unknown whenever the script has nothing to say
+// (fail closed: no scripted success is ever repeated).
+import { judgeQuery, judgeTransfer, type JudgementLists } from '../../application/judgement.ts';
+import {
+  PayoutModeMustBeDryRunError,
+  type ChannelRaw,
+  type QueryResult,
+  type TransferResult,
+} from '../../domain/channel-result.ts';
 import type { PayoutChannel, TransferRequest } from './payout-channel.ts';
 
 export type FakeStep =
@@ -20,23 +29,61 @@ export interface FakeChannelOptions {
 }
 
 export type FakeCall =
-  { kind: 'transfer'; request: TransferRequest } | { kind: 'query'; outBizNo: string };
+  | { kind: 'transfer'; request: TransferRequest }
+  | { kind: 'query'; outBizNo: string };
+
+const NO_SCRIPT: ChannelRaw = { code: 'FAKE_NO_SCRIPT' };
 
 export class FakeChannel implements PayoutChannel {
-  readonly calls!: readonly FakeCall[];
+  readonly calls: readonly FakeCall[];
+  private readonly log: FakeCall[] = [];
+  private readonly lists: JudgementLists;
+  private readonly queues = new Map<string, { transfer: FakeStep[]; query: FakeStep[] }>();
 
   constructor(options: FakeChannelOptions) {
-    void options;
-    throw new Error('NotImplemented: FakeChannel');
+    if (options.mode !== 'dry_run') throw new PayoutModeMustBeDryRunError();
+    this.lists = options.lists;
+    this.calls = this.log;
+    for (const [outBizNo, steps] of Object.entries(options.script)) {
+      this.queues.set(outBizNo, {
+        transfer: [...(steps.transfer ?? [])],
+        query: [...(steps.query ?? [])],
+      });
+    }
+  }
+
+  private next(outBizNo: string, operation: 'transfer' | 'query'): FakeStep | undefined {
+    return this.queues.get(outBizNo)?.[operation].shift();
   }
 
   transfer(request: TransferRequest): Promise<TransferResult> {
-    void request;
-    throw new Error('NotImplemented: FakeChannel.transfer');
+    this.log.push({ kind: 'transfer', request });
+    const step = this.next(request.outBizNo, 'transfer');
+    if (step === undefined || step.kind === 'unknown') {
+      return Promise.resolve({ kind: 'unknown', raw: NO_SCRIPT, latencyMs: 0 });
+    }
+    if (step.kind === 'timeout') {
+      return Promise.reject(new DOMException('fake channel timeout', 'TimeoutError'));
+    }
+    const judged = judgeTransfer(step.raw, step.status, this.lists);
+    const result: TransferResult = { ...judged, latencyMs: 0 };
+    if (step.channelOrderId !== undefined) result.channelOrderId = step.channelOrderId;
+    if (judged.kind === 'success' && step.paidAt !== undefined) result.paidAt = step.paidAt;
+    return Promise.resolve(result);
   }
 
   query(outBizNo: string): Promise<QueryResult> {
-    void outBizNo;
-    throw new Error('NotImplemented: FakeChannel.query');
+    this.log.push({ kind: 'query', outBizNo });
+    const step = this.next(outBizNo, 'query');
+    if (step === undefined || step.kind === 'unknown') {
+      return Promise.resolve({ kind: 'unknown', raw: NO_SCRIPT });
+    }
+    if (step.kind === 'timeout') {
+      return Promise.reject(new DOMException('fake channel timeout', 'TimeoutError'));
+    }
+    const result: QueryResult = judgeQuery(step.raw, step.status, this.lists);
+    if (step.channelOrderId !== undefined) result.channelOrderId = step.channelOrderId;
+    if (result.kind === 'success' && step.paidAt !== undefined) result.paidAt = step.paidAt;
+    return Promise.resolve(result);
   }
 }

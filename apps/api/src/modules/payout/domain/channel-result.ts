@@ -1,3 +1,9 @@
+// B2-06b: the normalised outcome of one payout channel call (规划/08 BR-WDR-14 / BR-WDR-28). The
+// raw evidence (code, sub_code, msg) is kept next to the decision so the attempt record and the
+// manual-resolution pages can show what the channel actually returned.
+//
+// Also compiled by the `test` project: erasable syntax only.
+
 /** B2-06b: raw channel evidence is retained independently of the normalized decision. */
 export interface ChannelRaw {
   code: string;
@@ -24,11 +30,11 @@ export interface TransferResult extends Omit<QueryResult, 'kind'> {
 
 /** Closed adapters reject; the normalized evidence travels on the rejection. */
 export class ChannelDisabledError extends Error {
-  readonly result!: QueryResult;
-
+  readonly result: QueryResult;
   constructor() {
     super('CHANNEL_DISABLED');
-    throw new Error('NotImplemented: ChannelDisabledError');
+    this.name = 'ChannelDisabledError';
+    this.result = { kind: 'unknown', raw: { code: 'CHANNEL_DISABLED' } };
   }
 }
 
@@ -36,7 +42,7 @@ export class ChannelDisabledError extends Error {
 export class PayoutChannelNotConfiguredError extends Error {
   constructor() {
     super('PAYOUT_CHANNEL_NOT_CONFIGURED');
-    throw new Error('NotImplemented: PayoutChannelNotConfiguredError');
+    this.name = 'PayoutChannelNotConfiguredError';
   }
 }
 
@@ -44,7 +50,7 @@ export class PayoutChannelNotConfiguredError extends Error {
 export class PayoutModeMustBeDryRunError extends Error {
   constructor() {
     super('PAYOUT_MODE_MUST_BE_DRY_RUN');
-    throw new Error('NotImplemented: PayoutModeMustBeDryRunError');
+    this.name = 'PayoutModeMustBeDryRunError';
   }
 }
 
@@ -52,6 +58,6 @@ export class PayoutModeMustBeDryRunError extends Error {
 export class PayoutPayeeNameRequiredError extends Error {
   constructor() {
     super('PAYOUT_PAYEE_NAME_REQUIRED');
-    throw new Error('NotImplemented: PayoutPayeeNameRequiredError');
+    this.name = 'PayoutPayeeNameRequiredError';
   }
 }

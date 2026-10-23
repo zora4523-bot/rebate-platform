@@ -1,14 +1,15 @@
-import type { QueryResult, TransferResult } from '../../domain/channel-result.ts';
+// B2-06b: placeholder for the WeChat balance channel (规划/08 BR-WDR-33; implemented after the Alipay
+// sandbox run, `payout.channel_enabled.wechat` off). Every call rejects with the disabled evidence.
+import { ChannelDisabledError, type QueryResult, type TransferResult } from '../../domain/channel-result.ts';
 import type { PayoutChannel, TransferRequest } from './payout-channel.ts';
 
 export class WechatChannel implements PayoutChannel {
   transfer(request: TransferRequest): Promise<TransferResult> {
     void request;
-    throw new Error('NotImplemented: WechatChannel.transfer');
+    return Promise.reject(new ChannelDisabledError());
   }
-
   query(outBizNo: string): Promise<QueryResult> {
     void outBizNo;
-    throw new Error('NotImplemented: WechatChannel.query');
+    return Promise.reject(new ChannelDisabledError());
   }
 }
