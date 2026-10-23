@@ -11,6 +11,7 @@ import ajvFormats from 'ajv-formats';
 import type { Schema } from '@couli/contracts-ts';
 import { addFen, parseFen, subFen } from '@couli/money';
 import type { ConfigReport, ConfigValues } from './config-values.ts';
+import { isDedicatedConfigKey } from './dedicated-config-keys.ts';
 import { deriveInviteEligibilityDays } from './invite-eligibility.ts';
 
 export type ClientConfig = Schema<'Config'>;
@@ -85,6 +86,7 @@ const OPTIONAL_CONFIG_KEYS = [
 ] as const;
 
 /** Every config_items key GET /v1/config reads (link_patterns is not one: platform's table). */
+/** F1-02zzj: a dedicated-port key (./dedicated-config-keys.ts) is never read here. */
 export const CLIENT_CONFIG_KEYS: readonly string[] = [
   ...REQUIRED_CONFIG_KEYS,
   ...OPTIONAL_CONFIG_KEYS,
@@ -93,7 +95,7 @@ export const CLIENT_CONFIG_KEYS: readonly string[] = [
     `convert.off_reason.${p}`,
     `search.enabled.${p}`,
   ]),
-];
+].filter((key) => !isDedicatedConfigKey(key));
 
 /** The h5_release bucket count: percent_bp is in 1/10000. */
 export const H5_BUCKETS = 10_000;

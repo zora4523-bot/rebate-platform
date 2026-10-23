@@ -49,6 +49,20 @@ export type {
   SystemSwitchWriter,
   SystemSwitchWriterOptions,
 } from './application/system-switch-writer.ts';
+// F1-02zzj (D10-281): union's dedicated write port for union.auth_alert_phones.
+export {
+  createUnionAlertPhonesWriter,
+  UnionAlertPhonesConflictError,
+  UnionAlertPhonesInputError,
+} from './application/union-alert-phones-writer.ts';
+export type {
+  UnionAlertPhonesInput,
+  UnionAlertPhonesKey,
+  UnionAlertPhonesResult,
+  UnionAlertPhonesValue,
+  UnionAlertPhonesWriter,
+  UnionAlertPhonesWriterOptions,
+} from './application/union-alert-phones-writer.ts';
 
 export interface ContentReaderOptions {
   /** Primary handle (ADR-0001 §4.2 #11); the reader only reads. */
