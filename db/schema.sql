@@ -7264,6 +7264,13 @@ CREATE INDEX relation_change_logs_user_at_idx ON app.relation_change_logs USING 
 
 
 --
+-- Name: risk_hits_blacklist_once_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX risk_hits_blacklist_once_key ON app.risk_hits USING btree (app_id, rule_id, ref_type, ref_id, value_hmac) WHERE (rule_id = 'BLACKLIST_HIT'::text);
+
+
+--
 -- Name: risk_hits_ref_idx; Type: INDEX; Schema: app; Owner: -
 --
 
