@@ -1,0 +1,37 @@
+{
+  "risk_note": "RV0 documentation task (docs/runbooks/redis.md only, plus its ledger): records the current Redis usage and the handling when Redis is unreachable or its data is lost, per the R-04 impact assessment (couli #187); no code, contract, migration or protected path touched. tester none, so there are no rule tests and no red run (spec_commit = the main tip it was rebased onto). Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 1,
+      "note": "round 1 pass, one S2 (CONFIG rename vs the check commands) fixed in the follow-up commit (runbook note on substituting the renamed command)"
+    }
+  ],
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "B1-01zzl",
+  "spec_commit": "885bc04769660d8ff0108af2d7216ac868f4859b",
+  "spec_ref": "bafa96ce58669cc77a7e0e1f19b0046f53075ce6",
+  "red_tests": [],
+  "runs": [],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "2d2f225a24118b7c6c8567691edeaa36c7f8abbe",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "3646ad5a9d5b9d7ed05f13599f87fda26d5208fa",
+    "specs": "72dde67eefff9307ad4dfab3f98c70a071cc017a"
+  }
+}
