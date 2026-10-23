@@ -8,7 +8,7 @@ type: impl
 # 回归样本（只看误报与读取错误，不入库）：couli/_vendor-sdk/youquanhui 下 youquanhui-android-1.0.9.apk（3 个 AXML 含 CDATA，现 exit 2）、youquanhui-ios-1.2.0.ipa。
 refs: [BR-ID-09]
 refs_hash:
-  BR-ID-09: f8c29aeda825
+  BR-ID-09: d54901c67242
 deps: [QA-09d]
 paths:
   - 'infra/release-scan/detect/**'

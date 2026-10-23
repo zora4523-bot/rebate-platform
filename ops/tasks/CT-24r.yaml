@@ -8,7 +8,7 @@ type: contract
 refs: [BR-ID-36, BR-ID-31]
 refs_hash:
   BR-ID-36: 4bb81d262347
-  BR-ID-31: 7976b65fe995
+  BR-ID-31: 497747587b67
 contract_sections: ['11.1']
 deps: [CT-26e]
 paths:

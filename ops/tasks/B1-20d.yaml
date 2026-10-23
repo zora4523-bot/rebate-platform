@@ -7,7 +7,7 @@ type: impl
 # Codex 实现（approvals #30、#31），Claude 写规则测试，编排者机械提交去 planned，Claude 新子代理评审。契约槽就绪即占。
 refs: [BR-ID-39]
 refs_hash:
-  BR-ID-39: 503d54b28ccf
+  BR-ID-39: e4fe6ce10a72
 deps: [CT-15n, B1-02z]
 paths:
   - 'apps/api/src/modules/identity/**'

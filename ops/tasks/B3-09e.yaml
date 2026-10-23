@@ -10,7 +10,7 @@ type: impl
 # 2026-10-22 agent-acct4：D10-175 取 B——清空自由文本 + 哈希替换（不删行），deps 加 B3-09f（列级授权与单向改写迁移）。
 refs: [BR-AI-22]
 refs_hash:
-  BR-AI-22: 366a972d2ad3
+  BR-AI-22: d412bc8a631a
 deps: [B1-15o, B3-09d, B3-09f]
 paths:
   - 'apps/api/src/modules/agent/deletion/**'

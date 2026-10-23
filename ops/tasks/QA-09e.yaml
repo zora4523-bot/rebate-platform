@@ -9,7 +9,7 @@ type: impl
 # 第三方 SDK 切环境 / 测试主机照拦、不设豁免（负责人 2026-10-08）。
 refs: [BR-ID-09]
 refs_hash:
-  BR-ID-09: f8c29aeda825
+  BR-ID-09: d54901c67242
 deps: [QA-09c, QA-09d]
 paths:
   - 'infra/release-scan/residue/**'

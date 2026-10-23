@@ -9,7 +9,7 @@ type: migration
 # 分工：Codex 写规则测试（允许的两种改写成功、其余改写被拒、无 DELETE 权限），Claude 新子代理过审，Opus 5.5 实现，Codex money 评审（db/** RV2）。
 refs: [BR-AI-22]
 refs_hash:
-  BR-AI-22: 366a972d2ad3
+  BR-AI-22: d412bc8a631a
 deps: [B1-15o]
 paths:
   - 'db/migrations/**'
