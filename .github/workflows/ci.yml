@@ -334,7 +334,7 @@ jobs:
                 version=${file#*_}
                 version=${version%_*}
                 version=${version//%3a/:}
-                # The URI is %-escaped (+ ~ :), the index Filename is not.
+                # The URI is %-escaped (+ ~), the index Filename is not.
                 filename=$(printf '%b' "${path//%/\\x}")
                 want=$(/usr/bin/apt-cache show "$name=$version" 2>/dev/null \
                   | awk -v f="$filename" '/^Filename: /{m=($2==f)} m&&/^SHA256: /{print $2; exit}')
