@@ -1,16 +1,42 @@
 id: CT-06zu
 repo: rebate-platform
-title: CT-06zu：agent 写表与 Redis 键门禁（AST 规则测试）——agent 模块的 Kysely 写与 sql 模板原生写语句只许 app.agent_* 表；Redis 命名空间只许 agent_ 前缀（含 app.module 交给 agent 端口的命名空间）（D10-287、D10-288 Q1）
+title: CT-06zu：agent 读写表与 Redis 键门禁（AST 规则测试）——agent 模块经 Kysely 与 SQL 文本的读写只碰 app.agent_* 表、不绕过构造器；Redis 命名空间只许 agent_ 前缀；app.module 的命名空间按白名单（D10-287、D10-288 Q1）
 type: guard-change
 # 2026-10-24 入账（agent 线，编排裁定 D10-287，D10-275 ② 取 A；D10-288 Q1 扩到 Redis 键）。BR-AI-02 ③ 白名单放行 platform 的基础设施
-# 部分（含数据库连接与 Redis），回写写明「数据库与 Redis 只读写 Agent 自己的表 / 键」；depcruise 只能按文件判定，管不到写哪张表、
+# 部分（含数据库连接与 Redis），回写写明「数据库与 Redis 只读写 Agent 自己的表 / 键」；depcruise 只能按文件判定，管不到读写哪张表、
 # 用哪个键，故以 TypeScript AST 静态扫描的规则测试守住（照 B3-08g imports.test.ts、CT-06zt 先例；tools/** 不能用编译器 API）。
-# 口径：apps/api/src/modules/agent/**（排除 *.test.ts）中 ① Kysely insertInto / updateTable / deleteFrom / mergeInto / replaceInto 的表名
-# 须为字面量且以 agent_ 开头，非字面量即违规；② sql 模板（sql`…` / sql.raw）里的写语句（INSERT INTO / UPDATE / DELETE FROM / MERGE INTO /
-# TRUNCATE）目标须为 app.agent_*；③ RedisHandle.namespace(name) 的 name 须为 agent_ 开头的字面量；④ apps/api/src/app.module.ts 里交给
-# agent 端口的命名空间常量须 agent_ 前缀。主干现状：写库全为 agent_* 表，命名空间 agent_cancel、agent_daily——上线即绿。测试自带违规 /
-# 合法样例自证。Codex 至 10-30 不可用：新鲜独立 Claude 写、另一新鲜独立 Claude 复审（approvals #36）。非 task 分支，不带证据文件，
-# 编排按 approvals #24 核对后加标签。
+# 口径（与 test/spec/agent/write-scope/scan.ts 文件头逐条一致；扫 apps/api/src/modules/agent/**，排除 *.test.ts 与 dist）：
+# ① Kysely 表名（按方法名，不看接收者）：写 insertInto / updateTable / deleteFrom / mergeInto / replaceInto，读 selectFrom 与
+#   innerJoin / leftJoin / rightJoin / fullJoin / crossJoin / innerJoinLateral / leftJoinLateral / crossJoinLateral 的首参，以及
+#   Kysely 构造链上的 .from / .using：须为字面量 agent_x / app.agent_x（可带 as 别名），数组逐个判，非字面量即违规；读方法另放行
+#   同文件 .with / .withRecursive 定义的 CTE 名、回调 (eb) => … 与 ….as('x') 子查询（其中的构造器调用另行扫描）。withSchema 只许 'app'。
+# ② SQL 文本来源：sql`…` 模板（sql 指标识符 sql、任何把 sql 导入成别名的本地名，及 kysely 命名空间导入的 k.sql）、sql.raw 的字面量；
+#   .query(…) 只在接收者末段名像数据库句柄时当 SQL：q / db / tx / trx / client / pool / conn / connection / executor / database /
+#   kysely（不分大小写），或以 Db / Tx / Trx / Client / Pool / Conn / Connection / Executor 结尾的驼峰名；这类 .query 只许 sql 模板、
+#   sql.x(…) 调用、字符串或模板，变量、其他调用、拼接即违规；其余对象的 .query 不扫。sql.lit 是取值不是 SQL；sql.raw 的实参不是纯字面量
+#   （变量、带插值的模板）即违规。剔除 TS 注释、SQL 注释与 SQL 字符串（含 E'…' 反斜杠转义）；$tag$…$tag$ 的内容单独按 SQL 扫（DO 块）；
+#   紧跟在 . 或包在 "…" 里的关键字是列名。写：INSERT INTO / UPDATE / DELETE FROM / MERGE INTO / TRUNCATE / SELECT … INTO 目标须为
+#   app.agent_x 或裸 agent_x（FOR [NO KEY] UPDATE、ON CONFLICT DO UPDATE 不算）。读：FROM（含逗号列表）/ JOIN / USING 后须为
+#   app.agent_x、裸 agent_x 或同一 SQL 里 WITH x AS 定义的 CTE 名；括号子查询 / VALUES / 列清单与函数调用（unnest(…) 等）放行；
+#   IS [NOT] DISTINCT FROM 与 extract / substring / substr / trim / overlay / position 括号内的 FROM 不算表。ALTER / DROP / CREATE /
+#   GRANT / REVOKE / COPY / LOCK / CALL / set_config 与语句级 SET [LOCAL|SESSION] ROLE / SESSION AUTHORIZATION 一律违规。插值
+#   ${sql.table/id/raw('字面量')} 计入文本，其余插值看不透，落在表名位置即违规。
+# ③ agent 里 .namespace(arg)（任何接收者）：arg 须为 agent_[a-z0-9_-]+ 字面量。
+# ④ apps/api/src/app.module.ts 里所有 .namespace(x)：x 须解析为字符串（字面量、本文件顶层 const、经相对路径 import / re-export 找到的
+#   导出 const），且以 agent_ 开头或在测试写死的非 agent 命名空间清单里（现为 catalog-cache，来源 app.module 的
+#   redis.namespace(PRODUCT_CACHE_NAMESPACE)）；解析不了即违规；非直接调用地取 namespace 即违规。新增命名空间须改测试清单（只增）。
+#   不再按名字判断「交给 agent 端口」：交给 agent 的只能是 agent_ 或清单里已知的别模块用途。
+# ⑤ agent 里不绕过构造器：标识符 executeQuery / CompiledQuery 出现即违规；x.schema.y / x.schema[y]（db.schema.createTable 等）即违规；
+#   表方法、withSchema、namespace 以非直接调用方式出现（解构、.call / .bind / .apply、取出传递）即违规；数据库句柄名或含 redis 的接收者
+#   用非字面量下标（db[m]）即违规；sql 本地名除作模板标签与 sql.x 外被引用（const s = sql、run(sql)）即违规。
+# 未覆盖（宁严勿漏之外的已知缺口，靠数据库授权或后续任务兜底）：调用 app.* 函数（含 SECURITY DEFINER）或 pgboss.send 间接读写；
+#   把 db 交给别的模块的读取器（如 createContentReader({ db })）后由对方读别的表；require / 动态 import 取 kysely；Reflect.get /
+#   Reflect.apply 按字符串取方法；把句柄改名成不像数据库句柄的名字后 .query(变量)；SQL 的 TABLE x 简写、FETCH … FROM 游标之外的少见语法；
+#   platform 导出的建连接函数（属依赖规则）。
+# 主干现状：Kysely 写 7 张、读 6 张，SQL 写 8 张、读 3 张，全是 agent_* 表（另有 unnest 函数读）；命名空间 agent_cancel、
+# app.module 里 agent_daily 与 catalog-cache——上线即绿。测试 6 条 [AC-CT-06zu#1..6]，各自先断言主干零违规、再断言确实扫到东西、再跑
+# 违规 / 合法内存样例自证。Codex 至 10-30 不可用：新鲜独立 Claude 写、另一新鲜独立 Claude 复审（approvals #36）。非 task 分支，
+# 不带证据文件，编排按 approvals #24 核对后加标签。
 refs: [BR-AI-02]
 refs_hash:
   BR-AI-02: 61014cc4d222

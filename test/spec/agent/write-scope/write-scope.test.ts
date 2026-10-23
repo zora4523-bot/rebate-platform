@@ -3,7 +3,7 @@
 // TypeScript AST of apps/api/src/modules/agent/** (test files and dist excluded) and
 // apps/api/src/app.module.ts; the scan proves itself on in-memory samples. No database, no Redis,
 // no listen, no network.
-// 口径 ①–④ are spelled out in ./scan.ts.
+// 口径 ①–⑤ are spelled out in ./scan.ts.
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import {
@@ -16,6 +16,14 @@ import {
   type Kind,
   type SourceFile,
 } from './scan.ts';
+
+/**
+ * Namespaces of other modules that app.module may assemble (not the agent's). Source:
+ * apps/api/src/app.module.ts `redis.namespace(PRODUCT_CACHE_NAMESPACE)` (catalog product reader),
+ * PRODUCT_CACHE_NAMESPACE = 'catalog-cache' in apps/api/src/modules/catalog/infra/product-cache.ts.
+ * A new namespace in app.module turns ④ red until it is added here (test/spec only grows).
+ */
+const NON_AGENT_NAMESPACES = ['catalog-cache'];
 
 function sample(text: string): SourceFile {
   return { path: join(AGENT, 'sample/index.ts'), text };
@@ -67,22 +75,21 @@ it('[AC-CT-06zu#1][BR-AI-02] agent/** 的 Kysely 写（insertInto / updateTable 
     "await db.insertInto('agent_cards').values(v).execute();",
     "await db.updateTable('app.agent_runs').set(v).execute();",
     "await db.deleteFrom('agent_sessions as s').where('s.id', '=', id).execute();",
-    "await db.mergeInto('agent_result_sets').using('orders', 'a', 'b').execute();",
+    "await db.mergeInto('agent_result_sets').using('agent_runs', 'a', 'b').execute();",
     "await db.deleteFrom(['agent_cards', 'agent_tool_calls']).execute();",
     "await db.withSchema('app').insertInto('agent_messages').values(v).execute();",
-    // Reads are not this gate's concern.
-    "await db.selectFrom('users').selectAll().execute();",
-    "await db.selectFrom('ledger_entries').forUpdate().selectAll().execute();",
   ]);
 });
 
-it('[AC-CT-06zu#2][BR-AI-02] agent/** 的 sql 模板与 sql.raw 里的写语句（INSERT INTO / UPDATE / DELETE FROM / MERGE INTO / TRUNCATE）只写 app.agent_*，注释与普通字符串不算，主干零违规；样例自证', () => {
+it('[AC-CT-06zu#2][BR-AI-02] agent/** 的 SQL 文本（sql 模板含别名与命名空间导入、sql.raw、数据库句柄的 .query）里的写语句只写 app.agent_*，DDL / 授权 / 切角色一律违规，注释、字符串与列名不算，主干零违规；样例自证', () => {
   const scan = scanAgent(agentSources());
   expect(kindOf(scan.violations, '②')).toEqual([]);
-  // The scan is not vacuous: it sees agent's real raw writes (deletion, stream/pg).
+  // The scan is not vacuous: it sees agent's real raw writes (deletion, stream/pg) and the
+  // .query calls on its query handles.
   expect(scan.sqlTargets).toEqual(
     expect.arrayContaining(['app.agent_runs', 'app.agent_sessions', 'app.agent_messages']),
   );
+  expect(scan.dbQueries).toBeGreaterThan(0);
 
   expectCaught('②', [
     'await q.query(sql`INSERT INTO app.users (id) VALUES (${id})`);',
@@ -104,25 +111,69 @@ it('[AC-CT-06zu#2][BR-AI-02] agent/** 的 sql 模板与 sql.raw 里的写语句�
     'await q.query(sql`DELETE FROM`);',
     'await q.query(sql.raw(text));',
     "await client.query('DELETE FROM app.users WHERE id = $1', [id]);",
+    // sql.raw with a template that has substitutions is not a literal.
+    'await q.query(sql.raw(`${stmt}`));',
+    'await q.query(sql.raw(`UPDATE ${t} SET x = 1`));',
+    'await q.query(sql`${sql.raw(`${stmt}`)}`);',
+    // sql under another local name, and through a namespace import of kysely.
+    "import { sql as s } from 'kysely';\nawait q.query(s`DELETE FROM app.users`);",
+    "import * as k from 'kysely';\nawait q.query(k.sql`DELETE FROM app.users`);",
+    "import * as k from 'kysely';\nawait q.query(k.sql.raw('UPDATE app.orders SET x = 1'));",
+    // .query on a database handle takes a sql tag, a string or a template, nothing else.
+    "const Q = 'DELETE FROM app.users';\nawait client.query(Q);",
+    "await client.query('DELETE FROM app.' + t);",
+    'await this.pool.query(text);',
+    'await trx.query(build());',
+    'await deps.db.query(`UPDATE ${t} SET x = 1`);',
+    "await pgClient.query('UPDATE app.orders SET x = 1');",
+    // E'…' backslash escapes and $tag$ quotes do not swallow statements.
+    "await q.query(sql`SELECT E'\\\\'' ; UPDATE app.orders SET x = 1`);",
+    "await q.query(sql`SELECT $$'$$; UPDATE app.orders SET x = 1; SELECT '1'`);",
+    'await q.query(sql`DO $body$ BEGIN UPDATE app.orders SET x = 1; END $body$`);',
+    // DDL, privileges, COPY, LOCK, CALL, role switching and SELECT … INTO.
+    'await q.query(sql`ALTER TABLE app.agent_runs ADD COLUMN x int`);',
+    'await q.query(sql`DROP TABLE app.agent_runs`);',
+    'await q.query(sql`CREATE TABLE app.agent_x (id int)`);',
+    'await q.query(sql`GRANT SELECT ON app.orders TO PUBLIC`);',
+    'await q.query(sql`REVOKE ALL ON app.agent_runs FROM PUBLIC`);',
+    'await q.query(sql`COPY app.orders TO STDOUT`);',
+    'await q.query(sql`LOCK TABLE app.orders`);',
+    'await q.query(sql`CALL app.settle_all()`);',
+    'await q.query(sql`SET LOCAL ROLE app_admin`);',
+    'await q.query(sql`SET SESSION AUTHORIZATION app_admin`);',
+    "await q.query(sql`SELECT pg_catalog.set_config('role', 'app_admin', true)`);",
+    'await q.query(sql`SELECT * INTO app.orders_copy FROM app.agent_runs`);',
   ]);
   expectClean([
     'await q.query(sql`UPDATE app.agent_runs SET x = ${v} WHERE id = ${id}`);',
     'await q.query(sql`INSERT INTO app.agent_messages (id) VALUES (${id}) ON CONFLICT (id) DO UPDATE SET x = 1`);',
-    'await q.query(sql`SELECT * FROM app.orders WHERE id = ${id} FOR NO KEY UPDATE`);',
-    'await q.query(sql`SELECT * FROM app.users FOR UPDATE SKIP LOCKED`);',
+    'await q.query(sql`SELECT * FROM app.agent_runs WHERE id = ${id} FOR NO KEY UPDATE`);',
+    'await q.query(sql`SELECT * FROM app.agent_sessions FOR UPDATE SKIP LOCKED`);',
     'await q.query(sql`delete from agent_cards where id = ${id}`);',
     'await q.query(sql`TRUNCATE app.agent_tool_calls`);',
     "await q.query(sql`UPDATE ${sql.table('app.agent_runs')} SET x = 1`);",
     "await q.query(sql`UPDATE ${sql.id('app', 'agent_runs')} SET x = 1`);",
     "await q.query(sql.raw('UPDATE app.agent_cards SET data = data'));",
+    'await q.query(sql`SELECT * INTO agent_tmp FROM app.agent_runs`);',
+    "import { sql as s } from 'kysely';\nawait q.query(s`UPDATE app.agent_runs SET x = 1`);",
     // SQL comments and SQL string literals are not statements.
     'await q.query(sql`-- UPDATE app.users\nSELECT 1 /* DELETE FROM orders */`);',
-    "await q.query(sql`SELECT 'DELETE FROM app.users' AS t, last_update, updated_at FROM app.users`);",
+    "await q.query(sql`SELECT 'DELETE FROM app.users' AS t, last_update, updated_at FROM app.agent_runs`);",
+    "await q.query(sql`SELECT E'it\\\\'s; DELETE FROM app.users' AS t FROM app.agent_runs`);",
+    "await q.query(sql`SELECT $$ it's $$ AS t FROM app.agent_runs`);",
+    // Column names are not statements.
+    'await q.query(sql`SELECT "update", a.update, a.create FROM app.agent_runs a`);',
+    // Session settings and advisory locks are not DDL.
+    "await q.query(sql`SET LOCAL lock_timeout = '2s'`);",
+    'await q.query(sql`SELECT pg_advisory_xact_lock(${key}::bigint)`);',
     // TypeScript comments, ordinary strings and untagged templates outside .query are not SQL.
     "// the decision UPDATE with this instance's memo\n/* DELETE FROM orders */\nexport {};",
     'const message = "update orders failed"; log(\'DELETE FROM users\');',
     'const m = `UPDATE ${x} with memo`;',
-    "const v = sql.lit('agent'); const r = sql.ref('col');",
+    "const v = sql.lit('update orders'); const r = sql.ref('col');",
+    // .query on anything that is not a database handle is not SQL.
+    "const hits = await searchApi.query('delete from cart');",
+    'const page = await docs.query(`update the ${topic} docs`);',
   ]);
 });
 
@@ -144,33 +195,144 @@ it('[AC-CT-06zu#3][BR-AI-02] agent/** 的 .namespace(name) 只用 agent_ 开头�
   ]);
 });
 
-it('[AC-CT-06zu#4][BR-AI-02] app.module.ts 交给 agent 的 Redis 命名空间（AGENT*NAMESPACE 常量、agent 装配内的 .namespace）只用 agent_ 前缀，主干零违规；样例自证', () => {
-  const real = scanAppModule(appModuleSource());
+it('[AC-CT-06zu#4][BR-AI-02] app.module.ts 的每个 .namespace(x) 都解析到字符串，且以 agent_ 开头或在非 agent 命名空间清单里，主干零违规；样例自证', () => {
+  const real = scanAppModule(appModuleSource(), NON_AGENT_NAMESPACES);
   expect(real.violations).toEqual([]);
-  // The scan is not vacuous: it resolves the daily counter's namespace through its const.
-  expect(real.agentNamespaces).toEqual(expect.arrayContaining(['agent_daily']));
+  // The scan is not vacuous: it resolves the daily counter's const and catalog's imported const,
+  // and every listed non-agent namespace is still in use.
+  expect(real.namespaces).toEqual(expect.arrayContaining(['agent_daily', ...NON_AGENT_NAMESPACES]));
 
   const root = (text: string): SourceFile => ({ path: APP_MODULE, text });
   const violating = [
-    "const AGENT_X_NAMESPACE = 'orders_x';",
-    "const AGENT_Y_NAMESPACE = PREFIX + 'y';",
-    "let AGENT_Z_NAMESPACE = 'agent_z';",
-    "function agentCache(redis: R) { return redis.namespace('step_up'); }",
+    "function cancelSignals(redis: R) { return redis.namespace('stream_cancel'); }",
     "const OTHER = 'orders';\nfunction agentCache(redis: R) { return redis.namespace(OTHER); }",
-    'function agentCache(redis: R, name: string) { return redis.namespace(name); }',
-    "const ports = { agentCounter: redis.namespace('orders') };",
-    "const AGENT_OTHER = 'risk';\nfunction risk(redis: R) { return redis.namespace(AGENT_OTHER); }",
+    'function cache(redis: R, name: string) { return redis.namespace(name); }',
+    'const ports = { dailyCounter: redis.namespace(`agent_${x}`) };',
+    "let N = 'agent_z';\nconst ns = redis.namespace(N);",
+    'const ns = redis.namespace(UNKNOWN_NAMESPACE);',
+    "import { NAMESPACE } from './nowhere.ts';\nconst ns = redis.namespace(NAMESPACE);",
+    "const ns = redis.namespace('catalog-cache-v2');",
+    "const AGENT_NS = 'agent_daily';\nfunction f(AGENT_NS: string) { return redis.namespace(AGENT_NS); }",
+    "const { namespace } = redis;\nconst ns = namespace('agent_x');",
+    'const make = redis.namespace.bind(redis);',
   ];
   for (const text of violating) {
-    expect(scanAppModule(root(text)).violations.length, text).toBeGreaterThan(0);
+    const { violations } = scanAppModule(root(text), NON_AGENT_NAMESPACES);
+    expect(violations.length, text).toBeGreaterThan(0);
   }
   const allowed = [
     "const AGENT_DAILY_COUNTER_NAMESPACE = 'agent_daily';\nfunction agentDailyCounter(redis: R) {\n  return redis.namespace(AGENT_DAILY_COUNTER_NAMESPACE);\n}",
     "function agentCancel(redis: R) { return redis?.namespace('agent_cancel'); }",
-    // Other modules' namespaces assembled in app.module are not the agent's.
     "const PRODUCT_CACHE_NAMESPACE = 'catalog-cache';\nfunction catalog(redis: R) { return redis.namespace(PRODUCT_CACHE_NAMESPACE); }",
+    // Resolved through catalog's index re-export to its infra const.
+    "import { PRODUCT_CACHE_NAMESPACE } from './modules/catalog/index.ts';\nconst ns = redis.namespace(PRODUCT_CACHE_NAMESPACE);",
   ];
   for (const text of allowed) {
-    expect(scanAppModule(root(text)).violations, text).toEqual([]);
+    const { violations } = scanAppModule(root(text), NON_AGENT_NAMESPACES);
+    expect(violations, text).toEqual([]);
   }
+});
+
+it('[AC-CT-06zu#5][BR-AI-02] agent/** 的读（Kysely selectFrom / 各种 join / 链上 .from .using，SQL 的 FROM / JOIN / USING）只读 agent_* 表，子查询、CTE、unnest 之类函数与 VALUES 放行，主干零违规；样例自证', () => {
+  const scan = scanAgent(agentSources());
+  expect(kindOf(scan.violations, '①')).toEqual([]);
+  expect(kindOf(scan.violations, '②')).toEqual([]);
+  // The scan is not vacuous: it sees agent's real Kysely and SQL reads.
+  expect(scan.readTables).toEqual(
+    expect.arrayContaining(['agent_sessions', 'agent_result_chains', 'agent_runs as r']),
+  );
+  expect(scan.sqlReads).toEqual(expect.arrayContaining(['app.agent_runs', 'app.agent_sessions']));
+
+  expectCaught('①', [
+    "await db.selectFrom('users').selectAll().execute();",
+    "await db.selectFrom('ledger_entries').forUpdate().selectAll().execute();",
+    "await db.selectFrom('app.orders as o').selectAll().execute();",
+    "await db.selectFrom(['agent_runs', 'orders']).selectAll().execute();",
+    'await db.selectFrom(table).selectAll().execute();',
+    "await db.selectFrom('agent_runs as r').innerJoin('app.users as u', 'u.id', 'r.user_id').execute();",
+    "await db.selectFrom('agent_runs as r').leftJoin('orders as o', 'o.id', 'r.id').execute();",
+    "await db.selectFrom('agent_runs as r').rightJoin('payouts', 'a', 'b').execute();",
+    "await db.selectFrom('agent_runs as r').fullJoin('withdrawals', 'a', 'b').execute();",
+    "await db.selectFrom('agent_runs').crossJoin('orders').execute();",
+    "await db.selectFrom('agent_runs').innerJoinLateral((eb) => eb.selectFrom('users').selectAll().as('u'), (j) => j.onTrue()).execute();",
+    "await db.selectFrom((eb) => eb.selectFrom('orders').selectAll().as('o')).selectAll().execute();",
+    "await db.with('x', (w) => w.selectFrom('orders').selectAll()).selectFrom('x').selectAll().execute();",
+    "await db.updateTable('agent_runs').from('orders').set(v).execute();",
+    "await db.deleteFrom('agent_runs').using('orders').execute();",
+    "await db.mergeInto('agent_result_sets').using('orders', 'a', 'b').execute();",
+  ]);
+  expectCaught('②', [
+    'await q.query(sql`SELECT * FROM app.orders`);',
+    'await q.query(sql`SELECT * FROM ONLY app.orders`);',
+    'await q.query(sql`SELECT * FROM app.agent_runs r, app.users u WHERE r.user_id = u.id`);',
+    'await q.query(sql`SELECT * FROM app.agent_runs r JOIN app.orders o ON o.id = r.id`);',
+    'await q.query(sql`SELECT * FROM app.agent_runs r LEFT OUTER JOIN app.users u ON true`);',
+    'await q.query(sql`UPDATE app.agent_runs SET x = o.x FROM app.orders o WHERE o.id = id`);',
+    'await q.query(sql`DELETE FROM app.agent_runs USING app.users u WHERE u.id = user_id`);',
+    'await q.query(sql`INSERT INTO app.agent_runs SELECT * FROM app.orders`);',
+    'await q.query(sql`SELECT * FROM ${table}`);',
+    "await q.query(sql`SELECT * FROM ${sql.table('orders')}`);",
+    'await q.query(sql`SELECT * FROM (SELECT * FROM app.orders) t`);',
+    'await q.query(sql`WITH x AS (SELECT * FROM app.orders) SELECT * FROM x`);',
+    'await q.query(sql`SELECT * FROM app.agent_runs WHERE id IN (SELECT run_id FROM app.payouts)`);',
+    'await q.query(sql`SELECT "a"FROM app.orders`);',
+    'await q.query(sql`SELECT * FROM`);',
+    "await client.query('SELECT phone FROM app.users WHERE id = $1', [id]);",
+  ]);
+  expectClean([
+    "await db.selectFrom('agent_runs as r').innerJoin('agent_sessions as s', 's.id', 'r.session_id').selectAll().execute();",
+    "await db.withSchema('app').selectFrom('agent_cards').leftJoin('app.agent_runs', 'a', 'b').selectAll().execute();",
+    "await db.selectFrom(['agent_runs', 'app.agent_cards']).selectAll().execute();",
+    "await db.updateTable('agent_runs').from('agent_sessions').set(v).execute();",
+    "await db.deleteFrom('agent_runs').using('agent_sessions').execute();",
+    "await db.with('recent', (w) => w.selectFrom('agent_runs').selectAll()).selectFrom('recent').selectAll().execute();",
+    "await db.selectFrom((eb) => eb.selectFrom('agent_runs').selectAll().as('r')).selectAll().execute();",
+    "const parts = Array.from(text); const key = Buffer.from(raw, 'utf8');",
+    'await q.query(sql`SELECT s.id FROM app.agent_sessions s JOIN app.agent_runs r ON r.id = s.run_lock_run_id`);',
+    'await q.query(sql`SELECT DISTINCT k FROM unnest(${keys}::text[]) AS t(k)`);',
+    'await q.query(sql`SELECT * FROM app.agent_runs r, LATERAL jsonb_array_elements(r.final_event) AS e`);',
+    'await q.query(sql`WITH recent AS (SELECT * FROM app.agent_runs) SELECT * FROM recent`);',
+    'await q.query(sql`SELECT * FROM (VALUES (1), (2)) AS v(x)`);',
+    "await q.query(sql`SELECT extract(epoch FROM accepted_at), substring(t FROM 1 FOR 3), trim(both ' ' FROM t) FROM app.agent_runs`);",
+    "await q.query(sql`SELECT * FROM app.agent_runs WHERE settle_result IS DISTINCT FROM 'refunded'`);",
+    'await q.query(sql`SELECT * FROM app.agent_runs a JOIN app.agent_cards c USING (run_id)`);',
+    "await q.query(sql`SELECT 'FROM app.orders' AS t FROM agent_runs`);",
+    'await q.query(sql`SELECT * FROM app.agent_runs ORDER BY id USING >`);',
+    'await q.query(sql`SELECT g FROM generate_series(1, 3) g`);',
+  ]);
+});
+
+it('[AC-CT-06zu#6][BR-AI-02] agent/** 不绕过构造器：executeQuery / CompiledQuery、db.schema.*、解构或 .call / .bind 间接取表方法与 namespace、db[变量]、改名传递 sql 一律违规，主干零违规；样例自证', () => {
+  const scan = scanAgent(agentSources());
+  expect(kindOf(scan.violations, '⑤')).toEqual([]);
+  // The scan is not vacuous: it sees agent's direct table / withSchema / namespace calls.
+  expect(scan.directCalls).toBeGreaterThan(0);
+
+  expectCaught('⑤', [
+    "await db.executeQuery(CompiledQuery.raw('DELETE FROM app.users'));",
+    "import { CompiledQuery as C } from 'kysely';\nawait run(C.raw('SELECT 1'));",
+    "await db.schema.createTable('app.orders').execute();",
+    "await db.schema.dropTable('agent_runs').execute();",
+    "await db.schema['alterTable']('agent_runs').execute();",
+    'const { schema } = db;',
+    "const { insertInto } = db;\nawait insertInto('users').execute();",
+    'const { selectFrom: from } = trx;',
+    "await db.insertInto.call(db, 'users').execute();",
+    'const insert = db.insertInto.bind(db);',
+    "await db['selectFrom'].apply(db, ['users']);",
+    "const m = 'insertInto';\nawait db[m]('users').execute();",
+    "const { namespace } = redis;\nnamespace('orders');",
+    "redis.namespace.call(redis, 'orders');",
+    'const ns = redis[key];',
+    'const s = sql;\nawait q.query(s`DELETE FROM app.users`);',
+    'run(sql);',
+  ]);
+  expectClean([
+    "await db.selectFrom('agent_runs').selectAll().execute();",
+    'const write = this.ctx.card.bind(this.ctx); read.call(store, a);',
+    'const first = rows[0]; const it = body[Symbol.asyncIterator]();',
+    "import { sql } from 'kysely';\nawait sql`SELECT 1`.execute(db);",
+    'const v = schema.parse(x); const s = validator.schema;',
+    'interface Port { namespace(name: string): Ns; insertInto: number }',
+  ]);
 });
