@@ -38,6 +38,14 @@
 //   requested → no loop. Shutdown awaits loop.stop() before services.stop() (services.stop runs
 //   even when loop.stop rejects). COULI_EXIT_AFTER_INIT=1 and the api / stream / admin / payout
 //   entries never start it.
+// B3-08k (D10-294; rule tests: test/spec/agent/foreign-db-handoff/**): agent never hands its
+//   database handle to another module's function. createAgentSweeperRuntime builds the limits
+//   with createQuotaLimitsSource({reader: deps.contentReader, logger}) and exposes that one source
+//   as runtime.limits (the finalizer's); forWorker()'s provider also injects
+//   agentContentReaderToken() (app.module provides content's reads, assembled there) and passes it
+//   as deps.contentReader. Without a DB handle the provider stays null with one
+//   'agent_sweeper_disabled' line, as before. forStream: the AGENT_CALLER provider injects
+//   agentCallerReaderToken() (./stream/mount/caller.ts) instead of options.callerReader.
 //
 // Also compiled by the `test` project: a class decorator only (no parameter decorators or
 // parameter properties; dependencies are injected through factories); erasable syntax only,
@@ -52,9 +60,11 @@ import {
   createPgRunPorts,
   createQuotaLimitsSource,
   runTimingsDefaults,
+  type QuotaLimitsSource,
   type RunTimings,
 } from './stream/pg/index.ts';
 import type { RunTexts } from './stream/run/index.ts';
+import type { AgentContentReader } from './stream/mount/config.ts';
 import { agentDefaultTexts } from './stream/mount/texts.ts';
 import { agentCallerProvider } from './stream/mount/caller.ts';
 import { agentStreamController } from './stream/mount/controller.ts';
@@ -65,6 +75,8 @@ import {
   type AgentStreamRuntime,
 } from './stream/mount/index.ts';
 export { agentDefaultTexts } from './stream/mount/texts.ts';
+export { agentContentReaderToken } from './stream/mount/config.ts';
+export { agentCallerReaderToken } from './stream/mount/caller.ts';
 import {
   createSweeper,
   sweeperDefaults,
@@ -91,6 +103,12 @@ export interface AgentSweeperRuntimeDeps {
   readonly db: Kysely<Database>;
   readonly clock: Clock;
   readonly logger: RootLogger;
+  /**
+   * B3-08k (D10-294): content's reads, assembled by app.module on the worker entry and injected
+   * through agentContentReaderToken(); the finalizer's daily limits read only its configValue
+   * (agent builds no content reader). Optional only until B3-08k is implemented.
+   */
+  readonly contentReader?: AgentContentReader;
 }
 
 /** Test seams of one loop start; production passes nothing. */
@@ -106,6 +124,11 @@ export interface AgentSweeperRuntime {
   readonly loopConfig: AgentSweepLoopConfig;
   /** The one-row sweeper the loop calls row by row (createSweeper with maxPerTick 1). */
   readonly step: Sweeper;
+  /**
+   * B3-08k: the one QuotaLimitsSource given to createPgRunPorts (the finalizer's), over
+   * deps.contentReader. Optional only until B3-08k is implemented (always set afterwards).
+   */
+  readonly limits?: QuotaLimitsSource;
   start(options?: AgentSweeperStartOptions): AgentSweepLoop;
 }
 

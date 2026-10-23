@@ -55,6 +55,11 @@
 //   for the runs in progress to end (at most timings.runMaxMs plus a margin; a run still live after
 //   that is left to the worker's sweeper), then resolves. It never closes the database. The
 //   runtime is a plain (not frozen) object; whoever stops it calls runtime.close() through it.
+// B3-08k (D10-294; rule tests: test/spec/agent/foreign-db-handoff/**): "content's reader" above is
+//   deps.contentReader (app.module's, never built here): limits and the consent version over its
+//   configValue, the switches over createAgentConfigReader({clock, content: deps.contentReader}),
+//   and the assembly's context.contentReader. agentStreamProvider also injects
+//   agentContentReaderToken() and passes its value on as deps.contentReader.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports,
 // relative imports with `.ts`, no process.env, no import of identity.
@@ -110,7 +115,7 @@ import {
   type RunRegistry,
   type RunTexts,
 } from '../run/index.ts';
-import { createAgentSwitchReader } from './config.ts';
+import { createAgentSwitchReader, type AgentContentReader } from './config.ts';
 import { agentDefaultTexts, agentText } from './texts.ts';
 import type { AgentCallerReaderFactory } from './caller.ts';
 import type { AgentStreamAssemblyFactory, AgentStreamProvidedPorts } from './assembly.ts';
@@ -138,6 +143,9 @@ export type {
 export { createAgentBodyAssembly } from './body.ts';
 export type { AgentBodyAssembly, AgentBodyAssemblyDeps } from './body.ts';
 
+export { agentContentReaderToken, createAgentConfigReader } from './config.ts';
+export type { AgentConfigReaderDeps, AgentContentReader } from './config.ts';
+
 /** identity's createAiConsentReader (B1-02r), handed in by app.module (agent never imports it). */
 export type AgentConsentReaderFactory = (options: {
   readonly db: Kysely<Database>;
@@ -152,6 +160,14 @@ export interface AgentStreamRuntimeDeps {
   /** Redis fast path of cancel signals; absent without Redis. */
   readonly signals?: Pick<RunRegistry, 'requestCancel' | 'cancelRequested'>;
   readonly consentReader: AgentConsentReaderFactory;
+  /**
+   * B3-08k (D10-294): content's reads, assembled by app.module and injected through
+   * agentContentReaderToken() (agentStreamProvider passes it on). The switches of access, identity
+   * and the run guard (createAgentConfigReader over it), the consent version and the daily limits
+   * read only through it, and the business assembly gets it as context.contentReader; the runtime
+   * builds no content reader of its own. Optional only until B3-08k is implemented.
+   */
+  readonly contentReader?: AgentContentReader;
 }
 
 /** Test seams only; production passes none. */

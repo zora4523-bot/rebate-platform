@@ -21,6 +21,20 @@ export interface AgentCallerReader {
 
 export type AgentCallerReaderFactory = (options: { db: Kysely<Database> }) => AgentCallerReader;
 
+/**
+ * B3-08k (D10-294; rule tests: test/spec/agent/foreign-db-handoff/**): the DI token of the
+ * AgentCallerReader app.module builds on the stream entry (identity's createAgentCallerReader over
+ * the primary handle's app schema); its value is null there without a database handle. The
+ * AGENT_CALLER provider injects it and no longer takes a reader factory
+ * (AgentStreamModuleOptions.callerReader goes away): it never hands a database handle to identity.
+ * New wording of the old
+ * "no database → null": without a caller reader (the token's value null) AGENT_CALLER is null,
+ * whether a database handle exists or not. The same symbol on every call.
+ */
+export function agentCallerReaderToken(): symbol {
+  throw new Error('NotImplemented: agentCallerReaderToken');
+}
+
 export interface AgentStreamRequest {
   readonly id: string;
   readonly ip: string;

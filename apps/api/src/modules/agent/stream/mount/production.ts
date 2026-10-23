@@ -16,6 +16,10 @@
 // waits for B3-08e / B3-08i), each behind agent.tools.<name>.enabled through the same content
 // reader; card_id references read agent_cards (createOrderCardRefs over context.db) and the
 // by-number budget is createOrderNoQuota over ports.dailyCounter (./orders.ts).
+// B3-08k (D10-294; rule tests: test/spec/agent/foreign-db-handoff/**): "the content configuration
+// reader" above is context.contentReader (app.module's, through the runtime): the search platform
+// switches, the page_guide routes, the tool switches, the review budget and the order budget are
+// read through it; no content reader is built from context.db.
 import { bridge } from '@couli/contracts-ts';
 import { createContentReader } from '../../../content/index.ts';
 import { systemScheduler } from '../../../platform/index.ts';
