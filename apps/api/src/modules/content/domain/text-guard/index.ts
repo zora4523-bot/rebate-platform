@@ -49,7 +49,9 @@ const STRIPPED_CATEGORIES = /[\p{Z}\p{P}\p{S}\p{Mn}\p{Mc}\p{Me}\p{Cf}\p{Cc}]/gu;
 const ASCII_UPPER = /[A-Z]/g;
 // 规划/08 BR-TEXT-12：模板变量写作 `{name}`。
 const PLACEHOLDER = /\{([a-z][a-z0-9_]*)\}/g;
-const AGREEMENT_PREFIXES = ['privacy.', 'perm.'] as const;
+// BR-TEXT-14 表 D：协议类内容（后台权限点 content.agreement，保存须填法务确认人）的键前缀；表 C 的
+// 实名认证同意弹层 `real_name.consent.` 同按协议类管理（编排裁定 D10-204）。只在落 ordinary 段后才看前缀。
+const AGREEMENT_PREFIXES = ['privacy.', 'perm.', 'real_name.consent.'] as const;
 
 /**
  * BR-TEXT-13 的匹配用归一化：① NFKC ② 去 Default_Ignorable_Code_Point ③ 去类别 Z、P、S、Mn、Mc、
@@ -125,7 +127,8 @@ function segmentCovers(segment: TextKeySegment, key: string): boolean {
 
 /**
  * 文案键分类（specs/fund-term-keys.yaml，BR-TEXT-12 / BR-TEXT-14）：只落 ordinary 的键才不是资金术语；
- * 其中 `privacy.` / `perm.` 开头的归协议类。两段都落或都不落按资金术语处理。
+ * 其中 `privacy.` / `perm.` / `real_name.consent.`（D10-204）开头的归协议类。两段都落或都不落按资金术语
+ * 处理，资金术语判定先于前缀判定。
  */
 export function classifyTextKey(key: string, fundTermKeys: FundTermKeys): TextKeyClass {
   const inFund = segmentCovers(fundTermKeys.fund_terms, key);

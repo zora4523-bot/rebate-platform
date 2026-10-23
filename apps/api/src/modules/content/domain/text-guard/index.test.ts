@@ -94,6 +94,34 @@ it('[AC-F1-02r#17] key classification', () => {
   expect(classifyTextKey('unknown', KEYS)).toBe('fund_terms');
 });
 
+const CONSENT_KEYS: FundTermKeys = {
+  fund_terms: {
+    prefixes: ['real_name.consent.fund.'],
+    keys: ['real_name.consent.both'],
+    notify_templates: [],
+  },
+  ordinary: {
+    prefixes: ['real_name.'],
+    keys: ['real_name.consent.title', 'real_name.consent.both'],
+    notify_templates: [],
+  },
+  exempt: [],
+};
+
+it('[AC-F1-02zzi#1] real_name.consent. keys classify as agreement only via the exact prefix', () => {
+  expect(classifyTextKey('real_name.consent.title', CONSENT_KEYS)).toBe('agreement');
+  expect(classifyTextKey('real_name.consent.point.1', CONSENT_KEYS)).toBe('agreement');
+  expect(classifyTextKey('real_name.consent', CONSENT_KEYS)).toBe('general');
+  expect(classifyTextKey('real_name.consentx.title', CONSENT_KEYS)).toBe('general');
+  expect(classifyTextKey('real_name.other', CONSENT_KEYS)).toBe('general');
+});
+
+it('[AC-F1-02zzi#1] fund-term classification still wins over the real_name.consent. prefix', () => {
+  expect(classifyTextKey('real_name.consent.fund.amount', CONSENT_KEYS)).toBe('fund_terms');
+  expect(classifyTextKey('real_name.consent.both', CONSENT_KEYS)).toBe('fund_terms');
+  expect(classifyTextKey('real_name.consent.title', KEYS)).toBe('fund_terms');
+});
+
 it('[AC-F1-02r#21] template classification', () => {
   expect(classifyTemplate('CREDITED', KEYS)).toBe('fund_terms');
   expect(classifyTemplate('SMS_CODE', KEYS)).toBe('general');
