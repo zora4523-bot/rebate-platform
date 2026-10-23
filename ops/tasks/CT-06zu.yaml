@@ -65,6 +65,7 @@ type: guard-change
 # app.module 里 agent_daily 与 catalog-cache——上线即绿。测试 6 条 [AC-CT-06zu#1..6]，各自先断言主干零违规、再断言确实扫到东西、再跑
 # 违规 / 合法内存样例自证。Codex 至 10-30 不可用：新鲜独立 Claude 写、另一新鲜独立 Claude 复审（approvals #36）。非 task 分支，
 # 不带证据文件，编排按 approvals #24 核对后加标签。
+# 未覆盖（第 4 轮评审补记）：.schema 之后用非字面量下标调用 DDL（t.schema[k](…)、['drop' + 'Table']）；从 .schema 解构出 DDL 方法后直接调用（const { dropTable } = t.schema / { schema: { dropTable } } = t）；插值之后的 SET ROLE。
 refs: [BR-AI-02]
 refs_hash:
   BR-AI-02: 61014cc4d222
