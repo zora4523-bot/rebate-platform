@@ -8,8 +8,9 @@
 // Always: Ajv2020 strict validation against --schema.
 // Review outputs (the schema has `findings`): non-empty summary; every finding and every
 //   `out_of_scope` entry has a concrete scenario, a `file:line` and a stable key
-//   `<file>#<function>#<rule id>`; no key is in both lists. Only `findings` decide the verdict:
-//   `pass` with an S0 / S1 finding is invalid, S0 / S1 entries of `out_of_scope` never count.
+//   `<file>#<function>#<rule id>` (the rule id may contain `#`); no key is in both lists. Only
+//   `findings` decide the verdict: `pass` with an S0 / S1 finding is invalid, S0 / S1 entries
+//   of `out_of_scope` never count.
 // --refs (spec-test reviews; the task's BR refs, 规划/11 §2.5 owner decision 2026-10-02): a
 //   finding whose `rule` cites only BR ids outside the refs belongs in `out_of_scope`. It is
 //   reported as a warning and does not count toward the verdict (it neither forces `fail` nor
@@ -181,7 +182,10 @@ export function gitLineChecker(base: string, cwd: string): LineChecker {
   };
 }
 
-const KEY_PATTERN = /^[^#\s]+#[^#\s]+#[^#\s]+$/;
+// `<file>#<function>#<rule id>`: the file is everything before the first `#` and the function
+// has no `#`; the rule id may itself contain `#` (an AC id such as `AC-F1-02r#18`, D10-234) but
+// neither starts nor ends with one.
+const KEY_PATTERN = /^[^#\s]+#[^#\s]+#[^#\s](?:\S*[^#\s])?$/;
 const BR_ID = /BR-[A-Z]+-[0-9]+/g;
 
 /** BR ids a finding's `rule` cites, when none of them is in `refs` (else an empty list). */
@@ -260,7 +264,7 @@ export function reviewProblems(
     if (f.file.trim() === '' || f.line < 1) errors.push(`${at}: needs file and line >= 1`);
     if (!KEY_PATTERN.test(f.key)) {
       errors.push(`${at}: key must be "<file>#<function>#<rule id>" without spaces`);
-    } else if (f.key.split('#')[0] !== f.file) {
+    } else if (f.key.slice(0, f.key.indexOf('#')) !== f.file) {
       errors.push(`${at}: key must start with the same path as "file"`);
     }
   };

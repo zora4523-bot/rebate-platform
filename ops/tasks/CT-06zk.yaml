@@ -1,0 +1,22 @@
+id: CT-06zk
+repo: rebate-platform
+title: CT-06zk：validate-output 的 key 允许规则编号部分含 #（AC 编号如 AC-F1-02r#18），文件与函数部分照旧
+type: guard-change
+# 2026-10-23 入账（ops 线，编排裁定 D10-234，10:48 派工）。起因：tools/agent/validate-output.ts 的 KEY_PATTERN 要求 key 恰好三段
+# `<文件>#<函数>#<规则编号>`，AC 编号自带 #（如 classification.test.ts#AC-F1-02r#18#agreement-prefix-oracle）被判成四段而拒收，
+# content 的 F1-02zzi 评审连跑 3 次结论 pass 都按无产出处理（couli-runs/F1-02zzi/review-claude-independent.json.rejected）。
+# 做法：文件部分到第一个 # 为止（与 file 字段比对也按第一个 # 切），函数或符号部分不含 #，规则编号部分可以含 #，但首尾不能是 #；
+# 缺文件、缺函数、缺规则编号、含空白的照旧拒收（原有「src/other.ts#split」被拒的用例不变）。README 同步。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/agent/validate-output{,.test}.ts'
+  - 'tools/agent/README.md'
+  - 'ops/tasks/CT-06zk.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

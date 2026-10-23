@@ -230,6 +230,38 @@ it('every finding needs a scenario, a file:line and a stable key', () => {
   ).toContain('summary: empty');
 });
 
+it('[D10-234] a rule id that carries its own # (an AC id) is a valid key; missing parts are not', () => {
+  const withKey = (key: string): string => {
+    const review = validReview();
+    const finding = review.findings[0];
+    if (finding === undefined) throw new Error('fixture has no finding');
+    finding.key = key;
+    return reviewProblems(review, { money: false }).errors.join('\n');
+  };
+  const file = validReview().findings[0]?.file ?? '';
+  expect(file).not.toBe('');
+  // The case of F1-02zzi: rule id AC-F1-02r#18 plus a suffix, so four `#`-separated parts.
+  expect(withKey(`${file}#AC-F1-02r#18#agreement-prefix-oracle`)).toBe('');
+  expect(withKey(`${file}#split#AC-B1-01zzj-DEPS#7`)).toBe('');
+  const malformed = 'key must be "<file>#<function>#<rule id>"';
+  // No file part, no function part, no rule id, a rule id that starts or ends with `#`, spaces.
+  for (const key of [
+    '#split#BR-CALC-21',
+    `${file}##BR-CALC-21`,
+    `${file}#split`,
+    `${file}#split#`,
+    `${file}#split##18`,
+    `${file}#split#AC-F1-02r#`,
+    `${file}#split#AC-F1-02r #18`,
+  ]) {
+    expect(withKey(key), key).toContain(malformed);
+  }
+  // The file part ends at the first `#`: a key naming another file is still refused.
+  expect(withKey('src/other.ts#split#AC-F1-02r#18')).toContain(
+    'key must start with the same path as "file"',
+  );
+});
+
 it('a pass verdict next to S0/S1 findings is an error, not a usable output', () => {
   const result = reviewProblems({ ...validReview(), verdict: 'pass' }, { money: false });
   expect(result.warnings).toEqual([]);
