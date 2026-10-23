@@ -40,7 +40,7 @@ function variants(phone: string): string[] {
     `${a}-${b}-${c}`,
     ` ${a} ${b} ${c} `,
     `${a}–${b}–${c}`,
-    `${a}​${b}${c}`,
+    `${a}\u200B${b}${c}`,
     fullWidth,
     phone,
   ];
