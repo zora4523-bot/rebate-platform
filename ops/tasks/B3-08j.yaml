@@ -9,7 +9,7 @@ type: impl
 # Codex 至 10-30 不可用：规则测试由新鲜独立 Claude 写（approvals #36）。风险 RV2（db/**）。
 refs: [BR-AI-02]
 refs_hash:
-  BR-AI-02: d14ca044d0e7
+  BR-AI-02: 40bc4f6f4109
 deps: [B3-08g]
 paths:
   - 'db/seeds/**'

@@ -14,7 +14,7 @@ type: guard-change
 # 非 task 分支 chore/guard-change-CT-06zu，test/spec 只新增、不带证据文件，编排按 approvals #24 核对后加标签。
 refs: [BR-AI-02]
 refs_hash:
-  BR-AI-02: d14ca044d0e7
+  BR-AI-02: 40bc4f6f4109
 deps: []
 paths:
   - 'test/spec/agent/write-scope/**'
