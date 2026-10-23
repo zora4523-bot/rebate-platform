@@ -1,0 +1,32 @@
+id: F1-06zu
+repo: rebate-platform
+title: 后台未实现接口占位（D10-284）——contracts-ts 生成器从 openapi.yaml 导出 x-implementation planned 的 operationId 清单（生成文件，不手写）；后台各页面 / 顶栏一框搜声明自己依赖的读接口，依赖里有 planned 操作时菜单照常、页面显示「功能开发中」占位，不发请求、不弹错误；接口去掉 planned 重新生成后自动恢复。清单经 createAdminShell 的新选项传入，只有正式入口 main.tsx 传生成清单，测试与嵌入不传即不屏蔽
+type: impl
+# 2026-10-24 入账（前端线 f1-frontend-7，编排裁定 D10-284：staging 上 10 个仍 planned 的后台接口 404——dashboard、invite-rewards、order-syncs（含 limits）、orders、rights-imports、risk-rules、search、union-accounts（含 alert-phones）——页面点进去报错）。
+# 不改 contracts/**（只读 openapi.yaml 的 x-implementation 标记），不占契约槽。冻结的页面测试直接调用 createAdminShell 且不传新选项，行为不变。
+# Codex 用量上限至 10-30：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude。落地后通知 ops 重新 build:web 部署 admin-stg。
+refs: []
+refs_hash: {}
+deps: [F1-06zb]
+paths:
+  - 'packages/contracts-ts/scripts/codegen.ts'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/planned-operations.test.ts'
+  - 'packages/contracts-ts/src/index.ts'
+  - 'apps/admin/src/main.tsx'
+  - 'apps/admin/src/shell.ts'
+  - 'apps/admin/src/shell-options.ts'
+  - 'apps/admin/src/App.tsx'
+  - 'apps/admin/src/components/planned/**'
+  - 'apps/admin/src/components/search/**'
+  - 'apps/admin/src/layout/**'
+  - 'apps/admin/src/texts/shell.ts'
+test_paths:
+  - 'test/spec/frontend/admin-planned/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-planned/**'
+status: todo
+pr: null
