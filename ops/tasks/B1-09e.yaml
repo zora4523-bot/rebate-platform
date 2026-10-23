@@ -18,7 +18,7 @@ paths:
 test_paths:
   - 'test/spec/db/orders-ops/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/db/orders-ops/**'
