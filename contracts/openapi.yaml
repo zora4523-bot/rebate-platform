@@ -14474,7 +14474,6 @@ paths:
         version of the whole item, the `expected_version` of the writes (0 = never written).
         At most 10 numbers (BR-ID-24 细则).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -14543,7 +14542,6 @@ paths:
         reason) for every accepted call. The response is the list as GET returns it now. No
         Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -14636,7 +14634,6 @@ paths:
         alerts then, BR-ID-24 ②). Writes an audit record (action union_alert_phone_remove, the
         masked number). The response is the list as GET returns it now. No Idempotency-Key.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003

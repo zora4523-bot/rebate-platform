@@ -9882,6 +9882,118 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "adminListUnionAlertPhones": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    }
+  },
+  "adminAddUnionAlertPhone": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/union-accounts/alert-phones.",
+      "additionalProperties": false,
+      "required": [
+        "phone",
+        "expected_version"
+      ],
+      "properties": {
+        "phone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "description": "The number as entered; normalized by BR-ID-05 细则 before checking."
+        },
+        "expected_version": {
+          "allOf": [
+            {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "description": "Version of the key's current value: 0 = never written (value null, the default applies);\nplus 1 on every change or rollback, never going back. The CAS value `expected_version`\nof the writes.\n"
+            }
+          ],
+          "description": "The `version` of the list as the console showed it; a mismatch is 20902."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Optional free-text reason, kept in the audit record (BR-ID-24 细则, BR-ATTR-02 细则)."
+        }
+      }
+    }
+  },
+  "adminRemoveUnionAlertPhone": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "phone_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "description": "Identifier of one alert phone, the HMAC of the normalized number as the server encodes it; opaque to the console."
+        },
+        "expected_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "Version of the key's current value: 0 = never written (value null, the default applies);\nplus 1 on every change or rollback, never going back. The CAS value `expected_version`\nof the writes.\n"
+        }
+      },
+      "required": [
+        "phone_id",
+        "expected_version"
+      ],
+      "additionalProperties": false
+    }
+  },
   "adminListUnionPids": {
     "headers": {
       "type": "object",

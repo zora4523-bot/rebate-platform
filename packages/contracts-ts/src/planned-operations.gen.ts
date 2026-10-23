@@ -4,7 +4,6 @@
 
 /** operationIds still marked `x-implementation: planned` (no route yet), sorted. */
 export const plannedOperations: ReadonlySet<string> = new Set([
-  "adminAddUnionAlertPhone",
   "adminApproveClaimItem",
   "adminChangeInviter",
   "adminChangeUserLevel",
@@ -30,12 +29,10 @@ export const plannedOperations: ReadonlySet<string> = new Set([
   "adminListRightsImports",
   "adminListRiskRules",
   "adminListUnionAccountOptions",
-  "adminListUnionAlertPhones",
   "adminListUserDataExports",
   "adminReassignOrder",
   "adminRegisterAppeal",
   "adminRejectClaimItem",
-  "adminRemoveUnionAlertPhone",
   "adminResolveAppeal",
   "adminSearch",
   "adminUnholdOrder",
