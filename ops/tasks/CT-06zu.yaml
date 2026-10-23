@@ -1,0 +1,26 @@
+id: CT-06zu
+repo: rebate-platform
+title: CT-06zu：agent 写表与 Redis 键门禁（AST 规则测试）——agent 模块的 Kysely 写与 sql 模板原生写语句只许 app.agent_* 表；Redis 命名空间只许 agent_ 前缀（含 app.module 交给 agent 端口的命名空间）（D10-287、D10-288 Q1）
+type: guard-change
+# 2026-10-24 入账（agent 线，编排裁定 D10-287，D10-275 ② 取 A；D10-288 Q1 扩到 Redis 键）。BR-AI-02 ③ 白名单放行 platform 的基础设施
+# 部分（含数据库连接与 Redis），回写写明「数据库与 Redis 只读写 Agent 自己的表 / 键」；depcruise 只能按文件判定，管不到写哪张表、
+# 用哪个键，故以 TypeScript AST 静态扫描的规则测试守住（照 B3-08g imports.test.ts、CT-06zt 先例；tools/** 不能用编译器 API）。
+# 口径：apps/api/src/modules/agent/**（排除 *.test.ts）中 ① Kysely insertInto / updateTable / deleteFrom / mergeInto / replaceInto 的表名
+# 须为字面量且以 agent_ 开头，非字面量即违规；② sql 模板（sql`…` / sql.raw）里的写语句（INSERT INTO / UPDATE / DELETE FROM / MERGE INTO /
+# TRUNCATE）目标须为 app.agent_*；③ RedisHandle.namespace(name) 的 name 须为 agent_ 开头的字面量；④ apps/api/src/app.module.ts 里交给
+# agent 端口的命名空间常量须 agent_ 前缀。主干现状：写库全为 agent_* 表，命名空间 agent_cancel、agent_daily——上线即绿。测试自带违规 /
+# 合法样例自证。Codex 至 10-30 不可用：新鲜独立 Claude 写、另一新鲜独立 Claude 复审（approvals #36）。非 task 分支，不带证据文件，
+# 编排按 approvals #24 核对后加标签。
+refs: [BR-AI-02]
+refs_hash:
+  BR-AI-02: 61014cc4d222
+deps: []
+paths:
+  - 'test/spec/agent/write-scope/**'
+  - 'ops/tasks/CT-06zu.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify:fast'
+status: todo
+pr: null
