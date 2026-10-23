@@ -29,9 +29,10 @@
 // prod hands out no Taobao path until it is verified (link-open-wiring.ts admission).
 // B1-19d (BR-ATTR-02, BR-ATTR-07, BR-ATTR-08, BR-ID-17): the slot is the scene's active slot of
 // the account this open uses (union-auth-reads.ts authAccountId: the unreleased binding's, else
-// the account of the platform's current self_buy slot, else its first account) — read with the
-// union port's account filter, so another account's earlier-activated slot never wins and never
-// stands in when the account has none (50301). taobaoTaoke's account check stays as the last line.
+// the account of the platform's current self_buy slot, else its earliest registered account by
+// union_accounts created_at, id ascending) — read with the union port's account filter, so
+// another account's earlier-activated slot never wins and never stands in when the account has
+// none (50301). taobaoTaoke's account check stays as the last line.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { UnionPidRow } from '../../union/index.ts';

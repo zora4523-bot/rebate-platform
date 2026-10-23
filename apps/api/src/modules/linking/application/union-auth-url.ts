@@ -13,7 +13,8 @@
 // selects scoped by app_id, plus union's read-only active-pid port; this module writes only
 // union_auth_sessions. The site authorization judged is that of the union account this
 // authorization actually uses (the unreleased binding's, else the platform's active self_buy pid's,
-// else the platform's first account in the pid service's order), never "any account still valid".
+// else the platform's earliest registered account by union_accounts created_at, id ascending),
+// never "any account still valid".
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
