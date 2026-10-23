@@ -1,0 +1,21 @@
+id: B1-22m
+repo: rebate-platform
+title: 淘宝转链 authorize 改为 08 BR-ATTR-05 顺序：先选账号 → ⑥ 站长授权门 / 用户授权 → ⑦ 取该账号推广位（推广位只在放行分支读取）；该平台没有任何联盟账号时一律 50301（D10-239 T3c）；open 与 POST /v1/links/convert 共用
+type: impl
+# 2026-10-23 入账（union 线，编排裁定 D10-239 T2 + T3c；评估 eval-1108.md ②）。只改 linking/application/link-open-taobao.ts 的 authorize 与头部注释；现有冻结用例无需改断言；返回码在「无推广位 + 授权不满足」同时出现时由 50301 变为 30101 / 30102 / 30153 / 10001（逐情形表写进 PR 说明，fe 核对客户端分支）。补约 6 条冻结用例（open 与 convert）。Codex 不可用至 10-30，测试由独立 Claude（approvals #36）。
+refs: [BR-ATTR-05]
+refs_hash:
+  BR-ATTR-05: 3583e10c3567
+deps: [B1-19d]
+paths:
+  - 'apps/api/src/modules/linking/application/link-open-taobao.ts'
+  - 'apps/api/src/modules/linking/application/link-open-taobao.test.ts'
+test_paths:
+  - 'test/spec/linking/open-taobao-auth-order/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/open-taobao-auth-order/**'
+status: todo
+pr: null
