@@ -17,7 +17,7 @@ paths:
   - 'apps/api/scripts/union-pids.ts'
 test_paths:
   - 'test/spec/db/union/pids-active-unique/**'
-  - 'test/spec/union/pids-by-account/activation.int.test.ts'
+  - 'test/spec/union/pids-by-account/queries.int.test.ts'
 impl: claude
 tester: claude-independent
 accept:
