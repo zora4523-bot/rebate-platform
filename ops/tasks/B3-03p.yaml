@@ -1,0 +1,30 @@
+id: B3-03p
+repo: rebate-platform
+title: 启用模型路径前的收尾接线：降级 / 续答 / 确定性路径与报价卡内商品记出卡回执，输出按句审核时限按 app 读配置并与配置读取共用一个时限
+type: impl
+# 2026-10-23 入账（agent2-acct4）。B3-03n（#1364）只在模型工具调用路径记回执；其实现回报与独立 Claude 资金评审留下的 S2（couli-runs/followups/staging-b1-01zc-zd.md 第 49、51–53 条）：
+# ① 降级关键词搜索、意图 / 再便宜点续答、确定性路径下发的 product_list 与 rebate_quote 卡内商品同样经 recordDelivered 记回执（被上限截掉、取消未写出的不记），之后「第 N 个」/ card_id 解析到这批卡；
+# ② 输出按句审核的时限按 app 每次读 agent.safety.timeout_ms（现为建构时固定预算，stream/mount/review.ts）；
+# ③ 读取该配置的等待计入同一审核时限，不再与审核时限叠加；读取失败仍 fail-close。
+# 当前生产固定 no_model，均不可达；B3-03k 启用模型前须合并。本地评测 orchestrator/eval/local.ts 的回执（第 50 条）不在本任务。
+# 分工：独立 Claude 写规则测试（Codex 至 10-30 不可用，approvals #36；恢复后可改回 codex），Claude Opus 5.5 实现，独立 Claude / Codex 评审。风险 RV1（agent/**）。
+refs: [BR-AI-05, BR-AI-18]
+refs_hash:
+  BR-AI-05: ee8fd647fd43
+  BR-AI-18: 01b60e6ca170
+deps: [B3-03n]
+paths:
+  - 'apps/api/src/modules/agent/orchestrator/core/**'
+  - 'apps/api/src/modules/agent/orchestrator/degraded/**'
+  - 'apps/api/src/modules/agent/orchestrator/deterministic/**'
+  - 'apps/api/src/modules/agent/orchestrator/results/**'
+  - 'apps/api/src/modules/agent/stream/mount/**'
+test_paths:
+  - 'test/spec/agent/stream-model-prereq-2/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/stream-model-prereq-2/**'
+status: todo
+pr: null
