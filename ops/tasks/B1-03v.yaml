@@ -5,6 +5,7 @@ type: impl
 # 草稿 2026-10-23（身份与风控线 identity-lane）。CT-26e 用 changed_at 与最近一条已结案申诉的 closed_at 判处罚边界，只能分出「最近一次」边界：处罚 A 维持 2 次、到期后处罚 B 维持 1 次时，B 的第 2 次会被算成第 4 次误拒 30418。
 # 当前没有把申诉结案为 upheld / revoked 的代码（后台结案按 CT-24r 契约未实现），这个缺口线上碰不到；后台申诉结案的实现任务应依赖本任务。存量行 penalty_started_at 可空，空时退回 CT-26e 的近似口径。
 # 迁移号落地时取主干最大 + 1（D10-116）；schema.sql / db.gen.ts 在测试机快照。冻结中再被冻结（延长）是否算新处罚待规划确认，确认前按「不算新处罚」写（不重置 penalty_started_at）。
+# 2026-10-23 tester 改 claude-independent（approvals #36；编排 10:27：Codex 至 10-30 01:09 不可用）。
 refs: []
 refs_hash: {}
 deps: [CT-26e]
@@ -19,7 +20,7 @@ paths:
 test_paths:
   - 'test/spec/risk/appeal-attempts/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/risk/appeal-attempts/**'
