@@ -144,6 +144,17 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   // overflow a timestamp), not a business value. config.business like the amounts (D-E2).
   // Not one of INVITE_REWARD_POSITIVE_KEYS: the enable check does not read it.
   businessInteger('growth.invite_reward.eligibility_days', 1, 3650),
+  // B2-06b payout channel keys (规划/08 BR-WDR-18 / 22 / 28; the conservative defaults live in
+  // payout's reader, readPayoutChannelConfig): caps as integer fen / bp, the business scene, the
+  // query schedule and the three BR-WDR-28 lists (empty until the sandbox run, D10-230).
+  businessInteger('payout.single_cap_fen', 1),
+  businessInteger('payout.daily_cap_fen', 1),
+  businessInteger('payout.watermark_usable_bp', 0, 10000),
+  spec('payout.biz_scene', 'string', 'config.business'),
+  spec('payout.query_schedule', 'object', 'config.business'),
+  spec('payout.definite_fail_codes', 'object', 'config.business'),
+  spec('payout.payer_side_codes', 'object', 'config.business'),
+  spec('payout.query_status_map', 'object', 'config.business'),
 ]);
 
 const VISIBLE: readonly ConfigItemSpec[] = Object.freeze(

@@ -173,8 +173,22 @@ export const INVITE_ELIG: readonly Expected[] = [
 export function inviteNow(): readonly Expected[] {
   return [...INVITE_CFG, ...INVITE_ELIG];
 }
+// B2-06bz (D10-244 ②、D10-296): the B2-06b payout channel keys, registered right after the growth
+// group in this order. The two caps and the watermark are integers (number), biz_scene a string,
+// the other four JSON (object); all config.business, editable, options null. Not part of
+// expectedNow(), which stays the three groups before them.
+export const PAYOUT: readonly Expected[] = [
+  row('payout.single_cap_fen', 'number', 'config.business'),
+  row('payout.daily_cap_fen', 'number', 'config.business'),
+  row('payout.watermark_usable_bp', 'number', 'config.business'),
+  row('payout.biz_scene', 'string', 'config.business'),
+  row('payout.query_schedule', 'object', 'config.business'),
+  row('payout.definite_fail_codes', 'object', 'config.business'),
+  row('payout.payer_side_codes', 'object', 'config.business'),
+  row('payout.query_status_map', 'object', 'config.business'),
+];
 export const expectedOf = (key: string): Expected => {
-  const found = expectedNow().find((entry) => entry.key === key);
+  const found = [...expectedNow(), ...PAYOUT].find((entry) => entry.key === key);
   expect(found, key).toBeDefined();
   return found!;
 };

@@ -3,7 +3,8 @@
 // F1-02zi / F1-02zm / F1-02zw: #1 compares with expectedNow() (EXPECTED + the BR-FUND-04 settle.*
 // group of F1-02zj + the BR-INV-24 growth.invite_reward.* group of F1-02zn / F1-02zx), #3 reads an
 // enum item's seed as a JSON string, #56 pins SETTLE, #57 the five invite reward keys and #58
-// growth.invite_reward.eligibility_days as the last item. F1-02zt：过渡已收紧, every group present.
+// growth.invite_reward.eligibility_days right after ip_window_hours. F1-02zt：过渡已收紧, every group present.
+// B2-06bz (D10-244 ②、D10-296): the eight payout.* keys follow the growth group (kit PAYOUT).
 import { expect, it } from 'vitest';
 import {
   configItemSpecOf,
@@ -20,6 +21,7 @@ import {
   FUND_FLAGS,
   INVITE_CFG,
   INVITE_ELIG,
+  PAYOUT,
   SETTLE,
   UNREGISTERED,
   expectedNow,
@@ -45,8 +47,10 @@ it('[AC-F1-10e#1] 裁定 14：注册表恰好是种子里全部非开关键加 a
   expect(seeds.length).toBeGreaterThan(0);
   const fromSeeds = seeds.filter((key) => switchSpecOf(key) === null);
   expect(sorted(keys)).toStrictEqual(sorted([...new Set([...fromSeeds, ...EXTRA])]));
-  // F1-02zt：过渡已收紧: EXPECTED + settle.* + growth.invite_reward.*, all present.
-  expect(sorted(keys)).toStrictEqual(sorted(expectedNow().map((entry) => entry.key)));
+  // F1-02zt：过渡已收紧: EXPECTED + settle.* + growth.invite_reward.* + payout.* (B2-06bz), all present.
+  expect(sorted(keys)).toStrictEqual(
+    sorted([...expectedNow(), ...PAYOUT].map((entry) => entry.key)),
+  );
 });
 
 it.each(EXPECTED.map((entry) => [entry.key, entry] as const))(
@@ -178,9 +182,9 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
   const present = SETTLE.filter((entry) => keys.includes(entry.key));
   expect(present).toHaveLength(SETTLE.length);
   // F1-02zm / F1-02zw: the only keys after this group are the whole growth.invite_reward.* group
-  // inviteNow() (checked key by key in #57 and #58).
+  // inviteNow() followed by the eight payout.* keys (B2-06bz; checked key by key in #57 and #58).
   presentOf(INVITE_CFG, 'growth.invite_reward.*');
-  const inviteTail = inviteNow().map((e) => e.key);
+  const inviteTail = [...inviteNow(), ...PAYOUT].map((e) => e.key);
   expect(keys.slice(EXPECTED.length, EXPECTED.length + SETTLE.length)).toStrictEqual(
     SETTLE.map((entry) => entry.key),
   );
@@ -199,15 +203,16 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
 });
 
 // F1-02zm: the BR-INV-24 细则 growth.invite_reward.* group of F1-02zn is registered whole right
-// after SETTLE, in its own order, followed only by eligibility_days (#58). F1-02zt：过渡已收紧, the
+// after SETTLE, in its own order, followed by eligibility_days and then payout.* (#58). F1-02zt：过渡已收紧, the
 // absent branch is gone.
-it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登记（紧接 settle.* 之后、其后只有 eligibility_days，逐键值类型、options、权限点、可改标记）', () => {
+it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登记（紧接 settle.* 之后、其后是 eligibility_days 与 payout.* 八项，逐键值类型、options、权限点、可改标记）', () => {
   expect(INVITE_CFG).toHaveLength(5);
   const keys = configRegistry().map((spec) => spec.key);
   const present = INVITE_CFG.filter((entry) => keys.includes(entry.key));
   expect(present).toHaveLength(INVITE_CFG.length);
-  // F1-02zw: the tail is inviteNow(), the five keys followed by eligibility_days (checked in #58).
-  const tail = inviteNow();
+  // F1-02zw: the tail is inviteNow(), the five keys followed by eligibility_days (checked in #58),
+  // then the eight payout.* keys (B2-06bz).
+  const tail = [...inviteNow(), ...PAYOUT];
   const head = keys.length - tail.length;
   expect(keys.slice(head)).toStrictEqual(tail.map((entry) => entry.key));
   expect(keys.slice(head, head + INVITE_CFG.length)).toStrictEqual(
@@ -229,9 +234,10 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
 });
 
 // F1-02zw: the BR-INV-24 细则 eligibility period of F1-02zx (08 l.560; 04 §10.1, config.business)
-// is registered as the last item, right after growth.invite_reward.ip_window_hours.
+// is registered right after growth.invite_reward.ip_window_hours; B2-06bz (D10-244 ②、D10-296):
+// the eight payout.* keys follow it directly, in PAYOUT order, and nothing else.
 // F1-02zt：过渡已收紧, the absent branch is gone.
-it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 登记为注册表最后一项（紧接 ip_window_hours，数值、options 为 null、config.business、可改）', () => {
+it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接 ip_window_hours 登记、其后紧接 payout.* 八项（按登记顺序，逐键值类型、权限点、可改标记；数值、options 为 null、config.business、可改）', () => {
   expect(INVITE_ELIG).toHaveLength(1);
   const key = 'growth.invite_reward.eligibility_days';
   expect(INVITE_ELIG[0]!.key).toBe(key);
@@ -239,8 +245,21 @@ it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 登记
   const tail = inviteNow().map((entry) => entry.key);
   expect(tail).toStrictEqual([...INVITE_CFG.map((entry) => entry.key), key]);
   expect(keys.filter((entry) => entry === key)).toHaveLength(1);
-  expect(keys.at(-1)).toBe(key);
-  expect(keys.at(-2)).toBe('growth.invite_reward.ip_window_hours');
+  const at = keys.indexOf(key);
+  expect(keys[at - 1]).toBe('growth.invite_reward.ip_window_hours');
+  expect(keys.slice(at + 1)).toStrictEqual(PAYOUT.map((entry) => entry.key));
+  for (const entry of PAYOUT) {
+    const payoutSpec = registered(entry.key);
+    expect({
+      key: payoutSpec.key,
+      valueType: payoutSpec.valueType,
+      options: payoutSpec.options,
+      permission: payoutSpec.permission,
+      adminEditable: payoutSpec.adminEditable,
+    }).toStrictEqual({ ...entry, options: null });
+    expect(configItemSpecOf(entry.key), entry.key).toBe(payoutSpec);
+    expect(switchSpecOf(entry.key), entry.key).toBeNull();
+  }
   const spec = registered(key);
   expect({
     key: spec.key,
