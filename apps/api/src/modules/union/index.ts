@@ -135,3 +135,6 @@ export {
   UNION_REGISTRY,
   UnionModule,
 } from './union.module.ts';
+// B1-22h: the /admin/v1/union-pids routes, assembled by app.module on the admin entry only.
+export { UnionAdminModule } from './union-admin.module.ts';
+export type { UnionAdminOptions, UnionAuditWriterFactory } from './union-admin.module.ts';

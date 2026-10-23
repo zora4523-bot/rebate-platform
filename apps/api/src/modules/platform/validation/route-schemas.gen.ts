@@ -8203,6 +8203,321 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "adminListUnionPids": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    }
+  },
+  "adminCreateUnionPid": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/union-pids; the new row is always pending.",
+      "additionalProperties": false,
+      "required": [
+        "platform",
+        "union_account_id",
+        "pid",
+        "pid_scene"
+      ],
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "Platform (contracts/enums/platform.yaml platform).",
+          "enum": [
+            "taobao",
+            "jd",
+            "pdd",
+            "meituan",
+            "vip",
+            "douyin",
+            "eleme",
+            "kuaishou",
+            "suning"
+          ]
+        },
+        "union_account_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "site_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[0-9A-Za-z_-]+$",
+              "description": "A union-side identifier (pid / adzone / positionId, or the taobao site_id) as the union shows it."
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Required for taobao; absent or null on every other platform."
+        },
+        "pid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z_-]+$",
+          "description": "A union-side identifier (pid / adzone / positionId, or the taobao site_id) as the union shows it."
+        },
+        "pid_scene": {
+          "type": "string",
+          "description": "PID scene (enum pid_scene; 04 §2.2, BR-ATTR-08).",
+          "enum": [
+            "self_buy",
+            "agent",
+            "share",
+            "taolijin",
+            "fallback",
+            "query"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Optional free-text reason, kept in the audit record (BR-ID-24 细则, BR-ATTR-02 细则)."
+        }
+      }
+    }
+  },
+  "adminUpdateUnionPid": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pid_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "pid_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of PATCH /admin/v1/union-pids/{pid_id} (pending rows only): `expected_row_version`\nplus at least one more field; a body that names none of the five fields (only\n`expected_row_version` and `reason`) is 20001 with `data.fields=[body]`.\n",
+      "additionalProperties": false,
+      "required": [
+        "expected_row_version"
+      ],
+      "minProperties": 2,
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "Platform (contracts/enums/platform.yaml platform).",
+          "enum": [
+            "taobao",
+            "jd",
+            "pdd",
+            "meituan",
+            "vip",
+            "douyin",
+            "eleme",
+            "kuaishou",
+            "suning"
+          ]
+        },
+        "union_account_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "site_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[0-9A-Za-z_-]+$",
+              "description": "A union-side identifier (pid / adzone / positionId, or the taobao site_id) as the union shows it."
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The taobao site id; null clears it when the row moves to another platform."
+        },
+        "pid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z_-]+$",
+          "description": "A union-side identifier (pid / adzone / positionId, or the taobao site_id) as the union shows it."
+        },
+        "pid_scene": {
+          "type": "string",
+          "description": "PID scene (enum pid_scene; 04 §2.2, BR-ATTR-08).",
+          "enum": [
+            "self_buy",
+            "agent",
+            "share",
+            "taolijin",
+            "fallback",
+            "query"
+          ]
+        },
+        "expected_row_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "row_version of the row as read (users' risk state, a union binding); plus 1 on every\nchange. The CAS value `expected_row_version` of the writes.\n"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Optional free-text reason, kept in the audit record (BR-ID-24 细则, BR-ATTR-02 细则)."
+        }
+      }
+    }
+  },
+  "adminActivateUnionPid": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pid_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "pid_id"
+      ],
+      "additionalProperties": false
+    },
+    "multipart": true
+  },
+  "adminRetireUnionPid": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pid_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "pid_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/union-pids/{pid_id}/retire.",
+      "additionalProperties": false,
+      "required": [
+        "expected_row_version"
+      ],
+      "properties": {
+        "expected_row_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "row_version of the row as read (users' risk state, a union binding); plus 1 on every\nchange. The CAS value `expected_row_version` of the writes.\n"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Optional free-text reason, kept in the audit record (BR-ID-24 细则, BR-ATTR-02 细则)."
+        }
+      }
+    }
+  },
   "adminListPlatformIcons": {
     "headers": {
       "type": "object",

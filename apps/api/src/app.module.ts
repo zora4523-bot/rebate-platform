@@ -256,6 +256,7 @@ import {
   REGISTERED_PLATFORMS,
   UNION_ENDPOINTS,
   UNION_REGISTRY,
+  UnionAdminModule,
   UnionModule,
   createGovernedAdapter,
   createUnionPidService,
@@ -2162,6 +2163,17 @@ export class AppModule {
                 auditWriter: (db, clock) =>
                   createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
                 configReader: (db, clock) => createContentReader({ db, clock }),
+              }),
+            ]
+          : []),
+        // union's /admin/v1/union-pids (B1-22h, BR-ATTR-02, BR-ATTR-28): guarded by
+        // AdminOperationGuard (union.pid); each registration, change, activation or retirement and
+        // its audit row (admin's writer bound to the change's transaction) commit together.
+        ...(options.entry === 'admin'
+          ? [
+              UnionAdminModule.forAdmin({
+                auditWriter: (db, clock) =>
+                  createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
               }),
             ]
           : []),
