@@ -1,0 +1,21 @@
+id: F1-02zzj
+repo: rebate-platform
+title: content 专用写入端口：union.auth_alert_phones（不透明值 + expected_version CAS + 操作人，同事务写 config_item_versions），通用配置接口显式隐藏并拒收该键（D10-281、D10-152 ④）
+type: impl
+# 2026-10-23 入账（content-client；编排裁定 D10-281：union B1-22d / B1-22g 的告警手机号写入，config_items 的写者是 content，不放给 union 跨模块写）。
+# 依据：D10-152 ④（告警手机号整组加密存配置键 union.auth_alert_phones，02 §4.1 union 不直接写 config_items）；union 10-22 21:07、10-23 03:22 请求（入参 app_id、固定键、不透明值、expected_version、操作人 admin id；返回新 version，版本不符返回冲突；加解密与 HMAC 由 union 做）。
+# 先例：application/system-switch-writer.ts（F1-02zk，content 导出的跨模块专用写入器，用调用方事务、同表历史）。读侧 union 走现有 ContentReader，不改。
+# 通用配置后台接口（列表 / 详情 / 版本 / 修改 / 批量 / 回滚）对该键 404 式拒收，与未登记键同口径；不登记进 config-registry。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/content/**'
+test_paths:
+  - 'test/spec/content/union-alert-phones-writer/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
