@@ -26,18 +26,33 @@ it('[AC-F1-02zx#1] 资格天数是唯一的可改业务配置，整数范围 1�
   expect(Object.isFrozen(spec!.range)).toBe(true);
 });
 
-it('[AC-F1-02zx#2] 六项邀请奖励配置连续位于注册表末尾，资格天数紧接 IP 窗口', () => {
+// B2-06bz (D10-244 ②、D10-296): the six keys stay contiguous, now followed directly by the eight
+// payout.* keys in this order (and nothing else), instead of ending the registry.
+const PAYOUT_KEYS = [
+  'payout.single_cap_fen',
+  'payout.daily_cap_fen',
+  'payout.watermark_usable_bp',
+  'payout.biz_scene',
+  'payout.query_schedule',
+  'payout.definite_fail_codes',
+  'payout.payer_side_codes',
+  'payout.query_status_map',
+];
+
+it('[AC-F1-02zx#2] 六项邀请奖励配置连续位于 growth 组，资格天数紧接 IP 窗口，其后紧接 payout.* 八项', () => {
   const registry = configRegistry();
   expect(
     registry
       .filter((entry) => entry.key.startsWith('growth.invite_reward.'))
       .map((entry) => entry.key),
   ).toStrictEqual(DEFAULTS.map((row) => row.key));
-  expect(registry.slice(-6).map((entry) => entry.key)).toStrictEqual(
+  const end = registry.length - PAYOUT_KEYS.length;
+  expect(registry.slice(end).map((entry) => entry.key)).toStrictEqual(PAYOUT_KEYS);
+  expect(registry.slice(end - 6, end).map((entry) => entry.key)).toStrictEqual(
     DEFAULTS.map((row) => row.key),
   );
-  expect(registry.at(-2)?.key).toBe(WINDOW);
-  expect(registry.at(-1)?.key).toBe(KEY);
+  expect(registry.at(end - 2)?.key).toBe(WINDOW);
+  expect(registry.at(end - 1)?.key).toBe(KEY);
 });
 
 it.each([1, 2, 30, 3649, 3650])('[AC-F1-02zx#3] 资格天数接受整数 %s', (value) => {

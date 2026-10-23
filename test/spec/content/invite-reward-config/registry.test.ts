@@ -27,8 +27,9 @@ it.each(CONFIGS)('[AC-F1-02zn#1] $key：类型、权限、可编辑性与整数�
 });
 
 // F1-02zw: F1-02zx appends growth.invite_reward.eligibility_days right after the five keys as the
-// last item; the five keys still follow settle.statement.grace_days directly, and nothing else may
-// follow them. F1-02zt：过渡已收紧, the sixth key must be present.
+// sixth key; the five keys still follow settle.statement.grace_days directly. F1-02zt：过渡已收紧,
+// the sixth key must be present. B2-06bz (D10-244 ②、D10-296): the eight payout.* keys follow
+// eligibility_days in this order, and nothing else.
 it('[AC-F1-02zn#2] 五项按指定顺序追加在 SETTLE 之后', () => {
   const keys = configRegistry().map((entry) => entry.key);
   const i = keys.indexOf('settle.statement.grace_days');
@@ -37,7 +38,17 @@ it('[AC-F1-02zn#2] 五项按指定顺序追加在 SETTLE 之后', () => {
     'settle.statement.grace_days',
     ...CONFIGS.map((row) => row.key),
   ]);
-  expect(keys.slice(i + 6)).toStrictEqual([ELIGIBILITY]);
+  expect(keys.slice(i + 6)).toStrictEqual([
+    ELIGIBILITY,
+    'payout.single_cap_fen',
+    'payout.daily_cap_fen',
+    'payout.watermark_usable_bp',
+    'payout.biz_scene',
+    'payout.query_schedule',
+    'payout.definite_fail_codes',
+    'payout.payer_side_codes',
+    'payout.query_status_map',
+  ]);
 });
 
 it.each(CONFIGS)('[AC-F1-02zn#3] $key：闭区间、默认值、拒绝浮点与隐式转换', (row) => {

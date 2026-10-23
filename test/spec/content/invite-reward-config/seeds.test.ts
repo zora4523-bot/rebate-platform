@@ -10,6 +10,19 @@ import { CONFIGS, ENABLED, PAUSED, PREFIX } from './oracle.ts';
 // the last row; its value is 30 days (08 l.560), written here independently of the registry and
 // the seed file. F1-02zt：过渡已收紧, the sixth row must be present.
 const ELIGIBILITY = { key: `${PREFIX}eligibility_days`, value: 30 };
+// B2-06bz (D10-244 ②、D10-296): the eight payout.* seed rows follow eligibility_days, in
+// registration order, and nothing else (values are not this test's concern; each must fit its spec,
+// checked below with the other extra rows).
+const PAYOUT_KEYS = [
+  'payout.single_cap_fen',
+  'payout.daily_cap_fen',
+  'payout.watermark_usable_bp',
+  'payout.biz_scene',
+  'payout.query_schedule',
+  'payout.definite_fail_codes',
+  'payout.payer_side_codes',
+  'payout.query_status_map',
+];
 
 it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；重跑不覆盖', () => {
   const sql = readFileSync(
@@ -29,7 +42,8 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
     ...CONFIGS.map((row) => row.key),
   ]);
   const extra = rows.slice(i + 6);
-  expect(extra).toStrictEqual([ELIGIBILITY]);
+  expect(extra[0]).toStrictEqual(ELIGIBILITY);
+  expect(extra.map((row) => row.key)).toStrictEqual([ELIGIBILITY.key, ...PAYOUT_KEYS]);
   for (const row of CONFIGS) {
     const spec = configItemSpecOf(row.key);
     expect(spec, row.key).not.toBeNull();
