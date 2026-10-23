@@ -11,7 +11,9 @@
 // recordHit: registers the BLACKLIST_HIT rule row (ON CONFLICT (app_id, rule_id) DO NOTHING, an
 //   existing configured row stays untouched), then appends one risk_hits row (ref_type order,
 //   ref_id = order id, value_hmac = HMAC of the blocklist value under blocklist.<dimension>); a
-//   retry of the same (order, value) ends on risk_hits_blacklist_once_key and adds nothing.
+//   retry of the same (order, value, risk_action) ends on risk_hits_blacklist_once_key and adds
+//   nothing. Escalating an order from manual_review to void_commission (D10-293) appends a second
+//   row; the first row is never rewritten (risk_hits is append only, no UPDATE grant).
 // importChannels: per row, under a transaction-scoped advisory lock on (app_id, union_account_id,
 //   relation_id) taken in sorted order (no deadlock between batches), an existing effective entry
 //   (active, end_at NULL or later than imported_at; no start_at condition, K-5) is returned as
@@ -69,7 +71,7 @@ export interface ChannelBlocklistImportResult {
 export interface OrderBlocklistPorts {
   /** 只读；返回两种维度全部命中，订单决策由调用方负责。 */
   match(trx: Transaction<DB>, input: OrderBlocklistQuery): Promise<readonly OrderBlocklistMatch[]>;
-  /** BLACKLIST_HIT 惰性登记；同一订单、同一值的重试由 PG 部分唯一索引兜底。 */
+  /** BLACKLIST_HIT 惰性登记；同订单同值同处置的重试由 PG 部分唯一索引兜底，改判只追加。 */
   recordHit(trx: Transaction<DB>, input: OrderBlocklistHitInput): Promise<void>;
   /** 按输入行序返回结果；只新增，既有条目不修改；整份文件审计由 orders 写。 */
   importChannels(
@@ -221,10 +223,10 @@ export function createOrderBlocklistPorts(options: OrderBlocklistOptions): Order
           ref_id: orderId,
           created_at: now,
         })
-        // Arbiter: risk_hits_blacklist_once_key (partial on this literal rule_id).
+        // Arbiter: risk_hits_blacklist_once_key (partial on this literal rule_id; D10-293 key).
         .onConflict((oc) =>
           oc
-            .columns(['app_id', 'rule_id', 'ref_type', 'ref_id', 'value_hmac'])
+            .columns(['app_id', 'rule_id', 'ref_type', 'ref_id', 'value_hmac', 'risk_action'])
             .where('rule_id', '=', sql.lit(RULE_ID))
             .doNothing(),
         )
