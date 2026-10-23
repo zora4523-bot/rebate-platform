@@ -1,6 +1,7 @@
 import type { DB } from '@couli/db';
 import type { ReconDiffType } from '@couli/contracts-ts';
 import {
+  accountingDate,
   classifySettlementBillOrder,
   splitSettlementBillBatches,
   transitionSettleBatch,
@@ -8,6 +9,7 @@ import {
 } from '@couli/domain';
 import { applyReserve, parseFen, subFen } from '@couli/money';
 import type { Kysely, Transaction } from 'kysely';
+import { pino, type Logger } from 'pino';
 import { newUuidV7 } from '../../../platform/index.ts';
 import type {
   BillJobDependencies,
@@ -30,8 +32,13 @@ import {
 // 其订单平台的批次），kind = supplement，单独确认。step-up、HTTP 与审计归 B2-09。
 // 补充批次不是账单生成：不等资产快照（③ 属账单日任务）。
 
-/** 与账单日任务同一组端口（不含资产快照读口）。 */
-export type SupplementDependencies = Omit<BillJobDependencies, 'snapshotStatus'>;
+/**
+ * 与账单日任务同一组端口（不含资产快照读口）。logger 供任务键顺延时打一行 warn；
+ * 生产装配（B2-09）应传根 logger 的 child，未传时退回一个只打 warn 以上的 pino 实例。
+ */
+export type SupplementDependencies = Omit<BillJobDependencies, 'snapshotStatus'> & {
+  readonly logger?: Pick<Logger, 'warn'>;
+};
 
 export interface SupplementInput {
   readonly appId: string;
@@ -87,11 +94,17 @@ export class SupplementRejectedError extends Error implements SupplementRejected
 
 // ---------------------------------------------------------------------------
 // 实现。settle_jobs 只经 ../settle-job.ts（生成的 settle-job transition()，只写 0066 授权列）。
-// 任务键沿用 job = 'bill'（settle_jobs_job_check 只允许四个值），run_at = 名义请求时刻。
-// 已知局限：键不含 bill_id（表上没有该维度，加列 / 新 job 值要新迁移），不同账单或与账单日任务
-// 恰好同一毫秒的 requestedAt 会互判重放；调用方（B2-09）须按每次发起取不同的名义时刻。
+// 任务键沿用 job = 'bill'（settle_jobs_job_check 只允许四个值），run_at 由 supplementJobRunAt 定：
+// 平常 = 名义请求时刻；落在账单日当天时顺延 1 ms（见该函数，D10-280 ①）。
+// 已知局限：键不含 bill_id（表上没有该维度，加列 / 新 job 值要新迁移），不同账单同一毫秒的
+// requestedAt 会互判重放；调用方（B2-09）须按每次发起取不同的名义时刻。
 
 const JOB = 'bill';
+const DEFAULT_BILL_DAY = 24;
+const MIN_BILL_DAY = 22;
+const MAX_BILL_DAY = 28;
+/** 账单日当天的补充任务键相对名义请求时刻的顺延量。 */
+const BILL_DAY_SHIFT_MS = 1;
 const DEFAULT_MAX_ORDERS = 5000;
 /** 一条 INSERT 的明细行数上限，避免超出 PG 参数个数上限。 */
 const INSERT_CHUNK = 1000;
@@ -126,6 +139,33 @@ export function blocksSupplement(facts: PendingItemFacts): boolean {
     default:
       return false;
   }
+}
+
+export interface SupplementJobRunAt {
+  readonly runAt: Date;
+  /** true：名义请求时刻落在账单日当天，键已顺延。 */
+  readonly shifted: boolean;
+}
+
+/**
+ * 补充批次在 settle_jobs 上的 run_at（D10-280 ①）。
+ * 补充与账单日任务共用 job = 'bill'。账单日任务只在账单日当天（+08:00，settle.bill_day）认领键，
+ * 其他日子的 'bill' 行只可能是补充批次写的，键 = 名义请求时刻，已有行即真重放（duplicate）。
+ * 账单日当天则无法分辨：settle_jobs 没有 kind / bill_id 列，两种任务写的列与取值完全相同，读出已有行
+ * 也判不出它属于哪一种。最保守做法：账单日当天的名义请求时刻一律留给账单日任务，补充键确定性地
+ * 顺延 1 ms——不管该时刻当下有没有行，否则「首轮没撞上而占了该时刻」与「撞上账单日任务」在重放时
+ * 不可区分。这样撞上账单日任务的补充照常执行（不被静默当成重放而少入账），同一次发起的重放算出同
+ * 一个键、照旧 duplicate。残余：账单日任务恰好取「补充名义时刻 + 1 ms」为 run_at 时仍会被当成重放，
+ * 表里无从分辨，留给 B2-09 / 新迁移加维度。
+ */
+export function supplementJobRunAt(requestedAt: Date, billDay: number): SupplementJobRunAt {
+  if (Number(accountingDate(requestedAt).slice(8, 10)) !== billDay) {
+    return { runAt: requestedAt, shifted: false };
+  }
+  // 复制入参再改时刻（不新建当前时间，也不改调用方的 Date）。
+  const runAt = structuredClone(requestedAt);
+  runAt.setTime(requestedAt.getTime() + BILL_DAY_SHIFT_MS);
+  return { runAt, shifted: true };
 }
 
 type ItemRole = 'self' | 'share' | 'direct' | 'indirect';
@@ -229,6 +269,46 @@ function isRejected(error: unknown): boolean {
 
 export function createSupplementCommand(dependencies: SupplementDependencies): SupplementCommand {
   const deps = dependencies;
+  const logger: Pick<Logger, 'warn'> = deps.logger ?? pino({ level: 'warn' });
+
+  /** 同账单日任务的取法（BR-FUND-04 ③：默认 24，取值 22–28）。 */
+  async function readBillDay(appId: string): Promise<number> {
+    const day = positiveInteger(await deps.config.get(appId, 'settle.bill_day'), 'settle.bill_day');
+    if (day === null) return DEFAULT_BILL_DAY;
+    if (day < MIN_BILL_DAY || day > MAX_BILL_DAY) {
+      throw new RangeError('config settle.bill_day must be within 22-28');
+    }
+    return day;
+  }
+
+  /** 顺延时读一下名义时刻上的已有行（只作诊断：表里分不出它属于哪种任务），打一行 warn。 */
+  async function warnShifted(
+    trx: Transaction<DB>,
+    appId: string,
+    platform: string,
+    requestedAt: Date,
+    runAt: Date,
+  ): Promise<void> {
+    const existing = await trx
+      .withSchema('app')
+      .selectFrom('settle_jobs')
+      .select(['status'])
+      .where('app_id', '=', appId)
+      .where('job', '=', JOB)
+      .where('platform', '=', platform)
+      .where('run_at', '=', requestedAt)
+      .executeTakeFirst();
+    logger.warn(
+      {
+        app_id: appId,
+        platform,
+        requested_at: requestedAt.toISOString(),
+        run_at: runAt.toISOString(),
+        bill_day_row_status: existing?.status ?? null,
+      },
+      'settlement supplement: requestedAt falls on bill day, settle_jobs run_at moved forward',
+    );
+  }
 
   async function creditEnabled(appId: string, platform: string): Promise<boolean> {
     // credit.enabled.<platform> 默认 off（BR-CALC-03）；只认明确的 on。
@@ -319,6 +399,7 @@ export function createSupplementCommand(dependencies: SupplementDependencies): S
     appId: string,
     platform: string,
     requestedAt: Date,
+    jobRunAt: SupplementJobRunAt,
     target: Target,
     now: Date,
   ): Promise<SupplementResult> {
@@ -327,7 +408,8 @@ export function createSupplementCommand(dependencies: SupplementDependencies): S
     }
     const billId = await lockBill(trx, appId, platform, target);
 
-    const key: SettleJobKey = { appId, job: JOB, platform, runAt: requestedAt };
+    if (jobRunAt.shifted) await warnShifted(trx, appId, platform, requestedAt, jobRunAt.runAt);
+    const key: SettleJobKey = { appId, job: JOB, platform, runAt: jobRunAt.runAt };
     // 新键 START；同键 failed 行 RETRY 同一行重跑；done / running 判为重放、不改行。
     const jobId = await claimSettleJob(trx, key, now);
     if (jobId === null) return { outcome: 'duplicate', billId, platform, batchIds: [] };
@@ -590,16 +672,17 @@ export function createSupplementCommand(dependencies: SupplementDependencies): S
     target: Target,
   ): Promise<SupplementResult> {
     const now = deps.clock.now();
+    const jobRunAt = supplementJobRunAt(requestedAt, await readBillDay(appId));
     try {
       return await db
         .transaction()
-        .execute((trx) => generate(trx, appId, platform, requestedAt, target, now));
+        .execute((trx) => generate(trx, appId, platform, requestedAt, jobRunAt, target, now));
     } catch (error) {
       // 前置条件拒绝不写任何表；其余错误时生成事务已整体回滚，另起事务把该键记为 failed，
       // 同键重试经 RETRY 重跑。
       if (!isRejected(error)) {
         try {
-          await failSettleJob(db, { appId, job: JOB, platform, runAt: requestedAt }, now);
+          await failSettleJob(db, { appId, job: JOB, platform, runAt: jobRunAt.runAt }, now);
         } catch {
           // 记失败本身出错时保留原始错误；行仍缺失或为 failed，重试照常可恢复。
         }
