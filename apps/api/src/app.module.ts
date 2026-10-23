@@ -2625,14 +2625,17 @@ export class AppModule {
               }),
             ]
           : []),
-        // union's /admin/v1/union-pids (B1-22h, BR-ATTR-02, BR-ATTR-28): guarded by
-        // AdminOperationGuard (union.pid); each registration, change, activation or retirement and
-        // its audit row (admin's writer bound to the change's transaction) commit together.
+        // union's /admin/v1/union-pids (B1-22h, BR-ATTR-02, BR-ATTR-28) and /admin/v1/union-accounts
+        // (B1-22d, BR-ID-24 ③): guarded by AdminOperationGuard (union.pid, union.account_auth);
+        // each change and its audit row (admin's writer bound to the change's transaction) commit
+        // together. The accounts read content's configuration (attr.jd.user_key_mode,
+        // union.auth_alert_*); the site OAuth providers are the local / test fake only.
         ...(options.entry === 'admin'
           ? [
               UnionAdminModule.forAdmin({
                 auditWriter: (db, clock) =>
                   createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                config: (db, clock) => createContentReader({ db, clock }),
               }),
             ]
           : []),

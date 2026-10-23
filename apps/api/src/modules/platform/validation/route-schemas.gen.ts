@@ -9235,6 +9235,216 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "adminListUnionAccounts": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    }
+  },
+  "adminStartUnionReauthorization": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "union_account_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "union_account_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/union-accounts/{union_account_id}/reauthorize; may be empty.",
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Optional free-text reason, kept in the audit record (BR-ID-24 细则, BR-ATTR-02 细则)."
+        }
+      }
+    }
+  },
+  "adminGetUnionReauthorization": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "union_account_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "session_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "union_account_id",
+        "session_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "adminCompleteUnionReauthorization": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/union-accounts/oauth/callback: what the console callback page\nreceived from the union, unchanged: `state` and exactly one of `code` or `error`\n(neither or both → 20001 with `data.fields=[code]`).\n",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "minProperties": 2,
+      "maxProperties": 2,
+      "properties": {
+        "state": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "The state the union echoed back; looked up by its hash."
+        },
+        "code": {
+          "type": "string",
+          "writeOnly": true,
+          "minLength": 1,
+          "maxLength": 1024,
+          "description": "The authorization code from the union; exchanged once, never logged or returned."
+        },
+        "error": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "The error the union sent instead of a code; kept as the session's failure cause."
+        }
+      }
+    }
+  },
+  "adminPutUnionCredential": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "union_account_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "union_account_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of PUT /admin/v1/union-accounts/{union_account_id}/credential (reauth_mode manual).",
+      "additionalProperties": false,
+      "required": [
+        "credential"
+      ],
+      "properties": {
+        "credential": {
+          "type": "string",
+          "writeOnly": true,
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^\\S(.*\\S)?$",
+          "description": "The new station-owner credential in plaintext; only encrypted, never returned or logged."
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Expiry shown by the union, later than now; absent → now + the platform's Key validity from the platform registry (not fixed), marked estimated."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Optional free-text reason, kept in the audit record (BR-ID-24 细则, BR-ATTR-02 细则)."
+        }
+      }
+    }
+  },
   "adminListUnionPids": {
     "headers": {
       "type": "object",

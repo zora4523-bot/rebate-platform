@@ -13320,7 +13320,6 @@ paths:
         `status` is union_accounts.status as stored; its values are registered with B1-22 and
         are not an enum here yet.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -13428,7 +13427,6 @@ paths:
         Writes an audit record (action union_account_reauthorize_start, reason). No
         Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -13518,7 +13516,6 @@ paths:
         unknown `session_id`, or one of another union account, is 20001 with
         `data.fields=[session_id]`.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -13620,7 +13617,6 @@ paths:
         checked where the union's grant names the account (B1-22, per platform registry in
         specs/union). No Idempotency-Key.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -13735,7 +13731,6 @@ paths:
         union_account_credential, reason; never the credential). The response is the account as
         GET /admin/v1/union-accounts lists it now. No Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
