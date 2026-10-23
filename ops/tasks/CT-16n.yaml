@@ -1,0 +1,20 @@
+id: CT-16n
+repo: rebate-platform
+title: 契约（CT-16 续，D10-252）：/v1/config 的 help_links 补邀请规则 invite_rules、邀请奖励活动规则 invite_reward_rules 两个键（描述登记，值为运营配置的帮助文章）
+type: contract
+# 2026-10-23 入账（content-client；编排 15:24 裁定 D10-252：fe F1-05a 的「完整规则」「活动规则」入口改用 help_links 键，不在前端写死文章标识）。
+# 现状（origin/main）：contracts/openapi.yaml ClientConfig.help_links 描述登记 price_compare、claim_guide.<platform>、login_help、withdraw_rules、share_rules、faq.invite_code_bind；值是 HelpLinkTarget，服务端按 dictOf 校验，不限键名。
+# 本任务：描述加 invite_rules（H5 邀请好友页「完整规则」）与 invite_reward_rules（邀请奖励「活动规则」，D10-252）；未配置的键前端不显示入口（现有规则）。键名按现有 *_rules 命名，由 content 定（D10-252）。不改服务端校验与默认值。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
