@@ -1,0 +1,24 @@
+id: B2-04rb
+repo: rebate-platform
+title: 迁移：settle_jobs_job_check 同名重建，在 bill / settle_adjust / recon_union / recon_monthly 之外加 'supplement'（只放宽），供 B2-04r 补充批次改用独立 job
+type: migration
+# 2026-10-24 资金线（编排 D10-280 ①）。B2-04r 过渡沿用 job='bill'；本迁移合并后另开小任务把补充改用 job='supplement'。
+# 资金表 CHECK 重建须先由 guard-change B2-04rc 在 APPROVED_GUARD_CHANGES 登记文件名与 sha256（照 B2-15h / B1-15t）；迁移号落地时取主干最大 +1；迁移槽排在 withdraw B2-06a 之后。
+# 规则测试由独立 Claude 写（Codex 额度至 10-30，approvals #36）。
+refs: [BR-FUND-04]
+refs_hash:
+  BR-FUND-04: ae08abefb6da
+deps: []
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/settlement/settle-jobs-supplement/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/settlement/settle-jobs-supplement/**'
+status: todo
+pr: null
