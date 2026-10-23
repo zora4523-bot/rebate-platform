@@ -1,0 +1,93 @@
+{
+  "task": "B2-04wa",
+  "spec_ref": "be49fe9b54beaa6d8e552f6766e9ae2d4d513705",
+  "spec_commit": "0d9da4551cc318c685291a7ac6b5ed5a28e8bd75",
+  "red_tests": [
+    "test/spec/ledger/asset-snapshot-alerts/assembly.int.test.ts > [AC-B2-04wa#6] 未注入 EVENT_BUS 时启动失败：缺失、为空或没有 publish 即同步拒绝组装，且不读时钟、不读来源、不发布、不写库",
+    "test/spec/ledger/asset-snapshot-alerts/assembly.int.test.ts > [AC-B2-04wa#7] 组装出的运行器只经注入的 EVENT_BUS 在快照写事务里入队两个告警，创建时不发布；再次组装重放不重复入队",
+    "test/spec/ledger/asset-snapshot-alerts/concurrency.int.test.ts > [AC-B2-04wa#8] 并发重复投递不误报超时：另一投递持锁确认为可比时，截止后到达的重复投递等锁、重读为可比即返回，不发超时",
+    "test/spec/ledger/asset-snapshot-alerts/concurrency.int.test.ts > [AC-B2-04wa#9] 持锁的确认回滚时，等锁的重复投递取得锁后才读时钟：等待期间跨过截止线即保持不可比并只发一次超时",
+    "test/spec/ledger/asset-snapshot-alerts/events.int.test.ts > [AC-B2-04wa#1] 两个告警事件按 02 §11 的位置登记，名字与载荷逐字一致：只含 app_id、会计日、类型与各自字段，金额为整数分",
+    "test/spec/ledger/asset-snapshot-alerts/events.int.test.ts > [AC-B2-04wa#2] 告警与快照行在同一写事务入队：事务内可见、提交前其他连接看不到快照、事件和任务，提交后各自一一对应",
+    "test/spec/ledger/asset-snapshot-alerts/events.int.test.ts > [AC-B2-04wa#3] 告警入队之后写事务失败：快照、已发布的事件留痕与任务一起回滚，原错误不变；重试后各一条且不是重复",
+    "test/spec/ledger/asset-snapshot-alerts/events.int.test.ts > [AC-B2-04wa#4] 快照写入在告警之前失败即不入队：没有事件留痕与任务；修复后重跑才入队",
+    "test/spec/ledger/asset-snapshot-alerts/events.int.test.ts > [AC-B2-04wa#5] 并发投递、重放与新实例不重复入队：每个 (app_id, 会计日, 类型) 只有一条事件和一个任务，迟写后再超时不冲突；另一 app、次日各自入队"
+  ],
+  "risk_note": "RV2 ledger + platform events (D10-188 ①; BR-FUND-18, 20). Registers asset_snapshot.timed_out and union_receivable.exposure_exceeded at their 02 §11 positions (SPEC_REF f3fea9b0) with the 02 §11 payloads (no personal data). createAssetSnapshotAlertQueue publishes them through EVENT_BUS in the snapshot's own transaction with a deterministic event id from (app_id, accounting_date, type), so a committed snapshot always has its alert queued and a replay does not queue it again; assembleAssetSnapshot makes the queue a required dependency (missing EVENT_BUS -> INVALID_INPUT), while createAssetSnapshot keeps the optional parameter because the frozen B2-04w kit calls it without one. Closes B2-04w money r4 S2: the confirm transaction locks and rereads the day's row, returns if already comparable, and reads the Clock only after the lock. Prerequisite test-changes B2-04wb (#1320) and B2-04wc (#1341) are merged.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0d9da4551cc318c685291a7ac6b5ed5a28e8bd75",
+      "tree": "6354f1b16624a3eeae278db0f04c494fddfe1f92",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T11:33:47Z",
+      "finished_at": "2026-10-23T11:33:55Z",
+      "gate": {
+        "commit": "0d31e2930a422163c1f057f94502692cbb61b82c",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/asset-snapshot-alerts/assembly.int.test.ts > [AC-B2-04wa#6] 未注入 EVENT_BUS 时启动失败：缺失、为空或没有 publish 即同步拒绝组装，且不读时钟、不读来源、不发布、不写库",
+        "test/spec/ledger/asset-snapshot-alerts/assembly.int.test.ts > [AC-B2-04wa#7] 组装出的运行器只经注入的 EVENT_BUS 在快照写事务里入队两个告警，创建时不发布；再次组装重放不重复入队",
+        "test/spec/ledger/asset-snapshot-alerts/concurrency.int.test.ts > [AC-B2-04wa#8] 并发重复投递不误报超时：另一投递持锁确认为可比时，截止后到达的重复投递等锁、重读为可比即返回，不发超时",
+        "test/spec/ledger/asset-snapshot-alerts/concurrency.int.test.ts > [AC-B2-04wa#9] 持锁的确认回滚时，等锁的重复投递取得锁后才读时钟：等待期间跨过截止线即保持不可比并只发一次超时",
+        "test/spec/ledger/asset-snapshot-alerts/events.int.test.ts > [AC-B2-04wa#1] 两个告警事件按 02 §11 的位置登记，名字与载荷逐字一致：只含 app_id、会计日、类型与各自字段，金额为整数分",
+        "test/spec/ledger/asset-snapshot-alerts/events.int.test.ts > [AC-B2-04wa#2] 告警与快照行在同一写事务入队：事务内可见、提交前其他连接看不到快照、事件和任务，提交后各自一一对应",
+        "test/spec/ledger/asset-snapshot-alerts/events.int.test.ts > [AC-B2-04wa#3] 告警入队之后写事务失败：快照、已发布的事件留痕与任务一起回滚，原错误不变；重试后各一条且不是重复",
+        "test/spec/ledger/asset-snapshot-alerts/events.int.test.ts > [AC-B2-04wa#4] 快照写入在告警之前失败即不入队：没有事件留痕与任务；修复后重跑才入队",
+        "test/spec/ledger/asset-snapshot-alerts/events.int.test.ts > [AC-B2-04wa#5] 并发投递、重放与新实例不重复入队：每个 (app_id, 会计日, 类型) 只有一条事件和一个任务，迟写后再超时不冲突；另一 app、次日各自入队"
+      ],
+      "expected": [
+        "test/spec/ledger/asset-snapshot-alerts/assembly.int.test.ts",
+        "test/spec/ledger/asset-snapshot-alerts/concurrency.int.test.ts",
+        "test/spec/ledger/asset-snapshot-alerts/events.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "78beea28eeae10effb9068f75b09c2cda211bdec50843aab997fef1799cb38e0"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota until 10-30 (orchestrator 10-23 10:27); adversarial money review by a fresh independent Claude via claude-run.sh (approvals #36); round 1 pass with one S2 (B2-04zb must wire assembleAssetSnapshot) kept as a follow-up",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by an independent Claude via claude-run.sh (tester claude-independent, approvals #36); its self-reported conflict (required port placed on the new assembly function because the frozen B2-04w kit omits it) was accepted by the review; round 1 pass with 2 S2 kept as follow-ups",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "8d174bb0f7b3f54b41cd896d09ed618d93636575",
+    "specs": "b9b8c7957aa786feb1b71c8ccc35e6fd7341add0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
