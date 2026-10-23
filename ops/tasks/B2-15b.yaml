@@ -6,6 +6,7 @@ type: impl
 # 不读写用户余额（BR-PAY-01 ③、07）。开关只有显式 true 才算 on；配置键默认值在代码常量、config_items 覆盖（经 content ContentReader）。
 # AC-S2-82 ⑫ 同一业务对象并发两渠道下单只生成一张单；⑩ 请求体带金额字段按契约 additionalProperties false 返回 20001；expire_at = 创建时刻 + pay.order_ttl_minutes（默认 15）并传渠道作支付截止；pay.biz.<biz_type>.platforms 为可售端键。
 # 本任务不写分录、不处理通知与查询结果（B2-15c），不做关单的渠道侧流程（B2-15d）：cancel 只置 closing 并入队。实现用 Fable 5.1 高推理（approvals #34 困难任务），Codex 写测试 + money 评审。
+# 2026-10-23 编排 10:27：Codex 不可用至 10-30，规则测试与评审改由独立 Claude（tools/agent/claude-run.sh，approvals #36），tester 改为 claude-independent。
 refs: [BR-PAY-01, BR-PAY-02, BR-PAY-03, BR-PAY-04, BR-PAY-05]
 refs_hash:
   BR-PAY-01: 15ea5ac62c34
@@ -27,7 +28,7 @@ paths:
 test_paths:
   - 'test/spec/payment/orders/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payment/orders/**'

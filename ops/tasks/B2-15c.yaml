@@ -6,6 +6,7 @@ type: impl
 # 分录不含 USER_BALANCE。success_states 验证前只含文档写明的成功状态（微信 SUCCESS、支付宝 TRADE_SUCCESS，docs-mirror 出处写进代码注释），其余一律不算成功并告警。
 # 事件名 pay.order.paid 要进 platform/events EVENT_NAMES 白名单；通知原文个人信息脱敏规则在 platform/logging；收款凭证模板登记进 specs/ledger-rules.md 与 ledger-templates.csv（独立复核 S1-3 / S2）。pay_query_attempts 由本任务（query）与 B2-15b（下单尝试）、B2-15d（close）、B2-15e（refund / refund_query）各自写。
 # 并发：通知重复、通知与查询并发只生效一次（真实 PG 两连接 + 咨询锁栅栏，11 §4.2）。依赖 B2-15i（ledger_type CHECK 含 PAY_*）。实现用 Fable 5.1 高推理。
+# 2026-10-23 编排 10:27：Codex 不可用至 10-30，规则测试与评审改由独立 Claude（tools/agent/claude-run.sh，approvals #36），tester 改为 claude-independent。
 refs: [BR-PAY-04, BR-PAY-05, BR-PAY-07]
 refs_hash:
   BR-PAY-04: 6763ec22c098
@@ -22,7 +23,7 @@ paths:
 test_paths:
   - 'test/spec/payment/result/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payment/result/**'

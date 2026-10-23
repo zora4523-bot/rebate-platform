@@ -4,6 +4,7 @@ title: 关单与过期处理：到 expire_at 未支付 / 用户取消 / 换渠�
 type: impl
 # 2026-10-22 收款线入账（BR-PAY-05 ①②③ 与细则、BR-PAY-02 换渠道、BR-PAY-03 closing 后不再返回调起参数）。默认值 close_grace 10 / close_retry 5 / close_wait 60 在代码常量、config_items 覆盖。
 # 后台处置接口（【立即查询】后 PO2 / PO3）归 B2-15f。关单与支付并发：只有一个结果生效、凭证恰一张（AC-S2-82 ⑬）。实现用 Fable 5.1 高推理。
+# 2026-10-23 编排 10:27：Codex 不可用至 10-30，规则测试与评审改由独立 Claude（tools/agent/claude-run.sh，approvals #36），tester 改为 claude-independent。
 refs: [BR-PAY-05, BR-PAY-02, BR-PAY-03]
 refs_hash:
   BR-PAY-05: cc6a654d316e
@@ -16,7 +17,7 @@ paths:
 test_paths:
   - 'test/spec/payment/close/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payment/close/**'

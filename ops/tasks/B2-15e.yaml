@@ -5,6 +5,7 @@ type: impl
 # 2026-10-22 收款线入账（BR-PAY-06 全文与细则、BR-PAY-07 分录；负责人 2026-10-05 原路退款不设二次验证）。refund_fail_states 验证前为空（退款失败按未知处理、继续占额）。
 # 事件名 pay.refund.succeeded 要进 EVENT_NAMES；后台账号的幂等 subject（a:<admin_user_id>，待裁定）要改 platform/idempotency（现只按 userId 推导）（独立复核 S1-3 / S1-4）。AC-S2-82 ⑮：开通失败 → 全额退款成功 → 旧开通任务重试后权益仍为退款后的结果。
 # 并发：同键提交两次只一张退款单；并发两笔部分退款只成功一笔、合计不超可退（AC-S2-82 ⑭）；退款通知与查询并发只生效一次。幂等 subject 按编排裁定（notices 21:3x ②）。实现用 Fable 5.1 高推理。
+# 2026-10-23 编排 10:27：Codex 不可用至 10-30，规则测试与评审改由独立 Claude（tools/agent/claude-run.sh，approvals #36），tester 改为 claude-independent。
 refs: [BR-PAY-06, BR-PAY-07]
 refs_hash:
   BR-PAY-06: 102e1fb8839f
@@ -24,7 +25,7 @@ paths:
 test_paths:
   - 'test/spec/payment/refund/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payment/refund/**'
