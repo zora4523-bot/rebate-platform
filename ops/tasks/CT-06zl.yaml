@@ -1,0 +1,28 @@
+id: CT-06zl
+repo: rebate-platform
+title: CT-06zl：test:browser 拆成 browser 与 admin 两个浏览器项目（止血 verify-int「Failed to fetch dynamically imported module」）
+type: guard-change
+# 2026-10-23 入账（ops 线，编排决定止血）。起因：verify-int 的 test:browser 偶发，至今 5 次（作业 120093634363、120128079809、
+# 120140807108、120149222363、120191988078）各红 1 个文件，都是 admin-shell 或 admin-dark 在导入阶段报 Failed to fetch dynamically
+# imported module；按报告顺序，每次都是同一浏览器页里紧跟在 h5 文件之后、第一次加载 admin 模块图的那个文件。CT-06zi（#1293）
+# 已否定「Vite 运行中重新预构建」，根因未确认，它的诊断日志继续保留。
+# 做法（基于相关性的止血，不是根因修复）：vitest.shared.ts 的 browserConfig 返回两个 Vitest 浏览器项目，extends: false，各有自己的
+# Vite 服务、依赖预构建、插件实例与浏览器页：browser（INCLUDE 去掉 admin 文件）先跑、admin（spec/frontend/admin-*）后跑
+# （sequence.groupOrder 0 / 1，同时开着的页数不超过拆分前）。两项目合起来正好是原 INCLUDE 减 BASE_EXCLUDE；admin 页再不会先跑
+# h5 文件。不加重试，不改任何测试与断言，STRICT 不变（passWithNoTests 只能在根上，其余三项也在每个项目里）。
+# test:browser 脚本、red-projects.json、red-plan.test.ts、verify-container.sh 都不用改：配置文件仍是一个，include 规则不变，
+# red-plan 的检查照旧成立。依赖 #1293（同改 vitest.shared.ts，本分支在它之上；它合并后变基即可）。
+# 改 vitest.shared.ts、test/vitest.browser.config.ts 属第二类保护路径，按 approvals #16 / #24 由编排核对后加标签；非 task 分支
+# chore/guard-change-CT-06zl，不带证据文件（先例 CT-06zg #1258）。
+refs: []
+refs_hash: {}
+deps: [CT-06zi]
+paths:
+  - 'vitest.shared.ts'
+  - 'test/vitest.browser.config.ts'
+  - 'ops/tasks/CT-06zl.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done

@@ -10,6 +10,11 @@ import { browserConfig } from '../vitest.shared.ts';
 
 const INCLUDE = ['spec/**/*.browser.test.{ts,tsx}'];
 
+// CT-06zl: the admin console's browser files run as a project of their own, after the others
+// (H5 and the browser environment checks), with their own Vite server and pages; see
+// browserConfig. The pattern lies inside INCLUDE, so the two projects still take INCLUDE.
+const ADMIN = ['spec/frontend/admin-*/**/*.browser.test.{ts,tsx}'];
+
 // Where `page.screenshot()` writes: the git-ignored test/.tmp/ by default; an export directory
 // when COULI_BROWSER_SCREENSHOT_DIR names one (tools/ops/verify-container.sh --browser sets it
 // to /out/screenshots). The page reads its screenshots back, so that directory is allowed.
@@ -18,7 +23,9 @@ const screenshots = exportDir === undefined || exportDir === '' ? undefined : re
 
 export default browserConfig({
   include: INCLUDE,
-  plugins: [react(), tailwindcss()],
+  name: 'browser',
+  apart: { name: 'admin', include: ADMIN },
+  plugins: () => [react(), tailwindcss()],
   provider: playwright(),
   screenshotDirectory: screenshots ?? '.tmp/browser/screenshots',
   ...(screenshots === undefined ? {} : { fsAllow: [screenshots] }),
