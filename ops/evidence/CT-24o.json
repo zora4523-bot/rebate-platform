@@ -1,0 +1,37 @@
+{
+  "task": "CT-24o",
+  "spec_ref": "17b5fe5cf052e9e93d0be356a7fcc1b3390be4b5",
+  "spec_commit": "026d2b4d454044cad65dcd3014069562cf86c910",
+  "red_tests": [],
+  "risk_note": "RV1 contract task (contracts/openapi.yaml, error-codes.yaml, contracts-ts catalog test and the regenerated contracts-ts and route tables): adds eleven planned admin-account write operations under /admin/v1/admins and /admin/v1/me — create a normal account (initial password returned once, no-store), regenerate the initial password (BR-ID-43, D10-143), disable / enable, save permission points as a whole (expected row_version), reset another account's authenticator, update display name, and verify-phone code send / change for self and by a super admin (TOTP-tier step-up, new-number SMS check, old number stays valid until the change). Super-only except the two /me operations; super targets are refused for disable / enable / permissions / display name / phone change, authenticator reset only refuses the caller itself. 20902 gains data.resource=admin_account (registered in 04 §7 / 08 §13.11 by planning #175); AdminAccount gains an optional row_version. No new error code. Transcribes 08 BR-ID-43, BR-ID-34 (incl. its verify-phone detail), BR-ID-33, BR-ID-42. tester none; implementation by an Opus 5.5 subagent in two runs. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 3,
+      "note": "round 1 fail (S1: 20902 admin_account not registered in planning); round 2 fail on the same plus BR-ID-43 absent from SPEC_REF (both closed once SPEC_REF reached planning #175); round 3 pass, 0 findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "2d2f225a24118b7c6c8567691edeaa36c7f8abbe",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "2bf4f600b96fb9d9d0a54ee6ab7a0e173f12c8e7",
+    "specs": "72dde67eefff9307ad4dfab3f98c70a071cc017a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
