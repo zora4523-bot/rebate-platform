@@ -163,7 +163,7 @@ export type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 /** A config_items row (content reads it; set before the app is created: content caches reads). */
 export async function setConfig(f: Fixture, key: string, value: unknown) {
-  await sql`INSERT INTO config_items (app_id, key, value, updated_by)
+  await sql`INSERT INTO app.config_items (app_id, key, value, updated_by)
     VALUES (${f.subject.app_id}, ${key}, ${JSON.stringify(value)}::jsonb, 'b2-15b-spec')`.execute(
     f.db,
   );
