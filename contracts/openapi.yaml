@@ -29698,8 +29698,10 @@ components:
             (BR-TEXT-03), claim_guide.<platform> (BR-ATTR-17 细则), login_help (BR-ID-02 细则),
             withdraw_rules (BR-WDR-04 细则), share_rules (the public share rules article, entered
             from the share page and the 分享赚 entry; W-25), faq.invite_code_bind (the invite-code
-            binding FAQ; W-25, where it is shown is left to design). Values are operations
-            configuration (article ids).
+            binding FAQ; W-25, where it is shown is left to design), invite_rules (the invite
+            rules article, entered from 完整规则 on the H5 invite page; D10-252), invite_reward_rules
+            (the invite reward campaign rules article, entered from 活动规则 on the same page;
+            D10-252). Values are operations configuration (article ids).
           additionalProperties:
             $ref: '#/components/schemas/HelpLinkTarget'
         nickname:
