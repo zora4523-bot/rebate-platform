@@ -14,10 +14,7 @@ import {
   type AgentCallerResolver,
   type AgentStreamRequest,
 } from '../../../../apps/api/src/modules/agent/stream/mount/caller.ts';
-import type {
-  AgentConsentReaderFactory,
-  AgentStreamModuleOptions,
-} from '../../../../apps/api/src/modules/agent/stream/mount/index.ts';
+import type { AgentStreamModuleOptions } from '../../../../apps/api/src/modules/agent/stream/mount/index.ts';
 import { APP_CONFIG, DB, loadConfig } from '../../../../apps/api/src/modules/platform/index.ts';
 import { APP, callFactory, compileOnlyDb, injectTokens, providerOf } from './kit.ts';
 
@@ -37,16 +34,12 @@ class FakeCallerReader implements AgentCallerReader {
   }
 }
 
-const consentReader: AgentConsentReaderFactory = () => ({
-  check: async () => ({ allowed: false, reason: 'missing' }),
-});
-
 /**
  * AGENT_CALLER's provider of AgentModule.forStream, given only what app.module still passes (no
- * caller reader factory; the cast keeps this valid while the option still exists).
+ * caller or consent reader factory; the cast keeps this valid while those options still exist).
  */
 function callerProvider() {
-  const stream = AgentModule.forStream({ consentReader } as AgentStreamModuleOptions);
+  const stream = AgentModule.forStream({} as AgentStreamModuleOptions);
   return providerOf(stream.providers, AGENT_CALLER);
 }
 
