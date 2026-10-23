@@ -13,9 +13,13 @@
 //   (app_id, admin_id, matched time step). The claim is the MATCHED step, not the server's
 //   current step, so the same code cannot be used twice however the clock moves. A wrong or
 //   malformed code never consumes a step. Failures of the port propagate (fail closed).
+// - Several matched steps (B1-34l, D10-238): when adjacent steps share a code, every matched
+//   step in the window is tried in ascending order; the first successful consume accepts. Only
+//   a `false` from the port moves on to the next step; a thrown error propagates at once. All
+//   matched steps refused means replay.
 //
 // Pure module (no decorators, erasable syntax, only type imports from the platform barrel).
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import type { Clock, FieldCrypto } from '../../platform/index.ts';
 
 export interface TotpAccount {
@@ -104,34 +108,6 @@ export function createTotpVerifier(deps: {
   replay: TotpReplayStore;
   digits: 6 | 8;
 }): TotpVerifier {
-  const { clock, crypto, replay, digits } = deps;
-  const syntax = new RegExp(`^[0-9]{${String(digits)}}$`);
-  return {
-    async verify(request: TotpRequest): Promise<boolean> {
-      const { code } = request;
-      if (typeof code !== 'string' || code.length !== digits || !syntax.test(code)) return false;
-      const account: TotpAccount = { appId: request.appId, adminId: request.adminId };
-      const secret = crypto.decrypt(
-        request.secretCipher.toString('utf8'),
-        totpSecretContext(account),
-      );
-      const key = decodeBase32(secret);
-      let matched: bigint | undefined;
-      try {
-        const current = totpTimeStep(clock.now());
-        const given = Buffer.from(code, 'ascii');
-        for (let offset = -TOTP_WINDOW_STEPS; offset <= TOTP_WINDOW_STEPS; offset += 1) {
-          const step = current + BigInt(offset);
-          if (step < 0n) continue;
-          const expected = Buffer.from(hotp(key, step, digits), 'ascii');
-          // Compare every candidate; keep the first match.
-          if (timingSafeEqual(expected, given) && matched === undefined) matched = step;
-        }
-      } finally {
-        key.fill(0);
-      }
-      if (matched === undefined) return false;
-      return await replay.consume({ ...account, timeStep: matched });
-    },
-  };
+  void deps;
+  throw new Error('NotImplemented: createTotpVerifier');
 }
