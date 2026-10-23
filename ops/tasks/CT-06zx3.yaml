@@ -1,0 +1,23 @@
+id: CT-06zx3
+repo: rebate-platform
+title: CT-06zx3：verify-int 的浏览器依赖安装步骤缓存 apt .deb、加下载超时与重试、单步 10 分钟上限（D10-308）
+type: guard-change
+# 2026-10-24 入账（ops 线，编排裁定 D10-308）。起因：最近 120 轮 ci.yml 里 verify-int 在 60 分钟被取消的两轮（#1451 run
+# 40012028986、#1452 run 40013000324）都卡在「Install Chromium and the CJK fonts for the browser tests」：azure Ubuntu 镜像掉到
+# 36–42 kB/s，fonts-noto-cjk（61 MB）一次停 23 分钟后重下，这一步用了 37 / 34 分钟（正常不到 1 分钟），test:int 随后被截断；
+# test:int 本身正常 17–30 分钟，不拆分片。做法：① actions/cache/restore + save 缓存 ~/apt-archives/*.deb，键 = runner 镜像
+# （ImageOS / ImageVersion）+ 包清单哈希（fonts-noto-cjk 与随 playwright 版本的 chromium 依赖）；精确命中或没有 .deb 时不存；
+# ② /etc/apt/apt.conf.d/99couli-ci 写 Acquire::http(s)::Timeout 30、Acquire::Retries 5、下载目录与保留下载包（playwright
+# install-deps 内部的 apt-get 同样读到）；③ 该步 timeout-minutes: 10。不改测试与作业时限。主干只有这一处同样的安装步骤。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/workflows/ci.yml'
+  - 'ops/tasks/CT-06zx3.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

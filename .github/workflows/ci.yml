@@ -250,7 +250,7 @@ jobs:
       # with the same glyphs as in tools/ops/verify-container.sh. Installed before test:int
       # (CT-06ze, 2026-10-22) so a slow install fails fast instead of after the integration
       # tests; the browser download is cached per playwright version, the system libraries and
-      # fonts still come from apt on every run.
+      # fonts come from apt, their .deb files cached per runner image (CT-06zx3).
       - name: Read the pinned playwright version
         id: playwright
         run: |
@@ -266,8 +266,44 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
-      - name: Install Chromium and the CJK fonts for the browser tests
+      # D10-308 (CT-06zx3): the apt downloads of the next step are cached as .deb files. Two
+      # verify-int runs (#1451, #1452, 2026-10-23) were cut at 60 minutes after this step took
+      # 34–37 minutes: the Azure Ubuntu mirror fell to ~40 kB/s and fonts-noto-cjk (61 MB) stalled
+      # for 23 minutes before a retry. The key is the runner image (ImageOS / ImageVersion) and a
+      # hash of the package list (fonts-noto-cjk plus playwright's chromium dependencies, which
+      # follow the pinned playwright version); a hit means apt finds the .deb files and downloads
+      # nothing it already has.
+      - name: Read the runner image for the apt cache
+        id: apt-key
         run: |
+          echo "image=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "packages=$(printf 'fonts-noto-cjk playwright-%s-chromium-deps' "$PLAYWRIGHT" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+        env:
+          PLAYWRIGHT: ${{ steps.playwright.outputs.version }}
+      - name: Restore the apt .deb cache
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives/*.deb
+          key: apt-debs-${{ steps.apt-key.outputs.image }}-${{ steps.apt-key.outputs.packages }}
+      # apt (and the apt-get that `playwright install-deps` runs) reads its options from an
+      # apt.conf.d file: downloads go to ~/apt-archives and are kept; a stalled download is dropped
+      # after 30 s and retried up to 5 times instead of hanging for 20 minutes. The step has its
+      # own 10-minute limit so a mirror that stays slow fails the job early (rerun it) instead of
+      # eating the job's 60 minutes; the job limit and the tests are unchanged.
+      - name: Install Chromium and the CJK fonts for the browser tests
+        id: apt-install
+        timeout-minutes: 10
+        run: |
+          mkdir -p "$HOME/apt-archives/partial"
+          printf '%s\n' \
+            'Acquire::http::Timeout "30";' \
+            'Acquire::https::Timeout "30";' \
+            'Acquire::Retries "5";' \
+            "Dir::Cache::Archives \"$HOME/apt-archives\";" \
+            'APT::Keep-Downloaded-Packages "true";' \
+            'Binary::apt::APT::Keep-Downloaded-Packages "true";' \
+            | sudo tee /etc/apt/apt.conf.d/99couli-ci > /dev/null
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends fonts-noto-cjk
           if [ "$CACHE_HIT" = true ]; then
@@ -275,8 +311,20 @@ jobs:
           else
             pnpm --filter @couli/spec-tests exec playwright install --with-deps chromium
           fi
+          sudo chmod -R a+rX "$HOME/apt-archives"
+          debs=$(find "$HOME/apt-archives" -maxdepth 1 -name '*.deb' | wc -l)
+          echo "apt .deb files kept: ${debs}"
+          echo "debs=${debs}" >> "$GITHUB_OUTPUT"
         env:
           CACHE_HIT: ${{ steps.playwright-cache.outputs.cache-hit }}
+      # Saved right after the install, so a later test failure still keeps the cache; skipped on an
+      # exact hit (the key exists already) and when apt kept no .deb file (a save of nothing fails).
+      - name: Save the apt .deb cache
+        if: ${{ steps.apt-cache.outputs.cache-hit != 'true' && steps.apt-install.outputs.debs != '0' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives/*.deb
+          key: apt-debs-${{ steps.apt-key.outputs.image }}-${{ steps.apt-key.outputs.packages }}
       # A service container takes no command, so the redis-server settings of
       # infra/local/compose.yaml (no RDB, no AOF, noeviction with an explicit limit;
       # ADR-0001 §4.2 #17) are applied at run time.
