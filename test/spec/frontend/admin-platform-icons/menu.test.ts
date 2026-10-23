@@ -143,7 +143,7 @@ it(
 
     const other = mount(undefined, {
       permissionsProvider: async () => ({ isSuper: true, permissions: [] }),
-      initialRoute: { menuId: 'app-versions' },
+      initialRoute: { menuId: 'reports' },
     });
     await waitFor(() => expect(screen.queryByText(/尚未接入/)).not.toBeNull());
     expect(other.server.log).toEqual([]);
