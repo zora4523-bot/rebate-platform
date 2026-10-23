@@ -88,6 +88,8 @@ export class SupplementRejectedError extends Error implements SupplementRejected
 // ---------------------------------------------------------------------------
 // 实现。settle_jobs 只经 ../settle-job.ts（生成的 settle-job transition()，只写 0066 授权列）。
 // 任务键沿用 job = 'bill'（settle_jobs_job_check 只允许四个值），run_at = 名义请求时刻。
+// 已知局限：键不含 bill_id（表上没有该维度，加列 / 新 job 值要新迁移），不同账单或与账单日任务
+// 恰好同一毫秒的 requestedAt 会互判重放；调用方（B2-09）须按每次发起取不同的名义时刻。
 
 const JOB = 'bill';
 const DEFAULT_MAX_ORDERS = 5000;
@@ -95,6 +97,36 @@ const DEFAULT_MAX_ORDERS = 5000;
 const INSERT_CHUNK = 1000;
 const DIFF_SOURCE = 'R1';
 const DIFF_REF_TYPE = 'order';
+
+/** 可能让明细仍待执行的批次状态（SQL 预筛；最终判定在 blocksSupplement）。 */
+const BLOCKING_STATUSES = ['DRAFT', 'CONFIRMED', 'EXECUTING'] as const;
+
+export interface PendingItemFacts {
+  readonly batchStatus: string;
+  readonly pausedBySwitchAt: Date | null;
+  readonly itemResult: string | null;
+}
+
+/**
+ * 某条已有的子订单明细是否让该单暂不进入补充批次（BR-FUND-04 结算批次迁移表表外：
+ * 一个 WAITING 子订单可以出现在多个批次的明细里，停在 PARTIAL 的批次不妨碍它进入后续批次）。
+ * 只有 DRAFT、未被开关停住的 CONFIRMED、EXECUTING 中尚未处理（result 为空）的明细算待执行；
+ * PARTIAL、DONE、CANCELLED、带 paused_by_switch_at 的批次与已有结果的明细都不阻挡。
+ * 同一单因此可能同时在 PARTIAL 主批次（手动继续）与补充批次里：⑦ 的锁内重验（仍 WAITING、seq 一致）
+ * 与入账凭证 uniq_key 保证只入账一次。
+ */
+export function blocksSupplement(facts: PendingItemFacts): boolean {
+  if (facts.itemResult !== null) return false;
+  switch (facts.batchStatus) {
+    case 'DRAFT':
+    case 'EXECUTING':
+      return true;
+    case 'CONFIRMED':
+      return facts.pausedBySwitchAt === null;
+    default:
+      return false;
+  }
+}
 
 type ItemRole = 'self' | 'share' | 'direct' | 'indirect';
 
@@ -243,7 +275,10 @@ export function createSupplementCommand(dependencies: SupplementDependencies): S
     return bill.bill_id;
   }
 
-  /** 已在未驳回批次中待执行或已入账的子订单（任意账单），不再重复纳入补充批次。 */
+  /**
+   * 仍在别的批次里待执行的子订单（任意账单），不重复纳入补充批次；判定见 {@link blocksSupplement}。
+   * PARTIAL、开关停住的批次与已处理的明细不阻挡（BR-FUND-04 迁移表表外）；重复入账由 ⑦ 锁内重验与凭证 uniq_key 兜底。
+   */
   async function pendingOrderIds(
     trx: Transaction<DB>,
     appId: string,
@@ -257,14 +292,24 @@ export function createSupplementCommand(dependencies: SupplementDependencies): S
         .innerJoin('settle_batches as b', (join) =>
           join.onRef('b.batch_id', '=', 'i.batch_id').onRef('b.app_id', '=', 'i.app_id'),
         )
-        .select('i.order_id')
+        .select(['i.order_id', 'i.result', 'b.status', 'b.paused_by_switch_at'])
         .where('i.app_id', '=', appId)
         .where('i.item_type', '=', 'order')
-        .where('b.status', '<>', 'CANCELLED')
-        .where((eb) => eb.or([eb('i.result', 'is', null), eb('i.result', '=', 'credited')]))
+        .where('i.result', 'is', null)
+        .where('b.status', 'in', [...BLOCKING_STATUSES])
         .where('i.order_id', 'in', part)
         .execute();
-      for (const r of rows) out.add(r.order_id);
+      for (const r of rows) {
+        if (
+          blocksSupplement({
+            batchStatus: r.status,
+            pausedBySwitchAt: r.paused_by_switch_at,
+            itemResult: r.result,
+          })
+        ) {
+          out.add(r.order_id);
+        }
+      }
     }
     return out;
   }
@@ -433,7 +478,7 @@ export function createSupplementCommand(dependencies: SupplementDependencies): S
 
     await deps.saveValidations(trx, selection, validations);
 
-    // 已在首批或前一轮补充中待执行（含 PARTIAL 待手动继续）的子订单不重复入批；驳回或跳过的可再入批。
+    // 已在首批或前一轮补充中仍待执行的子订单不重复入批；PARTIAL / 开关停住 / 驳回 / 已跳过的可再入批。
     const pending = await pendingOrderIds(
       trx,
       appId,
@@ -529,6 +574,10 @@ export function createSupplementCommand(dependencies: SupplementDependencies): S
       batchIds.push(batchId);
     }
 
+    // 取舍（待编排裁定）：补充轮不回写 settle_bills 的分平台子订单数、联盟结算佣金合计、受益人份额 /
+    // 平台留存合计与差错单数 / 暂缓数——它们是账单日那一刻的出账快照；补充轮的校验结果在
+    // saveValidations 的记录里、子订单数在各补充批次的 order_count、差错单在 recon_diffs，
+    // 是否把补充轮并入账单合计或另记批次级合计由后续任务（B2-09 后台详情）定。不影响入账金额。
     await completeSettleJob(trx, jobId, now, validations.length, heldCount);
     return { outcome: 'generated', billId, platform, batchIds };
   }
