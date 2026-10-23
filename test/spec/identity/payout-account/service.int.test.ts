@@ -51,17 +51,14 @@ afterAll(async () => {
   }
 });
 
-// 为 CT-26c 让路：CT-26c 给收款账号响应加必返 payout_account_id（当前收款账号行的编号）。
-// 只按响应对象有没有该键确定性判定：没有 → 期望与改前完全相同；有 → 期望原对象加上该键，
-// 值必须等于给定的当前收款账号行编号。CT-26c 合并后收紧为单态（恒带该键）。
+// CT-26c 起收款账号响应必返 payout_account_id（当前收款账号行的编号，契约 PayoutAccount*）。
+// 期望值必须是确定的行编号（字符串）；响应缺该键或值不同都让 toEqual 失败。
 function withPayoutAccountId(
-  actual: unknown,
   expected: Record<string, unknown>,
   currentId: string | undefined,
 ): Record<string, unknown> {
-  const carries =
-    typeof actual === 'object' && actual !== null && Object.hasOwn(actual, 'payout_account_id');
-  return carries ? { payout_account_id: currentId, ...expected } : expected;
+  expect(currentId).toEqual(expect.any(String));
+  return { payout_account_id: currentId, ...expected };
 }
 
 interface Vector {
@@ -116,11 +113,9 @@ it('[AC-B1-13e#2] 首绑返回脱敏账号，不计次；存储时刻取注入 C
   const f = await fixture(kit);
   const result = await save(kit, f);
   const rows = await state(kit, f);
-  const data = 'data' in result ? result.data : undefined;
   expect(result).toEqual({
     code: 0,
     data: withPayoutAccountId(
-      data,
       {
         payout_method: 'alipay',
         masked_account: 'zh***@example.com',
@@ -238,6 +233,11 @@ it('[AC-B1-13e#9] 换绑仅停用旧行、插新行并追加一条审计；旧�
   const rows = await state(kit, f);
   expect(rows.accounts).toHaveLength(2);
   expect(rows.accounts.filter((row) => row.is_current)).toHaveLength(1);
+  // [AC-CT-26i#1] 换绑返回新写入的当前行编号，不是旧行编号（契约：换绑写新行，编号随之改变）。
+  const fresh = rows.accounts.find((row) => row.is_current)!;
+  expect(fresh.id).toEqual(expect.any(String));
+  expect(fresh.id).not.toBe(old.id);
+  expect(result).toMatchObject({ code: 0, data: { payout_account_id: fresh.id } });
   const former = rows.accounts.find((row) => row.id === old.id)!;
   const {
     is_current: oldCurrent,
@@ -291,7 +291,6 @@ it('[AC-B1-13e#11] 同账号在上限后仍成功，保留账号与变更记录�
   expect(same).toEqual({
     code: 0,
     data: withPayoutAccountId(
-      'data' in same ? same.data : undefined,
       {
         payout_method: 'alipay',
         masked_account: '138****8000',

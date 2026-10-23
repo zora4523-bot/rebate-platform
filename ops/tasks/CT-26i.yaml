@@ -1,0 +1,20 @@
+id: CT-26i
+repo: rebate-platform
+title: 测试修改（收紧）：CT-26c 已合并，把 CT-26g 的两态判定收紧为单态——收款账号 GET / 保存 / 银行卡提交响应必带 payout_account_id；并补 CT-26g 复审 out_of_scope：service / submit 路径缺键须红，换绑后返回新行编号有用例
+type: test-change
+# 草稿 2026-10-23（身份与风控线 identity-lane）。CT-26c #1353 合并后收紧 CT-26g（#1294）的过渡写法（先例 CT-26h、B1-15q）。
+# 独立 Claude 改（approvals #36），新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签。
+refs: []
+refs_hash: {}
+deps: [CT-26c, CT-26g]
+paths:
+  - 'test/spec/identity/payout-account/get.int.test.ts'
+  - 'test/spec/identity/payout-account/service.int.test.ts'
+  - 'test/spec/identity/payout-bank-card/submit.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/payout-account/**'
+  - 'test/spec/identity/payout-bank-card/**'
+status: todo
