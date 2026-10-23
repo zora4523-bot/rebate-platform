@@ -1,0 +1,129 @@
+{
+  "red_tests": [
+    "test/spec/db/deletion-anonymize/immutable-account-columns.int.test.ts > [AC-B1-15r#18] a non-anonymized account cannot change any of the seven account columns, alone or with other columns",
+    "test/spec/db/deletion-anonymize/immutable-account-columns.int.test.ts > [AC-B1-15r#19] unrelated granted columns and same-value writes stay updatable on a live account",
+    "test/spec/db/deletion-anonymize/immutable-account-columns.int.test.ts > [AC-B1-15r#20] anonymized_at is final and an anonymized account cannot change any account column",
+    "test/spec/db/deletion-anonymize/immutable-account-columns.int.test.ts > [AC-B1-15r#21] only the single anonymizing UPDATE may clear the account, and the result is then frozen",
+    "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#1] anonymized_at is nullable timestamptz without a clock default; payee_name stays required",
+    "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#2] both methods accept anonymized skeletons with an optional bank name and a placeholder payee",
+    "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#3] couli_app clears each method atomically, preserves the row, and can repeat the cleanup",
+    "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#4] non-anonymized current and historical accounts still require every method-specific field",
+    "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#5] anonymized rows cannot retain any identifier, even a complete formerly valid account",
+    "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#6] an anonymized account cannot be current on insert or update",
+    "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#7] cleanup adds only the specified column grants and never DELETE or ownership updates",
+    "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#8] anonymization frees the current slots while all three scoped unique rules survive",
+    "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#9] anonymization preserves the method check, tenant foreign key and validated checks",
+    "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#10] tax_retained is a required boolean defaulting to false for both ordinary states",
+    "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#11] none with tax_retained accepts all retained ciphertext, including without verification metadata",
+    "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#12] couli_app can retain verified ciphertext under none and cannot unset the flag without clearing",
+    "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#13] default and false retention reject every residual private field under none or failed",
+    "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#14] tax_retained does not exempt failed rows or incomplete verified rows",
+    "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#15] ordinary unretained verified rows can still be cleared atomically",
+    "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#16] tax_retained adds only column UPDATE while existing cleanup grants and immutable identity survive",
+    "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#17] retained rows still enforce status, HMAC, provider and tenant integrity with validated checks"
+  ],
+  "risk_note": "RV2 (db). D10-186 / D10-137: migration 0077 adds payout_accounts.anonymized_at and recreates the funds-table payout_accounts_details_check as two branches (not anonymized: the 0009 condition unchanged; anonymized: the five identifying columns all null and is_current = false), plus column UPDATE grants for couli_app (no DELETE); realname gains tax_retained boolean NOT NULL DEFAULT false with realname_unverified_cleared_check relaxed only for status none + tax_retained; constraints added NOT VALID and validated in 0078 (as 0057 / 0058, 0071 / 0072). The guard registration of 0077 is guard-change B1-15t (merged first). Frozen realname tests made two-state by test-change B1-15s (merged). Snapshot regenerated on the AWS test machine; numbers 0077 / 0078 per the migration slot (D10-268), content otherwise as reviewed. Required CI checks run on the PR head. D10-269: 0077 also adds the payout_accounts BEFORE UPDATE guard (app.payout_accounts_reject_identifier_update / payout_accounts_anonymize_only, search_path pinned, EXECUTE revoked from PUBLIC, restrict_violation): the seven account columns change only in the UPDATE that sets anonymized_at from NULL, and anonymized_at is final once set.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "money review round 1 pass, no findings (couli-runs/B1-15r/review-codex.json); reviewed with temporary numbers 0071 / 0072, renumbered to 0077 / 0078 with only the cross-reference comments changed"
+    },
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "D10-269 increment (guard trigger) reviewed by a fresh independent Claude: pass, no findings (couli-runs/B1-15r/review-claude-independent.json); Codex unavailable until 10-30 (approvals #36)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (spec d5af150a) plus D10-269 cases [AC-B1-15r#18]-[#21] by a fresh independent Claude through claude-run.sh (tester switched by #1398; one earlier dispatch was refused before running but bumped the test count), committed before the implementation (spec cbee3610), red/2 PASS 21 tests; reviewed through claude-run.sh r1 pass (S2 1) and r2 pass (S2 1) (couli-runs/B1-15r/review-spec-r1.json, review-spec-r2.json)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "c0dfc20514127f13069bc5f9ed037951cac5799e",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "task": "B1-15r",
+  "spec_commit": "4a1f1bae43e95fd5e979cdcb26c78b5e9cf38620",
+  "spec_ref": "48e55e6a035ad350ee46437d6f0ffdc155543728",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "4a1f1bae43e95fd5e979cdcb26c78b5e9cf38620",
+      "tree": "af3217d7a832f0bcde5239334423540ba0d98971",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T16:36:53Z",
+      "finished_at": "2026-10-23T16:37:20Z",
+      "red_tests": [
+        "test/spec/db/deletion-anonymize/immutable-account-columns.int.test.ts > [AC-B1-15r#18] a non-anonymized account cannot change any of the seven account columns, alone or with other columns",
+        "test/spec/db/deletion-anonymize/immutable-account-columns.int.test.ts > [AC-B1-15r#19] unrelated granted columns and same-value writes stay updatable on a live account",
+        "test/spec/db/deletion-anonymize/immutable-account-columns.int.test.ts > [AC-B1-15r#20] anonymized_at is final and an anonymized account cannot change any account column",
+        "test/spec/db/deletion-anonymize/immutable-account-columns.int.test.ts > [AC-B1-15r#21] only the single anonymizing UPDATE may clear the account, and the result is then frozen",
+        "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#1] anonymized_at is nullable timestamptz without a clock default; payee_name stays required",
+        "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#2] both methods accept anonymized skeletons with an optional bank name and a placeholder payee",
+        "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#3] couli_app clears each method atomically, preserves the row, and can repeat the cleanup",
+        "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#4] non-anonymized current and historical accounts still require every method-specific field",
+        "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#5] anonymized rows cannot retain any identifier, even a complete formerly valid account",
+        "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#6] an anonymized account cannot be current on insert or update",
+        "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#7] cleanup adds only the specified column grants and never DELETE or ownership updates",
+        "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#8] anonymization frees the current slots while all three scoped unique rules survive",
+        "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts > [AC-B1-15r#9] anonymization preserves the method check, tenant foreign key and validated checks",
+        "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#10] tax_retained is a required boolean defaulting to false for both ordinary states",
+        "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#11] none with tax_retained accepts all retained ciphertext, including without verification metadata",
+        "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#12] couli_app can retain verified ciphertext under none and cannot unset the flag without clearing",
+        "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#13] default and false retention reject every residual private field under none or failed",
+        "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#14] tax_retained does not exempt failed rows or incomplete verified rows",
+        "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#15] ordinary unretained verified rows can still be cleared atomically",
+        "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#16] tax_retained adds only column UPDATE while existing cleanup grants and immutable identity survive",
+        "test/spec/db/deletion-anonymize/realname.int.test.ts > [AC-B1-15r#17] retained rows still enforce status, HMAC, provider and tenant integrity with validated checks"
+      ],
+      "expected": [
+        "test/spec/db/deletion-anonymize/immutable-account-columns.int.test.ts",
+        "test/spec/db/deletion-anonymize/payout-accounts.int.test.ts",
+        "test/spec/db/deletion-anonymize/realname.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "e0e4a9aa2a681d9ea51506f8d05ba018a34e0b50f565f54ffa2f11b68c93fd8d"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "51bd1813e2ca36d7287c17ce49460f909d39b28b",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ]
+}
