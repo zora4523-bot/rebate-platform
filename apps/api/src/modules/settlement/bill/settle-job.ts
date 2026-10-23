@@ -82,8 +82,9 @@ async function casStatus(
   jobId: string,
   from: SettleJobState,
   event: SettleJobEvent,
+  // 只含迁移 0066 授权 couli_app 可 UPDATE 的列（status、row_version 在下面补）；
+  // started_at 不在授权列内，重跑保留首次启动时间。
   set: {
-    readonly started_at?: Date;
     readonly finished_at: Date | null;
     readonly processed_count?: number;
     readonly skipped_count?: number;
@@ -103,7 +104,7 @@ async function casStatus(
 }
 
 /**
- * 认领一次运行：新键插入 running；已有 failed 行经 RETRY 在同一行重跑；
+ * 认领一次运行：新键插入 running；已有 failed 行经 RETRY 在同一行重跑（started_at 不变）；
  * 已有 done / running 行判为重放，返回 null、不改行。
  * 唯一约束兜底：并发同键投递在 INSERT 处等先到者提交或回滚。
  */
@@ -116,8 +117,8 @@ export async function claimSettleJob(
   if (inserted !== null) return inserted;
   const existing = await lockExisting(trx, key);
   if (existing.status !== 'failed') return null;
+  // started_at 保留首次启动时间（不在 couli_app 的 UPDATE 授权列内）。
   await casStatus(trx, existing.id, 'failed', 'RETRY', {
-    started_at: now,
     finished_at: null,
     processed_count: 0,
     skipped_count: 0,

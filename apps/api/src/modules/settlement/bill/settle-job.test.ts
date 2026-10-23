@@ -31,11 +31,21 @@ const KEY: SettleJobKey = { appId: APP, job: 'bill', platform: 'taobao', runAt: 
 
 type Row = Record<string, unknown>;
 
+/** 迁移 0066 授权 couli_app 的 settle_jobs UPDATE 列。 */
+const GRANTED_UPDATE = new Set([
+  'status',
+  'processed_count',
+  'skipped_count',
+  'finished_at',
+  'row_version',
+]);
+
 /** 只认 settle_jobs 的 INSERT … ON CONFLICT DO NOTHING / SELECT … FOR UPDATE / UPDATE … WHERE id AND status。 */
 function fakeDb() {
   let rows: Row[] = [];
   let saved: Row[] | null = null;
   const statements: string[] = [];
+  const updateSets: string[][] = [];
   const result = <R>(out: unknown[], affected?: bigint): QueryResult<R> =>
     (affected === undefined
       ? { rows: out }
@@ -89,6 +99,12 @@ function fakeDb() {
           text,
         );
       if (update !== null) {
+        const setCols = update[1]!.split(', ').map((part) => /^"([a-z_]+)" = /.exec(part)?.[1]);
+        updateSets.push(setCols.map(String));
+        // 迁移 0066 只授权 couli_app UPDATE 这几列；越界即报错（真库会 permission denied）。
+        if (setCols.some((c) => c === undefined || !GRANTED_UPDATE.has(c))) {
+          return Promise.reject(new Error(`permission denied for table settle_jobs: ${text}`));
+        }
         const id = params[Number(update[2]) - 1];
         const from = params[Number(update[3]) - 1];
         const hit = rows.find((r) => r['id'] === id && r['status'] === from);
@@ -133,7 +149,7 @@ function fakeDb() {
       createQueryCompiler: () => new PostgresQueryCompiler(),
     },
   });
-  return { db, rows: () => rows, statements };
+  return { db, rows: () => rows, statements, updateSets };
 }
 
 function deps(clock: FixedClock): BillJobDependencies {
@@ -190,19 +206,24 @@ it('[AC-B2-04n-UNIT#2] 首投递失败：生成事务回滚后该键记为 faile
   ]);
 });
 
-it('[AC-B2-04n-UNIT#3] 失败后同一 run_at 重投递：同一行经 RETRY 回 running，跑完 COMPLETE 为 done', async () => {
+it('[AC-B2-04n-UNIT#3] 失败后同一 run_at 重投递：同一行经 RETRY 回 running（started_at 保留首次），跑完 COMPLETE 为 done', async () => {
   const f = fakeDb();
   await failSettleJob(f.db, KEY, new Date(T1));
   const failedId = f.rows()[0]!['id'];
   expect(f.rows()).toEqual([expect.objectContaining({ status: 'failed', row_version: 1 })]);
 
+  f.updateSets.length = 0;
   const claimed = await f.db.transaction().execute((trx) => claimSettleJob(trx, KEY, new Date(T2)));
   expect(claimed).toBe(failedId);
+  // [AC-B2-04n-UNIT#3#2] RETRY 的 set 只含授权列，不含 started_at。
+  expect(f.updateSets).toEqual([
+    ['finished_at', 'processed_count', 'skipped_count', 'status', 'row_version'],
+  ]);
   expect(f.rows()).toEqual([
     expect.objectContaining({
       id: failedId,
       status: 'running',
-      started_at: new Date(T2),
+      started_at: new Date(T1),
       finished_at: null,
       row_version: 2,
     }),
