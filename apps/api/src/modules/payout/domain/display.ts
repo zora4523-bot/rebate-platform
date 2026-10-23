@@ -98,17 +98,24 @@ function delayed(row: WithdrawalDisplayRow, now: Date): boolean {
 function wechatBranch(row: WithdrawalDisplayRow, now: Date): WithdrawalSubTextBranch | null {
   if (row.payout_channel !== 'wechat' || row.needs_manual) return null;
   if (row.channel_state === 'wait_user_confirm') {
+    // D10-228 ②: no confirm_deadline recorded yet → still「处理中」(BR-WDR-25 wechat_processing),
+    // not「确认已过期」; expiry is only judged against a recorded deadline.
     const deadline = row.confirm_deadline;
-    return deadline !== null && now.getTime() < deadline.getTime()
-      ? 'wechat_wait_confirm'
-      : 'wechat_confirm_expired';
+    if (deadline === null) return 'wechat_processing';
+    return now.getTime() < deadline.getTime() ? 'wechat_wait_confirm' : 'wechat_confirm_expired';
   }
   if (row.channel_state === 'canceling') return 'wechat_canceling';
   return delayed(row, now) ? null : 'wechat_processing';
 }
 
-/** BR-WDR-25: the first matching row of the sub-text table, top to bottom. */
-export function subTextBranch(row: WithdrawalDisplayRow, now: Date): WithdrawalSubTextBranch {
+/**
+ * BR-WDR-25: the first matching row of the sub-text table, top to bottom. An unknown (future)
+ * status has a title (BR-TEXT-06「处理中」) but no sub-text branch → null (D10-228 ②).
+ */
+export function subTextBranch(
+  row: WithdrawalDisplayRow,
+  now: Date,
+): WithdrawalSubTextBranch | null {
   switch (row.status) {
     case 'PENDING_REVIEW': {
       if (row.auto_decision === null) return 'processing';
@@ -137,6 +144,6 @@ export function subTextBranch(row: WithdrawalDisplayRow, now: Date): WithdrawalS
       if (row.manual_resolution === 'failed') return 'failed_manual';
       return isAccountFailure(row.fail_code) ? 'failed_account' : 'failed_other';
     default:
-      return 'processing';
+      return null;
   }
 }

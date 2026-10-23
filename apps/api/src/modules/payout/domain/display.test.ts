@@ -33,3 +33,27 @@ describe('display (Codex money r1 S2)', () => {
     expect(subTextBranch({ ...base, payout_channel: 'alipay' }, now)).toBe('auto_expected_soon');
   });
 });
+
+describe('display (D10-228 ②: 以 08 为准)', () => {
+  const now = new Date('2026-10-23T04:00:00.000Z');
+
+  it('a WeChat withdrawal waiting for the user without a recorded deadline is still processing', () => {
+    const row: WithdrawalDisplayRow = {
+      ...base,
+      status: 'PAYING',
+      channel_state: 'wait_user_confirm',
+      confirm_deadline: null,
+    };
+    expect(subTextBranch(row, now)).toBe('wechat_processing');
+    expect(subTextBranch({ ...row, confirm_deadline: new Date(now.getTime() + 1) }, now)).toBe(
+      'wechat_wait_confirm',
+    );
+    expect(subTextBranch({ ...row, confirm_deadline: now }, now)).toBe('wechat_confirm_expired');
+  });
+
+  it('an unknown status has a title but no sub-text branch', () => {
+    expect(statusTitle('FUTURE_STATUS')).toBe('处理中');
+    expect(subTextBranch({ ...base, status: 'FUTURE_STATUS' }, now)).toBeNull();
+    expect(subTextBranch({ ...base, status: 'constructor' }, now)).toBeNull();
+  });
+});
