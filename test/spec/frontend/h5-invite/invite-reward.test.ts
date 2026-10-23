@@ -13,7 +13,7 @@ import {
   rewardLead,
   unavailable,
 } from './invite-fixtures.ts';
-import { controls, lastRule, mount, pageText, ruleCard, squash } from './invite-helpers.ts';
+import { controls, mount, pageText, ruleCard, ruleItems, squash } from './invite-helpers.ts';
 
 const REWARD_RULES = /活动规则/;
 const RULES_FULL = new RegExp(copy.rulesFull);
@@ -24,16 +24,19 @@ function expectNoRewardCard(text: string): void {
   expect(controls(REWARD_RULES)).toEqual([]);
 }
 
-/** 活动无效时「不发放」一句是邀请规则卡的最后一条（BR-INV-18 细则，画板 InviteShare-v2）。 */
-function expectNoRewardIsLastRule(): void {
+/** 定位到的是邀请规则卡本身（不是整页、不是奖励活动卡），返回它的规则列表各条。 */
+function ruleCardItems(): string[] {
   const card = ruleCard(copy.rulesTitle, RULES_FULL);
-  // 定位到的是规则卡本身，不是整页。
-  expect(squash(card.textContent)).not.toContain(inviteCode);
-  expect(squash(card.textContent)).toContain(squash(copy.noReward));
-  expect(
-    lastRule(card, RULES_FULL).endsWith(squash(copy.noReward)),
-    '「不发放红包或现金奖励」须是规则卡最后一条',
-  ).toBe(true);
+  const cardText = squash(card.textContent);
+  expect(cardText).not.toContain(inviteCode);
+  expect(cardText).not.toContain(squash(copy.rewardTitle));
+  return ruleItems(card);
+}
+
+/** 活动无效时「不发放」一句是邀请规则卡规则列表的最后一项（BR-INV-18 细则，画板 InviteShare-v2）。 */
+function expectNoRewardIsLastRule(): void {
+  const items = ruleCardItems();
+  expect(items.at(-1), '「不发放红包或现金奖励」须是规则列表最后一项').toBe(squash(copy.noReward));
 }
 
 it('[AC-F1-05a-REWARD#1] 活动无效（reward_enabled=false）：规则卡最后一条是「不发放」一句，无奖励活动卡', async () => {
@@ -70,9 +73,9 @@ it('[AC-F1-05a-REWARD#3] 活动有效（经桥 app.getConfig 读 invite）：奖
   // BR-TEXT-10 H5 金额：1000 分 → ¥10（去尾零）。
   expect(text).toContain(squash(copy.rewardTip.replace('{amount}', '¥10')));
   expect(text).not.toContain(squash(copy.noReward));
-  expect(squash(ruleCard(copy.rulesTitle, RULES_FULL).textContent)).not.toContain(
-    squash(copy.noReward),
-  );
+  const items = ruleCardItems();
+  expect(items.length).toBeGreaterThan(0);
+  expect(items.some((item) => item.includes(squash(copy.noReward)))).toBe(false);
   expect(text).toContain(inviteCode);
   expect(controls(REWARD_RULES)).toHaveLength(1);
   expect(text).not.toMatch(/\{amount\}|null|undefined|NaN/);

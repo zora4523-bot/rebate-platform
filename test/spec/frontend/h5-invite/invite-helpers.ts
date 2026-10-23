@@ -123,9 +123,17 @@ export function openedHelpArticles(http: InviteServer): string[] {
   return [...viaBridge, ...viaRouter];
 }
 
+/** Lists in `root` that are not nested inside another list in `root`. */
+function outerLists(root: HTMLElement): HTMLElement[] {
+  const lists = within(root).queryAllByRole('list');
+  return lists.filter((list) => !lists.some((other) => other !== list && other.contains(list)));
+}
+
 /**
- * The 邀请规则 card: the smallest element holding both the card title (an element whose whole
- * text is the title) and its 【完整规则】 entry.
+ * The 邀请规则 card (画板 InviteShare-v2 / InviteShareReward): the title and 【完整规则 ›】 sit
+ * in one row at the top, the rules are a list below that row. Found by the title (an element
+ * whose whole text is the title), then going up to the smallest ancestor that holds the
+ * 【完整规则】 entry and a rule list with at least one item.
  */
 export function ruleCard(title: string, fullEntry: RegExp): HTMLElement {
   const full = entry(fullEntry);
@@ -134,24 +142,34 @@ export function ruleCard(title: string, fullEntry: RegExp): HTMLElement {
     .find((element) => !element.contains(full) && element !== full);
   expect(heading, `规则卡标题「${title}」`).toBeDefined();
   let card: HTMLElement | null = heading!.parentElement;
-  while (card !== null && !card.contains(full)) card = card.parentElement;
-  expect(card, '规则卡同时含标题与完整规则入口').not.toBeNull();
+  while (
+    card !== null &&
+    !(
+      card.contains(full) &&
+      outerLists(card).some((list) => within(list).queryAllByRole('listitem').length > 0)
+    )
+  ) {
+    card = card.parentElement;
+  }
+  expect(card, '规则卡同时含标题、完整规则入口与规则列表').not.toBeNull();
   return card!;
 }
 
+/** Leading bullet or number markers a rule item may carry as text (•, ·, 1., 1、…). */
+const RULE_MARKER = /^(?:[•·・–—-]|\d+[.、)）])+/;
+
 /**
- * Text of the card's last rule: its last list item when the rules are a list, otherwise the card
- * text after the 【完整规则】 entry's text is taken out (whitespace removed either way).
+ * Texts of the rule card's rule list items, in order (whitespace and a leading bullet / number
+ * marker removed). The rule list is the card's list below the title row.
  */
-export function lastRule(card: HTMLElement, fullEntry: RegExp): string {
-  const items = within(card).queryAllByRole('listitem');
-  if (items.length > 0) return squash(items.at(-1)!.textContent);
-  const full = within(card)
-    .queryAllByRole('link', { name: fullEntry })
-    .concat(within(card).queryAllByRole('button', { name: fullEntry }));
-  let text = squash(card.textContent);
-  for (const element of full) text = text.replace(squash(element.textContent), '');
-  return text;
+export function ruleItems(card: HTMLElement): string[] {
+  const lists = outerLists(card).filter(
+    (list) => within(list).queryAllByRole('listitem').length > 0,
+  );
+  expect(lists, '规则卡里有且只有一个规则列表').toHaveLength(1);
+  return within(lists[0]!)
+    .getAllByRole('listitem')
+    .map((item) => squash(item.textContent).replace(RULE_MARKER, ''));
 }
 
 type User = ReturnType<typeof userEvent.setup>;
