@@ -1,0 +1,22 @@
+id: B1-06zc
+repo: rebate-platform
+title: linking 注销清理端口：该用户全部联盟绑定改 blocked（blocked_reason=deletion），在 identity 清理事务内执行、可重入；从 linking index 导出，app.module 替换 linking 的 unavailable 标记
+type: impl
+# 2026-10-24 入账（W1；编排 05:33 / D10-311 ③ 要求 W1 报 linking 注销清理端口）。依据 08 BR-ID-28 细则「注销删除与保留范围」：processing 阶段「联盟绑定 blocked（deletion）」；link_logs 按留存期 90 天清理、注销时不删（不在本任务）。
+# 形状：实现 identity 声明的 DeletionCleanupStep（apps/api/src/modules/identity/ports/deletion-cleanup.ts：(trx, { appId, userId, at }) => Promise<unknown>，在调用方事务内、users 行已锁、可重入）；union_bindings.status 迁移只经生成的 transition()（硬规则 2），blocked_reason 取 contracts/enums/identity.yaml union_binding_blocked_reason.deletion；已 blocked / released 的行不动；不删行。
+# app.module 装配时用该端口替换 linking 的 { unavailable: 'W1' } 标记（identity B1-15g 已就绪，D10-186 保守做法）。规则测试由新鲜独立 Claude 写（approvals #36）。
+refs: [BR-ID-28]
+refs_hash:
+  BR-ID-28: f6b22fd0bba1
+deps: []
+paths:
+  - 'apps/api/src/modules/linking/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/linking/deletion-cleanup/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/deletion-cleanup/**'
+status: todo
