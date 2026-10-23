@@ -25,7 +25,7 @@
 --         the anonymized branch (rule tests, B1-15r §9 补): a row is either live or fully cleared.
 --     payout_method keeps payout_accounts_method_check; payee_name stays NOT NULL (the cleanup
 --     writes a placeholder; its text belongs to B1-15g).
---   Added NOT VALID here and validated by the next migration (0072), as 0057 / 0058 did for
+--   Added NOT VALID here and validated by the next migration (0078), as 0057 / 0058 did for
 --   invite_rewards: no squawk exception is accepted on a funds table.
 --   Grants: couli_app gets column UPDATE on exactly the columns the cleanup writes (anonymized_at,
 --     the five identifiers, bank_name, payee_name), added to the 0009 grants (is_current,
@@ -42,7 +42,7 @@
 --     the unique index on verified HMACs are unchanged, so a verified row is still complete and a
 --     retained row (status none) never occupies the verified-HMAC index.
 --   realname is not a funds or attribution table; the check is still added NOT VALID and validated
---   in 0072, the same two-step shape as above.
+--   in 0078, the same two-step shape as above.
 --   Grants: couli_app gets column UPDATE (tax_retained), added to the 0041 grants that already
 --     cover every column the cleanup clears (the four private columns, status, provider,
 --     verified_at, row_version, updated_at). couli_readonly gets nothing new.
