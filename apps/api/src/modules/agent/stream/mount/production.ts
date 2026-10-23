@@ -21,7 +21,7 @@
 // switches, the page_guide routes, the tool switches, the review budget and the order budget are
 // read through it; no content reader is built from context.db.
 import { bridge } from '@couli/contracts-ts';
-import { createContentReader } from '../../../content/index.ts';
+import type { ContentReader } from '../../../content/index.ts';
 import { systemScheduler } from '../../../platform/index.ts';
 import type { AgentRunTexts } from '../../orchestrator/index.ts';
 import { createPgResultSetStore } from '../../store/results/index.ts';
@@ -90,7 +90,7 @@ export function productionRunTexts(
 function orderToolPorts(
   context: AgentStreamAssemblyContext,
   ports: AgentStreamProvidedPorts,
-  config: ReturnType<typeof createContentReader>,
+  config: Pick<ContentReader, 'configValue'>,
 ): AgentOrderToolPorts | undefined {
   const { orders, claimEntries, dailyCounter } = ports;
   if (orders === undefined && claimEntries === undefined && dailyCounter === undefined) {
@@ -116,7 +116,8 @@ export function createProductionStreamAssembly(
 ): AgentStreamAssembly {
   const ports = context.ports;
   if (ports === undefined) throw new Error('Agent stream business ports are not provided');
-  const config = createContentReader({ db: context.db.withSchema('app'), clock: context.clock });
+  // B3-08k: content's reads come from app.module (through the runtime); none is built here.
+  const config = context.contentReader;
   const keywords = createKeywordMatcher(inputKeywordLists());
   // BR-PROD-10, the same switches search_products queries with: explicit true only; missing or
   // unreadable is off.

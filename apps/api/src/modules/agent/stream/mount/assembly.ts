@@ -93,12 +93,12 @@ export interface AgentStreamAssemblyContext {
   /**
    * B3-08k (D10-294): content's configuration reader (the runtime's deps.contentReader, assembled
    * by app.module). createProductionStreamAssembly reads every configuration value through it and
-   * builds no content reader from context.db. Optional only until B3-08k is implemented.
+   * builds no content reader from context.db.
    * Review r2 (D10-305): `db` stays in this context for agent's own stores
    * (createPgResultSetStore, createOrderCardRefs); app.module's assembly must resolve to agent's
    * own function with a body (rule test: foreign-db-handoff/handoff.test.ts).
    */
-  readonly contentReader?: Pick<ContentReader, 'configValue'>;
+  readonly contentReader: Pick<ContentReader, 'configValue'>;
 }
 
 export interface AgentStreamBusinessPorts {
@@ -129,7 +129,7 @@ export interface AgentOrderToolPorts {
 
 export interface AgentStreamAssemblyDeps extends Omit<
   AgentStreamAssemblyContext,
-  'ports' | 'scheduler'
+  'ports' | 'scheduler' | 'contentReader'
 > {
   readonly ports: AgentStreamBusinessPorts;
   readonly config: CatalogConfigReader;
