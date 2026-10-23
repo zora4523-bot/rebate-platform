@@ -1,0 +1,20 @@
+id: CT-06zw
+repo: rebate-platform
+title: CT-06zw：verify-fast 作业时限 30 → 45 分钟（绿色运行 p90 已到上限的 98%）
+type: guard-change
+# 2026-10-24 入账（编排会话，照 CT-06z 先例）。起因：主干与各 PR 最近 29 次成功的 verify-fast 用时 16.5–29.9 分钟，
+# p50 27.0、p90 29.3（上限 30 的 98%）；#1407（B3-03p）连续三轮在 30 分钟被取消，只改 approvals.yaml 的 #1418 也跑了 29 分钟。
+# 做法：只把 .github/workflows/ci.yml 里 verify-fast 的 timeout-minutes 从 30 改为 45（p90 × 1.5 取 5 的倍数）并加注释，
+# 不动步骤、其他作业与检查内容。提速（拆分作业或找出慢用例）另开任务。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/workflows/ci.yml'
+  - 'ops/tasks/CT-06zw.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null

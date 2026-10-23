@@ -100,7 +100,10 @@ jobs:
     # seven green runs of 2026-10-17; 20 is that with a 1.5× margin.
     # 20 → 30 (2026-10-19, CT-06z): green in the 30 latest ci runs 11m21s–19m10s, p90 19m00s
     # (95% of the cap); 30 is the maximum with a 1.5× margin, rounded up to a multiple of 5.
-    timeout-minutes: 30
+    # 30 → 45 (2026-10-24, CT-06zw): green in the 29 latest completed runs 16.5–29.9 min, p50 27.0,
+    # p90 29.3 (98% of the cap), and #1407 was cancelled at the cap three times in a row; 45 is p90
+    # with a 1.5× margin, rounded up to a multiple of 5. Speeding the job up is a separate task.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
