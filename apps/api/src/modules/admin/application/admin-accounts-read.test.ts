@@ -12,12 +12,14 @@ function row(patch: Partial<AdminDirectoryRow> = {}): AdminDirectoryRow {
     id: '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01',
     appId: APP,
     loginName: 'ops',
+    displayName: null,
     isSuper: false,
     status: 'active',
     totpBoundAt: null,
     verifyPhoneCipher: null,
     lockedUntil: null,
     createdAt: new Date('2026-10-01T00:00:00.000Z'),
+    rowVersion: 0,
     permissionKeys: [],
     ...patch,
   };
@@ -67,6 +69,7 @@ it('[AC-F1-06m] the list maps rows, offsets by page and keeps the total', async 
       {
         adminId: a.id,
         username: 'ops',
+        displayName: null,
         isSuper: false,
         status: 'active',
         totpBound: true,
@@ -74,6 +77,7 @@ it('[AC-F1-06m] the list maps rows, offsets by page and keeps the total', async 
         lockedUntil: new Date('2026-10-09T02:01:00.000Z'),
         permissions: ['user.list', 'fund.adjust'],
         createdAt: a.createdAt,
+        rowVersion: 0,
       },
     ],
   });

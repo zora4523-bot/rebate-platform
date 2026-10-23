@@ -41,8 +41,9 @@ import {
 } from '../domain/login-policy.ts';
 import { totpSecretContext, type TotpVerifier } from '../domain/totp.ts';
 import type { AccountAudit, AdminAccount, AdminAccounts } from '../infra/admin-accounts.ts';
+import { issuedBeforeVoid, type AdminRevocations } from '../infra/admin-revocations.ts';
 import type { AdminSessions } from '../infra/admin-sessions.ts';
-import type { LoginTickets, TakenTicket } from '../infra/login-tickets.ts';
+import type { LoginTickets, TakenTicket, TicketRecord } from '../infra/login-tickets.ts';
 import type { AdminTokens } from './admin-tokens.ts';
 
 /** admin_users.status of an account that may sign in (trusted configuration, as in F1-06c). */
@@ -126,6 +127,12 @@ export interface AdminAuthDeps {
   readonly crypto: Pick<FieldCrypto, 'encrypt' | 'decrypt'>;
   /** Issuer shown by authenticator apps (F1-06c: 「Couli Admin」, environment appended off prod). */
   readonly issuer: string;
+  /**
+   * B1-34h: the per-account voiding instant (disable, authenticator reset, initial password
+   * regeneration); a ticket issued before it is 10001 login_ticket_expired. The admin entry always
+   * passes it; absent (unit tests of the login flow alone) no ticket is voided this way.
+   */
+  readonly revocations?: AdminRevocations;
 }
 
 const EXPIRED: AdminAuthFailure = Object.freeze({ code: 10001 });
@@ -195,6 +202,7 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
       adminId: account.id,
       appId: account.appId,
       expiresAtMs: expiresAt.getTime(),
+      issuedAtMs: clock.now().getTime(),
       ...(secretCipher === undefined ? {} : { secretCipher }),
     });
     return { code: 0, next, ticket, expiresAt };
@@ -213,6 +221,13 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
     return { code: 0, token, expiresAt, idleTimeoutSec: ADMIN_IDLE_TIMEOUT_SEC };
   };
 
+  /** True when the account voided its credentials after this ticket was issued (B1-34h). */
+  const voided = async (record: TicketRecord): Promise<boolean> => {
+    if (deps.revocations === undefined) return false;
+    const at = await deps.revocations.voidedAt({ appId: record.appId, adminId: record.adminId });
+    return issuedBeforeVoid(record.issuedAtMs ?? 0, at);
+  };
+
   /**
    * Takes the ticket for `step` and loads its account. Expired, missing, foreign-step tickets and
    * accounts that cannot continue are 10001 (the ticket is not put back); a locked account is
@@ -225,6 +240,7 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
     const taken = await tickets.take(step, ticket);
     if (taken === undefined) return EXPIRED;
     if (taken.record.expiresAtMs <= clock.now().getTime()) return EXPIRED;
+    if (await voided(taken.record)) return EXPIRED;
     const account = await accounts.byId(taken.record.appId, taken.record.adminId);
     if (account === undefined || account.status !== ADMIN_ACTIVE_STATUS) return EXPIRED;
     if (isLocked(account.lockedUntil, clock.now())) {
@@ -310,6 +326,7 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
       const record = await tickets.peek('bind_totp', ticket);
       if (record === undefined || record.secretCipher === undefined) return EXPIRED;
       if (record.expiresAtMs <= clock.now().getTime()) return EXPIRED;
+      if (await voided(record)) return EXPIRED;
       const account = await accounts.byId(record.appId, record.adminId);
       if (
         account === undefined ||

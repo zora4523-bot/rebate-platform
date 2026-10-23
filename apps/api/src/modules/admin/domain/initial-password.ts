@@ -3,9 +3,39 @@
 // regenerates its initial password; only its hash is stored, the clear text appears once in that
 // response and never in a log or an audit record.
 //
+// Shape (agent default, task §9): 20 characters drawn uniformly (crypto.randomInt) from upper-case
+// letters, lower-case letters and digits without the look-alikes 0 O o 1 l I, at least one of each
+// class (a draw without all three classes is discarded and drawn again). About 113 bits.
+//
 // Pure module (no decorators, erasable syntax, no I/O).
+import { randomInt } from 'node:crypto';
+import { ADMIN_PASSWORD_MAX_LENGTH, ADMIN_PASSWORD_MIN_LENGTH } from './login-policy.ts';
+
+const UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+const LOWER = 'abcdefghijkmnpqrstuvwxyz';
+const DIGITS = '23456789';
+const ALPHABET = UPPER + LOWER + DIGITS;
+
+/** Length of a generated initial password (inside the admin password limits). */
+export const ADMIN_INITIAL_PASSWORD_LENGTH = 20;
+
+if (
+  ADMIN_INITIAL_PASSWORD_LENGTH < ADMIN_PASSWORD_MIN_LENGTH ||
+  ADMIN_INITIAL_PASSWORD_LENGTH > ADMIN_PASSWORD_MAX_LENGTH
+) {
+  throw new Error('admin: initial password length outside the admin password limits');
+}
+
+const hasEach = (value: string): boolean =>
+  [UPPER, LOWER, DIGITS].every((set) => [...value].some((char) => set.includes(char)));
 
 /** A fresh initial password: within the admin password length limits, without whitespace. */
 export function generateAdminInitialPassword(): string {
-  throw new Error('NotImplemented: generateAdminInitialPassword');
+  for (;;) {
+    let value = '';
+    for (let i = 0; i < ADMIN_INITIAL_PASSWORD_LENGTH; i++) {
+      value += ALPHABET[randomInt(ALPHABET.length)];
+    }
+    if (hasEach(value)) return value;
+  }
 }

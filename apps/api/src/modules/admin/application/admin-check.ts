@@ -7,7 +7,10 @@
 //   2. a route whose contract x-auth is admin or super: `Authorization: Bearer <admin_token>` (one
 //      header; never a cookie) must verify (HS256 admin key, aud=admin, 8 hours by the Clock), its
 //      session must be live in Redis (not logged out, last checked request less than 30 minutes
-//      ago by the Clock) and its account active and not locked; else 10001 without data. A
+//      ago by the Clock) and its account active, not locked and with a bound authenticator
+//      (admin_users.totp_bound_at, B1-34h), and the token issued no earlier than the account's
+//      voiding instant (disable, authenticator reset, initial password regeneration;
+//      ../infra/admin-revocations.ts); else 10001 without data. A
 //      passing request records its activity (the idle period restarts) and carries the
 //      adminPrincipal. A super route then needs a super account: else 10403
 //      data.reason=admin_permission_denied.
@@ -25,6 +28,7 @@ import {
 } from '../../platform/index.ts';
 import { ADMIN_IDLE_TIMEOUT_SEC, isLocked } from '../domain/login-policy.ts';
 import type { AdminAccounts } from '../infra/admin-accounts.ts';
+import { issuedBeforeVoid, type AdminRevocations } from '../infra/admin-revocations.ts';
 import type { AdminSessions } from '../infra/admin-sessions.ts';
 import { ADMIN_ACTIVE_STATUS } from './admin-login.ts';
 import type { AdminTokens } from './admin-tokens.ts';
@@ -68,6 +72,8 @@ export function createAdminRequestCheck(deps: {
   readonly tokens: AdminTokens;
   readonly sessions: () => AdminSessions;
   readonly accounts: () => AdminAccounts;
+  /** B1-34h voiding instants; the admin entry always passes it. */
+  readonly revocations?: () => AdminRevocations;
 }): RequestCheck {
   const { clock, allows, tokens } = deps;
 
@@ -104,9 +110,17 @@ export function createAdminRequestCheck(deps: {
     if (
       account === undefined ||
       account.status !== ADMIN_ACTIVE_STATUS ||
+      account.totpBoundAt === null ||
       isLocked(account.lockedUntil, clock.now())
     ) {
       throw unauthenticated();
+    }
+    if (deps.revocations !== undefined) {
+      const voidedAt = await deps
+        .revocations()
+        .voidedAt({ appId: claims.appId, adminId: claims.adminId });
+      // iat is whole seconds: a token of the voiding second counts as issued before it.
+      if (issuedBeforeVoid(claims.issuedAt * 1000, voidedAt)) throw unauthenticated();
     }
     if (!(await sessions.touch(claims.sessionId, { ...session, lastSeenMs: now }))) {
       throw unauthenticated();

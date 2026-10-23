@@ -8096,7 +8096,6 @@ paths:
         Audit (BR-ID-34): action admin_account_create with the new account's id, username and
         display_name (never the password).
       x-auth: super
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -8270,7 +8269,6 @@ paths:
         Idempotency-Key (04 §6.6): when the outcome is unknown the super admin regenerates
         again, which voids the earlier one.
       x-auth: super
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -8368,7 +8366,6 @@ paths:
         (`status=disabled`). Audit: action admin_account_disable with the reason and the
         before / after status. No Idempotency-Key (04 §6.6).
       x-auth: super
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -8463,7 +8460,6 @@ paths:
         cancelled. The response is the account as it is now (`status=active`). Audit: action
         admin_account_enable with the before / after status. No Idempotency-Key (04 §6.6).
       x-auth: super
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -8666,7 +8662,6 @@ paths:
         password and verify phone are unchanged. Audit: action admin_totp_reset with the reason.
         The response is the account as it is now. No Idempotency-Key (04 §6.6).
       x-auth: super
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -8755,7 +8750,6 @@ paths:
         Audit: action admin_display_name_update with the name before and after. The response is
         the account as it is now. No Idempotency-Key (04 §6.6).
       x-auth: super
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
