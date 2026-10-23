@@ -18,6 +18,13 @@
 // and releases it otherwise (BR-WDR-01). `msg` is the package default text
 // (contracts/texts.default.json) and `data` only what the result carries.
 //
+// B2-05f: GET /v1/withdrawals (listWithdrawals) and GET /v1/withdrawals/{withdrawal_id}
+// (getWithdrawal): x-auth login, unsigned, not idempotent. The subject is the token principal;
+// the query (cursor, limit) is already judged by contractRouteSchema; the records come from the
+// same projection the read-only entry read.ts uses, through the process's snapshot decryption
+// (WITHDRAW_READS). Someone else's, another app's or an unknown id → 404 / 30701, never a
+// different answer per case.
+//
 // Nest's decorators are applied as plain calls (erasable syntax, as the orders module does).
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
@@ -29,6 +36,7 @@ import {
   HttpException,
   Inject,
   Optional,
+  Param,
   Post,
   Req,
 } from '@nestjs/common';
@@ -36,9 +44,14 @@ import { RouteSchema } from '@nestjs/platform-fastify';
 import type { Kysely } from 'kysely';
 import {
   IDEMPOTENCY,
+  CLOCK,
+  ROOT_LOGGER,
   contractRouteSchema,
+  fieldsErrorEnvelope,
   tokenPrincipal,
   type CheckedRequest,
+  type Clock,
+  type RootLogger,
   type HandlerResult,
   type Idempotency,
   type IdempotentResponse,
@@ -51,7 +64,14 @@ import {
 } from '../../application/withdraw-apply.ts';
 import type { WithdrawActor, WithdrawRulesService } from '../../application/withdraw-rules.ts';
 import {
+  listWithdrawalsForUser,
+  readWithdrawalForUser,
+  WithdrawalReadError,
+  type DecryptWithdrawalAccount,
+} from '../../application/withdrawal-reads.ts';
+import {
   WITHDRAW_APPLY,
+  WITHDRAW_READS,
   WITHDRAW_RULES,
   WITHDRAW_RULES_HANDLE,
   WITHDRAW_STEP_UP,
@@ -65,6 +85,12 @@ export interface WithdrawRulesHttpRequest {
   readonly id: string;
   readonly query?: { readonly amount_fen?: number | string };
   /** Attached by the token check (platform PrincipalCarrier); read with tokenPrincipal. */
+  readonly principal?: TokenPrincipal;
+}
+
+export interface WithdrawalListHttpRequest {
+  readonly id: string;
+  readonly query?: { readonly cursor?: string; readonly limit?: number | string };
   readonly principal?: TokenPrincipal;
 }
 
@@ -154,6 +180,9 @@ export class WithdrawalsController {
   readonly #apply: WithdrawApplyService | null;
   readonly #idempotency: Idempotency | undefined;
   readonly #stepUp: WithdrawStepUp | null;
+  readonly #reads: DecryptWithdrawalAccount | null;
+  readonly #clock: Clock | null;
+  readonly #logger: RootLogger | null;
 
   constructor(
     service: WithdrawRulesService | null,
@@ -161,12 +190,75 @@ export class WithdrawalsController {
     apply: WithdrawApplyService | null,
     idempotency?: Idempotency,
     stepUp?: WithdrawStepUp | null,
+    reads?: DecryptWithdrawalAccount | null,
+    clock?: Clock | null,
+    logger?: RootLogger | null,
   ) {
     this.#service = service;
     this.#handle = handle;
     this.#apply = apply;
     this.#idempotency = idempotency;
     this.#stepUp = stepUp ?? null;
+    this.#reads = reads ?? null;
+    this.#clock = clock ?? null;
+    this.#logger = logger ?? null;
+  }
+
+  async listWithdrawals(
+    request: WithdrawalListHttpRequest,
+  ): Promise<Schema<'WithdrawalListResponse'>> {
+    const actor = this.#actor(request);
+    const handle = this.#readsHandle();
+    const query = request.query ?? {};
+    const rawLimit = query.limit;
+    try {
+      const data = await listWithdrawalsForUser(
+        handle,
+        {
+          appId: actor.appId,
+          userId: actor.userId,
+          ...(query.cursor === undefined ? {} : { cursor: query.cursor }),
+          ...(rawLimit === undefined ? {} : { limit: Number(rawLimit) }),
+        },
+        this.#projectionContext(),
+      );
+      return { code: 0, msg: '', data, trace_id: request.id };
+    } catch (error) {
+      if (error instanceof WithdrawalReadError) {
+        const refused = fieldsErrorEnvelope(error.fields, request.id);
+        throw new HttpException(refused.body, refused.statusCode);
+      }
+      throw error;
+    }
+  }
+
+  async getWithdrawal(
+    request: WithdrawalListHttpRequest,
+    withdrawalId: string,
+  ): Promise<Schema<'WithdrawalResponse'>> {
+    const actor = this.#actor(request);
+    const handle = this.#readsHandle();
+    const data = await readWithdrawalForUser(
+      handle,
+      { appId: actor.appId, userId: actor.userId, withdrawalId },
+      this.#projectionContext(),
+    );
+    if (data === null) {
+      throw new HttpException(
+        { code: 30701, msg: '内容不存在或已下线', trace_id: request.id },
+        404,
+      );
+    }
+    return { code: 0, msg: '', data, trace_id: request.id };
+  }
+
+  /** The records need the process handle and the registered snapshot decryption. */
+  #readsHandle(): Kysely<DB> {
+    const handle = this.#handle;
+    if (handle === null || this.#reads === null) {
+      throw new Error('payout: the withdrawal records need the database and the field cipher');
+    }
+    return handle;
   }
 
   /**
@@ -233,6 +325,17 @@ export class WithdrawalsController {
     return { code: 0, msg: '', data, trace_id: request.id };
   }
 
+  /** CT-20b: the response instant for the BR-WDR-25 branches; no Clock registered → row time. */
+  #projectionContext(): {
+    readonly now?: Date;
+    readonly logger?: { warn(fields: Record<string, unknown>, message: string): void };
+  } {
+    return {
+      ...(this.#clock === null ? {} : { now: this.#clock.now() }),
+      ...(this.#logger === null ? {} : { logger: this.#logger.child({ module: 'payout' }) }),
+    };
+  }
+
   #actor(request: { readonly id: string; readonly principal?: TokenPrincipal }): WithdrawActor {
     const principal = tokenPrincipal(request);
     if (principal === undefined) {
@@ -254,6 +357,21 @@ export class WithdrawalsController {
   Inject(IDEMPOTENCY)(WithdrawalsController, undefined, 3);
   Optional()(WithdrawalsController, undefined, 4);
   Inject(WITHDRAW_STEP_UP)(WithdrawalsController, undefined, 4);
+  Optional()(WithdrawalsController, undefined, 5);
+  Inject(WITHDRAW_READS)(WithdrawalsController, undefined, 5);
+  Optional()(WithdrawalsController, undefined, 6);
+  Inject(CLOCK)(WithdrawalsController, undefined, 6);
+  Optional()(WithdrawalsController, undefined, 7);
+  Inject(ROOT_LOGGER)(WithdrawalsController, undefined, 7);
+  const list = Object.getOwnPropertyDescriptor(prototype, 'listWithdrawals')!;
+  const detail = Object.getOwnPropertyDescriptor(prototype, 'getWithdrawal')!;
+  Req()(prototype, 'listWithdrawals', 0);
+  Get()(prototype, 'listWithdrawals', list);
+  RouteSchema(contractRouteSchema('listWithdrawals'))(prototype, 'listWithdrawals', list);
+  Req()(prototype, 'getWithdrawal', 0);
+  Param('withdrawal_id')(prototype, 'getWithdrawal', 1);
+  Get(':withdrawal_id')(prototype, 'getWithdrawal', detail);
+  RouteSchema(contractRouteSchema('getWithdrawal'))(prototype, 'getWithdrawal', detail);
   Req()(prototype, 'getWithdrawRules', 0);
   Get('rules')(prototype, 'getWithdrawRules', rules);
   RouteSchema(contractRouteSchema('getWithdrawRules'))(prototype, 'getWithdrawRules', rules);

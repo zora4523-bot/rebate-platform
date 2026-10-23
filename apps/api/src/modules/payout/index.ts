@@ -42,7 +42,7 @@ export { createWithdrawUsageReader } from './infra/withdraw-usage.ts';
 export { createWithdrawHoldsReader } from './infra/withdraw-holds.ts';
 export { PayoutModule } from './payout.module.ts';
 export type { PayoutModuleOptions } from './payout.module.ts';
-export { WITHDRAW_RULES, WITHDRAW_APPLY, WITHDRAW_STEP_UP } from './tokens.ts';
+export { WITHDRAW_RULES, WITHDRAW_APPLY, WITHDRAW_STEP_UP, WITHDRAW_READS } from './tokens.ts';
 export type { WithdrawStepUp } from './http/public/withdrawals.controller.ts';
 export {
   createWithdrawSwitchCheck,
@@ -72,3 +72,17 @@ export type {
 } from './application/withdraw-holds.ts';
 export type { WithdrawalReaders } from './application/withdrawal-in-flight.ts';
 export type { PayoutWorkerOptions } from './payout.module.ts';
+export {
+  projectWithdrawalSummary,
+  projectWithdrawalDetail,
+  readWithdrawalForUser,
+  WithdrawalReadError,
+} from './application/withdrawal-reads.ts';
+export type {
+  DecryptWithdrawalAccount,
+  WithdrawalListQuery,
+  WithdrawalPage,
+  WithdrawalRecordRow,
+} from './application/withdrawal-reads.ts';
+export { statusTitle, subTextBranch, isAccountFailure } from './domain/display.ts';
+export type { WithdrawalDisplayRow, WithdrawalSubTextBranch } from './domain/display.ts';

@@ -6,3 +6,5 @@ export const WITHDRAW_RULES_HANDLE = Symbol('PAYOUT_WITHDRAW_RULES_HANDLE');
 export const WITHDRAW_APPLY = Symbol('PAYOUT_WITHDRAW_APPLY');
 /** Identity's withStepUp for POST /v1/withdrawals (B2-05d), handed in by app.module. */
 export const WITHDRAW_STEP_UP = Symbol('PAYOUT_WITHDRAW_STEP_UP');
+/** The process's snapshot decryption for the withdrawal records (B2-05f), registered by app.module. */
+export const WITHDRAW_READS = Symbol('PAYOUT_WITHDRAW_READS');

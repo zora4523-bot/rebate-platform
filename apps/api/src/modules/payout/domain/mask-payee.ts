@@ -45,7 +45,5 @@ export function maskPayeeAccount(
   return '*'.repeat([...account].length);
 }
 
-/** payout_channel_name of the contract (BR-TEXT-06: never a fixed「支付宝」). */
-export function payoutChannelName(method: 'alipay' | 'bank_card' | 'wechat'): string {
-  return method === 'alipay' ? '支付宝' : method === 'bank_card' ? '银行卡' : '微信零钱';
-}
+/** payout_channel_name of the contract (BR-TEXT-06: never a fixed「支付宝」); one table, in display.ts. */
+export { payoutChannelName } from './display.ts';
