@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
-import { ConfigError, loadConfig } from '../../../../apps/api/src/modules/platform/config/index.ts';
+import {
+  ConfigError,
+  loadConfig,
+  SMS_CREDENTIAL_ENV_NAMES,
+} from '../../../../apps/api/src/modules/platform/config/index.ts';
 import { createRedisHandle } from '../../../../apps/api/src/modules/platform/redis/index.ts';
 import { createSmsCodeService } from '../../../../apps/api/src/modules/identity/application/sms-codes.ts';
-import {
-  createFakeSmsSender,
-  smsCredentialEnvNames,
-} from '../../../../apps/api/src/modules/identity/infra/fake-sms.ts';
+import { createFakeSmsSender } from '../../../../apps/api/src/modules/identity/infra/fake-sms.ts';
 import { limited, makeHmac, memoryLogger, phone, redisConnection } from './kit.ts';
 
 it('[BR-ID-05] Redis 不可用时拒绝发码，返回正整数等待时间且不调用供应商', async () => {
@@ -70,7 +71,7 @@ it('[BR-ID-05] 假适配器不能在 staging/prod 启用', () => {
 });
 
 it('[BR-ID-05] 声明的 SMS 密钥使 local/test 拒启，仅报告变量名；保留其他通道保护', () => {
-  const names = smsCredentialEnvNames();
+  const names = SMS_CREDENTIAL_ENV_NAMES;
   expect(names.length).toBeGreaterThan(0);
   expect(new Set(names).size).toBe(names.length);
   for (const name of names) expect(name).toMatch(/^SMS_/);

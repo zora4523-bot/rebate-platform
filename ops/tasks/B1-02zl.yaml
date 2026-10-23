@@ -1,0 +1,17 @@
+id: B1-02zl
+repo: rebate-platform
+title: 测试修改（D10-289）：test/spec/identity/sms-codes/safety.test.ts 的 [BR-ID-05] 声明 SMS 密钥用例改为直接取 platform/config 的 SMS_CREDENTIAL_ENV_NAMES，不再经 identity fake-sms.ts 的 smsCredentialEnvNames()；断言不变
+type: test-change
+# 草稿 2026-10-24（身份与风控线 identity-lane）。编排 00:31 D10-289 取 A：agent 的 CT-06zt 扫描把「函数返回 platform 常量」也算中转，identity 不再导出 smsCredentialEnvNames()（B1-02zm）。本 test-change 先合：只换取值来源，主干改前改后都绿。
+# 独立 Claude 改（approvals #36），新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签。
+refs: []
+refs_hash: {}
+deps: [B1-02c]
+paths:
+  - 'test/spec/identity/sms-codes/safety.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/sms-codes/**'
+status: todo
