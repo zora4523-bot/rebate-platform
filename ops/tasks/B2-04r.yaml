@@ -1,0 +1,21 @@
+id: B2-04r
+repo: rebate-platform
+title: 补充批次：finance 对同一账单发起补充校验与批次（kind=supplement，流程同 B2-04n，单独确认）；credit.enabled off → on 后对当期账单重校验
+type: impl
+# 2026-10-23 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.2）。分工：独立 Claude 写规则测试（Codex 额度至 10-30，approvals #36）/ Opus 实现。
+# 状态备注：可开（B2-04n 已合并）。step-up 与 HTTP 归 B2-09。
+refs: [BR-FUND-04]
+refs_hash:
+  BR-FUND-04: ae08abefb6da
+deps: [B2-04n]
+paths:
+  - 'apps/api/src/modules/settlement/bill/supplement/**'
+test_paths:
+  - 'test/spec/settlement/supplement/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/supplement/**'
+status: todo
+pr: null
