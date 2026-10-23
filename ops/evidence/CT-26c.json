@@ -1,0 +1,48 @@
+{
+  "red_tests": [],
+  "risk_note": "RV1 (contract plus the payout account response builder). BR-WDR-03 ③b / 13 §13.11 / 04 §6.1: codes 10010 (403, data.method, no idempotent result) and 20005 (400, fail_limit / fail_remaining), enum reverify_method, attempt purpose reverify, GET /v1/me/reverify and POST id-number / oauth (planned), route Reverify, 10010 in the x-error-codes of createWithdrawal, savePayoutAccount, submitRealname and requestDeletion; optional step-up summary (server decides by action; compared inside the business lock, 10003 on mismatch); PayoutAccount gains required payout_account_id (GET current row, PUT the saved row); texts error.10010 / error.20005 classified ordinary; H5 signed list gains the two signed POSTs. Frozen payout account tests made two-state by test-change CT-26g. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "contract review round 1 pass with no findings (couli-runs/CT-26c/review-codex-contract-r1.json)"
+    },
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "money review round 1 pass (couli-runs/CT-26c/review-codex-money-r1.json)"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "940faa4a99223fbaa212a06b4e6f91a24ac02994",
+    "specs": "b9b8c7957aa786feb1b71c8ccc35e6fd7341add0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "CT-26c",
+  "spec_commit": "11fdd0aee72c6444486f4e1eda1ed84bb4d5ff4e",
+  "spec_ref": "be49fe9b54beaa6d8e552f6766e9ae2d4d513705",
+  "runs": []
+}
