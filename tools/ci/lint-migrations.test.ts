@@ -234,6 +234,11 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'pay_refunds',
     'pay_anomalies',
     'pay_fulfillments',
+    // Payout core tables (B2-06a): batches, batch member outcomes, channel attempts, watermarks.
+    'payout_batches',
+    'payout_batch_items',
+    'payout_attempts',
+    'payout_watermarks',
   ]);
   for (const name of funds) expect(tables, name).toContain(name);
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));
