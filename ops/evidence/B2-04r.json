@@ -1,0 +1,153 @@
+{
+  "task": "B2-04r",
+  "spec_ref": "48e55e6a035ad350ee46437d6f0ffdc155543728",
+  "spec_commit": "0d778398bf9368e326d76dc6614f9deec28696f1",
+  "red_tests": [
+    "test/spec/settlement/supplement/batches.int.test.ts > [AC-B2-04r#10] 补充批次 kind=supplement、DRAFT、挂在同一账单、未确认；返回本轮批次，生成不入账",
+    "test/spec/settlement/supplement/batches.int.test.ts > [AC-B2-04r#11] 补充不改首批批次与明细、账单日校验记录和账单生成时刻",
+    "test/spec/settlement/supplement/batches.int.test.ts > [AC-B2-04r#12] 补充候选同样按 settle.batch.max_orders 与 order_key 升序拆批",
+    "test/spec/settlement/supplement/batches.int.test.ts > [AC-B2-04r#13] 首批被驳回（CANCELLED）后批内订单仍为 WAITING，可进入补充批次",
+    "test/spec/settlement/supplement/batches.int.test.ts > [AC-B2-04r#14] 补充批次须单独确认：确认本轮补充批次不动首批，首批也不因补充而被确认",
+    "test/spec/settlement/supplement/idempotency.int.test.ts > [AC-B2-04r#20] 目标账单不存在或仍在出账中时拒绝发起，不写任何东西",
+    "test/spec/settlement/supplement/idempotency.int.test.ts > [AC-B2-04r#21] 同一发起键重放由数据库识别：重建服务、事实变化后也不重复生成",
+    "test/spec/settlement/supplement/idempotency.int.test.ts > [AC-B2-04r#22] 换一个发起键可再发起一轮补充，前一轮批次与明细保持原样",
+    "test/spec/settlement/supplement/idempotency.int.test.ts > [AC-B2-04r#23] 两个独立服务并发同键，只生成一轮补充批次与一份校验记录，PG 唯一约束兜底",
+    "test/spec/settlement/supplement/idempotency.int.test.ts > [AC-B2-04r#24] 明细实际写入后故障整体回滚，不留补充批次、差错或完成的任务行；同键重试可生成",
+    "test/spec/settlement/supplement/idempotency.int.test.ts > [AC-B2-04r#25] 校验结果保存失败整体回滚，不留补充批次；同键重试可生成",
+    "test/spec/settlement/supplement/rebatch.int.test.ts > [AC-B2-04r#30] 子订单停在 PARTIAL（SB7 执行中关开关，前一单已入账） 的主批次里仍可进补充批次；两条明细同 seq 同 B_settle，生成不入账，主批续跑入账后不再入批",
+    "test/spec/settlement/supplement/rebatch.int.test.ts > [AC-B2-04r#30] 子订单停在 CONFIRMED 带开关停住标记（SB5 未开始） 的主批次里仍可进补充批次；两条明细同 seq 同 B_settle，生成不入账，主批续跑入账后不再入批",
+    "test/spec/settlement/supplement/rebatch.int.test.ts > [AC-B2-04r#31] 主批次被驳回（SB4，CANCELLED） 后再发起补充，该 WAITING 子订单可以再入批",
+    "test/spec/settlement/supplement/rebatch.int.test.ts > [AC-B2-04r#31] 该单在已完成主批次里被跳过（DONE） 后再发起补充，该 WAITING 子订单可以再入批",
+    "test/spec/settlement/supplement/rebatch.int.test.ts > [AC-B2-04r#31] 该单在执行中主批次里已被跳过（EXECUTING） 后再发起补充，该 WAITING 子订单可以再入批",
+    "test/spec/settlement/supplement/switch.int.test.ts > [AC-B2-04r#15] credit.enabled=off 时拒绝发起补充，不写批次、校验记录、差错或任务行",
+    "test/spec/settlement/supplement/switch.int.test.ts > [AC-B2-04r#15] credit.enabled=undefined 时拒绝发起补充，不写批次、校验记录、差错或任务行",
+    "test/spec/settlement/supplement/switch.int.test.ts > [AC-B2-04r#16] 开关 off 期间账单只留校验结果；打开后对该账单发起补充，候选与补记项入批，差错不重复",
+    "test/spec/settlement/supplement/switch.int.test.ts > [AC-B2-04r#17] 开关打开后的重校验取当期账单（最近一份已生成账单），不取更早的账单",
+    "test/spec/settlement/supplement/switch.int.test.ts > [AC-B2-04r#18] 当期账单仍在出账中时重校验拒绝（bill_not_ready），不退回更早账单",
+    "test/spec/settlement/supplement/switch.int.test.ts > [AC-B2-04r#19] 还没有任何月结账单时重校验拒绝（bill_not_found）",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#1] hold 解除、维权关闭的暂缓单进入同一账单的补充批次，按快照基数换算入批",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#2] 账单日应结未结、联盟结算数据后到的订单进入补充批次，原差错单不重复登记",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#3] 金额不一致经差错结论「以联盟为准」后进入补充批次，B_settle 取联盟结算额换算",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#4] 仍不一致的不入批且同账单同单差错不重复；补充时新发现的不一致按目标账单月登记",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#5] 仍 hold 或维权中的订单记暂缓，不登记差错、不生成补充批次",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#6] 校验截点取发起时的 Clock（含等号），不取名义请求时刻；更晚取得的结算数据不计",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#7] 范围按目标账单月：次月发起时 settle_period 晚于账单月的订单不纳入，早于的有数据才纳入",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#8] 已入账订单不再作为子订单行；其未完成义务生成补记项，沿用同一 beneficiary_credit_id",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#9] 只校验发起的平台：另一平台的订单与义务不进本次补充批次，另一 app 不受影响",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#26] 补充校验遇联盟后到结算而我方 ESTIMATED：登记 union_mismatch，不入批",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#26] 补充校验遇联盟后到结算而我方 VOID：登记 union_mismatch，不入批",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#26] 补充校验遇联盟后到结算而我方 CLAWED_BACK：登记 union_mismatch，不入批",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#26] 补充校验遇联盟后到结算而我方 我方无单：登记 union_mismatch，不入批",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#27] 补充前已追加分佣快照 v2：按当前最大版本比对，联盟按 v2 结算的入批、不误报不一致",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#28] 补充前已追加分佣快照 v2：联盟仍按 v1 结算的按当前版本判不一致，不入批",
+    "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#29] B_settle 按 BR-CALC-02 向下取整并扣淘礼金：联盟佣金 1001 不整除时仍与快照基数一致"
+  ],
+  "risk_note": "RV2 settlement (settlement-plan B2-04r; BR-FUND-04 ⑧⑨). Supplement batches: launch runs the B2-04n validation for one bill and platform with settle_batches.kind = supplement and separate confirmation; recheckCurrentBill re-validates the current bill after credit.enabled goes off -> on. Same rules as B2-04n (current max snapshot version, BR-CALC-02 floor with tlj deduction, union_mismatch for settlement data without a WAITING order, recon diffs through ledger registerReconDiff, DRAFT only through the settle-batch transition, supplement items only in their order's platform batch, settle_jobs only through the settle-job transition and only granted columns). PARTIAL or switch-paused batches do not block an order from a supplement batch; double crediting is prevented by the ⑦ in-lock recheck and voucher uniq_keys (money round 1). A supplement launched on bill day shifts its run_at forward by 1 ms (with a warn) so it is never taken for the bill-day job's replay (D10-280 ①); settle_bills totals reflect only the bill-day job (D10-280 ③). Rejected when the bill is missing or still generating, or the switch is off.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0d778398bf9368e326d76dc6614f9deec28696f1",
+      "tree": "de7cf8765a46540364d0dd4b3a667e4cbc1faef9",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T18:27:32Z",
+      "finished_at": "2026-10-23T18:27:54Z",
+      "gate": {
+        "commit": "3a30541e88a1bf8361fe228fcfe793f42daaa906",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/settlement/supplement/batches.int.test.ts > [AC-B2-04r#10] 补充批次 kind=supplement、DRAFT、挂在同一账单、未确认；返回本轮批次，生成不入账",
+        "test/spec/settlement/supplement/batches.int.test.ts > [AC-B2-04r#11] 补充不改首批批次与明细、账单日校验记录和账单生成时刻",
+        "test/spec/settlement/supplement/batches.int.test.ts > [AC-B2-04r#12] 补充候选同样按 settle.batch.max_orders 与 order_key 升序拆批",
+        "test/spec/settlement/supplement/batches.int.test.ts > [AC-B2-04r#13] 首批被驳回（CANCELLED）后批内订单仍为 WAITING，可进入补充批次",
+        "test/spec/settlement/supplement/batches.int.test.ts > [AC-B2-04r#14] 补充批次须单独确认：确认本轮补充批次不动首批，首批也不因补充而被确认",
+        "test/spec/settlement/supplement/idempotency.int.test.ts > [AC-B2-04r#20] 目标账单不存在或仍在出账中时拒绝发起，不写任何东西",
+        "test/spec/settlement/supplement/idempotency.int.test.ts > [AC-B2-04r#21] 同一发起键重放由数据库识别：重建服务、事实变化后也不重复生成",
+        "test/spec/settlement/supplement/idempotency.int.test.ts > [AC-B2-04r#22] 换一个发起键可再发起一轮补充，前一轮批次与明细保持原样",
+        "test/spec/settlement/supplement/idempotency.int.test.ts > [AC-B2-04r#23] 两个独立服务并发同键，只生成一轮补充批次与一份校验记录，PG 唯一约束兜底",
+        "test/spec/settlement/supplement/idempotency.int.test.ts > [AC-B2-04r#24] 明细实际写入后故障整体回滚，不留补充批次、差错或完成的任务行；同键重试可生成",
+        "test/spec/settlement/supplement/idempotency.int.test.ts > [AC-B2-04r#25] 校验结果保存失败整体回滚，不留补充批次；同键重试可生成",
+        "test/spec/settlement/supplement/rebatch.int.test.ts > [AC-B2-04r#30] 子订单停在 PARTIAL（SB7 执行中关开关，前一单已入账） 的主批次里仍可进补充批次；两条明细同 seq 同 B_settle，生成不入账，主批续跑入账后不再入批",
+        "test/spec/settlement/supplement/rebatch.int.test.ts > [AC-B2-04r#30] 子订单停在 CONFIRMED 带开关停住标记（SB5 未开始） 的主批次里仍可进补充批次；两条明细同 seq 同 B_settle，生成不入账，主批续跑入账后不再入批",
+        "test/spec/settlement/supplement/rebatch.int.test.ts > [AC-B2-04r#31] 主批次被驳回（SB4，CANCELLED） 后再发起补充，该 WAITING 子订单可以再入批",
+        "test/spec/settlement/supplement/rebatch.int.test.ts > [AC-B2-04r#31] 该单在已完成主批次里被跳过（DONE） 后再发起补充，该 WAITING 子订单可以再入批",
+        "test/spec/settlement/supplement/rebatch.int.test.ts > [AC-B2-04r#31] 该单在执行中主批次里已被跳过（EXECUTING） 后再发起补充，该 WAITING 子订单可以再入批",
+        "test/spec/settlement/supplement/switch.int.test.ts > [AC-B2-04r#15] credit.enabled=off 时拒绝发起补充，不写批次、校验记录、差错或任务行",
+        "test/spec/settlement/supplement/switch.int.test.ts > [AC-B2-04r#15] credit.enabled=undefined 时拒绝发起补充，不写批次、校验记录、差错或任务行",
+        "test/spec/settlement/supplement/switch.int.test.ts > [AC-B2-04r#16] 开关 off 期间账单只留校验结果；打开后对该账单发起补充，候选与补记项入批，差错不重复",
+        "test/spec/settlement/supplement/switch.int.test.ts > [AC-B2-04r#17] 开关打开后的重校验取当期账单（最近一份已生成账单），不取更早的账单",
+        "test/spec/settlement/supplement/switch.int.test.ts > [AC-B2-04r#18] 当期账单仍在出账中时重校验拒绝（bill_not_ready），不退回更早账单",
+        "test/spec/settlement/supplement/switch.int.test.ts > [AC-B2-04r#19] 还没有任何月结账单时重校验拒绝（bill_not_found）",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#1] hold 解除、维权关闭的暂缓单进入同一账单的补充批次，按快照基数换算入批",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#2] 账单日应结未结、联盟结算数据后到的订单进入补充批次，原差错单不重复登记",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#3] 金额不一致经差错结论「以联盟为准」后进入补充批次，B_settle 取联盟结算额换算",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#4] 仍不一致的不入批且同账单同单差错不重复；补充时新发现的不一致按目标账单月登记",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#5] 仍 hold 或维权中的订单记暂缓，不登记差错、不生成补充批次",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#6] 校验截点取发起时的 Clock（含等号），不取名义请求时刻；更晚取得的结算数据不计",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#7] 范围按目标账单月：次月发起时 settle_period 晚于账单月的订单不纳入，早于的有数据才纳入",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#8] 已入账订单不再作为子订单行；其未完成义务生成补记项，沿用同一 beneficiary_credit_id",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#9] 只校验发起的平台：另一平台的订单与义务不进本次补充批次，另一 app 不受影响",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#26] 补充校验遇联盟后到结算而我方 ESTIMATED：登记 union_mismatch，不入批",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#26] 补充校验遇联盟后到结算而我方 VOID：登记 union_mismatch，不入批",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#26] 补充校验遇联盟后到结算而我方 CLAWED_BACK：登记 union_mismatch，不入批",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#26] 补充校验遇联盟后到结算而我方 我方无单：登记 union_mismatch，不入批",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#27] 补充前已追加分佣快照 v2：按当前最大版本比对，联盟按 v2 结算的入批、不误报不一致",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#28] 补充前已追加分佣快照 v2：联盟仍按 v1 结算的按当前版本判不一致，不入批",
+        "test/spec/settlement/supplement/validation.int.test.ts > [AC-B2-04r#29] B_settle 按 BR-CALC-02 向下取整并扣淘礼金：联盟佣金 1001 不整除时仍与快照基数一致"
+      ],
+      "expected": [
+        "test/spec/settlement/supplement/batches.int.test.ts",
+        "test/spec/settlement/supplement/idempotency.int.test.ts",
+        "test/spec/settlement/supplement/rebatch.int.test.ts",
+        "test/spec/settlement/supplement/switch.int.test.ts",
+        "test/spec/settlement/supplement/validation.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "a660fe30a59458e2daaa89ef44f94a3612c3ec482ed5394595ee23e68a56eea6"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "Codex out of quota until 10-30; adversarial money reviews by fresh independent Claude via claude-run.sh (approvals #36); round 1 fail (S1: PARTIAL batches blocked supplement entry); round 2 pass; round 3 incremental pass after the D10-280 ① run_at shift on bill day; open S2s (no bill dimension in the settle_jobs key, bill totals not refreshed) handled by B2-04rb and D10-280 ③",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 5,
+    "last_verdict": "pass",
+    "note": "rule tests by an independent Claude via claude-run.sh in 4 runs; rounds 1-3 fail (closed in runs 2-3), then one mechanical test(spec) commit added the diff type to a find (orchestrator exception D10-274 / D10-206, counter unchanged), round 4 pass; run 4 (orchestrator exception D10-291, counter unchanged) added two tests (an order in a PARTIAL main batch and a supplement batch; re-entry after rejection or skip), round 5 pass",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "9ff2f507884db3ea8b80a7c780c88291e08320e8",
+    "test/spec": "ae29ccecc61c3cf3c66f798d5adc92cec1507683",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "9ff2f507884db3ea8b80a7c780c88291e08320e8"
+  }
+}
