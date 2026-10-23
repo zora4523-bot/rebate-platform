@@ -8,6 +8,7 @@
 //                   Σ batch net + Σ PAYING net + Σ net paid after t_W > W × usable_bp / 10000 →
 //                   watermark_usable_exceeded (equality passes); otherwise ok.
 // Amounts are bigint fen; sums go through @couli/money.
+import { accountingDate, chinaDayRange } from '@couli/domain';
 import { addFen, mulDivFloor } from '@couli/money';
 
 export type WatermarkRejectReason =
@@ -46,7 +47,6 @@ export interface ForecastWindow {
 }
 
 const DAY_MS = 86_400_000;
-const CHINA_OFFSET_MS = 8 * 3_600_000;
 /** BR-WDR-18 ②: a reading older than this is stale (exactly this age still passes). */
 const MAX_READING_AGE_MS = 2 * 3_600_000;
 const FORECAST_DAYS = 7n;
@@ -61,8 +61,8 @@ function instant(at: Date, ms: number): Date {
 }
 
 export function forecastWindow(now: Date): ForecastWindow {
-  // 00:00 +08:00 of the day of `now`: the +08:00 calendar day boundary at or before `now`.
-  const toMs = Math.floor((now.getTime() + CHINA_OFFSET_MS) / DAY_MS) * DAY_MS - CHINA_OFFSET_MS;
+  // 00:00 +08:00 of the day of `now`, through the domain calendar (the one natural-day definition).
+  const toMs = Date.parse(chinaDayRange(accountingDate(now)).start);
   return { from: instant(now, toMs - Number(FORECAST_DAYS) * DAY_MS), to: instant(now, toMs) };
 }
 

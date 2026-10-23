@@ -320,7 +320,10 @@ export function createPayoutExecute(options: PayoutExecuteOptions): PayoutExecut
         left.push({ row, id, reason: 'not_approved', move: false });
         continue;
       }
-      if (await memberBlocked(trx, appId, row.user_id, now, riskRows, available)) {
+      if (
+        row.blocked_reason !== null ||
+        (await memberBlocked(trx, appId, row.user_id, now, riskRows, available))
+      ) {
         left.push({ row, id, reason: 'member_blocked', move: true });
         continue;
       }
@@ -353,7 +356,17 @@ export function createPayoutExecute(options: PayoutExecuteOptions): PayoutExecut
         parseBp,
         PAYOUT_EXECUTE_DEFAULTS.watermarkUsableBp,
       );
-      for (const [channel, batchNetFen] of perChannel) {
+      // One EXECUTE per (app, channel) at a time: the Σ PAYING of ③ must see every concurrent
+      // EXECUTE's PAYING rows, which READ COMMITTED alone would miss (write skew). Channels in a
+      // fixed order so two batches never wait on each other crosswise.
+      const channels = [...perChannel.keys()].sort();
+      for (const channel of channels) {
+        await sql`SELECT pg_advisory_xact_lock(hashtext(${`${appId}:payout-watermark:${channel}`})::bigint)`.execute(
+          trx,
+        );
+      }
+      for (const channel of channels) {
+        const batchNetFen = perChannel.get(channel) ?? 0n;
         const reading = await watermark.latest(trx, { appId, channel });
         const forecastFen = await watermark.forecast(trx, { appId, channel, now });
         const committed =
