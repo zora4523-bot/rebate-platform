@@ -3,17 +3,22 @@ repo: rebate-platform
 title: 契约：客服代办的实名更正与个人信息副本——POST /admin/v1/users/{user_id}/realname-correction（user.realname_fix + 动态码，每次提交含被拒写审计）、/admin/v1/users/{user_id}/data-exports 登记 / 列表 / 企业微信路径下载（user.data_export + pii.reveal_phone + 每次动态码），用户侧 GET /v1/me/data-copies 与下载；planned
 type: contract
 # 2026-10-23 入账（admin-backend，编排 2026-10-22 21:1x 派工 B1-27；形状由 couli #178 回写 04 §6.6 / §6.1 / §3.2 并经三轮独立评审，编排裁定 D10-165、D10-167、D10-185、D10-192）。依据：04 §6.6 `users/{id}/realname-correction` 与 `users/{id}/data-exports`、§6.1 `me/data-copies`、§3.2 `personal_data_copies` 与实名更正旧身份行、§11.2 `user.realname_fix` / `user.data_export`；08 BR-ID-25 细则「实名更正」、BR-ID-40 细则、BR-ID-30 ⑨⑬、BR-ID-33。
-# 本线技术取舍（由编排者摘进任务书第 9 节）：照 04 原文写形状；拒绝码与 data.reason 新值优先复用已登记码，确需新码先请规划在 08 §13.11 登记（04 已写「由契约线按 §13.11 分配」，本任务先列清单交规划回写，再落 error-codes.yaml）；delivery / status 两组枚举进 contracts/enums/identity.yaml；旧身份查看口单列权限点，不复用 user.realname_fix / pii.reveal_*（编排 2026-10-23 01:4x 提醒），权限点新增属 specs/permissions.yaml 与冻结测试，另开 test-change；user.realname_corrected 事件登记 EVENT_NAMES 冻结测试同样另开 test-change（编排已提醒契约线）。
-refs: [BR-ID-25, BR-ID-40]
+# 本线技术取舍（由编排者摘进任务书第 9 节）：照 04 原文写形状；拒绝码与 data.reason 新值优先复用已登记码，确需新码先请规划在 08 §13.11 登记（04 已写「由契约线按 §13.11 分配」，本任务先列清单交规划回写，再落 error-codes.yaml）；delivery / status 两组枚举进 contracts/enums/identity.yaml；本任务**不含**旧身份查看接口与其权限点（单列、不复用 user.realname_fix / pii.reveal_*，编排 01:4x）——权限点新增属 specs/permissions.yaml 与冻结测试，另立规划回写 + test-change + 契约任务；新增 App 路由 DataCopy 登记进 contracts/routes.json；新码：契约起草时列出不受理与拒绝所需的码，先请规划在 08 §13.11 登记、提升 SPEC_REF 后才写 error-codes.yaml 并落地（同 CT-24o 先例），在此之前任务停在评审后不落地；contract_sections 只填 11.1，编排者把 04 §6.1 me/data-copies 行、§6.6 两段、§3.2 personal_data_copies 与旧身份两行、§11.2 user.realname_fix / user.data_export 两行逐字摘进第 9 节，并点名 x-session-scopes [full, deletion_only] 与 10006 白名单；user.realname_corrected 事件登记 EVENT_NAMES 冻结测试同样另开 test-change（编排已提醒契约线）。
+refs: [BR-ID-25, BR-ID-40, BR-ID-30, BR-ID-33, BR-ID-01, BR-ID-31]
 refs_hash:
   BR-ID-25: dc381e7dc10f
   BR-ID-40: c925476ea7db
+  BR-ID-30: 24c70bf4ac65
+  BR-ID-33: 01b25f773b29
+  BR-ID-01: 9349559da74c
+  BR-ID-31: 497747587b67
 contract_sections: ['11.1']
 deps: []
 paths:
   - 'contracts/openapi.yaml'
   - 'contracts/enums/identity.yaml'
   - 'contracts/enums/admin.yaml'
+  - 'contracts/routes.json'
   - 'contracts/error-codes.yaml'
   - 'packages/contracts-ts/**'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
