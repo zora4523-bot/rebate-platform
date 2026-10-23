@@ -95,6 +95,10 @@ export interface AgentStreamAssemblyDeps extends Omit<
   readonly scheduler: Scheduler;
   readonly texts: AgentRunTexts;
   readonly routes: IntentDeps['routes'];
+  /** B3-03n: the one result store shared by search, references, clarification, refinement and
+   * the core's delivery receipts (production: agent/store/results createPgResultSetStore over
+   * context.db). Absent: createMemoryResultSetStore(), as before (B3-03f / B3-03j / B3-03m). */
+  readonly results?: ResultSetStore;
 }
 
 export interface AgentStreamAssembly {

@@ -124,7 +124,12 @@ export type {
 } from './assembly.ts';
 export { agentStreamPortsToken, createProductionStreamAssembly } from './production.ts';
 export { createStreamReview } from './review.ts';
-export type { StreamReviewOptions, StreamReviewPorts } from './review.ts';
+export type {
+  StreamReviewConfigReader,
+  StreamReviewDeps,
+  StreamReviewOptions,
+  StreamReviewPorts,
+} from './review.ts';
 
 export { createAgentBodyAssembly } from './body.ts';
 export type { AgentBodyAssembly, AgentBodyAssemblyDeps } from './body.ts';

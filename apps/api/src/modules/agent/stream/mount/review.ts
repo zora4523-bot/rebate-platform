@@ -44,6 +44,28 @@ export interface StreamReviewPorts {
   readonly review: SentenceReviewPort;
 }
 
+/** B3-03n: content's configuration read port (createContentReader's configValue). */
+export interface StreamReviewConfigReader {
+  configValue(appId: string, key: string): Promise<{ readonly value: unknown } | null>;
+}
+
+/**
+ * B3-03n · BR-AI-18: createStreamReview's dependencies. With `config`, every input check reads
+ * agent.safety.timeout_ms for that request's app (input.caller.appId) through it and uses that
+ * value as the whole input review budget; a missing key is the BR-AI-18 default 1000 ms, a value
+ * that is not a finite positive number takes the same default (the configuration layer's
+ * existing rule; never an unlimited wait). createProductionStreamAssembly passes its content
+ * reader.
+ */
+export interface StreamReviewDeps {
+  readonly options?: StreamReviewOptions;
+  readonly clock: Clock;
+  readonly scheduler: Scheduler;
+  readonly logger: RootLogger;
+  readonly texts: Pick<AgentRunTexts, 'text'>;
+  readonly config?: StreamReviewConfigReader;
+}
+
 /** BR-AI-18 default of agent.safety.timeout_ms. */
 const DEFAULT_TIMEOUT_MS = 1000;
 

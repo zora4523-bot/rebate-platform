@@ -26,6 +26,7 @@ import type {
 } from '../../model-gateway/routing/index.ts';
 import type { RunBodyResult, RunContext, UnnumberedCard } from '../../stream/run/index.ts';
 import type { SuggestionsData } from '../../stream/writer/index.ts';
+import type { DeliveredProduct } from '../results/types.ts';
 
 // B3-05i: exported function port; tools inject cardReference(ctx, outcome.cards index).
 // Import from ./card-references.ts; see its contract for delivery/removal semantics.
@@ -193,6 +194,18 @@ export interface RunTraceSink {
   record(runId: string, trace: OrchestratorTrace): void;
 }
 
+/**
+ * B3-03n · BR-AI-05 (followup 44): the result set's trusted delivery hook (ResultSetStore's
+ * recordDelivered). After a successful tool call's product_list card was written, the core records
+ * that list's embedded product cards under its data.result_set_id: each product's own delivered
+ * card_id (the session sequence, frame first, then its items), in delivery order. A card cut by
+ * the output limits, or never written because the run was cancelled or the context gave no
+ * receipt, is not recorded; notices and other card types are never product cards.
+ */
+export interface DeliveryReceiptPort {
+  recordDelivered(resultSetId: string, items: readonly DeliveredProduct[]): Promise<void>;
+}
+
 export interface AgentRunBodyDeps {
   readonly model: Pick<ModelRouter, 'complete'>;
   /** Fresh per run, shared by every complete call in that run. */
@@ -212,6 +225,8 @@ export interface AgentRunBodyDeps {
    * the placeholder table or raw values. Must not mutate the args or table. */
   readonly traceMask: (args: unknown, placeholders: Readonly<Record<string, string>>) => unknown;
   readonly trace?: RunTraceSink;
+  /** B3-03n: delivery receipts of product cards; absent, nothing is recorded (B3-05b runs). */
+  readonly results?: DeliveryReceiptPort;
 }
 
 export interface RunLabelsDeps {
