@@ -1,0 +1,27 @@
+id: B1-22o
+repo: rebate-platform
+title: 后台联盟账号只读选项接口后端（union）：GET /admin/v1/union/account-options?platform= 按 platform 列本 app 的联盟账号（union_account_id、platform、显示名，按 created_at、id 排序），权限点 union.pid 或 union.account_auth 任一、不要 step-up；不返回授权状态与凭据；去掉 planned
+type: impl
+# 2026-10-23 入账（union 线，编排裁定 D10-243；契约 CT-24s）。复用 B1-22h 的后台控制器写法与装配。Codex 不可用至 10-30，测试由独立 Claude（approvals #36）。
+refs: [BR-ATTR-02]
+refs_hash:
+  BR-ATTR-02: f8cda78b8778
+deps: [CT-24s, B1-22h]
+paths:
+  - 'apps/api/src/modules/union/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/union/admin-account-options/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/admin-account-options/**'
+status: todo
+pr: null

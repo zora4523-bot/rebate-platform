@@ -1,0 +1,23 @@
+id: CT-24s
+repo: rebate-platform
+title: 契约：后台联盟账号只读选项 GET /admin/v1/union/account-options?platform=（只回 union_account_id、platform、显示名；权限点 union.pid 或 union.account_auth 任一，只读不要 step-up），供推广位登记表单的联盟账号下拉；planned
+type: contract
+# 2026-10-23 入账（union 线，编排裁定 D10-243：不放宽 adminListUnionAccounts 的 union.account_auth，另开最小权限只读选项接口）。依据 04 §6.6 union-pids / union-accounts、§11.2 union.pid / union.account_auth，08 BR-ATTR-02 细则「后台登记与启停」。契约槽排队；fe（F1-10gb）合并后接。后端在 B1-22o。
+refs: [BR-ATTR-02]
+refs_hash:
+  BR-ATTR-02: f8cda78b8778
+contract_sections: ['11.2']
+deps: [CT-24h]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
