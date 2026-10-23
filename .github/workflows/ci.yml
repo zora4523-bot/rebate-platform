@@ -194,6 +194,36 @@ jobs:
         env:
           TEST_REDIS_URL: redis://127.0.0.1:6379/0
           PROP_RUNS: '2000'
+      # D10-253 (CT-06zn): the browser tests failed now and then on their first files with "Failed
+      # to fetch dynamically imported module"; the requests died with net::ERR_NETWORK_CHANGED.
+      # After test:int, testcontainers (Ryuk) removes the one-shot containers and their networks
+      # asynchronously, and Chromium aborts in-flight requests when it sees the host's links
+      # change. So wait until no testcontainers container or network is left (at most 120 s; on
+      # timeout list what is left and go on), then until two `ip -o link` samples 2 s apart are
+      # equal (at most 60 s). No retry, no test change.
+      - name: Wait for the integration containers and the host network to settle
+        run: |
+          left=''
+          for _ in $(seq 1 60); do
+            left="$(docker ps -aq --filter label=org.testcontainers=true)$(docker network ls -q --filter label=org.testcontainers=true)"
+            [ -z "$left" ] && break
+            sleep 2
+          done
+          if [ -n "$left" ]; then
+            echo "::warning::testcontainers objects still present after 120 s:"
+            docker ps -a --filter label=org.testcontainers=true
+            docker network ls --filter label=org.testcontainers=true
+          fi
+          prev=''
+          settled=''
+          for _ in $(seq 1 30); do
+            cur="$(ip -o link | awk '{print $2}' | sort | tr '\n' ' ')"
+            if [ -n "$prev" ] && [ "$cur" = "$prev" ]; then settled=yes; break; fi
+            prev="$cur"
+            sleep 2
+          done
+          [ -n "$settled" ] || echo "::warning::host links still changing after 60 s"
+          echo "host links: $cur"
       - run: pnpm --filter @couli/spec-tests run test:browser
       # Build smoke (F1-01k, test/vitest.build-smoke.config.ts): builds the H5 entries (APP_ENV=test)
       # and the admin console into a temporary directory, serves each on 127.0.0.1 and opens it in
