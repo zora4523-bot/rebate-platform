@@ -289,10 +289,10 @@ jobs:
       # apt (and the apt-get that `playwright install-deps` runs) reads its options from an
       # apt.conf.d file: downloads go to ~/apt-archives and are kept; a download that receives
       # nothing for 30 s is dropped and retried up to 5 times (a slow but moving download is not
-      # cut by this; the cache and the step limit are what bound it). The step has its own
-      # 10-minute limit so a mirror that stays slow fails the job early (rerun it) instead of eating
-      # the job's 60 minutes: a run where this step alone took 10–25 minutes used to pass and now
-      # fails, by design; `apt-get update` is not cached and counts against the same 10 minutes.
+      # cut by this; the prefetch wrapper below, the cache and the step limit bound it). The step has
+      # its own 10-minute limit so a mirror that stays slow fails the job early (rerun it) instead of
+      # eating the job's 60 minutes: a run where this step alone took 10–25 minutes used to pass and
+      # now fails, by design; `apt-get update` is not cached and counts against the same 10 minutes.
       # The job limit and the tests are unchanged.
       - name: Install Chromium and the CJK fonts for the browser tests
         id: apt-install
@@ -312,27 +312,41 @@ jobs:
           # only, `apt-get install` (ours, and the `sudo apt-get` playwright runs: sudo's
           # secure_path puts /usr/local/sbin first) goes through a wrapper that first fetches the
           # .deb files with curl, drops a mirror that stays under 300 kB/s for 15 s and tries the
-          # next Ubuntu mirror, then runs the real apt-get, which checks every file against the
-          # signed index and downloads whatever it still lacks.
+          # next Ubuntu mirror, then runs the real apt-get, which downloads whatever it still lacks.
+          # apt only compares the size of a file already in its archive directory, so the wrapper
+          # itself checks every prefetched file against the size and hash apt takes from the signed
+          # index (size from --print-uris, SHA256 from apt-cache show of the same Filename); a mismatch
+          # is deleted and the next mirror tried, and a file without a SHA256 there is left to apt.
+          trap 'sudo rm -f /usr/local/sbin/apt-get' EXIT
           sudo tee /usr/local/sbin/apt-get > /dev/null <<'WRAPPER'
           #!/bin/bash
           eval "$(/usr/bin/apt-config shell ARCH Dir::Cache::archives/d)"
           ARCH=${ARCH%/}
           case " $* " in
             *" install "*)
-              /usr/bin/apt-get --print-uris -qq "$@" 2>/dev/null | while read -r uri file _; do
+              /usr/bin/apt-get --print-uris -qq "$@" 2>/dev/null | while read -r uri file size _; do
                 uri=${uri//\'/}
                 path=${uri#*://*/ubuntu/}
                 [ "$path" != "$uri" ] || continue
                 [ -s "$ARCH/$file" ] && continue
+                # --print-uris only gives MD5; the SHA256 comes from the same signed index entry.
+                name=${file%%_*}
+                version=${file#*_}
+                version=${version%_*}
+                version=${version//%3a/:}
+                want=$(/usr/bin/apt-cache show "$name=$version" 2>/dev/null \
+                  | awk -v f="$path" '/^Filename: /{m=($2==f)} m&&/^SHA256: /{print $2; exit}')
+                [ -n "$want" ] || continue
                 for base in "${uri%%/ubuntu/*}/ubuntu" http://archive.ubuntu.com/ubuntu http://security.ubuntu.com/ubuntu http://mirrors.edge.kernel.org/ubuntu; do
-                  if curl -fsSL --connect-timeout 10 --speed-limit 300000 --speed-time 15 -o "$ARCH/partial/$file" "$base/$path"; then
+                  if curl -fsSL --connect-timeout 10 --speed-limit 300000 --speed-time 15 -o "$ARCH/partial/$file" "$base/$path" \
+                    && [ "$(stat -c %s "$ARCH/partial/$file")" = "$size" ] \
+                    && [ "$(sha256sum "$ARCH/partial/$file" | cut -d' ' -f1)" = "$want" ]; then
                     mv "$ARCH/partial/$file" "$ARCH/$file"
                     echo "prefetched $file from $base"
                     break
                   fi
                   rm -f "$ARCH/partial/$file"
-                  echo "slow or failed: $base for $file" >&2
+                  echo "slow, failed or not matching the index: $base for $file" >&2
                 done
               done
               ;;
@@ -340,7 +354,6 @@ jobs:
           exec /usr/bin/apt-get "$@"
           WRAPPER
           sudo chmod 755 /usr/local/sbin/apt-get
-          trap 'sudo rm -f /usr/local/sbin/apt-get' EXIT
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends fonts-noto-cjk
           if [ "$CACHE_HIT" = true ]; then
