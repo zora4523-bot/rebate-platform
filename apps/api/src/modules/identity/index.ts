@@ -145,6 +145,28 @@ export type {
 } from './application/deletion-expiry.ts';
 export { IdentityDeletionExpiryModule } from './deletion-expiry.module.ts';
 export type { IdentityDeletionExpiryModuleOptions } from './deletion-expiry.module.ts';
+// B1-15g: processing of deletion requests (cleanup, Apple revocation, done) on the same timer, and
+// the ports the owning modules implement for it (assembled by app.module).
+export { createDeletionProcessing } from './application/deletion-processing.ts';
+export type {
+  DeletionProcessing,
+  DeletionProcessingOptions,
+} from './application/deletion-processing.ts';
+export { closingAdjustmentFromBalance } from './ports/deletion-cleanup.ts';
+export type {
+  ClosingAdjustmentInput,
+  ClosingAdjustmentState,
+  DeletionCleanupInput,
+  DeletionCleanupPort,
+  DeletionCleanupPortName,
+  DeletionCleanupPorts,
+  DeletionCleanupStep,
+  DeletionCleanupUnavailable,
+  DeletionClosingAdjustmentReader,
+} from './ports/deletion-cleanup.ts';
+export type { WithdrawalSucceededReader } from './ports/withdrawal-in-flight.ts';
+export type { AppleTokenRevokeInput, AppleTokenRevoker } from './ports/apple-token-revoker.ts';
+export { unconfiguredAppleTokenRevoker } from './infra/unconfigured-apple-token-revoker.ts';
 export type {
   UserLevel,
   UserLevelSubject,
