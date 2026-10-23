@@ -1,8 +1,14 @@
 import { type DynamicModule, type Provider, HttpException, Module, Scope } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import type { DB as Database } from '@couli/db';
-import { ProductKeyUnderivable, deriveProductKey, type UnionProductPayload } from '@couli/domain';
-import type { Kysely } from 'kysely';
+import {
+  ProductKeyUnderivable,
+  deriveProductKey,
+  orderKey,
+  type UnionProductPayload,
+} from '@couli/domain';
+import { addFen } from '@couli/money';
+import type { Kysely, Transaction } from 'kysely';
 import {
   ADMIN_CHECK,
   AdminAuthModule,
@@ -41,6 +47,7 @@ import {
   type RegisterLinkInput,
 } from './modules/catalog/index.ts';
 import {
+  createSelfRebateEstimateReader,
   COMMISSION_QUOTE_CONFIG_KEYS,
   createCommissionRebateQuoter,
   createCommissionSnapshot,
@@ -85,6 +92,8 @@ import {
   type InviteRewardScanner,
 } from './modules/growth/index.ts';
 import {
+  createWithdrawSubjectReader,
+  laborAgreementSigned,
   IdentityAdminModule,
   IdentityModule,
   createExportUsersReader,
@@ -146,7 +155,17 @@ import {
   type MeUnionBindingStatus,
   type PayoutAccountConfigPort,
 } from './modules/identity/index.ts';
-import { LedgerModule, createLedger } from './modules/ledger/index.ts';
+import { LedgerModule, createLedger, getOrderNets } from './modules/ledger/index.ts';
+import {
+  PayoutModule,
+  createDefaultFeeTaxCalculator,
+  createWithdrawHoldsReader,
+  createWithdrawRules,
+  createWithdrawUsageReader,
+  type ReverifyGatePort,
+  type WithdrawRulesOptions,
+  type WithdrawRulesService,
+} from './modules/payout/index.ts';
 import {
   LINK_LANDING_PORTS,
   LINK_OPEN_PORTS,
@@ -185,6 +204,7 @@ import {
   unbindPushTokensForSession,
 } from './modules/notification/index.ts';
 import {
+  createSelfPurchaseOrderReader,
   OrdersAdminModule,
   OrdersModule,
   type AdminClaimPorts,
@@ -231,6 +251,9 @@ import {
   isHttpEntry,
 } from './modules/platform/index.ts';
 import {
+  createBlocklistMatchReader,
+  createAppealPrevStateReader,
+  createRiskStateBatchReader,
   RiskAdminModule,
   RiskModule,
   RiskScanModule,
@@ -2097,6 +2120,117 @@ function sessionPushTokens(clock: Clock): SessionPushTokens {
   };
 }
 
+/**
+ * B2-05c: the withdrawal rules use case of the api entry (GET /v1/withdrawals/rules; the same
+ * validator POST /v1/withdrawals runs, B2-05d). Every port reads on the caller's handle: content's
+ * configuration reader (withdraw.*; a plain read each time, as payoutAccountConfig), risk's state
+ * and appeal readers, the read-only blocklist match, identity's real-name, payout-account and
+ * labor-agreement ports, ledger's getBalances, the module's own usage / holds readers, the default
+ * fee / tax calculator (0 / 0, BR-WDR-19 / 20) and a re-verification gate that reports nothing
+ * pending until identity's CT-26c / CT-26e land. Without a database or a keyring the entry gets no
+ * use case (the controller answers 50001).
+ */
+/**
+ * BR-WDR-03 ⑬ 细则 (B2-05c): the member's self-purchase orders of the last 90 × 24 hours that are
+ * received and still rebate-worthy (orders' port), and the member's own rebate share of them —
+ * the credited net from the ledger once CREDITED (已入账金额), the commission snapshot's amount at the
+ * order's version before (当前预估). Read on the caller's handle; the ledger's order nets want a
+ * transaction, so a pool handle (GET /v1/withdrawals/rules) opens a short read-only one.
+ */
+function selfPurchasePort(): WithdrawRulesOptions['selfPurchase'] {
+  const orders = createSelfPurchaseOrderReader();
+  const estimate = createSelfRebateEstimateReader();
+  async function creditedSelfNet(
+    handle: Kysely<Database>,
+    appId: string,
+    userId: string,
+    platform: string,
+    subOrderId: string,
+  ): Promise<bigint> {
+    const selection = { appId, orderKey: orderKey(platform, subOrderId) };
+    const nets = handle.isTransaction
+      ? await getOrderNets(handle as Transaction<Database>, selection)
+      : await handle.transaction().execute((trx) => getOrderNets(trx, selection));
+    const own = nets.beneficiaries.find(
+      (b) => b.beneficiary_user_id === userId && b.role === 'self',
+    );
+    return own === undefined || own.net_fen < 0n ? 0n : own.net_fen;
+  }
+  return {
+    async read(handle, input) {
+      const rows = await orders.read(handle, {
+        appId: input.appId,
+        userId: input.userId,
+        now: input.now,
+      });
+      let amount = 0n;
+      for (const row of rows) {
+        const share =
+          row.rebate_status === 'CREDITED'
+            ? await creditedSelfNet(
+                handle,
+                input.appId,
+                input.userId,
+                row.platform,
+                row.sub_order_id,
+              )
+            : await estimate.read(handle, {
+                appId: input.appId,
+                orderId: row.order_id,
+                commissionVersion: row.commission_version,
+                userId: input.userId,
+              });
+        amount = addFen(amount, share);
+      }
+      return { count: rows.length, amount_fen: amount };
+    },
+  };
+}
+
+function payoutModule(): DynamicModule {
+  return PayoutModule.forRoot({
+    rules: {
+      inject: [
+        CLOCK,
+        ROOT_LOGGER,
+        { token: DB, optional: true },
+        { token: FIELD_CRYPTO, optional: true },
+      ],
+      useFactory: (
+        clock: Clock,
+        logger: RootLogger,
+        db?: Kysely<Database>,
+        crypto?: FieldCrypto,
+      ): WithdrawRulesService | null => {
+        if (db === undefined || crypto === undefined) return null;
+        // TODO(规划/11 §2.3): 待加验判定（BR-WDR-03 ③b）接 identity 的加验端口 — blocked on CT-26c
+        const reverify: ReverifyGatePort = { check: () => Promise.resolve(null) };
+        const realname = createRealnameReader(crypto);
+        return createWithdrawRules({
+          clock,
+          logger: logger.child({ module: 'payout' }),
+          config: {
+            configValue: (appId, key, handle) =>
+              createContentReader({ db: handle, clock }).configValue(appId, key),
+          },
+          risk: createRiskStateBatchReader({ db }),
+          appeal: createAppealPrevStateReader(),
+          blocklist: createBlocklistMatchReader(),
+          reverify,
+          realname: { read: realname.read, verified: realname.verified },
+          subject: createWithdrawSubjectReader(),
+          laborAgreementSigned,
+          ledger: createLedger({ clock }),
+          holds: createWithdrawHoldsReader(),
+          usage: createWithdrawUsageReader(),
+          selfPurchase: selfPurchasePort(),
+          feeTax: createDefaultFeeTaxCalculator(),
+        });
+      },
+    },
+  });
+}
+
 @Module({})
 export class AppModule {
   static forEntry(options: PlatformOptions): DynamicModule {
@@ -2246,6 +2380,8 @@ export class AppModule {
         // growth's POST /v1/me/inviter (B1-11e): on the api entry, beside identity and risk, whose
         // global guard and idempotency post-miss hooks run stages ①–⑧ before it.
         ...(options.entry === 'api' ? [growthModule()] : []),
+        // payout's GET /v1/withdrawals/rules (B2-05c): on the api entry, beside identity and risk.
+        ...(options.entry === 'api' ? [payoutModule()] : []),
         ...(union === undefined ? [] : [union]),
         // The ledger posting port (B2-02f) on every entry that books money: settlement (worker),
         // withdrawals (api, payout) and adjustments (admin); the stream entry books nothing.

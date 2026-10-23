@@ -6,6 +6,7 @@
 import { InvalidAmount, InvalidRatio } from './errors.ts';
 
 export { addFen, subFen, type SubFenOptions } from './add-sub.ts';
+export { floorToStepFen } from './floor-to-step.ts';
 export { formatYuan, formatYuanAdmin, formatYuanRange } from './display.ts';
 export { InvalidAmount, InvalidRatio } from './errors.ts';
 export { mulBpBpFloor } from './mul-bp-bp.ts';

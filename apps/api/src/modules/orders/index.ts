@@ -25,6 +25,8 @@ export type {
 export { claimEntryPinned } from './domain/claim-entry.ts';
 export type { ClaimEntryInput } from './domain/claim-entry.ts';
 export { createInviteRewardOrderFacts } from './ports/invite-reward.ts';
+export { createSelfPurchaseOrderReader, SELF_PURCHASE_WINDOW_MS } from './ports/self-purchase.ts';
+export type { SelfPurchaseOrder, SelfPurchaseOrderReader } from './ports/self-purchase.ts';
 export { readSnapshotRetryInput } from './infra/snapshot-retry-input.ts';
 // B1-08t：分佣快照补偿重试的纯判定与定时扫描（worker 经 worker-runtime 装配）。
 export {

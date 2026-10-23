@@ -195,3 +195,7 @@ export type {
   WorkingDayCalendarReader,
   WorkingDayDeadlineOptions,
 } from './application/appeal-calendar.ts';
+export { createAppealPrevStateReader } from './ports/appeal-prev-state.ts';
+export type { AppealPrevStateReader } from './ports/appeal-prev-state.ts';
+export { createBlocklistMatchReader } from './ports/blocklist-match.ts';
+export type { BlocklistMatchReader } from './ports/blocklist-match.ts';
