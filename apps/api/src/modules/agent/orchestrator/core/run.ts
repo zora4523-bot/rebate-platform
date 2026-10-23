@@ -132,6 +132,37 @@ function deliveredProductsOf(
   return out.length === 0 ? null : { resultSetId, items: out };
 }
 
+/**
+ * B3-03p · BR-AI-05: the receipt of a written rebate_quote card's embedded product (04 §8.2: it
+ * takes the card_id right after its frame), with a copy of the card whose product carries no
+ * card_id. null without a product key, a known platform or an integer final price.
+ */
+function quotedProductOf(
+  card: UnnumberedCard,
+  frameCardId: string,
+): DeliveredProductReceipt | null {
+  if (!isRecord(card.data)) return null;
+  const product = card.data['product'];
+  const frame = CARD_ID.exec(frameCardId);
+  if (!isRecord(product) || frame === null) return null;
+  const productKey = product['product_key'];
+  const platform = product['platform'];
+  const finalPrice = product['final_price_fen'];
+  const no = Number(frame[1]) + 1;
+  if (typeof productKey !== 'string' || productKey === '') return null;
+  if (typeof platform !== 'string' || !PLATFORMS.includes(platform)) return null;
+  if (typeof finalPrice !== 'number' || !Number.isSafeInteger(finalPrice)) return null;
+  if (!Number.isSafeInteger(no)) return null;
+  const copy = Object.fromEntries(Object.entries(product).filter(([key]) => key !== 'card_id'));
+  return {
+    card_id: `c${String(no)}`,
+    product_key: productKey,
+    platform: platform as Platform,
+    final_price_fen: finalPrice,
+    card: { ...card, data: { ...card.data, product: copy } },
+  };
+}
+
 /** Whole text without surrounding white space and one ``` fence (closed or not). */
 function unfenced(text: string): string {
   const body = text.trim();
@@ -317,7 +348,7 @@ class AgentRun {
    * recorded; nothing is recorded after the trace was written. Not counted in limits.toolCalls.
    */
   private quoteObserver(proceed: InputProceed): RunContext {
-    const ctx = this.out.context();
+    const ctx = this.pathContext();
     const linkCount = proceed.links.length;
     let started = 0;
     let open: number | null = null;
@@ -345,7 +376,35 @@ class AgentRun {
         observe(tool, phase);
         ctx.toolStatus(tool, phase, display);
       },
-      card: (card) => ctx.card(card),
+      card: (card, delivered) => ctx.card(card, delivered),
+      suggestions: (items) => ctx.suggestions(items),
+    };
+  }
+
+  /**
+   * B3-03p · BR-AI-05: the guarded context handed to the degraded path, the deterministic path
+   * and the intent port. Same caps and signal as RunOutput.context(); a card the run context
+   * confirmed as written (a receipt card_id) has its products recorded like a model tool call's
+   * (receipt()) before the path's next write. The path's own `delivered` callback, when given,
+   * gets the frame's card_id too.
+   */
+  private pathContext(): RunContext {
+    const ctx = this.out.context();
+    return {
+      runId: ctx.runId,
+      sessionId: ctx.sessionId,
+      signal: ctx.signal,
+      get cardsDelivered() {
+        return ctx.cardsDelivered;
+      },
+      text: (delta) => ctx.text(delta),
+      toolStatus: (tool, phase, display) => ctx.toolStatus(tool, phase, display),
+      card: async (card, delivered) => {
+        const written = await this.out.deliver(card);
+        if (written.cardId === null) return;
+        delivered?.(written.cardId);
+        await this.receipt(card, written.cardId);
+      },
       suggestions: (items) => ctx.suggestions(items),
     };
   }
@@ -354,7 +413,7 @@ class AgentRun {
     // An intent the model already gave is kept; otherwise the no-model keyword search's.
     if (this.intent === null) this.intent = DEGRADED_INTENT;
     const result = await this.wait(
-      this.deps.degraded.run({ reason, input: this.input, proceed }, this.out.context()),
+      this.deps.degraded.run({ reason, input: this.input, proceed }, this.pathContext()),
     );
     return result === ABORTED ? done('stop') : this.final(result);
   }
@@ -368,7 +427,9 @@ class AgentRun {
     if (tools === ABORTED) return done('stop');
     const known = new Set(tools.map((tool) => tool.name));
     const clock = this.deps.modelClock();
-    this.guard = createOutputGuard({ review: this.deps.review });
+    // B3-03p · BR-AI-18: this run's app's sentence review (its own budget), when wired.
+    const review = this.deps.outputReview?.forRun(this.appId, this.signal) ?? this.deps.review;
+    this.guard = createOutputGuard({ review });
     const messages: ChatMessage[] = [{ role: 'user', content: proceed.modelText }];
     let toolCalls = 0;
     for (let round = 1; ; round += 1) {
@@ -427,7 +488,7 @@ class AgentRun {
     const intents = this.deps.intents;
     if (intents !== undefined && !blank) {
       const handled = await this.wait(
-        intents.handle({ text, input: this.input, proceed }, this.out.context()),
+        intents.handle({ text, input: this.input, proceed }, this.pathContext()),
       );
       if (handled === ABORTED) return done('stop');
       if (handled !== null) return this.final(handled);
@@ -611,11 +672,23 @@ class AgentRun {
   private async receipt(card: UnnumberedCard, cardId: string): Promise<void | Aborted> {
     const port = this.deps.results;
     if (port === undefined) return undefined;
-    const delivered = deliveredProductsOf(card, cardId);
-    if (delivered === null) return undefined;
     let pending: Promise<void>;
     try {
-      pending = port.recordDelivered(delivered.resultSetId, delivered.items);
+      const quoted = card.type === 'rebate_quote' ? quotedProductOf(card, cardId) : null;
+      if (quoted !== null) {
+        // B3-03p: the quote card's product, outside every result set (ports.ts recordQuoted).
+        if (port.recordQuoted === undefined) return undefined;
+        const scope = {
+          appId: this.appId,
+          sessionId: this.input.sessionId,
+          runId: this.input.runId,
+        };
+        pending = port.recordQuoted(scope, [quoted]);
+      } else {
+        const delivered = deliveredProductsOf(card, cardId);
+        if (delivered === null) return undefined;
+        pending = port.recordDelivered(delivered.resultSetId, delivered.items);
+      }
     } catch {
       return undefined;
     }

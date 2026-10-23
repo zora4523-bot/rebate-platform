@@ -4,8 +4,38 @@
 // for every run, and lets the wait for that read count toward the same deadline as the review.
 // The stream entry hands it to the core as AgentRunBodyDeps.outputReview (createStreamReview's
 // ports carry it to the business assembly; production: createProductionStreamAssembly).
+import type { ReviewVerdict, SentenceReviewPort } from '../../guard/index.ts';
+import { createAliyunOutputReview } from '../../guard/review/index.ts';
 import type { RunSentenceReviewPort } from '../../orchestrator/core/ports.ts';
-import type { StreamReviewDeps } from './review.ts';
+import {
+  aliyunDepsFactory,
+  type StreamReviewDeps,
+  budgetOf,
+  liveSettings,
+  remainingBudget,
+  UNREADABLE,
+} from './safety.ts';
+
+const TIMED_OUT: SentenceReviewPort = { review: async () => 'timeout' };
+
+/** `pending`, or 'timeout' as soon as `signal` aborts (a late verdict is discarded). */
+async function untilAborted(
+  pending: Promise<ReviewVerdict>,
+  signal: AbortSignal,
+): Promise<ReviewVerdict> {
+  if (signal.aborted) return 'timeout';
+  let stop: () => void = () => undefined;
+  const aborted = new Promise<ReviewVerdict>((resolve) => {
+    stop = () => resolve('timeout');
+  });
+  signal.addEventListener('abort', stop, { once: true });
+  try {
+    const verdict = await Promise.race([pending, aborted]);
+    return signal.aborted ? 'timeout' : verdict;
+  } finally {
+    signal.removeEventListener('abort', stop);
+  }
+}
 
 /**
  * forRun(appId, signal) returns the sentence review of one run of `appId`. Each review(text) call
@@ -24,6 +54,31 @@ import type { StreamReviewDeps } from './review.ts';
  * external work; credentials and review text are never logged.
  */
 export function createStreamOutputReview(deps: StreamReviewDeps): RunSentenceReviewPort {
-  void deps;
-  throw new Error('NotImplemented: createStreamOutputReview');
+  const live = liveSettings(deps.options);
+  const config = deps.config;
+  if (live === undefined) return { forRun: () => TIMED_OUT };
+  const aliyunFor = aliyunDepsFactory(live, deps.options, deps);
+  const fallback = budgetOf(deps.options);
+  // Without a configuration port (never on the stream entry) every review keeps the fallback.
+  const fixed = createAliyunOutputReview(aliyunFor(fallback));
+  return {
+    // Everything of a run (its app, its signal) is bound in this closure: no shared field.
+    forRun(appId, signal) {
+      return {
+        async review(text) {
+          if (config === undefined) return untilAborted(fixed.review(text), signal);
+          const left = await remainingBudget(config, deps.scheduler, appId, signal, fallback);
+          if (left === UNREADABLE || left <= 0) {
+            if (left === UNREADABLE && !signal.aborted) {
+              deps.logger.warn({ app_id: appId }, 'agent_safety_timeout_unreadable');
+            }
+            return 'timeout';
+          }
+          // One adapter per review call: its deadline is what is left of this call's budget.
+          const review = createAliyunOutputReview(aliyunFor(left));
+          return untilAborted(review.review(text), signal);
+        },
+      };
+    },
+  };
 }

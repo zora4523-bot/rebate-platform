@@ -4,6 +4,7 @@
 export type {
   ChainStatus,
   DeliveredProduct,
+  QuotedReceiptStore,
   ResultSetInput,
   ResultSetStore,
   ResultsContinuationDeps,
@@ -12,7 +13,7 @@ export type {
   SessionChain,
   StoredResultSet,
 } from './types.ts';
-export { createMemoryResultSetStore } from './store.ts';
+export { createMemoryResultSetStore, keepsQuoted } from './store.ts';
 export { readSearchParams } from './shared.ts';
 export { createResultsTools } from './tools.ts';
 export { createClarification, createReferenceResolver, createRefinement } from './continuation.ts';

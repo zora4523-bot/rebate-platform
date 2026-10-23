@@ -5,6 +5,7 @@
 import type { ClarificationScope, ClarifySlot } from '../intents/types.ts';
 import type {
   DeliveredProduct,
+  QuotedReceiptStore,
   ResultSetInput,
   ResultSetStore,
   SessionChain,
@@ -40,13 +41,20 @@ function chainKey(appId: string, sessionId: string): string {
   return JSON.stringify([appId, sessionId]);
 }
 
-export function createMemoryResultSetStore(): Required<ResultSetStore> {
+/** Whether `store` keeps quoted products (the memory store does; see QuotedReceiptStore). */
+export function keepsQuoted<T extends object>(store: T): store is T & QuotedReceiptStore {
+  return typeof (store as Partial<QuotedReceiptStore>).recordQuoted === 'function';
+}
+
+export function createMemoryResultSetStore(): Required<ResultSetStore> & QuotedReceiptStore {
   // Save order is the recency order; a re-save of the same id keeps its place and receipts.
   const rows: Row[] = [];
   const byId = new Map<string, Row>();
   const asked = new Set<string>();
   // Appends per app/session: only the last one is ever read back, so only it is kept here.
   const chains = new Map<string, SessionChain>();
+  // B3-03p: quoted products (rebate_quote cards) by app/session; outside every result set.
+  const quoted = new Map<string, DeliveredProduct[]>();
 
   return {
     async save(value) {
@@ -71,6 +79,15 @@ export function createMemoryResultSetStore(): Required<ResultSetStore> {
       }
     },
 
+    async recordQuoted(scope, items) {
+      const key = chainKey(scope.appId, scope.sessionId);
+      const list = quoted.get(key) ?? [];
+      for (const item of items) {
+        if (!list.some((entry) => entry.card_id === item.card_id)) list.push(item);
+      }
+      quoted.set(key, list);
+    },
+
     async latestWithProducts(appId, sessionId) {
       for (let i = rows.length - 1; i >= 0; i -= 1) {
         const row = rows[i];
@@ -88,7 +105,10 @@ export function createMemoryResultSetStore(): Required<ResultSetStore> {
         const found = row.delivered.find((entry) => entry.card_id === cardId);
         if (found !== undefined) return found;
       }
-      return null;
+      const quote = quoted
+        .get(chainKey(appId, sessionId))
+        ?.find((entry) => entry.card_id === cardId);
+      return quote ?? null;
     },
 
     async takeOnce(scope: ClarificationScope, slot: ClarifySlot) {

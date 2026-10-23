@@ -203,6 +203,19 @@ export interface RunTraceSink {
  */
 export interface DeliveryReceiptPort {
   recordDelivered(resultSetId: string, items: readonly DeliveredProductReceipt[]): Promise<void>;
+  /**
+   * B3-03p · BR-AI-05: the product embedded in a written rebate_quote card (no result set), under
+   * the run's app, session and run; findable by its card_id in later rounds of that session, never
+   * part of the result set 「第 N 个」 addresses. Absent: quoted products are not recorded.
+   */
+  recordQuoted?(scope: QuotedScope, items: readonly DeliveredProductReceipt[]): Promise<void>;
+}
+
+/** Server-side scope of a quoted product's receipt (never from model arguments). */
+export interface QuotedScope {
+  readonly appId: string;
+  readonly sessionId: string;
+  readonly runId: string;
 }
 
 /*

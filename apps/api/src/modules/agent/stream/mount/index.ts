@@ -83,7 +83,7 @@ import {
   type AgentRunTexts,
 } from '../../orchestrator/index.ts';
 import type { DeliveryReceiptPort } from '../../orchestrator/core/ports.ts';
-import type { ResultSetStore } from '../../orchestrator/results/index.ts';
+import { keepsQuoted, type ResultSetStore } from '../../orchestrator/results/index.ts';
 import { createRunModelClock, type ResolvedRoute } from '../../model-gateway/routing/index.ts';
 import { createAgentRedactor } from '../../preprocess/redact/index.ts';
 import { agentSessionDefaults, createPgAgentSessionStore } from '../../store/index.ts';
@@ -258,19 +258,32 @@ export function agentStreamProvider(
  * run going without it.
  */
 function deliveryReceipts(store: ResultSetStore, logger: RootLogger): DeliveryReceiptPort {
-  return {
+  const failed = (fields: Record<string, string | number>, error: unknown): void => {
+    logger.warn(
+      { ...fields, error_name: error instanceof Error ? error.name : typeof error },
+      'agent_result_receipt_failed',
+    );
+  };
+  const port: DeliveryReceiptPort = {
     async recordDelivered(resultSetId, items) {
       try {
         await store.recordDelivered(resultSetId, items);
       } catch (error) {
-        logger.warn(
-          {
-            result_set_id: resultSetId,
-            cards: items.length,
-            error_name: error instanceof Error ? error.name : typeof error,
-          },
-          'agent_result_receipt_failed',
-        );
+        failed({ result_set_id: resultSetId, cards: items.length }, error);
+        throw error;
+      }
+    },
+  };
+  // B3-03p: quoted products, when the store keeps them (TODO(规划/11 §2.3): PG 结果库记报价卡内
+  // 商品 — blocked on agent_result_deliveries 只认结果集（result_set_id 必填），须另开 db 任务).
+  if (!keepsQuoted(store)) return port;
+  return {
+    ...port,
+    async recordQuoted(scope, items) {
+      try {
+        await store.recordQuoted(scope, items);
+      } catch (error) {
+        failed({ run_id: scope.runId, cards: items.length }, error);
         throw error;
       }
     },
@@ -362,6 +375,10 @@ export function createAgentStreamRuntime(
     },
     modelClock: () => createRunModelClock(timings.runMaxMs),
     review: business?.safety?.review ?? { review: async () => 'timeout' },
+    // B3-03p: the per-app output review, when the assembly's safety ports carry one.
+    ...(business?.safety?.outputReview === undefined
+      ? {}
+      : { outputReview: business.safety.outputReview }),
     texts: runTexts,
     prompt,
     route,
