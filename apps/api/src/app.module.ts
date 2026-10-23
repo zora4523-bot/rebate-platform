@@ -21,8 +21,13 @@ import {
 } from './modules/admin/index.ts';
 import {
   AgentModule,
+  agentCallerReaderToken,
+  agentConsentReaderToken,
+  agentContentReaderToken,
   agentStreamPortsToken,
   createProductionStreamAssembly,
+  type AgentConsentReaderFactory,
+  type AgentContentReader,
   type AgentStreamProvidedPorts,
   type StreamReviewOptions,
 } from './modules/agent/index.ts';
@@ -2239,6 +2244,66 @@ function agentStreamPorts(union: DynamicModule): DynamicModule {
 }
 
 /**
+ * B3-08k (D10-294; BR-AI-02 ③; rule tests test/spec/agent/foreign-db-handoff/**): the readers
+ * agent reads through, assembled here so agent never hands its database handle to content or
+ * identity. Each is null without a database handle (agent's runtimes are null then as well).
+ * - agentContentReaderToken() (stream and worker entries): configValue is the entry's shared,
+ *   cached content reader (on stream the same instance as risk's pooled minimum-version reader):
+ *   the consent version, the daily limits and every read of the production assembly;
+ *   freshConfigValue builds a content reader per call (no cache of its own), so agent's switches
+ *   are read anew behind agent's own 1 s cache (createAgentConfigReader, followup 23), exactly as
+ *   agent's per-call reader did before.
+ * - agentCallerReaderToken() (stream): identity's createAgentCallerReader over the handle's app
+ *   schema (the AGENT_CALLER provider's reader).
+ * - agentConsentReaderToken() (stream): identity's createAiConsentReader bound to the handle;
+ *   agent hands it the consent version source only.
+ */
+@Module({})
+class AgentReadersModule {}
+
+function agentReaders(
+  entry: 'stream' | 'worker',
+  contentReader: SharedContentReader,
+): DynamicModule {
+  const content = {
+    provide: agentContentReaderToken(),
+    inject: [CLOCK, { token: DB, optional: true }],
+    useFactory: (clock: Clock, db?: Kysely<Database>): AgentContentReader | null => {
+      if (db === undefined) return null;
+      const handle = db;
+      const shared = contentReader(handle, clock);
+      return {
+        configValue: (appId, key) => shared.configValue(appId, key),
+        freshConfigValue: (appId, key) =>
+          createContentReader({ db: handle, clock }).configValue(appId, key),
+      };
+    },
+  };
+  const caller = {
+    provide: agentCallerReaderToken(),
+    inject: [{ token: DB, optional: true }],
+    useFactory: (db?: Kysely<Database>) =>
+      db === undefined ? null : createAgentCallerReader({ db: db.withSchema('app') }),
+  };
+  const consent = {
+    provide: agentConsentReaderToken(),
+    inject: [{ token: DB, optional: true }],
+    useFactory: (db?: Kysely<Database>): AgentConsentReaderFactory | null => {
+      if (db === undefined) return null;
+      const handle = db;
+      return ({ currentVersion }) => createAiConsentReader({ db: handle, currentVersion });
+    },
+  };
+  const providers = entry === 'stream' ? [content, caller, consent] : [content];
+  return {
+    module: AgentReadersModule,
+    global: true,
+    providers,
+    exports: providers.map((provider) => provider.provide),
+  };
+}
+
+/**
  * The risk module of the `api` entry: stage ① (device signing keys from identity) and stage ④a,
  * whose minimum supported version port is content's reader of app_versions (same assembly as
  * identityModule(); risk never imports content, B1-03c): cached on the pool for the guard, and
@@ -2816,6 +2881,8 @@ export class AppModule {
         ...(options.entry === 'worker'
           ? [
               RiskScanModule.forWorker(),
+              // B3-08k: content's reads for the sweeper's daily limits, assembled here.
+              agentReaders('worker', contentReader),
               AgentModule.forWorker(),
               // risk.state_changed → RISK_STATE_CHANGED inbox message (B1-12g, BR-TEXT-23).
               // Its unbanned {need_reauth} reads linking's Taobao binding port (SELECT only).
@@ -2892,13 +2959,12 @@ export class AppModule {
         // B3-03j: the Agent's business ports (union / catalog / linking / parsing) and its
         // production assembly; B3-03m: input check and sentence review over the Aliyun content
         // safety review (fail-closed without its configuration); model routing stays minimal
-        // (B3-03k).
+        // (B3-03k). B3-08k: the content, caller and consent readers agent reads through.
         ...(options.entry === 'stream' && union !== undefined
           ? [
               agentStreamPorts(union),
+              agentReaders('stream', contentReader),
               AgentModule.forStream({
-                consentReader: createAiConsentReader,
-                callerReader: createAgentCallerReader,
                 assembly: createProductionStreamAssembly,
                 safety: agentStreamSafety(options.config),
               }),
