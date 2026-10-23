@@ -31,6 +31,7 @@ it.each(['frozen', 'appealing'] as const)(
         { role: 'indirect', ratioBp: 500 },
       ],
     });
+    const initial = await h.read(o);
     const result = await h.credit(o);
 
     expect(await h.voucherKeys()).toEqual(
@@ -93,6 +94,10 @@ it.each(['frozen', 'appealing'] as const)(
       booked_base_fen: 850n,
       booked_n_fen: 1000n,
     });
+    // BR-CALC-13：受益人级 held 只记在受益人事件与义务里，不设置订单级 hold（hold 只由人工或风控
+    // 按 BR-FUND-06 设置）。
+    expect(initial).toMatchObject({ hold: false, hold_reason: null });
+    expect(await h.read(o)).toMatchObject({ hold: false, hold_reason: null });
   },
   TIMEOUT,
 );
@@ -119,6 +124,9 @@ it(
     );
     expect(await h.voucherLines(forfeitKey(o, 'indirect'))).toEqual(platformLines(o, 42n));
     expect(await h.voucherLines(platformKey(o))).toEqual(platformLines(o, 448n));
+    expect(
+      (await h.vouchers()).find((v) => v.uniq_key === forfeitKey(o, 'indirect'))?.voucher_kind,
+    ).toBe('FORFEIT');
     expect(await h.balance(o.user('indirect'))).toBe(0n);
     expect(await h.balance(o.user('direct'))).toBe(85n);
     expect(await h.subjectNet(receivable(o))).toBe(1000n);
@@ -289,6 +297,53 @@ it(
     expect(await h.voucherKeys()).toEqual([creditKey(o, 'self'), platformKey(o)].sort());
     expect(await h.obligations()).toEqual([]);
     expect(await h.subjectNet(receivable(o))).toBe(1000n);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04m#41] 直推受益人处于注销冷静期（申请 cooling，users.status 仍 normal）：不算失效，照常入账，不写 FORFEIT、不追加事件、不开义务',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.order({
+      people: [
+        { role: 'self', ratioBp: 5000 },
+        { role: 'direct', ratioBp: 1000, state: 'cooling' },
+        { role: 'indirect', ratioBp: 500 },
+      ],
+    });
+    const result = await h.credit(o);
+    expect(result).toMatchObject({
+      outcome: 'credited',
+      bCreditFen: 850n,
+      platformCreditFen: 448n,
+    });
+    expect(await h.voucherKeys()).toEqual(
+      [
+        creditKey(o, 'self'),
+        creditKey(o, 'direct'),
+        creditKey(o, 'indirect'),
+        platformKey(o),
+      ].sort(),
+    );
+    expect(await h.voucherLines(creditKey(o, 'direct'))).toEqual(userCreditLines(o, 'direct', 85n));
+    expect(await h.balance(o.user('direct'))).toBe(85n);
+    expect(await h.subjectNet(receivable(o))).toBe(1000n);
+    expect(await h.obligations()).toEqual([]);
+    expect(await h.newBeneficiaryEvents(o)).toEqual([]);
+    if (result.outcome !== 'credited') throw new Error('not credited');
+    expect(result.beneficiaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          userId: o.user('direct'),
+          role: 'direct',
+          shareFen: 85n,
+          action: 'credit',
+          forfeitReason: null,
+          beneficiaryCreditId: null,
+        }),
+      ]),
+    );
   },
   TIMEOUT,
 );

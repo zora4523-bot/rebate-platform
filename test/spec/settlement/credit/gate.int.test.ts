@@ -47,6 +47,26 @@ it(
 );
 
 it(
+  '[AC-B2-04m#42] readStates：注销冷静期（申请 cooling，users.status 仍 normal）按 #35 映射为 deletion_status=null，不当成已注销',
+  async () => {
+    const h = await harness(p.db);
+    const cooling = await h.user('cooling');
+    const gate = h.gate();
+    const states = await p.db.transaction().execute(async (trx) => {
+      await gate.lockUsers(trx, { appId: h.appId, userIds: [cooling] });
+      return gate.readStates(trx, { appId: h.appId, userIds: [cooling] });
+    });
+    expect(states.get(cooling)).toEqual({
+      risk_state: 'normal',
+      deletion_status: null,
+      is_minor: false,
+    });
+    expect(states.size).toBe(1);
+  },
+  TIMEOUT,
+);
+
+it(
   '[AC-B2-04m#36] lockUsers 经 identity 端口在调用方事务里锁住 users 行：事务未结束时另一连接 FOR UPDATE NOWAIT 失败（55P03），提交后可锁',
   async () => {
     const h = await harness(p.db);

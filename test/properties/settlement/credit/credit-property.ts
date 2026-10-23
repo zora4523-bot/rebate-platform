@@ -3,7 +3,8 @@
 //
 // Oracle written from the rules, not from the planner: B = floor(max(0,N) × (10000 − reserve_bp) /
 // 10000) (BR-CALC-02, tlj 0); share = floor(B × ratio / 10000) (BR-CALC-04); per beneficiary state
-// after the locks (BR-CALC-13): normal / adult-or-self minor → CREDIT, frozen / appealing → held
+// after the locks (BR-CALC-13): normal / deletion cooling-off / self minor → CREDIT, frozen /
+// appealing → held
 // (first_credit obligation when > 0), banned / deleting / promotional minor → FORFEIT; platform =
 // B − Σ shares + reserve (BR-FUND-05); UNION_RECEIVABLE = max(0,N) − Σ held (BR-FUND-19 ⑤).
 import { addFen, subFen } from '@couli/money';
@@ -34,6 +35,8 @@ const STATES: readonly UserState[] = [
   'banned',
   'deleting',
   'minor',
+  // Deletion cooling-off is not a loss (BR-CALC-13): credited like normal.
+  'cooling',
 ];
 
 const person = (role: 'self' | 'direct' | 'indirect', maxBp: number) =>
@@ -48,6 +51,8 @@ const scenario = fc.record({
     fc.bigInt({ min: -500n, max: 0n }),
     fc.bigInt({ min: 1n, max: 999n }),
     fc.bigInt({ min: 1000n, max: 5_000_000n }),
+    // Beyond int4 / int32 (2^31) and 2^32, so a narrowed column or number path shows up.
+    fc.bigInt({ min: 2_147_483_648n, max: 100_000_000_000_000n }),
   ),
   reserveBp: fc.oneof(fc.constantFrom(0, 1500, 10000), fc.integer({ min: 0, max: 10000 })),
   self: person('self', 8000),
@@ -136,6 +141,12 @@ export async function assertCreditProperty(h: Harness): Promise<number> {
       const ofOrder = (key: string) => key.startsWith(`${o.orderKey}:`);
       const mine = (await h.vouchers()).filter((v) => ofOrder(v.uniq_key));
       expect(mine.map((v) => v.uniq_key).sort()).toEqual(expectedKeys.sort());
+      // BR-FUND-05 voucher kinds: user and platform CREDIT, forfeited shares FORFEIT.
+      for (const v of mine) {
+        expect(v.voucher_kind, v.uniq_key).toBe(
+          v.uniq_key.includes(':PLATFORM:FORFEIT:') ? 'FORFEIT' : 'CREDIT',
+        );
+      }
       const lines = (await h.lines()).filter((l) => ofOrder(l.uniq_key));
       for (const key of expectedKeys) {
         const own = lines.filter((l) => l.uniq_key === key);

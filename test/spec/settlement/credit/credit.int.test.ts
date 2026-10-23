@@ -8,6 +8,7 @@ import {
   TIMEOUT,
   creditKey,
   databaseFixture,
+  forfeitKey,
   harness,
   platformKey,
   platformLines,
@@ -54,6 +55,20 @@ it(
       const v = (await h.vouchers()).find((row) => row.uniq_key === creditKey(o, role));
       expect(v).toMatchObject({ beneficiary_user_id: o.user(role), role });
     }
+    // BR-FUND-05 / BR-FUND-19 ⑤ 凭证类型：受益人入账与平台（留存 + 预留）都是 CREDIT；平台凭证不带
+    // 受益人键（不计入受益人净额）。
+    const kinds = Object.fromEntries(
+      (await h.vouchers()).map((v) => [
+        v.uniq_key,
+        { kind: v.voucher_kind, user: v.beneficiary_user_id, role: v.role },
+      ]),
+    );
+    expect(kinds).toEqual({
+      [creditKey(o, 'self')]: { kind: 'CREDIT', user: o.user('self'), role: 'self' },
+      [creditKey(o, 'direct')]: { kind: 'CREDIT', user: o.user('direct'), role: 'direct' },
+      [creditKey(o, 'indirect')]: { kind: 'CREDIT', user: o.user('indirect'), role: 'indirect' },
+      [platformKey(o)]: { kind: 'CREDIT', user: null, role: null },
+    });
     // BR-FUND-05 分录模板：自购 REBATE_CREDIT，直推 / 间推 REFERRAL_CREDIT。
     const userLines = (await h.lines()).filter((l) => l.subject === 'USER_BALANCE');
     expect(userLines.find((l) => l.owner_id === o.user('self'))).toMatchObject({
@@ -407,6 +422,119 @@ it(
     expect(await h.history(o)).toEqual([
       expect.objectContaining({ from_status: 'WAITING', to_status: 'CREDITED' }),
     ]);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04m#38] 凭证类型按 BR-FUND-05：受益人 CREDIT、平台留存 + 预留一张 PLATFORM:CREDIT（CREDIT，无受益人键）、被剥夺份额一张平台 FORFEIT',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.order({
+      people: [
+        { role: 'self', ratioBp: 5000 },
+        { role: 'direct', ratioBp: 1000 },
+        { role: 'indirect', ratioBp: 500, state: 'banned' },
+      ],
+    });
+    expect(await h.credit(o)).toMatchObject({ outcome: 'credited', platformCreditFen: 448n });
+    const vouchers = await h.vouchers();
+    expect(Object.fromEntries(vouchers.map((v) => [v.uniq_key, v.voucher_kind]))).toEqual({
+      [creditKey(o, 'self')]: 'CREDIT',
+      [creditKey(o, 'direct')]: 'CREDIT',
+      [platformKey(o)]: 'CREDIT',
+      [forfeitKey(o, 'indirect')]: 'FORFEIT',
+    });
+    expect(vouchers.find((v) => v.uniq_key === platformKey(o))).toMatchObject({
+      order_key: o.orderKey,
+      beneficiary_user_id: null,
+      role: null,
+    });
+    expect(vouchers.find((v) => v.uniq_key === forfeitKey(o, 'indirect'))).toMatchObject({
+      order_key: o.orderKey,
+    });
+    expect(await h.voucherLines(forfeitKey(o, 'indirect'))).toEqual(platformLines(o, 42n));
+  },
+  TIMEOUT,
+);
+
+it.each([
+  // N = 1000, reserve_bp 1500: floor(1000 × 8500 / 10000) = 850, reserve 150 (BR-CALC-02).
+  // 淘礼金 100：B = 850 − 100 = 750 → 375 / 75 / floor(37.5) = 37。
+  { tlj: 100n, base: 750n, self: 375n, direct: 75n, indirect: 37n },
+  // 淘礼金 900 > 850：B = max(0, 850 − 900) = 0，受益人都不入账。
+  { tlj: 900n, base: 0n, self: 0n, direct: 0n, indirect: 0n },
+])(
+  '[AC-B2-04m#39] 淘礼金正常模式扣减 $tlj：经 readTljDeductFen 在本事务读取扣减额，B_credit = $base，受益人按扣减后的 B 拆分',
+  async ({ tlj, base, self, direct, indirect }) => {
+    const h = await harness(p.db);
+    const o = await h.order({ tljDeductFen: tlj });
+    const result = await h.credit(o);
+    expect(result).toMatchObject({ outcome: 'credited', bCreditFen: base, bookedNFen: 1000n });
+
+    expect(h.readTljDeductFen).toHaveBeenCalledWith(
+      h.transactions[0],
+      expect.objectContaining({ appId: h.appId, orderId: o.orderId, commissionVersion: 1 }),
+    );
+    expect(Math.min(...h.readTljDeductFen.mock.invocationCallOrder)).toBeLessThan(
+      Math.min(...h.post.mock.invocationCallOrder),
+    );
+
+    const shares = { self, direct, indirect };
+    const userKeys: string[] = [];
+    for (const role of ['self', 'direct', 'indirect'] as const) {
+      expect(await h.balance(o.user(role))).toBe(shares[role]);
+      if (shares[role] > 0n) {
+        userKeys.push(creditKey(o, role));
+        expect(await h.voucherLines(creditKey(o, role))).toEqual(
+          userCreditLines(o, role, shares[role]),
+        );
+      }
+    }
+    const keys = await h.voucherKeys();
+    expect(keys.filter((k) => k !== platformKey(o))).toEqual(userKeys.sort());
+    // 平台凭证存在（留存 + 预留 150 > 0）；扣减额本身的去向在规则里未写明（BR-FUND-05 平台凭证
+    // = 留存 + 预留，BR-FUND-19 ⑤ 应收 = booked_n_fen），金额待编排裁定，本例不断言。
+    expect(keys).toContain(platformKey(o));
+    expect(await h.read(o)).toMatchObject({
+      rebate_status: 'CREDITED',
+      booked_base_fen: base,
+      booked_n_fen: 1000n,
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04m#40] 大额 N = 100 亿分（> 2^31、> 2^32）：金额全程 bigint，不截断',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.order({ settleFen: 10_000_000_000n });
+    // B = floor(10_000_000_000 × 8500 / 10000) = 8_500_000_000，预留 1_500_000_000；
+    // 份额 4_250_000_000 / 850_000_000 / 425_000_000，留存 2_975_000_000，平台 4_475_000_000。
+    expect(await h.credit(o)).toMatchObject({
+      outcome: 'credited',
+      bCreditFen: 8_500_000_000n,
+      bookedNFen: 10_000_000_000n,
+      platformCreditFen: 4_475_000_000n,
+    });
+    expect(await h.voucherLines(creditKey(o, 'self'))).toEqual(
+      userCreditLines(o, 'self', 4_250_000_000n),
+    );
+    expect(await h.voucherLines(creditKey(o, 'direct'))).toEqual(
+      userCreditLines(o, 'direct', 850_000_000n),
+    );
+    expect(await h.voucherLines(creditKey(o, 'indirect'))).toEqual(
+      userCreditLines(o, 'indirect', 425_000_000n),
+    );
+    expect(await h.voucherLines(platformKey(o))).toEqual(platformLines(o, 4_475_000_000n));
+    expect(await h.balance(o.user('self'))).toBe(4_250_000_000n);
+    expect(await h.subjectNet(receivable(o))).toBe(10_000_000_000n);
+    expect(await h.read(o)).toMatchObject({
+      rebate_status: 'CREDITED',
+      booked_base_fen: 8_500_000_000n,
+      booked_n_fen: 10_000_000_000n,
+    });
   },
   TIMEOUT,
 );

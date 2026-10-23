@@ -100,7 +100,16 @@ export function databaseFixture(create: () => Promise<TestDatabaseLike>): Pools 
 }
 
 export type UserState =
-  'normal' | 'frozen' | 'appealing' | 'banned' | 'deleting' | 'deleted' | 'minor' | 'adult';
+  | 'normal'
+  | 'frozen'
+  | 'appealing'
+  | 'banned'
+  | 'deleting'
+  | 'deleted'
+  | 'minor'
+  | 'adult'
+  /** Open deletion request in its cooling-off window; users.status stays normal (BR-ID-28). */
+  | 'cooling';
 
 export interface PersonSpec {
   readonly role: CreditRole;
@@ -113,12 +122,21 @@ export interface PersonSpec {
 
 export interface OrderSpec {
   readonly people?: readonly PersonSpec[];
-  /** N: the union settlement commission (orders.settle_commission_fen and order_settlements). */
+  /**
+   * N: the effective union commission, orders.settle_commission_fen (BR-FUND-05, BR-CALC-02 取值
+   * 阶段). Every other commission column of the fixture holds a different value (see order()).
+   */
   readonly settleFen?: bigint;
   readonly reserveBp?: number;
+  /** commission_splits.tlj_deduct_fen (BR-CALC-02 / BR-CALC-19 normal mode); default 0. */
+  readonly tljDeductFen?: bigint;
   readonly platform?: string;
   readonly subOrderId?: string;
-  /** order_settlements seqs; default [1]. */
+  /**
+   * order_settlements seqs; default [1, 2]. The first is a STATEMENT record of N, the later ones
+   * are API records of a different amount (BR-FUND-09: the statement wins, so N stays
+   * orders.settle_commission_fen).
+   */
   readonly seqs?: readonly number[];
   readonly patch?: Partial<Insertable<DB['orders']>>;
 }
@@ -268,12 +286,33 @@ export function shareOf(base: bigint, ratioBp: number): bigint {
   return mulDivFloor(base, BigInt(ratioBp), 10000n);
 }
 
-/** BR-CALC-02 with tlj_deduct_fen = 0: B and reserve_fen of N. */
-export function baseOf(n: bigint, reserveBp: number): { base: bigint; reserve: bigint } {
+/**
+ * BR-CALC-02: B = max(0, floor(max(0,N) × (10000 − reserve_bp) / 10000) − tlj_deduct_fen) and
+ * reserve_fen = max(0,N) − floor(max(0,N) × (10000 − reserve_bp) / 10000).
+ */
+export function baseOf(
+  n: bigint,
+  reserveBp: number,
+  tljDeductFen = 0n,
+): { base: bigint; reserve: bigint } {
   const positive = n > 0n ? n : 0n;
-  const base = mulDivFloor(positive, BigInt(10000 - reserveBp), 10000n);
-  return { base, reserve: subFen(positive, base) };
+  const afterReserve = mulDivFloor(positive, BigInt(10000 - reserveBp), 10000n);
+  const deducted = subFen(afterReserve, tljDeductFen);
+  return { base: deducted > 0n ? deducted : 0n, reserve: subFen(positive, afterReserve) };
 }
+
+/**
+ * Offsets of the decoy commission columns from N (BR-CALC-02 取值阶段: once
+ * settle_commission_fen is set, N is only that value; estimates are archived, the snapshot keeps
+ * the estimate it was taken on, subsidy commission is not part of N_base). With the default
+ * N = 1000, reserve_bp 1500: est 3222 → B 2738; snapshot raw_n 4333 → B 3683 (reserve 650,
+ * shares 1841 / 368 / 184); n_total 4444; the later API record 6555 → B 5571. Only N = 1000 gives
+ * the expected B_credit 850 (reserve 150, shares 425 / 85 / 42).
+ */
+const ESTIMATE_DRIFT_FEN = 2222n;
+const SNAPSHOT_DRIFT_FEN = 3333n;
+const SUBSIDY_FEN = 111n;
+const API_DRIFT_FEN = 5555n;
 
 export async function harness(db: Kysely<DB>) {
   const appId = `credit-${randomUUID()}`;
@@ -346,7 +385,19 @@ export async function harness(db: Kysely<DB>) {
   const readSnapshot = vi.fn<CreditOrderDependencies['readSnapshot']>((trx, input) =>
     commission.readCommissionSnapshot(trx, input),
   );
-  const readTljDeductFen = vi.fn<CreditOrderDependencies['readTljDeductFen']>(async () => 0n);
+  // Test adapter only (commission does not export this port yet): the fixture's immutable
+  // commission_splits.tlj_deduct_fen, read on the caller's transaction.
+  const readTljDeductFen = vi.fn<CreditOrderDependencies['readTljDeductFen']>(
+    async (trx, input) => {
+      const row = await trx
+        .selectFrom('commission_splits')
+        .select('tlj_deduct_fen')
+        .where('app_id', '=', input.appId)
+        .where('order_id', '=', input.orderId)
+        .executeTakeFirstOrThrow();
+      return row.tlj_deduct_fen;
+    },
+  );
   // Test double of the commission-owned event writer: a plain insert on the same transaction.
   const appendBeneficiaryEvent = vi.fn<CreditOrderDependencies['appendBeneficiaryEvent']>(
     async (trx, input) => {
@@ -482,6 +533,21 @@ export async function harness(db: Kysely<DB>) {
     if (state === 'frozen' || state === 'appealing' || state === 'banned') {
       await setRisk(db, id, state);
     }
+    if (state === 'cooling') {
+      // An open request still inside its cooling-off window at NOW (BR-CALC-13: not a loss).
+      await db
+        .insertInto('deletion_requests')
+        .values({
+          id: randomUUID(),
+          app_id: appId,
+          user_id: id,
+          status: 'cooling',
+          apply_at: new Date(BEFORE),
+          cooling_until: new Date('2032-08-20T10:00:00+08:00'),
+          balance_snapshot_fen: 0n,
+        })
+        .execute();
+    }
     if (state === 'minor' || state === 'adult') {
       await db
         .insertInto('realname')
@@ -509,8 +575,15 @@ export async function harness(db: Kysely<DB>) {
     const subOrderId = spec.subOrderId ?? `sub-${randomUUID()}`;
     const n = spec.settleFen ?? 1000n;
     const reserveBp = spec.reserveBp ?? 1500;
-    const seqs = spec.seqs ?? [1];
+    const tlj = spec.tljDeductFen ?? 0n;
+    const seqs = spec.seqs ?? [1, 2];
     const attrAt = new Date(BEFORE);
+    // Decoys, each different from N (see ESTIMATE_DRIFT_FEN): the latest (archived) estimate, the
+    // estimate the snapshot was taken on, the subsidy commission and the later API record.
+    const estFen = addFen(n, ESTIMATE_DRIFT_FEN);
+    const rawN = addFen(n, SNAPSHOT_DRIFT_FEN);
+    const nTotal = addFen(rawN, SUBSIDY_FEN);
+    const apiFen = addFen(n, API_DRIFT_FEN);
     const people: SeededPerson[] = [];
     for (const p of spec.people ?? DEFAULT_PEOPLE) {
       people.push({
@@ -521,7 +594,8 @@ export async function harness(db: Kysely<DB>) {
       });
     }
     const owner = people.find((p) => p.role === 'self' || p.role === 'share') ?? people[0];
-    const { base, reserve } = baseOf(n, reserveBp);
+    // The snapshot (version 1) as commission wrote it from the estimate rawN, not from N.
+    const { base, reserve } = baseOf(rawN, reserveBp, tlj);
     const amounts = people.map((p) =>
       p.initialStatus === 'active' ? shareOf(base, p.ratioBp) : 0n,
     );
@@ -555,8 +629,16 @@ export async function harness(db: Kysely<DB>) {
         hold: false,
         rights_pending: false,
         commission_version: 1,
-        est_commission_fen: n,
+        est_commission_fen: estFen,
         settle_commission_fen: seqs.length === 0 ? null : n,
+        subsidy_commission_fen: SUBSIDY_FEN,
+        initial_est_fen: rawN,
+        // Redundant four amounts of the current snapshot version (BR-CALC-27), from rawN.
+        n_total_fen: nTotal,
+        pre_base_deduct_fen: subFen(nTotal, base),
+        base_fen: base,
+        platform_est_profit_fen: subFen(subFen(nTotal, userTotal), tlj),
+        activity_type: tlj > 0n ? 'tlj' : null,
         paid_at: attrAt,
         received_at: attrAt,
         settle_period: PERIOD,
@@ -574,15 +656,15 @@ export async function harness(db: Kysely<DB>) {
         order_id: orderId,
         rule_version_id: ruleVersionId,
         order_type: people.some((p) => p.role === 'share') ? 'share' : 'self',
-        activity_type: null,
-        rebate_mode: null,
+        activity_type: tlj > 0n ? 'tlj' : null,
+        rebate_mode: tlj > 0n ? 'normal' : null,
         paid_at: attrAt,
         paid_at_source: 'platform',
-        raw_n_fen: n,
-        subsidy_commission_fen: 0n,
+        raw_n_fen: rawN,
+        subsidy_commission_fen: SUBSIDY_FEN,
         reserve_bp: reserveBp,
         reserve_fen: reserve,
-        tlj_deduct_fen: 0n,
+        tlj_deduct_fen: tlj,
         base_fen: base,
         platform_retain_fen: subFen(base, userTotal),
         beneficiaries: JSON.stringify(
@@ -604,12 +686,12 @@ export async function harness(db: Kysely<DB>) {
         app_id: appId,
         order_id: orderId,
         commission_version: 1,
-        n_total_fen: n,
-        pre_base_deduct_fen: subFen(n, base),
+        n_total_fen: nTotal,
+        pre_base_deduct_fen: subFen(nTotal, base),
         base_fen: base,
         user_share_total_fen: userTotal,
-        tlj_redpacket_fen: 0n,
-        platform_est_profit_fen: subFen(n, userTotal),
+        tlj_redpacket_fen: tlj,
+        platform_est_profit_fen: subFen(subFen(nTotal, userTotal), tlj),
         created_at: attrAt,
       })
       .execute();
@@ -642,15 +724,15 @@ export async function harness(db: Kysely<DB>) {
         })
         .execute();
     }
-    for (const seq of seqs) {
+    for (const [index, seq] of seqs.entries()) {
       await db
         .insertInto('order_settlements')
         .values({
           app_id: appId,
           order_id: orderId,
           seq,
-          source: 'API',
-          settle_commission_fen: n,
+          source: index === 0 ? 'STATEMENT' : 'API',
+          settle_commission_fen: index === 0 ? n : apiFen,
           settled_at: attrAt,
           content_hash: randomUUID(),
           created_at: attrAt,
