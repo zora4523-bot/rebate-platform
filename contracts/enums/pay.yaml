@@ -1,0 +1,62 @@
+# 收款（支付基础设施）：渠道、支付单、退款、渠道请求记录与收款凭证（规划/04 §2.4；08 BR-PAY-01～07，CT-21b）。
+# 与提现打款（fund.yaml 的 payout_channel 等）无关；收款凭证类型只用于平台科目，不属于用户流水的 ledger_type。
+enums:
+  pay_channel:
+    source: 规划/04 §2.4；BR-PAY-01
+    description: pay_orders.pay_channel 等；与 payout_channel 无关
+    values:
+      wechat_pay: 微信支付（APP 支付）
+      alipay: 支付宝（App 支付）
+  pay_order_status:
+    source: 规划/04 §2.4；BR-PAY-02
+    description: pay_orders.status；PAID、CLOSED 为终态
+    values:
+      PENDING: 待支付
+      PAID: 已支付
+      CLOSED: 已关闭
+  pay_refund_status:
+    source: 规划/04 §2.4；BR-PAY-06 ①
+    description: pay_refunds.status
+    values:
+      PROCESSING: 处理中
+      SUCCESS: 成功
+      FAILED: 失败
+  pay_refund_target_type:
+    source: 规划/04 §2.4；BR-PAY-06 ①
+    description: pay_refunds.target_type；退款对象是一张 PAID 的支付单，或一条异常收款（BR-PAY-05 ④）
+    values:
+      pay_order: 支付单
+      pay_anomaly: 异常收款
+  pay_query_attempt_kind:
+    source: 规划/04 §2.4；BR-PAY-04、BR-PAY-05、BR-PAY-06
+    description: pay_query_attempts.kind
+    values:
+      query: 查询
+      close: 关单
+      refund: 退款
+      refund_query: 退款查询
+  pay_ledger_type:
+    source: 规划/04 §2.4；BR-PAY-07
+    description: 收款凭证类型，只用于平台科目，不属于用户流水的 ledger_type，不出现在任何用户流水接口
+    values:
+      PAY_RECEIPT: 收款
+      PAY_REFUND: 退款
+      PAY_ANOMALY: 异常收款
+      PAY_FEE: 渠道手续费
+  pay_refund_reason:
+    source: BR-PAY-06 细则默认值
+    description: pay_refunds.reason_code；后台退款必须选原因码，中文名见 texts.admin 的 admin_dict.pay_refund_reason
+    values:
+      USER_REQUEST: 用户申请退款
+      DUPLICATE_PAYMENT: 重复支付
+      ANOMALY_RECEIPT: 异常收款退回
+      RECON_DIFF: 对账差错
+      OTHER: 其他
+  pay_unavailable_reason:
+    source: BR-PAY-01 ④
+    description: 错误码 30901 的 data.reason；用户侧不区分原因，统一提示 error.30901
+    values:
+      pay_disabled: 收款总开关关闭
+      channel_disabled: 该渠道停止新下单
+      platform_not_allowed: 该端不允许支付
+      biz_not_sellable: 该业务对象不可购买

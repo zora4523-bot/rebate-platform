@@ -634,7 +634,7 @@ export type BeneficiaryCreditStatus = (typeof beneficiary_credit_status)[number]
 
 /**
  * recon_diff_type
- * Source: 规划/04 §2.5；BR-FUND-01、BR-FUND-04、BR-FUND-19、BR-FUND-22、BR-FUND-23 (contracts/enums/fund.yaml).
+ * Source: 规划/04 §2.5；BR-FUND-01、BR-FUND-04、BR-FUND-19、BR-FUND-22、BR-FUND-23、BR-PAY-07 (contracts/enums/fund.yaml).
  */
 export const recon_diff_type = [
   "union_mismatch", // 联盟对账差异（R1）
@@ -646,6 +646,8 @@ export const recon_diff_type = [
   "settle_missing", // 应结未结
   "appeal_restore", // 申诉撤销后恢复订单
   "estimate_changed_after_credit", // 入账后只有预估佣金变化（BR-FUND-01 R9b；开关关闭时不生成）
+  "pay_mismatch", // 收款对账不一致（R4）
+  "pay_anomaly", // 收款异常（R4）
 ] as const;
 export type ReconDiffType = (typeof recon_diff_type)[number];
 
@@ -1337,6 +1339,97 @@ export const claim_reject_reason = [
 export type ClaimRejectReason = (typeof claim_reject_reason)[number];
 
 /**
+ * pay_orders.pay_channel 等；与 payout_channel 无关
+ * Source: 规划/04 §2.4；BR-PAY-01 (contracts/enums/pay.yaml).
+ */
+export const pay_channel = [
+  "wechat_pay", // 微信支付（APP 支付）
+  "alipay", // 支付宝（App 支付）
+] as const;
+export type PayChannel = (typeof pay_channel)[number];
+
+/**
+ * pay_orders.status；PAID、CLOSED 为终态
+ * Source: 规划/04 §2.4；BR-PAY-02 (contracts/enums/pay.yaml).
+ */
+export const pay_order_status = [
+  "PENDING", // 待支付
+  "PAID", // 已支付
+  "CLOSED", // 已关闭
+] as const;
+export type PayOrderStatus = (typeof pay_order_status)[number];
+
+/**
+ * pay_refunds.status
+ * Source: 规划/04 §2.4；BR-PAY-06 ① (contracts/enums/pay.yaml).
+ */
+export const pay_refund_status = [
+  "PROCESSING", // 处理中
+  "SUCCESS", // 成功
+  "FAILED", // 失败
+] as const;
+export type PayRefundStatus = (typeof pay_refund_status)[number];
+
+/**
+ * pay_refunds.target_type；退款对象是一张 PAID 的支付单，或一条异常收款（BR-PAY-05 ④）
+ * Source: 规划/04 §2.4；BR-PAY-06 ① (contracts/enums/pay.yaml).
+ */
+export const pay_refund_target_type = [
+  "pay_order", // 支付单
+  "pay_anomaly", // 异常收款
+] as const;
+export type PayRefundTargetType = (typeof pay_refund_target_type)[number];
+
+/**
+ * pay_query_attempts.kind
+ * Source: 规划/04 §2.4；BR-PAY-04、BR-PAY-05、BR-PAY-06 (contracts/enums/pay.yaml).
+ */
+export const pay_query_attempt_kind = [
+  "query", // 查询
+  "close", // 关单
+  "refund", // 退款
+  "refund_query", // 退款查询
+] as const;
+export type PayQueryAttemptKind = (typeof pay_query_attempt_kind)[number];
+
+/**
+ * 收款凭证类型，只用于平台科目，不属于用户流水的 ledger_type，不出现在任何用户流水接口
+ * Source: 规划/04 §2.4；BR-PAY-07 (contracts/enums/pay.yaml).
+ */
+export const pay_ledger_type = [
+  "PAY_RECEIPT", // 收款
+  "PAY_REFUND", // 退款
+  "PAY_ANOMALY", // 异常收款
+  "PAY_FEE", // 渠道手续费
+] as const;
+export type PayLedgerType = (typeof pay_ledger_type)[number];
+
+/**
+ * pay_refunds.reason_code；后台退款必须选原因码，中文名见 texts.admin 的 admin_dict.pay_refund_reason
+ * Source: BR-PAY-06 细则默认值 (contracts/enums/pay.yaml).
+ */
+export const pay_refund_reason = [
+  "USER_REQUEST", // 用户申请退款
+  "DUPLICATE_PAYMENT", // 重复支付
+  "ANOMALY_RECEIPT", // 异常收款退回
+  "RECON_DIFF", // 对账差错
+  "OTHER", // 其他
+] as const;
+export type PayRefundReason = (typeof pay_refund_reason)[number];
+
+/**
+ * 错误码 30901 的 data.reason；用户侧不区分原因，统一提示 error.30901
+ * Source: BR-PAY-01 ④ (contracts/enums/pay.yaml).
+ */
+export const pay_unavailable_reason = [
+  "pay_disabled", // 收款总开关关闭
+  "channel_disabled", // 该渠道停止新下单
+  "platform_not_allowed", // 该端不允许支付
+  "biz_not_sellable", // 该业务对象不可购买
+] as const;
+export type PayUnavailableReason = (typeof pay_unavailable_reason)[number];
+
+/**
  * 平台字符串编码，不使用数字；天猫是淘宝的 shop_type=tmall，不单独占编码。能力与阶段由平台字典表 platforms 记录，代码不按本列表判断能力
  * Source: 规划/04 §2.1；08 §13.2 (contracts/enums/platform.yaml).
  */
@@ -1777,6 +1870,14 @@ export const enums = {
   claim_evidence_level,
   claim_item_decision,
   claim_reject_reason,
+  pay_channel,
+  pay_order_status,
+  pay_refund_status,
+  pay_refund_target_type,
+  pay_query_attempt_kind,
+  pay_ledger_type,
+  pay_refund_reason,
+  pay_unavailable_reason,
   platform,
   key_stability,
   client_platform,
