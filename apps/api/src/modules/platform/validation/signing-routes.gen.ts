@@ -998,6 +998,36 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/appeals",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/appeals",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/appeals/:appeal_id",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/appeals/:appeal_id/claim",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/appeals/:appeal_id/resolve",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/blocked-requests",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/pay-orders",
     "signed": false
   },

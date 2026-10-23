@@ -2013,6 +2013,66 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListAppeals",
+    "method": "GET",
+    "path": "/admin/v1/appeals",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminRegisterAppeal",
+    "method": "POST",
+    "path": "/admin/v1/appeals",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetAppeal",
+    "method": "GET",
+    "path": "/admin/v1/appeals/:appeal_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminClaimAppeal",
+    "method": "POST",
+    "path": "/admin/v1/appeals/:appeal_id/claim",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminResolveAppeal",
+    "method": "POST",
+    "path": "/admin/v1/appeals/:appeal_id/resolve",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListBlockedRequests",
+    "method": "GET",
+    "path": "/admin/v1/blocked-requests",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "listAdminPayOrders",
     "method": "GET",
     "path": "/admin/v1/pay-orders",

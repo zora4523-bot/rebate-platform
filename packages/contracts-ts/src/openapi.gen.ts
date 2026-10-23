@@ -6206,6 +6206,309 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/appeals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Appeals to handle (filters, page by page, four counts)
+         * @description The risk appeal console (风控申诉页; 04 §6.6 appeals; BR-ID-36). Permission point
+         *     `risk.appeal` (04 §11.2; read only, no step-up); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied` (a super admin holds every point). Every appeal of
+         *     the console's app: the account and order appeals users submitted in the app (POST
+         *     /v1/me/appeals) and the appeals customer service registered here (POST
+         *     /admin/v1/appeals), blocked_request appeals included.
+         *
+         *     Filters combine with AND: `status` (enum appeal_status), `overdue`, `target_type` (enum
+         *     appeal_target_type) and `q`. `overdue=true` keeps only the appeals still processing whose
+         *     `deadline_at` has passed (the internal time limit of BR-ID-36: the 3rd working day 24:00
+         *     +08:00 after submission); `overdue=false` or absent filters nothing. `q` is trimmed of
+         *     surrounding whitespace, then it must be 1–64 characters, else 20001 with
+         *     `data.fields=[q]`; it matches exactly (no prefix or partial match) an appeal_id (the
+         *     display number of an appeal is its appeal_id; there is no separate appeal number) or the
+         *     UID (user_id) of the appellant. A filter set nothing matches is an empty page
+         *     (`items=[]`, `total=0`), not an error. A value outside an enum is 20001 with
+         *     `data.fields` naming the parameter.
+         *
+         *     Order: `created_at` descending, then the server's internal order for the same time. Pages
+         *     with `page` (any positive integer, as AdminPage; a page past the last one is
+         *     `items=[]`) and `page_size` ≤ 200 (above 200 is 20001, as AdminPageSize). `counts` has
+         *     four numbers, each counted with every filter of the request except `status` and
+         *     `overdue`, so the console's four tabs show what each would hold: `processing` (status
+         *     processing), `overdue` (processing and past `deadline_at`; a part of `processing`),
+         *     `closed` (upheld or revoked) and `all`; `total` is the count of the page's own filter
+         *     set.
+         *
+         *     The appellant is shown as user_id and phone number masked 3 + 4 (BR-ID-33), never the
+         *     full number (only through POST /admin/v1/users/{user_id}/reveal, 04 §11.1); `user` is
+         *     null for a register-type blocked_request appeal (no account). Reading does not write an
+         *     audit record.
+         */
+        get: operations["adminListAppeals"];
+        put?: never;
+        /**
+         * Register an appeal on a person's behalf (代登记申诉)
+         * @description Customer service registers an appeal for someone who contacted them through WeCom (企业
+         *     微信): a request blocked with 44001 (the only kind possible for someone without an
+         *     account), or an account or order appeal (04 §6.6 appeals, §11.2 `risk.appeal`; BR-ID-36,
+         *     细则「被拦截请求申诉」). Permission point `risk.appeal`; lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. No step-up. The appeal is written through the
+         *     risk module's appeal service (single writer risk, 04 §3.2 appeals); this operation only
+         *     calls it.
+         *
+         *     Request: `target_type` (enum appeal_target_type) and `target_id` — for account the
+         *     user's UID (user_id), for order the order_id, for blocked_request the
+         *     `blocked_request_id` found with GET /admin/v1/blocked-requests. `content` is the
+         *     person's own statement (用户陈述). `reason` is the registration note (登记原因说明),
+         *     required: after trimming surrounding whitespace 1–200 characters, else 20001 with
+         *     `data.fields=[reason]`; it goes to the audit log only, is never shown to the user and has
+         *     no column of its own (04 §3.2 appeals). `user_id` is optional: the appellant is always
+         *     derived by the server from the target — account: `target_id`; order: the order's
+         *     user_id; blocked_request: the blocked request's user_id (none for the register type) —
+         *     and a `user_id` that differs from it (any value for a register-type blocked request
+         *     included) is 20001 with `data.fields=[user_id]` (编排裁定 D10-158).
+         *
+         *     Who may appeal is the same as POST /v1/me/appeals (04 §6.1, BR-ID-36): account — a user
+         *     whose risk_state is banned or frozen (or appealing, which has a processing appeal, see
+         *     below); order — an order whose rebate risk control voided (BR-ATTR-26); blocked_request
+         *     — a request blocked with 44001 (a risk_hits row with ref_type blocked_request). An
+         *     unknown target, a target of another app and a target that cannot be appealed are all
+         *     20001 with `data.fields=[target_id]`.
+         *
+         *     Order of checks, as for POST /v1/me/appeals: 20001 (body, target and user_id checks) → a
+         *     processing appeal on the same target returns that original appeal and creates nothing
+         *     (for a register-type blocked request also an appeal processing on the same related
+         *     phone number, BR-ID-36 细则「被拦截请求申诉」), never 30418 → the appeal count for the
+         *     target used up (BR-ID-36 细则「维持后再申诉」; registered appeals count the same as
+         *     appeals submitted in the app) → 30418 → create the appeal.
+         *
+         *     A new appeal is processing, with source admin, the caller as registrant, `deadline_at`
+         *     by BR-ID-36 and no handler. An account appeal sets the user's risk_state to appealing
+         *     and records prev_risk_state; an order appeal only marks the order as under appeal
+         *     (appeal_pending, 拍板第二批 OPS-07); a blocked_request appeal changes no risk_state and
+         *     sends no in-app message (BR-ID-36). Creating writes an audit record (action
+         *     appeal_register, with the target, the appellant and the registration note); returning
+         *     the processing appeal writes none. The response is the appeal as GET
+         *     /admin/v1/appeals/{appeal_id} returns it, new or the processing one already on the
+         *     target. No Idempotency-Key (04 §6.6): a repeated request finds the processing appeal and
+         *     returns it.
+         */
+        post: operations["adminRegisterAppeal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/appeals/{appeal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One appeal with its risk hit records and the blocked request
+         * @description The appeal detail page (04 §6.6 appeals; BR-ID-36). Permission point `risk.appeal` (read
+         *     only, no step-up); lacking it is 10403 with `data.reason=admin_permission_denied`. An
+         *     unknown appeal_id or an appeal of another app is 20001 with `data.fields=[appeal_id]`.
+         *
+         *     Same fields as a list row plus: `content` (the appellant's statement), `risk_state` (the
+         *     appellant's risk state now, enum risk_state; null without an account), `source` (enum
+         *     appeal_source: submitted in the app, or registered in the console) with the registrant
+         *     (`registered_by`, `registered_by_name`; null for an app submission), `claimed_at` (the
+         *     last claim; null when never claimed and after closing), `closed_at`, `row_version` (the
+         *     `expected_row_version` of claim and resolve), `revoke_permission`, `blocked_request` and
+         *     `risk_hits`.
+         *
+         *     `revoke_permission` is the permission point that revoking this appeal needs on top of
+         *     `risk.appeal` (04 §11.2 `risk.appeal`, BR-ID-36 细则「被拦截请求申诉」权限): `risk.ban` for
+         *     an account appeal against a ban (prev_risk_state banned), `risk.freeze` for one against
+         *     a freeze (frozen), `risk.blocklist` for a blocked_request appeal whose request a
+         *     blocklist entry blocked (cause blocklist; 编排裁定 D10-154); null otherwise (order
+         *     appeals, blocked requests blocked by another rule). When it is not null revoking also
+         *     needs a totp-tier step-up; upholding never needs either.
+         *
+         *     `blocked_request` is the blocked request (request type, the amount for a withdrawal,
+         *     when it was blocked and the reason category) for a blocked_request appeal, null
+         *     otherwise. `risk_hits` lists the related risk_hits rows newest first, at most 50: for an
+         *     account appeal the user's, for an order appeal those whose object is the order, for a
+         *     blocked_request appeal those of the blocked request; each with its time, rule, action
+         *     and related object number only. Never the hit dimension's value, its HMAC or the rule's
+         *     conditions (BR-ID-36). The phone number is masked as in the list (BR-ID-33). Reading
+         *     does not write an audit record.
+         */
+        get: operations["adminGetAppeal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/appeals/{appeal_id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim an appeal (marks the caller as its handler; not exclusive)
+         * @description Marks the caller as the handler of a processing appeal (认领; 04 §6.6 appeals). Only a
+         *     mark, not a lock (编排裁定 D10-158): another account holding `risk.appeal` can claim it
+         *     again, which rewrites the handler and `claimed_at`, and any account holding
+         *     `risk.appeal` can resolve the appeal whether or not it claimed it; there is no release
+         *     or transfer. Permission point `risk.appeal`; lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. No step-up. Written through the risk module's
+         *     appeal service (04 §3.2 appeals, writer risk).
+         *
+         *     Request: `expected_row_version` is the appeal's `row_version` from GET
+         *     /admin/v1/appeals/{appeal_id}. An unknown appeal_id or an appeal of another app is 20001
+         *     with `data.fields=[appeal_id]`. An appeal that is no longer processing, or whose
+         *     `row_version` is not `expected_row_version`, is 20902 with `data.resource=appeal`,
+         *     nothing changed; the console refreshes. Otherwise `handler_id` becomes the caller,
+         *     `claimed_at` the server's current time and `row_version` goes up by 1, also when the
+         *     caller already was the handler. Writes an audit record (action appeal_claim, the handler
+         *     before and after). The response is the appeal as GET /admin/v1/appeals/{appeal_id}
+         *     returns it. No Idempotency-Key (04 §6.6; the CAS keeps a retry from claiming twice).
+         */
+        post: operations["adminClaimAppeal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/appeals/{appeal_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close an appeal as upheld or revoked (结案)
+         * @description Closes a processing appeal (04 §6.6 appeals; BR-ID-36, BR-ID-31). Any account holding
+         *     `risk.appeal` can resolve it, claimed or not (编排裁定 D10-158). Written through the risk
+         *     module's appeal service in one transaction (04 §3.2 appeals, writer risk); this
+         *     operation only calls it.
+         *
+         *     Request: `decision` (`upheld` 维持 or `revoked` 撤销), `note` and `expected_row_version`
+         *     (the appeal's `row_version`). `note` is the internal note (结案内部说明), required: after
+         *     trimming surrounding whitespace 1–200 characters, else 20001 with `data.fields=[note]`;
+         *     it goes to the audit log only and is never shown to the user (04 §3.2 appeals: no
+         *     column).
+         *
+         *     Permission and step-up (04 §11.2 `risk.appeal`; BR-ID-36 细则「被拦截请求申诉」权限): the
+         *     permission point `risk.appeal` always. Revoking an account appeal against a ban
+         *     (prev_risk_state banned) also needs `risk.ban`, against a freeze (frozen) also
+         *     `risk.freeze`, and revoking a blocked_request appeal whose request a blocklist entry
+         *     blocked (cause blocklist) also `risk.blocklist` (编排裁定 D10-154); each of these three
+         *     also needs a totp-tier `X-Step-Up-Token`. Upholding, revoking an order appeal and
+         *     revoking a blocked_request appeal blocked by another rule (cause rule) need `risk.appeal`
+         *     only and no step-up. GET /admin/v1/appeals/{appeal_id} returns the extra point as
+         *     `revoke_permission`.
+         *
+         *     Order of checks: `risk.appeal` (10403 with `data.reason=admin_permission_denied`) →
+         *     body (20001 with `data.fields` naming the field) → an unknown appeal_id or an appeal of
+         *     another app (20001 with `data.fields=[appeal_id]`) → an appeal no longer processing, or
+         *     whose `row_version` is not `expected_row_version` (20902 with `data.resource=appeal`,
+         *     nothing changed; refresh) → for `revoked`, the extra permission point (10403 with
+         *     `data.reason=admin_permission_denied`) → its step-up (10003 with `data.tier=totp`).
+         *
+         *     Effects, in one transaction: `status` becomes the decision, `closed_at` the server's
+         *     current time, `handler_id` the caller (the resolver, whoever claimed it), `claimed_at`
+         *     null, and `row_version` goes up by 1.
+         *     - account: upheld → risk_state goes back to prev_risk_state; revoked → risk_state
+         *       normal, and revoking a ban unbans the user as BR-ID-31 says (the union bindings blocked
+         *       for ban come back as PUT /admin/v1/users/{user_id}/risk-state `unban` describes; taobao
+         *       ones become invalid).
+         *     - order: upheld → the order is no longer under appeal and stays voided; revoked → the
+         *       settlement module creates the appeal restore difference (appeal_restore, BR-FUND-22,
+         *       拍板第二批 FUND-14) from the domain event below.
+         *     - blocked_request: no risk_state changes. Revoked with cause blocklist → the blocklist
+         *       entries that caused the block are removed in the same operation (BR-ID-31, written to
+         *       the audit log; 编排裁定 D10-154); revoked with cause rule → the one-time pass of BR-ID-36
+         *       细则「被拦截请求申诉」 (kept and checked inside the server, not part of this contract).
+         *       The system never resubmits the blocked request: the person submits it again. Upheld →
+         *       the block stays.
+         *     Both decisions queue the domain event appeal.resolved {app_id, appeal_id, user_id,
+         *     target_type, target_id, status} in the same transaction (04 §3.2 appeals; 编排裁定
+         *     D10-141); the notification module then sends the in-app message APPEAL_RESULT for
+         *     account and order appeals (BR-TEXT-23). blocked_request appeals get no in-app message
+         *     or SMS: customer service tells the person in the WeCom conversation (BR-ID-36). Writes
+         *     an audit record (action appeal_resolve, with the decision, the note and the appeal's
+         *     state before and after). The response is the appeal as GET
+         *     /admin/v1/appeals/{appeal_id} returns it after closing. No Idempotency-Key (04 §6.6; the
+         *     CAS keeps a retry from closing twice).
+         */
+        post: operations["adminResolveAppeal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/blocked-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find requests blocked with 44001 (by full phone number, UID or blocked request id)
+         * @description The lookup of the 【代登记申诉】 dialog (04 §6.6 appeals「被拦请求查找」, §11.2
+         *     `risk.appeal`; BR-ID-36 细则「被拦截请求申诉」登记). Permission point `risk.appeal` (read
+         *     only, no step-up); lacking it is 10403 with `data.reason=admin_permission_denied`.
+         *
+         *     Exactly one of `phone`, `user_id` and `blocked_request_id`; none or more than one is
+         *     20001 with `data.fields=[phone, user_id, blocked_request_id]`. `phone` is the full
+         *     number, normalised as in BR-ID-05 细则「手机号规范化」 (not a mainland mobile number → 20001
+         *     with `data.fields=[phone]` and `data.reason=phone_invalid`); it matches the blocked
+         *     requests whose related phone number (stored as HMAC only, BR-ID-33) is that number, and
+         *     the blocked requests of the account that number belongs to now. `user_id` (the UID)
+         *     matches that user's blocked requests. `blocked_request_id` matches that one request
+         *     exactly; it is the only way to find a request without a phone number (a third-party
+         *     first login blocked at the same-device register limit, BR-ID-05). Only requests of the
+         *     console's app blocked with 44001 (risk_hits rows with ref_type blocked_request) are
+         *     listed; nothing found is an empty page (`items=[]`, `total=0`), not an error.
+         *
+         *     Each item: `blocked_request_id` (拦截请求编号, the risk_hits ref_id shown in the 44001
+         *     dialog), `request_type` (enum blocked_request_type), `phone_masked` (3 + 4, BR-ID-33;
+         *     null when the request has no related phone number), `blocked_at`, the reason category
+         *     (`cause`, enum blocked_request_cause, and `blocklist_dimension`, enum
+         *     blocklist_dimension, for cause blocklist, else null; never the value that was hit or the
+         *     rule's conditions), `amount_fen` (the amount asked for, request type withdraw only, else
+         *     null) and `processing_appeal_id` (the appeal processing on this request, or for a
+         *     register-type request on the same related phone number; null when none: the console
+         *     then opens that appeal instead of registering a new one). Order: `blocked_at`
+         *     descending, then the server's internal order; pages with `page` and `page_size` ≤ 200
+         *     (as AdminPage, AdminPageSize).
+         *
+         *     A lookup by `phone` that finds at least one request writes an audit record (action
+         *     blocked_request_lookup, the masked number and the number found), as a lookup by full
+         *     phone number under `user.lookup` does (04 §6.6); lookups by `user_id` or
+         *     `blocked_request_id`, and a phone lookup that finds nothing, write none.
+         */
+        get: operations["adminListBlockedRequests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/pay-orders": {
         parameters: {
             query?: never;
@@ -11484,6 +11787,286 @@ export interface components {
             /** @description Optional free-text reason, kept in the audit record. */
             reason?: string;
         };
+        /**
+         * @description contracts/enums/identity.yaml appeal_target_type, the full set (04 §3.2 appeals): the
+         *     console lists and registers blocked_request appeals too, unlike the user-side
+         *     AppealTargetType.
+         * @enum {string}
+         */
+        AdminAppealTargetType: "account" | "order" | "blocked_request";
+        /**
+         * @description The penalty an account appeal is against (appeals.prev_risk_state; a subset of enum risk_state, BR-ID-36).
+         * @enum {string}
+         */
+        AdminAppealPrevRiskState: "frozen" | "banned";
+        /**
+         * @description contracts/enums/identity.yaml blocked_request_type (BR-ID-36 细则「被拦截请求申诉」).
+         * @enum {string}
+         */
+        AdminBlockedRequestType: "register" | "withdraw" | "phone_change" | "payout_account";
+        /**
+         * @description contracts/enums/identity.yaml appeal_source (04 §3.2 appeals 来源).
+         * @enum {string}
+         */
+        AdminAppealSource: "app" | "admin";
+        /**
+         * @description contracts/enums/identity.yaml blocked_request_cause, the reason category of a blocked
+         *     request: blocklist (a BR-ID-31 blocklist entry; revoking removes it and needs
+         *     risk.blocklist) or rule (another block rule; revoking grants the one-time pass of
+         *     BR-ID-36).
+         * @enum {string}
+         */
+        AdminBlockedRequestCause: "blocklist" | "rule";
+        /**
+         * @description contracts/enums/identity.yaml blocklist_dimension (04 §3.2 blocklist; BR-ID-31).
+         * @enum {string}
+         */
+        AdminBlocklistDimension: "phone" | "id_no" | "alipay" | "bank_card" | "wechat_openid" | "device" | "relation_id" | "order_no_suffix" | "channel";
+        /**
+         * @description contracts/enums/identity.yaml risk_hit_ref_type (04 §3.2 risk_hits.ref_type).
+         * @enum {string}
+         */
+        AdminRiskHitRefType: "order" | "withdrawal" | "blocked_request" | "invite_relation" | "invite_reward";
+        /**
+         * @description The permission point revoking needs on top of risk.appeal (a subset of enum
+         *     admin_permission; 04 §11.2 risk.appeal, 编排裁定 D10-154); each also needs a totp step-up.
+         * @enum {string}
+         */
+        AdminAppealRevokePermission: "risk.ban" | "risk.freeze" | "risk.blocklist";
+        /**
+         * @description How an appeal is closed (a subset of enum appeal_status; BR-ID-36).
+         * @enum {string}
+         */
+        AdminAppealDecision: "upheld" | "revoked";
+        /** @description The appellant as the console shows it; the phone number only masked (BR-ID-33). */
+        AdminAppealUser: {
+            user_id: components["schemas"]["Id"];
+            phone_masked: components["schemas"]["AdminMaskedPhone"];
+        };
+        /**
+         * @description An appeal row of the console list (04 §3.2 appeals). Not the user-side Appeal. The display
+         *     number of an appeal is its appeal_id; there is no separate appeal number.
+         */
+        AdminAppealListItem: {
+            appeal_id: components["schemas"]["Id"];
+            /** @description The appellant; null for a register-type blocked_request appeal (no account). */
+            user: components["schemas"]["AdminAppealUser"] | null;
+            target_type: components["schemas"]["AdminAppealTargetType"];
+            target_id: components["schemas"]["Id"];
+            /**
+             * @description The target's display number (对象编号): the sub-order number (orders.sub_order_id) for
+             *     order, the blocked request id for blocked_request, the UID for account.
+             */
+            target_no: string;
+            /** @description The blocked request's type; null unless target_type is blocked_request. */
+            request_type: components["schemas"]["AdminBlockedRequestType"] | null;
+            /** @description The penalty appealed against; null unless target_type is account. */
+            prev_risk_state: components["schemas"]["AdminAppealPrevRiskState"] | null;
+            /**
+             * Format: date-time
+             * @description When the appeal was submitted or registered.
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description The internal time limit (BR-ID-36); past it a processing appeal is overdue.
+             */
+            deadline_at: string;
+            status: components["schemas"]["AppealStatus"];
+            /** @description admin_id of the last claimer, the resolver once closed; null while never claimed. */
+            handler_id: components["schemas"]["Id"] | null;
+            /** @description The handler's display name (admin_users.display_name, else the username); null when handler_id is null or the account is gone. */
+            handler_name: string | null;
+        };
+        /**
+         * @description The four tab counts, counted with every filter of the request except status and overdue
+         *     (0 included).
+         */
+        AdminAppealCounts: {
+            /**
+             * Format: int32
+             * @description Status processing.
+             */
+            processing: number;
+            /**
+             * Format: int32
+             * @description Processing and past deadline_at (a part of processing).
+             */
+            overdue: number;
+            /**
+             * Format: int32
+             * @description Status upheld or revoked.
+             */
+            closed: number;
+            /**
+             * Format: int32
+             * @description Every status.
+             */
+            all: number;
+        };
+        AdminAppealPage: {
+            items: components["schemas"]["AdminAppealListItem"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+            counts: components["schemas"]["AdminAppealCounts"];
+        };
+        AdminAppealPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminAppealPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description A write request blocked with 44001 (04 §3.2 risk_hits with ref_type blocked_request;
+         *     BR-ID-36 细则「被拦截请求申诉」). Never the value that was hit, its HMAC or the rule's
+         *     conditions.
+         */
+        AdminBlockedRequest: {
+            blocked_request_id: components["schemas"]["Id"];
+            request_type: components["schemas"]["AdminBlockedRequestType"];
+            phone_masked: components["schemas"]["AdminMaskedPhone"];
+            /**
+             * Format: date-time
+             * @description When the request was blocked.
+             */
+            blocked_at: string;
+            cause: components["schemas"]["AdminBlockedRequestCause"];
+            /** @description The blocklist dimension that was hit for cause blocklist; null for cause rule. */
+            blocklist_dimension: components["schemas"]["AdminBlocklistDimension"] | null;
+            /**
+             * Format: int64
+             * @description The amount asked for, in fen, for request type withdraw; null otherwise.
+             */
+            amount_fen: number | null;
+            /**
+             * @description The appeal processing on this request (for the register type also one on the same
+             *     related phone number); null when none.
+             */
+            processing_appeal_id: components["schemas"]["Id"] | null;
+        };
+        AdminBlockedRequestPage: {
+            items: components["schemas"]["AdminBlockedRequest"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminBlockedRequestPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminBlockedRequestPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description One related risk_hits row (04 §3.2): time, rule, action and related object only; never
+         *     the dimension's value, its HMAC or the rule's conditions (BR-ID-36).
+         */
+        AdminAppealRiskHit: {
+            /**
+             * Format: date-time
+             * @description When the rule hit.
+             */
+            created_at: string;
+            rule_id: components["schemas"]["AdminRiskRuleId"];
+            /** @description Display name of the rule (risk_rules.name). */
+            rule_name: string;
+            risk_action: components["schemas"]["AdminRiskAction"];
+            ref_type: components["schemas"]["AdminRiskHitRefType"];
+            /** @description Number of the related object (risk_hits.ref_id; for blocked_request the blocked request id). */
+            ref_id: string;
+        };
+        /** @description One appeal as the detail page shows it (04 §6.6 appeals); the list row's fields plus the detail. */
+        AdminAppealDetail: {
+            appeal_id: components["schemas"]["Id"];
+            /** @description The appellant; null for a register-type blocked_request appeal (no account). */
+            user: components["schemas"]["AdminAppealUser"] | null;
+            target_type: components["schemas"]["AdminAppealTargetType"];
+            target_id: components["schemas"]["Id"];
+            /** @description As in the list row. */
+            target_no: string;
+            /** @description The blocked request's type; null unless target_type is blocked_request. */
+            request_type: components["schemas"]["AdminBlockedRequestType"] | null;
+            /** @description The penalty appealed against; null unless target_type is account. */
+            prev_risk_state: components["schemas"]["AdminAppealPrevRiskState"] | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            deadline_at: string;
+            status: components["schemas"]["AppealStatus"];
+            handler_id: components["schemas"]["Id"] | null;
+            handler_name: string | null;
+            /** @description The appellant's statement (用户陈述). */
+            content: string;
+            /** @description The appellant's risk state now (enum risk_state); null without an account. */
+            risk_state: components["schemas"]["AdminUserRiskStateCode"] | null;
+            source: components["schemas"]["AdminAppealSource"];
+            /** @description admin_id of the account that registered the appeal; null for source app. */
+            registered_by: components["schemas"]["Id"] | null;
+            /** @description The registrant's display name; null when registered_by is null or the account is gone. */
+            registered_by_name: string | null;
+            /**
+             * Format: date-time
+             * @description The last claim; null when never claimed, and cleared when the appeal is closed.
+             */
+            claimed_at: string | null;
+            /**
+             * Format: date-time
+             * @description When the appeal was closed; null while processing.
+             */
+            closed_at: string | null;
+            /**
+             * Format: int32
+             * @description CAS value, plus 1 on every claim and on closing; the expected_row_version of claim and resolve.
+             */
+            row_version: number;
+            /**
+             * @description The permission point revoking needs on top of risk.appeal, together with a totp
+             *     step-up; null when risk.appeal alone is enough.
+             */
+            revoke_permission: components["schemas"]["AdminAppealRevokePermission"] | null;
+            /** @description The blocked request for target_type blocked_request; null otherwise. */
+            blocked_request: components["schemas"]["AdminBlockedRequest"] | null;
+            /** @description Related risk_hits rows, newest first, at most 50. */
+            risk_hits: components["schemas"]["AdminAppealRiskHit"][];
+        };
+        AdminAppealResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminAppealDetail"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminAppealRegisterRequest: {
+            target_type: components["schemas"]["AdminAppealTargetType"];
+            target_id: components["schemas"]["Id"];
+            /** @description The person's own statement (用户陈述). */
+            content: string;
+            /** @description The registration note (登记原因说明); audit log only, 1–200 characters after trimming. */
+            reason: string;
+            user_id?: components["schemas"]["Id"];
+        };
+        AdminAppealClaimRequest: {
+            /**
+             * Format: int32
+             * @description The appeal's row_version as the console showed it; a mismatch is 20902.
+             */
+            expected_row_version: number;
+        };
+        AdminAppealResolveRequest: {
+            decision: components["schemas"]["AdminAppealDecision"];
+            /** @description The internal note (结案内部说明); audit log only, 1–200 characters after trimming. */
+            note: string;
+            /**
+             * Format: int32
+             * @description The appeal's row_version as the console showed it; a mismatch is 20902.
+             */
+            expected_row_version: number;
+        };
         /** @description A registered configuration item (04 §10) and its current value. */
         AdminConfigItem: {
             key: components["schemas"]["AdminConfigKey"];
@@ -14080,6 +14663,39 @@ export interface components {
          *     or of another app → 20001 with data.fields=[rule_id].
          */
         AdminRiskRuleIdPath: components["schemas"]["AdminRiskRuleId"];
+        /**
+         * @description appeal_id of the appeal (also its display number); unknown or of another app → 20001 with
+         *     data.fields=[appeal_id].
+         */
+        AdminAppealIdPath: components["schemas"]["Id"];
+        /** @description Only appeals in this status (enum appeal_status); absent = all. The counts ignore it. */
+        AdminAppealStatusFilter: components["schemas"]["AppealStatus"];
+        /**
+         * @description true = only appeals still processing whose deadline_at has passed (BR-ID-36); false or
+         *     absent = no such filter. The counts ignore it.
+         */
+        AdminAppealOverdueFilter: boolean;
+        /** @description Only appeals on this kind of target (enum appeal_target_type); absent = all. */
+        AdminAppealTargetTypeFilter: components["schemas"]["AdminAppealTargetType"];
+        /**
+         * @description An appeal_id or the appellant's UID (user_id), matched exactly. Trimmed, then 1–64
+         *     characters, else 20001 with data.fields=[q]; the bound is checked after trimming, so the
+         *     schema carries none.
+         */
+        AdminAppealQuery: string;
+        /**
+         * @description The full phone number, normalised as in BR-ID-05 细则「手机号规范化」 (not a mainland mobile
+         *     number → 20001 with data.fields=[phone] and data.reason=phone_invalid); give exactly one
+         *     of phone, user_id and blocked_request_id.
+         */
+        AdminBlockedRequestPhone: components["schemas"]["Phone"];
+        /** @description The UID (user_id) whose blocked requests to list; give exactly one of phone, user_id and blocked_request_id. */
+        AdminBlockedRequestUserFilter: components["schemas"]["Id"];
+        /**
+         * @description The blocked request id (拦截请求编号) shown in the 44001 dialog, matched exactly; give
+         *     exactly one of phone, user_id and blocked_request_id.
+         */
+        AdminBlockedRequestIdFilter: components["schemas"]["Id"];
         /**
          * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
          *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
@@ -28086,6 +28702,583 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListAppeals: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+                /** @description Only appeals in this status (enum appeal_status); absent = all. The counts ignore it. */
+                status?: components["parameters"]["AdminAppealStatusFilter"];
+                /**
+                 * @description true = only appeals still processing whose deadline_at has passed (BR-ID-36); false or
+                 *     absent = no such filter. The counts ignore it.
+                 */
+                overdue?: components["parameters"]["AdminAppealOverdueFilter"];
+                /** @description Only appeals on this kind of target (enum appeal_target_type); absent = all. */
+                target_type?: components["parameters"]["AdminAppealTargetTypeFilter"];
+                /**
+                 * @description An appeal_id or the appellant's UID (user_id), matched exactly. Trimmed, then 1–64
+                 *     characters, else 20001 with data.fields=[q]; the bound is checked after trimming, so the
+                 *     schema carries none.
+                 */
+                q?: components["parameters"]["AdminAppealQuery"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of appeals, newest submitted first, with the four counts. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01",
+                     *             "user": {
+                     *               "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *               "phone_masked": "138****5678"
+                     *             },
+                     *             "target_type": "account",
+                     *             "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *             "target_no": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *             "request_type": null,
+                     *             "prev_risk_state": "banned",
+                     *             "created_at": "2026-11-02T15:00:00+08:00",
+                     *             "deadline_at": "2026-11-06T00:00:00+08:00",
+                     *             "status": "processing",
+                     *             "handler_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *             "handler_name": "客服小林"
+                     *           },
+                     *           {
+                     *             "appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d02",
+                     *             "user": null,
+                     *             "target_type": "blocked_request",
+                     *             "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5e01",
+                     *             "target_no": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5e01",
+                     *             "request_type": "register",
+                     *             "prev_risk_state": null,
+                     *             "created_at": "2026-10-12T11:30:00+08:00",
+                     *             "deadline_at": "2026-10-16T00:00:00+08:00",
+                     *             "status": "processing",
+                     *             "handler_id": null,
+                     *             "handler_name": null
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2,
+                     *         "counts": {
+                     *           "processing": 2,
+                     *           "overdue": 1,
+                     *           "closed": 5,
+                     *           "all": 7
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAppealPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminRegisterAppeal: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "target_type": "blocked_request",
+                 *       "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5e01",
+                 *       "content": "我只是正常注册，手机号是自己在用的号码。",
+                 *       "reason": "本人经企业微信联系客服，核对手机号与拦截时间一致"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminAppealRegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description The appeal, new or the processing one already on this target. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d02",
+                     *         "user": null,
+                     *         "target_type": "blocked_request",
+                     *         "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5e01",
+                     *         "target_no": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5e01",
+                     *         "request_type": "register",
+                     *         "prev_risk_state": null,
+                     *         "created_at": "2026-10-12T11:30:00+08:00",
+                     *         "deadline_at": "2026-10-16T00:00:00+08:00",
+                     *         "status": "processing",
+                     *         "handler_id": null,
+                     *         "handler_name": null,
+                     *         "content": "我只是正常注册，手机号是自己在用的号码。",
+                     *         "risk_state": null,
+                     *         "source": "admin",
+                     *         "registered_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *         "registered_by_name": "客服小林",
+                     *         "claimed_at": null,
+                     *         "closed_at": null,
+                     *         "row_version": 0,
+                     *         "revoke_permission": "risk.blocklist",
+                     *         "blocked_request": {
+                     *           "blocked_request_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5e01",
+                     *           "request_type": "register",
+                     *           "phone_masked": "136****4411",
+                     *           "blocked_at": "2026-10-12T11:05:00+08:00",
+                     *           "cause": "blocklist",
+                     *           "blocklist_dimension": "phone",
+                     *           "amount_fen": null,
+                     *           "processing_appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d02"
+                     *         },
+                     *         "risk_hits": [
+                     *           {
+                     *             "created_at": "2026-10-12T11:05:00+08:00",
+                     *             "rule_id": "BLACKLIST_PHONE",
+                     *             "rule_name": "手机号黑名单",
+                     *             "risk_action": "block",
+                     *             "ref_type": "blocked_request",
+                     *             "ref_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5e01"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAppealResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not registered (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetAppeal: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description appeal_id of the appeal (also its display number); unknown or of another app → 20001 with
+                 *     data.fields=[appeal_id].
+                 */
+                appeal_id: components["parameters"]["AdminAppealIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The appeal. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01",
+                     *         "user": {
+                     *           "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *           "phone_masked": "138****5678"
+                     *         },
+                     *         "target_type": "account",
+                     *         "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *         "target_no": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *         "request_type": null,
+                     *         "prev_risk_state": "banned",
+                     *         "created_at": "2026-11-02T15:00:00+08:00",
+                     *         "deadline_at": "2026-11-06T00:00:00+08:00",
+                     *         "status": "processing",
+                     *         "handler_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *         "handler_name": "客服小林",
+                     *         "content": "我没有恶意维权，退款都是商家同意的，请核查。",
+                     *         "risk_state": "appealing",
+                     *         "source": "app",
+                     *         "registered_by": null,
+                     *         "registered_by_name": null,
+                     *         "claimed_at": "2026-11-03T10:00:00+08:00",
+                     *         "closed_at": null,
+                     *         "row_version": 1,
+                     *         "revoke_permission": "risk.ban",
+                     *         "blocked_request": null,
+                     *         "risk_hits": [
+                     *           {
+                     *             "created_at": "2026-10-28T20:15:00+08:00",
+                     *             "rule_id": "RIGHTS_ABUSE",
+                     *             "rule_name": "异常售后维权",
+                     *             "risk_action": "manual_review",
+                     *             "ref_type": "order",
+                     *             "ref_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAppealResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminClaimAppeal: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description appeal_id of the appeal (also its display number); unknown or of another app → 20001 with
+                 *     data.fields=[appeal_id].
+                 */
+                appeal_id: components["parameters"]["AdminAppealIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_row_version": 0
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminAppealClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description The appeal after the claim. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01",
+                     *         "user": {
+                     *           "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *           "phone_masked": "138****5678"
+                     *         },
+                     *         "target_type": "account",
+                     *         "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *         "target_no": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *         "request_type": null,
+                     *         "prev_risk_state": "banned",
+                     *         "created_at": "2026-11-02T15:00:00+08:00",
+                     *         "deadline_at": "2026-11-06T00:00:00+08:00",
+                     *         "status": "processing",
+                     *         "handler_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *         "handler_name": "客服小林",
+                     *         "content": "我没有恶意维权，退款都是商家同意的，请核查。",
+                     *         "risk_state": "appealing",
+                     *         "source": "app",
+                     *         "registered_by": null,
+                     *         "registered_by_name": null,
+                     *         "claimed_at": "2026-11-03T10:00:00+08:00",
+                     *         "closed_at": null,
+                     *         "row_version": 1,
+                     *         "revoke_permission": "risk.ban",
+                     *         "blocked_request": null,
+                     *         "risk_hits": [
+                     *           {
+                     *             "created_at": "2026-10-28T20:15:00+08:00",
+                     *             "rule_id": "RIGHTS_ABUSE",
+                     *             "rule_name": "异常售后维权",
+                     *             "risk_action": "manual_review",
+                     *             "ref_type": "order",
+                     *             "ref_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAppealResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminResolveAppeal: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /**
+                 * @description appeal_id of the appeal (also its display number); unknown or of another app → 20001 with
+                 *     data.fields=[appeal_id].
+                 */
+                appeal_id: components["parameters"]["AdminAppealIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminAppealResolveRequest"];
+            };
+        };
+        responses: {
+            /** @description The appeal after closing. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d02",
+                     *         "user": null,
+                     *         "target_type": "blocked_request",
+                     *         "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5e01",
+                     *         "target_no": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5e01",
+                     *         "request_type": "register",
+                     *         "prev_risk_state": null,
+                     *         "created_at": "2026-10-12T11:30:00+08:00",
+                     *         "deadline_at": "2026-10-16T00:00:00+08:00",
+                     *         "status": "revoked",
+                     *         "handler_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b02",
+                     *         "handler_name": "风控小王",
+                     *         "content": "我只是正常注册，手机号是自己在用的号码。",
+                     *         "risk_state": null,
+                     *         "source": "admin",
+                     *         "registered_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *         "registered_by_name": "客服小林",
+                     *         "claimed_at": null,
+                     *         "closed_at": "2026-10-14T16:20:00+08:00",
+                     *         "row_version": 2,
+                     *         "revoke_permission": "risk.blocklist",
+                     *         "blocked_request": {
+                     *           "blocked_request_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5e01",
+                     *           "request_type": "register",
+                     *           "phone_masked": "136****4411",
+                     *           "blocked_at": "2026-10-12T11:05:00+08:00",
+                     *           "cause": "blocklist",
+                     *           "blocklist_dimension": "phone",
+                     *           "amount_fen": null,
+                     *           "processing_appeal_id": null
+                     *         },
+                     *         "risk_hits": [
+                     *           {
+                     *             "created_at": "2026-10-12T11:05:00+08:00",
+                     *             "rule_id": "BLACKLIST_PHONE",
+                     *             "rule_name": "手机号黑名单",
+                     *             "risk_action": "block",
+                     *             "ref_type": "blocked_request",
+                     *             "ref_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5e01"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAppealResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListBlockedRequests: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+                /**
+                 * @description The full phone number, normalised as in BR-ID-05 细则「手机号规范化」 (not a mainland mobile
+                 *     number → 20001 with data.fields=[phone] and data.reason=phone_invalid); give exactly one
+                 *     of phone, user_id and blocked_request_id.
+                 */
+                phone?: components["parameters"]["AdminBlockedRequestPhone"];
+                /** @description The UID (user_id) whose blocked requests to list; give exactly one of phone, user_id and blocked_request_id. */
+                user_id?: components["parameters"]["AdminBlockedRequestUserFilter"];
+                /**
+                 * @description The blocked request id (拦截请求编号) shown in the 44001 dialog, matched exactly; give
+                 *     exactly one of phone, user_id and blocked_request_id.
+                 */
+                blocked_request_id?: components["parameters"]["AdminBlockedRequestIdFilter"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of blocked requests, newest blocked first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "blocked_request_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5e02",
+                     *             "request_type": "withdraw",
+                     *             "phone_masked": "139****2266",
+                     *             "blocked_at": "2026-10-13T20:10:00+08:00",
+                     *             "cause": "blocklist",
+                     *             "blocklist_dimension": "alipay",
+                     *             "amount_fen": 5000,
+                     *             "processing_appeal_id": null
+                     *           },
+                     *           {
+                     *             "blocked_request_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5e03",
+                     *             "request_type": "phone_change",
+                     *             "phone_masked": "137****0099",
+                     *             "blocked_at": "2026-10-09T09:30:00+08:00",
+                     *             "cause": "rule",
+                     *             "blocklist_dimension": null,
+                     *             "amount_fen": null,
+                     *             "processing_appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d03"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminBlockedRequestPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

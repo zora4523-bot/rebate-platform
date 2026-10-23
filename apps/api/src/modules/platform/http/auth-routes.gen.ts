@@ -998,6 +998,36 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/appeals",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/appeals",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/appeals/:appeal_id",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/appeals/:appeal_id/claim",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/appeals/:appeal_id/resolve",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/blocked-requests",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/pay-orders",
     "auth": "admin"
   },
