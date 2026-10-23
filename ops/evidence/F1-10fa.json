@@ -1,0 +1,149 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-risk-rules/dictionary.test.ts > [AC-F1-10fa-DICT#1] 后台字典缺键时所有动作与两个状态显示编码，不硬编码中文或显示 undefined",
+    "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#1] 20902 risk_rule 提示刷新并重读，不盲目重发；下一次带刷新后的版本",
+    "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#2] 冲突后的重读失败清除旧行，重试失败仍不展示旧数据",
+    "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#3] 20001 fields=[rule_id] 提示规则不存在并刷新，删除过期行",
+    "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#4] enable 收到 10003 totp 不复用旧凭据，重新验证后才发相同请求",
+    "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#4] disable 收到 10003 totp 不复用旧凭据，重新验证后才发相同请求",
+    "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#5] 写入 10403 明确无权限，不把它当动态码过期再次验证",
+    "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#6] 动态码错误不发启停，原状态不变且保留验证提示",
+    "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#7] 启停网络失败显示错误，不宣称成功或自动重发",
+    "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-LIST#1] 全部字段、开放 scene、全部动作与状态从注入字典读取，时间固定北京时间",
+    "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-LIST#2] 大于默认页长仍展示全表，不增加筛选或分页参数",
+    "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-LINK#1] risk.device_register_limit 只进入配置中心对应配置项，本页没有阈值编辑或写请求",
+    "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-LINK#1] risk.device_login_accounts_limit 只进入配置中心对应配置项，本页没有阈值编辑或写请求",
+    "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-STATES#1] 列表未返回显示加载态，返回后再展示行",
+    "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-STATES#2] 空列表明确空态，不造规则和阈值入口",
+    "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-STATES#3] 网络错误可重试，连续失败仍为错误态，成功后恢复完整列表",
+    "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-PERMISSION#1] 10403 显示无权限，不作空列表或发起动态码",
+    "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-PERMISSION#2] risk.freeze 可进风控但没有 config.risk 时不出现规则清单且不请求列表",
+    "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-PERMISSION#2] risk.ban 可进风控但没有 config.risk 时不出现规则清单且不请求列表",
+    "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-PERMISSION#2] risk.blocklist 可进风控但没有 config.risk 时不出现规则清单且不请求列表",
+    "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-PERMISSION#2] risk.appeal 可进风控但没有 config.risk 时不出现规则清单且不请求列表",
+    "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-ROUTE#1] 默认 /risk 接入规则清单；risk.* 与 config.risk 同持者和超管可读",
+    "test/spec/frontend/admin-risk-rules/pages.browser.test.ts > [AC-F1-10fa-BROWSER#3] 阈值 risk.device_register_limit 进入配置中心并携带配置项键，全程不发写请求",
+    "test/spec/frontend/admin-risk-rules/pages.browser.test.ts > [AC-F1-10fa-BROWSER#3] 阈值 risk.device_login_accounts_limit 进入配置中心并携带配置项键，全程不发写请求",
+    "test/spec/frontend/admin-risk-rules/pages.browser.test.ts > [AC-F1-10fa-BROWSER#1] 真实路由可见规则清单与全部字段，开放场景原样；阈值是入口且只读查看不验证",
+    "test/spec/frontend/admin-risk-rules/pages.browser.test.ts > [AC-F1-10fa-BROWSER#2] 浏览器连续停用和启用都弹动态码，确认后才带各自凭据写入",
+    "test/spec/frontend/admin-risk-rules/source.test.ts > [AC-F1-10fa-SOURCE#1] 风控文案登记在 texts/risk.ts，页面引用它并复用现有二次验证组件",
+    "test/spec/frontend/admin-risk-rules/toggle.test.ts > [AC-F1-10fa-CHANGE#1] 连续停用、启用各验证一次；带最新版本与选填原因，不带幂等头，成功按返回行更新",
+    "test/spec/frontend/admin-risk-rules/toggle.test.ts > [AC-F1-10fa-CHANGE#2] 超管从 version=0 启用仍必须动态码，允许正好 200 字的原因",
+    "test/spec/frontend/admin-risk-rules/toggle.test.ts > [AC-F1-10fa-CHANGE#3] 超过 200 字不能发送违规 reason；可限制输入或提示校验错误",
+    "test/spec/frontend/admin-risk-rules/toggle.test.ts > [AC-F1-10fa-CHANGE#4] enable 返回目标状态且版本未增加也视为成功，下一次使用服务端原版本",
+    "test/spec/frontend/admin-risk-rules/toggle.test.ts > [AC-F1-10fa-CHANGE#4] disable 返回目标状态且版本未增加也视为成功，下一次使用服务端原版本",
+    "test/spec/frontend/admin-risk-rules/toggle.test.ts > [AC-F1-10fa-CHANGE#5] 取消动态码不写入、不乐观改状态，下一次操作仍需验证"
+  ],
+  "risk_note": "Admin console risk page, rules tab (apps/admin pages/risk, texts/risk.ts, App.tsx; no money logic; RV2 because App.tsx is touched, so the review ran on the money track). Contract CT-24f (adminListRiskRules, adminEnableRiskRule, adminDisableRiskRule; planned, backend not done, developed against the contract with a fake server). /risk shows the 规则清单 tab and reads the list only with config.risk (or super); with risk.* alone there is no tab and no request (menu visibility unchanged, frozen admin-shell permission table). List: scene as is, name, action and status names only from the admin dictionary (codes when missing), threshold keys as links to /config?item=<key> (no threshold input on this page), update time in Beijing time; states and 10403. Enable / disable: confirmation with optional reason, a fresh totp step-up every time, expected_version from the row, the returned row replaces it, already-in-target-state succeeds, 20902 and 20001 [rule_id] refresh, an unknown outcome is never resent (the list is read again). No finalized design spec; boards only as layout reference. Rule tests by Codex in three calls (the third made row assertions compatible with StepUpModal's inert / aria-hidden and matched cancel exactly); Claude spec-test review r3 pass; red on the test machine (red/3: 33 red, 0 problems). Implementation by Opus 5.5; test machine verify-fast/2 and browser/2 green. Review: Codex out of quota until 2026-10-30, so the adversarial review ran on a fresh independent Claude (tools/agent/claude-run.sh, orchestrator 2026-10-23 10:27, approvals id 36). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings; independent Claude because Codex hit its usage limit until 2026-10-30 (orchestrator 10:27, approvals id 36)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (2 S1: the threshold entry required opening the config center drawer outside this task's paths, update time asserted to the second; 1 S2), round 2 pass, round 3 pass on the increment that made row assertions compatible with StepUpModal (1 S2)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "F1-10fa",
+  "spec_ref": "f3fea9b041e41bc0d398380f6ad09555d1d6ba32",
+  "spec_commit": "0ab2decbf89dd1a53f7312772c33e0c5d39a5e7c",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0ab2decbf89dd1a53f7312772c33e0c5d39a5e7c",
+      "tree": "79a9a345c247af83cc07ee95cfb9e0649474f040",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T07:08:22Z",
+      "finished_at": "2026-10-23T07:09:27Z",
+      "gate": {
+        "commit": "9826d15042ed9cd764bba60530bfdc69b5868adb",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-risk-rules/dictionary.test.ts > [AC-F1-10fa-DICT#1] 后台字典缺键时所有动作与两个状态显示编码，不硬编码中文或显示 undefined",
+        "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#1] 20902 risk_rule 提示刷新并重读，不盲目重发；下一次带刷新后的版本",
+        "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#2] 冲突后的重读失败清除旧行，重试失败仍不展示旧数据",
+        "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#3] 20001 fields=[rule_id] 提示规则不存在并刷新，删除过期行",
+        "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#4] enable 收到 10003 totp 不复用旧凭据，重新验证后才发相同请求",
+        "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#4] disable 收到 10003 totp 不复用旧凭据，重新验证后才发相同请求",
+        "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#5] 写入 10403 明确无权限，不把它当动态码过期再次验证",
+        "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#6] 动态码错误不发启停，原状态不变且保留验证提示",
+        "test/spec/frontend/admin-risk-rules/errors.test.ts > [AC-F1-10fa-ERROR#7] 启停网络失败显示错误，不宣称成功或自动重发",
+        "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-LIST#1] 全部字段、开放 scene、全部动作与状态从注入字典读取，时间固定北京时间",
+        "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-LIST#2] 大于默认页长仍展示全表，不增加筛选或分页参数",
+        "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-LINK#1] risk.device_register_limit 只进入配置中心对应配置项，本页没有阈值编辑或写请求",
+        "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-LINK#1] risk.device_login_accounts_limit 只进入配置中心对应配置项，本页没有阈值编辑或写请求",
+        "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-STATES#1] 列表未返回显示加载态，返回后再展示行",
+        "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-STATES#2] 空列表明确空态，不造规则和阈值入口",
+        "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-STATES#3] 网络错误可重试，连续失败仍为错误态，成功后恢复完整列表",
+        "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-PERMISSION#1] 10403 显示无权限，不作空列表或发起动态码",
+        "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-PERMISSION#2] risk.freeze 可进风控但没有 config.risk 时不出现规则清单且不请求列表",
+        "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-PERMISSION#2] risk.ban 可进风控但没有 config.risk 时不出现规则清单且不请求列表",
+        "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-PERMISSION#2] risk.blocklist 可进风控但没有 config.risk 时不出现规则清单且不请求列表",
+        "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-PERMISSION#2] risk.appeal 可进风控但没有 config.risk 时不出现规则清单且不请求列表",
+        "test/spec/frontend/admin-risk-rules/list.test.ts > [AC-F1-10fa-ROUTE#1] 默认 /risk 接入规则清单；risk.* 与 config.risk 同持者和超管可读",
+        "test/spec/frontend/admin-risk-rules/pages.browser.test.ts > [AC-F1-10fa-BROWSER#3] 阈值 risk.device_register_limit 进入配置中心并携带配置项键，全程不发写请求",
+        "test/spec/frontend/admin-risk-rules/pages.browser.test.ts > [AC-F1-10fa-BROWSER#3] 阈值 risk.device_login_accounts_limit 进入配置中心并携带配置项键，全程不发写请求",
+        "test/spec/frontend/admin-risk-rules/pages.browser.test.ts > [AC-F1-10fa-BROWSER#1] 真实路由可见规则清单与全部字段，开放场景原样；阈值是入口且只读查看不验证",
+        "test/spec/frontend/admin-risk-rules/pages.browser.test.ts > [AC-F1-10fa-BROWSER#2] 浏览器连续停用和启用都弹动态码，确认后才带各自凭据写入",
+        "test/spec/frontend/admin-risk-rules/source.test.ts > [AC-F1-10fa-SOURCE#1] 风控文案登记在 texts/risk.ts，页面引用它并复用现有二次验证组件",
+        "test/spec/frontend/admin-risk-rules/toggle.test.ts > [AC-F1-10fa-CHANGE#1] 连续停用、启用各验证一次；带最新版本与选填原因，不带幂等头，成功按返回行更新",
+        "test/spec/frontend/admin-risk-rules/toggle.test.ts > [AC-F1-10fa-CHANGE#2] 超管从 version=0 启用仍必须动态码，允许正好 200 字的原因",
+        "test/spec/frontend/admin-risk-rules/toggle.test.ts > [AC-F1-10fa-CHANGE#3] 超过 200 字不能发送违规 reason；可限制输入或提示校验错误",
+        "test/spec/frontend/admin-risk-rules/toggle.test.ts > [AC-F1-10fa-CHANGE#4] enable 返回目标状态且版本未增加也视为成功，下一次使用服务端原版本",
+        "test/spec/frontend/admin-risk-rules/toggle.test.ts > [AC-F1-10fa-CHANGE#4] disable 返回目标状态且版本未增加也视为成功，下一次使用服务端原版本",
+        "test/spec/frontend/admin-risk-rules/toggle.test.ts > [AC-F1-10fa-CHANGE#5] 取消动态码不写入、不乐观改状态，下一次操作仍需验证"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-risk-rules/dictionary.test.ts",
+        "test/spec/frontend/admin-risk-rules/errors.test.ts",
+        "test/spec/frontend/admin-risk-rules/list.test.ts",
+        "test/spec/frontend/admin-risk-rules/pages.browser.test.ts",
+        "test/spec/frontend/admin-risk-rules/source.test.ts",
+        "test/spec/frontend/admin-risk-rules/toggle.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "72ebdb618d1155181ff44dca765355a7df88c071d31a8e62b645a48905403987"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "b58657a82a810929827c540c4d66ce6d84388af3a80d515d5c31cea60253aa0c"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "8027b9ce8dabc264cfb7ffcaf0448e25ff3df08c",
+    "specs": "d7811035a75370ee35f2ae060353af8353377700"
+  }
+}
