@@ -64,8 +64,10 @@ export interface CreditCas {
 }
 
 /**
- * R5 in one statement: rebate_status and the booked pair together (BR-FUND-05), CAS on
- * (rebate_status, row_version). Returns whether exactly one row matched.
+ * R5 in one statement: rebate_status, the booked pair (BR-FUND-05) and credited_at (the
+ * credit time read by the admin detail and the user timeline) together, CAS on
+ * (rebate_status, row_version). credited_at and updated_at are the same injected-Clock
+ * instant. Returns whether exactly one row matched.
  */
 export async function casCreditOrder(trx: Transaction<DB>, cas: CreditCas): Promise<boolean> {
   const result = await trx
@@ -75,6 +77,7 @@ export async function casCreditOrder(trx: Transaction<DB>, cas: CreditCas): Prom
       rebate_status: cas.to,
       booked_base_fen: cas.booked_base_fen,
       booked_n_fen: cas.booked_n_fen,
+      credited_at: cas.at,
       row_version: cas.row_version + 1,
       updated_at: cas.at,
     })
