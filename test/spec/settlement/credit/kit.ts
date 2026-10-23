@@ -13,11 +13,6 @@ import {
   type Transaction,
 } from 'kysely';
 import { afterAll, beforeAll, expect, vi } from 'vitest';
-import {
-  createRealnameStatusBatchReader,
-  createUserDeletionStatusReader,
-  lockUsersForUpdate,
-} from '../../../../apps/api/src/modules/identity/index.ts';
 import { createLedger, type Ledger } from '../../../../apps/api/src/modules/ledger/index.ts';
 import { FixedClock, createRootLogger } from '../../../../apps/api/src/modules/platform/index.ts';
 import { createRiskStateBatchReader } from '../../../../apps/api/src/modules/risk/index.ts';
@@ -33,6 +28,15 @@ import {
   type CreditRole,
   type MinorStatusReader,
 } from '../../../../apps/api/src/modules/settlement/credit/index.ts';
+
+// Exercise identity/index.ts at runtime; the URL import keeps Nest decorators out of the test TS
+// project (same as test/spec/identity/deletion-status/reader.int.test.ts). The type queries are erased.
+const { createRealnameStatusBatchReader, createUserDeletionStatusReader, lockUsersForUpdate } =
+  (await import(
+    new URL('../../../../apps/api/src/modules/identity/index.ts', import.meta.url).href
+  )) as typeof import('../../../../apps/api/src/modules/identity/ports/realname-status-batch.ts') &
+    typeof import('../../../../apps/api/src/modules/identity/ports/user-deletion-status.ts') &
+    typeof import('../../../../apps/api/src/modules/identity/ports/lock-users.ts');
 
 // Through commission's public entry, loaded at run time like the other settlement rule tests do.
 const commission = (await import(
