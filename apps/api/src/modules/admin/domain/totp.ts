@@ -19,7 +19,7 @@
 //   matched steps refused means replay.
 //
 // Pure module (no decorators, erasable syntax, only type imports from the platform barrel).
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Clock, FieldCrypto } from '../../platform/index.ts';
 
 export interface TotpAccount {
@@ -108,6 +108,37 @@ export function createTotpVerifier(deps: {
   replay: TotpReplayStore;
   digits: 6 | 8;
 }): TotpVerifier {
-  void deps;
-  throw new Error('NotImplemented: createTotpVerifier');
+  const { clock, crypto, replay, digits } = deps;
+  const syntax = new RegExp(`^[0-9]{${String(digits)}}$`);
+  return {
+    async verify(request: TotpRequest): Promise<boolean> {
+      const { code } = request;
+      if (typeof code !== 'string' || code.length !== digits || !syntax.test(code)) return false;
+      const account: TotpAccount = { appId: request.appId, adminId: request.adminId };
+      const secret = crypto.decrypt(
+        request.secretCipher.toString('utf8'),
+        totpSecretContext(account),
+      );
+      const key = decodeBase32(secret);
+      const matched: bigint[] = [];
+      try {
+        const current = totpTimeStep(clock.now());
+        const given = Buffer.from(code, 'ascii');
+        // Compare every candidate (no early exit); steps are collected in ascending order.
+        for (let offset = -TOTP_WINDOW_STEPS; offset <= TOTP_WINDOW_STEPS; offset += 1) {
+          const step = current + BigInt(offset);
+          if (step < 0n) continue;
+          const expected = Buffer.from(hotp(key, step, digits), 'ascii');
+          if (timingSafeEqual(expected, given)) matched.push(step);
+        }
+      } finally {
+        key.fill(0);
+      }
+      // Sequential on purpose: stop at the first consumed step; a thrown error propagates.
+      for (const timeStep of matched) {
+        if (await replay.consume({ ...account, timeStep })) return true;
+      }
+      return false;
+    },
+  };
 }
