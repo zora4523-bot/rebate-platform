@@ -83,9 +83,9 @@ describe('display (D10-233 ②: NEGATIVE_BALANCE rejection)', () => {
     expect(
       subTextBranch({ ...base, status: 'REJECTED', reject_reason_code: 'NEGATIVE_BALANCE' }, now),
     ).toBe('rejected_offset');
-    expect(subTextBranch({ ...base, status: 'REJECTED', reject_reason_code: 'USER_REQUEST' }, now)).toBe(
-      'rejected',
-    );
+    expect(
+      subTextBranch({ ...base, status: 'REJECTED', reject_reason_code: 'USER_REQUEST' }, now),
+    ).toBe('rejected');
     expect(subTextBranch({ ...base, status: 'REJECTED' }, now)).toBe('rejected');
   });
 });
