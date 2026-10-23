@@ -16,6 +16,7 @@ import {
   agentStreamPortsToken,
   createProductionStreamAssembly,
   type AgentStreamProvidedPorts,
+  type StreamReviewOptions,
 } from './modules/agent/index.ts';
 import {
   CatalogModule,
@@ -1680,6 +1681,21 @@ const AGENT_SEARCH_PAGE_SIZE = 20;
 @Module({})
 class AgentStreamPortsModule {}
 
+/**
+ * B3-03m (BR-AI-18; owner D10-135 ②): the stream entry's content safety review configuration,
+ * read by loadConfig (platform/config/agent-review.ts). Only staging / prod carry the AccessKey
+ * pair and the endpoint; local / test, or no configuration, hand over the environment alone, so
+ * the review stays fail-closed with no network request. Values are never logged.
+ * TODO(规划/11 §6): 真实调用验证 — blocked on 负责人在 staging 放入阿里云内容安全 Key
+ */
+function agentStreamSafety(config: AppConfig): StreamReviewOptions {
+  const review = config.agentReview ?? null;
+  if (review === null || (config.appEnv !== 'staging' && config.appEnv !== 'prod')) {
+    return { appEnv: config.appEnv };
+  }
+  return { appEnv: config.appEnv, credentials: review.credentials, endpoint: review.endpoint };
+}
+
 function agentStreamPorts(union: DynamicModule): DynamicModule {
   return {
     module: AgentStreamPortsModule,
@@ -2225,8 +2241,9 @@ export class AppModule {
           ? [OrdersModule.forWorker(orderSyncPorts(union))]
           : []),
         // B3-03j: the Agent's business ports (union / catalog / linking / parsing) and its
-        // production assembly; input check, sentence review and model routing stay minimal
-        // (B3-03m, B3-03k).
+        // production assembly; B3-03m: input check and sentence review over the Aliyun content
+        // safety review (fail-closed without its configuration); model routing stays minimal
+        // (B3-03k).
         ...(options.entry === 'stream' && union !== undefined
           ? [
               agentStreamPorts(union),
@@ -2234,6 +2251,7 @@ export class AppModule {
                 consentReader: createAiConsentReader,
                 callerReader: createAgentCallerReader,
                 assembly: createProductionStreamAssembly,
+                safety: agentStreamSafety(options.config),
               }),
             ]
           : []),
