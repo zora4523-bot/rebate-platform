@@ -1,0 +1,21 @@
+id: CT-06zz
+repo: rebate-platform
+title: CT-06zz：lint-migrations.test 的「passes the real repository」一条 it 加显式超时（测试机负载下撞 30 秒默认超时）
+type: guard-change
+# 2026-10-24 入账（ops 线，编排 03:24 派工，照 CT-06zp / CT-06zr 先例）。起因：tools/ci/lint-migrations.test.ts「passes the real
+# repository: every migration is either frozen or accepted」在测试机负载下反复撞 tools 的 30 秒默认超时（withdraw verify/6、W1 01:12；
+# 同文件 63 条在测试机约 39 秒，本机约 5 秒）。这一条在子进程里对真实仓库的全部迁移跑 lint，随 db/migrations 增长；主干 GitHub CI
+# 绿的 verify-fast 里它耗时 5.3–12.4 s（2026-10-22 三次）。测试机没有单条耗时记录，取测试机整文件约 39 秒为上界，× 3 取整为 120_000。
+# 做法：只给这一条 it 加超时参数与注释，断言与其他用例不动。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ci/lint-migrations.test.ts'
+  - 'ops/tasks/CT-06zz.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
