@@ -51,6 +51,21 @@ export interface AdminPermissions {
   permission_key: string;
 }
 
+export interface AdminUnionAuthSessions {
+  app_id: string;
+  created_at: Timestamp;
+  created_by: string;
+  error: string | null;
+  expires_at: Timestamp;
+  finished_at: Timestamp | null;
+  id: string;
+  state_hash: Buffer;
+  status: Generated<string>;
+  union_account_id: string;
+  updated_at: Timestamp;
+  used_at: Timestamp | null;
+}
+
 export interface AdminUsers {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -1563,6 +1578,7 @@ export interface UnionAccounts {
   alert_stage: Generated<string>;
   app_id: string;
   auth_expires_at: Timestamp | null;
+  auth_expires_estimated: Generated<boolean>;
   auth_renewed_at: Timestamp | null;
   auth_renewed_by: string | null;
   auth_status: string;
@@ -1735,6 +1751,7 @@ export interface UserTipReads {
 export interface DB {
   account_balances: AccountBalances;
   admin_permissions: AdminPermissions;
+  admin_union_auth_sessions: AdminUnionAuthSessions;
   admin_users: AdminUsers;
   agent_cards: AgentCards;
   agent_clarify_asks: AgentClarifyAsks;
