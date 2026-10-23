@@ -4,6 +4,7 @@ title: 后台支付单查询与处置：支付单列表 / 详情（pay.view，�
 type: impl
 # 2026-10-22 收款线入账（BR-PAY-05 ③④、BR-PAY-07「后台 支付单查询与对账页」、BR-PAY-08 ④；04 §6.6 pay-orders、§11.2）。后台接口照 CT-21e，去 planned。
 # 处置复用 B2-15c / B2-15d 的查询处理器与关单判定，不另写一套迁移逻辑。
+# 2026-10-23 编排 10:27：Codex 不可用至 10-30，规则测试与评审改由独立 Claude（tools/agent/claude-run.sh，approvals #36），tester 改为 claude-independent。
 refs: [BR-PAY-05, BR-PAY-07, BR-PAY-08]
 refs_hash:
   BR-PAY-05: cc6a654d316e
@@ -22,7 +23,7 @@ paths:
 test_paths:
   - 'test/spec/payment/admin/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payment/admin/**'

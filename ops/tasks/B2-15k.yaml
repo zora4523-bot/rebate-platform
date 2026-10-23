@@ -5,6 +5,7 @@ type: impl
 # 2026-10-22 收款线入账（BR-PAY-03、04、08、09；规划/09 §5.7 CAP-X-16 / CAP-X-17 文档已确认未实测）。平台行为只引私有库 docs-mirror/wechat-pay/pages/*.txt、docs-mirror/alipay/app-pay/*.md 并在代码注释注出处；
 # 09 未验证的能力不得当事实；success_states 等清单的增改须附实测样例（BR-PAY-04 细则）。密钥只在 KMS / staging 配置（BR-PAY-08 ②），代码只读变量名；新增环境变量进 platform/config schema 与 .env.example。
 # PAY-01 第 3 轮评审（couli-runs/PAY/code-review-r3.md）的修改未复审，本任务 Codex money 评审须逐条核对。
+# 2026-10-23 编排 10:27：Codex 不可用至 10-30，规则测试与评审改由独立 Claude（tools/agent/claude-run.sh，approvals #36），tester 改为 claude-independent。
 refs: [BR-PAY-03, BR-PAY-04, BR-PAY-05, BR-PAY-06, BR-PAY-08, BR-PAY-09]
 refs_hash:
   BR-PAY-03: d8433c7a1556
@@ -24,7 +25,7 @@ paths:
 test_paths:
   - 'test/spec/payment/channels/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payment/channels/**'
