@@ -8,10 +8,12 @@ type: migration
 #   rights_import_failures (import_id, row_no) 唯一、reason 命名 CHECK 照 CT-24n 枚举；order_assignments（id、app_id、order_id → order_keys、to_user_id、source claim / admin、reason、admin_id、created_at）；
 #   order_rights 唯一 (app_id, order_id, type, platform_rights_no) NULLS NOT DISTINCT（方案 K-2，表归 settlement、迁移由本线出，J-12 已裁定）；只给 SELECT / INSERT / 需要的 UPDATE，不给 DELETE；授权写在本迁移。
 # 迁移号落地时取主干最大号 + 1（notices 登记，现 0069），排在 B1-09a 之后；两段式由编排者跑 remote-snapshot 提交生成物；lint-migrations 资金 / 归属表名单如需加行，按 D10-19 先例由编排处理。
+# 2026-10-24 paths 补 tools/ci/lint-migrations.test.ts：新表 order_sync_requests、order_assignments 按前缀 order 归资金 / 归属表，须加进该测试的清单（编排 01:12 照 pay B2-15a 先例；落地时编排按 approvals #24 核对加标签）。
 refs: []
 refs_hash: {}
 deps: [B1-10a, CT-24n]
 paths:
+  - 'tools/ci/lint-migrations.test.ts'
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
