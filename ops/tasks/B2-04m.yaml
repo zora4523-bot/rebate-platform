@@ -1,0 +1,27 @@
+id: B2-04m
+repo: rebate-platform
+title: 单笔入账事务（R5）：加锁流程（order_key advisory → users 行升序 → 余额行升序）→ 锁后重读受益人状态 → 重验 WAITING / hold / rights_pending / seq → B2-04e 入账计划 → buildVouchers → ledger.post → 开 first_credit 义务 → booked 成对写 → CREDITED → order.credited，全在一事务
+type: impl
+# 2026-10-23 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.2）。分工：独立 Claude 写规则测试（Codex 额度至 10-30，approvals #36）/ Opus 实现。
+# 状态备注：可开（S2 已解锁：identity 导出 lockUsersForUpdate、实名 / 注销状态读口，risk 导出风控状态批量读口）。settlement 声明 BeneficiaryGate 端口（lockUsers + readStates），实现只经这些已导出端口；app.module 组装归 B2-04zb。真实 PG 并发（两连接 + 栅栏两种先后）与重放。
+refs: [BR-CALC-13, BR-FUND-01, BR-FUND-04, BR-FUND-05, BR-FUND-16]
+refs_hash:
+  BR-CALC-13: 54c06125032c
+  BR-FUND-01: b541996f8582
+  BR-FUND-04: ae08abefb6da
+  BR-FUND-05: 668ffe6648b8
+  BR-FUND-16: 077f6d412d5a
+deps: [B2-04a, B2-04d, B2-04e, B2-04h, B2-04i, B2-04j]
+paths:
+  - 'apps/api/src/modules/settlement/credit/**'
+test_paths:
+  - 'test/spec/settlement/credit/**'
+  - 'test/properties/settlement/credit/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/credit/**'
+  - 'test/properties/settlement/credit/**'
+status: todo
+pr: null
