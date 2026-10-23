@@ -2013,6 +2013,96 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "listAdminPayOrders",
+    "method": "GET",
+    "path": "/admin/v1/pay-orders",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "getAdminPayOrder",
+    "method": "GET",
+    "path": "/admin/v1/pay-orders/:pay_order_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "resolveAdminPayOrder",
+    "method": "POST",
+    "path": "/admin/v1/pay-orders/:pay_order_id/resolve",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "createAdminPayRefund",
+    "method": "POST",
+    "path": "/admin/v1/pay-orders/:pay_order_id/refunds",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
+    "operationId": "listAdminPayRefunds",
+    "method": "GET",
+    "path": "/admin/v1/pay-refunds",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "getAdminPayRefund",
+    "method": "GET",
+    "path": "/admin/v1/pay-refunds/:pay_refund_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "listAdminPayAnomalies",
+    "method": "GET",
+    "path": "/admin/v1/pay-anomalies",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "createAdminPayAnomalyRefund",
+    "method": "POST",
+    "path": "/admin/v1/pay-anomalies/:pay_anomaly_id/refunds",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
+    "operationId": "listAdminPayReconDiffs",
+    "method": "GET",
+    "path": "/admin/v1/pay-recon-diffs",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListKillSwitches",
     "method": "GET",
     "path": "/admin/v1/kill-switches",

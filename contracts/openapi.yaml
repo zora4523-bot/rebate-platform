@@ -100,6 +100,8 @@ tags:
     description: Admin console workbench — to-do counts, yesterday's overview and system status, trimmed to the account's permission points (permission point dashboard.view, 01 F-ADM-26, 04 §6.6 dashboard, §11.1).
   - name: admin-unions
     description: Station-owner union accounts and PIDs (推广位) in the admin console — accounts with authorization expiry and probe results, OAuth re-authorization sessions and their completion, manual credential entry, alert phones, and PID registration, change of pending rows, activation with the 花卷云 ignore confirmation and retirement (permission points union.account_auth, union.pid; 04 §6.6 union-accounts, union-pids, §11.2; BR-ID-24, BR-ATTR-02).
+  - name: admin-pay
+    description: Admin pay console — pay orders with their refunds and channel request summaries, the manual settlement of a needs_manual pay order (step-up), original-route refunds of a pay order or a pay anomaly (Idempotency-Key, no step-up), the refund list, pay anomalies and the R4 reconciliation differences (permission points pay.view, pay.resolve, pay.refund; 04 §6.6 pay-orders, §11.2; BR-PAY-05, BR-PAY-06, BR-PAY-07).
   - name: agent
     description: Agent sessions, history, the reply stream, stop, feedback and report (04 §6.5, §8).
 paths:
@@ -18031,6 +18033,915 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/pay-orders:
+    get:
+      operationId: listAdminPayOrders
+      tags:
+        - admin-pay
+      summary: Pay orders of the app (filters, page by page, newest first)
+      description: |
+        The pay order list of the console (04 §6.6 pay-orders; BR-PAY-02, BR-PAY-05). Read only,
+        no step-up. Permission point `pay.view` (04 §11.2). One row per pay order (04 §3.2
+        pay_orders) with its `pay_order_id` for the detail route, the refunded total
+        `refunded_fen` (refunds do not change the pay order status; 「已退款」「部分退款」 are
+        derived from it, BR-PAY-06 ③), `closing` (the close flow is running) and `needs_manual`
+        (automatic closing stopped at expire_at + `pay.close_wait_minutes`; settled through POST
+        /admin/v1/pay-orders/{pay_order_id}/resolve, BR-PAY-05 ③).
+
+        Filters combine with AND: `status`, `pay_channel`, `biz_type`, `user_id` (our user),
+        `out_trade_no` (exact match), `needs_manual`, `created_from` (inclusive) and `created_to`
+        (exclusive), both ISO 8601 with offset compared with `created_at`; `created_from` later
+        than `created_to` is 20001 with `data.fields=[created_from, created_to]`. A value outside
+        an enum is 20001 with `data.fields` naming the parameter; a filter set nothing matches is
+        an empty page. Order: `created_at` descending. Pages with `page` and `page_size` ≤ 200;
+        `total` is the count of the filter set. Amounts are integer fen. No channel-side user
+        identifier is returned (BR-PAY-08 ④). Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - $ref: '#/components/parameters/AdminPayOrderStatusFilter'
+        - $ref: '#/components/parameters/AdminPayChannelFilter'
+        - $ref: '#/components/parameters/AdminPayBizTypeFilter'
+        - $ref: '#/components/parameters/AdminPayUserFilter'
+        - $ref: '#/components/parameters/AdminPayOutTradeNoFilter'
+        - $ref: '#/components/parameters/AdminPayNeedsManualFilter'
+        - $ref: '#/components/parameters/AdminPayCreatedFrom'
+        - $ref: '#/components/parameters/AdminPayCreatedTo'
+      responses:
+        '200':
+          description: One page of pay orders, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPayOrderPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - pay_order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01
+                      user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                      biz_type: membership
+                      biz_ref: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7b01
+                      pay_channel: wechat_pay
+                      amount_fen: 1900
+                      refunded_fen: 0
+                      status: PENDING
+                      out_trade_no: P20261020103000000001
+                      channel_trade_no: null
+                      needs_manual: true
+                      closing: true
+                      expire_at: '2026-10-20T10:45:00+08:00'
+                      paid_at: null
+                      closed_at: null
+                      created_at: '2026-10-20T10:30:00+08:00'
+                    - pay_order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a02
+                      user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02
+                      biz_type: membership
+                      biz_ref: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7b02
+                      pay_channel: alipay
+                      amount_fen: 1900
+                      refunded_fen: 500
+                      status: PAID
+                      out_trade_no: P20261019090000000002
+                      channel_trade_no: '2026101922001400000000000002'
+                      needs_manual: false
+                      closing: false
+                      expire_at: '2026-10-19T09:15:00+08:00'
+                      paid_at: '2026-10-19T09:01:12+08:00'
+                      closed_at: null
+                      created_at: '2026-10-19T09:00:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 2
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                createdRangeInvalid:
+                  $ref: '#/components/examples/AdminPayCreatedRangeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pay-orders/{pay_order_id}:
+    get:
+      operationId: getAdminPayOrder
+      tags:
+        - admin-pay
+      summary: One pay order with its refunds and recent channel request summaries
+      description: |
+        The pay order detail of the console (04 §6.6 pay-orders). Read only, no step-up.
+        Permission point `pay.view` (04 §11.2). `pay_order` is the same shape as a list row;
+        `refunds` lists the pay order's refunds (pay_refunds with target_type pay_order), newest
+        first; `query_attempts` summarizes the 20 newest channel requests recorded for the pay
+        order and its refunds (pay_query_attempts, newest first), each with its `kind`, `result`
+        and time `at` only: the request and response bodies are never returned. An unknown
+        `pay_order_id`, or a pay order of another app, is 20001 with
+        `data.fields=[pay_order_id]` (no 404). Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPayOrderIdPath'
+      responses:
+        '200':
+          description: The pay order with its refunds and request summaries.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPayOrderDetailResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  pay_order:
+                    pay_order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a02
+                    user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02
+                    biz_type: membership
+                    biz_ref: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7b02
+                    pay_channel: alipay
+                    amount_fen: 1900
+                    refunded_fen: 500
+                    status: PAID
+                    out_trade_no: P20261019090000000002
+                    channel_trade_no: '2026101922001400000000000002'
+                    needs_manual: false
+                    closing: false
+                    expire_at: '2026-10-19T09:15:00+08:00'
+                    paid_at: '2026-10-19T09:01:12+08:00'
+                    closed_at: null
+                    created_at: '2026-10-19T09:00:00+08:00'
+                  refunds:
+                    - pay_refund_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7c01
+                      target_type: pay_order
+                      target_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a02
+                      out_refund_no: R20261020110000000001
+                      amount_fen: 500
+                      reason_code: USER_REQUEST
+                      note: null
+                      status: SUCCESS
+                      channel_refund_no: '2026102011000000000000000001'
+                      operator: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01
+                      created_at: '2026-10-20T11:00:00+08:00'
+                      succeeded_at: '2026-10-20T11:00:08+08:00'
+                  query_attempts:
+                    - kind: refund_query
+                      result: ok
+                      at: '2026-10-20T11:00:08+08:00'
+                    - kind: refund
+                      result: ok
+                      at: '2026-10-20T11:00:01+08:00'
+                    - kind: query
+                      result: ok
+                      at: '2026-10-19T09:01:12+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                payOrderInvalid:
+                  $ref: '#/components/examples/AdminPayOrderIdInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pay-orders/{pay_order_id}/resolve:
+    post:
+      operationId: resolveAdminPayOrder
+      tags:
+        - admin-pay
+      summary: Settle a needs_manual pay order by querying the channel now
+      description: |
+        The manual settlement of BR-PAY-05 ③ (【立即查询】). Permission point `pay.resolve`
+        (04 §11.2). Step-up: totp tier (04 §11.2, BR-ID-34): without a valid totp-tier
+        `X-Step-Up-Token` → 10003 with `data.tier=totp`. Only for a pay order with
+        `needs_manual=true` in status PENDING: the body is fixed (`expected_status=PENDING`,
+        `action=query_and_settle`); the console sends no channel result, status or evidence of
+        its own. A pay order that is no longer PENDING, or whose `needs_manual` is false, is 20902
+        with `data.resource=pay_order` (refresh the detail). An unknown `pay_order_id` is 20001
+        with `data.fields=[pay_order_id]`.
+
+        The server queries the channel now (a pay_query_attempts row of kind query) and settles by
+        the channel's answer: paid → PO2, the pay order becomes PAID (with the PAY_RECEIPT
+        posting and the business opening of BR-PAY-04); closed, or not exist under the condition
+        of BR-PAY-05 ② (past expire_at + `pay.close_grace_minutes` and still not exist on this
+        query) → PO3, the pay order becomes CLOSED; anything else (unknown, not paid yet, the
+        query failed, or not exist before that time) → no change, the pay order stays PENDING
+        with `needs_manual=true` and the answer says so. The evidence of the settlement is the
+        query response the server recorded (kept with the attempt, not returned); `channel_result`
+        is its summary. Every call is written to the audit log (action pay_order_resolve, with the
+        query result and the status before and after), the unchanged outcome included. No
+        Idempotency-Key (04 §6.6): a repeated call queries again and settles by CAS on
+        `expected_status`.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPayOrderIdPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPayOrderResolveRequest'
+            example:
+              expected_status: PENDING
+              action: query_and_settle
+      responses:
+        '200':
+          description: The pay order after the query, with the summary of the channel's answer.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPayOrderResolveResponse'
+              examples:
+                paid:
+                  summary: The channel says paid; the pay order became PAID
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      pay_order:
+                        pay_order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01
+                        user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                        biz_type: membership
+                        biz_ref: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7b01
+                        pay_channel: wechat_pay
+                        amount_fen: 1900
+                        refunded_fen: 0
+                        status: PAID
+                        out_trade_no: P20261020103000000001
+                        channel_trade_no: '4200002026102012345678901234'
+                        needs_manual: false
+                        closing: false
+                        expire_at: '2026-10-20T10:45:00+08:00'
+                        paid_at: '2026-10-20T10:44:31+08:00'
+                        closed_at: null
+                        created_at: '2026-10-20T10:30:00+08:00'
+                      channel_result:
+                        state: paid
+                        channel_state: SUCCESS
+                        channel_trade_no: '4200002026102012345678901234'
+                        queried_at: '2026-10-20T12:05:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                unknown:
+                  summary: The channel's answer is unknown; the pay order stays PENDING
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      pay_order:
+                        pay_order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01
+                        user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                        biz_type: membership
+                        biz_ref: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7b01
+                        pay_channel: wechat_pay
+                        amount_fen: 1900
+                        refunded_fen: 0
+                        status: PENDING
+                        out_trade_no: P20261020103000000001
+                        channel_trade_no: null
+                        needs_manual: true
+                        closing: true
+                        expire_at: '2026-10-20T10:45:00+08:00'
+                        paid_at: null
+                        closed_at: null
+                        created_at: '2026-10-20T10:30:00+08:00'
+                      channel_result:
+                        state: unknown
+                        channel_state: null
+                        channel_trade_no: null
+                        queried_at: '2026-10-20T12:05:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not settled (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                conflict:
+                  $ref: '#/components/examples/AdminPayOrderConflict'
+                payOrderInvalid:
+                  $ref: '#/components/examples/AdminPayOrderIdInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pay-orders/{pay_order_id}/refunds:
+    post:
+      operationId: createAdminPayRefund
+      tags:
+        - admin-pay
+      summary: Refund a PAID pay order through its original channel
+      description: |
+        The original-route refund of BR-PAY-06. Permission point `pay.refund` (04 §11.2); no
+        step-up (owner decision 2026-10-05). The refund goes back through the pay order's own channel to
+        the account it was paid from: the body carries only `amount_fen` (positive integer fen), the required
+        `reason_code` (enum pay_refund_reason) and an optional `note` (at most 200 characters);
+        target, channel, refund number and status are fixed by the server. The pay order must be
+        PAID, else 20902 with `data.resource=pay_order`. An amount that would exceed the
+        refundable amount (the successful plus processing refunds of the pay order, plus this
+        one, above its `amount_fen`, BR-PAY-06 ③) is 20001 with `data.fields=[amount_fen]`. An
+        unknown `pay_order_id` is 20001 with `data.fields=[pay_order_id]`.
+
+        `Idempotency-Key` is required (BR-PAY-06 ②): the same key with the same body gives the
+        same refund (one pay_refunds row and one `out_refund_no`, generated at creation and never
+        changed) and returns the first result; the same key with another body is 20901; the same
+        key while the first request is still running is 40901. The answer is the refund as
+        created, normally PROCESSING; its result comes later from the channel (BR-PAY-06 ④⑤) and
+        is read back through GET /admin/v1/pay-refunds/{pay_refund_id}. The pay order status does
+        not change; `refunded_fen` grows when the refund succeeds. Every refund is written to the
+        audit log (action pay_refund_create, with the operator, amount and reason code).
+      x-auth: admin
+      x-implementation: planned
+      x-idempotent: true
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20901
+        - 20902
+        - 40901
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPayOrderIdPath'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPayRefundCreateRequest'
+            example:
+              amount_fen: 500
+              reason_code: USER_REQUEST
+              note: 用户申请退回部分款项
+      responses:
+        '200':
+          description: The refund as created (normally PROCESSING), or the first result of the same key.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPayRefundResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  pay_refund_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7c01
+                  target_type: pay_order
+                  target_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a02
+                  out_refund_no: R20261020110000000001
+                  amount_fen: 500
+                  reason_code: USER_REQUEST
+                  note: 用户申请退回部分款项
+                  status: PROCESSING
+                  channel_refund_no: null
+                  operator: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01
+                  created_at: '2026-10-20T11:00:00+08:00'
+                  succeeded_at: null
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not refunded (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                amountExceeded:
+                  $ref: '#/components/examples/AdminPayRefundAmountExceeded'
+                idempotencyConflict:
+                  $ref: '#/components/examples/AdminPayRefundIdempotencyConflict'
+                notPaid:
+                  $ref: '#/components/examples/AdminPayOrderConflict'
+                payOrderInvalid:
+                  $ref: '#/components/examples/AdminPayOrderIdInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pay-refunds:
+    get:
+      operationId: listAdminPayRefunds
+      tags:
+        - admin-pay
+      summary: Refunds of the app (filters, page by page, newest first)
+      description: |
+        The refund list of the console (04 §6.6 pay-orders; BR-PAY-06). Read only, no step-up.
+        Permission point `pay.view` (04 §11.2). One row per refund (04 §3.2 pay_refunds), for a
+        pay order or a pay anomaly (`target_type`, `target_id`), with its `pay_refund_id` for
+        the detail route. Filters combine with AND: `status`, `target_type` and `reason_code`; a
+        value outside an enum is 20001 with `data.fields` naming the parameter. Order:
+        `created_at` descending. Pages with `page` and `page_size` ≤ 200. Amounts are integer
+        fen. Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - $ref: '#/components/parameters/AdminPayRefundStatusFilter'
+        - $ref: '#/components/parameters/AdminPayRefundTargetTypeFilter'
+        - $ref: '#/components/parameters/AdminPayRefundReasonFilter'
+      responses:
+        '200':
+          description: One page of refunds, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPayRefundPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - pay_refund_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7c02
+                      target_type: pay_anomaly
+                      target_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7d01
+                      out_refund_no: R20261021090000000002
+                      amount_fen: 1900
+                      reason_code: ANOMALY_RECEIPT
+                      note: null
+                      status: FAILED
+                      channel_refund_no: null
+                      operator: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01
+                      created_at: '2026-10-21T09:00:00+08:00'
+                      succeeded_at: null
+                    - pay_refund_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7c01
+                      target_type: pay_order
+                      target_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a02
+                      out_refund_no: R20261020110000000001
+                      amount_fen: 500
+                      reason_code: USER_REQUEST
+                      note: null
+                      status: SUCCESS
+                      channel_refund_no: '2026102011000000000000000001'
+                      operator: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01
+                      created_at: '2026-10-20T11:00:00+08:00'
+                      succeeded_at: '2026-10-20T11:00:08+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 2
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pay-refunds/{pay_refund_id}:
+    get:
+      operationId: getAdminPayRefund
+      tags:
+        - admin-pay
+      summary: One refund
+      description: |
+        One refund of the console (04 §6.6 pay-orders; BR-PAY-06). Read only, no step-up.
+        Permission point `pay.view` (04 §11.2). Same shape as a row of GET /admin/v1/pay-refunds;
+        the console polls it after POST /admin/v1/pay-orders/{pay_order_id}/refunds or POST
+        /admin/v1/pay-anomalies/{pay_anomaly_id}/refunds until the refund is SUCCESS or FAILED.
+        An unknown `pay_refund_id`, or a refund of another app, is 20001 with
+        `data.fields=[pay_refund_id]` (no 404). Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPayRefundIdPath'
+      responses:
+        '200':
+          description: The refund.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPayRefundResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  pay_refund_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7c01
+                  target_type: pay_order
+                  target_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a02
+                  out_refund_no: R20261020110000000001
+                  amount_fen: 500
+                  reason_code: USER_REQUEST
+                  note: 用户申请退回部分款项
+                  status: SUCCESS
+                  channel_refund_no: '2026102011000000000000000001'
+                  operator: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01
+                  created_at: '2026-10-20T11:00:00+08:00'
+                  succeeded_at: '2026-10-20T11:00:08+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                payRefundInvalid:
+                  $ref: '#/components/examples/AdminPayRefundIdInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pay-anomalies:
+    get:
+      operationId: listAdminPayAnomalies
+      tags:
+        - admin-pay
+      summary: Pay anomalies (money received without a payable pay order), page by page
+      description: |
+        The pay anomaly list of the console (BR-PAY-05 ④; 04 §3.2 pay_anomalies). Read only, no
+        step-up. Permission point `pay.view` (04 §11.2). One row per anomaly: money the channel
+        shows as received for a CLOSED pay order, or for a merchant order number that names no pay
+        order of ours (`pay_order_id` is then null; `out_trade_no` is null when the channel gave
+        none), with its
+        `pay_anomaly_id` for POST /admin/v1/pay-anomalies/{pay_anomaly_id}/refunds, the only way
+        the money goes back (BR-PAY-06). `refunded_fen` is the total of its successful refunds;
+        the refundable remainder is `amount_fen` minus the successful and processing refunds. The
+        evidence kept with the anomaly is not returned. Filters: `pay_channel`; a value outside the
+        enum is 20001 with `data.fields=[pay_channel]`. Order: `created_at` descending. Pages with
+        `page` and `page_size` ≤ 200. Amounts are integer fen. No channel-side user identifier is
+        returned (BR-PAY-08 ④). Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - $ref: '#/components/parameters/AdminPayChannelFilter'
+      responses:
+        '200':
+          description: One page of pay anomalies, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPayAnomalyPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - pay_anomaly_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7d01
+                      pay_channel: wechat_pay
+                      channel_trade_no: '4200002026102112345678900001'
+                      out_trade_no: P20261020080000000003
+                      pay_order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a03
+                      amount_fen: 1900
+                      refunded_fen: 0
+                      status: open
+                      created_at: '2026-10-21T02:10:00+08:00'
+                    - pay_anomaly_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7d02
+                      pay_channel: alipay
+                      channel_trade_no: '2026102122001400000000000009'
+                      out_trade_no: null
+                      pay_order_id: null
+                      amount_fen: 990
+                      refunded_fen: 990
+                      status: refunded
+                      created_at: '2026-10-21T02:10:05+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 2
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pay-anomalies/{pay_anomaly_id}/refunds:
+    post:
+      operationId: createAdminPayAnomalyRefund
+      tags:
+        - admin-pay
+      summary: Refund a pay anomaly through its original channel
+      description: |
+        The original-route refund of a pay anomaly (BR-PAY-05 ④, BR-PAY-06). Permission point
+        `pay.refund` (04 §11.2); no step-up (owner decision 2026-10-05). Same body and rules as
+        POST /admin/v1/pay-orders/{pay_order_id}/refunds: `amount_fen` (positive integer fen),
+        the required `reason_code` (enum pay_refund_reason) and an optional `note`; the refund
+        goes back the way the money came, with target, channel, refund number and status fixed by
+        the server. An amount that would exceed the refundable amount (the successful plus
+        processing refunds of the anomaly, plus this one, above its received `amount_fen`,
+        BR-PAY-06 ③) is 20001 with `data.fields=[amount_fen]`; an unknown `pay_anomaly_id` is
+        20001 with `data.fields=[pay_anomaly_id]`.
+
+        `Idempotency-Key` is required (BR-PAY-06 ②): same key and body → the same refund and the
+        first result; same key with another body → 20901; same key while still running → 40901.
+        The answer is the refund as created, normally PROCESSING; read its result through GET
+        /admin/v1/pay-refunds/{pay_refund_id}. Every refund is written to the audit log (action
+        pay_refund_create, with the operator, amount and reason code).
+      x-auth: admin
+      x-implementation: planned
+      x-idempotent: true
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20901
+        - 40901
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPayAnomalyIdPath'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPayRefundCreateRequest'
+            example:
+              amount_fen: 1900
+              reason_code: ANOMALY_RECEIPT
+      responses:
+        '200':
+          description: The refund as created (normally PROCESSING), or the first result of the same key.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPayRefundResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  pay_refund_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7c03
+                  target_type: pay_anomaly
+                  target_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7d01
+                  out_refund_no: R20261021100000000003
+                  amount_fen: 1900
+                  reason_code: ANOMALY_RECEIPT
+                  note: null
+                  status: PROCESSING
+                  channel_refund_no: null
+                  operator: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01
+                  created_at: '2026-10-21T10:00:00+08:00'
+                  succeeded_at: null
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not refunded (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                amountExceeded:
+                  $ref: '#/components/examples/AdminPayRefundAmountExceeded'
+                idempotencyConflict:
+                  $ref: '#/components/examples/AdminPayRefundIdempotencyConflict'
+                payAnomalyInvalid:
+                  $ref: '#/components/examples/AdminPayAnomalyIdInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pay-recon-diffs:
+    get:
+      operationId: listAdminPayReconDiffs
+      tags:
+        - admin-pay
+      summary: Pay reconciliation differences (source R4), page by page
+      description: |
+        The pay reconciliation page of the console (BR-PAY-07; 04 §6.6 pay-orders). Read only, no
+        step-up. Permission point `pay.view` (04 §11.2). Only recon_diffs of source R4 (收款对账,
+        the daily T+1 check of the channel's bills by out_trade_no and out_refund_no) are listed,
+        of type `pay_mismatch` or `pay_anomaly`; differences of R1–R3 are not here. Each row has its
+        `recon_diff_id`, `period` (the bill date), what it refers to (`ref_type`, `ref_id`), the
+        three amounts in fen (`expected_fen` ours, `actual_fen` the channel's, `diff_fen`) and its
+        `status`. Filters combine with AND: `type` and `status`; a value outside an enum is 20001
+        with `data.fields` naming the parameter. Order: `created_at` descending. Pages with `page`
+        and `page_size` ≤ 200. Handling a difference (query again and settle, register an anomaly
+        and refund, or close after checking) is not part of this operation. Reading does not write
+        an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - $ref: '#/components/parameters/AdminPayReconDiffTypeFilter'
+        - $ref: '#/components/parameters/AdminPayReconDiffStatusFilter'
+      responses:
+        '200':
+          description: One page of R4 reconciliation differences, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPayReconDiffPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - recon_diff_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7e01
+                      source: R4
+                      type: pay_anomaly
+                      period: '2026-10-20'
+                      ref_type: pay_anomaly
+                      ref_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7d01
+                      expected_fen: 0
+                      actual_fen: 1900
+                      diff_fen: -1900
+                      status: open
+                      created_at: '2026-10-21T02:10:00+08:00'
+                      closed_at: null
+                    - recon_diff_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7e02
+                      source: R4
+                      type: pay_mismatch
+                      period: '2026-10-20'
+                      ref_type: pay_order
+                      ref_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a04
+                      expected_fen: 1900
+                      actual_fen: 0
+                      diff_fen: 1900
+                      status: closed
+                      created_at: '2026-10-21T02:10:01+08:00'
+                      closed_at: '2026-10-21T15:00:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 2
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/kill-switches:
     get:
       operationId: adminListKillSwitches
@@ -19954,6 +20865,124 @@ components:
       description: pid_id from GET /admin/v1/union-pids; unknown or of another app → 20001 with data.fields=[pid_id].
       schema:
         $ref: '#/components/schemas/Id'
+    AdminPayOrderIdPath:
+      name: pay_order_id
+      in: path
+      required: true
+      description: The pay order (pay_orders.id) as a list row carries it; unknown or of another app → 20001 with data.fields=[pay_order_id].
+      schema:
+        $ref: '#/components/schemas/Id'
+    AdminPayRefundIdPath:
+      name: pay_refund_id
+      in: path
+      required: true
+      description: The refund (pay_refunds.id); unknown or of another app → 20001 with data.fields=[pay_refund_id].
+      schema:
+        $ref: '#/components/schemas/Id'
+    AdminPayAnomalyIdPath:
+      name: pay_anomaly_id
+      in: path
+      required: true
+      description: The pay anomaly (pay_anomalies.id); unknown or of another app → 20001 with data.fields=[pay_anomaly_id].
+      schema:
+        $ref: '#/components/schemas/Id'
+    AdminPayOrderStatusFilter:
+      name: status
+      in: query
+      required: false
+      description: Only pay orders in this status (enum pay_order_status); absent = all.
+      schema:
+        $ref: '#/components/schemas/AdminPayOrderStatus'
+    AdminPayChannelFilter:
+      name: pay_channel
+      in: query
+      required: false
+      description: Only rows of this pay channel (enum pay_channel); absent = all.
+      schema:
+        $ref: '#/components/schemas/AdminPayChannel'
+    AdminPayBizTypeFilter:
+      name: biz_type
+      in: query
+      required: false
+      description: Only pay orders of this business type (pay_orders.biz_type, exact match); absent = all.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+    AdminPayUserFilter:
+      name: user_id
+      in: query
+      required: false
+      description: Only pay orders of this user of ours (pay_orders.user_id); a user_id that names no user is an empty page.
+      schema:
+        $ref: '#/components/schemas/Id'
+    AdminPayOutTradeNoFilter:
+      name: out_trade_no
+      in: query
+      required: false
+      description: Only the pay order with this merchant order number (exact match).
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+    AdminPayNeedsManualFilter:
+      name: needs_manual
+      in: query
+      required: false
+      description: true = only pay orders waiting for manual settlement (BR-PAY-05 ③); false = only the others; absent = all.
+      schema:
+        type: boolean
+    AdminPayCreatedFrom:
+      name: created_from
+      in: query
+      required: false
+      description: Earliest created_at, inclusive (ISO 8601 with offset); later than created_to → 20001 with data.fields=[created_from, created_to].
+      schema:
+        type: string
+        format: date-time
+    AdminPayCreatedTo:
+      name: created_to
+      in: query
+      required: false
+      description: Latest created_at, exclusive (ISO 8601 with offset).
+      schema:
+        type: string
+        format: date-time
+    AdminPayRefundStatusFilter:
+      name: status
+      in: query
+      required: false
+      description: Only refunds in this status (enum pay_refund_status); absent = all.
+      schema:
+        $ref: '#/components/schemas/AdminPayRefundStatus'
+    AdminPayRefundTargetTypeFilter:
+      name: target_type
+      in: query
+      required: false
+      description: Only refunds of pay orders or of pay anomalies (enum pay_refund_target_type); absent = both.
+      schema:
+        $ref: '#/components/schemas/AdminPayRefundTargetType'
+    AdminPayRefundReasonFilter:
+      name: reason_code
+      in: query
+      required: false
+      description: Only refunds with this reason code (enum pay_refund_reason); absent = all.
+      schema:
+        $ref: '#/components/schemas/AdminPayRefundReason'
+    AdminPayReconDiffTypeFilter:
+      name: type
+      in: query
+      required: false
+      description: Only differences of this R4 type (pay_mismatch or pay_anomaly); absent = both.
+      schema:
+        $ref: '#/components/schemas/AdminPayReconDiffType'
+    AdminPayReconDiffStatusFilter:
+      name: status
+      in: query
+      required: false
+      description: Only differences in this status (enum recon_diff_status); absent = all.
+      schema:
+        $ref: '#/components/schemas/AdminReconDiffStatus'
   responses:
     NoStoreClientError:
       description: Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则).
@@ -21901,6 +22930,66 @@ components:
         data:
           fields:
             - state
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPayCreatedRangeInvalid:
+      summary: 20001 created_from later than created_to
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - created_from
+            - created_to
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPayOrderIdInvalid:
+      summary: 20001 unknown pay_order_id (or a pay order of another app)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - pay_order_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPayRefundIdInvalid:
+      summary: 20001 unknown pay_refund_id (or a refund of another app)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - pay_refund_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPayAnomalyIdInvalid:
+      summary: 20001 unknown pay_anomaly_id (or an anomaly of another app)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - pay_anomaly_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPayOrderConflict:
+      summary: 20902 the pay order is not in the expected status (not PENDING with needs_manual for resolve, not PAID for a refund)
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: pay_order
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPayRefundAmountExceeded:
+      summary: 20001 the amount would exceed the refundable amount
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - amount_fen
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPayRefundIdempotencyConflict:
+      summary: 20901 the same Idempotency-Key with another body
+      value:
+        code: 20901
+        msg: 请求内容有变化，请重新提交
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
   schemas:
     EntryName:
@@ -35998,3 +37087,651 @@ components:
           minLength: 1
           maxLength: 200
           description: The error the union sent instead of a code; kept as the session's failure cause.
+    AdminPayChannel:
+      type: string
+      description: Pay channel (contracts/enums/pay.yaml pay_channel; BR-PAY-01); not the payout channel.
+      enum:
+        - wechat_pay
+        - alipay
+    AdminPayOrderStatus:
+      type: string
+      description: Pay order status (contracts/enums/pay.yaml pay_order_status; BR-PAY-02); PAID and CLOSED are final.
+      enum:
+        - PENDING
+        - PAID
+        - CLOSED
+    AdminPayRefundStatus:
+      type: string
+      description: Refund status (contracts/enums/pay.yaml pay_refund_status; BR-PAY-06 ①).
+      enum:
+        - PROCESSING
+        - SUCCESS
+        - FAILED
+    AdminPayRefundTargetType:
+      type: string
+      description: What a refund pays back (contracts/enums/pay.yaml pay_refund_target_type; BR-PAY-06 ①).
+      enum:
+        - pay_order
+        - pay_anomaly
+    AdminPayRefundReason:
+      type: string
+      description: Refund reason code (contracts/enums/pay.yaml pay_refund_reason; BR-PAY-06); names from admin_dict.pay_refund_reason.
+      enum:
+        - USER_REQUEST
+        - DUPLICATE_PAYMENT
+        - ANOMALY_RECEIPT
+        - RECON_DIFF
+        - OTHER
+    AdminPayQueryAttemptKind:
+      type: string
+      description: Kind of a channel request record (contracts/enums/pay.yaml pay_query_attempt_kind).
+      enum:
+        - query
+        - close
+        - refund
+        - refund_query
+    AdminReconDiffStatus:
+      type: string
+      description: Reconciliation difference status (contracts/enums/fund.yaml recon_diff_status).
+      enum:
+        - open
+        - processing
+        - adjusted
+        - written_off
+        - closed
+    AdminPayReconDiffType:
+      type: string
+      description: The R4 types of contracts/enums/fund.yaml recon_diff_type (BR-PAY-07); the other types belong to R1–R3.
+      enum:
+        - pay_mismatch
+        - pay_anomaly
+    AdminPayOrder:
+      type: object
+      description: |
+        One pay order (04 §3.2 pay_orders) as the console shows it. `refunded_fen` is the total of
+        its successful refunds (BR-PAY-06 ③); `closing` is true while the close flow runs and
+        `needs_manual` while it waits for POST /admin/v1/pay-orders/{pay_order_id}/resolve
+        (BR-PAY-05). `user_id` is our user; no channel-side user identifier is included.
+      additionalProperties: false
+      required:
+        - pay_order_id
+        - user_id
+        - biz_type
+        - biz_ref
+        - pay_channel
+        - amount_fen
+        - refunded_fen
+        - status
+        - out_trade_no
+        - channel_trade_no
+        - needs_manual
+        - closing
+        - expire_at
+        - paid_at
+        - closed_at
+        - created_at
+      properties:
+        pay_order_id:
+          $ref: '#/components/schemas/Id'
+        user_id:
+          $ref: '#/components/schemas/Id'
+        biz_type:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: The business type that registered the pay order.
+        biz_ref:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The business object of that type the pay order pays for.
+        pay_channel:
+          $ref: '#/components/schemas/AdminPayChannel'
+        amount_fen:
+          $ref: '#/components/schemas/Fen'
+        refunded_fen:
+          $ref: '#/components/schemas/Fen'
+        status:
+          $ref: '#/components/schemas/AdminPayOrderStatus'
+        out_trade_no:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Our merchant order number, unique and never changed.
+        channel_trade_no:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: The channel's transaction number; null until the channel reports one.
+        needs_manual:
+          type: boolean
+        closing:
+          type: boolean
+        expire_at:
+          type: string
+          format: date-time
+        paid_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        closed_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    AdminPayOrderPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminPayOrder'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminPayOrderPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPayOrderPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPayQueryAttempt:
+      type: object
+      description: Summary of one channel request record (pay_query_attempts); the request and response bodies are never returned.
+      additionalProperties: false
+      required:
+        - kind
+        - result
+        - at
+      properties:
+        kind:
+          $ref: '#/components/schemas/AdminPayQueryAttemptKind'
+        result:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: The outcome the server recorded for the request (pay_query_attempts.result), such as ok or unknown.
+        at:
+          type: string
+          format: date-time
+    AdminPayOrderDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - pay_order
+        - refunds
+        - query_attempts
+      properties:
+        pay_order:
+          $ref: '#/components/schemas/AdminPayOrder'
+        refunds:
+          type: array
+          description: The pay order's refunds, newest first.
+          items:
+            $ref: '#/components/schemas/AdminPayRefund'
+        query_attempts:
+          type: array
+          description: The 20 newest channel requests of the pay order and its refunds, newest first.
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/AdminPayQueryAttempt'
+    AdminPayOrderDetailResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPayOrderDetail'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPayOrderResolveRequest:
+      type: object
+      description: |
+        Body of POST /admin/v1/pay-orders/{pay_order_id}/resolve: fixed values only. The server
+        queries the channel itself; the console sends no status, channel result or evidence.
+      additionalProperties: false
+      required:
+        - expected_status
+        - action
+      properties:
+        expected_status:
+          type: string
+          description: CAS on the pay order status; only PENDING (subset of pay_order_status).
+          enum:
+            - PENDING
+        action:
+          type: string
+          description: Query the channel now and settle by its answer (BR-PAY-05 ③).
+          enum:
+            - query_and_settle
+    AdminPayChannelResult:
+      type: object
+      description: |
+        Summary of the query the server made for the settlement (its evidence, BR-PAY-05 ③; the
+        recorded response itself is not returned). `state` is how the server read the answer:
+        paid (→ PAID), closed (→ CLOSED), not_exist (CLOSED only under the BR-PAY-05 ② condition,
+        otherwise unchanged) or unknown (unchanged). `channel_state` is the channel's own status
+        code as received (null when the query gave none); no channel-side user identifier.
+      additionalProperties: false
+      required:
+        - state
+        - channel_state
+        - channel_trade_no
+        - queried_at
+      properties:
+        state:
+          type: string
+          enum:
+            - paid
+            - closed
+            - not_exist
+            - unknown
+        channel_state:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+        channel_trade_no:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+        queried_at:
+          type: string
+          format: date-time
+    AdminPayOrderResolveResult:
+      type: object
+      additionalProperties: false
+      required:
+        - pay_order
+        - channel_result
+      properties:
+        pay_order:
+          $ref: '#/components/schemas/AdminPayOrder'
+        channel_result:
+          $ref: '#/components/schemas/AdminPayChannelResult'
+    AdminPayOrderResolveResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPayOrderResolveResult'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPayRefundCreateRequest:
+      type: object
+      description: |
+        Body of the two original-route refund operations. The target comes from the path; the
+        channel, refund number, operator and status are set by the server.
+      additionalProperties: false
+      required:
+        - amount_fen
+        - reason_code
+      properties:
+        amount_fen:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Positive integer fen; with the successful and processing refunds at most the refundable amount (else 20001).
+        reason_code:
+          $ref: '#/components/schemas/AdminPayRefundReason'
+        note:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Optional free text kept with the refund and in the audit record.
+    AdminPayRefund:
+      type: object
+      description: One refund (04 §3.2 pay_refunds); `out_refund_no` is generated at creation, unique and never changed.
+      additionalProperties: false
+      required:
+        - pay_refund_id
+        - target_type
+        - target_id
+        - out_refund_no
+        - amount_fen
+        - reason_code
+        - note
+        - status
+        - channel_refund_no
+        - operator
+        - created_at
+        - succeeded_at
+      properties:
+        pay_refund_id:
+          $ref: '#/components/schemas/Id'
+        target_type:
+          $ref: '#/components/schemas/AdminPayRefundTargetType'
+        target_id:
+          $ref: '#/components/schemas/Id'
+        out_refund_no:
+          type: string
+          minLength: 1
+          maxLength: 64
+        amount_fen:
+          $ref: '#/components/schemas/Fen'
+        reason_code:
+          $ref: '#/components/schemas/AdminPayRefundReason'
+        note:
+          type:
+            - string
+            - 'null'
+          maxLength: 200
+        status:
+          $ref: '#/components/schemas/AdminPayRefundStatus'
+        channel_refund_no:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: The channel's refund number; null until the channel reports one.
+        operator:
+          $ref: '#/components/schemas/Id'
+        created_at:
+          type: string
+          format: date-time
+        succeeded_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    AdminPayRefundResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPayRefund'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPayRefundPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminPayRefund'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminPayRefundPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPayRefundPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPayAnomaly:
+      type: object
+      description: |
+        One pay anomaly (04 §3.2 pay_anomalies; BR-PAY-05 ④): money received for a CLOSED pay
+        order or for a merchant order number that names no pay order (then `pay_order_id` is null;
+        `out_trade_no` is null when the channel gave none). The evidence is kept server side and not returned.
+      additionalProperties: false
+      required:
+        - pay_anomaly_id
+        - pay_channel
+        - channel_trade_no
+        - out_trade_no
+        - pay_order_id
+        - amount_fen
+        - refunded_fen
+        - status
+        - created_at
+      properties:
+        pay_anomaly_id:
+          $ref: '#/components/schemas/Id'
+        pay_channel:
+          $ref: '#/components/schemas/AdminPayChannel'
+        channel_trade_no:
+          type: string
+          minLength: 1
+          maxLength: 64
+        out_trade_no:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+        pay_order_id:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: Our pay order when the merchant order number names one (a CLOSED pay order), else null.
+        amount_fen:
+          $ref: '#/components/schemas/Fen'
+        refunded_fen:
+          $ref: '#/components/schemas/Fen'
+        status:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: pay_anomalies.status as stored; 04 §3.2 names the column but fixes no value set yet, so it is not an enum here.
+        created_at:
+          type: string
+          format: date-time
+    AdminPayAnomalyPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminPayAnomaly'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminPayAnomalyPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPayAnomalyPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPayReconDiff:
+      type: object
+      description: One reconciliation difference of source R4 (04 §3.2 recon_diffs; BR-PAY-07). `diff_fen` = `expected_fen` − `actual_fen`.
+      additionalProperties: false
+      required:
+        - recon_diff_id
+        - source
+        - type
+        - period
+        - ref_type
+        - ref_id
+        - expected_fen
+        - actual_fen
+        - diff_fen
+        - status
+        - created_at
+        - closed_at
+      properties:
+        recon_diff_id:
+          $ref: '#/components/schemas/Id'
+        source:
+          type: string
+          description: Always R4 (收款对账) here.
+          enum:
+            - R4
+        type:
+          $ref: '#/components/schemas/AdminPayReconDiffType'
+        period:
+          type: string
+          pattern: '^[0-9]{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12][0-9]|3[01]))?$'
+          description: The channel bill date (YYYY-MM-DD).
+        ref_type:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: What the difference refers to, such as pay_order, pay_refund or pay_anomaly.
+        ref_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        expected_fen:
+          $ref: '#/components/schemas/Fen'
+        actual_fen:
+          $ref: '#/components/schemas/Fen'
+        diff_fen:
+          $ref: '#/components/schemas/Fen'
+        status:
+          $ref: '#/components/schemas/AdminReconDiffStatus'
+        created_at:
+          type: string
+          format: date-time
+        closed_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    AdminPayReconDiffPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminPayReconDiff'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminPayReconDiffPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPayReconDiffPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
