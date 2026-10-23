@@ -27,5 +27,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/agent/stream-assembly-orders/**'
   - 'test/spec/agent/tools-registry/**'
-status: todo
-pr: null
+status: done
+pr: 1390
