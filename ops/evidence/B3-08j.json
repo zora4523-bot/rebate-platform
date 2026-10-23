@@ -1,0 +1,83 @@
+{
+  "task": "B3-08j",
+  "spec_ref": "48e55e6a035ad350ee46437d6f0ffdc155543728",
+  "spec_commit": "eb9a6bc6d2ea622e54d669dc0b219e63b3abd897",
+  "red_tests": [
+    "test/spec/agent/seeds-core-switches/seeds.int.test.ts > [AC-B3-08j#1][BR-AI-02] 新建库跑完全部种子后 couli 的 agent.tools.{search_products,get_rebate_quote}.enabled 两行都在，值为 jsonb 布尔 true，updated_by = seed",
+    "test/spec/agent/seeds-core-switches/seeds.int.test.ts > [AC-B3-08j#2][BR-AI-02] 重复执行全部种子不报错；先把 agent.tools.search_products.enabled 改成 false 再跑两遍仍 false，两行 version / updated_by 不变",
+    "test/spec/agent/seeds-core-switches/seeds.int.test.ts > [AC-B3-08j#2][BR-AI-02] 重复执行全部种子不报错；先把 agent.tools.get_rebate_quote.enabled 改成 false 再跑两遍仍 false，两行 version / updated_by 不变",
+    "test/spec/agent/seeds-core-switches/seeds.int.test.ts > [AC-B3-08j#3] 跑种子前库里已有 agent.tools.search_products.enabled（人工写的 false）→ 种子不改它，另一行照常补上",
+    "test/spec/agent/seeds-core-switches/seeds.int.test.ts > [AC-B3-08j#3] 跑种子前库里已有 agent.tools.get_rebate_quote.enabled（人工写的 false）→ 种子不改它，另一行照常补上",
+    "test/spec/agent/seeds-core-switches/seeds.int.test.ts > [AC-B3-08j#4][BR-AI-02] 回归：跑完全部种子后 B3-08g 的四个开关与本段两个开关都是 true；不种 agent.explain_order.order_no_daily_max、agent.orders.max_span_days"
+  ],
+  "risk_note": "RV2 db/seeds；只新增一个种子文件，两个开关值 true，ON CONFLICT DO NOTHING 不覆盖已有行",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "eb9a6bc6d2ea622e54d669dc0b219e63b3abd897",
+      "tree": "27de57271f44139af6e96c11d3104540748bf973",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T16:16:20Z",
+      "finished_at": "2026-10-23T16:16:31Z",
+      "red_tests": [
+        "test/spec/agent/seeds-core-switches/seeds.int.test.ts > [AC-B3-08j#1][BR-AI-02] 新建库跑完全部种子后 couli 的 agent.tools.{search_products,get_rebate_quote}.enabled 两行都在，值为 jsonb 布尔 true，updated_by = seed",
+        "test/spec/agent/seeds-core-switches/seeds.int.test.ts > [AC-B3-08j#2][BR-AI-02] 重复执行全部种子不报错；先把 agent.tools.search_products.enabled 改成 false 再跑两遍仍 false，两行 version / updated_by 不变",
+        "test/spec/agent/seeds-core-switches/seeds.int.test.ts > [AC-B3-08j#2][BR-AI-02] 重复执行全部种子不报错；先把 agent.tools.get_rebate_quote.enabled 改成 false 再跑两遍仍 false，两行 version / updated_by 不变",
+        "test/spec/agent/seeds-core-switches/seeds.int.test.ts > [AC-B3-08j#3] 跑种子前库里已有 agent.tools.search_products.enabled（人工写的 false）→ 种子不改它，另一行照常补上",
+        "test/spec/agent/seeds-core-switches/seeds.int.test.ts > [AC-B3-08j#3] 跑种子前库里已有 agent.tools.get_rebate_quote.enabled（人工写的 false）→ 种子不改它，另一行照常补上",
+        "test/spec/agent/seeds-core-switches/seeds.int.test.ts > [AC-B3-08j#4][BR-AI-02] 回归：跑完全部种子后 B3-08g 的四个开关与本段两个开关都是 true；不种 agent.explain_order.order_no_daily_max、agent.orders.max_span_days"
+      ],
+      "expected": ["test/spec/agent/seeds-core-switches/seeds.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "131e8940b59668dd60ce193c2164f8c0e905ee4dc7bade7139a6d586c159999e"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "1eaba8797cd239864456fcd5065a360db130d831",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "round 1 pass, 0 findings (couli-runs/B3-08j/review-claude-independent.json); Codex unavailable until 10-30, approvals #36"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "spec-test r1 pass (S2x1 into impl notes: no P1 switches). Rule tests by claude-independent (claude-run.sh)"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "4e54c370a90b553f9020b0763522eebfe315c8ce",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
