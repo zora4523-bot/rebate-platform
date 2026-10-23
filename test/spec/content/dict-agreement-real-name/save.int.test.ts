@@ -29,9 +29,7 @@ vi.mock('../../../../apps/api/src/modules/content/infra/texts-default.ts', async
 });
 vi.mock('../../../../apps/api/src/modules/content/specs/text-specs.ts', async (original) => {
   const actual =
-    await original<
-      typeof import('../../../../apps/api/src/modules/content/specs/text-specs.ts')
-    >();
+    await original<typeof import('../../../../apps/api/src/modules/content/specs/text-specs.ts')>();
   return {
     ...actual,
     getFundTermKeys: () => {

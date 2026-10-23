@@ -26,9 +26,12 @@ it('[AC-F1-02zzi#1] D10-204：仅 ordinary 的实名同意书归 agreement，精
   const cases = [
     ...CONSENT_KEYS.map((key) => ({ key, spec: ORDINARY_SPEC, expected: 'agreement' })),
     ...CONSENT_KEYS.map((key) => ({ key, spec: prefixSpec, expected: 'agreement' })),
-    ...['real_name.consentx', 'real_name.consentx.title', 'real_name.consent', 'real_name.other'].map(
-      (key) => ({ key, spec: ORDINARY_SPEC, expected: 'general' }),
-    ),
+    ...[
+      'real_name.consentx',
+      'real_name.consentx.title',
+      'real_name.consent',
+      'real_name.other',
+    ].map((key) => ({ key, spec: ORDINARY_SPEC, expected: 'general' })),
     ...['privacy.btn.agree', 'perm.btn.continue'].map((key) => ({
       key,
       spec: ORDINARY_SPEC,
