@@ -213,3 +213,44 @@ describe('[AC-B1-09b#26] 与本次更新同一事务：复核事件入队或返�
     expect(after.hits).toHaveLength(0);
   });
 });
+
+it('[AC-B1-09b#28] 存量未归因订单（user_id 为空）的下一次同步更新照样执行第 ③ 步：渠道命中经 BLACKLIST_HIT，同一事务', async () => {
+  const f = await existing(db, 'UNATTRIBUTED', {}, { unattributed: true });
+  expect(f.before.user_id).toBeNull();
+  await seedChannel(db, f);
+  expect(await f.update()).toMatchObject({ ok: true, value: { kind: 'updated' } });
+  expect(f.match).toHaveBeenCalledTimes(1);
+  expect(f.match.mock.calls[0]?.[1]).toMatchObject({
+    app_id: f.ctx.app_id,
+    platform: 'taobao',
+    relation_id: CHANNEL,
+    union_account_id: f.ctx.union_account_id,
+    attr_at: f.before.attr_at,
+  });
+  expect(f.onBlacklistHit).toHaveBeenCalledTimes(1);
+  expect(f.onUpdated).toHaveBeenCalledTimes(1);
+  const [hitTrx, hit] = f.onBlacklistHit.mock.calls[0]!;
+  expect(hitTrx.isTransaction).toBe(true);
+  expect(hitTrx).toBe(f.onUpdated.mock.calls[0]?.[0]);
+  expect(hit).toMatchObject({
+    app_id: f.ctx.app_id,
+    order_id: f.before.order_id,
+    attr_at: f.before.attr_at,
+  });
+  expect((await f.read()).hits.map(hitView)).toEqual([
+    {
+      user_id: null,
+      rule_id: 'BLACKLIST_HIT',
+      risk_action: 'void_commission',
+      dimension: 'channel',
+      value_hmac: f.hmac('channel', CHANNEL),
+      ref_type: 'order',
+      ref_id: f.before.order_id,
+    },
+  ]);
+  expect(afterCredit(f)).toHaveLength(0);
+  // BR-ATTR-26：黑名单不改 user_id、buy_type。
+  const row = (await f.read()).orders[0]!;
+  expect(ownership(row)).toEqual(ownership(f.before));
+  expect(row.user_id).toBeNull();
+});
