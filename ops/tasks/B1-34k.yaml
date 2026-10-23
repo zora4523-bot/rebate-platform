@@ -1,0 +1,29 @@
+id: B1-34k
+repo: rebate-platform
+title: admin：后台账号权限点整组保存实现（CT-24o adminSaveAdminPermissions）——只限超管、动态码档 step-up、带 expected_row_version（20902 admin_account）、只收已登记权限点键、审计记 before / after 差异；对超管目标拒绝；去掉 planned
+type: impl
+# 2026-10-23 入账（admin-backend，派工 ③ F1-10i 后端）。依据：契约 CT-24o adminSaveAdminPermissions 原文与台账注释、08 BR-ID-34 正文「勾选与撤销只限超管、需 step-up 并写审计」、04 §3.2 admin_permissions（超管不写本表、唯一 (app_id, admin_id, permission_key)）。
+# 自 B1-34h 拆出（#1221 两家 r1：权限点保存的直接依据是 BR-ID-34 正文「勾选与撤销只限超管、需 step-up 并写审计」，与 BR-ID-43 同引超 24KB）。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：不加迁移（admin_permissions 已有 INSERT / DELETE 授权，admin_users.row_version 已有）；整组替换在一个事务内：锁目标账号行比对 expected_row_version（不符 20902 admin_account）、删增差集、row_version 加一、审计记 before / after 差异；只收 specs/permissions.yaml 已登记的键（未知或重复 20001 [permissions]）；对 is_super 目标与对自己拒绝（10403）；保存后目标账号已签发的会话按新权限生效（admin-check 每次复核权限点，不吊销会话、不写会话代际）；同一任务内让 adminGetAdmin 与 adminListAdmins 输出 row_version（契约已有可选字段），规则测试断言「GET 取得的 row_version 直接用于 PUT 能成功」；与 B1-34h 串行（共用 admin 账号基础设施）。
+refs: [BR-ID-34]
+refs_hash:
+  BR-ID-34: 5ec74e78c860
+deps: [CT-24o, B1-34h]
+paths:
+  - 'apps/api/src/modules/admin/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/admin/admins-permissions/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/admins-permissions/**'
+status: todo
+pr: null
