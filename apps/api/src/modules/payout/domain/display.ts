@@ -14,6 +14,8 @@ export interface WithdrawalDisplayRow {
   readonly needs_manual: boolean;
   readonly manual_resolution: 'paid' | 'failed' | null;
   readonly fail_code: string | null;
+  /** D10-233 ②: a NEGATIVE_BALANCE rejection reads「冻结额已用于抵扣」(rejected_offset); optional for older callers. */
+  readonly reject_reason_code?: string | null;
   readonly payout_channel: 'alipay' | 'bank_card' | 'wechat';
   readonly channel_state: 'processing' | 'wait_user_confirm' | 'canceling' | null;
   readonly confirm_deadline: Date | null;
@@ -33,6 +35,7 @@ export type WithdrawalSubTextBranch =
   | 'paid_api'
   | 'paid_manual'
   | 'rejected'
+  | 'rejected_offset'
   | 'failed_account'
   | 'failed_other'
   | 'failed_manual';
@@ -147,7 +150,9 @@ export function subTextBranch(
     case 'PAID_MANUAL':
       return 'paid_manual';
     case 'REJECTED':
-      return 'rejected';
+      // D10-233 ②: the system rejection for a negative balance (BR-WDR-05 (a)) offsets the frozen
+      // amount instead of returning it; CT-20b carries the rejected_offset branch.
+      return row.reject_reason_code === 'NEGATIVE_BALANCE' ? 'rejected_offset' : 'rejected';
     case 'FAILED':
       if (row.manual_resolution === 'failed') return 'failed_manual';
       return isAccountFailure(row.fail_code) ? 'failed_account' : 'failed_other';

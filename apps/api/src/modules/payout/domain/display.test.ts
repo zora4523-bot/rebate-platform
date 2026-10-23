@@ -75,3 +75,17 @@ describe('display (D10-228 ② (b): account failures code by code, BR-TEXT-08)',
     expect(isAccountFailure(null)).toBe(false);
   });
 });
+
+describe('display (D10-233 ②: NEGATIVE_BALANCE rejection)', () => {
+  const now = new Date('2026-10-23T04:00:00.000Z');
+
+  it('reads a negative-balance rejection as rejected_offset and every other rejection as rejected', () => {
+    expect(
+      subTextBranch({ ...base, status: 'REJECTED', reject_reason_code: 'NEGATIVE_BALANCE' }, now),
+    ).toBe('rejected_offset');
+    expect(subTextBranch({ ...base, status: 'REJECTED', reject_reason_code: 'USER_REQUEST' }, now)).toBe(
+      'rejected',
+    );
+    expect(subTextBranch({ ...base, status: 'REJECTED' }, now)).toBe('rejected');
+  });
+});
