@@ -1,0 +1,119 @@
+{
+  "task": "B3-09e",
+  "spec_ref": "be49fe9b54beaa6d8e552f6766e9ae2d4d513705",
+  "spec_commit": "1bb6639bf46e8088697d249834a2fa5757d3b15e",
+  "red_tests": [
+    "test/spec/agent/deletion/boundaries.int.test.ts > [AC-B3-09e#8][BR-AI-22] 同 app 其他用户、同设备的游客会话、另一 app 的用户数据都不变",
+    "test/spec/agent/deletion/boundaries.int.test.ts > [AC-B3-09e#8][BR-AI-22] 按另一 app 清理同一用户编号时不动本 app 的数据",
+    "test/spec/agent/deletion/boundaries.int.test.ts > [AC-B3-09e#9][BR-AI-22] 可重入：第二次不报错、返回 0、各表与第一次后相同；无数据的用户直接返回 0",
+    "test/spec/agent/deletion/boundaries.int.test.ts > [AC-B3-09e#10][BR-AI-22] 在调用方事务内调用后再抛错，全部回滚",
+    "test/spec/agent/deletion/boundaries.int.test.ts > [AC-B3-09e#12][BR-AI-22] 空 appId、空 userId、at 不是有效 Date 时抛错且不写入",
+    "test/spec/agent/deletion/keys.test.ts > [AC-B3-09e#11][BR-AI-22] readAgentUserHashKey 有值时原样返回 AGENT_USER_HASH_KEY",
+    "test/spec/agent/deletion/keys.test.ts > [AC-B3-09e#11][BR-AI-22] readAgentUserHashKey 在缺失、空串、只有空白时抛错",
+    "test/spec/agent/deletion/keys.test.ts > [AC-B3-09e#11][BR-AI-22] createAgentDataPurge 的 userHashKey 为空或只有空白时抛错（D10-137 ⑥）",
+    "test/spec/agent/deletion/keys.test.ts > [AC-B3-09e#7][BR-AI-22] agentUserHash 是以密钥做的 HMAC-SHA256（64 位小写 hex），不是裸 sha256",
+    "test/spec/agent/deletion/keys.test.ts > [AC-B3-09e#7][BR-AI-22] agentUserHash 换密钥或换用户结果都不同",
+    "test/spec/agent/deletion/keys.test.ts > [AC-B3-09e#4][BR-AI-22] purgedCardText 是固定占位「内容已删除」",
+    "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#1][BR-AI-22] 该用户各会话的 user 与 assistant 消息行都保留，text、report_reason、report_note 为 NULL，返回清掉的行数",
+    "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#2][BR-AI-22] agent_runs.user_text 为 NULL；final_event / end_draft 只把已有的 data.msg、data.fallback_q 置 JSON null",
+    "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#3][BR-AI-22] agent_tool_calls.args 为 SQL NULL，name、seq、status、latency_ms、result_digest、created_at 不变",
+    "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#4][BR-AI-22] agent_cards.data 为 {}，fallback_text 为「内容已删除」，其余列不变",
+    "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#5][BR-AI-22] 结果集 conditions、投递 card 为 {}，结果链 conditions 只含本行 chain_id，行都在，clarify 不变",
+    "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#6][BR-AI-22] 网络日志最小字段原样保留：run 的 id、accepted_at、created_at、finish_reason、session_id，session 的 device_id、started_at",
+    "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#7][BR-AI-22] 会话断开 user_id 并写 HMAC 用户哈希，updated_at = at；quota_subjects 的 member 换成同一哈希",
+    "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#7][BR-AI-22] 换密钥哈希不同，且仍是该密钥的 HMAC",
+    "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#7][BR-AI-22] 清理后所有 agent_* 表的任何列都不含该用户编号明文"
+  ],
+  "risk_note": "RV1 agent/**；注销清理只按 0073 允许的空值清自由文本、member 编号换 HMAC 哈希，不删行（D10-175），只用调用方事务",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "1bb6639bf46e8088697d249834a2fa5757d3b15e",
+      "tree": "5d2b67c97d9a1aa0b721d6706169f6ca5e01ddbd",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T12:01:41Z",
+      "finished_at": "2026-10-23T12:02:11Z",
+      "red_tests": [
+        "test/spec/agent/deletion/boundaries.int.test.ts > [AC-B3-09e#8][BR-AI-22] 同 app 其他用户、同设备的游客会话、另一 app 的用户数据都不变",
+        "test/spec/agent/deletion/boundaries.int.test.ts > [AC-B3-09e#8][BR-AI-22] 按另一 app 清理同一用户编号时不动本 app 的数据",
+        "test/spec/agent/deletion/boundaries.int.test.ts > [AC-B3-09e#9][BR-AI-22] 可重入：第二次不报错、返回 0、各表与第一次后相同；无数据的用户直接返回 0",
+        "test/spec/agent/deletion/boundaries.int.test.ts > [AC-B3-09e#10][BR-AI-22] 在调用方事务内调用后再抛错，全部回滚",
+        "test/spec/agent/deletion/boundaries.int.test.ts > [AC-B3-09e#12][BR-AI-22] 空 appId、空 userId、at 不是有效 Date 时抛错且不写入",
+        "test/spec/agent/deletion/keys.test.ts > [AC-B3-09e#11][BR-AI-22] readAgentUserHashKey 有值时原样返回 AGENT_USER_HASH_KEY",
+        "test/spec/agent/deletion/keys.test.ts > [AC-B3-09e#11][BR-AI-22] readAgentUserHashKey 在缺失、空串、只有空白时抛错",
+        "test/spec/agent/deletion/keys.test.ts > [AC-B3-09e#11][BR-AI-22] createAgentDataPurge 的 userHashKey 为空或只有空白时抛错（D10-137 ⑥）",
+        "test/spec/agent/deletion/keys.test.ts > [AC-B3-09e#7][BR-AI-22] agentUserHash 是以密钥做的 HMAC-SHA256（64 位小写 hex），不是裸 sha256",
+        "test/spec/agent/deletion/keys.test.ts > [AC-B3-09e#7][BR-AI-22] agentUserHash 换密钥或换用户结果都不同",
+        "test/spec/agent/deletion/keys.test.ts > [AC-B3-09e#4][BR-AI-22] purgedCardText 是固定占位「内容已删除」",
+        "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#1][BR-AI-22] 该用户各会话的 user 与 assistant 消息行都保留，text、report_reason、report_note 为 NULL，返回清掉的行数",
+        "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#2][BR-AI-22] agent_runs.user_text 为 NULL；final_event / end_draft 只把已有的 data.msg、data.fallback_q 置 JSON null",
+        "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#3][BR-AI-22] agent_tool_calls.args 为 SQL NULL，name、seq、status、latency_ms、result_digest、created_at 不变",
+        "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#4][BR-AI-22] agent_cards.data 为 {}，fallback_text 为「内容已删除」，其余列不变",
+        "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#5][BR-AI-22] 结果集 conditions、投递 card 为 {}，结果链 conditions 只含本行 chain_id，行都在，clarify 不变",
+        "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#6][BR-AI-22] 网络日志最小字段原样保留：run 的 id、accepted_at、created_at、finish_reason、session_id，session 的 device_id、started_at",
+        "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#7][BR-AI-22] 会话断开 user_id 并写 HMAC 用户哈希，updated_at = at；quota_subjects 的 member 换成同一哈希",
+        "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#7][BR-AI-22] 换密钥哈希不同，且仍是该密钥的 HMAC",
+        "test/spec/agent/deletion/purge.int.test.ts > [AC-B3-09e#7][BR-AI-22] 清理后所有 agent_* 表的任何列都不含该用户编号明文"
+      ],
+      "expected": [
+        "test/spec/agent/deletion/boundaries.int.test.ts",
+        "test/spec/agent/deletion/keys.test.ts",
+        "test/spec/agent/deletion/purge.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "e92657693aaee58916f6253d54f41dbd277c3050dec4260d986cf86a16171e16"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "749c6c2f5a3196b5efb64904397e073a47160a9fbf98bf731ee604a80533f9f0"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "76e76d2ca40100cd80708da47779413762694c4f",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "round 1 pass, 0 findings (couli-runs/B3-09e/review-claude-independent.json); Codex unavailable until 10-30, approvals #36"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "spec-test r1 pass (S2x2 into impl notes). Rule tests by claude-independent (claude-run.sh). 编排同意机械修正 D10-206：test(spec) prettier on deletion/kit.ts, no assertion changed"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "b155945a2b61e719d849abca8d5e90505acf04bd",
+    "specs": "b9b8c7957aa786feb1b71c8ccc35e6fd7341add0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
