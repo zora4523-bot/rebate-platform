@@ -86,7 +86,10 @@ it('[AC-B1-35c#1] 首次过期查询失败后同日重试，成功后同日不�
   const tomorrow = dueRow(2);
   const f = fixture([outage, [due], [tomorrow]]);
 
-  const outcome = await f.scanner.tick().then(() => 'ok', (error: unknown) => error);
+  const outcome = await f.scanner.tick().then(
+    () => 'ok',
+    (error: unknown) => error,
+  );
   expect(outcome).toBe('ok');
   expect(f.readExpiry).toHaveBeenCalledTimes(1);
   expect(f.expireIfDue).not.toHaveBeenCalled();
@@ -127,7 +130,10 @@ it('[AC-B1-35c#2] 连续查询失败仍可同日重试，空扫描成功也记�
   const outage = new Error('synthetic-expiry-query-outage');
   const f = fixture([outage, outage, []]);
   for (let attempt = 0; attempt < 2; attempt++) {
-    const outcome = await f.scanner.tick().then(() => 'ok', (error: unknown) => error);
+    const outcome = await f.scanner.tick().then(
+      () => 'ok',
+      (error: unknown) => error,
+    );
     expect(outcome).toBe('ok');
     expect(f.readExpiry).toHaveBeenCalledTimes(attempt + 1);
     expect(f.readPayout).toHaveBeenCalledTimes(attempt + 1);
@@ -159,7 +165,10 @@ it('[AC-B1-35c#3] 已处理一整页后下一页查询失败，同日重试仍�
   const outage = new Error('synthetic-second-page-outage');
   const f = fixture([firstPage, outage, [tail]]);
 
-  const outcome = await f.scanner.tick().then(() => 'ok', (error: unknown) => error);
+  const outcome = await f.scanner.tick().then(
+    () => 'ok',
+    (error: unknown) => error,
+  );
   expect(outcome).toBe('ok');
   expect(f.readExpiry).toHaveBeenCalledTimes(2);
   expect(f.expireIfDue.mock.calls).toEqual(firstPage.map((row) => [APP, row.invitee_id]));
@@ -193,7 +202,10 @@ it('[AC-B1-35c#4] 过期查询与逐行发放同时失败，各记错误且 tick
   const f = fixture([outage, [due]]);
   f.process.mockRejectedValueOnce(payoutOutage);
 
-  const outcome = await f.scanner.tick().then(() => 'ok', (error: unknown) => error);
+  const outcome = await f.scanner.tick().then(
+    () => 'ok',
+    (error: unknown) => error,
+  );
   expect(outcome).toBe('ok');
   expect(f.readExpiry).toHaveBeenCalledTimes(1);
   expect(f.expireIfDue).not.toHaveBeenCalled();
