@@ -43,6 +43,7 @@ import { lockUsersForUpdate } from '../ports/lock-users.ts';
 import type { DeletionBalanceReader } from '../ports/deletion-balance.ts';
 import type { WithdrawalNonTerminalReader } from '../ports/withdrawal-in-flight.ts';
 import { instantPlus } from './config-seconds.ts';
+import { createDailyDedup } from './daily-dedup.ts';
 
 /** The working-day calendar's configuration (calendar.cn_holidays.<year>, ...cn_makeup_workdays.<year>). */
 export interface DeletionCalendarConfigReader {
@@ -80,8 +81,6 @@ const DEFAULT_BATCH_SIZE = 100;
 /** BR-ID-27: done within 15 working days of the application. */
 const OVERDUE_WORKING_DAYS = 15;
 const DAY_MS = 86_400_000;
-/** +08:00 (China Standard Time, no daylight saving): the alarm dedup's day boundary. */
-const OFFSET_MS = 8 * 3_600_000;
 
 const TOKEN = Symbol('IDENTITY_DELETION_EXPIRY');
 
@@ -93,11 +92,6 @@ function batchSizeOf(value: number | undefined): number {
   return value !== undefined && Number.isSafeInteger(value) && value > 0
     ? value
     : DEFAULT_BATCH_SIZE;
-}
-
-/** Day number of the +08:00 civil date of `at`. */
-function localDay(at: Date): number {
-  return Math.floor((at.getTime() + OFFSET_MS) / DAY_MS);
 }
 
 /**
@@ -121,28 +115,6 @@ interface Due {
   readonly app_id: string;
   readonly id: string;
   readonly user_id: string;
-}
-
-/**
- * Alarm lines at most once per key and +08:00 day in this process (brief §9.2 #6): the set is
- * cleared when the day changes; several replicas or a restart may report again (accepted).
- */
-function createDailyDedup() {
-  let day: number | undefined;
-  const seen = new Set<string>();
-  return {
-    /** True the first time `key` is met on the +08:00 day of `now`. */
-    first(key: string, now: Date): boolean {
-      const today = localDay(now);
-      if (day !== today) {
-        day = today;
-        seen.clear();
-      }
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    },
-  };
 }
 
 export function createDeletionExpiry(options: DeletionExpiryOptions): DeletionExpiry {

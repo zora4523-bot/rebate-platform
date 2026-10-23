@@ -89,6 +89,7 @@ import {
   createParentRelationReader,
   createRegistrationInviteBinding,
   createGrowthHistory,
+  detachChildrenOfDeleted,
   type ParentRelationReader,
   type InviteBinder,
   type InviteBinderDeps,
@@ -137,6 +138,13 @@ import {
   createInviteRewardDeletedPhoneReader,
   revokeSessionsByUser,
   unbindRevoked,
+  closingAdjustmentFromBalance,
+  unconfiguredAppleTokenRevoker,
+  type AfterSessionsRevoked,
+  type AppleTokenRevoker,
+  type DeletionCleanupPorts,
+  type DeletionClosingAdjustmentReader,
+  type WithdrawalSucceededReader,
   type IdentityAttrCodeReader,
   type IdentityConfigReader,
   type IdentityContext,
@@ -467,9 +475,15 @@ const payoutAccountConfig = {
  */
 const deletionWithdrawals = {
   inject: [CLOCK],
-  useFactory: (clock: Clock): WithdrawalInFlightReader & WithdrawalNonTerminalReader =>
+  useFactory: (
+    clock: Clock,
+  ): WithdrawalInFlightReader & WithdrawalNonTerminalReader & WithdrawalSucceededReader => ({
     // B2-05e (D-W04): payout's reader — hasInFlight ignores a member under a manual hold.
-    createWithdrawalInFlightReader({ clock }),
+    ...createWithdrawalInFlightReader({ clock }),
+    // B1-15g (D10-137 ②): a paid-out withdrawal keeps the real name (tax_retained).
+    // TODO(规划/11 §2.3): 有过成功提现读 payout 模块 — blocked on payout 提供成功提现读口
+    hasSucceeded: () => Promise.resolve(false),
+  }),
 };
 
 /**
@@ -494,6 +508,55 @@ const deletionBalance = {
       },
     };
   },
+};
+
+/**
+ * B1-15g: the owning modules' shares of the deletion cleanup (identity's DeletionCleanupPorts, on
+ * identity's cleanup transaction). growth's detachChildrenOfDeleted (B1-15n) is shipped; the others
+ * are unavailable markers: the rest of the cleanup still commits, but the request stays in
+ * processing (cleaned_at NULL) with a daily identity_deletion_cleanup_blocked line until the owner
+ * ships and is assembled here.
+ */
+const deletionCleanupPorts = {
+  inject: [],
+  useFactory: (): DeletionCleanupPorts => ({
+    // TODO(规划/11 §2.3): linking blockForDeletion（联盟绑定 blocked=deletion，ban / admin_disable 保持） — blocked on W1
+    linking: { unavailable: 'W1' },
+    growth: detachChildrenOfDeleted,
+    // TODO(规划/11 §2.3): notification deletePushTokensForUser — blocked on 通知模块推送 token 删除端口（be）
+    notification: { unavailable: 'notification-be' },
+    // TODO(规划/11 §2.3): agent purgeAgentDataForUser（B3-09e 已合并）装配 — blocked on AGENT_USER_HASH_KEY 进 platform/config 与 agent/index.ts 导出（B3-09f）
+    agent: { unavailable: 'B3-09f' },
+    // TODO(规划/11 §2.3): catalog deleteFavoritesForUser — blocked on W1
+    catalog: { unavailable: 'W1' },
+  }),
+};
+
+/**
+ * B1-15g (D10-137 ①, BR-FUND-24 ⑧): the closing adjustment gate of the deletion completion. Until
+ * the funds port exists, identity's stand-in over the same available_fen reader as the expiry: 0 →
+ * none_needed, anything else → pending (never done with a balance).
+ */
+const deletionClosingAdjustment = {
+  inject: [CLOCK],
+  useFactory: (clock: Clock): DeletionClosingAdjustmentReader =>
+    closingAdjustmentFromBalance(deletionBalance.useFactory(clock)),
+};
+
+/**
+ * B1-15g (BR-ID-27): the Sign in with Apple revocation. Unconfigured until the Apple keys and a
+ * recorded exchange exist: every attempt fails (three failures → failed, alerted, done not
+ * blocked). Never an implementation that pretends to succeed.
+ */
+const deletionAppleRevoker = {
+  inject: [],
+  useFactory: (): AppleTokenRevoker => unconfiguredAppleTokenRevoker(),
+};
+
+/** B1-15g: the push token unbinding of the sessions the deletion cleanup revokes (as for a ban). */
+const deletionAfterRevoked = {
+  inject: [CLOCK],
+  useFactory: (clock: Clock): AfterSessionsRevoked => unbindRevoked(sessionPushTokens(clock)),
 };
 
 /** Runs on the caller's transaction, or on a read-only one of its own. */
@@ -2781,13 +2844,18 @@ export class AppModule {
         // worker entry only; the admin entry's publish enqueues them in its write transaction.
         ...(options.entry === 'worker' ? [ContentWorkerModule.forWorker()] : []),
         // The cooling-period expiry of deletion requests (B1-15f, BR-ID-27): worker entry only;
-        // entry.ts starts its 60-second timer after the payout verification recheck.
+        // entry.ts starts its 60-second timer after the payout verification recheck. The same
+        // timer's round first processes the requests in processing (B1-15g: cleanup, Apple, done).
         ...(options.entry === 'worker'
           ? [
               IdentityDeletionExpiryModule.forWorker({
                 calendarConfig: deletionCalendarConfig,
                 withdrawals: deletionWithdrawals,
                 balance: deletionBalance,
+                cleanup: deletionCleanupPorts,
+                funds: deletionClosingAdjustment,
+                apple: deletionAppleRevoker,
+                afterRevoked: deletionAfterRevoked,
               }),
             ]
           : []),

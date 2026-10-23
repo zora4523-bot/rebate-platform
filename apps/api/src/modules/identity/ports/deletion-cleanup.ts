@@ -67,6 +67,14 @@ export interface DeletionClosingAdjustmentReader {
 export function closingAdjustmentFromBalance(
   balance: DeletionBalanceReader,
 ): DeletionClosingAdjustmentReader {
-  void balance;
-  throw new Error('NotImplemented: closingAdjustmentFromBalance');
+  // TODO(规划/11 §2.3): ACCOUNT_CLOSED 调减单状态读资金模块（BR-FUND-24 ⑧） — blocked on 资金端口 closingAdjustmentState 的属主任务
+  return {
+    async closingAdjustmentState(trx, input) {
+      const available = await balance.availableFen(trx, {
+        appId: input.appId,
+        userId: input.userId,
+      });
+      return available === 0n ? 'none_needed' : 'pending';
+    },
+  };
 }
