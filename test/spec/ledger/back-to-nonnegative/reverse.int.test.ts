@@ -32,9 +32,9 @@ it('[AC-B2-04ka#13] reverse 红冲扣回使负余额回到 0 时同事务调用�
     await ledger.lockBalances(trx, { appId, userIds: [a.user_id] });
     const partial = await ledger.reverse(trx, { appId, originalUniqKey: second.uniqKey });
     expect(partial.kind).toBe('posted');
-    expect(
-      (await ledger.getBalances(trx, { appId, userIds: [a.user_id] }))[0]?.available_fen,
-    ).toBe(-10n);
+    expect((await ledger.getBalances(trx, { appId, userIds: [a.user_id] }))[0]?.available_fen).toBe(
+      -10n,
+    );
     expect(onRecovered).not.toHaveBeenCalled();
   });
   const result = await h.db.transaction().execute(async (trx) => {
