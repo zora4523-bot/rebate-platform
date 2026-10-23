@@ -1,0 +1,137 @@
+{
+  "task": "B1-22l",
+  "spec_ref": "be49fe9b54beaa6d8e552f6766e9ae2d4d513705",
+  "spec_commit": "2f9ad1c15e3192b5ce1ebcdc0d4f0d306d99b3a5",
+  "red_tests": [
+    "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] taobao 绑定 absent、无 self_buy 位：最早登记的账号站长授权 expired 即拒绝，较晚登记却更早更新的有效账号不能替代",
+    "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] taobao 绑定 released、无 self_buy 位：最早登记的账号站长授权 expired 即拒绝，较晚登记却更早更新的有效账号不能替代",
+    "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] pdd 绑定 absent、无 self_buy 位：最早登记的账号站长授权 expired 即拒绝，较晚登记却更早更新的有效账号不能替代",
+    "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] pdd 绑定 released、无 self_buy 位：最早登记的账号站长授权 expired 即拒绝，较晚登记却更早更新的有效账号不能替代",
+    "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] taobao 绑定 absent、无 self_buy 位：最早登记的账号有效即签发，不因较晚登记的账号 expired 而拒绝",
+    "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] taobao 绑定 released、无 self_buy 位：最早登记的账号有效即签发，不因较晚登记的账号 expired 而拒绝",
+    "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] pdd 绑定 absent、无 self_buy 位：最早登记的账号有效即签发，不因较晚登记的账号 expired 而拒绝",
+    "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] pdd 绑定 released、无 self_buy 位：最早登记的账号有效即签发，不因较晚登记的账号 expired 而拒绝",
+    "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] taobao 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号 expired 即拒绝，最近重新授权或最早更新的有效账号都不能替代",
+    "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] pdd 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号 expired 即拒绝，最近重新授权或最早更新的有效账号都不能替代",
+    "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] taobao 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号有效即签发，最近重新授权或最早更新的账号 expired 不影响",
+    "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] pdd 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号有效即签发，最近重新授权或最早更新的账号 expired 不影响",
+    "test/spec/linking/auth-account-fallback/open-pdd.int.test.ts > [B1-22l] 拼多多 open 无绑定、无 self_buy 位：最早登记的账号 expired → maintenance，不改用更早更新的有效账号",
+    "test/spec/linking/auth-account-fallback/open-pdd.int.test.ts > [B1-22l] 拼多多 open 无绑定、无 self_buy 位：最早登记的账号有效 → 用它的 agent 位查备案，较晚登记的账号 expired 不影响",
+    "test/spec/linking/auth-account-fallback/open-pdd.int.test.ts > [B1-22l] 拼多多 open 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号 expired → maintenance，不改用最近重新授权或最早更新的有效账号",
+    "test/spec/linking/auth-account-fallback/open-pdd.int.test.ts > [B1-22l] 拼多多 open 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号有效 → 用它的 agent 位查备案",
+    "test/spec/linking/auth-account-fallback/open-taobao.int.test.ts > [B1-22l] 淘宝 open 无绑定、无 self_buy 位：最早登记的账号 expired → 30101 auth_unavailable，不签发 state",
+    "test/spec/linking/auth-account-fallback/open-taobao.int.test.ts > [B1-22l] 淘宝 open 无绑定、无 self_buy 位：最早登记的账号有效 → 30101 带授权入口，较晚登记的账号 expired 不影响",
+    "test/spec/linking/auth-account-fallback/open-taobao.int.test.ts > [B1-22l] 淘宝 open 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号 expired → 30101 auth_unavailable，不改用最近重新授权或最早更新的有效账号",
+    "test/spec/linking/auth-account-fallback/open-taobao.int.test.ts > [B1-22l] 淘宝 open 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号有效 → 30101 带授权入口，其余账号 expired 不影响",
+    "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] taobao：无绑定、无 active self_buy 推广位时取最早登记（created_at 最早）的账号，不因它最近更新而改选",
+    "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] pdd：无绑定、无 active self_buy 推广位时取最早登记（created_at 最早）的账号，不因它最近更新而改选",
+    "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] taobao：created_at 相同时按 id 升序，与 updated_at 无关",
+    "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] pdd：created_at 相同时按 id 升序，与 updated_at 无关",
+    "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] taobao：更新先后与登记先后并非正好相反时仍取最早登记的账号，既不取最近重新授权的，也不取最早更新的",
+    "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] pdd：更新先后与登记先后并非正好相反时仍取最早登记的账号，既不取最近重新授权的，也不取最早更新的",
+    "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] taobao：created_at 相同、id 较小者更新较早时同样按 id 升序",
+    "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] pdd：created_at 相同、id 较小者更新较早时同样按 id 升序",
+    "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] taobao：未释放绑定的账号与 self_buy 推广位所属账号仍先于兜底；两者都没有才取最早登记的账号",
+    "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] pdd：未释放绑定的账号与 self_buy 推广位所属账号仍先于兜底；两者都没有才取最早登记的账号"
+  ],
+  "risk_note": "RV2 (linking/application/union-auth-reads.ts authAccountId fallback ordered by created_at, id; D10-239 T1). Independent Claude (approvals #36, Codex unavailable until 10-30) wrote test/spec/linking/auth-account-fallback/** (attempt 2 not counted per D10-259: brief lacked the previous failure section); one mechanical prettier fix of a frozen import per D10-206 (c98e744a, assertions unchanged). Implementation model: Claude Opus 5.5 (1 round).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "2f9ad1c15e3192b5ce1ebcdc0d4f0d306d99b3a5",
+      "tree": "0e8aea4c8ffec608afc94694666b98343261d822",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T11:30:49Z",
+      "finished_at": "2026-10-23T11:30:58Z",
+      "red_tests": [
+        "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] taobao 绑定 absent、无 self_buy 位：最早登记的账号站长授权 expired 即拒绝，较晚登记却更早更新的有效账号不能替代",
+        "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] taobao 绑定 released、无 self_buy 位：最早登记的账号站长授权 expired 即拒绝，较晚登记却更早更新的有效账号不能替代",
+        "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] pdd 绑定 absent、无 self_buy 位：最早登记的账号站长授权 expired 即拒绝，较晚登记却更早更新的有效账号不能替代",
+        "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] pdd 绑定 released、无 self_buy 位：最早登记的账号站长授权 expired 即拒绝，较晚登记却更早更新的有效账号不能替代",
+        "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] taobao 绑定 absent、无 self_buy 位：最早登记的账号有效即签发，不因较晚登记的账号 expired 而拒绝",
+        "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] taobao 绑定 released、无 self_buy 位：最早登记的账号有效即签发，不因较晚登记的账号 expired 而拒绝",
+        "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] pdd 绑定 absent、无 self_buy 位：最早登记的账号有效即签发，不因较晚登记的账号 expired 而拒绝",
+        "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] pdd 绑定 released、无 self_buy 位：最早登记的账号有效即签发，不因较晚登记的账号 expired 而拒绝",
+        "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] taobao 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号 expired 即拒绝，最近重新授权或最早更新的有效账号都不能替代",
+        "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] pdd 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号 expired 即拒绝，最近重新授权或最早更新的有效账号都不能替代",
+        "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] taobao 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号有效即签发，最近重新授权或最早更新的账号 expired 不影响",
+        "test/spec/linking/auth-account-fallback/auth-url.int.test.ts > [B1-22l] pdd 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号有效即签发，最近重新授权或最早更新的账号 expired 不影响",
+        "test/spec/linking/auth-account-fallback/open-pdd.int.test.ts > [B1-22l] 拼多多 open 无绑定、无 self_buy 位：最早登记的账号 expired → maintenance，不改用更早更新的有效账号",
+        "test/spec/linking/auth-account-fallback/open-pdd.int.test.ts > [B1-22l] 拼多多 open 无绑定、无 self_buy 位：最早登记的账号有效 → 用它的 agent 位查备案，较晚登记的账号 expired 不影响",
+        "test/spec/linking/auth-account-fallback/open-pdd.int.test.ts > [B1-22l] 拼多多 open 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号 expired → maintenance，不改用最近重新授权或最早更新的有效账号",
+        "test/spec/linking/auth-account-fallback/open-pdd.int.test.ts > [B1-22l] 拼多多 open 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号有效 → 用它的 agent 位查备案",
+        "test/spec/linking/auth-account-fallback/open-taobao.int.test.ts > [B1-22l] 淘宝 open 无绑定、无 self_buy 位：最早登记的账号 expired → 30101 auth_unavailable，不签发 state",
+        "test/spec/linking/auth-account-fallback/open-taobao.int.test.ts > [B1-22l] 淘宝 open 无绑定、无 self_buy 位：最早登记的账号有效 → 30101 带授权入口，较晚登记的账号 expired 不影响",
+        "test/spec/linking/auth-account-fallback/open-taobao.int.test.ts > [B1-22l] 淘宝 open 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号 expired → 30101 auth_unavailable，不改用最近重新授权或最早更新的有效账号",
+        "test/spec/linking/auth-account-fallback/open-taobao.int.test.ts > [B1-22l] 淘宝 open 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号有效 → 30101 带授权入口，其余账号 expired 不影响",
+        "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] taobao：无绑定、无 active self_buy 推广位时取最早登记（created_at 最早）的账号，不因它最近更新而改选",
+        "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] pdd：无绑定、无 active self_buy 推广位时取最早登记（created_at 最早）的账号，不因它最近更新而改选",
+        "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] taobao：created_at 相同时按 id 升序，与 updated_at 无关",
+        "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] pdd：created_at 相同时按 id 升序，与 updated_at 无关",
+        "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] taobao：更新先后与登记先后并非正好相反时仍取最早登记的账号，既不取最近重新授权的，也不取最早更新的",
+        "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] pdd：更新先后与登记先后并非正好相反时仍取最早登记的账号，既不取最近重新授权的，也不取最早更新的",
+        "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] taobao：created_at 相同、id 较小者更新较早时同样按 id 升序",
+        "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] pdd：created_at 相同、id 较小者更新较早时同样按 id 升序",
+        "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] taobao：未释放绑定的账号与 self_buy 推广位所属账号仍先于兜底；两者都没有才取最早登记的账号",
+        "test/spec/linking/auth-account-fallback/reads.int.test.ts > [B1-22l] pdd：未释放绑定的账号与 self_buy 推广位所属账号仍先于兜底；两者都没有才取最早登记的账号"
+      ],
+      "expected": [
+        "test/spec/linking/auth-account-fallback/auth-url.int.test.ts",
+        "test/spec/linking/auth-account-fallback/open-pdd.int.test.ts",
+        "test/spec/linking/auth-account-fallback/open-taobao.int.test.ts",
+        "test/spec/linking/auth-account-fallback/reads.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "1cbf35ee2bc69c83771b69158934fc3e620af83e464db51598b96661fc00e176"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "0d31e2930a422163c1f057f94502692cbb61b82c",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "money r1 pass, no findings (couli-runs/B1-22l/review-claude-independent.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "r1 fail (1 S1) fixed in test attempt 3; r2 pass"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "3749003634979c526cfbc23d6c5b65e1d0b5ee45",
+    "specs": "b9b8c7957aa786feb1b71c8ccc35e6fd7341add0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
