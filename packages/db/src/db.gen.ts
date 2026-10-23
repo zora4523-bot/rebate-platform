@@ -1161,6 +1161,70 @@ export interface PageVersions {
   version: number;
 }
 
+export interface PayAnomalies {
+  amount_fen: ColumnType<bigint, bigint, bigint>;
+  app_id: string;
+  channel_trade_no: string;
+  created_at: Generated<Timestamp>;
+  evidence: Json;
+  id: string;
+  out_trade_no: string | null;
+  pay_channel: string;
+  pay_order_id: string | null;
+  refunded_fen: Generated<ColumnType<bigint, bigint, bigint>>;
+  status: string;
+}
+
+export interface PayFulfillments {
+  app_id: string;
+  applied_at: Timestamp | null;
+  biz_ref: string;
+  biz_type: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  last_pay_order_id: string | null;
+  refunded_fen: Generated<ColumnType<bigint, bigint, bigint>>;
+  state: string;
+  version: Generated<ColumnType<bigint, bigint, bigint>>;
+}
+
+export interface PayNotifications {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  handle_result: string | null;
+  id: string;
+  notify_id: string;
+  out_refund_no: string | null;
+  out_trade_no: string | null;
+  pay_channel: string;
+  payload_cipher: Buffer;
+  received_at: Timestamp;
+  verify_result: string;
+}
+
+export interface PayOrders {
+  amount_fen: ColumnType<bigint, bigint, bigint>;
+  app_id: string;
+  biz_ref: string;
+  biz_type: string;
+  channel_trade_no: string | null;
+  close_reason: string | null;
+  closed_at: Timestamp | null;
+  closing: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  expire_at: Timestamp;
+  id: string;
+  launch_issued_at: Timestamp | null;
+  needs_manual: Generated<boolean>;
+  out_trade_no: string;
+  paid_at: Timestamp | null;
+  pay_channel: string;
+  refunded_fen: Generated<ColumnType<bigint, bigint, bigint>>;
+  status: string;
+  updated_at: Timestamp;
+  user_id: string;
+}
+
 export interface PayoutAccountChanges {
   app_id: string;
   changed_at: Timestamp;
@@ -1252,6 +1316,36 @@ export interface PayoutWatermarks {
   entered_by: string;
   id: string;
   measured_at: Timestamp;
+}
+
+export interface PayQueryAttempts {
+  app_id: string;
+  at: Timestamp;
+  created_at: Generated<Timestamp>;
+  id: string;
+  kind: string;
+  pay_order_id: string | null;
+  pay_refund_id: string | null;
+  request: Json | null;
+  response: Json | null;
+  result: string | null;
+}
+
+export interface PayRefunds {
+  amount_fen: ColumnType<bigint, bigint, bigint>;
+  app_id: string;
+  channel_refund_no: string | null;
+  created_at: Generated<Timestamp>;
+  failed_at: Timestamp | null;
+  id: string;
+  idempotency_key: string;
+  operator: string;
+  out_refund_no: string;
+  reason_code: string;
+  status: string;
+  succeeded_at: Timestamp | null;
+  target_id: string;
+  target_type: string;
 }
 
 export interface PlatformIcons {
@@ -1935,6 +2029,12 @@ export interface DB {
   page_preview_tokens: PagePreviewTokens;
   page_versions: PageVersions;
   pages: Pages;
+  pay_anomalies: PayAnomalies;
+  pay_fulfillments: PayFulfillments;
+  pay_notifications: PayNotifications;
+  pay_orders: PayOrders;
+  pay_query_attempts: PayQueryAttempts;
+  pay_refunds: PayRefunds;
   payout_account_changes: PayoutAccountChanges;
   payout_account_verify_attempts: PayoutAccountVerifyAttempts;
   payout_accounts: PayoutAccounts;
