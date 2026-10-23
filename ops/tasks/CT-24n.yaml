@@ -8,6 +8,7 @@ type: contract
 # refs 清空、不设 contract_sections：上列细则与 04 §5 合计远超任务书 24KB 上限（B1-08s / t、CT-04e 先例），04 §6.6 订单段、§3.2 两行、§5 相关行与 §11.2 订单行由编排者补充逐字摘录。
 # 只转写 04 / 08 已定形状，不改订单归属与金额规则。待编排裁定 K-4（授权暂停新码，默认 301 段下一个未用号、后台专用、HTTP 422、data.platform）、K-6（status_filter 只收已登记值）、K-9（目标拒绝 20001 + data.reason ∈ target_banned / target_deleting / target_deleted）。
 # 技术取舍：后台写接口不带 Idempotency-Key；channel 的双权限点与整份一次动态码写进 description、由处理器判定（不设操作级 x-step-up，落地时核对生成器）；20902 不加新 resource；路径参数沿用 CT-24m 的 {order_id}。
+# 2026-10-23 paths 补 specs/fund-term-keys.yaml 与其生成物：新 admin_dict 键须在资金术语清单归类（[AC-F1-02zd#u4]），照 CT-21b 先例归普通。
 # 新码与 target_* 合并后由编排开规划同步回写 08 §13.11（先例 CT-02j）。排在 fe 的 CT-24f → CT-24h 之后占契约槽。
 refs: []
 refs_hash: {}
@@ -23,6 +24,8 @@ paths:
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  - 'specs/fund-term-keys.yaml'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
 test_paths:
   - 'test/spec/contracts/admin-order-actions/**'
 impl: claude
