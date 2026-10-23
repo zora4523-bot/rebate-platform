@@ -1405,6 +1405,12 @@ it(
   CLI_TIMEOUT,
 );
 
+// CT-06zp: this case runs verify-container.sh three times (failed initdb, PostgreSQL exiting
+// early, Redis still knowing MIGRATE), each through the whole preamble; no single wait dominates
+// (the stubbed unit is reported inactive on the first readiness poll). Green on main in CI it took
+// 17.5–26.6 s (12 runs, 2026-10-22/23) and hit the 30 s CLI_TIMEOUT now and then (since 10-15,
+// #476; again #1368 at 30.2 s). 90 s leaves room as in CT-06zb; assertions are unchanged.
+const INITDB_CASE_TIMEOUT = 90_000;
 it(
   'host services: a failed initdb or a PostgreSQL that exits stops the run (exit 2, no result) and the run directory is removed',
   () => {
@@ -1434,7 +1440,7 @@ it(
     expect(config.stderr).toContain('still knows MIGRATE');
     expect(entrypointRun(config.calls)).toBeUndefined();
   },
-  CLI_TIMEOUT,
+  INITDB_CASE_TIMEOUT,
 );
 
 it(
