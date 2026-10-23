@@ -428,6 +428,48 @@ export function createTokenService(deps: { clock: Clock; keys: TokenKeyProvider 
   };
 }
 
+/**
+ * The verification keys of a verify-only process (B1-02zj, D10-255 ①): the shape of platform's
+ * JwtVerifyKeyConfig (JWT_KEY_ID, its SPKI public key, JWT_VERIFY_KEYS_JSON). No private key.
+ */
+export interface TokenVerifyKeyConfig {
+  readonly kid: string;
+  readonly publicKeyPem: string;
+  readonly verificationKeys: Readonly<Record<string, string>>;
+}
+
+/** Verify-only key port (D10-255 ①): the public keys by kid, never a private key. */
+export interface TokenVerifyKeyProvider {
+  readonly kid: string;
+  readonly publicKeys: ReadonlyMap<string, KeyObject>;
+}
+
+/**
+ * The verify-only keys of a process that never signs (stream, ...). Staging / prod without a
+ * configuration refuse to start, naming JWT_PUBLIC_KEY_PEM; a hand-built configuration is checked
+ * again (P-256 SPKI, well-formed kids, previous kids distinct from the current one).
+ */
+export function createTokenVerifyKeyProvider(
+  appEnv: AppEnv,
+  config: TokenVerifyKeyConfig | null,
+): Promise<TokenVerifyKeyProvider> {
+  void appEnv;
+  void config;
+  throw new Error('NotImplemented: createTokenVerifyKeyProvider');
+}
+
+/**
+ * A TokenService that verifies exactly like createTokenService (ES256, local kid lookup, issuer,
+ * audience, typ, Clock, zero tolerance; 10002) but never signs: issueAccess rejects.
+ */
+export function createTokenVerifyService(deps: {
+  clock: Clock;
+  keys: TokenVerifyKeyProvider;
+}): TokenService {
+  void deps;
+  throw new Error('NotImplemented: createTokenVerifyService');
+}
+
 export interface SessionLookup {
   /** Each authenticated request reads its current session, scoped by app_id. */
   find(

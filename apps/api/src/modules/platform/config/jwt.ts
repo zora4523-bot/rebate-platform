@@ -157,3 +157,32 @@ export function readJwtKeyConfig(
   if (problems.length > 0) return { jwt: null, problems };
   return { jwt: Object.freeze({ kid, privateKeyPem, verificationKeys }), problems };
 }
+
+// B1-02zj (D10-255 ①): token keys split by least privilege. A process that only verifies access
+// tokens (stream, ...) needs JWT_KEY_ID and the current public key, never the private key:
+// - JWT_PUBLIC_KEY_PEM: exactly one PEM block labelled `PUBLIC KEY` (SPKI) on P-256.
+// - Verify-only: JWT_KEY_ID plus JWT_PUBLIC_KEY_PEM or JWT_PRIVATE_KEY_PEM (the public key is
+//   derived from the private key; the private key itself is not kept). Both given: they must be one
+//   key pair, otherwise a configuration problem. Staging / prod with neither key: the problems name
+//   JWT_PUBLIC_KEY_PEM. JWT_VERIFY_KEYS_JSON keeps its rules (never contains JWT_KEY_ID).
+// - Signing processes (api) still need JWT_PRIVATE_KEY_PEM + JWT_KEY_ID (readJwtKeyConfig).
+// - Local / test without any JWT_* variable keep their behaviour. Errors never quote values.
+
+/** The verification keys of a process that never signs (D10-255 ①). */
+export interface JwtVerifyKeyConfig {
+  readonly kid: string;
+  /** SPKI PEM of JWT_KEY_ID's key: JWT_PUBLIC_KEY_PEM, or derived from JWT_PRIVATE_KEY_PEM. */
+  readonly publicKeyPem: string;
+  /** JWT_VERIFY_KEYS_JSON (previous kids → SPKI PEM), as in JwtKeyConfig. */
+  readonly verificationKeys: Readonly<Record<string, string>>;
+}
+
+/** The verify-only reading of the JWT_* variables (D10-255 ①; contract above). */
+export function readJwtVerifyKeyConfig(
+  appEnv: AppEnv,
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly jwt: JwtVerifyKeyConfig | null; readonly problems: readonly string[] } {
+  void appEnv;
+  void env;
+  throw new Error('NotImplemented: readJwtVerifyKeyConfig');
+}
