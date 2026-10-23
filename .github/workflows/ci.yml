@@ -379,7 +379,7 @@ jobs:
   ci-gate:
     # Summary job: the only required check of this workflow (ops/branch-protection.json).
     if: always()
-    needs: [verify-reuse, verify-fast, verify-props, verify-int, guard-git]
+    needs: [verify-fast, verify-props, verify-int, guard-git, verify-reuse]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
