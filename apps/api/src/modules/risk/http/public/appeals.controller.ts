@@ -3,7 +3,9 @@
 // BR-ID-36. The subject is the token's principal only (stage ②: uid and app_id), never the body or
 // X-App-Id. The submission runs in platform idempotency's transactional mode: the appeal, the risk
 // state change, its event and the key's completed record commit together; a refusal (20001) or an
-// error rolls all of them back and leaves no record of the key. The idempotency response is
+// error rolls all of them back and leaves no record of the key. 30418 (the appeals of the
+// current penalty used up, BR-ID-36; HTTP 422, no data) is a 3xxxx business result: nothing was
+// written, and the key's record stores it like a success (04 §5). The idempotency response is
 // written as is (HTTP status and body bytes, so a replay equals the first answer). Stage ④a, ⑤
 // (10006 whitelist) and ⑬ are the global guard's and the idempotency post-miss hooks', not
 // judged here. Without a database (no appeals service or idempotency primitive) both routes fail
@@ -39,6 +41,8 @@ import { AppealQueryError, type AppealsService } from '../../application/appeals
 export const APPEALS_SERVICE = Symbol('APPEALS_SERVICE');
 
 const PATH = '/v1/me/appeals';
+/** BR-TEXT-14 error.30418 (contracts/texts.default.json); clients show their own copy by code. */
+const USED_UP_MSG = '这项申诉的次数已用完，不能再提交申诉';
 
 /** What this controller reads of the Fastify request, already checked by stages ①–③ and the schema. */
 export interface AppealsHttpRequest extends CheckedRequest {
@@ -91,6 +95,13 @@ export class AppealsController {
           return {
             status: 200,
             envelope: { code: 0, msg: '', data: outcome.data, trace_id: traceId },
+          };
+        }
+        if (outcome.code === 30418) {
+          // Stored by the idempotency module (3xxxx); nothing else was written.
+          return {
+            status: 422,
+            envelope: { code: 30418, msg: USED_UP_MSG, trace_id: traceId },
           };
         }
         // Not stored by the idempotency module (2xxxx): everything rolls back.

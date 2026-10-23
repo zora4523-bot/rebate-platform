@@ -1,0 +1,37 @@
+{
+  "red_tests": [],
+  "risk_note": "RV1 (contract plus the two response builders). BR-ID-36 / 04 §5–§6: RiskInfo.prev_risk_state (non-null only while appealing, from the processing account appeal), Appeal.attempt_no / can_resubmit, new code 30418 (fourth appeal of the same penalty refused before the row is created; controller answers 422), 30414 on send-code and step-up, features account.phone_change_enabled; texts error.30418 classified ordinary in specs/fund-term-keys.yaml. Penalty boundary uses user_risk_state.changed_at against the last closed appeal; exact grouping needs penalty_started_at (ledger B1-03v, unreachable until admin appeal closing exists). Frozen tests made two-state by test-change CT-26f (#1251). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 2 pass (couli-runs/CT-26e/review-codex.json); round 1 fail with S1 x2 (fourth appeal not refused in the service; two penalties counted as one) fixed in 643cacae (couli-runs/CT-26e/review-codex-r1.json); one S2 moved to B1-03v"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "2d2f225a24118b7c6c8567691edeaa36c7f8abbe",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "9028d1377c903b5194e8eceb6c13ecc291a5bae3",
+    "specs": "e7a971dbeb769354000209f436b71c34d362b5d9"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "CT-26e",
+  "spec_commit": "2a0cd509acdf201afb85f69bfa0240a2335f8fb7",
+  "spec_ref": "17b5fe5cf052e9e93d0be356a7fcc1b3390be4b5",
+  "runs": []
+}

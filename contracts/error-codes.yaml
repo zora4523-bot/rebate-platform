@@ -649,6 +649,13 @@ codes:
     data:
       status: [pending, running, done, failed, expired, cancelled]
     sources: [BR-ID-34, BR-ID-30]
+  - code: 30418
+    http: 422
+    meaning: 同一对象申诉次数已用完（累计 3 次都被维持；处理中再次提交仍返回原申诉单、不返回本码）
+    action: 仅提示，不再显示提交申诉
+    retry: 否
+    retry_kind: never
+    sources: [BR-ID-36]
   - code: 30501
     http: 422
     meaning: AI 助手未开放
