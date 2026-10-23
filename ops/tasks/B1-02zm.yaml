@@ -2,7 +2,7 @@ id: B1-02zm
 repo: rebate-platform
 title: identity 不再导出 smsCredentialEnvNames()（D10-289）：fake-sms.ts 删去该导出（取值处直接用 platform 的 SMS_CREDENTIAL_ENV_NAMES），sms-adapters.test.ts 同步改为从 platform 取；行为不变，主干 depcruise 与 agent 的 CT-06zt 扫描零命中
 type: impl
-# 草稿 2026-10-24（身份与风控线 identity-lane）。编排 D10-289：保留 CT-06zt「函数返回值也算中转」。须在 test-change B1-02zl 合并后落地（冻结规则测试不再引用该函数）。纯删导出与单元测试同步，无新规则测试（tester none）。
+# 草稿 2026-10-24（身份与风控线 identity-lane）。编排 D10-289：保留 CT-06zt「函数返回值也算中转」。须在 test-change B1-02zl 合并后落地（冻结规则测试不再引用该函数）。纯删导出与单元测试同步，规则测试（独立 Claude，approvals #36；RV2 须有 tester 与 test_paths）：断言 identity/infra/fake-sms.ts 不导出 smsCredentialEnvNames、identity 包入口不转出 platform 的 SMS_CREDENTIAL_ENV_NAMES；实现前红、实现后绿。
 refs: []
 refs_hash: {}
 deps: [B1-02zl]
@@ -10,8 +10,11 @@ paths:
   - 'apps/api/src/modules/identity/infra/fake-sms.ts'
   - 'apps/api/src/modules/identity/infra/sms-adapters.test.ts'
   - 'apps/api/src/modules/platform/config/credential-env.ts'
+test_paths:
+  - 'test/spec/identity/sms-credential-relay/**'
 impl: claude
-tester: none
+tester: claude-independent
 accept:
   - 'pnpm verify'
+  - 'test/spec/identity/sms-credential-relay/**'
 status: todo
