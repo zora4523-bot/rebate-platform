@@ -17,9 +17,7 @@ import {
   type OrderPipelineDeps,
   type OrderUpdateDeps,
 } from '../../../../apps/api/src/modules/orders/index.ts';
-import type {
-  createOrderBlocklistPorts as CreatePorts,
-} from '../../../../apps/api/src/modules/risk/application/order-blocklist.ts';
+import type { createOrderBlocklistPorts as CreatePorts } from '../../../../apps/api/src/modules/risk/application/order-blocklist.ts';
 import type {
   RegisteredPlatform,
   UnionOrder,

@@ -193,7 +193,7 @@ describe('[AC-B1-09b#26] 与本次更新同一事务：复核事件入队或返�
   it.each([
     ['CREDITED', 'order.blacklist_hit_after_credit 入队'],
     ['ESTIMATED', 'onBlacklistHit'],
-  ] as const)('%s：%s 抛错', async (status) => {
+  ] as const)('%s：%s 抛错', async (...[status]) => {
     const f = await existing(db, status);
     await seedChannel(db, f);
     const prior = await f.read();
