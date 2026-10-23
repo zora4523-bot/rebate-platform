@@ -1,0 +1,24 @@
+id: B1-22l
+repo: rebate-platform
+title: 无联盟绑定且无 self_buy 推广位时「所用联盟账号」的兜底改为按 union_accounts.created_at、id 升序（原按 updated_at，重新授权 / 登记首个推广位会让选中账号漂移）；同步相关注释
+type: impl
+# 2026-10-23 入账（union 线，编排裁定 D10-239 T1；评估 couli-runs/UNION-lane/eval-1108.md ①）。唯一位置 linking/application/union-auth-reads.ts authAccountId；无冻结用例受影响，补 1 条冻结用例（两账号：created 较早者 updated 较晚，无绑定、无 self_buy 推广位，选 created 较早者）。08 BR-ATTR-05 ⑦ 的现有实现句由编排随下批回写。Codex 不可用至 10-30，测试由独立 Claude（approvals #36）。
+refs: [BR-ATTR-05]
+refs_hash:
+  BR-ATTR-05: e7738d8ad0c1
+deps: [B1-19d]
+paths:
+  - 'apps/api/src/modules/linking/application/union-auth-reads.ts'
+  - 'apps/api/src/modules/linking/application/union-auth-reads.test.ts'
+  - 'apps/api/src/modules/linking/application/link-open-taobao.ts'
+  - 'apps/api/src/modules/linking/application/union-auth-url.ts'
+  - 'apps/api/src/modules/linking/application/union-bindings-pdd.ts'
+test_paths:
+  - 'test/spec/linking/auth-account-fallback/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/auth-account-fallback/**'
+status: todo
+pr: null
