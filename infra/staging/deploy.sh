@@ -180,12 +180,14 @@ fi
 log "deploying couli-api:$COULI_API_TAG (last successful: ${PREVIOUS_TAG:-none})"
 
 # Step 1: migrate with the new image, migrator credentials only, then apply the seeds
-# (db/seeds, re-runnable) in the same one-off container: `sh -e` runs the seed only after the
-# migration succeeded and stops at the first failure. Under set -e a failed migration or seed
-# stops here, before any running process is touched. Both scripts print connection strings
-# with the password removed.
+# (db/seeds, re-runnable) in the same one-off container. The container runs `sh -e` on the
+# script below with the migration command as its arguments ("$@"), so the seed starts only after
+# the migration succeeded and the first failure ends the container with a non-zero status. Under
+# set -e a failed migration or seed stops here, before any running process is touched. Both
+# scripts print connection strings with the password removed.
+MIGRATE_THEN_SEED=$'"$@"\nnode packages/db/scripts/seed.ts'
 log "step 1/4: database migration and seed"
-docker run --rm --pull never --env-file /etc/couli/staging-migrator.env --volume /etc/pki/ca.crt:/etc/pki/ca.crt:ro "couli-api:$COULI_API_TAG" sh -ec $'node packages/db/scripts/migrate.ts\nnode packages/db/scripts/seed.ts'
+docker run --rm --pull never --env-file /etc/couli/staging-migrator.env --volume /etc/pki/ca.crt:/etc/pki/ca.crt:ro "couli-api:$COULI_API_TAG" sh -ec "$MIGRATE_THEN_SEED" migrate-then-seed node packages/db/scripts/migrate.ts
 log "step 1/4: migration and seed finished"
 
 # Step 2: recreate all five processes on the new image and wait until every health check
