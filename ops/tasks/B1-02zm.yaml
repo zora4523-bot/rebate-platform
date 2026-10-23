@@ -11,10 +11,10 @@ paths:
   - 'apps/api/src/modules/identity/infra/sms-adapters.test.ts'
   - 'apps/api/src/modules/platform/config/credential-env.ts'
 test_paths:
-  - 'test/spec/identity/sms-credential-relay/**'
+  - 'test/spec/identity/sms-credential-export/**'
 impl: claude
 tester: claude-independent
 accept:
   - 'pnpm verify'
-  - 'test/spec/identity/sms-credential-relay/**'
+  - 'test/spec/identity/sms-credential-export/**'
 status: todo
