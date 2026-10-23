@@ -17,6 +17,7 @@ import {
   ExportWorkerModule,
   createAdminDisplayNameReader,
   createAuditWriter,
+  createOrderHoldAuditReader,
 } from './modules/admin/index.ts';
 import {
   AgentModule,
@@ -219,6 +220,7 @@ import {
   OrdersAdminModule,
   OrdersModule,
   type AdminClaimPorts,
+  type AdminOrderPorts,
   createInviteRewardOrderFacts,
   type ClaimEvidenceFactory,
   createOrderQueries,
@@ -1316,6 +1318,70 @@ function adminClaimPorts(db: Kysely<Database>, crypto: FieldCrypto | null): Admi
     phones: (appId, userIds) => phones.maskedPhones(appId, userIds),
     reviewerNames: (appId, adminIds) => names.displayNames(appId, adminIds),
     linkMoments: (appId, ids) => links.moments(appId, ids),
+  };
+}
+/**
+ * B1-10i: orders' console order reads (GET /admin/v1/orders, /admin/v1/orders/{order_id}):
+ * identity's masked phones, admin's latest order_hold audit and display names, the commission
+ * snapshot (commission_splits, as stored: commission exports no plain snapshot reader that needs
+ * no amount version), the link's link_logs time, event and scene (the 50 newest, records without
+ * a scene left out; linking exports no reader by link_id) and content's credit.enabled.<platform>.
+ * Every read is scoped by app_id; building them reads nothing.
+ */
+function adminOrderPorts(
+  db: Kysely<Database>,
+  crypto: FieldCrypto | null,
+  clock: Clock,
+): AdminOrderPorts {
+  const phones = createMaskedPhoneReader(db, crypto);
+  const names = createAdminDisplayNameReader(db);
+  const holds = createOrderHoldAuditReader(db);
+  return {
+    phones: (appId, userIds) => phones.maskedPhones(appId, userIds),
+    adminNames: (appId, adminIds) => names.displayNames(appId, adminIds),
+    latestHold: (appId, orderId) => holds.latestHold(appId, orderId),
+    async commissionSplit(appId, orderId) {
+      const row = await db
+        .withSchema('app')
+        .selectFrom('commission_splits')
+        .select([
+          'rule_version_id',
+          'order_type',
+          'raw_n_fen',
+          'subsidy_commission_fen',
+          'reserve_bp',
+          'reserve_fen',
+          'tlj_deduct_fen',
+          'base_fen',
+          'platform_retain_fen',
+          'beneficiaries',
+          'created_at',
+        ])
+        .where('app_id', '=', appId)
+        .where('order_id', '=', orderId)
+        .executeTakeFirst();
+      return row ?? null;
+    },
+    async linkLogs(appId, linkId, limit) {
+      return db
+        .withSchema('app')
+        .selectFrom('link_logs')
+        .select(['created_at as at', 'event', 'scene'])
+        .where('app_id', '=', appId)
+        .where('link_id', '=', linkId)
+        .where('scene', 'is not', null)
+        .orderBy('created_at', 'desc')
+        .orderBy('id', 'desc')
+        .limit(limit)
+        .execute();
+    },
+    async creditEnabled(appId, platform) {
+      const entry = await createContentReader({ db, clock }).configValue(
+        appId,
+        `credit.enabled.${platform}`,
+      );
+      return entry?.value === true;
+    },
   };
 }
 /**
@@ -2483,9 +2549,10 @@ export class AppModule {
         // orders' /admin/v1 claim review reads (B1-10j; BR-ATTR-30): guarded by AdminOperationGuard;
         // the applicant's masked phone through identity's port (decrypted and masked there), the
         // reviewer's display name through admin's, the evidence records' time and scene through
-        // linking's. Reads only, no audit row.
+        // linking's. Reads only, no audit row. B1-10i: the order list and detail on the same
+        // module (order.view, or user.lookup with user_id), over adminOrderPorts.
         ...(options.entry === 'admin'
-          ? [OrdersAdminModule.forAdmin({ ports: adminClaimPorts })]
+          ? [OrdersAdminModule.forAdmin({ ports: adminClaimPorts, orderPorts: adminOrderPorts })]
           : []),
         // content's GET /v1/config (F1-02c): agent availability and the h5_release bucket read
         // identity's request viewer (token principal, else the X-App-Id guest). GET

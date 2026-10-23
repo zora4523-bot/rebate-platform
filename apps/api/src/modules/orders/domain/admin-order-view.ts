@@ -30,16 +30,26 @@ export type AdminOrderLastHold = Pick<
   'last_hold_by' | 'last_hold_by_name' | 'last_hold_note' | 'last_hold_at'
 >;
 
+const STATUS_LOCKED: ReadonlySet<string> = new Set(['VOID', 'CREDITED', 'CLAWED_BACK']);
+/** Contract AdminOrderQuery: 1–64 characters after trimming and removing inner spaces. */
+export const ADMIN_ORDER_QUERY_MAX = 64;
+const UNMAPPED_STATUS = 'UNMAPPED_STATUS';
+
 /** locked, rights_pending, hold as stored; status_locked: rebate_status VOID, CREDITED, CLAWED_BACK. */
 export function adminOrderFlags(row: AdminOrderFlagSource): Schema<'AdminOrderFlags'> {
-  void row;
-  throw new Error('NotImplemented: adminOrderFlags');
+  return {
+    locked: row.locked,
+    status_locked: STATUS_LOCKED.has(row.rebate_status),
+    rights_pending: row.rights_pending,
+    hold: row.hold,
+  };
 }
 
 /** q trimmed and with inner spaces removed; null unless 1–64 characters remain. */
 export function normalizeOrderQuery(raw: string): string | null {
-  void raw;
-  throw new Error('NotImplemented: normalizeOrderQuery');
+  const value = raw.trim().replaceAll(' ', '');
+  const length = [...value].length;
+  return length >= 1 && length <= ADMIN_ORDER_QUERY_MAX ? value : null;
 }
 
 /** hold_reason UNMAPPED_STATUS and an UNMAPPED_STATUS record of the sub-order still open. */
@@ -47,9 +57,10 @@ export function unmappedPendingOpen(
   holdReason: string | null,
   pending: readonly AdminOrderPendingRecord[],
 ): boolean {
-  void holdReason;
-  void pending;
-  throw new Error('NotImplemented: unmappedPendingOpen');
+  return (
+    holdReason === UNMAPPED_STATUS &&
+    pending.some((record) => record.reason === UNMAPPED_STATUS && record.status === 'open')
+  );
 }
 
 /** The four last_hold_* fields; all null when never held by hand or held by the system now. */
@@ -58,8 +69,19 @@ export function lastManualHold(
   audit: AdminOrderHoldAudit | null,
   name: string | null,
 ): AdminOrderLastHold {
-  void holdReason;
-  void audit;
-  void name;
-  throw new Error('NotImplemented: lastManualHold');
+  // 方案 K-7: a current system hold (UNMAPPED_STATUS) shows no manual hold, even an older one.
+  if (audit === null || holdReason === UNMAPPED_STATUS) {
+    return {
+      last_hold_by: null,
+      last_hold_by_name: null,
+      last_hold_note: null,
+      last_hold_at: null,
+    };
+  }
+  return {
+    last_hold_by: audit.admin_id,
+    last_hold_by_name: name,
+    last_hold_note: audit.note,
+    last_hold_at: audit.at.toISOString(),
+  };
 }
