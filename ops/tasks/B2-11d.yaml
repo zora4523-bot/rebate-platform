@@ -1,0 +1,27 @@
+id: B2-11d
+repo: rebate-platform
+title: payout 模块：自动到账配置保存校验与开启前置检查——保存时 max_amount_fen ≤ withdraw.max_amount_fen、platform_daily_max_fen ≤ payout.daily_cap_fen、window_end > window_start、risk_block_flags ⊆ BR-WDR-29 标签 code（blacklist_hit 的实时检查固定、不可移除）；content/domain/kill-switch.ts 只加一个注入挂点（打开 withdraw.auto_payout.enabled 时调用 payout 提供的开启前置检查，缺省实现维持现在的无条件拒绝），前置检查本体在 payout：BR-WDR-22 ②⑤⑧ 在 09 判为支持 + 每日通道对账（BR-WDR-23）连续跑通天数达标，验证状态与天数由配置键登记（负责人开启时填，缺省不通过）；开启仍须负责人确认（BR-WDR-17）
+type: impl
+# 2026-10-23 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。Codex 写规则测试（缺省挂点下打开仍被拒、各校验边界）、Codex 评审。
+# D10-224 ①：kill-switch.ts 只加挂点，归本线；content 线知悉、后续改 kill-switch 时保留挂点。保存校验经 content 配置写入口的校验挂点（若 content 没有通用校验挂点，本任务只加一个与 kill-switch 同形的注入点）。
+# 状态备注：等 B2-11b 合并。
+refs: [BR-WDR-30, BR-WDR-17, BR-WDR-22]
+refs_hash:
+  BR-WDR-30: 9ce8ae5c92d4
+  BR-WDR-17: f6119a685e00
+  BR-WDR-22: 3fc7a8bd4852
+deps: [B2-11b]
+paths:
+  - 'apps/api/src/modules/payout/**'
+  - 'apps/api/src/modules/content/domain/kill-switch.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/payout/auto-config/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/auto-config/**'
+status: todo
+pr: null
