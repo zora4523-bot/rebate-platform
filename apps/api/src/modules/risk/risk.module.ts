@@ -42,6 +42,7 @@ import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
 import { map } from 'rxjs';
 import {
+  APP_CONFIG,
   CLOCK,
   DB,
   EVENT_BUS,
@@ -51,6 +52,7 @@ import {
   ROOT_LOGGER,
   registerIdempotencyEntryObserver,
   registerIdempotencyPostMissCheck,
+  type AppConfig,
   type Clock,
   type EventBus,
   type FieldCrypto,
@@ -110,6 +112,11 @@ import {
   createSignatureCheck,
   type DeviceSigningKeys,
 } from './application/signature-check.ts';
+import {
+  createRedisGenerationGate,
+  isRedisGenerationArmed,
+  isRedisGenerationEnabled,
+} from './application/redis-generation.ts';
 
 /** Nest token of the stage ④a check (createMinimumVersionCheck over the reader below). */
 export const MINIMUM_VERSION_CHECK = Symbol('MINIMUM_VERSION_CHECK');
@@ -344,6 +351,8 @@ export class RiskModule {
    * Provides SIGNATURE_CHECK, the stage ① request check that app.module places first in
    * REQUEST_CHECKS. Without a REDIS provider the check still refuses an invalid request with
    * 10401 / 10402, and fails a valid one closed (50001).
+   * Under APP_ENV staging / prod, once entry.ts armed it, the check asks the Redis generation gate
+   * (R-04, B1-02zi) before reserving a nonce; local / test, or no arming, leave the gate off.
    * Installs stage ④a when a minimum version reader is wired: a global guard judging the
    * non-idempotent operations after ① ② ③, an interceptor carrying the HTTP request to the
    * handler's async context, and the post-miss check on the IDEMPOTENCY instance judging the
@@ -397,9 +406,35 @@ export class RiskModule {
         appealsConfig,
         {
           provide: SIGNATURE_CHECK,
-          inject: [DEVICE_SIGNING_KEYS, CLOCK, { token: REDIS, optional: true }],
-          useFactory: (devices: DeviceSigningKeys, clock: Clock, redis?: RedisHandle) =>
-            createSignatureCheck({ devices, clock, ...(redis === undefined ? {} : { redis }) }),
+          // R-04 (B1-02zi): the Redis generation gate, enabled by APP_ENV (staging / prod) only.
+          inject: [
+            DEVICE_SIGNING_KEYS,
+            CLOCK,
+            ROOT_LOGGER,
+            { token: APP_CONFIG, optional: true },
+            { token: REDIS, optional: true },
+          ],
+          useFactory: (
+            devices: DeviceSigningKeys,
+            clock: Clock,
+            logger: RootLogger,
+            config?: Pick<AppConfig, 'appEnv'>,
+            redis?: RedisHandle,
+          ) =>
+            createSignatureCheck({
+              devices,
+              clock,
+              ...(redis === undefined ? {} : { redis }),
+              generation: createRedisGenerationGate({
+                clock,
+                logger,
+                enabled:
+                  isRedisGenerationArmed() &&
+                  config !== undefined &&
+                  isRedisGenerationEnabled(config.appEnv),
+                ...(redis === undefined ? {} : { redis }),
+              }),
+            }),
         },
         reader,
         {

@@ -10,6 +10,8 @@
 //   2. X-Timestamp 10 digits, X-Nonce 32 lower-case hex, X-Sign 64 lower-case hex, and
 //      |server time − X-Timestamp| ≤ 300 s (injected Clock) → else 10401.
 //   3. Timing-safe HMAC comparison → else 10401. A wrong signature never reserves a nonce.
+//   3a. R-04 (B1-02zi): the Redis generation gate (./redis-generation.ts) when one is wired; a
+//      refusal or a failing Redis propagates (50001) and reserves no nonce.
 //   4. Atomic nonce reservation in Redis (namespace `risk`, key
 //      `nonce:<device app_id>:<device_id>:<nonce>`, SET NX with a 600-second TTL in one Lua call);
 //      already reserved → 10401. No Redis provider, or Redis failing → the error propagates (the
@@ -145,6 +147,10 @@ export function createRequestSignatureVerifier(
     throw new TypeError('createSignatureCheck needs the device port and the clock');
   }
   const nonces = dependencies.redis?.namespace(NAMESPACE);
+  const generation = dependencies.generation;
+  if (generation !== undefined && typeof generation.admit !== 'function') {
+    throw new TypeError('createSignatureCheck: the generation gate needs admit()');
+  }
   return async (request: SignedRequest): Promise<VerifiedDevice> => {
     const deviceId = headerValue(request, 'x-device-id');
     if (deviceId === undefined || deviceId === '') throw new SignatureError(10402);
@@ -171,6 +177,9 @@ export function createRequestSignatureVerifier(
     });
     if (!signatureMatches(signature, expected)) throw new SignatureError(10401);
 
+    // R-04 (B1-02zi): the Redis generation gate, after the HMAC and before the nonce reservation.
+    // A refusal or a failing Redis propagates (50001) and reserves no nonce.
+    if (generation !== undefined) await generation.admit();
     if (nonces === undefined) {
       throw new Error('risk: no Redis in this process; signed requests are refused');
     }

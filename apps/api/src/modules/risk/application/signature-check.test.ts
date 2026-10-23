@@ -141,3 +141,33 @@ it('[BR-ID-09] the stage ① check still skips a route that is not x-signed, so 
   expect(asked).toEqual([]);
   expect(request).not.toHaveProperty('verifiedDevice');
 });
+
+it('[R-04] the generation gate is asked after the HMAC and before the nonce reservation; its refusal reserves no nonce', async () => {
+  const store = nonceStore();
+  const order: string[] = [];
+  let refuse = true;
+  const verify = createRequestSignatureVerifier({
+    devices: { findActive: async (id) => (id === DEVICE.deviceId ? DEVICE : null) },
+    clock: AT,
+    redis: store.handle,
+    generation: {
+      admit: async () => {
+        order.push('admit');
+        if (refuse) throw new Error('refusal period');
+      },
+    },
+  });
+  await expect(verify(signed('{}', { 'x-sign': '0'.repeat(64) }))).rejects.toMatchObject({
+    code: 10401,
+  });
+  expect(order).toEqual([]);
+  await expect(verify(signed('{}'))).rejects.toThrow('refusal period');
+  expect(order).toEqual(['admit']);
+  expect(store.keys).toEqual([]);
+  refuse = false;
+  await expect(verify(signed('{}'))).resolves.toEqual({
+    deviceId: DEVICE.deviceId,
+    appId: 'couli',
+  });
+  expect(store.keys).toHaveLength(1);
+});

@@ -36,7 +36,15 @@ import {
   loadConnectionConfig,
 } from './modules/platform/index.ts';
 import { orderSyncToken, type OrderSyncRuntime } from './modules/orders/index.ts';
-import { riskScanToken, seedRiskScan, startRiskScanHeal } from './modules/risk/index.ts';
+import {
+  armRedisGeneration,
+  redisGenerationRenewalToken,
+  riskScanToken,
+  seedRiskScan,
+  startRedisGenerationRenewal,
+  startRiskScanHeal,
+  type RedisGenerationRenewal,
+} from './modules/risk/index.ts';
 
 // Keeps a worker process alive until a signal arrives; longer than any deployment lives.
 const KEEP_ALIVE_INTERVAL_MS = 2 ** 30;
@@ -160,6 +168,27 @@ function startInviteReward(
   return startInviteRewardWorker({ scanner: scanner as InviteRewardScanner, logger });
 }
 
+/**
+ * The Redis generation key's renewal (R-04, B1-02zi): every 60 seconds, worker only. Optional like
+ * the other worker loops: a context without the provider, a null provider (APP_ENV local / test,
+ * or no REDIS) or a stop already requested → no timer, no crash, no log.
+ */
+function startGenerationRenewal(
+  resolve: () => unknown,
+  logger: RootLogger,
+  stopping: () => boolean,
+): { stop(): void } | undefined {
+  if (stopping()) return undefined;
+  let renewal: Partial<RedisGenerationRenewal> | null | undefined;
+  try {
+    renewal = resolve() as Partial<RedisGenerationRenewal> | null | undefined;
+  } catch {
+    return undefined;
+  }
+  if (stopping() || typeof renewal?.renew !== 'function') return undefined;
+  return startRedisGenerationRenewal({ renewal: renewal as RedisGenerationRenewal, logger });
+}
+
 /** A start step whose rejection marks the startup as failed before any cleanup runs. */
 function failFirst(
   signals: StartupSignals,
@@ -184,6 +213,9 @@ async function start(
   redisUrl: ConnectionConfig['redisUrl'],
   signals: StartupSignals,
 ): Promise<void> {
+  // R-04 (B1-02zi, 9.2 #5): the entry injects the Redis generation switch by APP_ENV (staging /
+  // prod on, local / test off) before the application is built.
+  armRedisGeneration(config.appEnv);
   if (isHttpEntry(entry)) {
     // startQueue: false — this runner starts JOB_QUEUE itself below, after init and its exit /
     // signal checks and before listen, so the production start order stays as it was (B1-12g).
@@ -277,6 +309,13 @@ async function start(
       // continuation does not stop the scans until the next worker start. Started even after a
       // failed seed; stopped first on shutdown, before the services.
       const heal = startRiskScanHeal(resolveScan, logger, () => signals.stopping());
+      // The Redis generation key's renewal (R-04, B1-02zi): every 60 seconds under APP_ENV
+      // staging / prod; stopped with the heal on shutdown.
+      const generation = startGenerationRenewal(
+        () => context.get<unknown>(redisGenerationRenewalToken(), { strict: false }),
+        logger,
+        () => signals.stopping(),
+      );
       // The paid bank-card verification records' takeover / recheck (B1-13g, BR-WDR-02 ⑦): a
       // 60-second timer, no immediate round. Not started once a stop was requested; stopped first
       // on shutdown, waiting for its current row, before anything else closes. Optional like the
@@ -360,6 +399,7 @@ async function start(
               }
             } finally {
               heal.stop();
+              generation?.stop();
               try {
                 try {
                   await sync?.stop();

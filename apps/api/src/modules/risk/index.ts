@@ -175,9 +175,15 @@ export type {
 // B1-02zi (R-04 option A): the Redis generation key that refuses signed requests for the nonce
 // dedup duration after Redis lost its data. Rule tests: test/spec/risk/redis-generation/**.
 export {
+  REDIS_GENERATION_RENEW_INTERVAL_MS,
+  REDIS_GENERATION_TTL_SECONDS,
+  RedisGenerationRefusalError,
+  armRedisGeneration,
   createRedisGenerationGate,
   createRedisGenerationRenewal,
+  isRedisGenerationArmed,
   isRedisGenerationEnabled,
+  redisGenerationRenewalToken,
   startRedisGenerationRenewal,
 } from './application/redis-generation.ts';
 export type {
