@@ -1,0 +1,21 @@
+id: CT-06zp
+repo: rebate-platform
+title: CT-06zp：verify-container.services.test 的「failed initdb / PostgreSQL exits」一条 it 超时与 CI 实际时长对齐（30 秒偶发超时）
+type: guard-change
+# 2026-10-23 入账（ops 线，编排 21:28 派工，照 CT-06zb #894 先例）。起因：tools/ops/verify-container.services.test.ts
+# 「host services: a failed initdb or a PostgreSQL that exits stops the run…」在 GitHub CI verify-fast 偶发 30 秒超时（10-15 #476 起，
+# 今天 #1368 30.2 s，run 39954588706 第 1 次）。主干最近 12 次绿的 verify-fast 里它耗时 17.5–26.6 s。慢的原因：一条 it 里完整跑三次
+# verify-container.sh（initdb 失败、PostgreSQL 提前退出、Redis 仍认 MIGRATE），每次都走完整前置；没有单个等待占大头（桩里 unit 第一次
+# 就绪探测即报未运行）。做法：只把这一条 it 的超时从 CLI_TIMEOUT（30 s）调到 90_000 并加注释，断言与其他用例不动。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ops/verify-container.services.test.ts'
+  - 'ops/tasks/CT-06zp.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 1399
