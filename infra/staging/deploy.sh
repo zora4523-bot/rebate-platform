@@ -4,7 +4,7 @@ set -Eeuo pipefail
 # Staging deployment (B1-01zc). Run as root on the staging node:
 #   ./deploy.sh <image-tag> [--with-current-compose]
 # The image couli-api:<image-tag> must already be loaded on the node (docker load).
-# Order: take the deployment lock -> check the node files exist -> migrate with the new image ->
+# Order: take the deployment lock -> check the node files exist -> migrate and seed with the new image ->
 # switch all five processes and wait until every health check passes (each requires 30s of
 # uptime and a single container start, see compose.yaml) -> confirm RestartCount 0 for all five
 # -> on success mark the containers settled, record the tag with a copy of the compose file used
@@ -179,11 +179,16 @@ fi
 
 log "deploying couli-api:$COULI_API_TAG (last successful: ${PREVIOUS_TAG:-none})"
 
-# Step 1: migrate with the new image, migrator credentials only. Under set -e a failed
-# migration stops here, before any running process is touched.
-log "step 1/4: database migration"
-docker run --rm --pull never --env-file /etc/couli/staging-migrator.env --volume /etc/pki/ca.crt:/etc/pki/ca.crt:ro "couli-api:$COULI_API_TAG" node packages/db/scripts/migrate.ts
-log "step 1/4: migration finished"
+# Step 1: migrate with the new image, migrator credentials only, then apply the seeds
+# (db/seeds, re-runnable) in the same one-off container. The container runs `sh -e` on the
+# script below with the migration command as its arguments ("$@"), so the seed starts only after
+# the migration succeeded and the first failure ends the container with a non-zero status. Under
+# set -e a failed migration or seed stops here, before any running process is touched. Both
+# scripts print connection strings with the password removed.
+MIGRATE_THEN_SEED=$'"$@"\nnode packages/db/scripts/seed.ts'
+log "step 1/4: database migration and seed"
+docker run --rm --pull never --env-file /etc/couli/staging-migrator.env --volume /etc/pki/ca.crt:/etc/pki/ca.crt:ro "couli-api:$COULI_API_TAG" sh -ec "$MIGRATE_THEN_SEED" migrate-then-seed node packages/db/scripts/migrate.ts
+log "step 1/4: migration and seed finished"
 
 # Step 2: recreate all five processes on the new image and wait until every health check
 # passes. A check passes only after 30s of uptime and only if the container has started

@@ -194,7 +194,7 @@ scp infra/staging/compose.yaml infra/staging/deploy.sh <staging 节点>:/opt/cou
 脚本依次打印每一步结果：
 
 1. 检查镜像已经 `docker load` 到节点，检查第 1 节列出的节点文件都存在；
-2. 用新镜像一次性运行迁移（`node packages/db/scripts/migrate.ts`，只读 `staging-migrator.env`，挂载数据库 CA），迁移失败直接停下，正在运行的进程不受影响；迁移脚本出错时只打印错误类型和去掉口令的消息；
+2. 用新镜像一次性运行迁移（`node packages/db/scripts/migrate.ts`，只读 `staging-migrator.env`，挂载数据库 CA），迁移成功后在同一个一次性容器里接着跑种子（`node packages/db/scripts/seed.ts`，按文件名顺序执行 `db/seeds/*.sql`，同样只读 `staging-migrator.env`、挂载数据库 CA）；种子可重复执行，所以每次部署（包括重复部署同一标签）都会再跑一遍，健康失败后的自动回退不再跑迁移和种子；迁移失败或种子失败都直接停下、非零退出，不切换进程，正在运行的进程不受影响，也不记录标签；迁移和种子脚本出错时只打印错误类型和去掉口令的消息，日志里的连接串也去掉口令；
 3. `docker compose up -d --force-recreate --wait` 重建全部五个进程并等五个健康检查都通过（上限 240 秒）：api / stream / admin 要求本进程 `/healthz` 返回 2xx，worker 与 payout 要求依赖探测通过（第 7 节），五个进程都要求容器已连续运行 30 秒，并且在本次部署被标记为稳定（`/tmp/couli-settled`）之前**只启动过一次**。`boot.mjs` 每次进程启动往容器内 `/tmp/couli-starts` 追加一行：这个文件在容器的可写层里，自动重启后还在，重建容器后清空。所以本次部署中任何一个进程（包括没有端口的 worker 与 payout）哪怕只崩溃、重启过一次，健康检查就一直不通过，这一步失败并回退。健康检查自己不写稳定标记，崩溃重启过的进程以后一直不健康；但 `up --wait` 对已经见过健康的服务不一定再看一遍，所以从任一服务首次健康后到 `up --wait` 返回这一整段里发生的崩溃重启，这一步可能发现不了，要靠第 4 步核对；
 4. 五个都健康后，再用 `docker inspect` 核对五个容器的 RestartCount 都是 0；通过后才往五个容器里写 `/tmp/couli-settled`（以后节点重启等情况下的自动重启只需重新等 30 秒，不会一直不健康），然后先把这次用的 `compose.yaml` 存一份为 `/var/lib/couli/compose.<标签>.yaml`（先写临时文件再改名到位；磁盘满等原因写不成时脚本就此失败，标签不记录，上一个成功标签和它的副本仍可用来回退），再把新标签写入 `/var/lib/couli/staging-api.tag`；
 5. 删除更早的 `couli-api` 镜像和对应的 compose 副本，只保留本次和上一次成功的标签（回退要用），避免写满与数据库共用的 20G 系统盘。本次标签与上一次成功的标签相同（重复部署同一版本）时不删任何镜像，之前留下的回退镜像保留。
