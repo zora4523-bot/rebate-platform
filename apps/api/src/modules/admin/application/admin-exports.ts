@@ -18,6 +18,12 @@
 //     failed → pending through transitionExportTask under a row_version CAS, with progress and
 //     failure_reason cleared, the export_retry audit (and export_unmasked with the new reason) and
 //     the generate job in one transaction. A lost CAS reads the status again (30417).
+// Create and retry first take the creator's admin_users row FOR SHARE in their transaction and
+// require it active (B1-34h review r1 S2): a disable (which holds that row FOR UPDATE, then cancels
+// the creator's pending / running tasks in the same transaction) either commits first — the
+// request then sees `disabled` and answers 10001 without writing — or waits for this transaction,
+// and its cancel then sees the new pending task. Row lock first, as the disable takes it, so the
+// two never wait on each other in opposite order.
 // Time only from the injected Clock. Logs nothing (no value, link or token reaches a log line).
 //
 // Pure module (no decorators, erasable syntax).
@@ -58,8 +64,18 @@ const RISK_STATE_NAMES: Readonly<Record<string, string>> = {
   banned: '封禁',
 };
 const SUMMARY_MAX = 500;
+/** admin_users.status of an account that may create or retry (same value as the login's). */
+const ADMIN_ACTIVE_CREATOR = 'active';
 
 type TaskRow = Selectable<DB['export_tasks']>;
+
+/** The creator was disabled (or vanished) after its admin_token was checked: 10001, nothing written. */
+export class ExportCreatorInactiveError extends Error {
+  constructor() {
+    super('admin export: the creating account is no longer active');
+    this.name = 'ExportCreatorInactiveError';
+  }
+}
 
 /** 20001 with data.fields. */
 export class ExportFieldsError extends Error {
@@ -306,6 +322,18 @@ export function createAdminExports(deps: AdminExportsDeps): AdminExports {
     return row;
   };
 
+  /** Holds the creator's row (shared) for the transaction; it must still be active. */
+  const lockActiveCreator = async (trx: Transaction<DB>, actor: AdminActor): Promise<void> => {
+    const creator = await trx
+      .selectFrom('admin_users')
+      .select('status')
+      .where('app_id', '=', actor.appId)
+      .where('id', '=', actor.adminId)
+      .forShare()
+      .executeTakeFirst();
+    if (creator?.status !== ADMIN_ACTIVE_CREATOR) throw new ExportCreatorInactiveError();
+  };
+
   const enqueue = (trx: Transaction<DB>, row: TaskRow) =>
     queue.send(EXPORT_QUEUE, EXPORT_GENERATE_JOB, { appId: row.app_id, taskId: row.id }, { trx });
 
@@ -329,6 +357,7 @@ export function createAdminExports(deps: AdminExportsDeps): AdminExports {
       const masked = !(command.resource === 'users' && command.unmasked === true);
       const now = clock.now();
       const row = await db.transaction().execute(async (trx) => {
+        await lockActiveCreator(trx, actor);
         const inserted = await trx
           .insertInto('export_tasks')
           .values({
@@ -478,6 +507,7 @@ export function createAdminExports(deps: AdminExportsDeps): AdminExports {
       const step = transitionExportTask(statusOf(task), 'RETRY');
       if (!step.ok) throw new ExportStatusError(statusOf(task));
       const outcome = await db.transaction().execute(async (trx) => {
+        await lockActiveCreator(trx, actor);
         const now = clock.now();
         const updated = await trx
           .updateTable('export_tasks')

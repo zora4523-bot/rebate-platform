@@ -15,6 +15,8 @@ import type { AdminDirectory, AdminDirectoryRow } from '../infra/admin-directory
 export interface AdminAccountView {
   readonly adminId: string;
   readonly username: string;
+  /** null when never set (the contract then omits display_name). */
+  readonly displayName: string | null;
   readonly isSuper: boolean;
   readonly status: string;
   readonly totpBound: boolean;
@@ -22,6 +24,8 @@ export interface AdminAccountView {
   readonly lockedUntil: Date | null;
   readonly permissions: AdminPermission[];
   readonly createdAt: Date;
+  /** CAS value; the reads do not answer it, B1-34h's write responses do. */
+  readonly rowVersion: number;
 }
 
 export interface AdminAccountsPage {
@@ -38,16 +42,16 @@ export interface AdminAccountsReader {
   get(appId: string, adminId: string): Promise<AdminAccountView | undefined>;
 }
 
-export function createAdminAccountsReader(deps: {
-  readonly clock: Clock;
-  readonly directory: AdminDirectory;
-  readonly crypto: Pick<FieldCrypto, 'decrypt'>;
-}): AdminAccountsReader {
-  const { clock, directory, crypto } = deps;
-
-  const view = (row: AdminDirectoryRow, now: Date): AdminAccountView => ({
+/** The account as the console sees it; only the verify phone's mask leaves this function. */
+export function toAccountView(
+  row: AdminDirectoryRow,
+  now: Date,
+  crypto: Pick<FieldCrypto, 'decrypt'>,
+): AdminAccountView {
+  return {
     adminId: row.id,
     username: row.loginName,
+    displayName: row.displayName,
     isSuper: row.isSuper,
     status: row.status,
     totpBound: row.totpBoundAt !== null,
@@ -63,7 +67,19 @@ export function createAdminAccountsReader(deps: {
     lockedUntil: lockInForce(row.lockedUntil, now),
     permissions: visiblePermissions(row.isSuper, row.permissionKeys),
     createdAt: row.createdAt,
-  });
+    rowVersion: row.rowVersion,
+  };
+}
+
+export function createAdminAccountsReader(deps: {
+  readonly clock: Clock;
+  readonly directory: AdminDirectory;
+  readonly crypto: Pick<FieldCrypto, 'decrypt'>;
+}): AdminAccountsReader {
+  const { clock, directory, crypto } = deps;
+
+  const view = (row: AdminDirectoryRow, now: Date): AdminAccountView =>
+    toAccountView(row, now, crypto);
 
   return {
     async list(appId, page, pageSize) {

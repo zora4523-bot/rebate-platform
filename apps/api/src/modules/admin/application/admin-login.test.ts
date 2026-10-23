@@ -26,6 +26,7 @@ import type {
   FailureOutcome,
   WriteOutcome,
 } from '../infra/admin-accounts.ts';
+import type { AdminRevocations } from '../infra/admin-revocations.ts';
 import { createAdminSessions } from '../infra/admin-sessions.ts';
 import { createLoginTickets } from '../infra/login-tickets.ts';
 import { createMemoryTotpReplayStore } from '../infra/totp-replay-memory.ts';
@@ -75,10 +76,21 @@ function memoryRedis(): RedisNamespace & { keys(): string[] } {
 function memoryAccounts(clock: FixedClock, initial: AdminAccount) {
   let row = initial;
   const audits: string[] = [];
+  /** Runs once right after the next read returned (a write committed in between, B1-34h). */
+  let afterRead: (() => void) | undefined;
+  const read = (found: boolean): Promise<AdminAccount | undefined> => {
+    const value = found ? row : undefined;
+    const hook = afterRead;
+    afterRead = undefined;
+    hook?.();
+    return Promise.resolve(value);
+  };
   const unlocked = () => !isLocked(row.lockedUntil, clock.now());
+  /** The infra writes are conditional on the row_version read (B1-34h review r1 S1). */
+  const moved = (account: AdminAccount) => account.rowVersion !== row.rowVersion;
   const accounts: AdminAccounts = {
-    byLoginName: (name) => Promise.resolve(name === row.loginName ? row : undefined),
-    byId: (_app, id) => Promise.resolve(id === row.id ? row : undefined),
+    byLoginName: (name) => read(name === row.loginName),
+    byId: (_app, id) => read(id === row.id),
     recordFailure(_account, lockAudit): Promise<FailureOutcome> {
       if (!unlocked()) {
         return Promise.resolve({ kind: 'already_locked', lockedUntil: row.lockedUntil! });
@@ -95,20 +107,23 @@ function memoryAccounts(clock: FixedClock, initial: AdminAccount) {
       audits.push(audit.action);
       return Promise.resolve();
     },
-    completeLogin(_account, list): Promise<WriteOutcome> {
+    completeLogin(account, list): Promise<WriteOutcome> {
+      if (moved(account)) return Promise.resolve({ kind: 'conflict' });
       if (!unlocked()) return Promise.resolve({ kind: 'locked', lockedUntil: row.lockedUntil! });
       row = { ...row, failedLoginCount: 0, lockedUntil: null };
       audits.push(...list.map((audit) => audit.action));
       return Promise.resolve({ kind: 'written' });
     },
-    changeInitialPassword(_account, hash, audit): Promise<WriteOutcome> {
+    changeInitialPassword(account, hash, audit): Promise<WriteOutcome> {
+      if (moved(account)) return Promise.resolve({ kind: 'conflict' });
       if (!unlocked()) return Promise.resolve({ kind: 'locked', lockedUntil: row.lockedUntil! });
       if (!row.passwordMustChange) return Promise.resolve({ kind: 'conflict' });
       row = { ...row, passwordHash: hash, passwordMustChange: false };
       audits.push(audit.action);
       return Promise.resolve({ kind: 'written' });
     },
-    bindTotp(_account, cipher, list): Promise<WriteOutcome> {
+    bindTotp(account, cipher, list): Promise<WriteOutcome> {
+      if (moved(account)) return Promise.resolve({ kind: 'conflict' });
       if (!unlocked()) return Promise.resolve({ kind: 'locked', lockedUntil: row.lockedUntil! });
       if (row.totpBoundAt !== null) return Promise.resolve({ kind: 'conflict' });
       row = {
@@ -122,7 +137,18 @@ function memoryAccounts(clock: FixedClock, initial: AdminAccount) {
       return Promise.resolve({ kind: 'written' });
     },
   };
-  return { accounts, audits, row: () => row };
+  return {
+    accounts,
+    audits,
+    row: () => row,
+    /** A super admin write committing right after the next read (row_version + 1). */
+    commitAfterNextRead(patch: Partial<AdminAccount>, then?: () => void) {
+      afterRead = () => {
+        row = { ...row, ...patch, rowVersion: row.rowVersion + 1 };
+        then?.();
+      };
+    },
+  };
 }
 
 /** Field cipher double: binds the context, never the real envelope. */
@@ -155,9 +181,18 @@ function setup(patch: Partial<AdminAccount> = {}) {
     passwordMustChange: false,
     failedLoginCount: 0,
     lockedUntil: null,
+    rowVersion: 0,
     ...patch,
   });
   const redis = memoryRedis();
+  let voidedAtMs: number | null = null;
+  const revocations: AdminRevocations = {
+    voidBefore: (_account, atMs) => {
+      voidedAtMs = atMs;
+      return Promise.resolve();
+    },
+    voidedAt: () => Promise.resolve(voidedAtMs),
+  };
   const tokens = createAdminTokens({ key: new Uint8Array(randomBytes(32)), clock });
   const sessions = createAdminSessions({ redis, clock });
   const service = createAdminAuthService({
@@ -174,6 +209,7 @@ function setup(patch: Partial<AdminAccount> = {}) {
     }),
     crypto,
     issuer: 'Couli Admin test',
+    revocations,
   });
   const check = createAdminRequestCheck({
     clock,
@@ -182,7 +218,7 @@ function setup(patch: Partial<AdminAccount> = {}) {
     sessions: () => sessions,
     accounts: () => store.accounts,
   });
-  return { clock, secret, store, redis, service, check };
+  return { clock, secret, store, redis, service, check, revocations };
 }
 
 const request = (token: string, url = '/admin/v1/me/permissions'): RequestCheckInput => ({
@@ -363,4 +399,103 @@ it('[AC-F1-06k] the admin check: whitelist first, super routes need a super acco
   await expect(
     fixture.check({ ...request('x'), routeTemplate: '/healthz', ip: '198.51.100.1' }),
   ).resolves.toBeUndefined();
+}, 30_000);
+
+/** The voiding write of an initial password regeneration as admin-account-writes commits it. */
+function regenerated(fixture: ReturnType<typeof setup>) {
+  return () => {
+    fixture.clock.advanceMs(1);
+    void fixture.revocations.voidBefore(
+      { appId: 'couli', adminId: ID },
+      fixture.clock.now().getTime(),
+    );
+  };
+}
+
+/** The regenerated initial password of the race tests (a placeholder). */
+const REGENERATED = 'regen-pw-2';
+
+const ON_INITIAL = { passwordMustChange: true, totpBoundAt: null, totpSecretCipher: null };
+
+it('[AC-B1-34h] a regeneration committed while the login checks the old password voids its ticket', async () => {
+  const fixture = setup(ON_INITIAL);
+  const replaced = await hashAdminPassword(REGENERATED);
+  // The login has read hash(P1); the regeneration commits before the ticket is stored.
+  fixture.store.commitAfterNextRead({ passwordHash: replaced }, regenerated(fixture));
+  const step = await fixture.service.login({ username: 'ops-yi', password: INITIAL, ip: null });
+  expect(step).toMatchObject({ code: 0, next: 'change_password' });
+  if (step.code !== 0 || !('ticket' in step)) throw new Error('no ticket');
+  fixture.clock.advanceMs(1_000);
+  expect(
+    await fixture.service.changeInitialPassword({
+      ticket: step.ticket,
+      newPassword: 'a-new-password',
+      ip: null,
+    }),
+  ).toEqual({ code: 10001 });
+  expect(fixture.store.row()).toMatchObject({ passwordHash: replaced, passwordMustChange: true });
+}, 60_000);
+
+it('[AC-B1-34h] a regeneration committed between the ticket check and the account read voids the step', async () => {
+  for (const visible of [true, false]) {
+    const fixture = setup(ON_INITIAL);
+    const step = await fixture.service.login({ username: 'ops-yi', password: INITIAL, ip: null });
+    if (step.code !== 0 || !('ticket' in step)) throw new Error('no ticket');
+    fixture.clock.advanceMs(1_000);
+    const replaced = await hashAdminPassword(REGENERATED);
+    // visible: the voiding instant is already in Redis when the step checks it; otherwise only
+    // the row has moved on (the regeneration still holds the row when the step reads it).
+    fixture.store.commitAfterNextRead(
+      { passwordHash: replaced },
+      visible ? regenerated(fixture) : undefined,
+    );
+    expect(
+      await fixture.service.changeInitialPassword({
+        ticket: step.ticket,
+        newPassword: 'a-new-password',
+        ip: null,
+      }),
+    ).toEqual({ code: 10001 });
+    expect(fixture.store.row()).toMatchObject({ passwordHash: replaced, passwordMustChange: true });
+  }
+}, 60_000);
+
+it('[AC-B1-34h] a ticket issued before an account change (row_version) cannot continue', async () => {
+  const fixture = setup();
+  const step = await fixture.service.login({ username: 'ops-yi', password: INITIAL, ip: null });
+  if (step.code !== 0 || !('ticket' in step)) throw new Error('no ticket');
+  // Disabled and enabled again in between: the row moved on, the ticket is stale.
+  fixture.store.commitAfterNextRead({});
+  await fixture.store.accounts.byId('couli', ID);
+  expect(
+    await fixture.service.verifyTotp({
+      ticket: step.ticket,
+      code: codeOf(fixture.secret, fixture.clock),
+      ip: null,
+    }),
+  ).toEqual({ code: 10001 });
+}, 30_000);
+
+it('[AC-B1-34h] a void landing right after the final login write revokes the new session', async () => {
+  const fixture = setup();
+  const step = await fixture.service.login({ username: 'ops-yi', password: INITIAL, ip: null });
+  if (step.code !== 0 || !('ticket' in step)) throw new Error('no ticket');
+  const complete = fixture.store.accounts.completeLogin.bind(fixture.store.accounts);
+  fixture.store.accounts.completeLogin = async (account, list) => {
+    const outcome = await complete(account, list);
+    fixture.clock.advanceMs(1);
+    await fixture.revocations.voidBefore(
+      { appId: 'couli', adminId: ID },
+      fixture.clock.now().getTime(),
+    );
+    return outcome;
+  };
+  expect(
+    await fixture.service.verifyTotp({
+      ticket: step.ticket,
+      code: codeOf(fixture.secret, fixture.clock),
+      ip: null,
+    }),
+  ).toEqual({ code: 10001 });
+  expect(fixture.redis.keys().filter((key) => key.startsWith('session:'))).toEqual([]);
 }, 30_000);

@@ -1,7 +1,8 @@
 // Read-only queries of the admin accounts list and detail (F1-06m). Always the primary database
 // (couli_app, the DB handle): couli_readonly cannot read the verify phone cipher (ruling §9.2 #1),
 // so a configured read replica is never used here. Reads only; nothing is written or audited
-// (ruling §9.2 #6). Scoped to one app_id; ordered by created_at, then id (ruling §9.2 #2).
+// (ruling §9.2 #6); B1-34h's writes also re-read the account through it inside their transaction.
+// Scoped to one app_id; ordered by created_at, then id (ruling §9.2 #2).
 //
 // Pure module (no decorators, erasable syntax).
 import type { DB } from '@couli/db';
@@ -11,12 +12,16 @@ export interface AdminDirectoryRow {
   readonly id: string;
   readonly appId: string;
   readonly loginName: string;
+  /** admin_users.display_name; null when never set. */
+  readonly displayName: string | null;
   readonly isSuper: boolean;
   readonly status: string;
   readonly totpBoundAt: Date | null;
   readonly verifyPhoneCipher: Buffer | null;
   readonly lockedUntil: Date | null;
   readonly createdAt: Date;
+  /** CAS value of the account (B1-34h write responses). */
+  readonly rowVersion: number;
   /** Raw permission keys ticked in admin_permissions (unfiltered). */
   readonly permissionKeys: readonly string[];
 }
@@ -34,24 +39,28 @@ const COLUMNS = [
   'id',
   'app_id',
   'login_name',
+  'display_name',
   'is_super',
   'status',
   'totp_bound_at',
   'verify_phone_cipher',
   'locked_until',
   'created_at',
+  'row_version',
 ] as const;
 
 interface Row {
   id: string;
   app_id: string;
   login_name: string;
+  display_name: string | null;
   is_super: boolean;
   status: string;
   totp_bound_at: Date | null;
   verify_phone_cipher: Buffer | null;
   locked_until: Date | null;
   created_at: Date;
+  row_version: number;
 }
 
 export function createAdminDirectory(deps: { readonly db: Kysely<DB> }): AdminDirectory {
@@ -83,12 +92,14 @@ export function createAdminDirectory(deps: { readonly db: Kysely<DB> }): AdminDi
       id: row.id,
       appId: row.app_id,
       loginName: row.login_name,
+      displayName: row.display_name,
       isSuper: row.is_super,
       status: row.status,
       totpBoundAt: row.totp_bound_at,
       verifyPhoneCipher: row.verify_phone_cipher,
       lockedUntil: row.locked_until,
       createdAt: row.created_at,
+      rowVersion: row.row_version,
       permissionKeys: keys.get(row.id) ?? [],
     }));
   };

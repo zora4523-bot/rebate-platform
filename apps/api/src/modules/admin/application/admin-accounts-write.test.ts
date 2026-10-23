@@ -1,0 +1,117 @@
+import { expect, it, vi } from 'vitest';
+import { FixedClock } from '../../platform/index.ts';
+import type { AdminAccountWrites } from '../infra/admin-account-writes.ts';
+import type { AdminDirectoryRow } from '../infra/admin-directory.ts';
+import {
+  createAdminAccountsWriter,
+  normalizeDisplayName,
+  reasonOk,
+} from './admin-accounts-write.ts';
+
+const APP = 'couli';
+const ACTOR = { appId: APP, adminId: '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b00', ip: '127.0.0.1' };
+const TARGET = '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01';
+
+function row(patch: Partial<AdminDirectoryRow> = {}): AdminDirectoryRow {
+  return {
+    id: TARGET,
+    appId: APP,
+    loginName: 'cs',
+    displayName: '客服',
+    isSuper: false,
+    status: 'active',
+    totpBoundAt: null,
+    verifyPhoneCipher: null,
+    lockedUntil: null,
+    createdAt: new Date('2026-10-01T00:00:00.000Z'),
+    rowVersion: 1,
+    permissionKeys: [],
+    ...patch,
+  };
+}
+
+function setup(writes: Partial<AdminAccountWrites> = {}) {
+  const all: AdminAccountWrites = {
+    create: vi.fn(async () => ({ kind: 'written' as const, row: row({ rowVersion: 0 }) })),
+    regenerate: vi.fn(async () => ({ kind: 'written' as const, row: row() })),
+    disable: vi.fn(async () => ({ kind: 'written' as const, row: row({ status: 'disabled' }) })),
+    enable: vi.fn(async () => ({ kind: 'written' as const, row: row() })),
+    resetTotp: vi.fn(async () => ({ kind: 'written' as const, row: row() })),
+    rename: vi.fn(async () => ({ kind: 'written' as const, row: row() })),
+    ...writes,
+  };
+  const hashPassword = vi.fn(async (password: string) => `hash(${password.length})`);
+  const writer = createAdminAccountsWriter({
+    clock: new FixedClock('2026-10-09T02:00:00.000Z'),
+    writes: all,
+    crypto: { decrypt: () => '' },
+    hashPassword,
+    generatePassword: () => 'Generated2Password',
+  });
+  return { writer, writes: all, hashPassword };
+}
+
+it('[AC-B1-34h] display names are trimmed and 1–32 characters; whitespace-only reasons are refused', () => {
+  expect(normalizeDisplayName('  客服小狸  ')).toBe('客服小狸');
+  expect(normalizeDisplayName('   ')).toBeNull();
+  expect(normalizeDisplayName('名'.repeat(32))).toBe('名'.repeat(32));
+  expect(normalizeDisplayName('名'.repeat(33))).toBeNull();
+  expect(reasonOk('已核对')).toBe(true);
+  expect(reasonOk('  ')).toBe(false);
+});
+
+it('[AC-B1-34h] create hands only the hash to the writes and answers the clear password once', async () => {
+  const { writer, writes, hashPassword } = setup();
+  const answer = await writer.create(ACTOR, { username: 'cs', display_name: ' 客服 ' });
+  expect(answer).toMatchObject({ kind: 'ok', initialPassword: 'Generated2Password' });
+  expect(hashPassword).toHaveBeenCalledWith('Generated2Password');
+  const call = vi.mocked(writes.create).mock.calls[0]![0];
+  expect(call).toMatchObject({
+    appId: APP,
+    actor: ACTOR.adminId,
+    loginName: 'cs',
+    displayName: '客服',
+    passwordHash: 'hash(18)',
+  });
+  expect(JSON.stringify(call)).not.toContain('Generated2Password');
+});
+
+it('[AC-B1-34h] refusals map to fields, forbidden and conflict without writing', async () => {
+  const { writer, writes } = setup({
+    create: vi.fn(async () => ({ kind: 'username_taken' as const })),
+    disable: vi.fn(async () => ({ kind: 'refused' as const, reason: 'conflict' as const })),
+    enable: vi.fn(async () => ({ kind: 'refused' as const, reason: 'forbidden' as const })),
+    rename: vi.fn(async () => ({ kind: 'refused' as const, reason: 'unknown' as const })),
+  });
+  expect(await writer.create(ACTOR, { username: 'cs', display_name: '客服' })).toEqual({
+    kind: 'fields',
+    fields: ['username'],
+  });
+  expect(await writer.create(ACTOR, { username: 'cs', display_name: '  ' })).toEqual({
+    kind: 'fields',
+    fields: ['display_name'],
+  });
+  expect(await writer.disable(ACTOR, TARGET, '原因')).toEqual({ kind: 'conflict' });
+  expect(await writer.disable(ACTOR, TARGET, ' ')).toEqual({ kind: 'fields', fields: ['reason'] });
+  expect(await writer.enable(ACTOR, TARGET)).toEqual({ kind: 'forbidden' });
+  expect(await writer.rename(ACTOR, TARGET, '新名')).toEqual({
+    kind: 'fields',
+    fields: ['admin_id'],
+  });
+  expect(await writer.resetTotp(ACTOR, 'not-a-uuid', '原因')).toEqual({
+    kind: 'fields',
+    fields: ['admin_id'],
+  });
+  expect(writes.resetTotp).not.toHaveBeenCalled();
+  expect(vi.mocked(writes.disable).mock.calls).toHaveLength(1);
+});
+
+it('[AC-B1-34h] the answered account carries display name and row version', async () => {
+  const { writer } = setup();
+  const answer = await writer.regenerate(ACTOR, TARGET);
+  expect(answer).toMatchObject({
+    kind: 'ok',
+    initialPassword: 'Generated2Password',
+    account: { adminId: TARGET, displayName: '客服', rowVersion: 1, totpBound: false },
+  });
+});

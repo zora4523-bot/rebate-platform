@@ -15,7 +15,9 @@
 //   3. sms tier on an account without a verify phone → 10003 data {tier: sms, reason:
 //      verify_phone_missing} (super admins too);
 //   4. X-Step-Up-Token missing, unknown, expired, of another account, app or session, of
-//      another tier, or in use by a concurrent request → 10003 data {tier} (super admins too);
+//      another tier, issued before the account's voiding instant (B1-34h: disable, authenticator
+//      reset, initial password regeneration), or in use by a concurrent request → 10003 data
+//      {tier} (super admins too);
 //   5. the token is claimed (SET NX of a claim key, atomically with its existence check), so
 //      concurrent requests with one token run the operation at most once; the operation runs;
 //      HTTP 2xx with code 0 consumes the token (the claim stays until the token's expiry);
@@ -28,6 +30,7 @@ import { HttpException } from '@nestjs/common';
 import type { Clock, RedisNamespace } from '../../platform/index.ts';
 import { later } from '../domain/login-policy.ts';
 import { requiredStepUpTier, type AdminStepUpTier } from '../domain/permission-catalog.ts';
+import { issuedBeforeVoid, type AdminRevocations } from '../infra/admin-revocations.ts';
 import { STEP_UP_CLEANUP_MARGIN_SEC, STEP_UP_TOKEN_TTL_MS } from '../domain/step-up-policy.ts';
 
 /** Redis namespace shared by the HTTP issuance and every guarded operation. */
@@ -200,10 +203,31 @@ function headerToken(headers: AdminPermissionRequest['headers']): string | undef
 const succeeded = (result: AdminBusinessResponse): boolean =>
   result.statusCode >= 200 && result.statusCode <= 299 && result.body.code === 0;
 
-export function createAdminPermissionGuard(deps: {
+export interface AdminStepUpGateRequest {
+  /** The verified admin_token's account and session (server-injected). */
+  readonly principal: Pick<AdminPermissionPrincipal, 'appId' | 'adminId' | 'sessionId'>;
+  readonly tier: AdminStepUpTier;
+  readonly headers: AdminPermissionRequest['headers'];
+  readonly traceId: string;
+}
+
+export interface AdminStepUpGate {
+  /** Steps 4 and 5 of the guard for a known tier (super-only operations use it directly). */
+  run(
+    request: AdminStepUpGateRequest,
+    business: () => Promise<AdminBusinessResponse>,
+  ): Promise<AdminBusinessResponse>;
+}
+
+/**
+ * The step-up token part of the guard (steps 4 and 5) for an operation whose tier is fixed by the
+ * contract rather than by a permission point (B1-34h: the super admin's /admin/v1/admins writes).
+ */
+export function createAdminStepUpGate(deps: {
   readonly clock: Clock;
   readonly redis: RedisNamespace;
-}): AdminPermissionGuard {
+  readonly revocations?: AdminRevocations;
+}): AdminStepUpGate {
   const { clock, redis } = deps;
 
   /** Best effort: a failure leaves the claim in place, which keeps the token unusable. */
@@ -214,6 +238,61 @@ export function createAdminPermissionGuard(deps: {
       // Fail closed: the claim outlives the token, so a lost write never re-enables it.
     }
   };
+
+  /** Issued before the account's voiding instant (B1-34h); the record holds its expiry only. */
+  const voided = async (record: TokenRecord): Promise<boolean> => {
+    if (deps.revocations === undefined) return false;
+    const at = await deps.revocations.voidedAt({ appId: record.appId, adminId: record.adminId });
+    return issuedBeforeVoid(record.expiresAtMs - STEP_UP_TOKEN_TTL_MS, at);
+  };
+
+  return {
+    async run(request, business) {
+      const { principal, tier, traceId } = request;
+      const token = headerToken(request.headers);
+      if (token === undefined) throw stepUpRequired(tier, traceId);
+      const digest = digestOf(token);
+      const record = parseRecord(await redis.get(tokenKey(digest)));
+      const nowMs = clock.now().getTime();
+      if (
+        record === undefined ||
+        record.expiresAtMs <= nowMs ||
+        record.appId !== principal.appId ||
+        record.adminId !== principal.adminId ||
+        record.sessionId !== principal.sessionId ||
+        record.tier !== tier ||
+        (await voided(record))
+      ) {
+        throw stepUpRequired(tier, traceId);
+      }
+      const claimed = await redis.eval(CLAIM_SCRIPT, {
+        keys: [tokenKey(digest), claimKey(digest)],
+        args: [],
+        ttlSeconds: ttlUntil(record.expiresAtMs, nowMs),
+      });
+      if (claimed !== 1) throw stepUpRequired(tier, traceId);
+
+      let result: AdminBusinessResponse;
+      try {
+        result = await business();
+      } catch (error) {
+        await quietly(RELEASE_SCRIPT, claimKey(digest));
+        throw error;
+      }
+      if (succeeded(result)) await quietly(CONSUME_SCRIPT, tokenKey(digest));
+      else await quietly(RELEASE_SCRIPT, claimKey(digest));
+      return result;
+    },
+  };
+}
+
+export function createAdminPermissionGuard(deps: {
+  readonly clock: Clock;
+  readonly redis: RedisNamespace;
+  /** B1-34h voiding instants (namespace admin-auth); the admin entry always passes it. */
+  readonly revocations?: AdminRevocations;
+}): AdminPermissionGuard {
+  const gate = createAdminStepUpGate(deps);
 
   return {
     async run(request, business) {
@@ -241,38 +320,7 @@ export function createAdminPermissionGuard(deps: {
       if (tier === null) return await business();
       if (tier === 'sms' && !principal.hasVerifyPhone) throw stepUpRequired(tier, traceId, true);
 
-      const token = headerToken(request.headers);
-      if (token === undefined) throw stepUpRequired(tier, traceId);
-      const digest = digestOf(token);
-      const record = parseRecord(await redis.get(tokenKey(digest)));
-      const nowMs = clock.now().getTime();
-      if (
-        record === undefined ||
-        record.expiresAtMs <= nowMs ||
-        record.appId !== principal.appId ||
-        record.adminId !== principal.adminId ||
-        record.sessionId !== principal.sessionId ||
-        record.tier !== tier
-      ) {
-        throw stepUpRequired(tier, traceId);
-      }
-      const claimed = await redis.eval(CLAIM_SCRIPT, {
-        keys: [tokenKey(digest), claimKey(digest)],
-        args: [],
-        ttlSeconds: ttlUntil(record.expiresAtMs, nowMs),
-      });
-      if (claimed !== 1) throw stepUpRequired(tier, traceId);
-
-      let result: AdminBusinessResponse;
-      try {
-        result = await business();
-      } catch (error) {
-        await quietly(RELEASE_SCRIPT, claimKey(digest));
-        throw error;
-      }
-      if (succeeded(result)) await quietly(CONSUME_SCRIPT, tokenKey(digest));
-      else await quietly(RELEASE_SCRIPT, claimKey(digest));
-      return result;
+      return await gate.run({ principal, tier, headers: request.headers, traceId }, business);
     },
   };
 }

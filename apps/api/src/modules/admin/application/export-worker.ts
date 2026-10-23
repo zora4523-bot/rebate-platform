@@ -207,9 +207,96 @@ async function limit(
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : fallback;
 }
 
+/**
+ * The account-disable port without the rest of the worker (B1-34h: the admin entry's disable runs
+ * it inside its own transaction): the creator's pending / running tasks → cancelled through
+ * transitionExportTask, one export_cancel audit row each, under the per-creator lock of `trx`.
+ */
+export interface ExportCanceller {
+  /** Number of tasks cancelled; nothing for an app id or admin id of the wrong shape. */
+  cancelByCreator(
+    trx: Kysely<DB>,
+    input: {
+      readonly appId: string;
+      readonly adminId: string;
+      /** Who the audit rows name (the disabling super admin); the creator when absent. */
+      readonly actor?: string;
+      readonly ip?: string | null;
+    },
+  ): Promise<number>;
+}
+
+export function createExportCanceller(options: {
+  readonly clock: Clock;
+  readonly sensitiveKeys?: readonly string[];
+}): ExportCanceller {
+  const { clock } = options;
+  return {
+    async cancelByCreator(handle, input) {
+      const { appId, adminId } = input;
+      if (!APP_ID.test(appId) || !UUID.test(adminId)) return 0;
+      const trx = handle.withSchema('app');
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`admin.export_tasks.creator:${appId}:${adminId}`}, 0))`.execute(
+        trx,
+      );
+      const rows = await trx
+        .selectFrom('export_tasks')
+        .selectAll()
+        .where('app_id', '=', appId)
+        .where('created_by', '=', adminId)
+        .where('status', 'in', ['pending', 'running'])
+        .orderBy('created_at')
+        .orderBy('id')
+        .forUpdate()
+        .execute();
+      const audit = createAuditWriter({
+        db: trx,
+        clock,
+        ...(options.sensitiveKeys === undefined ? {} : { sensitiveKeys: options.sensitiveKeys }),
+      });
+      let count = 0;
+      for (const row of rows) {
+        const step = transitionExportTask(row.status as ExportTaskState, 'CANCEL');
+        if (!step.ok) continue;
+        const now = clock.now();
+        await trx
+          .updateTable('export_tasks')
+          .set((eb) => ({
+            status: step.to,
+            updated_at: now,
+            row_version: eb('row_version', '+', 1),
+          }))
+          .where('id', '=', row.id)
+          .where('status', '=', row.status)
+          .execute();
+        await audit.append({
+          appId,
+          actor: input.actor ?? adminId,
+          action: 'export_cancel',
+          target: `export_tasks:${row.public_id}`,
+          before: { status: row.status },
+          after: {
+            task_id: row.public_id,
+            resource: row.resource,
+            status: step.to,
+            cause: 'admin_disabled',
+          },
+          ip: input.ip ?? null,
+        });
+        count++;
+      }
+      return count;
+    },
+  };
+}
+
 export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
   const { clock, queue, store, users, auditLogs, profiles, config, logger } = options;
   const db = options.db.withSchema('app');
+  const canceller = createExportCanceller({
+    clock,
+    ...(options.sensitiveKeys === undefined ? {} : { sensitiveKeys: options.sensitiveKeys }),
+  });
   const auditOn = (trx: Kysely<DB>) =>
     createAuditWriter({
       db: trx,
@@ -882,54 +969,9 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
     },
 
     async cancelByCreator(input: { readonly appId: string; readonly adminId: string }) {
-      const { appId, adminId } = input;
-      if (!APP_ID.test(appId) || !UUID.test(adminId)) return;
-      const cancelled = await db.transaction().execute(async (trx) => {
-        await lockCreator(trx, appId, adminId);
-        const rows = await trx
-          .selectFrom('export_tasks')
-          .selectAll()
-          .where('app_id', '=', appId)
-          .where('created_by', '=', adminId)
-          .where('status', 'in', ['pending', 'running'])
-          .orderBy('created_at')
-          .orderBy('id')
-          .forUpdate()
-          .execute();
-        const audit = auditOn(trx);
-        let count = 0;
-        for (const row of rows) {
-          const step = transitionExportTask(row.status as ExportTaskState, 'CANCEL');
-          if (!step.ok) continue;
-          const now = clock.now();
-          await trx
-            .updateTable('export_tasks')
-            .set((eb) => ({
-              status: step.to,
-              updated_at: now,
-              row_version: eb('row_version', '+', 1),
-            }))
-            .where('id', '=', row.id)
-            .where('status', '=', row.status)
-            .execute();
-          await audit.append({
-            appId,
-            actor: adminId,
-            action: 'export_cancel',
-            target: `export_tasks:${row.public_id}`,
-            before: { status: row.status },
-            after: {
-              task_id: row.public_id,
-              resource: row.resource,
-              status: step.to,
-              cause: 'admin_disabled',
-            },
-            ip: null,
-          });
-          count++;
-        }
-        return count;
-      });
+      const cancelled = await db
+        .transaction()
+        .execute((trx) => canceller.cancelByCreator(trx, input));
       if (cancelled > 0) {
         logger.info({ event: 'export_cancelled', count: cancelled }, 'export tasks cancelled');
       }

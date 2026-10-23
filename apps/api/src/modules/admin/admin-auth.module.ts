@@ -2,8 +2,14 @@
 // entry's request check (whitelist + admin_token) and the CORS policy bootstrap installs; and the
 // read-only admin accounts of the super admin (F1-06m, /admin/v1/admins, primary database only);
 // and the audit search of any signed-in account (B1-34a, /admin/v1/audit-logs, primary database);
-// and the export tasks (B1-34f, /admin/v1/exports: create, list, download, retry; primary database).
-// Loaded on the admin entry only (app.module).
+// and the export tasks (B1-34f, /admin/v1/exports: create, list, download, retry; primary database);
+// and the super admin's account writes (B1-34h, /admin/v1/admins: create, regenerate the initial
+// password, disable / enable, reset the authenticator, rename; primary database). Disable cancels
+// the account's exports through the export canceller alone (application/export-worker.ts), built
+// here without the rest of the export worker. Disable, reset and regeneration void the account's
+// admin_tokens, login tickets and step-up tokens through one Redis voiding instant
+// (infra/admin-revocations.ts), which the request check, the login steps and the step-up checks
+// read. Loaded on the admin entry only (app.module).
 //
 // Step-up and me/permissions (F1-06l) live here too: POST auth/step-up/sms-codes, POST
 // auth/step-up and GET me/permissions, over the same accounts, sessions and Redis; the SMS sender
@@ -41,7 +47,12 @@ import {
   createAdminAccountsReader,
   type AdminAccountsReader,
 } from './application/admin-accounts-read.ts';
+import {
+  createAdminAccountsWriter,
+  type AdminAccountsWriter,
+} from './application/admin-accounts-write.ts';
 import { createAdminExports, type AdminExports } from './application/admin-exports.ts';
+import { createExportCanceller } from './application/export-worker.ts';
 import { AdminOperationGuardImpl } from './application/admin-operation-guard.ts';
 import { createAuditLogsReader, type AuditLogsReader } from './application/audit-logs-read.ts';
 import { createAdminRequestCheck } from './application/admin-check.ts';
@@ -56,16 +67,20 @@ import { adminTokenKey, createAdminTokens, type AdminTokens } from './applicatio
 import {
   ADMIN_STEP_UP_NAMESPACE,
   createAdminPermissionGuard,
+  createAdminStepUpGate,
   createAdminStepUpTokens,
+  type AdminStepUpGate,
 } from './application/permission-guard.ts';
 import {
   ADMIN_ACCOUNTS_READ,
+  ADMIN_ACCOUNTS_WRITE,
   ADMIN_AUDIT_LOGS_READ,
   ADMIN_AUTH,
   ADMIN_CHECK,
   ADMIN_EXPORTS,
   ADMIN_HTTP_POLICY,
   ADMIN_STEP_UP,
+  ADMIN_STEP_UP_GATE,
 } from './application/tokens.ts';
 import type { ConfigPermissions } from './domain/audit-log-view.ts';
 import { createIpAllowlist } from './domain/login-policy.ts';
@@ -75,6 +90,7 @@ import { AdminAuditLogsController } from './http/admin/audit-logs.controller.ts'
 import { AdminAuthController } from './http/admin/auth.controller.ts';
 import { AdminExportsController } from './http/admin/exports.controller.ts';
 import { AdminStepUpController } from './http/admin/step-up.controller.ts';
+import { createAdminAccountWrites } from './infra/admin-account-writes.ts';
 import { createAdminAccounts, type AdminAccounts } from './infra/admin-accounts.ts';
 import { createAdminDirectory } from './infra/admin-directory.ts';
 import { createAdminDisplayNameReader } from './infra/admin-display-names.ts';
@@ -85,6 +101,7 @@ import {
 } from './infra/audit-log-id.ts';
 import { createAuditLogStore } from './infra/audit-log-store.ts';
 import { createAdminProfiles, type AdminProfiles } from './infra/admin-profiles.ts';
+import { createAdminRevocations, type AdminRevocations } from './infra/admin-revocations.ts';
 import { createAdminSessions, type AdminSessions } from './infra/admin-sessions.ts';
 import { createLoginTickets } from './infra/login-tickets.ts';
 import { createPgTotpReplayStore } from './infra/totp-replay-pg.ts';
@@ -132,6 +149,8 @@ interface AdminStores {
   readonly stepUp: () => RedisNamespace;
   /** Account and permission reads (step-up, me/permissions, the operation guard). */
   readonly profiles: () => AdminProfiles;
+  /** B1-34h voiding instants (namespace `admin-auth`). */
+  readonly revocations: () => AdminRevocations;
 }
 
 /** A namespace that is looked up at every command, so a missing Redis fails per request. */
@@ -227,7 +246,9 @@ export class AdminAuthModule {
               redis === undefined ? unavailable('Redis') : redis.namespace(ADMIN_STEP_UP_NAMESPACE),
             );
             const profiles = db === undefined ? undefined : createAdminProfiles({ db });
+            const revocations = createAdminRevocations({ redis: namespace });
             return {
+              revocations: () => revocations,
               redis: () => namespace,
               stepUp: () => stepUp,
               profiles: () => profiles ?? unavailable('database'),
@@ -280,6 +301,7 @@ export class AdminAuthModule {
               }),
               crypto,
               issuer: config.appEnv === 'prod' ? ISSUER : `${ISSUER} ${config.appEnv}`,
+              revocations: stores.revocations(),
             });
           },
         },
@@ -423,6 +445,7 @@ export class AdminAuthModule {
               tokens,
               sessions: stores.sessions,
               accounts: stores.accounts,
+              revocations: stores.revocations,
             }),
         },
         {
@@ -433,8 +456,65 @@ export class AdminAuthModule {
           useFactory: (clock: Clock, stores: AdminStores): AdminOperationGuard =>
             new AdminOperationGuardImpl({
               profiles: stores.profiles,
-              guard: createAdminPermissionGuard({ clock, redis: stores.stepUp() }),
+              guard: createAdminPermissionGuard({
+                clock,
+                redis: stores.stepUp(),
+                revocations: stores.revocations(),
+              }),
             }),
+        },
+        {
+          // B1-34h: the totp-tier step-up of the super admin's account writes.
+          provide: ADMIN_STEP_UP_GATE,
+          inject: [CLOCK, ADMIN_STORES],
+          useFactory: (clock: Clock, stores: AdminStores): AdminStepUpGate =>
+            createAdminStepUpGate({
+              clock,
+              redis: stores.stepUp(),
+              revocations: stores.revocations(),
+            }),
+        },
+        {
+          provide: ADMIN_ACCOUNTS_WRITE,
+          // B1-34h: primary database (couli_app), as the reads; each write one transaction.
+          inject: [
+            CLOCK,
+            ADMIN_STORES,
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            stores: AdminStores,
+            db?: Kysely<Database>,
+            crypto?: FieldCrypto,
+          ): AdminAccountsWriter => {
+            if (db === undefined || crypto === undefined) {
+              const refuse = (): Promise<never> =>
+                Promise.reject(
+                  new Error('admin account writes: needs the database and the field cipher'),
+                );
+              return {
+                create: refuse,
+                regenerate: refuse,
+                disable: refuse,
+                enable: refuse,
+                resetTotp: refuse,
+                rename: refuse,
+              };
+            }
+            return createAdminAccountsWriter({
+              clock,
+              crypto,
+              writes: createAdminAccountWrites({
+                db,
+                clock,
+                sensitiveKeys: SENSITIVE_KEYS,
+                exports: createExportCanceller({ clock, sensitiveKeys: SENSITIVE_KEYS }),
+                revocations: stores.revocations(),
+              }),
+            });
+          },
         },
         {
           provide: ADMIN_HTTP_POLICY,

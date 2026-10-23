@@ -92,6 +92,7 @@ function setup(
     passwordMustChange: false,
     failedLoginCount: 0,
     lockedUntil: null,
+    rowVersion: 0,
   };
   const profile: AdminProfile = {
     id,

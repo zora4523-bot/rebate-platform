@@ -24,6 +24,17 @@ export interface TicketRecord {
   readonly appId: string;
   /** Epoch milliseconds from the injected Clock; at or after it the ticket is expired. */
   readonly expiresAtMs: number;
+  /**
+   * Epoch milliseconds from the injected Clock when the ticket was issued (B1-34h: compared with
+   * the account's voiding instant, ../infra/admin-revocations.ts). Absent on a record written
+   * before B1-34h, which then counts as issued at 0.
+   */
+  readonly issuedAtMs?: number;
+  /**
+   * admin_users.row_version the ticket was issued on (B1-34h review r1 S1); every later step needs
+   * the account still at it. Absent on a record written before B1-34h (then never matches).
+   */
+  readonly rowVersion?: number;
   /** Bind tickets only: field-cipher envelope of the pending Base32 secret. */
   readonly secretCipher?: string;
 }
@@ -64,7 +75,9 @@ function parse(value: unknown): TicketRecord | undefined {
       typeof parsed.adminId !== 'string' ||
       typeof parsed.appId !== 'string' ||
       typeof parsed.expiresAtMs !== 'number' ||
-      (parsed.secretCipher !== undefined && typeof parsed.secretCipher !== 'string')
+      (parsed.secretCipher !== undefined && typeof parsed.secretCipher !== 'string') ||
+      (parsed.issuedAtMs !== undefined && typeof parsed.issuedAtMs !== 'number') ||
+      (parsed.rowVersion !== undefined && typeof parsed.rowVersion !== 'number')
     ) {
       return undefined;
     }

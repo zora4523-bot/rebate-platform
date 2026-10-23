@@ -7,7 +7,9 @@
 // treats an ended lock as a zero count, adds one and sets the lock at the threshold; it matches
 // only an unlocked row, so PG's row lock serialises concurrent failures (no lost update) and
 // exactly one of them sets the lock. Clearing, the password change and the binding are
-// conditional UPDATEs as well (they refuse a locked row).
+// conditional UPDATEs as well (they refuse a locked row), and on the status and row_version read
+// (B1-34h review r1 S1: a disable, an authenticator reset or an initial password regeneration
+// committed after the read makes them match nothing).
 //
 // Pure module (no decorators, erasable syntax, type-only imports from the platform barrel).
 import type { DB } from '@couli/db';
@@ -28,6 +30,11 @@ export interface AdminAccount {
   readonly passwordMustChange: boolean;
   readonly failedLoginCount: number;
   readonly lockedUntil: Date | null;
+  /**
+   * admin_users.row_version as read (B1-34h): every super admin write to the account moves it, so
+   * login tickets carry it and the login writes are conditional on it (review r1 S1).
+   */
+  readonly rowVersion: number;
 }
 
 /** An audit event without its app and actor (the account's). */
@@ -86,6 +93,7 @@ const COLUMNS = [
   'password_must_change',
   'failed_login_count',
   'locked_until',
+  'row_version',
 ] as const;
 
 interface AccountRow {
@@ -100,6 +108,7 @@ interface AccountRow {
   password_must_change: boolean;
   failed_login_count: number;
   locked_until: Date | null;
+  row_version: number;
 }
 
 function toAccount(row: AccountRow): AdminAccount {
@@ -115,6 +124,7 @@ function toAccount(row: AccountRow): AdminAccount {
     passwordMustChange: row.password_must_change,
     failedLoginCount: row.failed_login_count,
     lockedUntil: row.locked_until,
+    rowVersion: row.row_version,
   };
 }
 
@@ -230,6 +240,7 @@ export function createAdminAccounts(deps: {
           .where('app_id', '=', account.appId)
           .where('id', '=', account.id)
           .where('status', '=', account.status)
+          .where('row_version', '=', account.rowVersion)
           .where((eb) => eb.or([eb('locked_until', 'is', null), eb('locked_until', '<=', now)]))
           .executeTakeFirst();
         if (result.numUpdatedRows !== 1n) return await notWritten(trx, account, now);
@@ -248,6 +259,8 @@ export function createAdminAccounts(deps: {
           .where('id', '=', account.id)
           .where('password_must_change', '=', true)
           .where('password_hash', '=', account.passwordHash)
+          .where('status', '=', account.status)
+          .where('row_version', '=', account.rowVersion)
           .where((eb) => eb.or([eb('locked_until', 'is', null), eb('locked_until', '<=', now)]))
           .executeTakeFirst();
         if (result.numUpdatedRows !== 1n) return await notWritten(trx, account, now);
@@ -272,6 +285,8 @@ export function createAdminAccounts(deps: {
           .where('id', '=', account.id)
           .where('totp_bound_at', 'is', null)
           .where('password_must_change', '=', false)
+          .where('status', '=', account.status)
+          .where('row_version', '=', account.rowVersion)
           .where((eb) => eb.or([eb('locked_until', 'is', null), eb('locked_until', '<=', now)]))
           .executeTakeFirst();
         if (result.numUpdatedRows !== 1n) return await notWritten(trx, account, now);
