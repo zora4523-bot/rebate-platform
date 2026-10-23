@@ -1,0 +1,20 @@
+id: CT-26g
+repo: rebate-platform
+title: 测试修改：三份冻结集成测试按收款账号响应是否带 CT-26c 新必返字段 payout_account_id 两态判定，为 CT-26c 让路——test/spec/identity/payout-account/get.int.test.ts、service.int.test.ts、test/spec/identity/payout-bank-card/submit.int.test.ts：带 payout_account_id 时期望原对象加该字段（等于当前收款账号行的编号，保存响应为换绑后新行的编号），否则保持原形状；其余断言不变
+type: test-change
+# 草稿 2026-10-23（身份与风控线 identity-lane）。CT-26c 给 PayoutAccountAlipay / PayoutAccountBankCard 加必返 payout_account_id（二次验证摘要用）后这三份冻结测试的精确比对会红；照 B1-15p / CT-26f 先例拆非任务分支 test-change 先合。叠 CT-26c 完整验证若另有红的冻结文件，补进本任务。
+# 独立 Claude 改（approvals #36），新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签。CT-26c 合并后另开收紧任务改成单态。
+refs: []
+refs_hash: {}
+deps: [B1-13a]
+paths:
+  - 'test/spec/identity/payout-account/get.int.test.ts'
+  - 'test/spec/identity/payout-account/service.int.test.ts'
+  - 'test/spec/identity/payout-bank-card/submit.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/payout-account/**'
+  - 'test/spec/identity/payout-bank-card/**'
+status: todo

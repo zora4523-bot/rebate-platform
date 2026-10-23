@@ -52,6 +52,19 @@ afterAll(async () => {
   }
 });
 
+// 为 CT-26c 让路：CT-26c 给收款账号响应加必返 payout_account_id（当前收款账号行的编号）。
+// 只按响应对象有没有该键确定性判定：没有 → 期望与改前完全相同；有 → 期望原对象加上该键，
+// 值必须等于给定的当前收款账号行编号。CT-26c 合并后收紧为单态（恒带该键）。
+function withPayoutAccountId(
+  actual: unknown,
+  expected: Record<string, unknown>,
+  currentId: string | undefined,
+): Record<string, unknown> {
+  const carries =
+    typeof actual === 'object' && actual !== null && Object.hasOwn(actual, 'payout_account_id');
+  return carries ? { payout_account_id: currentId, ...expected } : expected;
+}
+
 it('[AC-B1-13f#1] PUT 去 planned，契约声明错误码且开户行由服务端 BIN 带出', async () => {
   const operation = kit.document.paths[PATH]!['put']!;
   expect(operation['x-implementation']).not.toBe('planned');
@@ -76,13 +89,21 @@ it.each([12, 16, 19])(
     const key = randomUUID();
     const body = bankBody(typed, { bank_name: '用户伪填银行' });
     const response = await f.submit(body, key);
-    expect(envelope(kit, response).data).toEqual({
-      payout_method: 'bank_card',
-      masked_account: `尾号 ${digits.slice(-4)}`,
-      bank_name: BANK,
-      masked_payee_name: '*******提',
-      change_remaining_this_month: 2,
-    });
+    const data = envelope(kit, response).data;
+    const currentId = (await state(kit, f)).accounts.find((row) => row.is_current)?.id;
+    expect(data).toEqual(
+      withPayoutAccountId(
+        data,
+        {
+          payout_method: 'bank_card',
+          masked_account: `尾号 ${digits.slice(-4)}`,
+          bank_name: BANK,
+          masked_payee_name: '*******提',
+          change_remaining_this_month: 2,
+        },
+        currentId,
+      ),
+    );
     expect(kit.lookup).toHaveBeenCalledWith(digits);
     expect(kit.verify).toHaveBeenCalledTimes(1);
     const attempts = await f.attempts();
