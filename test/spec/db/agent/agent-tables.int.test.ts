@@ -998,7 +998,20 @@ const FACTORIES: Record<Table, (values?: Row) => Promise<Row>> = {
 for (const table of TABLES) {
   it(`[AC-B3-09a#51] couli_app has only prescribed UPDATE columns on ${table}`, async () => {
     await requireTable(table);
-    const updatable = UPDATABLE[table];
+    // 两态判定，为 B3-09f（D10-175，Agent 注销清理的列级授权）让路：以 couli_app 是否已有
+    // agent_tool_calls.args 的 UPDATE 为标志——有则只额外允许 D10-175 列清单，其余列照旧。
+    const purge = await sql<{ granted: boolean }>`SELECT has_column_privilege(
+      'couli_app', 'app.agent_tool_calls', 'args', 'UPDATE') AS granted`.execute(app);
+    const purgeColumns: Partial<Record<Table, string[]>> =
+      purge.rows[0]?.granted === true
+        ? {
+            agent_runs: ['quota_subjects'],
+            agent_tool_calls: ['args'],
+            agent_cards: ['data', 'fallback_text'],
+            agent_result_sets: ['conditions'],
+          }
+        : {};
+    const updatable = [...UPDATABLE[table], ...(purgeColumns[table] ?? [])];
     for (const column of Object.keys(SHAPES[table])) {
       const result = await sql<{ allowed: boolean }>`SELECT has_column_privilege(
         'couli_app', ${`app.${table}`}, ${column}, 'UPDATE') AS allowed`.execute(app);
