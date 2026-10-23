@@ -342,9 +342,7 @@ it.each([
     const run = vi.fn<LinkQuoteRunner['run']>(async (candidate) => ({
       kind: 'ok',
       modelView: {},
-      cards: [
-        quoteCard(candidate.raw === firstRaw ? 'tb:synthetic-q1' : 'tb:synthetic-q2', 1500),
-      ],
+      cards: [quoteCard(candidate.raw === firstRaw ? 'tb:synthetic-q1' : 'tb:synthetic-q2', 1500)],
     }));
     const out = receiptContext({
       runId: value.runId,

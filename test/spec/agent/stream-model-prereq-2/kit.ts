@@ -53,7 +53,10 @@ export function pricedList(
   resultSetId: string,
   products: readonly (readonly [string, number])[],
 ): UnnumberedCard {
-  const base = list(resultSetId, products.map(([key]) => key));
+  const base = list(
+    resultSetId,
+    products.map(([key]) => key),
+  );
   const items = (base.data['items'] as Row[]).map((item, index) => {
     const price = products[index]?.[1] ?? 1000;
     return { ...item, price_fen: price, final_price_fen: price };

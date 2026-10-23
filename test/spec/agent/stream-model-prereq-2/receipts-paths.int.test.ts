@@ -33,14 +33,12 @@ async function degradedSearch(r: Production, sessionId: string) {
   expect(lists).toHaveLength(1);
   expect(frames.at(-1)?.data['finish_reason']).toBe('fallback');
   const list = lists[0]!;
-  const items = ((list.data['data'] as Row)['items'] as Row[]).map(
-    (item): Shown => ({
-      card_id: item['card_id'] as string,
-      product_key: item['product_key'] as string,
-      platform: item['platform'] as string,
-      final_price_fen: item['final_price_fen'] as number,
-    }),
-  );
+  const items = ((list.data['data'] as Row)['items'] as Row[]).map((item): Shown => ({
+    card_id: item['card_id'] as string,
+    product_key: item['product_key'] as string,
+    platform: item['platform'] as string,
+    final_price_fen: item['final_price_fen'] as number,
+  }));
   expect(items.length).toBeGreaterThan(0);
   return { frameCardId: list.data['card_id'] as string, items };
 }

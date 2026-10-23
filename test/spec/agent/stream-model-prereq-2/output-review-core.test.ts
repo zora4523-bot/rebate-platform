@@ -35,7 +35,11 @@ it('[AC-B3-03p#17][BR-AI-18] core 每个 run 按本 run 的 app 经 outputReview
     const value = inputFor(appId);
     const out = receiptContext({ runId: value.runId, sessionId: value.sessionId });
     const { tools } = searchTools([
-      { kind: 'ok', modelView: { items: [] }, cards: [list('synthetic-set-1', ['tb:synthetic-a'])] },
+      {
+        kind: 'ok',
+        modelView: { items: [] },
+        cards: [list('synthetic-set-1', ['tb:synthetic-a'])],
+      },
     ]);
     const asked = forRun.mock.calls.length;
     const result = await createAgentRunBody(
@@ -45,7 +49,10 @@ it('[AC-B3-03p#17][BR-AI-18] core 每个 run 按本 run 的 app 经 outputReview
     expect(result, appId).toEqual({ kind: 'done', finishReason: 'stop' });
     expect(forRun.mock.calls.length - asked, `${appId}: one sentence review per run`).toBe(1);
     expect(forRun).toHaveBeenLastCalledWith(appId, out.controller.signal);
-    expect(out.frames.map((frame) => frame.type), appId).toEqual(['product_list']);
+    expect(
+      out.frames.map((frame) => frame.type),
+      appId,
+    ).toEqual(['product_list']);
     expect(out.texts.join(''), appId).toBe(text);
   }
   expect(fixed).not.toHaveBeenCalled();
