@@ -153,11 +153,10 @@ CREATE TABLE app.payout_watermarks (
   CONSTRAINT payout_watermarks_pkey PRIMARY KEY (id),
   CONSTRAINT payout_watermarks_channel_check CHECK (channel IN ('alipay', 'bank_card', 'wechat')),
   CONSTRAINT payout_watermarks_available_check CHECK (available_fen >= 0),
-  CONSTRAINT payout_watermarks_entered_by_check CHECK (entered_by <> ''),
-  -- A measurement time in the future would keep a stale W looking fresh (BR-WDR-18 ②, D10-237);
-  -- five minutes of tolerance between the injected Clock and the database clock.
-  CONSTRAINT payout_watermarks_measured_at_check CHECK (measured_at <= created_at + interval '5 minutes')
+  CONSTRAINT payout_watermarks_entered_by_check CHECK (entered_by <> '')
 );
+-- No CHECK against created_at for measured_at: that would compare the injected Clock with the
+-- database clock (D10-241); the entry API (B2-09) rejects a measurement time in the future instead.
 
 CREATE INDEX payout_watermarks_latest_idx ON app.payout_watermarks (app_id, channel, measured_at DESC);
 
