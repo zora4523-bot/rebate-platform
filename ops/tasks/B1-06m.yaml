@@ -16,7 +16,7 @@ type: impl
 refs: [BR-PRICE-12, BR-PRICE-20]
 refs_hash:
   BR-PRICE-12: 6aa98fc3ce46
-  BR-PRICE-20: 7529667f1f23
+  BR-PRICE-20: 38e98cd4421e
 deps: [B1-06k, B1-06n, B1-06e]
 paths:
   - 'apps/api/src/modules/linking/**'

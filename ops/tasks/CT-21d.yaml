@@ -7,7 +7,7 @@ type: impl
 # specs/pay-notify.md 渠道侧字段按 P-D4 实测前只写我方处理与 BR-PAY-04 细则「通知应答」表。不占契约槽（不改 contracts/）。
 refs: [BR-PAY-02, BR-PAY-04, BR-PAY-05, BR-PAY-06]
 refs_hash:
-  BR-PAY-02: f59e87a9a27b
+  BR-PAY-02: 7bccee0eeb26
   BR-PAY-04: 6763ec22c098
   BR-PAY-05: cc6a654d316e
   BR-PAY-06: 102e1fb8839f
