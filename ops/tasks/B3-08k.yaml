@@ -2,17 +2,11 @@ id: B3-08k
 repo: rebate-platform
 title: agent 不再拿数据库句柄构造别模块的读取器——content 读取器与 identity 调用方读取器改由 app.module 组装后经注入令牌 / 端口交给 agent（5 处：agent.module.ts、stream/mount/{index,config,production,caller}.ts）；功能不变；AST 规则测试守住「agent 不把 db 句柄传给别模块的函数」
 type: impl
-# 2026-10-24 agent 线入账（编排裁定 D10-294，Jev B 0.88：同 B3-03j / B3-08g，agent 只拿端口；规则不加例外）。起因：CT-06zu 第 2 轮
-# 写测试者发现 production.ts:115 把 db 交给 content 读取器，D10-287「数据库只读写 Agent 自己的表」不许 agent 经别模块读取器间接读其表。
-# 主干共 5 处：agent.module.ts:129、stream/mount/index.ts:291、config.ts:25、production.ts:115（createContentReader({db, clock})），
-# caller.ts:52（app.module 交入的 identity readerFactory({db})）。做法：app.module（及其装配 agent 模块处）组装读取器，经注入令牌或
-# agentStreamPortsToken 端口交给 agent；agent 侧只依赖读取器接口（content / identity 的 index 类型）。agent 的 Nest 模块若需注入令牌，
-# 令牌定义在 agent 内、由 app.module 提供。
-# 规则测试（新鲜独立 Claude，Codex 至 10-30 不可用）：① AST 扫描 apps/api/src/modules/agent/**（排除 *.test.ts）——不得以数据库句柄
-# （Kysely / Transaction / DB 令牌注入值或其 withSchema 结果）作实参或对象属性传给从别模块导入的函数；② 装配后 content 配置读取、配额上限、
-# 同意版本、开关、调用方身份的行为与改前一致（以注入替身断言调用发生在注入的读取器上）。风险 RV2（app.module）。
-# D10-297：同 PR 单列一个提交，由新鲜独立 Claude 改上列 7 个冻结测试 / kit 的装配入参（像 app.module 一样自建读取器传入，断言、用例名与条数零改动），
-# 另一新鲜独立 Claude 只读复审「不削弱」；落地时编排按 #24 核对加标签。
+# 2026-10-24 agent 线入账（编排 D10-294，Jev B 0.88：同 B3-03j / B3-08g，agent 只拿端口，规则不加例外；D10-297 同 PR 改冻结测试）。
+# 主干 5 处：agent.module.ts:129、stream/mount/{index:291,config:25,production:115} 用 createContentReader({db})，caller.ts:52 readerFactory({db})；
+# 改为 app.module 组装读取器经令牌 / 端口注入，agent 只依赖读取器接口类型。规则测试（新鲜独立 Claude）：AST 扫描 agent 不得把 db 句柄传给
+# 别模块函数；装配后各读取行为不变。下列 7 个冻结测试 / kit 由新鲜独立 Claude 单列一个提交只改装配入参（断言、用例名与条数零改动），
+# 另一新鲜独立 Claude 复审「不削弱」，落地时编排按 #24 加标签。风险 RV2（app.module）。
 refs: [BR-AI-02]
 refs_hash:
   BR-AI-02: 61014cc4d222
