@@ -14,9 +14,10 @@ permissions:
   contents: read
 
 # CT-06zy (D10-301): a newer run of the same pull request cancels the older one, as in ci.yml.
-# Runs of pushes to main are never cancelled: each push is checked to the end.
+# A push to main gets a group of its own (its commit), so main runs neither cancel nor queue behind
+# each other: each push is checked to the end.
 concurrency:
-  group: contracts-${{ github.ref }}
+  group: contracts-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

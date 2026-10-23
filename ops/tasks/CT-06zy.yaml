@@ -4,9 +4,9 @@ title: CT-06zy：contracts / gitleaks / longrun-props 三个工作流加 concurr
 type: guard-change
 # 2026-10-24 入账（ops 线，编排裁定 D10-301）。起因：CI 排队仍是瓶颈；ci.yml、evidence.yml、protected-paths.yml 已有 concurrency
 # cancel-in-progress，contracts.yml、gitleaks.yml、longrun-props.yml 没有，同一 PR 连推几次时旧运行照跑到底、占 runner。
-# 做法：三个工作流加 `concurrency: group: <名>-${{ github.ref }}`，`cancel-in-progress` 只在 pull_request 事件上为真——推到 main 的
-# 运行不取消（gitleaks 在 main 上按每次推送的提交范围扫描，取消旧运行会漏扫那段提交；contracts 在 main 上同理保留每次结果）。
-# 与 ci.yml 的不同就在这一处（ci.yml 对 main 也取消）。evidence.yml、protected-paths.yml 已有，不改。
+# 做法：三个工作流加 concurrency：PR 的组是 `<名>-<github.ref>`、新运行取消旧运行；推到 main 的组是 `<名>-<github.sha>`（每次推送
+# 单独一组，`cancel-in-progress` 只在 pull_request 为真），main 上的运行既不互相取消也不互相排队——contracts 在 main 上只比较
+# 本次推送前后，取消或合并排队会让那次推送的契约改动没人查。与 ci.yml 的不同就在这一处（ci.yml 对 main 也取消）。evidence.yml、protected-paths.yml 已有，不改。
 refs: []
 refs_hash: {}
 deps: []
