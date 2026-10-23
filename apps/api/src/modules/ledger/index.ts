@@ -1,4 +1,12 @@
-export { createLedger } from './application/event-ledger.ts';
+export {
+  createLedger,
+  BalanceRecoveredHook as BALANCE_RECOVERED_HOOK,
+} from './application/recovered-ledger.ts';
+export type {
+  BalanceRecoveredHook,
+  BalanceRecoveredInput,
+  RecoveredLedgerOptions,
+} from './application/recovered-ledger.ts';
 export { createAssetSnapshot, getAssetSnapshotStatus } from './application/asset-snapshot.ts';
 export type {
   PendingEarningsSource,
