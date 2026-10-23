@@ -187,7 +187,16 @@ codes:
         - target_banned
         - target_deleting
         - target_deleted
-    sources: [BR-ID-05, BR-ID-09, BR-ID-25, BR-ID-39, BR-AI-23, BR-TEXT-13, BR-WDR-03, BR-WATCH-04, BR-ATTR-31]
+    sources:
+      - BR-ID-05
+      - BR-ID-09
+      - BR-ID-25
+      - BR-ID-39
+      - BR-AI-23
+      - BR-TEXT-13
+      - BR-WDR-03
+      - BR-WATCH-04
+      - BR-ATTR-31
   - code: 20002
     http: 400
     meaning: 验证码错误；后台登录第二步的动态码错误带 data.reason=totp_invalid，首次绑定时的动态码错误带 data.reason=totp_bind_invalid（不绑定、不登录），这两种 reason 每次计入 BR-ID-34 的连续失败计数；后台 step-up 的短信验证码与动态码错误不带 reason（BR-ID-34）
