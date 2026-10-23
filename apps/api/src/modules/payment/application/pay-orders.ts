@@ -10,24 +10,30 @@
 //   biz_type || ':' || biz_ref, 0)), then re-read the object's PENDING / PAID orders:
 //     a PAID or PENDING order of another user → 20902 data.resource=pay_order, nothing of that
 //     order is returned, no channel call (§12.1); the caller's PAID → 30902 data.pay_order_id;
-//     the caller's PENDING on another channel, or with closing=true → 20902; the caller's PENDING
-//     on the same channel → that order again; none → INSERT PENDING (out_trade_no from
+//     the caller's PENDING on another channel, with closing=true, or past its expire_at (now >=
+//     expire_at counts as closing: BR-PAY-03, no launch for an expired order) → 20902; the
+//     caller's PENDING on the same channel → that order again; none → INSERT PENDING (out_trade_no from
 //     domain/out-trade-no.ts, amount and title from the registry, expire_at = now + ttl) and
 //     commit: the row exists before the channel is called (外部写先落单);
 //   the channel call, outside any transaction (ok / unknown only; a throwing adapter is unknown);
 //   transaction ②: the same lock, one pay_query_attempts row (kind 'query', result 'prepay' /
 //   'unknown'); unknown → 50306 data.pay_channel, the order stays PENDING; ok → launch_issued_at
-//   = now by a CAS on «PENDING and closing=false»: 0 rows (cancel won the race) → 20902 and the
-//   launch parameters are dropped, so once closing no launch is ever returned (BR-PAY-03, §12.2).
-// Launch parameters never reach a log line or a database row; the order never carries a
-// channel-side user id; no ledger posting happens here (payment/AGENTS.md rules 1, 6).
+//   = now by a CAS on «PENDING, closing=false and expire_at > now»: 0 rows (cancel won the race,
+//   or the order expired meanwhile) → 20902 and the launch parameters are dropped, so once
+//   closing or expired no launch is ever returned (BR-PAY-03, §12.2).
+// Launch parameters never reach a log line or a row of payment's tables (pay_query_attempts keeps
+// summaries only); they are part of the response, which platform idempotency's standard mode
+// stores in idempotency_keys with the first answer and replays byte for byte to the same
+// Idempotency-Key for its retention (30 days) — so a replay needs no channel call and touches no
+// payment row. The order never carries a channel-side user id; no ledger posting happens here
+// (payment/AGENTS.md rules 1, 6).
 import type { DB } from '@couli/db';
 import type { Schema } from '@couli/contracts-ts';
 import { fenToJsonNumber } from '@couli/money';
 import type { Kysely } from 'kysely';
 import type { ContentReader } from '../../content/index.ts';
 import { newUuidV7, type Clock, type JobQueue, type RootLogger } from '../../platform/index.ts';
-import { orderTtlMinutes, payOrderExpireAt } from '../domain/order-ttl.ts';
+import { isPayOrderExpired, orderTtlMinutes, payOrderExpireAt } from '../domain/order-ttl.ts';
 import { generateOutTradeNo } from '../domain/out-trade-no.ts';
 import { payUnavailableReason, platformsOverrideOf } from '../domain/sellability.ts';
 import type { PayChannelCode, PayOrderStatus, PayUnavailableReason } from '../domain/types.ts';
@@ -178,6 +184,7 @@ export async function createPayOrder(
 
   const placement = await deps.db.transaction().execute(async (trx): Promise<Placement> => {
     await lockBizObject(trx, key);
+    const now = deps.clock.now();
     const open = await findOpenOrders(trx, key);
     const paid = open.find((row) => row.status === 'PAID');
     if (paid !== undefined) {
@@ -187,14 +194,19 @@ export async function createPayOrder(
     }
     const pending = open.find((row) => row.status === 'PENDING');
     if (pending !== undefined) {
-      if (pending.user_id !== userId || pending.closing || pending.pay_channel !== channel) {
-        // Someone else's order; the close flow (BR-PAY-03: no launch once closing); another
-        // channel (BR-PAY-02 细则: cancel and close the original first; D10-236 ④).
+      if (
+        pending.user_id !== userId ||
+        pending.closing ||
+        isPayOrderExpired(now, pending.expire_at) ||
+        pending.pay_channel !== channel
+      ) {
+        // Someone else's order; the close flow or an expired order (BR-PAY-03: no launch once
+        // closing or past expire_at; the close job of B2-15d catches up); another channel
+        // (BR-PAY-02 细则: cancel and close the original first; D10-236 ④).
         return { kind: 'failed', failure: CONFLICT };
       }
       return { kind: 'placed', order: pending, created: false };
     }
-    const now = deps.clock.now();
     const order = await insertPendingOrder(trx, {
       id: newUuidV7(now),
       appId,

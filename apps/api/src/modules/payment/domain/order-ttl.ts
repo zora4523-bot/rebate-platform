@@ -37,3 +37,11 @@ export function payOrderExpireAt(now: Date, ttlMinutes: number): Date {
   expireAt.setTime(now.getTime() + ttlMinutes * MS_PER_MINUTE);
   return expireAt;
 }
+
+/**
+ * True once the pay time limit has passed (now >= expire_at, BR-PAY-03): an expired PENDING order
+ * is treated like one in the close flow — no launch parameters are issued for it any more.
+ */
+export function isPayOrderExpired(now: Date, expireAt: Date): boolean {
+  return now.getTime() >= expireAt.getTime();
+}

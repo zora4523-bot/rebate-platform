@@ -124,9 +124,9 @@ export async function insertPendingOrder(
 }
 
 /**
- * Records that launch parameters were issued now: a CAS on «PENDING and not closing», so an order
- * that entered the close flow meanwhile is left alone (0 rows → the caller answers 20902 and
- * returns no launch, BR-PAY-03).
+ * Records that launch parameters were issued now: a CAS on «PENDING, not closing and expire_at
+ * after now», so an order that entered the close flow or expired meanwhile is left alone (0 rows →
+ * the caller answers 20902 and returns no launch, BR-PAY-03).
  */
 export async function markLaunchIssued(
   trx: Transaction<DB>,
@@ -160,6 +160,7 @@ export async function markClosing(
     .where('id', '=', payOrderId)
     .where('status', '=', 'PENDING')
     .where('closing', '=', false)
+    .where('expire_at', '>', now)
     .returningAll()
     .executeTakeFirst();
 }
