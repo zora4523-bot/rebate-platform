@@ -1,2 +1,6 @@
 search_products
 get_rebate_quote
+handoff_to_human
+prefill_claim
+list_my_orders
+explain_order

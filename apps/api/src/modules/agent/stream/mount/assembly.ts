@@ -29,7 +29,16 @@ import {
   type ResultSetStore,
   type ResultsDeps,
 } from '../../orchestrator/results/index.ts';
+import { createPrefillClaimHandler, type ClaimDraftDeps } from '../../tools/claim/index.ts';
+import { createHandoffHandler, type HandoffDeps } from '../../tools/handoff/index.ts';
 import type { MatchDeps } from '../../tools/match/index.ts';
+import {
+  createExplainOrderHandler,
+  createListMyOrdersHandler,
+  type OrderCardRefs,
+  type OrderNoQuota,
+  type OrderToolsDeps,
+} from '../../tools/orders/index.ts';
 import {
   createLinkQuoteRunner,
   createRebateQuoteHandler,
@@ -40,6 +49,7 @@ import {
   createToolRegistry,
   registeredToolNames,
   type ToolCallContext,
+  type ToolHandler,
   type ToolSwitches,
 } from '../../tools/registry/index.ts';
 import {
@@ -47,6 +57,7 @@ import {
   createSearchProductsHandler,
   type SearchProductsDeps,
 } from '../../tools/search/index.ts';
+import type { DailyCounter } from './orders.ts';
 
 /**
  * What the composition root (app.module, stream entry) provides from union / catalog / linking /
@@ -59,6 +70,12 @@ export interface AgentStreamProvidedPorts {
   readonly readProduct: RebateQuoteDeps['catalog']['readProduct'];
   readonly parsing: ParsingOptions;
   readonly cards: AgentStreamBusinessPorts['cards'];
+  /** B3-08g: orders' read-only queries (createOrderQueries, the same deps as orders.module). */
+  readonly orders?: OrderToolsDeps['orders'];
+  /** B3-08g: linking's link_logs reader for prefill_claim / explain_order (createClaimEntryReader). */
+  readonly claimEntries?: ClaimDraftDeps['clicks'];
+  /** B3-08g: the explain_order-by-number daily counter (Redis; no Redis rejects). */
+  readonly dailyCounter?: DailyCounter;
 }
 
 export interface AgentStreamAssemblyContext {
@@ -84,6 +101,19 @@ export interface AgentStreamBusinessPorts {
     context: ToolCallContext,
     registration: { readonly scene: 'agent'; readonly agentSessionId: string },
   ) => CatalogCardEntry;
+  /**
+   * B3-08g: the ports behind handoff_to_human, prefill_claim, list_my_orders and explain_order.
+   * Absent: only the two product tools are registered (B3-03j / B3-03n assemblies).
+   */
+  readonly orders?: AgentOrderToolPorts;
+}
+
+/** B3-08g: orders' read queries, linking's link_logs reader, card_id refs, by-number budget. */
+export interface AgentOrderToolPorts {
+  readonly orders: OrderToolsDeps['orders'];
+  readonly claimEntries: ClaimDraftDeps['clicks'];
+  readonly refs: OrderCardRefs;
+  readonly quota: OrderNoQuota;
 }
 
 export interface AgentStreamAssemblyDeps extends Omit<
@@ -201,7 +231,42 @@ export function createAgentStreamAssembly(deps: AgentStreamAssemblyDeps): AgentS
     references: createReferenceResolver({ store }),
   };
   const quoteDeps: RebateQuoteDeps = { ...runnerDeps, cardReference };
-  const handlers = [createSearchProductsHandler(searchDeps), createRebateQuoteHandler(quoteDeps)];
+  const handlers: ToolHandler[] = [
+    createSearchProductsHandler(searchDeps),
+    createRebateQuoteHandler(quoteDeps),
+  ];
+  if (ports.orders !== undefined) {
+    // B3-08g: registered = specs/agent-tools.allowlist (search_rules waits for its data source).
+    // Identity reaches every port only from the server-built call context (BR-AI-03).
+    const dictionary = (appId: string, key: string) => texts.text(appId, key);
+    const readConfig = (appId: string, key: string) => switchValue(config, appId, key);
+    const handoff: HandoffDeps = { texts: dictionary, cardReference };
+    const claim: ClaimDraftDeps = {
+      clicks: ports.orders.claimEntries,
+      clock: deps.clock,
+      config: readConfig,
+      platforms: ports.search.platforms,
+      cardReference,
+      texts: dictionary,
+    };
+    const orderDeps: OrderToolsDeps = {
+      orders: ports.orders.orders,
+      refs: ports.orders.refs,
+      quota: ports.orders.quota,
+      clock: deps.clock,
+      config: readConfig,
+      claim,
+      handoff,
+      cardReference,
+      texts: dictionary,
+    };
+    handlers.push(
+      createHandoffHandler(handoff),
+      createPrefillClaimHandler(claim),
+      createListMyOrdersHandler(orderDeps),
+      createExplainOrderHandler(orderDeps),
+    );
+  }
   const names = registeredToolNames(handlers);
   const registry = createToolRegistry({ handlers, switches, logger: deps.logger });
   const keyword = createKeywordSearch(searchDeps);

@@ -210,6 +210,7 @@ import {
   type AdminClaimPorts,
   createInviteRewardOrderFacts,
   type ClaimEvidenceFactory,
+  createOrderQueries,
   createOrderSourcePorts,
   type CommissionSnapshotPort,
   type OrderSourcePorts,
@@ -1782,6 +1783,41 @@ function agentStreamSafety(config: AppConfig): StreamReviewOptions {
   return { appEnv: config.appEnv, credentials: review.credentials, endpoint: review.endpoint };
 }
 
+type AgentDailyCounter = NonNullable<AgentStreamProvidedPorts['dailyCounter']>;
+
+/** Redis namespace of the Agent's per-day counters (explain_order by number, BR-AI-07 判定 4). */
+const AGENT_DAILY_COUNTER_NAMESPACE = 'agent_daily';
+
+/** INCR, then the key's expiry from ARGV[1] (the Redis handle's TTL argument); the new count. */
+const AGENT_DAILY_COUNTER_SCRIPT = `local n = redis.call('INCR', KEYS[1])
+redis.call('EXPIRE', KEYS[1], ARGV[1])
+return n`;
+
+/**
+ * B3-08g: the Agent's daily counter over the process Redis. The TTL is the whole seconds from the
+ * injected clock's now to `expireAt` (at least 1), so the key expires at expireAt (the next +08:00
+ * midnight the quota passes). Fail-closed: no Redis, a Redis failure or a reply that is not a
+ * positive count rejects, and the order tool answers tool_failed; nothing counts in memory.
+ */
+function agentDailyCounter(clock: Clock, redis: RedisHandle | undefined): AgentDailyCounter {
+  return {
+    async incr(key, expireAt) {
+      if (redis === undefined) throw new Error('agent: the daily counter needs Redis');
+      const ttlSeconds = Math.max(
+        1,
+        Math.ceil((expireAt.getTime() - clock.now().getTime()) / 1_000),
+      );
+      const reply = await redis
+        .namespace(AGENT_DAILY_COUNTER_NAMESPACE)
+        .eval(AGENT_DAILY_COUNTER_SCRIPT, { keys: [key], args: [], ttlSeconds });
+      if (typeof reply !== 'number' || !Number.isSafeInteger(reply) || reply < 1) {
+        throw new Error('agent: the daily counter answered no count');
+      }
+      return reply;
+    },
+  };
+}
+
 function agentStreamPorts(union: DynamicModule): DynamicModule {
   return {
     module: AgentStreamPortsModule,
@@ -1798,6 +1834,7 @@ function agentStreamPorts(union: DynamicModule): DynamicModule {
           ROOT_LOGGER,
           { token: FIELD_CRYPTO, optional: true },
           { token: DB, optional: true },
+          { token: REDIS, optional: true },
         ],
         useFactory: (
           appConfig: AppConfig,
@@ -1807,6 +1844,7 @@ function agentStreamPorts(union: DynamicModule): DynamicModule {
           logger: RootLogger,
           crypto?: FieldCrypto,
           db?: Kysely<Database>,
+          redis?: RedisHandle,
         ): AgentStreamProvidedPorts | null => {
           if (db === undefined) return null;
           if (crypto === undefined && appConfig.appEnv !== 'local' && appConfig.appEnv !== 'test') {
@@ -1848,6 +1886,17 @@ function agentStreamPorts(union: DynamicModule): DynamicModule {
             getGovernedAdapter: (platform) => union.adapter(platform),
             logger,
           };
+          // B3-08g: the order tools' read ports, the same building blocks as OrdersModule.forRoot
+          // on the api entry (content's reader, linking's order-link and claim-entry readers).
+          const claimEntries = createClaimEntryReader(db);
+          const orderQueries = createOrderQueries({
+            db,
+            clock,
+            config,
+            // TODO(规划/11 §4.5): figures 端口接 settlement / ledger / commission 读端口 — blocked on 这些模块尚无可用导出
+            links: createOrderLinkReader(db),
+            claimEntry: claimEntries,
+          });
           return {
             platforms: REGISTERED_PLATFORMS,
             async searchProducts(query, context, page) {
@@ -1937,6 +1986,13 @@ function agentStreamPorts(union: DynamicModule): DynamicModule {
               });
               return withSearchProductRefs(entry, catalog, logger);
             },
+            orders: {
+              searchForAgent: (subject, search) => orderQueries.searchForAgent(subject, search),
+              findOwnByNumber: (subject, query) => orderQueries.findOwnByNumber(subject, query),
+              get: (subject, orderId) => orderQueries.get(subject, orderId),
+            },
+            claimEntries: { read: (input) => claimEntries.read(input) },
+            dailyCounter: agentDailyCounter(clock, redis),
           };
         },
       },

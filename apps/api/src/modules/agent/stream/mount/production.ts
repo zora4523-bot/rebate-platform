@@ -10,6 +10,12 @@
 // B3-03n: the input review budget is agent.safety.timeout_ms of each request's app through the same
 // content reader (createStreamReview's config), and the one result store is the PG version
 // (agent/store/results createPgResultSetStore over context.db), shared by every runtime instance.
+// B3-08g (rule tests: test/spec/agent/stream-assembly-orders/**): with the ports' orders,
+// claimEntries and dailyCounter, the registry also holds handoff_to_human, prefill_claim,
+// list_my_orders and explain_order (registered = specs/agent-tools.allowlist exactly; search_rules
+// waits for B3-08e / B3-08i), each behind agent.tools.<name>.enabled through the same content
+// reader; card_id references read agent_cards (createOrderCardRefs over context.db) and the
+// by-number budget is createOrderNoQuota over ports.dailyCounter (./orders.ts).
 import { bridge } from '@couli/contracts-ts';
 import { createContentReader } from '../../../content/index.ts';
 import { systemScheduler } from '../../../platform/index.ts';
@@ -22,9 +28,12 @@ import {
 } from '../../preprocess/input/keywords.ts';
 import {
   createAgentStreamAssembly,
+  type AgentOrderToolPorts,
   type AgentStreamAssembly,
   type AgentStreamAssemblyContext,
+  type AgentStreamProvidedPorts,
 } from './assembly.ts';
+import { createOrderCardRefs, createOrderNoQuota } from './orders.ts';
 import { agentDefaultTexts, agentText, agentTextIfPresent, platformDisplayName } from './texts.ts';
 import { createStreamReview } from './review.ts';
 import { createToolStatusDisplay, type ToolStatusTextsDeps } from './tool-status.ts';
@@ -69,6 +78,35 @@ export function productionRunTexts(
   };
 }
 
+/**
+ * B3-08g: the order tools' ports, all three provided or none (the B3-03j / B3-03n assemblies
+ * without them keep the two product tools). A partial set is a wiring error, never a silent
+ * subset of tools.
+ */
+function orderToolPorts(
+  context: AgentStreamAssemblyContext,
+  ports: AgentStreamProvidedPorts,
+  config: ReturnType<typeof createContentReader>,
+): AgentOrderToolPorts | undefined {
+  const { orders, claimEntries, dailyCounter } = ports;
+  if (orders === undefined && claimEntries === undefined && dailyCounter === undefined) {
+    return undefined;
+  }
+  if (orders === undefined || claimEntries === undefined || dailyCounter === undefined) {
+    throw new Error('Agent order tool ports are incomplete (orders, claimEntries, dailyCounter)');
+  }
+  return {
+    orders,
+    claimEntries,
+    refs: createOrderCardRefs(context.db),
+    quota: createOrderNoQuota({
+      counter: dailyCounter,
+      clock: context.clock,
+      config: async (appId, key) => (await config.configValue(appId, key))?.value,
+    }),
+  };
+}
+
 export function createProductionStreamAssembly(
   context: AgentStreamAssemblyContext,
 ): AgentStreamAssembly {
@@ -90,6 +128,7 @@ export function createProductionStreamAssembly(
     );
     return ports.platforms.filter((_, index) => flags[index]);
   };
+  const orderTools = orderToolPorts(context, ports, config);
   const scheduler = context.scheduler ?? systemScheduler();
   const texts = productionRunTexts(searchPlatforms, context.logger);
   const safety = createStreamReview({
@@ -135,6 +174,7 @@ export function createProductionStreamAssembly(
       readProduct: ports.readProduct,
       parsing: ports.parsing,
       cards: ports.cards,
+      ...(orderTools === undefined ? {} : { orders: orderTools }),
     },
   });
   return { ...assembly, safety };
