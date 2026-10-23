@@ -55,14 +55,11 @@ it.each([
   { label: '跨度 91 天（默认上限 90）', args: { date_from: '2026-07-01', date_to: '2026-09-30' } },
   { label: '跨度远超上限', args: { date_from: '2025-10-01', date_to: '2026-10-01' } },
   { label: 'date_to 为明天（+08:00）', args: { date_from: '2026-10-20', date_to: '2026-10-24' } },
-])(
-  '[AC-B3-08a#4][BR-AI-07] $label → invalid_args，不查订单、不出卡',
-  async ({ args }) => {
-    const f = setup();
-    expect(await f.execute(LIST, args)).toEqual(rejected);
-    expect(f.searchForAgent).not.toHaveBeenCalled();
-  },
-);
+])('[AC-B3-08a#4][BR-AI-07] $label → invalid_args，不查订单、不出卡', async ({ args }) => {
+  const f = setup();
+  expect(await f.execute(LIST, args)).toEqual(rejected);
+  expect(f.searchForAgent).not.toHaveBeenCalled();
+});
 
 it.each([
   { label: '同一天', args: { date_from: '2026-10-23', date_to: '2026-10-23' } },
@@ -106,21 +103,16 @@ it.each([
   { label: 'UTC 23:30（+08:00 已是次日）', now: '2026-10-22T23:30:00.000Z', today: '2026-10-23' },
   { label: 'UTC 15:30（+08:00 当日 23:30）', now: '2026-10-23T15:30:00.000Z', today: '2026-10-23' },
   { label: 'UTC 16:00（+08:00 次日零点）', now: '2026-10-23T16:00:00.000Z', today: '2026-10-24' },
-])(
-  '[AC-B3-08a#4][BR-AI-07] 今天按 +08:00 自然日：$label',
-  async ({ now, today }) => {
-    const f = setup();
-    f.clock.set(now);
-    const tomorrow = today === '2026-10-23' ? '2026-10-24' : '2026-10-25';
-    const okOutcome = await f.execute(LIST, { date_from: '2026-10-20', date_to: today });
-    expect(okOutcome.kind).toBe('ok');
-    expect(await f.execute(LIST, { date_from: '2026-10-20', date_to: tomorrow })).toEqual(
-      rejected,
-    );
-    expect(f.searchForAgent).toHaveBeenCalledTimes(1);
-    expect(f.searchForAgent.mock.calls[0]?.[1]).toMatchObject({ date_to: today });
-  },
-);
+])('[AC-B3-08a#4][BR-AI-07] 今天按 +08:00 自然日：$label', async ({ now, today }) => {
+  const f = setup();
+  f.clock.set(now);
+  const tomorrow = today === '2026-10-23' ? '2026-10-24' : '2026-10-25';
+  const okOutcome = await f.execute(LIST, { date_from: '2026-10-20', date_to: today });
+  expect(okOutcome.kind).toBe('ok');
+  expect(await f.execute(LIST, { date_from: '2026-10-20', date_to: tomorrow })).toEqual(rejected);
+  expect(f.searchForAgent).toHaveBeenCalledTimes(1);
+  expect(f.searchForAgent.mock.calls[0]?.[1]).toMatchObject({ date_to: today });
+});
 
 it('[AC-B3-08a#5][BR-AI-07][BR-AI-05] 命中时每笔一张 order_status 卡，数据逐字段等于条目且顺序保留', async () => {
   const f = setup();

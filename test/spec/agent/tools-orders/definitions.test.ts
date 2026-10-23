@@ -136,23 +136,20 @@ it.each([
     args: { order_no: '990000000001', user_id: 'synthetic-forged' },
   },
   { tool: EXPLAIN, field: 'app_id', args: { card_id: 'c1', app_id: 'synthetic-forged' } },
-])(
-  '[AC-B3-08a#1][BR-AI-03] $tool 带身份字段 $field 整次拒绝并告警一次',
-  async ({ tool, args }) => {
-    const f = setup();
-    expect(await f.execute(tool, args)).toEqual(rejected);
-    expect(f.listRun).not.toHaveBeenCalled();
-    expect(f.explainRun).not.toHaveBeenCalled();
-    expect(f.searchForAgent).not.toHaveBeenCalled();
-    expect(f.findOwnByNumber).not.toHaveBeenCalled();
-    expect(f.take).not.toHaveBeenCalled();
-    expect(f.warn).toHaveBeenCalledTimes(1);
-    expect(f.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ event: 'agent.identity_arg', tool }),
-      'agent.identity_arg',
-    );
-  },
-);
+])('[AC-B3-08a#1][BR-AI-03] $tool 带身份字段 $field 整次拒绝并告警一次', async ({ tool, args }) => {
+  const f = setup();
+  expect(await f.execute(tool, args)).toEqual(rejected);
+  expect(f.listRun).not.toHaveBeenCalled();
+  expect(f.explainRun).not.toHaveBeenCalled();
+  expect(f.searchForAgent).not.toHaveBeenCalled();
+  expect(f.findOwnByNumber).not.toHaveBeenCalled();
+  expect(f.take).not.toHaveBeenCalled();
+  expect(f.warn).toHaveBeenCalledTimes(1);
+  expect(f.warn).toHaveBeenCalledWith(
+    expect.objectContaining({ event: 'agent.identity_arg', tool }),
+    'agent.identity_arg',
+  );
+});
 
 it.each([
   { label: '游客', userId: null, phoneBound: false },
