@@ -20,4 +20,5 @@ accept:
   - 'test/spec/identity/me/**'
   - 'test/spec/risk/appeals/**'
   - 'test/spec/identity/me-invite/**'
-status: todo
+status: done
+pr: 1251
