@@ -13,6 +13,10 @@
 // - B1-19d (BR-ATTR-07, BR-ID-17): an input carrying unionAccountId (the Pinduoduo composition's
 //   account in use) converts only with that account's active slot; none → 50301, never another
 //   account's. Without it the scene's slot app-wide, as before.
+// - B1-22n (BR-ATTR-05 细则 ⑦ before ⑧, D10-239 T3a): createConversionPrecheck builds the same
+//   identity without converting, so an open's authorization hook (link-open-pdd-auth.ts) stops a
+//   jd / pdd open with no usable slot (or attr_code, or a jd user key mode not served) at 50301
+//   before any cache, price or union call. Cache reads and keys are unchanged (R-12).
 import { bridge, type components } from '@couli/contracts-ts';
 import type { Clock } from '../../platform/index.ts';
 import {
@@ -219,81 +223,24 @@ export function pathsOf(platform: 'jd' | 'pdd', url: string, scheme: string | nu
   };
 }
 
-// TODO(规划/11 §4.5): 真实转链 — blocked on 推广位 / siteId。
-export function createLinkOpenConversion(options: LinkConversionOptions): LinkConversion {
-  const { clock, callerContext, registry, logger } = options;
-  const config = openScopedConfig(options.config);
-  const pids = openScopedPids(options.pids);
-  const attrCodes = openScopedAttrCodes(options.attrCodes);
+/** The readers the conversion identity is built from (as LinkConversionOptions names them). */
+type IdentityReaders = Pick<LinkConversionOptions, 'config' | 'pids' | 'attrCodes' | 'logger'>;
 
-  /** Every read of admit and convert for these identities; failures surface when used. */
-  async function prepare(plan: LinkOpenReadPlan): Promise<void> {
-    const { appId, platform } = plan;
-    const reads: Promise<unknown>[] = [
-      config.configValue(appId, CONVERT_CACHE_TTL_SEC),
-      config.configValue(appId, `convert.enabled.${platform}`),
-    ];
-    if (platform === 'jd' || platform === 'pdd') {
-      reads.push(config.configValue(appId, JD_USER_KEY_MODE));
-      reads.push(config.configValue(appId, CLICK_CODE[platform]));
-      for (const identity of plan.identities) {
-        const pidScene = identity.noRebate ? 'self_buy' : identity.pidScene;
-        reads.push(
-          pids.getActivePid({
-            appId,
-            platform,
-            pidScene: pidScene as Parameters<typeof pids.getActivePid>[0]['pidScene'],
-            purpose: 'convert',
-          }),
-        );
-        if (!identity.noRebate) reads.push(attrCodeOf(attrCodes, appId, identity.userId));
-      }
-    }
-    await Promise.allSettled(reads);
-  }
+/** The same readers, open-scoped by the caller (attrCodes undefined: none wired). */
+interface IdentityDeps {
+  readonly config: LinkConversionOptions['config'];
+  readonly pids: LinkConversionOptions['pids'];
+  readonly attrCodes: AttrCodeReader | undefined;
+  readonly logger: LinkConversionOptions['logger'];
+}
 
-  /**
-   * This conversion's jump expiry: now + link.convert_cache_ttl_sec (default and ceiling 900 s;
-   * 0 or invalid falls back to 900). links.expire_at only describes the copy issued at
-   * registration and is never reused here. The demo / governed adapter reports no URL expiry
-   * yet; when one is reported the shorter of the two applies.
-   */
-  async function jumpExpiry(appId: string): Promise<string> {
-    const configured = intSetting(
-      (await config.configValue(appId, CONVERT_CACHE_TTL_SEC))?.value,
-      URL_LIFETIME_FALLBACK_SEC,
-    );
-    const sec =
-      configured > 0 && configured <= MAX_CONVERT_CACHE_TTL_SEC
-        ? configured
-        : URL_LIFETIME_FALLBACK_SEC;
-    // Every Clock returns a fresh Date, so moving this one is local.
-    const at = clock.now();
-    at.setTime(at.getTime() + sec * 1000);
-    return at.toISOString();
-  }
-
-  async function switchOn(appId: string, key: string): Promise<boolean> {
-    const value = await config.configValue(appId, key);
-    return isSwitchOn(value?.value);
-  }
-
-  async function admit(owner: LinkOpenOwnerResult): Promise<void> {
-    const { platform, app_id: appId } = owner.link;
-    if (platform !== 'jd' && platform !== 'pdd') {
-      // TODO(规划/11 §4.5): 淘宝百川打开指令 — blocked on B1-06f。
-      throw paused('linking: platform conversion not available');
-    }
-    if (!(await switchOn(appId, `convert.enabled.${platform}`))) {
-      throw paused('linking: platform conversion switched off');
-    }
-  }
-
-  function variant(input: Pick<JdPddConversionInput, 'client' | 'installed'>): string {
-    const client = input.client === 'web' ? 'h5' : input.client;
-    const installed = client === 'h5' ? 'unknown' : (input.installed ?? 'unknown');
-    return `${client}:${installed}`;
-  }
+/**
+ * The server-built UnionIdentity of one conversion (BR-ATTR-05/06/08): the slot, the attr_code,
+ * the jd user key mode and the lk. Shared by convert and the pre-re-check check (B1-22n) so both
+ * judge one identity; any failure is a paused (50301) one.
+ */
+function createIdentityBuilder(deps: IdentityDeps) {
+  const { config, pids, attrCodes, logger } = deps;
 
   /**
    * B1-08s: the lk a non-no_rebate conversion of this link carries — the link's own stored code
@@ -395,6 +342,118 @@ export function createLinkOpenConversion(options: LinkConversionOptions): LinkCo
               ? { app: 'n', uid: attrCode, sc: pidScene }
               : { app: 'n', uid: attrCode, sc: pidScene, lk },
         });
+  }
+
+  return { identityFor };
+}
+
+/** B1-22n: one open's identity check before its re-check (see createConversionPrecheck). */
+export interface ConversionPrecheckInput {
+  readonly owner: LinkOpenOwnerResult;
+  /** The effective no_rebate (BR-ATTR-05 ①). */
+  readonly noRebate: boolean;
+  readonly traceId: string;
+  /** The account in use (the Pinduoduo composition); absent: the scene's slot app-wide (jd). */
+  readonly unionAccountId?: string;
+}
+
+/**
+ * B1-22n (BR-ATTR-05 细则 ⑦ before ⑧; D10-239 T3a): builds, without converting, the identity the
+ * conversion of this open would use — the scene's active slot (self_buy for no_rebate) of the
+ * account in use, the attr_code and the jd user key mode, all local reads — so a jd / pdd open
+ * with none stops with 50301 before any cache, price or union call. Throws the conversion's paused
+ * failure; other platforms pass. The conversion itself checks again (unchanged).
+ */
+export function createConversionPrecheck(options: IdentityReaders) {
+  const { identityFor } = createIdentityBuilder({
+    config: openScopedConfig(options.config),
+    pids: openScopedPids(options.pids),
+    attrCodes: openScopedAttrCodes(options.attrCodes),
+    logger: options.logger,
+  });
+  return async function precheck(input: ConversionPrecheckInput): Promise<void> {
+    const { owner } = input;
+    const platform = owner.link.platform;
+    if (platform !== 'jd' && platform !== 'pdd') return;
+    await identityFor(owner, platform, input.noRebate, input.traceId, input.unionAccountId);
+  };
+}
+
+// TODO(规划/11 §4.5): 真实转链 — blocked on 推广位 / siteId。
+export function createLinkOpenConversion(options: LinkConversionOptions): LinkConversion {
+  const { clock, callerContext, registry, logger } = options;
+  const config = openScopedConfig(options.config);
+  const pids = openScopedPids(options.pids);
+  const attrCodes = openScopedAttrCodes(options.attrCodes);
+  const { identityFor } = createIdentityBuilder({ config, pids, attrCodes, logger });
+
+  /** Every read of admit and convert for these identities; failures surface when used. */
+  async function prepare(plan: LinkOpenReadPlan): Promise<void> {
+    const { appId, platform } = plan;
+    const reads: Promise<unknown>[] = [
+      config.configValue(appId, CONVERT_CACHE_TTL_SEC),
+      config.configValue(appId, `convert.enabled.${platform}`),
+    ];
+    if (platform === 'jd' || platform === 'pdd') {
+      reads.push(config.configValue(appId, JD_USER_KEY_MODE));
+      reads.push(config.configValue(appId, CLICK_CODE[platform]));
+      for (const identity of plan.identities) {
+        const pidScene = identity.noRebate ? 'self_buy' : identity.pidScene;
+        reads.push(
+          pids.getActivePid({
+            appId,
+            platform,
+            pidScene: pidScene as Parameters<typeof pids.getActivePid>[0]['pidScene'],
+            purpose: 'convert',
+          }),
+        );
+        if (!identity.noRebate) reads.push(attrCodeOf(attrCodes, appId, identity.userId));
+      }
+    }
+    await Promise.allSettled(reads);
+  }
+
+  /**
+   * This conversion's jump expiry: now + link.convert_cache_ttl_sec (default and ceiling 900 s;
+   * 0 or invalid falls back to 900). links.expire_at only describes the copy issued at
+   * registration and is never reused here. The demo / governed adapter reports no URL expiry
+   * yet; when one is reported the shorter of the two applies.
+   */
+  async function jumpExpiry(appId: string): Promise<string> {
+    const configured = intSetting(
+      (await config.configValue(appId, CONVERT_CACHE_TTL_SEC))?.value,
+      URL_LIFETIME_FALLBACK_SEC,
+    );
+    const sec =
+      configured > 0 && configured <= MAX_CONVERT_CACHE_TTL_SEC
+        ? configured
+        : URL_LIFETIME_FALLBACK_SEC;
+    // Every Clock returns a fresh Date, so moving this one is local.
+    const at = clock.now();
+    at.setTime(at.getTime() + sec * 1000);
+    return at.toISOString();
+  }
+
+  async function switchOn(appId: string, key: string): Promise<boolean> {
+    const value = await config.configValue(appId, key);
+    return isSwitchOn(value?.value);
+  }
+
+  async function admit(owner: LinkOpenOwnerResult): Promise<void> {
+    const { platform, app_id: appId } = owner.link;
+    if (platform !== 'jd' && platform !== 'pdd') {
+      // TODO(规划/11 §4.5): 淘宝百川打开指令 — blocked on B1-06f。
+      throw paused('linking: platform conversion not available');
+    }
+    if (!(await switchOn(appId, `convert.enabled.${platform}`))) {
+      throw paused('linking: platform conversion switched off');
+    }
+  }
+
+  function variant(input: Pick<JdPddConversionInput, 'client' | 'installed'>): string {
+    const client = input.client === 'web' ? 'h5' : input.client;
+    const installed = client === 'h5' ? 'unknown' : (input.installed ?? 'unknown');
+    return `${client}:${installed}`;
   }
 
   async function convert(input: JdPddConversionInput): Promise<LinkOpenJump> {

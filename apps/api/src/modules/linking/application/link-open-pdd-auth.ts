@@ -3,7 +3,8 @@
 // Taobao composition does (link-open-taobao.ts, which delegates its Pinduoduo opens here). The
 // shared re-check core and the jd / pdd conversion itself know no authorization.
 // Order of one Pinduoduo open: ownership (owner stage) → convert.enabled.pdd and path admission
-// (50301) → this check → re-check price → conversion (orchestrator ruling D7-4 ②⑤).
+// (50301) → this check (⑥, then ⑦ the slot, B1-22n) → re-check price → conversion (orchestrator
+// ruling D7-4 ②⑤).
 // The check is judged on the identity snapshot's user, at (user, platform) granularity
 // (TODO(规划/11 §4.5): BR-ID-22 的 (user, pid) 粒度 — blocked on union_bindings 加 pid 维度的迁移):
 // - another user's share link (BR-ATTR-05 细则「别人的分享 link 不可用」, ruling D7-11 ①): the
@@ -18,10 +19,11 @@
 //   and active go on; any other status (unbound, pending_auth, invalid, released, no row) asks the
 //   union authority port (UnionAdapter.queryPddAuthority, an idempotent governed read) with the
 //   same server-built identity the conversion uses (custom_parameters {app, uid=attr_code, sc},
-//   never a user_id; no attr_code or no active slot → 50301): authorized → the binding is written
-//   active (below) and the open goes on; not authorized → 30111 with data.auth_jump only, a
-//   one-time state bound to uid + device record + the link this open serves (BR-ID-22 细则, the
-//   auth-url jump construction); the port missing or failing → 50303, nothing written.
+//   never a user_id; no attr_code → 50301; no active slot of the scene → 30111, B1-22n below):
+//   authorized → the binding is written active (below) and the open goes on; not authorized →
+//   30111 with data.auth_jump only, a one-time state bound to uid + device record + the link this
+//   open serves (BR-ID-22 细则, the auth-url jump construction); the port missing or failing →
+//   50303, nothing written.
 // Binding writes (single writer linking; approvals #26): every status written is first judged by
 // canTransitionBinding, then a row_version compare-and-set; the unreleased row (pending_auth /
 // invalid) is set active in place, else a stored `unbound` row (a projection value, judged as no
@@ -40,7 +42,20 @@
 // above; after an activation, the binding's account), read with the union port's account filter;
 // that account having none → 50301, never another account's slot or another scene's. The
 // conversion gets the account through LinkOpenConversionInput.unionAccountId.
+// B1-22n (BR-ATTR-05 细则「open 业务校验的先后」⑥ → ⑦ → ⑧; D10-239 T3a / T3b):
+// - ⑦ before ⑧: an allowed jd / pdd open first builds, without converting, the identity its
+//   conversion would use (link-open-conversion.ts createConversionPrecheck: the scene's active slot
+//   of the account in use, self_buy for no_rebate; attr_code; the jd user key mode); none → 50301
+//   (a blocked user's no_rebate keeps no_rebate_reason=binding_blocked) before any cache, price or
+//   union call. Jd has no ⑥: it is checked here too, so every composition routing jd through this
+//   hook (createPddAuthLinkOpen, link-open-taobao.ts) gets it. Cache reads and keys unchanged (R-12).
+// - ⑥ before ⑦ (D10-262 / D10-263): a binding not active whose account in use has no active slot
+//   of the link's scene is not queried (local configuration before external calls) and never
+//   activated, nor is another scene's slot used for the query: locally it counts as not filed →
+//   30111 with an auth_jump as above, no union call at all. With the slot: one filing query, then
+//   ⑦ as above. An active binding goes straight to ⑦ (no slot → 50301).
 import type { UnionPidRow } from '../../union/index.ts';
+import { createConversionPrecheck, effectiveNoRebate } from './link-open-conversion.ts';
 import type { LinkOpenService } from './link-open.ts';
 import type { LinkOpenOwnerResult } from './link-open-owner.ts';
 import {
@@ -94,6 +109,8 @@ const MAINTENANCE: LinkOpenAuthorization = {
   data: { reason: 'maintenance' },
 };
 const QUERY_FAILED: LinkOpenAuthorization = { kind: 'refused', code: 50303 };
+/** ⑦: no usable slot (or identity) for the conversion; no data, as the conversion's own 50301. */
+const NO_SLOT: LinkOpenAuthorization = { kind: 'refused', code: 50301 };
 
 function paused(message: string): Error & { readonly code: 50301 } {
   return Object.assign(new Error(message), { code: 50301 as const });
@@ -130,6 +147,30 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
   const decisions = new WeakMap<LinkOpenOwnerResult, Parameters<typeof pddCacheTag>[0]>();
   /** B1-19d: the account each allowed open converts with (LinkOpenConversionInput). */
   const accounts = new WeakMap<LinkOpenOwnerResult, string>();
+  /** B1-22n: ⑦, the conversion's identity built ahead of the re-check. */
+  const precheck = createConversionPrecheck(options);
+
+  /** ⑦ for this open: null when the conversion's identity builds, else the 50301 refusal. */
+  async function slotRefusal(
+    input: LinkOpenAuthorizationInput,
+    noRebate: boolean,
+    accountId: string | undefined,
+    blocked = false,
+  ): Promise<LinkOpenAuthorization | null> {
+    try {
+      await precheck({
+        owner: input.owner,
+        // BR-ATTR-05 ①: another user's share link keeps the sharer's attribution.
+        noRebate: effectiveNoRebate(input.caller, input.owner, noRebate),
+        traceId: input.traceId,
+        ...(accountId === undefined ? {} : { unionAccountId: accountId }),
+      });
+      return null;
+    } catch (error) {
+      if ((error as { code?: unknown } | null)?.code !== 50301) throw error;
+      return blocked ? { ...NO_SLOT, noRebateReason: 'binding_blocked' } : NO_SLOT;
+    }
+  }
 
   /**
    * authAccountId's self_buy slot, and every account's slots of the plan's scenes (B1-19d); the
@@ -169,12 +210,15 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
   }
 
   async function allow(
-    owner: LinkOpenOwnerResult,
+    input: LinkOpenAuthorizationInput,
     noRebate: boolean,
     binding: { readonly id: string; readonly accountId: string } | null,
     accountId: string,
     blocked = false,
   ): Promise<LinkOpenAuthorization> {
+    const { owner } = input;
+    const refused = await slotRefusal(input, noRebate, accountId, blocked);
+    if (refused !== null) return refused;
     const { link, identitySnapshot } = owner;
     const pidScene = noRebate ? 'self_buy' : identitySnapshot.pid_scene;
     const slot = await slotOf(link.app_id, pidScene, accountId);
@@ -238,7 +282,11 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
 
   async function authorize(input: LinkOpenAuthorizationInput): Promise<LinkOpenAuthorization> {
     const { caller, owner, noRebate, executor } = input;
-    if (owner.link.platform !== PLATFORM) return { kind: 'allowed' };
+    if (owner.link.platform !== PLATFORM) {
+      // B1-22n: jd has no authorization (⑥); its slot (⑦) is still settled before the re-check.
+      if (owner.link.platform !== 'jd') return { kind: 'allowed' };
+      return (await slotRefusal(input, noRebate, undefined)) ?? { kind: 'allowed' };
+    }
     const { link, identitySnapshot: snapshot } = owner;
     const appId = link.app_id;
     const subject = snapshot.user_id;
@@ -271,8 +319,8 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
         ? { ...MAINTENANCE, noRebateReason: 'binding_blocked' }
         : MAINTENANCE;
     }
-    if (noRebate) return allow(owner, true, null, accountId, status === 'blocked');
-    if (active !== null) return allow(owner, false, active, active.accountId);
+    if (noRebate) return allow(input, true, null, accountId, status === 'blocked');
+    if (active !== null) return allow(input, false, active, active.accountId);
 
     const identity = await pddAuthorityIdentity(
       { pids, attrCodes, logger },
@@ -285,7 +333,8 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
         events: 'linking.open',
       },
     );
-    if (identity === 'no_pid') throw paused('linking: no active promotion slot');
+    // B1-22n (D10-262 / D10-263): no active slot of the scene → not queried, not filed (⑥).
+    if (identity === 'no_pid') return issue(input, subject);
     if (identity === 'no_attr_code') throw paused('linking: attr_code unavailable');
     const authorized = await queryPddAuthority(
       { registry, logger },
@@ -303,7 +352,7 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
     if (written.kind === 'blocked') return { kind: 'refused', code: 30153 };
     // F1-07c: banned meanwhile (read after the user lock): the banned user's answer, as above.
     if (written.kind === 'banned') return { kind: 'refused', code: 10001 };
-    return allow(owner, false, { id: written.id, accountId: written.accountId }, written.accountId);
+    return allow(input, false, { id: written.id, accountId: written.accountId }, written.accountId);
   }
 
   function cacheTag(owner: LinkOpenOwnerResult, noRebate: boolean): string | undefined {
