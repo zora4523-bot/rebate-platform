@@ -35,7 +35,8 @@ export type PayoutLeftReason =
   | 'not_approved'
   | 'member_blocked'
   | 'has_transfer_attempt'
-  | 'channel_disabled';
+  | 'channel_disabled'
+  | WatermarkRejectReason;
 
 export type PayoutBatchRejectReason = 'payout_disabled' | 'queue_paused' | WatermarkRejectReason;
 

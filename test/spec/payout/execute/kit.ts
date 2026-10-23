@@ -35,9 +35,10 @@ export const MINUTE = 60_000;
 export const SYSTEM = 'system:auto_payout';
 export type Channel = 'alipay' | 'bank_card';
 
-/** The production `payout` queue spec (exclusive: singletonKey required) and its dead letter queue. */
+/** The production `payout` queue spec (exclusive: singletonKey required) and its own dead letter
+ * queue `payout.dead` (B1-01zzg: each business queue dead-letters into `<q>.dead`). */
 const CATALOG = QUEUE_CATALOG.filter(
-  (spec) => spec.name === 'payout' || spec.name === 'dead-letter',
+  (spec) => spec.name === 'payout' || spec.name === 'payout.dead',
 );
 
 interface Database {

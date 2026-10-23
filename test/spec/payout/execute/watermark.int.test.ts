@@ -2,22 +2,35 @@
 // W = the latest payout_watermarks row of (app, channel) by measured_at; stale when missing or older
 // than 2 hours (exactly 2 hours passes); P = round_half_up(7-day total / 7) × 3 over the 7 complete
 // natural days (+08:00) before today, REJECTED excluded; Σ batch + Σ PAYING + Σ paid after t_W must
-// not exceed W × usable_bp / 10000 (equality passes). Per channel; any failure refuses the whole
-// batch atomically. Expected values are computed here by hand.
+// not exceed W × usable_bp / 10000 (equality passes). W and P are both per channel (D10-285,
+// D10-288 Q2: P over that channel's payout_channel only). An executable set of one channel is refused
+// as a whole, atomically; an executable set of ≥ 2 channels blocks only the failing channel's
+// withdrawals (left / item blocked with the watermark reason, still APPROVED, no job) while the other
+// channels go on to PAYING (D10-288 Q3, D10-290). Expected values are computed here by hand.
 import { createTestDatabase } from '@couli/db/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import type { ExecuteBatchResult } from '../../../../apps/api/src/modules/payout/application/payout-execute.ts';
 import {
   HOUR,
   MINUTE,
   NOW,
   TIMEOUT,
+  batches,
   close,
+  events,
   executed,
+  expectJob,
   expectPaying,
+  expectUntouched,
+  items,
+  jobs,
   open,
   setup,
   snapshot,
   sorted,
+  withdrawal,
+  type Channel,
+  type ExecuteFixture,
   type Harness,
 } from './kit.ts';
 
@@ -30,6 +43,105 @@ afterAll(async () => {
 }, TIMEOUT);
 
 const ago = (ms: number) => new Date(NOW.getTime() - ms);
+
+type WatermarkReason = 'watermark_stale' | 'watermark_below_forecast' | 'watermark_usable_exceeded';
+interface Left {
+  id: string;
+  reason: string;
+}
+const byId = (a: Left, b: Left) => a.id.localeCompare(b.id);
+const itemKey = (row: { batch_id: string; withdrawal_id: string; result: string }) =>
+  `${row.batch_id}${row.withdrawal_id}${row.result}`;
+
+/** Finished withdrawals of the forecast window, all of one fresh member (paid a minute after creation). */
+async function seedHistory(
+  f: ExecuteFixture,
+  rows: readonly {
+    net: bigint;
+    channel: Channel;
+    status: 'PAID_API' | 'FAILED' | 'REJECTED';
+    createdAt: string;
+  }[],
+) {
+  const owner = await f.newUser();
+  for (const row of rows) {
+    const createdAt = new Date(row.createdAt);
+    await f.seedWithdrawal({
+      userId: owner,
+      net: row.net,
+      channel: row.channel,
+      status: row.status,
+      createdAt,
+      paidAt: new Date(createdAt.getTime() + MINUTE),
+    });
+  }
+}
+
+/**
+ * A mixed-channel batch split by the watermark (D10-288 Q3): one new manual batch; `paying` in
+ * PAYING (seq 1, item paying, one job id:1, one event each); `blocked` still APPROVED, never
+ * executed, on no batch, no job, item blocked with `reason`; `also` the ② leftovers with their items.
+ */
+async function expectSplit(
+  f: ExecuteFixture,
+  result: ExecuteBatchResult,
+  expected: {
+    paying: readonly string[];
+    blocked: readonly string[];
+    reason: WatermarkReason;
+    also?: readonly (Left & { result: 'skipped' | 'blocked' })[];
+  },
+) {
+  const also = expected.also ?? [];
+  const answer = executed(result);
+  expect(sorted(answer.paying)).toEqual(sorted(expected.paying));
+  expect([...answer.left].sort(byId)).toEqual(
+    [
+      ...expected.blocked.map((id) => ({ id, reason: expected.reason })),
+      ...also.map(({ id, reason }) => ({ id, reason })),
+    ].sort(byId),
+  );
+  expect(await batches(f)).toEqual([
+    { id: answer.batchId, kind: 'manual', created_by: expect.any(String) },
+  ]);
+  for (const id of expected.paying) {
+    await expectPaying(f, id, { batchId: answer.batchId, seq: 1, executor: f.adminId });
+  }
+  for (const id of expected.blocked) {
+    await expectUntouched(f, id, 'APPROVED');
+    expect((await withdrawal(f, id)).batch_id).toBeNull();
+  }
+  const row = (withdrawalId: string, result: string, reason: string | null) => ({
+    batch_id: answer.batchId,
+    withdrawal_id: withdrawalId,
+    result,
+    reason,
+    moved_to_batch_id: null,
+  });
+  expect(await items(f)).toEqual(
+    [
+      ...expected.paying.map((id) => row(id, 'paying', null)),
+      ...expected.blocked.map((id) => row(id, 'blocked', expected.reason)),
+      ...also.map((left) => row(left.id, left.result, left.reason)),
+    ].sort((a, b) => itemKey(a).localeCompare(itemKey(b))),
+  );
+  const queued = await jobs(f);
+  expect(queued).toHaveLength(expected.paying.length);
+  for (const id of expected.paying) expectJob(f, queued, id, 1);
+  const changed = await events(f);
+  expect(changed).toHaveLength(expected.paying.length);
+  expect(changed).toEqual(
+    expect.arrayContaining(
+      expected.paying.map((id) =>
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            data: expect.objectContaining({ withdrawal_id: id, status: 'PAYING' }),
+          }),
+        }),
+      ),
+    ),
+  );
+}
 
 it('[AC-B2-06c#3] ③ 该通道没有水位记录：整批拒绝 watermark_stale，零迁移零明细零任务', async () => {
   const f = await setup(h, { watermarks: false });
@@ -247,7 +359,7 @@ it('[AC-B2-06c#3] ③ 只对可执行集合求和：② 留下的单不计入本
   expect(answer.left).toEqual([{ id: blocked, reason: 'member_blocked' }]);
 });
 
-it('[AC-B2-06c#3] ③ 按通道分别计算（取值待编排裁定）：两个通道各自 W=100、各一单 100 都通过', async () => {
+it('[AC-B2-06c#3] ③ 按通道分别计算：两个通道各自 W=100、各一单 100 都通过', async () => {
   const f = await setup(h, { watermarks: false });
   const service = f.execute();
   await f.watermark(100n, ago(10 * MINUTE), 'alipay');
@@ -260,20 +372,94 @@ it('[AC-B2-06c#3] ③ 按通道分别计算（取值待编排裁定）：两个�
   await expectPaying(f, b, { batchId: answer.batchId, seq: 1, executor: f.adminId });
 });
 
-it('[AC-B2-06c#3] ③ 任一通道不满足即整批拒绝并指明通道（取值待编排裁定），另一通道的单也不迁移、② 的原因也不写明细', async () => {
+/**
+ * Forecast window [10-11T16:00Z, 10-18T16:00Z): alipay total 4000 + 3000 = 7000 → P = 1000 × 3 =
+ * 3000; bank_card total 700 (REJECTED 7000 excluded) → P = 100 × 3 = 300; one P over both channels
+ * would be round_half_up(7700 / 7) × 3 = 3300.
+ */
+const HISTORY = [
+  { net: 4000n, channel: 'alipay', status: 'PAID_API', createdAt: '2026-10-12T03:00:00.000Z' },
+  { net: 3000n, channel: 'alipay', status: 'FAILED', createdAt: '2026-10-16T03:00:00.000Z' },
+  { net: 700n, channel: 'bank_card', status: 'PAID_API', createdAt: '2026-10-14T03:00:00.000Z' },
+  { net: 7000n, channel: 'bank_card', status: 'REJECTED', createdAt: '2026-10-15T03:00:00.000Z' },
+] as const;
+
+it.each([
+  ['没有水位记录', null],
+  ['t_W 距今 2 小时又 1 毫秒', 2 * HOUR + 1],
+] as const)(
+  '[AC-B2-06c#3] ③ 混通道批次、bank_card %s：只拦 bank_card 的单（blocked / watermark_stale、留 APPROVED、不入队），支付宝的单照常 PAYING，② 的原因照写明细',
+  async (_name, age) => {
+    const f = await setup(h, { watermarks: false });
+    const service = f.execute();
+    await f.watermark(1_000_000_000n, ago(10 * MINUTE), 'alipay');
+    if (age !== null) await f.watermark(1_000_000_000n, ago(age), 'bank_card');
+    const a = await f.seedWithdrawal({ channel: 'alipay' });
+    const b = await f.seedWithdrawal({ channel: 'bank_card', userId: await f.newUser() });
+    const paying = await f.seedWithdrawal({ status: 'PAYING', userId: await f.newUser() });
+    await expectSplit(f, await f.run(service, [a, b, paying]), {
+      paying: [a],
+      blocked: [b],
+      reason: 'watermark_stale',
+      also: [{ id: paying, reason: 'not_approved', result: 'skipped' }],
+    });
+  },
+);
+
+it('[AC-B2-06c#3] ③ P 按通道拆：支付宝 W=2999 < 自己的 P=3000 被拦（watermark_below_forecast），bank_card W=300 ≥ 自己的 P=300 照常 PAYING', async () => {
   const f = await setup(h, { watermarks: false });
   const service = f.execute();
-  await f.watermark(1_000_000_000n, ago(10 * MINUTE), 'alipay');
-  await f.watermark(1_000_000_000n, ago(3 * HOUR), 'bank_card');
-  const a = await f.seedWithdrawal({ channel: 'alipay' });
-  const b = await f.seedWithdrawal({ channel: 'bank_card', userId: await f.newUser() });
-  const paying = await f.seedWithdrawal({ status: 'PAYING', userId: await f.newUser() });
-  const before = await snapshot(f);
-  expect(await f.run(service, [a, b, paying])).toEqual({
-    kind: 'rejected',
-    reason: 'watermark_stale',
-    channel: 'bank_card',
+  await seedHistory(f, HISTORY);
+  // 2999 ≥ bank_card's P (300) and 300 < alipay's P (3000) or a joint P (3300): only own P decides.
+  await f.watermark(2999n, ago(10 * MINUTE), 'alipay');
+  await f.watermark(300n, ago(10 * MINUTE), 'bank_card');
+  const a = await f.seedWithdrawal({ net: 100n, channel: 'alipay' });
+  const b = await f.seedWithdrawal({ net: 100n, channel: 'bank_card', userId: await f.newUser() });
+  await expectSplit(f, await f.run(service, [a, b]), {
+    paying: [b],
+    blocked: [a],
+    reason: 'watermark_below_forecast',
   });
-  expect(await snapshot(f)).toEqual(before);
-  expect(f.send).not.toHaveBeenCalled();
 });
+
+it('[AC-B2-06c#3] ③ 混通道批次、支付宝 Σ 超可用上限：支付宝两单（600、500 各自都够、合计 1100 > W=1000）都被拦（watermark_usable_exceeded），bank_card 一单 100 = W=100 照常 PAYING', async () => {
+  const f = await setup(h, { watermarks: false });
+  const service = f.execute();
+  await f.watermark(1000n, ago(10 * MINUTE), 'alipay');
+  await f.watermark(100n, ago(10 * MINUTE), 'bank_card');
+  const a1 = await f.seedWithdrawal({ net: 600n, channel: 'alipay' });
+  const a2 = await f.seedWithdrawal({ net: 500n, channel: 'alipay' });
+  const b = await f.seedWithdrawal({ net: 100n, channel: 'bank_card', userId: await f.newUser() });
+  await expectSplit(f, await f.run(service, [a1, b, a2]), {
+    paying: [b],
+    blocked: [a1, a2],
+    reason: 'watermark_usable_exceeded',
+  });
+});
+
+it.each([
+  { reason: 'watermark_stale', w: null, history: false, nets: [100n] },
+  { reason: 'watermark_below_forecast', w: 2999n, history: true, nets: [100n] },
+  { reason: 'watermark_usable_exceeded', w: 1000n, history: false, nets: [600n, 500n] },
+] as const)(
+  '[AC-B2-06c#3] ③ 对照：可执行集合只有一个通道（bank_card 的单已在 ② 留下）→ 照旧整批拒绝 $reason 并指明通道，零迁移零明细（② 的原因也不写）零任务',
+  async ({ reason, w, history, nets }) => {
+    const f = await setup(h, { watermarks: false });
+    const service = f.execute();
+    if (history) await seedHistory(f, HISTORY);
+    if (w !== null) await f.watermark(w, ago(10 * MINUTE), 'alipay');
+    await f.watermark(1_000_000_000n, ago(10 * MINUTE), 'bank_card');
+    await f.set('payout.channel_enabled.bank_card', false);
+    const members: string[] = [];
+    for (const net of nets) members.push(await f.seedWithdrawal({ net, channel: 'alipay' }));
+    const bank = await f.seedWithdrawal({ channel: 'bank_card', userId: await f.newUser() });
+    const before = await snapshot(f);
+    expect(await f.run(service, [...members, bank])).toEqual({
+      kind: 'rejected',
+      reason,
+      channel: 'alipay',
+    });
+    expect(await snapshot(f)).toEqual(before);
+    expect(f.send).not.toHaveBeenCalled();
+  },
+);
