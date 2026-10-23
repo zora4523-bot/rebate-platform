@@ -37,6 +37,7 @@ function money(doc: Obj, schema: Obj, names: string[]): void {
 }
 function payOrder(doc: Obj, schema: Obj): void {
   required(schema, [
+    'pay_order_id',
     'user_id',
     'biz_type',
     'biz_ref',
@@ -56,6 +57,7 @@ function payOrder(doc: Obj, schema: Obj): void {
 }
 function refund(doc: Obj, schema: Obj): void {
   required(schema, [
+    'pay_refund_id',
     'target_type',
     'target_id',
     'out_refund_no',
@@ -135,6 +137,7 @@ it('[AC-CT-21e#14] 异常收款保留渠道交易号、关联和可退金额', (
   const doc = contract();
   const schema = row(doc, data(doc, endpoints[6]));
   required(schema, [
+    'pay_anomaly_id',
     'pay_channel',
     'channel_trade_no',
     'out_trade_no',
@@ -154,6 +157,7 @@ it('[AC-CT-21e#15] 收款对账仅列 R4 的 pay_mismatch / pay_anomaly 并保�
   const endpoint = endpoints[8];
   const schema = row(doc, data(doc, endpoint));
   required(schema, [
+    'recon_diff_id',
     'type',
     'period',
     'ref_type',
@@ -176,7 +180,7 @@ it.each(endpoints)('[AC-CT-21e#16] %s %s 响应字段不暴露渠道侧用户标
     expand(doc, at(response(doc, endpoint), 'content', 'application/json', 'schema')),
   );
   const forbidden =
-    /^(?:openid|open_id|unionid|union_id|payer_id|buyer_id|buyer_logon_id|channel_user_id|channel_user_token|raw_request|raw_response|raw_payload|payer_openid)$/i;
+    /openid|buyer_id|buyer_logon|user_id_alipay|alipay_user|payer|^(?:open_id|unionid|union_id|channel_user_id|channel_user_token|raw_request|raw_response|raw_payload)$/i;
   function inspect(value: unknown): void {
     if (Array.isArray(value)) {
       value.forEach(inspect);
