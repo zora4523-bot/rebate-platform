@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
-import { sql, type Kysely } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createInboxMessages } from '../../../../apps/api/src/modules/notification/application/inbox-messages.ts';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
@@ -48,6 +48,54 @@ async function fixture() {
     abroad,
     clock,
   };
+}
+
+/** Polls until `count` backends of this database wait on a PG lock in a statement on `table`. */
+async function lockWaiters(count: number, table: string) {
+  let waiting = 0;
+  for (let attempt = 0; attempt < 250 && waiting < count; attempt += 1) {
+    if (attempt > 0) await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    const result = await sql<{ n: number }>`select count(*)::int as n from pg_stat_activity
+      where datname = current_database() and pid <> pg_backend_pid()
+        and wait_event_type = 'Lock' and query like ${`%${table}%`}`.execute(db);
+    waiting = result.rows[0]!.n;
+  }
+  const reason = `${count} calls must wait on a PG lock before it is released`;
+  expect(waiting, reason).toBeGreaterThanOrEqual(count);
+}
+
+/**
+ * Deterministic interleaving: `lock` takes one row lock in a transaction of its own; the calls
+ * start in `order`, each only after every earlier one waits on PG, and the lock is released once
+ * all of them wait. Returns the calls' promises indexed like `calls`.
+ */
+async function interleaved<T>(
+  lock: (trx: Transaction<DB>) => Promise<unknown[]>,
+  calls: readonly (() => Promise<T>)[],
+  order: readonly number[],
+  table: string,
+): Promise<Promise<T>[]> {
+  const locked = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const holder = db.transaction().execute(async (trx) => {
+    expect(await lock(trx)).toHaveLength(1);
+    locked.resolve();
+    await release.promise;
+  });
+  const started: Promise<T>[] = [];
+  try {
+    await Promise.race([locked.promise, holder]);
+    for (const [arrived, index] of order.entries()) {
+      const pending = calls[index]!();
+      void pending.catch(() => undefined);
+      started[index] = pending;
+      await lockWaiters(arrived + 1, table);
+    }
+  } finally {
+    release.resolve();
+    await holder;
+  }
+  return started;
 }
 
 it(
@@ -291,20 +339,45 @@ it(
 );
 
 it(
-  '[AC-B1-12k#6] 并发重复标同一消息合计只计一次，read_at与row_version只更新一次',
+  '[AC-B1-12k#6] 并发重复标同一消息合计只计一次，read_at与row_version只更新一次（确定性交错）',
   async () => {
-    const f = await fixture();
-    const id = await seedMessage(db, f.owner, { row_version: 5 });
-    const service = createInboxMessages({ db, clock: f.clock });
-    const results = await Promise.all([
-      service.markRead({ ...f.owner, message_ids: [id] }),
-      service.markRead({ ...f.owner, message_ids: [id] }),
-    ]);
-    expect(results.map((result) => result.marked_count).sort()).toEqual([0, 1]);
-    expect(results.map((result) => result.unread_count)).toEqual([0, 0]);
-    expect(await messagesOf(db, f.owner.app_id)).toMatchObject([
-      { message_id: id, read_at: f.clock.now(), updated_at: f.clock.now(), row_version: 6 },
-    ]);
+    for (const order of [
+      [0, 1],
+      [1, 0],
+    ]) {
+      const f = await fixture();
+      const id = await seedMessage(db, f.owner, { row_version: 5 });
+      const service = createInboxMessages({ db, clock: f.clock });
+      // Both calls reach the database while another transaction holds the message's row lock: a
+      // read-then-unconditional-update has seen the message unread in both and counts it twice.
+      const results = await Promise.all(
+        await interleaved(
+          (trx) =>
+            trx
+              .withSchema('app')
+              .selectFrom('inbox_messages')
+              .select('message_id')
+              .where('app_id', '=', f.owner.app_id)
+              .where('message_id', '=', id)
+              .forUpdate()
+              .execute(),
+          [
+            () => service.markRead({ ...f.owner, message_ids: [id] }),
+            () => service.markRead({ ...f.owner, message_ids: [id] }),
+          ],
+          order,
+          'inbox_messages',
+        ),
+      );
+      const byArrival = order.map((index) => results[index]!.marked_count);
+      expect(results.map((result) => result.marked_count).sort()).toEqual([0, 1]);
+      expect(results.map((result) => result.unread_count)).toEqual([0, 0]);
+      expect(await messagesOf(db, f.owner.app_id)).toMatchObject([
+        { message_id: id, read_at: f.clock.now(), updated_at: f.clock.now(), row_version: 6 },
+      ]);
+      // PG grants the row lock in arrival order: the call that queued first marks the message.
+      expect(byArrival).toEqual([1, 0]);
+    }
   },
   TIMEOUT,
 );

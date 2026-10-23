@@ -1,7 +1,7 @@
 // Real business-role PostgreSQL: persistence, isolation, timestamps and concurrent upserts.
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createNotificationSettings } from '../../../../apps/api/src/modules/notification/application/notification-settings.ts';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
@@ -44,6 +44,54 @@ async function fixture() {
     abroad: { app_id: otherApp, user_id: await seedUser(db, otherApp) },
     clock: new FixedClock(NOW),
   };
+}
+
+/** Polls until `count` backends of this database wait on a PG lock in a statement on `table`. */
+async function lockWaiters(count: number, table: string) {
+  let waiting = 0;
+  for (let attempt = 0; attempt < 250 && waiting < count; attempt += 1) {
+    if (attempt > 0) await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    const result = await sql<{ n: number }>`select count(*)::int as n from pg_stat_activity
+      where datname = current_database() and pid <> pg_backend_pid()
+        and wait_event_type = 'Lock' and query like ${`%${table}%`}`.execute(db);
+    waiting = result.rows[0]!.n;
+  }
+  const reason = `${count} calls must wait on a PG lock before it is released`;
+  expect(waiting, reason).toBeGreaterThanOrEqual(count);
+}
+
+/**
+ * Deterministic interleaving: `lock` takes one row lock in a transaction of its own; the calls
+ * start in `order`, each only after every earlier one waits on PG, and the lock is released once
+ * all of them wait. Returns the calls' promises indexed like `calls`.
+ */
+async function interleaved<T>(
+  lock: (trx: Transaction<DB>) => Promise<unknown[]>,
+  calls: readonly (() => Promise<T>)[],
+  order: readonly number[],
+  table: string,
+): Promise<Promise<T>[]> {
+  const locked = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const holder = db.transaction().execute(async (trx) => {
+    expect(await lock(trx)).toHaveLength(1);
+    locked.resolve();
+    await release.promise;
+  });
+  const started: Promise<T>[] = [];
+  try {
+    await Promise.race([locked.promise, holder]);
+    for (const [arrived, index] of order.entries()) {
+      const pending = calls[index]!();
+      void pending.catch(() => undefined);
+      started[index] = pending;
+      await lockWaiters(arrived + 1, table);
+    }
+  } finally {
+    release.resolve();
+    await holder;
+  }
+  return started;
 }
 
 it(
@@ -158,32 +206,55 @@ it(
 );
 
 it(
-  '[AC-B1-12m#9] 同账号并发首次PUT都成功，唯一行保存某一完整请求而非混合值',
+  '[AC-B1-12m#9] 同账号并发首次PUT都成功，唯一行保存某一完整请求而非混合值（确定性交错）',
   async () => {
-    const f = await fixture();
-    const service = createNotificationSettings({ db, clock: f.clock });
-    const first = { service_push: false, subscription_push: true, marketing_push: false };
-    const second = { service_push: true, subscription_push: false, marketing_push: true };
-    expect(await settingsOf(db, f.owner)).toEqual([]);
-    const results = await Promise.allSettled([
-      service.update(f.owner, first),
-      service.update(f.owner, second),
-    ]);
-    expect(results).toEqual([
-      { status: 'fulfilled', value: first },
-      { status: 'fulfilled', value: second },
-    ]);
-    const saved = await service.get(f.owner);
-    expect([first, second]).toContainEqual(saved);
-    expect(await settingsOf(db, f.owner)).toEqual([
-      {
-        ...f.owner,
-        ...saved,
-        created_at: f.clock.now(),
-        updated_at: f.clock.now(),
-        row_version: 1,
-      },
-    ]);
+    for (const order of [
+      [0, 1],
+      [1, 0],
+    ]) {
+      const f = await fixture();
+      const service = createNotificationSettings({ db, clock: f.clock });
+      const first = { service_push: false, subscription_push: true, marketing_push: false };
+      const second = { service_push: true, subscription_push: false, marketing_push: true };
+      expect(await settingsOf(db, f.owner)).toEqual([]);
+      // The account's users row is locked FOR UPDATE elsewhere, so the earlier PUT's insert stops
+      // in its foreign-key check with its row already in the primary key, and the later PUT meets
+      // that uncommitted row: check-then-insert answers 23505, insert-or-ignore keeps the earlier
+      // values while the later PUT reports its own.
+      const results = await Promise.allSettled(
+        await interleaved(
+          (trx) =>
+            trx
+              .withSchema('app')
+              .selectFrom('users')
+              .select('id')
+              .where('app_id', '=', f.owner.app_id)
+              .where('id', '=', f.owner.user_id)
+              .forUpdate()
+              .execute(),
+          [() => service.update(f.owner, first), () => service.update(f.owner, second)],
+          order,
+          'notification_settings',
+        ),
+      );
+      expect(results).toEqual([
+        { status: 'fulfilled', value: first },
+        { status: 'fulfilled', value: second },
+      ]);
+      const saved = await service.get(f.owner);
+      expect([first, second]).toContainEqual(saved);
+      expect(await settingsOf(db, f.owner)).toEqual([
+        {
+          ...f.owner,
+          ...saved,
+          created_at: f.clock.now(),
+          updated_at: f.clock.now(),
+          row_version: 1,
+        },
+      ]);
+      // The later PUT becomes the update of the committed earlier row, so its values are kept.
+      expect(saved).toEqual([first, second][order[1]!]);
+    }
   },
   TIMEOUT,
 );
