@@ -101,6 +101,14 @@ it.each(['alipay', 'bank_card'] as const)(
       fail_action: null,
       channel_order_id: null,
       created_at: NOW,
+      review_deadline: s.withdrawals[0]!.review_deadline!.toISOString(),
+      executed_at: null,
+      first_attempt_at: null,
+      paid_at: null,
+      channel_state: null,
+      confirm_deadline: null,
+      sub_text_branch: 'processing',
+      hold_days: null,
     });
     await assertContract(
       { statusCode: 200, json: <T>() => ({ code: 0, msg: '', data, trace_id: randomUUID() }) as T },
