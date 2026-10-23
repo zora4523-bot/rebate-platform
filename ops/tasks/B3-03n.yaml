@@ -1,0 +1,28 @@
+id: B3-03n
+repo: rebate-platform
+title: 启用模型路径前的生产接线补齐：出卡回执 recordDelivered、搜索出卡写商品引用、审核时限按 app 读 agent.safety.timeout_ms
+type: impl
+# 2026-10-23 入账（agent2-acct4）。B3-03j / B3-03m 的 Codex 资金评审各留 S2（followups 第 46–48 条），当前生产固定 no_model、触发不到，但 B3-03k 启用模型路径前须补：
+# ① core 下发卡片后经结果集端口 recordDelivered 记已下发的 card_id（被卡片上限截掉的不记；followups 第 44 条同源；PG 结果集 B3-09c 合并后按其端口），否则按 card_id / ref_ordinal 引用报价失败；
+# ② 生产 search_products 出卡时写商品引用（product_refs，与 B1-06i / parsing 同一写入口），否则之后以 context.product_key 报价 readProduct 抛错；
+# ③ 输入审核时限按 app 读 agent.safety.timeout_ms（content 配置读取口，缺省 1000ms；非法值按配置层既有口径）。
+# 分工：Codex 写规则测试，Claude Opus 5.5 实现，Codex 资金类评审（RV2：app.module.ts）。派发前按 B3-09c 与配置注册表现状重审 paths。
+refs: [BR-AI-05, BR-AI-04, BR-AI-18]
+refs_hash:
+  BR-AI-05: ee8fd647fd43
+  BR-AI-04: a07587a282ba
+  BR-AI-18: 01b60e6ca170
+deps: [B3-03j, B3-03m]
+paths:
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/agent/stream/mount/**'
+  - 'apps/api/src/modules/agent/orchestrator/core/run.ts'
+test_paths:
+  - 'test/spec/agent/stream-model-prereq/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/stream-model-prereq/**'
+status: todo
+pr: null
