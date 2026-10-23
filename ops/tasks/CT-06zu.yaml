@@ -1,0 +1,27 @@
+id: CT-06zu
+repo: rebate-platform
+title: CT-06zu：agent 读写表与 Redis 键门禁（AST 规则测试）——agent 模块经 Kysely 与 SQL 文本的读写只碰 app.agent_* 表、不绕过构造器；Redis 命名空间只许 agent_ 前缀；app.module 的命名空间按白名单（D10-287、D10-288 Q1）
+type: guard-change
+# 2026-10-24 入账（agent 线，编排裁定 D10-287（D10-275 ② 取 A）、D10-288 Q1）。BR-AI-02 ③ 白名单放行 platform 的基础设施部分，
+# 回写写明「数据库与 Redis 只读写 Agent 自己的表 / 键」；依赖检查按文件判定管不到表与键，故以 TypeScript AST 静态扫描规则测试守住
+# （照 B3-08g imports.test.ts 先例；tools/** 不能用编译器 API）。完整口径、「未覆盖」与「已知仍从严」清单见
+# test/spec/agent/write-scope/scan.ts 文件头（唯一出处）。摘要——扫描 apps/api/src/modules/agent/**（排除 *.test.ts）：
+# ① Kysely 写方法表名须为 agent_* 字面量，withSchema 只许 'app'；② sql 模板 / sql.raw / sql.lit / 数据库句柄 .query() 里的读写语句
+# 目标须为 app.agent_*，DDL 与 LOCK / CALL / SET ROLE 等一律违规；③ .namespace 只许 agent_ 字面量；④ app.module 所有 namespace 须解析为
+# 字面量，非 agent_ 的须在测试白名单（catalog-cache）；⑤ executeQuery / CompiledQuery、.schema 的 DDL、写方法与 namespace 的间接访问违规；
+# 读（selectFrom / join / FROM / JOIN）同样只许 agent_*。主干零违规，上线即绿。
+# 四轮新鲜独立 Claude 写测试、四轮新鲜独立 Claude 评审（approvals #36，Codex 至 10-30 不可用），评审结论在 couli-runs/CT-06zu-review*.json。
+# 非 task 分支 chore/guard-change-CT-06zu，test/spec 只新增、不带证据文件，编排按 approvals #24 核对后加标签。
+refs: [BR-AI-02]
+refs_hash:
+  BR-AI-02: 61014cc4d222
+deps: []
+paths:
+  - 'test/spec/agent/write-scope/**'
+  - 'ops/tasks/CT-06zu.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify:fast'
+status: todo
+pr: null
