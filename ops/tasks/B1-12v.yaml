@@ -1,0 +1,26 @@
+id: B1-12v
+repo: rebate-platform
+title: 测试加固：B1-12k / B1-12m / B1-12o 的并发规则用例改为确定性屏障（两连接 + advisory lock 或事务内持锁，两种先后各跑一次），只加强、断言语义不变、不削弱
+type: test-change
+# 2026-10-23 入账（be-codex，编排派工：B1-12k / B1-12m 两条 S2 排在 ③ 之后做 test-change；B1-12o 同类 S2 一并）。来源：各任务规则测试评审 S2——
+# [AC-B1-12k#6] 并发重复标已读、[AC-B1-12m#9]（service.int）/ [AC-B1-12m#14]（http.int）并发首次 PUT、[AC-B1-12o#35] 并发 dispatch，现只靠 Promise.all 自然交错，
+# 「先查后改、不带条件」等错误实现可能侥幸通过。改法：用两个独立连接与 advisory lock（或在一方事务内持锁）卡住交错点，两种先后各跑一次，原断言保留。
+# Codex 额度用尽（至 10-30），按 approvals #36 由独立 Claude（claude-run.sh impl --phase test）改测试；实现不改（现实现应照样通过），若新测试暴露实现缺陷则停下另开任务。第一类保护路径，#24 标签由编排核对。
+refs: []
+refs_hash: {}
+deps: [B1-12k, B1-12m, B1-12o]
+paths:
+  - 'test/spec/notification/message-list/service.int.test.ts'
+  - 'test/spec/notification/settings/service.int.test.ts'
+  - 'test/spec/notification/settings/http.int.test.ts'
+  - 'test/spec/notification/push-send/core.int.test.ts'
+test_paths:
+  - 'test/spec/notification/message-list/service.int.test.ts'
+  - 'test/spec/notification/settings/service.int.test.ts'
+  - 'test/spec/notification/settings/http.int.test.ts'
+  - 'test/spec/notification/push-send/core.int.test.ts'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
