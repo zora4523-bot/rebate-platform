@@ -248,6 +248,21 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/me/reverify",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/v1/me/reverify/id-number",
+    "signed": true
+  },
+  {
+    "method": "POST",
+    "path": "/v1/me/reverify/oauth",
+    "signed": true
+  },
+  {
+    "method": "GET",
     "path": "/v1/me/payout-account",
     "signed": false
   },

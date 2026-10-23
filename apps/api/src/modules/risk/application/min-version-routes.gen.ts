@@ -507,6 +507,36 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": true
   },
   {
+    "operationId": "getReverify",
+    "method": "GET",
+    "path": "/v1/me/reverify",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "reverifyByIdNumber",
+    "method": "POST",
+    "path": "/v1/me/reverify/id-number",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
+    "operationId": "reverifyByOauth",
+    "method": "POST",
+    "path": "/v1/me/reverify/oauth",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
     "operationId": "getPayoutAccount",
     "method": "GET",
     "path": "/v1/me/payout-account",

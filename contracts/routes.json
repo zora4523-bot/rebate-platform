@@ -576,6 +576,24 @@
       "entry": ["in_app", "push"],
       "agent_guide_account": "fund"
     },
+    "Reverify": {
+      "page": "核实身份（旧号加验；只由收到 10010 的页面打开，方式由 GET /v1/me/reverify 取；不接受外部预填：传入参数由路由层丢弃后照常打开，并记 route_params_dropped）",
+      "kind": "native",
+      "auth": "login",
+      "since": {
+        "ios": null,
+        "android": null,
+        "harmony": null
+      },
+      "phase": "M-内测",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "entry": ["in_app"]
+    },
     "PayoutAccount": {
       "page": "收款账号（不接受外部预填：传入参数由路由层丢弃后照常打开，并记 route_params_dropped）",
       "kind": "native",

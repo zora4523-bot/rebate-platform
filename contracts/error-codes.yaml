@@ -114,6 +114,17 @@ codes:
     data:
       locked_until: ~
     sources: [BR-ID-34]
+  - code: 10010
+    http: 403
+    meaning: 账号待加验且本设备未加验（旧号加验，BR-WDR-01 细则；data.method ∈ id_number / oauth / manual，method=oauth 时带 data.providers，method≠manual 时带 data.fail_limit；不写幂等结果）
+    action: 按 data.method 打开 Reverify；通过后回到原页面，由用户用新幂等键重新提交，不重放（BR-WDR-07）；manual 只提示联系客服
+    retry: 加验后由用户重新提交
+    retry_kind: after_action
+    data:
+      method: [id_number, oauth, manual]
+      providers: ~
+      fail_limit: ~
+    sources: [BR-WDR-01, BR-WDR-03, BR-WDR-07]
   - code: 10401
     http: 401
     meaning: 请求签名无效或重放（X-Nonce 重复 / 时间戳超窗）
@@ -199,6 +210,16 @@ codes:
     data:
       reason: [identity_mismatch]
     sources: [BR-ID-04, BR-ID-08]
+  - code: 20005
+    http: 400
+    meaning: 核实身份（旧号加验）核对不符：身份证号与已存实名不一致，或第三方重新授权得到的不是可信身份里的那一个（data.fail_limit 必有、data.fail_remaining；计入连续失败，到上限后再提交返回 10010 method=manual）
+    action: 留在 Reverify，提示剩余次数，由用户改正后用新的幂等键重新提交
+    retry: 否
+    retry_kind: never
+    data:
+      fail_limit: ~
+      fail_remaining: ~
+    sources: [BR-WDR-01]
   - code: 20901
     http: 409
     meaning: 幂等键冲突（同键不同请求体）

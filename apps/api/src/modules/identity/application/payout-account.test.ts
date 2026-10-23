@@ -4,6 +4,8 @@ import { expect, it } from 'vitest';
 import { FixedClock, createRootLogger, type FieldCrypto } from '../../platform/index.ts';
 import {
   createPayoutAccountService,
+  project,
+  type CurrentAccount,
   type PayoutAccountConfigPort,
   type SaveAlipayCommand,
 } from './payout-account.ts';
@@ -99,4 +101,63 @@ it('[AC-B1-13e] save: missing or malformed configuration warns with config_key o
       ['config_key', 'entry', 'env', 'level', 'msg', 'pid', 'time'].sort(),
     );
   }
+});
+
+// A stand-in for the field cipher: the stored "cipher" is the plain text (masking is what matters).
+const plainCrypto = { decrypt: (cipher: string) => cipher } as unknown as FieldCrypto;
+
+const ROW_ID = '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a80';
+
+function row(overrides: Partial<CurrentAccount>): CurrentAccount {
+  return {
+    id: ROW_ID,
+    payout_method: 'alipay',
+    alipay_hmac: 'hmac-alipay',
+    alipay_logon_id_cipher: Buffer.from('13812345678', 'utf8'),
+    bank_card_hmac: null,
+    bank_card_no_cipher: null,
+    bank_name: null,
+    payee_name: '张三',
+    row_version: 1,
+    ...overrides,
+  };
+}
+
+it('[AC-CT-26c] project: an alipay row carries payout_account_id = the current row id', () => {
+  const projected = project(row({}), plainCrypto, 2);
+  expect(projected.payout_account_id).toBe(ROW_ID);
+  expect(Object.keys(projected).sort()).toEqual(
+    [
+      'change_remaining_this_month',
+      'masked_account',
+      'masked_payee_name',
+      'payout_account_id',
+      'payout_method',
+    ].sort(),
+  );
+  expect(projected.payout_method).toBe('alipay');
+  expect(projected.masked_account).not.toContain('12345678');
+});
+
+it('[AC-CT-26c] project: a bank-card row carries payout_account_id = the current row id', () => {
+  const projected = project(
+    row({
+      id: '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a81',
+      payout_method: 'bank_card',
+      alipay_hmac: null,
+      alipay_logon_id_cipher: null,
+      bank_card_hmac: 'hmac-card',
+      bank_card_no_cipher: Buffer.from('6222000000000009', 'utf8'),
+      bank_name: '示例银行',
+    }),
+    plainCrypto,
+    0,
+  );
+  expect(projected).toMatchObject({
+    payout_account_id: '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a81',
+    payout_method: 'bank_card',
+    bank_name: '示例银行',
+    change_remaining_this_month: 0,
+  });
+  expect(projected.masked_account).not.toContain('6222000000000009');
 });
