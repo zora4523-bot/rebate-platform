@@ -458,49 +458,56 @@ it(
   TIMEOUT,
 );
 
+// 编排裁定 D10-272（本期淘礼金订单不入账）：首版按 D7 不接入淘礼金，tlj_deduct_fen > 0 视为数据
+// 异常，只多拦、不多付。异常记录按 08 现有口径，不新造状态、差错单类型或订单 hold：
+// - BR-FUND-04 ⑦：锁内重验不过即「跳过（保持 WAITING，批次明细记原因，进入后续批次）」——服务返回
+//   skipped 与原因 tlj_deduct_unsupported，由批次执行方写进 settle_batch_items.skip_reason；
+// - BR-FUND-04 ⑫ 同类数据异常的做法「跳过并告警，不写凭证」——告警按本模块现有写法，pino 告警行带
+//   alert 字段（同 rebate 的 rebate_illegal_transition）。
+// 不设 hold：BR-FUND-01 / BR-CALC-13 规定 hold 只由人工或风控设置；recon_diffs 也没有这类类型。
 it.each([
-  // N = 1000, reserve_bp 1500: floor(1000 × 8500 / 10000) = 850, reserve 150 (BR-CALC-02).
-  // 淘礼金 100：B = 850 − 100 = 750 → 375 / 75 / floor(37.5) = 37。
-  { tlj: 100n, base: 750n, self: 375n, direct: 75n, indirect: 37n },
-  // 淘礼金 900 > 850：B = max(0, 850 − 900) = 0，受益人都不入账。
-  { tlj: 900n, base: 0n, self: 0n, direct: 0n, indirect: 0n },
+  // N = 1000, reserve_bp 1500 → 扣减前 B 850：扣减 100 小于 B，扣减 900 大于 B，两例都不入账。
+  { tlj: 100n },
+  { tlj: 900n },
 ])(
-  '[AC-B2-04m#39] 淘礼金正常模式扣减 $tlj：经 readTljDeductFen 在本事务读取扣减额，B_credit = $base，受益人按扣减后的 B 拆分',
-  async ({ tlj, base, self, direct, indirect }) => {
+  '[AC-B2-04m#39] 淘礼金扣减 $tlj > 0（D10-272 本期不入账）：经 readTljDeductFen 在本事务读到扣减额后跳过（tlj_deduct_unsupported）并告警，不写凭证、余额、booked，保持 WAITING',
+  async ({ tlj }) => {
     const h = await harness(p.db);
     const o = await h.order({ tljDeductFen: tlj });
-    const result = await h.credit(o);
-    expect(result).toMatchObject({ outcome: 'credited', bCreditFen: base, bookedNFen: 1000n });
+    const initial = await h.read(o);
+    const before = await h.state();
+    const roles = ['self', 'direct', 'indirect'] as const;
+    const balances = () => Promise.all(roles.map((role) => h.balance(o.user(role))));
+    const balancesBefore = await balances();
 
+    expect(await h.credit(o)).toEqual({ outcome: 'skipped', reason: 'tlj_deduct_unsupported' });
+
+    // 扣减额在本事务内读取（调用方传入的事务对象）。
     expect(h.readTljDeductFen).toHaveBeenCalledWith(
       h.transactions[0],
       expect.objectContaining({ appId: h.appId, orderId: o.orderId, commissionVersion: 1 }),
     );
-    expect(Math.min(...h.readTljDeductFen.mock.invocationCallOrder)).toBeLessThan(
-      Math.min(...h.post.mock.invocationCallOrder),
-    );
 
-    const shares = { self, direct, indirect };
-    const userKeys: string[] = [];
-    for (const role of ['self', 'direct', 'indirect'] as const) {
-      expect(await h.balance(o.user(role))).toBe(shares[role]);
-      if (shares[role] > 0n) {
-        userKeys.push(creditKey(o, role));
-        expect(await h.voucherLines(creditKey(o, role))).toEqual(
-          userCreditLines(o, role, shares[role]),
-        );
-      }
-    }
-    const keys = await h.voucherKeys();
-    expect(keys.filter((k) => k !== platformKey(o))).toEqual(userKeys.sort());
-    // 平台凭证存在（留存 + 预留 150 > 0）；扣减额本身的去向在规则里未写明（BR-FUND-05 平台凭证
-    // = 留存 + 预留，BR-FUND-19 ⑤ 应收 = booked_n_fen），金额待编排裁定，本例不断言。
-    expect(keys).toContain(platformKey(o));
+    // 不入账：无凭证、余额不变、rebate_status 不变、booked_* 不写，也没有义务、事件与历史。
+    expect(h.post).not.toHaveBeenCalled();
+    expect(h.publish).not.toHaveBeenCalled();
+    expect(await h.vouchers()).toEqual([]);
+    expect(await balances()).toEqual(balancesBefore);
     expect(await h.read(o)).toMatchObject({
-      rebate_status: 'CREDITED',
-      booked_base_fen: base,
-      booked_n_fen: 1000n,
+      rebate_status: 'WAITING',
+      booked_base_fen: null,
+      booked_n_fen: null,
+      hold: initial.hold,
+      hold_reason: initial.hold_reason,
+      row_version: initial.row_version,
     });
+    expect(await h.state()).toEqual(before);
+
+    // 可查的异常记录：一条 warn 及以上的告警行，指向本 App 的本订单。
+    const alerts = h.logs.filter((line) => line['alert'] === 'credit_tlj_deduct_unsupported');
+    expect(alerts).toHaveLength(1);
+    expect(Number(alerts[0]?.['level'])).toBeGreaterThanOrEqual(40);
+    expect(alerts[0]).toMatchObject({ app_id: h.appId, order_id: o.orderId });
   },
   TIMEOUT,
 );

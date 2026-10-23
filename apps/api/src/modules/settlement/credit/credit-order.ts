@@ -7,8 +7,10 @@
 //   2. re-read the order after the lock: rebate_status = WAITING, hold = false,
 //      rights_pending = false, and the greatest order_settlements seq = expectedSettleSeq;
 //      otherwise return { outcome: 'skipped' } without writing anything;
-//   3. read the commission snapshot (current commission_version) and lock the users rows of the
-//      beneficiaries through the BeneficiaryGate (ascending user_id);
+//   3. read the commission snapshot (current commission_version) and its tlj_deduct_fen; a
+//      tlj_deduct_fen > 0 skips with 'tlj_deduct_unsupported' plus an alert log and writes
+//      nothing (编排裁定 D10-272); then lock the users rows of the beneficiaries through the
+//      BeneficiaryGate (ascending user_id);
 //   4. ledger.lockBalances for those users (ascending account_id);
 //   5. re-read each beneficiary's state through the gate (after 3 and 4) and plan the credit with
 //      @couli/domain planInitialCredit (B_credit from N per BR-CALC-02, shares per snapshot ratio);
@@ -92,7 +94,14 @@ export interface CreditOrderInput {
   readonly openedRef: string;
 }
 
-export type CreditSkipReason = 'not_waiting' | 'hold' | 'rights_pending' | 'settlement_changed';
+/**
+ * tlj_deduct_unsupported: the snapshot's tlj_deduct_fen is > 0. 淘礼金 is not credited this period
+ * (编排裁定 D10-272): skip without writing anything and log a warn line with
+ * alert = 'credit_tlj_deduct_unsupported', app_id and order_id; the batch item keeps the reason
+ * (BR-FUND-04 ⑦).
+ */
+export type CreditSkipReason =
+  'not_waiting' | 'hold' | 'rights_pending' | 'settlement_changed' | 'tlj_deduct_unsupported';
 
 export interface CreditBeneficiaryOutcome {
   readonly userId: string;
