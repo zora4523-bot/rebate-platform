@@ -32,9 +32,12 @@ import {
   createDemoRebateQuoter,
   createItemRefService,
   processItemRefCipher,
+  type Catalog,
   type CatalogCardEntry,
   type CatalogConfigReader,
   type CatalogWarning,
+  type ProductCapabilities,
+  type ProductRef,
   type RegisterLinkInput,
 } from './modules/catalog/index.ts';
 import {
@@ -1663,6 +1666,63 @@ function parsingPorts(): DynamicModule {
 /** Agent search pages: the tool's page size when it gives none (the tool always gives one). */
 const AGENT_SEARCH_PAGE_SIZE = 20;
 
+/** B3-03n: a search card's product reference comes from a served search (BR-PROD-10). */
+const AGENT_SEARCH_REF_CAPABILITIES: ProductCapabilities = Object.freeze({
+  parseEnabled: false,
+  searchEnabled: true,
+});
+
+/**
+ * B3-03n · BR-AI-04 / BR-AI-05: a search card delivered by the Agent (scene retrieval, a candidate
+ * reference of source search) writes its product reference through catalog's registerProductRef,
+ * the one product_refs writer, once its link is registered (the commit of a deferred card, or the
+ * card itself): a candidate never delivered writes nothing. A later get_rebate_quote by
+ * context.product_key then finds the stored raw id and reads a fresh price. A failed reference
+ * write is logged and leaves the card as it is (that quote fails as before).
+ */
+function withSearchProductRefs(
+  entry: CatalogCardEntry,
+  catalog: Pick<Catalog, 'registerProductRef'>,
+  logger: RootLogger,
+): CatalogCardEntry {
+  const register = async (ref: ProductRef): Promise<void> => {
+    try {
+      await catalog.registerProductRef(ref, AGENT_SEARCH_REF_CAPABILITIES);
+    } catch (error) {
+      logger.warn(
+        {
+          platform: ref.platform,
+          product_key: ref.productKey,
+          error_name: error instanceof Error ? error.name : typeof error,
+        },
+        'agent_search_product_ref_failed',
+      );
+    }
+  };
+  return {
+    async assemble(input) {
+      const result = await entry.assemble(input);
+      if (input.scene !== 'retrieval' || input.ref.source !== 'search') return result;
+      if (result.kind === 'card') {
+        await register(input.ref);
+        return result;
+      }
+      if (result.kind !== 'prepared') return result;
+      const commit = result.commit;
+      let registered: Promise<void> | undefined;
+      return {
+        ...result,
+        async commit() {
+          const card = await commit();
+          registered ??= register(input.ref);
+          await registered;
+          return card;
+        },
+      };
+    },
+  };
+}
+
 /**
  * B3-03j: the stream entry's Agent business ports (agentStreamPortsToken()), assembled here so
  * agent imports neither union, catalog, linking, parsing nor identity, over the same building
@@ -1676,6 +1736,7 @@ const AGENT_SEARCH_PAGE_SIZE = 20;
  * - cards(context, registration): built per tool call from that call's server-side identity,
  *   linking's registration in scene agent with the call's agent session (register only, never a
  *   conversion: TRADE-03); attr_code through identity's reader, pids through union's pid service.
+ *   B3-03n: a delivered search card also writes its product_refs row (withSearchProductRefs).
  * Without a database handle the value is null (the stream runtime is null then as well).
  */
 @Module({})
@@ -1840,7 +1901,7 @@ function agentStreamPorts(union: DynamicModule): DynamicModule {
                 context: registration,
                 logger,
               });
-              return createCatalogCardEntry({
+              const entry = createCatalogCardEntry({
                 clock,
                 logger,
                 viewerContext: { current },
@@ -1849,6 +1910,7 @@ function agentStreamPorts(union: DynamicModule): DynamicModule {
                 sourceLinks,
                 itemRefs,
               });
+              return withSearchProductRefs(entry, catalog, logger);
             },
           };
         },

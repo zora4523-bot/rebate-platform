@@ -17,6 +17,7 @@ import { RunOutput } from './output.ts';
 import type { CardWrite } from './output.ts';
 import type {
   AgentRunBodyDeps,
+  DeliveredProductReceipt,
   InputProceed,
   OrchestratorTrace,
   ToolContext,
@@ -82,6 +83,53 @@ export function intentOf(text: string): { readonly name: string | null } | undef
   if (!Object.hasOwn(value, 'agent_intent')) return undefined;
   const name = (value as Record<string, unknown>)['agent_intent'];
   return { name: typeof name === 'string' ? name : null };
+}
+
+const CARD_ID = /^c([1-9][0-9]*)$/u;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * B3-03n · BR-AI-05: the receipts of a written product_list whose frame took `frameCardId`. The
+ * embedded products are numbered right after their container, in item order (04 §8.2, the
+ * RunManager's numberCard), so item i took c<frame + 1 + i>. Each receipt keeps a one-product copy
+ * of the list (no card_id: a later re-delivery is numbered afresh). An item without a product key,
+ * a known platform or an integer final price is skipped (nothing to resolve it to).
+ */
+function deliveredProductsOf(
+  card: UnnumberedCard,
+  frameCardId: string,
+): { readonly resultSetId: string; readonly items: readonly DeliveredProductReceipt[] } | null {
+  if (card.type !== 'product_list' || !isRecord(card.data)) return null;
+  const resultSetId = card.data['result_set_id'];
+  const items = card.data['items'];
+  const frame = CARD_ID.exec(frameCardId);
+  if (typeof resultSetId !== 'string' || resultSetId === '' || !Array.isArray(items)) return null;
+  if (frame === null) return null;
+  const first = Number(frame[1]);
+  const out: DeliveredProductReceipt[] = [];
+  items.forEach((item: unknown, index) => {
+    if (!isRecord(item)) return;
+    const productKey = item['product_key'];
+    const platform = item['platform'];
+    const finalPrice = item['final_price_fen'];
+    const no = first + 1 + index;
+    if (typeof productKey !== 'string' || productKey === '') return;
+    if (typeof platform !== 'string' || !PLATFORMS.includes(platform)) return;
+    if (typeof finalPrice !== 'number' || !Number.isSafeInteger(finalPrice)) return;
+    if (!Number.isSafeInteger(no)) return;
+    const product = Object.fromEntries(Object.entries(item).filter(([key]) => key !== 'card_id'));
+    out.push({
+      card_id: `c${String(no)}`,
+      product_key: productKey,
+      platform: platform as Platform,
+      final_price_fen: finalPrice,
+      card: { ...card, data: { ...card.data, items: [product] } },
+    });
+  });
+  return out.length === 0 ? null : { resultSetId, items: out };
 }
 
 /** Whole text without surrounding white space and one ``` fence (closed or not). */
@@ -533,6 +581,9 @@ class AgentRun {
         if (written === ABORTED) return done('stop');
         refs.delivered(written.cardId);
         if (written.written) this.delivered = true;
+        if (written.cardId !== null && (await this.receipt(card, written.cardId)) === ABORTED) {
+          return done('stop');
+        }
         if (this.out.limitHit) return done('limit');
       }
       const suggestions = outcome.suggestions ?? [];
@@ -549,6 +600,27 @@ class AgentRun {
         ...refs.records(outcome.trace?.link_registrations ?? [], ['link_id', 'product_key']),
       );
     }
+  }
+
+  /**
+   * B3-03n · BR-AI-05: records the products of a product_list the run context confirmed as
+   * written (a receipt card_id) in the result set it names, before the next card goes out. A
+   * failed record never changes the run: the card is already out; the reference to it then
+   * resolves as unknown (invalid_args), as before receipts existed.
+   */
+  private async receipt(card: UnnumberedCard, cardId: string): Promise<void | Aborted> {
+    const port = this.deps.results;
+    if (port === undefined) return undefined;
+    const delivered = deliveredProductsOf(card, cardId);
+    if (delivered === null) return undefined;
+    let pending: Promise<void>;
+    try {
+      pending = port.recordDelivered(delivered.resultSetId, delivered.items);
+    } catch {
+      return undefined;
+    }
+    const recorded = await this.wait(pending.catch(() => undefined));
+    return recorded === ABORTED ? ABORTED : undefined;
   }
 
   private toolContext(placeholders: Readonly<Record<string, string>>): ToolContext {

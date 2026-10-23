@@ -47,7 +47,9 @@
 //   always null; limits: orchestratorLimitsDefaults(); traceMask}). B3-03m: an assembly's safety
 //   ports (createStreamReview, ./review.ts) replace the fail-closed input check (seams.inputCheck
 //   still wins) and the always-timeout review; labels = createRunLabels over the same route and
-//   prompt; sessions = createPgAgentSessionStore; ids = new UUIDv7 ids. No model transport is ever
+//   prompt; sessions = createPgAgentSessionStore; ids = new UUIDv7 ids. B3-03n: an assembly's
+//   results store is also the body's delivery receipt port (core recordDelivered of written
+//   product cards); failures are logged and never end the run. No model transport is ever
 //   called. seams are test seams only (production passes none).
 //   close(): stops accepting (a message after close() started is refused and opens no run), waits
 //   for the runs in progress to end (at most timings.runMaxMs plus a margin; a run still live after
@@ -80,6 +82,8 @@ import {
   type OrchestratorTools,
   type AgentRunTexts,
 } from '../../orchestrator/index.ts';
+import type { DeliveryReceiptPort } from '../../orchestrator/core/ports.ts';
+import type { ResultSetStore } from '../../orchestrator/results/index.ts';
 import { createRunModelClock, type ResolvedRoute } from '../../model-gateway/routing/index.ts';
 import { createAgentRedactor } from '../../preprocess/redact/index.ts';
 import { agentSessionDefaults, createPgAgentSessionStore } from '../../store/index.ts';
@@ -248,6 +252,31 @@ export function agentStreamProvider(
   };
 }
 
+/**
+ * B3-03n · BR-AI-05: the business assembly's result store as the core's delivery receipt port. A
+ * failed record is logged (flat fields, no card or price) and rejected again; the core keeps the
+ * run going without it.
+ */
+function deliveryReceipts(store: ResultSetStore, logger: RootLogger): DeliveryReceiptPort {
+  return {
+    async recordDelivered(resultSetId, items) {
+      try {
+        await store.recordDelivered(resultSetId, items);
+      } catch (error) {
+        logger.warn(
+          {
+            result_set_id: resultSetId,
+            cards: items.length,
+            error_name: error instanceof Error ? error.name : typeof error,
+          },
+          'agent_result_receipt_failed',
+        );
+        throw error;
+      }
+    },
+  };
+}
+
 export function createAgentStreamRuntime(
   deps: AgentStreamRuntimeDeps,
   seams?: AgentStreamSeams,
@@ -320,7 +349,11 @@ export function createAgentStreamRuntime(
     errorMsg: async (_appId, code) => texts.errorMsg(code),
     ...(business === undefined
       ? {}
-      : { deterministic: business.deterministic, intents: business.intents }),
+      : {
+          deterministic: business.deterministic,
+          intents: business.intents,
+          results: deliveryReceipts(business.results, logger),
+        }),
     model: {
       complete: async () => {
         await route();

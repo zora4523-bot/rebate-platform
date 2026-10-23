@@ -26,7 +26,6 @@ import type {
 } from '../../model-gateway/routing/index.ts';
 import type { RunBodyResult, RunContext, UnnumberedCard } from '../../stream/run/index.ts';
 import type { SuggestionsData } from '../../stream/writer/index.ts';
-import type { DeliveredProduct } from '../results/types.ts';
 
 // B3-05i: exported function port; tools inject cardReference(ctx, outcome.cards index).
 // Import from ./card-references.ts; see its contract for delivery/removal semantics.
@@ -203,7 +202,17 @@ export interface RunTraceSink {
  * receipt, is not recorded; notices and other card types are never product cards.
  */
 export interface DeliveryReceiptPort {
-  recordDelivered(resultSetId: string, items: readonly DeliveredProduct[]): Promise<void>;
+  recordDelivered(resultSetId: string, items: readonly DeliveredProductReceipt[]): Promise<void>;
+}
+
+/** One delivered product (the shape of results' DeliveredProduct, declared here so the core does
+ * not import results, which imports the core's types). `card`: a one-product copy of its list. */
+export interface DeliveredProductReceipt {
+  readonly card_id: string;
+  readonly product_key: string;
+  readonly platform: Platform;
+  readonly final_price_fen: number;
+  readonly card: UnnumberedCard;
 }
 
 export interface AgentRunBodyDeps {
