@@ -307,6 +307,40 @@ jobs:
             'APT::Keep-Downloaded-Packages "true";' \
             'Binary::apt::APT::Keep-Downloaded-Packages "true";' \
             | sudo tee /etc/apt/apt.conf.d/99couli-ci > /dev/null
+          # A slow but moving download is not cut by the timeout above (the first run of this
+          # change stalled 10 minutes on fonts-noto-cjk with nothing cached yet). So, for this step
+          # only, `apt-get install` (ours, and the `sudo apt-get` playwright runs: sudo's
+          # secure_path puts /usr/local/sbin first) goes through a wrapper that first fetches the
+          # .deb files with curl, drops a mirror that stays under 300 kB/s for 15 s and tries the
+          # next Ubuntu mirror, then runs the real apt-get, which checks every file against the
+          # signed index and downloads whatever it still lacks.
+          sudo tee /usr/local/sbin/apt-get > /dev/null <<'WRAPPER'
+          #!/bin/bash
+          eval "$(/usr/bin/apt-config shell ARCH Dir::Cache::archives/d)"
+          ARCH=${ARCH%/}
+          case " $* " in
+            *" install "*)
+              /usr/bin/apt-get --print-uris -qq "$@" 2>/dev/null | while read -r uri file _; do
+                uri=${uri//\'/}
+                path=${uri#*://*/ubuntu/}
+                [ "$path" != "$uri" ] || continue
+                [ -s "$ARCH/$file" ] && continue
+                for base in "${uri%%/ubuntu/*}/ubuntu" http://archive.ubuntu.com/ubuntu http://security.ubuntu.com/ubuntu http://mirrors.edge.kernel.org/ubuntu; do
+                  if curl -fsSL --connect-timeout 10 --speed-limit 300000 --speed-time 15 -o "$ARCH/partial/$file" "$base/$path"; then
+                    mv "$ARCH/partial/$file" "$ARCH/$file"
+                    echo "prefetched $file from $base"
+                    break
+                  fi
+                  rm -f "$ARCH/partial/$file"
+                  echo "slow or failed: $base for $file" >&2
+                done
+              done
+              ;;
+          esac
+          exec /usr/bin/apt-get "$@"
+          WRAPPER
+          sudo chmod 755 /usr/local/sbin/apt-get
+          trap 'sudo rm -f /usr/local/sbin/apt-get' EXIT
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends fonts-noto-cjk
           if [ "$CACHE_HIT" = true ]; then

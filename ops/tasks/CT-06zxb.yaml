@@ -9,6 +9,10 @@ type: guard-change
 # （ImageOS / ImageVersion）+ 包清单哈希（fonts-noto-cjk 与随 playwright 版本的 chromium 依赖）；精确命中或没有 .deb 时不存；
 # ② /etc/apt/apt.conf.d/99couli-ci 写 Acquire::http(s)::Timeout 30、Acquire::Retries 5、下载目录与保留下载包（playwright
 # install-deps 内部的 apt-get 同样读到）；③ 该步 timeout-minutes: 10。不改测试与作业时限。主干只有这一处同样的安装步骤。
+# 补（本 PR 首轮 CI）：缓存为空时 fonts-noto-cjk 慢速下载 10 分钟被单步上限截断（30 秒超时只管零字节停顿），缓存永远存不上；
+# 故本步内临时放一个 /usr/local/sbin/apt-get 包装（sudo 的 secure_path 优先，playwright 的 sudo apt-get 也经过它）：install 时先用
+# curl 按 apt 给的 URI 预取 .deb，某镜像 15 秒内低于 300 kB/s 就换下一个 Ubuntu 镜像，再交给真 apt-get（逐个按签名索引校验哈希）；
+# 步骤结束 trap 删除包装。测试机 ubuntu:24.04 容器里以带 sudo 的普通用户实测：全部预取、apt 需下载 0 B、包装已删。
 refs: []
 refs_hash: {}
 deps: []
