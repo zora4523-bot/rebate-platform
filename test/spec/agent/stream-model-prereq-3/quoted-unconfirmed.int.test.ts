@@ -17,6 +17,7 @@ import {
   type AgentStreamProvidedPorts,
 } from '../../../../apps/api/src/modules/agent/stream/mount/index.ts';
 import {
+  contentReaderFor,
   framesOf,
   message,
   openSession,
@@ -50,6 +51,7 @@ function productionMount(f: Fixture) {
       db: pg.db,
       clock: f.time.clock,
       logger: f.logs.logger,
+      contentReader: contentReaderFor(pg.db, f.time.clock),
       consentReader: f.consentReader,
       assembly: (context) => createProductionStreamAssembly({ ...context, ports }),
     },

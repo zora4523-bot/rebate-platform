@@ -36,6 +36,8 @@ import {
   APP,
   Logs,
   ManualTime,
+  bindConsentReader,
+  contentReaderFor,
   loadConsentReader,
   setConfig,
   openAgent,
@@ -201,14 +203,22 @@ export async function fixture(db: Kysely<DB>, suppliedCaller?: AgentCaller) {
       },
     },
   };
-  const consentReader = await loadConsentReader();
+  // B3-08k: identity's reader bound to the handle, as app.module provides it by token.
+  const consentReader = bindConsentReader(await loadConsentReader(), db);
   function build() {
     // Inside each it, never a hook: NotImplemented must fail the test body itself.
     return createAgentStreamAssembly(deps);
   }
   function mount(assembly: AgentStreamAssembly) {
     const runtime = createAgentStreamRuntime(
-      { db, clock: time.clock, logger: logs.logger, consentReader, assembly: () => assembly },
+      {
+        db,
+        clock: time.clock,
+        logger: logs.logger,
+        contentReader: contentReaderFor(db, time.clock),
+        consentReader,
+        assembly: () => assembly,
+      },
       { inputCheck: passInput, schedule: time.scheduler },
     );
     return { runtime, time, logs };

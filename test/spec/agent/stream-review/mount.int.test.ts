@@ -10,6 +10,7 @@ import {
 import type { StreamReviewOptions } from '../../../../apps/api/src/modules/agent/stream/mount/review.ts';
 import { fixture as businessFixture, LINK } from '../stream-assembly/kit.ts';
 import {
+  contentReaderFor,
   fileText,
   framesOf,
   message,
@@ -48,6 +49,7 @@ async function mount(
       db: pg.db,
       clock: f.time.clock,
       logger: f.logs.logger,
+      contentReader: contentReaderFor(pg.db, f.time.clock),
       consentReader: f.consentReader,
       assembly(context) {
         assembly = createProductionStreamAssembly({

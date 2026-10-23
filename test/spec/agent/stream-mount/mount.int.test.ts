@@ -32,6 +32,8 @@ import type { Clock, RootLogger } from '../../../../apps/api/src/modules/platfor
 import {
   agentStreamToken,
   createAgentStreamRuntime,
+  type AgentConsentReaderFactory,
+  type AgentContentReader,
   type AgentStreamModuleOptions,
 } from '../../../../apps/api/src/modules/agent/stream/mount/index.ts';
 import {
@@ -667,7 +669,7 @@ it('[AC-B3-03f#31][BR-AI-23][BR-AI-11][BR-ID-03][BR-AI-13] 真实 stream 入口 
  * seams to createAgentStreamRuntime: the input check lets the message through, the keyword search
  * is held until its run's signal aborts (a run kept in progress) and the RunManager sleeps on
  * `time`'s scheduler. Everything else is the provider's production assembly (the same inject list
- * and deps, identity's consent reader from app.module's options), with the real controller and
+ * and deps, app.module's content and consent readers by token), with the real controller and
  * the runtime's own HTTP layer and cancel port.
  */
 async function heldStreamApp(
@@ -703,10 +705,19 @@ async function heldStreamApp(
       return {
         provide: agentStreamToken(),
         inject: (provider as { inject?: unknown[] }).inject,
-        useFactory: (c: Clock, logger: RootLogger, db?: Kysely<DB>) => {
+        // B3-08k: the same inject list, so the content and consent readers are app.module's.
+        useFactory: (
+          c: Clock,
+          logger: RootLogger,
+          db: Kysely<DB> | undefined,
+          _redis: unknown,
+          _ports: unknown,
+          contentReader: AgentContentReader,
+          consentReader: AgentConsentReaderFactory,
+        ) => {
           expect(db, 'the stream entry has a database handle').toBeDefined();
           return createAgentStreamRuntime(
-            { db: db!, clock: c, logger, consentReader: options.consentReader },
+            { db: db!, clock: c, logger, contentReader, consentReader },
             { inputCheck: new PassInputCheck(), tools, schedule: time.scheduler },
           );
         },

@@ -10,16 +10,19 @@ import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
+import { createContentReader } from '../../../../apps/api/src/modules/content/index.ts';
 import {
   sweepStart,
   sweeperDefaults,
 } from '../../../../apps/api/src/modules/agent/stream/sweeper/index.ts';
 import {
   AgentModule,
+  agentContentReaderToken,
   agentSweeperToken,
   createAgentSweeperRuntime,
   type AgentSweeperRuntime,
 } from '../../../../apps/api/src/modules/agent/agent.module.ts';
+import type { AgentContentReader } from '../../../../apps/api/src/modules/agent/stream/mount/config.ts';
 import { memberKey, usedOn } from '../stream-finalize/kit.ts';
 import { leftover } from '../stream-sweeper/kit.ts';
 import {
@@ -35,6 +38,19 @@ import {
 } from './kit.ts';
 
 const pg = usePgEach(createTestDatabase);
+
+/**
+ * B3-08k (D10-306): content's reads as app.module's agentReaders provides them through
+ * agentContentReaderToken() on the worker entry: configValue through one cached content reader,
+ * freshConfigValue through a content reader built per call.
+ */
+function contentReaderFor(db: typeof pg.db, clock: FixedClock): AgentContentReader {
+  const shared = createContentReader({ db, clock });
+  return {
+    configValue: (appId, key) => shared.configValue(appId, key),
+    freshConfigValue: (appId, key) => createContentReader({ db, clock }).configValue(appId, key),
+  };
+}
 
 interface Context {
   get(token: unknown, options?: { strict: boolean }): unknown;
@@ -63,8 +79,10 @@ async function agentContext(clock: FixedClock, logs: Logs): Promise<Context> {
       { provide: DB, useValue: pg.db },
       { provide: CLOCK, useValue: clock },
       { provide: ROOT_LOGGER, useValue: logs.logger },
+      // As app.module's agentReaders('worker', ...) provides it beside the handle (D10-306).
+      { provide: agentContentReaderToken(), useValue: contentReaderFor(pg.db, clock) },
     ],
-    exports: [DB, CLOCK, ROOT_LOGGER],
+    exports: [DB, CLOCK, ROOT_LOGGER, agentContentReaderToken()],
   };
   return NestFactory.createApplicationContext(
     { module: ProviderTestRoot, imports: [platform, AgentModule.forWorker()] },
@@ -84,7 +102,12 @@ it('[AC-B3-03h#35] 真实 provider（AgentModule.forWorker）：运行体与 cre
     expect(logs.of('agent_sweeper_disabled')).toEqual([]);
 
     // One assembly path: the provider's value is what createAgentSweeperRuntime builds.
-    const direct = createAgentSweeperRuntime({ db: pg.db, clock, logger: logs.logger });
+    const direct = createAgentSweeperRuntime({
+      db: pg.db,
+      clock,
+      logger: logs.logger,
+      contentReader: contentReaderFor(pg.db, clock),
+    });
     expect(Object.keys(runtime).sort()).toEqual(Object.keys(direct).sort());
     expect(runtime.timings).toEqual(direct.timings);
     expect(runtime.sweeperConfig).toEqual(direct.sweeperConfig);
