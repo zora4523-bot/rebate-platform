@@ -1,0 +1,25 @@
+id: CT-06zo
+repo: rebate-platform
+title: CT-06zo：.dependency-cruiser.cjs 按 BR-AI-02 ③ 加 agent 依赖规则——不得依赖 growth / commission / settlement；ledger / payout 只许只读入口 read.ts；identity、linking、orders 只许导入类型（D10-266）
+type: guard-change
+# 2026-10-23 入账（agent 线，编排裁定 D10-266，20:00）。起因：B3-08g 规则测试评审发现 .dependency-cruiser.cjs 没有任何 agent 规则，
+# BR-AI-02 ③（agent 不得依赖 growth、commission；ledger、payout 只许各自只读入口；settlement 全部导出禁止；不得调用 identity 写服务与
+# B 级操作实现 linking.openLink、orders.createClaim）无 CI 门禁。做法：在 modules-only-via-index 之上加四条只收紧的规则；B 级实现与
+# identity 写服务都经各自 index 导出，depcruise 只能按文件判定，故对 identity、linking、orders 只许 type-only 依赖（端口由 app.module
+# 注入，B3-03j / B3-08g 先例）。主干与在途 B3-08g（#1390）跑过零违规；违规样例 7 种全被拦、合法样例 3 种不误伤（PR 说明列出）。
+# 改 .dependency-cruiser.cjs 属第二类保护路径；收紧改动由编排按 approvals #24 核对后加标签（D10-266：不需另问负责人）。非 task 分支
+# chore/guard-change-CT-06zo，不带证据文件（先例 CT-06zg #1258）。
+refs: [BR-AI-02]
+refs_hash:
+  BR-AI-02: 61014cc4d222
+deps: []
+paths:
+  - '.dependency-cruiser.cjs'
+  - 'ops/tasks/CT-06zo.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm depcruise'
+  - 'pnpm verify'
+status: todo
+pr: null

@@ -71,6 +71,50 @@ module.exports = {
         pathNot: ['^apps/api/src/modules/$1/', '^apps/api/src/modules/[^/]+/index\\.ts$'],
       },
     },
+    // CT-06zo (D10-266, BR-AI-02 ③): what the agent module may depend on. modules-only-via-index
+    // already limits every edge to another module's index.ts; these four rules only tighten it.
+    {
+      name: 'agent-no-growth-commission-settlement',
+      comment:
+        'BR-AI-02 ③: the agent module must not depend on growth, commission or settlement at all ' +
+        '(not even types); the Agent never decides rebates, invites or settlement (CT-06zo).',
+      severity: 'error',
+      from: { path: '^apps/api/src/modules/agent/' },
+      to: { path: '^apps/api/src/modules/(growth|commission|settlement)/' },
+    },
+    {
+      name: 'agent-ledger-payout-read-entry-only',
+      comment:
+        'BR-AI-02 ③: ledger and payout only through their read-only entry files ledger/read.ts ' +
+        'and payout/read.ts (registered in specs/agent-read-exports.yaml, D32); index.ts and every ' +
+        'other file stay forbidden (CT-06zo).',
+      severity: 'error',
+      from: { path: '^apps/api/src/modules/agent/' },
+      to: {
+        path: '^apps/api/src/modules/(ledger|payout)/',
+        pathNot: '^apps/api/src/modules/(ledger|payout)/read\\.ts$',
+      },
+    },
+    {
+      name: 'agent-identity-types-only',
+      comment:
+        'BR-AI-02 ③: the agent module never calls identity write services; identity values are ' +
+        'injected by the server (BR-AI-03), so only type-only imports of identity are allowed ' +
+        '(CT-06zo).',
+      severity: 'error',
+      from: { path: '^apps/api/src/modules/agent/' },
+      to: { path: '^apps/api/src/modules/identity/', dependencyTypesNot: ['type-only'] },
+    },
+    {
+      name: 'agent-b-level-modules-types-only',
+      comment:
+        'BR-AI-02 ③: no B-level operation implementation (linking.openLink, orders.createClaim): ' +
+        'the agent module may import only types from linking and orders; the read ports it uses ' +
+        'are injected by app.module (B3-03j / B3-08g) (CT-06zo).',
+      severity: 'error',
+      from: { path: '^apps/api/src/modules/agent/' },
+      to: { path: '^apps/api/src/modules/(linking|orders)/', dependencyTypesNot: ['type-only'] },
+    },
     {
       name: 'pg-boss-only-behind-job-queue',
       comment:
