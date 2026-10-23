@@ -145,6 +145,11 @@ export {
   OrderQueryError,
 } from './application/order-queries.ts';
 export type {
+  AgentCapableOrderQueries,
+  AgentOrderItem,
+  AgentOrderSearch,
+  AgentOrderSearchResult,
+  OwnOrderNumberQuery,
   OrderSubject,
   OrderFilter,
   OrderFigures,

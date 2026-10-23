@@ -1,0 +1,133 @@
+{
+  "task": "B3-08f",
+  "spec_ref": "bafa96ce58669cc77a7e0e1f19b0046f53075ce6",
+  "spec_commit": "f36c21a26fdd059e7928ee76865796539082befb",
+  "red_tests": [
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#1][BR-TEXT-02] 合并本人 self/share，隔离 App、他人、未归因和直推/间推订单",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#1][BR-TEXT-02] 配置的可查范围与日期区间取交集，单号查询也不越界",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#2][BR-AI-07] +08:00 两端闭区间，前后 1ms 排除，多日区间含中间日",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#2][BR-AI-07] 同一天也含首尾，self/share 交错按付款时间、同刻按 order_id 倒序后截断",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#2][BR-AI-07] 默认最多 8 条，total 越过列表分页批次，最小 limit 为 1",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#2][BR-AI-07] 定金单用 deposit_paid_at，已有 paid_at 时优先付款时间",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02][AC-S1-106③] 标题不区分大小写包含匹配，分享其他商品即使同标题也不命中",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02] self 与 share 的标题 % 按字面匹配",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02] self 与 share 的标题 _ 按字面匹配",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02] self 与 share 的标题 \\ 按字面匹配",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02] keyword 精确命中自购父/子单号时优先单号，不混入自购标题命中",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02][AC-S1-106②] keyword 为分享单的 parent 单号或片段时不命中",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02][AC-S1-106②] keyword 为分享单的 child 单号或片段时不命中",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02][AC-S1-106②] keyword 为分享单的 fragment 单号或片段时不命中",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#2][BR-AI-07] platform 与日期及 keyword 取交集，total 只统计匹配项，空结果为零",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#4][BR-TEXT-02][BR-AI-07][AC-S1-106④] self 仅返回八字段，结算期与 get 一致",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#4][BR-TEXT-02][BR-AI-07][AC-S1-106④] share-same 仅返回八字段，结算期与 get 一致",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#4][BR-TEXT-02][BR-AI-07][AC-S1-106④] share-other 仅返回八字段，结算期与 get 一致",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#4][BR-TEXT-02][BR-AI-07][AC-S1-106④] share-unknown 仅返回八字段，结算期与 get 一致",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#4][BR-AI-07] 未知金额和结算期保留 null，不猜测日期或金额",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02] 按父单号返回全部本人自购子单，子单号精确匹配，platform 限定",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] share-parent 单号一律查不到，不能回退标题",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] share-child 单号一律查不到，不能回退标题",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] masked 单号一律查不到，不能回退标题",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] fragment 单号一律查不到，不能回退标题",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] missing 单号一律查不到，不能回退标题",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] other-user 单号一律查不到，不能回退标题",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] other-app 单号一律查不到，不能回退标题",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] unattributed 单号一律查不到，不能回退标题",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] title-only 单号一律查不到，不能回退标题",
+    "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] self-fragment 单号一律查不到，不能回退标题"
+  ],
+  "risk_note": "RV2 orders/**；只读查询，复用 B1-08 检索范围与分享单投影，不写库",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "f36c21a26fdd059e7928ee76865796539082befb",
+      "tree": "a8ec0cf9cd8b0cccb196db9be7711f98168ba47b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T03:48:09Z",
+      "finished_at": "2026-10-23T03:48:18Z",
+      "red_tests": [
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#1][BR-TEXT-02] 合并本人 self/share，隔离 App、他人、未归因和直推/间推订单",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#1][BR-TEXT-02] 配置的可查范围与日期区间取交集，单号查询也不越界",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#2][BR-AI-07] +08:00 两端闭区间，前后 1ms 排除，多日区间含中间日",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#2][BR-AI-07] 同一天也含首尾，self/share 交错按付款时间、同刻按 order_id 倒序后截断",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#2][BR-AI-07] 默认最多 8 条，total 越过列表分页批次，最小 limit 为 1",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#2][BR-AI-07] 定金单用 deposit_paid_at，已有 paid_at 时优先付款时间",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02][AC-S1-106③] 标题不区分大小写包含匹配，分享其他商品即使同标题也不命中",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02] self 与 share 的标题 % 按字面匹配",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02] self 与 share 的标题 _ 按字面匹配",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02] self 与 share 的标题 \\ 按字面匹配",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02] keyword 精确命中自购父/子单号时优先单号，不混入自购标题命中",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02][AC-S1-106②] keyword 为分享单的 parent 单号或片段时不命中",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02][AC-S1-106②] keyword 为分享单的 child 单号或片段时不命中",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#3][BR-TEXT-02][AC-S1-106②] keyword 为分享单的 fragment 单号或片段时不命中",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#2][BR-AI-07] platform 与日期及 keyword 取交集，total 只统计匹配项，空结果为零",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#4][BR-TEXT-02][BR-AI-07][AC-S1-106④] self 仅返回八字段，结算期与 get 一致",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#4][BR-TEXT-02][BR-AI-07][AC-S1-106④] share-same 仅返回八字段，结算期与 get 一致",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#4][BR-TEXT-02][BR-AI-07][AC-S1-106④] share-other 仅返回八字段，结算期与 get 一致",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#4][BR-TEXT-02][BR-AI-07][AC-S1-106④] share-unknown 仅返回八字段，结算期与 get 一致",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#4][BR-AI-07] 未知金额和结算期保留 null，不猜测日期或金额",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02] 按父单号返回全部本人自购子单，子单号精确匹配，platform 限定",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] share-parent 单号一律查不到，不能回退标题",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] share-child 单号一律查不到，不能回退标题",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] masked 单号一律查不到，不能回退标题",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] fragment 单号一律查不到，不能回退标题",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] missing 单号一律查不到，不能回退标题",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] other-user 单号一律查不到，不能回退标题",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] other-app 单号一律查不到，不能回退标题",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] unattributed 单号一律查不到，不能回退标题",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] title-only 单号一律查不到，不能回退标题",
+        "test/spec/orders/agent-queries/queries.int.test.ts > [AC-B3-08f#5][BR-TEXT-02][BR-AI-07][AC-S1-106②] self-fragment 单号一律查不到，不能回退标题"
+      ],
+      "expected": ["test/spec/orders/agent-queries/queries.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "f226ad811f5af50b63849f91231878dd2c58b644d4f0d464ae3513250263a8c1"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "885bc04769660d8ff0108af2d7216ac868f4859b",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "round 1 pass (couli-runs/B3-08f/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "spec-test r2 pass (independent Claude; r1 S1x2 fixed by Codex round 2)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "2d2f225a24118b7c6c8567691edeaa36c7f8abbe",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "6d80b681f6d011c40849af9864dffe989314c45c",
+    "specs": "72dde67eefff9307ad4dfab3f98c70a071cc017a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}

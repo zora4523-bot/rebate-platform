@@ -17,7 +17,7 @@
 // read errors propagate like any other list read (never a silent false, nothing cached).
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
-import { chinaMonthRange } from '@couli/domain';
+import { chinaDayRange, chinaMonthRange } from '@couli/domain';
 import { fenToJsonNumber } from '@couli/money';
 import { sql, type Kysely } from 'kysely';
 import type { ContentReader } from '../../content/index.ts';
@@ -50,6 +50,42 @@ export interface OrderFilter {
   cursor?: string;
   limit?: number;
 }
+
+/** BR-AI-07: local +08:00 payment dates, inclusive, across self and share. */
+export interface AgentOrderSearch {
+  date_from: string;
+  date_to: string;
+  keyword?: string;
+  platform?: Schema<'PlatformCode'>;
+  limit?: number;
+}
+
+export interface OwnOrderNumberQuery {
+  order_no: string;
+  platform?: Schema<'PlatformCode'>;
+}
+
+/** contracts/agent-stream.schema.json#/$defs/card_order_status (the eight fields only). */
+export type AgentOrderItem = Pick<
+  Schema<'OrderDetail'>,
+  | 'order_id'
+  | 'platform'
+  | 'title'
+  | 'is_other_product'
+  | 'display_status'
+  | 'reason'
+  | 'est_rebate_fen'
+  | 'expected_credit_period'
+>;
+
+export interface AgentOrderSearchResult {
+  orders: AgentOrderItem[];
+  total: number;
+}
+
+/** The factory guarantees the new methods; legacy HTTP-only injected readers need not. */
+export type AgentCapableOrderQueries = OrderQueries &
+  Required<Pick<OrderQueries, 'searchForAgent' | 'findOwnByNumber'>>;
 
 export interface OrderFigures {
   b_est: bigint | null;
@@ -106,6 +142,13 @@ const MIN_BATCH = 50;
 const BATCH_FACTOR = 5;
 /** Upper bound of exact order-number candidates looked at before choosing number vs title mode. */
 const NUMBER_PROBE_LIMIT = 200;
+/** BR-AI-07 订单类工具契约: list_my_orders limit 1–8, default 8. */
+const AGENT_DEFAULT_LIMIT = 8;
+const AGENT_MAX_LIMIT = 8;
+/** Rows read per batch while counting an agent search (total spans every match, not one page). */
+const AGENT_BATCH = 200;
+/** Upper bound of child orders returned for one own order number. */
+const OWN_NUMBER_LIMIT = 200;
 const QUERY_MONTHS_KEY = 'order.user_query_months';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** UTC instant as the cursor carries it: milliseconds, or microseconds when they are not zero. */
@@ -307,11 +350,59 @@ function toSummary(view: OrderView): Schema<'OrderSummary'> {
   return { ...base, ...number } as Schema<'OrderSummary'>;
 }
 
+/** The card_order_status fields cut from the same projection (no order number, image or date). */
+function toAgentItem(view: OrderView): AgentOrderItem {
+  const { base } = summaryFields(view);
+  return {
+    order_id: base.order_id,
+    platform: base.platform,
+    title: base.title,
+    is_other_product: base.is_other_product,
+    display_status: base.display_status,
+    reason: base.reason,
+    est_rebate_fen: base.est_rebate_fen,
+    expected_credit_period: view.figures.expected_credit_period,
+  };
+}
+
+/** pay_time DESC, order_id DESC over rows already read (pay_key is fixed-width UTC text). */
+function newerFirst(a: OrderView, b: OrderView): number {
+  if (a.row.pay_key !== b.row.pay_key) return a.row.pay_key < b.row.pay_key ? 1 : -1;
+  if (a.row.order_id === b.row.order_id) return 0;
+  return a.row.order_id.toLowerCase() < b.row.order_id.toLowerCase() ? 1 : -1;
+}
+
+/** Application-side list filters; a shared title search never hits another product. */
+function acceptsFor(filter: OrderFilter): (view: OrderView) => boolean {
+  return (view) =>
+    (filter.status_group === undefined ||
+      matchesStatusGroup(view.display_status, filter.status_group)) &&
+    (filter.display_status === undefined || view.display_status === filter.display_status) &&
+    !(filter.scope === 'share' && filter.q !== undefined && view.is_other_product);
+}
+
 /**
  * Shared, already projected read surface for HTTP and B3-08; also the Nest provider token. This
  * base answers only when no database is wired (it rejects); createOrderQueries builds the real one.
  */
 export class OrderQueries {
+  /** Same visibility and projection as list/get; total is counted before limit. */
+  searchForAgent?(
+    subject: OrderSubject,
+    filter: AgentOrderSearch,
+  ): Promise<AgentOrderSearchResult> {
+    void subject;
+    void filter;
+    return Promise.reject(new Error('orders: order queries need the database'));
+  }
+
+  /** Exact parent/child number on self purchases only; never falls back to title. */
+  findOwnByNumber?(subject: OrderSubject, query: OwnOrderNumberQuery): Promise<AgentOrderItem[]> {
+    void subject;
+    void query;
+    return Promise.reject(new Error('orders: order queries need the database'));
+  }
+
   list(subject: OrderSubject, filter: OrderFilter): Promise<Schema<'OrderListData'>> {
     void subject;
     void filter;
@@ -329,6 +420,71 @@ export class OrderQueries {
 class DbOrderQueries extends OrderQueries {
   readonly #deps: OrderQueryDeps;
   readonly #figures: OrderFiguresReader;
+
+  /**
+   * BR-AI-07 list_my_orders: pay_time inside [date_from 00:00, date_to + 1 day 00:00) at +08:00 and
+   * inside the visible range; scope=self and scope=share each searched exactly as the list does
+   * (keyword = the list's q), merged by pay_time DESC, order_id DESC; total counts every match.
+   */
+  override async searchForAgent(
+    subject: OrderSubject,
+    filter: AgentOrderSearch,
+  ): Promise<AgentOrderSearchResult> {
+    const limit = filter.limit ?? AGENT_DEFAULT_LIMIT;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > AGENT_MAX_LIMIT) {
+      throw new OrderQueryError(['limit']);
+    }
+    const from = agentDayRange(filter.date_from, 'date_from');
+    const to = agentDayRange(filter.date_to, 'date_to');
+    if (filter.date_to < filter.date_from) throw new OrderQueryError(['date_to']);
+    const visible = this.#bounds(
+      visibleOrderStart(this.#required().clock, await this.#queryMonths(subject.app_id)),
+      undefined,
+    );
+    const bounds: Bounds = { from: [...visible.from, from.start], before: to.end };
+    const found: OrderView[] = [];
+    let total = 0;
+    for (const scope of ['self', 'share'] as const) {
+      const scoped: OrderFilter = {
+        scope,
+        ...(filter.platform === undefined ? {} : { platform: filter.platform }),
+        ...(filter.keyword === undefined ? {} : { q: filter.keyword }),
+      };
+      const part = await this.#scan(subject, scoped, bounds, limit);
+      found.push(...part.views);
+      total += part.total;
+    }
+    return { orders: found.sort(newerFirst).slice(0, limit).map(toAgentItem), total };
+  }
+
+  /**
+   * BR-AI-07 explain_order by order_no: the exact parent or child number among the subject's own
+   * self purchases in the visible range (optionally one platform). A shared order, a masked number,
+   * a fragment or a title never matches.
+   */
+  override async findOwnByNumber(
+    subject: OrderSubject,
+    query: OwnOrderNumberQuery,
+  ): Promise<AgentOrderItem[]> {
+    const deps = this.#required();
+    if (query.order_no === '') return [];
+    const bounds = this.#bounds(
+      visibleOrderStart(deps.clock, await this.#queryMonths(subject.app_id)),
+      undefined,
+    );
+    const filter: OrderFilter = {
+      scope: 'self',
+      ...(query.platform === undefined ? {} : { platform: query.platform }),
+    };
+    const search: SearchMode = { kind: 'number', text: query.order_no };
+    const rows = (await this.#scoped(subject, filter, bounds, search)
+      .orderBy(payTime, 'desc')
+      .orderBy('order_id', 'desc')
+      .limit(OWN_NUMBER_LIMIT)
+      .execute()) as OrderRow[];
+    const views = await this.#views(subject, rows);
+    return views.filter((view): view is OrderView => view !== undefined).map(toAgentItem);
+  }
 
   constructor(deps: OrderQueryDeps) {
     super();
@@ -354,12 +510,7 @@ class DbOrderQueries extends OrderQueries {
     const at: Clock = { now: () => shifted(now, 0) };
     const earliest = visibleOrderStart(at, await this.#queryMonths(subject.app_id));
     const bounds = this.#bounds(earliest, filter.paid_month);
-    const accepts = (view: OrderView) =>
-      (filter.status_group === undefined ||
-        matchesStatusGroup(view.display_status, filter.status_group)) &&
-      (filter.display_status === undefined || view.display_status === filter.display_status) &&
-      // A shared order's title search never matches an order of another product.
-      !(filter.scope === 'share' && filter.q !== undefined && view.is_other_product);
+    const accepts = acceptsFor(filter);
     const search = await this.#searchMode(subject, filter, bounds, accepts);
 
     const batch = Math.max(MIN_BATCH, limit * BATCH_FACTOR);
@@ -466,6 +617,46 @@ class DbOrderQueries extends OrderQueries {
 
   #required(): OrderQueryDeps {
     return this.#deps;
+  }
+
+  /**
+   * Every accepted row of one scope inside the bounds, by the list's own search mode and filters:
+   * the newest `keep` views and the count of all of them.
+   */
+  async #scan(
+    subject: OrderSubject,
+    filter: OrderFilter,
+    bounds: Bounds,
+    keep: number,
+  ): Promise<{ views: OrderView[]; total: number }> {
+    const accepts = acceptsFor(filter);
+    const search = await this.#searchMode(subject, filter, bounds, accepts);
+    const views: OrderView[] = [];
+    let total = 0;
+    let after: Cursor | undefined;
+    for (;;) {
+      let query = this.#scoped(subject, filter, bounds, search);
+      if (after !== undefined) {
+        const { at, id } = after;
+        query = query.where(
+          sql<boolean>`(${payTime}, ${sql.ref('order_id')}) < (${at}::timestamptz, ${id}::uuid)`,
+        );
+      }
+      const rows = (await query
+        .orderBy(payTime, 'desc')
+        .orderBy('order_id', 'desc')
+        .limit(AGENT_BATCH)
+        .execute()) as OrderRow[];
+      for (const view of await this.#views(subject, rows)) {
+        if (view === undefined || !accepts(view)) continue;
+        total += 1;
+        if (views.length < keep) views.push(view);
+      }
+      const last = rows.at(-1);
+      if (rows.length < AGENT_BATCH || last === undefined) break;
+      after = { at: cursorInstant(last.pay_key), id: last.order_id };
+    }
+    return { views, total };
   }
 
   /**
@@ -627,6 +818,15 @@ class DbOrderQueries extends OrderQueries {
   }
 }
 
+/** One +08:00 calendar day of an agent search; a malformed or impossible date is invalid. */
+function agentDayRange(date: string, field: string): { start: string; end: string } {
+  try {
+    return chinaDayRange(date);
+  } catch {
+    throw new OrderQueryError([field]);
+  }
+}
+
 type SearchMode =
   | { readonly kind: 'none' }
   | { readonly kind: 'number'; readonly text: string }
@@ -643,6 +843,6 @@ function sameProduct(row: OrderRow, products: ReadonlyMap<string, string | null>
   return linked !== null && linked === row.product_key;
 }
 
-export function createOrderQueries(deps: OrderQueryDeps): OrderQueries {
+export function createOrderQueries(deps: OrderQueryDeps): AgentCapableOrderQueries {
   return new DbOrderQueries(deps);
 }
