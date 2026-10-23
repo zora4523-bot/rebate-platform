@@ -113,10 +113,18 @@ function inspectLottie(input: Uint8Array): PopupAssetResult {
   if (input.byteLength > POPUP_LOTTIE_MAX_BYTES) return reject('too_large');
   const lottie = parseLottie(input);
   if (lottie === undefined) return reject('format');
+  // Frames first, then seconds, so no intermediate can overflow past the limit check:
+  // finite op / ip / fr may still give an infinite frame count or seconds (e.g. 1e308 − −1e308,
+  // 10 ÷ 1e-308); any non-finite value is too long. Compare seconds before rounding:
+  // 3.0004 s is too long although it rounds to 3000 ms.
   const frames = lottie.op - lottie.ip;
-  // Exact comparison before any rounding: 3.0004 s is too long although it rounds to 3000 ms.
-  if (frames <= 0 || frames > POPUP_LOTTIE_MAX_SECONDS * lottie.fr) return reject('too_long');
-  const durationMs = Math.round((frames * 1000) / lottie.fr);
+  if (!Number.isFinite(frames) || frames <= 0) return reject('too_long');
+  const seconds = frames / lottie.fr;
+  if (!Number.isFinite(seconds) || seconds <= 0 || seconds > POPUP_LOTTIE_MAX_SECONDS) {
+    return reject('too_long');
+  }
+  // seconds ≤ 3 here, so the product is finite and durationMs is an integer in [0, 3000].
+  const durationMs = Math.round(seconds * 1000);
   if (durationMs <= 0) return reject('too_long');
   if (lottie.assets.some(refersOutside)) return reject('external_ref');
   return {
