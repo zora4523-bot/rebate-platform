@@ -580,61 +580,7 @@ $$;
 
 
 --
-<<<<<<< HEAD
--- Name: pay_orders_reject_immutable_update(); Type: FUNCTION; Schema: app; Owner: -
---
-
-CREATE FUNCTION app.pay_orders_reject_immutable_update() RETURNS trigger
-    LANGUAGE plpgsql
-    SET search_path TO 'pg_catalog', 'pg_temp'
-    AS $$
-BEGIN
-  IF NEW.id IS DISTINCT FROM OLD.id
-    OR NEW.app_id IS DISTINCT FROM OLD.app_id
-    OR NEW.out_trade_no IS DISTINCT FROM OLD.out_trade_no
-    OR NEW.amount_fen IS DISTINCT FROM OLD.amount_fen
-    OR NEW.pay_channel IS DISTINCT FROM OLD.pay_channel
-    OR NEW.biz_type IS DISTINCT FROM OLD.biz_type
-    OR NEW.biz_ref IS DISTINCT FROM OLD.biz_ref
-    OR NEW.user_id IS DISTINCT FROM OLD.user_id
-  THEN
-    RAISE EXCEPTION 'pay_orders out_trade_no, amount_fen, pay_channel, biz_type, biz_ref and user_id cannot be changed'
-      USING ERRCODE = 'restrict_violation';
-  END IF;
-  RETURN NEW;
-END
-$$;
-
-
---
--- Name: pay_refunds_reject_immutable_update(); Type: FUNCTION; Schema: app; Owner: -
---
-
-CREATE FUNCTION app.pay_refunds_reject_immutable_update() RETURNS trigger
-    LANGUAGE plpgsql
-    SET search_path TO 'pg_catalog', 'pg_temp'
-    AS $$
-BEGIN
-  IF NEW.id IS DISTINCT FROM OLD.id
-    OR NEW.app_id IS DISTINCT FROM OLD.app_id
-    OR NEW.out_refund_no IS DISTINCT FROM OLD.out_refund_no
-    OR NEW.amount_fen IS DISTINCT FROM OLD.amount_fen
-    OR NEW.target_type IS DISTINCT FROM OLD.target_type
-    OR NEW.target_id IS DISTINCT FROM OLD.target_id
-  THEN
-    RAISE EXCEPTION 'pay_refunds out_refund_no, amount_fen, target_type and target_id cannot be changed'
-      USING ERRCODE = 'restrict_violation';
-  END IF;
-  RETURN NEW;
-END
-$$;
-
-
---
--- Name: reject_agent_card_rewrite(); Type: FUNCTION; Schema: app; Owner: -
-=======
 -- Name: payout_attempts_complete_once(); Type: FUNCTION; Schema: app; Owner: -
->>>>>>> fa9bc592 (B2-06a: schema.sql / db.gen.ts 随迁移重生成（测试机 db:snapshot）)
 --
 
 CREATE FUNCTION app.payout_attempts_complete_once() RETURNS trigger
@@ -661,20 +607,145 @@ $$;
 
 
 --
+-- Name: reject_agent_card_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_agent_card_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF (to_jsonb(NEW) - 'data'::text - 'fallback_text'::text)
+      IS DISTINCT FROM (to_jsonb(OLD) - 'data'::text - 'fallback_text'::text)
+    OR (NEW.data IS DISTINCT FROM OLD.data AND NEW.data IS DISTINCT FROM '{}'::jsonb)
+    OR (NEW.fallback_text IS DISTINCT FROM OLD.fallback_text
+        AND NEW.fallback_text IS DISTINCT FROM '内容已删除'::text)
+  THEN
+    RAISE EXCEPTION 'agent_cards only permits clearing data to {} and fallback_text to the placeholder'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
+-- Name: reject_agent_result_chain_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_agent_result_chain_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF (to_jsonb(NEW) - 'conditions'::text) IS DISTINCT FROM (to_jsonb(OLD) - 'conditions'::text)
+    OR (NEW.conditions IS DISTINCT FROM OLD.conditions
+        AND NEW.conditions IS DISTINCT FROM jsonb_build_object('chain_id', OLD.chain_id))
+  THEN
+    RAISE EXCEPTION 'agent_result_chains only permits clearing conditions to its chain_id'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
+-- Name: reject_agent_result_delivery_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_agent_result_delivery_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF (to_jsonb(NEW) - 'card'::text) IS DISTINCT FROM (to_jsonb(OLD) - 'card'::text)
+    OR (NEW.card IS DISTINCT FROM OLD.card AND NEW.card IS DISTINCT FROM '{}'::jsonb)
+  THEN
+    RAISE EXCEPTION 'agent_result_deliveries only permits clearing card to {}'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
+-- Name: reject_agent_result_set_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_agent_result_set_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF (to_jsonb(NEW) - 'conditions'::text) IS DISTINCT FROM (to_jsonb(OLD) - 'conditions'::text)
+    OR (NEW.conditions IS DISTINCT FROM OLD.conditions
+        AND NEW.conditions IS DISTINCT FROM '{}'::jsonb)
+  THEN
+    RAISE EXCEPTION 'agent_result_sets only permits clearing conditions to {}'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
 -- Name: reject_agent_run_rewrite(); Type: FUNCTION; Schema: app; Owner: -
 --
 
 CREATE FUNCTION app.reject_agent_run_rewrite() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'pg_temp'
-    AS $$
+    AS $_$
 BEGIN
   IF ROW(NEW.id, NEW.app_id, NEW.session_id, NEW.prompt_version, NEW.accepted_at,
-         NEW.quota_subjects, NEW.created_at, NEW.deadline_at)
+         NEW.created_at, NEW.deadline_at)
       IS DISTINCT FROM
       ROW(OLD.id, OLD.app_id, OLD.session_id, OLD.prompt_version, OLD.accepted_at,
-          OLD.quota_subjects, OLD.created_at, OLD.deadline_at)
-    OR (OLD.final_event IS NOT NULL AND NEW.final_event IS DISTINCT FROM OLD.final_event)
+          OLD.created_at, OLD.deadline_at)
+    OR (NEW.quota_subjects IS DISTINCT FROM OLD.quota_subjects
+        AND NOT COALESCE(
+          array_ndims(NEW.quota_subjects) = 1
+          AND cardinality(NEW.quota_subjects) = cardinality(OLD.quota_subjects)
+          AND array_lower(NEW.quota_subjects, 1) = array_lower(OLD.quota_subjects, 1)
+          AND NOT EXISTS (
+            SELECT 1
+            FROM unnest(OLD.quota_subjects, NEW.quota_subjects) AS s(old_subject, new_subject)
+            WHERE old_subject IS DISTINCT FROM new_subject
+              AND NOT COALESCE(
+                old_subject ~ '^\["member","[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"\]$'
+                AND new_subject ~ '^\["member","[0-9a-f]{64}"\]$',
+                false)
+          ),
+          false))
+    OR (OLD.final_event IS NOT NULL
+        AND NEW.final_event IS DISTINCT FROM OLD.final_event
+        AND NOT CASE
+          WHEN jsonb_typeof(OLD.final_event) = 'object'
+            AND jsonb_typeof(NEW.final_event) = 'object'
+            AND jsonb_typeof(OLD.final_event -> 'data') = 'object'
+            AND jsonb_typeof(NEW.final_event -> 'data') = 'object'
+          THEN COALESCE(
+            (NEW.final_event - 'data'::text) = (OLD.final_event - 'data'::text)
+            AND ((NEW.final_event -> 'data') - 'msg'::text - 'fallback_q'::text)
+              = ((OLD.final_event -> 'data') - 'msg'::text - 'fallback_q'::text)
+            AND ((NEW.final_event -> 'data') ? 'msg'::text)
+              = ((OLD.final_event -> 'data') ? 'msg'::text)
+            AND ((NEW.final_event -> 'data') ? 'fallback_q'::text)
+              = ((OLD.final_event -> 'data') ? 'fallback_q'::text)
+            AND COALESCE(
+              (NEW.final_event -> 'data' -> 'msg') = (OLD.final_event -> 'data' -> 'msg')
+              OR (NEW.final_event -> 'data' -> 'msg') = 'null'::jsonb,
+              true)
+            AND COALESCE(
+              (NEW.final_event -> 'data' -> 'fallback_q') = (OLD.final_event -> 'data' -> 'fallback_q')
+              OR (NEW.final_event -> 'data' -> 'fallback_q') = 'null'::jsonb,
+              true),
+            false)
+          ELSE false
+        END)
     OR (OLD.ended_at IS NOT NULL AND NEW.ended_at IS DISTINCT FROM OLD.ended_at)
     OR (OLD.end_reason IS NOT NULL AND NEW.end_reason IS DISTINCT FROM OLD.end_reason)
     OR (OLD.settle_result IS NOT NULL AND NEW.settle_result IS DISTINCT FROM OLD.settle_result)
@@ -682,16 +753,41 @@ BEGIN
     OR (OLD.card_delivered AND NOT NEW.card_delivered)
     OR (OLD.settle_result IS NOT NULL AND NEW.card_delivered IS DISTINCT FROM OLD.card_delivered)
     OR (NEW.user_text IS NOT NULL AND NEW.user_text IS DISTINCT FROM OLD.user_text)
-    OR (OLD.end_draft IS NOT NULL AND NEW.end_draft IS DISTINCT FROM OLD.end_draft)
+    OR (OLD.end_draft IS NOT NULL
+        AND NEW.end_draft IS DISTINCT FROM OLD.end_draft
+        AND NOT CASE
+          WHEN jsonb_typeof(OLD.end_draft) = 'object'
+            AND jsonb_typeof(NEW.end_draft) = 'object'
+            AND jsonb_typeof(OLD.end_draft -> 'data') = 'object'
+            AND jsonb_typeof(NEW.end_draft -> 'data') = 'object'
+          THEN COALESCE(
+            (NEW.end_draft - 'data'::text) = (OLD.end_draft - 'data'::text)
+            AND ((NEW.end_draft -> 'data') - 'msg'::text - 'fallback_q'::text)
+              = ((OLD.end_draft -> 'data') - 'msg'::text - 'fallback_q'::text)
+            AND ((NEW.end_draft -> 'data') ? 'msg'::text)
+              = ((OLD.end_draft -> 'data') ? 'msg'::text)
+            AND ((NEW.end_draft -> 'data') ? 'fallback_q'::text)
+              = ((OLD.end_draft -> 'data') ? 'fallback_q'::text)
+            AND COALESCE(
+              (NEW.end_draft -> 'data' -> 'msg') = (OLD.end_draft -> 'data' -> 'msg')
+              OR (NEW.end_draft -> 'data' -> 'msg') = 'null'::jsonb,
+              true)
+            AND COALESCE(
+              (NEW.end_draft -> 'data' -> 'fallback_q') = (OLD.end_draft -> 'data' -> 'fallback_q')
+              OR (NEW.end_draft -> 'data' -> 'fallback_q') = 'null'::jsonb,
+              true),
+            false)
+          ELSE false
+        END)
     OR (OLD.cancel_requested_at IS NOT NULL
         AND NEW.cancel_requested_at IS DISTINCT FROM OLD.cancel_requested_at)
   THEN
-    RAISE EXCEPTION 'agent_runs ending facts are write-once and user_text may only be cleared'
+    RAISE EXCEPTION 'agent_runs ending facts are write-once except text redaction, user_text may only be cleared and quota_subjects only hash a member'
       USING ERRCODE = 'restrict_violation';
   END IF;
   RETURN NEW;
 END
-$$;
+$_$;
 
 
 --
@@ -724,6 +820,26 @@ BEGIN
   RETURN NEW;
 END
 $_$;
+
+
+--
+-- Name: reject_agent_tool_call_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_agent_tool_call_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF (to_jsonb(NEW) - 'args'::text) IS DISTINCT FROM (to_jsonb(OLD) - 'args'::text)
+    OR NEW.args IS NOT NULL
+  THEN
+    RAISE EXCEPTION 'agent_tool_calls only permits clearing args to NULL'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
 
 
 --
@@ -3424,160 +3540,6 @@ CREATE TABLE app.pages (
 
 
 --
--- Name: pay_anomalies; Type: TABLE; Schema: app; Owner: -
---
-
-CREATE TABLE app.pay_anomalies (
-    id uuid NOT NULL,
-    app_id text NOT NULL,
-    pay_channel text NOT NULL,
-    channel_trade_no text NOT NULL,
-    out_trade_no text,
-    pay_order_id uuid,
-    amount_fen bigint NOT NULL,
-    refunded_fen bigint DEFAULT 0 NOT NULL,
-    evidence jsonb NOT NULL,
-    status text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT pay_anomalies_amount_fen_check CHECK ((amount_fen > 0)),
-    CONSTRAINT pay_anomalies_channel_trade_no_check CHECK ((channel_trade_no <> ''::text)),
-    CONSTRAINT pay_anomalies_pay_channel_check CHECK ((pay_channel = ANY (ARRAY['wechat_pay'::text, 'alipay'::text]))),
-    CONSTRAINT pay_anomalies_refunded_fen_check CHECK (((refunded_fen >= 0) AND (refunded_fen <= amount_fen))),
-    CONSTRAINT pay_anomalies_status_check CHECK ((status = ANY (ARRAY['open'::text, 'refunded'::text, 'closed'::text])))
-);
-
-
---
--- Name: pay_fulfillments; Type: TABLE; Schema: app; Owner: -
---
-
-CREATE TABLE app.pay_fulfillments (
-    id uuid NOT NULL,
-    app_id text NOT NULL,
-    biz_type text NOT NULL,
-    biz_ref text NOT NULL,
-    state text NOT NULL,
-    last_pay_order_id uuid,
-    refunded_fen bigint DEFAULT 0 NOT NULL,
-    version bigint DEFAULT 0 NOT NULL,
-    applied_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT pay_fulfillments_biz_ref_check CHECK ((biz_ref <> ''::text)),
-    CONSTRAINT pay_fulfillments_biz_type_check CHECK ((biz_type <> ''::text)),
-    CONSTRAINT pay_fulfillments_refunded_fen_check CHECK ((refunded_fen >= 0)),
-    CONSTRAINT pay_fulfillments_state_check CHECK ((state = ANY (ARRAY['none'::text, 'active'::text, 'revoked'::text]))),
-    CONSTRAINT pay_fulfillments_version_check CHECK ((version >= 0))
-);
-
-
---
--- Name: pay_notifications; Type: TABLE; Schema: app; Owner: -
---
-
-CREATE TABLE app.pay_notifications (
-    id uuid NOT NULL,
-    app_id text NOT NULL,
-    pay_channel text NOT NULL,
-    notify_id text NOT NULL,
-    out_trade_no text,
-    out_refund_no text,
-    payload_cipher bytea NOT NULL,
-    verify_result text NOT NULL,
-    handle_result text,
-    received_at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT pay_notifications_merchant_no_check CHECK (((out_trade_no IS NOT NULL) OR (out_refund_no IS NOT NULL))),
-    CONSTRAINT pay_notifications_notify_id_check CHECK ((notify_id <> ''::text)),
-    CONSTRAINT pay_notifications_pay_channel_check CHECK ((pay_channel = ANY (ARRAY['wechat_pay'::text, 'alipay'::text]))),
-    CONSTRAINT pay_notifications_verify_result_check CHECK ((verify_result = ANY (ARRAY['ok'::text, 'failed'::text])))
-);
-
-
---
--- Name: pay_orders; Type: TABLE; Schema: app; Owner: -
---
-
-CREATE TABLE app.pay_orders (
-    id uuid NOT NULL,
-    app_id text NOT NULL,
-    user_id uuid NOT NULL,
-    biz_type text NOT NULL,
-    biz_ref text NOT NULL,
-    pay_channel text NOT NULL,
-    amount_fen bigint NOT NULL,
-    refunded_fen bigint DEFAULT 0 NOT NULL,
-    status text NOT NULL,
-    out_trade_no text NOT NULL,
-    channel_trade_no text,
-    expire_at timestamp with time zone NOT NULL,
-    launch_issued_at timestamp with time zone,
-    closing boolean DEFAULT false NOT NULL,
-    needs_manual boolean DEFAULT false NOT NULL,
-    paid_at timestamp with time zone,
-    closed_at timestamp with time zone,
-    close_reason text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone NOT NULL,
-    CONSTRAINT pay_orders_amount_fen_check CHECK ((amount_fen > 0)),
-    CONSTRAINT pay_orders_biz_ref_check CHECK ((biz_ref <> ''::text)),
-    CONSTRAINT pay_orders_biz_type_check CHECK ((biz_type <> ''::text)),
-    CONSTRAINT pay_orders_out_trade_no_check CHECK ((out_trade_no ~ '^[A-Za-z0-9]{1,32}$'::text)),
-    CONSTRAINT pay_orders_pay_channel_check CHECK ((pay_channel = ANY (ARRAY['wechat_pay'::text, 'alipay'::text]))),
-    CONSTRAINT pay_orders_refunded_fen_check CHECK (((refunded_fen >= 0) AND (refunded_fen <= amount_fen))),
-    CONSTRAINT pay_orders_status_check CHECK ((status = ANY (ARRAY['PENDING'::text, 'PAID'::text, 'CLOSED'::text])))
-);
-
-
---
--- Name: pay_query_attempts; Type: TABLE; Schema: app; Owner: -
---
-
-CREATE TABLE app.pay_query_attempts (
-    id uuid NOT NULL,
-    app_id text NOT NULL,
-    pay_order_id uuid,
-    pay_refund_id uuid,
-    kind text NOT NULL,
-    request jsonb,
-    response jsonb,
-    result text,
-    at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT pay_query_attempts_kind_check CHECK ((kind = ANY (ARRAY['query'::text, 'close'::text, 'refund'::text, 'refund_query'::text]))),
-    CONSTRAINT pay_query_attempts_target_check CHECK ((num_nonnulls(pay_order_id, pay_refund_id) = 1))
-);
-
-
---
--- Name: pay_refunds; Type: TABLE; Schema: app; Owner: -
---
-
-CREATE TABLE app.pay_refunds (
-    id uuid NOT NULL,
-    app_id text NOT NULL,
-    target_type text NOT NULL,
-    target_id uuid NOT NULL,
-    idempotency_key text NOT NULL,
-    out_refund_no text NOT NULL,
-    amount_fen bigint NOT NULL,
-    reason_code text NOT NULL,
-    status text NOT NULL,
-    channel_refund_no text,
-    operator text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    succeeded_at timestamp with time zone,
-    failed_at timestamp with time zone,
-    CONSTRAINT pay_refunds_amount_fen_check CHECK ((amount_fen > 0)),
-    CONSTRAINT pay_refunds_idempotency_key_check CHECK ((idempotency_key <> ''::text)),
-    CONSTRAINT pay_refunds_operator_check CHECK ((operator <> ''::text)),
-    CONSTRAINT pay_refunds_out_refund_no_check CHECK ((out_refund_no ~ '^[A-Za-z0-9]{1,32}$'::text)),
-    CONSTRAINT pay_refunds_reason_code_check CHECK ((reason_code = ANY (ARRAY['USER_REQUEST'::text, 'DUPLICATE_PAYMENT'::text, 'ANOMALY_RECEIPT'::text, 'RECON_DIFF'::text, 'OTHER'::text]))),
-    CONSTRAINT pay_refunds_status_check CHECK ((status = ANY (ARRAY['PROCESSING'::text, 'SUCCESS'::text, 'FAILED'::text]))),
-    CONSTRAINT pay_refunds_target_type_check CHECK ((target_type = ANY (ARRAY['pay_order'::text, 'pay_anomaly'::text])))
-);
-
-
---
 -- Name: payout_account_changes; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -6092,126 +6054,6 @@ ALTER TABLE ONLY app.pages
 
 
 --
--- Name: pay_anomalies pay_anomalies_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_anomalies
-    ADD CONSTRAINT pay_anomalies_app_id_id_key UNIQUE (app_id, id);
-
-
---
--- Name: pay_anomalies pay_anomalies_channel_trade_no_key; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_anomalies
-    ADD CONSTRAINT pay_anomalies_channel_trade_no_key UNIQUE (app_id, pay_channel, channel_trade_no);
-
-
---
--- Name: pay_anomalies pay_anomalies_pkey; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_anomalies
-    ADD CONSTRAINT pay_anomalies_pkey PRIMARY KEY (id);
-
-
---
--- Name: pay_fulfillments pay_fulfillments_biz_key; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_fulfillments
-    ADD CONSTRAINT pay_fulfillments_biz_key UNIQUE (app_id, biz_type, biz_ref);
-
-
---
--- Name: pay_fulfillments pay_fulfillments_pkey; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_fulfillments
-    ADD CONSTRAINT pay_fulfillments_pkey PRIMARY KEY (id);
-
-
---
--- Name: pay_notifications pay_notifications_notify_id_key; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_notifications
-    ADD CONSTRAINT pay_notifications_notify_id_key UNIQUE (app_id, pay_channel, notify_id);
-
-
---
--- Name: pay_notifications pay_notifications_pkey; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_notifications
-    ADD CONSTRAINT pay_notifications_pkey PRIMARY KEY (id);
-
-
---
--- Name: pay_orders pay_orders_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_orders
-    ADD CONSTRAINT pay_orders_app_id_id_key UNIQUE (app_id, id);
-
-
---
--- Name: pay_orders pay_orders_out_trade_no_key; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_orders
-    ADD CONSTRAINT pay_orders_out_trade_no_key UNIQUE (app_id, out_trade_no);
-
-
---
--- Name: pay_orders pay_orders_pkey; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_orders
-    ADD CONSTRAINT pay_orders_pkey PRIMARY KEY (id);
-
-
---
--- Name: pay_query_attempts pay_query_attempts_pkey; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_query_attempts
-    ADD CONSTRAINT pay_query_attempts_pkey PRIMARY KEY (id);
-
-
---
--- Name: pay_refunds pay_refunds_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_refunds
-    ADD CONSTRAINT pay_refunds_app_id_id_key UNIQUE (app_id, id);
-
-
---
--- Name: pay_refunds pay_refunds_idempotency_key_key; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_refunds
-    ADD CONSTRAINT pay_refunds_idempotency_key_key UNIQUE (app_id, idempotency_key);
-
-
---
--- Name: pay_refunds pay_refunds_out_refund_no_key; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_refunds
-    ADD CONSTRAINT pay_refunds_out_refund_no_key UNIQUE (app_id, out_refund_no);
-
-
---
--- Name: pay_refunds pay_refunds_pkey; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_refunds
-    ADD CONSTRAINT pay_refunds_pkey PRIMARY KEY (id);
-
-
---
 -- Name: payout_account_changes payout_account_changes_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -7559,62 +7401,6 @@ CREATE INDEX orders_default_app_id_user_id_paid_at_order_id_idx ON app.orders_de
 
 
 --
--- Name: pay_anomalies_order_idx; Type: INDEX; Schema: app; Owner: -
---
-
-CREATE INDEX pay_anomalies_order_idx ON app.pay_anomalies USING btree (app_id, pay_order_id) WHERE (pay_order_id IS NOT NULL);
-
-
---
--- Name: pay_fulfillments_last_order_idx; Type: INDEX; Schema: app; Owner: -
---
-
-CREATE INDEX pay_fulfillments_last_order_idx ON app.pay_fulfillments USING btree (app_id, last_pay_order_id) WHERE (last_pay_order_id IS NOT NULL);
-
-
---
--- Name: pay_orders_open_biz_key; Type: INDEX; Schema: app; Owner: -
---
-
-CREATE UNIQUE INDEX pay_orders_open_biz_key ON app.pay_orders USING btree (app_id, biz_type, biz_ref) WHERE (status = ANY (ARRAY['PENDING'::text, 'PAID'::text]));
-
-
---
--- Name: pay_orders_status_expire_idx; Type: INDEX; Schema: app; Owner: -
---
-
-CREATE INDEX pay_orders_status_expire_idx ON app.pay_orders USING btree (app_id, status, expire_at);
-
-
---
--- Name: pay_orders_user_created_idx; Type: INDEX; Schema: app; Owner: -
---
-
-CREATE INDEX pay_orders_user_created_idx ON app.pay_orders USING btree (app_id, user_id, created_at);
-
-
---
--- Name: pay_query_attempts_order_at_idx; Type: INDEX; Schema: app; Owner: -
---
-
-CREATE INDEX pay_query_attempts_order_at_idx ON app.pay_query_attempts USING btree (app_id, pay_order_id, at);
-
-
---
--- Name: pay_query_attempts_refund_at_idx; Type: INDEX; Schema: app; Owner: -
---
-
-CREATE INDEX pay_query_attempts_refund_at_idx ON app.pay_query_attempts USING btree (app_id, pay_refund_id, at);
-
-
---
--- Name: pay_refunds_target_idx; Type: INDEX; Schema: app; Owner: -
---
-
-CREATE INDEX pay_refunds_target_idx ON app.pay_refunds USING btree (app_id, target_type, target_id);
-
-
---
 -- Name: payout_account_changes_user_changed_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -8245,6 +8031,34 @@ ALTER INDEX pgboss.job_pkey ATTACH PARTITION pgboss.job_common_pkey;
 
 
 --
+-- Name: agent_cards agent_cards_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER agent_cards_no_rewrite BEFORE UPDATE ON app.agent_cards FOR EACH ROW EXECUTE FUNCTION app.reject_agent_card_rewrite();
+
+
+--
+-- Name: agent_result_chains agent_result_chains_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER agent_result_chains_no_rewrite BEFORE UPDATE ON app.agent_result_chains FOR EACH ROW EXECUTE FUNCTION app.reject_agent_result_chain_rewrite();
+
+
+--
+-- Name: agent_result_deliveries agent_result_deliveries_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER agent_result_deliveries_no_rewrite BEFORE UPDATE ON app.agent_result_deliveries FOR EACH ROW EXECUTE FUNCTION app.reject_agent_result_delivery_rewrite();
+
+
+--
+-- Name: agent_result_sets agent_result_sets_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER agent_result_sets_no_rewrite BEFORE UPDATE ON app.agent_result_sets FOR EACH ROW EXECUTE FUNCTION app.reject_agent_result_set_rewrite();
+
+
+--
 -- Name: agent_runs agent_runs_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -8256,6 +8070,13 @@ CREATE TRIGGER agent_runs_no_rewrite BEFORE UPDATE ON app.agent_runs FOR EACH RO
 --
 
 CREATE TRIGGER agent_sessions_no_rewrite BEFORE UPDATE ON app.agent_sessions FOR EACH ROW EXECUTE FUNCTION app.reject_agent_session_rewrite();
+
+
+--
+-- Name: agent_tool_calls agent_tool_calls_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER agent_tool_calls_no_rewrite BEFORE UPDATE ON app.agent_tool_calls FOR EACH ROW EXECUTE FUNCTION app.reject_agent_tool_call_rewrite();
 
 
 --
@@ -8396,34 +8217,6 @@ CREATE TRIGGER order_sync_drop_keys_append_only BEFORE DELETE OR UPDATE ON app.o
 --
 
 CREATE TRIGGER orders_no_rewrite BEFORE UPDATE ON app.orders FOR EACH ROW EXECUTE FUNCTION app.reject_order_rewrite();
-
-
---
--- Name: pay_notifications pay_notifications_append_only; Type: TRIGGER; Schema: app; Owner: -
---
-
-CREATE TRIGGER pay_notifications_append_only BEFORE DELETE OR UPDATE ON app.pay_notifications FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
-
-
---
--- Name: pay_orders pay_orders_immutable_columns; Type: TRIGGER; Schema: app; Owner: -
---
-
-CREATE TRIGGER pay_orders_immutable_columns BEFORE UPDATE ON app.pay_orders FOR EACH ROW EXECUTE FUNCTION app.pay_orders_reject_immutable_update();
-
-
---
--- Name: pay_query_attempts pay_query_attempts_append_only; Type: TRIGGER; Schema: app; Owner: -
---
-
-CREATE TRIGGER pay_query_attempts_append_only BEFORE DELETE OR UPDATE ON app.pay_query_attempts FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
-
-
---
--- Name: pay_refunds pay_refunds_immutable_columns; Type: TRIGGER; Schema: app; Owner: -
---
-
-CREATE TRIGGER pay_refunds_immutable_columns BEFORE UPDATE ON app.pay_refunds FOR EACH ROW EXECUTE FUNCTION app.pay_refunds_reject_immutable_update();
 
 
 --
@@ -9270,46 +9063,6 @@ ALTER TABLE ONLY app.pages
 
 
 --
--- Name: pay_anomalies pay_anomalies_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_anomalies
-    ADD CONSTRAINT pay_anomalies_order_fkey FOREIGN KEY (app_id, pay_order_id) REFERENCES app.pay_orders(app_id, id);
-
-
---
--- Name: pay_fulfillments pay_fulfillments_last_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_fulfillments
-    ADD CONSTRAINT pay_fulfillments_last_order_fkey FOREIGN KEY (app_id, last_pay_order_id) REFERENCES app.pay_orders(app_id, id);
-
-
---
--- Name: pay_orders pay_orders_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_orders
-    ADD CONSTRAINT pay_orders_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
-
-
---
--- Name: pay_query_attempts pay_query_attempts_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_query_attempts
-    ADD CONSTRAINT pay_query_attempts_order_fkey FOREIGN KEY (app_id, pay_order_id) REFERENCES app.pay_orders(app_id, id);
-
-
---
--- Name: pay_query_attempts pay_query_attempts_refund_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.pay_query_attempts
-    ADD CONSTRAINT pay_query_attempts_refund_fkey FOREIGN KEY (app_id, pay_refund_id) REFERENCES app.pay_refunds(app_id, id);
-
-
---
 -- Name: payout_account_changes payout_account_changes_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -9872,21 +9625,6 @@ GRANT ALL ON FUNCTION app.partition_default_rows() TO couli_maint;
 
 
 --
-<<<<<<< HEAD
--- Name: FUNCTION pay_orders_reject_immutable_update(); Type: ACL; Schema: app; Owner: -
---
-
-REVOKE ALL ON FUNCTION app.pay_orders_reject_immutable_update() FROM PUBLIC;
-
-
---
--- Name: FUNCTION pay_refunds_reject_immutable_update(); Type: ACL; Schema: app; Owner: -
---
-
-REVOKE ALL ON FUNCTION app.pay_refunds_reject_immutable_update() FROM PUBLIC;
-
-
---
 -- Name: FUNCTION reject_agent_card_rewrite(); Type: ACL; Schema: app; Owner: -
 --
 
@@ -9915,8 +9653,6 @@ REVOKE ALL ON FUNCTION app.reject_agent_result_set_rewrite() FROM PUBLIC;
 
 
 --
-=======
->>>>>>> fa9bc592 (B2-06a: schema.sql / db.gen.ts 随迁移重生成（测试机 db:snapshot）)
 -- Name: FUNCTION reject_agent_run_rewrite(); Type: ACL; Schema: app; Owner: -
 --
 
@@ -9928,6 +9664,13 @@ REVOKE ALL ON FUNCTION app.reject_agent_run_rewrite() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION app.reject_agent_session_rewrite() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION reject_agent_tool_call_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_agent_tool_call_rewrite() FROM PUBLIC;
 
 
 --
@@ -10278,6 +10021,20 @@ GRANT SELECT ON TABLE app.agent_cards TO couli_readonly;
 
 
 --
+-- Name: COLUMN agent_cards.data; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(data) ON TABLE app.agent_cards TO couli_app;
+
+
+--
+-- Name: COLUMN agent_cards.fallback_text; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(fallback_text) ON TABLE app.agent_cards TO couli_app;
+
+
+--
 -- Name: TABLE agent_clarify_asks; Type: ACL; Schema: app; Owner: -
 --
 
@@ -10494,6 +10251,13 @@ GRANT SELECT(status) ON TABLE app.agent_result_chains TO couli_readonly;
 
 
 --
+-- Name: COLUMN agent_result_chains.conditions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(conditions) ON TABLE app.agent_result_chains TO couli_app;
+
+
+--
 -- Name: COLUMN agent_result_chains.created_at; Type: ACL; Schema: app; Owner: -
 --
 
@@ -10506,6 +10270,13 @@ GRANT SELECT(created_at) ON TABLE app.agent_result_chains TO couli_readonly;
 
 GRANT SELECT,INSERT ON TABLE app.agent_result_deliveries TO couli_app;
 GRANT SELECT ON TABLE app.agent_result_deliveries TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_result_deliveries.card; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(card) ON TABLE app.agent_result_deliveries TO couli_app;
 
 
 --
@@ -10534,6 +10305,13 @@ GRANT SELECT(app_id) ON TABLE app.agent_result_sets TO couli_readonly;
 --
 
 GRANT SELECT(run_id) ON TABLE app.agent_result_sets TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_result_sets.conditions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(conditions) ON TABLE app.agent_result_sets TO couli_app;
 
 
 --
@@ -10741,6 +10519,7 @@ GRANT SELECT(accepted_at) ON TABLE app.agent_runs TO couli_readonly;
 --
 
 GRANT SELECT(quota_subjects) ON TABLE app.agent_runs TO couli_readonly;
+GRANT UPDATE(quota_subjects) ON TABLE app.agent_runs TO couli_app;
 
 
 --
@@ -10948,6 +10727,13 @@ GRANT SELECT(seq) ON TABLE app.agent_tool_calls TO couli_readonly;
 --
 
 GRANT SELECT(name) ON TABLE app.agent_tool_calls TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_tool_calls.args; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(args) ON TABLE app.agent_tool_calls TO couli_app;
 
 
 --
@@ -12424,201 +12210,6 @@ GRANT UPDATE(scheduled_at) ON TABLE app.pages TO couli_app;
 --
 
 GRANT UPDATE(scheduled_by_admin_id) ON TABLE app.pages TO couli_app;
-
-
---
--- Name: TABLE pay_anomalies; Type: ACL; Schema: app; Owner: -
---
-
-GRANT SELECT,INSERT ON TABLE app.pay_anomalies TO couli_app;
-GRANT SELECT ON TABLE app.pay_anomalies TO couli_readonly;
-
-
---
--- Name: COLUMN pay_anomalies.refunded_fen; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(refunded_fen) ON TABLE app.pay_anomalies TO couli_app;
-
-
---
--- Name: COLUMN pay_anomalies.status; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(status) ON TABLE app.pay_anomalies TO couli_app;
-
-
---
--- Name: TABLE pay_fulfillments; Type: ACL; Schema: app; Owner: -
---
-
-GRANT SELECT,INSERT ON TABLE app.pay_fulfillments TO couli_app;
-GRANT SELECT ON TABLE app.pay_fulfillments TO couli_readonly;
-
-
---
--- Name: COLUMN pay_fulfillments.state; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(state) ON TABLE app.pay_fulfillments TO couli_app;
-
-
---
--- Name: COLUMN pay_fulfillments.last_pay_order_id; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(last_pay_order_id) ON TABLE app.pay_fulfillments TO couli_app;
-
-
---
--- Name: COLUMN pay_fulfillments.refunded_fen; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(refunded_fen) ON TABLE app.pay_fulfillments TO couli_app;
-
-
---
--- Name: COLUMN pay_fulfillments.version; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(version) ON TABLE app.pay_fulfillments TO couli_app;
-
-
---
--- Name: COLUMN pay_fulfillments.applied_at; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(applied_at) ON TABLE app.pay_fulfillments TO couli_app;
-
-
---
--- Name: TABLE pay_notifications; Type: ACL; Schema: app; Owner: -
---
-
-GRANT SELECT,INSERT ON TABLE app.pay_notifications TO couli_app;
-GRANT SELECT ON TABLE app.pay_notifications TO couli_readonly;
-
-
---
--- Name: TABLE pay_orders; Type: ACL; Schema: app; Owner: -
---
-
-GRANT SELECT,INSERT ON TABLE app.pay_orders TO couli_app;
-GRANT SELECT ON TABLE app.pay_orders TO couli_readonly;
-
-
---
--- Name: COLUMN pay_orders.refunded_fen; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(refunded_fen) ON TABLE app.pay_orders TO couli_app;
-
-
---
--- Name: COLUMN pay_orders.status; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(status) ON TABLE app.pay_orders TO couli_app;
-
-
---
--- Name: COLUMN pay_orders.channel_trade_no; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(channel_trade_no) ON TABLE app.pay_orders TO couli_app;
-
-
---
--- Name: COLUMN pay_orders.launch_issued_at; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(launch_issued_at) ON TABLE app.pay_orders TO couli_app;
-
-
---
--- Name: COLUMN pay_orders.closing; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(closing) ON TABLE app.pay_orders TO couli_app;
-
-
---
--- Name: COLUMN pay_orders.needs_manual; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(needs_manual) ON TABLE app.pay_orders TO couli_app;
-
-
---
--- Name: COLUMN pay_orders.paid_at; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(paid_at) ON TABLE app.pay_orders TO couli_app;
-
-
---
--- Name: COLUMN pay_orders.closed_at; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(closed_at) ON TABLE app.pay_orders TO couli_app;
-
-
---
--- Name: COLUMN pay_orders.close_reason; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(close_reason) ON TABLE app.pay_orders TO couli_app;
-
-
---
--- Name: COLUMN pay_orders.updated_at; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(updated_at) ON TABLE app.pay_orders TO couli_app;
-
-
---
--- Name: TABLE pay_query_attempts; Type: ACL; Schema: app; Owner: -
---
-
-GRANT SELECT,INSERT ON TABLE app.pay_query_attempts TO couli_app;
-GRANT SELECT ON TABLE app.pay_query_attempts TO couli_readonly;
-
-
---
--- Name: TABLE pay_refunds; Type: ACL; Schema: app; Owner: -
---
-
-GRANT SELECT,INSERT ON TABLE app.pay_refunds TO couli_app;
-GRANT SELECT ON TABLE app.pay_refunds TO couli_readonly;
-
-
---
--- Name: COLUMN pay_refunds.status; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(status) ON TABLE app.pay_refunds TO couli_app;
-
-
---
--- Name: COLUMN pay_refunds.channel_refund_no; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(channel_refund_no) ON TABLE app.pay_refunds TO couli_app;
-
-
---
--- Name: COLUMN pay_refunds.succeeded_at; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(succeeded_at) ON TABLE app.pay_refunds TO couli_app;
-
-
---
--- Name: COLUMN pay_refunds.failed_at; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(failed_at) ON TABLE app.pay_refunds TO couli_app;
 
 
 --
