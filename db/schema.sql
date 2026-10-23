@@ -1817,10 +1817,12 @@ CREATE TABLE app.appeals (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    penalty_started_at timestamp with time zone,
     CONSTRAINT appeals_account_target_check CHECK (((target_type <> 'account'::text) OR (target_id = (user_id)::text))),
     CONSTRAINT appeals_closed_check CHECK (((status = 'processing'::text) = (closed_at IS NULL))),
     CONSTRAINT appeals_handler_check CHECK (((status = 'processing'::text) OR (handler_id IS NOT NULL))),
     CONSTRAINT appeals_order_target_check CHECK (((target_type <> 'order'::text) OR (target_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text))),
+    CONSTRAINT appeals_penalty_started_at_check CHECK (((penalty_started_at IS NULL) OR (target_type = 'account'::text))),
     CONSTRAINT appeals_prev_risk_state_check CHECK (
 CASE
     WHEN (target_type = 'account'::text) THEN ((prev_risk_state IS NOT NULL) AND (prev_risk_state = ANY (ARRAY['banned'::text, 'frozen'::text])))
@@ -4799,6 +4801,7 @@ CREATE TABLE app.user_risk_state (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    penalty_started_at timestamp with time zone,
     CONSTRAINT user_risk_state_frozen_until_check CHECK (((frozen_until IS NULL) OR (state = ANY (ARRAY['frozen'::text, 'appealing'::text])))),
     CONSTRAINT user_risk_state_reason_category_check CHECK ((reason_category = ANY (ARRAY['malicious_rights'::text, 'fraud_invite'::text, 'abnormal_trade'::text, 'account_security'::text, 'other'::text]))),
     CONSTRAINT user_risk_state_reason_category_required_check CHECK (((state = 'normal'::text) OR (reason_category IS NOT NULL))),
@@ -14068,6 +14071,13 @@ GRANT UPDATE(row_version) ON TABLE app.user_risk_state TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.user_risk_state TO couli_app;
+
+
+--
+-- Name: COLUMN user_risk_state.penalty_started_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(penalty_started_at) ON TABLE app.user_risk_state TO couli_app;
 
 
 --

@@ -176,13 +176,16 @@ function scripted(
   state: string,
   historyRows: readonly AppealHistoryRow[],
   changedAt: Date = SINCE,
+  penaltyStartedAt: Date | null = null,
 ) {
   const statements: string[] = [];
+  const compiled: CompiledQuery[] = [];
   const connection: DatabaseConnection = {
-    executeQuery<R>(compiled: CompiledQuery): Promise<QueryResult<R>> {
-      statements.push(compiled.sql);
+    executeQuery<R>(query: CompiledQuery): Promise<QueryResult<R>> {
+      statements.push(query.sql);
+      compiled.push(query);
       let rows: readonly unknown[] = [];
-      if (compiled.sql.includes('from "app"."user_risk_state"')) {
+      if (query.sql.includes('from "app"."user_risk_state"')) {
         rows = [
           {
             state,
@@ -190,11 +193,12 @@ function scripted(
             reason_category: 'other',
             frozen_until: null,
             changed_at: changedAt,
+            penalty_started_at: penaltyStartedAt,
           },
         ];
-      } else if (compiled.sql.includes('"status" = $')) {
+      } else if (query.sql.includes('"status" = $')) {
         rows = [];
-      } else if (compiled.sql.includes('from "app"."appeals"')) {
+      } else if (query.sql.includes('from "app"."appeals"')) {
         rows = historyRows;
       }
       return Promise.resolve({ rows } as unknown as QueryResult<R>);
@@ -244,7 +248,7 @@ function scripted(
         },
       ),
     );
-  return { statements, setRiskState, submit };
+  return { statements, compiled, setRiskState, submit };
 }
 
 it('[AC-CT-26e-UNIT#11] three upheld appeals on the current penalty → 30418, nothing inserted, risk state unchanged', async () => {
@@ -304,4 +308,79 @@ it('[AC-CT-26e-UNIT#16] submit after a new penalty imposed since the third uphel
   );
   expect((await s.submit()).code).toBe(0);
   expect(s.setRiskState).toHaveBeenCalledTimes(1);
+});
+
+const PENALTY_A = new Date(Date.UTC(2026, 7, 1));
+const PENALTY_B = new Date(Date.UTC(2026, 8, 10));
+
+function onPenalty(n: number, status: string, penalty: Date | null): AppealHistoryRow {
+  return { ...account(n, status, 'frozen'), penalty_started_at: penalty };
+}
+
+it('[AC-B1-03v-UNIT#1] account appeals count within their own penalty_started_at group', () => {
+  const rows = [
+    onPenalty(1, 'upheld', PENALTY_A),
+    onPenalty(2, 'upheld', PENALTY_A),
+    onPenalty(3, 'upheld', PENALTY_A),
+    { ...onPenalty(4, 'upheld', PENALTY_B), created_at: new Date(Date.UTC(2026, 8, 11)) },
+  ];
+  const result = appealAttempts(rows, null, NOW);
+  expect(rows.map((row) => result.get(row.id)?.attempt_no)).toEqual([1, 2, 3, 1]);
+});
+
+it('[AC-B1-03v-UNIT#2] next attempt against the current penalty: same instant continues, another restarts', () => {
+  const latest = onPenalty(3, 'upheld', PENALTY_A);
+  expect(nextAppealAttempt(latest, 3, 'frozen', new Date(NOW.getTime()), PENALTY_A)).toBe(4);
+  expect(nextAppealAttempt(latest, 3, 'frozen', CLOSED, PENALTY_B)).toBe(1);
+  // A stock appeal (no instant) created before the current penalty began is an older penalty.
+  const stock = onPenalty(3, 'upheld', null);
+  expect(nextAppealAttempt(stock, 3, 'frozen', CLOSED, new Date(Date.UTC(2026, 9, 1)))).toBe(1);
+  // Unknown on both sides: the CT-26e approximation (changed_at vs closed_at).
+  expect(nextAppealAttempt(stock, 2, 'frozen', CLOSED, null)).toBe(3);
+});
+
+it('[AC-B1-03v-UNIT#3] can_resubmit follows the current penalty: an extended freeze keeps the cap, a new penalty frees it', () => {
+  const rows = [
+    onPenalty(1, 'upheld', PENALTY_A),
+    onPenalty(2, 'upheld', PENALTY_A),
+    onPenalty(3, 'upheld', PENALTY_A),
+  ];
+  const extended = {
+    state: 'frozen',
+    frozen_until: null,
+    changed_at: new Date(Date.UTC(2026, 9, 1)),
+    penalty_started_at: PENALTY_A,
+  } as const;
+  expect(appealAttempts(rows, extended, NOW).get(rows[2]!.id)).toEqual({
+    attempt_no: 3,
+    can_resubmit: false,
+  });
+  const fresh = { ...extended, penalty_started_at: new Date(Date.UTC(2026, 9, 1)) };
+  expect(appealAttempts(rows, fresh, NOW).get(rows[2]!.id)).toEqual({
+    attempt_no: 3,
+    can_resubmit: true,
+  });
+});
+
+it('[AC-B1-03v-UNIT#4] submit copies the risk row penalty_started_at into the new appeal', async () => {
+  const s = scripted('frozen', [onPenalty(1, 'upheld', PENALTY_A)], SINCE, PENALTY_A);
+  expect((await s.submit()).code).toBe(0);
+  const insert = s.compiled.find((q) => q.sql.startsWith('insert into "app"."appeals"'))!;
+  expect(insert.sql).toContain('"penalty_started_at"');
+  expect(insert.parameters).toContainEqual(PENALTY_A);
+});
+
+it('[AC-B1-03v-UNIT#5] three upheld appeals of the current penalty → 30418 even after the state was set again (freeze extended)', async () => {
+  const s = scripted(
+    'frozen',
+    [
+      onPenalty(1, 'upheld', PENALTY_A),
+      onPenalty(2, 'upheld', PENALTY_A),
+      onPenalty(3, 'upheld', PENALTY_A),
+    ],
+    new Date(Date.UTC(2026, 9, 1)),
+    PENALTY_A,
+  );
+  expect(await s.submit()).toEqual({ code: 30418 });
+  expect(s.setRiskState).not.toHaveBeenCalled();
 });
