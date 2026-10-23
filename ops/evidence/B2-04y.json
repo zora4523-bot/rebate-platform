@@ -1,0 +1,150 @@
+{
+  "task": "B2-04y",
+  "spec_ref": "48e55e6a035ad350ee46437d6f0ffdc155543728",
+  "spec_commit": "a9388d7e0db2e9ec276788d6b13ef0488e6b69b9",
+  "red_tests": [
+    "test/spec/ledger/wallet-summary/assembly.int.test.ts > [AC-B2-04y#16] BR-FUND-18 正式组装使用 settlement 真实预估来源与 read.ts 同一查询，响应逐字段一致",
+    "test/spec/ledger/wallet-summary/assembly.int.test.ts > [AC-B2-04y#17] BR-FUND-18 登录用户尚无账户行时余额为零，订单预估收益仍保留",
+    "test/spec/ledger/wallet-summary/contract.test.ts > [AC-B2-04y#15] 钱包 operation 不带 x-implementation 标记，生成请求 schema，保持 13 字段响应与登录权限",
+    "test/spec/ledger/wallet-summary/controller.test.ts > [AC-B2-04y#11] AC-S2-33 full 会话只取认证身份，原样返回查询的全部字段",
+    "test/spec/ledger/wallet-summary/controller.test.ts > [AC-B2-04y#11] AC-S2-33 deletion_only 会话只取认证身份，原样返回查询的全部字段",
+    "test/spec/ledger/wallet-summary/controller.test.ts > [AC-B2-04y#12] 没有认证上下文时拒绝读取，伪造请求身份不能补成登录用户",
+    "test/spec/ledger/wallet-summary/controller.test.ts > [AC-B2-04y#13] 查询失败时控制器不得返回成功的空钱包",
+    "test/spec/ledger/wallet-summary/controller.test.ts > [AC-B2-04y#14] 钱包控制器注册 GET /v1/wallet/summary 并装配到 api 入口",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#1] BR-AI-02 只读入口只导出查询函数；BR-FUND-18 原文负余额例逐字段一致",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#2] BR-FUND-10/18 余额 0n 分的可提现与负余额不扣冻结或提现门槛",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#2] BR-FUND-10/18 余额 1n 分的可提现与负余额不扣冻结或提现门槛",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#2] BR-FUND-10/18 余额 -1n 分的可提现与负余额不扣冻结或提现门槛",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#2] BR-FUND-10/18 余额 1234n 分的可提现与负余额不扣冻结或提现门槛",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#2] BR-FUND-10/18 余额 -321n 分的可提现与负余额不扣冻结或提现门槛",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#2] BR-FUND-10/18 余额 9007199254740991n 分的可提现与负余额不扣冻结或提现门槛",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#2] BR-FUND-10/18 余额 -9007199254740991n 分的可提现与负余额不扣冻结或提现门槛",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#3] BR-FUND-13/18 零余额零收益完整返回所有字段，不产生第二个余额或空对象",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#4] BR-FUND-13/18 按 app 与 user 共同隔离单一余额和所有外部读取",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#5] BR-FUND-18 逾期与暂停只影响进度字段，仍计入预估总额",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#6] BR-FUND-18 风险提示 null 与关闭提现不清零金额",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#6] BR-FUND-18 风险提示 account_frozen 与关闭提现不清零金额",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#7] BR-FUND-18 余额实时读取，预估值最多缓存 60 秒且读不写库",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 available 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 negative 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 frozen 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 estimated 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 pending 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 paused 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 total 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 withdrawn 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#9] BR-FUND-18 外部 pending 读取失败不得伪装为零收益或安全状态",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#9] BR-FUND-18 外部 withdrawals 读取失败不得伪装为零收益或安全状态",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#9] BR-FUND-18 外部 risk 读取失败不得伪装为零收益或安全状态",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#9] BR-FUND-18 外部 config 读取失败不得伪装为零收益或安全状态",
+    "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#10] AC-S2-33 控制器真实查询响应 data 与同一只读函数 13 字段一致"
+  ],
+  "risk_note": "RV2 ledger + contract (settlement-plan B2-04y, AC-S2-33; BR-AI-02, BR-FUND-10, 13, 18; S3). ledger/read.ts exports only getWalletSummary, which reads ledger balances (zero when the account row does not exist yet, without creating one) and the estimate-class amounts through PendingEarningsSource (settlement createPendingEarningsSource from settlement/index.ts) in one read-only transaction; amounts pass a JSON-safe-integer check, port failures propagate, nothing is cached. GET /v1/wallet/summary takes user and app only from the authenticated principal and returns the function's fields verbatim. The tlj deduction comes through a new commission read port readTljDeductFen instead of a cross-module table read. Contract: the operation's x-implementation marker is removed (repository convention for implemented, decision 45) and route schemas regenerated. withdrawn_fen is 0 until B2-05 (TODO).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "a9388d7e0db2e9ec276788d6b13ef0488e6b69b9",
+      "tree": "44940a32d4c46c20919c7c187ba4c89613da4cee",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T17:41:50Z",
+      "finished_at": "2026-10-23T17:42:06Z",
+      "gate": {
+        "commit": "303e0de9468c4488da4b89d628459e08a2706566",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/wallet-summary/assembly.int.test.ts > [AC-B2-04y#16] BR-FUND-18 正式组装使用 settlement 真实预估来源与 read.ts 同一查询，响应逐字段一致",
+        "test/spec/ledger/wallet-summary/assembly.int.test.ts > [AC-B2-04y#17] BR-FUND-18 登录用户尚无账户行时余额为零，订单预估收益仍保留",
+        "test/spec/ledger/wallet-summary/contract.test.ts > [AC-B2-04y#15] 钱包 operation 不带 x-implementation 标记，生成请求 schema，保持 13 字段响应与登录权限",
+        "test/spec/ledger/wallet-summary/controller.test.ts > [AC-B2-04y#11] AC-S2-33 full 会话只取认证身份，原样返回查询的全部字段",
+        "test/spec/ledger/wallet-summary/controller.test.ts > [AC-B2-04y#11] AC-S2-33 deletion_only 会话只取认证身份，原样返回查询的全部字段",
+        "test/spec/ledger/wallet-summary/controller.test.ts > [AC-B2-04y#12] 没有认证上下文时拒绝读取，伪造请求身份不能补成登录用户",
+        "test/spec/ledger/wallet-summary/controller.test.ts > [AC-B2-04y#13] 查询失败时控制器不得返回成功的空钱包",
+        "test/spec/ledger/wallet-summary/controller.test.ts > [AC-B2-04y#14] 钱包控制器注册 GET /v1/wallet/summary 并装配到 api 入口",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#1] BR-AI-02 只读入口只导出查询函数；BR-FUND-18 原文负余额例逐字段一致",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#2] BR-FUND-10/18 余额 0n 分的可提现与负余额不扣冻结或提现门槛",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#2] BR-FUND-10/18 余额 1n 分的可提现与负余额不扣冻结或提现门槛",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#2] BR-FUND-10/18 余额 -1n 分的可提现与负余额不扣冻结或提现门槛",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#2] BR-FUND-10/18 余额 1234n 分的可提现与负余额不扣冻结或提现门槛",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#2] BR-FUND-10/18 余额 -321n 分的可提现与负余额不扣冻结或提现门槛",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#2] BR-FUND-10/18 余额 9007199254740991n 分的可提现与负余额不扣冻结或提现门槛",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#2] BR-FUND-10/18 余额 -9007199254740991n 分的可提现与负余额不扣冻结或提现门槛",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#3] BR-FUND-13/18 零余额零收益完整返回所有字段，不产生第二个余额或空对象",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#4] BR-FUND-13/18 按 app 与 user 共同隔离单一余额和所有外部读取",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#5] BR-FUND-18 逾期与暂停只影响进度字段，仍计入预估总额",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#6] BR-FUND-18 风险提示 null 与关闭提现不清零金额",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#6] BR-FUND-18 风险提示 account_frozen 与关闭提现不清零金额",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#7] BR-FUND-18 余额实时读取，预估值最多缓存 60 秒且读不写库",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 available 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 negative 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 frozen 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 estimated 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 pending 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 paused 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 total 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#8] ADR-0001 金额 withdrawn 超过 JSON 安全整数边界时拒绝而非舍入或字符串化",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#9] BR-FUND-18 外部 pending 读取失败不得伪装为零收益或安全状态",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#9] BR-FUND-18 外部 withdrawals 读取失败不得伪装为零收益或安全状态",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#9] BR-FUND-18 外部 risk 读取失败不得伪装为零收益或安全状态",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#9] BR-FUND-18 外部 config 读取失败不得伪装为零收益或安全状态",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts > [AC-B2-04y#10] AC-S2-33 控制器真实查询响应 data 与同一只读函数 13 字段一致"
+      ],
+      "expected": [
+        "test/spec/ledger/wallet-summary/assembly.int.test.ts",
+        "test/spec/ledger/wallet-summary/contract.test.ts",
+        "test/spec/ledger/wallet-summary/controller.test.ts",
+        "test/spec/ledger/wallet-summary/summary.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "46284514cfca1e097f103fc47fbcdf62df846f2a744416388077ec91d261c976"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "be8d18184f38a1d335e128303a7c11e2574e0bc23dd5ee9891d781f84f55434f"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass on the round-2 implementation (deep import and cross-module table read replaced by ports)",
+      "engine": "codex",
+      "model": "gpt-6-astra"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex in 3 runs; round 1 fail (S1: the production assembly of the estimate source was untested), round 2 pass, run 3 ([AC-B2-04y#15] expects no x-implementation marker, decision 45) was Codex output not taken in by post-run because of a codex-run position assertion and was committed as a mechanical test(spec) per D10-88 (orchestrator 07:23), round 3 pass",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "9ff2f507884db3ea8b80a7c780c88291e08320e8",
+    "test/spec": "119814cb00b88dda69119dc96618989f46fc8791",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "9ff2f507884db3ea8b80a7c780c88291e08320e8"
+  }
+}

@@ -54,6 +54,8 @@ import {
   createCommissionSnapshot,
   createRuleSetReader,
   createSnapshotBeneficiaryResolver,
+  readCommissionSnapshot,
+  readTljDeductFen,
   type RuleSetReader,
 } from './modules/commission/index.ts';
 import {
@@ -61,6 +63,7 @@ import {
   ContentPublicModule,
   ContentWorkerModule,
   createContentReader,
+  switchSpecOf,
   type ContentReader,
   type PageAudienceReads,
 } from './modules/content/index.ts';
@@ -159,7 +162,13 @@ import {
   type MeUnionBindingStatus,
   type PayoutAccountConfigPort,
 } from './modules/identity/index.ts';
-import { LedgerModule, createLedger, getOrderNets } from './modules/ledger/index.ts';
+import {
+  LedgerModule,
+  WalletSummaryModule,
+  createLedger,
+  getOrderNets,
+  type WalletSummaryDependencies,
+} from './modules/ledger/index.ts';
 import {
   PayoutModule,
   createDefaultFeeTaxCalculator,
@@ -287,6 +296,7 @@ import {
   type BlocklistService,
   type RiskStateService,
 } from './modules/risk/index.ts';
+import { createPendingEarningsSource } from './modules/settlement/index.ts';
 import {
   REGISTERED_PLATFORMS,
   UNION_ENDPOINTS,
@@ -484,6 +494,85 @@ const deletionBalance = {
     };
   },
 };
+
+/** Runs on the caller's transaction, or on a read-only one of its own. */
+function onReadTransaction<T>(
+  db: Kysely<Database>,
+  run: (trx: Transaction<Database>) => Promise<T>,
+): Promise<T> {
+  if (db.isTransaction) return run(db as Transaction<Database>);
+  return db.transaction().setAccessMode('read only').execute(run);
+}
+
+/**
+ * GET /v1/wallet/summary's owner-module ports (B2-04y; BR-FUND-18), on the entry's database:
+ * - estimates: settlement's PendingEarningsSource (S3), built per read over the read transaction
+ *   with content's configuration reader and commission's snapshot and tlj_deduct_fen read ports;
+ * - risk_paused_reason: risk's batch state reader; a stored frozen state answers account_frozen;
+ * - withdraw_enabled: withdraw.enabled through content's reader, the registry default when unset.
+ */
+function walletSummaryDependencies(db: Kysely<Database>, clock: Clock): WalletSummaryDependencies {
+  const pendingSource = (trx: Transaction<Database>) =>
+    createPendingEarningsSource({
+      clock,
+      config: {
+        get: async (appId, key) =>
+          (await createContentReader({ db: trx, clock }).configValue(appId, key))?.value,
+      },
+      readSnapshot: readCommissionSnapshot,
+      // commission's read port: the sub-order's immutable tlj_deduct_fen on the same transaction
+      // (an absent split throws: never a default 0, BR-CALC-02).
+      readTljDeductFen,
+    });
+  const riskStates = createRiskStateBatchReader({ db });
+  const withdrawDefault = switchSpecOf('withdraw.enabled')?.defaultValue;
+  return {
+    clock,
+    pendingEarnings: {
+      readUser: (handle, input) =>
+        onReadTransaction(handle, async (trx) => {
+          const own = await pendingSource(trx).forUser(trx, {
+            appId: input.appId,
+            userId: input.userId,
+          });
+          return {
+            estimated_fen: own.estimated_fen,
+            pending_credit_fen: own.pending_credit_fen,
+            pending_credit_paused_fen: own.pending_credit_paused_fen,
+            next_credit_period: own.next_credit_period,
+            credit_overdue: own.credit_overdue,
+          };
+        }),
+      readAppTotals: (handle, input) =>
+        onReadTransaction(handle, (trx) => pendingSource(trx).forApp(trx, { appId: input.appId })),
+    },
+    withdrawals: {
+      // TODO(规划/11 §2.3): 已提现合计（PAID_API / PAID_MANUAL 的 amount_fen）读 payout 模块 — blocked on B2-05（提现单表尚不存在，现在确实没有已到账的提现）
+      readPaidTotal: () => Promise.resolve(0n),
+    },
+    risk: {
+      async readPauseReason(handle, subject) {
+        const states = await riskStates.read(handle, {
+          appId: subject.appId,
+          userIds: [subject.userId],
+        });
+        // TODO(规划/11 §2.3): 生效的 withdraw_holds 也返回原因 key — blocked on B2-05（withdraw_holds 表尚不存在）
+        return states.get(subject.userId)?.state === 'frozen' ? 'account_frozen' : null;
+      },
+    },
+    config: {
+      async readWithdrawEnabled(appId) {
+        const item = await createContentReader({ db, clock }).configValue(
+          appId,
+          'withdraw.enabled',
+        );
+        const value = item === null ? withdrawDefault : item.value;
+        // Anything but a boolean is a broken setting: the button greys out, balances still show.
+        return value === true;
+      },
+    },
+  };
+}
 
 /**
  * B1-15f: the working-day calendar of the deletion overdue alarm (calendar.cn_holidays.<year>,
@@ -2546,6 +2635,10 @@ export class AppModule {
         ...(options.entry === 'api' ? [growthModule()] : []),
         // payout's GET /v1/withdrawals/rules (B2-05c): on the api entry, beside identity and risk.
         ...(options.entry === 'api' ? [payoutModule()] : []),
+        // GET /v1/wallet/summary (B2-04y): ledger's read.ts query over the owners' ports.
+        ...(options.entry === 'api'
+          ? [WalletSummaryModule.forApi({ dependencies: walletSummaryDependencies })]
+          : []),
         ...(union === undefined ? [] : [union]),
         // The ledger posting port (B2-02f) on every entry that books money: settlement (worker),
         // withdrawals (api, payout) and adjustments (admin); the stream entry books nothing.
