@@ -1,0 +1,31 @@
+id: B1-01zzm
+repo: rebate-platform
+title: staging 的 stream 挂访问令牌验签公钥：compose 给 stream 只读挂公钥目录，boot.mjs 为 stream 读入 JWT_PUBLIC_KEY_PEM 与 JWT_KEY_ID（不给私钥）；README §1.4 补公钥文件的生成与核对
+type: impl
+# 2026-10-23 入账（ops 线，编排裁定 D10-255 ①，identity B1-02zj 的配套）。起因：staging 部署 main 7fc32d26 时 stream 启动即退出
+# （JWT_PRIVATE_KEY_PEM and JWT_KEY_ID must be set when APP_ENV=staging）：B3-03f（#768）起 stream 挂了 identity 的令牌校验，而 staging
+# 只把签名私钥经 /etc/couli-jwt 挂给 api（README §1.4、boot.mjs）。D10-255 ① 取 B：stream 只验签、只要公钥；identity 的 B1-02zj 加
+# JWT_PUBLIC_KEY_PEM、拆签发器 / 验签器，staging / prod 只验签进程缺私钥能启动。本任务是 staging 侧配套（B1-02zj 合并后开工）：
+# ① 节点新目录（例如 /etc/couli-jwt-pub，属主 1000、目录 500 / 文件 400）放公钥 es256.pub.pem（由现有私钥 openssl pkey -pubout 导出，
+#    私钥不经终端）与 key-id 副本，README §1.4 写生成与核对命令（只打印公钥）；deploy.sh 的节点文件检查加这两个文件；
+# ② compose.yaml 只给 stream 只读挂公钥目录、设 COULI_JWT_PUB_DIR；api 照旧挂私钥目录；其余三个进程两个都不挂；
+# ③ boot.mjs：COULI_JWT_PUB_DIR 存在时读公钥与 kid 进本进程环境变量（读不到只报路径与错误码并退出，不打印内容），与私钥分支互斥。
+# 不在本任务：令牌配置本身（B1-02zj）、prod、其余进程的密钥。风险：infra/staging → RV2，规则测试由 Codex 写（test/spec/infra/staging/**）。
+refs: []
+refs_hash: {}
+deps:
+  - B1-02zj
+paths:
+  - 'infra/staging/compose.yaml'
+  - 'infra/staging/boot.mjs'
+  - 'infra/staging/deploy.sh'
+  - 'infra/staging/README.md'
+test_paths:
+  - 'test/spec/infra/staging/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/infra/staging/**'
+status: todo
+pr: null
