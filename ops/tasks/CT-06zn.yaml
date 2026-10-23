@@ -1,0 +1,22 @@
+id: CT-06zn
+repo: rebate-platform
+title: CT-06zn：verify-int 的 test:browser 之前等 testcontainers 清理完容器与网络、主机网卡稳定（浏览器偶发 ERR_NETWORK_CHANGED）
+type: guard-change
+# 2026-10-23 入账（ops 线，编排裁定 D10-253，15:27 派工）。起因：浏览器测试开头一两个文件偶发「Failed to fetch dynamically imported
+# module」，#1293 的诊断日志显示失败请求都是 net::ERR_NETWORK_CHANGED：verify-int 里 test:int 先跑，testcontainers（Ryuk）在集成测试
+# 结束后异步删容器与 veth 网卡，Chromium 察觉网卡变化就中止在途请求。#1323（拆分）对不上根因，编排暂停。
+# 做法（二选一里更简单的那个：不另起作业、不重装浏览器）：在 pnpm test:int 与 test:browser 之间加一步——先等带
+# org.testcontainers=true 标签的容器与网络都没了（最多 120 秒，超时列出残留、打警告后继续），再等前后两次（间隔 2 秒）`ip -o link`
+# 相同（最多 60 秒，未稳定打警告后继续）。不加重试、不改测试。合并后观察一天，再定 #1323 关闭。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/workflows/ci.yml'
+  - 'ops/tasks/CT-06zn.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 1351
