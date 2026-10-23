@@ -1,0 +1,17 @@
+id: B2-04wc
+repo: rebate-platform
+title: test-change：[AC-B1-08u#1]「order.snapshot_retry_exhausted 位于 EVENT_NAMES 末尾」改为「位于 02 §11 位置：其后只有 02 §11 排在它之后的事件」，blacklist 断言改为排在它之前；为 B2-04wa 登记两个快照告警事件让路
+type: test-change
+# 2026-10-23 入账（funds）。依据：02 §11（SPEC_REF bafa96ce 起）在 order.snapshot_retry_exhausted 之后新增 order.snapshot_created、user.realname_corrected、asset_snapshot.timed_out、union_receivable.exposure_exceeded（D10-142、D10-181 / 192、D10-188）；B2-04wa 按 02 §11 登记后，「必须是末尾」与 02 §11 冲突（B2-04wa 实现第 1 轮报）。
+# 只改这一条用例：登记一次、在 02 §11 位置、blacklist 在其前，三层含义不变；完整顺序仍由 test/spec/platform/events 的契约测试逐项核对。原测试属 W1 B1-08u；按 approvals #24 由编排核对加标签，先于 B2-04wa 合并。Codex 至 10-30 不可用，「不削弱」评审由新鲜独立 Claude 做。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/orders/snapshot-retry-alert/contract.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
