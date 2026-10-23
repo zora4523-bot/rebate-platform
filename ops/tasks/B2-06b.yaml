@@ -10,7 +10,7 @@ refs: [BR-WDR-13, BR-WDR-22, BR-WDR-28, BR-WDR-32]
 refs_hash:
   BR-WDR-13: 11b5c3e1a9b3
   BR-WDR-22: 3fc7a8bd4852
-  BR-WDR-28: 96789506486c
+  BR-WDR-28: 7bd49391b300
   BR-WDR-32: 914684fbaab3
 deps: [B2-05a]
 paths:

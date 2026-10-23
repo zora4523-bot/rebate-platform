@@ -8,7 +8,7 @@ type: contract
 refs: [BR-ID-24, BR-ATTR-02]
 refs_hash:
   BR-ID-24: 4cba1bd5dd15
-  BR-ATTR-02: 383185d2ddf7
+  BR-ATTR-02: f8cda78b8778
 contract_sections: ['11.2']
 deps: []
 paths:
