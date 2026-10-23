@@ -44,10 +44,12 @@ import { RouteSchema } from '@nestjs/platform-fastify';
 import type { Kysely } from 'kysely';
 import {
   IDEMPOTENCY,
+  CLOCK,
   contractRouteSchema,
   fieldsErrorEnvelope,
   tokenPrincipal,
   type CheckedRequest,
+  type Clock,
   type HandlerResult,
   type Idempotency,
   type IdempotentResponse,
@@ -177,6 +179,7 @@ export class WithdrawalsController {
   readonly #idempotency: Idempotency | undefined;
   readonly #stepUp: WithdrawStepUp | null;
   readonly #reads: DecryptWithdrawalAccount | null;
+  readonly #clock: Clock | null;
 
   constructor(
     service: WithdrawRulesService | null,
@@ -185,6 +188,7 @@ export class WithdrawalsController {
     idempotency?: Idempotency,
     stepUp?: WithdrawStepUp | null,
     reads?: DecryptWithdrawalAccount | null,
+    clock?: Clock | null,
   ) {
     this.#service = service;
     this.#handle = handle;
@@ -192,6 +196,7 @@ export class WithdrawalsController {
     this.#idempotency = idempotency;
     this.#stepUp = stepUp ?? null;
     this.#reads = reads ?? null;
+    this.#clock = clock ?? null;
   }
 
   async listWithdrawals(
@@ -202,12 +207,16 @@ export class WithdrawalsController {
     const query = request.query ?? {};
     const rawLimit = query.limit;
     try {
-      const data = await listWithdrawalsForUser(handle, {
-        appId: actor.appId,
-        userId: actor.userId,
-        ...(query.cursor === undefined ? {} : { cursor: query.cursor }),
-        ...(rawLimit === undefined ? {} : { limit: Number(rawLimit) }),
-      });
+      const data = await listWithdrawalsForUser(
+        handle,
+        {
+          appId: actor.appId,
+          userId: actor.userId,
+          ...(query.cursor === undefined ? {} : { cursor: query.cursor }),
+          ...(rawLimit === undefined ? {} : { limit: Number(rawLimit) }),
+        },
+        this.#projectionContext(),
+      );
       return { code: 0, msg: '', data, trace_id: request.id };
     } catch (error) {
       if (error instanceof WithdrawalReadError) {
@@ -224,11 +233,11 @@ export class WithdrawalsController {
   ): Promise<Schema<'WithdrawalResponse'>> {
     const actor = this.#actor(request);
     const handle = this.#readsHandle();
-    const data = await readWithdrawalForUser(handle, {
-      appId: actor.appId,
-      userId: actor.userId,
-      withdrawalId,
-    });
+    const data = await readWithdrawalForUser(
+      handle,
+      { appId: actor.appId, userId: actor.userId, withdrawalId },
+      this.#projectionContext(),
+    );
     if (data === null) {
       throw new HttpException(
         { code: 30701, msg: '内容不存在或已下线', trace_id: request.id },
@@ -311,6 +320,11 @@ export class WithdrawalsController {
     return { code: 0, msg: '', data, trace_id: request.id };
   }
 
+  /** CT-20b: the response instant for the BR-WDR-25 branches; no Clock registered → row time. */
+  #projectionContext(): { readonly now?: Date } {
+    return this.#clock === null ? {} : { now: this.#clock.now() };
+  }
+
   #actor(request: { readonly id: string; readonly principal?: TokenPrincipal }): WithdrawActor {
     const principal = tokenPrincipal(request);
     if (principal === undefined) {
@@ -334,6 +348,8 @@ export class WithdrawalsController {
   Inject(WITHDRAW_STEP_UP)(WithdrawalsController, undefined, 4);
   Optional()(WithdrawalsController, undefined, 5);
   Inject(WITHDRAW_READS)(WithdrawalsController, undefined, 5);
+  Optional()(WithdrawalsController, undefined, 6);
+  Inject(CLOCK)(WithdrawalsController, undefined, 6);
   const list = Object.getOwnPropertyDescriptor(prototype, 'listWithdrawals')!;
   const detail = Object.getOwnPropertyDescriptor(prototype, 'getWithdrawal')!;
   Req()(prototype, 'listWithdrawals', 0);

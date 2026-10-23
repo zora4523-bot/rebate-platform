@@ -13,7 +13,12 @@ import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import { fenToJsonNumber } from '@couli/money';
 import { sql, type Kysely, type Selectable } from 'kysely';
-import { isAccountFailure, payoutChannelName } from '../domain/display.ts';
+import {
+  isAccountFailure,
+  payoutChannelName,
+  subTextBranch,
+  type WithdrawalDisplayRow,
+} from '../domain/display.ts';
 import { maskPayeeAccount } from '../domain/mask-payee.ts';
 
 /** Only snapshot fields; current identity/payout-account data is never a projection input. */
@@ -33,7 +38,31 @@ export type WithdrawalRecordRow = Pick<
   | 'fail_code'
   | 'created_at'
   | 'channel_order_id'
->;
+> &
+  /** CT-20b fields (D10-207): optional so older callers and fixtures still type-check; absent = null. */
+  Partial<
+    Pick<
+      Selectable<DB['withdrawals']>,
+      | 'review_deadline'
+      | 'executed_at'
+      | 'paid_at'
+      | 'channel_state'
+      | 'confirm_deadline'
+      | 'auto_decision'
+      | 'needs_manual'
+      | 'manual_resolution'
+    >
+  >;
+
+/**
+ * What the projection needs beyond the row: the response instant (Clock; BR-WDR-25 branches
+ * compare against it) and the first transfer attempt (payout_attempts, B2-06a; null until the
+ * payout process exists). Without a context the row's created_at stands in for now.
+ */
+export interface WithdrawalProjectionContext {
+  readonly now?: Date;
+  readonly firstAttemptAt?: Date | null;
+}
 
 /** In-memory decryption port; the cleartext must be masked before crossing the read boundary. */
 export type DecryptWithdrawalAccount = (cipher: Buffer, method: string) => string;
@@ -75,6 +104,14 @@ const RECORD_COLUMNS = [
   'fail_code',
   'created_at',
   'channel_order_id',
+  'review_deadline',
+  'executed_at',
+  'paid_at',
+  'channel_state',
+  'confirm_deadline',
+  'auto_decision',
+  'needs_manual',
+  'manual_resolution',
 ] as const;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
@@ -108,9 +145,38 @@ function methodOf(value: string): 'alipay' | 'bank_card' | 'wechat' {
   throw new Error('payout: unknown payout method on a withdrawal row');
 }
 
+function isoOrNull(at: Date | null | undefined): string | null {
+  return at === null || at === undefined ? null : chinaIso(at);
+}
+
+/** BR-WDR-25 / CT-20b: the sub-text branch of the row at `now`; no row matched → processing. */
+function branchOf(
+  row: WithdrawalRecordRow,
+  channel: 'alipay' | 'bank_card' | 'wechat',
+  context: WithdrawalProjectionContext,
+): Schema<'WithdrawalSubTextBranch'> {
+  const display: WithdrawalDisplayRow = {
+    status: row.status,
+    review_mode: (row.review_mode ?? null) as WithdrawalDisplayRow['review_mode'],
+    auto_decision: (row.auto_decision ?? null) as WithdrawalDisplayRow['auto_decision'],
+    review_deadline: row.review_deadline ?? null,
+    executed_at: row.executed_at ?? null,
+    first_attempt_at: context.firstAttemptAt ?? null,
+    needs_manual: row.needs_manual ?? false,
+    manual_resolution: (row.manual_resolution ?? null) as WithdrawalDisplayRow['manual_resolution'],
+    fail_code: row.fail_code,
+    reject_reason_code: row.reject_reason_code,
+    payout_channel: channel,
+    channel_state: (row.channel_state ?? null) as WithdrawalDisplayRow['channel_state'],
+    confirm_deadline: row.confirm_deadline ?? null,
+  };
+  return subTextBranch(display, context.now ?? row.created_at) ?? 'processing';
+}
+
 export function projectWithdrawalSummary(
   row: WithdrawalRecordRow,
   decryptAccount: DecryptWithdrawalAccount,
+  context: WithdrawalProjectionContext = {},
 ): Schema<'WithdrawalSummary'> {
   const method = methodOf(row.payout_method);
   const channel = channelOf(row.payout_channel);
@@ -130,15 +196,26 @@ export function projectWithdrawalSummary(
     reason_code: reason,
     fail_action: failed && isAccountFailure(row.fail_code) ? 'change_payout_account' : null,
     created_at: chinaIso(row.created_at),
+    // CT-20b (D10-207): the time points and the server-computed sub-text branch.
+    review_deadline: isoOrNull(row.review_deadline),
+    executed_at: isoOrNull(row.executed_at),
+    first_attempt_at: isoOrNull(context.firstAttemptAt),
+    paid_at: isoOrNull(row.paid_at),
+    channel_state: (row.channel_state ?? null) as Schema<'WithdrawalSummary'>['channel_state'],
+    confirm_deadline: isoOrNull(row.confirm_deadline),
+    sub_text_branch: branchOf(row, channel, context),
+    // hold_days: the W10 failed resolution with a hold (BR-WDR-15 / 25); W10 arrives with B2-09.
+    hold_days: null,
   };
 }
 
 export function projectWithdrawalDetail(
   row: WithdrawalRecordRow,
   decryptAccount: DecryptWithdrawalAccount,
+  context: WithdrawalProjectionContext = {},
 ): Schema<'Withdrawal'> {
   return {
-    ...projectWithdrawalSummary(row, decryptAccount),
+    ...projectWithdrawalSummary(row, decryptAccount, context),
     channel_order_id: PAID.includes(row.status) ? row.channel_order_id : null,
   };
 }
@@ -202,6 +279,7 @@ function pageSize(limit: number | undefined): number {
 export async function listWithdrawalsForUser(
   db: Kysely<DB>,
   query: WithdrawalListQuery,
+  context: WithdrawalProjectionContext = {},
 ): Promise<WithdrawalPage> {
   const decrypt = currentDecrypt();
   const limit = pageSize(query.limit);
@@ -230,7 +308,7 @@ export async function listWithdrawalsForUser(
   const page = rows.slice(0, limit);
   const last = page.at(-1);
   return {
-    items: page.map((row) => projectWithdrawalSummary(row, decrypt)),
+    items: page.map((row) => projectWithdrawalSummary(row, decrypt, context)),
     next_cursor:
       rows.length > limit && last !== undefined
         ? encodeWithdrawalCursor({ createdAt: last.created_at.toISOString(), id: last.id })
@@ -242,6 +320,7 @@ export async function listWithdrawalsForUser(
 export async function readWithdrawalForUser(
   db: Kysely<DB>,
   query: { readonly appId: string; readonly userId: string; readonly withdrawalId: string },
+  context: WithdrawalProjectionContext = {},
 ): Promise<Schema<'Withdrawal'> | null> {
   const decrypt = currentDecrypt();
   if (!UUID.test(query.withdrawalId)) return null;
@@ -253,5 +332,5 @@ export async function readWithdrawalForUser(
     .where('user_id', '=', query.userId)
     .where('id', '=', query.withdrawalId)
     .executeTakeFirst();
-  return row === undefined ? null : projectWithdrawalDetail(row, decrypt);
+  return row === undefined ? null : projectWithdrawalDetail(row, decrypt, context);
 }
