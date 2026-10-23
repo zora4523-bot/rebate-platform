@@ -6,6 +6,7 @@
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import { expect, vi } from 'vitest';
+import type { components } from '../../../../packages/contracts-ts/src/index.ts';
 import {
   createPddAuthLinkOpen,
   type PddAuthLinkOpenOptions,
@@ -165,6 +166,31 @@ export async function expectStoppedBeforeRecheck(f: Fixture, result: unknown): P
   expect((await f.links()).map((link) => link.link_id)).toEqual([f.row.link_id]);
   expect(await f.logs()).toEqual([
     expect.objectContaining({ link_id: f.row.link_id, result_code: 50301 }),
+  ]);
+}
+
+/** ⑥ answered: 30111 with only auth_jump, a state bound to A's device and the opened link. */
+export async function expectFilingRefusal(f: Fixture, result: unknown, before: unknown) {
+  const value = await response(result, 30111, 422);
+  const data = value.envelope.data as { auth_jump: components['schemas']['AuthJumpPlan'] };
+  expect(Object.keys(data)).toEqual(['auth_jump']);
+  const sessions = await f.sessions();
+  expect(sessions).toHaveLength(1);
+  expect(sessions[0]).toMatchObject({
+    app_id: f.appId,
+    user_id: f.a.userId,
+    device_id: f.a.deviceId,
+    platform: 'pdd',
+    link_id: f.row.link_id,
+    used_at: null,
+  });
+  expect(f.fetch).not.toHaveBeenCalled();
+  expect(f.quote).not.toHaveBeenCalled();
+  expect(f.convert).not.toHaveBeenCalled();
+  expect(await f.attempts()).toEqual([]);
+  expect(await f.bindings()).toEqual(before);
+  expect(await f.logs()).toEqual([
+    expect.objectContaining({ link_id: f.row.link_id, result_code: 30111 }),
   ]);
 }
 

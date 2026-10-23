@@ -4,6 +4,7 @@ import {
   RECHECKS,
   TIMEOUT,
   databaseFixture,
+  expectFilingRefusal,
   expectRecheckDecided,
   expectStoppedBeforeRecheck,
   fixture,
@@ -92,16 +93,19 @@ for (const binding of ['active', 'pending_auth', 'blocked'] as const) {
   );
 }
 
-// Filed: the binding is not active (or there is none) but the filing double answers authorized, so
-// ⑥ passes after one filing query and ⑦ finds no active slot on the account in use. With a binding
-// that account is A (B keeps its slot, never borrowed). With none it is the account of the earliest
-// active self_buy slot (B), and retiring only B's self_buy would move it to A, so both accounts
-// lose the scene's slot there.
+// Filed on the platform side: the binding is not active (or there is none) and the filing double
+// would answer authorized. Without an active slot of the scene on the account in use the filing is
+// not queried (D10-262 / D10-263): the binding is not active, so locally the user counts as not
+// filed and ⑥ answers 30111 with one authorization session; nothing is activated, no other scene's
+// slot is borrowed for the query, and the next open after the slot is configured queries and
+// activates. With a binding that account is A (B keeps its slot, never borrowed). With none it is
+// the account of the earliest active self_buy slot (B), and retiring only B's self_buy would move
+// it to A, so both accounts lose the scene's slot there. With the slot nothing changes.
 for (const binding of ['absent', 'pending_auth', 'invalid'] as const) {
   for (const scene of ['detail', 'agent'] as const) {
     for (const { recheck, withSlot } of RECHECKS) {
       it(
-        `[AC-B1-22n#6] 拼多多 ${binding}/${scene} 已备案（查询答已授权）但所用账号无该场景 active 推广位：⑥ 通过后 ⑦ 回 50301、不复核，不回 30111、不签发授权会话（复核注入 ${recheck}）；有推广位时照旧复核得 ${withSlot}`,
+        `[AC-B1-22n#6] 拼多多 ${binding}/${scene} 平台侧已备案但绑定非 active、所用账号无该场景 active 推广位：不查备案、回 30111（授权门 ⑥）、签发一条授权会话、不复核、绑定不变（复核注入 ${recheck}）；有推广位时照旧查一次备案、复核得 ${withSlot}`,
         async () => {
           const db = database();
           const f = await fixture(db, { binding, query: true, scene });
@@ -112,14 +116,15 @@ for (const binding of ['absent', 'pending_auth', 'invalid'] as const) {
           ];
           if (binding === 'absent') retire.push({ account: 'b', scene: missing });
           const slots = await pddSlots(db, f, retire);
+          const before = await f.bindings();
           const stopped = openWith(f, slots.pids);
-          await expectStoppedBeforeRecheck(
+          await expectFilingRefusal(
             f,
             await outcome(() => stopped.service.open(f.request())),
+            before,
           );
-          expect(f.query).toHaveBeenCalledTimes(1);
-          expect(stopped.external.filter((name) => name !== 'queryPddAuthority')).toEqual([]);
-          expect(await f.sessions()).toEqual([]);
+          expect(f.query).not.toHaveBeenCalled();
+          expect(stopped.external).toEqual([]);
 
           const g = await fixture(db, { binding, query: true, scene });
           await injectRecheck(g, recheck);
