@@ -19,6 +19,7 @@ import {
   oauth,
   open,
   processing,
+  realname,
   request,
   reset,
   session,
@@ -48,6 +49,8 @@ async function withDevice() {
   const d = await device(kit.db, m.appId);
   await session(kit.db, m, d.id);
   await oauth(kit.db, m, 'wechat');
+  // footprint() reads the realname row strictly; give the user one so #24 compares it too.
+  await realname(kit.db, m);
   return { m, row };
 }
 
