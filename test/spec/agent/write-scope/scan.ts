@@ -29,12 +29,16 @@
 //    . or " is a column name, not a statement.
 //    Writes INSERT INTO / UPDATE / DELETE FROM / MERGE INTO / TRUNCATE / SELECT … INTO must target
 //    app.agent_x or a bare agent_x. UPDATE after FOR / KEY / DO / ON / OF / OR / BEFORE / AFTER is
-//    a lock or conflict clause. Reads FROM (with comma lists) / JOIN / USING must name app.agent_x,
-//    a bare agent_x, or a CTE defined by WITH x AS in the same SQL; a parenthesised subquery /
-//    VALUES / column list and a function call (unnest(…)) pass. FROM after IS [NOT] DISTINCT and
-//    inside extract / substring / substr / trim / overlay / position is not a table. ALTER / DROP
-//    / CREATE / GRANT / REVOKE / COPY / LOCK / CALL / set_config and a statement SET [LOCAL |
-//    SESSION] ROLE / SESSION AUTHORIZATION are violations whatever follows. A substitution
+//    a lock or conflict clause; THEN UPDATE SET inside a MERGE statement is its WHEN action (the
+//    MERGE INTO target is checked). Reads FROM (with comma lists) / JOIN / USING must name
+//    app.agent_x, a bare agent_x, or a CTE defined by WITH x AS in the same SQL; a parenthesised
+//    subquery / VALUES / column list and a function call (unnest(…)) pass. FROM after IS [NOT]
+//    DISTINCT and inside extract / substring / substr / trim / overlay / position is not a table.
+//    ALTER / DROP / CREATE / GRANT / REVOKE / COPY / LOCK / CALL are violations whatever follows
+//    when they start a statement: at the text start, after ; or (, at the start of a $tag$ body,
+//    after a <<label>>, or after BEGIN / THEN / ELSE / LOOP / DO / ATOMIC / INSTEAD / ALSO;
+//    elsewhere (WHERE lock = 1, AS drop) they are names. set_config anywhere and a statement SET
+//    [LOCAL | SESSION] ROLE / SESSION AUTHORIZATION are violations. A substitution
 //    ${sql.table('…')}, ${sql.id('…'[, '…'])} or ${sql.raw('…')} with literal arguments
 //    contributes its text; any other substitution is opaque, and an opaque or missing table is a
 //    violation.
@@ -44,8 +48,12 @@
 //    or is on the caller's list of other modules' namespaces; anything unresolved is a violation.
 //    Accessing .namespace other than by a direct call is a violation.
 //  ⑤ Bypasses in agent code: the identifiers executeQuery and CompiledQuery anywhere; db.schema.…
-//    (x.schema.y / x.schema[y]); a Kysely table method, withSchema or namespace accessed other
-//    than by a direct call (destructuring, .call / .bind / .apply, passing it on); a non-literal
+//    (.schema on a database-handle receiver as in ②, or destructured from one); a Kysely table
+//    method or withSchema accessed other than by a direct call (destructuring, .call / .bind /
+//    .apply, passing it on), except that a Kysely expression-builder callback may destructure one
+//    without renaming it (.where(({ exists, selectFrom }) => …)): that local is then only called
+//    directly and each call is checked as ①; .namespace accessed other than by a direct call on, or
+//    destructured from, a receiver whose name (or parameter type) contains redis; a non-literal
 //    key on a database-handle or *redis* receiver (db[m]); a sql local used other than as a tag
 //    or as sql.x (const s = sql).
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -108,8 +116,10 @@ const READ_METHODS = new Set([
 ]);
 /** Builder roots after which .from / .using name a table. */
 const BUILDER_ROOTS = new Set([...WRITE_METHODS, 'selectFrom']);
-/** Methods that may only be called directly in agent code. */
-const DIRECT_ONLY = new Set([...WRITE_METHODS, ...READ_METHODS, 'withSchema', 'namespace']);
+/** Kysely methods that may only be called directly in agent code. */
+const KYSELY_DIRECT = new Set([...WRITE_METHODS, ...READ_METHODS, 'withSchema']);
+/** Methods that may only be called directly in agent code (namespace: on a redis receiver). */
+const DIRECT_ONLY = new Set([...KYSELY_DIRECT, 'namespace']);
 const CTE_METHODS = new Set(['with', 'withRecursive', 'withMaterialized', 'withNotMaterialized']);
 const DB_HANDLE_NAMES = new Set([
   'q',
@@ -129,6 +139,28 @@ const DB_HANDLE_SUFFIX = /[a-z0-9](?:Db|Tx|Trx|Client|Pool|Conn|Connection|Execu
 const OPAQUE = '\u0001';
 /** Words before UPDATE that make it a clause, not a statement. */
 const NOT_A_STATEMENT = new Set(['for', 'key', 'do', 'on', 'of', 'or', 'before', 'after']);
+/** Words after which a statement starts (PL/pgSQL blocks, rule actions). */
+const STATEMENT_LEADS = new Set([
+  'begin',
+  'then',
+  'else',
+  'loop',
+  'do',
+  'atomic',
+  'instead',
+  'also',
+]);
+/** Forbidden whatever follows, but only at the start of a statement. */
+const FORBIDDEN_STATEMENTS = new Set([
+  'alter',
+  'drop',
+  'create',
+  'grant',
+  'revoke',
+  'copy',
+  'lock',
+  'call',
+]);
 /** Functions whose argument syntax uses FROM. */
 const FROM_FUNCTIONS = new Set(['extract', 'substring', 'substr', 'trim', 'overlay', 'position']);
 /** Words that end a FROM item instead of aliasing it. */
@@ -200,6 +232,53 @@ function receiverName(expr: ts.Expression): string | null {
 
 export function isDbHandleName(name: string | null): boolean {
   return name !== null && (DB_HANDLE_NAMES.has(name.toLowerCase()) || DB_HANDLE_SUFFIX.test(name));
+}
+
+function isRedisName(name: string | null): boolean {
+  return name !== null && /redis/iu.test(name);
+}
+
+/** The callee's method name, or its name when it is a bare identifier (a destructured method). */
+function calleeName(callee: ts.Expression): string | null {
+  return methodName(callee) ?? (ts.isIdentifier(callee) ? callee.text : null);
+}
+
+/**
+ * The name of what an object binding destructures: the initializer's last name (const { a } =
+ * deps.db → db), the parameter's type name (({ a }: RedisHandle) → RedisHandle), or the outer
+ * property ({ db: { a } } → db); null when unknown.
+ */
+function bindingSource(node: ts.BindingElement): string | null {
+  const holder = node.parent.parent;
+  if (ts.isVariableDeclaration(holder)) {
+    return holder.initializer === undefined ? null : receiverName(holder.initializer);
+  }
+  if (ts.isParameter(holder)) {
+    const type = holder.type;
+    if (type === undefined || !ts.isTypeReferenceNode(type)) return null;
+    return ts.isIdentifier(type.typeName) ? type.typeName.text : type.typeName.right.text;
+  }
+  if (ts.isBindingElement(holder)) {
+    const key = holder.propertyName ?? holder.name;
+    return ts.isIdentifier(key) ? key.text : null;
+  }
+  return null;
+}
+
+/** ({ selectFrom }) => … passed as an argument of a call, the method not renamed or defaulted. */
+function isBuilderCallbackBinding(node: ts.BindingElement): boolean {
+  const key = node.propertyName;
+  if (node.initializer !== undefined || !ts.isIdentifier(node.name)) return false;
+  if (key !== undefined && !(ts.isIdentifier(key) && key.text === node.name.text)) return false;
+  const pattern = node.parent;
+  const parameter = pattern.parent;
+  if (!ts.isObjectBindingPattern(pattern) || !ts.isParameter(parameter)) return false;
+  const fn = parameter.parent;
+  return (
+    (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) &&
+    ts.isCallExpression(fn.parent) &&
+    fn.parent.arguments.some((arg) => arg === fn)
+  );
 }
 
 function isDirectCallee(node: ts.Node): boolean {
@@ -292,7 +371,7 @@ const DOLLAR_QUOTE = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/u;
 
 /**
  * SQL with -- and block comments and '…' / E'…' strings blanked; "quoted identifiers" kept; the
- * body of a $tag$ quote is stripped on its own and kept (so it is scanned as SQL).
+ * body of a $tag$ quote is stripped on its own and kept between ; marks (so it is scanned as SQL).
  */
 function stripSql(text: string): string {
   let out = '';
@@ -332,7 +411,8 @@ function stripSql(text: string): string {
       }
       const start = i + tag[0].length;
       const end = text.indexOf(tag[0], start);
-      out += ` ${stripSql(text.slice(start, end === -1 ? text.length : end))} `;
+      // The body starts and ends statements of its own (DO $$ … $$, function bodies).
+      out += ` ; ${stripSql(text.slice(start, end === -1 ? text.length : end))} ; `;
       i = end === -1 ? text.length : end + tag[0].length;
     } else {
       out += text[i];
@@ -383,6 +463,22 @@ function agentTarget(target: string | null): boolean {
 
 function wordBefore(text: string, index: number): string {
   return (/([A-Za-z_]+)\s*$/u.exec(text.slice(0, index))?.[1] ?? '').toLowerCase();
+}
+
+/** Whether `index` is where a statement starts. */
+function atStatementStart(text: string, index: number): boolean {
+  const before = text.slice(0, index).trimEnd();
+  if (before === '' || before.endsWith(';') || before.endsWith('(') || before.endsWith('>>')) {
+    return true;
+  }
+  return STATEMENT_LEADS.has(wordBefore(text, index));
+}
+
+/** THEN UPDATE SET inside a MERGE statement (the statement since the last ;). */
+function mergeAction(text: string, start: number, rest: number): boolean {
+  if (wordBefore(text, start) !== 'then' || !/^\s+set\b/iu.test(text.slice(rest))) return false;
+  const statement = text.slice(text.lastIndexOf(';', start) + 1, start);
+  return /\bmerge\s+into\b/iu.test(statement);
 }
 
 /** Index just past the parenthesised group opening at `open`. */
@@ -483,6 +579,7 @@ export function sqlAccesses(sqlText: string): SqlAccess[] {
     if (quotedName || (dotted && keyword !== 'set_config')) continue;
     if (WRITES.has(keyword)) {
       if (keyword === 'update' && NOT_A_STATEMENT.has(wordBefore(text, start))) continue;
+      if (keyword === 'update' && mergeAction(text, start, rest)) continue;
       const statement = keyword === 'into' ? 'select into' : keyword;
       const prefix =
         keyword === 'truncate' ? String.raw`(?:table\s+)?(?:only\s+)?` : String.raw`(?:only\s+)?`;
@@ -503,6 +600,9 @@ export function sqlAccesses(sqlText: string): SqlAccess[] {
         const ok = agentTarget(target) || (target !== null && ctes.has(target));
         out.push({ statement: keyword, kind: 'read', target, ok });
       }
+    } else if (FORBIDDEN_STATEMENTS.has(keyword) && !atStatementStart(text, start)) {
+      // A column name or alias: WHERE lock = 1, SELECT x AS drop.
+      continue;
     } else {
       out.push({ statement: keyword, kind: 'forbidden', target: null, ok: false });
     }
@@ -571,7 +671,7 @@ function inBuilderChain(callee: ts.Expression): boolean {
     if (ts.isPropertyAccessExpression(up) || ts.isElementAccessExpression(up)) {
       up = up.expression;
     } else if (ts.isCallExpression(up)) {
-      if (BUILDER_ROOTS.has(methodName(up.expression) ?? '')) return true;
+      if (BUILDER_ROOTS.has(calleeName(up.expression) ?? '')) return true;
       up = up.expression;
     } else {
       return false;
@@ -660,7 +760,7 @@ export function scanAgent(files: readonly SourceFile[]): AgentScan {
         checkSql(node, templateText(node.template, names));
       } else if (ts.isCallExpression(node)) {
         const helper = sqlHelper(node, names);
-        const method = methodName(node.expression);
+        const method = calleeName(node.expression);
         const arg = node.arguments[0];
         if (helper !== null && helper.name === 'raw') {
           // A literal sql.raw inside a sql`…` substitution is read as part of that template.
@@ -708,6 +808,14 @@ export function scanAgent(files: readonly SourceFile[]): AgentScan {
         if (node.text === 'executeQuery' || node.text === 'CompiledQuery') {
           report('⑤', node, node.text);
         } else if (
+          KYSELY_DIRECT.has(node.text) &&
+          isReference(node) &&
+          !(ts.isBindingElement(node.parent) && node.parent.name === node) &&
+          !isDirectCallee(node)
+        ) {
+          // A method destructured in a builder callback: only called directly (checked as ①).
+          report('⑤', node, `${node.text} not called directly`);
+        } else if (
           names.sql.has(node.text) &&
           isReference(node) &&
           !(ts.isTaggedTemplateExpression(node.parent) && node.parent.tag === node) &&
@@ -717,34 +825,42 @@ export function scanAgent(files: readonly SourceFile[]): AgentScan {
         }
       } else if (ts.isPropertyAccessExpression(node)) {
         const name = node.name.text;
-        const parent = node.parent;
-        if (
-          name === 'schema' &&
-          (ts.isPropertyAccessExpression(parent) || ts.isElementAccessExpression(parent)) &&
-          parent.expression === node
-        ) {
-          report('⑤', node, '.schema.…');
+        const receiver = receiverName(node.expression);
+        if (name === 'schema') {
+          // db.schema.createTable, const s = trx.schema; tool.schema.properties is not a database.
+          if (isDbHandleName(receiver)) report('⑤', node, `${receiver ?? ''}.schema`);
         } else if (DIRECT_ONLY.has(name)) {
           if (isDirectCallee(node)) directCalls += 1;
-          else report('⑤', node, `.${name} not called directly`);
+          else if (name !== 'namespace' || isRedisName(receiver)) {
+            report('⑤', node, `.${name} not called directly`);
+          }
         }
       } else if (ts.isElementAccessExpression(node)) {
         const key = literal(node.argumentExpression);
+        const receiver = receiverName(node.expression);
         if (key !== null) {
-          if (DIRECT_ONLY.has(key) && !isDirectCallee(node)) {
+          if (key === 'schema' && isDbHandleName(receiver)) {
+            report('⑤', node, `${receiver ?? ''}['schema']`);
+          } else if (
+            DIRECT_ONLY.has(key) &&
+            !isDirectCallee(node) &&
+            (key !== 'namespace' || isRedisName(receiver))
+          ) {
             report('⑤', node, `['${key}'] not called directly`);
           }
-        } else {
-          const receiver = receiverName(node.expression);
-          if (isDbHandleName(receiver) || /redis/iu.test(receiver ?? '')) {
-            report('⑤', node, `${receiver ?? ''}[<non-literal>]`);
-          }
+        } else if (isDbHandleName(receiver) || isRedisName(receiver)) {
+          report('⑤', node, `${receiver ?? ''}[<non-literal>]`);
         }
       } else if (ts.isBindingElement(node)) {
         const key = node.propertyName ?? node.name;
         const text = ts.isIdentifier(key) || ts.isStringLiteral(key) ? key.text : null;
-        if (text !== null && (DIRECT_ONLY.has(text) || text === 'schema')) {
-          report('⑤', node, `destructured ${text}`);
+        const from = bindingSource(node);
+        if (
+          (text === 'schema' && isDbHandleName(from)) ||
+          (text === 'namespace' && isRedisName(from)) ||
+          (text !== null && KYSELY_DIRECT.has(text) && !isBuilderCallbackBinding(node))
+        ) {
+          report('⑤', node, `destructured ${text ?? ''}`);
         }
       }
     };

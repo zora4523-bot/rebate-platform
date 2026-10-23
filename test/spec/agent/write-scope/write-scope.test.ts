@@ -70,6 +70,8 @@ it('[AC-CT-06zu#1][BR-AI-02] agent/** 的 Kysely 写（insertInto / updateTable 
     "await db.deleteFrom(['agent_cards', 'users']).execute();",
     "await db['insertInto']('users').values(v).execute();",
     "await db.withSchema('pgboss').insertInto('agent_cards').values(v).execute();",
+    // A method destructured in a callback is still checked when called by its bare name.
+    "await db.updateTable('agent_runs').set(({ insertInto }) => insertInto('orders')).execute();",
   ]);
   expectClean([
     "await db.insertInto('agent_cards').values(v).execute();",
@@ -143,6 +145,17 @@ it('[AC-CT-06zu#2][BR-AI-02] agent/** 的 SQL 文本（sql 模板含别名与命
     'await q.query(sql`SET SESSION AUTHORIZATION app_admin`);',
     "await q.query(sql`SELECT pg_catalog.set_config('role', 'app_admin', true)`);",
     'await q.query(sql`SELECT * INTO app.orders_copy FROM app.agent_runs`);',
+    // Forbidden keywords at any statement start: after ;, in DO blocks after BEGIN / THEN / ELSE
+    // / LOOP, at the start of a $tag$ body.
+    'await q.query(sql`SELECT 1;\n  drop table app.agent_runs`);',
+    'await q.query(sql`DO $$ BEGIN IF true THEN LOCK TABLE app.orders; ELSE CALL app.settle_all(); END IF; END $$`);',
+    'await q.query(sql`DO $$ BEGIN FOR i IN 1..2 LOOP ALTER TABLE app.agent_runs ADD COLUMN x int; END LOOP; END $$`);',
+    'await q.query(sql`DO $body$ CREATE TABLE app.agent_x (id int) $body$`);',
+    // MERGE: the target and the source are still checked; THEN UPDATE outside MERGE is a statement.
+    'await q.query(sql`MERGE INTO app.orders o USING app.agent_runs r ON o.id = r.id WHEN MATCHED THEN UPDATE SET x = 1`);',
+    'await q.query(sql`MERGE INTO app.agent_cards c USING app.agent_runs r ON c.id = r.id WHEN MATCHED THEN UPDATE SET x = (SELECT y FROM app.orders)`);',
+    'await q.query(sql`MERGE INTO app.agent_cards c USING app.agent_runs r ON c.id = r.id WHEN MATCHED THEN DELETE; UPDATE app.orders SET x = 1`);',
+    'await q.query(sql`DO $$ BEGIN IF true THEN UPDATE app.orders SET x = 1; END IF; END $$`);',
   ]);
   expectClean([
     'await q.query(sql`UPDATE app.agent_runs SET x = ${v} WHERE id = ${id}`);',
@@ -166,6 +179,12 @@ it('[AC-CT-06zu#2][BR-AI-02] agent/** 的 SQL 文本（sql 模板含别名与命
     // Session settings and advisory locks are not DDL.
     "await q.query(sql`SET LOCAL lock_timeout = '2s'`);",
     'await q.query(sql`SELECT pg_advisory_xact_lock(${key}::bigint)`);',
+    // Forbidden keywords away from a statement start are column names or aliases.
+    'await q.query(sql`SELECT x AS drop, y AS create FROM app.agent_runs WHERE lock = 1 AND copy IS NULL ORDER BY call`);',
+    'await q.query(sql`UPDATE app.agent_runs SET lock = false, alter = 1 WHERE drop IS NULL`);',
+    // MERGE … WHEN MATCHED THEN UPDATE SET / DELETE / INSERT are actions on the MERGE target.
+    'await q.query(sql`MERGE INTO app.agent_cards c USING app.agent_runs r ON c.id = r.id WHEN MATCHED THEN UPDATE SET data = r.data WHEN NOT MATCHED THEN INSERT (id) VALUES (r.id)`);',
+    'await q.query(sql`MERGE INTO app.agent_cards c USING app.agent_runs r ON c.id = r.id WHEN MATCHED AND r.gone THEN DELETE`);',
     // TypeScript comments, ordinary strings and untagged templates outside .query are not SQL.
     "// the decision UPDATE with this instance's memo\n/* DELETE FROM orders */\nexport {};",
     'const message = "update orders failed"; log(\'DELETE FROM users\');',
@@ -260,6 +279,10 @@ it('[AC-CT-06zu#5][BR-AI-02] agent/** 的读（Kysely selectFrom / 各种 join /
     "await db.updateTable('agent_runs').from('orders').set(v).execute();",
     "await db.deleteFrom('agent_runs').using('orders').execute();",
     "await db.mergeInto('agent_result_sets').using('orders', 'a', 'b').execute();",
+    // selectFrom destructured in an expression-builder callback is checked when called.
+    "await db.selectFrom('agent_runs').where(({ exists, selectFrom }) => exists(selectFrom('orders').select('id'))).selectAll().execute();",
+    "await db.selectFrom('agent_runs').where(({ selectFrom }) => selectFrom(table).select('id')).selectAll().execute();",
+    "await db.selectFrom('agent_runs').where(({ exists, selectFrom }) => exists(selectFrom('agent_cards as c').innerJoin('users as u', 'u.id', 'c.user_id').select('c.id'))).selectAll().execute();",
   ]);
   expectCaught('②', [
     'await q.query(sql`SELECT * FROM app.orders`);',
@@ -287,6 +310,8 @@ it('[AC-CT-06zu#5][BR-AI-02] agent/** 的读（Kysely selectFrom / 各种 join /
     "await db.deleteFrom('agent_runs').using('agent_sessions').execute();",
     "await db.with('recent', (w) => w.selectFrom('agent_runs').selectAll()).selectFrom('recent').selectAll().execute();",
     "await db.selectFrom((eb) => eb.selectFrom('agent_runs').selectAll().as('r')).selectAll().execute();",
+    "await db.selectFrom('agent_runs').where(({ exists, selectFrom }) => exists(selectFrom('agent_cards').select('id'))).selectAll().execute();",
+    "await db.selectFrom('agent_runs').where((eb) => eb.exists(eb.selectFrom('agent_cards').select('id'))).selectAll().execute();",
     "const parts = Array.from(text); const key = Buffer.from(raw, 'utf8');",
     'await q.query(sql`SELECT s.id FROM app.agent_sessions s JOIN app.agent_runs r ON r.id = s.run_lock_run_id`);',
     'await q.query(sql`SELECT DISTINCT k FROM unnest(${keys}::text[]) AS t(k)`);',
@@ -326,6 +351,22 @@ it('[AC-CT-06zu#6][BR-AI-02] agent/** 不绕过构造器：executeQuery / Compil
     'const ns = redis[key];',
     'const s = sql;\nawait q.query(s`DELETE FROM app.users`);',
     'run(sql);',
+    // .schema on (or destructured from) a database handle, by name or by parameter type.
+    'const s = db.schema;',
+    "await this.trx.schema.dropTable('agent_runs').execute();",
+    'const { schema } = deps.db;',
+    "function migrate({ schema }: Kysely<DB>) { return schema.dropTable('agent_runs'); }",
+    // .namespace taken from (or destructured from) a redis receiver, by name or parameter type.
+    'const ns = this.redis.namespace;',
+    'const { namespace } = deps.redis;',
+    "function f({ namespace }: RedisHandle) { return namespace('agent_x'); }",
+    "const make = redisHandle['namespace'];",
+    // Destructuring a table method: renamed, outside a callback argument, or passed on.
+    "await db.selectFrom('agent_runs').where(({ exists, selectFrom: from }) => exists(from('agent_cards'))).execute();",
+    "await db.selectFrom('agent_runs').where(({ selectFrom }) => { const f = selectFrom; return f('orders'); }).execute();",
+    "await db.selectFrom('agent_runs').where(({ selectFrom }) => run({ selectFrom })).execute();",
+    "function reader({ selectFrom }: Kysely<DB>) { return selectFrom('agent_runs'); }",
+    "const read = ({ selectFrom }: Kysely<DB>) => selectFrom('agent_runs');",
   ]);
   expectClean([
     "await db.selectFrom('agent_runs').selectAll().execute();",
@@ -334,5 +375,15 @@ it('[AC-CT-06zu#6][BR-AI-02] agent/** 不绕过构造器：executeQuery / Compil
     "import { sql } from 'kysely';\nawait sql`SELECT 1`.execute(db);",
     'const v = schema.parse(x); const s = validator.schema;',
     'interface Port { namespace(name: string): Ns; insertInto: number }',
+    // .schema on anything that is not a database handle (tool JSON schemas, Zod-style schemas).
+    'const props = tool.schema.properties; const t = def.parameters.schema.type;',
+    'const v = Message.schema.parse(x); const { schema } = tool;',
+    'function register({ schema }: ToolDef) { return schema; }',
+    // .namespace on anything that is not a redis handle.
+    'const ns = config.namespace; log.info({ namespace: opts.namespace });',
+    'function f({ namespace }: Options) { return namespace; }\nconst g = ({ namespace }) => namespace;',
+    'const { namespace: n } = config;',
+    // A Kysely expression-builder callback destructures exists / selectFrom.
+    "await db.selectFrom('agent_runs').where(({ exists, selectFrom }) => exists(selectFrom('agent_cards').select('id'))).selectAll().execute();",
   ]);
 });
