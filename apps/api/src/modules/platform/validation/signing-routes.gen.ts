@@ -457,6 +457,16 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "POST",
+    "path": "/admin/v1/me/verify-phone/sms-codes",
+    "signed": false
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/me/verify-phone",
+    "signed": false
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/dashboard",
     "signed": false
@@ -467,8 +477,53 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "POST",
+    "path": "/admin/v1/admins",
+    "signed": false
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/admins/:admin_id",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/initial-password",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/disable",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/enable",
+    "signed": false
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/admins/:admin_id/permissions",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/totp/reset",
+    "signed": false
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/admins/:admin_id/display-name",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/verify-phone/sms-codes",
+    "signed": false
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/admins/:admin_id/verify-phone",
     "signed": false
   },
   {

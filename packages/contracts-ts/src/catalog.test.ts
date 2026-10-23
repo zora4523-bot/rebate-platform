@@ -231,6 +231,8 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     'risk_rule',
     // CT-24h: admin PID change / activate / retire CAS (04 §6.6 union-pids, BR-ATTR-02).
     'union_pid',
+    // CT-24o: admin account disable / enable / permission save CAS (04 §6.6 admins, BR-ID-34).
+    'admin_account',
   ]);
 });
 
