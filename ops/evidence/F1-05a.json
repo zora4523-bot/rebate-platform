@@ -1,0 +1,158 @@
+{
+  "red_tests": [
+    "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-COPY#1] 【复制邀请码】经 clipboard.write 写入 invite_code 并提示已复制邀请码",
+    "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-COPY#2] 【复制邀请链接】写入 landing_url 原样并提示已复制邀请链接",
+    "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-COPY#3] 复制按钮的读屏名带对象且两个按钮可区分",
+    "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-POSTER#1] 【保存海报】预览服务端出图 poster_url，保存走 media.saveImage",
+    "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-POSTER#2] poster_url 为空时保存海报不可用或不出现，点了也不调用保存",
+    "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-POSTER#3] 相册权限被拒（saved=false）显示被拒提示，页面不崩溃可继续操作",
+    "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-LINK#1] 人数卡说明「在余额流水里查看」进入 Ledger",
+    "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-LINK#2] 活动有效时【活动规则】与【完整规则】打开不同的帮助文章",
+    "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-LINK#3] 活动无效时【完整规则】打开邀请规则帮助文章，没有活动规则入口",
+    "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#1] 活动无效（reward_enabled=false）：规则卡最后一条是「不发放」一句，无奖励活动卡",
+    "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#2] reward_enabled 缺省按无效：规则卡最后一条仍是「不发放」一句，无奖励活动卡",
+    "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#3] 活动有效（经桥 app.getConfig 读 invite）：奖励活动卡用 tip_inviter，规则卡不再有「不发放」一句",
+    "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#4] 奖励金额取配置 reward_amount_fen=1550，按 BR-TEXT-10 显示 ¥15.5",
+    "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#4] 奖励金额取配置 reward_amount_fen=5，按 BR-TEXT-10 显示 ¥0.05",
+    "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#4] 奖励金额取配置 reward_amount_fen=123456，按 BR-TEXT-10 显示 ¥1234.56",
+    "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#4] 奖励金额取配置 reward_amount_fen=800，按 BR-TEXT-10 显示 ¥8",
+    "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#5] can_invite=false 时即使活动有效也不显示奖励活动卡与奖励句",
+    "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#6] 经桥读取配置失败时按活动无效处理，邀请码照常显示",
+    "test/spec/frontend/h5-invite/invite-source.test.ts > [AC-F1-05a-ROUTE#1] InviteShare 路由 /invite 懒加载邀请好友页面",
+    "test/spec/frontend/h5-invite/invite-source.test.ts > [AC-F1-05a-SOURCE#1] 经应用级 API 与 @couli/money 格式化，桥能力只用登记的方法，不绕过客户端",
+    "test/spec/frontend/h5-invite/invite-source.test.ts > [AC-F1-05a-SOURCE#2] 无字典键的文案集中在 texts/invite.ts，页面源码无中文与字面颜色",
+    "test/spec/frontend/h5-invite/invite-source.test.ts > [AC-F1-05a-SOURCE#3] 契约字典已有的键不在 texts/invite.ts 重复登记中文",
+    "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#1] 请求在途显示加载态，返回后才显示邀请码",
+    "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#2] 应用级客户端取 H5 令牌后 GET /v1/invites/me，带 Bearer 且无查询参数",
+    "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#3] 可邀请：邀请码卡（邀请码与三个按钮）、人数卡与邀请规则卡",
+    "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#4] 直邀人数按 direct_count 显示，0 人也照常显示",
+    "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#5] can_invite=false：暂不可邀请说明不给原因，人数卡与邀请规则卡照常，无邀请码卡与按钮",
+    "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#11] can_invite=false：【联系客服】经 cs.open 打开客服，一次点击一次调用、不带用户标识",
+    "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#6] 30413：显示 error.30413，隐藏邀请与分享入口，不重试",
+    "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#7] 10005：兜底显示 error.10005，无邀请入口",
+    "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#8] 加载失败显示 H5 失败文案，点重试只再请求一次 getMyInvite",
+    "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#9] 断网显示错误态与重试，恢复后重试成功",
+    "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#10] 10405 显示错误态且 getMyInvite 只发一次，不自动重放",
+    "test/spec/frontend/h5-invite/invite.browser.test.ts > [AC-F1-05a-BROWSER#1] h5-invite",
+    "test/spec/frontend/h5-invite/invite.browser.test.ts > [AC-F1-05a-BROWSER#2] h5-invite-reward",
+    "test/spec/frontend/h5-invite/invite.browser.test.ts > [AC-F1-05a-BROWSER#3] h5-invite-unavailable",
+    "test/spec/frontend/h5-invite/invite.browser.test.ts > [AC-F1-05a-BROWSER#4] h5-invite-dark",
+    "test/spec/frontend/h5-invite/invite.browser.test.ts > [AC-F1-05a-BROWSER#5] 320 窄屏与两倍字号仍显示邀请码、按钮与奖励句且不横向溢出"
+  ],
+  "risk_note": "H5 invite page /invite (apps/h5 pages/invite, routes.ts, texts/invite.ts; display only, no money logic). Finalized spec design/specs/app-invite-share.md (App hi-fi batch 3); contract getMyInvite (implemented) and the invite section of getConfig read through the bridge app.getConfig. Invite code card with copy code / copy link / save poster (preview via media.previewImage, save via media.saveImage, album denial notice, no save while poster_url is null); invited count card linking to Ledger; rule card whose last item is the no-reward sentence only while the reward is off; reward card only while invite.reward_enabled (amount by BR-TEXT-10); unavailable state with a contact button (cs.open, no account identifiers) and the rule card; 30413 / 10005 / offline / load failure; dark mode; placeholder before any hook when no API client (frozen h5-shell route test). Route adds about 8.5 KiB gzip, initial plus route about 138 KiB of the 150 KiB budget. Known gap reported: help_links has no keys for the two rule articles, so their ids are fixed in the page until the contract adds them. Rule tests written by an independent Claude in three calls (Codex out of quota until 2026-10-30; ledger tester claude-independent, approvals id 36); Claude spec-test review r3 pass; red on the test machine (red/3: 38 red, 0 problems). Implementation by Opus 5.5; test machine verify-fast/3 and browser/2 green. Adversarial review by a fresh independent Claude (tools/agent/claude-run.sh). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 1,
+      "note": "round 1 pass, two S2 (fixed help article ids until the contract adds help_links keys; a live campaign without an amount is shown as off) tracked in followups; independent Claude because Codex hit its usage limit until 2026-10-30"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (2 S1: config must come through the bridge app.getConfig, the bridge whitelist lacked app.getConfig and cs.open; 3 S2) plus a red/1 load error, round 2 fail (1 S1: the rule card helper found only the title row), round 3 pass; the tests were written by an independent Claude (claude-run.sh)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "F1-05a",
+  "spec_ref": "f3fea9b041e41bc0d398380f6ad09555d1d6ba32",
+  "spec_commit": "031ad247cdbb17b1c8fc7a2f631a9ed9b978e75e",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "031ad247cdbb17b1c8fc7a2f631a9ed9b978e75e",
+      "tree": "fe258e7cb83cfcf7c9b4f4600045b245d31d010b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T08:02:28Z",
+      "finished_at": "2026-10-23T08:02:38Z",
+      "gate": {
+        "commit": "7fc32d261702b2a2165260a9b89624d72c9c532b",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "red_tests": [
+        "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-COPY#1] 【复制邀请码】经 clipboard.write 写入 invite_code 并提示已复制邀请码",
+        "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-COPY#2] 【复制邀请链接】写入 landing_url 原样并提示已复制邀请链接",
+        "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-COPY#3] 复制按钮的读屏名带对象且两个按钮可区分",
+        "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-POSTER#1] 【保存海报】预览服务端出图 poster_url，保存走 media.saveImage",
+        "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-POSTER#2] poster_url 为空时保存海报不可用或不出现，点了也不调用保存",
+        "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-POSTER#3] 相册权限被拒（saved=false）显示被拒提示，页面不崩溃可继续操作",
+        "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-LINK#1] 人数卡说明「在余额流水里查看」进入 Ledger",
+        "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-LINK#2] 活动有效时【活动规则】与【完整规则】打开不同的帮助文章",
+        "test/spec/frontend/h5-invite/invite-actions.test.ts > [AC-F1-05a-LINK#3] 活动无效时【完整规则】打开邀请规则帮助文章，没有活动规则入口",
+        "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#1] 活动无效（reward_enabled=false）：规则卡最后一条是「不发放」一句，无奖励活动卡",
+        "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#2] reward_enabled 缺省按无效：规则卡最后一条仍是「不发放」一句，无奖励活动卡",
+        "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#3] 活动有效（经桥 app.getConfig 读 invite）：奖励活动卡用 tip_inviter，规则卡不再有「不发放」一句",
+        "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#4] 奖励金额取配置 reward_amount_fen=1550，按 BR-TEXT-10 显示 ¥15.5",
+        "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#4] 奖励金额取配置 reward_amount_fen=5，按 BR-TEXT-10 显示 ¥0.05",
+        "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#4] 奖励金额取配置 reward_amount_fen=123456，按 BR-TEXT-10 显示 ¥1234.56",
+        "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#4] 奖励金额取配置 reward_amount_fen=800，按 BR-TEXT-10 显示 ¥8",
+        "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#5] can_invite=false 时即使活动有效也不显示奖励活动卡与奖励句",
+        "test/spec/frontend/h5-invite/invite-reward.test.ts > [AC-F1-05a-REWARD#6] 经桥读取配置失败时按活动无效处理，邀请码照常显示",
+        "test/spec/frontend/h5-invite/invite-source.test.ts > [AC-F1-05a-ROUTE#1] InviteShare 路由 /invite 懒加载邀请好友页面",
+        "test/spec/frontend/h5-invite/invite-source.test.ts > [AC-F1-05a-SOURCE#1] 经应用级 API 与 @couli/money 格式化，桥能力只用登记的方法，不绕过客户端",
+        "test/spec/frontend/h5-invite/invite-source.test.ts > [AC-F1-05a-SOURCE#2] 无字典键的文案集中在 texts/invite.ts，页面源码无中文与字面颜色",
+        "test/spec/frontend/h5-invite/invite-source.test.ts > [AC-F1-05a-SOURCE#3] 契约字典已有的键不在 texts/invite.ts 重复登记中文",
+        "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#1] 请求在途显示加载态，返回后才显示邀请码",
+        "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#2] 应用级客户端取 H5 令牌后 GET /v1/invites/me，带 Bearer 且无查询参数",
+        "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#3] 可邀请：邀请码卡（邀请码与三个按钮）、人数卡与邀请规则卡",
+        "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#4] 直邀人数按 direct_count 显示，0 人也照常显示",
+        "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#5] can_invite=false：暂不可邀请说明不给原因，人数卡与邀请规则卡照常，无邀请码卡与按钮",
+        "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#11] can_invite=false：【联系客服】经 cs.open 打开客服，一次点击一次调用、不带用户标识",
+        "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#6] 30413：显示 error.30413，隐藏邀请与分享入口，不重试",
+        "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#7] 10005：兜底显示 error.10005，无邀请入口",
+        "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#8] 加载失败显示 H5 失败文案，点重试只再请求一次 getMyInvite",
+        "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#9] 断网显示错误态与重试，恢复后重试成功",
+        "test/spec/frontend/h5-invite/invite-states.test.ts > [AC-F1-05a-STATES#10] 10405 显示错误态且 getMyInvite 只发一次，不自动重放",
+        "test/spec/frontend/h5-invite/invite.browser.test.ts > [AC-F1-05a-BROWSER#1] h5-invite",
+        "test/spec/frontend/h5-invite/invite.browser.test.ts > [AC-F1-05a-BROWSER#2] h5-invite-reward",
+        "test/spec/frontend/h5-invite/invite.browser.test.ts > [AC-F1-05a-BROWSER#3] h5-invite-unavailable",
+        "test/spec/frontend/h5-invite/invite.browser.test.ts > [AC-F1-05a-BROWSER#4] h5-invite-dark",
+        "test/spec/frontend/h5-invite/invite.browser.test.ts > [AC-F1-05a-BROWSER#5] 320 窄屏与两倍字号仍显示邀请码、按钮与奖励句且不横向溢出"
+      ],
+      "expected": [
+        "test/spec/frontend/h5-invite/invite-actions.test.ts",
+        "test/spec/frontend/h5-invite/invite-reward.test.ts",
+        "test/spec/frontend/h5-invite/invite-source.test.ts",
+        "test/spec/frontend/h5-invite/invite-states.test.ts",
+        "test/spec/frontend/h5-invite/invite.browser.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "0c98ccd5c3a48306306ff854db874600d59af8bb4e229fb7eb54929836390bc0"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8ac51ad49e4561ad8b4979b9fe6e6ade9232cf3c63aafbbf62baa4d529f5a5c5"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "94e4281826b877e1786e723ad5938f2cb749c4af",
+    "specs": "d7811035a75370ee35f2ae060353af8353377700"
+  }
+}
