@@ -9,29 +9,97 @@
 // (hasNonTerminal answers false; TODO(规划/11 §2.3) there — blocked on B2-05); the balance port is
 // the one app.module assembles for B1-15d over the ledger's getBalances, on the caller's transaction.
 //
+// B1-15g: the same token's runner also does the processing round (cleanup, Apple revocation, done)
+// — no second timer. Each round runs processing first and the cooling-period expiry second, so a
+// request the expiry moves to processing is cleaned in the next round. The processing ports come
+// from app.module's factories (cleanup ports, closing adjustment, paid-out withdrawals, Apple
+// revoker, push unbinding); FIELD_CRYPTO is optional (without it an Apple attempt counts as failed).
+//
 // Also compiled by the `test` project: a class decorator only (dependencies through factories).
 import { type DynamicModule, type FactoryProvider, Module } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
-import { CLOCK, DB, ROOT_LOGGER, type Clock, type RootLogger } from '../platform/index.ts';
+import {
+  CLOCK,
+  DB,
+  FIELD_CRYPTO,
+  ROOT_LOGGER,
+  type Clock,
+  type FieldCrypto,
+  type RootLogger,
+} from '../platform/index.ts';
 import {
   createDeletionExpiry,
   deletionExpiryToken,
   type DeletionCalendarConfigReader,
   type DeletionExpiry,
 } from './application/deletion-expiry.ts';
+import {
+  createDeletionProcessing,
+  type DeletionProcessing,
+} from './application/deletion-processing.ts';
+import type { AfterSessionsRevoked } from './application/revoke-sessions.ts';
+import type { AppleTokenRevoker } from './ports/apple-token-revoker.ts';
 import type { DeletionBalanceReader } from './ports/deletion-balance.ts';
-import type { WithdrawalNonTerminalReader } from './ports/withdrawal-in-flight.ts';
+import type {
+  DeletionCleanupPorts,
+  DeletionClosingAdjustmentReader,
+} from './ports/deletion-cleanup.ts';
+import type {
+  WithdrawalNonTerminalReader,
+  WithdrawalSucceededReader,
+} from './ports/withdrawal-in-flight.ts';
 
 export interface IdentityDeletionExpiryModuleOptions {
   readonly calendarConfig: Omit<FactoryProvider<DeletionCalendarConfigReader>, 'provide'>;
-  readonly withdrawals: Omit<FactoryProvider<WithdrawalNonTerminalReader>, 'provide'>;
+  /** hasNonTerminal for the expiry, hasSucceeded for the processing round's real-name step. */
+  readonly withdrawals: Omit<
+    FactoryProvider<WithdrawalNonTerminalReader & WithdrawalSucceededReader>,
+    'provide'
+  >;
   readonly balance: Omit<FactoryProvider<DeletionBalanceReader>, 'provide'>;
+  /** B1-15g: the owning modules' cleanup ports (or the unavailable markers). */
+  readonly cleanup: Omit<FactoryProvider<DeletionCleanupPorts>, 'provide'>;
+  /** B1-15g: the closing adjustment gate of the completion. */
+  readonly funds: Omit<FactoryProvider<DeletionClosingAdjustmentReader>, 'provide'>;
+  /** B1-15g: Sign in with Apple revocation. */
+  readonly apple: Omit<FactoryProvider<AppleTokenRevoker>, 'provide'>;
+  /** B1-15g: the push token unbinding of the sessions the cleanup revokes. */
+  readonly afterRevoked: Omit<FactoryProvider<AfterSessionsRevoked>, 'provide'>;
+}
+
+/** One round: processing first, then the cooling-period expiry (brief B1-15g §9.2 #1). */
+function combined(
+  processing: DeletionProcessing,
+  expiry: DeletionExpiry,
+  logger: RootLogger,
+): DeletionExpiry {
+  return Object.freeze({
+    async runOnce(stopping: () => boolean = () => false): Promise<{ scanned: number }> {
+      let processed = 0;
+      try {
+        processed = (await processing.runOnce(stopping)).scanned;
+      } catch (error) {
+        // A failed processing round (its scan) does not keep the expiry from running.
+        logger.warn(
+          { error_name: error instanceof Error ? error.name : typeof error },
+          'identity_deletion_processing_failed',
+        );
+      }
+      if (stopping()) return { scanned: processed };
+      const expired = await expiry.runOnce(stopping);
+      return { scanned: processed + expired.scanned };
+    },
+  });
 }
 
 const CALENDAR_CONFIG = Symbol('IDENTITY_DELETION_EXPIRY_CALENDAR_CONFIG');
 const WITHDRAWALS = Symbol('IDENTITY_DELETION_EXPIRY_WITHDRAWALS');
 const BALANCE = Symbol('IDENTITY_DELETION_EXPIRY_BALANCE');
+const CLEANUP = Symbol('IDENTITY_DELETION_PROCESSING_CLEANUP');
+const FUNDS = Symbol('IDENTITY_DELETION_PROCESSING_FUNDS');
+const APPLE = Symbol('IDENTITY_DELETION_PROCESSING_APPLE');
+const AFTER_REVOKED = Symbol('IDENTITY_DELETION_PROCESSING_AFTER_REVOKED');
 
 @Module({})
 export class IdentityDeletionExpiryModule {
@@ -42,6 +110,10 @@ export class IdentityDeletionExpiryModule {
         { ...options.calendarConfig, provide: CALENDAR_CONFIG },
         { ...options.withdrawals, provide: WITHDRAWALS },
         { ...options.balance, provide: BALANCE },
+        { ...options.cleanup, provide: CLEANUP },
+        { ...options.funds, provide: FUNDS },
+        { ...options.apple, provide: APPLE },
+        { ...options.afterRevoked, provide: AFTER_REVOKED },
         {
           provide: deletionExpiryToken(),
           inject: [
@@ -50,21 +122,50 @@ export class IdentityDeletionExpiryModule {
             CALENDAR_CONFIG,
             WITHDRAWALS,
             BALANCE,
+            CLEANUP,
+            FUNDS,
+            APPLE,
+            AFTER_REVOKED,
             { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
           ],
           useFactory: (
             clock: Clock,
             logger: RootLogger,
             calendar: DeletionCalendarConfigReader,
-            withdrawals: WithdrawalNonTerminalReader,
+            withdrawals: WithdrawalNonTerminalReader & WithdrawalSucceededReader,
             balance: DeletionBalanceReader,
+            cleanup: DeletionCleanupPorts,
+            funds: DeletionClosingAdjustmentReader,
+            apple: AppleTokenRevoker,
+            afterRevoked: AfterSessionsRevoked,
             db?: Kysely<Database>,
+            crypto?: FieldCrypto,
           ): DeletionExpiry | null => {
             if (db === undefined) {
               logger.info({}, 'identity_deletion_expiry_disabled');
               return null;
             }
-            return createDeletionExpiry({ db, clock, logger, withdrawals, balance, calendar });
+            const expiry = createDeletionExpiry({
+              db,
+              clock,
+              logger,
+              withdrawals,
+              balance,
+              calendar,
+            });
+            const processing = createDeletionProcessing({
+              db,
+              clock,
+              logger,
+              ...(crypto === undefined || crypto === null ? {} : { crypto }),
+              cleanup,
+              funds,
+              withdrawals,
+              apple,
+              afterRevoked,
+            });
+            return combined(processing, expiry, logger);
           },
         },
       ],

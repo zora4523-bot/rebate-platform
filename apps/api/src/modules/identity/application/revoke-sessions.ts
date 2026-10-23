@@ -26,7 +26,9 @@ export type SessionRevokeReason =
   | 'merged'
   | 'banned'
   | 'admin_revoked'
-  | 'device_revoked';
+  | 'device_revoked'
+  /** B1-15g: the deletion cleanup (BR-ID-28). */
+  | 'account_deleted';
 
 /** The sids are sessions of `context.app_id` (sid is unique per app, 0013). */
 export type AfterSessionsRevoked = (
@@ -44,6 +46,7 @@ const REVOKE_REASONS: ReadonlySet<unknown> = new Set<SessionRevokeReason>([
   'banned',
   'admin_revoked',
   'device_revoked',
+  'account_deleted',
 ]);
 
 function checkReason(reason: unknown): void {

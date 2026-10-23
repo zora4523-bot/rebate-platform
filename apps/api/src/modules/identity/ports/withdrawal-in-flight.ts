@@ -35,3 +35,12 @@ export interface WithdrawalInFlightReader {
 export interface WithdrawalNonTerminalReader {
   hasNonTerminal(trx: Transaction<DB>, input: WithdrawalInFlightInput): Promise<boolean>;
 }
+
+/**
+ * B1-15g (D10-137 ②): true = the user has at least one withdrawal that was paid out (the deletion
+ * cleanup then keeps the real-name ciphertext, marked tax_retained). Same caller transaction, no
+ * writes, no logging. Until B2-05 app.module's implementation truthfully answers false.
+ */
+export interface WithdrawalSucceededReader {
+  hasSucceeded(trx: Transaction<DB>, input: WithdrawalInFlightInput): Promise<boolean>;
+}
