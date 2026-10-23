@@ -27,5 +27,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/admin/admins-permissions/**'
-status: todo
-pr: null
+status: done
+pr: 1467
