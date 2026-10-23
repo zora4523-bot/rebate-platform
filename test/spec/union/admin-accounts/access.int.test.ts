@@ -65,7 +65,10 @@ it('[B1-22d][BR-ID-24 ③] 超管不勾权限点也能查看、发起与录入�
   const t = await targets(s, s);
   expect((await listed(s)).length).toBe(2);
   await accepted(await s.result(t.oauth.id, t.session.session_id), 'result');
-  await accepted(await s.put(t.manual.id, { credential: 'fixture-super-manual-key' }), 'credential');
+  await accepted(
+    await s.put(t.manual.id, { credential: 'fixture-super-manual-key' }),
+    'credential',
+  );
   await rejected(await s.start(t.oauth.id, {}, { token: null }), 'start', 10003, { tier: 'totp' });
 });
 

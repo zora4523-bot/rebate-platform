@@ -228,8 +228,6 @@ it('[B1-22d][D10-196] 再次录入照常轮换：始终只有一条当前凭据�
   expect(decrypt(s, current[0]!.access_token_cipher, ACCESS_CONTEXT)).toBe(second);
   expect((await audits(s)).filter((a) => a.action === ACTIONS.credential)).toHaveLength(2);
   const account = await accountRow(s, row.id);
-  expect(ms(account.auth_expires_at)).toBe(
-    s.f.clock.now().getTime() + KEY_VALIDITY_DAYS * DAY_MS,
-  );
+  expect(ms(account.auth_expires_at)).toBe(s.f.clock.now().getTime() + KEY_VALIDITY_DAYS * DAY_MS);
   expectNoSecrets([await audits(s), s.f.lines], [first, second]);
 });

@@ -189,10 +189,7 @@ export async function setup(
 export type Scenario = Awaited<ReturnType<typeof setup>>;
 type Where = Pick<Scenario, 'h' | 'f' | 'appId'>;
 
-export async function seedAccount(
-  s: Where,
-  patch: Partial<Insertable<DB['union_accounts']>> = {},
-) {
+export async function seedAccount(s: Where, patch: Partial<Insertable<DB['union_accounts']>> = {}) {
   const id = randomUUID();
   return s.h.db
     .insertInto('union_accounts')
