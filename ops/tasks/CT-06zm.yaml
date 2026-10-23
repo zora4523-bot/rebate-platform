@@ -1,0 +1,25 @@
+id: CT-06zm
+repo: rebate-platform
+title: CT-06zm：ci.yml 在 labeled / unlabeled 事件上复用同一被测树上已通过的 verify-fast / verify-props / verify-int，不再整轮重跑
+type: guard-change
+# 2026-10-23 入账（ops 线，编排裁定 D10-242，12:27 派工，编排优先插队）。起因：CI 排队是头号瓶颈（12:3x 排队 83 个作业、近 1 小时
+# 零合并）；ci.yml 对 labeled / unlabeled 也整轮重跑三个 verify，而加标签不改代码，几乎每个 PR（land.sh 自加标签、编排加标签）都跑两遍。
+# 做法：新增轻量作业 verify-reuse，只在 pull_request 的 labeled / unlabeled 事件上运行，用 Actions API 查本工作流（ci.yml）对同一 PR 头 SHA
+# 的较早运行：三个 verify 作业各自要有 latest attempt 结论为 success、且带 verified-<作业>-<被测树> 产物（各 verify 作业所有步骤通过后才上传，
+# <被测树> 为它检出的提交的树）。被测树按本次事件检出的合并提交计算并比对：base 在其后前进（合并结果不同）就整轮重跑——比「同一头 SHA」
+# 更严，避免分支保护不要求与 main 同步时漏测新合并结果。失败 / 取消 / 跳过的结果都不算；其他事件、找不到记录、API 出错都照旧全跑。
+# 三个 verify 作业 needs verify-reuse、if: !cancelled() 且复用不成立；ci-gate 只在 verify-reuse 成功且输出 reuse=true 时把「跳过」算作通过。
+# guard-git / evidence / protected-paths 等照旧在标签事件上跑。tools/ci/check-workflows.ts 规则照守（无 paths 过滤、只汇总作业为必需检查、
+# action 固定 SHA：upload-artifact v7.0.2 cf430e03）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/workflows/ci.yml'
+  - 'ops/tasks/CT-06zm.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

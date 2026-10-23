@@ -13,7 +13,8 @@ name: ci
 on:
   pull_request:
     # labeled / unlabeled: guard-git reads the owner approval label, so the check reruns when it
-    # is added or removed.
+    # is added or removed; the verify jobs then reuse an earlier pass on the same tested tree
+    # (verify-reuse, D10-242).
     types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
@@ -26,7 +27,71 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  verify-reuse:
+    # D10-242 (CT-06zm): an owner-approval label added or removed changes no code, so on a
+    # labeled / unlabeled event the three verify jobs reuse what already passed instead of running
+    # a second time. Reuse holds only when, for EACH of verify-fast, verify-props and verify-int,
+    # an earlier run of this workflow file (ci.yml) for the same PR head SHA has that job's latest
+    # attempt concluded `success` AND carries the artifact `verified-<job>-<tree>` that the job
+    # uploads only after all of its steps passed, <tree> being the tree it tested. The tree of
+    # this event's checkout (the PR merge commit as of now) must equal it, so a base branch that
+    # moved since then (a different merge result) means a full run; failed, cancelled or skipped
+    # jobs never count. Any other event, a missing record or an API error: reuse is not output and
+    # everything runs as before. guard-git and the other workflows still run on label events.
+    if: >-
+      github.event_name == 'pull_request' &&
+      (github.event.action == 'labeled' || github.event.action == 'unlabeled')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      reuse: ${{ steps.find.outputs.reuse }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: find
+        run: |
+          set -euo pipefail
+          tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tree of this event: $tree (head $HEAD_SHA)"
+          runs=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$HEAD_SHA&per_page=100" \
+            --jq ".workflow_runs[] | select(.id != $RUN_ID) | .id")
+          reuse=true
+          for job in verify-fast verify-props verify-int; do
+            found=''
+            for run in $runs; do
+              ok=$(gh api "repos/$REPO/actions/runs/$run/jobs?filter=latest&per_page=100" \
+                --jq "[.jobs[] | select(.name == \"$job\" and .conclusion == \"success\" and .head_sha == \"$HEAD_SHA\")] | length")
+              [ "$ok" -ge 1 ] || continue
+              art=$(gh api "repos/$REPO/actions/runs/$run/artifacts?name=verified-$job-$tree&per_page=100" \
+                --jq "[.artifacts[] | select(.name == \"verified-$job-$tree\" and .expired == false)] | length")
+              [ "$art" -ge 1 ] || continue
+              found=$run
+              break
+            done
+            if [ -n "$found" ]; then
+              echo "$job: passed on this tree in run $found, reused"
+            else
+              echo "$job: no passing run on this tree, runs in full"
+              reuse=false
+            fi
+          done
+          echo "reuse=$reuse" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_ID: ${{ github.run_id }}
+
   verify-fast:
+    # D10-242 (CT-06zm): skipped only when verify-reuse found a success of this very job on the
+    # same tested tree (see verify-reuse); every other event, and any failure of verify-reuse,
+    # runs it in full.
+    needs: [verify-reuse]
+    if: ${{ !cancelled() && needs.verify-reuse.outputs.reuse != 'true' }}
     runs-on: ubuntu-latest
     # 20 → 35 (2026-10-14): main's verify-fast reached 19m50s on 2026-10-10 and PRs are being
     # cancelled at the cap (two 100k-run property passes plus pnpm verify:fast).
@@ -40,6 +105,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The tree this job tests (the PR merge commit, or the pushed commit): recorded before
+      # anything runs, uploaded under that name only when every step passed (D10-242).
+      - id: tested
+        run: echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -59,6 +128,13 @@ jobs:
       - run: pnpm verify:fast
         env:
           COULI_SPEC_REPO: ${{ github.workspace }}/.tmp/spec-repo
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-verify-fast-${{ steps.tested.outputs.tree }}
+          # The artifact name is the record (job and tested tree); the file is only a placeholder.
+          path: .nvmrc
+          retention-days: 7
+          if-no-files-found: error
 
   verify-props:
     # PR property tier (规划/11 §4.2): 100k runs with the fixed seed, then 100k runs with a seed
@@ -67,6 +143,11 @@ jobs:
     # with it instead of pushing it past its cap; same steps, same runs, same seeds. The spec
     # tests resolve workspace packages from source (vitest.shared.ts `couli-src`) and read no
     # planning text, so neither `pnpm build` nor the planning repository is needed here.
+    # D10-242 (CT-06zm): skipped only when verify-reuse found a success of this very job on the
+    # same tested tree (see verify-reuse); every other event, and any failure of verify-reuse,
+    # runs it in full.
+    needs: [verify-reuse]
+    if: ${{ !cancelled() && needs.verify-reuse.outputs.reuse != 'true' }}
     runs-on: ubuntu-latest
     # 35 → 60 (2026-10-19, CT-06z): green in the 30 latest ci runs 16m40s–32m13s, p90 31m30s
     # (90% of the cap); the maximum with a 1.5× margin, rounded up to a multiple of 5, is 50,
@@ -76,6 +157,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The tree this job tests (the PR merge commit, or the pushed commit): recorded before
+      # anything runs, uploaded under that name only when every step passed (D10-242).
+      - id: tested
+        run: echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -95,11 +180,23 @@ jobs:
         env:
           PROP_RUNS: '100000'
           COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-verify-props-${{ steps.tested.outputs.tree }}
+          # The artifact name is the record (job and tested tree); the file is only a placeholder.
+          path: .nvmrc
+          retention-days: 7
+          if-no-files-found: error
 
   verify-int:
     # Needs Docker (Testcontainers starts the one-shot PostgreSQL): ubuntu-latest, never ubuntu-slim.
     # The one-shot Redis of the integration tests (TEST_REDIS_URL) is a service container with
     # the image of infra/local/compose.yaml and tools/ops/verify-container.sh, data on tmpfs only.
+    # D10-242 (CT-06zm): skipped only when verify-reuse found a success of this very job on the
+    # same tested tree (see verify-reuse); every other event, and any failure of verify-reuse,
+    # runs it in full.
+    needs: [verify-reuse]
+    if: ${{ !cancelled() && needs.verify-reuse.outputs.reuse != 'true' }}
     runs-on: ubuntu-latest
     # 30 → 45 (2026-10-19, CT-06z): green in the 30 latest ci runs 17m05s–29m16s, p90 29m05s
     # (97% of the cap); 45 is the maximum with a 1.5× margin, rounded up to a multiple of 5.
@@ -121,6 +218,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The tree this job tests (the PR merge commit, or the pushed commit): recorded before
+      # anything runs, uploaded under that name only when every step passed (D10-242).
+      - id: tested
+        run: echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -201,6 +302,13 @@ jobs:
       # Screenshots stay in test/.tmp/build-smoke/screenshots/ on the runner.
       - run: pnpm --filter @couli/spec-tests run test:smoke
       - run: pnpm db:check
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-verify-int-${{ steps.tested.outputs.tree }}
+          # The artifact name is the record (job and tested tree); the file is only a placeholder.
+          path: .nvmrc
+          retention-days: 7
+          if-no-files-found: error
 
   guard-git:
     # Git-dependent guards run from the BASE copy of tools/guard against the PR tree, so a branch
@@ -271,16 +379,19 @@ jobs:
   ci-gate:
     # Summary job: the only required check of this workflow (ops/branch-protection.json).
     if: always()
-    needs: [verify-fast, verify-props, verify-int, guard-git]
+    needs: [verify-reuse, verify-fast, verify-props, verify-int, guard-git]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Summarise
         run: |
-          echo "verify-fast=${FAST} verify-props=${PROPS} verify-int=${INT} guard-git=${GUARD} event=${EVENT}"
-          [ "$FAST" = success ] || exit 1
-          [ "$PROPS" = success ] || exit 1
-          [ "$INT" = success ] || exit 1
+          echo "verify-fast=${FAST} verify-props=${PROPS} verify-int=${INT} guard-git=${GUARD} event=${EVENT} reuse=${REUSE_RESULT}/${REUSE}"
+          # A verify job passes when it succeeded, or (label event, D10-242) when verify-reuse
+          # itself succeeded and found its success on the same tested tree, so it was skipped.
+          reused() { [ "$REUSE_RESULT" = success ] && [ "$REUSE" = true ] && [ "$1" = skipped ]; }
+          [ "$FAST" = success ] || reused "$FAST" || exit 1
+          [ "$PROPS" = success ] || reused "$PROPS" || exit 1
+          [ "$INT" = success ] || reused "$INT" || exit 1
           if [ "$EVENT" = pull_request ]; then
             [ "$GUARD" = success ] || exit 1
           else
@@ -291,4 +402,6 @@ jobs:
           PROPS: ${{ needs.verify-props.result }}
           INT: ${{ needs.verify-int.result }}
           GUARD: ${{ needs.guard-git.result }}
+          REUSE_RESULT: ${{ needs.verify-reuse.result }}
+          REUSE: ${{ needs.verify-reuse.outputs.reuse }}
           EVENT: ${{ github.event_name }}
