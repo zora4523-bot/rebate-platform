@@ -27,4 +27,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/notification/push-send/**'
-status: todo
+status: done
+pr: 1202
