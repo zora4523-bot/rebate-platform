@@ -11,6 +11,13 @@ on:
 permissions:
   contents: read
 
+# CT-06zy (D10-301): a newer run of the same pull request cancels the older one, as in ci.yml.
+# A push to main gets a group of its own (its commit), so main runs neither cancel nor queue behind
+# each other: each push is checked to the end.
+concurrency:
+  group: gitleaks-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   gitleaks:
     runs-on: ubuntu-latest
