@@ -1,0 +1,29 @@
+id: CT-06zq
+repo: rebate-platform
+title: CT-06zq：.dependency-cruiser.cjs 把 agent 依赖改为白名单（BR-AI-02 ③）并加再导出中转检查——agent 只许 parsing / catalog / linking / orders / content / taolijin / identity、ledger|payout read.ts，外加 platform 与 union（类型）；不得依赖 modules 以外的 apps/api/src 文件；白名单模块的 index.ts 不得再导出别的模块的值（D10-273 ②）
+type: guard-change
+# 2026-10-23 入账（agent 线，编排裁定 D10-273 ②）。承接 CT-06zo（#1397）独立评审 S2：BR-AI-02 ③ 是白名单而 CT-06zo 是黑名单（agent 值导入
+# admin / risk / notification 不受限），且可经非模块文件或别的模块 index 再导出中转。做法：加四条只收紧的规则（白名单、union 只许类型、
+# 禁非模块文件、白名单模块 index 不得再导出别模块的值）。白名单在 BR 原文之外多两项：platform（基础设施内核，agent 现有 39 处引用）与
+# union（tools/quote 1 处类型引用）——均为现状，报编排决定是否回写 BR-AI-02 ③。主干全仓 depcruise 0 违规；违规样例 6 种全被拦、合法样例
+# 3 种不误伤（PR 说明列出）。未覆盖：`import Def, { type T }` 被判 type-only（依赖检查局限，需 eslint 规则，eslint 配置属第二类保护另议）。
+# 评审后收紧（同 PR）：白名单模块 index 对别模块不许有非类型依赖；白名单模块任一文件不许再导出别模块的值；禁中转扩到 apps|test|tools|specs|db 的非 modules 文件；新增 packages-not-on-apps。均主干 0 违规。
+# 第 2 轮评审后再收紧（同 PR）：禁中转改为「modules / packages / node_modules 以外的任何文件」，白名单模块两条规则也覆盖非模块文件中转。
+# 仍未覆盖（依赖检查做不到，需 AST 检查，另开任务）：白名单模块的非 index 文件先 import 别模块的值、再以自己名义 export，由 index `export *` 转出；以及 `import Def, { type T }`。
+# CI 修正（同 PR）：tools/ci/depcruise-rules.test.ts 夹具 packages/domain/src/bad-app.ts 同时被新规则 packages-not-on-apps 拦下（应拦），只增不删补该期望；并给 CT-06zo / CT-06zq 的 9 条 agent 规则各补一个违规夹具与期望（该测试的宗旨是每条规则都能失败）。
+# 改 .dependency-cruiser.cjs 属第二类保护路径、tools/ci/depcruise-rules.test.ts 属第三类保护路径（tools/**）；收紧改动由编排按 approvals #24 核对后加标签（D10-266 / D10-273）。非 task 分支，不带证据文件。
+refs: [BR-AI-02]
+refs_hash:
+  BR-AI-02: 61014cc4d222
+deps: [CT-06zo]
+paths:
+  - '.dependency-cruiser.cjs'
+  - 'tools/ci/depcruise-rules.test.ts'
+  - 'ops/tasks/CT-06zq.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm depcruise'
+  - 'pnpm verify'
+status: todo
+pr: null

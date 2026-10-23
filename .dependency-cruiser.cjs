@@ -115,6 +115,93 @@ module.exports = {
       from: { path: '^apps/api/src/modules/agent/' },
       to: { path: '^apps/api/src/modules/(linking|orders)/', dependencyTypesNot: ['type-only'] },
     },
+    // CT-06zq (D10-273 ②): BR-AI-02 ③ is an allow-list. The agent module may depend only on the
+    // listed modules (plus platform, the shared infrastructure kernel, and union types, both in
+    // use before this rule and reported to the orchestrator), and no file outside the modules may
+    // relay another module's values to it.
+    {
+      name: 'agent-modules-allow-list',
+      comment:
+        'BR-AI-02 ③: apps/api/src/modules/agent/** may depend only on parsing, catalog, linking, ' +
+        'orders, content, taolijin and identity (their index.ts; linking / orders / identity ' +
+        'types only, see the rules above), ledger/read.ts and payout/read.ts, plus platform ' +
+        '(infrastructure) and union (types only, below) (CT-06zq).',
+      severity: 'error',
+      from: { path: '^apps/api/src/modules/agent/' },
+      to: {
+        path: '^apps/api/src/modules/',
+        pathNot: [
+          '^apps/api/src/modules/(agent|parsing|catalog|linking|orders|content|taolijin|identity|platform|union)/',
+          '^apps/api/src/modules/(ledger|payout)/read\\.ts$',
+        ],
+      },
+    },
+    {
+      name: 'agent-union-types-only',
+      comment:
+        'The agent module uses union only for types (the quote tool); union adapters reach it ' +
+        'through injected ports, never as values (CT-06zq).',
+      severity: 'error',
+      from: { path: '^apps/api/src/modules/agent/' },
+      to: { path: '^apps/api/src/modules/union/', dependencyTypesNot: ['type-only'] },
+    },
+    {
+      name: 'agent-no-relay-outside-modules',
+      comment:
+        'No relay: the agent module depends only on apps/api/src/modules, workspace packages and ' +
+        'npm / node built-ins; any other repo file (root, apps, test, tools, config, docs, ops …) ' +
+        'could re-export a forbidden value (CT-06zo / CT-06zq reviews). Packages are covered by ' +
+        'packages-not-on-apps (CT-06zq).',
+      severity: 'error',
+      from: { path: '^apps/api/src/modules/agent/' },
+      to: {
+        pathNot: ['^apps/api/src/modules/', '^packages/', '(^|/)node_modules/'],
+        couldNotResolve: false,
+        dependencyTypesNot: ['core'],
+      },
+    },
+    {
+      name: 'agent-allowed-indexes-no-value-relay',
+      comment:
+        'No relay: the index.ts of a module the agent may import has no value dependency on ' +
+        'another module at all (types only), so it cannot import-then-export or wrap another ' +
+        "module's values for the agent (CT-06zq, tightened after its review).",
+      severity: 'error',
+      from: {
+        path: '^apps/api/src/modules/(parsing|catalog|linking|orders|content|taolijin|identity|platform|union)/index\\.ts$',
+      },
+      to: {
+        pathNot: ['^apps/api/src/modules/$1/', '^packages/', '(^|/)node_modules/'],
+        couldNotResolve: false,
+        dependencyTypesNot: ['core', 'type-only'],
+      },
+    },
+    {
+      name: 'agent-allowed-modules-no-value-reexport',
+      comment:
+        'No relay: no file of a module the agent may import re-exports values of another module ' +
+        '(export … from / export * from), so its index cannot pass them on through an inner file ' +
+        '(CT-06zq review).',
+      severity: 'error',
+      from: {
+        path: '^apps/api/src/modules/(parsing|catalog|linking|orders|content|taolijin|identity|platform|union)/',
+      },
+      to: {
+        pathNot: ['^apps/api/src/modules/$1/', '^packages/', '(^|/)node_modules/'],
+        couldNotResolve: false,
+        dependencyTypes: ['export'],
+        dependencyTypesNot: ['core', 'type-only'],
+      },
+    },
+    {
+      name: 'packages-not-on-apps',
+      comment:
+        'Workspace packages never depend on the apps (layering; also closes a relay of module ' +
+        'values to the agent module through a package, CT-06zq review).',
+      severity: 'error',
+      from: { path: '^packages/' },
+      to: { path: '^apps/' },
+    },
     {
       name: 'pg-boss-only-behind-job-queue',
       comment:
