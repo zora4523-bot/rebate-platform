@@ -8414,7 +8414,7 @@ export const CONTRACT_ROUTE_SCHEMAS = {
           "type": "integer",
           "format": "int32",
           "minimum": 0,
-          "description": "row_version of the row as read (users' risk state, a union binding); plus 1 on every\nchange. The CAS value `expected_row_version` of the writes.\n"
+          "description": "row_version of the row as read (users' risk state, a union binding, an admin account);\nplus 1 on every change. The CAS value `expected_row_version` of the writes.\n"
         },
         "reason": {
           "type": "string",
@@ -8507,7 +8507,7 @@ export const CONTRACT_ROUTE_SCHEMAS = {
           "type": "integer",
           "format": "int32",
           "minimum": 0,
-          "description": "row_version of the row as read (users' risk state, a union binding); plus 1 on every\nchange. The CAS value `expected_row_version` of the writes.\n"
+          "description": "row_version of the row as read (users' risk state, a union binding, an admin account);\nplus 1 on every change. The CAS value `expected_row_version` of the writes.\n"
         },
         "reason": {
           "type": "string",

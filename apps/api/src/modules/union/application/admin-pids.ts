@@ -1,6 +1,7 @@
 // Admin console PIDs (推广位) (B1-22h; contract adminListUnionPids / adminCreateUnionPid /
 // adminUpdateUnionPid / adminActivateUnionPid / adminRetireUnionPid; BR-ATTR-02 正文与细则「后台登记
-// 与启停」「后台修改与启用的裁定」, BR-ATTR-28; 编排裁定 D10-152, D10-159, D10-221 A).
+// 与启停」「后台修改与启用的裁定」, BR-ATTR-28; 编排裁定 D10-152, D10-159, D10-221 A as amended
+// by D10-231).
 // union is the only writer of union_pids and union_accounts. The controller has already checked
 // the admin_token, the permission point union.pid and (writes) the totp step-up through platform's
 // AdminOperationGuard; the app and the admin are the guard's actor, never request fields.
@@ -14,10 +15,12 @@
 //     is checked as a new one; moving to an account without sync_start_at writes it at the time
 //     of the change; hjy confirmation fields are left as they are;
 //   - activate: the screenshot is checked from its bytes and stored before the transaction (a
-//     failing store changes no row); the transaction first takes a scene-level advisory lock
-//     (app × platform × pid_scene), then locks every row of that scene in id order (FOR UPDATE),
-//     so concurrent activations in one scene serialize without a phantom, and an active row
-//     there, of any union account, refuses with 30155 without changing anything (D10-221 A);
+//     failing store changes no row); the transaction first takes an advisory lock on the
+//     PID's app × platform × union_account_id × pid_scene, then locks every row of that account's
+//     scene in id order (FOR UPDATE), so concurrent activations there serialize without a
+//     phantom, and an active row of the same union account and scene refuses with 30155 without
+//     changing anything. Other union accounts' active rows in the scene do not count: each
+//     account may have one active PID per scene (D10-231, amending D10-221 A);
 //   - retire: active → retired only.
 // The frozen B1-19 service (../pids/service.ts) keeps its command-line semantics (super account,
 // taobao mm_ PID form, warn-only cross-account activation); this console path follows the contract
@@ -59,7 +62,10 @@ export class AdminPidConflictError extends Error {
   }
 }
 
-/** 30155: another PID of the same app × platform × pid_scene is active. */
+/**
+ * 30155: another PID of the same app × platform × union_account_id × pid_scene is active
+ * (D10-231; other union accounts' active PIDs in the scene do not count).
+ */
 export class AdminPidSceneActiveError extends Error {
   constructor() {
     super('union pid: the scene already has an active PID');
@@ -398,7 +404,8 @@ export class AdminUnionPids {
 
   /**
    * adminActivateUnionPid. Order of checks (contract): pid_id → the 花卷云 items missing → the
-   * screenshot → other parts → state / row_version (20902) → an active PID in the scene (30155).
+   * screenshot → other parts → state / row_version (20902) → an active PID of the same union
+   * account in the scene (30155, D10-231).
    * The screenshot is stored only after every check passed on a plain read, and the row is written
    * only after the store succeeded; the transaction repeats the state and scene checks under lock.
    */
@@ -466,6 +473,7 @@ export class AdminUnionPids {
       .select('id')
       .where('app_id', '=', actor.appId)
       .where('platform', '=', current.platform)
+      .where('union_account_id', '=', current.union_account_id)
       .where('pid_scene', '=', current.pid_scene)
       .where('status', '=', 'active')
       .where('id', '<>', current.id)
@@ -479,33 +487,39 @@ export class AdminUnionPids {
     await this.#options.evidence.put({ key, bytes: evidence, contentType: inspected.contentType });
 
     const row = await db.transaction().execute(async (trx) => {
-      // Scene mutex first (review r1 S1): a transaction-level advisory lock keyed by app ×
-      // platform × pid_scene. Row locks alone miss a phantom: the scene SELECT's snapshot is
-      // taken before it waits on a row lock, so a same-scene row inserted (or moved here) and
-      // activated by another transaction meanwhile would stay invisible to it. Every activation
-      // takes this lock before its SELECT, so that SELECT starts (READ COMMITTED: a new statement
-      // snapshot) only after any earlier activation of the scene committed or rolled back.
+      // Mutex first (review r1 S1): a transaction-level advisory lock keyed by app × platform ×
+      // union_account_id × pid_scene, the unit of D10-231's "at most one active". It is keyed by
+      // the account too (not the whole scene) because activations of different accounts never
+      // conflict and need not wait for each other. Row locks alone miss a phantom: the SELECT's
+      // snapshot is taken before it waits on a row lock, so a row of this account and scene
+      // inserted (or moved here) and activated by another transaction meanwhile would stay
+      // invisible to it. Every activation takes this lock before its SELECT, so that SELECT starts
+      // (READ COMMITTED: a new statement snapshot) only after any earlier activation of the same
+      // account and scene committed or rolled back.
       // Registration and PATCH need not take it: they only ever write pending rows, and a pending
       // row becomes active only through this path. Lock order is always advisory → row locks;
       // PATCH and retire take row locks only, so no cycle.
       await sql`select pg_advisory_xact_lock(hashtextextended(${sceneLockKey(
         actor.appId,
         current.platform,
+        current.union_account_id,
         current.pid_scene,
       )}, 0))`.execute(trx);
-      // Every row of the scene, in id order, locked (D10-221 A): the active check below reads
-      // committed state, and a concurrent PATCH or retire of these rows waits for this commit.
+      // Every row of this account's scene, in id order, locked (D10-231): the active check below
+      // reads committed state, and a concurrent PATCH or retire of these rows waits for this
+      // commit. A row moved to another account or scene meanwhile is not returned → 20902.
       const scene = await trx
         .selectFrom('union_pids')
         .selectAll()
         .where('app_id', '=', actor.appId)
         .where('platform', '=', current.platform)
+        .where('union_account_id', '=', current.union_account_id)
         .where('pid_scene', '=', current.pid_scene)
         .orderBy('id', 'asc')
         .forUpdate()
         .execute();
       const before = scene.find((candidate) => candidate.id === current.id);
-      // Gone from the scene: changed meanwhile (row_version moved).
+      // Gone from this account's scene: changed meanwhile (row_version moved).
       if (
         before === undefined ||
         !canTransitionPid(before.status, 'active') ||
@@ -662,9 +676,12 @@ export class AdminUnionPids {
   }
 }
 
-/** Advisory-lock key text of one app × platform × pid_scene (hashed in SQL to a bigint). */
-function sceneLockKey(appId: string, platform: string, scene: string): string {
-  return `union_pid_scene:${appId}:${platform}:${scene}`;
+/**
+ * Advisory-lock key text of one app × platform × union_account_id × pid_scene (hashed in SQL to a
+ * bigint; D10-231's unit of "at most one active").
+ */
+function sceneLockKey(appId: string, platform: string, accountId: string, scene: string): string {
+  return `union_pid_scene:${appId}:${platform}:${accountId.toLowerCase()}:${scene}`;
 }
 
 /** The five editable fields of a row (the update audit's before / after). */
