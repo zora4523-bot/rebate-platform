@@ -62,6 +62,39 @@
 //    destructured from, a receiver whose name (or parameter type) contains redis; a non-literal
 //    key on a database-handle or *redis* receiver (db[m]); a sql local used other than as a tag
 //    or as sql.x (const s = sql).
+//
+// Known gaps and known over-strict cases (kept here as the single source; the CT-06zu ledger points here).
+// 未覆盖（宁严勿漏之外的已知缺口，靠数据库授权或后续任务兜底）：调用 app.* 函数（含 SECURITY DEFINER）或 pgboss.send 间接读写；
+// 把 db 交给别的模块的读取器（如 createContentReader({ db })）后由对方读别的表；require / 动态 import 取 kysely；Reflect.get
+//    /
+// Reflect.apply 按字符串取方法；把句柄改名成不像数据库句柄的名字后 .query(变量)；SQL 的 TABLE x 简写、FETCH … FROM 游标之外的少见语法；
+// platform 导出的建连接函数（属依赖规则）；以及第 2 轮评审 S2-1..4、7 列出的：Kysely 读方法实参是 sql 原生片段再 .as()（如
+// selectFrom(sql.table('orders').as('o'))、sql`app.users`.as('u')、先存变量再 .as）当表表达式；分步构造查询时另起一句的 .fr
+//   om / .using
+// （qb = qb.from('orders')、dq = dq.using('orders')）；CTE 名的作用范围过大（Kysely 侧按整个文件收集 .with 名，SQL 侧按整段文
+//   本收集
+// WITH 名，同名真表会被放行）；单引号字符串里的 SQL（DO '…' / DO E'…' 匿名块、DO 块里 EXECUTE 'DROP TABLE app.orders' /
+// EXECUTE format('UPDATE app.orders …') 动态 SQL、query_to_xml / query_to_xml_and_xmlschema / cursor
+//   _to_xml 执行字符串 SQL）；
+// Redis 的 Lua 脚本越过命名空间访问别的键（eval 里 redis.call 任意键，含 app.module 的
+// AGENT_DAILY_COUNTER_SCRIPT）；app.module 把 redis 交给别模块的工厂（如 createClaimCounter(redis)）再转交 agent；清
+//   单里的 catalog-cache
+// 被直接交给 agent 端口（如 agentStreamPorts({ cache: redis.namespace(PRODUCT_CACHE_NAMESPACE) })，④ 只看命名空间
+//   值不看交给谁）；
+// 接收者先做类型断言再用非字面量下标（(db as any)['execute' + 'Query']、app.module 里 (redis as any)[k]）；Redis 句柄改名成不
+//   含 redis
+// 的名字后间接取 namespace（cache.namespace.bind(cache)）；以及第 3 轮评审 out_of_scope 与第 4 轮补记的：计算属性键解构取方法
+// （const { [k]: put } = db; put('orders')）；SchemaModule 以不叫 schema、也非解构自 schema 的形参或变量传入后再调 DDL 方
+//   法
+// （(m: SchemaModule) => m.dropTable('orders')）。
+// 已知仍从严（误报方向，不构成漏洞）：CASE … THEN lock / ELSE drop 这类 THEN / ELSE 后的裸列名、看不透的插值后紧跟的不带 AS 的
+// 裸别名（SELECT ${col} lock）仍按语句开头判；.schema 接收链上任意位置调用 DDL 同名方法（x.schema.parse(y).dropTable）也报；app.m
+//   odule 里非直接调用地取
+// namespace 仍不看接收者一律违规。
+// 主干现状：Kysely 写 7 张、读 6 张，SQL 写 8 张、读 3 张，全是 agent_* 表（另有 unnest 函数读）；命名空间 agent_cancel、
+// app.module 里 agent_daily 与 catalog-cache——上线即绿。测试 6 条 [AC-CT-06zu#1..6]，各自先断言主干零违规、再断言确实扫到东西、再跑
+// 违规 / 合法内存样例自证。Codex 至 10-30 不可用：新鲜独立 Claude 写、另一新鲜独立 Claude 复审（approvals #36）。非 task 分支，
+// 不带证据文件，编排按 approvals #24 核对后加标签。
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
