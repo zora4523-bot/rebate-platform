@@ -19,6 +19,11 @@
 // wrong code, a rejected new password or a lock keeps the ticket usable (restored with its
 // original expiry); success consumes it. Login, lock, password change, binding and logout are
 // audited (no password, secret, code, ticket or token in any audit row).
+// B1-34h: a ticket also stands for the account as read when it was issued — issued before the
+// account's voiding instant (disable, authenticator reset, initial password regeneration; the
+// issue instant is taken before the account read) or on another row_version than the account now
+// has, it is 10001 login_ticket_expired; the login writes are conditional on that row_version,
+// and a void that lands right after the final write revokes the new session again.
 //
 // Pure module (no decorators, erasable syntax, type-only imports from the platform barrel).
 import type { Clock, FieldCrypto } from '../../platform/index.ts';
@@ -180,10 +185,16 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
     return null;
   };
 
-  /** Issues the ticket of the next step (a bind ticket carries a fresh, encrypted secret). */
+  /**
+   * Issues the ticket of the next step (a bind ticket carries a fresh, encrypted secret).
+   * `issuedAtMs` is the Clock instant before `account` was read (B1-34h review r1 S1): a voiding
+   * change committed after that read voids the ticket even when the ticket is stored later; the
+   * ticket also carries the row_version it was issued on, which every later step requires.
+   */
   const issueStep = async (
     account: AdminAccount,
     next: AdminLoginStep,
+    issuedAtMs: number,
   ): Promise<LoginStepResult> => {
     const expiresAt = later(clock.now(), ADMIN_TICKET_TTL_MS);
     let secretCipher: string | undefined;
@@ -202,13 +213,23 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
       adminId: account.id,
       appId: account.appId,
       expiresAtMs: expiresAt.getTime(),
-      issuedAtMs: clock.now().getTime(),
+      issuedAtMs,
+      rowVersion: account.rowVersion,
       ...(secretCipher === undefined ? {} : { secretCipher }),
     });
     return { code: 0, next, ticket, expiresAt };
   };
 
-  const issueSession = async (account: AdminAccount): Promise<SessionResult> => {
+  /**
+   * Issues the admin_token. A voiding change whose instant falls after `openedAtMs` (the read the
+   * login write was conditional on) may have committed just after that write: the session is then
+   * revoked again and the step answers 10001 (B1-34h review r1 S1). A void written after this
+   * check is later than the token's iat, so the request check refuses the token itself.
+   */
+  const issueSession = async (
+    account: AdminAccount,
+    openedAtMs: number,
+  ): Promise<SessionResult | AdminAuthFailure> => {
     const { token, claims } = await tokens.issue({ adminId: account.id, appId: account.appId });
     const now = clock.now();
     const expiresAt = later(now, claims.expiresAt * 1000 - now.getTime());
@@ -218,15 +239,31 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
       expiresAtMs: expiresAt.getTime(),
       lastSeenMs: now.getTime(),
     });
+    if (await voidedSince(account, openedAtMs)) {
+      await sessions.revoke(claims.sessionId);
+      return EXPIRED;
+    }
     return { code: 0, token, expiresAt, idleTimeoutSec: ADMIN_IDLE_TIMEOUT_SEC };
   };
 
-  /** True when the account voided its credentials after this ticket was issued (B1-34h). */
-  const voided = async (record: TicketRecord): Promise<boolean> => {
+  /** True when the account voided its credentials after `sinceMs` (B1-34h). */
+  async function voidedSince(
+    account: { readonly appId: string; readonly id: string },
+    sinceMs: number,
+  ): Promise<boolean> {
     if (deps.revocations === undefined) return false;
-    const at = await deps.revocations.voidedAt({ appId: record.appId, adminId: record.adminId });
-    return issuedBeforeVoid(record.issuedAtMs ?? 0, at);
-  };
+    const at = await deps.revocations.voidedAt({ appId: account.appId, adminId: account.id });
+    return issuedBeforeVoid(sinceMs, at);
+  }
+
+  /**
+   * The ticket no longer stands for `account` as just read: voided after it was issued, or the
+   * account changed since (row_version; absent on a ticket from before B1-34h). Checked after the
+   * account read, so a change committed between the two is caught by one or the other.
+   */
+  const stale = async (record: TicketRecord, account: AdminAccount): Promise<boolean> =>
+    record.rowVersion !== account.rowVersion ||
+    (await voidedSince(account, record.issuedAtMs ?? 0));
 
   /**
    * Takes the ticket for `step` and loads its account. Expired, missing, foreign-step tickets and
@@ -236,18 +273,21 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
   const open = async (
     step: AdminLoginStep,
     ticket: string,
-  ): Promise<{ taken: TakenTicket; account: AdminAccount } | AdminAuthFailure> => {
+  ): Promise<
+    { taken: TakenTicket; account: AdminAccount; openedAtMs: number } | AdminAuthFailure
+  > => {
     const taken = await tickets.take(step, ticket);
     if (taken === undefined) return EXPIRED;
-    if (taken.record.expiresAtMs <= clock.now().getTime()) return EXPIRED;
-    if (await voided(taken.record)) return EXPIRED;
+    const openedAtMs = clock.now().getTime();
+    if (taken.record.expiresAtMs <= openedAtMs) return EXPIRED;
     const account = await accounts.byId(taken.record.appId, taken.record.adminId);
     if (account === undefined || account.status !== ADMIN_ACTIVE_STATUS) return EXPIRED;
+    if (await stale(taken.record, account)) return EXPIRED;
     if (isLocked(account.lockedUntil, clock.now())) {
       await tickets.restore(taken);
       return locked(account.lockedUntil!);
     }
-    return { taken, account };
+    return { taken, account, openedAtMs };
   };
 
   /** A wrong code: count it, keep the ticket usable, answer 20002 (or 10009 when it locked). */
@@ -274,6 +314,7 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
 
   return {
     async login({ username, password, ip }) {
+      const readAtMs = clock.now().getTime();
       const account = await accounts.byLoginName(username);
       if (account === undefined) {
         await verifyAdminPassword(password, await decoyHash());
@@ -289,13 +330,14 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
           passwordMustChange: account.passwordMustChange,
           totpBound: account.totpBoundAt !== null && account.totpSecretCipher !== null,
         }),
+        readAtMs,
       );
     },
 
     async changeInitialPassword({ ticket, newPassword, ip }) {
       const opened = await open('change_password', ticket);
       if ('code' in opened) return opened;
-      const { taken, account } = opened;
+      const { taken, account, openedAtMs } = opened;
       if (!account.passwordMustChange) return EXPIRED;
       if (
         !newPasswordShapeOk(newPassword, account.loginName) ||
@@ -319,6 +361,8 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
           passwordMustChange: false,
           totpBound: account.totpBoundAt !== null && account.totpSecretCipher !== null,
         }),
+        // The password change does not move row_version: the next ticket stands on the same read.
+        openedAtMs,
       );
     },
 
@@ -326,13 +370,13 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
       const record = await tickets.peek('bind_totp', ticket);
       if (record === undefined || record.secretCipher === undefined) return EXPIRED;
       if (record.expiresAtMs <= clock.now().getTime()) return EXPIRED;
-      if (await voided(record)) return EXPIRED;
       const account = await accounts.byId(record.appId, record.adminId);
       if (
         account === undefined ||
         account.status !== ADMIN_ACTIVE_STATUS ||
         account.passwordMustChange ||
-        account.totpBoundAt !== null
+        account.totpBoundAt !== null ||
+        (await stale(record, account))
       ) {
         return EXPIRED;
       }
@@ -347,7 +391,7 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
     async bindTotp({ ticket, code, ip }) {
       const opened = await open('bind_totp', ticket);
       if ('code' in opened) return opened;
-      const { taken, account } = opened;
+      const { taken, account, openedAtMs } = opened;
       const cipher = taken.record.secretCipher;
       if (cipher === undefined || account.passwordMustChange || account.totpBoundAt !== null) {
         return EXPIRED;
@@ -371,13 +415,13 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
         loginAudit(account, ip, 'bind_totp'),
       ]);
       if (outcome.kind !== 'written') return await notWritten(taken, outcome);
-      return await issueSession(account);
+      return await issueSession(account, openedAtMs);
     },
 
     async verifyTotp({ ticket, code, ip }) {
       const opened = await open('totp', ticket);
       if ('code' in opened) return opened;
-      const { taken, account } = opened;
+      const { taken, account, openedAtMs } = opened;
       if (account.totpSecretCipher === null || account.totpBoundAt === null) return EXPIRED;
       const ok = await totp.verify({
         appId: account.appId,
@@ -388,7 +432,7 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
       if (!ok) return await wrongCode(taken, account, ip, 'totp_invalid');
       const outcome = await accounts.completeLogin(account, [loginAudit(account, ip, 'totp')]);
       if (outcome.kind !== 'written') return await notWritten(taken, outcome);
-      return await issueSession(account);
+      return await issueSession(account, openedAtMs);
     },
 
     async logout({ adminId, appId, sessionId, ip }) {

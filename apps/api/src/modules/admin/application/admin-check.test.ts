@@ -38,6 +38,7 @@ async function setup(account: Partial<AdminAccount>, voidedAt: number | null) {
     passwordMustChange: false,
     failedLoginCount: 0,
     lockedUntil: null,
+    rowVersion: 0,
     ...account,
   };
   const accounts = { byId: async () => row } as unknown as AdminAccounts;

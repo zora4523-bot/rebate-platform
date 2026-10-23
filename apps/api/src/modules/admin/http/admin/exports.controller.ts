@@ -28,6 +28,7 @@ import {
 } from '../../../platform/index.ts';
 import {
   EXPORT_PII_POINT,
+  ExportCreatorInactiveError,
   ExportFieldsError,
   ExportPermissionError,
   ExportStatusError,
@@ -36,6 +37,7 @@ import {
   type ExportResource,
   type ExportStatus,
 } from '../../application/admin-exports.ts';
+import { ADMIN_MESSAGES } from '../../application/admin-check.ts';
 import { STEP_UP_MESSAGES } from '../../application/permission-guard.ts';
 import { ADMIN_EXPORTS } from '../../application/tokens.ts';
 import { ADMIN_PAGE_DEFAULT, ADMIN_PAGE_SIZE_DEFAULT } from '../../domain/admin-view.ts';
@@ -90,6 +92,10 @@ function commandOf(body: Schema<'AdminExportCreateRequest'>): ExportCreateComman
 
 /** The use case's refusals as error envelopes; anything else is left to the global handling. */
 function refusal(error: unknown, traceId: string): unknown {
+  if (error instanceof ExportCreatorInactiveError) {
+    // Disabled meanwhile (B1-34h): the same answer as its next admin_token check.
+    return new HttpException({ code: 10001, msg: ADMIN_MESSAGES[10001], trace_id: traceId }, 401);
+  }
   if (error instanceof ExportFieldsError) {
     const refused = fieldsErrorEnvelope(error.fields, traceId);
     return new HttpException(refused.body, refused.statusCode);
