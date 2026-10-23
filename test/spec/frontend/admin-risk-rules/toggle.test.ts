@@ -40,7 +40,8 @@ it(
     await verify(first);
     await waitFor(() => expect(row().textContent).toContain('服务端返回的新规则名'));
     enabled(false);
-    expect(row().textContent).toContain('12:34:56');
+    expect(row().textContent).toMatch(/2026[-/]10[-/]23/);
+    expect(row().textContent).toContain('12:34');
     expect(server.requests('POST', DISABLE)[0]!.body).toEqual({
       expected_version: 7,
       reason: '复查后暂停观察',

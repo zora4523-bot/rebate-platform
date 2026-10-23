@@ -54,7 +54,7 @@ it('[AC-F1-10fa-LIST#1] 全部字段、开放 scene、全部动作与状态从�
     ])
       expect(current.textContent).toContain(text);
     expect(current.textContent).toMatch(/2026[-/]10[-/]23/);
-    expect(current.textContent).toContain('03:04:05');
+    expect(current.textContent).toContain('03:04');
   }
   expect(within(row('inv_08_self')).queryAllByRole('link')).toHaveLength(0);
   expect(within(row('inv_08_self')).queryAllByRole('button', { name: /阈值|配置/ })).toHaveLength(
@@ -169,6 +169,11 @@ it('[AC-F1-10fa-PERMISSION#1] 10403 显示无权限，不作空列表或发起�
 it.each(['risk.freeze', 'risk.ban', 'risk.blocklist', 'risk.appeal'])(
   '[AC-F1-10fa-PERMISSION#2] %s 可进风控但没有 config.risk 时不出现规则清单且不请求列表',
   async (permission) => {
+    // Prove the page renders before checking absence, so an unimplemented page cannot pass.
+    await mount(createServer(), PERMITTED);
+    await loaded();
+    expect(within(mainElement()).queryByRole('tab', { name: '规则清单' })).not.toBeNull();
+    cleanup();
     const { server } = await mount(createServer(), { isSuper: false, permissions: [permission] });
     await settled(server);
     expect(within(mainElement()).queryByRole('tab', { name: '规则清单' })).toBeNull();

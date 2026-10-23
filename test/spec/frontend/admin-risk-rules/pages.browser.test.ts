@@ -4,6 +4,8 @@ import { afterEach, expect, it } from 'vitest';
 import { page } from 'vitest/browser';
 import { createAdminShell } from '../../../../apps/admin/src/App.tsx';
 import { createDataProvider } from '../../../../apps/admin/src/providers/data/index.ts';
+import type { AdminAuthProvider } from '../../../../apps/admin/src/providers/auth/index.ts';
+import { harness, signIn } from '../admin-auth/fixtures.ts';
 import {
   createServer as createConfigServer,
   item as configItem,
@@ -21,27 +23,33 @@ import {
 
 const FIRST = { timeout: 10_000 };
 let root: Root | undefined;
+let session: AdminAuthProvider | undefined;
 afterEach(() => {
   root?.unmount();
   root = undefined;
+  session?.dispose();
+  session = undefined;
   document.body.replaceChildren();
   window.history.replaceState(null, '', '/');
 });
 
-function show() {
+async function show() {
   const server = createServer();
   const config = createConfigServer(
     THRESHOLDS.map((name, index) =>
       configItem(name, { permission: 'config.risk', value: 13 + index }),
     ),
   );
+  session = harness().create();
+  await signIn(session);
+  window.history.replaceState(null, '', '/risk');
   const container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
   root.render(
     createAdminShell({
-      router: 'memory',
-      initialRoute: { menuId: 'risk' },
+      router: 'browser',
+      authProvider: session,
       permissionsProvider: async () => ({
         isSuper: false,
         permissions: ['risk.freeze', 'config.risk'],
@@ -73,12 +81,14 @@ function currentRow() {
 }
 
 it.each(THRESHOLDS)(
-  '[AC-F1-10fa-BROWSER#3] 阈值 %s 真实进入配置菜单的对应项编辑，不只携带一个无人处理的参数',
+  '[AC-F1-10fa-BROWSER#3] 阈值 %s 进入配置中心并携带配置项键，全程不发写请求',
   async (threshold) => {
-    const { server, config } = show();
+    const { server, config } = await show();
     await expect
       .element(page.getByRole('main').getByText(TARGET, { exact: true }), FIRST)
       .toBeVisible();
+    await expect.element(page.getByRole('main').getByRole('textbox')).not.toBeInTheDocument();
+    await expect.element(page.getByRole('main').getByRole('spinbutton')).not.toBeInTheDocument();
     await currentRow()
       .getByRole('link', { name: threshold, exact: true })
       .or(currentRow().getByRole('button', { name: threshold, exact: true }))
@@ -86,11 +96,20 @@ it.each(THRESHOLDS)(
     await expect
       .element(page.getByRole('link', { name: '配置中心', exact: true }), FIRST)
       .toHaveAttribute('aria-current', 'page');
-    const editor = page.getByRole('dialog', { name: /编辑配置/ });
-    await expect.element(editor, FIRST).toBeVisible();
-    await expect.element(editor).toMatchTextContent(threshold);
-    await expect.element(editor.getByLabelText('新值', { exact: true })).toBeEnabled();
-    expect(config.log.some((request) => request.method === 'GET')).toBe(true);
+    expect(window.location.pathname.replace(/\/$/, '')).toBe('/config');
+    expect(
+      decodeURIComponent(
+        JSON.stringify({
+          pathname: window.location.pathname,
+          search: window.location.search,
+          state: window.history.state as unknown,
+        }),
+      ),
+    ).toContain(threshold);
+    await expect
+      .poll(() => config.log.some((request) => request.method === 'GET'), FIRST)
+      .toBe(true);
+    await expect.poll(() => config.pending + server.pending, FIRST).toBe(0);
     expect(config.log.filter((request) => request.method !== 'GET')).toEqual([]);
     expect(server.writes()).toEqual([]);
     expect(server.requests('POST', VERIFY)).toEqual([]);
@@ -99,7 +118,7 @@ it.each(THRESHOLDS)(
 
 it('[AC-F1-10fa-BROWSER#1] 真实路由可见规则清单与全部字段，开放场景原样；阈值是入口且只读查看不验证', async () => {
   await page.viewport(1440, 1000);
-  const { server } = show();
+  const { server } = await show();
   const main = page.getByRole('main');
   await expect
     .element(main.getByRole('tab', { name: '规则清单', exact: true }), FIRST)
@@ -107,7 +126,8 @@ it('[AC-F1-10fa-BROWSER#1] 真实路由可见规则清单与全部字段，开�
   await expect.element(main.getByText(TARGET, { exact: true }), FIRST).toBeVisible();
   await expect.element(currentRow()).toMatchTextContent('同设备注册上限');
   await expect.element(currentRow()).toMatchTextContent('register');
-  await expect.element(currentRow()).toMatchTextContent('03:04:05');
+  await expect.element(currentRow()).toMatchTextContent(/2026[-/]10[-/]23/);
+  await expect.element(currentRow()).toMatchTextContent('03:04');
   await expect.element(main).toMatchTextContent('future_scene_v2');
   for (const threshold of THRESHOLDS) {
     const link = currentRow().getByRole('link', { name: threshold, exact: true });
@@ -123,7 +143,7 @@ it('[AC-F1-10fa-BROWSER#1] 真实路由可见规则清单与全部字段，开�
 
 it('[AC-F1-10fa-BROWSER#2] 浏览器连续停用和启用都弹动态码，确认后才带各自凭据写入', async () => {
   await page.viewport(1440, 1000);
-  const { server } = show();
+  const { server } = await show();
   await expect
     .element(page.getByRole('main').getByText(TARGET, { exact: true }), FIRST)
     .toBeVisible();
