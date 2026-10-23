@@ -1,0 +1,25 @@
+id: B1-01zzh
+repo: rebate-platform
+title: 指标导出与队列 / 同步类告警规则：api / worker / payout 各在内网端口暴露 Prometheus /metrics（不进 OAS）——各队列 failed 数（含 <queue>.dead）、最老已到期 created 的 evt.* 任务年龄、队列积压、同步水位延迟；告警规则 YAML 放 infra/monitoring/rules/**
+type: impl
+# 2026-10-23 入账（be-codex；编排 D10-183 ② R-01、D10-193 ③：/metrics 与告警规则 YAML 由 be 做，采集、Alertmanager 路由、pg_exporter 归 ops B1-25）。依据：规划 02 §11（任一队列 failed>0、最老事件任务、积压）、§13 告警表（最老未取走 evt.* 只计 created 且已到期 >60 秒、同步水位延迟 >30 分钟；Prometheus 格式；通用 5 分钟粒度）；ADR-0001 §4.2 第 14、22 项（不开 persistQueueStats；积压只计 created 且已到期）。
+# 指标按 SQL 采集（pgboss.job、app.sync_cursors），只读；内网端口与开关走 platform/config；告警规则打 severity 标签，资金类在 B1-01zzi。死信计数复用 B1-01zzg 的 <queue>.dead 口径。依赖 prom-client 由 B1-01zzha 加。
+refs: []
+refs_hash: {}
+deps: [B1-01zzg, B1-01zzha]
+paths:
+  - 'apps/api/src/modules/platform/metrics/**'
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/entry.ts'
+  - 'infra/monitoring/rules/**'
+  - 'infra/staging/compose.yaml'
+  - '.env.example'
+test_paths:
+  - 'test/spec/platform/metrics/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/metrics/**'
+status: todo
