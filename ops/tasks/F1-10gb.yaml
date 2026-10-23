@@ -4,6 +4,7 @@ title: 后台联盟账号与推广位（二）推广位页签：推广位列表�
 type: impl
 # 2026-10-23 入账（前端线 f1-frontend-7，编排 03:50 派工）。05 F1-10g、01 F-ADM-16；契约 CT-24h（union-pids，planned，后端 B1-22 在 union 线做——按契约用假服务端开发，联调另开子任务）。
 # 与 F1-10ga 共用 /unions 页与 texts/unions.ts，排在其后（deps）。无定稿页面规格，视觉沿用后台通用列表 / 对话框。approvals 第 34 条：Claude 实现，Codex 写测试与评审。
+# 2026-10-23 tester 改 claude-independent：Codex 用量上限至 10-30 01:09，编排 10:27 统一改用独立 Claude（approvals #36，tools/agent/claude-run.sh）。
 refs: []
 refs_hash: {}
 deps: [CT-24h, F1-10ga]
@@ -13,7 +14,7 @@ paths:
 test_paths:
   - 'test/spec/frontend/admin-union-pids/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/frontend/admin-union-pids/**'
