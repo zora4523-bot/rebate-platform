@@ -75,6 +75,8 @@ export interface FeeTaxCalculator {
     fee_fen: bigint;
     tax_fen: bigint;
     net_fen: bigint;
+    fee_rule_id?: string | null;
+    tax_rule_version?: string | null;
   }>;
 }
 
@@ -265,6 +267,26 @@ export async function readWithdrawLimits(
   };
 }
 
+/** BR-WDR-03 ① alone (the post-miss switch check): missing row = on, invalid value = default. */
+export async function readWithdrawEnabled(
+  handle: Kysely<DB>,
+  appId: string,
+  options: {
+    config: PayoutConfigPort;
+    logger: { warn(fields: Record<string, unknown>, message: string): void };
+  },
+): Promise<boolean> {
+  const row = await options.config.configValue(appId, WITHDRAW_CONFIG_KEYS.enabled, handle);
+  if (row === null) return DEFAULT_WITHDRAW_LIMITS.enabled;
+  const parsed = parseSwitch(row.value);
+  if (parsed.ok) return parsed.value;
+  options.logger.warn(
+    { app_id: appId, config_key: WITHDRAW_CONFIG_KEYS.enabled },
+    'withdraw_config_default',
+  );
+  return DEFAULT_WITHDRAW_LIMITS.enabled;
+}
+
 /** A hold is in effect while not released and either open-ended or not yet due (BR-WDR-05). */
 export function holdActive(hold: WithdrawHold, now: Date): boolean {
   if (hold.released_at !== null) return false;
@@ -276,79 +298,86 @@ function isMinor(birthDate: string, now: Date): boolean {
   return !isAtLeastAge(birthDate, 18, now);
 }
 
+/**
+ * The chain's input gathered from the ports on `handle` (B2-05d reads it twice: outside the locks
+ * and again under them, so every read goes to the handle given, never to a second connection).
+ */
+export async function readWithdrawInput(
+  handle: Kysely<DB>,
+  actor: WithdrawActor,
+  stepUpValid: boolean,
+  options: WithdrawRulesOptions,
+): Promise<WithdrawRuleInput> {
+  const now = options.clock.now();
+  const subjectKey = { app_id: actor.appId, user_id: actor.userId };
+  const limits = await readWithdrawLimits(handle, actor, options);
+  const riskRows = await options.risk.read(handle, {
+    appId: actor.appId,
+    userIds: [actor.userId],
+  });
+  const risk = riskRows.get(actor.userId) ?? { state: 'normal' as const, frozen_until: null };
+  // A freeze with an expiry is over the moment the clock reaches it (B1-02zf: judged here).
+  const expired =
+    risk.state === 'frozen' &&
+    risk.frozen_until !== null &&
+    risk.frozen_until.getTime() <= now.getTime();
+  const riskState = expired ? 'normal' : risk.state;
+  const prev =
+    riskState === 'appealing'
+      ? await options.appeal.read(handle, { appId: actor.appId, userId: actor.userId })
+      : null;
+  const reverify = await options.reverify.check(handle, actor);
+  const realnameStatus = await options.realname.read(handle, subjectKey);
+  const realname = await options.realname.verified(handle, subjectKey);
+  const subject = await options.subject.read(handle, {
+    appId: actor.appId,
+    userId: actor.userId,
+  });
+  const payeeHmac = subject === null ? null : subject.payee_hmac;
+  const payoutMethod = subject === null ? null : subject.payout_method;
+  const blocked = await options.blocklist.read(handle, {
+    ...actor,
+    payeeHmac,
+    payoutMethod,
+    now,
+  });
+  const signed = await options.laborAgreementSigned(handle, subjectKey);
+  const balances = await options.ledger.getBalances(handle, {
+    appId: actor.appId,
+    userIds: [actor.userId],
+  });
+  const own = balances.find((row) => row.app_id === actor.appId && row.user_id === actor.userId);
+  const holds = await options.holds.read(handle, actor);
+  const usage = await options.usage.read(handle, { ...actor, now, payeeHmac });
+  // ⑬ is judged only when the gate is on: the port's order reads are skipped otherwise.
+  const selfPurchase = limits.self_purchase_enabled
+    ? await options.selfPurchase.read(handle, { ...actor, now })
+    : { count: 0, amount_fen: 0n };
+  return {
+    limits,
+    step_up_valid: stepUpValid,
+    risk_state: riskState,
+    prev_risk_state: prev,
+    blocklist_risk_msg_code: blocked === null ? null : blocked.risk_msg_code,
+    reverify,
+    realname_verified: realnameStatus === 'verified' && realname !== null,
+    payout_method: payoutMethod,
+    names_match:
+      realname !== null && subject !== null && samePersonName(realname.name, subject.payee_name),
+    labor_agreement_signed: signed,
+    active_hold: holds.some((hold) => holdActive(hold, now)),
+    available_fen: own === undefined ? 0n : own.available_fen,
+    usage,
+    minor: realname !== null && isMinor(realname.birth_date, now),
+    self_purchase_count: selfPurchase.count,
+    self_purchase_fen: selfPurchase.amount_fen,
+  };
+}
+
 export function createWithdrawRules(options: WithdrawRulesOptions): WithdrawRulesService {
   const { clock } = options;
-
-  async function gather(
-    handle: Kysely<DB>,
-    actor: WithdrawActor,
-    stepUpValid: boolean,
-  ): Promise<WithdrawRuleInput> {
-    const now = clock.now();
-    const subjectKey = { app_id: actor.appId, user_id: actor.userId };
-    const limits = await readWithdrawLimits(handle, actor, options);
-    const riskRows = await options.risk.read(handle, {
-      appId: actor.appId,
-      userIds: [actor.userId],
-    });
-    const risk = riskRows.get(actor.userId) ?? { state: 'normal' as const, frozen_until: null };
-    // A freeze with an expiry is over the moment the clock reaches it (B1-02zf: judged here).
-    const expired =
-      risk.state === 'frozen' &&
-      risk.frozen_until !== null &&
-      risk.frozen_until.getTime() <= now.getTime();
-    const riskState = expired ? 'normal' : risk.state;
-    const prev =
-      riskState === 'appealing'
-        ? await options.appeal.read(handle, { appId: actor.appId, userId: actor.userId })
-        : null;
-    const reverify = await options.reverify.check(handle, actor);
-    const realnameStatus = await options.realname.read(handle, subjectKey);
-    const realname = await options.realname.verified(handle, subjectKey);
-    const subject = await options.subject.read(handle, {
-      appId: actor.appId,
-      userId: actor.userId,
-    });
-    const payeeHmac = subject === null ? null : subject.payee_hmac;
-    const payoutMethod = subject === null ? null : subject.payout_method;
-    const blocked = await options.blocklist.read(handle, {
-      ...actor,
-      payeeHmac,
-      payoutMethod,
-      now,
-    });
-    const signed = await options.laborAgreementSigned(handle, subjectKey);
-    const balances = await options.ledger.getBalances(handle, {
-      appId: actor.appId,
-      userIds: [actor.userId],
-    });
-    const own = balances.find((row) => row.app_id === actor.appId && row.user_id === actor.userId);
-    const holds = await options.holds.read(handle, actor);
-    const usage = await options.usage.read(handle, { ...actor, now, payeeHmac });
-    // ⑬ is judged only when the gate is on: the port's order reads are skipped otherwise.
-    const selfPurchase = limits.self_purchase_enabled
-      ? await options.selfPurchase.read(handle, { ...actor, now })
-      : { count: 0, amount_fen: 0n };
-    return {
-      limits,
-      step_up_valid: stepUpValid,
-      risk_state: riskState,
-      prev_risk_state: prev,
-      blocklist_risk_msg_code: blocked === null ? null : blocked.risk_msg_code,
-      reverify,
-      realname_verified: realnameStatus === 'verified' && realname !== null,
-      payout_method: payoutMethod,
-      names_match:
-        realname !== null && subject !== null && samePersonName(realname.name, subject.payee_name),
-      labor_agreement_signed: signed,
-      active_hold: holds.some((hold) => holdActive(hold, now)),
-      available_fen: own === undefined ? 0n : own.available_fen,
-      usage,
-      minor: realname !== null && isMinor(realname.birth_date, now),
-      self_purchase_count: selfPurchase.count,
-      self_purchase_fen: selfPurchase.amount_fen,
-    };
-  }
+  const gather = (handle: Kysely<DB>, actor: WithdrawActor, stepUpValid: boolean) =>
+    readWithdrawInput(handle, actor, stepUpValid, options);
 
   return {
     async getRules(handle, actor, amountFen) {
