@@ -15,6 +15,12 @@ import {
 import { addFen, applyReserve, parseFen, splitByBp, subFen } from '@couli/money';
 import type { Kysely, Transaction, Selectable } from 'kysely';
 import { newUuidV7, type Clock, type JobPayload } from '../../platform/index.ts';
+import {
+  claimSettleJob,
+  completeSettleJob,
+  failSettleJob,
+  type SettleJobKey,
+} from './settle-job.ts';
 
 export interface BillJobInput {
   readonly appId: string;
@@ -140,8 +146,7 @@ export interface BillJob {
 // ---------------------------------------------------------------------------
 // 实现（BR-FUND-04 ③④⑤⑨⑫、BR-FUND-18）。
 // 不接线调度（B2-04zb）；orders 事实、淘礼金扣减、快照读口与差错登记都经依赖注入。
-// TODO(规划/11 §7.1): settle_jobs 尚无生成的状态机（S7 三态 running/done/failed），这里只写
-// running → done 两个字面值 — blocked on 编排补 specs/state-machines 的 settle-job 定义。
+// settle_jobs.status 只经 ./settle-job.ts（生成的 settle-job transition()，按旧状态 CAS）。
 
 const JOB = 'bill';
 const DEFAULT_BILL_DAY = 24;
@@ -353,27 +358,10 @@ export function createBillJob(dependencies: BillJobDependencies): BillJob {
     now: Date,
   ): Promise<BillJobResult> {
     const { appId, platform } = input;
-    const inserted = await trx
-      .withSchema('app')
-      .insertInto('settle_jobs')
-      .values({
-        id: newUuidV7(now),
-        app_id: appId,
-        job: JOB,
-        platform,
-        run_at: input.runAt,
-        status: 'running',
-        processed_count: 0,
-        skipped_count: 0,
-        started_at: now,
-        finished_at: null,
-      })
-      .onConflict((oc) => oc.columns(['app_id', 'job', 'platform', 'run_at']).doNothing())
-      .returning('id')
-      .executeTakeFirst();
-    // 唯一约束兜底：并发的同键投递在此等待先到者提交后返回空，判为重放。
-    if (inserted === undefined) return { outcome: 'duplicate', billId, status: null };
-    const jobId = inserted.id;
+    const key: SettleJobKey = { appId, job: JOB, platform, runAt: input.runAt };
+    // 新键 START；同键 failed 行 RETRY 同一行重跑；done / running 判为重放、不改行。
+    const jobId = await claimSettleJob(trx, key, now);
+    if (jobId === null) return { outcome: 'duplicate', billId, status: null };
 
     await trx
       .withSchema('app')
@@ -394,7 +382,7 @@ export function createBillJob(dependencies: BillJobDependencies): BillJob {
     const counts = parseCounts(bill.platform_order_counts);
     if (Object.prototype.hasOwnProperty.call(counts, platform)) {
       // 该平台本账单已出过主批次（另一 run_at 的投递）；不重复生成，后续走补充批次（⑧）。
-      await finishJob(trx, jobId, now, 0, 0);
+      await completeSettleJob(trx, jobId, now, 0, 0);
       return { outcome: 'duplicate', billId, status: null };
     }
 
@@ -672,7 +660,7 @@ export function createBillJob(dependencies: BillJobDependencies): BillJob {
       .where('bill_id', '=', billId)
       .execute();
 
-    await finishJob(trx, jobId, now, validations.length, heldCount);
+    await completeSettleJob(trx, jobId, now, validations.length, heldCount);
 
     const batches = await trx
       .withSchema('app')
@@ -711,31 +699,25 @@ export function createBillJob(dependencies: BillJobDependencies): BillJob {
         deps.clock,
       );
       if (snapshot.state === 'pending') return { outcome: 'deferred', billId, status: null };
-      return db.transaction().execute((trx) => generate(trx, input, billId, now));
+      try {
+        return await db.transaction().execute((trx) => generate(trx, input, billId, now));
+      } catch (error) {
+        // 生成事务已整体回滚；另起事务把该键记为 failed（FAIL），重投递同一 run_at 时经 RETRY 重跑。
+        const key: SettleJobKey = {
+          appId: input.appId,
+          job: JOB,
+          platform: input.platform,
+          runAt: input.runAt,
+        };
+        try {
+          await failSettleJob(db, key, deps.clock.now());
+        } catch {
+          // 记失败本身出错时保留原始错误；行仍缺失或为 failed，重投递照常可恢复。
+        }
+        throw error;
+      }
     },
   };
-}
-
-async function finishJob(
-  trx: Transaction<DB>,
-  jobId: string,
-  now: Date,
-  processed: number,
-  skipped: number,
-): Promise<void> {
-  await trx
-    .withSchema('app')
-    .updateTable('settle_jobs')
-    .set((eb) => ({
-      status: 'done',
-      finished_at: now,
-      processed_count: processed,
-      skipped_count: skipped,
-      row_version: eb('row_version', '+', 1),
-    }))
-    .where('id', '=', jobId)
-    .where('status', '=', 'running')
-    .execute();
 }
 
 async function openObligationItems(
