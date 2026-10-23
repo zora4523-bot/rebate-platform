@@ -1,0 +1,19 @@
+id: B1-08zb
+repo: rebate-platform
+title: lint：apps/api/src/modules/orders/**（排除测试与 platform-rules 规则表目录）禁止平台名字面量的 ===/!== 比较与 switch case（eslint no-restricted-syntax，须与已有 NO_WALL_CLOCK_IN_APP 合并写，不得覆盖）
+type: impl
+# 2026-10-23 入账（be-codex；R-09，D10-254 ②③：走 eslint、只禁比较与 case，不动日志文案）。eslint.config.js 是第二类保护路径，合并前须负责人在 PR 上加 owner-approved 标签。
+# 注意 flat config 中后写的 no-restricted-syntax 会整体替换前者：orders 块须写成 ['error', ...NO_WALL_CLOCK_IN_APP, ...NO_PLATFORM_LITERAL_COMPARE]。平台名取自 contracts 的 platform 枚举。依赖 B1-08za（否则立即红）。
+refs: []
+refs_hash: {}
+deps: [B1-08za]
+paths:
+  - 'eslint.config.js'
+test_paths:
+  - 'test/spec/orders/platform-literal-lint/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/platform-literal-lint/**'
+status: todo
