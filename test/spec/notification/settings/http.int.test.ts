@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createSession } from '../../../../apps/api/src/modules/identity/application/sessions.ts';
 import { bindPushTokensForSession } from '../../../../apps/api/src/modules/notification/application/session-bindings.ts';
@@ -139,6 +139,54 @@ async function success(response: Response, operation: Operation, settings: Setti
   await expectSchema(operation, '200', response.json());
 }
 
+/** Polls until `count` backends of this database wait on a PG lock in a statement on `table`. */
+async function lockWaiters(count: number, table: string) {
+  let waiting = 0;
+  for (let attempt = 0; attempt < 250 && waiting < count; attempt += 1) {
+    if (attempt > 0) await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    const result = await sql<{ n: number }>`select count(*)::int as n from pg_stat_activity
+      where datname = current_database() and pid <> pg_backend_pid()
+        and wait_event_type = 'Lock' and query like ${`%${table}%`}`.execute(db);
+    waiting = result.rows[0]!.n;
+  }
+  const reason = `${count} calls must wait on a PG lock before it is released`;
+  expect(waiting, reason).toBeGreaterThanOrEqual(count);
+}
+
+/**
+ * Deterministic interleaving: `lock` takes one row lock in a transaction of its own; the calls
+ * start in `order`, each only after every earlier one waits on PG, and the lock is released once
+ * all of them wait. Returns the calls' promises indexed like `calls`.
+ */
+async function interleaved<T>(
+  lock: (trx: Transaction<DB>) => Promise<unknown[]>,
+  calls: readonly (() => Promise<T>)[],
+  order: readonly number[],
+  table: string,
+): Promise<Promise<T>[]> {
+  const locked = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const holder = db.transaction().execute(async (trx) => {
+    expect(await lock(trx)).toHaveLength(1);
+    locked.resolve();
+    await release.promise;
+  });
+  const started: Promise<T>[] = [];
+  try {
+    await Promise.race([locked.promise, holder]);
+    for (const [arrived, index] of order.entries()) {
+      const pending = calls[index]!();
+      void pending.catch(() => undefined);
+      started[index] = pending;
+      await lockWaiters(arrived + 1, table);
+    }
+  } finally {
+    release.resolve();
+    await holder;
+  }
+  return started;
+}
+
 it(
   '[AC-B1-12m#12] HTTP默认全开且不插行，PUT八种组合可往返、重复保存不增行且隔离登录账号',
   async () => {
@@ -228,27 +276,53 @@ it.each(invalidBodies)(
 );
 
 it(
-  '[AC-B1-12m#14] HTTP并发首次PUT都返回200和各自保存值，最终仅一行完整设置',
+  '[AC-B1-12m#14] HTTP并发首次PUT都返回200和各自保存值，最终仅一行完整设置（确定性交错）',
   async () => {
     const f = await fixture();
     try {
       await f.app.init();
-      expect(await settingsOf(db, f.owner)).toEqual([]);
-      const results = await Promise.all([f.request('PUT', OFF), f.request('PUT', ON)]);
-      await success(results[0], 'updateNotificationSettings', OFF);
-      await success(results[1], 'updateNotificationSettings', ON);
-      const rows = await settingsOf(db, f.owner);
-      expect(rows).toHaveLength(1);
-      expect([OFF, ON]).toContainEqual({
-        service_push: rows[0]!.service_push,
-        subscription_push: rows[0]!.subscription_push,
-        marketing_push: rows[0]!.marketing_push,
-      });
-      expect(rows[0]).toMatchObject({
-        row_version: 1,
-        created_at: f.clock.now(),
-        updated_at: f.clock.now(),
-      });
+      // One login per order, each saving for the first time.
+      for (const { caller, owner, order } of [
+        { caller: undefined, owner: f.owner, order: [0, 1] },
+        { caller: f.someone, owner: f.other, order: [1, 0] },
+      ]) {
+        expect(await settingsOf(db, owner)).toEqual([]);
+        // The account's users row is locked FOR UPDATE elsewhere, so the earlier PUT's insert
+        // stops in its foreign-key check with its row already in the primary key, and the later
+        // PUT meets that uncommitted row (check-then-insert answers 23505 there).
+        const results = await Promise.all(
+          await interleaved(
+            (trx) =>
+              trx
+                .withSchema('app')
+                .selectFrom('users')
+                .select('id')
+                .where('app_id', '=', owner.app_id)
+                .where('id', '=', owner.user_id)
+                .forUpdate()
+                .execute(),
+            [() => f.request('PUT', OFF, caller), () => f.request('PUT', ON, caller)],
+            order,
+            'notification_settings',
+          ),
+        );
+        await success(results[0]!, 'updateNotificationSettings', OFF);
+        await success(results[1]!, 'updateNotificationSettings', ON);
+        const rows = await settingsOf(db, owner);
+        expect(rows).toHaveLength(1);
+        expect([OFF, ON]).toContainEqual({
+          service_push: rows[0]!.service_push,
+          subscription_push: rows[0]!.subscription_push,
+          marketing_push: rows[0]!.marketing_push,
+        });
+        expect(rows[0]).toMatchObject({
+          row_version: 1,
+          created_at: f.clock.now(),
+          updated_at: f.clock.now(),
+        });
+        // The later PUT becomes the update of the committed earlier row, so its values are kept.
+        expect(rows[0]).toMatchObject([OFF, ON][order[1]!]!);
+      }
     } finally {
       await f.app.close();
     }

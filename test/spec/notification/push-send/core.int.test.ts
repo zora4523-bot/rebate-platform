@@ -1,6 +1,6 @@
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createPushSendCore } from '../../../../apps/api/src/modules/notification/application/push-send.ts';
 import { createPushSessionValidity } from '../../../../apps/api/src/modules/identity/ports/push-session-validity.ts';
@@ -640,19 +640,87 @@ it.each([1, 2])(
   },
 );
 
-it('[AC-B1-12o#35] 已提交事件由两个独立核心并发 dispatch，只有一个认领成功且只调用一次通道', async () => {
-  const f = await fixture(db);
-  await f.registration();
-  const first = createPushSendCore(f);
-  const second = createPushSendCore(f);
-  await db.transaction().execute((trx) => first.record(trx, f.input));
-  const outcomes = await Promise.all([
-    first.dispatch(db, eventOf(f.input)),
-    second.dispatch(db, eventOf(f.input)),
-  ]);
-  expect(outcomes.sort()).toEqual(['skipped', 'success']);
-  expect(f.channel.send).toHaveBeenCalledTimes(1);
-  await assertRecords(f, 'success');
+/** Polls until `count` backends of this database wait on a PG lock. */
+async function lockWaiters(count: number) {
+  let waiting = 0;
+  for (let attempt = 0; attempt < 250 && waiting < count; attempt += 1) {
+    if (attempt > 0) await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    const result = await sql<{ n: number }>`select count(*)::int as n from pg_stat_activity
+      where datname = current_database() and pid <> pg_backend_pid()
+        and wait_event_type = 'Lock'`.execute(db);
+    waiting = result.rows[0]!.n;
+  }
+  const reason = `${count} calls must wait on a PG lock before it is released`;
+  expect(waiting, reason).toBeGreaterThanOrEqual(count);
+}
+
+/**
+ * Deterministic interleaving: `lock` takes one row lock in a transaction of its own; the calls
+ * start in `order`, each only after every earlier one waits on PG, and the lock is released once
+ * all of them wait. Returns the calls' promises indexed like `calls`.
+ */
+async function interleaved<T>(
+  lock: (trx: Transaction<DB>) => Promise<unknown[]>,
+  calls: readonly (() => Promise<T>)[],
+  order: readonly number[],
+): Promise<Promise<T>[]> {
+  const locked = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const holder = db.transaction().execute(async (trx) => {
+    expect(await lock(trx)).toHaveLength(1);
+    locked.resolve();
+    await release.promise;
+  });
+  const started: Promise<T>[] = [];
+  try {
+    await Promise.race([locked.promise, holder]);
+    for (const [arrived, index] of order.entries()) {
+      const pending = calls[index]!();
+      void pending.catch(() => undefined);
+      started[index] = pending;
+      await lockWaiters(arrived + 1);
+    }
+  } finally {
+    release.resolve();
+    await holder;
+  }
+  return started;
+}
+
+it('[AC-B1-12o#35] 已提交事件由两个独立核心并发 dispatch，只有一个认领成功且只调用一次通道（确定性交错）', async () => {
+  for (const order of [
+    [0, 1],
+    [1, 0],
+  ]) {
+    const f = await fixture(db);
+    await f.registration();
+    const first = createPushSendCore(f);
+    const second = createPushSendCore(f);
+    await db.transaction().execute((trx) => first.record(trx, f.input));
+    // The push log row is locked FOR UPDATE elsewhere until both dispatches wait on PG: a dispatch
+    // that reads the log unlocked and claims it without the queued / row_version 0 condition has
+    // seen it unclaimed in both cores and sends twice.
+    const outcomes = await Promise.all(
+      await interleaved(
+        (trx) =>
+          trx
+            .selectFrom('notify_logs')
+            .select('id')
+            .where('app_id', '=', f.app_id)
+            .where('dedupe_key', '=', `${f.input.eventKey}:push`)
+            .forUpdate()
+            .execute(),
+        [() => first.dispatch(db, eventOf(f.input)), () => second.dispatch(db, eventOf(f.input))],
+        order,
+      ),
+    );
+    const byArrival = order.map((index) => outcomes[index]);
+    expect(outcomes.sort()).toEqual(['skipped', 'success']);
+    expect(f.channel.send).toHaveBeenCalledTimes(1);
+    await assertRecords(f, 'success');
+    // PG grants the log lock in arrival order: the core that queued first claims and sends.
+    expect(byArrival).toEqual(['success', 'skipped']);
+  }
 });
 
 it('[AC-B1-12o#36] dispatch 拒绝事务句柄，不在调用方事务内发送或认领', async () => {
