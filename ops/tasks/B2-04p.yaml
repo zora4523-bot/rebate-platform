@@ -1,0 +1,23 @@
+id: B2-04p
+repo: rebate-platform
+title: 批次执行器（job batch_execute）：SB5 守卫（时刻、快照、两开关、停住标记）、逐明细事务调 B2-04m / B2-04q、每单前读开关（缓存上限按 ⑦）、SB6 / SB7、跨日停止、SB9 无存活执行者续跑、完成入队 settle.batch_done
+type: impl
+# 2026-10-24 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.2）。分工：独立 Claude 写规则测试（Codex 额度至 10-30，approvals #36）/ Opus 实现。
+# 状态备注：可开（B2-04m、B2-04o、B2-04w 已合并）。真实 PG：崩溃续跑、同一批次并发执行两次（QA-02）；规则测试须含「同一子订单被两个批次纳入、执行后只入账一次」（B2-04r 第 5 轮过审范围外 S1）与跳过原因写入批次明细（B2-04m 过审 S2）。
+refs: [BR-FUND-04, BR-FUND-18, BR-FUND-20]
+refs_hash:
+  BR-FUND-04: ae08abefb6da
+  BR-FUND-18: c7ebd23ee75e
+  BR-FUND-20: 01dc2440638f
+deps: [B2-04m, B2-04o, B2-04w]
+paths:
+  - 'apps/api/src/modules/settlement/batch/executor/**'
+test_paths:
+  - 'test/spec/settlement/batch-executor/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/batch-executor/**'
+status: todo
+pr: null
