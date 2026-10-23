@@ -16,6 +16,13 @@
 // (admin-risk-state.ts, F1-07d), not here; frozen expiry is B1-03j's job, so a read never restores
 // a state on its own.
 //
+// penalty_started_at (BR-ID-36 细则, D10-147; task B1-03v): when the account's current penalty
+// began, the grouping key of appeal attempts (appeals.ts). setRiskState writes it from the state
+// change alone (penaltyChange): normal or no row → frozen / banned, and frozen → banned (an
+// escalation is a new penalty), set it to the change instant; → normal clears it; every other
+// change (→ appealing, an upheld appeal putting the state back, frozen → frozen extending a
+// freeze, banned → banned) keeps it. A first row in any other state starts without one.
+//
 // Reads: no row reads as normal. A process cache (≤60 s, keyed by app_id + user_id, aged with the
 // injected Clock) serves the guard path; `fresh: true` reads the database. A change made through
 // this service invalidates its key at once and marks it pending until a read sees the written
@@ -353,6 +360,17 @@ async function appealPrevious(db: Kysely<DB>, subject: RiskSubject): Promise<str
   return row?.prev_risk_state ?? null;
 }
 
+/**
+ * What a change does to penalty_started_at (BR-ID-36 细则, D10-147): 'start' a new penalty at the
+ * change instant, 'clear' it, or 'keep' it. `from` null is a user without a row (normal).
+ */
+export function penaltyChange(from: string | null, to: string): 'start' | 'clear' | 'keep' {
+  if (to === 'normal') return 'clear';
+  if (to !== 'frozen' && to !== 'banned') return 'keep';
+  if (from === null || from === 'normal') return 'start';
+  return from === 'frozen' && to === 'banned' ? 'start' : 'keep';
+}
+
 export function createRiskStateService(options: RiskStateOptions): RiskStateService {
   const { db, clock, events, redis } = options;
   const cache = new Map<string, CacheEntry>();
@@ -476,6 +494,7 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
     if (!canTransitionRiskState(from, command.state)) {
       throw new RiskStateTransitionError(from, command.state);
     }
+    const penalty = penaltyChange(from, command.state);
     let written: number;
     if (current === undefined) {
       // A row of the same user_id under another app_id fails here (primary key), never updated.
@@ -488,6 +507,7 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
         frozen_until: command.frozen_until,
         changed_by: command.changed_by,
         changed_at: now,
+        penalty_started_at: penalty === 'start' ? now : null,
         row_version: 0,
         created_at: now,
         updated_at: now,
@@ -511,6 +531,7 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
           frozen_until: command.frozen_until,
           changed_by: command.changed_by,
           changed_at: now,
+          ...(penalty === 'keep' ? {} : { penalty_started_at: penalty === 'start' ? now : null }),
           row_version: eb('row_version', '+', 1),
           updated_at: now,
         }))

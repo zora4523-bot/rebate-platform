@@ -262,6 +262,7 @@ export interface Appeals {
   deadline_at: Timestamp;
   handler_id: string | null;
   id: string;
+  penalty_started_at: Timestamp | null;
   prev_risk_state: string | null;
   related_phone_hmac: string | null;
   request_type: string | null;
@@ -1801,6 +1802,7 @@ export interface UserRiskState {
   changed_by: string;
   created_at: Generated<Timestamp>;
   frozen_until: Timestamp | null;
+  penalty_started_at: Timestamp | null;
   reason: string | null;
   reason_category: string | null;
   row_version: Generated<number>;

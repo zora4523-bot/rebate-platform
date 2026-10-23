@@ -10,6 +10,7 @@ import {
   RiskStateConflictError,
   RiskStateTransitionError,
   createRiskStateService,
+  penaltyChange,
   riskStateServiceToken,
   type RiskStateRequest,
   type SetRiskState,
@@ -444,6 +445,55 @@ it('[B1-03h §11#4] a change outside the transition table writes and publishes n
         f.service.setRiskState(trx, { ...BAN, state: 'normal', reason_category: null }),
       );
     expect(f.publish).toHaveBeenCalledTimes(1);
+  } finally {
+    await f.db.destroy();
+  }
+});
+
+it('[AC-B1-03v-UNIT#6] penaltyChange: normal / no row → frozen or banned and frozen → banned start a penalty; → normal clears; the rest keep', () => {
+  expect(penaltyChange(null, 'frozen')).toBe('start');
+  expect(penaltyChange(null, 'banned')).toBe('start');
+  expect(penaltyChange('normal', 'frozen')).toBe('start');
+  expect(penaltyChange('normal', 'banned')).toBe('start');
+  expect(penaltyChange('frozen', 'banned')).toBe('start');
+  expect(penaltyChange('frozen', 'frozen')).toBe('keep');
+  expect(penaltyChange('banned', 'banned')).toBe('keep');
+  expect(penaltyChange('banned', 'frozen')).toBe('keep');
+  expect(penaltyChange('frozen', 'appealing')).toBe('keep');
+  expect(penaltyChange('banned', 'appealing')).toBe('keep');
+  expect(penaltyChange('appealing', 'frozen')).toBe('keep');
+  expect(penaltyChange('appealing', 'banned')).toBe('keep');
+  expect(penaltyChange(null, 'appealing')).toBe('keep');
+  for (const from of [null, 'normal', 'frozen', 'banned', 'appealing']) {
+    expect(penaltyChange(from, 'normal')).toBe('clear');
+  }
+});
+
+it('[AC-B1-03v-UNIT#7] setRiskState writes penalty_started_at only when a penalty starts or ends', async () => {
+  const f = scripted();
+  try {
+    f.state.row = { state: 'frozen', reason_category: 'other', frozen_until: null, row_version: 1 };
+    await f.db.transaction().execute((trx) => f.service.setRiskState(trx, BAN));
+    await f.db
+      .transaction()
+      .execute((trx) => f.service.setRiskState(trx, { ...BAN, state: 'frozen' }));
+    await f.db.transaction().execute((trx) =>
+      f.service.setRiskState(trx, {
+        ...BAN,
+        state: 'normal',
+        reason: null,
+        reason_category: null,
+      }),
+    );
+    const updates = f.statements.filter((s) => /^update\b/i.test(s));
+    expect(updates).toHaveLength(3);
+    expect(updates[0]).toContain('"penalty_started_at"');
+    expect(updates[1]).not.toContain('"penalty_started_at"');
+    expect(updates[2]).toContain('"penalty_started_at"');
+    f.state.row = null;
+    await f.db.transaction().execute((trx) => f.service.setRiskState(trx, BAN));
+    const insert = f.statements.find((s) => /^insert\b/i.test(s))!;
+    expect(insert).toContain('"penalty_started_at"');
   } finally {
     await f.db.destroy();
   }
