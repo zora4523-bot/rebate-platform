@@ -8,7 +8,9 @@
 #   /etc/couli/staging-payout.env  payout only (its own database role; payout never uses Redis)
 # Every service mounts read-only: the database CA (/etc/pki/ca.crt) and the field-encryption
 # key ring directory (/etc/couli-keys -> /run/couli-keys); api also mounts its access-token
-# signing key directory (/etc/couli-jwt -> /run/couli-jwt), loaded by infra/staging/boot.mjs.
+# signing key directory (/etc/couli-jwt -> /run/couli-jwt), loaded by infra/staging/boot.mjs;
+# stream mounts only the matching verification public key directory (/etc/couli-jwt-pub ->
+# /run/couli-jwt-pub), also loaded by boot.mjs, and never the signing key.
 # api and worker also mount the optional Pinduoduo directory (/etc/couli-pdd -> /run/couli-pdd).
 # Every process starts through boot.mjs (node --import), which also counts container starts.
 # All five health checks require 30s of uptime and a single start until deploy.sh marks the
@@ -121,6 +123,9 @@ services:
       APP_ENV: staging
       # Listen on the container interface so the 127.0.0.1-only host port reaches it.
       API_HOST: '0.0.0.0'
+      # boot.mjs reads the access-token verification public key (es256.pub.pem, key-id) from
+      # this mounted directory into the process environment; stream only verifies tokens.
+      COULI_JWT_PUB_DIR: /run/couli-jwt-pub
     ports:
       - host_ip: 127.0.0.1
         target: '${STREAM_PORT:-3101}'
@@ -135,6 +140,14 @@ services:
       - type: bind
         source: /etc/couli-keys
         target: /run/couli-keys
+        read_only: true
+      # access-token verification public key (SPKI P-256 es256.pub.pem + key-id, exported from
+      # /etc/couli-jwt, README section 1.4): owned by uid 1000; mounted on stream only. No
+      # create_host_path: a missing directory fails the deployment instead of starting stream
+      # with an empty mount.
+      - type: bind
+        source: /etc/couli-jwt-pub
+        target: /run/couli-jwt-pub
         read_only: true
     healthcheck:
       # Healthy only when this process own /healthz on STREAM_PORT answers 2xx AND the
