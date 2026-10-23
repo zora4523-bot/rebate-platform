@@ -36,6 +36,7 @@ import { LoadFailedPage, NoPermissionPage, PagePending, WelcomePage } from './la
 import { Sidebar } from './layout/Sidebar.tsx';
 import { TopBar } from './layout/TopBar.tsx';
 import { AdminsPage } from './pages/admins/index.ts';
+import { APP_VERSIONS_MENU_ID, AppVersionsPage, editTargetOf } from './pages/app-versions/index.ts';
 import { ClaimReviewPage, ClaimsPage } from './pages/claims/index.ts';
 import { AuditLogDetailPage, AuditLogsPage } from './pages/audit-logs/index.ts';
 import { ConfigCenterPage } from './pages/config-center/index.ts';
@@ -70,6 +71,7 @@ import {
   type AdminMenuGroup,
 } from './resources/index.ts';
 import type { AdminShellOptions } from './shell-options.ts';
+import { appVersionsTexts } from './texts/app-versions.ts';
 import { claimsTexts } from './texts/claims.ts';
 import { auditLogsTexts } from './texts/audit-logs.ts';
 import { exportsTexts } from './texts/exports.ts';
@@ -483,14 +485,23 @@ function ShellFrame({
   const claimId = claimIdOf(menuId);
   // An order's detail page (/orders/<order_id>) belongs to the orders menu (sidebar, crumbs).
   const orderId = claimId === undefined ? orderIdOf(menuId) : undefined;
+  // A version row's edit subpage (/app-versions/<platform>/<channel>) belongs to 版本管理.
+  const appVersionEdit = editTargetOf(menuId) !== undefined;
   const match = findMenuItem(
     groups,
-    claimId !== undefined ? CLAIMS_MENU_ID : orderId !== undefined ? ORDERS_MENU_ID : menuId,
+    claimId !== undefined
+      ? CLAIMS_MENU_ID
+      : orderId !== undefined
+        ? ORDERS_MENU_ID
+        : appVersionEdit
+          ? APP_VERSIONS_MENU_ID
+          : menuId,
   );
   let subpage = match === undefined ? undefined : (auditSubpage ?? subpageOf(location.state));
   if (match !== undefined && claimId !== undefined) subpage = claimsTexts.review.crumb;
   if (match !== undefined && orderId !== undefined) subpage = ordersTexts.detail.crumb;
   if (match !== undefined && unionCallback) subpage = unionsTexts.callback.crumb;
+  if (match !== undefined && appVersionEdit) subpage = appVersionsTexts.editor.crumb;
   // A workbench card opened a route whose page is not in the catalogue yet (e.g. /risk/appeals):
   // the placeholder shows under the card's page name instead of falling back home.
   const cardTarget =
@@ -558,6 +569,9 @@ function ShellFrame({
       content = <PlatformIconsPage />;
     } else if (match !== undefined && match.item.id === UNIONS_MENU_ID) {
       content = <UnionsPage access={access} clock={options.clock} />;
+    } else if (match !== undefined && match.item.id === APP_VERSIONS_MENU_ID) {
+      // The list, or a row's edit subpage (the page reads the address itself).
+      content = <AppVersionsPage access={access} />;
     } else if (match !== undefined && match.item.id === 'switches') {
       content = <KillSwitchesPage access={access} />;
     } else if (match !== undefined && match.item.id === 'config') {
