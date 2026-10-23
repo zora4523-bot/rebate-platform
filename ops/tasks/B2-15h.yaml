@@ -4,12 +4,14 @@ title: 门禁：tools/ci/lint-migrations.ts APPROVED_GUARD_CHANGES 登记 B2-15i
 type: guard-change
 # 2026-10-22 收款线入账（PAY-lane/plan.md D-PAY-2；先例 CT-25d：#1002 白名单先合、#1007 迁移后合）。资金表守卫变更，已在 notices 21:3x 请编排裁定；
 # 迁移号以 B2-15i 落地时主干最大 +1 为准，本任务在该文件内容定稿后登记。第三类保护路径，合并需编排按 #24 加标签。
+# 2026-10-23 paths 补 test/spec/db/lint-migrations/guard-approvals.test.ts：[AC-CT-06d#1] 的白名单 pin 在该冻结测试里（先例 B1-22e、F1-02zy #1002），同 PR 增量同步。
 refs: []
 refs_hash: {}
 deps: []
 paths:
   - 'tools/ci/lint-migrations.ts'
   - 'tools/ci/lint-migrations.test.ts'
+  - 'test/spec/db/lint-migrations/guard-approvals.test.ts'
 impl: claude
 tester: none
 accept:
