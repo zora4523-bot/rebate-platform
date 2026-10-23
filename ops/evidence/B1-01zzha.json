@@ -1,9 +1,9 @@
 {
   "task": "B1-01zzha",
   "spec_ref": "f3fea9b041e41bc0d398380f6ad09555d1d6ba32",
-  "spec_commit": "9826d15042ed9cd764bba60530bfdc69b5868adb",
+  "spec_commit": "dbb72c3bd2d7d8b35d3b067107a6c5e2fceb9944",
   "red_tests": [],
-  "risk_note": "RV2 by path (apps/api/package.json dependencies and pnpm-lock.yaml; class-2 protected, allowed for a deps task, label per approvals id 24). Adds prom-client 15.1.3 (exact) to apps/api for the internal /metrics endpoint of B1-01zzh (orchestrator ruling D10-193 ③). New lock entries: prom-client 15.1.3 (Apache-2.0), tdigest 0.1.3 (MIT), bintrees 1.0.2 (MIT), @opentelemetry/api 1.9.1 (Apache-2.0), all published more than two weeks ago, each with an integrity hash; vitest's optional-peer resolution key changes because @opentelemetry/api is now present, no version change. Scripts unchanged. The npm registry marks prom-client deprecated in favour of @prometheus-io/client; recorded as a follow-up (the ledger and D10-193 name prom-client). No code change, no money.",
+  "risk_note": "RV2 by path (apps/api/package.json dependencies and pnpm-lock.yaml; class-2 protected, allowed for a deps task, label per approvals id 24). Adds @prometheus-io/client 0.16.1 (exact; the npm successor of prom-client, which is deprecated upstream; orchestrator ruling D10-249 replaces the prom-client choice of D10-193) to apps/api for the internal /metrics endpoint of B1-01zzh. Same API (Registry, Counter, Gauge, Histogram, Summary, collectDefaultMetrics, register, contentType; Registry.metrics() returns Prometheus text), engines node ^22 || ^24 || >=26. New lock entries: @prometheus-io/client 0.16.1 (Apache-2.0, 2026-08-27), tdigest 0.1.3 (MIT), bintrees 1.0.2 (MIT), @opentelemetry/api 1.9.1 (Apache-2.0), all published more than two weeks ago, each with an integrity hash matching the registry; vitest's optional-peer resolution key changes because @opentelemetry/api is present, no version change. prom-client is no longer in the lockfile. Scripts unchanged. No code change, no money.",
   "runs": [],
   "reviews": [
     {
@@ -14,8 +14,8 @@
       "open_s0_s1": 0,
       "checklist_complete": true,
       "review_type": "money",
-      "round": 1,
-      "note": "round 1 pass (Codex out of quota until 10-30, approvals #36); one S2: prom-client is deprecated upstream in favour of @prometheus-io/client, recorded as a follow-up"
+      "round": 2,
+      "note": "Codex out of quota until 10-30 (approvals #36). Round 1 pass on prom-client 15.1.3 with one S2 (deprecated upstream); D10-249 swapped it for @prometheus-io/client 0.16.1; round 2 reviewed the dependency increment: pass with no findings"
     }
   ],
   "trees": {
@@ -23,7 +23,7 @@
     "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
     "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
     "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
-    "test/spec": "f2e9ca7ce35d42a5bce5b978733b6defb7e94860",
+    "test/spec": "6760b0e5e3f365429d6c9f65dc4f20273ff9f449",
     "specs": "d7811035a75370ee35f2ae060353af8353377700"
   },
   "longrun": {
