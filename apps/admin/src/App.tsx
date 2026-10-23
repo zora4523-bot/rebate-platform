@@ -45,6 +45,7 @@ import { HomeConfigPage } from './pages/home-config/index.ts';
 import { KillSwitchesPage } from './pages/kill-switches/index.ts';
 import { OrderDetailPage, OrdersPage } from './pages/orders/index.ts';
 import { PlatformIconsPage } from './pages/platform-icons/index.ts';
+import { UnionOAuthCallbackPage, UnionsPage } from './pages/unions/index.ts';
 import { UsersPage } from './pages/users/index.ts';
 import { UserDetailView } from './pages/users/UserDetailView.tsx';
 import { LoginPage } from './pages/login/index.ts';
@@ -70,6 +71,7 @@ import { auditLogsTexts } from './texts/audit-logs.ts';
 import { exportsTexts } from './texts/exports.ts';
 import { ordersTexts } from './texts/orders.ts';
 import { shellTexts } from './texts/shell.ts';
+import { unionsTexts } from './texts/unions.ts';
 import { createAntdTheme, sameAntdTheme } from './theme.ts';
 
 type PermissionState =
@@ -108,6 +110,9 @@ const AUDIT_LOGS_MENU_ID = 'audit-logs';
 /** 导出记录: no sidebar item; a subpage of 操作日志 (reached from its header link). */
 const EXPORTS_ROUTE = 'exports';
 const AUDIT_LOG_DETAIL = /^audit-logs\/([^/]+)$/;
+const UNIONS_MENU_ID = 'unions';
+/** 联盟 OAuth 回调页: no sidebar item; a subpage of 联盟账号与推广位 (the union redirects here). */
+const UNION_CALLBACK_ROUTE = 'unions/oauth-callback';
 
 /** Record id of an /audit-logs/<id> address (the detail subpage), else undefined. */
 function auditLogIdOf(path: string): string | undefined {
@@ -463,7 +468,9 @@ function ShellFrame({
       : exportsRoute
         ? exportsTexts.title
         : undefined;
-  const menuId = auditSubpage === undefined ? path : AUDIT_LOGS_MENU_ID;
+  const unionCallback = path === UNION_CALLBACK_ROUTE;
+  const menuId =
+    auditSubpage !== undefined ? AUDIT_LOGS_MENU_ID : unionCallback ? UNIONS_MENU_ID : path;
   const searchUser = menuId === USERS_MENU_ID ? searchUserOf(location.state) : undefined;
   // A claim's review page (/claims/<claim_id>) belongs to the claims menu (sidebar, crumbs).
   const claimId = claimIdOf(menuId);
@@ -476,6 +483,7 @@ function ShellFrame({
   let subpage = match === undefined ? undefined : (auditSubpage ?? subpageOf(location.state));
   if (match !== undefined && claimId !== undefined) subpage = claimsTexts.review.crumb;
   if (match !== undefined && orderId !== undefined) subpage = ordersTexts.detail.crumb;
+  if (match !== undefined && unionCallback) subpage = unionsTexts.callback.crumb;
   // A workbench card opened a route whose page is not in the catalogue yet (e.g. /risk/appeals):
   // the placeholder shows under the card's page name instead of falling back home.
   const cardTarget =
@@ -518,6 +526,9 @@ function ShellFrame({
       content = <AuditLogDetailPage key={auditLogId} id={auditLogId} access={access} />;
     } else if (match !== undefined && exportsRoute) {
       content = <ExportsPage access={access} clock={options.clock} />;
+    } else if (match !== undefined && unionCallback) {
+      // The union's OAuth redirect: posts state and code (or error) once, then shows the result.
+      content = <UnionOAuthCallbackPage access={access} clock={options.clock} />;
     } else if (match !== undefined && options.renderPage !== undefined) {
       content = options.renderPage(match.item.id, access);
     } else if (searchUser !== undefined && (snapshot.isSuper || snapshot.permissions.length > 0)) {
@@ -538,6 +549,8 @@ function ShellFrame({
       content = <AdminsPage />;
     } else if (match !== undefined && match.item.id === 'platform-icons') {
       content = <PlatformIconsPage />;
+    } else if (match !== undefined && match.item.id === UNIONS_MENU_ID) {
+      content = <UnionsPage access={access} clock={options.clock} />;
     } else if (match !== undefined && match.item.id === 'switches') {
       content = <KillSwitchesPage access={access} />;
     } else if (match !== undefined && match.item.id === 'config') {
