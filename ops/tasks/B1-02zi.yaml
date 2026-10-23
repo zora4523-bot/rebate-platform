@@ -1,0 +1,27 @@
+id: B1-02zi
+repo: rebate-platform
+title: Redis 代次识别（R-04 选 A）：risk 模块用带 TTL 的代次键识别 Redis 被清空、换空实例或从快照 / 备份恢复，识别后在 nonce 去重时长（BR-ID-09）内拒绝签名请求；worker 定时续期；runbook 先删代次键再放开应用
+type: impl
+# 草稿 2026-10-23（身份与风控线 identity-lane）。负责人 2026-10-23 13:31 确认 R-04 选 A；编排 13:31 派工 ②（couli docs/changes/20261023-R04-Redis失效与防重放.md §6 的 02 §3.1 草稿）。规则测试先行，Codex 至 10-30 不可用，由独立 Claude 经 claude-run.sh 写（approvals #36）。
+# 技术取舍（本线定，留记录）：代次键值为创建时刻（注入 Clock），拒绝期 = 创建时刻 + NONCE_TTL_SECONDS（request-signature.ts，BR-ID-09，不另写数值）；每次签名请求在登记 nonce 前检查代次键，缺失则 SET NX 建键并进入拒绝期；拒绝时与 nonce 登记失败同样返回 50001（不新增码）；代次键 TTL 取续期间隔的 30 倍，worker 每 60 秒续期（键缺失时也由 worker SET NX 建），worker 停摆超过 TTL 时按数据丢失处理（宁拒不放）；只在 APP_ENV 为 staging / prod 时启用，local / test 关闭，避免一次性 Redis 让所有签名测试进入拒绝期。
+refs: []
+refs_hash: {}
+deps: [B1-02zc]
+paths:
+  - 'apps/api/src/modules/risk/application/redis-generation.ts'
+  - 'apps/api/src/modules/risk/application/redis-generation.test.ts'
+  - 'apps/api/src/modules/risk/application/signature-check.ts'
+  - 'apps/api/src/modules/risk/application/signature-check.test.ts'
+  - 'apps/api/src/modules/risk/risk.module.ts'
+  - 'apps/api/src/modules/risk/risk-scan.module.ts'
+  - 'apps/api/src/modules/risk/index.ts'
+  - 'apps/api/src/entry.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/risk/redis-generation/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/redis-generation/**'
+status: todo
