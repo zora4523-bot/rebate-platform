@@ -10,12 +10,7 @@ import {
 } from '../../../../apps/api/src/modules/linking/application/union-auth-url.ts';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/index.ts';
 import { TRACE, validate } from '../auth-url/kit.ts';
-import {
-  databaseFixture,
-  driftedAccounts,
-  interleavedAccounts,
-  type AuthPlatform,
-} from './kit.ts';
+import { databaseFixture, driftedAccounts, interleavedAccounts, type AuthPlatform } from './kit.ts';
 
 // B1-22l (D10-239 ①; BR-ID-24 ④): the auth-url judges the site authorization of the account
 // this authorization uses; with no unreleased binding and no active self_buy slot that is the
