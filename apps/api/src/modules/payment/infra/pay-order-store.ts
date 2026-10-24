@@ -346,6 +346,8 @@ export interface NewPayAnomaly {
   readonly amountFen: bigint;
   /** Flat JSON of ids, numbers as text and the channel state; never the original or a payer id. */
   readonly evidence: Readonly<Record<string, string | number | boolean | null>>;
+  /** The injected Clock's instant (never the database's now()). */
+  readonly createdAt: Date;
 }
 
 /**
@@ -370,6 +372,7 @@ export async function registerAnomalyRow(
       refunded_fen: 0n,
       evidence: sql`${JSON.stringify(row.evidence)}::jsonb`,
       status: 'open',
+      created_at: row.createdAt,
     })
     .onConflict((oc) => oc.columns(['app_id', 'pay_channel', 'channel_trade_no']).doNothing())
     .executeTakeFirst();

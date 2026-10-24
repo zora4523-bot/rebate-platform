@@ -257,8 +257,12 @@ export interface AnomalyReceiptInput {
 
 /**
  * BR-PAY-05 ④ on the caller's transaction: the anomaly row (once per channel trade number), its
- * PAY_ANOMALY voucher, the R4 pay_anomaly recon diff of today's accounting date, and the alert.
- * No fulfilment, no event, no PO2.
+ * PAY_ANOMALY voucher, the R4 pay_anomaly recon diff and the alert. The recon diff and the alert
+ * belong to the first registration only: a repeat (the channel re-sending the notification, a
+ * later query of the same CLOSED order, on any later accounting day) finds the row, posts a
+ * duplicate and registers nothing more — the recon diff's period is the anomaly row's own
+ * accounting date and its dedupe key names the anomaly, so even a replay that reached it would
+ * get the existing diff back. No fulfilment, no event, no PO2.
  */
 export async function registerAnomalyReceipt(
   deps: PaySettlementDeps,
@@ -284,34 +288,37 @@ export async function registerAnomalyReceipt(
       pay_order_id: input.payOrderId,
       observed_at: now.toISOString(),
     },
+    createdAt: now,
   });
   await deps.ledger.post(trx, anomalyVoucher(anomaly));
+  const fields = {
+    app_id: anomaly.app_id,
+    pay_channel: anomaly.pay_channel,
+    pay_anomaly_id: anomaly.id,
+    pay_order_id: anomaly.pay_order_id,
+    out_trade_no: anomaly.out_trade_no,
+    amount_fen: anomaly.amount_fen.toString(),
+    source: input.source,
+  };
+  if (!created) {
+    // Registered before: nothing more to book or to alert (ids only, never the original).
+    deps.logger.info(fields, 'pay_anomaly_receipt_repeat');
+    return { anomaly, created };
+  }
   await deps.ledger.registerReconDiff(trx, {
     appId: anomaly.app_id,
     type: 'pay_anomaly',
     source: 'R4',
-    period: accountingDate(now),
+    period: accountingDate(anomaly.created_at),
     refType: 'pay_anomaly',
     refId: anomaly.id,
     expectedFen: 0n,
     actualFen: anomaly.amount_fen,
     diffFen: anomaly.amount_fen,
-    dedupeKey: null,
+    dedupeKey: `pay_anomaly:${anomaly.id}`,
     resolution: null,
   });
   // The alert (BR-PAY-05 ④ 告警): ids and our merchant number only, never the original.
-  deps.logger.warn(
-    {
-      app_id: anomaly.app_id,
-      pay_channel: anomaly.pay_channel,
-      pay_anomaly_id: anomaly.id,
-      pay_order_id: anomaly.pay_order_id,
-      out_trade_no: anomaly.out_trade_no,
-      amount_fen: anomaly.amount_fen.toString(),
-      source: input.source,
-      created,
-    },
-    'pay_anomaly_receipt',
-  );
+  deps.logger.warn(fields, 'pay_anomaly_receipt');
   return { anomaly, created };
 }
