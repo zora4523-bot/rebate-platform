@@ -1,10 +1,7 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import type { FactoryProvider } from '@nestjs/common';
-import type { DB as Database } from '@couli/db';
-import type { Kysely } from 'kysely';
 import {
   APP_CONFIG,
-  DB,
   FIELD_CRYPTO,
   tokenPrincipal,
   type AppConfig,
@@ -19,7 +16,20 @@ export interface AgentCallerReader {
   deviceHash(appId: string, deviceId: string): Promise<string | null>;
 }
 
-export type AgentCallerReaderFactory = (options: { db: Kysely<Database> }) => AgentCallerReader;
+const CALLER_READER = Symbol('AGENT_CALLER_READER');
+
+/**
+ * B3-08k (D10-294; rule tests: test/spec/agent/foreign-db-handoff/**): the DI token of the
+ * AgentCallerReader app.module builds on the stream entry (identity's createAgentCallerReader over
+ * the primary handle's app schema); its value is null there without a database handle. The
+ * AGENT_CALLER provider injects it and no longer takes a reader factory
+ * (AgentStreamModuleOptions.callerReader is gone): it never hands a database handle to identity.
+ * New wording of the old "no database → null": without a caller reader (the token's value null)
+ * AGENT_CALLER is null, whether a database handle exists or not. The same symbol on every call.
+ */
+export function agentCallerReaderToken(): symbol {
+  return CALLER_READER;
+}
 
 export interface AgentStreamRequest {
   readonly id: string;
@@ -33,23 +43,27 @@ export type AgentCallerResolver = (request: AgentStreamRequest) => Promise<Agent
 export const AGENT_CALLER = Symbol('AGENT_CALLER');
 const IP_CONTEXT = 'agent.quota.ip';
 
-export function agentCallerProvider(readerFactory: AgentCallerReaderFactory): FactoryProvider {
+/**
+ * AGENT_CALLER of AgentModule.forStream, injected [APP_CONFIG, agentCallerReaderToken(),
+ * {token: FIELD_CRYPTO, optional: true}]. B3-08k: the caller reader comes built by app.module (no
+ * reader factory, no database handle here); without one (null) the resolver is null.
+ */
+export function agentCallerProvider(): FactoryProvider {
   return {
     provide: AGENT_CALLER,
-    inject: [APP_CONFIG, { token: DB, optional: true }, { token: FIELD_CRYPTO, optional: true }],
+    inject: [APP_CONFIG, agentCallerReaderToken(), { token: FIELD_CRYPTO, optional: true }],
     useFactory: (
       config: AppConfig,
-      db?: Kysely<Database>,
+      reader: AgentCallerReader | null | undefined,
       crypto?: FieldCrypto,
     ): AgentCallerResolver | null => {
-      if (db === undefined) return null;
+      if (reader == null) return null;
       // Across production replicas/restarts the existing field keyring supplies the same key.
       // An ephemeral key is only suitable for local/test processes without a keyring.
       if (crypto === undefined && config.appEnv !== 'local' && config.appEnv !== 'test') {
         throw new Error('Agent caller requires the field keyring');
       }
       const localKey = crypto === undefined ? randomBytes(32) : undefined;
-      const reader = readerFactory({ db: db.withSchema('app') });
       return async (request) => {
         const principal = tokenPrincipal(request);
         const appId = principal?.app_id ?? header(request, 'x-app-id');

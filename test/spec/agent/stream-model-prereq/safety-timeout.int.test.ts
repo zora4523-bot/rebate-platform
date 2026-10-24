@@ -8,7 +8,7 @@ import {
   createProductionStreamAssembly,
   type AgentStreamProvidedPorts,
 } from '../../../../apps/api/src/modules/agent/stream/mount/index.ts';
-import { setConfig, usePgEach } from '../stream-mount/kit.ts';
+import { contentReaderFor, setConfig, usePgEach } from '../stream-mount/kit.ts';
 import { APP, fixture } from '../stream-assembly/kit.ts';
 import { credentials, endpoint, transport } from '../stream-review/kit.ts';
 import { expectInputBudget, TIMEOUT_KEY } from './kit.ts';
@@ -38,6 +38,7 @@ it('[AC-B3-03n#11][BR-AI-18] 生产装配经 content 配置读取口按 app 读 
     clock: f.time.clock,
     logger: f.logs.logger,
     scheduler: f.time.scheduler,
+    contentReader: contentReaderFor(pg.db, f.time.clock),
     ports,
     safety: {
       appEnv: 'staging',

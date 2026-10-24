@@ -3,16 +3,19 @@
 // test/spec/agent/stream-mount/** import this file by path: names, signatures and the semantics
 // written here are the contract. AgentModule.forStream(options) (agent.module.ts) provides
 // agentStreamProvider(options) and exports agentStreamToken(); app.module imports it on the
-// `stream` entry only, handing identity's createAiConsentReader in as options.consentReader (agent
-// never imports identity), and gives the stream entry's request check plan identity's token check
-// ② ③ (no signature check). api, worker, admin and payout neither import it nor serve
-// /v1/agent/*; stream starts no sweeper.
+// `stream` entry only, providing identity's createAiConsentReader bound to its handle as
+// agentConsentReaderToken() (agent never imports identity; B3-08k), and gives the stream entry's
+// request check plan identity's token check ② ③ (no signature check). api, worker, admin and
+// payout neither import it nor serve /v1/agent/*; stream starts no sweeper.
 //
 // agentStreamToken(): the DI token of the stream runtime; the same symbol on every call.
 // agentStreamProvider(options): the Nest factory provider of agentStreamToken(), injected [CLOCK,
-//   ROOT_LOGGER, {token: DB, optional: true}, {token: REDIS, optional: true}]. Without a DB handle
-//   its value is null and one info line 'agent_stream_disabled' is logged; with one it is
-//   createAgentStreamRuntime({db, clock, logger, signals?, consentReader: options.consentReader}).
+//   ROOT_LOGGER, {token: DB, optional: true}, {token: REDIS, optional: true},
+//   {token: agentStreamPortsToken(), optional: true}, agentContentReaderToken(),
+//   agentConsentReaderToken()]. Without a DB handle its value is null and one info line
+//   'agent_stream_disabled' is logged; with one it is createAgentStreamRuntime({db, clock, logger,
+//   signals?, assembly?, contentReader, consentReader}) (B3-08k: both readers from app.module; a
+//   DB handle without them is a wiring error and throws).
 //   The four routes of B3-03d (createAgentSession, getCurrentAgentSession, sendAgentMessage,
 //   cancelAgentRun) are registered either way; without a runtime each answers the JSON 50001
 //   envelope. On application shutdown runtime.close() resolves before the platform closes the
@@ -24,17 +27,18 @@
 //   build; runConfig = {...runConfigDefaults(), maxRunMs: timings.runMaxMs} with
 //   0 < guardPollMs ≤ 5 000; assertRunTimings({...timings, admissionRunMaxMs: runConfig.maxRunMs,
 //   sweepMarginMs: 0}) is called at build (a throw: the entry does not start).
-//   limits = createQuotaLimitsSource({reader: createContentReader({db, clock}), logger}): ONE
+//   limits = createQuotaLimitsSource({reader: deps.contentReader, logger}): ONE
 //   instance, given to createPgRunPorts({db, clock, timings, limits, texts, signals?, logger}) and
 //   to AgentHttpDeps.limits, and exposed as runtime.limits.
 //   runs = createRunManager on the PG ports' admission and registry, config runConfig, guardFor =
 //   B3-03i createRunGuardFactory, scheduler = seams.schedule ?? the system scheduler.
 //   access / identity / consent = B3-03i createAgentAccessPort / createAgentIdentityPort /
-//   createAgentConsentPort; consent over deps.consentReader({db, currentVersion: version}) with
-//   version = createConsentVersionSource({reader, logger}); the same version source goes to the
-//   guard factory. The reader through which access and the guard read the agent.* switches caches
-//   for at most 5 000 ms on the injected Clock (followup 23: a switch turned off is seen by a new
-//   request 5 s later and ends a live run within 10 s); other keys keep content's reader.
+//   createAgentConsentPort; consent over deps.consentReader({currentVersion: version}) with
+//   version = createConsentVersionSource({reader: deps.contentReader, logger}); the same version
+//   source goes to the guard factory. The reader through which access and the guard read the
+//   agent.* switches (createAgentConfigReader over deps.contentReader.freshConfigValue, as
+//   createAgentSwitchReader before B3-08k) keeps an answer for less than 1 000 ms on the injected
+//   Clock (followup 23); other keys go through deps.contentReader.configValue.
 //   redactor = B3-05a createAgentRedactor(); traceMask(args, table) =
 //   maskForTrace(restorePlaceholders(args, table)) (followup 22), also runtime.traceMask.
 //   body, labels and traceMask come from the shared createAgentBodyAssembly (./body.ts, B3-05m;
@@ -55,13 +59,27 @@
 //   for the runs in progress to end (at most timings.runMaxMs plus a margin; a run still live after
 //   that is left to the worker's sweeper), then resolves. It never closes the database. The
 //   runtime is a plain (not frozen) object; whoever stops it calls runtime.close() through it.
+// B3-08k (D10-294; rule tests: test/spec/agent/foreign-db-handoff/**): content's reader is
+//   deps.contentReader (app.module's, never built here): limits and the consent version over its
+//   configValue, the switches over createAgentConfigReader({clock, content: deps.contentReader}),
+//   and the assembly's context.contentReader (that very object). agentStreamProvider injects
+//   agentContentReaderToken() and passes its value on as deps.contentReader.
+//   Review r1 (the sixth place, D10-287): agent hands no database handle to any function value it
+//   is handed (a deps / options property, a parameter, an injected token value), whatever agent
+//   type it carries. deps.consentReader is called with {currentVersion: version} only (identity's
+//   createAiConsentReader over app.module's handle; AgentConsentReaderFactory loses its db), and
+//   agentStreamProvider injects it by agentConsentReaderToken() (app.module provides it on the
+//   stream entry, null without a database handle) instead of options.consentReader: forStream's
+//   options keep assembly and safety only. Review r2 (D10-305): deps.assembly (and the provider's
+//   wrapper of options.assembly) may keep receiving the context with db, for agent's own stores:
+//   the assembly app.module hands in must resolve to agent's own function with a body
+//   (createProductionStreamAssembly), which the rule test proves from app.module's source.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports,
 // relative imports with `.ts`, no process.env, no import of identity.
 import type { FactoryProvider } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
-import { createContentReader } from '../../../content/index.ts';
 import {
   CLOCK,
   DB,
@@ -110,9 +128,12 @@ import {
   type RunRegistry,
   type RunTexts,
 } from '../run/index.ts';
-import { createAgentSwitchReader } from './config.ts';
+import {
+  agentContentReaderToken,
+  createAgentConfigReader,
+  type AgentContentReader,
+} from './config.ts';
 import { agentDefaultTexts, agentText } from './texts.ts';
-import type { AgentCallerReaderFactory } from './caller.ts';
 import type { AgentStreamAssemblyFactory, AgentStreamProvidedPorts } from './assembly.ts';
 import { agentStreamPortsToken } from './production.ts';
 import type { StreamReviewOptions } from './review.ts';
@@ -138,11 +159,27 @@ export type {
 export { createAgentBodyAssembly } from './body.ts';
 export type { AgentBodyAssembly, AgentBodyAssemblyDeps } from './body.ts';
 
-/** identity's createAiConsentReader (B1-02r), handed in by app.module (agent never imports it). */
+export { agentContentReaderToken, createAgentConfigReader } from './config.ts';
+export type { AgentConfigReaderDeps, AgentContentReader } from './config.ts';
+
+/**
+ * identity's createAiConsentReader (B1-02r), bound by app.module to its own database handle and
+ * handed in (agent never imports it). B3-08k: agent passes currentVersion only, never a handle.
+ */
 export type AgentConsentReaderFactory = (options: {
-  readonly db: Kysely<Database>;
   readonly currentVersion: (appId: string) => Promise<number>;
 }) => AgentConsentReader;
+
+const CONSENT_READER = Symbol('AGENT_CONSENT_READER');
+
+/**
+ * B3-08k (review r1, D10-287): DI token of the AgentConsentReaderFactory app.module provides on
+ * the stream entry (identity's createAiConsentReader bound to its handle; null without one);
+ * agentStreamProvider injects it. The same symbol on every call.
+ */
+export function agentConsentReaderToken(): symbol {
+  return CONSENT_READER;
+}
 
 export interface AgentStreamRuntimeDeps {
   readonly assembly?: AgentStreamAssemblyFactory;
@@ -152,6 +189,14 @@ export interface AgentStreamRuntimeDeps {
   /** Redis fast path of cancel signals; absent without Redis. */
   readonly signals?: Pick<RunRegistry, 'requestCancel' | 'cancelRequested'>;
   readonly consentReader: AgentConsentReaderFactory;
+  /**
+   * B3-08k (D10-294): content's reads, assembled by app.module and injected through
+   * agentContentReaderToken() (agentStreamProvider passes it on). The switches of access, identity
+   * and the run guard (createAgentConfigReader over it), the consent version and the daily limits
+   * read only through it, and the business assembly gets it as context.contentReader; the runtime
+   * builds no content reader of its own.
+   */
+  readonly contentReader: AgentContentReader;
 }
 
 /** Test seams only; production passes none. */
@@ -175,14 +220,14 @@ export interface AgentStreamRuntime {
 
 export interface AgentStreamModuleOptions {
   /** B3-03j: the business assembly (app.module passes createProductionStreamAssembly); absent,
-   * the minimal B3-03f mount. Called once per runtime with {db, clock, logger, scheduler} and the
-   * value of agentStreamPortsToken() when one is provided. */
+   * the minimal B3-03f mount. Called once per runtime with {db, clock, logger, scheduler,
+   * contentReader} (B3-08k) and the value of agentStreamPortsToken() when one is provided. */
   readonly assembly?: AgentStreamAssemblyFactory;
   /** B3-03m: the content safety review configuration handed to the assembly as context.safety
    * (app.module, stream entry). Absent: the assembly's review stays fail-closed. */
   readonly safety?: StreamReviewOptions;
-  readonly consentReader: AgentConsentReaderFactory;
-  readonly callerReader: AgentCallerReaderFactory;
+  // B3-08k: no consentReader / callerReader here; agentConsentReaderToken() and
+  // agentCallerReaderToken() (./caller.ts) carry what app.module built over its own handle.
 }
 
 const STREAM_RUNTIME = Symbol('AGENT_STREAM_RUNTIME');
@@ -192,7 +237,7 @@ export function agentStreamToken(): symbol {
 }
 
 export function agentStreamProvider(
-  options: Pick<AgentStreamModuleOptions, 'consentReader' | 'assembly' | 'safety'>,
+  options: Pick<AgentStreamModuleOptions, 'assembly' | 'safety'>,
 ): FactoryProvider {
   return {
     provide: agentStreamToken(),
@@ -202,17 +247,25 @@ export function agentStreamProvider(
       { token: DB, optional: true },
       { token: REDIS, optional: true },
       { token: agentStreamPortsToken(), optional: true },
+      agentContentReaderToken(),
+      agentConsentReaderToken(),
     ],
     useFactory: (
       clock: Clock,
       logger: RootLogger,
-      db?: Kysely<Database>,
-      redis?: RedisHandle,
-      ports?: AgentStreamProvidedPorts | null,
+      db: Kysely<Database> | undefined,
+      redis: RedisHandle | undefined,
+      ports: AgentStreamProvidedPorts | null | undefined,
+      contentReader: AgentContentReader | null | undefined,
+      consentReader: AgentConsentReaderFactory | null | undefined,
     ): AgentStreamRuntime | null => {
       if (db == null) {
         logger.info('agent_stream_disabled');
         return null;
+      }
+      // app.module provides both whenever it provides the handle; anything else is a wiring error.
+      if (contentReader == null || consentReader == null) {
+        throw new Error('agent: the stream entry needs the content and consent readers');
       }
       // Only called after PG's ownership check and committed cancellation. PG remains the
       // authority; the fast path carries no user data and never extends a run's lifetime.
@@ -244,7 +297,8 @@ export function agentStreamProvider(
         db,
         clock,
         logger,
-        consentReader: options.consentReader,
+        contentReader,
+        consentReader,
         ...(assembly === undefined ? {} : { assembly }),
         ...(signals === undefined ? {} : { signals }),
       });
@@ -293,20 +347,18 @@ export function createAgentStreamRuntime(
   deps: AgentStreamRuntimeDeps,
   seams?: AgentStreamSeams,
 ): AgentStreamRuntime {
-  const { clock, logger } = deps;
+  const { clock, logger, contentReader } = deps;
   const db = deps.db.withSchema('app');
   const timings = Object.freeze(runTimingsDefaults());
   const runConfig = Object.freeze({ ...runConfigDefaults(), maxRunMs: timings.runMaxMs });
   assertRunTimings({ ...timings, admissionRunMaxMs: runConfig.maxRunMs, sweepMarginMs: 0 });
   const scheduler = seams?.schedule ?? systemScheduler();
   const texts = agentDefaultTexts();
-  const reader = createContentReader({ db, clock });
-  const switches = createAgentSwitchReader(db, clock, reader);
-  const version = createConsentVersionSource({ reader, logger });
-  // Platform and integration fixtures supply an app-scoped handle. Preserve that handle at
-  // the cross-module factory boundary, as identity's public reader expects.
-  const consent = deps.consentReader({ db: deps.db, currentVersion: version });
-  const limits = createQuotaLimitsSource({ reader, logger });
+  const switches = createAgentConfigReader({ clock, content: contentReader });
+  const version = createConsentVersionSource({ reader: contentReader, logger });
+  // B3-08k: identity's reader is bound to app.module's handle; agent hands it the version only.
+  const consent = deps.consentReader({ currentVersion: version });
+  const limits = createQuotaLimitsSource({ reader: contentReader, logger });
   const pg = createPgRunPorts({
     db,
     clock,
@@ -340,7 +392,8 @@ export function createAgentStreamRuntime(
     },
   });
   // B3-03j: the business assembly is built once, with nothing running (no query, no timer).
-  const business = deps.assembly?.({ db: deps.db, clock, logger, scheduler });
+  // B3-08k: the context keeps the handle for agent's own stores; content's reads are contentReader.
+  const business = deps.assembly?.({ db: deps.db, clock, logger, scheduler, contentReader });
   const tools = seams?.tools ?? business?.tools ?? emptyOrchestratorTools();
   const runTexts: AgentRunTexts = business?.texts ?? {
     text: async (_appId, key) => agentText(key),

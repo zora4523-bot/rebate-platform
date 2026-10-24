@@ -9,6 +9,7 @@ import type { Kysely } from 'kysely';
 import { expect, it } from 'vitest';
 
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
+import { createContentReader } from '../../../../apps/api/src/modules/content/index.ts';
 import type { AgentCaller } from '../../../../apps/api/src/modules/agent/http/index.ts';
 import { runTimingsDefaults } from '../../../../apps/api/src/modules/agent/stream/pg/index.ts';
 import { sweeperDefaults } from '../../../../apps/api/src/modules/agent/stream/sweeper/index.ts';
@@ -17,6 +18,7 @@ import {
   createAgentSweeperRuntime,
   type AgentSweeperRuntime,
 } from '../../../../apps/api/src/modules/agent/agent.module.ts';
+import type { AgentContentReader } from '../../../../apps/api/src/modules/agent/stream/mount/config.ts';
 import {
   APP,
   FakeReply,
@@ -61,10 +63,24 @@ interface Worker {
   readonly schedule: ManualSchedule;
 }
 
+/**
+ * B3-08k (D10-306): content's reads as app.module's agentReaders provides them through
+ * agentContentReaderToken() on the worker entry: configValue through one cached content reader,
+ * freshConfigValue through a content reader built per call.
+ */
+function contentReaderFor(db: Kysely<DB>, clock: FixedClock): AgentContentReader {
+  const shared = createContentReader({ db, clock });
+  return {
+    configValue: (appId, key) => shared.configValue(appId, key),
+    freshConfigValue: (appId, key) => createContentReader({ db, clock }).configValue(appId, key),
+  };
+}
+
 function worker(db: Kysely<DB>, atMs: number = SWEEP_MS): Worker {
   const clock = new FixedClock(new Date(atMs));
   const logs = new Logs();
-  const runtime = createAgentSweeperRuntime({ db, clock, logger: logs.logger });
+  const contentReader = contentReaderFor(db, clock);
+  const runtime = createAgentSweeperRuntime({ db, clock, logger: logs.logger, contentReader });
   return { runtime, clock, logs, schedule: new ManualSchedule() };
 }
 

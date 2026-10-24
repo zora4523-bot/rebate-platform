@@ -8,6 +8,7 @@ import type { StreamReviewOptions, StreamReviewPorts } from './review.ts';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { CatalogCardEntry, CatalogConfigReader } from '../../../catalog/index.ts';
+import type { ContentReader } from '../../../content/index.ts';
 import { parseToken, parseUrl, type ParsingOptions } from '../../../parsing/index.ts';
 import type { Clock, RootLogger, Scheduler } from '../../../platform/index.ts';
 import {
@@ -89,6 +90,15 @@ export interface AgentStreamAssemblyContext {
   readonly scheduler?: Scheduler;
   /** agentStreamPortsToken()'s value on the stream entry; absent without it. */
   readonly ports?: AgentStreamProvidedPorts;
+  /**
+   * B3-08k (D10-294): content's configuration reader (the runtime's deps.contentReader, assembled
+   * by app.module). createProductionStreamAssembly reads every configuration value through it and
+   * builds no content reader from context.db.
+   * Review r2 (D10-305): `db` stays in this context for agent's own stores
+   * (createPgResultSetStore, createOrderCardRefs); app.module's assembly must resolve to agent's
+   * own function with a body (rule test: foreign-db-handoff/handoff.test.ts).
+   */
+  readonly contentReader: Pick<ContentReader, 'configValue'>;
 }
 
 export interface AgentStreamBusinessPorts {
@@ -119,7 +129,7 @@ export interface AgentOrderToolPorts {
 
 export interface AgentStreamAssemblyDeps extends Omit<
   AgentStreamAssemblyContext,
-  'ports' | 'scheduler'
+  'ports' | 'scheduler' | 'contentReader'
 > {
   readonly ports: AgentStreamBusinessPorts;
   readonly config: CatalogConfigReader;

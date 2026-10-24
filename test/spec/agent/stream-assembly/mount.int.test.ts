@@ -11,6 +11,7 @@ import {
 } from '../../../../apps/api/src/modules/agent/stream/mount/index.ts';
 import { AgentModule } from '../../../../apps/api/src/modules/agent/agent.module.ts';
 import {
+  contentReaderFor,
   framesOf,
   message,
   newGuest,
@@ -27,11 +28,14 @@ afterEach(() => vi.restoreAllMocks());
 it('[AC-B3-03j#10] 可选工厂缺省保持旧挂载；提供后 provider 必须使用同一 tools/intents/deterministic/texts', async () => {
   const f = await fixture(pg.db);
   const body = vi.spyOn(core, 'createAgentRunBody');
-  const legacy = agentStreamProvider({ consentReader: f.consentReader }).useFactory(
+  const legacy = agentStreamProvider({}).useFactory(
     f.time.clock,
     f.logs.logger,
     pg.db,
     undefined,
+    undefined,
+    contentReaderFor(pg.db, f.time.clock),
+    f.consentReader,
   ) as AgentStreamRuntime;
   try {
     expect(body).toHaveBeenCalledTimes(1);
@@ -43,14 +47,27 @@ it('[AC-B3-03j#10] 可选工厂缺省保持旧挂载；提供后 provider 必须
 
   const assembly = f.build();
   const factory = vi.fn(() => assembly);
-  const wired = agentStreamProvider({
-    consentReader: f.consentReader,
-    assembly: factory,
-  }).useFactory(f.time.clock, f.logs.logger, pg.db, undefined) as AgentStreamRuntime;
+  const contentReader = contentReaderFor(pg.db, f.time.clock);
+  const wired = agentStreamProvider({ assembly: factory }).useFactory(
+    f.time.clock,
+    f.logs.logger,
+    pg.db,
+    undefined,
+    undefined,
+    contentReader,
+    f.consentReader,
+  ) as AgentStreamRuntime;
   try {
     expect(factory).toHaveBeenCalledTimes(1);
+    // B3-08k: the context keeps the handle for agent's own stores; content's reads are the
+    // injected reader (agentContentReaderToken()'s value), never one built from the handle.
     expect(factory).toHaveBeenCalledWith(
-      expect.objectContaining({ db: pg.db, clock: f.time.clock, logger: f.logs.logger }),
+      expect.objectContaining({
+        db: pg.db,
+        clock: f.time.clock,
+        logger: f.logs.logger,
+        contentReader,
+      }),
     );
     expect(body.mock.calls.at(-1)?.[0]).toMatchObject({
       tools: assembly.tools,

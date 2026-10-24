@@ -20,10 +20,17 @@ import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
 import { expect } from 'vitest';
 
+import { createContentReader } from '../../../../apps/api/src/modules/content/index.ts';
+import type {
+  AiConsentReader,
+  AiConsentReaderOptions,
+} from '../../../../apps/api/src/modules/identity/ports/ai-consent.ts';
+import type { Clock } from '../../../../apps/api/src/modules/platform/index.ts';
 import type { AgentCaller } from '../../../../apps/api/src/modules/agent/http/index.ts';
 import {
   createAgentStreamRuntime,
   type AgentConsentReaderFactory,
+  type AgentContentReader,
   type AgentStreamRuntime,
   type AgentStreamSeams,
 } from '../../../../apps/api/src/modules/agent/stream/mount/index.ts';
@@ -224,12 +231,41 @@ export function retrace(caller: AgentCaller): AgentCaller {
 
 // ---- runtime ----------------------------------------------------------------------------------
 
+/** identity's createAiConsentReader (B1-02r) as identity exports it (it takes a handle). */
+export type IdentityConsentReader = (options: AiConsentReaderOptions) => AiConsentReader;
+
 /** identity's real AiConsentReader factory (B1-02r), loaded by URL. */
-export async function loadConsentReader(): Promise<AgentConsentReaderFactory> {
+export async function loadConsentReader(): Promise<IdentityConsentReader> {
   const identity = (await import(
     new URL('../../../../apps/api/src/modules/identity/index.ts', import.meta.url).href
   )) as typeof import('../../../../apps/api/src/modules/identity/ports/ai-consent.ts');
   return identity.createAiConsentReader;
+}
+
+/**
+ * B3-08k: identity's consent reader bound to `db`, as app.module provides it through
+ * agentConsentReaderToken() (agent hands it the version source only, never a handle).
+ */
+export function bindConsentReader(
+  identityReader: IdentityConsentReader,
+  db: Kysely<DB>,
+): AgentConsentReaderFactory {
+  return ({ currentVersion }) => identityReader({ db, currentVersion });
+}
+
+/**
+ * B3-08k: content's reads as app.module provides them through agentContentReaderToken(), built
+ * here over `db`'s app schema as the runtime built its own reader before: configValue through one
+ * cached content reader, freshConfigValue through a content reader built per call.
+ */
+export function contentReaderFor(db: Kysely<DB>, clock: Clock): AgentContentReader {
+  const handle = db.withSchema('app');
+  const shared = createContentReader({ db: handle, clock });
+  return {
+    configValue: (appId, key) => shared.configValue(appId, key),
+    freshConfigValue: (appId, key) =>
+      createContentReader({ db: handle, clock }).configValue(appId, key),
+  };
 }
 
 export interface Rig {
@@ -246,11 +282,12 @@ export async function rig(
   db: Kysely<DB>,
   seams: Pick<AgentStreamSeams, 'inputCheck' | 'tools'> = {},
 ): Promise<Rig> {
-  const consentReader = await loadConsentReader();
+  const consentReader = bindConsentReader(await loadConsentReader(), db);
   const time = new ManualTime();
   const logs = new Logs();
+  const contentReader = contentReaderFor(db, time.clock);
   const runtime = createAgentStreamRuntime(
-    { db, clock: time.clock, logger: logs.logger, consentReader },
+    { db, clock: time.clock, logger: logs.logger, contentReader, consentReader },
     { ...seams, schedule: time.scheduler },
   );
   return { time, logs, runtime };

@@ -12,7 +12,7 @@ import {
   createProductionStreamAssembly,
   type AgentStreamProvidedPorts,
 } from '../../../../apps/api/src/modules/agent/stream/mount/index.ts';
-import { fileText, setConfig, usePgEach } from '../stream-mount/kit.ts';
+import { contentReaderFor, fileText, setConfig, usePgEach } from '../stream-mount/kit.ts';
 import { APP, fixture, passInput, request } from '../stream-assembly/kit.ts';
 import { credentials, endpoint, transport } from '../stream-review/kit.ts';
 import { receiptContext, scriptedModel, TIMEOUT_KEY } from '../stream-model-prereq/kit.ts';
@@ -44,6 +44,7 @@ it('[AC-B3-03p#21][BR-AI-18] 生产装配的输出按句审核按 run 的 app �
     clock: f.time.clock,
     logger: f.logs.logger,
     scheduler: f.time.scheduler,
+    contentReader: contentReaderFor(pg.db, f.time.clock),
     ports,
     safety: {
       appEnv: 'staging',

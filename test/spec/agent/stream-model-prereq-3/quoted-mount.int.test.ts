@@ -23,6 +23,7 @@ import {
 } from '../../../../apps/api/src/modules/agent/stream/mount/index.ts';
 import type { UnnumberedCard } from '../../../../apps/api/src/modules/agent/stream/run/index.ts';
 import {
+  contentReaderFor,
   LEVEL,
   framesOf,
   message,
@@ -61,6 +62,7 @@ function productionMount(f: Fixture) {
       db: pg.db,
       clock: f.time.clock,
       logger: f.logs.logger,
+      contentReader: contentReaderFor(pg.db, f.time.clock),
       consentReader: f.consentReader,
       assembly: (context) => createProductionStreamAssembly({ ...context, ports }),
     },
