@@ -1,6 +1,6 @@
 id: B3-08k
 repo: rebate-platform
-title: agent 不再拿数据库句柄构造别模块的读取器——content 读取器与 identity 调用方读取器改由 app.module 组装后经注入令牌 / 端口交给 agent（5 处：agent.module.ts、stream/mount/{index,config,production,caller}.ts）；功能不变；AST 规则测试守住「agent 不把 db 句柄传给别模块的函数」
+title: agent 不再拿数据库句柄构造别模块的读取器——content 读取器与 identity 调用方读取器改由 app.module 组装后经注入令牌 / 端口交给 agent（6 处：agent.module.ts、stream/mount/{index,config,production,caller}.ts）；功能不变；AST 规则测试守住「agent 不把 db 句柄传给别模块的函数」
 type: impl
 # 2026-10-24 agent 线入账（编排 D10-294，Jev B 0.88：同 B3-03j / B3-08g，agent 只拿端口，规则不加例外；D10-297 同 PR 改冻结测试）。
 # 主干 5 处：agent.module.ts:129、stream/mount/{index:291,config:25,production:115} 用 createContentReader({db})，caller.ts:52 readerFactory({db})； 改为 app.module 组装读取器经令牌 / 端口注入，agent 只依赖读取器接口类型。规则测试（新鲜独立 Claude）：AST 扫描 agent 不得把 db 句柄传给
@@ -36,5 +36,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/agent/foreign-db-handoff/**'
-status: todo
-pr: null
+status: done
+pr: 1518
