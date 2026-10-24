@@ -12,9 +12,11 @@
 --     pay_anomaly, the payment reconciliation diffs of source R4 (already allowed by
 --     recon_diffs_source_check).
 -- Compatibility: both CHECKs only widen; every existing row and writer stays valid. Each is dropped
--- and added back under the same name NOT VALID, then validated in this same migration. On the
--- partitioned ledger_entries the drop, add and validation recurse to its partitions (only the
--- DEFAULT partition exists). No column, index, trigger or grant changes.
+-- and added back under the same name NOT VALID here; the next migration (ledger-type-pay-validate)
+-- validates them (precedent 0057 / 0058, 0071 / 0072, 0079 / 0080: a funds table takes no squawk
+-- exception, so the validation is its own migration). On the partitioned ledger_entries the drop and
+-- add recurse to its partitions (only the DEFAULT partition exists). No column, index, trigger or
+-- grant changes.
 -- Guard: ledger_entries and recon_diffs are funds tables; both CHECKs are rebuilt under the same
 -- name with a different definition, so this file is registered by hash in APPROVED_GUARD_CHANGES of
 -- tools/ci/lint-migrations.ts (task B2-15h). Any later edit of this file needs a new registration.
@@ -22,9 +24,8 @@
 -- fails while any PAY_* entry or pay_* diff exists.
 --
 -- Timeouts: DROP / ADD CONSTRAINT take an ACCESS EXCLUSIVE lock on ledger_entries (and its
--- partition) and on recon_diffs; VALIDATE takes SHARE UPDATE EXCLUSIVE and scans the rows, which are
--- few before launch. 5s lock wait so a blocked deploy fails fast, 60s overall as a ceiling for the
--- scans.
+-- partition) and on recon_diffs; catalog-only, no scan. 5s lock wait so a blocked deploy fails fast,
+-- 60s overall as a ceiling.
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';
 
@@ -38,8 +39,6 @@ ALTER TABLE app.ledger_entries
     'PAY_RECEIPT', 'PAY_REFUND', 'PAY_ANOMALY', 'PAY_FEE'
   )) NOT VALID;
 
-ALTER TABLE app.ledger_entries VALIDATE CONSTRAINT ledger_entries_ledger_type_check;
-
 ALTER TABLE app.recon_diffs DROP CONSTRAINT recon_diffs_type_check;
 
 ALTER TABLE app.recon_diffs
@@ -49,5 +48,3 @@ ALTER TABLE app.recon_diffs
     'estimate_changed_after_credit',
     'pay_mismatch', 'pay_anomaly'
   )) NOT VALID;
-
-ALTER TABLE app.recon_diffs VALIDATE CONSTRAINT recon_diffs_type_check;
