@@ -1,0 +1,16 @@
+id: CT-24u
+repo: rebate-platform
+title: test-change：后台权限点冻结预言 test/spec/admin/permissions/expected.ts 的动态码组在枚举含 notify.channels 时才纳入它（04 §11.2，动态码），改前改后都绿，为 CT-24t 新增权限点放行；不改断言逻辑、不删既有权限点
+type: test-change
+# 2026-10-24 入账（be-codex；D10-316 ②，台账评审 GT-23bgm S1）。照 CT-24i 先例（dashboard.view 按枚举条件纳入）。冻结测试改动按 approvals #24 由编排核对加标签。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/admin/permissions/expected.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/permissions/**'
+status: todo

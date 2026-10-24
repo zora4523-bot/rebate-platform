@@ -5,6 +5,7 @@ type: impl
 # 2026-10-24 入账（be-codex；编排 D10-316 ①，couli #201 d8e3ba5d）。形状照 04 §3 notify_templates / notify_logs（2026-10-24 补列），取值照 08 BR-TEXT-20 细则「短信渠道登记与后台渠道开关」。
 # 按 code × variant 一行登记；模板类型只有 verify、notice 两种（CHECK）；签名与模板 CODE 不得为空串；现有 channels 列即后台开关当前值，不另加开关列。AccessKey 不进数据库。
 # 只新增可空列，不回填、不改现有行；授权写在本迁移（couli_app 读写新列，照 notify_templates / notify_logs 现有授权）。编号占槽时按主干最大 +1，db:snapshot 走测试机。
+# 冻结库表测试精确断言列全集（send-log 约 134 / 165 行、template-override 约 81 / 391 行、send-log-suppressed 约 94 行）：测试阶段由测试作者只把新列补进列全集、其余断言不动（第一类保护路径，照 B1-12n 先例，#24 标签由编排核对；GT-23bgm S1）。
 refs: [BR-TEXT-20]
 refs_hash:
   BR-TEXT-20: 6cc6345e46c3
@@ -15,6 +16,9 @@ paths:
   - 'packages/db/src/db.gen.ts'
 test_paths:
   - 'test/spec/db/notification/sms-channel/**'
+  - 'test/spec/db/notification/send-log/send-log.int.test.ts'
+  - 'test/spec/db/notification/template-override/template-override.int.test.ts'
+  - 'test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts'
 impl: claude
 tester: claude-independent
 accept:

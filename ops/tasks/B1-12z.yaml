@@ -4,6 +4,7 @@ title: 后台通知渠道与短信登记接口实现（CT-24t）：列表、推�
 type: impl
 # 2026-10-24 入账（be-codex；编排 D10-316 ①）。取值照 08 BR-TEXT-20 细则「短信渠道登记与后台渠道开关」：站内信不能增删；只发站内信的编码不能开推送 / 短信；SMS_CODE 与 UNION_AUTH_* 只能换模板不能关；给表里原本没短信的服务类编码开短信要二次确认（契约字段）。
 # 保存校验：预览正文变量集合 = 代码定义；SMS_CODE 正文写了分钟数须等于 BR-ID-05 有效期；照过 BR-TEXT-12 / 13 的现有校验（content 导出）。测试发送用样例变量发到操作人验证手机号（BR-ID-45），没登记的不能启用新配置。
+# 跨模块只经导出（GT-23bgm S1）：content/index.ts 导出既有 BR-TEXT-12 / 13 校验与资金术语键判定（不抄一份）；admin/index.ts 导出只读端口取操作人验证手机号（admin_users 属 admin，不直读表）。
 refs: [BR-TEXT-20, BR-ID-45, BR-ID-05]
 refs_hash:
   BR-TEXT-20: 6cc6345e46c3
@@ -12,6 +13,9 @@ refs_hash:
 deps: [CT-24t, B1-12x, B1-12y]
 paths:
   - 'apps/api/src/modules/notification/**'
+  - 'apps/api/src/modules/content/index.ts'
+  - 'apps/api/src/modules/admin/index.ts'
+  - 'apps/api/src/modules/admin/application/verify-phone-read*.ts'
   - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/notification/admin-channels/**'
