@@ -1,0 +1,37 @@
+{
+  "task": "CT-16n",
+  "spec_ref": "395cf6661e2c5d595922086bdd89b0bb191ad192",
+  "spec_commit": "ad314233f646e6c309947c59eac1c81b5954d97e",
+  "red_tests": [],
+  "risk_note": "RV1 (contract description only; D10-252). The /v1/config ClientConfig.help_links description now lists invite_rules (the invite rules article, entered from 完整规则 on the H5 invite page) and invite_reward_rules (the invite reward campaign rules article, entered from 活动规则); openapi.gen.ts regenerated. The schema shape, server validation (dictOf, any key) and defaults are unchanged; an unconfigured key still shows no entry. Not breaking. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "fresh independent Claude via claude-run.sh (Codex out of quota until 2026-10-30, approvals 36); pass, one S2: planning 04 §10.1 does not list the two keys yet (reported for the next planning writeback)"
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "25aedff343852b2d48fde138b3c9c46ec39c64b7",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}
