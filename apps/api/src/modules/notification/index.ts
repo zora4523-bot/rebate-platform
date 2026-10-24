@@ -24,6 +24,13 @@ export {
   unbindPushTokensForSession,
 } from './application/session-bindings.ts';
 export type { SessionBinding, SessionUnbinding } from './application/session-bindings.ts';
+// F1-02zzk: notification's deletion cleanup port (BR-ID-28 push tokens). identity never imports
+// it: app.module hands it to identity's DeletionCleanupPorts.notification.
+export { deletePushTokensForUser } from './application/deletion-cleanup.ts';
+export type {
+  PushTokenDeletionInput,
+  PushTokenDeletionResult,
+} from './application/deletion-cleanup.ts';
 export { createPushTokenReporter } from './application/push-token-report.ts';
 export type {
   PushTokenConfigReader,
