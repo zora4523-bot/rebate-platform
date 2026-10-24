@@ -13,6 +13,10 @@ refs_hash:
 deps: [B2-04m]
 paths:
   - 'apps/api/src/modules/settlement/credit/beneficiary/**'
+  # D10-317: version-independent attribution read exported by commission (settlement reads only through commission/index.ts)
+  - 'apps/api/src/modules/commission/index.ts'
+  - 'apps/api/src/modules/commission/application/read-attribution*.ts'
+  - 'apps/api/src/modules/commission/infra/attribution-reader*.ts'
 test_paths:
   - 'test/spec/settlement/beneficiary-credit/**'
 impl: claude
