@@ -10,8 +10,9 @@
 //   biz.reconcile  the business object's fulfilment, recomputed from the current payment and refund
 //                  facts under the object lock (pay_fulfillments), never added or subtracted
 //                  (application/pay-fulfillment.ts).
-//   order.close    B2-15d: a job of that name fails here (the queue retries, then dead-letters it
-//                  with its payload intact) rather than being completed without the close flow.
+//   order.close    B2-15d: the close flow of one order (application/pay-close.ts): query first,
+//                  close on the channel, PO3 only on an explicit «closed» (or «not exist» past the
+//                  grace), its own next run while still PENDING, needs_manual after the wait.
 // Also compiled by the `test` project: erasable syntax only.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
@@ -19,6 +20,7 @@ import type { ContentReader } from '../../content/index.ts';
 import type { Clock, EventBus, JobHandler, JobQueue, RootLogger } from '../../platform/index.ts';
 import type { BizTypeRegistry } from '../application/biz-registry.ts';
 import type { PayChannelSet } from '../application/pay-channel.ts';
+import { runOrderClose } from '../application/pay-close.ts';
 import { runBizReconcile } from '../application/pay-fulfillment.ts';
 import { runOrderQuery } from '../application/pay-query.ts';
 import type { PayLedgerPort } from '../application/pay-settlement.ts';
@@ -49,12 +51,8 @@ export function createPayJobHandler(deps: PayJobDeps): JobHandler {
         await runBizReconcile(deps, job.payload);
         return;
       case ORDER_CLOSE_JOB:
-        // TODO(规划/11 §2.3): 关单任务处理器 — blocked on B2-15d（先查后关、close_grace / retry / wait）
-        deps.logger.warn(
-          { job_id: job.id, attempt: job.attempt, job_name: job.name },
-          'pay_job_not_handled_yet',
-        );
-        throw new Error('payment: order.close is handled from B2-15d on');
+        await runOrderClose(deps, job.payload);
+        return;
       default:
         deps.logger.error({ job_id: job.id, job_name: job.name }, 'pay_job_unknown');
         throw new Error('payment: unknown job name on queue pay');
