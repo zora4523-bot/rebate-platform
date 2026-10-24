@@ -22,6 +22,10 @@ paths:
   - 'specs/ledger-templates.csv'
 test_paths:
   - 'test/spec/payment/result/**'
+  # D10-338：02 §11 补 pay.order.paid，事件夹具与契约测试只收紧（新鲜独立 Claude 改，另一新鲜 Claude 复审）。
+  - 'test/spec/platform/events/kit.ts'
+  - 'test/spec/platform/events/contract.test.ts'
+  - 'test/spec/orders/snapshot-retry-alert/contract.test.ts'
 impl: claude
 tester: claude-independent
 accept:
