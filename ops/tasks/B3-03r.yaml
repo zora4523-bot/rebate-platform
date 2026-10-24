@@ -20,5 +20,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/agent/stream-model-prereq-4/**'
-status: todo
-pr: null
+status: done
+pr: 1543
