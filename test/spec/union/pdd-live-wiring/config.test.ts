@@ -21,6 +21,11 @@ import {
   visible,
 } from './kit.ts';
 
+// B3-09j: loadConfig requires AGENT_USER_HASH_KEY when APP_ENV=prod; synthetic test-only value.
+const PROD_AGENT_KEY = {
+  AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-pdd-live-wiring-config',
+};
+
 const names = ['PDD_CLIENT_ID', 'PDD_CLIENT_SECRET_FILE'] as const;
 
 it.each(names)('[AC-B1-04t-CONFIG#1] %s 登记为真实凭据变量并进入启动检查', (name) => {
@@ -68,7 +73,7 @@ it.each([undefined, 'kms', 'local'] as const)(
 );
 
 it('[AC-B1-04t-CONFIG#4] prod 其他配置有效、只设置密钥文件变量也拒绝且不泄漏路径', () => {
-  const env = environment('prod');
+  const env = { ...environment('prod'), ...PROD_AGENT_KEY };
   expect(() => loadConfig(env)).not.toThrow();
   const file = '/FAKE_PDD_PROD_ONLY_FILE_PATH/secret.txt';
   const error = configFailure({ ...env, PDD_CLIENT_SECRET_FILE: file });
@@ -88,7 +93,9 @@ it('[AC-B1-04t-CONFIG#5] loadConfig 纯校验：保留标识与文件路径，�
     expect(configured(file)).toEqual(before);
     expect(visible(configured(file))).not.toContain(SECRET);
     for (const appEnv of ['local', 'test', 'staging', 'prod'] as const) {
-      expect(() => loadConfig(environment(appEnv))).not.toThrow();
+      expect(() =>
+        loadConfig({ ...environment(appEnv), ...(appEnv === 'prod' ? PROD_AGENT_KEY : {}) }),
+      ).not.toThrow();
     }
   } finally {
     await removeDirectory(directory);

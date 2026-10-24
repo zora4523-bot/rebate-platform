@@ -7,6 +7,9 @@ import {
 import { expectRequestFailure } from './error-response.ts';
 import { BASE_URL, SVG, configEnv, digest, memoryLogger } from './kit.ts';
 
+// B3-09j: loadConfig requires AGENT_USER_HASH_KEY when APP_ENV=prod; synthetic test-only value.
+const PROD_AGENT_KEY = { AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-media-config' };
+
 function problems(env: Record<string, string | undefined>): readonly string[] {
   try {
     loadConfig(env);
@@ -33,7 +36,11 @@ it.each(['local', 'test', 'staging', 'prod'] as const)(
   '[AC-F1-06z#3] %s 通过 loadConfig 下发合法 https 媒体地址',
   (appEnv) => {
     for (const url of [BASE_URL, `${BASE_URL}/`, 'https://media.example.invalid:8443/assets']) {
-      const config = loadConfig({ ...configEnv(appEnv), MEDIA_PUBLIC_BASE_URL: url });
+      const config = loadConfig({
+        ...configEnv(appEnv),
+        ...(appEnv === 'prod' ? PROD_AGENT_KEY : {}),
+        MEDIA_PUBLIC_BASE_URL: url,
+      });
       expect(config.mediaPublicBaseUrl?.replace(/\/+$/, '')).toBe(url.replace(/\/+$/, ''));
     }
   },
@@ -64,7 +71,11 @@ it.each(['staging', 'prod'] as const)(
   '[AC-F1-06z#5] %s 缺少媒体地址仍可加载配置，写入与取地址按请求失败（空串同未设置）',
   async (appEnv) => {
     for (const missing of [undefined, '']) {
-      const env = { ...configEnv(appEnv), MEDIA_PUBLIC_BASE_URL: missing };
+      const env = {
+        ...configEnv(appEnv),
+        ...(appEnv === 'prod' ? PROD_AGENT_KEY : {}),
+        MEDIA_PUBLIC_BASE_URL: missing,
+      };
       expect(problems(env)).toEqual([]);
       const config = loadConfig(env);
       const { logger } = memoryLogger(appEnv);

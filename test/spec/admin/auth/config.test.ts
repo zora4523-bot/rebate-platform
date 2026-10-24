@@ -2,6 +2,9 @@ import { randomBytes } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { ConfigError, loadConfig } from '../../../../apps/api/src/modules/platform/config/index.ts';
 
+// B3-09j: loadConfig requires AGENT_USER_HASH_KEY when APP_ENV=prod; synthetic test-only value.
+const PROD_AGENT_KEY = { AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-admin-auth' };
+
 function problems(env: Record<string, string>): readonly string[] {
   try {
     loadConfig(env);
@@ -22,6 +25,7 @@ function cloud(appEnv: 'staging' | 'prod'): Record<string, string> {
     ADMIN_TOKEN_SIGNING_KEY: randomBytes(32).toString('base64url'),
     ADMIN_IP_ALLOWLIST: '192.0.2.0/24',
     ADMIN_CORS_ORIGIN: 'https://admin.example.invalid',
+    ...(appEnv === 'prod' ? PROD_AGENT_KEY : {}),
   };
 }
 

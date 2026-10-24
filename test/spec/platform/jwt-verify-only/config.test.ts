@@ -28,6 +28,16 @@ import {
   pemBodyLine,
 } from './kit.ts';
 
+/**
+ * B3-09j: loadConfig requires AGENT_USER_HASH_KEY when APP_ENV=prod; a synthetic test-only value
+ * for the cases that expect loadConfig to accept (staging inputs stay unchanged).
+ */
+const PROD_AGENT_KEY = { AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-jwt-verify-only' };
+
+function prodAgentKey(appEnv: (typeof CLOUD_ENVS)[number]): Record<string, string> {
+  return appEnv === 'prod' ? PROD_AGENT_KEY : {};
+}
+
 /** True when the PEM text is the same public key as `key`. */
 function samePublicKey(pem: string | undefined, key: ReturnType<typeof p256>['publicKey']) {
   return pem !== undefined && createPublicKey(pem).equals(key);
@@ -61,7 +71,7 @@ for (const appEnv of CLOUD_ENVS) {
     expect(sign.jwt).toBeNull();
     expect(names(sign.problems, 'JWT_PRIVATE_KEY_PEM'), sign.problems.join(' | ')).toBe(true);
 
-    expect(configProblems(cloudEnv(appEnv, env))).toBe('loaded');
+    expect(configProblems(cloudEnv(appEnv, { ...env, ...prodAgentKey(appEnv) }))).toBe('loaded');
   });
 
   it(`[D10-255][BR-ID-07] ${appEnv}：只给 JWT_KEY_ID 与 JWT_PRIVATE_KEY_PEM（现有部署），验签配置由私钥导出公钥且不保留私钥，签发配置不变`, () => {
@@ -81,7 +91,7 @@ for (const appEnv of CLOUD_ENVS) {
     const sign = readJwtKeyConfig(appEnv, env);
     expect(sign.problems).toEqual([]);
     expect(sign.jwt).toMatchObject({ kid: KID, privateKeyPem: pair.privatePem });
-    expect(configProblems(cloudEnv(appEnv, env))).toBe('loaded');
+    expect(configProblems(cloudEnv(appEnv, { ...env, ...prodAgentKey(appEnv) }))).toBe('loaded');
   });
 
   it(`[D10-255][BR-ID-07] ${appEnv}：同时给同一对的公钥与私钥，验签与签发配置都通过`, () => {
@@ -98,7 +108,7 @@ for (const appEnv of CLOUD_ENVS) {
     const sign = readJwtKeyConfig(appEnv, env);
     expect(sign.problems).toEqual([]);
     expect(sign.jwt).toMatchObject({ kid: KID, privateKeyPem: pair.privatePem });
-    expect(configProblems(cloudEnv(appEnv, env))).toBe('loaded');
+    expect(configProblems(cloudEnv(appEnv, { ...env, ...prodAgentKey(appEnv) }))).toBe('loaded');
   });
 
   it(`[D10-255][BR-ID-07] ${appEnv}：公钥与私钥不是同一对是配置错误（验签配置与 loadConfig 都拒绝，不回显密钥）`, () => {
@@ -204,7 +214,7 @@ for (const appEnv of CLOUD_ENVS) {
     const verify = readJwtVerifyKeyConfig(appEnv, env);
     expect(verify.problems).toEqual([]);
     expect(verify.jwt?.verificationKeys).toEqual(verificationKeys);
-    expect(configProblems(cloudEnv(appEnv, env))).toBe('loaded');
+    expect(configProblems(cloudEnv(appEnv, { ...env, ...prodAgentKey(appEnv) }))).toBe('loaded');
 
     const currentAsPrevious = JSON.stringify({ [KID]: current.publicPem });
     const clash = { ...env, JWT_VERIFY_KEYS_JSON: currentAsPrevious };

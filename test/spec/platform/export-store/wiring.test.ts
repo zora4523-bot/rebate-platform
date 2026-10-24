@@ -10,6 +10,9 @@ import {
 } from '../../../../apps/api/src/modules/platform/export-store/index.ts';
 import { BASE_URL, CSV, EXPIRES, KEY, SIGNING_KEY, configEnv, fixture } from './kit.ts';
 
+// B3-09j: loadConfig requires AGENT_USER_HASH_KEY when APP_ENV=prod; synthetic test-only value.
+const PROD_AGENT_KEY = { AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-export-store-wiring' };
+
 interface TestContext {
   get<T>(token: unknown): T;
   close(): Promise<void>;
@@ -35,6 +38,7 @@ it.each(['local', 'test', 'staging', 'prod'] as const)(
       const config = {
         ...loadConfig({
           ...configEnv(appEnv),
+          ...(appEnv === 'prod' ? PROD_AGENT_KEY : {}),
           EXPORT_STORE_BASE_URL: BASE_URL,
           EXPORT_STORE_SIGNING_KEY: SIGNING_KEY,
         }),

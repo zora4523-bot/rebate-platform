@@ -19,6 +19,9 @@ import {
   visible,
 } from './kit.ts';
 
+// B3-09j: loadConfig requires AGENT_USER_HASH_KEY when APP_ENV=prod; synthetic test-only value.
+const PROD_AGENT_KEY = { AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-pdd-live-wiring' };
+
 // Give spies a mutable module surface; native ESM namespace properties are not configurable.
 vi.mock('node:fs/promises', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs/promises')>();
@@ -42,7 +45,10 @@ it.each(['local', 'test', 'prod'] as const)(
   '[AC-B1-04t-STARTUP#1] %s 的 pdd/live 在模块工厂拒绝（prod 等待 KMS），不构造适配器或联网',
   async (appEnv) => {
     const observed = observePdd();
-    const config = loadConfig(environment(appEnv));
+    const config = loadConfig({
+      ...environment(appEnv),
+      ...(appEnv === 'prod' ? PROD_AGENT_KEY : {}),
+    });
     const error = await startupFailure(() => startUnion(config, endpoints()));
     expect(error.message.length).toBeGreaterThan(0);
     expect(observed.constructor).not.toHaveBeenCalled();
