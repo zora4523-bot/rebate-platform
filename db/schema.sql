@@ -2772,7 +2772,7 @@ CREATE TABLE app.ledger_entries (
     CONSTRAINT ledger_entries_amount_fen_check CHECK ((amount_fen <> 0)),
     CONSTRAINT ledger_entries_balance_after_check CHECK (((balance_after_fen IS NULL) = (account_version IS NULL))),
     CONSTRAINT ledger_entries_income_type_check CHECK ((income_type = ANY (ARRAY['SERVICE_FEE'::text, 'INCIDENTAL'::text]))),
-    CONSTRAINT ledger_entries_ledger_type_check CHECK ((ledger_type = ANY (ARRAY['REBATE_CREDIT'::text, 'SHARE_CREDIT'::text, 'REFERRAL_CREDIT'::text, 'CLAWBACK'::text, 'SETTLE_ADJUST'::text, 'WITHDRAW_FREEZE'::text, 'WITHDRAW_PAID'::text, 'WITHDRAW_RETURN'::text, 'WITHDRAW_FEE'::text, 'TAX_WITHHOLD'::text, 'REWARD'::text, 'ADMIN_ADJUST'::text, 'BAD_DEBT_WRITEOFF'::text]))),
+    CONSTRAINT ledger_entries_ledger_type_check CHECK ((ledger_type = ANY (ARRAY['REBATE_CREDIT'::text, 'SHARE_CREDIT'::text, 'REFERRAL_CREDIT'::text, 'CLAWBACK'::text, 'SETTLE_ADJUST'::text, 'WITHDRAW_FREEZE'::text, 'WITHDRAW_PAID'::text, 'WITHDRAW_RETURN'::text, 'WITHDRAW_FEE'::text, 'TAX_WITHHOLD'::text, 'REWARD'::text, 'ADMIN_ADJUST'::text, 'BAD_DEBT_WRITEOFF'::text, 'PAY_RECEIPT'::text, 'PAY_REFUND'::text, 'PAY_ANOMALY'::text, 'PAY_FEE'::text]))),
     CONSTRAINT ledger_entries_sub_account_check CHECK ((sub_account = ANY (ARRAY['available'::text, 'frozen'::text]))),
     CONSTRAINT ledger_entries_sub_type_check CHECK ((sub_type <> ''::text))
 )
@@ -2801,7 +2801,7 @@ CREATE TABLE app.ledger_entries_default (
     CONSTRAINT ledger_entries_amount_fen_check CHECK ((amount_fen <> 0)),
     CONSTRAINT ledger_entries_balance_after_check CHECK (((balance_after_fen IS NULL) = (account_version IS NULL))),
     CONSTRAINT ledger_entries_income_type_check CHECK ((income_type = ANY (ARRAY['SERVICE_FEE'::text, 'INCIDENTAL'::text]))),
-    CONSTRAINT ledger_entries_ledger_type_check CHECK ((ledger_type = ANY (ARRAY['REBATE_CREDIT'::text, 'SHARE_CREDIT'::text, 'REFERRAL_CREDIT'::text, 'CLAWBACK'::text, 'SETTLE_ADJUST'::text, 'WITHDRAW_FREEZE'::text, 'WITHDRAW_PAID'::text, 'WITHDRAW_RETURN'::text, 'WITHDRAW_FEE'::text, 'TAX_WITHHOLD'::text, 'REWARD'::text, 'ADMIN_ADJUST'::text, 'BAD_DEBT_WRITEOFF'::text]))),
+    CONSTRAINT ledger_entries_ledger_type_check CHECK ((ledger_type = ANY (ARRAY['REBATE_CREDIT'::text, 'SHARE_CREDIT'::text, 'REFERRAL_CREDIT'::text, 'CLAWBACK'::text, 'SETTLE_ADJUST'::text, 'WITHDRAW_FREEZE'::text, 'WITHDRAW_PAID'::text, 'WITHDRAW_RETURN'::text, 'WITHDRAW_FEE'::text, 'TAX_WITHHOLD'::text, 'REWARD'::text, 'ADMIN_ADJUST'::text, 'BAD_DEBT_WRITEOFF'::text, 'PAY_RECEIPT'::text, 'PAY_REFUND'::text, 'PAY_ANOMALY'::text, 'PAY_FEE'::text]))),
     CONSTRAINT ledger_entries_sub_account_check CHECK ((sub_account = ANY (ARRAY['available'::text, 'frozen'::text]))),
     CONSTRAINT ledger_entries_sub_type_check CHECK ((sub_type <> ''::text))
 );
@@ -4130,7 +4130,7 @@ CREATE TABLE app.recon_diffs (
     CONSTRAINT recon_diffs_resolution_check CHECK ((jsonb_typeof(resolution) = 'object'::text)),
     CONSTRAINT recon_diffs_source_check CHECK ((source = ANY (ARRAY['R1'::text, 'R2'::text, 'R3'::text, 'R4'::text]))),
     CONSTRAINT recon_diffs_status_check CHECK ((status = ANY (ARRAY['open'::text, 'processing'::text, 'adjusted'::text, 'written_off'::text, 'closed'::text]))),
-    CONSTRAINT recon_diffs_type_check CHECK ((type = ANY (ARRAY['union_mismatch'::text, 'channel_mismatch'::text, 'ledger_mismatch'::text, 'platform_restore'::text, 'month_end_unbalanced'::text, 'settle_amount_mismatch'::text, 'settle_missing'::text, 'appeal_restore'::text, 'estimate_changed_after_credit'::text])))
+    CONSTRAINT recon_diffs_type_check CHECK ((type = ANY (ARRAY['union_mismatch'::text, 'channel_mismatch'::text, 'ledger_mismatch'::text, 'platform_restore'::text, 'month_end_unbalanced'::text, 'settle_amount_mismatch'::text, 'settle_missing'::text, 'appeal_restore'::text, 'estimate_changed_after_credit'::text, 'pay_mismatch'::text, 'pay_anomaly'::text])))
 );
 
 
