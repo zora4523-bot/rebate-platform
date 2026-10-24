@@ -32,13 +32,17 @@ import {
   choose,
   click,
   expectFieldError,
+  fieldError,
   fill,
+  freshText,
   mount,
   openChannels,
   openDrawer,
   settle,
   settled,
+  shows,
   smsRow,
+  snapshotText,
   squash,
   stepUpDialog,
   stepUpOpen,
@@ -46,6 +50,7 @@ import {
   textbox,
   toggle,
   verify,
+  type TextSnapshot,
 } from './helpers.ts';
 
 /** The parts adminRegisterNotifySms accepts in its body. */
@@ -57,23 +62,32 @@ const BODY_KEYS = [
   'sample',
   'row_version',
 ];
+/** A WD_FAILED preview that keeps both variables (${reason}, ${amount}). */
+const WD_FAILED_EDITED = '提现打款未成功：${reason}，${amount} 已退回可提现余额';
 
-/** Submits the drawer, checks nothing is written before the step-up, verifies, waits for PUT. */
-async function submit(server: Server, drawer: HTMLElement, code: string): Promise<void> {
+/**
+ * Submits the drawer, checks nothing is written before the step-up, verifies, waits for PUT.
+ * Returns the page text as it was just before the submit (to tell new replies from standing text).
+ */
+async function submit(server: Server, drawer: HTMLElement, code: string): Promise<TextSnapshot> {
+  const before = snapshotText();
   await click(submitOf(drawer));
   const modal = await stepUpDialog();
   expect(server.requests('PUT')).toEqual([]);
   await verify(modal);
   await waitFor(() => expect(server.requests('PUT', smsPath(code))).toHaveLength(1));
   await settled(server);
+  return before;
 }
 
 /** Opens SMS_CODE, replaces its template CODE and submits. */
-async function replaceSmsCodeTemplate(server: Server): Promise<HTMLElement> {
+async function replaceSmsCodeTemplate(
+  server: Server,
+): Promise<{ drawer: HTMLElement; before: TextSnapshot }> {
   const drawer = await openDrawer('SMS_CODE');
   await fill(textbox(drawer, LABEL.template), TEMPLATE.replacement);
-  await submit(server, drawer, 'SMS_CODE');
-  return drawer;
+  const before = await submit(server, drawer, 'SMS_CODE');
+  return { drawer, before };
 }
 
 function rowKeepsOldTemplate(server: Server): void {
@@ -85,17 +99,25 @@ function rowKeepsOldTemplate(server: Server): void {
   );
 }
 
+function rowKeepsOldPreview(server: Server): void {
+  expect(squash(smsRow('WD_FAILED').textContent)).toContain(squash(PREVIEW.wdFailed));
+  expect(server.item('WD_FAILED').sms_registrations[0]!.registration!.preview_text).toBe(
+    PREVIEW.wdFailed,
+  );
+}
+
 it(
   '[AC-F1-06zv-EDIT#1] 编辑抽屉显示定义的变量并带出当前登记；换模板 CODE → 动态码 → PUT（query variant、row_version），受理后写明测试发送号码并更新列表',
   async () => {
     const { server, directFetch } = await mount();
     const drawer = await openDrawer('SMS_CODE');
-    expect(squash(drawer.textContent)).toContain('code');
+    // The variable is shown outside the text boxes (the preview textarea holds ${code} too).
+    expect(shows(drawer, 'code'), 'variable code shown').toBe(true);
     expect(textbox(drawer, LABEL.sign).value).toBe(SIGN);
     expect(textbox(drawer, LABEL.template).value).toBe(TEMPLATE.smsCode);
     expect(textbox(drawer, LABEL.preview).value).toBe(PREVIEW.smsCode);
     await fill(textbox(drawer, LABEL.template), TEMPLATE.replacement);
-    await submit(server, drawer, 'SMS_CODE');
+    const before = await submit(server, drawer, 'SMS_CODE');
     const [request] = server.requests('PUT', smsPath('SMS_CODE'));
     expect(request!.query).toEqual({ variant: 'default' });
     expect(request!.body).toMatchObject({
@@ -110,8 +132,11 @@ it(
     );
     assertWrite(request!, 'test-totp-1');
     assertVerified(server, 1);
-    await waitFor(() => expect(bodyText()).toMatch(ACCEPTED));
-    expect(bodyText()).toContain(PHONE);
+    await waitFor(() => {
+      const text = freshText(before);
+      expect(text).toMatch(ACCEPTED);
+      expect(text).toContain(PHONE);
+    });
     await waitFor(() =>
       expect(squash(smsRow('SMS_CODE').textContent)).toContain(TEMPLATE.replacement),
     );
@@ -121,17 +146,19 @@ it(
 );
 
 it(
-  '[AC-F1-06zv-EDIT#2] 登记未登记的变体：显示该变体的变量，填签名 / 模板 CODE / 类型 / 预览正文后提交，受理后该行变为已登记',
+  '[AC-F1-06zv-EDIT#2] 登记未登记的变体：显示该变体的变量（不列出别的变体的），填签名 / 模板 CODE / 类型 / 预览正文后提交，受理后该行变为已登记',
   async () => {
     const { server } = await mount();
     const drawer = await openDrawer('WD_REJECTED', 'negative_balance');
-    expect(squash(drawer.textContent)).toContain('reason');
+    // negative_balance defines reason only; amount belongs to the default variant.
+    expect(shows(drawer, 'reason'), 'variable reason shown').toBe(true);
+    expect(shows(drawer, 'amount'), 'no amount (default variant only)').toBe(false);
     const preview = '提现未通过：${reason}，请在钱包查看余额';
     await fill(textbox(drawer, LABEL.sign), SIGN);
     await fill(textbox(drawer, LABEL.template), TEMPLATE.fresh);
     await choose(drawer, LABEL.type, /通知/);
     await fill(textbox(drawer, LABEL.preview), preview);
-    await submit(server, drawer, 'WD_REJECTED');
+    const before = await submit(server, drawer, 'WD_REJECTED');
     const [request] = server.requests('PUT', smsPath('WD_REJECTED'));
     expect(request!.query).toEqual({ variant: 'negative_balance' });
     expect(request!.body).toMatchObject({
@@ -141,8 +168,11 @@ it(
       preview_text: preview,
       row_version: 0,
     });
-    await waitFor(() => expect(bodyText()).toMatch(ACCEPTED));
-    expect(bodyText()).toContain(PHONE);
+    await waitFor(() => {
+      const text = freshText(before);
+      expect(text).toMatch(ACCEPTED);
+      expect(text).toContain(PHONE);
+    });
     await waitFor(() => {
       const row = smsRow('WD_REJECTED', 'negative_balance');
       expect(squash(row.textContent)).toContain(TEMPLATE.fresh);
@@ -159,21 +189,21 @@ it(
   async () => {
     const { server } = await mount();
     const drawer = await openDrawer('WD_FAILED');
-    const text = squash(drawer.textContent);
-    expect(text).toContain('reason');
-    expect(text).toContain('amount');
-    const preview = '提现打款未成功：${reason}，${amount} 已退回可提现余额';
-    await fill(textbox(drawer, LABEL.preview), preview);
-    await submit(server, drawer, 'WD_FAILED');
+    expect(shows(drawer, 'reason'), 'variable reason shown').toBe(true);
+    expect(shows(drawer, 'amount'), 'variable amount shown').toBe(true);
+    await fill(textbox(drawer, LABEL.preview), WD_FAILED_EDITED);
+    const before = await submit(server, drawer, 'WD_FAILED');
     expect(server.requests('PUT', smsPath('WD_FAILED'))[0]!.body).toMatchObject({
       sign_name: SIGN,
       template_code: TEMPLATE.wdFailed,
       template_type: 'notice',
-      preview_text: preview,
+      preview_text: WD_FAILED_EDITED,
       row_version: 1,
     });
-    await waitFor(() => expect(bodyText()).toMatch(SAVED));
-    await waitFor(() => expect(squash(smsRow('WD_FAILED').textContent)).toContain(squash(preview)));
+    await waitFor(() => expect(freshText(before)).toMatch(SAVED));
+    await waitFor(() =>
+      expect(squash(smsRow('WD_FAILED').textContent)).toContain(squash(WD_FAILED_EDITED)),
+    );
   },
   FLOW_TIMEOUT,
 );
@@ -183,8 +213,8 @@ it(
   async () => {
     const server = createServer(undefined, { verifyPhone: null });
     await mount(server);
-    await replaceSmsCodeTemplate(server);
-    await waitFor(() => expect(bodyText()).toMatch(NO_PHONE));
+    const { before } = await replaceSmsCodeTemplate(server);
+    await waitFor(() => expect(freshText(before)).toMatch(NO_PHONE));
     await settle();
     expect(stepUpOpen()).toBe(false);
     expect(server.requests('PUT')).toHaveLength(1);
@@ -197,7 +227,7 @@ it(
 it.each([
   {
     name: '20001 fields=[sign_name, template_code]（服务商拒收签名或模板）',
-    reply: () => failure(20001, { fields: ['sign_name', 'template_code'] }),
+    reply: () => failure(20001, { fields: ['sign_name', 'template_code'] }, '参数错误'),
     fields: true,
   },
   {
@@ -213,10 +243,12 @@ it.each([
     const server = createServer();
     server.once('PUT', smsPath('SMS_CODE'), reply);
     await mount(server);
-    const drawer = await replaceSmsCodeTemplate(server);
+    const { drawer, before } = await replaceSmsCodeTemplate(server);
+    // Said in the drawer / result dialog or a notice that was not there before the submit.
     await waitFor(() => {
-      expect(bodyText()).toMatch(NOT_ACCEPTED);
-      expect(bodyText()).toMatch(KEPT);
+      const text = freshText(before);
+      expect(text).toMatch(NOT_ACCEPTED);
+      expect(text).toMatch(KEPT);
     });
     if (fields) {
       await expectFieldError(textbox(drawer, LABEL.sign));
@@ -229,14 +261,24 @@ it.each([
 );
 
 it(
-  '[AC-F1-06zv-EDIT#6] 预览正文被拒（20001 fields=[preview_text]，如变量不一致）：在预览正文旁提示',
+  '[AC-F1-06zv-EDIT#6] 预览正文被服务端拒（20001 fields=[preview_text]）：只在预览正文旁提示，列表不变',
   async () => {
-    const { server } = await mount();
+    const server = createServer();
+    server.once('PUT', smsPath('WD_FAILED'), () =>
+      failure(20001, { fields: ['preview_text'] }, '参数错误'),
+    );
+    await mount(server);
     const drawer = await openDrawer('WD_FAILED');
-    await fill(textbox(drawer, LABEL.preview), '提现打款未成功：${reason}，金额已退回余额');
+    // A valid preview (both variables kept): only the server's answer can mark the field.
+    await fill(textbox(drawer, LABEL.preview), WD_FAILED_EDITED);
     await submit(server, drawer, 'WD_FAILED');
+    expect(server.requests('PUT', smsPath('WD_FAILED'))[0]!.body).toMatchObject({
+      preview_text: WD_FAILED_EDITED,
+    });
     await expectFieldError(textbox(drawer, LABEL.preview));
-    expect(squash(smsRow('WD_FAILED').textContent)).toContain(squash(PREVIEW.wdFailed));
+    expect(fieldError(textbox(drawer, LABEL.sign)), 'no error next to the signature').toBe('');
+    expect(fieldError(textbox(drawer, LABEL.template)), 'no error next to the CODE').toBe('');
+    rowKeepsOldPreview(server);
   },
   FLOW_TIMEOUT,
 );
@@ -262,7 +304,7 @@ it(
     const server = createServer();
     server.once('PUT', smsPath('SMS_CODE'), () => {
       server.item('SMS_CODE').row_version = 5;
-      return failure(20902, { resource: 'notify' });
+      return failure(20902, { resource: 'notify' }, '状态已变化，请刷新后重试');
     });
     await mount(server);
     await replaceSmsCodeTemplate(server);
@@ -285,10 +327,7 @@ it(
       expect(toggle('push', 'WD_FAILED').getAttribute('aria-checked')).toBe('false'),
     );
     const drawer = await openDrawer('WD_FAILED');
-    await fill(
-      textbox(drawer, LABEL.preview),
-      '提现打款未成功：${reason}，${amount} 已退回可提现余额',
-    );
+    await fill(textbox(drawer, LABEL.preview), WD_FAILED_EDITED);
     await submit(server, drawer, 'WD_FAILED');
     const put = server.requests('PUT', smsPath('WD_FAILED'))[0]!;
     expect(put.body).toMatchObject({ row_version: 2 });
@@ -311,6 +350,35 @@ it(
     expect(server.requests('POST', VERIFY)).toEqual([]);
     expect(server.requests('PUT')).toEqual([]);
     rowKeepsOldTemplate(server);
+  },
+  FLOW_TIMEOUT,
+);
+
+it(
+  '[AC-F1-06zv-EDIT#11] 预览正文缺定义的变量：前端预检拦下（不验证、不发 PUT）或发 PUT 收 20001 均可，都在预览正文旁提示，列表不变',
+  async () => {
+    const { server } = await mount();
+    const drawer = await openDrawer('WD_FAILED');
+    // ${amount} is missing.
+    await fill(textbox(drawer, LABEL.preview), '提现打款未成功：${reason}，金额已退回余额');
+    await click(submitOf(drawer));
+    await waitFor(() =>
+      expect(
+        stepUpOpen() || fieldError(textbox(drawer, LABEL.preview)) !== '',
+        'a step-up (then PUT) or a hint next to the preview',
+      ).toBe(true),
+    );
+    if (stepUpOpen()) {
+      await verify(await stepUpDialog());
+      await waitFor(() => expect(server.requests('PUT', smsPath('WD_FAILED'))).toHaveLength(1));
+      await settled(server);
+    } else {
+      await settled(server);
+      expect(server.requests('POST', VERIFY)).toEqual([]);
+      expect(server.requests('PUT')).toEqual([]);
+    }
+    await expectFieldError(textbox(drawer, LABEL.preview));
+    rowKeepsOldPreview(server);
   },
   FLOW_TIMEOUT,
 );

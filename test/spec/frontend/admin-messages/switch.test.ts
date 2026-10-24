@@ -21,8 +21,8 @@ import {
   assertWrite,
   bodyText,
   cancelStepUp,
-  channelRow,
   click,
+  freshText,
   isOn,
   mount,
   openChannels,
@@ -30,22 +30,13 @@ import {
   otherDialogs,
   settle,
   settled,
+  snapshotText,
   squash,
   stepUpDialog,
   stepUpOpen,
   toggle,
   verify,
 } from './helpers.ts';
-
-const NOTICES =
-  '[role="alert"], [role="status"], .ant-message-notice, .ant-notification-notice, .ant-alert';
-
-/** Text of the notices on screen (alerts, antd message / notification) and of the row. */
-function notice(code: string): string {
-  const nodes = Array.from(document.querySelectorAll(NOTICES));
-  const texts = nodes.map((node) => node.textContent ?? '');
-  return squash(texts.join(' ')) + squash(channelRow(code).textContent);
-}
 
 function patches(server: Server, code: string) {
   return server.requests('PATCH', channelPath(code));
@@ -185,11 +176,13 @@ it.each([
     server.once('PATCH', channelPath('WD_SUCCESS'), reply);
     await mount(server);
     await openChannels('WD_SUCCESS');
+    // Only a notice that appears after the switch counts (not standing text of the row).
+    const before = snapshotText();
     await click(toggle('push', 'WD_SUCCESS'));
     await verify(await stepUpDialog());
     await waitFor(() => expect(patches(server, 'WD_SUCCESS')).toHaveLength(1));
     await settled(server);
-    await waitFor(() => expect(notice('WD_SUCCESS')).toMatch(FAILED));
+    await waitFor(() => expect(freshText(before)).toMatch(FAILED));
     expect(isOn('push', 'WD_SUCCESS')).toBe(true);
     expect(stepUpOpen()).toBe(false);
     expect(server.requests('PATCH')).toHaveLength(1);

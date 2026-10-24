@@ -1,7 +1,22 @@
 // @vitest-environment jsdom
 import { expect, it } from 'vitest';
 import { LIST, PREVIEW, SIGN, TEMPLATE } from './fixtures.ts';
-import { FLOW_TIMEOUT, actions, hasSmsRow, mount, openSms, smsRow, squash } from './helpers.ts';
+import {
+  FLOW_TIMEOUT,
+  actions,
+  hasSmsRow,
+  mount,
+  openSms,
+  smsCell,
+  smsRow,
+  squash,
+} from './helpers.ts';
+
+/** Title of the 类型 column (类型 / 模板类型 …). */
+const TYPE_COLUMN = /类型$/;
+/** Labels of sms_template_type (contracts/enums/admin.yaml): verify 验证码, notice 通知. */
+const VERIFY_LABEL = /验证码/;
+const NOTICE_LABEL = /通知/;
 
 it(
   '[AC-F1-06zv-SMS#1] 「短信」页签：已登记的 code × variant 行列出签名、模板 CODE、类型与预览正文，给【编辑】',
@@ -9,21 +24,37 @@ it(
     const { server } = await mount();
     await openSms('SMS_CODE');
     expect(server.requests('GET', LIST)).toHaveLength(1);
+    // The type is read from the 类型 cell only: the SMS_CODE preview itself says 验证码.
     const registered = [
-      { code: 'SMS_CODE', template: TEMPLATE.smsCode, type: /验证码/, preview: PREVIEW.smsCode },
-      { code: 'WD_FAILED', template: TEMPLATE.wdFailed, type: /通知/, preview: PREVIEW.wdFailed },
+      {
+        code: 'SMS_CODE',
+        template: TEMPLATE.smsCode,
+        type: VERIFY_LABEL,
+        other: NOTICE_LABEL,
+        preview: PREVIEW.smsCode,
+      },
+      {
+        code: 'WD_FAILED',
+        template: TEMPLATE.wdFailed,
+        type: NOTICE_LABEL,
+        other: VERIFY_LABEL,
+        preview: PREVIEW.wdFailed,
+      },
       {
         code: 'UNION_AUTH_EXPIRING',
         template: TEMPLATE.unionExpiring,
-        type: /通知/,
+        type: NOTICE_LABEL,
+        other: VERIFY_LABEL,
         preview: PREVIEW.unionExpiring,
       },
     ];
-    for (const { code, template, type, preview } of registered) {
+    for (const { code, template, type, other, preview } of registered) {
       const text = squash(smsRow(code).textContent);
       expect(text, code).toContain(SIGN);
       expect(text, code).toContain(template);
-      expect(text, code).toMatch(type);
+      const typeText = squash(smsCell(code, 'default', TYPE_COLUMN).textContent);
+      expect(typeText, `${code} 类型`).toMatch(type);
+      expect(typeText, `${code} 类型`).not.toMatch(other);
       expect(text, code).toContain(squash(preview));
       expect(text, code).not.toContain('未登记');
       expect(actions(smsRow(code), /^编辑/), `${code} 【编辑】`).toHaveLength(1);
