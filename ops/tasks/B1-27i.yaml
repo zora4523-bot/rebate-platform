@@ -1,0 +1,40 @@
+id: B1-27i
+repo: rebate-platform
+title: identity：个人信息副本下载实现（CT-24q adminDownloadUserDataExport、listMyDataCopies、getMyDataCopyDownload）——后台企业微信路径：只限登记人、每次同时持 user.data_export 与 pii.reveal_phone 并动态码、第一次下载生成一次性口令加密交付文件并记交付、regenerate 换新文件与口令、30417 / 20001；用户侧：只列本人 in_app_sms 的 ready / delivered 未过期副本，下载现签短时链接，其余一律 30701，10006 白名单与 deletion_only 受限会话可用；去掉这三个接口的 planned
+type: impl
+# 2026-10-24 草稿（admin-backend，B1-27 拆分）。依据：08 BR-ID-40 细则「企业微信会话交付的下载」「在 App 内下载」、04 §6.6 `users/{id}/data-exports` 下载段与 §6.1 `me/data-copies` 行；签名链接有效期 min(5 分钟, 副本过期时刻) 同 BR-ID-42 口径（由编排者摘一句）；封禁白名单 BR-ID-31、受限会话 BR-ID-01 细则「受限会话」由编排者各摘一句（契约已标 x-session-scopes [full, deletion_only]、10006 白名单、不受 10405 闸门）。 refs 只列 BR-ID-40（约 11.7KB）。 任务书预算（参照 B1-27b 实测：模板约 9KB + 第 3 节路径约 2KB）：规则原文约 11.7KB，第 9 节须压到约 3KB 内，按 ②③ 优先摘；其余写成一句指针指回本台账注释。 拆分理由：三个下载接口共享「现签短时链接、不暴露存在性、口令只出现一次」的安全口径，单独评审；与登记（B1-27c）分开后两边任务书都在 24KB 内。 本线技术取舍（由编排者摘进任务书第 9 节）： ① 文件：后台 identity/http/admin/user-data-exports.controller.ts 追加下载路由（与 B1-27c 同一控制器）、服务 identity/application/admin-data-copy-download.ts；用户侧 identity/http/public/data-copies.controller.ts、服务 identity/application/my-data-copies.ts。 ② 后台下载判定：下载人不是登记人或 export_id 不存在 → 20001 fields=[export_id]（同样回答，不暴露存在性）；缺任一权限点 → 10403；状态不是 ready / delivered、已过期、或过期后要 regenerate → 30417（data.status 为当前状态）；通过后每次写一条审计（action user_data_copy_download）再返回链接。第一次下载：CSPRNG 生成口令，解开 B1-27h 服务端加密的文件、用口令重新加密出交付文件写入新对象键，口令只在本次响应返回、不落库不进日志，同事务记 delivered；regenerate=true：同法换新文件与新口令、删原对象，due_at、expires_at 不变。并发两次「第一次下载」以 row_version CAS 判定，只有一个拿到口令，另一个按已交付处理。 ③ 用户侧：列表只返回本人、delivery=in_app_sms、status ∈ {ready, delivered}、未过期的（copy_id、status、generated_at、expires_at），不含链接与提取码；下载任何不满足（不存在、非本人、非 in_app_sms、状态不可下载、已过期）一律 30701；账号进入 processing 后不可用（照注销状态的现有判定），封禁、冷静期、版本过低受限会话照常可用。 ④ 签名链接经 platform/export-store.signedUrl，有效期 min(5 分钟, expires_at)，每次现签，不缓存。 ⑤ 去掉三个操作的 planned 并一起提交生成物；不加迁移。 TODO(规划/11 §2.3): 封禁说明页（RiskNotice）的副本入口 — blocked on 设计画板与前端任务（followups-ledger 第 26 行），本任务只交付接口。
+refs: [BR-ID-40]
+refs_hash:
+  BR-ID-40: 994eb7b30461
+deps: [B1-27c, B1-27h]
+paths:
+  - 'apps/api/src/modules/identity/application/admin-data-copy-download.ts'
+  - 'apps/api/src/modules/identity/application/admin-data-copy-download.test.ts'
+  - 'apps/api/src/modules/identity/application/my-data-copies.ts'
+  - 'apps/api/src/modules/identity/application/my-data-copies.test.ts'
+  - 'apps/api/src/modules/identity/http/admin/user-data-exports.controller.ts'
+  - 'apps/api/src/modules/identity/http/admin/user-data-exports.controller.test.ts'
+  - 'apps/api/src/modules/identity/http/public/data-copies.controller.ts'
+  - 'apps/api/src/modules/identity/http/public/data-copies.controller.test.ts'
+  - 'apps/api/src/modules/identity/infra/personal-data-copies.ts'
+  - 'apps/api/src/modules/identity/infra/personal-data-copies.test.ts'
+  - 'apps/api/src/modules/identity/identity.module.ts'
+  - 'apps/api/src/modules/identity/identity-admin.module.ts'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/identity/data-copies-download/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/data-copies-download/**'
+status: todo
+pr: null

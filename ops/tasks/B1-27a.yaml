@@ -1,0 +1,40 @@
+id: B1-27a
+repo: rebate-platform
+title: identity：后台实名更正实现（CT-24q adminCorrectUserRealname）——不受理五类 30419 与新身份证号黑名单 44001、照自助实名顺序校验并调二要素（不计每日次数）、锁用户行在途复核、有到账提现时旧身份迁入隔离存储、同一事务覆盖实名并使收款账号全部失效、发 user.realname_corrected、每次提交（含被拒）写审计；去掉 planned
+type: impl
+# 2026-10-24 草稿（admin-backend，编排 2026-10-22 21:1x 派工 B1-27；契约 CT-24q 已合并 #1492）。依据：08 BR-ID-25 细则「实名更正」（D10-165 / 167 / 185 / 192 / 246 / 248 / 250）、04 §6.6 `users/{id}/realname-correction`、§3.2「实名更正旧身份」、§11.2 `user.realname_fix`；一跳引用 BR-WDR-02 细则「实名更正后的失效与重绑」、BR-ID-26、BR-ID-31、BR-ID-33、BR-WDR-08 终态集合由编排者在第 9 节各摘一两句。 refs 只列 BR-ID-25（正文约 2.0KB + 细则约 9.5KB，合计约 11.5KB）；再加 BR-WDR-02（细则很长）或 BR-ID-33（约 5.2KB）都会超过约 14KB 的建议值，故一跳规则只摘句。 任务书预算（参照 B1-27b 实测：模板约 9KB + 第 3 节路径约 2KB）：规则原文约 11.5KB，第 9 节须压到约 3KB 内，按 ②③④⑤⑦ 优先摘；其余写成一句指针指回本台账注释。 拆分理由：旧身份表与副本表的迁移拆为 B1-27d，旧身份的独立数据密钥拆为 B1-27e（platform，RV2），payout_account_changes 记失效行拆为 B1-27g（等契约线补区分字段）；本任务只做 identity 的更正业务与后台接口。 本线技术取舍（由编排者摘进任务书第 9 节）： ① 文件：服务 identity/application/admin-realname-correction.ts、控制器 identity/http/admin/user-realname.controller.ts、旧身份写入 identity/infra/realname-prior-identities.ts；照 B1-27b 在 identity-admin.module.ts 注册、由 app.module 经 forAdmin 传入绑定事务的 auditWriter、risk 名单查询、payout 的在途 / 到账读端口与 B1-27e 打开的旧身份 FieldCrypto；跨模块只经对方 index.ts。 ② 判定顺序：先不受理（不调供应商，30419）——realname_status≠verified → realname_not_verified；注销 cooling / processing → account_deleting（带 data.stage，取值同 10007）、已注销 → account_deleted；非终态提现单 → withdrawal_in_progress（复用 identity/ports/withdrawal-in-flight.ts 的 hasNonTerminal，payout 已实现，不另读提现表）；原实名 id_no_hmac 命中 id_no 维度黑名单 → identity_blacklisted；然后 20001 格式 → 新身份证号命中黑名单 44001（后台侧拒绝：不记 risk_hits、不进申诉）→ 30407 → 30405（他人 verified 占用；与本人原值相同不算）→ 供应商；50401 / 50301 照常返回不保存；不一致 30406、原实名不动；不计 realname-attempts 的每日次数。校验函数复用 realname.ts 的 parseResidentIdNo / normalizePersonName / 年龄判断，不复制规则。 ③ 供应商一致后在同一事务锁用户行（与提现建单 BR-WDR-07 ① 同一把用户级锁；注意 payout-account.ts 头注释里 FOR UPDATE 与 risk_hits 外键的死锁说明）再判一次 hasNonTerminal，有就按 withdrawal_in_progress 拒绝且不覆盖；锁内再判 hasSucceeded：为真时先把旧姓名 / 身份证密文（主密钥环解密后用 B1-27e 的独立密钥重新加密，明文只在内存）、旧 id_no_hmac、旧 verified_at 与更正时刻插入 B1-27d 的旧身份表，为假时不迁入（hasSucceeded 不分身份；同一用户第二次更正时会把更早身份下的到账也算进来，多迁一次只是多留，不会少留，先这样做并在代码注释写明，精确到「上次更正之后」等提现读端口带时间界再收紧）；随后覆盖 realname（姓名、身份证密文、id_no_hmac、birth_date、provider、verified_at=Clock），30405 的并发占用以部分唯一索引 23505 兜底。
+# ④ 收款账号全部失效：同一事务把该用户 is_current 行置 false（row_version CAS），不新建行；payout_account_changes 现表 new_payout_method / new_hmac 非空，失效无法如实写入，本任务暂不写该表——按 payout-account.ts 现行口径，没有当前账号时的重新绑定是首次绑定、不写变更行、不计次，正好满足 BR-WDR-02 细则「这次失效与其后第一次重新绑定不计入」；04 §6.6「写 payout_account_changes」由 B1-27g 补上（TODO 见下）。 ⑤ 银行卡核验记录不得跨身份复用：payout-bank-card.ts 的请求指纹是 `${realname.id}:${bank_card_hmac}`，更正就地覆盖 realname 行、id 不变，旧身份下 matched 的记录会被复用、绕过「按新身份证号三要素」（BR-WDR-02）；本任务让复用判定只认更正之后（核验记录时刻晚于 realname.verified_at）的记录，或把 verified_at 纳入指纹，二选一由实现定，须带单元测试。 ⑥ 事件：在 platform/events/types.ts 的 EVENT_NAMES 按 02 §11 位置（asset_snapshot.timed_out 之前）登记 user.realname_corrected，载荷只含 app_id、user_id、旧 / 新 id_no_hmac 与更正时刻，与覆盖同一事务入队；test/spec/platform/events/kit.ts 已把它列为 PENDING，不用改冻结测试；本任务不写消费者（tax_ytd 归 B2-08）。 ⑦ 审计：每次提交（含所有拒绝、供应商超时）一条 audit_logs，action `user_realname_correct`，记操作人、原因、结果码、新值脱敏串或 id_no_hmac，成功另记前后脱敏值；被拒的审计在独立短事务写，不随业务回滚丢失；姓名与身份证号明文不进日志、审计、错误与响应；成功响应返回脱敏实名（BR-ID-33 格式，复用 domain/mask-name.ts）。 ⑧ step-up 动态码与权限点 user.realname_fix 走后台现有守卫；去掉 adminCorrectUserRealname 的 planned 并一起提交生成物；不加迁移。 TODO(规划/11 §2.3): 账号带「待加验」标记时不受理（reverify_pending）— blocked on 待加验标记的表结构与任务（BR-WDR-01 细则，同 B1-27b 的 TODO）；在此之前该分支不可达，代码里留 TODO，不造假数据。 TODO(规划/11 §2.3): 失效时写 payout_account_changes 并在计次里排除这类行 — blocked on 契约线给 payout_account_changes 补区分字段（BR-WDR-02 细则、04 §3.2；followups-ledger 已记），落地任务 B1-27g。 TODO(规划/11 §2.3): 旧身份的查看接口与单列权限点 — blocked on 规划回写 + specs/permissions.yaml test-change + 契约任务（CT-24q 注释已排除）。
+refs: [BR-ID-25]
+refs_hash:
+  BR-ID-25: dcab91fa0ccc
+deps: [CT-24q, B1-27d, B1-27e]
+paths:
+  - 'apps/api/src/modules/identity/application/admin-realname-correction.ts'
+  - 'apps/api/src/modules/identity/application/admin-realname-correction.test.ts'
+  - 'apps/api/src/modules/identity/http/admin/user-realname.controller.ts'
+  - 'apps/api/src/modules/identity/http/admin/user-realname.controller.test.ts'
+  - 'apps/api/src/modules/identity/infra/realname-prior-identities.ts'
+  - 'apps/api/src/modules/identity/infra/realname-prior-identities.test.ts'
+  - 'apps/api/src/modules/identity/application/payout-bank-card.ts'
+  - 'apps/api/src/modules/identity/application/payout-bank-card.test.ts'
+  - 'apps/api/src/modules/identity/identity-admin.module.ts'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/platform/events/types.ts'
+  - 'apps/api/src/modules/platform/events/index.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/identity/admin-realname/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/admin-realname/**'
+status: todo
+pr: null

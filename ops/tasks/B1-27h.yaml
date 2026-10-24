@@ -1,0 +1,38 @@
+id: B1-27h
+repo: rebate-platform
+title: identity：个人信息副本的生成与交付——异步作业 pending→running→（in_app_sms：一次性提取码加密、短信发提取码、站内信只带 DataCopy 入口、即记 delivered；wecom_session：服务端加密存放、ready）、失败 failed、24 小时过期 expired 并删文件；登记人后台账号停用时其未交付的企业微信路径请求置 failed；注销进入 processing 时取消未结束请求并删除全部副本文件；生成、交付各写审计
+type: impl
+# 2026-10-24 草稿（admin-backend，B1-27 拆分）。依据：08 BR-ID-40 细则「交付（默认）」「副本请求与注销状态」「重新登记与登记人停用」、04 §3.2 `personal_data_copies` 行与 §6.6 `users/{id}/data-exports`（「登记后异步生成副本」「in_app_sms 生成时用一次性提取码加密文件……即记交付」「wecom_session 生成后为 ready」）；一跳引用 BR-ID-30 ⑨（24 小时过期）、BR-ID-42（导出文件私有存储与短时签名口径）、BR-ID-43（停用后台账号）、BR-ID-28（processing 清理）由编排者在第 9 节各摘一两句。 refs 只列 BR-ID-40（约 11.7KB）；BR-ID-42 约 3.3KB、BR-ID-30 约 13.6KB，同引超约 14KB 的建议值。 任务书预算（参照 B1-27b 实测：模板约 9KB + 第 3 节路径约 2KB）：规则原文约 11.7KB，第 9 节须压到约 3KB 内，按 ①②④⑥⑦ 优先摘；其余写成一句指针指回本台账注释。
+# 拆分理由：作业、存储、短信 / 站内信、停用钩子与注销联动是一组带副作用的后台流程，与登记接口（B1-27c）、下载接口（B1-27i）分开评审；登记只负责落行并在同一事务入队本任务的作业。 本线技术取舍（由编排者摘进任务书第 9 节）： ① 不复用 admin 模块 B1-34e 的 export-worker（它只服务 export_tasks 的 CSV，且 personal_data_copies 的写者是 identity，04 §3.2）；照它的租约 / 至少一次投递 / 消费端去重写法，在 identity 新增 data-copy-worker，作业经 platform/queue 投递，app.module 在 worker 进程装配（identity-worker.module.ts）。
+# ② 存储复用 platform/export-store：扩出副本用的对象键前缀与内容类型（现在 key 限 `<app_id>/<export_id>.csv`、contentType 只有 text/csv）；从一开始就用每次运行独立的对象键并在完成前校验运行令牌，不重演 B1-34e / B1-34f 迟到上传覆盖的问题（D10-138）；ExportStore 若有冻结测试钉死 key 形状，先报 test-change，不改测试。 ③ 文件：内容取自 B1-27f 的 PersonalDataCopySources，打成一个压缩包并整体加密；加密格式默认 AES-256 加密 ZIP（常见解压工具输入口令即可打开）。若需新依赖，实现代理在输出写 deps_needed（精确版本），由编排者先开 deps 任务，本任务不改锁文件；提取码 / 口令用 CSPRNG 生成、不落库、不进日志与审计。in_app_sms 的提取码在生成时产生、只经短信发出；wecom_session 生成后用服务端密钥加密存放（口令在 B1-27i 第一次下载时才生成）。 ④ 交付：短信经 identity 现有短信端口（非生产只用假适配器）发到绑定手机号，站内信经 notification index 写一条只带 `DataCopy` 入口的消息，两者都不带下载链接；两者都成功才记 delivered（delivered_at=Clock），任一失败按 failed（failure_reason）处理、不留半交付。
+# ⑤ 过期：expires_at = generated_at + 24 小时（BR-ID-30 ⑨）；定时扫描把过期的 ready / delivered 置 expired 并删对象；企业微信路径未交付即过期的保持 expired（重新登记由 B1-27c 判）。 ⑥ 停用钩子：B1-34h 在 admin/infra/admin-account-writes.ts 停用事务里已调 cancelByCreator，本任务在同一事务追加 identity 导出的端口（经 identity/index.ts，admin 不读 personal_data_copies），把 requested_by=该账号、delivery=wecom_session、未交付的请求置 failed 并写审计；in_app_sms 不受影响；落地后删 B1-34h 注释里对应的 TODO。 ⑦ 注销：进入 processing（deletion-processing.ts）时，同事务把该用户 pending / running / ready 的请求置 cancelled，并删除该用户全部副本对象（含已交付、未过期的）；删对象失败只记日志并由过期扫描兜底再删。
+# ⑧ 审计：生成成功、生成失败、交付各一条 audit_logs（BR-ID-40 正文「请求、生成与交付全程写 audit_logs」），交付一条记交付方式；不加迁移（表来自 B1-27d）。 TODO(规划/11 §2.3): 副本交付的站内信标题 / 正文与短信正文（带提取码）的文案键 — blocked on 08 BR-TEXT 登记（现只有 risk_notice.data_copy_entry 与 30417.data_copy，没有交付文案）；派工前须先由规划登记，否则 in_app_sms 路径不能交付。 TODO(规划/11 §2.3): 真实对象存储（OSS）下的副本存放 — blocked on B1-30 OSS 适配器；在此之前 staging / prod 生成会按 ExportStoreUnavailableError 失败（与后台导出同口径）。
+refs: [BR-ID-40]
+refs_hash:
+  BR-ID-40: 994eb7b30461
+deps: [B1-27d, B1-27f, B1-34h]
+paths:
+  - 'apps/api/src/modules/identity/application/data-copy-worker.ts'
+  - 'apps/api/src/modules/identity/application/data-copy-worker.test.ts'
+  - 'apps/api/src/modules/identity/application/data-copy-file.ts'
+  - 'apps/api/src/modules/identity/application/data-copy-file.test.ts'
+  - 'apps/api/src/modules/identity/infra/personal-data-copies.ts'
+  - 'apps/api/src/modules/identity/infra/personal-data-copies.test.ts'
+  - 'apps/api/src/modules/identity/application/deletion-processing.ts'
+  - 'apps/api/src/modules/identity/application/deletion-processing.test.ts'
+  - 'apps/api/src/modules/identity/identity-worker.module.ts'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/modules/admin/infra/admin-account-writes.ts'
+  - 'apps/api/src/modules/admin/infra/admin-account-writes.test.ts'
+  - 'apps/api/src/modules/notification/index.ts'
+  - 'apps/api/src/modules/platform/export-store/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/identity/data-copies-worker/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/data-copies-worker/**'
+status: todo
+pr: null

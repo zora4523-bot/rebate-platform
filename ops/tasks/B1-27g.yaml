@@ -1,0 +1,27 @@
+id: B1-27g
+repo: rebate-platform
+title: identity：实名更正导致的收款账号失效写 payout_account_changes（用契约线补的区分字段标明这类变更），本月变更次数与 change_remaining_this_month 排除这类行及其后第一次重新绑定；B1-27a 的后续
+type: impl
+# 2026-10-24 草稿（admin-backend，B1-27 拆分）。依据：08 BR-WDR-02 细则「实名更正后的失效与重绑」（D10-181 ③、D10-185 ⑥：「区分这类变更的字段由契约线补（规划/04 §3.2）」）、04 §6.6 `users/{id}/realname-correction`（「使该用户已绑定的收款账号全部失效（payout_accounts 不再有当前账号，写 payout_account_changes）」）；followups-ledger 第 25 行。
+# 拆分理由：payout_account_changes 现表 new_payout_method / new_hmac 非空、没有区分字段，失效写不进去；加字段是契约 / 表结构改动，不在本线实现任务里。B1-27a 先按「失效不写变更行、无当前账号时重绑按首次绑定不计次」落地，次数口径已对；本任务只补留痕，让 04 §6.6 的「写 payout_account_changes」成立。
+# 收款账号读写在 identity 模块（identity/application/payout-account.ts、payout-bank-card.ts），不在 payout 模块；风险级按 identity（RV1），但它决定提现前置的变更次数，评审仍按资金口径看。
+# refs 留空：BR-WDR-02 正文约 4.4KB + 细则约 27.8KB，单引就超任务书上限；由编排者在第 9 节逐字摘细则「存储」「保存在用户级锁内」「实名更正后的失效与重绑」三条（合计约 2KB）。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：失效行与 B1-27a 的覆盖同一事务写；计次查询 changesThisMonth 排除区分字段标为实名更正的行；其后第一次重新绑定沿用「首次绑定不写变更行」口径，如契约线要求这次重绑也写行并标明，同样排除；不改 GET /v1/me/payout-account 的响应形状。
+# 入账前置：TODO(规划/11 §2.3): 本任务的 deps 补上契约线的「payout_account_changes 区分字段」契约 / 迁移任务编号 — blocked on 契约线入账（04 §3.2 先由规划补列名与取值）；在此之前不派工。
+refs: []
+refs_hash: {}
+deps: [B1-27a]
+paths:
+  - 'apps/api/src/modules/identity/application/admin-realname-correction.ts'
+  - 'apps/api/src/modules/identity/application/admin-realname-correction.test.ts'
+  - 'apps/api/src/modules/identity/application/payout-account.ts'
+  - 'apps/api/src/modules/identity/application/payout-account.test.ts'
+test_paths:
+  - 'test/spec/identity/realname-payout-invalidate/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/realname-payout-invalidate/**'
+status: todo
+pr: null

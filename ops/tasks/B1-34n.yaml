@@ -1,0 +1,20 @@
+id: B1-34n
+repo: rebate-platform
+title: admin：作废时间点与登录最后一步交错的窄窗——启用与首次重绑验证器时也写作废时间点，使停用 / 重置前签发、跨整秒存活的会话在启用 / 重绑后仍失效（B1-34h r2 S2）
+type: impl
+# 草稿（admin-backend 2026-10-24，B1-34h 独立 Claude money r2 S2）：admin-login.ts:242 最终会话检查取的作废时间点先于其写入 Redis；停用 / 重置验证器与登录最后一步在几毫秒内交错且跨整秒时，新会话存活，账号被停用期间 admin-check 按 status 拒，30 分钟空闲期内被重新启用（或重绑验证器）后该会话复活。
+# 修法候选：enable 与首次 bindTotp（重置后）也写作废时间点（此刻之前签发的作废）；或会话记签发时的 row_version 并在 admin-check 比对（需评估改显示名 / 存权限点不吊销会话的契约口径）。
+refs: [BR-ID-43]
+refs_hash:
+  BR-ID-43: aabc9139136d
+deps: [B1-34h]
+paths:
+  - 'apps/api/src/modules/admin/**'
+test_paths:
+  - 'test/spec/admin/admins-revive/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

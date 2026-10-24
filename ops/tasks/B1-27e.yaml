@@ -1,0 +1,27 @@
+id: B1-27e
+repo: rebate-platform
+title: platform：实名更正旧身份隔离存储的独立数据密钥——第二套字段密钥环（独立于 FIELD_KEYRING_FILE 的配置项与启动校验，local / test 用 LocalKeyProvider），经 platform/crypto 现有 openFieldCrypto 打开，供 identity 的旧身份迁入使用；B1-27a 前置
+type: impl
+# 2026-10-24 草稿（admin-backend，B1-27 拆分）。依据：08 BR-ID-25 细则「实名更正」中「旧身份留存」一项（「隔离存储用独立的数据密钥」）、04 §3.2「实名更正旧身份」行（「与 tax_archive 同等保护的隔离存储，独立数据密钥」）；由编排者在第 9 节摘这两句，refs 不再引 BR-ID-25（约 11.5KB，留给 B1-27a）。
+# 拆分理由：独立密钥是 platform/config + crypto 的改动（RV2，起门禁作用的启动校验），与 identity 的更正业务分开评审；B1-27a 只接收已打开的第二个 FieldCrypto，不碰密钥配置。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：照现有 FIELD_KEY_PROVIDER / FIELD_KEYRING_FILE 的做法新增一组旧身份密钥环配置（变量名实现时定，说明写在 config 源码注释；安全禁区不读写 .env*，.env.example 要补一行时由编排者另行处理）；staging / prod 缺这组配置时启动失败（同主密钥环的启动校验口径，keyring-startup.ts），local / test 自动用 LocalKeyProvider 生成；两套密钥环的数据密钥不得相同、盲索引沿用主密钥环（旧 id_no_hmac 原样迁移，不重算）；context 字符串用独立前缀，防止与 realname 列密文互换；KMS 适配器另有任务，不在本任务。
+# 部署：staging / prod 的密钥文件由负责人自己配（需要时编排者在派工前提醒），本任务只交付配置项与本地实现。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/platform/config/keyring*.ts'
+  - 'apps/api/src/modules/platform/config/config.ts'
+  - 'apps/api/src/modules/platform/config/config.test.ts'
+  - 'apps/api/src/modules/platform/config/index.ts'
+  - 'apps/api/src/modules/platform/crypto/**'
+  - 'apps/api/src/modules/platform/platform.module.ts'
+test_paths:
+  - 'test/spec/platform/prior-identity-keyring/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/prior-identity-keyring/**'
+status: todo
+pr: null
