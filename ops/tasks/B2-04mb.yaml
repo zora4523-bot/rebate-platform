@@ -1,0 +1,23 @@
+id: B2-04mb
+repo: rebate-platform
+title: 单笔入账（R5，B2-04m credit-order.ts）改经 commission 版本无关归属读取 readCommissionAttribution：order-sync 已把 commission_version 升到 2、而 v2 快照无写者时，WAITING 单入账不得因快照读取断言当前版本而整批回滚
+type: impl
+# 2026-10-24 资金线（编排 D10-317：q 合并后另开小任务，先写复现规则测试确认是真 bug 再修）。分工：独立 Claude 写规则测试（Codex 额度至 10-30，approvals #36）/ Opus 实现。
+# 状态备注：可开（B2-04q #1507 已合并，commission 已导出 readCommissionAttribution）。只改 credit-order.ts 取比例 / forfeited 的读取方式；金额口径（B2-04e 入账计划、BR-CALC-02 floor）不变。若复现测试在现主干上即绿（不是真 bug），停下报编排。
+refs: [BR-FUND-04, BR-CALC-13]
+refs_hash:
+  BR-FUND-04: f4b8b2be46ea
+  BR-CALC-13: 54c06125032c
+deps: [B2-04m, B2-04q]
+paths:
+  - 'apps/api/src/modules/settlement/credit/credit-order.ts'
+  - 'apps/api/src/modules/settlement/credit/credit-store.ts'
+  - 'apps/api/src/modules/settlement/credit/index.ts'
+test_paths:
+  - 'test/spec/settlement/credit-attribution/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/credit-attribution/**'
+status: todo
