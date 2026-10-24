@@ -2,17 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { fixture as baseFixture } from '../list-detail/kit.ts';
-import {
-  ADMIN_NAME,
-  CONFLICT,
-  IP,
-  NOTE,
-  NOW,
-  fieldsError,
-  fixture,
-  open,
-  type Harness,
-} from './kit.ts';
+import { NOW, fixture, open, type Harness } from './db-kit.ts';
+import { ADMIN_NAME, CONFLICT, IP, NOTE, fieldsError } from './kit.ts';
 
 let database: TestDatabase | undefined;
 let h: Harness;

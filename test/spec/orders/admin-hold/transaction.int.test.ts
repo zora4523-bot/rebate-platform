@@ -10,17 +10,8 @@ import type {
   RebateAdminCommandPort,
 } from '../../../../apps/api/src/modules/orders/application/rights-ports.ts';
 import type { AuditInput } from '../../../../apps/api/src/modules/platform/index.ts';
-import {
-  CONFLICT,
-  acceptable,
-  fixture,
-  open,
-  probe,
-  underForeignLock,
-  type Fixture,
-  type Harness,
-  type Mode,
-} from './kit.ts';
+import { fixture, open, probe, underForeignLock, type Fixture, type Harness } from './db-kit.ts';
+import { CONFLICT, acceptable, type Mode } from './kit.ts';
 
 let database: TestDatabase | undefined;
 let h: Harness;

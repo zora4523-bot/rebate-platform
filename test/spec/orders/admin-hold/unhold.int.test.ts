@@ -1,18 +1,7 @@
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import {
-  ADMIN_NAME,
-  CONFLICT,
-  IP,
-  NOTE,
-  NOW,
-  fieldsError,
-  fixture,
-  open,
-  type Fixture,
-  type Harness,
-  type Order,
-} from './kit.ts';
+import { NOW, fixture, open, type Fixture, type Harness, type Order } from './db-kit.ts';
+import { ADMIN_NAME, CONFLICT, IP, NOTE, fieldsError } from './kit.ts';
 
 let database: TestDatabase | undefined;
 let h: Harness;
