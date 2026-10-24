@@ -7,9 +7,9 @@ type: impl
 # 本线技术取舍（由编排者摘进任务书第 9 节）：端口 identity/ports/personal-data-copy-sources.ts，按 (app_id, user_id) 在调用方给的只读句柄上取，不写；各模块只新增 application/personal-data-copy-read.ts 并在 index.ts 加导出，不改既有行为。
 # 邀请只输出「是否已绑定邀请人」（J7）；Agent 对话只取未过期的（BR-ID-30 ①，按 agent 现有过期口径）；手机号完整、实名与收款账号脱敏，复用 platform/masking 与 identity/domain/mask-*.ts；序列化与打包归 B1-27h；不加迁移。
 # orders、ledger、payout、growth 是 RV2，只新增只读导出；评审照 approvals 第 27 / 36 条，资金评审清单照填。
-refs: [BR-ID-40]
-refs_hash:
-  BR-ID-40: 994eb7b30461
+# 2026-10-24 refs 改空：取数横跨 orders / ledger / payout / growth / agent，任务书第 5 节各模块 AGENTS.md 已约 13.7KB，与 BR-ID-40 原文（约 12.6KB）同引超 24KB；只读端口只需 BR-ID-40 细则「导出范围（默认）」一段，由编排者原文摘进第 9 节（照 B1-15r 等 refs 为空的先例）。
+refs: []
+refs_hash: {}
 deps: [CT-24q]
 paths:
   - 'apps/api/src/modules/identity/ports/personal-data-copy-sources.ts'
