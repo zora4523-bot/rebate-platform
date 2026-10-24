@@ -36,6 +36,39 @@ red_exempt:
   - file: test/spec/content/pages-schedule/contract.test.ts
     test: '[AC-F1-09p#27] 撤销操作正式启用，content.page 不要求二次认证'
     reason: 冻结 F1-09p 用例，测试体未改，只因同文件死信目标改名期望入列（D10-193）
+  - file: test/spec/payment/orders/domain.test.ts
+    test: '[AC-B2-15b#1] 生成的 out_trade_no 为 P+20 位大写字母数字：纯 ASCII、≤32、互不相同且通过渠道交集校验'
+    reason: 冻结 B2-15b 用例，测试体未改；同文件只改 [AC-B2-15b#9] 死信目标（D10-193）
+  - file: test/spec/payment/orders/domain.test.ts
+    test: '[AC-B2-15b#2] 商户单号校验取两渠道交集：ASCII 字母数字 6–32 位为真，含其他字符、过短、过长为假'
+    reason: 冻结 B2-15b 用例，测试体未改；同文件只改 [AC-B2-15b#9] 死信目标（D10-193）
+  - file: test/spec/payment/orders/domain.test.ts
+    test: '[AC-B2-15b#3] expire_at = 创建时刻 + pay.order_ttl_minutes，精确到毫秒（三个时点：日内、跨 +08 日界、跨闰日）'
+    reason: 冻结 B2-15b 用例，测试体未改；同文件只改 [AC-B2-15b#9] 死信目标（D10-193）
+  - file: test/spec/payment/orders/domain.test.ts
+    test: '[AC-B2-15b#4] pay.order_ttl_minutes 缺省为 15；正整数照用；其他值回默认并标记告警'
+    reason: 冻结 B2-15b 用例，测试体未改；同文件只改 [AC-B2-15b#9] 死信目标（D10-193）
+  - file: test/spec/payment/orders/domain.test.ts
+    test: '[AC-B2-15b#5] 开关只有值恰为 JSON true 才算开；缺省、false、字符串 true、1 等一律为关'
+    reason: 冻结 B2-15b 用例，测试体未改；同文件只改 [AC-B2-15b#9] 死信目标（D10-193）
+  - file: test/spec/payment/orders/domain.test.ts
+    test: '[AC-B2-15b#6] 30901 reason 按 pay_disabled → channel_disabled → 未登记 biz_not_sellable / 端不符 platform_not_allowed 取第一个'
+    reason: 冻结 B2-15b 用例，测试体未改；同文件只改 [AC-B2-15b#9] 死信目标（D10-193）
+  - file: test/spec/payment/orders/domain.test.ts
+    test: '[AC-B2-15b#7] pay.biz.<biz_type>.platforms 覆盖登记的可售端；未登记的类型不能只靠配置变成可售'
+    reason: 冻结 B2-15b 用例，测试体未改；同文件只改 [AC-B2-15b#9] 死信目标（D10-193）
+  - file: test/spec/payment/orders/domain.test.ts
+    test: '[AC-B2-15b#8] 业务类型登记按 APP_ENV：prod 为空；local/test/staging 只有 test_item（1 分、测试商品、三端可售、不许用户侧退款）'
+    reason: 冻结 B2-15b 用例，测试体未改；同文件只改 [AC-B2-15b#9] 死信目标（D10-193）
+  - file: test/spec/payment/orders/domain.test.ts
+    test: '[AC-B2-15b#10] FakePayChannel 下单：按渠道给出契约形状的调起参数且每次不同；排队的 unknown 只作用于下一次；记录每次入参'
+    reason: 冻结 B2-15b 用例，测试体未改；同文件只改 [AC-B2-15b#9] 死信目标（D10-193）
+  - file: test/spec/payment/orders/domain.test.ts
+    test: '[AC-B2-15b#11] FakePayChannel 查询与关单：已下单为未支付，可设为已支付 / 超时；未支付关单后为已关闭，已支付关不掉'
+    reason: 冻结 B2-15b 用例，测试体未改；同文件只改 [AC-B2-15b#9] 死信目标（D10-193）
+  - file: test/spec/payment/orders/domain.test.ts
+    test: '[AC-B2-15b#12] 四个用户侧支付单接口去掉 planned，进入运行时请求 schema 表'
+    reason: 冻结 B2-15b 用例，测试体未改；同文件只改 [AC-B2-15b#9] 死信目标（D10-193）
 impl: claude
 tester: claude-independent
 accept:
