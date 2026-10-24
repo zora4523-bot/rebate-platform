@@ -1,6 +1,5 @@
 // B2-04s: post-credit clawback orchestration (BR-FUND-01 R8 / R9 / R9b; BR-FUND-08; BR-FUND-10;
-// BR-CALC-09). Skeleton written with the rule tests (test/spec/settlement/clawback/**): every
-// function only throws NotImplemented. The contract below is what those tests pin.
+// BR-CALC-09). The contract below is what the rule tests (test/spec/settlement/clawback/**) pin.
 //
 // apply(trx, command): one reverse event on one CREDITED sub-order, on the caller's transaction
 // (never opens, commits or rolls back one). In order:
@@ -74,19 +73,67 @@
 //     carrying an `alert` field, app_id and the order; result 'estimate_archived'.
 // platform jd whose effective commission goes from > 0 to 0 (BR-FUND-08, 口径待 规划/09): R8 full
 // clawback as for any platform, plus one open recon diff naming the order_key for manual review
-// (type 待编排裁定: no recon_diffs.type value fits yet).
+// (编排裁定 D10-313: type union_mismatch, resolution.reason_code = 'COMMISSION_ZERO').
+// 待编排裁定 (implementation): a refunded_quantity increase is read as orders.refunded_quantity >
+// COALESCE(refunded_quantity_at_credit, 0) under the lock; R9b writes no rebate history row.
 // Amounts only through @couli/money; time only from the injected Clock.
 import type { DB } from '@couli/db';
+import {
+  buildVouchers,
+  chinaMonth,
+  orderKey,
+  planCommissionAdjustment,
+  selectClawbackCommission,
+  transitionBeneficiaryCredit,
+  transitionOrderRebate,
+  transitionSettleAdjustment,
+  type AdjustmentBeneficiary,
+  type AdjustmentBeneficiaryResult,
+  type AdjustmentPlan,
+  type BuildVoucherParams,
+  type BuiltVoucher,
+  type CreditBeneficiaryState,
+  type OrderRebateEvent,
+} from '@couli/domain';
+import { applyReserve, subFen } from '@couli/money';
 import type { Transaction } from 'kysely';
-import type { Ledger } from '../../ledger/index.ts';
-import type { OrderStatusSource, OrderUpdateChange } from '../../orders/index.ts';
+import {
+  getOrderNets,
+  registerReconDiff,
+  type Ledger,
+  type PostingEntry,
+  type PostingVoucher,
+} from '../../ledger/index.ts';
+import {
+  lockOrderKey,
+  type OrderStatusSource,
+  type OrderUpdateChange,
+} from '../../orders/index.ts';
 import type { Clock, EventBus, RootLogger } from '../../platform/index.ts';
 import type {
   BeneficiaryEventInput,
   BeneficiaryGate,
+  CreditRole,
   CreditSnapshot,
   CreditSnapshotSelection,
 } from '../credit/index.ts';
+import { readOrderLocator } from '../credit/credit-store.ts';
+import {
+  insertRebateHistory,
+  readRebateOrder,
+  type OrderRow,
+} from '../rebate/infra/rebate-store.ts';
+import {
+  casClawbackOrder,
+  casRightsPending,
+  closeObligation,
+  computeRightsPending,
+  hasOrderRights,
+  markRightsWaitCommission,
+  readOpenObligations,
+  voidPendingCandidates,
+  type BeneficiaryCreditRow,
+} from './clawback-store.ts';
 
 /** The reverse event behind one clawback (BR-FUND-08 细则「sub_type 与订单原因码」). */
 export type ClawbackCause =
@@ -186,7 +233,724 @@ export interface ClawbackOrder {
   ): Promise<ClawbackResult>;
 }
 
+const FROM_STATUS = 'CREDITED';
+const BIZ_TYPE = 'ORDER_CLAWBACK';
+const OPERATOR = 'system';
+const DIFF_SWITCH = 'settle.estimate_change_diff.enabled';
+const FULL_CAUSES: readonly ClawbackCause[] = [
+  'PLATFORM_INVALID',
+  'INVALID_AFTER_SETTLE',
+  'REFUND_AFTER_SETTLE',
+  'PUNISH',
+];
+const ALERT_WAIT = 'clawback_wait_commission';
+const ALERT_ESTIMATE = 'estimate_changed_after_credit';
+const ALERT_JD_ZERO = 'clawback_jd_commission_zero';
+
+/** A snapshot beneficiary no longer in app.users: treated as deleted (same as B2-04m). */
+const MISSING_USER: CreditBeneficiaryState = Object.freeze({
+  risk_state: 'normal',
+  deletion_status: 'done',
+  is_minor: false,
+});
+
+type SubType = 'FULL' | 'PUNISH' | 'RIGHTS' | 'PART_REFUND';
+
+interface CauseRules {
+  readonly r8Event: (nPositive: bigint) => OrderRebateEvent;
+  readonly r9Event: OrderRebateEvent | null;
+  readonly r8SubType: SubType;
+  readonly r9SubType: SubType | null;
+  readonly r8Reason: string;
+}
+
+const zeroEvent = (nPositive: bigint): OrderRebateEvent =>
+  nPositive === 0n ? 'COMMISSION_POSITIVE_ZERO' : 'BASE_ZERO';
+
+/** BR-FUND-08 细则「sub_type 与订单原因码」; the table in the file header. */
+function rulesOf(cause: ClawbackCause): CauseRules {
+  switch (cause) {
+    case 'PLATFORM_INVALID':
+    case 'INVALID_AFTER_SETTLE':
+    case 'REFUND_AFTER_SETTLE':
+      return {
+        r8Event: () => cause,
+        r9Event: null,
+        r8SubType: 'FULL',
+        r9SubType: null,
+        r8Reason: 'REFUND',
+      };
+    case 'PUNISH':
+      return {
+        r8Event: () => 'PUNISH',
+        r9Event: null,
+        r8SubType: 'PUNISH',
+        r9SubType: null,
+        r8Reason: 'PUNISH',
+      };
+    case 'RIGHTS':
+      return {
+        r8Event: () => 'RIGHTS_FULL',
+        r9Event: 'RIGHTS_PARTIAL',
+        r8SubType: 'RIGHTS',
+        r9SubType: 'RIGHTS',
+        r8Reason: 'RIGHTS',
+      };
+    case 'PARTIAL_REFUND':
+      return {
+        r8Event: zeroEvent,
+        r9Event: 'PARTIAL_REFUND',
+        r8SubType: 'FULL',
+        r9SubType: 'PART_REFUND',
+        r8Reason: 'COMMISSION_ZERO',
+      };
+    case 'COMMISSION':
+      return {
+        r8Event: zeroEvent,
+        r9Event: null,
+        r8SubType: 'FULL',
+        r9SubType: null,
+        r8Reason: 'COMMISSION_ZERO',
+      };
+    default:
+      throw new TypeError('settlement clawback: unknown cause');
+  }
+}
+
+function text(value: unknown, name: string): string {
+  if (typeof value !== 'string' || value === '') {
+    throw new TypeError(`settlement clawback: ${name} must be a nonempty string`);
+  }
+  return value;
+}
+
+function optionalFen(value: unknown, name: string): bigint | null {
+  if (value === null) return null;
+  if (typeof value !== 'bigint') {
+    throw new TypeError(`settlement clawback: ${name} must be a bigint or null`);
+  }
+  return value;
+}
+
+function checkCommand(command: ClawbackCommand): void {
+  text(command.appId, 'appId');
+  text(command.orderId, 'orderId');
+  rulesOf(command.cause);
+  const ref = command.ref as ClawbackEventRef | undefined;
+  if (ref === undefined || ref === null) throw new TypeError('settlement clawback: ref missing');
+  if (ref.kind === 'rights') text(ref.orderRightsId, 'ref.orderRightsId');
+  else if (ref.kind !== 'platform' && ref.kind !== 'commission') {
+    throw new TypeError('settlement clawback: unknown ref kind');
+  }
+  optionalFen(command.newCommissionFen, 'newCommissionFen');
+  optionalFen(command.rightsDeductFen, 'rightsDeductFen');
+  if (command.rightsDeductFen !== null && command.rightsDeductFen < 0n) {
+    throw new TypeError('settlement clawback: rightsDeductFen must be nonnegative');
+  }
+}
+
+/** BR-FUND-08 rights_event_id, from the order row re-read under the lock. */
+function rightsEventIdOf(ref: ClawbackEventRef, order: OrderRow): string {
+  switch (ref.kind) {
+    case 'rights':
+      return `R${ref.orderRightsId}`;
+    case 'platform':
+      return `P${String(order.row_version)}`;
+    case 'commission':
+      return `C${String(order.commission_version)}`;
+  }
+}
+
+function positive(fen: bigint): bigint {
+  return fen > 0n ? fen : 0n;
+}
+
+/** settle.estimate_change_diff.enabled: on unless false / 'false' / 'off'. */
+function switchedOff(value: unknown): boolean {
+  if (value === false) return true;
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    return v === 'false' || v === 'off';
+  }
+  return false;
+}
+
+function identity(userId: string, role: string): string {
+  return JSON.stringify([userId, role]);
+}
+
 export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
-  void deps;
-  throw new Error('NotImplemented: createClawbackOrder');
+  const { clock, logger, ledger, gate, events } = deps;
+
+  interface Locked {
+    readonly order: OrderRow;
+    readonly key: string;
+  }
+
+  /** order_key advisory lock (re-entrant within the sync transaction), then re-read the order. */
+  async function lockAndRead(
+    trx: Transaction<DB>,
+    appId: string,
+    orderId: string,
+  ): Promise<Locked> {
+    const locator = await readOrderLocator(trx, appId, orderId);
+    if (locator === undefined) throw new Error('settlement clawback: order not found for app');
+    await lockOrderKey(trx, locator.platform, locator.sub_order_id);
+    const order = await readRebateOrder(trx, { appId, orderId, attrAt: locator.attr_at });
+    if (order === undefined) throw new Error('settlement clawback: order not found for app');
+    return { order, key: orderKey(locator.platform, locator.sub_order_id) };
+  }
+
+  async function readSnapshotOf(trx: Transaction<DB>, order: OrderRow): Promise<CreditSnapshot> {
+    const snapshot = await deps.readSnapshot(trx, {
+      appId: order.app_id,
+      orderId: order.order_id,
+      commissionVersion: order.commission_version,
+    });
+    if (snapshot === null) throw new Error('settlement clawback: order has no commission snapshot');
+    return snapshot;
+  }
+
+  function bookedOf(order: OrderRow): { base: bigint; n: bigint } {
+    if (order.booked_base_fen === null || order.booked_n_fen === null) {
+      throw new Error('settlement clawback: CREDITED order without booked pair');
+    }
+    return { base: order.booked_base_fen, n: order.booked_n_fen };
+  }
+
+  /** BR-FUND-08 ③ (S12): no voucher, no rebate transition; rights → WAIT_COMMISSION; pending. */
+  async function waitCommission(
+    trx: Transaction<DB>,
+    command: ClawbackCommand,
+    order: OrderRow,
+    key: string,
+    rightsEventId: string,
+  ): Promise<ClawbackResult> {
+    const now = clock.now();
+    const rightsId = command.ref.kind === 'rights' ? command.ref.orderRightsId : null;
+    await markRightsWaitCommission(trx, order.app_id, order.order_id, rightsId, now);
+    const pending = await computeRightsPending(trx, order.app_id, order.order_id);
+    if (pending !== order.rights_pending) {
+      const ok = await casRightsPending(trx, order, pending, now);
+      if (!ok) throw new Error('settlement clawback: rights_pending CAS matched no row');
+    }
+    await deps.pending.open(trx, {
+      appId: order.app_id,
+      orderId: order.order_id,
+      platform: order.platform,
+      subOrderId: order.sub_order_id,
+      reason: 'CLAWBACK_NO_COMMISSION',
+      detail: `cause=${command.cause};rights_event_id=${rightsEventId}`,
+    });
+    logger.warn(
+      {
+        alert: ALERT_WAIT,
+        app_id: order.app_id,
+        order_id: order.order_id,
+        order_key: key,
+        rights_event_id: rightsEventId,
+      },
+      'clawback waits for the union commission (no new commission, no deduction)',
+    );
+    return { outcome: 'wait_commission', orderKey: key, rightsEventId };
+  }
+
+  function beneficiariesOf(
+    snapshot: CreditSnapshot,
+    states: ReadonlyMap<string, CreditBeneficiaryState>,
+    nets: ReadonlyMap<string, bigint>,
+    obligations: ReadonlyMap<string, BeneficiaryCreditRow>,
+  ): AdjustmentBeneficiary[] {
+    const forfeited = new Set(snapshot.forfeitedEvents.map((e) => identity(e.userId, e.role)));
+    return snapshot.beneficiaries.map((b) => {
+      const id = identity(b.userId, b.role);
+      const obligation = obligations.get(id) ?? null;
+      const current = states.get(b.userId) ?? MISSING_USER;
+      let status: AdjustmentBeneficiary['status'] = 'active';
+      if (b.initialStatus === 'forfeited' || forfeited.has(id)) status = 'forfeited';
+      else if (obligation !== null && obligation.kind !== 'deferred') status = 'held';
+      return {
+        user_id: b.userId,
+        role: b.role,
+        ratio_bp: BigInt(b.ratioBp),
+        status,
+        risk_state: current.risk_state,
+        deletion_status: current.deletion_status,
+        is_minor: current.is_minor,
+        net_fen: nets.get(id) ?? 0n,
+        obligation:
+          obligation === null
+            ? null
+            : {
+                beneficiary_credit_id: obligation.beneficiary_credit_id,
+                kind: obligation.kind as 'first_credit' | 'reassign_credit' | 'deferred',
+              },
+      };
+    });
+  }
+
+  function postingOf(
+    appId: string,
+    key: string,
+    built: BuiltVoucher,
+    beneficiary: { readonly userId: string; readonly role: CreditRole } | null,
+    accounts: ReadonlyMap<string, string>,
+  ): PostingVoucher {
+    const entries: PostingEntry[] = built.entries.map((entry) => {
+      if (entry.account.owner_type === 'user') {
+        const accountId = accounts.get(entry.account.owner_id);
+        if (accountId === undefined) {
+          throw new Error('settlement clawback: a clawed-back beneficiary has no locked balance');
+        }
+        return {
+          account: { ownerType: 'user', accountId },
+          sub_account: entry.sub_account ?? 'available',
+          amount_fen: entry.amount_fen,
+          ledger_type: entry.ledger_type,
+          sub_type: entry.sub_type,
+          income_type: null,
+        };
+      }
+      return {
+        account: { ownerType: 'platform', subject: entry.account.subject },
+        sub_account: entry.sub_account ?? 'available',
+        amount_fen: entry.amount_fen,
+        ledger_type: entry.ledger_type,
+        sub_type: entry.sub_type,
+        income_type: null,
+      };
+    });
+    return {
+      appId,
+      uniqKey: built.uniq_key,
+      bizType: BIZ_TYPE,
+      bizId: key,
+      operator: OPERATOR,
+      memo: null,
+      orderKey: key,
+      beneficiaryUserId: beneficiary?.userId ?? null,
+      role: beneficiary?.role ?? null,
+      voucherKind: 'CLAWBACK',
+      entries,
+    };
+  }
+
+  async function postVouchers(
+    trx: Transaction<DB>,
+    order: OrderRow,
+    key: string,
+    rightsEventId: string,
+    subType: SubType,
+    plan: AdjustmentPlan,
+    accounts: ReadonlyMap<string, string>,
+  ): Promise<void> {
+    const base = { order_key: key, platform: order.platform, rights_event_id: rightsEventId };
+    for (const b of plan.beneficiaries) {
+      if (b.delta_fen === 0n) continue;
+      if (b.delta_fen > 0n) {
+        // A clawback never pays out (BR-CALC-09: positive differences are deferred or forfeited).
+        throw new Error('settlement clawback: positive beneficiary delta in a clawback');
+      }
+      const template = `CLAWBACK:${subType}:${b.posting === 'bad_debt' ? 'BAD_DEBT' : 'USER'}`;
+      const params: BuildVoucherParams = {
+        ...base,
+        user_id: b.user_id,
+        role: b.role,
+        clawback_fen: subFen(0n, b.delta_fen),
+      };
+      const beneficiary = { userId: b.user_id, role: b.role as CreditRole };
+      for (const built of buildVouchers(template, params)) {
+        await ledger.post(trx, postingOf(order.app_id, key, built, beneficiary, accounts));
+      }
+    }
+    const delta = plan.platform_delta_fen;
+    if (delta !== 0n) {
+      // platform_delta_fen = new − old: < 0 → DECREASE (debit COMMISSION_REVENUE), > 0 → INCREASE.
+      const template = `CLAWBACK:${subType}:PLATFORM:${delta < 0n ? 'DECREASE' : 'INCREASE'}`;
+      const params: BuildVoucherParams = {
+        ...base,
+        clawback_fen: delta < 0n ? subFen(0n, delta) : delta,
+      };
+      for (const built of buildVouchers(template, params)) {
+        await ledger.post(trx, postingOf(order.app_id, key, built, null, accounts));
+      }
+    }
+  }
+
+  async function settleObligations(
+    trx: Transaction<DB>,
+    order: OrderRow,
+    transition: 'R8' | 'R9',
+    rightsEventId: string,
+    rows: readonly AdjustmentBeneficiaryResult[],
+    obligations: ReadonlyMap<string, BeneficiaryCreditRow>,
+    now: Date,
+  ): Promise<void> {
+    for (const b of rows) {
+      const action = b.obligation_action;
+      if (action === null || action === 'keep') continue;
+      if (action !== 'voided' && action !== 'forfeited') {
+        // 'open' / 'done' never arise on the clawback path; refuse instead of guessing.
+        throw new Error(`settlement clawback: unexpected obligation action ${action}`);
+      }
+      const row = obligations.get(identity(b.user_id, b.role));
+      if (row === undefined) throw new Error('settlement clawback: obligation not found');
+      const step = transitionBeneficiaryCredit('open', action === 'voided' ? 'VOID' : 'FORFEIT');
+      if (!step.ok || step.noop || step.to !== action) {
+        throw new Error('settlement clawback: illegal obligation transition');
+      }
+      const closed = await closeObligation(trx, {
+        app_id: order.app_id,
+        beneficiary_credit_id: row.beneficiary_credit_id,
+        row_version: row.row_version,
+        status: action,
+        closed_by: transition,
+        closed_ref: rightsEventId,
+        closed_at: now,
+      });
+      if (!closed) throw new Error('settlement clawback: obligation CAS matched no row');
+      if (b.append_forfeited_event) {
+        await deps.appendBeneficiaryEvent(trx, {
+          appId: order.app_id,
+          orderId: order.order_id,
+          userId: b.user_id,
+          role: b.role as CreditRole,
+          status: 'forfeited',
+          reason: b.forfeit_reason,
+        });
+      }
+    }
+  }
+
+  async function voidCandidates(trx: Transaction<DB>, order: OrderRow, now: Date): Promise<void> {
+    const step = transitionSettleAdjustment('pending', 'VOID_BY_CLAWBACK');
+    if (!step.ok || step.to !== 'voided_by_clawback') {
+      throw new Error('settlement clawback: illegal candidate transition');
+    }
+    await voidPendingCandidates(trx, order.app_id, order.order_id, now);
+  }
+
+  /** BR-FUND-08: jd's actual commission > 0 → 0, held for manual review (D10-313). */
+  async function registerJdReview(
+    trx: Transaction<DB>,
+    order: OrderRow,
+    key: string,
+    rightsEventId: string,
+    bookedN: bigint,
+    nPositive: bigint,
+  ): Promise<void> {
+    const refId = `${key}#COMMISSION_ZERO#${rightsEventId}`;
+    await registerReconDiff(
+      trx,
+      {
+        appId: order.app_id,
+        type: 'union_mismatch',
+        source: 'R1',
+        period: chinaMonth(clock.now()),
+        refType: 'order',
+        refId,
+        expectedFen: bookedN,
+        actualFen: nPositive,
+        diffFen: subFen(nPositive, bookedN),
+        dedupeKey: `union_mismatch:COMMISSION_ZERO:${key}:${rightsEventId}`,
+        resolution: {
+          reason_code: 'COMMISSION_ZERO',
+          order_key: key,
+          rights_event_id: rightsEventId,
+        },
+      },
+      { clock },
+    );
+    logger.warn(
+      {
+        alert: ALERT_JD_ZERO,
+        app_id: order.app_id,
+        order_id: order.order_id,
+        order_key: key,
+        rights_event_id: rightsEventId,
+      },
+      'jd commission went to zero after credit: clawed back in full, recon diff for review',
+    );
+  }
+
+  async function apply(trx: Transaction<DB>, command: ClawbackCommand): Promise<ClawbackResult> {
+    checkCommand(command);
+    const { appId, orderId, cause } = command;
+    const rules = rulesOf(cause);
+
+    // 1. lock, re-read.
+    const { order, key } = await lockAndRead(trx, appId, orderId);
+    if (order.rebate_status !== FROM_STATUS) return { outcome: 'skipped', reason: 'not_credited' };
+    const booked = bookedOf(order);
+
+    // 2. rights_event_id.
+    const rightsEventId = rightsEventIdOf(command.ref, order);
+
+    // 3. N_new (BR-FUND-08 ① ② ③; full causes → 0).
+    const selected = selectClawbackCommission({
+      full_invalid: FULL_CAUSES.includes(cause),
+      booked_n_fen: booked.n,
+      settle_commission_fen: null,
+      settlement_seq_changed: false,
+      est_commission_fen: command.newCommissionFen,
+      estimate_changed: command.newCommissionFen !== null,
+      rights_deduct_fen: command.rightsDeductFen,
+      adapter_estimate_fen: null,
+    });
+    if (selected.kind === 'wait_commission') {
+      return waitCommission(trx, command, order, key, rightsEventId);
+    }
+    const nNew = selected.n_new_fen;
+    const nPositive = positive(nNew);
+
+    const snapshot = await readSnapshotOf(trx, order);
+    const reserveBp = BigInt(snapshot.reserveBp);
+
+    // 4. COMMISSION is a reverse event only when it is R8.
+    if (cause === 'COMMISSION') {
+      const { after_reserve_fen: baseNew } = applyReserve(nNew, reserveBp);
+      const r8 = nPositive === 0n || (booked.base > 0n && baseNew === 0n);
+      if (!r8) return { outcome: 'skipped', reason: 'not_reverse' };
+    }
+
+    // 5. users rows → balance rows → states after the locks; nets; plan.
+    const userIds = [...new Set(snapshot.beneficiaries.map((b) => b.userId))].sort();
+    const locked =
+      userIds.length === 0 ? new Set<string>() : await gate.lockUsers(trx, { appId, userIds });
+    const present = userIds.filter((id) => locked.has(id));
+    for (const userId of present) {
+      await ledger.openUserAccount(trx, { appId, userId });
+    }
+    const balances =
+      present.length === 0 ? [] : await ledger.lockBalances(trx, { appId, userIds: present });
+    const accounts = new Map(balances.map((row) => [row.user_id, row.account_id]));
+    const states =
+      present.length === 0
+        ? new Map<string, CreditBeneficiaryState>()
+        : await gate.readStates(trx, { appId, userIds: present });
+
+    const stored = await getOrderNets(trx, { appId, orderKey: key });
+    const nets = new Map(
+      stored.beneficiaries.map((b) => [identity(b.beneficiary_user_id, b.role), b.net_fen]),
+    );
+    const obligations = new Map(
+      (await readOpenObligations(trx, appId, orderId)).map((r) => [identity(r.user_id, r.role), r]),
+    );
+    const plan = planCommissionAdjustment({
+      event: 'clawback',
+      n_new_fen: nNew,
+      reserve_bp: reserveBp,
+      booked_base_fen: booked.base,
+      booked_n_fen: booked.n,
+      platform_net_fen: stored.platform_net_fen,
+      beneficiaries: beneficiariesOf(snapshot, states, nets, obligations),
+    });
+    const now = clock.now();
+
+    if (plan.transition === null) {
+      // Nothing to write (e.g. a replayed R9); the clawback still voids pending candidates.
+      if (plan.void_pending_candidates) await voidCandidates(trx, order, now);
+      return { outcome: 'no_change', orderKey: key, rightsEventId };
+    }
+    if (plan.transition !== 'R8' && plan.transition !== 'R9') {
+      throw new Error(`settlement clawback: unexpected plan transition ${plan.transition}`);
+    }
+    const transition = plan.transition;
+    let event: OrderRebateEvent;
+    let subType: SubType;
+    if (transition === 'R8') {
+      event = rules.r8Event(nPositive);
+      subType = rules.r8SubType;
+    } else {
+      if (rules.r9Event === null || rules.r9SubType === null) {
+        throw new Error(`settlement clawback: ${cause} cannot be R9`);
+      }
+      event = rules.r9Event;
+      subType = rules.r9SubType;
+    }
+    const step = transitionOrderRebate(FROM_STATUS, event);
+    if (!step.ok || step.id !== transition || step.to !== plan.rebate_status) {
+      throw new Error(`settlement clawback: ${event} is not a legal ${transition}`);
+    }
+
+    // 6. vouchers (a stored uniq_key is a duplicate, never a second clawback).
+    await postVouchers(trx, order, key, rightsEventId, subType, plan, accounts);
+
+    // 7. obligations; 8. candidates.
+    await settleObligations(
+      trx,
+      order,
+      transition,
+      rightsEventId,
+      plan.beneficiaries,
+      obligations,
+      now,
+    );
+    if (plan.void_pending_candidates) await voidCandidates(trx, order, now);
+
+    // 9. booked pair + rebate_status in one CAS, then history.
+    const written = await casClawbackOrder(trx, order, {
+      to: step.to,
+      booked_base_fen: plan.booked_after.booked_base_fen,
+      booked_n_fen: plan.booked_after.booked_n_fen,
+      ...(transition === 'R8' ? { reason: rules.r8Reason } : { diff_reason_code: 'PART_REFUND' }),
+      at: now,
+    });
+    if (!written) throw new Error('settlement clawback: order CAS matched no row');
+    await insertRebateHistory(
+      trx,
+      { app_id: appId, order_id: orderId },
+      [{ from: FROM_STATUS, event, to: step.to }],
+      'system',
+      now,
+    );
+
+    if (
+      transition === 'R8' &&
+      order.platform === 'jd' &&
+      (cause === 'COMMISSION' || cause === 'PARTIAL_REFUND') &&
+      nPositive === 0n &&
+      booked.n > 0n
+    ) {
+      await registerJdReview(trx, order, key, rightsEventId, booked.n, nPositive);
+    }
+
+    // 10. order.clawed_back on the same transaction (R8 only).
+    if (transition === 'R8') {
+      await events.publish(trx, {
+        appId,
+        name: 'order.clawed_back',
+        payload: {
+          order_id: orderId,
+          rights_event_id: rightsEventId,
+          reason: rules.r8Reason,
+        },
+      });
+    }
+    logger.info(
+      {
+        app_id: appId,
+        order_id: orderId,
+        transition,
+        rights_event_id: rightsEventId,
+        booked_base_fen: String(plan.booked_after.booked_base_fen),
+      },
+      'order clawed back',
+    );
+    return {
+      outcome: 'clawed_back',
+      transition,
+      orderKey: key,
+      rightsEventId,
+      bookedBaseFen: plan.booked_after.booked_base_fen,
+      bookedNFen: plan.booked_after.booked_n_fen,
+    };
+  }
+
+  /** R9b: archive only; one recon diff per sub-order and estimate value behind the switch. */
+  async function archiveEstimate(
+    trx: Transaction<DB>,
+    order: OrderRow,
+    key: string,
+    estimate: bigint | null,
+  ): Promise<ClawbackResult> {
+    const booked = bookedOf(order);
+    if (estimate === null)
+      return { outcome: 'estimate_archived', orderKey: key, reconDiff: 'none' };
+    const snapshot = await readSnapshotOf(trx, order);
+    const { after_reserve_fen: base } = applyReserve(estimate, BigInt(snapshot.reserveBp));
+    if (base === booked.base) {
+      return { outcome: 'estimate_archived', orderKey: key, reconDiff: 'none' };
+    }
+    if (switchedOff(await deps.config.get(order.app_id, DIFF_SWITCH))) {
+      return { outcome: 'estimate_archived', orderKey: key, reconDiff: 'disabled' };
+    }
+    const refId = `${key}#EST#${String(estimate)}`;
+    await registerReconDiff(
+      trx,
+      {
+        appId: order.app_id,
+        type: 'estimate_changed_after_credit',
+        source: 'R1',
+        period: chinaMonth(clock.now()),
+        refType: 'order',
+        refId,
+        expectedFen: booked.base,
+        actualFen: base,
+        diffFen: subFen(base, booked.base),
+        dedupeKey: `estimate_changed_after_credit:${key}:${String(estimate)}`,
+        resolution: null,
+      },
+      { clock },
+    );
+    logger.warn(
+      {
+        alert: ALERT_ESTIMATE,
+        app_id: order.app_id,
+        order_id: order.order_id,
+        order_key: key,
+        expected_fen: String(booked.base),
+        actual_fen: String(base),
+      },
+      'estimated commission changed after credit (R9b): recon diff registered',
+    );
+    return { outcome: 'estimate_archived', orderKey: key, reconDiff: 'registered' };
+  }
+
+  async function onUpdated(
+    trx: Transaction<DB>,
+    change: OrderUpdateChange,
+    source: OrderStatusSource,
+  ): Promise<ClawbackResult> {
+    const appId = text(change.app_id, 'change.app_id');
+    const orderId = text(change.order_id, 'change.order_id');
+    const { order, key } = await lockAndRead(trx, appId, orderId);
+    if (order.rebate_status !== FROM_STATUS) return { outcome: 'skipped', reason: 'not_credited' };
+    const base = { appId, orderId, newCommissionFen: null, rightsDeductFen: null } as const;
+
+    if (source.event === 'PLATFORM_INVALID' || change.to_status === 'INVALID') {
+      return apply(trx, {
+        ...base,
+        cause: change.from_status === 'SETTLED' ? 'INVALID_AFTER_SETTLE' : 'PLATFORM_INVALID',
+        ref: { kind: 'platform' },
+      });
+    }
+    if (source.event === 'PLATFORM_PUNISH') {
+      return apply(trx, { ...base, cause: 'PUNISH', ref: { kind: 'platform' } });
+    }
+    if (source.event === 'PLATFORM_RIGHTS') {
+      // TODO(规划/11 §4.2): rights success entry (维权成功入口) — blocked on B2-04l.
+      return { outcome: 'skipped', reason: 'not_reverse' };
+    }
+
+    const estChanged = change.est_after !== change.est_before;
+    const refundIncreased =
+      (order.refunded_quantity ?? 0) > (order.refunded_quantity_at_credit ?? 0);
+    const settled = change.settle_commission_fen !== null;
+    const r9 = refundIncreased || (estChanged && (await hasOrderRights(trx, appId, orderId)));
+    if (r9) {
+      // BR-FUND-01「R9 与 R9b 的判定」: never R9b. With a settlement record only a new seq is ①
+      // (left to R10), so the estimate does not count and N_new comes from ② or ③.
+      return apply(trx, {
+        ...base,
+        cause: 'PARTIAL_REFUND',
+        ref: { kind: 'commission' },
+        newCommissionFen: settled ? null : change.est_after,
+      });
+    }
+    if (!estChanged) return { outcome: 'skipped', reason: 'not_reverse' };
+    if (!settled) {
+      if (change.est_after === null) return { outcome: 'skipped', reason: 'not_reverse' };
+      // No settlement record: the estimate is the effective commission (①); only R8 is reverse.
+      return apply(trx, {
+        ...base,
+        cause: 'COMMISSION',
+        ref: { kind: 'commission' },
+        newCommissionFen: change.est_after,
+      });
+    }
+    return archiveEstimate(trx, order, key, change.est_after);
+  }
+
+  return Object.freeze({ apply, onUpdated });
 }
