@@ -107,9 +107,13 @@ export const DEALING_STEP: FakeStep = {
 export const UNKNOWN_STEP: FakeStep = { kind: 'unknown' };
 export const TIMEOUT_STEP: FakeStep = { kind: 'timeout' };
 
-/** The production `payout` queue (exclusive), the negative-balance event queue and dead letters. */
+/** The production `payout` queue (exclusive), the negative-balance queue and their `<q>.dead`. */
 const CATALOG = QUEUE_CATALOG.filter(
-  (spec) => spec.name === 'payout' || spec.name === 'dead-letter' || spec.name === NEGATIVE_QUEUE,
+  (spec) =>
+    spec.name === 'payout' ||
+    spec.name === 'payout.dead' ||
+    spec.name === NEGATIVE_QUEUE ||
+    spec.name === `${NEGATIVE_QUEUE}.dead`,
 );
 
 interface Database {
@@ -587,7 +591,7 @@ export function expectQueryJob(rows: readonly JobRow[], w: Seeded, seq = w.execu
   ]);
 }
 
-/** wallet.withdrawal_changed events of this app (payloads only). */
+/** wallet.withdrawal_changed events of this app (the envelope's data only). */
 export async function changes(f: ProcessFixture, db: Kysely<DB> = f.h.observer) {
   const rows = await db
     .withSchema('app')
@@ -597,7 +601,7 @@ export async function changes(f: ProcessFixture, db: Kysely<DB> = f.h.observer) 
     .where('name', '=', 'wallet.withdrawal_changed')
     .orderBy('id')
     .execute();
-  return rows.map((row) => row.payload);
+  return rows.map((row) => (row.payload as unknown as { data: Record<string, unknown> }).data);
 }
 
 export interface EntryRow {
