@@ -3,7 +3,12 @@ import type { Platform } from '@couli/contracts-ts';
 import type { UnnumberedCard } from '../../stream/run/index.ts';
 import type { MatchDeps } from '../../tools/match/index.ts';
 import type { SearchSort } from '../../tools/search/schema.ts';
-import type { AgentRunTexts, OrchestratorLimits, OrchestratorTools } from '../core/ports.ts';
+import type {
+  AgentRunTexts,
+  OrchestratorLimits,
+  OrchestratorTools,
+  QuotedScope,
+} from '../core/ports.ts';
 import type { ClarificationScope, ClarifySlot, IntentDeps } from '../intents/types.ts';
 
 /** Server-owned conditions; chain_id is never accepted from model tool arguments. */
@@ -61,6 +66,15 @@ export interface ResultSetStore {
   currentChain?(appId: string, sessionId: string): Promise<SessionChain | null>;
   /** Append only. Reject has_products with null conditions or a mismatching chain_id. */
   appendChain?(appId: string, sessionId: string, chain: SessionChain): Promise<void>;
+}
+
+/**
+ * B3-03p · BR-AI-05: a store that also keeps the product of a written rebate_quote card
+ * (DeliveryReceiptPort.recordQuoted): findDelivered finds it by card_id in the same app and
+ * session; latestWithProducts never returns it (「第 N 个」 keeps the latest product_list).
+ */
+export interface QuotedReceiptStore {
+  recordQuoted(scope: QuotedScope, items: readonly DeliveredProduct[]): Promise<void>;
 }
 
 export interface ResultsDeps {

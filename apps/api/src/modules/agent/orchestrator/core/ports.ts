@@ -203,6 +203,50 @@ export interface RunTraceSink {
  */
 export interface DeliveryReceiptPort {
   recordDelivered(resultSetId: string, items: readonly DeliveredProductReceipt[]): Promise<void>;
+  /**
+   * B3-03p · BR-AI-05: the product embedded in a written rebate_quote card (no result set), under
+   * the run's app, session and run; findable by its card_id in later rounds of that session, never
+   * part of the result set 「第 N 个」 addresses. Absent: quoted products are not recorded.
+   */
+  recordQuoted?(scope: QuotedScope, items: readonly DeliveredProductReceipt[]): Promise<void>;
+}
+
+/** Server-side scope of a quoted product's receipt (never from model arguments). */
+export interface QuotedScope {
+  readonly appId: string;
+  readonly sessionId: string;
+  readonly runId: string;
+}
+
+/*
+ * B3-03p · BR-AI-05 (followups 49, 51): the same receipts on every path, not only the model's tool
+ * calls. A product_list written through the guarded RunContext the core hands to the degraded
+ * path, the deterministic path or the intent port (再便宜点 / 换一批 / 换平台 …) is recorded exactly
+ * as above (its own embedded card_ids, delivery order, frame first; cut by the output limits,
+ * cancelled or without a receipt: nothing). The product embedded in a written rebate_quote card
+ * (04 §8.2: rebate_quote.product takes the next card_id after its frame) is recorded too, so the
+ * session can quote it again by that card_id in a later round; it never becomes the result set that
+ * 「第 N 个」 addresses (BR-AI-05: the latest result set with a product_list). Notices and other
+ * card types are never product cards. A record that fails or throws is dropped (the stream entry
+ * logs it); the run's output and result do not change. Any port member added for this is
+ * optional: a body without it behaves as before.
+ */
+
+/**
+ * B3-03p · BR-AI-18 (followups 52, 53): the output-side sentence review of one run, for that run's
+ * app. With AgentRunBodyDeps.outputReview, the core calls forRun(input.caller.appId, ctx.signal)
+ * once per run that reaches the model path and builds that run's OutputGuard over the returned
+ * port instead of AgentRunBodyDeps.review. Every review call of the returned port is bounded by
+ * agent.safety.timeout_ms of that app, read for this run through the content configuration port
+ * (no build-time value): a missing key is the BR-AI-18 default 1000 ms, a value that is not a
+ * finite positive number takes the same default (the configuration layer's rule). The wait for
+ * that read counts toward the same limit as the review it precedes (one deadline from the start
+ * of the call, never read time plus budget). A read that fails, does not settle within the
+ * default, or outlives the run answers 'timeout' (fail-close); BR-AI-18 then holds the text, reviews
+ * it once more before the run ends and replaces it with agent.refuse.safety_timeout, cards kept.
+ */
+export interface RunSentenceReviewPort {
+  forRun(appId: string, signal: AbortSignal): SentenceReviewPort;
 }
 
 /** One delivered product (the shape of results' DeliveredProduct, declared here so the core does
@@ -236,6 +280,9 @@ export interface AgentRunBodyDeps {
   readonly trace?: RunTraceSink;
   /** B3-03n: delivery receipts of product cards; absent, nothing is recorded (B3-05b runs). */
   readonly results?: DeliveryReceiptPort;
+  /** B3-03p: the per-app output review (RunSentenceReviewPort); absent, every run's OutputGuard
+   * uses `review` as before (B3-05b runs). */
+  readonly outputReview?: RunSentenceReviewPort;
 }
 
 export interface RunLabelsDeps {

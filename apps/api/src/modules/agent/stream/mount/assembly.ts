@@ -26,6 +26,7 @@ import {
   createReferenceResolver,
   createRefinement,
   createResultsTools,
+  saveKeywordResults,
   type ResultSetStore,
   type ResultsDeps,
 } from '../../orchestrator/results/index.ts';
@@ -274,7 +275,24 @@ export function createAgentStreamAssembly(deps: AgentStreamAssemblyDeps): AgentS
     definitions: (appId, subject) => registry.definitions(appId, subject),
     execute: (call, ctx) => registry.execute(call, ctx),
     enabledSearchPlatforms: (appId) => keyword.enabledSearchPlatforms(appId),
-    searchKeyword: (plan, ctx) => keyword.searchKeyword(plan, ctx),
+    async searchKeyword(plan, ctx) {
+      const outcome = await keyword.searchKeyword(plan, ctx);
+      // B3-03p · BR-AI-05: the degraded path's product_list result sets, saved before any card is
+      // written (the PG store records receipts only under a saved set). Failure: logged, the run
+      // keeps its cards (they just stay unreferenceable).
+      try {
+        await saveKeywordResults(store, plan, ctx, outcome.cards);
+      } catch (error) {
+        deps.logger.warn(
+          {
+            run_id: ctx.runId,
+            error_name: error instanceof Error ? error.name : typeof error,
+          },
+          'agent_keyword_result_set_failed',
+        );
+      }
+      return outcome;
+    },
   };
   // Jev result check is not wired (B3-12): the code rules decide every tag.
   const match: MatchDeps = { provider: async () => 'rules', scheduler: deps.scheduler };
