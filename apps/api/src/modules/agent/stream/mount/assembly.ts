@@ -22,11 +22,11 @@ import { createDeterministicPath } from '../../orchestrator/deterministic/index.
 import { createIntentPort, type IntentDeps } from '../../orchestrator/intents/index.ts';
 import {
   createClarification,
+  createKeywordResults,
   createMemoryResultSetStore,
   createReferenceResolver,
   createRefinement,
   createResultsTools,
-  saveKeywordResults,
   type ResultSetStore,
   type ResultsDeps,
 } from '../../orchestrator/results/index.ts';
@@ -203,6 +203,8 @@ export function createAgentStreamAssembly(deps: AgentStreamAssemblyDeps): AgentS
   // B3-03n: the injected store (production: PG, shared by every instance); else one in-memory
   // store per assembly (single instance only), as before.
   const store = deps.results ?? createMemoryResultSetStore();
+  // B3-03q: the degraded batch's chain becomes current on its first delivery receipt.
+  const keywordResults = createKeywordResults(store);
   const limits = orchestratorLimitsDefaults();
   const switches: ToolSwitches = {
     async get(appId, key) {
@@ -278,10 +280,11 @@ export function createAgentStreamAssembly(deps: AgentStreamAssemblyDeps): AgentS
     async searchKeyword(plan, ctx) {
       const outcome = await keyword.searchKeyword(plan, ctx);
       // B3-03p · BR-AI-05: the degraded path's product_list result sets, saved before any card is
-      // written (the PG store records receipts only under a saved set). Failure: logged, the run
-      // keeps its cards (they just stay unreferenceable).
+      // written (the PG store records receipts only under a saved set); their chain is switched to
+      // only once a list was confirmed as written (B3-03q, `receipts` below). Failure: logged, the
+      // run keeps its cards (they just stay unreferenceable).
       try {
-        await saveKeywordResults(store, plan, ctx, outcome.cards);
+        await keywordResults.save(plan, ctx, outcome.cards);
       } catch (error) {
         deps.logger.warn(
           {
@@ -326,12 +329,22 @@ export function createAgentStreamAssembly(deps: AgentStreamAssemblyDeps): AgentS
     },
   });
 
-  // B3-03n: `results` is also the core's delivery receipt port (createAgentStreamRuntime).
+  // B3-03n: `results` is also the core's delivery receipt port (createAgentStreamRuntime); B3-03q:
+  // the same store whose receipts also switch a confirmed degraded batch's chain.
+  const receipts = keywordResults.receipts((error, resultSetId) => {
+    deps.logger.warn(
+      {
+        result_set_id: resultSetId,
+        error_name: error instanceof Error ? error.name : typeof error,
+      },
+      'agent_keyword_chain_failed',
+    );
+  });
   return {
     tools: productView(results),
     deterministic: linkPath(createLinkQuoteRunner(runnerDeps), texts),
     intents,
-    results: store,
+    results: receipts,
     texts,
   };
 }

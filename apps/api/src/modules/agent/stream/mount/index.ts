@@ -274,8 +274,7 @@ function deliveryReceipts(store: ResultSetStore, logger: RootLogger): DeliveryRe
       }
     },
   };
-  // B3-03p: quoted products, when the store keeps them (TODO(规划/11 §2.3): PG 结果库记报价卡内
-  // 商品 — blocked on agent_result_deliveries 只认结果集（result_set_id 必填），须另开 db 任务).
+  // B3-03p: quoted products, when the store keeps them (memory store; the PG store since B3-03q).
   if (!keepsQuoted(store)) return port;
   return {
     ...port,

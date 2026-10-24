@@ -15,6 +15,6 @@ export type {
 } from './types.ts';
 export { createMemoryResultSetStore, keepsQuoted } from './store.ts';
 export { readSearchParams } from './shared.ts';
-export { saveKeywordResults } from './keyword.ts';
+export { createKeywordResults, type KeywordResults } from './keyword.ts';
 export { createResultsTools } from './tools.ts';
 export { createClarification, createReferenceResolver, createRefinement } from './continuation.ts';
