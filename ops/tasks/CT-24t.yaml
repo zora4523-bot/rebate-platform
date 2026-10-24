@@ -7,7 +7,7 @@ type: contract
 # 权限点源文件 specs/permissions.yaml 加 notify.channels（step_up_tier totp），由 codegen 重生 permissions.gen.ts，不手改生成物；冻结预言 expected.ts 由 CT-24u 先放行（GT-23bgm S1）。
 refs: [BR-TEXT-20, BR-ID-45]
 refs_hash:
-  BR-TEXT-20: c6171f66b926
+  BR-TEXT-20: a4fbfc91c104
   BR-ID-45: 0b4839cbc54b
 contract_sections: ['11.2']
 deps: [CT-24q, CT-24u]
