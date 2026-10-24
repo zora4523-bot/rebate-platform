@@ -53,9 +53,17 @@
 // Batch status only through the generated settle-batch transition(), every write a row_version CAS.
 // Time only from deps.clock; logs only through deps.logger.
 import type { DB } from '@couli/db';
-import type { Kysely, Transaction } from 'kysely';
+import {
+  SETTLE_BATCH_STATES,
+  accountingDate,
+  transitionSettleBatch,
+  type SettleBatchEvent,
+  type SettleBatchState,
+} from '@couli/domain';
+import { sql, type Kysely, type Transaction, type Updateable } from 'kysely';
 import type { Clock, EventBus, RootLogger } from '../../../platform/index.ts';
 import type { CreditOrder, CreditRole } from '../../credit/index.ts';
+import { compareItems, previousDay, switchOn } from './rules.ts';
 
 export interface BatchExecuteInput {
   readonly appId: string;
@@ -136,7 +144,417 @@ export interface BatchExecutor {
   run(input: BatchExecuteInput): Promise<BatchExecuteResult>;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** First key of the two-int advisory lock: a key space apart from the bigint order_key locks. */
+const LOCK_NAMESPACE = 'settlement.batch_execute';
+const AUTO_SWITCH = 'settle.auto.enabled';
+const DONE_EVENT = 'settle.batch_done';
+const ROLES: readonly string[] = ['self', 'share', 'direct', 'indirect'];
+
+interface BatchRow {
+  readonly batch_id: string;
+  readonly app_id: string;
+  readonly bill_id: string;
+  readonly platform: string;
+  readonly kind: string;
+  readonly status: string;
+  readonly settle_mode: string;
+  readonly scheduled_at: Date | null;
+  readonly paused_by_switch_at: Date | null;
+  readonly row_version: number;
+}
+
+interface ItemRow {
+  readonly id: string;
+  readonly item_type: string;
+  readonly order_id: string;
+  readonly user_id: string | null;
+  readonly role: string | null;
+  readonly beneficiary_credit_id: string | null;
+  readonly settle_seq: number;
+  readonly platform: string;
+  readonly sub_order_id: string;
+}
+
+interface ItemWrite {
+  readonly result: 'credited' | 'skipped' | 'deferred';
+  readonly amount_fen: bigint | null;
+  readonly skip_reason: string | null;
+}
+
+/** The item transaction crossed into a day whose snapshot is not ready: roll it back, stop. */
+class DayRollover extends Error {
+  constructor() {
+    super('settle batch execution crossed into a day whose asset snapshot is not ready');
+    this.name = 'DayRollover';
+  }
+}
+
+/** The DONE CAS matched no row (someone else moved the batch): roll back, end 'busy'. */
+class LostCas extends Error {
+  constructor() {
+    super('settle batch row_version CAS lost');
+    this.name = 'LostCas';
+  }
+}
+
+function stateOf(status: string): SettleBatchState {
+  if (!(SETTLE_BATCH_STATES as readonly string[]).includes(status)) {
+    throw new Error(`unknown settle batch status ${JSON.stringify(status)}`);
+  }
+  return status as SettleBatchState;
+}
+
+/** Only through the generated transition(); an event outside the table throws. */
+function nextState(status: string, event: SettleBatchEvent): SettleBatchState {
+  const result = transitionSettleBatch(stateOf(status), event);
+  if (!result.ok) throw new Error(`settle batch ${status} --${event}--> not allowed`);
+  return result.to;
+}
+
+function result(outcome: BatchExecuteOutcome): BatchExecuteResult {
+  return { outcome };
+}
+
 export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecutor {
-  void deps;
-  throw new Error('NotImplemented: createBatchExecutor');
+  const { db, clock, logger } = deps;
+
+  function readBatch(input: BatchExecuteInput): Promise<BatchRow | undefined> {
+    return db
+      .withSchema('app')
+      .selectFrom('settle_batches')
+      .select([
+        'batch_id',
+        'app_id',
+        'bill_id',
+        'platform',
+        'kind',
+        'status',
+        'settle_mode',
+        'scheduled_at',
+        'paused_by_switch_at',
+        'row_version',
+      ])
+      .where('app_id', '=', input.appId)
+      .where('batch_id', '=', input.batchId)
+      .executeTakeFirst();
+  }
+
+  /** One row_version CAS on (status, row_version); true when exactly one row matched. */
+  async function casBatch(
+    on: Kysely<DB>,
+    batch: BatchRow,
+    from: SettleBatchState,
+    rowVersion: number,
+    set: Updateable<DB['settle_batches']>,
+  ): Promise<boolean> {
+    const updated = await on
+      .withSchema('app')
+      .updateTable('settle_batches')
+      .set({ ...set, row_version: rowVersion + 1 })
+      .where('app_id', '=', batch.app_id)
+      .where('batch_id', '=', batch.batch_id)
+      .where('status', '=', from)
+      .where('row_version', '=', rowVersion)
+      .executeTakeFirst();
+    return updated.numUpdatedRows === 1n;
+  }
+
+  /** BR-FUND-18: the snapshot of the day before `today` is complete or timed out. */
+  async function snapshotReady(appId: string, today: string): Promise<boolean> {
+    const status = await deps.snapshotStatus(
+      db,
+      { appId, accountingDate: previousDay(today) },
+      clock,
+    );
+    return status.state === 'complete' || status.state === 'timed_out';
+  }
+
+  /** BR-FUND-04 ⑦: read fresh before every item (no cache, within the 10-second bound). */
+  async function switchesOn(appId: string, platform: string): Promise<boolean> {
+    const auto = await deps.config.get(appId, AUTO_SWITCH);
+    const credit = await deps.config.get(appId, `credit.enabled.${platform}`);
+    return switchOn(auto) && switchOn(credit);
+  }
+
+  /**
+   * 细则「执行中跨日」: still the day the run is on, or a new day whose snapshot is ready (the run
+   * then moves to that day); null when the new day's snapshot is not ready.
+   */
+  async function dayCheck(appId: string, day: string): Promise<string | null> {
+    const today = accountingDate(clock.now());
+    if (today === day) return day;
+    return (await snapshotReady(appId, today)) ? today : null;
+  }
+
+  async function loadItems(input: BatchExecuteInput): Promise<ItemRow[]> {
+    const rows = await db
+      .withSchema('app')
+      .selectFrom('settle_batch_items as i')
+      .innerJoin('orders as o', (join) =>
+        join.onRef('o.app_id', '=', 'i.app_id').onRef('o.order_id', '=', 'i.order_id'),
+      )
+      .select([
+        'i.id',
+        'i.item_type',
+        'i.order_id',
+        'i.user_id',
+        'i.role',
+        'i.beneficiary_credit_id',
+        'i.settle_seq',
+        'o.platform',
+        'o.sub_order_id',
+      ])
+      .where('i.app_id', '=', input.appId)
+      .where('i.batch_id', '=', input.batchId)
+      .where('i.result', 'is', null)
+      .execute();
+    return rows.sort(compareItems);
+  }
+
+  async function unprocessedCount(trx: Transaction<DB>, batch: BatchRow): Promise<number> {
+    const row = await trx
+      .withSchema('app')
+      .selectFrom('settle_batch_items')
+      .select((eb) => eb.fn.countAll<string>().as('n'))
+      .where('app_id', '=', batch.app_id)
+      .where('batch_id', '=', batch.batch_id)
+      .where('result', 'is', null)
+      .executeTakeFirstOrThrow();
+    return Number(row.n);
+  }
+
+  async function executeItem(
+    trx: Transaction<DB>,
+    batch: BatchRow,
+    item: ItemRow,
+  ): Promise<ItemWrite> {
+    if (item.item_type === 'order') {
+      const credited = await deps.creditOrder.credit(trx, {
+        appId: batch.app_id,
+        orderId: item.order_id,
+        expectedSettleSeq: item.settle_seq,
+        openedRef: item.id,
+      });
+      if (credited.outcome === 'credited') {
+        return { result: 'credited', amount_fen: null, skip_reason: null };
+      }
+      return { result: 'skipped', amount_fen: null, skip_reason: credited.reason };
+    }
+    if (item.item_type !== 'beneficiary') {
+      throw new Error(`settle batch item ${item.id} has an unknown item_type`);
+    }
+    const { user_id: userId, role, beneficiary_credit_id: beneficiaryCreditId } = item;
+    if (userId === null || role === null || beneficiaryCreditId === null || !ROLES.includes(role)) {
+      throw new Error(`settle batch item ${item.id} is not a well-formed beneficiary item`);
+    }
+    const answer = await deps.creditBeneficiary.execute(trx, {
+      appId: batch.app_id,
+      batchId: batch.batch_id,
+      itemId: item.id,
+      orderId: item.order_id,
+      userId,
+      role: role as CreditRole,
+      beneficiaryCreditId,
+      expectedSettleSeq: item.settle_seq,
+    });
+    switch (answer.result) {
+      case 'credited':
+        if (typeof answer.amountFen !== 'bigint' || answer.amountFen < 0n) {
+          throw new Error(`settle batch item ${item.id}: credited amount is not a fen amount`);
+        }
+        return { result: 'credited', amount_fen: answer.amountFen, skip_reason: null };
+      case 'deferred':
+        return { result: 'deferred', amount_fen: null, skip_reason: null };
+      case 'skipped':
+        if (typeof answer.reason !== 'string' || answer.reason === '') {
+          throw new Error(`settle batch item ${item.id}: skipped without a reason`);
+        }
+        return { result: 'skipped', amount_fen: null, skip_reason: answer.reason };
+      default:
+        throw new Error(`settle batch item ${item.id}: unknown beneficiary result`);
+    }
+  }
+
+  /** 规划/12 §4.4: the item result on the credit's transaction, only while it is unprocessed. */
+  async function writeItem(
+    trx: Transaction<DB>,
+    batch: BatchRow,
+    item: ItemRow,
+    write: ItemWrite,
+  ): Promise<void> {
+    const updated = await trx
+      .withSchema('app')
+      .updateTable('settle_batch_items')
+      .set({ result: write.result, amount_fen: write.amount_fen, skip_reason: write.skip_reason })
+      .where('app_id', '=', batch.app_id)
+      .where('batch_id', '=', batch.batch_id)
+      .where('id', '=', item.id)
+      .where('result', 'is', null)
+      .executeTakeFirst();
+    if (updated.numUpdatedRows !== 1n) {
+      throw new Error(`settle batch item ${item.id} was already processed`);
+    }
+  }
+
+  /** Steps 3–5, with the liveness lock held. */
+  async function owned(input: BatchExecuteInput): Promise<BatchExecuteResult> {
+    // Re-read after the lock: an executor that just finished may have moved the batch on.
+    const batch = await readBatch(input);
+    if (batch === undefined) return result('idle');
+    const fields = { app_id: batch.app_id, batch_id: batch.batch_id };
+    let version = batch.row_version;
+
+    if (batch.status === 'CONFIRMED') {
+      // SB5 a: only SB10 may start a batch stopped by a switch.
+      if (batch.paused_by_switch_at !== null) return result('idle');
+      // SB5 b: the execution instant.
+      if (batch.settle_mode === 'SCHEDULED') {
+        if (batch.scheduled_at === null) {
+          throw new Error(`settle batch ${batch.batch_id} is SCHEDULED without scheduled_at`);
+        }
+        if (clock.now().getTime() < batch.scheduled_at.getTime()) return result('not_due');
+      }
+      // SB5 c: the switches, before the snapshot check.
+      if (!(await switchesOn(batch.app_id, batch.platform))) {
+        const marked = await casBatch(db, batch, 'CONFIRMED', version, {
+          paused_by_switch_at: clock.now(),
+        });
+        if (!marked) return result('busy');
+        logger.warn({ ...fields, event: 'settle_batch_switched_off' }, 'settle batch not started');
+        return result('switched_off');
+      }
+      // SB5 d: BR-FUND-18.
+      if (!(await snapshotReady(batch.app_id, accountingDate(clock.now())))) {
+        return result('snapshot_pending');
+      }
+      // SB5 e.
+      const to = nextState(batch.status, 'START');
+      if (
+        !(await casBatch(db, batch, 'CONFIRMED', version, { status: to, started_at: clock.now() }))
+      ) {
+        return result('busy');
+      }
+      version += 1;
+      logger.info({ ...fields, event: 'settle_batch_started' }, 'settle batch started');
+    } else if (batch.status === 'EXECUTING') {
+      // SB9: no live executor (the lock was free); the snapshot guard applies again.
+      if (!(await snapshotReady(batch.app_id, accountingDate(clock.now())))) {
+        return result('snapshot_pending');
+      }
+      const to = nextState(batch.status, 'TAKE_OVER');
+      if (!(await casBatch(db, batch, 'EXECUTING', version, { status: to }))) {
+        return result('busy');
+      }
+      version += 1;
+      logger.info({ ...fields, event: 'settle_batch_taken_over' }, 'settle batch taken over');
+    } else {
+      return result('idle');
+    }
+
+    let day = accountingDate(clock.now());
+    for (const item of await loadItems(input)) {
+      // BR-FUND-04 ⑦: both switches before every item; either off → SB7.
+      if (!(await switchesOn(batch.app_id, batch.platform))) {
+        const to = nextState('EXECUTING', 'SWITCH_OFF');
+        if (!(await casBatch(db, batch, 'EXECUTING', version, { status: to }))) {
+          return result('busy');
+        }
+        logger.warn(
+          { ...fields, event: 'settle_batch_partial' },
+          'settle batch stopped by a switch',
+        );
+        return result('partial');
+      }
+      const before = await dayCheck(batch.app_id, day);
+      if (before === null) {
+        logger.warn({ ...fields, event: 'settle_batch_day_rollover' }, 'settle batch paused');
+        return result('day_rollover');
+      }
+      day = before;
+      try {
+        await db.transaction().execute(async (trx) => {
+          const write = await executeItem(trx, batch, item);
+          await writeItem(trx, batch, item, write);
+          // Right before commit: crossing into a day whose snapshot is not ready rolls back.
+          const after = await dayCheck(batch.app_id, day);
+          if (after === null) throw new DayRollover();
+          day = after;
+        });
+      } catch (error) {
+        if (error instanceof DayRollover) {
+          logger.warn({ ...fields, event: 'settle_batch_day_rollover' }, 'settle batch paused');
+          return result('day_rollover');
+        }
+        logger.error(
+          { ...fields, item_id: item.id, event: 'settle_batch_item_failed' },
+          'settle batch item transaction failed',
+        );
+        throw error;
+      }
+    }
+
+    // SB6 and settle.batch_done on one transaction.
+    try {
+      await db.transaction().execute(async (trx) => {
+        if ((await unprocessedCount(trx, batch)) > 0) {
+          throw new Error(`settle batch ${batch.batch_id} still has unprocessed items`);
+        }
+        const to = nextState('EXECUTING', 'COMPLETE');
+        const done = await casBatch(trx, batch, 'EXECUTING', version, {
+          status: to,
+          finished_at: clock.now(),
+        });
+        if (!done) throw new LostCas();
+        await deps.events.publish(trx, {
+          appId: batch.app_id,
+          name: DONE_EVENT,
+          payload: {
+            batch_id: batch.batch_id,
+            bill_id: batch.bill_id,
+            platform: batch.platform,
+            kind: batch.kind,
+          },
+        });
+      });
+    } catch (error) {
+      if (error instanceof LostCas) return result('busy');
+      throw error;
+    }
+    logger.info({ ...fields, event: 'settle_batch_done' }, 'settle batch done');
+    return result('done');
+  }
+
+  return {
+    async run(input) {
+      if (typeof input.appId !== 'string' || input.appId === '') return result('idle');
+      if (typeof input.batchId !== 'string' || !UUID.test(input.batchId)) return result('idle');
+      const seen = await readBatch(input);
+      if (seen === undefined || (seen.status !== 'CONFIRMED' && seen.status !== 'EXECUTING')) {
+        return result('idle');
+      }
+      const lockText = `${input.appId}:${input.batchId}`;
+      return db.connection().execute(async (conn) => {
+        const taken = await sql<{ locked: boolean }>`
+          select pg_try_advisory_lock(hashtext(${LOCK_NAMESPACE}), hashtext(${lockText})) as locked
+        `.execute(conn);
+        if (taken.rows[0]?.locked !== true) return result('busy');
+        try {
+          return await owned(input);
+        } finally {
+          try {
+            await sql`
+              select pg_advisory_unlock(hashtext(${LOCK_NAMESPACE}), hashtext(${lockText}))
+            `.execute(conn);
+          } catch {
+            // A dead connection already dropped the session lock with it.
+            logger.warn(
+              { app_id: input.appId, batch_id: input.batchId, event: 'settle_batch_unlock_failed' },
+              'settle batch executor lock release failed',
+            );
+          }
+        }
+      });
+    },
+  };
 }
