@@ -7,8 +7,10 @@
 //   1. Read the batch for appId (another app's batch, or none: outcome 'idle', nothing written).
 //      DRAFT, PARTIAL (no automatic resume), DONE, CANCELLED: 'idle', nothing written.
 //   2. Executor liveness: at most one live executor per batch. The run holds a session-level
-//      PostgreSQL advisory lock on the batch for its whole duration, on a connection of deps.db, and
-//      releases it when the run ends; a crashed process loses it with its connection. A run that
+//      PostgreSQL advisory lock on the batch for its whole duration, on one reserved connection of
+//      deps.db that also carries every later statement of the run (so a lost connection stops the
+//      run, and a run never holds one connection while waiting for another), and releases it when
+//      the run ends; a crashed process loses it with its connection. A run that
 //      cannot take it at once (another executor is alive) returns 'busy' without waiting and
 //      without writing anything.
 //   3. CONFIRMED (SB5), in this order:
@@ -29,12 +31,13 @@
 //      (order_keys: `${platform}:${sub_order_id}`); an item with a result is never executed again.
 //      Before each item:
 //        - read settle.auto.enabled and credit.enabled.<platform> through deps.config (a value is
-//          on only when it is true or 'on'; a missing credit.enabled is off; a cached value is at
+//          on only when it is true or 'on'; a missing credit.enabled is off, a missing
+//          settle.auto.enabled takes the switch registry default (on); a cached value is at
 //          most 10 seconds old by deps.clock): either off → stop, EXECUTING → PARTIAL (SB7, event
 //          SWITCH_OFF, CAS), 'partial';
 //        - the accounting date of clock.now() differs from the one the run started on and that
 //          day's snapshot check d fails → stop, the batch stays EXECUTING, 'day_rollover'.
-//      Each item runs in its own transaction of deps.db:
+//      Each item runs in its own transaction on the reserved connection:
 //        - item_type order: deps.creditOrder.credit(trx, { appId, orderId, expectedSettleSeq:
 //          item.settle_seq, openedRef: item.id }); credited → result 'credited'; skipped → result
 //          'skipped' and skip_reason = the returned reason (e.g. 'not_waiting',
@@ -61,6 +64,7 @@ import {
   type SettleBatchState,
 } from '@couli/domain';
 import { sql, type Kysely, type Transaction, type Updateable } from 'kysely';
+import { switchSpecOf } from '../../../content/index.ts';
 import type { Clock, EventBus, RootLogger } from '../../../platform/index.ts';
 import type { CreditOrder, CreditRole } from '../../credit/index.ts';
 import { compareItems, previousDay, switchOn } from './rules.ts';
@@ -212,6 +216,14 @@ function nextState(status: string, event: SettleBatchEvent): SettleBatchState {
   return result.to;
 }
 
+/**
+ * settle.auto.enabled defaults to on (BR-FUND-20; content's switch registry): an app without a
+ * stored value runs batches. Only credit.enabled.<platform> treats a missing value as off.
+ */
+export function autoSwitchValue(stored: unknown): unknown {
+  return stored === undefined || stored === null ? switchSpecOf(AUTO_SWITCH)?.defaultValue : stored;
+}
+
 function result(outcome: BatchExecuteOutcome): BatchExecuteResult {
   return { outcome };
 }
@@ -219,8 +231,8 @@ function result(outcome: BatchExecuteOutcome): BatchExecuteResult {
 export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecutor {
   const { db, clock, logger } = deps;
 
-  function readBatch(input: BatchExecuteInput): Promise<BatchRow | undefined> {
-    return db
+  function readBatch(on: Kysely<DB>, input: BatchExecuteInput): Promise<BatchRow | undefined> {
+    return on
       .withSchema('app')
       .selectFrom('settle_batches')
       .select([
@@ -261,9 +273,9 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
   }
 
   /** BR-FUND-18: the snapshot of the day before `today` is complete or timed out. */
-  async function snapshotReady(appId: string, today: string): Promise<boolean> {
+  async function snapshotReady(on: Kysely<DB>, appId: string, today: string): Promise<boolean> {
     const status = await deps.snapshotStatus(
-      db,
+      on,
       { appId, accountingDate: previousDay(today) },
       clock,
     );
@@ -272,7 +284,7 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
 
   /** BR-FUND-04 ⑦: read fresh before every item (no cache, within the 10-second bound). */
   async function switchesOn(appId: string, platform: string): Promise<boolean> {
-    const auto = await deps.config.get(appId, AUTO_SWITCH);
+    const auto = autoSwitchValue(await deps.config.get(appId, AUTO_SWITCH));
     const credit = await deps.config.get(appId, `credit.enabled.${platform}`);
     return switchOn(auto) && switchOn(credit);
   }
@@ -281,14 +293,14 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
    * 细则「执行中跨日」: still the day the run is on, or a new day whose snapshot is ready (the run
    * then moves to that day); null when the new day's snapshot is not ready.
    */
-  async function dayCheck(appId: string, day: string): Promise<string | null> {
+  async function dayCheck(on: Kysely<DB>, appId: string, day: string): Promise<string | null> {
     const today = accountingDate(clock.now());
     if (today === day) return day;
-    return (await snapshotReady(appId, today)) ? today : null;
+    return (await snapshotReady(on, appId, today)) ? today : null;
   }
 
-  async function loadItems(input: BatchExecuteInput): Promise<ItemRow[]> {
-    const rows = await db
+  async function loadItems(on: Kysely<DB>, input: BatchExecuteInput): Promise<ItemRow[]> {
+    const rows = await on
       .withSchema('app')
       .selectFrom('settle_batch_items as i')
       .innerJoin('orders as o', (join) =>
@@ -397,10 +409,15 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
     }
   }
 
-  /** Steps 3–5, with the liveness lock held. */
-  async function owned(input: BatchExecuteInput): Promise<BatchExecuteResult> {
+  /**
+   * Steps 3–5, with the liveness lock held by `conn`. Every statement of the run (batch CAS, item
+   * transactions, snapshot reads) goes over that one connection: losing it loses the lock and
+   * fails the run at its next statement, and a run never waits for a second pool connection while
+   * holding one. Inside a transaction only `trx` is used (`conn` is busy until it ends).
+   */
+  async function owned(conn: Kysely<DB>, input: BatchExecuteInput): Promise<BatchExecuteResult> {
     // Re-read after the lock: an executor that just finished may have moved the batch on.
-    const batch = await readBatch(input);
+    const batch = await readBatch(conn, input);
     if (batch === undefined) return result('idle');
     const fields = { app_id: batch.app_id, batch_id: batch.batch_id };
     let version = batch.row_version;
@@ -417,7 +434,7 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
       }
       // SB5 c: the switches, before the snapshot check.
       if (!(await switchesOn(batch.app_id, batch.platform))) {
-        const marked = await casBatch(db, batch, 'CONFIRMED', version, {
+        const marked = await casBatch(conn, batch, 'CONFIRMED', version, {
           paused_by_switch_at: clock.now(),
         });
         if (!marked) return result('busy');
@@ -425,13 +442,16 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
         return result('switched_off');
       }
       // SB5 d: BR-FUND-18.
-      if (!(await snapshotReady(batch.app_id, accountingDate(clock.now())))) {
+      if (!(await snapshotReady(conn, batch.app_id, accountingDate(clock.now())))) {
         return result('snapshot_pending');
       }
       // SB5 e.
       const to = nextState(batch.status, 'START');
       if (
-        !(await casBatch(db, batch, 'CONFIRMED', version, { status: to, started_at: clock.now() }))
+        !(await casBatch(conn, batch, 'CONFIRMED', version, {
+          status: to,
+          started_at: clock.now(),
+        }))
       ) {
         return result('busy');
       }
@@ -439,11 +459,11 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
       logger.info({ ...fields, event: 'settle_batch_started' }, 'settle batch started');
     } else if (batch.status === 'EXECUTING') {
       // SB9: no live executor (the lock was free); the snapshot guard applies again.
-      if (!(await snapshotReady(batch.app_id, accountingDate(clock.now())))) {
+      if (!(await snapshotReady(conn, batch.app_id, accountingDate(clock.now())))) {
         return result('snapshot_pending');
       }
       const to = nextState(batch.status, 'TAKE_OVER');
-      if (!(await casBatch(db, batch, 'EXECUTING', version, { status: to }))) {
+      if (!(await casBatch(conn, batch, 'EXECUTING', version, { status: to }))) {
         return result('busy');
       }
       version += 1;
@@ -453,11 +473,11 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
     }
 
     let day = accountingDate(clock.now());
-    for (const item of await loadItems(input)) {
+    for (const item of await loadItems(conn, input)) {
       // BR-FUND-04 ⑦: both switches before every item; either off → SB7.
       if (!(await switchesOn(batch.app_id, batch.platform))) {
         const to = nextState('EXECUTING', 'SWITCH_OFF');
-        if (!(await casBatch(db, batch, 'EXECUTING', version, { status: to }))) {
+        if (!(await casBatch(conn, batch, 'EXECUTING', version, { status: to }))) {
           return result('busy');
         }
         logger.warn(
@@ -466,18 +486,18 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
         );
         return result('partial');
       }
-      const before = await dayCheck(batch.app_id, day);
+      const before = await dayCheck(conn, batch.app_id, day);
       if (before === null) {
         logger.warn({ ...fields, event: 'settle_batch_day_rollover' }, 'settle batch paused');
         return result('day_rollover');
       }
       day = before;
       try {
-        await db.transaction().execute(async (trx) => {
+        await conn.transaction().execute(async (trx) => {
           const write = await executeItem(trx, batch, item);
           await writeItem(trx, batch, item, write);
           // Right before commit: crossing into a day whose snapshot is not ready rolls back.
-          const after = await dayCheck(batch.app_id, day);
+          const after = await dayCheck(trx, batch.app_id, day);
           if (after === null) throw new DayRollover();
           day = after;
         });
@@ -496,7 +516,7 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
 
     // SB6 and settle.batch_done on one transaction.
     try {
-      await db.transaction().execute(async (trx) => {
+      await conn.transaction().execute(async (trx) => {
         if ((await unprocessedCount(trx, batch)) > 0) {
           throw new Error(`settle batch ${batch.batch_id} still has unprocessed items`);
         }
@@ -529,7 +549,7 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
     async run(input) {
       if (typeof input.appId !== 'string' || input.appId === '') return result('idle');
       if (typeof input.batchId !== 'string' || !UUID.test(input.batchId)) return result('idle');
-      const seen = await readBatch(input);
+      const seen = await readBatch(db, input);
       if (seen === undefined || (seen.status !== 'CONFIRMED' && seen.status !== 'EXECUTING')) {
         return result('idle');
       }
@@ -540,7 +560,7 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
         `.execute(conn);
         if (taken.rows[0]?.locked !== true) return result('busy');
         try {
-          return await owned(input);
+          return await owned(conn, input);
         } finally {
           try {
             await sql`
