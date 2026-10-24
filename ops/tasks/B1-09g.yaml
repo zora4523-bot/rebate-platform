@@ -7,6 +7,7 @@ type: impl
 # 本线技术取舍（由编排者摘进任务书第 9 节）：每次上传都新建任务（不按文件哈希去重，BR-FUND-06 细则）；文件照 platform/export-store 先例新增私有 import-store 端口（local / test 内存实现，OSS 适配器 TODO blocked on B1-30），日志不打内容；
 #   新队列 rights-import 进 QUEUE_CATALOG（若平台队列冻结测试钉全目录，照 export 队列先例另开 test-change）；列映射读登记表，表头待负责人样例（方案 K-3），测试用合成表头；整份文件写一条审计；
 #   order.claim 全部 kind，channel 另需 risk.blocklist 与 totp 动态码（整份一次，BR-ATTR-26 细则）；按 J-1 / J-22 路由不挂载、契约 planned 不动，挂载另开 B1-09n。
+# 2026-10-25（W1）：Codex 至 10-30 不可用，tester 改 claude-independent（approvals #36）。队列取舍改为**复用 orders 自有的 order-sync 队列、任务名 rights_import**，不新建 rights-import 队列：新队列须改三份钉死全目录的平台冻结测试（queue/contract.test.ts、metrics/kit.ts、dead-letter-scan/kit.ts），kit 改动会让同目录大批用例被整体判定、先红过不了（同 B1-03w / B1-09e）；代价是导入与订单同步共用单并发队列，上线前可接受，记 followups，需要时再拆。catalog.ts 不改。
 refs: [BR-FUND-06]
 refs_hash:
   BR-FUND-06: 2076b932478c
@@ -19,7 +20,7 @@ paths:
 test_paths:
   - 'test/spec/orders/rights-import-task/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/orders/rights-import-task/**'
