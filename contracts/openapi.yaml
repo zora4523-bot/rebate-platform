@@ -18235,7 +18235,9 @@ paths:
           a validity written in its preview text must equal); null for every other code.
         - `fund_terms`: true for a fund code (BR-TEXT-12 细则「资金术语键」, the `fund_terms`
           template codes of specs/fund-term-keys.yaml; a code in neither list counts as a fund
-          code). Saving its SMS registration and enabling a new one also need
+          code, except `DATA_COPY_READY` and `DATA_COPY_CODE`, which are ordinary (orchestrator
+          ruling D10-341: personal data copy delivery, no money) until the list registers them).
+          Saving its SMS registration and enabling a new one also need
           `content.fund_terms`; switching its channels, retesting and discarding do not.
         - `sms_registrations`: one row per variant of the code (code × variant, 04 §3) when the
           code may send SMS (`sms_fixed` or `sms_switchable`), otherwise empty. Each row has the
@@ -18392,7 +18394,7 @@ paths:
                       sms_switchable: false
                       sms_fixed: true
                       sms_billing_confirm: false
-                      fund_terms: true
+                      fund_terms: false
                       sms_ready: false
                       sms_state: enabled_not_ready
                       sms_deploy_fallback: false
@@ -18625,7 +18627,9 @@ paths:
         sample value), and its result is saved on the pending registration:
         - the provider accepts it (accepted is not delivered) → 200, `pending.test.status=accepted`;
           the console offers 「启用新配置」 (POST …/sms/pending/enable) or 「稍后再启用」, which
-          changes nothing;
+          changes nothing. This accepted test is what satisfies BR-TEXT-20's test send to a verify
+          phone: whoever enables the registration later needs no verify phone of their own
+          (orchestrator ruling D10-342 ②);
         - the account has no verify phone (also when it lost it after the page was loaded) → the
           pending registration is still saved, nothing is sent, 200 with
           `pending.test.status=not_sent_no_verify_phone` and `test_send_phone_masked` null (never
@@ -19082,7 +19086,10 @@ paths:
         not `accepted` (failed, or not sent for want of a verify phone) → 20001 with
         `data.fields=[variant]` (only a registration whose test the provider accepted can be
         enabled, BR-TEXT-20 细则) → `row_version` differs from the code's current one → 20902
-        without data. Otherwise the pending registration becomes the active one of the code ×
+        without data. The gate is the pending registration's accepted test, which already
+        satisfied BR-TEXT-20's test send to a verify phone: the enabling operator needs no verify
+        phone of their own and nothing is sent here (orchestrator ruling D10-342 ②; permission
+        and step-up as above). Otherwise the pending registration becomes the active one of the code ×
         variant (replacing the earlier active one; `enabled_at` = now), the pending one is
         cleared and `row_version` goes up by 1; from then on that code × variant is sent with it
         (for `SMS_CODE` the deployment fallback no longer applies). When this makes `sms_ready`
