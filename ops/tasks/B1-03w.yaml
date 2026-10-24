@@ -1,0 +1,24 @@
+id: B1-03w
+repo: rebate-platform
+title: 风控扫描链任务名不合队列命名规则导致从未入队：risk-scan 的 freeze-expiry / daily-alerts 改为 freeze_expiry / daily_alerts（platform/queue validateSend 的任务名只允许小写字母、数字、下划线与点），种子、续排、自愈三处同改；singletonKey 前缀保持可读；规则测试用真实队列运行时证明三处发送都被接受、冻结到期扫描与每日告警确实跑起来
+type: impl
+# 草稿 2026-10-24（身份与风控线 identity-lane）。编排 19:2x 派排查：staging worker 启动 warn risk_scan_seed_failed（QueueError）。查明：risk-scan.ts JOB_NAMES 为 'freeze-expiry' / 'daily-alerts'，platform/queue/validation.ts validateSend 的任务名正则 ^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$ 不允许连字符 → 每次 send 抛 QueueError('invalid_name')（本地直调 validateSend 已复现）。后果：每次 worker 启动种子必失败；B1-03u 的 5 分钟自愈与 handle 后续排同样走 send，同样失败；队列里从未有 risk-scan 任务 → 冻结到期不自动解冻（BR-ID-31 frozen_until）、每日告警不发。单元测试用假队列没覆盖命名校验。
+# 做法：只改任务名常量与相关类型 / 槽位键生成（risk/domain/risk-scan-slots.ts 的 singletonKey 允许连字符，可保留或同步改，二选一写明）；handle 的 isJobName 同步；不改 platform/queue 规则。规则测试（独立 Claude，Codex 至 10-30 不可用）：用 platform/queue 真实运行时（连库 *.int.test.ts）断言 seed / heal / 续排三处入队成功且 worker 能消费。
+refs: []
+refs_hash: {}
+deps: [B1-03j, B1-03u]
+paths:
+  - 'apps/api/src/modules/risk/application/risk-scan.ts'
+  - 'apps/api/src/modules/risk/application/risk-scan.test.ts'
+  - 'apps/api/src/modules/risk/application/risk-scan-heal.ts'
+  - 'apps/api/src/modules/risk/application/risk-scan-heal.test.ts'
+  - 'apps/api/src/modules/risk/domain/risk-scan-slots.ts'
+  - 'apps/api/src/modules/risk/domain/risk-scan-slots.test.ts'
+test_paths:
+  - 'test/spec/risk/risk-scan-queue/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/risk-scan-queue/**'
+status: todo
