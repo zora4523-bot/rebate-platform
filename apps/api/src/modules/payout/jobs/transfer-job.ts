@@ -80,10 +80,7 @@ export interface PayoutQueuePauseInput {
 
 /** content's system write of payout.queue_paused = true, on the caller's transaction. */
 export interface PayoutQueuePausePort {
-  pause(
-    trx: Transaction<DB>,
-    input: PayoutQueuePauseInput,
-  ): Promise<{ readonly changed: boolean }>;
+  pause(trx: Transaction<DB>, input: PayoutQueuePauseInput): Promise<{ readonly changed: boolean }>;
 }
 
 export type TransferAlertMessage = 'payout_queue_paused';

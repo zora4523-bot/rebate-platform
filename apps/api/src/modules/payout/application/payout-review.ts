@@ -42,8 +42,7 @@ export interface TransferReviewInput {
 }
 
 export type TransferReviewVerdict =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly reason: TransferHoldReason };
+  { readonly ok: true } | { readonly ok: false; readonly reason: TransferHoldReason };
 
 export function reviewTransfer(input: TransferReviewInput): TransferReviewVerdict {
   void input;
