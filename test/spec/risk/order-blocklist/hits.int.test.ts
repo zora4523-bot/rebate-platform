@@ -78,7 +78,7 @@ it('[AC-B1-09a#16] 已有 BLACKLIST_HIT 配置原样保留，写入使用调用�
   expect(after.hits[0]).toMatchObject({ risk_action: 'manual_review', created_at: f.clock.now() });
 });
 
-it('[AC-B1-09a#17] 同一订单同值重试只插一次，变更处置或用户不覆盖首次命中', async () => {
+it('[AC-B1-09a#17] 同一订单先 manual_review 后 void_commission 各留一行，首次命中不被改写', async () => {
   const db = database();
   const f = setup(db);
   const user = await seedUser(db, f.app);
@@ -93,7 +93,27 @@ it('[AC-B1-09a#17] 同一订单同值重试只插一次，变更处置或用户�
       risk_action: 'void_commission',
     }),
   );
-  expect(await state(db, f.app)).toEqual(before);
+  // D10-293：只追加，改判作废插第二行，第一行原样保留。
+  const after = await state(db, f.app);
+  expect(after.blocks).toEqual(before.blocks);
+  expect(after.rules).toEqual(before.rules);
+  expect(after.hits).toHaveLength(2);
+  expect(after.hits.map((row) => row.risk_action).sort()).toEqual([
+    'manual_review',
+    'void_commission',
+  ]);
+  const first = before.hits[0]!;
+  expect(after.hits.find((row) => row.id === first.id)).toEqual(first);
+  expect(after.hits.find((row) => row.id !== first.id)).toMatchObject({
+    app_id: f.app,
+    user_id: user,
+    rule_id: RULE,
+    risk_action: 'void_commission',
+    value_hmac: first.value_hmac,
+    ref_type: 'order',
+    ref_id: f.hitInput.order_id,
+    created_at: f.clock.now(),
+  });
 });
 
 it('[AC-B1-09a#18] 并发首次命中规则惰性登记无冲突，同键去重、不同值分别留痕', async () => {
