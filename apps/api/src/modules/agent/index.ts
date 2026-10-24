@@ -1,7 +1,19 @@
 // The agent module's only public entry (apps/api/AGENTS.md): other modules import from here.
 // B3-03d adds the HTTP layer and the session store; B3-03h the worker assembly of the left-over
 // run sweeper (AgentModule.forWorker, agentSweeperToken); the HTTP mount is B3-03f.
+// B3-09i: the deletion cleanup port of B3-09e (BR-AI-22), for app.module's deletionCleanupPorts.
 export * from './http/index.ts';
 export * from './store/index.ts';
 export * from './agent.module.ts';
 export * from './stream/mount/index.ts';
+export {
+  createAgentDataPurge,
+  readAgentUserHashKey,
+  agentUserHash,
+  purgedCardText,
+} from './deletion/index.ts';
+export type {
+  AgentDataPurge,
+  PurgeAgentDataInput,
+  PurgeAgentDataResult,
+} from './deletion/index.ts';

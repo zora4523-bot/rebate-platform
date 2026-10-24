@@ -1,0 +1,78 @@
+{
+  "task": "B3-09i",
+  "spec_ref": "d8e3ba5d50552d573506f45a0903e0a8f0a8aca3",
+  "spec_commit": "acc4f04badb162224a21eeb46ac47058509cb3fe",
+  "red_tests": [
+    "test/spec/agent/deletion-export/export.test.ts > [AC-B3-09i#1][BR-AI-22] index 导出的四个函数与 ./deletion/index.ts 是同一个引用",
+    "test/spec/agent/deletion-export/export.test.ts > [AC-B3-09i#2][BR-AI-22] createAgentDataPurge(…).purgeAgentDataForUser 可直接装进 DeletionCleanupStep",
+    "test/spec/agent/deletion-export/export.test.ts > [AC-B3-09i#3][BR-AI-22] 经 index 的 readAgentUserHashKey：有值原样返回，缺失、空串、全空白抛错",
+    "test/spec/agent/deletion-export/export.test.ts > [AC-B3-09i#4][BR-AI-22] 经 index 的 purgedCardText() 是迁移 0073 的占位「内容已删除」"
+  ],
+  "risk_note": "RV1 apps/api/src/modules/agent/**；只在 agent/index.ts 再导出 B3-09e 的注销清理端口（同一引用），无行为改动、无迁移",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "acc4f04badb162224a21eeb46ac47058509cb3fe",
+      "tree": "f126873fe109174ca9cbcda1ffa6a9bf09ee25e4",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T04:46:07Z",
+      "finished_at": "2026-10-24T04:46:14Z",
+      "red_tests": [
+        "test/spec/agent/deletion-export/export.test.ts > [AC-B3-09i#1][BR-AI-22] index 导出的四个函数与 ./deletion/index.ts 是同一个引用",
+        "test/spec/agent/deletion-export/export.test.ts > [AC-B3-09i#2][BR-AI-22] createAgentDataPurge(…).purgeAgentDataForUser 可直接装进 DeletionCleanupStep",
+        "test/spec/agent/deletion-export/export.test.ts > [AC-B3-09i#3][BR-AI-22] 经 index 的 readAgentUserHashKey：有值原样返回，缺失、空串、全空白抛错",
+        "test/spec/agent/deletion-export/export.test.ts > [AC-B3-09i#4][BR-AI-22] 经 index 的 purgedCardText() 是迁移 0073 的占位「内容已删除」"
+      ],
+      "expected": ["test/spec/agent/deletion-export/export.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "7397f6c4f24c7c9ed4dd08b0068aa9f6162978cf31bd22908773b228d215883a"
+        }
+      ],
+      "gate": {
+        "commit": "30dc0ee6a971b6d1c39211ef65691f1edfa921b0",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "round 1 pass, 0 findings (couli-runs/B3-09i/review-claude-general.json). Codex unavailable, approvals #36"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "spec-test r1 pass, 0 findings (independent Claude, couli-runs/B3-09i/review-claude-spec-test.json); rule tests by claude-independent (claude-run.sh); 编排 12:2x 指示的机械修正：export.test.ts 的 DeletionCleanupStep / DeletionCleanupPort 类型改从 identity/ports/deletion-cleanup.ts 导入（原经 identity/index.ts 把参数属性代码拉进只许可擦除语法的 test 项目，TS1294），断言不动，单列 test(spec) 提交置于实现前；本地 tsc -b test 0 错误"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "ae054367ceb09e20fba021a20cb9c577dd9afb91",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}
