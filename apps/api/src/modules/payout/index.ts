@@ -145,3 +145,29 @@ export type {
 } from './infra/payout-batches-store.ts';
 export { createPayoutAttemptsStore } from './infra/payout-attempts-store.ts';
 export type { PayoutAttemptsStore } from './infra/payout-attempts-store.ts';
+// B2-06d: the payout process's transfer job and its pre-transfer review.
+export {
+  createTransferJob,
+  PAYOUT_QUEUE,
+  PAYOUT_QUERY_JOB,
+  PAYOUT_WENT_NEGATIVE_QUEUE,
+  PAYOUT_WENT_NEGATIVE_JOB,
+  PAYOUT_QUEUE_PAUSED_ALERT,
+} from './jobs/transfer-job.ts';
+export type {
+  TransferJobPayload,
+  QueryJobPayload,
+  PayoutQueuePauseInput,
+  PayoutQueuePausePort,
+  TransferAlertCause,
+  TransferAlertMessage,
+  TransferJobLogger,
+  TransferJobOptions,
+} from './jobs/transfer-job.ts';
+export { reviewTransfer } from './application/payout-review.ts';
+export type {
+  TransferHoldReason,
+  WithdrawalHoldReason,
+  TransferReviewInput,
+  TransferReviewVerdict,
+} from './application/payout-review.ts';

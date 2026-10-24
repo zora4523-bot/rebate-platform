@@ -15,6 +15,7 @@
 // The watermark is not checked here (only at EXECUTE, BR-WDR-18).
 //
 // Also compiled by the `test` project: erasable syntax only.
+import { addFen } from '@couli/money';
 
 /** W9 reasons of the review (withdrawals.hold_reason, BR-WDR-13). */
 export type TransferHoldReason =
@@ -45,6 +46,13 @@ export type TransferReviewVerdict =
   { readonly ok: true } | { readonly ok: false; readonly reason: TransferHoldReason };
 
 export function reviewTransfer(input: TransferReviewInput): TransferReviewVerdict {
-  void input;
-  throw new Error('NotImplemented: reviewTransfer');
+  if (!input.payoutEnabled) return { ok: false, reason: 'payout_disabled' };
+  if (input.queuePaused) return { ok: false, reason: 'queue_paused' };
+  if (!input.channelOpen) return { ok: false, reason: 'channel_disabled' };
+  if (input.memberBlocked) return { ok: false, reason: 'member_blocked' };
+  if (input.netFen > input.singleCapFen) return { ok: false, reason: 'single_cap' };
+  if (addFen(input.dailySentFen, input.netFen) > input.dailyCapFen) {
+    return { ok: false, reason: 'daily_cap' };
+  }
+  return { ok: true };
 }
