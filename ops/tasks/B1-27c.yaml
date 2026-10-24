@@ -1,22 +1,23 @@
 id: B1-27c
 repo: rebate-platform
-title: identity：后台个人信息副本登记与列表实现（CT-24q adminCreateUserDataExport、adminListUserDataExports）——按两项通道情况判交付方式（一项为真 30419 delivery_undecided）、注销状态不受理、企业微信路径缺 pii.reveal_phone 10403、in_app_sms 未绑手机 20001、同一用户未结束请求复用 reused=true（登记人失权的原条置 failed 另建）、失败后重登记 retry_of 与 due_at 沿用、15 个工作日截止、每次登记写审计并入队生成作业；去掉这两个接口的 planned
+title: identity：后台个人信息副本登记与列表实现（CT-24q adminCreateUserDataExport、adminListUserDataExports）——注销状态不受理、同一用户未结束请求复用 reused=true（企业微信路径登记人失权的原条置 failed 另建）、按两项通道情况判交付方式（一项为真 30419 delivery_undecided、in_app_sms 未绑手机 20001、wecom_session 缺 pii.reveal_phone 10403）、retry_of 与 due_at 沿用、15 个工作日截止、写审计并入队生成作业；去掉这两个接口的 planned
 type: impl
-# 2026-10-24 草稿（admin-backend，编排 2026-10-22 21:1x 派工 B1-27；契约 CT-24q 已合并 #1492）。依据：08 BR-ID-40 正文与细则「用户登不上 App……」「能登录 App……」「截止时刻」「副本请求与注销状态」「企业微信会话交付的下载」第一句、「重新登记与登记人停用」；04 §6.6 `users/{id}/data-exports`（登记、列表、reused、retry_of）、§3.2 `personal_data_copies`、§11.2 `user.data_export`；工作日口径 BR-ID-27 由编排者摘一句。 refs 只列 BR-ID-40（正文约 1.1KB + 细则约 10.5KB，合计约 11.7KB）。 任务书预算（参照 B1-27b 实测：模板约 9KB + 第 3 节路径约 2KB）：规则原文约 11.7KB，第 9 节须压到约 3KB 内，按 ②③ 优先摘；其余写成一句指针指回本台账注释。
-# 拆分理由：副本线按「表（B1-27d）→ 取数（B1-27f）→ 生成与交付（B1-27h）→ 登记与列表（本任务）→ 下载（B1-27i）」拆，每个任务都只引 BR-ID-40，单任务任务书不超 24KB；本任务排在 B1-27h 之后，去掉 planned 时登记出来的请求已有作业处理，不出现「登记了没人生成」。 本线技术取舍（由编排者摘进任务书第 9 节）： ① 文件：服务 identity/application/admin-data-copies.ts、控制器 identity/http/admin/user-data-exports.controller.ts，照 B1-27b 在 identity-admin.module.ts 注册、经 forAdmin 注入 auditWriter 与权限查询；admin 账号的权限点与停用状态经 admin 模块 index 读，不直读 admin 表。
-# ② 判定顺序（未写明处为代理补全的默认，与 04 §6.6 同）：账号 processing → 30419 account_deleting（data.stage 同 10007）、已注销 → account_deleted，cooling 照常受理；两项通道一真一假 → 30419 delivery_undecided；都为真且未绑手机 → 20001 fields=[phone_sms_ok]；都为假且登记人不同时持 user.data_export 与 pii.reveal_phone → 10403 data.reason=admin_permission_denied；每一种拒绝都照常写一条审计（原因说明与两项通道情况）。 ③ 同一用户的未结束请求（pending / running / ready）在锁用户行后判：有且未失权 → 返回原条 reused=true、写审计标明复用；原条是企业微信路径、未交付且登记人已停用或不再同时持两项权限点 → 原条置 failed，新建一条 retry_of=原条、due_at 沿用；上一条 failed 或企业微信路径未交付即 expired 的，新建并记 retry_of、due_at 沿用；其余新建 due_at = 登记时刻起第 15 个工作日 24:00（+08:00），工作日日历复用 identity/application/deletion-expiry.ts 的配置读取（calendar.cn_holidays.<year> 等），不另写一份；部分唯一索引兜底并发登记（23505 → 重读返回原条）。 ④ 新建与入队 B1-27h 作业同一事务；新建与复用都返回 200 并带 reused；列表按契约分页、只给 user.data_export 持有人，不返回对象键、提取码或口令。
-# ⑤ step-up 动态码走后台现有守卫；去掉两个操作的 planned 并一起提交生成物；不加迁移。 落地顺序提醒：本任务去掉 planned 后，企业微信路径的请求在 B1-27i 落地前只能停在 ready、24 小时后 expired（可重新登记、due_at 沿用），编排者宜让 B1-27i 紧随其后落地。
+# 2026-10-24 入账（admin-backend）。依据：08 BR-ID-40 细则、04 §6.6 users/{id}/data-exports、契约 CT-24q 的 adminCreateUserDataExport 说明（判定顺序逐字照它）；refs 只列 BR-ID-40（约 11.7KB），工作日口径 BR-ID-27 只摘句。
+# 拆分：副本线为 表 B1-27d → 取数 B1-27f → 生成与交付 B1-27h → 登记与列表（本任务）→ 下载 B1-27i；本任务排在 B1-27h 之后，登记出的请求已有作业处理。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：① 先过权限点 user.data_export、动态码与请求体校验（20001 data.fields；未知 user_id 为 20001 [user_id]）；契约第 1 步：注销 processing → 30419 account_deleting（data.stage=processing），已注销 → account_deleted，cooling 照常受理。
+# ② 第 2 步：锁用户行后查未结束请求（pending / running / ready），有则返回原条 reused=true、不看本次两项通道情况；例外是企业微信路径未交付且登记人已停用或不再同时持两项权限点，原条置 failed 后按第 3 步新建。
+# ③ 第 3 步：两项都为真 → in_app_sms（未绑手机 20001 [phone_sms_ok]）；都为假 → wecom_session（登记人缺 pii.reveal_phone 10403 admin_permission_denied）；一真一假 → 30419 delivery_undecided。
+# ④ 新建为 pending、reused=false；上一条 failed 或企业微信路径未交付即 expired 的记 retry_of、due_at 沿用；否则 due_at 为登记日之后第 15 个工作日 24:00（+08:00），日历复用 deletion-expiry.ts 的配置读取；23505 并发时重读返回原条。
+# ⑤ 通过权限、动态码与请求体校验的每次登记写一条审计 user_data_copy_request（新建、复用带原条 id、或拒绝码）；新建与入队 B1-27h 作业同一事务；列表不返回对象键、提取码或口令。
+# 去掉 planned 后到 B1-27i 落地前，企业微信路径的请求只能停在 ready、24 小时后 expired（可重新登记，due_at 沿用）。
 refs: [BR-ID-40]
 refs_hash:
   BR-ID-40: 994eb7b30461
 deps: [CT-24q, B1-27d, B1-27h]
 paths:
-  - 'apps/api/src/modules/identity/application/admin-data-copies.ts'
-  - 'apps/api/src/modules/identity/application/admin-data-copies.test.ts'
-  - 'apps/api/src/modules/identity/http/admin/user-data-exports.controller.ts'
-  - 'apps/api/src/modules/identity/http/admin/user-data-exports.controller.test.ts'
-  - 'apps/api/src/modules/identity/infra/personal-data-copies.ts'
-  - 'apps/api/src/modules/identity/infra/personal-data-copies.test.ts'
+  - 'apps/api/src/modules/identity/application/admin-data-copies*.ts'
+  - 'apps/api/src/modules/identity/http/admin/user-data-exports.controller*.ts'
+  - 'apps/api/src/modules/identity/infra/personal-data-copies*.ts'
   - 'apps/api/src/modules/identity/identity-admin.module.ts'
   - 'apps/api/src/modules/identity/index.ts'
   - 'apps/api/src/modules/admin/index.ts'

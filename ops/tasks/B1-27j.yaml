@@ -1,0 +1,26 @@
+id: B1-27j
+repo: rebate-platform
+title: payout：成功提现只读读口 hasSucceeded（该用户有 PAID_API / PAID_MANUAL 提现即为真），并在 app.module 替换写死 false 的接线；B1-27a 旧身份迁入与 B1-15g 注销保留实名的前置
+type: impl
+# 2026-10-24 草稿（admin-backend，PR #1498 评审 S1）。主干 app.module.ts 的 deletionWithdrawals 里 hasSucceeded 写死 false（TODO：blocked on payout 提供成功提现读口），payout 的 withdrawal-in-flight.ts 只有 hasInFlight / hasNonTerminal。
+# 依据：08 BR-ID-25 细则「实名更正」中「旧身份留存」（名下有到账提现 PAID_API / PAID_MANUAL 才迁入）、D10-137 ②（有成功提现时注销保留实名，tax_retained）；终态名取 db/schema.sql 的 withdrawals_status_check。
+# 拆分理由：资金模块的读口与 identity 的写业务分开评审，路径只给 payout 这一个读口文件、其测试、payout/index.ts 与 app.module.ts 接线。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：在 createWithdrawalInFlightReader 返回的读口里加 hasSucceeded，满足 identity/ports/withdrawal-in-flight.ts 的 WithdrawalSucceededReader；只读、在调用方事务上、不写不记日志；app.module 删掉写死的 false 与对应 TODO。
+# 接线后 B1-15g 的注销清理会对有成功提现的用户保留实名密文（tax_retained），这是 D10-137 ② 原定行为，不是新口径。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/payout/application/withdrawal-in-flight.ts'
+  - 'apps/api/src/modules/payout/application/withdrawal-in-flight.test.ts'
+  - 'apps/api/src/modules/payout/index.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/payout/withdrawal-succeeded/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/withdrawal-succeeded/**'
+status: todo
+pr: null

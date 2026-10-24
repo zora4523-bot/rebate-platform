@@ -16,5 +16,6 @@ impl: claude
 tester: claude-independent
 accept:
   - 'pnpm verify'
+  - 'test/spec/admin/admins-verify-phone-route/**'
 status: todo
 pr: null
