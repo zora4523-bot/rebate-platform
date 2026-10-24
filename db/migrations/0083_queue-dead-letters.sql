@@ -21,7 +21,7 @@
 -- Recovery: restore from backup; no down migration. (By hand: point the business queues and their
 -- waiting jobs back at 'dead-letter'; the .dead queues may stay.)
 --
--- Only rows of pgboss.queue (15 + 15) and the waiting / running jobs of 15 queues are touched: 5s
+-- Only rows of pgboss.queue (17 + 17) and the waiting / running jobs of 17 queues are touched: 5s
 -- lock wait so a deploy blocked behind a long queue transaction fails fast, 30s overall.
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
@@ -41,6 +41,8 @@ FROM (
     ('evt.notification-risk-state'),
     ('evt.notification-appeal-result'),
     ('evt.notification-claim-result'),
+    ('evt.payout-went-negative'),
+    ('pay'),
     ('pool-refresh'),
     ('page-schedule'),
     ('poster'),
@@ -61,6 +63,8 @@ WHERE name IN (
     'evt.notification-risk-state',
     'evt.notification-appeal-result',
     'evt.notification-claim-result',
+    'evt.payout-went-negative',
+    'pay',
     'pool-refresh',
     'page-schedule',
     'poster',
@@ -82,6 +86,8 @@ WHERE name IN (
     'evt.notification-risk-state',
     'evt.notification-appeal-result',
     'evt.notification-claim-result',
+    'evt.payout-went-negative',
+    'pay',
     'pool-refresh',
     'page-schedule',
     'poster',
