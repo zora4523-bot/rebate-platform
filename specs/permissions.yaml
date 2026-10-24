@@ -10,7 +10,7 @@
 #
 # 运行时不解析本文件：apps/api/src/modules/admin/scripts/generate-permissions.ts 生成
 # apps/api/src/modules/admin/domain/permissions.gen.ts，单元测试核对两者一致；改动本文件后重新生成。
-version: '2'
+version: '3'
 permissions:
   - key: dashboard.view
     step_up_tier: null
@@ -61,6 +61,9 @@ permissions:
     operations: []
   - key: content.platform_icon
     step_up_tier: null
+    operations: []
+  - key: notify.channels
+    step_up_tier: totp
     operations: []
   - key: config.general
     step_up_tier: null

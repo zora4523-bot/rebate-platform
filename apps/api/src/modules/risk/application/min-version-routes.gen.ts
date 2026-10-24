@@ -2025,6 +2025,66 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListNotifyChannels",
+    "method": "GET",
+    "path": "/admin/v1/notify-channels",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminSwitchNotifyChannels",
+    "method": "PATCH",
+    "path": "/admin/v1/notify-channels/:code",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminRegisterNotifySms",
+    "method": "PUT",
+    "path": "/admin/v1/notify-channels/:code/sms",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminDiscardNotifySms",
+    "method": "DELETE",
+    "path": "/admin/v1/notify-channels/:code/sms/pending",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminRetestNotifySms",
+    "method": "POST",
+    "path": "/admin/v1/notify-channels/:code/sms/pending/test",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminEnableNotifySms",
+    "method": "POST",
+    "path": "/admin/v1/notify-channels/:code/sms/pending/enable",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListAppVersions",
     "method": "GET",
     "path": "/admin/v1/app-versions",

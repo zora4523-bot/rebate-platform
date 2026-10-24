@@ -23,6 +23,7 @@ export const admin_permission = [
   "content.app_version", // 版本管理（按端与渠道）：最新版本、推荐版本、更新文案、商店登记与默认商店、最低支持版本；只有提高最低支持版本时要二次验证（step-up）
   "content.fund_terms", // 修改资金术语键与资金类消息模板（清单见 BR-TEXT-12 细则「资金术语键」与 specs/fund-term-keys.yaml）（step-up）
   "content.platform_icon", // 平台标识上传、发布、回滚、恢复内置（BR-TEXT-24）
+  "notify.channels", // 通知渠道开关（推送、短信）、短信签名与模板 CODE 登记与测试发送；资金类编码改短信登记另需 content.fund_terms（04 §11.2、BR-TEXT-20 细则「短信渠道登记与后台渠道开关」）（step-up）
   "config.general", // 普通配置（不含 BR-TEXT-14 表 D 的隐私与权限文案键与 BR-TEXT-12 细则所列的资金术语键）
   "config.risk", // 风控规则与阈值（step-up）
   "config.business", // 返利规则版本、费率、提现规则与限额、自动到账设置（step-up）
@@ -268,6 +269,49 @@ export const union_pid_status = [
   "retired", // 已停用，停止新转链，仍留在白名单
 ] as const;
 export type UnionPidStatus = (typeof union_pid_status)[number];
+
+/**
+ * 通知的发送渠道；后台只能开关 push 与 sms，inbox 不能由后台增删
+ * Source: 规划/04 §3 notify_templates 渠道列、notify_logs.channel；规划/08 BR-TEXT-09 细则模板表渠道列、BR-TEXT-20 细则「短信渠道登记与后台渠道开关」（CT-24t） (contracts/enums/admin.yaml).
+ */
+export const notify_channel = [
+  "inbox", // 站内信
+  "push", // 推送
+  "sms", // 短信
+] as const;
+export type NotifyChannel = (typeof notify_channel)[number];
+
+/**
+ * 短信服务商的模板类型；营销短信为 P1，不列入
+ * Source: 规划/04 §3 notify_templates 短信渠道列（模板类型 verify / notice）；规划/08 BR-TEXT-20 细则「短信渠道登记与后台渠道开关」（CT-24t） (contracts/enums/admin.yaml).
+ */
+export const sms_template_type = [
+  "verify", // 验证码
+  "notice", // 通知
+] as const;
+export type SmsTemplateType = (typeof sms_template_type)[number];
+
+/**
+ * GET /admin/v1/notify-channels 的 sms_state：该编码的短信现在怎样发
+ * Source: 规划/08 BR-TEXT-20 细则「短信渠道登记与后台渠道开关」（短信就绪条件，编排裁定 D10-337 ②、D10-339 ⑥）；规划/04 §3 notify_templates（CT-24t） (contracts/enums/admin.yaml).
+ */
+export const notify_sms_state = [
+  "disabled", // 关（短信不在当前渠道里）
+  "enabled", // 开，且已就绪（各变体都有在用登记）或 SMS_CODE 用部署配置兜底：照发
+  "enabled_not_ready", // 开（未就绪）：默认渠道含短信、变体未全登记启用，服务端不发短信、只记录未发送，推送与站内信照发
+] as const;
+export type NotifySmsState = (typeof notify_sms_state)[number];
+
+/**
+ * 待测试登记最近一次测试发送的结果
+ * Source: 规划/08 BR-TEXT-20 细则「短信渠道登记与后台渠道开关」（「待测试」登记与测试发送，编排裁定 D10-337 ①、D10-339 ①⑤）；规划/04 §3 notify_templates（CT-24t） (contracts/enums/admin.yaml).
+ */
+export const notify_sms_test_status = [
+  "accepted", // 已受理（受理不等于送达），可启用新配置；选「稍后再启用」后仍是此值
+  "failed", // 测试失败（服务商拒收、出错或超时），原配置继续生效
+  "not_sent_no_verify_phone", // 未发送：保存时操作人没有登记验证手机号
+] as const;
+export type NotifySmsTestStatus = (typeof notify_sms_test_status)[number];
 
 /**
  * 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
@@ -1966,6 +2010,10 @@ export const enums = {
   union_reauth_mode,
   admin_union_auth_session_status,
   union_pid_status,
+  notify_channel,
+  sms_template_type,
+  notify_sms_state,
+  notify_sms_test_status,
   ledger_type,
   referral_credit_sub_type,
   clawback_sub_type,

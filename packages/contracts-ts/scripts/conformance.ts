@@ -129,6 +129,12 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminRiskHitRefType: 'risk_hit_ref_type',
   PersonalDataCopyDelivery: 'personal_data_copy_delivery',
   PersonalDataCopyStatus: 'personal_data_copy_status',
+  // CT-24t: admin notification channels and SMS registration (04 §3, BR-TEXT-20 细则).
+  AdminNotifyCategory: 'notify_category',
+  AdminNotifyChannel: 'notify_channel',
+  AdminSmsTemplateType: 'sms_template_type',
+  AdminNotifySmsState: 'notify_sms_state',
+  AdminNotifySmsTestStatus: 'notify_sms_test_status',
 };
 
 /**

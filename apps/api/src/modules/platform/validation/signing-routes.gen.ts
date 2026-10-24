@@ -1003,6 +1003,36 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/notify-channels",
+    "signed": false
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/v1/notify-channels/:code",
+    "signed": false
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/notify-channels/:code/sms",
+    "signed": false
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/v1/notify-channels/:code/sms/pending",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/notify-channels/:code/sms/pending/test",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/notify-channels/:code/sms/pending/enable",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/app-versions",
     "signed": false
   },

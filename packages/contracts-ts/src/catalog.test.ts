@@ -152,6 +152,10 @@ it('identity codes of 08 §13.11 (功能对照补缺 1–3 批) carry their data
     'target_banned',
     'target_deleting',
     'target_deleted',
+    // CT-24t: admin-only notification channel and SMS registry rejections (D10-335 ②).
+    'notify_channel_locked',
+    'notify_preview_vars_mismatch',
+    'notify_code_ttl_mismatch',
   ]);
   expect(errorCodes[30701].sources).toEqual(['规划/04 §7', 'BR-ID-10', 'BR-ID-40']);
 });
@@ -187,8 +191,8 @@ it('[AC-CT-01c#1] removes the cancelled ticket enums (04 §2.5)', () => {
   expect.soft(enums).not.toHaveProperty('ticket_status');
 });
 
-it('[AC-CT-01c#2] synchronizes the admin permissions (04 §11.2; 55 since CT-24a)', () => {
-  expect.soft(enums.admin_permission).toHaveLength(55);
+it('[AC-CT-01c#2] synchronizes the admin permissions (04 §11.2; 55 since CT-24a, 56 with notify.channels in CT-24t)', () => {
+  expect.soft(enums.admin_permission).toHaveLength(56);
   expect.soft(enums.admin_permission).not.toContain('ticket.handle');
   expect.soft(enums.admin_permission).not.toContain('ticket.data_export');
   for (const permission of [
@@ -198,6 +202,7 @@ it('[AC-CT-01c#2] synchronizes the admin permissions (04 §11.2; 55 since CT-24a
     'user.realname_fix',
     'user.phone_change',
     'user.data_export',
+    'notify.channels',
     'agent.report',
     'dashboard.view',
   ]) {
