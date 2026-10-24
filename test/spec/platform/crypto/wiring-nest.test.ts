@@ -50,6 +50,8 @@ import {
   masterText,
   memoryLogger,
   platformIndex,
+  priorIdentityEnv,
+  priorPaths,
   removeDir,
   secretsOf,
   settle,
@@ -418,7 +420,12 @@ it.each(ENTRIES)(
   async (entry) => {
     const files = fresh(`staging-direct-${entry}`);
     const config = {
-      ...loadConfig({ ...localEnv('test', files), ...stagingJwtEnv() }),
+      ...loadConfig({
+        ...localEnv('test', files),
+        ...stagingJwtEnv(),
+        // The configuration is a staging one: it carries the prior identity keyring (B1-27e).
+        ...priorIdentityEnv('staging', priorPaths(files)),
+      }),
       appEnv: 'staging',
     };
     misleadingProcessEnv(files);
@@ -450,6 +457,7 @@ it.each(ENTRIES)(
         APP_ENV: appEnv,
         FIELD_KEY_PROVIDER: 'kms',
         FIELD_KEYRING_FILE: files.keyringFile,
+        ...priorIdentityEnv(appEnv, priorPaths(files), 'kms'),
       });
       const { logger, lines } = memoryLogger(entry, appEnv);
       const outcome = await startAndClose(entry, { logger });

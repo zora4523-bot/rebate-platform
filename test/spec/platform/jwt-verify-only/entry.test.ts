@@ -135,9 +135,16 @@ function memoryLogger(entry: HttpEntry): { logger: RootLogger; lines: string[] }
   return { logger, lines };
 }
 
-/** loadConfig's staging configuration (keyring replaced by null: no file, no KMS is touched). */
+/**
+ * loadConfig's staging configuration (keyring and prior identity keyring (B1-27e) replaced by
+ * null: no file, no KMS is touched).
+ */
 function stagingConfig(jwt: Readonly<Record<string, string>>): Settled<AppConfig> {
-  return settleSync(() => ({ ...loadConfig(cloudEnv('staging', jwt)), keyring: null }));
+  return settleSync(() => ({
+    ...loadConfig(cloudEnv('staging', jwt)),
+    keyring: null,
+    ...{ priorIdentityKeyring: null },
+  }));
 }
 
 /** createHttpApp as entry.ts calls it (no database handles, nothing listens). */

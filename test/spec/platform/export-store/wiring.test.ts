@@ -40,6 +40,8 @@ it.each(['local', 'test', 'staging', 'prod'] as const)(
         }),
         // Isolate export provisioning from KMS; no database/Redis handles are supplied.
         keyring: null,
+        // Likewise the prior identity keyring (B1-27e), kms in staging / prod.
+        ...{ priorIdentityKeyring: null },
       };
       const module = platform.PlatformModule.forRoot({ ...options, config, entry });
       expect(module.global).toBe(true);

@@ -10,12 +10,18 @@ import {
   APP_ENV_NAMES,
   PROBLEMS,
   configProblems,
+  priorIdentityEnv,
   settleSync,
   type AppEnvName,
 } from './wiring-kit.ts';
 
 const KEYRING = '/srv/couli/keys/keyring.json';
 const MASTER = '/srv/couli/keys/master.hex';
+/** Paths of the prior identity keyring (B1-27e) that staging / prod configurations carry. */
+const PRIOR = {
+  keyringFile: '/srv/couli/keys/prior-identity-keyring.json',
+  masterFile: '/srv/couli/keys/prior-identity-master.hex',
+};
 
 function keyringOf(env: Record<string, string>): unknown {
   const config = loadConfig(env) as unknown as Record<string, unknown>;
@@ -58,6 +64,7 @@ it('[ADR-0001 §2] FIELD_KEY_PROVIDER 只接受确切的 local 或 kms，取值�
             FIELD_KEY_PROVIDER: value,
             FIELD_KEYRING_FILE: 'relative/keyring.json',
             FIELD_MASTER_KEY_FILE: 'relative/master.hex',
+            ...priorIdentityEnv(appEnv, PRIOR),
           }),
         ),
         `${appEnv} ${JSON.stringify(value)}`,
@@ -95,11 +102,18 @@ it('[AC-B1-01zd#7][ADR-0001 §2][规划/02 §12.6] APP_ENV 为 prod 选 local �
           FIELD_KEY_PROVIDER: 'local',
           FIELD_KEYRING_FILE: KEYRING,
           FIELD_MASTER_KEY_FILE: MASTER,
+          ...priorIdentityEnv(appEnv, PRIOR),
         }),
       ),
     ).toEqual([PROBLEMS.localInCloud(appEnv)]);
     expect(
-      configProblems(() => loadConfig({ APP_ENV: appEnv, FIELD_KEY_PROVIDER: 'local' })),
+      configProblems(() =>
+        loadConfig({
+          APP_ENV: appEnv,
+          FIELD_KEY_PROVIDER: 'local',
+          ...priorIdentityEnv(appEnv, PRIOR),
+        }),
+      ),
     ).toEqual([PROBLEMS.localInCloud(appEnv), PROBLEMS.keyringUnset, PROBLEMS.masterUnset]);
     expect(
       configProblems(() =>
@@ -108,6 +122,7 @@ it('[AC-B1-01zd#7][ADR-0001 §2][规划/02 §12.6] APP_ENV 为 prod 选 local �
           FIELD_KEY_PROVIDER: 'local',
           FIELD_KEYRING_FILE: 'keyring.json',
           FIELD_MASTER_KEY_FILE: 'master.hex',
+          ...priorIdentityEnv(appEnv, PRIOR),
         }),
       ),
     ).toEqual([PROBLEMS.localInCloud(appEnv), PROBLEMS.keyringRelative, PROBLEMS.masterRelative]);
@@ -121,6 +136,7 @@ it('[AC-B1-01zd#8][BR-ID-33] staging 选 local 且提供两个文件变量时 lo
       FIELD_KEY_PROVIDER: 'local',
       FIELD_KEYRING_FILE: KEYRING,
       FIELD_MASTER_KEY_FILE: MASTER,
+      ...priorIdentityEnv('staging', PRIOR),
     }),
   );
   expect('value' in outcome ? outcome.value.keyring : 'rejected').toStrictEqual({
@@ -131,7 +147,11 @@ it('[AC-B1-01zd#8][BR-ID-33] staging 选 local 且提供两个文件变量时 lo
 });
 
 it('[AC-B1-01zd#9][BR-ID-33] staging 选 local 仍校验两个文件变量：必填且必须为绝对路径', () => {
-  const base = { APP_ENV: 'staging', FIELD_KEY_PROVIDER: 'local' };
+  const base = {
+    APP_ENV: 'staging',
+    FIELD_KEY_PROVIDER: 'local',
+    ...priorIdentityEnv('staging', PRIOR),
+  };
   expect(configProblems(() => loadConfig(base))).toEqual([
     PROBLEMS.keyringUnset,
     PROBLEMS.masterUnset,
@@ -165,8 +185,14 @@ it('[规划/11 §8] local 与 test 选 kms 拒绝启动（本地栈不加载真�
 
 it('[ADR-0001 §2] staging 与 prod 选 kms 时配置通过（keyring 只有 provider 与 keyringFile），不许再设主密钥文件', () => {
   for (const appEnv of ['staging', 'prod'] as const) {
+    const prior = priorIdentityEnv(appEnv, PRIOR, 'kms');
     expect(
-      keyringOf({ APP_ENV: appEnv, FIELD_KEY_PROVIDER: 'kms', FIELD_KEYRING_FILE: KEYRING }),
+      keyringOf({
+        APP_ENV: appEnv,
+        FIELD_KEY_PROVIDER: 'kms',
+        FIELD_KEYRING_FILE: KEYRING,
+        ...prior,
+      }),
     ).toStrictEqual({ provider: 'kms', keyringFile: KEYRING });
     expect(
       keyringOf({
@@ -174,6 +200,7 @@ it('[ADR-0001 §2] staging 与 prod 选 kms 时配置通过（keyring 只有 pro
         FIELD_KEY_PROVIDER: 'kms',
         FIELD_KEYRING_FILE: KEYRING,
         FIELD_MASTER_KEY_FILE: '',
+        ...prior,
       }),
     ).toStrictEqual({ provider: 'kms', keyringFile: KEYRING });
     expect(
@@ -183,11 +210,12 @@ it('[ADR-0001 §2] staging 与 prod 选 kms 时配置通过（keyring 只有 pro
           FIELD_KEY_PROVIDER: 'kms',
           FIELD_KEYRING_FILE: KEYRING,
           FIELD_MASTER_KEY_FILE: MASTER,
+          ...prior,
         }),
       ),
     ).toEqual([PROBLEMS.masterWithKms]);
     expect(
-      configProblems(() => loadConfig({ APP_ENV: appEnv, FIELD_KEY_PROVIDER: 'kms' })),
+      configProblems(() => loadConfig({ APP_ENV: appEnv, FIELD_KEY_PROVIDER: 'kms', ...prior })),
     ).toEqual([PROBLEMS.keyringUnset]);
   }
 });
@@ -257,7 +285,12 @@ it('[ADR-0001 §2] 文件变量必须是绝对路径：以 / 开头且不含控�
   for (const appEnv of ['staging', 'prod'] as const) {
     expect(
       configProblems(() =>
-        loadConfig({ APP_ENV: appEnv, FIELD_KEY_PROVIDER: 'kms', FIELD_KEYRING_FILE: 'k.json' }),
+        loadConfig({
+          APP_ENV: appEnv,
+          FIELD_KEY_PROVIDER: 'kms',
+          FIELD_KEYRING_FILE: 'k.json',
+          ...priorIdentityEnv(appEnv, PRIOR, 'kms'),
+        }),
       ),
     ).toEqual([PROBLEMS.keyringRelative]);
   }
@@ -305,6 +338,7 @@ it('[ADR-0001 §2] keyring 的问题排在 loadConfig 其他问题之后，其�
         FIELD_KEY_PROVIDER: 'local',
         FIELD_KEYRING_FILE: KEYRING,
         FIELD_MASTER_KEY_FILE: MASTER,
+        ...priorIdentityEnv('prod', PRIOR),
       }),
     ),
   ).toEqual([
@@ -374,6 +408,7 @@ it('[AC-B1-01zd#10][ADR-0001 §2] 只读 env 参数：staging 允许 local，其
         env['FIELD_KEYRING_FILE'] = KEYRING;
       }
       if (provider === 'local') env['FIELD_MASTER_KEY_FILE'] = MASTER;
+      if (provider !== 'unset') Object.assign(env, priorIdentityEnv(appEnv, PRIOR, provider));
       const outcome = configProblems(() => loadConfig(env));
       if (Array.isArray(outcome)) {
         seen[appEnv][provider] = 'refused';

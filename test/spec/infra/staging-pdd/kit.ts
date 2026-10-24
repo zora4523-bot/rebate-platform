@@ -20,7 +20,13 @@ export function environment(appEnv: AppEnv): Record<string, string> {
   return {
     APP_ENV: appEnv,
     ...(appEnv === 'staging' || appEnv === 'prod'
-      ? { FIELD_KEY_PROVIDER: 'kms', FIELD_KEYRING_FILE: join(root, '.tmp/unused-keyring.json') }
+      ? {
+          FIELD_KEY_PROVIDER: 'kms',
+          FIELD_KEYRING_FILE: join(root, '.tmp/unused-keyring.json'),
+          // The prior identity keyring (B1-27e), as unused as the field keyring above.
+          PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
+          PRIOR_IDENTITY_KEYRING_FILE: join(root, '.tmp/unused-prior-identity-keyring.json'),
+        }
       : {}),
   };
 }

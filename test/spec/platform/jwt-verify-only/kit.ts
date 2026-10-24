@@ -63,8 +63,14 @@ export function pemBodyLine(pem: string): string {
 const KEYRING_FILE = fileURLToPath(
   new URL('../../../../.tmp/jwt-verify-only/unused-keyring.json', import.meta.url),
 );
+const PRIOR_IDENTITY_KEYRING_FILE = fileURLToPath(
+  new URL('../../../../.tmp/jwt-verify-only/unused-prior-identity-keyring.json', import.meta.url),
+);
 
-/** loadConfig input of a cloud environment: a kms keyring (never opened) plus the JWT_* given. */
+/**
+ * loadConfig input of a cloud environment: a kms keyring and a kms prior identity keyring
+ * (B1-27e; neither opened) plus the JWT_* given.
+ */
 export function cloudEnv(
   appEnv: CloudEnv,
   jwt: Readonly<Record<string, string>>,
@@ -74,6 +80,8 @@ export function cloudEnv(
     LOG_LEVEL: 'silent',
     FIELD_KEY_PROVIDER: 'kms',
     FIELD_KEYRING_FILE: KEYRING_FILE,
+    PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
+    PRIOR_IDENTITY_KEYRING_FILE,
     ...jwt,
   };
 }

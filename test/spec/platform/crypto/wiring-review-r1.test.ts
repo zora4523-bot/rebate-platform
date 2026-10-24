@@ -22,6 +22,7 @@ import {
   keyringDoc,
   localEnv,
   makeDir,
+  priorIdentityEnv,
   removeDir,
   secretsOf,
   settle,
@@ -130,6 +131,11 @@ it('[BR-ID-33] openConfiguredFieldCrypto 与 loadConfig 在独立进程里成功
         FIELD_KEY_PROVIDER: 'local',
         FIELD_KEYRING_FILE: `/srv/${SAMPLES.phone}`,
         FIELD_MASTER_KEY_FILE: `/srv/${marker}`,
+        // The prior identity keyring (B1-27e) a prod configuration carries: kms, never opened here.
+        ...priorIdentityEnv('prod', {
+          keyringFile: '/srv/prior-identity-keyring.json',
+          masterFile: '/srv/prior-identity-master.hex',
+        }),
       },
       { APP_ENV: 'test', FIELD_KEY_PROVIDER: SAMPLES.idNo, FIELD_KEYRING_FILE: marker },
       { APP_ENV: 'test', FIELD_KEYRING_FILE: `/srv/${SAMPLES.idNo}` },
