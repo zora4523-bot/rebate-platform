@@ -2,8 +2,9 @@
 // accounts, super admin only. B1-34h adds the writes adminCreateAdmin,
 // adminRegenerateAdminInitialPassword, adminDisableAdmin, adminEnableAdmin, adminResetAdminTotp
 // (totp-tier step-up through the step-up gate: claimed before, consumed only by the 2xx answer)
-// and adminUpdateAdminDisplayName (no step-up); refusals are thrown inside the gate, so they keep
-// the step-up token usable. The answers with a one-time initial password carry
+// and adminUpdateAdminDisplayName (no step-up); B1-34k adds adminSaveAdminPermissions (totp-tier
+// step-up, CAS on expected_row_version) and row_version on the reads; refusals are thrown inside
+// the gate, so they keep the step-up token usable. The answers with a one-time initial password carry
 // Cache-Control: no-store. The admin request check (application/admin-check.ts) has already
 // verified the admin_token and refused any account that is not a super admin (10403
 // admin_permission_denied) before the query schema ran; the handlers only take the parameters,
@@ -77,6 +78,7 @@ function principalOf(request: AdminsRequest): AdminPrincipal {
   return principal;
 }
 
+/** Reads and writes carry row_version, the CAS value of adminSaveAdminPermissions. */
 function toAccount(view: AdminAccountView): Account {
   return {
     admin_id: view.adminId,
@@ -90,12 +92,8 @@ function toAccount(view: AdminAccountView): Account {
     locked_until: view.lockedUntil === null ? null : view.lockedUntil.toISOString(),
     permissions: view.permissions,
     created_at: view.createdAt.toISOString(),
+    row_version: view.rowVersion,
   };
-}
-
-/** The write responses also carry row_version (contract: returned once B1-34h ships). */
-function toWrittenAccount(view: AdminAccountView): Account {
-  return { ...toAccount(view), row_version: view.rowVersion };
 }
 
 function actorOf(request: AdminsRequest): AdminActor {
@@ -166,7 +164,7 @@ export class AdminAccountsController {
 
   private account(request: AdminsRequest, answer: AccountAnswer): AccountResponse {
     if (answer.kind !== 'ok') throw refused(answer, request.id);
-    return { code: 0, msg: '', data: toWrittenAccount(answer.account), trace_id: request.id };
+    return { code: 0, msg: '', data: toAccount(answer.account), trace_id: request.id };
   }
 
   private created(request: AdminsRequest, answer: CreatedAnswer): CreatedResponse {
@@ -175,7 +173,7 @@ export class AdminAccountsController {
       code: 0,
       msg: '',
       data: {
-        account: toWrittenAccount(answer.account),
+        account: toAccount(answer.account),
         initial_password: answer.initialPassword,
       },
       trace_id: request.id,
@@ -267,6 +265,21 @@ export class AdminAccountsController {
     return this.account(
       request,
       await this.writer.rename(actorOf(request), this.target(request), body.display_name),
+    );
+  }
+
+  /** adminSaveAdminPermissions: the whole set of ticked points; sessions keep running on it. */
+  @Put(':admin_id/permissions')
+  @RouteSchema(contractRouteSchema('adminSaveAdminPermissions'))
+  async savePermissions(
+    @Req() request: AdminsRequest,
+    @Body() body: Schema<'AdminPermissionsSaveRequest'>,
+  ): Promise<AccountResponse> {
+    return this.stepped(request, async () =>
+      this.account(
+        request,
+        await this.writer.savePermissions(actorOf(request), this.target(request), body),
+      ),
     );
   }
 

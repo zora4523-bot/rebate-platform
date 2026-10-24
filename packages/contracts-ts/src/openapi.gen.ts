@@ -10885,7 +10885,8 @@ export interface components {
              * @description CAS value of the account (plus 1 on every change made through the /admin/v1/admins
              *     operations: status, display name, permission points, authenticator reset, initial
              *     password regeneration, verify phone); PUT /admin/v1/admins/{admin_id}/permissions sends it back as
-             *     expected_row_version. Returned once admin account management ships (B1-34h).
+             *     expected_row_version. Returned by the reads (adminListAdmins, adminGetAdmin) and the
+             *     writes (B1-34h, B1-34k).
              */
             row_version?: components["schemas"]["AdminRowVersion"];
         };

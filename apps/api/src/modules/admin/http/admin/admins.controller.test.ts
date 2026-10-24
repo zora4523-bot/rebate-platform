@@ -69,3 +69,22 @@ it.each(['api', 'stream'] as const)(
     expect((await get(DETAIL)).statusCode).toBe(404);
   },
 );
+
+it('[AC-B1-34k] the admin entry mounts the permission save with its contract body schema; without an admin_token it is 10001', async () => {
+  const routes = await build();
+  const schema = routes.find(
+    (r) => r.url === `${LIST}/:admin_id/permissions` && r.schema !== undefined,
+  )?.schema;
+  expect(schema).toMatchObject({
+    body: { required: ['permissions', 'expected_row_version'], additionalProperties: false },
+  });
+  const response = await app!.inject({
+    method: 'PUT',
+    url: `${DETAIL}/permissions`,
+    remoteAddress: '127.0.0.1',
+    headers: { 'content-type': 'application/json' },
+    payload: JSON.stringify({ permissions: [], expected_row_version: 0 }),
+  });
+  expect(response.statusCode).toBe(401);
+  expect(response.json()).toMatchObject({ code: 10001 });
+});

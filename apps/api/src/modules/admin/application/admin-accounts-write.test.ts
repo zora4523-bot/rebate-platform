@@ -5,6 +5,7 @@ import type { AdminDirectoryRow } from '../infra/admin-directory.ts';
 import {
   createAdminAccountsWriter,
   normalizeDisplayName,
+  permissionsOk,
   reasonOk,
 } from './admin-accounts-write.ts';
 
@@ -38,6 +39,7 @@ function setup(writes: Partial<AdminAccountWrites> = {}) {
     enable: vi.fn(async () => ({ kind: 'written' as const, row: row() })),
     resetTotp: vi.fn(async () => ({ kind: 'written' as const, row: row() })),
     rename: vi.fn(async () => ({ kind: 'written' as const, row: row() })),
+    savePermissions: vi.fn(async () => ({ kind: 'written' as const, row: row() })),
     ...writes,
   };
   const hashPassword = vi.fn(async (password: string) => `hash(${password.length})`);
@@ -113,5 +115,59 @@ it('[AC-B1-34h] the answered account carries display name and row version', asyn
     kind: 'ok',
     initialPassword: 'Generated2Password',
     account: { adminId: TARGET, displayName: '客服', rowVersion: 1, totpBound: false },
+  });
+});
+
+it('[AC-B1-34k] permission keys must be catalog points, each once', () => {
+  expect(permissionsOk([])).toBe(true);
+  expect(permissionsOk(['user.lookup', 'fund.view'])).toBe(true);
+  expect(permissionsOk(['user.lookup', 'fund.unknown_point'])).toBe(false);
+  expect(permissionsOk(['user.lookup', 'fund.view', 'user.lookup'])).toBe(false);
+});
+
+it('[AC-B1-34k] savePermissions refuses bad keys before the admin id and writes nothing', async () => {
+  const { writer, writes } = setup();
+  expect(
+    await writer.savePermissions(ACTOR, 'not-a-uuid', {
+      permissions: ['retired.unknown'],
+      expected_row_version: 0,
+    }),
+  ).toEqual({ kind: 'fields', fields: ['permissions'] });
+  expect(
+    await writer.savePermissions(ACTOR, 'not-a-uuid', {
+      permissions: ['user.lookup'],
+      expected_row_version: 0,
+    }),
+  ).toEqual({ kind: 'fields', fields: ['admin_id'] });
+  expect(writes.savePermissions).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-34k] savePermissions hands the set and the CAS value to the write and maps refusals', async () => {
+  const { writer, writes } = setup({
+    savePermissions: vi
+      .fn<AdminAccountWrites['savePermissions']>()
+      .mockResolvedValueOnce({ kind: 'written', row: row({ permissionKeys: ['fund.view'] }) })
+      .mockResolvedValueOnce({ kind: 'refused', reason: 'conflict' })
+      .mockResolvedValueOnce({ kind: 'refused', reason: 'forbidden' })
+      .mockResolvedValueOnce({ kind: 'refused', reason: 'unknown' }),
+  });
+  const body = { permissions: ['fund.view'], expected_row_version: 3 };
+  expect(await writer.savePermissions(ACTOR, TARGET, body)).toMatchObject({
+    kind: 'ok',
+    account: { permissions: ['fund.view'] },
+  });
+  expect(vi.mocked(writes.savePermissions).mock.calls[0]![0]).toEqual({
+    appId: APP,
+    actor: ACTOR.adminId,
+    ip: ACTOR.ip,
+    adminId: TARGET,
+    permissions: ['fund.view'],
+    expectedRowVersion: 3,
+  });
+  expect(await writer.savePermissions(ACTOR, TARGET, body)).toEqual({ kind: 'conflict' });
+  expect(await writer.savePermissions(ACTOR, TARGET, body)).toEqual({ kind: 'forbidden' });
+  expect(await writer.savePermissions(ACTOR, TARGET, body)).toEqual({
+    kind: 'fields',
+    fields: ['admin_id'],
   });
 });
