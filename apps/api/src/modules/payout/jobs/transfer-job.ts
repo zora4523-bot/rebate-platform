@@ -800,6 +800,7 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
       result = null;
     }
 
+    const landedAt = clock.now();
     try {
       const stored =
         result === null
@@ -824,14 +825,16 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
       if (result === null || result.kind === 'unknown') {
         await landUnknown(row, result, delay);
       } else if (result.kind === 'success') {
-        await landSuccess(row, result, now);
+        await landSuccess(row, result, landedAt);
       } else if (result.kind === 'fail') {
-        await landFail(row, result, now);
+        await landFail(row, result, landedAt);
       } else {
-        await landPayerSide(row, result, now);
+        await landPayerSide(row, result, landedAt);
       }
     } catch (error: unknown) {
-      // After ⑤ nothing may make the queue retry the transfer; the query job / B2-06e reconciles.
+      // A database error while landing the result: the transfer is recorded, so a redelivery is
+      // stopped at ② and only queries. Try to leave the first query job; if even that fails,
+      // reject so the queue redelivers (② then enqueues the query).
       logger.warn(
         {
           withdrawal_id: row.id,
@@ -840,6 +843,7 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
         },
         'payout_transfer_landing_failed',
       );
+      await db.transaction().execute((trx) => sendFirstQuery(trx, row, delay));
     }
   };
 }

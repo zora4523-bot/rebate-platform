@@ -20,6 +20,7 @@ import {
   type Clock,
   type EventBus,
   type QueueRuntime,
+  type ReceivedJob,
   type RootLogger,
 } from '../platform/index.ts';
 import { WENT_NEGATIVE_CONSUMER, createWentNegativeConsumer } from './application/went-negative.ts';
@@ -92,6 +93,34 @@ export interface PayoutWorkerOptions {
   attempts: WithdrawalAttemptsPort;
 }
 
+/**
+ * A direct negative-balance recheck job (payout's transfer job, W9 member_blocked: payload exactly
+ * { app_id, user_id }) wrapped as the event envelope registerEventConsumer requires; an event the
+ * bus published already carries the envelope and passes through unchanged.
+ */
+function withEnvelope(job: ReceivedJob, clock: Clock): ReceivedJob {
+  const payload = job.payload as Record<string, unknown>;
+  const keys = Object.keys(payload).sort();
+  if (
+    keys.length !== 2 ||
+    keys[0] !== 'app_id' ||
+    keys[1] !== 'user_id' ||
+    typeof payload['app_id'] !== 'string' ||
+    typeof payload['user_id'] !== 'string'
+  ) {
+    return job;
+  }
+  return {
+    ...job,
+    payload: {
+      app_id: payload['app_id'],
+      v: 1,
+      occurred_at: clock.now().toISOString(),
+      data: { app_id: payload['app_id'], user_id: payload['user_id'] },
+    },
+  };
+}
+
 export class PayoutModule {
   /**
    * B2-05e: the worker entry's account.went_negative consumer on queue evt.payout-went-negative
@@ -156,7 +185,15 @@ export class PayoutModule {
               attempts: options.attempts,
               eventBus,
             });
-            registerEventConsumer(queue, {
+            // B2-06d (BR-WDR-05 (a)): the payout process's W9 member_blocked enqueues a direct
+            // recheck { app_id, user_id } on this queue; it is given the event envelope the
+            // consumer expects before the shared registration sees it (one job, one claim).
+            const normalized: Pick<QueueRuntime, 'register'> = {
+              register(name, handler) {
+                queue.register(name, (job) => handler(withEnvelope(job, clock)));
+              },
+            };
+            registerEventConsumer(normalized, {
               consumer: WENT_NEGATIVE_CONSUMER,
               db,
               logger,
