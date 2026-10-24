@@ -135,6 +135,7 @@ export const FUND_TERM_KEYS = {
       "auth_manage.",
       "privacy.",
       "perm.",
+      "real_name.consent.",
       "agent.suggest.clarify.",
       "agent.tool_status.search_products.",
       "agent.tool_status.default."
@@ -756,6 +757,10 @@ export const FUND_TERM_KEYS = {
     ]
   },
   "exempt": [
+    {
+      "key": "real_name.consent.point.1",
+      "reason": "实名同意弹层要点，只说收集姓名和身份证号用于提现前核验身份，不说金额、状态或有没有返利（08 表 C 原文，另归 content.agreement）"
+    },
     {
       "key": "agent.notice.search_disabled",
       "reason": "只是请用户改用发链接查返利，不说有没有返利（08 BR-TEXT-12 细则写明归普通）"
