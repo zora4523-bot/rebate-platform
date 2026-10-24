@@ -77,14 +77,27 @@ export type PayCloseResult =
   | { readonly kind: 'ok'; readonly state: 'closed' | 'paid' | 'not_exist' }
   | { readonly kind: 'unknown'; readonly reason: string };
 
+/**
+ * B2-15e: one original-route refund as sent to the channel (BR-PAY-06). The refund goes back the
+ * way the money came: the original is named by our merchant number and / or the channel's trade
+ * number (an anomaly receipt may have no merchant number of ours, BR-PAY-05 ④).
+ */
 export interface PayRefundInput {
-  readonly outTradeNo: string;
+  /** The original's out_trade_no; null for an anomaly receipt without one. */
+  readonly outTradeNo: string | null;
+  /** The original's channel trade number (pay_orders / pay_anomalies channel_trade_no). */
+  readonly channelTradeNo: string | null;
+  /** pay_refunds.out_refund_no: generated at creation, never changed, never reused. */
   readonly outRefundNo: string;
+  /** This refund's amount, integer fen. */
   readonly refundFen: bigint;
+  /** The original's total: the pay order's amount_fen, or the anomaly's received amount_fen. */
   readonly totalFen: bigint;
+  /** pay_refunds.reason_code. */
   readonly reason: string;
 }
 
+/** ok: the channel accepted the request (the result comes later); never «failed» (rule 7). */
 export type PayRefundResult =
   { readonly kind: 'ok' } | { readonly kind: 'unknown'; readonly reason: string };
 
@@ -93,6 +106,23 @@ export type PayRefundQueryResult =
       readonly kind: 'ok';
       readonly state: 'success' | 'processing' | 'failed' | 'not_exist';
       readonly refundFen: bigint | null;
+      /**
+       * B2-15e: the channel's own refund state as reported (WeChat status / refund_status, Alipay
+       * refund_status), judged against `pay.<pay_channel>.refund_success_states` and
+       * `refund_fail_states` (BR-PAY-06 ④). `state` above is the adapter's summary only and never
+       * decides. A result without channelState, merchantRef or appRef is never a result (fail closed).
+       */
+      readonly channelState?: string;
+      /** B2-15e: the original's merchant number as the channel reports it. */
+      readonly outTradeNo?: string | null;
+      /** B2-15e: the original's channel trade number as the channel reports it. */
+      readonly channelTradeNo?: string | null;
+      /** B2-15e: the channel's refund number (pay_refunds.channel_refund_no). */
+      readonly channelRefundNo?: string | null;
+      /** B2-15e: the merchant identity the channel reports (WeChat mchid, Alipay seller_id). */
+      readonly merchantRef?: string;
+      /** B2-15e: the application identity the channel reports (WeChat appid, Alipay app_id). */
+      readonly appRef?: string;
     }
   | { readonly kind: 'unknown'; readonly reason: string };
 
@@ -120,6 +150,14 @@ export type PayNotificationResult =
       readonly state: string;
       readonly merchantRef: string;
       readonly appRef: string;
+      /**
+       * B2-15e: a refund notification (outRefundNo set) also carries the refunded amount (WeChat
+       * amount.refund, Alipay refund_fee) — amountFen stays the original's total — and the
+       * channel's refund number; `state` is then the channel's refund state. A refund
+       * notification without refundFen is never a result (fail closed).
+       */
+      readonly refundFen?: bigint;
+      readonly channelRefundNo?: string;
     }
   | { readonly kind: 'rejected'; readonly reason: string };
 

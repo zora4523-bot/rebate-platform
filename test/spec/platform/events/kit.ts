@@ -30,7 +30,7 @@ export const EVENT_MESSAGES: Readonly<Record<EventErrorCode, string>> = {
   unknown_consumer: 'the consumer has no subscription',
 };
 
-/** The event list of 规划/02 §11 (29 names: 28 at SPEC_REF bafa96ce + pay_order.paid of couli #204, D10-338), in order, copied by hand. */
+/** The event list of 规划/02 §11 (30 names: 28 at SPEC_REF bafa96ce + pay_order.paid of couli #204, D10-338, + pay_refund.succeeded of couli #208, D10-349), in order, copied by hand. */
 export const PLAN_02_EVENTS = [
   'order.created',
   'order.updated',
@@ -62,6 +62,8 @@ export const PLAN_02_EVENTS = [
   'union_receivable.exposure_exceeded',
   // 02 §11 收款：支付成功（D10-340，couli #206）
   'pay_order.paid',
+  // 02 §11 收款：退款成功（D10-349，couli #208）
+  'pay_refund.succeeded',
 ] as const;
 
 /**

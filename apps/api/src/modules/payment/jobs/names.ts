@@ -52,6 +52,20 @@ export interface BizReconcilePayload extends JobPayload {
   readonly pay_order_id: string;
 }
 
+/**
+ * B2-15e: payload of `refund.query` — the refund to query, by id (BR-PAY-06 ④ ⑤). Enqueued with a
+ * delay in the same transaction that creates the refund (with its idempotency record and the
+ * amount it holds), before the channel is called; the refund is submitted only after that commit
+ * (D10-351 ③), so a refund whose submission never answered is still queried. The handler queries
+ * the channel with the refund's own out_refund_no, keeps a pay_query_attempts row (kind
+ * refund_query) and hands the answer to the same result handler as a refund notification. It never
+ * submits the refund again (结果未知时只查询; resubmitting the same number waits for BR-PAY-09).
+ */
+export interface RefundQueryPayload extends JobPayload {
+  readonly app_id: string;
+  readonly pay_refund_id: string;
+}
+
 /** singletonKey of the client-return query: one queued or active per order. */
 export function orderQueryReturnedKey(payOrderId: string): string {
   return `${ORDER_QUERY_JOB}:${payOrderId}:returned`;
