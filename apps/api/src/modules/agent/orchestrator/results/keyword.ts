@@ -5,16 +5,23 @@
 // under a saved set. The batch's chain becomes the session's current chain only once one of its
 // product_lists was confirmed as written (a delivery receipt, B3-03q): a batch cancelled, cut by
 // the card limit or written without a receipt leaves the current chain as it was, so 「换一批」
-// and 「第 N 个」 keep addressing what the user saw last.
+// and 「第 N 个」 keep addressing what the user saw last. B3-03r: the same pending table serves the
+// model and follow-up path (createResultsTools' `chains`, PendingChains.defer).
 import type { KeywordSearchPlan } from '../../model-gateway/degraded/index.ts';
 import type { UnnumberedCard } from '../../stream/run/index.ts';
 import type { ToolContext } from '../core/ports.ts';
 import { chainPort, conditionsOf, newChainId, setChain } from './shared.ts';
 import { keepsQuoted } from './store.ts';
-import type { QuotedReceiptStore, ResultSetStore, SessionChain } from './types.ts';
+import type {
+  PendingBatch,
+  PendingChains,
+  QuotedReceiptStore,
+  ResultSetStore,
+  SessionChain,
+} from './types.ts';
 
 /** A saved batch waiting for its first delivery receipt. */
-interface PendingBatch {
+interface Waiting {
   readonly appId: string;
   readonly sessionId: string;
   readonly chain: SessionChain;
@@ -27,7 +34,7 @@ interface PendingBatch {
  */
 const MAX_PENDING_SETS = 10_000;
 
-export interface KeywordResults {
+export interface KeywordResults extends PendingChains {
   /**
    * Saves every product_list's result_set_id under the run's app, session and run with the plan's
    * conditions (q, platforms, relevance, page 1) on a new chain, kept pending until one of them is
@@ -47,16 +54,39 @@ export interface KeywordResults {
 }
 
 export function createKeywordResults(store: ResultSetStore): KeywordResults {
-  const pending = new Map<string, PendingBatch>();
+  const pending = new Map<string, Waiting>();
+
+  function defer(input: PendingBatch): void {
+    const ids = [...new Set(input.resultSetIds.filter((id) => id !== ''))];
+    if (ids.length === 0) return;
+    const batch: Waiting = {
+      appId: input.appId,
+      sessionId: input.sessionId,
+      chain: input.chain,
+      ids,
+    };
+    // A re-saved id belongs to its latest batch only.
+    for (const id of ids) {
+      pending.delete(id);
+      pending.set(id, batch);
+    }
+    while (pending.size > MAX_PENDING_SETS) {
+      const oldest = pending.keys().next();
+      if (oldest.done === true) break;
+      pending.delete(oldest.value);
+    }
+  }
 
   async function confirm(resultSetId: string): Promise<void> {
     const batch = pending.get(resultSetId);
     if (batch === undefined) return;
-    for (const id of batch.ids) pending.delete(id);
+    for (const id of batch.ids) if (pending.get(id) === batch) pending.delete(id);
     await setChain(store, batch.appId, batch.sessionId, batch.chain);
   }
 
   return {
+    defer,
+
     async save(plan, ctx, cards) {
       const ids: string[] = [];
       for (const card of cards) {
@@ -74,18 +104,12 @@ export function createKeywordResults(store: ResultSetStore): KeywordResults {
       for (const id of ids) {
         await store.save({ id, appId, sessionId: ctx.sessionId, runId: ctx.runId, conditions });
       }
-      const batch: PendingBatch = {
+      defer({
         appId,
         sessionId: ctx.sessionId,
         chain: { chainId, conditions, status: 'has_products' },
-        ids,
-      };
-      for (const id of ids) pending.set(id, batch);
-      while (pending.size > MAX_PENDING_SETS) {
-        const oldest = pending.keys().next();
-        if (oldest.done === true) break;
-        pending.delete(oldest.value);
-      }
+        resultSetIds: ids,
+      });
     },
 
     receipts(onChainError) {

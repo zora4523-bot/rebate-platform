@@ -3,6 +3,10 @@
 // results are relaxed within the run's tool budget (spec first, then the price ceiling), every
 // product_list is tagged against the user's original conditions and its conditions are saved
 // under its result_set_id. ctx is always forwarded unchanged (B3-05i binds references to it).
+// B3-03r · BR-AI-05: with `deps.chains` wired, a search's conditions become the session's current
+// chain only once one of its product_lists was confirmed as written (a delivery receipt); until
+// then 「换一批」 and 「第 N 个」 both keep addressing the batch the user saw last. A price question
+// (awaiting_price) is still recorded at once: it is what the user was shown.
 import type { AgentProductCard } from '../../tools/search/index.ts';
 import { priceRangeInvalidView } from '../../tools/search/index.ts';
 import { assignMatchTags } from '../../tools/match/index.ts';
@@ -36,7 +40,7 @@ import {
   type SessionChain,
 } from './shared.ts';
 import { shiftCardReferences } from './references.ts';
-import type { ResultsDeps } from './types.ts';
+import type { ResultsDeps, SearchConditions } from './types.ts';
 
 type Ok = Extract<ToolOutcome, { kind: 'ok' }>;
 type Args = Readonly<Record<string, unknown>>;
@@ -101,6 +105,16 @@ function matchConditions(requested: Args, relaxed: boolean): MatchConditions {
     ...(validPrice(max) ? { priceMaxFen: max } : {}),
     relaxed,
   };
+}
+
+/** The result_set_ids of the product_lists among `cards` (the ones finish saves). */
+function resultSetIds(cards: readonly UnnumberedCard[]): string[] {
+  const ids: string[] = [];
+  for (const card of cards) {
+    const id = card.data['result_set_id'];
+    if (card.type === 'product_list' && typeof id === 'string' && id !== '') ids.push(id);
+  }
+  return ids;
 }
 
 function isProductCard(value: unknown): value is AgentProductCard {
@@ -170,7 +184,11 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
     // 再便宜点 is only an attempt: its conditions become the chain's only once it shows products,
     // so a cheaper search without result leaves 换一批 / 换平台 on the conditions shown before.
     const attempt = server?.kind !== 'cheaper';
-    if (attempt) await setChain(deps.store, appId, ctx.sessionId, chain);
+    // B3-03r: with deferred chains nothing is recorded before the search; the batch's chain waits
+    // for its written list (finish), a price question is recorded when it is asked (askPrice).
+    if (attempt && deps.chains === undefined) {
+      await setChain(deps.store, appId, ctx.sessionId, chain);
+    }
     const scope = { appId, sessionId: ctx.sessionId, chainId };
     const notices: string[] = [];
     let requested: Args = args;
@@ -320,13 +338,7 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
       }
     }
     // Continuations must start from the same effective conditions that produced these cards.
-    if (conditions !== null) {
-      await setChain(deps.store, appId, ctx.sessionId, {
-        chainId,
-        conditions,
-        status: 'has_products',
-      });
-    }
+    if (conditions !== null) await switchChain(ctx, chainId, conditions, outcome.cards);
     if (notices.length === 0 && deps.match === undefined) return outcome;
     const moved = shifted(ctx, outcome, notices.length);
     return {
@@ -335,6 +347,28 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
       modelView: withServerNotices(moved.modelView, notices.map(noticeName)),
       cards,
     };
+  }
+
+  /**
+   * The batch's has_products chain: set at once without `deps.chains` (B3-05g); otherwise kept
+   * pending under the batch's product_list result sets until one of them is confirmed as written
+   * (B3-03r). The switch never depends on the run's signal: a list confirmed as written switches
+   * the chain also when the user stops the run afterwards.
+   */
+  async function switchChain(
+    ctx: ToolContext,
+    chainId: string,
+    conditions: SearchConditions,
+    cards: readonly UnnumberedCard[],
+  ): Promise<void> {
+    const appId = ctx.subject.appId;
+    const chain: SessionChain = { chainId, conditions, status: 'has_products' };
+    const chains = deps.chains;
+    if (chains === undefined) {
+      await setChain(deps.store, appId, ctx.sessionId, chain);
+      return;
+    }
+    chains.defer({ appId, sessionId: ctx.sessionId, chain, resultSetIds: resultSetIds(cards) });
   }
 
   /**
