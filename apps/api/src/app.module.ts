@@ -556,6 +556,20 @@ const deletionCleanupPorts = {
 };
 
 /**
+ * B3-09j (BR-AI-22): the agent slot of deletionCleanupPorts. With config.agentUserHashKey, agent's
+ * purgeAgentDataForUser over that key; without it (null / absent; prod never gets here, loadConfig
+ * refuses), an unavailable marker and one warn that never carries a key value.
+ */
+export function agentDeletionCleanup(
+  config: AppConfig,
+  logger: RootLogger,
+): DeletionCleanupPorts['agent'] {
+  void config;
+  void logger;
+  throw new Error('NotImplemented: agentDeletionCleanup');
+}
+
+/**
  * B1-15g (D10-137 ①, BR-FUND-24 ⑧): the closing adjustment gate of the deletion completion. Until
  * the funds port exists, identity's stand-in over the same available_fen reader as the expiry: 0 →
  * none_needed, anything else → pending (never done with a balance).

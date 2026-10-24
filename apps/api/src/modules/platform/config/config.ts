@@ -147,6 +147,12 @@ export interface AppConfig {
    * every message. A hand-built config without it counts as null.
    */
   readonly sms?: SmsConfig | null;
+  /**
+   * AGENT_USER_HASH_KEY (./agent-user-hash.ts, B3-09j; BR-AI-22): HMAC key of agent's deletion
+   * purge. loadConfig fills it (null when unset outside prod; prod refuses to start without it).
+   * A hand-built config without it counts as null: the agent cleanup port stays unavailable.
+   */
+  readonly agentUserHashKey?: string | null;
 }
 
 /** Thrown by `loadConfig`; `problems` lists every finding. Messages never contain values. */
