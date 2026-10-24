@@ -74,4 +74,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/dead-letter-scan/**'
-status: todo
+status: done
+pr: 1291
