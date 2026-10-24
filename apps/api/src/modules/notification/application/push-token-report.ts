@@ -11,6 +11,10 @@
 //      last_login_sid is not command.sid → ignore the whole report (no write at all: no token
 //      value, no binding, no row created). Reading last_login_sid and writing the token rows happen
 //      in that one transaction, never read-then-write; then lock the token rows involved in id order.
+//      Before the device row, lock the subject's users row (app_id, command.user_id) FOR SHARE
+//      (D10-318; lock order users → devices → push_tokens, as in the deletion cleanup): no such
+//      row, or status deleting / deleted → ignore the whole report in the same way (no write,
+//      resolve), so a report racing the cleanup never leaves a token row behind.
 //   2. The device's own row (app_id, device_id, provider) frozen (frozen_until > now) → no write.
 //      The live row holding (app_id, provider, token) on another device frozen → no write.
 //   3. Value not live on another device row:
