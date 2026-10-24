@@ -1,0 +1,17 @@
+id: B1-01zzhb
+repo: rebate-platform
+title: 依赖：移除 apps/api 闲置的 @prometheus-io/client（B1-01zzh 改为手写 Prometheus 文本格式），只改 dependencies 与锁文件，不改 vitest.shared.ts
+type: deps
+# 2026-10-25 入账（be-codex；编排裁定 D10-345：手写格式认可，闲置依赖移除；D10-249 记为「改为手写格式，依赖已移除」）。B1-01zzh 合并后做。
+# 原因：该库入口无条件 require @opentelemetry/api，保护的 vitest 解析条件下落到 ESM 构建不可加载；以后真要用库再按 D10-249 重新评估并同时处理 vitest 条件。
+refs: []
+refs_hash: {}
+deps: [B1-01zzh]
+paths:
+  - 'apps/api/package.json'
+  - 'pnpm-lock.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
