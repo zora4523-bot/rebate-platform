@@ -18490,9 +18490,15 @@ paths:
         nothing sent or saved. Otherwise one SMS goes synchronously to the operator's own verify
         phone with the new signature and template CODE, filled with `sample` (variables not given
         take the server's built-in sample value). Only a send the provider accepts lets the new
-        registration take effect (accepted is not delivered). Not accepted: the provider refuses
-        or errors → 50301; times out or the outcome is unknown → 50401; in both cases nothing is
-        saved and the current registration stays in force. The test SMS counts against the
+        registration take effect (accepted is not delivered). Not accepted, in every case nothing
+        is saved and the current registration stays in force: the provider explicitly rejects the
+        submitted signature or template (signature or template CODE illegal or not approved,
+        template variables missing, e.g. isv.SMS_SIGNATURE_ILLEGAL, isv.SMS_TEMPLATE_ILLEGAL) →
+        20001 with `data.fields=[sign_name, template_code]` (the test send was rejected by the SMS
+        provider; check the registration in the provider's console); the provider rejects it for
+        its rate limits (e.g. isv.BUSINESS_LIMIT_CONTROL) → 42901 with Retry-After (seconds, the
+        server's estimate); the provider is unavailable or errors → 50301; times out or the
+        outcome is unknown → 50401. The test SMS counts against the
         provider's rate limits for that phone and may delay the operator's own sms-tier step-up
         codes right after. When only `template_type` or `preview_text` changes, nothing is sent.
         Saving re-checks `row_version` in the same transaction (20902 when the code changed
@@ -18514,6 +18520,7 @@ paths:
         - 10403
         - 20001
         - 20902
+        - 42901
         - 50301
         - 50401
       security:
@@ -18605,6 +18612,8 @@ paths:
                   $ref: '#/components/examples/AdminNotifySmsPreviewForbidden'
                 verifyPhoneMissing:
                   $ref: '#/components/examples/AdminNotifySmsVerifyPhoneMissing'
+                providerRejected:
+                  $ref: '#/components/examples/AdminNotifySmsProviderRejected'
                 conflict:
                   $ref: '#/components/examples/AdminNotifyChannelConflict'
                 noPermission:
@@ -24650,6 +24659,16 @@ components:
           fields:
             - preview_text
             - 官方
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminNotifySmsProviderRejected:
+      summary: 20001 the test send was rejected by the SMS provider (signature or template not valid or not approved); the current registration stays
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - sign_name
+            - template_code
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminNotifySmsVerifyPhoneMissing:
       summary: 10003 a test send is needed but the account has no verify phone (register it first)

@@ -6467,9 +6467,15 @@ export interface paths {
          *     nothing sent or saved. Otherwise one SMS goes synchronously to the operator's own verify
          *     phone with the new signature and template CODE, filled with `sample` (variables not given
          *     take the server's built-in sample value). Only a send the provider accepts lets the new
-         *     registration take effect (accepted is not delivered). Not accepted: the provider refuses
-         *     or errors → 50301; times out or the outcome is unknown → 50401; in both cases nothing is
-         *     saved and the current registration stays in force. The test SMS counts against the
+         *     registration take effect (accepted is not delivered). Not accepted, in every case nothing
+         *     is saved and the current registration stays in force: the provider explicitly rejects the
+         *     submitted signature or template (signature or template CODE illegal or not approved,
+         *     template variables missing, e.g. isv.SMS_SIGNATURE_ILLEGAL, isv.SMS_TEMPLATE_ILLEGAL) →
+         *     20001 with `data.fields=[sign_name, template_code]` (the test send was rejected by the SMS
+         *     provider; check the registration in the provider's console); the provider rejects it for
+         *     its rate limits (e.g. isv.BUSINESS_LIMIT_CONTROL) → 42901 with Retry-After (seconds, the
+         *     server's estimate); the provider is unavailable or errors → 50301; times out or the
+         *     outcome is unknown → 50401. The test SMS counts against the
          *     provider's rate limits for that phone and may delay the operator's own sms-tier step-up
          *     codes right after. When only `template_type` or `preview_text` changes, nothing is sent.
          *     Saving re-checks `row_version` in the same transaction (20902 when the code changed
