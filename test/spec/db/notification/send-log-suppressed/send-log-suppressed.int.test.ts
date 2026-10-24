@@ -101,6 +101,7 @@ it('[AC-B1-12n#1] adds only nullable text suppress_reason and keeps existing col
     { name: 'planned_at', type: 'timestamptz', nullable: false },
     { name: 'row_version', type: 'int4', nullable: false },
     { name: 'sent_at', type: 'timestamptz', nullable: true },
+    { name: 'sms_biz_id', type: 'text', nullable: true },
     { name: 'status', type: 'text', nullable: false },
     { name: 'suppress_reason', type: 'text', nullable: true },
     { name: 'updated_at', type: 'timestamptz', nullable: false },
