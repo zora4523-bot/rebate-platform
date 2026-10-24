@@ -2981,9 +2981,16 @@ export class AppModule {
           : []),
         // payment's /v1/pay/orders routes (B2-15b): on the api entry, over content's shared
         // configuration reader (pay.enabled, pay.channel_enabled.*, pay.biz.*.platforms,
-        // pay.order_ttl_minutes). Its jobs are worked by the worker entry from B2-15c / B2-15d on.
+        // pay.order_ttl_minutes, pay.query_schedule, pay.<pay_channel>.success_states). B2-15c:
+        // the channel notification entry POST /notify/pay/<channel> too, in a process with a
+        // database (outside the client contract; nothing to verify or keep without one).
         ...(options.entry === 'api'
-          ? [PaymentModule.forApi({ config: (db, clock) => contentReader(db, clock) })]
+          ? [
+              PaymentModule.forApi({
+                config: (db, clock) => contentReader(db, clock),
+                notifyEntry: options.dbHandles !== undefined,
+              }),
+            ]
           : []),
         ...(union === undefined ? [] : [union]),
         // The ledger posting port (B2-02f) on every entry that books money: settlement (worker),
@@ -2997,6 +3004,10 @@ export class AppModule {
         ...(options.entry === 'worker'
           ? [
               RiskScanModule.forWorker(),
+              // payment's queue `pay` (B2-15c): order.query (the result judgement and the
+              // query rhythm) and biz.reconcile (the business object's fulfilment) over content's
+              // shared configuration reader; order.close joins with B2-15d.
+              PaymentModule.forWorker({ config: (db, clock) => contentReader(db, clock) }),
               // B3-08k: content's reads for the sweeper's daily limits, assembled here.
               agentReaders('worker', contentReader),
               AgentModule.forWorker(),

@@ -38,6 +38,10 @@
 | `TAX_PAYABLE` | platform | 负债 | 代扣个税 |
 | `MKT_EXPENSE` | platform | 费用 | 淘礼金、奖励等营销费用（02 §8.2；RECON_FIX / OTHER 调账白名单科目之一；邀请奖励 `REWARD:INVITE` 的平台侧，BR-INV-24 ⑦；newbie / checkin 奖励 P1 前不列模板） |
 | `BAD_DEBT` | platform | 费用 | 负余额核销；注销中 / 已注销受益人的扣回与负差改记 |
+| `CASH_PAY:{pay_channel}` | platform | 资产 | 收款渠道的在途 / 已收资金，按收款渠道分（wechat_pay、alipay）；与提现用的 CASH_ALIPAY、CASH_WECHAT 是不同科目，即使以后收款与打款共用商户号也分开记（BR-PAY-07 细则；第 10 节） |
+| `PAY_RECEIPTS:{biz_type}` | platform | 负债 | 已收到的购买款，按业务类型分；收入何时确认、怎么分期由财务定，不在本表（BR-PAY-07；第 10 节） |
+| `PAY_SUSPENSE` | platform | 负债 | 待退的异常收款（BR-PAY-05 ④、BR-PAY-07）；余额等于未退完的异常收款合计（第 10 节） |
+| `PAY_CHANNEL_FEE` | platform | 费用 | 收款渠道手续费，对账时按账单记（BR-PAY-07；B2-15h，第 10 节） |
 
 不设 `WITHDRAW_IN_TRANSIT`：打款中资金留在 USER_BALANCE.frozen（BR-WDR-09、BR-FUND-14）。不设单一的调账科目：调账对方科目按原因码取上表科目（第 6 节）。
 
@@ -317,3 +321,21 @@ REASSIGN_REV 遇旧受益人已进入注销 processing 或已注销、且在本�
 ## 9. 与 csv 的对应
 
 csv 列：`template_id,ledger_type,sub_type,uniq_key_pattern,line,account_owner,subject,sub_account,sign,amount_ref,note`；按 template_id 升序，同模板 line 从 1 起。template_id 只是表内名字，不是流水枚举；业务比对单位是 (ledger_type, sub_type, uniq_key_pattern) 一组。note 列为自由说明。csv 由 `node packages/domain/src/ledger/generate-templates.ts` 生成 `packages/domain/src/ledger/templates.gen.ts`，buildVouchers 只读生成物。
+
+## 10. 收款科目与凭证（pay_ledger_type，BR-PAY-07；B2-15c 起草）
+
+收款（`payment` 模块）的钱是平台自己的资金，不进用户余额：这些凭证只记平台科目，不产生任何 `USER_BALANCE` 分录，不参与分佣、月结、提现（BR-PAY-07、BR-PAY-01 ③）。凭证类型取 `contracts/enums/pay.yaml` 的 `pay_ledger_type`（PAY_RECEIPT、PAY_REFUND、PAY_ANOMALY、PAY_FEE），只用于平台科目，不属于用户流水的 13 种 `ledger_type`（BR-FUND-15 不变），不出现在任何用户流水接口；按 `ledger_type` 取数的用户口径只取用户账户上的分录，所以不受影响。数据库侧由迁移 0081 / 0082（B2-15i）把这四个值加进 `ledger_entries_ledger_type_check`，`recon_diffs_type_check` 加 pay_mismatch / pay_anomaly。
+
+这些凭证由 payment 经 ledger 的 `post()` 直接落账（凭证唯一键落在 ledger 的 (app_id, uniq_key) 唯一约束上，重放返回同一结果、不重复记账），不经 `buildVouchers`，因此不列入 `specs/ledger-templates.csv`：csv 的业务组集合、流水类型（只取 fund.yaml 的 13 值）与科目表由 test/spec/ledger-rules 的独立预期表锁定，收款模板另表登记如下。`sub_type` 一律写收款渠道（pay_channel），`income_type` 空；平台科目分录的 sub_account 写 `available`（第 7 节口径）。
+
+| 凭证 | ledger_type / sub_type | uniq_key | 借 | 贷 | 金额 | 何时写 | 依据 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 收款 | PAY_RECEIPT / {pay_channel} | `PAY_RECEIPT:{pay_order_id}` | `CASH_PAY:{pay_channel}` | `PAY_RECEIPTS:{biz_type}` | amount_fen（支付单金额） | PO2（PENDING → PAID）的同一事务，与开通任务入队、`pay_order.paid` 事件同事务；每张支付单至多一张 | BR-PAY-04、BR-PAY-07 |
+| 退款 | PAY_REFUND / {pay_channel} | `PAY_REFUND:{pay_refund_id}` | `PAY_RECEIPTS:{biz_type}` | `CASH_PAY:{pay_channel}` | refund_fen（退款单金额） | 退款单 SUCCESS 时，方向与收款相反；每张退款单至多一张（B2-15e） | BR-PAY-06、BR-PAY-07 |
+| 异常收款 | PAY_ANOMALY / {pay_channel} | `PAY_ANOMALY:{pay_anomaly_id}` | `CASH_PAY:{pay_channel}` | `PAY_SUSPENSE` | anomaly_fen（渠道上报的收款金额） | 登记异常收款时（CLOSED 单或找不到支付单的收款，BR-PAY-05 ④），同事务登记 pay_anomalies 与 R4 pay_anomaly 差错单；每条异常收款的收款凭证至多一张；对异常收款退款成功时写相反方向（B2-15e） | BR-PAY-05 ④、BR-PAY-07 |
+| 渠道手续费 | PAY_FEE / {pay_channel} | `PAY_FEE:{pay_channel}:{bill_date}` | `PAY_CHANNEL_FEE` | `CASH_PAY:{pay_channel}` | fee_fen（账单手续费） | T+1 对账按账单记，按（渠道、账单日）一张（B2-15h） | BR-PAY-07 |
+
+- 不变量（BR-PAY-07 细则）：带支付单、退款单或异常收款引用的凭证里不得出现 USER_BALANCE 科目；每张 PAID 支付单恰有一张 PAY_RECEIPT 凭证；每张 SUCCESS 退款单恰有一张 PAY_REFUND（或对异常收款的反向 PAY_ANOMALY）凭证；PAY_SUSPENSE 的余额等于未退完的异常收款合计。
+- 判定与结算（BR-PAY-04）：收款凭证只在核对表逐项通过（验签、应用与商户标识、商户单号、金额 = amount_fen、状态 ∈ `pay.<pay_channel>.success_states`）后写；任一不符不迁移、不记账。通知与主动查询走同一套核对与结算；同一通知重复到达、通知与查询并发只生效一次（业务对象锁 + 状态 CAS + 凭证唯一键）。结算中途任何失败整体回滚、不应答成功。
+- 异常收款（BR-PAY-05 ④）：CLOSED 的单不得再变为 PAID；这笔钱只能经 BR-PAY-06 对该异常收款原路退回。差错单来源 R4、类型 pay_anomaly，不套用提现差错（R2）的做法，不冻结用户提现，不做用户余额调账。
+- 金额一律 bigint 分；渠道报文里的元字符串只在真实适配器里经 `@couli/money` 的 `yuanStrToFen` 换算，不经浮点。会计日取写入时注入 `Clock` 的 +08:00 日期（`accountingDate`）。

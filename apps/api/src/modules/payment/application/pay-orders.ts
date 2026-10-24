@@ -13,8 +13,11 @@
 //     the caller's PENDING on another channel, with closing=true, or past its expire_at (now >=
 //     expire_at counts as closing: BR-PAY-03, no launch for an expired order) → 20902; the
 //     caller's PENDING on the same channel → that order again; none → INSERT PENDING (out_trade_no from
-//     domain/out-trade-no.ts, amount and title from the registry, expire_at = now + ttl) and
-//     commit: the row exists before the channel is called (外部写先落单);
+//     domain/out-trade-no.ts, amount and title from the registry, expire_at = now + ttl) with the
+//     first scheduled query of `pay.query_schedule` enqueued on the same transaction (B2-15c,
+//     BR-PAY-04: queue pay, order.query, singletonKey order.query:<id>:t<seconds>, delaySeconds to
+//     the first slot; the payload names the order by out_trade_no, jobs/names.ts) and commit: the
+//     row exists before the channel is called (外部写先落单);
 //   the channel call, outside any transaction (ok / unknown only; a throwing adapter is unknown);
 //   transaction ②: the same lock, one pay_query_attempts row (kind 'query', result 'prepay' /
 //   'unknown'); unknown → 50306 data.pay_channel, the order stays PENDING; ok → launch_issued_at
@@ -38,6 +41,13 @@ import type { ContentReader } from '../../content/index.ts';
 import { newUuidV7, type Clock, type JobQueue, type RootLogger } from '../../platform/index.ts';
 import { isPayOrderExpired, orderTtlMinutes, payOrderExpireAt } from '../domain/order-ttl.ts';
 import { generateOutTradeNo } from '../domain/out-trade-no.ts';
+import {
+  delaySecondsUntil,
+  nextQueryInstant,
+  queryInstants,
+  queryScheduleOf,
+  querySlotSeconds,
+} from '../domain/pay-result.ts';
 import { payUnavailableReason, platformsOverrideOf } from '../domain/sellability.ts';
 import type { PayChannelCode, PayOrderStatus, PayUnavailableReason } from '../domain/types.ts';
 import {
@@ -59,11 +69,15 @@ import {
   PAY_QUEUE,
   orderCloseKey,
   orderQueryReturnedKey,
+  orderQueryScheduledKey,
   type OrderClosePayload,
   type OrderQueryPayload,
+  type OrderQueryScheduledPayload,
 } from '../jobs/names.ts';
 import type { BizTypeRegistry } from './biz-registry.ts';
 import type { PayChannelSet, PayCreateOrderInput, PayCreateOrderResult } from './pay-channel.ts';
+import { NOTIFY_ROUTES } from './notify-routes.ts';
+import { QUERY_SCHEDULE_KEY } from './pay-settlement.ts';
 
 /** The caller: from the access token, and the request's X-Platform. */
 export interface PaySubject {
@@ -103,7 +117,7 @@ export function bizPlatformsKey(bizType: string): string {
 
 /** The notification path of a channel (specs/pay-notify.md); the public base URL joins in B2-15k. */
 export function notifyPathOf(channel: PayChannelCode): string {
-  return `/notify/pay/${channel}`;
+  return NOTIFY_ROUTES[channel];
 }
 
 const CONFLICT: PayFailure = Object.freeze({
@@ -183,6 +197,9 @@ export async function createPayOrder(
   const ttl = orderTtlMinutes(await rawConfig(deps, appId, ORDER_TTL_KEY));
   if (ttl.fallback)
     deps.logger.warn({ app_id: appId, key: ORDER_TTL_KEY }, 'pay_order_ttl_invalid');
+  const schedule = queryScheduleOf(await rawConfig(deps, appId, QUERY_SCHEDULE_KEY));
+  if (schedule.fallback)
+    deps.logger.warn({ app_id: appId, key: QUERY_SCHEDULE_KEY }, 'pay_query_schedule_invalid');
   const key: BizObjectKey = { appId, bizType, bizRef: input.biz_ref };
 
   const placement = await deps.db.transaction().execute(async (trx): Promise<Placement> => {
@@ -222,6 +239,24 @@ export async function createPayOrder(
       expireAt: payOrderExpireAt(now, ttl.minutes),
       now,
     });
+    // BR-PAY-04 查询节奏: the first slot is queued with the order, persistent from the start
+    // (没有收到通知时按 pay.query_schedule 查询; the client-return query is payOrderReturned's).
+    const first = nextQueryInstant(
+      queryInstants(order.created_at, order.expire_at, schedule.seconds),
+      now,
+    );
+    if (first !== null) {
+      const payload: OrderQueryScheduledPayload = {
+        app_id: order.app_id,
+        out_trade_no: order.out_trade_no,
+        trigger: 'scheduled',
+      };
+      await deps.queue.send(PAY_QUEUE, ORDER_QUERY_JOB, payload, {
+        trx,
+        singletonKey: orderQueryScheduledKey(order.id, querySlotSeconds(order.created_at, first)),
+        delaySeconds: delaySecondsUntil(now, first),
+      });
+    }
     return { kind: 'placed', order, created: true };
   });
   if (placement.kind === 'failed') return placement.failure;
