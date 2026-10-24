@@ -10,7 +10,7 @@
 // - start() starts the scheduler's timer loops only (createOrderSyncScheduler); every call starts
 //   one more set (entry.ts calls it once).
 // - B1-08t: with the optional commission snapshot port injected, the update step and the pipeline
-//   get it, the order-sync handler routes 'snapshot-retry' jobs to the compensation scan
+//   get it, the order-sync handler routes 'snapshot_retry' jobs to the compensation scan
 //   (jobs/snapshot-retry.ts, with the runtime's events for its B1-08u exhausted alert), and start()
 //   also arms the scan's dispatch timer (every 15 minutes);
 //   stop() stops both and waits for the round in flight. Without it nothing of B1-08t runs: no

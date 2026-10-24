@@ -33,13 +33,13 @@ it('[B1-03u §10] heal sends the next slot of both jobs with the continuation ke
   expect(h.send.mock.calls).toEqual([
     [
       'risk-scan',
-      'freeze-expiry',
+      'freeze_expiry',
       {},
       { trx: null, singletonKey: 'freeze-expiry:2026-10-14T16:06', delaySeconds: 37 },
     ],
     [
       'risk-scan',
-      'daily-alerts',
+      'daily_alerts',
       {},
       { trx: null, singletonKey: 'daily-alerts:2026-10-16', delaySeconds: 86_377 },
     ],
@@ -57,7 +57,7 @@ it('[B1-03u §10] a failed heal send is a warn line and the other job is still s
       level: 40,
       msg: 'risk_scan_heal_failed',
       queue: 'risk-scan',
-      job_name: 'freeze-expiry',
+      job_name: 'freeze_expiry',
       error_name: 'Error',
     }),
   ]);
