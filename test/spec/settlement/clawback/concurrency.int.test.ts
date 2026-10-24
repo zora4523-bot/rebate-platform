@@ -45,7 +45,7 @@ it(
         q.parameters.includes(orderLockKeyText(o.platform, o.subOrderId)),
     );
     const usersLock = traced.queries.findIndex(
-      (q) => /"users"/.test(q.sql) && /for update/i.test(q.sql),
+      (q) => /"users"/.test(q.sql) && /for (no key )?update/i.test(q.sql),
     );
     expect(advisory).toBeGreaterThanOrEqual(0);
     expect(usersLock).toBeGreaterThan(advisory);
