@@ -4,12 +4,12 @@ title: payout 入口装配：PayoutModule.forPayout（注册 payout 队列的转
 type: impl
 # 2026-10-23 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。Codex 写规则测试（入口以 COULI_EXIT_AFTER_INIT 起停；dry_run / live 守卫）、Codex 评审。
 # 不改安全组 / RAM / KMS（ops）；出站白名单与密钥存放按 02 §12.6 由 ops 任务做。
-# 状态备注：等 B2-06d、B2-06e 合并。
+# 状态备注：等 B2-06d、B2-06e、B2-06fz 合并。数据库角色按编排 D10-326（取 C）：payout 进程只用 couli_payout 一个池，W5 / W6 落库由 B2-06fz 搬到 worker。
 refs: [BR-WDR-13, BR-WDR-17]
 refs_hash:
   BR-WDR-13: 11b5c3e1a9b3
   BR-WDR-17: f6119a685e00
-deps: [B2-06d, B2-06e]
+deps: [B2-06d, B2-06e, B2-06fz]
 paths:
   - 'apps/api/src/modules/payout/**'
   - 'apps/api/src/app.module.ts'
