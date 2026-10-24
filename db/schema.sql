@@ -3128,6 +3128,24 @@ CREATE TABLE app.notify_templates (
 
 
 --
+-- Name: order_assignments; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.order_assignments (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    order_id uuid NOT NULL,
+    to_user_id uuid NOT NULL,
+    source text NOT NULL,
+    reason text,
+    admin_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT order_assignments_admin_id_check CHECK (((source <> 'admin'::text) OR (admin_id IS NOT NULL))),
+    CONSTRAINT order_assignments_source_check CHECK ((source = ANY (ARRAY['claim'::text, 'admin'::text])))
+);
+
+
+--
 -- Name: order_keys; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3342,6 +3360,39 @@ ALTER TABLE app.order_sync_pending ALTER COLUMN id ADD GENERATED ALWAYS AS IDENT
     NO MINVALUE
     NO MAXVALUE
     CACHE 1
+);
+
+
+--
+-- Name: order_sync_requests; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.order_sync_requests (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    mode text NOT NULL,
+    "from" timestamp with time zone,
+    "to" timestamp with time zone,
+    status_filter text,
+    order_nos text[],
+    filter_digest text NOT NULL,
+    status text NOT NULL,
+    requested_by uuid NOT NULL,
+    fetched_count integer DEFAULT 0 NOT NULL,
+    stored_count integer DEFAULT 0 NOT NULL,
+    error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    finished_at timestamp with time zone,
+    CONSTRAINT order_sync_requests_counts_check CHECK (((fetched_count >= 0) AND (stored_count >= 0))),
+    CONSTRAINT order_sync_requests_filter_digest_check CHECK ((filter_digest ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT order_sync_requests_finished_check CHECK (((status = ANY (ARRAY['done'::text, 'failed'::text])) = (finished_at IS NOT NULL))),
+    CONSTRAINT order_sync_requests_mode_check CHECK ((mode = ANY (ARRAY['window'::text, 'order_nos'::text]))),
+    CONSTRAINT order_sync_requests_order_nos_check CHECK (((mode <> 'order_nos'::text) OR ((order_nos IS NOT NULL) AND (array_ndims(order_nos) = 1) AND ((cardinality(order_nos) >= 1) AND (cardinality(order_nos) <= 50)) AND ("from" IS NULL) AND ("to" IS NULL) AND (status_filter IS NULL)))),
+    CONSTRAINT order_sync_requests_platform_check CHECK ((platform = ANY (ARRAY['taobao'::text, 'jd'::text, 'pdd'::text, 'meituan'::text, 'vip'::text, 'douyin'::text, 'eleme'::text, 'kuaishou'::text, 'suning'::text]))),
+    CONSTRAINT order_sync_requests_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'done'::text, 'failed'::text]))),
+    CONSTRAINT order_sync_requests_status_filter_check CHECK (((status_filter IS NULL) OR ((length(status_filter) >= 1) AND (length(status_filter) <= 64)))),
+    CONSTRAINT order_sync_requests_window_check CHECK (((mode <> 'window'::text) OR (("from" IS NOT NULL) AND ("to" IS NOT NULL) AND ("from" < "to") AND (order_nos IS NULL))))
 );
 
 
@@ -4209,6 +4260,56 @@ ALTER TABLE app.relation_change_logs ALTER COLUMN id ADD GENERATED ALWAYS AS IDE
     NO MINVALUE
     NO MAXVALUE
     CACHE 1
+);
+
+
+--
+-- Name: rights_import_failures; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.rights_import_failures (
+    app_id text NOT NULL,
+    import_id uuid NOT NULL,
+    row_no integer NOT NULL,
+    reason text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT rights_import_failures_reason_check CHECK ((reason = ANY (ARRAY['invalid_row'::text, 'order_not_found'::text, 'sub_order_no_missing'::text, 'received_at_missing'::text, 'platform_mismatch'::text]))),
+    CONSTRAINT rights_import_failures_row_no_check CHECK ((row_no > 0))
+);
+
+
+--
+-- Name: rights_imports; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.rights_imports (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    kind text NOT NULL,
+    platform text NOT NULL,
+    union_account_id uuid,
+    time_basis text,
+    "from" timestamp with time zone,
+    "to" timestamp with time zone,
+    file_path text NOT NULL,
+    status text NOT NULL,
+    total_rows integer DEFAULT 0 NOT NULL,
+    succeeded_rows integer DEFAULT 0 NOT NULL,
+    failed_rows integer DEFAULT 0 NOT NULL,
+    skipped_rows integer DEFAULT 0 NOT NULL,
+    duplicate_rows integer DEFAULT 0 NOT NULL,
+    created_by uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    finished_at timestamp with time zone,
+    CONSTRAINT rights_imports_channel_check CHECK (((kind <> 'channel'::text) OR ((union_account_id IS NOT NULL) AND (time_basis IS NULL) AND ("from" IS NULL) AND ("to" IS NULL)))),
+    CONSTRAINT rights_imports_counts_check CHECK (((total_rows >= 0) AND (succeeded_rows >= 0) AND (failed_rows >= 0) AND (skipped_rows >= 0) AND (duplicate_rows >= 0))),
+    CONSTRAINT rights_imports_file_path_check CHECK ((file_path <> ''::text)),
+    CONSTRAINT rights_imports_finished_check CHECK (((status = ANY (ARRAY['done'::text, 'failed'::text])) = (finished_at IS NOT NULL))),
+    CONSTRAINT rights_imports_kind_check CHECK ((kind = ANY (ARRAY['rights'::text, 'punish'::text, 'channel'::text]))),
+    CONSTRAINT rights_imports_platform_check CHECK ((platform = ANY (ARRAY['taobao'::text, 'jd'::text, 'pdd'::text, 'meituan'::text, 'vip'::text, 'douyin'::text, 'eleme'::text, 'kuaishou'::text, 'suning'::text]))),
+    CONSTRAINT rights_imports_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'done'::text, 'failed'::text]))),
+    CONSTRAINT rights_imports_time_basis_check CHECK (((time_basis IS NULL) OR (time_basis = ANY (ARRAY['paid'::text, 'received'::text])))),
+    CONSTRAINT rights_imports_window_check CHECK ((((time_basis IS NULL) AND ("from" IS NULL) AND ("to" IS NULL)) OR ((time_basis IS NOT NULL) AND ("from" IS NOT NULL) AND ("to" IS NOT NULL) AND ("from" < "to"))))
 );
 
 
@@ -6034,6 +6135,14 @@ ALTER TABLE ONLY app.notify_templates
 
 
 --
+-- Name: order_assignments order_assignments_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_assignments
+    ADD CONSTRAINT order_assignments_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: order_keys order_keys_app_order_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -6151,6 +6260,14 @@ ALTER TABLE ONLY app.order_sync_drops
 
 ALTER TABLE ONLY app.order_sync_pending
     ADD CONSTRAINT order_sync_pending_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_sync_requests order_sync_requests_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_sync_requests
+    ADD CONSTRAINT order_sync_requests_pkey PRIMARY KEY (id);
 
 
 --
@@ -6535,6 +6652,30 @@ ALTER TABLE ONLY app.refresh_tokens
 
 ALTER TABLE ONLY app.relation_change_logs
     ADD CONSTRAINT relation_change_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rights_import_failures rights_import_failures_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.rights_import_failures
+    ADD CONSTRAINT rights_import_failures_pkey PRIMARY KEY (import_id, row_no);
+
+
+--
+-- Name: rights_imports rights_imports_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.rights_imports
+    ADD CONSTRAINT rights_imports_app_id_id_key UNIQUE (app_id, id);
+
+
+--
+-- Name: rights_imports rights_imports_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.rights_imports
+    ADD CONSTRAINT rights_imports_pkey PRIMARY KEY (id);
 
 
 --
@@ -7580,6 +7721,27 @@ CREATE INDEX notify_logs_user_created_idx ON app.notify_logs USING btree (app_id
 
 
 --
+-- Name: order_assignments_order_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX order_assignments_order_idx ON app.order_assignments USING btree (app_id, order_id);
+
+
+--
+-- Name: order_assignments_to_user_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX order_assignments_to_user_idx ON app.order_assignments USING btree (app_id, to_user_id);
+
+
+--
+-- Name: order_rights_dedupe_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX order_rights_dedupe_key ON app.order_rights USING btree (app_id, order_id, type, platform_rights_no) NULLS NOT DISTINCT;
+
+
+--
 -- Name: order_rights_order_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -7598,6 +7760,20 @@ CREATE INDEX order_status_history_order_idx ON app.order_status_history USING bt
 --
 
 CREATE UNIQUE INDEX order_sync_pending_open_key ON app.order_sync_pending USING btree (app_id, platform, sub_order_id, reason) WHERE (status = 'open'::text);
+
+
+--
+-- Name: order_sync_requests_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX order_sync_requests_created_idx ON app.order_sync_requests USING btree (app_id, created_at);
+
+
+--
+-- Name: order_sync_requests_live_digest_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX order_sync_requests_live_digest_key ON app.order_sync_requests USING btree (app_id, filter_digest) WHERE (status = ANY (ARRAY['queued'::text, 'running'::text]));
 
 
 --
@@ -7822,6 +7998,13 @@ CREATE INDEX refresh_tokens_session_idx ON app.refresh_tokens USING btree (app_i
 --
 
 CREATE INDEX relation_change_logs_user_at_idx ON app.relation_change_logs USING btree (app_id, user_id, at, id);
+
+
+--
+-- Name: rights_imports_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX rights_imports_created_idx ON app.rights_imports USING btree (app_id, created_at);
 
 
 --
@@ -8420,6 +8603,13 @@ CREATE TRIGGER links_no_quote_rewrite BEFORE UPDATE ON app.links FOR EACH ROW EX
 
 
 --
+-- Name: order_assignments order_assignments_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER order_assignments_append_only BEFORE DELETE OR UPDATE ON app.order_assignments FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
 -- Name: order_keys order_keys_append_only; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -8515,6 +8705,13 @@ CREATE TRIGGER product_refs_no_key_rewrite BEFORE UPDATE ON app.product_refs FOR
 --
 
 CREATE TRIGGER relation_change_logs_append_only BEFORE DELETE OR UPDATE ON app.relation_change_logs FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: rights_import_failures rights_import_failures_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER rights_import_failures_append_only BEFORE DELETE OR UPDATE ON app.rights_import_failures FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
 
 
 --
@@ -9184,6 +9381,30 @@ ALTER TABLE ONLY app.notify_logs
 
 
 --
+-- Name: order_assignments order_assignments_admin_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_assignments
+    ADD CONSTRAINT order_assignments_admin_fkey FOREIGN KEY (app_id, admin_id) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: order_assignments order_assignments_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_assignments
+    ADD CONSTRAINT order_assignments_order_fkey FOREIGN KEY (app_id, order_id) REFERENCES app.order_keys(app_id, order_id);
+
+
+--
+-- Name: order_assignments order_assignments_to_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_assignments
+    ADD CONSTRAINT order_assignments_to_user_fkey FOREIGN KEY (app_id, to_user_id) REFERENCES app.users(app_id, id);
+
+
+--
 -- Name: order_rights order_rights_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -9213,6 +9434,14 @@ ALTER TABLE ONLY app.order_status_history
 
 ALTER TABLE ONLY app.order_sync_pending
     ADD CONSTRAINT order_sync_pending_order_fkey FOREIGN KEY (app_id, order_id) REFERENCES app.order_keys(app_id, order_id);
+
+
+--
+-- Name: order_sync_requests order_sync_requests_requested_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_sync_requests
+    ADD CONSTRAINT order_sync_requests_requested_by_fkey FOREIGN KEY (app_id, requested_by) REFERENCES app.admin_users(app_id, id);
 
 
 --
@@ -9493,6 +9722,30 @@ ALTER TABLE ONLY app.relation_change_logs
 
 ALTER TABLE ONLY app.relation_change_logs
     ADD CONSTRAINT relation_change_logs_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: rights_import_failures rights_import_failures_import_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.rights_import_failures
+    ADD CONSTRAINT rights_import_failures_import_fkey FOREIGN KEY (app_id, import_id) REFERENCES app.rights_imports(app_id, id);
+
+
+--
+-- Name: rights_imports rights_imports_created_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.rights_imports
+    ADD CONSTRAINT rights_imports_created_by_fkey FOREIGN KEY (app_id, created_by) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: rights_imports rights_imports_union_account_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.rights_imports
+    ADD CONSTRAINT rights_imports_union_account_fkey FOREIGN KEY (app_id, union_account_id) REFERENCES app.union_accounts(app_id, id);
 
 
 --
@@ -12268,6 +12521,14 @@ GRANT SELECT ON TABLE app.notify_templates TO couli_readonly;
 
 
 --
+-- Name: TABLE order_assignments; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.order_assignments TO couli_app;
+GRANT SELECT ON TABLE app.order_assignments TO couli_readonly;
+
+
+--
 -- Name: TABLE order_keys; Type: ACL; Schema: app; Owner: -
 --
 
@@ -12329,6 +12590,49 @@ GRANT SELECT ON TABLE app.order_sync_drops TO couli_readonly;
 
 GRANT SELECT,INSERT,UPDATE ON TABLE app.order_sync_pending TO couli_app;
 GRANT SELECT ON TABLE app.order_sync_pending TO couli_readonly;
+
+
+--
+-- Name: TABLE order_sync_requests; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.order_sync_requests TO couli_app;
+GRANT SELECT ON TABLE app.order_sync_requests TO couli_readonly;
+
+
+--
+-- Name: COLUMN order_sync_requests.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.order_sync_requests TO couli_app;
+
+
+--
+-- Name: COLUMN order_sync_requests.fetched_count; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(fetched_count) ON TABLE app.order_sync_requests TO couli_app;
+
+
+--
+-- Name: COLUMN order_sync_requests.stored_count; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(stored_count) ON TABLE app.order_sync_requests TO couli_app;
+
+
+--
+-- Name: COLUMN order_sync_requests.error; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(error) ON TABLE app.order_sync_requests TO couli_app;
+
+
+--
+-- Name: COLUMN order_sync_requests.finished_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(finished_at) ON TABLE app.order_sync_requests TO couli_app;
 
 
 --
@@ -13292,6 +13596,71 @@ GRANT UPDATE(updated_at) ON TABLE app.refresh_tokens TO couli_app;
 
 GRANT SELECT,INSERT ON TABLE app.relation_change_logs TO couli_app;
 GRANT SELECT ON TABLE app.relation_change_logs TO couli_readonly;
+
+
+--
+-- Name: TABLE rights_import_failures; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.rights_import_failures TO couli_app;
+GRANT SELECT ON TABLE app.rights_import_failures TO couli_readonly;
+
+
+--
+-- Name: TABLE rights_imports; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.rights_imports TO couli_app;
+GRANT SELECT ON TABLE app.rights_imports TO couli_readonly;
+
+
+--
+-- Name: COLUMN rights_imports.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.rights_imports TO couli_app;
+
+
+--
+-- Name: COLUMN rights_imports.total_rows; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(total_rows) ON TABLE app.rights_imports TO couli_app;
+
+
+--
+-- Name: COLUMN rights_imports.succeeded_rows; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(succeeded_rows) ON TABLE app.rights_imports TO couli_app;
+
+
+--
+-- Name: COLUMN rights_imports.failed_rows; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(failed_rows) ON TABLE app.rights_imports TO couli_app;
+
+
+--
+-- Name: COLUMN rights_imports.skipped_rows; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(skipped_rows) ON TABLE app.rights_imports TO couli_app;
+
+
+--
+-- Name: COLUMN rights_imports.duplicate_rows; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(duplicate_rows) ON TABLE app.rights_imports TO couli_app;
+
+
+--
+-- Name: COLUMN rights_imports.finished_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(finished_at) ON TABLE app.rights_imports TO couli_app;
 
 
 --

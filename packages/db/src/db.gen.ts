@@ -949,6 +949,17 @@ export interface NotifyTemplates {
   variant: Generated<string>;
 }
 
+export interface OrderAssignments {
+  admin_id: string | null;
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  order_id: string;
+  reason: string | null;
+  source: string;
+  to_user_id: string;
+}
+
 export interface OrderKeys {
   app_id: string;
   attr_at: Timestamp;
@@ -1118,6 +1129,25 @@ export interface OrderSyncPending {
   resolved_by: string | null;
   status: string;
   sub_order_id: string;
+}
+
+export interface OrderSyncRequests {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  error: string | null;
+  fetched_count: Generated<number>;
+  filter_digest: string;
+  finished_at: Timestamp | null;
+  from: Timestamp | null;
+  id: string;
+  mode: string;
+  order_nos: string[] | null;
+  platform: string;
+  requested_by: string;
+  status: string;
+  status_filter: string | null;
+  stored_count: Generated<number>;
+  to: Timestamp | null;
 }
 
 export interface PagePreviewTokens {
@@ -1496,6 +1526,35 @@ export interface RelationChangeLogs {
   source: string;
   to_parent_id: string | null;
   user_id: string;
+}
+
+export interface RightsImportFailures {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  import_id: string;
+  reason: string;
+  row_no: number;
+}
+
+export interface RightsImports {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  duplicate_rows: Generated<number>;
+  failed_rows: Generated<number>;
+  file_path: string;
+  finished_at: Timestamp | null;
+  from: Timestamp | null;
+  id: string;
+  kind: string;
+  platform: string;
+  skipped_rows: Generated<number>;
+  status: string;
+  succeeded_rows: Generated<number>;
+  time_basis: string | null;
+  to: Timestamp | null;
+  total_rows: Generated<number>;
+  union_account_id: string | null;
 }
 
 export interface RiskHits {
@@ -1974,6 +2033,7 @@ export interface DB {
   notification_settings: NotificationSettings;
   notify_logs: NotifyLogs;
   notify_templates: NotifyTemplates;
+  order_assignments: OrderAssignments;
   order_keys: OrderKeys;
   order_rights: OrderRights;
   order_settlements: OrderSettlements;
@@ -1982,6 +2042,7 @@ export interface DB {
   order_sync_drop_keys: OrderSyncDropKeys;
   order_sync_drops: OrderSyncDrops;
   order_sync_pending: OrderSyncPending;
+  order_sync_requests: OrderSyncRequests;
   orders: Orders;
   page_preview_tokens: PagePreviewTokens;
   page_versions: PageVersions;
@@ -2009,6 +2070,8 @@ export interface DB {
   recon_union: ReconUnion;
   refresh_tokens: RefreshTokens;
   relation_change_logs: RelationChangeLogs;
+  rights_import_failures: RightsImportFailures;
+  rights_imports: RightsImports;
   risk_hits: RiskHits;
   risk_judgements: RiskJudgements;
   risk_rules: RiskRules;
