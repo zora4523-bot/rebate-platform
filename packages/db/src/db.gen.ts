@@ -945,10 +945,16 @@ export interface NotifyTemplates {
   created_at: Generated<Timestamp>;
   route: Json | null;
   row_version: Generated<number>;
+  sms_pending_preview_text: string | null;
+  sms_pending_sign_name: string | null;
+  sms_pending_template_code: string | null;
+  sms_pending_template_type: string | null;
   sms_preview_text: string | null;
   sms_sign_name: string | null;
   sms_template_code: string | null;
   sms_template_type: string | null;
+  sms_test_status: string | null;
+  sms_tested_at: Timestamp | null;
   title_override: string | null;
   updated_at: Generated<Timestamp>;
   variant: Generated<string>;
