@@ -5,7 +5,7 @@ import { INDEX, RULE, START, databaseFixture } from './kit.ts';
 
 const database = databaseFixture();
 
-it('[AC-B1-09a#21] BLACKLIST_HIT 部分唯一索引由 PG 兜底；五列分别参与且不影响其他规则', async () => {
+it('[AC-B1-09a#21] BLACKLIST_HIT 部分唯一索引由 PG 兜底；六列分别参与且不影响其他规则', async () => {
   const db = database();
   // 只按对象名核对，不锁定迁移编号。先断言索引存在，未迁移时只产生断言红。
   const index = await sql<{
@@ -20,7 +20,14 @@ it('[AC-B1-09a#21] BLACKLIST_HIT 部分唯一索引由 PG 兜底；五列分别�
     WHERE i.indrelid = 'app.risk_hits'::regclass AND c.relname = ${INDEX}`.execute(db);
   expect(index.rows).toHaveLength(1);
   expect(index.rows[0]!.unique).toBe(true);
-  expect(index.rows[0]!.columns).toEqual(['app_id', 'rule_id', 'ref_type', 'ref_id', 'value_hmac']);
+  expect(index.rows[0]!.columns).toEqual([
+    'app_id',
+    'rule_id',
+    'ref_type',
+    'ref_id',
+    'value_hmac',
+    'risk_action',
+  ]);
   expect(index.rows[0]!.predicate).toMatch(/^\(rule_id = 'BLACKLIST_HIT'::text\)$/u);
 
   const app = `blacklist_index_${randomUUID()}`;
@@ -59,18 +66,18 @@ it('[AC-B1-09a#21] BLACKLIST_HIT 部分唯一索引由 PG 兜底；五列分别�
     code: '23505',
     constraint: INDEX,
   });
-  // dimension、risk_action 不在键中，不能通过改变它们绕过去重。
+  // dimension 不在键中，不能通过改变它绕过去重；risk_action 在键中（D10-293），不同处置可并存。
   await expect(
     db
       .insertInto('risk_hits')
       .values({
         ...hit,
         dimension: 'order_no_suffix',
-        risk_action: 'void_commission',
       })
       .execute(),
   ).rejects.toMatchObject({ code: '23505', constraint: INDEX });
   for (const overrides of [
+    { risk_action: 'void_commission' },
     { app_id: otherApp },
     { ref_type: 'withdrawal' },
     { ref_id: randomUUID() },
@@ -87,5 +94,5 @@ it('[AC-B1-09a#21] BLACKLIST_HIT 部分唯一索引由 PG 兜底；五列分别�
   }
   expect(
     await db.selectFrom('risk_hits').select('id').where('app_id', 'in', [app, otherApp]).execute(),
-  ).toHaveLength(7);
+  ).toHaveLength(8);
 });
