@@ -24,8 +24,14 @@ export type PayOrderStatus = 'PENDING' | 'PAID' | 'CLOSED';
 export type PayQueueName = 'pay';
 
 /**
- * Job names inside queue `pay` (task B2-15b §9.8 / §9.9; handlers in B2-15c / B2-15d):
- * order.query (singletonKey `order.query:<pay_order_id>:returned` for the client-return query),
- * order.close (singletonKey `order.close:<pay_order_id>`).
+ * Job names inside queue `pay` (task B2-15b §9.8 / §9.9, B2-15c §9.4 ～ §9.7; handlers in
+ * jobs/pay-jobs.ts from B2-15c on, order.close in B2-15d):
+ * order.query (singletonKey `order.query:<pay_order_id>:returned` for the client-return query,
+ * `order.query:<pay_order_id>:t<seconds>` for a slot of pay.query_schedule),
+ * order.close (singletonKey `order.close:<pay_order_id>`),
+ * biz.reconcile (singletonKey `biz:<biz_type>:<biz_ref>`, the business object's fulfilment).
  */
-export type PayJobName = 'order.query' | 'order.close';
+export type PayJobName = 'order.query' | 'order.close' | 'biz.reconcile';
+
+/** pay_fulfillments.state (D10-168): the business object's entitlement as last recomputed. */
+export type PayFulfillmentState = 'none' | 'active' | 'revoked';

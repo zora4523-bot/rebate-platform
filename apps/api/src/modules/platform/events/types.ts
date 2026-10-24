@@ -52,6 +52,9 @@ export const EVENT_NAMES: readonly string[] = Object.freeze([
   // (B2-04wa; BR-FUND-18, BR-FUND-20; last in 02 §11, after user.realname_corrected; D10-188).
   'asset_snapshot.timed_out',
   'union_receivable.exposure_exceeded',
+  // Payment (B2-15c; 08 BR-PAY-04 PO2): published by payment on the settlement transaction.
+  // 02 §11 at SPEC_REF does not list it yet (待规划回写): appended after the list.
+  'pay.order.paid',
 ]);
 
 export interface EventSubscription {

@@ -2,7 +2,9 @@
 // It never talks to a channel and signs nothing real; its launch parameters are synthetic, unique
 // per createOrder call, and of the contract shape of its channel (PayLaunchWechatPay /
 // PayLaunchAlipay). Scriptable: the next createOrder answers, and the trade state query / close
-// see. Real adapters: B2-15k. No clock (the synthetic timestamp derives from the given deadline).
+// see; the identities it treats as ours (own / ownerAppOf). Its notifications are never verified:
+// it signs nothing. Real adapters: B2-15k. No clock (the synthetic timestamp derives from the
+// given deadline).
 // Also compiled by the `test` project: erasable syntax only (no parameter properties).
 import { randomBytes } from 'node:crypto';
 import type { PayChannelCode } from '../../domain/types.ts';
@@ -53,6 +55,8 @@ export class FakePayChannel implements PayChannel {
   readonly #answers: FakeCreateAnswer[] = [];
   readonly #trades = new Map<string, FakeTrade>();
   readonly #calls: PayCreateOrderInput[] = [];
+  readonly #owners = new Map<string, string>();
+  #identities = 0;
   #sequence = 0;
 
   constructor(channel: PayChannelCode) {
@@ -168,10 +172,24 @@ export class FakePayChannel implements PayChannel {
     return Promise.resolve({ kind: 'rejected', reason: 'fake_not_supported' });
   }
 
-  /** B2-15c: the fake's own synthetic identity resolution (skeleton). */
+  /**
+   * B2-15c: registers a fresh synthetic merchant / application identity as the given app's (what
+   * the channel configuration does for a real adapter) and returns it; nothing is ours until
+   * registered, so an unknown identity resolves to null (fail closed, BR-PAY-04 核对 ①).
+   */
+  own(appId: string): PayChannelIdentity {
+    this.#identities += 1;
+    const identity: PayChannelIdentity = {
+      merchantRef: `fake-${this.channel}-merchant-${this.#identities}-${nonce()}`,
+      appRef: `fake-${this.channel}-app-${this.#identities}-${nonce()}`,
+    };
+    this.#owners.set(`${identity.merchantRef}\u0000${identity.appRef}`, appId);
+    return identity;
+  }
+
+  /** B2-15c: our app_id of a registered identity (own); null for anything else. */
   ownerAppOf(identity: PayChannelIdentity): string | null {
-    void identity;
-    throw new Error('NotImplemented: FakePayChannel.ownerAppOf');
+    return this.#owners.get(`${identity.merchantRef}\u0000${identity.appRef}`) ?? null;
   }
 
   downloadBill(date: string): Promise<PayBillResult> {
