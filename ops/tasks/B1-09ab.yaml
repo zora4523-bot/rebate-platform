@@ -49,4 +49,4 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/risk/order-blocklist-escalation/**'
-status: todo
+status: done
