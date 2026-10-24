@@ -50,7 +50,10 @@ it('[AC-B1-12w#15] staging / prod 缺任一（未设、空串、全空白）→ 
         const env: Record<string, string | undefined> = { ...FULL };
         if (value === undefined) delete env[name];
         else env[name] = value;
-        results.push({ case: `${appEnv} ${name}=${JSON.stringify(value)}`, config: readSmsConfig(appEnv, env) });
+        results.push({
+          case: `${appEnv} ${name}=${JSON.stringify(value)}`,
+          config: readSmsConfig(appEnv, env),
+        });
       }
     }
   }
@@ -65,9 +68,9 @@ it('[AC-B1-12w#15] staging / prod 缺任一（未设、空串、全空白）→ 
 
 it('[AC-B1-12w#16] SMS_CREDENTIAL_ENV_NAMES 恰为这四个名字；findCredentialLikeEnvNames 认出它们；local / test 设了任一即拒启动，只报名字不报值', () => {
   expect([...SMS_CREDENTIAL_ENV_NAMES].sort()).toEqual([...NAMES].sort());
-  expect(
-    findCredentialLikeEnvNames({ ...FULL, APP_ENV: 'test', SMS_UNRELATED: 'x' }),
-  ).toEqual([...NAMES].sort());
+  expect(findCredentialLikeEnvNames({ ...FULL, APP_ENV: 'test', SMS_UNRELATED: 'x' })).toEqual(
+    [...NAMES].sort(),
+  );
   const refusals: unknown[] = [];
   for (const appEnv of ['local', 'test']) {
     for (const name of NAMES) {

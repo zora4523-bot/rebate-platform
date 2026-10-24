@@ -44,7 +44,12 @@ function failed(...attempts: SmsAttempt[]): SmsSendResult {
   };
 }
 
-const request = { app_id: 'couli', phone: '13912345678', purpose: 'login' as const, code: '042019' };
+const request = {
+  app_id: 'couli',
+  phone: '13912345678',
+  purpose: 'login' as const,
+  code: '042019',
+};
 
 it('[AC-B1-12w#10][BR-ID-05] 验证码模板：编码 SMS_CODE，文案逐字一致；「N分钟」的 N × 60 等于 SMS_CODE_LIFETIME_SECONDS，模板变量恰为 {code}', () => {
   const exported = verifyCode as unknown as Readonly<Record<string, unknown>>;
@@ -70,7 +75,9 @@ it('[AC-B1-12w#11][BR-ID-05] 三种用途共用 SMS_CODE 模板：交给短信�
   });
   const results: unknown[] = [];
   results.push(await sender.send({ ...request, purpose: 'login' }));
-  results.push(await sender.send({ app_id: 'couli-b', phone: '13800000000', purpose: 'bind', code: '000123' }));
+  results.push(
+    await sender.send({ app_id: 'couli-b', phone: '13800000000', purpose: 'bind', code: '000123' }),
+  );
   results.push(await sender.send({ ...request, purpose: 'step_up', code: '999999' }));
   expect(results).toEqual(['accepted', 'accepted', 'accepted']);
   expect(seen).toEqual([

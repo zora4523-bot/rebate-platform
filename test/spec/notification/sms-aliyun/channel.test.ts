@@ -112,10 +112,14 @@ it('[AC-B1-12w#4] 受理：一次 POST 到默认 https://dysmsapi.aliyuncs.com/�
 });
 
 it('[AC-B1-12w#5] 签名名称与模板 CODE 只来自 resolveTemplate（按模板编码查）；TemplateParam 是 params 的 JSON；endpoint 可配置，签名的 host 随之改变', async () => {
-  const r = rig([OK_REPLY], { endpoint: 'https://dysmsapi.example.invalid/' }, {
-    SMS_CODE: VERIFY,
-    site_alert: { signName: '另一个签名', templateCode: 'SMS_000000002' },
-  });
+  const r = rig(
+    [OK_REPLY],
+    { endpoint: 'https://dysmsapi.example.invalid/' },
+    {
+      SMS_CODE: VERIFY,
+      site_alert: { signName: '另一个签名', templateCode: 'SMS_000000002' },
+    },
+  );
   const params = { site: '站点 A', code: '7' };
   const answer = await r.channel.send(
     message({ template: 'site_alert', message_id: 'sms-msg-2', phone: '13800000000', params }),

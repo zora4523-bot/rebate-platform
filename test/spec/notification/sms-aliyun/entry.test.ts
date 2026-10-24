@@ -144,8 +144,14 @@ it('[AC-B1-12w#19] 通道超时：按登记表 sms 行的时限（≥ 1000 毫�
 });
 
 it('[AC-B1-12w#20] 供应商拒收 → rejected；HTTP 503 → unknown；都只发一次请求（不登记备用、不重试）', async () => {
-  const rejected = entry([json(200, { Code: 'isv.MOBILE_NUMBER_ILLEGAL', Message: 'x' }), OK_REPLY], CONFIG);
-  const failing = entry([json(503, { Code: 'ServiceUnavailable', Message: 'x' }), OK_REPLY], CONFIG);
+  const rejected = entry(
+    [json(200, { Code: 'isv.MOBILE_NUMBER_ILLEGAL', Message: 'x' }), OK_REPLY],
+    CONFIG,
+  );
+  const failing = entry(
+    [json(503, { Code: 'ServiceUnavailable', Message: 'x' }), OK_REPLY],
+    CONFIG,
+  );
   const outcomes = [observe(rejected.sender.send(REQUEST)), observe(failing.sender.send(REQUEST))];
   await rejected.scheduler.advance(60_000);
   await failing.scheduler.advance(60_000);
