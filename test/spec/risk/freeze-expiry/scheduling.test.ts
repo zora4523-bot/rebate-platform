@@ -130,12 +130,12 @@ it('[AC-B1-03j#22] AppModule 只给 worker 装配 risk-scan handler，队列启�
       }
       const seeds = send.mock.calls.filter(([name]) => name === 'risk-scan');
       expect(seeds.map(([, name]) => name).sort()).toEqual(
-        entry === 'worker' ? ['daily-alerts', 'freeze-expiry'] : [],
+        entry === 'worker' ? ['daily_alerts', 'freeze_expiry'] : [],
       );
       if (entry === 'worker') {
         for (const [name, singletonKey] of [
-          ['freeze-expiry', 'freeze-expiry:2026-10-14T16:00'],
-          ['daily-alerts', 'daily-alerts:2026-10-15'],
+          ['freeze_expiry', 'freeze-expiry:2026-10-14T16:00'],
+          ['daily_alerts', 'daily-alerts:2026-10-15'],
         ]) {
           expect(send).toHaveBeenCalledWith(
             'risk-scan',
@@ -145,10 +145,10 @@ it('[AC-B1-03j#22] AppModule 只给 worker 装配 risk-scan handler，队列启�
           );
         }
         send.mockClear();
-        await handlers[0]![1](job('freeze-expiry'));
+        await handlers[0]![1](job('freeze_expiry'));
         expect(send).toHaveBeenCalledExactlyOnceWith(
           'risk-scan',
-          'freeze-expiry',
+          'freeze_expiry',
           {},
           expect.objectContaining({ singletonKey: 'freeze-expiry:2026-10-14T16:01' }),
         );
@@ -185,8 +185,8 @@ it('[AC-B1-03j#13] 启动按 UTC 分钟和 +08 日期投两类种子，同槽重
   await f.service.seed();
   expect(f.send).toHaveBeenCalledTimes(2);
   for (const [name, singletonKey] of [
-    ['freeze-expiry', 'freeze-expiry:2026-10-14T16:00'],
-    ['daily-alerts', 'daily-alerts:2026-10-15'],
+    ['freeze_expiry', 'freeze-expiry:2026-10-14T16:00'],
+    ['daily_alerts', 'daily-alerts:2026-10-15'],
   ]) {
     expect(f.send).toHaveBeenCalledWith(
       'risk-scan',
@@ -215,10 +215,10 @@ for (const [now, minute, delay] of [
   it(`[AC-B1-03j#14] ${now} 完成到期扫描，按下一 UTC 分钟续投，延迟 ${delay} 秒`, async () => {
     const f = await emptyScan();
     f.clock.set(now);
-    await f.service.handle(job('freeze-expiry'));
+    await f.service.handle(job('freeze_expiry'));
     expect(f.send).toHaveBeenCalledExactlyOnceWith(
       'risk-scan',
-      'freeze-expiry',
+      'freeze_expiry',
       {},
       expect.objectContaining({
         trx: null,
@@ -240,10 +240,10 @@ for (const [now, day, delay] of [
   it(`[AC-B1-03j#15] daily-alerts 在 ${now} 完成，续投距下一个 +08:00 自然日 00:05 的 ${delay} 秒`, async () => {
     const f = await emptyScan();
     f.clock.set(now);
-    await f.service.handle(job('daily-alerts'));
+    await f.service.handle(job('daily_alerts'));
     expect(f.send).toHaveBeenCalledExactlyOnceWith(
       'risk-scan',
-      'daily-alerts',
+      'daily_alerts',
       {},
       expect.objectContaining({
         trx: null,
@@ -273,13 +273,13 @@ it('[AC-B1-03j#19] 跨 +08 午夜重新启动：种子使用新 UTC 分钟、新
 
 for (const [name, currentKey, nextKey, nextTime] of [
   [
-    'freeze-expiry',
+    'freeze_expiry',
     'freeze-expiry:2026-10-14T16:00',
     'freeze-expiry:2026-10-14T16:01',
     '2026-10-15T00:01:00+08:00',
   ],
   [
-    'daily-alerts',
+    'daily_alerts',
     'daily-alerts:2026-10-15',
     'daily-alerts:2026-10-16',
     '2026-10-16T00:05:00+08:00',
@@ -327,10 +327,10 @@ it('[AC-B1-03j#21] 扫描跨分钟完成，按完成时 Clock 选择未来时间
     },
   });
   const service = await createScan({ ...f.options, db: delayed });
-  await service.handle(job('freeze-expiry'));
+  await service.handle(job('freeze_expiry'));
   expect(f.send).toHaveBeenCalledExactlyOnceWith(
     'risk-scan',
-    'freeze-expiry',
+    'freeze_expiry',
     {},
     expect.objectContaining({
       trx: null,
@@ -340,7 +340,7 @@ it('[AC-B1-03j#21] 扫描跨分钟完成，按完成时 Clock 选择未来时间
   );
 });
 
-for (const name of ['freeze-expiry', 'daily-alerts'] as const) {
+for (const name of ['freeze_expiry', 'daily_alerts'] as const) {
   it(`[AC-B1-03j#16] ${name} 扫描失败交队列重试，不再投一条任务链`, async () => {
     const f = await emptyScan();
     const failed = f.db.withPlugin({
