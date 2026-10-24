@@ -1,0 +1,39 @@
+id: B1-27h
+repo: rebate-platform
+title: identity：个人信息副本的生成与交付——异步作业 pending→running→（in_app_sms：一次性提取码加密、短信发提取码、站内信只带 DataCopy 入口、即记 delivered；wecom_session：服务端加密存放、ready）、失败 failed、24 小时过期 expired 并删文件；登记人后台账号停用时其未交付的企业微信路径请求置 failed；注销进入 processing 时取消未结束请求并删除全部副本文件；生成、交付各写审计
+type: impl
+# 2026-10-24 入账（admin-backend）。依据：08 BR-ID-40 细则「交付（默认）」「副本请求与注销状态」「重新登记与登记人停用」、04 §3.2 personal_data_copies、§6.6 data-exports；refs 只列 BR-ID-40（约 11.7KB），BR-ID-30 ⑨、BR-ID-42、BR-ID-43、BR-ID-28 只摘句。
+# 拆分理由：作业、存储、短信 / 站内信、停用钩子与注销联动是一组带副作用的后台流程，与登记（B1-27c）、下载（B1-27i）分开评审；登记只落行并同事务入队本任务的作业。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：① 不复用 admin 的 B1-34e export-worker（只服务 export_tasks，且副本表写者是 identity）；照其租约、至少一次投递、消费端去重写法新增 identity 的 data-copy-worker，在 identity-worker.module.ts 装配。
+# ② 存储复用 platform/export-store，扩出副本的对象键前缀与内容类型；每次运行用独立对象键并在完成前校验运行令牌（D10-138）；如有冻结测试钉死 key 形状，报 test-change，不改测试。
+# ③ 内容取自 B1-27f 的端口，打成压缩包整体加密，默认 AES-256 加密 ZIP；需新依赖时写 deps_needed，不改锁文件；提取码 / 口令用 CSPRNG、不落库不进日志与审计；wecom_session 先用服务端密钥加密存放。
+# ④ 交付：短信经 identity 现有短信端口（非生产只用假适配器）、站内信经 notification index，都不带链接；两者都成功才记 delivered，任一失败置 failed（failure_reason），不留半交付——08 与契约未写，代理补全的默认。
+# ⑤ 过期：expires_at = generated_at + 24 小时（BR-ID-30 ⑨），扫描把过期的 ready / delivered 置 expired 并删对象；企业微信路径未交付即过期的保持 expired。
+# ⑥ 停用：在 admin-account-writes.ts 停用事务里、cancelByCreator 旁追加 identity 导出的端口，把该账号登记、未交付的 wecom_session 请求置 failed 并写审计；in_app_sms 不受影响。
+# ⑦ 注销 processing（deletion-processing.ts）同事务把 pending / running / ready 置 cancelled，并删该用户全部副本对象（含已交付未过期的），删失败只记日志、由过期扫描兜底；生成成功、生成失败、交付各一条审计；不加迁移。
+# TODO(规划/11 §2.3): 站内信与短信的文案 — blocked on 08 BR-TEXT 登记（契约：模板代码随实现定，文案待 BR-TEXT）；真实 OSS 存放 — blocked on B1-30，此前 staging / prod 生成按 ExportStoreUnavailableError 失败。
+refs: [BR-ID-40]
+refs_hash:
+  BR-ID-40: 994eb7b30461
+deps: [B1-27d, B1-27f, B1-34h]
+paths:
+  - 'apps/api/src/modules/identity/application/data-copy-worker*.ts'
+  - 'apps/api/src/modules/identity/application/data-copy-file*.ts'
+  - 'apps/api/src/modules/identity/infra/personal-data-copies*.ts'
+  - 'apps/api/src/modules/identity/application/deletion-processing*.ts'
+  - 'apps/api/src/modules/identity/identity-worker.module.ts'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/modules/admin/infra/admin-account-writes*.ts'
+  - 'apps/api/src/modules/notification/index.ts'
+  - 'apps/api/src/modules/platform/export-store/**'
+  - 'apps/api/src/modules/platform/config/export-store.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/identity/data-copies-worker/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/data-copies-worker/**'
+status: todo
+pr: null

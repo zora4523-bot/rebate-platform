@@ -1,0 +1,30 @@
+id: B1-27d
+repo: rebate-platform
+title: 迁移：个人信息副本请求表 personal_data_copies（delivery / status 两组枚举、同一用户最多 1 条未结束、retry_of、due_at / expires_at 等）与实名更正旧身份隔离表（建议名 realname_prior_identities，只插入）；列级授权；B1-27a / B1-27c / B1-27h 的前置
+type: impl
+# 2026-10-24 入账（admin-backend）。依据：04 §3.2「实名更正旧身份（表名由契约线定）」与 personal_data_copies 两行、§2.5 两组枚举（CT-24q 已落 contracts/enums/identity.yaml）；BR-ID-25「旧身份留存」、BR-ID-40 只摘句，主干现无这两张表。
+# 拆分理由：两张表是 B1-27a 与 B1-27c / B1-27h 的前置；迁移单列一个 RV2 任务，实现任务不碰 db/**；照 B1-15r 先例 refs 留空。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：① personal_data_copies 列照 04 §3.2：id（uuid v7）、app_id、对外编号（与契约 export_id / copy_id 同值）、user_id、requested_by（引用 admin_users）、delivery、status、retry_of（自引用可空）。
+# ② 续列：object_key、due_at（非空）、generated_at、delivered_at、expires_at、failure_reason、row_version、created_at、updated_at；delivery / status 用 CHECK，取值照 contracts/enums/identity.yaml。
+# ③ 部分唯一索引 (app_id, user_id) WHERE status IN (pending, running, ready)；原因说明、身份核对结论、两项通道情况、提取码与口令不设列（04 §3.2：只进 audit_logs，口令不落库）。
+# ④ 授权：couli_app SELECT / INSERT 与 status、object_key、generated_at、delivered_at、expires_at、failure_reason、row_version、updated_at 的列级 UPDATE，不授 DELETE。
+# ⑤ 旧身份表：app_id、user_id、旧 name_cipher、旧 id_no_cipher、旧 id_no_hmac、旧 verified_at、corrected_at、created_at；密文由 B1-27e 的独立密钥加密。
+# ⑥ 旧身份表只授 couli_app INSERT，不授 SELECT / UPDATE / DELETE（查看接口与权限点单列，CT-24q 已排除；注销不提前删，BR-ID-28）。
+# ⑦ 迁移号落地时取主干最大 + 1（D10-116）；schema.sql 与 db.gen.ts 在测试机快照（outside_needed）。
+# TODO(规划/11 §2.3): 旧身份表正式表名回写 04 §3.2 — blocked on 本任务评审定名；personal_data_copies 请求记录的留存与删除 — blocked on BR-ID-30 细则「个人信息副本请求记录」补登。
+refs: []
+refs_hash: {}
+deps: [CT-24q]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/data-copies-tables/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/data-copies-tables/**'
+status: todo
+pr: null

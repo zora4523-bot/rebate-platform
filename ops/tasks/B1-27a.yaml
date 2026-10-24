@@ -1,0 +1,40 @@
+id: B1-27a
+repo: rebate-platform
+title: identity：后台实名更正实现（CT-24q adminCorrectUserRealname）——不受理五类 30419 与新身份证号黑名单 44001、照自助实名顺序校验并调二要素（不计每日次数）、锁用户行在途复核、有到账提现时旧身份迁入隔离存储、同一事务覆盖实名并使收款账号全部失效、发 user.realname_corrected、每次提交（含被拒）写审计；去掉 planned
+type: impl
+# 2026-10-24 入账（admin-backend）。依据：08 BR-ID-25 细则「实名更正」、04 §6.6 realname-correction、§3.2「实名更正旧身份」；refs 只列 BR-ID-25（约 11.5KB），BR-WDR-02 / BR-ID-33 只摘句。拆分：迁移 B1-27d、独立密钥 B1-27e、到账读口 B1-27j。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：① 顺序：30419 五类（未实名、注销各阶段、hasNonTerminal、原 id_no_hmac 黑名单）→ 20001 → 新号黑名单 44001（不记 risk_hits）→ 30407 → 30405 → 供应商，不计每日次数，校验复用 realname.ts。 TODO(规划/11 §2.3): 待加验标记不受理（reverify_pending）— blocked on 待加验标记的表结构与任务。
+# ② 一致后锁用户行（同 BR-WDR-07 ①，见 payout-account.ts 死锁说明）复判 hasNonTerminal；hasSucceeded（B1-27j，不分身份，多留不少留）为真时用 B1-27e 密钥把旧身份写入 B1-27d 的表，再覆盖 realname。 TODO(规划/11 §2.3): 旧身份查看接口与单列权限点 — blocked on 规划回写与权限点任务。
+# ③ 收款账号失效：is_current 置 false（row_version CAS），不写 payout_account_changes（现表 new_* 非空）；无当前账号时的重绑按首次绑定不计次，满足 BR-WDR-02 细则；TODO(规划/11 §2.3): 失效写 payout_account_changes 并排除计次 — blocked on 契约线补区分字段（04 §6.6 原文要写该表）。
+# ④ 银行卡核验记录不得跨身份复用（指纹 `${realname.id}:${hmac}`，更正不换 id）：同一 Idempotency-Key 再提交时 matched 不看时限直接保存、unknown 记录的复查、按指纹取最新一条（payout-account-verify-attempts.ts latestAttempt）三条路径都只认更正之后的记录，须有单元测试。
+# ⑤ EVENT_NAMES 按 02 §11 位置登记 user.realname_corrected（载荷只含新旧 id_no_hmac 等），同事务入队；每次提交（含被拒）一条审计 user_realname_correct，被拒的在独立短事务写，明文不进日志与审计。
+refs: [BR-ID-25]
+refs_hash:
+  BR-ID-25: dcab91fa0ccc
+deps: [CT-24q, B1-27d, B1-27e, B1-27j]
+paths:
+  - 'apps/api/src/modules/identity/application/admin-realname-correction*.ts'
+  - 'apps/api/src/modules/identity/http/admin/user-realname.controller*.ts'
+  - 'apps/api/src/modules/identity/infra/realname-prior-identities*.ts'
+  - 'apps/api/src/modules/identity/application/payout-bank-card*.ts'
+  - 'apps/api/src/modules/identity/application/payout-account-verify-attempts*.ts'
+  - 'apps/api/src/modules/identity/identity-admin.module.ts'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/platform/events/types.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/identity/admin-realname/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/admin-realname/**'
+status: todo
+pr: null

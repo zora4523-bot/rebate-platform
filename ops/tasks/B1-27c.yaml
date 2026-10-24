@@ -1,0 +1,40 @@
+id: B1-27c
+repo: rebate-platform
+title: identity：后台个人信息副本登记与列表实现（CT-24q adminCreateUserDataExport、adminListUserDataExports）——注销状态不受理、同一用户未结束请求复用 reused=true（企业微信路径登记人失权的原条置 failed 另建）、按两项通道情况判交付方式（一项为真 30419 delivery_undecided、in_app_sms 未绑手机 20001、wecom_session 缺 pii.reveal_phone 10403）、retry_of 与 due_at 沿用、15 个工作日截止、写审计并入队生成作业；去掉这两个接口的 planned
+type: impl
+# 2026-10-24 入账（admin-backend）。依据：08 BR-ID-40 细则、04 §6.6 users/{id}/data-exports、契约 CT-24q 的 adminCreateUserDataExport 说明（判定顺序逐字照它）；refs 只列 BR-ID-40（约 11.7KB），工作日口径 BR-ID-27 只摘句。
+# 拆分：副本线为 表 B1-27d → 取数 B1-27f → 生成与交付 B1-27h → 登记与列表（本任务）→ 下载 B1-27i；本任务排在 B1-27h 之后，登记出的请求已有作业处理。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：① 先过权限点 user.data_export、动态码与请求体校验（20001 data.fields；未知 user_id 为 20001 [user_id]）；契约第 1 步：注销 processing → 30419 account_deleting（data.stage=processing），已注销 → account_deleted，cooling 照常受理。
+# ② 第 2 步：锁用户行后查未结束请求（pending / running / ready），有则返回原条 reused=true、不看本次两项通道情况；例外是企业微信路径未交付且登记人已停用或不再同时持两项权限点，原条置 failed 后按第 3 步新建。
+# ③ 第 3 步：两项都为真 → in_app_sms（未绑手机 20001 [phone_sms_ok]）；都为假 → wecom_session（登记人缺 pii.reveal_phone 10403 admin_permission_denied）；一真一假 → 30419 delivery_undecided。
+# ④ 新建为 pending、reused=false；上一条 failed 或企业微信路径未交付即 expired 的记 retry_of、due_at 沿用；否则 due_at 为登记日之后第 15 个工作日 24:00（+08:00），日历复用 deletion-expiry.ts 的配置读取；23505 并发时重读返回原条。
+# ⑤ 通过权限、动态码与请求体校验的每次登记写一条审计 user_data_copy_request（新建、复用带原条 id、或拒绝码）；新建与入队 B1-27h 作业同一事务；列表不返回对象键、提取码或口令。
+# 去掉 planned 后到 B1-27i 落地前，企业微信路径的请求只能停在 ready、24 小时后 expired（可重新登记，due_at 沿用）。
+refs: [BR-ID-40]
+refs_hash:
+  BR-ID-40: 994eb7b30461
+deps: [CT-24q, B1-27d, B1-27h]
+paths:
+  - 'apps/api/src/modules/identity/application/admin-data-copies*.ts'
+  - 'apps/api/src/modules/identity/http/admin/user-data-exports.controller*.ts'
+  - 'apps/api/src/modules/identity/infra/personal-data-copies*.ts'
+  - 'apps/api/src/modules/identity/identity-admin.module.ts'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/modules/admin/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/identity/data-copies-register/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/data-copies-register/**'
+status: todo
+pr: null

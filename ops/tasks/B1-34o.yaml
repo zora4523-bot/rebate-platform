@@ -1,0 +1,21 @@
+id: B1-34o
+repo: rebate-platform
+title: admin：验证手机号待核验记录绑定发起路由——本人 /me 发的码只能由本人提交、超管代发的码只能由超管代改提交，审计 changed_by 与发起方一致（B1-34i r1 S2）
+type: impl
+# 草稿（admin-backend 2026-10-24，B1-34i 独立 Claude money r1 S2）：admin-verify-phone.ts:303 待核验记录（Redis vp-code，按账号一条）不记发起方，A 经 /me 发码后超管可凭该码经代改接口提交（审计记 super_admin 但无超管发码审计），反之超管代发的码可由 A 经 /me 提交（审计记 self、无原因）。正常界面流程先发后交、后发覆盖，不可达。
+# 修法：待核验记录带 route / sender（self | super_admin + 超管 id），提交时比对不符按契约既有错误处理（不新增错误码则复用 20002 code 错误口径，需契约确认）。
+refs: [BR-ID-45]
+refs_hash:
+  BR-ID-45: 0b4839cbc54b
+deps: [B1-34i]
+paths:
+  - 'apps/api/src/modules/admin/**'
+test_paths:
+  - 'test/spec/admin/admins-verify-phone-route/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/admins-verify-phone-route/**'
+status: todo
+pr: null
