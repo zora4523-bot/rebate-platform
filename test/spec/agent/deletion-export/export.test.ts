@@ -20,7 +20,7 @@ import * as deletion from '../../../../apps/api/src/modules/agent/deletion/index
 import type {
   DeletionCleanupPort,
   DeletionCleanupStep,
-} from '../../../../apps/api/src/modules/identity/index.ts';
+} from '../../../../apps/api/src/modules/identity/ports/deletion-cleanup.ts';
 
 const KEY = 'synthetic-agent-user-hash-key';
 const USER = '019a0000-0000-7000-8000-0000000000e1';
