@@ -159,6 +159,10 @@ export type {
 // Rule tests: test/spec/linking/admin-union-bindings/**.
 export { blockForBan, restoreAfterUnban } from './application/binding-risk.ts';
 export type { BindingRiskInput } from './application/binding-risk.ts';
+// B1-06zc: identity's deletion cleanup port (BR-ID-28: the user's bindings blocked for deletion),
+// assembled by app.module. Rule tests: test/spec/linking/deletion-cleanup/**.
+export { blockForDeletion } from './application/deletion-cleanup.ts';
+export type { BlockForDeletionInput } from './application/deletion-cleanup.ts';
 export { LinkingAdminModule } from './linking-admin.module.ts';
 export type { LinkingAdminOptions, LinkingAuditWriterFactory } from './linking-admin.module.ts';
 // B1-08n: orders' relation_id binding reader (every status, raw instants), assembled by app.module.
