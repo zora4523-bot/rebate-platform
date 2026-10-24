@@ -4,6 +4,7 @@ title: 风控扫描链任务名不合队列命名规则导致从未入队：risk
 type: impl
 # 草稿 2026-10-24（身份与风控线 identity-lane）。编排 19:2x 派排查：staging worker 启动 warn risk_scan_seed_failed（QueueError）。查明：risk-scan.ts JOB_NAMES 为 'freeze-expiry' / 'daily-alerts'，platform/queue/validation.ts validateSend 的任务名正则 ^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$ 不允许连字符 → 每次 send 抛 QueueError('invalid_name')（本地直调 validateSend 已复现）。后果：每次 worker 启动种子必失败；B1-03u 的 5 分钟自愈与 handle 后续排同样走 send，同样失败；队列里从未有 risk-scan 任务 → 冻结到期不自动解冻（BR-ID-31 frozen_until）、每日告警不发。单元测试用假队列没覆盖命名校验。
 # 做法：只改任务名常量与相关类型 / 槽位键生成（risk/domain/risk-scan-slots.ts 的 singletonKey 允许连字符，可保留或同步改，二选一写明）；handle 的 isJobName 同步；不改 platform/queue 规则。规则测试（独立 Claude，Codex 至 10-30 不可用）：用 platform/queue 真实运行时（连库 *.int.test.ts）断言 seed / heal / 续排三处入队成功且 worker 能消费。
+# D10-343（2026-10-24 编排）：① orders/jobs/snapshot-retry.ts 的 'snapshot-retry' 同类缺陷同 PR 改 snapshot_retry（paths 加 orders 两文件与 worker-runtime 单测，订单路径 RV2、加独立 Claude money 评审），[B1-03w#7] 全仓零违例照留；② 断言旧任务名的冻结测试照 D10-327 列进 test_paths，由新鲜独立 Claude 在作者提交（spec_commit 之前）只改任务名字面量、另一新鲜 Claude 只读核对，落地时编排按 #24 加标签。
 refs: []
 refs_hash: {}
 deps: [B1-03j, B1-03u]
@@ -14,8 +15,22 @@ paths:
   - 'apps/api/src/modules/risk/application/risk-scan-heal.test.ts'
   - 'apps/api/src/modules/risk/domain/risk-scan-slots.ts'
   - 'apps/api/src/modules/risk/domain/risk-scan-slots.test.ts'
+  - 'apps/api/src/modules/orders/jobs/snapshot-retry.ts'
+  - 'apps/api/src/modules/orders/worker-runtime.ts'
+  - 'apps/api/src/modules/orders/worker-runtime.test.ts'
 test_paths:
   - 'test/spec/risk/risk-scan-queue/**'
+  - 'test/spec/risk/freeze-expiry/scheduling.test.ts'
+  - 'test/spec/risk/freeze-expiry/scans.int.test.ts'
+  - 'test/spec/risk/freeze-expiry/kit.ts'
+  - 'test/spec/risk/freeze-expiry-heal/heal.test.ts'
+  - 'test/spec/risk/freeze-expiry-heal/kit.ts'
+  - 'test/spec/orders/snapshot-retry/wiring.test.ts'
+  - 'test/spec/orders/snapshot-retry/scheduler.test.ts'
+  - 'test/spec/orders/snapshot-retry/kit.ts'
+  - 'test/spec/orders/snapshot-wiring/db-kit.ts'
+  - 'test/spec/orders/snapshot-wiring/module.test.ts'
+  - 'test/spec/orders/snapshot-wiring/scheduler.test.ts'
 impl: claude
 tester: claude-independent
 accept:
