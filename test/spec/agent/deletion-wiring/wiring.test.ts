@@ -3,9 +3,22 @@
 // 缺密钥 → unavailable 标记并 warn 一次；prod 缺密钥由 loadConfig 拒绝启动。problem、错误消息与日志都不带
 // 密钥值。清理 SQL 行为由 test/spec/agent/deletion 覆盖，导出引用由 test/spec/agent/deletion-export 覆盖。
 // 不连库、不启动 Nest：app.module.ts 只按 test/spec/ledger/posting/wiring.test.ts 的写法动态导入。
+// 第 3 次（评审 r1 两条 S1）：清理函数在无库的 Kysely 桩驱动上跑一次，参数里须有按配置密钥算的
+// HMAC-SHA256(userId)；worker 入口的注销清理 provider 须注入 APP_CONFIG、ROOT_LOGGER 并按配置装配 agent 槽。
+import { createHmac } from 'node:crypto';
 import { inspect } from 'node:util';
 import type { DB } from '@couli/db';
-import type { Transaction } from 'kysely';
+import {
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler,
+  type CompiledQuery,
+  type DatabaseConnection,
+  type Driver,
+  type QueryResult,
+  type Transaction,
+} from 'kysely';
 import { expect, it } from 'vitest';
 
 import {
@@ -15,15 +28,25 @@ import {
   type AppConfig,
   type AppEnv,
 } from '../../../../apps/api/src/modules/platform/config/index.ts';
+import {
+  APP_CONFIG,
+  CLOCK,
+  FixedClock,
+  ROOT_LOGGER,
+  createRootLogger,
+} from '../../../../apps/api/src/modules/platform/index.ts';
 import type { RootLogger } from '../../../../apps/api/src/modules/platform/logging/index.ts';
 import type {
   DeletionCleanupPort,
+  DeletionCleanupPorts,
   DeletionCleanupStep,
 } from '../../../../apps/api/src/modules/identity/ports/deletion-cleanup.ts';
 
 const KEY_NAME = 'AGENT_USER_HASH_KEY';
 /** Synthetic key; ASCII only so a serialized log argument shows it verbatim. */
 const SECRET = 'test-only-agent-user-hash-key-first';
+/** A second configured key: the hash must follow whichever key the configuration carries. */
+const SECOND_SECRET = 'test-only-agent-user-hash-key-second';
 /** The value of an unrelated variable passed alongside; never echoed either. */
 const OTHER_NAME = 'B309J_UNRELATED_SETTING';
 const OTHER_SECRET = 'test-only-unrelated-setting-value';
@@ -130,6 +153,177 @@ function keyProblems(problems: readonly string[]): readonly string[] {
   return problems.filter((problem) => problem.startsWith(KEY_NAME));
 }
 
+/** A valid (lower-case) uuid member id and the one session the stub driver reports for it. */
+const PURGE_USER_ID = '7d3f0c2a-5b1e-4c9d-8a6f-2e4b1c0d9f3a';
+const SESSION_ID = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
+const PURGE_AT = new Date('2026-12-01T00:00:00.000Z');
+/** Keys whose hash must not appear unless configured (OTHER_SECRET stands for any foreign key). */
+const CANDIDATE_KEYS: readonly string[] = [SECRET, SECOND_SECRET, OTHER_SECRET];
+
+interface RecordedQuery {
+  readonly sql: string;
+  readonly parameters: readonly unknown[];
+}
+
+function hmacHex(key: string, userId: string): string {
+  return createHmac('sha256', Buffer.from(key, 'utf8')).update(userId, 'utf8').digest('hex');
+}
+
+/**
+ * Runs the step inside a real Kysely transaction over a no-database driver: every compiled query is
+ * recorded, and each answers one row ({ id: SESSION_ID }, one affected row).
+ */
+async function runOnStubTransaction(
+  step: DeletionCleanupStep,
+  userId: string,
+): Promise<readonly RecordedQuery[]> {
+  const queries: RecordedQuery[] = [];
+  const connection: DatabaseConnection = {
+    async executeQuery<R>(compiled: CompiledQuery): Promise<QueryResult<R>> {
+      queries.push({ sql: compiled.sql, parameters: compiled.parameters });
+      return { rows: [{ id: SESSION_ID }] as unknown as R[], numAffectedRows: 1n };
+    },
+    streamQuery(): AsyncIterableIterator<never> {
+      throw new Error('stub driver: streaming is not used');
+    },
+  };
+  const driver: Driver = {
+    init: () => Promise.resolve(),
+    acquireConnection: () => Promise.resolve(connection),
+    beginTransaction: () => Promise.resolve(),
+    commitTransaction: () => Promise.resolve(),
+    rollbackTransaction: () => Promise.resolve(),
+    releaseConnection: () => Promise.resolve(),
+    destroy: () => Promise.resolve(),
+  };
+  const db = new Kysely<DB>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => driver,
+      createIntrospector: (handle) => new PostgresIntrospector(handle),
+      createQueryCompiler: () => new PostgresQueryCompiler(),
+    },
+  });
+  try {
+    await db.transaction().execute((trx) => step(trx, { appId: 'couli', userId, at: PURGE_AT }));
+  } finally {
+    await db.destroy();
+  }
+  return queries;
+}
+
+/**
+ * BR-AI-22 细则「哈希」: the written user hash is HMAC-SHA256 under the configured key (the same
+ * algorithm and key as agent_sessions.user_hash), never under any other key, and the key itself is
+ * never a query parameter.
+ */
+async function expectHashedUnder(
+  step: DeletionCleanupStep,
+  key: string,
+  label: string,
+): Promise<void> {
+  const queries = await runOnStubTransaction(step, PURGE_USER_ID);
+  expect(queries.length, `${label}: statements issued`).toBeGreaterThan(0);
+  const recorded = queries.map((query) => query.parameters);
+  const parameters = inspect(recorded, {
+    depth: null,
+    breakLength: Infinity,
+    maxArrayLength: null,
+    maxStringLength: null,
+  });
+  expect(parameters, `${label}: hash under the configured key`).toContain(
+    hmacHex(key, PURGE_USER_ID),
+  );
+  for (const other of CANDIDATE_KEYS.filter((candidate) => candidate !== key)) {
+    expect(parameters, `${label}: no hash under another key`).not.toContain(
+      hmacHex(other, PURGE_USER_ID),
+    );
+  }
+  expect(parameters, `${label}: the key is never a parameter`).not.toContain(key);
+}
+
+interface ModuleShape {
+  readonly module?: unknown;
+  readonly imports?: readonly unknown[];
+  readonly providers?: readonly unknown[];
+}
+
+interface FactoryShape {
+  readonly provide: unknown;
+  readonly inject?: readonly unknown[];
+  readonly useFactory?: (...args: unknown[]) => unknown;
+}
+
+const WORKER_CLOCK = new FixedClock('2026-12-01T00:00:00.000Z');
+
+function tokenOf(entry: unknown): unknown {
+  return typeof entry === 'object' && entry !== null && 'token' in entry ? entry.token : entry;
+}
+
+/**
+ * The worker entry's deletion cleanup provider (identity's IdentityDeletionExpiryModule, the
+ * `cleanup` option app.module passes), found in the Nest module metadata; nothing is started.
+ */
+async function workerCleanupProvider(config: AppConfig): Promise<FactoryShape> {
+  // Dynamic, as in test/spec/ledger/posting/wiring.test.ts and test/spec/commission/wiring/kit.ts.
+  const { AppModule } = (await import(
+    new URL('../../../../apps/api/src/app.module.ts', import.meta.url).href
+  )) as { AppModule: { forEntry(options: object): ModuleShape } };
+  const { IdentityDeletionExpiryModule } = (await import(
+    new URL('../../../../apps/api/src/modules/identity/index.ts', import.meta.url).href
+  )) as { IdentityDeletionExpiryModule: unknown };
+  const root = AppModule.forEntry({
+    entry: 'worker',
+    config,
+    clock: WORKER_CLOCK,
+    logger: createRootLogger({ level: 'silent', entry: 'worker', appEnv: 'test' }, { write() {} }),
+  });
+  const found: ModuleShape[] = [];
+  const seen = new Set<unknown>();
+  function collect(candidate: unknown): void {
+    if (candidate === null || typeof candidate !== 'object' || seen.has(candidate)) return;
+    seen.add(candidate);
+    const shape = candidate as ModuleShape;
+    if (shape.module === IdentityDeletionExpiryModule) found.push(shape);
+    for (const child of shape.imports ?? []) collect(child);
+  }
+  collect(root);
+  expect(found, 'worker imports IdentityDeletionExpiryModule once').toHaveLength(1);
+  const cleanup = (found[0]?.providers ?? []).filter(
+    (provider): provider is FactoryShape =>
+      typeof provider === 'object' &&
+      provider !== null &&
+      'provide' in provider &&
+      typeof provider.provide === 'symbol' &&
+      provider.provide.description === 'IDENTITY_DELETION_PROCESSING_CLEANUP',
+  );
+  expect(cleanup, 'one deletion cleanup provider').toHaveLength(1);
+  const provider = cleanup[0];
+  if (provider === undefined) throw new Error('no deletion cleanup provider');
+  return provider;
+}
+
+/** Resolves the provider's injections: APP_CONFIG, ROOT_LOGGER, CLOCK; optional others absent. */
+async function cleanupPorts(
+  provider: FactoryShape,
+  config: AppConfig,
+  logger: RootLogger,
+): Promise<DeletionCleanupPorts> {
+  const args = (provider.inject ?? []).map((entry) => {
+    const token = tokenOf(entry);
+    if (token === APP_CONFIG) return config;
+    if (token === ROOT_LOGGER) return logger;
+    if (token === CLOCK) return WORKER_CLOCK;
+    const optional =
+      typeof entry === 'object' && entry !== null && 'optional' in entry && entry.optional === true;
+    expect(optional, `unexpected required injection ${String(token)}`).toBe(true);
+    return undefined;
+  });
+  expect(typeof provider.useFactory, 'cleanup provider is a factory').toBe('function');
+  if (provider.useFactory === undefined) throw new Error('cleanup provider has no factory');
+  return (await provider.useFactory(...args)) as DeletionCleanupPorts;
+}
+
 it('[AC-B3-09j#1][BR-AI-22] prod 缺失、空串或全空白：agentUserHashKey 为 null，恰有一条以 AGENT_USER_HASH_KEY 开头的 problem，且不带传入值', () => {
   for (const env of MISSING_KEY_ENVS) {
     const result = readAgentUserHashConfig('prod', env);
@@ -203,8 +397,20 @@ it('[AC-B3-09j#5][BR-AI-22] 带密钥：agentDeletionCleanup 返回可装进 Del
     );
     expect(refused, appEnv).toBeInstanceOf(TypeError);
     expect((refused as Error).message).not.toMatch(/NotImplemented/);
+    // A valid member on a no-database transaction: the hash written is under the configured key.
+    await expectHashedUnder(step, SECRET, appEnv);
     expect(calls.filter((call) => call.level === 'warn')).toEqual([]);
   }
+  // Another configured key yields that key's hash (no fixed or borrowed key).
+  const { logger, calls } = recordingLogger();
+  const port = agentDeletionCleanup(
+    { ...BASE, appEnv: 'prod', agentUserHashKey: SECOND_SECRET },
+    logger,
+  );
+  expect(typeof port, 'second key').toBe('function');
+  if (typeof port !== 'function') throw new Error('second key: expected a cleanup step');
+  await expectHashedUnder(port, SECOND_SECRET, 'second key');
+  expect(calls.filter((call) => call.level === 'warn')).toEqual([]);
 });
 
 it('[AC-B3-09j#6] 不带密钥（null / 缺省）：返回 { unavailable: 非空字符串 }，warn 恰 1 次且不含密钥值', async () => {
@@ -244,5 +450,50 @@ it('[AC-B3-09j#7][BR-AI-22] 带密钥：日志替身任何级别（含 child 绑
     const port = agentDeletionCleanup({ ...BASE, appEnv, agentUserHashKey: SECRET }, logger);
     expect(typeof port, appEnv).toBe('function');
     expect(serialized(calls), appEnv).not.toContain(SECRET);
+  }
+});
+
+const WORKER_KEYS = [
+  ['first key', SECRET],
+  ['second key', SECOND_SECRET],
+] as const;
+
+it('[AC-B3-09j#5][AC-B3-09j#6][BR-AI-22] worker 入口：注销清理 provider 注入 APP_CONFIG 与 ROOT_LOGGER，按配置装配 agent 槽（有密钥 → 按该密钥哈希的清理函数；无密钥 → unavailable 标记并 warn 一次）', async () => {
+  const base = loadConfig({ APP_ENV: 'test' });
+
+  // With the key: identity's cleanup round reaches agent's purge under that very key.
+  for (const [label, key] of WORKER_KEYS) {
+    const config: AppConfig = { ...base, agentUserHashKey: key };
+    const provider = await workerCleanupProvider(config);
+    const tokens = (provider.inject ?? []).map(tokenOf);
+    expect(tokens, `${label}: injects APP_CONFIG`).toContain(APP_CONFIG);
+    expect(tokens, `${label}: injects ROOT_LOGGER`).toContain(ROOT_LOGGER);
+    const { logger, calls } = recordingLogger();
+    const ports = await cleanupPorts(provider, config, logger);
+    expect(typeof ports.agent, `${label}: agent slot`).toBe('function');
+    if (typeof ports.agent !== 'function') throw new Error(`${label}: expected a cleanup step`);
+    await expectHashedUnder(ports.agent, key, `worker ${label}`);
+    expect(calls.filter((call) => call.level === 'warn')).toEqual([]);
+    expect(serialized(calls), label).not.toContain(key);
+  }
+
+  // Without the key (non-prod; prod never starts): the unavailable marker, one warn, no key value.
+  for (const appEnv of ['test', 'staging'] as const) {
+    const config: AppConfig = { ...base, appEnv, agentUserHashKey: null };
+    const provider = await workerCleanupProvider(config);
+    const tokens = (provider.inject ?? []).map(tokenOf);
+    expect(tokens, `${appEnv}: injects APP_CONFIG`).toContain(APP_CONFIG);
+    expect(tokens, `${appEnv}: injects ROOT_LOGGER`).toContain(ROOT_LOGGER);
+    const { logger, calls } = recordingLogger();
+    const ports = await cleanupPorts(provider, config, logger);
+    expect(typeof ports.agent, `${appEnv}: agent slot`).toBe('object');
+    const marker = ports.agent as { readonly unavailable?: unknown };
+    expect(typeof marker.unavailable, appEnv).toBe('string');
+    expect(String(marker.unavailable).trim(), appEnv).not.toBe('');
+    expect(
+      calls.filter((call) => call.level === 'warn'),
+      appEnv,
+    ).toHaveLength(1);
+    for (const [, key] of WORKER_KEYS) expect(serialized(calls), appEnv).not.toContain(key);
   }
 });
