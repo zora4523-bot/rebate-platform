@@ -2,7 +2,11 @@ import type { OrderHoldReason, OrderRightsStatus, OrderRightsType } from '@couli
 import type { DB } from '@couli/db';
 import type { Selectable, Transaction } from 'kysely';
 
-/** Settlement owns these outcomes, the guards, CAS, history, audit and all fund writes. */
+/**
+ * Settlement owns these outcomes, the guards, CAS, history and all fund writes. The admin hold /
+ * unhold audit is written by orders (B1-09l) after the port answers applied; settlement does not
+ * write it.
+ */
 export type RightsRecordResult = { readonly kind: 'applied' | 'duplicate' | 'not_applicable' };
 export type AdminHoldResult = {
   readonly kind: 'applied' | 'not_applicable' | 'same_state' | 'cas_conflict';
@@ -28,7 +32,7 @@ export interface AdminHoldInput {
   readonly before: Selectable<DB['orders']>;
   readonly expected_row_version: number;
   readonly reason_code: Exclude<OrderHoldReason, 'UNMAPPED_STATUS'>;
-  /** Required operator explanation for the settlement audit. */
+  /** Required operator explanation (orders writes it into its order_hold / order_unhold audit). */
   readonly reason: string;
   /** Authenticated admin id, injected by the caller; never a system unhold. */
   readonly actor: string;
