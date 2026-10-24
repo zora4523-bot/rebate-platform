@@ -6328,6 +6328,170 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/notify-channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Notification channels and SMS registrations of every template code (not paged)
+         * @description Permission point `notify.channels` (04 §11.2; read only, no step-up); lacking it is 10403
+         *     with `data.reason=admin_permission_denied`. One item per template code of
+         *     `notify_templates` (04 §3), ordered by code; not paged. Rules: 08 BR-TEXT-20 细则「短信渠道登记与
+         *     后台渠道开关」 and BR-TEXT-09 细则 (the channel column of its template table is each code's
+         *     default). Each item carries:
+         *     - `category`, `default_channels` (BR-TEXT-09 细则 template table, or the code's definition
+         *       in 08 for codes outside it) and `channels`, the channels in force (the console switch
+         *       values; `inbox` is never added or removed from the console: a code with the inbox
+         *       channel always writes it, a code without it can never get it).
+         *     - What may be changed: `push_switchable` (push may be turned on or off), `sms_switchable`
+         *       (SMS may be turned on or off) and `sms_fixed` (SMS is always on and only its
+         *       registration may be replaced: `SMS_CODE`, `UNION_AUTH_EXPIRING`, `UNION_AUTH_EXPIRED`,
+         *       `DATA_COPY_CODE`). Codes 08 sends as inbox messages only (the three codes of BR-TEXT-23
+         *       and `BALANCE_ADJUSTED`) have both switches false; codes outside the service category
+         *       never get SMS (subscription codes, BR-WATCH-15; marketing SMS is P1), so their
+         *       `sms_switchable` is false; codes without inbox (`SMS_CODE`, the station-owner alerts)
+         *       cannot get push either. `sms_billing_confirm` is true for a service code whose default
+         *       channels have no SMS: turning its SMS on needs `confirm_sms_billing` (SMS is billed per
+         *       message).
+         *     - `fund_terms`: true for a fund code (BR-TEXT-12 细则「资金术语键」, the `fund_terms`
+         *       template codes of specs/fund-term-keys.yaml; a code in neither list counts as a fund
+         *       code). Changing its SMS registration also needs `content.fund_terms`; switching its
+         *       channels does not.
+         *     - `sms_registrations`: one row per variant of the code (code × variant, 04 §3) when the
+         *       code may send SMS (`sms_fixed` or `sms_switchable`), otherwise empty. Each row has the
+         *       variable names the code defines for that variant (`variables`: fixed in code, not
+         *       changeable here) and the registration (`registration`: signature, provider template
+         *       CODE, template type and preview text) or null when nothing is registered. Until a
+         *       registration exists, `SMS_CODE` is sent with the signature and template CODE of the
+         *       deployment configuration (BR-TEXT-20 细则「过渡」); the deployment fallback is not shown
+         *       here. AccessKeys are never stored or returned.
+         *     - `row_version`: one version for the whole code (its channels and every variant's
+         *       registration); every accepted change of the code raises it by 1. It is the
+         *       `row_version` of the writes.
+         *     Reading does not write an audit record.
+         */
+        get: operations["adminListNotifyChannels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/notify-channels/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Turn the push or SMS channel of a template code on or off
+         * @description Permission point `notify.channels` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). Only switching: no
+         *     `content.fund_terms` is needed, also for a fund code (BR-TEXT-20 细则). The switch applies
+         *     to the code as a whole (every variant). Order of checks, the first hit is returned:
+         *     permission, step-up → `code` not a template code of the app → 20001 with
+         *     `data.fields=[code]` → body (20001 with `data.fields` naming the field; neither `push`
+         *     nor `sms` given → `data.fields=[push, sms]`) → what the item of GET
+         *     /admin/v1/notify-channels allows: `push` given on a code whose `push_switchable` is false
+         *     → 20001 with `data.fields=[push]`; `sms` given on a code whose `sms_switchable` is false
+         *     (inbox-only codes, codes outside the service category, and `sms_fixed` codes, whose SMS
+         *     cannot be turned off) → 20001 with `data.fields=[sms]`; `sms=true` on a code whose
+         *     `sms_billing_confirm` is true and SMS is off, without `confirm_sms_billing=true` → 20001
+         *     with `data.fields=[confirm_sms_billing]` (the console's second confirmation that SMS is
+         *     billed per message) → `row_version` differs from the code's current one → 20902 (refresh
+         *     and retry). A switch already at the requested value is left as it is; when nothing
+         *     changes the call succeeds without writing, `row_version` unchanged. Turning SMS on does
+         *     not need a registration: SMS of a code without one is not sent until it is registered
+         *     (PUT /admin/v1/notify-channels/{code}/sms). Effects (BR-TEXT-20 细则): a channel turned
+         *     off is no longer sent; the user's service switch governs push only, never SMS; SMS of a
+         *     code turned on here is sent at the time the code's push would be (quiet hours as
+         *     BR-TEXT-09 细则「频控与免打扰」). Writes an audit record (action notify_channel_switch: the
+         *     code, channels before and after, and whether the billing confirmation was given) for
+         *     every change. The response is the item as GET returns it now. No Idempotency-Key
+         *     (04 §6.6).
+         */
+        patch: operations["adminSwitchNotifyChannels"];
+        trace?: never;
+    };
+    "/admin/v1/notify-channels/{code}/sms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Register or replace the SMS signature and template CODE of a template code (test send first)
+         * @description Permission point `notify.channels` (04 §11.2), and for a fund code (`fund_terms` true in
+         *     GET /admin/v1/notify-channels) also `content.fund_terms`; lacking either is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). One registration per code ×
+         *     variant (`variant` query parameter, `default` when absent). The signature and template are
+         *     applied for and approved in the provider's console (Aliyun SMS); here they are only
+         *     registered, and `preview_text` is the approved text as the operator copies it (not
+         *     checked against the provider in MVP, 规划/09 CAP-X-09). Rules: 08 BR-TEXT-20 细则「短信渠道登记
+         *     与后台渠道开关」.
+         *     Order of checks, the first hit is returned: permission, step-up → `code` not a template
+         *     code of the app → 20001 with `data.fields=[code]` → a fund code without
+         *     `content.fund_terms` → 10403 → the code may not send SMS (neither `sms_fixed` nor
+         *     `sms_switchable`) → 20001 with `data.fields=[code]` → `variant` not a variant of the
+         *     code → 20001 with `data.fields=[variant]` → body (20001 with `data.fields` naming the
+         *     field; a `sample` key that is not one of the variant's variables → `data.fields=[sample]`)
+         *     → `preview_text` (each a 20001, nothing saved): its placeholders (`${name}`, as in the
+         *     provider's template) are not exactly the variables the code defines for the variant →
+         *     `data.fields=[preview_text]`; for `SMS_CODE`, a validity written in the text as N minutes
+         *     (N分钟) where N × 60 seconds is not the code validity of BR-ID-05 (5 minutes there) →
+         *     `data.fields=[preview_text]` (a text that states no validity may be saved); the checks of
+         *     BR-TEXT-12, BR-TEXT-13 and BR-TEXT-20 (no platform name at the start of the first
+         *     sentence after the signature, no 「官方」, forbidden words) → `data.fields` names
+         *     `preview_text` followed by the forbidden words found, as for dictionary texts →
+         *     `row_version` differs from the code's current one → 20902 (refresh and retry).
+         *     Test send (BR-TEXT-20 细则「测试发送」), only when `sign_name` or `template_code` differs
+         *     from the current registration (or there is none): the account must have a verify phone
+         *     (BR-ID-45); without one → 10003 with `data.tier=totp` and
+         *     `data.reason=verify_phone_missing` (no step-up prompt: register the verify phone first),
+         *     nothing sent or saved. Otherwise one SMS goes synchronously to the operator's own verify
+         *     phone with the new signature and template CODE, filled with `sample` (variables not given
+         *     take the server's built-in sample value). Only a send the provider accepts lets the new
+         *     registration take effect (accepted is not delivered). Not accepted: the provider refuses
+         *     or errors → 50301; times out or the outcome is unknown → 50401; in both cases nothing is
+         *     saved and the current registration stays in force. The test SMS counts against the
+         *     provider's rate limits for that phone and may delay the operator's own sms-tier step-up
+         *     codes right after. When only `template_type` or `preview_text` changes, nothing is sent.
+         *     Saving re-checks `row_version` in the same transaction (20902 when the code changed
+         *     meanwhile; the test SMS may already have gone out). On success the registration of the
+         *     code × variant is replaced, `row_version` goes up by 1, and from then on that code ×
+         *     variant is sent with it (for `SMS_CODE` the deployment fallback no longer applies). Audit:
+         *     every call that reaches the test send or saves writes one record (action
+         *     notify_sms_register: code, variant, registration before and after, whether it is a fund
+         *     code, the masked verify phone and the provider's result, never the AccessKey), refusals
+         *     of the test send included. The response is the code's item as GET returns it now and the
+         *     masked phone of the test send (null when none was needed). No Idempotency-Key (04 §6.6):
+         *     a retry after a lost response is a new call and sends again when the registration was not
+         *     saved.
+         */
+        put: operations["adminRegisterNotifySms"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/app-versions": {
         parameters: {
             query?: never;
@@ -12555,6 +12719,130 @@ export interface components {
         };
         /** @description Who in legal confirmed the change; required when the keys are of class agreement (04 §11.2 content.agreement). */
         AdminDictLegalConfirmedBy: string;
+        /** @description Template code of notify_templates (04 §3), e.g. WD_FAILED, SMS_CODE. */
+        AdminNotifyTemplateCode: string;
+        /** @description Variant of a template code (notify_templates.variant, 04 §3); default for a code with one variant. */
+        AdminNotifyTemplateVariant: string;
+        /**
+         * @description Notification category (enum notify_category).
+         * @enum {string}
+         */
+        AdminNotifyCategory: "service" | "subscription" | "marketing";
+        /**
+         * @description Delivery channel (enum notify_channel).
+         * @enum {string}
+         */
+        AdminNotifyChannel: "inbox" | "push" | "sms";
+        /**
+         * @description Provider template type (enum sms_template_type); verification code or notice, marketing SMS is P1.
+         * @enum {string}
+         */
+        AdminSmsTemplateType: "verify" | "notice";
+        AdminNotifyChannelList: components["schemas"]["AdminNotifyChannel"][];
+        /** @description The SMS registration of one code × variant (04 §3 notify_templates SMS columns). */
+        AdminNotifySmsRegistration: {
+            sign_name: string;
+            template_code: string;
+            template_type: components["schemas"]["AdminSmsTemplateType"];
+            preview_text: string;
+            /**
+             * Format: date-time
+             * @description When this registration was saved.
+             */
+            updated_at: string;
+        };
+        AdminNotifySmsVariantRow: {
+            variant: components["schemas"]["AdminNotifyTemplateVariant"];
+            /** @description Variable names the code defines for this variant (fixed in code); the preview text must use exactly these. */
+            variables: string[];
+            /** @description null = nothing registered for this code × variant. */
+            registration: components["schemas"]["AdminNotifySmsRegistration"] | null;
+        };
+        /** @description One template code in GET /admin/v1/notify-channels (BR-TEXT-20 细则「短信渠道登记与后台渠道开关」). */
+        AdminNotifyChannelItem: {
+            code: components["schemas"]["AdminNotifyTemplateCode"];
+            category: components["schemas"]["AdminNotifyCategory"];
+            /** @description The code's default channels (BR-TEXT-09 细则 template table). */
+            default_channels: components["schemas"]["AdminNotifyChannelList"];
+            /** @description The channels in force. */
+            channels: components["schemas"]["AdminNotifyChannelList"];
+            /** @description Push may be turned on or off here. */
+            push_switchable: boolean;
+            /** @description SMS may be turned on or off here. */
+            sms_switchable: boolean;
+            /** @description SMS is always on; only its registration may be replaced. */
+            sms_fixed: boolean;
+            /** @description Turning SMS on needs confirm_sms_billing (a service code without SMS by default). */
+            sms_billing_confirm: boolean;
+            /** @description A fund code; changing its SMS registration also needs content.fund_terms. */
+            fund_terms: boolean;
+            /** @description One row per variant when the code may send SMS, otherwise empty. */
+            sms_registrations: components["schemas"]["AdminNotifySmsVariantRow"][];
+            /**
+             * Format: int32
+             * @description Version of the whole code (channels and every registration); the row_version of the writes.
+             */
+            row_version: number;
+        };
+        AdminNotifyChannelItems: {
+            items: components["schemas"]["AdminNotifyChannelItem"][];
+        };
+        AdminNotifyChannelListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminNotifyChannelItems"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminNotifyChannelResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminNotifyChannelItem"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Body of PATCH /admin/v1/notify-channels/{code}; at least one of push and sms. */
+        AdminNotifyChannelSwitchRequest: {
+            /** @description Push on (true) or off (false); only when push_switchable. */
+            push?: boolean;
+            /** @description SMS on (true) or off (false); only when sms_switchable. */
+            sms?: boolean;
+            /** @description Must be true when turning SMS on for a code whose sms_billing_confirm is true; ignored otherwise. */
+            confirm_sms_billing?: boolean;
+            /**
+             * Format: int32
+             * @description The row_version of the item as the console showed it; a mismatch is 20902.
+             */
+            row_version: number;
+        };
+        /** @description Body of PUT /admin/v1/notify-channels/{code}/sms. */
+        AdminNotifySmsRegisterRequest: {
+            /** @description The approved signature, without 【】. */
+            sign_name: string;
+            /** @description The approved provider template CODE. */
+            template_code: string;
+            template_type: components["schemas"]["AdminSmsTemplateType"];
+            /** @description The approved template text as copied from the provider, placeholders written ${name}. */
+            preview_text: string;
+            /** @description Sample values for the test send, by variable name; variables not given take the server's built-in sample. */
+            sample?: {
+                [key: string]: string;
+            };
+            /**
+             * Format: int32
+             * @description The row_version of the item as the console showed it; a mismatch is 20902.
+             */
+            row_version: number;
+        };
+        AdminNotifySmsRegisterResult: {
+            item: components["schemas"]["AdminNotifyChannelItem"];
+            /** @description Masked verify phone the test SMS went to (BR-ID-33); null when no test send was needed. */
+            test_send_phone_masked: string | null;
+        };
+        AdminNotifySmsRegisterResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminNotifySmsRegisterResult"];
+            trace_id: components["schemas"]["TraceId"];
+        };
         AdminDictSaveRequest: {
             /** @description Keys of one class, each at most once. */
             changes: components["schemas"]["AdminDictChange"][];
@@ -15289,6 +15577,8 @@ export interface components {
          *     optional). Only on admin console operations; app operations use StepUpToken.
          */
         AdminStepUpToken: string;
+        /** @description Template code (code of GET /admin/v1/notify-channels); not a template code of the app → 20001 with data.fields=[code]. */
+        AdminNotifyTemplateCodePath: components["schemas"]["AdminNotifyTemplateCode"];
         /** @description session_id. A session that does not exist or is not the caller's is 30504 either way (BR-AI-20). */
         AgentSessionId: components["schemas"]["Id"];
         /** @description run_id from meta.run_id or a history turn. */
@@ -29304,6 +29594,333 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListNotifyChannels: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every template code with its channels and SMS registrations. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "code": "SMS_CODE",
+                     *             "category": "service",
+                     *             "default_channels": [
+                     *               "sms"
+                     *             ],
+                     *             "channels": [
+                     *               "sms"
+                     *             ],
+                     *             "push_switchable": false,
+                     *             "sms_switchable": false,
+                     *             "sms_fixed": true,
+                     *             "sms_billing_confirm": false,
+                     *             "fund_terms": false,
+                     *             "sms_registrations": [
+                     *               {
+                     *                 "variant": "default",
+                     *                 "variables": [
+                     *                   "code"
+                     *                 ],
+                     *                 "registration": null
+                     *               }
+                     *             ],
+                     *             "row_version": 0
+                     *           },
+                     *           {
+                     *             "code": "WD_FAILED",
+                     *             "category": "service",
+                     *             "default_channels": [
+                     *               "push",
+                     *               "inbox",
+                     *               "sms"
+                     *             ],
+                     *             "channels": [
+                     *               "push",
+                     *               "inbox",
+                     *               "sms"
+                     *             ],
+                     *             "push_switchable": true,
+                     *             "sms_switchable": true,
+                     *             "sms_fixed": false,
+                     *             "sms_billing_confirm": false,
+                     *             "fund_terms": true,
+                     *             "sms_registrations": [
+                     *               {
+                     *                 "variant": "default",
+                     *                 "variables": [
+                     *                   "amount"
+                     *                 ],
+                     *                 "registration": {
+                     *                   "sign_name": "凑狸",
+                     *                   "template_code": "SMS_480215673",
+                     *                   "template_type": "notice",
+                     *                   "preview_text": "【凑狸】你的提现打款未成功，${amount}已退回余额，请在App内查看原因。",
+                     *                   "updated_at": "2026-11-02T10:15:00+08:00"
+                     *                 }
+                     *               }
+                     *             ],
+                     *             "row_version": 3
+                     *           },
+                     *           {
+                     *             "code": "BALANCE_ADJUSTED",
+                     *             "category": "service",
+                     *             "default_channels": [
+                     *               "inbox"
+                     *             ],
+                     *             "channels": [
+                     *               "inbox"
+                     *             ],
+                     *             "push_switchable": false,
+                     *             "sms_switchable": false,
+                     *             "sms_fixed": false,
+                     *             "sms_billing_confirm": false,
+                     *             "fund_terms": true,
+                     *             "sms_registrations": [],
+                     *             "row_version": 0
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminNotifyChannelListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminSwitchNotifyChannels: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description Template code (code of GET /admin/v1/notify-channels); not a template code of the app → 20001 with data.fields=[code]. */
+                code: components["parameters"]["AdminNotifyTemplateCodePath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "sms": true,
+                 *       "confirm_sms_billing": true,
+                 *       "row_version": 2
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminNotifyChannelSwitchRequest"];
+            };
+        };
+        responses: {
+            /** @description The code's item as it is now. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "code": "WD_SUCCESS",
+                     *         "category": "service",
+                     *         "default_channels": [
+                     *           "push",
+                     *           "inbox"
+                     *         ],
+                     *         "channels": [
+                     *           "push",
+                     *           "inbox",
+                     *           "sms"
+                     *         ],
+                     *         "push_switchable": true,
+                     *         "sms_switchable": true,
+                     *         "sms_fixed": false,
+                     *         "sms_billing_confirm": true,
+                     *         "fund_terms": true,
+                     *         "sms_registrations": [
+                     *           {
+                     *             "variant": "default",
+                     *             "variables": [
+                     *               "net",
+                     *               "payout_channel_name"
+                     *             ],
+                     *             "registration": null
+                     *           }
+                     *         ],
+                     *         "row_version": 3
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminNotifyChannelResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminRegisterNotifySms: {
+        parameters: {
+            query?: {
+                /** @description The variant of the code (sms_registrations[].variant of GET /admin/v1/notify-channels); default when absent. */
+                variant?: components["schemas"]["AdminNotifyTemplateVariant"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description Template code (code of GET /admin/v1/notify-channels); not a template code of the app → 20001 with data.fields=[code]. */
+                code: components["parameters"]["AdminNotifyTemplateCodePath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "sign_name": "凑狸",
+                 *       "template_code": "SMS_480215673",
+                 *       "template_type": "notice",
+                 *       "preview_text": "【凑狸】你的提现打款未成功，${amount}已退回余额，请在App内查看原因。",
+                 *       "sample": {
+                 *         "amount": "¥10"
+                 *       },
+                 *       "row_version": 2
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminNotifySmsRegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Registered; the code's item as it is now and where the test SMS went. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "item": {
+                     *           "code": "WD_FAILED",
+                     *           "category": "service",
+                     *           "default_channels": [
+                     *             "push",
+                     *             "inbox",
+                     *             "sms"
+                     *           ],
+                     *           "channels": [
+                     *             "push",
+                     *             "inbox",
+                     *             "sms"
+                     *           ],
+                     *           "push_switchable": true,
+                     *           "sms_switchable": true,
+                     *           "sms_fixed": false,
+                     *           "sms_billing_confirm": false,
+                     *           "fund_terms": true,
+                     *           "sms_registrations": [
+                     *             {
+                     *               "variant": "default",
+                     *               "variables": [
+                     *                 "amount"
+                     *               ],
+                     *               "registration": {
+                     *                 "sign_name": "凑狸",
+                     *                 "template_code": "SMS_480215673",
+                     *                 "template_type": "notice",
+                     *                 "preview_text": "【凑狸】你的提现打款未成功，${amount}已退回余额，请在App内查看原因。",
+                     *                 "updated_at": "2026-11-02T10:15:00+08:00"
+                     *               }
+                     *             }
+                     *           ],
+                     *           "row_version": 3
+                     *         },
+                     *         "test_send_phone_masked": "138****5678"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminNotifySmsRegisterResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not saved (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

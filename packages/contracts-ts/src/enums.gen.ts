@@ -23,6 +23,7 @@ export const admin_permission = [
   "content.app_version", // 版本管理（按端与渠道）：最新版本、推荐版本、更新文案、商店登记与默认商店、最低支持版本；只有提高最低支持版本时要二次验证（step-up）
   "content.fund_terms", // 修改资金术语键与资金类消息模板（清单见 BR-TEXT-12 细则「资金术语键」与 specs/fund-term-keys.yaml）（step-up）
   "content.platform_icon", // 平台标识上传、发布、回滚、恢复内置（BR-TEXT-24）
+  "notify.channels", // 通知渠道开关（推送、短信）、短信签名与模板 CODE 登记与测试发送；资金类编码改短信登记另需 content.fund_terms（04 §11.2、BR-TEXT-20 细则「短信渠道登记与后台渠道开关」）（step-up）
   "config.general", // 普通配置（不含 BR-TEXT-14 表 D 的隐私与权限文案键与 BR-TEXT-12 细则所列的资金术语键）
   "config.risk", // 风控规则与阈值（step-up）
   "config.business", // 返利规则版本、费率、提现规则与限额、自动到账设置（step-up）
@@ -268,6 +269,27 @@ export const union_pid_status = [
   "retired", // 已停用，停止新转链，仍留在白名单
 ] as const;
 export type UnionPidStatus = (typeof union_pid_status)[number];
+
+/**
+ * 通知的发送渠道；后台只能开关 push 与 sms，inbox 不能由后台增删
+ * Source: 规划/04 §3 notify_templates 渠道列、notify_logs.channel；规划/08 BR-TEXT-09 细则模板表渠道列、BR-TEXT-20 细则「短信渠道登记与后台渠道开关」（CT-24t） (contracts/enums/admin.yaml).
+ */
+export const notify_channel = [
+  "inbox", // 站内信
+  "push", // 推送
+  "sms", // 短信
+] as const;
+export type NotifyChannel = (typeof notify_channel)[number];
+
+/**
+ * 短信服务商的模板类型；营销短信为 P1，不列入
+ * Source: 规划/04 §3 notify_templates 短信渠道列（模板类型 verify / notice）；规划/08 BR-TEXT-20 细则「短信渠道登记与后台渠道开关」（CT-24t） (contracts/enums/admin.yaml).
+ */
+export const sms_template_type = [
+  "verify", // 验证码
+  "notice", // 通知
+] as const;
+export type SmsTemplateType = (typeof sms_template_type)[number];
 
 /**
  * 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
@@ -1966,6 +1988,8 @@ export const enums = {
   union_reauth_mode,
   admin_union_auth_session_status,
   union_pid_status,
+  notify_channel,
+  sms_template_type,
   ledger_type,
   referral_credit_sub_type,
   clawback_sub_type,

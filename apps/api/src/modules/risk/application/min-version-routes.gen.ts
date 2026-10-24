@@ -2025,6 +2025,36 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListNotifyChannels",
+    "method": "GET",
+    "path": "/admin/v1/notify-channels",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminSwitchNotifyChannels",
+    "method": "PATCH",
+    "path": "/admin/v1/notify-channels/:code",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminRegisterNotifySms",
+    "method": "PUT",
+    "path": "/admin/v1/notify-channels/:code/sms",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListAppVersions",
     "method": "GET",
     "path": "/admin/v1/app-versions",

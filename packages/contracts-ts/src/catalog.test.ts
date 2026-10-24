@@ -187,8 +187,8 @@ it('[AC-CT-01c#1] removes the cancelled ticket enums (04 §2.5)', () => {
   expect.soft(enums).not.toHaveProperty('ticket_status');
 });
 
-it('[AC-CT-01c#2] synchronizes the admin permissions (04 §11.2; 55 since CT-24a)', () => {
-  expect.soft(enums.admin_permission).toHaveLength(55);
+it('[AC-CT-01c#2] synchronizes the admin permissions (04 §11.2; 55 since CT-24a, 56 with notify.channels in CT-24t)', () => {
+  expect.soft(enums.admin_permission).toHaveLength(56);
   expect.soft(enums.admin_permission).not.toContain('ticket.handle');
   expect.soft(enums.admin_permission).not.toContain('ticket.data_export');
   for (const permission of [
@@ -198,6 +198,7 @@ it('[AC-CT-01c#2] synchronizes the admin permissions (04 §11.2; 55 since CT-24a
     'user.realname_fix',
     'user.phone_change',
     'user.data_export',
+    'notify.channels',
     'agent.report',
     'dashboard.view',
   ]) {
