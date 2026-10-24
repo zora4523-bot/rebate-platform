@@ -15,8 +15,13 @@ function problemsOf(env: Record<string, string>): readonly string[] {
 it('[AC-F1-06k] no ADMIN_* variable: adminAuth is null in every environment and nothing is refused here', () => {
   expect(loadConfig({ APP_ENV: 'test' }).adminAuth).toBeNull();
   expect(
-    loadConfig({ APP_ENV: 'staging', FIELD_KEY_PROVIDER: 'kms', FIELD_KEYRING_FILE: '/k.json' })
-      .adminAuth,
+    loadConfig({
+      APP_ENV: 'staging',
+      FIELD_KEY_PROVIDER: 'kms',
+      FIELD_KEYRING_FILE: '/k.json',
+      PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
+      PRIOR_IDENTITY_KEYRING_FILE: '/prior-k.json',
+    }).adminAuth,
   ).toBeNull();
 });
 
@@ -40,6 +45,8 @@ it('[AC-F1-06k] staging with one ADMIN_* variable set names the missing key and 
     APP_ENV: 'staging',
     FIELD_KEY_PROVIDER: 'kms',
     FIELD_KEYRING_FILE: '/k.json',
+    PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
+    PRIOR_IDENTITY_KEYRING_FILE: '/prior-k.json',
     ADMIN_CORS_ORIGIN: 'https://console.example.invalid',
   });
   expect(problems).toEqual([

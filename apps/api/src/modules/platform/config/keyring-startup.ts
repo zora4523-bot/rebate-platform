@@ -120,7 +120,7 @@ import {
   type FieldCrypto,
   type WrappedKeyring,
 } from '../crypto/index.ts';
-import type { AppEnv } from './config.ts';
+import type { AppEnv } from './app-env.ts';
 import type { KeyringConfig } from './keyring.ts';
 
 /** `keyId` of the LocalKeyProvider built from FIELD_MASTER_KEY_FILE (§1). */
@@ -235,8 +235,11 @@ export async function readLocalKeyProvider(masterKeyFile: string): Promise<Local
   return provider;
 }
 
-/** Check and read the same descriptor; nonblocking open also rejects FIFOs without waiting. */
-async function readBoundedFile(
+/**
+ * Check and read the same descriptor; nonblocking open also rejects FIFOs without waiting. Also
+ * used by ./keyring-prior-identity.ts, so both keyrings accept exactly the same files.
+ */
+export async function readBoundedFile(
   path: string,
   limit: number,
   unreadable: KeyringStartupErrorCode,

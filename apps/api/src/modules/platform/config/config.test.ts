@@ -42,6 +42,8 @@ describe('loadConfig', () => {
         APP_ENV: 'staging',
         FIELD_KEY_PROVIDER: 'kms',
         FIELD_KEYRING_FILE: '/srv/couli/keyring.json',
+        PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
+        PRIOR_IDENTITY_KEYRING_FILE: '/srv/couli/prior-identity-keyring.json',
         LOG_LEVEL: 'debug',
         CLOCK_NOW: '2026-10-31T23:59:59.999+08:00',
         COULI_EXIT_AFTER_INIT: '1',
@@ -64,6 +66,10 @@ describe('loadConfig', () => {
       streamPort: 8081,
       adminPort: 8082,
       keyring: { provider: 'kms', keyringFile: '/srv/couli/keyring.json' },
+      priorIdentityKeyring: {
+        provider: 'kms',
+        keyringFile: '/srv/couli/prior-identity-keyring.json',
+      },
       jwt: null,
       trustedProxies: ['198.51.100.0/24', '2001:db8::1'],
       adminAuth: null,
@@ -120,7 +126,12 @@ describe('loadConfig', () => {
             APP_ENV: appEnv,
             CLOCK_NOW: clockNow,
             ...(appEnv === 'staging'
-              ? { FIELD_KEY_PROVIDER: 'kms', FIELD_KEYRING_FILE: '/srv/couli/keyring.json' }
+              ? {
+                  FIELD_KEY_PROVIDER: 'kms',
+                  FIELD_KEYRING_FILE: '/srv/couli/keyring.json',
+                  PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
+                  PRIOR_IDENTITY_KEYRING_FILE: '/srv/couli/prior-identity-keyring.json',
+                }
               : {}),
           }).clockNow,
         ).toBe(clockNow);
@@ -147,6 +158,8 @@ describe('loadConfig', () => {
         APP_ENV: 'prod',
         FIELD_KEY_PROVIDER: 'kms',
         FIELD_KEYRING_FILE: '/srv/couli/keyring.json',
+        PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
+        PRIOR_IDENTITY_KEYRING_FILE: '/srv/couli/prior-identity-keyring.json',
       }).clockNow,
     ).toBeUndefined();
   });
@@ -175,6 +188,8 @@ describe('loadConfig', () => {
         ALIPAY_PRIVATE_KEY: 'k',
         FIELD_KEY_PROVIDER: 'kms',
         FIELD_KEYRING_FILE: '/srv/couli/keyring.json',
+        PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
+        PRIOR_IDENTITY_KEYRING_FILE: '/srv/couli/prior-identity-keyring.json',
       }).appEnv,
     ).toBe(appEnv);
   });
@@ -186,7 +201,13 @@ describe('loadConfig', () => {
   it('[BR-ID-07] JWT_* problems are merged only when a JWT variable is set, after the other problems', () => {
     // Unset in prod: loadConfig keeps its own findings; identity's key provider refuses at startup.
     expect(
-      problemsOf({ APP_ENV: 'prod', FIELD_KEY_PROVIDER: 'kms', FIELD_KEYRING_FILE: '/k.json' }),
+      problemsOf({
+        APP_ENV: 'prod',
+        FIELD_KEY_PROVIDER: 'kms',
+        FIELD_KEYRING_FILE: '/k.json',
+        PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
+        PRIOR_IDENTITY_KEYRING_FILE: '/prior-k.json',
+      }),
     ).toEqual([]);
     const pem = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
       .privateKey.export({ type: 'pkcs8', format: 'pem' })
@@ -220,6 +241,8 @@ describe('loadConfig JWT verify-only reading (B1-02zj)', () => {
       APP_ENV: 'prod',
       FIELD_KEY_PROVIDER: 'kms',
       FIELD_KEYRING_FILE: '/k.json',
+      PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
+      PRIOR_IDENTITY_KEYRING_FILE: '/prior-k.json',
       JWT_KEY_ID: 'k1',
       JWT_PUBLIC_KEY_PEM: publicPem,
     });
