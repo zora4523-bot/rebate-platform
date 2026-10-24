@@ -22,6 +22,7 @@ interface Pending {
   hash: string;
   exp: number;
   wrong: number;
+  by: string;
 }
 
 /** VerifyPhoneCodes double with the semantics of infra/verify-phone-codes.ts (one account). */
@@ -57,6 +58,9 @@ function memoryCodes() {
     },
     check: (_app, _admin, submitted, nowMs, maxWrong): Promise<VerifyPhoneCodeCheck> => {
       const cur = state.current;
+      if (cur !== undefined && cur.exp > nowMs && cur.by !== submitted.by) {
+        return Promise.resolve('route');
+      }
       const live = cur !== undefined && cur.exp > nowMs && cur.phone === submitted.phone;
       if (live && cur.hash === submitted.hash) {
         state.current = undefined;
@@ -169,7 +173,11 @@ function setup(options: { phone?: string | null; targetSuper?: boolean } = {}) {
     crypto: { encrypt, decrypt, blindIndex },
   });
   const caller = { appId: APP, adminId: actorId, ip: '127.0.0.1' };
+  const otherSuper = { appId: APP, adminId: randomUUID(), ip: '127.0.0.1' };
+  const holder = { appId: APP, adminId: targetId, ip: '127.0.0.1' };
   return {
+    otherSuper,
+    holder,
     clock,
     service,
     caller,
@@ -348,4 +356,42 @@ it('[AC-B1-34i] 超管代改提交：原因只有空白 → reason，id 不合�
     account: { adminId: s.targetId, verifyPhoneMasked: '139****2222', rowVersion: 3 },
   });
   expect(s.changes.at(-1)).toMatchObject({ bySuper: true, reason: '本人委托', actor: s.actorId });
+});
+
+it('[AC-B1-34o] 待核验记录记发起方：本人发码记 self，超管代发记 super_admin 与超管 id', async () => {
+  const s = setup();
+  await s.service.sendMine(s.holder, FRESH);
+  expect(s.state.current?.by).toBe('self');
+  s.clock.advanceMs(60_000);
+  await s.service.sendFor(s.caller, s.targetId, FRESH);
+  expect(s.state.current?.by).toBe(`super_admin:${s.actorId}`);
+});
+
+it('[AC-B1-34o] 本人发的码经代改提交被拒（20002），不消耗、不计错码；本人随后提交生效，记 self', async () => {
+  const s = setup();
+  await s.service.sendMine(s.holder, FRESH);
+  const code = s.outbox[0]!.code;
+  const body = { phone: FRESH, code, reason: '本人委托' };
+  for (let i = 0; i < 6; i += 1) {
+    expect(await s.service.changeFor(s.caller, s.targetId, body)).toEqual({ kind: 'wrong' });
+  }
+  expect(s.state.current).toMatchObject({ wrong: 0, by: 'self' });
+  expect(s.changes).toEqual([]);
+  expect(await s.service.changeMine(s.holder, FRESH, code)).toMatchObject({ kind: 'ok' });
+  expect(s.changes).toHaveLength(1);
+  expect(s.changes[0]).toMatchObject({ actor: s.targetId, bySuper: false, reason: null });
+});
+
+it('[AC-B1-34o] 超管代发的码，本人或另一超管提交被拒（20002），不消耗；发码超管随后提交生效', async () => {
+  const s = setup();
+  await s.service.sendFor(s.caller, s.targetId, FRESH);
+  const code = s.outbox[0]!.code;
+  expect(await s.service.changeMine(s.holder, FRESH, code)).toEqual({ kind: 'wrong' });
+  const body = { phone: FRESH, code, reason: '本人委托' };
+  expect(await s.service.changeFor(s.otherSuper, s.targetId, body)).toEqual({ kind: 'wrong' });
+  expect(s.state.current).toMatchObject({ wrong: 0, by: `super_admin:${s.actorId}` });
+  expect(s.changes).toEqual([]);
+  expect(await s.service.changeFor(s.caller, s.targetId, body)).toMatchObject({ kind: 'ok' });
+  expect(s.changes).toHaveLength(1);
+  expect(s.changes[0]).toMatchObject({ actor: s.actorId, bySuper: true, reason: '本人委托' });
 });

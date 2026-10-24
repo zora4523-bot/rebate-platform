@@ -41,7 +41,9 @@ export type VerifyPhoneRefusal =
   /** A wrong code: 20002. */
   | 'wrong'
   /** No live pending code for this phone (expired, used, replaced, voided): 20003. */
-  | 'gone';
+  | 'gone'
+  /** The live pending code was sent on the other route or by another super admin: 20002. */
+  | 'route';
 
 export type VerifyPhoneWriteResult =
   | { readonly kind: 'written'; readonly row: AdminDirectoryRow; readonly setAt: Date }
