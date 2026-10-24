@@ -652,3 +652,34 @@ it(
   },
   TIMEOUT,
 );
+
+it(
+  '[AC-B2-04s#43b] 京东联盟佣金由 >0 变 0 的待复核差错单（D10-313 取 A）：恰好一条 type union_mismatch、status open、指向该子订单，明细 resolution.reason_code = COMMISSION_ZERO；同一事件重放 apply 不再登记',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.credited({ platform: 'jd' });
+    await h.bumpCommissionVersion(o, 3);
+    const spec = {
+      cause: 'COMMISSION',
+      ref: { kind: 'commission' },
+      newCommissionFen: 0n,
+    } as const;
+
+    expect(await h.apply(o, spec)).toMatchObject({ outcome: 'clawed_back', transition: 'R8' });
+
+    // recon_diffs has no detail column besides resolution (jsonb), so reason_code lives there.
+    const rows = await h.reconDiffs();
+    expect(rows).toEqual([
+      expect.objectContaining({
+        type: 'union_mismatch',
+        status: 'open',
+        ref_id: expect.stringContaining(o.orderKey),
+      }),
+    ]);
+    expect(rows[0]?.resolution).toMatchObject({ reason_code: 'COMMISSION_ZERO' });
+
+    await h.apply(o, spec);
+    expect(await h.reconDiffs()).toHaveLength(1);
+  },
+  TIMEOUT,
+);
