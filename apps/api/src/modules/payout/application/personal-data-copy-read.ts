@@ -12,6 +12,7 @@
 // Also compiled by the `test` project: erasable syntax only, `import type` for types.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
+import { maskPayeeAccount } from '../domain/mask-payee.ts';
 import type { DecryptWithdrawalAccount } from './withdrawal-reads.ts';
 
 export interface PersonalDataCopyWithdrawalSubject {
@@ -41,9 +42,58 @@ export interface PersonalDataCopyWithdrawalsOptions {
   readonly decrypt: DecryptWithdrawalAccount;
 }
 
+function methodOf(value: string): 'alipay' | 'bank_card' | 'wechat' {
+  // withdrawals_payout_method_check; anything else is a broken database.
+  if (value === 'alipay' || value === 'bank_card' || value === 'wechat') return value;
+  throw new Error('payout: unknown payout method');
+}
+
 export function createPersonalDataCopyWithdrawalsReader(
   options: PersonalDataCopyWithdrawalsOptions,
 ): PersonalDataCopyWithdrawalsRead {
-  void options;
-  throw new Error('NotImplemented: createPersonalDataCopyWithdrawalsReader');
+  const { decrypt } = options;
+  return async (handle, subject) => {
+    // Only snapshot fields the copy carries; payee_name, the HMAC and the console staff columns
+    // (reviewer, executor, manual entry / confirmation, resolvers) are never selected.
+    const rows = await handle
+      .withSchema('app')
+      .selectFrom('withdrawals')
+      .select([
+        'id',
+        'status',
+        'amount_fen',
+        'fee_fen',
+        'tax_fen',
+        'net_fen',
+        'payout_method',
+        'payout_channel',
+        'payee_account_cipher',
+        'created_at',
+        'paid_at',
+      ])
+      .where('app_id', '=', subject.appId)
+      .where('user_id', '=', subject.userId)
+      .orderBy('created_at', 'desc')
+      .orderBy('id', 'desc')
+      .execute();
+    return rows.map((row) => {
+      const method = methodOf(row.payout_method);
+      return {
+        withdrawal_id: row.id,
+        status: row.status,
+        amount_fen: row.amount_fen,
+        fee_fen: row.fee_fen,
+        tax_fen: row.tax_fen,
+        net_fen: row.net_fen,
+        payout_channel: row.payout_channel,
+        // The cleartext lives only long enough to be masked (BR-ID-33 收款账号).
+        masked_account: maskPayeeAccount(
+          method,
+          decrypt(Buffer.from(row.payee_account_cipher), method),
+        ),
+        created_at: row.created_at,
+        paid_at: row.paid_at,
+      };
+    });
+  };
 }

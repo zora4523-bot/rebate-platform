@@ -26,11 +26,27 @@ export interface PersonalDataCopyOrderRow {
   readonly created_at: Date;
 }
 
-export function readPersonalDataCopyOrders(
+export async function readPersonalDataCopyOrders(
   handle: Kysely<DB>,
   subject: PersonalDataCopyOrderSubject,
 ): Promise<readonly PersonalDataCopyOrderRow[]> {
-  void handle;
-  void subject;
-  throw new Error('NotImplemented: readPersonalDataCopyOrders');
+  return handle
+    .withSchema('app')
+    .selectFrom('orders')
+    .select([
+      'order_id',
+      'platform',
+      'sub_order_id',
+      'title',
+      'pay_amount_fen',
+      'platform_status',
+      'rebate_status',
+      'paid_at',
+      'created_at',
+    ])
+    .where('app_id', '=', subject.appId)
+    .where('user_id', '=', subject.userId)
+    .orderBy('created_at', 'desc')
+    .orderBy('order_id', 'desc')
+    .execute();
 }

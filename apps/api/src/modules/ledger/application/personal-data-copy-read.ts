@@ -25,11 +25,36 @@ export interface PersonalDataCopyLedgerRow {
   readonly booked_at: Date;
 }
 
-export function readPersonalDataCopyLedgerEntries(
+function subAccountOf(value: string): 'available' | 'frozen' {
+  // ledger_entries_sub_account_check; anything else is a broken database.
+  if (value === 'available' || value === 'frozen') return value;
+  throw new Error('ledger: unknown sub_account');
+}
+
+export async function readPersonalDataCopyLedgerEntries(
   handle: Kysely<DB>,
   subject: PersonalDataCopyLedgerSubject,
 ): Promise<readonly PersonalDataCopyLedgerRow[]> {
-  void handle;
-  void subject;
-  throw new Error('NotImplemented: readPersonalDataCopyLedgerEntries');
+  const rows = await handle
+    .withSchema('app')
+    .selectFrom('ledger_entries as e')
+    .innerJoin('ledger_accounts as a', (join) =>
+      join.onRef('a.app_id', '=', 'e.app_id').onRef('a.id', '=', 'e.account_id'),
+    )
+    .select([
+      'e.ledger_type',
+      'e.sub_type',
+      'e.sub_account',
+      'e.amount_fen',
+      'e.balance_after_fen',
+      'e.booked_at',
+    ])
+    .where('a.app_id', '=', subject.appId)
+    .where('a.owner_type', '=', 'user')
+    .where('a.owner_id', '=', subject.userId)
+    .where('a.subject', '=', 'USER_BALANCE')
+    .orderBy('e.booked_at')
+    .orderBy('e.id')
+    .execute();
+  return rows.map((row) => ({ ...row, sub_account: subAccountOf(row.sub_account) }));
 }

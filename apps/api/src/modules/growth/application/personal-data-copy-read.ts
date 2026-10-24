@@ -18,11 +18,17 @@ export interface PersonalDataCopyInviteRow {
   readonly has_inviter: boolean;
 }
 
-export function readPersonalDataCopyInvite(
+export async function readPersonalDataCopyInvite(
   handle: Kysely<DB>,
   subject: PersonalDataCopyInviteSubject,
 ): Promise<PersonalDataCopyInviteRow> {
-  void handle;
-  void subject;
-  throw new Error('NotImplemented: readPersonalDataCopyInvite');
+  const row = await handle
+    .withSchema('app')
+    .selectFrom('users')
+    .select('parent_id')
+    .where('app_id', '=', subject.appId)
+    .where('id', '=', subject.userId)
+    .executeTakeFirst();
+  // Only whether an inviter is bound: the parent id itself never leaves this function.
+  return { has_inviter: row !== undefined && row.parent_id !== null };
 }
