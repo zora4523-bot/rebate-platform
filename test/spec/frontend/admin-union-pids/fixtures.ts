@@ -14,10 +14,25 @@ import {
 } from '../admin-unions/fixtures.ts';
 
 // Contract fixtures (contracts/openapi.yaml tag admin-unions, CT-24h: adminListUnionPids,
-// adminCreateUnionPid, adminUpdateUnionPid, adminActivateUnionPid, adminRetireUnionPid). The PIDs,
-// site ids and accounts are samples, not recordings of a real union.
+// adminCreateUnionPid, adminUpdateUnionPid, adminActivateUnionPid, adminRetireUnionPid; CT-24s:
+// adminListUnionAccountOptions). The PIDs, site ids and accounts are samples, not recordings of a
+// real union.
 export { ACCOUNTS, BASE_URL, NOW, PHONES, VERIFY, failure, ok };
 export const PIDS = '/admin/v1/union-pids';
+/** GET: the union account choices of the PID forms (union.pid or union.account_auth; CT-24s). */
+export const OPTIONS = '/admin/v1/union/account-options';
+/** Enum platform (contracts/enums/platform.yaml; PlatformCode). */
+export const PLATFORMS: readonly string[] = [
+  'taobao',
+  'jd',
+  'pdd',
+  'meituan',
+  'vip',
+  'douyin',
+  'eleme',
+  'kuaishou',
+  'suning',
+];
 /** 「测试 OAuth 账号」 (taobao), 「测试手工账号」 (jd), 「测试免授权账号」 (pdd). */
 export const TAOBAO_ACCOUNT = ACCOUNT_ID_WEB_GRANT;
 export const JD_ACCOUNT = MANUAL_ID;
@@ -60,6 +75,32 @@ export const MAX_EVIDENCE_BYTES = 5 * 1024 * 1024;
 
 export type Pid = Schema<'AdminUnionPid'>;
 export type Account = Schema<'AdminUnionAccount'>;
+export type AccountOption = Schema<'AdminUnionAccountOption'>;
+
+/**
+ * The rows of GET /admin/v1/union/account-options for `accounts`: only union_account_id, platform
+ * and account_name (the same values as the union-accounts row), only `platform`'s when given,
+ * ordered by platform, then account_name, then union_account_id.
+ */
+export function accountOptions(
+  accounts: readonly Account[],
+  platform?: string | undefined,
+): AccountOption[] {
+  const order = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  return accounts
+    .filter((item) => platform === undefined || item.platform === platform)
+    .map((item) => ({
+      union_account_id: item.union_account_id,
+      platform: item.platform,
+      account_name: item.account_name,
+    }))
+    .sort(
+      (a, b) =>
+        order(a.platform, b.platform) ||
+        order(a.account_name, b.account_name) ||
+        order(a.union_account_id, b.union_account_id),
+    );
+}
 
 export function pids(): Pid[] {
   return [
@@ -135,6 +176,8 @@ const SCENES: readonly string[] = ['self_buy', 'agent', 'share', 'taolijin', 'fa
 
 /**
  * Fake /admin/v1 server: union accounts and alert phones (read only, for the 联盟账号 tab), the
+ * union account choices of the PID forms (GET /admin/v1/union/account-options: the same accounts,
+ * three fields per row, `platform` filter, 20001 fields=[platform] outside enum platform), the
  * union-pids endpoints with the contract's checks, and totp step-up. A step-up value is good for
  * the next write only once; any other value (none, an old one, a reused one) is 10003.
  */
@@ -273,6 +316,12 @@ export function createServer(initial: Pid[] = pids(), accounts: Account[] = acco
     if (method === 'GET' && path === ACCOUNTS) return ok({ items: accountState });
     if (method === 'GET' && path === PHONES)
       return ok({ version: 1, items: [{ phone_id: 'hm-existing', phone_masked: '138****5678' }] });
+    if (method === 'GET' && path === OPTIONS) {
+      const platform = request.query['platform'];
+      if (platform !== undefined && !PLATFORMS.includes(platform))
+        return failure(20001, { fields: ['platform'] });
+      return ok({ items: accountOptions(accountState, platform) });
+    }
     if (method === 'GET' && path === PIDS) return ok({ items: state });
     if (method === 'POST' && path === VERIFY) {
       const body = request.body as Schema<'AdminStepUpRequest'> | undefined;
