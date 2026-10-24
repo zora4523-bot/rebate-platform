@@ -395,6 +395,24 @@ it('[AC-B3-03j#9][BR-AI-04][BR-AI-05] 搜索结果经过 match，条件存入共
       benefit_tags: ['有券'],
     });
     expect(referenced).toBe(true);
+    // B3-03j does not own automatic delivery receipts (followup 44). Supply one trusted
+    // receipt explicitly to verify search.save and quote.references share the SAME store.
+    // B3-03s (D10-328): the receipt now precedes the currentChain check, since B3-03r only
+    // switches the chain to has_products after the product_list write is acknowledged.
+    expect(outcome.kind).toBe('ok');
+    if (outcome.kind !== 'ok') return;
+    const list = outcome.cards.find((card) => card.type === 'product_list')!;
+    const resultId = list.data['result_set_id'];
+    expect(resultId).toBeTypeOf('string');
+    await assembly.results.recordDelivered(resultId as string, [
+      {
+        card_id: 'c17',
+        product_key: 'tb:synthetic-cup',
+        platform: 'taobao',
+        final_price_fen: 10000,
+        card: list,
+      },
+    ]);
     expect(await assembly.results.currentChain?.(APP, sessionId)).toMatchObject({
       status: 'has_products',
       conditions: { q: '保温杯', spec: '500ml' },
@@ -407,44 +425,28 @@ it('[AC-B3-03j#9][BR-AI-04][BR-AI-05] 搜索结果经过 match，条件存入共
         .kind,
     ).toBe('rejected');
     expect(f.readProduct).not.toHaveBeenCalled();
-    // B3-03j does not own automatic delivery receipts (followup 44). Supply one trusted
-    // receipt explicitly to verify search.save and quote.references share the SAME store.
-    if (outcome.kind === 'ok') {
-      const list = outcome.cards.find((card) => card.type === 'product_list')!;
-      const resultId = list.data['result_set_id'];
-      expect(resultId).toBeTypeOf('string');
-      await assembly.results.recordDelivered(resultId as string, [
-        {
-          card_id: 'c17',
-          product_key: 'tb:synthetic-cup',
-          platform: 'taobao',
-          final_price_fen: 10000,
-          card: list,
-        },
-      ]);
-      expect(await assembly.results.latestWithProducts(APP, sessionId)).toMatchObject({
-        id: resultId,
-        appId: APP,
-        sessionId,
-        runId: ctx.runId,
-        conditions: { q: '保温杯', spec: '500ml' },
-      });
-      for (const args of [{ card_id: 'c17' }, { ref_ordinal: 1 }]) {
-        expect(
-          products(
-            (await execute(assembly.tools, f.context(sessionId), 'get_rebate_quote', args)).outcome,
-          )[0],
-        ).toMatchObject({ product_key: 'tb:synthetic-cup', final_price_fen: 10000 });
-      }
-      expect(f.readProduct).toHaveBeenCalledTimes(2);
-      expect(await assembly.results.findDelivered(APP, randomUUID(), 'c17')).toBeNull();
-      expect(await assembly.results.findDelivered('another-app', sessionId, 'c17')).toBeNull();
+    expect(await assembly.results.latestWithProducts(APP, sessionId)).toMatchObject({
+      id: resultId,
+      appId: APP,
+      sessionId,
+      runId: ctx.runId,
+      conditions: { q: '保温杯', spec: '500ml' },
+    });
+    for (const args of [{ card_id: 'c17' }, { ref_ordinal: 1 }]) {
       expect(
-        (await execute(assembly.tools, f.context(), 'get_rebate_quote', { card_id: 'c17' })).outcome
-          .kind,
-      ).toBe('rejected');
-      expect(f.readProduct).toHaveBeenCalledTimes(2);
+        products(
+          (await execute(assembly.tools, f.context(sessionId), 'get_rebate_quote', args)).outcome,
+        )[0],
+      ).toMatchObject({ product_key: 'tb:synthetic-cup', final_price_fen: 10000 });
     }
+    expect(f.readProduct).toHaveBeenCalledTimes(2);
+    expect(await assembly.results.findDelivered(APP, randomUUID(), 'c17')).toBeNull();
+    expect(await assembly.results.findDelivered('another-app', sessionId, 'c17')).toBeNull();
+    expect(
+      (await execute(assembly.tools, f.context(), 'get_rebate_quote', { card_id: 'c17' })).outcome
+        .kind,
+    ).toBe('rejected');
+    expect(f.readProduct).toHaveBeenCalledTimes(2);
   } finally {
     await r.runtime.close();
   }
