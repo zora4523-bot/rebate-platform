@@ -1,0 +1,91 @@
+{
+  "task": "F1-02zzl",
+  "spec_ref": "ec81e625dcf54f230d168dbf09910bd704c82a18",
+  "spec_commit": "796ca338636c99a4194215aaa37540bfbf37dabe",
+  "red_tests": [
+    "test/spec/notification/push-token-deletion-race/lock-order.int.test.ts > [D10-318][BR-ID-28] 锁序 users → devices（上报先行）：上报停在读完 devices 行之后（未提交）时已持有该用户 users 行的锁，清理事务对 users 行的 FOR UPDATE 必须等它；放行后上报先提交、清理随后把它写的令牌删掉，两边都完成、无死锁，最终无残留",
+    "test/spec/notification/push-token-deletion-race/lock-order.int.test.ts > [D10-318][BR-ID-28] 锁序 users → devices（清理先行且清理也锁设备行）：清理先锁 users 行后停住，上报须在 users 行上等待、不先占设备行；清理再锁该设备行、置 deleting、删令牌并提交，不死锁；上报随后整次忽略并 resolve，无残留",
+    "test/spec/notification/push-token-deletion-race/race.int.test.ts > [D10-318][BR-ID-28] 清理先行·用户早已 deleting：清理事务锁 users 行、删掉该用户令牌后未提交，此时同设备当前会话上报同一令牌值；上报须等清理提交，之后整次忽略——该用户在该 app 无令牌行、设备上无行，上报照常 resolve",
+    "test/spec/notification/push-token-deletion-race/race.int.test.ts > [D10-318][BR-ID-28] 清理事务里才把 status 由 normal 改为 deleting（与删令牌同一事务、未提交）时上报改报新值：上报须在 users 行锁上等到提交，按提交后的 deleting 整次忽略——该用户无令牌行，上报照常 resolve（先读状态再写的做法在此残留）",
+    "test/spec/notification/push-token-deletion-race/race.int.test.ts > [D10-318][BR-ID-28] 清理事务里才把 status 由 normal 改为 deleted（与删令牌同一事务、未提交）时上报改报新值：上报须在 users 行锁上等到提交，按提交后的 deleted 整次忽略——该用户无令牌行，上报照常 resolve（先读状态再写的做法在此残留）",
+    "test/spec/notification/push-token-deletion-race/race.int.test.ts > [D10-318][BR-ID-28] 新设备首次上报（设备上还没有令牌行）与清理并发：清理在同一事务里置 deleting 并删掉该用户旧设备上的令牌、未提交；新设备当前会话的上报须等清理提交后整次忽略，不新建行，上报照常 resolve",
+    "test/spec/notification/push-token-deletion-race/status.int.test.ts > [D10-318][BR-ID-28][BR-ID-30] 用户 status=deleting（deleted_reason=null）时上报：改报新值、重报同值、在无行的设备上首次上报、报另一设备上的有效值，都整次忽略——不新建、不改、不作废、不冻结任何行，每次上报照常 resolve，无冲突日志、日志不含令牌值",
+    "test/spec/notification/push-token-deletion-race/status.int.test.ts > [D10-318][BR-ID-28][BR-ID-30] 用户 status=deleted（deleted_reason=account_deleted）时上报：改报新值、重报同值、在无行的设备上首次上报、报另一设备上的有效值，都整次忽略——不新建、不改、不作废、不冻结任何行，每次上报照常 resolve，无冲突日志、日志不含令牌值",
+    "test/spec/notification/push-token-deletion-race/status.int.test.ts > [D10-318][BR-ID-28][BR-ID-30] 用户 status=deleted（deleted_reason=merged）时上报：改报新值、重报同值、在无行的设备上首次上报、报另一设备上的有效值，都整次忽略——不新建、不改、不作废、不冻结任何行，每次上报照常 resolve，无冲突日志、日志不含令牌值",
+    "test/spec/notification/push-token-deletion-race/status.int.test.ts > [D10-318] 上报主体在该 app 没有 users 行（同 id 只在别的 app 有、或根本不存在），会话却是设备当前会话：与非当前会话同口径整次忽略，不写任何行，上报照常 resolve（不因外键报错）",
+    "test/spec/notification/push-token-deletion-race/status.int.test.ts > [D10-318][BR-ID-07] 正常用户行为不变：同 app 另一用户注销中、其上报被整次忽略的同时，正常用户首次上报新建一行（token_set_at 取 Clock），换新会话重报同值只换绑定、token_set_at 不推进"
+  ],
+  "risk_note": "RV1 (notification). Push token reports now lock the reporting user's users row FOR SHARE before the devices row (lock order users -> devices -> push_tokens, the same as identity's deletion cleanup), outside the SAVEPOINT retry loop; a missing row or status deleting / deleted ignores the whole report like a non-current session (no push_tokens write, report resolves, no new error code, no token value logged) (D10-318). FOR SHARE conflicts with the cleanup's FOR NO KEY UPDATE and is compatible with login's FOR KEY SHARE. This closes the F1-02zzk review's out-of-scope S2 (a concurrent report re-inserting a token after the cleanup's delete). Rule tests by a fresh independent Claude reproduce the race (red before the fix); test-machine full verify passed. Full verification by the required CI checks (ops/approvals.yaml id 21). Mechanical test-data change folded into the rule-test commit after the first push: sample push token strings shortened from 'pt-del-…' to 'pd-…' (under 16 characters) so gitleaks rule cn-doc-secret does not match test data; no assertion changed, gitleaks rules untouched; red re-run on the new spec commit.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "796ca338636c99a4194215aaa37540bfbf37dabe",
+      "tree": "ac7a05a55578a5086634993f14230f2bd441470f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T06:36:42Z",
+      "finished_at": "2026-10-24T06:36:48Z",
+      "red_tests": [
+        "test/spec/notification/push-token-deletion-race/lock-order.int.test.ts > [D10-318][BR-ID-28] 锁序 users → devices（上报先行）：上报停在读完 devices 行之后（未提交）时已持有该用户 users 行的锁，清理事务对 users 行的 FOR UPDATE 必须等它；放行后上报先提交、清理随后把它写的令牌删掉，两边都完成、无死锁，最终无残留",
+        "test/spec/notification/push-token-deletion-race/lock-order.int.test.ts > [D10-318][BR-ID-28] 锁序 users → devices（清理先行且清理也锁设备行）：清理先锁 users 行后停住，上报须在 users 行上等待、不先占设备行；清理再锁该设备行、置 deleting、删令牌并提交，不死锁；上报随后整次忽略并 resolve，无残留",
+        "test/spec/notification/push-token-deletion-race/race.int.test.ts > [D10-318][BR-ID-28] 清理先行·用户早已 deleting：清理事务锁 users 行、删掉该用户令牌后未提交，此时同设备当前会话上报同一令牌值；上报须等清理提交，之后整次忽略——该用户在该 app 无令牌行、设备上无行，上报照常 resolve",
+        "test/spec/notification/push-token-deletion-race/race.int.test.ts > [D10-318][BR-ID-28] 清理事务里才把 status 由 normal 改为 deleting（与删令牌同一事务、未提交）时上报改报新值：上报须在 users 行锁上等到提交，按提交后的 deleting 整次忽略——该用户无令牌行，上报照常 resolve（先读状态再写的做法在此残留）",
+        "test/spec/notification/push-token-deletion-race/race.int.test.ts > [D10-318][BR-ID-28] 清理事务里才把 status 由 normal 改为 deleted（与删令牌同一事务、未提交）时上报改报新值：上报须在 users 行锁上等到提交，按提交后的 deleted 整次忽略——该用户无令牌行，上报照常 resolve（先读状态再写的做法在此残留）",
+        "test/spec/notification/push-token-deletion-race/race.int.test.ts > [D10-318][BR-ID-28] 新设备首次上报（设备上还没有令牌行）与清理并发：清理在同一事务里置 deleting 并删掉该用户旧设备上的令牌、未提交；新设备当前会话的上报须等清理提交后整次忽略，不新建行，上报照常 resolve",
+        "test/spec/notification/push-token-deletion-race/status.int.test.ts > [D10-318][BR-ID-28][BR-ID-30] 用户 status=deleting（deleted_reason=null）时上报：改报新值、重报同值、在无行的设备上首次上报、报另一设备上的有效值，都整次忽略——不新建、不改、不作废、不冻结任何行，每次上报照常 resolve，无冲突日志、日志不含令牌值",
+        "test/spec/notification/push-token-deletion-race/status.int.test.ts > [D10-318][BR-ID-28][BR-ID-30] 用户 status=deleted（deleted_reason=account_deleted）时上报：改报新值、重报同值、在无行的设备上首次上报、报另一设备上的有效值，都整次忽略——不新建、不改、不作废、不冻结任何行，每次上报照常 resolve，无冲突日志、日志不含令牌值",
+        "test/spec/notification/push-token-deletion-race/status.int.test.ts > [D10-318][BR-ID-28][BR-ID-30] 用户 status=deleted（deleted_reason=merged）时上报：改报新值、重报同值、在无行的设备上首次上报、报另一设备上的有效值，都整次忽略——不新建、不改、不作废、不冻结任何行，每次上报照常 resolve，无冲突日志、日志不含令牌值",
+        "test/spec/notification/push-token-deletion-race/status.int.test.ts > [D10-318] 上报主体在该 app 没有 users 行（同 id 只在别的 app 有、或根本不存在），会话却是设备当前会话：与非当前会话同口径整次忽略，不写任何行，上报照常 resolve（不因外键报错）",
+        "test/spec/notification/push-token-deletion-race/status.int.test.ts > [D10-318][BR-ID-07] 正常用户行为不变：同 app 另一用户注销中、其上报被整次忽略的同时，正常用户首次上报新建一行（token_set_at 取 Clock），换新会话重报同值只换绑定、token_set_at 不推进"
+      ],
+      "expected": [
+        "test/spec/notification/push-token-deletion-race/lock-order.int.test.ts",
+        "test/spec/notification/push-token-deletion-race/race.int.test.ts",
+        "test/spec/notification/push-token-deletion-race/status.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "683648e2fc407d40b99763f31d577e4a371701d32e44090200d963485f992954"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 1,
+      "note": "fresh independent Claude via claude-run.sh (Codex out of quota until 2026-10-30, approvals 36); pass, one S2 on the test kit (it stands in for the cleanup with FOR UPDATE rather than FOR NO KEY UPDATE, so a FOR KEY SHARE implementation would not be caught); the implementation uses FOR SHARE"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by a fresh independent Claude, reviewed by another fresh independent Claude (spec-test): r1 pass, one S2 (FOR UPDATE on users would deadlock with login; the implementer used FOR SHARE); the test machine showed all 11 red tests failing for the right reason"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "2875ce64c1d55b66b5e5a00646f3b9348626986c",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}
