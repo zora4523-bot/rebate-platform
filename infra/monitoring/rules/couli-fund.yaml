@@ -1,0 +1,65 @@
+# Prometheus alerting rules of couli: fund alerts (B1-01zzi; 规划/02 §13; BR-FUND-02, BR-FUND-04,
+# BR-CALC-13, BR-WDR-14, BR-WDR-24). Same format and YAML subset as couli.yaml (which stays as it
+# is): every string single-quoted, 2-space indentation.
+# Every rule here carries labels fund: 'true' (a string) for the night routing of fund alerts:
+# at night only fund alerts are pushed (规划/02 §13). Alertmanager routing itself is not in this
+# file (B1-25).
+# Source of the metrics: the worker's internal /metrics listener (METRICS_PORT;
+# apps/api/src/modules/platform/metrics), read through the orders, settlement and payout read
+# ports at scrape time, across every app_id. A failed read fails the scrape (target down), it is
+# never exported as 0.
+# Granularity: the common 5m.
+# TODO(规划/11 §2.3): W6 ratio and repeated W6 (BR-WDR-24) — blocked on B2-06a.
+# TODO(规划/11 §2.3): corporate Alipay balance watermark W < 1.5P (BR-WDR-18) — blocked on B2-06fz.
+groups:
+  - name: couli-fund-orders
+    rules:
+      - alert: CouliOrderStatusUnmapped
+        expr: 'couli_order_sync_pending_open{reason="UNMAPPED_STATUS"} > 0'
+        for: '5m'
+        labels:
+          severity: critical
+          fund: 'true'
+        annotations:
+          summary: 'Platform order status codes outside the status map are waiting for a person'
+          description: 'Open order_sync_pending rows with reason UNMAPPED_STATUS (BR-FUND-02): the code was neither dropped nor guessed; add it to the map or resolve the rows.'
+  - name: couli-fund-settlement
+    rules:
+      - alert: CouliSettleBillJobFailed
+        expr: 'couli_settle_bill_jobs_failed > 0'
+        for: '5m'
+        labels:
+          severity: critical
+          fund: 'true'
+        annotations:
+          summary: 'Monthly bill generation failed'
+          description: 'settle_jobs rows with job bill in status failed (BR-FUND-04); the bill of that platform and month needs a rerun.'
+      - alert: CouliSettleBatchPartial
+        expr: 'couli_settle_batches_partial > 0'
+        for: '5m'
+        labels:
+          severity: critical
+          fund: 'true'
+        annotations:
+          summary: 'A settlement batch finished PARTIAL'
+          description: 'settle_batches rows in status PARTIAL (BR-FUND-04): some orders of the batch were not credited.'
+      - alert: CouliBeneficiaryHeldOver30Days
+        expr: 'couli_beneficiary_held_over_30d > 0'
+        for: '5m'
+        labels:
+          severity: warning
+          fund: 'true'
+        annotations:
+          summary: 'Beneficiary shares held for 30 days without a risk decision'
+          description: 'Shares whose latest event is held, 30 x 24 hours after their first held event (BR-CALC-13 FUND-17). A person decides; the share stays held, nothing is credited or forfeited automatically.'
+  - name: couli-fund-payout
+    rules:
+      - alert: CouliWithdrawalResultUnknown
+        expr: 'couli_withdrawals_paying_needs_manual > 0'
+        for: '5m'
+        labels:
+          severity: critical
+          fund: 'true'
+        annotations:
+          summary: 'Withdrawals in PAYING with an unknown result need a person'
+          description: 'PAYING withdrawals set to needs_manual (BR-WDR-14, BR-WDR-24): only query the channel, never pay again.'

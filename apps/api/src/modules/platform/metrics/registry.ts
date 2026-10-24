@@ -1,5 +1,7 @@
 // Prometheus registry of one entry (B1-01zzh): process-level metrics everywhere; the five business
-// gauges only on the worker, filled by `collect` at scrape time (no polling loop).
+// gauges only on the worker, filled by `collect` at scrape time (no polling loop). The five fund
+// gauges (B1-01zzi) likewise only on the worker, filled by `collectFund` at scrape time; a rejected
+// collection rejects render() (the scrape fails visibly, no value is made up).
 // The text exposition format 0.0.4 is written here from Node built-ins only: the client library
 // cannot be loaded in the test environment (its @opentelemetry/api dependency resolves to an ESM
 // build Node cannot import), so no third-party metrics library is used at runtime.
@@ -65,6 +67,37 @@ const BUSINESS_GAUGES: Readonly<
 };
 
 const BUSINESS_KEYS = Object.keys(BUSINESS_GAUGES) as (keyof WorkerMetricsSnapshot)[];
+
+/** The fund gauge with one label (reason): open order_sync_pending rows (BR-FUND-02). */
+const PENDING_GAUGE = {
+  name: 'couli_order_sync_pending_open',
+  help: 'Open order_sync_pending rows per reason (UNMAPPED_STATUS: status code outside the map).',
+  label: 'reason',
+} as const;
+
+type ScalarFundKey = Exclude<keyof FundMetricsSnapshot, 'orderSyncPendingOpen'>;
+
+/** The four unlabelled fund gauges: snapshot key → metric name and help text. */
+const SCALAR_FUND_GAUGES: Readonly<Record<ScalarFundKey, { name: string; help: string }>> = {
+  billJobsFailed: {
+    name: 'couli_settle_bill_jobs_failed',
+    help: 'Monthly bill generation jobs (settle_jobs job bill) in status failed.',
+  },
+  partialBatches: {
+    name: 'couli_settle_batches_partial',
+    help: 'Settlement batches in status PARTIAL.',
+  },
+  beneficiariesHeldOver30Days: {
+    name: 'couli_beneficiary_held_over_30d',
+    help: 'Beneficiary shares still held 30 days or more after their first held event.',
+  },
+  payingNeedsManual: {
+    name: 'couli_withdrawals_paying_needs_manual',
+    help: 'Withdrawals in status PAYING whose result is unknown and needs a person (needs_manual).',
+  },
+};
+
+const SCALAR_FUND_KEYS = Object.keys(SCALAR_FUND_GAUGES) as ScalarFundKey[];
 
 function escapeHelp(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/\n/g, '\\n');
@@ -158,14 +191,41 @@ function businessFamilies(snapshot: WorkerMetricsSnapshot): Family[] {
   });
 }
 
+function fundFamilies(snapshot: FundMetricsSnapshot): Family[] {
+  // Only this snapshot's reasons: one without open rows has no series (not a stale or made-up 0).
+  const pending: Family = {
+    name: PENDING_GAUGE.name,
+    help: PENDING_GAUGE.help,
+    type: 'gauge',
+    samples: Object.entries(snapshot.orderSyncPendingOpen).map(([reason, value]) => ({
+      labels: { [PENDING_GAUGE.label]: reason },
+      value,
+    })),
+  };
+  // The scalar gauges are always exported, 0 included (the rules compare with > 0).
+  const scalars = SCALAR_FUND_KEYS.map((key) => ({
+    name: SCALAR_FUND_GAUGES[key].name,
+    help: SCALAR_FUND_GAUGES[key].help,
+    type: 'gauge' as const,
+    samples: [{ value: snapshot[key] }],
+  }));
+  return [pending, ...scalars];
+}
+
 export function createMetricsRegistry(options: MetricsRegistryOptions): MetricsRegistry {
-  const collect = options.entry === 'worker' ? options.collect : undefined;
+  const worker = options.entry === 'worker';
+  const collect = worker ? options.collect : undefined;
+  const collectFund = worker ? options.collectFund : undefined;
   return {
     contentType: CONTENT_TYPE,
     async render() {
-      // Business values first, then the process values of the same scrape.
-      const business = collect === undefined ? [] : businessFamilies(await collect());
-      return [...business, ...processFamilies()].map(renderFamily).join('');
+      // Business and fund values first, then the process values of the same scrape. Either
+      // collection rejecting rejects the whole render.
+      const [business, fund] = await Promise.all([
+        collect === undefined ? [] : collect().then(businessFamilies),
+        collectFund === undefined ? [] : collectFund().then(fundFamilies),
+      ]);
+      return [...business, ...fund, ...processFamilies()].map(renderFamily).join('');
     },
   };
 }

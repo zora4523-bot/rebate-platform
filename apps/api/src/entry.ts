@@ -14,6 +14,7 @@ import {
 } from './modules/identity/index.ts';
 import {
   type AppConfig,
+  type Clock,
   type ConnectionConfig,
   type DbHandles,
   type MaintConnectionConfig,
@@ -40,7 +41,14 @@ import {
   loadConfig,
   loadConnectionConfig,
 } from './modules/platform/index.ts';
-import { orderSyncToken, type OrderSyncRuntime } from './modules/orders/index.ts';
+import {
+  orderSyncToken,
+  readOrderSyncPendingOpen,
+  type OrderSyncRuntime,
+} from './modules/orders/index.ts';
+import { readPayoutFundMetrics } from './modules/payout/index.ts';
+import type { FundMetricsSnapshot } from './modules/platform/metrics/index.ts';
+import { readSettlementFundMetrics } from './modules/settlement/index.ts';
 import {
   armRedisGeneration,
   redisGenerationRenewalToken,
@@ -197,16 +205,23 @@ function startGenerationRenewal(
 /**
  * The entry's internal Prometheus /metrics listener (B1-01zzh): only when METRICS_PORT is set.
  * Every entry exports process-level metrics; only the worker passes `collect` (whole-database
- * gauges read through its own handle at scrape time). Not on the Nest application, not in the OAS.
+ * gauges read through its own handle at scrape time) and, since B1-01zzi, `collectFund` (the fund
+ * gauges from the orders, settlement and payout read ports). Not on the Nest application, not in
+ * the OAS.
  */
 async function openMetrics(
   entry: EntryName,
   config: AppConfig,
   logger: RootLogger,
-  collect?: () => Promise<WorkerMetricsSnapshot>,
+  collectors?: {
+    readonly collect: () => Promise<WorkerMetricsSnapshot>;
+    readonly collectFund: () => Promise<FundMetricsSnapshot>;
+  },
 ): Promise<MetricsServer | undefined> {
   if (config.metrics === undefined) return undefined;
-  const registry = createMetricsRegistry(collect === undefined ? { entry } : { entry, collect });
+  const registry = createMetricsRegistry(
+    collectors === undefined ? { entry } : { entry, ...collectors },
+  );
   const server = await startMetricsServer({
     host: config.metrics.host,
     port: config.metrics.port,
@@ -214,6 +229,26 @@ async function openMetrics(
   });
   logger.info({ host: config.metrics.host, port: server.port }, 'metrics_listening');
   return server;
+}
+
+/**
+ * The worker's fund gauges (B1-01zzi) through each module's read-only port over the worker's own
+ * database handle, read in parallel at scrape time. Any port rejecting rejects the whole snapshot:
+ * no value is replaced by 0, so a failed read fails the scrape visibly.
+ */
+async function collectFundMetrics(db: DbHandles['db'], clock: Clock): Promise<FundMetricsSnapshot> {
+  const [orderSyncPendingOpen, settlement, payout] = await Promise.all([
+    readOrderSyncPendingOpen(db),
+    readSettlementFundMetrics(db, clock),
+    readPayoutFundMetrics(db),
+  ]);
+  return {
+    orderSyncPendingOpen,
+    billJobsFailed: settlement.billJobsFailed,
+    partialBatches: settlement.partialBatches,
+    beneficiariesHeldOver30Days: settlement.beneficiariesHeldOver30Days,
+    payingNeedsManual: payout.payingNeedsManual,
+  };
 }
 
 /** Closes the metrics listener during a failed startup without masking the startup error. */
@@ -350,9 +385,10 @@ async function start(
       // The /metrics listener (B1-01zzh), opened once the services run and no stop was requested.
       // A failed listen stops the services it would otherwise leave running, then fails startup.
       try {
-        metricsServer = await openMetrics(entry, config, logger, () =>
-          collectWorkerMetrics(dbHandles.db, clock),
-        );
+        metricsServer = await openMetrics(entry, config, logger, {
+          collect: () => collectWorkerMetrics(dbHandles.db, clock),
+          collectFund: () => collectFundMetrics(dbHandles.db, clock),
+        });
       } catch (error) {
         signals.fail();
         await services.stop();
