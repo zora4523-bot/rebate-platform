@@ -116,3 +116,33 @@ it('[AC-B2-05j#7] 失效后首次重绑走首绑：不写变更行、剩余不�
   expect(await exemptReasons(kit, f)).toEqual([null, EXEMPT, null]);
   expect(await save(kit, f, { alipayLogonId: 'last@example.com' })).toEqual(LIMIT);
 });
+
+it('[AC-B2-05j#10] 本月名额已用满 + 实名更正失效后：首次重绑仍成功、不写变更行、剩余 0；之后再换绑 30303', async () => {
+  const f = await fixture(kit);
+  const old = await account(kit, f);
+  await change(kit, f);
+  await change(kit, f);
+  expect(envelope(kit, await f.get())).toMatchObject({ change_remaining_this_month: 0 });
+
+  expect(await invalidate(kit, f, kit.clock.now())).toEqual({ retired: 1 });
+  const invalidated = await state(kit, f);
+  expect(invalidated.accounts.filter((row) => row.is_current)).toEqual([]);
+  expect(invalidated.changes).toHaveLength(3);
+  expect(await exemptReasons(kit, f)).toEqual([null, null, EXEMPT]);
+
+  // A used-up month must not block the first rebinding: there is no current account to change.
+  const rebound = await save(kit, f, { alipayLogonId: 'new@example.com' });
+  expect(rebound).toMatchObject({ code: 0, data: { change_remaining_this_month: 0 } });
+  const afterRebind = await state(kit, f);
+  expect(afterRebind.changes).toEqual(invalidated.changes);
+  const current = afterRebind.accounts.filter((row) => row.is_current);
+  expect(current).toHaveLength(1);
+  expect(current[0]!.id).not.toBe(old.id);
+  expect(current[0]!.alipay_hmac).toBe(kit.crypto.blindIndex('new@example.com', ALIPAY_CONTEXT));
+  expect(rebound).toMatchObject({ data: { payout_account_id: current[0]!.id } });
+  expect(envelope(kit, await f.get())).toMatchObject({ change_remaining_this_month: 0 });
+
+  // The next change is ordinary and the month is still full.
+  expect(await save(kit, f, { alipayLogonId: 'next@example.com' })).toEqual(LIMIT);
+  expect((await state(kit, f)).changes).toEqual(invalidated.changes);
+});
