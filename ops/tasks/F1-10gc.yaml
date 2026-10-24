@@ -1,0 +1,24 @@
+id: F1-10gc
+repo: rebate-platform
+title: 后台推广位登记改用联盟账号选项接口——/unions「推广位」页签的登记 / 修改对话框的联盟账号下拉改读 adminListUnionAccountOptions（GET /admin/v1/union/account-options，union.pid 或 union.account_auth 任一即可、按 platform 筛选），只持 union.pid 的账号也能登记；列表行的所属账号名照常显示（选项接口给 account_name）；该接口仍是 planned 时（F1-06zu 清单）不请求、下拉为空并提示「功能开发中」；不再为推广位读 GET /admin/v1/union-accounts
+type: impl
+# 2026-10-24 入账（前端线 f1-frontend-7，编排续跑指令：CT-24s #1476 已合并 27194e19，开 F1-10gb 后续）。契约 CT-24s（D10-243），后端 B1-22o 未做——按契约以假服务端开发。F1-10gb 已 done，本条为其后续。
+# 冻结测试同步：admin-union-pids 的假服务端只提供 GET /admin/v1/union-accounts 作账号来源，admin-planned PAGE#4 / recover 只拦旧地址——由本任务的规则测试作者（新鲜独立 Claude）在 test_paths 内改为提供 / 拦截 account-options，断言含义不放宽；属第一类保护路径改动，合并需编排按 #24 加 owner-approved 标签。
+# Codex 用量上限至 10-30：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude。
+refs: []
+refs_hash: {}
+deps: [CT-24s, F1-10gb, F1-06zu]
+paths:
+  - 'apps/admin/src/pages/unions/**'
+  - 'apps/admin/src/texts/unions.ts'
+test_paths:
+  - 'test/spec/frontend/admin-union-pids/**'
+  - 'test/spec/frontend/admin-planned/**'
+  - 'test/spec/frontend/admin-union-pids-options/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-union-pids-options/**'
+status: todo
+pr: null
