@@ -18,7 +18,10 @@
 //   change: the phone is normalised as for sending; the super route also needs a non-blank reason
 //     (20001 reason); then, under the target row's lock, the pending code for this account and
 //     phone is checked: a wrong code → 20002 (never counted towards the login lock; the 5th wrong
-//     try voids the pending code); none pending, expired, used, replaced or voided → 20003; a
+//     try voids the pending code); none pending, expired, used, replaced or voided → 20003; a live
+//     pending code sent by someone else (the holder's own on the super route, a super admin's on
+//     「我的账号」, another super admin's) → 20002 without data, the code kept and the try not
+//     counted (B1-34o: the pending code names its sender, so the audit row names who started it); a
 //     verified code replaces the verify phone (field cipher + blind index, BR-ID-33) and writes the
 //     audit row (admin_verify_phone_change: masked phones before and after, who made it, the
 //     reason on the super route). Sessions stay.
@@ -119,8 +122,12 @@ const PHONE_INVALID: VerifyPhoneRefused = Object.freeze({
 const FORBIDDEN: VerifyPhoneRefused = Object.freeze({ kind: 'forbidden' });
 const EXPIRED: VerifyPhoneRefused = Object.freeze({ kind: 'expired' });
 const FAILED: VerifyPhoneSendAnswer = Object.freeze({ kind: 'failed' });
+const WRONG: VerifyPhoneCodeRefused = Object.freeze({ kind: 'wrong' });
 /** Bound on drawing a code whose hash differs from the pending and replaced ones. */
 const CODE_DRAWS = 16;
+/** The sender a pending code records: the holder itself, or the super admin acting for them. */
+const SELF_SENDER = 'self';
+const superSender = (superAdminId: string): string => `super_admin:${superAdminId}`;
 
 interface Account {
   readonly appId: string;
@@ -153,7 +160,7 @@ export function createAdminVerifyPhoneService(deps: AdminVerifyPhoneDeps): Admin
     caller: VerifyPhoneCaller,
     target: AdminProfile,
     input: string,
-    audited: boolean,
+    bySuper: boolean,
   ): Promise<VerifyPhoneSendAnswer> => {
     const account: Account = { appId: target.appId, adminId: target.id };
     const phone = normalizeVerifyPhone(input);
@@ -199,14 +206,18 @@ export function createAdminVerifyPhoneService(deps: AdminVerifyPhoneDeps): Admin
       await codes.store(
         account.appId,
         account.adminId,
-        { phone: phoneHmac(account, phone), hash },
+        {
+          phone: phoneHmac(account, phone),
+          hash,
+          by: bySuper ? superSender(caller.adminId) : SELF_SENDER,
+        },
         nowMs,
         nowMs + STEP_UP_SMS_CODE_TTL_MS,
       );
     } catch {
       return await free();
     }
-    if (audited) {
+    if (bySuper) {
       try {
         await writes.auditSend({
           appId: caller.appId,
@@ -256,7 +267,11 @@ export function createAdminVerifyPhoneService(deps: AdminVerifyPhoneDeps): Admin
         codes.check(
           account.appId,
           account.adminId,
-          { phone: hmac, hash: codeHash(account, code) },
+          {
+            phone: hmac,
+            hash: codeHash(account, code),
+            by: reason === null ? SELF_SENDER : superSender(caller.adminId),
+          },
           clock.now().getTime(),
           VERIFY_PHONE_CODE_MAX_WRONG,
         ),
@@ -268,7 +283,9 @@ export function createAdminVerifyPhoneService(deps: AdminVerifyPhoneDeps): Admin
       ? fields('admin_id')
       : reason === 'forbidden'
         ? FORBIDDEN
-        : { kind: reason };
+        : reason === 'route'
+          ? WRONG
+          : { kind: reason };
 
   return {
     async sendMine(caller, phone) {

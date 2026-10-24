@@ -1,21 +1,26 @@
 // Redis state of a pending verify-phone change (B1-34i; 08 BR-ID-45, BR-ID-33; contract CT-24o),
 // namespace `admin-step-up`, one record per account (`<app>:<admin id>`; the holder's own change
-// and a super admin's change on the holder's behalf share it, so either send replaces the other):
+// and a super admin's change on the holder's behalf share it, so either send replaces the other;
+// the record names its sender, so only the route that sent a code can submit it — B1-34o):
 //   vp-sent:<app>:<admin>  "<sent at ms>:<reservation id>" — the 60-second send limit by the Clock,
 //                          taken atomically before the SMS goes out and released only when the
 //                          provider definitely rejected it (apart from the sms step-up tier's own
 //                          limit, which keeps serving the current phone during a change);
-//   vp-code:<app>:<admin>  JSON {phone, hash, exp, wrong} — the pending change: the new phone's
-//                          blind index (never the phone), the code's keyed hash (never the code),
-//                          its expiry by the Clock and the wrong tries so far;
+//   vp-code:<app>:<admin>  JSON {phone, hash, exp, wrong, by} — the pending change: the new
+//                          phone's blind index (never the phone), the code's keyed hash (never the
+//                          code), its expiry by the Clock, the wrong tries so far and its sender
+//                          (`self`, or `super_admin:<super admin id>`; a record without one holds
+//                          no code);
 //   vp-hist:<app>:<admin>  JSON [{hash, at}] — every code sent in the last 24 hours by the Clock
 //                          (oldest dropped beyond the keep limit), so a replaced, used or voided
 //                          code answers `gone` rather than a counted `wrong`.
 // Expiry and the 24-hour window are judged by the Clock (ARGV); the Redis TTL (ARGV[1]) only
 // cleans up. The record is written before the SMS goes out (repo hard rule 3); a definite rejection
 // then `revoke`s it.
-// Verification is one script: the live pending code for this phone → `ok` and the record goes (the
-// code stays in the history); a code in the history → `gone`; a different code while a live code
+// Verification is one script: a live pending change sent by someone other than the submitter →
+// `route`, and nothing changes (the code is not used up and the try is not counted, so a submitter on
+// the other route cannot void it); the live pending code for this phone → `ok` and the record goes
+// (the code stays in the history); a code in the history → `gone`; a different code while a live code
 // for this phone is pending → `wrong` (the `max`-th wrong try voids the pending code); anything
 // else (nothing pending, another phone, expired) → `gone`.
 //
@@ -29,7 +34,7 @@ import {
 } from '../domain/step-up-policy.ts';
 import type { ReserveOutcome } from './step-up-sms-codes.ts';
 
-export type VerifyPhoneCodeCheck = 'ok' | 'wrong' | 'gone';
+export type VerifyPhoneCodeCheck = 'ok' | 'wrong' | 'gone' | 'route';
 
 export interface VerifyPhoneCodes {
   /** Hashes of the pending code and the history (to draw a code that differs from them). */
@@ -43,21 +48,24 @@ export interface VerifyPhoneCodes {
   ): Promise<ReserveOutcome>;
   /** Give the slot back (nothing was sent). */
   release(appId: string, adminId: string, reservation: string): Promise<void>;
-  /** Make (`phone`, `hash`) the pending change until `expiresAtMs`; the earlier one is void. */
+  /**
+   * Make (`phone`, `hash`) sent by `by` the pending change until `expiresAtMs`; the earlier one is
+   * void.
+   */
   store(
     appId: string,
     adminId: string,
-    pending: { readonly phone: string; readonly hash: string },
+    pending: { readonly phone: string; readonly hash: string; readonly by: string },
     nowMs: number,
     expiresAtMs: number,
   ): Promise<void>;
   /** Withdraw a stored code that was never delivered. */
   revoke(appId: string, adminId: string, hash: string, nowMs: number): Promise<void>;
-  /** Check (and on success consume) a submitted phone's blind index and code hash. */
+  /** Check (and on success consume) a phone's blind index and code hash submitted by `by`. */
   check(
     appId: string,
     adminId: string,
-    submitted: { readonly phone: string; readonly hash: string },
+    submitted: { readonly phone: string; readonly hash: string; readonly by: string },
     nowMs: number,
     maxWrong: number,
   ): Promise<VerifyPhoneCodeCheck>;
@@ -82,7 +90,7 @@ local function current()
   if not raw then return nil end
   local ok, cur = pcall(cjson.decode, raw)
   if not ok or type(cur) ~= 'table' or type(cur.hash) ~= 'string' or type(cur.phone) ~= 'string'
-    or not tonumber(cur.exp) then
+    or type(cur.by) ~= 'string' or not tonumber(cur.exp) then
     return nil
   end
   return cur
@@ -122,7 +130,7 @@ local list = history()
 table.insert(list, {hash = ARGV[4], at = now})
 save_history(list)
 redis.call('SET', KEYS[1],
-  cjson.encode({phone = ARGV[3], hash = ARGV[4], exp = tonumber(ARGV[5]), wrong = 0}),
+  cjson.encode({phone = ARGV[3], hash = ARGV[4], exp = tonumber(ARGV[5]), wrong = 0, by = ARGV[6]}),
   'EX', ARGV[1])
 return 1`;
 
@@ -138,6 +146,7 @@ return 1`;
 
 const CHECK_SCRIPT = `${RECORD_LUA}
 local cur = current()
+if cur ~= nil and tonumber(cur.exp) > now and cur.by ~= ARGV[6] then return 'route' end
 local live = cur ~= nil and tonumber(cur.exp) > now and cur.phone == ARGV[3]
 if live and cur.hash == ARGV[4] then
   redis.call('DEL', KEYS[1])
@@ -155,7 +164,8 @@ if live then
     redis.call('DEL', KEYS[1])
   else
     redis.call('SET', KEYS[1],
-      cjson.encode({phone = cur.phone, hash = cur.hash, exp = tonumber(cur.exp), wrong = wrong}),
+      cjson.encode({phone = cur.phone, hash = cur.hash, exp = tonumber(cur.exp), wrong = wrong,
+      by = cur.by}),
       'EX', ARGV[1])
   end
   return 'wrong'
@@ -165,7 +175,7 @@ return 'gone'`;
 const sentKey = (appId: string, adminId: string): string => `vp-sent:${appId}:${adminId}`;
 const codeKey = (appId: string, adminId: string): string => `vp-code:${appId}:${adminId}`;
 const historyKey = (appId: string, adminId: string): string => `vp-hist:${appId}:${adminId}`;
-const CHECKS: ReadonlySet<unknown> = new Set(['ok', 'wrong', 'gone']);
+const CHECKS: ReadonlySet<unknown> = new Set(['ok', 'wrong', 'gone', 'route']);
 
 function hashesOf(current: unknown, history: unknown): Set<string> {
   const hashes = new Set<string>();
@@ -235,7 +245,7 @@ export function createVerifyPhoneCodes(deps: { readonly redis: RedisNamespace })
     async store(appId, adminId, pending, nowMs, expiresAtMs) {
       await redis.eval(STORE_SCRIPT, {
         keys: keysOf(appId, adminId),
-        args: [String(nowMs), pending.phone, pending.hash, String(expiresAtMs)],
+        args: [String(nowMs), pending.phone, pending.hash, String(expiresAtMs), pending.by],
         ttlSeconds: recordTtl,
       });
     },
@@ -251,7 +261,7 @@ export function createVerifyPhoneCodes(deps: { readonly redis: RedisNamespace })
     async check(appId, adminId, submitted, nowMs, maxWrong) {
       const reply = await redis.eval(CHECK_SCRIPT, {
         keys: keysOf(appId, adminId),
-        args: [String(nowMs), submitted.phone, submitted.hash, String(maxWrong)],
+        args: [String(nowMs), submitted.phone, submitted.hash, String(maxWrong), submitted.by],
         ttlSeconds: recordTtl,
       });
       if (!CHECKS.has(reply)) throw new Error('admin verify phone: unexpected code check reply');
