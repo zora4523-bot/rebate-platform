@@ -36,9 +36,26 @@ it(
   async () => {
     await scenario(createTestDatabase, '08', async ({ db, check }) => {
       const o = await order(db);
-      await rights(db, o);
-      await rights(db, o);
-      await rights(db, o, 'FAILED');
+      // order_rights_dedupe_key（0084，方案 K-2）下同订单同 type 无单号只能有一行：多条维权是不同单号的维权单（D10-346）。
+      const numbered = async (no: string, status = 'SUCCEEDED', type = 'INVALID_AFTER_SETTLE') => {
+        await db
+          .withSchema('app')
+          .insertInto('order_rights')
+          .values({
+            id: crypto.randomUUID(),
+            app_id: o.app,
+            order_id: o.id,
+            source: 'API',
+            type,
+            status,
+            occurred_at: '2032-06-15T08:00:00Z',
+            platform_rights_no: no,
+          })
+          .execute();
+      };
+      await numbered('R-16-1');
+      await numbered('R-16-2');
+      await numbered('R-16-3', 'FAILED');
       const rows = await check(1n);
       differences(rows, 'account');
       identifies(rows, o);
@@ -56,9 +73,27 @@ it(
   async () => {
     await scenario(createTestDatabase, '08', async ({ db, check }) => {
       const o = await order(db, { values: { rights_pending: true } });
-      for (const status of ['PROCESSING', 'WAIT_COMMISSION', 'FAILED']) await rights(db, o, status);
+      // order_rights_dedupe_key（0084，方案 K-2）下同订单同 type 无单号只能有一行：多条维权是不同单号的维权单（D10-346）。
+      const numbered = async (no: string, status = 'SUCCEEDED', type = 'INVALID_AFTER_SETTLE') => {
+        await db
+          .withSchema('app')
+          .insertInto('order_rights')
+          .values({
+            id: crypto.randomUUID(),
+            app_id: o.app,
+            order_id: o.id,
+            source: 'API',
+            type,
+            status,
+            occurred_at: '2032-06-15T08:00:00Z',
+            platform_rights_no: no,
+          })
+          .execute();
+      };
+      for (const status of ['PROCESSING', 'WAIT_COMMISSION', 'FAILED'])
+        await numbered(`R-17-${status}`, status);
       for (const type of ['RIGHTS', 'PUNISH', 'REFUND_AFTER_SETTLE'])
-        await rights(db, o, 'SUCCEEDED', type);
+        await numbered(`R-17-${type}`, 'SUCCEEDED', type);
       clean(await check(1n));
     });
   },
@@ -74,8 +109,25 @@ it(
         people: [p, { ...p, role: 'direct', ratio: 1000 }],
         values: { platform_status: 'INVALID' },
       });
-      await rights(db, o);
-      await rights(db, o);
+      // order_rights_dedupe_key（0084，方案 K-2）下同订单同 type 无单号只能有一行：多条维权是不同单号的维权单（D10-346）。
+      const numbered = async (no: string, status = 'SUCCEEDED', type = 'INVALID_AFTER_SETTLE') => {
+        await db
+          .withSchema('app')
+          .insertInto('order_rights')
+          .values({
+            id: crypto.randomUUID(),
+            app_id: o.app,
+            order_id: o.id,
+            source: 'API',
+            type,
+            status,
+            occurred_at: '2032-06-15T08:00:00Z',
+            platform_rights_no: no,
+          })
+          .execute();
+      };
+      await numbered('R-18-1');
+      await numbered('R-18-2');
       const rows = await check(1n);
       differences(rows, 'account');
       identifies(rows, o);
