@@ -1,0 +1,110 @@
+{
+  "task": "B1-01zzi",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "c14f57b5d3398167142d4fe581dc2d0a1cb0e4a4",
+  "red_tests": [
+    "test/spec/platform/fund-metrics/entry.test.ts > [AC-B1-01zzi#14] worker 的 registry 带 collectFund：经本入口库读三个模块端口的表、不写、不读数据库时钟，collect 照旧；其余四个入口没有 collectFund",
+    "test/spec/platform/fund-metrics/ports.int.test.ts > [AC-B1-01zzi#8] orders 端口：open 的待处理记录按 reason 计数（跨 app_id），resolved / dismissed 不计，没有 open 记录的 reason 不出键",
+    "test/spec/platform/fund-metrics/ports.int.test.ts > [AC-B1-01zzi#9] settlement 端口：只计 job=bill 且 failed 的账单任务、status=PARTIAL 的批次（跨 app_id 与平台），与注入时钟无关",
+    "test/spec/platform/fund-metrics/ports.int.test.ts > [AC-B1-01zzi#10] settlement 端口：受益人份额按 (app_id, order_id, user_id, role) 取最新事件为 held、且首次 held 满 30×24 小时（含边界）才计；29 天、差 1 秒、已转 active / forfeited 不计；按注入时钟推进",
+    "test/spec/platform/fund-metrics/ports.int.test.ts > [AC-B1-01zzi#11] payout 端口：只计 PAYING 且 needs_manual 的提现单（跨 app_id）；needs_manual 但已到终态或驳回、PAYING 但未转人工都不计",
+    "test/spec/platform/fund-metrics/ports.int.test.ts > [AC-B1-01zzi#12] 空库：pending 为空对象，其余计数为 0",
+    "test/spec/platform/fund-metrics/ports.int.test.ts > [AC-B1-01zzi#13] worker registry 以三个端口为 collectFund 渲染：五个资金指标的文本数值与夹具一致，下一次 scrape 跟随注入时钟",
+    "test/spec/platform/fund-metrics/ports.test.ts > [AC-B1-01zzi#7] 三个只读端口经各自模块 index.ts 导出；只读本模块的表、不写、不读数据库时钟",
+    "test/spec/platform/fund-metrics/registry.test.ts > [AC-B1-01zzi#1] worker 的 registry 在 scrape 时调 collectFund：五类资金 gauge（pending 带 reason，其余四个无标签）与快照一致，B1-01zzh 的业务 gauge 与进程级指标照旧",
+    "test/spec/platform/fund-metrics/registry.test.ts > [AC-B1-01zzi#2] 资金指标只在 worker 且给了 collectFund 时出现：api / stream / admin / payout 给了也不调用、不出资金指标名；worker 不给 collectFund 也没有",
+    "test/spec/platform/fund-metrics/registry.test.ts > [AC-B1-01zzi#3] 每次 scrape 取最新资金快照：不常驻轮询，消失的 reason 不留旧序列，0 照样输出",
+    "test/spec/platform/fund-metrics/rules.test.ts > [AC-B1-01zzi#4] couli-fund.yaml 结构：每条规则 alert 唯一（也不与 couli.yaml 重名）、有 expr、for、severity（critical / warning）、summary，且 labels.fund 为字符串 \"true\"；couli.yaml 的规则不带 fund",
+    "test/spec/platform/fund-metrics/rules.test.ts > [AC-B1-01zzi#5] 五条资金告警：映射表外状态码（pending open 且 reason=\"UNMAPPED_STATUS\"）、账单生成失败、批次 PARTIAL、受益人 held 满 30 天、打款结果未知需人工，阈值均为 > 0",
+    "test/spec/platform/fund-metrics/rules.test.ts > [AC-B1-01zzi#6] couli-fund.yaml 只读 worker 导出的五个资金指标：不读 B1-01zzh 的队列 / 同步指标，也不先写 W6 / 水位等未落地的指标"
+  ],
+  "risk_note": "RV2 (read-only ports in orders / settlement / payout, platform metrics, entry wiring, fund alert rules). D10-183 ② R-01, D10-193 ③: fund metrics read by SQL through new read-only module ports (order_sync_pending open by reason; settle_jobs bill failed; settle_batches PARTIAL; beneficiary shares whose latest event is held and whose first held event is at least 30 x 24 h old per BR-CALC-13; withdrawals PAYING with needs_manual), injected by entry.ts into the worker's collectFund only (platform imports no module; B1-01zzh's collect contract unchanged). Any port failure fails the scrape, no invented zeros; now only from the injected Clock. infra/monitoring/rules/couli-fund.yaml: five alerts with fund=\"true\" and severity. W6 rate, consecutive W6 and the Alipay watermark stay TODO on B2-06a / B2-06fz; other BR-WDR-24 items are payout event alerts. Read-only, no business logic changed, no money moved, no migration.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c14f57b5d3398167142d4fe581dc2d0a1cb0e4a4",
+      "tree": "69d6e7097afdc2810a165c7ed8f2dcb35be08c55",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T21:04:09Z",
+      "finished_at": "2026-10-24T21:04:38Z",
+      "gate": {
+        "commit": "7d09841704c0f148fd66e322fc35ff4d5198d104",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/platform/fund-metrics/entry.test.ts > [AC-B1-01zzi#14] worker 的 registry 带 collectFund：经本入口库读三个模块端口的表、不写、不读数据库时钟，collect 照旧；其余四个入口没有 collectFund",
+        "test/spec/platform/fund-metrics/ports.int.test.ts > [AC-B1-01zzi#8] orders 端口：open 的待处理记录按 reason 计数（跨 app_id），resolved / dismissed 不计，没有 open 记录的 reason 不出键",
+        "test/spec/platform/fund-metrics/ports.int.test.ts > [AC-B1-01zzi#9] settlement 端口：只计 job=bill 且 failed 的账单任务、status=PARTIAL 的批次（跨 app_id 与平台），与注入时钟无关",
+        "test/spec/platform/fund-metrics/ports.int.test.ts > [AC-B1-01zzi#10] settlement 端口：受益人份额按 (app_id, order_id, user_id, role) 取最新事件为 held、且首次 held 满 30×24 小时（含边界）才计；29 天、差 1 秒、已转 active / forfeited 不计；按注入时钟推进",
+        "test/spec/platform/fund-metrics/ports.int.test.ts > [AC-B1-01zzi#11] payout 端口：只计 PAYING 且 needs_manual 的提现单（跨 app_id）；needs_manual 但已到终态或驳回、PAYING 但未转人工都不计",
+        "test/spec/platform/fund-metrics/ports.int.test.ts > [AC-B1-01zzi#12] 空库：pending 为空对象，其余计数为 0",
+        "test/spec/platform/fund-metrics/ports.int.test.ts > [AC-B1-01zzi#13] worker registry 以三个端口为 collectFund 渲染：五个资金指标的文本数值与夹具一致，下一次 scrape 跟随注入时钟",
+        "test/spec/platform/fund-metrics/ports.test.ts > [AC-B1-01zzi#7] 三个只读端口经各自模块 index.ts 导出；只读本模块的表、不写、不读数据库时钟",
+        "test/spec/platform/fund-metrics/registry.test.ts > [AC-B1-01zzi#1] worker 的 registry 在 scrape 时调 collectFund：五类资金 gauge（pending 带 reason，其余四个无标签）与快照一致，B1-01zzh 的业务 gauge 与进程级指标照旧",
+        "test/spec/platform/fund-metrics/registry.test.ts > [AC-B1-01zzi#2] 资金指标只在 worker 且给了 collectFund 时出现：api / stream / admin / payout 给了也不调用、不出资金指标名；worker 不给 collectFund 也没有",
+        "test/spec/platform/fund-metrics/registry.test.ts > [AC-B1-01zzi#3] 每次 scrape 取最新资金快照：不常驻轮询，消失的 reason 不留旧序列，0 照样输出",
+        "test/spec/platform/fund-metrics/rules.test.ts > [AC-B1-01zzi#4] couli-fund.yaml 结构：每条规则 alert 唯一（也不与 couli.yaml 重名）、有 expr、for、severity（critical / warning）、summary，且 labels.fund 为字符串 \"true\"；couli.yaml 的规则不带 fund",
+        "test/spec/platform/fund-metrics/rules.test.ts > [AC-B1-01zzi#5] 五条资金告警：映射表外状态码（pending open 且 reason=\"UNMAPPED_STATUS\"）、账单生成失败、批次 PARTIAL、受益人 held 满 30 天、打款结果未知需人工，阈值均为 > 0",
+        "test/spec/platform/fund-metrics/rules.test.ts > [AC-B1-01zzi#6] couli-fund.yaml 只读 worker 导出的五个资金指标：不读 B1-01zzh 的队列 / 同步指标，也不先写 W6 / 水位等未落地的指标"
+      ],
+      "expected": [
+        "test/spec/platform/fund-metrics/entry.test.ts",
+        "test/spec/platform/fund-metrics/ports.int.test.ts",
+        "test/spec/platform/fund-metrics/ports.test.ts",
+        "test/spec/platform/fund-metrics/registry.test.ts",
+        "test/spec/platform/fund-metrics/rules.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "be10cd4a46fdf750f1b0a994d8551a2575ebd9b4860c3c807c1a8b6b8b623914"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "a3c857815c02110d7b47617755025467c5f946d7bdf31d1d3892e3d6d711b8a8"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota until 10-30 (approvals #36); independent Claude review over the test(spec) base: pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by an independent Claude context (14 tests in 5 files red for the right reason on the test machine), reviewed by a separate fresh independent Claude call: pass with four S2 recorded as follow-ups (re-held key reading, entry collectFund values, rejecting collectFund, strict parsing stand-in)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "e3d698aa4b47ec9e2db67dc7668a08f07c4402a2",
+    "specs": "cec847e1768a63aac90e3e1bd473462d95d84436"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
