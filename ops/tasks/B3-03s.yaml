@@ -6,18 +6,15 @@ type: test-change
 # test/spec/agent/stream-assembly/assembly.int.test.ts [AC-B3-03j#9] 与 regressions.int.test.ts [AC-B3-03j#14] 直接调装配的 tools 做 search_products，
 # 不经 core、无写出回执就断言 currentChain 已是 has_products。做法：#9 把已有的手动 recordDelivered 挪到 currentChain 断言之前；#14 补一次写出回执再断言。
 # 断言含义不变、不放宽别的断言、不删用例、不动实现；现行主干实现下也全绿，可先于 B3-03r 合并（先例 B3-04j #1141）。
-# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件；新鲜独立 Claude 改（Codex 至 10-30 不可用，approvals #36），另一新鲜独立 Claude 只读复审；标签由编排核对后加（D10-110、#24）。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件；新鲜独立 Claude 改、另一新鲜独立 Claude 只读复审（Codex 至 10-30 不可用，approvals #36；写进 PR 正文，不靠 tester 字段）；标签由编排核对后加（D10-110、#24）。
 refs: []
 refs_hash: {}
 deps: [B3-03j]
 paths:
   - 'test/spec/agent/stream-assembly/assembly.int.test.ts'
   - 'test/spec/agent/stream-assembly/regressions.int.test.ts'
-test_paths:
-  - 'test/spec/agent/stream-assembly/assembly.int.test.ts'
-  - 'test/spec/agent/stream-assembly/regressions.int.test.ts'
 impl: claude
-tester: claude-independent
+tester: none
 accept:
   - 'pnpm verify'
 status: todo
