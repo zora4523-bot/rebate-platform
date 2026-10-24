@@ -13,7 +13,16 @@ import {
 import { createDataProvider } from '../../../../apps/admin/src/providers/data/index.ts';
 import { installMediaQuery } from '../admin-auth-qr/helpers.ts';
 import { ACCOUNTS, BASE_URL, NOW, PHONES } from '../admin-union-pids/fixtures.ts';
-import { PERMITTED, main, settle } from '../admin-union-pids/helpers.ts';
+import {
+  LABEL,
+  PERMITTED,
+  action,
+  click,
+  dialogs,
+  main,
+  openEdit,
+  settle,
+} from '../admin-union-pids/helpers.ts';
 import { backend, type Backend, type BackendOptions } from './server.ts';
 
 export { PERMITTED };
@@ -25,9 +34,11 @@ export const PIDS_ONLY: PermissionSnapshot = {
 };
 /** The placeholder / mark of a planned operation (apps/admin/src/texts/shell.ts). */
 export const PLANNED = '功能开发中';
-/** A hint that the account choices could not be read. */
-export const UNAVAILABLE =
-  /读取不到|读不到|读取失败|加载失败|获取失败|无法读取|无法加载|无法获取|无法选择|暂时无法|暂不可用|不可用/;
+/**
+ * A hint that the account choices could not be read: any common wording (读取出错 / 请求失败 /
+ * 暂不可用 / 无法… / …失败 / 读不到 / 出错 / 错误).
+ */
+export const UNAVAILABLE = /读取不到|读不到|出错|错误|失败|无法|不可用|暂时无法/;
 
 export interface MountOptions extends Omit<BackendOptions, 'granted'> {
   readonly snapshot?: PermissionSnapshot | undefined;
@@ -204,4 +215,33 @@ export function accountHintText(form: HTMLElement, label: RegExp): string {
   for (const id of (combo.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean))
     texts.push(document.getElementById(id)?.textContent);
   return texts.filter((text): text is string => typeof text === 'string').join('\n');
+}
+
+/** Closes a PID dialog with its 【取消】 and waits until no dialog titled `title` is open. */
+export async function closeDialog(form: HTMLElement, title: RegExp): Promise<void> {
+  await click(action(form, /^取消/));
+  await waitFor(() => expect(dialogs(title)).toEqual([]));
+  await settle();
+}
+
+/**
+ * Opens 【修改】 of the pending row `pid` (whose account is `own`): its account select offers no
+ * account of `names` (at most the row's own account id it already holds), a hint matching `hint`
+ * sits in the dialog / on the select, and the dialog is closed again.
+ */
+export async function editOffersNone(
+  api: { readonly pending: number },
+  pid: string,
+  own: string,
+  names: readonly string[],
+  hint: RegExp,
+): Promise<void> {
+  const form = await openEdit(pid);
+  await quietly(api);
+  const offered = await offeredNow(form, LABEL.account, api);
+  const joined = offered.join('|');
+  for (const name of names) expect(joined).not.toContain(name);
+  for (const text of offered) expect(text).toContain(own);
+  await waitFor(() => expect(accountHintText(form, LABEL.account)).toMatch(hint));
+  await closeDialog(form, /修改/);
 }

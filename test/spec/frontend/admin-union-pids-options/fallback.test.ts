@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // F1-10gc: when GET /admin/v1/union/account-options fails (an error, 10403, the network) the 推广位
-// list still shows (the account column falls back to the account id), the register dialog offers
-// no account and says so, nothing pops up as a global error, and the tab does not fall back to
+// list still shows (the account column falls back to the account id), the register dialog and the
+// 【修改】 dialog of a pending row offer no account and say so (any common wording), nothing pops
+// up as a global error, and the tab does not fall back to
 // GET /admin/v1/union-accounts.
 import { waitFor } from '@testing-library/react';
 import { expect, it } from 'vitest';
@@ -30,6 +31,8 @@ import {
   accountHintText,
   accountsTabShown,
   chooseIfOffered,
+  closeDialog,
+  editOffersNone,
   mountPage,
   noToast,
   offeredNow,
@@ -38,6 +41,7 @@ import {
 import { SPARE_TAOBAO_NAME, type Backend } from './server.ts';
 
 const NAMES = [TAOBAO_NAME, SPARE_TAOBAO_NAME, JD_NAME, PDD_NAME];
+const REGISTER_TITLE = /登记|新增|添加/;
 
 /** The list shows every PID with its status entries; the account column shows the account id. */
 function listWithIds(): void {
@@ -52,7 +56,10 @@ function listWithIds(): void {
   expect(actions(panel(), /^(?:登记|新增|添加)/)).toHaveLength(1);
 }
 
-/** The register dialog offers no account and gives a hint next to it; no global error. */
+/**
+ * The register dialog and the 【修改】 dialog of a pending row offer no account and give a hint
+ * next to it; no global error.
+ */
 async function noChoices(api: Backend): Promise<void> {
   const form = await openRegister();
   await chooseIfOffered(form, LABEL.platform, /淘宝|taobao/i, api);
@@ -60,6 +67,9 @@ async function noChoices(api: Backend): Promise<void> {
   for (const name of NAMES) expect(offered).not.toContain(name);
   expect(offered).not.toContain(TAOBAO_ACCOUNT);
   await waitFor(() => expect(accountHintText(form, LABEL.account)).toMatch(UNAVAILABLE));
+  noToast();
+  await closeDialog(form, REGISTER_TITLE);
+  await editOffersNone(api, PID.pendingJd, JD_ACCOUNT, NAMES, UNAVAILABLE);
   noToast();
 }
 

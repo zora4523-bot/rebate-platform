@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 // F1-10gc with F1-06zu (D10-284): while adminListUnionAccountOptions is in the shell's planned
 // list the 推广位 tab does not read GET /admin/v1/union/account-options (nor union-accounts), its
-// register dialog offers no account and says 「功能开发中」, the list and the other operations work
-// as usual and the 联盟账号 tab is untouched; once the operation leaves the list the tab reads the
-// choices again.
+// register and 【修改】 dialogs offer no account and say 「功能开发中」, the list and the other
+// operations work as usual and the 联盟账号 tab is untouched; once the operation leaves the list
+// the tab reads the choices again. The lists are built here, not read from the generated file, so
+// the cases stay true after the backend ships the operation.
 import { cleanup, waitFor } from '@testing-library/react';
 import { expect, it } from 'vitest';
-import { plannedOperations } from '../../../../packages/contracts-ts/src/planned-operations.gen.ts';
 import {
   ACTIVE_ID,
   JD_ACCOUNT,
@@ -39,6 +39,8 @@ import {
   accountHintText,
   accountsTabShown,
   chooseIfOffered,
+  closeDialog,
+  editOffersNone,
   mountPage,
   noToast,
   offeredNow,
@@ -48,7 +50,18 @@ import { OPTIONS_OPERATION, type Backend } from './server.ts';
 
 const NAMES = [TAOBAO_NAME, JD_NAME, PDD_NAME];
 
-/** The register dialog offers no account and marks the select 「功能开发中」. */
+/** An operation of another page: the planned lists below are not only the one operation. */
+const OTHER_PLANNED = 'adminListInvitees';
+
+/** A planned list made of exactly these operationIds (as admin-planned builds them). */
+function planned(...ids: string[]): ReadonlySet<string> {
+  return new Set(ids);
+}
+
+/**
+ * The register dialog and the 【修改】 dialog of a pending row offer no account and mark the
+ * select 「功能开发中」.
+ */
 async function plannedChoices(api: Backend): Promise<void> {
   const form = await openRegister();
   await chooseIfOffered(form, LABEL.platform, /淘宝|taobao/i, api);
@@ -56,6 +69,8 @@ async function plannedChoices(api: Backend): Promise<void> {
   for (const name of NAMES) expect(offered).not.toContain(name);
   expect(offered).not.toContain(TAOBAO_ACCOUNT);
   await waitFor(() => expect(accountHintText(form, LABEL.account)).toContain(PLANNED));
+  await closeDialog(form, /登记|新增|添加/);
+  await editOffersNone(api, PID.pendingJd, JD_ACCOUNT, NAMES, new RegExp(PLANNED));
 }
 
 it(
@@ -115,18 +130,19 @@ it(
 );
 
 it(
-  '[AC-F1-10gc-PLANNED#3] 生成的清单含 adminListUnionAccountOptions 时不请求；清单去掉它（接口上线重新生成）后推广位页签自动恢复读取 account-options 并列出账号',
+  '[AC-F1-10gc-PLANNED#3] 传入的清单含 adminListUnionAccountOptions 时不请求；清单不含它（接口上线后）推广位页签自动恢复读取 account-options 并列出账号',
   async () => {
-    expect(plannedOperations.has(OPTIONS_OPERATION)).toBe(true);
-    const first = await mountPage({ snapshot: PIDS_ONLY, planned: plannedOperations });
+    const first = await mountPage({
+      snapshot: PIDS_ONLY,
+      planned: planned(OPTIONS_OPERATION, OTHER_PLANNED),
+    });
     await openPids();
     await quietly(first.api);
     await plannedChoices(first.api);
     await quietly(first.api);
     expect(first.api.optionReads()).toEqual([]);
     cleanup();
-    const shipped = new Set([...plannedOperations].filter((id) => id !== OPTIONS_OPERATION));
-    const second = await mountPage({ snapshot: PIDS_ONLY, planned: shipped });
+    const second = await mountPage({ snapshot: PIDS_ONLY, planned: planned(OTHER_PLANNED) });
     await openPids();
     await waitFor(() => expect(second.api.optionReads().length).toBeGreaterThan(0));
     await waitFor(() => expect(row(PID.active).textContent).toContain(TAOBAO_NAME));
