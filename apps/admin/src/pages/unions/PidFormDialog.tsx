@@ -22,7 +22,7 @@ import {
   type PidPlatform,
   type PidScene,
   type PidUpdateRequest,
-  type UnionAccount,
+  type UnionAccountOption,
   type UnionPid,
 } from './model.ts';
 import type { StepUp } from './useStepUp.tsx';
@@ -42,8 +42,10 @@ const SERVER_FIELD_TEXT: Readonly<Record<Field, string>> = {
 export interface PidFormDialogProps {
   /** 没有时是登记；有时是修改这一行（只 pending）。 */
   readonly row?: UnionPid | undefined;
-  /** 联盟账号列表；undefined 表示读不到（缺 union.account_auth 或读取失败）。 */
-  readonly accounts: readonly UnionAccount[] | undefined;
+  /** 联盟账号选项（account-options）；undefined 表示还没读到、读不到或接口未上线。 */
+  readonly accounts: readonly UnionAccountOption[] | undefined;
+  /** 选不了账号的原因（读取失败 / 功能开发中）；没有时不提示。 */
+  readonly accountsHint?: { readonly title: string; readonly description?: string } | undefined;
   readonly stepUp: StepUp;
   readonly onClose: () => void;
   readonly onSaved: (row: UnionPid, created: boolean) => void;
@@ -53,6 +55,7 @@ export interface PidFormDialogProps {
 export function PidFormDialog({
   row,
   accounts,
+  accountsHint,
   stepUp,
   onClose,
   onSaved,
@@ -61,6 +64,7 @@ export function PidFormDialog({
   const getProvider = useDataProvider();
   const platformId = useId();
   const accountId = useId();
+  const accountHintId = useId();
   const siteId = useId();
   const pidId = useId();
   const sceneId = useId();
@@ -255,9 +259,15 @@ export function PidFormDialog({
         <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
           {editing ? t.pids.editIntro : t.pids.registerIntro}
         </Typography.Paragraph>
-        {accounts === undefined ? (
-          <Alert type="warning" showIcon message={t.pids.accountsUnavailable} />
-        ) : null}
+        {accountsHint === undefined ? null : (
+          <Alert
+            id={accountHintId}
+            type="warning"
+            showIcon
+            message={accountsHint.title}
+            description={accountsHint.description}
+          />
+        )}
         {message === undefined ? null : (
           <Alert type={message.type} showIcon message={message.text} />
         )}
@@ -284,6 +294,7 @@ export function PidFormDialog({
           >
             <Select<string>
               id={accountId}
+              aria-describedby={accountsHint === undefined ? undefined : accountHintId}
               value={account ?? null}
               disabled={busy}
               placeholder={

@@ -1,0 +1,115 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-union-pids-options/fallback.test.ts > [AC-F1-10gc-FAIL#1] account-options 读取出错（50000）：推广位列表照常、所属账号显示账号编号，登记对话框账号下拉为空并提示，不弹全局错误、不改读 union-accounts",
+    "test/spec/frontend/admin-union-pids-options/fallback.test.ts > [AC-F1-10gc-FAIL#1] account-options 10403：推广位列表照常、所属账号显示账号编号，登记对话框账号下拉为空并提示，不弹全局错误、不改读 union-accounts",
+    "test/spec/frontend/admin-union-pids-options/fallback.test.ts > [AC-F1-10gc-FAIL#1] account-options 网络中断：推广位列表照常、所属账号显示账号编号，登记对话框账号下拉为空并提示，不弹全局错误、不改读 union-accounts",
+    "test/spec/frontend/admin-union-pids-options/fallback.test.ts > [AC-F1-10gc-FAIL#2] 只持 union.pid 且 account-options 出错：列表照常显示账号编号，登记对话框下拉为空并提示，不请求 union-accounts",
+    "test/spec/frontend/admin-union-pids-options/options.test.ts > [AC-F1-10gc-SOURCE#1] 推广位页签读 account-options 显示所属账号名，不为推广位读 union-accounts；联盟账号页签照旧只读 union-accounts",
+    "test/spec/frontend/admin-union-pids-options/options.test.ts > [AC-F1-10gc-SOURCE#2] 只持 union.pid：所属账号显示名称，登记对话框列出该平台账号并完成登记，请求体同 F1-10gb，全程不读 union-accounts",
+    "test/spec/frontend/admin-union-pids-options/options.test.ts > [AC-F1-10gc-SOURCE#3] 只持 union.pid 修改待确认行：带出原账号名；改到京东时只列京东账号，PATCH 同 F1-10gb",
+    "test/spec/frontend/admin-union-pids-options/options.test.ts > [AC-F1-10gc-FILTER#1] 只持 union.pid 登记：账号下拉只列所选平台 /淘宝|taobao/i 的全部账号，不列其他平台的",
+    "test/spec/frontend/admin-union-pids-options/options.test.ts > [AC-F1-10gc-FILTER#1] 只持 union.pid 登记：账号下拉只列所选平台 /京东|jd/i 的全部账号，不列其他平台的",
+    "test/spec/frontend/admin-union-pids-options/options.test.ts > [AC-F1-10gc-FILTER#1] 只持 union.pid 登记：账号下拉只列所选平台 /拼多多|pdd/i 的全部账号，不列其他平台的",
+    "test/spec/frontend/admin-union-pids-options/options.test.ts > [AC-F1-10gc-FILTER#2] 登记时换平台：账号下拉随之只列新平台的账号，原平台的账号选择被清掉",
+    "test/spec/frontend/admin-union-pids-options/pages.browser.test.ts > [AC-F1-10gc-BROWSER#1] 只持 union.pid：真实 /unions 推广位页签显示所属账号名，登记对话框只列淘宝账号并完成登记，不读 union-accounts",
+    "test/spec/frontend/admin-union-pids-options/planned.test.ts > [AC-F1-10gc-PLANNED#1] adminListUnionAccountOptions 为 planned：推广位页签不请求 account-options 也不读 union-accounts，登记下拉为空并提示「功能开发中」，列表与停用照常，联盟账号页签不变",
+    "test/spec/frontend/admin-union-pids-options/planned.test.ts > [AC-F1-10gc-PLANNED#2] 只持 union.pid 且 adminListUnionAccountOptions 为 planned：不请求 account-options，登记下拉为空并提示「功能开发中」",
+    "test/spec/frontend/admin-union-pids-options/planned.test.ts > [AC-F1-10gc-PLANNED#3] 传入的清单含 adminListUnionAccountOptions 时不请求；清单不含它（接口上线后）推广位页签自动恢复读取 account-options 并列出账号",
+    "test/spec/frontend/admin-union-pids-options/planned.test.ts > [AC-F1-10gc-PLANNED#4] 联盟账号页签依赖的 adminListUnionAccounts 为 planned（该页签占位）：切到推广位照常请求 union-pids，并读 account-options，仍不读 union-accounts",
+    "test/spec/frontend/admin-union-pids-options/planned.test.ts > [AC-F1-10gc-PLANNED#5] 联盟账号页签依赖的 adminListUnionAlertPhones 为 planned（该页签占位）：切到推广位照常请求 union-pids，并读 account-options，仍不读 union-accounts"
+  ],
+  "risk_note": "Admin console /unions PIDs tab reads its union account choices from GET /admin/v1/union/account-options (adminListUnionAccountOptions, contract CT-24s; planned, backend B1-22o not done, developed against the contract with a fake server; orchestrator ruling D10-243): list account names and the register / edit dialog dropdowns use it, filtered by the chosen platform in the page; an account holding only union.pid can now register; the tab no longer reads GET /admin/v1/union-accounts (the union accounts tab is unchanged). On failure the list keeps working with account ids and the dropdowns are empty with a hint, no global error; while the operation is in the planned list (F1-06zu) it is not requested and the dialogs show 功能开发中, restored when the id leaves the list. Frozen test sync (first-class protected path, needs the #24 label): admin-union-pids/fixtures.ts fake server also serves account-options (same accounts, three fields, platform filter, 20001), no assertion loosened; admin-planned unchanged from main (the stricter checks live in admin-union-pids-options). No money logic; RV2 track for the review. Rule tests written by an independent Claude in three calls (Codex out of quota until 2026-10-30; ledger tester claude-independent, approvals id 36); Claude spec-test review r3 pass; red on the test machine (red/3: 17 red, 0 problems). Implementation by Opus 5.5; test machine verify-fast/1 and browser/1 green. Adversarial review by a fresh independent Claude (tools/agent/claude-run.sh, money track). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, one S2 (a failed account-options read is not retried when switching tabs) tracked in followups; independent Claude because Codex hit its usage limit until 2026-10-30"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (S1: a planned case asserted the generated list's current content, which would block the backend; 2 S2), round 2 pass, round 3 pass after moving the admin-planned changes into the new directory (red-check requires a touched test file to be red as a whole); tests written by an independent Claude"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  },
+  "task": "F1-10gc",
+  "spec_ref": "d8e3ba5d50552d573506f45a0903e0a8f0a8aca3",
+  "spec_commit": "0c220093715e3f290690f8b7425c79e5965b6024",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0c220093715e3f290690f8b7425c79e5965b6024",
+      "tree": "c401935cf7f44fe87a328d5bb091ba45a1de65d0",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T04:34:13Z",
+      "finished_at": "2026-10-24T04:35:50Z",
+      "gate": {
+        "commit": "30dc0ee6a971b6d1c39211ef65691f1edfa921b0",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-union-pids-options/fallback.test.ts > [AC-F1-10gc-FAIL#1] account-options 读取出错（50000）：推广位列表照常、所属账号显示账号编号，登记对话框账号下拉为空并提示，不弹全局错误、不改读 union-accounts",
+        "test/spec/frontend/admin-union-pids-options/fallback.test.ts > [AC-F1-10gc-FAIL#1] account-options 10403：推广位列表照常、所属账号显示账号编号，登记对话框账号下拉为空并提示，不弹全局错误、不改读 union-accounts",
+        "test/spec/frontend/admin-union-pids-options/fallback.test.ts > [AC-F1-10gc-FAIL#1] account-options 网络中断：推广位列表照常、所属账号显示账号编号，登记对话框账号下拉为空并提示，不弹全局错误、不改读 union-accounts",
+        "test/spec/frontend/admin-union-pids-options/fallback.test.ts > [AC-F1-10gc-FAIL#2] 只持 union.pid 且 account-options 出错：列表照常显示账号编号，登记对话框下拉为空并提示，不请求 union-accounts",
+        "test/spec/frontend/admin-union-pids-options/options.test.ts > [AC-F1-10gc-SOURCE#1] 推广位页签读 account-options 显示所属账号名，不为推广位读 union-accounts；联盟账号页签照旧只读 union-accounts",
+        "test/spec/frontend/admin-union-pids-options/options.test.ts > [AC-F1-10gc-SOURCE#2] 只持 union.pid：所属账号显示名称，登记对话框列出该平台账号并完成登记，请求体同 F1-10gb，全程不读 union-accounts",
+        "test/spec/frontend/admin-union-pids-options/options.test.ts > [AC-F1-10gc-SOURCE#3] 只持 union.pid 修改待确认行：带出原账号名；改到京东时只列京东账号，PATCH 同 F1-10gb",
+        "test/spec/frontend/admin-union-pids-options/options.test.ts > [AC-F1-10gc-FILTER#1] 只持 union.pid 登记：账号下拉只列所选平台 /淘宝|taobao/i 的全部账号，不列其他平台的",
+        "test/spec/frontend/admin-union-pids-options/options.test.ts > [AC-F1-10gc-FILTER#1] 只持 union.pid 登记：账号下拉只列所选平台 /京东|jd/i 的全部账号，不列其他平台的",
+        "test/spec/frontend/admin-union-pids-options/options.test.ts > [AC-F1-10gc-FILTER#1] 只持 union.pid 登记：账号下拉只列所选平台 /拼多多|pdd/i 的全部账号，不列其他平台的",
+        "test/spec/frontend/admin-union-pids-options/options.test.ts > [AC-F1-10gc-FILTER#2] 登记时换平台：账号下拉随之只列新平台的账号，原平台的账号选择被清掉",
+        "test/spec/frontend/admin-union-pids-options/pages.browser.test.ts > [AC-F1-10gc-BROWSER#1] 只持 union.pid：真实 /unions 推广位页签显示所属账号名，登记对话框只列淘宝账号并完成登记，不读 union-accounts",
+        "test/spec/frontend/admin-union-pids-options/planned.test.ts > [AC-F1-10gc-PLANNED#1] adminListUnionAccountOptions 为 planned：推广位页签不请求 account-options 也不读 union-accounts，登记下拉为空并提示「功能开发中」，列表与停用照常，联盟账号页签不变",
+        "test/spec/frontend/admin-union-pids-options/planned.test.ts > [AC-F1-10gc-PLANNED#2] 只持 union.pid 且 adminListUnionAccountOptions 为 planned：不请求 account-options，登记下拉为空并提示「功能开发中」",
+        "test/spec/frontend/admin-union-pids-options/planned.test.ts > [AC-F1-10gc-PLANNED#3] 传入的清单含 adminListUnionAccountOptions 时不请求；清单不含它（接口上线后）推广位页签自动恢复读取 account-options 并列出账号",
+        "test/spec/frontend/admin-union-pids-options/planned.test.ts > [AC-F1-10gc-PLANNED#4] 联盟账号页签依赖的 adminListUnionAccounts 为 planned（该页签占位）：切到推广位照常请求 union-pids，并读 account-options，仍不读 union-accounts",
+        "test/spec/frontend/admin-union-pids-options/planned.test.ts > [AC-F1-10gc-PLANNED#5] 联盟账号页签依赖的 adminListUnionAlertPhones 为 planned（该页签占位）：切到推广位照常请求 union-pids，并读 account-options，仍不读 union-accounts"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-union-pids-options/fallback.test.ts",
+        "test/spec/frontend/admin-union-pids-options/options.test.ts",
+        "test/spec/frontend/admin-union-pids-options/pages.browser.test.ts",
+        "test/spec/frontend/admin-union-pids-options/planned.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "85f9d109610c557576ca6b43dcf6a13a6c17ad4ebd5cd9fcb7f8a73973bcd652"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d997a0b1db2515f6795672c37f7bb3732be506a9c81dc19a35ff53ae0813ad67"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "9d8317ec6c7a54a9c7fc145eba3b035f90df0746",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  }
+}

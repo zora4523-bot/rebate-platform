@@ -166,6 +166,7 @@ export const unionsTexts = {
     accountPlatformFirst: '请先选择平台',
     accountsUnavailable:
       '联盟账号列表读取不到（需要「联盟账号授权」权限 union.account_auth），暂时无法选择联盟账号',
+    accountOptionsUnavailable: '联盟账号选项读取失败，暂时无法选择联盟账号，请稍后重新打开本页签',
     siteLabel: '淘宝 site_id',
     siteRequired: '淘宝推广位须填 site_id',
     siteInvalid: 'site_id 为 1–64 位字母、数字、下划线或短横线',
