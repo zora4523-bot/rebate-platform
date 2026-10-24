@@ -10,6 +10,7 @@ import type {
   AlipayLaunch,
   PayBillResult,
   PayChannel,
+  PayChannelIdentity,
   PayCloseResult,
   PayCreateOrderInput,
   PayCreateOrderResult,
@@ -165,6 +166,12 @@ export class FakePayChannel implements PayChannel {
   verifyNotification(raw: PayRawNotification): Promise<PayNotificationResult> {
     void raw;
     return Promise.resolve({ kind: 'rejected', reason: 'fake_not_supported' });
+  }
+
+  /** B2-15c: the fake's own synthetic identity resolution (skeleton). */
+  ownerAppOf(identity: PayChannelIdentity): string | null {
+    void identity;
+    throw new Error('NotImplemented: FakePayChannel.ownerAppOf');
   }
 
   downloadBill(date: string): Promise<PayBillResult> {

@@ -50,8 +50,28 @@ export type PayQueryResult =
       readonly state: PayTradeState;
       readonly channelTradeNo: string | null;
       readonly amountFen: bigint | null;
+      /**
+       * B2-15c: the channel's own trade state as reported (WeChat trade_state, Alipay
+       * trade_status), judged against `pay.<pay_channel>.success_states` (BR-PAY-04). A result
+       * without it, or without merchantRef / appRef, never counts as paid (fail closed).
+       */
+      readonly channelState?: string;
+      /** B2-15c: the merchant identity the channel reports (WeChat mchid, Alipay seller_id). */
+      readonly merchantRef?: string;
+      /** B2-15c: the application identity the channel reports (WeChat appid, Alipay app_id). */
+      readonly appRef?: string;
     }
   | { readonly kind: 'unknown'; readonly reason: string };
+
+/**
+ * B2-15c: the merchant and application identity a notification or query carries (BR-PAY-04 核对
+ * ①). Which app of ours it belongs to comes from the channel configuration only
+ * (PayChannel.ownerAppOf); a notification never names our app_id itself.
+ */
+export interface PayChannelIdentity {
+  readonly merchantRef: string;
+  readonly appRef: string;
+}
 
 export type PayCloseResult =
   | { readonly kind: 'ok'; readonly state: 'closed' | 'paid' | 'not_exist' }
@@ -82,11 +102,24 @@ export interface PayRawNotification {
   readonly body: string;
 }
 
+/**
+ * B2-15c (task §9.1): a notification after the adapter verified it (WeChat: APIv3 signature, then
+ * AES-256-GCM decryption of resource; Alipay: the form signature) and read its fields. Nothing of
+ * a rejected notification is trusted or kept. amountFen is the channel's order total, converted
+ * without floating point (Alipay total_amount is yuan text). state is the channel's own value.
+ */
 export type PayNotificationResult =
   | {
-      readonly kind: 'verified';
+      readonly kind: 'ok';
+      /** The channel's notification id (WeChat id, Alipay notify_id): the dedupe key. */
       readonly notifyId: string;
-      readonly payload: Readonly<Record<string, unknown>>;
+      readonly outTradeNo: string | null;
+      readonly outRefundNo: string | null;
+      readonly channelTradeNo: string;
+      readonly amountFen: bigint;
+      readonly state: string;
+      readonly merchantRef: string;
+      readonly appRef: string;
     }
   | { readonly kind: 'rejected'; readonly reason: string };
 
@@ -103,6 +136,11 @@ export interface PayChannel {
   refund(input: PayRefundInput): Promise<PayRefundResult>;
   refundQuery(outRefundNo: string): Promise<PayRefundQueryResult>;
   verifyNotification(raw: PayRawNotification): Promise<PayNotificationResult>;
+  /**
+   * B2-15c: our app_id of a merchant / application identity, from this channel's configuration;
+   * null when the identity is not ours (BR-PAY-04 核对 ①: reject, count, alert, no trace).
+   */
+  ownerAppOf(identity: PayChannelIdentity): string | null;
   /** The channel's bill of one accounting day (YYYY-MM-DD, +08:00). */
   downloadBill(date: string): Promise<PayBillResult>;
 }
