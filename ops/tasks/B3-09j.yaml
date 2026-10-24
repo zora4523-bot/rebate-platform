@@ -6,7 +6,7 @@ type: impl
 refs: [BR-AI-22]
 refs_hash:
   BR-AI-22: d412bc8a631a
-deps: [B3-09i, B3-09k]
+deps: [B3-09i, B3-09k, B3-09l]
 paths:
   - 'apps/api/src/app.module.ts'
   - 'apps/api/src/modules/platform/config/config.ts'
