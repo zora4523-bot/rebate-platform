@@ -36,8 +36,8 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payment/orders/**'
-status: todo
-pr: null
+status: done
+pr: 1448
 red_exempt:
   - file: test/spec/contracts/pay-http/http.test.ts
     test: '[AC-CT-21c#2] post /v1/pay/orders（createPayOrder）复用公共头；只有创建需要 Idempotency-Key'
