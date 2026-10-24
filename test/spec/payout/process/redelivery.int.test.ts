@@ -3,7 +3,9 @@
 // back — after a crash right after the pending attempt was committed, while the first delivery is
 // still waiting on the channel (expiry), or after it finished — the channel's transfer is called
 // exactly once in total; a redelivery of a PAYING withdrawal only enqueues the first query job
-// (deduplicated by its singletonKey), one of a finished withdrawal ends at ①.
+// (deduplicated by its singletonKey), one of a finished withdrawal ends at ①. Two deliveries
+// running at once: the second waits on the first's row lock or daily lock until the first's pending
+// attempt is committed, then sees it at ② (no second pass of ② before ④).
 import { createTestDatabase } from '@couli/db/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
@@ -16,10 +18,13 @@ import {
   gate,
   jobs,
   open,
+  pauseFirstRead,
   queryJobs,
+  reachedBefore,
   scripted,
   setup,
   successStep,
+  waitAnyBlocked,
   waitUntil,
   withdrawal,
   type Harness,
@@ -76,6 +81,44 @@ it('[AC-B2-06d#7] 第一次投递还卡在通道调用上时同一任务被重�
   await expect(first).resolves.toBeUndefined();
   expect(reached).toBe(true);
   expect(ch.transfers()).toHaveLength(1);
+  expect(await attempts(f, w.id)).toEqual([
+    expect.objectContaining({ kind: 'transfer', result: 'unknown' }),
+  ]);
+  expectQueryJob(await jobs(f), w);
+  expect((await withdrawal(f, w.id)).status).toBe('PAYING');
+});
+
+it('[AC-B2-06d#7] 两次投递同时进行（确定性双连接）：A 过了 ① ② 停在日锁内的复核上，B 进入同一任务必须等 A 的行锁或日锁；A 写 pending 并提交后 B 看到转账尝试只走查询，transfer 恰好 1 次', async () => {
+  const f = await setup(h);
+  const w = await f.seedWithdrawal({ net: 900n });
+  const ch = scripted({ [w.outBizNo]: [UNKNOWN_STEP] });
+  // A's first read of payout.enabled (③'s first check) stops it after ① and ②, before ④.
+  const paused = pauseFirstRead(f, 'payout.enabled');
+  const handler = f.job(ch.channel, { config: paused.config });
+  const first = handler(f.jobOf(w));
+  first.catch(() => undefined);
+  let second: Promise<unknown> | undefined;
+  let reached = false;
+  let waited = false;
+  let during: { attempts: number; transfers: number } | undefined;
+  try {
+    reached = await reachedBefore(paused.inside, first);
+    if (reached) {
+      second = handler(f.jobOf(w, { attempt: 2 }));
+      second.catch(() => undefined);
+      waited = await waitAnyBlocked(f);
+      during = { attempts: (await attempts(f, w.id)).length, transfers: ch.transfers().length };
+    }
+  } finally {
+    paused.resume.open();
+  }
+  await expect(first).resolves.toBeUndefined();
+  expect(reached).toBe(true);
+  await expect(second).resolves.toBeUndefined();
+  expect(waited).toBe(true);
+  expect(during).toEqual({ attempts: 0, transfers: 0 });
+  expect(ch.transfers()).toHaveLength(1);
+  expect(ch.transfers()[0]!.outBizNo).toBe(w.outBizNo);
   expect(await attempts(f, w.id)).toEqual([
     expect.objectContaining({ kind: 'transfer', result: 'unknown' }),
   ]);

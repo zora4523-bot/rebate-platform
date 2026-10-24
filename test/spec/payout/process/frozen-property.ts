@@ -62,12 +62,39 @@ function stepOf(outcome: Outcome, w: Seeded): FakeStep | null {
   }
 }
 
+/** 2^31: amounts above it stay bigint end to end; nothing in the property goes through Number. */
+const BIG = 2n ** 31n;
+/** payout.single_cap_fen of the property (2^33): above every generated net but 'single_cap'. */
+const PROP_SINGLE_CAP = 8_589_934_592n;
+/** Amount tiers of test/properties/README.md, each hit in at least 1% of runs. */
+export const TIERS = ['amount:0', 'amount:1', 'amount:odd', 'amount:>2^31'] as const;
+
+function odd(max: bigint) {
+  return fc.bigInt({ min: 0n, max }).map((n) => 2n * n + 1n);
+}
+
 const plan = fc.record({
   outcome: fc.constantFrom(...OUTCOMES),
-  net: fc.bigInt({ min: 1n, max: BigInt(SINGLE_CAP) }),
-  fee: fc.bigInt({ min: 0n, max: 300n }),
-  tax: fc.bigInt({ min: 0n, max: 300n }),
+  net: fc.oneof(
+    fc.constant(1n),
+    odd(499_999n),
+    fc.bigInt({ min: 1n, max: BigInt(SINGLE_CAP) }),
+    fc.bigInt({ min: BIG + 1n, max: 2n * BIG }),
+  ),
+  fee: fc.oneof(fc.constant(0n), fc.constant(1n), odd(149n), fc.bigInt({ min: 0n, max: 300n })),
+  tax: fc.oneof(fc.constant(0n), fc.constant(1n), odd(149n), fc.bigInt({ min: 0n, max: 300n })),
 });
+
+/** The tiers one run's generated amounts hit (bigint comparisons only). */
+function tiersOf(amounts: readonly { net: bigint; fee: bigint; tax: bigint }[]) {
+  const values = amounts.flatMap((each) => [each.net, each.fee, each.tax]);
+  const hit: (typeof TIERS)[number][] = [];
+  if (values.some((value) => value === 0n)) hit.push('amount:0');
+  if (values.some((value) => value === 1n)) hit.push('amount:1');
+  if (values.some((value) => value % 2n === 1n)) hit.push('amount:odd');
+  if (values.some((value) => value > BIG)) hit.push('amount:>2^31');
+  return hit;
+}
 
 async function consistent(
   f: ProcessFixture,
@@ -116,8 +143,10 @@ export async function assertFrozenInvariant(f: ProcessFixture): Promise<PropStat
     transfer: (request) => current.channel.transfer(request),
     query: (outBizNo) => current.channel.query(outBizNo),
   });
-  // Far above Σ net of every run of one seed: daily_cap never masks the generated outcomes.
-  await f.set('payout.daily_cap_fen', 9_000_000_000_000);
+  // Far above Σ net of every run of one seed (≤ 3 × 2^32 per run): daily_cap never masks the
+  // generated outcomes. Config values are JSON numbers (both below 2^53).
+  await f.set('payout.daily_cap_fen', 4_000_000_000_000_000);
+  await f.set('payout.single_cap_fen', 8_589_934_592);
   await fc.assert(
     fc.asyncProperty(
       fc.array(plan, { minLength: 1, maxLength: 3 }),
@@ -125,9 +154,10 @@ export async function assertFrozenInvariant(f: ProcessFixture): Promise<PropStat
       async (plans, deliveries) => {
         stats.hit('run');
         for (const outcome of new Set(plans.map((each) => each.outcome))) stats.hit(outcome);
+        for (const tier of tiersOf(plans)) stats.hit(tier);
         await f.set('payout.queue_paused', false);
         const amounts = plans.map((each) => {
-          const net = each.outcome === 'single_cap' ? BigInt(SINGLE_CAP) + each.net : each.net;
+          const net = each.outcome === 'single_cap' ? PROP_SINGLE_CAP + each.net : each.net;
           return { net, fee: each.fee, tax: each.tax };
         });
         const funded = amounts.reduce(
@@ -159,12 +189,15 @@ export async function assertFrozenInvariant(f: ProcessFixture): Promise<PropStat
   return stats.flush();
 }
 
-/** The one summary of the entry: runs, discards, and the outcomes hit in fewer than 1% of runs. */
+/**
+ * The one summary of the entry: runs, discards, and the outcomes and amount tiers hit in fewer
+ * than 1% of runs.
+ */
 export function summarize(record: PropStatsRecord) {
   const runs = record.hits['run'] ?? 0;
   return {
     runs,
     discards: record.discards,
-    thin: OUTCOMES.filter((outcome) => (record.hits[outcome] ?? 0) * 100 < runs),
+    thin: [...OUTCOMES, ...TIERS].filter((label) => (record.hits[label] ?? 0) * 100 < runs),
   };
 }

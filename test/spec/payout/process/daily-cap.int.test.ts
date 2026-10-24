@@ -2,7 +2,8 @@
 // attempts whose `at` falls on today in +08:00 (@couli/domain's day boundary, from the injected
 // Clock) and whose result is pending, success or unknown. A definite failure, a query attempt,
 // yesterday (+08:00) and another app never count. sent + net = cap passes; sent + net = cap + 1 is
-// W9 daily_cap.
+// W9 daily_cap. Both sides are net_fen (never amount_fen, which also carries fee and tax), and the
+// sum is over every channel of the app (unlike the watermark's P, BR-WDR-18).
 import { createTestDatabase } from '@couli/db/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
@@ -16,6 +17,7 @@ import {
   scripted,
   setup,
   withdrawal,
+  type Channel,
   type Harness,
   type ProcessFixture,
 } from './kit.ts';
@@ -62,6 +64,81 @@ it.each([
     expect((await withdrawal(f, w.id)).hold_reason).toBe(reason);
     expect(ch.transfers()).toHaveLength(reason === null ? 1 : 0);
     expect(await attempts(f, w.id)).toHaveLength(reason === null ? 1 : 0);
+  },
+);
+
+it.each([
+  [401, null],
+  [400, 'daily_cap'],
+] as const)(
+  '[AC-B2-06d#4] 当日合计与本单都按 net_fen：已发出两单 net 合计 400（amount 460）、本单 net 1（amount 31）、daily_cap_fen=%s → hold_reason %s',
+  async (cap, reason) => {
+    const f = await setup(h);
+    await f.set('payout.daily_cap_fen', cap);
+    await f.seedSent({ net: 250n, fee: 30n, tax: 0n, result: 'pending', at: NOW });
+    await f.seedSent({
+      net: 150n,
+      fee: 0n,
+      tax: 30n,
+      result: 'success',
+      at: new Date(NOW.getTime() - HOUR),
+    });
+    const w = await f.seedWithdrawal({ net: 1n, fee: 20n, tax: 10n });
+    const ch = scripted({});
+    const handler = f.job(ch.channel);
+    await expect(handler(f.jobOf(w))).resolves.toBeUndefined();
+    expect((await withdrawal(f, w.id)).hold_reason).toBe(reason);
+    expect(ch.transfers().map((request) => request.netFen)).toEqual(reason === null ? [1n] : []);
+    expect(await attempts(f, w.id)).toHaveLength(reason === null ? 1 : 0);
+  },
+);
+
+interface AcrossCase {
+  label: string;
+  sent: Channel;
+  own: Channel;
+  cap: number;
+  reason: 'daily_cap' | null;
+}
+
+const ACROSS: AcrossCase[] = [
+  {
+    label: 'bank_card 已发出 600 + alipay 本单 500、daily_cap_fen=1000',
+    sent: 'bank_card',
+    own: 'alipay',
+    cap: 1000,
+    reason: 'daily_cap',
+  },
+  {
+    label: 'alipay 已发出 600 + bank_card 本单 500、daily_cap_fen=1000',
+    sent: 'alipay',
+    own: 'bank_card',
+    cap: 1000,
+    reason: 'daily_cap',
+  },
+  {
+    label: 'bank_card 已发出 600 + alipay 本单 500、daily_cap_fen=1100',
+    sent: 'bank_card',
+    own: 'alipay',
+    cap: 1100,
+    reason: null,
+  },
+];
+
+it.each(ACROSS)(
+  '[AC-B2-06d#4] daily_cap 是全通道合计（不按通道拆）：$label（两通道都开通）→ hold_reason $reason',
+  async ({ sent, own, cap, reason }) => {
+    const f = await setup(h);
+    await f.set('payout.daily_cap_fen', cap);
+    await f.seedSent({ net: 600n, result: 'pending', at: NOW, channel: sent });
+    const w = await f.seedWithdrawal({ net: 500n, channel: own });
+    const ch = scripted({});
+    const handler = f.job(ch.channel);
+    await expect(handler(f.jobOf(w))).resolves.toBeUndefined();
+    expect((await withdrawal(f, w.id)).hold_reason).toBe(reason);
+    expect(ch.transfers().map((request) => request.outBizNo)).toEqual(
+      reason === null ? [w.outBizNo] : [],
+    );
   },
 );
 

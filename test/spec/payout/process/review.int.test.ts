@@ -156,6 +156,45 @@ it('[AC-B2-06d#3] 另一通道的开关不影响本单：bank_card 关闭时 ali
   expect(await withdrawal(f, w.id)).toMatchObject({ status: 'PAID_API', hold_reason: null });
 });
 
+const BANK_CARD_HOLDS: { label: string; arrange(f: ProcessFixture): Promise<void> }[] = [
+  {
+    label: 'payout.channel_enabled.bank_card=off',
+    arrange: (f) => f.set('payout.channel_enabled.bank_card', false),
+  },
+  {
+    label: 'payout.channel_paused.bank_card=on',
+    arrange: (f) => f.set('payout.channel_paused.bank_card', true),
+  },
+];
+
+it.each(BANK_CARD_HOLDS)(
+  '[AC-B2-06d#3] bank_card 单按自己的通道复核：$label、alipay 开通 → W9 hold_reason=channel_disabled',
+  async ({ arrange }) => {
+    const f = await setup(h);
+    await arrange(f);
+    const w = await f.seedWithdrawal({ net: 1000n, channel: 'bank_card' });
+    const ch = scripted({ [w.outBizNo]: [successStep(`CH${w.outBizNo}`)] });
+    const handler = f.job(ch.channel);
+    const before = await observe(f, w);
+    await expect(handler(f.jobOf(w))).resolves.toBeUndefined();
+    await expectHeld(f, w, 'channel_disabled', before, ch);
+    expect(negativeJobs(await jobs(f))).toEqual([]);
+    expect(f.pause).not.toHaveBeenCalled();
+  },
+);
+
+it('[AC-B2-06d#3] alipay 关闭且暂停时 bank_card 单照常转账（只看本单通道）', async () => {
+  const f = await setup(h);
+  await f.set('payout.channel_enabled.alipay', false);
+  await f.set('payout.channel_paused.alipay', true);
+  const w = await f.seedWithdrawal({ net: 1000n, channel: 'bank_card' });
+  const ch = scripted({ [w.outBizNo]: [successStep(`CH${w.outBizNo}`)] });
+  const handler = f.job(ch.channel);
+  await expect(handler(f.jobOf(w))).resolves.toBeUndefined();
+  expect(ch.transfers()).toEqual([expect.objectContaining({ outBizNo: w.outBizNo })]);
+  expect(await withdrawal(f, w.id)).toMatchObject({ status: 'PAID_API', hold_reason: null });
+});
+
 it('[AC-B2-06d#3] 复核顺序固定：六项同时不满足取最前一项，逐项解除依次得到后一项，全部解除才转账', async () => {
   const f = await setup(h);
   const ch = scripted({});
@@ -328,5 +367,57 @@ it.each([
     await handler(f.jobOf(w));
     expect((await withdrawal(f, w.id)).hold_reason).toBe(reason);
     expect(ch.transfers()).toHaveLength(reason === null ? 1 : 0);
+  },
+);
+
+// amount_fen = net_fen + fee_fen + tax_fen; only net_fen is compared with the cap.
+const NET_CAP: {
+  label: string;
+  net: bigint;
+  fee: bigint;
+  tax: bigint;
+  reason: 'single_cap' | null;
+}[] = [
+  {
+    label: 'net 500000、fee 30、tax 0（amount 500030）',
+    net: 500_000n,
+    fee: 30n,
+    tax: 0n,
+    reason: null,
+  },
+  {
+    label: 'net 500000、fee 0、tax 20（amount 500020）',
+    net: 500_000n,
+    fee: 0n,
+    tax: 20n,
+    reason: null,
+  },
+  {
+    label: 'net 499990、fee 30、tax 20（amount 500040）',
+    net: 499_990n,
+    fee: 30n,
+    tax: 20n,
+    reason: null,
+  },
+  {
+    label: 'net 500001、fee 30、tax 20（amount 500051）',
+    net: 500_001n,
+    fee: 30n,
+    tax: 20n,
+    reason: 'single_cap',
+  },
+];
+
+it.each(NET_CAP)(
+  '[AC-B2-06d#3] single_cap 比较的是 net_fen 不是 amount_fen：single_cap_fen=500000、$label → hold_reason $reason',
+  async ({ net, fee, tax, reason }) => {
+    const f = await setup(h);
+    await f.set('payout.single_cap_fen', 500_000);
+    const w = await f.seedWithdrawal({ net, fee, tax });
+    const ch = scripted({ [w.outBizNo]: [successStep(`CH${w.outBizNo}`)] });
+    const handler = f.job(ch.channel);
+    await expect(handler(f.jobOf(w))).resolves.toBeUndefined();
+    expect((await withdrawal(f, w.id)).hold_reason).toBe(reason);
+    expect(ch.transfers().map((request) => request.netFen)).toEqual(reason === null ? [net] : []);
   },
 );

@@ -413,6 +413,9 @@ export async function setup(h: Harness) {
     kind?: 'transfer' | 'query';
     appId?: string;
     userId?: string;
+    fee?: bigint;
+    tax?: bigint;
+    channel?: Channel;
   }) {
     const status =
       values.result === 'success' ? 'PAID_API' : values.result === 'fail' ? 'FAILED' : 'PAYING';
@@ -421,6 +424,9 @@ export async function setup(h: Harness) {
       status,
       ...(values.appId === undefined ? {} : { appId: values.appId }),
       ...(values.userId === undefined ? {} : { userId: values.userId }),
+      ...(values.fee === undefined ? {} : { fee: values.fee }),
+      ...(values.tax === undefined ? {} : { tax: values.tax }),
+      ...(values.channel === undefined ? {} : { channel: values.channel }),
     });
     await seedAttempt(seeded.id, values.kind ?? 'transfer', values.result, values.at, seeded.appId);
     return seeded;
@@ -756,6 +762,58 @@ export async function waitBlockedBy(f: ProcessFixture, holder: number): Promise<
     await delay(5);
   }
   return false;
+}
+
+/**
+ * Polls (bounded, no timing assumption) until some backend of this database waits on a lock held
+ * by another backend (a row lock, the daily advisory lock, whichever the job takes first).
+ */
+export async function waitAnyBlocked(f: ProcessFixture): Promise<boolean> {
+  for (let attempt = 0; attempt < 4000; attempt += 1) {
+    const result = await sql<{ blocked: boolean }>`
+      SELECT EXISTS (
+        SELECT 1 FROM pg_stat_activity
+        WHERE datname = current_database() AND cardinality(pg_blocking_pids(pid)) > 0
+      ) AS blocked`.execute(f.h.observer);
+    if (result.rows[0]?.blocked === true) return true;
+    await delay(5);
+  }
+  return false;
+}
+
+/**
+ * A config reader that stops the first read of `key` until `resume.open()`: with key
+ * 'payout.enabled' (the review's first check, BR-WDR-13 ③) the job is then past ① and ②, inside
+ * the daily lock, before ④. `inside` opens when that read starts; later reads pass straight through.
+ */
+export function pauseFirstRead(f: ProcessFixture, key: string) {
+  const inside = gate();
+  const resume = gate();
+  let reads = 0;
+  const config: TransferJobOptions['config'] = {
+    async configValue(app, item, handle) {
+      if (item === key) {
+        reads += 1;
+        if (reads === 1) {
+          inside.open();
+          await resume.wait();
+        }
+      }
+      return f.options.config.configValue(app, item, handle);
+    },
+  };
+  return { config, inside, resume };
+}
+
+/** Resolves true once `inside` opened, false if `run` settled first (it never reached the read). */
+export async function reachedBefore(inside: { wait(): Promise<void> }, run: Promise<unknown>) {
+  return Promise.race([
+    inside.wait().then(() => true),
+    run.then(
+      () => false,
+      () => false,
+    ),
+  ]);
 }
 
 /** Polls `check` until it holds (bounded); returns whether it did. */

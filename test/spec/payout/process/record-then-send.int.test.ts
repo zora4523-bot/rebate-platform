@@ -5,6 +5,7 @@
 // after the call the same row is completed once (response, resp_code, resp_sub_code, result,
 // latency_ms). The request goes out with the withdrawal's snapshot (out_biz_no, net_fen, payee).
 import { createTestDatabase } from '@couli/db/testing';
+import { sql } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
   LOGON_ID,
@@ -14,13 +15,18 @@ import {
   attempts,
   close,
   dailyLockFree,
+  dailyLockKey,
   expectNoPayeeInLogs,
   holdDailyLock,
   open,
+  pauseFirstRead,
+  reachedBefore,
   scripted,
   setup,
   successStep,
+  waitAnyBlocked,
   waitBlockedBy,
+  waitUntil,
   withdrawal,
   type Harness,
 } from './kit.ts';
@@ -127,6 +133,69 @@ it('[AC-B2-06d#5] 复核与写 pending 在 payout_daily 锁内：别的连接持
   await expect(run).resolves.toBeUndefined();
   expect(waited).toBe(true);
   expect(observed).toEqual({ attempts: [], transfers: 0 });
+  expect(ch.transfers()).toHaveLength(1);
+  expect(await attempts(f, w.id)).toEqual([
+    expect.objectContaining({ kind: 'transfer', result: 'success' }),
+  ]);
+});
+
+it('[AC-B2-06d#5] pending 尝试在 payout_daily 锁释放前已提交（确定性栅栏）：任务在锁内复核时另一连接在日锁上等待，拿到锁的那一刻已看得到 result=pending 的转账尝试，通道还没被调用', async () => {
+  const f = await setup(h);
+  const w = await f.seedWithdrawal({ net: 1000n });
+  let observed = false;
+  // The transfer waits (bounded) until the waiter has looked: what it saw cannot include ⑤.
+  const ch = scripted(
+    { [w.outBizNo]: [successStep(`CH${w.outBizNo}`)] },
+    {
+      before: async () => {
+        await waitUntil(() => observed);
+      },
+    },
+  );
+  // The first read of payout.enabled (③'s first check) stops the job inside the daily lock.
+  const paused = pauseFirstRead(f, 'payout.enabled');
+  const handler = f.job(ch.channel, { config: paused.config });
+  const run = handler(f.jobOf(w));
+  run.catch(() => undefined);
+  let reached = false;
+  let held = false;
+  let waited = false;
+  let waiter: Promise<{ attempts: Attempts; transfers: number }> | undefined;
+  try {
+    reached = await reachedBefore(paused.inside, run);
+    if (reached) {
+      held = !(await dailyLockFree(f));
+      waiter = f.h.observer
+        .transaction()
+        .execute(async (trx) => {
+          await sql`SELECT pg_advisory_xact_lock(hashtext(${dailyLockKey(f.appId)}))`.execute(trx);
+          return { attempts: await attempts(f, w.id, trx), transfers: ch.transfers().length };
+        })
+        .finally(() => {
+          observed = true;
+        });
+      waiter.catch(() => undefined);
+      waited = await waitAnyBlocked(f);
+    }
+  } finally {
+    paused.resume.open();
+  }
+  await expect(run).resolves.toBeUndefined();
+  expect(reached).toBe(true);
+  expect(held).toBe(true);
+  expect(waited).toBe(true);
+  expect(await waiter).toEqual({
+    attempts: [
+      expect.objectContaining({
+        withdrawal_id: w.id,
+        kind: 'transfer',
+        result: 'pending',
+        response: null,
+        at: NOW,
+      }),
+    ],
+    transfers: 0,
+  });
   expect(ch.transfers()).toHaveLength(1);
   expect(await attempts(f, w.id)).toEqual([
     expect.objectContaining({ kind: 'transfer', result: 'success' }),
