@@ -4,15 +4,19 @@
 // register and 【修改】 dialogs offer no account and say 「功能开发中」, the list and the other
 // operations work as usual and the 联盟账号 tab is untouched; once the operation leaves the list
 // the tab reads the choices again. The lists are built here, not read from the generated file, so
-// the cases stay true after the backend ships the operation.
+// the cases stay true after the backend ships the operation. When only the 联盟账号 tab is a
+// placeholder (its own reads planned, the scene of admin-planned PAGE#4) the 推广位 tab still reads
+// union-pids and account-options and never union-accounts.
 import { cleanup, waitFor } from '@testing-library/react';
 import { expect, it } from 'vitest';
 import {
   ACTIVE_ID,
   JD_ACCOUNT,
   JD_NAME,
+  OPTIONS,
   PDD_NAME,
   PID,
+  PIDS,
   TAOBAO_ACCOUNT,
   TAOBAO_NAME,
   pids,
@@ -71,6 +75,30 @@ async function plannedChoices(api: Backend): Promise<void> {
   await waitFor(() => expect(accountHintText(form, LABEL.account)).toContain(PLANNED));
   await closeDialog(form, /登记|新增|添加/);
   await editOffersNone(api, PID.pendingJd, JD_ACCOUNT, NAMES, new RegExp(PLANNED));
+}
+
+/**
+ * The 联盟账号 tab depends on `operationId`, which is planned: that tab is a placeholder and reads
+ * nothing under union-accounts; opening the 推广位 tab reads union-pids and account-options (the
+ * row shows the account name from it) and still nothing under union-accounts.
+ */
+async function accountsTabPlanned(operationId: string): Promise<void> {
+  const { api, onError, directFetch } = await mountPage({
+    snapshot: PERMITTED,
+    planned: planned(operationId),
+  });
+  await waitFor(() => expect(main().textContent).toContain(PLANNED));
+  await quietly(api);
+  expect(api.accountReads()).toEqual([]);
+  await openPids();
+  await waitFor(() => expect(api.sent('GET', PIDS).length).toBeGreaterThan(0));
+  await waitFor(() => expect(api.sent('GET', OPTIONS).length).toBeGreaterThan(0));
+  await waitFor(() => expect(row(PID.active).textContent).toContain(TAOBAO_NAME));
+  await quietly(api);
+  expect(api.accountReads()).toEqual([]);
+  expect(onError).not.toHaveBeenCalled();
+  expect(directFetch).not.toHaveBeenCalled();
+  noToast();
 }
 
 it(
@@ -153,6 +181,22 @@ it(
     expect(form.textContent).not.toContain(PLANNED);
     await quietly(second.api);
     expect(second.api.accountReads()).toEqual([]);
+  },
+  FLOW_TIMEOUT,
+);
+
+it(
+  '[AC-F1-10gc-PLANNED#4] 联盟账号页签依赖的 adminListUnionAccounts 为 planned（该页签占位）：切到推广位照常请求 union-pids，并读 account-options，仍不读 union-accounts',
+  async () => {
+    await accountsTabPlanned('adminListUnionAccounts');
+  },
+  FLOW_TIMEOUT,
+);
+
+it(
+  '[AC-F1-10gc-PLANNED#5] 联盟账号页签依赖的 adminListUnionAlertPhones 为 planned（该页签占位）：切到推广位照常请求 union-pids，并读 account-options，仍不读 union-accounts',
+  async () => {
+    await accountsTabPlanned('adminListUnionAlertPhones');
   },
   FLOW_TIMEOUT,
 );

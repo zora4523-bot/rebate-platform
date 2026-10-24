@@ -118,8 +118,6 @@ it.each([['adminListUnionAccounts'], ['adminListUnionAlertPhones']])(
     const server = recorder(
       routes([
         [/^\/admin\/v1\/union-pids$/, async () => unionsOk({ items: [] })],
-        // The 推广位 tab reads its account choices here (F1-10gc, CT-24s).
-        [/^\/admin\/v1\/union\/account-options$/, async () => unionsOk({ items: [] })],
         [/^\/admin\/v1\/union-accounts/, unions.fetch],
       ]),
     );
@@ -141,12 +139,6 @@ it.each([['adminListUnionAccounts'], ['adminListUnionAlertPhones']])(
     await waitFor(() =>
       expect(server.hits('GET', '/admin/v1/union-pids').length).toBeGreaterThan(0),
     );
-    // F1-10gc: the 推广位 tab takes its accounts from account-options, still not union-accounts.
-    await waitFor(() =>
-      expect(server.hits('GET', '/admin/v1/union/account-options').length).toBeGreaterThan(0),
-    );
-    await settled(server);
-    expect(server.hits('GET', /^\/admin\/v1\/union-accounts/)).toEqual([]);
   },
   FLOW_TIMEOUT,
 );
