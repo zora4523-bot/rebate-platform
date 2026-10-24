@@ -113,16 +113,17 @@ it.each(['PAID_API', 'PAID_MANUAL'] as const)(
 it.each(STATUSES)('[AC-B1-27j#5] %s：冻结记录与收款身份不影响成功提现口径', async (status) => {
   const f = await setup(h);
   const reader = succeededReader(f.clock);
+  // Another payee identity on the row (BR-ID-25: 不分身份) and holds of every reason in effect.
+  // payee_name is not updatable by the app role, so the apply snapshot port fixes it at creation.
+  const payee = f.options.snapshot;
+  f.options.snapshot = {
+    async read(handle, who) {
+      const row = await payee.read(handle, who);
+      return row && { ...row, payee_name: '另一合成姓名' };
+    },
+  };
   const id = await f.startWithdrawal();
   await seedStatus(f, id, status);
-  // Another payee identity on the row (BR-ID-25: 不分身份) and holds of every reason in effect.
-  await h.db
-    .withSchema('app')
-    .updateTable('withdrawals')
-    .set({ payee_name: '另一合成姓名' })
-    .where('app_id', '=', f.actor.appId)
-    .where('id', '=', id)
-    .execute();
   for (const reason of [
     'manual',
     'recon_diff',
