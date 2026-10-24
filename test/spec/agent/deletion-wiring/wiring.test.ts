@@ -399,6 +399,10 @@ it('[AC-B3-09j#4] loadConfig 填入 agentUserHashKey；test 缺省为 null 不�
   for (const problem of given.problems) expect(problem).not.toContain(SECRET);
 });
 
+// The first test in this file to import the agent module, so the cold load of its module graph is
+// billed to it: 12–14 s in a full parallel run, and over test/vitest.config.ts's 15 s ceiling
+// (15.03–15.05 s) in the B1-09e, B1-01zzhb and B2-15d verifies on 2026-10-25. Only this test's
+// timeout is raised; assertions are unchanged.
 it('[AC-B3-09j#5][BR-AI-22] 带密钥：agentDeletionCleanup 返回可装进 DeletionCleanupStep 的清理函数，不记 warn', async () => {
   const agentDeletionCleanup = await loadAgentDeletionCleanup();
   for (const appEnv of ALL_ENVS) {
@@ -436,7 +440,7 @@ it('[AC-B3-09j#5][BR-AI-22] 带密钥：agentDeletionCleanup 返回可装进 Del
   if (typeof port !== 'function') throw new Error('second key: expected a cleanup step');
   await expectHashedUnder(port, SECOND_SECRET, 'second key');
   expect(calls.filter((call) => call.level === 'warn')).toEqual([]);
-});
+}, 60_000);
 
 it('[AC-B3-09j#6] 不带密钥（null / 缺省）：返回 { unavailable: 非空字符串 }，warn 恰 1 次且不含密钥值', async () => {
   const agentDeletionCleanup = await loadAgentDeletionCleanup();
