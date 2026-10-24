@@ -16,7 +16,7 @@ paths:
 test_paths:
   - 'test/spec/orders/admin-hold/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/orders/admin-hold/**'

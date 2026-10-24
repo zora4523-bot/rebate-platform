@@ -5,6 +5,7 @@ type: impl
 # 2026-10-24 入账（W1；编排裁定 D10-293）。起因：B1-09b 独立 Claude money r1 的 out_of_scope S1——B1-09a 的 BLACKLIST_HIT 去重键不含 risk_action，同一订单先记 manual_review（尾号开关关、或 settlement onBlacklistHit 未接线时）后改判作废时，void_commission 行被 DO NOTHING 丢掉，订单 VOID(BLACKLIST) 而命中记录只写 manual_review，与 BR-ID-36 的命中记录 / 申诉展示不符。
 # 做法（D10-293）：不用 ON CONFLICT DO UPDATE（app.risk_hits 对 couli_app 只有 SELECT / INSERT，是只追加的证据表）；新迁移同名重建 risk_hits_blacklist_once_key 为 (app_id, rule_id, ref_type, ref_id, value_hmac, risk_action) WHERE rule_id='BLACKLIST_HIT'；recordHit 去重键同步加 risk_action，升级时插第二行；命中记录与申诉展示按「同一订单取最严处置（void_commission 优先）」，两行都保留作历史（展示侧若不在本任务 paths 内，记 followups）。不放宽其他规则的去重。
 # 规则测试由新鲜独立 Claude 写（approvals #36）：先 manual_review 后作废 → 两行、各一条；同处置重复 → 仍一条；其他规则不受影响。迁移号落地时按迁移槽取主干最大 + 1（排 W1 B1-09e 之后，编排 01:12）。须在 B1-09n 挂载前合并。
+# 2026-10-24 编排裁定 D10-302：同 PR 内单列 test-change 提交（B1-09ac）改 B1-09a 冻结的 [AC-B1-09a#17]（两行各一条、第一行不改）与 [AC-B1-09a#21]（唯一键 6 列含 risk_action、同处置重复仍 23505、不同处置可并存），其余断言不动；新鲜独立 Claude 改、另一新鲜独立 Claude 只读核；落地编排按 approvals #24 加标签，证据写 D10-302。paths 补这两个文件。
 refs: []
 refs_hash: {}
 deps: [B1-09a]
@@ -13,6 +14,8 @@ paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
+  - 'test/spec/risk/order-blocklist/hits.int.test.ts'
+  - 'test/spec/risk/order-blocklist/uniqueness.int.test.ts'
 test_paths:
   - 'test/spec/risk/order-blocklist-escalation/**'
 impl: claude
