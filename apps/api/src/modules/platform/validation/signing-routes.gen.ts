@@ -783,6 +783,11 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/union/account-options",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/union-pids",
     "signed": false
   },

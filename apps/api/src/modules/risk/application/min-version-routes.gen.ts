@@ -1583,6 +1583,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListUnionAccountOptions",
+    "method": "GET",
+    "path": "/admin/v1/union/account-options",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListUnionPids",
     "method": "GET",
     "path": "/admin/v1/union-pids",
