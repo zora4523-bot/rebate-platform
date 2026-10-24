@@ -85,7 +85,7 @@ const SUBSETS = PENDING_COLUMNS.reduce<PendingColumn[][]>(
   (subsets, name) => [...subsets, ...subsets.map((subset) => [...subset, name])],
   [[]],
 );
-const BLANKS = ['', ' ', '   ', '\t', '\n', '\r', '\r\n', '\v', '\f', ' ', '　', ' ', ' \t\r\n　'];
+const BLANKS = ['', ' ', '   ', '\t', '\n', '\r', '\r\n', '\v', '\f', ' ', '　', '\u2028', ' \t\r\n　'];
 const CREDENTIAL = /access|secret|credential|password/i;
 
 async function columns(table: string) {
