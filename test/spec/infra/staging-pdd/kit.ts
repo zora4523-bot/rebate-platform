@@ -16,6 +16,9 @@ export const PLATFORMS = ['jd', 'pdd', 'taobao'] as const;
 export const root = fileURLToPath(new URL('../../../../', import.meta.url));
 export type OverrideConfig = AppConfig & { readonly unionEndpointOverrideDir?: string | null };
 
+// B3-09j: loadConfig requires AGENT_USER_HASH_KEY when APP_ENV=prod; synthetic test-only value.
+const PROD_AGENT_KEY = { AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-staging-pdd' };
+
 export function environment(appEnv: AppEnv): Record<string, string> {
   return {
     APP_ENV: appEnv,
@@ -28,6 +31,7 @@ export function environment(appEnv: AppEnv): Record<string, string> {
           PRIOR_IDENTITY_KEYRING_FILE: join(root, '.tmp/unused-prior-identity-keyring.json'),
         }
       : {}),
+    ...(appEnv === 'prod' ? PROD_AGENT_KEY : {}),
   };
 }
 

@@ -128,6 +128,7 @@ it('[BR-ID-33] openConfiguredFieldCrypto 与 loadConfig 在独立进程里成功
     config: [
       {
         APP_ENV: 'prod',
+        AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-wiring-r1',
         FIELD_KEY_PROVIDER: 'local',
         FIELD_KEYRING_FILE: `/srv/${SAMPLES.phone}`,
         FIELD_MASTER_KEY_FILE: `/srv/${marker}`,

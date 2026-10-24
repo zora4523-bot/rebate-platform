@@ -408,6 +408,7 @@ it('[ADR-0001 §4.2 #4、#8、#11; 规划/02 §3.1、§12.6; worker 契约 4] �
     prodMalformed: runToEnd('worker', {
       ...base,
       APP_ENV: 'prod',
+      AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-worker-entry',
       DATABASE_MAINT_URL: `mysql://couli_maint:${pw}@127.0.0.1:1/couli`,
     }),
     localValid: runToEnd('worker', { ...base, APP_ENV: 'local', DATABASE_MAINT_URL: valid }),

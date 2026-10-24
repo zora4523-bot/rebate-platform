@@ -3,11 +3,15 @@ import { ConfigError, loadConfig } from '../../../../apps/api/src/modules/platfo
 import { readExportStoreConfig } from '../../../../apps/api/src/modules/platform/config/export-store.ts';
 import { BASE_URL, SIGNING_KEY, configEnv } from './kit.ts';
 
+// B3-09j: loadConfig requires AGENT_USER_HASH_KEY when APP_ENV=prod; synthetic test-only value.
+const PROD_AGENT_KEY = { AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-export-store-config' };
+
 it.each(['local', 'test', 'staging', 'prod'] as const)(
   '[AC-B1-34d#12] %s 通过 loadConfig 下发导出地址与签名密钥',
   (appEnv) => {
     const env = {
       ...configEnv(appEnv),
+      ...(appEnv === 'prod' ? PROD_AGENT_KEY : {}),
       EXPORT_STORE_BASE_URL: BASE_URL,
       EXPORT_STORE_SIGNING_KEY: SIGNING_KEY,
     };
@@ -47,6 +51,7 @@ it.each(['staging', 'prod'] as const)(
     for (const missing of [undefined, '']) {
       const env = {
         ...configEnv(appEnv),
+        ...(appEnv === 'prod' ? PROD_AGENT_KEY : {}),
         EXPORT_STORE_BASE_URL: missing,
         EXPORT_STORE_SIGNING_KEY: missing,
       };

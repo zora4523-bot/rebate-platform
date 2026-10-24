@@ -5,7 +5,7 @@
 // written out by hand (wiring-kit.ts PROBLEMS); a problem never quotes the value of a variable, so
 // the comparisons are exact. Top-level it() only (规划/11 §4.3).
 import { expect, it } from 'vitest';
-import { loadConfig } from '../../../../apps/api/src/modules/platform/config/index.ts';
+import { loadConfig as loadConfigOf } from '../../../../apps/api/src/modules/platform/config/index.ts';
 import {
   APP_ENV_NAMES,
   PROBLEMS,
@@ -14,6 +14,16 @@ import {
   settleSync,
   type AppEnvName,
 } from './wiring-kit.ts';
+
+// B3-09j (D10-327): prod also requires AGENT_USER_HASH_KEY; every prod environment of this file
+// gets a synthetic value so that only the keyring problems remain (an explicit value wins).
+function loadConfig(env: Record<string, string>) {
+  return loadConfigOf(
+    env['APP_ENV'] === 'prod'
+      ? { AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-wiring-config', ...env }
+      : env,
+  );
+}
 
 const KEYRING = '/srv/couli/keys/keyring.json';
 const MASTER = '/srv/couli/keys/master.hex';

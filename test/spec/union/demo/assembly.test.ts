@@ -92,6 +92,7 @@ it.each(platforms)(
     // Pure config parsing: this inert path is never opened and no KMS provider is started.
     const config = loadConfig({
       APP_ENV: 'prod',
+      AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-assembly',
       FIELD_KEY_PROVIDER: 'kms',
       FIELD_KEYRING_FILE: '/demo-unused/keyring.json',
       PRIOR_IDENTITY_KEY_PROVIDER: 'kms',

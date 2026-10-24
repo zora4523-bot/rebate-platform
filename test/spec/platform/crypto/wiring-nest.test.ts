@@ -104,6 +104,9 @@ function dbHandlesFor(entry: Entry, logger: object) {
   );
 }
 
+/** B3-09j (D10-327): the synthetic AGENT_USER_HASH_KEY that prod environments of this file add. */
+const PROD_AGENT_KEY = { AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-wiring-nest' };
+
 /** process.env pointing somewhere else entirely: an entry that reads it instead of the config fails. */
 function misleadingProcessEnv(files: LocalFiles): void {
   stubProcessEnv({
@@ -355,7 +358,11 @@ it.each(ENTRIES)(
   async (entry) => {
     const seen: Record<string, unknown> = {};
     for (const appEnv of ['staging', 'prod'] as const) {
-      stubProcessEnv({ APP_ENV: appEnv, LOG_LEVEL: 'silent' });
+      stubProcessEnv({
+        APP_ENV: appEnv,
+        LOG_LEVEL: 'silent',
+        ...(appEnv === 'prod' ? PROD_AGENT_KEY : {}),
+      });
       const { logger } = memoryLogger(entry, appEnv);
       const outcome = await startAndClose(entry, { logger });
       seen[appEnv] =
@@ -379,7 +386,7 @@ it.each(ENTRIES)(
     const files = fresh(`env-local-${entry}`);
     const refused: Record<string, unknown> = {};
     for (const appEnv of ['prod'] as const) {
-      stubProcessEnv(localEnv(appEnv, files));
+      stubProcessEnv({ ...localEnv(appEnv, files), ...PROD_AGENT_KEY });
       const outcome = await startAndClose(entry, { logger: memoryLogger(entry, appEnv).logger });
       refused[appEnv] =
         'error' in outcome
@@ -458,6 +465,7 @@ it.each(ENTRIES)(
         FIELD_KEY_PROVIDER: 'kms',
         FIELD_KEYRING_FILE: files.keyringFile,
         ...priorIdentityEnv(appEnv, priorPaths(files), 'kms'),
+        ...(appEnv === 'prod' ? PROD_AGENT_KEY : {}),
       });
       const { logger, lines } = memoryLogger(entry, appEnv);
       const outcome = await startAndClose(entry, { logger });
