@@ -1288,6 +1288,7 @@ export interface PayoutAccountChanges {
   changed_at: Timestamp;
   created_at: Generated<Timestamp>;
   id: Generated<ColumnType<bigint, bigint, bigint>>;
+  limit_exempt_reason: string | null;
   new_hmac: string;
   new_payout_method: string;
   old_hmac: string;
