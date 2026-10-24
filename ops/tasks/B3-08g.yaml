@@ -9,7 +9,7 @@ type: impl
 # 2026-10-23 agent 线补：search_rules 已由 B3-08b 实现（#1305），但生产数据源 rule_chunks 待 B3-08e / B3-08i，本段仍不注册 search_rules；card_id 解析与按单号每日计数放新文件 stream/mount/orders.ts（不放 tools/registry/**，免进 denylist 源码扫描）；计数用 Redis INCR、到次日 +08:00 零点过期，无 Redis 时工具失败不放行。
 refs: [BR-AI-02]
 refs_hash:
-  BR-AI-02: d14ca044d0e7
+  BR-AI-02: 40bc4f6f4109
 deps: [B3-08a, B3-08c, B3-08d, B3-08h, B3-03j]
 paths:
   - 'apps/api/src/modules/agent/stream/mount/assembly.ts'
