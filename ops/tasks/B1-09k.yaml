@@ -15,7 +15,7 @@ paths:
 test_paths:
   - 'test/spec/orders/rights-import-rows/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/orders/rights-import-rows/**'
