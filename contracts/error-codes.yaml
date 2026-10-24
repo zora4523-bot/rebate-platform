@@ -691,13 +691,13 @@ codes:
     sources: [BR-ID-27, BR-FUND-10]
   - code: 30417
     http: 422
-    meaning: 导出任务当前状态不允许该操作（只出现在 /admin/v1 的 exports/{id}/download 与 exports/{id}/retry：下载只接受 done 且未到 expires_at（到期未及置 expired 的也按 expired）；重试只接受 failed；data.status 为任务当前状态（enum export_status）。码值按 08 §13.11 304 段（账号身份，BR-ID-34）顺序取号，CT-24k）
-    action: 后台：刷新导出记录，按任务当前状态提示
+    meaning: 导出任务当前状态不允许该操作（只出现在 /admin/v1 的 exports/{id}/download 与 exports/{id}/retry：下载只接受 done 且未到 expires_at（到期未及置 expired 的也按 expired）；重试只接受 failed；data.status 为任务当前状态（enum export_status）。码值按 08 §13.11 304 段（账号身份，BR-ID-34）顺序取号，CT-24k）；2026-10-23 扩到个人信息副本（BR-ID-40 细则「企业微信会话交付的下载」，编排裁定 D10-246，CT-24q）：POST /admin/v1/users/{user_id}/data-exports/{export_id}/download 时请求状态不是 ready / delivered、已过 expires_at（未及置 expired 的也按 expired）或过期后要求重新生成，data.status 取 personal_data_copy_status（只会是 pending、running、failed、expired、cancelled，都在下列取值内）
+    action: 后台：刷新导出记录（个人信息副本为用户详情页的副本请求列表），按任务当前状态提示
     retry: 否
     retry_kind: never
     data:
       status: [pending, running, done, failed, expired, cancelled]
-    sources: [BR-ID-34, BR-ID-30]
+    sources: [BR-ID-34, BR-ID-30, BR-ID-40]
   - code: 30418
     http: 422
     meaning: 同一对象申诉次数已用完（累计 3 次都被维持；处理中再次提交仍返回原申诉单、不返回本码）
@@ -705,6 +705,23 @@ codes:
     retry: 否
     retry_kind: never
     sources: [BR-ID-36]
+  - code: 30419
+    http: 422
+    meaning: 该用户当前不受理这项客服代办（只出现在 /admin/v1：实名更正 POST /admin/v1/users/{user_id}/realname-correction 的 realname_not_verified、account_deleting、account_deleted、withdrawal_in_progress、reverify_pending、identity_blacklisted，BR-ID-25 细则「实名更正」；个人信息副本登记 POST /admin/v1/users/{user_id}/data-exports 的 account_deleting、account_deleted、delivery_undecided，BR-ID-40 细则；account_deleting（注销中）另带 data.stage，取值同 10007 的 data.stage（编排裁定 D10-248）；已注销的账号用 account_deleted，不带 data.stage（编排裁定 D10-250）。码值按 08 §13.11 304 段顺序取号，编排裁定 D10-246，CT-24q）
+    action: 后台：按 data.reason 提示不受理的原因，不提交
+    retry: 否
+    retry_kind: never
+    data:
+      reason:
+        - realname_not_verified
+        - account_deleting
+        - withdrawal_in_progress
+        - reverify_pending
+        - identity_blacklisted
+        - delivery_undecided
+        - account_deleted
+      stage: [cooling, processing]
+    sources: [BR-ID-25, BR-ID-40]
   - code: 30501
     http: 422
     meaning: AI 助手未开放
@@ -782,11 +799,11 @@ codes:
     sources: [规划/04 §7]
   - code: 30701
     http: 404
-    meaning: 页面或内容不存在（推送点击回查 GET /v1/messages/{message_id} 时，消息不存在或不属于当前账号同码，对外不区分）
+    meaning: 页面或内容不存在（推送点击回查 GET /v1/messages/{message_id} 时，消息不存在或不属于当前账号同码，对外不区分；用户侧个人信息副本下载 GET /v1/me/data-copies/{id}/download 的副本不存在、不属于本人、不是站内信路径、状态不可下载或已过期同码，对外不区分，BR-ID-40 细则「在 App 内下载」，编排裁定 D10-246，CT-24q）
     action: 显示空态；推送点击回查得到本码时改为打开站内信页（BR-ID-10 细则「推送点击的落点」）
     retry: 否
     retry_kind: never
-    sources: [规划/04 §7, BR-ID-10]
+    sources: [规划/04 §7, BR-ID-10, BR-ID-40]
   - code: 30801
     http: 422
     meaning: 当前已达到目标价

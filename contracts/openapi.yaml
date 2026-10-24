@@ -11492,17 +11492,17 @@ paths:
         WeCom conversation). Rules: BR-ID-25 细则「实名更正」.
         Body checks first: a missing or over-long field is 20001 with `data.fields` naming it. An
         unknown `user_id`, or one of another app, is 20001 with `data.fields=[user_id]`.
-        Not accepted (judged before the checks below, no vendor call), first hit wins: the user's
-        realname_status is not verified (a user who never verified does it in the App); the
-        account is in the deletion flow (cooling, processing or done, BR-ID-27; also refused in
-        the cooling period); the user has any withdrawal outside the terminal set of BR-WDR-08
-        (finance brings it to a terminal state first); the account carries the "pending
-        re-verification" flag (BR-WDR-01 细则「旧手机号被二次放号时的提现加验」; cleared by hand
-        first); the id_no_hmac of the current real name is blacklisted (BR-ID-31 ID-number
-        dimension; passed to risk control). These refusals use the code that 08 §13.11 is to
-        assign (proposed: 30419 with `data.reason` ∈ realname_not_verified, account_deleting with
-        `data.stage`, withdrawal_in_progress, reverify_pending, identity_blacklisted); until it is
-        registered the code is not in x-error-codes or contracts/error-codes.yaml.
+        Not accepted (judged before the checks below, no vendor call), first hit wins, each 30419
+        (08 §13.11; only in /admin/v1) with `data.reason`: the user's realname_status is not
+        verified (`realname_not_verified`; a user who never verified does it in the App); the
+        account is in the deletion flow (BR-ID-27; also refused in the cooling period): cooling or
+        processing is `account_deleting` with `data.stage` (the values of 10007's `data.stage`),
+        done is `account_deleted` without `data.stage`; the user has any withdrawal outside the
+        terminal set of BR-WDR-08 (`withdrawal_in_progress`; finance brings it to a terminal state
+        first); the account carries the "pending re-verification" flag (`reverify_pending`;
+        BR-WDR-01 细则「旧手机号被二次放号时的提现加验」; cleared by hand first); the id_no_hmac of
+        the current real name is blacklisted (`identity_blacklisted`; BR-ID-31 ID-number
+        dimension; passed to risk control).
         Then the same order as the user's own real-name verification (POST /v1/me/realname):
         20001 format of `id_no` (18 digits and check digit, `data.fields=[id_no]`) → 44001 the new
         ID number is blacklisted (a console-side refusal: no risk_hits record, not an appealable
@@ -11513,7 +11513,7 @@ paths:
         nothing. Attempts are not counted against the user's 3 per day (no 30410 here).
         On a match, in one transaction that locks the user row (the same user-level lock as a
         withdrawal application): withdrawals are checked again and a new non-terminal one refuses
-        the correction as above (withdrawal_in_progress); when the old identity has a paid-out
+        the correction as above (30419 with `data.reason=withdrawal_in_progress`); when the old identity has a paid-out
         withdrawal (PAID_API / PAID_MANUAL), the old name and ID ciphertexts, id_no_hmac and
         verified_at move to the isolated store first (BR-ID-25 细则「旧身份留存」; viewing it
         comes with a later contract); then the realname row's name and ID ciphertexts,
@@ -11539,6 +11539,7 @@ paths:
         - 30405
         - 30406
         - 30407
+        - 30419
         - 44001
         - 50301
         - 50401
@@ -11596,6 +11597,10 @@ paths:
                   $ref: '#/components/examples/AdminUnknownUser'
                 reasonMissing:
                   $ref: '#/components/examples/AdminUserReasonInvalid'
+                withdrawalInProgress:
+                  $ref: '#/components/examples/AdminRealnameWithdrawalInProgress'
+                accountDeleting:
+                  $ref: '#/components/examples/AdminRealnameAccountDeleting'
                 idNoInvalid:
                   $ref: '#/components/examples/AdminRealnameIdNoInvalid'
                 idNoBlacklisted:
@@ -11631,7 +11636,10 @@ paths:
         `user_id`, or one of another app, is 20001 with `data.fields=[user_id]`.
         Then, first hit wins:
         1. Account state (BR-ID-40 细则「副本请求与注销状态」): an account whose deletion is
-           processing or done is not accepted; the cooling period is accepted as usual.
+           processing is not accepted (30419 with `data.reason=account_deleting` and
+           `data.stage=processing`), nor one whose deletion is done (30419 with
+           `data.reason=account_deleted`, no `data.stage`); the cooling period is accepted as
+           usual.
         2. An unfinished request of the user (pending, running or ready; at most one) is returned
            instead of creating one, with `reused=true`; the channel facts of this call are not
            judged. Exception (BR-ID-40 细则「重新登记与登记人停用」): a `wecom_session` request
@@ -11643,11 +11651,10 @@ paths:
            `wecom_session` (the `reason` must say why the in-app message and the phone cannot be
            used), which needs the caller to hold `pii.reveal_phone` as well (else 10403 with
            `data.reason=admin_permission_denied`; the registrant is the only one who can
-           download it); only one true → not accepted, pending legal confirmation (BR-ID-40,
-           规划/06 Q-F17).
-        Points 1 and 3 refuse with the code that 08 §13.11 is to assign (proposed: 30419 with
-        `data.reason=account_deleting` and `data.stage`, or `data.reason=delivery_undecided`);
-        until it is registered the code is not in x-error-codes or contracts/error-codes.yaml.
+           download it); only one true → not accepted, pending legal confirmation (30419 with
+           `data.reason=delivery_undecided`; BR-ID-40, 规划/06 Q-F17).
+        30419 is 08 §13.11's code for an assisted request the user is not accepted for now (only
+        in /admin/v1).
         A new request starts in pending (`reused=false`). `due_at` is the end (24:00 +08:00) of
         the 15th working day after the registration day (the registration day itself not counted; working days as in BR-ID-27); when the user's latest
         request is failed, or a `wecom_session` one that expired without being delivered, the
@@ -11674,6 +11681,7 @@ paths:
         - 10003
         - 10403
         - 20001
+        - 30419
       security:
         - adminBearerAuth: []
       parameters:
@@ -11748,6 +11756,12 @@ paths:
                   $ref: '#/components/examples/AdminUserReasonInvalid'
                 noPhone:
                   $ref: '#/components/examples/AdminDataExportPhoneMissing'
+                accountDeleting:
+                  $ref: '#/components/examples/AdminDataExportAccountDeleting'
+                accountDeleted:
+                  $ref: '#/components/examples/AdminDataExportAccountDeleted'
+                deliveryUndecided:
+                  $ref: '#/components/examples/AdminDataExportDeliveryUndecided'
                 noPermission:
                   $ref: '#/components/examples/AdminPermissionDenied'
                 tokenExpired:
@@ -11866,17 +11880,17 @@ paths:
         `data.fields=[export_id]`. An unknown `user_id` is 20001 with `data.fields=[user_id]`.
         Only a request in status `ready` or `delivered` whose `expires_at` has not passed can be
         downloaded; any other status (pending, running, failed, expired, cancelled; one past
-        `expires_at` answers expired even before the server has set the status) refuses with the
-        code that 08 §13.11 is to assign (proposed: 30417 widened to personal information copies,
-        with `data.status`); until it is registered the code is not in x-error-codes.
+        `expires_at` answers expired even before the server has set the status) is 30417 with
+        `data.status` (the request's status, personal_data_copy_status; 08 §13.11 widened 30417 to
+        personal information copies, only in /admin/v1).
         The first call (status ready, judged under a lock on the request row) generates a
         one-time password, encrypts the delivery file with it and returns the password in
         `password`, only in this response (never stored, never in logs or audit); the request
         becomes delivered (an audit record of the delivery). Later calls sign a new link to the
         same file with `password=null`. `regenerate: true` re-encrypts a new file with a new
         password (returned in this response) and voids the previous file; `due_at` and
-        `expires_at` do not change, and after `expires_at` nothing can be regenerated (BR-ID-40
-        细则). Send the file and the password to the user in the WeCom conversation in separate
+        `expires_at` do not change, and after `expires_at` nothing can be regenerated (30417 with
+        `data.status=expired`, BR-ID-40 细则). Send the file and the password to the user in the WeCom conversation in separate
         messages.
         Every call is authorized again and signs a new link (as GET /admin/v1/exports/{id}/download);
         `url` is valid until `url_expires_at` = min(5 minutes from now, the request's
@@ -11892,6 +11906,7 @@ paths:
         - 10003
         - 10403
         - 20001
+        - 30417
       security:
         - adminBearerAuth: []
       parameters:
@@ -11956,6 +11971,8 @@ paths:
                   $ref: '#/components/examples/AdminStepUpRequiredTotp'
                 unknownRequest:
                   $ref: '#/components/examples/AdminUnknownDataExport'
+                notDownloadable:
+                  $ref: '#/components/examples/AdminDataExportNotDownloadable'
                 noPermission:
                   $ref: '#/components/examples/AdminPermissionDenied'
                 tokenExpired:
@@ -23591,6 +23608,56 @@ components:
         data:
           fields:
             - export_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminDataExportNotDownloadable:
+      summary: 30417 the copy request's status does not allow a download (here past expires_at)
+      value:
+        code: 30417
+        msg: 副本请求当前的状态不允许下载，请刷新后查看
+        data:
+          status: expired
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminDataExportAccountDeleting:
+      summary: 30419 the account's deletion is processing (no copy request is registered)
+      value:
+        code: 30419
+        msg: 该用户当前不受理这项代办
+        data:
+          reason: account_deleting
+          stage: processing
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminDataExportAccountDeleted:
+      summary: 30419 the account's deletion is done (no data.stage)
+      value:
+        code: 30419
+        msg: 该用户当前不受理这项代办
+        data:
+          reason: account_deleted
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminDataExportDeliveryUndecided:
+      summary: 30419 only one of app_login_ok and phone_sms_ok is true (pending legal confirmation)
+      value:
+        code: 30419
+        msg: 该用户当前不受理这项代办
+        data:
+          reason: delivery_undecided
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminRealnameWithdrawalInProgress:
+      summary: 30419 the user has a withdrawal not yet in a terminal state (nothing changed)
+      value:
+        code: 30419
+        msg: 该用户当前不受理这项代办
+        data:
+          reason: withdrawal_in_progress
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminRealnameAccountDeleting:
+      summary: 30419 the account is in the deletion cooling period (real-name correction refused)
+      value:
+        code: 30419
+        msg: 该用户当前不受理这项代办
+        data:
+          reason: account_deleting
+          stage: cooling
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminInviterChangeNotAllowed:
       summary: 30409 the user already has a direct invitee, an order or a claim
