@@ -1,6 +1,11 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { readAgentUserHashConfig } from './agent-user-hash.ts';
 import { ConfigError, loadConfig } from './config.ts';
+
+/** Synthetic AGENT_USER_HASH_KEY for prod inputs (B3-09j: prod refuses to start without it). */
+const AGENT_KEY = 'unit-test-agent-user-hash-key';
+const PROD_AGENT_KEY = { AGENT_USER_HASH_KEY: AGENT_KEY } as const;
 
 function problemsOf(env: Record<string, string | undefined>): readonly string[] {
   try {
@@ -33,6 +38,7 @@ describe('loadConfig', () => {
       pdd: null,
       pddQueryCustomParameters: null,
       unionEndpointOverrideDir: null,
+      agentUserHashKey: null,
     });
   });
 
@@ -54,6 +60,7 @@ describe('loadConfig', () => {
         DATABASE_URL: 'postgres://couli_app@127.0.0.1:54329/couli',
         REDIS_URL: 'redis://127.0.0.1:63790',
         TRUSTED_PROXIES: ' 198.51.100.0/24, 2001:db8::1 ',
+        AGENT_USER_HASH_KEY: AGENT_KEY,
         PATH: '/usr/bin',
       }),
     ).toEqual({
@@ -76,6 +83,7 @@ describe('loadConfig', () => {
       pdd: null,
       pddQueryCustomParameters: null,
       unionEndpointOverrideDir: null,
+      agentUserHashKey: AGENT_KEY,
     });
   });
 
@@ -147,12 +155,16 @@ describe('loadConfig', () => {
   );
 
   it('[AC-B1-01f] refuses to start in prod when CLOCK_NOW is set (ADR-0001 §4.2 #10)', () => {
-    expect(problemsOf({ APP_ENV: 'prod', CLOCK_NOW: '2026-10-01T12:00:00Z' })).toEqual([
+    expect(
+      problemsOf({ APP_ENV: 'prod', CLOCK_NOW: '2026-10-01T12:00:00Z', ...PROD_AGENT_KEY }),
+    ).toEqual([
       'CLOCK_NOW: must not be set when APP_ENV=prod (the production clock is real time)',
       'FIELD_KEY_PROVIDER: must be set when APP_ENV=prod',
     ]);
     // Refused even when the value is malformed: both findings are reported.
-    expect(problemsOf({ APP_ENV: 'prod', CLOCK_NOW: 'tomorrow' })).toHaveLength(3);
+    expect(problemsOf({ APP_ENV: 'prod', CLOCK_NOW: 'tomorrow', ...PROD_AGENT_KEY })).toHaveLength(
+      3,
+    );
     expect(
       loadConfig({
         APP_ENV: 'prod',
@@ -160,6 +172,7 @@ describe('loadConfig', () => {
         FIELD_KEYRING_FILE: '/srv/couli/keyring.json',
         PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
         PRIOR_IDENTITY_KEYRING_FILE: '/srv/couli/prior-identity-keyring.json',
+        ...PROD_AGENT_KEY,
       }).clockNow,
     ).toBeUndefined();
   });
@@ -190,6 +203,7 @@ describe('loadConfig', () => {
         FIELD_KEYRING_FILE: '/srv/couli/keyring.json',
         PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
         PRIOR_IDENTITY_KEYRING_FILE: '/srv/couli/prior-identity-keyring.json',
+        ...PROD_AGENT_KEY,
       }).appEnv,
     ).toBe(appEnv);
   });
@@ -207,6 +221,7 @@ describe('loadConfig', () => {
         FIELD_KEYRING_FILE: '/k.json',
         PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
         PRIOR_IDENTITY_KEYRING_FILE: '/prior-k.json',
+        ...PROD_AGENT_KEY,
       }),
     ).toEqual([]);
     const pem = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
@@ -243,6 +258,7 @@ describe('loadConfig JWT verify-only reading (B1-02zj)', () => {
       FIELD_KEYRING_FILE: '/k.json',
       PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
       PRIOR_IDENTITY_KEYRING_FILE: '/prior-k.json',
+      ...PROD_AGENT_KEY,
       JWT_KEY_ID: 'k1',
       JWT_PUBLIC_KEY_PEM: publicPem,
     });
@@ -273,6 +289,52 @@ describe('loadConfig JWT verify-only reading (B1-02zj)', () => {
     expect(problems).toEqual([
       expect.stringMatching(/^JWT_PUBLIC_KEY_PEM: must be the public key/),
     ]);
+  });
+});
+
+describe('readAgentUserHashConfig (B3-09j)', () => {
+  const OTHER = 'unrelated-value-never-echoed';
+
+  it('[BR-AI-22] prod without the key (missing, empty or blank): null and one problem naming only the variable', () => {
+    for (const value of [undefined, '', '   ', ' \t\n ']) {
+      const result = readAgentUserHashConfig('prod', { AGENT_USER_HASH_KEY: value, OTHER });
+      expect(result.agentUserHashKey).toBeNull();
+      expect(result.problems).toHaveLength(1);
+      expect(result.problems[0]?.startsWith('AGENT_USER_HASH_KEY')).toBe(true);
+      expect(result.problems.join('\n')).not.toContain(OTHER);
+    }
+    const problems = problemsOf({
+      APP_ENV: 'prod',
+      FIELD_KEY_PROVIDER: 'kms',
+      FIELD_KEYRING_FILE: '/k.json',
+      PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
+      PRIOR_IDENTITY_KEYRING_FILE: '/prior-k.json',
+    });
+    expect(problems).toEqual([expect.stringMatching(/^AGENT_USER_HASH_KEY: /)]);
+  });
+
+  it('[BR-AI-22] local / test / staging without the key: null and no problem', () => {
+    for (const appEnv of ['local', 'test', 'staging'] as const) {
+      for (const value of [undefined, '', '  ']) {
+        expect(readAgentUserHashConfig(appEnv, { AGENT_USER_HASH_KEY: value })).toEqual({
+          agentUserHashKey: null,
+          problems: [],
+        });
+      }
+    }
+    expect(loadConfig({ APP_ENV: 'test' }).agentUserHashKey).toBeNull();
+  });
+
+  it('[BR-AI-22] a non-blank key is kept exactly as set in every APP_ENV', () => {
+    for (const appEnv of ['local', 'test', 'staging', 'prod'] as const) {
+      for (const value of [AGENT_KEY, `  ${AGENT_KEY}  `]) {
+        expect(readAgentUserHashConfig(appEnv, { AGENT_USER_HASH_KEY: value })).toEqual({
+          agentUserHashKey: value,
+          problems: [],
+        });
+      }
+    }
+    expect(loadConfig({ APP_ENV: 'test', ...PROD_AGENT_KEY }).agentUserHashKey).toBe(AGENT_KEY);
   });
 });
 
