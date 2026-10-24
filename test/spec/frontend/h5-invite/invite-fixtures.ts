@@ -84,6 +84,21 @@ export function inviteConfig(
   };
 }
 
+export type HelpLinkTarget = components['schemas']['HelpLinkTarget'];
+
+/**
+ * help_links targets of the two invite-page entries (契约 CT-16n，D10-252): invite_rules →
+ * 【完整规则】, invite_reward_rules → 【活动规则】. The article ids are obviously fake UUIDs.
+ */
+export const inviteRulesTarget: HelpLinkTarget = {
+  route: 'Help',
+  params: { article_id: '00000000-0000-4000-8000-0000000f1051' },
+};
+export const inviteRewardRulesTarget: HelpLinkTarget = {
+  route: 'Help',
+  params: { article_id: '00000000-0000-4000-8000-0000000f1052' },
+};
+
 /** Only the part of /v1/config this page reads plus a few top-level keys; the rest is not used. */
 export function config(invite: ConfigInvite = inviteConfig()): Record<string, unknown> {
   return {
@@ -92,6 +107,10 @@ export function config(invite: ConfigInvite = inviteConfig()): Record<string, un
     h5_base_url: 'https://h5.example.invalid',
     share_domains: ['share.example.invalid'],
     invite,
+    help_links: {
+      invite_rules: inviteRulesTarget,
+      invite_reward_rules: inviteRewardRulesTarget,
+    },
   };
 }
 
