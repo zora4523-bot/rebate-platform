@@ -1,0 +1,26 @@
+id: CT-06zt
+repo: rebate-platform
+title: CT-06zt：agent 依赖中转的 AST 静态检查（规则测试）——白名单模块的非 index 文件不得先导入别模块的值再以自己名义导出；agent 与白名单模块不得用 `import Def, { type T }` 混写夹带值导入（D10-275 ①）
+type: guard-change
+# 2026-10-24 入账（agent 线，编排裁定 D10-275 ①）。承接 CT-06zq（#1404）两轮独立评审记下的、依赖检查做不到的两处局限：
+# ① 白名单模块（parsing / catalog / linking / orders / content / taolijin / identity / platform / union）里的非 index 文件先
+#    import 别模块的值、再以自己名义 export（或包一层 export const x = imported），由 index `export *` 转给 agent；
+# ② `import Def, { type T } from '<别模块>'` 被 dependency-cruiser 判为 type-only，夹带值导入。
+# 白名单模块清单与 CT-06zq（#1404，在途）的 depcruise 白名单一致；本测试不依赖其规则文件。
+# 做法：照 B3-08g test/spec/agent/stream-assembly-orders/imports.test.ts 先例，写成 test/spec 下的 TypeScript AST 静态扫描规则测试
+# （tools/** 只许 Node 内置与 ajv，不能用编译器 API）；测试自带违规样例自证能抓到、合法样例不误报；主干现零违规，上线即绿。
+# Codex 至 10-30 不可用：由新鲜独立 Claude 写、另一新鲜独立 Claude 评审（approvals #36）。test/spec 只新增；非 task 分支
+# chore/guard-change-CT-06zt，不带证据文件，编排按 approvals #24 核对后加标签。
+refs: [BR-AI-02]
+refs_hash:
+  BR-AI-02: 40bc4f6f4109
+deps: []
+paths:
+  - 'test/spec/agent/dependency-relay/**'
+  - 'ops/tasks/CT-06zt.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify:fast'
+status: todo
+pr: null
