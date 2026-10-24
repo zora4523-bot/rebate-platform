@@ -10,7 +10,11 @@ it('[AC-B1-12r#23] claim.resolved 有且仅有一个本任务订阅，队列及 
     { consumer: 'notification-claim-result', events: ['claim.resolved'] },
   ]);
   expect(QUEUE_CATALOG.filter((q) => q.name === 'evt.notification-claim-result')).toMatchObject([
-    { name: 'evt.notification-claim-result', policy: 'standard', deadLetter: 'dead-letter' },
+    {
+      name: 'evt.notification-claim-result',
+      policy: 'standard',
+      deadLetter: 'evt.notification-claim-result.dead',
+    },
   ]);
   expect(ENTRY_PLAN.worker.filter((w) => w.queue === 'evt.notification-claim-result')).toEqual([
     { queue: 'evt.notification-claim-result', concurrency: 5, pollingIntervalSeconds: 2 },

@@ -18,9 +18,24 @@
 // fail, periodic supervise, send — run unbounded on the shared pool as before. A db without
 // transaction() (unit-test doubles of the option, which only requires executeQuery) runs
 // unbounded.
+//
+// Dead letter scan (B1-01zzg). Only the worker entry runs pg-boss's scheduler (schedule: true; the
+// other entries keep schedule:false and never stamp pgboss.version.cron_on). During start() it
+// creates its internal queue `dead-letter-scan` (not a catalog queue, so no plan names it and no
+// business code can send to it) with the catalog queues and upserts the schedule `dead-letter-scan`
+// (every five minutes, UTC). One extra executor lane works that queue: each tick runs
+// scanDeadLetters, which counts the jobs of the dead letter queues in SQL and logs; it never takes
+// a job from a dead letter queue.
 import { CompiledQuery, sql, type Kysely } from 'kysely';
 import type { DB } from '@couli/db';
 import { PgBoss, fromKysely } from 'pg-boss';
+import {
+  DEAD_LETTER_SCAN_CRON,
+  DEAD_LETTER_SCAN_JOB,
+  DEAD_LETTER_SCAN_QUEUE,
+  DEAD_LETTER_SCAN_SPEC,
+  scanDeadLetters,
+} from './dead-letter-scan.ts';
 import { reportQueueError, runExecutor } from './executor.ts';
 import {
   PGBOSS_SCHEMA,
@@ -30,6 +45,7 @@ import {
   type QueueRuntime,
   type QueueRuntimeOptions,
   type QueueSpec,
+  type WorkSpec,
 } from './types.ts';
 import { runtimeOptions, validateSend } from './validation.ts';
 
@@ -38,6 +54,13 @@ const START_STATEMENT_TIMEOUT = '20s';
 
 /** pg-boss's own transaction texts (plans.transaction), which set their own lock_timeout. */
 const OWN_TRANSACTION = /^\s*BEGIN\s*;/i;
+
+/** The worker's lane of the dead letter scan ticks (B1-01zzg): one at a time. */
+const DEAD_LETTER_SCAN_WORK: WorkSpec = Object.freeze({
+  queue: DEAD_LETTER_SCAN_QUEUE,
+  concurrency: 1,
+  pollingIntervalSeconds: 2,
+});
 
 function queueSettings(spec: QueueSpec) {
   return {
@@ -55,6 +78,9 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
   const options = runtimeOptions(input);
   const { db, logger, entry, catalog, plan, stopTimeoutMs } = options;
   const specs = new Map(catalog.map((spec) => [spec.name, spec]));
+  // The worker also owns the internal scan queue (B1-01zzg); a catalog queue of that name wins.
+  const scanning = entry === 'worker' && !specs.has(DEAD_LETTER_SCAN_QUEUE);
+  const managed = scanning ? [...catalog, DEAD_LETTER_SCAN_SPEC] : catalog;
   const work = new Map(plan[entry].map((item) => [item.queue, item]));
   const handlers = new Map<string, JobHandler>();
   const executors: Promise<void>[] = [];
@@ -117,7 +143,8 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
     schema: PGBOSS_SCHEMA,
     migrate: false,
     supervise: entry === 'worker',
-    schedule: false,
+    // Only the worker runs the cron monitor: the dead letter scan schedule (B1-01zzg).
+    schedule: scanning,
     reindex: false,
     persistQueueStats: false,
     useListenNotify: false,
@@ -140,7 +167,7 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
       // Check ALL existing queues before making any changes or starting pg-boss timers.
       const existing = await boss.getQueues();
       const byName = new Map(existing.map((queue) => [queue.name, queue]));
-      for (const spec of catalog) {
+      for (const spec of managed) {
         const queue = byName.get(spec.name);
         if (
           queue !== undefined &&
@@ -154,8 +181,8 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
       if (stopping) return;
       // A dead-letter target must exist before a queue referencing it is created.
       const ordered = [
-        ...catalog.filter((spec) => spec.deadLetter === null),
-        ...catalog.filter((spec) => spec.deadLetter !== null),
+        ...managed.filter((spec) => spec.deadLetter === null),
+        ...managed.filter((spec) => spec.deadLetter !== null),
       ];
       for (const spec of ordered) {
         if (stopping) return;
@@ -174,11 +201,18 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
         }
       }
       if (stopping) return;
+      // Upsert (name, key '') of the scan schedule: a restart replaces it, never adds a second.
+      if (scanning) {
+        await boss.schedule(DEAD_LETTER_SCAN_QUEUE, DEAD_LETTER_SCAN_CRON, DEAD_LETTER_SCAN_JOB, {
+          tz: 'UTC',
+        });
+      }
+      if (stopping) return;
       // createQueue/updateQueue evict pg-boss's metadata cache. A read through findJobs
       // fills it (getQueue/getQueues do not), without claiming or inserting a job.
       // Warm every queue before send is available: a cold lookup uses the shared pool
       // even when send itself is given a transaction, which can deadlock a full pool.
-      for (const spec of catalog) {
+      for (const spec of managed) {
         if (stopping) return;
         await boss.findJobs(spec.name, { id: '00000000-0000-0000-0000-000000000000' });
       }
@@ -191,6 +225,20 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
       // Recovery addendum 1: reclaim crashed workers' expired jobs, including payout jobs,
       // before registering any consumer. Pg-boss repeats supervision at its default 60 s interval.
       if (entry === 'worker') await boss.supervise();
+      if (scanning && !stopping) {
+        executors.push(
+          runExecutor({
+            db,
+            boss,
+            logger,
+            work: DEAD_LETTER_SCAN_WORK,
+            handler: () => scanDeadLetters({ db, logger }),
+            shutdown: shutdown.signal,
+            deadline: deadline.signal,
+            runningHandlers,
+          }),
+        );
+      }
       for (const [queue, handler] of handlers) {
         if (stopping) return;
         const item = work.get(queue)!;

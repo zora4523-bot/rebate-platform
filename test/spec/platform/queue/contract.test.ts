@@ -116,6 +116,7 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
     expect(QUEUE_CATALOG[riskScan]).toStrictEqual({
       name: 'risk-scan',
       ...DEFAULT,
+      deadLetter: 'risk-scan.dead',
       policy: 'exclusive',
     });
     expect(QUEUE_CATALOG[riskScan - 1]?.name).toBe('agent-trace');
@@ -127,6 +128,7 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
     expect(QUEUE_CATALOG[orderSync]).toStrictEqual({
       name: 'order-sync',
       ...DEFAULT,
+      deadLetter: 'order-sync.dead',
       policy: 'exclusive',
     });
     expect(QUEUE_CATALOG[orderSync + 1]?.name).toBe('order-rescan');
@@ -136,16 +138,24 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
   const exportAt = QUEUE_CATALOG.findIndex((queue) => queue.name === 'export');
   if (exportAt !== -1) {
     expect(QUEUE_CATALOG.filter((queue) => queue.name === 'export')).toHaveLength(1);
-    expect(QUEUE_CATALOG[exportAt]).toStrictEqual({ name: 'export', ...DEFAULT });
+    expect(QUEUE_CATALOG[exportAt]).toStrictEqual({
+      name: 'export',
+      ...DEFAULT,
+      deadLetter: 'export.dead',
+    });
     expect(QUEUE_CATALOG[exportAt - 1]?.name).toBe('risk-scan');
-    expect(QUEUE_CATALOG[exportAt + 1]?.name).toBe('dead-letter');
+    expect(QUEUE_CATALOG[exportAt + 1]?.name).toBe('order-sync.dead');
   }
   // F1-09q：page-schedule（页面定时发布）有则钉死，F1-09p 合并后收紧。Exactly one standard entry with
   // the defaults, right after pool-refresh and right before poster. Everything else stays exact.
   const pageScheduleAt = QUEUE_CATALOG.findIndex((queue) => queue.name === 'page-schedule');
   if (pageScheduleAt !== -1) {
     expect(QUEUE_CATALOG.filter((queue) => queue.name === 'page-schedule')).toHaveLength(1);
-    expect(QUEUE_CATALOG[pageScheduleAt]).toStrictEqual({ name: 'page-schedule', ...DEFAULT });
+    expect(QUEUE_CATALOG[pageScheduleAt]).toStrictEqual({
+      name: 'page-schedule',
+      ...DEFAULT,
+      deadLetter: 'page-schedule.dead',
+    });
     expect(QUEUE_CATALOG[pageScheduleAt - 1]?.name).toBe('pool-refresh');
     expect(QUEUE_CATALOG[pageScheduleAt + 1]?.name).toBe('poster');
   }
@@ -161,6 +171,7 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
     name: 'union-auth',
     ...DEFAULT,
     policy: 'exclusive',
+    deadLetter: 'union-auth.dead',
   });
   expect(QUEUE_CATALOG[unionAuthAt - 1]?.name).toBe('notify');
   expect(QUEUE_CATALOG[unionAuthAt + 1]?.name).toBe('evt.notification-risk-state');
@@ -170,7 +181,12 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
   const payAt = QUEUE_CATALOG.findIndex((queue) => queue.name === 'pay');
   expect(payAt).not.toBe(-1);
   expect(QUEUE_CATALOG.filter((queue) => queue.name === 'pay')).toHaveLength(1);
-  expect(QUEUE_CATALOG[payAt]).toStrictEqual({ name: 'pay', ...DEFAULT, policy: 'exclusive' });
+  expect(QUEUE_CATALOG[payAt]).toStrictEqual({
+    name: 'pay',
+    ...DEFAULT,
+    policy: 'exclusive',
+    deadLetter: 'pay.dead',
+  });
   expect(QUEUE_CATALOG[payAt - 1]?.name).toBe('evt.payout-went-negative');
   expect(QUEUE_CATALOG[payAt + 1]?.name).toBe('pool-refresh');
   expect(
@@ -181,22 +197,44 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
         queue.name !== 'export' &&
         queue.name !== 'union-auth' &&
         queue.name !== 'pay' &&
-        queue.name !== 'page-schedule',
+        queue.name !== 'page-schedule' &&
+        queue.name !== 'dead-letter' &&
+        (!queue.name.endsWith('.dead') || queue.name === 'order-sync.dead'),
     ),
   ).toStrictEqual([
-    { name: 'order-rescan', ...DEFAULT },
-    { name: 'settle', ...DEFAULT, policy: 'exclusive' },
-    { name: 'payout', ...DEFAULT, policy: 'exclusive' },
-    { name: 'notify', ...DEFAULT },
-    { name: 'evt.notification-risk-state', ...DEFAULT },
-    { name: 'evt.notification-appeal-result', ...DEFAULT },
-    { name: 'evt.notification-claim-result', ...DEFAULT },
-    ...(hasPayoutWentNegative ? [{ name: 'evt.payout-went-negative', ...DEFAULT }] : []),
-    { name: 'pool-refresh', ...DEFAULT },
-    { name: 'poster', ...DEFAULT },
-    { name: 'agent-trace', ...DEFAULT },
+    { name: 'order-rescan', ...DEFAULT, deadLetter: 'order-rescan.dead' },
+    { name: 'settle', ...DEFAULT, policy: 'exclusive', deadLetter: 'settle.dead' },
+    { name: 'payout', ...DEFAULT, policy: 'exclusive', deadLetter: 'payout.dead' },
+    { name: 'notify', ...DEFAULT, deadLetter: 'notify.dead' },
     {
-      name: 'dead-letter',
+      name: 'evt.notification-risk-state',
+      ...DEFAULT,
+      deadLetter: 'evt.notification-risk-state.dead',
+    },
+    {
+      name: 'evt.notification-appeal-result',
+      ...DEFAULT,
+      deadLetter: 'evt.notification-appeal-result.dead',
+    },
+    {
+      name: 'evt.notification-claim-result',
+      ...DEFAULT,
+      deadLetter: 'evt.notification-claim-result.dead',
+    },
+    ...(hasPayoutWentNegative
+      ? [
+          {
+            name: 'evt.payout-went-negative',
+            ...DEFAULT,
+            deadLetter: 'evt.payout-went-negative.dead',
+          },
+        ]
+      : []),
+    { name: 'pool-refresh', ...DEFAULT, deadLetter: 'pool-refresh.dead' },
+    { name: 'poster', ...DEFAULT, deadLetter: 'poster.dead' },
+    { name: 'agent-trace', ...DEFAULT, deadLetter: 'agent-trace.dead' },
+    {
+      name: 'order-sync.dead',
       policy: 'standard',
       retryLimit: 0,
       retryDelaySeconds: 1,
@@ -326,7 +364,7 @@ it('[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只�
     'pool-refresh',
     'poster',
     'agent-trace',
-    'dead-letter',
+    'order-sync.dead',
   ];
   const seen: Record<string, Record<string, string>> = {};
   for (const entry of ENTRIES) {

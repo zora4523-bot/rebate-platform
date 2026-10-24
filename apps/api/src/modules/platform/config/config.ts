@@ -48,6 +48,11 @@ const envSchema = z.object({
   API_PORT: port(3100),
   STREAM_PORT: port(3101),
   ADMIN_PORT: port(3102),
+  // B1-01zzg (02 §13): the deployed image tag, bound to every log line. Docker tag syntax.
+  COULI_DEPLOY_VERSION: z
+    .string()
+    .regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/, 'must be an image tag ([A-Za-z0-9_.-], 1–128)')
+    .optional(),
 });
 
 type EnvKey = keyof z.input<typeof envSchema>;
@@ -70,6 +75,12 @@ export interface AppConfig {
   readonly exportStoreSigningKey?: string | undefined;
   readonly appEnv: AppEnv;
   readonly logLevel: LogLevel;
+  /**
+   * COULI_DEPLOY_VERSION (B1-01zzg, 规划/02 §13): the deployed image tag, bound to every root log
+   * line as `deployVersion`. Absent when unset or empty (no key at all, never an empty string); a
+   * hand-built config without it logs no deploy version.
+   */
+  readonly deployVersion?: string | undefined;
   /** Validated CLOCK_NOW text; parsed into an instant only inside platform/clock. */
   readonly clockNow: string | undefined;
   readonly exitAfterInit: boolean;
@@ -289,6 +300,9 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     apiPort: values.API_PORT,
     streamPort: values.STREAM_PORT,
     adminPort: values.ADMIN_PORT,
+    ...(values.COULI_DEPLOY_VERSION === undefined
+      ? {}
+      : { deployVersion: values.COULI_DEPLOY_VERSION }),
     keyring,
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(priorIdentityKeyring === null ? {} : { priorIdentityKeyring }),

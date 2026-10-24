@@ -23,17 +23,20 @@
 //      `evt.<consumer>` join the catalog with the tasks that bring their platforms and consumers.
 //    - Policies: only 'standard' and 'exclusive' (section 4 says why).
 //    - Production values (待编排会话确认 — ADR-0001 and 规划/02 give none except "失败窗口进死信队列"
-//      (02 §7.1) and "任一队列 failed >0" alerting (02 §11)): every queue except `dead-letter` uses
+//      (02 §7.1) and "任一队列 failed >0" alerting (02 §11)): every business queue <q> uses
 //        retryLimit 5, retryDelaySeconds 10, retryBackoff true, retryDelayMaxSeconds 600,
 //        expireInSeconds 900, retentionSeconds 1 209 600 (14 d), deleteAfterSeconds 604 800 (7 d),
-//        deadLetter 'dead-letter';
+//        deadLetter '<q>.dead' (B1-01zzg, D10-183 ② R-01: one dead letter queue per queue; the
+//        former global 'dead-letter' queue is no longer in the catalog and nothing points at it);
 //      policies: `payout` and `settle` 'exclusive' (their tasks carry dedup keys: 02 §5.3
 //      `{withdrawal_id}:{execute_seq}`, 02 §11 settle.bill / settle.batch_execute), all others
-//      'standard'. `dead-letter` (no worker; failed jobs of every queue are copied there and wait for
-//      an operator): standard, retryLimit 0, retryDelaySeconds 1, retryBackoff false,
-//      retryDelayMaxSeconds null, expireInSeconds 900, retentionSeconds 2 592 000 (30 d),
-//      deleteAfterSeconds 2 592 000, deadLetter null. Catalog order: order-rescan, settle, payout,
-//      notify, pool-refresh, poster, agent-trace, dead-letter.
+//      'standard'. Each `<q>.dead` (no worker; failed jobs of <q> are copied there and wait for
+//      an operator; the worker's dead letter scan only counts them, dead-letter-scan.ts): standard,
+//      retryLimit 0, retryDelaySeconds 1, retryBackoff false, retryDelayMaxSeconds null,
+//      expireInSeconds 900, retentionSeconds 2 592 000 (30 d), deleteAfterSeconds 2 592 000,
+//      deadLetter null. Catalog order: the business queues (catalog.ts), then their .dead queues in
+//      the same order (order-sync.dead first). Migration *_queue-dead-letters.sql creates the .dead
+//      queues and repoints existing queues before the new catalog starts (else queue_mismatch).
 //    - Catalog rules (`createQueueRuntime` throws QueueError('invalid_catalog') when the catalog it
 //      is given breaks one): names valid and unique; policy one of the two; retryLimit integer
 //      0..20; retryDelaySeconds integer 1..3600; retryBackoff boolean; retryDelayMaxSeconds null when
@@ -151,7 +154,11 @@
 //        3. Workers (worker and payout only): each registered queue is worked with its plan's
 //           concurrency and polling interval; the worker entry also runs pg-boss supervision
 //           (expiry of active jobs past expireInSeconds, deletion); payout and the HTTP entries do
-//           not (待编排会话确认). No cron schedules yet (schedule:false). No LISTEN/NOTIFY.
+//           not (待编排会话确认). No LISTEN/NOTIFY. Cron schedules: only the worker runs pg-boss's
+//           scheduler, for one internal schedule (B1-01zzg): `dead-letter-scan` every five
+//           minutes on the internal queue of the same name (not in the catalog), worked by one
+//           extra lane of the worker runtime that runs scanDeadLetters (dead-letter-scan.ts). The
+//           other entries keep schedule:false.
 //      A failed start leaves nothing running; stop() then resolves at once. Database errors (e.g.
 //      the database cannot be reached) reject unchanged.
 //    - Connections: every statement runs on a connection of the given `db` handle's pool (the
@@ -201,6 +208,8 @@
 //                          no business call starts, but pg-boss counts the release as a failure.
 //      `job_released_on_expiry` level warn, fields exactly { queue, jobId, attempt } — defensive
 //                          release of an already expired fetched lease without calling its handler.
+//      `dead_letter_jobs`  level error, fields exactly { queue, count } or, for order-sync.dead,
+//                          { queue, platform, count } — the dead letter scan found waiting jobs;
 //      `job_handler_overrun` level warn, fields exactly { queue, jobId, attempt } — handler still
 //                          running when expireInSeconds elapses; it continues holding its slot.
 //      `job_attempt_superseded` level warn, fields exactly { queue, jobId, attempt } — settlement

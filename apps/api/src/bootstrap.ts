@@ -122,7 +122,12 @@ function platformOptions(entry: EntryName, overrides: BootstrapOverrides): Platf
     clock: overrides.clock ?? clockFromConfig(config),
     logger:
       overrides.logger ??
-      createRootLogger({ level: config.logLevel, entry, appEnv: config.appEnv }),
+      createRootLogger({
+        level: config.logLevel,
+        entry,
+        appEnv: config.appEnv,
+        deployVersion: config.deployVersion,
+      }),
   };
 }
 

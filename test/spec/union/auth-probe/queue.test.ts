@@ -18,7 +18,7 @@ it('[AC-S1-64#50] union-auth 是 exclusive，只 worker 并发1，其余目录�
       expireInSeconds: 900,
       retentionSeconds: 1_209_600,
       deleteAfterSeconds: 604_800,
-      deadLetter: 'dead-letter',
+      deadLetter: 'union-auth.dead',
     },
   ]);
   expect(ENTRY_PLAN.worker.filter((q) => q.queue === 'union-auth')).toEqual([

@@ -16,7 +16,11 @@ it('[AC-F1-09p#27] 撤销操作正式启用，content.page 不要求二次认证
 it('[AC-F1-09p#28] page-schedule 位于 pool-refresh 后且 poster 前，仅 worker 并发 1 消费', () => {
   const index = QUEUE_CATALOG.findIndex((q) => q.name === 'pool-refresh');
   const defaults = QUEUE_CATALOG[index]!;
-  expect(QUEUE_CATALOG[index + 1]).toEqual({ ...defaults, name: 'page-schedule' });
+  expect(QUEUE_CATALOG[index + 1]).toEqual({
+    ...defaults,
+    name: 'page-schedule',
+    deadLetter: 'page-schedule.dead',
+  });
   expect(QUEUE_CATALOG[index + 2]?.name).toBe('poster');
   const worker = ENTRY_PLAN.worker;
   const position = worker.findIndex((q) => q.queue === 'pool-refresh');
