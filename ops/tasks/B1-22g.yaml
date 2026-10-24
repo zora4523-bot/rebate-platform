@@ -4,6 +4,7 @@ title: 后台告警手机号接口（union）：adminListUnionAlertPhones（只�
 type: impl
 # 入账（union 线）。依据 08 BR-ID-24 ② 与细则「后台告警手机号与重新授权会话」（D10-152 ④、D10-176 ②③）、BR-ID-33（加密存储、脱敏显示）、BR-ID-05（规范化）；04 §6.6、§10.1；02 §4.1（union 不直接写 config_items）。编解码复用 B1-22b encodeAlertPhones / alertPhoneId。前置：content 提供写入端口（notices 已请）。
 # 2026-10-24 content 写入端口已合并（F1-02zzj #1434，D10-281）：createUnionAlertPhonesWriter / UnionAlertPhonesConflictError 等从 content/index.ts 取。Codex 用量至 10-30 不可用，规则测试与评审改由独立 Claude（approvals #36）。
+# 2026-10-24 paths 补 packages/contracts-ts/src/planned-operations.gen.ts：去 planned 后 codegen 会改这份生成物（contracts:check 校验它）。
 refs: [BR-ID-24]
 refs_hash:
   BR-ID-24: 4cba1bd5dd15
@@ -13,6 +14,7 @@ paths:
   - 'apps/api/src/app.module.ts'
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
