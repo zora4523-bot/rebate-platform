@@ -1,0 +1,20 @@
+id: F1-02zzl
+repo: rebate-platform
+title: 推送令牌上报与注销清理并发：上报时先锁 users 行，用户 status 为 deleting / deleted 时整次上报忽略（不写令牌、接口照常回成功），先写能复现并发残留的规则测试（D10-318）
+type: impl
+# 2026-10-24 入账（content-client；编排裁定 D10-318：F1-02zzk money r1 范围外 S2 归 content）。
+# 现状：notification/infra/push-token-report-store.ts reportInTransaction 只锁 devices 行（last_login_sid 校验）再锁 push_tokens，不锁 users；identity 注销清理先锁 users 行再调 notification 的 deletePushTokensForUser（F1-02zzk）。READ COMMITTED 下上报可能在清理删除之后再插入一行该用户令牌。
+# 本任务：上报事务里先锁 users 行（与清理同序：users → devices → push_tokens，避免死锁），status ∈ {deleting, deleted} → 与「非当前会话」同口径整次忽略（application/push-token-report.ts 头注释第 1 条的拒绝方式，无新错误码）。
+refs: []
+refs_hash: {}
+deps: [F1-02zzk]
+paths:
+  - 'apps/api/src/modules/notification/**'
+test_paths:
+  - 'test/spec/notification/push-token-deletion-race/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
