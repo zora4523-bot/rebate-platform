@@ -77,8 +77,9 @@ export const RED_EXEMPT_REASON_MIN = 10;
 /**
  * The most declarations a task may make (CT-06t): the section is left out of the task file's
  * line limit (tools/ops/task.ts countedLines), so it has its own, by entries.
+ * 2026-10-24 编排裁定 D10-344：由 20 提到 50（B1-03w 改名冻结测试 40 条）；豁免仍须规则测试评审方在证据里确认。
  */
-export const RED_EXEMPT_MAX = 20;
+export const RED_EXEMPT_MAX = 50;
 
 export const TASK_REPOS = ['rebate-platform', 'ios', 'android', 'harmony'] as const;
 export const TASK_TYPES = [
