@@ -330,7 +330,7 @@ csv 列：`template_id,ledger_type,sub_type,uniq_key_pattern,line,account_owner,
 
 | 凭证 | ledger_type / sub_type | uniq_key | 借 | 贷 | 金额 | 何时写 | 依据 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 收款 | PAY_RECEIPT / {pay_channel} | `PAY_RECEIPT:{pay_order_id}` | `CASH_PAY:{pay_channel}` | `PAY_RECEIPTS:{biz_type}` | amount_fen（支付单金额） | PO2（PENDING → PAID）的同一事务，与开通任务入队、`pay.order.paid` 事件同事务；每张支付单至多一张 | BR-PAY-04、BR-PAY-07 |
+| 收款 | PAY_RECEIPT / {pay_channel} | `PAY_RECEIPT:{pay_order_id}` | `CASH_PAY:{pay_channel}` | `PAY_RECEIPTS:{biz_type}` | amount_fen（支付单金额） | PO2（PENDING → PAID）的同一事务，与开通任务入队、`pay_order.paid` 事件同事务；每张支付单至多一张 | BR-PAY-04、BR-PAY-07 |
 | 退款 | PAY_REFUND / {pay_channel} | `PAY_REFUND:{pay_refund_id}` | `PAY_RECEIPTS:{biz_type}` | `CASH_PAY:{pay_channel}` | refund_fen（退款单金额） | 退款单 SUCCESS 时，方向与收款相反；每张退款单至多一张（B2-15e） | BR-PAY-06、BR-PAY-07 |
 | 异常收款 | PAY_ANOMALY / {pay_channel} | `PAY_ANOMALY:{pay_anomaly_id}` | `CASH_PAY:{pay_channel}` | `PAY_SUSPENSE` | anomaly_fen（渠道上报的收款金额） | 登记异常收款时（CLOSED 单或找不到支付单的收款，BR-PAY-05 ④），同事务登记 pay_anomalies 与 R4 pay_anomaly 差错单；每条异常收款的收款凭证至多一张；对异常收款退款成功时写相反方向（B2-15e） | BR-PAY-05 ④、BR-PAY-07 |
 | 渠道手续费 | PAY_FEE / {pay_channel} | `PAY_FEE:{pay_channel}:{bill_date}` | `PAY_CHANNEL_FEE` | `CASH_PAY:{pay_channel}` | fee_fen（账单手续费） | T+1 对账按账单记，按（渠道、账单日）一张（B2-15h） | BR-PAY-07 |

@@ -53,8 +53,8 @@ export const EVENT_NAMES: readonly string[] = Object.freeze([
   'asset_snapshot.timed_out',
   'union_receivable.exposure_exceeded',
   // Payment (B2-15c; 08 BR-PAY-04 PO2): published by payment on the settlement transaction.
-  // 02 §11 at SPEC_REF does not list it yet (待规划回写): appended after the list.
-  'pay.order.paid',
+  // Two segments per the event name rule (D10-340, couli #206: 02 §11 lists it as pay_order.paid).
+  'pay_order.paid',
 ]);
 
 export interface EventSubscription {

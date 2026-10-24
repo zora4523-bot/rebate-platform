@@ -8,7 +8,7 @@
 //   (借 CASH_PAY:{pay_channel} / 贷 PAY_RECEIPTS:{biz_type}, platform subjects only, uniq key
 //   PAY_RECEIPT:<pay_order_id>: at most one per order, BR-PAY-07), the business object's
 //   fulfilment job (queue pay, biz.reconcile, singletonKey biz:<biz_type>:<biz_ref>: serial per
-//   object) and the pay.order.paid event — all on that one transaction, so a failure anywhere
+//   object) and the pay_order.paid event — all on that one transaction, so a failure anywhere
 //   leaves nothing behind (BR-PAY-04 细则 应答表 last row).
 // registerAnomalyReceipt — BR-PAY-05 ④: one pay_anomalies row per (channel, channel trade
 //   number), its PAY_ANOMALY voucher (借 CASH_PAY:{pay_channel} / 贷 PAY_SUSPENSE, uniq key
@@ -64,7 +64,7 @@ export interface PaySettlementDeps {
 }
 
 /** platform/events EVENT_NAMES entry published on PO2 (02 §11 addition of B2-15c). */
-export const PAY_ORDER_PAID_EVENT = 'pay.order.paid';
+export const PAY_ORDER_PAID_EVENT = 'pay_order.paid';
 /** The operator of every voucher payment posts. */
 export const PAY_OPERATOR = 'system:payment';
 export const QUERY_SCHEDULE_KEY = 'pay.query_schedule';
