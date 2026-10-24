@@ -78,9 +78,24 @@ export const FIELD_VARS = [
   'FIELD_MASTER_KEY_FILE',
 ] as const;
 
+/**
+ * The variables of the second keyring (B1-27e: the isolated store of prior identities). A staging
+ * / prod configuration of these tests carries them next to FIELD_*, so that it still passes
+ * loadConfig once that group is required there; local and test need none.
+ */
+export const PRIOR_IDENTITY_VARS = [
+  'PRIOR_IDENTITY_KEY_PROVIDER',
+  'PRIOR_IDENTITY_KEYRING_FILE',
+  'PRIOR_IDENTITY_MASTER_KEY_FILE',
+] as const;
+
 /** Labels of the test keys (testKey of ./kit.ts). */
 export const MASTER_LABEL = 71;
 export const OTHER_MASTER_LABEL = 72;
+/** The prior identity keyring's own master key, data keys (per version) and blind-index key. */
+export const PRIOR_MASTER_LABEL = 73;
+export const PRIOR_DATA_KEY_LABEL_BASE = 80;
+export const PRIOR_BLIND_KEY_LABEL = 202;
 export const VERSIONS = [1, 2] as const;
 export const CURRENT_VERSION = 2;
 
@@ -128,13 +143,37 @@ export function keyringDoc(
   };
 }
 
+/**
+ * The prior identity keyring document (B1-27e): same format as keyringDoc, but its own master key
+ * and data keys (testKey(PRIOR_DATA_KEY_LABEL_BASE + v)), so no data key equals one of the main
+ * keyring (B1-27e refuses a shared data key).
+ */
+export function priorIdentityKeyringDoc(): WrappedKeyring {
+  const master = testKey(PRIOR_MASTER_LABEL);
+  return {
+    key_id: 'local',
+    current_version: CURRENT_VERSION,
+    data_keys: VERSIONS.map((version) => ({
+      version,
+      wrapped: referenceWrap(master, 'local', testKey(PRIOR_DATA_KEY_LABEL_BASE + version)),
+    })),
+    blind_index_key: referenceWrap(master, 'local', testKey(PRIOR_BLIND_KEY_LABEL)),
+  };
+}
+
 export interface LocalFiles {
   readonly dir: string;
   readonly masterFile: string;
   readonly keyringFile: string;
+  /** The prior identity keyring's files (B1-27e), always written next to the two above. */
+  readonly priorMasterFile: string;
+  readonly priorKeyringFile: string;
 }
 
-/** Writes a master key file and a keyring file (text or bytes as given) into `dir`. */
+/**
+ * Writes a master key file and a keyring file (text or bytes as given) into `dir`, and a working
+ * prior identity master key file and keyring file (priorIdentityKeyringDoc) next to them.
+ */
 export function writeFiles(
   dir: string,
   contents: {
@@ -146,10 +185,42 @@ export function writeFiles(
   const keyringFile = join(dir, 'keyring.json');
   writeFileSync(masterFile, contents.master ?? masterText());
   writeFileSync(keyringFile, contents.keyring ?? `${JSON.stringify(keyringDoc())}\n`);
-  return { dir, masterFile, keyringFile };
+  const priorMasterFile = join(dir, 'prior-identity-master.hex');
+  const priorKeyringFile = join(dir, 'prior-identity-keyring.json');
+  writeFileSync(priorMasterFile, masterText(PRIOR_MASTER_LABEL));
+  writeFileSync(priorKeyringFile, `${JSON.stringify(priorIdentityKeyringDoc())}\n`);
+  return { dir, masterFile, keyringFile, priorMasterFile, priorKeyringFile };
 }
 
-/** The variables of a working local keyring for loadConfig. */
+/**
+ * The PRIOR_IDENTITY_* variables (B1-27e) a staging / prod configuration carries next to FIELD_*;
+ * none for local and test. The provider defaults to `local` in staging and `kms` in prod (where
+ * `local` is refused); `kms` names no master key file.
+ */
+export function priorIdentityEnv(
+  appEnv: string,
+  paths: { readonly keyringFile: string; readonly masterFile: string },
+  provider: 'local' | 'kms' = appEnv === 'prod' ? 'kms' : 'local',
+): Record<string, string> {
+  if (appEnv !== 'staging' && appEnv !== 'prod') return {};
+  return provider === 'local'
+    ? {
+        PRIOR_IDENTITY_KEY_PROVIDER: 'local',
+        PRIOR_IDENTITY_KEYRING_FILE: paths.keyringFile,
+        PRIOR_IDENTITY_MASTER_KEY_FILE: paths.masterFile,
+      }
+    : { PRIOR_IDENTITY_KEY_PROVIDER: 'kms', PRIOR_IDENTITY_KEYRING_FILE: paths.keyringFile };
+}
+
+/** The prior identity files of `files` in the shape priorIdentityEnv takes. */
+export function priorPaths(files: LocalFiles): { keyringFile: string; masterFile: string } {
+  return { keyringFile: files.priorKeyringFile, masterFile: files.priorMasterFile };
+}
+
+/**
+ * The variables of a working local keyring for loadConfig; in staging also the working local
+ * prior identity keyring of `files`, in prod a kms one (B1-27e, priorIdentityEnv).
+ */
 export function localEnv(appEnv: AppEnvName, files: LocalFiles): Record<string, string> {
   return {
     APP_ENV: appEnv,
@@ -157,6 +228,7 @@ export function localEnv(appEnv: AppEnvName, files: LocalFiles): Record<string, 
     FIELD_KEY_PROVIDER: 'local',
     FIELD_KEYRING_FILE: files.keyringFile,
     FIELD_MASTER_KEY_FILE: files.masterFile,
+    ...priorIdentityEnv(appEnv, priorPaths(files)),
   };
 }
 
@@ -362,6 +434,7 @@ export function stubProcessEnv(values: Readonly<Record<string, string>>): void {
     'STREAM_PORT',
     'ADMIN_PORT',
     ...FIELD_VARS,
+    ...PRIOR_IDENTITY_VARS,
     ...Object.keys(process.env).filter((name) => CREDENTIAL_LIKE.test(name)),
   ];
   for (const name of names) vi.stubEnv(name, values[name]);

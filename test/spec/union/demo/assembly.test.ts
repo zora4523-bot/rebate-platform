@@ -94,6 +94,8 @@ it.each(platforms)(
       APP_ENV: 'prod',
       FIELD_KEY_PROVIDER: 'kms',
       FIELD_KEYRING_FILE: '/demo-unused/keyring.json',
+      PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
+      PRIOR_IDENTITY_KEYRING_FILE: '/demo-unused/prior-identity-keyring.json',
     });
     const mixed: readonly UnionEndpoint[] = endpoints.map((endpoint) =>
       endpoint.platform === platform

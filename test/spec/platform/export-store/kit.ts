@@ -18,6 +18,8 @@ export function configEnv(appEnv: AppEnv): Record<string, string> {
         APP_ENV: appEnv,
         FIELD_KEY_PROVIDER: 'kms',
         FIELD_KEYRING_FILE: '/not-opened/export-store-fixture.json',
+        PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
+        PRIOR_IDENTITY_KEYRING_FILE: '/not-opened/export-store-prior-identity-fixture.json',
       };
 }
 

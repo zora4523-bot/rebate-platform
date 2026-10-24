@@ -17,6 +17,8 @@ function cloud(appEnv: 'staging' | 'prod'): Record<string, string> {
     APP_ENV: appEnv,
     FIELD_KEY_PROVIDER: 'kms',
     FIELD_KEYRING_FILE: '/not-opened/keyring.json',
+    PRIOR_IDENTITY_KEY_PROVIDER: 'kms',
+    PRIOR_IDENTITY_KEYRING_FILE: '/not-opened/prior-identity-keyring.json',
     ADMIN_TOKEN_SIGNING_KEY: randomBytes(32).toString('base64url'),
     ADMIN_IP_ALLOWLIST: '192.0.2.0/24',
     ADMIN_CORS_ORIGIN: 'https://admin.example.invalid',

@@ -137,10 +137,20 @@ it.each([
             ? new URL('../../../../.tmp/stream-review/unused-keyring.json', import.meta.url)
                 .pathname
             : undefined,
+        PRIOR_IDENTITY_KEY_PROVIDER: appEnv === 'staging' ? 'kms' : undefined,
+        PRIOR_IDENTITY_KEYRING_FILE:
+          appEnv === 'staging'
+            ? new URL(
+                '../../../../.tmp/stream-review/unused-prior-identity-keyring.json',
+                import.meta.url,
+              ).pathname
+            : undefined,
         JWT_KEY_ID: 'synthetic-stream-review',
         JWT_PRIVATE_KEY_PEM: pair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
       }),
       keyring: null,
+      // Likewise the prior identity keyring (B1-27e): kms in staging, never opened here.
+      ...{ priorIdentityKeyring: null },
     };
     const app = await boot.createHttpApp('stream', {
       config,
