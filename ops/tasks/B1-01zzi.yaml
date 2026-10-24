@@ -4,7 +4,8 @@ title: 资金类业务指标与告警规则：映射表外平台状态码、月�
 type: impl
 # 2026-10-23 入账（be-codex；编排 D10-183 ② R-01、D10-193 ③）。依据：规划 02 §13 告警表与夜间只推资金类的规定；BR-FUND-02、BR-FUND-04、BR-CALC-13、BR-WDR-14、BR-WDR-18、BR-WDR-24 的告警条目。
 # 日终分录差异引用 R-03（funds，每日不变量）的结果，不重做；夜间路由与 @ 值班人由 ops 在 Alertmanager 做（B1-25）。打款 / 提现相关几项依赖提现线（B2-05 起）的表落地，未落地的写 TODO 标 blocked。
-# 2026-10-25 开工补齐：platform 不导入任何模块，指标经各模块新增的只读端口（orders：order_sync_pending open 计数按 reason；settlement：settle_batches PARTIAL / 失败与 beneficiary_credits open 满 30 天；payout：withdrawals needs_manual、自然日 W6 比率与连续 W6）由入口注入 worker 的采集；企业支付宝水位 W<1.5P 依赖 B2-06a 的 payout_watermarks，未落地写 TODO blocked。Codex 额度至 10-30，tester 按 approvals #36 改独立 Claude。
+# 2026-10-25 开工补齐：platform 不导入模块，指标经各模块新增只读端口由入口注入 worker；WorkerMetricsSnapshot 与 createMetricsRegistry 现有 collect 契约不变（B1-01zzh 冻结 kit 钉死），资金指标走另一个采集选项。端口口径：orders——order_sync_pending status='open' 按 reason 计数；settlement——settle_jobs job='bill' 且 status='failed' 计数、settle_batches status='PARTIAL' 计数（批次执行失败即 settle 队列 failed，B1-01zzh 已导出）、受益人 held 满 30 天无结论＝commission_split_beneficiary_events 最新状态为 held 且首次 held ≤ now−30 天；payout——withdrawals status='PAYING' 且 needs_manual=true 计数。
+# BR-WDR-24 本任务只做 needs_manual（PAYING）一条；W6 比率、连续 W6、企业支付宝水位 W<1.5P 需转账尝试与状态迁移时间（B2-06a / B2-06fz）未落地写 TODO blocked；未识别业务码、queue_paused、EXECUTE 因水位被拒、W9、W10 判 FAILED、审核超时、R2 差异、改 withdraw.* / payout.* 配置为 payout / 资金线的事件告警（B2-06d、B2-06fz、B2-11c 等），不在本任务。Codex 额度至 10-30，tester 按 approvals #36 改独立 Claude（GT-23bgn 六条 S2 已落进本注释）。
 refs: [BR-FUND-02, BR-FUND-04, BR-CALC-13, BR-WDR-14, BR-WDR-18, BR-WDR-24]
 refs_hash:
   BR-FUND-02: bffd22853853
