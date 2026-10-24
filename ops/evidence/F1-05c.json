@@ -1,0 +1,97 @@
+{
+  "red_tests": [
+    "test/spec/frontend/h5-invite-help-links/invite-help-links-source.test.ts > [AC-F1-05c-SOURCE#1] 邀请页源码与 texts/invite.ts 不再写死文章标识 invite-rules / invite-reward",
+    "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-OPEN#1] 活动无效时【完整规则】经桥 nav.open 按 help_links.invite_rules 的目标原样打开，没有活动规则入口",
+    "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-OPEN#2] 活动有效时【活动规则】按 invite_reward_rules、【完整规则】按 invite_rules 各自打开",
+    "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-OPEN#3] 暂不可邀请（can_invite=false）时【完整规则】仍按 invite_rules 打开，没有活动规则入口",
+    "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-HIDE#1] 活动无效且 help_links 缺 invite_rules：没有【完整规则】入口，邀请规则卡标题与规则照常显示",
+    "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-HIDE#2] 活动有效且缺 invite_rules：没有【完整规则】入口，【活动规则】仍按 invite_reward_rules 打开",
+    "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-HIDE#3] 活动有效且缺 invite_reward_rules：奖励活动卡标题与奖励句照常显示，只是没有【活动规则】入口",
+    "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-HIDE#4] 配置里没有 help_links：【完整规则】【活动规则】都不显示，邀请规则卡与奖励活动卡照常",
+    "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-HIDE#5] help_links 为空对象：两入口都不显示，邀请码与邀请规则卡照常",
+    "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-HIDE#6] 经桥读取配置失败：两入口都不显示，邀请码与邀请规则卡（含不发放一句）照常",
+    "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-CONFIG#1] help_links 与 invite 一样只经桥 app.getConfig 读取，不另发 HTTP 读 /v1/config"
+  ],
+  "risk_note": "H5 invite page rule entries (apps/h5 pages/invite: model.ts, invite-page.tsx, model.test.ts; display only, no money logic). Contract CT-16n registered help_links keys invite_rules (完整规则) and invite_reward_rules (活动规则) in /v1/config (orchestrator ruling D10-252). The page reads invite and help_links in one app.getConfig bridge call and opens each target {route, params} as given through nav.open; an entry whose key is missing, or all entries when help_links is missing or the config read fails, is not rendered (contract help_links rule); the reward card and rule card stay; the fixed ids invite-rules / invite-reward are gone. Frozen fixture sync (first-class protected path, needs the #24 label): test/spec/frontend/h5-invite/invite-fixtures.ts config gains the two keys with fake-UUID Help targets; no *.test.ts changed, no assertion loosened. Rule tests written by an independent Claude (Codex out of quota until 2026-10-30; ledger tester claude-independent, approvals id 36); Claude spec-test review r1 pass; red on the test machine (red/1: 11 red, 0 problems). Implementation by Opus 5.5; test machine verify-fast/1 and browser/1 green. Adversarial review by a fresh independent Claude (tools/agent/claude-run.sh). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 1,
+      "note": "round 1 pass, no findings; independent Claude because Codex hit its usage limit until 2026-10-30"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagent: round 1 pass, no findings; tests written by an independent Claude (claude-run.sh)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  },
+  "task": "F1-05c",
+  "spec_ref": "ec81e625dcf54f230d168dbf09910bd704c82a18",
+  "spec_commit": "6c6d29bd04a69d33e51815c6e2ae427f073b4c3b",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "6c6d29bd04a69d33e51815c6e2ae427f073b4c3b",
+      "tree": "35fc2257cba720c60db37fb5a9d0510acf8adf5e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T07:45:33Z",
+      "finished_at": "2026-10-24T07:45:42Z",
+      "gate": {
+        "commit": "1189e953720b9d716862a057720b2f6a6e9536dd",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "red_tests": [
+        "test/spec/frontend/h5-invite-help-links/invite-help-links-source.test.ts > [AC-F1-05c-SOURCE#1] 邀请页源码与 texts/invite.ts 不再写死文章标识 invite-rules / invite-reward",
+        "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-OPEN#1] 活动无效时【完整规则】经桥 nav.open 按 help_links.invite_rules 的目标原样打开，没有活动规则入口",
+        "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-OPEN#2] 活动有效时【活动规则】按 invite_reward_rules、【完整规则】按 invite_rules 各自打开",
+        "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-OPEN#3] 暂不可邀请（can_invite=false）时【完整规则】仍按 invite_rules 打开，没有活动规则入口",
+        "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-HIDE#1] 活动无效且 help_links 缺 invite_rules：没有【完整规则】入口，邀请规则卡标题与规则照常显示",
+        "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-HIDE#2] 活动有效且缺 invite_rules：没有【完整规则】入口，【活动规则】仍按 invite_reward_rules 打开",
+        "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-HIDE#3] 活动有效且缺 invite_reward_rules：奖励活动卡标题与奖励句照常显示，只是没有【活动规则】入口",
+        "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-HIDE#4] 配置里没有 help_links：【完整规则】【活动规则】都不显示，邀请规则卡与奖励活动卡照常",
+        "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-HIDE#5] help_links 为空对象：两入口都不显示，邀请码与邀请规则卡照常",
+        "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-HIDE#6] 经桥读取配置失败：两入口都不显示，邀请码与邀请规则卡（含不发放一句）照常",
+        "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts > [AC-F1-05c-CONFIG#1] help_links 与 invite 一样只经桥 app.getConfig 读取，不另发 HTTP 读 /v1/config"
+      ],
+      "expected": [
+        "test/spec/frontend/h5-invite-help-links/invite-help-links-source.test.ts",
+        "test/spec/frontend/h5-invite-help-links/invite-help-links.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "53881bf477ee79af00b270404937fa5d255a49b3c78a180ac77d853304401ac7"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "0618d9bfe0d6f7827a4b8eba43e92cda9dfb0b71",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  }
+}

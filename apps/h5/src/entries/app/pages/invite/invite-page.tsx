@@ -11,11 +11,13 @@ import { t } from '../../../../shared/texts.ts';
 import { inviteRewardRules, inviteRuleSummary, inviteTexts } from '../../../../texts/invite.ts';
 import { Component as PagePending } from '../page-pending.tsx';
 import {
-  ARTICLE_INVITE_REWARD,
-  ARTICLE_INVITE_RULES,
   CONFIG_KEYS,
+  NO_LINKS,
   SUPPORT_ENTRY,
+  parseInviteLinks,
   parseInviteReward,
+  type HelpTarget,
+  type InviteLinks,
   type InviteReward,
 } from './model.ts';
 
@@ -46,7 +48,8 @@ const ACTION_PRIMARY = `${ACTION} bg-couli-button-primary-default-background fon
 
 /**
  * 邀请好友（F1-05a，路由 InviteShare，h5 `/invite`）：经应用级 API 客户端（内部经桥取 H5 令牌）读 getMyInvite，
- * 经桥 app.getConfig 读 invite 段决定奖励活动卡（D36；读取失败按活动无效）。没有 API 客户端（App 外或未配置）
+ * 经桥 app.getConfig 读 invite 段决定奖励活动卡（D36；读取失败按活动无效），读 help_links 决定【完整规则】
+ * 【活动规则】入口（CT-16n；键未配置或读取失败时入口不显示）。没有 API 客户端（App 外或未配置）
  * 时在任何钩子之前返回共用占位页，不发请求。
  */
 export function InvitePage(props: InvitePageProps): ReactElement {
@@ -56,15 +59,22 @@ export function InvitePage(props: InvitePageProps): ReactElement {
   return <InviteContent api={api} />;
 }
 
-/** 经桥读奖励活动配置；桥没有该能力或调用失败都按活动无效（null），不让整页失败。 */
-async function loadReward(): Promise<InviteReward | null> {
+interface InviteConfig {
+  reward: InviteReward | null;
+  links: InviteLinks;
+}
+
+const NO_CONFIG: InviteConfig = { reward: null, links: NO_LINKS };
+
+/** 经桥读奖励活动与帮助入口配置；桥没有该能力或调用失败都按活动无效、入口不显示，不让整页失败。 */
+async function loadConfig(): Promise<InviteConfig> {
   const getConfig = has('app.getConfig');
-  if (getConfig === null) return null;
+  if (getConfig === null) return NO_CONFIG;
   try {
     const result = await call(getConfig, { keys: CONFIG_KEYS });
-    return parseInviteReward(result.values);
+    return { reward: parseInviteReward(result.values), links: parseInviteLinks(result.values) };
   } catch {
-    return null;
+    return NO_CONFIG;
   }
 }
 
@@ -95,7 +105,7 @@ function InviteContent({ api }: { api: H5ApiClient }): ReactElement {
     queryFn: () => api.request('GET', '/v1/invites/me', {}),
     ...NO_AUTO_FETCH,
   });
-  const config = useQuery({ queryKey: CONFIG_KEY, queryFn: loadReward, ...NO_AUTO_FETCH });
+  const config = useQuery({ queryKey: CONFIG_KEY, queryFn: loadConfig, ...NO_AUTO_FETCH });
   const [notice, setNotice] = useState<string | null>(null);
 
   /** 轻提示：有 ui.toast 走原生，否则页内播报。 */
@@ -161,7 +171,8 @@ function InviteContent({ api }: { api: H5ApiClient }): ReactElement {
     data.landing_url !== null &&
     data.landing_url !== '';
   // 暂不可邀请时不显示奖励活动卡（规格 §7 保守默认）。
-  const reward = canInvite ? (config.data ?? null) : null;
+  const reward = canInvite ? (config.data?.reward ?? null) : null;
+  const links = config.data?.links ?? NO_LINKS;
 
   return (
     <Page>
@@ -176,8 +187,8 @@ function InviteContent({ api }: { api: H5ApiClient }): ReactElement {
         <UnavailableCard />
       )}
       <CountCard count={data.direct_count} />
-      {reward === null ? null : <RewardCard reward={reward} />}
-      <RulesCard rewardOn={reward !== null} />
+      {reward === null ? null : <RewardCard reward={reward} link={links.rewardRules} />}
+      <RulesCard rewardOn={reward !== null} link={links.rules} />
       {notice === null ? null : (
         <p role="status" className={`${CAPTION} text-center`}>
           {notice}
@@ -194,10 +205,11 @@ function openLedger(): void {
   call(navOpen, { route: 'Ledger' }).catch(() => undefined);
 }
 
-function openArticle(articleId: string): void {
+/** 按 help_links 的跳转目标原样经桥打开帮助文章。 */
+function openArticle(target: HelpTarget): void {
   const navOpen = has('nav.open');
   if (navOpen === null) return;
-  call(navOpen, { route: 'Help', params: { article_id: articleId } }).catch(() => undefined);
+  call(navOpen, target).catch(() => undefined);
 }
 
 function CodeCard({
@@ -357,22 +369,25 @@ function CountCard({ count }: { count: number }): ReactElement {
   );
 }
 
+/** 卡片标题行；入口的跳转目标为 null（help_links 未配置该键）时不显示入口（契约 help_links 约定）。 */
 function CardHeader({
   title,
   entry,
-  onOpen,
+  target,
 }: {
   title: string;
   entry: string;
-  onOpen: () => void;
+  target: HelpTarget | null;
 }): ReactElement {
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-couli-3">
       <h2 className="text-couli-body leading-couli-body font-couli-semibold">{title}</h2>
-      <button type="button" className={LINK} onClick={onOpen}>
-        {entry}
-        <ChevronIcon />
-      </button>
+      {target === null ? null : (
+        <button type="button" className={LINK} onClick={() => openArticle(target)}>
+          {entry}
+          <ChevronIcon />
+        </button>
+      )}
     </div>
   );
 }
@@ -389,7 +404,13 @@ function RuleList({ items }: { items: readonly string[] }): ReactElement {
   );
 }
 
-function RewardCard({ reward }: { reward: InviteReward }): ReactElement {
+function RewardCard({
+  reward,
+  link,
+}: {
+  reward: InviteReward;
+  link: HelpTarget | null;
+}): ReactElement {
   const rules = [
     inviteRewardRules.settle,
     ...(reward.eligibilityDays === null
@@ -404,7 +425,7 @@ function RewardCard({ reward }: { reward: InviteReward }): ReactElement {
       <CardHeader
         title={t('invite.share.reward_title')}
         entry={t('invite.share.reward_rules')}
-        onOpen={() => openArticle(ARTICLE_INVITE_REWARD)}
+        target={link}
       />
       <p className="flex items-start gap-couli-2 rounded-couli-button border border-couli-brand-subtle bg-couli-brand-subtle px-couli-3 py-couli-2 text-couli-body leading-couli-body font-couli-semibold text-couli-brand-primary">
         <GiftIcon />
@@ -417,7 +438,13 @@ function RewardCard({ reward }: { reward: InviteReward }): ReactElement {
   );
 }
 
-function RulesCard({ rewardOn }: { rewardOn: boolean }): ReactElement {
+function RulesCard({
+  rewardOn,
+  link,
+}: {
+  rewardOn: boolean;
+  link: HelpTarget | null;
+}): ReactElement {
   // 活动无效时末条为「不发放红包或现金奖励」一句；有效时不显示（BR-INV-18 细则、BR-INV-24 ⑨）。
   const items = rewardOn
     ? inviteRuleSummary
@@ -427,7 +454,7 @@ function RulesCard({ rewardOn }: { rewardOn: boolean }): ReactElement {
       <CardHeader
         title={t('invite.share.rules_title')}
         entry={t('invite.share.rules_full')}
-        onOpen={() => openArticle(ARTICLE_INVITE_RULES)}
+        target={link}
       />
       <RuleList items={items} />
     </section>
