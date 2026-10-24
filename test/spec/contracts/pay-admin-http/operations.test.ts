@@ -18,51 +18,99 @@ import {
   yaml,
 } from './kit.ts';
 
-it.each(endpoints)(
-  '[AC-CT-21e#1] %s %s 声明 planned、后台鉴权与权限点',
-  (method, path, id, permission) => {
-    const doc = contract();
-    const endpoint = endpoints.find((e) => e[2] === id)!;
-    const op = operation(doc, endpoint);
-    expect(op['operationId']).toBe(id);
-    expect(op['x-implementation']).toBe('planned');
-    expect(op['x-auth']).toBe('admin');
-    expect(op['security']).toEqual([{ adminBearerAuth: [] }]);
-    expect(op['description']).toMatch(
-      new RegExp('Permission point:?\\s+`' + permission.replace('.', '\\.') + '`'),
+it.each(
+  endpoints.filter(
+    (e): boolean => e[2] !== 'createAdminPayRefund' && e[2] !== 'createAdminPayAnomalyRefund',
+  ),
+)('[AC-CT-21e#1] %s %s 声明 planned、后台鉴权与权限点', (method, path, id, permission) => {
+  const doc = contract();
+  const endpoint = endpoints.find((e) => e[2] === id)!;
+  const op = operation(doc, endpoint);
+  expect(op['operationId']).toBe(id);
+  expect(op['x-implementation']).toBe('planned');
+  expect(op['x-auth']).toBe('admin');
+  expect(op['security']).toEqual([{ adminBearerAuth: [] }]);
+  expect(op['description']).toMatch(
+    new RegExp('Permission point:?\\s+`' + permission.replace('.', '\\.') + '`'),
+  );
+  expect([undefined, false]).toContain(op['x-signed']);
+  expect(op).not.toHaveProperty('x-min-version-gate');
+  expect(op).not.toHaveProperty('x-session-scopes');
+  const params = parameters(doc, endpoint);
+  for (const forbidden of [
+    'X-App-Id',
+    'X-Platform',
+    'X-Device-Id',
+    'X-Sign',
+    'X-Timestamp',
+    'X-Nonce',
+  ]) {
+    expect(params.map((p) => String(p['name']).toLowerCase())).not.toContain(
+      forbidden.toLowerCase(),
     );
-    expect([undefined, false]).toContain(op['x-signed']);
-    expect(op).not.toHaveProperty('x-min-version-gate');
-    expect(op).not.toHaveProperty('x-session-scopes');
-    const params = parameters(doc, endpoint);
-    for (const forbidden of [
-      'X-App-Id',
-      'X-Platform',
-      'X-Device-Id',
-      'X-Sign',
-      'X-Timestamp',
-      'X-Nonce',
-    ]) {
-      expect(params.map((p) => String(p['name']).toLowerCase())).not.toContain(
-        forbidden.toLowerCase(),
-      );
-    }
-    for (const match of path.matchAll(/\{([^}]+)\}/g)) {
-      expect(params).toContainEqual(
-        expect.objectContaining({ in: 'path', name: match[1], required: true }),
-      );
-    }
-    for (const entry of Object.values(at(op, 'responses'))) {
-      expect(resolve(doc, entry)).toHaveProperty('headers.X-Trace-Id');
-    }
-    if (method === 'get') {
-      expect(op).not.toHaveProperty('requestBody');
-      expect(op).not.toHaveProperty('x-step-up');
-      expect(params.map((p) => p['name'])).not.toContain('X-Step-Up-Token');
-      expect(params.map((p) => p['name'])).not.toContain('Idempotency-Key');
-    }
-  },
-);
+  }
+  for (const match of path.matchAll(/\{([^}]+)\}/g)) {
+    expect(params).toContainEqual(
+      expect.objectContaining({ in: 'path', name: match[1], required: true }),
+    );
+  }
+  for (const entry of Object.values(at(op, 'responses'))) {
+    expect(resolve(doc, entry)).toHaveProperty('headers.X-Trace-Id');
+  }
+  if (method === 'get') {
+    expect(op).not.toHaveProperty('requestBody');
+    expect(op).not.toHaveProperty('x-step-up');
+    expect(params.map((p) => p['name'])).not.toContain('X-Step-Up-Token');
+    expect(params.map((p) => p['name'])).not.toContain('Idempotency-Key');
+  }
+});
+
+it.each(
+  endpoints.filter(
+    (e): boolean => e[2] === 'createAdminPayRefund' || e[2] === 'createAdminPayAnomalyRefund',
+  ),
+)('[AC-CT-21e#1] %s %s（退款）声明 planned、后台鉴权与权限点', (method, path, id, permission) => {
+  const doc = contract();
+  const endpoint = endpoints.find((e) => e[2] === id)!;
+  const op = operation(doc, endpoint);
+  expect(op['operationId']).toBe(id);
+  expect(op['x-implementation']).toBe('planned');
+  expect(op['x-auth']).toBe('admin');
+  expect(op['security']).toEqual([{ adminBearerAuth: [] }]);
+  expect(op['description']).toMatch(
+    new RegExp('Permission point:?\\s+`' + permission.replace('.', '\\.') + '`'),
+  );
+  expect([undefined, false]).toContain(op['x-signed']);
+  expect(op).not.toHaveProperty('x-min-version-gate');
+  expect(op).not.toHaveProperty('x-session-scopes');
+  const params = parameters(doc, endpoint);
+  for (const forbidden of [
+    'X-App-Id',
+    'X-Platform',
+    'X-Device-Id',
+    'X-Sign',
+    'X-Timestamp',
+    'X-Nonce',
+  ]) {
+    expect(params.map((p) => String(p['name']).toLowerCase())).not.toContain(
+      forbidden.toLowerCase(),
+    );
+  }
+  for (const match of path.matchAll(/\{([^}]+)\}/g)) {
+    expect(params).toContainEqual(
+      expect.objectContaining({ in: 'path', name: match[1], required: true }),
+    );
+  }
+  for (const entry of Object.values(at(op, 'responses'))) {
+    expect(resolve(doc, entry)).toHaveProperty('headers.X-Trace-Id');
+  }
+  if (method === 'get') {
+    expect(op).not.toHaveProperty('requestBody');
+    expect(op).not.toHaveProperty('x-step-up');
+    expect(params.map((p) => p['name'])).not.toContain('X-Step-Up-Token');
+    expect(params.map((p) => p['name'])).not.toContain('Idempotency-Key');
+  }
+});
 
 it.each(lists)('[AC-CT-21e#2] %s %s 使用后台页码且 page_size 上限为 200', (...endpoint) => {
   const doc = contract();
