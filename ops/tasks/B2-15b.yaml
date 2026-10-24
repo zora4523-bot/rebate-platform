@@ -38,3 +38,61 @@ accept:
   - 'test/spec/payment/orders/**'
 status: todo
 pr: null
+red_exempt:
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#2] post /v1/pay/orders（createPayOrder）复用公共头；只有创建需要 Idempotency-Key'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#2] get /v1/pay/orders/{pay_order_id}（getPayOrder）复用公共头；只有创建需要 Idempotency-Key'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#2] post /v1/pay/orders/{pay_order_id}/returned（payOrderReturned）复用公共头；只有创建需要 Idempotency-Key'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#2] post /v1/pay/orders/{pay_order_id}/cancel（cancelPayOrder）复用公共头；只有创建需要 Idempotency-Key'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#3] 创建只收业务类型、业务对象和渠道，拒绝金额、身份与任意额外字段'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#4] 支付单公开字段完整，金额为整数分，终态时间可空且不暴露渠道用户'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#5] PayOrder 的状态与渠道绑定 CT-21b 枚举，创建渠道沿用同一取值'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#6] 调起参数 oneOf 分微信与支付宝，必填 SDK 字段，标待实测且禁止日志'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#7] get /v1/pay/orders/{pay_order_id}（getPayOrder）只返回支付单，不重新泄露调起参数'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#7] post /v1/pay/orders/{pay_order_id}/cancel（cancelPayOrder）只返回支付单，不重新泄露调起参数'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#8] returned 无请求体和 SDK 结果，只触发一次立即查询，data 为空对象'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#9] 查询限本人，取消先查后关且异步，非 PENDING 为 20902/pay_order'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#10] 创建仅限原生本人，支持同渠道待支付原单复用，调起不下发私钥'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#11] post /v1/pay/orders（createPayOrder）错误码已登记且不误列二次验证 20903'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#11] get /v1/pay/orders/{pay_order_id}（getPayOrder）错误码已登记且不误列二次验证 20903'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#11] post /v1/pay/orders/{pay_order_id}/returned（payOrderReturned）错误码已登记且不误列二次验证 20903'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#11] post /v1/pay/orders/{pay_order_id}/cancel（cancelPayOrder）错误码已登记且不误列二次验证 20903'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#12] 四个原生支付接口存在时，Bridge 全文与 Agent 白名单均无支付入口'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
+  - file: test/spec/contracts/pay-http/http.test.ts
+    test: '[AC-CT-21c#14] 支付契约存在且 contracts:check 核对生成类型无漂移'
+    reason: 冻结 CT-21c 契约用例，测试体未改；本任务只收紧 [AC-CT-21c#1]/[#13]（去 planned），同文件被整体判定（kit 等测试支撑文件有改动），编排已核只收紧
