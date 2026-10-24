@@ -929,6 +929,7 @@ export interface NotifyLogs {
   planned_at: Timestamp;
   row_version: Generated<number>;
   sent_at: Timestamp | null;
+  sms_biz_id: string | null;
   status: Generated<string>;
   suppress_reason: string | null;
   updated_at: Generated<Timestamp>;
@@ -944,6 +945,10 @@ export interface NotifyTemplates {
   created_at: Generated<Timestamp>;
   route: Json | null;
   row_version: Generated<number>;
+  sms_preview_text: string | null;
+  sms_sign_name: string | null;
+  sms_template_code: string | null;
+  sms_template_type: string | null;
   title_override: string | null;
   updated_at: Generated<Timestamp>;
   variant: Generated<string>;
