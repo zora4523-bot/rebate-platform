@@ -19,3 +19,6 @@ export type {
   UserPendingEarnings,
   AppPendingEarnings,
 } from './reads/pending-earnings.ts';
+// B1-01zzi: the worker's fund metrics (failed bill jobs, PARTIAL batches, held shares; read only).
+export { readSettlementFundMetrics } from './application/metrics-read.ts';
+export type { SettlementFundMetrics } from './application/metrics-read.ts';

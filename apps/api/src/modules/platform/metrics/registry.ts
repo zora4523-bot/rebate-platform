@@ -6,11 +6,14 @@
 import { performance } from 'node:perf_hooks';
 import type { EntryName } from '../entries.ts';
 import type { WorkerMetricsSnapshot } from './collect.ts';
+import type { FundMetricsSnapshot } from './fund.ts';
 
 export interface MetricsRegistryOptions {
   readonly entry: EntryName;
   /** Used only when entry is 'worker'; called once per render(). */
   readonly collect?: () => Promise<WorkerMetricsSnapshot>;
+  /** The fund gauges (B1-01zzi). Used only when entry is 'worker'; called once per render(). */
+  readonly collectFund?: () => Promise<FundMetricsSnapshot>;
 }
 
 export interface MetricsRegistry {

@@ -228,3 +228,5 @@ export type {
   PersonalDataCopyOrderRow,
   PersonalDataCopyOrderSubject,
 } from './application/personal-data-copy-read.ts';
+// B1-01zzi: the worker's fund metric (open order_sync_pending rows per reason; read only).
+export { readOrderSyncPendingOpen } from './application/metrics-read.ts';
