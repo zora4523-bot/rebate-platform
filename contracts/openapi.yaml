@@ -14724,7 +14724,6 @@ paths:
         registered under it is decided by POST /admin/v1/union-pids alone. Reading does not
         write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

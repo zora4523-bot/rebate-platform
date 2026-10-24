@@ -25,5 +25,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/union/admin-account-options/**'
-status: todo
-pr: null
+status: done
+pr: 1533
