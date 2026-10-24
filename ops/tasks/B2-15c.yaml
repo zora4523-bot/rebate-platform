@@ -31,8 +31,8 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payment/result/**'
-status: todo
-pr: null
+status: done
+pr: 1555
 red_exempt:
   - file: test/spec/orders/snapshot-retry-alert/contract.test.ts
     test: '[AC-B1-08u#1] 耗尽告警登记一次并位于规划事件清单中的位置（其后只有 02 §11 排在它之后的事件）'
