@@ -9,6 +9,8 @@
 //                                         the default 1440 is due): set needs_manual, alert, stop.
 //   nextQueryPoint(schedule, T, now)      the first point n with T + offset(n) > now (the recovery
 //                                         scan's point; a late job's next point is n + 1 of its own).
+//   nextQueryDueMs(schedule, T, n)        when point n is due: T + offset(n), never later than
+//                                         T + manual_after_min.
 import type { PayoutChannelConfig } from './judgement.ts';
 
 const SECONDS_PER_MINUTE = 60;
@@ -44,4 +46,20 @@ export function nextQueryPoint(schedule: QuerySchedule, firstTransferAt: Date, n
     point += 1;
   }
   return point;
+}
+
+/**
+ * The instant (ms) point `point` is due: T + offset(point), capped at T + manual_after_min so the
+ * T + manual_after decision runs on time even when manual_after_min falls between two points.
+ */
+export function nextQueryDueMs(
+  schedule: QuerySchedule,
+  firstTransferAt: Date,
+  point: number,
+): number {
+  const t = firstTransferAt.getTime();
+  return Math.min(
+    t + queryPointOffsetSeconds(schedule, point) * 1000,
+    t + schedule.manual_after_min * MS_PER_MINUTE,
+  );
 }

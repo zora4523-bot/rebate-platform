@@ -17,11 +17,14 @@
 //      payout.query_status_map are unknown (the channel judges with the lists).
 //   ⑥ success → W5 as in transfer-job.ts (CHANNEL_SUCCESS → PAID_API, channel_order_id, paid_at
 //      the channel's time else Clock.now, WITHDRAW:SUCCESS:CASH_<channel> `wd:{id}:PAID`, event);
-//      fail → W6 (CHANNEL_FAIL → FAILED, fail_code = sub_code, WITHDRAW:RETURN, event); 3 times
+//      fail → W6 (CHANNEL_FAIL → FAILED, fail_code = sub_code, else the mapped order status,
+//      WITHDRAW:RETURN, event); 3 times
 //      unknown → stays PAYING and, on one transaction, the next point:
 //        queue.send('payout', 'query', { …, point: n + 1 }, { trx,
 //          singletonKey: `${withdrawal_id}:${execute_seq}:query:${n + 1}`,
-//          delaySeconds: max(0, T + queryPointOffsetSeconds(n + 1) − now) })
+//          delaySeconds: max(0, min(T + queryPointOffsetSeconds(n + 1), T + manual_after) − now) })
+//      (the next job never lands after T + manual_after, so that decision is taken on time even
+//      when manual_after_min is not one of the points).
 //      A CAS that hits nothing (row_version moved) only warns. A query never pauses the queue.
 // No transaction or lock is held across a channel call or a sleep (the ① read ends before ⑤).
 // payout.enabled = off and payout.queue_paused = true do not stop queries (BR-WDR-17). Logs carry
@@ -37,11 +40,7 @@ import type { QueryResult } from '../domain/channel-result.ts';
 import { readPayoutChannelConfig } from '../application/judgement.ts';
 import { createPayoutLanding } from '../application/payout-landing.ts';
 import { markNeedsManual } from '../application/query-manual.ts';
-import {
-  manualDue,
-  queryPointOffsetSeconds,
-  type QuerySchedule,
-} from '../application/query-schedule.ts';
+import { manualDue, nextQueryDueMs, type QuerySchedule } from '../application/query-schedule.ts';
 import type { WithdrawApplyOptions } from '../application/withdraw-apply.ts';
 import type { PayoutConfigPort } from '../application/withdraw-rules.ts';
 import type { PayoutChannel, PayoutChannelName } from '../infra/channels/payout-channel.ts';
@@ -345,7 +344,7 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
     now: Date,
   ): Promise<void> {
     const next = point + 1;
-    const dueMs = firstTransfer.getTime() + queryPointOffsetSeconds(schedule, next) * 1000;
+    const dueMs = nextQueryDueMs(schedule, firstTransfer, next);
     const delaySeconds = Math.max(0, Math.ceil((dueMs - now.getTime()) / 1000));
     const payload: QueryJobPayload = {
       withdrawal_id: row.id,
@@ -406,7 +405,9 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
     } else if (result.kind === 'success') {
       await landing.success(row, result, landedAt);
     } else {
-      await landing.fail(row, result, landedAt);
+      // A query's failure: the mapped order status names it when the response has no sub code.
+      const failCode = result.raw.subCode ?? result.status;
+      await landing.fail(row, failCode === undefined ? result : { ...result, failCode }, landedAt);
     }
   };
 }

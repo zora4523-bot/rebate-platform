@@ -17,6 +17,8 @@ export type TransferKind = QueryKind | 'payer_side';
 export interface QueryResult {
   kind: QueryKind;
   raw: ChannelRaw;
+  /** The channel's order status the kind was mapped from (payout.query_status_map), when given. */
+  status?: string;
   channelOrderId?: string;
   /** ISO timestamp with an explicit offset; provider time takes precedence over Clock. */
   paidAt?: string;

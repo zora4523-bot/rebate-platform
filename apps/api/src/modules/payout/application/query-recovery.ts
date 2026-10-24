@@ -7,7 +7,7 @@
 //   otherwise n = the first point with T + queryPointOffsetSeconds(n) > now and
 //     queue.send('payout', 'query', { withdrawal_id, execute_seq, app_id, point: n },
 //       { trx, singletonKey: `${withdrawal_id}:${execute_seq}:query:${n}`,
-//         delaySeconds: T + offset(n) − now })
+//         delaySeconds: min(T + offset(n), T + manual_after) − now })
 //     a send that returns null (a queued or active job of that key already exists) is not
 //     counted; one that returns an id is counted in `enqueued`.
 // Withdrawals in other states, with needs_manual = true or without a transfer attempt are not
@@ -18,12 +18,7 @@ import type { Kysely } from 'kysely';
 import type { Logger } from 'pino';
 import type { JobQueue } from '../../platform/index.ts';
 import { readPayoutChannelConfig } from './judgement.ts';
-import {
-  manualDue,
-  nextQueryPoint,
-  queryPointOffsetSeconds,
-  type QuerySchedule,
-} from './query-schedule.ts';
+import { manualDue, nextQueryDueMs, nextQueryPoint, type QuerySchedule } from './query-schedule.ts';
 import type { PayoutConfigPort } from './withdraw-rules.ts';
 import { PAYOUT_QUERY_JOB, PAYOUT_QUEUE, type QueryJobPayload } from '../jobs/transfer-job.ts';
 import { markNeedsManual } from './query-manual.ts';
@@ -120,7 +115,7 @@ export function createQueryRecovery(options: QueryRecoveryOptions): QueryRecover
           if (marked) manual += 1;
           continue;
         }
-        const dueMs = t.getTime() + queryPointOffsetSeconds(schedule, point) * 1000;
+        const dueMs = nextQueryDueMs(schedule, t, point);
         const delaySeconds = Math.max(0, Math.ceil((dueMs - now.getTime()) / 1000));
         const payload: QueryJobPayload = {
           withdrawal_id: row.id,

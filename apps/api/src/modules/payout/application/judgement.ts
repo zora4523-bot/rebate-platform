@@ -153,9 +153,9 @@ export function judgeQuery(
   raw: ChannelRaw,
   status: string | undefined,
   lists: JudgementLists,
-): { kind: QueryKind; raw: ChannelRaw } {
+): { kind: QueryKind; raw: ChannelRaw; status?: string } {
   if (raw.code !== SUCCESS_CODE || status === undefined) return { kind: 'unknown', raw };
   const map = lists.queryStatusMap;
   const kind = Object.hasOwn(map, status) ? map[status]! : 'unknown';
-  return { kind, raw };
+  return { kind, raw, status };
 }

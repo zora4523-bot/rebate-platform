@@ -5,7 +5,8 @@
 //            gives one, else `now` — the Clock when the success was received); the voucher
 //            WITHDRAW:SUCCESS:CASH_<ALIPAY|BANK|WECHAT> `wd:{id}:PAID` through ledger.post on the
 //            same transaction (zero fee / tax lines are dropped by the template); the event.
-//   fail     W6 CHANNEL_FAIL → FAILED: fail_code = sub_code (else code); WITHDRAW:RETURN
+//   fail     W6 CHANNEL_FAIL → FAILED: fail_code = the caller's failCode, else sub_code, else
+//            code; WITHDRAW:RETURN
 //            `wd:{id}:RETURN`; the event.
 // One business transaction per landing under the module's lock order (identity's users row →
 // ledger.lockBalances); the transition is a CAS on (status PAYING, row_version) through the
@@ -37,6 +38,12 @@ export interface LandingRow {
 /** What a success or a definite failure carries (TransferResult and QueryResult both do). */
 export interface LandingResult {
   readonly raw: ChannelRaw;
+  /**
+   * W6's fail_code when the caller knows better than the raw codes: the query job passes the
+   * mapped order status when the response has no sub code (a query's 10000 is the gateway's
+   * success code, not the failure). Default: sub_code, else code.
+   */
+  readonly failCode?: string;
   readonly channelOrderId?: string;
   /** ISO instant with an offset; the channel's time takes precedence over the Clock. */
   readonly paidAt?: string;
@@ -226,7 +233,7 @@ export function createPayoutLanding(options: PayoutLandingOptions): PayoutLandin
           trx,
           row,
           transition.to,
-          { fail_code: result.raw.subCode ?? result.raw.code },
+          { fail_code: result.failCode ?? result.raw.subCode ?? result.raw.code },
           now,
         );
         if (!moved) return false;
