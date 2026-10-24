@@ -1,0 +1,22 @@
+id: CT-16o
+repo: rebate-platform
+title: 文案（CT-16 续，D10-204）：texts.default.json 建实名认证前单独同意弹层 real_name.consent.title / .point.1～.3 / .agree / .continue / .cancel（.body 待法务不建），登记 fund-term-keys 普通段（经前缀归 agreement）
+type: contract
+# 2026-10-24 入账（content-client；F1-02zzi #1347 已把 real_name.consent. 归协议类，CT-16g 未建的这些键由本任务补）。
+# 依据：08 12_TEXT 表 C「real_name.consent.title / .point.1～.3 / .body / .agree / .continue / .cancel」一行逐字（要点标「占位」，.body「同意书正文待法务」不建）；表 D 管理说明（D10-204）。原文由编排者摘入任务书，refs 置空。
+# 依赖 F1-02zzm（冻结测试 [AC-F1-02r#18] 的期望先认 real_name.consent.）。按契约槽排队。
+refs: []
+refs_hash: {}
+deps: [F1-02zzm]
+paths:
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
