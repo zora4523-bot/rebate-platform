@@ -484,7 +484,8 @@ const payoutAccountConfig = {
  * The user's withdrawals as identity's deletion flows see them, on the caller's transaction:
  * POST /v1/me/deletion asks hasInFlight (B1-15d, D10-97: 30412), the worker's cooling-period
  * expiry asks hasNonTerminal (B1-15f, BR-ID-27: any non-terminal one, ban-frozen included, defers
- * processing). Both are payout's reader (B2-05e).
+ * processing), the deletion cleanup asks hasSucceeded (B1-15g / B1-27j, D10-137 ②). All three are
+ * payout's reader (B2-05e).
  */
 const deletionWithdrawals = {
   inject: [CLOCK],
@@ -492,10 +493,9 @@ const deletionWithdrawals = {
     clock: Clock,
   ): WithdrawalInFlightReader & WithdrawalNonTerminalReader & WithdrawalSucceededReader => ({
     // B2-05e (D-W04): payout's reader — hasInFlight ignores a member under a manual hold.
+    // B1-27j (D10-137 ②): its hasSucceeded (PAID_API / PAID_MANUAL) keeps the real name on
+    // deletion (tax_retained).
     ...createWithdrawalInFlightReader({ clock }),
-    // B1-15g (D10-137 ②): a paid-out withdrawal keeps the real name (tax_retained).
-    // TODO(规划/11 §2.3): 有过成功提现读 payout 模块 — blocked on payout 提供成功提现读口
-    hasSucceeded: () => Promise.resolve(false),
   }),
 };
 
