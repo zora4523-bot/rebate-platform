@@ -1,0 +1,22 @@
+id: CT-16p
+repo: rebate-platform
+title: 契约（D10-341）：notify_template_code 枚举补 DATA_COPY_READY / DATA_COPY_CODE，specs/fund-term-keys.yaml 普通段 notify_templates 登记两项，fund-term-keys.test.ts 普通段钉死清单随之加两项
+type: contract
+# 2026-10-24 入账（content-client；编排裁定 D10-341：个人信息副本交付通知不是资金类，归普通段；合并后 be 在 CT-24t / B1-12y 把编码正则收紧为枚举）。
+# 依据：04 §2.5 notify_template.code 已补 DATA_COPY_READY / DATA_COPY_CODE（l.117 变更记录）；08 BR-TEXT-23 细则「个人信息副本的交付通知」模板表 l.1597–1598、BR-TEXT-20。原文由编排者摘入任务书，refs 置空。
+# 钉死清单在 packages/contracts-ts/src/fund-term-keys.test.ts（普通段 notify_templates 精确等于 SMS_CODE、UNION_AUTH_*）；该文件不在第一类保护路径内（test_paths 校验不收），列在 paths；照 D10-341 由全新上下文 Claude 改、另一位复审。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'contracts/enums/ops.yaml'
+  - 'specs/fund-term-keys.yaml'
+  - 'packages/contracts-ts/src/**'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
