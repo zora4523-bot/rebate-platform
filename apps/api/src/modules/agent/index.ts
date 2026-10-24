@@ -17,3 +17,5 @@ export type {
   PurgeAgentDataInput,
   PurgeAgentDataResult,
 } from './deletion/index.ts';
+// B1-27f: the Agent conversations section of a personal information copy (read only; app.module).
+export * from './application/personal-data-copy-read.ts';

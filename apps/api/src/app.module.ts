@@ -176,6 +176,7 @@ import {
   type MeReadPorts,
   type MeUnionBindingStatus,
   type PayoutAccountConfigPort,
+  type PersonalDataCopySources,
 } from './modules/identity/index.ts';
 import {
   LedgerModule,
@@ -572,6 +573,23 @@ const deletionAfterRevoked = {
   inject: [CLOCK],
   useFactory: (clock: Clock): AfterSessionsRevoked => unbindRevoked(sessionPushTokens(clock)),
 };
+
+/**
+ * B1-27f (BR-ID-40 导出范围): the sources of a personal information copy for B1-27h's generation —
+ * identity's createPersonalDataCopySources over the process field cipher, with the owners'
+ * read-only files from their index.ts: orders' readPersonalDataCopyOrders, ledger's
+ * readPersonalDataCopyLedgerEntries, payout's createPersonalDataCopyWithdrawalsReader (the payee
+ * snapshot decrypted with the payout_accounts.* contexts, as the withdrawal reads), agent's
+ * createPersonalDataCopyAgentReader (the clock) and growth's readPersonalDataCopyInvite.
+ */
+export function personalDataCopySources(
+  clock: Clock,
+  crypto: FieldCrypto,
+): PersonalDataCopySources {
+  void clock;
+  void crypto;
+  throw new Error('NotImplemented: personalDataCopySources');
+}
 
 /** Runs on the caller's transaction, or on a read-only one of its own. */
 function onReadTransaction<T>(

@@ -92,3 +92,9 @@ export type {
   MyInviteReader,
   MyInviteResult,
 } from './application/my-invite.ts';
+// B1-27f: the invite section of a personal information copy (only whether an inviter is bound).
+export { readPersonalDataCopyInvite } from './application/personal-data-copy-read.ts';
+export type {
+  PersonalDataCopyInviteRow,
+  PersonalDataCopyInviteSubject,
+} from './application/personal-data-copy-read.ts';

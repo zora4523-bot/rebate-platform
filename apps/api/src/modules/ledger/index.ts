@@ -70,3 +70,9 @@ export type {
   WalletSummaryDependencies,
   WalletSummaryQuery,
 } from './application/wallet-summary.ts';
+// B1-27f: the balance ledger section of a personal information copy (read only; app.module).
+export { readPersonalDataCopyLedgerEntries } from './application/personal-data-copy-read.ts';
+export type {
+  PersonalDataCopyLedgerRow,
+  PersonalDataCopyLedgerSubject,
+} from './application/personal-data-copy-read.ts';

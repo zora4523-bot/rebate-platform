@@ -93,3 +93,12 @@ export type {
   WithdrawalNotificationReader,
   WithdrawalNotificationView,
 } from './ports/withdrawal-notification.ts';
+// B1-27f: the withdrawal records section of a personal information copy (read only, payee account
+// masked; assembled by app.module).
+export { createPersonalDataCopyWithdrawalsReader } from './application/personal-data-copy-read.ts';
+export type {
+  PersonalDataCopyWithdrawalRow,
+  PersonalDataCopyWithdrawalSubject,
+  PersonalDataCopyWithdrawalsOptions,
+  PersonalDataCopyWithdrawalsRead,
+} from './application/personal-data-copy-read.ts';

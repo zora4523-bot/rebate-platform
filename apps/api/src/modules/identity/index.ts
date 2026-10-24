@@ -298,3 +298,24 @@ export type {
   WithdrawPayeeSnapshot,
   WithdrawPayeeSnapshotReader,
 } from './ports/withdraw-subject.ts';
+// B1-27f: the sources of a personal information copy (BR-ID-40 导出范围): identity's own sections and
+// the owners' read-only files app.module hands in, for B1-27h's generation.
+export { createPersonalDataCopySources } from './application/personal-data-copy-sources.ts';
+export type {
+  PersonalDataCopyOwnerReads,
+  PersonalDataCopySourcesOptions,
+} from './application/personal-data-copy-sources.ts';
+export type {
+  PersonalDataCopyAccount,
+  PersonalDataCopyAgentConversation,
+  PersonalDataCopyAgentMessage,
+  PersonalDataCopyConsent,
+  PersonalDataCopyInvite,
+  PersonalDataCopyLedgerEntry,
+  PersonalDataCopyOrder,
+  PersonalDataCopyRead,
+  PersonalDataCopyRealname,
+  PersonalDataCopySources,
+  PersonalDataCopySubject,
+  PersonalDataCopyWithdrawal,
+} from './ports/personal-data-copy-sources.ts';

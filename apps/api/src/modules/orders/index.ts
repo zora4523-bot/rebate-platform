@@ -222,3 +222,9 @@ export type {
 } from './application/blacklist-step.ts';
 export { planOrderUpdate, planOrderSyncColumns } from './domain/update-plan.ts';
 export type { OrderUpdatePlan, OrderSyncColumns, UpdateStateInput } from './domain/update-plan.ts';
+// B1-27f: the orders section of a personal information copy (read only; assembled by app.module).
+export { readPersonalDataCopyOrders } from './application/personal-data-copy-read.ts';
+export type {
+  PersonalDataCopyOrderRow,
+  PersonalDataCopyOrderSubject,
+} from './application/personal-data-copy-read.ts';
