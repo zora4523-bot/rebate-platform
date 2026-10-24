@@ -545,7 +545,7 @@ const deletionBalance = {
  */
 const deletionCleanupPorts = {
   inject: [APP_CONFIG, ROOT_LOGGER],
-  useFactory: (config: AppConfig, logger: RootLogger): DeletionCleanupPorts => ({
+  useFactory: (config: AppConfig | undefined, logger: RootLogger): DeletionCleanupPorts => ({
     linking: blockForDeletion,
     growth: detachChildrenOfDeleted,
     // F1-02zzk: notification deletes the user's push tokens in the app (BR-ID-28, BR-ID-30).
@@ -560,13 +560,14 @@ const deletionCleanupPorts = {
 /**
  * B3-09j (BR-AI-22): the agent slot of deletionCleanupPorts. With config.agentUserHashKey, agent's
  * purgeAgentDataForUser over that key; without it (null / absent; prod never gets here, loadConfig
- * refuses), an unavailable marker and one warn that never carries a key value.
+ * refuses), an unavailable marker and one warn that never carries a key value. A missing config
+ * (a caller resolving no APP_CONFIG) counts as keyless.
  */
 export function agentDeletionCleanup(
-  config: AppConfig,
+  config: AppConfig | undefined,
   logger: RootLogger,
 ): DeletionCleanupPorts['agent'] {
-  const key = config.agentUserHashKey ?? null;
+  const key = config?.agentUserHashKey ?? null;
   if (key !== null && key.trim() !== '') {
     return createAgentDataPurge({ userHashKey: key }).purgeAgentDataForUser;
   }
