@@ -1,0 +1,19 @@
+id: B3-09l
+repo: rebate-platform
+title: B3-09l：B1-27e 冻结测试 prior-identity-keyring 的 prod 配置输入补合成 AGENT_USER_HASH_KEY（B3-09j 前置；只改输入、断言不动）
+type: test-change
+# 2026-10-24 入账（agent 线）。同 B3-09k：#1544（B1-27e）在 B3-09k 之后合并，其冻结测试 test/spec/platform/prior-identity-keyring/{config,wiring}.test.ts 以 prod 配置调 loadConfig / 入口，
+# B3-09j（D10-312）合并后 prod 缺 AGENT_USER_HASH_KEY 会多一条 problem，#1525 CI 红约 20 条。只给 prod 输入补不含数字的合成值，断言、用例名、条数零改动；现行主干不读该变量，全绿可先合。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件；新鲜独立 Claude 改、另一新鲜独立 Claude 只读复审 pass（写进 PR 正文）；标签由编排核对后加（#24）。
+refs: []
+refs_hash: {}
+deps: [B3-09k]
+paths:
+  - 'test/spec/platform/prior-identity-keyring/config.test.ts'
+  - 'test/spec/platform/prior-identity-keyring/wiring.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

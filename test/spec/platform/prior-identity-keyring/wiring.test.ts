@@ -96,6 +96,9 @@ function fieldEnv(appEnv: AppEnvName, files: PriorFiles): Record<string, string>
   };
 }
 
+/** B3-09j (D10-327): the synthetic AGENT_USER_HASH_KEY that prod environments of this file add. */
+const PROD_AGENT_KEY = { AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-prior-wiring' };
+
 /** Synthetic signing key: a staging api entry needs one to get as far as the keyrings. */
 function stagingJwtEnv(): Record<string, string> {
   const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
@@ -263,6 +266,7 @@ it.each(ENTRIES)(
           PRIOR_IDENTITY_KEY_PROVIDER: 'local',
           PRIOR_IDENTITY_KEYRING_FILE: files.keyringFile,
           PRIOR_IDENTITY_MASTER_KEY_FILE: files.masterFile,
+          ...PROD_AGENT_KEY,
         },
       ],
       [
@@ -352,6 +356,7 @@ it.each(ENTRIES)(
           LOG_LEVEL: 'silent',
           FIELD_KEY_PROVIDER: 'kms',
           FIELD_KEYRING_FILE: files.fieldKeyringFile,
+          ...PROD_AGENT_KEY,
         },
       ],
     ] as const) {
