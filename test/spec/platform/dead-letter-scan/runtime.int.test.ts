@@ -79,7 +79,7 @@ it('[AC-B1-01zzg#10] 已部署旧目录整段重放迁移后，各业务队列�
     })}::jsonb)`.execute(db);
     for (const name of BUSINESS_QUEUES) {
       await sql`SELECT pgboss.create_queue(${name}, ${JSON.stringify({
-        policy: ['order-sync', 'settle', 'payout', 'risk-scan', 'union-auth'].includes(name)
+        policy: ['order-sync', 'settle', 'payout', 'risk-scan', 'union-auth', 'pay'].includes(name)
           ? 'exclusive'
           : 'standard',
         retryLimit: 5,
