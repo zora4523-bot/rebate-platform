@@ -32,4 +32,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/platform/aliyun-signature/**'
   - 'test/spec/notification/sms-aliyun/**'
-status: todo
+status: done
+pr: 1512
