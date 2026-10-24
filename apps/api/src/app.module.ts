@@ -3004,9 +3004,9 @@ export class AppModule {
         ...(options.entry === 'worker'
           ? [
               RiskScanModule.forWorker(),
-              // payment's queue `pay` (B2-15c): order.query (the result judgement and the
-              // query rhythm) and biz.reconcile (the business object's fulfilment) over content's
-              // shared configuration reader; order.close joins with B2-15d.
+              // payment's queue `pay` (B2-15c / B2-15d): order.query (the result judgement and the
+              // query rhythm), biz.reconcile (the business object's fulfilment) and order.close
+              // (the close flow) over content's shared configuration reader.
               PaymentModule.forWorker({ config: (db, clock) => contentReader(db, clock) }),
               // B3-08k: content's reads for the sweeper's daily limits, assembled here.
               agentReaders('worker', contentReader),

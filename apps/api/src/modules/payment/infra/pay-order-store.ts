@@ -148,7 +148,8 @@ export async function markLaunchIssued(
 }
 
 /**
- * The user's cancel: a CAS on «PENDING and not closing» → closing with close_reason user_cancel.
+ * The user's cancel (close_reason user_cancel), or B2-15d's close job finding the order past its
+ * expire_at (close_reason expired): a CAS on «PENDING and not closing» → closing.
  * expire_at is not a condition: an expired PENDING order can still be cancelled (the close job
  * then confirms the state with the channel, B2-15d).
  */
@@ -156,7 +157,7 @@ export async function markClosing(
   trx: Transaction<DB>,
   appId: string,
   payOrderId: string,
-  closeReason: 'user_cancel',
+  closeReason: 'user_cancel' | 'expired',
   now: Date,
 ): Promise<PayOrderRow | undefined> {
   return trx
@@ -174,7 +175,8 @@ export interface NewQueryAttempt {
   readonly id: string;
   readonly appId: string;
   readonly payOrderId: string;
-  readonly kind: 'query';
+  /** query: a placement or a query (B2-15b / B2-15c / B2-15d); close: a channel close (B2-15d). */
+  readonly kind: 'query' | 'close';
   /** Flat JSON summaries; never the launch parameters themselves. */
   readonly request: Readonly<Record<string, string | number | boolean | null>>;
   readonly response: Readonly<Record<string, string | number | boolean | null>>;
@@ -202,6 +204,65 @@ export async function insertQueryAttempt(
       created_at: attempt.at,
     })
     .execute();
+}
+
+// ---------------------------------------------------------------------------------------------
+// B2-15d: the close flow's writes (pay_orders PO3 and needs_manual; grants UPDATE of status,
+// closing, closed_at, needs_manual, updated_at).
+
+/** Whether any channel call of the order was ever recorded (a placement attempt above all). */
+export async function hasAnyAttempt(
+  trx: Transaction<DB>,
+  appId: string,
+  payOrderId: string,
+): Promise<boolean> {
+  const row = await trx
+    .selectFrom('pay_query_attempts')
+    .select('id')
+    .where('app_id', '=', appId)
+    .where('pay_order_id', '=', payOrderId)
+    .limit(1)
+    .executeTakeFirst();
+  return row !== undefined;
+}
+
+/**
+ * PO3 as a CAS on «PENDING» (BR-PAY-02): CLOSED, closed_at, closing cleared; close_reason stays as
+ * the close flow set it. The caller holds the business object lock and has re-read the order;
+ * 0 rows → undefined (another result won), nothing else is written.
+ */
+export async function markClosed(
+  trx: Transaction<DB>,
+  appId: string,
+  payOrderId: string,
+  now: Date,
+): Promise<PayOrderRow | undefined> {
+  return trx
+    .updateTable('pay_orders')
+    .set({ status: 'CLOSED', closed_at: now, closing: false, updated_at: now })
+    .where('app_id', '=', appId)
+    .where('id', '=', payOrderId)
+    .where('status', '=', 'PENDING')
+    .returningAll()
+    .executeTakeFirst();
+}
+
+/** BR-PAY-05 ③: a CAS on «PENDING, not yet manual» → needs_manual (the automatic flow stops). */
+export async function markNeedsManual(
+  trx: Transaction<DB>,
+  appId: string,
+  payOrderId: string,
+  now: Date,
+): Promise<PayOrderRow | undefined> {
+  return trx
+    .updateTable('pay_orders')
+    .set({ needs_manual: true, updated_at: now })
+    .where('app_id', '=', appId)
+    .where('id', '=', payOrderId)
+    .where('status', '=', 'PENDING')
+    .where('needs_manual', '=', false)
+    .returningAll()
+    .executeTakeFirst();
 }
 
 // ---------------------------------------------------------------------------------------------

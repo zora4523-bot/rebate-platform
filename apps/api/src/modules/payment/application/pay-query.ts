@@ -59,8 +59,8 @@ export interface PayQueryDeps extends PaySettlementDeps {
   readonly channels: Pick<PayChannelSet, 'of'>;
 }
 
-/** What the query left the order as (decides the follow-up of a scheduled slot). */
-type Outcome = 'settled' | 'already_paid' | 'anomaly' | 'open' | 'closed';
+/** What the query left the order as (decides the follow-up of a scheduled slot; B2-15d's too). */
+export type Outcome = 'settled' | 'already_paid' | 'anomaly' | 'open' | 'closed';
 
 function isPayload(value: unknown): value is OrderQueryPayload {
   if (typeof value !== 'object' || value === null) return false;
@@ -88,7 +88,11 @@ async function orderOf(
   return order;
 }
 
-async function queryChannel(adapter: PayChannel, outTradeNo: string): Promise<PayQueryResult> {
+/** One channel query; a throwing adapter is an unknown answer (also B2-15d's close flow). */
+export async function queryChannel(
+  adapter: PayChannel,
+  outTradeNo: string,
+): Promise<PayQueryResult> {
   try {
     return await adapter.query(outTradeNo);
   } catch (error: unknown) {
@@ -219,8 +223,11 @@ export async function runOrderQuery(deps: PayQueryDeps, payload: unknown): Promi
   }
 }
 
-/** A channel answer of paid: the checks of BR-PAY-04, then the settlement or the anomaly. */
-async function judgePaidAnswer(
+/**
+ * A channel answer of paid: the checks of BR-PAY-04, then the settlement or the anomaly (also the
+ * close flow's paid answer, B2-15d: PO2, never closed).
+ */
+export async function judgePaidAnswer(
   deps: PayQueryDeps,
   adapter: PayChannel,
   order: PayOrderRow,

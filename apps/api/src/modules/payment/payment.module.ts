@@ -203,7 +203,7 @@ export class PaymentModule {
     };
   }
 
-  /** The worker entry: the handler of queue `pay` (order.query, biz.reconcile; order.close B2-15d). */
+  /** The worker entry: the handler of queue `pay` (order.query, biz.reconcile, order.close). */
   static forWorker(options: Pick<PaymentModuleOptions, 'config'>): DynamicModule {
     return {
       module: PaymentModule,

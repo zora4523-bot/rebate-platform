@@ -1,6 +1,7 @@
 // B2-15b / B2-15c: the queue and job names of the payment module (task B2-15b §9.8 ～ §9.10,
 // B2-15c §9.4 ～ §9.7; D-PAY-11). Only the names, payloads and singleton keys live here; the
-// handlers are in ./pay-jobs.ts (order.query, biz.reconcile) and B2-15d (order.close), registered
+// handlers are in ./pay-jobs.ts (order.query, biz.reconcile, and order.close through
+// application/pay-close.ts, B2-15d), registered
 // by the worker entry. Also compiled by the `test` project: erasable syntax only.
 import type { JobPayload } from '../../platform/index.ts';
 import type { PayJobName, PayQueueName } from '../domain/types.ts';
@@ -64,6 +65,16 @@ export function orderQueryScheduledKey(payOrderId: string, slotSeconds: number):
 /** singletonKey of the close job: one queued or active per order. */
 export function orderCloseKey(payOrderId: string): string {
   return `${ORDER_CLOSE_JOB}:${payOrderId}`;
+}
+
+/**
+ * singletonKey of a close run the close flow enqueues for itself (B2-15d, task §9.3): the run's
+ * instant in whole epoch seconds. It differs from orderCloseKey, so the next run is accepted while
+ * the current one is still active (queue pay is exclusive per key); and every chain of one order
+ * computes the same instants, so a cancel chain and an expiry chain merge into one.
+ */
+export function orderCloseRunKey(payOrderId: string, runAt: Date): string {
+  return `${ORDER_CLOSE_JOB}:${payOrderId}:at${Math.ceil(runAt.getTime() / 1000)}`;
 }
 
 /** singletonKey of the fulfilment job: one queued or active per business object (serial per object). */
