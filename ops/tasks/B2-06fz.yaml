@@ -1,0 +1,28 @@
+id: B2-06fz
+repo: rebate-platform
+title: 打款落库搬到 worker（D10-326 取 C）：payout 进程只写尝试结果并入队 payout-landing 任务，worker（couli_app）在同一事务做 W5 / W6 状态迁移 + 分录；06d / 06e 规则测试改为「handler 之后再跑 landing handler」（test-change）
+type: impl
+# 2026-10-24 提现线（withdraw-acct4，模型 Claude Fable 5.1）。编排裁定 D10-326：A（payout 进程同时持 couli_app 口令）违反 02 §12.6「各进程只读自己那一个角色的口令」，B（给 couli_payout 授 ledger / users 权限）违反 ADR-0002 验收第 3 项，取 C。
+# 范围：① platform/queue catalog 新增 worker 入口队列 payout-landing（concurrency 1）；② payout 进程拿到 success / fail 后在 attemptsDb 同一事务写尝试结果并 queue.send('payout-landing','land',{app_id, withdrawal_id, execute_seq, attempt_id}，去重键 withdrawal_id:execute_seq:land:attempt_id）；unknown / W9 / needs_manual / 查询时点推进仍在 payout 进程；
+# ③ worker 的 PayoutModule.forWorker 注册 landing handler：users 行锁 → 提现单 FOR NO KEY UPDATE → 核 PAYING 与 execute_seq、重读尝试行 → 同一事务 W5 / W6 迁移 + ledger.post + 事件（application/payout-landing.ts 复用，transfer / query 共用）；④ 06d process/**、06e query/** 的 kit 与 int 用例改为 handler 后调用 landing handler（kit landPending），结果 / 凭证 / 幂等断言口径不变；contract.test 队列目录随之改。
+# 编排 D10-327：要改的别任务冻结测试与夹具列进 test_paths（不放 paths），台账合并后由独立 Claude 在作者提交（spec_commit 之前）里改，断言口径变动经规则测试评审，合并时编排按 approvals #24 加标签（test-guard 只增不删由标签放行）；landing handler 的新规则测试（test/spec/payout/landing/**）同一作者提交新增；实现由本线做，money 评审。叠在 B2-06e 之上，06d / 06e 合并后落地；B2-06f 入口装配依赖本任务。
+refs: [BR-WDR-13, BR-WDR-14]
+refs_hash:
+  BR-WDR-13: 11b5c3e1a9b3
+  BR-WDR-14: 6328f3cda2e6
+deps: [B2-06d, B2-06e]
+paths:
+  - 'apps/api/src/modules/payout/**'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/payout/landing/**'
+  - 'test/spec/payout/process/**'
+  - 'test/spec/payout/query/**'
+  - 'test/spec/platform/queue/contract.test.ts'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/**'
+status: todo
