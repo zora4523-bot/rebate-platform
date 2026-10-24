@@ -29,12 +29,14 @@ import {
 // 依据：SPEC_REF 的 BR-PAY-01～05、04 §5 / §6.4、任务书 §9。
 // 这里只检查公开契约；并发锁、通知验签、记账及渠道调用留给实现任务。
 it.each(endpoints)(
-  '[AC-CT-21c#1] %s %s（%s）为 planned，鉴权、签名、幂等和版本门禁明确',
+  '[AC-CT-21c#1] %s %s（%s）已实现（不再 planned），鉴权、签名、幂等和版本门禁明确',
   async (method, path, id) => {
     const doc = await contract();
     const op = operation(doc, method, path);
     expect(op['operationId']).toBe(id);
-    expect(op['x-implementation']).toBe('planned');
+    // B2-15b：路由已实现；按契约首部说明，x-implementation 标记随路由上线一并移除。
+    expect(op).not.toHaveProperty('x-implementation');
+    expect(op['x-implementation']).not.toBe('planned');
     expect(op['tags']).toContain('pay');
     const tag = list(doc['tags'])
       .map(object)
@@ -369,7 +371,7 @@ it('[AC-CT-21c#12] 四个原生支付接口存在时，Bridge 全文与 Agent �
   }
 });
 
-it('[AC-CT-21c#13] planned 支付接口同步鉴权、签名、版本表，尚不进入运行时请求 schema', async () => {
+it('[AC-CT-21c#13] 已实现的支付接口同步鉴权、签名、版本表，并进入运行时请求 schema', async () => {
   const doc = await contract();
   for (const [method, path] of endpoints) operation(doc, method, path);
   const tables = [
@@ -409,7 +411,24 @@ it('[AC-CT-21c#13] planned 支付接口同步鉴权、签名、版本表，尚�
     ),
   );
   const schemas = object(module['CONTRACT_ROUTE_SCHEMAS']);
-  for (const [, , id] of endpoints) expect(schemas).not.toHaveProperty(id);
+  // B2-15b：四个操作已实现，必须进入运行时请求 schema；形状与契约一致（头部 / 路径参数 / 请求体）。
+  for (const [method, path, id] of endpoints) {
+    expect(schemas, `route-schemas.gen.ts: ${id}`).toHaveProperty(id);
+    const entry = object(schemas[id]);
+    expect(at(entry, 'headers')['type']).toBe('object');
+    expect(Object.hasOwn(entry, 'body'), `${id} body`).toBe(id === 'createPayOrder');
+    expect(entry).not.toHaveProperty('querystring');
+    if (path.includes('{pay_order_id}')) {
+      const params = at(entry, 'params');
+      expect(Object.keys(at(params, 'properties'))).toEqual(['pay_order_id']);
+      expect(list(params['required'])).toEqual(['pay_order_id']);
+      expect(at(params, 'properties', 'pay_order_id')).toMatchObject({
+        type: 'string',
+        format: 'uuid',
+      });
+    } else expect(entry).not.toHaveProperty('params');
+    if (method === 'get') expect(entry).not.toHaveProperty('body');
+  }
 });
 
 it('[AC-CT-21c#14] 支付契约存在且 contracts:check 核对生成类型无漂移', async () => {
