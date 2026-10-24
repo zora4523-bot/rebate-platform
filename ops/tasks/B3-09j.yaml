@@ -1,0 +1,28 @@
+id: B3-09j
+repo: rebate-platform
+title: AGENT_USER_HASH_KEY 经 platform/config 读进 AppConfig，app.module 有密钥即把注销清理端口 agent 换成 purgeAgentDataForUser；非 prod 缺密钥保持 unavailable 并 warn，prod 缺密钥拒绝启动
+type: impl
+# 2026-10-24 agent 线入账（编排裁定 D10-312，接 B3-09i 的导出）。现 app.module deletionCleanupPorts 为 agent: { unavailable: 'B3-09f' }，
+# 真实环境注销单停在 processing、每日 cleanup_blocked 告警（B1-15g）。口径（D10-312）：密钥只经 platform/config 读（照 agent-review.ts：
+# readAgentUserHashConfig(appEnv, env) → { agentUserHashKey, problems }，空白视同缺失，problems 不带值），不进仓库、不打日志；
+# APP_ENV=prod 缺密钥 → loadConfig problem（拒绝启动，同其他必需密钥）；非 prod 缺密钥 → 端口保持 unavailable，启动时一行 pino warn（不含值）；
+# 有密钥 → createAgentDataPurge 装配真实端口。staging 放密钥由负责人做（负责人待办），放好后下次部署即生效、不改代码。
+# 新鲜独立 Claude 写规则测试（Codex 不可用，approvals #36）；风险 RV2（platform/**、app.module），评审类型 money。
+refs: [BR-AI-22]
+refs_hash:
+  BR-AI-22: d412bc8a631a
+deps: [B3-09i]
+paths:
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/platform/config/config.ts'
+  - 'apps/api/src/modules/platform/config/agent-user-hash.ts'
+  - 'apps/api/src/modules/platform/config/index.ts'
+test_paths:
+  - 'test/spec/agent/deletion-wiring/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/deletion-wiring/**'
+status: todo
+pr: null
