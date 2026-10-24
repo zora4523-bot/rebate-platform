@@ -165,15 +165,14 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
   expect(QUEUE_CATALOG[unionAuthAt - 1]?.name).toBe('notify');
   expect(QUEUE_CATALOG[unionAuthAt + 1]?.name).toBe('evt.notification-risk-state');
   // B2-15b: pay (payment's order.query / order.close jobs), when present, is exactly one exclusive
-  // entry with the directory defaults, right after evt.notification-claim-result and right before
+  // entry with the directory defaults, right after evt.payout-went-negative and right before
   // pool-refresh. Everything else stays exact.
   const payAt = QUEUE_CATALOG.findIndex((queue) => queue.name === 'pay');
-  if (payAt !== -1) {
-    expect(QUEUE_CATALOG.filter((queue) => queue.name === 'pay')).toHaveLength(1);
-    expect(QUEUE_CATALOG[payAt]).toStrictEqual({ name: 'pay', ...DEFAULT, policy: 'exclusive' });
-    expect(QUEUE_CATALOG[payAt - 1]?.name).toBe('evt.payout-went-negative');
-    expect(QUEUE_CATALOG[payAt + 1]?.name).toBe('pool-refresh');
-  }
+  expect(payAt).not.toBe(-1);
+  expect(QUEUE_CATALOG.filter((queue) => queue.name === 'pay')).toHaveLength(1);
+  expect(QUEUE_CATALOG[payAt]).toStrictEqual({ name: 'pay', ...DEFAULT, policy: 'exclusive' });
+  expect(QUEUE_CATALOG[payAt - 1]?.name).toBe('evt.payout-went-negative');
+  expect(QUEUE_CATALOG[payAt + 1]?.name).toBe('pool-refresh');
   expect(
     QUEUE_CATALOG.filter(
       (queue) =>
@@ -275,15 +274,13 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
     ),
   ).toStrictEqual([]);
   // B2-15b: pay, when planned, is worker-only with concurrency 4 and the default polling, exactly
-  // one entry, right after evt.notification-claim-result and right before pool-refresh; api /
+  // one entry, right after evt.payout-went-negative and right before pool-refresh; api /
   // stream / admin / payout never consume it.
   const pays = ENTRY_PLAN.worker.filter((work) => work.queue === 'pay');
-  if (pays.length > 0) {
-    expect(pays).toStrictEqual([w('pay', 4)]);
-    const payAt = ENTRY_PLAN.worker.findIndex((work) => work.queue === 'pay');
-    expect(ENTRY_PLAN.worker[payAt - 1]).toStrictEqual(w('evt.payout-went-negative', 1));
-    expect(ENTRY_PLAN.worker[payAt + 1]).toStrictEqual(w('pool-refresh', 1));
-  }
+  expect(pays).toStrictEqual([w('pay', 4)]);
+  const payAt = ENTRY_PLAN.worker.findIndex((work) => work.queue === 'pay');
+  expect(ENTRY_PLAN.worker[payAt - 1]).toStrictEqual(w('evt.payout-went-negative', 1));
+  expect(ENTRY_PLAN.worker[payAt + 1]).toStrictEqual(w('pool-refresh', 1));
   expect(
     (['api', 'stream', 'admin', 'payout'] as const).flatMap((entry) =>
       ENTRY_PLAN[entry].filter((work) => work.queue === 'pay').map(() => entry),
