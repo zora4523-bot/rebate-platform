@@ -4,8 +4,8 @@
 // unknown results — "order does not exist", processing, a status outside query_status_map, a
 // system error, a timeout, a network error, nothing to say, a payer-side code — leave the
 // withdrawal PAYING and enqueue the next point on the handler's transaction: singletonKey
-// `${id}:${seq}:query:${n + 1}`, delaySeconds = T + offset(n + 1) − now, T being the earliest
-// transfer attempt. A query never pauses the queue.
+// `${id}:${seq}:query:${n + 1}`, delaySeconds = T + offset(n + 1) − now, T being this
+// withdrawal's (only) transfer attempt. A query never pauses the queue.
 import { createTestDatabase } from '@couli/db/testing';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import {
@@ -190,11 +190,12 @@ it('[AC-B2-06e#5] 超时、网络错误之后第 3 次成功：调用 3 次、�
   expect(await jobsOf(f, w.id)).toEqual([]);
 });
 
-it('[AC-B2-06e#5] T 取最早一条 kind=transfer 尝试：另有更晚的转账尝试和更早的 query 尝试时，point 2 的延迟仍按最早转账算（1500 秒）', async () => {
+it('[AC-B2-06e#5] T 取本单那条 kind=transfer 尝试：本单更早的 query 尝试不算 T，别的提现单更早的转账尝试也不算，point 2 的延迟仍是 1500 秒', async () => {
   const f = await setup(h);
+  // A transfer attempt of another withdrawal, earlier than this one's T: T only looks at this withdrawal.
+  await f.seedPaying(at(-30 * MINUTE));
   const w = await f.seedPaying(at(-5 * MINUTE));
-  await f.seedAttempt(w.id, 'transfer', 'unknown', at(-2 * MINUTE));
-  await f.seedAttempt(w.id, 'query', 'unknown', at(-6 * MINUTE));
+  await f.seedAttempt(w.id, 'query', 'unknown', at(-6 * MINUTE), w.appId);
   const ch = queryScripted({ [w.outBizNo]: [UNKNOWN_STEP, UNKNOWN_STEP, UNKNOWN_STEP] });
   const handler = f.queryJob(ch.channel);
   await expect(handler(f.queryJobOf(w, 1))).resolves.toBeUndefined();
