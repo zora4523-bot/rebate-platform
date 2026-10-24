@@ -6,7 +6,7 @@
 // expected problem is written out by hand (./kit.ts PRIOR_PROBLEMS); a problem never quotes the
 // value of a variable, so the comparisons are exact. Top-level it() only (规划/11 §4.3).
 import { afterEach, expect, it, vi } from 'vitest';
-import { loadConfig } from '../../../../apps/api/src/modules/platform/config/index.ts';
+import { loadConfig as loadConfigOf } from '../../../../apps/api/src/modules/platform/config/index.ts';
 import {
   APP_ENV_NAMES,
   PROBLEMS,
@@ -15,6 +15,17 @@ import {
   type AppEnvName,
 } from '../crypto/wiring-kit.ts';
 import { PRIOR_PROBLEMS } from './kit.ts';
+
+// B3-09j (D10-327): prod also requires AGENT_USER_HASH_KEY; every prod environment of this file
+// gets a synthetic value so that only the prior identity problems remain (an explicit value wins).
+// AC-B1-27e#12 only checks that no problem quotes a path and keeps calling loadConfigOf as it was.
+function loadConfig(env: Record<string, string>) {
+  return loadConfigOf(
+    env['APP_ENV'] === 'prod'
+      ? { AGENT_USER_HASH_KEY: 'test-only-agent-user-hash-key-prior-identity-config', ...env }
+      : env,
+  );
+}
 
 const FIELD_KEYRING = '/srv/couli/keys/keyring.json';
 const FIELD_MASTER = '/srv/couli/keys/master.hex';
@@ -455,7 +466,7 @@ it('[AC-B1-27e#12][BR-ID-25][规划/02 §12.6] 问题文案不带变量的值：
     { APP_ENV: 'local', ...local('couli-marker-b127e/k', `${marker}/m`) },
   ];
   for (const env of cases) {
-    const problems = configProblems(() => loadConfig(env));
+    const problems = configProblems(() => loadConfigOf(env));
     expect(Array.isArray(problems), JSON.stringify(problems)).toBe(true);
     expect(JSON.stringify(problems)).not.toContain('couli-marker-b127e');
   }
