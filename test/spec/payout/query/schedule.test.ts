@@ -40,9 +40,9 @@ it('[AC-B2-06e#3] 默认时点：point 0..3 为 T+1 / 5 / 30 / 120 分，之后�
 
 it('[AC-B2-06e#3] 默认配置下第 14 个时点是 T+22 小时、第 15 个恰为 T+24 小时（manual_after）', () => {
   expect([
+    queryPointOffsetSeconds(DEFAULT, 13),
     queryPointOffsetSeconds(DEFAULT, 14),
     queryPointOffsetSeconds(DEFAULT, 15),
-    queryPointOffsetSeconds(DEFAULT, 16),
   ]).toEqual([1320 * MINUTE_S, 1440 * MINUTE_S, 1560 * MINUTE_S]);
 });
 
@@ -56,24 +56,27 @@ it('[AC-B2-06e#3] 别的配置照读：points_min [3, 10]、interval 45 → 3 / 
 });
 
 it('[AC-B2-06e#3] 属性：任意配置与时点，固定时点取 points_min[n] 分，之后按 interval_min 分等距递增（整秒）', () => {
-  fc.assert(
-    fc.property(
-      fc.array(fc.integer({ min: 1, max: 5000 }), { minLength: 1, maxLength: 8 }),
-      fc.integer({ min: 1, max: 5000 }),
-      fc.nat({ max: 400 }),
-      (points, interval, point) => {
-        const schedule: QuerySchedule = {
-          points_min: points,
-          interval_min: interval,
-          manual_after_min: 1440,
-        };
-        const last = points.length - 1;
-        const minutes = point <= last ? points[point]! : points[last]! + (point - last) * interval;
-        return queryPointOffsetSeconds(schedule, point) === minutes * MINUTE_S;
-      },
+  expect(() =>
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: 1, max: 5000 }), { minLength: 1, maxLength: 8 }),
+        fc.integer({ min: 1, max: 5000 }),
+        fc.nat({ max: 400 }),
+        (points, interval, point) => {
+          const schedule: QuerySchedule = {
+            points_min: points,
+            interval_min: interval,
+            manual_after_min: 1440,
+          };
+          const last = points.length - 1;
+          const minutes =
+            point <= last ? points[point]! : points[last]! + (point - last) * interval;
+          return queryPointOffsetSeconds(schedule, point) === minutes * MINUTE_S;
+        },
+      ),
+      propParams(),
     ),
-    propParams(),
-  );
+  ).not.toThrow();
 });
 
 it('[AC-B2-06e#3] manual_after 1440 分的边界：恰 T+24 小时为到、过 1 毫秒为到；差 1 毫秒未到；T 当时与 T 之前未到', () => {
@@ -87,23 +90,25 @@ it('[AC-B2-06e#3] manual_after 1440 分的边界：恰 T+24 小时为到、过 1
 });
 
 it('[AC-B2-06e#3] 属性：任意 manual_after_min 与时差，到期当且仅当 now − T ≥ manual_after_min 分（毫秒精度）', () => {
-  fc.assert(
-    fc.property(
-      fc.integer({ min: 1, max: 100_000 }),
-      fc.integer({ min: -DAY_MS, max: 100 * DAY_MS }),
-      fc.boolean(),
-      (manualAfter, delta, onEdge) => {
-        const schedule: QuerySchedule = {
-          points_min: [1, 5, 30, 120],
-          interval_min: 120,
-          manual_after_min: manualAfter,
-        };
-        // Half of the runs sit within a millisecond of the edge.
-        const ms = onEdge ? manualAfter * MINUTE_MS + (delta % 2) : delta;
-        const due = ms >= manualAfter * MINUTE_MS;
-        return manualDue(schedule, T, after(ms)) === due;
-      },
+  expect(() =>
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 100_000 }),
+        fc.integer({ min: -DAY_MS, max: 100 * DAY_MS }),
+        fc.boolean(),
+        (manualAfter, delta, onEdge) => {
+          const schedule: QuerySchedule = {
+            points_min: [1, 5, 30, 120],
+            interval_min: 120,
+            manual_after_min: manualAfter,
+          };
+          // Half of the runs sit within a millisecond of the edge.
+          const ms = onEdge ? manualAfter * MINUTE_MS + (delta % 2) : delta;
+          const due = ms >= manualAfter * MINUTE_MS;
+          return manualDue(schedule, T, after(ms)) === due;
+        },
+      ),
+      propParams(),
     ),
-    propParams(),
-  );
+  ).not.toThrow();
 });
