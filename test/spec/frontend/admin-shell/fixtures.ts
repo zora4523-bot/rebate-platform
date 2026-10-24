@@ -22,7 +22,7 @@ export const MENU = [
   ['运营', 'pages', '首页配置', ['content.page']],
   ['运营', 'pools', '商品池', ['content.pool']],
   ['运营', 'content', '内容管理', ['content.article', 'content.agreement']],
-  ['运营', 'messages', '消息模板', ['content.article', 'content.fund_terms']],
+  ['运营', 'messages', '消息模板', ['content.article', 'content.fund_terms', 'notify.channels']],
   ['运营', 'app-versions', '版本管理', ['content.app_version']],
   ['运营', 'platform-icons', '平台标识', ['content.platform_icon']],
   ['规则与配置', 'commission-rules', '分佣规则', ['config.business']],
