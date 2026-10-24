@@ -94,6 +94,8 @@ it('every notify template code falls in exactly one segment', () => {
     [...notify_template_code].sort(),
   );
   expect([...ordinary.notify_templates].sort()).toEqual([
+    'DATA_COPY_CODE',
+    'DATA_COPY_READY',
     'SMS_CODE',
     'UNION_AUTH_EXPIRED',
     'UNION_AUTH_EXPIRING',
