@@ -6,7 +6,10 @@
 // B3-03r · BR-AI-05: with `deps.chains` wired, a search's conditions become the session's current
 // chain only once one of its product_lists was confirmed as written (a delivery receipt); until
 // then 「换一批」 and 「第 N 个」 both keep addressing the batch the user saw last. A price question
-// (awaiting_price) is still recorded at once: it is what the user was shown.
+// (awaiting_price) is still recorded at once: it is what the user was shown. So is a search that
+// ends without a product_list (no result, failed, refused, notices only): its attempt is recorded
+// as it was before the search (new conditions, the chain's own status), so 换平台 and price
+// follow-ups continue the query the user just asked; 再便宜点 without result still records nothing.
 import type { AgentProductCard } from '../../tools/search/index.ts';
 import { priceRangeInvalidView } from '../../tools/search/index.ts';
 import { assignMatchTags } from '../../tools/match/index.ts';
@@ -185,10 +188,17 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
     // so a cheaper search without result leaves 换一批 / 换平台 on the conditions shown before.
     const attempt = server?.kind !== 'cheaper';
     // B3-03r: with deferred chains nothing is recorded before the search; the batch's chain waits
-    // for its written list (finish), a price question is recorded when it is asked (askPrice).
+    // for its written list (finish), a price question is recorded when it is asked (askPrice) and
+    // a round without a product_list records its attempt when it ends (unshown).
     if (attempt && deps.chains === undefined) {
       await setChain(deps.store, appId, ctx.sessionId, chain);
     }
+    const tried: SessionChain | null = attempt ? chain : null;
+    /** The round ends without a product_list: record the attempt now (deferred chains only). */
+    const unshown = async <T>(result: T): Promise<T> => {
+      if (deps.chains !== undefined) await recordAttempt(ctx, tried);
+      return result;
+    };
     const scope = { appId, sessionId: ctx.sessionId, chainId };
     const notices: string[] = [];
     let requested: Args = args;
@@ -216,14 +226,14 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
         if (await deps.store.takeOnce(scope, 'price')) return askPrice();
         requested = without(args, 'price_min_fen', 'price_max_fen');
         notices.push(resultKeys.priceUnrecognized);
-        if (!take()) return noResult(ctx, outcome, notices);
+        if (!take()) return unshown(await noResult(ctx, outcome, notices));
         outcome = await inner.execute(forward(call, requested, 'without-price'), ctx);
       }
     }
 
-    if (outcome.kind !== 'ok' || isRefused(outcome)) return outcome;
+    if (outcome.kind !== 'ok' || isRefused(outcome)) return unshown(outcome);
     if (hasProducts(outcome))
-      return finish(ctx, chainId, outcome, requested, requested, notices, false);
+      return finish(ctx, chainId, tried, outcome, requested, requested, notices, false);
     // BR-AI-08 ①: 再便宜点 never relaxes.
     if (server?.kind === 'cheaper') {
       return withNotices(ctx, outcome, [...notices, resultKeys.noCheaper], false);
@@ -250,11 +260,11 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
       working = without(working, step.drop);
       notices.push(step.key);
       outcome = await inner.execute(forward(call, working, `relax-${step.drop}`), ctx);
-      if (outcome.kind !== 'ok' || isRefused(outcome)) return outcome;
+      if (outcome.kind !== 'ok' || isRefused(outcome)) return unshown(outcome);
       if (hasProducts(outcome))
-        return finish(ctx, chainId, outcome, requested, working, notices, true);
+        return finish(ctx, chainId, tried, outcome, requested, working, notices, true);
     }
-    return noResult(ctx, outcome, notices);
+    return unshown(await noResult(ctx, outcome, notices));
   }
 
   async function clarifyPrice(appId: string): Promise<ToolOutcome> {
@@ -312,6 +322,7 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
   async function finish(
     ctx: ToolContext,
     chainId: string,
+    tried: SessionChain | null,
     outcome: Ok,
     requested: Args,
     effective: Args,
@@ -338,7 +349,7 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
       }
     }
     // Continuations must start from the same effective conditions that produced these cards.
-    if (conditions !== null) await switchChain(ctx, chainId, conditions, outcome.cards);
+    await switchChain(ctx, chainId, tried, conditions, outcome.cards);
     if (notices.length === 0 && deps.match === undefined) return outcome;
     const moved = shifted(ctx, outcome, notices.length);
     return {
@@ -358,17 +369,40 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
   async function switchChain(
     ctx: ToolContext,
     chainId: string,
-    conditions: SearchConditions,
+    tried: SessionChain | null,
+    conditions: SearchConditions | null,
     cards: readonly UnnumberedCard[],
   ): Promise<void> {
     const appId = ctx.subject.appId;
-    const chain: SessionChain = { chainId, conditions, status: 'has_products' };
     const chains = deps.chains;
+    if (conditions === null) {
+      if (chains !== undefined) await recordAttempt(ctx, tried);
+      return;
+    }
+    const chain: SessionChain = { chainId, conditions, status: 'has_products' };
     if (chains === undefined) {
       await setChain(deps.store, appId, ctx.sessionId, chain);
       return;
     }
-    chains.defer({ appId, sessionId: ctx.sessionId, chain, resultSetIds: resultSetIds(cards) });
+    const ids = resultSetIds(cards);
+    // No product_list to confirm (no saved result set): nothing can be written, so this round
+    // counts as one without a list and records its attempt like a search without result.
+    if (ids.length === 0) {
+      await recordAttempt(ctx, tried);
+      return;
+    }
+    chains.defer({ appId, sessionId: ctx.sessionId, chain, resultSetIds: ids });
+  }
+
+  /**
+   * B3-03r: a round that shows no product_list records its attempt at once — the chain the search
+   * started on with this round's requested conditions and that chain's own status, exactly what
+   * was recorded before the search without `deps.chains`. Null (再便宜点) records nothing.
+   * Never conditional on the run's signal.
+   */
+  async function recordAttempt(ctx: ToolContext, tried: SessionChain | null): Promise<void> {
+    if (tried === null) return;
+    await setChain(deps.store, ctx.subject.appId, ctx.sessionId, tried);
   }
 
   /**
