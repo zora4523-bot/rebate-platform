@@ -3,6 +3,7 @@
 // T + points_min[n] minutes, every later point interval_min minutes after the one before
 // (defaults: T+1, +5, +30, +120 minutes, then +240, +360 …); manual_after_min (1440 = 24 hours) is
 // reached when now − T ≥ manual_after_min minutes — exactly 24 hours is due.
+import { propParams } from '@couli/testing';
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
 import {
@@ -68,9 +69,10 @@ it('[AC-B2-06e#3] 属性：任意配置与时点，固定时点取 points_min[n]
         };
         const last = points.length - 1;
         const minutes = point <= last ? points[point]! : points[last]! + (point - last) * interval;
-        expect(queryPointOffsetSeconds(schedule, point)).toBe(minutes * MINUTE_S);
+        return queryPointOffsetSeconds(schedule, point) === minutes * MINUTE_S;
       },
     ),
+    propParams(),
   );
 });
 
@@ -98,8 +100,10 @@ it('[AC-B2-06e#3] 属性：任意 manual_after_min 与时差，到期当且仅�
         };
         // Half of the runs sit within a millisecond of the edge.
         const ms = onEdge ? manualAfter * MINUTE_MS + (delta % 2) : delta;
-        expect(manualDue(schedule, T, after(ms))).toBe(ms >= manualAfter * MINUTE_MS);
+        const due = ms >= manualAfter * MINUTE_MS;
+        return manualDue(schedule, T, after(ms)) === due;
       },
     ),
+    propParams(),
   );
 });

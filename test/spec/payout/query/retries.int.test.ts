@@ -29,6 +29,7 @@ import {
   expectNoPayeeInLogs,
   jobsOf,
   open,
+  queryAttempts,
   queryJobRow,
   queryScripted,
   querySends,
@@ -92,20 +93,30 @@ it('[AC-B2-06e#5] T+5 分的时点三次都未知：查询 3 次、其间等待 
   expectNoPayeeInLogs(f);
 });
 
-const UNKNOWNS: readonly (readonly [string, QueryStep])[] = [
-  ['查询返回「订单不存在」', NOT_FOUND_STEP],
-  ['处理中（10000 + DEALING）', DEALING_STEP],
-  ['query_status_map 之外的状态', UNLISTED_STATUS_STEP],
-  ['SYSTEM_ERROR', SYSTEM_ERROR_STEP],
-  ['10 秒超时（TimeoutError）', TIMEOUT_STEP],
-  ['网络错误（调用被拒绝）', NETWORK_STEP],
-  ['通道没有可说的结果', UNKNOWN_STEP],
-  ['付款方侧的码（查询里只算未知）', PAYER_SIDE_CODE_STEP],
+/**
+ * What each of the three query attempts must record: the channel's codes and its response (W10
+ * later relies on "the last query said the order does not exist"), no code at all when the call
+ * never answered; `{}` pins nothing beyond the summary.
+ */
+function answered(code: string, subCode: string | null): Record<string, unknown> {
+  return { resp_code: code, resp_sub_code: subCode, response: expect.anything() };
+}
+const NO_ANSWER: Record<string, unknown> = { resp_code: null };
+
+const UNKNOWNS: readonly (readonly [string, QueryStep, Record<string, unknown>])[] = [
+  ['查询返回「订单不存在」', NOT_FOUND_STEP, answered('40004', 'ORDER_NOT_EXIST')],
+  ['处理中（10000 + DEALING）', DEALING_STEP, answered('10000', null)],
+  ['query_status_map 之外的状态', UNLISTED_STATUS_STEP, {}],
+  ['SYSTEM_ERROR', SYSTEM_ERROR_STEP, answered('20000', 'SYSTEM_ERROR')],
+  ['10 秒超时（TimeoutError）', TIMEOUT_STEP, NO_ANSWER],
+  ['网络错误（调用被拒绝）', NETWORK_STEP, NO_ANSWER],
+  ['通道没有可说的结果', UNKNOWN_STEP, {}],
+  ['付款方侧的码（查询里只算未知）', PAYER_SIDE_CODE_STEP, {}],
 ];
 
 it.each(UNKNOWNS)(
-  '[AC-B2-06e#5] %s 三次：都算未知——保持 PAYING、三行 unknown 尝试、不暂停队列，投 point 1（T+1 分时投，延迟 4 分 = 240 秒）',
-  async (_label, step) => {
+  '[AC-B2-06e#5] %s 三次：都算未知——保持 PAYING、三行 unknown 尝试（记下通道返回的码与响应）、不暂停队列，投 point 1（T+1 分时投，延迟 4 分 = 240 秒）',
+  async (_label, step, recorded) => {
     const f = await setup(h);
     const w = await f.seedPaying(at(-1 * MINUTE));
     const ch = queryScripted({ [w.outBizNo]: [step, step, step] });
@@ -120,6 +131,9 @@ it.each(UNKNOWNS)(
       ['unknown', 0, 2],
       ['unknown', 0, 3],
     ]);
+    expect(await queryAttempts(f, w.id)).toEqual(
+      [1, 2, 3].map(() => expect.objectContaining(recorded)),
+    );
     expect(await withdrawal(f, w.id)).toEqual(before);
     expect(await jobsOf(f, w.id)).toEqual([queryJobRow(w, 1, 240)]);
     expect(f.pause).not.toHaveBeenCalled();

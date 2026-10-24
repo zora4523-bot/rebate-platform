@@ -9,10 +9,14 @@
 // payout.queue_paused = true do not stop queries or their landing (the switches gate sending).
 import { createTestDatabase } from '@couli/db/testing';
 import { sql } from 'kysely';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import {
+  DEALING_STEP,
   MINUTE,
+  NOT_FOUND_STEP,
   NOW,
+  RETRY_GAP_MS,
+  SECOND,
   TIMEOUT,
   UNKNOWN_STEP,
   QUERY_FAIL_STEP,
@@ -36,6 +40,7 @@ import {
   withdrawal,
   withdrawalVouchers,
   type Harness,
+  type QueryStep,
 } from './kit.ts';
 
 let h: Harness;
@@ -106,6 +111,43 @@ it('[AC-B2-06e#4] 查询成功（支付宝，含手续费与税）：W5 → PAID
   expect(f.pause).not.toHaveBeenCalled();
   expectNoPayeeInLogs(f);
 });
+
+/** [label, the unknown tries before the success, the clock's advance at the success]. */
+const PAID_LATE: readonly (readonly [string, readonly QueryStep[], number])[] = [
+  ['第 2 次', [NOT_FOUND_STEP], 10 * SECOND],
+  ['第 3 次', [NOT_FOUND_STEP, DEALING_STEP], 20 * SECOND],
+];
+
+it.each(PAID_LATE)(
+  '[AC-B2-06e#4] 查询%s才成功（银行卡，手续费与税为 0）：两条分录（冻结 → CASH_BANK），通道没给到账时间时 paid_at 取收到成功响应时的注入时钟（每次等待推进 10 秒）',
+  async (_label, unknowns, elapsedMs) => {
+    const f = await setup(h);
+    const owner = await f.newUser(5_000n);
+    const w = await f.seedPaying(T, { userId: owner, net: 700n, channel: 'bank_card' });
+    const order = `CH${w.outBizNo}`;
+    const ch = queryScripted({ [w.outBizNo]: [...unknowns, querySuccess(order)] });
+    // The wait between two tries moves the server clock on: paid_at is the clock at the success.
+    const sleep = vi.fn<(ms: number) => Promise<void>>(async () => {
+      f.clock.advanceMs(RETRY_GAP_MS);
+    });
+    const handler = f.queryJob(ch.channel, { sleep });
+    await expect(handler(f.queryJobOf(w, 1))).resolves.toBeUndefined();
+    expect(ch.queries()).toHaveLength(unknowns.length + 1);
+    expect(sleep.mock.calls).toEqual(unknowns.map(() => [RETRY_GAP_MS]));
+    expect(await withdrawal(f, w.id)).toMatchObject({
+      status: 'PAID_API',
+      paid_at: new Date(NOW.getTime() + elapsedMs),
+      channel_order_id: order,
+      needs_manual: false,
+    });
+    expect(await entries(f, `wd:${w.id}:PAID`)).toEqual([
+      user('frozen', 700n, 'WITHDRAW_PAID'),
+      platform('CASH_BANK', -700n, 'WITHDRAW_PAID'),
+    ]);
+    expect(await balanceOf(f, owner)).toEqual({ available_fen: 4300n, frozen_fen: 0n });
+    expect(await jobsOf(f, w.id)).toEqual([]);
+  },
+);
 
 it('[AC-B2-06e#4] 查询成功（银行卡，手续费与税为 0）：两条分录（冻结 → CASH_BANK），通道没给到账时间时 paid_at 取注入时钟', async () => {
   const f = await setup(h);
