@@ -6,8 +6,8 @@
 // Every write is one transaction: the target row is locked (SELECT … FOR UPDATE, scoped to the
 // app) and judged, the row is changed (row_version + 1), the audit row is inserted with the same
 // transaction handle; disable also cancels the target's pending / running exports through the
-// export canceller on that handle; disable, authenticator reset and initial password regeneration
-// finally record the account's voiding instant (Redis, ./admin-revocations.ts) before the commit,
+// export canceller on that handle; disable, enable (B1-34n), authenticator reset and initial
+// password regeneration finally record the account's voiding instant (Redis, ./admin-revocations.ts) before the commit,
 // so a failing Redis rolls the change back (50001) and a committed change has always voided. The
 // account is re-read inside the transaction for the answer. Admin accounts have no generated
 // state machine (not in specs/state-machines): status moves only by the conditional UPDATEs here.
@@ -333,7 +333,10 @@ export function createAdminAccountWrites(deps: {
           ordinaryOnly(input, row) ??
           (row.status === ADMIN_ACCOUNT_STATUS.disabled ? null : 'conflict'),
         async (trx, row, now) => {
-          // The voiding instant of the disable stays: what it voided stays void.
+          // The voiding instant of the disable stays: what it voided stays void. Enabling also
+          // voids at its own instant (B1-34n): a session whose last login step interleaved with
+          // the disable (issued in the next whole second, so not void by the disable's instant)
+          // was refused only for the disabled status and must not come back with the account.
           await update(trx, input, row, { status: ADMIN_ACCOUNT_STATUS.active }, now);
           await audit(trx).append({
             appId: input.appId,
@@ -344,6 +347,7 @@ export function createAdminAccountWrites(deps: {
             after: { admin_id: input.adminId, status: ADMIN_ACCOUNT_STATUS.active },
             ip: input.ip,
           });
+          await voidCredentials(input, now);
         },
       );
     },

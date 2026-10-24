@@ -5,6 +5,11 @@
 // account issued before it is void from then on (admin-check, the login steps, the step-up guard).
 // row_version is not used: it also moves on writes that void nothing (rename, permission points,
 // verify phone). Enabling an account never clears the instant, so what a disable voided stays void.
+// B1-34n: enabling an account and binding an authenticator (the first binding after a reset
+// included) also record an instant, so a session whose last login step interleaved with a disable
+// or a reset (issued in the next whole second, refused meanwhile only for the account's state)
+// stays void once the account is usable again. The binding records its ticket's open instant
+// rounded down to the whole second, so the admin_token it issues (iat in whole seconds) survives.
 //
 // The record only ever moves forward (one Lua script keeps the later instant). Its Redis lifetime
 // covers the longest credential it can void (the 8-hour admin_token) plus a cleanup margin: once

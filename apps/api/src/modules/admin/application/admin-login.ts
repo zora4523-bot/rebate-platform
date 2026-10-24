@@ -24,6 +24,8 @@
 // issue instant is taken before the account read) or on another row_version than the account now
 // has, it is 10001 login_ticket_expired; the login writes are conditional on that row_version,
 // and a void that lands right after the final write revokes the new session again.
+// B1-34n: binding the authenticator also records a voiding instant (the open instant rounded down
+// to the whole second), so a session issued around a reset never passes again after the rebind.
 //
 // Pure module (no decorators, erasable syntax, type-only imports from the platform barrel).
 import type { Clock, FieldCrypto } from '../../platform/index.ts';
@@ -404,6 +406,15 @@ export function createAdminAuthService(deps: AdminAuthDeps): AdminAuthService {
         code,
       });
       if (!ok) return await wrongCode(taken, account, ip, 'totp_bind_invalid');
+      // B1-34n: the binding voids what the account was issued before it (a session of a login
+      // that interleaved with the authenticator reset, refused so far only for the missing
+      // binding). Recorded before the bind write, so a failing Redis binds nothing (50001), at the
+      // open instant rounded down to the whole second: this step's own check (issued from
+      // openedAtMs on) and its admin_token (iat no earlier than that second) are not voided.
+      await deps.revocations?.voidBefore(
+        { appId: account.appId, adminId: account.id },
+        Math.floor(openedAtMs / 1000) * 1000,
+      );
       const outcome = await accounts.bindTotp(account, secretCipher, [
         {
           action: ADMIN_AUTH_AUDIT.totpBound,
