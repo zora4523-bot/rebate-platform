@@ -102,3 +102,6 @@ export type {
   PersonalDataCopyWithdrawalsOptions,
   PersonalDataCopyWithdrawalsRead,
 } from './application/personal-data-copy-read.ts';
+// B1-01zzi: the worker's fund metric (PAYING withdrawals that need a person; read only).
+export { readPayoutFundMetrics } from './application/metrics-read.ts';
+export type { PayoutFundMetrics } from './application/metrics-read.ts';
