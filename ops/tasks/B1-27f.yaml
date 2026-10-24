@@ -2,7 +2,7 @@ id: B1-27f
 repo: rebate-platform
 title: identity：个人信息副本的取数端口——identity 声明 PersonalDataCopySources（账号资料、实名脱敏、订单、余额流水、提现记录（收款账号脱敏）、同意记录、未过期 Agent 对话、是否已绑邀请人），identity 自有部分自己实现，其余由 orders / ledger / payout / agent / growth 各新增一个只读文件经 index 导出、app.module 组装；不含他人信息
 type: impl
-# 2026-10-24 入账（admin-backend）。依据：08 BR-ID-40 细则「导出范围（默认）」、04 §3.2 personal_data_copies 行（取数端口经各模块只读入口，02 §4.1）；refs 只列 BR-ID-40（约 11.7KB），BR-ID-33 脱敏格式只摘句。
+# 2026-10-24 入账（admin-backend）。依据：08 BR-ID-40 细则「导出范围（默认）」、04 §3.2 personal_data_copies 行（取数端口经各模块只读入口，02 §4.1）；refs 为空（见下方 2026-10-24 注释），BR-ID-40「导出范围（默认）」、BR-ID-30 ①、BR-ID-33 脱敏格式均由编排者原文摘句。
 # 拆分理由：取数横跨 6 个模块，单独评审范围与是否带出他人信息；生成与交付（B1-27h）只消费这个端口。
 # 本线技术取舍（由编排者摘进任务书第 9 节）：端口 identity/ports/personal-data-copy-sources.ts，按 (app_id, user_id) 在调用方给的只读句柄上取，不写；各模块只新增 application/personal-data-copy-read.ts 并在 index.ts 加导出，不改既有行为。
 # 邀请只输出「是否已绑定邀请人」（J7）；Agent 对话只取未过期的（BR-ID-30 ①，按 agent 现有过期口径）；手机号完整、实名与收款账号脱敏，复用 platform/masking 与 identity/domain/mask-*.ts；序列化与打包归 B1-27h；不加迁移。
