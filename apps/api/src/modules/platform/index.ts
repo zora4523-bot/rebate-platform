@@ -90,7 +90,11 @@ export { loadMaintConnectionConfig, createMaintDbHandle } from './db/maint.ts';
 export type { MaintConnectionConfig, MaintDbHandle } from './db/maint.ts';
 export { createWorkerMaintenance, startWorkerServices } from './maintenance/worker.ts';
 // Prometheus /metrics (B1-01zzh): the worker's whole-database gauges, process metrics everywhere.
-export { collectWorkerMetrics, createMetricsRegistry, startMetricsServer } from './metrics/index.ts';
+export {
+  collectWorkerMetrics,
+  createMetricsRegistry,
+  startMetricsServer,
+} from './metrics/index.ts';
 export type {
   MetricsRegistry,
   MetricsRegistryOptions,

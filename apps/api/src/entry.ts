@@ -23,7 +23,12 @@ import {
   type HttpEntry,
   type RootLogger,
   type QueueRuntime,
+  type MetricsServer,
+  type WorkerMetricsSnapshot,
   JOB_QUEUE,
+  collectWorkerMetrics,
+  createMetricsRegistry,
+  startMetricsServer,
   createRootLogger,
   createDbHandles,
   createMaintDbHandle,
@@ -189,6 +194,37 @@ function startGenerationRenewal(
   return startRedisGenerationRenewal({ renewal: renewal as RedisGenerationRenewal, logger });
 }
 
+/**
+ * The entry's internal Prometheus /metrics listener (B1-01zzh): only when METRICS_PORT is set.
+ * Every entry exports process-level metrics; only the worker passes `collect` (whole-database
+ * gauges read through its own handle at scrape time). Not on the Nest application, not in the OAS.
+ */
+async function openMetrics(
+  entry: EntryName,
+  config: AppConfig,
+  logger: RootLogger,
+  collect?: () => Promise<WorkerMetricsSnapshot>,
+): Promise<MetricsServer | undefined> {
+  if (config.metrics === undefined) return undefined;
+  const registry = createMetricsRegistry(collect === undefined ? { entry } : { entry, collect });
+  const server = await startMetricsServer({
+    host: config.metrics.host,
+    port: config.metrics.port,
+    registry,
+  });
+  logger.info({ host: config.metrics.host, port: server.port }, 'metrics_listening');
+  return server;
+}
+
+/** Closes the metrics listener during a failed startup without masking the startup error. */
+async function closeQuietly(server: MetricsServer | undefined, logger: RootLogger): Promise<void> {
+  try {
+    await server?.close();
+  } catch (error) {
+    logger.warn({ err: error }, 'metrics_close_failed');
+  }
+}
+
 /** A start step whose rejection marks the startup as failed before any cleanup runs. */
 function failFirst(
   signals: StartupSignals,
@@ -226,7 +262,14 @@ async function start(
       redisUrl,
       startQueue: false,
     });
-    const close = (): Promise<void> => app.close();
+    let metricsServer: MetricsServer | undefined;
+    const close = async (): Promise<void> => {
+      try {
+        await metricsServer?.close();
+      } finally {
+        await app.close();
+      }
+    };
     try {
       if (signals.stopping()) {
         await signals.stop(close);
@@ -250,9 +293,11 @@ async function start(
       }
       const port = portOf(entry, config);
       await app.listen(port, config.apiHost);
+      metricsServer = await openMetrics(entry, config, logger);
       await signals.serve(close, { listening: true, host: config.apiHost, port });
     } catch (error) {
       signals.fail();
+      await closeQuietly(metricsServer, logger);
       await app.close();
       throw error;
     }
@@ -269,6 +314,7 @@ async function start(
       redisUrl,
     });
     let servicesOwnCleanup = false;
+    let metricsServer: MetricsServer | undefined;
     try {
       if (config.exitAfterInit) {
         logger.info({ listening: false }, 'started');
@@ -301,6 +347,18 @@ async function start(
         await signals.stop(() => services.stop());
         return;
       }
+      // The /metrics listener (B1-01zzh), opened once the services run and no stop was requested.
+      // A failed listen stops the services it would otherwise leave running, then fails startup.
+      try {
+        metricsServer = await openMetrics(entry, config, logger, () =>
+          collectWorkerMetrics(dbHandles.db, clock),
+        );
+      } catch (error) {
+        signals.fail();
+        await services.stop();
+        throw error;
+      }
+      const servedMetrics = metricsServer;
       // The risk-scan chain (B1-03j): its current-slot seeds, now that the queue runs. A failed
       // seed is a warn line only; a signal that arrived meanwhile sends nothing.
       const resolveScan = (): unknown => context.get<unknown>(riskScanToken(), { strict: false });
@@ -389,12 +447,17 @@ async function start(
           try {
             try {
               try {
-                await reward?.stop();
+                // Stop being scraped first: collect reads through handles closed below.
+                await servedMetrics?.close();
               } finally {
                 try {
-                  await recheck?.stop();
+                  await reward?.stop();
                 } finally {
-                  await expiry?.stop();
+                  try {
+                    await recheck?.stop();
+                  } finally {
+                    await expiry?.stop();
+                  }
                 }
               }
             } finally {
@@ -418,6 +481,7 @@ async function start(
       );
     } catch (error) {
       signals.fail();
+      await closeQuietly(metricsServer, logger);
       throw error;
     } finally {
       if (!servicesOwnCleanup) {
@@ -443,21 +507,30 @@ async function start(
     await signals.stop(() => context.close());
     return;
   }
+  let metricsServer: MetricsServer | undefined;
   try {
     await queue.start();
+    // B1-01zzh: process-level metrics only; payout never reads business tables for them.
+    metricsServer = await openMetrics(entry, config, logger);
   } catch (error) {
     signals.fail();
+    await closeQuietly(metricsServer, logger);
     await queue.stop();
     await context.close();
     throw error;
   }
+  const servedMetrics = metricsServer;
   // Keep entries alive even while no business module has registered a handler.
   const keepAlive = setInterval(() => undefined, KEEP_ALIVE_INTERVAL_MS);
   await signals.serve(
     async () => {
       try {
-        await queue.stop();
-        await context.close();
+        try {
+          await servedMetrics?.close();
+        } finally {
+          await queue.stop();
+          await context.close();
+        }
       } finally {
         clearInterval(keepAlive);
       }

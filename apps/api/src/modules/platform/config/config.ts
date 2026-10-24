@@ -54,6 +54,15 @@ const envSchema = z.object({
     .string()
     .regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/, 'must be an image tag ([A-Za-z0-9_.-], 1–128)')
     .optional(),
+  // B1-01zzh: the internal Prometheus /metrics listener. Unset = no listener; the host alone opens
+  // nothing. Unprivileged ports only.
+  METRICS_PORT: z
+    .string()
+    .regex(/^\d{1,5}$/, 'must be a decimal port number')
+    .transform(Number)
+    .pipe(z.number().int().min(1024).max(65535))
+    .optional(),
+  METRICS_HOST: z.string().min(1).default('127.0.0.1'),
 });
 
 type EnvKey = keyof z.input<typeof envSchema>;
@@ -165,6 +174,18 @@ export interface AppConfig {
    * A hand-built config without it counts as null: the agent cleanup port stays unavailable.
    */
   readonly agentUserHashKey?: string | null;
+  /**
+   * METRICS_PORT / METRICS_HOST (B1-01zzh): the internal Prometheus /metrics listener of every
+   * entry (not on the Nest application, not in the OpenAPI contract). Present only when
+   * METRICS_PORT is set; host defaults to 127.0.0.1. A hand-built config without it opens none.
+   */
+  readonly metrics?: MetricsConfig | undefined;
+}
+
+/** Where the internal /metrics listener binds (B1-01zzh). */
+export interface MetricsConfig {
+  readonly port: number;
+  readonly host: string;
 }
 
 /** Thrown by `loadConfig`; `problems` lists every finding. Messages never contain values. */
@@ -335,5 +356,9 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(sms === undefined ? {} : { sms }),
     agentUserHashKey,
+    // Only present when configured, so the documented shape of an unconfigured result is unchanged.
+    ...(values.METRICS_PORT === undefined
+      ? {}
+      : { metrics: { port: values.METRICS_PORT, host: values.METRICS_HOST } }),
   };
 }
