@@ -28,11 +28,15 @@ export interface PushTokenDeletionResult {
 }
 
 /** Deletes every push_tokens row of (appId, userId) on the caller's transaction. */
-export function deletePushTokensForUser(
+export async function deletePushTokensForUser(
   trx: Transaction<DB>,
   input: PushTokenDeletionInput,
 ): Promise<PushTokenDeletionResult> {
-  void trx;
-  void input;
-  throw new Error('NotImplemented: deletePushTokensForUser');
+  const result = await trx
+    .withSchema('app')
+    .deleteFrom('push_tokens')
+    .where('app_id', '=', input.appId)
+    .where('user_id', '=', input.userId)
+    .executeTakeFirst();
+  return { deleted: Number(result.numDeletedRows) };
 }
