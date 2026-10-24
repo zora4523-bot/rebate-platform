@@ -83,7 +83,20 @@ export interface BeneficiaryCreditDependencies {
   readonly logger: Pick<RootLogger, 'info' | 'warn' | 'error'>;
   readonly ledger: Pick<Ledger, 'openUserAccount' | 'lockBalances' | 'post'>;
   readonly gate: BeneficiaryGate;
-  /** commission readCommissionSnapshot (current commission_version); null when there is none. */
+  /**
+   * commission readCommissionAttribution: the immutable attribution (reserve ratio, beneficiaries
+   * with their ratios, forfeited events) without any amount version; throws when there is none.
+   * Preferred over readSnapshot: R5a takes its amounts from booked_base_fen / booked_n_fen, and
+   * orders.commission_version may run ahead of the stored amount rows (order-sync bumps it).
+   */
+  readonly readAttribution?: (
+    trx: Transaction<DB>,
+    input: { readonly appId: string; readonly orderId: string },
+  ) => Promise<CreditSnapshot>;
+  /**
+   * commission readCommissionSnapshot (current commission_version); null when there is none. Used
+   * only when readAttribution is not supplied (it asserts the version is the greatest stored one).
+   */
   readSnapshot(
     trx: Transaction<DB>,
     input: CreditSnapshotSelection,
@@ -380,11 +393,15 @@ export function createBeneficiaryCredit(deps: BeneficiaryCreditDependencies): Be
       throw new Error('settlement beneficiary credit: CREDITED order without booked amounts');
     }
 
-    const snapshot = await deps.readSnapshot(trx, {
-      appId,
-      orderId,
-      commissionVersion: order.commission_version,
-    });
+    // Ratios and forfeited events only (amounts are the booked pair): version-independent read.
+    const snapshot =
+      deps.readAttribution === undefined
+        ? await deps.readSnapshot(trx, {
+            appId,
+            orderId,
+            commissionVersion: order.commission_version,
+          })
+        : await deps.readAttribution(trx, { appId, orderId });
     if (snapshot === null) {
       throw new Error('settlement beneficiary credit: order has no commission snapshot');
     }

@@ -77,7 +77,7 @@ const ATTR_AT = new Date('2032-06-20T10:00:00+08:00');
  * re-statement only); the direct's first_credit obligation was opened on version 1.
  * booked_base 850 → direct 1000 bp owes 85; self 425 credited at R5; receivable 1000 − 85.
  */
-function scenario() {
+function scenario(options: { readonly attribution: boolean } = { attribution: true }) {
   const { db, queries } = fakeDb((q) => {
     const text = q.sql;
     if (/select "platform", "sub_order_id", "attr_at" from "app"."orders"/.test(text)) {
@@ -146,7 +146,19 @@ function scenario() {
     platform_net_fen: 490n,
     union_receivable_net_fen: 915n,
   };
-  const readSnapshot = vi.fn(async () => snapshot);
+  // Mimics commission readCommissionSnapshot with only amount version 1 stored: any other expected
+  // version throws (assertCurrentVersion).
+  const readSnapshot = vi.fn(
+    async (_trx: unknown, input: { readonly commissionVersion: number }) => {
+      if (input.commissionVersion !== 1) {
+        throw new Error(
+          `commission: expected commission_version ${String(input.commissionVersion)} is not the current version 1`,
+        );
+      }
+      return snapshot;
+    },
+  );
+  const readAttribution = vi.fn(async () => snapshot);
   const post = vi.fn(async () => ({ kind: 'posted' as const, voucherId: VOUCHER }));
   const service = createBeneficiaryCredit({
     clock: new FixedClock(NOW),
@@ -166,6 +178,7 @@ function scenario() {
       ),
     },
     readSnapshot,
+    ...(options.attribution ? { readAttribution } : {}),
     readOrderNets: vi.fn(async () => nets),
     appendBeneficiaryEvent: vi.fn(async () => undefined),
   });
@@ -179,7 +192,7 @@ function scenario() {
         closedRef: 'batch-item-1',
       }),
     );
-  return { queries, run, readSnapshot, post };
+  return { queries, run, readSnapshot, readAttribution, post };
 }
 
 it('[AC-B2-04q] attributionUnchanged: an amount-version bump keeps the attribution; a version above the current one or a malformed ref does not', () => {
@@ -195,7 +208,7 @@ it('[AC-B2-04q] attributionUnchanged: an amount-version bump keeps the attributi
 });
 
 it('[AC-B2-04q] commission_version bumped on a CREDITED order after R5: the obligation opened on version 1 still executes, amounts from the current version, history row after the close', async () => {
-  const { queries, run, readSnapshot, post } = scenario();
+  const { queries, run, readSnapshot, readAttribution, post } = scenario();
   const result = await run();
   expect(result).toEqual({
     outcome: 'credited',
@@ -205,12 +218,10 @@ it('[AC-B2-04q] commission_version bumped on a CREDITED order after R5: the obli
     amountFen: 85n,
     voucherId: VOUCHER,
   });
-  // The snapshot is read at the current version (amounts current), not at the obligation's one.
-  expect(readSnapshot).toHaveBeenCalledWith(expect.anything(), {
-    appId: APP,
-    orderId: ORDER,
-    commissionVersion: 2,
-  });
+  // Only v1 amounts are stored while orders.commission_version = 2: the attribution is read
+  // without a version (the asserting snapshot reader is not used), amounts are the booked pair.
+  expect(readAttribution).toHaveBeenCalledWith(expect.anything(), { appId: APP, orderId: ORDER });
+  expect(readSnapshot).not.toHaveBeenCalled();
   expect(post).toHaveBeenCalledTimes(1);
   const voucher = (post.mock.calls[0] as unknown[] | undefined)?.[1];
   expect(voucher).toMatchObject({
@@ -237,4 +248,16 @@ it('[AC-B2-04q] commission_version bumped on a CREDITED order after R5: the obli
   expect(queries[close]?.parameters).toEqual(
     expect.arrayContaining(['done', 'R5a', 'batch-item-1', new Date(NOW), VOUCHER, 1]),
   );
+});
+
+it('[AC-B2-04q] without readAttribution the fallback is the asserting snapshot reader: v1 stored, orders at v2 → throws, nothing closed', async () => {
+  const { queries, run, readSnapshot, post } = scenario({ attribution: false });
+  await expect(run()).rejects.toThrow('is not the current version 1');
+  expect(readSnapshot).toHaveBeenCalledWith(expect.anything(), {
+    appId: APP,
+    orderId: ORDER,
+    commissionVersion: 2,
+  });
+  expect(post).not.toHaveBeenCalled();
+  expect(queries.some((q) => q.sql.startsWith('update "app"."beneficiary_credits"'))).toBe(false);
 });
