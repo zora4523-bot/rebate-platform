@@ -4,7 +4,9 @@
 // createSiteReauth, manual credential entry; BR-ID-24 ③, D10-176, D10-196); (B1-22g)
 // /admin/v1/union-accounts/alert-phones (list, add, remove the station-owner alert phones; the
 // encrypted group is written only through content's createUnionAlertPhonesWriter inside union's
-// transaction, with union's audit row; BR-ID-24 ②, D10-152 ④, D10-281). app.module
+// transaction, with union's audit row; BR-ID-24 ②, D10-152 ④, D10-281); (B1-22o)
+// /admin/v1/union/account-options (the PID form's account choices, union.pid or
+// union.account_auth, read only; D10-243). app.module
 // imports this module on the admin entry only; the api, stream and worker entries do not serve
 // /admin/v1. Permission and step-up checks go through platform's AdminOperationGuard, which the
 // admin module provides on the admin entry (union never imports admin). Each change and its audit
@@ -33,10 +35,12 @@ import {
   type FieldCrypto,
   type RootLogger,
 } from '../platform/index.ts';
+import { AdminUnionAccountOptions } from './application/admin-account-options.ts';
 import { AdminUnionAccounts, reauthAuditWriter } from './application/admin-accounts.ts';
 import { AdminUnionAlertPhonesService } from './application/admin-alert-phones.ts';
 import { AdminUnionPids } from './application/admin-pids.ts';
 import { createSiteReauth } from './auth-expiry/reauth.ts';
+import { AdminUnionAccountOptionsController } from './http/admin/union-account-options.controller.ts';
 import { AdminUnionAccountsController } from './http/admin/union-accounts.controller.ts';
 import { AdminUnionAlertPhonesController } from './http/admin/union-alert-phones.controller.ts';
 import { AdminUnionPidsController } from './http/admin/union-pids.controller.ts';
@@ -61,6 +65,7 @@ export class UnionAdminModule {
         AdminUnionPidsController,
         AdminUnionAccountsController,
         AdminUnionAlertPhonesController,
+        AdminUnionAccountOptionsController,
       ],
       providers: [
         {
@@ -123,6 +128,12 @@ export class UnionAdminModule {
               logger,
             });
           },
+        },
+        {
+          provide: AdminUnionAccountOptions,
+          inject: [{ token: DB, optional: true }],
+          useFactory: (db?: Kysely<Database>): AdminUnionAccountOptions =>
+            new AdminUnionAccountOptions({ db }),
         },
         {
           provide: AdminUnionAlertPhonesService,
