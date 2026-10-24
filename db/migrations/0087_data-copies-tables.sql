@@ -5,8 +5,8 @@
 -- personal_data_copy_delivery / personal_data_copy_status). Task B1-27d (task brief §9 ①–⑥),
 -- prerequisite of B1-27a / B1-27c / B1-27h. Storage and grants only: registration, generation,
 -- delivery, expiry, cancellation and the correction flow are written by the identity services.
--- Compatibility: additive, two new empty tables; no existing object changes. The file number is a
--- placeholder taken at landing time (D10-116); nothing below depends on it.
+-- Compatibility: additive, two new empty tables; no existing object changes. The file number was
+-- taken at landing time (D10-116); nothing below depends on it.
 -- Recovery: restore from backup; no down migration. (Until a later release writes to them, the two
 -- tables could be dropped by a new migration.)
 --
