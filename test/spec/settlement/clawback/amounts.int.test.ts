@@ -463,6 +463,64 @@ it(
         event: 'COMMISSION_POSITIVE_ZERO',
       }),
     ]);
+    // Only jd's >0 → 0 is held for manual review (#43); taobao registers no recon diff.
+    expect(await h.reconDiffs()).toEqual([]);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04s#43] 京东联盟佣金由 >0 变 0（口径待 规划/09 验证）：验证前按 R8 全额扣回（金额同 #16：425 / 85 / 42、平台 448），并多登记一条指向该子订单的待复核差错单（open）',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.credited({ platform: 'jd' });
+    await h.bumpCommissionVersion(o, 3);
+    const id = 'C3';
+
+    const result = await h.apply(o, {
+      cause: 'COMMISSION',
+      ref: { kind: 'commission' },
+      newCommissionFen: 0n,
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'clawed_back',
+      transition: 'R8',
+      rightsEventId: id,
+      bookedBaseFen: 0n,
+      bookedNFen: 0n,
+    });
+    expect(await h.voucherLines(clawbackKey(o, 'self', id))).toEqual(
+      userClawbackLines(o, 'self', 425n),
+    );
+    expect(await h.voucherLines(clawbackKey(o, 'direct', id))).toEqual(
+      userClawbackLines(o, 'direct', 85n),
+    );
+    expect(await h.voucherLines(clawbackKey(o, 'indirect', id))).toEqual(
+      userClawbackLines(o, 'indirect', 42n),
+    );
+    expect(await h.voucherLines(platformClawbackKey(o, id))).toEqual(
+      platformDecreaseLines(o, 448n),
+    );
+    for (const key of await h.clawbackKeys(o)) {
+      expect(await h.voucherTypes(key), key).toEqual(['CLAWBACK|FULL']);
+    }
+    expect(await h.orderSubjectNet(o, receivable(o))).toBe(0n);
+    expect(await h.read(o)).toMatchObject({
+      rebate_status: 'CLAWED_BACK',
+      booked_base_fen: 0n,
+      booked_n_fen: 0n,
+      reason: 'COMMISSION_ZERO',
+    });
+    // 待编排裁定: recon_diffs.type has no value for「京东实际佣金归零待复核」(schema CHECK lists
+    // union_mismatch … estimate_changed_after_credit), so the type is not pinned here.
+    expect(await h.reconDiffs()).toEqual([
+      expect.objectContaining({
+        type: expect.any(String),
+        status: 'open',
+        ref_id: expect.stringContaining(o.orderKey),
+      }),
+    ]);
   },
   TIMEOUT,
 );

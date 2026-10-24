@@ -59,12 +59,22 @@
 //   - source.event PLATFORM_PUNISH (P8) → apply cause PUNISH, ref platform;
 //   - source.event PLATFORM_RIGHTS → skipped; TODO(规划/11 §4.2): rights success entry — blocked
 //     on B2-04l;
-//   - settlement record unchanged and est_commission_fen changed → R9b: archive only (no voucher,
-//     booked pair unchanged); when the estimate's base (BR-CALC-02, snapshot reserve_bp) differs
-//     from booked_base_fen and settle.estimate_change_diff.enabled is not off, register one
-//     recon diff (ledger registerReconDiff, type estimate_changed_after_credit, ref_id naming the
-//     order_key, expected_fen = booked_base_fen, actual_fen = that base, diff_fen = actual −
-//     expected) once per sub-order and estimate value; result 'estimate_archived'.
+//   - refunded_quantity increased in this sync, or an order_rights row exists for the order → R9
+//     (BR-FUND-01「R9 与 R9b 的判定」), never R9b: N_new per step 3; with the settlement record
+//     unchanged and no deduction that is ③ WAIT_COMMISSION (an existing order_rights row →
+//     WAIT_COMMISSION). 待编排裁定: change carries no refunded_quantity, so how the increase is
+//     detected (orders.refunded_quantity re-read under the lock against
+//     refunded_quantity_at_credit, or a new change field) is left to the implementation;
+//   - otherwise settlement record unchanged and est_commission_fen changed → R9b: archive only
+//     (no voucher, booked pair unchanged); when the estimate's base (BR-CALC-02, snapshot
+//     reserve_bp) differs from booked_base_fen and settle.estimate_change_diff.enabled is not off,
+//     register one recon diff (ledger registerReconDiff, type estimate_changed_after_credit,
+//     ref_id naming the order_key, expected_fen = booked_base_fen, actual_fen = that base,
+//     diff_fen = actual − expected) once per sub-order and estimate value, and log one warn line
+//     carrying an `alert` field, app_id and the order; result 'estimate_archived'.
+// platform jd whose effective commission goes from > 0 to 0 (BR-FUND-08, 口径待 规划/09): R8 full
+// clawback as for any platform, plus one open recon diff naming the order_key for manual review
+// (type 待编排裁定: no recon_diffs.type value fits yet).
 // Amounts only through @couli/money; time only from the injected Clock.
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';

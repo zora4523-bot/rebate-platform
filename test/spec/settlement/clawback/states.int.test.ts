@@ -2,6 +2,7 @@
 // 注销后扣回记坏账; BR-FUND-04 ⑫ 未完成义务; BR-FUND-10 负余额). Default order: N 1000,
 // reserve 1500 → B 850; self 425 / direct 85 / indirect 42; platform 448. Partial: N 600 →
 // B 510 → 255 / 51 / 25.
+import { randomBytes, randomUUID } from 'node:crypto';
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
@@ -15,9 +16,30 @@ import {
   platformDecreaseLines,
   receivable,
   userClawbackLines,
+  type Harness,
 } from './kit.ts';
 
 const p = databaseFixture(createTestDatabase);
+
+/** Identifies the user as under 18 after the credit (verified realname + the minor reader). */
+async function markMinor(h: Harness, userId: string): Promise<void> {
+  await h.db
+    .insertInto('realname')
+    .values({
+      id: randomUUID(),
+      app_id: h.appId,
+      user_id: userId,
+      name_cipher: Buffer.from('synthetic-name'),
+      id_no_cipher: Buffer.from('synthetic-id-no'),
+      id_no_hmac: randomBytes(32).toString('hex'),
+      birth_date_cipher: Buffer.from('synthetic-birth-date'),
+      status: 'verified',
+      provider: 'synthetic',
+      verified_at: h.clock.now(),
+    })
+    .execute();
+  h.minors.add(userId);
+}
 
 it(
   '[AC-B2-04s#21] 受益人入账后进入注销 processing、净额 > 0：其扣回不写账户，改借 BAD_DEBT / 贷 UNION_RECEIVABLE（同一 uniq_key、类型不变、带受益人键），余额不变；其余照常，应收归 0',
@@ -276,6 +298,56 @@ it(
     expect(await h.balance(o.user('self'))).toBe(-425n);
     expect(await h.frozenOf(o.user('self'))).toBe(425n);
     expect(await h.read(o)).toMatchObject({ rebate_status: 'CLAWED_BACK' });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04s#44] 入账后才识别直推未满 18 周岁（BR-CALC-09 / BR-ID-26 (b)）：部分退款 1000 → 600，推广份额的负向差额照常扣回（直推扣 34、余额 51、净额 51），本人照常扣 170，间推扣 17、平台冲回 179；不写没收凭证',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.credited();
+    await markMinor(h, o.user('direct'));
+    const keysBefore = await h.orderVoucherKeys(o);
+    const rightsId = await h.rights(o);
+    const id = `R${rightsId}`;
+
+    expect(
+      await h.apply(o, {
+        cause: 'PARTIAL_REFUND',
+        ref: { kind: 'rights', orderRightsId: rightsId },
+        newCommissionFen: 600n,
+      }),
+    ).toMatchObject({
+      outcome: 'clawed_back',
+      transition: 'R9',
+      bookedBaseFen: 510n,
+      bookedNFen: 600n,
+    });
+    expect(await h.voucherLines(clawbackKey(o, 'direct', id))).toEqual(
+      userClawbackLines(o, 'direct', 34n),
+    );
+    expect(await h.balance(o.user('direct'))).toBe(51n);
+    expect(await h.netOf(o, 'direct')).toBe(51n);
+    expect(await h.voucherLines(clawbackKey(o, 'self', id))).toEqual(
+      userClawbackLines(o, 'self', 170n),
+    );
+    expect(await h.balance(o.user('self'))).toBe(255n);
+    expect(await h.voucherLines(clawbackKey(o, 'indirect', id))).toEqual(
+      userClawbackLines(o, 'indirect', 17n),
+    );
+    expect(await h.voucherLines(platformClawbackKey(o, id))).toEqual(
+      platformDecreaseLines(o, 179n),
+    );
+    expect((await h.orderVoucherKeys(o)).filter((k) => !keysBefore.includes(k)).sort()).toEqual(
+      [
+        clawbackKey(o, 'self', id),
+        clawbackKey(o, 'direct', id),
+        clawbackKey(o, 'indirect', id),
+        platformClawbackKey(o, id),
+      ].sort(),
+    );
+    expect(await h.orderSubjectNet(o, receivable(o))).toBe(600n);
   },
   TIMEOUT,
 );

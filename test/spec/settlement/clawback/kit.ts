@@ -62,6 +62,8 @@ export interface SyncSpec {
   readonly platformStatus?: string;
   /** New est_commission_fen (default unchanged); a different value bumps commission_version. */
   readonly estAfter?: bigint;
+  /** New orders.refunded_quantity (default unchanged). */
+  readonly refundedQuantityAfter?: number;
 }
 
 export interface SyncOutcome {
@@ -203,7 +205,8 @@ export async function harness(db: Kysely<DB>) {
   /**
    * Simulates the orders sync step on one transaction: order_key lock, the orders column update
    * (platform_status, est_commission_fen, commission_version + 1 when the estimate changed,
-   * row_version + 1), then rebate.onUpdated with the change and the status source.
+   * refunded_quantity, row_version + 1), then rebate.onUpdated with the change and the status
+   * source.
    */
   async function sync(o: SeededOrder, spec: SyncSpec): Promise<SyncOutcome> {
     const clawback = boot();
@@ -232,6 +235,7 @@ export async function harness(db: Kysely<DB>) {
           platform_status: to,
           est_commission_fen: estAfter,
           commission_version: commissionVersion,
+          refunded_quantity: spec.refundedQuantityAfter ?? before.refunded_quantity,
           row_version: rowVersion,
           updated_at: h.clock.now(),
         })
