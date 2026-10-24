@@ -41,70 +41,70 @@ pr: null
 red_exempt:
   - file: test/spec/contracts/pay-admin-http/generated.test.ts
     test: '[AC-CT-21e#17] get /admin/v1/pay-orders 已生成类型、后台鉴权和无签名策略，planned 不挂载校验路由'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/generated.test.ts
     test: '[AC-CT-21e#17] get /admin/v1/pay-orders/{pay_order_id} 已生成类型、后台鉴权和无签名策略，planned 不挂载校验路由'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/generated.test.ts
     test: '[AC-CT-21e#17] post /admin/v1/pay-orders/{pay_order_id}/resolve 已生成类型、后台鉴权和无签名策略，planned 不挂载校验路由'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/generated.test.ts
     test: '[AC-CT-21e#17] get /admin/v1/pay-refunds 已生成类型、后台鉴权和无签名策略，planned 不挂载校验路由'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/generated.test.ts
     test: '[AC-CT-21e#17] get /admin/v1/pay-refunds/{pay_refund_id} 已生成类型、后台鉴权和无签名策略，planned 不挂载校验路由'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/generated.test.ts
     test: '[AC-CT-21e#17] get /admin/v1/pay-anomalies 已生成类型、后台鉴权和无签名策略，planned 不挂载校验路由'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/generated.test.ts
     test: '[AC-CT-21e#17] get /admin/v1/pay-recon-diffs 已生成类型、后台鉴权和无签名策略，planned 不挂载校验路由'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#1] get /admin/v1/pay-orders 声明 planned、后台鉴权与权限点'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#1] get /admin/v1/pay-orders/{pay_order_id} 声明 planned、后台鉴权与权限点'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#1] post /admin/v1/pay-orders/{pay_order_id}/resolve 声明 planned、后台鉴权与权限点'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#1] get /admin/v1/pay-refunds 声明 planned、后台鉴权与权限点'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#1] get /admin/v1/pay-refunds/{pay_refund_id} 声明 planned、后台鉴权与权限点'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#1] get /admin/v1/pay-anomalies 声明 planned、后台鉴权与权限点'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#1] get /admin/v1/pay-recon-diffs 声明 planned、后台鉴权与权限点'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#2] get /admin/v1/pay-orders 使用后台页码且 page_size 上限为 200'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#2] get /admin/v1/pay-refunds 使用后台页码且 page_size 上限为 200'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#2] get /admin/v1/pay-anomalies 使用后台页码且 page_size 上限为 200'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#2] get /admin/v1/pay-recon-diffs 使用后台页码且 page_size 上限为 200'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#3] 支付单列表包含规定筛选项和有界状态/渠道'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#4] 人工处置要求动态码并声明 needs_manual、查询凭证与审计'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#5] post /admin/v1/pay-orders/{pay_order_id}/refunds 必须幂等、不要二次验证并复用错误码'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#5] post /admin/v1/pay-anomalies/{pay_anomaly_id}/refunds 必须幂等、不要二次验证并复用错误码'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#6] README 登记后台支付契约'
-    reason: 冻结 CT-21e 契约用例，测试体未改；本任务只收紧 #1585 拆出的（退款）两块（去 planned），同文件因可能读到本任务改动的测试支撑文件 test/spec/platform/events/kit.ts 被整体判定
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只收紧 PR 1585 拆出的（退款）两块（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的兄弟测试文件（operations.test.ts / generated.test.ts），同文件因此被整体判定'
