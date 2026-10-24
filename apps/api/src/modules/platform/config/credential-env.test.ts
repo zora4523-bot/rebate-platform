@@ -12,9 +12,11 @@ describe('looksLikeRealCredentialEnvName', () => {
     'ALIPAY_PRIVATE_KEY',
     'ALIPAY_APP_PRIVATE_KEY',
     'BANK_CHANNEL_ACCESS_KEY',
-    'SMS_ALIYUN_ACCESS_KEY_ID',
-    'SMS_ALIYUN_ACCESS_KEY_SECRET',
-    'sms_aliyun_access_key_secret',
+    'SMS_ACCESS_KEY_ID',
+    'SMS_ACCESS_KEY_SECRET',
+    'SMS_SIGN_NAME',
+    'SMS_TEMPLATE_VERIFY_CODE',
+    'sms_access_key_secret',
   ])('matches %s', (name) => {
     expect(looksLikeRealCredentialEnvName(name)).toBe(true);
   });
@@ -31,12 +33,15 @@ describe('looksLikeRealCredentialEnvName', () => {
 
   // The SMS part of the provisional pattern is replaced by the declared names (ruling B1-02e
   // §9.5 #4): an SMS_ variable that no adapter reads is not a credential.
-  it.each(['SMS_ACCESS_KEY', 'SMS_ALIYUN_SECRET', 'SMS_SIGN_NAME', 'SMS_ALIYUN_ACCESS_KEY_ID_X'])(
-    'does not match the undeclared SMS name %s',
-    (name) => {
-      expect(looksLikeRealCredentialEnvName(name)).toBe(false);
-    },
-  );
+  it.each([
+    'SMS_ACCESS_KEY',
+    'SMS_ALIYUN_SECRET',
+    'SMS_ALIYUN_ACCESS_KEY_ID',
+    'SMS_ACCESS_KEY_ID_X',
+    'SMS_TEMPLATE',
+  ])('does not match the undeclared SMS name %s', (name) => {
+    expect(looksLikeRealCredentialEnvName(name)).toBe(false);
+  });
 
   it.each([
     'UNION_APP_KEY',
@@ -45,7 +50,6 @@ describe('looksLikeRealCredentialEnvName', () => {
     'ALIPAY_PRIVATE_KEY_PATH',
     'MY_UNION_SECRET',
     'UNIONS_SECRET',
-    'SMS_SIGN_NAME',
     'BANK_',
     'SECRET',
     'DATABASE_URL',
@@ -60,13 +64,13 @@ describe('findCredentialLikeEnvNames', () => {
   it('returns sorted names that are set to a non-empty value', () => {
     expect(
       findCredentialLikeEnvNames({
-        SMS_ALIYUN_ACCESS_KEY_SECRET: 'x',
+        SMS_ACCESS_KEY_SECRET: 'x',
         ALIPAY_PRIVATE_KEY: 'y',
         UNION_SECRET: '',
         BANK_CARD_SECRET: undefined,
         PATH: '/usr/bin',
       }),
-    ).toEqual(['ALIPAY_PRIVATE_KEY', 'SMS_ALIYUN_ACCESS_KEY_SECRET']);
+    ).toEqual(['ALIPAY_PRIVATE_KEY', 'SMS_ACCESS_KEY_SECRET']);
   });
 
   it('returns an empty list for a clean environment', () => {

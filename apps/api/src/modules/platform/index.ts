@@ -137,3 +137,11 @@ export type {
 } from './http/admin-guard.ts';
 export { readSingleUpload } from './http/single-upload.ts';
 export type { SingleUpload, SingleUploadRequest } from './http/single-upload.ts';
+// Aliyun OpenAPI V3 (ACS3-HMAC-SHA256) request signing (B1-12w; agent review, notification SMS).
+export { createAliyunAcs3Signer } from './aliyun/acs3.ts';
+export type {
+  AliyunAcs3Sign,
+  AliyunAcs3SignerDeps,
+  AliyunCredentials,
+  AliyunSignRequest,
+} from './aliyun/acs3.ts';

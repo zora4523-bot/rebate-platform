@@ -2,10 +2,11 @@
 // 本地栈加载"): local and test processes refuse to start when one of them is set, because their
 // union / SMS / payout adapters must be fakes.
 //
-// SMS: the names the SMS adapter declares (orchestrator ruling B1-02e §9.3 #8, §9.5 #4). Every SMS
-// variable starts with SMS_; the real provider adapter (a later task, in notification) reads its
-// credentials from these names only and adds any new one here. The list lives in platform because
-// loadConfig runs before any module and platform imports no module.
+// SMS: the names the Aliyun SendSms channel reads (orchestrator rulings B1-02e §9.3 #8, §9.5 #4;
+// D10-315, B1-12w): the AccessKey pair, the signature name and the verification code template
+// CODE, all SMS_-prefixed; ./sms.ts reads them in staging / prod only, and any new SMS variable is
+// added here. The list lives in platform because loadConfig runs before any module and platform
+// imports no module.
 //
 // Pinduoduo: PDD_CLIENT_ID and PDD_CLIENT_SECRET_FILE, declared by the live adapter wiring (B1-04t).
 //
@@ -17,10 +18,15 @@
 const CREDENTIAL_ENV_NAME =
   /^(?:UNION|ALIPAY|BANK)_(?:[A-Z0-9]+_)*(?:SECRET|PRIVATE_KEY|ACCESS_KEY)$/i;
 
-/** Credential variables of the SMS provider adapter (Aliyun AccessKey pair), all SMS_-prefixed. */
+/**
+ * Variables of the Aliyun SendSms channel (B1-12w): AccessKey pair, signature name and template
+ * CODE, all SMS_-prefixed. local / test refuse to start when any of them is set.
+ */
 export const SMS_CREDENTIAL_ENV_NAMES: readonly string[] = Object.freeze([
-  'SMS_ALIYUN_ACCESS_KEY_ID',
-  'SMS_ALIYUN_ACCESS_KEY_SECRET',
+  'SMS_ACCESS_KEY_ID',
+  'SMS_ACCESS_KEY_SECRET',
+  'SMS_SIGN_NAME',
+  'SMS_TEMPLATE_VERIFY_CODE',
 ]);
 
 /**

@@ -16,7 +16,7 @@
 
 | 文件 | 给谁用 | 内容（只列变量名） |
 | --- | --- | --- |
-| `/etc/couli/staging.env` | api、stream、worker、admin | API_PORT / STREAM_PORT / ADMIN_PORT、DATABASE_URL、DATABASE_READ_URL、DATABASE_MAINT_URL、REDIS_URL、FIELD_KEY_PROVIDER、FIELD_KEYRING_FILE、FIELD_MASTER_KEY_FILE |
+| `/etc/couli/staging.env` | api、stream、worker、admin | API_PORT / STREAM_PORT / ADMIN_PORT、DATABASE_URL、DATABASE_READ_URL、DATABASE_MAINT_URL、REDIS_URL、FIELD_KEY_PROVIDER、FIELD_KEYRING_FILE、FIELD_MASTER_KEY_FILE；可选 SMS_ACCESS_KEY_ID、SMS_ACCESS_KEY_SECRET、SMS_SIGN_NAME、SMS_TEMPLATE_VERIFY_CODE（见 1.6） |
 | `/etc/couli/staging-payout.env` | 只给 payout | payout 自己的 DATABASE_URL，以及同样的三个 FIELD_* 变量（payout 不连 Redis，ADR-0001 §4.2 第 20 项） |
 | `/etc/couli/staging-migrator.env` | 只给迁移步骤 | MIGRATOR_DATABASE_URL |
 
@@ -166,7 +166,22 @@ chmod 500 /etc/couli-pdd/union-endpoints /etc/couli-pdd
 
 拼多多开放平台应用的 IP 白名单只加不删：把 staging 节点的出口 IP 加进去，已有的地址一律保留。
 
-### 1.6 B1-01zd 之前
+### 1.6 阿里云短信（验证码，可选）
+
+在 `/etc/couli/staging.env` 设下面四个变量，api 与 admin 入口的验证码短信就走阿里云短信（SendSms）。**四个齐全才启用**；缺任一（未设、空串或全空白）时维持现状：每条验证码都拒发，入口启动时打一条 warn `sms_sender_unconfigured`。四个都设好时启动打一条 info `sms_sender_live`（只带环境名与供应商，不带任何值）。
+
+| 变量 | 取值 |
+| --- | --- |
+| `SMS_ACCESS_KEY_ID` | 阿里云 AccessKey ID |
+| `SMS_ACCESS_KEY_SECRET` | 阿里云 AccessKey Secret |
+| `SMS_SIGN_NAME` | 短信签名名称，与阿里云短信控制台里审核通过的签名逐字相同 |
+| `SMS_TEMPLATE_VERIFY_CODE` | 验证码模板的模板 CODE（形如 `SMS_` 加数字），模板正文为「您的动态码为：${code}，5分钟内有效，请勿泄露！」 |
+
+- AccessKey 只用 RAM 子账号的，只授短信发送权限，不用主账号 AccessKey（规划/02 §14）。
+- 1.2 说过 `deploy.sh` 会对整个 `staging.env` 做 `$` 展开：值里不要出现 `$`；签名名称是中文时照常写，不加引号。
+- `APP_ENV` 为 local 或 test 时设了这四个中的任何一个都会拒绝启动；本地 `.env` 不放它们。
+
+### 1.7 B1-01zd 之前
 
 **B1-01zd 合并之前**，应用在 `APP_ENV=staging` 下仍拒绝 `FIELD_KEY_PROVIDER=local`，五个进程都会启动失败，部署会走失败分支。
 

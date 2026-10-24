@@ -83,3 +83,13 @@ export type {
 } from './application/push-send.ts';
 export type { PushDeliveryChannel, PushPayload, PushTarget } from './ports/push-delivery.ts';
 export { createDemoMobPush } from './infra/demo-mobpush.ts';
+// B1-12w: the entry's verification code sender on the Aliyun SendSms channel (D10-315). identity
+// never imports it: app.module hands it to identity's SmsSender port.
+export { createEntrySmsSender } from './sms/index.ts';
+export type {
+  EntrySmsSenderDeps,
+  AliyunSmsFetch,
+  VerifyCodeDelivery,
+  VerifyCodeMessage,
+  VerifyCodeSmsSender,
+} from './sms/index.ts';

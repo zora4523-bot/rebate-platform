@@ -17,6 +17,7 @@ import { readExportStoreConfig } from './export-store.ts';
 import { readMediaConfig } from './media.ts';
 import { readPddConfig, type PddClientConfig } from './pdd.ts';
 import { readPddQueryConfig } from './pdd-query.ts';
+import { readSmsConfig, type SmsConfig } from './sms.ts';
 import { readTrustedProxies } from './trusted-proxies.ts';
 import { readUnionEndpointOverrideConfig } from './union-endpoint-override.ts';
 
@@ -126,6 +127,13 @@ export interface AppConfig {
    * it counts as null.
    */
   readonly agentReview?: AgentReviewConfig | null;
+  /**
+   * SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET / SMS_SIGN_NAME / SMS_TEMPLATE_VERIFY_CODE
+   * (./sms.ts, B1-12w): staging / prod only, the Aliyun SendSms channel of the verification code.
+   * Absent (left out of loadConfig's result) or null: the entry keeps the sender that rejects
+   * every message. A hand-built config without it counts as null.
+   */
+  readonly sms?: SmsConfig | null;
 }
 
 /** Thrown by `loadConfig`; `problems` lists every finding. Messages never contain values. */
@@ -251,6 +259,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   const { agentReview, problems: agentReviewProblems } = readAgentReviewConfig(values.APP_ENV, env);
   violations.push(...agentReviewProblems);
   if (violations.length > 0) throw new ConfigError(violations);
+  const sms = readSmsConfig(values.APP_ENV, env);
 
   return {
     appEnv: values.APP_ENV,
@@ -275,5 +284,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     unionEndpointOverrideDir,
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(agentReview === null ? {} : { agentReview }),
+    // Only present when configured, so the documented shape of an unconfigured result is unchanged.
+    ...(sms === undefined ? {} : { sms }),
   };
 }
