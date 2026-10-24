@@ -11,7 +11,24 @@
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for types.
 import type { DB } from '@couli/db';
-import type { Transaction } from 'kysely';
+import { sql, type Transaction } from 'kysely';
+
+/** 04 §3.2: the one limit_exempt_reason value (BR-WDR-02 细则「实名更正后的失效与重绑」). */
+export const REALNAME_CORRECTION_EXEMPT = 'realname_correction';
+const EXEMPT_REASON = REALNAME_CORRECTION_EXEMPT;
+
+interface CurrentRow {
+  readonly payout_method: string;
+  readonly alipay_hmac: string | null;
+  readonly bank_card_hmac: string | null;
+}
+
+/** The HMAC that identifies the account of its payout_method (BR-WDR-02 细则; same as payout-account.ts). */
+function accountHmac(row: CurrentRow): string {
+  const hmac = row.payout_method === 'alipay' ? row.alipay_hmac : row.bank_card_hmac;
+  if (hmac === null) throw new Error('identity: payout account row without its HMAC');
+  return hmac;
+}
 
 export interface PayoutAccountInvalidationCommand {
   readonly appId: string;
@@ -34,5 +51,43 @@ export interface PayoutAccountInvalidation {
 }
 
 export function createPayoutAccountInvalidation(): PayoutAccountInvalidation {
-  throw new Error('NotImplemented: createPayoutAccountInvalidation');
+  return {
+    async invalidate(trx, command) {
+      const { appId, userId, operator, now } = command;
+      // The caller holds the users row lock: nobody else writes this user's accounts meanwhile.
+      const current = await trx
+        .withSchema('app')
+        .selectFrom('payout_accounts')
+        .select(['id', 'payout_method', 'alipay_hmac', 'bank_card_hmac', 'row_version'])
+        .where('app_id', '=', appId)
+        .where('user_id', '=', userId)
+        .where('is_current', '=', true)
+        .orderBy('id')
+        .execute();
+      let retired = 0;
+      for (const row of current) {
+        const result = await trx
+          .withSchema('app')
+          .updateTable('payout_accounts')
+          .set({ is_current: false, row_version: row.row_version + 1, updated_at: now })
+          .where('app_id', '=', appId)
+          .where('id', '=', row.id)
+          .where('is_current', '=', true)
+          .where('row_version', '=', row.row_version)
+          .executeTakeFirst();
+        if (result.numUpdatedRows !== 1n) {
+          throw new Error('identity: current payout account changed under the user lock');
+        }
+        const hmac = accountHmac(row);
+        // limit_exempt_reason is not in the generated types until the schema snapshot: plain SQL.
+        await sql`INSERT INTO app.payout_account_changes
+          (app_id, user_id, old_payout_method, new_payout_method, old_hmac, new_hmac, operator,
+           changed_at, created_at, limit_exempt_reason)
+          VALUES (${appId}, ${userId}, ${row.payout_method}, ${row.payout_method}, ${hmac}, '',
+            ${operator}, ${now}, ${now}, ${EXEMPT_REASON})`.execute(trx);
+        retired += 1;
+      }
+      return { retired };
+    },
+  };
 }

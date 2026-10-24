@@ -80,7 +80,10 @@ export type {
   SaveBankCardResult,
 } from './application/payout-account.ts';
 // B2-05j: the realname-correction invalidation of the payout accounts, for admin B1-27g.
-export { createPayoutAccountInvalidation } from './application/payout-account-invalidation.ts';
+export {
+  createPayoutAccountInvalidation,
+  REALNAME_CORRECTION_EXEMPT,
+} from './application/payout-account-invalidation.ts';
 export type {
   PayoutAccountInvalidation,
   PayoutAccountInvalidationCommand,
