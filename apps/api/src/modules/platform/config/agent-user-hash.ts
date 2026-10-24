@@ -9,8 +9,11 @@
 //   cleanup port unavailable and warns).
 import type { AppEnv } from './app-env.ts';
 
-/** The environment variable name (the implementation exports it as AGENT_USER_HASH_KEY_ENV). */
-export type AgentUserHashKeyEnvName = 'AGENT_USER_HASH_KEY';
+/** The environment variable that carries the agent user hash key. */
+export const AGENT_USER_HASH_KEY_ENV = 'AGENT_USER_HASH_KEY';
+
+/** The environment variable name (the value of AGENT_USER_HASH_KEY_ENV). */
+export type AgentUserHashKeyEnvName = typeof AGENT_USER_HASH_KEY_ENV;
 
 export interface AgentUserHashConfigResult {
   readonly agentUserHashKey: string | null;
@@ -21,7 +24,11 @@ export function readAgentUserHashConfig(
   appEnv: AppEnv,
   env: Readonly<Record<string, string | undefined>>,
 ): AgentUserHashConfigResult {
-  void appEnv;
-  void env;
-  throw new Error('NotImplemented: readAgentUserHashConfig');
+  const value = env[AGENT_USER_HASH_KEY_ENV];
+  if (value !== undefined && value.trim() !== '') return { agentUserHashKey: value, problems: [] };
+  if (appEnv !== 'prod') return { agentUserHashKey: null, problems: [] };
+  return {
+    agentUserHashKey: null,
+    problems: [`${AGENT_USER_HASH_KEY_ENV}: must be set when APP_ENV=prod`],
+  };
 }

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { APP_ENVS, type AppEnv } from './app-env.ts';
 import { readAdminAuthConfig, type AdminAuthConfig } from './admin-auth.ts';
 import { readAgentReviewConfig, type AgentReviewConfig } from './agent-review.ts';
+import { readAgentUserHashConfig } from './agent-user-hash.ts';
 import { findCredentialLikeEnvNames } from './credential-env.ts';
 import {
   JWT_ENV_NAMES,
@@ -246,6 +247,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     problems.push(...readPddQueryConfig(env).problems);
     if (appEnv.success)
       problems.push(...readUnionEndpointOverrideConfig(appEnv.data, env).problems);
+    if (appEnv.success) problems.push(...readAgentUserHashConfig(appEnv.data, env).problems);
     throw new ConfigError(problems);
   }
 
@@ -283,6 +285,11 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   violations.push(...overrideProblems);
   const { agentReview, problems: agentReviewProblems } = readAgentReviewConfig(values.APP_ENV, env);
   violations.push(...agentReviewProblems);
+  const { agentUserHashKey, problems: agentUserHashProblems } = readAgentUserHashConfig(
+    values.APP_ENV,
+    env,
+  );
+  violations.push(...agentUserHashProblems);
   if (violations.length > 0) throw new ConfigError(violations);
   const sms = readSmsConfig(values.APP_ENV, env);
 
@@ -313,5 +320,6 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     ...(agentReview === null ? {} : { agentReview }),
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(sms === undefined ? {} : { sms }),
+    agentUserHashKey,
   };
 }

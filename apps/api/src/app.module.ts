@@ -27,6 +27,7 @@ import {
   agentStreamPortsToken,
   agentTraceRetentionDays,
   agentTraceRetentionKey,
+  createAgentDataPurge,
   createPersonalDataCopyAgentReader,
   createProductionStreamAssembly,
   type AgentConsentReaderFactory,
@@ -539,17 +540,18 @@ const deletionBalance = {
  * deletePushTokensForUser (F1-02zzk), linking's blockForDeletion (B1-06zc) and catalog's
  * deleteFavoritesForUser (B1-28f) are shipped; the others are unavailable markers: the rest of the
  * cleanup still commits, but the request stays in processing (cleaned_at NULL) with a daily
- * identity_deletion_cleanup_blocked line until the owner ships and is assembled here.
+ * identity_deletion_cleanup_blocked line until the owner ships and is assembled here. agent's
+ * slot follows the configuration (agentDeletionCleanup).
  */
 const deletionCleanupPorts = {
-  inject: [],
-  useFactory: (): DeletionCleanupPorts => ({
+  inject: [APP_CONFIG, ROOT_LOGGER],
+  useFactory: (config: AppConfig, logger: RootLogger): DeletionCleanupPorts => ({
     linking: blockForDeletion,
     growth: detachChildrenOfDeleted,
     // F1-02zzk: notification deletes the user's push tokens in the app (BR-ID-28, BR-ID-30).
     notification: deletePushTokensForUser,
-    // TODO(规划/11 §2.3): agent purgeAgentDataForUser（B3-09e 已合并）装配 — blocked on AGENT_USER_HASH_KEY 进 platform/config 与 agent/index.ts 导出（B3-09f）
-    agent: { unavailable: 'B3-09f' },
+    // B3-09j (BR-AI-22): agent's purge under AGENT_USER_HASH_KEY; unavailable while it is unset.
+    agent: agentDeletionCleanup(config, logger),
     // B1-28f: every favorite of the user in the app (BR-ID-28).
     catalog: deleteFavoritesForUser,
   }),
@@ -564,9 +566,16 @@ export function agentDeletionCleanup(
   config: AppConfig,
   logger: RootLogger,
 ): DeletionCleanupPorts['agent'] {
-  void config;
-  void logger;
-  throw new Error('NotImplemented: agentDeletionCleanup');
+  const key = config.agentUserHashKey ?? null;
+  if (key !== null && key.trim() !== '') {
+    return createAgentDataPurge({ userHashKey: key }).purgeAgentDataForUser;
+  }
+  // Names the variable only, never a value.
+  logger.warn(
+    { event: 'agent_deletion_cleanup_unavailable' },
+    'AGENT_USER_HASH_KEY is not set: agent data purge on account deletion stays unavailable',
+  );
+  return { unavailable: 'AGENT_USER_HASH_KEY' };
 }
 
 /**

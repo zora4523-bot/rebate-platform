@@ -47,7 +47,7 @@ export type { AgentReviewConfig } from './agent-review.ts';
 export { readSmsConfig } from './sms.ts';
 export type { SmsConfig } from './sms.ts';
 // Agent user hash key (B3-09j, BR-AI-22): HMAC key of agent's deletion purge; prod requires it.
-export { readAgentUserHashConfig } from './agent-user-hash.ts';
+export { AGENT_USER_HASH_KEY_ENV, readAgentUserHashConfig } from './agent-user-hash.ts';
 export type { AgentUserHashConfigResult, AgentUserHashKeyEnvName } from './agent-user-hash.ts';
 // Pinduoduo query identity custom_parameters (B1-04x): optional server setting, not a credential.
 export {
