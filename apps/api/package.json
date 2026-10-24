@@ -17,7 +17,6 @@
     "@nestjs/common": "12.1.0",
     "@nestjs/core": "12.1.0",
     "@nestjs/platform-fastify": "12.1.0",
-    "@prometheus-io/client": "0.16.1",
     "@xmldom/xmldom": "0.9.12",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
