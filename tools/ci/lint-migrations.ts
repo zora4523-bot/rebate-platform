@@ -116,8 +116,9 @@ export const APPROVED_GUARD_CHANGES: Readonly<Record<string, string>> = {
   '0077_deletion-anonymize.sql': 'd933bc024716bc1fcaa2ac7c7c1bfe9537f76d64225e0effff95d37e6a238113',
   // B2-15h (pay lane, orchestrator ruling D10-168 ①): B2-15i's 0081 rebuilds ledger_entries_ledger_type_check
   // (+ PAY_RECEIPT / PAY_REFUND / PAY_ANOMALY / PAY_FEE, BR-PAY-07 pay_ledger_type) and recon_diffs_type_check
-  // (+ pay_mismatch / pay_anomaly, R4) under the same names, NOT VALID then VALIDATE; both only widen.
-  '0081_ledger-type-pay.sql': 'affc680c363578c9cfe9f9388bb4db9f32ff574c2ff73a382e90724d14822ab5',
+  // (+ pay_mismatch / pay_anomaly, R4) under the same names, NOT VALID; 0082 validates them (two-stage,
+  // precedent 0079 / 0080). Both only widen.
+  '0081_ledger-type-pay.sql': 'e0a4df6555607577c01ec7624a30c3d7bef544098783204329ffe8a01705cf2e',
 };
 /** Extensions node-pg-migrate would run from db/migrations besides SQL. */
 const SCRIPT_MIGRATION = /\.(?:js|cjs|mjs|ts|cts|mts|jsx|tsx)$/;
