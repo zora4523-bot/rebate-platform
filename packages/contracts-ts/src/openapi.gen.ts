@@ -1952,6 +1952,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/data-copies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My personal information copies that can be downloaded
+         * @description The personal information copies (个人信息副本, BR-ID-40) of the current account that the
+         *     App page `DataCopy` can download (BR-ID-40 细则「在 App 内下载」; 04 §6.1): only requests
+         *     of the caller's own account with delivery `in_app_sms`, status `ready` or `delivered` and
+         *     `expires_at` not yet passed, newest generated first. A request delivered through the WeCom
+         *     (企业微信) conversation (`wecom_session`) is never listed here. Items carry no download
+         *     link and no extraction code (提取码): the link is signed only when the user taps download
+         *     (GET /v1/me/data-copies/{id}/download) and the extraction code only goes by SMS to the
+         *     bound phone number. An account without such a copy gets `items=[]`. At most a few items
+         *     (one unfinished request per user, files expire 24 hours after generation, BR-ID-30 ⑨),
+         *     so there is no paging.
+         *     In the 10006 whitelist (BR-ID-31): a banned user, or one appealing a ban, can call it;
+         *     the ban notice page (`RiskNotice`) shows its copy entry only when this list is not empty.
+         *     Usable during the deletion cooling period (BR-ID-27); once the account's deletion is
+         *     processing or done, the unfinished requests are cancelled and the files deleted
+         *     (BR-ID-40 细则「副本请求与注销状态」), so the list is empty. Session scopes: accepts
+         *     deletion_only (BR-ID-01 细则「受限会话」, personal information rights do not depend on the
+         *     client version). Version gate: none (GET). Reading writes no audit record.
+         */
+        get: operations["listMyDataCopies"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/data-copies/{id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a short-lived signed link to one of my personal information copies
+         * @description Signs a new short-lived link to the encrypted file of one copy that GET
+         *     /v1/me/data-copies lists (BR-ID-40 细则「在 App 内下载」; the same download rule as the
+         *     console's exports: every call is authorized again and signs a new link, no long-lived
+         *     link is issued). The link `url` is valid until `url_expires_at` = min(5 minutes from now,
+         *     the copy's `expires_at`). The extraction code (提取码) that opens the file is never
+         *     returned: it only goes by SMS to the bound phone number.
+         *     An unknown id, a copy of another account or another app, a copy delivered through the
+         *     WeCom conversation (`wecom_session`), one not in status `ready` or `delivered`, and one
+         *     whose `expires_at` has passed are all 30701, without telling which (04 §6.1). Once the
+         *     account's deletion is processing or done the files are deleted and every id is 30701.
+         *     In the 10006 whitelist (BR-ID-31) and usable during the deletion cooling period, as the
+         *     list. Not subject to 10405: session scopes accept deletion_only (BR-ID-01 细则「受限会话」)
+         *     and there is no version gate (GET). The response carries `Cache-Control: no-store`.
+         */
+        get: operations["getMyDataCopyDownload"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/appeals": {
         parameters: {
             query?: never;
@@ -4065,6 +4133,200 @@ export interface paths {
          *     now, phone number masked. No compare-and-set value and no Idempotency-Key (04 §6.6).
          */
         patch: operations["adminEditUserProfile"];
+        trace?: never;
+    };
+    "/admin/v1/users/{user_id}/realname-correction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct a user's real-name data (name and ID number) on the user's behalf (audited)
+         * @description Permission point `user.realname_fix` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier (without a valid totp-tier
+         *     `X-Step-Up-Token` → 10003 with `data.tier=totp`). The user contacts customer service in a
+         *     WeCom (企业微信) conversation; the agent checks the user's identity there by hand (no
+         *     system verification flow, 2026-10-05) and submits the corrected `name` and `id_no`
+         *     (18-digit resident ID number) with `reason` (1–200 characters: what was checked in the
+         *     WeCom conversation). Rules: BR-ID-25 细则「实名更正」.
+         *     Body checks first: a missing or over-long field is 20001 with `data.fields` naming it. An
+         *     unknown `user_id`, or one of another app, is 20001 with `data.fields=[user_id]`.
+         *     Not accepted (judged before the checks below, no vendor call), first hit wins, each 30419
+         *     (08 §13.11; only in /admin/v1) with `data.reason`: the user's realname_status is not
+         *     verified (`realname_not_verified`; a user who never verified does it in the App); the
+         *     account is in the deletion flow (BR-ID-27; also refused in the cooling period): cooling or
+         *     processing is `account_deleting` with `data.stage` (the values of 10007's `data.stage`),
+         *     done is `account_deleted` without `data.stage`; the user has any withdrawal outside the
+         *     terminal set of BR-WDR-08 (`withdrawal_in_progress`; finance brings it to a terminal state
+         *     first); the account carries the "pending re-verification" flag (`reverify_pending`;
+         *     BR-WDR-01 细则「旧手机号被二次放号时的提现加验」; cleared by hand first); the id_no_hmac of
+         *     the current real name is blacklisted (`identity_blacklisted`; BR-ID-31 ID-number
+         *     dimension; passed to risk control).
+         *     Then the same order as the user's own real-name verification (POST /v1/me/realname):
+         *     20001 format of `id_no` (18 digits and check digit, `data.fields=[id_no]`) → 44001 the new
+         *     ID number is blacklisted (a console-side refusal: no risk_hits record, not an appealable
+         *     blocked request, BR-ID-36) → 30407 age (BR-ID-26) → 30405 the new id_no_hmac is verified
+         *     on another account of this app (the user's own current value does not count; that
+         *     account is never revealed) → vendor two-element verification: a mismatch is 30406 and
+         *     leaves the stored real name as it was; vendor timeout or error is 50401 / 50301 and saves
+         *     nothing. Attempts are not counted against the user's 3 per day (no 30410 here).
+         *     On a match, in one transaction that locks the user row (the same user-level lock as a
+         *     withdrawal application): withdrawals are checked again and a new non-terminal one refuses
+         *     the correction as above (30419 with `data.reason=withdrawal_in_progress`); when the old identity has a paid-out
+         *     withdrawal (PAID_API / PAID_MANUAL), the old name and ID ciphertexts, id_no_hmac and
+         *     verified_at move to the isolated store first (BR-ID-25 细则「旧身份留存」; viewing it
+         *     comes with a later contract); then the realname row's name and ID ciphertexts,
+         *     id_no_hmac, birth_date, provider and verified_at are overwritten, every bound payout
+         *     account of the user is invalidated (written to payout_account_changes; this invalidation
+         *     and the first rebinding after it are not counted in the user's monthly changes), and the
+         *     domain event `user.realname_corrected` (old and new id_no_hmac, never plaintext) is
+         *     queued in the same transaction (规划/02 §11). Minor rules follow the new birth_date.
+         *     Audit: every submission that passes the permission, step-up and body checks writes one
+         *     audit record (action user_realname_correct: admin, reason, result code, the new values
+         *     masked or their id_no_hmac, never the plaintext), refusals included; a success also
+         *     records the masked before and after values (BR-ID-33). The name and the ID number never
+         *     go into logs. The response is the user's real name as it is now, masked. No
+         *     Idempotency-Key (04 §6.6): a retry after a lost response is a new submission with its
+         *     own checks, vendor call and audit record.
+         */
+        post: operations["adminCorrectUserRealname"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{user_id}/data-exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The personal information copy requests of one user
+         * @description Permission point `user.data_export` (04 §11.2; read only, no step-up); lacking it is
+         *     10403 with `data.reason=admin_permission_denied`. Every request of the user, whoever
+         *     registered it, newest first (`created_at` descending, then the server's internal order
+         *     for the same time), page by page (`page`, `page_size` ≤ 200, above that 20001). Each row
+         *     has the status, the delivery, `due_at`, `expires_at` and `retry_of`, never a link, an
+         *     extraction code or a password (04 §6.6). An unknown `user_id`, or one of another app, is
+         *     20001 with `data.fields=[user_id]`. Status names come from the console dictionary
+         *     (BR-TEXT-25 admin_dict), not from this contract. Listing does not write an audit record.
+         */
+        get: operations["adminListUserDataExports"];
+        put?: never;
+        /**
+         * Register a request for a user's personal information copy (audited, asynchronous)
+         * @description Permission point `user.data_export` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier (without a valid totp-tier
+         *     `X-Step-Up-Token` → 10003 with `data.tier=totp`). The user asks for a copy of their
+         *     personal information in a WeCom (企业微信) conversation; the agent checks the identity
+         *     there by hand and registers the request here (BR-ID-40; 04 §6.6 users/{id}/data-exports).
+         *     Body (20001 with `data.fields` naming a missing or invalid field): `reason` (1–200
+         *     characters, including the agent's written conclusion of the identity check) and the two
+         *     channel facts the agent confirmed in the conversation, `app_login_ok` (the user can sign
+         *     in to the App) and `phone_sms_ok` (the bound phone number can receive SMS). An unknown
+         *     `user_id`, or one of another app, is 20001 with `data.fields=[user_id]`.
+         *     Then, first hit wins:
+         *     1. Account state (BR-ID-40 细则「副本请求与注销状态」): an account whose deletion is
+         *        processing is not accepted (30419 with `data.reason=account_deleting` and
+         *        `data.stage=processing`), nor one whose deletion is done (30419 with
+         *        `data.reason=account_deleted`, no `data.stage`); the cooling period is accepted as
+         *        usual.
+         *     2. An unfinished request of the user (pending, running or ready; at most one) is returned
+         *        instead of creating one, with `reused=true`; the channel facts of this call are not
+         *        judged. Exception (BR-ID-40 细则「重新登记与登记人停用」): a `wecom_session` request
+         *        not yet delivered whose registrant's admin account is disabled, or who no longer
+         *        holds both `user.data_export` and `pii.reveal_phone`, is set to failed now and a new
+         *        request is created as in the next point.
+         *     3. Delivery from the channel facts: both true → `in_app_sms`, which also needs a bound
+         *        phone number (else 20001 with `data.fields=[phone_sms_ok]`); both false →
+         *        `wecom_session` (the `reason` must say why the in-app message and the phone cannot be
+         *        used), which needs the caller to hold `pii.reveal_phone` as well (else 10403 with
+         *        `data.reason=admin_permission_denied`; the registrant is the only one who can
+         *        download it); only one true → not accepted, pending legal confirmation (30419 with
+         *        `data.reason=delivery_undecided`; BR-ID-40, 规划/06 Q-F17).
+         *     30419 is 08 §13.11's code for an assisted request the user is not accepted for now (only
+         *     in /admin/v1).
+         *     A new request starts in pending (`reused=false`). `due_at` is the end (24:00 +08:00) of
+         *     the 15th working day after the registration day (the registration day itself not counted; working days as in BR-ID-27); when the user's latest
+         *     request is failed, or a `wecom_session` one that expired without being delivered, the
+         *     new request records it in `retry_of` and keeps its `due_at` (the time limit counts from
+         *     the first registration). The copy is generated asynchronously (scope in BR-ID-40 细则
+         *     「导出范围」) into a private object-storage bucket; `expires_at` is 24 hours after
+         *     generation (BR-ID-30 ⑨). `in_app_sms`: the file is encrypted with a one-time extraction
+         *     code, an in-app message carries only an entry to the App page `DataCopy` (no link), the
+         *     code goes by SMS to the bound phone number and the request is delivered at once; the
+         *     user downloads through GET /v1/me/data-copies/{id}/download. `wecom_session`: the
+         *     request stays ready until the registrant downloads it (POST
+         *     /admin/v1/users/{user_id}/data-exports/{export_id}/download). The template codes of the
+         *     in-app message and the SMS are fixed with the implementation; the wording waits for
+         *     BR-TEXT.
+         *     Audit (BR-ID-40): every registration that passes the permission, step-up and body checks
+         *     writes one audit record (action user_data_copy_request: admin, user, reason, the two
+         *     channel facts, the result — created, reused with the returned request's id, or the
+         *     refusal code); generating and delivering write their own records. No Idempotency-Key
+         *     (04 §6.6): a retry returns the unfinished request with `reused=true`.
+         */
+        post: operations["adminCreateUserDataExport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{user_id}/data-exports/{export_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get the file of a WeCom-delivered personal information copy (registrant only, audited)
+         * @description Only for requests with delivery `wecom_session` (BR-ID-40 细则「企业微信会话交付的下载」;
+         *     04 §6.6): the copy holds the full phone number and the Agent conversations, so the caller
+         *     must hold both `user.data_export` and `pii.reveal_phone` (04 §11.2; lacking either is
+         *     10403 with `data.reason=admin_permission_denied`) and every call needs a valid totp-tier
+         *     `X-Step-Up-Token` (else 10003 with `data.tier=totp`). Only the registrant
+         *     (`requested_by`) can download, even a super admin cannot download another account's
+         *     request: an unknown `export_id`, a request of another user or another app, an
+         *     `in_app_sms` request and another account's request are all 20001 with
+         *     `data.fields=[export_id]`. An unknown `user_id` is 20001 with `data.fields=[user_id]`.
+         *     Only a request in status `ready` or `delivered` whose `expires_at` has not passed can be
+         *     downloaded; any other status (pending, running, failed, expired, cancelled; one past
+         *     `expires_at` answers expired even before the server has set the status) is 30417 with
+         *     `data.status` (the request's status, personal_data_copy_status; 08 §13.11 widened 30417 to
+         *     personal information copies, only in /admin/v1).
+         *     The first call (status ready, judged under a lock on the request row) generates a
+         *     one-time password, encrypts the delivery file with it and returns the password in
+         *     `password`, only in this response (never stored, never in logs or audit); the request
+         *     becomes delivered (an audit record of the delivery). Later calls sign a new link to the
+         *     same file with `password=null`. `regenerate: true` re-encrypts a new file with a new
+         *     password (returned in this response) and voids the previous file; `due_at` and
+         *     `expires_at` do not change, and after `expires_at` nothing can be regenerated (30417 with
+         *     `data.status=expired`, BR-ID-40 细则). Send the file and the password to the user in the WeCom conversation in separate
+         *     messages.
+         *     Every call is authorized again and signs a new link (as GET /admin/v1/exports/{id}/download);
+         *     `url` is valid until `url_expires_at` = min(5 minutes from now, the request's
+         *     `expires_at`). Every call that returns a link writes its own audit record (action
+         *     user_data_copy_download: admin, user, request id, regenerate; never the link or the
+         *     password) before the response is sent. The response carries `Cache-Control: no-store`.
+         *     No Idempotency-Key (04 §6.6): a retry after a lost first response gets `password=null`,
+         *     and the registrant then calls again with `regenerate: true`.
+         */
+        post: operations["adminDownloadUserDataExport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/admin/v1/orders": {
@@ -8414,6 +8676,52 @@ export interface components {
             cancel_reason: components["schemas"]["DeletionCancelReason"] | null;
             /** Format: date-time */
             processed_at: string | null;
+        };
+        /** @description One downloadable personal information copy of mine (no link, no extraction code). */
+        DataCopyItem: {
+            copy_id: components["schemas"]["Id"];
+            /**
+             * @description contracts/enums/identity.yaml personal_data_copy_status; only ready or delivered are listed.
+             * @enum {string}
+             */
+            status: "ready" | "delivered";
+            /**
+             * Format: date-time
+             * @description Time the copy was generated.
+             */
+            generated_at: string;
+            /**
+             * Format: date-time
+             * @description End of the download period (24 hours after generation, BR-ID-30 ⑨).
+             */
+            expires_at: string;
+        };
+        DataCopyList: {
+            items: components["schemas"]["DataCopyItem"][];
+        };
+        DataCopyListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["DataCopyList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        DataCopyDownload: {
+            /**
+             * Format: uri
+             * @description Signed link to the encrypted file; valid until url_expires_at. Opened with the extraction code from the SMS.
+             */
+            url: string;
+            /**
+             * Format: date-time
+             * @description min(5 minutes after signing, the copy's expires_at).
+             */
+            url_expires_at: string;
+        };
+        DataCopyDownloadResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["DataCopyDownload"];
+            trace_id: components["schemas"]["TraceId"];
         };
         DeletionResponse: {
             code: components["schemas"]["SuccessCode"];
@@ -12890,6 +13198,218 @@ export interface components {
             inviter_user_id: components["schemas"]["Id"] | null;
             reason: components["schemas"]["AdminUserReason"];
         };
+        /** @description Corrected real-name data submitted by customer service (BR-ID-25 细则「实名更正」). */
+        AdminRealnameCorrectionRequest: {
+            /** @description Corrected real name as typed; normalised by the server. Never logged or audited in plaintext. */
+            name: string;
+            /**
+             * @description Corrected 18-digit resident ID number as typed. No pattern here: length and check
+             *     digit are judged by the server (20001 data.fields=[id_no]) after the not-accepted
+             *     checks. Never logged or audited in plaintext.
+             */
+            id_no: string;
+            reason: components["schemas"]["AdminUserReason"];
+        };
+        /** @description A user's real name, masked by the server (BR-ID-33). */
+        AdminUserRealname: {
+            user_id: components["schemas"]["Id"];
+            /**
+             * @description contracts/enums/identity.yaml realname_status; always verified after a correction.
+             * @enum {string}
+             */
+            realname_status: "verified";
+            /** @description Name with only the last character kept (`**三`, BR-ID-33). */
+            masked_name: string;
+            /** @description ID number with only the first and the last character kept (`1****************X`, BR-ID-33). */
+            masked_id_no: string;
+            /**
+             * Format: date-time
+             * @description Time of the vendor verification that the stored real name is based on.
+             */
+            verified_at: string;
+        };
+        AdminUserRealnameResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUserRealname"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description How a personal information copy is delivered (enum personal_data_copy_delivery,
+         *     BR-ID-40): in_app_sms (an in-app entry to the App page DataCopy plus the extraction code
+         *     by SMS) or wecom_session (the registrant sends the file and its password in the WeCom
+         *     conversation).
+         * @enum {string}
+         */
+        PersonalDataCopyDelivery: "in_app_sms" | "wecom_session";
+        /**
+         * @description Status of a personal information copy request (enum personal_data_copy_status,
+         *     BR-ID-40); pending, running and ready are unfinished (at most one per user).
+         * @enum {string}
+         */
+        PersonalDataCopyStatus: "pending" | "running" | "ready" | "delivered" | "failed" | "expired" | "cancelled";
+        /**
+         * @description Registration of a personal information copy request (04 §6.6 users/{id}/data-exports).
+         *     The two channel facts decide the delivery: both true → in_app_sms, both false →
+         *     wecom_session, only one true → not accepted (pending legal confirmation, BR-ID-40).
+         */
+        AdminUserDataExportCreateRequest: {
+            reason: components["schemas"]["AdminUserReason"];
+            /** @description The agent confirmed in the conversation that the user can sign in to the App. */
+            app_login_ok: boolean;
+            /** @description The agent confirmed in the conversation that the bound phone number can receive SMS. */
+            phone_sms_ok: boolean;
+        };
+        /**
+         * @description A personal information copy request (04 §3.2 personal_data_copies). Never carries a
+         *     link, an extraction code or a password. Fields that only apply to some statuses are null
+         *     otherwise.
+         */
+        AdminUserDataExport: {
+            export_id: components["schemas"]["Id"];
+            user_id: components["schemas"]["Id"];
+            delivery: components["schemas"]["PersonalDataCopyDelivery"];
+            status: components["schemas"]["PersonalDataCopyStatus"];
+            requested_by: components["schemas"]["Id"];
+            /** @description Current name of the registrant (admin_users.display_name, else the username); null when it cannot be read. */
+            requested_by_name?: string | null;
+            /**
+             * Format: date-time
+             * @description Time the request was registered.
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description Deadline: the end of the 15th working day from the first registration (BR-ID-40 细则
+             *     「截止时刻」); a request with retry_of keeps the deadline of the one it replaces.
+             */
+            due_at: string;
+            /** @description The failed (or undelivered expired wecom_session) request this one replaces; null otherwise. */
+            retry_of: components["schemas"]["Id"] | null;
+            /**
+             * Format: date-time
+             * @description Time the file was generated; null before.
+             */
+            generated_at: string | null;
+            /**
+             * Format: date-time
+             * @description Time of delivery (in_app_sms: the extraction code SMS was sent; wecom_session: the
+             *     registrant's first download); null before.
+             */
+            delivered_at: string | null;
+            /**
+             * Format: date-time
+             * @description 24 hours after generation (BR-ID-30 ⑨); null before the file is generated.
+             */
+            expires_at: string | null;
+            /** @description Short reason written by the server when failed; null otherwise. */
+            failure_reason: string | null;
+        };
+        /** @description The registered request (AdminUserDataExport) plus `reused`. */
+        AdminUserDataExportCreateResult: {
+            export_id: components["schemas"]["Id"];
+            user_id: components["schemas"]["Id"];
+            delivery: components["schemas"]["PersonalDataCopyDelivery"];
+            status: components["schemas"]["PersonalDataCopyStatus"];
+            requested_by: components["schemas"]["Id"];
+            /** @description Current name of the registrant; null when it cannot be read. */
+            requested_by_name?: string | null;
+            /**
+             * Format: date-time
+             * @description Time the request was registered.
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description Deadline, as in AdminUserDataExport.
+             */
+            due_at: string;
+            /** @description The request this one replaces; null otherwise. */
+            retry_of: components["schemas"]["Id"] | null;
+            /**
+             * Format: date-time
+             * @description Time the file was generated; null before.
+             */
+            generated_at: string | null;
+            /**
+             * Format: date-time
+             * @description Time of delivery; null before.
+             */
+            delivered_at: string | null;
+            /**
+             * Format: date-time
+             * @description 24 hours after generation; null before.
+             */
+            expires_at: string | null;
+            /** @description Short reason when failed; null otherwise. */
+            failure_reason: string | null;
+            /** @description true = the user's unfinished request was returned and nothing was created. */
+            reused: boolean;
+        };
+        AdminUserDataExportCreateResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUserDataExportCreateResult"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminUserDataExportPage: {
+            items: components["schemas"]["AdminUserDataExport"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminUserDataExportPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUserDataExportPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Body of a wecom_session download; empty for an ordinary download. */
+        AdminUserDataExportDownloadRequest: {
+            /**
+             * @description true = re-encrypt a new file with a new password and void the previous file
+             *     (the password was lost); due_at and expires_at do not change.
+             * @default false
+             */
+            regenerate?: boolean;
+        };
+        AdminUserDataExportDownload: {
+            /**
+             * Format: uri
+             * @description Signed link to the encrypted file in the private bucket; valid until url_expires_at.
+             */
+            url: string;
+            /**
+             * Format: date-time
+             * @description min(5 minutes after signing, the request's expires_at).
+             */
+            url_expires_at: string;
+            /**
+             * @description One-time password of the file, only when this call generated it (the first download,
+             *     or regenerate=true); null otherwise. Never stored; tell it to the user separately
+             *     from the file.
+             */
+            password: string | null;
+            /**
+             * @description contracts/enums/identity.yaml personal_data_copy_status; always delivered after a download.
+             * @enum {string}
+             */
+            status: "delivered";
+            /**
+             * Format: date-time
+             * @description End of the download period of the request (24 hours after generation).
+             */
+            expires_at: string;
+        };
+        AdminUserDataExportDownloadResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUserDataExportDownload"];
+            trace_id: components["schemas"]["TraceId"];
+        };
         /**
          * @description Body of PATCH /admin/v1/users/{user_id}/profile (BR-ID-06 细则「客服代办换号」, BR-ID-39
          *     细则「后台改昵称」): `reason` and at least one of `phone` and `nickname`.
@@ -14604,6 +15124,12 @@ export interface components {
          *     data.fields=[id].
          */
         AdminExportIdPath: components["schemas"]["AdminExportId"];
+        /**
+         * @description export_id of a personal information copy request of the user in the path, as GET
+         *     /admin/v1/users/{user_id}/data-exports lists it; unknown, of another user or app, an
+         *     in_app_sms request, or registered by another account → 20001 with data.fields=[export_id].
+         */
+        AdminDataExportIdPath: components["schemas"]["Id"];
         /**
          * @description Platform of the user's union binding (enum platform). Only platforms with user
          *     authorization have bindings (BR-ID-17); another platform, such as jd, → 20001 with
@@ -19381,6 +19907,117 @@ export interface operations {
             "5XX": components["responses"]["ServerError"];
         };
     };
+    listMyDataCopies: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description My downloadable copies, newest generated first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "copy_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01",
+                     *             "status": "delivered",
+                     *             "generated_at": "2026-11-03T10:20:00+08:00",
+                     *             "expires_at": "2026-11-04T10:20:00+08:00"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["DataCopyListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getMyDataCopyDownload: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                /** @description copy_id from GET /v1/me/data-copies. */
+                id: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A freshly signed link to the encrypted copy. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    /** @description Always no-store; the signed link is not cached by any proxy or the client. */
+                    "Cache-Control": "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "url": "https://exports.example.com/copies/0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01.zip?expires=1762137900&sig=demo",
+                     *         "url_expires_at": "2026-11-03T10:45:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["DataCopyDownloadResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
     listAppeals: {
         parameters: {
             query?: {
@@ -23883,6 +24520,310 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not saved (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminCorrectUserRealname: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "张三",
+                 *       "id_no": "11010519491231002X",
+                 *       "reason": "用户先用家人身份实名，企业微信核对注册手机号、最近一笔订单号与身份证照片后改为本人"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminRealnameCorrectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Corrected; the user's real name as it is now, masked. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *         "realname_status": "verified",
+                     *         "masked_name": "**三",
+                     *         "masked_id_no": "1****************X",
+                     *         "verified_at": "2026-11-03T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserRealnameResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not corrected (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListUserDataExports: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of the user's requests, newest first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "export_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d02",
+                     *             "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *             "delivery": "wecom_session",
+                     *             "status": "ready",
+                     *             "requested_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b02",
+                     *             "requested_by_name": "cs02",
+                     *             "created_at": "2026-11-05T15:00:00+08:00",
+                     *             "due_at": "2026-11-24T00:00:00+08:00",
+                     *             "retry_of": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01",
+                     *             "generated_at": "2026-11-05T15:03:00+08:00",
+                     *             "delivered_at": null,
+                     *             "expires_at": "2026-11-06T15:03:00+08:00",
+                     *             "failure_reason": null
+                     *           },
+                     *           {
+                     *             "export_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01",
+                     *             "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *             "delivery": "wecom_session",
+                     *             "status": "failed",
+                     *             "requested_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *             "requested_by_name": "cs01",
+                     *             "created_at": "2026-11-02T10:00:00+08:00",
+                     *             "due_at": "2026-11-24T00:00:00+08:00",
+                     *             "retry_of": null,
+                     *             "generated_at": "2026-11-02T10:04:00+08:00",
+                     *             "delivered_at": null,
+                     *             "expires_at": "2026-11-03T10:04:00+08:00",
+                     *             "failure_reason": "登记人的后台账号已停用"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserDataExportPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminCreateUserDataExport: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserDataExportCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description The new request (pending), or the user's unfinished one (`reused=true`). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "export_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01",
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *         "delivery": "in_app_sms",
+                     *         "status": "pending",
+                     *         "requested_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *         "requested_by_name": "cs01",
+                     *         "created_at": "2026-11-02T10:00:00+08:00",
+                     *         "due_at": "2026-11-24T00:00:00+08:00",
+                     *         "retry_of": null,
+                     *         "generated_at": null,
+                     *         "delivered_at": null,
+                     *         "expires_at": null,
+                     *         "failure_reason": null,
+                     *         "reused": false
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserDataExportCreateResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description No request registered (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminDownloadUserDataExport: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+                /**
+                 * @description export_id of a personal information copy request of the user in the path, as GET
+                 *     /admin/v1/users/{user_id}/data-exports lists it; unknown, of another user or app, an
+                 *     in_app_sms request, or registered by another account → 20001 with data.fields=[export_id].
+                 */
+                export_id: components["parameters"]["AdminDataExportIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserDataExportDownloadRequest"];
+            };
+        };
+        responses: {
+            /** @description A freshly signed link, and the password when one was generated by this call. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    /** @description Always no-store; the signed link and the password are not cached by any proxy or the browser. */
+                    "Cache-Control": "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "url": "https://exports.example.com/copies/0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d02.zip?expires=1762326480&sig=demo",
+                     *         "url_expires_at": "2026-11-05T15:13:00+08:00",
+                     *         "password": "example-one-time-password",
+                     *         "status": "delivered",
+                     *         "expires_at": "2026-11-06T15:03:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserDataExportDownloadResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description No link (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

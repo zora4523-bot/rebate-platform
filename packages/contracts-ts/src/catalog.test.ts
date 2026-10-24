@@ -153,7 +153,7 @@ it('identity codes of 08 §13.11 (功能对照补缺 1–3 批) carry their data
     'target_deleting',
     'target_deleted',
   ]);
-  expect(errorCodes[30701].sources).toEqual(['规划/04 §7', 'BR-ID-10']);
+  expect(errorCodes[30701].sources).toEqual(['规划/04 §7', 'BR-ID-10', 'BR-ID-40']);
 });
 
 it('order enums carry the 资金规则对齐 additions (04 §2.3)', () => {

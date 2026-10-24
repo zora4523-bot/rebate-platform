@@ -1092,6 +1092,31 @@ export const invite_reward_bind_source = [
 export type InviteRewardBindSource = (typeof invite_reward_bind_source)[number];
 
 /**
+ * personal_data_copies.delivery，个人信息副本的交付方式；登记时由两项通道情况判定（app_login_ok 与 phone_sms_ok 都为真 → in_app_sms，都为假 → wecom_session，只有一项为真时待法务确认、不受理）
+ * Source: 规划/04 §3.2 personal_data_copies、§6.6 users/{id}/data-exports；BR-ID-40 细则（CT-24q） (contracts/enums/identity.yaml).
+ */
+export const personal_data_copy_delivery = [
+  "in_app_sms", // 站内信与短信：站内信只带进入 App 内副本页（路由 DataCopy）的入口、不带链接，提取码短信发到绑定手机号，用户经 GET /v1/me/data-copies/{id}/download 下载
+  "wecom_session", // 企业微信会话：登记人经 POST /admin/v1/users/{user_id}/data-exports/{export_id}/download 取文件与一次性口令，在企业微信会话里发给用户，口令另行告知
+] as const;
+export type PersonalDataCopyDelivery = (typeof personal_data_copy_delivery)[number];
+
+/**
+ * personal_data_copies.status；未结束的是 pending、running、ready（同一用户同时最多 1 条）；迁移 pending→running→ready（文件已生成）→delivered（in_app_sms 发出提取码短信时，wecom_session 登记人第一次下载时）；生成失败或登记人失去下载权限（后台账号停用，或重新登记时发现已不同时持 user.data_export 与 pii.reveal_phone）且未交付→failed；文件生成后 24 小时→expired；账号进入注销 processing 时未结束的→cancelled
+ * Source: 规划/04 §3.2 personal_data_copies；BR-ID-40 细则、BR-ID-30 ⑨（CT-24q） (contracts/enums/identity.yaml).
+ */
+export const personal_data_copy_status = [
+  "pending", // 已登记，等待生成
+  "running", // 生成中
+  "ready", // 文件已生成，尚未交付
+  "delivered", // 已交付（文件在 expires_at 前仍可下载）
+  "failed", // 失败（重新登记的新请求记 retry_of 并沿用截止时刻）
+  "expired", // 已过期（生成后 24 小时，文件已删除）
+  "cancelled", // 已取消（账号进入注销处理，文件一并删除）
+] as const;
+export type PersonalDataCopyStatus = (typeof personal_data_copy_status)[number];
+
+/**
  * 消息模板编码；UNION_AUTH_EXPIRING、UNION_AUTH_EXPIRED 只发站长手机号，不属于用户通知分类
  * Source: 规划/04 §2.5；BR-TEXT-09、BR-TEXT-20 (contracts/enums/ops.yaml).
  */
@@ -2008,6 +2033,8 @@ export const enums = {
   invite_reward_skip_reason,
   invite_reward_void_reason,
   invite_reward_bind_source,
+  personal_data_copy_delivery,
+  personal_data_copy_status,
   notify_template_code,
   notify_category,
   user_level,

@@ -348,6 +348,16 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/me/data-copies",
+    "auth": "login"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/me/data-copies/:id/download",
+    "auth": "login"
+  },
+  {
+    "method": "GET",
     "path": "/v1/me/appeals",
     "auth": "login"
   },
@@ -664,6 +674,26 @@ export const CONTRACT_AUTH_ROUTES = [
   {
     "method": "PATCH",
     "path": "/admin/v1/users/:user_id/profile",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/realname-correction",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/users/:user_id/data-exports",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/data-exports",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/data-exports/:export_id/download",
     "auth": "admin"
   },
   {

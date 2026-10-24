@@ -127,6 +127,8 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminBlockedRequestCause: 'blocked_request_cause',
   AdminBlocklistDimension: 'blocklist_dimension',
   AdminRiskHitRefType: 'risk_hit_ref_type',
+  PersonalDataCopyDelivery: 'personal_data_copy_delivery',
+  PersonalDataCopyStatus: 'personal_data_copy_status',
 };
 
 /**
@@ -195,6 +197,9 @@ export const DELETION_ONLY_SCOPE: Readonly<Record<string, 'always' | 'conditiona
   'GET /v1/dict': 'always',
   'GET /v1/me': 'always',
   'GET /v1/wallet/summary': 'always',
+  // Personal information copies (BR-ID-40 细则「在 App 内下载」; D10-181 ⑦, D10-185 ⑥; CT-24q).
+  'GET /v1/me/data-copies': 'always',
+  'GET /v1/me/data-copies/{id}/download': 'always',
 };
 
 /**
@@ -260,6 +265,9 @@ export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
   AdminAppealPrevRiskState: 'risk_state',
   AdminAppealDecision: 'appeal_status',
   AdminAppealRevokePermission: 'admin_permission',
+  // The App lists only downloadable copies; a download always leaves the request delivered (CT-24q).
+  'DataCopyItem/properties/status': 'personal_data_copy_status',
+  'AdminUserDataExportDownload/properties/status': 'personal_data_copy_status',
 };
 
 function isObj(v: unknown): v is Obj {

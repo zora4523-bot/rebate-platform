@@ -348,6 +348,16 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/me/data-copies",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/v1/me/data-copies/:id/download",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/v1/me/appeals",
     "signed": false
   },
@@ -664,6 +674,26 @@ export const CONTRACT_SIGNING_ROUTES = [
   {
     "method": "PATCH",
     "path": "/admin/v1/users/:user_id/profile",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/realname-correction",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/users/:user_id/data-exports",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/data-exports",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/data-exports/:export_id/download",
     "signed": false
   },
   {
