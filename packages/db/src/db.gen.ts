@@ -1346,6 +1346,25 @@ export interface PayRefunds {
   target_type: string;
 }
 
+export interface PersonalDataCopies {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  delivered_at: Timestamp | null;
+  delivery: string;
+  due_at: Timestamp;
+  expires_at: Timestamp | null;
+  failure_reason: string | null;
+  generated_at: Timestamp | null;
+  id: string;
+  object_key: string | null;
+  requested_by: string;
+  retry_of: string | null;
+  row_version: Generated<number>;
+  status: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface PlatformIcons {
   app_id: string;
   current_version: number | null;
@@ -1479,6 +1498,17 @@ export interface Realname {
   updated_at: Generated<Timestamp>;
   user_id: string;
   verified_at: Timestamp | null;
+}
+
+export interface RealnamePriorIdentities {
+  app_id: string;
+  corrected_at: Timestamp;
+  created_at: Generated<Timestamp>;
+  id_no_cipher: Buffer;
+  id_no_hmac: string;
+  name_cipher: Buffer;
+  user_id: string;
+  verified_at: Timestamp;
 }
 
 export interface ReconDiffs {
@@ -2067,6 +2097,7 @@ export interface DB {
   payout_account_changes: PayoutAccountChanges;
   payout_account_verify_attempts: PayoutAccountVerifyAttempts;
   payout_accounts: PayoutAccounts;
+  personal_data_copies: PersonalDataCopies;
   platform_icon_uploads: PlatformIconUploads;
   platform_icon_versions: PlatformIconVersions;
   platform_icons: PlatformIcons;
@@ -2077,6 +2108,7 @@ export interface DB {
   product_refs: ProductRefs;
   push_tokens: PushTokens;
   realname: Realname;
+  realname_prior_identities: RealnamePriorIdentities;
   recon_diffs: ReconDiffs;
   recon_union: ReconUnion;
   refresh_tokens: RefreshTokens;

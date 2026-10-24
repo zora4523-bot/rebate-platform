@@ -3910,6 +3910,35 @@ CREATE TABLE app.payout_accounts (
 
 
 --
+-- Name: personal_data_copies; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.personal_data_copies (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    requested_by uuid NOT NULL,
+    delivery text NOT NULL,
+    status text NOT NULL,
+    retry_of uuid,
+    object_key text,
+    due_at timestamp with time zone NOT NULL,
+    generated_at timestamp with time zone,
+    delivered_at timestamp with time zone,
+    expires_at timestamp with time zone,
+    failure_reason text,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT personal_data_copies_delivery_check CHECK ((delivery = ANY (ARRAY['in_app_sms'::text, 'wecom_session'::text]))),
+    CONSTRAINT personal_data_copies_failure_reason_check CHECK (((failure_reason IS NULL) OR (failure_reason ~ '[^[:space:]]'::text))),
+    CONSTRAINT personal_data_copies_object_key_check CHECK (((object_key IS NULL) OR (object_key ~ '[^[:space:]]'::text))),
+    CONSTRAINT personal_data_copies_row_version_check CHECK ((row_version >= 0)),
+    CONSTRAINT personal_data_copies_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'ready'::text, 'delivered'::text, 'failed'::text, 'expired'::text, 'cancelled'::text])))
+);
+
+
+--
 -- Name: platform_icon_uploads; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4172,6 +4201,23 @@ CREATE TABLE app.realname (
     CONSTRAINT realname_status_check CHECK ((status = ANY (ARRAY['none'::text, 'verified'::text, 'failed'::text]))),
     CONSTRAINT realname_unverified_cleared_check CHECK (((status = 'verified'::text) OR ((status = 'none'::text) AND tax_retained) OR ((name_cipher IS NULL) AND (id_no_cipher IS NULL) AND (id_no_hmac IS NULL) AND (birth_date_cipher IS NULL)))),
     CONSTRAINT realname_verified_check CHECK (((status <> 'verified'::text) OR ((name_cipher IS NOT NULL) AND (id_no_cipher IS NOT NULL) AND (id_no_hmac IS NOT NULL) AND (birth_date_cipher IS NOT NULL) AND (provider IS NOT NULL) AND (verified_at IS NOT NULL))))
+);
+
+
+--
+-- Name: realname_prior_identities; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.realname_prior_identities (
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    name_cipher bytea NOT NULL,
+    id_no_cipher bytea NOT NULL,
+    id_no_hmac text NOT NULL,
+    verified_at timestamp with time zone NOT NULL,
+    corrected_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT realname_prior_identities_id_no_hmac_check CHECK ((id_no_hmac ~ '^[0-9a-f]{64}$'::text))
 );
 
 
@@ -6486,6 +6532,22 @@ ALTER TABLE ONLY app.payout_accounts
 
 
 --
+-- Name: personal_data_copies personal_data_copies_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.personal_data_copies
+    ADD CONSTRAINT personal_data_copies_app_id_id_key UNIQUE (app_id, id);
+
+
+--
+-- Name: personal_data_copies personal_data_copies_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.personal_data_copies
+    ADD CONSTRAINT personal_data_copies_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: platform_icon_uploads platform_icon_uploads_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -7940,6 +8002,34 @@ CREATE UNIQUE INDEX payout_accounts_current_user_key ON app.payout_accounts USIN
 
 
 --
+-- Name: personal_data_copies_open_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX personal_data_copies_open_key ON app.personal_data_copies USING btree (app_id, user_id) WHERE (status = ANY (ARRAY['pending'::text, 'running'::text, 'ready'::text]));
+
+
+--
+-- Name: personal_data_copies_requested_by_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX personal_data_copies_requested_by_idx ON app.personal_data_copies USING btree (app_id, requested_by);
+
+
+--
+-- Name: personal_data_copies_retry_of_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX personal_data_copies_retry_of_idx ON app.personal_data_copies USING btree (app_id, retry_of) WHERE (retry_of IS NOT NULL);
+
+
+--
+-- Name: personal_data_copies_user_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX personal_data_copies_user_idx ON app.personal_data_copies USING btree (app_id, user_id);
+
+
+--
 -- Name: price_snapshot_latest_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -7972,6 +8062,13 @@ CREATE UNIQUE INDEX push_tokens_live_token_key ON app.push_tokens USING btree (a
 --
 
 CREATE INDEX push_tokens_user_bound_sid_idx ON app.push_tokens USING btree (app_id, user_id, bound_sid);
+
+
+--
+-- Name: realname_prior_identities_user_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX realname_prior_identities_user_idx ON app.realname_prior_identities USING btree (app_id, user_id);
 
 
 --
@@ -9628,6 +9725,30 @@ ALTER TABLE ONLY app.payout_accounts
 
 
 --
+-- Name: personal_data_copies personal_data_copies_requested_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.personal_data_copies
+    ADD CONSTRAINT personal_data_copies_requested_by_fkey FOREIGN KEY (app_id, requested_by) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: personal_data_copies personal_data_copies_retry_of_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.personal_data_copies
+    ADD CONSTRAINT personal_data_copies_retry_of_fkey FOREIGN KEY (app_id, retry_of) REFERENCES app.personal_data_copies(app_id, id);
+
+
+--
+-- Name: personal_data_copies personal_data_copies_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.personal_data_copies
+    ADD CONSTRAINT personal_data_copies_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
 -- Name: platform_icon_uploads platform_icon_uploads_created_by_admin_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -9689,6 +9810,14 @@ ALTER TABLE ONLY app.push_tokens
 
 ALTER TABLE ONLY app.push_tokens
     ADD CONSTRAINT push_tokens_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: realname_prior_identities realname_prior_identities_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.realname_prior_identities
+    ADD CONSTRAINT realname_prior_identities_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -13141,6 +13270,132 @@ GRANT UPDATE(anonymized_at) ON TABLE app.payout_accounts TO couli_app;
 
 
 --
+-- Name: TABLE personal_data_copies; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.personal_data_copies TO couli_app;
+
+
+--
+-- Name: COLUMN personal_data_copies.id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
+-- Name: COLUMN personal_data_copies.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_id) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
+-- Name: COLUMN personal_data_copies.user_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(user_id) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
+-- Name: COLUMN personal_data_copies.requested_by; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(requested_by) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
+-- Name: COLUMN personal_data_copies.delivery; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(delivery) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
+-- Name: COLUMN personal_data_copies.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.personal_data_copies TO couli_app;
+GRANT SELECT(status) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
+-- Name: COLUMN personal_data_copies.retry_of; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(retry_of) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
+-- Name: COLUMN personal_data_copies.object_key; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(object_key) ON TABLE app.personal_data_copies TO couli_app;
+
+
+--
+-- Name: COLUMN personal_data_copies.due_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(due_at) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
+-- Name: COLUMN personal_data_copies.generated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(generated_at) ON TABLE app.personal_data_copies TO couli_app;
+GRANT SELECT(generated_at) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
+-- Name: COLUMN personal_data_copies.delivered_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(delivered_at) ON TABLE app.personal_data_copies TO couli_app;
+GRANT SELECT(delivered_at) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
+-- Name: COLUMN personal_data_copies.expires_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(expires_at) ON TABLE app.personal_data_copies TO couli_app;
+GRANT SELECT(expires_at) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
+-- Name: COLUMN personal_data_copies.failure_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(failure_reason) ON TABLE app.personal_data_copies TO couli_app;
+GRANT SELECT(failure_reason) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
+-- Name: COLUMN personal_data_copies.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.personal_data_copies TO couli_app;
+GRANT SELECT(row_version) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
+-- Name: COLUMN personal_data_copies.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
+-- Name: COLUMN personal_data_copies.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.personal_data_copies TO couli_app;
+GRANT SELECT(updated_at) ON TABLE app.personal_data_copies TO couli_readonly;
+
+
+--
 -- Name: TABLE platform_icon_uploads; Type: ACL; Schema: app; Owner: -
 --
 
@@ -13531,6 +13786,13 @@ GRANT SELECT(updated_at) ON TABLE app.realname TO couli_readonly;
 --
 
 GRANT UPDATE(tax_retained) ON TABLE app.realname TO couli_app;
+
+
+--
+-- Name: TABLE realname_prior_identities; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT INSERT ON TABLE app.realname_prior_identities TO couli_app;
 
 
 --
