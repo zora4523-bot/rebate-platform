@@ -1,0 +1,24 @@
+id: B1-12y
+repo: rebate-platform
+title: 短信按编码取登记：发送时由 notify_templates 的短信渠道登记取签名与模板 CODE（SMS_CODE 未登记时用部署配置兜底，其余编码未登记不发），站长授权告警短信接真实通道并把 BizId 写进 notify_logs
+type: impl
+# 2026-10-24 入账（be-codex；编排 D10-316 ①）。接 B1-12w 的「调用方按编码查找」：查找改为读 B1-12x 的登记列（app_id + code + variant），部署配置 SMS_SIGN_NAME / SMS_TEMPLATE_VERIFY_CODE 只在 SMS_CODE 没有登记时兜底（BR-TEXT-20 细则「过渡」）。
+# 后台关闭短信渠道的编码（channels 不含 sms）不再发短信；SMS_CODE 与 UNION_AUTH_* 不能关（由后台接口保证，本任务发送侧照 channels 判断）。站长告警（notification/site-auth-alert 的 TemplateSmsSender）由拒发换成真实通道，变量照代码定义。
+# 受理后 BizId 写进对应 notify_logs 行的回执编号列（BR-TEXT-20、04 §3）；SMS_CODE 不写 notify_logs（identity 自有发送记录）。超时仍记 unknown 不重发（B1-12w）。
+refs: [BR-TEXT-20]
+refs_hash:
+  BR-TEXT-20: 6cc6345e46c3
+deps: [B1-12w, B1-12x]
+paths:
+  - 'apps/api/src/modules/notification/sms/**'
+  - 'apps/api/src/modules/notification/site-auth-alert/**'
+  - 'apps/api/src/modules/notification/index.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/notification/sms-registry/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/sms-registry/**'
+status: todo

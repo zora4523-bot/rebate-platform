@@ -1,0 +1,23 @@
+id: B1-12z
+repo: rebate-platform
+title: 后台通知渠道与短信登记接口实现（CT-24t）：列表、推送 / 短信开关、换签名与模板 CODE（预览正文校验 + 同步测试发送受理才保存，失败保留原配置）；notify.channels 动态码，资金类编码改登记另需 content.fund_terms；审计
+type: impl
+# 2026-10-24 入账（be-codex；编排 D10-316 ①）。取值照 08 BR-TEXT-20 细则「短信渠道登记与后台渠道开关」：站内信不能增删；只发站内信的编码不能开推送 / 短信；SMS_CODE 与 UNION_AUTH_* 只能换模板不能关；给表里原本没短信的服务类编码开短信要二次确认（契约字段）。
+# 保存校验：预览正文变量集合 = 代码定义；SMS_CODE 正文写了分钟数须等于 BR-ID-05 有效期；照过 BR-TEXT-12 / 13 的现有校验（content 导出）。测试发送用样例变量发到操作人验证手机号（BR-ID-45），没登记的不能启用新配置。
+refs: [BR-TEXT-20, BR-ID-45, BR-ID-05]
+refs_hash:
+  BR-TEXT-20: 6cc6345e46c3
+  BR-ID-45: 0b4839cbc54b
+  BR-ID-05: 0737ee3b67e2
+deps: [CT-24t, B1-12x, B1-12y]
+paths:
+  - 'apps/api/src/modules/notification/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/notification/admin-channels/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/admin-channels/**'
+status: todo
