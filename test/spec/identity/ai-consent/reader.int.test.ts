@@ -384,8 +384,22 @@ async function snapshot() {
   // Full row contents (including multiplicity), not just counts. All business tables,
   // plus the queue, catch unintended writes. Read partitions through their parent:
   // couli_app has parent SELECT grants, not direct grants on every child partition.
-  const tables = await sql<{ schemaname: string; tablename: string }>`
-    SELECT n.nspname AS schemaname, c.relname AS tablename
+  // The kit offers no role that can SELECT every table (the owner couli_migrator is withheld).
+  // Tables couli_app may not read (insert-only isolation stores) stay in the snapshot as
+  // their heap size, summed over the table itself and all its partitions. This is reliable
+  // only for tables that are empty at snapshot time (a new insert, even rolled back, grows
+  // the main fork by at least one page).
+  const tables = await sql<{
+    schemaname: string;
+    tablename: string;
+    readable: boolean;
+    heap_bytes: string;
+  }>`
+    SELECT n.nspname AS schemaname, c.relname AS tablename,
+      pg_catalog.has_table_privilege(c.oid, 'SELECT') AS readable,
+      (SELECT coalesce(sum(pg_catalog.pg_relation_size(s.r, 'main')), 0)
+         FROM (SELECT c.oid UNION SELECT p.relid FROM pg_catalog.pg_partition_tree(c.oid) p)
+           s(r))::text AS heap_bytes
     FROM pg_catalog.pg_class c
     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname IN ('app', 'pgboss') AND c.relkind IN ('r', 'p')
@@ -393,7 +407,11 @@ async function snapshot() {
     ORDER BY n.nspname, c.relname
   `.execute(seedDb);
   const result: Record<string, string[]> = {};
-  for (const { schemaname, tablename } of tables.rows) {
+  for (const { schemaname, tablename, readable, heap_bytes } of tables.rows) {
+    if (!readable) {
+      result[`${schemaname}.${tablename}`] = [`unreadable; heap_bytes=${heap_bytes}`];
+      continue;
+    }
     const rows = await sql<{ row: string }>`
       SELECT to_jsonb(t)::text AS row FROM ${sql.id(schemaname, tablename)} AS t
       ORDER BY to_jsonb(t)::text
