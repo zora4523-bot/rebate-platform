@@ -79,6 +79,11 @@ interface PartialCase {
   /** Which list was confirmed (its index among the written frames) and its query. */
   readonly written: number;
   readonly q: string;
+  /**
+   * The query of the chain each probe sees (one probe per written product_list, before its
+   * receipt): the latest batch confirmed so far; '合成保温杯' is the previous batch (`before`).
+   */
+  readonly probes: readonly string[];
 }
 
 const PARTIAL: readonly PartialCase[] = [
@@ -88,6 +93,7 @@ const PARTIAL: readonly PartialCase[] = [
     finish: 'stop',
     written: 0,
     q: '合成水杯',
+    probes: ['合成保温杯', '合成水杯'],
   },
   {
     label: '第 1 张交出未确认、第 2 张写出',
@@ -95,6 +101,7 @@ const PARTIAL: readonly PartialCase[] = [
     finish: 'stop',
     written: 1,
     q: '合成茶杯',
+    probes: ['合成保温杯', '合成保温杯'],
   },
   {
     label: '第 1 张写出、第 2 张写出前取消',
@@ -102,6 +109,7 @@ const PARTIAL: readonly PartialCase[] = [
     finish: 'stop',
     written: 0,
     q: '合成水杯',
+    probes: ['合成保温杯'],
   },
   {
     // 2 (list frame and its product) fit in 3; the second list (2 more) is cut, never split.
@@ -111,6 +119,7 @@ const PARTIAL: readonly PartialCase[] = [
     finish: 'limit',
     written: 0,
     q: '合成水杯',
+    probes: ['合成保温杯'],
   },
 ];
 
@@ -140,7 +149,16 @@ it.each(PARTIAL)(
       expect(run.searched.map((query) => query.q)).toEqual(['合成水杯', '合成茶杯']);
       expect(run.result).toEqual({ kind: 'done', finishReason: partial.finish });
       expect(probe.seen.length).toBeGreaterThan(0);
-      expect(probe.seen, 'no switch before a receipt').toEqual(probe.seen.map(() => before));
+      expect(probe.seen, 'the latest confirmed batch before each receipt').toEqual(
+        partial.probes.map((q) =>
+          q === '合成保温杯'
+            ? before
+            : expect.objectContaining({
+                status: 'has_products',
+                conditions: expect.objectContaining({ q }),
+              }),
+        ),
+      );
 
       const after = await chainOf(x.store, APP, at.sessionId);
       expect(after).toMatchObject({ status: 'has_products', conditions: { q: partial.q } });
