@@ -33,3 +33,7 @@ accept:
   - 'test/spec/payment/result/**'
 status: todo
 pr: null
+red_exempt:
+  - file: test/spec/orders/snapshot-retry-alert/contract.test.ts
+    test: '[AC-B1-08u#1] 耗尽告警登记一次并位于规划事件清单中的位置（其后只有 02 §11 排在它之后的事件）'
+    reason: 冻结 B1-08u 用例，测试体未改；本任务只在其允许名单 PLAN_02_AFTER_RETRY_EXHAUSTED 末尾加 pay_order.paid（D10-340，02 §11 +1），名单扩展在骨架上仍为绿（EVENT_NAMES 尚无该事件），实现后亦绿；复审见 couli-runs/B2-15c/fixture-review.json
