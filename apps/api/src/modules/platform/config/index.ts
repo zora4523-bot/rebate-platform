@@ -40,6 +40,9 @@ export type { PddClientConfig } from './pdd.ts';
 // Agent content safety review (B3-03m): Aliyun AccessKey pair and endpoint, staging / prod only.
 export { AGENT_REVIEW_ENDPOINT_ENV, readAgentReviewConfig } from './agent-review.ts';
 export type { AgentReviewConfig } from './agent-review.ts';
+// SMS provider (B1-12w): Aliyun AccessKey pair, signature name and template CODE, staging / prod only.
+export { readSmsConfig } from './sms.ts';
+export type { SmsConfig } from './sms.ts';
 // Pinduoduo query identity custom_parameters (B1-04x): optional server setting, not a credential.
 export {
   PDD_QUERY_CUSTOM_PARAMETERS_ENV,
