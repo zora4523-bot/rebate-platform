@@ -20,7 +20,13 @@ function uniqueConflict(error: unknown): boolean {
   );
 }
 
-/** Device lock survives retries; all token locks and changes are inside the savepoint. */
+/** users.status values of an account being deleted or already deleted (D10-318). */
+const GONE_STATUSES: ReadonlySet<string> = new Set(['deleting', 'deleted']);
+
+/**
+ * Users and device locks survive retries; all token locks and changes are inside the savepoint.
+ * Lock order users → devices → push_tokens, the same as identity's deletion cleanup.
+ */
 export async function reportInTransaction(
   transaction: Transaction<DB>,
   command: PushTokenReport,
@@ -28,6 +34,19 @@ export async function reportInTransaction(
   windowMs: number,
 ): Promise<Conflict | undefined> {
   const db = transaction.withSchema('app');
+  // D10-318: FOR SHARE conflicts with the deletion cleanup's FOR UPDATE of this row (so the
+  // status is judged after the cleanup commits and no token is written behind it), while staying
+  // compatible with the FOR KEY SHARE that session creation's foreign key takes after locking the
+  // device row (FOR UPDATE here would deadlock against a concurrent login).
+  const user = await db
+    .selectFrom('users')
+    .select('status')
+    .where('app_id', '=', command.app_id)
+    .where('id', '=', command.user_id)
+    .forShare()
+    .executeTakeFirst();
+  if (user === undefined || GONE_STATUSES.has(user.status)) return;
+
   const device = await db
     .selectFrom('devices')
     .select(['last_login_sid', 'created_at'])
