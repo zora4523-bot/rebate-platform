@@ -47,7 +47,7 @@ it.each([
   ['notify', 'query', 'wechat_pay'],
   ['query', 'notify', 'alipay'],
 ] as const)(
-  '[AC-B2-15c#28] 真实并发：%s 先到、%s 后到，再加一条重复通知（%s）：只迁移一次、只有一张 PAY_RECEIPT、一次开通入队、一个 pay.order.paid，通知都应答成功',
+  '[AC-B2-15c#28] 真实并发：%s 先到、%s 后到，再加一条重复通知（%s）：只迁移一次、只有一张 PAY_RECEIPT、一次开通入队、一个 pay_order.paid，通知都应答成功',
   async (first, second, channel: PayChannelCode) => {
     const f = await fixture(s);
     const { channels, identity } = specChannels(f);
@@ -111,14 +111,14 @@ async function tallies(f: Fixture) {
       (SELECT count(*)::int FROM app.pay_notifications n
         WHERE n.app_id = o.app_id AND n.out_trade_no = o.out_trade_no) AS notes,
       (SELECT count(*)::int FROM app.event_log e
-        WHERE e.app_id = o.app_id AND e.name = 'pay.order.paid'
+        WHERE e.app_id = o.app_id AND e.name = 'pay_order.paid'
           AND e.payload->'data'->>'pay_order_id' = o.id::text) AS events
     FROM app.pay_orders o WHERE o.app_id = ${f.subject.app_id}
     ORDER BY o.created_at, o.id`.execute(f.db);
   return result.rows;
 }
 
-it('[AC-B2-15c#29] 压力：200 轮里同一通知两次与一次主动查询同时到达（两渠道、先后轮换），每张单都只迁移一次、恰一张 PAY_RECEIPT、一份通知留存、一个 pay.order.paid，通知都应答成功', async () => {
+it('[AC-B2-15c#29] 压力：200 轮里同一通知两次与一次主动查询同时到达（两渠道、先后轮换），每张单都只迁移一次、恰一张 PAY_RECEIPT、一份通知留存、一个 pay_order.paid，通知都应答成功', async () => {
   const f = await fixture(s);
   const { channels, identity } = specChannels(f);
   await withNotify(f, channels, async (h) => {

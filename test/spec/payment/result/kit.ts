@@ -1085,11 +1085,11 @@ export async function queuedByKey(f: Fixture, prefix: string): Promise<QueuedJob
   return result.rows;
 }
 
-/** The pay.order.paid events of the app (event_log payload {v, data}). */
+/** The pay_order.paid events of the app (event_log payload {v, data}). */
 export async function paidEvents(f: Fixture): Promise<Record<string, unknown>[]> {
   const result = await sql<{ data: Record<string, unknown> }>`
     SELECT payload->'data' AS data FROM app.event_log
-    WHERE app_id = ${f.subject.app_id} AND name = 'pay.order.paid'
+    WHERE app_id = ${f.subject.app_id} AND name = 'pay_order.paid'
     ORDER BY occurred_at, id`.execute(f.db);
   return result.rows.map((row) => row.data);
 }

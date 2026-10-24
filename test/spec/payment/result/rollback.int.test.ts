@@ -168,7 +168,7 @@ async function settledOnce(f: Fixture, order: OrderRow, trade: string) {
 }
 
 it.each(CHANNELS)(
-  '[AC-B2-15c#31] %s 主动查询结果合格、结算中收款分录写入失败（ledger.post 拒绝一次）：整笔回滚——支付单仍 PENDING、没有凭证、没有开通任务与 pay.order.paid，查询尝试照记，任务以失败结束交队列重试；再查一次正常结算，只一张凭证',
+  '[AC-B2-15c#31] %s 主动查询结果合格、结算中收款分录写入失败（ledger.post 拒绝一次）：整笔回滚——支付单仍 PENDING、没有凭证、没有开通任务与 pay_order.paid，查询尝试照记，任务以失败结束交队列重试；再查一次正常结算，只一张凭证',
   async (channel) => {
     const f = await fixture(s);
     const { channels, identity } = specChannels(f);

@@ -125,7 +125,7 @@ function closedOrder(f: Fixture, channel: PayChannelCode): Promise<OrderRow> {
 }
 
 it.each(CHANNELS)(
-  '[AC-B2-15c#6] %s 首次合格通知（开关全关也照常处理）：同一事务 PO2 + 恰一张 PAY_RECEIPT（借 CASH_PAY / 贷 PAY_RECEIPTS）+ 按业务对象入队一次开通 + pay.order.paid；原文加密留存；提交后应答成功；不碰用户余额',
+  '[AC-B2-15c#6] %s 首次合格通知（开关全关也照常处理）：同一事务 PO2 + 恰一张 PAY_RECEIPT（借 CASH_PAY / 贷 PAY_RECEIPTS）+ 按业务对象入队一次开通 + pay_order.paid；原文加密留存；提交后应答成功；不碰用户余额',
   async (channel) => {
     const { f, channels, identity } = await prepared();
     const order = await seedPending(f, channel);

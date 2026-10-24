@@ -79,7 +79,7 @@ function notPaid(identity: SpecTrade['identity']): SpecTrade {
 }
 
 it.each(CHANNELS)(
-  '[AC-B2-15c#18] %s 主动查询结果合格（客户端返回触发）：与通知同一套核对与结算，PO2 + 恰一张 PAY_RECEIPT + 同事务入队开通与 pay.order.paid，记录查询尝试；再查一次不重复',
+  '[AC-B2-15c#18] %s 主动查询结果合格（客户端返回触发）：与通知同一套核对与结算，PO2 + 恰一张 PAY_RECEIPT + 同事务入队开通与 pay_order.paid，记录查询尝试；再查一次不重复',
   async (channel) => {
     const f = await fixture(s);
     const { channels, identity } = specChannels(f);
@@ -114,7 +114,7 @@ it.each(CHANNELS)(
       ]),
     ).toEqual([['pay', `biz:${BIZ}:${order.biz_ref}`, true]]);
     expect(kit.published.map((p) => [p.event.name, p.event.appId, p.inTransaction])).toEqual([
-      ['pay.order.paid', f.subject.app_id, true],
+      ['pay_order.paid', f.subject.app_id, true],
     ]);
     expect(kit.published[0]?.event.payload).toMatchObject({ pay_order_id: order.id });
 
