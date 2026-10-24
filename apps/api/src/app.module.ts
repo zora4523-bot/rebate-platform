@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { type DynamicModule, type Provider, HttpException, Module, Scope } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import type { DB as Database } from '@couli/db';
@@ -234,9 +234,12 @@ import {
   NotificationModule,
   bindPushTokensForSession,
   createSiteAuthAlertPort,
+  createEntrySmsSender,
   createTemplateSmsSender,
   deletePushTokensForUser,
   unbindPushTokensForSession,
+  type AliyunSmsFetch,
+  type VerifyCodeSmsSender,
 } from './modules/notification/index.ts';
 import {
   createSelfPurchaseOrderReader,
@@ -271,6 +274,7 @@ import {
   ROOT_LOGGER,
   SENSITIVE_KEYS,
   createMemoryQuotaLimiter,
+  createResilienceRegistry,
   quotaShares,
   systemScheduler,
   type AppConfig,
@@ -833,8 +837,8 @@ function identityModule(contentReader: SharedContentReader): DynamicModule {
     },
     // Through identity's index.ts, as for the admin entry (one sender factory for both entries).
     smsSender: {
-      inject: [APP_CONFIG, ROOT_LOGGER],
-      useFactory: (config: AppConfig, logger: RootLogger) => createSmsSender(config.appEnv, logger),
+      inject: [APP_CONFIG, ROOT_LOGGER, CLOCK],
+      useFactory: entrySmsSender,
     },
     pushTokens: {
       inject: [CLOCK],
@@ -2363,10 +2367,36 @@ function adminAuthModule(): DynamicModule {
     configPermissions: new Map(configRegistry().map((item) => [item.key, item.permission])),
     smsSender: {
       provide: smsSenderToken(),
-      inject: [APP_CONFIG, ROOT_LOGGER],
-      useFactory: (config: AppConfig, logger: RootLogger) => createSmsSender(config.appEnv, logger),
+      inject: [APP_CONFIG, ROOT_LOGGER, CLOCK],
+      useFactory: entrySmsSender,
     },
   });
+}
+
+/** Production transport of the SendSms channel: the platform fetch, called lazily. */
+const smsFetch: AliyunSmsFetch = (url, init) => globalThis.fetch(url, init);
+
+/**
+ * The verification code sender of an entry (B1-12w, D10-315): the Aliyun SendSms channel on
+ * notification's SMS failover when loadConfig read all four SMS_ variables; otherwise identity's
+ * createSmsSender (local / test fake, or the staging / prod sender that rejects every message and
+ * warns at startup). One sender (and breaker) per entry process.
+ */
+function entrySmsSender(config: AppConfig, logger: RootLogger, clock: Clock): VerifyCodeSmsSender {
+  const sms = config.sms ?? undefined;
+  const sender = createEntrySmsSender({
+    sms,
+    fallback: () => createSmsSender(config.appEnv, logger),
+    registry: createResilienceRegistry(),
+    scheduler: systemScheduler(),
+    fetch: smsFetch,
+    clock,
+    nonce: randomUUID,
+    messageId: randomUUID,
+  });
+  if (sms !== undefined)
+    logger.info({ app_env: config.appEnv, provider: 'aliyun' }, 'sms_sender_live');
+  return sender;
 }
 
 /**

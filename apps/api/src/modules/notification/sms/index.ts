@@ -10,8 +10,13 @@
 //     verifyCodeTemplate }), no backup, a provider switch that always reads null; wrapped in
 //     createVerifyCodeSmsSender.
 import type { Clock, ResilienceRegistry, Scheduler, SmsConfig } from '../../platform/index.ts';
-import type { AliyunSmsFetch } from './aliyun-channel.ts';
-import type { VerifyCodeSmsSender } from './verify-code-sender.ts';
+import { createSmsSender } from '../resilience/index.ts';
+import { createAliyunSmsChannel, type AliyunSmsFetch } from './aliyun-channel.ts';
+import {
+  VERIFY_CODE_TEMPLATE,
+  createVerifyCodeSmsSender,
+  type VerifyCodeSmsSender,
+} from './verify-code-sender.ts';
 
 export { createAliyunSmsChannel } from './aliyun-channel.ts';
 export type {
@@ -21,7 +26,11 @@ export type {
   AliyunSmsFetchResponse,
   AliyunSmsTemplate,
 } from './aliyun-channel.ts';
-export { createVerifyCodeSmsSender } from './verify-code-sender.ts';
+export {
+  VERIFY_CODE_TEMPLATE,
+  VERIFY_CODE_TEMPLATE_TEXT,
+  createVerifyCodeSmsSender,
+} from './verify-code-sender.ts';
 export type {
   VerifyCodeDelivery,
   VerifyCodeMessage,
@@ -42,6 +51,24 @@ export interface EntrySmsSenderDeps {
 }
 
 export function createEntrySmsSender(deps: EntrySmsSenderDeps): VerifyCodeSmsSender {
-  void deps;
-  throw new Error('NotImplemented: createEntrySmsSender');
+  const config = deps.sms;
+  if (config === undefined) return deps.fallback();
+  const verifyCode = Object.freeze({
+    signName: config.signName,
+    templateCode: config.verifyCodeTemplate,
+  });
+  const primary = createAliyunSmsChannel({
+    credentials: { accessKeyId: config.accessKeyId, accessKeySecret: config.accessKeySecret },
+    resolveTemplate: (template) => (template === VERIFY_CODE_TEMPLATE ? verifyCode : undefined),
+    fetch: deps.fetch,
+    clock: deps.clock,
+    nonce: deps.nonce,
+  });
+  const sms = createSmsSender({
+    registry: deps.registry,
+    primary,
+    providerSwitch: { current: () => Promise.resolve(null) },
+    scheduler: deps.scheduler,
+  });
+  return createVerifyCodeSmsSender({ sms, messageId: deps.messageId });
 }

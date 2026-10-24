@@ -12,6 +12,12 @@
 // error) → unknown; sms.send throwing → unknown.
 import type { SmsMessage, SmsSendResult } from '../resilience/index.ts';
 
+/** Template key every purpose shares (the caller maps it to the provider's template CODE). */
+export const VERIFY_CODE_TEMPLATE = 'SMS_CODE';
+
+/** The registered template text (BR-ID-05: 5 minutes = SMS_CODE_LIFETIME_SECONDS). Not a template literal. */
+export const VERIFY_CODE_TEMPLATE_TEXT = '您的动态码为：${code}，5分钟内有效，请勿泄露！';
+
 export type VerifyCodePurpose = 'login' | 'bind' | 'step_up';
 
 export interface VerifyCodeMessage {
@@ -33,7 +39,31 @@ export interface VerifyCodeSmsSenderDeps {
   readonly messageId: () => string;
 }
 
+function delivery(result: SmsSendResult): VerifyCodeDelivery {
+  if (result.outcome === 'sent') return 'accepted';
+  if (result.outcome === 'rejected') return 'rejected';
+  // Every attempt hit an open breaker: nothing left the process, so no SMS can arrive.
+  if (result.attempts.length > 0 && result.attempts.every((a) => a.result === 'circuit_open')) {
+    return 'rejected';
+  }
+  return 'unknown';
+}
+
 export function createVerifyCodeSmsSender(deps: VerifyCodeSmsSenderDeps): VerifyCodeSmsSender {
-  void deps;
-  throw new Error('NotImplemented: createVerifyCodeSmsSender');
+  return {
+    async send(message) {
+      const sms: SmsMessage = {
+        app_id: message.app_id,
+        message_id: deps.messageId(),
+        phone: message.phone,
+        template: VERIFY_CODE_TEMPLATE,
+        params: { code: message.code },
+      };
+      try {
+        return delivery(await deps.sms.send(sms));
+      } catch {
+        return 'unknown';
+      }
+    },
+  };
 }

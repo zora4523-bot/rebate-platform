@@ -18,11 +18,34 @@ export interface SmsConfig {
   readonly verifyCodeTemplate: string;
 }
 
+/** The four variables, in the order of SmsConfig's fields. */
+const SMS_ENV = {
+  accessKeyId: 'SMS_ACCESS_KEY_ID',
+  accessKeySecret: 'SMS_ACCESS_KEY_SECRET',
+  signName: 'SMS_SIGN_NAME',
+  verifyCodeTemplate: 'SMS_TEMPLATE_VERIFY_CODE',
+} as const;
+
 export function readSmsConfig(
   appEnv: AppEnv,
   env: Readonly<Record<string, string | undefined>>,
 ): SmsConfig | undefined {
-  void appEnv;
-  void env;
-  throw new Error('NotImplemented: readSmsConfig');
+  if (appEnv !== 'staging' && appEnv !== 'prod') return undefined;
+  const read = (name: string): string | undefined => {
+    const value = env[name];
+    return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+  };
+  const accessKeyId = read(SMS_ENV.accessKeyId);
+  const accessKeySecret = read(SMS_ENV.accessKeySecret);
+  const signName = read(SMS_ENV.signName);
+  const verifyCodeTemplate = read(SMS_ENV.verifyCodeTemplate);
+  if (
+    accessKeyId === undefined ||
+    accessKeySecret === undefined ||
+    signName === undefined ||
+    verifyCodeTemplate === undefined
+  ) {
+    return undefined;
+  }
+  return Object.freeze({ accessKeyId, accessKeySecret, signName, verifyCodeTemplate });
 }
