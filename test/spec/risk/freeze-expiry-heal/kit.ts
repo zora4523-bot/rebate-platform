@@ -11,7 +11,7 @@ import { createScan, ports, type Job, type Options, type Scan } from '../freeze-
 
 export { job } from '../freeze-expiry/kit.ts';
 export const HEAL_INTERVAL_MS = 5 * 60_000;
-export type Name = 'freeze-expiry' | 'daily-alerts';
+export type Name = 'freeze_expiry' | 'daily_alerts';
 export interface Healer extends Scan {
   heal(): Promise<void>;
 }

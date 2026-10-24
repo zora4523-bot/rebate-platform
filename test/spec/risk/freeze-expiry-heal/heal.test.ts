@@ -7,8 +7,8 @@ it('[AC-B1-03u#1] 健康链补投与 handle 续投完全同 key，重复 worker 
   const scan = healer(f.scan);
   const q = exclusiveQueue(f);
   f.clock.set('2026-10-15T00:05:23+08:00');
-  await scan.handle(job('freeze-expiry'));
-  await scan.handle(job('daily-alerts'));
+  await scan.handle(job('freeze_expiry'));
+  await scan.handle(job('daily_alerts'));
   const chained = f.send.mock.calls.map(([queue, name, payload, options]) => ({
     queue,
     name,
@@ -36,14 +36,14 @@ it('[AC-B1-03u#1] 健康链补投与 handle 续投完全同 key，重复 worker 
 
 for (const [name, nextKey, due, followingKey, table] of [
   [
-    'freeze-expiry',
+    'freeze_expiry',
     'freeze-expiry:2026-10-14T16:06',
     '2026-10-15T00:06:00+08:00',
     'freeze-expiry:2026-10-14T16:07',
     'user_risk_state',
   ],
   [
-    'daily-alerts',
+    'daily_alerts',
     'daily-alerts:2026-10-16',
     '2026-10-16T00:05:00+08:00',
     'daily-alerts:2026-10-17',
@@ -87,8 +87,8 @@ for (const [now, minute, minuteDelay, day, dayDelay] of [
     await scan.heal();
     expect(f.send).toHaveBeenCalledTimes(2);
     for (const [name, singletonKey, delaySeconds] of [
-      ['freeze-expiry', `freeze-expiry:${minute}`, minuteDelay],
-      ['daily-alerts', `daily-alerts:${day}`, dayDelay],
+      ['freeze_expiry', `freeze-expiry:${minute}`, minuteDelay],
+      ['daily_alerts', `daily-alerts:${day}`, dayDelay],
     ]) {
       expect(f.send).toHaveBeenCalledWith(
         'risk-scan',
@@ -120,7 +120,7 @@ it('[AC-B1-03u#4] 当天 daily-alerts 已完成不再占 key，heal 仍只补明
   expect(f.queries).toHaveLength(queries);
 });
 
-for (const failed of ['freeze-expiry', 'daily-alerts', 'both'] as const) {
+for (const failed of ['freeze_expiry', 'daily_alerts', 'both'] as const) {
   it(`[AC-B1-03u#5] ${failed} 补投失败只记规定 warn；另一条独立投递，下次仍能恢复`, async () => {
     const f = await fixture();
     const scan = healer(f.scan);
@@ -132,10 +132,10 @@ for (const failed of ['freeze-expiry', 'daily-alerts', 'both'] as const) {
     });
     await expect(scan.heal()).resolves.toBeUndefined();
     expect(f.send.mock.calls.map(([, name]) => name).sort()).toEqual([
-      'daily-alerts',
-      'freeze-expiry',
+      'daily_alerts',
+      'freeze_expiry',
     ]);
-    const failedNames = failed === 'both' ? ['daily-alerts', 'freeze-expiry'] : [failed];
+    const failedNames = failed === 'both' ? ['daily_alerts', 'freeze_expiry'] : [failed];
     const warnings = f.logs().filter((line) => line['msg'] === 'risk_scan_heal_failed');
     expect(warnings).toHaveLength(failedNames.length);
     for (const name of failedNames) {

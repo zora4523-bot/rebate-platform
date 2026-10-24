@@ -470,7 +470,7 @@ it('[AC-B1-03j#18] handler 按任务名实际执行对应扫描，解冻不跑�
     deadline_at: new Date(f.clock.now().getTime() - 1),
   });
   const before = await f.states();
-  await service.handle(job('daily-alerts'));
+  await service.handle(job('daily_alerts'));
   expect(await f.states()).toEqual(before);
   expect(warnings(f.lines, 'risk_freeze_indefinite_overdue')).toEqual([
     expect.objectContaining(indefinite),
@@ -480,7 +480,7 @@ it('[AC-B1-03j#18] handler 按任务名实际执行对应扫描，解冻不跑�
   ]);
   expect(f.setRiskState).not.toHaveBeenCalled();
   f.lines.length = 0;
-  await service.handle(job('freeze-expiry'));
+  await service.handle(job('freeze_expiry'));
   expect((await f.states()).find((r) => r.user_id === expiring.user_id)).toMatchObject({
     state: 'normal',
     row_version: 8,
@@ -488,5 +488,5 @@ it('[AC-B1-03j#18] handler 按任务名实际执行对应扫描，解冻不跑�
   expect(warnings(f.lines, 'risk_freeze_indefinite_overdue')).toEqual([]);
   expect(warnings(f.lines, 'risk_appeal_overdue')).toEqual([]);
   expect(await f.eventRows()).toHaveLength(1);
-  expect(f.send.mock.calls.map(([, name]) => name)).toEqual(['daily-alerts', 'freeze-expiry']);
+  expect(f.send.mock.calls.map(([, name]) => name)).toEqual(['daily_alerts', 'freeze_expiry']);
 });

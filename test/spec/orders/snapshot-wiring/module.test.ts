@@ -84,7 +84,7 @@ it('[AC-B1-08w#1] worker 只建一次真实解析器，流水线、更新与补�
     const job = {
       id: 'synthetic-retry',
       queue: 'order-sync',
-      name: 'snapshot-retry',
+      name: 'snapshot_retry',
       payload: { app_id: request.appId },
       attempt: 1,
     };
