@@ -227,6 +227,7 @@ import {
   type LinkOpenReadPlan,
   type LinkRegistrations,
   needsTaobaoReauth,
+  blockForDeletion,
 } from './modules/linking/index.ts';
 import {
   NotificationModule,
@@ -514,16 +515,16 @@ const deletionBalance = {
 
 /**
  * B1-15g: the owning modules' shares of the deletion cleanup (identity's DeletionCleanupPorts, on
- * identity's cleanup transaction). growth's detachChildrenOfDeleted (B1-15n) and notification's
- * deletePushTokensForUser (F1-02zzk) are shipped; the others are unavailable markers: the rest of
- * the cleanup still commits, but the request stays in processing (cleaned_at NULL) with a daily
- * identity_deletion_cleanup_blocked line until the owner ships and is assembled here.
+ * identity's cleanup transaction). growth's detachChildrenOfDeleted (B1-15n), notification's
+ * deletePushTokensForUser (F1-02zzk) and linking's blockForDeletion (B1-06zc) are shipped; the
+ * others are unavailable markers: the rest of the cleanup still commits, but the request stays in
+ * processing (cleaned_at NULL) with a daily identity_deletion_cleanup_blocked line until the owner
+ * ships and is assembled here.
  */
 const deletionCleanupPorts = {
   inject: [],
   useFactory: (): DeletionCleanupPorts => ({
-    // TODO(规划/11 §2.3): linking blockForDeletion（联盟绑定 blocked=deletion，ban / admin_disable 保持） — blocked on W1
-    linking: { unavailable: 'W1' },
+    linking: blockForDeletion,
     growth: detachChildrenOfDeleted,
     // F1-02zzk: notification deletes the user's push tokens in the app (BR-ID-28, BR-ID-30).
     notification: deletePushTokensForUser,

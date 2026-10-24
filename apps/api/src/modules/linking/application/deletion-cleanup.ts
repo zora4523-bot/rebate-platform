@@ -9,8 +9,16 @@
 //   kept (BR-ID-30 ②).
 // - Runs on identity's cleanup transaction (users row already locked) and is re-entrant: a second
 //   call changes nothing. Rule tests: test/spec/linking/deletion-cleanup/**.
+// - Takes the bindings' user lock (binding-lock.ts) like every other writer, then one set-based
+//   UPDATE whose source statuses come from canTransitionBinding (no per-row compare-and-set: a
+//   writer without the user lock, such as the inspection turning active into invalid, is waited
+//   for by the row lock and the row is re-evaluated against the status set, so it is never
+//   silently skipped).
+// TODO(规划/11 §4.5): 换用生成的 transition() — blocked on CT-10 状态机生成器（approvals #26）
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
+import { canTransitionBinding, type BindingStatus } from '../domain/binding-status-transitions.ts';
+import { lockBindingUser } from './binding-lock.ts';
 
 export interface BlockForDeletionInput {
   readonly appId: string;
@@ -19,12 +27,37 @@ export interface BlockForDeletionInput {
   readonly at: Date;
 }
 
+const STATUSES: readonly BindingStatus[] = [
+  'unbound',
+  'pending_auth',
+  'active',
+  'invalid',
+  'blocked',
+  'released',
+];
+
+/** The statuses a binding may leave for blocked (the transition table decides). */
+const BLOCKABLE: readonly BindingStatus[] = Object.freeze(
+  STATUSES.filter((from) => canTransitionBinding(from, 'blocked')),
+);
+
 /** identity's DeletionCleanupStep for linking, on the caller's transaction. */
-export function blockForDeletion(
+export async function blockForDeletion(
   trx: Transaction<DB>,
   input: BlockForDeletionInput,
 ): Promise<void> {
-  void trx;
-  void input;
-  throw new Error('NotImplemented: blockForDeletion');
+  const { appId, userId, at } = input;
+  if (!(await lockBindingUser(trx, appId, userId))) return;
+  await trx
+    .updateTable('union_bindings')
+    .set((eb) => ({
+      status: 'blocked',
+      blocked_reason: 'deletion',
+      updated_at: at,
+      row_version: eb('row_version', '+', 1),
+    }))
+    .where('app_id', '=', appId)
+    .where('user_id', '=', userId)
+    .where('status', 'in', [...BLOCKABLE])
+    .execute();
 }
