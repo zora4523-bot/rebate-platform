@@ -10,13 +10,13 @@
 //   staging / prod, until the provider adapter lands, a sender that rejects every message (nothing
 //   is sent, the reservation is released, the request answers 50001); the entry logs one warn
 //   `sms_sender_unconfigured` when it builds that sender.
-// - smsCredentialEnvNames: the credential variables the SMS adapter reads, all SMS_-prefixed;
-//   loadConfig refuses to start local / test when one is set (platform/config/credential-env.ts
-//   holds the list, because loadConfig runs before any module).
+// The credential variables the SMS adapter reads (all SMS_-prefixed; loadConfig refuses to start
+// local / test when one is set) are platform's SMS_CREDENTIAL_ENV_NAMES
+// (platform/config/credential-env.ts), because loadConfig runs before any module.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for types, `.ts`
 // relative imports, no decorators.
-import { SMS_CREDENTIAL_ENV_NAMES, type RootLogger } from '../../platform/index.ts';
+import type { RootLogger } from '../../platform/index.ts';
 import type { SmsDelivery, SmsMessage, SmsSender } from '../application/sms-codes.ts';
 
 export interface FakeSmsSender extends SmsSender {
@@ -75,10 +75,6 @@ export function createSmsSender(appEnv: string, logger: Pick<RootLogger, 'warn'>
   if (isFakeEnvironment(appEnv)) return createFakeSmsSender(appEnv);
   logger.warn({ app_env: appEnv }, 'sms_sender_unconfigured');
   return Object.freeze({ send: async (): Promise<SmsDelivery> => 'rejected' });
-}
-
-export function smsCredentialEnvNames(): readonly string[] {
-  return SMS_CREDENTIAL_ENV_NAMES;
 }
 
 /** Stable Nest token for the process-owned sender, also used to inspect the HTTP test outbox. */
