@@ -503,7 +503,7 @@ it('[AC-F1-02t#8] 列表按默认全集/类别/前缀分页且只取已发布值
       segment.keys.includes(key) || segment.prefixes.some((p) => key.startsWith(p));
     return covers(spec.fund_terms) || !covers(spec.ordinary)
       ? 'fund_terms'
-      : /^(privacy|perm)\./.test(key)
+      : /^(privacy\.|perm\.|real_name\.consent\.)/.test(key)
         ? 'agreement'
         : 'general';
   };

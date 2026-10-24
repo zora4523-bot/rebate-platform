@@ -268,7 +268,7 @@ it('[AC-F1-02zd#8] 编辑列表严格为两份默认并集，键排序、分类�
       segment.keys.includes(key) || segment.prefixes.some((prefix) => key.startsWith(prefix));
     return covers(spec.fund_terms) || !covers(spec.ordinary)
       ? 'fund_terms'
-      : /^(privacy|perm)\./.test(key)
+      : /^(privacy\.|perm\.|real_name\.consent\.)/.test(key)
         ? 'agreement'
         : 'general';
   };
