@@ -252,6 +252,7 @@ export class AlipayChannel implements PayoutChannel {
     }
     const { node, raw, status } = outcome.verified;
     const result: QueryResult = judgeQuery(raw, status, this.options.lists);
+    if (status !== undefined) result.status = status;
     if (typeof node['order_id'] === 'string') result.channelOrderId = node['order_id'];
     if (result.kind === 'success') {
       result.paidAt = providerTime(node['pay_date']) ?? isoChina(this.options.clock.now());

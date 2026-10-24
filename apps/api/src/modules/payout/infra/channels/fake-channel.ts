@@ -81,6 +81,7 @@ export class FakeChannel implements PayoutChannel {
       return Promise.reject(new DOMException('fake channel timeout', 'TimeoutError'));
     }
     const result: QueryResult = judgeQuery(step.raw, step.status, this.lists);
+    if (step.status !== undefined) result.status = step.status;
     if (step.channelOrderId !== undefined) result.channelOrderId = step.channelOrderId;
     if (result.kind === 'success' && step.paidAt !== undefined) result.paidAt = step.paidAt;
     return Promise.resolve(result);
