@@ -36,5 +36,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/agent/foreign-db-handoff/**'
-status: todo
-pr: null
+status: done
+pr: 1518
