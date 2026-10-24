@@ -1,0 +1,146 @@
+{
+  "task": "B2-04p",
+  "spec_ref": "ec81e625dcf54f230d168dbf09910bd704c82a18",
+  "spec_commit": "dfceef1c8a43bb762824ba15e9a669ccc540cb26",
+  "red_tests": [
+    "test/spec/settlement/batch-executor/items.int.test.ts > [AC-B2-04p#9] 明细按 order_key 升序逐条执行，每条一个独立事务；入账入参取明细的 settle_seq，开立引用为明细 id",
+    "test/spec/settlement/batch-executor/items.int.test.ts > [AC-B2-04p#10] 执行校验不过的子订单记 skipped 与 B2-04m 的原因（hold / rights_pending / settlement_changed / tlj_deduct_unsupported），订单保持 WAITING、不写凭证；其余照常入账，批次 DONE",
+    "test/spec/settlement/batch-executor/items.int.test.ts > [AC-B2-04p#11] 明细结果与入账同一事务：写第 2 条明细结果的语句执行后失败 → 该单入账整体回滚、明细仍未处理，批次保持 EXECUTING；再投递从这条续跑，每单只入账一次",
+    "test/spec/settlement/batch-executor/items.int.test.ts > [AC-B2-04p#12] 受益人补记项经 B2-04q 端口执行，各自独立事务；明细按返回记 credited + amount_fen、deferred、skipped + skip_reason",
+    "test/spec/settlement/batch-executor/items.int.test.ts > [AC-B2-04p#13] SB6 与 settle.batch_done 同一事务：发布失败 → 批次保持 EXECUTING、finished_at 为空、无事件；再投递只补完成，不重复入账，恰好一条 settle.batch_done",
+    "test/spec/settlement/batch-executor/items.int.test.ts > [AC-B2-04p#14] 完成时为本 app 发布一条带 batch_id 的 settle.batch_done；DONE 之后重复投递 idle，不再发布、不改任何东西",
+    "test/spec/settlement/batch-executor/overlap.int.test.ts > [AC-B2-04p#24] 同一子订单同时在 PARTIAL 主批次与补充批次中（main_first）：只入账一次，先执行的明细 credited，后执行的明细 skipped / not_waiting",
+    "test/spec/settlement/batch-executor/overlap.int.test.ts > [AC-B2-04p#24] 同一子订单同时在 PARTIAL 主批次与补充批次中（supplement_first）：只入账一次，先执行的明细 credited，后执行的明细 skipped / not_waiting",
+    "test/spec/settlement/batch-executor/recovery.int.test.ts > [AC-B2-04p#20] 崩溃续跑（E-18）：10 单的批次在第 4 单事务中执行者进程连接全部断开 → 批次停在 EXECUTING、前 3 单已入账；另一执行者按 SB9 从第 4 单续跑，10 单各入账一次：用户合计 4800、平台 5200、UNION_RECEIVABLE 10000",
+    "test/spec/settlement/batch-executor/recovery.int.test.ts > [AC-B2-04p#21] 执行者仍存活时的重复投递（另一连接）：立即 busy，不等待、不改批次与明细；原执行者继续执行完，每单只入账一次、一条 settle.batch_done",
+    "test/spec/settlement/batch-executor/recovery.int.test.ts > [AC-B2-04p#22] 同一 CONFIRMED 批次被两个执行者同时投递（两条连接）：只有一个执行，另一个 busy 或 idle；每单只调用一次入账、只入账一次，一条 settle.batch_done",
+    "test/spec/settlement/batch-executor/recovery.int.test.ts > [AC-B2-04p#23] 前一天中断、停在 EXECUTING 的批次在当日快照完成前被接管：snapshot_pending，不入账、不改批次；快照完成后 SB9 续跑，不改 started_at",
+    "test/spec/settlement/batch-executor/rollover.int.test.ts > [AC-B2-04p#18] 执行中跨过日切而新一天快照未完成：在途那一单提交前发现、整单回滚，批次保持 EXECUTING、不发 settle.batch_done；00:20 再投递仍等快照；快照完成后 SB9 从这一单续跑，每单只入账一次",
+    "test/spec/settlement/batch-executor/rollover.int.test.ts > [AC-B2-04p#19] 跨过日切时新一天的快照已完成：不停止，照常执行完 DONE",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#1] SB5→SB6：立即结算的 CONFIRMED 批次（两个开关开、当日快照已超时）开始执行：写 started_at，逐单入账后 DONE 并写 finished_at，不写 settle_jobs",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#2] SB5「已到执行时刻」：定时结算未到 scheduled_at 时 not_due，什么都不写；到点后再投递才开始，started_at 为到点时刻",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#3] 到执行时刻 settle.auto.enabled=false：不执行，批次保持 CONFIRMED 并写停住标记 paused_by_switch_at；开关恢复后再投递仍不自动开始（只能走 SB10）",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#3] 到执行时刻 settle.auto.enabled=off：不执行，批次保持 CONFIRMED 并写停住标记 paused_by_switch_at；开关恢复后再投递仍不自动开始（只能走 SB10）",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#3] 到执行时刻 credit.enabled.taobao=false：不执行，批次保持 CONFIRMED 并写停住标记 paused_by_switch_at；开关恢复后再投递仍不自动开始（只能走 SB10）",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#3] 到执行时刻 credit.enabled.taobao=off：不执行，批次保持 CONFIRMED 并写停住标记 paused_by_switch_at；开关恢复后再投递仍不自动开始（只能走 SB10）",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#3] 到执行时刻 credit.enabled.taobao=undefined：不执行，批次保持 CONFIRMED 并写停住标记 paused_by_switch_at；开关恢复后再投递仍不自动开始（只能走 SB10）",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#4] 停住标记先于快照判断写入：00:10 当日快照未完成也未超时、credit.enabled 为 off → 写标记、不执行；快照完成后也不自动开始",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#5] 已带停住标记的 CONFIRMED 批次：开关都开、快照已超时也不开始，不写任何东西",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#6] BR-FUND-18：00:10 当日快照未完成也未超时 → snapshot_pending，批次与明细不变、不写停住标记；快照 complete 后再投递才执行",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#6] BR-FUND-18：00:10 当日快照未完成也未超时 → snapshot_pending，批次与明细不变、不写停住标记；快照 timed_out 后再投递才执行",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#7] 批次为 DRAFT 时执行任务幂等结束（PARTIAL 不自动续跑）：idle，不调用入账，批次、明细、订单与账务都不变",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#7] 批次为 PARTIAL 时执行任务幂等结束（PARTIAL 不自动续跑）：idle，不调用入账，批次、明细、订单与账务都不变",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#7] 批次为 DONE 时执行任务幂等结束（PARTIAL 不自动续跑）：idle，不调用入账，批次、明细、订单与账务都不变",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#7] 批次为 CANCELLED 时执行任务幂等结束（PARTIAL 不自动续跑）：idle，不调用入账，批次、明细、订单与账务都不变",
+    "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#8] 只执行本 app 的批次：用别的 app_id 投递同一 batch_id → idle，该批次与订单都不变",
+    "test/spec/settlement/batch-executor/switch.int.test.ts > [AC-B2-04p#15] 执行中把 settle.auto.enabled 关掉（缓存时限 10 秒已过）：在下一单前停止，批次 PARTIAL，已入账的保持、未处理的保持 WAITING；SB8 继续后从第一条未处理的明细续跑，每单只入账一次",
+    "test/spec/settlement/batch-executor/switch.int.test.ts > [AC-B2-04p#15] 执行中把 credit.enabled.taobao 关掉（缓存时限 10 秒已过）：在下一单前停止，批次 PARTIAL，已入账的保持、未处理的保持 WAITING；SB8 继续后从第一条未处理的明细续跑，每单只入账一次",
+    "test/spec/settlement/batch-executor/switch.int.test.ts > [AC-B2-04p#16] 停在 EXECUTING、没有存活执行者的批次被接管时开关为 off：第一单前即停止，批次 PARTIAL，不调用入账",
+    "test/spec/settlement/batch-executor/switch.int.test.ts > [AC-B2-04p#17] 每单事务开始前都读两个开关（时钟每单前进 11 秒，超过 10 秒缓存时限）：settle.auto.enabled 与 credit.enabled.<批次平台> 各至少读到单数次"
+  ],
+  "risk_note": "RV2 settlement (settlement-plan B2-04p; BR-FUND-04 ⑦, SB5–SB10, BR-FUND-18/20). Batch executor: per-run session advisory lock (two-int key space distinct from order locks) on one reserved connection that carries every statement of the run (batch re-read, CAS, items, completion); per-item transaction calling B2-04m credit with item results guarded by result IS NULL; switches re-read before every item (settle.auto.enabled missing = registry default on; credit.enabled.<platform> missing = off, BR-CALC-03); day-roll checked before and before commit (rollback, batch stays EXECUTING); DONE only when no unprocessed item remains; items ordered by order_key in code.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "dfceef1c8a43bb762824ba15e9a669ccc540cb26",
+      "tree": "e2294408dba8ff52ed010c992036730d4493675c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T06:37:06Z",
+      "finished_at": "2026-10-24T06:37:15Z",
+      "gate": {
+        "commit": "97963b4d8a65c82c93282a2a61f9fe59d150eecf",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/settlement/batch-executor/items.int.test.ts > [AC-B2-04p#9] 明细按 order_key 升序逐条执行，每条一个独立事务；入账入参取明细的 settle_seq，开立引用为明细 id",
+        "test/spec/settlement/batch-executor/items.int.test.ts > [AC-B2-04p#10] 执行校验不过的子订单记 skipped 与 B2-04m 的原因（hold / rights_pending / settlement_changed / tlj_deduct_unsupported），订单保持 WAITING、不写凭证；其余照常入账，批次 DONE",
+        "test/spec/settlement/batch-executor/items.int.test.ts > [AC-B2-04p#11] 明细结果与入账同一事务：写第 2 条明细结果的语句执行后失败 → 该单入账整体回滚、明细仍未处理，批次保持 EXECUTING；再投递从这条续跑，每单只入账一次",
+        "test/spec/settlement/batch-executor/items.int.test.ts > [AC-B2-04p#12] 受益人补记项经 B2-04q 端口执行，各自独立事务；明细按返回记 credited + amount_fen、deferred、skipped + skip_reason",
+        "test/spec/settlement/batch-executor/items.int.test.ts > [AC-B2-04p#13] SB6 与 settle.batch_done 同一事务：发布失败 → 批次保持 EXECUTING、finished_at 为空、无事件；再投递只补完成，不重复入账，恰好一条 settle.batch_done",
+        "test/spec/settlement/batch-executor/items.int.test.ts > [AC-B2-04p#14] 完成时为本 app 发布一条带 batch_id 的 settle.batch_done；DONE 之后重复投递 idle，不再发布、不改任何东西",
+        "test/spec/settlement/batch-executor/overlap.int.test.ts > [AC-B2-04p#24] 同一子订单同时在 PARTIAL 主批次与补充批次中（main_first）：只入账一次，先执行的明细 credited，后执行的明细 skipped / not_waiting",
+        "test/spec/settlement/batch-executor/overlap.int.test.ts > [AC-B2-04p#24] 同一子订单同时在 PARTIAL 主批次与补充批次中（supplement_first）：只入账一次，先执行的明细 credited，后执行的明细 skipped / not_waiting",
+        "test/spec/settlement/batch-executor/recovery.int.test.ts > [AC-B2-04p#20] 崩溃续跑（E-18）：10 单的批次在第 4 单事务中执行者进程连接全部断开 → 批次停在 EXECUTING、前 3 单已入账；另一执行者按 SB9 从第 4 单续跑，10 单各入账一次：用户合计 4800、平台 5200、UNION_RECEIVABLE 10000",
+        "test/spec/settlement/batch-executor/recovery.int.test.ts > [AC-B2-04p#21] 执行者仍存活时的重复投递（另一连接）：立即 busy，不等待、不改批次与明细；原执行者继续执行完，每单只入账一次、一条 settle.batch_done",
+        "test/spec/settlement/batch-executor/recovery.int.test.ts > [AC-B2-04p#22] 同一 CONFIRMED 批次被两个执行者同时投递（两条连接）：只有一个执行，另一个 busy 或 idle；每单只调用一次入账、只入账一次，一条 settle.batch_done",
+        "test/spec/settlement/batch-executor/recovery.int.test.ts > [AC-B2-04p#23] 前一天中断、停在 EXECUTING 的批次在当日快照完成前被接管：snapshot_pending，不入账、不改批次；快照完成后 SB9 续跑，不改 started_at",
+        "test/spec/settlement/batch-executor/rollover.int.test.ts > [AC-B2-04p#18] 执行中跨过日切而新一天快照未完成：在途那一单提交前发现、整单回滚，批次保持 EXECUTING、不发 settle.batch_done；00:20 再投递仍等快照；快照完成后 SB9 从这一单续跑，每单只入账一次",
+        "test/spec/settlement/batch-executor/rollover.int.test.ts > [AC-B2-04p#19] 跨过日切时新一天的快照已完成：不停止，照常执行完 DONE",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#1] SB5→SB6：立即结算的 CONFIRMED 批次（两个开关开、当日快照已超时）开始执行：写 started_at，逐单入账后 DONE 并写 finished_at，不写 settle_jobs",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#2] SB5「已到执行时刻」：定时结算未到 scheduled_at 时 not_due，什么都不写；到点后再投递才开始，started_at 为到点时刻",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#3] 到执行时刻 settle.auto.enabled=false：不执行，批次保持 CONFIRMED 并写停住标记 paused_by_switch_at；开关恢复后再投递仍不自动开始（只能走 SB10）",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#3] 到执行时刻 settle.auto.enabled=off：不执行，批次保持 CONFIRMED 并写停住标记 paused_by_switch_at；开关恢复后再投递仍不自动开始（只能走 SB10）",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#3] 到执行时刻 credit.enabled.taobao=false：不执行，批次保持 CONFIRMED 并写停住标记 paused_by_switch_at；开关恢复后再投递仍不自动开始（只能走 SB10）",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#3] 到执行时刻 credit.enabled.taobao=off：不执行，批次保持 CONFIRMED 并写停住标记 paused_by_switch_at；开关恢复后再投递仍不自动开始（只能走 SB10）",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#3] 到执行时刻 credit.enabled.taobao=undefined：不执行，批次保持 CONFIRMED 并写停住标记 paused_by_switch_at；开关恢复后再投递仍不自动开始（只能走 SB10）",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#4] 停住标记先于快照判断写入：00:10 当日快照未完成也未超时、credit.enabled 为 off → 写标记、不执行；快照完成后也不自动开始",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#5] 已带停住标记的 CONFIRMED 批次：开关都开、快照已超时也不开始，不写任何东西",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#6] BR-FUND-18：00:10 当日快照未完成也未超时 → snapshot_pending，批次与明细不变、不写停住标记；快照 complete 后再投递才执行",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#6] BR-FUND-18：00:10 当日快照未完成也未超时 → snapshot_pending，批次与明细不变、不写停住标记；快照 timed_out 后再投递才执行",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#7] 批次为 DRAFT 时执行任务幂等结束（PARTIAL 不自动续跑）：idle，不调用入账，批次、明细、订单与账务都不变",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#7] 批次为 PARTIAL 时执行任务幂等结束（PARTIAL 不自动续跑）：idle，不调用入账，批次、明细、订单与账务都不变",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#7] 批次为 DONE 时执行任务幂等结束（PARTIAL 不自动续跑）：idle，不调用入账，批次、明细、订单与账务都不变",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#7] 批次为 CANCELLED 时执行任务幂等结束（PARTIAL 不自动续跑）：idle，不调用入账，批次、明细、订单与账务都不变",
+        "test/spec/settlement/batch-executor/start.int.test.ts > [AC-B2-04p#8] 只执行本 app 的批次：用别的 app_id 投递同一 batch_id → idle，该批次与订单都不变",
+        "test/spec/settlement/batch-executor/switch.int.test.ts > [AC-B2-04p#15] 执行中把 settle.auto.enabled 关掉（缓存时限 10 秒已过）：在下一单前停止，批次 PARTIAL，已入账的保持、未处理的保持 WAITING；SB8 继续后从第一条未处理的明细续跑，每单只入账一次",
+        "test/spec/settlement/batch-executor/switch.int.test.ts > [AC-B2-04p#15] 执行中把 credit.enabled.taobao 关掉（缓存时限 10 秒已过）：在下一单前停止，批次 PARTIAL，已入账的保持、未处理的保持 WAITING；SB8 继续后从第一条未处理的明细续跑，每单只入账一次",
+        "test/spec/settlement/batch-executor/switch.int.test.ts > [AC-B2-04p#16] 停在 EXECUTING、没有存活执行者的批次被接管时开关为 off：第一单前即停止，批次 PARTIAL，不调用入账",
+        "test/spec/settlement/batch-executor/switch.int.test.ts > [AC-B2-04p#17] 每单事务开始前都读两个开关（时钟每单前进 11 秒，超过 10 秒缓存时限）：settle.auto.enabled 与 credit.enabled.<批次平台> 各至少读到单数次"
+      ],
+      "expected": [
+        "test/spec/settlement/batch-executor/items.int.test.ts",
+        "test/spec/settlement/batch-executor/overlap.int.test.ts",
+        "test/spec/settlement/batch-executor/recovery.int.test.ts",
+        "test/spec/settlement/batch-executor/rollover.int.test.ts",
+        "test/spec/settlement/batch-executor/start.int.test.ts",
+        "test/spec/settlement/batch-executor/switch.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "391173d3b9b30cbc15a2773387fec86925f7172b7489393d1e38604185bc379a"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "Codex out of quota until 10-30; adversarial money reviews by fresh independent Claude via claude-run.sh (approvals #36); round 1 fail (S1: missing settle.auto.enabled row treated as off, batch stuck CONFIRMED; S2 lock connection vs pool), round 2 incremental pass; open S2 (config reader borrows a pool connection, PARTIAL emits no settle.batch_done, poison item) recorded as followups for B2-04zb / orchestrator",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by an independent Claude via claude-run.sh in 1 run; round 1 pass",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "760d162f7a87df08576d8cf4d1530a6b0cae8201",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}
