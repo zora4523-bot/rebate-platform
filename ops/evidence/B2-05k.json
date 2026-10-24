@@ -1,0 +1,118 @@
+{
+  "task": "B2-05k",
+  "spec_ref": "3a301d14f0f566e8f0bc689aa8cfc177175dae20",
+  "spec_commit": "52d212d868091c3930666eb9dc22e98850c776ce",
+  "red_tests": [
+    "test/spec/payout/recovered/assembly.int.test.ts > [AC-B2-05k#7] api 入口装配的 LEDGER 带 payout 回正挂点：回正入账提交后阻断即清，updated_at 取入口 Clock",
+    "test/spec/payout/recovered/assembly.int.test.ts > [AC-B2-05k#7] admin 入口装配的 LEDGER 带 payout 回正挂点：回正入账提交后阻断即清，updated_at 取入口 Clock",
+    "test/spec/payout/recovered/assembly.int.test.ts > [AC-B2-05k#7] worker 入口装配的 LEDGER 带 payout 回正挂点：回正入账提交后阻断即清，updated_at 取入口 Clock",
+    "test/spec/payout/recovered/assembly.int.test.ts > [AC-B2-05k#7] payout 入口装配的 LEDGER 带 payout 回正挂点：回正入账提交后阻断即清，updated_at 取入口 Clock",
+    "test/spec/payout/recovered/assembly.int.test.ts > [AC-B2-05k#7] worker 的 account.went_negative 消费者：系统驳回的 WITHDRAW_RETURN 使余额回正，同一事务清空该会员 PAYING 单的阻断",
+    "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#1] −1 入账 1n 回到 0n：同一事务内 APPROVED 与 PAYING 的阻断清空，提交后可见，状态金额不变、row_version +1、updated_at 取挂点 Clock",
+    "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#1] −1 入账 51n 回到 50n：同一事务内 APPROVED 与 PAYING 的阻断清空，提交后可见，状态金额不变、row_version +1、updated_at 取挂点 Clock",
+    "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#1] 一张凭证同时让同 app 两名会员回正：两人的阻断都在该事务内清空",
+    "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#2] 回正的 post 在同一事务里随后回滚：阻断保留，余额、分录、凭证都不变",
+    "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#3] 入账后仍为负（−5 → −2）挂点不调用、阻断不清；再入账到 0 才清",
+    "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#3] 端口被直接以 availableAfter=-1n（仍为负）调用时防御性返回，不写任何行",
+    "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#3] 端口被直接以 availableAfter=-300n（仍为负）调用时防御性返回，不写任何行",
+    "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#4] 本就 ≥0（0n）的会员入账：挂点不被调用，残留的阻断单不动",
+    "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#4] 本就 ≥0（50n）的会员入账：挂点不被调用，残留的阻断单不动",
+    "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#5] 挂点在 UPDATE 之后抛错（error）：整张凭证回滚，余额、分录、凭证、阻断都不变，调用方事务仍可用",
+    "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#5] 挂点在 UPDATE 之后抛错（sql）：整张凭证回滚，余额、分录、凭证、阻断都不变，调用方事务仍可用",
+    "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#6] 回正会员没有 NEGATIVE_BALANCE 单（no withdrawals）：UPDATE 影响 0 行、不报错，单据 row_version 不变",
+    "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#6] 回正会员没有 NEGATIVE_BALANCE 单（only unblocked withdrawals）：UPDATE 影响 0 行、不报错，单据 row_version 不变",
+    "test/spec/payout/recovered/wiring.test.ts > [AC-B2-05k#7] 源码里每个带 eventBus 的 createLedger 调用（apply、went-negative 消费者）都带 balanceRecoveredHook"
+  ],
+  "risk_note": "RV2 payout (withdraw lane B2-05k; model Claude Fable 5.1). payout's implementation of ledger's recovery port (B2-04ka BalanceRecoveredHook, BR-WDR-05 (a) / BR-FUND-12): inside the posting that takes a member's available from < 0 to >= 0, on the same transaction and inside ledger's voucher savepoint, one UPDATE clears blocked_reason = NEGATIVE_BALANCE on that member's withdrawals of this app (updated_at from the injected Clock, row_version + 1; no status change, no voucher, no event; a still-negative availableAfter is ignored). A failure rolls the voucher back. Wiring: PayoutModule.recovery() provides BALANCE_RECOVERED_HOOK globally on every non-stream entry so LedgerModule's LEDGER carries it; the apply use case and the worker's account.went_negative consumer pass the hook to their createLedger directly. B2-05e's transitional consumer-side clearing stays (frozen [AC-B2-05e#24]). No amounts or entries change.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "52d212d868091c3930666eb9dc22e98850c776ce",
+      "tree": "9a9fd737e1e53636793142a09ac09ddb1ce70d4c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T23:32:36Z",
+      "finished_at": "2026-10-23T23:32:50Z",
+      "gate": {
+        "commit": "a3b419aa91db81c8439d4020c0f265b4e4dc01a9",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/payout/recovered/assembly.int.test.ts > [AC-B2-05k#7] api 入口装配的 LEDGER 带 payout 回正挂点：回正入账提交后阻断即清，updated_at 取入口 Clock",
+        "test/spec/payout/recovered/assembly.int.test.ts > [AC-B2-05k#7] admin 入口装配的 LEDGER 带 payout 回正挂点：回正入账提交后阻断即清，updated_at 取入口 Clock",
+        "test/spec/payout/recovered/assembly.int.test.ts > [AC-B2-05k#7] worker 入口装配的 LEDGER 带 payout 回正挂点：回正入账提交后阻断即清，updated_at 取入口 Clock",
+        "test/spec/payout/recovered/assembly.int.test.ts > [AC-B2-05k#7] payout 入口装配的 LEDGER 带 payout 回正挂点：回正入账提交后阻断即清，updated_at 取入口 Clock",
+        "test/spec/payout/recovered/assembly.int.test.ts > [AC-B2-05k#7] worker 的 account.went_negative 消费者：系统驳回的 WITHDRAW_RETURN 使余额回正，同一事务清空该会员 PAYING 单的阻断",
+        "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#1] −1 入账 1n 回到 0n：同一事务内 APPROVED 与 PAYING 的阻断清空，提交后可见，状态金额不变、row_version +1、updated_at 取挂点 Clock",
+        "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#1] −1 入账 51n 回到 50n：同一事务内 APPROVED 与 PAYING 的阻断清空，提交后可见，状态金额不变、row_version +1、updated_at 取挂点 Clock",
+        "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#1] 一张凭证同时让同 app 两名会员回正：两人的阻断都在该事务内清空",
+        "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#2] 回正的 post 在同一事务里随后回滚：阻断保留，余额、分录、凭证都不变",
+        "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#3] 入账后仍为负（−5 → −2）挂点不调用、阻断不清；再入账到 0 才清",
+        "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#3] 端口被直接以 availableAfter=-1n（仍为负）调用时防御性返回，不写任何行",
+        "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#3] 端口被直接以 availableAfter=-300n（仍为负）调用时防御性返回，不写任何行",
+        "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#4] 本就 ≥0（0n）的会员入账：挂点不被调用，残留的阻断单不动",
+        "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#4] 本就 ≥0（50n）的会员入账：挂点不被调用，残留的阻断单不动",
+        "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#5] 挂点在 UPDATE 之后抛错（error）：整张凭证回滚，余额、分录、凭证、阻断都不变，调用方事务仍可用",
+        "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#5] 挂点在 UPDATE 之后抛错（sql）：整张凭证回滚，余额、分录、凭证、阻断都不变，调用方事务仍可用",
+        "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#6] 回正会员没有 NEGATIVE_BALANCE 单（no withdrawals）：UPDATE 影响 0 行、不报错，单据 row_version 不变",
+        "test/spec/payout/recovered/recovered.int.test.ts > [AC-B2-05k#6] 回正会员没有 NEGATIVE_BALANCE 单（only unblocked withdrawals）：UPDATE 影响 0 行、不报错，单据 row_version 不变",
+        "test/spec/payout/recovered/wiring.test.ts > [AC-B2-05k#7] 源码里每个带 eventBus 的 createLedger 调用（apply、went-negative 消费者）都带 balanceRecoveredHook"
+      ],
+      "expected": [
+        "test/spec/payout/recovered/assembly.int.test.ts",
+        "test/spec/payout/recovered/recovered.int.test.ts",
+        "test/spec/payout/recovered/wiring.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "8c97212fe5186a8cc26b12bedee0807168e8edd7ad2021ae3a8057e7abbfbc2c"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "fef5e2422fe56e4650d3b4bb32f0a8d5f47ae6b142cec62b7f94702bbf2ec642"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "round 1 pass, no S0/S1 (couli-runs/B2-05k/review-claude-independent.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass with one S2 (status range of the clearing UPDATE, recorded in followups) (couli-runs/B2-05k/attempts/*/review-claude-independent.json)"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "b31be6f81af21e2ba9a34c65a51a9d746293e968",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}

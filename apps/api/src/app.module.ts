@@ -182,6 +182,7 @@ import {
   PayoutModule,
   createDefaultFeeTaxCalculator,
   createWithdrawApply,
+  createBalanceRecoveredHook,
   createWithdrawalInFlightReader,
   createWithdrawHoldsReader,
   createWithdrawRules,
@@ -2595,7 +2596,11 @@ function payoutModule(): DynamicModule {
         if (db === undefined || crypto === undefined) return null;
         return createWithdrawApply({
           rules: withdrawRuleOptions(clock, logger, db, crypto),
-          ledger: createLedger(eventBus === undefined ? { clock } : { clock, eventBus }),
+          ledger: createLedger({
+            clock,
+            ...(eventBus === undefined ? {} : { eventBus }),
+            balanceRecoveredHook: createBalanceRecoveredHook({ clock }),
+          }),
           lockUsersForUpdate,
           snapshot: createWithdrawPayeeSnapshotReader(crypto),
           outBizNo: () => generateOutBizNo(randomBytes),
@@ -2794,6 +2799,9 @@ export class AppModule {
         // The ledger posting port (B2-02f) on every entry that books money: settlement (worker),
         // withdrawals (api, payout) and adjustments (admin); the stream entry books nothing.
         ...(options.entry === 'stream' ? [] : [LedgerModule.forRoot()]),
+        // payout's recovery port for that ledger (B2-05k, BR-WDR-05 (a)): the posting that takes a
+        // member's available back to >= 0 clears the member's NEGATIVE_BALANCE blocks.
+        ...(options.entry === 'stream' ? [] : [PayoutModule.recovery()]),
         // Freeze expiry and the daily risk alerts (BR-ID-36, B1-03j): the risk-scan queue's
         // handler, worked by the worker entry only; entry.ts seeds the chain after the queue starts.
         ...(options.entry === 'worker'

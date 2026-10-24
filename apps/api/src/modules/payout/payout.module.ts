@@ -8,7 +8,8 @@
 import type { DynamicModule, FactoryProvider } from '@nestjs/common';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
-import { createLedger } from '../ledger/index.ts';
+import { BALANCE_RECOVERED_HOOK, createLedger } from '../ledger/index.ts';
+import { createBalanceRecoveredHook } from './application/balance-recovered.ts';
 import {
   CLOCK,
   DB as DB_TOKEN,
@@ -98,6 +99,26 @@ export class PayoutModule {
    * Registration runs no statement; without a database or queue nothing is registered and one
    * info line `went_negative_consumer_disabled` is logged.
    */
+  /**
+   * B2-05k: payout's recovery port for ledger (BR-WDR-05 (a)), global so LedgerModule's optional
+   * BALANCE_RECOVERED_HOOK injection sees it on every entry that books money. The hook clears the
+   * member's NEGATIVE_BALANCE blocks inside the posting that takes available back to >= 0.
+   */
+  static recovery(): DynamicModule {
+    return {
+      module: PayoutModule,
+      global: true,
+      providers: [
+        {
+          provide: BALANCE_RECOVERED_HOOK,
+          inject: [CLOCK],
+          useFactory: (clock: Clock) => createBalanceRecoveredHook({ clock }),
+        },
+      ],
+      exports: [BALANCE_RECOVERED_HOOK],
+    };
+  }
+
   static forWorker(options: PayoutWorkerOptions): DynamicModule {
     return {
       module: PayoutModule,
@@ -126,7 +147,11 @@ export class PayoutModule {
               db,
               logger: logger.child({ module: 'payout' }),
               clock,
-              ledger: createLedger({ clock, eventBus }),
+              ledger: createLedger({
+                clock,
+                eventBus,
+                balanceRecoveredHook: createBalanceRecoveredHook({ clock }),
+              }),
               lockUsersForUpdate: options.lockUsersForUpdate,
               attempts: options.attempts,
               eventBus,
