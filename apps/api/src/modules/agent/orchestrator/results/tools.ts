@@ -9,7 +9,8 @@
 // (awaiting_price) is still recorded at once: it is what the user was shown. So is a search that
 // ends without a product_list (no result, failed, refused, notices only): its attempt is recorded
 // as it was before the search (new conditions, the chain's own status), so 换平台 and price
-// follow-ups continue the query the user just asked; 再便宜点 without result still records nothing.
+// follow-ups continue the query the user just asked, but its page never runs ahead of the batch
+// shown (D10-333); 再便宜点 without result still records nothing.
 import type { AgentProductCard } from '../../tools/search/index.ts';
 import { priceRangeInvalidView } from '../../tools/search/index.ts';
 import { assignMatchTags } from '../../tools/match/index.ts';
@@ -398,11 +399,17 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
    * B3-03r: a round that shows no product_list records its attempt at once — the chain the search
    * started on with this round's requested conditions and that chain's own status, exactly what
    * was recorded before the search without `deps.chains`. Null (再便宜点) records nothing.
+   * It records the query, never a page the user did not see (D10-333): on the current chain the
+   * page stays the one already shown (a failed or stopped 换一批 does not move it; a condition
+   * change that restarted at page 1 keeps page 1), and a new chain starts from page 1.
    * Never conditional on the run's signal.
    */
   async function recordAttempt(ctx: ToolContext, tried: SessionChain | null): Promise<void> {
     if (tried === null) return;
-    await setChain(deps.store, ctx.subject.appId, ctx.sessionId, tried);
+    const appId = ctx.subject.appId;
+    const current = await currentChain(deps.store, appId, ctx.sessionId);
+    const same = current !== null && current.chainId === tried.chainId ? current : null;
+    await setChain(deps.store, appId, ctx.sessionId, unadvanced(tried, same));
   }
 
   /**
@@ -435,4 +442,25 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
   }
 
   return tools;
+}
+
+/** The page the user has seen on a chain (absent means page 1). */
+function pageOf(conditions: SearchConditions | null): number {
+  return conditions?.page ?? 1;
+}
+
+/**
+ * D10-333: `tried` with a page that never runs ahead of what was shown — on the current chain
+ * the lower of the requested and the shown page (with the shown chain's own spelling when that
+ * is the lower one), on a new chain page 1 (no page key).
+ */
+function unadvanced(tried: SessionChain, current: SessionChain | null): SessionChain {
+  const conditions = tried.conditions;
+  if (conditions === null) return tried;
+  const { page, ...rest } = conditions;
+  void page;
+  if (current === null) return { ...tried, conditions: rest };
+  const kept = pageOf(conditions) <= pageOf(current.conditions) ? conditions : current.conditions;
+  const shown = kept?.page;
+  return { ...tried, conditions: shown === undefined ? rest : { ...rest, page: shown } };
 }

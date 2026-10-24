@@ -542,3 +542,64 @@ it('[AC-B3-03r#5][BR-PRICE-15] 延后切链时再便宜点无结果仍不改条�
   expect(noticeKeys(out.cards)).toEqual(['agent.notice.no_cheaper']);
   expect(await h.store.currentChain?.(APP, SESSION)).toEqual(before);
 });
+
+// B3-03r (D10-333) · BR-AI-05: a round without a product_list records the query, never a page the
+// user did not see — a failed 换一批 keeps the shown page, so the next 换一批 asks for it again.
+it.each([
+  ['失败结果', () => ({ kind: 'failed', modelView: { error: 'tool_failed' } }) as const],
+  [
+    '检索抛错',
+    () => {
+      throw new Error('synthetic upstream failure');
+    },
+  ],
+] as const)(
+  '[AC-B3-03r#7][BR-AI-05] 换一批（%s）没出商品列表：当前链页码不变，再换一批请求的仍是第 2 页',
+  async (_label, fail) => {
+    const h = harness(true);
+    await seenBatch(h);
+    const before = await h.store.currentChain?.(APP, SESSION);
+    h.execute.mockImplementationOnce(async () => fail());
+    await h.intent({ agent_intent: 'refine', conditions: { next_batch: true } }, 'failed-run');
+    expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({ q: '合成保温杯', page: 2 });
+    expect(await h.store.currentChain?.(APP, SESSION)).toEqual(before);
+    await h.intent({ agent_intent: 'refine', conditions: { next_batch: true } }, 'again-run');
+    expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({ q: '合成保温杯', page: 2 });
+  },
+);
+
+it('[AC-B3-03r#7][BR-AI-05] 第 2 页已见后价格追问失败：记下新价格、页码回到第 1 页，不沿用旧查询的页码', async () => {
+  const h = harness(true);
+  await seenBatch(h);
+  await h.intent({ agent_intent: 'refine', conditions: { next_batch: true } }, 'page-two-run');
+  const pageTwo = h.execute.mock.calls.at(-1)?.[0];
+  expect(pageTwo?.args).toEqual({ q: '合成保温杯', page: 2 });
+  await h.receipts.recordDelivered(pageTwo!.id, [delivered('c2')]);
+  expect(await h.store.currentChain?.(APP, SESSION)).toMatchObject({
+    status: 'has_products',
+    conditions: { q: '合成保温杯', page: 2 },
+  });
+  h.execute.mockResolvedValueOnce({ kind: 'failed', modelView: { error: 'tool_failed' } });
+  await h.intent({ agent_intent: 'refine', conditions: { price_max_fen: 10000 } }, 'price-run');
+  expect(await h.store.currentChain?.(APP, SESSION)).toMatchObject({
+    conditions: { q: '合成保温杯', price_max_fen: 10000, page: 1 },
+  });
+  await h.intent({ agent_intent: 'refine', conditions: { next_batch: true } }, 'next-run');
+  expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({
+    q: '合成保温杯',
+    price_max_fen: 10000,
+    page: 2,
+  });
+});
+
+it('[AC-B3-03r#7][BR-AI-05] 新查询直接请求第 3 页但失败：新链从第 1 页记起', async () => {
+  const h = harness(true);
+  await seenBatch(h);
+  h.execute.mockResolvedValueOnce({ kind: 'failed', modelView: { error: 'tool_failed' } });
+  await h.modelSearch({ q: '合成水杯', page: 3 }, 'failed-run');
+  const chain = await h.store.currentChain?.(APP, SESSION);
+  expect(chain?.conditions?.q).toBe('合成水杯');
+  expect(chain?.conditions?.page ?? 1).toBe(1);
+  await h.intent({ agent_intent: 'refine', conditions: { next_batch: true } }, 'next-run');
+  expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({ q: '合成水杯', page: 2 });
+});
