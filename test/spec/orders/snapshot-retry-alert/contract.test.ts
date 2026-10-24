@@ -7,6 +7,8 @@ const PLAN_02_AFTER_RETRY_EXHAUSTED = [
   'user.realname_corrected',
   'asset_snapshot.timed_out',
   'union_receivable.exposure_exceeded',
+  // 02 §11 收款：支付成功（D10-338，couli #204）
+  'pay_order.paid',
 ];
 
 it('[AC-B1-08u#1] 耗尽告警登记一次并位于规划事件清单中的位置（其后只有 02 §11 排在它之后的事件）', () => {
