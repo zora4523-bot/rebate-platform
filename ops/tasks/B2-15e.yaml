@@ -24,6 +24,8 @@ paths:
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
 test_paths:
   - 'test/spec/payment/refund/**'
+  # 2026-10-25 D10-340：02 §11 已有 pay_refund.succeeded，事件夹具 PLAN_02_EVENTS 由测试作者在作者提交里只加这一项（同 B2-15c #1549）；[AC-B1-08u#1] 允许名单另走前置 PR（D10-325）。
+  - 'test/spec/platform/events/kit.ts'
 impl: claude
 tester: claude-independent
 accept:
