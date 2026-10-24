@@ -93,3 +93,13 @@ export type {
   VerifyCodeMessage,
   VerifyCodeSmsSender,
 } from './sms/index.ts';
+// B1-12y: the signature name and template CODE by code from notify_templates' SMS registration
+// (D10-316 ①), and the site auth alert SMS on the real channel with its BizId in notify_logs.
+export { createRegisteredTemplateResolver } from './sms/index.ts';
+export type {
+  RegisteredTemplateQuery,
+  RegisteredTemplateResolver,
+  RegisteredTemplateResolverDeps,
+} from './sms/index.ts';
+export { createLiveTemplateSmsSender } from './site-auth-alert/live-sender.ts';
+export type { LiveTemplateSmsSenderDeps } from './site-auth-alert/live-sender.ts';
