@@ -1,0 +1,137 @@
+{
+  "task": "B1-01zzg",
+  "spec_ref": "7d67b89ca2641f256810eda9b15cd272f33ba1a7",
+  "spec_commit": "6f54b36b5a46942ebf3d1e474f39cfd8e2f0a6df",
+  "red_tests": [
+    "test/spec/admin/export-worker/queue.int.test.ts > [AC-B1-34e#26] export exists once after risk-scan in the catalog with B1-34c standard defaults",
+    "test/spec/content/pages-schedule/contract.test.ts > [AC-F1-09p#28] page-schedule 位于 pool-refresh 后且 poster 前，仅 worker 并发 1 消费",
+    "test/spec/notification/claim-result-message/routing.test.ts > [AC-B1-12r#23] claim.resolved 有且仅有一个本任务订阅，队列及 worker 计划完整且其他进程不消费",
+    "test/spec/orders/sync/queue.test.ts > [AC-B1-08g#22] order-sync 紧邻 order-rescan 之前，exclusive、默认重试与单一死信",
+    "test/spec/payment/orders/domain.test.ts > [AC-B2-15b#9] 队列目录登记 pay（默认重试与保留），只由 worker 入口以并发 4 处理",
+    "test/spec/platform/dead-letter-scan/bootstrap.test.ts > [AC-B1-01zzg#8] 五入口 bootstrap 默认根日志传递配置里的部署 tag，无须调用者另传 logger",
+    "test/spec/platform/dead-letter-scan/catalog.test.ts > [AC-B1-01zzg#1] 每个业务队列指向唯一的同名 .dead，死信零重试保留 30 天且所有入口均禁止消费",
+    "test/spec/platform/dead-letter-scan/entry.test.ts > [AC-B1-01zzg#9] 真实 runEntry 的五入口启动日志都传入部署版本，不因另建根 logger 而丢失",
+    "test/spec/platform/dead-letter-scan/logging.test.ts > [AC-B1-01zzg#6] loadConfig 只从注入的 COULI_DEPLOY_VERSION 读取镜像 tag，未设和空串均按缺省处理",
+    "test/spec/platform/dead-letter-scan/logging.test.ts > [AC-B1-01zzg#7] pino 根 base 与子日志均带部署 tag；缺省时 bindings 与 JSON 都没有该键",
+    "test/spec/platform/dead-letter-scan/runtime.int.test.ts > [AC-B1-01zzg#4] 迁移在应用启动前已建各 .dead 并改业务 dead_letter，目录一致且五入口均可启动",
+    "test/spec/platform/dead-letter-scan/runtime.int.test.ts > [AC-B1-01zzg#10] 已部署旧目录整段重放迁移后，各业务队列改指自己的 .dead 且五入口均可启动",
+    "test/spec/platform/dead-letter-scan/runtime.int.test.ts > [AC-B1-01zzg#5] 只有 worker 登记五分钟 pg-boss schedule，定时队列任务实际触发 SQL 告警且死信原样保留",
+    "test/spec/platform/dead-letter-scan/scan.int.test.ts > [AC-B1-01zzg#2] SQL 扫所有 .dead；order-sync 按 data.platform 分组，零计数不告警，不取走、不修改、不重放任务",
+    "test/spec/platform/dead-letter-scan/scan.int.test.ts > [AC-B1-01zzg#3] 所有死信队列为空时静默，业务队列 failed 不冒充死信计数",
+    "test/spec/platform/queue/contract.test.ts > [规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项确切（待编排会话确认的默认值）：payout、settle 为 exclusive（risk-scan 若有亦然），其余 standard，死信队列 dead-letter",
+    "test/spec/platform/queue/contract.test.ts > [规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只能为自己计划里的队列注册处理器：其余目录队列一律 not_in_entry",
+    "test/spec/union/auth-probe/queue.test.ts > [AC-S1-64#50] union-auth 是 exclusive，只 worker 并发1，其余目录默认；公共出口队列名固定"
+  ],
+  "risk_note": "RV2 (platform queue / logging / config, db migration). R-01 (D10-183 ②, D10-193): every business queue (15 on main, including union-auth and evt.notification-claim-result added since the first review) gets its own dead-letter queue <queue>.dead (order-sync.dead for the shared order-sync queue); a migration first creates the .dead queues in pgboss.queue (same settings as the old global dead-letter) and then repoints the existing queues' dead_letter (the foreign key is not deferrable), so a deployed database matches the new catalog and startup is not refused with queue_mismatch; release order is migrate first, then restart all processes. The entry plan still consumes no dead-letter queue (validation unchanged); a worker scheduled job counts jobs in each .dead queue by SQL (order-sync.dead grouped by data.platform) and logs one structured error per non-empty queue, never consuming, changing or replaying them; metrics export and alert rules follow in B1-01zzh. The root pino logger carries the deploy version from a new config item (staging passes COULI_API_TAG into the containers) and omits the field when unset. The schema snapshot is unchanged (the migration only writes pgboss.queue rows). Frozen tests that listed the global dead-letter target change only that expectation (ledger test_paths; class 1, label checked by the orchestrator under approvals #24); [AC-F1-09p#27] is declared red_exempt (body unchanged). No money, no attribution. After rebasing on 10-24, orchestrator mechanical test(spec) commits add the two newer queues to the rule-test queue list, change only the dead-letter expectation of their frozen catalog tests (test/spec/union/auth-probe/queue.test.ts, test/spec/notification/claim-result-message/routing.test.ts; ledger #1443) and create union-auth exclusive in the old-catalog replay fixture.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "6f54b36b5a46942ebf3d1e474f39cfd8e2f0a6df",
+      "tree": "2a127ac5655a19aaf5968e739b460cdcd6dea1e0",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T13:40:37Z",
+      "finished_at": "2026-10-24T13:40:53Z",
+      "gate": {
+        "commit": "44d892d593875483765d994dcb1a6e950d7a5ea0",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/admin/export-worker/queue.int.test.ts > [AC-B1-34e#26] export exists once after risk-scan in the catalog with B1-34c standard defaults",
+        "test/spec/content/pages-schedule/contract.test.ts > [AC-F1-09p#28] page-schedule 位于 pool-refresh 后且 poster 前，仅 worker 并发 1 消费",
+        "test/spec/notification/claim-result-message/routing.test.ts > [AC-B1-12r#23] claim.resolved 有且仅有一个本任务订阅，队列及 worker 计划完整且其他进程不消费",
+        "test/spec/orders/sync/queue.test.ts > [AC-B1-08g#22] order-sync 紧邻 order-rescan 之前，exclusive、默认重试与单一死信",
+        "test/spec/payment/orders/domain.test.ts > [AC-B2-15b#9] 队列目录登记 pay（默认重试与保留），只由 worker 入口以并发 4 处理",
+        "test/spec/platform/dead-letter-scan/bootstrap.test.ts > [AC-B1-01zzg#8] 五入口 bootstrap 默认根日志传递配置里的部署 tag，无须调用者另传 logger",
+        "test/spec/platform/dead-letter-scan/catalog.test.ts > [AC-B1-01zzg#1] 每个业务队列指向唯一的同名 .dead，死信零重试保留 30 天且所有入口均禁止消费",
+        "test/spec/platform/dead-letter-scan/entry.test.ts > [AC-B1-01zzg#9] 真实 runEntry 的五入口启动日志都传入部署版本，不因另建根 logger 而丢失",
+        "test/spec/platform/dead-letter-scan/logging.test.ts > [AC-B1-01zzg#6] loadConfig 只从注入的 COULI_DEPLOY_VERSION 读取镜像 tag，未设和空串均按缺省处理",
+        "test/spec/platform/dead-letter-scan/logging.test.ts > [AC-B1-01zzg#7] pino 根 base 与子日志均带部署 tag；缺省时 bindings 与 JSON 都没有该键",
+        "test/spec/platform/dead-letter-scan/runtime.int.test.ts > [AC-B1-01zzg#4] 迁移在应用启动前已建各 .dead 并改业务 dead_letter，目录一致且五入口均可启动",
+        "test/spec/platform/dead-letter-scan/runtime.int.test.ts > [AC-B1-01zzg#10] 已部署旧目录整段重放迁移后，各业务队列改指自己的 .dead 且五入口均可启动",
+        "test/spec/platform/dead-letter-scan/runtime.int.test.ts > [AC-B1-01zzg#5] 只有 worker 登记五分钟 pg-boss schedule，定时队列任务实际触发 SQL 告警且死信原样保留",
+        "test/spec/platform/dead-letter-scan/scan.int.test.ts > [AC-B1-01zzg#2] SQL 扫所有 .dead；order-sync 按 data.platform 分组，零计数不告警，不取走、不修改、不重放任务",
+        "test/spec/platform/dead-letter-scan/scan.int.test.ts > [AC-B1-01zzg#3] 所有死信队列为空时静默，业务队列 failed 不冒充死信计数",
+        "test/spec/platform/queue/contract.test.ts > [规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项确切（待编排会话确认的默认值）：payout、settle 为 exclusive（risk-scan 若有亦然），其余 standard，死信队列 dead-letter",
+        "test/spec/platform/queue/contract.test.ts > [规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只能为自己计划里的队列注册处理器：其余目录队列一律 not_in_entry",
+        "test/spec/union/auth-probe/queue.test.ts > [AC-S1-64#50] union-auth 是 exclusive，只 worker 并发1，其余目录默认；公共出口队列名固定"
+      ],
+      "expected": [
+        "test/spec/admin/export-worker/queue.int.test.ts",
+        "test/spec/content/pages-schedule/contract.test.ts",
+        "test/spec/notification/claim-result-message/routing.test.ts",
+        "test/spec/orders/sync/queue.test.ts",
+        "test/spec/payment/orders/domain.test.ts",
+        "test/spec/platform/dead-letter-scan/bootstrap.test.ts",
+        "test/spec/platform/dead-letter-scan/catalog.test.ts",
+        "test/spec/platform/dead-letter-scan/entry.test.ts",
+        "test/spec/platform/dead-letter-scan/logging.test.ts",
+        "test/spec/platform/dead-letter-scan/runtime.int.test.ts",
+        "test/spec/platform/dead-letter-scan/scan.int.test.ts",
+        "test/spec/platform/queue/contract.test.ts",
+        "test/spec/union/auth-probe/queue.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "8442c937ba9050cf8cbf0412c59d351504097d68ac358a45c24500a61aaf12fb"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "2e414b8204d60e78944991779bc41a4bba7c9bbdbf06e178332308931772b548"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    },
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "incremental review after the 10-24 rebase (Codex out of quota until 10-30, approvals #36): pass; one S2 on the orchestrator's mechanical commit (replay fixture created union-auth as standard), fixed by a further mechanical commit"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (run 1 and 2: module-not-found skeleton gaps fixed; run 3 after review) reviewed by fresh Claude subagents: round 1 fail with one S1 (no test replayed the migration over queues created by the old catalog), fixed in Codex run 3; round 2 pass with one S2 left (the frozen catalog contract filter excludes .dead queues; those are pinned by [AC-B1-01zzg#1]). The 10-24 rebase additions were orchestrator mechanical commits (queue list entries and dead-letter expectations only), checked by the independent Claude review of that increment. The 10-24 slot rebase (migration renumbered 0083) added two more orchestrator mechanical test(spec) commits: the queues added on main since (evt.payout-went-negative, pay) in the business queue list and pay's dead letter expectation (including the frozen [AC-B2-15b#9], ledger #1539), and the old-catalog fixture creating pay exclusive; expectations only, no assertion loosened. The 12 red_exempt entries (11 frozen B2-15b cases in payment/orders/domain.test.ts and [AC-F1-09p#27]) were confirmed by a fresh read-only Claude rule-test review as byte-identical to the base and reading nothing the task changed (CT-06r); the only changed tests in those files are [AC-B2-15b#9] and [AC-F1-09p#28] (dead letter targets).",
+    "red_exempt_confirmed": true
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "aa572e54a5fa99fbdbbc6484ebaefbe264b1a5e7",
+    "specs": "3a4839903f37a34b57bd1d7a7a4364ec48e27c1f"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
