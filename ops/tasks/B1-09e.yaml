@@ -9,6 +9,7 @@ type: migration
 #   order_rights 唯一 (app_id, order_id, type, platform_rights_no) NULLS NOT DISTINCT（方案 K-2，表归 settlement、迁移由本线出，J-12 已裁定）；只给 SELECT / INSERT / 需要的 UPDATE，不给 DELETE；授权写在本迁移。
 # 迁移号落地时取主干最大号 + 1（notices 登记，现 0069），排在 B1-09a 之后；两段式由编排者跑 remote-snapshot 提交生成物；lint-migrations 资金 / 归属表名单如需加行，按 D10-19 先例由编排处理。
 # 2026-10-24 paths 补 tools/ci/lint-migrations.test.ts：新表 order_sync_requests、order_assignments 按前缀 order 归资金 / 归属表，须加进该测试的清单（编排 01:12 照 pay B2-15a 先例；落地时编排按 approvals #24 核对加标签）。
+# 2026-10-25（W1，回编排 23:57）：#1560 CI verify-int 红 [AC-B2-04z#16]/[#17]/[#18]——夹具插多行同 order、同 type、无平台维权单号的维权，被 0084 的 order_rights_dedupe_key（方案 K-2：无单号每子订单每类型一条）拒绝；判夹具违 K-2，照 D10-327 把该冻结测试列进 test_paths，新鲜独立 Claude 只改造数（断言不动）、另一新鲜 Claude 只读核；同文件 7 条在骨架上仍绿，列 red_exempt。
 refs: []
 refs_hash: {}
 deps: [B1-10a, CT-24n]
@@ -19,6 +20,29 @@ paths:
   - 'packages/db/src/db.gen.ts'
 test_paths:
   - 'test/spec/db/orders-ops/**'
+  - 'test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts'
+red_exempt:
+  - file: test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts
+    test: '[AC-B2-04z#15] ⑧ INVALID仍CREDITED即报账户级差异，定位全部受益人且检查数按子订单'
+    reason: 冻结 B2-04z 不变量用例；本任务只把同文件 #16/#17/#18 的维权造数改为带互不相同的 platform_rights_no（迁移 0084 的 order_rights 唯一键按方案 K-2，断言不动），同文件被整体判定，骨架（无 0084）上仍绿
+  - file: test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts
+    test: '[AC-B2-04z#16] ⑧ 平台仍SETTLED但存在成功INVALID_AFTER_SETTLE同样报，重复维权不倍增'
+    reason: 冻结 B2-04z 不变量用例；本任务只把同文件 #16/#17/#18 的维权造数改为带互不相同的 platform_rights_no（迁移 0084 的 order_rights 唯一键按方案 K-2，断言不动），同文件被整体判定，骨架（无 0084）上仍绿
+  - file: test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts
+    test: '[AC-B2-04z#17] ⑧ 处理中、待佣金、失败及其他类型成功维权都不误报，不能用rights_pending替代'
+    reason: 冻结 B2-04z 不变量用例；本任务只把同文件 #16/#17/#18 的维权造数改为带互不相同的 platform_rights_no（迁移 0084 的 order_rights 唯一键按方案 K-2，断言不动），同文件被整体判定，骨架（无 0084）上仍绿
+  - file: test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts
+    test: '[AC-B2-04z#18] ⑧ INVALID与成功维权均存在时也不重复；同用户多角色只定位一个账户'
+    reason: 冻结 B2-04z 不变量用例；本任务只把同文件 #16/#17/#18 的维权造数改为带互不相同的 platform_rights_no（迁移 0084 的 order_rights 唯一键按方案 K-2，断言不动），同文件被整体判定，骨架（无 0084）上仍绿
+  - file: test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts
+    test: '[AC-B2-04z#19] ⑧ 失效或成功维权但已CLAWED_BACK、VOID等非CREDITED不误报也不计入候选数'
+    reason: 冻结 B2-04z 不变量用例；本任务只把同文件 #16/#17/#18 的维权造数改为带互不相同的 platform_rights_no（迁移 0084 的 order_rights 唯一键按方案 K-2，断言不动），同文件被整体判定，骨架（无 0084）上仍绿
+  - file: test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts
+    test: '[AC-B2-04z#20] ⑧ 另一应用另一平台的失效维权不会污染正常订单，差异保留正确app_id'
+    reason: 冻结 B2-04z 不变量用例；本任务只把同文件 #16/#17/#18 的维权造数改为带互不相同的 platform_rights_no（迁移 0084 的 order_rights 唯一键按方案 K-2，断言不动），同文件被整体判定，骨架（无 0084）上仍绿
+  - file: test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts
+    test: '[AC-B2-04z#21] ⑧ 正常空集合返回零检查哨兵行'
+    reason: 冻结 B2-04z 不变量用例；本任务只把同文件 #16/#17/#18 的维权造数改为带互不相同的 platform_rights_no（迁移 0084 的 order_rights 唯一键按方案 K-2，断言不动），同文件被整体判定，骨架（无 0084）上仍绿
 impl: claude
 tester: claude-independent
 accept:
