@@ -1,0 +1,37 @@
+{
+  "task": "CT-24q",
+  "spec_ref": "395cf6661e2c5d595922086bdd89b0bb191ad192",
+  "spec_commit": "6342306581d87b50f6fb20f66c2b11ad14241b4d",
+  "red_tests": [],
+  "risk_note": "RV1 contract task (contracts/openapi.yaml, enums/identity.yaml, error-codes.yaml, routes.json DataCopy page, contracts-ts conformance / catalog / texts tests and the regenerated contracts-ts and route tables): adds six planned operations — back-office realname correction (BR-ID-25 细则「实名更正」), back-office personal data copy request / list / WeCom-path download (BR-ID-40), and the user-side me/data-copies list and download. Registers the new error code 30419 (HTTP 422, /admin/v1 only, data.reason with seven values; account_deleting carries data.stage as 10007, account_deleted does not; D10-246 / D10-248 / D10-250), extends 30417 to personal data copy downloads (data.status from personal_data_copy_status) and 30701 to the user-side copy download, transcribed from 04 §7 and 08 §13.11 at SPEC_REF 395cf666; the round-1 placeholders for codes awaiting registration are replaced by references. tester none; implementation by an Opus 5.5 subagent in two rounds (round 2 after planning registered the codes). Full verification on the test machine and by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "Codex out of quota (until 10-30); independent Claude via tools/agent/claude-run.sh per approvals #36. Round 1 pass with S2×2 (due_at example wording fixed; 30701 use awaiting planning — now registered). Round 2 (increment incl. the 30419 / 30417 / 30701 registration) pass, 0 findings."
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "597817825c7ed7ffdffd6141c68c45382b9fe780",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}
