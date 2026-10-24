@@ -1,0 +1,37 @@
+{
+  "risk_note": "RV2 (tools/** gate and a frozen test under test/spec/**). Gate registration only: tools/ci/lint-migrations.ts APPROVED_GUARD_CHANGES gains 0081_ledger-type-pay.sql (B2-15i: ledger_entries_ledger_type_check + pay_ledger_type, recon_diffs_type_check + pay_mismatch / pay_anomaly, same-name rebuild NOT VALID then VALIDATE; orchestrator ruling D10-168 ①) with the file's sha256 affc680c363578c9cfe9f9388bb4db9f32ff574c2ff73a382e90724d14822ab5, and [AC-CT-06d#1] in test/spec/db/lint-migrations/guard-approvals.test.ts pins the same hash (precedents #1002 / B1-22e). The migration was renumbered 0071 → 0077 → 0081 at the migration slot (2026-10-24 03:10) without any content change, so the hash is unchanged; B1-15t's 0077 entry on main is kept beside it. No executable code; tester none, no red run. Written by the lane orchestrator (pay-acct4, Claude Fable 5.1); after a merge conflict with B1-15t's entry the orchestrator session rebuilt the PR on main as a single commit (a37f3e3f, same registration content). Money review by an independent Claude (claude-run.sh, Codex unavailable until 2026-10-30, approvals #36) round 1 pass with 2 S2 — it reviewed the identical registration content when the file was still named 0077_ledger-type-pay.sql (pin is checked only via the registry literal; the frozen-test path was added to the ledger, #1392). Ledger PR #1187.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, 2 S2 (couli-runs/B2-15h/review-claude-independent.json); reviewed the same APPROVED_GUARD_CHANGES entry and frozen pin under the file name 0077_ledger-type-pay.sql — renumbered to 0081 without content or hash change"
+    }
+  ],
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  },
+  "task": "B2-15h",
+  "spec_commit": "c5558a81ff039726ad154aa88bd0aeee002ce68b",
+  "spec_ref": "3a301d14f0f566e8f0bc689aa8cfc177175dae20",
+  "red_tests": [],
+  "runs": [],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "6deebd233a7499c69e54433f60ba42ec11bc2939",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  }
+}
