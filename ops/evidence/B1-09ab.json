@@ -1,0 +1,109 @@
+{
+  "task": "B1-09ab",
+  "spec_ref": "7d67b89ca2641f256810eda9b15cd272f33ba1a7",
+  "spec_commit": "cdf307e53a2bca65c25033b0c24d6b59e5f397ba",
+  "red_tests": [
+    "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#5] 同一订单先 manual_review 后 void_commission：只追加第二行，第一行一字不改",
+    "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#5] 同一订单先 void_commission 后 manual_review：只追加第二行，第一行一字不改",
+    "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#6] 同一订单同值同处置 manual_review 重复记录仍只一条，换用户或时钟不覆盖",
+    "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#6] 同一订单同值同处置 void_commission 重复记录仍只一条，换用户或时钟不覆盖",
+    "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#7] 反复改判只留每种处置的首次记录：交替记录（含同一事务内）后同一订单恰好两行",
+    "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#8] 并发记录两种处置：规则惰性登记一次，同一订单每种处置各一行",
+    "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#9] 处置之外的键不变：同一订单不同名单值、不同订单各自按处置去重",
+    "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#10] 改判作废随调用方回滚时不留第二行、首行不变；之后重试再追加",
+    "test/spec/risk/order-blocklist-escalation/index.int.test.ts > [AC-B1-09ab#1] 同名唯一索引按六列重建、谓词只限 BLACKLIST_HIT；无旧五列残留，同设备索引不变",
+    "test/spec/risk/order-blocklist-escalation/index.int.test.ts > [AC-B1-09ab#2] PG 兜底：同一订单同值两种处置各一行，同处置再插按索引名拒绝；dimension 不是去重键",
+    "test/spec/risk/order-blocklist-escalation/index.int.test.ts > [AC-B1-09ab#3] 其他规则去重不放宽：SAME_DEVICE_MULTI_ACCOUNT 同键换处置 manual_review 仍被原索引拒绝，无索引规则照旧不去重",
+    "test/spec/risk/order-blocklist-escalation/index.int.test.ts > [AC-B1-09ab#3] 其他规则去重不放宽：SAME_DEVICE_MULTI_ACCOUNT 同键换处置 void_commission 仍被原索引拒绝，无索引规则照旧不去重",
+    "test/spec/risk/order-blocklist-escalation/index.int.test.ts > [AC-B1-09ab#3] 其他规则去重不放宽：SAME_DEVICE_MULTI_ACCOUNT 同键换处置 block 仍被原索引拒绝，无索引规则照旧不去重",
+    "test/spec/risk/order-blocklist-escalation/index.int.test.ts > [AC-B1-09ab#4] couli_app 对 risk_hits 仍只有 SELECT / INSERT：无表级或列级 UPDATE，无 DELETE，改写首行被拒",
+    "test/spec/risk/order-blocklist/hits.int.test.ts > [AC-B1-09a#17] 同一订单先 manual_review 后 void_commission 各留一行，首次命中不被改写",
+    "test/spec/risk/order-blocklist/uniqueness.int.test.ts > [AC-B1-09a#21] BLACKLIST_HIT 部分唯一索引由 PG 兜底；六列分别参与且不影响其他规则"
+  ],
+  "risk_note": "RV2 (risk/**, db/migrations, db/schema.sql; a frozen B1-09a rule-test change). Order blocklist hits deduped per risk_action, append-only (orchestrator ruling D10-293): a new migration rebuilds risk_hits_blacklist_once_key with the same name as (app_id, rule_id, ref_type, ref_id, value_hmac, risk_action) WHERE rule_id='BLACKLIST_HIT' (DROP then CREATE in one transaction, lock_timeout 5s, squawk-ignore for the non-concurrent drop), and recordHit dedupes on the same six columns, still DO NOTHING with no UPDATE grant: an order escalated from manual_review to void_commission keeps both rows, the first unchanged; other rules' dedupe untouched. Test-change B1-09ac (orchestrator ruling D10-302, same PR; per D10-327 a separate test(spec) commit before the implementation, its two frozen files in test_paths, ledger #1569): the frozen [AC-B1-09a#17] and [#21] now expect two rows / a six-column key; changed by a fresh independent Claude and checked change-only by another (couli-runs/B1-09ab/b109ac-check.md). Deploy note (money review S2): old pods doing ON CONFLICT on five columns get 42P10 once the index has six, so release must stop old workers / API before the migration or split it (followups); no production traffic yet. Migration 0085 under the migration slot (main max 0084). Codex was unavailable until 10-30, so tests and the money review ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "cdf307e53a2bca65c25033b0c24d6b59e5f397ba",
+      "tree": "c6254abb0b23a63e8ee4c075d94dc5f39f52567f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T19:42:28Z",
+      "finished_at": "2026-10-24T19:42:57Z",
+      "gate": {
+        "commit": "a50cc002d2170b2ff5e89a8a6366ac3d2c521b38",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#5] 同一订单先 manual_review 后 void_commission：只追加第二行，第一行一字不改",
+        "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#5] 同一订单先 void_commission 后 manual_review：只追加第二行，第一行一字不改",
+        "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#6] 同一订单同值同处置 manual_review 重复记录仍只一条，换用户或时钟不覆盖",
+        "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#6] 同一订单同值同处置 void_commission 重复记录仍只一条，换用户或时钟不覆盖",
+        "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#7] 反复改判只留每种处置的首次记录：交替记录（含同一事务内）后同一订单恰好两行",
+        "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#8] 并发记录两种处置：规则惰性登记一次，同一订单每种处置各一行",
+        "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#9] 处置之外的键不变：同一订单不同名单值、不同订单各自按处置去重",
+        "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts > [AC-B1-09ab#10] 改判作废随调用方回滚时不留第二行、首行不变；之后重试再追加",
+        "test/spec/risk/order-blocklist-escalation/index.int.test.ts > [AC-B1-09ab#1] 同名唯一索引按六列重建、谓词只限 BLACKLIST_HIT；无旧五列残留，同设备索引不变",
+        "test/spec/risk/order-blocklist-escalation/index.int.test.ts > [AC-B1-09ab#2] PG 兜底：同一订单同值两种处置各一行，同处置再插按索引名拒绝；dimension 不是去重键",
+        "test/spec/risk/order-blocklist-escalation/index.int.test.ts > [AC-B1-09ab#3] 其他规则去重不放宽：SAME_DEVICE_MULTI_ACCOUNT 同键换处置 manual_review 仍被原索引拒绝，无索引规则照旧不去重",
+        "test/spec/risk/order-blocklist-escalation/index.int.test.ts > [AC-B1-09ab#3] 其他规则去重不放宽：SAME_DEVICE_MULTI_ACCOUNT 同键换处置 void_commission 仍被原索引拒绝，无索引规则照旧不去重",
+        "test/spec/risk/order-blocklist-escalation/index.int.test.ts > [AC-B1-09ab#3] 其他规则去重不放宽：SAME_DEVICE_MULTI_ACCOUNT 同键换处置 block 仍被原索引拒绝，无索引规则照旧不去重",
+        "test/spec/risk/order-blocklist-escalation/index.int.test.ts > [AC-B1-09ab#4] couli_app 对 risk_hits 仍只有 SELECT / INSERT：无表级或列级 UPDATE，无 DELETE，改写首行被拒",
+        "test/spec/risk/order-blocklist/hits.int.test.ts > [AC-B1-09a#17] 同一订单先 manual_review 后 void_commission 各留一行，首次命中不被改写",
+        "test/spec/risk/order-blocklist/uniqueness.int.test.ts > [AC-B1-09a#21] BLACKLIST_HIT 部分唯一索引由 PG 兜底；六列分别参与且不影响其他规则"
+      ],
+      "expected": [
+        "test/spec/risk/order-blocklist-escalation/escalation.int.test.ts",
+        "test/spec/risk/order-blocklist-escalation/index.int.test.ts",
+        "test/spec/risk/order-blocklist/hits.int.test.ts",
+        "test/spec/risk/order-blocklist/uniqueness.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "fd619e07a8646da6bcf1d6b3b0b5d34626d0fa20c1f6ccf9934e078ea8ce9f7f"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 against the merge base pass with one S2 (rolling-deploy 42P10 with old pods, recorded as a deploy follow-up); a first run produced output that failed schema validation (a checklist line outside the diff hunks) and was re-run."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude (1 run); round 1 pass with one out_of_scope S2 (BR-ID-36 display of the strictest action, outside risk/**). B1-09ac change-only check by another fresh independent Claude: pass (one S2: the user-only retry is not tested on its own, as before). The 8 red_exempt entries (unchanged B1-09a tests [#15]x4, [#16], [#18], [#19], [#20] in hits.int.test.ts, judged as a whole because the shared kit.ts may read files this task adds) were confirmed unchanged by the same change-only review (b109ac-check.md §1: only [#17] and [#21] differ).",
+    "red_exempt_confirmed": true
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "7e72fd13b69fa63e0868cbe26fa098924c2764bf",
+    "specs": "cec847e1768a63aac90e3e1bd473462d95d84436"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
