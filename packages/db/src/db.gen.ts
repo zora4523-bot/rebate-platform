@@ -1337,6 +1337,7 @@ export interface PayRefunds {
   failed_at: Timestamp | null;
   id: string;
   idempotency_key: string;
+  note: string | null;
   operator: string;
   out_refund_no: string;
   reason_code: string;
