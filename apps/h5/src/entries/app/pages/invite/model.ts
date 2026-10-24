@@ -1,18 +1,26 @@
+import type { BridgeMethods } from '@couli/bridge-sdk';
+
 // 邀请好友页的配置解析与固定入口（不依赖 React，便于单测）。
 
-/** 经桥 app.getConfig 读取的键（规格 §4：getConfig 经桥读取，只要 invite 段）。 */
-export const CONFIG_KEYS = ['invite'];
+/** 经桥 app.getConfig 读取的键（规格 §4：getConfig 经桥读取）：invite 段与帮助文章入口 help_links。 */
+export const CONFIG_KEYS = ['invite', 'help_links'];
 
 /** cs.open 的 entry：只带调用页的 routes.json 名（BR-ID-33 细则），不带任何账号标识。 */
 export const SUPPORT_ENTRY = 'InviteShare';
 
+/** nav.open 的参数：help_links 的跳转目标 {route, params} 原样交给桥。 */
+export type HelpTarget = BridgeMethods['nav.open']['params'];
+
 /**
- * 帮助文章（规格 §2：「完整规则」→ HelpArticleInviteRules，「活动规则」→ HelpArticleInviteReward）。
- * 契约 help_links 还没有这两项的键，先用固定的文章标识，由运营在帮助中心按此标识建文章；
- * 契约补键后改为读配置（已在输出里报编排者）。
+ * 两张卡的帮助文章入口（契约 CT-16n，D10-252）：help_links.invite_rules →【完整规则】，
+ * help_links.invite_reward_rules →【活动规则】。键未配置（或配置读取失败）为 null，对应入口不显示。
  */
-export const ARTICLE_INVITE_RULES = 'invite-rules';
-export const ARTICLE_INVITE_REWARD = 'invite-reward';
+export interface InviteLinks {
+  rules: HelpTarget | null;
+  rewardRules: HelpTarget | null;
+}
+
+export const NO_LINKS: InviteLinks = { rules: null, rewardRules: null };
 
 /** 奖励活动（D36）：只有 reward_enabled 为真且金额为正整数分时才算有效。 */
 export interface InviteReward {
@@ -42,5 +50,22 @@ export function parseInviteReward(values: unknown): InviteReward | null {
   return {
     amountFen: BigInt(amount),
     eligibilityDays: positiveInteger(invite['eligibility_days']),
+  };
+}
+
+/** 只认 {route, params} 对象（route 为非空字符串、params 为对象），其余按未配置。 */
+function helpTarget(value: unknown): HelpTarget | null {
+  const link = record(value);
+  if (link === null || typeof link['route'] !== 'string' || link['route'] === '') return null;
+  if (record(link['params']) === null) return null;
+  return link as unknown as HelpTarget;
+}
+
+/** 解析 app.getConfig 的 values 里的 help_links：缺失、不是对象或键缺失都按该入口不显示。 */
+export function parseInviteLinks(values: unknown): InviteLinks {
+  const links = record(record(values)?.['help_links']) ?? {};
+  return {
+    rules: helpTarget(links['invite_rules']),
+    rewardRules: helpTarget(links['invite_reward_rules']),
   };
 }
