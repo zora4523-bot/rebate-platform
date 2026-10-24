@@ -199,7 +199,7 @@ export class AdminUnionAccounts {
   readonly #db: Kysely<DB> | undefined;
   readonly #clock: Clock;
   readonly #crypto: FieldCrypto | undefined;
-  readonly #config: Pick<ContentReader, 'configValue'> | undefined;
+  readonly #config: (db: Kysely<DB>, clock: Clock) => Pick<ContentReader, 'configValue'>;
   readonly #auditWriter: (db: Kysely<DB>) => UnionAuditWriter;
   readonly #reauth: SiteReauth | null;
   readonly #validity: Readonly<Record<RegisteredPlatform, number>>;
@@ -209,7 +209,7 @@ export class AdminUnionAccounts {
     this.#db = options.db;
     this.#clock = options.clock;
     this.#crypto = options.crypto;
-    this.#config = options.db === undefined ? undefined : options.config(options.db, options.clock);
+    this.#config = options.config;
     this.#auditWriter = options.auditWriter;
     this.#reauth = options.reauth;
     this.#validity = { ...MANUAL_KEY_VALIDITY_DAYS, ...options.keyValidityDays };
@@ -507,10 +507,12 @@ export class AdminUnionAccounts {
     return statusFor(left, days ?? DEFAULT_ALERT_DAYS);
   }
 
+  /**
+   * A fresh reader per call (B1-22g): the content reader caches, and the alert phones change on
+   * this same entry through AdminUnionAlertPhonesService, so the list reads them as they are now.
+   */
   #reader(): Pick<ContentReader, 'configValue'> {
-    if (this.#config === undefined)
-      throw new Error('union: account administration needs the database');
-    return this.#config;
+    return this.#config(this.#database(), this.#clock);
   }
 
   async #session(appId: string, sessionId: string): Promise<AdminUnionReauthResult> {

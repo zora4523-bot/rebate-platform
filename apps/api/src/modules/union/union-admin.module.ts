@@ -1,7 +1,10 @@
 // union's admin console routes (B1-22h): /admin/v1/union-pids (list, register, change a pending
 // row, activate with the 花卷云 ignore screenshot, retire; BR-ATTR-02, BR-ATTR-28); (B1-22d)
 // /admin/v1/union-accounts (list, station-owner OAuth re-authorization sessions over B1-22c's
-// createSiteReauth, manual credential entry; BR-ID-24 ③, D10-176, D10-196). app.module
+// createSiteReauth, manual credential entry; BR-ID-24 ③, D10-176, D10-196); (B1-22g)
+// /admin/v1/union-accounts/alert-phones (list, add, remove the station-owner alert phones; the
+// encrypted group is written only through content's createUnionAlertPhonesWriter inside union's
+// transaction, with union's audit row; BR-ID-24 ②, D10-152 ④, D10-281). app.module
 // imports this module on the admin entry only; the api, stream and worker entries do not serve
 // /admin/v1. Permission and step-up checks go through platform's AdminOperationGuard, which the
 // admin module provides on the admin entry (union never imports admin). Each change and its audit
@@ -17,7 +20,7 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
-import type { ContentReader } from '../content/index.ts';
+import { createUnionAlertPhonesWriter, type ContentReader } from '../content/index.ts';
 import {
   APP_CONFIG,
   CLOCK,
@@ -31,9 +34,11 @@ import {
   type RootLogger,
 } from '../platform/index.ts';
 import { AdminUnionAccounts, reauthAuditWriter } from './application/admin-accounts.ts';
+import { AdminUnionAlertPhonesService } from './application/admin-alert-phones.ts';
 import { AdminUnionPids } from './application/admin-pids.ts';
 import { createSiteReauth } from './auth-expiry/reauth.ts';
 import { AdminUnionAccountsController } from './http/admin/union-accounts.controller.ts';
+import { AdminUnionAlertPhonesController } from './http/admin/union-alert-phones.controller.ts';
 import { AdminUnionPidsController } from './http/admin/union-pids.controller.ts';
 import { createSiteOAuthProviders } from './infra/fake-site-oauth.ts';
 import { HjyIgnoreEvidenceStore } from './infra/hjy-ignore-evidence-store.ts';
@@ -52,7 +57,11 @@ export class UnionAdminModule {
   static forAdmin(options: UnionAdminOptions): DynamicModule {
     return {
       module: UnionAdminModule,
-      controllers: [AdminUnionPidsController, AdminUnionAccountsController],
+      controllers: [
+        AdminUnionPidsController,
+        AdminUnionAccountsController,
+        AdminUnionAlertPhonesController,
+      ],
       providers: [
         {
           provide: HjyIgnoreEvidenceStore,
@@ -114,6 +123,30 @@ export class UnionAdminModule {
               logger,
             });
           },
+        },
+        {
+          provide: AdminUnionAlertPhonesService,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<Database>,
+            crypto?: FieldCrypto,
+          ): AdminUnionAlertPhonesService =>
+            new AdminUnionAlertPhonesService({
+              db,
+              clock,
+              crypto,
+              config: options.config,
+              writer: createUnionAlertPhonesWriter({ clock, logger }),
+              auditWriter: (trx) => options.auditWriter(trx, clock),
+              logger,
+            }),
         },
       ],
     };
