@@ -8,6 +8,7 @@ type: impl
 # ② staging / prod 缺这组配置时启动失败（同 keyring-startup.ts 口径）；local / test 自动用 LocalKeyProvider 生成。
 # ③ 两套密钥环的数据密钥不同；盲索引沿用主密钥环（旧 id_no_hmac 原样迁移不重算）；context 用独立前缀，防止与 realname 列密文互换；KMS 适配器不在本任务。
 # 部署：staging / prod 的密钥文件由负责人自己配，本任务只交付配置项与本地实现；未配置时这两个环境启动失败。
+# 2026-10-24 paths 补 platform/config/admin-auth.test.ts：按取舍②（D10-324 / D10-325）staging / prod 缺 PRIOR_IDENTITY_* 即报缺配置，该单元测试只配 FIELD 的 staging / prod 用例需同步补这组变量（规则测试评审 r2 S2）。
 refs: []
 refs_hash: {}
 deps: []
@@ -15,6 +16,7 @@ paths:
   - 'apps/api/src/modules/platform/config/keyring*.ts'
   - 'apps/api/src/modules/platform/config/config.ts'
   - 'apps/api/src/modules/platform/config/config.test.ts'
+  - 'apps/api/src/modules/platform/config/admin-auth.test.ts'
   - 'apps/api/src/modules/platform/config/index.ts'
   - 'apps/api/src/modules/platform/crypto/**'
   - 'apps/api/src/modules/platform/platform.module.ts'
