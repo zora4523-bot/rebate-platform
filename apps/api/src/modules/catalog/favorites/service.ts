@@ -1,11 +1,12 @@
 // B1-28b: the favorites use cases on app.favorites (catalog is the single writer).
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
 import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import { decodeFavoritesCursor, encodeFavoritesCursor } from './cursor.ts';
 import { FavoriteError } from './errors.ts';
 import { favoriteCardView, readFavoritesCap } from './rules.ts';
 import { outerFavoritesTransaction, prefetchedFavoritesCap } from './transaction.ts';
+import { deleteAllFavoritesIn, lockFavoritesOfUser } from './user-lock.ts';
 import type {
   FavoriteCardView,
   FavoriteRecord,
@@ -54,13 +55,8 @@ export function createFavoritesService(options: FavoritesServiceOptions): Favori
     userId: string,
     work: (trx: Transaction<DB>) => Promise<T>,
   ): Promise<T> {
-    // UUID text is case insensitive in PG; normalise it for the same lock identity.
-    const key = createHash('sha256')
-      .update(JSON.stringify(['catalog.favorites', appId, userId.toLowerCase()]))
-      .digest()
-      .readBigInt64BE(0);
     const locked = async (trx: Transaction<DB>): Promise<T> => {
-      await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(trx);
+      await lockFavoritesOfUser(trx, appId, userId);
       return work(trx);
     };
     // B1-28e: inside runInFavoritesTransaction the lock (transaction-scoped, so it is held
@@ -234,14 +230,8 @@ export function createFavoritesService(options: FavoritesServiceOptions): Favori
     },
 
     async deleteAllFavoritesOfUser(appId, userId) {
-      await withUserLock(appId, userId, async (trx) => {
-        await trx
-          .withSchema('app')
-          .deleteFrom('favorites')
-          .where('app_id', '=', appId)
-          .where('user_id', '=', userId)
-          .execute();
-      });
+      // B1-28f: the same delete as the deletion cleanup port deleteFavoritesForUser.
+      await withUserLock(appId, userId, (trx) => deleteAllFavoritesIn(trx, appId, userId));
     },
   };
 }

@@ -43,6 +43,7 @@ import {
   createUnionDetailUpstream,
   createUnionSearchUpstream,
   createDemoRebateQuoter,
+  deleteFavoritesForUser,
   createItemRefService,
   processItemRefCipher,
   type Catalog,
@@ -526,10 +527,10 @@ const deletionBalance = {
 /**
  * B1-15g: the owning modules' shares of the deletion cleanup (identity's DeletionCleanupPorts, on
  * identity's cleanup transaction). growth's detachChildrenOfDeleted (B1-15n), notification's
- * deletePushTokensForUser (F1-02zzk) and linking's blockForDeletion (B1-06zc) are shipped; the
- * others are unavailable markers: the rest of the cleanup still commits, but the request stays in
- * processing (cleaned_at NULL) with a daily identity_deletion_cleanup_blocked line until the owner
- * ships and is assembled here.
+ * deletePushTokensForUser (F1-02zzk), linking's blockForDeletion (B1-06zc) and catalog's
+ * deleteFavoritesForUser (B1-28f) are shipped; the others are unavailable markers: the rest of the
+ * cleanup still commits, but the request stays in processing (cleaned_at NULL) with a daily
+ * identity_deletion_cleanup_blocked line until the owner ships and is assembled here.
  */
 const deletionCleanupPorts = {
   inject: [],
@@ -540,8 +541,8 @@ const deletionCleanupPorts = {
     notification: deletePushTokensForUser,
     // TODO(规划/11 §2.3): agent purgeAgentDataForUser（B3-09e 已合并）装配 — blocked on AGENT_USER_HASH_KEY 进 platform/config 与 agent/index.ts 导出（B3-09f）
     agent: { unavailable: 'B3-09f' },
-    // TODO(规划/11 §2.3): catalog deleteFavoritesForUser — blocked on W1
-    catalog: { unavailable: 'W1' },
+    // B1-28f: every favorite of the user in the app (BR-ID-28).
+    catalog: deleteFavoritesForUser,
   }),
 };
 

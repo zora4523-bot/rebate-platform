@@ -6,6 +6,9 @@ export { decodeFavoritesCursor, encodeFavoritesCursor } from './cursor.ts';
 export { favoriteCardView, readFavoritesCap } from './rules.ts';
 export { createFavoritesService } from './service.ts';
 export { createFavoriteCardPort } from './card-port.ts';
+// B1-28f: the deletion cleanup port (identity's deletionCleanupPorts.catalog).
+export { deleteFavoritesForUser } from './deletion.ts';
+export type { FavoritesDeletionInput } from './deletion.ts';
 export {
   outerFavoritesTransaction,
   prefetchedFavoritesCap,

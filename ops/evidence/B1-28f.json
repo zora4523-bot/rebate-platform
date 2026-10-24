@@ -1,0 +1,97 @@
+{
+  "task": "B1-28f",
+  "spec_ref": "ec81e625dcf54f230d168dbf09910bd704c82a18",
+  "spec_commit": "7895d99f5ee860a73ab592e6960f053721fc9462",
+  "red_tests": [
+    "test/spec/catalog/favorites-deletion/assembled.int.test.ts > [AC-B1-28f#8] 装配版 catalog 端口在调用方事务里删掉该用户本 app 的全部收藏，别人的不动",
+    "test/spec/catalog/favorites-deletion/assembled.int.test.ts > [AC-B1-28f#9] 装配版注销清理跑完一轮：processing 用户的收藏为空，cleanup_blocked 不再点名 catalog",
+    "test/spec/catalog/favorites-deletion/port.int.test.ts > [AC-B1-28f#1] 删除该用户在本 app 的全部收藏（各平台、晚于 at 的也删），同 app 别的用户与别的 app 同 user_id 的收藏不动",
+    "test/spec/catalog/favorites-deletion/port.int.test.ts > [AC-B1-28f#2] 按 app_id 限定：同一 user_id 配另一个 appId 只删那个 app 的收藏，本 app 的一条不少",
+    "test/spec/catalog/favorites-deletion/port.int.test.ts > [AC-B1-28f#3] 在调用方事务里执行（users 行已锁）：事务内即看不到收藏，提交前别的连接仍看到原样，提交后才删掉",
+    "test/spec/catalog/favorites-deletion/port.int.test.ts > [AC-B1-28f#4] 调用方回滚则删除一并回滚：一条收藏都不少",
+    "test/spec/catalog/favorites-deletion/port.int.test.ts > [AC-B1-28f#5] 可重入：同一事务里再调、提交后另起事务再调都不报错，结果不变；本来没有收藏的用户也不报错",
+    "test/spec/catalog/favorites-deletion/port.int.test.ts > [AC-B1-28f#6] 并发两次清理同一用户：两边都成功，最终该用户收藏为空，别人的不动",
+    "test/spec/catalog/favorites-deletion/wiring.test.ts > [AC-B1-28f#7] 装配：worker 的 deletionCleanupPorts.catalog 是清理步骤函数，不再是 unavailable 标记"
+  ],
+  "risk_note": "RV1/RV2 (catalog favorites, app.module assembly). D10-311 ②, 08 BR-ID-28 (favorites are deleted with the account): catalog's deletion cleanup port deleteFavoritesForUser runs on identity's cleanup transaction (users row already locked; no own transaction, no commit), takes the same per-user advisory lock as the favorites writes and deletes the user's app.favorites rows by app_id and user_id; re-entrant (a retry or a concurrent run deletes nothing more and does not fail). The lock and delete core are shared with B1-28b's deleteAllFavoritesOfUser, whose behaviour is unchanged ([AC-B1-28b#34]). app.module's deletionCleanupPorts.catalog changes from the unavailable marker to this port. couli_app already has DELETE on app.favorites; no migration. No money, no attribution.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "7895d99f5ee860a73ab592e6960f053721fc9462",
+      "tree": "8e1f167f692c6a59b59f058422d7bd2be55eb94e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T09:11:04Z",
+      "finished_at": "2026-10-24T09:11:25Z",
+      "gate": {
+        "commit": "1189e953720b9d716862a057720b2f6a6e9536dd",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/catalog/favorites-deletion/assembled.int.test.ts > [AC-B1-28f#8] 装配版 catalog 端口在调用方事务里删掉该用户本 app 的全部收藏，别人的不动",
+        "test/spec/catalog/favorites-deletion/assembled.int.test.ts > [AC-B1-28f#9] 装配版注销清理跑完一轮：processing 用户的收藏为空，cleanup_blocked 不再点名 catalog",
+        "test/spec/catalog/favorites-deletion/port.int.test.ts > [AC-B1-28f#1] 删除该用户在本 app 的全部收藏（各平台、晚于 at 的也删），同 app 别的用户与别的 app 同 user_id 的收藏不动",
+        "test/spec/catalog/favorites-deletion/port.int.test.ts > [AC-B1-28f#2] 按 app_id 限定：同一 user_id 配另一个 appId 只删那个 app 的收藏，本 app 的一条不少",
+        "test/spec/catalog/favorites-deletion/port.int.test.ts > [AC-B1-28f#3] 在调用方事务里执行（users 行已锁）：事务内即看不到收藏，提交前别的连接仍看到原样，提交后才删掉",
+        "test/spec/catalog/favorites-deletion/port.int.test.ts > [AC-B1-28f#4] 调用方回滚则删除一并回滚：一条收藏都不少",
+        "test/spec/catalog/favorites-deletion/port.int.test.ts > [AC-B1-28f#5] 可重入：同一事务里再调、提交后另起事务再调都不报错，结果不变；本来没有收藏的用户也不报错",
+        "test/spec/catalog/favorites-deletion/port.int.test.ts > [AC-B1-28f#6] 并发两次清理同一用户：两边都成功，最终该用户收藏为空，别人的不动",
+        "test/spec/catalog/favorites-deletion/wiring.test.ts > [AC-B1-28f#7] 装配：worker 的 deletionCleanupPorts.catalog 是清理步骤函数，不再是 unavailable 标记"
+      ],
+      "expected": [
+        "test/spec/catalog/favorites-deletion/assembled.int.test.ts",
+        "test/spec/catalog/favorites-deletion/port.int.test.ts",
+        "test/spec/catalog/favorites-deletion/wiring.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "96dcc57d242d5187350334eece1a0568e60e7fcd388898c52ec5e8abfc70e24e"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "212eb2754397879ac6db8447872d78e659d23bb62ed47259dd653e465a09c19b"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota until 10-30 (approvals #36); first output was rejected by the validator (checklist line references outside the diff hunks) and rerun; pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests written by an independent Claude context (claude-run.sh, approvals #36; 9 tests in 3 files red for the right reason on the test machine), reviewed by a fresh Claude subagent: pass with one S2 (the assembly test passes only CLOCK and ROOT_LOGGER to the cleanup port factory; follow-up)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "ef71ffe7db2a87160d8718e19353884bd98b42fc",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}
