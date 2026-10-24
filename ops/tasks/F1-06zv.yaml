@@ -1,0 +1,26 @@
+id: F1-06zv
+repo: rebate-platform
+title: 后台「消息模板」页（运营 / 消息模板，资源 messages）——「消息模板」页签按编码列出站内信 / 推送 / 短信三渠道（恒开、锁定、只发站内信、订阅类不发短信等按接口给的可改性画），推送与短信开关（notify.channels 动态码；默认无短信的服务类编码打开短信先二次确认）；「短信」页签按 code × variant 列签名、阿里云模板 CODE、类型、预览正文与登记状态，编辑抽屉换签名与模板 CODE（同步测试发送到操作人验证手机号，受理才保存；资金类编码另需 content.fund_terms），保存被拒按字段提示；无 notify.channels 时写操作不出现；接口 CT-24t（planned）
+type: impl
+# 2026-10-24 入账（前端线 f1-frontend-7，编排 19:05「负责人定稿（D10-316 ③ 设计稿）」：9 张画板定稿，页面名沿用「消息模板」，提示语照画板原文，其余 12 条照评审页）。
+# 接口以 CT-24t 契约为准；契约未合并时按 be 草稿的 planned 形状写（任务书摘录草稿），合并后对齐。20001 的三个 reason（D10-335 ②）待编排回写 08 后由契约补，本任务先只按 data.fields 指字段；画板上「资金类变量不一致」「验证码有效期不一致」两种提示在 reason 落地前用同一字段提示，留后续任务。
+# 菜单「消息模板」的可见权限补 notify.channels（resources/index.ts）；正式入口经 F1-06zu planned 清单在接口落地前显示「功能开发中」。站内信措辞编辑与「发送记录」页签无契约，本任务不做。
+# 冻结测试同步：test/spec/frontend/admin-shell/fixtures.ts 的 MENU 表 messages 行逐项写死 [content.article, content.fund_terms]（[AC-F1-06e-MENU#2] toEqual），由本任务规则测试作者在 test_paths 内补 notify.channels，只增不删；[AC-F1-06e-MENU#1] 要求该键在契约枚举 admin_permission 里，故本任务须在 CT-24t 合并后落地。第一类保护路径改动，合并需编排按 #24 加 owner-approved 标签。
+# Codex 用量上限至 10-30：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude。App.tsx 登记页面，按先例走 RV2 评审口径。
+refs: []
+refs_hash: {}
+deps: [CT-24t, F1-06zu]
+paths:
+  - 'apps/admin/src/pages/messages/**'
+  - 'apps/admin/src/texts/messages.ts'
+  - 'apps/admin/src/resources/index.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-messages/**'
+  - 'test/spec/frontend/admin-shell/fixtures.ts'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-messages/**'
+status: todo
