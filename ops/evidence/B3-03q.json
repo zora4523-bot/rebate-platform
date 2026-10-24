@@ -1,0 +1,112 @@
+{
+  "task": "B3-03q",
+  "spec_ref": "d8e3ba5d50552d573506f45a0903e0a8f0a8aca3",
+  "spec_commit": "dd75cc35f95364de281933e17134c0d5bac04181",
+  "red_tests": [
+    "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 降级搜索这批卡没写出（cancel，结果库 pg）：currentChain 保持用户上一批的链，「换一批」与「第 N 个」仍指向上一批；之后写出的一批才切为当前链，「换一批」从它续翻",
+    "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 降级搜索这批卡没写出（limit，结果库 pg）：currentChain 保持用户上一批的链，「换一批」与「第 N 个」仍指向上一批；之后写出的一批才切为当前链，「换一批」从它续翻",
+    "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 降级搜索这批卡没写出（unconfirmed，结果库 pg）：currentChain 保持用户上一批的链，「换一批」与「第 N 个」仍指向上一批；之后写出的一批才切为当前链，「换一批」从它续翻",
+    "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 降级搜索这批卡没写出（cancel，结果库 memory）：currentChain 保持用户上一批的链，「换一批」与「第 N 个」仍指向上一批；之后写出的一批才切为当前链，「换一批」从它续翻",
+    "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 会话原来没有当前链、降级搜索这批卡没写出（cancel）：currentChain 仍为空，「换一批」不检索，「第 N 个」无可指；写出一批后才有当前链",
+    "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 会话原来没有当前链、降级搜索这批卡没写出（limit）：currentChain 仍为空，「换一批」不检索，「第 N 个」无可指；写出一批后才有当前链",
+    "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 会话原来没有当前链、降级搜索这批卡没写出（unconfirmed）：currentChain 仍为空，「换一批」不检索，「第 N 个」无可指；写出一批后才有当前链",
+    "test/spec/agent/stream-model-prereq-3/degraded-stopped.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 降级搜索这批 product_list 已写出并确认、随后用户在收尾文字前停止本轮（结果库 pg）：currentChain 切到这批的新链，「换一批」按这批词翻第 2 页，「第 1 个」解析到这批第一件；之后没写出的一批不顶替它",
+    "test/spec/agent/stream-model-prereq-3/degraded-stopped.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 降级搜索这批 product_list 已写出并确认、随后用户在收尾文字前停止本轮（结果库 memory）：currentChain 切到这批的新链，「换一批」按这批词翻第 2 页，「第 1 个」解析到这批第一件；之后没写出的一批不顶替它",
+    "test/spec/agent/stream-model-prereq-3/quoted-mount.int.test.ts > [AC-B3-03q#4][BR-AI-05][BR-AI-04] 生产 stream 入口（生产业务装配、PG 结果库）经确定性链接路径写出报价卡后，下一轮按卡内商品的 card_id 报价解析到该商品并现查，不是 invalid_args；「第 N 个」不指向它",
+    "test/spec/agent/stream-model-prereq-3/quoted-mount.int.test.ts > [AC-B3-03q#4][BR-AI-05] 生产 stream 入口：同一轮两条链接，第二张报价卡写出前被取消——只记已写出的那张卡内商品，被取消、未写出的不记",
+    "test/spec/agent/stream-model-prereq-3/quoted-mount.int.test.ts > [AC-B3-03q#3][BR-AI-05] PG 结果库记报价卡商品失败只打日志：本轮报价卡照常下发、正常结束；日志只有平铺字段，不含商品与价格",
+    "test/spec/agent/stream-model-prereq-3/quoted-store.int.test.ts > [AC-B3-03q#1][BR-AI-05] PG 结果库支持 recordQuoted：记下的报价卡商品同 app 同会话按 card_id 可查（商品键、平台、到手价分、卡片内容与写出时一致），换实例仍在；别的 app、别的会话查不到",
+    "test/spec/agent/stream-model-prereq-3/quoted-store.int.test.ts > [AC-B3-03q#2][BR-AI-05] 报价卡商品不进「第 N 个」：只有报价卡时 latestWithProducts 为空；先有 product_list 后有报价卡时仍返回那批 product_list，序号与内容不变",
+    "test/spec/agent/stream-model-prereq-3/quoted-store.int.test.ts > [AC-B3-03q#3][BR-AI-05] recordQuoted 幂等且并发安全：同一 card_id 重复记、同次重复、两实例并发记都只留先到的一条，调用不报错",
+    "test/spec/agent/stream-model-prereq-3/quoted-store.int.test.ts > [AC-B3-03q#3][BR-AI-05] 报价卡商品与 product_list 的 card_id 同会话唯一：同号先到者为准，后到的不改写它",
+    "test/spec/agent/stream-model-prereq-3/quoted-unconfirmed.int.test.ts > [AC-B3-03q#4][BR-AI-05][BR-AI-04] 生产 stream 入口：报价卡已编号、已交出但没有写出回执（写卡失败）——卡内商品不记，按其 card_id findDelivered 为 null、报价为 invalid_args；同会话之后带回执写出的报价卡照常记下并可报价"
+  ],
+  "risk_note": "RV1 (agent/store/results, agent/orchestrator/results, agent/stream/mount): result-set gaps before the model path — the PG result store implements recordQuoted (one append-only quoted result set per run, id derived from the run id; excluded from latestWithProducts / 「第 N 个」 by id, also after the purge clears conditions; card_id session-wide unique via the deliveries primary key; run checked against app and session; no migration, INSERT only), so production wiring records quote-card products through keepsQuoted; the degraded keyword search's chain switch is deferred until the first product_list delivery receipt (createKeywordResults: also after a stop once the list was written; not when cancelled, cut by the card limit or unconfirmed; pending map in process memory, capped). Rule tests by an independent Claude in 2 attempts (Codex unavailable until 10-30). Opus implementation 1 attempt. Full pnpm verify on the AWS test machine at 49bbcc84 (verify/1) exit 0. Independent Claude general review r1 pass (0 findings; one out-of-scope S2 in followups). Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "dd75cc35f95364de281933e17134c0d5bac04181",
+      "tree": "666d32fa7538b6b2ad53831bf200655e66ad240e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T04:39:18Z",
+      "finished_at": "2026-10-24T04:39:29Z",
+      "red_tests": [
+        "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 降级搜索这批卡没写出（cancel，结果库 pg）：currentChain 保持用户上一批的链，「换一批」与「第 N 个」仍指向上一批；之后写出的一批才切为当前链，「换一批」从它续翻",
+        "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 降级搜索这批卡没写出（limit，结果库 pg）：currentChain 保持用户上一批的链，「换一批」与「第 N 个」仍指向上一批；之后写出的一批才切为当前链，「换一批」从它续翻",
+        "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 降级搜索这批卡没写出（unconfirmed，结果库 pg）：currentChain 保持用户上一批的链，「换一批」与「第 N 个」仍指向上一批；之后写出的一批才切为当前链，「换一批」从它续翻",
+        "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 降级搜索这批卡没写出（cancel，结果库 memory）：currentChain 保持用户上一批的链，「换一批」与「第 N 个」仍指向上一批；之后写出的一批才切为当前链，「换一批」从它续翻",
+        "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 会话原来没有当前链、降级搜索这批卡没写出（cancel）：currentChain 仍为空，「换一批」不检索，「第 N 个」无可指；写出一批后才有当前链",
+        "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 会话原来没有当前链、降级搜索这批卡没写出（limit）：currentChain 仍为空，「换一批」不检索，「第 N 个」无可指；写出一批后才有当前链",
+        "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 会话原来没有当前链、降级搜索这批卡没写出（unconfirmed）：currentChain 仍为空，「换一批」不检索，「第 N 个」无可指；写出一批后才有当前链",
+        "test/spec/agent/stream-model-prereq-3/degraded-stopped.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 降级搜索这批 product_list 已写出并确认、随后用户在收尾文字前停止本轮（结果库 pg）：currentChain 切到这批的新链，「换一批」按这批词翻第 2 页，「第 1 个」解析到这批第一件；之后没写出的一批不顶替它",
+        "test/spec/agent/stream-model-prereq-3/degraded-stopped.int.test.ts > [AC-B3-03q#5][BR-AI-05][BR-AI-14] 降级搜索这批 product_list 已写出并确认、随后用户在收尾文字前停止本轮（结果库 memory）：currentChain 切到这批的新链，「换一批」按这批词翻第 2 页，「第 1 个」解析到这批第一件；之后没写出的一批不顶替它",
+        "test/spec/agent/stream-model-prereq-3/quoted-mount.int.test.ts > [AC-B3-03q#4][BR-AI-05][BR-AI-04] 生产 stream 入口（生产业务装配、PG 结果库）经确定性链接路径写出报价卡后，下一轮按卡内商品的 card_id 报价解析到该商品并现查，不是 invalid_args；「第 N 个」不指向它",
+        "test/spec/agent/stream-model-prereq-3/quoted-mount.int.test.ts > [AC-B3-03q#4][BR-AI-05] 生产 stream 入口：同一轮两条链接，第二张报价卡写出前被取消——只记已写出的那张卡内商品，被取消、未写出的不记",
+        "test/spec/agent/stream-model-prereq-3/quoted-mount.int.test.ts > [AC-B3-03q#3][BR-AI-05] PG 结果库记报价卡商品失败只打日志：本轮报价卡照常下发、正常结束；日志只有平铺字段，不含商品与价格",
+        "test/spec/agent/stream-model-prereq-3/quoted-store.int.test.ts > [AC-B3-03q#1][BR-AI-05] PG 结果库支持 recordQuoted：记下的报价卡商品同 app 同会话按 card_id 可查（商品键、平台、到手价分、卡片内容与写出时一致），换实例仍在；别的 app、别的会话查不到",
+        "test/spec/agent/stream-model-prereq-3/quoted-store.int.test.ts > [AC-B3-03q#2][BR-AI-05] 报价卡商品不进「第 N 个」：只有报价卡时 latestWithProducts 为空；先有 product_list 后有报价卡时仍返回那批 product_list，序号与内容不变",
+        "test/spec/agent/stream-model-prereq-3/quoted-store.int.test.ts > [AC-B3-03q#3][BR-AI-05] recordQuoted 幂等且并发安全：同一 card_id 重复记、同次重复、两实例并发记都只留先到的一条，调用不报错",
+        "test/spec/agent/stream-model-prereq-3/quoted-store.int.test.ts > [AC-B3-03q#3][BR-AI-05] 报价卡商品与 product_list 的 card_id 同会话唯一：同号先到者为准，后到的不改写它",
+        "test/spec/agent/stream-model-prereq-3/quoted-unconfirmed.int.test.ts > [AC-B3-03q#4][BR-AI-05][BR-AI-04] 生产 stream 入口：报价卡已编号、已交出但没有写出回执（写卡失败）——卡内商品不记，按其 card_id findDelivered 为 null、报价为 invalid_args；同会话之后带回执写出的报价卡照常记下并可报价"
+      ],
+      "expected": [
+        "test/spec/agent/stream-model-prereq-3/degraded-chain.int.test.ts",
+        "test/spec/agent/stream-model-prereq-3/degraded-stopped.int.test.ts",
+        "test/spec/agent/stream-model-prereq-3/quoted-mount.int.test.ts",
+        "test/spec/agent/stream-model-prereq-3/quoted-store.int.test.ts",
+        "test/spec/agent/stream-model-prereq-3/quoted-unconfirmed.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "1097da43f1c39e2b7c3c62461cb09f81e39d3fcbcb102511d3a951bfa5e810d7"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "30dc0ee6a971b6d1c39211ef65691f1edfa921b0",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "independent Claude (claude-run.sh; Codex unavailable until 10-30) round 1 pass, no findings; one out-of-scope S2 (model-path decorator switches chain before write) recorded in followups (couli-runs/B3-03q/review-claude-independent-general-r1.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh independent Claude reviews of tests written by other independent Claude calls: r1 fail (S1 list written then stopped untested; S2 numbered but unconfirmed quote), fixed in attempt 2 (add-only); r2 pass (couli-runs/B3-03q/review-claude-independent-spec-test-r1.json, r2.json)"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "98fc02b2b2ca8dfd25e88ce24c937ed199e0ff52",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}

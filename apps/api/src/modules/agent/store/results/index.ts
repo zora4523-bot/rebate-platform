@@ -10,9 +10,16 @@
 //     from the items. Unknown or non-UUID ids are ignored. Rows go to agent_result_deliveries in
 //     delivery order (position = this set's max + 1, under an advisory lock per result set); a
 //     card_id already delivered in the session (primary key) is skipped, also under concurrency.
+//   recordQuoted (B3-03q) — the product of a written rebate_quote card, outside every product_list
+//     result set: the scope's run (checked against app and session; else rejects, nothing written)
+//     gets one quoted result set whose id is derived from the run id in SQL (quotedSetId: md5 of a
+//     fixed prefix and the run id), conditions only a marker; the products go to
+//     agent_result_deliveries like recordDelivered's (same lock, positions and card_id skip), so
+//     findDelivered finds them and a card_id stays session-wide unique (first one wins).
 //   latestWithProducts — the newest result set (created_at DESC, id DESC) of the session that has
-//     at least one delivery, with its deliveries in delivery order (position, then created_at,
-//     card_id). Never ordered by price.
+//     at least one delivery and is not a quoted set (the id test survives a purge clearing
+//     conditions), with its deliveries in delivery order (position, then created_at, card_id).
+//     Never ordered by price.
 //   findDelivered — the session's delivery of a card_id (session-wide unique), any round.
 //   takeOnce — INSERT agent_clarify_asks … ON CONFLICT DO NOTHING RETURNING: one winner per key.
 //   currentChain / appendChain — agent_result_chains, the largest seq is current; appends take
@@ -24,12 +31,13 @@
 // couli_app only has SELECT and INSERT on these tables; no UPDATE, no FOR UPDATE.
 import type { DB } from '@couli/db';
 import { fenToJsonNumber, parseFen } from '@couli/money';
-import type { Kysely } from 'kysely';
+import type { Kysely, RawBuilder } from 'kysely';
 import { sql } from 'kysely';
 import { chainProblem } from '../../orchestrator/results/store.ts';
 import type {
   ChainStatus,
   DeliveredProduct,
+  QuotedReceiptStore,
   ResultSetStore,
   SearchConditions,
   SessionChain,
@@ -81,7 +89,67 @@ async function advisoryLock(connection: Kysely<DB>, key: readonly string[]): Pro
   );
 }
 
-export function createPgResultSetStore(deps: { db: Kysely<DB> }): Required<ResultSetStore> {
+/**
+ * B3-03q: the id of a run's quoted result set, computed by PG from the run id (an existing column
+ * expression or a parameter). Product_list result sets get random v4 ids, so they never match.
+ */
+function quotedSetId(runId: RawBuilder<unknown>): RawBuilder<string> {
+  return sql<string>`md5(${'agent.result.quoted:'}::text || (${runId})::uuid::text)::uuid`;
+}
+
+/** The conditions of a quoted result set: a marker only, never a search (BR-AI-05). */
+const QUOTED_CONDITIONS = JSON.stringify({ receipt: 'rebate_quote' });
+
+interface DeliveryOwner {
+  readonly app_id: string;
+  readonly session_id: string;
+  readonly run_id: string;
+}
+
+/**
+ * Appends `items` to the deliveries of `resultSetId` in order (position = max + 1 under an
+ * advisory lock per result set); a card_id already delivered in the session is skipped.
+ */
+async function appendDeliveries(
+  tx: Kysely<DB>,
+  owner: DeliveryOwner,
+  resultSetId: string,
+  items: readonly DeliveredProduct[],
+): Promise<void> {
+  await advisoryLock(tx, ['agent.result.deliveries', owner.app_id, resultSetId]);
+  const last = await tx
+    .selectFrom('agent_result_deliveries')
+    .select((eb) => eb.fn.max('position').as('max'))
+    .where('app_id', '=', owner.app_id)
+    .where('result_set_id', '=', resultSetId)
+    .executeTakeFirst();
+  let position = (last?.max ?? 0) + 1;
+  for (const item of items) {
+    // Only the DeliveredProduct fields are read; extra runtime fields are never stored.
+    const inserted = await tx
+      .insertInto('agent_result_deliveries')
+      .values({
+        app_id: owner.app_id,
+        session_id: owner.session_id,
+        run_id: owner.run_id,
+        result_set_id: resultSetId,
+        position,
+        card_id: item.card_id,
+        product_key: item.product_key,
+        platform: item.platform,
+        final_price_fen: parseFen(item.final_price_fen),
+        card: JSON.stringify(item.card),
+      })
+      .onConflict((oc) => oc.columns(['app_id', 'session_id', 'card_id']).doNothing())
+      .returning('card_id')
+      .executeTakeFirst();
+    if (inserted !== undefined) position += 1;
+  }
+}
+
+export function createPgResultSetStore(deps: {
+  db: Kysely<DB>;
+}): Required<ResultSetStore> & QuotedReceiptStore {
   const db = deps.db.withSchema('app');
 
   async function deliveries(
@@ -141,35 +209,51 @@ export function createPgResultSetStore(deps: { db: Kysely<DB> }): Required<Resul
           .executeTakeFirst();
         // A receipt for a set never saved has no trusted app/session: it is ignored.
         if (owner === undefined) return;
-        await advisoryLock(tx, ['agent.result.deliveries', owner.app_id, resultSetId]);
-        const last = await tx
-          .selectFrom('agent_result_deliveries')
-          .select((eb) => eb.fn.max('position').as('max'))
-          .where('app_id', '=', owner.app_id)
-          .where('result_set_id', '=', resultSetId)
+        await appendDeliveries(tx, owner, resultSetId, items);
+      });
+    },
+
+    async recordQuoted(scope, items) {
+      if (items.length === 0) return;
+      const run =
+        isUuid(scope.runId) && isUuid(scope.sessionId)
+          ? await db
+              .selectFrom('agent_runs')
+              .select('id')
+              .where('app_id', '=', scope.appId)
+              .where('session_id', '=', scope.sessionId)
+              .where('id', '=', scope.runId)
+              .executeTakeFirst()
+          : undefined;
+      if (run === undefined) {
+        throw new Error('recordQuoted: run not found in this app and session');
+      }
+      await db.transaction().execute(async (tx) => {
+        // One quoted set per run: concurrent first calls insert the same id, one row stays.
+        const set = await tx
+          .insertInto('agent_result_sets')
+          .values({
+            id: quotedSetId(sql`${scope.runId}`),
+            app_id: scope.appId,
+            run_id: scope.runId,
+            conditions: QUOTED_CONDITIONS,
+          })
+          .onConflict((oc) => oc.column('id').doNothing())
+          .returning('id')
           .executeTakeFirst();
-        let position = (last?.max ?? 0) + 1;
-        for (const item of items) {
-          // Only the DeliveredProduct fields are read; extra runtime fields are never stored.
-          const inserted = await tx
-            .insertInto('agent_result_deliveries')
-            .values({
-              app_id: owner.app_id,
-              session_id: owner.session_id,
-              run_id: owner.run_id,
-              result_set_id: resultSetId,
-              position,
-              card_id: item.card_id,
-              product_key: item.product_key,
-              platform: item.platform,
-              final_price_fen: parseFen(item.final_price_fen),
-              card: JSON.stringify(item.card),
-            })
-            .onConflict((oc) => oc.columns(['app_id', 'session_id', 'card_id']).doNothing())
-            .returning('card_id')
-            .executeTakeFirst();
-          if (inserted !== undefined) position += 1;
-        }
+        const resultSetId =
+          set?.id ??
+          (
+            await tx
+              .selectFrom('agent_result_sets')
+              .select('id')
+              .where('app_id', '=', scope.appId)
+              .where('run_id', '=', scope.runId)
+              .where(sql<boolean>`id = ${quotedSetId(sql`${scope.runId}`)}`)
+              .executeTakeFirstOrThrow()
+          ).id;
+        const owner = { app_id: scope.appId, session_id: scope.sessionId, run_id: scope.runId };
+        await appendDeliveries(tx, owner, resultSetId, items);
       });
     },
 
@@ -183,6 +267,8 @@ export function createPgResultSetStore(deps: { db: Kysely<DB> }): Required<Resul
         .select(['s.id', 's.app_id', 's.run_id', 's.conditions', 'r.session_id'])
         .where('s.app_id', '=', appId)
         .where('r.session_id', '=', sessionId)
+        // B3-03q: quoted products are addressable by card_id only, never by 「第 N 个」.
+        .where(sql<boolean>`s.id <> ${quotedSetId(sql.ref('s.run_id'))}`)
         .where((eb) =>
           eb.exists(
             eb

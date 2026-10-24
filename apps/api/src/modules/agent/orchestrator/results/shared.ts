@@ -44,9 +44,9 @@ export type InternalToolCall = OrchestratorToolCall & { readonly [SERVER_CALL]?:
  * every decorator and continuation sharing the store sees the same chain. */
 const fallbackChains = new WeakMap<ResultSetStore, Required<ResultSetStore>>();
 
-type ChainPort = Pick<Required<ResultSetStore>, 'currentChain' | 'appendChain'>;
+export type ChainPort = Pick<Required<ResultSetStore>, 'currentChain' | 'appendChain'>;
 
-function chainPort(store: ResultSetStore): ChainPort {
+export function chainPort(store: ResultSetStore): ChainPort {
   const { currentChain: read, appendChain: append } = store;
   if (read !== undefined && append !== undefined) {
     return {
