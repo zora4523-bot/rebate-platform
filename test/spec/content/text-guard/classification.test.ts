@@ -30,7 +30,9 @@ it.each(Object.keys(defaults))('[AC-F1-02r#18] 默认文案资金归类与 CI �
   expect(classification).toBe(
     isFundTermKey(fundTermKeys, key)
       ? 'fund_terms'
-      : key.startsWith('privacy.') || key.startsWith('perm.')
+      : key.startsWith('privacy.') ||
+          key.startsWith('perm.') ||
+          key.startsWith('real_name.consent.')
         ? 'agreement'
         : 'general',
   );
