@@ -1,0 +1,118 @@
+{
+  "task": "B1-27j",
+  "spec_ref": "ec81e625dcf54f230d168dbf09910bd704c82a18",
+  "spec_commit": "5635fe86836dcc5ced7c6e2b3fdade94946f5fa9",
+  "red_tests": [
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#1] 单笔 PENDING_REVIEW：只有 PAID_API / PAID_MANUAL 为真，租户与用户隔离，只读",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#1] 单笔 APPROVED：只有 PAID_API / PAID_MANUAL 为真，租户与用户隔离，只读",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#1] 单笔 PAYING：只有 PAID_API / PAID_MANUAL 为真，租户与用户隔离，只读",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#1] 单笔 REJECTED：只有 PAID_API / PAID_MANUAL 为真，租户与用户隔离，只读",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#1] 单笔 PAID_API：只有 PAID_API / PAID_MANUAL 为真，租户与用户隔离，只读",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#1] 单笔 PAID_MANUAL：只有 PAID_API / PAID_MANUAL 为真，租户与用户隔离，只读",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#1] 单笔 FAILED：只有 PAID_API / PAID_MANUAL 为真，租户与用户隔离，只读",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#2] 没有任何提现的用户为假",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#3] 多笔 [ 'FAILED', 'REJECTED', 'PAYING' ]：任一笔到账即为真",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#3] 多笔 [ 'REJECTED', 'APPROVED', …(1) ]：任一笔到账即为真",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#3] 多笔 [ 'FAILED', 'PAID_MANUAL' ]：任一笔到账即为真",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#3] 多笔 [ 'PAID_API', 'PENDING_REVIEW' ]：任一笔到账即为真",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#3] 多笔 [ 'PAID_API', 'PAID_MANUAL', 'FAILED' ]：任一笔到账即为真",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#4] 在调用方事务上读：未提交的 PAID_API 可见，回滚后为假",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#4] 在调用方事务上读：未提交的 PAID_MANUAL 可见，回滚后为假",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#5] PENDING_REVIEW：冻结记录与收款身份不影响成功提现口径",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#5] APPROVED：冻结记录与收款身份不影响成功提现口径",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#5] PAYING：冻结记录与收款身份不影响成功提现口径",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#5] REJECTED：冻结记录与收款身份不影响成功提现口径",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#5] PAID_API：冻结记录与收款身份不影响成功提现口径",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#5] PAID_MANUAL：冻结记录与收款身份不影响成功提现口径",
+    "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#5] FAILED：冻结记录与收款身份不影响成功提现口径",
+    "test/spec/payout/withdrawal-succeeded/wiring.test.ts > [AC-B1-27j#6] app.module 的注销读口改用 payout 的 hasSucceeded，删掉写死的 false 与 TODO"
+  ],
+  "risk_note": "RV2 by path (payout module). Adds the read-only hasSucceeded to payout's WithdrawalReaders (withdrawal-in-flight.ts): one SELECT on the caller's transaction, app_id + user_id scoped, true when a withdrawal is PAID_API or PAID_MANUAL; no writes, no logs, no hold or payee lookup. app.module.ts replaces the hardcoded false used by identity's deletion side, so B1-15g now keeps the realname cipher for users with a paid-out withdrawal (D10-137 ②, as originally intended). Prerequisite for B1-27a (prior identity kept when a paid-out withdrawal exists, BR-ID-25). No contract, schema or migration. Rule tests by an independent Claude (approvals #36), red before the implementation; implementation by an Opus 5.5 subagent in one run.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "5635fe86836dcc5ced7c6e2b3fdade94946f5fa9",
+      "tree": "3560d9a6d362cd9cf9b0cba5d1052d6a0f920f30",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T08:40:18Z",
+      "finished_at": "2026-10-24T08:40:27Z",
+      "red_tests": [
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#1] 单笔 PENDING_REVIEW：只有 PAID_API / PAID_MANUAL 为真，租户与用户隔离，只读",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#1] 单笔 APPROVED：只有 PAID_API / PAID_MANUAL 为真，租户与用户隔离，只读",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#1] 单笔 PAYING：只有 PAID_API / PAID_MANUAL 为真，租户与用户隔离，只读",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#1] 单笔 REJECTED：只有 PAID_API / PAID_MANUAL 为真，租户与用户隔离，只读",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#1] 单笔 PAID_API：只有 PAID_API / PAID_MANUAL 为真，租户与用户隔离，只读",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#1] 单笔 PAID_MANUAL：只有 PAID_API / PAID_MANUAL 为真，租户与用户隔离，只读",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#1] 单笔 FAILED：只有 PAID_API / PAID_MANUAL 为真，租户与用户隔离，只读",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#2] 没有任何提现的用户为假",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#3] 多笔 [ 'FAILED', 'REJECTED', 'PAYING' ]：任一笔到账即为真",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#3] 多笔 [ 'REJECTED', 'APPROVED', …(1) ]：任一笔到账即为真",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#3] 多笔 [ 'FAILED', 'PAID_MANUAL' ]：任一笔到账即为真",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#3] 多笔 [ 'PAID_API', 'PENDING_REVIEW' ]：任一笔到账即为真",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#3] 多笔 [ 'PAID_API', 'PAID_MANUAL', 'FAILED' ]：任一笔到账即为真",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#4] 在调用方事务上读：未提交的 PAID_API 可见，回滚后为假",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#4] 在调用方事务上读：未提交的 PAID_MANUAL 可见，回滚后为假",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#5] PENDING_REVIEW：冻结记录与收款身份不影响成功提现口径",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#5] APPROVED：冻结记录与收款身份不影响成功提现口径",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#5] PAYING：冻结记录与收款身份不影响成功提现口径",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#5] REJECTED：冻结记录与收款身份不影响成功提现口径",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#5] PAID_API：冻结记录与收款身份不影响成功提现口径",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#5] PAID_MANUAL：冻结记录与收款身份不影响成功提现口径",
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts > [AC-B1-27j#5] FAILED：冻结记录与收款身份不影响成功提现口径",
+        "test/spec/payout/withdrawal-succeeded/wiring.test.ts > [AC-B1-27j#6] app.module 的注销读口改用 payout 的 hasSucceeded，删掉写死的 false 与 TODO"
+      ],
+      "expected": [
+        "test/spec/payout/withdrawal-succeeded/succeeded.int.test.ts",
+        "test/spec/payout/withdrawal-succeeded/wiring.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "bc81fba08c4c2ed651ca6a2fa44d15f9f74725f36140cf6ba38ad56c1d701018"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "1f1fdc83a308e53dd06e29dac5f3f12ea44afadf1e520407ed025f2fa6f95b4b"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota (until 10-30); independent Claude via tools/agent/claude-run.sh per approvals #36; round 1 pass, 0 findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by claude-independent reviewed by a fresh Claude subagent against the ledger notes: pass, S2×3 (wiring regex, snapshot scope, other-app fixture); output accepted by orchestrator discretion after a branches-only position assertion; prettier --write before the first spec commit, formatting only (D10-206); [AC-B1-27j#5] fixture fixed by the same independent Claude author as a new spec commit 42fb441e before the implementation (app-role UPDATE of withdrawals.payee_name has no grant; the other payee name is now set at creation through the apply snapshot port), assertions unchanged — precedent D10-209; re-checked by a fresh Claude: pass"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "4f607f5ec27b4db3dbe3e27504e91e009b10f289",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}
