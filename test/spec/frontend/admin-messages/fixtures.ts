@@ -4,8 +4,9 @@ import type { PermissionSnapshot } from '../../../../apps/admin/src/providers/ac
 // written): adminListNotifyChannels GET /admin/v1/notify-channels, adminSwitchNotifyChannels
 // PATCH /admin/v1/notify-channels/{code}, adminRegisterNotifySms PUT
 // /admin/v1/notify-channels/{code}/sms?variant=. The schema is not generated yet, so the item
-// shape is written out below from the task book's summary of the draft. Sign names, template
-// CODEs and phone numbers are obvious samples.
+// shape is written out below from the draft (checked against the CT-24t draft diff of
+// 2026-10-24, sha256 4776f13061ea…: order of checks, error codes, HTTP statuses). Sign names,
+// template CODEs and phone numbers are obvious samples.
 export const BASE_URL = 'https://admin-api.example.test';
 export const TRACE_ID = '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b';
 export const LIST = '/admin/v1/notify-channels';
@@ -59,7 +60,7 @@ export interface ChannelItem {
 const UPDATED_AT = '2026-10-20T10:00:00+08:00';
 
 /**
- * One item per code, in the order the server returns them:
+ * One item per code, returned ordered by code as the contract's list is:
  * - SMS_CODE: SMS only, fixed on (change template only), registered (verify), not fund;
  * - WD_SUCCESS: push + inbox, push and SMS switchable, opening SMS needs the billing confirmation,
  *   fund, one unregistered variant;
@@ -71,7 +72,7 @@ const UPDATED_AT = '2026-10-20T10:00:00+08:00';
  * - UNION_AUTH_EXPIRING: SMS only, fixed on, registered, no inbox.
  */
 export function items(): ChannelItem[] {
-  return [
+  const list: ChannelItem[] = [
     {
       code: 'SMS_CODE',
       category: 'service',
@@ -205,17 +206,18 @@ export function items(): ChannelItem[] {
       row_version: 3,
     },
   ];
+  return list.sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
 }
 
 /** Every code of items(), in order. */
 export const CODES = [
+  'BALANCE_ADJUSTED',
+  'CLAIM_RESULT',
   'SMS_CODE',
-  'WD_SUCCESS',
+  'UNION_AUTH_EXPIRING',
   'WD_FAILED',
   'WD_REJECTED',
-  'CLAIM_RESULT',
-  'BALANCE_ADJUSTED',
-  'UNION_AUTH_EXPIRING',
+  'WD_SUCCESS',
 ] as const;
 
 /** The same items with `patch` applied to the item of `code`. */
@@ -244,9 +246,11 @@ export const ARTICLE_ONLY = snapshot(['content.article', 'content.fund_terms']);
 export function ok(data: unknown): Response {
   return Response.json({ code: 0, msg: '', data, trace_id: TRACE_ID });
 }
-// 10003 stays 400 as in the other admin fixtures (401 would end the console session).
+// HTTP statuses as in contracts/error-codes.yaml.
 const STATUS: Record<number, number> = {
+  10003: 403,
   10403: 403,
+  20902: 409,
   42901: 429,
   50001: 500,
   50301: 503,
@@ -290,8 +294,16 @@ const SMS_KEYS = [
   'row_version',
 ];
 
+/** Words the fake server refuses in preview_text (named after the field in data.fields). */
+const FORBIDDEN_WORDS = [BANNED_WORD, '官方'];
+/** The code validity of SMS_CODE in minutes (BR-ID-05). */
+const SMS_CODE_MINUTES = 5;
+
 function variablesOf(text: string): string[] {
   return [...new Set(Array.from(text.matchAll(/\$\{([A-Za-z0-9_]+)\}/g), (m) => m[1]!))].sort();
+}
+function isText(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.trim() !== '' && value.length <= max;
 }
 
 /**
@@ -322,66 +334,91 @@ export function createServer(initial: ChannelItem[] = items(), options: ServerOp
       : {};
   }
 
+  // Checks in the order of the CT-24t descriptions; the first hit is returned.
   function switchChannels(item: ChannelItem, body: Record<string, unknown>): Response {
     const unknown = Object.keys(body).filter((key) => !SWITCH_KEYS.includes(key));
     if (unknown.length > 0) return failure(20001, { fields: unknown });
-    if (body['row_version'] !== item.row_version) return failure(20902, { resource: 'notify' });
     const push = body['push'];
     const sms = body['sms'];
-    if (push === undefined && sms === undefined) return failure(20001, { fields: ['body'] });
-    if (push !== undefined && (typeof push !== 'boolean' || !item.push_switchable))
+    const confirm = body['confirm_sms_billing'];
+    const version = body['row_version'];
+    if (push === undefined && sms === undefined) return failure(20001, { fields: ['push', 'sms'] });
+    if (push !== undefined && typeof push !== 'boolean')
       return failure(20001, { fields: ['push'] });
-    if (sms !== undefined && (typeof sms !== 'boolean' || !item.sms_switchable))
-      return failure(20001, { fields: ['sms'] });
-    if (
-      sms === true &&
-      !item.channels.includes('sms') &&
-      item.sms_billing_confirm &&
-      body['confirm_sms_billing'] !== true
-    )
+    if (sms !== undefined && typeof sms !== 'boolean') return failure(20001, { fields: ['sms'] });
+    if (confirm !== undefined && typeof confirm !== 'boolean')
       return failure(20001, { fields: ['confirm_sms_billing'] });
+    if (typeof version !== 'number' || !Number.isInteger(version) || version < 0)
+      return failure(20001, { fields: ['row_version'] });
+    if (push !== undefined && !item.push_switchable) return failure(20001, { fields: ['push'] });
+    if (sms !== undefined && !item.sms_switchable) return failure(20001, { fields: ['sms'] });
+    if (sms === true && !item.channels.includes('sms') && item.sms_billing_confirm && !confirm)
+      return failure(20001, { fields: ['confirm_sms_billing'] });
+    if (version !== item.row_version) return failure(20902, { resource: 'notify' });
     const set = new Set(item.channels);
     if (push === true) set.add('push');
     if (push === false) set.delete('push');
     if (sms === true) set.add('sms');
     if (sms === false) set.delete('sms');
-    item.channels = (['push', 'inbox', 'sms'] as const).filter((channel) => set.has(channel));
-    item.row_version += 1;
+    const next = (['push', 'inbox', 'sms'] as const).filter((channel) => set.has(channel));
+    // A switch already at the requested value is left as it is (no write, row_version kept).
+    if (next.join(',') !== item.channels.join(',')) {
+      item.channels = next;
+      item.row_version += 1;
+    }
     return ok(item);
   }
 
   function register(item: ChannelItem, variant: string, request: RequestLog): Response {
     const body = bodyOf(request);
+    if (!item.sms_fixed && !item.sms_switchable) return failure(20001, { fields: ['code'] });
     const row = item.sms_registrations.find((entry) => entry.variant === variant);
     if (row === undefined) return failure(20001, { fields: ['variant'] });
     const unknown = Object.keys(body).filter((key) => !SMS_KEYS.includes(key));
     if (unknown.length > 0) return failure(20001, { fields: unknown });
-    if (body['row_version'] !== item.row_version) return failure(20902, { resource: 'notify' });
     const sign = body['sign_name'];
     const template = body['template_code'];
     const type = body['template_type'];
     const preview = body['preview_text'];
-    const missing = [
-      ...(typeof sign === 'string' && sign.trim() !== '' ? [] : ['sign_name']),
-      ...(typeof template === 'string' && /^SMS_\d+$/.test(template) ? [] : ['template_code']),
+    const sample = body['sample'];
+    const version = body['row_version'];
+    const invalid = [
+      ...(isText(sign, 32) ? [] : ['sign_name']),
+      ...(isText(template, 64) ? [] : ['template_code']),
       ...(type === 'verify' || type === 'notice' ? [] : ['template_type']),
-      ...(typeof preview === 'string' && preview.trim() !== '' ? [] : ['preview_text']),
+      ...(isText(preview, 500) ? [] : ['preview_text']),
+      ...(typeof version === 'number' && Number.isInteger(version) && version >= 0
+        ? []
+        : ['row_version']),
     ];
-    if (missing.length > 0) return failure(20001, { fields: missing });
+    if (invalid.length > 0) return failure(20001, { fields: invalid });
+    if (sample !== undefined) {
+      const entries =
+        typeof sample === 'object' && sample !== null && !Array.isArray(sample)
+          ? Object.entries(sample)
+          : null;
+      if (
+        entries === null ||
+        entries.some(([name, value]) => !row.variables.includes(name) || !isText(value, 64))
+      )
+        return failure(20001, { fields: ['sample'] });
+    }
     const text = preview as string;
-    if (text.includes(BANNED_WORD))
-      return failure(20001, { fields: ['preview_text', BANNED_WORD] });
     if (variablesOf(text).join(',') !== [...row.variables].sort().join(','))
       return failure(20001, { fields: ['preview_text'] });
+    if (
+      item.code === 'SMS_CODE' &&
+      Array.from(text.matchAll(/(\d+)\s*分钟/g)).some((m) => Number(m[1]) !== SMS_CODE_MINUTES)
+    )
+      return failure(20001, { fields: ['preview_text'] });
+    const found = FORBIDDEN_WORDS.filter((word) => text.includes(word));
+    if (found.length > 0) return failure(20001, { fields: ['preview_text', ...found] });
+    if (version !== item.row_version) return failure(20902, { resource: 'notify' });
     const current = row.registration;
     const testSend =
       current === null || current.sign_name !== sign || current.template_code !== template;
     if (testSend && verifyPhone === null)
-      return failure(
-        10003,
-        { tier: 'totp', reason: 'verify_phone_missing' },
-        '请先登记验证手机号，再更换短信签名或模板',
-      );
+      return failure(10003, { tier: 'totp', reason: 'verify_phone_missing' }, '请先登记验证手机号');
     row.registration = {
       sign_name: sign as string,
       template_code: template as string,
@@ -410,19 +447,16 @@ export function createServer(initial: ChannelItem[] = items(), options: ServerOp
     }
     const match = /^\/admin\/v1\/notify-channels\/([^/]+)(\/sms)?$/.exec(path);
     if (match === null) return failure(20001, { fields: ['path'] });
+    const write =
+      (method === 'PATCH' && match[2] === undefined) || (method === 'PUT' && match[2] === '/sms');
+    if (!write) return failure(20001, { fields: ['path'] });
+    // Permission, step-up → code → (PUT) fund code without content.fund_terms → the rest.
+    if (!presented(request)) return failure(10003, { tier: 'totp' });
     const item = state.find((entry) => entry.code === decodeURIComponent(match[1]!));
     if (item === undefined) return failure(20001, { fields: ['code'] });
-    if (method === 'PATCH' && match[2] === undefined) {
-      if (!presented(request)) return failure(10003, { tier: 'totp' });
-      return switchChannels(item, bodyOf(request));
-    }
-    if (method === 'PUT' && match[2] === '/sms') {
-      if (item.fund_terms && !fundTerms)
-        return failure(10403, { reason: 'admin_permission_denied' });
-      if (!presented(request)) return failure(10003, { tier: 'totp' });
-      return register(item, request.query['variant'] ?? '', request);
-    }
-    return failure(20001, { fields: ['path'] });
+    if (method === 'PATCH') return switchChannels(item, bodyOf(request));
+    if (item.fund_terms && !fundTerms) return failure(10403, { reason: 'admin_permission_denied' });
+    return register(item, request.query['variant'] ?? 'default', request);
   }
 
   const fetch: typeof globalThis.fetch = async (input, init) => {

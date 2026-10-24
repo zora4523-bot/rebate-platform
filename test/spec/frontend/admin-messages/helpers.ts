@@ -124,6 +124,17 @@ function token(word: string): RegExp {
   return new RegExp(`(?<![A-Za-z0-9_])${escape(word)}(?![A-Za-z0-9_])`);
 }
 
+/** Text of `scope` without what is typed into its fields (a textarea's value is its text). */
+export function shownText(scope: HTMLElement): string {
+  const copy = scope.cloneNode(true) as HTMLElement;
+  for (const node of Array.from(copy.querySelectorAll('textarea, input, select'))) node.remove();
+  return copy.textContent ?? '';
+}
+/** `scope` shows `word` as a whole token outside its fields. */
+export function shows(scope: HTMLElement, word: string): boolean {
+  return token(word).test(shownText(scope));
+}
+
 // ---- tabs ----------------------------------------------------------------------------------
 
 function tabs(name: string): HTMLElement[] {
@@ -195,23 +206,37 @@ export function hasSmsRow(code: string): boolean {
 
 export const CHANNEL_TITLE = { inbox: '站内信', push: '推送', sms: '短信' } as const;
 
-/** The cell of `code` under the column titled 站内信 / 推送 / 短信. */
-export function channelCell(code: string, channel: keyof typeof CHANNEL_TITLE): HTMLElement {
-  const panel = panelOf(CHANNELS_TAB);
+/** Column titles of the header row of `panel` (spaces removed). */
+function columnTitles(panel: HTMLElement): string[] {
   const header =
     panel.querySelector<HTMLElement>('thead tr') ??
     Array.from(panel.querySelectorAll<HTMLElement>('[role="row"]')).find(
       (node) => node.querySelector('[role="columnheader"]') !== null,
     ) ??
     null;
-  expect(header, 'a header row with the channel columns').not.toBeNull();
-  const titles = Array.from(header!.children, (cell) => squash(cell.textContent));
+  expect(header, 'a header row with column titles').not.toBeNull();
+  return Array.from(header!.children, (cell) => squash(cell.textContent));
+}
+
+/** The cell of `code` under the column titled 站内信 / 推送 / 短信. */
+export function channelCell(code: string, channel: keyof typeof CHANNEL_TITLE): HTMLElement {
+  const titles = columnTitles(panelOf(CHANNELS_TAB));
   const title = CHANNEL_TITLE[channel];
   let index = titles.indexOf(title);
   if (index < 0) index = titles.findIndex((text) => text.startsWith(title));
   expect(index, `column ${title}`).toBeGreaterThanOrEqual(0);
   const cell = channelRow(code).children[index];
   expect(cell, `${code} / ${title}`).toBeDefined();
+  return cell as HTMLElement;
+}
+
+/** The cell of `code` · `variant` in the 「短信」 tab under the one column whose title matches. */
+export function smsCell(code: string, variant: string, title: RegExp): HTMLElement {
+  const titles = columnTitles(panelOf(SMS_TAB));
+  const indexes = titles.flatMap((text, index) => (title.test(text) ? [index] : []));
+  expect(indexes, `one column titled ${String(title)}`).toHaveLength(1);
+  const cell = smsRow(code, variant).children[indexes[0]!];
+  expect(cell, `${code} · ${variant} / ${String(title)}`).toBeDefined();
   return cell as HTMLElement;
 }
 
@@ -320,6 +345,48 @@ export async function verify(modal: HTMLElement): Promise<void> {
 export async function cancelStepUp(modal: HTMLElement): Promise<void> {
   await click(within(modal).getByRole('button', { name: '取消' }));
   await settle();
+}
+
+// ---- text that appeared after an action ----------------------------------------------------
+
+/** Notices: alerts, status lines, antd message / notification, antd Alert. */
+const NOTICES =
+  '[role="alert"], [role="status"], .ant-message-notice, .ant-notification-notice, .ant-alert';
+
+/** NodeFilter.SHOW_TEXT (spelled out so no environment global is needed). */
+const SHOW_TEXT = 0x4;
+
+function textNodes(): Text[] {
+  const walker = document.createTreeWalker(document.body, SHOW_TEXT);
+  const nodes: Text[] = [];
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode())
+    nodes.push(node as Text);
+  return nodes;
+}
+export type TextSnapshot = ReadonlyMap<Text, string>;
+/** Every text node on the page with its text, taken before an action. */
+export function snapshotText(): TextSnapshot {
+  return new Map(textNodes().map((node): [Text, string] => [node, node.data]));
+}
+/** Text the operator is told in: a notice, or a dialog / drawer other than step-up. */
+function inReply(node: Text): boolean {
+  const element = node.parentElement;
+  if (element === null || element.closest('textarea') !== null || !visible(element)) return false;
+  const dialog = element.closest<HTMLElement>('[role="dialog"]');
+  if (dialog !== null) return !STEP_UP.test(titleOf(dialog));
+  return element.closest(NOTICES) !== null;
+}
+/**
+ * Text that is new (or changed) since `before`, in notices and in dialogs / drawers other than
+ * step-up; standing text that was on the page before the action does not count.
+ */
+export function freshText(before: TextSnapshot): string {
+  return squash(
+    textNodes()
+      .filter((node) => before.get(node) !== node.data && inReply(node))
+      .map((node) => node.data)
+      .join(''),
+  );
 }
 
 export function assertWrite(request: RequestLog, value: string): void {
