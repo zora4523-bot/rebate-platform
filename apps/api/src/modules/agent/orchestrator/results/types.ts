@@ -77,8 +77,33 @@ export interface QuotedReceiptStore {
   recordQuoted(scope: QuotedScope, items: readonly DeliveredProduct[]): Promise<void>;
 }
 
+/** B3-03r · BR-AI-05: a batch's chain, waiting for a delivery receipt of one of its lists. */
+export interface PendingBatch {
+  readonly appId: string;
+  readonly sessionId: string;
+  /** has_products, with the conditions that produced the batch. */
+  readonly chain: SessionChain;
+  /** The batch's product_list result_set_ids (already saved). */
+  readonly resultSetIds: readonly string[];
+}
+
+/**
+ * B3-03r · BR-AI-05: the receipt store's pending table (createKeywordResults). The batch's chain
+ * becomes the session's current chain on the first delivery receipt (at least one product) of
+ * one of its lists; a batch never confirmed never switches it.
+ */
+export interface PendingChains {
+  defer(batch: PendingBatch): void;
+}
+
 export interface ResultsDeps {
   readonly store: ResultSetStore;
+  /**
+   * B3-03r: when wired (the production assembly, over the same store as the core's receipts), a
+   * search's has_products chain waits for its first written product_list instead of being set
+   * as soon as the search returns. Absent: the chain is set at once, as before (B3-05g / B3-05k).
+   */
+  readonly chains?: PendingChains;
   /** toolDisplay, when wired, gives server-built calls (refinement, 第 N 个) the same
    * tool.status frames as the core's model calls. */
   readonly texts: IntentDeps['texts'] & { readonly toolDisplay?: AgentRunTexts['toolDisplay'] };

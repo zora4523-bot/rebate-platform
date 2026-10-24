@@ -4,6 +4,8 @@
 export type {
   ChainStatus,
   DeliveredProduct,
+  PendingBatch,
+  PendingChains,
   QuotedReceiptStore,
   ResultSetInput,
   ResultSetStore,

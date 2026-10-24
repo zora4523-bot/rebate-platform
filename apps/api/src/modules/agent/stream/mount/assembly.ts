@@ -213,7 +213,8 @@ export function createAgentStreamAssembly(deps: AgentStreamAssemblyDeps): AgentS
   // B3-03n: the injected store (production: PG, shared by every instance); else one in-memory
   // store per assembly (single instance only), as before.
   const store = deps.results ?? createMemoryResultSetStore();
-  // B3-03q: the degraded batch's chain becomes current on its first delivery receipt.
+  // B3-03q: the degraded batch's chain becomes current on its first delivery receipt; B3-03r: so
+  // does a model or follow-up search's batch (the same pending table, `chains` below).
   const keywordResults = createKeywordResults(store);
   const limits = orchestratorLimitsDefaults();
   const switches: ToolSwitches = {
@@ -309,7 +310,7 @@ export function createAgentStreamAssembly(deps: AgentStreamAssemblyDeps): AgentS
   };
   // Jev result check is not wired (B3-12): the code rules decide every tag.
   const match: MatchDeps = { provider: async () => 'rules', scheduler: deps.scheduler };
-  const resultsDeps: ResultsDeps = { store, texts, limits, match };
+  const resultsDeps: ResultsDeps = { store, texts, limits, match, chains: keywordResults };
   const results = createResultsTools(inner, resultsDeps);
   const continuation = { ...resultsDeps, tools: results };
 
@@ -339,15 +340,16 @@ export function createAgentStreamAssembly(deps: AgentStreamAssemblyDeps): AgentS
     },
   });
 
-  // B3-03n: `results` is also the core's delivery receipt port (createAgentStreamRuntime); B3-03q:
-  // the same store whose receipts also switch a confirmed degraded batch's chain.
+  // B3-03n: `results` is also the core's delivery receipt port (createAgentStreamRuntime); B3-03q /
+  // B3-03r: the same store whose receipts also switch a confirmed batch's chain (degraded, model
+  // and follow-up searches alike).
   const receipts = keywordResults.receipts((error, resultSetId) => {
     deps.logger.warn(
       {
         result_set_id: resultSetId,
         error_name: error instanceof Error ? error.name : typeof error,
       },
-      'agent_keyword_chain_failed',
+      'agent_result_chain_failed',
     );
   });
   return {

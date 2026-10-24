@@ -13,9 +13,10 @@ import type {
 } from '../core/ports.ts';
 import { createIntentPort } from '../intents/index.ts';
 import type { IntentDeps, IntentRequest } from '../intents/index.ts';
+import { createKeywordResults } from './keyword.ts';
 import { createMemoryResultSetStore } from './store.ts';
 import { createClarification, createRefinement, createResultsTools } from './index.ts';
-import type { ResultSetStore, ResultsDeps } from './index.ts';
+import type { DeliveredProduct, ResultSetStore, ResultsDeps } from './index.ts';
 import { openServerCall } from './references.ts';
 import { priceRangeInvalidView } from '../../tools/search/index.ts';
 
@@ -83,7 +84,8 @@ function searchHandler() {
   });
 }
 
-function harness() {
+/** `deferred`: the production wiring (B3-03r), chains pending until a list's delivery receipt. */
+function harness(deferred = false) {
   const execute = searchHandler();
   const inner: OrchestratorTools = {
     definitions: async () => [],
@@ -92,10 +94,13 @@ function harness() {
     searchKeyword: async () => ({ results: [], cards: [] }),
   };
   const store: ResultSetStore = createMemoryResultSetStore();
+  const keyword = createKeywordResults(store);
+  const receipts = keyword.receipts(() => undefined);
   const deps: ResultsDeps = {
     store,
     texts: { text: async (_app, key) => `文案:${key}` },
     limits: orchestratorLimitsDefaults(),
+    ...(deferred ? { chains: keyword } : {}),
   };
   const tools = createResultsTools(inner, deps);
   const clarification = createClarification({ ...deps, tools });
@@ -152,7 +157,7 @@ function harness() {
     return { result, cards, suggestions };
   }
 
-  return { execute, store, modelSearch, intent, clarification };
+  return { execute, store, receipts, modelSearch, intent, clarification };
 }
 
 function noticeKeys(cards: readonly UnnumberedCard[]): unknown[] {
@@ -442,4 +447,159 @@ it('[AC-B3-05k#7][BR-AI-08] 端口从未追加过链但有已下发结果集时 
   const scope = await h.clarification.scope(request({}, 'scope-run'));
   expect(scope.chainId).toBe('synthetic-legacy-chain');
   expect(append).not.toHaveBeenCalled();
+});
+
+// B3-03r · BR-AI-05: with deferred chains a round without a product_list still records the query
+// the user just asked (as before the deferral), while a list not confirmed as written never does.
+function delivered(cardId: string): DeliveredProduct {
+  return {
+    card_id: cardId,
+    product_key: 'jd:synthetic',
+    platform: 'jd',
+    final_price_fen: 1000,
+    card: productList('unused'),
+  };
+}
+
+async function seenBatch(h: ReturnType<typeof harness>) {
+  await h.modelSearch({ q: '合成保温杯' }, 'seen-run');
+  await h.receipts.recordDelivered('model-seen-run', [delivered('c1')]);
+  expect(await h.store.currentChain?.(APP, SESSION)).toMatchObject({
+    status: 'has_products',
+    conditions: { q: '合成保温杯' },
+  });
+}
+
+it('[AC-B3-03r#2][BR-AI-05] 无结果的一轮当场记下本次查询：之后换平台只改 platforms、沿用刚问过的查询', async () => {
+  const h = harness(true);
+  await seenBatch(h);
+  h.execute.mockResolvedValueOnce(emptySearch(null));
+  const empty = await h.modelSearch({ q: '合成水杯', platforms: ['taobao'] }, 'empty-run');
+  expect(empty.kind === 'ok' ? noticeKeys(empty.cards) : []).toEqual(['agent.notice.no_result']);
+  expect(await h.store.currentChain?.(APP, SESSION)).toMatchObject({
+    status: 'searching',
+    conditions: { q: '合成水杯', platforms: ['taobao'] },
+  });
+  await h.intent({ agent_intent: 'refine', conditions: { platform: 'jd' } }, 'switch-run');
+  expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({ q: '合成水杯', platforms: ['jd'] });
+});
+
+it('[AC-B3-03r#2][BR-AI-05] 无结果的一轮后价格追问基于刚问过的查询，从第 1 页检索', async () => {
+  const h = harness(true);
+  await seenBatch(h);
+  h.execute.mockResolvedValueOnce(emptySearch(null));
+  await h.modelSearch({ q: '合成水杯' }, 'empty-run');
+  await h.intent({ agent_intent: 'refine', conditions: { price_max_fen: 10000 } }, 'price-run');
+  expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({
+    q: '合成水杯',
+    price_max_fen: 10000,
+    page: 1,
+  });
+});
+
+it('[AC-B3-03r#2][BR-AI-05] 新会话首搜无结果、检索失败的一轮同样记下查询，换平台不回落为 no_result', async () => {
+  const h = harness(true);
+  h.execute.mockResolvedValueOnce({ kind: 'failed', modelView: { error: 'tool_failed' } });
+  await h.modelSearch({ q: '合成水杯' }, 'failed-run');
+  expect(await h.store.currentChain?.(APP, SESSION)).toMatchObject({
+    status: 'searching',
+    conditions: { q: '合成水杯' },
+  });
+  const out = await h.intent(
+    { agent_intent: 'refine', conditions: { platform: 'taobao' } },
+    'switch-run',
+  );
+  expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({ q: '合成水杯', platforms: ['taobao'] });
+  expect(out.cards.map((card) => card.type)).toEqual(['product_list']);
+});
+
+it('[AC-B3-03r#2][BR-AI-05] 搜到商品但列表未确认写出的一轮仍不切链：换平台与换一批沿用上一批', async () => {
+  const h = harness(true);
+  await seenBatch(h);
+  const unwritten = await h.modelSearch({ q: '合成水杯' }, 'unwritten-run');
+  expect(unwritten.kind === 'ok' ? unwritten.cards.map((card) => card.type) : []).toEqual([
+    'product_list',
+  ]);
+  expect(await h.store.currentChain?.(APP, SESSION)).toMatchObject({
+    status: 'has_products',
+    conditions: { q: '合成保温杯' },
+  });
+  await h.intent({ agent_intent: 'refine', conditions: { platform: 'taobao' } }, 'switch-run');
+  expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({ q: '合成保温杯', platforms: ['taobao'] });
+  await h.intent({ agent_intent: 'refine', conditions: { next_batch: true } }, 'next-run');
+  expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({ q: '合成保温杯', page: 2 });
+});
+
+it('[AC-B3-03r#5][BR-PRICE-15] 延后切链时再便宜点无结果仍不改条件', async () => {
+  const h = harness(true);
+  await seenBatch(h);
+  const before = await h.store.currentChain?.(APP, SESSION);
+  h.execute.mockResolvedValueOnce(emptySearch(null));
+  const out = await h.intent(
+    { agent_intent: 'refine', conditions: { cheaper: true } },
+    'cheap-run',
+  );
+  expect(noticeKeys(out.cards)).toEqual(['agent.notice.no_cheaper']);
+  expect(await h.store.currentChain?.(APP, SESSION)).toEqual(before);
+});
+
+// B3-03r (D10-333) · BR-AI-05: a round without a product_list records the query, never a page the
+// user did not see — a failed 换一批 keeps the shown page, so the next 换一批 asks for it again.
+it.each([
+  ['失败结果', () => ({ kind: 'failed', modelView: { error: 'tool_failed' } }) as const],
+  [
+    '检索抛错',
+    () => {
+      throw new Error('synthetic upstream failure');
+    },
+  ],
+] as const)(
+  '[AC-B3-03r#7][BR-AI-05] 换一批（%s）没出商品列表：当前链页码不变，再换一批请求的仍是第 2 页',
+  async (_label, fail) => {
+    const h = harness(true);
+    await seenBatch(h);
+    const before = await h.store.currentChain?.(APP, SESSION);
+    h.execute.mockImplementationOnce(async () => fail());
+    await h.intent({ agent_intent: 'refine', conditions: { next_batch: true } }, 'failed-run');
+    expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({ q: '合成保温杯', page: 2 });
+    expect(await h.store.currentChain?.(APP, SESSION)).toEqual(before);
+    await h.intent({ agent_intent: 'refine', conditions: { next_batch: true } }, 'again-run');
+    expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({ q: '合成保温杯', page: 2 });
+  },
+);
+
+it('[AC-B3-03r#7][BR-AI-05] 第 2 页已见后价格追问失败：记下新价格、页码回到第 1 页，不沿用旧查询的页码', async () => {
+  const h = harness(true);
+  await seenBatch(h);
+  await h.intent({ agent_intent: 'refine', conditions: { next_batch: true } }, 'page-two-run');
+  const pageTwo = h.execute.mock.calls.at(-1)?.[0];
+  expect(pageTwo?.args).toEqual({ q: '合成保温杯', page: 2 });
+  await h.receipts.recordDelivered(pageTwo!.id, [delivered('c2')]);
+  expect(await h.store.currentChain?.(APP, SESSION)).toMatchObject({
+    status: 'has_products',
+    conditions: { q: '合成保温杯', page: 2 },
+  });
+  h.execute.mockResolvedValueOnce({ kind: 'failed', modelView: { error: 'tool_failed' } });
+  await h.intent({ agent_intent: 'refine', conditions: { price_max_fen: 10000 } }, 'price-run');
+  expect(await h.store.currentChain?.(APP, SESSION)).toMatchObject({
+    conditions: { q: '合成保温杯', price_max_fen: 10000, page: 1 },
+  });
+  await h.intent({ agent_intent: 'refine', conditions: { next_batch: true } }, 'next-run');
+  expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({
+    q: '合成保温杯',
+    price_max_fen: 10000,
+    page: 2,
+  });
+});
+
+it('[AC-B3-03r#7][BR-AI-05] 新查询直接请求第 3 页但失败：新链从第 1 页记起', async () => {
+  const h = harness(true);
+  await seenBatch(h);
+  h.execute.mockResolvedValueOnce({ kind: 'failed', modelView: { error: 'tool_failed' } });
+  await h.modelSearch({ q: '合成水杯', page: 3 }, 'failed-run');
+  const chain = await h.store.currentChain?.(APP, SESSION);
+  expect(chain?.conditions?.q).toBe('合成水杯');
+  expect(chain?.conditions?.page ?? 1).toBe(1);
+  await h.intent({ agent_intent: 'refine', conditions: { next_batch: true } }, 'next-run');
+  expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({ q: '合成水杯', page: 2 });
 });
