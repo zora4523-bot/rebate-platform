@@ -7,7 +7,7 @@ type: impl
 # readAgentUserHashConfig(appEnv, env) → { agentUserHashKey, problems }，空白视同缺失，problems 不带值），不进仓库、不打日志；
 # APP_ENV=prod 缺密钥 → loadConfig problem（拒绝启动，同其他必需密钥）；非 prod 缺密钥 → 端口保持 unavailable，启动时一行 pino warn（不含值）；
 # 有密钥 → createAgentDataPurge 装配真实端口。staging 放密钥由负责人做（负责人待办），放好后下次部署即生效、不改代码。
-# prod 缺密钥由 loadConfig 拒绝后，下列 5 个别任务冻结测试的 prod 配置输入须补 AGENT_USER_HASH_KEY（D10-327：列 test_paths，独立 Claude 在作者提交里只改输入、断言不动）；config.test.ts 由实现方改。
+# prod 缺密钥由 loadConfig 拒绝后，下列 6 个别任务冻结测试的 prod 配置输入须补 AGENT_USER_HASH_KEY（D10-327：列 test_paths，独立 Claude 在作者提交里只改输入、断言不动）；config.test.ts 由实现方改。
 # 新鲜独立 Claude 写规则测试（Codex 不可用，approvals #36）；风险 RV2（platform/**、app.module），评审类型 money。
 refs: [BR-AI-22]
 refs_hash:
@@ -26,6 +26,7 @@ test_paths:
   - 'test/spec/platform/crypto/wiring-config.test.ts'
   - 'test/spec/platform/maintenance/worker-entry.int.test.ts'
   - 'test/spec/union/demo/assembly.test.ts'
+  - 'test/spec/platform/jwt-verify-only/config.test.ts'
 impl: claude
 tester: claude-independent
 accept:
