@@ -2,13 +2,7 @@ id: B3-09j
 repo: rebate-platform
 title: AGENT_USER_HASH_KEY 经 platform/config 读进 AppConfig，app.module 有密钥即把注销清理端口 agent 换成 purgeAgentDataForUser；非 prod 缺密钥保持 unavailable 并 warn，prod 缺密钥拒绝启动
 type: impl
-# 2026-10-24 agent 线入账（编排裁定 D10-312，接 B3-09i 的导出）。现 app.module deletionCleanupPorts 为 agent: { unavailable: 'B3-09f' }，
-# 真实环境注销单停在 processing、每日 cleanup_blocked 告警（B1-15g）。口径（D10-312）：密钥只经 platform/config 读（照 agent-review.ts：
-# readAgentUserHashConfig(appEnv, env) → { agentUserHashKey, problems }，空白视同缺失，problems 不带值），不进仓库、不打日志；
-# APP_ENV=prod 缺密钥 → loadConfig problem（拒绝启动，同其他必需密钥）；非 prod 缺密钥 → 端口保持 unavailable，启动时一行 pino warn（不含值）；
-# 有密钥 → createAgentDataPurge 装配真实端口。staging 放密钥由负责人做（负责人待办），放好后下次部署即生效、不改代码。
-# prod 缺密钥由 loadConfig 拒绝后，下列 7 个别任务冻结测试的 prod 配置输入须补 AGENT_USER_HASH_KEY（D10-327：列 test_paths，独立 Claude 在作者提交里只改输入、断言不动）；config.test.ts 由实现方改。
-# 新鲜独立 Claude 写规则测试（Codex 不可用，approvals #36）；风险 RV2（platform/**、app.module），评审类型 money。
+# 2026-10-24 agent 线入账（D10-312，接 B3-09i）。密钥只经 platform/config 读（readAgentUserHashConfig，空白视同缺失，problem 不带值）；prod 缺密钥 loadConfig 拒启动；非 prod 缺密钥保持 agent: { unavailable } 并 warn；有密钥装配 createAgentDataPurge。 test_paths 里 deletion-wiring 之外是别任务冻结测试 / 夹具：prod 配置输入补 AGENT_USER_HASH_KEY（D10-327，独立 Claude 只改输入、断言不动）；config.test.ts 由实现方改。新鲜独立 Claude 写测试（approvals #36）；RV2。
 refs: [BR-AI-22]
 refs_hash:
   BR-AI-22: d412bc8a631a
@@ -28,6 +22,15 @@ test_paths:
   - 'test/spec/union/demo/assembly.test.ts'
   - 'test/spec/platform/jwt-verify-only/config.test.ts'
   - 'test/spec/union/pdd-live-wiring/startup.test.ts'
+  - 'test/spec/admin/auth/config.test.ts'
+  - 'test/spec/infra/staging-pdd/config.test.ts'
+  - 'test/spec/infra/staging-pdd/endpoints.test.ts'
+  - 'test/spec/infra/staging-pdd/kit.ts'
+  - 'test/spec/platform/export-store/config.test.ts'
+  - 'test/spec/platform/export-store/wiring.test.ts'
+  - 'test/spec/platform/media/config.test.ts'
+  - 'test/spec/union/pdd-live-wiring/config.test.ts'
+  - 'test/spec/union/pdd-query-identity/config.test.ts'
 impl: claude
 tester: claude-independent
 accept:
