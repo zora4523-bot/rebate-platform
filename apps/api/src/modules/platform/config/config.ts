@@ -13,6 +13,10 @@ import {
   type JwtVerifyKeyConfig,
 } from './jwt.ts';
 import { readKeyringConfig, type KeyringConfig } from './keyring.ts';
+import {
+  readPriorIdentityKeyringConfig,
+  type PriorIdentityKeyringConfig,
+} from './keyring-prior-identity.ts';
 import { readExportStoreConfig } from './export-store.ts';
 import { readMediaConfig } from './media.ts';
 import { readPddConfig, type PddClientConfig } from './pdd.ts';
@@ -74,6 +78,15 @@ export interface AppConfig {
   readonly streamPort: number;
   readonly adminPort: number;
   readonly keyring: KeyringConfig | null;
+  /**
+   * PRIOR_IDENTITY_KEY_PROVIDER / PRIOR_IDENTITY_KEYRING_FILE / PRIOR_IDENTITY_MASTER_KEY_FILE
+   * (./keyring-prior-identity.ts, B1-27e): the second field keyring, whose independent data keys
+   * encrypt the isolated store of prior identities (规划/08 BR-ID-25). Same meaning and formats as
+   * FIELD_*; staging / prod require it once FIELD_KEY_PROVIDER is set, local / test generate one
+   * per process when it is unset. Present only when configured; a hand-built config without it
+   * (or with null) counts as unset. Holds only the provider name and the paths.
+   */
+  readonly priorIdentityKeyring?: PriorIdentityKeyringConfig | null;
   /**
    * The access-token signing key of the api entry (./jwt.ts, B1-02h). Null when no JWT_* variable
    * is set: local / test then sign with an ephemeral key pair, staging / prod refuse to start
@@ -216,6 +229,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     if (appEnv.success) {
       problems.push(...startupViolations(appEnv.data, env));
       problems.push(...readKeyringConfig(appEnv.data, env).problems);
+      problems.push(...readPriorIdentityKeyringConfig(appEnv.data, env).problems);
       problems.push(...readJwt(appEnv.data, env).problems);
     }
     problems.push(...readTrustedProxies(env).problems);
@@ -233,6 +247,11 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   const violations = startupViolations(values.APP_ENV, env);
   const { keyring, problems } = readKeyringConfig(values.APP_ENV, env);
   violations.push(...problems);
+  const { priorIdentityKeyring, problems: priorIdentityProblems } = readPriorIdentityKeyringConfig(
+    values.APP_ENV,
+    env,
+  );
+  violations.push(...priorIdentityProblems);
   const { jwt, jwtVerify, problems: jwtProblems } = readJwt(values.APP_ENV, env);
   violations.push(...jwtProblems);
   const { trustedProxies, problems: proxyProblems } = readTrustedProxies(env);
@@ -271,6 +290,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     streamPort: values.STREAM_PORT,
     adminPort: values.ADMIN_PORT,
     keyring,
+    // Only present when configured, so the documented shape of an unconfigured result is unchanged.
+    ...(priorIdentityKeyring === null ? {} : { priorIdentityKeyring }),
     jwt,
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(jwtVerify === null ? {} : { jwtVerify }),

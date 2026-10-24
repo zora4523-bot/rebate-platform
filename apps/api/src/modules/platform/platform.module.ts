@@ -1,6 +1,10 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { CLOCK, type Clock } from './clock/index.ts';
 import type { AppConfig } from './config/index.ts';
+import {
+  openPriorIdentityFieldCrypto,
+  PRIOR_IDENTITY_FIELD_CRYPTO,
+} from './config/keyring-prior-identity.ts';
 import { openConfiguredFieldCrypto } from './config/keyring-startup.ts';
 import type { FieldCrypto } from './crypto/index.ts';
 import type { ConnectionConfig, DbHandles } from './db/index.ts';
@@ -61,6 +65,24 @@ export class PlatformModule {
                 await openConfiguredFieldCrypto(options.config.appEnv, keyring),
             },
           ];
+    // The second field keyring (B1-27e, config/keyring-prior-identity.ts §5): provided when it is
+    // configured, and in local / test (generated per process). In staging / prod without it (only a
+    // hand-built config gets there) the token is absent, so a provider that injects it fails.
+    const appEnv = options.config.appEnv;
+    const priorIdentityKeyring = options.config.priorIdentityKeyring ?? null;
+    const providesPriorIdentity =
+      priorIdentityKeyring !== null || appEnv === 'local' || appEnv === 'test';
+    const priorIdentityProviders = providesPriorIdentity
+      ? [
+          {
+            provide: PRIOR_IDENTITY_FIELD_CRYPTO,
+            // Injecting FIELD_CRYPTO makes the main keyring open (and fail) first.
+            inject: keyring === null ? [] : [FIELD_CRYPTO],
+            useFactory: async () =>
+              await openPriorIdentityFieldCrypto(appEnv, priorIdentityKeyring, keyring),
+          },
+        ]
+      : [];
     const queue =
       handles === undefined
         ? undefined
@@ -169,6 +191,7 @@ export class PlatformModule {
         ...databaseProviders,
         ...redisProviders,
         ...cryptoProviders,
+        ...priorIdentityProviders,
       ],
       exports: [
         APP_CONFIG,
@@ -178,6 +201,7 @@ export class PlatformModule {
         MEDIA_STORE,
         EXPORT_STORE,
         ...(keyring === null ? [] : [FIELD_CRYPTO]),
+        ...(providesPriorIdentity ? [PRIOR_IDENTITY_FIELD_CRYPTO] : []),
         ...(redisUrl === null ? [] : [REDIS]),
         ...(handles === undefined ? [] : [DB, IDEMPOTENCY, JOB_QUEUE, EVENT_BUS]),
         ...(handles !== undefined && options.entry === 'admin' && handles.dbRead !== null
