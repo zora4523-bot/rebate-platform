@@ -1,0 +1,110 @@
+{
+  "task": "B1-06zc",
+  "spec_ref": "d8e3ba5d50552d573506f45a0903e0a8f0a8aca3",
+  "spec_commit": "ad18f9ec65ce9b6e1efc380f248a5b81c314884c",
+  "red_tests": [
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：taobao 绑定 active/null → 可停用的改 blocked(deletion)，其余原样",
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：jd 绑定 invalid/null → 可停用的改 blocked(deletion)，其余原样",
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：pdd 绑定 pending_auth/null → 可停用的改 blocked(deletion)，其余原样",
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：meituan 绑定 blocked/ban → 可停用的改 blocked(deletion)，其余原样",
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：vip 绑定 blocked/admin_disable → 可停用的改 blocked(deletion)，其余原样",
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：douyin 绑定 blocked/deletion → 可停用的改 blocked(deletion)，其余原样",
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：eleme 绑定 released/null → 可停用的改 blocked(deletion)，其余原样",
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：kuaishou 绑定 unbound/null → 可停用的改 blocked(deletion)，其余原样",
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#2] 一次调用覆盖该用户全部平台：active / invalid / pending_auth 全改 blocked(deletion)；已 blocked（ban、admin_disable、deletion）、released、unbound 与历史行不动，不增删行",
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#3] 可重入：同一事务内再调、提交后换更晚的 at 再调，都不再改任何行（row_version、updated_at 停在第一次）",
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#4] 只用调用方事务：提交前别的连接看不到改动，调用方回滚后全部绑定复原",
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#5] 调用方事务已按 identity 清理的方式锁住 users 行时照常执行（不等锁、不另开事务），随调用方提交",
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#6] 按 app_id 与用户隔离：同 App 其他用户、别的 App 的用户不受影响；同一 userId 配别的 appId 不改任何行",
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#7] 没有任何绑定的用户：调用成功、不写任何行",
+    "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#8] 不动 link_logs：该用户作为点击者与分享者的打开记录按 90 天留存原样保留，不删不改",
+    "test/spec/linking/deletion-cleanup/wiring.test.ts > [AC-B1-06zc#9] 装配：worker 的注销清理端口 linking 换成 linking/index.ts 导出的 blockForDeletion（DeletionCleanupStep），不再是 unavailable 标记；growth 端口不变"
+  ],
+  "risk_note": "RV2 (linking/**, app.module.ts; attribution: bindings drive order attribution). Linking's deletion cleanup port for identity's cleanup transaction (08 BR-ID-28: union bindings blocked with reason deletion; orchestrator D10-311 ③): blockForDeletion takes the linking user lock, then one UPDATE turns the user's active / invalid / pending_auth bindings in that app into blocked with blocked_reason deletion, row_version + 1, updated_at = the step clock; the state set comes from canTransitionBinding(from, 'blocked') (approvals id 26 exception until CT-10's generated transition(), blockForBan precedent); unbound, released and already blocked rows (any reason) untouched, no rows deleted, link_logs untouched; re-entrant; a concurrent writer waits on the row lock and the status predicate is re-checked, so no row is silently skipped. app.module wires it in place of the { unavailable: 'W1' } marker. Codex was unavailable until 10-30, so tests and the money review ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "ad18f9ec65ce9b6e1efc380f248a5b81c314884c",
+      "tree": "bf39838e80c170258d2337d5c475a2468f3a7353",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T04:20:45Z",
+      "finished_at": "2026-10-24T04:21:03Z",
+      "gate": {
+        "commit": "ceafc3bc32c7bd4a83564b2b4d098674a2faf0c5",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：taobao 绑定 active/null → 可停用的改 blocked(deletion)，其余原样",
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：jd 绑定 invalid/null → 可停用的改 blocked(deletion)，其余原样",
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：pdd 绑定 pending_auth/null → 可停用的改 blocked(deletion)，其余原样",
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：meituan 绑定 blocked/ban → 可停用的改 blocked(deletion)，其余原样",
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：vip 绑定 blocked/admin_disable → 可停用的改 blocked(deletion)，其余原样",
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：douyin 绑定 blocked/deletion → 可停用的改 blocked(deletion)，其余原样",
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：eleme 绑定 released/null → 可停用的改 blocked(deletion)，其余原样",
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#1] 注销清理：kuaishou 绑定 unbound/null → 可停用的改 blocked(deletion)，其余原样",
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#2] 一次调用覆盖该用户全部平台：active / invalid / pending_auth 全改 blocked(deletion)；已 blocked（ban、admin_disable、deletion）、released、unbound 与历史行不动，不增删行",
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#3] 可重入：同一事务内再调、提交后换更晚的 at 再调，都不再改任何行（row_version、updated_at 停在第一次）",
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#4] 只用调用方事务：提交前别的连接看不到改动，调用方回滚后全部绑定复原",
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#5] 调用方事务已按 identity 清理的方式锁住 users 行时照常执行（不等锁、不另开事务），随调用方提交",
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#6] 按 app_id 与用户隔离：同 App 其他用户、别的 App 的用户不受影响；同一 userId 配别的 appId 不改任何行",
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#7] 没有任何绑定的用户：调用成功、不写任何行",
+        "test/spec/linking/deletion-cleanup/block.int.test.ts > [AC-B1-06zc#8] 不动 link_logs：该用户作为点击者与分享者的打开记录按 90 天留存原样保留，不删不改",
+        "test/spec/linking/deletion-cleanup/wiring.test.ts > [AC-B1-06zc#9] 装配：worker 的注销清理端口 linking 换成 linking/index.ts 导出的 blockForDeletion（DeletionCleanupStep），不再是 unavailable 标记；growth 端口不变"
+      ],
+      "expected": [
+        "test/spec/linking/deletion-cleanup/block.int.test.ts",
+        "test/spec/linking/deletion-cleanup/wiring.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "965a04be9e1a8d90d3412176a435dda34ee8ece467921d1520d707ad02528f05"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "67f8737907be3258c90eccf31b90fc98ec82218d284a8b4d6f6e6e211db3c0b4"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 against the merge base pass with no findings."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude (1 run); round 1 pass with one S2 (a per-row CAS skipped under a concurrent sweep), addressed by the single conditional UPDATE in the implementation."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "108faaace2e23aefeaf653f2c382ff02c87d1d93",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}
