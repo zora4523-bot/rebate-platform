@@ -1,7 +1,8 @@
 // HTTP 层（不挂载，经后台入口上的探针）：所有 kind 要 order.claim；渠道单另要 risk.blocklist 与 totp 动态码
 // （整份一次）；multipart 的表单项与文件；超过全局上限 413 / 20001 [body]；被拒的请求什么都不留下。
+// 用例全部是顶层 it（资金 / 归属测试路径，规划/11 §4.3）。
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it } from 'vitest';
 import { fixture, open, type Fixture, type Harness } from './db-kit.ts';
 import { BASE, BODY_LIMIT, STEP_UP, post, withProbe, type Response } from './http-kit.ts';
 import { PNG, conforms, form, hex, ms, sheet } from './kit.ts';
@@ -45,8 +46,19 @@ async function created(f: Fixture, response: Response) {
   return row!;
 }
 
-describe('[AC-B1-09g#19] 维权单 / 违规单：只要 order.claim，不要动态码', () => {
-  it.each(['rights', 'punish'])('%s：multipart 表单项与文件 → 新任务 queued', async (kind) => {
+/** A well-formed channel upload of the fixture's own union account. */
+function channel(f: Fixture) {
+  return form(
+    { kind: 'channel', platform: 'taobao', union_account_id: f.accountId },
+    sheet(['succeeded']),
+  );
+}
+
+// ---------------------------------------------------------------- 维权单 / 违规单：只要 order.claim
+
+it.each(['rights', 'punish'])(
+  '[AC-B1-09g#19] %s：只要 order.claim、不要动态码；multipart 表单项与文件 → 新任务 queued',
+  async (kind) => {
     const f = await fixture(h);
     const bytes = sheet(['succeeded', 'skipped']);
     await withProbe(f, async (app) => {
@@ -68,44 +80,41 @@ describe('[AC-B1-09g#19] 维权单 / 违规单：只要 order.claim，不要动�
       expect(f.queue.sent).toHaveLength(1);
       expect((await f.state()).audits).toHaveLength(1);
     });
-  });
+  },
+);
 
-  it('没有 order.claim → 10403，什么都不留下', async () => {
-    const f = await fixture(h);
-    await withProbe(f, async (app, probe) => {
-      probe.guard.held.keys = ['order.view', 'risk.blocklist'];
-      const response = await app.inject(
-        post(form({ kind: 'rights', platform: 'taobao' }, sheet(['succeeded'])), {
-          'x-step-up-token': STEP_UP,
-        }),
-      );
-      refused(response, 403, 10403, { reason: 'admin_permission_denied' });
-      await nothingLeft(f);
-    });
+it('[AC-B1-09g#19] 没有 order.claim → 10403，什么都不留下', async () => {
+  const f = await fixture(h);
+  await withProbe(f, async (app, probe) => {
+    probe.guard.held.keys = ['order.view', 'risk.blocklist'];
+    const response = await app.inject(
+      post(form({ kind: 'rights', platform: 'taobao' }, sheet(['succeeded'])), {
+        'x-step-up-token': STEP_UP,
+      }),
+    );
+    refused(response, 403, 10403, { reason: 'admin_permission_denied' });
+    await nothingLeft(f);
   });
 });
 
-describe('[AC-B1-09g#20] 渠道单：另要 risk.blocklist 与 totp 动态码（整份一次）', () => {
-  const channel = (f: Fixture) =>
-    form(
-      { kind: 'channel', platform: 'taobao', union_account_id: f.accountId },
-      sheet(['succeeded']),
-    );
+// ---------------------------------------------------------------- 渠道单：另要 risk.blocklist 与 totp 动态码（整份一次）
 
-  it('缺 risk.blocklist → 10403，什么都不留下', async () => {
-    const f = await fixture(h);
-    await withProbe(f, async (app, probe) => {
-      probe.guard.held.keys = ['order.claim'];
-      const response = await app.inject(post(channel(f), { 'x-step-up-token': STEP_UP }));
-      refused(response, 403, 10403, { reason: 'admin_permission_denied' });
-      await nothingLeft(f);
-    });
+it('[AC-B1-09g#20] 渠道单缺 risk.blocklist → 10403，什么都不留下', async () => {
+  const f = await fixture(h);
+  await withProbe(f, async (app, probe) => {
+    probe.guard.held.keys = ['order.claim'];
+    const response = await app.inject(post(channel(f), { 'x-step-up-token': STEP_UP }));
+    refused(response, 403, 10403, { reason: 'admin_permission_denied' });
+    await nothingLeft(f);
   });
+});
 
-  it.each([
-    ['动态码错', { 'x-step-up-token': 'wrong-plain-plain-plain' }],
-    ['没带动态码', {}],
-  ] as const)('%s → 10003（tier totp），什么都不留下', async (_label, headers) => {
+it.each([
+  ['动态码错', { 'x-step-up-token': 'wrong-plain-plain-plain' }],
+  ['没带动态码', {}],
+] as const)(
+  '[AC-B1-09g#20] 渠道单%s → 10003（tier totp），什么都不留下',
+  async (_label, headers) => {
     const f = await fixture(h);
     await withProbe(f, async (app, probe) => {
       probe.guard.held.keys = ['order.claim', 'risk.blocklist'];
@@ -113,140 +122,140 @@ describe('[AC-B1-09g#20] 渠道单：另要 risk.blocklist 与 totp 动态码（
       refused(response, 403, 10003, { tier: 'totp' });
       await nothingLeft(f);
     });
-  });
+  },
+);
 
-  it('两个权限点都有、动态码对 → 新任务 queued', async () => {
-    const f = await fixture(h);
-    await withProbe(f, async (app, probe) => {
-      probe.guard.held.keys = ['order.claim', 'risk.blocklist'];
-      const response = await app.inject(post(channel(f), { 'x-step-up-token': STEP_UP }));
-      const row = await created(f, response);
-      expect(row).toMatchObject({
+it('[AC-B1-09g#20] 渠道单两个权限点都有、动态码对 → 新任务 queued', async () => {
+  const f = await fixture(h);
+  await withProbe(f, async (app, probe) => {
+    probe.guard.held.keys = ['order.claim', 'risk.blocklist'];
+    const response = await app.inject(post(channel(f), { 'x-step-up-token': STEP_UP }));
+    const row = await created(f, response);
+    expect(row).toMatchObject({
+      kind: 'channel',
+      platform: 'taobao',
+      union_account_id: f.accountId,
+      time_basis: null,
+      created_by: f.adminId,
+    });
+    expect(f.queue.sent).toHaveLength(1);
+  });
+});
+
+it('[AC-B1-09g#20] 维权单带着权限点与动态码也照常受理（不要求，也不妨碍）', async () => {
+  const f = await fixture(h);
+  await withProbe(f, async (app, probe) => {
+    probe.guard.held.keys = ['order.claim', 'risk.blocklist'];
+    const response = await app.inject(
+      post(form({ kind: 'rights', platform: 'taobao' }, sheet(['succeeded'])), {
+        'x-step-up-token': STEP_UP,
+      }),
+    );
+    expect((await created(f, response)).kind).toBe('rights');
+  });
+});
+
+// ---------------------------------------------------------------- 请求体与表单
+
+it(`[AC-B1-09g#21] 请求体超过全局上限（${BODY_LIMIT} 字节）→ HTTP 413 / 20001 [body]，什么都不留下`, async () => {
+  const f = await fixture(h);
+  await withProbe(f, async (app) => {
+    const big = Buffer.alloc(BODY_LIMIT + 4096, 0x41);
+    const response = await app.inject(post(form({ kind: 'rights', platform: 'taobao' }, big)));
+    refused(response, 413, 20001, { fields: ['body'] });
+    await nothingLeft(f);
+  });
+});
+
+it('[AC-B1-09g#21] 不是 multipart → 400 / 20001，什么都不留下', async () => {
+  const f = await fixture(h);
+  await withProbe(f, async (app) => {
+    const response = await app.inject({
+      method: 'POST',
+      url: BASE,
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ kind: 'rights', platform: 'taobao' }),
+    });
+    refused(response, 400, 20001);
+    await nothingLeft(f);
+  });
+});
+
+it('[AC-B1-09g#21] 文件不是 xlsx → 400 / 20001 [file]', async () => {
+  const f = await fixture(h);
+  await withProbe(f, async (app) => {
+    const response = await app.inject(post(form({ kind: 'rights', platform: 'taobao' }, PNG)));
+    refused(response, 400, 20001, { fields: ['file'] });
+    await nothingLeft(f);
+  });
+});
+
+it('[AC-B1-09g#21] 组合不合（渠道单带 time_basis）→ 400 / 20001 [time_basis]', async () => {
+  const f = await fixture(h);
+  await withProbe(f, async (app, probe) => {
+    probe.guard.held.keys = ['order.claim', 'risk.blocklist'];
+    const parts = form(
+      {
         kind: 'channel',
         platform: 'taobao',
         union_account_id: f.accountId,
-        time_basis: null,
-        created_by: f.adminId,
-      });
-      expect(f.queue.sent).toHaveLength(1);
-    });
-  });
-
-  it('维权单带着权限点与动态码也照常受理（不要求，也不妨碍）', async () => {
-    const f = await fixture(h);
-    await withProbe(f, async (app, probe) => {
-      probe.guard.held.keys = ['order.claim', 'risk.blocklist'];
-      const response = await app.inject(
-        post(form({ kind: 'rights', platform: 'taobao' }, sheet(['succeeded'])), {
-          'x-step-up-token': STEP_UP,
-        }),
-      );
-      expect((await created(f, response)).kind).toBe('rights');
-    });
+        time_basis: 'paid',
+      },
+      sheet(['succeeded']),
+    );
+    const response = await app.inject(post(parts, { 'x-step-up-token': STEP_UP }));
+    refused(response, 400, 20001, { fields: ['time_basis'] });
+    await nothingLeft(f);
   });
 });
 
-describe('[AC-B1-09g#21] 请求体与表单', () => {
-  it(`请求体超过全局上限（${BODY_LIMIT} 字节）→ HTTP 413 / 20001 [body]，什么都不留下`, async () => {
-    const f = await fixture(h);
-    await withProbe(f, async (app) => {
-      const big = Buffer.alloc(BODY_LIMIT + 4096, 0x41);
-      const response = await app.inject(post(form({ kind: 'rights', platform: 'taobao' }, big)));
-      refused(response, 413, 20001, { fields: ['body'] });
-      await nothingLeft(f);
-    });
-  });
-
-  it('不是 multipart → 400 / 20001，什么都不留下', async () => {
-    const f = await fixture(h);
-    await withProbe(f, async (app) => {
-      const response = await app.inject({
-        method: 'POST',
-        url: BASE,
-        headers: { 'content-type': 'application/json' },
-        payload: JSON.stringify({ kind: 'rights', platform: 'taobao' }),
-      });
-      refused(response, 400, 20001);
-      await nothingLeft(f);
-    });
-  });
-
-  it('文件不是 xlsx → 400 / 20001 [file]', async () => {
-    const f = await fixture(h);
-    await withProbe(f, async (app) => {
-      const response = await app.inject(post(form({ kind: 'rights', platform: 'taobao' }, PNG)));
-      refused(response, 400, 20001, { fields: ['file'] });
-      await nothingLeft(f);
-    });
-  });
-
-  it('组合不合（渠道单带 time_basis）→ 400 / 20001 [time_basis]', async () => {
-    const f = await fixture(h);
-    await withProbe(f, async (app, probe) => {
-      probe.guard.held.keys = ['order.claim', 'risk.blocklist'];
-      const parts = form(
-        {
-          kind: 'channel',
-          platform: 'taobao',
-          union_account_id: f.accountId,
-          time_basis: 'paid',
-        },
-        sheet(['succeeded']),
-      );
-      const response = await app.inject(post(parts, { 'x-step-up-token': STEP_UP }));
-      refused(response, 400, 20001, { fields: ['time_basis'] });
-      await nothingLeft(f);
-    });
-  });
-
-  it('kind 不在枚举 → 400 / 20001 [kind]', async () => {
-    const f = await fixture(h);
-    await withProbe(f, async (app) => {
-      const response = await app.inject(
-        post(form({ kind: 'refund', platform: 'taobao' }, sheet(['succeeded']))),
-      );
-      refused(response, 400, 20001, { fields: ['kind'] });
-      await nothingLeft(f);
-    });
+it('[AC-B1-09g#21] kind 不在枚举 → 400 / 20001 [kind]', async () => {
+  const f = await fixture(h);
+  await withProbe(f, async (app) => {
+    const response = await app.inject(
+      post(form({ kind: 'refund', platform: 'taobao' }, sheet(['succeeded']))),
+    );
+    refused(response, 400, 20001, { fields: ['kind'] });
+    await nothingLeft(f);
   });
 });
 
-describe('[AC-B1-09g#22] 列表 / 详情：order.claim 只读，App 取自操作人', () => {
-  it('列表与详情只读本 App；别的 App 的任务 → 400 / 20001 [import_id]；守卫只读、不要动态码', async () => {
-    const f = await fixture(h);
-    const other = await fixture(h);
-    const own = await f.seed();
-    const theirs = await other.seed();
-    await withProbe(f, async (app, probe) => {
-      const list = await app.inject({ method: 'GET', url: `${BASE}?page=1&page_size=20` });
-      expect(list.statusCode).toBe(200);
-      const page = list.json() as { code: number; data: { items: { import_id: string }[] } };
-      expect(page.code).toBe(0);
-      expect(page.data.items.map((i) => i.import_id)).toEqual([own.id]);
-      await conforms(page, 'AdminRightsImportPageResponse');
+// ---------------------------------------------------------------- 列表 / 详情：order.claim 只读，App 取自操作人
 
-      const detail = await app.inject({ method: 'GET', url: `${BASE}/${own.id}` });
-      expect(detail.statusCode).toBe(200);
-      expect(detail.json()).toMatchObject({ code: 0, data: { import_id: own.id, failures: [] } });
-      await conforms(detail.json(), 'AdminRightsImportDetailResponse');
+it('[AC-B1-09g#22] 列表与详情只读本 App；别的 App 的任务 → 400 / 20001 [import_id]；守卫只读、不要动态码', async () => {
+  const f = await fixture(h);
+  const other = await fixture(h);
+  const own = await f.seed();
+  const theirs = await other.seed();
+  await withProbe(f, async (app, probe) => {
+    const list = await app.inject({ method: 'GET', url: `${BASE}?page=1&page_size=20` });
+    expect(list.statusCode).toBe(200);
+    const page = list.json() as { code: number; data: { items: { import_id: string }[] } };
+    expect(page.code).toBe(0);
+    expect(page.data.items.map((i) => i.import_id)).toEqual([own.id]);
+    await conforms(page, 'AdminRightsImportPageResponse');
 
-      refused(await app.inject({ method: 'GET', url: `${BASE}/${theirs.id}` }), 400, 20001, {
-        fields: ['import_id'],
-      });
-      expect(probe.guard.calls.length).toBeGreaterThanOrEqual(3);
-      for (const call of probe.guard.calls) {
-        expect(call).toMatchObject({ permission: 'order.claim', readOnly: true });
-      }
+    const detail = await app.inject({ method: 'GET', url: `${BASE}/${own.id}` });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json()).toMatchObject({ code: 0, data: { import_id: own.id, failures: [] } });
+    await conforms(detail.json(), 'AdminRightsImportDetailResponse');
+
+    refused(await app.inject({ method: 'GET', url: `${BASE}/${theirs.id}` }), 400, 20001, {
+      fields: ['import_id'],
     });
+    expect(probe.guard.calls.length).toBeGreaterThanOrEqual(3);
+    for (const call of probe.guard.calls) {
+      expect(call).toMatchObject({ permission: 'order.claim', readOnly: true });
+    }
   });
+});
 
-  it('没有 order.claim → 10403', async () => {
-    const f = await fixture(h);
-    const own = await f.seed();
-    await withProbe(f, async (app, probe) => {
-      probe.guard.held.keys = ['order.view'];
-      refused(await app.inject({ method: 'GET', url: BASE }), 403, 10403);
-      refused(await app.inject({ method: 'GET', url: `${BASE}/${own.id}` }), 403, 10403);
-    });
+it('[AC-B1-09g#22] 列表 / 详情没有 order.claim → 10403', async () => {
+  const f = await fixture(h);
+  const own = await f.seed();
+  await withProbe(f, async (app, probe) => {
+    probe.guard.held.keys = ['order.view'];
+    refused(await app.inject({ method: 'GET', url: BASE }), 403, 10403);
+    refused(await app.inject({ method: 'GET', url: `${BASE}/${own.id}` }), 403, 10403);
   });
 });
