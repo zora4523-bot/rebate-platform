@@ -1,0 +1,20 @@
+id: F1-02zzn
+repo: rebate-platform
+title: 测试修改：两份冻结集成测试的期望分类正则补 real_name.consent. 归 agreement（test/spec/content/admin-dict/delivery.int.test.ts、test/spec/content/dict-admin/dict-items.int.test.ts），为 CT-16o 建键让路
+type: test-change
+# 2026-10-24 入账（content-client；CT-16o #1542 verify-int 红在 [AC-F1-02zd#8]、[AC-F1-02t#8]：两处 classOf 用 /^(privacy|perm)\./ 判 agreement，未认主干 classifyTextKey 自 F1-02zzi 起的 real_name.consent. 前缀（D10-204），把新键期望成 general）。
+# 与 F1-02zzm 同类、当时漏改的两处；只把正则补成三前缀，断言与其余判定不变，不削弱。全新上下文 Claude 修改、另一全新上下文 Claude 只读复审，按 approvals #24 请编排加标签；台账同 PR（先例 B1-08y / B2-04wb）。
+refs: []
+refs_hash: {}
+deps: [F1-02zzm]
+paths:
+  - 'test/spec/content/admin-dict/delivery.int.test.ts'
+  - 'test/spec/content/dict-admin/dict-items.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/admin-dict/**'
+  - 'test/spec/content/dict-admin/**'
+status: todo
+pr: null
