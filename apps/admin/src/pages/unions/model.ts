@@ -6,6 +6,8 @@ import { ordersTexts } from '../../texts/orders.ts';
 import { unionsTexts as t } from '../../texts/unions.ts';
 
 export type UnionAccount = Schema<'AdminUnionAccount'>;
+/** 推广位登记用的联盟账号选项（CT-24s adminListUnionAccountOptions）：只有编号、平台、名称。 */
+export type UnionAccountOption = Schema<'AdminUnionAccountOption'>;
 export type ReauthSession = Schema<'AdminUnionReauthSession'>;
 export type ReauthResult = Schema<'AdminUnionReauthResult'>;
 export type AlertPhones = Schema<'AdminUnionAlertPhones'>;
@@ -14,6 +16,8 @@ export type AlertPhone = AlertPhones['items'][number];
 export const ACCOUNTS_URL = '/admin/v1/union-accounts';
 export const PHONES_URL = `${ACCOUNTS_URL}/alert-phones`;
 export const CALLBACK_URL = `${ACCOUNTS_URL}/oauth/callback`;
+/** union.pid 或 union.account_auth 任一即可读；不分页。 */
+export const ACCOUNT_OPTIONS_URL = '/admin/v1/union/account-options';
 export const STEP_UP_URL = '/admin/v1/auth/step-up';
 export const REASON_MAX = 200;
 export const CREDENTIAL_MAX = 512;

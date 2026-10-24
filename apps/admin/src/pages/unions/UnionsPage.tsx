@@ -64,9 +64,8 @@ export function UnionsPage({ access, clock }: UnionsPageProps): ReactElement {
   const pidPermitted = access.can(PID_PERMISSION);
   const now = clock ?? SYSTEM_CLOCK;
   // 联盟账号列表或告警手机号的读接口还没上线（planned，D10-284）：联盟账号页签显示占位、不发请求；
-  // 推广位页签照常，只是不去读联盟账号列表（同缺 union.account_auth：账号下拉为空并提示）。
+  // 推广位页签照常（它的账号选项来自 account-options，F1-10gc）。
   const accountsPlanned = usePlanned('adminListUnionAccounts', 'adminListUnionAlertPhones');
-  const accountListPlanned = usePlanned('adminListUnionAccounts');
   let accountsTab: ReactElement;
   if (!permitted) accountsTab = <Forbidden />;
   else if (accountsPlanned) accountsTab = <PlannedPanel />;
@@ -87,11 +86,7 @@ export function UnionsPage({ access, clock }: UnionsPageProps): ReactElement {
           {
             key: 'pids',
             label: t.tabs.pids,
-            children: pidPermitted ? (
-              <PidsTab clock={now} canReadAccounts={permitted && !accountListPlanned} />
-            ) : (
-              <PidForbidden />
-            ),
+            children: pidPermitted ? <PidsTab clock={now} /> : <PidForbidden />,
           },
         ]}
       />

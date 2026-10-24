@@ -1,8 +1,10 @@
 // 「推广位」页签（F1-10gb；契约 adminListUnionPids 等，CT-24h；BR-ATTR-02）：全量推广位列表（不分页，
 // 顺序同服务端：平台、场景、创建时间）与本地筛选；按状态的入口——pending：修改、启用；active：停用；
 // retired：无。任何行都没有删除。列表只读、不要动态码；每次写都先 totp 动态码，令牌只用一次。
-// 联盟账号名来自 GET /admin/v1/union-accounts（要 union.account_auth；没有时显示账号编号，登记时
-// 选不了账号并提示）。
+// 联盟账号名与登记 / 修改的账号下拉来自 GET /admin/v1/union/account-options（F1-10gc，CT-24s：
+// union.pid 或 union.account_auth 任一即可），不读 GET /admin/v1/union-accounts。读不到（出错、
+// 10403、断网）时列表显示账号编号，对话框账号下拉为空并提示；该接口仍是 planned 时不请求，对话框
+// 提示「功能开发中」。
 import { useDataProvider } from '@refinedev/core';
 import {
   Alert,
@@ -19,11 +21,13 @@ import {
 } from 'antd';
 import type { TableColumnsType } from 'antd';
 import { useCallback, useEffect, useId, useRef, useState, type ReactElement } from 'react';
+import { usePlanned } from '../../components/planned/index.ts';
 import type { AuthClock } from '../../providers/auth/index.ts';
+import { plannedTexts } from '../../texts/shell.ts';
 import { unionsTexts as t } from '../../texts/unions.ts';
 import { ActivateDialog } from './ActivateDialog.tsx';
 import {
-  ACCOUNTS_URL,
+  ACCOUNT_OPTIONS_URL,
   PIDS_URL,
   beijingTime,
   codeOf,
@@ -32,7 +36,7 @@ import {
   pidStatusLabel,
   platformLabel,
   sceneLabel,
-  type UnionAccount,
+  type UnionAccountOption,
   type UnionPid,
 } from './model.ts';
 import { PidFormDialog } from './PidFormDialog.tsx';
@@ -56,9 +60,10 @@ const ALL = '__all__';
 
 export interface PidsTabProps {
   readonly clock: AuthClock;
-  /** 是否持 union.account_auth（读联盟账号列表要它）。 */
-  readonly canReadAccounts: boolean;
 }
+
+/** 联盟账号选项的读取状态：loading 时下拉暂空、不提示；failed / planned 时下拉为空并提示。 */
+type ChoicesStatus = 'loading' | 'ready' | 'failed';
 
 export function PidForbidden(): ReactElement {
   return (
@@ -68,7 +73,7 @@ export function PidForbidden(): ReactElement {
   );
 }
 
-export function PidsTab({ clock, canReadAccounts }: PidsTabProps): ReactElement {
+export function PidsTab({ clock }: PidsTabProps): ReactElement {
   const getProvider = useDataProvider();
   const stepUp = useStepUp();
   const platformFilterId = useId();
@@ -76,7 +81,9 @@ export function PidsTab({ clock, canReadAccounts }: PidsTabProps): ReactElement 
   const [rows, setRows] = useState<UnionPid[]>([]);
   const [status, setStatus] = useState<LoadStatus>('loading');
   const [network, setNetwork] = useState(false);
-  const [accounts, setAccounts] = useState<UnionAccount[]>();
+  const optionsPlanned = usePlanned('adminListUnionAccountOptions');
+  const [accounts, setAccounts] = useState<UnionAccountOption[]>();
+  const [choices, setChoices] = useState<ChoicesStatus>('loading');
   const [platformFilter, setPlatformFilter] = useState(ALL);
   const [sceneFilter, setSceneFilter] = useState(ALL);
   const [editing, setEditing] = useState<Editing>();
@@ -109,20 +116,36 @@ export function PidsTab({ clock, canReadAccounts }: PidsTabProps): ReactElement 
   }, [load]);
 
   useEffect(() => {
-    if (!canReadAccounts) return;
+    if (optionsPlanned) return;
     let alive = true;
-    customOf(getProvider())<{ items: UnionAccount[] }>({ url: ACCOUNTS_URL, method: 'get' }).then(
+    // 一次取全部平台的选项（不带 platform），对话框里按所选平台筛选。
+    customOf(getProvider())<{ items: UnionAccountOption[] }>({
+      url: ACCOUNT_OPTIONS_URL,
+      method: 'get',
+    }).then(
       (response) => {
-        if (alive) setAccounts(response.data.items);
+        if (!alive) return;
+        setAccounts(response.data.items);
+        setChoices('ready');
       },
       () => {
-        // 读不到账号时列表显示账号编号，登记对话框提示选不了账号。
+        // 读不到选项时列表显示账号编号，登记 / 修改对话框提示选不了账号；不改读 union-accounts。
+        if (alive) setChoices('failed');
       },
     );
     return () => {
       alive = false;
     };
-  }, [canReadAccounts, getProvider]);
+  }, [optionsPlanned, getProvider]);
+
+  // 对话框账号下拉旁的提示：接口未上线时「功能开发中」，读取失败时不可用。
+  const choicesHint: { readonly title: string; readonly description?: string } | undefined =
+    optionsPlanned
+      ? { title: plannedTexts.title, description: plannedTexts.description }
+      : choices === 'failed'
+        ? { title: t.pids.accountOptionsUnavailable }
+        : undefined;
+  const dialogAccounts = optionsPlanned ? undefined : accounts;
 
   const retry = () => {
     setStatus('loading');
@@ -153,7 +176,7 @@ export function PidsTab({ clock, canReadAccounts }: PidsTabProps): ReactElement 
   };
 
   const accountName = (id: string): string =>
-    accounts?.find((item) => item.union_account_id === id)?.account_name ?? id;
+    dialogAccounts?.find((item) => item.union_account_id === id)?.account_name ?? id;
 
   const platforms: string[] = [];
   for (const row of rows) if (!platforms.includes(row.platform)) platforms.push(row.platform);
@@ -383,7 +406,8 @@ export function PidsTab({ clock, canReadAccounts }: PidsTabProps): ReactElement 
       {body}
       {editing?.kind === 'register' ? (
         <PidFormDialog
-          accounts={accounts}
+          accounts={dialogAccounts}
+          accountsHint={choicesHint}
           stepUp={stepUp}
           onClose={() => setEditing(undefined)}
           onSaved={(row) => saved(row, t.pids.registered(row.pid))}
@@ -394,7 +418,8 @@ export function PidsTab({ clock, canReadAccounts }: PidsTabProps): ReactElement 
         <PidFormDialog
           key={editing.row.pid_id}
           row={editing.row}
-          accounts={accounts}
+          accounts={dialogAccounts}
+          accountsHint={choicesHint}
           stepUp={stepUp}
           onClose={() => setEditing(undefined)}
           onSaved={(row) => saved(row, t.pids.saved(row.pid))}
