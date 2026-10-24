@@ -8011,7 +8011,7 @@ CREATE INDEX rights_imports_created_idx ON app.rights_imports USING btree (app_i
 -- Name: risk_hits_blacklist_once_key; Type: INDEX; Schema: app; Owner: -
 --
 
-CREATE UNIQUE INDEX risk_hits_blacklist_once_key ON app.risk_hits USING btree (app_id, rule_id, ref_type, ref_id, value_hmac) WHERE (rule_id = 'BLACKLIST_HIT'::text);
+CREATE UNIQUE INDEX risk_hits_blacklist_once_key ON app.risk_hits USING btree (app_id, rule_id, ref_type, ref_id, value_hmac, risk_action) WHERE (rule_id = 'BLACKLIST_HIT'::text);
 
 
 --
