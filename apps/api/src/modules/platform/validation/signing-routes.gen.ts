@@ -1017,6 +1017,21 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "DELETE",
+    "path": "/admin/v1/notify-channels/:code/sms/pending",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/notify-channels/:code/sms/pending/test",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/notify-channels/:code/sms/pending/enable",
+    "signed": false
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/app-versions",
     "signed": false

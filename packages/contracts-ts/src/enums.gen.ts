@@ -292,6 +292,28 @@ export const sms_template_type = [
 export type SmsTemplateType = (typeof sms_template_type)[number];
 
 /**
+ * GET /admin/v1/notify-channels 的 sms_state：该编码的短信现在怎样发
+ * Source: 规划/08 BR-TEXT-20 细则「短信渠道登记与后台渠道开关」（短信就绪条件，编排裁定 D10-337 ②、D10-339 ⑥）；规划/04 §3 notify_templates（CT-24t） (contracts/enums/admin.yaml).
+ */
+export const notify_sms_state = [
+  "disabled", // 关（短信不在当前渠道里）
+  "enabled", // 开，且已就绪（各变体都有在用登记）或 SMS_CODE 用部署配置兜底：照发
+  "enabled_not_ready", // 开（未就绪）：默认渠道含短信、变体未全登记启用，服务端不发短信、只记录未发送，推送与站内信照发
+] as const;
+export type NotifySmsState = (typeof notify_sms_state)[number];
+
+/**
+ * 待测试登记最近一次测试发送的结果
+ * Source: 规划/08 BR-TEXT-20 细则「短信渠道登记与后台渠道开关」（「待测试」登记与测试发送，编排裁定 D10-337 ①、D10-339 ①⑤）；规划/04 §3 notify_templates（CT-24t） (contracts/enums/admin.yaml).
+ */
+export const notify_sms_test_status = [
+  "accepted", // 已受理（受理不等于送达），可启用新配置；选「稍后再启用」后仍是此值
+  "failed", // 测试失败（服务商拒收、出错或超时），原配置继续生效
+  "not_sent_no_verify_phone", // 未发送：保存时操作人没有登记验证手机号
+] as const;
+export type NotifySmsTestStatus = (typeof notify_sms_test_status)[number];
+
+/**
  * 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
  * Source: 规划/04 §2.4；BR-FUND-15；08 §13.4 (contracts/enums/fund.yaml).
  */
@@ -1990,6 +2012,8 @@ export const enums = {
   union_pid_status,
   notify_channel,
   sms_template_type,
+  notify_sms_state,
+  notify_sms_test_status,
   ledger_type,
   referral_credit_sub_type,
   clawback_sub_type,

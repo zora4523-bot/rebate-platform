@@ -93,7 +93,7 @@ tags:
   - name: admin-content
     description: Admin content operations; platform mark replacement images (permission point content.platform_icon, BR-TEXT-24).
   - name: admin-notify
-    description: Admin notification channels — per template code the push / SMS switches and the SMS signature and template CODE registration with a synchronous test send to the operator's verify phone (permission point notify.channels, fund codes also content.fund_terms for the registration; 04 §3, §11.2; BR-TEXT-20, BR-TEXT-09).
+    description: Admin notification channels — per template code the push / SMS switches with SMS readiness, and the SMS signature and template CODE registration saved as pending with a synchronous test send to the operator's verify phone, retest, enable and discard (permission points content.article or notify.channels to read, notify.channels to write, fund codes also content.fund_terms to save or enable; 04 §3, §11.2; BR-TEXT-20, BR-TEXT-09).
   - name: admin-config
     description: Admin configuration center and emergency switches (permission points config.* and switch.*, 04 §10, §10.2, §11.2; F1-10).
   - name: admin-risk
@@ -18198,42 +18198,58 @@ paths:
       operationId: adminListNotifyChannels
       tags:
         - admin-notify
-      summary: Notification channels and SMS registrations of every template code (not paged)
+      summary: Notification channels, SMS readiness and SMS registrations of every template code (not paged)
       description: |
-        Permission point `notify.channels` (04 §11.2; read only, no step-up); lacking it is 10403
-        with `data.reason=admin_permission_denied`. One item per template code of
-        `notify_templates` (04 §3), ordered by code; not paged. Rules: 08 BR-TEXT-20 细则「短信渠道登记与
-        后台渠道开关」 and BR-TEXT-09 细则 (the channel column of its template table is each code's
-        default). Each item carries:
+        Permission point `content.article` or `notify.channels` (either is enough; read only, no
+        step-up; 08 BR-TEXT-20 细则, orchestrator ruling D10-337 ④); lacking both is 10403 with
+        `data.reason=admin_permission_denied`. One item per template code of `notify_templates`
+        (04 §3), ordered by code; not paged. Rules: 08 BR-TEXT-20 细则「短信渠道登记与后台渠道开关」
+        and BR-TEXT-09 细则 (the channel column of its template table is each code's default).
+        Each item carries:
         - `category`, `default_channels` (BR-TEXT-09 细则 template table, or the code's definition
-          in 08 for codes outside it) and `channels`, the channels in force (the console switch
-          values; `inbox` is never added or removed from the console: a code with the inbox
-          channel always writes it, a code without it can never get it).
+          in 08 for codes outside it) and `channels`, the switch values in force (`inbox` is never
+          added or removed from the console: a code with the inbox channel always writes it, a code
+          without it can never get it).
         - What may be changed: `push_switchable` (push may be turned on or off), `sms_switchable`
-          (SMS may be turned on or off) and `sms_fixed` (SMS is always on and only its
-          registration may be replaced: `SMS_CODE`, `UNION_AUTH_EXPIRING`, `UNION_AUTH_EXPIRED`,
+          (SMS may be turned on or off) and `sms_fixed` (SMS is always on and only its registration
+          may be replaced: `SMS_CODE`, `UNION_AUTH_EXPIRING`, `UNION_AUTH_EXPIRED`,
           `DATA_COPY_CODE`). Codes 08 sends as inbox messages only (the three codes of BR-TEXT-23
           and `BALANCE_ADJUSTED`) have both switches false; codes outside the service category
-          never get SMS (subscription codes, BR-WATCH-15; marketing SMS is P1), so their
-          `sms_switchable` is false; codes without inbox (`SMS_CODE`, the station-owner alerts)
-          cannot get push either. `sms_billing_confirm` is true for a service code whose default
-          channels have no SMS: turning its SMS on needs `confirm_sms_billing` (SMS is billed per
-          message).
+          never get SMS (subscription codes, BR-WATCH-15; marketing SMS is P1); codes without inbox
+          (`SMS_CODE`, the station-owner alerts) cannot get push either. `sms_billing_confirm` is
+          true for a service code whose default channels have no SMS: turning its SMS on needs
+          `confirm_sms_billing` (SMS is billed per message).
+        - SMS readiness (D10-337 ②, D10-339 ⑥): `sms_ready` is true when every variant of the code
+          has an active registration (`sms_registrations[].active` not null); it is false for a
+          code without SMS rows. SMS can be turned on only when `sms_ready` is true.
+          `sms_deploy_fallback` is true only for `SMS_CODE` while it has no active registration:
+          it is then sent with the signature and template CODE of the deployment configuration
+          (BR-TEXT-20 细则「过渡」; the console shows 「部署配置兜底」, the configured values are never
+          returned), and readiness does not apply to it. `sms_state` is what SMS does now:
+          `disabled` (SMS is not among `channels`); `enabled` (on, and ready or on the deployment
+          fallback: SMS is sent); `enabled_not_ready` (on but not ready, which only happens to a
+          code whose default channels include SMS before every variant is registered and enabled:
+          the server sends no SMS for it and only records that it was not sent, while push and
+          inbox go as usual; once ready it sends SMS by default without another switch).
+        - `sms_code_ttl_sec`: for `SMS_CODE` only, the code validity of BR-ID-05 in seconds (what
+          a validity written in its preview text must equal); null for every other code.
         - `fund_terms`: true for a fund code (BR-TEXT-12 细则「资金术语键」, the `fund_terms`
           template codes of specs/fund-term-keys.yaml; a code in neither list counts as a fund
-          code). Changing its SMS registration also needs `content.fund_terms`; switching its
-          channels does not.
+          code). Saving its SMS registration and enabling a new one also need
+          `content.fund_terms`; switching its channels, retesting and discarding do not.
         - `sms_registrations`: one row per variant of the code (code × variant, 04 §3) when the
           code may send SMS (`sms_fixed` or `sms_switchable`), otherwise empty. Each row has the
-          variable names the code defines for that variant (`variables`: fixed in code, not
-          changeable here) and the registration (`registration`: signature, provider template
-          CODE, template type and preview text) or null when nothing is registered. Until a
-          registration exists, `SMS_CODE` is sent with the signature and template CODE of the
-          deployment configuration (BR-TEXT-20 细则「过渡」); the deployment fallback is not shown
-          here. AccessKeys are never stored or returned.
-        - `row_version`: one version for the whole code (its channels and every variant's
-          registration); every accepted change of the code raises it by 1. It is the
-          `row_version` of the writes.
+          variable names the code defines for that variant (`variables`, fixed in code), the
+          registration in use (`active`, null = none) and the new registration waiting to be
+          enabled (`pending`, null = none; D10-337 ①): its signature, template CODE, template type
+          and preview text with the latest test result (`test.status`: `accepted` = the provider
+          accepted the test SMS and it may be enabled, also after the operator chose 「稍后再启用」;
+          `failed` = the provider rejected it, errored or timed out, the active registration stays
+          in force; `not_sent_no_verify_phone` = saved while the operator had no verify phone,
+          nothing sent) and when it was tested. AccessKeys are never stored or returned.
+        - `row_version`: one version for the whole code (its channels and every variant's active
+          and pending registration); every accepted write to the code raises it by 1, including a
+          saved test result. It is the `row_version` of the writes.
         Reading does not write an audit record.
       x-auth: admin
       x-implementation: planned
@@ -18246,7 +18262,7 @@ paths:
         - $ref: '#/components/parameters/TraceId'
       responses:
         '200':
-          description: Every template code with its channels and SMS registrations.
+          description: Every template code with its channels, SMS readiness and registrations.
           headers:
             X-Trace-Id:
               $ref: '#/components/headers/TraceId'
@@ -18270,11 +18286,16 @@ paths:
                       sms_fixed: true
                       sms_billing_confirm: false
                       fund_terms: false
+                      sms_ready: false
+                      sms_state: enabled
+                      sms_deploy_fallback: true
+                      sms_code_ttl_sec: 300
                       sms_registrations:
                         - variant: default
                           variables:
                             - code
-                          registration: null
+                          active: null
+                          pending: null
                       row_version: 0
                     - code: WD_FAILED
                       category: service
@@ -18291,17 +18312,99 @@ paths:
                       sms_fixed: false
                       sms_billing_confirm: false
                       fund_terms: true
+                      sms_ready: true
+                      sms_state: enabled
+                      sms_deploy_fallback: false
+                      sms_code_ttl_sec: null
                       sms_registrations:
                         - variant: default
                           variables:
                             - amount
-                          registration:
+                          active:
                             sign_name: 凑狸
-                            template_code: SMS_480215673
+                            template_code: SMS_000000001
                             template_type: notice
                             preview_text: 【凑狸】你的提现打款未成功，${amount}已退回余额，请在App内查看原因。
-                            updated_at: '2026-11-02T10:15:00+08:00'
-                      row_version: 3
+                            enabled_at: '2026-11-02T10:15:00+08:00'
+                          pending:
+                            sign_name: 凑狸
+                            template_code: SMS_000000002
+                            template_type: notice
+                            preview_text: 【凑狸】你的提现打款未成功，${amount}已退回余额，可在App内查看原因。
+                            saved_at: '2026-11-05T09:30:00+08:00'
+                            test:
+                              status: failed
+                              tested_at: '2026-11-05T09:30:01+08:00'
+                      row_version: 5
+                    - code: WD_REJECTED
+                      category: service
+                      default_channels:
+                        - push
+                        - inbox
+                      channels:
+                        - push
+                        - inbox
+                      push_switchable: true
+                      sms_switchable: true
+                      sms_fixed: false
+                      sms_billing_confirm: true
+                      fund_terms: true
+                      sms_ready: false
+                      sms_state: disabled
+                      sms_deploy_fallback: false
+                      sms_code_ttl_sec: null
+                      sms_registrations:
+                        - variant: default
+                          variables:
+                            - reason
+                            - amount
+                          active: null
+                          pending:
+                            sign_name: 凑狸
+                            template_code: SMS_000000003
+                            template_type: notice
+                            preview_text: 【凑狸】你的提现未通过：${reason}，${amount}已退回余额。
+                            saved_at: '2026-11-05T10:00:00+08:00'
+                            test:
+                              status: accepted
+                              tested_at: '2026-11-05T10:00:01+08:00'
+                        - variant: negative_balance
+                          variables:
+                            - reason
+                          active: null
+                          pending:
+                            sign_name: 凑狸
+                            template_code: SMS_000000004
+                            template_type: notice
+                            preview_text: 【凑狸】你的提现未通过：${reason}；抵扣后的余额以钱包显示为准。
+                            saved_at: '2026-11-05T10:05:00+08:00'
+                            test:
+                              status: not_sent_no_verify_phone
+                              tested_at: '2026-11-05T10:05:00+08:00'
+                      row_version: 4
+                    - code: DATA_COPY_CODE
+                      category: service
+                      default_channels:
+                        - sms
+                      channels:
+                        - sms
+                      push_switchable: false
+                      sms_switchable: false
+                      sms_fixed: true
+                      sms_billing_confirm: false
+                      fund_terms: true
+                      sms_ready: false
+                      sms_state: enabled_not_ready
+                      sms_deploy_fallback: false
+                      sms_code_ttl_sec: null
+                      sms_registrations:
+                        - variant: default
+                          variables:
+                            - code
+                            - expires_at
+                          active: null
+                          pending: null
+                      row_version: 0
                     - code: BALANCE_ADJUSTED
                       category: service
                       default_channels:
@@ -18313,6 +18416,10 @@ paths:
                       sms_fixed: false
                       sms_billing_confirm: false
                       fund_terms: true
+                      sms_ready: false
+                      sms_state: disabled
+                      sms_deploy_fallback: false
+                      sms_code_ttl_sec: null
                       sms_registrations: []
                       row_version: 0
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
@@ -18350,22 +18457,25 @@ paths:
         `data.fields=[code]` → body (20001 with `data.fields` naming the field; neither `push`
         nor `sms` given → `data.fields=[push, sms]`) → what the item of GET
         /admin/v1/notify-channels allows: `push` given on a code whose `push_switchable` is false
-        → 20001 with `data.fields=[push]`; `sms` given on a code whose `sms_switchable` is false
-        (inbox-only codes, codes outside the service category, and `sms_fixed` codes, whose SMS
-        cannot be turned off) → 20001 with `data.fields=[sms]`; `sms=true` on a code whose
-        `sms_billing_confirm` is true and SMS is off, without `confirm_sms_billing=true` → 20001
-        with `data.fields=[confirm_sms_billing]` (the console's second confirmation that SMS is
-        billed per message) → `row_version` differs from the code's current one → 20902 (refresh
-        and retry). A switch already at the requested value is left as it is; when nothing
-        changes the call succeeds without writing, `row_version` unchanged. Turning SMS on does
-        not need a registration: SMS of a code without one is not sent until it is registered
-        (PUT /admin/v1/notify-channels/{code}/sms). Effects (BR-TEXT-20 细则): a channel turned
-        off is no longer sent; the user's service switch governs push only, never SMS; SMS of a
-        code turned on here is sent at the time the code's push would be (quiet hours as
-        BR-TEXT-09 细则「频控与免打扰」). Writes an audit record (action notify_channel_switch: the
-        code, channels before and after, and whether the billing confirmation was given) for
-        every change. The response is the item as GET returns it now. No Idempotency-Key
-        (04 §6.6).
+        → 20001 with `data.fields=[push]` and `data.reason=notify_channel_locked`; `sms` given on
+        a code whose `sms_switchable` is false (inbox-only codes, codes outside the service
+        category, and `sms_fixed` codes, whose SMS cannot be turned off) → 20001 with
+        `data.fields=[sms]` and `data.reason=notify_channel_locked` → `sms=true` while SMS is off
+        and `sms_ready` is false (some variant has no active registration; D10-337 ②) → 20001
+        with `data.fields=[sms]` and no reason (the console greys the switch out from
+        `sms_ready`) → `sms=true` on a code whose `sms_billing_confirm` is true while SMS is off,
+        without `confirm_sms_billing=true` → 20001 with `data.fields=[confirm_sms_billing]` (the
+        console's second confirmation that SMS is billed per message) → `row_version` differs
+        from the code's current one → 20902 without data (refresh and retry). A switch already at
+        the requested value is left as it is; when nothing changes the call succeeds without
+        writing, `row_version` unchanged. A code in `sms_state=enabled_not_ready` may have its SMS
+        turned off when `sms_switchable` is true; turning it on again then needs `sms_ready`.
+        Effects (BR-TEXT-20 细则): a channel turned off is no longer sent; the user's service switch
+        governs push only, never SMS; SMS of a code turned on here is sent at the time the code's
+        push would be (quiet hours as BR-TEXT-09 细则「频控与免打扰」). Writes an audit record
+        (action notify_channel_switch: the code, channels before and after, and whether the billing
+        confirmation was given) for every change. The response is the item as GET returns it now.
+        No Idempotency-Key (04 §6.6).
       x-auth: admin
       x-implementation: planned
       x-error-codes:
@@ -18387,9 +18497,8 @@ paths:
             schema:
               $ref: '#/components/schemas/AdminNotifyChannelSwitchRequest'
             example:
-              sms: true
-              confirm_sms_billing: true
-              row_version: 2
+              push: false
+              row_version: 5
       responses:
         '200':
           description: The code's item as it is now.
@@ -18404,27 +18513,44 @@ paths:
                 code: 0
                 msg: ''
                 data:
-                  code: WD_SUCCESS
+                  code: WD_FAILED
                   category: service
                   default_channels:
                     - push
                     - inbox
+                    - sms
                   channels:
-                    - push
                     - inbox
                     - sms
                   push_switchable: true
                   sms_switchable: true
                   sms_fixed: false
-                  sms_billing_confirm: true
+                  sms_billing_confirm: false
                   fund_terms: true
+                  sms_ready: true
+                  sms_state: enabled
+                  sms_deploy_fallback: false
+                  sms_code_ttl_sec: null
                   sms_registrations:
                     - variant: default
                       variables:
-                        - net
-                        - payout_channel_name
-                      registration: null
-                  row_version: 3
+                        - amount
+                      active:
+                        sign_name: 凑狸
+                        template_code: SMS_000000001
+                        template_type: notice
+                        preview_text: 【凑狸】你的提现打款未成功，${amount}已退回余额，请在App内查看原因。
+                        enabled_at: '2026-11-02T10:15:00+08:00'
+                      pending:
+                        sign_name: 凑狸
+                        template_code: SMS_000000002
+                        template_type: notice
+                        preview_text: 【凑狸】你的提现打款未成功，${amount}已退回余额，可在App内查看原因。
+                        saved_at: '2026-11-05T09:30:00+08:00'
+                        test:
+                          status: failed
+                          tested_at: '2026-11-05T09:30:01+08:00'
+                  row_version: 6
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
           $ref: '#/components/responses/TooManyRequests'
@@ -18440,8 +18566,10 @@ paths:
               examples:
                 stepUpRequired:
                   $ref: '#/components/examples/AdminStepUpRequiredTotp'
-                notSwitchable:
-                  $ref: '#/components/examples/AdminNotifyChannelSmsNotSwitchable'
+                locked:
+                  $ref: '#/components/examples/AdminNotifyChannelLocked'
+                notReady:
+                  $ref: '#/components/examples/AdminNotifyChannelSmsNotReady'
                 billingConfirmMissing:
                   $ref: '#/components/examples/AdminNotifyChannelBillingConfirmMissing'
                 conflict:
@@ -18457,61 +18585,64 @@ paths:
       operationId: adminRegisterNotifySms
       tags:
         - admin-notify
-      summary: Register or replace the SMS signature and template CODE of a template code (test send first)
+      summary: Save an SMS registration of a template code as pending and test-send it
       description: |
         Permission point `notify.channels` (04 §11.2), and for a fund code (`fund_terms` true in
         GET /admin/v1/notify-channels) also `content.fund_terms`; lacking either is 10403 with
-        `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
-        totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). One registration per code ×
-        variant (`variant` query parameter, `default` when absent). The signature and template are
-        applied for and approved in the provider's console (Aliyun SMS); here they are only
-        registered, and `preview_text` is the approved text as the operator copies it (not
-        checked against the provider in MVP, 规划/09 CAP-X-09). Rules: 08 BR-TEXT-20 细则「短信渠道登记
-        与后台渠道开关」.
-        Order of checks, the first hit is returned: permission, step-up → `code` not a template
-        code of the app → 20001 with `data.fields=[code]` → a fund code without
-        `content.fund_terms` → 10403 → the code may not send SMS (neither `sms_fixed` nor
-        `sms_switchable`) → 20001 with `data.fields=[code]` → `variant` not a variant of the
-        code → 20001 with `data.fields=[variant]` → body (20001 with `data.fields` naming the
-        field; a `sample` key that is not one of the variant's variables → `data.fields=[sample]`)
-        → `preview_text` (each a 20001, nothing saved): its placeholders (`${name}`, as in the
-        provider's template) are not exactly the variables the code defines for the variant →
-        `data.fields=[preview_text]`; for `SMS_CODE`, a validity written in the text as N minutes
-        (N分钟) where N × 60 seconds is not the code validity of BR-ID-05 (5 minutes there) →
-        `data.fields=[preview_text]` (a text that states no validity may be saved); the checks of
-        BR-TEXT-12, BR-TEXT-13 and BR-TEXT-20 (no platform name at the start of the first
-        sentence after the signature, no 「官方」, forbidden words) → `data.fields` names
-        `preview_text` followed by the forbidden words found, as for dictionary texts →
-        `row_version` differs from the code's current one → 20902 (refresh and retry).
-        Test send (BR-TEXT-20 细则「测试发送」), only when `sign_name` or `template_code` differs
-        from the current registration (or there is none): the account must have a verify phone
-        (BR-ID-45); without one → 10003 with `data.tier=totp` and
-        `data.reason=verify_phone_missing` (no step-up prompt: register the verify phone first),
-        nothing sent or saved. Otherwise one SMS goes synchronously to the operator's own verify
-        phone with the new signature and template CODE, filled with `sample` (variables not given
-        take the server's built-in sample value). Only a send the provider accepts lets the new
-        registration take effect (accepted is not delivered). Not accepted, in every case nothing
-        is saved and the current registration stays in force: the provider explicitly rejects the
-        submitted signature or template (signature or template CODE illegal or not approved,
-        template variables missing, e.g. isv.SMS_SIGNATURE_ILLEGAL, isv.SMS_TEMPLATE_ILLEGAL) →
-        20001 with `data.fields=[sign_name, template_code]` (the test send was rejected by the SMS
-        provider; check the registration in the provider's console); the provider rejects it for
-        its rate limits (e.g. isv.BUSINESS_LIMIT_CONTROL) → 42901 with Retry-After (seconds, the
-        server's estimate); the provider is unavailable or errors → 50301; times out or the
-        outcome is unknown → 50401. The test SMS counts against the
-        provider's rate limits for that phone and may delay the operator's own sms-tier step-up
-        codes right after. When only `template_type` or `preview_text` changes, nothing is sent.
-        Saving re-checks `row_version` in the same transaction (20902 when the code changed
-        meanwhile; the test SMS may already have gone out). On success the registration of the
-        code × variant is replaced, `row_version` goes up by 1, and from then on that code ×
-        variant is sent with it (for `SMS_CODE` the deployment fallback no longer applies). Audit:
-        every call that reaches the test send or saves writes one record (action
-        notify_sms_register: code, variant, registration before and after, whether it is a fund
-        code, the masked verify phone and the provider's result, never the AccessKey), refusals
-        of the test send included. The response is the code's item as GET returns it now and the
-        masked phone of the test send (null when none was needed). No Idempotency-Key (04 §6.6):
-        a retry after a lost response is a new call and sends again when the registration was not
-        saved.
+        `data.reason=admin_permission_denied`. Step-up: totp tier on every call, one code for the
+        save and its test send (without a valid totp-tier `X-Step-Up-Token` → 10003 with
+        `data.tier=totp`). One registration per code × variant (`variant` query parameter,
+        `default` when absent). The signature and template are applied for and approved in the
+        provider's console (Aliyun SMS); here they are only registered, and `preview_text` is the
+        approved text as the operator copies it (not checked against the provider in MVP, 规划/09
+        CAP-X-09). Rules: 08 BR-TEXT-20 细则「短信渠道登记与后台渠道开关」 (「待测试」登记与启用,
+        D10-337 ①, D10-339 ⑤).
+        Order of checks, the first hit is returned, nothing is saved on any of them: permission,
+        step-up → `code` not a template code of the app → 20001 with `data.fields=[code]` → a
+        fund code without `content.fund_terms` → 10403 → the code may not send SMS (neither
+        `sms_fixed` nor `sms_switchable`) → 20001 with `data.fields=[code]` and
+        `data.reason=notify_channel_locked` → `variant` not a variant of the code → 20001 with
+        `data.fields=[variant]` → body (20001 with `data.fields` naming the field; a `sample` key
+        that is not one of the variant's variables → `data.fields=[sample]`) → `preview_text`:
+        its placeholders (`${name}`, as in the provider's template) are not exactly the variables
+        the code defines for the variant → 20001 with `data.fields=[preview_text]` and
+        `data.reason=notify_preview_vars_mismatch`; for `SMS_CODE`, a validity written in the text
+        as N minutes (N分钟) where N × 60 is not `sms_code_ttl_sec` (BR-ID-05) → 20001 with
+        `data.fields=[preview_text]` and `data.reason=notify_code_ttl_mismatch` (a text that
+        states no validity may be saved); the checks of BR-TEXT-12, BR-TEXT-13 and BR-TEXT-20 (no
+        platform name at the start of the first sentence after the signature, no 「官方」,
+        forbidden words) → 20001 with `data.fields` naming `preview_text` followed by the
+        forbidden words found, as for dictionary texts → `row_version` differs from the code's
+        current one → 20902 without data (refresh and retry).
+        Then, when `sign_name` and `template_code` equal those of the active registration, only
+        its `template_type` and `preview_text` are replaced in place: no test send, the pending
+        registration (if any) is left as it is, `test_send_phone_masked` is null. Otherwise (no
+        active registration, or a new signature or template CODE) the body becomes the pending
+        registration of the code × variant, replacing an earlier pending one; the active
+        registration is never replaced here and stays in force. In the same call a test SMS goes
+        synchronously to the operator's own verify phone (BR-ID-45) with the new signature and
+        template CODE, filled with `sample` (variables not given take the server's built-in
+        sample value), and its result is saved on the pending registration:
+        - the provider accepts it (accepted is not delivered) → 200, `pending.test.status=accepted`;
+          the console offers 「启用新配置」 (POST …/sms/pending/enable) or 「稍后再启用」, which
+          changes nothing;
+        - the account has no verify phone (also when it lost it after the page was loaded) → the
+          pending registration is still saved, nothing is sent, 200 with
+          `pending.test.status=not_sent_no_verify_phone` and `test_send_phone_masked` null (never
+          10003 here, D10-339 ⑤);
+        - not accepted: the provider rejects it (including a wrong signature or template CODE) or
+          errors → 50301; times out or the outcome is unknown → 50401 (D10-335 ③). The pending
+          registration is saved anyway with `test.status=failed` and `row_version` raised, so the
+          console refreshes the list after these codes; the active registration stays in force.
+        The test SMS counts against the provider's rate limits for that phone and may delay the
+        operator's own sms-tier step-up codes right after. Saving and the test result are written
+        under the `row_version` checked above in one transaction after the provider answers
+        (20902 when the code changed meanwhile; the test SMS may already have gone out). Audit:
+        every save writes one record (action notify_sms_register: code, variant, the pending or
+        active registration before and after, whether it is a fund code, the masked verify phone
+        and the test result, never the AccessKey). The response is the code's item as GET returns
+        it now and the masked phone of the test send (null when nothing was sent). No
+        Idempotency-Key (04 §6.6): a retry after a lost response is a new call and sends again.
       x-auth: admin
       x-implementation: planned
       x-error-codes:
@@ -18520,7 +18651,6 @@ paths:
         - 10403
         - 20001
         - 20902
-        - 42901
         - 50301
         - 50401
       security:
@@ -18529,12 +18659,7 @@ paths:
         - $ref: '#/components/parameters/TraceId'
         - $ref: '#/components/parameters/AdminStepUpToken'
         - $ref: '#/components/parameters/AdminNotifyTemplateCodePath'
-        - name: variant
-          in: query
-          required: false
-          description: The variant of the code (sms_registrations[].variant of GET /admin/v1/notify-channels); default when absent.
-          schema:
-            $ref: '#/components/schemas/AdminNotifyTemplateVariant'
+        - $ref: '#/components/parameters/AdminNotifyTemplateVariantQuery'
       requestBody:
         required: true
         content:
@@ -18543,55 +18668,119 @@ paths:
               $ref: '#/components/schemas/AdminNotifySmsRegisterRequest'
             example:
               sign_name: 凑狸
-              template_code: SMS_480215673
+              template_code: SMS_000000002
               template_type: notice
-              preview_text: 【凑狸】你的提现打款未成功，${amount}已退回余额，请在App内查看原因。
+              preview_text: 【凑狸】你的提现打款未成功，${amount}已退回余额，可在App内查看原因。
               sample:
                 amount: ¥10
-              row_version: 2
+              row_version: 5
       responses:
         '200':
-          description: Registered; the code's item as it is now and where the test SMS went.
+          description: Saved; the code's item as it is now and where the test SMS went.
           headers:
             X-Trace-Id:
               $ref: '#/components/headers/TraceId'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AdminNotifySmsRegisterResponse'
-              example:
-                code: 0
-                msg: ''
-                data:
-                  item:
-                    code: WD_FAILED
-                    category: service
-                    default_channels:
-                      - push
-                      - inbox
-                      - sms
-                    channels:
-                      - push
-                      - inbox
-                      - sms
-                    push_switchable: true
-                    sms_switchable: true
-                    sms_fixed: false
-                    sms_billing_confirm: false
-                    fund_terms: true
-                    sms_registrations:
-                      - variant: default
-                        variables:
-                          - amount
-                        registration:
-                          sign_name: 凑狸
-                          template_code: SMS_480215673
-                          template_type: notice
-                          preview_text: 【凑狸】你的提现打款未成功，${amount}已退回余额，请在App内查看原因。
-                          updated_at: '2026-11-02T10:15:00+08:00'
-                    row_version: 3
-                  test_send_phone_masked: '138****5678'
-                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                $ref: '#/components/schemas/AdminNotifySmsResultResponse'
+              examples:
+                accepted:
+                  summary: Pending registration saved and the test SMS accepted
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      item:
+                        code: WD_FAILED
+                        category: service
+                        default_channels:
+                          - push
+                          - inbox
+                          - sms
+                        channels:
+                          - push
+                          - inbox
+                          - sms
+                        push_switchable: true
+                        sms_switchable: true
+                        sms_fixed: false
+                        sms_billing_confirm: false
+                        fund_terms: true
+                        sms_ready: true
+                        sms_state: enabled
+                        sms_deploy_fallback: false
+                        sms_code_ttl_sec: null
+                        sms_registrations:
+                          - variant: default
+                            variables:
+                              - amount
+                            active:
+                              sign_name: 凑狸
+                              template_code: SMS_000000001
+                              template_type: notice
+                              preview_text: 【凑狸】你的提现打款未成功，${amount}已退回余额，请在App内查看原因。
+                              enabled_at: '2026-11-02T10:15:00+08:00'
+                            pending:
+                              sign_name: 凑狸
+                              template_code: SMS_000000002
+                              template_type: notice
+                              preview_text: 【凑狸】你的提现打款未成功，${amount}已退回余额，可在App内查看原因。
+                              saved_at: '2026-11-05T09:30:00+08:00'
+                              test:
+                                status: accepted
+                                tested_at: '2026-11-05T09:30:01+08:00'
+                        row_version: 6
+                      test_send_phone_masked: '138****5678'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                notSent:
+                  summary: Saved as pending without a test send (the operator has no verify phone)
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      item:
+                        code: WD_FAILED
+                        category: service
+                        default_channels:
+                          - push
+                          - inbox
+                          - sms
+                        channels:
+                          - push
+                          - inbox
+                          - sms
+                        push_switchable: true
+                        sms_switchable: true
+                        sms_fixed: false
+                        sms_billing_confirm: false
+                        fund_terms: true
+                        sms_ready: true
+                        sms_state: enabled
+                        sms_deploy_fallback: false
+                        sms_code_ttl_sec: null
+                        sms_registrations:
+                          - variant: default
+                            variables:
+                              - amount
+                            active:
+                              sign_name: 凑狸
+                              template_code: SMS_000000001
+                              template_type: notice
+                              preview_text: 【凑狸】你的提现打款未成功，${amount}已退回余额，请在App内查看原因。
+                              enabled_at: '2026-11-02T10:15:00+08:00'
+                            pending:
+                              sign_name: 凑狸
+                              template_code: SMS_000000002
+                              template_type: notice
+                              preview_text: 【凑狸】你的提现打款未成功，${amount}已退回余额，可在App内查看原因。
+                              saved_at: '2026-11-05T09:30:00+08:00'
+                              test:
+                                status: not_sent_no_verify_phone
+                                tested_at: '2026-11-05T09:30:01+08:00'
+                        row_version: 6
+                      test_send_phone_masked: null
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
           $ref: '#/components/responses/TooManyRequests'
         4XX:
@@ -18606,14 +18795,398 @@ paths:
               examples:
                 stepUpRequired:
                   $ref: '#/components/examples/AdminStepUpRequiredTotp'
-                previewInvalid:
-                  $ref: '#/components/examples/AdminNotifySmsPreviewInvalid'
+                locked:
+                  $ref: '#/components/examples/AdminNotifySmsCodeLocked'
+                varsMismatch:
+                  $ref: '#/components/examples/AdminNotifySmsPreviewVarsMismatch'
+                ttlMismatch:
+                  $ref: '#/components/examples/AdminNotifySmsCodeTtlMismatch'
                 forbiddenWord:
                   $ref: '#/components/examples/AdminNotifySmsPreviewForbidden'
+                conflict:
+                  $ref: '#/components/examples/AdminNotifyChannelConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/AdminNotifySmsTestNotAccepted'
+  /admin/v1/notify-channels/{code}/sms/pending:
+    delete:
+      operationId: adminDiscardNotifySms
+      tags:
+        - admin-notify
+      summary: Discard the pending SMS registration of a code × variant
+      description: |
+        Permission point `notify.channels` (04 §11.2; no step-up and no `content.fund_terms`,
+        also for a fund code: D10-339 ②); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. 「放弃新配置」: drops only the pending registration
+        of the code × variant (`variant`, `default` when absent), whatever its test result; the
+        active registration and the channels are not touched. No body: the query holds only
+        identifiers. Order of checks: permission → `code` not a template code of the app → 20001
+        with `data.fields=[code]` → `variant` not a variant of the code → 20001 with
+        `data.fields=[variant]` → `row_version` missing or malformed → 20001 with
+        `data.fields=[row_version]`; differs from the code's current one → 20902 without data. No
+        pending registration → success, nothing changed and `row_version` unchanged. Otherwise
+        the pending registration is deleted and `row_version` goes up by 1. Writes an audit
+        record (action notify_sms_discard: code, variant, the discarded registration and its test
+        result). The response is the code's item as GET returns it now. No Idempotency-Key.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminNotifyTemplateCodePath'
+        - $ref: '#/components/parameters/AdminNotifyTemplateVariantQuery'
+        - name: row_version
+          in: query
+          required: true
+          description: The row_version of the item as the console showed it; a mismatch is 20902.
+          schema:
+            $ref: '#/components/schemas/AdminNotifyRowVersion'
+      responses:
+        '200':
+          description: The code's item as it is now.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminNotifyChannelResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  code: WD_FAILED
+                  category: service
+                  default_channels:
+                    - push
+                    - inbox
+                    - sms
+                  channels:
+                    - push
+                    - inbox
+                    - sms
+                  push_switchable: true
+                  sms_switchable: true
+                  sms_fixed: false
+                  sms_billing_confirm: false
+                  fund_terms: true
+                  sms_ready: true
+                  sms_state: enabled
+                  sms_deploy_fallback: false
+                  sms_code_ttl_sec: null
+                  sms_registrations:
+                    - variant: default
+                      variables:
+                        - amount
+                      active:
+                        sign_name: 凑狸
+                        template_code: SMS_000000001
+                        template_type: notice
+                        preview_text: 【凑狸】你的提现打款未成功，${amount}已退回余额，请在App内查看原因。
+                        enabled_at: '2026-11-02T10:15:00+08:00'
+                      pending: null
+                  row_version: 6
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                conflict:
+                  $ref: '#/components/examples/AdminNotifyChannelConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/notify-channels/{code}/sms/pending/test:
+    post:
+      operationId: adminRetestNotifySms
+      tags:
+        - admin-notify
+      summary: Test-send the pending SMS registration of a code × variant again
+      description: |
+        Permission point `notify.channels` (04 §11.2; no `content.fund_terms`, also for a fund
+        code); lacking it is 10403 with `data.reason=admin_permission_denied`. Step-up: totp tier
+        on every call (without a valid totp-tier `X-Step-Up-Token` → 10003 with
+        `data.tier=totp`). 「测试发送 / 重新测试」 of the pending registration of the code ×
+        variant (`variant`, `default` when absent), whatever its current test result. Order of
+        checks, the first hit is returned: permission, step-up → `code` not a template code of the
+        app → 20001 with `data.fields=[code]` → `variant` not a variant of the code → 20001 with
+        `data.fields=[variant]` → body (20001 with `data.fields` naming the field; a `sample` key
+        that is not one of the variant's variables → `data.fields=[sample]`) → no pending
+        registration → 20001 with `data.fields=[variant]` → `row_version` differs from the code's
+        current one → 20902 without data → the account has no verify phone (BR-ID-45) → 10003
+        with `data.tier=totp` and `data.reason=verify_phone_missing` (no step-up prompt: register
+        the verify phone first; this operation is the only one that returns it, D10-339 ⑤),
+        nothing sent or saved. Otherwise one SMS goes synchronously to the operator's own verify
+        phone with the pending signature and template CODE, filled with `sample` (variables not
+        given take the server's built-in sample value), and the result replaces the pending
+        registration's `test` (raising `row_version`, re-checked when it is written): accepted →
+        200 with `test.status=accepted`; the provider rejects it (including a wrong signature or
+        template CODE) or errors → 50301; times out or the outcome is unknown → 50401; on both
+        `test.status=failed` is saved and the active registration stays in force. The test SMS
+        counts against the provider's rate limits for that phone. Writes an audit record (action
+        notify_sms_test: code, variant, the masked verify phone and the result). The response is
+        the code's item as GET returns it now and the masked phone of the test send. No
+        Idempotency-Key: a retry sends again.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+        - 50301
+        - 50401
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+        - $ref: '#/components/parameters/AdminNotifyTemplateCodePath'
+        - $ref: '#/components/parameters/AdminNotifyTemplateVariantQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminNotifySmsRetestRequest'
+            example:
+              sample:
+                reason: 收款账号信息有误
+              row_version: 4
+      responses:
+        '200':
+          description: The test SMS was accepted; the code's item as it is now and where it went.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminNotifySmsResultResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  item:
+                    code: WD_REJECTED
+                    category: service
+                    default_channels:
+                      - push
+                      - inbox
+                    channels:
+                      - push
+                      - inbox
+                    push_switchable: true
+                    sms_switchable: true
+                    sms_fixed: false
+                    sms_billing_confirm: true
+                    fund_terms: true
+                    sms_ready: false
+                    sms_state: disabled
+                    sms_deploy_fallback: false
+                    sms_code_ttl_sec: null
+                    sms_registrations:
+                      - variant: default
+                        variables:
+                          - reason
+                          - amount
+                        active: null
+                        pending:
+                          sign_name: 凑狸
+                          template_code: SMS_000000003
+                          template_type: notice
+                          preview_text: 【凑狸】你的提现未通过：${reason}，${amount}已退回余额。
+                          saved_at: '2026-11-05T10:00:00+08:00'
+                          test:
+                            status: accepted
+                            tested_at: '2026-11-05T10:00:01+08:00'
+                      - variant: negative_balance
+                        variables:
+                          - reason
+                        active: null
+                        pending:
+                          sign_name: 凑狸
+                          template_code: SMS_000000004
+                          template_type: notice
+                          preview_text: 【凑狸】你的提现未通过：${reason}；抵扣后的余额以钱包显示为准。
+                          saved_at: '2026-11-05T10:05:00+08:00'
+                          test:
+                            status: accepted
+                            tested_at: '2026-11-05T10:20:00+08:00'
+                    row_version: 5
+                  test_send_phone_masked: '138****5678'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not sent (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
                 verifyPhoneMissing:
                   $ref: '#/components/examples/AdminNotifySmsVerifyPhoneMissing'
-                providerRejected:
-                  $ref: '#/components/examples/AdminNotifySmsProviderRejected'
+                noPending:
+                  $ref: '#/components/examples/AdminNotifySmsNoPending'
+                conflict:
+                  $ref: '#/components/examples/AdminNotifyChannelConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/AdminNotifySmsTestNotAccepted'
+  /admin/v1/notify-channels/{code}/sms/pending/enable:
+    post:
+      operationId: adminEnableNotifySms
+      tags:
+        - admin-notify
+      summary: Enable the pending SMS registration of a code × variant (test accepted)
+      description: |
+        Permission point `notify.channels` (04 §11.2), and for a fund code also
+        `content.fund_terms` (D10-339 ③); lacking either is 10403 with
+        `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+        totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). 「启用新配置」, from the test
+        result dialog or later from the code's edit drawer (D10-339 ①). Order of checks, the
+        first hit is returned: permission, step-up → `code` not a template code of the app →
+        20001 with `data.fields=[code]` → a fund code without `content.fund_terms` → 10403 →
+        `variant` not a variant of the code → 20001 with `data.fields=[variant]` → body (20001
+        with `data.fields` naming the field) → no pending registration, or its `test.status` is
+        not `accepted` (failed, or not sent for want of a verify phone) → 20001 with
+        `data.fields=[variant]` (only a registration whose test the provider accepted can be
+        enabled, BR-TEXT-20 细则) → `row_version` differs from the code's current one → 20902
+        without data. Otherwise the pending registration becomes the active one of the code ×
+        variant (replacing the earlier active one; `enabled_at` = now), the pending one is
+        cleared and `row_version` goes up by 1; from then on that code × variant is sent with it
+        (for `SMS_CODE` the deployment fallback no longer applies). When this makes `sms_ready`
+        true, a code in `sms_state=enabled_not_ready` starts sending SMS (`enabled`); a code
+        whose SMS is off stays off until switched on. Writes an audit record (action
+        notify_sms_enable: code, variant, the active registration before and after, whether it is
+        a fund code). The response is the code's item as GET returns it now. No Idempotency-Key.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+        - $ref: '#/components/parameters/AdminNotifyTemplateCodePath'
+        - $ref: '#/components/parameters/AdminNotifyTemplateVariantQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminNotifySmsEnableRequest'
+            example:
+              row_version: 4
+      responses:
+        '200':
+          description: Enabled; the code's item as it is now.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminNotifyChannelResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  code: WD_REJECTED
+                  category: service
+                  default_channels:
+                    - push
+                    - inbox
+                  channels:
+                    - push
+                    - inbox
+                  push_switchable: true
+                  sms_switchable: true
+                  sms_fixed: false
+                  sms_billing_confirm: true
+                  fund_terms: true
+                  sms_ready: false
+                  sms_state: disabled
+                  sms_deploy_fallback: false
+                  sms_code_ttl_sec: null
+                  sms_registrations:
+                    - variant: default
+                      variables:
+                        - reason
+                        - amount
+                      active:
+                        sign_name: 凑狸
+                        template_code: SMS_000000003
+                        template_type: notice
+                        preview_text: 【凑狸】你的提现未通过：${reason}，${amount}已退回余额。
+                        enabled_at: '2026-11-05T10:30:00+08:00'
+                      pending: null
+                    - variant: negative_balance
+                      variables:
+                        - reason
+                      active: null
+                      pending:
+                        sign_name: 凑狸
+                        template_code: SMS_000000004
+                        template_type: notice
+                        preview_text: 【凑狸】你的提现未通过：${reason}；抵扣后的余额以钱包显示为准。
+                        saved_at: '2026-11-05T10:05:00+08:00'
+                        test:
+                          status: not_sent_no_verify_phone
+                          tested_at: '2026-11-05T10:05:00+08:00'
+                  row_version: 5
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not enabled (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                notAccepted:
+                  $ref: '#/components/examples/AdminNotifySmsNoPending'
                 conflict:
                   $ref: '#/components/examples/AdminNotifyChannelConflict'
                 noPermission:
@@ -22823,6 +23396,13 @@ components:
       description: Template code (code of GET /admin/v1/notify-channels); not a template code of the app → 20001 with data.fields=[code].
       schema:
         $ref: '#/components/schemas/AdminNotifyTemplateCode'
+    AdminNotifyTemplateVariantQuery:
+      name: variant
+      in: query
+      required: false
+      description: The variant of the code (sms_registrations[].variant of GET /admin/v1/notify-channels); default when absent; not a variant of the code → 20001 with data.fields=[variant].
+      schema:
+        $ref: '#/components/schemas/AdminNotifyTemplateVariant'
     AgentSessionId:
       name: id
       in: path
@@ -23189,6 +23769,32 @@ components:
             code: 42901
             msg: 请求过于频繁
             trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminNotifySmsTestNotAccepted:
+      description: |
+        The test SMS of an admin SMS registration was not accepted by the SMS provider (D10-335 ③): rejected (including a
+        wrong signature or template CODE) or provider error → 50301; timeout or unknown outcome → 50401. The pending
+        registration is saved with test.status=failed and the active registration stays in force; other server errors
+        as ServerError.
+      headers:
+        X-Trace-Id:
+          $ref: '#/components/headers/TraceId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          examples:
+            providerRejected:
+              summary: 50301 the SMS provider rejected the test SMS or errored
+              value:
+                code: 50301
+                msg: 短信服务暂不可用，原配置继续生效
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            providerTimeout:
+              summary: 50401 the SMS provider timed out or the outcome is unknown
+              value:
+                code: 50401
+                msg: 短信服务响应超时，原配置继续生效
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     ServerError:
       description: Server-side error; 503 codes carry `data.platform` / `data.reason` where listed.
       headers:
@@ -24617,8 +25223,18 @@ components:
         data:
           resource: dict_item
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
-    AdminNotifyChannelSmsNotSwitchable:
-      summary: 20001 SMS of this code may not be switched (inbox only, not a service code, or always on)
+    AdminNotifyChannelLocked:
+      summary: 20001 this channel of the code cannot be switched from the console (notify_channel_locked)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - sms
+          reason: notify_channel_locked
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminNotifyChannelSmsNotReady:
+      summary: 20001 SMS turned on while some variant has no active registration (sms_ready false)
       value:
         code: 20001
         msg: 参数错误
@@ -24641,14 +25257,35 @@ components:
         code: 20902
         msg: 状态已变化，请刷新后重试
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
-    AdminNotifySmsPreviewInvalid:
-      summary: 20001 preview placeholders differ from the code's variables (or SMS_CODE minutes differ from the code validity)
+    AdminNotifySmsCodeLocked:
+      summary: 20001 the code may not send SMS, so no SMS registration (notify_channel_locked)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - code
+          reason: notify_channel_locked
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminNotifySmsPreviewVarsMismatch:
+      summary: 20001 preview placeholders differ from the variables the code defines (notify_preview_vars_mismatch)
       value:
         code: 20001
         msg: 参数错误
         data:
           fields:
             - preview_text
+          reason: notify_preview_vars_mismatch
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminNotifySmsCodeTtlMismatch:
+      summary: 20001 SMS_CODE preview states minutes other than the BR-ID-05 code validity (notify_code_ttl_mismatch)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - preview_text
+          reason: notify_code_ttl_mismatch
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminNotifySmsPreviewForbidden:
       summary: 20001 preview text contains forbidden words (listed after the field)
@@ -24660,18 +25297,17 @@ components:
             - preview_text
             - 官方
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
-    AdminNotifySmsProviderRejected:
-      summary: 20001 the test send was rejected by the SMS provider (signature or template not valid or not approved); the current registration stays
+    AdminNotifySmsNoPending:
+      summary: 20001 no pending registration for the code × variant, or (enable) its test was not accepted
       value:
         code: 20001
         msg: 参数错误
         data:
           fields:
-            - sign_name
-            - template_code
+            - variant
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminNotifySmsVerifyPhoneMissing:
-      summary: 10003 a test send is needed but the account has no verify phone (register it first)
+      summary: 10003 a separate test send while the account has no verify phone (register it first)
       value:
         code: 10003
         msg: 请先登记验证手机号
@@ -35904,13 +36540,18 @@ components:
       minLength: 1
       maxLength: 64
       pattern: ^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$
-      description: Template code of notify_templates (04 §3), e.g. WD_FAILED, SMS_CODE.
+      description: Template code of notify_templates (04 §3, 04 §2.5 notify_template.code), e.g. WD_FAILED, SMS_CODE, DATA_COPY_CODE.
     AdminNotifyTemplateVariant:
       type: string
       minLength: 1
       maxLength: 64
       pattern: ^[a-z][a-z0-9]*(_[a-z0-9]+)*$
       description: Variant of a template code (notify_templates.variant, 04 §3); default for a code with one variant.
+    AdminNotifyRowVersion:
+      type: integer
+      format: int32
+      minimum: 0
+      description: Version of a template code as a whole (channels and every variant's active and pending registration).
     AdminNotifyCategory:
       type: string
       description: Notification category (enum notify_category).
@@ -35931,21 +36572,35 @@ components:
       enum:
         - verify
         - notice
+    AdminNotifySmsState:
+      type: string
+      description: What SMS of the code does now (enum notify_sms_state).
+      enum:
+        - disabled
+        - enabled
+        - enabled_not_ready
+    AdminNotifySmsTestStatus:
+      type: string
+      description: Latest test result of a pending SMS registration (enum notify_sms_test_status).
+      enum:
+        - accepted
+        - failed
+        - not_sent_no_verify_phone
     AdminNotifyChannelList:
       type: array
       uniqueItems: true
       items:
         $ref: '#/components/schemas/AdminNotifyChannel'
-    AdminNotifySmsRegistration:
+    AdminNotifySmsActive:
       type: object
-      description: The SMS registration of one code × variant (04 §3 notify_templates SMS columns).
+      description: The SMS registration in use for one code × variant (04 §3 notify_templates SMS columns).
       additionalProperties: false
       required:
         - sign_name
         - template_code
         - template_type
         - preview_text
-        - updated_at
+        - enabled_at
       properties:
         sign_name:
           type: string
@@ -35961,17 +36616,63 @@ components:
           type: string
           minLength: 1
           maxLength: 500
-        updated_at:
+        enabled_at:
           type: string
           format: date-time
-          description: When this registration was saved.
+          description: When this registration was enabled, or last edited in place (template type or preview text only).
+    AdminNotifySmsTest:
+      type: object
+      description: Latest test send of a pending registration.
+      additionalProperties: false
+      required:
+        - status
+        - tested_at
+      properties:
+        status:
+          $ref: '#/components/schemas/AdminNotifySmsTestStatus'
+        tested_at:
+          type: string
+          format: date-time
+          description: When the test was sent, or (not_sent_no_verify_phone) when it was skipped.
+    AdminNotifySmsPending:
+      type: object
+      description: The new SMS registration of one code × variant waiting to be enabled (「待测试」登记, D10-337 ①).
+      additionalProperties: false
+      required:
+        - sign_name
+        - template_code
+        - template_type
+        - preview_text
+        - saved_at
+        - test
+      properties:
+        sign_name:
+          type: string
+          minLength: 1
+          maxLength: 32
+        template_code:
+          type: string
+          minLength: 1
+          maxLength: 64
+        template_type:
+          $ref: '#/components/schemas/AdminSmsTemplateType'
+        preview_text:
+          type: string
+          minLength: 1
+          maxLength: 500
+        saved_at:
+          type: string
+          format: date-time
+        test:
+          $ref: '#/components/schemas/AdminNotifySmsTest'
     AdminNotifySmsVariantRow:
       type: object
       additionalProperties: false
       required:
         - variant
         - variables
-        - registration
+        - active
+        - pending
       properties:
         variant:
           $ref: '#/components/schemas/AdminNotifyTemplateVariant'
@@ -35984,11 +36685,16 @@ components:
             minLength: 1
             maxLength: 64
             pattern: ^[a-z][a-z0-9_]*$
-        registration:
+        active:
           anyOf:
-            - $ref: '#/components/schemas/AdminNotifySmsRegistration'
+            - $ref: '#/components/schemas/AdminNotifySmsActive'
             - type: 'null'
-          description: null = nothing registered for this code × variant.
+          description: The registration in use; null = none.
+        pending:
+          anyOf:
+            - $ref: '#/components/schemas/AdminNotifySmsPending'
+            - type: 'null'
+          description: The registration waiting to be enabled; null = none.
     AdminNotifyChannelItem:
       type: object
       description: One template code in GET /admin/v1/notify-channels (BR-TEXT-20 细则「短信渠道登记与后台渠道开关」).
@@ -36003,6 +36709,10 @@ components:
         - sms_fixed
         - sms_billing_confirm
         - fund_terms
+        - sms_ready
+        - sms_state
+        - sms_deploy_fallback
+        - sms_code_ttl_sec
         - sms_registrations
         - row_version
       properties:
@@ -36017,7 +36727,7 @@ components:
         channels:
           allOf:
             - $ref: '#/components/schemas/AdminNotifyChannelList'
-          description: The channels in force.
+          description: The switch values in force.
         push_switchable:
           type: boolean
           description: Push may be turned on or off here.
@@ -36032,17 +36742,29 @@ components:
           description: Turning SMS on needs confirm_sms_billing (a service code without SMS by default).
         fund_terms:
           type: boolean
-          description: A fund code; changing its SMS registration also needs content.fund_terms.
+          description: A fund code; saving its SMS registration and enabling a new one also need content.fund_terms.
+        sms_ready:
+          type: boolean
+          description: Every variant has an active registration; SMS can be turned on only when true.
+        sms_state:
+          $ref: '#/components/schemas/AdminNotifySmsState'
+        sms_deploy_fallback:
+          type: boolean
+          description: SMS_CODE without an active registration, sent with the deployment configuration (values not returned).
+        sms_code_ttl_sec:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 1
+          description: SMS_CODE only, the BR-ID-05 code validity in seconds; null for other codes.
         sms_registrations:
           type: array
           description: One row per variant when the code may send SMS, otherwise empty.
           items:
             $ref: '#/components/schemas/AdminNotifySmsVariantRow'
         row_version:
-          type: integer
-          format: int32
-          minimum: 0
-          description: Version of the whole code (channels and every registration); the row_version of the writes.
+          $ref: '#/components/schemas/AdminNotifyRowVersion'
     AdminNotifyChannelItems:
       type: object
       additionalProperties: false
@@ -36099,15 +36821,22 @@ components:
           description: Push on (true) or off (false); only when push_switchable.
         sms:
           type: boolean
-          description: SMS on (true) or off (false); only when sms_switchable.
+          description: SMS on (true) or off (false); only when sms_switchable, and on only when sms_ready.
         confirm_sms_billing:
           type: boolean
           description: Must be true when turning SMS on for a code whose sms_billing_confirm is true; ignored otherwise.
         row_version:
-          type: integer
-          format: int32
-          minimum: 0
+          allOf:
+            - $ref: '#/components/schemas/AdminNotifyRowVersion'
           description: The row_version of the item as the console showed it; a mismatch is 20902.
+    AdminNotifySmsSample:
+      type: object
+      description: Sample values for the test send, by variable name; variables not given take the server's built-in sample.
+      maxProperties: 20
+      additionalProperties:
+        type: string
+        minLength: 1
+        maxLength: 64
     AdminNotifySmsRegisterRequest:
       type: object
       description: Body of PUT /admin/v1/notify-channels/{code}/sms.
@@ -36137,19 +36866,36 @@ components:
           maxLength: 500
           description: The approved template text as copied from the provider, placeholders written ${name}.
         sample:
-          type: object
-          description: Sample values for the test send, by variable name; variables not given take the server's built-in sample.
-          maxProperties: 20
-          additionalProperties:
-            type: string
-            minLength: 1
-            maxLength: 64
+          $ref: '#/components/schemas/AdminNotifySmsSample'
         row_version:
-          type: integer
-          format: int32
-          minimum: 0
+          allOf:
+            - $ref: '#/components/schemas/AdminNotifyRowVersion'
           description: The row_version of the item as the console showed it; a mismatch is 20902.
-    AdminNotifySmsRegisterResult:
+    AdminNotifySmsRetestRequest:
+      type: object
+      description: Body of POST /admin/v1/notify-channels/{code}/sms/pending/test.
+      additionalProperties: false
+      required:
+        - row_version
+      properties:
+        sample:
+          $ref: '#/components/schemas/AdminNotifySmsSample'
+        row_version:
+          allOf:
+            - $ref: '#/components/schemas/AdminNotifyRowVersion'
+          description: The row_version of the item as the console showed it; a mismatch is 20902.
+    AdminNotifySmsEnableRequest:
+      type: object
+      description: Body of POST /admin/v1/notify-channels/{code}/sms/pending/enable.
+      additionalProperties: false
+      required:
+        - row_version
+      properties:
+        row_version:
+          allOf:
+            - $ref: '#/components/schemas/AdminNotifyRowVersion'
+          description: The row_version of the item as the console showed it; a mismatch is 20902.
+    AdminNotifySmsResult:
       type: object
       additionalProperties: false
       required:
@@ -36163,8 +36909,8 @@ components:
             - string
             - 'null'
           maxLength: 32
-          description: Masked verify phone the test SMS went to (BR-ID-33); null when no test send was needed.
-    AdminNotifySmsRegisterResponse:
+          description: Masked verify phone the test SMS went to (BR-ID-33); null when nothing was sent.
+    AdminNotifySmsResultResponse:
       type: object
       additionalProperties: false
       required:
@@ -36178,7 +36924,7 @@ components:
         msg:
           type: string
         data:
-          $ref: '#/components/schemas/AdminNotifySmsRegisterResult'
+          $ref: '#/components/schemas/AdminNotifySmsResult'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     AdminDictSaveRequest:

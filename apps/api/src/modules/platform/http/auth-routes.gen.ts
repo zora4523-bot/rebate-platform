@@ -1017,6 +1017,21 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "admin"
   },
   {
+    "method": "DELETE",
+    "path": "/admin/v1/notify-channels/:code/sms/pending",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/notify-channels/:code/sms/pending/test",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/notify-channels/:code/sms/pending/enable",
+    "auth": "admin"
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/app-versions",
     "auth": "admin"

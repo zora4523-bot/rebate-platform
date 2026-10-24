@@ -152,6 +152,10 @@ it('identity codes of 08 §13.11 (功能对照补缺 1–3 批) carry their data
     'target_banned',
     'target_deleting',
     'target_deleted',
+    // CT-24t: admin-only notification channel and SMS registry rejections (D10-335 ②).
+    'notify_channel_locked',
+    'notify_preview_vars_mismatch',
+    'notify_code_ttl_mismatch',
   ]);
   expect(errorCodes[30701].sources).toEqual(['规划/04 §7', 'BR-ID-10', 'BR-ID-40']);
 });

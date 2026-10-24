@@ -1,6 +1,6 @@
 # 后台权限点（规划/04 §2.5 admin_permission、§11）。超管拥有全部权限点；其他后台账号按权限点逐项勾选。
 # 「后台账号与权限」只限超管、不可授予，不是权限点，不列入。specs/permissions.yaml（B1-18）另记 step-up 与守卫。
-# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）；风控规则清单的规则状态 risk_rule_status 与命中动作 risk_action（CT-24f）；站长联盟账号与推广位 union_auth_status、union_reauth_mode、admin_union_auth_session_status、union_pid_status（CT-24h）；后台通知渠道与短信登记的渠道 notify_channel 与短信模板类型 sms_template_type（CT-24t）。
+# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）；风控规则清单的规则状态 risk_rule_status 与命中动作 risk_action（CT-24f）；站长联盟账号与推广位 union_auth_status、union_reauth_mode、admin_union_auth_session_status、union_pid_status（CT-24h）；后台通知渠道与短信登记的渠道 notify_channel、短信模板类型 sms_template_type、短信状态 notify_sms_state 与待测试登记的测试结果 notify_sms_test_status（CT-24t）。
 enums:
   admin_permission:
     source: 规划/04 §11（拍板第二批 §8 ADD-04、ADD-05）
@@ -208,3 +208,17 @@ enums:
     values:
       verify: 验证码
       notice: 通知
+  notify_sms_state:
+    source: 规划/08 BR-TEXT-20 细则「短信渠道登记与后台渠道开关」（短信就绪条件，编排裁定 D10-337 ②、D10-339 ⑥）；规划/04 §3 notify_templates（CT-24t）
+    description: GET /admin/v1/notify-channels 的 sms_state：该编码的短信现在怎样发
+    values:
+      disabled: 关（短信不在当前渠道里）
+      enabled: 开，且已就绪（各变体都有在用登记）或 SMS_CODE 用部署配置兜底：照发
+      enabled_not_ready: 开（未就绪）：默认渠道含短信、变体未全登记启用，服务端不发短信、只记录未发送，推送与站内信照发
+  notify_sms_test_status:
+    source: 规划/08 BR-TEXT-20 细则「短信渠道登记与后台渠道开关」（「待测试」登记与测试发送，编排裁定 D10-337 ①、D10-339 ①⑤）；规划/04 §3 notify_templates（CT-24t）
+    description: 待测试登记最近一次测试发送的结果
+    values:
+      accepted: 已受理（受理不等于送达），可启用新配置；选「稍后再启用」后仍是此值
+      failed: 测试失败（服务商拒收、出错或超时），原配置继续生效
+      not_sent_no_verify_phone: 未发送：保存时操作人没有登记验证手机号

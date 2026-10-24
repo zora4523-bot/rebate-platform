@@ -133,6 +133,8 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminNotifyCategory: 'notify_category',
   AdminNotifyChannel: 'notify_channel',
   AdminSmsTemplateType: 'sms_template_type',
+  AdminNotifySmsState: 'notify_sms_state',
+  AdminNotifySmsTestStatus: 'notify_sms_test_status',
 };
 
 /**
