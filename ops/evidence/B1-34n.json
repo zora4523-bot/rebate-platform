@@ -1,0 +1,77 @@
+{
+  "task": "B1-34n",
+  "spec_ref": "ec81e625dcf54f230d168dbf09910bd704c82a18",
+  "spec_commit": "0e48d41541c9a5d4d13d20c400a840dbc5944d98",
+  "red_tests": [
+    "test/spec/admin/admins-revive/revive.int.test.ts > [AC-B1-34n#1] 停用与登录最后一步交错（跨整秒 20 毫秒）：停用期间被拒的会话在启用后仍 10001，启用后重新登录可用",
+    "test/spec/admin/admins-revive/revive.int.test.ts > [AC-B1-34n#1] 停用与登录最后一步交错（签发恰在下一整秒）：停用期间被拒的会话在启用后仍 10001，启用后重新登录可用",
+    "test/spec/admin/admins-revive/revive.int.test.ts > [AC-B1-34n#1] 停用与登录最后一步交错（作废恰在整秒、同一秒内签发）：停用期间被拒的会话在启用后仍 10001，启用后重新登录可用",
+    "test/spec/admin/admins-revive/revive.int.test.ts > [AC-B1-34n#2] 重置验证器与登录最后一步交错（跨整秒 20 毫秒）：首次重绑后旧会话仍 10001，绑定得到的会话与之后的登录可用",
+    "test/spec/admin/admins-revive/revive.int.test.ts > [AC-B1-34n#2] 重置验证器与登录最后一步交错（签发恰在下一整秒）：首次重绑后旧会话仍 10001，绑定得到的会话与之后的登录可用",
+    "test/spec/admin/admins-revive/revive.int.test.ts > [AC-B1-34n#2] 重置验证器与登录最后一步交错（作废恰在整秒、同一秒内签发）：首次重绑后旧会话仍 10001，绑定得到的会话与之后的登录可用"
+  ],
+  "risk_note": "RV2 by path (admin module). Closes the B1-34h round-2 S2 window: enabling an account now writes the account's voiding instant at its Clock instant inside the locked transaction before commit (a Redis failure rolls the enable back), and binding an authenticator (first binding, including the rebind after a reset) writes one at the bind ticket's opening instant floored to the whole second, so the step's own check and the admin_token it issues (whole-second iat) stay valid. A session that survived a disable or a reset racing the final login step across a second boundary therefore cannot revive after enable or rebind. Renaming and saving permission points still revoke nothing (contract). No contract, schema or migration. Rule tests by an independent Claude (approvals #36), red before the implementation; implementation by an Opus 5.5 subagent in one run.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0e48d41541c9a5d4d13d20c400a840dbc5944d98",
+      "tree": "30057420558d3309d2dbc47947f83c9bbbda9c9c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T08:06:32Z",
+      "finished_at": "2026-10-24T08:06:49Z",
+      "red_tests": [
+        "test/spec/admin/admins-revive/revive.int.test.ts > [AC-B1-34n#1] 停用与登录最后一步交错（跨整秒 20 毫秒）：停用期间被拒的会话在启用后仍 10001，启用后重新登录可用",
+        "test/spec/admin/admins-revive/revive.int.test.ts > [AC-B1-34n#1] 停用与登录最后一步交错（签发恰在下一整秒）：停用期间被拒的会话在启用后仍 10001，启用后重新登录可用",
+        "test/spec/admin/admins-revive/revive.int.test.ts > [AC-B1-34n#1] 停用与登录最后一步交错（作废恰在整秒、同一秒内签发）：停用期间被拒的会话在启用后仍 10001，启用后重新登录可用",
+        "test/spec/admin/admins-revive/revive.int.test.ts > [AC-B1-34n#2] 重置验证器与登录最后一步交错（跨整秒 20 毫秒）：首次重绑后旧会话仍 10001，绑定得到的会话与之后的登录可用",
+        "test/spec/admin/admins-revive/revive.int.test.ts > [AC-B1-34n#2] 重置验证器与登录最后一步交错（签发恰在下一整秒）：首次重绑后旧会话仍 10001，绑定得到的会话与之后的登录可用",
+        "test/spec/admin/admins-revive/revive.int.test.ts > [AC-B1-34n#2] 重置验证器与登录最后一步交错（作废恰在整秒、同一秒内签发）：首次重绑后旧会话仍 10001，绑定得到的会话与之后的登录可用"
+      ],
+      "expected": ["test/spec/admin/admins-revive/revive.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "709968f8c3a9524d99e7f5fc8daba0439a6cc4b2bb6b091f35d4abec7bbfb2f8"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota (until 10-30); independent Claude via tools/agent/claude-run.sh per approvals #36; round 1 pass, 0 findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by claude-independent reviewed by a fresh Claude subagent against BR-ID-43 and the ledger notes: pass, S2×1 (the replay does not roll row_version back — implementation uses the preferred fix, not the row_version alternative); output accepted by orchestrator discretion after a branches-only position assertion; prettier --write before the first spec commit, formatting only (D10-206)"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "150b5ee84b8da4d490738d4981f3448f247fe4b1",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}

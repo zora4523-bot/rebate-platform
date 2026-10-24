@@ -499,3 +499,52 @@ it('[AC-B1-34h] a void landing right after the final login write revokes the new
   ).toEqual({ code: 10001 });
   expect(fixture.redis.keys().filter((key) => key.startsWith('session:'))).toEqual([]);
 }, 30_000);
+
+/** A bind_totp ticket and its pending secret of an account without an authenticator. */
+async function bindStep(fixture: ReturnType<typeof setup>) {
+  const step = await fixture.service.login({ username: 'ops-yi', password: INITIAL, ip: null });
+  if (step.code !== 0 || !('ticket' in step) || step.next !== 'bind_totp') {
+    throw new Error('no bind ticket');
+  }
+  const binding = await fixture.service.bindingSecret({ ticket: step.ticket });
+  if (binding.code !== 0 || !('secret' in binding)) throw new Error('no secret');
+  return { ticket: step.ticket, secret: binding.secret };
+}
+
+it('[AC-B1-34n] binding the authenticator voids at its open instant rounded down to the whole second; its own session survives', async () => {
+  const fixture = setup({ totpBoundAt: null, totpSecretCipher: null });
+  fixture.clock.set('2026-10-09T02:00:00.990Z');
+  const { ticket, secret } = await bindStep(fixture);
+  fixture.clock.set('2026-10-09T02:00:01.200Z');
+  const session = await fixture.service.bindTotp({
+    ticket,
+    code: codeOf(secret, fixture.clock),
+    ip: null,
+  });
+  expect(session).toMatchObject({ code: 0 });
+  expect(await fixture.revocations.voidedAt({ appId: 'couli', adminId: ID })).toBe(
+    Date.parse('2026-10-09T02:00:01.000Z'),
+  );
+  expect(fixture.store.row().totpBoundAt).toEqual(fixture.clock.now());
+}, 30_000);
+
+it('[AC-B1-34n] a failing voiding write binds nothing: the account stays unbound', async () => {
+  const fixture = setup({ totpBoundAt: null, totpSecretCipher: null });
+  const { ticket, secret } = await bindStep(fixture);
+  fixture.revocations.voidBefore = () => Promise.reject(new Error('redis down'));
+  await expect(
+    fixture.service.bindTotp({ ticket, code: codeOf(secret, fixture.clock), ip: null }),
+  ).rejects.toThrow('redis down');
+  expect(fixture.store.row()).toMatchObject({ totpBoundAt: null, totpSecretCipher: null });
+  expect(fixture.store.audits).not.toContain(ADMIN_AUTH_AUDIT.totpBound);
+}, 30_000);
+
+it('[AC-B1-34n] a wrong binding code records no voiding instant', async () => {
+  const fixture = setup({ totpBoundAt: null, totpSecretCipher: null });
+  const { ticket, secret } = await bindStep(fixture);
+  const wrong = codeOf(secret, fixture.clock) === '000000' ? '111111' : '000000';
+  expect(await fixture.service.bindTotp({ ticket, code: wrong, ip: null })).toMatchObject({
+    code: 20002,
+  });
+  expect(await fixture.revocations.voidedAt({ appId: 'couli', adminId: ID })).toBeNull();
+}, 30_000);
