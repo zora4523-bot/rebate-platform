@@ -1,0 +1,121 @@
+{
+  "task": "B2-05l",
+  "spec_ref": "3a301d14f0f566e8f0bc689aa8cfc177175dae20",
+  "spec_commit": "06b598d8c5f847ae6d7e6198c7057a12de49747b",
+  "red_tests": [
+    "test/spec/payout/read-port/boundary.test.ts > [AC-B2-05l#7] 端口经 payout/index.ts 导出、不进 read.ts；read.ts 仍只导出 listWithdrawalsForUser",
+    "test/spec/payout/read-port/boundary.test.ts > [AC-B2-05l#8] 端口源码只读：不写表、不解密、不记日志、显式列清单且不选个人信息列",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#1] PENDING_REVIEW 单逐字段精确等于库行（金额 bigint 分、时间 Date、按 id 取同 app 同用户的那一张）",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#1] APPROVED 单逐字段精确等于库行（金额 bigint 分、时间 Date、按 id 取同 app 同用户的那一张）",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#1] REJECTED 单逐字段精确等于库行（金额 bigint 分、时间 Date、按 id 取同 app 同用户的那一张）",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#1] PAYING 单逐字段精确等于库行（金额 bigint 分、时间 Date、按 id 取同 app 同用户的那一张）",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#1] PAID_API 单逐字段精确等于库行（金额 bigint 分、时间 Date、按 id 取同 app 同用户的那一张）",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#1] PAID_MANUAL 单逐字段精确等于库行（金额 bigint 分、时间 Date、按 id 取同 app 同用户的那一张）",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#1] FAILED 单逐字段精确等于库行（金额 bigint 分、时间 Date、按 id 取同 app 同用户的那一张）",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#2] REJECTED 原因码 NEGATIVE_BALANCE 原样返回（WD_REJECTED 选句依据），内部备注不出端口",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#2] REJECTED 原因码 RISK_SUSPECT 原样返回（WD_REJECTED 选句依据），内部备注不出端口",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#2] REJECTED 原因码 ORDER_ABNORMAL 原样返回（WD_REJECTED 选句依据），内部备注不出端口",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#2] REJECTED 原因码 PAYEE_INFO_INVALID 原样返回（WD_REJECTED 选句依据），内部备注不出端口",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#2] REJECTED 原因码 USER_REQUEST 原样返回（WD_REJECTED 选句依据），内部备注不出端口",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#2] REJECTED 原因码 OTHER 原样返回（WD_REJECTED 选句依据），内部备注不出端口",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#3] 别 app 用同一 id 取 → null；不存在的 id → null；本 app 取别 app 的单 → null",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#4] 在调用方句柄上读：事务内看得到本事务未提交的单，别的连接看不到",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#5] 端口不改任何行：只读事务里可读，调用前后提现行（含 row_version、updated_at）、分录、事件、冻结记录不变",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#6] alipay 单的返回对象键集合精确为 12 个，不含姓名、账号密文、HMAC、银行名等个人信息",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#6] bank_card 单的返回对象键集合精确为 12 个，不含姓名、账号密文、HMAC、银行名等个人信息",
+    "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#6] wechat 单的返回对象键集合精确为 12 个，不含姓名、账号密文、HMAC、银行名等个人信息"
+  ],
+  "risk_note": "RV2 payout (withdraw lane B2-05l; model Claude Fable 5.1). A read-only port for the notification module (D10-260: wallet.withdrawal_changed keeps {withdrawal_id, user_id, status}; notification reads the withdrawal here to pick the WD_REJECTED sentence): createWithdrawalNotificationReader().read(handle, {appId, withdrawalId}) runs one SELECT of twelve explicit columns on withdrawals scoped to the app (another app or unknown id → null), on the caller's handle, returning bigint fen as stored and Date instants; no payee / personal column is selected, nothing is decrypted, written or logged. Exported through payout/index.ts; read.ts is unchanged (frozen [AC-B2-05f#10] pins it to listWithdrawalsForUser). No money movement, no state change.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "06b598d8c5f847ae6d7e6198c7057a12de49747b",
+      "tree": "9d1e82bcd8616e26d5504fba7e7fe246b373a89f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T23:45:51Z",
+      "finished_at": "2026-10-23T23:46:03Z",
+      "gate": {
+        "commit": "a3b419aa91db81c8439d4020c0f265b4e4dc01a9",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/payout/read-port/boundary.test.ts > [AC-B2-05l#7] 端口经 payout/index.ts 导出、不进 read.ts；read.ts 仍只导出 listWithdrawalsForUser",
+        "test/spec/payout/read-port/boundary.test.ts > [AC-B2-05l#8] 端口源码只读：不写表、不解密、不记日志、显式列清单且不选个人信息列",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#1] PENDING_REVIEW 单逐字段精确等于库行（金额 bigint 分、时间 Date、按 id 取同 app 同用户的那一张）",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#1] APPROVED 单逐字段精确等于库行（金额 bigint 分、时间 Date、按 id 取同 app 同用户的那一张）",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#1] REJECTED 单逐字段精确等于库行（金额 bigint 分、时间 Date、按 id 取同 app 同用户的那一张）",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#1] PAYING 单逐字段精确等于库行（金额 bigint 分、时间 Date、按 id 取同 app 同用户的那一张）",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#1] PAID_API 单逐字段精确等于库行（金额 bigint 分、时间 Date、按 id 取同 app 同用户的那一张）",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#1] PAID_MANUAL 单逐字段精确等于库行（金额 bigint 分、时间 Date、按 id 取同 app 同用户的那一张）",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#1] FAILED 单逐字段精确等于库行（金额 bigint 分、时间 Date、按 id 取同 app 同用户的那一张）",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#2] REJECTED 原因码 NEGATIVE_BALANCE 原样返回（WD_REJECTED 选句依据），内部备注不出端口",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#2] REJECTED 原因码 RISK_SUSPECT 原样返回（WD_REJECTED 选句依据），内部备注不出端口",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#2] REJECTED 原因码 ORDER_ABNORMAL 原样返回（WD_REJECTED 选句依据），内部备注不出端口",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#2] REJECTED 原因码 PAYEE_INFO_INVALID 原样返回（WD_REJECTED 选句依据），内部备注不出端口",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#2] REJECTED 原因码 USER_REQUEST 原样返回（WD_REJECTED 选句依据），内部备注不出端口",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#2] REJECTED 原因码 OTHER 原样返回（WD_REJECTED 选句依据），内部备注不出端口",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#3] 别 app 用同一 id 取 → null；不存在的 id → null；本 app 取别 app 的单 → null",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#4] 在调用方句柄上读：事务内看得到本事务未提交的单，别的连接看不到",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#5] 端口不改任何行：只读事务里可读，调用前后提现行（含 row_version、updated_at）、分录、事件、冻结记录不变",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#6] alipay 单的返回对象键集合精确为 12 个，不含姓名、账号密文、HMAC、银行名等个人信息",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#6] bank_card 单的返回对象键集合精确为 12 个，不含姓名、账号密文、HMAC、银行名等个人信息",
+        "test/spec/payout/read-port/notification-view.int.test.ts > [AC-B2-05l#6] wechat 单的返回对象键集合精确为 12 个，不含姓名、账号密文、HMAC、银行名等个人信息"
+      ],
+      "expected": [
+        "test/spec/payout/read-port/boundary.test.ts",
+        "test/spec/payout/read-port/notification-view.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "4daeeb56c668a39f78d5337e004df610d17156c2a24b0f2c42b160c1d24a8644"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "4e6028006a458c85f1b0fe3fb551511afa5bdd54eac53f0412715e5a4db6e3a0"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "round 1 pass, no S0/S1 (couli-runs/B2-05l/review-claude-independent.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "the independent Claude's first accepted run (its earlier run was rejected by claude-run with exit 12 because this lane created a ledger branch in the clone while it ran; that output was discarded unused, so the test attempt counter 2 reflects one void run and one real run); mechanical fix D10-206 (prettier only, second spec commit, counters unchanged); round 1 review pass (couli-runs/B2-05l/attempts/*/review-claude-independent.json)"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "d055b260cc9e783bc788ec33d77dc01add8ddbb5",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}

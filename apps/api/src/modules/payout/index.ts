@@ -88,3 +88,8 @@ export type {
 } from './application/withdrawal-reads.ts';
 export { statusTitle, subTextBranch, isAccountFailure } from './domain/display.ts';
 export type { WithdrawalDisplayRow, WithdrawalSubTextBranch } from './domain/display.ts';
+export { createWithdrawalNotificationReader } from './ports/withdrawal-notification.ts';
+export type {
+  WithdrawalNotificationReader,
+  WithdrawalNotificationView,
+} from './ports/withdrawal-notification.ts';
