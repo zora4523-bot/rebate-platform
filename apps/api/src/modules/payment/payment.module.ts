@@ -186,7 +186,13 @@ export class PaymentModule {
                 inject: [HttpAdapterHost],
                 useFactory: (host: HttpAdapterHost): { onModuleInit(): void } => ({
                   onModuleInit() {
-                    installNotifyBodyCapture(host.httpAdapter.getInstance(), isNotifyRoute);
+                    // Only where an HTTP server exists: a module graph built without one (an
+                    // application context, a wiring test) has no adapter and nothing to capture.
+                    const adapter: { getInstance?: () => unknown } | null | undefined =
+                      host.httpAdapter;
+                    const instance = adapter?.getInstance?.();
+                    if (instance === undefined || instance === null) return;
+                    installNotifyBodyCapture(instance, isNotifyRoute);
                   },
                 }),
               },

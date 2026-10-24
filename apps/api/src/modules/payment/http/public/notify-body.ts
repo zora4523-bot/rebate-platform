@@ -150,9 +150,10 @@ function replay(rawBody: Buffer, source: PayloadStream): PayloadStream {
  * Installs the capture on a Fastify instance before it is ready (the module's init hook): once
  * per instance. `isNotifyRoute` selects the notification routes.
  */
-export function installNotifyBodyCapture(server: object, isNotifyRoute: NotifyRouteFilter): void {
-  if (!isNotifyServer(server))
+export function installNotifyBodyCapture(server: unknown, isNotifyRoute: NotifyRouteFilter): void {
+  if (typeof server !== 'object' || server === null || !isNotifyServer(server)) {
     throw new TypeError('installNotifyBodyCapture needs a Fastify instance');
+  }
   if (server.hasRequestDecorator(NOTIFY_RAW_BODY)) {
     throw new Error('the notification body capture is already installed on this server');
   }
