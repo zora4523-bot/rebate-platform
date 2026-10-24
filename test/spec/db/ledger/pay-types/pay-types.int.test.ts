@@ -166,26 +166,43 @@ it('[AC-B2-15i#2] R4 接受两种收款差错，原九种仍可存储，未知�
   await checkConstraint('recon_diffs', 'recon_diffs_type_check', RECON_TYPES);
 });
 
-it('[AC-B2-15i#3] 两个守卫在同一新迁移中按原名 NOT VALID 重建并 VALIDATE，保留有限超时', () => {
+it('[AC-B2-15i#3] 两个守卫按原名 NOT VALID 重建于新迁移，紧随的 -validate 迁移 VALIDATE，均保留有限超时', () => {
   const directory = new URL('../../../../../db/migrations/', import.meta.url);
-  const migrations = readdirSync(directory)
-    .filter((name) => /^\d{4}_.+\.sql$/.test(name))
-    .map((name) => ({
-      name,
-      source: readFileSync(new URL(name, directory), 'utf8')
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/--[^\n]*/g, ''),
-    }))
+  const names = readdirSync(directory).filter((name) => /^\d{4}_.+\.sql$/.test(name));
+  const load = (name: string) =>
+    readFileSync(new URL(name, directory), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/--[^\n]*/g, '');
+  const split = (source: string) =>
+    source
+      .split(';')
+      .map((part) => part.trim())
+      .filter(Boolean);
+  const migrations = names
+    .map((name) => ({ name, source: load(name) }))
     .filter(({ source }) => /DROP\s+CONSTRAINT\s+ledger_entries_ledger_type_check\b/i.test(source));
   expect(migrations, '新增且仅有一个收款类型扩展迁移，不改 0037 / 0060').toHaveLength(1);
   const migration = migrations[0]!;
-  expect(Number(migration.name.slice(0, 4))).toBeGreaterThan(70);
-  const statements = migration.source
-    .split(';')
-    .map((part) => part.trim())
-    .filter(Boolean);
+  const number = Number(migration.name.slice(0, 4));
+  expect(number).toBeGreaterThan(70);
+  // squawk constraint-missing-not-valid：NOT VALID 与 VALIDATE 不得同事务，资金表不加例外（先例 0079 / 0080）。
+  expect(migration.source, '重建迁移内不得出现 VALIDATE CONSTRAINT').not.toMatch(
+    /VALIDATE\s+CONSTRAINT/i,
+  );
+  const statements = split(migration.source);
   expect(statements[0]).toMatch(/^SET\s+LOCAL\s+lock_timeout\s*=\s*'5s'$/i);
   expect(statements[1]).toMatch(/^SET\s+LOCAL\s+statement_timeout\s*=\s*'60s'$/i);
+  expect(statements, '重建迁移只含两条超时与两组 DROP / ADD，无其他 DDL').toHaveLength(6);
+  const followerName = `${String(number + 1).padStart(4, '0')}_${migration.name.slice(5, -4)}-validate.sql`;
+  expect(names, `紧随的 ${followerName} 必须存在`).toContain(followerName);
+  const follower = load(followerName);
+  expect(follower, `${followerName} 不得 DROP / ADD CONSTRAINT`).not.toMatch(
+    /(?:DROP|ADD)\s+CONSTRAINT/i,
+  );
+  const validations = split(follower);
+  expect(validations[0]).toMatch(/^SET\s+LOCAL\s+lock_timeout\s*=\s*'5s'$/i);
+  expect(validations[1]).toMatch(/^SET\s+LOCAL\s+statement_timeout\s*=\s*'60s'$/i);
+  expect(validations, `${followerName} 只含两条超时与两条 VALIDATE，无其他 DDL`).toHaveLength(4);
   for (const [table, name, values] of [
     ['ledger_entries', 'ledger_entries_ledger_type_check', [...USER_TYPES, ...PAY_TYPES]],
     ['recon_diffs', 'recon_diffs_type_check', RECON_TYPES],
@@ -200,12 +217,12 @@ it('[AC-B2-15i#3] 两个守卫在同一新迁移中按原名 NOT VALID 重建并
         'i',
       ).test(statement),
     );
-    const validate = statements.findIndex((statement) =>
+    const validate = validations.findIndex((statement) =>
       new RegExp(`^${prefix}VALIDATE\\s+CONSTRAINT\\s+${name}$`, 'i').test(statement),
     );
     expect(drop, `${name}: DROP`).toBeGreaterThanOrEqual(2);
     expect(add, `${name}: ADD NOT VALID 在 DROP 后`).toBeGreaterThan(drop);
-    expect(validate, `${name}: VALIDATE 在 ADD 后`).toBeGreaterThan(add);
+    expect(validate, `${name}: VALIDATE 在紧随迁移的两条超时后`).toBeGreaterThanOrEqual(2);
     expect([...statements[add]!.matchAll(/'([^']*)'/g)].map((match) => match[1]!)).toEqual(values);
   }
 });
