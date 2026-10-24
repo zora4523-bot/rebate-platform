@@ -1,7 +1,7 @@
 // B2-15e: the pure part of the refund result judgement (08 BR-PAY-06 ④ ⑤ and 细则). No clock, no
 // database: our refund and the configuration values come in as arguments. The rule tests in
 // test/spec/payment/refund/** import this file by path; the names, signatures and semantics written
-// here are the contract (bodies throw until the implementation lands).
+// here are the contract.
 //
 // judgeRefundResult — one verified refund notification or one refund query answer, next to our
 //   facts. The checks run in the order of BR-PAY-06 ④; the first failing one decides, so a later
@@ -87,10 +87,62 @@ export type RefundResultVerdict =
 /** Which configured list: refund_success_states or refund_fail_states. */
 export type RefundStateList = 'success' | 'fail';
 
+/**
+ * ③ of the header: at least one compared pair (both values present), every compared pair equal.
+ * A pair with a value missing on either side is not compared (an anomaly receipt may have no
+ * merchant number of ours; a channel may report only one of the two numbers).
+ */
+function originalMatches(facts: RefundResultFacts, refund: RefundResultRefund): boolean {
+  let compared = 0;
+  for (const [reported, ours] of [
+    [facts.outTradeNo, refund.targetOutTradeNo],
+    [facts.channelTradeNo, refund.targetChannelTradeNo],
+  ] as const) {
+    if (reported === null || ours === null) continue;
+    if (reported !== ours) return false;
+    compared += 1;
+  }
+  return compared > 0;
+}
+
 /** BR-PAY-06 ④ in the fixed order ① ～ ⑥ (see the header). */
 export function judgeRefundResult(facts: RefundResultFacts): RefundResultVerdict {
-  void facts;
-  throw new Error('NotImplemented: judgeRefundResult');
+  if (!facts.ours) return { kind: 'rejected' };
+  const refund = facts.refund;
+  if (refund === null) return { kind: 'mismatch', reason: 'refund_not_found' };
+  if (!originalMatches(facts, refund)) return { kind: 'mismatch', reason: 'original_mismatch' };
+  if (facts.channel !== refund.payChannel) return { kind: 'mismatch', reason: 'channel_mismatch' };
+  if (facts.refundFen === null || facts.refundFen !== refund.amountFen) {
+    return { kind: 'mismatch', reason: 'amount_mismatch' };
+  }
+  const state = facts.channelState;
+  if (state !== null && facts.successStates.includes(state)) {
+    return refund.status === 'PROCESSING' ? { kind: 'succeed' } : { kind: 'already_final' };
+  }
+  if (state !== null && facts.failStates.includes(state)) {
+    return refund.status === 'PROCESSING' ? { kind: 'fail' } : { kind: 'already_final' };
+  }
+  return { kind: 'mismatch', reason: 'state_not_listed' };
+}
+
+/**
+ * The documented refund success state of each channel (BR-PAY-06 细则 默认值, 待实测): WeChat Pay
+ * 退款查询 status / 退款结果通知 refund_status SUCCESS; Alipay alipay.trade.fastpay.refund.query
+ * refund_status REFUND_SUCCESS. Source: docs-mirror/wechat-pay, docs-mirror/alipay/app-pay (not
+ * verified against a real merchant account yet).
+ */
+const DEFAULT_REFUND_SUCCESS_STATES: Readonly<Record<PayChannelCode, readonly string[]>> =
+  Object.freeze({
+    wechat_pay: Object.freeze(['SUCCESS']),
+    alipay: Object.freeze(['REFUND_SUCCESS']),
+  });
+
+function isStringArray(raw: unknown, allowEmpty: boolean): raw is readonly string[] {
+  return (
+    Array.isArray(raw) &&
+    (allowEmpty || raw.length > 0) &&
+    raw.every((item: unknown) => typeof item === 'string' && item !== '')
+  );
 }
 
 /** `pay.<pay_channel>.refund_<list>_states` in effect (see the header). */
@@ -99,8 +151,8 @@ export function refundStatesOf(
   list: RefundStateList,
   raw: unknown,
 ): { readonly states: readonly string[]; readonly fallback: boolean } {
-  void channel;
-  void list;
-  void raw;
-  throw new Error('NotImplemented: refundStatesOf');
+  const defaults = list === 'success' ? [...DEFAULT_REFUND_SUCCESS_STATES[channel]] : [];
+  if (raw === null || raw === undefined) return { states: defaults, fallback: false };
+  if (isStringArray(raw, list === 'fail')) return { states: [...raw], fallback: false };
+  return { states: defaults, fallback: true };
 }

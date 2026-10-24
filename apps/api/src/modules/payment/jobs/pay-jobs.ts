@@ -13,6 +13,10 @@
 //   order.close    B2-15d: the close flow of one order (application/pay-close.ts): query first,
 //                  close on the channel, PO3 only on an explicit «closed» (or «not exist» past the
 //                  grace), its own next run while still PENDING, needs_manual after the wait.
+//   refund.query   B2-15e: one channel query of a PROCESSING refund, judged by the same checks and
+//                  the same result handler as a refund notification (application/pay-refund-
+//                  query.ts, pay-refund-result.ts); without a verdict the next slot is enqueued,
+//                  the refund is never submitted again under the same number.
 // Also compiled by the `test` project: erasable syntax only.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
@@ -23,8 +27,9 @@ import type { PayChannelSet } from '../application/pay-channel.ts';
 import { runOrderClose } from '../application/pay-close.ts';
 import { runBizReconcile } from '../application/pay-fulfillment.ts';
 import { runOrderQuery } from '../application/pay-query.ts';
+import { runRefundQuery } from '../application/pay-refund-query.ts';
 import type { PayLedgerPort } from '../application/pay-settlement.ts';
-import { BIZ_RECONCILE_JOB, ORDER_CLOSE_JOB, ORDER_QUERY_JOB } from './names.ts';
+import { BIZ_RECONCILE_JOB, ORDER_CLOSE_JOB, ORDER_QUERY_JOB, REFUND_QUERY_JOB } from './names.ts';
 
 export type { PayLedgerPort } from '../application/pay-settlement.ts';
 
@@ -49,6 +54,9 @@ export function createPayJobHandler(deps: PayJobDeps): JobHandler {
         return;
       case BIZ_RECONCILE_JOB:
         await runBizReconcile(deps, job.payload);
+        return;
+      case REFUND_QUERY_JOB:
+        await runRefundQuery(deps, job.payload);
         return;
       case ORDER_CLOSE_JOB:
         await runOrderClose(deps, job.payload);

@@ -1,6 +1,8 @@
 // B2-15b / B2-15c: the payment module on the api entry (task B2-15b §9.1: the four /v1/pay/orders
 // routes over the pay order use cases; B2-15c §9.1: the notification entry POST
-// /notify/pay/<channel>) and on the worker entry (B2-15c: the handler of queue `pay`).
+// /notify/pay/<channel>), on the worker entry (B2-15c: the handler of queue `pay`; B2-15e adds
+// refund.query) and, from B2-15e, on the admin entry (the console's original-route refund,
+// http/admin/, over platform idempotency and admin's audit writer handed in by app.module).
 // app.module hands in content's configuration reader as a factory, so this module imports no other
 // module's implementation but ledger's posting port (LedgerModule, index.ts); the business type
 // registry follows APP_ENV (prod registers nothing); the channel set is FakePayChannel outside
@@ -25,13 +27,16 @@ import {
   DB,
   EVENT_BUS,
   FIELD_CRYPTO,
+  IDEMPOTENCY,
   JOB_QUEUE,
   REDIS,
   ROOT_LOGGER,
   type AppConfig,
+  type AuditPort,
   type Clock,
   type EventBus,
   type FieldCrypto,
+  type Idempotency,
   type JobQueue,
   type QueueRuntime,
   type RedisHandle,
@@ -40,7 +45,9 @@ import {
 import { createBizRegistry } from './application/biz-registry.ts';
 import { PayChannelSet } from './application/pay-channel.ts';
 import type { PayOrderDeps } from './application/pay-orders.ts';
+import type { PayRefundDeps } from './application/pay-refunds.ts';
 import type { PayLedgerPort } from './application/pay-settlement.ts';
+import { AdminPayRefundsController, PAY_REFUND_DEPS } from './http/admin/pay-refunds.controller.ts';
 import { installNotifyBodyCapture } from './http/public/notify-body.ts';
 import {
   PAY_NOTIFY_DEPS,
@@ -62,6 +69,12 @@ export interface PaymentModuleOptions {
    * whether the process has a database; without one the entry is left out (see the header).
    */
   readonly notifyEntry?: boolean;
+}
+
+/** B2-15e: the admin entry's options (the console's original-route refund). */
+export interface PaymentAdminOptions {
+  /** Binds the audit port to a transaction handle (app.module: admin's createAuditWriter). */
+  readonly auditWriter: (db: Kysely<Database>, clock: Clock) => AuditPort;
 }
 
 /** Nest token of the worker's registered pay queue handler (null without database or queue). */
@@ -203,7 +216,54 @@ export class PaymentModule {
     };
   }
 
-  /** The worker entry: the handler of queue `pay` (order.query, biz.reconcile, order.close). */
+  /**
+   * B2-15e: the admin entry's original-route refund (POST /admin/v1/pay-orders/{id}/refunds, POST
+   * /admin/v1/pay-anomalies/{id}/refunds) over platform idempotency, the queue (the first
+   * refund.query slot) and admin's audit writer bound to the creating transaction. Without the
+   * database, the queue or the idempotency primitive the routes fail closed (50001).
+   */
+  static forAdmin(options: PaymentAdminOptions): DynamicModule {
+    return {
+      module: PaymentModule,
+      controllers: [AdminPayRefundsController],
+      providers: [
+        channelSetProvider,
+        {
+          provide: PAY_REFUND_DEPS,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            PayChannelSet,
+            { token: DB, optional: true },
+            { token: JOB_QUEUE, optional: true },
+            { token: IDEMPOTENCY, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            channels: PayChannelSet,
+            db?: Kysely<Database>,
+            queue?: JobQueue,
+            idempotency?: Idempotency,
+          ): PayRefundDeps | null =>
+            db === undefined || queue === undefined || idempotency === undefined
+              ? null
+              : {
+                  db,
+                  clock,
+                  queue,
+                  channels,
+                  idempotency,
+                  auditOn: (trx) => options.auditWriter(trx, clock),
+                  logger: logger.child({ module: 'payment', entry_point: 'admin' }),
+                },
+        },
+      ],
+      exports: [PayChannelSet],
+    };
+  }
+
+  /** The worker entry: the handler of queue `pay` (order.query, biz.reconcile, order.close, refund.query). */
   static forWorker(options: Pick<PaymentModuleOptions, 'config'>): DynamicModule {
     return {
       module: PaymentModule,

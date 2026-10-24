@@ -12,6 +12,7 @@ export const PAY_QUEUE: PayQueueName = 'pay';
 export const ORDER_QUERY_JOB: PayJobName = 'order.query';
 export const ORDER_CLOSE_JOB: PayJobName = 'order.close';
 export const BIZ_RECONCILE_JOB: PayJobName = 'biz.reconcile';
+export const REFUND_QUERY_JOB: PayJobName = 'refund.query';
 
 /** The client came back from the channel SDK (BR-PAY-03 细则, one query; B2-15b). */
 export interface OrderQueryReturnedPayload extends JobPayload {
@@ -94,4 +95,9 @@ export function orderCloseRunKey(payOrderId: string, runAt: Date): string {
 /** singletonKey of the fulfilment job: one queued or active per business object (serial per object). */
 export function bizReconcileKey(bizType: string, bizRef: string): string {
   return `biz:${bizType}:${bizRef}`;
+}
+
+/** B2-15e: singletonKey of one refund query slot: whole seconds after the refund's creation. */
+export function refundQueryKey(payRefundId: string, slotSeconds: number): string {
+  return `${REFUND_QUERY_JOB}:${payRefundId}:t${slotSeconds}`;
 }

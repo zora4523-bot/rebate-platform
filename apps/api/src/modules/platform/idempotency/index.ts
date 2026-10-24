@@ -459,6 +459,14 @@ export class IdempotencyError extends Error {
 /** Section 1. */
 export function subjectOf(actor: IdempotencyActor): string {
   if (actor == null) throw new IdempotencyError('invalid_subject');
+  const admin = actor.adminUserId;
+  if (admin !== undefined && admin !== null) {
+    // Section 1, admin accounts (B2-15e): `a:<admin_users.id>`, checked like the other UUIDs.
+    if (typeof admin !== 'string' || !UUID.test(admin) || admin.includes('\n')) {
+      throw new IdempotencyError('invalid_subject');
+    }
+    return `a:${admin}`;
+  }
   for (const [value, prefix, pattern] of [
     [actor.userId, 'u', UUID],
     [actor.deviceId, 'd', UUID],

@@ -3014,6 +3014,19 @@ export class AppModule {
               }),
             ]
           : []),
+        // payment's /admin/v1 original-route refund (B2-15e; BR-PAY-06): guarded by
+        // AdminOperationGuard (pay.refund, no step-up), under platform idempotency (subject
+        // a:<admin_users.id>); the refund row, its first refund.query job and the audit row
+        // (admin's writer bound to the creating transaction) commit together before the channel
+        // is called.
+        ...(options.entry === 'admin'
+          ? [
+              PaymentModule.forAdmin({
+                auditWriter: (db, clock) =>
+                  createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+              }),
+            ]
+          : []),
         // content's GET /v1/config (F1-02c): agent availability and the h5_release bucket read
         // identity's request viewer (token principal, else the X-App-Id guest). GET
         // /v1/pages/{page_key} (F1-09d) reads the same viewer for its login condition.
@@ -3102,9 +3115,10 @@ export class AppModule {
         ...(options.entry === 'worker'
           ? [
               RiskScanModule.forWorker(),
-              // payment's queue `pay` (B2-15c / B2-15d): order.query (the result judgement and the
-              // query rhythm), biz.reconcile (the business object's fulfilment) and order.close
-              // (the close flow) over content's shared configuration reader.
+              // payment's queue `pay` (B2-15c / B2-15d / B2-15e): order.query (the result judgement and
+              // the query rhythm), biz.reconcile (the business object's fulfilment), order.close (the
+              // close flow) and refund.query (the refund result, reading pay.<pay_channel>.refund_*_states)
+              // over content's shared configuration reader.
               PaymentModule.forWorker({ config: (db, clock) => contentReader(db, clock) }),
               // B3-08k: content's reads for the sweeper's daily limits, assembled here.
               agentReaders('worker', contentReader),

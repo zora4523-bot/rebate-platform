@@ -20911,7 +20911,6 @@ paths:
         not change; `refunded_fen` grows when the refund succeeds. Every refund is written to the
         audit log (action pay_refund_create, with the operator, amount and reason code).
       x-auth: admin
-      x-implementation: planned
       x-idempotent: true
       x-error-codes:
         - 10001
@@ -21264,7 +21263,6 @@ paths:
         /admin/v1/pay-refunds/{pay_refund_id}. Every refund is written to the audit log (action
         pay_refund_create, with the operator, amount and reason code).
       x-auth: admin
-      x-implementation: planned
       x-idempotent: true
       x-error-codes:
         - 10001
