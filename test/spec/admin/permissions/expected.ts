@@ -36,6 +36,8 @@ export const TOTP = [
   'settle.bill',
   'fund.settle_adjust',
   'fund.cash_entry',
+  // 04 §11.2 notify.channels（动态码，D10-316）：枚举含它才纳入。CT-24t 合并后可去掉该条件。
+  ...(enumKeys().includes('notify.channels') ? ['notify.channels'] : []),
 ];
 export const SMS = ['fund.adjust', 'fund.writeoff'];
 export const NONE = [
