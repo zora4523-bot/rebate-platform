@@ -70,7 +70,14 @@ export function createEntrySmsSender(deps: EntrySmsSenderDeps): VerifyCodeSmsSen
   });
   const primary = createAliyunSmsChannel({
     credentials: { accessKeyId: config.accessKeyId, accessKeySecret: config.accessKeySecret },
-    resolveTemplate: (template) => (template === VERIFY_CODE_TEMPLATE ? verifyCode : undefined),
+    resolveTemplate: (template, message) => {
+      if (template !== VERIFY_CODE_TEMPLATE) return undefined;
+      // B1-12y: by the message's app (registration, else the deployment fallback the resolver
+      // holds); undefined → rejected, the entry never stands in with the deployment itself.
+      const resolver = deps.resolver;
+      if (resolver === undefined) return verifyCode;
+      return resolver.resolve({ appId: message.app_id, code: VERIFY_CODE_TEMPLATE });
+    },
     fetch: deps.fetch,
     clock: deps.clock,
     nonce: deps.nonce,

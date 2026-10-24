@@ -8,6 +8,8 @@
 //   log's id (so the message is found again from the event key alone), and the push log
 //   (dedupe_key = eventKey + ':push', row_version 0, sent_at empty) is written queued, or
 //   suppressed(push_disabled) when the recipient's switch for the category is off right now.
+//   B1-12y: when the template row of app/code/variant exists and its channels lack 'push' (closed
+//   in the console, BR-TEXT-20 细则), no push log is written at all (not suppressed).
 //
 // dispatch(db, event) — the one and only function that calls the push channel (first send, retry
 // and resume of a recorded event all go through it). It takes the root handle only, refuses a
@@ -16,7 +18,8 @@
 //      (attempted, result unknown, or finished) → 'skipped' (结果未知只查询、不重发). Under that row
 //      lock the category (notify_templates of app/code/variant, else the caller's registry
 //      category) and the recipient's current switch (notification_settings; no row = on) are read
-//      again: off → suppressed(push_disabled), no call. On → the recipient's push_tokens rows are
+//      again: off, or the template's channels no longer hold 'push' → suppressed(push_disabled),
+//      no call. On → the recipient's push_tokens rows are
 //      locked FOR UPDATE in id order (the token report's order) and checked (not revoked, not
 //      frozen at the Clock's now, bound to a session identity reports valid); failing bound rows
 //      are unbound with the (user_id, bound_sid) read here (conditional command). No usable row →
@@ -105,16 +108,25 @@ const pushKeyOf = (event: Pick<PushEvent, 'eventKey'>) => `${event.eventKey}:pus
 export function createPushSendCore(options: PushSendOptions): PushSendCore {
   const { clock, channel, sessionValidity } = options;
 
-  /** The recipient's current switch for the event's category; no settings row means on. */
-  async function pushEnabled(transaction: Transaction<DB>, event: PushEvent): Promise<boolean> {
+  /**
+   * The push decision of the event right now: 'closed' when the template row of app/code/variant
+   * exists and its channels lack 'push' (the console closed the push channel, BR-TEXT-20 细则);
+   * otherwise the recipient's current switch for the category ('on' / 'off'; no settings row
+   * means on). Without a template row the caller's registry category applies and push is open.
+   */
+  async function pushDecision(
+    transaction: Transaction<DB>,
+    event: PushEvent,
+  ): Promise<'on' | 'off' | 'closed'> {
     const db = transaction.withSchema('app');
     const template = await db
       .selectFrom('notify_templates')
-      .select('category')
+      .select(['category', 'channels'])
       .where('app_id', '=', event.app_id)
       .where('code', '=', event.code)
       .where('variant', '=', event.variant)
       .executeTakeFirst();
+    if (template !== undefined && !template.channels.includes('push')) return 'closed';
     const category =
       template !== undefined && isCategory(template.category) ? template.category : event.category;
     const settings = await db
@@ -123,7 +135,8 @@ export function createPushSendCore(options: PushSendOptions): PushSendCore {
       .where('app_id', '=', event.app_id)
       .where('user_id', '=', event.user_id)
       .executeTakeFirst();
-    return settings === undefined ? true : settings[SWITCH_OF[category]];
+    const enabled = settings === undefined ? true : settings[SWITCH_OF[category]];
+    return enabled ? 'on' : 'off';
   }
 
   async function record(transaction: Transaction<DB>, input: PushSendInput): Promise<void> {
@@ -165,7 +178,10 @@ export function createPushSendCore(options: PushSendOptions): PushSendCore {
       })
       .execute();
 
-    const enabled = await pushEnabled(transaction, input);
+    const decision = await pushDecision(transaction, input);
+    // Push closed in the console: no push log at all (not suppressed); the inbox stays written.
+    if (decision === 'closed') return;
+    const enabled = decision === 'on';
     await db
       .insertInto('notify_logs')
       .values({
@@ -255,7 +271,7 @@ export function createPushSendCore(options: PushSendOptions): PushSendCore {
     if (log === undefined || log.status !== 'queued' || log.row_version !== 0) {
       return { kind: 'skipped' };
     }
-    if (!(await pushEnabled(transaction, event))) {
+    if ((await pushDecision(transaction, event)) !== 'on') {
       await suppress(transaction, event, log.id, 0);
       return { kind: 'suppressed' };
     }
@@ -300,7 +316,7 @@ export function createPushSendCore(options: PushSendOptions): PushSendCore {
     logId: string,
     payload: PushPayload,
   ): Promise<PushDispatchOutcome> {
-    if (!(await pushEnabled(transaction, event))) {
+    if ((await pushDecision(transaction, event)) !== 'on') {
       await suppress(transaction, event, logId, 1);
       return 'suppressed';
     }

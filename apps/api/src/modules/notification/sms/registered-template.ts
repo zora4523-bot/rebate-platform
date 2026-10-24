@@ -40,9 +40,64 @@ export interface RegisteredTemplateResolverDeps {
   readonly logger: Pick<RootLogger, 'info' | 'warn' | 'error'>;
 }
 
+/** The verification code key: the only code the deployment configuration stands in for. */
+const VERIFY_CODE = 'SMS_CODE';
+const DEFAULT_VARIANT = 'default';
+
+interface RegistrationRow {
+  readonly variant: string;
+  readonly channels: readonly string[];
+  readonly sms_sign_name: string | null;
+  readonly sms_template_code: string | null;
+}
+
+/** The in-use registration of a row (both columns set); the pending columns are never read. */
+function inUse(row: RegistrationRow): AliyunSmsTemplate | undefined {
+  const signName = row.sms_sign_name;
+  const templateCode = row.sms_template_code;
+  if (signName === null || signName.trim() === '') return undefined;
+  if (templateCode === null || templateCode.trim() === '') return undefined;
+  return { signName, templateCode };
+}
+
 export function createRegisteredTemplateResolver(
   deps: RegisteredTemplateResolverDeps,
 ): RegisteredTemplateResolver {
-  void deps;
-  throw new Error('NotImplemented: createRegisteredTemplateResolver');
+  const { logger } = deps;
+  const db = deps.db.withSchema('app');
+  const fallback =
+    deps.deployVerifyCode === undefined
+      ? undefined
+      : Object.freeze({
+          signName: deps.deployVerifyCode.signName,
+          templateCode: deps.deployVerifyCode.templateCode,
+        });
+  return {
+    async resolve(query) {
+      const variant = query.variant ?? DEFAULT_VARIANT;
+      // Every variant of the code, read on each call (a registration enabled in the console takes
+      // effect on the next send; no cache).
+      const rows: readonly RegistrationRow[] = await db
+        .selectFrom('notify_templates')
+        .select(['variant', 'channels', 'sms_sign_name', 'sms_template_code'])
+        .where('app_id', '=', query.appId)
+        .where('code', '=', query.code)
+        .execute();
+      const row = rows.find((candidate) => candidate.variant === variant);
+      const registration = row === undefined ? undefined : inUse(row);
+      const allVariants = rows.every((candidate) => inUse(candidate) !== undefined);
+
+      if (query.code === VERIFY_CODE) {
+        // SMS_CODE's channel cannot be closed (BR-TEXT-20): the registration when every variant
+        // has one, otherwise the deployment configuration (D10-337 ②), else nothing.
+        return registration !== undefined && allVariants ? registration : fallback;
+      }
+      if (row === undefined || !row.channels.includes('sms')) return undefined;
+      if (registration !== undefined && allVariants) return registration;
+      // The default channels hold SMS but some variant has no in-use registration yet (未就绪,
+      // D10-339 ⑥): no SMS, one log line (never a phone number).
+      logger.info({ app_id: query.appId, code: query.code, variant }, 'sms_not_ready');
+      return undefined;
+    },
+  };
 }

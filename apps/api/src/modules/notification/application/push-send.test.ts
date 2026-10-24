@@ -26,6 +26,8 @@ interface Script {
   /** The inbox log already exists (record() is a no-op). */
   duplicate?: boolean;
   templateCategory?: string;
+  /** channels of that template row (B1-12y); ['push'] when absent. */
+  templateChannels?: readonly string[];
   /** Settings row answered by each successive settings read; the last one repeats. */
   settings?: readonly (Switches | undefined)[];
   tokens?: readonly Record<string, unknown>[];
@@ -67,8 +69,11 @@ async function fixture(script: Script = {}) {
     if (sql.startsWith('insert into "app"."notify_logs"')) {
       const isInbox = p.includes('inbox');
       rows = isInbox && script.duplicate === true ? [] : [{ id: `log-${queries.length}` }];
-    } else if (sql.startsWith('select "category" from "app"."notify_templates"')) {
-      rows = script.templateCategory === undefined ? [] : [{ category: script.templateCategory }];
+    } else if (sql.startsWith('select "category", "channels" from "app"."notify_templates"')) {
+      rows =
+        script.templateCategory === undefined
+          ? []
+          : [{ category: script.templateCategory, channels: script.templateChannels ?? ['push'] }];
     } else if (isSettings(sql)) {
       const seq = script.settings ?? [undefined];
       const row = seq[Math.min(settingsReads, seq.length - 1)];
@@ -498,10 +503,40 @@ it('[AC-B1-12o#5] every read is scoped by app_id; the template read also by code
   const reads = f.queries.filter((q) => q.sql.startsWith('select'));
   expect(reads.length).toBeGreaterThan(0);
   for (const read of reads) expect(read.sql).toContain('"app_id" = $1');
-  const template = f.find('select "category" from "app"."notify_templates"');
+  const template = f.find('select "category", "channels" from "app"."notify_templates"');
   // record, the decision and the delivery each read the category again.
   expect(template).toHaveLength(3);
   for (const read of template)
     expect(read.parameters).toEqual(['couli', 'ORDER_TRACKED', 'default']);
   expect(f.where(isLockLog)[0]?.parameters).toEqual(['couli', 'event-a:push', 'push']);
+});
+
+it('[AC-B1-12y#23] template channels without push: record() writes inbox and inbox log only, no push log, no settings read', async () => {
+  const f = await fixture({
+    templateCategory: 'service',
+    templateChannels: ['inbox', 'sms'],
+    settings: [ON],
+    tokens: [token('a')],
+  });
+  await f.db.transaction().execute((trx) => f.core().record(trx, f.input));
+  const logs = f.find('insert into "app"."notify_logs"');
+  expect(logs).toHaveLength(1);
+  expect(logs[0]?.parameters).toEqual(expect.arrayContaining(['inbox', 'event-a', 'success']));
+  expect(f.find('insert into "app"."inbox_messages"')).toHaveLength(1);
+  expect(f.where(isSettings)).toHaveLength(0);
+  expect(f.channel.send).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-12y#24] push closed after record: dispatch suppresses the queued log, never calls the channel', async () => {
+  const f = await fixture({
+    templateCategory: 'service',
+    templateChannels: ['inbox'],
+    settings: [ON],
+    tokens: [token('a')],
+  });
+  expect(await f.core().dispatch(f.db, f.input)).toBe('suppressed');
+  expect(f.where(isSuppress)).toHaveLength(1);
+  expect(f.where(isClaim)).toHaveLength(0);
+  expect(f.where(isTokens)).toHaveLength(0);
+  expect(f.channel.send).not.toHaveBeenCalled();
 });
