@@ -7,9 +7,10 @@
 //   1. pg_advisory_xact_lock(order_key) through orders' lockOrderKey(platform, sub_order_id);
 //   2. after the lock, re-read the order and the obligation (beneficiary_credits) and re-verify:
 //      rebate_status = CREDITED, rights_pending = false, the greatest order_settlements seq =
-//      input.expectedSettleSeq, the obligation's split_ref = the order's current snapshot reference
-//      (`commission_version:{orders.commission_version}`, as B2-04m writes it) and the obligation
-//      status = open; a failed check returns { outcome: 'skipped', reason } and writes nothing;
+//      input.expectedSettleSeq, the obligation's attribution snapshot (split_ref) is still the
+//      order's (see attributionUnchanged: an amount-version bump is not an attribution change) and
+//      the obligation status = open; a failed check returns { outcome: 'skipped', reason } and
+//      writes nothing; amounts always come from the current commission_version and booked pair;
 //   3. lock the obligation's beneficiary users row through the BeneficiaryGate, then
 //      ledger.lockBalances for that user, then re-read the beneficiary's state through the gate;
 //   4. check BR-FUND-19 ⑤ for the whole order before writing (ledger order nets, the snapshot
@@ -33,7 +34,8 @@
 //   7. the obligation is closed through the generated beneficiary-credit transition() with a CAS on
 //      (status, row_version), row_version + 1, closed_by = 'R5a', closed_ref = input.closedRef,
 //      closed_at = the injected Clock, voucher_id = the voucher written (null when none), on the
-//      same transaction as the voucher.
+//      same transaction as the voucher, followed by the rebate history row of the R5a self-step
+//      (field rebate, CREDITED → CREDITED, BENEFICIARY_RELEASE, source system).
 // Amounts only through @couli/money; time only from the injected Clock.
 import type { DB } from '@couli/db';
 import {
@@ -60,7 +62,7 @@ import type {
 } from '../../../ledger/index.ts';
 import { lockOrderKey } from '../../../orders/index.ts';
 import type { Clock, RootLogger } from '../../../platform/index.ts';
-import { readRebateOrder } from '../../rebate/infra/rebate-store.ts';
+import { insertRebateHistory, readRebateOrder } from '../../rebate/infra/rebate-store.ts';
 import type { BeneficiaryGate } from '../beneficiary-gate.ts';
 import { readLatestSettleSeq, readOrderLocator } from '../credit-store.ts';
 import {
@@ -219,6 +221,25 @@ function roleOf(value: string): CreditRole {
   return value as CreditRole;
 }
 
+const SPLIT_REF = /^commission_version:([1-9][0-9]{0,8})$/;
+
+/**
+ * BR-FUND-04 ⑫「归属快照未变」: the obligation's split_ref names the attribution snapshot it was
+ * opened on, `commission_version:{K}` as B2-04m writes it. The attribution (who the beneficiaries
+ * are and their ratios) lives in the order's single immutable commission_splits row; a later
+ * commission_version only re-states amounts (order-sync bumps it on a CREDITED order when the
+ * estimate changes, BR-CALC-10) and keeps the attribution, so K ≤ the current version is still the
+ * same attribution. The only attribution change is a reassignment (R14), which is not open
+ * (2026-10-18) and would void the open obligations itself. A K that is not a version of this order
+ * (malformed, or above the current version) is treated as changed.
+ */
+export function attributionUnchanged(splitRef: string, commissionVersion: number): boolean {
+  const match = SPLIT_REF.exec(splitRef);
+  if (match === null || !Number.isSafeInteger(commissionVersion)) return false;
+  const opened = Number(match[1]);
+  return opened >= 1 && opened <= commissionVersion;
+}
+
 function identity(userId: string, role: string): string {
   return JSON.stringify([userId, role]);
 }
@@ -341,8 +362,12 @@ export function createBeneficiaryCredit(deps: BeneficiaryCreditDependencies): Be
     if (seq === null || seq !== input.expectedSettleSeq) {
       return { outcome: 'skipped', reason: 'settlement_changed' };
     }
-    const snapshotId = `commission_version:${String(order.commission_version)}`;
-    if (row.split_ref !== snapshotId) return { outcome: 'skipped', reason: 'snapshot_changed' };
+    if (!attributionUnchanged(row.split_ref, order.commission_version)) {
+      return { outcome: 'skipped', reason: 'snapshot_changed' };
+    }
+    // The planner compares the obligation's snapshot id with the order's attribution id: both are
+    // the verified split_ref here (amounts are taken from the current version below).
+    const snapshotId = row.split_ref;
     if (row.status !== 'open') return { outcome: 'skipped', reason: 'obligation_closed' };
     const step = transitionOrderRebate(FROM_STATUS, REBATE_EVENT);
     if (!step.ok || !step.noop) {
@@ -408,7 +433,8 @@ export function createBeneficiaryCredit(deps: BeneficiaryCreditDependencies): Be
       });
     }
     if (!seen.has(identity(userId, row.role))) {
-      throw new Error('settlement beneficiary credit: obligation beneficiary not in the snapshot');
+      // The obligation's beneficiary is not in the order's attribution: it changed.
+      return { outcome: 'skipped', reason: 'snapshot_changed' };
     }
     for (const b of nets.beneficiaries) {
       const id = identity(b.beneficiary_user_id, b.role);
@@ -520,6 +546,14 @@ export function createBeneficiaryCredit(deps: BeneficiaryCreditDependencies): Be
       // Under the order_key lock nothing else may move the obligation: never report success.
       throw new Error('settlement beneficiary credit: obligation CAS matched no row');
     }
+    // R5a is a self-step (CREDITED → CREDITED): history row on the same transaction (rebate.ts).
+    await insertRebateHistory(
+      trx,
+      { app_id: appId, order_id: orderId },
+      [{ from: FROM_STATUS, event: REBATE_EVENT, to: step.to }],
+      'system',
+      now,
+    );
     logger.info(
       {
         app_id: appId,
