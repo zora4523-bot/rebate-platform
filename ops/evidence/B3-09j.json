@@ -1,0 +1,98 @@
+{
+  "task": "B3-09j",
+  "spec_ref": "7d67b89ca2641f256810eda9b15cd272f33ba1a7",
+  "spec_commit": "f0cc5ec64cc9a14f7d040f92b2fd9b7e523258f1",
+  "red_tests": [
+    "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#1][BR-AI-22] prod 缺失、空串或全空白：agentUserHashKey 为 null，恰有一条以 AGENT_USER_HASH_KEY 开头的 problem，且不带传入值",
+    "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#2] local / test / staging 缺失、空串或全空白：agentUserHashKey 为 null，problems 为空（非 prod 不拒绝启动）",
+    "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#3] 任一 APP_ENV 下值非空白：agentUserHashKey 等于原值，problems 为空",
+    "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#4] loadConfig 填入 agentUserHashKey；test 缺省为 null 不抛；prod 缺省抛 ConfigError 且不带值",
+    "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#5][BR-AI-22] 带密钥：agentDeletionCleanup 返回可装进 DeletionCleanupStep 的清理函数，不记 warn",
+    "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#6] 不带密钥（null / 缺省）：返回 { unavailable: 非空字符串 }，warn 恰 1 次且不含密钥值",
+    "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#7][BR-AI-22] 带密钥：日志替身任何级别（含 child 绑定）的调用参数都不含密钥值",
+    "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#5][AC-B3-09j#6][BR-AI-22] worker 入口：注销清理 provider 注入 APP_CONFIG、ROOT_LOGGER 与 optional DB，按配置装配 agent 槽（有密钥 → 按该密钥哈希的清理函数；无密钥 → unavailable 标记并 warn 一次）",
+    "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#6] worker 入口无数据库：注销清理 provider 的 DB 解析为 undefined 且无密钥时，agent 槽仍是 { unavailable: 非空字符串 }，warn 及以上的调用为 0 条"
+  ],
+  "risk_note": "RV2 apps/api/src/app.module.ts、platform/config；AGENT_USER_HASH_KEY 只经 loadConfig 读，值不进日志 / 错误；prod 缺失拒启动，非 prod 保持注销端口 unavailable 并 warn；无迁移、无资金路径",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "f0cc5ec64cc9a14f7d040f92b2fd9b7e523258f1",
+      "tree": "4aade9637325ca3121bac8e41f7dfa384259b63c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T13:31:53Z",
+      "finished_at": "2026-10-24T13:32:06Z",
+      "red_tests": [
+        "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#1][BR-AI-22] prod 缺失、空串或全空白：agentUserHashKey 为 null，恰有一条以 AGENT_USER_HASH_KEY 开头的 problem，且不带传入值",
+        "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#2] local / test / staging 缺失、空串或全空白：agentUserHashKey 为 null，problems 为空（非 prod 不拒绝启动）",
+        "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#3] 任一 APP_ENV 下值非空白：agentUserHashKey 等于原值，problems 为空",
+        "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#4] loadConfig 填入 agentUserHashKey；test 缺省为 null 不抛；prod 缺省抛 ConfigError 且不带值",
+        "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#5][BR-AI-22] 带密钥：agentDeletionCleanup 返回可装进 DeletionCleanupStep 的清理函数，不记 warn",
+        "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#6] 不带密钥（null / 缺省）：返回 { unavailable: 非空字符串 }，warn 恰 1 次且不含密钥值",
+        "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#7][BR-AI-22] 带密钥：日志替身任何级别（含 child 绑定）的调用参数都不含密钥值",
+        "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#5][AC-B3-09j#6][BR-AI-22] worker 入口：注销清理 provider 注入 APP_CONFIG、ROOT_LOGGER 与 optional DB，按配置装配 agent 槽（有密钥 → 按该密钥哈希的清理函数；无密钥 → unavailable 标记并 warn 一次）",
+        "test/spec/agent/deletion-wiring/wiring.test.ts > [AC-B3-09j#6] worker 入口无数据库：注销清理 provider 的 DB 解析为 undefined 且无密钥时，agent 槽仍是 { unavailable: 非空字符串 }，warn 及以上的调用为 0 条"
+      ],
+      "expected": ["test/spec/agent/deletion-wiring/wiring.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "2c78fee247cbc632b040399272826a5558ec1d9cb24de013a118ae1ec61c9c47"
+        }
+      ],
+      "gate": {
+        "commit": "44d892d593875483765d994dcb1a6e950d7a5ea0",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "round 1 pass, S2x2 (prod refusal broke other tasks' frozen tests and config unit tests) — fixed: config.test.ts by the implementer; the frozen tests / fixtures' prod inputs moved to the prerequisite B3-09k (#1538, merged; red_exempt cannot hold 218 entries). couli-runs/B3-09j/review-claude-money-r1.json. Codex unavailable, approvals #36"
+    },
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "round 2 pass, 0 findings (review-claude-money-r2.json): implementation rounds 3–4 — a missing APP_CONFIG counts as no key (linking [AC-B1-06zc#9] resolves only CLOCK / ROOT_LOGGER); cleanup provider injects DB optionally and warns about the missing key only with a database (orchestrator D10-334, identity [AC-B1-15f#29]); impl round 4 beyond the counter under D10-334"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "spec-test r1 fail (S1x2: assembly slot not proven, HMAC key not proven) -> r2 pass (independent Claude, review-claude-spec-test-r{1,2}.json); rule tests by claude-independent (claude-run.sh). Test attempt 1 voided by a position assertion the orchestrator caused (another branch created in the same clone during the run), counted; attempts 2–3 produced the tests; later rule-test edits without new review rounds, by orchestrator exception: digit-free fake keys for gitleaks (D10-329) and the D10-334 worker/database cases (fresh independent Claude, read-only review by another: pass)"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "a426e6a4b96502d52ad4e2d807d5846b90350649"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
