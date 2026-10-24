@@ -23,7 +23,8 @@
 //      kind (timeout, network) is an unknown result; the handler never rethrows it and never calls
 //      transfer again (the job resolves, so the queue does not retry).
 // Landing the synchronous result: the pending attempt row is completed once (response, resp_code,
-// resp_sub_code, result, latency_ms) and, on the business handle:
+// resp_sub_code, result, latency_ms) and, on the business handle (W5 / W6 through
+// application/payout-landing.ts, shared with the query job of B2-06e):
 //   success     W5 CHANNEL_SUCCESS → PAID_API: channel_order_id, paid_at (the channel's time when
 //               given, else Clock.now); the voucher WITHDRAW:SUCCESS:CASH_<ALIPAY|BANK|WECHAT>
 //               `wd:{id}:PAID` through ledger.post on the same transaction (zero fee / tax lines
@@ -53,19 +54,19 @@ import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
 import {
   accountingDate,
-  buildVouchers,
   chinaDayRange,
   transitionWithdrawal,
   type WithdrawalState,
 } from '@couli/domain';
 import { parseFen } from '@couli/money';
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Ledger, PostingEntry } from '../../ledger/index.ts';
+import type { Ledger } from '../../ledger/index.ts';
 import type { Clock, EventBus, JobHandler, JobQueue, ReceivedJob } from '../../platform/index.ts';
 import type { AppealPrevStateReader, RiskStateBatchReader } from '../../risk/index.ts';
 import type { Logger } from 'pino';
 import type { ChannelRaw, TransferResult } from '../domain/channel-result.ts';
 import { readPayoutChannelConfig } from '../application/judgement.ts';
+import { createPayoutLanding, instant } from '../application/payout-landing.ts';
 import { reviewTransfer, type TransferHoldReason } from '../application/payout-review.ts';
 import type { WithdrawApplyOptions } from '../application/withdraw-apply.ts';
 import type { PayoutConfigPort } from '../application/withdraw-rules.ts';
@@ -145,11 +146,6 @@ const SWITCH_DEFAULTS = {
   channelPaused: false,
 } as const;
 
-const CASH_SUBJECT: Readonly<Record<PayoutChannelName, string>> = {
-  alipay: 'CASH_ALIPAY',
-  bank_card: 'CASH_BANK',
-  wechat: 'CASH_WECHAT',
-};
 const CHANNELS: ReadonlySet<string> = new Set(['alipay', 'bank_card', 'wechat']);
 const PAYING: WithdrawalState = 'PAYING';
 const SENT_RESULTS = ['pending', 'success', 'unknown'] as const;
@@ -200,13 +196,6 @@ function parsePayload(job: ReceivedJob): TransferJobPayload | null {
   return { withdrawal_id: withdrawalId, execute_seq: executeSeq, app_id: appId };
 }
 
-/** A copy of `at` moved to `ms` (structuredClone + setTime: no `new Date` outside platform/clock). */
-function instant(at: Date, ms: number): Date {
-  const copy = structuredClone(at);
-  copy.setTime(ms);
-  return copy;
-}
-
 /** The payee's name reduced to its first character (the attempt's masked request summary). */
 function maskName(name: string): string {
   const first = [...name][0];
@@ -247,6 +236,15 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
     logger,
   } = options;
   const attempts = createPayoutAttemptsStore();
+  /** W5 / W6 landing shared with the query job (application/payout-landing.ts). */
+  const landing = createPayoutLanding({
+    db,
+    ledger,
+    lockUsersForUpdate,
+    eventBus,
+    logger,
+    conflictMessage: 'payout_transfer_cas_conflict',
+  });
   /** readPayoutChannelConfig wants pino's warn; the job's logger has the same two-argument shape. */
   const configLogger = {
     warn: (fields: Record<string, unknown>, message?: string) => logger.warn(fields, message ?? ''),
@@ -580,156 +578,6 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
       .execute();
   }
 
-  function userEntries(
-    built: readonly {
-      account: { owner_type: string; subject: string };
-      sub_account: 'available' | 'frozen' | null;
-      amount_fen: bigint;
-      ledger_type: string;
-      sub_type: string | null;
-    }[],
-    accountId: string,
-  ): PostingEntry[] {
-    return built.map((entry) => ({
-      account:
-        entry.account.owner_type === 'user'
-          ? { ownerType: 'user', accountId }
-          : { ownerType: 'platform', subject: entry.account.subject },
-      sub_account: entry.sub_account === 'frozen' ? 'frozen' : 'available',
-      amount_fen: entry.amount_fen,
-      ledger_type: entry.ledger_type,
-      sub_type: entry.sub_type,
-      income_type: null,
-    }));
-  }
-
-  /** The locks of a booking transition: users row → balance row (module lock order). */
-  async function lockedAccount(trx: Transaction<DB>, row: WithdrawalRow): Promise<string | null> {
-    await lockUsersForUpdate(trx, { appId: row.app_id, userIds: [row.user_id] });
-    const balances = await ledger.lockBalances(trx, { appId: row.app_id, userIds: [row.user_id] });
-    const own = balances.find((balance) => balance.user_id === row.user_id);
-    return own === undefined ? null : own.account_id;
-  }
-
-  async function cas(
-    trx: Transaction<DB>,
-    row: WithdrawalRow,
-    to: WithdrawalState,
-    patch: Record<string, unknown>,
-    now: Date,
-  ): Promise<boolean> {
-    const result = await trx
-      .withSchema('app')
-      .updateTable('withdrawals')
-      .set({ ...patch, status: to, row_version: row.row_version + 1, updated_at: now })
-      .where('app_id', '=', row.app_id)
-      .where('id', '=', row.id)
-      .where('status', '=', PAYING)
-      .where('row_version', '=', row.row_version)
-      .executeTakeFirst();
-    if (result.numUpdatedRows === 1n) return true;
-    logger.warn(
-      { withdrawal_id: row.id, out_biz_no: row.out_biz_no, to },
-      'payout_transfer_cas_conflict',
-    );
-    return false;
-  }
-
-  async function landSuccess(row: WithdrawalRow, result: TransferResult, now: Date): Promise<void> {
-    const transition = transitionWithdrawal(PAYING, 'CHANNEL_SUCCESS');
-    if (!transition.ok || transition.noop) return;
-    const paidAt =
-      result.paidAt !== undefined && !Number.isNaN(Date.parse(result.paidAt))
-        ? instant(now, Date.parse(result.paidAt))
-        : now;
-    await db.transaction().execute(async (trx) => {
-      const accountId = await lockedAccount(trx, row);
-      if (accountId === null) {
-        logger.warn({ withdrawal_id: row.id, out_biz_no: row.out_biz_no }, 'payout_no_balance_row');
-        return;
-      }
-      const moved = await cas(
-        trx,
-        row,
-        transition.to,
-        { paid_at: paidAt, channel_order_id: result.channelOrderId ?? null },
-        now,
-      );
-      if (!moved) return;
-      const channel = row.payout_channel as PayoutChannelName;
-      const [voucher] = buildVouchers(`WITHDRAW:SUCCESS:${CASH_SUBJECT[channel]}`, {
-        withdrawal_id: row.id,
-        user_id: row.user_id,
-        net_fen: row.net_fen,
-        fee_fen: row.fee_fen,
-        tax_fen: row.tax_fen,
-      });
-      if (voucher === undefined) throw new Error('payout: WITHDRAW:SUCCESS built no voucher');
-      await ledger.post(trx, {
-        appId: row.app_id,
-        uniqKey: voucher.uniq_key,
-        bizType: 'withdrawal',
-        bizId: row.id,
-        operator: 'system:payout',
-        memo: null,
-        orderKey: null,
-        beneficiaryUserId: null,
-        role: null,
-        voucherKind: null,
-        entries: userEntries(voucher.entries, accountId),
-      });
-      await eventBus.publish(trx, {
-        appId: row.app_id,
-        name: 'wallet.withdrawal_changed',
-        payload: { withdrawal_id: row.id, user_id: row.user_id, status: transition.to },
-      });
-    });
-  }
-
-  async function landFail(row: WithdrawalRow, result: TransferResult, now: Date): Promise<void> {
-    const transition = transitionWithdrawal(PAYING, 'CHANNEL_FAIL');
-    if (!transition.ok || transition.noop) return;
-    await db.transaction().execute(async (trx) => {
-      const accountId = await lockedAccount(trx, row);
-      if (accountId === null) {
-        logger.warn({ withdrawal_id: row.id, out_biz_no: row.out_biz_no }, 'payout_no_balance_row');
-        return;
-      }
-      const moved = await cas(
-        trx,
-        row,
-        transition.to,
-        { fail_code: result.raw.subCode ?? result.raw.code },
-        now,
-      );
-      if (!moved) return;
-      const [voucher] = buildVouchers('WITHDRAW:RETURN', {
-        withdrawal_id: row.id,
-        user_id: row.user_id,
-        withdraw_fen: row.amount_fen,
-      });
-      if (voucher === undefined) throw new Error('payout: WITHDRAW:RETURN built no voucher');
-      await ledger.post(trx, {
-        appId: row.app_id,
-        uniqKey: voucher.uniq_key,
-        bizType: 'withdrawal',
-        bizId: row.id,
-        operator: 'system:payout',
-        memo: null,
-        orderKey: null,
-        beneficiaryUserId: null,
-        role: null,
-        voucherKind: null,
-        entries: userEntries(voucher.entries, accountId),
-      });
-      await eventBus.publish(trx, {
-        appId: row.app_id,
-        name: 'wallet.withdrawal_changed',
-        payload: { withdrawal_id: row.id, user_id: row.user_id, status: transition.to },
-      });
-    });
-  }
-
   async function landPayerSide(
     row: WithdrawalRow,
     result: TransferResult,
@@ -825,9 +673,9 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
       if (result === null || result.kind === 'unknown') {
         await landUnknown(row, result, delay);
       } else if (result.kind === 'success') {
-        await landSuccess(row, result, landedAt);
+        await landing.success(row, result, landedAt);
       } else if (result.kind === 'fail') {
-        await landFail(row, result, landedAt);
+        await landing.fail(row, result, landedAt);
       } else {
         await landPayerSide(row, result, landedAt);
       }

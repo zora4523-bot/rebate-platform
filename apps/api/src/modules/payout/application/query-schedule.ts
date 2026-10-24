@@ -7,22 +7,41 @@
 //                                         Defaults [1, 5, 30, 120] / 120: 1, 5, 30, 120, 240, 360 …
 //   manualDue(schedule, T, now)           now − T ≥ manual_after_min minutes (exactly 24 hours with
 //                                         the default 1440 is due): set needs_manual, alert, stop.
+//   nextQueryPoint(schedule, T, now)      the first point n with T + offset(n) > now (the recovery
+//                                         scan's point; a late job's next point is n + 1 of its own).
 import type { PayoutChannelConfig } from './judgement.ts';
+
+const SECONDS_PER_MINUTE = 60;
+const MS_PER_MINUTE = 60_000;
+/** Bound of the point search (a day of one-minute points is 1440; the default needs 15). */
+const MAX_POINTS = 100_000;
 
 /** payout.query_schedule as readPayoutChannelConfig returns it. */
 export type QuerySchedule = PayoutChannelConfig['querySchedule'];
 
 /** Seconds from the first transfer attempt T to query point `point` (BR-WDR-14). */
 export function queryPointOffsetSeconds(schedule: QuerySchedule, point: number): number {
-  void schedule;
-  void point;
-  throw new Error('NotImplemented: queryPointOffsetSeconds');
+  const points = schedule.points_min;
+  const last = points.length - 1;
+  const n = Number.isInteger(point) && point >= 0 ? point : 0;
+  // No fixed point at all (a configuration the reader never returns): one point every interval.
+  if (last < 0) return (n + 1) * schedule.interval_min * SECONDS_PER_MINUTE;
+  const fixed = points[Math.min(n, last)] as number;
+  const minutes = n <= last ? fixed : fixed + (n - last) * schedule.interval_min;
+  return minutes * SECONDS_PER_MINUTE;
 }
 
 /** True once `now` is at least manual_after_min minutes after T (BR-WDR-14 / BR-WDR-15). */
 export function manualDue(schedule: QuerySchedule, firstTransferAt: Date, now: Date): boolean {
-  void schedule;
-  void firstTransferAt;
-  void now;
-  throw new Error('NotImplemented: manualDue');
+  return now.getTime() - firstTransferAt.getTime() >= schedule.manual_after_min * MS_PER_MINUTE;
+}
+
+/** The first point n with T + offset(n) > now (the next point still ahead); at most MAX_POINTS. */
+export function nextQueryPoint(schedule: QuerySchedule, firstTransferAt: Date, now: Date): number {
+  const elapsedMs = now.getTime() - firstTransferAt.getTime();
+  let point = 0;
+  while (point < MAX_POINTS && queryPointOffsetSeconds(schedule, point) * 1000 <= elapsedMs) {
+    point += 1;
+  }
+  return point;
 }
