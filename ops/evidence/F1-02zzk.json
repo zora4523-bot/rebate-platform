@@ -1,0 +1,89 @@
+{
+  "task": "F1-02zzk",
+  "spec_ref": "395cf6661e2c5d595922086bdd89b0bb191ad192",
+  "spec_commit": "66a72f1234f1c9af0de8cecd280d039560007cc8",
+  "red_tests": [
+    "test/spec/notification/deletion-cleanup/assembly.int.test.ts > [AC-F1-02zzk#5] 装配版 notification 端口在真实库上：删该用户在该 app 的全部令牌；同 app 其他用户、无主令牌、其他 app 令牌与站内信、发送记录、通知设置不变",
+    "test/spec/notification/deletion-cleanup/assembly.int.test.ts > [AC-F1-02zzk#6] 装配版注销处理一轮后该用户在该 app 不再有带其 user_id 的推送令牌；同 app 其他用户令牌、该用户站内信 / 发送记录 / 通知设置不变；cleanup_blocked 不再点名 notification",
+    "test/spec/notification/deletion-cleanup/port.int.test.ts > [AC-F1-02zzk#1] 删除该 app × 该用户的全部推送令牌（已绑定、同设备另一推送通道、已撤销、冻结中、未绑会话但仍带该用户）；同 app 其他用户、无主令牌、其他 app 的令牌逐字段不变",
+    "test/spec/notification/deletion-cleanup/port.int.test.ts > [AC-F1-02zzk#2] 只用调用方事务：事务内已删，调用方回滚后令牌原样都在",
+    "test/spec/notification/deletion-cleanup/port.int.test.ts > [AC-F1-02zzk#3] 可重入：同一事务里连调两次、之后另一事务再调，都不抛错、第二次起删 0 行，结果与调一次相同",
+    "test/spec/notification/deletion-cleanup/port.int.test.ts > [AC-F1-02zzk#3] 该用户没有任何令牌时调用不抛错、删 0 行，app 内其他令牌不变",
+    "test/spec/notification/deletion-cleanup/port.int.test.ts > [AC-F1-02zzk#4] 站内信、推送与短信发送记录、通知设置、设备与用户行都不动（BR-ID-30 各自留存期；D10-311 ①），只少了该用户的令牌",
+    "test/spec/notification/deletion-cleanup/wiring.test.ts > [AC-F1-02zzk#5] 装配：worker 交给 identity 的 notification 注销清理端口不再是 unavailable 标记；在调用方事务上只写 push_tokens，带 user_id 的语句同时限定 app_id，不碰站内信、发送记录与通知设置"
+  ],
+  "risk_note": "RV2 (notification + app.module). New deletion cleanup port deletePushTokensForUser for identity's DeletionCleanupPorts.notification (08 BR-ID-28, D10-186, D10-311 ①): on the caller's transaction it deletes the push_tokens rows of that app and user via the query builder, re-entrant (a second call deletes 0 rows), no logging of token values. inbox_messages and notify_logs follow BR-ID-30 retention and notification_settings is left as is (D10-311 ①). app.module swaps only the notification port from the unavailable marker to this function. Rule tests by a fresh independent Claude (Codex out of quota until 2026-10-30, approvals 36); test-machine full verify passed. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "66a72f1234f1c9af0de8cecd280d039560007cc8",
+      "tree": "cafdcfe8337b515e101042e609f87732d9dcbe4d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T03:04:41Z",
+      "finished_at": "2026-10-24T03:04:57Z",
+      "red_tests": [
+        "test/spec/notification/deletion-cleanup/assembly.int.test.ts > [AC-F1-02zzk#5] 装配版 notification 端口在真实库上：删该用户在该 app 的全部令牌；同 app 其他用户、无主令牌、其他 app 令牌与站内信、发送记录、通知设置不变",
+        "test/spec/notification/deletion-cleanup/assembly.int.test.ts > [AC-F1-02zzk#6] 装配版注销处理一轮后该用户在该 app 不再有带其 user_id 的推送令牌；同 app 其他用户令牌、该用户站内信 / 发送记录 / 通知设置不变；cleanup_blocked 不再点名 notification",
+        "test/spec/notification/deletion-cleanup/port.int.test.ts > [AC-F1-02zzk#1] 删除该 app × 该用户的全部推送令牌（已绑定、同设备另一推送通道、已撤销、冻结中、未绑会话但仍带该用户）；同 app 其他用户、无主令牌、其他 app 的令牌逐字段不变",
+        "test/spec/notification/deletion-cleanup/port.int.test.ts > [AC-F1-02zzk#2] 只用调用方事务：事务内已删，调用方回滚后令牌原样都在",
+        "test/spec/notification/deletion-cleanup/port.int.test.ts > [AC-F1-02zzk#3] 可重入：同一事务里连调两次、之后另一事务再调，都不抛错、第二次起删 0 行，结果与调一次相同",
+        "test/spec/notification/deletion-cleanup/port.int.test.ts > [AC-F1-02zzk#3] 该用户没有任何令牌时调用不抛错、删 0 行，app 内其他令牌不变",
+        "test/spec/notification/deletion-cleanup/port.int.test.ts > [AC-F1-02zzk#4] 站内信、推送与短信发送记录、通知设置、设备与用户行都不动（BR-ID-30 各自留存期；D10-311 ①），只少了该用户的令牌",
+        "test/spec/notification/deletion-cleanup/wiring.test.ts > [AC-F1-02zzk#5] 装配：worker 交给 identity 的 notification 注销清理端口不再是 unavailable 标记；在调用方事务上只写 push_tokens，带 user_id 的语句同时限定 app_id，不碰站内信、发送记录与通知设置"
+      ],
+      "expected": [
+        "test/spec/notification/deletion-cleanup/assembly.int.test.ts",
+        "test/spec/notification/deletion-cleanup/port.int.test.ts",
+        "test/spec/notification/deletion-cleanup/wiring.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "cb8695e97733d890d20841aafa24f4debb9f48358b8c919ac2b2617ac1a0dda0"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "ee0d0abf23a7d587d7b831d058440b54bb529ca00875f371b791c0dd172cfcae"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "fresh independent Claude via claude-run.sh; pass with no in-scope findings; one out-of-scope S2 (a concurrent push-token report during cleanup can re-insert a row; push-token-report-store) recorded as a follow-up"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by a fresh independent Claude, reviewed by another fresh independent Claude (spec-test): r1 pass, one S2 (raw SQL would be mis-detected; the implementer used the query builder); the test machine showed all 8 red tests failing for the right reason"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "6cdeff9e6844bdacb0abdac01d31eb32f4a0e625",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}

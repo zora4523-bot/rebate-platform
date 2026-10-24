@@ -233,6 +233,7 @@ import {
   bindPushTokensForSession,
   createSiteAuthAlertPort,
   createTemplateSmsSender,
+  deletePushTokensForUser,
   unbindPushTokensForSession,
 } from './modules/notification/index.ts';
 import {
@@ -513,10 +514,10 @@ const deletionBalance = {
 
 /**
  * B1-15g: the owning modules' shares of the deletion cleanup (identity's DeletionCleanupPorts, on
- * identity's cleanup transaction). growth's detachChildrenOfDeleted (B1-15n) is shipped; the others
- * are unavailable markers: the rest of the cleanup still commits, but the request stays in
- * processing (cleaned_at NULL) with a daily identity_deletion_cleanup_blocked line until the owner
- * ships and is assembled here.
+ * identity's cleanup transaction). growth's detachChildrenOfDeleted (B1-15n) and notification's
+ * deletePushTokensForUser (F1-02zzk) are shipped; the others are unavailable markers: the rest of
+ * the cleanup still commits, but the request stays in processing (cleaned_at NULL) with a daily
+ * identity_deletion_cleanup_blocked line until the owner ships and is assembled here.
  */
 const deletionCleanupPorts = {
   inject: [],
@@ -524,8 +525,8 @@ const deletionCleanupPorts = {
     // TODO(规划/11 §2.3): linking blockForDeletion（联盟绑定 blocked=deletion，ban / admin_disable 保持） — blocked on W1
     linking: { unavailable: 'W1' },
     growth: detachChildrenOfDeleted,
-    // TODO(规划/11 §2.3): notification deletePushTokensForUser — blocked on 通知模块推送 token 删除端口（be）
-    notification: { unavailable: 'notification-be' },
+    // F1-02zzk: notification deletes the user's push tokens in the app (BR-ID-28, BR-ID-30).
+    notification: deletePushTokensForUser,
     // TODO(规划/11 §2.3): agent purgeAgentDataForUser（B3-09e 已合并）装配 — blocked on AGENT_USER_HASH_KEY 进 platform/config 与 agent/index.ts 导出（B3-09f）
     agent: { unavailable: 'B3-09f' },
     // TODO(规划/11 §2.3): catalog deleteFavoritesForUser — blocked on W1
