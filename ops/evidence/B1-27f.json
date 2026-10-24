@@ -1,0 +1,100 @@
+{
+  "task": "B1-27f",
+  "spec_ref": "ec81e625dcf54f230d168dbf09910bd704c82a18",
+  "spec_commit": "d1142432ae025597af0910729a7622eccdb4edee",
+  "red_tests": [
+    "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#1] 账号资料：昵称、完整绑定手机号、第三方登录方式、注册时间；未绑手机号为 null，用户不存在为 null",
+    "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#2] 实名信息只给脱敏值（**三、1****************X）与核验时间，不带姓名、身份证号、出生日期明文；无实名记录为 none",
+    "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#3] 同意记录：本人（subject_type user）的每一条；设备维度的同意与他人的同意不进副本",
+    "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#4] 订单：本人在本 app 的全部订单（含一年多以前的），不含他人订单",
+    "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#5] 余额流水：只有本人余额账户的分录，不含同一凭证上平台科目的对方分录，也不含他人分录",
+    "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#6] 提现记录：本人的每一笔，收款账号脱敏（zh***@example.com、尾号 0123），不带账号与收款人姓名明文、处理它的后台人员，不含他人提现",
+    "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#7] Agent 对话：本人未过留存期（BR-ID-30 ① 190 天）的会话连同消息（按时间先后），已闲置结束的也在；超过留存期的、同设备访客会话、他人会话与后台的举报处理不进副本",
+    "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#8] 邀请关系只写是否已绑定邀请人：有上级为 true、没有为 false，用户不存在为 false",
+    "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#9] 整份副本不含他人信息：邀请人、下级、同 app 其他用户、同设备访客与后台人员的标识、昵称、手机号、邀请码、订单、提现与对话都不出现",
+    "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#10] 只读：整份副本在调用方给的 READ ONLY 事务上取完，每段都只发不加锁的 SELECT，并按 app_id 与本人取数",
+    "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#11] 装配：app.module 给的五段与 orders / ledger / payout / agent / growth 各自 index.ts 导出的只读函数结果一致",
+    "test/spec/identity/data-copies-content/sources.test.ts > [AC-B1-27f#12] identity 把 orders / ledger / withdrawals / agent / invite 五段原样转交给 app.module 给的读：同一句柄、同一主体、结果原样返回，自己不发语句",
+    "test/spec/identity/data-copies-content/sources.test.ts > [AC-B1-27f#13] identity 自己的账号资料、实名、同意记录：只发按 app_id 与本人取数、不加锁的 SELECT；查无数据时账号为 null、实名为 none、同意记录为空，不去调用五段的读",
+    "test/spec/identity/data-copies-content/sources.test.ts > [AC-B1-27f#14] app.module 组装的八段都只发按 app_id 取数、不加锁的 SELECT，每段都按本人取；查无数据时账号为 null、实名为 none、各列表为空、未绑邀请人"
+  ],
+  "risk_note": "RV2 by path (orders, ledger, payout, agent, growth read-only exports; identity port; app.module). Personal-information copy sources (BR-ID-40 「导出范围（默认）」): identity declares the port and reads the account (full bound phone, login methods, registration time), realname (masked per BR-ID-33) and the user-subject consent records; orders, ledger, payout, agent and growth each export one read-only reader of the member's own section through their index.ts; app.module assembles them. Every section runs on the caller's READ ONLY handle, scoped by app_id and the member, plain SELECTs without locks, no writes and no logs; amounts pass through as stored integer fen; payee accounts are masked; no other user's data; the invite section is only whether an inviter is bound. Agent conversations within the BR-ID-30 ① retention: app.module reads agent.trace.retention_days on the caller's handle and passes the computed days to agent (agent never hands a db handle to another module — [AC-B3-08k#1]). No contract, schema or migration. Rule tests by an independent Claude (approvals #36) in three rounds (round 2: ledger fixture sign; round 3: one type annotation, D10-206), red before the implementation; implementation by an Opus 5.5 subagent (one fix for the foreign-handle rule).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "d1142432ae025597af0910729a7622eccdb4edee",
+      "tree": "6f9f05ccecf25a7c73784b89cf2874af7fd0f82d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T11:52:24Z",
+      "finished_at": "2026-10-24T11:52:39Z",
+      "red_tests": [
+        "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#1] 账号资料：昵称、完整绑定手机号、第三方登录方式、注册时间；未绑手机号为 null，用户不存在为 null",
+        "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#2] 实名信息只给脱敏值（**三、1****************X）与核验时间，不带姓名、身份证号、出生日期明文；无实名记录为 none",
+        "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#3] 同意记录：本人（subject_type user）的每一条；设备维度的同意与他人的同意不进副本",
+        "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#4] 订单：本人在本 app 的全部订单（含一年多以前的），不含他人订单",
+        "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#5] 余额流水：只有本人余额账户的分录，不含同一凭证上平台科目的对方分录，也不含他人分录",
+        "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#6] 提现记录：本人的每一笔，收款账号脱敏（zh***@example.com、尾号 0123），不带账号与收款人姓名明文、处理它的后台人员，不含他人提现",
+        "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#7] Agent 对话：本人未过留存期（BR-ID-30 ① 190 天）的会话连同消息（按时间先后），已闲置结束的也在；超过留存期的、同设备访客会话、他人会话与后台的举报处理不进副本",
+        "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#8] 邀请关系只写是否已绑定邀请人：有上级为 true、没有为 false，用户不存在为 false",
+        "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#9] 整份副本不含他人信息：邀请人、下级、同 app 其他用户、同设备访客与后台人员的标识、昵称、手机号、邀请码、订单、提现与对话都不出现",
+        "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#10] 只读：整份副本在调用方给的 READ ONLY 事务上取完，每段都只发不加锁的 SELECT，并按 app_id 与本人取数",
+        "test/spec/identity/data-copies-content/copy.int.test.ts > [AC-B1-27f#11] 装配：app.module 给的五段与 orders / ledger / payout / agent / growth 各自 index.ts 导出的只读函数结果一致",
+        "test/spec/identity/data-copies-content/sources.test.ts > [AC-B1-27f#12] identity 把 orders / ledger / withdrawals / agent / invite 五段原样转交给 app.module 给的读：同一句柄、同一主体、结果原样返回，自己不发语句",
+        "test/spec/identity/data-copies-content/sources.test.ts > [AC-B1-27f#13] identity 自己的账号资料、实名、同意记录：只发按 app_id 与本人取数、不加锁的 SELECT；查无数据时账号为 null、实名为 none、同意记录为空，不去调用五段的读",
+        "test/spec/identity/data-copies-content/sources.test.ts > [AC-B1-27f#14] app.module 组装的八段都只发按 app_id 取数、不加锁的 SELECT，每段都按本人取；查无数据时账号为 null、实名为 none、各列表为空、未绑邀请人"
+      ],
+      "expected": [
+        "test/spec/identity/data-copies-content/copy.int.test.ts",
+        "test/spec/identity/data-copies-content/sources.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "f70b58d97535c20aaf46fecbe10ea0630da9eec497d4a6159c0fa13529d65f95"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "4ba4b7a8aab9cc22255578c083b80e9e50445893af2f81947c7ea8991bafaaae"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "Codex out of quota (until 10-30); independent Claude via tools/agent/claude-run.sh per approvals #36. Round 1 ran on a worktree left mid-rebase by the orchestrator (conflict markers in agent/index.ts, implementation not applied) and failed for that reason only; after the rebase was completed, round 2 pass with no S0 / S1 / S2."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by claude-independent reviewed by a fresh Claude subagent against the BR-ID-40 / BR-ID-30 ① / BR-ID-33 excerpts: pass (both author choices confirmed), S2×3; fixture fixes in round 2 (ledger sign, re-checked by a fresh Claude: pass) and round 3 (readOnly<unknown> type annotation, D10-206) amended into the spec commit before the implementation; prettier --write before the first spec commit, formatting only"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "017735ec9fd1ed11b4af542650a71c055bb2f543",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
