@@ -1,0 +1,145 @@
+{
+  "risk_note": "RV2 by path (payment). Pay order close and expiry (BR-PAY-05 ①, BR-PAY-02, BR-PAY-03): runOrderClose re-reads the order inside the business-object lock by app_id + pay_order_id; at expire_at it sets closing through the generated CAS (close_reason expired); an order never placed (launch_issued_at null and no pay_query_attempts) goes straight to PO3 in the same transaction; otherwise it queries first and closes outside the lock — a paid answer goes to B2-15c's judgement (PO2), «not found» closes (PO3) only after expire_at + grace; every query / close writes its attempt row; a pending order re-enqueues itself on the expire_at + k×retry grid (cancel and expiry chains merge into one singletonKey) and becomes needs_manual with a warn at expire_at + wait. order.close in jobs/pay-jobs.ts now routes to runOrderClose. Late success notifications after a close keep B2-15c's anomaly path. Time only from the injected Clock. No contract or schema change, no migration. Taken over by admin-backend from the pay lane (account 4 out of weekly quota until 10-30). Rule tests by an independent Claude (approvals #36), red before the implementation; implementation by an Opus 5.5 subagent in one run.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota (until 10-30); independent Claude via tools/agent/claude-run.sh per approvals #36; round 1 pass, 0 S0/S1; S2×3 recorded as follow-ups (placement-in-flight cancel unreachable in ordinary use; close attempt row written after the call; dead-lettered chain never reaches needs_manual)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by claude-independent reviewed by a fresh Claude subagent against BR-PAY-05 / 02 / 03 and the brief §9 / §10: pass, S2×3 (no app_id isolation case; concurrent cancel and expiry chains; a comment contradicting its assertion) handled on the implementation side; prettier --write before the first spec commit, formatting only (D10-206)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  },
+  "task": "B2-15d",
+  "spec_commit": "0b8b94cff3143a3914b89e9f90a87088107d82ca",
+  "spec_ref": "7d67b89ca2641f256810eda9b15cd272f33ba1a7",
+  "red_tests": [
+    "test/spec/payment/close/concurrency.int.test.ts > [AC-B2-15d#14] 真实并发：close 先等业务对象锁、notify 后等（wechat_pay）：关单与支付通知只有一个结果生效——要么 PAID + 恰一张 PAY_RECEIPT、无异常收款、不关闭，要么 CLOSED + 一条异常收款（PAY_ANOMALY）、无 PAY_RECEIPT、无 pay_order.paid；通知都应答成功",
+    "test/spec/payment/close/concurrency.int.test.ts > [AC-B2-15d#14] 真实并发：notify 先等业务对象锁、close 后等（alipay）：关单与支付通知只有一个结果生效——要么 PAID + 恰一张 PAY_RECEIPT、无异常收款、不关闭，要么 CLOSED + 一条异常收款（PAY_ANOMALY）、无 PAY_RECEIPT、无 pay_order.paid；通知都应答成功",
+    "test/spec/payment/close/concurrency.int.test.ts > [AC-B2-15d#15] 压力：40 轮里关单任务与同一张单的支付通知同时到达（两渠道、先后轮换）：每张单只有一个结果——PAID 且恰一张 PAY_RECEIPT、无异常收款，或 CLOSED 且恰一条异常收款与一张 PAY_ANOMALY、无 PAY_RECEIPT；通知都应答成功",
+    "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#9] 时刻矩阵：渠道一直答「单据不存在」，关单在 expire_at + 宽限（10 分钟）-1000 毫秒执行 → PENDING（wechat_pay）：宽限到点之前不关；到点及之后本次再查仍不存在才 PO3",
+    "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#9] 时刻矩阵：渠道一直答「单据不存在」，关单在 expire_at + 宽限（10 分钟）0 毫秒执行 → CLOSED（alipay）：宽限到点之前不关；到点及之后本次再查仍不存在才 PO3",
+    "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#9] 时刻矩阵：渠道一直答「单据不存在」，关单在 expire_at + 宽限（10 分钟）60000 毫秒执行 → CLOSED（wechat_pay）：宽限到点之前不关；到点及之后本次再查仍不存在才 PO3",
+    "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#10] 用户取消（换渠道须先取消原单）后渠道答「单据不存在」：宽限前支付单保持 PENDING、业务对象不释放——同渠道、换渠道再下单都 20902（resource=pay_order）、不给调起参数；过了 expire_at + 宽限再查仍不存在才 CLOSED，之后换渠道新建支付单成功",
+    "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#11] wechat_pay 「单据不存在」不等于已关闭：到期查询不存在、宽限内渠道又查到已支付（在途的下单到了、用户付了款）→ PO2，恰一张 PAY_RECEIPT，不关闭、无异常收款",
+    "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#11] alipay 「单据不存在」不等于已关闭：到期查询不存在、宽限内渠道又查到已支付（在途的下单到了、用户付了款）→ PO2，恰一张 PAY_RECEIPT，不关闭、无异常收款",
+    "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#12] wechat_pay 过期后渠道一直没有结果（查询 timeout、关单 channel）：置 closing、close_reason=expired，每 5 分钟重做一次（任务自我续期、延迟 300 秒）；到 expire_at + 60 分钟仍无结果 → needs_manual、告警 pay_order_needs_manual、不再入队；之后再来的任务不再问渠道",
+    "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#12] alipay 过期后渠道一直没有结果（查询 not_paid、关单 unknown）：置 closing、close_reason=expired，每 5 分钟重做一次（任务自我续期、延迟 300 秒）；到 expire_at + 60 分钟仍无结果 → needs_manual、告警 pay_order_needs_manual、不再入队；之后再来的任务不再问渠道",
+    "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#13] 关单节奏的三个配置键可由 config_items 同名覆盖：pay.close_retry_minutes=10（续期延迟 600 秒）、pay.close_wait_minutes=30（30 分钟到点 needs_manual）、pay.close_grace_minutes=3（「单据不存在」3 分钟宽限）",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#1] 从未向渠道下单、也没向客户端返回过调起参数的单（user_cancel，wechat_pay）：不查询、不调关单，直接 PO3——CLOSED、closed_at 为当前时刻、close_reason 照原因，不写账、不再入队关单",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#1] 从未向渠道下单、也没向客户端返回过调起参数的单（expired，alipay）：不查询、不调关单，直接 PO3——CLOSED、closed_at 为当前时刻、close_reason 照原因，不写账、不再入队关单",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#2] 已向客户端返回过调起参数 的单不能直接关：先向渠道查询；渠道答「单据不存在」且未过 expire_at + 宽限 → 保持 PENDING（closing）、不关闭",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#2] 下单结果未知（有下单尝试、未返回调起参数） 的单不能直接关：先向渠道查询；渠道答「单据不存在」且未过 expire_at + 宽限 → 保持 PENDING（closing）、不关闭",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#2] 已向渠道下单、调起参数因取消抢先而没返回 的单不能直接关：先向渠道查询；渠道答「单据不存在」且未过 expire_at + 宽限 → 保持 PENDING（closing）、不关闭",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#3] wechat_pay 关单流程中查询到渠道已支付（金额、标识、状态都核对通过）：走 PO2 不关闭——PAID、恰一张 PAY_RECEIPT、开通入队与 pay_order.paid 各一，不调关单接口、不再入队关单",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#3] alipay 关单流程中查询到渠道已支付（金额、标识、状态都核对通过）：走 PO2 不关闭——PAID、恰一张 PAY_RECEIPT、开通入队与 pay_order.paid 各一，不调关单接口、不再入队关单",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#4] wechat_pay 查询为 not_paid → 调渠道关单接口，渠道明确「已关闭」才 PO3：CLOSED、closed_at 为当前时刻；先查后关，每次查询与关单各落一行尝试；不写账、不再入队",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#4] alipay 查询为 not_paid → 调渠道关单接口，渠道明确「已关闭」才 PO3：CLOSED、closed_at 为当前时刻；先查后关，每次查询与关单各落一行尝试；不写账、不再入队",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#4] wechat_pay 查询为 closed → 调渠道关单接口，渠道明确「已关闭」才 PO3：CLOSED、closed_at 为当前时刻；先查后关，每次查询与关单各落一行尝试；不写账、不再入队",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#4] alipay 查询为 closed → 调渠道关单接口，渠道明确「已关闭」才 PO3：CLOSED、closed_at 为当前时刻；先查后关，每次查询与关单各落一行尝试；不写账、不再入队",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#5] 渠道查询超时（结果未知）（wechat_pay）：没有渠道明确的「已关闭」就不关——支付单保持 PENDING、closing、业务对象不释放，并入队下一次关单（同一张单、延迟执行）",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#5] 查询未支付、关单结果未知（alipay）：没有渠道明确的「已关闭」就不关——支付单保持 PENDING、closing、业务对象不释放，并入队下一次关单（同一张单、延迟执行）",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#5] 查询已关闭、关单结果未知（wechat_pay）：没有渠道明确的「已关闭」就不关——支付单保持 PENDING、closing、业务对象不释放，并入队下一次关单（同一张单、延迟执行）",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#6] wechat_pay 查询时未支付、关单那一刻用户付了款（关单接口答已支付）：绝不 CLOSED、不登记异常收款；若本次就判定成功则 PAID 且恰一张 PAY_RECEIPT，否则保持 PENDING 待下次",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#6] alipay 查询时未支付、关单那一刻用户付了款（关单接口答已支付）：绝不 CLOSED、不登记异常收款；若本次就判定成功则 PAID 且恰一张 PAY_RECEIPT，否则保持 PENDING 待下次",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#7] 过期关单任务执行时支付单还没到 expire_at、也不在关单流程中：什么都不做（不查询、不关、不改单）",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#8] 关单任务执行时支付单已是 PAID（wechat_pay）：重读后结束——不查询、不调关单、不改单、不入队（终态不迁移；needs_manual 后停止自动处理）",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#8] 关单任务执行时支付单已是 CLOSED（alipay）：重读后结束——不查询、不调关单、不改单、不入队（终态不迁移；needs_manual 后停止自动处理）",
+    "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#8] 关单任务执行时支付单已是 needs_manual（wechat_pay）：重读后结束——不查询、不调关单、不改单、不入队（终态不迁移；needs_manual 后停止自动处理）",
+    "test/spec/payment/close/renewal.int.test.ts > [AC-B2-15d#17] 过期关单的自我续期也持久化：worker 执行到期关单、渠道无结果 → 下一次关单任务以 300 秒延迟写进 pgboss、本次任务完成；进程停掉，重启后的 worker 在它到期时继续执行，渠道已可关闭 → CLOSED，不再留关单任务",
+    "test/spec/payment/close/restart.int.test.ts > [AC-B2-15d#16] 关单任务持久化：用户取消入队的 order.close 在进程停掉后仍在 pgboss；重启后的 worker 重新注册处理器即把它执行完——先查后关、CLOSED，任务完成、不留待执行的关单任务"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0b8b94cff3143a3914b89e9f90a87088107d82ca",
+      "tree": "327036ae05e69f753af103afe5130678a1257019",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T19:09:03Z",
+      "finished_at": "2026-10-24T19:09:47Z",
+      "red_tests": [
+        "test/spec/payment/close/concurrency.int.test.ts > [AC-B2-15d#14] 真实并发：close 先等业务对象锁、notify 后等（wechat_pay）：关单与支付通知只有一个结果生效——要么 PAID + 恰一张 PAY_RECEIPT、无异常收款、不关闭，要么 CLOSED + 一条异常收款（PAY_ANOMALY）、无 PAY_RECEIPT、无 pay_order.paid；通知都应答成功",
+        "test/spec/payment/close/concurrency.int.test.ts > [AC-B2-15d#14] 真实并发：notify 先等业务对象锁、close 后等（alipay）：关单与支付通知只有一个结果生效——要么 PAID + 恰一张 PAY_RECEIPT、无异常收款、不关闭，要么 CLOSED + 一条异常收款（PAY_ANOMALY）、无 PAY_RECEIPT、无 pay_order.paid；通知都应答成功",
+        "test/spec/payment/close/concurrency.int.test.ts > [AC-B2-15d#15] 压力：40 轮里关单任务与同一张单的支付通知同时到达（两渠道、先后轮换）：每张单只有一个结果——PAID 且恰一张 PAY_RECEIPT、无异常收款，或 CLOSED 且恰一条异常收款与一张 PAY_ANOMALY、无 PAY_RECEIPT；通知都应答成功",
+        "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#9] 时刻矩阵：渠道一直答「单据不存在」，关单在 expire_at + 宽限（10 分钟）-1000 毫秒执行 → PENDING（wechat_pay）：宽限到点之前不关；到点及之后本次再查仍不存在才 PO3",
+        "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#9] 时刻矩阵：渠道一直答「单据不存在」，关单在 expire_at + 宽限（10 分钟）0 毫秒执行 → CLOSED（alipay）：宽限到点之前不关；到点及之后本次再查仍不存在才 PO3",
+        "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#9] 时刻矩阵：渠道一直答「单据不存在」，关单在 expire_at + 宽限（10 分钟）60000 毫秒执行 → CLOSED（wechat_pay）：宽限到点之前不关；到点及之后本次再查仍不存在才 PO3",
+        "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#10] 用户取消（换渠道须先取消原单）后渠道答「单据不存在」：宽限前支付单保持 PENDING、业务对象不释放——同渠道、换渠道再下单都 20902（resource=pay_order）、不给调起参数；过了 expire_at + 宽限再查仍不存在才 CLOSED，之后换渠道新建支付单成功",
+        "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#11] wechat_pay 「单据不存在」不等于已关闭：到期查询不存在、宽限内渠道又查到已支付（在途的下单到了、用户付了款）→ PO2，恰一张 PAY_RECEIPT，不关闭、无异常收款",
+        "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#11] alipay 「单据不存在」不等于已关闭：到期查询不存在、宽限内渠道又查到已支付（在途的下单到了、用户付了款）→ PO2，恰一张 PAY_RECEIPT，不关闭、无异常收款",
+        "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#12] wechat_pay 过期后渠道一直没有结果（查询 timeout、关单 channel）：置 closing、close_reason=expired，每 5 分钟重做一次（任务自我续期、延迟 300 秒）；到 expire_at + 60 分钟仍无结果 → needs_manual、告警 pay_order_needs_manual、不再入队；之后再来的任务不再问渠道",
+        "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#12] alipay 过期后渠道一直没有结果（查询 not_paid、关单 unknown）：置 closing、close_reason=expired，每 5 分钟重做一次（任务自我续期、延迟 300 秒）；到 expire_at + 60 分钟仍无结果 → needs_manual、告警 pay_order_needs_manual、不再入队；之后再来的任务不再问渠道",
+        "test/spec/payment/close/expiry.int.test.ts > [AC-B2-15d#13] 关单节奏的三个配置键可由 config_items 同名覆盖：pay.close_retry_minutes=10（续期延迟 600 秒）、pay.close_wait_minutes=30（30 分钟到点 needs_manual）、pay.close_grace_minutes=3（「单据不存在」3 分钟宽限）",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#1] 从未向渠道下单、也没向客户端返回过调起参数的单（user_cancel，wechat_pay）：不查询、不调关单，直接 PO3——CLOSED、closed_at 为当前时刻、close_reason 照原因，不写账、不再入队关单",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#1] 从未向渠道下单、也没向客户端返回过调起参数的单（expired，alipay）：不查询、不调关单，直接 PO3——CLOSED、closed_at 为当前时刻、close_reason 照原因，不写账、不再入队关单",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#2] 已向客户端返回过调起参数 的单不能直接关：先向渠道查询；渠道答「单据不存在」且未过 expire_at + 宽限 → 保持 PENDING（closing）、不关闭",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#2] 下单结果未知（有下单尝试、未返回调起参数） 的单不能直接关：先向渠道查询；渠道答「单据不存在」且未过 expire_at + 宽限 → 保持 PENDING（closing）、不关闭",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#2] 已向渠道下单、调起参数因取消抢先而没返回 的单不能直接关：先向渠道查询；渠道答「单据不存在」且未过 expire_at + 宽限 → 保持 PENDING（closing）、不关闭",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#3] wechat_pay 关单流程中查询到渠道已支付（金额、标识、状态都核对通过）：走 PO2 不关闭——PAID、恰一张 PAY_RECEIPT、开通入队与 pay_order.paid 各一，不调关单接口、不再入队关单",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#3] alipay 关单流程中查询到渠道已支付（金额、标识、状态都核对通过）：走 PO2 不关闭——PAID、恰一张 PAY_RECEIPT、开通入队与 pay_order.paid 各一，不调关单接口、不再入队关单",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#4] wechat_pay 查询为 not_paid → 调渠道关单接口，渠道明确「已关闭」才 PO3：CLOSED、closed_at 为当前时刻；先查后关，每次查询与关单各落一行尝试；不写账、不再入队",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#4] alipay 查询为 not_paid → 调渠道关单接口，渠道明确「已关闭」才 PO3：CLOSED、closed_at 为当前时刻；先查后关，每次查询与关单各落一行尝试；不写账、不再入队",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#4] wechat_pay 查询为 closed → 调渠道关单接口，渠道明确「已关闭」才 PO3：CLOSED、closed_at 为当前时刻；先查后关，每次查询与关单各落一行尝试；不写账、不再入队",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#4] alipay 查询为 closed → 调渠道关单接口，渠道明确「已关闭」才 PO3：CLOSED、closed_at 为当前时刻；先查后关，每次查询与关单各落一行尝试；不写账、不再入队",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#5] 渠道查询超时（结果未知）（wechat_pay）：没有渠道明确的「已关闭」就不关——支付单保持 PENDING、closing、业务对象不释放，并入队下一次关单（同一张单、延迟执行）",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#5] 查询未支付、关单结果未知（alipay）：没有渠道明确的「已关闭」就不关——支付单保持 PENDING、closing、业务对象不释放，并入队下一次关单（同一张单、延迟执行）",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#5] 查询已关闭、关单结果未知（wechat_pay）：没有渠道明确的「已关闭」就不关——支付单保持 PENDING、closing、业务对象不释放，并入队下一次关单（同一张单、延迟执行）",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#6] wechat_pay 查询时未支付、关单那一刻用户付了款（关单接口答已支付）：绝不 CLOSED、不登记异常收款；若本次就判定成功则 PAID 且恰一张 PAY_RECEIPT，否则保持 PENDING 待下次",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#6] alipay 查询时未支付、关单那一刻用户付了款（关单接口答已支付）：绝不 CLOSED、不登记异常收款；若本次就判定成功则 PAID 且恰一张 PAY_RECEIPT，否则保持 PENDING 待下次",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#7] 过期关单任务执行时支付单还没到 expire_at、也不在关单流程中：什么都不做（不查询、不关、不改单）",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#8] 关单任务执行时支付单已是 PAID（wechat_pay）：重读后结束——不查询、不调关单、不改单、不入队（终态不迁移；needs_manual 后停止自动处理）",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#8] 关单任务执行时支付单已是 CLOSED（alipay）：重读后结束——不查询、不调关单、不改单、不入队（终态不迁移；needs_manual 后停止自动处理）",
+        "test/spec/payment/close/flow.int.test.ts > [AC-B2-15d#8] 关单任务执行时支付单已是 needs_manual（wechat_pay）：重读后结束——不查询、不调关单、不改单、不入队（终态不迁移；needs_manual 后停止自动处理）",
+        "test/spec/payment/close/renewal.int.test.ts > [AC-B2-15d#17] 过期关单的自我续期也持久化：worker 执行到期关单、渠道无结果 → 下一次关单任务以 300 秒延迟写进 pgboss、本次任务完成；进程停掉，重启后的 worker 在它到期时继续执行，渠道已可关闭 → CLOSED，不再留关单任务",
+        "test/spec/payment/close/restart.int.test.ts > [AC-B2-15d#16] 关单任务持久化：用户取消入队的 order.close 在进程停掉后仍在 pgboss；重启后的 worker 重新注册处理器即把它执行完——先查后关、CLOSED，任务完成、不留待执行的关单任务"
+      ],
+      "expected": [
+        "test/spec/payment/close/concurrency.int.test.ts",
+        "test/spec/payment/close/expiry.int.test.ts",
+        "test/spec/payment/close/flow.int.test.ts",
+        "test/spec/payment/close/renewal.int.test.ts",
+        "test/spec/payment/close/restart.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "8e613c757ca4e625bc0bcf64c5a94dfe0c6df4005beb61454ee472c9ec447a5a"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "c84aa744b97a4c286f0a6be86f48f2ebf279d8ac",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "44e8cf43b9dfb9b6e32b500df201e6574cd4a3e9",
+    "specs": "cec847e1768a63aac90e3e1bd473462d95d84436"
+  }
+}
