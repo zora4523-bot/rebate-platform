@@ -1,0 +1,23 @@
+id: F1-05c
+repo: rebate-platform
+title: H5 邀请好友页的【完整规则】【活动规则】改按 /v1/config help_links 的 invite_rules / invite_reward_rules 打开（契约 CT-16n，D10-252）；键未配置时对应入口不显示（契约 help_links 约定），不再写死文章标识 invite-rules / invite-reward
+type: impl
+# 2026-10-24 入账（前端线 f1-frontend-7，F1-05a 后续；CT-16n 50feafdf 已合并）。D10-252：help_links 补两键、文章由运营在后台建，前端不写死标识。
+# 冻结测试同步：F1-05a 的 h5-invite 夹具配置里没有 help_links，LINK#2 / #3 要求入口打开非空标识——由本任务规则测试作者（新鲜独立 Claude）在 test_paths 内给夹具补两键，断言含义不放宽；属第一类保护路径改动，合并需编排按 #24 加 owner-approved 标签。新规则测试放 h5-invite-help-links/**（键缺失时不显示入口等）；只改一份测试文件时注意红测要求该文件整体变红。
+# Codex 用量上限至 10-30：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude。
+refs: []
+refs_hash: {}
+deps: [F1-05a, CT-16n]
+paths:
+  - 'apps/h5/src/entries/app/pages/invite/**'
+  - 'apps/h5/src/texts/invite.ts'
+test_paths:
+  - 'test/spec/frontend/h5-invite/**'
+  - 'test/spec/frontend/h5-invite-help-links/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-invite-help-links/**'
+status: todo
+pr: null
