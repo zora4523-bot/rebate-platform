@@ -5,6 +5,9 @@
 // 不连库、不启动 Nest：app.module.ts 只按 test/spec/ledger/posting/wiring.test.ts 的写法动态导入。
 // 第 3 次（评审 r1 两条 S1）：清理函数在无库的 Kysely 桩驱动上跑一次，参数里须有按配置密钥算的
 // HMAC-SHA256(userId)；worker 入口的注销清理 provider 须注入 APP_CONFIG、ROOT_LOGGER 并按配置装配 agent 槽。
+// D10-334（编排例外，计数不改）：provider 另以 optional 注入 platform 的 DB 令牌；缺密钥只在有库时 warn 一行，
+// 无库（DB 解析为 undefined）时静默且 agent 槽仍是 unavailable 标记（identity [AC-B1-15f#29]）。
+// agentDeletionCleanup 的第三个参数是数据库（undefined 视为无库）。
 import { createHmac } from 'node:crypto';
 import { inspect } from 'node:util';
 import type { DB } from '@couli/db';
@@ -31,6 +34,7 @@ import {
 import {
   APP_CONFIG,
   CLOCK,
+  DB as DB_TOKEN,
   FixedClock,
   ROOT_LOGGER,
   createRootLogger,
@@ -81,7 +85,14 @@ const BASE: AppConfig = {
   jwt: null,
 };
 
-type AgentDeletionCleanup = (config: AppConfig, logger: RootLogger) => DeletionCleanupPort;
+type AgentDeletionCleanup = (
+  config: AppConfig,
+  logger: RootLogger,
+  database: unknown,
+) => DeletionCleanupPort;
+
+/** A database stand-in (never queried): "a database is configured". */
+const STAND_IN_DATABASE: unknown = Object.freeze({ standIn: 'database' });
 
 async function loadAgentDeletionCleanup(): Promise<AgentDeletionCleanup> {
   // Dynamic: a static import would pull identity's decorated application layer into the spec
@@ -303,20 +314,29 @@ async function workerCleanupProvider(config: AppConfig): Promise<FactoryShape> {
   return provider;
 }
 
-/** Resolves the provider's injections: APP_CONFIG, ROOT_LOGGER, CLOCK; optional others absent. */
+function isOptional(entry: unknown): boolean {
+  return (
+    typeof entry === 'object' && entry !== null && 'optional' in entry && entry.optional === true
+  );
+}
+
+/**
+ * Resolves the provider's injections: APP_CONFIG, ROOT_LOGGER, CLOCK; the optional DB token as
+ * `database` (the stand-in, or undefined for "no database"); other optional ones absent.
+ */
 async function cleanupPorts(
   provider: FactoryShape,
   config: AppConfig,
   logger: RootLogger,
+  database: unknown,
 ): Promise<DeletionCleanupPorts> {
   const args = (provider.inject ?? []).map((entry) => {
     const token = tokenOf(entry);
     if (token === APP_CONFIG) return config;
     if (token === ROOT_LOGGER) return logger;
     if (token === CLOCK) return WORKER_CLOCK;
-    const optional =
-      typeof entry === 'object' && entry !== null && 'optional' in entry && entry.optional === true;
-    expect(optional, `unexpected required injection ${String(token)}`).toBe(true);
+    expect(isOptional(entry), `unexpected required injection ${String(token)}`).toBe(true);
+    if (token === DB_TOKEN) return database;
     return undefined;
   });
   expect(typeof provider.useFactory, 'cleanup provider is a factory').toBe('function');
@@ -383,7 +403,11 @@ it('[AC-B3-09j#5][BR-AI-22] 带密钥：agentDeletionCleanup 返回可装进 Del
   const agentDeletionCleanup = await loadAgentDeletionCleanup();
   for (const appEnv of ALL_ENVS) {
     const { logger, calls } = recordingLogger();
-    const port = agentDeletionCleanup({ ...BASE, appEnv, agentUserHashKey: SECRET }, logger);
+    const port = agentDeletionCleanup(
+      { ...BASE, appEnv, agentUserHashKey: SECRET },
+      logger,
+      STAND_IN_DATABASE,
+    );
     expect(typeof port, appEnv).toBe('function');
     if (typeof port !== 'function') throw new Error(`${appEnv}: expected a cleanup step`);
     // Type level: fails `pnpm typecheck` if the narrowed port is not identity's step.
@@ -406,6 +430,7 @@ it('[AC-B3-09j#5][BR-AI-22] 带密钥：agentDeletionCleanup 返回可装进 Del
   const port = agentDeletionCleanup(
     { ...BASE, appEnv: 'prod', agentUserHashKey: SECOND_SECRET },
     logger,
+    STAND_IN_DATABASE,
   );
   expect(typeof port, 'second key').toBe('function');
   if (typeof port !== 'function') throw new Error('second key: expected a cleanup step');
@@ -424,7 +449,7 @@ it('[AC-B3-09j#6] 不带密钥（null / 缺省）：返回 { unavailable: 非空
   for (const config of keyless) {
     const label = `${config.appEnv} ${String(config.agentUserHashKey)}`;
     const { logger, calls } = recordingLogger();
-    const port = agentDeletionCleanup(config, logger);
+    const port = agentDeletionCleanup(config, logger, STAND_IN_DATABASE);
     expect(typeof port, label).toBe('object');
     const marker = port as { readonly unavailable?: unknown };
     expect(typeof marker.unavailable, label).toBe('string');
@@ -437,8 +462,12 @@ it('[AC-B3-09j#6] 不带密钥（null / 缺省）：返回 { unavailable: 非空
   }
   // Reverse check: the keyed configuration's value never shows up in the keyless warn either.
   const { logger, calls } = recordingLogger();
-  agentDeletionCleanup({ ...BASE, agentUserHashKey: SECRET }, recordingLogger().logger);
-  agentDeletionCleanup(BASE, logger);
+  agentDeletionCleanup(
+    { ...BASE, agentUserHashKey: SECRET },
+    recordingLogger().logger,
+    STAND_IN_DATABASE,
+  );
+  agentDeletionCleanup(BASE, logger, STAND_IN_DATABASE);
   expect(calls.filter((call) => call.level === 'warn')).toHaveLength(1);
   expect(serialized(calls)).not.toContain(SECRET);
 });
@@ -447,18 +476,29 @@ it('[AC-B3-09j#7][BR-AI-22] 带密钥：日志替身任何级别（含 child 绑
   const agentDeletionCleanup = await loadAgentDeletionCleanup();
   for (const appEnv of ALL_ENVS) {
     const { logger, calls } = recordingLogger();
-    const port = agentDeletionCleanup({ ...BASE, appEnv, agentUserHashKey: SECRET }, logger);
+    const port = agentDeletionCleanup(
+      { ...BASE, appEnv, agentUserHashKey: SECRET },
+      logger,
+      STAND_IN_DATABASE,
+    );
     expect(typeof port, appEnv).toBe('function');
     expect(serialized(calls), appEnv).not.toContain(SECRET);
   }
 });
+
+/** D10-334: the provider injects platform's DB token, and optionally (a worker may run without one). */
+function expectOptionalDatabase(provider: FactoryShape, label: string): void {
+  const entries = (provider.inject ?? []).filter((entry) => tokenOf(entry) === DB_TOKEN);
+  expect(entries, `${label}: injects DB once`).toHaveLength(1);
+  expect(isOptional(entries[0]), `${label}: DB is optional`).toBe(true);
+}
 
 const WORKER_KEYS = [
   ['first key', SECRET],
   ['second key', SECOND_SECRET],
 ] as const;
 
-it('[AC-B3-09j#5][AC-B3-09j#6][BR-AI-22] worker 入口：注销清理 provider 注入 APP_CONFIG 与 ROOT_LOGGER，按配置装配 agent 槽（有密钥 → 按该密钥哈希的清理函数；无密钥 → unavailable 标记并 warn 一次）', async () => {
+it('[AC-B3-09j#5][AC-B3-09j#6][BR-AI-22] worker 入口：注销清理 provider 注入 APP_CONFIG、ROOT_LOGGER 与 optional DB，按配置装配 agent 槽（有密钥 → 按该密钥哈希的清理函数；无密钥 → unavailable 标记并 warn 一次）', async () => {
   const base = loadConfig({ APP_ENV: 'test' });
 
   // With the key: identity's cleanup round reaches agent's purge under that very key.
@@ -469,7 +509,7 @@ it('[AC-B3-09j#5][AC-B3-09j#6][BR-AI-22] worker 入口：注销清理 provider �
     expect(tokens, `${label}: injects APP_CONFIG`).toContain(APP_CONFIG);
     expect(tokens, `${label}: injects ROOT_LOGGER`).toContain(ROOT_LOGGER);
     const { logger, calls } = recordingLogger();
-    const ports = await cleanupPorts(provider, config, logger);
+    const ports = await cleanupPorts(provider, config, logger, STAND_IN_DATABASE);
     expect(typeof ports.agent, `${label}: agent slot`).toBe('function');
     if (typeof ports.agent !== 'function') throw new Error(`${label}: expected a cleanup step`);
     await expectHashedUnder(ports.agent, key, `worker ${label}`);
@@ -484,8 +524,9 @@ it('[AC-B3-09j#5][AC-B3-09j#6][BR-AI-22] worker 入口：注销清理 provider �
     const tokens = (provider.inject ?? []).map(tokenOf);
     expect(tokens, `${appEnv}: injects APP_CONFIG`).toContain(APP_CONFIG);
     expect(tokens, `${appEnv}: injects ROOT_LOGGER`).toContain(ROOT_LOGGER);
+    expectOptionalDatabase(provider, appEnv);
     const { logger, calls } = recordingLogger();
-    const ports = await cleanupPorts(provider, config, logger);
+    const ports = await cleanupPorts(provider, config, logger, STAND_IN_DATABASE);
     expect(typeof ports.agent, `${appEnv}: agent slot`).toBe('object');
     const marker = ports.agent as { readonly unavailable?: unknown };
     expect(typeof marker.unavailable, appEnv).toBe('string');
@@ -495,5 +536,26 @@ it('[AC-B3-09j#5][AC-B3-09j#6][BR-AI-22] worker 入口：注销清理 provider �
       appEnv,
     ).toHaveLength(1);
     for (const [, key] of WORKER_KEYS) expect(serialized(calls), appEnv).not.toContain(key);
+  }
+});
+
+it('[AC-B3-09j#6] worker 入口无数据库：注销清理 provider 的 DB 解析为 undefined 且无密钥时，agent 槽仍是 { unavailable: 非空字符串 }，warn 及以上的调用为 0 条', async () => {
+  const base = loadConfig({ APP_ENV: 'test' });
+  for (const appEnv of ['test', 'staging'] as const) {
+    const config: AppConfig = { ...base, appEnv, agentUserHashKey: null };
+    const provider = await workerCleanupProvider(config);
+    expectOptionalDatabase(provider, appEnv);
+    const { logger, calls } = recordingLogger();
+    const ports = await cleanupPorts(provider, config, logger, undefined);
+    expect(typeof ports.agent, `${appEnv}: agent slot`).toBe('object');
+    const marker = ports.agent as { readonly unavailable?: unknown };
+    expect(typeof marker.unavailable, appEnv).toBe('string');
+    expect(String(marker.unavailable).trim(), appEnv).not.toBe('');
+    expect(
+      calls.filter(
+        (call) => call.level === 'warn' || call.level === 'error' || call.level === 'fatal',
+      ),
+      appEnv,
+    ).toEqual([]);
   }
 });
