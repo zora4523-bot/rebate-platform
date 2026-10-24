@@ -89,6 +89,15 @@ export type { ConnectionConfig, DbHandles } from './db/index.ts';
 export { loadMaintConnectionConfig, createMaintDbHandle } from './db/maint.ts';
 export type { MaintConnectionConfig, MaintDbHandle } from './db/maint.ts';
 export { createWorkerMaintenance, startWorkerServices } from './maintenance/worker.ts';
+// Prometheus /metrics (B1-01zzh): the worker's whole-database gauges, process metrics everywhere.
+export { collectWorkerMetrics, createMetricsRegistry, startMetricsServer } from './metrics/index.ts';
+export type {
+  MetricsRegistry,
+  MetricsRegistryOptions,
+  MetricsServer,
+  MetricsServerOptions,
+  WorkerMetricsSnapshot,
+} from './metrics/index.ts';
 // Inject `REDIS` (api / stream / admin / worker; payout has none) and take a namespace per module.
 export { RedisClosedError, RedisUnavailableError, RedisValidationError } from './redis/index.ts';
 export type {
