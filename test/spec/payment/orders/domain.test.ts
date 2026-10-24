@@ -211,7 +211,7 @@ it('[AC-B2-15b#9] 队列目录登记 pay（默认重试与保留），只由 wor
     expireInSeconds: 900,
     retentionSeconds: 1_209_600,
     deleteAfterSeconds: 604_800,
-    deadLetter: 'dead-letter',
+    deadLetter: 'pay.dead',
   });
   expect(ENTRY_PLAN.worker.filter((work) => work.queue === 'pay')).toEqual([
     { queue: 'pay', concurrency: 4, pollingIntervalSeconds: 2 },

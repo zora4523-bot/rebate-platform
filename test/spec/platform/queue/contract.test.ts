@@ -181,7 +181,12 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
   const payAt = QUEUE_CATALOG.findIndex((queue) => queue.name === 'pay');
   expect(payAt).not.toBe(-1);
   expect(QUEUE_CATALOG.filter((queue) => queue.name === 'pay')).toHaveLength(1);
-  expect(QUEUE_CATALOG[payAt]).toStrictEqual({ name: 'pay', ...DEFAULT, policy: 'exclusive' });
+  expect(QUEUE_CATALOG[payAt]).toStrictEqual({
+    name: 'pay',
+    ...DEFAULT,
+    policy: 'exclusive',
+    deadLetter: 'pay.dead',
+  });
   expect(QUEUE_CATALOG[payAt - 1]?.name).toBe('evt.payout-went-negative');
   expect(QUEUE_CATALOG[payAt + 1]?.name).toBe('pool-refresh');
   expect(

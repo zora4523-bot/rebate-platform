@@ -14,6 +14,8 @@ export const BUSINESS_QUEUES = [
   'evt.notification-risk-state',
   'evt.notification-appeal-result',
   'evt.notification-claim-result',
+  'evt.payout-went-negative',
+  'pay',
   'pool-refresh',
   'page-schedule',
   'poster',
