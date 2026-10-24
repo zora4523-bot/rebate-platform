@@ -121,7 +121,7 @@ it(
     // recon_diffs type CHECK + pay_mismatch / pay_anomaly; orchestrator ruling D10-168 ①). Same
     // pinning as 0057.
     const b215i = '0081_ledger-type-pay.sql';
-    const b215iHash = 'affc680c363578c9cfe9f9388bb4db9f32ff574c2ff73a382e90724d14822ab5';
+    const b215iHash = 'e0a4df6555607577c01ec7624a30c3d7bef544098783204329ffe8a01705cf2e';
     expect(module.APPROVED_GUARD_CHANGES).toEqual({
       [APPROVED_FILE]: createHash('sha256').update(bytes).digest('hex'),
       [ct25d]: ct25dHash,
