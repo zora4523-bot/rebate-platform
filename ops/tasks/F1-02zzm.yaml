@@ -14,5 +14,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/content/text-guard/**'
-status: todo
-pr: null
+status: done
+pr: 1534
