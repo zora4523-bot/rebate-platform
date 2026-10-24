@@ -1,0 +1,28 @@
+id: B2-05j
+repo: rebate-platform
+title: payout_account_changes.limit_exempt_reason（null / realname_correction，04 §3.2；BR-WDR-02 细则「实名更正后的失效与重绑」）：迁移两段 + identity 月度变更计数排除 exempt 行 + identity 失效端口 createPayoutAccountInvalidation（admin B1-27g 用）
+type: migration
+# 2026-10-24 提现线（withdraw-acct4，模型 Claude Fable 5.1）。编排 12:3x 派 withdraw（新任务号，占迁移槽排队尾）；admin 的 B1-27g 依赖本任务。
+# 迁移两段（D10-206）：ADD COLUMN limit_exempt_reason text + CHECK（null 或 'realname_correction'）NOT VALID；紧随的 -validate 迁移 VALIDATE CONSTRAINT。迁移号落地时取主干最大 +1 / +2，规则测试不写死迁移号（D10-116）。
+# 读写在 identity（payout_accounts / payout_account_changes 的现有写者，B1-13e；编排 D10-330 ②：不挪模块）：changesThisMonth 只数 limit_exempt_reason IS NULL 的行；新端口 createPayoutAccountInvalidation 在调用方已锁 users 行的事务里把该用户所有当前行（可能多种 payout_method）逐行置 is_current=false（各自 row_version CAS），每失效一行写一条 change 行（limit_exempt_reason='realname_correction'，operator 'admin:<id>'，new_payout_method = 旧方式、new_hmac = '' 表示无新账号——失效行约定，规则测试钉住），返回 {retired: 失效行数}，无当前行零写入 {retired: 0}（D10-330 ③「全部失效」）。更正后第一次重绑走现有首次绑定路径（无当前行不写 change 行，本来不计次），不加机制。
+# 状态备注：等迁移槽；B1-27g 依赖。
+refs: [BR-WDR-02]
+refs_hash:
+  BR-WDR-02: b8ce66617ed9
+deps: [B1-13e]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'apps/api/src/modules/identity/application/payout-account.ts'
+  - 'apps/api/src/modules/identity/application/payout-account-invalidation.ts'
+  - 'apps/api/src/modules/identity/index.ts'
+test_paths:
+  - 'test/spec/identity/payout-account-exempt/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/payout-account-exempt/**'
+status: todo
+pr: null
