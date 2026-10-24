@@ -1,5 +1,5 @@
 export { APP_ENVS, ConfigError, LOG_LEVELS, loadConfig, startupViolations } from './config.ts';
-export type { AppConfig, AppEnv, LogLevel } from './config.ts';
+export type { AppConfig, AppEnv, LogLevel, MetricsConfig } from './config.ts';
 // The second field keyring (B1-27e): only the token; opening and reading it stay inside platform.
 export { PRIOR_IDENTITY_FIELD_CRYPTO } from './keyring-prior-identity.ts';
 export type { PriorIdentityKeyringConfig } from './keyring-prior-identity.ts';

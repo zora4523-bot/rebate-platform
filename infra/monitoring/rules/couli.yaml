@@ -1,0 +1,78 @@
+# Prometheus alerting rules of couli (B1-01zzh; 规划/02 §11, §13; ADR-0001 §4.2 #14, #17).
+# Format: Prometheus rule file (groups[].rules[]: alert / expr / for / labels.severity /
+# annotations.summary). Kept inside the repository's strict YAML subset (tools/lib/yaml-lite):
+# every string is single-quoted, 2-space indentation.
+# Sources of the metrics:
+# - couli_queue_* / couli_evt_* / couli_sync_*: the worker's internal /metrics listener
+#   (METRICS_PORT; apps/api/src/modules/platform/metrics), whole-database gauges read per scrape.
+# - redis_*: redis_exporter (deployment and Alertmanager routing are not in this file, B1-25).
+# Granularity: the common 5m (规划/02 §13). The evt rule uses 1m because its own threshold is 60
+# seconds; a 5m hold would only fire after six minutes.
+# Redis memory: maxmemory must be set; with maxmemory 0 the ratio is +Inf and the rule fires,
+# which also flags the missing limit.
+# Redis write refusal: redis_exporter's error statistics counter redis_errors_total, err label
+# OOM (maxmemory reached under noeviction), MISCONF (RDB save failing, writes stopped) or
+# READONLY (a replica answered a write). Counters are read only through increase().
+groups:
+  - name: couli-queue
+    rules:
+      - alert: CouliQueueFailedJobs
+        expr: 'couli_queue_failed_jobs > 0'
+        for: '5m'
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Queue {{ $labels.queue }} has failed jobs'
+          description: 'Jobs in state failed (retries exhausted). Inspect the queue and its dead letter queue; dead jobs are never replayed automatically.'
+      - alert: CouliQueueDeadLetters
+        expr: 'couli_queue_dead_letters > 0'
+        for: '5m'
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Dead letter queue {{ $labels.queue }} has waiting jobs'
+          description: 'Jobs waiting in a dead letter queue (created or retry) need an operator.'
+      - alert: CouliEvtOldestDueCreatedJob
+        expr: 'couli_evt_oldest_due_created_age_seconds > 60'
+        for: '1m'
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Event queue {{ $labels.queue }} has a due job not picked up for over 60 seconds'
+          description: 'Oldest created job whose start_after has passed, counted against the worker clock.'
+  - name: couli-sync
+    rules:
+      - alert: CouliSyncWatermarkLag
+        expr: 'couli_sync_watermark_lag_seconds > 1800'
+        for: '5m'
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Order sync watermark of {{ $labels.platform }} lags more than 30 minutes'
+          description: 'now minus the oldest sync cursor of the platform, in seconds.'
+  - name: couli-redis
+    rules:
+      - alert: CouliRedisDown
+        expr: 'redis_up == 0'
+        for: '5m'
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Redis {{ $labels.instance }} is unreachable'
+          description: 'redis_exporter cannot reach the Redis server.'
+      - alert: CouliRedisMemoryHigh
+        expr: 'redis_memory_used_bytes / redis_memory_max_bytes > 0.7'
+        for: '5m'
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Redis {{ $labels.instance }} uses more than 70% of maxmemory'
+          description: 'Used memory over maxmemory; +Inf when maxmemory is not set.'
+      - alert: CouliRedisWritesRejected
+        expr: 'sum by (instance) (increase(redis_errors_total{err=~"OOM|MISCONF|READONLY"}[5m])) > 0'
+        for: '5m'
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Redis {{ $labels.instance }} rejects writes'
+          description: 'OOM, MISCONF or READONLY error replies counted by redis_exporter in the last 5 minutes.'
