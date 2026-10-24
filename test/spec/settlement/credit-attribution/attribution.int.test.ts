@@ -155,6 +155,31 @@ function attributed(h: Harness) {
   return { readAttribution, logs, transactions, run };
 }
 
+/** How a credit attempt ended: its result, or the message of the error it threw. */
+type Settled =
+  | { readonly resolved: true; readonly value: CreditOrderResult }
+  | { readonly resolved: false; readonly error: string };
+
+/**
+ * Waits for a credit attempt and keeps a thrown error as data, so that a credit that throws (the
+ * version assertion rolling the order back) fails the test's own expect on the outcome, with the
+ * error's message in the diff, instead of escaping the test.
+ */
+async function settle(attempt: Promise<CreditOrderResult>): Promise<Settled> {
+  try {
+    return { resolved: true, value: await attempt };
+  } catch (err) {
+    return { resolved: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** The result of an attempt that must have resolved (an assertion failure otherwise). */
+function resolvedValue(outcome: Settled): CreditOrderResult {
+  expect(outcome).toMatchObject({ resolved: true });
+  if (!outcome.resolved) throw new Error('unreachable: the expect above failed');
+  return outcome.value;
+}
+
 /** The order's ledger lines with the order key and user ids replaced by role names. */
 async function footprint(h: Harness, o: SeededOrder) {
   const alias: [string, string][] = [
@@ -240,13 +265,16 @@ it(
 
     const a = attributed(h);
     const traced = tracing(p.db);
-    const attempt = a.run(o, traced.db);
-    await expect(attempt).resolves.toMatchObject({
-      outcome: 'credited',
-      orderKey: o.orderKey,
-      bCreditFen: 850n,
-      bookedNFen: 1000n,
-      platformCreditFen: 448n,
+    const attempt = await settle(a.run(o, traced.db));
+    expect(attempt).toMatchObject({
+      resolved: true,
+      value: {
+        outcome: 'credited',
+        orderKey: o.orderKey,
+        bCreditFen: 850n,
+        bookedNFen: 1000n,
+        platformCreditFen: 448n,
+      },
     });
 
     expect(await h.voucherKeys()).toEqual(
@@ -333,10 +361,10 @@ it.each([{ version: 2 }, { version: 3 }, { version: 9 }])(
     const a = attributed(h);
     const first = await a.run(v1);
     expect(first).toMatchObject({ outcome: 'credited', bCreditFen: 850n, platformCreditFen: 448n });
-    const second = a.run(bumped);
-    await expect(second).resolves.toMatchObject({ outcome: 'credited' });
+    const second = await settle(a.run(bumped));
+    expect(second).toMatchObject({ resolved: true, value: { outcome: 'credited' } });
 
-    expect(shape(bumped, await second)).toEqual(shape(v1, first));
+    expect(shape(bumped, resolvedValue(second))).toEqual(shape(v1, first));
     expect(await footprint(h, bumped)).toEqual(await footprint(h, v1));
     expect(await h.read(bumped)).toMatchObject({
       rebate_status: 'CREDITED',
@@ -363,12 +391,15 @@ it(
     });
     await orderSyncBump(h, o, 2);
     const a = attributed(h);
-    const attempt = a.run(o);
-    await expect(attempt).resolves.toMatchObject({
-      outcome: 'credited',
-      bCreditFen: 850n,
-      bookedNFen: 1000n,
-      platformCreditFen: 448n,
+    const attempt = await settle(a.run(o));
+    expect(attempt).toMatchObject({
+      resolved: true,
+      value: {
+        outcome: 'credited',
+        bCreditFen: 850n,
+        bookedNFen: 1000n,
+        platformCreditFen: 448n,
+      },
     });
 
     expect(await h.voucherKeys()).toEqual(
@@ -457,12 +488,11 @@ it(
     const eventsBefore = await h.beneficiaryEvents(o);
 
     const a = attributed(h);
-    const attempt = a.run(o);
+    const attempt = await settle(a.run(o));
     // 850 − 425 (self) + 150 reserve = 575: the direct 85 and indirect 42 stay with the platform.
-    await expect(attempt).resolves.toMatchObject({
-      outcome: 'credited',
-      bCreditFen: 850n,
-      platformCreditFen: 575n,
+    expect(attempt).toMatchObject({
+      resolved: true,
+      value: { outcome: 'credited', bCreditFen: 850n, platformCreditFen: 575n },
     });
     expect(await h.voucherKeys()).toEqual([creditKey(o, 'self'), platformKey(o)].sort());
     expect(await h.voucherLines(creditKey(o, 'self'))).toEqual(userCreditLines(o, 'self', 425n));
@@ -553,9 +583,9 @@ it(
     const before = await h.state();
     const a = attributed(h);
 
-    await expect(a.run(o)).resolves.toEqual({
-      outcome: 'skipped',
-      reason: 'tlj_deduct_unsupported',
+    expect(await settle(a.run(o))).toEqual({
+      resolved: true,
+      value: { outcome: 'skipped', reason: 'tlj_deduct_unsupported' },
     });
     expect(h.post).not.toHaveBeenCalled();
     expect(h.publish).not.toHaveBeenCalled();
