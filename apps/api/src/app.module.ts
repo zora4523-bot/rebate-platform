@@ -25,6 +25,9 @@ import {
   agentConsentReaderToken,
   agentContentReaderToken,
   agentStreamPortsToken,
+  agentTraceRetentionDays,
+  agentTraceRetentionKey,
+  createPersonalDataCopyAgentReader,
   createProductionStreamAssembly,
   type AgentConsentReaderFactory,
   type AgentContentReader,
@@ -96,6 +99,7 @@ import {
   createRegistrationInviteBinding,
   createGrowthHistory,
   detachChildrenOfDeleted,
+  readPersonalDataCopyInvite,
   type ParentRelationReader,
   type InviteBinder,
   type InviteBinderDeps,
@@ -104,6 +108,7 @@ import {
   type InviteRewardScanner,
 } from './modules/growth/index.ts';
 import {
+  createPersonalDataCopySources,
   createWithdrawSubjectReader,
   laborAgreementSigned,
   IdentityAdminModule,
@@ -176,12 +181,14 @@ import {
   type MeReadPorts,
   type MeUnionBindingStatus,
   type PayoutAccountConfigPort,
+  type PersonalDataCopySources,
 } from './modules/identity/index.ts';
 import {
   LedgerModule,
   WalletSummaryModule,
   createLedger,
   getOrderNets,
+  readPersonalDataCopyLedgerEntries,
   type WalletSummaryDependencies,
 } from './modules/ledger/index.ts';
 import { PaymentModule } from './modules/payment/index.ts';
@@ -190,6 +197,7 @@ import {
   createDefaultFeeTaxCalculator,
   createWithdrawApply,
   createBalanceRecoveredHook,
+  createPersonalDataCopyWithdrawalsReader,
   createWithdrawalInFlightReader,
   createWithdrawHoldsReader,
   createWithdrawRules,
@@ -259,6 +267,7 @@ import {
   createOrderSourcePorts,
   type CommissionSnapshotPort,
   type OrderSourcePorts,
+  readPersonalDataCopyOrders,
   type OrdersWorkerOptions,
 } from './modules/orders/index.ts';
 import {
@@ -572,6 +581,50 @@ const deletionAfterRevoked = {
   inject: [CLOCK],
   useFactory: (clock: Clock): AfterSessionsRevoked => unbindRevoked(sessionPushTokens(clock)),
 };
+
+/**
+ * B1-27f (BR-ID-40 导出范围): the sources of a personal information copy for B1-27h's generation —
+ * identity's createPersonalDataCopySources over the process field cipher, with the owners'
+ * read-only files from their index.ts: orders' readPersonalDataCopyOrders, ledger's
+ * readPersonalDataCopyLedgerEntries, payout's createPersonalDataCopyWithdrawalsReader (the payee
+ * snapshot decrypted with the payout_accounts.* contexts, as the withdrawal reads), agent's
+ * createPersonalDataCopyAgentReader (the clock) and growth's readPersonalDataCopyInvite.
+ */
+export function personalDataCopySources(
+  clock: Clock,
+  crypto: FieldCrypto,
+): PersonalDataCopySources {
+  const contexts = blocklistHmacContexts();
+  const agent = createPersonalDataCopyAgentReader({ clock });
+  return createPersonalDataCopySources({
+    crypto,
+    orders: readPersonalDataCopyOrders,
+    ledger: readPersonalDataCopyLedgerEntries,
+    withdrawals: createPersonalDataCopyWithdrawalsReader({
+      decrypt: (cipher, method) => {
+        const context =
+          method === 'alipay'
+            ? contexts.alipay
+            : method === 'bank_card'
+              ? contexts.bank_card
+              : null;
+        if (context === null) throw new Error('payout: no cipher context for the payout method');
+        return crypto.decrypt(cipher.toString('utf8'), context);
+      },
+    }),
+    // agent.trace.retention_days read here, through content's config_items reader on the caller's
+    // handle (fresh per call, uncached; a READ ONLY transaction included), and resolved by agent's
+    // pure agentTraceRetentionDays; agent's reader gets only the number, never a config port.
+    agent: async (handle, subject) => {
+      const item = await createContentReader({ db: handle, clock }).configValue(
+        subject.appId,
+        agentTraceRetentionKey(),
+      );
+      return agent(handle, subject, { retentionDays: agentTraceRetentionDays(item?.value) });
+    },
+    invite: readPersonalDataCopyInvite,
+  });
+}
 
 /** Runs on the caller's transaction, or on a read-only one of its own. */
 function onReadTransaction<T>(
