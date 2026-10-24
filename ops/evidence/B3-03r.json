@@ -1,0 +1,150 @@
+{
+  "task": "B3-03r",
+  "spec_ref": "ec81e625dcf54f230d168dbf09910bd704c82a18",
+  "spec_commit": "2782a5a87954965a5d7820de67252bb722be912f",
+  "red_tests": [
+    "test/spec/agent/stream-model-prereq-4/clarify-cheaper.int.test.ts > [AC-B3-03r#5][BR-AI-08][BR-AI-05] 价格澄清后答价这批没写出（结果库 pg）：当前链仍是待答价格的那条链；同链再给非法价格不再追问（takeOnce 作用域不错位），丢弃价格检索并出 notice，写出后该链才有商品",
+    "test/spec/agent/stream-model-prereq-4/clarify-cheaper.int.test.ts > [AC-B3-03r#5][BR-AI-08][BR-AI-05] 价格澄清后答价这批没写出（结果库 memory）：当前链仍是待答价格的那条链；同链再给非法价格不再追问（takeOnce 作用域不错位），丢弃价格检索并出 notice，写出后该链才有商品",
+    "test/spec/agent/stream-model-prereq-4/clarify-cheaper.int.test.ts > [AC-B3-03r#5][BR-AI-05][BR-PRICE-15] 模型搜索的一批没写出（cancel）后「再便宜点」无更便宜结果：不改条件、出 no_cheaper notice；当前链仍是用户见过的那批，「换一批」按它翻页，「第 N 个」指向它",
+    "test/spec/agent/stream-model-prereq-4/clarify-cheaper.int.test.ts > [AC-B3-03r#5][BR-AI-05][BR-PRICE-15] 模型搜索的一批没写出（unconfirmed）后「再便宜点」无更便宜结果：不改条件、出 no_cheaper notice；当前链仍是用户见过的那批，「换一批」按它翻页，「第 N 个」指向它",
+    "test/spec/agent/stream-model-prereq-4/failed-refine.int.test.ts > [AC-B3-03r#7][BR-AI-05] 「换一批」请求第 2 页但上游全部失败（结果库 pg）：只出失败提示、没有商品列表，currentChain 仍为用户见过的第 1 页那批（chainId、条件与页码不变）；再「换一批」请求的仍是第 2 页而不是第 3 页，「第 N 个」仍指第 1 页那批；对照：检索成功但无结果的新查询之后当前链跟新查询走（第 1 页），换平台与价格追问按新查询检索",
+    "test/spec/agent/stream-model-prereq-4/failed-refine.int.test.ts > [AC-B3-03r#7][BR-AI-05] 「换一批」请求第 2 页但上游全部失败（结果库 memory）：只出失败提示、没有商品列表，currentChain 仍为用户见过的第 1 页那批（chainId、条件与页码不变）；再「换一批」请求的仍是第 2 页而不是第 3 页，「第 N 个」仍指第 1 页那批；对照：检索成功但无结果的新查询之后当前链跟新查询走（第 1 页），换平台与价格追问按新查询检索",
+    "test/spec/agent/stream-model-prereq-4/failed-refine.int.test.ts > [AC-B3-03r#7][BR-AI-05] 「换一批」检索第 2 页时用户停止本轮：没有商品列表写出，currentChain 仍为用户见过的第 1 页那批（chainId、条件与页码不变）；再「换一批」请求的仍是第 2 页，「第 N 个」仍指第 1 页那批",
+    "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#1][BR-AI-05][BR-PRICE-15] 续答「换一批」这批写出并确认后才切为当前链（交出未确认时仍是用户见过的条件）；之后「换一批」从新条件翻页，「第 N 个」1 指向新一批第一件",
+    "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#1][BR-AI-05][BR-PRICE-15] 续答「换平台」这批写出并确认后才切为当前链（交出未确认时仍是用户见过的条件）；之后「换一批」从新条件翻页，「第 N 个」1 指向新一批第一件",
+    "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#1][BR-AI-05][BR-PRICE-15] 续答「再便宜点」这批写出并确认后才切为当前链（交出未确认时仍是用户见过的条件）；之后「换一批」从新条件翻页，「第 N 个」1 指向新一批第一件",
+    "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#1][BR-AI-05][BR-PRICE-15] 续答「价格续答」这批写出并确认后才切为当前链（交出未确认时仍是用户见过的条件）；之后「换一批」从新条件翻页，「第 N 个」1 指向新一批第一件",
+    "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「换一批」这批卡没写出（cancel）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+    "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「换一批」这批卡没写出（limit）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+    "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「换一批」这批卡没写出（unconfirmed）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+    "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「换平台」这批卡没写出（cancel）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+    "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「换平台」这批卡没写出（limit）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+    "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「再便宜点」这批卡没写出（cancel）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+    "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「再便宜点」这批卡没写出（unconfirmed）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+    "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「价格续答」这批卡没写出（cancel）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+    "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「价格续答」这批卡没写出（unconfirmed）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+    "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#1][BR-AI-05] 模型调用 search_products（结果库 pg）：这批商品列表写出并确认后才切为当前链（交出未确认时仍是上一批的链）；之后「换一批」从本轮条件翻下一页，「第 N 个」1 指向本轮第一件",
+    "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#1][BR-AI-05] 模型调用 search_products（结果库 memory）：这批商品列表写出并确认后才切为当前链（交出未确认时仍是上一批的链）；之后「换一批」从本轮条件翻下一页，「第 N 个」1 指向本轮第一件",
+    "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 模型调用 search_products 这批卡没写出（cancel，结果库 pg）：currentChain 的条件与页码保持为用户上一批见过的那批，「换一批」按上一批条件翻页、「第 N 个」仍指向上一批；之后写出的一批确认后才切",
+    "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 模型调用 search_products 这批卡没写出（limit，结果库 pg）：currentChain 的条件与页码保持为用户上一批见过的那批，「换一批」按上一批条件翻页、「第 N 个」仍指向上一批；之后写出的一批确认后才切",
+    "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 模型调用 search_products 这批卡没写出（unconfirmed，结果库 pg）：currentChain 的条件与页码保持为用户上一批见过的那批，「换一批」按上一批条件翻页、「第 N 个」仍指向上一批；之后写出的一批确认后才切",
+    "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 模型调用 search_products 这批卡没写出（cancel，结果库 memory）：currentChain 的条件与页码保持为用户上一批见过的那批，「换一批」按上一批条件翻页、「第 N 个」仍指向上一批；之后写出的一批确认后才切",
+    "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 模型调用 search_products 这批卡没写出（unconfirmed，结果库 memory）：currentChain 的条件与页码保持为用户上一批见过的那批，「换一批」按上一批条件翻页、「第 N 个」仍指向上一批；之后写出的一批确认后才切",
+    "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 会话原来没有当前链、模型调用 search_products 这批卡没写出（cancel）：currentChain 仍为空，「换一批」不检索，「第 N 个」无可指；写出一批并确认后才有当前链",
+    "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 会话原来没有当前链、模型调用 search_products 这批卡没写出（limit）：currentChain 仍为空，「换一批」不检索，「第 N 个」无可指；写出一批并确认后才有当前链",
+    "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 会话原来没有当前链、模型调用 search_products 这批卡没写出（unconfirmed）：currentChain 仍为空，「换一批」不检索，「第 N 个」无可指；写出一批并确认后才有当前链",
+    "test/spec/agent/stream-model-prereq-4/stopped-partial.int.test.ts > [AC-B3-03r#3][BR-AI-05] 模型路径本轮商品列表已确认写出、随后在收尾前用户停止本轮（结果库 pg）：仍切为本轮的链（确认前仍是上一批的链）；「换一批」从本轮条件翻下一页，「第 N 个」指向本轮",
+    "test/spec/agent/stream-model-prereq-4/stopped-partial.int.test.ts > [AC-B3-03r#3][BR-AI-05] 模型路径本轮商品列表已确认写出、随后在收尾前用户停止本轮（结果库 memory）：仍切为本轮的链（确认前仍是上一批的链）；「换一批」从本轮条件翻下一页，「第 N 个」指向本轮",
+    "test/spec/agent/stream-model-prereq-4/stopped-partial.int.test.ts > [AC-B3-03r#4][BR-AI-05] 同轮两次 search_products 只部分写出（第 1 张写出、第 2 张交出未确认）：以确认写出的那张 product_list 切链；「换一批」按它的条件翻页，「第 N 个」指向它",
+    "test/spec/agent/stream-model-prereq-4/stopped-partial.int.test.ts > [AC-B3-03r#4][BR-AI-05] 同轮两次 search_products 只部分写出（第 1 张交出未确认、第 2 张写出）：以确认写出的那张 product_list 切链；「换一批」按它的条件翻页，「第 N 个」指向它",
+    "test/spec/agent/stream-model-prereq-4/stopped-partial.int.test.ts > [AC-B3-03r#4][BR-AI-05] 同轮两次 search_products 只部分写出（第 1 张写出、第 2 张写出前取消）：以确认写出的那张 product_list 切链；「换一批」按它的条件翻页，「第 N 个」指向它",
+    "test/spec/agent/stream-model-prereq-4/stopped-partial.int.test.ts > [AC-B3-03r#4][BR-AI-05] 同轮两次 search_products 只部分写出（第 1 张写出、第 2 张被卡片上限截掉）：以确认写出的那张 product_list 切链；「换一批」按它的条件翻页，「第 N 个」指向它"
+  ],
+  "risk_note": "RV1 (agent/orchestrator/results, agent/stream/mount): the model and follow-up result decorator (createResultsTools) defers its has_products chain switch to the first written product_list receipt, sharing the degraded path's pending table (createKeywordResults defer); a round without a product_list (no result, failed, notice only) records its attempt at once with the query only — on the same chain the page never goes past the one the user saw (a failed or stopped 换一批 does not skip a page), new chains start at page 1; price clarification, takeOnce scope and 再便宜点 unchanged; the switch does not depend on ctx.signal. Rule tests by an independent Claude (1 attempt) with two orchestrator exceptions not counted: D10-329 one wrong assertion in [AC-B3-03r#4] corrected, D10-333 one added case [AC-B3-03r#7]; each read-only re-reviewed by a fresh independent Claude. B3-03j [#9]/[#14] adjusted separately by test-change B3-03s (D10-328). Opus implementation 4 attempts (4th by orchestrator exception D10-333). Full pnpm verify on the AWS test machine at fb8336a5 (verify/5): only B3-03j #9/#14 red before B3-03s. Independent Claude general review r1 fail (S1 no-result attempt not recorded) → r2 fail (S1 failed 换一批 advanced the page) → r3 pass, 0 findings. Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "2782a5a87954965a5d7820de67252bb722be912f",
+      "tree": "fff7c9a9a7bb77e5c0a816e0b8132ec350b6e5bb",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T11:41:48Z",
+      "finished_at": "2026-10-24T11:42:03Z",
+      "red_tests": [
+        "test/spec/agent/stream-model-prereq-4/clarify-cheaper.int.test.ts > [AC-B3-03r#5][BR-AI-08][BR-AI-05] 价格澄清后答价这批没写出（结果库 pg）：当前链仍是待答价格的那条链；同链再给非法价格不再追问（takeOnce 作用域不错位），丢弃价格检索并出 notice，写出后该链才有商品",
+        "test/spec/agent/stream-model-prereq-4/clarify-cheaper.int.test.ts > [AC-B3-03r#5][BR-AI-08][BR-AI-05] 价格澄清后答价这批没写出（结果库 memory）：当前链仍是待答价格的那条链；同链再给非法价格不再追问（takeOnce 作用域不错位），丢弃价格检索并出 notice，写出后该链才有商品",
+        "test/spec/agent/stream-model-prereq-4/clarify-cheaper.int.test.ts > [AC-B3-03r#5][BR-AI-05][BR-PRICE-15] 模型搜索的一批没写出（cancel）后「再便宜点」无更便宜结果：不改条件、出 no_cheaper notice；当前链仍是用户见过的那批，「换一批」按它翻页，「第 N 个」指向它",
+        "test/spec/agent/stream-model-prereq-4/clarify-cheaper.int.test.ts > [AC-B3-03r#5][BR-AI-05][BR-PRICE-15] 模型搜索的一批没写出（unconfirmed）后「再便宜点」无更便宜结果：不改条件、出 no_cheaper notice；当前链仍是用户见过的那批，「换一批」按它翻页，「第 N 个」指向它",
+        "test/spec/agent/stream-model-prereq-4/failed-refine.int.test.ts > [AC-B3-03r#7][BR-AI-05] 「换一批」请求第 2 页但上游全部失败（结果库 pg）：只出失败提示、没有商品列表，currentChain 仍为用户见过的第 1 页那批（chainId、条件与页码不变）；再「换一批」请求的仍是第 2 页而不是第 3 页，「第 N 个」仍指第 1 页那批；对照：检索成功但无结果的新查询之后当前链跟新查询走（第 1 页），换平台与价格追问按新查询检索",
+        "test/spec/agent/stream-model-prereq-4/failed-refine.int.test.ts > [AC-B3-03r#7][BR-AI-05] 「换一批」请求第 2 页但上游全部失败（结果库 memory）：只出失败提示、没有商品列表，currentChain 仍为用户见过的第 1 页那批（chainId、条件与页码不变）；再「换一批」请求的仍是第 2 页而不是第 3 页，「第 N 个」仍指第 1 页那批；对照：检索成功但无结果的新查询之后当前链跟新查询走（第 1 页），换平台与价格追问按新查询检索",
+        "test/spec/agent/stream-model-prereq-4/failed-refine.int.test.ts > [AC-B3-03r#7][BR-AI-05] 「换一批」检索第 2 页时用户停止本轮：没有商品列表写出，currentChain 仍为用户见过的第 1 页那批（chainId、条件与页码不变）；再「换一批」请求的仍是第 2 页，「第 N 个」仍指第 1 页那批",
+        "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#1][BR-AI-05][BR-PRICE-15] 续答「换一批」这批写出并确认后才切为当前链（交出未确认时仍是用户见过的条件）；之后「换一批」从新条件翻页，「第 N 个」1 指向新一批第一件",
+        "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#1][BR-AI-05][BR-PRICE-15] 续答「换平台」这批写出并确认后才切为当前链（交出未确认时仍是用户见过的条件）；之后「换一批」从新条件翻页，「第 N 个」1 指向新一批第一件",
+        "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#1][BR-AI-05][BR-PRICE-15] 续答「再便宜点」这批写出并确认后才切为当前链（交出未确认时仍是用户见过的条件）；之后「换一批」从新条件翻页，「第 N 个」1 指向新一批第一件",
+        "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#1][BR-AI-05][BR-PRICE-15] 续答「价格续答」这批写出并确认后才切为当前链（交出未确认时仍是用户见过的条件）；之后「换一批」从新条件翻页，「第 N 个」1 指向新一批第一件",
+        "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「换一批」这批卡没写出（cancel）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+        "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「换一批」这批卡没写出（limit）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+        "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「换一批」这批卡没写出（unconfirmed）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+        "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「换平台」这批卡没写出（cancel）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+        "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「换平台」这批卡没写出（limit）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+        "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「再便宜点」这批卡没写出（cancel）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+        "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「再便宜点」这批卡没写出（unconfirmed）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+        "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「价格续答」这批卡没写出（cancel）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+        "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts > [AC-B3-03r#2][BR-AI-05][BR-PRICE-15] 续答「价格续答」这批卡没写出（unconfirmed）：currentChain 的条件与页码保持为用户上一批见过的那批；「换一批」按上一批条件翻页，「第 N 个」仍指向上一批",
+        "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#1][BR-AI-05] 模型调用 search_products（结果库 pg）：这批商品列表写出并确认后才切为当前链（交出未确认时仍是上一批的链）；之后「换一批」从本轮条件翻下一页，「第 N 个」1 指向本轮第一件",
+        "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#1][BR-AI-05] 模型调用 search_products（结果库 memory）：这批商品列表写出并确认后才切为当前链（交出未确认时仍是上一批的链）；之后「换一批」从本轮条件翻下一页，「第 N 个」1 指向本轮第一件",
+        "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 模型调用 search_products 这批卡没写出（cancel，结果库 pg）：currentChain 的条件与页码保持为用户上一批见过的那批，「换一批」按上一批条件翻页、「第 N 个」仍指向上一批；之后写出的一批确认后才切",
+        "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 模型调用 search_products 这批卡没写出（limit，结果库 pg）：currentChain 的条件与页码保持为用户上一批见过的那批，「换一批」按上一批条件翻页、「第 N 个」仍指向上一批；之后写出的一批确认后才切",
+        "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 模型调用 search_products 这批卡没写出（unconfirmed，结果库 pg）：currentChain 的条件与页码保持为用户上一批见过的那批，「换一批」按上一批条件翻页、「第 N 个」仍指向上一批；之后写出的一批确认后才切",
+        "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 模型调用 search_products 这批卡没写出（cancel，结果库 memory）：currentChain 的条件与页码保持为用户上一批见过的那批，「换一批」按上一批条件翻页、「第 N 个」仍指向上一批；之后写出的一批确认后才切",
+        "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 模型调用 search_products 这批卡没写出（unconfirmed，结果库 memory）：currentChain 的条件与页码保持为用户上一批见过的那批，「换一批」按上一批条件翻页、「第 N 个」仍指向上一批；之后写出的一批确认后才切",
+        "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 会话原来没有当前链、模型调用 search_products 这批卡没写出（cancel）：currentChain 仍为空，「换一批」不检索，「第 N 个」无可指；写出一批并确认后才有当前链",
+        "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 会话原来没有当前链、模型调用 search_products 这批卡没写出（limit）：currentChain 仍为空，「换一批」不检索，「第 N 个」无可指；写出一批并确认后才有当前链",
+        "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts > [AC-B3-03r#2][BR-AI-05] 会话原来没有当前链、模型调用 search_products 这批卡没写出（unconfirmed）：currentChain 仍为空，「换一批」不检索，「第 N 个」无可指；写出一批并确认后才有当前链",
+        "test/spec/agent/stream-model-prereq-4/stopped-partial.int.test.ts > [AC-B3-03r#3][BR-AI-05] 模型路径本轮商品列表已确认写出、随后在收尾前用户停止本轮（结果库 pg）：仍切为本轮的链（确认前仍是上一批的链）；「换一批」从本轮条件翻下一页，「第 N 个」指向本轮",
+        "test/spec/agent/stream-model-prereq-4/stopped-partial.int.test.ts > [AC-B3-03r#3][BR-AI-05] 模型路径本轮商品列表已确认写出、随后在收尾前用户停止本轮（结果库 memory）：仍切为本轮的链（确认前仍是上一批的链）；「换一批」从本轮条件翻下一页，「第 N 个」指向本轮",
+        "test/spec/agent/stream-model-prereq-4/stopped-partial.int.test.ts > [AC-B3-03r#4][BR-AI-05] 同轮两次 search_products 只部分写出（第 1 张写出、第 2 张交出未确认）：以确认写出的那张 product_list 切链；「换一批」按它的条件翻页，「第 N 个」指向它",
+        "test/spec/agent/stream-model-prereq-4/stopped-partial.int.test.ts > [AC-B3-03r#4][BR-AI-05] 同轮两次 search_products 只部分写出（第 1 张交出未确认、第 2 张写出）：以确认写出的那张 product_list 切链；「换一批」按它的条件翻页，「第 N 个」指向它",
+        "test/spec/agent/stream-model-prereq-4/stopped-partial.int.test.ts > [AC-B3-03r#4][BR-AI-05] 同轮两次 search_products 只部分写出（第 1 张写出、第 2 张写出前取消）：以确认写出的那张 product_list 切链；「换一批」按它的条件翻页，「第 N 个」指向它",
+        "test/spec/agent/stream-model-prereq-4/stopped-partial.int.test.ts > [AC-B3-03r#4][BR-AI-05] 同轮两次 search_products 只部分写出（第 1 张写出、第 2 张被卡片上限截掉）：以确认写出的那张 product_list 切链；「换一批」按它的条件翻页，「第 N 个」指向它"
+      ],
+      "expected": [
+        "test/spec/agent/stream-model-prereq-4/clarify-cheaper.int.test.ts",
+        "test/spec/agent/stream-model-prereq-4/failed-refine.int.test.ts",
+        "test/spec/agent/stream-model-prereq-4/follow-ups.int.test.ts",
+        "test/spec/agent/stream-model-prereq-4/model-search.int.test.ts",
+        "test/spec/agent/stream-model-prereq-4/stopped-partial.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "b8d2aafe55f3d5b2964d5fdc54bfd83b2e76fc8c0fb9afbdcef370f8f78ce242"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "dff49b756cb59be4287c892bb0ffc5f78a2700c1",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 3,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "independent Claude (claude-run.sh; Codex unavailable until 10-30) r1 fail S1, r2 fail S1, r3 pass 0 findings (couli-runs/B3-03r/review-claude-independent-general-r1/r2/r3.json); impl 4th attempt by orchestrator exception D10-333"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "fresh independent Claude r1 pass (S2 x1); orchestrator exceptions not counted: D10-329 assertion fix re-review pass, D10-333 added case re-review pass (couli-runs/B3-03r/review-claude-independent-spec-test-r1.json, -fix.json, -add.json)"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "e04e5b4a608d6ba6be09ba2c646a6cabf3eda120",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
