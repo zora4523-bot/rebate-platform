@@ -167,6 +167,64 @@ it.each(BREAKAGES)(
 );
 
 it(
+  '[AC-B2-04q#37] 执行前 BR-FUND-19 ⑤ 后半句不成立（应收等式仍成立，但受益人净额合计 967 > booked_base_fen 850）：跳过（invariant_mismatch）并告警，不写凭证、不改义务',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.order();
+    // One adjustment that moved 500 of the platform's part to self: self +500, platform −500, so
+    // the receivable stays 915 = 1000 − 85 while self's net becomes 925 (925 + 42 > 850).
+    const owner = { userId: o.user('self'), role: 'self' as const };
+    await h.seedVoucher(
+      h.userVoucher(
+        o,
+        `${o.orderKey}:${owner.userId}:self:ADJ:3`,
+        owner,
+        500n,
+        'SETTLE_ADJUST',
+        'SETTLE_ADJUST',
+        'SETTLE_DIFF',
+      ),
+    );
+    await h.seedVoucher(
+      h.platformVoucher(
+        o,
+        `${o.orderKey}:PLATFORM:ADJ:3`,
+        -500n,
+        'SETTLE_ADJUST',
+        'SETTLE_ADJUST',
+        'SETTLE_DIFF',
+      ),
+    );
+    expect((await h.nets(o)).union_receivable_net_fen).toBe(915n);
+    expect(await h.netOf(o, 'self')).toBe(925n);
+    expect(await h.netOf(o, 'direct')).toBe(0n);
+    expect(await h.netOf(o, 'indirect')).toBe(42n);
+    expect((await h.read(o)).booked_base_fen).toBe(850n);
+
+    const before = await h.state();
+    expect(await h.execute(o)).toEqual({ outcome: 'skipped', reason: 'invariant_mismatch' });
+    expect(await h.state()).toEqual(before);
+    expect(h.post).not.toHaveBeenCalled();
+    expect(h.appendBeneficiaryEvent).not.toHaveBeenCalled();
+    expect(await h.obligationRow(o.obligation().beneficiaryCreditId)).toMatchObject({
+      status: 'open',
+      voucher_id: null,
+    });
+
+    const alerts = h.alerts();
+    expect(alerts).toHaveLength(1);
+    expect(Number(alerts[0]?.['level'])).toBeGreaterThanOrEqual(40);
+    expect(alerts[0]).toMatchObject({
+      alert: ALERT,
+      app_id: h.appId,
+      order_id: o.orderId,
+      beneficiary_credit_id: o.obligation().beneficiaryCreditId,
+    });
+  },
+  TIMEOUT,
+);
+
+it(
   '[AC-B2-04q#21] ⑤ 成立时不告警：正常补记没有 invariant_mismatch 告警行',
   async () => {
     const h = await harness(p.db);

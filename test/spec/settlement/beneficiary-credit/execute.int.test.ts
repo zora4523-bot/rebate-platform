@@ -20,6 +20,7 @@ import {
   receivable,
   userLines,
   type DeferredOrigin,
+  type PersonSpec,
   type UserState,
 } from './kit.ts';
 
@@ -289,6 +290,128 @@ it.each<{ state: UserState; reason: 'banned' | 'deleted' | 'minor' }>([
   TIMEOUT,
 );
 
+// Share order (buy_type=share): share 5000 / direct 1000 / indirect 500 → 425 / 85 / 42 on 850;
+// platform 448. The sharer's share is a promotion share (BR-CALC-13, BR-ID-26 (b)).
+const MINOR_SHARER: readonly PersonSpec[] = [
+  { role: 'share', ratioBp: 5000, state: 'minor' },
+  { role: 'direct', ratioBp: 1000 },
+  { role: 'indirect', ratioBp: 500 },
+];
+
+it(
+  '[AC-B2-04q#35] 分享单首次入账义务、分享者锁后重读为已识别未成年人：分享份额首次整份没收 425，写 PLATFORM:FORFEIT:{uid}:share（带 minor），追加 forfeited 事件，余额为 0，义务记没收',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.order({ held: ['share'], people: MINOR_SHARER });
+    expect(await h.read(o)).toMatchObject({ buy_type: 'share', rebate_status: 'CREDITED' });
+    // R5 时分享者暂缓：应收 = 1000 − 425。
+    expect((await h.nets(o)).union_receivable_net_fen).toBe(575n);
+    const ob = o.obligation('share');
+    expect(ob.kind).toBe('first_credit');
+    const before = await h.obligationRow(ob.beneficiaryCreditId);
+    const result = await h.execute(o);
+
+    const v = await h.voucher(forfeitKey(o, 'share'));
+    expect(v).toMatchObject({ order_key: o.orderKey, voucher_kind: 'FORFEIT' });
+    expect(v?.memo ?? '').toContain('minor');
+    expect(result).toMatchObject({
+      outcome: 'forfeited',
+      beneficiaryCreditId: ob.beneficiaryCreditId,
+      userId: o.user('share'),
+      role: 'share',
+      amountFen: 425n,
+      forfeitReason: 'minor',
+      voucherId: v?.id,
+    });
+    expect(await h.voucherLines(forfeitKey(o, 'share'))).toEqual(platformLines(o, 425n));
+    expect(await h.voucherKeys()).toEqual(
+      [
+        creditKey(o, 'direct'),
+        creditKey(o, 'indirect'),
+        platformKey(o),
+        forfeitKey(o, 'share'),
+      ].sort(),
+    );
+    expect(await h.balance(o.user('share'))).toBe(0n);
+    expect(await h.netOf(o, 'share')).toBe(0n);
+    expect((await h.nets(o)).union_receivable_net_fen).toBe(1000n);
+    expect(await h.subjectNet('COMMISSION_REVENUE')).toBe(-873n);
+
+    expect(await h.newBeneficiaryEvents(o)).toEqual([
+      expect.objectContaining({
+        user_id: o.user('share'),
+        role: 'share',
+        status: 'forfeited',
+        reason: 'minor',
+      }),
+    ]);
+    expect(await h.obligationRow(ob.beneficiaryCreditId)).toEqual({
+      ...before,
+      status: 'forfeited',
+      closed_by: 'R5a',
+      closed_ref: h.input(o).closedRef,
+      closed_at: new Date(NOW),
+      voucher_id: v?.id,
+      row_version: before.row_version + 1,
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04q#36] 分享单延后差额义务、分享者锁后重读为已识别未成年人：只没收剩余 85（510 − 425），写 PLATFORM:FORFEIT:{uid}:share:DEFERRED:{id}（带 minor），不追加 forfeited 事件，已入账的 425 不动，义务记没收',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.order({ adjustTo: 1200n, deferred: ['share'], people: MINOR_SHARER });
+    expect(await h.read(o)).toMatchObject({ buy_type: 'share', booked_base_fen: 1020n });
+    // 直推 +17、间推 +9、平台 +89 已补；分享者的 85 待补记：应收 = 1200 − 85。
+    expect((await h.nets(o)).union_receivable_net_fen).toBe(1115n);
+    const ob = o.obligation('share');
+    expect(ob.kind).toBe('deferred');
+    const before = await h.obligationRow(ob.beneficiaryCreditId);
+    const result = await h.execute(o);
+
+    const key = forfeitDeferredKey(o, 'share');
+    const v = await h.voucher(key);
+    expect(v).toMatchObject({ order_key: o.orderKey, voucher_kind: 'FORFEIT' });
+    expect(v?.memo ?? '').toContain('minor');
+    expect(result).toMatchObject({
+      outcome: 'forfeited',
+      beneficiaryCreditId: ob.beneficiaryCreditId,
+      userId: o.user('share'),
+      role: 'share',
+      amountFen: 85n,
+      forfeitReason: 'minor',
+      voucherId: v?.id,
+    });
+    expect(await h.voucherLines(key)).toEqual(platformLines(o, 85n));
+    const keys = await h.voucherKeys();
+    expect(keys).not.toContain(forfeitKey(o, 'share'));
+    const sharerPrefix = `${o.orderKey}:${o.user('share')}:share:`;
+    expect(keys.filter((k) => k.startsWith(sharerPrefix))).toEqual([creditKey(o, 'share')]);
+    // 识别前已入账的不扣回（BR-CALC-13）。
+    expect(await h.balance(o.user('share'))).toBe(425n);
+    expect(await h.netOf(o, 'share')).toBe(425n);
+    expect((await h.nets(o)).union_receivable_net_fen).toBe(1200n);
+
+    expect((await h.newBeneficiaryEvents(o)).filter((e) => e.status === 'forfeited')).toEqual([]);
+    expect(h.appendBeneficiaryEvent).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: 'forfeited' }),
+    );
+    expect(await h.obligationRow(ob.beneficiaryCreditId)).toEqual({
+      ...before,
+      status: 'forfeited',
+      closed_by: 'R5a',
+      closed_ref: h.input(o).closedRef,
+      closed_at: new Date(NOW),
+      voucher_id: v?.id,
+      row_version: before.row_version + 1,
+    });
+  },
+  TIMEOUT,
+);
+
 it.each<{ state: 'frozen' | 'appealing'; kind: 'first_credit' | 'deferred'; owed: bigint }>([
   { state: 'frozen', kind: 'first_credit', owed: 85n },
   { state: 'appealing', kind: 'first_credit', owed: 85n },
@@ -410,6 +533,52 @@ it(
       closed_at: new Date(NOW),
       voucher_id: null,
     });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04q#38] 剩余未履约金额小于 0 按 0：延后差额义务的直推净额 85 已超过按当前 booked_base_fen 765 重拆的 76（76 − 85 = −9），⑤ 按 0 计成立：不写凭证（不扣回、不写负额），义务记完成，不告警',
+  async () => {
+    const h = await harness(p.db);
+    // Synthetic state: booked_base_fen lowered to 765 while the vouchers stay as seeded (receivable
+    // 1183), so booked_n_fen is set to 1183: ⑤ holds only when the direct's −9 counts as 0
+    // (1183 = 1183 − 0; Σ nets 510 + 85 + 51 = 646 ≤ 765). Without the clamp it would not hold.
+    const o = await h.order({
+      adjustTo: 1200n,
+      deferred: ['direct'],
+      patch: { booked_base_fen: 765n, booked_n_fen: 1183n },
+    });
+    expect((await h.nets(o)).union_receivable_net_fen).toBe(1183n);
+    expect(await h.netOf(o, 'direct')).toBe(85n);
+    const ob = o.obligation('direct');
+    const before = await h.state();
+    const result = await h.execute(o);
+
+    expect(result).toMatchObject({
+      outcome: 'credited',
+      beneficiaryCreditId: ob.beneficiaryCreditId,
+      userId: o.user('direct'),
+      role: 'direct',
+      amountFen: 0n,
+      voucherId: null,
+    });
+    expect(h.post).not.toHaveBeenCalled();
+    const after = await h.state();
+    expect(after.vouchers).toEqual(before.vouchers);
+    expect(after.lines).toEqual(before.lines);
+    expect(after.balances).toEqual(before.balances);
+    expect(await h.voucherKeys()).not.toContain(adjDeferredKey(o, 'direct'));
+    expect(await h.balance(o.user('direct'))).toBe(85n);
+    expect(await h.netOf(o, 'direct')).toBe(85n);
+    expect(await h.obligationRow(ob.beneficiaryCreditId)).toMatchObject({
+      status: 'done',
+      closed_by: 'R5a',
+      closed_ref: h.input(o).closedRef,
+      closed_at: new Date(NOW),
+      voucher_id: null,
+    });
+    expect(h.alerts()).toEqual([]);
   },
   TIMEOUT,
 );
