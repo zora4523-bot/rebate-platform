@@ -179,6 +179,8 @@ ordinary:
     - auth_manage.
     - privacy.
     - perm.
+    # 表 C 实名认证前单独同意弹层（编排裁定 D10-204：同按表 D 管理，经前缀归 content.agreement）。
+    - real_name.consent.
     # 08 BR-TEXT-12 细则 2026-10-22 D10-135 写明整组归普通的 Agent 键段。
     - agent.suggest.clarify.
     - agent.tool_status.search_products.
@@ -805,6 +807,8 @@ ordinary:
     - UNION_AUTH_EXPIRING
     - UNION_AUTH_EXPIRED
 exempt:
+  - key: real_name.consent.point.1
+    reason: 实名同意弹层要点，只说收集姓名和身份证号用于提现前核验身份，不说金额、状态或有没有返利（08 表 C 原文，另归 content.agreement）
   - key: agent.notice.search_disabled
     reason: 只是请用户改用发链接查返利，不说有没有返利（08 BR-TEXT-12 细则写明归普通）
   - key: agent.refuse.out_of_scope
