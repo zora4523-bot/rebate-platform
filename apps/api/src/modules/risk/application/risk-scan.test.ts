@@ -103,7 +103,7 @@ it('[B1-03j §10] seed() still sends the second seed when the first fails, then 
   f.send.mockRejectedValueOnce(new Error('first-failed'));
   try {
     await expect(f.scan.seed()).rejects.toThrow('first-failed');
-    expect(f.send.mock.calls.map(([, name]) => name)).toEqual(['freeze-expiry', 'daily-alerts']);
+    expect(f.send.mock.calls.map(([, name]) => name)).toEqual(['freeze_expiry', 'daily_alerts']);
   } finally {
     await f.db.destroy();
   }

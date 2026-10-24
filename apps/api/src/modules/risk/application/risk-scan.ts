@@ -1,6 +1,6 @@
 // Risk scans of the worker entry (BR-ID-36; task B1-03j, orchestrator ruling §9.3).
 //
-// freeze-expiry: every user (all app_id) with state frozen and a frozen_until at or before the
+// freeze_expiry: every user (all app_id) with state frozen and a frozen_until at or before the
 // injected Clock goes back to normal through the risk state service (the single writer of
 // user_risk_state), one transaction per user: the row is re-read with FOR UPDATE under the same
 // conditions first, so a manual change, an appeal or a ban committed after the candidate read
@@ -12,20 +12,21 @@
 // keyset batches over (app_id, user_id) with a LIMIT, so users released by an earlier batch never
 // shift a later one. A candidate read that fails rejects (the queue retries the job).
 //
-// daily-alerts: indefinite freezes (frozen_until null) unchanged for at least 30×24 hours
+// daily_alerts: indefinite freezes (frozen_until null) unchanged for at least 30×24 hours
 // (`risk_freeze_indefinite_overdue`: app_id, user_id, changed_at, days) and processing appeals
 // past deadline_at (`risk_appeal_overdue`: app_id, appeal_id, target_type, deadline_at), one warn
 // line each, flat fields only (never the reason or the appeal content). Nothing is changed.
 //
 // Job chain (queue risk-scan, policy exclusive): seed() enqueues the current slot of both jobs;
 // handle() runs the job's scan and then enqueues the next slot of the same job (see
-// ../domain/risk-scan-slots.ts). A failed scan rejects before enqueuing (the queue retries this
-// job, whose key stays reserved); a failed enqueue after a successful scan is logged as warn and
-// the job still succeeds.
+// ../domain/risk-scan-slots.ts). Job names follow the queue's name rule (B1-03w): freeze_expiry,
+// daily_alerts; the singletonKey prefixes stay freeze-expiry: / daily-alerts:. A failed scan
+// rejects before enqueuing (the queue retries this job, whose key stays reserved); a failed
+// enqueue after a successful scan is logged as warn and the job still succeeds.
 //
 // Self-heal (B1-03u): heal() enqueues the next slot of both jobs, computed exactly as handle()
 // continues the chain. A healthy chain already holds that key (exclusive: the send is dropped);
-// a broken chain resumes from it. The current slot is never healed (a completed daily-alerts of
+// a broken chain resumes from it. The current slot is never healed (a completed daily_alerts of
 // today is outside the dedup and would repeat its alerts). See ./risk-scan-heal.ts for the timer.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
@@ -72,7 +73,7 @@ const DAY_MS = 86_400_000;
 /** BR-ID-36 / FUND-17: an indefinite freeze without a decision is reported after 30 days. */
 const INDEFINITE_OVERDUE_DAYS = 30;
 
-const JOB_NAMES: readonly RiskScanJobName[] = ['freeze-expiry', 'daily-alerts'];
+const JOB_NAMES: readonly RiskScanJobName[] = ['freeze_expiry', 'daily_alerts'];
 
 function isJobName(name: string): name is RiskScanJobName {
   return (JOB_NAMES as readonly string[]).includes(name);
@@ -317,7 +318,7 @@ export function createRiskScan(options: RiskScanOptions): RiskScan {
     },
     async handle(job) {
       if (!isJobName(job.name)) throw new Error(`unknown risk-scan job: ${job.name}`);
-      if (job.name === 'freeze-expiry') await expireFrozen();
+      if (job.name === 'freeze_expiry') await expireFrozen();
       else await dailyAlerts();
       await enqueueNext(job.name);
     },
