@@ -544,14 +544,18 @@ const deletionBalance = {
  * slot follows the configuration (agentDeletionCleanup).
  */
 const deletionCleanupPorts = {
-  inject: [APP_CONFIG, ROOT_LOGGER],
-  useFactory: (config: AppConfig | undefined, logger: RootLogger): DeletionCleanupPorts => ({
+  inject: [APP_CONFIG, ROOT_LOGGER, { token: DB, optional: true }],
+  useFactory: (
+    config: AppConfig | undefined,
+    logger: RootLogger,
+    database?: unknown,
+  ): DeletionCleanupPorts => ({
     linking: blockForDeletion,
     growth: detachChildrenOfDeleted,
     // F1-02zzk: notification deletes the user's push tokens in the app (BR-ID-28, BR-ID-30).
     notification: deletePushTokensForUser,
     // B3-09j (BR-AI-22): agent's purge under AGENT_USER_HASH_KEY; unavailable while it is unset.
-    agent: agentDeletionCleanup(config, logger),
+    agent: agentDeletionCleanup(config, logger, database),
     // B1-28f: every favorite of the user in the app (BR-ID-28).
     catalog: deleteFavoritesForUser,
   }),
@@ -560,17 +564,21 @@ const deletionCleanupPorts = {
 /**
  * B3-09j (BR-AI-22): the agent slot of deletionCleanupPorts. With config.agentUserHashKey, agent's
  * purgeAgentDataForUser over that key; without it (null / absent; prod never gets here, loadConfig
- * refuses), an unavailable marker and one warn that never carries a key value. A missing config
- * (a caller resolving no APP_CONFIG) counts as keyless.
+ * refuses), an unavailable marker, plus one warn that never carries a key value when a database is
+ * configured. Without a database the deletion processing does not run, so there is no warn
+ * (D10-334, identity [AC-B1-15f#29]). A missing config (a caller resolving no APP_CONFIG) counts as
+ * keyless.
  */
 export function agentDeletionCleanup(
   config: AppConfig | undefined,
   logger: RootLogger,
+  database?: unknown,
 ): DeletionCleanupPorts['agent'] {
   const key = config?.agentUserHashKey ?? null;
   if (key !== null && key.trim() !== '') {
     return createAgentDataPurge({ userHashKey: key }).purgeAgentDataForUser;
   }
+  if (database === undefined || database === null) return { unavailable: 'AGENT_USER_HASH_KEY' };
   // Names the variable only, never a value.
   logger.warn(
     { event: 'agent_deletion_cleanup_unavailable' },
