@@ -1,0 +1,132 @@
+{
+  "task": "B1-22o",
+  "spec_ref": "ec81e625dcf54f230d168dbf09910bd704c82a18",
+  "spec_commit": "761ffe536df55ba305d4b2faa1d7acdc936c09ff",
+  "red_tests": [
+    "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][D10-243] 持 [\"union.pid\"] 即可读取选项，不带动态码也是 200，且不写任何东西",
+    "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][D10-243] 持 [\"union.account_auth\"] 即可读取选项，不带动态码也是 200，且不写任何东西",
+    "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][D10-243] 持 [\"union.pid\",\"union.account_auth\"] 即可读取选项，不带动态码也是 200，且不写任何东西",
+    "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][D10-243] union.pid 与 union.account_auth 都没有（授予 []）为 10403 admin_permission_denied，带不带 platform、带不带动态码都一样",
+    "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][D10-243] union.pid 与 union.account_auth 都没有（授予 [\"union.binding_reset\"]）为 10403 admin_permission_denied，带不带 platform、带不带动态码都一样",
+    "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][D10-243] union.pid 与 union.account_auth 都没有（授予 [\"user.list\",\"config.general\"]）为 10403 admin_permission_denied，带不带 platform、带不带动态码都一样",
+    "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o] 超管不勾权限点也能读取选项",
+    "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][D10-243] 只读不要二次验证：带上的动态码不被消耗，之后仍能用于一次写操作",
+    "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o] 要后台令牌：缺失为 10001，无效令牌也不给数据",
+    "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][BR-ATTR-02] 只列本 app 的联盟账号；伪造 app 头无效，他 app 的账号不出现",
+    "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o] 同一 app 的两个后台账号（一个只持 union.pid、一个只持 union.account_auth）读到相同的选项",
+    "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o] 只有后台入口装配这个接口，api 入口没有",
+    "test/spec/union/admin-account-options/contract.test.ts > [B1-22o][D10-243] GET /admin/v1/union/account-options 上线移除 planned；后台身份、只读、无动态码与幂等键，可选 platform 查询参数",
+    "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] 每项只有 union_account_id、platform、account_name 三个字段，取值照存储",
+    "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] 不返回任何凭据：账号有当前凭据时选项里也没有它的明文或密文",
+    "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][BR-ATTR-02 细则] 账号无论何种状态、授权状态都列出（含 expired、expiring、paused、从未探测）",
+    "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] 排序：同平台按 account_name，同名再按 union_account_id；多平台按 platform 分组",
+    "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] 不分页：一次返回本 app 的全部账号",
+    "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] platform 过滤：只回该平台；该平台没有账号时为空列表",
+    "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] platform=\"\" 不在平台枚举：20001 data.fields=[platform]，不给数据",
+    "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] platform=\"TAOBAO\" 不在平台枚举：20001 data.fields=[platform]，不给数据",
+    "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] platform=\"tmall\" 不在平台枚举：20001 data.fields=[platform]，不给数据",
+    "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] platform=\"taobao \" 不在平台枚举：20001 data.fields=[platform]，不给数据",
+    "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] platform=\"unknown\" 不在平台枚举：20001 data.fields=[platform]，不给数据",
+    "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] platform=\"1\" 不在平台枚举：20001 data.fields=[platform]，不给数据",
+    "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] 与 GET /admin/v1/union-accounts 同一账号的三个字段取值一致"
+  ],
+  "risk_note": "RV2 (union admin account options: read-only list, union.pid or union.account_auth; CT-24s planned removed). Independent Claude (approvals #36, Codex unavailable until 10-30) wrote test/spec/union/admin-account-options/** (1 attempt, prettier-formatted before commit per D10-292). Implementation model: Claude Opus 5.5 (1 round). verify:fast on the AWS runner exit 0. Fixture credential value in list.int.test.ts made low-entropy and folded into the rule-test commit (gitleaks cn-doc-secret; D10-329, not counted): a fresh independent Claude changed it, another fresh independent Claude reviewed it (pass); local gitleaks over origin/main..HEAD: no leaks.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "761ffe536df55ba305d4b2faa1d7acdc936c09ff",
+      "tree": "43f78d38b754ee92fd3fc98c09495c55348bd2aa",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T10:34:58Z",
+      "finished_at": "2026-10-24T10:35:16Z",
+      "red_tests": [
+        "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][D10-243] 持 [\"union.pid\"] 即可读取选项，不带动态码也是 200，且不写任何东西",
+        "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][D10-243] 持 [\"union.account_auth\"] 即可读取选项，不带动态码也是 200，且不写任何东西",
+        "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][D10-243] 持 [\"union.pid\",\"union.account_auth\"] 即可读取选项，不带动态码也是 200，且不写任何东西",
+        "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][D10-243] union.pid 与 union.account_auth 都没有（授予 []）为 10403 admin_permission_denied，带不带 platform、带不带动态码都一样",
+        "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][D10-243] union.pid 与 union.account_auth 都没有（授予 [\"union.binding_reset\"]）为 10403 admin_permission_denied，带不带 platform、带不带动态码都一样",
+        "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][D10-243] union.pid 与 union.account_auth 都没有（授予 [\"user.list\",\"config.general\"]）为 10403 admin_permission_denied，带不带 platform、带不带动态码都一样",
+        "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o] 超管不勾权限点也能读取选项",
+        "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][D10-243] 只读不要二次验证：带上的动态码不被消耗，之后仍能用于一次写操作",
+        "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o] 要后台令牌：缺失为 10001，无效令牌也不给数据",
+        "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o][BR-ATTR-02] 只列本 app 的联盟账号；伪造 app 头无效，他 app 的账号不出现",
+        "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o] 同一 app 的两个后台账号（一个只持 union.pid、一个只持 union.account_auth）读到相同的选项",
+        "test/spec/union/admin-account-options/access.int.test.ts > [B1-22o] 只有后台入口装配这个接口，api 入口没有",
+        "test/spec/union/admin-account-options/contract.test.ts > [B1-22o][D10-243] GET /admin/v1/union/account-options 上线移除 planned；后台身份、只读、无动态码与幂等键，可选 platform 查询参数",
+        "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] 每项只有 union_account_id、platform、account_name 三个字段，取值照存储",
+        "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] 不返回任何凭据：账号有当前凭据时选项里也没有它的明文或密文",
+        "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][BR-ATTR-02 细则] 账号无论何种状态、授权状态都列出（含 expired、expiring、paused、从未探测）",
+        "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] 排序：同平台按 account_name，同名再按 union_account_id；多平台按 platform 分组",
+        "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] 不分页：一次返回本 app 的全部账号",
+        "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] platform 过滤：只回该平台；该平台没有账号时为空列表",
+        "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] platform=\"\" 不在平台枚举：20001 data.fields=[platform]，不给数据",
+        "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] platform=\"TAOBAO\" 不在平台枚举：20001 data.fields=[platform]，不给数据",
+        "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] platform=\"tmall\" 不在平台枚举：20001 data.fields=[platform]，不给数据",
+        "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] platform=\"taobao \" 不在平台枚举：20001 data.fields=[platform]，不给数据",
+        "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] platform=\"unknown\" 不在平台枚举：20001 data.fields=[platform]，不给数据",
+        "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] platform=\"1\" 不在平台枚举：20001 data.fields=[platform]，不给数据",
+        "test/spec/union/admin-account-options/list.int.test.ts > [B1-22o][D10-243] 与 GET /admin/v1/union-accounts 同一账号的三个字段取值一致"
+      ],
+      "expected": [
+        "test/spec/union/admin-account-options/access.int.test.ts",
+        "test/spec/union/admin-account-options/contract.test.ts",
+        "test/spec/union/admin-account-options/list.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "2c5fdf647b87e2a4303a8081c489e0a8a04684b8e65a38dd9794a76c0c1cc177"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d1b0ecf94484fdab3375a5e6b916903f1f50d6b54c86c67da721ae828c23311d"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "ed45922ca87183342580f451c1e7e215fdc4074a",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "money r1 pass, no findings (first run produced no usable output: checklist validation failed; rerun) (couli-runs/B1-22o/review-money-r1.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "r1 pass with one S2 (ordering of equal names by id), followed by the implementation"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "28b5ffc81d845ff7e38b6c531b13c6000893e546",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
