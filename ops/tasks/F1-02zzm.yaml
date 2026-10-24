@@ -1,0 +1,18 @@
+id: F1-02zzm
+repo: rebate-platform
+title: 测试修改：test/spec/content/text-guard/classification.test.ts [AC-F1-02r#18] 的期望归类补 real_name.consent. 前缀归 agreement（与 F1-02zzi 的 classifyTextKey 一致），为 CT-16o 建键让路
+type: test-change
+# 2026-10-24 入账（content-client；F1-02zzi money 评审 out_of_scope S2 / 编排 10:46 D10-234 记录：CT-16 续段建 real_name.consent.* 默认键时，[AC-F1-02r#18] 的期望只认 privacy./perm.，会把正确实现判红）。
+# 只把期望式里的协议类前缀补上 real_name.consent.（D10-204），断言条数与其余判定不变，不削弱。独立 Claude 改（approvals #36），新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签。
+refs: []
+refs_hash: {}
+deps: [F1-02zzi]
+paths:
+  - 'test/spec/content/text-guard/classification.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/text-guard/**'
+status: todo
+pr: null
