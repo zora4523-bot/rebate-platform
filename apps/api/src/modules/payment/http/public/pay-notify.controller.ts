@@ -26,7 +26,18 @@ import type { NotifyAnswer, PayNotificationDeps } from '../../application/pay-no
 import { handlePayNotification } from '../../application/pay-notifications.ts';
 import type { PayChannelCode } from '../../domain/types.ts';
 import type { NotifyRateLimiter } from '../../infra/notify-rate-limit.ts';
+import {
+  NOTIFY_CONTROLLER_PATH,
+  NOTIFY_ROUTE_PREFIX,
+  NOTIFY_ROUTE_SEGMENTS,
+  NOTIFY_ROUTES,
+  isNotifyRoute,
+} from '../../application/notify-routes.ts';
 import { NOTIFY_RAW_BODY, notifyRawBodyOf } from './notify-body.ts';
+
+// The routes live in application/notify-routes.ts (shared with the notify URL given to the
+// channel); re-exported for the module and the existing tests.
+export { NOTIFY_ROUTE_PREFIX, NOTIFY_ROUTES, isNotifyRoute };
 
 /** Nest token of the entry's dependencies. */
 export const PAY_NOTIFY_DEPS = Symbol('PAYMENT_PAY_NOTIFY_DEPS');
@@ -36,20 +47,6 @@ export interface PayNotifyDeps {
   /** null: no Redis in this process (announced once at start); nothing is limited then. */
   readonly rateLimiter: NotifyRateLimiter | null;
   readonly logger: RootLogger;
-}
-
-/** The notification routes (Fastify templates), for the body capture's route filter. */
-export const NOTIFY_ROUTE_PREFIX = '/notify/pay/';
-export const NOTIFY_ROUTES: Readonly<Record<PayChannelCode, string>> = Object.freeze({
-  wechat_pay: `${NOTIFY_ROUTE_PREFIX}wechat`,
-  alipay: `${NOTIFY_ROUTE_PREFIX}alipay`,
-});
-
-export function isNotifyRoute(method: string, routeTemplate: string): boolean {
-  return (
-    method.toUpperCase() === 'POST' &&
-    Object.values(NOTIFY_ROUTES).some((route) => route === routeTemplate)
-  );
 }
 
 /** What the handlers read of the Fastify request. */
@@ -173,9 +170,9 @@ export class PayNotifyController {
   Inject(PAY_NOTIFY_DEPS)(PayNotifyController, undefined, 0);
   Req()(prototype, 'wechat', 0);
   Res()(prototype, 'wechat', 1);
-  Post('wechat')(prototype, 'wechat', wechat);
+  Post(NOTIFY_ROUTE_SEGMENTS.wechat_pay)(prototype, 'wechat', wechat);
   Req()(prototype, 'alipay', 0);
   Res()(prototype, 'alipay', 1);
-  Post('alipay')(prototype, 'alipay', alipay);
-  Controller('notify/pay')(PayNotifyController);
+  Post(NOTIFY_ROUTE_SEGMENTS.alipay)(prototype, 'alipay', alipay);
+  Controller(NOTIFY_CONTROLLER_PATH)(PayNotifyController);
 }

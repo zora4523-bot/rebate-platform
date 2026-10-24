@@ -76,6 +76,7 @@ import {
 } from '../jobs/names.ts';
 import type { BizTypeRegistry } from './biz-registry.ts';
 import type { PayChannelSet, PayCreateOrderInput, PayCreateOrderResult } from './pay-channel.ts';
+import { NOTIFY_ROUTES } from './notify-routes.ts';
 import { QUERY_SCHEDULE_KEY } from './pay-settlement.ts';
 
 /** The caller: from the access token, and the request's X-Platform. */
@@ -116,7 +117,7 @@ export function bizPlatformsKey(bizType: string): string {
 
 /** The notification path of a channel (specs/pay-notify.md); the public base URL joins in B2-15k. */
 export function notifyPathOf(channel: PayChannelCode): string {
-  return `/notify/pay/${channel}`;
+  return NOTIFY_ROUTES[channel];
 }
 
 const CONFLICT: PayFailure = Object.freeze({
