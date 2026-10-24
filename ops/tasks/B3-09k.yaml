@@ -1,0 +1,34 @@
+id: B3-09k
+repo: rebate-platform
+title: B3-09k：别任务冻结测试 / 夹具的 prod 配置输入补合成 AGENT_USER_HASH_KEY（B3-09j 前置；只改输入、断言不动）
+type: test-change
+# 2026-10-24 入账（agent 线）。B3-09j（D10-312）让 loadConfig 在 APP_ENV=prod 缺 AGENT_USER_HASH_KEY 时拒绝启动，下列冻结测试 / 夹具的 prod 输入须补该键（D10-327）。
+# 原并在 B3-09j 的 test_paths，但先红把它们当规则测试判「骨架上为绿」共 218 条，red_exempt 上限 20 条，故照 B3-03s / B1-27e-fixtures 先例拆成前置任务：
+# 只给 prod 输入补不含数字的合成值，断言、用例名、条数零改动；现行主干下多一个无人读取的变量，全绿，可先于 B3-09j 合并。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件；新鲜独立 Claude 改、另一新鲜独立 Claude 只读复审 pass（写进 PR 正文）；标签由编排核对后加（#24）。
+refs: []
+refs_hash: {}
+deps: [B3-09i]
+paths:
+  - 'test/spec/platform/crypto/wiring-review-r1.test.ts'
+  - 'test/spec/platform/crypto/wiring-nest.test.ts'
+  - 'test/spec/platform/crypto/wiring-config.test.ts'
+  - 'test/spec/platform/maintenance/worker-entry.int.test.ts'
+  - 'test/spec/union/demo/assembly.test.ts'
+  - 'test/spec/platform/jwt-verify-only/config.test.ts'
+  - 'test/spec/union/pdd-live-wiring/startup.test.ts'
+  - 'test/spec/admin/auth/config.test.ts'
+  - 'test/spec/infra/staging-pdd/config.test.ts'
+  - 'test/spec/infra/staging-pdd/endpoints.test.ts'
+  - 'test/spec/infra/staging-pdd/kit.ts'
+  - 'test/spec/platform/export-store/config.test.ts'
+  - 'test/spec/platform/export-store/wiring.test.ts'
+  - 'test/spec/platform/media/config.test.ts'
+  - 'test/spec/union/pdd-live-wiring/config.test.ts'
+  - 'test/spec/union/pdd-query-identity/config.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
