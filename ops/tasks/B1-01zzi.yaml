@@ -4,17 +4,30 @@ title: 资金类业务指标与告警规则：映射表外平台状态码、月�
 type: impl
 # 2026-10-23 入账（be-codex；编排 D10-183 ② R-01、D10-193 ③）。依据：规划 02 §13 告警表与夜间只推资金类的规定；BR-FUND-02、BR-FUND-04、BR-CALC-13、BR-WDR-14、BR-WDR-18、BR-WDR-24 的告警条目。
 # 日终分录差异引用 R-03（funds，每日不变量）的结果，不重做；夜间路由与 @ 值班人由 ops 在 Alertmanager 做（B1-25）。打款 / 提现相关几项依赖提现线（B2-05 起）的表落地，未落地的写 TODO 标 blocked。
-# 开工前补 refs 与 refs_hash（task.ts check 计算），paths 随各模块只读端口确定；排在 B1-01zzh 之后。
-refs: []
-refs_hash: {}
+# 2026-10-25 开工补齐：platform 不导入任何模块，指标经各模块新增的只读端口（orders：order_sync_pending open 计数按 reason；settlement：settle_batches PARTIAL / 失败与 beneficiary_credits open 满 30 天；payout：withdrawals needs_manual、自然日 W6 比率与连续 W6）由入口注入 worker 的采集；企业支付宝水位 W<1.5P 依赖 B2-06a 的 payout_watermarks，未落地写 TODO blocked。Codex 额度至 10-30，tester 按 approvals #36 改独立 Claude。
+refs: [BR-FUND-02, BR-FUND-04, BR-CALC-13, BR-WDR-14, BR-WDR-18, BR-WDR-24]
+refs_hash:
+  BR-FUND-02: bffd22853853
+  BR-FUND-04: f4b8b2be46ea
+  BR-CALC-13: 54c06125032c
+  BR-WDR-14: 6328f3cda2e6
+  BR-WDR-18: 9247640dde57
+  BR-WDR-24: 1e9585c4b8bf
 deps: [B1-01zzh]
 paths:
   - 'apps/api/src/modules/platform/metrics/**'
+  - 'apps/api/src/modules/orders/index.ts'
+  - 'apps/api/src/modules/orders/application/metrics-read*.ts'
+  - 'apps/api/src/modules/settlement/index.ts'
+  - 'apps/api/src/modules/settlement/application/metrics-read*.ts'
+  - 'apps/api/src/modules/payout/index.ts'
+  - 'apps/api/src/modules/payout/application/metrics-read*.ts'
+  - 'apps/api/src/entry.ts'
   - 'infra/monitoring/rules/**'
 test_paths:
   - 'test/spec/platform/fund-metrics/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/fund-metrics/**'
