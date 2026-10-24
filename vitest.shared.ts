@@ -1,7 +1,11 @@
 // Shared Vitest configuration for every workspace package (conventions C5).
 // Protected path, class 2 (verify config): changing it needs owner approval (规划/11 §4.4).
 import { defaultClientConditions, defaultServerConditions, type Plugin } from 'vite';
-import { configDefaults, type ViteUserConfig } from 'vitest/config';
+import {
+  configDefaults,
+  type TestProjectInlineConfiguration,
+  type ViteUserConfig,
+} from 'vitest/config';
 
 // Workspace packages expose their TypeScript sources through the custom export condition
 // `couli-src`, so tests never need a prior build. Vite's own server conditions are kept.
@@ -13,12 +17,13 @@ const BROWSER_CONDITIONS: string[] = ['couli-src', ...defaultClientConditions];
 const BASE_EXCLUDE: string[] = [...configDefaults.exclude, '**/dist/**', '**/.tmp/**'];
 
 // Same strictness for every tier: an empty run, `.only`, retries and assertion-free tests fail.
-const STRICT = {
-  passWithNoTests: false,
+// PROJECT_STRICT is the part a Vitest project may set itself (`passWithNoTests` is root-only).
+const PROJECT_STRICT = {
   allowOnly: false,
   retry: 0,
   expect: { requireAssertions: true },
 } as const;
+const STRICT = { passWithNoTests: false, ...PROJECT_STRICT } as const;
 
 function resolveBlock(): Pick<ViteUserConfig, 'resolve' | 'ssr'> {
   return {
@@ -89,6 +94,48 @@ function moduleRequestLog(): Plugin {
   };
 }
 
+type BrowserConfigOptions = {
+  include: string[];
+  /** Name of the project that runs `include` without the `apart` files. */
+  name: string;
+  /** Files of `include` (globs of the same form) that run in a browser project of their own. */
+  apart: { name: string; include: string[] };
+  /** A fresh set of Vite plugins per call: each project gets its own Vite server. */
+  plugins: () => NonNullable<ViteUserConfig['plugins']>;
+  provider: NonNullable<BrowserOptions['provider']>;
+  screenshotDirectory: string;
+  fsAllow?: string[];
+};
+
+/** One browser project of browserConfig: its own Vite server, browser pages and test files. */
+function browserProject(
+  opts: BrowserConfigOptions,
+  name: string,
+  files: { include: string[]; exclude: string[]; groupOrder: number },
+): TestProjectInlineConfiguration {
+  return {
+    // Nothing is inherited from the declaring config: the project is complete by itself.
+    extends: false,
+    resolve: { conditions: [...BROWSER_CONDITIONS] },
+    plugins: [...opts.plugins(), moduleRequestLog()],
+    ...(opts.fsAllow === undefined ? {} : { server: { fs: { allow: [...opts.fsAllow] } } }),
+    test: {
+      ...PROJECT_STRICT,
+      name,
+      include: files.include,
+      exclude: files.exclude,
+      sequence: { groupOrder: files.groupOrder },
+      browser: {
+        enabled: true,
+        provider: opts.provider,
+        headless: true,
+        instances: [{ browser: 'chromium' }],
+        screenshotDirectory: opts.screenshotDirectory,
+      },
+    },
+  };
+}
+
 /**
  * Browser tests (`*.browser.test.{ts,tsx}`): Vitest browser mode in a real headless Chromium. The
  * provider and the Vite plugins come from the caller (test/vitest.browser.config.ts), whose
@@ -97,6 +144,17 @@ function moduleRequestLog(): Plugin {
  * directories the page may read back through `commands.readFile` (an export directory outside
  * the repository).
  *
+ * CT-06zl: the files run in two browser projects, `name` (all of `include` but the `apart` files)
+ * and `apart.name`. Their `sequence.groupOrder` (0 and 1) makes them run one after the other, so
+ * no more pages run tests at once than with a single project (the first project's idle pages
+ * and browser stay open until the end; with a single worker per project Vitest may run the
+ * first project last). Each project has its own Vite server, dependency optimizer and browser
+ * pages, so a page that ran a file of one project never loads a file of the other. Together they
+ * run exactly the files one project with `include` and BASE_EXCLUDE would run, provided
+ * `apart.include` lies inside `include`. This is a stopgap based on correlation (the five
+ * verify-int failures seen so far were each the first admin file a page loaded right after an
+ * H5 file there); CT-06zi's logs stay on to find the cause.
+ *
  * CT-06zi, the browser side of that log: VITEST_PW_DEBUG makes @vitest/browser-playwright print
  * every request the page itself reports as failed ("[PW Error] <type> request failed for <url>
  * url: <net error>"), including ones that never reached the server. The provider reads the
@@ -104,29 +162,23 @@ function moduleRequestLog(): Plugin {
  * Requests to the fixtures' unreachable hosts (images of *.example.test and the like) show up
  * there too.
  */
-export function browserConfig(opts: {
-  include: string[];
-  plugins: NonNullable<ViteUserConfig['plugins']>;
-  provider: NonNullable<BrowserOptions['provider']>;
-  screenshotDirectory: string;
-  fsAllow?: string[];
-}): ViteUserConfig {
+export function browserConfig(opts: BrowserConfigOptions): ViteUserConfig {
   process.env['VITEST_PW_DEBUG'] ??= '1';
   return {
-    resolve: { conditions: [...BROWSER_CONDITIONS] },
-    plugins: [...opts.plugins, moduleRequestLog()],
-    ...(opts.fsAllow === undefined ? {} : { server: { fs: { allow: [...opts.fsAllow] } } }),
     test: {
       ...STRICT,
-      include: opts.include,
-      exclude: [...BASE_EXCLUDE],
-      browser: {
-        enabled: true,
-        provider: opts.provider,
-        headless: true,
-        instances: [{ browser: 'chromium' }],
-        screenshotDirectory: opts.screenshotDirectory,
-      },
+      projects: [
+        browserProject(opts, opts.name, {
+          include: opts.include,
+          exclude: [...BASE_EXCLUDE, ...opts.apart.include],
+          groupOrder: 0,
+        }),
+        browserProject(opts, opts.apart.name, {
+          include: opts.apart.include,
+          exclude: [...BASE_EXCLUDE],
+          groupOrder: 1,
+        }),
+      ],
     },
   };
 }
