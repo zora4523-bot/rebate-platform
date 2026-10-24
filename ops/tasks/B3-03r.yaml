@@ -1,0 +1,24 @@
+id: B3-03r
+repo: rebate-platform
+title: 启用模型路径前的当前链补漏：模型与续答路径的结果集装饰器在商品列表确认写出后才切为会话当前链
+type: impl
+# 2026-10-24 入账（agent2-acct4）。B3-03q（#1503）独立 Claude general r1 范围外 S2（couli-runs/followups/staging-b1-01zc-zd.md 第 57 条）：
+# orchestrator/results/tools.ts 的 createResultsTools 在 core 写卡前就追加 has_products 当前链；该批 product_list 因取消 / 卡片上限未写出时，
+# 下一轮「换一批」翻到用户没见过的页，「第 N 个」仍指向上一批。照 B3-03q 降级路径（createKeywordResults）改为首个 product_list 写出回执后再切链。
+# 当前生产固定 no_model，不可达；B3-03k 启用模型前须合并。分工：独立 Claude 写规则测试（Codex 至 10-30 不可用，approvals #36），Claude Opus 5.5 实现，独立 Claude / Codex 评审。风险 RV1。
+refs: [BR-AI-05]
+refs_hash:
+  BR-AI-05: ee8fd647fd43
+deps: [B3-03q]
+paths:
+  - 'apps/api/src/modules/agent/orchestrator/results/**'
+  - 'apps/api/src/modules/agent/stream/mount/**'
+test_paths:
+  - 'test/spec/agent/stream-model-prereq-4/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/stream-model-prereq-4/**'
+status: todo
+pr: null
