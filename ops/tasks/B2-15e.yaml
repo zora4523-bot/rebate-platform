@@ -23,7 +23,7 @@ paths:
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
-  # 2026-10-25 D10-350 / D10-351：同一迁移里 pay_refunds 补 note 列（≤200，只在建单 INSERT 写），幂等唯一键同名重建为 (app_id, operator, idempotency_key)；迁移号落地时取主干最大 + 1，迁移槽排在 be B1-12x 之后。两条退款操作去掉 planned 后 planned-operations.gen.ts 随之重生成。D10-351 ③ 建退款单同一事务入队延迟的 refund.query，渠道调用在提交之后，中途退出由该查询判定、不用同一 out_refund_no 重提；① 异常收款退款成功只断言 pay_fulfillments 不变（入不入队均可）。
+  # 2026-10-25 D10-350 / D10-351：同一迁移里 pay_refunds 补 note 列（≤200，只在建单 INSERT 写），幂等唯一键同名重建为 (app_id, operator, idempotency_key)；迁移号落地时取主干最大 + 1，迁移槽排在 be B1-12x 之后。两条退款操作去掉 planned 后 planned-operations.gen.ts 随之重生成。D10-351 ③ 建退款单同一事务入队延迟的 refund.query（加进 PayJobName），渠道调用在提交之后，进程中途退出由该查询判定、不用同一 out_refund_no 重提；① 异常收款退款成功只断言该收款涉及业务对象的 pay_fulfillments 不变（入不入队均可）。
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
