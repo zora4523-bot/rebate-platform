@@ -19,7 +19,7 @@ it('[AC-B1-08w#3] 生产处理器识别 snapshot-retry 并查询待处理订单'
       registrations[0]![1]({
         id: 'synthetic-retry',
         queue: 'order-sync',
-        name: 'snapshot-retry',
+        name: 'snapshot_retry',
         payload: { app_id: 'synthetic-app' },
         attempt: 1,
       }),

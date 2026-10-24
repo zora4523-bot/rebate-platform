@@ -34,8 +34,8 @@ it('[AC-B1-08t#22] 定时器通过 JobQueue 按 App 投递补偿扫描，停止�
     await vi.advanceTimersByTimeAsync(1);
     expect(f.send).toHaveBeenCalledTimes(2);
     expect(f.send.mock.calls.map(([queue, name, payload]) => ({ queue, name, payload }))).toEqual([
-      { queue: 'order-sync', name: 'snapshot-retry', payload: { app_id: 'app-a' } },
-      { queue: 'order-sync', name: 'snapshot-retry', payload: { app_id: 'app-b' } },
+      { queue: 'order-sync', name: 'snapshot_retry', payload: { app_id: 'app-a' } },
+      { queue: 'order-sync', name: 'snapshot_retry', payload: { app_id: 'app-b' } },
     ]);
     for (const [, , , options] of f.send.mock.calls) expect(options.trx).toBeNull();
     await vi.advanceTimersByTimeAsync(60_000);

@@ -202,6 +202,6 @@ export function warnings(lines: string[], message: string): Record<string, unkno
     .map((line) => JSON.parse(line) as Record<string, unknown>)
     .filter((line) => line['level'] === 40 && line['msg'] === message);
 }
-export function job(name: 'freeze-expiry' | 'daily-alerts'): Job {
+export function job(name: 'freeze_expiry' | 'daily_alerts'): Job {
   return { id: randomUUID(), queue: 'risk-scan', name, payload: {}, attempt: 1 };
 }

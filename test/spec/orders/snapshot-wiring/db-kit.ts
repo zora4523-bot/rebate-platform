@@ -101,7 +101,7 @@ export async function fixture(db: Kysely<DB>, directStatus = 'normal') {
         handler({
           id: randomUUID(),
           queue: 'order-sync',
-          name: 'snapshot-retry',
+          name: 'snapshot_retry',
           payload: { app_id: a.app_id },
           attempt: 1,
         }),
