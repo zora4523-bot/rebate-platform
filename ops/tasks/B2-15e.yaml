@@ -5,6 +5,7 @@ type: impl
 # 2026-10-22 收款线入账（BR-PAY-06 全文与细则、BR-PAY-07 分录；负责人 2026-10-05 原路退款不设二次验证）。refund_fail_states 验证前为空（退款失败按未知处理、继续占额）。
 # 事件名 pay.refund.succeeded 要进 EVENT_NAMES；后台账号的幂等 subject（a:<admin_user_id>，待裁定）要改 platform/idempotency（现只按 userId 推导）（独立复核 S1-3 / S1-4）。AC-S2-82 ⑮：开通失败 → 全额退款成功 → 旧开通任务重试后权益仍为退款后的结果。
 # 并发：同键提交两次只一张退款单；并发两笔部分退款只成功一笔、合计不超可退（AC-S2-82 ⑭）；退款通知与查询并发只生效一次。幂等 subject 按编排裁定（notices 21:3x ②）。实现用 Fable 5.1 高推理。
+# 2026-10-25 D10-351：③ 建退款单的同一事务里入队延迟的 refund.query（加进 PayJobName），渠道调用在提交之后；进程中途退出由该查询判定，不用同一 out_refund_no 重提。① 异常收款退款成功只断言该收款涉及业务对象的 pay_fulfillments 不变（入不入队均可）。
 # 2026-10-23 编排 10:27：Codex 不可用至 10-30，规则测试与评审改由独立 Claude（tools/agent/claude-run.sh，approvals #36），tester 改为 claude-independent。
 refs: [BR-PAY-06, BR-PAY-07]
 refs_hash:
@@ -22,8 +23,14 @@ paths:
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  # 2026-10-25 D10-350 / D10-351：同一迁移里 pay_refunds 补 note 列（≤200，只在建单 INSERT 写），幂等唯一键同名重建为 (app_id, operator, idempotency_key)；迁移号落地时取主干最大 + 1，迁移槽排在 be B1-12x 之后。
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
 test_paths:
   - 'test/spec/payment/refund/**'
+  # 2026-10-25 D10-340：02 §11 已有 pay_refund.succeeded，事件夹具 PLAN_02_EVENTS 由测试作者在作者提交里只加这一项（同 B2-15c #1549）；[AC-B1-08u#1] 允许名单另走前置 PR（D10-325）。
+  - 'test/spec/platform/events/kit.ts'
 impl: claude
 tester: claude-independent
 accept:
