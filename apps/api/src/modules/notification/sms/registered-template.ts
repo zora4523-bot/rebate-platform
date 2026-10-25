@@ -4,12 +4,15 @@
 //
 // resolve({ appId, code, variant }) — variant 'default' when absent; the rows are read on every
 // call (no cache: a registration enabled in the console takes effect on the next send):
-//   - the row (app_id, code, variant) has its in-use registration (sms_sign_name and
-//     sms_template_code set), its channels contain 'sms', and every variant row of that app and
-//     code has its in-use registration → { signName: sms_sign_name, templateCode:
-//     sms_template_code };
-//   - code 'SMS_CODE' whose row has no in-use registration (or no row) → deployVerifyCode (the
-//     deployment's SMS_SIGN_NAME / SMS_TEMPLATE_VERIFY_CODE); undefined when that is absent too;
+//   - code 'SMS_CODE' (B1-12za; D10-337 ②): the requested variant's row has its in-use
+//     registration → that registration, whatever the other variants hold and whatever its
+//     channels say (its channel cannot be closed; no readiness check, no `sms_not_ready` line);
+//     otherwise (no in-use registration, or no row) → deployVerifyCode (the deployment's
+//     SMS_SIGN_NAME / SMS_TEMPLATE_VERIFY_CODE); undefined when that is absent too;
+//   - any other code: the row (app_id, code, variant) has its in-use registration
+//     (sms_sign_name and sms_template_code set), its channels contain 'sms', and every variant
+//     row of that app and code has its in-use registration → { signName: sms_sign_name,
+//     templateCode: sms_template_code };
 //   - any other code without an in-use registration, or whose channels lack 'sms' → undefined
 //     (not sent; the deployment configuration never stands in for it);
 //   - channels contain 'sms' but some variant of the code has no in-use registration yet (未就绪,
@@ -85,14 +88,15 @@ export function createRegisteredTemplateResolver(
         .execute();
       const row = rows.find((candidate) => candidate.variant === variant);
       const registration = row === undefined ? undefined : inUse(row);
-      const allVariants = rows.every((candidate) => inUse(candidate) !== undefined);
 
       if (query.code === VERIFY_CODE) {
-        // SMS_CODE's channel cannot be closed (BR-TEXT-20): the registration when every variant
-        // has one, otherwise the deployment configuration (D10-337 ②), else nothing.
-        return registration !== undefined && allVariants ? registration : fallback;
+        // SMS_CODE's channel cannot be closed (BR-TEXT-20): the requested variant's own in-use
+        // registration, otherwise the deployment configuration (D10-337 ②), else nothing. The
+        // other variants' registrations and the channels column play no part.
+        return registration ?? fallback;
       }
       if (row === undefined || !row.channels.includes('sms')) return undefined;
+      const allVariants = rows.every((candidate) => inUse(candidate) !== undefined);
       if (registration !== undefined && allVariants) return registration;
       // The default channels hold SMS but some variant has no in-use registration yet (未就绪,
       // D10-339 ⑥): no SMS, one log line (never a phone number).
