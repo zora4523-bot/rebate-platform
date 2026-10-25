@@ -25,6 +25,8 @@
 //     no audit per row (the upload writes one for the whole file, B1-09g).
 import type { DB } from '@couli/db';
 import type { Kysely, Transaction } from 'kysely';
+import { checkChannelRow } from '../domain/channel-row.ts';
+import type { RightsImportRowOutcome } from '../domain/rights-import.ts';
 import type { RightsImportRowProcessor } from './rights-import-ports.ts';
 import type { SyncAccessPort } from './sync-ports.ts';
 
@@ -64,7 +66,51 @@ export interface ChannelImportDeps {
   readonly accounts: Pick<SyncAccessPort, 'listEnabledAccounts'>;
 }
 
+const INVALID_ROW: RightsImportRowOutcome = { kind: 'failed', reason: 'invalid_row' };
+const PLATFORM_MISMATCH: RightsImportRowOutcome = { kind: 'failed', reason: 'platform_mismatch' };
+
 export function createChannelImportProcessor(deps: ChannelImportDeps): RightsImportRowProcessor {
-  void deps;
-  throw new Error('NotImplemented: createChannelImportProcessor');
+  const { db, blocklist, accounts } = deps;
+  /** The platform of the last task's union account (null: not in union's listing). */
+  let known: { readonly key: string; readonly platform: string | null } | undefined;
+
+  async function accountPlatform(appId: string, accountId: string): Promise<string | null> {
+    const key = JSON.stringify([appId, accountId]);
+    if (known?.key !== key) {
+      const listed = await accounts.listEnabledAccounts();
+      const account = listed.find((a) => a.app_id === appId && a.union_account_id === accountId);
+      known = { key, platform: account?.platform ?? null };
+    }
+    return known.platform;
+  }
+
+  return {
+    async process(task, row, trx) {
+      const accountId = task.union_account_id;
+      if (accountId === null) return INVALID_ROW;
+      // An account missing from union's listing (another App's, or unknown) is no account of the
+      // task's platform either.
+      if ((await accountPlatform(task.app_id, accountId)) !== task.platform) {
+        return PLATFORM_MISMATCH;
+      }
+      const checked = checkChannelRow(row.values, task.created_at);
+      if (!checked.ok) return INVALID_ROW;
+      const input: ChannelBlocklistImport = {
+        app_id: task.app_id,
+        platform: task.platform,
+        union_account_id: accountId,
+        created_by: task.created_by,
+        imported_at: task.created_at,
+        rows: [{ relation_id: checked.relation_id, end_at: checked.end_at }],
+      };
+      const results =
+        trx === undefined
+          ? await db.transaction().execute((own) => blocklist.importChannels(own, input))
+          : await blocklist.importChannels(trx, input);
+      const status = results[0]?.status;
+      if (status === 'inserted') return { kind: 'succeeded' };
+      if (status === 'duplicate') return { kind: 'duplicate' };
+      throw new Error('orders: channel blocklist import returned no result for the row');
+    },
+  };
 }
