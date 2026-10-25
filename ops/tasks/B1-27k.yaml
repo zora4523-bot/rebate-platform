@@ -1,0 +1,22 @@
+id: B1-27k
+repo: rebate-platform
+title: identity：个人信息副本加密 ZIP（自写 WinZip AES-256 / AE-2）的互通测试——标准实现能用提取码解开本系统生成的包、内容逐字一致，错误密码必拒；或以标准工具生成并核验的已知答案夹具对照；D10-356 ② 的上线门槛
+type: impl
+# 2026-10-25 入账（admin-backend，编排 16:5x 派）。依据：裁定 D10-356 ②（B1-27h #1615 自写 WinZip AES-256 照准合并；任何真实环境开放个人信息副本交付前须补互通测试），08 BR-ID-40 细则「交付（默认）」（加密压缩包 + 一次性提取码）。
+# 被测实现：apps/api/src/modules/identity/application/data-copy-file.ts（encryptDataCopyZip / generateDataCopySecret，每条目独立随机盐、PBKDF2-HMAC-SHA1 1000 次、小端计数 AES-CTR、对密文 HMAC-SHA1 截 10 字节，AE-2 的 CRC-32 记 0）。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：① 优先在验证容器里用现成标准实现（7-Zip / Info-ZIP / libarchive 的 bsdtar，看镜像里有哪个）解包；镜像里都没有时，改用已知答案夹具：由标准工具在仓库外生成一个 AE-2 包（明文、密码、盐与产物都入夹具，记下工具名与版本），测试断言本实现对同一明文、密码与盐的产物逐字节相同，并能被夹具里的标准包反向核对。② 不新增运行时依赖；测试侧若需新开发依赖写 deps_needed，不改锁文件。③ 错误密码、截断包、篡改一个字节的密文都必须被拒。④ 若互通失败，修 data-copy-file.ts 使之符合 WinZip AE-2 规范，不改规则测试去迁就。
+refs: []
+refs_hash: {}
+deps: [B1-27h]
+paths:
+  - 'apps/api/src/modules/identity/application/data-copy-file.ts'
+  - 'apps/api/src/modules/identity/application/data-copy-file.test.ts'
+test_paths:
+  - 'test/spec/identity/data-copies-interop/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/data-copies-interop/**'
+status: todo
+pr: null
