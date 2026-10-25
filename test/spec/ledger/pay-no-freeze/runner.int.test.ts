@@ -125,7 +125,7 @@ it(
 );
 
 it(
-  '[AC-B2-02o#2] 只有 pay- 不变量报全局差异：不建议冻结提现；差错单与关闭月结建议同改前（全局即关）',
+  '[AC-B2-02o#2] 只有 pay- 不变量报全局差异：不建议冻结提现，也不关月结；照常建议差错单',
   async () => {
     const { result, differenceLogs, findings } = await check([
       clean('01_balance.sql', '01'),
@@ -134,7 +134,7 @@ it(
     expect(result.recommendations).toEqual({
       createDiscrepancies: true,
       freezeWithdrawals: false,
-      disableAutoSettlement: true,
+      disableAutoSettlement: false,
     });
     expect(result.accountDifferences).toEqual([]);
     expect(result.globalDifferences).toEqual([
@@ -210,7 +210,7 @@ it(
 );
 
 it(
-  '[AC-B2-02o#6] pay- 全局差异与非 pay- 账户级差异同时出现：冻结提现、差错单、关闭月结都建议',
+  '[AC-B2-02o#6] pay- 全局差异与非 pay- 账户级差异同时出现：建议冻结提现与差错单，不关月结',
   async () => {
     const { result, findings } = await check([
       differing('07_negative.sql', '07', [{ scope: 'account' }]),
@@ -219,8 +219,27 @@ it(
     expect(result.recommendations).toEqual({
       createDiscrepancies: true,
       freezeWithdrawals: true,
+      disableAutoSettlement: false,
+    });
+    expect(recommendDailyCheckActions(findings)).toEqual(result.recommendations);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-02o#15] pay- 全局差异与非 pay- 全局差异同时出现：三项建议全部为真，两边差异与告警都保留',
+  async () => {
+    const { result, differenceLogs, findings } = await check([
+      differing('02_voucher.sql', '02', [{ scope: 'global' }]),
+      differing('pay-suspense.sql', 'P4', [{ scope: 'global' }]),
+    ]);
+    expect(result.recommendations).toEqual({
+      createDiscrepancies: true,
+      freezeWithdrawals: true,
       disableAutoSettlement: true,
     });
+    expect(result.globalDifferences.map((d) => d.invariant)).toEqual(['02', 'P4']);
+    expect(differenceLogs.map((f) => f['file'])).toEqual(['02_voucher.sql', 'pay-suspense.sql']);
     expect(recommendDailyCheckActions(findings)).toEqual(result.recommendations);
   },
   TIMEOUT,

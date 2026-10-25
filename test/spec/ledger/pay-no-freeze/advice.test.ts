@@ -33,7 +33,7 @@ it('[AC-B2-02o#10] 无差异时三项建议全为假', () => {
   });
 });
 
-it('[AC-B2-02o#11] 只有 pay- 差异：建议差错单、不冻结提现；全局差异照旧关闭月结', () => {
+it('[AC-B2-02o#11] 只有 pay- 差异：建议差错单、不冻结提现；全局差异也不关闭月结', () => {
   expect(recommendDailyCheckActions([{ file: 'pay-receipts.sql', scope: 'account' }])).toEqual({
     createDiscrepancies: true,
     freezeWithdrawals: false,
@@ -47,7 +47,7 @@ it('[AC-B2-02o#11] 只有 pay- 差异：建议差错单、不冻结提现；全�
   ).toEqual({
     createDiscrepancies: true,
     freezeWithdrawals: false,
-    disableAutoSettlement: true,
+    disableAutoSettlement: false,
   });
 });
 
@@ -67,15 +67,31 @@ it('[AC-B2-02o#12] 任一非 pay- 差异（含名字里带 pay 的）即建议�
   }
 });
 
-it('[AC-B2-02o#13] 性质：差错单看有无差异，冻结看有无非 pay- 差异，关闭月结看有无全局差异', () => {
+it('[AC-B2-02o#13] 性质：差错单看有无差异，冻结看有无非 pay- 差异，关闭月结看有无非 pay- 全局差异', () => {
   fc.assert(
     fc.property(fc.array(finding, { maxLength: 8 }), (findings) => {
       expect(recommendDailyCheckActions(findings)).toEqual({
         createDiscrepancies: findings.length > 0,
         freezeWithdrawals: findings.some((f) => !f.file.startsWith('pay-')),
-        disableAutoSettlement: findings.some((f) => f.scope === 'global'),
+        disableAutoSettlement: findings.some(
+          (f) => f.scope === 'global' && !f.file.startsWith('pay-'),
+        ),
       });
     }),
     propParams(),
   );
+});
+
+it('[AC-B2-02o#14] pay- 全局差异与非 pay- 全局差异同时出现：三项建议全为真，不论顺序', () => {
+  const findings: DailyCheckFinding[] = [
+    { file: 'pay-suspense.sql', scope: 'global' },
+    { file: '02_voucher.sql', scope: 'global' },
+  ];
+  const expected = {
+    createDiscrepancies: true,
+    freezeWithdrawals: true,
+    disableAutoSettlement: true,
+  };
+  expect(recommendDailyCheckActions(findings)).toEqual(expected);
+  expect(recommendDailyCheckActions([...findings].reverse())).toEqual(expected);
 });
