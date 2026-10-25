@@ -6,6 +6,7 @@
 // passed through unchanged, so createMetricsRegistry renders the same values ([AC-B1-01zzi#3]:
 // the registry still calls collectFund on every render). Whether an age of exactly ttlMs is still
 // fresh is not fixed here: the tests stay one millisecond either side of it.
+import { propParams } from '@couli/testing';
 import fc from 'fast-check';
 import { afterEach, expect, it, vi } from 'vitest';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
@@ -225,9 +226,9 @@ it('[AC-B1-01zzo#6] 任意顺序的时钟推进与成功 / 失败采集（逐次
         }
       },
     ),
-    { numRuns: 200 },
+    propParams(),
   );
-});
+}, 900_000);
 
 it('[AC-B1-01zzo#7] 交给 worker registry：每次 render 照旧调用 collectFund，但 5 分钟内两次 render 只调一次底层、资金值与快照一致（口径不变）；B1-01zzh 的 collect 每次都调；过期后底层失败则该次 render 失败', async () => {
   const clock = new FixedClock(NOW);

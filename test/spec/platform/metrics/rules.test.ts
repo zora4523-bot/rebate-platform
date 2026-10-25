@@ -134,3 +134,48 @@ it('[AC-B1-01zzh#15] Redis 三条：不可达（redis_up == 0）、内存使用�
   expect(refusal[0]!.for).toBe('5m');
   expect(new Set([down.alert, memory.alert, refusal[0]!.alert]).size).toBe(3);
 });
+
+// be-tc-1 (D10-355 ③, B1-01zzh spec-test S2): #15 accepts `> 0` or `== 0` for whichever refusal
+// signal is chosen, and `> 70` for the memory ratio without a percentage scale. Here the direction
+// is bound to the metric: a counter only counts up, so it is compared after increase() / rate()
+// with `> 0` (a bare counter `> 0` would stay true forever after one error; `== 0` would fire while
+// healthy); redis_rdb_last_bgsave_status is 1 when the last save succeeded, so it fires on `== 0`;
+// the used / max ratio is a fraction, so 70% is `> 0.7`, and `> 70` only with an explicit `* 100`.
+const REDIS_COUNTER = /\bredis_[a-z_]+_total\b/g;
+const WRAPPED = /\b(increase|rate)\(\s*redis_[a-z_]+_total(\{[^}]*\})?\[\d+(ms|s|m|h)\]\s*\)/g;
+const RATE_OF = /\b(increase|rate)\(\s*(redis_rejected_connections_total|redis_errors_total)\b/;
+const BGSAVE_RATE = /\b(increase|rate)\(\s*redis_rdb_last_bgsave_status\b/;
+
+it('[AC-B1-01zzh#16] Redis 规则比较方向与指标绑定：计数器只在 increase()/rate()（带区间）内读且拒写告警以 > 0 触发；用 redis_rdb_last_bgsave_status 则 == 0；内存比率只接受 > 0.7（明确 * 100 时 > 70）', () => {
+  const all = rules();
+
+  // Every Redis counter any rule reads sits inside increase(...[range]) or rate(...[range]).
+  for (const rule of all) {
+    const bare = rule.expr.match(REDIS_COUNTER) ?? [];
+    const wrapped = rule.expr.match(WRAPPED) ?? [];
+    const why = `${rule.alert}: Redis counters only through increase()/rate()`;
+    expect(wrapped.length, why).toBe(bare.length);
+  }
+
+  const refusal = all.filter((rule) =>
+    /\b(redis_rejected_connections_total|redis_errors_total|redis_rdb_last_bgsave_status)\b/.test(
+      rule.expr,
+    ),
+  );
+  expect(refusal.map((rule) => rule.alert)).toHaveLength(1);
+  const { expr, alert } = refusal[0]!;
+  if (/\bredis_rdb_last_bgsave_status\b/.test(expr)) {
+    // A gauge (1 = last save ok): read directly, never through increase()/rate(), fires on 0.
+    expect(expr, alert).not.toMatch(BGSAVE_RATE);
+    expect(expr, alert).toMatch(/==\s*0\s*$/);
+  } else {
+    expect(expr, alert).toMatch(RATE_OF);
+    expect(expr, alert).toMatch(/(^|[^<>=!])>\s*0\s*$/);
+    expect(expr, alert).not.toMatch(/==\s*0\s*$/);
+  }
+
+  const memory = ruleOf(all, 'redis_memory_used_bytes');
+  const scaled = /\*\s*100(?![0-9.])/.test(memory.expr);
+  const want = scaled ? /(^|[^<>=!])>\s*70\s*$/ : /(^|[^<>=!])>\s*0\.70?\s*$/;
+  expect(memory.expr, memory.alert).toMatch(want);
+});
