@@ -158,7 +158,7 @@ it('[AC-B1-09h#5] 处理器拿到的事务就是提交该行检查点的事务�
     async process(task, row, trx) {
       expect(trx, `row ${row.row_no} is handed its checkpoint transaction`).toBeDefined();
       // Read on another connection: the version committed by the previous row's checkpoint.
-      const { rows } = await sql<{ x: string }>`SELECT xmin::text AS x FROM rights_imports
+      const { rows } = await sql<{ x: string }>`SELECT xmin::text AS x FROM app.rights_imports
         WHERE app_id = ${f.appId} AND id = ${t.importId}`.execute(f.db);
       committedTx.set(row.row_no, rows[0]!.x);
       const outcome = await real.process(task, row, trx);
