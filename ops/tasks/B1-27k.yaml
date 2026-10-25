@@ -4,7 +4,7 @@ title: identity：个人信息副本加密 ZIP（自写 WinZip AES-256 / AE-2）
 type: impl
 # 2026-10-25 入账（admin-backend，编排 16:5x 派）。依据：裁定 D10-356 ②（B1-27h #1615 自写 WinZip AES-256 照准合并；任何真实环境开放个人信息副本交付前须补互通测试），08 BR-ID-40 细则「交付（默认）」（加密压缩包 + 一次性提取码）。
 # 被测实现：apps/api/src/modules/identity/application/data-copy-file.ts（encryptDataCopyZip / generateDataCopySecret，每条目独立随机盐、PBKDF2-HMAC-SHA1 1000 次、小端计数 AES-CTR、对密文 HMAC-SHA1 截 10 字节，AE-2 的 CRC-32 记 0）。
-# 本线技术取舍（由编排者摘进任务书第 9 节；评审 #1616 r1 后改写）：① 验证镜像（tools/ops/verify-image/Dockerfile）没有 AE-2 标准实现，Info-ZIP UnZip 6.0 不支持 WinZip AES，故以已知答案夹具为准：夹具由**编排者在宿主机**用 libarchive bsdtar（3.7.4）以 `--format zip --options zip:encryption=aes256 --passphrase` 生成（stored 条目），命令、工具名与版本写进夹具旁的说明；测试作者只消费夹具、不自产期望字节。
+# 本线技术取舍（由编排者摘进任务书第 9 节；评审 #1616 r1 后改写）：① 验证镜像（tools/ops/verify-image/Dockerfile）没有 AE-2 标准实现，Info-ZIP UnZip 6.0 不支持 WinZip AES，故以已知答案夹具为准：夹具由**编排者在宿主机**用 libarchive bsdtar 以 `--format zip --options zip:encryption=aes256,zip:compression=store --passphrase` 生成（stored 条目），所用 bsdtar 的路径与 `--version` 整行输出、完整命令写进夹具旁的说明；测试作者只消费夹具、不自产期望字节。
 # ② 测试内容：kit 里与实现独立的读取器先用标准包校准（能解开、错误密码被拒）；逐字节对照只限单个 stored 条目的 AES 负载（salt‖verifier‖密文‖认证码）——盐用 vi.mock('node:crypto') 部分替换 randomBytes 注入，或在本任务 paths 内给 encryptDataCopyZip 加可选的盐参数；整包头部（时间、扩展字段、descriptor）不比。③ 拒绝要落在对应层：错误密码在口令校验值处拒，篡改一个密文字节在 HMAC 认证码处拒，截断包报错；不得靠解压报错碰巧挡住。
 # ④ 反向互通（D10-356 原文「标准实现解开本系统生成的包」）：编排者在宿主机用 bsdtar 解开本实现生成的样包并试错误密码，结果作证据记进 PR，不进常规测试。⑤ 不新增运行时依赖；互通失败时修 data-copy-file.ts 使之符合 WinZip AE-2，不改规则测试去迁就。tester 按 approvals #36 预填 claude-independent（Codex 可用时改回 codex）。
 refs: []
