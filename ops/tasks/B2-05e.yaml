@@ -26,5 +26,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/payout/state/**'
   - 'test/properties/domain/payout/**'
-status: todo
-pr: null
+status: done
+pr: 1435
