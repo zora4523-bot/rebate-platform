@@ -18,4 +18,4 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/orders/platform-rules/**'
-status: todo
+status: done
