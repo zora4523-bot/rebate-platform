@@ -17,6 +17,7 @@ paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
+  - 'tools/ci/lint-migrations.test.ts'
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/openapi.gen.ts'
   - 'packages/contracts-ts/src/planned-operations.gen.ts'
