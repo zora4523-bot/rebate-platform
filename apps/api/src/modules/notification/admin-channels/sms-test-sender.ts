@@ -16,7 +16,10 @@
 // createFakeNotifySmsTestSender(appEnv): local / test only (any other APP_ENV throws). By default
 // every message is accepted; enqueueResult() queues the outcome of the next sends. outbox() holds
 // every attempted message in order, whatever its outcome (appId, phone, signName, templateCode,
-// params). Nothing is logged.
+// params). beforeNextAnswer(callback) is a deterministic hook for concurrency tests: the next send
+// (only that one; the hook is taken off before it runs) records its message in the outbox, then
+// awaits callback(message), then answers its outcome; sends made inside the callback answer
+// normally. Nothing is logged.
 //
 // notifySmsTestSenderToken(): the stable Nest token of the entry's sender. The admin entry provides
 // the fake under it in local / test (one per entry instance); tests read and script it through
@@ -44,6 +47,8 @@ export interface NotifySmsTestSender {
 export interface FakeNotifySmsTestSender extends NotifySmsTestSender {
   enqueueResult(result: NotifySmsTestResult): void;
   outbox(): readonly NotifySmsTestMessage[];
+  /** Runs `callback` once, inside the next send: after its outbox entry, before its answer. */
+  beforeNextAnswer(callback: (message: NotifySmsTestMessage) => Promise<void>): void;
 }
 
 /** Only local / test may construct this adapter; default outcome accepted. */
