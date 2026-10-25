@@ -1,0 +1,151 @@
+{
+  "task": "B1-27h",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "e411908b3d5e239ef62f0b8de7a33ab129b903b5",
+  "red_tests": [
+    "test/spec/identity/data-copies-worker/deletion.int.test.ts > [AC-B1-27h#28] 清理把 processing 用户的 pending / running / ready 请求置 cancelled（row_version 加一、updated_at 为清理时刻）；该用户已结束的请求、别的用户与冷静期用户的请求不动；没有存储时文件仍记在 object_key 上",
+    "test/spec/identity/data-copies-worker/deletion.int.test.ts > [AC-B1-27h#29] 取消与清理同一事务：清理回滚（某个属主端口抛错）时请求不变；下一轮清理成功时才取消",
+    "test/spec/identity/data-copies-worker/deletion.int.test.ts > [AC-B1-27h#30] 有存储时清理删除该用户全部副本文件（ready 取消后的与已交付未过期的），object_key 清空、已交付的状态不变；别的用户的文件不动",
+    "test/spec/identity/data-copies-worker/deletion.int.test.ts > [AC-B1-27h#31] 删除文件失败只记日志：清理照常完成、请求照常取消，文件仍记在 object_key 上，到期的 expire 作业兜底删除",
+    "test/spec/identity/data-copies-worker/deletion.int.test.ts > [AC-B1-27h#32] 装配版：worker 入口的注销定时任务（app.module 传的选项，私有导出存储在 EXPORT_STORE）一轮就取消 processing 用户的请求并删除其文件",
+    "test/spec/identity/data-copies-worker/deletion.int.test.ts > [AC-B1-27h#33] 生成进行中账号的注销清理取消了请求：请求停在 cancelled（不会再变成 delivered），不发短信、不写站内信、不记交付；留下的文件必须记在 object_key 上，并由到期的 expire 作业删除",
+    "test/spec/identity/data-copies-worker/disable.int.test.ts > [AC-B1-27h#25] 停用登记人：其未交付的企业微信路径请求（pending / running / ready）置 failed 并各写一条审计（停用操作人）；已交付的、站内信路径的、别人登记的不动；停用失败回滚时一个也不改",
+    "test/spec/identity/data-copies-worker/disable.int.test.ts > [AC-B1-27h#26] 停用时 ready 的企业微信副本置 failed 后，文件由到期的 expire 作业删除、object_key 清空，状态仍是 failed",
+    "test/spec/identity/data-copies-worker/disable.int.test.ts > [AC-B1-27h#27] 生成进行中被停用：请求停在 failed（不会再变成 ready），不发短信；留下的文件必须记在 object_key 上，并由到期的 expire 作业删除",
+    "test/spec/identity/data-copies-worker/expire.int.test.ts > [AC-B1-27h#22] in_app_sms 已交付：23 小时时的 expire 作业不改行、按剩余时间再入队；过了 expires_at → expired，文件删除、object_key 清空",
+    "test/spec/identity/data-copies-worker/expire.int.test.ts > [AC-B1-27h#23] wecom_session 生成后一直没交付（ready）：过了 expires_at → expired（不是 failed），文件删除、object_key 清空",
+    "test/spec/identity/data-copies-worker/expire.int.test.ts > [AC-B1-27h#24] 已取消 / 已失败但还留着文件的请求：到期的 expire 作业只删文件、清空 object_key，状态不变；没有文件的 pending 不受影响",
+    "test/spec/identity/data-copies-worker/file.test.ts > [AC-B1-27h#1] encryptDataCopyZip：标准 ZIP、每个条目 WinZip AES-256 加密；独立读取器用口令原样解开，错口令解不开；明文不出现在文件里；同样输入每次加密结果不同",
+    "test/spec/identity/data-copies-worker/file.test.ts > [AC-B1-27h#2] generateDataCopySecret：非空字符串，每次不同（200 次几乎不重复）；来自 CSPRNG，不读 Math.random；拿它当口令加密的文件用它解得开",
+    "test/spec/identity/data-copies-worker/file.test.ts > [AC-B1-27h#3] 服务端封存（wecom_session）：同一字段密钥打开得原样条目，另一把密钥打不开；封存结果不含明文",
+    "test/spec/identity/data-copies-worker/file.test.ts > [AC-B1-27h#4] 文件条目：导出范围每一节都在（账号资料、实名脱敏、同意记录、订单、余额流水、提现记录脱敏、Agent 对话），bigint 分与时刻可序列化；条目名不重复、不带路径穿越与个人信息",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#10] in_app_sms：pending → delivered；文件是用短信提取码加密的 AES-256 ZIP、导出范围齐全；提取码短信（DATA_COPY_CODE）发到绑定手机号；站内信 DATA_COPY_READY 只带 DataCopy 入口、不带链接；expires_at = generated_at + 24 小时并同事务入队 expire；生成、交付各一条审计；提取码哪里都不留",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#11] wecom_session：pending → ready；文件按服务端密钥封存（同一密钥打开得完整副本，另一把打不开，存储里无明文）；不发短信、不写站内信、不记交付；expires_at = generated_at + 24 小时并入队 expire；只写生成审计",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#12] 无效、别的 app 的、未知副本与未知作业名的投递什么也不做；有效投递生成一次，重复投递不再生成、不再发短信",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#13] 已结束或已生成的请求（ready / delivered / failed / expired / cancelled）收到 generate 什么也不改",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#14] 租约内的 running（重复投递）不生成、不改行，只入队一次延时的 generate 复查",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#15] 租约早已过期的 running（进程中断）：再次投递后不再停在 running；交付了就恰一条短信、文件可用短信提取码打开，失败了就没有短信与文件",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#16] 租约过期被接手：旧运行恢复后完成前校验令牌失败，什么也写不进、不发短信、不留文件；两次运行的对象键不同；最终交付的文件能用唯一那条短信的提取码打开",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#17] in_app_sms 生成失败（source：取数抛错 / 存储不可用 ExportStoreUnavailableError）→ failed（failure_reason 不带错误详情），不发短信、不写站内信、不留文件；生成审计记失败；日志不带错误详情",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#17] in_app_sms 生成失败（store：取数抛错 / 存储不可用 ExportStoreUnavailableError）→ failed（failure_reason 不带错误详情），不发短信、不写站内信、不留文件；生成审计记失败；日志不带错误详情",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#17] wecom_session 生成失败（source：取数抛错 / 存储不可用 ExportStoreUnavailableError）→ failed（failure_reason 不带错误详情），不发短信、不写站内信、不留文件；生成审计记失败；日志不带错误详情",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#17] wecom_session 生成失败（store：取数抛错 / 存储不可用 ExportStoreUnavailableError）→ failed（failure_reason 不带错误详情），不发短信、不写站内信、不留文件；生成审计记失败；日志不带错误详情",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#18] in_app_sms 提取码短信发送失败（rejected）→ failed，文件删除、不写站内信、不记交付，不留半交付",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#18] in_app_sms 提取码短信发送失败（throws）→ failed，文件删除、不写站内信、不记交付，不留半交付",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#19] in_app_sms 站内信写入失败 → failed，文件删除、不记交付",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#20] in_app_sms 生成时已无绑定手机号 → failed，不发短信、不写站内信、不留文件",
+    "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#21] 注销状态：已进入 processing 的账号不再生成与交付（cancelled 或 failed，无短信、无站内信、无文件）；冷静期（cooling）照常交付",
+    "test/spec/identity/data-copies-worker/store.test.ts > [AC-B1-27h#5] dataCopyObjectKey：带 app_id 与副本 id、以 .zip 结尾、不是导出键形状；每次运行一个键（同输入同键，换运行、换副本、换 app 都换键）；put / get / 签名链接 / 校验 / 删除照常",
+    "test/spec/identity/data-copies-worker/store.test.ts > [AC-B1-27h#6] 副本键不收 text/csv，导出键不收 application/zip；改过的副本键与形状不对的组成部分一律拒绝，不碰已有文件",
+    "test/spec/identity/data-copies-worker/store.test.ts > [AC-B1-27h#7] staging / prod（OSS 适配器 B1-30 之前）：副本 put 按请求失败 ExportStoreUnavailableError，删除照常成功",
+    "test/spec/identity/data-copies-worker/wiring.test.ts > [AC-B1-27h#8] 装配：worker 入口的 IdentityWorkerModule（app.module 传的选项）在有库、队列、存储与密钥时把 data-copy 队列的处理器注册到 JOB_QUEUE",
+    "test/spec/identity/data-copies-worker/wiring.test.ts > [AC-B1-27h#9] 队列目录：data-copy 恰有一条，标准策略与目录默认值、死信 data-copy.dead（其死信队列也在目录里）；只有 worker 入口执行它"
+  ],
+  "risk_note": "RV2 by path (admin/infra/admin-account-writes, platform/export-store, platform/queue/catalog). Personal information copy generation and delivery (BR-ID-40): a new identity data-copy job and queue (lease 600 s, at-least-once delivery, run token; a separate object key per run, recorded before upload); in_app_sms packs the B1-27f sections into a WinZip AES-256 ZIP (node:crypto / zlib, no new dependency) with a CSPRNG extraction code that is never stored or logged; delivered, audit rows, the expire job and the inbox message commit together, an SMS not accepted rolls it all back to failed and deletes the file; wecom_session seals the copy with the server field key (ready); per-copy expire jobs delete the file and move ready / delivered to expired; disabling the registrant fails their undelivered wecom_session copies in the disable transaction; the deletion cleanup cancels open copies and deletes the user's copy files after commit. No amounts, no ledger, settlement or payout state; no contract or schema change. Rule tests by an independent Claude (approvals #36), three rounds, red before the implementation; implementation by an Opus 5.5 subagent.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "e411908b3d5e239ef62f0b8de7a33ab129b903b5",
+      "tree": "d5c5346bba3f75c1119ff439b63acaebb6065661",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-25T07:58:52Z",
+      "finished_at": "2026-10-25T07:59:07Z",
+      "red_tests": [
+        "test/spec/identity/data-copies-worker/deletion.int.test.ts > [AC-B1-27h#28] 清理把 processing 用户的 pending / running / ready 请求置 cancelled（row_version 加一、updated_at 为清理时刻）；该用户已结束的请求、别的用户与冷静期用户的请求不动；没有存储时文件仍记在 object_key 上",
+        "test/spec/identity/data-copies-worker/deletion.int.test.ts > [AC-B1-27h#29] 取消与清理同一事务：清理回滚（某个属主端口抛错）时请求不变；下一轮清理成功时才取消",
+        "test/spec/identity/data-copies-worker/deletion.int.test.ts > [AC-B1-27h#30] 有存储时清理删除该用户全部副本文件（ready 取消后的与已交付未过期的），object_key 清空、已交付的状态不变；别的用户的文件不动",
+        "test/spec/identity/data-copies-worker/deletion.int.test.ts > [AC-B1-27h#31] 删除文件失败只记日志：清理照常完成、请求照常取消，文件仍记在 object_key 上，到期的 expire 作业兜底删除",
+        "test/spec/identity/data-copies-worker/deletion.int.test.ts > [AC-B1-27h#32] 装配版：worker 入口的注销定时任务（app.module 传的选项，私有导出存储在 EXPORT_STORE）一轮就取消 processing 用户的请求并删除其文件",
+        "test/spec/identity/data-copies-worker/deletion.int.test.ts > [AC-B1-27h#33] 生成进行中账号的注销清理取消了请求：请求停在 cancelled（不会再变成 delivered），不发短信、不写站内信、不记交付；留下的文件必须记在 object_key 上，并由到期的 expire 作业删除",
+        "test/spec/identity/data-copies-worker/disable.int.test.ts > [AC-B1-27h#25] 停用登记人：其未交付的企业微信路径请求（pending / running / ready）置 failed 并各写一条审计（停用操作人）；已交付的、站内信路径的、别人登记的不动；停用失败回滚时一个也不改",
+        "test/spec/identity/data-copies-worker/disable.int.test.ts > [AC-B1-27h#26] 停用时 ready 的企业微信副本置 failed 后，文件由到期的 expire 作业删除、object_key 清空，状态仍是 failed",
+        "test/spec/identity/data-copies-worker/disable.int.test.ts > [AC-B1-27h#27] 生成进行中被停用：请求停在 failed（不会再变成 ready），不发短信；留下的文件必须记在 object_key 上，并由到期的 expire 作业删除",
+        "test/spec/identity/data-copies-worker/expire.int.test.ts > [AC-B1-27h#22] in_app_sms 已交付：23 小时时的 expire 作业不改行、按剩余时间再入队；过了 expires_at → expired，文件删除、object_key 清空",
+        "test/spec/identity/data-copies-worker/expire.int.test.ts > [AC-B1-27h#23] wecom_session 生成后一直没交付（ready）：过了 expires_at → expired（不是 failed），文件删除、object_key 清空",
+        "test/spec/identity/data-copies-worker/expire.int.test.ts > [AC-B1-27h#24] 已取消 / 已失败但还留着文件的请求：到期的 expire 作业只删文件、清空 object_key，状态不变；没有文件的 pending 不受影响",
+        "test/spec/identity/data-copies-worker/file.test.ts > [AC-B1-27h#1] encryptDataCopyZip：标准 ZIP、每个条目 WinZip AES-256 加密；独立读取器用口令原样解开，错口令解不开；明文不出现在文件里；同样输入每次加密结果不同",
+        "test/spec/identity/data-copies-worker/file.test.ts > [AC-B1-27h#2] generateDataCopySecret：非空字符串，每次不同（200 次几乎不重复）；来自 CSPRNG，不读 Math.random；拿它当口令加密的文件用它解得开",
+        "test/spec/identity/data-copies-worker/file.test.ts > [AC-B1-27h#3] 服务端封存（wecom_session）：同一字段密钥打开得原样条目，另一把密钥打不开；封存结果不含明文",
+        "test/spec/identity/data-copies-worker/file.test.ts > [AC-B1-27h#4] 文件条目：导出范围每一节都在（账号资料、实名脱敏、同意记录、订单、余额流水、提现记录脱敏、Agent 对话），bigint 分与时刻可序列化；条目名不重复、不带路径穿越与个人信息",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#10] in_app_sms：pending → delivered；文件是用短信提取码加密的 AES-256 ZIP、导出范围齐全；提取码短信（DATA_COPY_CODE）发到绑定手机号；站内信 DATA_COPY_READY 只带 DataCopy 入口、不带链接；expires_at = generated_at + 24 小时并同事务入队 expire；生成、交付各一条审计；提取码哪里都不留",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#11] wecom_session：pending → ready；文件按服务端密钥封存（同一密钥打开得完整副本，另一把打不开，存储里无明文）；不发短信、不写站内信、不记交付；expires_at = generated_at + 24 小时并入队 expire；只写生成审计",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#12] 无效、别的 app 的、未知副本与未知作业名的投递什么也不做；有效投递生成一次，重复投递不再生成、不再发短信",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#13] 已结束或已生成的请求（ready / delivered / failed / expired / cancelled）收到 generate 什么也不改",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#14] 租约内的 running（重复投递）不生成、不改行，只入队一次延时的 generate 复查",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#15] 租约早已过期的 running（进程中断）：再次投递后不再停在 running；交付了就恰一条短信、文件可用短信提取码打开，失败了就没有短信与文件",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#16] 租约过期被接手：旧运行恢复后完成前校验令牌失败，什么也写不进、不发短信、不留文件；两次运行的对象键不同；最终交付的文件能用唯一那条短信的提取码打开",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#17] in_app_sms 生成失败（source：取数抛错 / 存储不可用 ExportStoreUnavailableError）→ failed（failure_reason 不带错误详情），不发短信、不写站内信、不留文件；生成审计记失败；日志不带错误详情",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#17] in_app_sms 生成失败（store：取数抛错 / 存储不可用 ExportStoreUnavailableError）→ failed（failure_reason 不带错误详情），不发短信、不写站内信、不留文件；生成审计记失败；日志不带错误详情",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#17] wecom_session 生成失败（source：取数抛错 / 存储不可用 ExportStoreUnavailableError）→ failed（failure_reason 不带错误详情），不发短信、不写站内信、不留文件；生成审计记失败；日志不带错误详情",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#17] wecom_session 生成失败（store：取数抛错 / 存储不可用 ExportStoreUnavailableError）→ failed（failure_reason 不带错误详情），不发短信、不写站内信、不留文件；生成审计记失败；日志不带错误详情",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#18] in_app_sms 提取码短信发送失败（rejected）→ failed，文件删除、不写站内信、不记交付，不留半交付",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#18] in_app_sms 提取码短信发送失败（throws）→ failed，文件删除、不写站内信、不记交付，不留半交付",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#19] in_app_sms 站内信写入失败 → failed，文件删除、不记交付",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#20] in_app_sms 生成时已无绑定手机号 → failed，不发短信、不写站内信、不留文件",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts > [AC-B1-27h#21] 注销状态：已进入 processing 的账号不再生成与交付（cancelled 或 failed，无短信、无站内信、无文件）；冷静期（cooling）照常交付",
+        "test/spec/identity/data-copies-worker/store.test.ts > [AC-B1-27h#5] dataCopyObjectKey：带 app_id 与副本 id、以 .zip 结尾、不是导出键形状；每次运行一个键（同输入同键，换运行、换副本、换 app 都换键）；put / get / 签名链接 / 校验 / 删除照常",
+        "test/spec/identity/data-copies-worker/store.test.ts > [AC-B1-27h#6] 副本键不收 text/csv，导出键不收 application/zip；改过的副本键与形状不对的组成部分一律拒绝，不碰已有文件",
+        "test/spec/identity/data-copies-worker/store.test.ts > [AC-B1-27h#7] staging / prod（OSS 适配器 B1-30 之前）：副本 put 按请求失败 ExportStoreUnavailableError，删除照常成功",
+        "test/spec/identity/data-copies-worker/wiring.test.ts > [AC-B1-27h#8] 装配：worker 入口的 IdentityWorkerModule（app.module 传的选项）在有库、队列、存储与密钥时把 data-copy 队列的处理器注册到 JOB_QUEUE",
+        "test/spec/identity/data-copies-worker/wiring.test.ts > [AC-B1-27h#9] 队列目录：data-copy 恰有一条，标准策略与目录默认值、死信 data-copy.dead（其死信队列也在目录里）；只有 worker 入口执行它"
+      ],
+      "expected": [
+        "test/spec/identity/data-copies-worker/deletion.int.test.ts",
+        "test/spec/identity/data-copies-worker/disable.int.test.ts",
+        "test/spec/identity/data-copies-worker/expire.int.test.ts",
+        "test/spec/identity/data-copies-worker/file.test.ts",
+        "test/spec/identity/data-copies-worker/generate.int.test.ts",
+        "test/spec/identity/data-copies-worker/store.test.ts",
+        "test/spec/identity/data-copies-worker/wiring.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "3da221a0947051d3675619e5031d5cdd2d6ea973d63d1e5a02de07ab5d5e4f1e"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "b93293067f486288a23606aadd41e02eb9d612545785b37856860ea49f314e68"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota (until 10-30); independent Claude via tools/agent/claude-run.sh per approvals #36; round 1 pass, 0 S0/S1; S2x2 recorded as follow-ups (the extraction-code SMS is sent before COMMIT; a killed wecom_session run whose registrant is then disabled leaves the sealed file until expiry). After the review only one import path changed (depcruise modules-only-via-index)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by claude-independent (three runs: the first stopped at the 30-minute limit, the second completed it, the third revised per review r1) reviewed by a fresh Claude subagent against BR-ID-40 and the brief §9: r1 fail (S1x2: [#33] would hang a correct implementation that checks deletion at claim; [#9] needs catalog.ts and the frozen queue contract — fixed by ledger #1608 and prerequisite #1610), r2 pass (S2 recorded); prettier --write before the first spec commit, formatting only (D10-206)"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "2a6f084bf8f1178d45d52038af7b3fa6315a7116",
+    "specs": "cec847e1768a63aac90e3e1bd473462d95d84436"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
