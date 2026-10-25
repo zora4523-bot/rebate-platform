@@ -422,7 +422,7 @@ async function attribute(
 }
 
 /** 来源回填的商品键：库内 product_key 优先（首次入库已按 BR-PROD-03 推导），否则交端口推导。 */
-function storedSourcePorts(
+export function storedSourcePorts(
   ports: OrderSourcePorts,
   order: Selectable<DB['orders']>,
 ): OrderSourcePorts {
@@ -442,7 +442,7 @@ function storedSourcePorts(
 }
 
 /** 由库内订单行还原回填要读的报文字段（订单参数、推广位、商品 ID、店铺）；本次没有新报文。 */
-function storedUnionOrder(
+export function storedUnionOrder(
   order: Selectable<DB['orders']>,
   platform: RegisteredPlatform,
 ): UnionOrder {
