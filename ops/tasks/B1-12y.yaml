@@ -25,4 +25,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/notification/sms-registry/**'
   - 'test/spec/notification/push-channel-switch/**'
-status: todo
+status: done
+pr: 1588
