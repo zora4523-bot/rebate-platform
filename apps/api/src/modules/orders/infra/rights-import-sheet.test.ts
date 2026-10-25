@@ -1,6 +1,7 @@
 import { crc32, deflateRawSync } from 'node:zlib';
 import { expect, it } from 'vitest';
 import { readRightsImportSheet } from './rights-import-sheet.ts';
+import { isoDateCellKey, isoDateCells } from './xlsx-date-cells.ts';
 
 /** A plain zip of deflated entries. */
 function zip(files: readonly { name: string; data: string }[]): Buffer {
@@ -115,4 +116,73 @@ it('[AC-B1-09h#1] a date cell typed as a wall clock comes out as that wall clock
     [2, 'R8', at('2026-10-31T00:00:00+08:00')],
     [3, 'R9', at('2026-10-31T12:00:00+08:00')],
   ]);
+});
+
+/** A sheet of raw cell XML per data row (style 1 = a date format), header row A1:B1. */
+function rawSheet(rows: readonly string[], sheetPath = 'worksheets/sheet1.xml'): Buffer {
+  const body = rows.map((cells, i) => `<row r="${i + 2}">${cells}</row>`).join('');
+  return zip([
+    {
+      name: '[Content_Types].xml',
+      data:
+        `${XML}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/></Types>',
+    },
+    {
+      name: '_rels/.rels',
+      data: `${XML}<Relationships xmlns="${PKG}"><Relationship Id="rId1" Type="${REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    },
+    {
+      name: 'xl/workbook.xml',
+      data: `${XML}<workbook xmlns="${MAIN}" xmlns:r="${REL}"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    },
+    {
+      name: 'xl/_rels/workbook.xml.rels',
+      data:
+        `${XML}<Relationships xmlns="${PKG}">` +
+        `<Relationship Id="rId1" Type="${REL}/worksheet" Target="${sheetPath}"/>` +
+        `<Relationship Id="rId2" Type="${REL}/styles" Target="styles.xml"/></Relationships>`,
+    },
+    {
+      name: 'xl/styles.xml',
+      data: `${XML}<styleSheet xmlns="${MAIN}"><cellXfs count="2"><xf numFmtId="0"/><xf numFmtId="22" applyNumberFormat="1"/></cellXfs></styleSheet>`,
+    },
+    {
+      name: `xl/${sheetPath}`,
+      data:
+        `${XML}<worksheet xmlns="${MAIN}"><sheetData>` +
+        '<row r="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c><c r="B1" t="inlineStr"><is><t>b</t></is></c></row>' +
+        `${body}</sheetData></worksheet>`,
+    },
+  ]);
+}
+
+it('[AC-B1-09k#9] an ISO date cell (t="d") keeps its instant; a serial date cell is read at +08:00', async () => {
+  const sheet = await readRightsImportSheet(
+    new Uint8Array(
+      rawSheet([
+        '<c r="A2" t="d"><v>2026-10-18T02:30:00Z</v></c><c r="B2" s="1"><v>46313.4375</v></c>',
+        '<c r="A3" s="1"><v>46313.4375</v></c><c r="B3" s="1" t="d"><v>2026-10-18T10:30:00+08:00</v></c>',
+      ]),
+    ),
+  );
+  const times = sheet?.rows.map((r) => r.cells.map((c) => (c as Date).getTime()));
+  const want = at('2026-10-18T02:30:00Z');
+  expect(times).toEqual([
+    [want, want],
+    [want, want],
+  ]);
+});
+
+it('[AC-B1-09k#9] the first sheet is found through the workbook relationships; cells without r by position', async () => {
+  const bytes = rawSheet(
+    ['<c s="1"><v>46313.4375</v></c><c t="d"><v>2026-10-18T02:30:00Z</v></c>'],
+    'worksheets/other.xml',
+  );
+  expect([...isoDateCells(new Uint8Array(bytes))]).toEqual([isoDateCellKey(2, 1)]);
+});
+
+it('[AC-B1-09k#9] not a zip → no ISO date cells', () => {
+  expect(isoDateCells(new Uint8Array(Buffer.from('not a zip'))).size).toBe(0);
 });
