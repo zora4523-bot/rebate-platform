@@ -3387,6 +3387,32 @@ ALTER TABLE app.order_sync_pending ALTER COLUMN id ADD GENERATED ALWAYS AS IDENT
 
 
 --
+-- Name: order_sync_request_windows; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.order_sync_request_windows (
+    app_id text NOT NULL,
+    sync_id uuid NOT NULL,
+    seq integer NOT NULL,
+    union_account_id uuid NOT NULL,
+    window_start timestamp with time zone,
+    window_end timestamp with time zone,
+    status text NOT NULL,
+    fetched_count integer DEFAULT 0 NOT NULL,
+    stored_count integer DEFAULT 0 NOT NULL,
+    error text,
+    finished_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT order_sync_request_windows_counts_check CHECK (((fetched_count >= 0) AND (stored_count >= 0))),
+    CONSTRAINT order_sync_request_windows_finished_check CHECK (((status = ANY (ARRAY['done'::text, 'failed'::text])) = (finished_at IS NOT NULL))),
+    CONSTRAINT order_sync_request_windows_seq_check CHECK ((seq >= 0)),
+    CONSTRAINT order_sync_request_windows_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'done'::text, 'failed'::text]))),
+    CONSTRAINT order_sync_request_windows_window_check CHECK ((((window_start IS NULL) AND (window_end IS NULL)) OR ((window_start IS NOT NULL) AND (window_end IS NOT NULL) AND (window_start < window_end))))
+);
+
+
+--
 -- Name: order_sync_requests; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -6333,6 +6359,22 @@ ALTER TABLE ONLY app.order_sync_pending
 
 
 --
+-- Name: order_sync_request_windows order_sync_request_windows_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_sync_request_windows
+    ADD CONSTRAINT order_sync_request_windows_pkey PRIMARY KEY (sync_id, seq);
+
+
+--
+-- Name: order_sync_request_windows order_sync_request_windows_window_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_sync_request_windows
+    ADD CONSTRAINT order_sync_request_windows_window_key UNIQUE NULLS NOT DISTINCT (sync_id, union_account_id, window_start);
+
+
+--
 -- Name: order_sync_requests order_sync_requests_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -7846,6 +7888,20 @@ CREATE INDEX order_status_history_order_idx ON app.order_status_history USING bt
 --
 
 CREATE UNIQUE INDEX order_sync_pending_open_key ON app.order_sync_pending USING btree (app_id, platform, sub_order_id, reason) WHERE (status = 'open'::text);
+
+
+--
+-- Name: order_sync_request_windows_account_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX order_sync_request_windows_account_idx ON app.order_sync_request_windows USING btree (app_id, union_account_id);
+
+
+--
+-- Name: order_sync_requests_app_id_id_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX order_sync_requests_app_id_id_key ON app.order_sync_requests USING btree (app_id, id);
 
 
 --
@@ -9555,6 +9611,14 @@ ALTER TABLE ONLY app.order_status_history
 
 ALTER TABLE ONLY app.order_sync_pending
     ADD CONSTRAINT order_sync_pending_order_fkey FOREIGN KEY (app_id, order_id) REFERENCES app.order_keys(app_id, order_id);
+
+
+--
+-- Name: order_sync_request_windows order_sync_request_windows_sync_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_sync_request_windows
+    ADD CONSTRAINT order_sync_request_windows_sync_fkey FOREIGN KEY (app_id, sync_id) REFERENCES app.order_sync_requests(app_id, id);
 
 
 --
@@ -12743,6 +12807,56 @@ GRANT SELECT ON TABLE app.order_sync_drops TO couli_readonly;
 
 GRANT SELECT,INSERT,UPDATE ON TABLE app.order_sync_pending TO couli_app;
 GRANT SELECT ON TABLE app.order_sync_pending TO couli_readonly;
+
+
+--
+-- Name: TABLE order_sync_request_windows; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.order_sync_request_windows TO couli_app;
+GRANT SELECT ON TABLE app.order_sync_request_windows TO couli_readonly;
+
+
+--
+-- Name: COLUMN order_sync_request_windows.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.order_sync_request_windows TO couli_app;
+
+
+--
+-- Name: COLUMN order_sync_request_windows.fetched_count; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(fetched_count) ON TABLE app.order_sync_request_windows TO couli_app;
+
+
+--
+-- Name: COLUMN order_sync_request_windows.stored_count; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(stored_count) ON TABLE app.order_sync_request_windows TO couli_app;
+
+
+--
+-- Name: COLUMN order_sync_request_windows.error; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(error) ON TABLE app.order_sync_request_windows TO couli_app;
+
+
+--
+-- Name: COLUMN order_sync_request_windows.finished_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(finished_at) ON TABLE app.order_sync_request_windows TO couli_app;
+
+
+--
+-- Name: COLUMN order_sync_request_windows.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.order_sync_request_windows TO couli_app;
 
 
 --

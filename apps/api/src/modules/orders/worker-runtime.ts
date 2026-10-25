@@ -92,6 +92,8 @@ import type {
 } from './application/rights-import-ports.ts';
 import { RIGHTS_IMPORT_JOB } from './application/rights-imports.ts';
 import { handleRightsImport } from './jobs/rights-import.ts';
+import { handleManualSyncJob, isManualSyncJob } from './jobs/manual-sync.ts';
+import { createOrderSyncRequestProgress } from './infra/order-sync-requests.ts';
 
 export interface OrderSyncRuntime {
   readonly access: SyncAccessPort;
@@ -285,13 +287,25 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
     }
     return handleRightsImport(job, { db, clock, logger, ...rightsImports });
   };
+  // B1-09i: the console's manual sync jobs share the order-sync queue (jobs/manual-sync.ts).
+  const manual = {
+    access,
+    registry,
+    pipeline,
+    requests: createOrderSyncRequestProgress(db, clock),
+    logger,
+  };
   const sync = createOrderSyncScheduler(
     { clock, queue, cursors, access, logger },
     DEFAULT_INTERVAL,
   );
   if (snapshots === undefined) {
     queue.register(ORDER_SYNC_QUEUE, (job) =>
-      job.name === RIGHTS_IMPORT_JOB ? importJob(job) : handleOrderSyncWindow(job, handler),
+      job.name === RIGHTS_IMPORT_JOB
+        ? importJob(job)
+        : isManualSyncJob(job)
+          ? handleManualSyncJob(job, manual)
+          : handleOrderSyncWindow(job, handler),
     );
     return {
       access,
@@ -311,7 +325,9 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
       ? handleSnapshotRetry(job, retryDeps)
       : job.name === RIGHTS_IMPORT_JOB
         ? importJob(job)
-        : handleOrderSyncWindow(job, handler),
+        : isManualSyncJob(job)
+          ? handleManualSyncJob(job, manual)
+          : handleOrderSyncWindow(job, handler),
   );
   const retryScheduler = createSnapshotRetryScheduler({
     queue,

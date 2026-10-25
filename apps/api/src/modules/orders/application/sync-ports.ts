@@ -57,5 +57,5 @@ export interface SyncSchedulerDeps {
 export type SyncLogger = Pick<RootLogger, 'info' | 'warn' | 'error'>;
 
 export interface SyncRegistry {
-  get(platform: RegisteredPlatform): Pick<UnionAdapter, 'listOrders'>;
+  get(platform: RegisteredPlatform): Pick<UnionAdapter, 'listOrders' | 'getPddOrderDetail'>;
 }

@@ -1161,6 +1161,22 @@ export interface OrderSyncRequests {
   to: Timestamp | null;
 }
 
+export interface OrderSyncRequestWindows {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  error: string | null;
+  fetched_count: Generated<number>;
+  finished_at: Timestamp | null;
+  seq: number;
+  status: string;
+  stored_count: Generated<number>;
+  sync_id: string;
+  union_account_id: string;
+  updated_at: Generated<Timestamp>;
+  window_end: Timestamp | null;
+  window_start: Timestamp | null;
+}
+
 export interface PagePreviewTokens {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -2084,6 +2100,7 @@ export interface DB {
   order_sync_drop_keys: OrderSyncDropKeys;
   order_sync_drops: OrderSyncDrops;
   order_sync_pending: OrderSyncPending;
+  order_sync_request_windows: OrderSyncRequestWindows;
   order_sync_requests: OrderSyncRequests;
   orders: Orders;
   page_preview_tokens: PagePreviewTokens;

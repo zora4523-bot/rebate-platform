@@ -14269,31 +14269,38 @@ export interface components {
          */
         AdminOrderSyncStatusFilter: string;
         /**
-         * @description Manual sync by time window. `from` must be before `to` and not earlier than the platform's
-         *     earliest_from (the look-back range of 02 §7.1; GET /admin/v1/order-syncs/limits), checked
-         *     by the handler (20001).
+         * @description Body of POST /admin/v1/order-syncs; exactly one of the two forms. By time window:
+         *     `platform`, `from`, `to` and an optional `status_filter`; `from` must be before `to` and not
+         *     earlier than the platform's earliest_from (the look-back range of 02 §7.1; GET
+         *     /admin/v1/order-syncs/limits), checked by the handler (20001). By order numbers:
+         *     `platform` and `order_nos` (the 【同步此单】 of the order detail sends one). The fields are
+         *     declared once here and the `oneOf` only picks the form, so a value out of range (such as
+         *     more than 50 order numbers) names just that field.
          */
-        AdminOrderSyncByWindow: {
+        AdminOrderSyncCreateRequest: {
             platform: components["schemas"]["PlatformCode"];
             /**
              * Format: date-time
-             * @description Window start, inclusive (ISO 8601 with offset).
+             * @description Window start, inclusive (ISO 8601 with offset); time window form only.
              */
-            from: string;
+            from?: string;
             /**
              * Format: date-time
-             * @description Window end, exclusive (ISO 8601 with offset).
+             * @description Window end, exclusive (ISO 8601 with offset); time window form only.
              */
-            to: string;
+            to?: string;
             status_filter?: components["schemas"]["AdminOrderSyncStatusFilter"];
-        };
-        /** @description Manual sync by sub-order numbers (the 【同步此单】 of the order detail sends one). */
-        AdminOrderSyncByOrderNos: {
-            platform: components["schemas"]["PlatformCode"];
-            order_nos: components["schemas"]["AdminOrderSyncOrderNos"];
-        };
-        /** @description Body of POST /admin/v1/order-syncs; exactly one of the two forms. */
-        AdminOrderSyncCreateRequest: components["schemas"]["AdminOrderSyncByWindow"] | components["schemas"]["AdminOrderSyncByOrderNos"];
+            order_nos?: components["schemas"]["AdminOrderSyncOrderNos"];
+        } & ({
+            from: unknown;
+            to: unknown;
+            order_nos?: unknown;
+        } | {
+            order_nos: unknown;
+            from?: unknown;
+            to?: unknown;
+            status_filter?: unknown;
+        });
         /** @description The sync request; `reused=true` when an equal request was already queued or running and is returned instead. */
         AdminOrderSyncCreated: {
             sync_id: components["schemas"]["Id"];
