@@ -175,3 +175,108 @@ for (const rival of RIVALS) {
     );
   });
 }
+
+// 第 3 次（spec-test r2）：进行中那次发送答复「未受理」（rejected → 平时 50301，unknown → 平时 50401，
+// 两种平时都照存「待测试」为 failed）。期间编码被另一管理员改过时，按前面校验的 row_version 写入失败 → 20902、
+// 不带 data；「未受理仍存为 failed」不得盖掉对手写入后的状态。进行中那次的答复在它开始发送时取定，回调里对手
+// 登记的测试发送不消耗它（按默认受理）。
+type Unaccepted = 'rejected' | 'unknown';
+const UNACCEPTED: readonly Unaccepted[] = ['rejected', 'unknown'];
+const RETEST_AC: Readonly<Record<Unaccepted, string>> = {
+  rejected: '[AC-B1-12z#61]',
+  unknown: '[AC-B1-12z#63]',
+};
+const REGISTER_AC: Readonly<Record<Unaccepted, string>> = {
+  rejected: '[AC-B1-12z#62]',
+  unknown: '[AC-B1-12z#64]',
+};
+
+/** 对手写入后的测试结果：对手登记的新「待测试」已受理、开关不动种子的已受理、放弃后没有「待测试」。 */
+async function expectRivalTestStatus(s: Scenario, rival: Rival) {
+  const status = rival === 'discard' ? null : 'accepted';
+  expect((await templateRow(s, 'WD_FAILED')).sms_test_status, rival).toBe(status);
+  expect(variantOf(await itemOf(s, 'WD_FAILED')).pending?.test.status ?? null, rival).toBe(status);
+}
+
+for (const outcome of UNACCEPTED) {
+  for (const rival of RIVALS) {
+    it(`${RETEST_AC[outcome]} 重新测试进行中、测试短信答复 ${outcome}（答复前另一管理员${rival}同一编码）→ 重新测试 20902、不带 data，不存 failed、不写审计；库里状态等于对手写入后的状态`, async () => {
+      const s = await setup(h);
+      await seedWdFailed(s);
+      const other = await signIn(h, s.f, s.appId);
+      const variables = await variablesOf(s, 'WD_FAILED');
+      const sms = smsOf(s.f);
+      sms.enqueueResult(outcome);
+      let seen: NotifySmsTestMessage | undefined;
+      let afterRival: Awaited<ReturnType<typeof snapshot>> | undefined;
+      sms.beforeNextAnswer(async (message) => {
+        seen = message;
+        await rivalWrite(other, rival, variables);
+        afterRival = await snapshot(s);
+      });
+
+      await rejected(await s.retest('WD_FAILED', { row_version: 5 }), 'retest', 20902);
+      expect(seen, '回调在重新测试的发送里执行').toMatchObject({
+        appId: s.appId,
+        phone: s.phone,
+        templateCode: WD_FAILED_PENDING.templateCode,
+      });
+      expect(afterRival).toBeDefined();
+      expect(await snapshot(s)).toEqual(afterRival);
+      await expectRivalKept(s, rival);
+      await expectRivalTestStatus(s, rival);
+      expect(sms.outbox().map((m) => m.templateCode)).toEqual(
+        rival === 'register'
+          ? [WD_FAILED_PENDING.templateCode, RIVAL_TEMPLATE_CODE]
+          : [WD_FAILED_PENDING.templateCode],
+      );
+    });
+  }
+}
+
+for (const outcome of UNACCEPTED) {
+  for (const rival of RIVALS) {
+    it(`${REGISTER_AC[outcome]} 登记进行中、测试短信答复 ${outcome}（答复前另一管理员${rival}同一编码）→ 登记 20902、不带 data，新登记不存为 failed、不写审计；库里状态等于对手写入后的状态`, async () => {
+      const s = await setup(h);
+      await seedWdFailed(s);
+      const other = await signIn(h, s.f, s.appId);
+      const variables = await variablesOf(s, 'WD_FAILED');
+      const sms = smsOf(s.f);
+      sms.enqueueResult(outcome);
+      let seen: NotifySmsTestMessage | undefined;
+      let afterRival: Awaited<ReturnType<typeof snapshot>> | undefined;
+      sms.beforeNextAnswer(async (message) => {
+        seen = message;
+        await rivalWrite(other, rival, variables);
+        afterRival = await snapshot(s);
+      });
+
+      await rejected(
+        await s.register('WD_FAILED', {
+          sign_name: '凑狸',
+          template_code: 'SMS_520000003',
+          template_type: 'notice',
+          preview_text: previewWith(variables),
+          row_version: 5,
+        }),
+        'register',
+        20902,
+      );
+      expect(seen, '回调在登记的测试发送里执行').toMatchObject({
+        appId: s.appId,
+        phone: s.phone,
+        templateCode: 'SMS_520000003',
+      });
+      expect(afterRival).toBeDefined();
+      expect(await snapshot(s)).toEqual(afterRival);
+      await expectRivalKept(s, rival);
+      await expectRivalTestStatus(s, rival);
+      expect((await templateRow(s, 'WD_FAILED')).sms_pending_template_code).not.toBe(
+        'SMS_520000003',
+      );
+      expect(sms.outbox().map((m) => m.templateCode)).toEqual(
+        rival === 'register' ? ['SMS_520000003', RIVAL_TEMPLATE_CODE] : ['SMS_520000003'],
+      );
+    });
+  }
+}

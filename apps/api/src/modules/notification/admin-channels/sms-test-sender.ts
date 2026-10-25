@@ -19,7 +19,10 @@
 // params). beforeNextAnswer(callback) is a deterministic hook for concurrency tests: the next send
 // (only that one; the hook is taken off before it runs) records its message in the outbox, then
 // awaits callback(message), then answers its outcome; sends made inside the callback answer
-// normally. Nothing is logged.
+// normally. Each send takes its queued outcome (or the default accepted) when it starts, before
+// the hook runs: the outcome of the in-flight send is fixed then, and a rival's send made inside
+// the callback does not consume it (it takes the next queued outcome, else accepted). Nothing is
+// logged.
 //
 // notifySmsTestSenderToken(): the stable Nest token of the entry's sender. The admin entry provides
 // the fake under it in local / test (one per entry instance); tests read and script it through
@@ -47,7 +50,10 @@ export interface NotifySmsTestSender {
 export interface FakeNotifySmsTestSender extends NotifySmsTestSender {
   enqueueResult(result: NotifySmsTestResult): void;
   outbox(): readonly NotifySmsTestMessage[];
-  /** Runs `callback` once, inside the next send: after its outbox entry, before its answer. */
+  /**
+   * Runs `callback` once, inside the next send: after its outbox entry, before its answer. That
+   * send's outcome was taken from the queue when it started; sends inside `callback` never take it.
+   */
   beforeNextAnswer(callback: (message: NotifySmsTestMessage) => Promise<void>): void;
 }
 
