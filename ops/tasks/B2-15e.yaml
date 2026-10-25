@@ -36,8 +36,8 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payment/refund/**'
-status: todo
-pr: null
+status: done
+pr: 1598
 red_exempt:
   - file: test/spec/contracts/pay-admin-http/generated.test.ts
     test: '[AC-CT-21e#17] get /admin/v1/pay-orders 已生成类型、后台鉴权和无签名策略，planned 不挂载校验路由'
