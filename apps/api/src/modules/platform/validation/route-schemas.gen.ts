@@ -9406,6 +9406,70 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "adminCorrectUserRealname": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "user_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Corrected real-name data submitted by customer service (BR-ID-25 细则「实名更正」).",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "id_no",
+        "reason"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Corrected real name as typed; normalised by the server. Never logged or audited in plaintext.",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "id_no": {
+          "type": "string",
+          "description": "Corrected 18-digit resident ID number as typed. No pattern here: length and check\ndigit are judged by the server (20001 data.fields=[id_no]) after the not-accepted\nchecks. Never logged or audited in plaintext.\n",
+          "maxLength": 32
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Required free-text reason, kept in the audit record."
+        }
+      }
+    }
+  },
   "adminListOrders": {
     "headers": {
       "type": "object",

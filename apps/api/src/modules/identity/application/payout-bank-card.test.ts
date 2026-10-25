@@ -72,6 +72,8 @@ interface Store {
   occupied: number;
   current?: Record<string, unknown>;
   updated: bigint;
+  /** The verified realname row's verified_at and row_version (B1-27a: a corrected row). */
+  realname?: { readonly verified_at: Date; readonly row_version: number };
 }
 
 function attemptRow(status: string, overrides: Record<string, unknown> = {}) {
@@ -100,7 +102,17 @@ function responder(store: Store): Responder {
     if (text.includes('from "app"."users"')) return { rows: [{ phone_cipher: null }] };
     if (text.includes('from "app"."realname"')) {
       return {
-        rows: [{ id: 'rn-1', name_cipher: Buffer.from(NAME), id_no_cipher: Buffer.from(ID_NO) }],
+        rows: [
+          {
+            id: 'rn-1',
+            name_cipher: Buffer.from(NAME),
+            id_no_cipher: Buffer.from(ID_NO),
+            ...(store.realname ?? {
+              verified_at: new Date('2026-03-01T00:00:00Z'),
+              row_version: 0,
+            }),
+          },
+        ],
       };
     }
     if (text.includes('from "app"."payout_account_changes"')) return { rows: [{ n: '0' }] };
@@ -694,4 +706,77 @@ it("[AC-B1-13f] a record whose fingerprint is not the request's is never applied
   });
   await expect(f.submit()).rejects.toThrow(/another card or real name/);
   expect(f.saveBankCard).not.toHaveBeenCalled();
+});
+
+/** B1-27a: the realname row was corrected (rewritten in place) one hour before NOW. */
+const CORRECTED = { verified_at: new Date('2026-10-18T03:00:00Z'), row_version: 2 };
+const BEFORE_CORRECTION = new Date('2026-10-18T02:59:59Z');
+
+it("[AC-B1-27a] after a real-name correction the key's own matched record of the old identity is 20901 (whatever its age), nothing saved", async () => {
+  const own = attemptRow('matched', {
+    idempotency_key: 'this-key-001',
+    reserved_at: BEFORE_CORRECTION,
+    resolved_at: BEFORE_CORRECTION,
+  });
+  const f = await harness({ own, realname: CORRECTED });
+  expect(await f.submit()).toEqual({ code: 20901 });
+  expect(f.saveBankCard).not.toHaveBeenCalled();
+  expect(f.verify).not.toHaveBeenCalled();
+  expect(f.events.some(isInsert)).toBe(false);
+  // Control: the key's record of the current identity still saves, whatever its age.
+  const fresh = await harness({
+    own: attemptRow('matched', {
+      idempotency_key: 'this-key-001',
+      reserved_at: CORRECTED.verified_at,
+      resolved_at: new Date('2026-10-18T03:00:01Z'),
+    }),
+    realname: CORRECTED,
+  });
+  expect(await fresh.submit()).toEqual(SAVED);
+});
+
+it("[AC-B1-27a] after a real-name correction the fingerprint's matched record of the old identity is not reused: a new paid verification", async () => {
+  const old = attemptRow('matched', {
+    reserved_at: BEFORE_CORRECTION,
+    resolved_at: BEFORE_CORRECTION,
+  });
+  const f = await harness({ latest: [old], realname: CORRECTED });
+  expect(await f.submit()).toEqual(SAVED);
+  expect(f.events.some(isInsert)).toBe(true);
+  expect(f.verify).toHaveBeenCalledTimes(1);
+  expect(f.verify.mock.calls[0]![0]).toMatchObject({ name: NAME, id_no: ID_NO });
+  expect(f.query).not.toHaveBeenCalled();
+  // Control: within the reuse period and after the correction it is reused.
+  const fresh = await harness({
+    latest: [attemptRow('matched', { reserved_at: CORRECTED.verified_at })],
+    realname: CORRECTED,
+  });
+  expect(await fresh.submit()).toEqual(SAVED);
+  expect(fresh.verify).not.toHaveBeenCalled();
+});
+
+it.each(['unknown', 'reserved'] as const)(
+  "[AC-B1-27a] after a real-name correction the fingerprint's %s record of the old identity is neither taken over nor rechecked",
+  async (status) => {
+    const old = attemptRow(status, { reserved_at: BEFORE_CORRECTION });
+    const f = await harness({ latest: [old], realname: CORRECTED }, { query: async () => 'match' });
+    expect(await f.submit()).toEqual(SAVED);
+    expect(f.query).not.toHaveBeenCalled();
+    expect(f.verify).toHaveBeenCalledTimes(1);
+    const pool = f.writes('pool');
+    expect(pool.filter((q) => q.sql.startsWith('update'))).toEqual([]);
+    expect(pool.some((q) => q.sql.startsWith('insert'))).toBe(true);
+  },
+);
+
+it('[AC-B1-27a] a realname row never rewritten after its insert (row_version 0) keeps every record of its id', async () => {
+  const own = attemptRow('matched', {
+    idempotency_key: 'this-key-001',
+    reserved_at: new Date('2026-01-01T00:00:00Z'),
+  });
+  const f = await harness({
+    own,
+    realname: { verified_at: new Date('2026-10-18T03:00:00Z'), row_version: 0 },
+  });
+  expect(await f.submit()).toEqual(SAVED);
 });

@@ -48,6 +48,10 @@ export const EVENT_NAMES: readonly string[] = Object.freeze([
   // the manual hand-off mark (B1-08u; last in 02 §11, after order.blacklist_hit_after_credit;
   // D10-81, D10-105).
   'order.snapshot_retry_exhausted',
+  // A real-name correction by customer service, published by identity on the overwrite's
+  // transaction: user_id with the old and the new id_no_hmac, never plaintext (B1-27a; BR-ID-25
+  // 细则「实名更正」个税; 02 §11 after order.snapshot_created; D10-181 ②).
+  'user.realname_corrected',
   // Finance alerts of the asset daily snapshot, published by ledger on the snapshot's transaction
   // (B2-04wa; BR-FUND-18, BR-FUND-20; last in 02 §11, after user.realname_corrected; D10-188).
   'asset_snapshot.timed_out',

@@ -22,6 +22,7 @@ import {
   leaseExpired,
   queryAttempt,
   recheckDue,
+  recordedSince,
   reusable,
   verifySettings,
   type VerifyAttemptStatus,
@@ -347,3 +348,11 @@ it.each(['reserved', 'matched', 'mismatched', 'expired_unresolved', 'released'] 
     expect(f.updates()).toEqual([]);
   },
 );
+
+it('[AC-B1-27a] recordedSince: at or after the identity instant counts, earlier does not, null keeps every record', () => {
+  const at = new Date('2026-10-18T03:00:00.000Z');
+  expect(recordedSince({ reserved_at: new Date('2026-10-18T03:00:00.000Z') }, at)).toBe(true);
+  expect(recordedSince({ reserved_at: new Date('2026-10-18T03:00:00.001Z') }, at)).toBe(true);
+  expect(recordedSince({ reserved_at: new Date('2026-10-18T02:59:59.999Z') }, at)).toBe(false);
+  expect(recordedSince({ reserved_at: new Date('2020-01-01T00:00:00.000Z') }, null)).toBe(true);
+});

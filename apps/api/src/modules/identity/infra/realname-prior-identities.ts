@@ -39,14 +39,32 @@ export interface PriorIdentity {
   readonly correctedAt: Date;
 }
 
+/** The contexts the prior identity cipher encrypts under (fixed: B1-27e §6). */
+export const PRIOR_IDENTITY_CONTEXT: PriorIdentityContexts = Object.freeze({
+  name: 'prior_identity.name',
+  idNo: 'prior_identity.id_no',
+});
+
 /** Inserts one prior identity on `trx`, its name and ID number encrypted with `priorCrypto`. */
-export function insertPriorIdentity(
+export async function insertPriorIdentity(
   trx: Transaction<DB>,
   priorCrypto: FieldCrypto,
   identity: PriorIdentity,
 ): Promise<void> {
-  void trx;
-  void priorCrypto;
-  void identity;
-  throw new Error('NotImplemented: insertPriorIdentity');
+  const encrypt = (value: string, context: string) =>
+    Buffer.from(priorCrypto.encrypt(value, context), 'utf8');
+  // INSERT only: couli_app has no SELECT on the table, so no RETURNING either.
+  await trx
+    .withSchema('app')
+    .insertInto('realname_prior_identities')
+    .values({
+      app_id: identity.appId,
+      user_id: identity.userId,
+      name_cipher: encrypt(identity.name, PRIOR_IDENTITY_CONTEXT.name),
+      id_no_cipher: encrypt(identity.idNo, PRIOR_IDENTITY_CONTEXT.idNo),
+      id_no_hmac: identity.idNoHmac,
+      verified_at: identity.verifiedAt,
+      corrected_at: identity.correctedAt,
+    })
+    .execute();
 }
