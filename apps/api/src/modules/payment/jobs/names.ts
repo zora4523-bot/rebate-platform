@@ -67,6 +67,16 @@ export interface RefundQueryPayload extends JobPayload {
   readonly pay_refund_id: string;
 }
 
+/**
+ * B2-15j: payload of `bill.recon` — the T+1 reconciliation of one app (BR-PAY-07). It carries no
+ * bill date: the handler reconciles the bill of the accounting day before clock.now() (+08:00,
+ * @couli/domain) of each enabled channel through runPayBillRecon, so a run at 01:00 +08:00 (UTC
+ * still the day before) and one at 10:00 +08:00 reconcile the same day.
+ */
+export interface PayBillReconPayload extends JobPayload {
+  readonly app_id: string;
+}
+
 /** singletonKey of the client-return query: one queued or active per order. */
 export function orderQueryReturnedKey(payOrderId: string): string {
   return `${ORDER_QUERY_JOB}:${payOrderId}:returned`;
