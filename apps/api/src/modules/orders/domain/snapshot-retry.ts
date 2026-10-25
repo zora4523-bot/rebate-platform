@@ -141,12 +141,12 @@ const TAOLIJIN_SCENE = 'taolijin';
  * 佣金基数要扣平台服务费的平台（拼多多报文的佣金含软件服务费，B1-08k）。B1-08za：判定只查规则表的
  * serviceFeeDeducted；本常量只留作 SQL（infra/snapshot-retry-store.ts）的单平台取值，须与规则表一致。
  */
-export const SERVICE_FEE_PLATFORM = 'pdd';
+export const SERVICE_FEE_PLATFORM = 'pdd' as const;
 /**
  * 推广位场景（淘礼金）决定返利模式的平台；扫描路径查不到场景，此平台的单一律 skip。B1-08za：判定只查规则表的
  * taolijinPidScene；本常量只留作 SQL 的单平台取值，须与规则表一致。
  */
-export const PID_SCENE_PLATFORM = 'taobao';
+export const PID_SCENE_PLATFORM = 'taobao' as const;
 
 /** 重试时的入参组装；判定顺序与 planCommissionSnapshot 一致（金额 → 服务费 → paidAt），其余字段同 B1-08k。 */
 export function planSnapshotRetry(input: PlanSnapshotRetryInput): SnapshotRetryPlan {
