@@ -35,6 +35,7 @@ const COLUMNS = [
   'sms_pending_preview_text',
   'sms_test_status',
   'sms_tested_at',
+  'sms_pending_saved_at',
 ] as const;
 
 export interface CodeWrite {

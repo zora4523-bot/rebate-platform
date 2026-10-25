@@ -1,0 +1,99 @@
+{
+  "task": "B1-12zb",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "01cccd627c42472957d96c4fbfacda960f76a7d2",
+  "red_tests": [
+    "test/spec/db/notification/send-log/send-log.int.test.ts > [AC-B1-12e#1] templates have exactly the agreed columns; inbox_messages keeps its columns",
+    "test/spec/db/notification/sms-channel/sms-channel.int.test.ts > [AC-B1-12x#1] notify_templates gains exactly four nullable text SMS columns without defaults and no credential column",
+    "test/spec/db/notification/sms-channel/sms-pending.int.test.ts > [AC-B1-12x#12] notify_templates gains exactly six nullable pending SMS columns without defaults and no credential column",
+    "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#1] template columns have the agreed types, nullability and defaults",
+    "test/spec/notification/sms-pending-saved-at/saved-at.int.test.ts > [AC-B1-12zb#1] notify_templates 加 sms_pending_saved_at：timestamptz、可空、无默认；只有六列的待测试行照旧可写、新列读作空；七列齐全也可写；随表授权（couli_app 读写、couli_readonly 只读）",
+    "test/spec/notification/sms-pending-saved-at/saved-at.int.test.ts > [AC-B1-12zb#2] 保存待测试（测试受理 / 被拒 50301 / 超时 50401 / 没有验证手机号未发送）：sms_pending_saved_at = 保存时刻，响应与列表的 saved_at 都是它",
+    "test/spec/notification/sms-pending-saved-at/saved-at.int.test.ts > [AC-B1-12zb#3] 重新测试不改保存时刻：推进时钟后重新测试（受理、被拒都算），saved_at 仍是保存时刻而 tested_at 换成此刻；再保存一份新登记才换成新的保存时刻",
+    "test/spec/notification/sms-pending-saved-at/saved-at.int.test.ts > [AC-B1-12zb#4] 只有六列的旧待测试行：列表回退 sms_tested_at；首次重新测试（受理或超时）把原 tested_at 冻结进 sms_pending_saved_at，此后 saved_at 一直是它；别的变体不动",
+    "test/spec/notification/sms-pending-saved-at/saved-at.int.test.ts > [AC-B1-12zb#5] saved_at 取 sms_pending_saved_at（不为空时不看 sms_tested_at）：列表、重新测试响应都是它，重新测试不覆盖它；就地改在用登记也不动它",
+    "test/spec/notification/sms-pending-saved-at/saved-at.int.test.ts > [AC-B1-12zb#6] 启用、放弃时 sms_pending_saved_at 与其余待测试列一起清空；之后再保存的登记取新的保存时刻"
+  ],
+  "risk_note": "RV2 (db migration, generated snapshot, notification admin-channels). D10-355 ①: notify_templates.sms_pending_saved_at timestamptz nullable, no default, no backfill, outside the six-column pending all-or-none CHECK (frozen fixtures that insert six pending columns stay valid); table-level grants cover it. Written with the injected Clock's now on save (accepted / rejected / timeout / not sent), frozen from the previous sms_tested_at on a legacy row's first retest (row_version-guarded), cleared with the other pending columns on enable / discard; pending.saved_at reads it with a fallback to sms_tested_at. CT-24t saved_at shape unchanged. Frozen column-set tests (B1-12e / B1-12f / B1-12x) gain only the new column (approvals #24). No money, no attribution.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "01cccd627c42472957d96c4fbfacda960f76a7d2",
+      "tree": "d8494bbf2bcda6b6fe85ad38840d0806ae94d376",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-25T09:37:17Z",
+      "finished_at": "2026-10-25T09:37:41Z",
+      "gate": {
+        "commit": "016a5ab3f7da19fd6d6a81a35e696153d1ee7583",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/notification/send-log/send-log.int.test.ts > [AC-B1-12e#1] templates have exactly the agreed columns; inbox_messages keeps its columns",
+        "test/spec/db/notification/sms-channel/sms-channel.int.test.ts > [AC-B1-12x#1] notify_templates gains exactly four nullable text SMS columns without defaults and no credential column",
+        "test/spec/db/notification/sms-channel/sms-pending.int.test.ts > [AC-B1-12x#12] notify_templates gains exactly six nullable pending SMS columns without defaults and no credential column",
+        "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#1] template columns have the agreed types, nullability and defaults",
+        "test/spec/notification/sms-pending-saved-at/saved-at.int.test.ts > [AC-B1-12zb#1] notify_templates 加 sms_pending_saved_at：timestamptz、可空、无默认；只有六列的待测试行照旧可写、新列读作空；七列齐全也可写；随表授权（couli_app 读写、couli_readonly 只读）",
+        "test/spec/notification/sms-pending-saved-at/saved-at.int.test.ts > [AC-B1-12zb#2] 保存待测试（测试受理 / 被拒 50301 / 超时 50401 / 没有验证手机号未发送）：sms_pending_saved_at = 保存时刻，响应与列表的 saved_at 都是它",
+        "test/spec/notification/sms-pending-saved-at/saved-at.int.test.ts > [AC-B1-12zb#3] 重新测试不改保存时刻：推进时钟后重新测试（受理、被拒都算），saved_at 仍是保存时刻而 tested_at 换成此刻；再保存一份新登记才换成新的保存时刻",
+        "test/spec/notification/sms-pending-saved-at/saved-at.int.test.ts > [AC-B1-12zb#4] 只有六列的旧待测试行：列表回退 sms_tested_at；首次重新测试（受理或超时）把原 tested_at 冻结进 sms_pending_saved_at，此后 saved_at 一直是它；别的变体不动",
+        "test/spec/notification/sms-pending-saved-at/saved-at.int.test.ts > [AC-B1-12zb#5] saved_at 取 sms_pending_saved_at（不为空时不看 sms_tested_at）：列表、重新测试响应都是它，重新测试不覆盖它；就地改在用登记也不动它",
+        "test/spec/notification/sms-pending-saved-at/saved-at.int.test.ts > [AC-B1-12zb#6] 启用、放弃时 sms_pending_saved_at 与其余待测试列一起清空；之后再保存的登记取新的保存时刻"
+      ],
+      "expected": [
+        "test/spec/db/notification/send-log/send-log.int.test.ts",
+        "test/spec/db/notification/sms-channel/sms-channel.int.test.ts",
+        "test/spec/db/notification/sms-channel/sms-pending.int.test.ts",
+        "test/spec/db/notification/template-override/template-override.int.test.ts",
+        "test/spec/notification/sms-pending-saved-at/saved-at.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "186f96cb9298e96ae17fa3c148bcee1d1a7f24f7e97a25dabc2250dab064591f"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota until 10-30 (approvals #36); independent Claude review of the migration, snapshot and admin-channels changes over the test(spec) base: pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "rule tests by an independent Claude context (10 tests in 5 files red for the right reason on the test machine; 45 unchanged frozen tests exempt, 8 of them by the ledger's red_exempt), reviewed by a separate fresh independent Claude call: pass with no findings; the reviewer confirmed the eight red_exempt cases [AC-B1-12x#13]–[#20] byte-identical to the base (the only hunk in sms-pending.int.test.ts is the column-set line of #12)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "32a974a728c8f41747455f235211afb2cf5a171f",
+    "specs": "cec847e1768a63aac90e3e1bd473462d95d84436"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}

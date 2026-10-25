@@ -10,9 +10,10 @@
 //   - sms_state: disabled (no sms in channels), enabled (ready or on the fallback), else
 //     enabled_not_ready;
 //   - row_version: the code's version (every write raises it on all of its rows).
-// The schema has no enabled_at / saved_at columns: enabled_at is the row's updated_at, which only
-// the writes of the in-use registration (enable, in-place edit) touch; saved_at is sms_tested_at
-// (a pending registration is saved and tested in one write).
+// The schema has no enabled_at column: enabled_at is the row's updated_at, which only the writes of
+// the in-use registration (enable, in-place edit) touch. saved_at is sms_pending_saved_at, written
+// by the save and left alone by a retest (B1-12zb, D10-355 ①); a pending row saved before that
+// column existed has it NULL and falls back to sms_tested_at.
 //
 // Pure module (no decorators, erasable syntax).
 import {
@@ -43,6 +44,8 @@ export interface TemplateRow {
   readonly sms_pending_preview_text: string | null;
   readonly sms_test_status: string | null;
   readonly sms_tested_at: Date | null;
+  /** When the pending registration was saved; null on a pending row saved before B1-12zb. */
+  readonly sms_pending_saved_at: Date | null;
 }
 
 export type NotifyCategory = 'service' | 'subscription' | 'marketing';
@@ -175,7 +178,7 @@ export function pendingOf(row: TemplateRow): PendingView | null {
     template_code: row.sms_pending_template_code,
     template_type: type as SmsTemplateType,
     preview_text: row.sms_pending_preview_text,
-    saved_at: testedAt,
+    saved_at: (row.sms_pending_saved_at ?? row.sms_tested_at).toISOString(),
     test: { status: status as SmsTestStatus, tested_at: testedAt },
   };
 }

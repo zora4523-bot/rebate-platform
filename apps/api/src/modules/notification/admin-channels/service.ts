@@ -381,6 +381,7 @@ export class NotifyChannelsAdmin {
     }
     const status = result === null ? 'not_sent_no_verify_phone' : testStatus(result);
     const masked = phone === null ? null : maskPhone(phone);
+    const savedAt = this.#deps.clock.now();
     await this.#write(actor, code, rows, request.row_version, {
       variant: {
         name: row.variant,
@@ -390,7 +391,8 @@ export class NotifyChannelsAdmin {
           sms_pending_template_type: request.template_type,
           sms_pending_preview_text: request.preview_text,
           sms_test_status: status,
-          sms_tested_at: this.#deps.clock.now(),
+          sms_tested_at: savedAt,
+          sms_pending_saved_at: savedAt,
         },
       },
       audit: {
@@ -447,7 +449,14 @@ export class NotifyChannelsAdmin {
     await this.#write(actor, code, rows, request.row_version, {
       variant: {
         name: row.variant,
-        set: { sms_test_status: status, sms_tested_at: this.#deps.clock.now() },
+        // The save time stays; a pending row saved before sms_pending_saved_at existed freezes
+        // its previous test time into it (the write is conditional on the version just read, so
+        // row.sms_tested_at is still the stored value).
+        set: {
+          sms_test_status: status,
+          sms_tested_at: this.#deps.clock.now(),
+          ...(row.sms_pending_saved_at === null ? { sms_pending_saved_at: row.sms_tested_at } : {}),
+        },
       },
       audit: {
         action: NOTIFY_AUDIT_ACTIONS.test,
@@ -505,6 +514,7 @@ export class NotifyChannelsAdmin {
           sms_pending_preview_text: null,
           sms_test_status: null,
           sms_tested_at: null,
+          sms_pending_saved_at: null,
           updated_at: this.#deps.clock.now(),
         },
       },
@@ -542,6 +552,7 @@ export class NotifyChannelsAdmin {
           sms_pending_preview_text: null,
           sms_test_status: null,
           sms_tested_at: null,
+          sms_pending_saved_at: null,
         },
       },
       audit: {
