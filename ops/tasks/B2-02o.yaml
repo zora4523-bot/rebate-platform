@@ -1,0 +1,22 @@
+id: B2-02o
+repo: rebate-platform
+title: ledger 日终校验：pay- 前缀不变量（收款，db/invariants/ledger/pay-*.sql）的差异不建议冻结提现（freezeWithdrawals），照常告警并建议生成差错单；其余不变量的建议不变
+type: impl
+# 2026-10-26 编排裁定 D10-358 ②：BR-PAY-07 写明收款差错「不冻结用户提现」；现 daily-check.ts 对任何差异都置 freezeWithdrawals。作为 B2-15j 的依赖、先于 B2-15j 合并（pay 不变量上线时不触发冻结建议）。funds 线 10-30 恢复前由 be 做；RV2，独立 Claude 写测试与 money 评审（approvals #36）。
+# 只改 ledger 模块；不改已有规则测试。规则测试用临时 pay- 前缀不变量文件（夹具目录）驱动运行器，不依赖 B2-15j 的 pay-*.sql。
+refs: [BR-PAY-07, BR-FUND-19]
+refs_hash:
+  BR-PAY-07: a98350f4412a
+  BR-FUND-19: e6205ee4fcc1
+deps: [B2-02j]
+paths:
+  - 'apps/api/src/modules/ledger/**'
+test_paths:
+  - 'test/spec/ledger/pay-no-freeze/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/pay-no-freeze/**'
+status: todo
+pr: null
