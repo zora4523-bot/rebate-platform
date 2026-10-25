@@ -4,6 +4,7 @@ title: 后台支付单查询与处置：支付单列表 / 详情（pay.view，�
 type: impl
 # 2026-10-22 收款线入账（BR-PAY-05 ③④、BR-PAY-07「后台 支付单查询与对账页」、BR-PAY-08 ④；04 §6.6 pay-orders、§11.2）。后台接口照 CT-21e，去 planned。
 # 处置复用 B2-15c / B2-15d 的查询处理器与关单判定，不另写一套迁移逻辑。
+# 2026-10-25 be 认领（编排派工 18:28）：去 planned 须同步冻结契约测试 [AC-CT-21e#1] / [#17] 的块 C（四条操作改断言已实现、挂载校验路由），块拆分由前置 test-change be-tc-5 先做（照 D10-325 / #1585），本任务只改块 C（#24）。
 # 2026-10-23 编排 10:27：Codex 不可用至 10-30，规则测试与评审改由独立 Claude（tools/agent/claude-run.sh，approvals #36），tester 改为 claude-independent。
 refs: [BR-PAY-05, BR-PAY-07, BR-PAY-08]
 refs_hash:
@@ -22,6 +23,8 @@ paths:
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
 test_paths:
   - 'test/spec/payment/admin/**'
+  - 'test/spec/contracts/pay-admin-http/operations.test.ts'
+  - 'test/spec/contracts/pay-admin-http/generated.test.ts'
 impl: claude
 tester: claude-independent
 accept:
