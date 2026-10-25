@@ -14,6 +14,8 @@
 // request the expiry moves to processing is cleaned in the next round. The processing ports come
 // from app.module's factories (cleanup ports, closing adjustment, paid-out withdrawals, Apple
 // revoker, push unbinding); FIELD_CRYPTO is optional (without it an Apple attempt counts as failed).
+// B1-27h: EXPORT_STORE (optional) is the private store of the personal information copies, whose
+// files of the user the processing round deletes after the cleanup.
 //
 // Also compiled by the `test` project: a class decorator only (dependencies through factories).
 import { type DynamicModule, type FactoryProvider, Module } from '@nestjs/common';
@@ -22,9 +24,11 @@ import type { Kysely } from 'kysely';
 import {
   CLOCK,
   DB,
+  EXPORT_STORE,
   FIELD_CRYPTO,
   ROOT_LOGGER,
   type Clock,
+  type ExportStore,
   type FieldCrypto,
   type RootLogger,
 } from '../platform/index.ts';
@@ -128,6 +132,7 @@ export class IdentityDeletionExpiryModule {
             AFTER_REVOKED,
             { token: DB, optional: true },
             { token: FIELD_CRYPTO, optional: true },
+            { token: EXPORT_STORE, optional: true },
           ],
           useFactory: (
             clock: Clock,
@@ -141,6 +146,7 @@ export class IdentityDeletionExpiryModule {
             afterRevoked: AfterSessionsRevoked,
             db?: Kysely<Database>,
             crypto?: FieldCrypto,
+            store?: ExportStore,
           ): DeletionExpiry | null => {
             if (db === undefined) {
               logger.info({}, 'identity_deletion_expiry_disabled');
@@ -164,6 +170,8 @@ export class IdentityDeletionExpiryModule {
               withdrawals,
               apple,
               afterRevoked,
+              // B1-27h (BR-ID-40 细则「副本请求与注销状态」): the copy files of the user are deleted.
+              ...(store === undefined ? {} : { dataCopyStore: store }),
             });
             return combined(processing, expiry, logger);
           },

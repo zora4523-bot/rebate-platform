@@ -1,7 +1,9 @@
 // Private export store port (B1-34d; 08 BR-ID-34 细则「后台导出任务」: every download re-authorizes
 // and gets a freshly signed link valid for min(5 minutes, remaining download window), the caller
 // picks expiresAt; 02 §4: OSS `exports` bucket is private, files are reached only via signed URLs).
-// Key: `<app_id>/<export_id>.csv`. put overwrites idempotently and returns no public URL;
+// Key: `<app_id>/<export_id>.csv` (text/csv), or a personal information copy's
+// `data-copies/<app_id>/<copy_id>/<run>.zip` (B1-27h, dataCopyObjectKey; application/zip or
+// application/octet-stream). put overwrites idempotently and returns no public URL;
 // signedUrl returns a time-limited link; delete of a missing key succeeds.
 // local / test: in-process memory stand-in whose links carry an HMAC-SHA256 signature and an expiry
 // that verify() checks. staging / prod: until the OSS adapter lands (B1-30), construction succeeds
@@ -19,10 +21,14 @@ import {
 import type { RootLogger } from '../logging/index.ts';
 
 export interface ExportPutInput {
-  /** `<app_id>/<export_id>.csv`; app_id follows the contract, export_id uses [A-Za-z0-9_-]+. */
+  /**
+   * `<app_id>/<export_id>.csv`; app_id follows the contract, export_id uses [A-Za-z0-9_-]+. A
+   * personal information copy uses dataCopyObjectKey (B1-27h).
+   */
   readonly key: string;
   readonly bytes: Uint8Array;
-  readonly contentType: 'text/csv';
+  /** text/csv for an export; a copy key takes application/zip or application/octet-stream. */
+  readonly contentType: 'text/csv' | 'application/zip' | 'application/octet-stream';
 }
 
 export interface ExportSignedUrlInput {
@@ -46,6 +52,31 @@ export interface ExportStore {
 
 /** Nest injection token of the process-wide ExportStore (provided globally by PlatformModule). */
 export const EXPORT_STORE = Symbol('EXPORT_STORE');
+
+const DATA_COPY_PREFIX = 'data-copies';
+const APP_ID = /^[a-z0-9_]{1,32}$/;
+const COPY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const RUN = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Object key of one generation run of a personal information copy (B1-27h; BR-ID-40, D10-138: a
+ * key of its own per run): a prefix no export key can have, the app id, the copy id and the run,
+ * ending in `.zip`. put takes it with application/zip or application/octet-stream only (an export
+ * key keeps text/csv only); signedUrl, delete and verify as for an export key. Parts of the wrong
+ * shape throw.
+ */
+export function dataCopyObjectKey(appId: string, copyId: string, run: string): string {
+  if (typeof appId !== 'string' || !APP_ID.test(appId)) {
+    throw new TypeError('data copy key: app id must match the contract AppId');
+  }
+  if (typeof copyId !== 'string' || !COPY_ID.test(copyId)) {
+    throw new TypeError('data copy key: copy id must be a lower-case UUID');
+  }
+  if (typeof run !== 'string' || !RUN.test(run)) {
+    throw new TypeError('data copy key: run must be 1 to 64 characters of [A-Za-z0-9_-]');
+  }
+  return `${DATA_COPY_PREFIX}/${appId}/${copyId}/${run}.zip`;
+}
 
 export interface MemoryExportStoreOptions {
   readonly baseUrl: string;
@@ -76,20 +107,39 @@ export class ExportStoreUnavailableError extends Error {
 
 // app_id: contracts/openapi.yaml AppId (^[a-z0-9_]+$, 1..32); export_id: [A-Za-z0-9_-]{1,128}.
 const EXPORT_KEY = /^[a-z0-9_]{1,32}\/[A-Za-z0-9_-]{1,128}\.csv$/;
+// A copy key: `data-copies/<app_id>/<copy uuid>/<run>.zip` (B1-27h). Its first segment has a hyphen,
+// which no app id can have, and it has three slashes: no export key ever looks like it.
+const DATA_COPY_KEY =
+  /^data-copies\/[a-z0-9_]{1,32}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[A-Za-z0-9_-]{1,64}\.zip$/;
 const EXPIRES_MS = /^(?:0|[1-9][0-9]{0,15})$/;
 const SIGNATURE_HEX = /^[0-9a-f]{64}$/;
 const CONTENT_TYPE = 'text/csv';
+const COPY_CONTENT_TYPES: ReadonlySet<string> = new Set([
+  'application/zip',
+  'application/octet-stream',
+]);
+
+function isKey(key: unknown): key is string {
+  return typeof key === 'string' && (EXPORT_KEY.test(key) || DATA_COPY_KEY.test(key));
+}
 
 function assertKey(key: unknown): asserts key is string {
-  if (typeof key !== 'string' || !EXPORT_KEY.test(key)) {
-    throw new TypeError('export key must be <app_id>/<export_id>.csv');
+  if (!isKey(key)) {
+    throw new TypeError('export key must be <app_id>/<export_id>.csv or a data copy key');
   }
 }
 
 function checkPut(input: ExportPutInput): void {
   assertKey(input.key);
-  if (input.contentType !== CONTENT_TYPE)
+  if (DATA_COPY_KEY.test(input.key)) {
+    if (!COPY_CONTENT_TYPES.has(input.contentType)) {
+      throw new TypeError(
+        'data copy contentType must be application/zip or application/octet-stream',
+      );
+    }
+  } else if (input.contentType !== CONTENT_TYPE) {
     throw new TypeError('export contentType must be text/csv');
+  }
   if (!(input.bytes instanceof Uint8Array))
     throw new TypeError('export bytes must be a Uint8Array');
 }
@@ -100,6 +150,11 @@ function validInstant(value: unknown): value is Date {
 
 function rejectWith<T>(error: unknown): Promise<T> {
   return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+}
+
+interface StoredFile {
+  readonly bytes: Uint8Array;
+  readonly contentType: ExportPutInput['contentType'];
 }
 
 /**
@@ -113,7 +168,7 @@ export class MemoryExportStore implements ExportStore {
   readonly #signingKey: string;
   readonly #clock: Clock;
   readonly #logger: RootLogger;
-  readonly #files = new Map<string, Uint8Array>();
+  readonly #files = new Map<string, StoredFile>();
 
   constructor(options: MemoryExportStoreOptions) {
     const base = options.baseUrl.replace(/\/+$/, '');
@@ -130,7 +185,10 @@ export class MemoryExportStore implements ExportStore {
       checkPut(input);
       // A fresh copy of only the view's own bytes (byteOffset / byteLength): `slice()` on a Node
       // Buffer would share its memory, so later changes by the caller would reach the file.
-      this.#files.set(input.key, new Uint8Array(input.bytes));
+      this.#files.set(input.key, {
+        bytes: new Uint8Array(input.bytes),
+        contentType: input.contentType,
+      });
       this.#logger.debug({ event: 'export_store_put', key: input.key }, 'export stored');
       return Promise.resolve();
     } catch (error) {
@@ -167,12 +225,16 @@ export class MemoryExportStore implements ExportStore {
     }
   }
 
-  get(key: string): { readonly bytes: Uint8Array; readonly contentType: 'text/csv' } | undefined {
-    const bytes = this.#files.get(key);
+  get(
+    key: string,
+  ):
+    | { readonly bytes: Uint8Array; readonly contentType: ExportPutInput['contentType'] }
+    | undefined {
+    const file = this.#files.get(key);
     // A fresh copy per read: changing what one read returned never reaches the stored file.
-    return bytes === undefined
+    return file === undefined
       ? undefined
-      : { bytes: new Uint8Array(bytes), contentType: CONTENT_TYPE };
+      : { bytes: new Uint8Array(file.bytes), contentType: file.contentType };
   }
 
   verify(url: string, now: Date): boolean {
@@ -183,7 +245,7 @@ export class MemoryExportStore implements ExportStore {
     const question = rest.indexOf('?');
     if (question < 0) return false;
     const key = rest.slice(0, question);
-    if (!EXPORT_KEY.test(key)) return false;
+    if (!isKey(key)) return false;
     const entries = [...new URLSearchParams(rest.slice(question + 1))];
     if (entries.length !== 2) return false;
     const params = new Map(entries);

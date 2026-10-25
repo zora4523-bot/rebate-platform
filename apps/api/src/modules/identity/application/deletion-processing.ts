@@ -12,6 +12,11 @@
 //      only when every port is available.
 //   ② Apple revocation outside any transaction (cleaned_at set, apple_revoke_result NULL): at most
 //      one attempt per round, the third failure is final (failed) and alerts, never blocking done.
+//      B1-27h (BR-ID-40 细则「副本请求与注销状态」): the same transaction cancels the user's open
+//      personal information copy requests (pending / running / ready); once it committed, every
+//      copy file of the user still recorded (delivered and unexpired ones included) is deleted
+//      through dataCopyStore and object_key cleared — a failed delete is one warn line and the file
+//      stays recorded for its expire job; without dataCopyStore the files wait for those jobs.
 //   ③ completion transaction: closing adjustment none_needed / done required; phone_hmac and the
 //      device hashes into deleted_identities (180 days), user_oauth deleted, users tombstone
 //      (status deleted), the request COMPLETE → done.
@@ -26,7 +31,7 @@
 import type { DB } from '@couli/db';
 import { transitionDeletionRequest } from '@couli/domain';
 import type { Kysely, Transaction } from 'kysely';
-import type { Clock, FieldCrypto, RootLogger } from '../../platform/index.ts';
+import type { Clock, ExportStore, FieldCrypto, RootLogger } from '../../platform/index.ts';
 import { DEFAULT_AVATAR } from '../domain/registration.ts';
 import { APPLE_REFRESH_TOKEN_CONTEXT } from '../infra/oauth-accounts.ts';
 import type { AppleTokenRevoker } from '../ports/apple-token-revoker.ts';
@@ -37,6 +42,7 @@ import type {
   DeletionCleanupStep,
   DeletionClosingAdjustmentReader,
 } from '../ports/deletion-cleanup.ts';
+import { cancelOpenCopiesOfUser, deleteCopyFilesOfUser } from '../infra/personal-data-copies.ts';
 import { lockUsersForUpdate } from '../ports/lock-users.ts';
 import type { WithdrawalSucceededReader } from '../ports/withdrawal-in-flight.ts';
 import { instantPlus } from './config-seconds.ts';
@@ -59,6 +65,11 @@ export interface DeletionProcessingOptions {
   readonly apple: AppleTokenRevoker;
   /** The push token unbinding of the revoked sessions, in the cleanup transaction. */
   readonly afterRevoked?: AfterSessionsRevoked;
+  /**
+   * B1-27h (BR-ID-40 细则「副本请求与注销状态」): the private store of the personal information
+   * copies, whose files of the user (delivered ones included) the cleanup deletes.
+   */
+  readonly dataCopyStore?: Pick<ExportStore, 'delete'>;
   readonly batchSize?: number;
 }
 
@@ -148,6 +159,7 @@ function fixedAt(now: Date): Clock {
 
 export function createDeletionProcessing(options: DeletionProcessingOptions): DeletionProcessing {
   const { db, clock, logger, crypto, cleanup, funds, withdrawals, apple, afterRevoked } = options;
+  const dataCopyStore = options.dataCopyStore;
   const batchSize = batchSizeOf(options.batchSize);
   const dedup = createDailyDedup();
 
@@ -289,6 +301,10 @@ export function createDeletionProcessing(options: DeletionProcessingOptions): De
         .where('user_id', '=', userId)
         .where('anonymized_at', 'is', null)
         .execute();
+
+      // Personal information copies (BR-ID-40 细则「副本请求与注销状态」): open requests cancelled;
+      // their files are deleted after the commit (processOne).
+      await cancelOpenCopiesOfUser(trx, { appId, userId, at: now });
 
       // Login logs: detached from the user, kept until their own retention (BR-ID-28).
       await trx
@@ -489,6 +505,21 @@ export function createDeletionProcessing(options: DeletionProcessingOptions): De
     if (progress === undefined || progress.status !== 'processing') return;
     if (progress.cleaned_at === null) {
       const outcome = await clean(due);
+      if (outcome.kind !== 'skipped' && dataCopyStore !== undefined) {
+        try {
+          await deleteCopyFilesOfUser(
+            db,
+            { appId: due.app_id, userId: due.user_id },
+            { clock, store: dataCopyStore, logger },
+          );
+        } catch (error) {
+          // The files stay recorded in object_key: their expire jobs delete them.
+          logger.warn(
+            { app_id: due.app_id, deletion_request_id: due.id, error_name: errorName(error) },
+            'identity_deletion_data_copy_files_failed',
+          );
+        }
+      }
       if (outcome.kind === 'blocked') {
         const now = clock.now();
         for (const port of outcome.ports) {

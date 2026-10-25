@@ -21,7 +21,10 @@ export type {
   PayoutVerifyRecheckControl,
 } from './application/payout-verify-recheck.ts';
 export { IdentityWorkerModule } from './identity-worker.module.ts';
-export type { IdentityWorkerModuleOptions } from './identity-worker.module.ts';
+export type {
+  IdentityDataCopyPorts,
+  IdentityWorkerModuleOptions,
+} from './identity-worker.module.ts';
 export {
   PRIVACY_CONSENT_CHECKS,
   privacyConsentRefusal,
@@ -319,3 +322,28 @@ export type {
   PersonalDataCopySubject,
   PersonalDataCopyWithdrawal,
 } from './ports/personal-data-copy-sources.ts';
+// B1-27h: generation and delivery of personal information copies (BR-ID-40): the data-copy queue's
+// worker and the copy file (B1-27i re-encrypts a sealed wecom_session copy at its first download).
+export { DATA_COPY_QUEUE, createDataCopyWorker } from './application/data-copy-worker.ts';
+export type {
+  DataCopyCodeSender,
+  DataCopyInbox,
+  DataCopyInboxEvent,
+  DataCopyInboxInput,
+  DataCopyPushCategory,
+  DataCopySmsMessage,
+  DataCopySmsResult,
+  DataCopyWorker,
+  DataCopyWorkerOptions,
+} from './application/data-copy-worker.ts';
+export {
+  dataCopyFileEntries,
+  encryptDataCopyZip,
+  generateDataCopySecret,
+  openSealedDataCopyEntries,
+  sealDataCopyEntries,
+} from './application/data-copy-file.ts';
+export type { DataCopyFileEntry, PersonalDataCopyContent } from './application/data-copy-file.ts';
+// B1-27h: the account-disable step admin's disable transaction runs (BR-ID-40 细则「重新登记与登记人停用」).
+export { failWecomCopiesOfRegistrant } from './infra/personal-data-copies.ts';
+export type { WecomCopyFailInput } from './infra/personal-data-copies.ts';
