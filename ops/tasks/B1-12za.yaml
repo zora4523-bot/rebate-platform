@@ -1,0 +1,19 @@
+id: B1-12za
+repo: rebate-platform
+title: 短信跟进：SMS_CODE 按所请求变体的在用登记发送，只有该变体无在用登记时才用部署配置兜底（不受「全部变体就绪」约束）
+type: impl
+# 2026-10-25 入账（be-codex；编排续跑派工：本线 followups）。依据：B1-12y money r1 S2——registered-template.ts 对 SMS_CODE 在「有变体未登记」时整体回退部署配置，即使所请求变体（default）已有在用登记；D10-337 ② 已定 SMS_CODE 不受就绪条件约束。今天仓库不建 SMS_CODE 非 default 变体，属防御性修正；其他编码的就绪判定不变。
+refs: [BR-TEXT-20]
+refs_hash:
+  BR-TEXT-20: 3a9b6d8f0834
+deps: [B1-12y]
+paths:
+  - 'apps/api/src/modules/notification/sms/**'
+test_paths:
+  - 'test/spec/notification/sms-code-variant/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/sms-code-variant/**'
+status: todo

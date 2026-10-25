@@ -1,0 +1,21 @@
+id: B1-01zzo
+repo: rebate-platform
+title: 指标跟进：worker 资金指标采集结果按 5 分钟缓存（采集失败不缓存、口径不变，减轻受益人 held 计数的全表分组），Redis 拒绝写入告警的 increase 窗口放宽到 10 分钟（for 5m 不变）
+type: impl
+# 2026-10-25 入账（be-codex；编排续跑派工：从本线 followups 挑不改他线逻辑的条目）。依据：B1-01zzi followups（settlement 端口 held 计数每次抓取对 commission_split_beneficiary_events 全表按键分组，现有索引 (app_id, order_id, user_id, role, event_seq) 只能顺序扫）、B1-01zzh money r1 S2（单次 OOM 拒写在 increase(...[5m]) > 0 + for 5m 下可能不触发）。
+# 做法：collectFund 在 worker 内缓存最近一次成功快照 5 分钟（02 §13 通用 5 分钟粒度；时钟只取注入 Clock），过期或无缓存才查库；任一端口失败照旧整次失败、不缓存失败、不回退旧值；B1-01zzh 的 collect（队列 / 水位）不缓存。缓存只包在 entry.ts 传入的 collectFund 外层（可由 metrics 导出一个缓存包装函数，仅 entry.ts 使用）；createMetricsRegistry 每次 render 照旧调用 collectFund，B1-01zzi 冻结测试 [AC-B1-01zzi#3] 不变（GT-23bgo S2）。不加迁移、不改三端口 SQL 口径。couli.yaml 的 Redis 拒写规则改为 increase(...[10m]) > 0、for 5m。
+refs: []
+refs_hash: {}
+deps: [B1-01zzi, B1-01zzh]
+paths:
+  - 'apps/api/src/modules/platform/metrics/**'
+  - 'apps/api/src/entry.ts'
+  - 'infra/monitoring/rules/couli.yaml'
+test_paths:
+  - 'test/spec/platform/metrics-followups/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/metrics-followups/**'
+status: todo
