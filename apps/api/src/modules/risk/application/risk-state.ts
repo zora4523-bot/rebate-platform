@@ -264,6 +264,9 @@ const WHITELIST: ReadonlyMap<string, WhitelistEntry> = new Map<string, Whitelist
   ['POST /v1/idempotency-keys/abandon', true],
   ['POST /v1/me/appeals', true],
   ['GET /v1/me/appeals', true],
+  // BR-ID-40 细则「在 App 内下载」: personal information rights stay while banned (B1-27i).
+  ['GET /v1/me/data-copies', true],
+  ['GET /v1/me/data-copies/:id/download', true],
 ]);
 
 /** The four contract x-step-up operations (withdraw, phone change, payout account, deletion). */

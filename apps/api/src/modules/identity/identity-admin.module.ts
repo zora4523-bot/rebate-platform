@@ -20,6 +20,9 @@
 // registrant reads (an account's download rights, current names) and the working-day calendar
 // (content's configuration). Without a database or job queue the routes still register and every
 // call fails closed (50001).
+// The download of a wecom_session copy (B1-27i; BR-ID-40 细则「企业微信会话交付的下载」): the same
+// registrant reads, the field cipher that opens the sealed file and the private export store.
+// Without a database or field cipher the route still registers and every download fails closed.
 import { type DynamicModule, Module } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely, Transaction } from 'kysely';
@@ -29,6 +32,7 @@ import {
   CLOCK,
   DB,
   EVENT_BUS,
+  EXPORT_STORE,
   FIELD_CRYPTO,
   JOB_QUEUE,
   ROOT_LOGGER,
@@ -36,6 +40,7 @@ import {
   type AuditPort,
   type Clock,
   type EventBus,
+  type ExportStore,
   type FieldCrypto,
   type JobQueue,
   type RootLogger,
@@ -46,7 +51,13 @@ import {
   type AdminDataCopies,
   type AdminDataCopyRegistrants,
 } from './application/admin-data-copies.ts';
+import {
+  ADMIN_DATA_COPY_DOWNLOAD,
+  createAdminDataCopyDownload,
+  type AdminDataCopyDownload,
+} from './application/admin-data-copy-download.ts';
 import type { DeletionCalendarConfigReader } from './application/deletion-expiry.ts';
+import { createDataCopyFileReader } from './infra/personal-data-copies.ts';
 import { AdminUserDataExportsController } from './http/admin/user-data-exports.controller.ts';
 import {
   AdminProfileEdit,
@@ -114,6 +125,11 @@ const NO_DATA_COPIES: AdminDataCopies = {
   list: () => Promise.reject(new Error('identity: copy requests need the database')),
 };
 
+/** Stands in for the download when the entry has no database or field cipher: fails closed. */
+const NO_DATA_COPY_DOWNLOAD: AdminDataCopyDownload = {
+  download: () => Promise.reject(new Error('identity: copy downloads need the database')),
+};
+
 @Module({})
 export class IdentityAdminModule {
   static forAdmin(options: IdentityAdminOptions): DynamicModule {
@@ -149,6 +165,35 @@ export class IdentityAdminModule {
                   logger,
                   queue,
                   calendar: options.dataCopyCalendar(db, clock),
+                  registrants: options.dataCopyRegistrants,
+                  auditOn: (handle: Kysely<Database>) => options.auditWriter(handle, clock),
+                }),
+        },
+        {
+          provide: ADMIN_DATA_COPY_DOWNLOAD,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            EXPORT_STORE,
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            store: ExportStore,
+            db?: Kysely<Database>,
+            crypto?: FieldCrypto,
+          ): AdminDataCopyDownload =>
+            db === undefined || crypto === undefined
+              ? NO_DATA_COPY_DOWNLOAD
+              : createAdminDataCopyDownload({
+                  db,
+                  clock,
+                  logger,
+                  store,
+                  files: createDataCopyFileReader(store),
+                  crypto,
                   registrants: options.dataCopyRegistrants,
                   auditOn: (handle: Kysely<Database>) => options.auditWriter(handle, clock),
                 }),

@@ -5,12 +5,14 @@ import {
   APP_CONFIG,
   CLOCK,
   DB,
+  EXPORT_STORE,
   FIELD_CRYPTO,
   IDEMPOTENCY,
   REDIS,
   ROOT_LOGGER,
   type AppConfig,
   type Clock,
+  type ExportStore,
   type FieldCrypto,
   type Idempotency,
   type IdempotencyPostMissCheck,
@@ -197,6 +199,12 @@ import { LandingSmsCodesController } from './http/public/landing-sms-codes.contr
 import { SmsCodesController } from './http/public/sms-codes.controller.ts';
 import { SmsLoginController } from './http/public/sms-login.controller.ts';
 import { TipsController } from './http/public/tips.controller.ts';
+import { DataCopiesController } from './http/public/data-copies.controller.ts';
+import {
+  MY_DATA_COPIES,
+  createMyDataCopies,
+  type MyDataCopies,
+} from './application/my-data-copies.ts';
 import { MeController } from './http/public/me.controller.ts';
 import { PayoutAccountController } from './http/public/payout-account.controller.ts';
 import { RealnameController } from './http/public/realname.controller.ts';
@@ -509,6 +517,7 @@ export class IdentityModule {
         LaborAgreementController,
         PayoutAccountController,
         DeletionController,
+        DataCopiesController,
       ],
       providers: [
         options.withdrawalInFlight === undefined
@@ -1125,6 +1134,17 @@ export class IdentityModule {
           inject: [CLOCK, { token: DB, optional: true }],
           useFactory: (clock: Clock, db?: Kysely<Database>): ConsentService | null =>
             db === undefined ? null : createConsentService({ db, clock }),
+        },
+        {
+          // GET /v1/me/data-copies and its download (B1-27i, BR-ID-40 细则「在 App 内下载」).
+          provide: MY_DATA_COPIES,
+          inject: [CLOCK, EXPORT_STORE, { token: DB, optional: true }],
+          useFactory: (
+            clock: Clock,
+            store: ExportStore,
+            db?: Kysely<Database>,
+          ): MyDataCopies | null =>
+            db === undefined ? null : createMyDataCopies({ db, clock, store }),
         },
         {
           provide: TIPS,

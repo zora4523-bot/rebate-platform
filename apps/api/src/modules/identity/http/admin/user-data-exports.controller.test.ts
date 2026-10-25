@@ -16,6 +16,11 @@ import type {
   AdminDataCopyRegisterResult,
   AdminDataCopyView,
 } from '../../application/admin-data-copies.ts';
+import type {
+  AdminDataCopyDownload,
+  AdminDataCopyDownloadInput,
+  AdminDataCopyDownloadResult,
+} from '../../application/admin-data-copy-download.ts';
 import { AdminUserDataExportsController } from './user-data-exports.controller.ts';
 
 const APP = 'b1_27c_ctrl';
@@ -53,8 +58,19 @@ const VIEW: AdminDataCopyView = {
   failureReason: null,
 };
 
-function setup(register: AdminDataCopyRegisterResult, list?: AdminDataCopyListResult) {
+function setup(
+  register: AdminDataCopyRegisterResult,
+  list?: AdminDataCopyListResult,
+  download?: AdminDataCopyDownloadResult,
+) {
   const guard = new FakeGuard();
+  const downloaded: AdminDataCopyDownloadInput[] = [];
+  const downloads: AdminDataCopyDownload = {
+    download: (input) => {
+      downloaded.push(input);
+      return Promise.resolve(download ?? { kind: 'unknown_export' });
+    },
+  };
   const registered: AdminDataCopyRegisterInput[] = [];
   const listed: AdminDataCopyListInput[] = [];
   const copies: AdminDataCopies = {
@@ -67,9 +83,9 @@ function setup(register: AdminDataCopyRegisterResult, list?: AdminDataCopyListRe
       return Promise.resolve(list ?? { kind: 'page', items: [], total: 0 });
     },
   };
-  const controller = new AdminUserDataExportsController(guard, copies);
+  const controller = new AdminUserDataExportsController(guard, copies, downloads);
   const request = { id: TRACE, ip: '127.0.0.1', query: {} } as never;
-  return { guard, registered, listed, controller, request };
+  return { guard, registered, listed, downloaded, controller, request };
 }
 
 async function refusal(promise: Promise<unknown>): Promise<{ status: number; body: unknown }> {
@@ -162,4 +178,67 @@ it('[AC-B1-27c#35] 列表：只读守卫，默认第 1 页每页 20 条；未知
   const refused = await refusal(missing.controller.list(missing.request, USER));
   expect(refused.status).toBe(400);
   expect(refused.body).toMatchObject({ code: 20001, data: { fields: ['user_id'] } });
+});
+
+function headers() {
+  const set: Record<string, string> = {};
+  return { set, reply: { header: (name: string, value: string) => (set[name] = value) } };
+}
+
+it('[B1-27i] 下载：守卫按 user.data_export 跑（totp），regenerate 缺省为 false，回链接、口令与 no-store', async () => {
+  const s = setup({ kind: 'unknown_user' }, undefined, {
+    kind: 'link',
+    url: 'https://exports.invalid/k?expires=1&signature=0',
+    urlExpiresAt: new Date('2026-11-03T02:25:00.000Z'),
+    password: 'ABCD2345',
+    expiresAt: new Date('2026-11-04T02:20:00.000Z'),
+  });
+  const h = headers();
+  const answer = await s.controller.download(s.request, USER, COPY, {}, h.reply);
+  expect(h.set).toEqual({ 'Cache-Control': 'no-store' });
+  expect(s.guard.calls).toEqual([{ request: s.request, permission: 'user.data_export' }]);
+  expect(s.downloaded).toEqual([
+    {
+      appId: APP,
+      adminId: ADMIN,
+      userId: USER,
+      exportId: COPY,
+      regenerate: false,
+      ip: '127.0.0.1',
+    },
+  ]);
+  expect(answer).toEqual({
+    code: 0,
+    msg: '',
+    data: {
+      url: 'https://exports.invalid/k?expires=1&signature=0',
+      url_expires_at: '2026-11-03T02:25:00.000Z',
+      password: 'ABCD2345',
+      status: 'delivered',
+      expires_at: '2026-11-04T02:20:00.000Z',
+    },
+    trace_id: TRACE,
+  });
+  await s.controller.download(s.request, USER, COPY, { regenerate: true }, h.reply);
+  expect(s.downloaded[1]?.regenerate).toBe(true);
+});
+
+it.each([
+  [{ kind: 'unknown_user' }, 400, { code: 20001, data: { fields: ['user_id'] } }],
+  [{ kind: 'unknown_export' }, 400, { code: 20001, data: { fields: ['export_id'] } }],
+  [
+    { kind: 'permission_denied' },
+    403,
+    { code: 10403, data: { reason: 'admin_permission_denied' } },
+  ],
+  [
+    { kind: 'not_downloadable', status: 'expired' },
+    422,
+    { code: 30417, data: { status: 'expired' } },
+  ],
+] as const)('[B1-27i] 下载拒绝 %o → HTTP %i', async (result, status, body) => {
+  const s = setup({ kind: 'unknown_user' }, undefined, result);
+  const answer = await refusal(s.controller.download(s.request, USER, COPY, {}, headers().reply));
+  expect(answer.status).toBe(status);
+  expect(answer.body).toMatchObject({ ...body, trace_id: TRACE });
 });
