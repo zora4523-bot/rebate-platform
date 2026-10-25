@@ -4,9 +4,13 @@
 // Row processors (one per kind; injected by the assembly):
 //   - rights / punish: B1-09k (locate the sub-order, the five row failures, the time window,
 //     rights.record into order_rights; duplicate under the BR-FUND-06 key);
-//   - channel: B1-09h (risk's channel blocklist port; start_at = the task's created_at).
-// A processor owns its own transaction(s) and returns one outcome per row; it never writes
-// rights_imports or rights_import_failures (the job does: failures insert-only, the five tallies).
+//   - channel: B1-09h (risk's channel blocklist port; start_at = the task's created_at;
+//     application/channel-import.ts).
+// A processor returns one outcome per row; it never writes rights_imports or
+// rights_import_failures (the job does: failures insert-only, the five tallies). Given the job's
+// transaction of the row (B1-09h: the checkpoint's own), it writes on that one only and commits
+// nothing itself, so a crash before the checkpoint commits leaves nothing of the row; without one it
+// owns its own transaction(s).
 // A kind without an injected processor ends the whole task as failed (J-22), no row is processed.
 //
 // Column templates: the columns of each Excel type follow the union's official export template,
@@ -15,6 +19,8 @@
 // (exact text after trimming). No template registered for (kind, platform), or a template column
 // missing from the header: every data row of the file is the row failure invalid_row and no row
 // reaches the processor. Rows are numbered as in the file (the header is row 1).
+import type { DB } from '@couli/db';
+import type { Transaction } from 'kysely';
 import type {
   RightsImportKind,
   RightsImportRowOutcome,
@@ -48,7 +54,12 @@ export interface RightsImportTaskInfo {
 }
 
 export interface RightsImportRowProcessor {
-  process(task: RightsImportTaskInfo, row: RightsImportRow): Promise<RightsImportRowOutcome>;
+  /** trx: the job's transaction of this row's checkpoint (see the header). */
+  process(
+    task: RightsImportTaskInfo,
+    row: RightsImportRow,
+    trx?: Transaction<DB>,
+  ): Promise<RightsImportRowOutcome>;
 }
 
 export type RightsImportProcessors = Readonly<

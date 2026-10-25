@@ -10,10 +10,11 @@
 //      no template, or a template column missing from the header → every data row invalid_row;
 //      otherwise each data row goes, in file order, to the processor of the task's kind;
 //   ④ each row's outcome is committed before the next row goes to the processor: one transaction
-//      inserts its failure into rights_import_failures (row_no, reason; insert-only, one per
-//      (import_id, row_no)) and adds it to the tallies (domain countRightsImportRows), so the
-//      committed tallies are the checkpoint; status done with finished_at (the injected Clock) at
-//      the end;
+//      per row (B1-09h) locks the task row at the checkpoint, is handed to the processor (whose
+//      writes ride on it), inserts the row's failure into rights_import_failures (row_no, reason;
+//      insert-only, one per (import_id, row_no)) and adds it to the tallies (domain
+//      countRightsImportRows), so the committed tallies are the checkpoint; status done with
+//      finished_at (the injected Clock) at the end;
 //   ⑤ the whole task fails (status failed, finished_at) when its file is gone or cannot be read, or
 //      no processor is injected for its kind (J-22; logged at error with ids only);
 //   ⑥ an error thrown by a processor (or the database) is not swallowed: the attempt fails, the
@@ -44,6 +45,7 @@ import {
   commitRightsImportRow,
   findRightsImport,
   finishRightsImport,
+  lockRightsImportCheckpoint,
   markRightsImportRunning,
   type RightsImportRecord,
 } from '../infra/rights-import-store.ts';
@@ -152,22 +154,29 @@ export async function handleRightsImport(
   // The committed tallies are the checkpoint: rows are committed in file order, one per row.
   let committed = row.total_rows;
   for (const data of sheet.rows.slice(committed)) {
-    let outcome: RightsImportRowOutcome;
-    if (columns === null) {
-      outcome = INVALID_ROW;
-    } else {
-      const values: Record<string, RightsImportCell> = {};
-      for (const [name, index] of columns) values[name] = data.cells[index] ?? null;
-      const input: RightsImportRow = { row_no: data.row_no, values };
-      outcome = await processor.process(task, input);
-    }
-    await commitRightsImportRow(db, {
-      appId,
-      importId,
-      committed,
-      rowNo: data.row_no,
-      failure: outcome.kind === 'failed' ? outcome.reason : null,
-      add: countRightsImportRows([outcome]),
+    // One transaction per row: the processor writes on it and the row's checkpoint commits on it,
+    // so a crash before COMMIT leaves nothing of the row and the redelivered row counts once.
+    await db.transaction().execute(async (trx) => {
+      if (!(await lockRightsImportCheckpoint(trx, appId, importId, committed))) {
+        throw new Error('orders: rights import checkpoint moved; this attempt stops');
+      }
+      let outcome: RightsImportRowOutcome;
+      if (columns === null) {
+        outcome = INVALID_ROW;
+      } else {
+        const values: Record<string, RightsImportCell> = {};
+        for (const [name, index] of columns) values[name] = data.cells[index] ?? null;
+        const input: RightsImportRow = { row_no: data.row_no, values };
+        outcome = await processor.process(task, input, trx);
+      }
+      await commitRightsImportRow(trx, {
+        appId,
+        importId,
+        committed,
+        rowNo: data.row_no,
+        failure: outcome.kind === 'failed' ? outcome.reason : null,
+        add: countRightsImportRows([outcome]),
+      });
     });
     committed += 1;
   }

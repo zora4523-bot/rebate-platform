@@ -2,9 +2,12 @@
 // admin Excel imports. Row 1 is the header; data rows keep their number in the file. A row whose
 // cells are all empty is no data row (not counted, not processed). Anything that is not a readable
 // xlsx (not a zip, a zip without a workbook, a truncated file) is `null`: the caller decides.
+// A date cell is a wall clock without a zone (read-excel-file reads it at UTC+0); it is re-read at
+// +08:00 here (domain/channel-row.ts sheetDateInstant), so every row carries true instants.
 // Never logs: callers log ids and counts only, never a cell.
 import { readSheet } from 'read-excel-file/node';
 import type { RightsImportCell } from '../application/rights-import-ports.ts';
+import { sheetDateInstant } from '../domain/channel-row.ts';
 
 export interface RightsImportSheetRow {
   /** The row's number in the file (the header is row 1). */
@@ -23,12 +26,8 @@ const isEmpty = (cell: unknown): boolean =>
 
 function cellOf(value: unknown): RightsImportCell {
   if (value === undefined || value === null) return null;
-  if (
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean' ||
-    value instanceof Date
-  ) {
+  if (value instanceof Date) return sheetDateInstant(value);
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
     return value;
   }
   return null;

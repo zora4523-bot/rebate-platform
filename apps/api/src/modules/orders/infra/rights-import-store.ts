@@ -88,11 +88,35 @@ export async function finishRightsImport(
 }
 
 /**
- * One row's checkpoint, in one transaction: its failure (if any) and its tallies. `committed` is
- * the total_rows the caller resumed from; a row that moved meanwhile (another attempt) is refused.
+ * Locks the task row for one row's transaction (FOR UPDATE) while it is still running at the
+ * caller's checkpoint; false when another attempt moved it (or it ended) meanwhile.
+ */
+export async function lockRightsImportCheckpoint(
+  trx: Transaction<DB>,
+  appId: string,
+  importId: string,
+  committed: number,
+): Promise<boolean> {
+  const row = await trx
+    .withSchema('app')
+    .selectFrom('rights_imports')
+    .select('id')
+    .where('app_id', '=', appId)
+    .where('id', '=', importId)
+    .where('status', '=', 'running')
+    .where('total_rows', '=', committed)
+    .forUpdate()
+    .executeTakeFirst();
+  return row !== undefined;
+}
+
+/**
+ * One row's checkpoint, on the row's transaction (the one its processor wrote on; the caller
+ * commits it): its failure (if any) and its tallies. `committed` is the total_rows the caller
+ * resumed from; a row that moved meanwhile (another attempt) is refused.
  */
 export async function commitRightsImportRow(
-  db: Kysely<DB>,
+  trx: Transaction<DB>,
   input: {
     readonly appId: string;
     readonly importId: string;
@@ -102,39 +126,37 @@ export async function commitRightsImportRow(
     readonly add: RightsImportCounts;
   },
 ): Promise<void> {
-  await db.transaction().execute(async (trx) => {
-    const { add } = input;
-    const result = await trx
+  const { add } = input;
+  const result = await trx
+    .withSchema('app')
+    .updateTable('rights_imports')
+    .set({
+      total_rows: sql<number>`total_rows + ${add.total_rows}`,
+      succeeded_rows: sql<number>`succeeded_rows + ${add.succeeded_rows}`,
+      failed_rows: sql<number>`failed_rows + ${add.failed_rows}`,
+      skipped_rows: sql<number>`skipped_rows + ${add.skipped_rows}`,
+      duplicate_rows: sql<number>`duplicate_rows + ${add.duplicate_rows}`,
+    })
+    .where('app_id', '=', input.appId)
+    .where('id', '=', input.importId)
+    .where('status', '=', 'running')
+    .where('total_rows', '=', input.committed)
+    .executeTakeFirst();
+  if (result.numUpdatedRows !== 1n) {
+    throw new Error('orders: rights import checkpoint moved; this attempt stops');
+  }
+  if (input.failure !== null) {
+    await trx
       .withSchema('app')
-      .updateTable('rights_imports')
-      .set({
-        total_rows: sql<number>`total_rows + ${add.total_rows}`,
-        succeeded_rows: sql<number>`succeeded_rows + ${add.succeeded_rows}`,
-        failed_rows: sql<number>`failed_rows + ${add.failed_rows}`,
-        skipped_rows: sql<number>`skipped_rows + ${add.skipped_rows}`,
-        duplicate_rows: sql<number>`duplicate_rows + ${add.duplicate_rows}`,
+      .insertInto('rights_import_failures')
+      .values({
+        app_id: input.appId,
+        import_id: input.importId,
+        row_no: input.rowNo,
+        reason: input.failure,
       })
-      .where('app_id', '=', input.appId)
-      .where('id', '=', input.importId)
-      .where('status', '=', 'running')
-      .where('total_rows', '=', input.committed)
-      .executeTakeFirst();
-    if (result.numUpdatedRows !== 1n) {
-      throw new Error('orders: rights import checkpoint moved; this attempt stops');
-    }
-    if (input.failure !== null) {
-      await trx
-        .withSchema('app')
-        .insertInto('rights_import_failures')
-        .values({
-          app_id: input.appId,
-          import_id: input.importId,
-          row_no: input.rowNo,
-          reason: input.failure,
-        })
-        .execute();
-    }
-  });
+      .execute();
+  }
 }
 
 export interface RightsImportListRow extends RightsImportRecord {
