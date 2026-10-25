@@ -9470,6 +9470,117 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "adminListUserDataExports": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "user_id"
+      ],
+      "additionalProperties": false
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "adminCreateUserDataExport": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "user_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Registration of a personal information copy request (04 §6.6 users/{id}/data-exports).\nThe two channel facts decide the delivery: both true → in_app_sms, both false →\nwecom_session, only one true → not accepted (pending legal confirmation, BR-ID-40).\n",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "app_login_ok",
+        "phone_sms_ok"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Required free-text reason, kept in the audit record."
+        },
+        "app_login_ok": {
+          "type": "boolean",
+          "description": "The agent confirmed in the conversation that the user can sign in to the App."
+        },
+        "phone_sms_ok": {
+          "type": "boolean",
+          "description": "The agent confirmed in the conversation that the bound phone number can receive SMS."
+        }
+      }
+    }
+  },
   "adminListOrders": {
     "headers": {
       "type": "object",

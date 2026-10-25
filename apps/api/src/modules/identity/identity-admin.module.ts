@@ -16,6 +16,10 @@
 // createRealnameVerifier of the environment, assembled while the entry starts. Without a database,
 // field cipher, prior identity cipher or event bus the route still registers and every submission
 // fails closed (50001).
+// The personal information copy requests (B1-27c; BR-ID-40): app.module also hands in admin's
+// registrant reads (an account's download rights, current names) and the working-day calendar
+// (content's configuration). Without a database or job queue the routes still register and every
+// call fails closed (50001).
 import { type DynamicModule, Module } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely, Transaction } from 'kysely';
@@ -26,14 +30,24 @@ import {
   DB,
   EVENT_BUS,
   FIELD_CRYPTO,
+  JOB_QUEUE,
   ROOT_LOGGER,
   type AppConfig,
   type AuditPort,
   type Clock,
   type EventBus,
   type FieldCrypto,
+  type JobQueue,
   type RootLogger,
 } from '../platform/index.ts';
+import {
+  ADMIN_DATA_COPIES,
+  createAdminDataCopies,
+  type AdminDataCopies,
+  type AdminDataCopyRegistrants,
+} from './application/admin-data-copies.ts';
+import type { DeletionCalendarConfigReader } from './application/deletion-expiry.ts';
+import { AdminUserDataExportsController } from './http/admin/user-data-exports.controller.ts';
 import {
   AdminProfileEdit,
   type AdminProfileEditOptions,
@@ -78,6 +92,10 @@ export interface IdentityAdminOptions {
   }) => AdminRealnameCorrectionOptions['blocklist'];
   /** The Nest token of the isolated store's own field cipher (PRIOR_IDENTITY_FIELD_CRYPTO). */
   readonly priorIdentityCrypto: symbol;
+  /** admin's reads of the copy requests' registrants (download rights, current names). */
+  readonly dataCopyRegistrants: AdminDataCopyRegistrants;
+  /** The working-day calendar over the entry's database (content's configuration reader). */
+  readonly dataCopyCalendar: (db: Kysely<Database>, clock: Clock) => DeletionCalendarConfigReader;
 }
 
 /** Stands in for the service when the entry has no database or field cipher: fails closed. */
@@ -90,6 +108,12 @@ const NO_REALNAME_CORRECTION = {
   correct: () => Promise.reject(new Error('identity: real-name corrections need the database')),
 } as unknown as AdminRealnameCorrection;
 
+/** Stands in for the copy requests when the entry has no database or job queue: fails closed. */
+const NO_DATA_COPIES: AdminDataCopies = {
+  register: () => Promise.reject(new Error('identity: copy requests need the database')),
+  list: () => Promise.reject(new Error('identity: copy requests need the database')),
+};
+
 @Module({})
 export class IdentityAdminModule {
   static forAdmin(options: IdentityAdminOptions): DynamicModule {
@@ -100,8 +124,35 @@ export class IdentityAdminModule {
         AdminUsersController,
         AdminUserProfileController,
         AdminUserRealnameController,
+        AdminUserDataExportsController,
       ],
       providers: [
+        {
+          provide: ADMIN_DATA_COPIES,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB, optional: true },
+            { token: JOB_QUEUE, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<Database>,
+            queue?: JobQueue,
+          ): AdminDataCopies =>
+            db === undefined || queue === undefined
+              ? NO_DATA_COPIES
+              : createAdminDataCopies({
+                  db,
+                  clock,
+                  logger,
+                  queue,
+                  calendar: options.dataCopyCalendar(db, clock),
+                  registrants: options.dataCopyRegistrants,
+                  auditOn: (handle: Kysely<Database>) => options.auditWriter(handle, clock),
+                }),
+        },
         {
           provide: AdminRealnameCorrection,
           inject: [

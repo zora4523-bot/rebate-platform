@@ -11,11 +11,13 @@ import {
 import { addFen } from '@couli/money';
 import type { Kysely, Transaction } from 'kysely';
 import {
+  ADMIN_ACTIVE_STATUS,
   ADMIN_CHECK,
   AdminAuthModule,
   AdminModule,
   ExportWorkerModule,
   createAdminDisplayNameReader,
+  createAdminProfiles,
   createAdminVerifyPhoneReader,
   createAuditWriter,
   createOrderHoldAuditReader,
@@ -172,6 +174,7 @@ import {
   type LaborAgreementConfigReader,
   type DeletionBalanceReader,
   type DeletionCalendarConfigReader,
+  type AdminDataCopyRegistrants,
   type WithdrawalInFlightReader,
   type WithdrawalNonTerminalReader,
   type LandingInvitePort,
@@ -792,6 +795,26 @@ function walletSummaryDependencies(db: Kysely<Database>, clock: Clock): WalletSu
  * calendar.cn_makeup_workdays.<year>) through content's reader; without a database there is no
  * expiry to read it (every read answers null).
  */
+/** The two points a wecom_session copy is downloaded under (BR-ID-40 细则「企业微信会话交付的下载」). */
+const DATA_COPY_DOWNLOAD_POINTS = ['user.data_export', 'pii.reveal_phone'] as const;
+
+/**
+ * identity's copy request registrants (B1-27c) over admin's reads, on the handle the caller passes
+ * (the registration's transaction): an active account that is super or ticks both download
+ * points; current names as admin's display name reader gives them.
+ */
+const dataCopyRegistrants: AdminDataCopyRegistrants = {
+  async canDownload(db, appId, adminId) {
+    const profiles = createAdminProfiles({ db });
+    const profile = await profiles.byId(appId, adminId);
+    if (profile === undefined || profile.status !== ADMIN_ACTIVE_STATUS) return false;
+    if (profile.isSuper) return true;
+    const ticked = new Set(await profiles.permissionKeys(appId, adminId));
+    return DATA_COPY_DOWNLOAD_POINTS.every((point) => ticked.has(point));
+  },
+  names: (db, appId, adminIds) => createAdminDisplayNameReader(db).displayNames(appId, adminIds),
+};
+
 const deletionCalendarConfig = {
   inject: [CLOCK, { token: DB, optional: true }],
   useFactory: (clock: Clock, db?: Kysely<Database>): DeletionCalendarConfigReader => {
@@ -3032,6 +3055,13 @@ export class AppModule {
                 withdrawals: (clock) => createWithdrawalInFlightReader({ clock }),
                 idNoBlocklist: correctionIdNoBlocklist,
                 priorIdentityCrypto: PRIOR_IDENTITY_FIELD_CRYPTO,
+                // B1-27c (BR-ID-40 细则「企业微信会话交付的下载」「重新登记与登记人停用」): admin's reads
+                // of the registrants and content's working-day calendar.
+                dataCopyRegistrants,
+                dataCopyCalendar: (db, clock) => {
+                  const reader = createContentReader({ db, clock });
+                  return { configValue: (appId, key) => reader.configValue(appId, key) };
+                },
               }),
             ]
           : []),

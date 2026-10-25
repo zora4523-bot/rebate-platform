@@ -36,5 +36,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/data-copies-register/**'
-status: todo
-pr: null
+status: done
+pr: 1629
