@@ -36,7 +36,7 @@
 import { randomBytes } from 'node:crypto';
 import type { DB } from '@couli/db';
 import type { Kysely, Selectable, Transaction } from 'kysely';
-import { dataCopyObjectKey } from '../../platform/export-store/index.ts';
+import { dataCopyObjectKey } from '../../platform/index.ts';
 import type {
   AuditPort,
   Clock,
