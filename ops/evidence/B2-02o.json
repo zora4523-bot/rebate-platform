@@ -1,0 +1,109 @@
+{
+  "task": "B2-02o",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "3168b405a973f693196de779ddc4739613276c14",
+  "red_tests": [
+    "test/spec/ledger/pay-no-freeze/advice.test.ts > [AC-B2-02o#10] 无差异时三项建议全为假",
+    "test/spec/ledger/pay-no-freeze/advice.test.ts > [AC-B2-02o#11] 只有 pay- 差异：建议差错单、不冻结提现；全局差异也不关闭月结",
+    "test/spec/ledger/pay-no-freeze/advice.test.ts > [AC-B2-02o#12] 任一非 pay- 差异（含名字里带 pay 的）即建议冻结提现，不论顺序",
+    "test/spec/ledger/pay-no-freeze/advice.test.ts > [AC-B2-02o#13] 性质：差错单看有无差异，冻结看有无非 pay- 差异，关闭月结看有无非 pay- 全局差异",
+    "test/spec/ledger/pay-no-freeze/advice.test.ts > [AC-B2-02o#14] pay- 全局差异与非 pay- 全局差异同时出现：三项建议全为真，不论顺序",
+    "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#1] 只有 pay- 不变量报账户级差异：不建议冻结提现，照常建议差错单、写差异与告警，不关月结",
+    "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#2] 只有 pay- 不变量报全局差异：不建议冻结提现，也不关月结；照常建议差错单",
+    "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#3] 只有非 pay- 不变量报账户级差异：照旧建议冻结提现与差错单，不关月结",
+    "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#4] 只有非 pay- 不变量报全局差异：照旧三项建议全部为真",
+    "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#5] pay- 与非 pay- 同时报差异：建议冻结提现，两边差异与告警都保留",
+    "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#6] pay- 全局差异与非 pay- 账户级差异同时出现：建议冻结提现与差错单，不关月结",
+    "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#15] pay- 全局差异与非 pay- 全局差异同时出现：三项建议全部为真，两边差异与告警都保留",
+    "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#7] 无差异（含 pay- 空检）时三项建议同改前全为假，空检照常告警",
+    "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#8] 只是名字里含 pay 的非 pay- 文件（01_pay-、payout、pay_）照旧建议冻结提现",
+    "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#9] 指定 appId 时按过滤后的差异给建议：外应用的非 pay- 差异不使本应用的 pay- 差异变为冻结"
+  ],
+  "risk_note": "RV2 by path (ledger). Daily check advice (BR-FUND-19; BR-PAY-07, D10-358 ②, D10-359): differences reported by pay- prefixed invariant files (by file name), global ones included, recommend a discrepancy but neither a withdrawal hold nor disabling auto settlement; every other invariant keeps its advice unchanged. Pure advice function wired into the runner; no migration, no contract change, no amounts.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "3168b405a973f693196de779ddc4739613276c14",
+      "tree": "73f368d69638d80ea3c3c3949940236916282ba1",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-25T18:53:17Z",
+      "finished_at": "2026-10-25T18:53:30Z",
+      "gate": {
+        "commit": "d7665d37b1f042cb8ba0594a94acf1f41734c899",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/pay-no-freeze/advice.test.ts > [AC-B2-02o#10] 无差异时三项建议全为假",
+        "test/spec/ledger/pay-no-freeze/advice.test.ts > [AC-B2-02o#11] 只有 pay- 差异：建议差错单、不冻结提现；全局差异也不关闭月结",
+        "test/spec/ledger/pay-no-freeze/advice.test.ts > [AC-B2-02o#12] 任一非 pay- 差异（含名字里带 pay 的）即建议冻结提现，不论顺序",
+        "test/spec/ledger/pay-no-freeze/advice.test.ts > [AC-B2-02o#13] 性质：差错单看有无差异，冻结看有无非 pay- 差异，关闭月结看有无非 pay- 全局差异",
+        "test/spec/ledger/pay-no-freeze/advice.test.ts > [AC-B2-02o#14] pay- 全局差异与非 pay- 全局差异同时出现：三项建议全为真，不论顺序",
+        "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#1] 只有 pay- 不变量报账户级差异：不建议冻结提现，照常建议差错单、写差异与告警，不关月结",
+        "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#2] 只有 pay- 不变量报全局差异：不建议冻结提现，也不关月结；照常建议差错单",
+        "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#3] 只有非 pay- 不变量报账户级差异：照旧建议冻结提现与差错单，不关月结",
+        "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#4] 只有非 pay- 不变量报全局差异：照旧三项建议全部为真",
+        "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#5] pay- 与非 pay- 同时报差异：建议冻结提现，两边差异与告警都保留",
+        "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#6] pay- 全局差异与非 pay- 账户级差异同时出现：建议冻结提现与差错单，不关月结",
+        "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#15] pay- 全局差异与非 pay- 全局差异同时出现：三项建议全部为真，两边差异与告警都保留",
+        "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#7] 无差异（含 pay- 空检）时三项建议同改前全为假，空检照常告警",
+        "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#8] 只是名字里含 pay 的非 pay- 文件（01_pay-、payout、pay_）照旧建议冻结提现",
+        "test/spec/ledger/pay-no-freeze/runner.int.test.ts > [AC-B2-02o#9] 指定 appId 时按过滤后的差异给建议：外应用的非 pay- 差异不使本应用的 pay- 差异变为冻结"
+      ],
+      "expected": [
+        "test/spec/ledger/pay-no-freeze/advice.test.ts",
+        "test/spec/ledger/pay-no-freeze/runner.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "518b9e5f147e8fa6a3f5851e6f28b7dc8f9627ab09d42069a0543d8d670680dc"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d01365fab8575f849905bd19fcd69ae7af4d1f9bf1e07ceaa0e0ec4d1801377d"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable; independent Claude via tools/agent/claude-run.sh per approvals #36; round 1 pass with no findings."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude contexts in 2 runs (run 2 per D10-359: pay- global differences do not disable auto settlement); 15 tests in 2 files red for the right reason (red/2). Reviewed by a separate fresh independent Claude call: pass, S2x2 (property body throws instead of returning a boolean; fixture codes P* could let an implementation key on the invariant code — the implementation keys on the file name)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "7bc83f0ef37b23e4364101449557530d75076489",
+    "specs": "cec847e1768a63aac90e3e1bd473462d95d84436"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
