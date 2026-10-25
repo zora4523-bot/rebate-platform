@@ -1,8 +1,8 @@
 // B2-15b / B2-15c: the queue and job names of the payment module (task B2-15b §9.8 ～ §9.10,
 // B2-15c §9.4 ～ §9.7; D-PAY-11). Only the names, payloads and singleton keys live here; the
 // handlers are in ./pay-jobs.ts (order.query, biz.reconcile, and order.close through
-// application/pay-close.ts, B2-15d), registered
-// by the worker entry. Also compiled by the `test` project: erasable syntax only.
+// application/pay-close.ts, B2-15d; bill.recon through application/pay-recon.ts, B2-15j),
+// registered by the worker entry. Also compiled by the `test` project: erasable syntax only.
 import type { JobPayload } from '../../platform/index.ts';
 import type { PayJobName, PayQueueName } from '../domain/types.ts';
 
@@ -13,6 +13,8 @@ export const ORDER_QUERY_JOB: PayJobName = 'order.query';
 export const ORDER_CLOSE_JOB: PayJobName = 'order.close';
 export const BIZ_RECONCILE_JOB: PayJobName = 'biz.reconcile';
 export const REFUND_QUERY_JOB: PayJobName = 'refund.query';
+/** B2-15j: the T+1 reconciliation of one app's channel bills (BR-PAY-07). */
+export const BILL_RECON_JOB: PayJobName = 'bill.recon';
 
 /** The client came back from the channel SDK (BR-PAY-03 细则, one query; B2-15b). */
 export interface OrderQueryReturnedPayload extends JobPayload {
@@ -110,4 +112,12 @@ export function bizReconcileKey(bizType: string, bizRef: string): string {
 /** B2-15e: singletonKey of one refund query slot: whole seconds after the refund's creation. */
 export function refundQueryKey(payRefundId: string, slotSeconds: number): string {
   return `${REFUND_QUERY_JOB}:${payRefundId}:t${slotSeconds}`;
+}
+
+/**
+ * B2-15j: singletonKey of the daily reconciliation of one app: the bill day it reconciles. A run
+ * enqueued again for the same day merges into the queued one (queue pay is exclusive per key).
+ */
+export function billReconKey(appId: string, billDate: string): string {
+  return `${BILL_RECON_JOB}:${appId}:${billDate}`;
 }

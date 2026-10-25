@@ -238,6 +238,8 @@ export class PaymentModule {
    * posting (the PAY_RECEIPT of PO2), the queue and event bus (biz.reconcile, pay_order.paid),
    * content's configuration and admin's audit writer bound to the settling transaction. Without the
    * database, the queue or the event bus they fail closed (50001).
+   * B2-15j: the R4 recon diff list (GET /admin/v1/pay-recon-diffs) on the same reads, through
+   * ledger's getReconDiffs.
    */
   static forAdmin(options: PaymentAdminOptions): DynamicModule {
     return {
@@ -320,7 +322,11 @@ export class PaymentModule {
     };
   }
 
-  /** The worker entry: the handler of queue `pay` (order.query, biz.reconcile, order.close, refund.query). */
+  /**
+   * The worker entry: the handler of queue `pay` (order.query, biz.reconcile, order.close,
+   * refund.query; B2-15j bill.recon, the T+1 reconciliation over the channel set, ledger's posting
+   * and recon diff registration).
+   */
   static forWorker(options: Pick<PaymentModuleOptions, 'config'>): DynamicModule {
     return {
       module: PaymentModule,

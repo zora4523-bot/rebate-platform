@@ -13471,6 +13471,60 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "listAdminPayReconDiffs": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        },
+        "type": {
+          "type": "string",
+          "description": "The R4 types of contracts/enums/fund.yaml recon_diff_type (BR-PAY-07); the other types belong to R1–R3.",
+          "enum": [
+            "pay_mismatch",
+            "pay_anomaly"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "description": "Reconciliation difference status (contracts/enums/fund.yaml recon_diff_status).",
+          "enum": [
+            "open",
+            "processing",
+            "adjusted",
+            "written_off",
+            "closed"
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
   "adminListKillSwitches": {
     "headers": {
       "type": "object",

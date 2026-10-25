@@ -1,11 +1,12 @@
 // B2-15f: GET /admin/v1/pay-orders, GET /admin/v1/pay-orders/{pay_order_id}, POST
 // /admin/v1/pay-orders/{pay_order_id}/resolve and GET /admin/v1/pay-anomalies (listAdminPayOrders,
 // getAdminPayOrder, resolveAdminPayOrder, listAdminPayAnomalies; 08 BR-PAY-05 ③④, BR-PAY-08 ④;
-// 04 §11.2). Only authorisation, the parameters and the call into application/ live here.
+// 04 §11.2); B2-15j: GET /admin/v1/pay-recon-diffs (listAdminPayReconDiffs, BR-PAY-07, pay.view).
+// Only authorisation, the parameters and the call into application/ live here.
 //
 // Mounted only by PaymentModule.forAdmin on the admin entry. The admin request check has verified
 // the admin_token and the route schema the query, the path and the body before this runs. The
-// AdminOperationGuard re-reads the account and checks the permission point: the three reads hold
+// AdminOperationGuard re-reads the account and checks the permission point: the four reads hold
 // pay.view, read only (no step-up; an X-Step-Up-Token header is neither read nor consumed); the
 // resolve holds pay.resolve with its step-up tier totp (specs/permissions.yaml), the token consumed
 // only after an answer with code 0. A super admin holds every point. Refusals of the use cases
@@ -38,6 +39,7 @@ import {
   PayAdminReads,
   type PayAnomalyListQuery,
   type PayOrderListQuery,
+  type PayReconDiffListQuery,
 } from '../../application/pay-admin-reads.ts';
 import { resolvePayOrder, type PayResolveDeps } from '../../application/pay-resolve.ts';
 
@@ -106,6 +108,14 @@ export class AdminPayOrdersController {
     reply: HeaderReply,
   ): Promise<Schema<'AdminPayAnomalyPageResponse'>> {
     return this.#read(request, reply, (appId) => this.#reads.listAnomalies(appId, query));
+  }
+
+  reconDiffs(
+    request: AdminPayOrdersRequest,
+    query: PayReconDiffListQuery,
+    reply: HeaderReply,
+  ): Promise<Schema<'AdminPayReconDiffPageResponse'>> {
+    return this.#read(request, reply, (appId) => this.#reads.listReconDiffs(appId, query));
   }
 
   // The body is fixed by the route schema (expected_status PENDING, action query_and_settle) and
@@ -207,6 +217,13 @@ export class AdminPayOrdersController {
   Res({ passthrough: true })(prototype, 'anomalies', 2);
   Get('pay-anomalies')(prototype, 'anomalies', anomalies);
   RouteSchema(contractRouteSchema('listAdminPayAnomalies'))(prototype, 'anomalies', anomalies);
+
+  const reconDiffs = Object.getOwnPropertyDescriptor(prototype, 'reconDiffs')!;
+  Req()(prototype, 'reconDiffs', 0);
+  Query()(prototype, 'reconDiffs', 1);
+  Res({ passthrough: true })(prototype, 'reconDiffs', 2);
+  Get('pay-recon-diffs')(prototype, 'reconDiffs', reconDiffs);
+  RouteSchema(contractRouteSchema('listAdminPayReconDiffs'))(prototype, 'reconDiffs', reconDiffs);
 
   Controller('admin/v1')(AdminPayOrdersController);
 }
