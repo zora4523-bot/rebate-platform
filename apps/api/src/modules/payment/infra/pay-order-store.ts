@@ -228,8 +228,11 @@ export async function hasAnyAttempt(
 
 /**
  * PO3 as a CAS on «PENDING» (BR-PAY-02): CLOSED, closed_at, closing cleared; close_reason stays as
- * the close flow set it. The caller holds the business object lock and has re-read the order;
- * 0 rows → undefined (another result won), nothing else is written.
+ * the close flow set it. needs_manual is cleared by the same UPDATE (BR-PAY-05 ③, D10-357: the
+ * flag ends with the terminal state, whichever path reached it — the close flow or the admin
+ * resolve); its history stays in the audit and in pay_query_attempts, no column keeps it here.
+ * The caller holds the business object lock and has re-read the order; 0 rows → undefined
+ * (another result won), nothing else is written.
  */
 export async function markClosed(
   trx: Transaction<DB>,
@@ -239,7 +242,7 @@ export async function markClosed(
 ): Promise<PayOrderRow | undefined> {
   return trx
     .updateTable('pay_orders')
-    .set({ status: 'CLOSED', closed_at: now, closing: false, updated_at: now })
+    .set({ status: 'CLOSED', closed_at: now, closing: false, needs_manual: false, updated_at: now })
     .where('app_id', '=', appId)
     .where('id', '=', payOrderId)
     .where('status', '=', 'PENDING')
@@ -303,8 +306,11 @@ export async function findPaidOrder(
 
 /**
  * PO2 as a CAS on «PENDING» (BR-PAY-02: 影响 0 行即并发冲突): PAID, paid_at and the channel's
- * trade number, closing cleared. The caller holds the business object lock and has re-read the
- * order; 0 rows → undefined, and the caller rolls its transaction back.
+ * trade number, closing cleared. needs_manual is cleared by the same UPDATE (BR-PAY-05 ③,
+ * D10-357: the flag ends with the terminal state, whichever path reached it — the admin resolve,
+ * a verified notification, a returned or scheduled query); its history stays in the audit and in
+ * pay_query_attempts, no column keeps it here. The caller holds the business object lock and has
+ * re-read the order; 0 rows → undefined, and the caller rolls its transaction back.
  */
 export async function markPaid(
   trx: Transaction<DB>,
@@ -320,6 +326,7 @@ export async function markPaid(
       paid_at: now,
       channel_trade_no: channelTradeNo,
       closing: false,
+      needs_manual: false,
       updated_at: now,
     })
     .where('app_id', '=', appId)
