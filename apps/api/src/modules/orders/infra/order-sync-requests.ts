@@ -1,6 +1,6 @@
 // B1-09i: app.order_sync_requests, the console's manual sync requests (04 §3.2; migration 0084),
 // and app.order_sync_request_windows, one progress row per job a request dispatched (migration
-// 0088). orders is the only writer: the admin entry inserts the request (one live row per
+// 0089). orders is the only writer: the admin entry inserts the request (one live row per
 // (app_id, filter_digest) while queued or running, the partial unique index
 // order_sync_requests_live_digest_key) and its job rows in the same transaction as the queue sends;
 // the worker's order-sync handler updates only the granted progress columns. Every status change is
