@@ -14,9 +14,8 @@ export const MAX_EVENT_PAYLOAD_DEPTH = 3;
 export const MAX_EVENT_VERSION = 999;
 
 /**
- * Event names of 规划/02 §11 (section 1), in its order. Names 02 §11 lists but no task publishes yet
- * (order.reassigned) are added, at their 02 position, by the task
- * that needs them.
+ * Event names of 规划/02 §11 (section 1), in its order. A name 02 §11 adds later is registered, at
+ * its 02 position, by the task that publishes it.
  */
 export const EVENT_NAMES: readonly string[] = Object.freeze([
   'order.created',
@@ -25,6 +24,8 @@ export const EVENT_NAMES: readonly string[] = Object.freeze([
   'order.invalidated',
   'order.clawed_back',
   'order.settle_adjusted',
+  // Unattributed order assigned by an admin (B1-10f; BR-ATTR-31; 02 §11, after order.settle_adjusted).
+  'order.reassigned',
   'claim.resolved',
   'binding.changed',
   'member.registered',

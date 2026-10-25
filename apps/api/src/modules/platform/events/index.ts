@@ -23,7 +23,8 @@
 //
 // 1. Event names — `EVENT_NAMES`
 //    The event list of 规划/02 §11, in that order: order.created, order.updated, order.credited,
-//    order.invalidated, order.clawed_back, order.settle_adjusted, claim.resolved, binding.changed,
+//    order.invalidated, order.clawed_back, order.settle_adjusted, order.reassigned (unattributed
+//    order assigned by an admin, B1-10f), claim.resolved, binding.changed,
 //    member.registered, member.bound_parent, member.level_changed, wallet.withdrawal_changed,
 //    withdrawal.created, account.went_negative, settle.batch_done, risk.state_changed,
 //    appeal.resolved, agent.run_finished, order.attr_param_changed, order.illegal_transition,
@@ -33,8 +34,7 @@
 //    asset_snapshot.timed_out, union_receivable.exposure_exceeded (finance alerts of the ledger's
 //    asset daily snapshot, B2-04wa, D10-188; last in 02 §11).
 //    A frozen array. Publishing any other name is refused ('unknown_event'): a new event is added
-//    here, at its 02 §11 position, by the task that needs it (02 §11 also lists order.reassigned, not
-//    registered until a task publishes it).
+//    here, at its 02 §11 position, by the task that needs it.
 //    Every name is `<entity>.<past-tense verb>` in snake_case, i.e. matches
 //    /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/ (also a valid job name of the queue contract 3b).
 //
