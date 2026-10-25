@@ -3129,6 +3129,7 @@ CREATE TABLE app.notify_templates (
     sms_pending_preview_text text,
     sms_test_status text,
     sms_tested_at timestamp with time zone,
+    sms_pending_saved_at timestamp with time zone,
     CONSTRAINT notify_templates_body_override_check CHECK (((body_override IS NULL) OR (body_override ~ '[^[:space:]\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]'::text))),
     CONSTRAINT notify_templates_category_check CHECK ((category = ANY (ARRAY['service'::text, 'subscription'::text, 'marketing'::text]))),
     CONSTRAINT notify_templates_channels_check CHECK (((cardinality(channels) >= 1) AND (array_position(channels, NULL::text) IS NULL) AND (channels <@ ARRAY['inbox'::text, 'push'::text, 'sms'::text]))),

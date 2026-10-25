@@ -946,6 +946,7 @@ export interface NotifyTemplates {
   route: Json | null;
   row_version: Generated<number>;
   sms_pending_preview_text: string | null;
+  sms_pending_saved_at: Timestamp | null;
   sms_pending_sign_name: string | null;
   sms_pending_template_code: string | null;
   sms_pending_template_type: string | null;

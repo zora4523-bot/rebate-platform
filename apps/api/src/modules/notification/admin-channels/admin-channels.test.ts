@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { definedVariablesOf } from './catalog.ts';
 import { chineseNumber, previewProblem } from './preview.ts';
 import { createFakeNotifySmsTestSender } from './sms-test-sender.ts';
-import { itemOf, type TemplateRow } from './view.ts';
+import { itemOf, pendingOf, type TemplateRow } from './view.ts';
 
 const none = (): readonly string[] => [];
 const AT = new Date('2026-10-08T01:00:00.000Z');
@@ -25,6 +25,7 @@ function row(patch: Partial<TemplateRow>): TemplateRow {
     sms_pending_preview_text: null,
     sms_test_status: null,
     sms_tested_at: null,
+    sms_pending_saved_at: null,
     ...patch,
   };
 }
@@ -124,4 +125,25 @@ it('[AC-B1-12z#59] the fake fixes the in-flight outcome before its hook runs', a
   expect(inner).toBe('accepted');
   expect(sender.outbox().map((m) => m.templateCode)).toEqual(['t', 'rival']);
   expect(() => createFakeNotifySmsTestSender('prod')).toThrow();
+});
+
+it('[AC-B1-12zb#u1] pending saved_at is sms_pending_saved_at, falling back to sms_tested_at', () => {
+  const saved = new Date('2026-10-07T23:30:00.000Z');
+  const pending = {
+    sms_pending_sign_name: '凑狸',
+    sms_pending_template_code: 'SMS_1',
+    sms_pending_template_type: 'notice',
+    sms_pending_preview_text: '你的${amount}。',
+    sms_test_status: 'failed',
+    sms_tested_at: AT,
+  };
+  expect(pendingOf(row({ ...pending, sms_pending_saved_at: saved }))).toMatchObject({
+    saved_at: saved.toISOString(),
+    test: { status: 'failed', tested_at: AT.toISOString() },
+  });
+  expect(pendingOf(row(pending))).toMatchObject({
+    saved_at: AT.toISOString(),
+    test: { tested_at: AT.toISOString() },
+  });
+  expect(pendingOf(row({ sms_pending_saved_at: saved }))).toBeNull();
 });
