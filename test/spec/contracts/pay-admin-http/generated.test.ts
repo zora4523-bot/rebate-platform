@@ -116,10 +116,15 @@ it.each(
       e[2] === 'listAdminPayAnomalies',
   ),
 )(
-  '[AC-CT-21e#17] %s %s（支付单查询与处置）已生成类型、后台鉴权和无签名策略，planned 不挂载校验路由',
+  '[AC-CT-21e#17] %s %s（支付单查询与处置）已生成类型、后台鉴权和无签名策略，已实现（不再 planned）并挂载校验路由',
   (method, path, id, permission) => {
+    // B2-15f：四条支付单查询与处置操作已实现，x-implementation 随路由上线移除；
+    // 必须挂载与契约一致的运行时请求校验。
     const endpoint = endpoints.find((entry) => entry[2] === id)!;
-    expect(operation(contract(), endpoint)['x-implementation']).toBe('planned');
+    const doc = contract();
+    const op = operation(doc, endpoint);
+    expect(op).not.toHaveProperty('x-implementation');
+    expect(op['x-implementation']).not.toBe('planned');
     const route = { method: method.toUpperCase(), path: path.replace(/\{([^}]+)\}/g, ':$1') };
     const auth = list(
       generated('apps/api/src/modules/platform/http/auth-routes.gen.ts', 'CONTRACT_AUTH_ROUTES'),
@@ -151,7 +156,70 @@ it.each(
         'CONTRACT_ROUTE_SCHEMAS',
       ),
     );
-    expect(schemas).not.toHaveProperty(id);
+    // 形状与契约一致：无 Idempotency-Key；处置的头部可带动态码；路径参数与查询参数取自契约且无多余；
+    // 只有处置有请求体（固定的 expected_status / action）。
+    expect(schemas, `route-schemas.gen.ts: ${id}`).toHaveProperty(id);
+    const entry = object(schemas[id]);
+    const headers = object(entry['headers']);
+    expect(headers['type']).toBe('object');
+    expect(object(headers['properties'])).not.toHaveProperty(['idempotency-key']);
+    expect(list(headers['required'] ?? [])).not.toContain('idempotency-key');
+    if (id === 'resolveAdminPayOrder') {
+      expect(object(headers['properties'])).toHaveProperty(['x-step-up-token']);
+    } else {
+      expect(object(headers['properties'])).not.toHaveProperty(['x-step-up-token']);
+    }
+    const names = [...path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]!);
+    if (names.length === 0) {
+      expect(entry).not.toHaveProperty('params');
+    } else {
+      const params = object(entry['params']);
+      expect(params['type']).toBe('object');
+      expect(Object.keys(object(params['properties']))).toEqual(names);
+      expect(list(params['required'])).toEqual(names);
+    }
+    // 路径级与操作级参数合并，逐个解析 #/ 引用（与 kit.ts 的 parameters / resolve 同义）。
+    const pathItem = object(object(doc['paths'])[endpoint[1]]);
+    const queries = [...list(pathItem['parameters'] ?? []), ...list(op['parameters'] ?? [])]
+      .map((raw) => {
+        let p = object(raw);
+        const seen = new Set<string>();
+        while (p['$ref'] !== undefined) {
+          const ref = p['$ref'];
+          expect(ref).toBeTypeOf('string');
+          const pointer = String(ref);
+          expect(pointer.startsWith('#/')).toBe(true);
+          expect(seen.has(pointer), `循环引用 ${pointer}`).toBe(false);
+          seen.add(pointer);
+          p = object(
+            pointer
+              .slice(2)
+              .split('/')
+              .map((key) => key.replaceAll('~1', '/').replaceAll('~0', '~'))
+              .reduce<unknown>((node, key) => object(node)[key], doc),
+          );
+        }
+        return p;
+      })
+      .filter((p) => p['in'] === 'query')
+      .map((p) => String(p['name']));
+    if (queries.length === 0) {
+      expect(entry).not.toHaveProperty('querystring');
+    } else {
+      const querystring = object(entry['querystring']);
+      expect(querystring['type']).toBe('object');
+      expect(Object.keys(object(querystring['properties'])).sort()).toEqual(queries.sort());
+      expect(querystring['additionalProperties']).toBe(false);
+    }
+    if (method === 'get') {
+      expect(entry).not.toHaveProperty('body');
+    } else {
+      const body = object(entry['body']);
+      expect(body['type']).toBe('object');
+      expect(body['additionalProperties']).toBe(false);
+      expect(list(body['required'])).toEqual(expect.arrayContaining(['expected_status', 'action']));
+      expect(Object.keys(object(body['properties'])).sort()).toEqual(['action', 'expected_status']);
+    }
     const source = ts.createSourceFile(
       'openapi.gen.ts',
       read('packages/contracts-ts/src/openapi.gen.ts'),

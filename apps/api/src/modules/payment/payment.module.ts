@@ -2,7 +2,8 @@
 // routes over the pay order use cases; B2-15c §9.1: the notification entry POST
 // /notify/pay/<channel>), on the worker entry (B2-15c: the handler of queue `pay`; B2-15e adds
 // refund.query) and, from B2-15e, on the admin entry (the console's original-route refund,
-// http/admin/, over platform idempotency and admin's audit writer handed in by app.module).
+// http/admin/, over platform idempotency and admin's audit writer handed in by app.module; B2-15f
+// adds the pay reads and the manual settlement of a needs_manual pay order there).
 // app.module hands in content's configuration reader as a factory, so this module imports no other
 // module's implementation but ledger's posting port (LedgerModule, index.ts); the business type
 // registry follows APP_ENV (prod registers nothing); the channel set is FakePayChannel outside
@@ -44,9 +45,12 @@ import {
 } from '../platform/index.ts';
 import { createBizRegistry } from './application/biz-registry.ts';
 import { PayChannelSet } from './application/pay-channel.ts';
+import { PayAdminReads } from './application/pay-admin-reads.ts';
 import type { PayOrderDeps } from './application/pay-orders.ts';
 import type { PayRefundDeps } from './application/pay-refunds.ts';
+import type { PayResolveDeps } from './application/pay-resolve.ts';
 import type { PayLedgerPort } from './application/pay-settlement.ts';
+import { AdminPayOrdersController, PAY_RESOLVE_DEPS } from './http/admin/pay-orders.controller.ts';
 import { AdminPayRefundsController, PAY_REFUND_DEPS } from './http/admin/pay-refunds.controller.ts';
 import { installNotifyBodyCapture } from './http/public/notify-body.ts';
 import {
@@ -71,10 +75,18 @@ export interface PaymentModuleOptions {
   readonly notifyEntry?: boolean;
 }
 
-/** B2-15e: the admin entry's options (the console's original-route refund). */
+/**
+ * B2-15e: the admin entry's options (the console's original-route refund); B2-15f: the pay reads
+ * and the manual settlement of a needs_manual pay order.
+ */
 export interface PaymentAdminOptions {
   /** Binds the audit port to a transaction handle (app.module: admin's createAuditWriter). */
   readonly auditWriter: (db: Kysely<Database>, clock: Clock) => AuditPort;
+  /**
+   * B2-15f: content's ContentReader over the primary handle (pay.close_grace_minutes and the other
+   * close settings, pay.<pay_channel>.success_states) for the manual settlement.
+   */
+  readonly config: PaymentModuleOptions['config'];
 }
 
 /** Nest token of the worker's registered pay queue handler (null without database or queue). */
@@ -221,13 +233,58 @@ export class PaymentModule {
    * /admin/v1/pay-anomalies/{id}/refunds) over platform idempotency, the queue (the first
    * refund.query slot) and admin's audit writer bound to the creating transaction. Without the
    * database, the queue or the idempotency primitive the routes fail closed (50001).
+   * B2-15f: the pay order list / detail and the anomaly list (reads over the primary handle) and
+   * the manual settlement (POST /admin/v1/pay-orders/{id}/resolve) over the channel set, ledger's
+   * posting (the PAY_RECEIPT of PO2), the queue and event bus (biz.reconcile, pay_order.paid),
+   * content's configuration and admin's audit writer bound to the settling transaction. Without the
+   * database, the queue or the event bus they fail closed (50001).
    */
   static forAdmin(options: PaymentAdminOptions): DynamicModule {
     return {
       module: PaymentModule,
-      controllers: [AdminPayRefundsController],
+      imports: [LedgerModule.forRoot()],
+      controllers: [AdminPayRefundsController, AdminPayOrdersController],
       providers: [
         channelSetProvider,
+        {
+          provide: PayAdminReads,
+          inject: [{ token: DB, optional: true }],
+          useFactory: (db?: Kysely<Database>): PayAdminReads => new PayAdminReads(db ?? null),
+        },
+        {
+          provide: PAY_RESOLVE_DEPS,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            PayChannelSet,
+            LEDGER,
+            { token: DB, optional: true },
+            { token: JOB_QUEUE, optional: true },
+            { token: EVENT_BUS, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            channels: PayChannelSet,
+            ledger: Ledger,
+            db?: Kysely<Database>,
+            queue?: JobQueue,
+            events?: EventBus,
+          ): PayResolveDeps | null =>
+            db === undefined || queue === undefined || events === undefined
+              ? null
+              : {
+                  db,
+                  clock,
+                  config: options.config(db, clock),
+                  queue,
+                  events,
+                  channels,
+                  ledger: ledgerPort(ledger, clock),
+                  auditOn: (trx) => options.auditWriter(trx, clock),
+                  logger: logger.child({ module: 'payment', entry_point: 'admin' }),
+                },
+        },
         {
           provide: PAY_REFUND_DEPS,
           inject: [
