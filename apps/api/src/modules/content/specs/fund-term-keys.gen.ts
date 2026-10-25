@@ -753,7 +753,9 @@ export const FUND_TERM_KEYS = {
     "notify_templates": [
       "SMS_CODE",
       "UNION_AUTH_EXPIRING",
-      "UNION_AUTH_EXPIRED"
+      "UNION_AUTH_EXPIRED",
+      "DATA_COPY_READY",
+      "DATA_COPY_CODE"
     ]
   },
   "exempt": [

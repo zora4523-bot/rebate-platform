@@ -806,6 +806,9 @@ ordinary:
     - SMS_CODE
     - UNION_AUTH_EXPIRING
     - UNION_AUTH_EXPIRED
+    # 个人信息副本交付通知（08 BR-TEXT-23 细则；编排裁定 D10-341：不涉及钱，归普通）。
+    - DATA_COPY_READY
+    - DATA_COPY_CODE
 exempt:
   - key: real_name.consent.point.1
     reason: 实名同意弹层要点，只说收集姓名和身份证号用于提现前核验身份，不说金额、状态或有没有返利（08 表 C 原文，另归 content.agreement）

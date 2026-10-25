@@ -21,6 +21,8 @@ enums:
       SMS_CODE: 短信验证码
       UNION_AUTH_EXPIRING: 站长授权即将到期（短信）
       UNION_AUTH_EXPIRED: 站长授权已过期（短信）
+      DATA_COPY_READY: 个人信息副本已生成（推送 + 站内信）
+      DATA_COPY_CODE: 个人信息副本提取码（短信，发到绑定手机号）
   notify_category:
     source: 规划/04 §2.5；拍板第二批 OPS-16；BR-WATCH-19
     description: 用户通知分类；交易与提现模板都归 service，MVP 只开放 service 开关，subscription、marketing 预埋不展示（待负责人确认）

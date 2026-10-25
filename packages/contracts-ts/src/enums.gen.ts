@@ -1181,6 +1181,8 @@ export const notify_template_code = [
   "SMS_CODE", // 短信验证码
   "UNION_AUTH_EXPIRING", // 站长授权即将到期（短信）
   "UNION_AUTH_EXPIRED", // 站长授权已过期（短信）
+  "DATA_COPY_READY", // 个人信息副本已生成（推送 + 站内信）
+  "DATA_COPY_CODE", // 个人信息副本提取码（短信，发到绑定手机号）
 ] as const;
 export type NotifyTemplateCode = (typeof notify_template_code)[number];
 
