@@ -7,7 +7,13 @@
 // type and the built-in sample values of the test send.
 //
 // Codes outside this catalog (for example a subscription code) keep their stored channels as their
-// defaults and define no SMS variables.
+// defaults and define no SMS variables. The variables are listed per variant: a variant the catalog
+// does not list (of any code) defines none and its SMS registration is refused; nothing falls back
+// to `default`. Variant names of the codes with several templates follow the BR-TEXT-09 细则 table
+// rows (the inbox.title.<code>.<variant> keys of contracts/texts.default.json name self / share /
+// invite and self / promo / mixed; the single and merged rows and the indirect invite row are told
+// apart by a suffix, an agent default until the producers of these codes name their variants), and
+// CLAIM_RESULT's are those of claim-result-message.ts (approved, rejected).
 //
 // Pure module (no decorators, erasable syntax).
 
@@ -21,7 +27,7 @@ export interface TemplateCodeDefinition {
   readonly inboxOnly?: true;
   /** SMS is always on; only its registration may be replaced. */
   readonly smsFixed?: true;
-  /** SMS variables by variant; `default` also stands for a variant not listed. */
+  /** SMS variables by variant; a variant not listed defines none (no fallback to `default`). */
   readonly variables: Readonly<Record<string, readonly string[]>>;
 }
 
@@ -36,10 +42,31 @@ const INBOX: readonly NotifyChannel[] = ['inbox'];
 const SMS: readonly NotifyChannel[] = ['sms'];
 
 const CATALOG: Readonly<Record<string, TemplateCodeDefinition>> = {
-  ORDER_TRACKED: { defaultChannels: PUSH_INBOX, variables: { default: ['title_short', 'rebate'] } },
-  ORDER_INVALID: { defaultChannels: INBOX, variables: { default: ['reason'] } },
-  CREDITED: { defaultChannels: PUSH_INBOX, variables: { default: ['n', 'sum'] } },
-  CLAWBACK: { defaultChannels: PUSH_INBOX, variables: { default: ['amount', 'reason'] } },
+  ORDER_TRACKED: {
+    defaultChannels: PUSH_INBOX,
+    variables: {
+      self: ['title_short', 'rebate'],
+      self_merged: ['n', 'rebate_sum'],
+      share: ['rebate'],
+      share_merged: ['n', 'rebate_sum'],
+      invite: ['rebate'],
+      invite_indirect: ['rebate'],
+      invite_merged: ['n', 'rebate_sum'],
+    },
+  },
+  // {reason.title} is filled as `reason`; the invite row carries no reason (J7).
+  ORDER_INVALID: {
+    defaultChannels: INBOX,
+    variables: { self: ['reason'], share: ['reason'], invite: [] },
+  },
+  CREDITED: {
+    defaultChannels: PUSH_INBOX,
+    variables: { self: ['n', 'sum'], promo: ['m', 'promo_sum'], mixed: ['n', 'sum', 'promo_sum'] },
+  },
+  CLAWBACK: {
+    defaultChannels: PUSH_INBOX,
+    variables: { self: ['amount', 'reason'], share: ['amount', 'reason'], invite: ['amount'] },
+  },
   WD_SUCCESS: {
     defaultChannels: PUSH_INBOX,
     variables: { default: ['net', 'payout_channel_name'] },
@@ -52,7 +79,10 @@ const CATALOG: Readonly<Record<string, TemplateCodeDefinition>> = {
   // BR-TEXT-20 细则 WD_FAILED SMS example: the amount only (the reason is read in the App).
   WD_FAILED: { defaultChannels: ['push', 'inbox', 'sms'], variables: { default: ['amount'] } },
   WD_OVERDUE: { defaultChannels: PUSH_INBOX, variables: { default: [] } },
-  CLAIM_RESULT: { defaultChannels: INBOX, variables: { default: ['rebate'] } },
+  CLAIM_RESULT: {
+    defaultChannels: INBOX,
+    variables: { approved: ['rebate'], rejected: ['reason'] },
+  },
   RISK_STATE_CHANGED: { defaultChannels: INBOX, inboxOnly: true, variables: {} },
   APPEAL_RESULT: { defaultChannels: INBOX, inboxOnly: true, variables: {} },
   DELETION_PROGRESS: { defaultChannels: INBOX, inboxOnly: true, variables: {} },
@@ -81,11 +111,15 @@ export function definitionOf(code: string): TemplateCodeDefinition | undefined {
   return Object.hasOwn(CATALOG, code) ? CATALOG[code] : undefined;
 }
 
+/** The SMS variables the code defines for exactly this variant; undefined when it defines none. */
+export function definedVariablesOf(code: string, variant: string): readonly string[] | undefined {
+  const variables = definitionOf(code)?.variables ?? {};
+  return Object.hasOwn(variables, variant) ? variables[variant] : undefined;
+}
+
 /** The SMS variables the code defines for a variant (empty when it defines none). */
 export function variablesOf(code: string, variant: string): readonly string[] {
-  const variables = definitionOf(code)?.variables ?? {};
-  if (Object.hasOwn(variables, variant)) return variables[variant] ?? [];
-  return variables[DEFAULT_VARIANT] ?? [];
+  return definedVariablesOf(code, variant) ?? [];
 }
 
 /** The template type the console may register (D10-337: SMS_CODE verification, others notice). */
@@ -100,7 +134,10 @@ const SAMPLES: Readonly<Record<string, string>> = {
   net: '¥10',
   sum: '¥10',
   rebate: '¥1',
+  rebate_sum: '¥2',
+  promo_sum: '¥2',
   n: '2',
+  m: '2',
   reason: '收款账号信息有误',
   title_short: '示例商品',
   payout_channel_name: '支付宝',

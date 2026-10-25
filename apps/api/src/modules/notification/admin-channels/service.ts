@@ -20,6 +20,7 @@ import type { AuditInput, Clock } from '../../platform/index.ts';
 import {
   DEFAULT_VARIANT,
   VERIFY_CODE,
+  definedVariablesOf,
   lockedTemplateType,
   sampleOf,
   variablesOf,
@@ -298,12 +299,14 @@ export class NotifyChannelsAdmin {
       throw new NotifyFieldsError(['code'], NOTIFY_LOCKED);
     }
     const row = this.#variantRow(rows, query);
+    // A variant the code defines no SMS variables for cannot get a registration (no fallback).
+    const variables = definedVariablesOf(code, row.variant);
+    if (variables === undefined) throw new NotifyFieldsError(['variant']);
     checked(this.#deps.validators.registerQuery, plainObject(query));
     const request = checked<RegisterBody>(this.#deps.validators.registerBody, body);
     // notify_templates keeps no blank registration text (the same white space as its CHECKs).
     const blank = TEXT_FIELDS.filter((field) => !VISIBLE.test(request[field]));
     if (blank.length > 0) throw new NotifyFieldsError(blank);
-    const variables = variablesOf(code, row.variant);
     this.#checkSample(request.sample, variables);
     if (request.template_type !== lockedTemplateType(code)) {
       throw new NotifyFieldsError(['template_type']);
@@ -311,6 +314,7 @@ export class NotifyChannelsAdmin {
     const problem = previewProblem({
       text: request.preview_text,
       variables,
+      signName: request.sign_name,
       codeTtlSec: code === VERIFY_CODE ? this.#deps.codeTtlSec : null,
       bannedWords: this.#deps.bannedWords,
     });
