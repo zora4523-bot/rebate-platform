@@ -26,5 +26,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/db/data-copies-tables/**'
-status: todo
-pr: null
+status: done
+pr: 1593
