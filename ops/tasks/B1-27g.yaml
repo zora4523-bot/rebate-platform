@@ -1,0 +1,23 @@
+id: B1-27g
+repo: rebate-platform
+title: identity：实名更正的收款账号失效改用 B2-05j 的 createPayoutAccountInvalidation（同一事务、已持用户行锁），每失效一行写一条 limit_exempt_reason='realname_correction' 的 payout_account_changes；本月变更次数与 change_remaining_this_month 不受实名更正及其后第一次重绑影响；B1-27a 的后续
+type: impl
+# 2026-10-24 草稿（admin-backend，B1-27 拆分）；2026-10-26 入账（B2-05j 已补字段与端口，编排 06:3x 改派 admin 落地）。
+# 依据：08 BR-WDR-02 细则「实名更正后的失效与重绑」（D10-181 ③、D10-185 ⑥、D10-330）、04 §6.6 users/{id}/realname-correction（「使该用户已绑定的收款账号全部失效（payout_accounts 不再有当前账号，写 payout_account_changes）」）；followups-ledger 第 25 行。
+# 本线技术取舍：B1-27a 在 admin-realname-correction.ts 里自写的失效（逐行 is_current=false、不写变更行）换成 identity 的 createPayoutAccountInvalidation().invalidate(trx, {appId, userId, operator: 'admin:<id>', now})，仍在覆盖实名的同一事务、用户行锁之内；审计与事件里的 payout_accounts_invalidated 取返回的 retired；计次排除与首次重绑不计次已由 B2-05j 落地（payout-account.ts），本任务不改；不改 GET /v1/me/payout-account 的响应形状。
+refs: [BR-WDR-02]
+refs_hash:
+  BR-WDR-02: b8ce66617ed9
+deps: [B1-27a, B2-05j]
+paths:
+  - 'apps/api/src/modules/identity/application/admin-realname-correction.ts'
+  - 'apps/api/src/modules/identity/application/admin-realname-correction.test.ts'
+test_paths:
+  - 'test/spec/identity/realname-payout-invalidate/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/realname-payout-invalidate/**'
+status: todo
+pr: null
