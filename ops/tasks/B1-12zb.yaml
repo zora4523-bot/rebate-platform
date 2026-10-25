@@ -51,4 +51,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/notification/sms-pending-saved-at/**'
-status: todo
+status: done
+pr: 1619
