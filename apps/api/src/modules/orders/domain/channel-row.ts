@@ -4,7 +4,8 @@
 //     invalid); an integer number cell is its decimal text (non-negative safe integers only: a
 //     larger one has already lost digits in the sheet); any other cell → invalid;
 //   - end_at: empty (null, or a text of white space only) → null (in force until stopped); a Date
-//     cell as is; an ISO 8601 text — date, or date and time with `T` or a space — with Z or an
+//     cell as the instant it is (a sheet's date cells reach here already re-read at +08:00 by
+//     sheetDateInstant, see below); an ISO 8601 text — date, or date and time with `T` or a space — with Z or an
 //     offset as given, without one read at +08:00 (a date alone = 00:00 +08:00 that day), never
 //     the server's zone; anything else (numbers such as Excel serials included) → invalid.
 //     end_at must be later than start_at (= the task's acceptance time; checkChannelRow).
@@ -64,6 +65,17 @@ export function channelEndAtMs(text: string): number | null {
   const offset = offsetMinutes(zone);
   if (offset === null) return null;
   return Date.UTC(year, month - 1, day, hour, minute, second, ms) - offset * 60_000;
+}
+
+/**
+ * The instant of a date cell as read-excel-file hands it over. Its parseExcelTimestamp builds the
+ * Date "in UTC+0 timezone": the Date's UTC fields are the wall clock typed in the sheet, with no
+ * zone. A time without an offset is +08:00 (as for end_at texts above), so those fields are re-read
+ * at +08:00 (8 hours earlier); a date-only cell becomes 00:00 +08:00 that day. Applied once, where
+ * the sheet is read (infra/rights-import-sheet.ts), so processors only ever see true instants.
+ */
+export function sheetDateInstant(cell: Date): Date {
+  return instantAt(cell, cell.getTime() - LOCAL_OFFSET_MINUTES * 60_000);
 }
 
 export type ChannelEndAt =

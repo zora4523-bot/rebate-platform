@@ -1,6 +1,12 @@
 import { expect, it } from 'vitest';
 import { FixedClock } from '../../platform/index.ts';
-import { channelEndAt, channelEndAtMs, channelRelationId, checkChannelRow } from './channel-row.ts';
+import {
+  channelEndAt,
+  channelEndAtMs,
+  channelRelationId,
+  checkChannelRow,
+  sheetDateInstant,
+} from './channel-row.ts';
 
 const START = new FixedClock('2026-10-10T07:00:00.000Z').now();
 const ms = (iso: string) => Date.parse(iso);
@@ -62,4 +68,16 @@ it('[AC-B1-09h#3] the row: end_at must be later than start_at', () => {
   });
   expect(checkChannelRow({ relation_id: null, end_at: null }, START)).toEqual({ ok: false });
   expect(checkChannelRow({}, START)).toEqual({ ok: false });
+});
+
+it('[AC-B1-09h#1] sheet date cell: the UTC+0 wall clock read-excel-file builds is re-read at +08:00', () => {
+  // 2026-10-31 00:00 typed in the sheet: read-excel-file hands over 2026-10-31T00:00:00Z.
+  const typed = new FixedClock('2026-10-31T00:00:00.000Z').now();
+  expect(sheetDateInstant(typed).toISOString()).toBe('2026-10-30T16:00:00.000Z');
+  // the same as the offset-less text of the same wall clock
+  expect(sheetDateInstant(typed).getTime()).toBe(channelEndAtMs('2026-10-31 00:00:00'));
+  expect(sheetDateInstant(typed).getTime()).toBe(channelEndAtMs('2026-10-31'));
+  const withTime = new FixedClock('2026-10-31T09:30:15.000Z').now();
+  expect(sheetDateInstant(withTime).getTime()).toBe(channelEndAtMs('2026-10-31T09:30:15'));
+  expect(typed.toISOString()).toBe('2026-10-31T00:00:00.000Z');
 });
