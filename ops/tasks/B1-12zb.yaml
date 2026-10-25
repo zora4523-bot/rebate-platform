@@ -1,0 +1,29 @@
+id: B1-12zb
+repo: rebate-platform
+title: 迁移：notify_templates 加待测试登记保存时刻列 sms_pending_saved_at（可空），后台列表 / 保存响应的 saved_at 改取它（重新测试不再改变 saved_at；旧行为空时回退 sms_tested_at）；迁移槽排在 W1 B1-09i 之后
+type: impl
+# 2026-10-25 入账（be-codex；编排裁定 D10-355 ①：B1-12z money r1 S2——saved_at 现取 sms_tested_at，重新测试后会变，只影响显示）。
+# 迁移只新增一列 timestamptz 可空、无默认、不回填；不并入待测试六列的「全空或全有」CHECK（冻结夹具按六列插入待测试行，须照旧可写）；表级授权已覆盖。编号占槽时按主干最大 +1（排在 W1 B1-09i 0089 之后，admin B1-27a / B1-27h 若有迁移按先就绪先占）。
+# 实现：保存（PUT …/sms 存待测试）时写 sms_pending_saved_at = 注入 Clock 的 now；重新测试只改 sms_test_status / sms_tested_at；启用与放弃时与其余待测试列一起清空；saved_at 读它，为空回退 sms_tested_at。契约 CT-24t 的 saved_at 字段形状不变。
+# 冻结列全集测试（B1-12e send-log、B1-12f template-override、B1-12x sms-channel / sms-pending）只把新列补进列全集、其余不动（第一类保护路径，#24 由编排核对）。
+refs: [BR-TEXT-20]
+refs_hash:
+  BR-TEXT-20: 3a9b6d8f0834
+deps: [B1-12z, B1-12x]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'apps/api/src/modules/notification/admin-channels/**'
+test_paths:
+  - 'test/spec/notification/sms-pending-saved-at/**'
+  - 'test/spec/db/notification/send-log/send-log.int.test.ts'
+  - 'test/spec/db/notification/template-override/template-override.int.test.ts'
+  - 'test/spec/db/notification/sms-channel/sms-channel.int.test.ts'
+  - 'test/spec/db/notification/sms-channel/sms-pending.int.test.ts'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/sms-pending-saved-at/**'
+status: todo
