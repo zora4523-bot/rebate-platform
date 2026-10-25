@@ -4,17 +4,47 @@
 import type { Clock } from '../clock/index.ts';
 import type { FundMetricsSnapshot } from './fund.ts';
 
+/** Default freshness of a successful fund snapshot: 5 minutes. */
+const DEFAULT_TTL_MS = 300_000;
+
 /**
  * Within ttlMs (default 300 000) of the last successful collection: that same snapshot. Otherwise
  * one call of `collect`, shared by concurrent callers; its rejection is passed on and not cached.
+ * A snapshot's age counts from the instant its collection started, so it is never served as
+ * fresher than the reads behind it. An expired snapshot is never served again, not even when the
+ * next collection fails.
  */
 export function cacheFundCollector(
   collect: () => Promise<FundMetricsSnapshot>,
   clock: Clock,
-  ttlMs?: number,
+  ttlMs = DEFAULT_TTL_MS,
 ): () => Promise<FundMetricsSnapshot> {
-  void collect;
-  void clock;
-  void ttlMs;
-  throw new Error('NotImplemented: cacheFundCollector');
+  let cached: { readonly value: FundMetricsSnapshot; readonly at: number } | undefined;
+  let inFlight: Promise<FundMetricsSnapshot> | undefined;
+
+  return () => {
+    const now = clock.now().getTime();
+    if (cached !== undefined && now - cached.at < ttlMs) return Promise.resolve(cached.value);
+    // Expired: drop it, so a failing collection cannot fall back to it.
+    cached = undefined;
+    if (inFlight !== undefined) return inFlight;
+
+    // Called synchronously; a synchronous throw becomes this call's rejection.
+    const started = (async () => collect())();
+    const shared = started.then(
+      (value) => {
+        if (inFlight === shared) {
+          inFlight = undefined;
+          cached = { value, at: now };
+        }
+        return value;
+      },
+      (error: unknown) => {
+        if (inFlight === shared) inFlight = undefined;
+        throw error;
+      },
+    );
+    inFlight = shared;
+    return shared;
+  };
 }

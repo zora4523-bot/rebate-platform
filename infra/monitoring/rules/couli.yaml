@@ -69,10 +69,10 @@ groups:
           summary: 'Redis {{ $labels.instance }} uses more than 70% of maxmemory'
           description: 'Used memory over maxmemory; +Inf when maxmemory is not set.'
       - alert: CouliRedisWritesRejected
-        expr: 'sum by (instance) (increase(redis_errors_total{err=~"OOM|MISCONF|READONLY"}[5m])) > 0'
+        expr: 'sum by (instance) (increase(redis_errors_total{err=~"OOM|MISCONF|READONLY"}[10m])) > 0'
         for: '5m'
         labels:
           severity: critical
         annotations:
           summary: 'Redis {{ $labels.instance }} rejects writes'
-          description: 'OOM, MISCONF or READONLY error replies counted by redis_exporter in the last 5 minutes.'
+          description: 'OOM, MISCONF or READONLY error replies counted by redis_exporter in the last 10 minutes (a window wider than one missed scrape).'
