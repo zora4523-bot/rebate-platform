@@ -19,10 +19,14 @@ import {
 import type { RootLogger } from '../logging/index.ts';
 
 export interface ExportPutInput {
-  /** `<app_id>/<export_id>.csv`; app_id follows the contract, export_id uses [A-Za-z0-9_-]+. */
+  /**
+   * `<app_id>/<export_id>.csv`; app_id follows the contract, export_id uses [A-Za-z0-9_-]+. A
+   * personal information copy uses dataCopyObjectKey (B1-27h).
+   */
   readonly key: string;
   readonly bytes: Uint8Array;
-  readonly contentType: 'text/csv';
+  /** text/csv for an export; a copy key takes application/zip or application/octet-stream. */
+  readonly contentType: 'text/csv' | 'application/zip' | 'application/octet-stream';
 }
 
 export interface ExportSignedUrlInput {
@@ -46,6 +50,20 @@ export interface ExportStore {
 
 /** Nest injection token of the process-wide ExportStore (provided globally by PlatformModule). */
 export const EXPORT_STORE = Symbol('EXPORT_STORE');
+
+/**
+ * Object key of one generation run of a personal information copy (B1-27h; BR-ID-40, D10-138: a
+ * key of its own per run): a prefix no export key can have, the app id, the copy id and the run,
+ * ending in `.zip`. put takes it with application/zip or application/octet-stream only (an export
+ * key keeps text/csv only); signedUrl, delete and verify as for an export key. Parts of the wrong
+ * shape throw.
+ */
+export function dataCopyObjectKey(appId: string, copyId: string, run: string): string {
+  void appId;
+  void copyId;
+  void run;
+  throw new Error('NotImplemented: dataCopyObjectKey');
+}
 
 export interface MemoryExportStoreOptions {
   readonly baseUrl: string;

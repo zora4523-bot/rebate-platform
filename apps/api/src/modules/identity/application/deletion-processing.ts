@@ -26,7 +26,7 @@
 import type { DB } from '@couli/db';
 import { transitionDeletionRequest } from '@couli/domain';
 import type { Kysely, Transaction } from 'kysely';
-import type { Clock, FieldCrypto, RootLogger } from '../../platform/index.ts';
+import type { Clock, ExportStore, FieldCrypto, RootLogger } from '../../platform/index.ts';
 import { DEFAULT_AVATAR } from '../domain/registration.ts';
 import { APPLE_REFRESH_TOKEN_CONTEXT } from '../infra/oauth-accounts.ts';
 import type { AppleTokenRevoker } from '../ports/apple-token-revoker.ts';
@@ -59,6 +59,11 @@ export interface DeletionProcessingOptions {
   readonly apple: AppleTokenRevoker;
   /** The push token unbinding of the revoked sessions, in the cleanup transaction. */
   readonly afterRevoked?: AfterSessionsRevoked;
+  /**
+   * B1-27h (BR-ID-40 细则「副本请求与注销状态」): the private store of the personal information
+   * copies, whose files of the user (delivered ones included) the cleanup deletes.
+   */
+  readonly dataCopyStore?: Pick<ExportStore, 'delete'>;
   readonly batchSize?: number;
 }
 
