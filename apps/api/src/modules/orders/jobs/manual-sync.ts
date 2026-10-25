@@ -3,17 +3,19 @@
 // [window_start, window_end) like a scheduled window; an order-number job ('manual-order-nos', pdd
 // only) fetches every number through union's getPddOrderDetail. Every order goes to the pipeline in
 // order. sync_cursors is never read nor advanced.
-// Write-back of order_sync_requests (the columns 0084 grants): the first job taken moves queued →
-// running; a job adds its counts once all its orders are processed (fetched = orders returned,
-// stored = pipeline inserted / updated), and the job dispatched last (sync_final) ends the request
-// done with finished_at. Any fetch or pipeline failure is rethrown with nothing counted, so the
-// queue retries the whole job; on the last attempt (attempt > the queue's retryLimit, after which
-// the job goes to order-sync.dead) the request is failed first ('retries_exhausted', also over a
-// request a later job already ended done), so a dead window never leaves it running or done. A job
-// taken while the site authorization is paused (BR-ID-24 ④), while the worker's offline breaker of
-// the platform is open (02 §6.2; the breaker lives in this process only) or whose account is not
-// the adapter's credential owner (D10-36) fetches nothing and fails the request (error,
-// finished_at), which frees its filter; jobs of an ended failed request are dropped.
+// Write-back (order_sync_requests and the job's own row `sync_seq` in order_sync_request_windows):
+// the first job taken moves the request queued → running; a job ends its row done with its counts
+// once all its orders are processed (fetched = orders returned, stored = pipeline inserted /
+// updated), and the request is done only when no row of it is left queued or running, its counts
+// the sum of its rows (infra/order-sync-requests.ts). A row ends once, so a redelivered job counts
+// nothing twice. Any fetch or pipeline failure is rethrown with nothing counted, so the queue
+// retries the whole job; on the last attempt (attempt > the queue's retryLimit, after which the job
+// goes to order-sync.dead) the row and the request are failed first ('retries_exhausted'), so a
+// dead window never leaves the request running. A job taken while the site authorization is paused
+// (BR-ID-24 ④), while the worker's offline breaker of the platform is open (02 §6.2; the breaker
+// lives in this process only) or whose account is not the adapter's credential owner (D10-36)
+// fetches nothing and fails its row and the request (error, finished_at), which frees its filter;
+// jobs of an ended (done or failed) request are dropped.
 import type { JobPayload, ReceivedJob } from '../../platform/index.ts';
 import type { RegisteredPlatform, UnionOrder } from '../../union/index.ts';
 import { MANUAL_SYNC_ORDER_NO_PLATFORMS } from '../domain/manual-sync.ts';
@@ -53,7 +55,7 @@ interface ManualJob {
   readonly platform: RegisteredPlatform;
   readonly union_account_id: string;
   readonly sync_id: string;
-  readonly final: boolean;
+  readonly seq: number;
   readonly window: { readonly window_start: string; readonly window_end: string } | null;
   readonly order_nos: readonly string[] | null;
 }
@@ -75,7 +77,7 @@ function parseManualJob(job: ReceivedJob): ManualJob {
     platform: platform as RegisteredPlatform,
     union_account_id: str('union_account_id'),
     sync_id: str('sync_id'),
-    final: payload['sync_final'] === true,
+    seq: seqOf(payload['sync_seq']),
   };
   if (job.name === MANUAL_SYNC_ORDER_NOS_JOB) {
     if (str('query_kind') !== MANUAL_SYNC_ORDER_NOS_KIND) {
@@ -109,6 +111,13 @@ function parseManualJob(job: ReceivedJob): ManualJob {
   return { ...base, window: { window_start: windowStart, window_end: windowEnd }, order_nos: null };
 }
 
+function seqOf(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new OrderSyncPayloadError('invalid sync_seq');
+  }
+  return value;
+}
+
 const STORED: ReadonlySet<string> = new Set(['inserted', 'updated']);
 
 export async function handleManualSyncJob(
@@ -120,17 +129,19 @@ export async function handleManualSyncJob(
     platform: m.platform,
     account: m.union_account_id,
     sync_id: m.sync_id,
+    seq: m.seq,
     attempt: job.attempt,
     ...(m.window ?? {}),
   };
   const status = await deps.requests.status(m.app_id, m.sync_id);
-  if (status === null || status === 'failed') {
+  // An ended request has no row left queued or running: a redelivered job of it fetches nothing.
+  if (status === null || status === 'failed' || status === 'done') {
     deps.logger?.info({ ...fields, status }, 'order_manual_sync_job_dropped');
     return;
   }
   const refuse = async (reason: string): Promise<void> => {
     deps.logger?.warn({ ...fields, reason }, 'order_manual_sync_job_refused');
-    await deps.requests.fail(m.app_id, m.sync_id, reason);
+    await deps.requests.finish(m.app_id, m.sync_id, m.seq, { status: 'failed', error: reason });
   };
   // D10-36: the adapter queries one credential set per platform.
   if (deps.access.queryableAccount !== undefined) {
@@ -153,7 +164,7 @@ export async function handleManualSyncJob(
     await refuse('offline_circuit_open');
     return;
   }
-  await deps.requests.start(m.app_id, m.sync_id);
+  await deps.requests.start(m.app_id, m.sync_id, m.seq);
   try {
     await fetchAndRecord(job, m, deps, fields);
   } catch (error) {
@@ -162,7 +173,10 @@ export async function handleManualSyncJob(
         { ...fields, reason: 'retries_exhausted' },
         'order_manual_sync_job_refused',
       );
-      await deps.requests.fail(m.app_id, m.sync_id, 'retries_exhausted', { overDone: true });
+      await deps.requests.finish(m.app_id, m.sync_id, m.seq, {
+        status: 'failed',
+        error: 'retries_exhausted',
+      });
     }
     throw error;
   }
@@ -217,7 +231,10 @@ async function fetchAndRecord(
         { ...fields, reason: 'order_detail_unsupported' },
         'order_manual_sync_job_refused',
       );
-      await deps.requests.fail(m.app_id, m.sync_id, 'order_detail_unsupported');
+      await deps.requests.finish(m.app_id, m.sync_id, m.seq, {
+        status: 'failed',
+        error: 'order_detail_unsupported',
+      });
       return;
     }
     // The pipeline context is shaped as a window's; an order-number job has no window, so the
@@ -235,6 +252,6 @@ async function fetchAndRecord(
       await processAll([order], ctx);
     }
   }
-  await deps.requests.record(m.app_id, m.sync_id, { fetched, stored }, m.final);
-  deps.logger?.info({ ...fields, fetched, stored, final: m.final }, 'order_manual_sync_job_done');
+  await deps.requests.finish(m.app_id, m.sync_id, m.seq, { status: 'done', fetched, stored });
+  deps.logger?.info({ ...fields, fetched, stored }, 'order_manual_sync_job_done');
 }

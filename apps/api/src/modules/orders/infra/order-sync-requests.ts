@@ -1,13 +1,55 @@
-// B1-09i: app.order_sync_requests, the console's manual sync requests (04 §3.2; migration 0084).
-// orders is the only writer: the admin entry inserts (one live row per (app_id, filter_digest) while
-// queued or running, the partial unique index order_sync_requests_live_digest_key), the worker's
-// order-sync handler updates only the columns 0084 grants (status, fetched_count, stored_count,
-// error, finished_at). Every status change is a compare-and-set on the current status.
+// B1-09i: app.order_sync_requests, the console's manual sync requests (04 §3.2; migration 0084),
+// and app.order_sync_request_windows, one progress row per job a request dispatched (migration
+// 0088). orders is the only writer: the admin entry inserts the request (one live row per
+// (app_id, filter_digest) while queued or running, the partial unique index
+// order_sync_requests_live_digest_key) and its job rows in the same transaction as the queue sends;
+// the worker's order-sync handler updates only the granted progress columns. Every status change is
+// a compare-and-set on the current status: a job row ends once (queued / running → done / failed),
+// so a redelivered job counts nothing twice, and the request's counts are the sum of its rows.
 import type { DB } from '@couli/db';
-import type { Kysely, Selectable, Transaction } from 'kysely';
+import type { ColumnType, Generated, Kysely, Selectable, Transaction } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
+import { manualSyncRequestAfterJob } from '../domain/manual-sync.ts';
 
 export type OrderSyncRequestRow = Selectable<DB['order_sync_requests']>;
+
+/**
+ * app.order_sync_request_windows as migration 0088 creates it.
+ * TODO(规划/11 §2.3): drop this bridge once db.gen.ts is regenerated with the table — blocked on
+ * `pnpm db:snapshot` outside the sandbox (the generated DB then carries the same shape).
+ */
+type Timestamp = ColumnType<Date, Date | string, Date | string>;
+type GeneratedTimestamp = ColumnType<Date, Date | string | undefined, Date | string>;
+
+interface OrderSyncRequestWindows {
+  app_id: string;
+  sync_id: string;
+  seq: number;
+  union_account_id: string;
+  window_start: Timestamp | null;
+  window_end: Timestamp | null;
+  status: string;
+  fetched_count: Generated<number>;
+  stored_count: Generated<number>;
+  error: string | null;
+  finished_at: Timestamp | null;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+
+type ProgressDB = DB & { order_sync_request_windows: OrderSyncRequestWindows };
+
+function progressDb<T extends Kysely<DB> | Transaction<DB>>(db: T): Kysely<ProgressDB> {
+  return db as unknown as Kysely<ProgressDB>;
+}
+
+/** One job the request dispatched: its index, account and window (null for order numbers). */
+export interface NewOrderSyncRequestWindow {
+  readonly seq: number;
+  readonly union_account_id: string;
+  readonly window_start: Date | null;
+  readonly window_end: Date | null;
+}
 
 export interface NewOrderSyncRequest {
   readonly id: string;
@@ -48,6 +90,36 @@ export async function insertOrderSyncRequest(
     .returningAll()
     .executeTakeFirst();
   return inserted ?? null;
+}
+
+/** The request's job rows, all queued, in the transaction that inserted the request. */
+export async function insertOrderSyncRequestWindows(
+  trx: Transaction<DB>,
+  request: { readonly app_id: string; readonly id: string; readonly created_at: Date },
+  windows: readonly NewOrderSyncRequestWindow[],
+): Promise<void> {
+  if (windows.length === 0) return;
+  await progressDb(trx)
+    .withSchema('app')
+    .insertInto('order_sync_request_windows')
+    .values(
+      windows.map((w) => ({
+        app_id: request.app_id,
+        sync_id: request.id,
+        seq: w.seq,
+        union_account_id: w.union_account_id,
+        window_start: w.window_start,
+        window_end: w.window_end,
+        status: 'queued',
+        fetched_count: 0,
+        stored_count: 0,
+        error: null,
+        finished_at: null,
+        created_at: request.created_at,
+        updated_at: request.created_at,
+      })),
+    )
+    .execute();
 }
 
 /** The queued or running request of this filter, if any. */
@@ -96,34 +168,28 @@ export async function pageOrderSyncRequests(
     .execute();
 }
 
-/** The worker side: progress of one request. */
+/** How one job ended. */
+export type OrderSyncJobOutcome =
+  | { readonly status: 'done'; readonly fetched: number; readonly stored: number }
+  | { readonly status: 'failed'; readonly error: string };
+
+/** The worker side: progress of one request and its job rows. */
 export interface OrderSyncRequestProgress {
   /** The request's status, or null when no row of (app_id, id) exists. */
   status(appId: string, id: string): Promise<string | null>;
-  /** queued → running; a request already running or ended is left as it is. */
-  start(appId: string, id: string): Promise<void>;
+  /** queued → running for the request and the job row `seq`; anything else is left as it is. */
+  start(appId: string, id: string, seq: number): Promise<void>;
   /**
-   * Adds one finished job's counts; with `final` a running request becomes done (finished_at at
-   * the Clock). A request already ended keeps its status.
+   * Ends the job row `seq` (queued / running → done with its counts, or failed with the error) and
+   * then the request: its counts become the sum of its rows; it is failed (the row's error,
+   * finished_at at the Clock) once a row failed, done once no row is queued or running, running
+   * otherwise. A row already ended (a redelivered job) changes nothing; an ended request keeps its
+   * status and counts.
    */
-  record(
-    appId: string,
-    id: string,
-    counts: { readonly fetched: number; readonly stored: number },
-    final: boolean,
-  ): Promise<void>;
-  /**
-   * queued / running → failed with the error and finished_at at the Clock. With `overDone` a done
-   * request is failed too: a window that dead-letters after a later job ended the request done
-   * (jobs finish in any order) must not leave the console showing a complete sync.
-   */
-  fail(
-    appId: string,
-    id: string,
-    error: string,
-    options?: { readonly overDone?: boolean },
-  ): Promise<void>;
+  finish(appId: string, id: string, seq: number, outcome: OrderSyncJobOutcome): Promise<void>;
 }
+
+const ENDED_BY_REQUEST = 'request_ended';
 
 export function createOrderSyncRequestProgress(
   db: Kysely<DB>,
@@ -140,46 +206,101 @@ export function createOrderSyncRequestProgress(
         .executeTakeFirst();
       return row?.status ?? null;
     },
-    async start(appId, id) {
-      await app
-        .updateTable('order_sync_requests')
-        .set({ status: 'running' })
-        .where('app_id', '=', appId)
-        .where('id', '=', id)
-        .where('status', '=', 'queued')
-        .execute();
-    },
-    async record(appId, id, counts, final) {
+    async start(appId, id, seq) {
+      const now = clock.now();
       await db.transaction().execute(async (trx) => {
         await trx
           .withSchema('app')
           .updateTable('order_sync_requests')
-          .set((eb) => ({
-            fetched_count: eb('fetched_count', '+', counts.fetched),
-            stored_count: eb('stored_count', '+', counts.stored),
-          }))
+          .set({ status: 'running' })
           .where('app_id', '=', appId)
           .where('id', '=', id)
+          .where('status', '=', 'queued')
           .execute();
-        if (!final) return;
+        await progressDb(trx)
+          .withSchema('app')
+          .updateTable('order_sync_request_windows')
+          .set({ status: 'running', updated_at: now })
+          .where('app_id', '=', appId)
+          .where('sync_id', '=', id)
+          .where('seq', '=', seq)
+          .where('status', '=', 'queued')
+          .execute();
+      });
+    },
+    async finish(appId, id, seq, outcome) {
+      const now = clock.now();
+      await db.transaction().execute(async (trx) => {
+        // The request row first: jobs of one request finishing at once are serialised here, so the
+        // last of them sees every other row ended.
+        const request = await trx
+          .withSchema('app')
+          .selectFrom('order_sync_requests')
+          .select('status')
+          .where('app_id', '=', appId)
+          .where('id', '=', id)
+          .forUpdate()
+          .executeTakeFirst();
+        if (request === undefined) return;
+        const windows = progressDb(trx).withSchema('app');
+        const ended = await windows
+          .updateTable('order_sync_request_windows')
+          .set(
+            outcome.status === 'done'
+              ? {
+                  status: 'done',
+                  fetched_count: outcome.fetched,
+                  stored_count: outcome.stored,
+                  error: null,
+                  finished_at: now,
+                  updated_at: now,
+                }
+              : { status: 'failed', error: outcome.error, finished_at: now, updated_at: now },
+          )
+          .where('app_id', '=', appId)
+          .where('sync_id', '=', id)
+          .where('seq', '=', seq)
+          .where('status', 'in', LIVE)
+          .executeTakeFirst();
+        if (ended.numUpdatedRows === 0n) return;
+        if (!(LIVE as readonly string[]).includes(request.status)) return;
+        const tally = await windows
+          .selectFrom('order_sync_request_windows')
+          .select((eb) => [
+            eb.fn.coalesce(eb.fn.sum<string>('fetched_count'), eb.lit(0)).as('fetched'),
+            eb.fn.coalesce(eb.fn.sum<string>('stored_count'), eb.lit(0)).as('stored'),
+            eb.fn.countAll<string>().filterWhere('status', 'in', LIVE).as('live'),
+          ])
+          .where('app_id', '=', appId)
+          .where('sync_id', '=', id)
+          .executeTakeFirstOrThrow();
+        const counts = { fetched_count: Number(tally.fetched), stored_count: Number(tally.stored) };
+        const status = manualSyncRequestAfterJob(outcome.status, Number(tally.live));
+        const next =
+          outcome.status === 'failed'
+            ? { status, error: outcome.error, finished_at: now }
+            : status === 'done'
+              ? { status, error: null, finished_at: now }
+              : { status };
         await trx
           .withSchema('app')
           .updateTable('order_sync_requests')
-          .set({ status: 'done', error: null, finished_at: clock.now() })
+          .set({ ...counts, ...next })
           .where('app_id', '=', appId)
           .where('id', '=', id)
           .where('status', 'in', LIVE)
           .execute();
+        if (outcome.status === 'failed') {
+          // The request has ended: its other rows will never be fetched (their jobs are dropped).
+          await windows
+            .updateTable('order_sync_request_windows')
+            .set({ status: 'failed', error: ENDED_BY_REQUEST, finished_at: now, updated_at: now })
+            .where('app_id', '=', appId)
+            .where('sync_id', '=', id)
+            .where('status', 'in', LIVE)
+            .execute();
+        }
       });
-    },
-    async fail(appId, id, error, options) {
-      await app
-        .updateTable('order_sync_requests')
-        .set({ status: 'failed', error, finished_at: clock.now() })
-        .where('app_id', '=', appId)
-        .where('id', '=', id)
-        .where('status', 'in', options?.overDone === true ? [...LIVE, 'done'] : LIVE)
-        .execute();
     },
   };
 }

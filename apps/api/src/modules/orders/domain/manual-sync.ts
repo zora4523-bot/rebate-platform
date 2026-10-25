@@ -143,3 +143,15 @@ export function manualSyncWindows(
   }
   return windows;
 }
+
+/**
+ * The request's status after one of its job rows ended (order_sync_request_windows): failed as soon
+ * as a row failed, done once no row is left queued or running, running otherwise.
+ */
+export function manualSyncRequestAfterJob(
+  jobStatus: 'done' | 'failed',
+  liveRows: number,
+): 'running' | 'done' | 'failed' {
+  if (jobStatus === 'failed') return 'failed';
+  return liveRows === 0 ? 'done' : 'running';
+}

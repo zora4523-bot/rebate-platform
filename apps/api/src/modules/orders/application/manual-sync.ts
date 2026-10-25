@@ -19,10 +19,13 @@
 //   (ManualOrderSyncDispatchDroppedError, 50001): the leftovers are dropped by the worker as their
 //   request ended, after which the same filter can be submitted again, instead of a new request
 //   whose windows were never queued staying live and holding its filter for good.
+//   Every job sent gets a progress row in order_sync_request_windows (same transaction; its index
+//   `sync_seq` travels in the payload): the worker ends the request once no row is left queued or
+//   running (jobs/manual-sync.ts), whatever order the queue runs them in.
 // - list: the app's requests, created_at descending; limits: manualSyncLimits at the Clock.
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
-import type { Kysely } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import { newUuidV7, type Clock, type JobQueue } from '../../platform/index.ts';
 import { isRegisteredPlatform, type RegisteredPlatform } from '../../union/index.ts';
 import {
@@ -39,6 +42,7 @@ import {
   countOrderSyncRequests,
   findLiveOrderSyncRequest,
   insertOrderSyncRequest,
+  insertOrderSyncRequestWindows,
   pageOrderSyncRequests,
   type OrderSyncRequestRow,
 } from '../infra/order-sync-requests.ts';
@@ -189,13 +193,19 @@ export function createManualOrderSyncs(deps: ManualOrderSyncDeps): ManualOrderSy
   }
 
   async function dispatch(
-    trx: Parameters<JobQueue['send']>[3]['trx'],
+    trx: Transaction<DB>,
     row: OrderSyncRequestRow,
     filter: ManualSyncFilter,
     accounts: readonly SyncAccount[],
   ): Promise<number> {
     const now = clock.now();
-    const jobs: { name: string; payload: Record<string, unknown>; key: string }[] = [];
+    const jobs: {
+      name: string;
+      payload: Record<string, unknown>;
+      key: string;
+      account: string;
+      window: { start: Date; end: Date } | null;
+    }[] = [];
     for (const account of accounts) {
       const stream = {
         app_id: account.app_id,
@@ -221,6 +231,8 @@ export function createManualOrderSyncs(deps: ManualOrderSyncDeps): ManualOrderSy
             row.filter_digest,
             'order_nos',
           ].join(':'),
+          account: account.union_account_id,
+          window: null,
         });
         continue;
       }
@@ -244,15 +256,29 @@ export function createManualOrderSyncs(deps: ManualOrderSyncDeps): ManualOrderSy
             row.filter_digest,
             win.window_start,
           ].join(':'),
+          account: account.union_account_id,
+          window: {
+            start: instantAt(now, Date.parse(win.window_start)),
+            end: instantAt(now, Date.parse(win.window_end)),
+          },
         });
       }
     }
-    // The last job sent ends the request when it completes (jobs/manual-sync.ts).
+    await insertOrderSyncRequestWindows(
+      trx,
+      row,
+      jobs.map((job, seq) => ({
+        seq,
+        union_account_id: job.account,
+        window_start: job.window?.start ?? null,
+        window_end: job.window?.end ?? null,
+      })),
+    );
     for (const [i, job] of jobs.entries()) {
       const id = await queue.send(
         ORDER_SYNC_QUEUE,
         job.name,
-        { ...(job.payload as Record<string, never>), sync_final: i === jobs.length - 1 },
+        { ...(job.payload as Record<string, never>), sync_seq: i },
         { trx, singletonKey: job.key },
       );
       if (id === null) {
