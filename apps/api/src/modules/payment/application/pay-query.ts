@@ -223,6 +223,40 @@ export async function runOrderQuery(deps: PayQueryDeps, payload: unknown): Promi
   }
 }
 
+/** What BR-PAY-04 checks of a paid query answer (identity resolved to an app of ours or not). */
+export interface PaidAnswerFacts {
+  readonly ours: boolean;
+  readonly amountFen: bigint;
+  readonly channelState: string;
+  readonly channelTradeNo: string;
+}
+
+/**
+ * The facts of a paid query answer for the order's app, or null when the answer lacks the state,
+ * the amount, the trade number or the identity (never a payment then: fail closed; also B2-15f).
+ */
+export function paidAnswerFacts(
+  adapter: Pick<PayChannel, 'ownerAppOf'>,
+  appId: string,
+  result: Extract<PayQueryResult, { kind: 'ok' }>,
+): PaidAnswerFacts | null {
+  if (
+    result.channelState === undefined ||
+    result.amountFen === null ||
+    result.channelTradeNo === null ||
+    result.merchantRef === undefined ||
+    result.appRef === undefined
+  ) {
+    return null;
+  }
+  return {
+    ours: adapter.ownerAppOf({ merchantRef: result.merchantRef, appRef: result.appRef }) === appId,
+    amountFen: result.amountFen,
+    channelState: result.channelState,
+    channelTradeNo: result.channelTradeNo,
+  };
+}
+
 /**
  * A channel answer of paid: the checks of BR-PAY-04, then the settlement or the anomaly (also the
  * close flow's paid answer, B2-15d: PO2, never closed).
@@ -236,25 +270,12 @@ export async function judgePaidAnswer(
 ): Promise<Outcome> {
   const channel = order.pay_channel as PayChannelCode;
   const base = { app_id: order.app_id, pay_order_id: order.id, out_trade_no: order.out_trade_no };
-  if (
-    result.channelState === undefined ||
-    result.amountFen === null ||
-    result.channelTradeNo === null ||
-    result.merchantRef === undefined ||
-    result.appRef === undefined
-  ) {
+  const facts = paidAnswerFacts(adapter, order.app_id, result);
+  if (facts === null) {
     // Fail closed: a paid answer without the facts to check is not a payment (task §11).
     deps.logger.warn({ ...base, pay_channel: channel, reason: 'incomplete' }, 'pay_query_mismatch');
     return order.status === 'CLOSED' ? 'closed' : 'open';
   }
-  const facts = {
-    ours:
-      adapter.ownerAppOf({ merchantRef: result.merchantRef, appRef: result.appRef }) ===
-      order.app_id,
-    amountFen: result.amountFen,
-    channelState: result.channelState,
-    channelTradeNo: result.channelTradeNo,
-  };
   const successStates = await successStatesFor(deps, order.app_id, channel);
   try {
     return await deps.db.transaction().execute(async (trx): Promise<Outcome> => {

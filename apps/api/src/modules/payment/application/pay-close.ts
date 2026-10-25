@@ -83,8 +83,8 @@ function bizKeyOf(order: PayOrderRow): BizObjectKey {
   return { appId: order.app_id, bizType: order.biz_type, bizRef: order.biz_ref };
 }
 
-/** The three close settings of the app (config_items overrides the code defaults). */
-async function closeSettingsOf(deps: PayCloseDeps, appId: string): Promise<CloseSettings> {
+/** The three close settings of the app (config_items overrides the code defaults; also B2-15f). */
+export async function closeSettingsOf(deps: PayCloseDeps, appId: string): Promise<CloseSettings> {
   const read = async (key: string, fallback: number): Promise<number> => {
     const value = closeMinutesOf(await rawConfigValue(deps.config, appId, key), fallback);
     if (value.fallback) deps.logger.warn({ app_id: appId, key }, 'pay_close_setting_invalid');
@@ -103,8 +103,11 @@ type Entry =
   | { readonly kind: 'closed' }
   | { readonly kind: 'ask'; readonly order: PayOrderRow };
 
-/** PO3 on the caller's locked transaction for an order it re-read as PENDING; false on a lost CAS. */
-async function closeOrder(
+/**
+ * PO3 on the caller's locked transaction for an order it re-read as PENDING; false on a lost CAS
+ * (also B2-15f's manual settlement, application/pay-resolve.ts).
+ */
+export async function closeOrder(
   deps: PayCloseDeps,
   trx: Parameters<typeof markClosed>[0],
   order: PayOrderRow,
@@ -180,11 +183,15 @@ async function closeChannel(adapter: PayChannel, outTradeNo: string): Promise<Pa
   }
 }
 
-/** One query of the close flow, its attempt row committed on its own before any judgement. */
-async function recordedQuery(
+/**
+ * One query of the close flow, its attempt row committed on its own before any judgement (also
+ * B2-15f's manual settlement, trigger admin_resolve: the recorded response is its evidence).
+ */
+export async function recordedQuery(
   deps: PayCloseDeps,
   adapter: PayChannel,
   order: PayOrderRow,
+  trigger: 'close' | 'admin_resolve' = 'close',
 ): Promise<{ readonly result: PayQueryResult; readonly attemptId: string }> {
   const result = await queryChannel(adapter, order.out_trade_no);
   const now = deps.clock.now();
@@ -199,7 +206,7 @@ async function recordedQuery(
         op: 'query',
         pay_channel: order.pay_channel,
         out_trade_no: order.out_trade_no,
-        trigger: 'close',
+        trigger,
       },
       response:
         result.kind === 'ok'

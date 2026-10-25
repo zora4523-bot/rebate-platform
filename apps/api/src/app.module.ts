@@ -3106,12 +3106,15 @@ export class AppModule {
         // AdminOperationGuard (pay.refund, no step-up), under platform idempotency (subject
         // a:<admin_users.id>); the refund row, its first refund.query job and the audit row
         // (admin's writer bound to the creating transaction) commit together before the channel
-        // is called.
+        // is called. B2-15f: the pay order / anomaly reads (pay.view) and the manual settlement of
+        // a needs_manual pay order (pay.resolve, step-up totp; BR-PAY-05 ③): PO2 / PO3 and the
+        // audit row commit together, over content's shared configuration reader.
         ...(options.entry === 'admin'
           ? [
               PaymentModule.forAdmin({
                 auditWriter: (db, clock) =>
                   createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                config: (db, clock) => contentReader(db, clock),
               }),
             ]
           : []),

@@ -12808,6 +12808,175 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "listAdminPayOrders": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        },
+        "status": {
+          "type": "string",
+          "description": "Pay order status (contracts/enums/pay.yaml pay_order_status; BR-PAY-02); PAID and CLOSED are final.",
+          "enum": [
+            "PENDING",
+            "PAID",
+            "CLOSED"
+          ]
+        },
+        "pay_channel": {
+          "type": "string",
+          "description": "Pay channel (contracts/enums/pay.yaml pay_channel; BR-PAY-01); not the payout channel.",
+          "enum": [
+            "wechat_pay",
+            "alipay"
+          ]
+        },
+        "biz_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "out_trade_no": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "needs_manual": {
+          "type": "boolean"
+        },
+        "created_from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "created_to": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "getAdminPayOrder": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pay_order_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "pay_order_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "resolveAdminPayOrder": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pay_order_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "pay_order_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/pay-orders/{pay_order_id}/resolve: fixed values only. The server\nqueries the channel itself; the console sends no status, channel result or evidence.\n",
+      "additionalProperties": false,
+      "required": [
+        "expected_status",
+        "action"
+      ],
+      "properties": {
+        "expected_status": {
+          "type": "string",
+          "description": "CAS on the pay order status; only PENDING (subset of pay_order_status).",
+          "enum": [
+            "PENDING"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "description": "Query the channel now and settle by its answer (BR-PAY-05 ③).",
+          "enum": [
+            "query_and_settle"
+          ]
+        }
+      }
+    }
+  },
   "createAdminPayRefund": {
     "headers": {
       "type": "object",
@@ -12879,6 +13048,49 @@ export const CONTRACT_ROUTE_SCHEMAS = {
           "description": "Optional free text kept with the refund and in the audit record."
         }
       }
+    }
+  },
+  "listAdminPayAnomalies": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        },
+        "pay_channel": {
+          "type": "string",
+          "description": "Pay channel (contracts/enums/pay.yaml pay_channel; BR-PAY-01); not the payout channel.",
+          "enum": [
+            "wechat_pay",
+            "alipay"
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false
     }
   },
   "createAdminPayAnomalyRefund": {
