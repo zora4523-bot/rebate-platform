@@ -119,6 +119,13 @@ export const APPROVED_GUARD_CHANGES: Readonly<Record<string, string>> = {
   // (+ pay_mismatch / pay_anomaly, R4) under the same names, NOT VALID; 0082 validates them (two-stage,
   // precedent 0079 / 0080). Both only widen.
   '0081_ledger-type-pay.sql': 'e0a4df6555607577c01ec7624a30c3d7bef544098783204329ffe8a01705cf2e',
+  // B2-15e (pay lane, orchestrator rulings D10-350 / D10-351 ②, registered by D10-352): rebuilds
+  // pay_refunds_idempotency_key_key on the funds table pay_refunds under the same name as
+  // UNIQUE (app_id, operator, idempotency_key) (unique index first, then UNIQUE USING INDEX); it only
+  // widens: a row unique on (app_id, idempotency_key) stays unique on the three columns. The same
+  // migration adds the nullable note column. Money review (independent Claude) passed.
+  '0088_pay-refunds-note-idempotency-operator.sql':
+    '8d75300755329c8ebbb06fbf10988279df06958406e0c159ca877cdf54638a82',
 };
 /** Extensions node-pg-migrate would run from db/migrations besides SQL. */
 const SCRIPT_MIGRATION = /\.(?:js|cjs|mjs|ts|cts|mts|jsx|tsx)$/;
