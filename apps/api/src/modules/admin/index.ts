@@ -34,6 +34,12 @@ export type { AdminDisplayNameReader } from './infra/admin-display-names.ts';
 // B1-10i: the latest manual hold audit of an order for orders' console order detail (app.module only).
 export { createOrderHoldAuditReader } from './application/order-hold-audits.ts';
 export type { OrderHoldAudit, OrderHoldAuditReader } from './application/order-hold-audits.ts';
+// B1-12z: the operator's verify phone for notification's console SMS test send (app.module only).
+export { createAdminVerifyPhoneReader } from './application/verify-phone-read.ts';
+export type {
+  AdminVerifyPhoneReader,
+  AdminVerifyPhoneReaderDeps,
+} from './application/verify-phone-read.ts';
 // Test double only; production uses createPgTotpReplayStore.
 export { createMemoryTotpReplayStore } from './infra/totp-replay-memory.ts';
 export { createSuperVerifier } from './application/verify-super.ts';

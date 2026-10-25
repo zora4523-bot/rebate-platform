@@ -18,6 +18,12 @@ export type {
   SwitchValueType,
 } from './domain/switch-registry.ts';
 export { SWITCH_CACHE_TTL_MS, switchCacheTtlMs } from './domain/cache-policy.ts';
+// B1-12z: the BR-TEXT-13 forbidden-word check and the BR-TEXT-12 fund term classification of
+// template codes, for notification's console SMS registration (its save checks and its
+// content.fund_terms gate read the same lists as the dictionary saves).
+export { classifyTemplate, findBannedWords } from './domain/text-guard/index.ts';
+export type { BannedWord, FundTermKeys, TextScope } from './domain/text-guard/index.ts';
+export { getBannedWords, getFundTermKeys } from './specs/text-specs.ts';
 export type { AppVersionRow } from './domain/app-version.ts';
 // F1-06w: the admin console's platform mark reads, loaded by app.module on the admin entry only.
 export { ContentAdminModule } from './content-admin.module.ts';

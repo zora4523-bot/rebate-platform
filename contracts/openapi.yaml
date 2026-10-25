@@ -18254,7 +18254,6 @@ paths:
           saved test result. It is the `row_version` of the writes.
         Reading does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -18479,7 +18478,6 @@ paths:
         confirmation was given) for every change. The response is the item as GET returns it now.
         No Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -18648,7 +18646,6 @@ paths:
         it now and the masked phone of the test send (null when nothing was sent). No
         Idempotency-Key (04 §6.6): a retry after a lost response is a new call and sends again.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -18836,7 +18833,6 @@ paths:
         record (action notify_sms_discard: code, variant, the discarded registration and its test
         result). The response is the code's item as GET returns it now. No Idempotency-Key.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -18952,7 +18948,6 @@ paths:
         the code's item as GET returns it now and the masked phone of the test send. No
         Idempotency-Key: a retry sends again.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -19098,7 +19093,6 @@ paths:
         notify_sms_enable: code, variant, the active registration before and after, whether it is
         a fund code). The response is the code's item as GET returns it now. No Idempotency-Key.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003

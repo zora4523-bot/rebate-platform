@@ -11966,6 +11966,406 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "required": []
     }
   },
+  "adminListNotifyChannels": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    }
+  },
+  "adminSwitchNotifyChannels": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$",
+          "description": "Template code of notify_templates (04 §3, 04 §2.5 notify_template.code), e.g. WD_FAILED, SMS_CODE, DATA_COPY_CODE."
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of PATCH /admin/v1/notify-channels/{code}; at least one of push and sms.",
+      "additionalProperties": false,
+      "required": [
+        "row_version"
+      ],
+      "properties": {
+        "push": {
+          "type": "boolean",
+          "description": "Push on (true) or off (false); only when push_switchable."
+        },
+        "sms": {
+          "type": "boolean",
+          "description": "SMS on (true) or off (false); only when sms_switchable, and on only when sms_ready."
+        },
+        "confirm_sms_billing": {
+          "type": "boolean",
+          "description": "Must be true when turning SMS on for a code whose sms_billing_confirm is true; ignored otherwise."
+        },
+        "row_version": {
+          "allOf": [
+            {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "description": "Version of a template code as a whole (channels and every variant's active and pending registration)."
+            }
+          ],
+          "description": "The row_version of the item as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
+  "adminRegisterNotifySms": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$",
+          "description": "Template code of notify_templates (04 §3, 04 §2.5 notify_template.code), e.g. WD_FAILED, SMS_CODE, DATA_COPY_CODE."
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "variant": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$",
+          "description": "Variant of a template code (notify_templates.variant, 04 §3); default for a code with one variant."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of PUT /admin/v1/notify-channels/{code}/sms.",
+      "additionalProperties": false,
+      "required": [
+        "sign_name",
+        "template_code",
+        "template_type",
+        "preview_text",
+        "row_version"
+      ],
+      "properties": {
+        "sign_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "description": "The approved signature, without 【】."
+        },
+        "template_code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "The approved provider template CODE."
+        },
+        "template_type": {
+          "type": "string",
+          "description": "Provider template type (enum sms_template_type); verification code or notice, marketing SMS is P1.",
+          "enum": [
+            "verify",
+            "notice"
+          ]
+        },
+        "preview_text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "The approved template text as copied from the provider, placeholders written ${name}."
+        },
+        "sample": {
+          "type": "object",
+          "description": "Sample values for the test send, by variable name; variables not given take the server's built-in sample.",
+          "maxProperties": 20,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "row_version": {
+          "allOf": [
+            {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "description": "Version of a template code as a whole (channels and every variant's active and pending registration)."
+            }
+          ],
+          "description": "The row_version of the item as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
+  "adminDiscardNotifySms": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$",
+          "description": "Template code of notify_templates (04 §3, 04 §2.5 notify_template.code), e.g. WD_FAILED, SMS_CODE, DATA_COPY_CODE."
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "variant": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$",
+          "description": "Variant of a template code (notify_templates.variant, 04 §3); default for a code with one variant."
+        },
+        "row_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "Version of a template code as a whole (channels and every variant's active and pending registration)."
+        }
+      },
+      "required": [
+        "row_version"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "adminRetestNotifySms": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$",
+          "description": "Template code of notify_templates (04 §3, 04 §2.5 notify_template.code), e.g. WD_FAILED, SMS_CODE, DATA_COPY_CODE."
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "variant": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$",
+          "description": "Variant of a template code (notify_templates.variant, 04 §3); default for a code with one variant."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/notify-channels/{code}/sms/pending/test.",
+      "additionalProperties": false,
+      "required": [
+        "row_version"
+      ],
+      "properties": {
+        "sample": {
+          "type": "object",
+          "description": "Sample values for the test send, by variable name; variables not given take the server's built-in sample.",
+          "maxProperties": 20,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "row_version": {
+          "allOf": [
+            {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "description": "Version of a template code as a whole (channels and every variant's active and pending registration)."
+            }
+          ],
+          "description": "The row_version of the item as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
+  "adminEnableNotifySms": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$",
+          "description": "Template code of notify_templates (04 §3, 04 §2.5 notify_template.code), e.g. WD_FAILED, SMS_CODE, DATA_COPY_CODE."
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "variant": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$",
+          "description": "Variant of a template code (notify_templates.variant, 04 §3); default for a code with one variant."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/notify-channels/{code}/sms/pending/enable.",
+      "additionalProperties": false,
+      "required": [
+        "row_version"
+      ],
+      "properties": {
+        "row_version": {
+          "allOf": [
+            {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "description": "Version of a template code as a whole (channels and every variant's active and pending registration)."
+            }
+          ],
+          "description": "The row_version of the item as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
   "adminListAppVersions": {
     "headers": {
       "type": "object",
