@@ -80,13 +80,15 @@ it.each(
       e[2] === 'listAdminPayAnomalies',
   ),
 )(
-  '[AC-CT-21e#1] %s %s（支付单查询与处置）声明 planned、后台鉴权与权限点',
+  '[AC-CT-21e#1] %s %s（支付单查询与处置）已实现（不再 planned）、后台鉴权与权限点',
   (method, path, id, permission) => {
+    // B2-15f：四条支付单查询与处置操作已实现，x-implementation 随路由上线移除。
     const doc = contract();
     const endpoint = endpoints.find((e) => e[2] === id)!;
     const op = operation(doc, endpoint);
     expect(op['operationId']).toBe(id);
-    expect(op['x-implementation']).toBe('planned');
+    expect(op).not.toHaveProperty('x-implementation');
+    expect(op['x-implementation']).not.toBe('planned');
     expect(op['x-auth']).toBe('admin');
     expect(op['security']).toEqual([{ adminBearerAuth: [] }]);
     expect(op['description']).toMatch(

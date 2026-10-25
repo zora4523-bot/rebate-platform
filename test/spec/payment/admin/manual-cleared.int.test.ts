@@ -105,8 +105,13 @@ function auditedClear(audit: AuditRow | undefined, order: OrderRow): void {
 
 interface AttemptFact {
   readonly kind: string;
-  readonly result: string;
+  readonly result: string | null;
   readonly at: number;
+}
+
+/** A seeded attempt always carries a result (seedAttempt writes it). */
+interface SeededAttempt extends AttemptFact {
+  readonly result: string;
 }
 
 /** A resolve that won the race answers the PAID order with needs_manual false; a loser 20902. */
@@ -124,7 +129,7 @@ async function paidOrConflict(sent: AdminSent): Promise<void> {
 /** What B2-15d's close flow left before the hand-over: a not-paid query, an unknown close. */
 async function closeFlowAttempts(f: Fixture, order: OrderRow): Promise<AttemptFact[]> {
   const expireAt = order.expire_at.getTime();
-  const seeded: AttemptFact[] = [
+  const seeded: SeededAttempt[] = [
     { kind: 'query', result: 'not_paid', at: expireAt + MINUTE },
     { kind: 'close', result: 'unknown', at: expireAt + 2 * MINUTE },
   ];
