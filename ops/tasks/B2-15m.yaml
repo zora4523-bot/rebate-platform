@@ -1,0 +1,22 @@
+id: B2-15m
+repo: rebate-platform
+title: 收款对账的周期调度：worker 启动后按 App 种下 bill.recon 的下一时段（+08:00；singletonKey 按 App + 账单日去重，重启不重复入队），首轮无需人工入队；下次日跑按已对账的账单日推算（账单日 + 1），停机或死信隔日重放不漏日
+type: impl
+# 2026-10-26 be 入账：B2-15j 实现留项（TODO 规划/11 §2.3：worker 无周期任务钩子，首个 bill.recon 无人入队）与其 money r2 S2（scheduleBillRecon 以 now 推算下次日跑，停机 >14 小时或死信隔日重放会漏一天、PAY_FEE 未记）。做法照 B1-22b 的时段链：payment.module.ts 里像 union-auth.module.ts 那样在 application bootstrap 后延时种下各 App 的下一时段，仍跑在既有 pay 队列上（不新增队列、不改 catalog；业务代码没有 pg-boss schedule 接口）。
+# **收款上线门槛**：pay.enabled 打开前必须合并（同 B2-15l）。不改对账判定与金额口径（B2-15j 已合并部分不动）。
+refs: [BR-PAY-07]
+refs_hash:
+  BR-PAY-07: a98350f4412a
+deps: [B2-15j]
+paths:
+  - 'apps/api/src/modules/payment/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/payment/recon-schedule/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payment/recon-schedule/**'
+status: todo
+pr: null
