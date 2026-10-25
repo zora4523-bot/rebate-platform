@@ -142,6 +142,8 @@ export type { JwtKeyConfig } from './config/jwt.ts';
 export * from './qrcode/index.ts';
 export * from './media/index.ts';
 export * from './export-store/index.ts';
+// Private import store of the admin Excel imports (B1-09g; rights-imports).
+export * from './import-store/index.ts';
 export { AdminOperationGuard } from './http/admin-guard.ts';
 export type {
   AdminActor,
