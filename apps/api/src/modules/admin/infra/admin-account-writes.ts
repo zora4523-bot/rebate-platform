@@ -6,7 +6,8 @@
 // Every write is one transaction: the target row is locked (SELECT … FOR UPDATE, scoped to the
 // app) and judged, the row is changed (row_version + 1), the audit row is inserted with the same
 // transaction handle; disable also cancels the target's pending / running exports through the
-// export canceller on that handle; disable, enable (B1-34n), authenticator reset and initial
+// export canceller on that handle, and (B1-27h) fails the target's undelivered wecom_session
+// personal information copy requests through identity's port on it; disable, enable (B1-34n), authenticator reset and initial
 // password regeneration finally record the account's voiding instant (Redis, ./admin-revocations.ts) before the commit,
 // so a failing Redis rolls the change back (50001) and a committed change has always voided. The
 // account is re-read inside the transaction for the answer. Admin accounts have no generated
@@ -22,6 +23,7 @@
 import type { DB } from '@couli/db';
 import type { Kysely, Transaction } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
+import { failWecomCopiesOfRegistrant } from '../../identity/index.ts';
 import type { ExportCanceller } from '../application/export-worker.ts';
 import { createAdminDirectory, type AdminDirectoryRow } from './admin-directory.ts';
 import type { AdminRevocations } from './admin-revocations.ts';
@@ -308,6 +310,13 @@ export function createAdminAccountWrites(deps: {
             actor: input.actor,
             ip: input.ip,
           });
+          // B1-27h (BR-ID-40 细则「重新登记与登记人停用」): identity fails the account's undelivered
+          // wecom_session copy requests in this transaction, one audit row each.
+          await failWecomCopiesOfRegistrant(
+            trx,
+            { appId: input.appId, adminId: input.adminId, actor: input.actor, ip: input.ip },
+            { clock, audit: audit(trx) },
+          );
           await audit(trx).append({
             appId: input.appId,
             actor: input.actor,

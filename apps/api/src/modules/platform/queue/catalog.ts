@@ -37,6 +37,9 @@ const BUSINESS_QUEUES = [
   // Scheduled page publish due jobs (F1-09p): content's ContentWorkerModule, worker only.
   'page-schedule',
   'poster',
+  // Personal information copies (B1-27h, BR-ID-40): generate and delayed expire jobs of
+  // identity's personal_data_copies, worker only.
+  'data-copy',
   'agent-trace',
   'risk-scan',
   // Admin data exports (B1-34c / B1-34e): generate and delayed expire jobs of export_tasks.
@@ -108,6 +111,7 @@ export const ENTRY_PLAN: EntryPlan = Object.freeze({
     work('pool-refresh', 1),
     work('page-schedule', 1),
     work('poster', 2, 0.5),
+    work('data-copy', 1),
     work('agent-trace', 2),
     work('export', 1),
     work('risk-scan', 1),

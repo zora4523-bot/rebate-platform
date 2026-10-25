@@ -111,7 +111,11 @@ import {
   type InviteRewardScanner,
 } from './modules/growth/index.ts';
 import {
+  createPushSessionValidity,
   createPersonalDataCopySources,
+  type DataCopyCodeSender,
+  type DataCopyInbox,
+  type IdentityDataCopyPorts,
   createWithdrawSubjectReader,
   laborAgreementSigned,
   IdentityAdminModule,
@@ -253,8 +257,10 @@ import {
   bindPushTokensForSession,
   createSiteAuthAlertPort,
   createEntrySmsSender,
+  createDemoMobPush,
   createLiveTemplateSmsSender,
   createNotifySmsTestSender,
+  createPushSendCore,
   createRegisteredTemplateResolver,
   createTemplateSmsSender,
   deletePushTokensForUser,
@@ -2633,6 +2639,47 @@ function siteAuthSmsSender(
 }
 
 /**
+ * B1-27h (BR-ID-40 细则「交付（默认）」; BR-TEXT-23 细则「个人信息副本的交付通知」): the ports of
+ * identity's copy worker on the worker entry.
+ * - sources: personalDataCopySources (B1-27f) over the process field cipher.
+ * - sms: the extraction code (template DATA_COPY_CODE, {code, expires_at}). local / test: a fake that
+ *   accepts every message and keeps nothing (identity's verification code fake has no templates,
+ *   notification's template fake renders only the site auth alerts); staging / prod: the entry's
+ *   template SMS sender (siteAuthSmsSender: Aliyun by registration when the SMS_ variables are
+ *   loaded, rejecting otherwise; an unregistered template is refused, D10-316).
+ * - inbox: notification's push sending core over identity's push session validity; the channel is
+ *   the demonstration MobPush (accepting on local / test, rejecting elsewhere: the push log fails,
+ *   the inbox message stays).
+ *   TODO(规划/11 §2.3): 真实推送通道 — blocked on MobPush 适配器任务
+ * - auditWriter: admin's writer with platform logging's SENSITIVE_KEYS.
+ */
+export function dataCopyPorts(config: AppConfig): IdentityDataCopyPorts {
+  return {
+    sources: (clock, crypto) => personalDataCopySources(clock, crypto),
+    sms: ({ db, clock, logger, appEnv }): DataCopyCodeSender => {
+      if (appEnv === 'local' || appEnv === 'test') {
+        return { send: async () => 'accepted' };
+      }
+      return siteAuthSmsSender(config, appEnv, db, clock, logger);
+    },
+    inbox: (clock, appEnv): DataCopyInbox => {
+      const core = createPushSendCore({
+        clock,
+        channel: createDemoMobPush({
+          status: appEnv === 'local' || appEnv === 'test' ? 'accepted' : 'rejected',
+        }),
+        sessionValidity: createPushSessionValidity(clock),
+      });
+      return {
+        record: (trx, input) => core.record(trx, input),
+        dispatch: (db, event) => core.dispatch(db, event),
+      };
+    },
+    auditWriter: (db, clock) => createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+  };
+}
+
+/**
  * Root module, assembled per process entry. Every HTTP entry serves the health probe; the `api`
  * entry also serves the /v1 identity routes, the risk module's request signature check, whose
  * device port identity implements, identity's token check, and the risk module's stage ④a gate
@@ -3164,8 +3211,16 @@ export class AppModule {
         // The scheduled takeover / recheck of the paid bank-card verification records (B1-13g,
         // BR-WDR-02 ⑦): worker entry only, without the HTTP IdentityModule; entry.ts starts the
         // timer after the risk-scan heal and stops it first on shutdown.
+        // B1-27h: the same module also works the data-copy queue (personal information copies,
+        // BR-ID-40): generation and delivery over the copy sources, the extraction code SMS, the
+        // inbox message and admin's audit writer assembled here (dataCopyPorts).
         ...(options.entry === 'worker'
-          ? [IdentityWorkerModule.forWorker({ payoutAccountConfig })]
+          ? [
+              IdentityWorkerModule.forWorker({
+                payoutAccountConfig,
+                dataCopy: dataCopyPorts(options.config),
+              }),
+            ]
           : []),
         // Scheduled page publish due jobs (F1-09p): the page-schedule queue's handler, worked by the
         // worker entry only; the admin entry's publish enqueues them in its write transaction.
