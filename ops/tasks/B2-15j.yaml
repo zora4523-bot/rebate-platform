@@ -23,13 +23,11 @@ paths:
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
   - 'packages/contracts-ts/src/planned-operations.gen.ts'
 test_paths:
-  # 2026-10-25 be 认领：listAdminPayReconDiffs 去 planned 触动冻结 CT-21e [AC-CT-21e#1] / [#17] 块 A，先由前置 test-change be-tc-6 拆出（照 #1624），本任务只收紧拆出的块；planned-operations.gen.ts 随去 planned 重生成（同 #1631）；2026-10-26 改：pay-*.sql 由实现方照规则测试钉住的文件名写（先例 B2-02e；表已存在，测试作者自写 SQL 会让不变量测试在实现前即绿、先红失效），db/invariants/ledger/** 留在 paths。D10-358 ①：diff_fen 统一 expected − actual，下两份 B2-15c 冻结断言只改符号（+amount → −amount），随本任务实现同 PR 合并（单独先合会使主干红），#24 标签。
+  # 2026-10-25 be 认领：listAdminPayReconDiffs 去 planned 触动冻结 CT-21e [AC-CT-21e#1] / [#17] 块 A，先由前置 test-change be-tc-6 拆出（照 #1624），本任务只收紧拆出的块；planned-operations.gen.ts 随去 planned 重生成（同 #1631）；2026-10-26 改：pay-*.sql 由实现方照规则测试钉住的文件名写（先例 B2-02e；表已存在，测试作者自写 SQL 会让不变量测试在实现前即绿、先红失效），db/invariants/ledger/** 留在 paths。D10-360：本任务不动 B2-15c 写入处与冻结测试，pay_anomaly 差错单暂保留 +amount，pay_mismatch 照契约 expected − actual；统一留 B2-15l（收款上线门槛）。
   - 'test/spec/payment/recon/**'
   - 'test/spec/db/ledger/invariants-pay/**'
   - 'test/spec/contracts/pay-admin-http/operations.test.ts'
   - 'test/spec/contracts/pay-admin-http/generated.test.ts'
-  - 'test/spec/payment/result/closed-query.int.test.ts'
-  - 'test/spec/payment/result/notify.int.test.ts'
 impl: claude
 tester: claude-independent
 accept:

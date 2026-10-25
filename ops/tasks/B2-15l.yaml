@@ -1,0 +1,25 @@
+id: B2-15l
+repo: rebate-platform
+title: 收款差错单 diff_fen 统一为 expected_fen − actual_fen：pay_anomaly 差错单（B2-15c registerAnomalyRow 与 B2-15j 对账登记）改为 expected 0、actual = 收款额、diff = −收款额，与契约 AdminPayReconDiff 一致；B2-15c 冻结断言只改符号
+type: impl
+# 2026-10-26 编排裁定 D10-360（改 D10-358 ①）：B2-15c 冻结文件 notify.int.test.ts 的 diff_fen 断言在测试回调外的共用辅助函数里，改符号触发 red-check 整文件判定；须等 ops 线恢复、red-check 对「只改回调外辅助函数的断言值」给出放行口径后做。
+# **收款上线门槛**：pay.enabled 打开前必须合并（编排记 HANDOFF）。收款未上线、无存量数据、diff_fen 只展示不入账，过渡期两种符号无实际影响。不放宽冻结断言（那属削弱资金测试）。
+refs: [BR-PAY-07, BR-PAY-05]
+refs_hash:
+  BR-PAY-07: a98350f4412a
+  BR-PAY-05: cc6a654d316e
+deps: [B2-15j]
+paths:
+  - 'apps/api/src/modules/payment/**'
+test_paths:
+  - 'test/spec/payment/result/closed-query.int.test.ts'
+  - 'test/spec/payment/result/notify.int.test.ts'
+  - 'test/spec/payment/recon/**'
+  - 'test/spec/payment/diff-sign/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payment/diff-sign/**'
+status: todo
+pr: null
