@@ -25,5 +25,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/queue-concurrency/**'
-status: todo
-pr: null
+status: done
+pr: 1646
