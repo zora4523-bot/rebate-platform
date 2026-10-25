@@ -3,6 +3,7 @@ import type { Kysely } from 'kysely';
 import type { PgBoss } from 'pg-boss';
 import type { RootLogger } from '../logging/logger.ts';
 import { fetchAttempt, settleAttempt, type ClaimedJob } from './attempt.ts';
+import type { Permits } from './permits.ts';
 import type { JobHandler, WorkSpec } from './types.ts';
 
 export function reportQueueError(logger: RootLogger, error: unknown): void {
@@ -32,6 +33,12 @@ export interface ExecutorOptions {
   shutdown: AbortSignal;
   deadline: AbortSignal;
   runningHandlers: Set<Promise<void>>;
+  /**
+   * B1-01zzk (index.ts section 12): the worker's shared budget. The lane takes a permit before
+   * each fetch (waiting, abortable by `shutdown`, claims no job) and returns it after that job's
+   * settlement or right after an empty or failed fetch. Absent: no shared budget.
+   */
+  permits?: Permits;
 }
 
 async function execute(options: ExecutorOptions, job: ClaimedJob): Promise<void> {
@@ -100,11 +107,15 @@ async function execute(options: ExecutorOptions, job: ClaimedJob): Promise<void>
  * One lane owns its execution slot BEFORE fetching and keeps it through actual handler exit.
  * A round that executed a fetched job fetches again at once, so a backlog drains at handler
  * speed; only an empty or failed fetch waits one polling interval (no busy loop). The stop
- * signal is checked before every fetch and interrupts the wait.
+ * signal is checked before every fetch and interrupts the wait. With `permits` (B1-01zzk) a
+ * round also holds one permit of the shared budget from before its fetch until its job's
+ * execution returned; the polling wait after an empty or failed fetch holds none.
  */
 export async function runExecutor(options: ExecutorOptions): Promise<void> {
-  const { db, boss, work, shutdown, logger } = options;
+  const { db, boss, work, shutdown, logger, permits } = options;
   while (!shutdown.aborted) {
+    // B1-01zzk: no permit, no fetch — the jobs stay queued. Stop ends the wait without a fetch.
+    if (permits !== undefined && !(await permits.acquire(shutdown))) break;
     let executed = false;
     try {
       const jobs = await fetchAttempt(db, boss, work.queue);
@@ -116,6 +127,10 @@ export async function runExecutor(options: ExecutorOptions): Promise<void> {
       reportQueueError(logger, error);
       // Settlement errors after a job are still failures: back off rather than spin.
       executed = false;
+    } finally {
+      // After execute() returned, i.e. after the handler itself exited (an overrunning handler
+      // keeps the permit past its lease), or after an empty or failed fetch; never while waiting.
+      permits?.release();
     }
     if (!executed && !shutdown.aborted) {
       let timer: ReturnType<typeof setTimeout> | undefined;

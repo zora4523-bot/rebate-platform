@@ -90,6 +90,10 @@ export class PlatformModule {
             entry: options.entry,
             db: handles.db,
             logger: options.logger,
+            // B1-01zzk: QUEUE_CONCURRENCY_<Q> / QUEUE_DB_BUDGET only limit the worker's lanes.
+            ...(options.entry === 'worker' && options.config.queueLimits !== undefined
+              ? { limits: options.config.queueLimits }
+              : {}),
           });
     const databaseProviders =
       handles === undefined

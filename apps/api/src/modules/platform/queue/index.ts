@@ -252,6 +252,54 @@
 //       reads no time at all — delays and retries are measured by PostgreSQL (pgboss.job_now()), so
 //       CLOCK_NOW does not shift them (待编排会话确认: AC-S2-32's compressed clock on staging);
 //       logs only through `options.logger`.
+//
+// 12. Concurrency limits of the worker entry (B1-01zzk) — `QueueLimits`, `effectiveLimits`,
+//     `createPermits`, option `limits` of createQueueRuntime. Rule tests:
+//     test/spec/platform/queue-concurrency/**.
+//     - Why: the worker plan has 17 queues and 38 execution slots over a business pool of 10
+//       connections (POOL_SIZES.worker.db), which pg-boss's own statements share. Uncapped, the
+//       slots can take every connection and slow supervision and the health checks down.
+//     - Heavy queues (long-running or connection-holding; inventory in the header of ./runtime.ts):
+//       order-sync, order-rescan, settle, export, data-copy, pay, poster, and the notification
+//       fan-out (notify, evt.notification-*). Senders and business semantics do not change. The
+//       dead letter scan lane (B1-01zzg) takes no permit.
+//     - ENTRY_PLAN, QUEUE_CATALOG, QueueSpec and WorkSpec do not change (frozen rule tests pin
+//       them): a queue's plan concurrency stays its upper bound; limits can only lower it.
+//     - `QueueLimits`: a plain object with exactly the keys concurrency and dbBudget.
+//         concurrency  a plain object of own enumerable data properties; each key a queue of
+//                      plan.worker, each value an integer from 1 to that queue's plan concurrency.
+//                      Queues not listed keep their plan concurrency.
+//         dbBudget     null or an integer from 1 to 7: the most business handler calls running at
+//                      once over all queues of the worker entry. null = the default 7 =
+//                      floor(POOL_SIZES.worker.db × 0.7), which leaves at least 3 of the 10
+//                      connections to supervision, the dead letter scan and the health checks.
+//     - effectiveLimits(entry, plan, limits?) → { concurrency, dbBudget }, pure (changes neither
+//       argument):
+//         worker       concurrency has every queue of plan.worker (the override, else the plan
+//                      value); dbBudget is limits.dbBudget, else 7.
+//         api, stream, admin, payout
+//                      concurrency has every queue of plan[entry] with its plan value; dbBudget
+//                      null (no shared budget). Limits change nothing there.
+//         Limits that break the rules above (checked against plan.worker for every entry) →
+//         QueueError('invalid_option').
+//     - createQueueRuntime: optional option `limits` (a QueueLimits; absent = no override and the
+//       default budget). Checked with the other options of section 9: invalid → 'invalid_option'
+//       (invalid_catalog is still checked first); still opens no connection. The worker runtime
+//       works each registered queue with its effective concurrency and gives all its business
+//       lanes one permit pool of dbBudget (ExecutorOptions.permits). Other entries: unchanged.
+//     - A lane takes a permit BEFORE it fetches and returns it after that job's settlement, or
+//       right after an empty or failed fetch. A lane without a permit waits: no job is claimed for
+//       it, so the jobs it would take stay queued and lose no expiry, retry or attempt
+//       (pgboss.job retry_count and ReceivedJob.attempt unchanged). Waiting is not a failure and
+//       logs nothing. The stop signal ends a wait at once, without a fetch.
+//     - createPermits(size) → Permits (./permits.ts): a counting semaphore, waiters first come
+//       first served; acquire(signal) resolves false, holding nothing, once the signal is aborted.
+//     - Configuration: platform/config/queue-concurrency.ts (QUEUE_CONCURRENCY_<Q>,
+//       QUEUE_DB_BUDGET) → AppConfig.queueLimits, which the entry wiring hands to the worker's
+//       runtime as `limits`.
 export * from './types.ts';
 export { QUEUE_CATALOG, ENTRY_PLAN } from './catalog.ts';
 export { createQueueRuntime } from './runtime.ts';
+export { effectiveLimits } from './limits.ts';
+export { createPermits } from './permits.ts';
+export type { Permits } from './permits.ts';

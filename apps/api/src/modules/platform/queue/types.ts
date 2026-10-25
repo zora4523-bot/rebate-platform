@@ -2,6 +2,7 @@ import type { DB } from '@couli/db';
 import type { Kysely, Transaction } from 'kysely';
 import type { EntryName } from '../entries.ts';
 import type { RootLogger } from '../logging/logger.ts';
+import type { QueueLimits } from './worker-plan.ts';
 
 /** pg-boss schema version that db/migrations/0002_pgboss-schema-v42.sql installs. */
 export const PGBOSS_SCHEMA_VERSION = 42;
@@ -37,6 +38,17 @@ export interface WorkSpec {
 }
 
 export type EntryPlan = Readonly<Record<EntryName, readonly WorkSpec[]>>;
+
+/** Concurrency limits of the worker entry (B1-01zzk, section 12); defined in ./worker-plan.ts. */
+export type { QueueLimits };
+
+/** What an entry runs with (section 12): every queue of its plan, and its shared budget. */
+export interface EffectiveLimits {
+  /** Every queue of plan[entry] → the concurrency its lanes run with. */
+  readonly concurrency: Readonly<Record<string, number>>;
+  /** The worker's shared budget; null for the other entries (no shared budget). */
+  readonly dbBudget: number | null;
+}
 
 export interface SendOptions {
   /** Required: the business transaction (same-transaction enqueue) or null (section 3). */
@@ -79,6 +91,8 @@ export interface QueueRuntimeOptions {
   readonly catalog?: readonly QueueSpec[];
   readonly plan?: EntryPlan;
   readonly stopTimeoutMs?: number;
+  /** B1-01zzk (section 12): the worker's per-queue overrides and shared budget. */
+  readonly limits?: QueueLimits;
 }
 
 export type QueueErrorCode =

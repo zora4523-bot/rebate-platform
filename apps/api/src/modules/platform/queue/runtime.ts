@@ -26,6 +26,16 @@
 // (every five minutes, UTC). One extra executor lane works that queue: each tick runs
 // scanDeadLetters, which counts the jobs of the dead letter queues in SQL and logs; it never takes
 // a job from a dead letter queue.
+//
+// Concurrency limits (B1-01zzk, section 12 of ./index.ts). Each registered queue gets as many lanes
+// as its effective concurrency (option `limits` lowers the plan's, never raises it). The worker's
+// business lanes share one pool of dbBudget permits (default 7 of its 10 pool connections): a lane
+// takes a permit before its fetch and returns it after its job's handler exited, so jobs beyond
+// the budget stay unclaimed in pgboss.job. Heavy queues this protects the pool from (long-running
+// or connection-holding): order-sync and order-rescan (union back-scan pages), settle (monthly
+// settlement batches), pay (payment batches), export and data-copy (bulk reads and file writes),
+// poster (image rendering) and the notification fan-out (notify, evt.notification-*). Senders,
+// retries and idempotency are unchanged.
 import { CompiledQuery, sql, type Kysely } from 'kysely';
 import type { DB } from '@couli/db';
 import { PgBoss, fromKysely } from 'pg-boss';
@@ -37,6 +47,8 @@ import {
   scanDeadLetters,
 } from './dead-letter-scan.ts';
 import { reportQueueError, runExecutor } from './executor.ts';
+import { effectiveLimits } from './limits.ts';
+import { createPermits } from './permits.ts';
 import {
   PGBOSS_SCHEMA,
   PGBOSS_SCHEMA_VERSION,
@@ -77,6 +89,11 @@ function queueSettings(spec: QueueSpec) {
 export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
   const options = runtimeOptions(input);
   const { db, logger, entry, catalog, plan, stopTimeoutMs } = options;
+  // B1-01zzk (section 12): checked after the other options; invalid → invalid_option.
+  const limits = effectiveLimits(entry, plan, input.limits);
+  // The worker's business lanes share one permit pool; the dead letter scan lane stays outside
+  // it, on the connections the budget keeps free. Other entries: no shared budget.
+  const permits = limits.dbBudget === null ? undefined : createPermits(limits.dbBudget);
   const specs = new Map(catalog.map((spec) => [spec.name, spec]));
   // The worker also owns the internal scan queue (B1-01zzg); a catalog queue of that name wins.
   const scanning = entry === 'worker' && !specs.has(DEAD_LETTER_SCAN_QUEUE);
@@ -242,7 +259,8 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
       for (const [queue, handler] of handlers) {
         if (stopping) return;
         const item = work.get(queue)!;
-        for (let slot = 0; slot < item.concurrency; slot++) {
+        const lanes = limits.concurrency[queue] ?? item.concurrency;
+        for (let slot = 0; slot < lanes; slot++) {
           executors.push(
             runExecutor({
               db,
@@ -253,6 +271,7 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
               shutdown: shutdown.signal,
               deadline: deadline.signal,
               runningHandlers,
+              ...(permits === undefined ? {} : { permits }),
             }),
           );
         }

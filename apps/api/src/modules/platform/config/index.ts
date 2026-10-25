@@ -62,6 +62,9 @@ export {
   openPddCredentials,
 } from './pdd-startup.ts';
 export type { PddClientCredentials, PddStartupErrorCode } from './pdd-startup.ts';
+// Worker queue concurrency limits (B1-01zzk): per-queue overrides and the shared budget.
+export { readQueueConcurrencyConfig } from './queue-concurrency.ts';
+export type { QueueConcurrencyConfigResult } from './queue-concurrency.ts';
 // Union endpoint override directory (B1-04y): staging reads the endpoints from a mounted directory.
 export {
   UNION_ENDPOINT_OVERRIDE_DIR_ENV,
