@@ -16,4 +16,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/notification/sms-code-variant/**'
-status: todo
+status: done
+pr: 1603
