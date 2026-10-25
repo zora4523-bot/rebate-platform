@@ -21,7 +21,10 @@
 //    three null → IdempotencyError('invalid_subject'). Only the winning value is checked; the
 //    later ones are ignored entirely (whatever they hold). The record's `user_id` column is
 //    userId for a `u:` subject, else null.
-//    Admin accounts have no idempotent operation in 04 §6.6 yet; no `a:` subject (待编排会话确认).
+//    Admin accounts (task B2-15e; 04 §5「幂等」, D10-168 ②): the optional `adminUserId` (the
+//    admin token's admin_users.id, same UUID format) → `a:<adminUserId>`, the record's user_id
+//    null. It is set only on /admin/v1 requests, where the other three are null; set but
+//    malformed → IdempotencyError('invalid_subject'). Absent or null: the order above, unchanged.
 //
 // 2. The key — header Idempotency-Key, contract schema IdempotencyKey: 8 to 64 characters of
 //    [A-Za-z0-9_-] (contracts/openapi.yaml). Missing (undefined), empty or outside the format →
@@ -350,6 +353,8 @@ export interface IdempotencyActor {
   readonly userId: string | null;
   readonly deviceId: string | null;
   readonly phoneHmac: string | null;
+  /** Section 1 (B2-15e): an admin account's request → `a:<adminUserId>`, user_id null. */
+  readonly adminUserId?: string | null;
 }
 
 export interface IdempotentRequest {
@@ -454,6 +459,14 @@ export class IdempotencyError extends Error {
 /** Section 1. */
 export function subjectOf(actor: IdempotencyActor): string {
   if (actor == null) throw new IdempotencyError('invalid_subject');
+  const admin = actor.adminUserId;
+  if (admin !== undefined && admin !== null) {
+    // Section 1, admin accounts (B2-15e): `a:<admin_users.id>`, checked like the other UUIDs.
+    if (typeof admin !== 'string' || !UUID.test(admin) || admin.includes('\n')) {
+      throw new IdempotencyError('invalid_subject');
+    }
+    return `a:${admin}`;
+  }
   for (const [value, prefix, pattern] of [
     [actor.userId, 'u', UUID],
     [actor.deviceId, 'd', UUID],

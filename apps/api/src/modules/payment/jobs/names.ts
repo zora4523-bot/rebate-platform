@@ -12,6 +12,7 @@ export const PAY_QUEUE: PayQueueName = 'pay';
 export const ORDER_QUERY_JOB: PayJobName = 'order.query';
 export const ORDER_CLOSE_JOB: PayJobName = 'order.close';
 export const BIZ_RECONCILE_JOB: PayJobName = 'biz.reconcile';
+export const REFUND_QUERY_JOB: PayJobName = 'refund.query';
 
 /** The client came back from the channel SDK (BR-PAY-03 细则, one query; B2-15b). */
 export interface OrderQueryReturnedPayload extends JobPayload {
@@ -52,6 +53,20 @@ export interface BizReconcilePayload extends JobPayload {
   readonly pay_order_id: string;
 }
 
+/**
+ * B2-15e: payload of `refund.query` — the refund to query, by id (BR-PAY-06 ④ ⑤). Enqueued with a
+ * delay in the same transaction that creates the refund (with its idempotency record and the
+ * amount it holds), before the channel is called; the refund is submitted only after that commit
+ * (D10-351 ③), so a refund whose submission never answered is still queried. The handler queries
+ * the channel with the refund's own out_refund_no, keeps a pay_query_attempts row (kind
+ * refund_query) and hands the answer to the same result handler as a refund notification. It never
+ * submits the refund again (结果未知时只查询; resubmitting the same number waits for BR-PAY-09).
+ */
+export interface RefundQueryPayload extends JobPayload {
+  readonly app_id: string;
+  readonly pay_refund_id: string;
+}
+
 /** singletonKey of the client-return query: one queued or active per order. */
 export function orderQueryReturnedKey(payOrderId: string): string {
   return `${ORDER_QUERY_JOB}:${payOrderId}:returned`;
@@ -80,4 +95,9 @@ export function orderCloseRunKey(payOrderId: string, runAt: Date): string {
 /** singletonKey of the fulfilment job: one queued or active per business object (serial per object). */
 export function bizReconcileKey(bizType: string, bizRef: string): string {
   return `biz:${bizType}:${bizRef}`;
+}
+
+/** B2-15e: singletonKey of one refund query slot: whole seconds after the refund's creation. */
+export function refundQueryKey(payRefundId: string, slotSeconds: number): string {
+  return `${REFUND_QUERY_JOB}:${payRefundId}:t${slotSeconds}`;
 }

@@ -17,8 +17,11 @@
 //   table of BR-PAY-04 细则: success after the commit of a settlement, of a repeat, or of an
 //   anomaly on a CLOSED order of ours; not success for a mismatch, for money on a number we have
 //   no order of (the channel re-sends, every arrival is kept), and for any error (rolled back).
-//   A notification whose number is a refund (out_refund_no) is kept and answered «not success»
-//   until the refund result handler exists (B2-15e).
+//   A notification that names a refund (out_refund_no set; B2-15e, BR-PAY-06 ④) goes to the one
+//   refund result handler (application/pay-refund-result.ts, shared with the refund query):
+//   succeed / fail / already final → kept and answered success after the commit; a mismatch (not
+//   our refund, another original, another channel, another amount, a state in no list) → kept,
+//   alerted with the refund numbers, answered «not success»; the amount stays held.
 // Nothing of the original, the payer or the signature reaches a log line; the alerts carry ids,
 // our merchant number and the reason only. Amounts stay bigint fen.
 // Also compiled by the `test` project (through jobs/pay-jobs.ts imports of the shared pieces):
@@ -34,6 +37,7 @@ import {
   hasNotificationResult,
   insertNotification,
   lockBizObject,
+  type NewPayNotification,
 } from '../infra/pay-order-store.ts';
 import type {
   PayChannel,
@@ -41,6 +45,11 @@ import type {
   PayNotificationResult,
   PayRawNotification,
 } from './pay-channel.ts';
+import {
+  PayRefundConflict,
+  handleRefundReport,
+  type PayRefundOutcome,
+} from './pay-refund-result.ts';
 import {
   PaySettlementConflict,
   registerAnomalyReceipt,
@@ -62,7 +71,7 @@ export type NotifyAnswer = 'ack' | 'nack';
 /** Context of the field cipher for kept originals (platform/crypto: printable ASCII). */
 export const NOTIFY_CIPHER_CONTEXT = 'pay_notifications.payload_cipher';
 
-/** handle_result values written to pay_notifications. */
+/** handle_result values written to pay_notifications (refund notifications: `refund_<outcome>`). */
 export type NotifyHandleResult =
   | 'settled'
   | 'already_paid'
@@ -71,7 +80,33 @@ export type NotifyHandleResult =
   | 'order_not_found'
   | 'amount_mismatch'
   | 'state_not_success'
-  | 'refund_unhandled';
+  | 'refund_succeeded'
+  | 'refund_failed'
+  | 'refund_already_final'
+  | 'refund_not_found'
+  | 'refund_original_mismatch'
+  | 'refund_channel_mismatch'
+  | 'refund_amount_mismatch'
+  | 'refund_state_not_listed';
+
+/** The handle_result of a refund notification's outcome. */
+function refundHandleResult(outcome: PayRefundOutcome): NotifyHandleResult {
+  switch (outcome.verdict.kind) {
+    case 'succeed':
+      return 'refund_succeeded';
+    case 'fail':
+      return 'refund_failed';
+    case 'already_final':
+      return 'refund_already_final';
+    case 'mismatch':
+      return outcome.verdict.reason === 'refund_not_found'
+        ? 'refund_not_found'
+        : `refund_${outcome.verdict.reason}`;
+    case 'rejected':
+      // ① was checked before the transaction; unreachable with ours: true.
+      throw new Error('payment: identity rejected inside the refund judgement');
+  }
+}
 
 interface Decision {
   readonly answer: NotifyAnswer;
@@ -139,23 +174,11 @@ export async function handlePayNotification(
     verifyResult: 'ok' as const,
   };
 
-  if (verified.outTradeNo === null) {
-    // A refund notification (BR-PAY-06 ④): kept, judged by B2-15e; «not success» until then.
-    const now = deps.clock.now();
-    const inserted = await deps.db.transaction().execute((trx) =>
-      insertNotification(trx, {
-        ...notification,
-        id: newUuidV7(now),
-        handleResult: 'refund_unhandled',
-        receivedAt: now,
-      }),
-    );
-    deps.logger.warn(
-      { app_id: appId, pay_channel: channel, duplicate: !inserted },
-      'pay_notify_refund_unhandled',
-    );
-    return 'nack';
+  if (verified.outRefundNo !== null) {
+    // A refund notification (BR-PAY-06 ④): the one refund result handler (B2-15e).
+    return handleRefundNotification(deps, channel, appId, verified, notification);
   }
+  if (verified.outTradeNo === null) return rejected(deps, channel, 'no_merchant_number');
 
   const outTradeNo = verified.outTradeNo;
   const successStates = await successStatesFor(deps, appId, channel);
@@ -270,4 +293,90 @@ export async function handlePayNotification(
     'pay_notify_handled',
   );
   return decision.answer;
+}
+
+/** The verified fields of a notification (PayNotificationResult, kind ok). */
+type VerifiedNotification = Extract<PayNotificationResult, { readonly kind: 'ok' }>;
+
+/** The kept notification's fields that do not depend on the outcome. */
+type NotificationDraft = Omit<NewPayNotification, 'id' | 'handleResult' | 'receivedAt'>;
+
+/**
+ * A verified refund notification of our identity (B2-15e, BR-PAY-06 ④): one transaction holds the
+ * refund result handler (the target's lock, the fixed checks, RF2 / RF3 with everything ⑤ puts
+ * next to them) and the kept original (handle_result = what was decided). The answer: success after
+ * the commit of a succeed, a fail or a repeat of a decided refund; «not success» for a mismatch (the
+ * channel re-sends, every arrival is kept, the amount stays held) and for any error (rolled back).
+ * A refund notification without the refunded amount is never a result (fail closed: amount
+ * mismatch). The mismatch alert names our refund numbers, never the original.
+ */
+async function handleRefundNotification(
+  deps: PayNotificationDeps,
+  channel: PayChannelCode,
+  appId: string,
+  verified: VerifiedNotification,
+  notification: NotificationDraft,
+): Promise<NotifyAnswer> {
+  const outRefundNo = verified.outRefundNo;
+  if (outRefundNo === null) throw new Error('payment: a refund notification names no refund');
+  let outcome: PayRefundOutcome;
+  let inserted: boolean;
+  try {
+    ({ outcome, inserted } = await deps.db.transaction().execute(async (trx) => {
+      const decided = await handleRefundReport(deps, trx, {
+        source: 'notify',
+        channel,
+        appId,
+        ours: true,
+        outRefundNo,
+        outTradeNo: verified.outTradeNo,
+        channelTradeNo: verified.channelTradeNo,
+        refundFen: verified.refundFen ?? null,
+        channelState: verified.state,
+        channelRefundNo: verified.channelRefundNo ?? null,
+      });
+      const now = deps.clock.now();
+      const kept = await insertNotification(trx, {
+        ...notification,
+        id: newUuidV7(now),
+        handleResult: refundHandleResult(decided),
+        receivedAt: now,
+      });
+      return { outcome: decided, inserted: kept };
+    }));
+  } catch (error: unknown) {
+    if (error instanceof PayRefundConflict) {
+      deps.logger.warn(
+        { app_id: appId, pay_channel: channel, pay_refund_id: error.payRefundId },
+        'pay_refund_notify_conflict',
+      );
+      return 'nack';
+    }
+    throw error;
+  }
+  const verdict = outcome.verdict;
+  if (verdict.kind === 'mismatch') {
+    // 任一项不符或状态不在清单内 → 记录并告警 (BR-PAY-06 ④): our numbers and the reason only.
+    deps.logger.warn(
+      {
+        app_id: appId,
+        pay_channel: channel,
+        pay_refund_id: outcome.payRefundId,
+        out_refund_no: outRefundNo,
+        reason: verdict.reason,
+      },
+      'pay_refund_notify_mismatch',
+    );
+  }
+  deps.logger.info(
+    {
+      app_id: appId,
+      pay_channel: channel,
+      pay_refund_id: outcome.payRefundId,
+      result: refundHandleResult(outcome),
+      duplicate: !inserted,
+    },
+    'pay_notify_handled',
+  );
+  return verdict.kind === 'mismatch' || verdict.kind === 'rejected' ? 'nack' : 'ack';
 }

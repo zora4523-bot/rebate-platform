@@ -12593,6 +12593,152 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "createAdminPayRefund": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Value of the Idempotency-Key header (04 §5「幂等」).",
+          "minLength": 8,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "idempotency-key"
+      ]
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pay_order_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "pay_order_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of the two original-route refund operations. The target comes from the path; the\nchannel, refund number, operator and status are set by the server.\n",
+      "additionalProperties": false,
+      "required": [
+        "amount_fen",
+        "reason_code"
+      ],
+      "properties": {
+        "amount_fen": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1,
+          "description": "Positive integer fen; with the successful and processing refunds at most the refundable amount (else 20001)."
+        },
+        "reason_code": {
+          "type": "string",
+          "description": "Refund reason code (contracts/enums/pay.yaml pay_refund_reason; BR-PAY-06); names from admin_dict.pay_refund_reason.",
+          "enum": [
+            "USER_REQUEST",
+            "DUPLICATE_PAYMENT",
+            "ANOMALY_RECEIPT",
+            "RECON_DIFF",
+            "OTHER"
+          ]
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Optional free text kept with the refund and in the audit record."
+        }
+      }
+    }
+  },
+  "createAdminPayAnomalyRefund": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Value of the Idempotency-Key header (04 §5「幂等」).",
+          "minLength": 8,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "idempotency-key"
+      ]
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pay_anomaly_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "pay_anomaly_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of the two original-route refund operations. The target comes from the path; the\nchannel, refund number, operator and status are set by the server.\n",
+      "additionalProperties": false,
+      "required": [
+        "amount_fen",
+        "reason_code"
+      ],
+      "properties": {
+        "amount_fen": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1,
+          "description": "Positive integer fen; with the successful and processing refunds at most the refundable amount (else 20001)."
+        },
+        "reason_code": {
+          "type": "string",
+          "description": "Refund reason code (contracts/enums/pay.yaml pay_refund_reason; BR-PAY-06); names from admin_dict.pay_refund_reason.",
+          "enum": [
+            "USER_REQUEST",
+            "DUPLICATE_PAYMENT",
+            "ANOMALY_RECEIPT",
+            "RECON_DIFF",
+            "OTHER"
+          ]
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Optional free text kept with the refund and in the audit record."
+        }
+      }
+    }
+  },
   "adminListKillSwitches": {
     "headers": {
       "type": "object",

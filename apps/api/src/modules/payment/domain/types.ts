@@ -29,9 +29,21 @@ export type PayQueueName = 'pay';
  * order.query (singletonKey `order.query:<pay_order_id>:returned` for the client-return query,
  * `order.query:<pay_order_id>:t<seconds>` for a slot of pay.query_schedule),
  * order.close (singletonKey `order.close:<pay_order_id>`),
- * biz.reconcile (singletonKey `biz:<biz_type>:<biz_ref>`, the business object's fulfilment).
+ * biz.reconcile (singletonKey `biz:<biz_type>:<biz_ref>`, the business object's fulfilment),
+ * refund.query (B2-15e: one refund query of a PROCESSING refund, payload RefundQueryPayload; the
+ * same result handler as a refund notification, BR-PAY-06 ④).
  */
-export type PayJobName = 'order.query' | 'order.close' | 'biz.reconcile';
+export type PayJobName = 'order.query' | 'order.close' | 'biz.reconcile' | 'refund.query';
+
+/** pay_refunds.status (enum pay_refund_status; specs/state-machines/pay-refund.yaml). */
+export type PayRefundStatus = 'PROCESSING' | 'SUCCESS' | 'FAILED';
+
+/** pay_refunds.target_type (enum pay_refund_target_type, BR-PAY-06 ①). */
+export type PayRefundTargetType = 'pay_order' | 'pay_anomaly';
+
+/** pay_refunds.reason_code (enum pay_refund_reason, BR-PAY-06 细则 默认值). */
+export type PayRefundReason =
+  'USER_REQUEST' | 'DUPLICATE_PAYMENT' | 'ANOMALY_RECEIPT' | 'RECON_DIFF' | 'OTHER';
 
 /** pay_fulfillments.state (D10-168): the business object's entitlement as last recomputed. */
 export type PayFulfillmentState = 'none' | 'active' | 'revoked';

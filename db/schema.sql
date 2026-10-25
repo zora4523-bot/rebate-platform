@@ -3814,6 +3814,7 @@ CREATE TABLE app.pay_refunds (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     succeeded_at timestamp with time zone,
     failed_at timestamp with time zone,
+    note text,
     CONSTRAINT pay_refunds_amount_fen_check CHECK ((amount_fen > 0)),
     CONSTRAINT pay_refunds_idempotency_key_check CHECK ((idempotency_key <> ''::text)),
     CONSTRAINT pay_refunds_operator_check CHECK ((operator <> ''::text)),
@@ -6480,7 +6481,7 @@ ALTER TABLE ONLY app.pay_refunds
 --
 
 ALTER TABLE ONLY app.pay_refunds
-    ADD CONSTRAINT pay_refunds_idempotency_key_key UNIQUE (app_id, idempotency_key);
+    ADD CONSTRAINT pay_refunds_idempotency_key_key UNIQUE (app_id, operator, idempotency_key);
 
 
 --
