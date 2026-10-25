@@ -1,0 +1,197 @@
+// B1-09i: the order-sync queue's jobs of a console manual sync (application/manual-sync.ts sends
+// them; 01 F-ORD-10; 02 §7.1). A window job ('manual-window') fetches its fixed
+// [window_start, window_end) like a scheduled window; an order-number job ('manual-order-nos', pdd
+// only) fetches every number through union's getPddOrderDetail. Every order goes to the pipeline in
+// order. sync_cursors is never read nor advanced.
+// Write-back of order_sync_requests (the columns 0084 grants): the first job taken moves queued →
+// running; a job adds its counts once all its orders are processed (fetched = orders returned,
+// stored = pipeline inserted / updated), and the job dispatched last (sync_final) ends the request
+// done with finished_at. Any fetch or pipeline failure is rethrown with nothing counted, so the
+// queue retries the whole job. A job taken while the site authorization is paused (BR-ID-24 ④) or
+// whose account is not the adapter's credential owner (D10-36) fetches nothing and fails the
+// request (error, finished_at), which frees its filter; jobs of an ended failed request are dropped.
+import type { JobPayload, ReceivedJob } from '../../platform/index.ts';
+import type { RegisteredPlatform, UnionOrder } from '../../union/index.ts';
+import { MANUAL_SYNC_ORDER_NO_PLATFORMS } from '../domain/manual-sync.ts';
+import { parseInstantMs, scheduledPlatforms } from '../domain/sync-window.ts';
+import type { OrderPipelineContext, OrderPipelinePort } from '../application/pipeline-types.ts';
+import type { SyncAccessPort, SyncLogger, SyncRegistry } from '../application/sync-ports.ts';
+import {
+  MANUAL_SYNC_ORDER_NOS_JOB,
+  MANUAL_SYNC_ORDER_NOS_KIND,
+  MANUAL_SYNC_WINDOW_JOB,
+} from '../application/manual-sync.ts';
+import type { OrderSyncRequestProgress } from '../infra/order-sync-requests.ts';
+import { OrderSyncPayloadError } from './order-sync.ts';
+
+export interface ManualSyncHandlerDeps {
+  readonly access: SyncAccessPort;
+  readonly registry: SyncRegistry;
+  readonly pipeline: OrderPipelinePort;
+  readonly requests: OrderSyncRequestProgress;
+  readonly logger?: SyncLogger;
+}
+
+export function isManualSyncJob(job: Pick<ReceivedJob, 'name'>): boolean {
+  return job.name === MANUAL_SYNC_WINDOW_JOB || job.name === MANUAL_SYNC_ORDER_NOS_JOB;
+}
+
+interface ManualJob {
+  readonly app_id: string;
+  readonly platform: RegisteredPlatform;
+  readonly union_account_id: string;
+  readonly sync_id: string;
+  readonly final: boolean;
+  readonly window: { readonly window_start: string; readonly window_end: string } | null;
+  readonly order_nos: readonly string[] | null;
+}
+
+function parseManualJob(job: ReceivedJob): ManualJob {
+  const payload: JobPayload = job.payload;
+  const str = (key: string): string => {
+    const v = payload[key];
+    if (typeof v !== 'string' || v === '') throw new OrderSyncPayloadError(`invalid ${key}`);
+    return v;
+  };
+  const platform = str('platform');
+  if (!(scheduledPlatforms() as readonly string[]).includes(platform)) {
+    throw new OrderSyncPayloadError('invalid platform');
+  }
+  if (str('scene') !== '-') throw new OrderSyncPayloadError('invalid scene');
+  const base = {
+    app_id: str('app_id'),
+    platform: platform as RegisteredPlatform,
+    union_account_id: str('union_account_id'),
+    sync_id: str('sync_id'),
+    final: payload['sync_final'] === true,
+  };
+  if (job.name === MANUAL_SYNC_ORDER_NOS_JOB) {
+    if (str('query_kind') !== MANUAL_SYNC_ORDER_NOS_KIND) {
+      throw new OrderSyncPayloadError('invalid query_kind');
+    }
+    if (!MANUAL_SYNC_ORDER_NO_PLATFORMS.includes(base.platform)) {
+      throw new OrderSyncPayloadError('invalid platform');
+    }
+    const numbers = payload['order_nos'];
+    if (
+      !Array.isArray(numbers) ||
+      numbers.length === 0 ||
+      numbers.some((n) => typeof n !== 'string' || n === '')
+    ) {
+      throw new OrderSyncPayloadError('invalid order_nos');
+    }
+    return { ...base, window: null, order_nos: numbers as string[] };
+  }
+  if (str('query_kind') !== 'increment') throw new OrderSyncPayloadError('invalid query_kind');
+  const windowStart = str('window_start');
+  const windowEnd = str('window_end');
+  let start: number;
+  let end: number;
+  try {
+    start = parseInstantMs(windowStart, 'window_start');
+    end = parseInstantMs(windowEnd, 'window_end');
+  } catch (error) {
+    throw new OrderSyncPayloadError((error as Error).message);
+  }
+  if (end <= start) throw new OrderSyncPayloadError('empty window');
+  return { ...base, window: { window_start: windowStart, window_end: windowEnd }, order_nos: null };
+}
+
+const STORED: ReadonlySet<string> = new Set(['inserted', 'updated']);
+
+export async function handleManualSyncJob(
+  job: ReceivedJob,
+  deps: ManualSyncHandlerDeps,
+): Promise<void> {
+  const m = parseManualJob(job);
+  const fields = {
+    platform: m.platform,
+    account: m.union_account_id,
+    sync_id: m.sync_id,
+    attempt: job.attempt,
+    ...(m.window ?? {}),
+  };
+  const status = await deps.requests.status(m.app_id, m.sync_id);
+  if (status === null || status === 'failed') {
+    deps.logger?.info({ ...fields, status }, 'order_manual_sync_job_dropped');
+    return;
+  }
+  const refuse = async (reason: string): Promise<void> => {
+    deps.logger?.warn({ ...fields, reason }, 'order_manual_sync_job_refused');
+    await deps.requests.fail(m.app_id, m.sync_id, reason);
+  };
+  // D10-36: the adapter queries one credential set per platform.
+  if (deps.access.queryableAccount !== undefined) {
+    const queryable = await deps.access.queryableAccount(m.platform);
+    if (queryable !== m.union_account_id) {
+      await refuse(queryable === null ? 'no_queryable_account' : 'not_queryable_account');
+      return;
+    }
+  }
+  // BR-ID-24 ④: a job taken while the site authorization is paused fetches nothing.
+  const stream = { app_id: m.app_id, platform: m.platform, union_account_id: m.union_account_id };
+  const scheduled = { ...stream, query_kind: 'increment', scene: '-' };
+  if (!(await deps.access.siteAuthAvailable(scheduled))) {
+    await refuse('site_auth_paused');
+    return;
+  }
+  await deps.requests.start(m.app_id, m.sync_id);
+  const adapter = deps.registry.get(m.platform);
+  const requestId = `order-sync:${job.id}:${job.attempt}`;
+  const call = { appId: m.app_id, requestId, purpose: 'order_sync' } as const;
+  let fetched = 0;
+  let stored = 0;
+  const processAll = async (orders: readonly UnionOrder[], ctx: OrderPipelineContext) => {
+    for (const order of orders) {
+      fetched += 1;
+      const result = await deps.pipeline.process(order, ctx);
+      if (result !== undefined && STORED.has(result.kind)) stored += 1;
+    }
+  };
+  if (m.window !== null) {
+    const ctx: OrderPipelineContext = {
+      ...stream,
+      query_kind: 'increment',
+      scene: '-',
+      ...m.window,
+      requestId,
+    };
+    const range = { from: m.window.window_start, to: m.window.window_end };
+    const seen = new Set<string>();
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await adapter.listOrders(
+        range,
+        cursor === undefined ? { queryMode: 'increment' } : { cursor, queryMode: 'increment' },
+        call,
+      );
+      await processAll(page.items, ctx);
+      if (page.nextCursor === null) break;
+      if (seen.has(page.nextCursor)) throw new Error('order_sync_cursor_repeated');
+      seen.add(page.nextCursor);
+      cursor = page.nextCursor;
+    }
+  } else {
+    const detail = adapter.getPddOrderDetail;
+    if (detail === undefined) {
+      await refuse('order_detail_unsupported');
+      return;
+    }
+    // The pipeline context is shaped as a window's; an order-number job has no window, so the
+    // bounds stay empty (the pipeline reads only app, platform and account from it).
+    const ctx: OrderPipelineContext = {
+      ...stream,
+      query_kind: 'increment',
+      scene: '-',
+      window_start: '',
+      window_end: '',
+      requestId,
+    };
+    for (const orderSn of m.order_nos!) {
+      const order = await detail.call(adapter, orderSn, call);
+      await processAll([order], ctx);
+    }
+  }
+  await deps.requests.record(m.app_id, m.sync_id, { fetched, stored }, m.final);
+  deps.logger?.info({ ...fields, fetched, stored, final: m.final }, 'order_manual_sync_job_done');
+}

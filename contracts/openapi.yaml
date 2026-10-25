@@ -12614,7 +12614,6 @@ paths:
         the site owner's (站长) authorization and that stream is paused (BR-ID-24 ④), the request is
         refused with 30156 and `data.platform`.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -12740,7 +12739,6 @@ paths:
         `requested_by_name` (written as `decided_by_name`: display_name, else the username; null
         when the account is deleted). Reading does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -12836,7 +12834,6 @@ paths:
         the console limits its inputs with them and POST /admin/v1/order-syncs checks the same
         values. Reading does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

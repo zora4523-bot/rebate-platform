@@ -9549,6 +9549,156 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "adminListOrderSyncs": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "adminCreateOrderSync": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "description": "Body of POST /admin/v1/order-syncs; exactly one of the two forms.",
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "Manual sync by time window. `from` must be before `to` and not earlier than the platform's\nearliest_from (the look-back range of 02 §7.1; GET /admin/v1/order-syncs/limits), checked\nby the handler (20001).\n",
+          "additionalProperties": false,
+          "required": [
+            "platform",
+            "from",
+            "to"
+          ],
+          "properties": {
+            "platform": {
+              "type": "string",
+              "description": "Platform (contracts/enums/platform.yaml platform).",
+              "enum": [
+                "taobao",
+                "jd",
+                "pdd",
+                "meituan",
+                "vip",
+                "douyin",
+                "eleme",
+                "kuaishou",
+                "suning"
+              ]
+            },
+            "from": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Window start, inclusive (ISO 8601 with offset)."
+            },
+            "to": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Window end, exclusive (ISO 8601 with offset)."
+            },
+            "status_filter": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "description": "The order status filter of the platform's order query (status_filter), only a value\nregistered for that platform in specs/union/<platform>.md; an unregistered value is 20001\nwith data.fields=[status_filter]. Not the status of the sync request.\n"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "Manual sync by sub-order numbers (the 【同步此单】 of the order detail sends one).",
+          "additionalProperties": false,
+          "required": [
+            "platform",
+            "order_nos"
+          ],
+          "properties": {
+            "platform": {
+              "type": "string",
+              "description": "Platform (contracts/enums/platform.yaml platform).",
+              "enum": [
+                "taobao",
+                "jd",
+                "pdd",
+                "meituan",
+                "vip",
+                "douyin",
+                "eleme",
+                "kuaishou",
+                "suning"
+              ]
+            },
+            "order_nos": {
+              "type": "array",
+              "description": "Sub-order numbers, 1–50 (01 F-ORD-10).",
+              "minItems": 1,
+              "maxItems": 50,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "adminGetOrderSyncLimits": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    }
+  },
   "adminListClaims": {
     "headers": {
       "type": "object",
