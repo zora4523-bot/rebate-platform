@@ -11672,7 +11672,6 @@ paths:
         refusal code); generating and delivering write their own records. No Idempotency-Key
         (04 §6.6): a retry returns the unfinished request with `reused=true`.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -11780,7 +11779,6 @@ paths:
         20001 with `data.fields=[user_id]`. Status names come from the console dictionary
         (BR-TEXT-25 admin_dict), not from this contract. Listing does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

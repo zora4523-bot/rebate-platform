@@ -31,6 +31,11 @@ export { createPgTotpReplayStore } from './infra/totp-replay-pg.ts';
 // B1-10j: the reviewers' display names for orders' console claim review (app.module only).
 export { createAdminDisplayNameReader } from './infra/admin-display-names.ts';
 export type { AdminDisplayNameReader } from './infra/admin-display-names.ts';
+// B1-27c: an account's status, super flag and ticked points, for identity's copy request
+// registrants (app.module only; identity never reads admin's tables).
+export { createAdminProfiles } from './infra/admin-profiles.ts';
+export type { AdminProfile, AdminProfiles } from './infra/admin-profiles.ts';
+export { ADMIN_ACTIVE_STATUS } from './application/admin-login.ts';
 // B1-10i: the latest manual hold audit of an order for orders' console order detail (app.module only).
 export { createOrderHoldAuditReader } from './application/order-hold-audits.ts';
 export type { OrderHoldAudit, OrderHoldAuditReader } from './application/order-hold-audits.ts';
