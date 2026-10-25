@@ -7,6 +7,7 @@ import type { Kysely } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
 import { runInvariantQuery, writeDailyBalances } from '../infra/daily-check-store.ts';
 import { directoryInvariantSource } from '../infra/invariant-files.ts';
+import { recommendDailyCheckActions, type DailyCheckFinding } from './daily-check-advice.ts';
 import {
   assertSingleStatement,
   orderInvariantFiles,
@@ -98,6 +99,7 @@ export function createDailyCheck(dependencies: DailyCheckDependencies): DailyChe
       const accountDifferences: LedgerDifference[] = [];
       const globalDifferences: LedgerDifference[] = [];
       const emptyChecks: string[] = [];
+      const findings: DailyCheckFinding[] = [];
       for (const file of files) {
         let rows: unknown;
         try {
@@ -134,6 +136,7 @@ export function createDailyCheck(dependencies: DailyCheckDependencies): DailyChe
           (difference.scope === 'account' ? accountDifferences : globalDifferences).push(
             difference,
           );
+          findings.push({ file: file.name, scope: difference.scope });
           // Flat fields only; detail stays in the result (it may name beneficiaries).
           logger.warn(
             {
@@ -150,7 +153,6 @@ export function createDailyCheck(dependencies: DailyCheckDependencies): DailyChe
         }
       }
 
-      const anyDifference = accountDifferences.length > 0 || globalDifferences.length > 0;
       return {
         accountingDate,
         checks,
@@ -158,12 +160,9 @@ export function createDailyCheck(dependencies: DailyCheckDependencies): DailyChe
         globalDifferences,
         emptyChecks,
         // Account-level (①⑥⑦⑧): discrepancy + withdraw hold. Global (②③④⑤): also switch
-        // settle.auto.enabled off and hold every involved user. Only advice here (TODO above).
-        recommendations: {
-          createDiscrepancies: anyDifference,
-          freezeWithdrawals: anyDifference,
-          disableAutoSettlement: globalDifferences.length > 0,
-        },
+        // settle.auto.enabled off and hold every involved user. pay- files (collections,
+        // BR-PAY-07) only ask for a discrepancy. Only advice here (TODO above).
+        recommendations: recommendDailyCheckActions(findings),
       };
     },
   };

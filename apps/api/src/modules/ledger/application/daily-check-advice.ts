@@ -19,6 +19,17 @@ export interface DailyCheckRecommendations {
 export function recommendDailyCheckActions(
   findings: readonly DailyCheckFinding[],
 ): DailyCheckRecommendations {
-  void findings;
-  throw new Error('NotImplemented: recommendDailyCheckActions');
+  // pay- is decided by the invariant file name (basename, case-sensitive), never by the
+  // invariant code the SQL reports.
+  const unfreezable = findings.filter((finding) => !isPayInvariantFile(finding.file));
+  return {
+    createDiscrepancies: findings.length > 0,
+    freezeWithdrawals: unfreezable.length > 0,
+    disableAutoSettlement: unfreezable.some((finding) => finding.scope === 'global'),
+  };
+}
+
+/** Collection invariants: db/invariants/ledger/pay-*.sql. */
+function isPayInvariantFile(file: string): boolean {
+  return file.startsWith('pay-');
 }
