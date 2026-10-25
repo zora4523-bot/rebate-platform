@@ -61,4 +61,4 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/orders/manual-sync/**'
-status: todo
+status: done
