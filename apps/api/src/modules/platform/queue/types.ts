@@ -38,6 +38,25 @@ export interface WorkSpec {
 
 export type EntryPlan = Readonly<Record<EntryName, readonly WorkSpec[]>>;
 
+/**
+ * Concurrency limits of the worker entry (B1-01zzk, section 12): lower per-queue concurrency than
+ * the plan's and the shared budget of handler calls running at once. Exactly these two keys.
+ */
+export interface QueueLimits {
+  /** Queue of plan.worker → integer from 1 to that queue's plan concurrency. */
+  readonly concurrency: Readonly<Record<string, number>>;
+  /** null (the default budget 7) or an integer from 1 to 7. */
+  readonly dbBudget: number | null;
+}
+
+/** What an entry runs with (section 12): every queue of its plan, and its shared budget. */
+export interface EffectiveLimits {
+  /** Every queue of plan[entry] → the concurrency its lanes run with. */
+  readonly concurrency: Readonly<Record<string, number>>;
+  /** The worker's shared budget; null for the other entries (no shared budget). */
+  readonly dbBudget: number | null;
+}
+
 export interface SendOptions {
   /** Required: the business transaction (same-transaction enqueue) or null (section 3). */
   readonly trx: Transaction<DB> | null;

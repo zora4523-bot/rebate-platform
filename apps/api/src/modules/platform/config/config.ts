@@ -1,6 +1,7 @@
 // Environment configuration (ADR-0001 §2 配置校验): validated once at startup with zod.
 // `loadConfig` is pure: it only looks at the object it is given.
 import { z } from 'zod';
+import type { QueueLimits } from '../queue/types.ts';
 import { APP_ENVS, type AppEnv } from './app-env.ts';
 import { readAdminAuthConfig, type AdminAuthConfig } from './admin-auth.ts';
 import { readAgentReviewConfig, type AgentReviewConfig } from './agent-review.ts';
@@ -180,6 +181,13 @@ export interface AppConfig {
    * METRICS_PORT is set; host defaults to 127.0.0.1. A hand-built config without it opens none.
    */
   readonly metrics?: MetricsConfig | undefined;
+  /**
+   * QUEUE_CONCURRENCY_<Q> / QUEUE_DB_BUDGET (./queue-concurrency.ts, B1-01zzk): the worker's
+   * per-queue concurrency overrides (only lower than ENTRY_PLAN) and its shared budget of handler
+   * calls running at once. Present only when one of them is set; a hand-built config without it
+   * runs the plan's concurrency with the default budget.
+   */
+  readonly queueLimits?: QueueLimits | undefined;
 }
 
 /** Where the internal /metrics listener binds (B1-01zzh). */

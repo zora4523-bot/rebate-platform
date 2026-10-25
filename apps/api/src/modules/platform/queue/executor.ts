@@ -3,6 +3,7 @@ import type { Kysely } from 'kysely';
 import type { PgBoss } from 'pg-boss';
 import type { RootLogger } from '../logging/logger.ts';
 import { fetchAttempt, settleAttempt, type ClaimedJob } from './attempt.ts';
+import type { Permits } from './permits.ts';
 import type { JobHandler, WorkSpec } from './types.ts';
 
 export function reportQueueError(logger: RootLogger, error: unknown): void {
@@ -32,6 +33,12 @@ export interface ExecutorOptions {
   shutdown: AbortSignal;
   deadline: AbortSignal;
   runningHandlers: Set<Promise<void>>;
+  /**
+   * B1-01zzk (index.ts section 12): the worker's shared budget. The lane takes a permit before
+   * each fetch (waiting, abortable by `shutdown`, claims no job) and returns it after that job's
+   * settlement or right after an empty or failed fetch. Absent: no shared budget.
+   */
+  permits?: Permits;
 }
 
 async function execute(options: ExecutorOptions, job: ClaimedJob): Promise<void> {
