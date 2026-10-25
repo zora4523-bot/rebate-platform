@@ -83,8 +83,9 @@ export class OrdersAdminModule {
         },
         {
           // B1-09i: the console's manual sync. union's sync access on the admin entry has no
-          // governed adapter, so its offline breaker reads closed (the worker's breaker is per
-          // process); the handler re-checks the site authorization when it takes each job.
+          // governed adapter, so its offline breaker reads closed here (the breaker lives in the
+          // worker process only); the worker's handler checks the real breaker and the site
+          // authorization when it takes each job and fails the request instead of fetching.
           provide: MANUAL_ORDER_SYNCS,
           inject: [
             CLOCK,

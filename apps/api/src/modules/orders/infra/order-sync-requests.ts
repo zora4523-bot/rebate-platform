@@ -112,8 +112,17 @@ export interface OrderSyncRequestProgress {
     counts: { readonly fetched: number; readonly stored: number },
     final: boolean,
   ): Promise<void>;
-  /** queued / running → failed with the error and finished_at at the Clock. */
-  fail(appId: string, id: string, error: string): Promise<void>;
+  /**
+   * queued / running → failed with the error and finished_at at the Clock. With `overDone` a done
+   * request is failed too: a window that dead-letters after a later job ended the request done
+   * (jobs finish in any order) must not leave the console showing a complete sync.
+   */
+  fail(
+    appId: string,
+    id: string,
+    error: string,
+    options?: { readonly overDone?: boolean },
+  ): Promise<void>;
 }
 
 export function createOrderSyncRequestProgress(
@@ -163,13 +172,13 @@ export function createOrderSyncRequestProgress(
           .execute();
       });
     },
-    async fail(appId, id, error) {
+    async fail(appId, id, error, options) {
       await app
         .updateTable('order_sync_requests')
         .set({ status: 'failed', error, finished_at: clock.now() })
         .where('app_id', '=', appId)
         .where('id', '=', id)
-        .where('status', 'in', LIVE)
+        .where('status', 'in', options?.overDone === true ? [...LIVE, 'done'] : LIVE)
         .execute();
     },
   };

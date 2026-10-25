@@ -11,7 +11,14 @@
 //   are refused with 20001 data.fields=[order_nos]. A status_filter not registered for the platform
 //   in specs/union/<platform>.md is 20001 [status_filter]. While the platform's sync stream is
 //   paused by the site owner's authorization (BR-ID-24 ④, union's siteAuthAvailable) the request is
-//   refused with 30156 data.platform; while the offline breaker is open nothing is dispatched.
+//   refused with 30156 data.platform; while the offline breaker is open nothing is dispatched (the
+//   breaker is the worker's; the handler re-checks it when it takes each job).
+//   The filter_digest in the key carries no request id, so a job left queued by an earlier ended
+//   request of the same filter (one failed while its other windows waited) still holds a key and
+//   the queue drops the new send (null). Then the whole request is rolled back and the create fails
+//   (ManualOrderSyncDispatchDroppedError, 50001): the leftovers are dropped by the worker as their
+//   request ended, after which the same filter can be submitted again, instead of a new request
+//   whose windows were never queued staying live and holding its filter for good.
 // - list: the app's requests, created_at descending; limits: manualSyncLimits at the Clock.
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
@@ -97,6 +104,14 @@ export class ManualOrderSyncPausedError extends Error {
     super('orders: manual sync paused by site authorization');
     this.name = 'ManualOrderSyncPausedError';
     this.platform = platform;
+  }
+}
+
+/** A window or order-number send was dropped by the queue (its key still held by a leftover job). */
+export class ManualOrderSyncDispatchDroppedError extends Error {
+  constructor() {
+    super('orders: manual sync job dropped by the queue, a job of the same key is still queued');
+    this.name = 'ManualOrderSyncDispatchDroppedError';
   }
 }
 
@@ -234,12 +249,19 @@ export function createManualOrderSyncs(deps: ManualOrderSyncDeps): ManualOrderSy
     }
     // The last job sent ends the request when it completes (jobs/manual-sync.ts).
     for (const [i, job] of jobs.entries()) {
-      await queue.send(
+      const id = await queue.send(
         ORDER_SYNC_QUEUE,
         job.name,
         { ...(job.payload as Record<string, never>), sync_final: i === jobs.length - 1 },
         { trx, singletonKey: job.key },
       );
+      if (id === null) {
+        logger?.warn(
+          { platform: row.platform, sync_id: row.id, jobs: jobs.length, dropped_at: i },
+          'order_manual_sync_dispatch_dropped',
+        );
+        throw new ManualOrderSyncDispatchDroppedError();
+      }
     }
     return jobs.length;
   }

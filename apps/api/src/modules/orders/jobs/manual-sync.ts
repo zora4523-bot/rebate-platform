@@ -7,9 +7,13 @@
 // running; a job adds its counts once all its orders are processed (fetched = orders returned,
 // stored = pipeline inserted / updated), and the job dispatched last (sync_final) ends the request
 // done with finished_at. Any fetch or pipeline failure is rethrown with nothing counted, so the
-// queue retries the whole job. A job taken while the site authorization is paused (BR-ID-24 ④) or
-// whose account is not the adapter's credential owner (D10-36) fetches nothing and fails the
-// request (error, finished_at), which frees its filter; jobs of an ended failed request are dropped.
+// queue retries the whole job; on the last attempt (attempt > the queue's retryLimit, after which
+// the job goes to order-sync.dead) the request is failed first ('retries_exhausted', also over a
+// request a later job already ended done), so a dead window never leaves it running or done. A job
+// taken while the site authorization is paused (BR-ID-24 ④), while the worker's offline breaker of
+// the platform is open (02 §6.2; the breaker lives in this process only) or whose account is not
+// the adapter's credential owner (D10-36) fetches nothing and fails the request (error,
+// finished_at), which frees its filter; jobs of an ended failed request are dropped.
 import type { JobPayload, ReceivedJob } from '../../platform/index.ts';
 import type { RegisteredPlatform, UnionOrder } from '../../union/index.ts';
 import { MANUAL_SYNC_ORDER_NO_PLATFORMS } from '../domain/manual-sync.ts';
@@ -24,12 +28,20 @@ import {
 import type { OrderSyncRequestProgress } from '../infra/order-sync-requests.ts';
 import { OrderSyncPayloadError } from './order-sync.ts';
 
+/**
+ * retryLimit of the order-sync queue (platform's queue catalog: the business queue defaults). The
+ * handler's attempt runs 1..retryLimit + 1; a failure on the last one dead-letters the job.
+ */
+export const MANUAL_SYNC_RETRY_LIMIT = 5;
+
 export interface ManualSyncHandlerDeps {
   readonly access: SyncAccessPort;
   readonly registry: SyncRegistry;
   readonly pipeline: OrderPipelinePort;
   readonly requests: OrderSyncRequestProgress;
   readonly logger?: SyncLogger;
+  /** Defaults to MANUAL_SYNC_RETRY_LIMIT. */
+  readonly retryLimit?: number;
 }
 
 export function isManualSyncJob(job: Pick<ReceivedJob, 'name'>): boolean {
@@ -135,7 +147,34 @@ export async function handleManualSyncJob(
     await refuse('site_auth_paused');
     return;
   }
+  // 02 §6.2: nothing is fetched while the platform's offline breaker is open; the request ends so
+  // the filter is free again instead of the job burning its retries on circuit_open.
+  if (await deps.access.offlineCircuitOpen(m.platform)) {
+    await refuse('offline_circuit_open');
+    return;
+  }
   await deps.requests.start(m.app_id, m.sync_id);
+  try {
+    await fetchAndRecord(job, m, deps, fields);
+  } catch (error) {
+    if (job.attempt > (deps.retryLimit ?? MANUAL_SYNC_RETRY_LIMIT)) {
+      deps.logger?.warn(
+        { ...fields, reason: 'retries_exhausted' },
+        'order_manual_sync_job_refused',
+      );
+      await deps.requests.fail(m.app_id, m.sync_id, 'retries_exhausted', { overDone: true });
+    }
+    throw error;
+  }
+}
+
+async function fetchAndRecord(
+  job: ReceivedJob,
+  m: ManualJob,
+  deps: ManualSyncHandlerDeps,
+  fields: Record<string, unknown>,
+): Promise<void> {
+  const stream = { app_id: m.app_id, platform: m.platform, union_account_id: m.union_account_id };
   const adapter = deps.registry.get(m.platform);
   const requestId = `order-sync:${job.id}:${job.attempt}`;
   const call = { appId: m.app_id, requestId, purpose: 'order_sync' } as const;
@@ -174,7 +213,11 @@ export async function handleManualSyncJob(
   } else {
     const detail = adapter.getPddOrderDetail;
     if (detail === undefined) {
-      await refuse('order_detail_unsupported');
+      deps.logger?.warn(
+        { ...fields, reason: 'order_detail_unsupported' },
+        'order_manual_sync_job_refused',
+      );
+      await deps.requests.fail(m.app_id, m.sync_id, 'order_detail_unsupported');
       return;
     }
     // The pipeline context is shaped as a window's; an order-number job has no window, so the
