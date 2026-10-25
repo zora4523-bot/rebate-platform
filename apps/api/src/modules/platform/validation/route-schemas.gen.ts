@@ -9599,85 +9599,86 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "required": []
     },
     "body": {
-      "description": "Body of POST /admin/v1/order-syncs; exactly one of the two forms.",
+      "type": "object",
+      "description": "Body of POST /admin/v1/order-syncs; exactly one of the two forms. By time window:\n`platform`, `from`, `to` and an optional `status_filter`; `from` must be before `to` and not\nearlier than the platform's earliest_from (the look-back range of 02 §7.1; GET\n/admin/v1/order-syncs/limits), checked by the handler (20001). By order numbers:\n`platform` and `order_nos` (the 【同步此单】 of the order detail sends one). The fields are\ndeclared once here and the `oneOf` only picks the form, so a value out of range (such as\nmore than 50 order numbers) names just that field.\n",
+      "additionalProperties": false,
+      "required": [
+        "platform"
+      ],
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "Platform (contracts/enums/platform.yaml platform).",
+          "enum": [
+            "taobao",
+            "jd",
+            "pdd",
+            "meituan",
+            "vip",
+            "douyin",
+            "eleme",
+            "kuaishou",
+            "suning"
+          ]
+        },
+        "from": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Window start, inclusive (ISO 8601 with offset); time window form only."
+        },
+        "to": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Window end, exclusive (ISO 8601 with offset); time window form only."
+        },
+        "status_filter": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "The order status filter of the platform's order query (status_filter), only a value\nregistered for that platform in specs/union/<platform>.md; an unregistered value is 20001\nwith data.fields=[status_filter]. Not the status of the sync request.\n"
+        },
+        "order_nos": {
+          "type": "array",
+          "description": "Sub-order numbers, 1–50 (01 F-ORD-10).",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      },
       "oneOf": [
         {
-          "type": "object",
-          "description": "Manual sync by time window. `from` must be before `to` and not earlier than the platform's\nearliest_from (the look-back range of 02 §7.1; GET /admin/v1/order-syncs/limits), checked\nby the handler (20001).\n",
-          "additionalProperties": false,
+          "title": "AdminOrderSyncByWindow",
           "required": [
-            "platform",
             "from",
             "to"
           ],
           "properties": {
-            "platform": {
-              "type": "string",
-              "description": "Platform (contracts/enums/platform.yaml platform).",
-              "enum": [
-                "taobao",
-                "jd",
-                "pdd",
-                "meituan",
-                "vip",
-                "douyin",
-                "eleme",
-                "kuaishou",
-                "suning"
-              ]
-            },
-            "from": {
-              "type": "string",
-              "format": "date-time",
-              "description": "Window start, inclusive (ISO 8601 with offset)."
-            },
-            "to": {
-              "type": "string",
-              "format": "date-time",
-              "description": "Window end, exclusive (ISO 8601 with offset)."
-            },
-            "status_filter": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64,
-              "description": "The order status filter of the platform's order query (status_filter), only a value\nregistered for that platform in specs/union/<platform>.md; an unregistered value is 20001\nwith data.fields=[status_filter]. Not the status of the sync request.\n"
+            "from": {},
+            "to": {},
+            "order_nos": {
+              "not": {}
             }
           }
         },
         {
-          "type": "object",
-          "description": "Manual sync by sub-order numbers (the 【同步此单】 of the order detail sends one).",
-          "additionalProperties": false,
+          "title": "AdminOrderSyncByOrderNos",
           "required": [
-            "platform",
             "order_nos"
           ],
           "properties": {
-            "platform": {
-              "type": "string",
-              "description": "Platform (contracts/enums/platform.yaml platform).",
-              "enum": [
-                "taobao",
-                "jd",
-                "pdd",
-                "meituan",
-                "vip",
-                "douyin",
-                "eleme",
-                "kuaishou",
-                "suning"
-              ]
+            "order_nos": {},
+            "from": {
+              "not": {}
             },
-            "order_nos": {
-              "type": "array",
-              "description": "Sub-order numbers, 1–50 (01 F-ORD-10).",
-              "minItems": 1,
-              "maxItems": 50,
-              "items": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 64
-              }
+            "to": {
+              "not": {}
+            },
+            "status_filter": {
+              "not": {}
             }
           }
         }

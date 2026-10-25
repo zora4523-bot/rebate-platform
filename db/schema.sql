@@ -9622,14 +9622,6 @@ ALTER TABLE ONLY app.order_sync_request_windows
 
 
 --
--- Name: order_sync_request_windows order_sync_request_windows_union_account_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.order_sync_request_windows
-    ADD CONSTRAINT order_sync_request_windows_union_account_fkey FOREIGN KEY (app_id, union_account_id) REFERENCES app.union_accounts(app_id, id);
-
-
---
 -- Name: order_sync_requests order_sync_requests_requested_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 

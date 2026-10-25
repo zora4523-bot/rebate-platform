@@ -39452,47 +39452,55 @@ components:
         The order status filter of the platform's order query (status_filter), only a value
         registered for that platform in specs/union/<platform>.md; an unregistered value is 20001
         with data.fields=[status_filter]. Not the status of the sync request.
-    AdminOrderSyncByWindow:
+    AdminOrderSyncCreateRequest:
       type: object
       description: |
-        Manual sync by time window. `from` must be before `to` and not earlier than the platform's
-        earliest_from (the look-back range of 02 §7.1; GET /admin/v1/order-syncs/limits), checked
-        by the handler (20001).
+        Body of POST /admin/v1/order-syncs; exactly one of the two forms. By time window:
+        `platform`, `from`, `to` and an optional `status_filter`; `from` must be before `to` and not
+        earlier than the platform's earliest_from (the look-back range of 02 §7.1; GET
+        /admin/v1/order-syncs/limits), checked by the handler (20001). By order numbers:
+        `platform` and `order_nos` (the 【同步此单】 of the order detail sends one). The fields are
+        declared once here and the `oneOf` only picks the form, so a value out of range (such as
+        more than 50 order numbers) names just that field.
       additionalProperties: false
       required:
         - platform
-        - from
-        - to
       properties:
         platform:
           $ref: '#/components/schemas/PlatformCode'
         from:
           type: string
           format: date-time
-          description: Window start, inclusive (ISO 8601 with offset).
+          description: Window start, inclusive (ISO 8601 with offset); time window form only.
         to:
           type: string
           format: date-time
-          description: Window end, exclusive (ISO 8601 with offset).
+          description: Window end, exclusive (ISO 8601 with offset); time window form only.
         status_filter:
           $ref: '#/components/schemas/AdminOrderSyncStatusFilter'
-    AdminOrderSyncByOrderNos:
-      type: object
-      description: Manual sync by sub-order numbers (the 【同步此单】 of the order detail sends one).
-      additionalProperties: false
-      required:
-        - platform
-        - order_nos
-      properties:
-        platform:
-          $ref: '#/components/schemas/PlatformCode'
         order_nos:
           $ref: '#/components/schemas/AdminOrderSyncOrderNos'
-    AdminOrderSyncCreateRequest:
-      description: Body of POST /admin/v1/order-syncs; exactly one of the two forms.
       oneOf:
-        - $ref: '#/components/schemas/AdminOrderSyncByWindow'
-        - $ref: '#/components/schemas/AdminOrderSyncByOrderNos'
+        - title: AdminOrderSyncByWindow
+          required:
+            - from
+            - to
+          properties:
+            from: {}
+            to: {}
+            order_nos:
+              not: {}
+        - title: AdminOrderSyncByOrderNos
+          required:
+            - order_nos
+          properties:
+            order_nos: {}
+            from:
+              not: {}
+            to:
+              not: {}
+            status_filter:
+              not: {}
     AdminOrderSyncCreated:
       type: object
       description: The sync request; `reused=true` when an equal request was already queued or running and is returned instead.

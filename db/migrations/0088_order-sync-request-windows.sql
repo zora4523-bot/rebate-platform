@@ -13,7 +13,8 @@
 --   same transaction as the request and its queue sends. Columns:
 --   app_id, sync_id   the request (FK app.order_sync_requests (app_id, id), same app only).
 --   seq               the job's index within the request, 0-based; it travels in the job payload.
---   union_account_id  the union account the job queries (FK app.union_accounts (app_id, id)).
+--   union_account_id  the union account the job queries (no foreign key to app.union_accounts:
+--                     the row records which account a job was sent for, as the job payload does).
 --   window_start, window_end   the job's fixed window [start, end), both empty for an
 --                     order-number job (mode order_nos), otherwise start < end.
 --   status            queued / running / done / failed (CHECK), same values as the request.
@@ -61,8 +62,6 @@ CREATE TABLE app.order_sync_request_windows (
     UNIQUE NULLS NOT DISTINCT (sync_id, union_account_id, window_start),
   CONSTRAINT order_sync_request_windows_sync_fkey FOREIGN KEY (app_id, sync_id)
     REFERENCES app.order_sync_requests (app_id, id),
-  CONSTRAINT order_sync_request_windows_union_account_fkey FOREIGN KEY (app_id, union_account_id)
-    REFERENCES app.union_accounts (app_id, id),
   CONSTRAINT order_sync_request_windows_seq_check CHECK (seq >= 0),
   CONSTRAINT order_sync_request_windows_window_check CHECK (
     (window_start IS NULL AND window_end IS NULL)

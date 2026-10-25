@@ -7,41 +7,11 @@
 // a compare-and-set on the current status: a job row ends once (queued / running → done / failed),
 // so a redelivered job counts nothing twice, and the request's counts are the sum of its rows.
 import type { DB } from '@couli/db';
-import type { ColumnType, Generated, Kysely, Selectable, Transaction } from 'kysely';
+import type { Kysely, Selectable, Transaction } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
 import { manualSyncRequestAfterJob } from '../domain/manual-sync.ts';
 
 export type OrderSyncRequestRow = Selectable<DB['order_sync_requests']>;
-
-/**
- * app.order_sync_request_windows as migration 0088 creates it.
- * TODO(规划/11 §2.3): drop this bridge once db.gen.ts is regenerated with the table — blocked on
- * `pnpm db:snapshot` outside the sandbox (the generated DB then carries the same shape).
- */
-type Timestamp = ColumnType<Date, Date | string, Date | string>;
-type GeneratedTimestamp = ColumnType<Date, Date | string | undefined, Date | string>;
-
-interface OrderSyncRequestWindows {
-  app_id: string;
-  sync_id: string;
-  seq: number;
-  union_account_id: string;
-  window_start: Timestamp | null;
-  window_end: Timestamp | null;
-  status: string;
-  fetched_count: Generated<number>;
-  stored_count: Generated<number>;
-  error: string | null;
-  finished_at: Timestamp | null;
-  created_at: GeneratedTimestamp;
-  updated_at: GeneratedTimestamp;
-}
-
-type ProgressDB = DB & { order_sync_request_windows: OrderSyncRequestWindows };
-
-function progressDb<T extends Kysely<DB> | Transaction<DB>>(db: T): Kysely<ProgressDB> {
-  return db as unknown as Kysely<ProgressDB>;
-}
 
 /** One job the request dispatched: its index, account and window (null for order numbers). */
 export interface NewOrderSyncRequestWindow {
@@ -99,7 +69,7 @@ export async function insertOrderSyncRequestWindows(
   windows: readonly NewOrderSyncRequestWindow[],
 ): Promise<void> {
   if (windows.length === 0) return;
-  await progressDb(trx)
+  await trx
     .withSchema('app')
     .insertInto('order_sync_request_windows')
     .values(
@@ -217,7 +187,7 @@ export function createOrderSyncRequestProgress(
           .where('id', '=', id)
           .where('status', '=', 'queued')
           .execute();
-        await progressDb(trx)
+        await trx
           .withSchema('app')
           .updateTable('order_sync_request_windows')
           .set({ status: 'running', updated_at: now })
@@ -242,7 +212,7 @@ export function createOrderSyncRequestProgress(
           .forUpdate()
           .executeTakeFirst();
         if (request === undefined) return;
-        const windows = progressDb(trx).withSchema('app');
+        const windows = trx.withSchema('app');
         const ended = await windows
           .updateTable('order_sync_request_windows')
           .set(

@@ -8,6 +8,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   HttpException,
   Inject,
   Post,
@@ -123,6 +124,8 @@ export class AdminOrderSyncsController {
   Req()(prototype, 'create', 0);
   Body()(prototype, 'create', 1);
   Post('')(prototype, 'create', create);
+  // The contract answers a new or reused request with 200, not Nest's POST default of 201.
+  HttpCode(200)(prototype, 'create', create);
   RouteSchema(contractRouteSchema('adminCreateOrderSync'))(prototype, 'create', create);
   const list = Object.getOwnPropertyDescriptor(prototype, 'list')!;
   Req()(prototype, 'list', 0);
