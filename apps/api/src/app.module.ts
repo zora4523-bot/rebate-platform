@@ -16,6 +16,7 @@ import {
   AdminModule,
   ExportWorkerModule,
   createAdminDisplayNameReader,
+  createAdminVerifyPhoneReader,
   createAuditWriter,
   createOrderHoldAuditReader,
 } from './modules/admin/index.ts';
@@ -83,6 +84,7 @@ import {
 // TODO(规划/11 §2.3): 配置注册表改从 content 的 index.ts 导入 — blocked on content 任务补该导出（不在 B1-34a 路径内）
 import { configRegistry } from './modules/content/domain/config-registry.ts';
 import { HealthModule } from './modules/health/index.ts';
+import { SMS_CODE_LIFETIME_SECONDS } from './modules/identity/domain/sms-limits.ts';
 import {
   GrowthModule,
   appendLevelChange,
@@ -246,16 +248,19 @@ import {
   blockForDeletion,
 } from './modules/linking/index.ts';
 import {
+  NotificationAdminModule,
   NotificationModule,
   bindPushTokensForSession,
   createSiteAuthAlertPort,
   createEntrySmsSender,
   createLiveTemplateSmsSender,
+  createNotifySmsTestSender,
   createRegisteredTemplateResolver,
   createTemplateSmsSender,
   deletePushTokensForUser,
   unbindPushTokensForSession,
   type AliyunSmsFetch,
+  type NotifySmsTestSender,
   type TemplateSmsSender,
   type VerifyCodeSmsSender,
 } from './modules/notification/index.ts';
@@ -2571,6 +2576,30 @@ function entrySmsSender(
 }
 
 /**
+ * The admin entry's sender of the console's SMS registration test messages (B1-12z, D10-335 ③):
+ * the fake in local / test (scripted by the HTTP tests), the Aliyun SendSms channel on staging /
+ * prod when loadConfig read all four SMS_ variables, otherwise a sender that refuses every message
+ * (announced once). One sender (and breaker) per entry process.
+ */
+function notifySmsTestSender(
+  config: AppConfig,
+  logger: RootLogger,
+  clock: Clock,
+): NotifySmsTestSender {
+  return createNotifySmsTestSender({
+    appEnv: config.appEnv,
+    sms: config.sms ?? undefined,
+    logger,
+    registry: createResilienceRegistry,
+    scheduler: systemScheduler,
+    fetch: smsFetch,
+    clock,
+    nonce: randomUUID,
+    messageId: randomUUID,
+  });
+}
+
+/**
  * The worker's site union authorization alert SMS sender (B1-22b, B1-12y): on staging / prod with
  * all four SMS_ variables, the Aliyun SendSms channel with the signature name and template CODE of
  * each code's in-use notify_templates registration (none → not sent) and the BizId written to
@@ -2968,6 +2997,22 @@ export class AppModule {
         // module (order.view, or user.lookup with user_id), over adminOrderPorts.
         ...(options.entry === 'admin'
           ? [OrdersAdminModule.forAdmin({ ports: adminClaimPorts, orderPorts: adminOrderPorts })]
+          : []),
+        // notification's /admin/v1/notify-channels (B1-12z, CT-24t; BR-TEXT-20 细则「短信渠道登记与
+        // 后台渠道开关」): guarded by AdminOperationGuard; each write and its audit row (admin's
+        // writer bound to the write's transaction) commit together. The registration test SMS goes
+        // to the operator's verify phone, read through admin's reader; SMS_CODE previews are
+        // checked against identity's BR-ID-05 code validity.
+        ...(options.entry === 'admin'
+          ? [
+              NotificationAdminModule.forAdmin({
+                auditWriter: (db, clock) =>
+                  createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                verifyPhones: (db, crypto) => createAdminVerifyPhoneReader({ db, crypto }),
+                testSender: notifySmsTestSender,
+                codeTtlSec: SMS_CODE_LIFETIME_SECONDS,
+              }),
+            ]
           : []),
         // content's GET /v1/config (F1-02c): agent availability and the h5_release bucket read
         // identity's request viewer (token principal, else the X-App-Id guest). GET

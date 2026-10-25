@@ -103,3 +103,20 @@ export type {
 } from './sms/index.ts';
 export { createLiveTemplateSmsSender } from './site-auth-alert/live-sender.ts';
 export type { LiveTemplateSmsSenderDeps } from './site-auth-alert/live-sender.ts';
+// B1-12z: the console's notification channel page (/admin/v1/notify-channels*, CT-24t) on the
+// admin entry, and the entry's sender of the SMS registration test messages (app.module only).
+export { NotificationAdminModule, isFundTemplateCode } from './notification-admin.module.ts';
+export type { NotificationAdminOptions } from './notification-admin.module.ts';
+export { createNotifySmsTestSender } from './admin-channels/live-test-sender.ts';
+export type { NotifySmsTestSenderDeps } from './admin-channels/live-test-sender.ts';
+export {
+  createFakeNotifySmsTestSender,
+  notifySmsTestSenderToken,
+} from './admin-channels/sms-test-sender.ts';
+export type {
+  FakeNotifySmsTestSender,
+  NotifySmsTestMessage,
+  NotifySmsTestResult,
+  NotifySmsTestSender,
+} from './admin-channels/sms-test-sender.ts';
+export type { NotifyVerifyPhones } from './admin-channels/service.ts';

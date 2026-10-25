@@ -57,13 +57,48 @@ export interface FakeNotifySmsTestSender extends NotifySmsTestSender {
   beforeNextAnswer(callback: (message: NotifySmsTestMessage) => Promise<void>): void;
 }
 
+/** The token is a registered symbol, so every copy of this module names the same provider. */
+const TOKEN = Symbol.for('couli.notification.notifySmsTestSender');
+
 /** Only local / test may construct this adapter; default outcome accepted. */
 export function createFakeNotifySmsTestSender(appEnv: string): FakeNotifySmsTestSender {
-  void appEnv;
-  throw new Error('NotImplemented: createFakeNotifySmsTestSender');
+  if (appEnv !== 'local' && appEnv !== 'test') {
+    throw new Error(`notification: the fake SMS test sender is local / test only (${appEnv})`);
+  }
+  const queued: NotifySmsTestResult[] = [];
+  const sent: NotifySmsTestMessage[] = [];
+  let hook: ((message: NotifySmsTestMessage) => Promise<void>) | undefined;
+  return {
+    async send(message) {
+      // The outcome of this send is fixed now, before any hook runs (a rival's send made inside
+      // the hook takes the next queued outcome, else accepted).
+      const result = queued.shift() ?? 'accepted';
+      const copy: NotifySmsTestMessage = Object.freeze({
+        appId: message.appId,
+        phone: message.phone,
+        signName: message.signName,
+        templateCode: message.templateCode,
+        params: Object.freeze({ ...message.params }),
+      });
+      sent.push(copy);
+      const callback = hook;
+      hook = undefined;
+      if (callback !== undefined) await callback(copy);
+      return result;
+    },
+    enqueueResult(result) {
+      queued.push(result);
+    },
+    outbox() {
+      return [...sent];
+    },
+    beforeNextAnswer(callback) {
+      hook = callback;
+    },
+  };
 }
 
 /** Stable Nest token of the entry's test sender, also used to script the HTTP tests' fake. */
 export function notifySmsTestSenderToken(): symbol {
-  throw new Error('NotImplemented: notifySmsTestSenderToken');
+  return TOKEN;
 }
