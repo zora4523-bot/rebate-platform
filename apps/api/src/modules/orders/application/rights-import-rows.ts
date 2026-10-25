@@ -20,8 +20,11 @@
 //   - rights → type RIGHTS, the row's status; punish → type PUNISH, status SUCCEEDED; source IMPORT,
 //     now = the injected Clock; `before` is the order row re-read FOR UPDATE after lockOrderKey of
 //     the sub-order (one transaction per row, the lock first);
+//   - amounts only through @couli/money's decimal string conversion (a number cell is read as its
+//     decimal text), never Number × 100: '0.29' → 29n, '1.15' → 115n;
 //   - port answers: applied → succeeded; duplicate (BR-FUND-06 key already imported) → duplicate,
-//     not a failure, nothing written again; a thrown error propagates (the job retries the row);
+//     not a failure, nothing written again; not_applicable (settlement wrote nothing) → skipped,
+//     not a failure and not retried; a thrown error propagates (the job retries the row);
 //   - with the job's transaction (rights-import-ports.ts) every statement runs on it and nothing is
 //     committed here, so a redelivered row counts once; without one each row is its own transaction;
 //   - rights.record not injected: no processor is returned for rights / punish, so the job ends the
