@@ -5,8 +5,7 @@ type: impl
 # 2026-10-24 入账（admin-backend）。依据：08 BR-ID-40 细则「企业微信会话交付的下载」「在 App 内下载」、04 §6.6 data-exports 下载段与 §6.1 me/data-copies、契约 CT-24q 三个操作的说明；refs 只列 BR-ID-40（约 11.7KB），BR-ID-42 / 31 / 01 只摘句。 拆分理由：三个下载接口共用「现签短时链接、不暴露存在性、口令只出现一次」的口径，单独评审；与登记（B1-27c）分开后两边任务书都在 24KB 内。
 # 本线技术取舍（由编排者摘进任务书第 9 节）：① 后台下载：未知 export_id、别的用户或别的 app 的请求、in_app_sms 路径的请求、非登记人的请求一律 20001 [export_id]（未知 user_id 为 20001 [user_id]）；缺任一权限点 10403；无有效动态码 10003。
 # ② 只有 ready / delivered 且未过 expires_at 可下载，其余（含已过时刻、服务端尚未改状态的）30417 data.status；过期后 regenerate 为 30417 expired；每次返回链接前写审计 user_data_copy_download（不记链接与口令），响应 Cache-Control: no-store。 链接经 export-store.signedUrl 每次现签，有效期 min(5 分钟, expires_at)（用户侧同）；不加迁移。
-# ③ 第一次下载在请求行锁下判 ready：CSPRNG 生成口令、解开服务端加密文件并用口令重新加密到新对象键，口令只在本次响应、不落库，同事务记 delivered；之后 password=null；regenerate 换新文件与口令、作废原文件，due_at / expires_at 不变。
-# ④ 用户侧：列表只给本人 in_app_sms、ready / delivered、未过期的（copy_id、status、generated_at、expires_at）；下载不满足任一条件一律 30701；进入 processing 后不可用，封禁、冷静期、版本过低的受限会话照常可用。 TODO(规划/11 §2.3): 封禁说明页的副本入口 — blocked on 设计画板与前端任务。
+# ③ 第一次下载在请求行锁下判 ready：CSPRNG 生成口令、解开服务端加密文件并用口令重新加密到新对象键，口令只在本次响应、不落库，同事务记 delivered；之后 password=null；regenerate 换新文件与口令、作废原文件，due_at / expires_at 不变。 ④ 用户侧：列表只给本人 in_app_sms、ready / delivered、未过期的（copy_id、status、generated_at、expires_at）；下载不满足任一条件一律 30701；进入 processing 后不可用，封禁、冷静期、版本过低的受限会话照常可用。 TODO(规划/11 §2.3): 封禁说明页的副本入口 — blocked on 设计画板与前端任务。
 refs: [BR-ID-40]
 refs_hash:
   BR-ID-40: 994eb7b30461
@@ -22,6 +21,7 @@ paths:
   - 'apps/api/src/modules/identity/index.ts'
   - 'apps/api/src/app.module.ts'
   - 'apps/api/src/modules/risk/application/risk-state.*'
+  - 'apps/api/src/modules/identity/application/data-copy-worker*.ts'
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/planned-operations.gen.ts'
   - 'packages/contracts-ts/src/openapi.gen.ts'
