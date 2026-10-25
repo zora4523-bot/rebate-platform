@@ -9,6 +9,7 @@ type: impl
 # 上限（配置键，默认值保守），重任务队列同时在跑的任务数不超过上限；③ 所有队列合计的连接占用不超过 worker 连接池的一个固定比例，
 # 给 supervision 与健康检查留出连接。不改各队列的业务语义、重试与幂等；不改投递方。
 # 不在本任务：compose 资源上限（B1-01zzj）、压测验证（QA-06 加同机组合场景，另开）。风险：platform/queue → RV2。
+# 2026-10-26（W1 接手，编排 00:27 派工）：Codex 至 10-30 不可用，tester 改 claude-independent（approvals #36）。取舍：QueueSpec / WorkSpec 结构与 ENTRY_PLAN 默认值被 test/spec/platform/queue/contract.test.ts 等冻结测试 toStrictEqual 钉死，**不改它们**；按队列并发上限做成 platform/config 的配置覆盖（默认取现有计划值），全部队列合计的连接预算在 worker 运行时限流（给 supervision / 健康检查留余量），故不需前置 test-change。
 refs: []
 refs_hash: {}
 deps: []
@@ -19,7 +20,7 @@ paths:
 test_paths:
   - 'test/spec/platform/queue-concurrency/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/queue-concurrency/**'
