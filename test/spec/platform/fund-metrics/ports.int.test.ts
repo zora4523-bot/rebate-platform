@@ -197,11 +197,54 @@ it('[AC-B1-01zzi#13] worker registry 以三个端口为 collectFund 渲染：五
     expect(text).toMatch(/^couli_order_sync_pending_open\{reason="UNMAPPED_STATUS"\} 3$/m);
     expect(text).toMatch(/^couli_settle_bill_jobs_failed 4$/m);
     expect(text).toMatch(/^couli_settle_batches_partial 3$/m);
-    expect(text).toMatch(/^couli_beneficiary_held_over_30d 6$/m);
+    expect(text).toMatch(/^couli_beneficiary_held_over_30d 7$/m);
     expect(text).toMatch(/^couli_withdrawals_paying_needs_manual 3$/m);
 
     clock.advanceMs(DAY * 1000);
     expect(fundFromText(await registry.render())).toEqual(expected.oneDayLater);
+  } finally {
+    await t.close();
+  }
+}, 60_000);
+
+it('[AC-B1-01zzi#15] settlement 端口：held → active → held 的份额按首次 held 起算（BR-CALC-13 字面，D10-355）——首次 held 满 30 天、当前又是 held 即计；当前已转 active 的不计；首次 held 不满 30 天的不计', async () => {
+  const t = await open();
+  try {
+    const key = async (role: 'self' | 'share' | 'direct' | 'indirect') => ({
+      appId: 'couli',
+      orderId: await insertOrderKey(t.db, 'couli'),
+      userId: '00000000-0000-4000-8000-0000000000bb',
+      role,
+    });
+    // Held 50 days ago, released 40 days ago, held again 10 days ago: the first held is 50 days
+    // old, so it counts at NOW although the current hold is only 10 days old.
+    await insertBeneficiaryEvents(t.db, await key('share'), [
+      ['held', -50 * DAY],
+      ['active', -40 * DAY],
+      ['held', -10 * DAY],
+    ]);
+    // The same history, released again 5 days ago: the latest event is active → not counted.
+    await insertBeneficiaryEvents(t.db, await key('self'), [
+      ['held', -50 * DAY],
+      ['active', -40 * DAY],
+      ['held', -10 * DAY],
+      ['active', -5 * DAY],
+    ]);
+    // Re-held, but its first held is only 20 days old → not counted (now or one day later).
+    await insertBeneficiaryEvents(t.db, await key('direct'), [
+      ['held', -20 * DAY],
+      ['active', -15 * DAY],
+      ['held', -5 * DAY],
+    ]);
+    const clock = new FixedClock(NOW);
+    expect(await readSettlementFundMetrics(t.readOnly, clock)).toEqual({
+      billJobsFailed: 0,
+      partialBatches: 0,
+      beneficiariesHeldOver30Days: 1,
+    });
+    clock.advanceMs(DAY * 1000);
+    const later = await readSettlementFundMetrics(t.readOnly, clock);
+    expect(later.beneficiariesHeldOver30Days).toBe(1);
   } finally {
     await t.close();
   }

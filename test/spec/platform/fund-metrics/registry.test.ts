@@ -144,3 +144,45 @@ it('[AC-B1-01zzi#3] 每次 scrape 取最新资金快照：不常驻轮询，消�
   expect(third).not.toMatch(new RegExp(`^${PENDING_METRIC}[{ ]`, 'm'));
   for (const key of SCALAR_KEYS) expect(scalarGauge(third, key), key).toBe(SECOND[key]);
 });
+
+it('[AC-B1-01zzi#16] collectFund 拒绝时 render() 拒绝（抓取失败可见）：不把资金 gauge 编造成 0，也不沿用上一次的快照；恢复后下一次 scrape 取新值', async () => {
+  const failure = new Error('fund collection failed');
+  // Rejected from the first scrape on.
+  const rejecting = vi.fn(async (): Promise<FundMetricsSnapshot> => {
+    throw failure;
+  });
+  const failing = createMetricsRegistry({
+    entry: 'worker',
+    collect: async () => WORKER,
+    collectFund: rejecting,
+  });
+  await expect(failing.render()).rejects.toBe(failure);
+  expect(rejecting).toHaveBeenCalledTimes(1);
+
+  // A collector that throws synchronously still makes the scrape fail, not a text without values.
+  const throwing = createMetricsRegistry({
+    entry: 'worker',
+    collectFund: (): Promise<FundMetricsSnapshot> => {
+      throw failure;
+    },
+  });
+  await expect(throwing.render()).rejects.toBe(failure);
+
+  // After a good scrape, a failing one rejects instead of re-serving FIRST or zeros; the next good
+  // scrape renders its own values.
+  const collectFund = vi.fn<() => Promise<FundMetricsSnapshot>>();
+  collectFund
+    .mockResolvedValueOnce(FIRST)
+    .mockRejectedValueOnce(failure)
+    .mockResolvedValueOnce(SECOND);
+  const worker = createMetricsRegistry({
+    entry: 'worker',
+    collect: async () => WORKER,
+    collectFund,
+  });
+  expect(fundFromText(await worker.render())).toEqual(FIRST);
+  await expect(worker.render()).rejects.toBe(failure);
+  const recovered = await worker.render();
+  expect(collectFund).toHaveBeenCalledTimes(3);
+  expect(fundFromText(recovered)).toEqual(SECOND);
+});

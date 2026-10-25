@@ -1,8 +1,9 @@
 // B1-01zzi brief B.1: each module exports its read-only fund port from its own index.ts (the worker
 // reaches other modules only through it), and the port reads only its own module's fund tables.
 // Called on a Kysely that compiles and logs every query but never connects (each query answers one
-// empty row; the values are not checked here): no statement writes, and none reads the database's
-// clock ("now" is the injected Clock only). The counts themselves are checked against PostgreSQL in
+// row whose every column is the number string '0', kit numericRow; the values are not checked
+// here): no statement writes, and none reads the database's clock ("now" is the injected Clock
+// only). The counts themselves are checked against PostgreSQL in
 // ports.int.test.ts.
 import { expect, it } from 'vitest';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
@@ -19,16 +20,17 @@ import {
   SQL_CLOCK,
   WRITE_SQL,
   mentions,
+  numericRow,
   recordingDb,
 } from './kit.ts';
 
 type Module = keyof typeof PORT_TABLES;
 
-/** The queries one port call compiles (its result over the stand-in's empty rows is not checked). */
+/** The queries one port call compiles (its result over the stand-in's '0' rows is not checked). */
 async function queriesOf(call: (db: ReturnType<typeof recordingDb>) => Promise<unknown>) {
   const queries: string[] = [];
   await Promise.resolve()
-    .then(() => call(recordingDb(queries, () => [{}])))
+    .then(() => call(recordingDb(queries, () => [numericRow()])))
     .catch(() => undefined);
   return queries;
 }

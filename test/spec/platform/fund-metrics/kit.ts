@@ -11,6 +11,7 @@ import {
   PostgresAdapter,
   PostgresIntrospector,
   PostgresQueryCompiler,
+  type CompiledQuery,
   type DatabaseConnection,
   type Driver,
   type QueryResult,
@@ -114,17 +115,39 @@ export const SQL_CLOCK =
   /\b(now\s*\(|current_timestamp|current_date|localtimestamp|transaction_timestamp|statement_timestamp|clock_timestamp)/i;
 
 /**
- * A Kysely that compiles and logs every query but never connects. Each query answers `rows()`;
- * one empty row lets a port that reads `rows[0]` go on to its next query, so every table it reads
- * is logged (B1-01zzh's compileOnlyDb always answers no rows).
+ * One result row in which every column reads as a plausible number string: `fixed[column]` when
+ * given, otherwise `value` (default '0'). A port that parses its count columns strictly, or reads
+ * them one query after another, still goes on to its next query, so every table it reads is logged.
+ */
+export function numericRow(
+  value = '0',
+  fixed: Readonly<Record<string, string>> = {},
+): Record<string, unknown> {
+  return new Proxy<Record<string, unknown>>(
+    {},
+    {
+      get(_target, column) {
+        if (typeof column !== 'string') return undefined;
+        return Object.hasOwn(fixed, column) ? fixed[column] : value;
+      },
+      has: (_target, column) => typeof column === 'string',
+    },
+  );
+}
+
+/**
+ * A Kysely that compiles and logs every query but never connects. Each query answers
+ * `rows(sql)` (the compiled SQL text is passed, so a stand-in can answer per table or throw); one
+ * numericRow() lets a port that reads `rows[0]` go on to its next query, so every table it reads is
+ * logged (B1-01zzh's compileOnlyDb always answers no rows).
  */
 export function recordingDb(
   queries: string[],
-  rows: () => readonly Record<string, unknown>[],
+  rows: (query: string) => readonly Record<string, unknown>[],
 ): Kysely<DB> {
   const connection: DatabaseConnection = {
-    executeQuery<R>(): Promise<QueryResult<R>> {
-      return Promise.resolve({ rows: [...rows()] } as unknown as QueryResult<R>);
+    executeQuery<R>(compiledQuery: CompiledQuery): Promise<QueryResult<R>> {
+      return Promise.resolve({ rows: [...rows(compiledQuery.sql)] } as unknown as QueryResult<R>);
     },
     async *streamQuery() {
       throw new Error('streamQuery is not used by the fund ports');
@@ -444,8 +467,15 @@ export async function seedBeneficiaries(
   await insertBeneficiaryEvents(db, await key('couli', 'self'), [['active', -90 * DAY]]);
   // L: another app_id, held 31 days → counts.
   await insertBeneficiaryEvents(db, await key(OTHER_APP, 'self'), [['held', -31 * DAY]]);
-  // At NOW: A, K, B, G, H, L. One day later also C and D.
-  return { atNow: 6, oneDayLater: 8 };
+  // N: held 50 days ago, active 40 days ago, held again 10 days ago (still held). BR-CALC-13
+  // measures from the key's first held ever (D10-355), not from the latest re-hold → counts.
+  await insertBeneficiaryEvents(db, await key('couli', 'share'), [
+    ['held', -50 * DAY],
+    ['active', -40 * DAY],
+    ['held', -10 * DAY],
+  ]);
+  // At NOW: A, K, B, G, H, L, N. One day later also C and D.
+  return { atNow: 7, oneDayLater: 9 };
 }
 
 /** PAYING with needs_manual only (every app_id). */
