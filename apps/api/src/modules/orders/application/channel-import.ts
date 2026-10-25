@@ -3,18 +3,24 @@
 // One row is one channel blocklist entry, written through risk's order-side blocklist port
 // (createOrderBlocklistPorts().importChannels, B1-09a; declared here by structure, risk's
 // implementation satisfies it): orders never writes risk's tables (02 §4.1).
-//   - row.values: `relation_id` (required, a non-empty text) and `end_at` (optional: empty = in
-//     force until stopped; an ISO 8601 instant with offset, or a Date cell of the sheet);
+//   - row.values: `relation_id` (required: a text, trimmed of leading / trailing white space before
+//     the emptiness check and the write; an integer number cell is its decimal text, any other
+//     number is invalid) and `end_at` (optional: empty = in force until stopped; an ISO 8601 text —
+//     with Z or an offset as given, without one read at +08:00, never the server's zone — or a
+//     Date cell of the sheet);
 //   - union_account_id is the task's (rows carry none); start_at (imported_at) = the task's
 //     created_at, also when the row is processed later or again; created_by = the task's admin;
 //   - outcomes: inserted → succeeded; an effective entry already there (port: duplicate; same app,
 //     union account and relation_id, active, end_at empty or later than the import time) →
-//     duplicate, nothing inserted; relation_id missing or not a text, end_at unreadable or not
-//     after start_at → failed invalid_row; the platform of the task's union account (union's
+//     duplicate, nothing inserted; relation_id missing, blank or neither a text nor an integer,
+//     end_at unreadable or not after start_at → failed invalid_row; the platform of the task's
+//     union account (union's
 //     account listing, by app_id and union_account_id) ≠ the task's platform → failed
 //     platform_mismatch. A failed row writes nothing;
 //   - with the job's transaction (rights-import-ports.ts) every statement runs on it and nothing is
-//     committed here; without one each row is one transaction of its own;
+//     committed here: the job hands each row the transaction that also commits the row's
+//     checkpoint, so a redelivered row is counted once; without one each row is one transaction of
+//     its own;
 //   - no scan of stored orders: the entry voids later orders in the pipeline step (B1-09b) only;
 //     no audit per row (the upload writes one for the whole file, B1-09g).
 import type { DB } from '@couli/db';
