@@ -28,6 +28,7 @@ paths:
   - 'apps/api/src/modules/platform/export-store/**'
   - 'apps/api/src/modules/platform/config/export-store.ts'
   - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
 test_paths:
   - 'test/spec/identity/data-copies-worker/**'
 impl: claude
