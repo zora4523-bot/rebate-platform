@@ -160,7 +160,12 @@ it('[AC-B1-09g#8] 审计：操作人、kind、platform、文件名、行数；�
     filename: FILENAME,
     total_rows: 3,
   });
-  expect(JSON.stringify(audits)).not.toContain(PRIVATE_CELL);
+  // audit_logs.id 是 bigint：序列化时转字符串，只为检查单元格内容不进审计。
+  expect(
+    JSON.stringify(audits, (_key, value: unknown) =>
+      typeof value === 'bigint' ? value.toString() : value,
+    ),
+  ).not.toContain(PRIVATE_CELL);
 });
 
 // ---------------------------------------------------------------- 入队：order-sync 队列的 rights_import 任务
