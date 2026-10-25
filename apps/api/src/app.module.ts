@@ -84,6 +84,9 @@ import {
 // TODO(规划/11 §2.3): 配置注册表改从 content 的 index.ts 导入 — blocked on content 任务补该导出（不在 B1-34a 路径内）
 import { configRegistry } from './modules/content/domain/config-registry.ts';
 import { HealthModule } from './modules/health/index.ts';
+// The token of B1-27e's second keyring (not on the platform barrel): the isolated store of the
+// real-name correction (B1-27a) encrypts with it.
+import { PRIOR_IDENTITY_FIELD_CRYPTO } from './modules/platform/config/index.ts';
 import { SMS_CODE_LIFETIME_SECONDS } from './modules/identity/domain/sms-limits.ts';
 import {
   GrowthModule,
@@ -504,6 +507,39 @@ const payoutAccountConfig = {
       createContentReader({ db: handle, clock }).configValue(appId, key),
   }),
 };
+
+/**
+ * B1-27a (BR-ID-25 细则「实名更正」, BR-ID-31 ID-number dimension; D10-185): whether an ID number is
+ * on an active, unexpired id_no entry of the app's blocklist, read only on the caller's handle (the
+ * console-side 44001 / identity_blacklisted records no risk_hits and is not appealable, BR-ID-36;
+ * risk's BlocklistService.check would record one). Both digests the code base uses for this
+ * dimension are matched: realname.id_no_hmac (what the withdrawal check compares,
+ * risk/ports/blocklist-match.ts) and risk's own blocklist.id_no context.
+ * TODO(规划/11 §2.3): 把只读的身份证维度黑名单匹配移入 risk 并从其 index.ts 导出 — blocked on risk 模块不在本任务路径内
+ */
+function correctionIdNoBlocklist(deps: { readonly clock: Clock; readonly crypto: FieldCrypto }) {
+  const context = blocklistHmacContexts().id_no;
+  return {
+    async listed(
+      handle: Kysely<Database>,
+      input: { readonly appId: string; readonly idNo: string; readonly idNoHmac: string },
+    ): Promise<boolean> {
+      const digests = [...new Set([input.idNoHmac, deps.crypto.blindIndex(input.idNo, context)])];
+      const row = await handle
+        .withSchema('app')
+        .selectFrom('blocklist')
+        .select('id')
+        .where('app_id', '=', input.appId)
+        .where('dimension', '=', 'id_no')
+        .where('value_hmac', 'in', digests)
+        .where('status', '=', 'active')
+        .where('expire_at', '>', deps.clock.now())
+        .limit(1)
+        .executeTakeFirst();
+      return row !== undefined;
+    },
+  };
+}
 
 /**
  * The user's withdrawals as identity's deletion flows see them, on the caller's transaction:
@@ -2991,6 +3027,11 @@ export class AppModule {
                 revokeSessions: (clock) => (trx, input) =>
                   revokeSessionsByUser(trx, input, clock, unbindRevoked(sessionPushTokens(clock))),
                 blocklist: (deps) => createBlocklistService(deps),
+                // B1-27a (BR-ID-25 细则「实名更正」): payout's readers judge the non-terminal
+                // withdrawals (30419) and the paid-out ones (the old identity's isolated copy).
+                withdrawals: (clock) => createWithdrawalInFlightReader({ clock }),
+                idNoBlocklist: correctionIdNoBlocklist,
+                priorIdentityCrypto: PRIOR_IDENTITY_FIELD_CRYPTO,
               }),
             ]
           : []),

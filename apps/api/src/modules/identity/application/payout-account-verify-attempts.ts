@@ -196,6 +196,19 @@ export function reusable(
   );
 }
 
+/**
+ * B1-27a (BR-ID-25 细则「实名更正」): a record belongs to the current identity of the realname row
+ * only when it was reserved at or after `from` — the instant the row took its current identity (a
+ * correction keeps the row id, so the request fingerprint is the same before and after it); null
+ * when the row has had one identity only (every record qualifies).
+ */
+export function recordedSince(
+  attempt: Pick<VerifyAttempt, 'reserved_at'>,
+  from: Date | null,
+): boolean {
+  return from === null || attempt.reserved_at.getTime() >= from.getTime();
+}
+
 /** Single vendor call budget (9.2 #7: about 10 seconds; a hang or an error counts as unknown). */
 export const VENDOR_CALL_TIMEOUT_MS = 10_000;
 

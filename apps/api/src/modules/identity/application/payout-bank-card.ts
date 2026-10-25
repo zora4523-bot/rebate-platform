@@ -43,6 +43,18 @@
 // during the vendor call gets 40901 instead of BR-ID-10's "abandon wins, the request rolls back
 // with 20903"; recorded for the planning sync, not worked around here.
 //
+// Real-name corrections (B1-27a; BR-ID-25 细则「实名更正」, task §9 ④): a correction overwrites the
+// realname row in place (same id), so the fingerprint alone cannot tell a record verified against
+// the old identity from one of the new. Every record path — the key's own record (matched saves
+// whatever its age), the fingerprint's latest record (reserved / unknown rechecked, matched
+// reused) — therefore only accepts records reserved at or after the identity's lower bound
+// (recordsFrom / recordedSince): the row's verified_at, which a correction sets to its instant,
+// once the row was rewritten after its insert (row_version > 0: a correction, or a verification
+// after a failed attempt, before which no record of the row can exist); a row verified on insert
+// and never rewritten has had one identity only, so every record of its id is that identity's.
+// The key's own older record is another request (20901); an older latest record is as if there
+// were none (a new paid verification of the new identity).
+//
 // Invariant: a record's answer only ever binds the card it verified. saveMatched and mismatched
 // refuse (throw) a record whose fingerprint is not this request's; every path that reaches them
 // has compared it already (the key's record above; the fingerprint's records by construction).
@@ -62,7 +74,7 @@ import {
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { newUuidV7, type Clock, type FieldCrypto, type RootLogger } from '../../platform/index.ts';
 import type { BlocklistService } from '../../risk/index.ts';
-import { verifiedRealnameIdentity } from '../infra/realname-reader.ts';
+import { REALNAME_CONTEXT } from '../infra/realname-reader.ts';
 import type { BankCardVerifierPort, CardBinPort } from '../ports/bank-card-verifier.ts';
 import {
   BANK_CARD_CONTEXT,
@@ -96,6 +108,7 @@ import {
   occupiedToday,
   queryAttempt,
   recheckDue,
+  recordedSince,
   reusable,
   settleAttempt,
   transitionAttempt,
@@ -133,6 +146,45 @@ export interface BankCardBindingOptions {
 
 export interface BankCardBinding {
   submit(trx: Transaction<DB>, command: BankCardSubmitCommand): Promise<BankCardSubmitResult>;
+}
+
+/** The verified real name the three elements use, with the instant it was (last) verified. */
+interface VerifiedIdentity {
+  readonly id: string;
+  readonly name: string;
+  readonly id_no: string;
+  /** The earliest reserved_at of a record of this identity (null: any, see the file header). */
+  readonly records_from: Date | null;
+}
+
+/**
+ * The verified record's id (part of the fingerprint), decrypted name and ID number (only to the
+ * vendor port, in memory) and the records' lower bound (file header); null unless verified.
+ */
+async function verifiedIdentity(
+  handle: Kysely<DB>,
+  crypto: FieldCrypto,
+  subject: { readonly app_id: string; readonly user_id: string },
+): Promise<VerifiedIdentity | null> {
+  const row = await handle
+    .withSchema('app')
+    .selectFrom('realname')
+    .select(['id', 'name_cipher', 'id_no_cipher', 'verified_at', 'row_version'])
+    .where('app_id', '=', subject.app_id)
+    .where('user_id', '=', subject.user_id)
+    .where('status', '=', 'verified')
+    .executeTakeFirst();
+  if (row === undefined) return null;
+  // realname_verified_check guarantees these on a verified row.
+  if (row.name_cipher === null || row.id_no_cipher === null || !(row.verified_at instanceof Date)) {
+    throw new Error('identity: incomplete verified realname record');
+  }
+  return {
+    id: row.id,
+    name: crypto.decrypt(Buffer.from(row.name_cipher).toString('utf8'), REALNAME_CONTEXT.name),
+    id_no: crypto.decrypt(Buffer.from(row.id_no_cipher).toString('utf8'), REALNAME_CONTEXT.idNo),
+    records_from: row.row_version > 0 ? row.verified_at : null,
+  };
 }
 
 /** What the reservation decided (b); `fingerprint` is this request's (realname id + card). */
@@ -222,7 +274,7 @@ export function createBankCardBinding(options: BankCardBindingOptions): BankCard
         user,
         { method: 'bank_card', hmac: request.hmac, payeeName: request.payeeName },
         request.limit,
-        (h) => verifiedRealnameIdentity(h, crypto, { app_id: owner.appId, user_id: owner.userId }),
+        (h) => verifiedIdentity(h, crypto, { app_id: owner.appId, user_id: owner.userId }),
       );
       if (checks.kind === 'refused') return refusal(checks.result);
       if (checks.kind === 'same') {
@@ -235,9 +287,13 @@ export function createBankCardBinding(options: BankCardBindingOptions): BankCard
       // reused only for the very card and real-name record it verified: the key sent again with
       // another card is another request (20901), whatever the record's status.
       const fingerprint = `${checks.realname.id}:${request.hmac}`;
+      // Only records of the current identity (see the file header: real-name corrections).
+      const since = checks.realname.records_from;
       const own = await attemptByKey(handle, owner, command.idempotencyKey);
       if (own !== undefined) {
-        if (own.request_fingerprint !== fingerprint) return { kind: 'answer', result: KEY_REUSED };
+        if (own.request_fingerprint !== fingerprint || !recordedSince(own, since)) {
+          return { kind: 'answer', result: KEY_REUSED };
+        }
         switch (own.status) {
           case 'reserved':
             if (leaseExpired(own, now, settings.inflightSeconds)) {
@@ -257,7 +313,8 @@ export function createBankCardBinding(options: BankCardBindingOptions): BankCard
       }
 
       // 「同一账号再次提交」: the fingerprint's latest record (so of this very card).
-      const latest = await latestAttempt(handle, owner, fingerprint);
+      const found = await latestAttempt(handle, owner, fingerprint);
+      const latest = found !== undefined && recordedSince(found, since) ? found : undefined;
       if (latest?.status === 'reserved') {
         if (!leaseExpired(latest, now, settings.inflightSeconds)) {
           return { kind: 'answer', result: BUSY };
