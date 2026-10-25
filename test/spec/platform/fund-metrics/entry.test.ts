@@ -4,17 +4,28 @@
 // other four entries get neither. The stand-ins follow B1-01zzh's entry test: the platform exports
 // are spied on the platform surface and on platform/metrics, the database compiles and logs every
 // query but never connects (kit recordingDb), nothing listens. Dynamic imports keep Nest decorators out of the spec
-// project's TypeScript compilation.
+// project's TypeScript compilation. The worker's own collectFund (the one entry.ts assembles) is
+// also called over a stand-in that answers each query by the fund table it reads, with known
+// counts: its result must equal those counts item by item, and any one table failing rejects it.
 import { afterEach, expect, it, vi } from 'vitest';
 import * as platform from '../../../../apps/api/src/modules/platform/index.ts';
 import * as metrics from '../../../../apps/api/src/modules/platform/metrics/index.ts';
 import type {
+  FundMetricsSnapshot,
   MetricsRegistry,
   MetricsRegistryOptions,
   MetricsServerOptions,
 } from '../../../../apps/api/src/modules/platform/metrics/index.ts';
 import { ROOT } from '../metrics/kit.ts';
-import { PORT_TABLES, SQL_CLOCK, WRITE_SQL, mentions, recordingDb } from './kit.ts';
+import {
+  FUND_TABLES,
+  PORT_TABLES,
+  SQL_CLOCK,
+  WRITE_SQL,
+  mentions,
+  numericRow,
+  recordingDb,
+} from './kit.ts';
 
 type Entry = 'api' | 'stream' | 'admin' | 'worker' | 'payout';
 const ENTRIES: readonly Entry[] = ['api', 'stream', 'admin', 'worker', 'payout'];
@@ -53,9 +64,16 @@ async function fixture() {
   );
   vi.spyOn(platform, 'createRootLogger').mockReturnValue(logger);
   const queries: string[] = [];
-  // No rows during startup (as in B1-01zzh's test); one empty row per query while collectFund runs.
-  const answer = { oneRow: false };
-  const db = recordingDb(queries, () => (answer.oneRow ? [{}] : []));
+  // No rows during startup (as in B1-01zzh's test); one numericRow per query while collectFund
+  // runs, or byQuery's answer when a test sets it.
+  const answer: {
+    oneRow: boolean;
+    byQuery: ((query: string) => readonly Record<string, unknown>[]) | null;
+  } = { oneRow: false, byQuery: null };
+  const db = recordingDb(queries, (query) => {
+    if (answer.byQuery !== null) return answer.byQuery(query);
+    return answer.oneRow ? [numericRow()] : [];
+  });
   vi.spyOn(platform, 'createDbHandles').mockReturnValue({
     db,
     dbRead: null,
@@ -137,7 +155,7 @@ it('[AC-B1-01zzi#14] worker 的 registry 带 collectFund：经本入口库读三
         expect(registryOptions.collectFund, 'worker collectFund').toEqual(expect.any(Function));
         expect(registryOptions.collect, 'worker collect (B1-01zzh)').toEqual(expect.any(Function));
         f.queries.length = 0;
-        // The stand-in database answers one empty row per query; only the reads matter here.
+        // The stand-in database answers one '0' row per query; only the reads matter here.
         f.answer.oneRow = true;
         await Promise.resolve()
           .then(() => registryOptions.collectFund!())
@@ -158,6 +176,75 @@ it('[AC-B1-01zzi#14] worker 的 registry 带 collectFund：经本入口库读三
       await f.stop();
     }
   } finally {
+    await f.stop();
+  }
+}, 30_000);
+
+/** Known counts per fund table, all different, handed back as number strings. */
+const KNOWN_ROWS: Readonly<Record<string, () => readonly Record<string, unknown>[]>> = {
+  order_sync_pending: () => [
+    numericRow('3', { reason: 'UNMAPPED_STATUS' }),
+    numericRow('1', { reason: 'ILLEGAL_TRANSITION' }),
+  ],
+  settle_jobs: () => [numericRow('4')],
+  settle_batches: () => [numericRow('2')],
+  commission_split_beneficiary_events: () => [numericRow('6')],
+  withdrawals: () => [numericRow('5')],
+};
+
+/** The snapshot those counts make. */
+const KNOWN_SNAPSHOT: FundMetricsSnapshot = {
+  orderSyncPendingOpen: { UNMAPPED_STATUS: 3, ILLEGAL_TRANSITION: 1 },
+  billJobsFailed: 4,
+  partialBatches: 2,
+  beneficiariesHeldOver30Days: 6,
+  payingNeedsManual: 5,
+};
+
+/**
+ * The stand-in's answer to one query: the known rows of the one fund table it reads (a query that
+ * reads no fund table, e.g. other worker work, answers no rows; one that reads several is refused).
+ */
+function knownRows(query: string): readonly Record<string, unknown>[] {
+  const read = FUND_TABLES.filter((table) => mentions(query, table));
+  if (read.length === 0) return [];
+  if (read.length > 1) throw new Error(`stand-in: more than one fund table in ${query}`);
+  return KNOWN_ROWS[read[0]!]!();
+}
+
+it('[AC-B1-01zzi#17] worker 的真实 collectFund（entry.ts 装配的那个）：返回值逐项等于各端口表给出的已知计数；任一端口的表读失败时 collectFund 拒绝，不以 0 代替', async () => {
+  const f = await fixture();
+  try {
+    await f.runEntry('worker');
+    expect(process.exitCode, 'worker failed to start').toBe(originalExitCode);
+    const server = f.servers.at(-1)!;
+    const made = f.registries.filter((r) => r.registry === server.options.registry);
+    expect(made, 'served registry comes from createMetricsRegistry').toHaveLength(1);
+    expect(made[0]!.options.entry).toBe('worker');
+    const collectFund = made[0]!.options.collectFund;
+    expect(collectFund, 'worker collectFund').toEqual(expect.any(Function));
+
+    // Failures first: a rejected collection is never cached (B1-01zzo), so every round reads again.
+    for (const table of FUND_TABLES) {
+      const message = `stand-in: ${table} unavailable`;
+      f.answer.byQuery = (query) => {
+        if (mentions(query, table)) throw new Error(message);
+        return knownRows(query);
+      };
+      await expect(collectFund!(), `${table} fails`).rejects.toThrow(message);
+    }
+
+    f.answer.byQuery = knownRows;
+    f.queries.length = 0;
+    expect(await collectFund!()).toEqual(KNOWN_SNAPSHOT);
+    for (const table of FUND_TABLES) {
+      expect(
+        f.queries.some((q) => mentions(q, table)),
+        `collectFund reads ${table}`,
+      ).toBe(true);
+    }
+  } finally {
+    f.answer.byQuery = null;
     await f.stop();
   }
 }, 30_000);
