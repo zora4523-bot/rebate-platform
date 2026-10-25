@@ -41,8 +41,10 @@
 //   (singletonKey bill.recon:<app_id>:<bill date>). A failed channel fails the job after the others
 //   ran; the retry reconciles all of them again, which changes nothing that already holds.
 // Also compiled by the `test` project: erasable syntax only.
+import type { DB } from '@couli/db';
 import { chinaDayRange } from '@couli/domain';
 import { subFen } from '@couli/money';
+import type { Kysely } from 'kysely';
 import type { PostingVoucher } from '../../ledger/index.ts';
 import { newUuidV7 } from '../../platform/index.ts';
 import {
@@ -75,8 +77,7 @@ import {
   billReconKey,
   type PayBillReconPayload,
 } from '../jobs/names.ts';
-import type { PayJobDeps } from '../jobs/pay-jobs.ts';
-import type { PayBillResult, PayChannel } from './pay-channel.ts';
+import type { PayBillResult, PayChannel, PayChannelSet } from './pay-channel.ts';
 import { channelEnabledKey } from './pay-orders.ts';
 import { refundStatesFor } from './pay-refund-result.ts';
 import {
@@ -84,9 +85,16 @@ import {
   anomalyVoucher,
   rawConfigValue,
   successStatesFor,
+  type PaySettlementDeps,
 } from './pay-settlement.ts';
 
 export type { PayBillRow } from '../domain/pay-recon.ts';
+
+/** What the reconciliation needs (a subset of the pay queue handler's deps, jobs/pay-jobs.ts). */
+export interface PayReconDeps extends PaySettlementDeps {
+  readonly db: Kysely<DB>;
+  readonly channels: Pick<PayChannelSet, 'of'>;
+}
 
 /** Which bill to reconcile. */
 export interface PayReconInput {
@@ -127,7 +135,7 @@ export class PayBillMalformed extends Error {
 
 /** One run's fixed facts. */
 interface Run {
-  readonly deps: PayJobDeps;
+  readonly deps: PayReconDeps;
   readonly appId: string;
   readonly channel: PayChannelCode;
   readonly billDate: string;
@@ -422,7 +430,7 @@ export function feeVoucher(
  * Reconciles the bill of `input` (BR-PAY-07). Idempotent per (app, channel, bill date): a run
  * delivered again registers no second recon diff, anomaly or PAY_FEE voucher.
  */
-export async function runPayBillRecon(deps: PayJobDeps, input: PayReconInput): Promise<void> {
+export async function runPayBillRecon(deps: PayReconDeps, input: PayReconInput): Promise<void> {
   const channel = input.pay_channel;
   const billDate = input.bill_date;
   // RangeError for anything but an existing YYYY-MM-DD (the bill day's [start, end) at +08:00).
@@ -519,7 +527,7 @@ function isPayload(value: unknown): value is PayBillReconPayload {
  * the run offset (domain/pay-recon.ts), keyed by the bill day it reconciles.
  */
 export async function scheduleBillRecon(
-  deps: Pick<PayJobDeps, 'queue'>,
+  deps: Pick<PayReconDeps, 'queue'>,
   appId: string,
   now: Date,
 ): Promise<void> {
@@ -537,7 +545,7 @@ export async function scheduleBillRecon(
 // in B2-15j's paths); until then the first run is enqueued by hand or by the task that adds it.
 
 /** The handler of `bill.recon`: the bill day before now (+08:00) of every enabled channel. */
-export async function runBillReconJob(deps: PayJobDeps, payload: unknown): Promise<void> {
+export async function runBillReconJob(deps: PayReconDeps, payload: unknown): Promise<void> {
   if (!isPayload(payload)) throw new Error('payment: bill.recon payload is malformed');
   const appId = payload.app_id;
   const now = deps.clock.now();
