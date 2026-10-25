@@ -18,7 +18,25 @@
 // - Result: `queueLimits` null when none of these variables is set; else { concurrency: each set
 //   queue → its value, dbBudget: the value or null }. loadConfig puts it into AppConfig.queueLimits
 //   only when it is not null, so the shape of an unconfigured result does not change.
-import type { QueueLimits } from '../queue/types.ts';
+import { WORKER_DB_BUDGET, WORKER_LANES, type QueueLimits } from '../queue/worker-plan.ts';
+
+const CONCURRENCY_PREFIX = 'QUEUE_CONCURRENCY_';
+const BUDGET_ENV = 'QUEUE_DB_BUDGET';
+
+/** QUEUE_CONCURRENCY_<Q> → [queue, plan concurrency] for each queue of ENTRY_PLAN.worker. */
+const WORKER_QUEUES: ReadonlyMap<string, readonly [string, number]> = new Map(
+  WORKER_LANES.map(([queue, concurrency]) => [
+    `${CONCURRENCY_PREFIX}${queue.toUpperCase().replace(/[-.]/g, '_')}`,
+    [queue, concurrency] as const,
+  ]),
+);
+
+/** Decimal digits only, from 1 to `max`; else null. */
+function bounded(value: string, max: number): number | null {
+  if (!/^[1-9][0-9]{0,5}$/.test(value)) return null;
+  const parsed = Number(value);
+  return parsed <= max ? parsed : null;
+}
 
 export interface QueueConcurrencyConfigResult {
   readonly queueLimits: QueueLimits | null;
@@ -28,6 +46,39 @@ export interface QueueConcurrencyConfigResult {
 export function readQueueConcurrencyConfig(
   env: Readonly<Record<string, string | undefined>>,
 ): QueueConcurrencyConfigResult {
-  void env;
-  throw new Error('NotImplemented: readQueueConcurrencyConfig');
+  const problems: string[] = [];
+  const concurrency: Record<string, number> = {};
+  let set = false;
+  for (const [name, value] of Object.entries(env)) {
+    if (!name.startsWith(CONCURRENCY_PREFIX) || value === undefined || value === '') continue;
+    const queue = WORKER_QUEUES.get(name);
+    if (queue === undefined) {
+      problems.push(`${name}: names no queue of the worker entry`);
+      continue;
+    }
+    const parsed = bounded(value, queue[1]);
+    if (parsed === null) {
+      problems.push(`${name}: must be an integer from 1 to ${String(queue[1])}`);
+      continue;
+    }
+    concurrency[queue[0]] = parsed;
+    set = true;
+  }
+  let dbBudget: number | null = null;
+  const budget = env[BUDGET_ENV];
+  if (budget !== undefined && budget !== '') {
+    dbBudget = bounded(budget, WORKER_DB_BUDGET);
+    if (dbBudget === null) {
+      problems.push(`${BUDGET_ENV}: must be an integer from 1 to ${String(WORKER_DB_BUDGET)}`);
+    } else {
+      set = true;
+    }
+  }
+  if (problems.length > 0) return { queueLimits: null, problems };
+  // Keys in ENTRY_PLAN.worker order, independent of the environment's order.
+  const ordered: Record<string, number> = {};
+  for (const [queue] of WORKER_QUEUES.values()) {
+    if (Object.hasOwn(concurrency, queue)) ordered[queue] = concurrency[queue]!;
+  }
+  return { queueLimits: set ? { concurrency: ordered, dbBudget } : null, problems: [] };
 }

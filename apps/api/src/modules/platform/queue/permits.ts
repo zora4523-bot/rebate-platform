@@ -17,8 +17,51 @@ export interface Permits {
   release(): void;
 }
 
+interface Waiter {
+  readonly grant: () => void;
+}
+
 /** A pool of `size` permits (an integer ≥ 1). */
 export function createPermits(size: number): Permits {
-  void size;
-  throw new Error('NotImplemented: createPermits');
+  if (!Number.isInteger(size) || size < 1) throw new RangeError('permits: size must be ≥ 1');
+  let held = 0;
+  // Insertion order is arrival order; an aborted waiter deletes itself.
+  const waiters = new Set<Waiter>();
+  return {
+    size,
+    held: () => held,
+    waiting: () => waiters.size,
+    acquire(signal: AbortSignal): Promise<boolean> {
+      if (signal.aborted) return Promise.resolve(false);
+      if (held < size && waiters.size === 0) {
+        held += 1;
+        return Promise.resolve(true);
+      }
+      return new Promise<boolean>((resolve) => {
+        const abort = () => {
+          waiters.delete(waiter);
+          resolve(false);
+        };
+        const waiter: Waiter = {
+          // The permit passes straight from the releaser to this waiter: `held` stays counted.
+          grant: () => {
+            signal.removeEventListener('abort', abort);
+            resolve(true);
+          },
+        };
+        waiters.add(waiter);
+        signal.addEventListener('abort', abort, { once: true });
+      });
+    },
+    release(): void {
+      if (held === 0) return;
+      const next = waiters.values().next();
+      if (next.done === true) {
+        held -= 1;
+        return;
+      }
+      waiters.delete(next.value);
+      next.value.grant();
+    },
+  };
 }

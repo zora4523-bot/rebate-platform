@@ -22,14 +22,14 @@ const specKeys = [
   'deadLetter',
 ];
 
-function plain(value: unknown): value is Record<string, unknown> {
+export function plain(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== 'object') return false;
   const proto: unknown = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
 }
 
 /** Do not invoke getters while validating boundary objects. */
-function keys(
+export function keys(
   value: unknown,
   allowed: readonly string[],
   required = allowed,
@@ -49,7 +49,7 @@ function keys(
   );
 }
 
-function integer(value: unknown, min: number, max: number): value is number {
+export function integer(value: unknown, min: number, max: number): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
 }
 
@@ -108,14 +108,17 @@ function validCatalog(catalog: unknown, plan: unknown): boolean {
   return true;
 }
 
-export function runtimeOptions(options: QueueRuntimeOptions): Required<QueueRuntimeOptions> {
+/** The validated options of createQueueRuntime; `limits` is checked by ./limits.ts. */
+export type RuntimeOptions = Required<Omit<QueueRuntimeOptions, 'limits'>>;
+
+export function runtimeOptions(options: QueueRuntimeOptions): RuntimeOptions {
   const catalog = options?.catalog === undefined ? QUEUE_CATALOG : options.catalog;
   const plan = options?.plan === undefined ? ENTRY_PLAN : options.plan;
   if (!validCatalog(catalog, plan)) throw new QueueError('invalid_catalog');
   if (
     !keys(
       options,
-      ['entry', 'db', 'logger', 'catalog', 'plan', 'stopTimeoutMs'],
+      ['entry', 'db', 'logger', 'catalog', 'plan', 'stopTimeoutMs', 'limits'],
       ['entry', 'db', 'logger'],
     ) ||
     !entries.includes(options.entry) ||
@@ -139,7 +142,7 @@ export function runtimeOptions(options: QueueRuntimeOptions): Required<QueueRunt
     catalog: catalog.map((spec) => ({ ...spec })),
     plan: Object.fromEntries(
       entries.map((entry) => [entry, plan[entry].map((work) => ({ ...work }))]),
-    ) as unknown as Required<QueueRuntimeOptions>['plan'],
+    ) as unknown as RuntimeOptions['plan'],
   };
 }
 

@@ -1,7 +1,7 @@
 // Environment configuration (ADR-0001 §2 配置校验): validated once at startup with zod.
 // `loadConfig` is pure: it only looks at the object it is given.
 import { z } from 'zod';
-import type { QueueLimits } from '../queue/types.ts';
+import type { QueueLimits } from '../queue/worker-plan.ts';
 import { APP_ENVS, type AppEnv } from './app-env.ts';
 import { readAdminAuthConfig, type AdminAuthConfig } from './admin-auth.ts';
 import { readAgentReviewConfig, type AgentReviewConfig } from './agent-review.ts';
@@ -23,6 +23,7 @@ import { readExportStoreConfig } from './export-store.ts';
 import { readMediaConfig } from './media.ts';
 import { readPddConfig, type PddClientConfig } from './pdd.ts';
 import { readPddQueryConfig } from './pdd-query.ts';
+import { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 import { readSmsConfig, type SmsConfig } from './sms.ts';
 import { readTrustedProxies } from './trusted-proxies.ts';
 import { readUnionEndpointOverrideConfig } from './union-endpoint-override.ts';
@@ -288,6 +289,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     if (appEnv.success)
       problems.push(...readUnionEndpointOverrideConfig(appEnv.data, env).problems);
     if (appEnv.success) problems.push(...readAgentUserHashConfig(appEnv.data, env).problems);
+    problems.push(...readQueueConcurrencyConfig(env).problems);
     throw new ConfigError(problems);
   }
 
@@ -330,6 +332,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     env,
   );
   violations.push(...agentUserHashProblems);
+  const { queueLimits, problems: queueProblems } = readQueueConcurrencyConfig(env);
+  violations.push(...queueProblems);
   if (violations.length > 0) throw new ConfigError(violations);
   const sms = readSmsConfig(values.APP_ENV, env);
 
@@ -368,5 +372,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     ...(values.METRICS_PORT === undefined
       ? {}
       : { metrics: { port: values.METRICS_PORT, host: values.METRICS_HOST } }),
+    // Only present when configured, so the documented shape of an unconfigured result is unchanged.
+    ...(queueLimits === null ? {} : { queueLimits }),
   };
 }

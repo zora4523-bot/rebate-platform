@@ -259,10 +259,10 @@
 //     - Why: the worker plan has 17 queues and 38 execution slots over a business pool of 10
 //       connections (POOL_SIZES.worker.db), which pg-boss's own statements share. Uncapped, the
 //       slots can take every connection and slow supervision and the health checks down.
-//     - Heavy queues (long-running or connection-holding; inventory of the implementation, to be
-//       completed there): order-sync, order-rescan, settle, export, data-copy, pay, and the
-//       notification fan-out (notify, evt.notification-*). Senders and business semantics do not
-//       change.
+//     - Heavy queues (long-running or connection-holding; inventory in the header of ./runtime.ts):
+//       order-sync, order-rescan, settle, export, data-copy, pay, poster, and the notification
+//       fan-out (notify, evt.notification-*). Senders and business semantics do not change. The
+//       dead letter scan lane (B1-01zzg) takes no permit.
 //     - ENTRY_PLAN, QUEUE_CATALOG, QueueSpec and WorkSpec do not change (frozen rule tests pin
 //       them): a queue's plan concurrency stays its upper bound; limits can only lower it.
 //     - `QueueLimits`: a plain object with exactly the keys concurrency and dbBudget.

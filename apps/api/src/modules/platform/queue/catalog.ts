@@ -1,4 +1,5 @@
 import type { EntryPlan, QueueSpec, WorkSpec } from './types.ts';
+import { WORKER_LANES } from './worker-plan.ts';
 
 const defaults = {
   policy: 'standard',
@@ -95,26 +96,8 @@ export const ENTRY_PLAN: EntryPlan = Object.freeze({
   api: Object.freeze([]),
   stream: Object.freeze([]),
   admin: Object.freeze([]),
-  worker: Object.freeze([
-    work('order-sync', 1),
-    work('order-rescan', 1),
-    work('settle', 1),
-    work('notify', 5),
-    work('union-auth', 1),
-    work('evt.notification-risk-state', 5),
-    work('evt.notification-appeal-result', 5),
-    work('evt.notification-claim-result', 5),
-    // One worker: the member's withdrawals are re-checked under the users lock, serially.
-    work('evt.payout-went-negative', 1),
-    // B2-15b: payment's queue, worker only, four slots (task §9.10).
-    work('pay', 4),
-    work('pool-refresh', 1),
-    work('page-schedule', 1),
-    work('poster', 2, 0.5),
-    work('data-copy', 1),
-    work('agent-trace', 2),
-    work('export', 1),
-    work('risk-scan', 1),
-  ]),
+  worker: Object.freeze(
+    WORKER_LANES.map(([queue, concurrency, polling]) => work(queue, concurrency, polling)),
+  ),
   payout: Object.freeze([work('payout', 1)]),
 });

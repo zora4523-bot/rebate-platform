@@ -1,0 +1,44 @@
+// The worker entry's lanes and limits as plain data (B1-01zzk; contract section 12 of ./index.ts).
+// A leaf module without imports: platform/config reads it, and platform/config must not depend on
+// ./types.ts (which reaches back into platform/config through the logger).
+
+/** ENTRY_PLAN.worker as [queue, concurrency, pollingIntervalSeconds]; ./catalog.ts builds it. */
+export const WORKER_LANES: readonly (readonly [string, number, number])[] = Object.freeze([
+  Object.freeze(['order-sync', 1, 2] as const),
+  Object.freeze(['order-rescan', 1, 2] as const),
+  Object.freeze(['settle', 1, 2] as const),
+  Object.freeze(['notify', 5, 2] as const),
+  Object.freeze(['union-auth', 1, 2] as const),
+  Object.freeze(['evt.notification-risk-state', 5, 2] as const),
+  Object.freeze(['evt.notification-appeal-result', 5, 2] as const),
+  Object.freeze(['evt.notification-claim-result', 5, 2] as const),
+  // One worker: the member's withdrawals are re-checked under the users lock, serially.
+  Object.freeze(['evt.payout-went-negative', 1, 2] as const),
+  // B2-15b: payment's queue, worker only, four slots (task §9.10).
+  Object.freeze(['pay', 4, 2] as const),
+  Object.freeze(['pool-refresh', 1, 2] as const),
+  Object.freeze(['page-schedule', 1, 2] as const),
+  Object.freeze(['poster', 2, 0.5] as const),
+  Object.freeze(['data-copy', 1, 2] as const),
+  Object.freeze(['agent-trace', 2, 2] as const),
+  Object.freeze(['export', 1, 2] as const),
+  Object.freeze(['risk-scan', 1, 2] as const),
+]);
+
+/**
+ * Default and largest shared budget of the worker: floor(POOL_SIZES.worker.db 10 × 7 / 10) = 7,
+ * leaving at least 3 connections to supervision, the dead letter scan and the health checks.
+ * ./worker-plan.test.ts keeps it in step with POOL_SIZES.
+ */
+export const WORKER_DB_BUDGET = 7;
+
+/**
+ * Concurrency limits of the worker entry (B1-01zzk, section 12): lower per-queue concurrency than
+ * the plan's and the shared budget of handler calls running at once. Exactly these two keys.
+ */
+export interface QueueLimits {
+  /** Queue of plan.worker → integer from 1 to that queue's plan concurrency. */
+  readonly concurrency: Readonly<Record<string, number>>;
+  /** null (the default budget 7) or an integer from 1 to 7. */
+  readonly dbBudget: number | null;
+}
