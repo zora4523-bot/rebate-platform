@@ -28,6 +28,34 @@ paths:
 test_paths:
   - 'test/spec/orders/manual-sync/**'
   - 'test/spec/contracts/admin-order-actions/operations.test.ts'
+red_exempt:
+  - file: test/spec/contracts/admin-order-actions/operations.test.ts
+    test: '[AC-CT-24n#1] post /admin/v1/rights-imports 登记 adminCreateRightsImport、后台权限和 planned'
+    reason: 冻结 CT-24n 契约用例，测试体未改（块 A 自 #1597 拆分后未动）；本任务只改同文件块 B 的三条手动同步，且共用 kit 可能读到本任务新增的 manual-sync 测试文件，同文件被整体判定，此用例在骨架上仍绿
+  - file: test/spec/contracts/admin-order-actions/operations.test.ts
+    test: '[AC-CT-24n#1] get /admin/v1/rights-imports 登记 adminListRightsImports、后台权限和 planned'
+    reason: 冻结 CT-24n 契约用例，测试体未改（块 A 自 #1597 拆分后未动）；本任务只改同文件块 B 的三条手动同步，且共用 kit 可能读到本任务新增的 manual-sync 测试文件，同文件被整体判定，此用例在骨架上仍绿
+  - file: test/spec/contracts/admin-order-actions/operations.test.ts
+    test: '[AC-CT-24n#1] get /admin/v1/rights-imports/{import_id} 登记 adminGetRightsImport、后台权限和 planned'
+    reason: 冻结 CT-24n 契约用例，测试体未改（块 A 自 #1597 拆分后未动）；本任务只改同文件块 B 的三条手动同步，且共用 kit 可能读到本任务新增的 manual-sync 测试文件，同文件被整体判定，此用例在骨架上仍绿
+  - file: test/spec/contracts/admin-order-actions/operations.test.ts
+    test: '[AC-CT-24n#1] post /admin/v1/orders/{order_id}/hold 登记 adminHoldOrder、后台权限和 planned'
+    reason: 冻结 CT-24n 契约用例，测试体未改（块 A 自 #1597 拆分后未动）；本任务只改同文件块 B 的三条手动同步，且共用 kit 可能读到本任务新增的 manual-sync 测试文件，同文件被整体判定，此用例在骨架上仍绿
+  - file: test/spec/contracts/admin-order-actions/operations.test.ts
+    test: '[AC-CT-24n#1] post /admin/v1/orders/{order_id}/unhold 登记 adminUnholdOrder、后台权限和 planned'
+    reason: 冻结 CT-24n 契约用例，测试体未改（块 A 自 #1597 拆分后未动）；本任务只改同文件块 B 的三条手动同步，且共用 kit 可能读到本任务新增的 manual-sync 测试文件，同文件被整体判定，此用例在骨架上仍绿
+  - file: test/spec/contracts/admin-order-actions/operations.test.ts
+    test: '[AC-CT-24n#1] post /admin/v1/orders/{order_id}/reassign 登记 adminReassignOrder、后台权限和 planned'
+    reason: 冻结 CT-24n 契约用例，测试体未改（块 A 自 #1597 拆分后未动）；本任务只改同文件块 B 的三条手动同步，且共用 kit 可能读到本任务新增的 manual-sync 测试文件，同文件被整体判定，此用例在骨架上仍绿
+  - file: test/spec/contracts/admin-order-actions/operations.test.ts
+    test: '[AC-CT-24n#2] /admin/v1/order-syncs 使用后台页码分页'
+    reason: 冻结 CT-24n 契约用例，测试体未改（块 A 自 #1597 拆分后未动）；本任务只改同文件块 B 的三条手动同步，且共用 kit 可能读到本任务新增的 manual-sync 测试文件，同文件被整体判定，此用例在骨架上仍绿
+  - file: test/spec/contracts/admin-order-actions/operations.test.ts
+    test: '[AC-CT-24n#2] /admin/v1/rights-imports 使用后台页码分页'
+    reason: 冻结 CT-24n 契约用例，测试体未改（块 A 自 #1597 拆分后未动）；本任务只改同文件块 B 的三条手动同步，且共用 kit 可能读到本任务新增的 manual-sync 测试文件，同文件被整体判定，此用例在骨架上仍绿
+  - file: test/spec/contracts/admin-order-actions/operations.test.ts
+    test: '[AC-CT-24n#3] channel 导入的额外权限和动态码仅条件适用'
+    reason: 冻结 CT-24n 契约用例，测试体未改（块 A 自 #1597 拆分后未动）；本任务只改同文件块 B 的三条手动同步，且共用 kit 可能读到本任务新增的 manual-sync 测试文件，同文件被整体判定，此用例在骨架上仍绿
 impl: claude
 tester: claude-independent
 accept:
