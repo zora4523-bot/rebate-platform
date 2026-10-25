@@ -16,7 +16,8 @@
 //     sub_order_no_missing; no sub-order of the task's app and platform → order_not_found; with a
 //     window (task from / to) the sub-order's paid_at (time_basis paid) or received_at (time_basis
 //     received) must lie in [from, to): outside → skipped (nothing written), received basis and no
-//     received_at → received_at_missing. No window: no row is filtered;
+//     received_at → received_at_missing (paid basis and no paid_at → outside). No window: no row is
+//     filtered. The window is judged on the order re-read under the lock;
 //   - rights → type RIGHTS, the row's status; punish → type PUNISH, status SUCCEEDED; source IMPORT,
 //     now = the injected Clock; `before` is the order row re-read FOR UPDATE after lockOrderKey of
 //     the sub-order (one transaction per row, the lock first);
@@ -30,10 +31,25 @@
 //   - rights.record not injected: no processor is returned for rights / punish, so the job ends the
 //     task failed and logs it at error (J-22); no order_rights is written.
 import type { DB } from '@couli/db';
-import type { Kysely } from 'kysely';
+import type { Kysely, Selectable, Transaction } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
-import type { RightsImportProcessors } from './rights-import-ports.ts';
-import type { OrderRightsPorts } from './rights-ports.ts';
+import { isRegisteredPlatform } from '../../union/index.ts';
+import { checkRightsRow, type RightsRowKind } from '../domain/rights-row.ts';
+import type { RightsImportRowOutcome } from '../domain/rights-import.ts';
+import { rereadOrderForUpdate } from '../infra/admin-hold-store.ts';
+import { lockOrderKey } from '../infra/order-lock.ts';
+import { findOrderForRights } from '../infra/rights-order-lookup.ts';
+import type {
+  RightsImportProcessors,
+  RightsImportRow,
+  RightsImportRowProcessor,
+  RightsImportTaskInfo,
+} from './rights-import-ports.ts';
+import {
+  recordOrderRights,
+  type OrderRightsPorts,
+  type RightsRecordInput,
+} from './rights-ports.ts';
 
 export interface RightsImportRowDeps {
   /** Opens the row's transaction when the job hands none. */
@@ -44,8 +60,85 @@ export interface RightsImportRowDeps {
   readonly ports: OrderRightsPorts | undefined;
 }
 
+const failed = (reason: Extract<RightsImportRowOutcome, { kind: 'failed' }>['reason']) =>
+  ({ kind: 'failed', reason }) as const satisfies RightsImportRowOutcome;
+const SKIPPED: RightsImportRowOutcome = { kind: 'skipped' };
+
+/** The window check of the locked order; null: inside the window, or no window. */
+function windowOutcome(
+  task: RightsImportTaskInfo,
+  order: Selectable<DB['orders']>,
+): RightsImportRowOutcome | null {
+  if (task.from === null || task.to === null || task.time_basis === null) return null;
+  const at = task.time_basis === 'received' ? order.received_at : order.paid_at;
+  if (at === null) return task.time_basis === 'received' ? failed('received_at_missing') : SKIPPED;
+  const ms = at.getTime();
+  return ms >= task.from.getTime() && ms < task.to.getTime() ? null : SKIPPED;
+}
+
+function createProcessor(
+  kind: RightsRowKind,
+  deps: RightsImportRowDeps & { readonly ports: OrderRightsPorts },
+): RightsImportRowProcessor {
+  const { db, clock, ports } = deps;
+
+  async function onTrx(
+    trx: Transaction<DB>,
+    task: RightsImportTaskInfo,
+    row: RightsImportRow,
+  ): Promise<RightsImportRowOutcome> {
+    const checked = checkRightsRow(kind, row.values, task.created_at);
+    if (!checked.ok) return failed('invalid_row');
+    const cells = checked.row;
+    if (cells.platform !== null && cells.platform !== task.platform) {
+      return failed('platform_mismatch');
+    }
+    if (cells.sub_order_id === null) return failed('sub_order_no_missing');
+    if (!isRegisteredPlatform(task.platform)) return failed('order_not_found');
+    const found = await findOrderForRights(trx, {
+      app_id: task.app_id,
+      platform: task.platform,
+      platform_order_no: cells.sub_order_id,
+    });
+    if (found.kind === 'sub_order_no_missing') return failed('sub_order_no_missing');
+    if (found.kind === 'not_found') return failed('order_not_found');
+    const target = found.order;
+    await lockOrderKey(trx, target.platform, target.sub_order_id);
+    const before = await rereadOrderForUpdate(trx, task.app_id, target.order_id);
+    if (before === undefined) return failed('order_not_found');
+    const outside = windowOutcome(task, before);
+    if (outside !== null) return outside;
+    const input: RightsRecordInput = {
+      before,
+      order_id: before.order_id,
+      source: 'IMPORT',
+      type: kind === 'rights' ? 'RIGHTS' : 'PUNISH',
+      status: cells.status,
+      amount_fen: cells.amount_fen,
+      deduction_commission_fen: cells.deduction_commission_fen,
+      occurred_at: cells.occurred_at,
+      platform_rights_no: cells.rights_no,
+      now: clock.now(),
+    };
+    const result = await recordOrderRights(trx, ports, input);
+    if (result.kind === 'applied') return { kind: 'succeeded' };
+    if (result.kind === 'duplicate') return { kind: 'duplicate' };
+    return SKIPPED;
+  }
+
+  return {
+    async process(task, row, trx) {
+      return trx === undefined
+        ? await db.transaction().execute((own) => onTrx(own, task, row))
+        : await onTrx(trx, task, row);
+    },
+  };
+}
+
 /** The rights and punish processors (both, or neither when rights.record is not injected). */
 export function createRightsImportProcessors(deps: RightsImportRowDeps): RightsImportProcessors {
-  void deps;
-  throw new Error('NotImplemented: createRightsImportProcessors');
+  const { ports } = deps;
+  if (ports === undefined || typeof ports.rights?.record !== 'function') return {};
+  const ready = { ...deps, ports };
+  return { rights: createProcessor('rights', ready), punish: createProcessor('punish', ready) };
 }
