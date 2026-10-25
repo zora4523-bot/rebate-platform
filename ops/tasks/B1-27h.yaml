@@ -2,8 +2,7 @@ id: B1-27h
 repo: rebate-platform
 title: identity：个人信息副本的生成与交付——异步作业 pending→running→（in_app_sms：一次性提取码加密、短信发提取码、站内信只带 DataCopy 入口、即记 delivered；wecom_session：服务端加密存放、ready）、失败 failed、24 小时过期 expired 并删文件；登记人后台账号停用时其未交付的企业微信路径请求置 failed；注销进入 processing 时取消未结束请求并删除全部副本文件；生成、交付各写审计
 type: impl
-# 2026-10-24 入账（admin-backend）。依据：08 BR-ID-40 细则「交付（默认）」「副本请求与注销状态」「重新登记与登记人停用」、04 §3.2 personal_data_copies、§6.6 data-exports；refs 只列 BR-ID-40（约 11.7KB），BR-ID-30 ⑨、BR-ID-42、BR-ID-43、BR-ID-28 只摘句。
-# 拆分理由：作业、存储、短信 / 站内信、停用钩子与注销联动是一组带副作用的后台流程，与登记（B1-27c）、下载（B1-27i）分开评审；登记只落行并同事务入队本任务的作业。
+# 2026-10-24 入账（admin-backend）。依据：08 BR-ID-40 细则「交付（默认）」「副本请求与注销状态」「重新登记与登记人停用」、04 §3.2 personal_data_copies、§6.6 data-exports；refs 只列 BR-ID-40（约 11.7KB），BR-ID-30 ⑨、BR-ID-42、BR-ID-43、BR-ID-28 只摘句。 拆分理由：作业、存储、短信 / 站内信、停用钩子与注销联动是一组带副作用的后台流程，与登记（B1-27c）、下载（B1-27i）分开评审；登记只落行并同事务入队本任务的作业。
 # 本线技术取舍（由编排者摘进任务书第 9 节）：① 不复用 admin 的 B1-34e export-worker（只服务 export_tasks，且副本表写者是 identity）；照其租约、至少一次投递、消费端去重写法新增 identity 的 data-copy-worker，在 identity-worker.module.ts 装配。
 # ② 存储复用 platform/export-store，扩出副本的对象键前缀与内容类型；每次运行用独立对象键并在完成前校验运行令牌（D10-138）；如有冻结测试钉死 key 形状，报 test-change，不改测试。
 # ③ 内容取自 B1-27f 的端口，打成压缩包整体加密，默认 AES-256 加密 ZIP；需新依赖时写 deps_needed，不改锁文件；提取码 / 口令用 CSPRNG、不落库不进日志与审计；wecom_session 先用服务端密钥加密存放。
@@ -21,6 +20,7 @@ paths:
   - 'apps/api/src/modules/identity/application/data-copy-file*.ts'
   - 'apps/api/src/modules/identity/infra/personal-data-copies*.ts'
   - 'apps/api/src/modules/identity/application/deletion-processing*.ts'
+  - 'apps/api/src/modules/identity/deletion-expiry.module.ts'
   - 'apps/api/src/modules/identity/identity-worker.module.ts'
   - 'apps/api/src/modules/identity/index.ts'
   - 'apps/api/src/modules/admin/infra/admin-account-writes*.ts'
