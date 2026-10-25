@@ -1,6 +1,6 @@
 // B2-15e: Kysely access to the refund side of payment's tables (pay_refunds, the refund columns of
 // pay_orders / pay_anomalies, pay_query_attempts rows of a refund; db/schema.sql and migration
-// 0098_pay-refunds-note-idempotency-operator.sql). The couli_app role may INSERT pay_refunds and
+// 0088_pay-refunds-note-idempotency-operator.sql). The couli_app role may INSERT pay_refunds and
 // UPDATE only status, channel_refund_no, succeeded_at and failed_at; the trigger
 // pay_refunds_reject_immutable_update keeps out_refund_no, amount_fen, target_type and target_id
 // as written, and `note` has no UPDATE grant at all (D10-350: written by the creating INSERT only).
@@ -11,7 +11,7 @@ import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import type { PayRefundReason, PayRefundTargetType } from '../domain/types.ts';
 
 /**
- * pay_refunds with the `note` column of D10-350 (migration 0098). Transitional, explicitly local:
+ * pay_refunds with the `note` column of D10-350 (migration 0088). Transitional, explicitly local:
  * packages/db/src/db.gen.ts is a generated file and gains the column with `pnpm db:snapshot` on
  * the test machine; until then the row type is widened here and nowhere else. Once the snapshot
  * carries `note`, this intersection is redundant and harmless.
