@@ -1,0 +1,128 @@
+{
+  "task": "B1-08za",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "947960b5752f448bbca6bbb5da6bd37db0bacc35",
+  "red_tests": [
+    "test/spec/orders/platform-rules/claims.test.ts > [AC-B1-08za#17] 找回授权平台（待跟单入口）：淘宝要 active 且 relation_id 可用（1–32 位）、拼多多 active 备案行即可、京东与未登记平台永不恢复授权类无返利记录",
+    "test/spec/orders/platform-rules/claims.test.ts > [AC-B1-08za#18] 找回授权平台（找回证据）：淘宝与拼多多有 active 绑定时授权类无返利记录算证据，京东与未登记平台不算",
+    "test/spec/orders/platform-rules/completeness.test.ts > [AC-B1-08za#1] 每个已登记平台在 PLATFORM_RULES 里恰有一份、键齐全无多余；类型层缺平台或缺键即编译失败",
+    "test/spec/orders/platform-rules/completeness.test.ts > [AC-B1-08za#2] platform-rules/<platform>.ts 逐个已登记平台存在并导出表中那一份；目录里没有未登记平台的文件",
+    "test/spec/orders/platform-rules/exports.test.ts > [AC-B1-08za#20] parseAttrCode / classifyBuyType 仍从 domain/attribution.ts 导出、签名不变，且与规则表逐样本一致",
+    "test/spec/orders/platform-rules/exports.test.ts > [AC-B1-08za#21] parseLinkCode 仍从 orders/index.ts 与 domain/source-backfill.ts 导出（同一函数）、签名不变，且与规则表逐样本一致",
+    "test/spec/orders/platform-rules/exports.test.ts > [AC-B1-08za#22] SERVICE_FEE_PLATFORM / PID_SCENE_PLATFORM 仍从 domain/snapshot-retry.ts 导出、字面量类型不变，且各是规则表里唯一打开该项的平台",
+    "test/spec/orders/platform-rules/exports.test.ts > [AC-B1-08za#23] scheduledPlatforms / INCREMENT_WINDOW_CAP_MS 仍从 domain/sync-window.ts 导出、签名不变，且与规则表的同步窗口上限一致",
+    "test/spec/orders/platform-rules/exports.test.ts > [AC-B1-08za#24] normalizeOrderNo / claimCompareValue 仍从原模块导出、签名不变，且与规则表的单号规范化一致",
+    "test/spec/orders/platform-rules/exports.test.ts > [AC-B1-08za#25] storedUnionOrder 仍从 application/claim-review.ts 导出、签名不变，商品 ID 落在规则表的字段名上",
+    "test/spec/orders/platform-rules/funds.test.ts > [AC-B1-08za#11] 服务费入基数（首次快照）：只有拼多多 N = 佣金 − 服务费、服务费缺失进待处理；京东 / 淘宝不扣、缺失也照常生成",
+    "test/spec/orders/platform-rules/funds.test.ts > [AC-B1-08za#12] 服务费入基数（补偿重试）：拼多多 unknown → skip、报文没给 → 待处理、有值扣减；京东 / 淘宝三种都不扣",
+    "test/spec/orders/platform-rules/funds.test.ts > [AC-B1-08za#13] 扫描必然 skip：拼多多服务费列为空 → true（0 或有值 → false），京东永不因服务费 skip，淘宝因推广位场景恒 true；佣金基数不可得一律 false",
+    "test/spec/orders/platform-rules/funds.test.ts > [AC-B1-08za#14] 未登记的平台代码（无规则表）：不扣服务费、服务费缺失或未知不进待处理也不 skip，场景未知不 skip",
+    "test/spec/orders/platform-rules/funds.test.ts > [AC-B1-08za#15] 淘礼金推广位场景（补偿重试）：只有淘宝在推广位场景未知时 skip pid_scene_unknown；京东 / 拼多多按非淘礼金照常生成",
+    "test/spec/orders/platform-rules/funds.test.ts > [AC-B1-08za#16] 淘礼金推广位场景已知时不按平台分支：任何平台推广位为 taolijin → rebate_mode none、红包记空；其余场景 → 空模式、红包 0",
+    "test/spec/orders/platform-rules/no-platform-compare.test.ts > [AC-B1-08za#19] orders 模块（规则表与单元测试之外）不再与平台名字面量比较、switch 分支或用平台名集合判定",
+    "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#3] 归因参数解析：京东只读 subUnionId 整串第 1 组，拼多多只读 custom_parameters（app=n、8 位字符串 uid），互不借用",
+    "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#4] 归因方式：淘宝走 relation_id 绑定、不解析 attr_code；京东 / 拼多多按 attr_code 查用户、不查绑定",
+    "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#5] 来源短码：京东取 subUnionId 第 2 组，拼多多取 custom_parameters.lk（1–16 位 [0-9a-z]），淘宝恒为 null",
+    "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#6] 购买场景回退：只有拼多多在推广位 fallback 时读 custom_parameters.sc；推广位场景已知时各平台都按推广位",
+    "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#7] 单号规范化：拼多多两侧去掉全部连字符（保留前导零与空格），其他平台与未登记平台原样",
+    "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#8] 商品键推送：京东不推（不读 key_prefix、返回 null），拼多多与淘宝按平台读 key_prefix 推导",
+    "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#9] 同步窗口上限：拼多多 30 分钟，淘宝 / 京东没有固定上限；调度与手动同步只列有上限的平台",
+    "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#10] 商品 ID 字段名：淘宝 item_id、京东 itemId、拼多多 goods_sign；库内订单还原只填该平台那一个字段"
+  ],
+  "risk_note": "RV2 by path (orders). Behaviour-preserving refactor (architecture review R-09, D10-183 ⑤ / D10-254): per-platform rule tables in orders/domain/platform-rules/{jd,pdd,taobao}.ts covering attribution parsing, link code, scene-param fallback, service-fee deduction, taolijin PID scene, order-number normalisation, claim authorisation, product-key push, sync-window cap and item-id field; domain code looks the table up instead of comparing platform names; frozen exports and signatures kept (SERVICE_FEE_PLATFORM / PID_SCENE_PLATFORM now `as const`, same literal types). Left as data lookups for a later task: manual-sync platform list and the two SQL constants. No migration, no contract change.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "947960b5752f448bbca6bbb5da6bd37db0bacc35",
+      "tree": "58dfcd3ff522e52f9466b0126e7e9c585a128f9f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-25T19:24:13Z",
+      "finished_at": "2026-10-25T19:24:19Z",
+      "gate": {
+        "commit": "8637d726ae1e23170597ec2e0cfab411c22a7b29",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "red_tests": [
+        "test/spec/orders/platform-rules/claims.test.ts > [AC-B1-08za#17] 找回授权平台（待跟单入口）：淘宝要 active 且 relation_id 可用（1–32 位）、拼多多 active 备案行即可、京东与未登记平台永不恢复授权类无返利记录",
+        "test/spec/orders/platform-rules/claims.test.ts > [AC-B1-08za#18] 找回授权平台（找回证据）：淘宝与拼多多有 active 绑定时授权类无返利记录算证据，京东与未登记平台不算",
+        "test/spec/orders/platform-rules/completeness.test.ts > [AC-B1-08za#1] 每个已登记平台在 PLATFORM_RULES 里恰有一份、键齐全无多余；类型层缺平台或缺键即编译失败",
+        "test/spec/orders/platform-rules/completeness.test.ts > [AC-B1-08za#2] platform-rules/<platform>.ts 逐个已登记平台存在并导出表中那一份；目录里没有未登记平台的文件",
+        "test/spec/orders/platform-rules/exports.test.ts > [AC-B1-08za#20] parseAttrCode / classifyBuyType 仍从 domain/attribution.ts 导出、签名不变，且与规则表逐样本一致",
+        "test/spec/orders/platform-rules/exports.test.ts > [AC-B1-08za#21] parseLinkCode 仍从 orders/index.ts 与 domain/source-backfill.ts 导出（同一函数）、签名不变，且与规则表逐样本一致",
+        "test/spec/orders/platform-rules/exports.test.ts > [AC-B1-08za#22] SERVICE_FEE_PLATFORM / PID_SCENE_PLATFORM 仍从 domain/snapshot-retry.ts 导出、字面量类型不变，且各是规则表里唯一打开该项的平台",
+        "test/spec/orders/platform-rules/exports.test.ts > [AC-B1-08za#23] scheduledPlatforms / INCREMENT_WINDOW_CAP_MS 仍从 domain/sync-window.ts 导出、签名不变，且与规则表的同步窗口上限一致",
+        "test/spec/orders/platform-rules/exports.test.ts > [AC-B1-08za#24] normalizeOrderNo / claimCompareValue 仍从原模块导出、签名不变，且与规则表的单号规范化一致",
+        "test/spec/orders/platform-rules/exports.test.ts > [AC-B1-08za#25] storedUnionOrder 仍从 application/claim-review.ts 导出、签名不变，商品 ID 落在规则表的字段名上",
+        "test/spec/orders/platform-rules/funds.test.ts > [AC-B1-08za#11] 服务费入基数（首次快照）：只有拼多多 N = 佣金 − 服务费、服务费缺失进待处理；京东 / 淘宝不扣、缺失也照常生成",
+        "test/spec/orders/platform-rules/funds.test.ts > [AC-B1-08za#12] 服务费入基数（补偿重试）：拼多多 unknown → skip、报文没给 → 待处理、有值扣减；京东 / 淘宝三种都不扣",
+        "test/spec/orders/platform-rules/funds.test.ts > [AC-B1-08za#13] 扫描必然 skip：拼多多服务费列为空 → true（0 或有值 → false），京东永不因服务费 skip，淘宝因推广位场景恒 true；佣金基数不可得一律 false",
+        "test/spec/orders/platform-rules/funds.test.ts > [AC-B1-08za#14] 未登记的平台代码（无规则表）：不扣服务费、服务费缺失或未知不进待处理也不 skip，场景未知不 skip",
+        "test/spec/orders/platform-rules/funds.test.ts > [AC-B1-08za#15] 淘礼金推广位场景（补偿重试）：只有淘宝在推广位场景未知时 skip pid_scene_unknown；京东 / 拼多多按非淘礼金照常生成",
+        "test/spec/orders/platform-rules/funds.test.ts > [AC-B1-08za#16] 淘礼金推广位场景已知时不按平台分支：任何平台推广位为 taolijin → rebate_mode none、红包记空；其余场景 → 空模式、红包 0",
+        "test/spec/orders/platform-rules/no-platform-compare.test.ts > [AC-B1-08za#19] orders 模块（规则表与单元测试之外）不再与平台名字面量比较、switch 分支或用平台名集合判定",
+        "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#3] 归因参数解析：京东只读 subUnionId 整串第 1 组，拼多多只读 custom_parameters（app=n、8 位字符串 uid），互不借用",
+        "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#4] 归因方式：淘宝走 relation_id 绑定、不解析 attr_code；京东 / 拼多多按 attr_code 查用户、不查绑定",
+        "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#5] 来源短码：京东取 subUnionId 第 2 组，拼多多取 custom_parameters.lk（1–16 位 [0-9a-z]），淘宝恒为 null",
+        "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#6] 购买场景回退：只有拼多多在推广位 fallback 时读 custom_parameters.sc；推广位场景已知时各平台都按推广位",
+        "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#7] 单号规范化：拼多多两侧去掉全部连字符（保留前导零与空格），其他平台与未登记平台原样",
+        "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#8] 商品键推送：京东不推（不读 key_prefix、返回 null），拼多多与淘宝按平台读 key_prefix 推导",
+        "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#9] 同步窗口上限：拼多多 30 分钟，淘宝 / 京东没有固定上限；调度与手动同步只列有上限的平台",
+        "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#10] 商品 ID 字段名：淘宝 item_id、京东 itemId、拼多多 goods_sign；库内订单还原只填该平台那一个字段"
+      ],
+      "expected": [
+        "test/spec/orders/platform-rules/claims.test.ts",
+        "test/spec/orders/platform-rules/completeness.test.ts",
+        "test/spec/orders/platform-rules/exports.test.ts",
+        "test/spec/orders/platform-rules/funds.test.ts",
+        "test/spec/orders/platform-rules/no-platform-compare.test.ts",
+        "test/spec/orders/platform-rules/values.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "b16445451767434e280dd44d1e9955571e69289a04606684cfc95cec9071437d"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable; independent Claude via tools/agent/claude-run.sh per approvals #36; round 1 pass with no findings (service-fee and taolijin branches checked one by one)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests and a NotImplemented skeleton by an independent Claude context (25 tests in 6 files red for the right reason, red/1); reviewed by a separate fresh independent Claude call: pass, S2x1 (the no-platform-compare scan misses array includes and comparisons wrapped across lines; the implementation removed those too)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "0c25ec9f2d8cd11339cfb177d0badd017c62f085",
+    "specs": "cec847e1768a63aac90e3e1bd473462d95d84436"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}

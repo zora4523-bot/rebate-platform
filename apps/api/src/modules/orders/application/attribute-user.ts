@@ -6,6 +6,7 @@
 //   多个不同用户 → 未归因、P1 告警（attr_binding_conflict），不计数。
 import type { RegisteredPlatform, UnionOrderAttrParams } from '../../union/index.ts';
 import { parseAttrCode, resolveBinding } from '../domain/attribution.ts';
+import { findPlatformRules } from '../domain/platform-rules/index.ts';
 import type { OrderPipelineDeps } from './pipeline-types.ts';
 
 export type UserCounter = 'attr_param_invalid' | 'attr_binding_miss';
@@ -39,7 +40,8 @@ export async function attributeOrderUser(
   ports: Pick<OrderPipelineDeps, 'users' | 'bindings'>,
   input: AttributeUserInput,
 ): Promise<UserAttribution> {
-  if (input.platform === 'taobao') {
+  // 归因方式查规则表的 attribution（淘宝 relation_id，京东 / 拼多多 attr_code）。
+  if (findPlatformRules(input.platform)?.attribution.kind === 'relation_id') {
     const relationId = input.params.relation_id;
     if (relationId === null || relationId === '') return unattributed('attr_binding_miss');
     const rows = await ports.bindings.findByRelation({

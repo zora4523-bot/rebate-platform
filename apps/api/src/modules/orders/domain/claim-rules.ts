@@ -2,6 +2,7 @@
 // orchestrator 口径 5～8). No database, Redis or clock here: the application reads the rows and
 // the time and hands them in.
 import { accountingDate, chinaDayRange } from '@couli/domain';
+import { findPlatformRules } from './platform-rules/index.ts';
 
 /** BR-ATTR-19: claims created (entered submitted) per user per +08:00 day. */
 export const CLAIM_DAILY_LIMIT = 5;
@@ -47,9 +48,14 @@ export function stripClaimSpaces(orderNo: string): string {
   return orderNo.replaceAll(' ', '');
 }
 
-/** The value compared with stored numbers: pdd drops every hyphen (both sides), others as is. */
+/**
+ * The value compared with stored numbers: pdd drops every hyphen (both sides), others as is. The
+ * rule table's orderNoStripHyphens decides; an unregistered platform code is left as is.
+ */
 export function claimCompareValue(platform: string, orderNo: string): string {
-  return platform === 'pdd' ? orderNo.replaceAll('-', '') : orderNo;
+  return findPlatformRules(platform)?.orderNoStripHyphens === true
+    ? orderNo.replaceAll('-', '')
+    : orderNo;
 }
 
 /** claim.window_hours when it is a positive integer, else the BR-ATTR-13 ④ default. */

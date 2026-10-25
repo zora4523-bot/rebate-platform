@@ -1,6 +1,7 @@
 import type { DB } from '@couli/db';
 import type { Kysely, Selectable } from 'kysely';
 import type { RegisteredPlatform } from '../../union/index.ts';
+import { findPlatformRules } from '../domain/platform-rules/index.ts';
 
 export interface RightsOrderLookupInput {
   readonly app_id: string;
@@ -15,10 +16,12 @@ export type RightsOrderLookupResult =
 
 /**
  * 平台单号的比较用规范形态：拼多多去掉全部连字符（存储侧也按同样规则规范化后再比较），
- * 其他平台原样（保留连字符与前导零）。不假设连字符的位置，也不转 number。
+ * 其他平台原样（保留连字符与前导零）。不假设连字符的位置，也不转 number。查规则表的 orderNoStripHyphens。
  */
 export function normalizeOrderNo(platform: RegisteredPlatform, platformOrderNo: string): string {
-  return platform === 'pdd' ? platformOrderNo.replaceAll('-', '') : platformOrderNo;
+  return findPlatformRules(platform)?.orderNoStripHyphens === true
+    ? platformOrderNo.replaceAll('-', '')
+    : platformOrderNo;
 }
 
 type OrderNoColumn = 'sub_order_id' | 'parent_order_id';
@@ -38,7 +41,7 @@ export async function findOrderForRights(
   input: RightsOrderLookupInput,
 ): Promise<RightsOrderLookupResult> {
   const no = normalizeOrderNo(input.platform, input.platform_order_no);
-  const pdd = input.platform === 'pdd';
+  const strip = findPlatformRules(input.platform)?.orderNoStripHyphens === true;
   const scoped = () =>
     db
       .withSchema('app')
@@ -51,14 +54,14 @@ export async function findOrderForRights(
       eb(eb.fn<string>('replace', [eb.ref(column), eb.val('-'), eb.val('')]), '=', no),
     );
 
-  const subQuery = pdd
+  const subQuery = strip
     ? exact('sub_order_id').selectAll().unionAll(stripped('sub_order_id').selectAll())
     : exact('sub_order_id').selectAll();
   const order = await subQuery.executeTakeFirst();
   if (order !== undefined) return { kind: 'found', order };
 
   // Diagnostic probe only: a parent hit is reported, never expanded to its children.
-  const parentQuery = pdd
+  const parentQuery = strip
     ? exact('parent_order_id')
         .select('sub_order_id')
         .unionAll(stripped('parent_order_id').select('sub_order_id'))

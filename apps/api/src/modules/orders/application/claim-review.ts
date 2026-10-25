@@ -41,6 +41,7 @@ import {
   type StaffRejectReason,
 } from '../domain/claim-review.ts';
 import { planCommissionSnapshot, snapshotPaidAtSource } from '../domain/commission-snapshot.ts';
+import { platformRules, type ItemIdField } from '../domain/platform-rules/index.ts';
 import { createAdminClaimReads } from '../infra/admin-claim-reads.ts';
 import {
   claimDecisions,
@@ -446,12 +447,9 @@ export function storedUnionOrder(
   order: Selectable<DB['orders']>,
   platform: RegisteredPlatform,
 ): UnionOrder {
-  const item =
-    platform === 'taobao'
-      ? { item_id: order.raw_item_id }
-      : platform === 'jd'
-        ? { itemId: order.raw_item_id }
-        : { goods_sign: order.raw_item_id };
+  // 商品 ID 只填该平台的那一个字段（规则表 itemIdField）。
+  const item: Partial<Record<ItemIdField, string>> = {};
+  item[platformRules(platform).itemIdField] = order.raw_item_id;
   return {
     platform,
     ...item,

@@ -20,6 +20,7 @@ import type {
   ClaimEvidenceBinding,
   ClaimEvidenceConflict,
 } from '../../linking/index.ts';
+import { findPlatformRules } from './platform-rules/index.ts';
 import { instantAt } from './sync-window.ts';
 
 export type ClaimEvidenceLevel = 'strong' | 'weak' | 'none';
@@ -49,8 +50,6 @@ const HOUR_MS = 3_600_000;
 const EVENTS: ReadonlySet<string> = new Set(['convert', 'open']);
 /** BR-ID-18: only the authorisation reasons may ever be recovered. */
 const AUTH_REASONS: ReadonlySet<string> = new Set(['auth_declined', 'auth_failed']);
-/** Platforms whose authorisation 08 defines (taobao binding active, pdd filing active). */
-const AUTH_PLATFORMS: ReadonlySet<string> = new Set(['taobao', 'pdd']);
 
 /** W_backfill in hours: a positive safe integer, otherwise the default. */
 export function backfillWindowHours(value: unknown): number {
@@ -73,7 +72,9 @@ function nonEmpty(value: string | null): value is string {
 
 /** Whether the applicant may use no_rebate rows of the authorisation reasons (BR-ID-18). */
 function authorised(input: ClaimEvidenceInput): boolean {
-  if (!AUTH_PLATFORMS.has(input.platform)) return false;
+  // Only platforms whose authorisation 08 defines (rule table claimAuth: taobao binding active,
+  // pdd filing active); an unregistered platform code never.
+  if ((findPlatformRules(input.platform)?.claimAuth ?? null) === null) return false;
   if (!input.bindings.some((row) => row.status === 'active')) return false;
   if (input.bindings.some((row) => row.status === 'blocked')) return false;
   const attr = input.attrAt.getTime();

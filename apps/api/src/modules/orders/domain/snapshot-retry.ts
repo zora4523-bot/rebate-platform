@@ -18,6 +18,7 @@ import {
   type PaidAtSource,
   type SnapshotPendingReason,
 } from './commission-snapshot.ts';
+import { findPlatformRules } from './platform-rules/index.ts';
 
 /** 快照类待处理原因（B1-08k 写入）；TLJ_FACE_VALUE_UNMATCHED 是快照已生成后另写的，不属于重试对象。 */
 export const SNAPSHOT_RETRY_REASONS = [
@@ -136,18 +137,25 @@ export interface PlanSnapshotRetryInput {
 }
 
 const TAOLIJIN_SCENE = 'taolijin';
-/** 佣金基数要扣平台服务费的平台（拼多多报文的佣金含软件服务费，B1-08k）。 */
-export const SERVICE_FEE_PLATFORM = 'pdd';
-/** 推广位场景（淘礼金）决定返利模式的平台；扫描路径查不到场景，此平台的单一律 skip。 */
-export const PID_SCENE_PLATFORM = 'taobao';
+/**
+ * 佣金基数要扣平台服务费的平台（拼多多报文的佣金含软件服务费，B1-08k）。B1-08za：判定只查规则表的
+ * serviceFeeDeducted；本常量只留作 SQL（infra/snapshot-retry-store.ts）的单平台取值，须与规则表一致。
+ */
+export const SERVICE_FEE_PLATFORM = 'pdd' as const;
+/**
+ * 推广位场景（淘礼金）决定返利模式的平台；扫描路径查不到场景，此平台的单一律 skip。B1-08za：判定只查规则表的
+ * taolijinPidScene；本常量只留作 SQL 的单平台取值，须与规则表一致。
+ */
+export const PID_SCENE_PLATFORM = 'taobao' as const;
 
 /** 重试时的入参组装；判定顺序与 planCommissionSnapshot 一致（金额 → 服务费 → paidAt），其余字段同 B1-08k。 */
 export function planSnapshotRetry(input: PlanSnapshotRetryInput): SnapshotRetryPlan {
   const { order } = input;
+  const rules = findPlatformRules(order.platform);
   const commission = order.settle_commission_fen ?? order.est_commission_fen;
   if (commission === null) return { kind: 'pending', reason: 'AMOUNT_PARSE_FAILED' };
   let nBaseFen = commission;
-  if (order.platform === SERVICE_FEE_PLATFORM) {
+  if (rules?.serviceFeeDeducted === true) {
     if (input.serviceFeeFen === 'unknown') return { kind: 'skip', reason: 'service_fee_unknown' };
     if (input.serviceFeeFen === null)
       return { kind: 'pending', reason: 'SERVICE_FEE_RATE_MISSING' };
@@ -157,7 +165,7 @@ export function planSnapshotRetry(input: PlanSnapshotRetryInput): SnapshotRetryP
   let pidScene: string | null;
   if (input.pidScene === 'unknown') {
     // 淘礼金只在淘宝；别的平台场景未知时与 B1-08k「查不到 → 非淘礼金」一致。
-    if (order.platform === PID_SCENE_PLATFORM) return { kind: 'skip', reason: 'pid_scene_unknown' };
+    if (rules?.taolijinPidScene === true) return { kind: 'skip', reason: 'pid_scene_unknown' };
     pidScene = null;
   } else {
     pidScene = input.pidScene;
@@ -203,9 +211,10 @@ export interface ScanSkipOrder {
  */
 export function isScanSkipCertain(order: ScanSkipOrder): boolean {
   if ((order.settle_commission_fen ?? order.est_commission_fen) === null) return false;
-  if (order.platform === SERVICE_FEE_PLATFORM && order.service_fee_fen === null) return true;
+  const rules = findPlatformRules(order.platform);
+  if (rules?.serviceFeeDeducted === true && order.service_fee_fen === null) return true;
   const source = order.paid_at_source;
   if (source === 'platform' && order.paid_at === null) return true;
   if (source !== null && source !== 'platform' && source !== 'observed') return true;
-  return order.platform === PID_SCENE_PLATFORM;
+  return rules?.taolijinPidScene === true;
 }
