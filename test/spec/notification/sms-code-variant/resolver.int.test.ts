@@ -16,6 +16,7 @@ import { memoryLogger } from '../../platform/queue/kit.ts';
 import {
   DEPLOY,
   PENDING_REG,
+  type PendingRegistration,
   type Registration,
   VERIFY_REG,
   WD_DEFAULT_REG,
@@ -34,6 +35,24 @@ const STEP_UP_REG: Registration = Object.freeze({
   templateCode: 'SMS_100000002',
   type: 'verify',
   preview: '您的动态码为：{code}，请勿泄露！',
+});
+
+/** SMS_CODE 的「测试失败」待测试登记（sms_test_status='failed'；签名、模板 CODE 与在用登记、部署配置都不同）。 */
+const FAILED_REG: PendingRegistration = Object.freeze({
+  signName: '测试失败签名',
+  templateCode: 'SMS_400000009',
+  type: 'verify',
+  preview: '测试失败的动态码 {code}',
+  status: 'failed',
+});
+
+/** SMS_CODE 的待测试登记：没有站长验证手机、测试短信未发（sms_test_status='not_sent_no_verify_phone'）。 */
+const NOT_SENT_REG: PendingRegistration = Object.freeze({
+  signName: '未发测试签名',
+  templateCode: 'SMS_400000008',
+  type: 'verify',
+  preview: '未发测试的动态码 {code}',
+  status: 'not_sent_no_verify_phone',
 });
 
 const WD_CHANNELS = ['inbox', 'push', 'sms'] as const;
@@ -339,4 +358,100 @@ it('[AC-B1-12za#8] 按 app 隔离：各 app 只看自己的行，A 的 default �
     bareDefault: DEPLOY,
     bareStepUp: templateOf(STEP_UP_REG),
   });
+});
+
+it('[AC-B1-12za#9] SMS_CODE：所请求变体只有「测试失败」（failed）或「未发测试」的待测试登记、在用为空 → 部署配置，绝不用待测试的签名 / 模板 CODE；同时有在用登记与 failed 待测试 → 用在用登记', async () => {
+  const r = rig('with-deploy');
+  const failedOnly = newAppId('sms-code-variant');
+  const activeAndFailed = newAppId('sms-code-variant');
+  await seedTemplate(r.db, {
+    appId: failedOnly,
+    code: 'SMS_CODE',
+    variant: 'default',
+    channels: ['sms'],
+    pending: FAILED_REG,
+  });
+  await seedTemplate(r.db, {
+    appId: failedOnly,
+    code: 'SMS_CODE',
+    variant: 'step_up',
+    channels: ['sms'],
+    pending: FAILED_REG,
+  });
+  await seedTemplate(r.db, {
+    appId: failedOnly,
+    code: 'SMS_CODE',
+    variant: 'login',
+    channels: ['sms'],
+    pending: NOT_SENT_REG,
+  });
+  await seedTemplate(r.db, {
+    appId: activeAndFailed,
+    code: 'SMS_CODE',
+    variant: 'default',
+    channels: ['sms'],
+    active: VERIFY_REG,
+    pending: FAILED_REG,
+  });
+  await seedTemplate(r.db, {
+    appId: activeAndFailed,
+    code: 'SMS_CODE',
+    variant: 'step_up',
+    channels: ['sms'],
+    active: STEP_UP_REG,
+    pending: FAILED_REG,
+  });
+  const got = {
+    failedOnlyDefault: await r.resolver.resolve({ appId: failedOnly, code: 'SMS_CODE' }),
+    failedOnlyStepUp: await r.resolver.resolve({
+      appId: failedOnly,
+      code: 'SMS_CODE',
+      variant: 'step_up',
+    }),
+    notSentOnlyLogin: await r.resolver.resolve({
+      appId: failedOnly,
+      code: 'SMS_CODE',
+      variant: 'login',
+    }),
+    activeAndFailedDefault: await r.resolver.resolve({ appId: activeAndFailed, code: 'SMS_CODE' }),
+    activeAndFailedStepUp: await r.resolver.resolve({
+      appId: activeAndFailed,
+      code: 'SMS_CODE',
+      variant: 'step_up',
+    }),
+  };
+  expect(got).toEqual({
+    failedOnlyDefault: DEPLOY,
+    failedOnlyStepUp: DEPLOY,
+    notSentOnlyLogin: DEPLOY,
+    activeAndFailedDefault: templateOf(VERIFY_REG),
+    activeAndFailedStepUp: templateOf(STEP_UP_REG),
+  });
+  expect(linesOf(r.lines, 'sms_not_ready')).toEqual([]);
+});
+
+it('[AC-B1-12za#10] SMS_CODE 没有部署配置：所请求变体只有「测试失败」（failed）待测试登记 → undefined（待测试登记不顶替）；同时有在用登记与 failed 待测试 → 用在用登记', async () => {
+  const r = rig('without-deploy');
+  const appId = newAppId('sms-code-variant');
+  await seedTemplate(r.db, {
+    appId,
+    code: 'SMS_CODE',
+    variant: 'default',
+    channels: ['sms'],
+    active: VERIFY_REG,
+    pending: FAILED_REG,
+  });
+  await seedTemplate(r.db, {
+    appId,
+    code: 'SMS_CODE',
+    variant: 'step_up',
+    channels: ['sms'],
+    pending: FAILED_REG,
+  });
+  const got = {
+    default: await r.resolver.resolve({ appId, code: 'SMS_CODE' }),
+    stepUp: await r.resolver.resolve({ appId, code: 'SMS_CODE', variant: 'step_up' }),
+  };
+  expect(got).toEqual({ default: templateOf(VERIFY_REG), stepUp: undefined });
+  expect(linesOf(r.lines, 'sms_not_ready')).toEqual([]);
 });
