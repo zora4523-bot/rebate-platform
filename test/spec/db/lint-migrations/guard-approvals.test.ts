@@ -122,12 +122,18 @@ it(
     // pinning as 0057.
     const b215i = '0081_ledger-type-pay.sql';
     const b215iHash = 'e0a4df6555607577c01ec7624a30c3d7bef544098783204329ffe8a01705cf2e';
+    // B2-15e (guard-change): B2-15e's 0088 (pay_refunds idempotency key rebuilt as UNIQUE (app_id,
+    // operator, idempotency_key), nullable note column; orchestrator rulings D10-350 / D10-351 ②,
+    // D10-352). Same pinning as 0057.
+    const b215e = '0088_pay-refunds-note-idempotency-operator.sql';
+    const b215eHash = '8d75300755329c8ebbb06fbf10988279df06958406e0c159ca877cdf54638a82';
     expect(module.APPROVED_GUARD_CHANGES).toEqual({
       [APPROVED_FILE]: createHash('sha256').update(bytes).digest('hex'),
       [ct25d]: ct25dHash,
       [b122a]: b122aHash,
       [b115r]: b115rHash,
       [b215i]: b215iHash,
+      [b215e]: b215eHash,
     });
     const ct25dPath = join(ROOT, 'db/migrations', ct25d);
     if (existsSync(ct25dPath)) {
