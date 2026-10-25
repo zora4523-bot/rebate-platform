@@ -5,6 +5,7 @@ import type { DB } from '@couli/db';
 import { chinaDayRange } from '@couli/domain';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import type { OrderSubject } from '../application/order-queries.ts';
+import { findPlatformRules } from '../domain/platform-rules/index.ts';
 
 /** What acceptance reads of a matched orders row. */
 export interface ClaimOrderRow {
@@ -24,7 +25,8 @@ export interface ClaimOrderRow {
 /**
  * Orders of (app_id, platform) whose child (`sub`) or parent (`parent`) number equals `value`.
  * pdd compares with every hyphen removed from the stored number (the caller removes them from the
- * input); other platforms compare exactly. A null parent number never matches.
+ * input); other platforms compare exactly (rule table orderNoStripHyphens). A null parent number
+ * never matches.
  */
 export async function findClaimOrders(
   trx: Transaction<DB>,
@@ -35,7 +37,9 @@ export async function findClaimOrders(
 ): Promise<ClaimOrderRow[]> {
   const column = by === 'sub' ? 'sub_order_id' : 'parent_order_id';
   const stored =
-    platform === 'pdd' ? sql<string>`replace(${sql.ref(column)}, '-', '')` : sql.ref(column);
+    findPlatformRules(platform)?.orderNoStripHyphens === true
+      ? sql<string>`replace(${sql.ref(column)}, '-', '')`
+      : sql.ref(column);
   return trx
     .withSchema('app')
     .selectFrom('orders')

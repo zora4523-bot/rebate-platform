@@ -1,6 +1,8 @@
 // B1-08h: pure attribution rules for one union sub-order (BR-ATTR-06/07/08). No I/O here; the
 // pipeline feeds port rows in and writes the decision. Reused by B1-08i (unattributed re-run).
 import type { RegisteredPlatform, UnionOrderAttrParams } from '../../union/index.ts';
+import { findPlatformRules } from './platform-rules/index.ts';
+import { parseJsonObject } from './platform-rules/params.ts';
 
 export interface BindingRow {
   readonly user_id: string;
@@ -18,51 +20,22 @@ export interface BuyTypeDecision {
   readonly scene_basis: 'pid' | 'param' | 'fallback';
 }
 
-/**
- * BR-ATTR-06 京东 subUnionId：整串完全匹配（JS 的 `$` 不吞结尾换行）。第 1 组 attr_code，第 2 组 link 短码 lk
- * （1–16 位，BR-ATTR-15 exact 用，B1-08j 共用）。
- */
-export const JD_SUB_UNION = /^n_([0-9a-z]{8})(?:_([0-9a-z]{1,16}))?$/;
-/** BR-ATTR-06 拼多多 uid：8 位 [0-9a-z] 字符串。 */
-const PDD_UID = /^[0-9a-z]{8}$/;
-
-/** Parses JSON and keeps only a plain object (not null, not an array, not a primitive). */
-export function parseJsonObject(text: string | null): Record<string, unknown> | null {
-  if (text === null || text === '') return null;
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
+// B1-08za：订单参数的解析器移到 platform-rules/params.ts（按平台的取值在 platform-rules/<platform>.ts），
+// 这里按原名再导出。
+export { JD_SUB_UNION, parseJsonObject } from './platform-rules/params.ts';
 
 /**
  * BR-ATTR-06：从订单参数解析 attr_code；只看本平台自己的参数字段，解析失败返回 null。
- * 京东看 sub_union_id；拼多多看 custom_parameters（JSON 对象、app==="n"、uid 为 8 位字符串，
- * uid 是 number 算失败）；淘宝走 relation_id 绑定（BR-ATTR-07），这里恒为 null。
+ * 解析方式查规则表（platform-rules/<platform>.ts 的 attribution）：京东看 sub_union_id；拼多多看
+ * custom_parameters（JSON 对象、app==="n"、uid 为 8 位字符串，uid 是 number 算失败）；淘宝走
+ * relation_id 绑定（BR-ATTR-07），这里恒为 null。
  */
 export function parseAttrCode(
   platform: RegisteredPlatform,
   params: UnionOrderAttrParams,
 ): string | null {
-  if (platform === 'jd') {
-    const sub = params.sub_union_id;
-    if (typeof sub !== 'string') return null;
-    const match = JD_SUB_UNION.exec(sub);
-    return match?.[1] ?? null;
-  }
-  if (platform === 'pdd') {
-    const obj = parseJsonObject(params.custom_parameters);
-    if (obj === null) return null;
-    if (obj['app'] !== 'n') return null;
-    const uid = obj['uid'];
-    if (typeof uid !== 'string' || !PDD_UID.test(uid)) return null;
-    return uid;
-  }
-  return null;
+  const attribution = findPlatformRules(platform)?.attribution;
+  return attribution?.kind === 'attr_code' ? attribution.parseAttrCode(params) : null;
 }
 
 /**
@@ -101,8 +74,9 @@ export function isKnownPidScene(pidScene: string): boolean {
 
 /**
  * BR-ATTR-08：① 推广位 pid_scene 是四个场景之一 → 直接取（scene_basis=pid）；② pid_scene=fallback
- * 时读拼多多 custom_parameters.sc，取值在四个场景内 → 采用（scene_basis=param）；③ 其余（sc 缺失、
- * 非法、sc=fallback、非拼多多、未写明的 pid_scene 如 query）→ self / fallback。
+ * 时读 custom_parameters.sc（只有规则表 sceneParamFallback 打开的平台：拼多多），取值在四个场景内 → 采用
+ * （scene_basis=param）；③ 其余（sc 缺失、非法、sc=fallback、该平台不回退、未写明的 pid_scene 如 query）→
+ * self / fallback。
  */
 export function classifyBuyType(
   platform: RegisteredPlatform,
@@ -111,7 +85,7 @@ export function classifyBuyType(
 ): BuyTypeDecision {
   const byPid = SCENES.get(pidScene);
   if (byPid !== undefined) return { buy_type: byPid, scene_basis: 'pid' };
-  if (pidScene === 'fallback' && platform === 'pdd') {
+  if (pidScene === 'fallback' && findPlatformRules(platform)?.sceneParamFallback === true) {
     const sc = parseJsonObject(customParameters)?.['sc'];
     const byParam = typeof sc === 'string' ? SCENES.get(sc) : undefined;
     if (byParam !== undefined) return { buy_type: byParam, scene_basis: 'param' };

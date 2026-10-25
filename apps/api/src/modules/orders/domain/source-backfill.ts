@@ -7,7 +7,7 @@
 //   ② 另要同 product_key，③ 另要同 shop_id；取 created_at 最大，同刻取 id 最大；
 // ④ none：三个来源字段置空。
 import type { RegisteredPlatform, UnionOrderAttrParams } from '../../union/index.ts';
-import { JD_SUB_UNION, parseJsonObject } from './attribution.ts';
+import { findPlatformRules } from './platform-rules/index.ts';
 
 export interface ExactLink {
   readonly link_id: string;
@@ -62,9 +62,6 @@ const CLICK_EVENTS: ReadonlySet<string> = new Set(['convert', 'open']);
  * 推广位场景未知（null）不当作 fallback。
  */
 const FALLBACK_PID_SCENE = 'fallback';
-
-/** BR-ATTR-15 lk：1–16 位 [0-9a-z]（BR-ATTR-06 解析口径，便于将来调长）。 */
-const LINK_CODE = /^[0-9a-z]{1,16}$/;
 
 const HOUR_MS = 3_600_000;
 
@@ -152,20 +149,12 @@ export function matchOrderSource(input: MatchOrderSourceInput): OrderSourceMatch
 /**
  * BR-ATTR-15 lk：只看本平台自己的参数字段。京东取 subUnionId（BR-ATTR-06 整串格式）的第 2 组；
  * 拼多多取 custom_parameters（JSON 对象）的 lk，须是 1–16 位 [0-9a-z] 字符串；其余平台 null。
+ * 解析方式查规则表（platform-rules/<platform>.ts 的 parseLinkCode）。
  */
 // TODO(规划/11 §4.5): 美团 sid 的 lk 解析 — blocked on 美团联盟适配器（RegisteredPlatform 未含美团）
 export function parseLinkCode(
   platform: RegisteredPlatform,
   attrParams: UnionOrderAttrParams,
 ): string | null {
-  if (platform === 'jd') {
-    const sub = attrParams.sub_union_id;
-    if (typeof sub !== 'string') return null;
-    return JD_SUB_UNION.exec(sub)?.[2] ?? null;
-  }
-  if (platform === 'pdd') {
-    const lk = parseJsonObject(attrParams.custom_parameters)?.['lk'];
-    return typeof lk === 'string' && LINK_CODE.test(lk) ? lk : null;
-  }
-  return null;
+  return findPlatformRules(platform)?.parseLinkCode(attrParams) ?? null;
 }

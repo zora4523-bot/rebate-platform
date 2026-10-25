@@ -19,6 +19,7 @@ import type {
   ClaimEntryLog,
   ClaimEntryScope,
 } from '../../linking/index.ts';
+import { findPlatformRules } from './platform-rules/index.ts';
 
 export interface ClaimEntryInput extends ClaimEntryFacts, ClaimEntryScope {
   readonly now: Date;
@@ -49,7 +50,10 @@ function authorisedSince(
   bindings: readonly ClaimEntryBinding[],
   scope: ClaimEntryScope,
 ): boolean {
-  if (log.platform !== 'taobao' && log.platform !== 'pdd') return false;
+  // Rule table claimAuth: relation_id (Taobao) needs a usable relation_id, filing (Pinduoduo) is
+  // the active row alone, null (JD) and unregistered platforms never.
+  const auth = findPlatformRules(log.platform)?.claimAuth ?? null;
+  if (auth === null) return false;
   const at = log.created_at.getTime();
   return bindings.some(
     (binding) =>
@@ -59,7 +63,7 @@ function authorisedSince(
       binding.status === 'active' &&
       binding.bound_at !== null &&
       binding.bound_at.getTime() >= at &&
-      (binding.platform === 'pdd' || usableRelation(binding.relation_id)),
+      (auth === 'filing' || usableRelation(binding.relation_id)),
   );
 }
 

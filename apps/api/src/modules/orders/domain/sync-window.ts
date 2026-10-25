@@ -1,13 +1,23 @@
 // B1-08g: pure window arithmetic for incremental order sync (规划/02 §7.1). No Nest, no I/O.
 import type { RegisteredPlatform } from '../../union/index.ts';
+import { PLATFORM_RULES } from './platform-rules/index.ts';
+
+function windowCaps(): Partial<Record<RegisteredPlatform, number>> {
+  const caps: Partial<Record<RegisteredPlatform, number>> = {};
+  for (const platform of Object.keys(PLATFORM_RULES) as RegisteredPlatform[]) {
+    const cap = PLATFORM_RULES[platform].syncWindowCapMs;
+    if (cap !== null) caps[platform] = cap;
+  }
+  return caps;
+}
 
 /**
- * Increment window cap per platform (02 §7.1 table). Only Pinduoduo is fixed today (30 minutes);
- * a platform without an entry is not scheduled.
+ * Increment window cap per platform (02 §7.1 table), read from the rule table's syncWindowCapMs.
+ * Only Pinduoduo is fixed today (30 minutes); a platform without an entry is not scheduled.
  */
 // TODO(规划/11 §4.5): 淘宝 / 京东增量窗口上限与 scene 分路 — blocked on CAP-TB-07 / CAP-JD-07
 export const INCREMENT_WINDOW_CAP_MS: Readonly<Partial<Record<RegisteredPlatform, number>>> =
-  Object.freeze({ pdd: 30 * 60_000 });
+  Object.freeze(windowCaps());
 
 export const DEFAULT_SYNC_INTERVAL_SECONDS = 60;
 

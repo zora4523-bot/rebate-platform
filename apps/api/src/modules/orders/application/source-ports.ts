@@ -9,6 +9,7 @@
 //   都不改）；归属由 matchExactLink 判，这里不判。
 import { ProductKeyUnderivable, deriveProductKey } from '@couli/domain';
 import type { RegisteredPlatform } from '../../union/index.ts';
+import { findPlatformRules } from '../domain/platform-rules/index.ts';
 import { DEFAULT_BACKFILL_WINDOW_HOURS } from '../domain/source-backfill.ts';
 import type { OrderSourceConfig, OrderSourcePorts } from './source-backfill.ts';
 
@@ -58,9 +59,8 @@ export function createOrderSourcePorts(reads: OrderSourceReads): ProductionOrder
     linkLogs: (input) => reads.linkLogs(input),
     ...(linkByCode === undefined ? {} : { linkByCode: (input) => linkByCode(input) }),
     async productKey({ platform, order }) {
-      // TODO(规划/11 §4.5): 京东订单商品键的 jdMode — blocked on 京东订单映射
-      // 端口入参没有 App，读不到 App 级 product_key.jd.mode，不猜模式：京东不推商品键（跳过 ②）。
-      if (platform === 'jd') return null;
+      // 规则表 pushesProductKey 关着的平台不推商品键（跳过 ②）：京东（jdMode 待定，见 platform-rules/jd.ts）。
+      if (findPlatformRules(platform)?.pushesProductKey === false) return null;
       const keyPrefix = await reads.keyPrefix(platform);
       if (keyPrefix === null || keyPrefix === '') return null;
       try {

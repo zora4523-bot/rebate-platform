@@ -11,6 +11,7 @@
 import { subFen } from '@couli/money';
 import type { OrderPlatformState } from '@couli/domain';
 import type { components } from '@couli/contracts-ts';
+import { findPlatformRules } from './platform-rules/index.ts';
 
 /**
  * commission 快照端口的入参（与 commission/index.ts 导出的 CreateCommissionSnapshotInput 逐字段同构；
@@ -147,8 +148,9 @@ export function planCommissionSnapshot(input: PlanCommissionSnapshotInput): Comm
   const commission = order.settle_commission_fen ?? order.est_commission_fen;
   if (commission === null) return { kind: 'pending', reason: 'AMOUNT_PARSE_FAILED' };
   let nBaseFen = commission;
-  if (order.platform === 'pdd') {
+  if (findPlatformRules(order.platform)?.serviceFeeDeducted === true) {
     // BR-CALC-03：拼多多 promotion_amount 含软件服务费；服务费缺失不得按 0 处理。
+    // 查规则表的 serviceFeeDeducted（只有拼多多打开）；未登记的平台代码不扣。
     const fee = input.incoming.service_fee_fen;
     if (fee === null) return { kind: 'pending', reason: 'SERVICE_FEE_RATE_MISSING' };
     nBaseFen = subFen(commission, fee);
