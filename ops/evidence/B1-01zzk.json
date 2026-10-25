@@ -1,0 +1,122 @@
+{
+  "task": "B1-01zzk",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "6e3d6f878b272c9e586d85d6a022f700de3ddb8f",
+  "red_tests": [
+    "test/spec/platform/queue-concurrency/budget.int.test.ts > [B1-01zzk 全局预算] 缺省预算 7：worker 三个队列计划合计 10 个槽、36 个任务同时到达时，同时在跑的处理器与被领取的任务都正好 7，其余留在队列里排队；放行后 36 个全部完成，attempt 都是 1、retry_count 都是 0",
+    "test/spec/platform/queue-concurrency/budget.int.test.ts > [B1-01zzk 全局预算] limits.dbBudget 3：18 个任务同时到达时同时在跑与被领取的都正好 3；超出的排队、最终全部完成，不增加重试计数",
+    "test/spec/platform/queue-concurrency/budget.int.test.ts > [B1-01zzk 配置覆盖] limits.concurrency 把 c-a 调到 1：c-a 同时在跑与被领取的都不超过 1，未覆盖的 c-b 仍取计划值 4；放行后全部完成，attempt 都是 1、retry_count 都是 0",
+    "test/spec/platform/queue-concurrency/budget.int.test.ts > [B1-01zzk 其他入口不受影响] payout 与 api 入口拿到同样的 limits（预算 1）也照旧：api 照常发送，payout 的 c-pay 按计划并发 3 同时在跑，没有共享预算；放行后全部完成",
+    "test/spec/platform/queue-concurrency/config.test.ts > [B1-01zzk 配置覆盖] 缺省取计划值：一个变量都没设（或都是空串）时 loadConfig 结果没有 queueLimits；设了合法值时 queueLimits 只列设了的队列，QUEUE_DB_BUDGET 未设时 dbBudget 为 null",
+    "test/spec/platform/queue-concurrency/config.test.ts > [B1-01zzk 配置覆盖] 每个 worker 队列各有自己的变量 QUEUE_CONCURRENCY_<队列名大写，- 与 . 换成 _>：1 与计划值本身都接受；17 个一起设成计划值时 concurrency 正好是整个 worker 计划",
+    "test/spec/platform/queue-concurrency/config.test.ts > [B1-01zzk 配置覆盖] 超过计划值或不是 1 起的十进制整数一律启动拒绝：ConfigError 点名该变量、不回显取值",
+    "test/spec/platform/queue-concurrency/config.test.ts > [B1-01zzk 配置覆盖; 其他入口不受影响] 不对应任何 worker 队列的 QUEUE_CONCURRENCY_* 启动拒绝：payout（并发固定 1，只由 payout 入口执行）、死信队列、内部扫描队列、拼错的名字",
+    "test/spec/platform/queue-concurrency/config.test.ts > [B1-01zzk 全局预算] QUEUE_DB_BUDGET 接受 1..7（7 = POOL_SIZES.worker.db 10 减去留给 supervision 与健康检查的 3 个连接，也是缺省值）；其余取值启动拒绝并点名该变量、不回显取值",
+    "test/spec/platform/queue-concurrency/config.test.ts > [B1-01zzk 配置覆盖] 多个变量同时不合法时一个 ConfigError 逐个点名；APP_ENV 本身不合法时这些问题照常一并列出",
+    "test/spec/platform/queue-concurrency/executor-budget.test.ts > [B1-01zzk 全局预算] 三条通道（两个队列）共享预算 2：同时在跑的处理器不超过 2 且确实到 2；每次领取时在跑的不超过 1（先拿许可再领取）；8 个任务全部完成、各结算一次、attempt 都是 1、retryCount 不变；排空后许可全部归还",
+    "test/spec/platform/queue-concurrency/executor-budget.test.ts > [B1-01zzk 全局预算] 空取或领取失败后立即归还许可：预算 1 时空队列与报错队列的通道不霸占许可，另一队列的 3 个任务在一个轮询间隔内做完；领取失败照常报 queue_error",
+    "test/spec/platform/queue-concurrency/executor-budget.test.ts > [B1-01zzk 全局预算; 停止] 拿不到许可的通道不领取任务；停止信号让它立即结束且不再领取，正在跑的任务照常结算，另一队列的任务留在队列里",
+    "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 冻结结构不变] ENTRY_PLAN 与 QUEUE_CATALOG 与主干逐字一致且仍冻结；不给 limits 时 worker 17 个队列取计划值（合计 38），共享预算缺省 7 = floor(POOL_SIZES.worker.db × 0.7)，至少留 3 个连接",
+    "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 配置覆盖] 覆盖只往下调：列出的队列取覆盖值（等于计划值也接受），没列出的仍取计划值，dbBudget 取给定值（1 与 7 都接受）；计划与 limits 本身都不被改动",
+    "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 其他入口不受影响] api / stream / admin / payout：有没有 limits 都只取自己的计划值，没有共享预算（dbBudget null）",
+    "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 配置覆盖] 合法的 limits 被接受；超过计划值、非整数、不在 worker 计划里的队列、预算不在 1..7、多键缺键、不是普通对象 → 同步抛 QueueError invalid_option（固定文案、无 cause），payout 入口同样检查",
+    "test/spec/platform/queue-concurrency/permits.test.ts > [B1-01zzk 全局预算] createPermits(2)：前 2 个 acquire 立即拿到，其余排队等待（不是失败）；每次 release 把许可交给等得最久的；任何时刻持有数不超过 2",
+    "test/spec/platform/queue-concurrency/permits.test.ts > [B1-01zzk 全局预算; 停止] 等待中的 acquire 在信号中止时以 false 解决、不占许可、退出队列，许可交给下一个等待者；信号已中止时即使有空闲许可也以 false 解决",
+    "test/spec/platform/queue-concurrency/runtime-options.test.ts > [B1-01zzk 配置覆盖; 其他入口不受影响] createQueueRuntime 接受合法的 limits（五个入口都接受，生产目录与计划亦然）；不合法的 limits 同步抛 invalid_option（固定文案、无 cause），目录错误仍先报 invalid_catalog；全程不连库"
+  ],
+  "risk_note": "RV2 (platform/queue, platform/config, platform/platform.module.ts). Worker queue concurrency (architecture review R-07, D10-183 ③): the worker's 17 queues have 38 plan slots against a 10-connection business pool. Per-queue overrides QUEUE_CONCURRENCY_<queue> may only lower a queue's plan concurrency; a shared budget QUEUE_DB_BUDGET (default 7, at most 7) of running jobs is taken before fetching and released only after the handler exits (also when it overruns its lease), released at once on an empty fetch or a fetch error; jobs over the budget stay unclaimed with no retry counted; the dead-letter scan takes no permit. Only the worker entry is affected, and only when an override is set. QueueSpec / WorkSpec fields, ENTRY_PLAN defaults and QUEUE_CATALOG pinned by frozen tests are unchanged; the worker plan, default budget and config types moved to a dependency-free queue/worker-plan.ts to break a config → queue → logging → config cycle. Codex was unavailable until 10-30, so tests and reviews ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "6e3d6f878b272c9e586d85d6a022f700de3ddb8f",
+      "tree": "3dfd41a3858f821d1a41ff1606b91f7690c538f8",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-25T20:12:12Z",
+      "finished_at": "2026-10-25T20:12:40Z",
+      "gate": {
+        "commit": "8c74bc64aebbd9988895f2846999358107b24eb9",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/platform/queue-concurrency/budget.int.test.ts > [B1-01zzk 全局预算] 缺省预算 7：worker 三个队列计划合计 10 个槽、36 个任务同时到达时，同时在跑的处理器与被领取的任务都正好 7，其余留在队列里排队；放行后 36 个全部完成，attempt 都是 1、retry_count 都是 0",
+        "test/spec/platform/queue-concurrency/budget.int.test.ts > [B1-01zzk 全局预算] limits.dbBudget 3：18 个任务同时到达时同时在跑与被领取的都正好 3；超出的排队、最终全部完成，不增加重试计数",
+        "test/spec/platform/queue-concurrency/budget.int.test.ts > [B1-01zzk 配置覆盖] limits.concurrency 把 c-a 调到 1：c-a 同时在跑与被领取的都不超过 1，未覆盖的 c-b 仍取计划值 4；放行后全部完成，attempt 都是 1、retry_count 都是 0",
+        "test/spec/platform/queue-concurrency/budget.int.test.ts > [B1-01zzk 其他入口不受影响] payout 与 api 入口拿到同样的 limits（预算 1）也照旧：api 照常发送，payout 的 c-pay 按计划并发 3 同时在跑，没有共享预算；放行后全部完成",
+        "test/spec/platform/queue-concurrency/config.test.ts > [B1-01zzk 配置覆盖] 缺省取计划值：一个变量都没设（或都是空串）时 loadConfig 结果没有 queueLimits；设了合法值时 queueLimits 只列设了的队列，QUEUE_DB_BUDGET 未设时 dbBudget 为 null",
+        "test/spec/platform/queue-concurrency/config.test.ts > [B1-01zzk 配置覆盖] 每个 worker 队列各有自己的变量 QUEUE_CONCURRENCY_<队列名大写，- 与 . 换成 _>：1 与计划值本身都接受；17 个一起设成计划值时 concurrency 正好是整个 worker 计划",
+        "test/spec/platform/queue-concurrency/config.test.ts > [B1-01zzk 配置覆盖] 超过计划值或不是 1 起的十进制整数一律启动拒绝：ConfigError 点名该变量、不回显取值",
+        "test/spec/platform/queue-concurrency/config.test.ts > [B1-01zzk 配置覆盖; 其他入口不受影响] 不对应任何 worker 队列的 QUEUE_CONCURRENCY_* 启动拒绝：payout（并发固定 1，只由 payout 入口执行）、死信队列、内部扫描队列、拼错的名字",
+        "test/spec/platform/queue-concurrency/config.test.ts > [B1-01zzk 全局预算] QUEUE_DB_BUDGET 接受 1..7（7 = POOL_SIZES.worker.db 10 减去留给 supervision 与健康检查的 3 个连接，也是缺省值）；其余取值启动拒绝并点名该变量、不回显取值",
+        "test/spec/platform/queue-concurrency/config.test.ts > [B1-01zzk 配置覆盖] 多个变量同时不合法时一个 ConfigError 逐个点名；APP_ENV 本身不合法时这些问题照常一并列出",
+        "test/spec/platform/queue-concurrency/executor-budget.test.ts > [B1-01zzk 全局预算] 三条通道（两个队列）共享预算 2：同时在跑的处理器不超过 2 且确实到 2；每次领取时在跑的不超过 1（先拿许可再领取）；8 个任务全部完成、各结算一次、attempt 都是 1、retryCount 不变；排空后许可全部归还",
+        "test/spec/platform/queue-concurrency/executor-budget.test.ts > [B1-01zzk 全局预算] 空取或领取失败后立即归还许可：预算 1 时空队列与报错队列的通道不霸占许可，另一队列的 3 个任务在一个轮询间隔内做完；领取失败照常报 queue_error",
+        "test/spec/platform/queue-concurrency/executor-budget.test.ts > [B1-01zzk 全局预算; 停止] 拿不到许可的通道不领取任务；停止信号让它立即结束且不再领取，正在跑的任务照常结算，另一队列的任务留在队列里",
+        "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 冻结结构不变] ENTRY_PLAN 与 QUEUE_CATALOG 与主干逐字一致且仍冻结；不给 limits 时 worker 17 个队列取计划值（合计 38），共享预算缺省 7 = floor(POOL_SIZES.worker.db × 0.7)，至少留 3 个连接",
+        "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 配置覆盖] 覆盖只往下调：列出的队列取覆盖值（等于计划值也接受），没列出的仍取计划值，dbBudget 取给定值（1 与 7 都接受）；计划与 limits 本身都不被改动",
+        "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 其他入口不受影响] api / stream / admin / payout：有没有 limits 都只取自己的计划值，没有共享预算（dbBudget null）",
+        "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 配置覆盖] 合法的 limits 被接受；超过计划值、非整数、不在 worker 计划里的队列、预算不在 1..7、多键缺键、不是普通对象 → 同步抛 QueueError invalid_option（固定文案、无 cause），payout 入口同样检查",
+        "test/spec/platform/queue-concurrency/permits.test.ts > [B1-01zzk 全局预算] createPermits(2)：前 2 个 acquire 立即拿到，其余排队等待（不是失败）；每次 release 把许可交给等得最久的；任何时刻持有数不超过 2",
+        "test/spec/platform/queue-concurrency/permits.test.ts > [B1-01zzk 全局预算; 停止] 等待中的 acquire 在信号中止时以 false 解决、不占许可、退出队列，许可交给下一个等待者；信号已中止时即使有空闲许可也以 false 解决",
+        "test/spec/platform/queue-concurrency/runtime-options.test.ts > [B1-01zzk 配置覆盖; 其他入口不受影响] createQueueRuntime 接受合法的 limits（五个入口都接受，生产目录与计划亦然）；不合法的 limits 同步抛 invalid_option（固定文案、无 cause），目录错误仍先报 invalid_catalog；全程不连库"
+      ],
+      "expected": [
+        "test/spec/platform/queue-concurrency/budget.int.test.ts",
+        "test/spec/platform/queue-concurrency/config.test.ts",
+        "test/spec/platform/queue-concurrency/executor-budget.test.ts",
+        "test/spec/platform/queue-concurrency/limits.test.ts",
+        "test/spec/platform/queue-concurrency/permits.test.ts",
+        "test/spec/platform/queue-concurrency/runtime-options.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "fd6e7b52dc3b481723c8fd042eb7457d7c0965252c58bcec332f99376f85b013"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "1d67d774b4463e5eed7ee58a32c79143073ead0909ef8d2e9edfd196e532e053"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 against the merge base pass with no findings. A general review was requested first and refused by claude-run (RV2 requires the money checklist); its attempt counter was bumped once without a run."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude (1 run); round 1 pass with one S2 (a permit released when an overrunning lease settles instead of when the handler exits), handled in the implementation (permits released only after execute() returns)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "54425747d553251fd52f3ed364c23f30c08b9647",
+    "specs": "cec847e1768a63aac90e3e1bd473462d95d84436"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
