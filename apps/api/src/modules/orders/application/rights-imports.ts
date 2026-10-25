@@ -29,8 +29,27 @@
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import type { Kysely, Transaction } from 'kysely';
-import type { AuditPort, Clock, ImportStore, JobQueue, RootLogger } from '../../platform/index.ts';
-import type { RightsImportFormFields } from '../domain/rights-import.ts';
+import {
+  newUuidV7,
+  type AuditPort,
+  type Clock,
+  type ImportStore,
+  type JobQueue,
+  type RootLogger,
+} from '../../platform/index.ts';
+import {
+  checkRightsImportForm,
+  type RightsImportFormFields,
+  type RightsImportStatus,
+} from '../domain/rights-import.ts';
+import { readRightsImportSheet } from '../infra/rights-import-sheet.ts';
+import {
+  findRightsImportWithName,
+  insertRightsImport,
+  listRightsImportFailures,
+  listRightsImportRows,
+  type RightsImportListRow,
+} from '../infra/rights-import-store.ts';
 
 export type RightsImportAuditAction = 'rights_import_create';
 
@@ -68,8 +87,7 @@ export type RightsImportFieldsError = {
 };
 
 export type RightsImportCreateOutcome =
-  | { readonly code: 0; readonly data: Schema<'AdminRightsImportCreated'> }
-  | RightsImportFieldsError;
+  { readonly code: 0; readonly data: Schema<'AdminRightsImportCreated'> } | RightsImportFieldsError;
 
 export interface RightsImportPageQuery {
   /** From 1; a page past the last one has no items. */
@@ -79,39 +97,176 @@ export interface RightsImportPageQuery {
 }
 
 export type RightsImportDetailOutcome =
-  | { readonly code: 0; readonly data: Schema<'AdminRightsImportDetail'> }
-  | RightsImportFieldsError;
+  { readonly code: 0; readonly data: Schema<'AdminRightsImportDetail'> } | RightsImportFieldsError;
 
-/** Operational failures (store, database, queue) propagate; nothing is answered for them. */
-export function createRightsImport(
+/** At most this many data rows under the header row (contract adminCreateRightsImport). */
+export const RIGHTS_IMPORT_MAX_ROWS = 10_000;
+/** orders' own queue and this job's name in it (B1-09g: no queue of its own). */
+export const RIGHTS_IMPORT_QUEUE = 'order-sync';
+export const RIGHTS_IMPORT_JOB = 'rights_import';
+const AUDIT_ACTION: RightsImportAuditAction = 'rights_import_create';
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' as const;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ACCOUNT_FKEY = 'rights_imports_union_account_fkey';
+
+const fieldsError = (field: string): RightsImportFieldsError => ({
+  code: 20001,
+  data: { fields: [field] },
+});
+
+/** The (app_id, union_account_id) foreign key refused the row: no such account in this app. */
+function isUnknownAccount(error: unknown): boolean {
+  if (error === null || typeof error !== 'object') return false;
+  const { code, constraint } = error as { code?: unknown; constraint?: unknown };
+  return code === '23503' && constraint === ACCOUNT_FKEY;
+}
+
+/** Signals the foreign-key refusal out of the transaction (rolled back, nothing stored). */
+class UnknownAccount extends Error {
+  override readonly name = 'UnknownAccount';
+}
+
+/**
+ * Operational failures (store, database, queue) propagate; nothing is answered for them.
+ * The union account of a channel import is checked by the (app_id, union_account_id) foreign key
+ * of rights_imports (an account of another app or none at all), inside the task's transaction and
+ * before the file is stored: orders reads no union table. The file is put into the import store on
+ * that transaction, after the row and before the audit and the job, so a refused or rolled-back
+ * request stores nothing (a store write that outlives a failed commit is an unreferenced key).
+ */
+export async function createRightsImport(
   deps: RightsImportDeps,
   actor: RightsImportActor,
   command: RightsImportCommand,
 ): Promise<RightsImportCreateOutcome> {
-  void deps;
-  void actor;
-  void command;
-  throw new Error('NotImplemented: createRightsImport');
+  const checked = checkRightsImportForm(command);
+  if (!checked.ok) return { code: 20001, data: { fields: [...checked.fields] } };
+  const form = checked.form;
+  const file = command.file;
+  if (file === undefined) return fieldsError('file');
+  const sheet = await readRightsImportSheet(file.bytes);
+  if (sheet === null || sheet.rows.length > RIGHTS_IMPORT_MAX_ROWS) {
+    deps.logger.info(
+      { event: 'rights_import_refused', app_id: actor.appId, reason: 'file' },
+      'rights import refused',
+    );
+    return fieldsError('file');
+  }
+
+  const now = deps.clock.now();
+  const importId = newUuidV7(now);
+  const key = `${actor.appId}/${importId}.xlsx`;
+  const totalRows = sheet.rows.length;
+  try {
+    await deps.db.transaction().execute(async (trx) => {
+      try {
+        await insertRightsImport(trx, {
+          id: importId,
+          app_id: actor.appId,
+          kind: form.kind,
+          platform: form.platform,
+          union_account_id: form.kind === 'channel' ? form.union_account_id : null,
+          time_basis: form.kind === 'channel' ? null : (form.window?.time_basis ?? null),
+          from: form.kind === 'channel' ? null : (form.window?.from ?? null),
+          to: form.kind === 'channel' ? null : (form.window?.to ?? null),
+          file_path: key,
+          created_by: actor.adminId,
+          created_at: now,
+        });
+      } catch (error) {
+        if (isUnknownAccount(error)) throw new UnknownAccount();
+        throw error;
+      }
+      await deps.store.put({ key, bytes: file.bytes, contentType: XLSX });
+      await deps.auditOn(trx).append({
+        appId: actor.appId,
+        actor: actor.adminId,
+        action: AUDIT_ACTION,
+        target: `rights_imports:${importId}`,
+        before: null,
+        after: {
+          kind: form.kind,
+          platform: form.platform,
+          filename: file.filename,
+          total_rows: totalRows,
+        },
+        ip: actor.ip,
+      });
+      await deps.queue.send(
+        RIGHTS_IMPORT_QUEUE,
+        RIGHTS_IMPORT_JOB,
+        { app_id: actor.appId, import_id: importId },
+        { trx, singletonKey: `${RIGHTS_IMPORT_JOB}:${importId}` },
+      );
+    });
+  } catch (error) {
+    if (error instanceof UnknownAccount) return fieldsError('union_account_id');
+    throw error;
+  }
+  deps.logger.info(
+    {
+      event: 'rights_import_created',
+      app_id: actor.appId,
+      import_id: importId,
+      kind: form.kind,
+      total_rows: totalRows,
+    },
+    'rights import queued',
+  );
+  return { code: 0, data: { import_id: importId, status: 'queued' } };
 }
 
-export function listRightsImports(
+type Summary = Schema<'AdminRightsImportSummary'>;
+
+const iso = (value: Date | string | null): string | null =>
+  value === null ? null : typeof value === 'string' ? value : value.toISOString();
+
+function summaryOf(row: RightsImportListRow): Summary {
+  return {
+    import_id: row.id,
+    kind: row.kind as Summary['kind'],
+    platform: row.platform as Summary['platform'],
+    status: row.status as RightsImportStatus,
+    total_rows: row.total_rows,
+    succeeded_rows: row.succeeded_rows,
+    failed_rows: row.failed_rows,
+    skipped_rows: row.skipped_rows,
+    duplicate_rows: row.duplicate_rows,
+    created_by: row.created_by,
+    created_by_name: row.created_by_name,
+    created_at: iso(row.created_at)!,
+    finished_at: iso(row.finished_at),
+  };
+}
+
+export async function listRightsImports(
   deps: Pick<RightsImportDeps, 'db'>,
   appId: string,
   query: RightsImportPageQuery,
 ): Promise<Schema<'AdminRightsImportPage'>> {
-  void deps;
-  void appId;
-  void query;
-  throw new Error('NotImplemented: listRightsImports');
+  const { page, page_size: size } = query;
+  const { rows, total } = await listRightsImportRows(deps.db, appId, size, (page - 1) * size);
+  return { items: rows.map(summaryOf), page, page_size: size, total };
 }
 
-export function getRightsImport(
+export async function getRightsImport(
   deps: Pick<RightsImportDeps, 'db'>,
   appId: string,
   importId: string,
 ): Promise<RightsImportDetailOutcome> {
-  void deps;
-  void appId;
-  void importId;
-  throw new Error('NotImplemented: getRightsImport');
+  if (!UUID.test(importId)) return fieldsError('import_id');
+  const id = importId.toLowerCase();
+  const row = await findRightsImportWithName(deps.db, appId, id);
+  if (row === undefined) return fieldsError('import_id');
+  const failures = await listRightsImportFailures(deps.db, appId, id);
+  return {
+    code: 0,
+    data: {
+      ...summaryOf(row),
+      failures: failures.map((f) => ({
+        row_no: f.row_no,
+        reason: f.reason as Schema<'AdminRightsImportFailure'>['reason'],
+      })),
+    },
+  };
 }

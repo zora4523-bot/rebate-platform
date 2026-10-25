@@ -26,9 +26,27 @@ import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { Clock, ImportStore, ReceivedJob, RootLogger } from '../../platform/index.ts';
 import type {
+  RightsImportCell,
   RightsImportProcessors,
+  RightsImportRow,
+  RightsImportRowProcessor,
+  RightsImportTaskInfo,
   RightsImportTemplates,
 } from '../application/rights-import-ports.ts';
+import {
+  countRightsImportRows,
+  type RightsImportKind,
+  type RightsImportRowOutcome,
+  type RightsImportTimeBasis,
+} from '../domain/rights-import.ts';
+import { readRightsImportSheet, type RightsImportSheet } from '../infra/rights-import-sheet.ts';
+import {
+  commitRightsImportRow,
+  findRightsImport,
+  finishRightsImport,
+  markRightsImportRunning,
+  type RightsImportRecord,
+} from '../infra/rights-import-store.ts';
 
 /** The job name inside the order-sync queue (platform/queue job name rule: lower case, `_`). */
 export type RightsImportJobName = 'rights_import';
@@ -42,9 +60,126 @@ export interface RightsImportJobDeps {
   readonly logger: RootLogger;
 }
 
+export class RightsImportPayloadError extends Error {
+  override readonly name = 'RightsImportPayloadError';
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function parsePayload(payload: ReceivedJob['payload']): { appId: string; importId: string } {
+  const appId = payload['app_id'];
+  const importId = payload['import_id'];
+  if (typeof appId !== 'string' || appId === '') throw new RightsImportPayloadError('app_id');
+  if (typeof importId !== 'string' || !UUID.test(importId)) {
+    throw new RightsImportPayloadError('import_id');
+  }
+  return { appId, importId };
+}
+
+function taskInfo(row: RightsImportRecord): RightsImportTaskInfo {
+  return {
+    import_id: row.id,
+    app_id: row.app_id,
+    kind: row.kind as RightsImportKind,
+    platform: row.platform,
+    union_account_id: row.union_account_id,
+    time_basis: row.time_basis as RightsImportTimeBasis | null,
+    from: row.from,
+    to: row.to,
+    created_by: row.created_by,
+    created_at: row.created_at,
+  };
+}
+
+const headerText = (cell: RightsImportCell): string | null =>
+  typeof cell === 'string' ? cell.trim() : typeof cell === 'number' ? String(cell) : null;
+
+/**
+ * Template column → index in the file's header; null when nothing is registered for (kind,
+ * platform) or a template column is missing from the header.
+ */
+function columnsOf(
+  templates: RightsImportTemplates,
+  task: RightsImportTaskInfo,
+  sheet: RightsImportSheet,
+): ReadonlyMap<string, number> | null {
+  const template = templates.find(task.kind, task.platform);
+  if (template === undefined) return null;
+  const header = sheet.header.map(headerText);
+  const columns = new Map<string, number>();
+  for (const [name, text] of Object.entries(template.columns)) {
+    const index = header.indexOf(text.trim());
+    if (index < 0) return null;
+    columns.set(name, index);
+  }
+  return columns;
+}
+
+const INVALID_ROW: RightsImportRowOutcome = { kind: 'failed', reason: 'invalid_row' };
+
 /** A malformed payload throws (the queue retries, then dead-letters); see the header for the rest. */
-export function handleRightsImport(job: ReceivedJob, deps: RightsImportJobDeps): Promise<void> {
-  void job;
-  void deps;
-  throw new Error('NotImplemented: handleRightsImport');
+export async function handleRightsImport(
+  job: ReceivedJob,
+  deps: RightsImportJobDeps,
+): Promise<void> {
+  const { appId, importId } = parsePayload(job.payload);
+  const { db, clock, logger } = deps;
+  const log = { app_id: appId, import_id: importId, job_id: job.id, attempt: job.attempt };
+  let row = await findRightsImport(db, appId, importId);
+  if (row === undefined || row.status === 'done' || row.status === 'failed') return;
+  if (row.status === 'queued') {
+    await markRightsImportRunning(db, appId, importId);
+    row = await findRightsImport(db, appId, importId);
+    if (row?.status !== 'running') return;
+  }
+  const task = taskInfo(row);
+  const fail = async (reason: string): Promise<void> => {
+    await finishRightsImport(db, appId, importId, 'failed', clock.now());
+    logger.error(
+      { event: 'rights_import_failed', ...log, kind: task.kind, reason },
+      'rights import failed',
+    );
+  };
+
+  const processor: RightsImportRowProcessor | undefined = deps.processors[task.kind];
+  if (processor === undefined) return fail('no_processor');
+  const bytes = await deps.store.get(row.file_path);
+  if (bytes === null) return fail('file_missing');
+  const sheet = await readRightsImportSheet(bytes);
+  if (sheet === null) return fail('file_unreadable');
+  const columns = columnsOf(deps.templates, task, sheet);
+
+  // The committed tallies are the checkpoint: rows are committed in file order, one per row.
+  let committed = row.total_rows;
+  for (const data of sheet.rows.slice(committed)) {
+    let outcome: RightsImportRowOutcome;
+    if (columns === null) {
+      outcome = INVALID_ROW;
+    } else {
+      const values: Record<string, RightsImportCell> = {};
+      for (const [name, index] of columns) values[name] = data.cells[index] ?? null;
+      const input: RightsImportRow = { row_no: data.row_no, values };
+      outcome = await processor.process(task, input);
+    }
+    await commitRightsImportRow(db, {
+      appId,
+      importId,
+      committed,
+      rowNo: data.row_no,
+      failure: outcome.kind === 'failed' ? outcome.reason : null,
+      add: countRightsImportRows([outcome]),
+    });
+    committed += 1;
+  }
+  await finishRightsImport(db, appId, importId, 'done', clock.now());
+  logger.info(
+    {
+      event: 'rights_import_done',
+      ...log,
+      kind: task.kind,
+      rows: committed,
+      template: columns !== null,
+    },
+    'rights import done',
+  );
 }

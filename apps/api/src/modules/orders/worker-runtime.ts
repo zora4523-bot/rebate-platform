@@ -28,6 +28,11 @@
 //   ports.suffixVoidEnabled; absent → false, the 08 default (suffix hits only recorded for review).
 //   Until settlement wires rebate.onBlacklistHit, an uncredited hit is recorded as manual_review
 //   with a P1 warning and the order is left unchanged.
+// - B1-09g: the order-sync handler routes job name 'rights_import' (the admin Excel import tasks,
+//   sent by application/rights-imports.ts) to jobs/rights-import.ts with the runtime's db, clock and
+//   logger plus `rightsImports` (the import store, the column template registry and the per-kind row
+//   processors). Without `rightsImports` such a job throws, so the queue retries and dead-letters it
+//   (nothing of a task is touched); the other job names are routed as before.
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
 import { readFileSync } from 'node:fs';
 import type { DB } from '@couli/db';
@@ -38,6 +43,8 @@ import {
   type EventBus,
   type QueueRuntime,
   type QuotaLimiter,
+  type ImportStore,
+  type ReceivedJob,
   type RootLogger,
   type Scheduler,
 } from '../platform/index.ts';
@@ -79,6 +86,12 @@ import { loadStatusMap, type StatusMap } from './domain/status-map.ts';
 import { scheduledPlatforms } from './domain/sync-window.ts';
 import { createSyncCursorStore } from './infra/sync-cursors.ts';
 import { handleOrderSyncWindow } from './jobs/order-sync.ts';
+import type {
+  RightsImportProcessors,
+  RightsImportTemplates,
+} from './application/rights-import-ports.ts';
+import { RIGHTS_IMPORT_JOB } from './application/rights-imports.ts';
+import { handleRightsImport } from './jobs/rights-import.ts';
 
 export interface OrderSyncRuntime {
   readonly access: SyncAccessPort;
@@ -130,6 +143,15 @@ export interface OrderSyncRuntimeDeps {
   readonly ports: OrderSyncReadPorts;
   /** B1-08k / B1-08t: commission's snapshot port; absent → step ⑥ and the compensation retry are off. */
   readonly snapshots?: CommissionSnapshotPort;
+  /** B1-09g: what the rights_import job needs besides db, clock and logger; absent → it throws. */
+  readonly rightsImports?: OrderRightsImportDeps;
+}
+
+/** B1-09g: the import store and the registries the rights_import job reads. */
+export interface OrderRightsImportDeps {
+  readonly store: ImportStore;
+  readonly templates: RightsImportTemplates;
+  readonly processors: RightsImportProcessors;
 }
 
 const ORDER_SYNC = Symbol('ORDER_SYNC');
@@ -256,12 +278,21 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
   });
 
   const handler = { access, cursors, registry, pipeline, logger };
+  const rightsImports = deps.rightsImports;
+  const importJob = (job: ReceivedJob): Promise<void> => {
+    if (rightsImports === undefined) {
+      return Promise.reject(new Error('orders: rights_import is not configured on this worker'));
+    }
+    return handleRightsImport(job, { db, clock, logger, ...rightsImports });
+  };
   const sync = createOrderSyncScheduler(
     { clock, queue, cursors, access, logger },
     DEFAULT_INTERVAL,
   );
   if (snapshots === undefined) {
-    queue.register(ORDER_SYNC_QUEUE, (job) => handleOrderSyncWindow(job, handler));
+    queue.register(ORDER_SYNC_QUEUE, (job) =>
+      job.name === RIGHTS_IMPORT_JOB ? importJob(job) : handleOrderSyncWindow(job, handler),
+    );
     return {
       access,
       cursors,
@@ -278,7 +309,9 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
   queue.register(ORDER_SYNC_QUEUE, (job) =>
     job.name === SNAPSHOT_RETRY_JOB
       ? handleSnapshotRetry(job, retryDeps)
-      : handleOrderSyncWindow(job, handler),
+      : job.name === RIGHTS_IMPORT_JOB
+        ? importJob(job)
+        : handleOrderSyncWindow(job, handler),
   );
   const retryScheduler = createSnapshotRetryScheduler({
     queue,

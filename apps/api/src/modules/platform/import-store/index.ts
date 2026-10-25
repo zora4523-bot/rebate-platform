@@ -42,31 +42,132 @@ export interface ImportStoreOptions {
   readonly logger: RootLogger;
 }
 
+/**
+ * The import store has no usable backend in this environment (staging / prod without the OSS
+ * adapter). A plain Error without a business code: the global exception filter answers 50001.
+ */
+export class ImportStoreUnavailableError extends Error {
+  constructor() {
+    super('Import store adapter is unavailable');
+    this.name = 'ImportStoreUnavailableError';
+  }
+}
+
+// app_id: contracts/openapi.yaml AppId (^[a-z0-9_]+$, 1..32); import_id: a lower-case UUID.
+const IMPORT_KEY =
+  /^[a-z0-9_]{1,32}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.xlsx$/;
+const CONTENT_TYPE: ImportContentType =
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+function assertKey(key: unknown): asserts key is string {
+  if (typeof key !== 'string' || !IMPORT_KEY.test(key)) {
+    throw new TypeError('import key must be <app_id>/<import_id>.xlsx');
+  }
+}
+
+function checkPut(input: ImportPutInput): void {
+  assertKey(input.key);
+  if (input.contentType !== CONTENT_TYPE) throw new TypeError('import contentType must be xlsx');
+  if (!(input.bytes instanceof Uint8Array))
+    throw new TypeError('import bytes must be a Uint8Array');
+}
+
+function rejectWith<T>(error: unknown): Promise<T> {
+  return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+}
+
 /** local / test stand-in: the files live in this object only. */
 export class MemoryImportStore implements ImportStore {
+  readonly #logger: RootLogger;
+  readonly #files = new Map<string, Uint8Array>();
+
   constructor(options: MemoryImportStoreOptions) {
-    void options;
-    throw new Error('NotImplemented: MemoryImportStore');
+    this.#logger = options.logger;
   }
 
   put(input: ImportPutInput): Promise<void> {
-    void input;
-    throw new Error('NotImplemented: MemoryImportStore.put');
+    try {
+      checkPut(input);
+      // A fresh copy of only the view's own bytes: later changes by the caller never reach it.
+      this.#files.set(input.key, new Uint8Array(input.bytes));
+      this.#logger.debug({ event: 'import_store_put', key: input.key }, 'import stored');
+      return Promise.resolve();
+    } catch (error) {
+      return rejectWith(error);
+    }
   }
 
   get(key: string): Promise<Uint8Array | null> {
-    void key;
-    throw new Error('NotImplemented: MemoryImportStore.get');
+    try {
+      assertKey(key);
+      const bytes = this.#files.get(key);
+      // A fresh copy per read: changing what one read returned never reaches the stored file.
+      return Promise.resolve(bytes === undefined ? null : new Uint8Array(bytes));
+    } catch (error) {
+      return rejectWith(error);
+    }
   }
 
   delete(key: string): Promise<void> {
-    void key;
-    throw new Error('NotImplemented: MemoryImportStore.delete');
+    try {
+      assertKey(key);
+      this.#files.delete(key);
+      this.#logger.debug({ event: 'import_store_deleted', key }, 'import deleted');
+      return Promise.resolve();
+    } catch (error) {
+      return rejectWith(error);
+    }
+  }
+}
+
+/** staging / prod before the OSS adapter (B1-30): constructs, then every put and get fails. */
+class UnavailableImportStore implements ImportStore {
+  readonly #logger: RootLogger;
+
+  constructor(logger: RootLogger) {
+    this.#logger = logger;
+  }
+
+  put(input: ImportPutInput): Promise<void> {
+    try {
+      checkPut(input);
+    } catch (error) {
+      return rejectWith(error);
+    }
+    return this.#refuse('put', input.key);
+  }
+
+  get(key: string): Promise<Uint8Array | null> {
+    try {
+      assertKey(key);
+    } catch (error) {
+      return rejectWith(error);
+    }
+    return this.#refuse('get', key);
+  }
+
+  delete(key: string): Promise<void> {
+    try {
+      assertKey(key);
+      return Promise.resolve();
+    } catch (error) {
+      return rejectWith(error);
+    }
+  }
+
+  #refuse<T>(operation: 'put' | 'get', key: string): Promise<T> {
+    this.#logger.warn(
+      { event: 'import_store_unavailable', operation, key },
+      'import store adapter is not configured; request refused',
+    );
+    return Promise.reject(new ImportStoreUnavailableError());
   }
 }
 
 /** local / test: memory; staging / prod: construction succeeds, put and get fail until B1-30. */
 export function createImportStore(options: ImportStoreOptions): ImportStore {
-  void options;
-  throw new Error('NotImplemented: createImportStore');
+  if (options.appEnv === 'local' || options.appEnv === 'test') {
+    return new MemoryImportStore({ logger: options.logger });
+  }
+  return new UnavailableImportStore(options.logger);
 }

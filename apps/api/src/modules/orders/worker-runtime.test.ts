@@ -27,6 +27,7 @@ import * as updateStep from './application/update-step.ts';
 import {
   createOrderSyncRuntime,
   orderSyncToken,
+  type OrderRightsImportDeps,
   type OrderSyncReadPorts,
 } from './worker-runtime.ts';
 
@@ -65,6 +66,7 @@ function rawAdapter(platform: RegisteredPlatform): UnionAdapter {
 function setup(
   sources?: OrderSyncReadPorts['sources'],
   extra: Pick<OrderSyncReadPorts, 'blocklist' | 'suffixVoidEnabled'> = {},
+  rightsImports?: OrderRightsImportDeps,
 ) {
   const queries: string[] = [];
   const lines: { msg: string }[] = [];
@@ -118,6 +120,7 @@ function setup(
     endpoints,
     registry,
     ports,
+    ...(rightsImports === undefined ? {} : { rightsImports }),
   });
   return {
     runtime,
@@ -265,4 +268,56 @@ it('[AC-B1-09b#u2] 注入尾号开关读法：按 App 读；未注入 blocklist 
   setup(undefined, { suffixVoidEnabled: suffix });
   expect('blacklist' in makePipeline.mock.calls[0]![0]).toBe(false);
   expect('blacklist' in makeUpdate.mock.calls[0]![0]).toBe(false);
+});
+
+const RIGHTS_IMPORT_JOB = {
+  id: 'j-ri',
+  queue: 'order-sync',
+  name: 'rights_import',
+  attempt: 1,
+  payload: { app_id: 'unit', import_id: '01890000-0000-7000-8000-00000000000a' },
+};
+
+it('[AC-B1-09g#u1] rights_import 任务分派到导入处理：读任务行，不调用窗口同步', async () => {
+  const store = { put: vi.fn(), get: vi.fn(), delete: vi.fn() };
+  const process = vi.fn();
+  const s = setup(
+    undefined,
+    {},
+    {
+      store,
+      templates: { find: vi.fn() },
+      processors: { rights: { process } },
+    },
+  );
+  const handler = s.register.mock.calls[0]![1];
+  await handler(RIGHTS_IMPORT_JOB);
+  expect(s.queries.some((q) => q.includes('"rights_imports"'))).toBe(true);
+  expect(s.raws.get('pdd')!.listOrders).not.toHaveBeenCalled();
+  expect(store.get).not.toHaveBeenCalled();
+  expect(process).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-09g#u2] 没有装配 rightsImports：rights_import 任务抛错交队列重试，不查库', async () => {
+  const s = setup();
+  const handler = s.register.mock.calls[0]![1];
+  await expect(handler(RIGHTS_IMPORT_JOB)).rejects.toThrow(/rights_import is not configured/);
+  expect(s.queries).toEqual([]);
+});
+
+it('[AC-B1-09g#u3] rights_import 的载荷不合：抛错（重试后进死信），不查库', async () => {
+  const s = setup(
+    undefined,
+    {},
+    {
+      store: { put: vi.fn(), get: vi.fn(), delete: vi.fn() },
+      templates: { find: vi.fn() },
+      processors: {},
+    },
+  );
+  const handler = s.register.mock.calls[0]![1];
+  await expect(
+    handler({ ...RIGHTS_IMPORT_JOB, payload: { app_id: 'unit', import_id: 'nope' } }),
+  ).rejects.toThrow(/import_id/);
+  expect(s.queries).toEqual([]);
 });
