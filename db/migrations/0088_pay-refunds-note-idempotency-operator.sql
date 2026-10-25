@@ -1,9 +1,8 @@
 -- Up Migration
 -- pay_refunds: the operator's note and the idempotency key scoped by operator (08 BR-PAY-06 ②;
 -- 规划/04 §5「幂等」后台账号的幂等主体 a:<admin_user_id>, D10-168 ②; orchestrator rulings D10-350 and
--- D10-351 ②, 2026-10-25). Task B2-15e. Placeholder number: the orchestrator renumbers it to the
--- trunk's next free number when it lands (the local migrations numbering test reports the gap
--- until then, as expected).
+-- D10-351 ②, 2026-10-25). Task B2-15e. The file number was taken at landing time (after
+-- B1-27d's 0087).
 -- Compatibility: additive on the column; the unique key only widens (every existing row stays
 -- valid: a key unique per app is unique per (app, operator) too). No data change.
 -- Recovery: restore from backup; no down migration.
