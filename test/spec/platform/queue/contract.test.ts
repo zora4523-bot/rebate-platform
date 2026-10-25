@@ -198,6 +198,8 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
         queue.name !== 'union-auth' &&
         queue.name !== 'pay' &&
         queue.name !== 'page-schedule' &&
+        // B1-27h（个人信息副本作业，BR-ID-40）的队列，属性由 test/spec/identity/data-copies-worker 钉住。
+        queue.name !== 'data-copy' &&
         queue.name !== 'dead-letter' &&
         (!queue.name.endsWith('.dead') || queue.name === 'order-sync.dead'),
     ),
@@ -333,7 +335,9 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
         work.queue !== 'export' &&
         work.queue !== 'union-auth' &&
         work.queue !== 'pay' &&
-        work.queue !== 'page-schedule',
+        work.queue !== 'page-schedule' &&
+        // B1-27h（个人信息副本作业，BR-ID-40）的队列，属性由 test/spec/identity/data-copies-worker 钉住。
+        work.queue !== 'data-copy',
     ),
   }).toStrictEqual({
     api: [],
