@@ -4,7 +4,7 @@ title: 迁移：notify_templates 加待测试登记保存时刻列 sms_pending_s
 type: impl
 # 2026-10-25 入账（be-codex；编排裁定 D10-355 ①：B1-12z money r1 S2——saved_at 现取 sms_tested_at，重新测试后会变，只影响显示）。
 # 迁移只新增一列 timestamptz 可空、无默认、不回填；不并入待测试六列的「全空或全有」CHECK（冻结夹具按六列插入待测试行，须照旧可写）；表级授权已覆盖。编号占槽时按主干最大 +1（排在 W1 B1-09i 0089 之后，admin B1-27a / B1-27h 若有迁移按先就绪先占）。
-# 实现：保存（PUT …/sms 存待测试）时写 sms_pending_saved_at = 注入 Clock 的 now；重新测试只改 sms_test_status / sms_tested_at；启用与放弃时与其余待测试列一起清空；saved_at 读它，为空回退 sms_tested_at。契约 CT-24t 的 saved_at 字段形状不变。
+# 实现：保存（PUT …/sms 存待测试）时写 sms_pending_saved_at = 注入 Clock 的 now；重新测试改 sms_test_status / sms_tested_at，且若 sms_pending_saved_at 为空先把更新前的 sms_tested_at 固化进去（COALESCE，旧行首次重新测试即冻结保存时刻，GT-23bgo/GT-23bgp S2）；启用与放弃时与其余待测试列一起清空；saved_at 读它，为空回退 sms_tested_at。契约 CT-24t 的 saved_at 字段形状不变。
 # 冻结列全集测试（B1-12e send-log、B1-12f template-override、B1-12x sms-channel / sms-pending）只把新列补进列全集、其余不动（第一类保护路径，#24 由编排核对）。
 refs: [BR-TEXT-20]
 refs_hash:
