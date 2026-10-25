@@ -109,10 +109,15 @@ it.each(
 );
 
 it.each(endpoints.filter((e): boolean => e[2] === 'listAdminPayReconDiffs'))(
-  '[AC-CT-21e#17] %s %s（对账差错）已生成类型、后台鉴权和无签名策略，planned 不挂载校验路由',
+  '[AC-CT-21e#17] %s %s（对账差错）已实现（不再 planned）、已生成类型、后台鉴权和无签名策略，并挂载校验路由',
   (method, path, id, permission) => {
+    // B2-15j：对账差错列表已实现，x-implementation 随路由上线移除；
+    // 必须挂载与契约一致的运行时请求校验。
     const endpoint = endpoints.find((entry) => entry[2] === id)!;
-    expect(operation(contract(), endpoint)['x-implementation']).toBe('planned');
+    const doc = contract();
+    const op = operation(doc, endpoint);
+    expect(op).not.toHaveProperty('x-implementation');
+    expect(op['x-implementation']).not.toBe('planned');
     const route = { method: method.toUpperCase(), path: path.replace(/\{([^}]+)\}/g, ':$1') };
     const auth = list(
       generated('apps/api/src/modules/platform/http/auth-routes.gen.ts', 'CONTRACT_AUTH_ROUTES'),
@@ -144,7 +149,50 @@ it.each(endpoints.filter((e): boolean => e[2] === 'listAdminPayReconDiffs'))(
         'CONTRACT_ROUTE_SCHEMAS',
       ),
     );
-    expect(schemas).not.toHaveProperty(id);
+    // 形状与契约一致：GET 无请求体、无 Idempotency-Key、无动态码；无路径参数；
+    // 查询参数取自契约（page、page_size、type、status）且无多余。
+    expect(schemas, `route-schemas.gen.ts: ${id}`).toHaveProperty(id);
+    const entry = object(schemas[id]);
+    const headers = object(entry['headers']);
+    expect(headers['type']).toBe('object');
+    expect(object(headers['properties'])).not.toHaveProperty(['idempotency-key']);
+    expect(list(headers['required'] ?? [])).not.toContain('idempotency-key');
+    expect(object(headers['properties'])).not.toHaveProperty(['x-step-up-token']);
+    const names = [...path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]!);
+    expect(names).toEqual([]);
+    expect(entry).not.toHaveProperty('params');
+    // 路径级与操作级参数合并，逐个解析 #/ 引用（与 kit.ts 的 parameters / resolve 同义）。
+    const pathItem = object(object(doc['paths'])[endpoint[1]]);
+    const queries = [...list(pathItem['parameters'] ?? []), ...list(op['parameters'] ?? [])]
+      .map((raw) => {
+        let p = object(raw);
+        const seen = new Set<string>();
+        while (p['$ref'] !== undefined) {
+          const ref = p['$ref'];
+          expect(ref).toBeTypeOf('string');
+          const pointer = String(ref);
+          expect(pointer.startsWith('#/')).toBe(true);
+          expect(seen.has(pointer), `循环引用 ${pointer}`).toBe(false);
+          seen.add(pointer);
+          p = object(
+            pointer
+              .slice(2)
+              .split('/')
+              .map((key) => key.replaceAll('~1', '/').replaceAll('~0', '~'))
+              .reduce<unknown>((node, key) => object(node)[key], doc),
+          );
+        }
+        return p;
+      })
+      .filter((p) => p['in'] === 'query')
+      .map((p) => String(p['name']));
+    expect(queries.toSorted()).toEqual(['page', 'page_size', 'status', 'type']);
+    const querystring = object(entry['querystring']);
+    expect(querystring['type']).toBe('object');
+    expect(Object.keys(object(querystring['properties'])).sort()).toEqual(queries.toSorted());
+    expect(querystring['additionalProperties']).toBe(false);
+    expect(method).toBe('get');
+    expect(entry).not.toHaveProperty('body');
     const source = ts.createSourceFile(
       'openapi.gen.ts',
       read('packages/contracts-ts/src/openapi.gen.ts'),

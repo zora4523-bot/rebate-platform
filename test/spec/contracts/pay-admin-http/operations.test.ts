@@ -73,13 +73,15 @@ it.each(
 });
 
 it.each(endpoints.filter((e): boolean => e[2] === 'listAdminPayReconDiffs'))(
-  '[AC-CT-21e#1] %s %s（对账差错）声明 planned、后台鉴权与权限点',
+  '[AC-CT-21e#1] %s %s（对账差错）已实现（不再 planned）、后台鉴权与权限点',
   (method, path, id, permission) => {
+    // B2-15j：对账差错列表已实现，x-implementation 随路由上线移除。
     const doc = contract();
     const endpoint = endpoints.find((e) => e[2] === id)!;
     const op = operation(doc, endpoint);
     expect(op['operationId']).toBe(id);
-    expect(op['x-implementation']).toBe('planned');
+    expect(op).not.toHaveProperty('x-implementation');
+    expect(op['x-implementation']).not.toBe('planned');
     expect(op['x-auth']).toBe('admin');
     expect(op['security']).toEqual([{ adminBearerAuth: [] }]);
     expect(op['description']).toMatch(
