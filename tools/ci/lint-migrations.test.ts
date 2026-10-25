@@ -237,6 +237,8 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     // B1-09e: order part two tables under the order prefix (attribution side).
     'order_sync_requests',
     'order_assignments',
+    // B1-09i: per-window progress of manual order sync (order prefix, attribution side).
+    'order_sync_request_windows',
   ]);
   for (const name of funds) expect(tables, name).toContain(name);
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));
