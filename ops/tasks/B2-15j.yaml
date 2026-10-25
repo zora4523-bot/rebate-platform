@@ -14,16 +14,20 @@ deps: [B2-15e, B2-15f]
 paths:
   - 'apps/api/src/modules/payment/**'
   - 'apps/api/src/app.module.ts'
-  - 'db/invariants/ledger/**'
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/openapi.gen.ts'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
 test_paths:
+  # 2026-10-25 be 认领：listAdminPayReconDiffs 去 planned 触动冻结 CT-21e [AC-CT-21e#1] / [#17] 块 A，先由前置 test-change be-tc-6 拆出（照 #1624），本任务只收紧拆出的块；planned-operations.gen.ts 随去 planned 重生成（同 #1631）；pay-*.sql 由规则测试作者写，db/invariants/ledger/** 移入 test_paths（先例 B2-05b）。
   - 'test/spec/payment/recon/**'
   - 'test/spec/db/ledger/invariants-pay/**'
+  - 'db/invariants/ledger/**'
+  - 'test/spec/contracts/pay-admin-http/operations.test.ts'
+  - 'test/spec/contracts/pay-admin-http/generated.test.ts'
 impl: claude
 tester: claude-independent
 accept:
