@@ -22,5 +22,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/infra/staging/**'
-status: todo
-pr: null
+status: done
+pr: 1459
