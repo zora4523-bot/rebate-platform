@@ -1,0 +1,88 @@
+{
+  "task": "B1-12za",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "36cdadff7a5ee1aab6e3ad8d9d9ca06e698ce6d2",
+  "red_tests": [
+    "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#1] SMS_CODE：default 已登记、另一变体没有在用登记 → 请求 default（含缺省）用 default 的登记，不回退部署配置",
+    "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#2] SMS_CODE：所请求变体没有在用登记（只有登记列全空的行、只有「待测试」登记、没有这一行）→ 部署配置，即使 default 已登记",
+    "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#3] SMS_CODE：非 default 变体已登记、default 未登记 → 该变体用自己的登记，default 用部署配置；各变体不串用别的变体的登记",
+    "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#4] SMS_CODE 没有部署配置：所请求变体已登记 → 用登记（另一变体未登记也一样）；所请求变体未登记 → undefined",
+    "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#5] SMS_CODE 不看渠道开关：channels 不含 sms 的行，所请求变体已登记仍用登记（另一变体未登记）；未登记的变体仍用部署配置",
+    "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#6] 其他编码不变：WD_FAILED default 已登记、manual 未登记 → 两个变体都按未就绪不发、各记一行 sms_not_ready；同一 app 同样形状的 SMS_CODE 照发登记、不记",
+    "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#7] SMS_CODE 每次发送都读当前的行：default 启用登记后下一次就用它，不等另一变体登记；启用前用部署配置",
+    "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#8] 按 app 隔离：各 app 只看自己的行，A 的 default 登记不给 B 的 default 用（B 用部署配置），B 的 step_up 登记不给 A 的 step_up 用"
+  ],
+  "risk_note": "RV2 (notification SMS resolver). B1-12y follow-up, D10-337 ②: SMS_CODE uses the requested variant's in-use registration whenever it exists and falls back to the deployment SMS_SIGN_NAME / SMS_TEMPLATE_VERIFY_CODE only when that variant has none; SMS_CODE ignores the all-variants readiness rule and the channel switch; other codes unchanged. No money, no attribution, no migration.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "36cdadff7a5ee1aab6e3ad8d9d9ca06e698ce6d2",
+      "tree": "a32b1bd4be38efc5bf6a5bedbfdbbd031f440878",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-25T04:49:59Z",
+      "finished_at": "2026-10-25T04:50:28Z",
+      "gate": {
+        "commit": "b670fff74d6c8be33b96b93ff6557864481ad332",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#1] SMS_CODE：default 已登记、另一变体没有在用登记 → 请求 default（含缺省）用 default 的登记，不回退部署配置",
+        "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#2] SMS_CODE：所请求变体没有在用登记（只有登记列全空的行、只有「待测试」登记、没有这一行）→ 部署配置，即使 default 已登记",
+        "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#3] SMS_CODE：非 default 变体已登记、default 未登记 → 该变体用自己的登记，default 用部署配置；各变体不串用别的变体的登记",
+        "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#4] SMS_CODE 没有部署配置：所请求变体已登记 → 用登记（另一变体未登记也一样）；所请求变体未登记 → undefined",
+        "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#5] SMS_CODE 不看渠道开关：channels 不含 sms 的行，所请求变体已登记仍用登记（另一变体未登记）；未登记的变体仍用部署配置",
+        "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#6] 其他编码不变：WD_FAILED default 已登记、manual 未登记 → 两个变体都按未就绪不发、各记一行 sms_not_ready；同一 app 同样形状的 SMS_CODE 照发登记、不记",
+        "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#7] SMS_CODE 每次发送都读当前的行：default 启用登记后下一次就用它，不等另一变体登记；启用前用部署配置",
+        "test/spec/notification/sms-code-variant/resolver.int.test.ts > [AC-B1-12za#8] 按 app 隔离：各 app 只看自己的行，A 的 default 登记不给 B 的 default 用（B 用部署配置），B 的 step_up 登记不给 A 的 step_up 用"
+      ],
+      "expected": ["test/spec/notification/sms-code-variant/resolver.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "081b9e3256a096aed54b132003209b7c20cb523b244b1c9738501779d433e764"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota until 10-30 (approvals #36); independent Claude review over the test(spec) base: pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by an independent Claude context (8 tests in 1 file red for the right reason on the test machine), reviewed by a separate fresh independent Claude call: pass with one S2 (no failed-pending fixture) recorded as a follow-up."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "dc729aef04aae5fb77913d7d29cc3c3af777b0ef",
+    "specs": "cec847e1768a63aac90e3e1bd473462d95d84436"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
