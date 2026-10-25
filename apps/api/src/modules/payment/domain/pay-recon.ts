@@ -1,6 +1,9 @@
 // B2-15j: the pure part of the T+1 collection reconciliation (08 BR-PAY-07 对账; BR-PAY-05 ④). No
 // clock, no database: instants, bill rows and configuration come in as arguments.
 //
+// scopeBillRows  — keeps the rows of one app (B2-15j money review r1 S0): a row that carries a
+//   merchant / application identity is kept only when it resolves to that app; a row without one is
+//   taken as the app's, because the adapter fetched the app's own bill (PayChannel.downloadBill).
 // parseBillRows  — the adapter's PayBillResult rows (normalised keys, PayBillRow) checked one by one;
 //   one malformed row refuses the whole bill (fail closed: a bill read in part would report the
 //   rest as missing). Amounts are integer fen as decimal digits, parsed by @couli/money only.
@@ -38,6 +41,10 @@ export type PayBillRow = {
   readonly state: string;
   /** The channel's service fee of the line, integer fen as decimal digits (may be '0'). */
   readonly fee_fen: string;
+  /** The merchant identity the line belongs to (WeChat mchid, Alipay seller_id), when given. */
+  readonly merchant_ref?: string;
+  /** The application identity the line belongs to (WeChat appid, Alipay app_id), when given. */
+  readonly app_ref?: string;
 };
 
 /** A checked bill line: amounts as bigint fen. */
@@ -106,6 +113,43 @@ function lineOf(row: Readonly<Record<string, string>>): BillLine | string {
   };
 }
 
+/** The identity a bill row carries: none, both parts, or a part missing (never ours then). */
+export type BillRowIdentity =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'partial' }
+  | { readonly kind: 'full'; readonly merchantRef: string; readonly appRef: string };
+
+export function billRowIdentity(row: Readonly<Record<string, string>>): BillRowIdentity {
+  const merchantRef = textOf(row, 'merchant_ref') ?? '';
+  const appRef = textOf(row, 'app_ref') ?? '';
+  if (merchantRef === '' && appRef === '') return { kind: 'none' };
+  if (merchantRef === '' || appRef === '') return { kind: 'partial' };
+  return { kind: 'full', merchantRef, appRef };
+}
+
+/**
+ * The rows of one app: rows without an identity (the adapter scoped the bill to the app) and rows
+ * whose identity `isOurs` accepts; a row with half an identity is dropped (fail closed). `dropped`
+ * is a count only: nothing of a dropped row is kept or logged.
+ */
+export function scopeBillRows(
+  rows: readonly Readonly<Record<string, string>>[],
+  isOurs: (identity: { readonly merchantRef: string; readonly appRef: string }) => boolean,
+): { readonly kept: readonly Readonly<Record<string, string>>[]; readonly dropped: number } {
+  const kept: Readonly<Record<string, string>>[] = [];
+  let dropped = 0;
+  for (const row of rows) {
+    const identity =
+      typeof row === 'object' && row !== null ? billRowIdentity(row) : { kind: 'none' as const };
+    if (identity.kind === 'none' || (identity.kind === 'full' && isOurs(identity))) {
+      kept.push(row);
+    } else {
+      dropped += 1;
+    }
+  }
+  return { kept, dropped };
+}
+
 /** Every row checked; the first unusable row refuses the bill (its index and the field). */
 export function parseBillRows(rows: readonly Readonly<Record<string, string>>[]): BillParse {
   const lines: BillLine[] = [];
@@ -153,6 +197,23 @@ const MS_PER_DAY = 86_400_000;
  * (待实测, B2-15k). A run that finds no bill yet fails and is retried by the queue.
  */
 export const BILL_RECON_RUN_OFFSET_MS = 10 * 3_600_000;
+
+/**
+ * paid_at / succeeded_at are our settlement instants, not the channel's success instants: a payment
+ * or refund that succeeded at the channel just before 00:00 +08:00 and was settled just after is
+ * listed on the previous day's bill. A PAID order or SUCCESS refund settled within this window
+ * after the bill day's midnight that the bill does not list is looked up on the previous day's bill
+ * before it is reported missing (money review r1 S2). Ten minutes covers a notification or the
+ * first scheduled queries arriving late; anything later is reported and closed by hand.
+ */
+export const MIDNIGHT_GRACE_MS = 10 * 60_000;
+
+/** The bill day before `billDate` (YYYY-MM-DD, +08:00); `like` is only copied, never read. */
+export function dayBefore(billDate: string, like: Date): string {
+  const instant = structuredClone(like);
+  instant.setTime(Date.parse(chinaDayRange(billDate).start) - MS_PER_DAY);
+  return accountingDate(instant);
+}
 
 /** The bill day reconciled by a run at `now`: the +08:00 accounting day before it. */
 export function previousBillDate(now: Date): string {

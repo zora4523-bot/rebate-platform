@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { FixedClock } from '../../platform/index.ts';
 import {
   billFeeTotal,
+  dayBefore,
   nextBillReconRun,
   parseBillRows,
   pickLines,
   previousBillDate,
+  scopeBillRows,
   type PayBillRow,
 } from './pay-recon.ts';
 
@@ -96,5 +98,29 @@ describe('bill days at +08:00', () => {
     const early = nextBillReconRun(new FixedClock('2026-10-21T17:00:00.000Z').now());
     expect(early.billDate).toBe('2026-10-22');
     expect(early.at.toISOString()).toBe('2026-10-23T02:00:00.000Z');
+  });
+});
+
+describe('scopeBillRows', () => {
+  it('[AC-B2-15j#u6] rows of another identity or half an identity are dropped; rows without one stay', () => {
+    const ours = { merchant_ref: 'M-A', app_ref: 'APP-A' };
+    const rows = [
+      trade(),
+      trade({ ...ours, out_trade_no: 'P-A' }),
+      trade({ merchant_ref: 'M-B', app_ref: 'APP-B', out_trade_no: 'P-B' }),
+      trade({ merchant_ref: 'M-A', out_trade_no: 'P-half' }),
+    ];
+    const scoped = scopeBillRows(rows, (id) => id.merchantRef === 'M-A' && id.appRef === 'APP-A');
+    expect(scoped.dropped).toBe(2);
+    expect(scoped.kept.map((row) => row['out_trade_no'])).toEqual(['P0001', 'P-A']);
+  });
+});
+
+describe('dayBefore', () => {
+  it('[AC-B2-15j#u7] the bill day before, across a month end', () => {
+    const like = new FixedClock('2026-10-22T02:00:00.000Z').now();
+    expect(dayBefore('2026-10-22', like)).toBe('2026-10-21');
+    expect(dayBefore('2026-11-01', like)).toBe('2026-10-31');
+    expect(like.toISOString()).toBe('2026-10-22T02:00:00.000Z');
   });
 });

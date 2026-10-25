@@ -44,6 +44,8 @@ export interface ReconRefundRow {
   readonly target_id: string;
   /** The target's pay_channel (the refund row carries none); null when the target is missing. */
   readonly pay_channel: string | null;
+  /** Our RF2 instant (null unless SUCCESS). */
+  readonly succeeded_at: Date | null;
 }
 
 /** pay_refunds with the pay_channel of its pay order or anomaly receipt, inside one app. */
@@ -83,6 +85,7 @@ function reconRefund(row: {
   readonly target_type: string;
   readonly target_id: string;
   readonly pay_channel: string | null;
+  readonly succeeded_at: Date | null;
 }): ReconRefundRow {
   return {
     id: row.id,
@@ -92,6 +95,7 @@ function reconRefund(row: {
     target_type: row.target_type,
     target_id: row.target_id,
     pay_channel: row.pay_channel,
+    succeeded_at: row.succeeded_at,
   };
 }
 

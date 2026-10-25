@@ -2,8 +2,10 @@
 // specs/ledger-rules.md 第 10 节 PAY_ANOMALY / PAY_FEE).
 //
 // runPayBillRecon — downloads the bill of one (app, channel, bill date) through PayChannel
-//   .downloadBill and checks it line by line against our pay orders (by out_trade_no) and refunds
-//   (by out_refund_no). Every disagreement is an R4 recon diff registered through ledger's port
+//   .downloadBill(date, app), keeps only that app's rows (a row naming a merchant / application
+//   identity that ownerAppOf does not resolve to the app is dropped and counted, money review r1
+//   S0), and checks it line by line against our pay orders (by out_trade_no) and refunds (by
+//   out_refund_no). Every disagreement is an R4 recon diff registered through ledger's port
 //   (period = the bill date, dedupe key per channel, bill date and reference) plus an alert:
 //     trade line in a success state, our order PENDING          pay_mismatch  pay_order  0 / bill
 //     our order PAID (paid inside the bill day), no trade line  pay_mismatch  pay_order  ours / 0
@@ -14,6 +16,8 @@
 //     our refund SUCCESS, the amount differs                    pay_mismatch  pay_refund ours / bill
 //     our refund SUCCESS, the line's state not a success        pay_mismatch  pay_refund ours / 0
 //     our refund SUCCESS (inside the bill day), no refund line  pay_mismatch  pay_refund ours / 0
+//   (a PAID order or SUCCESS refund settled within MIDNIGHT_GRACE_MS after the bill day's midnight
+//   is not reported missing when the previous day's bill lists it: domain/pay-recon.ts, r1 S2.)
 //   («ours / bill» = expected_fen / actual_fen, diff_fen = expected − actual, contract
 //   AdminPayReconDiff.) A trade line in a success state for a CLOSED order of ours, or for a merchant
 //   number we have no order of on that channel in that app, is an anomaly receipt (BR-PAY-05 ④): the
@@ -29,17 +33,21 @@
 //   05, refund the anomaly receipt by BR-PAY-06, close after checking — have no operation in the
 //   contract yet, the refs ref_type / ref_id are what they need). Nothing touches a user account, no
 //   withdrawal is held, nothing of R2 is applied (payment/AGENTS.md rule 1).
-//   The bill's fees are one PAY_FEE voucher per (channel, bill date) (借 PAY_CHANNEL_FEE / 贷
+//   The app's rows' fees are one PAY_FEE voucher per (channel, bill date) (借 PAY_CHANNEL_FEE / 贷
 //   CASH_PAY:{pay_channel}, uniq key PAY_FEE:{pay_channel}:{bill_date}), none when the total is 0.
 //   Idempotent per (app, channel, bill date), at least once delivered: recon diffs dedupe on their
 //   key, anomalies on (channel, channel trade number), vouchers on their uniq key. A bill the channel
-//   cannot give yet (unknown) is never read as an empty bill: nothing is written, the run fails and
-//   the queue retries it. A malformed bill is refused as a whole (fail closed).
-// runBillReconJob — the handler of job `bill.recon` (payload: the app only): the bill day is the
-//   +08:00 accounting day before clock.now() (@couli/domain), each channel whose
-//   pay.channel_enabled.<pay_channel> is on is reconciled, then the next daily run is enqueued
-//   (singletonKey bill.recon:<app_id>:<bill date>). A failed channel fails the job after the others
-//   ran; the retry reconciles all of them again, which changes nothing that already holds.
+//   cannot give yet (unknown) is never read as an empty bill: nothing is written and
+//   PayBillUnavailable is thrown. A malformed bill is refused as a whole (fail closed).
+// runBillReconJob — the handler of job `bill.recon`: the bill day is the payload's bill_date (the
+//   daily run carries it) or else the +08:00 accounting day before clock.now() (@couli/domain).
+//   Every channel the process has an adapter for is reconciled, whatever pay.channel_enabled says
+//   (BR-PAY-01 ④: the switch only stops new orders; r1 S1); a channel without an adapter is
+//   skipped. A bill not available yet gets a catch-up run of that channel and that bill day, an
+//   hour later, until CATCH_UP_LIMIT_MS after the bill day, then an alert (r1 S1: the day is never
+//   left to the queue's short retry budget or to the clock at retry time). A daily run then
+//   enqueues the next daily run (singletonKey bill.recon:<app_id>:<bill date>). Any other failure
+//   fails the job after the other channels ran; the retry changes nothing that already holds.
 // Also compiled by the `test` project: erasable syntax only.
 import type { DB } from '@couli/db';
 import { chinaDayRange } from '@couli/domain';
@@ -48,15 +56,17 @@ import type { Kysely } from 'kysely';
 import type { PostingVoucher } from '../../ledger/index.ts';
 import { newUuidV7 } from '../../platform/index.ts';
 import {
+  MIDNIGHT_GRACE_MS,
   billFeeTotal,
+  dayBefore,
   nextBillReconRun,
   parseBillRows,
   pickLines,
   previousBillDate,
+  scopeBillRows,
   type BillLine,
 } from '../domain/pay-recon.ts';
 import { delaySecondsUntil } from '../domain/pay-result.ts';
-import { isSwitchOn } from '../domain/sellability.ts';
 import type { PayChannelCode } from '../domain/types.ts';
 import {
   findOrderById,
@@ -74,16 +84,20 @@ import {
 import {
   BILL_RECON_JOB,
   PAY_QUEUE,
+  billReconCatchUpKey,
   billReconKey,
   type PayBillReconPayload,
 } from '../jobs/names.ts';
-import type { PayBillResult, PayChannel, PayChannelSet } from './pay-channel.ts';
-import { channelEnabledKey } from './pay-orders.ts';
+import {
+  PayChannelUnavailable,
+  type PayBillResult,
+  type PayChannel,
+  type PayChannelSet,
+} from './pay-channel.ts';
 import { refundStatesFor } from './pay-refund-result.ts';
 import {
   PAY_OPERATOR,
   anomalyVoucher,
-  rawConfigValue,
   successStatesFor,
   type PaySettlementDeps,
 } from './pay-settlement.ts';
@@ -156,9 +170,13 @@ interface Mismatch {
   readonly outRefundNo?: string;
 }
 
-async function downloadBill(adapter: PayChannel, billDate: string): Promise<PayBillResult> {
+async function downloadBill(
+  adapter: PayChannel,
+  billDate: string,
+  appId: string,
+): Promise<PayBillResult> {
   try {
-    return await adapter.downloadBill(billDate);
+    return await adapter.downloadBill(billDate, appId);
   } catch (error: unknown) {
     // A throwing adapter is an unknown answer (payment/AGENTS.md rule 7), never an empty bill.
     return {
@@ -166,6 +184,31 @@ async function downloadBill(adapter: PayChannel, billDate: string): Promise<PayB
       reason: error instanceof Error ? `adapter_error:${error.name}` : 'adapter_error',
     };
   }
+}
+
+/** A bill as the reconciliation reads it: the app's rows only, checked. */
+type LoadedBill =
+  | { readonly kind: 'ok'; readonly lines: readonly BillLine[] }
+  | { readonly kind: 'unknown'; readonly reason: string }
+  | { readonly kind: 'malformed'; readonly index: number; readonly field: string };
+
+/**
+ * Downloads the app's bill of one day, drops the rows of another identity (counted and alerted,
+ * nothing of the row logged) before anything is matched or summed, then checks the rest.
+ */
+async function loadBill(run: Run, adapter: PayChannel, billDate: string): Promise<LoadedBill> {
+  const bill = await downloadBill(adapter, billDate, run.appId);
+  if (bill.kind === 'unknown') return bill;
+  const scoped = scopeBillRows(bill.rows, (identity) => adapter.ownerAppOf(identity) === run.appId);
+  if (scoped.dropped > 0) {
+    run.deps.logger.warn(
+      { ...run.base, rows_bill_date: billDate, dropped_rows: scoped.dropped },
+      'pay_bill_rows_not_ours',
+    );
+  }
+  const parsed = parseBillRows(scoped.kept);
+  if (!parsed.ok) return { kind: 'malformed', index: parsed.index, field: parsed.reason };
+  return { kind: 'ok', lines: parsed.lines };
 }
 
 /** The R4 pay_mismatch of one reference and its alert (ids, numbers and amounts only). */
@@ -443,15 +486,14 @@ export async function runPayBillRecon(deps: PayReconDeps, input: PayReconInput):
     base: { app_id: input.app_id, pay_channel: channel, bill_date: billDate },
   };
   const adapter = deps.channels.of(channel);
-  const bill = await downloadBill(adapter, billDate);
-  if (bill.kind === 'unknown') {
-    deps.logger.warn({ ...run.base, reason: bill.reason }, 'pay_bill_unavailable');
+  const parsed = await loadBill(run, adapter, billDate);
+  if (parsed.kind === 'unknown') {
+    deps.logger.warn({ ...run.base, reason: parsed.reason }, 'pay_bill_unavailable');
     throw new PayBillUnavailable(channel, billDate);
   }
-  const parsed = parseBillRows(bill.rows);
-  if (!parsed.ok) {
+  if (parsed.kind === 'malformed') {
     deps.logger.error(
-      { ...run.base, row_index: parsed.index, field: parsed.reason },
+      { ...run.base, row_index: parsed.index, field: parsed.field },
       'pay_bill_malformed',
     );
     throw new PayBillMalformed(channel, billDate);
@@ -461,12 +503,34 @@ export async function runPayBillRecon(deps: PayReconDeps, input: PayReconInput):
     refundStatesFor(deps, input.app_id, channel),
   ]);
 
+  // Settled just after midnight: looked up on the previous day's bill (downloaded at most once,
+  // only when needed) before being reported missing. An unavailable or malformed previous bill
+  // matches nothing, so the reference is reported.
+  const graceEndMs = Date.parse(day.start) + MIDNIGHT_GRACE_MS;
+  let previous: Promise<LoadedBill> | undefined;
+  const listedTheDayBefore = async (
+    kind: BillLine['kind'],
+    key: string,
+    states: readonly string[],
+    settledAt: Date | null,
+  ): Promise<boolean> => {
+    if (settledAt === null || settledAt.getTime() >= graceEndMs) return false;
+    previous ??= loadBill(run, adapter, dayBefore(billDate, settledAt));
+    const loaded = await previous;
+    if (loaded.kind !== 'ok') return false;
+    const line = pickLines(loaded.lines, kind, states).get(key);
+    return line !== undefined && states.includes(line.state);
+  };
+
   // out_trade_no: every trade line, then our PAID orders of the bill day the bill does not list.
   const trades = pickLines(parsed.lines, 'trade', successStates);
   for (const line of trades.values()) await reconcileTrade(run, line, successStates);
   const paid = await paidOrdersOfDay(deps.db, input.app_id, channel, day.start, day.end);
   for (const order of paid) {
     if (trades.has(order.out_trade_no)) continue;
+    if (await listedTheDayBefore('trade', order.out_trade_no, successStates, order.paid_at)) {
+      continue;
+    }
     await registerMismatch(run, {
       refType: 'pay_order',
       refId: order.id,
@@ -489,6 +553,10 @@ export async function runPayBillRecon(deps: PayReconDeps, input: PayReconInput):
   );
   for (const refund of succeeded) {
     if (refunds.has(refund.out_refund_no)) continue;
+    const success = refundStates.success;
+    if (await listedTheDayBefore('refund', refund.out_refund_no, success, refund.succeeded_at)) {
+      continue;
+    }
     await registerMismatch(run, {
       refType: 'pay_refund',
       refId: refund.id,
@@ -499,7 +567,8 @@ export async function runPayBillRecon(deps: PayReconDeps, input: PayReconInput):
     });
   }
 
-  // PAY_FEE: one voucher per (channel, bill date); an entry amount is never 0, so none for 0.
+  // PAY_FEE: one voucher per (channel, bill date) over the app's rows only; an entry amount is
+  // never 0, so none for 0.
   const feeFen = billFeeTotal(parsed.lines);
   if (feeFen !== 0n) {
     const voucher = feeVoucher(input.app_id, channel, billDate, feeFen);
@@ -516,15 +585,32 @@ export async function runPayBillRecon(deps: PayReconDeps, input: PayReconInput):
   );
 }
 
+/** Every catch-up run of a bill not available yet comes one hour later (whole hours). */
+const CATCH_UP_INTERVAL_MS = 60 * 60_000;
+/**
+ * The last catch-up run is at most three days after the bill day ended: when a channel's bill
+ * becomes available is not verified (待实测, B2-15k), and three days outlast a channel outage over
+ * a weekend; a bill still missing by then is alerted (pay_bill_recon_abandoned) for the console.
+ */
+const CATCH_UP_LIMIT_MS = 3 * 86_400_000;
+
 function isPayload(value: unknown): value is PayBillReconPayload {
   if (typeof value !== 'object' || value === null) return false;
-  const appId = (value as Record<string, unknown>)['app_id'];
-  return typeof appId === 'string' && appId !== '';
+  const p = value as Record<string, unknown>;
+  const appId = p['app_id'];
+  const billDate = p['bill_date'];
+  const channel = p['pay_channel'];
+  return (
+    typeof appId === 'string' &&
+    appId !== '' &&
+    (billDate === undefined || typeof billDate === 'string') &&
+    (channel === undefined || (RECON_CHANNELS as readonly unknown[]).includes(channel))
+  );
 }
 
 /**
  * Enqueues the daily run after `now` for the app: the start of the next +08:00 accounting day plus
- * the run offset (domain/pay-recon.ts), keyed by the bill day it reconciles.
+ * the run offset (domain/pay-recon.ts), keyed by and carrying the bill day it reconciles.
  */
 export async function scheduleBillRecon(
   deps: Pick<PayReconDeps, 'queue'>,
@@ -532,7 +618,7 @@ export async function scheduleBillRecon(
   now: Date,
 ): Promise<void> {
   const next = nextBillReconRun(now);
-  const payload: PayBillReconPayload = { app_id: appId };
+  const payload: PayBillReconPayload = { app_id: appId, bill_date: next.billDate };
   await deps.queue.send(PAY_QUEUE, BILL_RECON_JOB, payload, {
     trx: null,
     singletonKey: billReconKey(appId, next.billDate),
@@ -540,25 +626,70 @@ export async function scheduleBillRecon(
   });
 }
 
+/**
+ * The catch-up run of one channel's bill day whose bill was not available: the next whole hour at
+ * least CATCH_UP_INTERVAL_MS away, or, past CATCH_UP_LIMIT_MS after the bill day, an alert instead.
+ */
+async function scheduleCatchUp(
+  deps: Pick<PayReconDeps, 'queue' | 'logger'>,
+  appId: string,
+  channel: PayChannelCode,
+  billDate: string,
+  now: Date,
+): Promise<void> {
+  const base = { app_id: appId, pay_channel: channel, bill_date: billDate };
+  const deadlineMs = Date.parse(chinaDayRange(billDate).end) + CATCH_UP_LIMIT_MS;
+  const at = structuredClone(now);
+  const slots = Math.ceil((now.getTime() + CATCH_UP_INTERVAL_MS) / CATCH_UP_INTERVAL_MS);
+  at.setTime(slots * CATCH_UP_INTERVAL_MS);
+  if (at.getTime() > deadlineMs) {
+    deps.logger.error(base, 'pay_bill_recon_abandoned');
+    return;
+  }
+  const payload: PayBillReconPayload = { app_id: appId, bill_date: billDate, pay_channel: channel };
+  await deps.queue.send(PAY_QUEUE, BILL_RECON_JOB, payload, {
+    trx: null,
+    singletonKey: billReconCatchUpKey(appId, billDate, channel, at),
+    delaySeconds: delaySecondsUntil(now, at),
+  });
+  deps.logger.warn({ ...base, retry_at: at.toISOString() }, 'pay_bill_recon_catch_up');
+}
+
+/** The channel's adapter in this process, or null when there is none (never reconciled then). */
+function adapterOf(deps: Pick<PayReconDeps, 'channels'>, channel: PayChannelCode) {
+  try {
+    return deps.channels.of(channel);
+  } catch (error: unknown) {
+    if (error instanceof PayChannelUnavailable) return null;
+    throw error;
+  }
+}
+
 // TODO(规划/11 §2.3): enqueue the first bill.recon of each app with collection on (the run then
 // enqueues its own next day) — blocked on a recurring-job hook of the worker entry (platform, not
 // in B2-15j's paths); until then the first run is enqueued by hand or by the task that adds it.
 
-/** The handler of `bill.recon`: the bill day before now (+08:00) of every enabled channel. */
+/** The handler of `bill.recon`: one bill day of each channel with an adapter (or of one). */
 export async function runBillReconJob(deps: PayReconDeps, payload: unknown): Promise<void> {
   if (!isPayload(payload)) throw new Error('payment: bill.recon payload is malformed');
   const appId = payload.app_id;
   const now = deps.clock.now();
-  const billDate = previousBillDate(now);
+  const billDate = payload.bill_date ?? previousBillDate(now);
+  const catchUp = payload.pay_channel !== undefined;
+  const channels = payload.pay_channel === undefined ? RECON_CHANNELS : [payload.pay_channel];
   const failed: PayChannelCode[] = [];
-  for (const channel of RECON_CHANNELS) {
-    const enabled = isSwitchOn(
-      await rawConfigValue(deps.config, appId, channelEnabledKey(channel)),
-    );
-    if (!enabled) continue;
+  for (const channel of channels) {
+    if (adapterOf(deps, channel) === null) {
+      deps.logger.debug({ app_id: appId, pay_channel: channel }, 'pay_bill_recon_no_adapter');
+      continue;
+    }
     try {
       await runPayBillRecon(deps, { app_id: appId, pay_channel: channel, bill_date: billDate });
     } catch (error: unknown) {
+      if (error instanceof PayBillUnavailable) {
+        await scheduleCatchUp(deps, appId, channel, billDate, now);
+        continue;
+      }
       failed.push(channel);
       deps.logger.error(
         {
@@ -571,7 +702,7 @@ export async function runBillReconJob(deps: PayReconDeps, payload: unknown): Pro
       );
     }
   }
-  await scheduleBillRecon(deps, appId, now);
+  if (!catchUp) await scheduleBillRecon(deps, appId, now);
   if (failed.length > 0) {
     throw new Error(`payment: bill reconciliation of ${billDate} failed for ${failed.join(', ')}`);
   }
