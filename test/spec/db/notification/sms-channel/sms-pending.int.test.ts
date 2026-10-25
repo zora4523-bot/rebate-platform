@@ -206,6 +206,7 @@ it('[AC-B1-12x#12] notify_templates gains exactly six nullable pending SMS colum
     ['route', 'jsonb', true],
     ['row_version', 'int4', false],
     ['sms_pending_preview_text', 'text', true],
+    ['sms_pending_saved_at', 'timestamptz', true],
     ['sms_pending_sign_name', 'text', true],
     ['sms_pending_template_code', 'text', true],
     ['sms_pending_template_type', 'text', true],
