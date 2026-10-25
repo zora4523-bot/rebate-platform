@@ -3,8 +3,10 @@
 // ../resilience runs every send through its governor (timeout, breaker, no retry).
 //
 // send(message, signal):
-//   - resolveTemplate(message.template) undefined → { status: 'rejected' }, no request. The
-//     signature name and the template CODE come from the caller by template key (D10-316).
+//   - resolveTemplate(message.template, message) (sync or a promise) undefined → { status:
+//     'rejected' }, no request. The signature name and the template CODE come from the caller by
+//     template key (D10-316); B1-12y passes the message too, so the caller can look the key up per
+//     app. A rejected lookup throws: a channel failure.
 //   - Otherwise one POST to `endpoint` (default https://dysmsapi.aliyuncs.com/), ACS3-signed by
 //     platform's createAliyunAcs3Signer, x-acs-action SendSms, x-acs-version 2017-05-25; the
 //     parameters go in the query: PhoneNumbers = message.phone, SignName, TemplateCode,
@@ -16,7 +18,7 @@
 //     aborted) throws: a channel failure. No error and no output carries the AccessKeySecret.
 import type { AliyunCredentials, Clock } from '../../platform/index.ts';
 import { createAliyunAcs3Signer } from '../../platform/index.ts';
-import type { SmsChannel } from '../resilience/index.ts';
+import type { SmsChannel, SmsMessage } from '../resilience/index.ts';
 
 export interface AliyunSmsTemplate {
   readonly signName: string;
@@ -42,7 +44,10 @@ export type AliyunSmsFetch = (
 
 export interface AliyunSmsChannelDeps {
   readonly credentials: AliyunCredentials;
-  readonly resolveTemplate: (template: string) => AliyunSmsTemplate | undefined;
+  readonly resolveTemplate: (
+    template: string,
+    message: SmsMessage,
+  ) => AliyunSmsTemplate | undefined | Promise<AliyunSmsTemplate | undefined>;
   readonly fetch: AliyunSmsFetch;
   readonly clock: Clock;
   readonly nonce: () => string;
@@ -88,7 +93,12 @@ export function createAliyunSmsChannel(deps: AliyunSmsChannelDeps): SmsChannel {
   return {
     provider: 'aliyun',
     async send(message, signal) {
-      const template = deps.resolveTemplate(message.template);
+      let template: AliyunSmsTemplate | undefined;
+      try {
+        template = await deps.resolveTemplate(message.template, message);
+      } catch {
+        throw new AliyunSmsChannelError('template lookup failed');
+      }
       if (template === undefined) return { status: 'rejected' };
 
       // RFC 3986 encoding (spaces as %20, not '+'), so the provider decodes exactly what was signed.

@@ -485,8 +485,9 @@ export function createFakeTemplateSmsSender(appEnv: string): FakeTemplateSmsSend
 }
 
 /**
- * The worker's sender: the fake in local / test; elsewhere, until the Aliyun template adapter
- * exists, a sender that definitely rejects (nothing is sent), announced once with a warn.
+ * The worker's sender without the live channel: the fake in local / test; elsewhere (staging /
+ * prod without all SMS_ variables; with them app.module uses ./live-sender.ts, B1-12y) a sender
+ * that definitely rejects (nothing is sent), announced once with a warn.
  */
 export function createTemplateSmsSender(
   appEnv: string,

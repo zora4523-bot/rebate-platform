@@ -250,10 +250,13 @@ import {
   bindPushTokensForSession,
   createSiteAuthAlertPort,
   createEntrySmsSender,
+  createLiveTemplateSmsSender,
+  createRegisteredTemplateResolver,
   createTemplateSmsSender,
   deletePushTokensForUser,
   unbindPushTokensForSession,
   type AliyunSmsFetch,
+  type TemplateSmsSender,
   type VerifyCodeSmsSender,
 } from './modules/notification/index.ts';
 import {
@@ -928,7 +931,7 @@ function identityModule(contentReader: SharedContentReader): DynamicModule {
     },
     // Through identity's index.ts, as for the admin entry (one sender factory for both entries).
     smsSender: {
-      inject: [APP_CONFIG, ROOT_LOGGER, CLOCK],
+      inject: [APP_CONFIG, ROOT_LOGGER, CLOCK, { token: DB, optional: true }],
       useFactory: entrySmsSender,
     },
     pushTokens: {
@@ -2518,7 +2521,7 @@ function adminAuthModule(): DynamicModule {
     configPermissions: new Map(configRegistry().map((item) => [item.key, item.permission])),
     smsSender: {
       provide: smsSenderToken(),
-      inject: [APP_CONFIG, ROOT_LOGGER, CLOCK],
+      inject: [APP_CONFIG, ROOT_LOGGER, CLOCK, { token: DB, optional: true }],
       useFactory: entrySmsSender,
     },
   });
@@ -2532,11 +2535,28 @@ const smsFetch: AliyunSmsFetch = (url, init) => globalThis.fetch(url, init);
  * notification's SMS failover when loadConfig read all four SMS_ variables; otherwise identity's
  * createSmsSender (local / test fake, or the staging / prod sender that rejects every message and
  * warns at startup). One sender (and breaker) per entry process.
+ * B1-12y (D10-316 ①, D10-337 ②): with a database, SMS_CODE's signature name and template CODE come
+ * from the app's in-use notify_templates registration, the deployment's SMS_SIGN_NAME /
+ * SMS_TEMPLATE_VERIFY_CODE only standing in when the app has none.
  */
-function entrySmsSender(config: AppConfig, logger: RootLogger, clock: Clock): VerifyCodeSmsSender {
+function entrySmsSender(
+  config: AppConfig,
+  logger: RootLogger,
+  clock: Clock,
+  db?: Kysely<Database>,
+): VerifyCodeSmsSender {
   const sms = config.sms ?? undefined;
+  const resolver =
+    sms === undefined || db === undefined
+      ? undefined
+      : createRegisteredTemplateResolver({
+          db,
+          logger,
+          deployVerifyCode: { signName: sms.signName, templateCode: sms.verifyCodeTemplate },
+        });
   const sender = createEntrySmsSender({
     sms,
+    ...(resolver === undefined ? {} : { resolver }),
     fallback: () => createSmsSender(config.appEnv, logger),
     registry: createResilienceRegistry(),
     scheduler: systemScheduler(),
@@ -2548,6 +2568,39 @@ function entrySmsSender(config: AppConfig, logger: RootLogger, clock: Clock): Ve
   if (sms !== undefined)
     logger.info({ app_env: config.appEnv, provider: 'aliyun' }, 'sms_sender_live');
   return sender;
+}
+
+/**
+ * The worker's site union authorization alert SMS sender (B1-22b, B1-12y): on staging / prod with
+ * all four SMS_ variables, the Aliyun SendSms channel with the signature name and template CODE of
+ * each code's in-use notify_templates registration (none → not sent) and the BizId written to
+ * notify_logs; otherwise createTemplateSmsSender (the fake in local / test, a rejecting sender
+ * announced once elsewhere).
+ */
+function siteAuthSmsSender(
+  config: AppConfig,
+  appEnv: AppConfig['appEnv'],
+  db: Kysely<Database>,
+  clock: Clock,
+  logger: RootLogger,
+): TemplateSmsSender {
+  const sms = config.sms ?? undefined;
+  if (appEnv === 'local' || appEnv === 'test' || sms === undefined) {
+    return createTemplateSmsSender(appEnv, logger);
+  }
+  logger.info({ app_env: appEnv, provider: 'aliyun' }, 'template_sms_sender_live');
+  return createLiveTemplateSmsSender({
+    sms,
+    resolver: createRegisteredTemplateResolver({ db, logger }),
+    db,
+    registry: createResilienceRegistry(),
+    scheduler: systemScheduler(),
+    fetch: smsFetch,
+    clock,
+    nonce: randomUUID,
+    messageId: randomUUID,
+    logger,
+  });
 }
 
 /**
@@ -3034,8 +3087,9 @@ export class AppModule {
               }),
               // The site union authorization check (B1-22b, BR-ID-24): the union-auth queue's
               // handler, its chain seed and self-heal timer; alerts through notification's port
-              // and the entry's template SMS sender (the fake in local / test, a rejecting sender
-              // announced once elsewhere until the Aliyun adapter exists).
+              // and the entry's template SMS sender (B1-12y: the Aliyun channel by registration on
+              // staging / prod with the SMS_ variables; the fake in local / test; a rejecting
+              // sender announced once otherwise).
               UnionAuthModule.forWorker({
                 config: (db, clock) => createContentReader({ db, clock }),
                 alerts: ({ db, clock, logger, appEnv }) =>
@@ -3043,7 +3097,7 @@ export class AppModule {
                     db,
                     clock,
                     logger,
-                    sms: createTemplateSmsSender(appEnv, logger),
+                    sms: siteAuthSmsSender(options.config, appEnv, db, clock, logger),
                   }),
               }),
             ]

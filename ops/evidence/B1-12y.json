@@ -1,0 +1,140 @@
+{
+  "task": "B1-12y",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "6b7cdbae5ad29613cd677661507c3d6385cf0272",
+  "red_tests": [
+    "test/spec/notification/push-channel-switch/switch.int.test.ts > [AC-B1-12y#17] channels 不含 push（[ 'inbox' ]）：只写站内信与站内信日志，不写推送记录、不调推送通道，dispatch 无事可做（skipped）",
+    "test/spec/notification/push-channel-switch/switch.int.test.ts > [AC-B1-12y#17] channels 不含 push（[ 'inbox', 'sms' ]）：只写站内信与站内信日志，不写推送记录、不调推送通道，dispatch 无事可做（skipped）",
+    "test/spec/notification/push-channel-switch/switch.int.test.ts > [AC-B1-12y#18] channels 不含 push 且用户关了「服务」类推送：同样不写推送记录（不记 suppressed），站内信照写",
+    "test/spec/notification/push-channel-switch/switch.int.test.ts > [AC-B1-12y#19] 只看本变体的 channels：manual 变体不含 push → 不推送；default 变体含 push → 照常推送成功",
+    "test/spec/notification/push-channel-switch/switch.int.test.ts > [AC-B1-12y#20] 记录后后台才关掉推送（channels 去掉 push）：之后的 dispatch 不再调推送通道，推送记录不会变成 success；站内信仍在",
+    "test/spec/notification/sms-registry/entry.test.ts > [AC-B1-12y#15] 有 resolver：SMS_CODE 的 SignName / TemplateCode 按消息的 app_id 取自 resolver（各 app 各用各的登记，不是部署配置）；凭据仍是部署配置",
+    "test/spec/notification/sms-registry/entry.test.ts > [AC-B1-12y#16] 有 resolver 而它给 undefined（该 app 没有在用登记、也没有部署兜底）→ rejected，不发请求，入口自己不拿部署配置顶替",
+    "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#8] 受理：一次 SendSms，SignName / TemplateCode 来自 notify_templates 的在用登记（不是部署配置），凭据来自部署配置，OutId = outId；BizId 写进对应行，该行状态不动",
+    "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#9] 未登记（resolver 给 undefined）→ rejected，不发请求，不写 BizId；resolver 按 appId 与模板编码查",
+    "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#10] 未受理不写 BizId：供应商明确拒收 → rejected，只发一次请求（不登记备用、不重发），send 不抛错",
+    "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#10] 未受理不写 BizId：HTTP 503 → unknown，只发一次请求（不登记备用、不重发），send 不抛错",
+    "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#10] 未受理不写 BizId：fetch 抛错 → unknown，只发一次请求（不登记备用、不重发），send 不抛错",
+    "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#11] 通道超时：按登记表 sms 行的时限中止请求，结果 unknown，只发一次，不写 BizId",
+    "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#12] BizId 只写 app_id + dedupe_key = outId 且 channel = 'sms' 的那一行：别的 app 同键、同 app 别的键、同键的非短信行都不动",
+    "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#13] 接上站长告警端口：每个号码一次 SendSms（登记的签名与模板 CODE、BR-TEXT-20 变量、OutId = 去重键），受理的行 success 且 sms_biz_id = 该次请求的 BizId",
+    "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#14] 接上站长告警端口：该编码只有「待测试」登记（没有在用登记）→ 不发请求，行 failed，不写 BizId",
+    "test/spec/notification/sms-registry/resolver.int.test.ts > [AC-B1-12y#1] 在用登记齐且 channels 含 sms：签名与模板 CODE 取自该 app / code / variant 的登记；variant 缺省按 default；部署配置不参与",
+    "test/spec/notification/sms-registry/resolver.int.test.ts > [AC-B1-12y#2] SMS_CODE：有在用登记 → 用登记；没有在用登记（无行，或只有测试已受理的「待测试」登记）→ 部署配置兜底",
+    "test/spec/notification/sms-registry/resolver.int.test.ts > [AC-B1-12y#3] SMS_CODE 没有在用登记、部署配置也没有 → undefined；有在用登记时不需要部署配置",
+    "test/spec/notification/sms-registry/resolver.int.test.ts > [AC-B1-12y#4] SMS_CODE 以外的编码没有在用登记 → undefined（不发）：无行、只有「待测试」登记、登记列全空都一样，部署配置不顶替",
+    "test/spec/notification/sms-registry/resolver.int.test.ts > [AC-B1-12y#5] 后台关闭短信渠道（channels 不含 sms）的编码：在用登记齐也 → undefined（不发）",
+    "test/spec/notification/sms-registry/resolver.int.test.ts > [AC-B1-12y#6] 未就绪（D10-339 ⑥）：默认含短信、有变体没有在用登记 → 每个变体都 undefined，各记一行 sms_not_ready（带 app_id、code）；全部变体启用后自动按登记发、不再记",
+    "test/spec/notification/sms-registry/resolver.int.test.ts > [AC-B1-12y#7] 按 app 隔离：别的 app 的登记不让本 app 就绪，别的 app 未就绪也不拦本 app；SMS_CODE 各用各的",
+    "test/spec/notification/sms-registry/wiring.int.test.ts > [AC-B1-12y#21] 装配：api 入口（staging，SMS 配置齐）的 SmsSender 发码时，有 SMS_CODE 在用登记的 app 的 SendSms 用登记的 SignName / TemplateCode，没有登记的 app 用部署配置；凭据都是部署配置",
+    "test/spec/notification/sms-registry/wiring.int.test.ts > [AC-B1-12y#21] 装配：api 入口（prod，SMS 配置齐）的 SmsSender 发码时，有 SMS_CODE 在用登记的 app 的 SendSms 用登记的 SignName / TemplateCode，没有登记的 app 用部署配置；凭据都是部署配置",
+    "test/spec/notification/sms-registry/wiring.int.test.ts > [AC-B1-12y#21] 装配：admin 入口（staging，SMS 配置齐）的 SmsSender 发码时，有 SMS_CODE 在用登记的 app 的 SendSms 用登记的 SignName / TemplateCode，没有登记的 app 用部署配置；凭据都是部署配置",
+    "test/spec/notification/sms-registry/wiring.int.test.ts > [AC-B1-12y#21] 装配：admin 入口（prod，SMS 配置齐）的 SmsSender 发码时，有 SMS_CODE 在用登记的 app 的 SendSms 用登记的 SignName / TemplateCode，没有登记的 app 用部署配置；凭据都是部署配置",
+    "test/spec/notification/sms-registry/wiring.int.test.ts > [AC-B1-12y#22] 装配：worker 的站长告警 port 在 staging（SMS 配置齐）走真实通道：计划中的告警发出一次 SendSms（登记的签名与模板 CODE、OutId = 去重键），受理后该行 success 且 sms_biz_id = BizId；同样装配在 local 仍是假发送器（不发请求、不写 BizId）",
+    "test/spec/notification/sms-registry/wiring.int.test.ts > [AC-B1-12y#22] 装配：worker 的站长告警 port 在 prod（SMS 配置齐）走真实通道：计划中的告警发出一次 SendSms（登记的签名与模板 CODE、OutId = 去重键），受理后该行 success 且 sms_biz_id = BizId；同样装配在 test 仍是假发送器（不发请求、不写 BizId）"
+  ],
+  "risk_note": "RV2 (notification SMS / site-auth alert / push send, app.module wiring). D10-316 ①, D10-337 ②, D10-339 ⑥: SMS sign name and template code come from the notify_templates in-use registration by code (SMS_CODE falls back to the deployment SMS_SIGN_NAME / SMS_TEMPLATE_VERIFY_CODE when unregistered; other codes are not sent unless registered and switched on; pending test registrations are never used; codes whose default channels include SMS but are not ready are logged, not sent). The site-auth alert goes through the live Aliyun sender in staging / prod with full SMS config (local / test keep the fake) and writes the BizId to notify_logs.sms_biz_id after acceptance; same accepted / rejected / unknown mapping and no resend as B1-12w. Push is skipped for codes whose channels lack push, the inbox is still written. No money, no attribution, no migration.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "6b7cdbae5ad29613cd677661507c3d6385cf0272",
+      "tree": "8e48c7b706e310a34e3e6ed03267460dbe817106",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-24T23:26:04Z",
+      "finished_at": "2026-10-24T23:26:19Z",
+      "gate": {
+        "commit": "790e34a1cb1fcd06ecf3047d53d3e635951b4aa0",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/notification/push-channel-switch/switch.int.test.ts > [AC-B1-12y#17] channels 不含 push（[ 'inbox' ]）：只写站内信与站内信日志，不写推送记录、不调推送通道，dispatch 无事可做（skipped）",
+        "test/spec/notification/push-channel-switch/switch.int.test.ts > [AC-B1-12y#17] channels 不含 push（[ 'inbox', 'sms' ]）：只写站内信与站内信日志，不写推送记录、不调推送通道，dispatch 无事可做（skipped）",
+        "test/spec/notification/push-channel-switch/switch.int.test.ts > [AC-B1-12y#18] channels 不含 push 且用户关了「服务」类推送：同样不写推送记录（不记 suppressed），站内信照写",
+        "test/spec/notification/push-channel-switch/switch.int.test.ts > [AC-B1-12y#19] 只看本变体的 channels：manual 变体不含 push → 不推送；default 变体含 push → 照常推送成功",
+        "test/spec/notification/push-channel-switch/switch.int.test.ts > [AC-B1-12y#20] 记录后后台才关掉推送（channels 去掉 push）：之后的 dispatch 不再调推送通道，推送记录不会变成 success；站内信仍在",
+        "test/spec/notification/sms-registry/entry.test.ts > [AC-B1-12y#15] 有 resolver：SMS_CODE 的 SignName / TemplateCode 按消息的 app_id 取自 resolver（各 app 各用各的登记，不是部署配置）；凭据仍是部署配置",
+        "test/spec/notification/sms-registry/entry.test.ts > [AC-B1-12y#16] 有 resolver 而它给 undefined（该 app 没有在用登记、也没有部署兜底）→ rejected，不发请求，入口自己不拿部署配置顶替",
+        "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#8] 受理：一次 SendSms，SignName / TemplateCode 来自 notify_templates 的在用登记（不是部署配置），凭据来自部署配置，OutId = outId；BizId 写进对应行，该行状态不动",
+        "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#9] 未登记（resolver 给 undefined）→ rejected，不发请求，不写 BizId；resolver 按 appId 与模板编码查",
+        "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#10] 未受理不写 BizId：供应商明确拒收 → rejected，只发一次请求（不登记备用、不重发），send 不抛错",
+        "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#10] 未受理不写 BizId：HTTP 503 → unknown，只发一次请求（不登记备用、不重发），send 不抛错",
+        "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#10] 未受理不写 BizId：fetch 抛错 → unknown，只发一次请求（不登记备用、不重发），send 不抛错",
+        "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#11] 通道超时：按登记表 sms 行的时限中止请求，结果 unknown，只发一次，不写 BizId",
+        "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#12] BizId 只写 app_id + dedupe_key = outId 且 channel = 'sms' 的那一行：别的 app 同键、同 app 别的键、同键的非短信行都不动",
+        "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#13] 接上站长告警端口：每个号码一次 SendSms（登记的签名与模板 CODE、BR-TEXT-20 变量、OutId = 去重键），受理的行 success 且 sms_biz_id = 该次请求的 BizId",
+        "test/spec/notification/sms-registry/live-sender.int.test.ts > [AC-B1-12y#14] 接上站长告警端口：该编码只有「待测试」登记（没有在用登记）→ 不发请求，行 failed，不写 BizId",
+        "test/spec/notification/sms-registry/resolver.int.test.ts > [AC-B1-12y#1] 在用登记齐且 channels 含 sms：签名与模板 CODE 取自该 app / code / variant 的登记；variant 缺省按 default；部署配置不参与",
+        "test/spec/notification/sms-registry/resolver.int.test.ts > [AC-B1-12y#2] SMS_CODE：有在用登记 → 用登记；没有在用登记（无行，或只有测试已受理的「待测试」登记）→ 部署配置兜底",
+        "test/spec/notification/sms-registry/resolver.int.test.ts > [AC-B1-12y#3] SMS_CODE 没有在用登记、部署配置也没有 → undefined；有在用登记时不需要部署配置",
+        "test/spec/notification/sms-registry/resolver.int.test.ts > [AC-B1-12y#4] SMS_CODE 以外的编码没有在用登记 → undefined（不发）：无行、只有「待测试」登记、登记列全空都一样，部署配置不顶替",
+        "test/spec/notification/sms-registry/resolver.int.test.ts > [AC-B1-12y#5] 后台关闭短信渠道（channels 不含 sms）的编码：在用登记齐也 → undefined（不发）",
+        "test/spec/notification/sms-registry/resolver.int.test.ts > [AC-B1-12y#6] 未就绪（D10-339 ⑥）：默认含短信、有变体没有在用登记 → 每个变体都 undefined，各记一行 sms_not_ready（带 app_id、code）；全部变体启用后自动按登记发、不再记",
+        "test/spec/notification/sms-registry/resolver.int.test.ts > [AC-B1-12y#7] 按 app 隔离：别的 app 的登记不让本 app 就绪，别的 app 未就绪也不拦本 app；SMS_CODE 各用各的",
+        "test/spec/notification/sms-registry/wiring.int.test.ts > [AC-B1-12y#21] 装配：api 入口（staging，SMS 配置齐）的 SmsSender 发码时，有 SMS_CODE 在用登记的 app 的 SendSms 用登记的 SignName / TemplateCode，没有登记的 app 用部署配置；凭据都是部署配置",
+        "test/spec/notification/sms-registry/wiring.int.test.ts > [AC-B1-12y#21] 装配：api 入口（prod，SMS 配置齐）的 SmsSender 发码时，有 SMS_CODE 在用登记的 app 的 SendSms 用登记的 SignName / TemplateCode，没有登记的 app 用部署配置；凭据都是部署配置",
+        "test/spec/notification/sms-registry/wiring.int.test.ts > [AC-B1-12y#21] 装配：admin 入口（staging，SMS 配置齐）的 SmsSender 发码时，有 SMS_CODE 在用登记的 app 的 SendSms 用登记的 SignName / TemplateCode，没有登记的 app 用部署配置；凭据都是部署配置",
+        "test/spec/notification/sms-registry/wiring.int.test.ts > [AC-B1-12y#21] 装配：admin 入口（prod，SMS 配置齐）的 SmsSender 发码时，有 SMS_CODE 在用登记的 app 的 SendSms 用登记的 SignName / TemplateCode，没有登记的 app 用部署配置；凭据都是部署配置",
+        "test/spec/notification/sms-registry/wiring.int.test.ts > [AC-B1-12y#22] 装配：worker 的站长告警 port 在 staging（SMS 配置齐）走真实通道：计划中的告警发出一次 SendSms（登记的签名与模板 CODE、OutId = 去重键），受理后该行 success 且 sms_biz_id = BizId；同样装配在 local 仍是假发送器（不发请求、不写 BizId）",
+        "test/spec/notification/sms-registry/wiring.int.test.ts > [AC-B1-12y#22] 装配：worker 的站长告警 port 在 prod（SMS 配置齐）走真实通道：计划中的告警发出一次 SendSms（登记的签名与模板 CODE、OutId = 去重键），受理后该行 success 且 sms_biz_id = BizId；同样装配在 test 仍是假发送器（不发请求、不写 BizId）"
+      ],
+      "expected": [
+        "test/spec/notification/push-channel-switch/switch.int.test.ts",
+        "test/spec/notification/sms-registry/entry.test.ts",
+        "test/spec/notification/sms-registry/live-sender.int.test.ts",
+        "test/spec/notification/sms-registry/resolver.int.test.ts",
+        "test/spec/notification/sms-registry/wiring.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "c4f85c3a03cb0f21d776a9d4e8093060544a701e996e7bf8499c996c99a96396"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "84dfd58529aa04ec6cbc09766615d7b6f9defba871209979c3188b6566d04cbb"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota until 10-30 (approvals #36); independent Claude review over the test(spec) base: pass with one S2 (non-default SMS_CODE variants fall back to deploy config; unreachable today) recorded as a follow-up"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by an independent Claude context in two runs (run 1: 23 tests red; run 2 adds app.module wiring tests: 29 tests in 5 files red for the right reason on the test machine); reviewed by separate fresh independent Claude calls: round 1 fail with two S1 (no wiring test for the entry SmsSender resolver and the worker's live site-auth sender), fixed by run 2; round 2 pass with no findings."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "0818e3447dd0abe2908cbee2ccbb4a85c2bba12f",
+    "specs": "cec847e1768a63aac90e3e1bd473462d95d84436"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
