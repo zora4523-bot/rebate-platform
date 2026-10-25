@@ -206,26 +206,69 @@ export function encryptDataCopyZip(
   entries: readonly DataCopyFileEntry[],
   password: string,
 ): Uint8Array {
-  void entries;
-  void password;
-  throw new Error('NotImplemented: encryptDataCopyZip');
-}
+  checkEntries(entries);
+  if (typeof password !== 'string' || password.length === 0) {
+    throw new TypeError('data copy: the password must not be empty');
+  }
+  const secret = Buffer.from(password, 'utf8');
+  const parts: Buffer[] = [];
+  const central: Buffer[] = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const plain = Buffer.from(entry.bytes.buffer, entry.bytes.byteOffset, entry.bytes.byteLength);
+    const deflated = deflateRawSync(plain);
+    const method = deflated.length < plain.length ? METHOD_DEFLATED : METHOD_STORED;
+    const data = aesEntry(method === METHOD_DEFLATED ? deflated : plain, secret);
+    const name = Buffer.from(entry.name, 'utf8');
+    const extra = aesExtra(method);
 
-// B1-27k red skeleton (temporary): keeps what only the original encryptDataCopyZip body uses
-// referenced for ESLint; the implementation commit restores that body and drops this list.
-export {
-  aesEntry,
-  aesExtra,
-  deflateRawSync,
-  DOS_DATE,
-  DOS_TIME,
-  METHOD_AES,
-  METHOD_DEFLATED,
-  METHOD_STORED,
-  size32,
-  ZIP_FLAGS,
-  ZIP_VERSION,
-};
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(ZIP_VERSION, 4);
+    local.writeUInt16LE(ZIP_FLAGS, 6);
+    local.writeUInt16LE(METHOD_AES, 8);
+    local.writeUInt16LE(DOS_TIME, 10);
+    local.writeUInt16LE(DOS_DATE, 12);
+    local.writeUInt32LE(0, 14);
+    local.writeUInt32LE(size32(data.length), 18);
+    local.writeUInt32LE(size32(plain.length), 22);
+    local.writeUInt16LE(name.length, 26);
+    local.writeUInt16LE(extra.length, 28);
+
+    const header = Buffer.alloc(46);
+    header.writeUInt32LE(0x02014b50, 0);
+    header.writeUInt16LE(ZIP_VERSION, 4);
+    header.writeUInt16LE(ZIP_VERSION, 6);
+    header.writeUInt16LE(ZIP_FLAGS, 8);
+    header.writeUInt16LE(METHOD_AES, 10);
+    header.writeUInt16LE(DOS_TIME, 12);
+    header.writeUInt16LE(DOS_DATE, 14);
+    header.writeUInt32LE(0, 16);
+    header.writeUInt32LE(data.length, 20);
+    header.writeUInt32LE(plain.length, 24);
+    header.writeUInt16LE(name.length, 28);
+    header.writeUInt16LE(extra.length, 30);
+    header.writeUInt16LE(0, 32);
+    header.writeUInt16LE(0, 34);
+    header.writeUInt16LE(0, 36);
+    header.writeUInt32LE(0, 38);
+    header.writeUInt32LE(size32(offset), 42);
+
+    parts.push(local, name, extra, data);
+    central.push(header, name, extra);
+    offset += local.length + name.length + extra.length + data.length;
+  }
+  const directory = Buffer.concat(central);
+  if (entries.length > 0xffff) throw new RangeError('data copy: too many entries for ZIP32');
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(size32(directory.length), 12);
+  end.writeUInt32LE(size32(offset), 16);
+  end.writeUInt16LE(0, 20);
+  return new Uint8Array(Buffer.concat([...parts, directory, end]));
+}
 
 /** The one-time extraction code / password, from the CSPRNG (crypto.randomInt). */
 export function generateDataCopySecret(): string {
