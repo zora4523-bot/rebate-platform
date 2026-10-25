@@ -21342,7 +21342,6 @@ paths:
         and refund, or close after checking) is not part of this operation. Reading does not write
         an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

@@ -179,8 +179,14 @@ export interface PayChannel {
    * null when the identity is not ours (BR-PAY-04 核对 ①: reject, count, alert, no trace).
    */
   ownerAppOf(identity: PayChannelIdentity): string | null;
-  /** The channel's bill of one accounting day (YYYY-MM-DD, +08:00). */
-  downloadBill(date: string): Promise<PayBillResult>;
+  /**
+   * The channel's bill of one accounting day (YYYY-MM-DD, +08:00) for one app of ours (B2-15j):
+   * the bill of the merchant / application identity this channel's configuration holds for
+   * `appId`, never the bill of another app's identity. Rows are normalised to domain/pay-recon.ts
+   * PayBillRow; a row may also carry the identity it belongs to (merchant_ref / app_ref), and the
+   * reconciliation then keeps it only when ownerAppOf(identity) is `appId`.
+   */
+  downloadBill(date: string, appId: string): Promise<PayBillResult>;
 }
 
 /** Thrown by PayChannelSet.of for a channel the process has no adapter for (fail closed). */

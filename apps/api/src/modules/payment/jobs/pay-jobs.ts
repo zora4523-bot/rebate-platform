@@ -17,6 +17,9 @@
 //                  the same result handler as a refund notification (application/pay-refund-
 //                  query.ts, pay-refund-result.ts); without a verdict the next slot is enqueued,
 //                  the refund is never submitted again under the same number.
+//   bill.recon     B2-15j: the T+1 reconciliation of one app (application/pay-recon.ts): the bill
+//                  of the +08:00 accounting day before now of every enabled channel, checked line
+//                  by line (R4 recon diffs, anomaly receipts, PAY_FEE), then the next day's run.
 // Also compiled by the `test` project: erasable syntax only.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
@@ -27,9 +30,16 @@ import type { PayChannelSet } from '../application/pay-channel.ts';
 import { runOrderClose } from '../application/pay-close.ts';
 import { runBizReconcile } from '../application/pay-fulfillment.ts';
 import { runOrderQuery } from '../application/pay-query.ts';
+import { runBillReconJob } from '../application/pay-recon.ts';
 import { runRefundQuery } from '../application/pay-refund-query.ts';
 import type { PayLedgerPort } from '../application/pay-settlement.ts';
-import { BIZ_RECONCILE_JOB, ORDER_CLOSE_JOB, ORDER_QUERY_JOB, REFUND_QUERY_JOB } from './names.ts';
+import {
+  BILL_RECON_JOB,
+  BIZ_RECONCILE_JOB,
+  ORDER_CLOSE_JOB,
+  ORDER_QUERY_JOB,
+  REFUND_QUERY_JOB,
+} from './names.ts';
 
 export type { PayLedgerPort } from '../application/pay-settlement.ts';
 
@@ -60,6 +70,9 @@ export function createPayJobHandler(deps: PayJobDeps): JobHandler {
         return;
       case ORDER_CLOSE_JOB:
         await runOrderClose(deps, job.payload);
+        return;
+      case BILL_RECON_JOB:
+        await runBillReconJob(deps, job.payload);
         return;
       default:
         deps.logger.error({ job_id: job.id, job_name: job.name }, 'pay_job_unknown');

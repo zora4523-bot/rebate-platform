@@ -31,9 +31,12 @@ export type PayQueueName = 'pay';
  * order.close (singletonKey `order.close:<pay_order_id>`),
  * biz.reconcile (singletonKey `biz:<biz_type>:<biz_ref>`, the business object's fulfilment),
  * refund.query (B2-15e: one refund query of a PROCESSING refund, payload RefundQueryPayload; the
- * same result handler as a refund notification, BR-PAY-06 ④).
+ * same result handler as a refund notification, BR-PAY-06 ④),
+ * bill.recon (B2-15j: the T+1 reconciliation of one app, payload PayBillReconPayload; the handler
+ * derives the bill date D−1 at +08:00 from the Clock, BR-PAY-07).
  */
-export type PayJobName = 'order.query' | 'order.close' | 'biz.reconcile' | 'refund.query';
+export type PayJobName =
+  'order.query' | 'order.close' | 'biz.reconcile' | 'refund.query' | 'bill.recon';
 
 /** pay_refunds.status (enum pay_refund_status; specs/state-machines/pay-refund.yaml). */
 export type PayRefundStatus = 'PROCESSING' | 'SUCCESS' | 'FAILED';

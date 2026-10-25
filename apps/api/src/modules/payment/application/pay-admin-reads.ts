@@ -1,5 +1,7 @@
 // B2-15f: the console's pay reads (contract listAdminPayOrders, getAdminPayOrder,
-// listAdminPayAnomalies; 08 BR-PAY-05 ③④, BR-PAY-06 ③, BR-PAY-08 ④; 规划/04 §6.6, §11.2). The
+// listAdminPayAnomalies; 08 BR-PAY-05 ③④, BR-PAY-06 ③, BR-PAY-08 ④; 规划/04 §6.6, §11.2); B2-15j
+// adds listAdminPayReconDiffs (BR-PAY-07: the R4 recon diffs, read through ledger's index.ts
+// getReconDiffs, never from recon_diffs directly: ledger is that table's only owner). The
 // permission check (pay.view, read only, no step-up) is the controller's, through platform's
 // AdminOperationGuard; appId is always the guard's actor, never a header or query field. Nothing
 // is written or audited. Every answer is built field by field from the contract's schema: no
@@ -7,9 +9,10 @@
 // pay_anomalies' evidence are never read, infra/pay-admin-store.ts). Amounts stay bigint fen until
 // the JSON integer of @couli/money.
 import type { DB } from '@couli/db';
-import type { Schema } from '@couli/contracts-ts';
+import type { ReconDiffStatus, Schema } from '@couli/contracts-ts';
 import { fenToJsonNumber } from '@couli/money';
 import type { Kysely } from 'kysely';
+import { getReconDiffs, type ReconDiff } from '../../ledger/index.ts';
 import type { PayChannelCode, PayOrderStatus } from '../domain/types.ts';
 import {
   attemptsOfOrder,
@@ -67,6 +70,42 @@ export interface PayAnomalyListQuery {
   readonly page?: number;
   readonly page_size?: number;
   readonly pay_channel?: string;
+}
+
+/** B2-15j: the query of GET /admin/v1/pay-recon-diffs after the route schema (enums checked). */
+export interface PayReconDiffListQuery {
+  readonly page?: number;
+  readonly page_size?: number;
+  readonly type?: string;
+  readonly status?: string;
+}
+
+/** The collection recon diffs (contract AdminPayReconDiffType; BR-PAY-07 source R4). */
+const PAY_DIFF_TYPES: readonly string[] = Object.freeze(['pay_mismatch', 'pay_anomaly']);
+
+/** The contract AdminPayReconDiff of an R4 recon diff row. */
+export function adminPayReconDiffView(row: ReconDiff): Schema<'AdminPayReconDiff'> {
+  return {
+    recon_diff_id: row.id,
+    source: 'R4',
+    type: row.type as Schema<'AdminPayReconDiffType'>,
+    period: row.period,
+    ref_type: row.ref_type,
+    ref_id: row.ref_id,
+    expected_fen: fenToJsonNumber(row.expected_fen),
+    actual_fen: fenToJsonNumber(row.actual_fen),
+    diff_fen: fenToJsonNumber(row.diff_fen),
+    status: row.status as Schema<'AdminReconDiffStatus'>,
+    created_at: row.created_at.toISOString(),
+    closed_at: iso(row.closed_at),
+  };
+}
+
+/** created_at descending, id descending on a tie (the order of the other console lists). */
+function newestFirst(a: ReconDiff, b: ReconDiff): number {
+  const byTime = b.created_at.getTime() - a.created_at.getTime();
+  if (byTime !== 0) return byTime;
+  return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
 }
 
 function iso(value: Date | null): string | null {
@@ -207,5 +246,34 @@ export class PayAdminReads {
     const offset = (page - 1) * pageSize;
     const rows = offset >= total ? [] : await pagePayAnomalies(db, filter, offset, pageSize);
     return { items: rows.map(adminPayAnomalyView), page, page_size: pageSize, total };
+  }
+
+  /**
+   * B2-15j: GET /admin/v1/pay-recon-diffs. Only source R4 of type pay_mismatch / pay_anomaly; type
+   * and status combine with AND. ledger's getReconDiffs filters by app and status; the source, the
+   * type, the order and the page are applied here.
+   */
+  async listReconDiffs(
+    appId: string,
+    query: PayReconDiffListQuery,
+  ): Promise<Schema<'AdminPayReconDiffPage'>> {
+    const page = query.page ?? DEFAULT_PAGE;
+    const pageSize = query.page_size ?? DEFAULT_PAGE_SIZE;
+    const db = this.#handle();
+    const rows = await getReconDiffs(db, {
+      appId,
+      ...(query.status === undefined ? {} : { status: query.status as ReconDiffStatus }),
+    });
+    const matching = rows
+      .filter(
+        (row) =>
+          row.source === 'R4' &&
+          PAY_DIFF_TYPES.includes(row.type) &&
+          (query.type === undefined || row.type === query.type),
+      )
+      .sort(newestFirst);
+    const offset = (page - 1) * pageSize;
+    const items = matching.slice(offset, offset + pageSize).map(adminPayReconDiffView);
+    return { items, page, page_size: pageSize, total: matching.length };
   }
 }

@@ -35,7 +35,6 @@ export const plannedOperations: ReadonlySet<string> = new Set([
   "getSearchHotWords",
   "getSharePage",
   "getShareTpwd",
-  "listAdminPayReconDiffs",
   "listAdminPayRefunds",
   "listAgentSessionMessages",
   "listWalletLedger",

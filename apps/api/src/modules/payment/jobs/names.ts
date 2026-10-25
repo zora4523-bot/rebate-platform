@@ -1,10 +1,10 @@
 // B2-15b / B2-15c: the queue and job names of the payment module (task B2-15b §9.8 ～ §9.10,
 // B2-15c §9.4 ～ §9.7; D-PAY-11). Only the names, payloads and singleton keys live here; the
 // handlers are in ./pay-jobs.ts (order.query, biz.reconcile, and order.close through
-// application/pay-close.ts, B2-15d), registered
-// by the worker entry. Also compiled by the `test` project: erasable syntax only.
+// application/pay-close.ts, B2-15d; bill.recon through application/pay-recon.ts, B2-15j),
+// registered by the worker entry. Also compiled by the `test` project: erasable syntax only.
 import type { JobPayload } from '../../platform/index.ts';
-import type { PayJobName, PayQueueName } from '../domain/types.ts';
+import type { PayChannelCode, PayJobName, PayQueueName } from '../domain/types.ts';
 
 /** platform/queue/catalog.ts entry `pay` (exclusive: one queued or active job per singletonKey). */
 export const PAY_QUEUE: PayQueueName = 'pay';
@@ -13,6 +13,8 @@ export const ORDER_QUERY_JOB: PayJobName = 'order.query';
 export const ORDER_CLOSE_JOB: PayJobName = 'order.close';
 export const BIZ_RECONCILE_JOB: PayJobName = 'biz.reconcile';
 export const REFUND_QUERY_JOB: PayJobName = 'refund.query';
+/** B2-15j: the T+1 reconciliation of one app's channel bills (BR-PAY-07). */
+export const BILL_RECON_JOB: PayJobName = 'bill.recon';
 
 /** The client came back from the channel SDK (BR-PAY-03 细则, one query; B2-15b). */
 export interface OrderQueryReturnedPayload extends JobPayload {
@@ -67,6 +69,20 @@ export interface RefundQueryPayload extends JobPayload {
   readonly pay_refund_id: string;
 }
 
+/**
+ * B2-15j: payload of `bill.recon` — the T+1 reconciliation of one app (BR-PAY-07). bill_date is the
+ * bill day to reconcile (YYYY-MM-DD, +08:00); the daily run enqueued by the previous one carries
+ * it, so a retry or a replay after midnight still reconciles that day. Without it the handler
+ * takes the accounting day before clock.now() (@couli/domain): a run at 01:00 +08:00 (UTC still
+ * the day before) and one at 10:00 +08:00 reconcile the same day. pay_channel is set only on a
+ * catch-up run of one channel whose bill was not available yet (application/pay-recon.ts).
+ */
+export interface PayBillReconPayload extends JobPayload {
+  readonly app_id: string;
+  readonly bill_date?: string;
+  readonly pay_channel?: PayChannelCode;
+}
+
 /** singletonKey of the client-return query: one queued or active per order. */
 export function orderQueryReturnedKey(payOrderId: string): string {
   return `${ORDER_QUERY_JOB}:${payOrderId}:returned`;
@@ -100,4 +116,26 @@ export function bizReconcileKey(bizType: string, bizRef: string): string {
 /** B2-15e: singletonKey of one refund query slot: whole seconds after the refund's creation. */
 export function refundQueryKey(payRefundId: string, slotSeconds: number): string {
   return `${REFUND_QUERY_JOB}:${payRefundId}:t${slotSeconds}`;
+}
+
+/**
+ * B2-15j: singletonKey of the daily reconciliation of one app: the bill day it reconciles. A run
+ * enqueued again for the same day merges into the queued one (queue pay is exclusive per key).
+ */
+export function billReconKey(appId: string, billDate: string): string {
+  return `${BILL_RECON_JOB}:${appId}:${billDate}`;
+}
+
+/**
+ * B2-15j: singletonKey of a catch-up run of one channel's bill day, by its run instant in whole
+ * epoch seconds: distinct from the daily key (held while the daily run is active) and from the
+ * catch-up that enqueues the next one, while runs computed for the same instant merge.
+ */
+export function billReconCatchUpKey(
+  appId: string,
+  billDate: string,
+  payChannel: PayChannelCode,
+  runAt: Date,
+): string {
+  return `${billReconKey(appId, billDate)}:${payChannel}:at${Math.ceil(runAt.getTime() / 1000)}`;
 }

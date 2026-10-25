@@ -192,6 +192,7 @@ export class FakePayChannel implements PayChannel {
     return this.#owners.get(`${identity.merchantRef}\u0000${identity.appRef}`) ?? null;
   }
 
+  // The fake has no bills: the app (the port's second argument) does not matter here.
   downloadBill(date: string): Promise<PayBillResult> {
     void date;
     return Promise.resolve({ kind: 'unknown', reason: 'fake_not_supported' });
