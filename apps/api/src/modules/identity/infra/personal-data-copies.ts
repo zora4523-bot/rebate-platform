@@ -12,11 +12,19 @@
 //   - deleteCopyFilesOfUser: after that transaction committed, every file of the user still recorded
 //     in object_key (delivered and not yet expired ones included) is deleted from the store and
 //     object_key cleared; a failed delete is one warn line (no error message) and the file stays
-//     recorded, for its expire job.
+//     recorded, for its expire job. A wecom_session delivery file (B1-27i) takes its sealed file
+//     with it.
+//   - dataCopyDeliveryKey / dataCopySealedKeyOf (B1-27i, no migration): the delivery file of a
+//     wecom_session copy is stored under a run that carries the sealed file's run, so object_key
+//     (which then names the delivery file) still finds the sealed file a regenerate re-encrypts.
+//   - createDataCopyFileReader: the bytes of a stored file. The ExportStore port has no read
+//     yet: the memory store of local / test is read back, any other store fails closed.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for types.
+import { randomBytes } from 'node:crypto';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
+import { dataCopyObjectKey, MemoryExportStore } from '../../platform/index.ts';
 import type { AuditPort, Clock, ExportStore, RootLogger } from '../../platform/index.ts';
 
 export const DATA_COPY_OPEN_STATUSES = ['pending', 'running', 'ready'] as const;
@@ -28,6 +36,50 @@ const APP_ID = /^[a-z0-9_]{1,32}$/;
 
 export function dataCopyAuditTarget(copyId: string): string {
   return `personal_data_copies:${copyId}`;
+}
+
+// `data-copies/<app_id>/<copy_id>/<run>.zip` (platform's dataCopyObjectKey); a delivery run is the
+// sealed run, `-d` and 16 random hex digits.
+const COPY_KEY = /^data-copies\/([a-z0-9_]{1,32})\/([0-9a-f-]{36})\/([A-Za-z0-9_-]{1,64})\.zip$/;
+const DELIVERY_RUN = /^([A-Za-z0-9_-]+)-d[0-9a-f]{16}$/;
+
+/** A new delivery file key next to the sealed file at `sealedKey` (a fresh one per call). */
+export function dataCopyDeliveryKey(sealedKey: string): string {
+  const parts = COPY_KEY.exec(sealedKey);
+  if (parts === null || DELIVERY_RUN.test(parts[3]!)) {
+    throw new TypeError('data copy: not the key of a sealed file');
+  }
+  return dataCopyObjectKey(parts[1]!, parts[2]!, `${parts[3]!}-d${randomBytes(8).toString('hex')}`);
+}
+
+/** The sealed file of the delivery file at `key`; null when `key` is not a delivery file's. */
+export function dataCopySealedKeyOf(key: string): string | null {
+  const parts = COPY_KEY.exec(key);
+  const run = parts === null ? null : DELIVERY_RUN.exec(parts[3]!);
+  if (parts === null || run === null) return null;
+  return dataCopyObjectKey(parts[1]!, parts[2]!, run[1]!);
+}
+
+/** Reads one stored file back (B1-27i: the sealed file of a wecom_session copy). */
+export interface DataCopyFileReader {
+  read(key: string): Promise<Uint8Array>;
+}
+
+// TODO(规划/11 §2.3): 私有导出存储的读取（OSS 适配器的 get） — blocked on B1-30 OSS 适配器
+/** The memory store reads its file back; any other store (staging / prod) fails closed. */
+export function createDataCopyFileReader(store: ExportStore): DataCopyFileReader {
+  return {
+    read(key) {
+      if (!(store instanceof MemoryExportStore)) {
+        return Promise.reject(new Error('identity: the export store cannot read files back yet'));
+      }
+      const file = store.get(key);
+      if (file === undefined) {
+        return Promise.reject(new Error('identity: the sealed copy file is missing'));
+      }
+      return Promise.resolve(file.bytes);
+    },
+  };
 }
 
 function errorName(error: unknown): string {
@@ -149,7 +201,9 @@ export async function deleteCopyFilesOfUser(
   for (const row of rows) {
     const key = row.object_key;
     if (key === null) continue;
+    const sealed = dataCopySealedKeyOf(key);
     try {
+      if (sealed !== null) await deps.store.delete(sealed);
       await deps.store.delete(key);
     } catch (error) {
       deps.logger.warn(

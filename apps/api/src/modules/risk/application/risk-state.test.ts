@@ -426,6 +426,22 @@ it('[B1-03h §11#1] GET /v1/me/appeals is on the 10006 whitelist', async () => {
   }
 });
 
+it('[B1-27i] GET /v1/me/data-copies and its download are on the 10006 whitelist', async () => {
+  const f = scripted();
+  try {
+    f.state.row = { state: 'banned', reason_category: 'other', frozen_until: null, row_version: 0 };
+    await expect(f.service.checkRequest(request('/v1/me/data-copies'))).resolves.toBeUndefined();
+    await expect(
+      f.service.checkRequest(request('/v1/me/data-copies/:id/download')),
+    ).resolves.toBeUndefined();
+    await expect(
+      f.service.checkRequest(request('/v1/me/data-copies', 'POST')),
+    ).rejects.toBeInstanceOf(RiskStateBannedException);
+  } finally {
+    await f.db.destroy();
+  }
+});
+
 it('[B1-03h §11#4] a change outside the transition table writes and publishes nothing', async () => {
   const f = scripted();
   try {

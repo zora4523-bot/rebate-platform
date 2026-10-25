@@ -5320,7 +5320,6 @@ paths:
       x-auth: login
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-session-scopes:
         - full
         - deletion_only
@@ -5384,7 +5383,6 @@ paths:
       x-auth: login
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-session-scopes:
         - full
         - deletion_only
@@ -11895,7 +11893,6 @@ paths:
         No Idempotency-Key (04 §6.6): a retry after a lost first response gets `password=null`,
         and the registrant then calls again with `regenerate: true`.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
