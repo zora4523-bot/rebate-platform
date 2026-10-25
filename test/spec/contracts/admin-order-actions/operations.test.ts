@@ -79,15 +79,15 @@ it.each(
     ['adminCreateOrderSync', 'adminListOrderSyncs', 'adminGetOrderSyncLimits'].includes(r[2]),
   ),
 )(
-  '[AC-CT-24n#1] %s %s（手动同步）登记 %s、后台权限和 planned',
+  '[AC-CT-24n#1] %s %s（手动同步）登记 %s、后台权限和已实现（不再 planned）',
   (method, path, operationId, permission) => {
     const doc = contract();
     const operation = op(doc, path, method);
     expect(operation).toMatchObject({
       operationId,
       'x-auth': 'admin',
-      'x-implementation': 'planned',
     });
+    expect(operation['x-implementation']).toBeUndefined();
     expect(operation['security']).toEqual([{ adminBearerAuth: [] }]);
     expect(description(doc, path, method)).toContain(permission);
     for (const key of ['x-signed', 'x-idempotent', 'x-min-version-gate'])
