@@ -68,7 +68,44 @@ const LOG_STATES = [
   { status: 'suppressed', suppress_reason: 'push_disabled', sent_at: null },
 ];
 const SENDABLE_STATES = LOG_STATES.filter((state) => state.status !== 'suppressed');
-const BLANKS = ['', ' ', '   ', '\t', '\n', '\r', '\r\n', '\v', '\f', ' ', '　', ' \t\r\n　 '];
+const BLANKS = [
+  '',
+  ' ',
+  '   ',
+  '\t',
+  '\n',
+  '\r',
+  '\r\n',
+  '\v',
+  '\f',
+  ' ',
+  '　',
+  ' \t\r\n　 ',
+  // be-tc-2 (D10-355 ③): the Unicode spaces outside ASCII [:space:] that the CHECKs also reject.
+  '\u0085',
+  '\u00a0',
+  '\u1680',
+  '\u2000',
+  '\u2001',
+  '\u2002',
+  '\u2003',
+  '\u2004',
+  '\u2005',
+  '\u2006',
+  '\u2007',
+  '\u2008',
+  '\u2009',
+  '\u200a',
+  '\u2028',
+  '\u2029',
+  '\u202f',
+  '\u205f',
+  '\u3000',
+  '\ufeff',
+  '\u2000\u200a',
+  '\ufeff \u3000',
+  ' \t\u0085\u00a0\u1680\u2029\u202f\u205f\r\n\ufeff',
+];
 const CREDENTIAL = /access|secret|credential|password/i;
 
 async function columns(table: string) {
@@ -605,4 +642,39 @@ it('[AC-B1-12x#11] the new columns inherit the table grants: couli_app writes, c
     await sqlState(insertLog(log({ sms_biz_id: BIZ_ID }), readonly)),
   ];
   expect(denied).toEqual(['42501', '42501', '42501', '42501']);
+});
+
+// be-tc-2 (D10-355 ③, B1-12x spec-test S2): no column anywhere in schema app may hold an Aliyun
+// AccessKey or an SMS secret or key; the credential stays out of the database (BR-TEXT-20 细则).
+const CREDENTIAL_COLUMN = /access_?key|sms.*(secret|key)/i;
+
+it('[AC-B1-12x#21] no column of any table or view in schema app is named like an access key or an SMS secret or key', async () => {
+  await requireSmsColumns();
+  // The pattern itself catches the names it is meant to catch.
+  const samples = ['access_key', 'AccessKey', 'aliyun_accesskey', 'sms_secret', 'sms_api_key'];
+  expect(samples.filter((name) => CREDENTIAL_COLUMN.test(name))).toEqual(samples);
+  const visible = await sql<{ relation: string; name: string }>`
+    SELECT table_name::text AS relation, column_name::text AS name
+    FROM information_schema.columns
+    WHERE table_schema = 'app'
+    ORDER BY table_name, column_name
+  `.execute(app);
+  // information_schema only lists columns the role can reach; pg_attribute lists them all.
+  const catalog = await sql<{ relation: string; name: string }>`
+    SELECT t.relname::text AS relation, a.attname::text AS name
+    FROM pg_attribute a JOIN pg_class t ON t.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'app' AND t.relkind IN ('r', 'p', 'v', 'm', 'f')
+      AND a.attnum > 0 AND NOT a.attisdropped
+    ORDER BY t.relname, a.attname
+  `.execute(app);
+  for (const scan of [visible.rows, catalog.rows]) {
+    expect(scan).toEqual(
+      expect.arrayContaining([
+        { relation: 'notify_templates', name: 'sms_sign_name' },
+        { relation: 'notify_logs', name: 'sms_biz_id' },
+      ]),
+    );
+    expect(scan.filter((column) => CREDENTIAL_COLUMN.test(column.name))).toEqual([]);
+  }
 });
