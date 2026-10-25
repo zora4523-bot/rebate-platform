@@ -21,6 +21,31 @@ test_paths:
   - 'test/spec/db/notification/template-override/template-override.int.test.ts'
   - 'test/spec/db/notification/sms-channel/sms-channel.int.test.ts'
   - 'test/spec/db/notification/sms-channel/sms-pending.int.test.ts'
+red_exempt:
+  - file: test/spec/db/notification/sms-channel/sms-pending.int.test.ts
+    test: '[AC-B1-12x#13] writes that omit the pending columns read NULL and stay updatable, registered or not'
+    reason: 冻结 B1-12x 用例，测试体未改；同文件只在列全集补新列 sms_pending_saved_at
+  - file: test/spec/db/notification/sms-channel/sms-pending.int.test.ts
+    test: '[AC-B1-12x#14] in-use and pending registrations are independent: neither, either or both can be stored'
+    reason: 冻结 B1-12x 用例，测试体未改；同文件只在列全集补新列 sms_pending_saved_at
+  - file: test/spec/db/notification/sms-channel/sms-pending.int.test.ts
+    test: '[AC-B1-12x#15] pending template type is verify or notice and test status is accepted, failed or not_sent_no_verify_phone'
+    reason: 冻结 B1-12x 用例，测试体未改；同文件只在列全集补新列 sms_pending_saved_at
+  - file: test/spec/db/notification/sms-channel/sms-pending.int.test.ts
+    test: '[AC-B1-12x#16] the six pending columns are all NULL or all set, on insert and on update'
+    reason: 冻结 B1-12x 用例，测试体未改；同文件只在列全集补新列 sms_pending_saved_at
+  - file: test/spec/db/notification/sms-channel/sms-pending.int.test.ts
+    test: '[AC-B1-12x#17] a complete pending registration does not excuse a partial in-use one, nor the reverse'
+    reason: 冻结 B1-12x 用例，测试体未改；同文件只在列全集补新列 sms_pending_saved_at
+  - file: test/spec/db/notification/sms-channel/sms-pending.int.test.ts
+    test: '[AC-B1-12x#18] pending sign name, template CODE and preview text reject empty or whitespace-only values'
+    reason: 冻结 B1-12x 用例，测试体未改；同文件只在列全集补新列 sms_pending_saved_at
+  - file: test/spec/db/notification/sms-channel/sms-pending.int.test.ts
+    test: '[AC-B1-12x#19] the pending CHECKs are validated and cover every pending column; the key is unchanged'
+    reason: 冻结 B1-12x 用例，测试体未改；同文件只在列全集补新列 sms_pending_saved_at
+  - file: test/spec/db/notification/sms-channel/sms-pending.int.test.ts
+    test: '[AC-B1-12x#20] the pending columns inherit the table grants: couli_app writes, couli_readonly only reads'
+    reason: 冻结 B1-12x 用例，测试体未改；同文件只在列全集补新列 sms_pending_saved_at
 impl: claude
 tester: claude-independent
 accept:
