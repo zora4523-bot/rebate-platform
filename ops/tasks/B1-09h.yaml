@@ -19,4 +19,4 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/orders/channel-import/**'
-status: todo
+status: done
