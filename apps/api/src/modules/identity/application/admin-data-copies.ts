@@ -145,6 +145,8 @@ function uniqueViolationOf(error: unknown, constraint: string): boolean {
   return pg.code === '23505' && pg.constraint === constraint;
 }
 
+const NO_NAMES: ReadonlyMap<string, string> = new Map();
+
 function viewOf(row: CopyRow, names: ReadonlyMap<string, string>): AdminDataCopyView {
   return {
     exportId: row.id,
@@ -263,8 +265,7 @@ export function createAdminDataCopies(options: AdminDataCopiesOptions): AdminDat
           result: 'reused',
           copy_id: open.id,
         });
-        const shown = await names(trx, input.appId, [open.requested_by]);
-        return { kind: 'registered', view: viewOf(open, shown), reused: true };
+        return { kind: 'registered', view: viewOf(open, NO_NAMES), reused: true };
       }
       // The registrant can no longer download it: failed now, replaced below (BR-ID-40 细则).
       const failed = await app
@@ -376,21 +377,29 @@ export function createAdminDataCopies(options: AdminDataCopiesOptions): AdminDat
       delivery,
       retry_of: row.retry_of,
     });
-    const shown = await names(trx, input.appId, [row.requested_by]);
-    return { kind: 'registered', view: viewOf(row, shown), reused: false };
+    return { kind: 'registered', view: viewOf(row, NO_NAMES), reused: false };
   }
 
   async function register(input: AdminDataCopyRegisterInput): Promise<AdminDataCopyRegisterResult> {
     if (!UUID.test(input.userId)) return { kind: 'unknown_user' };
-    for (let attempt = 0; ; attempt += 1) {
+    let result: AdminDataCopyRegisterResult | undefined;
+    for (let attempt = 0; result === undefined; attempt += 1) {
       try {
-        return await db.transaction().execute((trx) => registerOn(trx, input));
+        result = await db.transaction().execute((trx) => registerOn(trx, input));
       } catch (error) {
         // A concurrent writer created the unfinished request first: run again, which returns it.
         if (attempt === 0 && uniqueViolationOf(error, OPEN_KEY)) continue;
         throw error;
       }
     }
+    if (result.kind !== 'registered') return result;
+    // The registrant's name is display only and read after the commit, on the root handle: a
+    // failing read can never abort (and so silently roll back) the registration's transaction.
+    const shown = await names(db, input.appId, [result.view.requestedBy]);
+    return {
+      ...result,
+      view: { ...result.view, requestedByName: shown.get(result.view.requestedBy) ?? null },
+    };
   }
 
   async function list(input: AdminDataCopyListInput): Promise<AdminDataCopyListResult> {
