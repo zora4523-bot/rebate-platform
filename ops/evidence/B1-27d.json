@@ -1,0 +1,118 @@
+{
+  "task": "B1-27d",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "92f3ae63192235d0b48ee8656e09e1e3ca691c9d",
+  "red_tests": [
+    "test/spec/db/data-copies-tables/copies-access.int.test.ts > [AC-B1-27d#15] app inserts, reads and walks a request through every lifecycle column",
+    "test/spec/db/data-copies-tables/copies-access.int.test.ts > [AC-B1-27d#16] app cannot update identity, delivery, retry_of, due_at or created_at, nor delete",
+    "test/spec/db/data-copies-tables/copies-access.int.test.ts > [AC-B1-27d#17] couli_app holds exactly SELECT, INSERT and the column UPDATEs; no table-wide UPDATE or DELETE",
+    "test/spec/db/data-copies-tables/copies-access.int.test.ts > [AC-B1-27d#18] other runtime roles can neither write nor alter requests",
+    "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#5] delivery accepts exactly the two contract values",
+    "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#6] status accepts exactly the seven contract values",
+    "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#7] every column round-trips; optional columns accept null",
+    "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#8] required columns reject null and have no fallback when omitted",
+    "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#9] a user has at most one unfinished request across pending, running and ready",
+    "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#10] finished history repeats, and finishing the open request releases its slot",
+    "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#11] reopening a finished row cannot create a second unfinished request",
+    "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#12] concurrent registrations yield one committed row and one unique violation",
+    "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#13] user and registrant must exist in the same app; ids are globally unique",
+    "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#14] retry_of points at an existing request of the same app",
+    "test/spec/db/data-copies-tables/copies-schema.int.test.ts > [AC-B1-27d#1] columns have the specified types, nullability and defaults, and nothing else",
+    "test/spec/db/data-copies-tables/copies-schema.int.test.ts > [AC-B1-27d#2] no column stores the reason, identity check, channel facts, extraction code or password",
+    "test/spec/db/data-copies-tables/copies-schema.int.test.ts > [AC-B1-27d#3] primary key on id; user, registrant and retry_of foreign keys are tenant-qualified and never cascade",
+    "test/spec/db/data-copies-tables/copies-schema.int.test.ts > [AC-B1-27d#4] a valid partial unique index on (app_id, user_id) covers exactly the unfinished statuses",
+    "test/spec/db/data-copies-tables/prior-identities.int.test.ts > [AC-B1-27d#19] columns are exactly the specified ones, all required, with only created_at defaulted",
+    "test/spec/db/data-copies-tables/prior-identities.int.test.ts > [AC-B1-27d#20] the user foreign key is tenant-qualified and never cascades",
+    "test/spec/db/data-copies-tables/prior-identities.int.test.ts > [AC-B1-27d#21] every column rejects null; only created_at may be omitted",
+    "test/spec/db/data-copies-tables/prior-identities.int.test.ts > [AC-B1-27d#22] a user may accumulate several prior identities over successive corrections",
+    "test/spec/db/data-copies-tables/prior-identities.int.test.ts > [AC-B1-27d#23] couli_app can only insert: no read-back, update, delete or truncate",
+    "test/spec/db/data-copies-tables/prior-identities.int.test.ts > [AC-B1-27d#24] privileges: couli_app INSERT only; every other runtime role has nothing"
+  ],
+  "risk_note": "RV2 by path (db/migrations, db/schema.sql, db.gen.ts). One new migration creates app.personal_data_copies (personal information copy requests: status / delivery enums from CT-24q, retry_of to the same table, partial unique index for one open request per user and delivery, column-level UPDATE grants for couli_app with no DELETE, couli_readonly may read every column except object_key) and app.realname_prior_identities (prior identity kept on realname correction: eight columns, ciphertext and blind index, INSERT-only for couli_app and nothing for any other role, foreign keys without cascade so deletion does not remove it early). CHECKs: id_no_hmac 64 lowercase hex, object_key / failure_reason non-blank, row_version >= 0. No amounts and no ledger, settlement or payout state. Generated db/schema.sql and db.gen.ts produced on the test machine with remote-snapshot. Migration number assigned from main when the migration slot is taken. Rule tests by an independent Claude (approvals #36), red before the migration; migration by an Opus 5.5 subagent in one run.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "92f3ae63192235d0b48ee8656e09e1e3ca691c9d",
+      "tree": "5281f006d7cfbd6b472730bf8b7068f9dbba0236",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-25T01:20:44Z",
+      "finished_at": "2026-10-25T01:21:06Z",
+      "red_tests": [
+        "test/spec/db/data-copies-tables/copies-access.int.test.ts > [AC-B1-27d#15] app inserts, reads and walks a request through every lifecycle column",
+        "test/spec/db/data-copies-tables/copies-access.int.test.ts > [AC-B1-27d#16] app cannot update identity, delivery, retry_of, due_at or created_at, nor delete",
+        "test/spec/db/data-copies-tables/copies-access.int.test.ts > [AC-B1-27d#17] couli_app holds exactly SELECT, INSERT and the column UPDATEs; no table-wide UPDATE or DELETE",
+        "test/spec/db/data-copies-tables/copies-access.int.test.ts > [AC-B1-27d#18] other runtime roles can neither write nor alter requests",
+        "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#5] delivery accepts exactly the two contract values",
+        "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#6] status accepts exactly the seven contract values",
+        "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#7] every column round-trips; optional columns accept null",
+        "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#8] required columns reject null and have no fallback when omitted",
+        "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#9] a user has at most one unfinished request across pending, running and ready",
+        "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#10] finished history repeats, and finishing the open request releases its slot",
+        "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#11] reopening a finished row cannot create a second unfinished request",
+        "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#12] concurrent registrations yield one committed row and one unique violation",
+        "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#13] user and registrant must exist in the same app; ids are globally unique",
+        "test/spec/db/data-copies-tables/copies-constraints.int.test.ts > [AC-B1-27d#14] retry_of points at an existing request of the same app",
+        "test/spec/db/data-copies-tables/copies-schema.int.test.ts > [AC-B1-27d#1] columns have the specified types, nullability and defaults, and nothing else",
+        "test/spec/db/data-copies-tables/copies-schema.int.test.ts > [AC-B1-27d#2] no column stores the reason, identity check, channel facts, extraction code or password",
+        "test/spec/db/data-copies-tables/copies-schema.int.test.ts > [AC-B1-27d#3] primary key on id; user, registrant and retry_of foreign keys are tenant-qualified and never cascade",
+        "test/spec/db/data-copies-tables/copies-schema.int.test.ts > [AC-B1-27d#4] a valid partial unique index on (app_id, user_id) covers exactly the unfinished statuses",
+        "test/spec/db/data-copies-tables/prior-identities.int.test.ts > [AC-B1-27d#19] columns are exactly the specified ones, all required, with only created_at defaulted",
+        "test/spec/db/data-copies-tables/prior-identities.int.test.ts > [AC-B1-27d#20] the user foreign key is tenant-qualified and never cascades",
+        "test/spec/db/data-copies-tables/prior-identities.int.test.ts > [AC-B1-27d#21] every column rejects null; only created_at may be omitted",
+        "test/spec/db/data-copies-tables/prior-identities.int.test.ts > [AC-B1-27d#22] a user may accumulate several prior identities over successive corrections",
+        "test/spec/db/data-copies-tables/prior-identities.int.test.ts > [AC-B1-27d#23] couli_app can only insert: no read-back, update, delete or truncate",
+        "test/spec/db/data-copies-tables/prior-identities.int.test.ts > [AC-B1-27d#24] privileges: couli_app INSERT only; every other runtime role has nothing"
+      ],
+      "expected": [
+        "test/spec/db/data-copies-tables/copies-access.int.test.ts",
+        "test/spec/db/data-copies-tables/copies-constraints.int.test.ts",
+        "test/spec/db/data-copies-tables/copies-schema.int.test.ts",
+        "test/spec/db/data-copies-tables/prior-identities.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "e618f99706cb4556009b4db2e7af3a7d05f24bffacf2fbbf38d301f12fdc9cab"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota (until 10-30); independent Claude via tools/agent/claude-run.sh per approvals #36; round 1 pass, 0 findings (grants and the implementer's own CHECKs confirmed)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by claude-independent reviewed by a fresh Claude subagent against the ledger choices ①–⑦ and contract CT-24q: pass, S2×3; prettier --write before the first spec commit, formatting only (D10-206)"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "02c62a27c131ec059e4405cb86a6c54b40894dee",
+    "specs": "cec847e1768a63aac90e3e1bd473462d95d84436"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
