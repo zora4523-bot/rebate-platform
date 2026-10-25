@@ -47,7 +47,7 @@ import {
   type OrderSyncRuntime,
 } from './modules/orders/index.ts';
 import { readPayoutFundMetrics } from './modules/payout/index.ts';
-import type { FundMetricsSnapshot } from './modules/platform/metrics/index.ts';
+import { cacheFundCollector, type FundMetricsSnapshot } from './modules/platform/metrics/index.ts';
 import { readSettlementFundMetrics } from './modules/settlement/index.ts';
 import {
   armRedisGeneration,
@@ -206,8 +206,8 @@ function startGenerationRenewal(
  * The entry's internal Prometheus /metrics listener (B1-01zzh): only when METRICS_PORT is set.
  * Every entry exports process-level metrics; only the worker passes `collect` (whole-database
  * gauges read through its own handle at scrape time) and, since B1-01zzi, `collectFund` (the fund
- * gauges from the orders, settlement and payout read ports). Not on the Nest application, not in
- * the OAS.
+ * gauges from the orders, settlement and payout read ports; the worker hands it in wrapped by
+ * `cacheFundCollector`, B1-01zzo). Not on the Nest application, not in the OAS.
  */
 async function openMetrics(
   entry: EntryName,
@@ -387,7 +387,9 @@ async function start(
       try {
         metricsServer = await openMetrics(entry, config, logger, {
           collect: () => collectWorkerMetrics(dbHandles.db, clock),
-          collectFund: () => collectFundMetrics(dbHandles.db, clock),
+          // Cached for 5 minutes (B1-01zzo): the held-beneficiary count groups a whole table.
+          // A failed collection is not cached and never falls back to an older snapshot.
+          collectFund: cacheFundCollector(() => collectFundMetrics(dbHandles.db, clock), clock),
         });
       } catch (error) {
         signals.fail();

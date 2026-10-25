@@ -1,4 +1,5 @@
 // Public surface of platform/metrics (B1-01zzh).
+export { cacheFundCollector } from './cache.ts';
 export { collectWorkerMetrics } from './collect.ts';
 export type { WorkerMetricsSnapshot } from './collect.ts';
 export type { FundMetricsSnapshot } from './fund.ts';

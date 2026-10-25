@@ -1,0 +1,95 @@
+{
+  "task": "B1-01zzo",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "75f81d5c78efbeeb50ba70dbe30f6b5d32a8c82c",
+  "red_tests": [
+    "test/spec/platform/metrics-followups/cache.test.ts > [AC-B1-01zzo#1] 默认 TTL 5 分钟：创建时不采集；TTL 内返回上次成功的同一快照、底层只调一次；299 999 ms 仍用缓存，300 001 ms 重新采集，新快照另起 5 分钟",
+    "test/spec/platform/metrics-followups/cache.test.ts > [AC-B1-01zzo#2] ttlMs 可传：1 000 ms 时 999 ms 仍用缓存、1 001 ms 重新采集；1 小时则过 5 分钟仍用缓存",
+    "test/spec/platform/metrics-followups/cache.test.ts > [AC-B1-01zzo#3] 采集失败不缓存、不回退旧值：拒绝原样传出，下一次（同一时刻）再调底层；过期后底层拒绝也不返回过期快照",
+    "test/spec/platform/metrics-followups/cache.test.ts > [AC-B1-01zzo#4] 无可用缓存时并发调用共享进行中的一次采集：首次与过期后各只调一次底层、都拿到同一快照；共享的采集失败则都拒绝且不缓存",
+    "test/spec/platform/metrics-followups/cache.test.ts > [AC-B1-01zzo#5] 时间只取注入的 Clock：系统时间前跳一天不使缓存过期；注入时钟走过 5 分钟（系统时间不动）才重新采集",
+    "test/spec/platform/metrics-followups/cache.test.ts > [AC-B1-01zzo#6] 任意顺序的时钟推进与成功 / 失败采集（逐次等待）：每次至多调一次底层；有效缓存内不调、无缓存或过期必调；结果是本次采集的快照或拒绝，或缓存的同一快照",
+    "test/spec/platform/metrics-followups/cache.test.ts > [AC-B1-01zzo#7] 交给 worker registry：每次 render 照旧调用 collectFund，但 5 分钟内两次 render 只调一次底层、资金值与快照一致（口径不变）；B1-01zzh 的 collect 每次都调；过期后底层失败则该次 render 失败",
+    "test/spec/platform/metrics-followups/entry.test.ts > [AC-B1-01zzo#8] worker 装配走缓存：5 分钟内两次 render 只查一次资金端口表（collect 每次照查），过 5 分钟再查；直接调 collectFund 也共用缓存；其余四个入口没有 collectFund、render 不查库也无资金指标",
+    "test/spec/platform/metrics-followups/rules.test.ts > [AC-B1-01zzo#9] Redis 拒绝写入告警：唯一读 redis_errors_total 的规则，increase 窗口为 [10m]（不再有 [5m]），err 口径不变，> 0，for 5m，severity critical；描述不再写 5 分钟",
+    "test/spec/platform/metrics-followups/rules.test.ts > [AC-B1-01zzo#10] couli.yaml 其余规则不变：分组、顺序、alert 名、表达式、for 与标签与 B1-01zzh 一致，只有拒绝写入一条的窗口变成 [10m]"
+  ],
+  "risk_note": "RV2 (platform metrics, entry wiring, infra alert rule). B1-01zzi / B1-01zzh follow-ups: the worker's fund collection is cached for 5 minutes around entry.ts's collectFund (failures not cached, no stale fallback, one shared in-flight collection, Clock only); createMetricsRegistry still calls collectFund on every render; port SQL unchanged, no migration. The Redis write-refusal alert uses increase over 10 minutes with for 5m so a single refusal fires. No money, no attribution.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "75f81d5c78efbeeb50ba70dbe30f6b5d32a8c82c",
+      "tree": "3e756d4471e2b5aa3739e0a5410f615ed2806a32",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-25T04:53:00Z",
+      "finished_at": "2026-10-25T04:53:07Z",
+      "gate": {
+        "commit": "b670fff74d6c8be33b96b93ff6557864481ad332",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "red_tests": [
+        "test/spec/platform/metrics-followups/cache.test.ts > [AC-B1-01zzo#1] 默认 TTL 5 分钟：创建时不采集；TTL 内返回上次成功的同一快照、底层只调一次；299 999 ms 仍用缓存，300 001 ms 重新采集，新快照另起 5 分钟",
+        "test/spec/platform/metrics-followups/cache.test.ts > [AC-B1-01zzo#2] ttlMs 可传：1 000 ms 时 999 ms 仍用缓存、1 001 ms 重新采集；1 小时则过 5 分钟仍用缓存",
+        "test/spec/platform/metrics-followups/cache.test.ts > [AC-B1-01zzo#3] 采集失败不缓存、不回退旧值：拒绝原样传出，下一次（同一时刻）再调底层；过期后底层拒绝也不返回过期快照",
+        "test/spec/platform/metrics-followups/cache.test.ts > [AC-B1-01zzo#4] 无可用缓存时并发调用共享进行中的一次采集：首次与过期后各只调一次底层、都拿到同一快照；共享的采集失败则都拒绝且不缓存",
+        "test/spec/platform/metrics-followups/cache.test.ts > [AC-B1-01zzo#5] 时间只取注入的 Clock：系统时间前跳一天不使缓存过期；注入时钟走过 5 分钟（系统时间不动）才重新采集",
+        "test/spec/platform/metrics-followups/cache.test.ts > [AC-B1-01zzo#6] 任意顺序的时钟推进与成功 / 失败采集（逐次等待）：每次至多调一次底层；有效缓存内不调、无缓存或过期必调；结果是本次采集的快照或拒绝，或缓存的同一快照",
+        "test/spec/platform/metrics-followups/cache.test.ts > [AC-B1-01zzo#7] 交给 worker registry：每次 render 照旧调用 collectFund，但 5 分钟内两次 render 只调一次底层、资金值与快照一致（口径不变）；B1-01zzh 的 collect 每次都调；过期后底层失败则该次 render 失败",
+        "test/spec/platform/metrics-followups/entry.test.ts > [AC-B1-01zzo#8] worker 装配走缓存：5 分钟内两次 render 只查一次资金端口表（collect 每次照查），过 5 分钟再查；直接调 collectFund 也共用缓存；其余四个入口没有 collectFund、render 不查库也无资金指标",
+        "test/spec/platform/metrics-followups/rules.test.ts > [AC-B1-01zzo#9] Redis 拒绝写入告警：唯一读 redis_errors_total 的规则，increase 窗口为 [10m]（不再有 [5m]），err 口径不变，> 0，for 5m，severity critical；描述不再写 5 分钟",
+        "test/spec/platform/metrics-followups/rules.test.ts > [AC-B1-01zzo#10] couli.yaml 其余规则不变：分组、顺序、alert 名、表达式、for 与标签与 B1-01zzh 一致，只有拒绝写入一条的窗口变成 [10m]"
+      ],
+      "expected": [
+        "test/spec/platform/metrics-followups/cache.test.ts",
+        "test/spec/platform/metrics-followups/entry.test.ts",
+        "test/spec/platform/metrics-followups/rules.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "a947cb714f4f2338dc937880ae3e910adf6d06bf379890cc13872a85c0418b2a"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota until 10-30 (approvals #36); independent Claude review over the test(spec) base: pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by an independent Claude context (10 tests in 3 files red for the right reason on the test machine), reviewed by a separate fresh independent Claude call: pass with one S2 (a property test uses fixed runs instead of PROP_RUNS / PROP_SEED) recorded as a follow-up."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "a1de78cba41c1a3a76c5addcfdfb4cca020f7435",
+    "specs": "cec847e1768a63aac90e3e1bd473462d95d84436"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
