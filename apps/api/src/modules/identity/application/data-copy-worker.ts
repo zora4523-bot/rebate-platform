@@ -14,7 +14,8 @@
 //     the run's object deleted). Generation and delivery each write an audit row
 //     (user_data_copy_generate, user_data_copy_deliver) under the registrant's id; the code never
 //     reaches the database, the logs, the audit or the queue.
-//   - expire: at expires_at the file is deleted (object_key cleared); ready / delivered → expired.
+//   - expire: at expires_at the file is deleted (with the sealed file behind a delivery file, B1-27i;
+//     object_key cleared); ready / delivered → expired.
 // A duplicate or late delivery of either job changes nothing.
 //
 // Lease (no extra column, as B1-34e): updated_at is the heartbeat, row_version the fencing token;
@@ -48,7 +49,7 @@ import type {
   ReceivedJob,
   RootLogger,
 } from '../../platform/index.ts';
-import { dataCopyAuditTarget } from '../infra/personal-data-copies.ts';
+import { dataCopyAuditTarget, dataCopySealedKeyOf } from '../infra/personal-data-copies.ts';
 import type {
   PersonalDataCopySources,
   PersonalDataCopySubject,
@@ -667,7 +668,7 @@ export function createDataCopyWorker(options: DataCopyWorkerOptions): DataCopyWo
   }
 
   /**
-   * At expires_at: the file deleted under the row lock (a failing delete rolls back and the job is
+   * At expires_at: the file (and a delivery file's sealed file) deleted under the row lock (a failing delete rolls back and the job is
    * retried), object_key cleared, ready / delivered → expired (other statuses keep theirs). An
    * early delivery sends one delayed expire for the remaining time.
    */
@@ -682,7 +683,12 @@ export function createDataCopyWorker(options: DataCopyWorkerOptions): DataCopyWo
         await sendExpire(trx, row, row.expires_at, now);
         return 'early';
       }
-      if (row.object_key !== null) await store.delete(row.object_key);
+      if (row.object_key !== null) {
+        // A delivered wecom_session copy keeps its sealed file for regenerate (B1-27i): it goes too.
+        const sealed = dataCopySealedKeyOf(row.object_key);
+        if (sealed !== null) await store.delete(sealed);
+        await store.delete(row.object_key);
+      }
       await trx
         .withSchema('app')
         .updateTable('personal_data_copies')
