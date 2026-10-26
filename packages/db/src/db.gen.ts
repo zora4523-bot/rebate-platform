@@ -1334,6 +1334,49 @@ export interface PayoutAccountVerifyAttempts {
   verify_date: Timestamp;
 }
 
+export interface PayoutAttempts {
+  app_id: string;
+  at: Generated<Timestamp>;
+  id: string;
+  kind: string;
+  latency_ms: number | null;
+  request: Json;
+  resp_code: string | null;
+  resp_sub_code: string | null;
+  response: Json | null;
+  result: string;
+  withdrawal_id: string;
+}
+
+export interface PayoutBatches {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  id: string;
+  kind: string;
+}
+
+export interface PayoutBatchItems {
+  app_id: string;
+  at: Generated<Timestamp>;
+  batch_id: string;
+  id: string;
+  moved_to_batch_id: string | null;
+  reason: string | null;
+  result: string;
+  withdrawal_id: string;
+}
+
+export interface PayoutWatermarks {
+  app_id: string;
+  available_fen: ColumnType<bigint, bigint, bigint>;
+  channel: string;
+  created_at: Generated<Timestamp>;
+  entered_by: string;
+  id: string;
+  measured_at: Timestamp;
+}
+
 export interface PayQueryAttempts {
   app_id: string;
   at: Timestamp;
@@ -2117,6 +2160,10 @@ export interface DB {
   payout_account_changes: PayoutAccountChanges;
   payout_account_verify_attempts: PayoutAccountVerifyAttempts;
   payout_accounts: PayoutAccounts;
+  payout_attempts: PayoutAttempts;
+  payout_batch_items: PayoutBatchItems;
+  payout_batches: PayoutBatches;
+  payout_watermarks: PayoutWatermarks;
   personal_data_copies: PersonalDataCopies;
   platform_icon_uploads: PlatformIconUploads;
   platform_icon_versions: PlatformIconVersions;

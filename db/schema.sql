@@ -664,6 +664,33 @@ $$;
 
 
 --
+-- Name: payout_attempts_complete_once(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.payout_attempts_complete_once() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'payout_attempts rows are never deleted' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF OLD.result <> 'pending' THEN
+    RAISE EXCEPTION 'payout_attempts: a settled attempt never changes' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.result = 'pending' THEN
+    RAISE EXCEPTION 'payout_attempts: completing an attempt needs a settled result' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.id IS DISTINCT FROM OLD.id OR NEW.app_id IS DISTINCT FROM OLD.app_id
+     OR NEW.withdrawal_id IS DISTINCT FROM OLD.withdrawal_id OR NEW.kind IS DISTINCT FROM OLD.kind
+     OR NEW.request IS DISTINCT FROM OLD.request OR NEW.at IS DISTINCT FROM OLD.at THEN
+    RAISE EXCEPTION 'payout_attempts: only the completion columns may change' USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: reject_agent_card_rewrite(); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -3940,6 +3967,79 @@ CREATE TABLE app.payout_accounts (
 
 
 --
+-- Name: payout_attempts; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.payout_attempts (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    withdrawal_id uuid NOT NULL,
+    kind text NOT NULL,
+    request jsonb NOT NULL,
+    response jsonb,
+    resp_code text,
+    resp_sub_code text,
+    result text NOT NULL,
+    latency_ms integer,
+    at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT payout_attempts_kind_check CHECK ((kind = ANY (ARRAY['transfer'::text, 'query'::text, 'cancel'::text]))),
+    CONSTRAINT payout_attempts_latency_check CHECK (((latency_ms IS NULL) OR (latency_ms >= 0))),
+    CONSTRAINT payout_attempts_result_check CHECK ((result = ANY (ARRAY['pending'::text, 'success'::text, 'fail'::text, 'unknown'::text])))
+);
+
+
+--
+-- Name: payout_batch_items; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.payout_batch_items (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    batch_id uuid NOT NULL,
+    withdrawal_id uuid NOT NULL,
+    result text NOT NULL,
+    reason text,
+    moved_to_batch_id uuid,
+    at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT payout_batch_items_reason_check CHECK ((((result = ANY (ARRAY['skipped'::text, 'blocked'::text])) AND (reason IS NOT NULL) AND (reason <> ''::text) AND (moved_to_batch_id IS NULL)) OR ((result = 'moved_out'::text) AND (moved_to_batch_id IS NOT NULL) AND (moved_to_batch_id <> batch_id) AND (reason IS NULL)) OR ((result = 'paying'::text) AND (reason IS NULL) AND (moved_to_batch_id IS NULL)))),
+    CONSTRAINT payout_batch_items_result_check CHECK ((result = ANY (ARRAY['paying'::text, 'skipped'::text, 'blocked'::text, 'moved_out'::text])))
+);
+
+
+--
+-- Name: payout_batches; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.payout_batches (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    kind text NOT NULL,
+    created_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT payout_batches_created_by_check CHECK ((((kind = 'manual'::text) = (created_by IS NOT NULL)) AND ((created_by IS NULL) OR (created_by <> ''::text)))),
+    CONSTRAINT payout_batches_kind_check CHECK ((kind = ANY (ARRAY['manual'::text, 'auto'::text])))
+);
+
+
+--
+-- Name: payout_watermarks; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.payout_watermarks (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    channel text NOT NULL,
+    available_fen bigint NOT NULL,
+    measured_at timestamp with time zone NOT NULL,
+    entered_by text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT payout_watermarks_available_check CHECK ((available_fen >= 0)),
+    CONSTRAINT payout_watermarks_channel_check CHECK ((channel = ANY (ARRAY['alipay'::text, 'bank_card'::text, 'wechat'::text]))),
+    CONSTRAINT payout_watermarks_entered_by_check CHECK ((entered_by <> ''::text))
+);
+
+
+--
 -- Name: personal_data_copies; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -6578,6 +6678,38 @@ ALTER TABLE ONLY app.payout_accounts
 
 
 --
+-- Name: payout_attempts payout_attempts_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_attempts
+    ADD CONSTRAINT payout_attempts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: payout_batch_items payout_batch_items_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_batch_items
+    ADD CONSTRAINT payout_batch_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: payout_batches payout_batches_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_batches
+    ADD CONSTRAINT payout_batches_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: payout_watermarks payout_watermarks_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_watermarks
+    ADD CONSTRAINT payout_watermarks_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: personal_data_copies personal_data_copies_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -8062,6 +8194,55 @@ CREATE UNIQUE INDEX payout_accounts_current_user_key ON app.payout_accounts USIN
 
 
 --
+-- Name: payout_attempts_transfer_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_attempts_transfer_at_idx ON app.payout_attempts USING btree (app_id, at) WHERE (kind = 'transfer'::text);
+
+
+--
+-- Name: payout_attempts_transfer_once_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX payout_attempts_transfer_once_key ON app.payout_attempts USING btree (withdrawal_id) WHERE (kind = 'transfer'::text);
+
+
+--
+-- Name: payout_attempts_withdrawal_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_attempts_withdrawal_at_idx ON app.payout_attempts USING btree (withdrawal_id, at);
+
+
+--
+-- Name: payout_batch_items_batch_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_batch_items_batch_at_idx ON app.payout_batch_items USING btree (batch_id, at);
+
+
+--
+-- Name: payout_batch_items_withdrawal_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_batch_items_withdrawal_at_idx ON app.payout_batch_items USING btree (withdrawal_id, at);
+
+
+--
+-- Name: payout_batches_app_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_batches_app_created_idx ON app.payout_batches USING btree (app_id, created_at);
+
+
+--
+-- Name: payout_watermarks_latest_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_watermarks_latest_idx ON app.payout_watermarks USING btree (app_id, channel, measured_at DESC);
+
+
+--
 -- Name: personal_data_copies_open_key; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -8871,6 +9052,27 @@ CREATE TRIGGER payout_account_changes_append_only BEFORE DELETE OR UPDATE ON app
 --
 
 CREATE TRIGGER payout_accounts_anonymize_only BEFORE UPDATE ON app.payout_accounts FOR EACH ROW EXECUTE FUNCTION app.payout_accounts_reject_identifier_update();
+
+
+--
+-- Name: payout_attempts payout_attempts_complete_once; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER payout_attempts_complete_once BEFORE DELETE OR UPDATE ON app.payout_attempts FOR EACH ROW EXECUTE FUNCTION app.payout_attempts_complete_once();
+
+
+--
+-- Name: payout_batch_items payout_batch_items_insert_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER payout_batch_items_insert_only BEFORE DELETE OR UPDATE ON app.payout_batch_items FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: payout_watermarks payout_watermarks_insert_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER payout_watermarks_insert_only BEFORE DELETE OR UPDATE ON app.payout_watermarks FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
 
 
 --
@@ -9800,6 +10002,38 @@ ALTER TABLE ONLY app.payout_accounts
 
 
 --
+-- Name: payout_attempts payout_attempts_withdrawal_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_attempts
+    ADD CONSTRAINT payout_attempts_withdrawal_fkey FOREIGN KEY (withdrawal_id) REFERENCES app.withdrawals(id);
+
+
+--
+-- Name: payout_batch_items payout_batch_items_batch_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_batch_items
+    ADD CONSTRAINT payout_batch_items_batch_fkey FOREIGN KEY (batch_id) REFERENCES app.payout_batches(id);
+
+
+--
+-- Name: payout_batch_items payout_batch_items_moved_to_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_batch_items
+    ADD CONSTRAINT payout_batch_items_moved_to_fkey FOREIGN KEY (moved_to_batch_id) REFERENCES app.payout_batches(id);
+
+
+--
+-- Name: payout_batch_items payout_batch_items_withdrawal_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_batch_items
+    ADD CONSTRAINT payout_batch_items_withdrawal_fkey FOREIGN KEY (withdrawal_id) REFERENCES app.withdrawals(id);
+
+
+--
 -- Name: personal_data_copies personal_data_copies_requested_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -10237,6 +10471,14 @@ ALTER TABLE ONLY app.users
 
 ALTER TABLE ONLY app.withdraw_holds
     ADD CONSTRAINT withdraw_holds_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: withdrawals withdrawals_batch_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.withdrawals
+    ADD CONSTRAINT withdrawals_batch_fkey FOREIGN KEY (batch_id) REFERENCES app.payout_batches(id);
 
 
 --
@@ -13392,6 +13634,77 @@ GRANT UPDATE(updated_at) ON TABLE app.payout_accounts TO couli_app;
 --
 
 GRANT UPDATE(anonymized_at) ON TABLE app.payout_accounts TO couli_app;
+
+
+--
+-- Name: TABLE payout_attempts; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT ON TABLE app.payout_attempts TO couli_app;
+GRANT SELECT,INSERT ON TABLE app.payout_attempts TO couli_payout;
+GRANT SELECT ON TABLE app.payout_attempts TO couli_readonly;
+
+
+--
+-- Name: COLUMN payout_attempts.response; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(response) ON TABLE app.payout_attempts TO couli_payout;
+
+
+--
+-- Name: COLUMN payout_attempts.resp_code; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(resp_code) ON TABLE app.payout_attempts TO couli_payout;
+
+
+--
+-- Name: COLUMN payout_attempts.resp_sub_code; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(resp_sub_code) ON TABLE app.payout_attempts TO couli_payout;
+
+
+--
+-- Name: COLUMN payout_attempts.result; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(result) ON TABLE app.payout_attempts TO couli_payout;
+
+
+--
+-- Name: COLUMN payout_attempts.latency_ms; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(latency_ms) ON TABLE app.payout_attempts TO couli_payout;
+
+
+--
+-- Name: TABLE payout_batch_items; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.payout_batch_items TO couli_app;
+GRANT SELECT ON TABLE app.payout_batch_items TO couli_payout;
+GRANT SELECT ON TABLE app.payout_batch_items TO couli_readonly;
+
+
+--
+-- Name: TABLE payout_batches; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.payout_batches TO couli_app;
+GRANT SELECT ON TABLE app.payout_batches TO couli_payout;
+GRANT SELECT ON TABLE app.payout_batches TO couli_readonly;
+
+
+--
+-- Name: TABLE payout_watermarks; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.payout_watermarks TO couli_app;
+GRANT SELECT ON TABLE app.payout_watermarks TO couli_payout;
+GRANT SELECT ON TABLE app.payout_watermarks TO couli_readonly;
 
 
 --
