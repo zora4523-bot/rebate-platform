@@ -28,8 +28,10 @@
 //      (../infra/realname-prior-identities.ts) before the overwrite; overwrite the realname row
 //      (same id: name, ID number and birth date ciphertexts, id_no_hmac, provider, verified_at =
 //      Clock; row_version CAS); every current payout account of the user is_current = false
-//      (row_version CAS; no payout_account_changes row, task §9 ③: without a current account the
-//      next binding is a first binding, so neither counts in the monthly changes); publish
+//      through createPayoutAccountInvalidation (./payout-account-invalidation.ts: row_version
+//      CAS, one payout_account_changes row each with limit_exempt_reason 'realname_correction',
+//      operator admin:<id>; exempt rows are not counted, and without a current account the next
+//      binding is a first binding, so neither counts in the monthly changes); publish
 //      user.realname_corrected (user_id, old and new id_no_hmac, no plaintext); the audit row. A
 //      concurrent verification of the same number on another user loses on the partial unique
 //      index (23505) → 30405, everything rolled back.
@@ -56,6 +58,7 @@ import type {
   WithdrawalNonTerminalReader,
   WithdrawalSucceededReader,
 } from '../ports/withdrawal-in-flight.ts';
+import { createPayoutAccountInvalidation } from './payout-account-invalidation.ts';
 import { MIN_REALNAME_AGE } from './realname.ts';
 
 /** The audit action of every submission (contract adminCorrectUserRealname). */
@@ -449,28 +452,15 @@ export class AdminRealnameCorrection {
     }
 
     // Every current payout account stops being current (BR-WDR-02: bind again under the new
-    // identity). No payout_account_changes row (task §9 ③), so neither this invalidation nor the
-    // next binding (a first binding without a current account) counts in the monthly changes.
-    const accounts = await app
-      .selectFrom('payout_accounts')
-      .select(['id', 'row_version'])
-      .where('app_id', '=', command.appId)
-      .where('user_id', '=', command.userId)
-      .where('is_current', '=', true)
-      .execute();
-    for (const account of accounts) {
-      const retired = await app
-        .updateTable('payout_accounts')
-        .set({ is_current: false, row_version: account.row_version + 1, updated_at: now })
-        .where('app_id', '=', command.appId)
-        .where('id', '=', account.id)
-        .where('is_current', '=', true)
-        .where('row_version', '=', account.row_version)
-        .executeTakeFirst();
-      if (retired.numUpdatedRows !== 1n) {
-        throw new Error('identity: payout account changed under the user lock');
-      }
-    }
+    // identity), one exempt payout_account_changes row each (limit_exempt_reason
+    // 'realname_correction'), so neither this invalidation nor the next binding (a first binding
+    // without a current account) counts in the monthly changes. A CAS miss throws: all rolled back.
+    const { retired } = await createPayoutAccountInvalidation().invalidate(trx, {
+      appId: command.appId,
+      userId: command.userId,
+      operator: `admin:${command.adminId}`,
+      now,
+    });
 
     await events.publish(trx, {
       appId: command.appId,
@@ -495,7 +485,7 @@ export class AdminRealnameCorrection {
         reason: command.reason,
         result_code: 0,
         ...after,
-        payout_accounts_invalidated: accounts.length,
+        payout_accounts_invalidated: retired,
       },
       ip: command.ip,
     });
@@ -506,7 +496,7 @@ export class AdminRealnameCorrection {
         user_id: command.userId,
         admin_id: command.adminId,
         provider,
-        payout_accounts_invalidated: accounts.length,
+        payout_accounts_invalidated: retired,
       },
       'identity_admin_realname_corrected',
     );
