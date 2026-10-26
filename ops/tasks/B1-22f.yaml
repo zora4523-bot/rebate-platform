@@ -14,5 +14,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/union/pids-cli/**'
-status: todo
-pr: null
+status: done
+pr: 1204

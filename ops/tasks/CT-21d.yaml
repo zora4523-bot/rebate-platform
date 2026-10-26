@@ -29,5 +29,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/state-machines/pay-order/**'
   - 'test/spec/state-machines/pay-refund/**'
-status: todo
-pr: null
+status: done
+pr: 1216
