@@ -3867,6 +3867,8 @@ CREATE TABLE app.payout_account_changes (
     operator text NOT NULL,
     changed_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    limit_exempt_reason text,
+    CONSTRAINT payout_account_changes_limit_exempt_reason_check CHECK (((limit_exempt_reason IS NULL) OR (limit_exempt_reason = 'realname_correction'::text))),
     CONSTRAINT payout_account_changes_new_method_check CHECK ((new_payout_method = ANY (ARRAY['alipay'::text, 'bank_card'::text]))),
     CONSTRAINT payout_account_changes_old_method_check CHECK ((old_payout_method = ANY (ARRAY['alipay'::text, 'bank_card'::text])))
 );

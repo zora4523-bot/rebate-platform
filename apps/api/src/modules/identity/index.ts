@@ -79,6 +79,16 @@ export type {
   SaveBankCardCommand,
   SaveBankCardResult,
 } from './application/payout-account.ts';
+// B2-05j: the realname-correction invalidation of the payout accounts, for admin B1-27g.
+export {
+  createPayoutAccountInvalidation,
+  REALNAME_CORRECTION_EXEMPT,
+} from './application/payout-account-invalidation.ts';
+export type {
+  PayoutAccountInvalidation,
+  PayoutAccountInvalidationCommand,
+  PayoutAccountInvalidationResult,
+} from './application/payout-account-invalidation.ts';
 // B1-13f: the takeover / recheck seam of the paid bank-card verification records, for B1-13g's
 // scheduled task (it only updates the records: no account save, no refund).
 export { createPayoutAccountVerifyAttempts } from './application/payout-account-verify-attempts.ts';

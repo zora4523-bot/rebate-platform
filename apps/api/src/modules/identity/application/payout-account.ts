@@ -5,7 +5,8 @@
 // (the step-up summary of a withdrawal, CT-26c; a change writes a new row, so the id changes),
 // plus change_remaining_this_month =
 // max(0, monthly limit − rows of payout_account_changes of this user and app whose changed_at lies
-// in the +08:00 natural month of the injected Clock). No current row → {} (EmptyData). The
+// in the +08:00 natural month of the injected Clock and whose limit_exempt_reason is NULL: the rows
+// a realname correction wrote (B2-05j, application/payout-account-invalidation.ts) are not counted). No current row → {} (EmptyData). The
 // decrypted logon id or card number lives only in memory long enough to be masked.
 //
 // createPayoutAccountService().save — the Alipay binding / change, run by B1-13f's PUT controller
@@ -296,6 +297,9 @@ async function changesThisMonth(
     .where('user_id', '=', subject.userId)
     .where('changed_at', '>=', sql<Date>`${month.start}::timestamptz`)
     .where('changed_at', '<', sql<Date>`${month.end}::timestamptz`)
+    // B2-05j (BR-WDR-02 细则「实名更正后的失效与重绑」): rows the realname correction wrote
+    // (limit_exempt_reason) do not count. Plain SQL until the schema snapshot adds the column type.
+    .where(sql<boolean>`limit_exempt_reason IS NULL`)
     .executeTakeFirstOrThrow();
   return Number(row.n);
 }
