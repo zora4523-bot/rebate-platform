@@ -8,6 +8,7 @@ import * as governance from '../../../../apps/api/src/modules/union/application/
 import * as userReaders from '../../../../apps/api/src/modules/identity/infra/order-user-reader.ts';
 import * as bindingReaders from '../../../../apps/api/src/modules/linking/infra/order-binding-reader.ts';
 import { contextOf, runtime, token } from './context-kit.ts';
+import { ordersTimers } from './owner-kit.ts';
 
 afterEach(() => {
   vi.clearAllTimers();
@@ -16,6 +17,9 @@ afterEach(() => {
 
 it('[AC-B1-08n#1] worker 装配只注册一次 order-sync，零查询、零投递、零定时器，映射取真实 CSV', async () => {
   vi.useFakeTimers();
+  // D10-363：装配里别的模块（如 B2-15m payment）也起定时器、发查询；这里只数 orders 的定时器与
+  // start() 之后 orders 的查询（owner-kit.ts），orders 自己的个数、周期与查询照旧精确断言。
+  const t = ordersTimers();
   const f = await contextOf('worker', true);
   try {
     const r = await runtime(f.context);
@@ -25,7 +29,7 @@ it('[AC-B1-08n#1] worker 装配只注册一次 order-sync，零查询、零投�
     ]);
     expect(f.queries).toEqual([]);
     expect(f.queue.send).not.toHaveBeenCalled();
-    expect(vi.getTimerCount()).toBe(0);
+    expect(t.count()).toBe(0);
     const csv = readFileSync(
       new URL('../../../../specs/order-status-map/pdd.csv', import.meta.url),
       'utf8',
@@ -39,26 +43,30 @@ it('[AC-B1-08n#1] worker 装配只注册一次 order-sync，零查询、零投�
     // B1-08t's compensation scan arms one 15-minute timer once a snapshot port is wired (B1-08w);
     // count it by its period so the platform timers stay exactly one per platform (B1-08z
     // test-change, ruling D10-146).
-    const armed = vi.spyOn(globalThis, 'setTimeout');
-    const handle = r.start();
+    const queries = t.watch(f.queries);
+    const armed = t.periods().length;
+    const handle = t.run(() => r.start());
     try {
       await vi.advanceTimersByTimeAsync(0);
       expect(f.queue.send).not.toHaveBeenCalled();
-      expect(f.queries).toEqual([]);
-      const scans = armed.mock.calls.filter(([, ms]) => ms === 15 * 60_000).length;
+      expect(queries()).toEqual([]);
+      const scans = t
+        .periods()
+        .slice(armed)
+        .filter((ms) => ms === 15 * 60_000).length;
       expect(scans).toBeLessThanOrEqual(1);
-      expect(vi.getTimerCount()).toBe(scheduledPlatforms().length + scans);
+      expect(t.count()).toBe(scheduledPlatforms().length + scans);
       await vi.advanceTimersByTimeAsync(59_999);
-      expect(f.queries).toEqual([]);
+      expect(queries()).toEqual([]);
       await vi.advanceTimersByTimeAsync(1);
-      expect(f.queries.some((q) => q.includes('union_accounts'))).toBe(true);
+      expect(queries().some((q) => q.includes('union_accounts'))).toBe(true);
     } finally {
-      await handle.stop();
-      armed.mockRestore();
+      await t.run(() => handle.stop());
     }
-    expect(vi.getTimerCount()).toBe(0);
+    expect(t.count()).toBe(0);
     expect(f.lines().filter((l) => l.msg === 'order_sync_disabled')).toEqual([]);
   } finally {
+    t.restore();
     await f.context.close();
   }
 });
