@@ -14,6 +14,7 @@ paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
+  - 'tools/ci/lint-migrations.test.ts'
 test_paths:
   - 'test/spec/payment/recon-resume/**'
 impl: claude
