@@ -10,6 +10,7 @@ import { input } from '../../commission/snapshot/fixtures.ts';
 import { capture } from '../attribution/kit.ts';
 import { built } from '../wiring/db-kit.ts';
 import { compileOnlyDb, contextOf, runtime, token } from '../wiring/context-kit.ts';
+import { ordersTimers } from '../wiring/owner-kit.ts';
 
 // URL 导入避免解析器的跨模块类型导出把 Nest 控制器带进 spec 项目编译。
 const resolver = (await import(
@@ -41,12 +42,14 @@ it('[AC-B1-08w#1] worker 只建一次真实解析器，流水线、更新与补�
   const scan = vi.spyOn(retry, 'handleSnapshotRetry');
   const queries: string[] = [];
   const db = compileOnlyDb(queries);
+  // D10-363：装配里别的模块（如 B2-15m payment）也起定时器；只数 orders 的（owner-kit.ts）。
+  const t = ordersTimers();
   const f = await built(() => contextOf('worker', true, db));
   try {
     await runtime(f.context);
     expect(queries).toEqual([]);
     expect(f.queue.send).not.toHaveBeenCalled();
-    expect(vi.getTimerCount()).toBe(0);
+    expect(t.count()).toBe(0);
     expect(makePipeline).toHaveBeenCalledTimes(1);
     expect(makeUpdate).toHaveBeenCalledTimes(1);
     expect(makeRuntime).toHaveBeenCalledTimes(1);
@@ -100,6 +103,7 @@ it('[AC-B1-08w#1] worker 只建一次真实解析器，流水线、更新与补�
     expect(makeResolver).toHaveBeenCalledTimes(1);
     expect(makeGrowth).toHaveBeenCalledTimes(1);
   } finally {
+    t.restore();
     await f.context.close();
   }
 });
