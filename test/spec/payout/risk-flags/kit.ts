@@ -5,6 +5,7 @@
 // createWithdrawRiskFactsReader) are only called inside a test, never in hooks.
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
+import { orderKey } from '@couli/domain';
 import { sql, type Kysely } from 'kysely';
 import {
   createWithdrawApply,
@@ -21,6 +22,7 @@ import {
   type WithdrawRiskSubject,
 } from '../../../../apps/api/src/modules/payout/application/withdraw-risk-flags.ts';
 import { generateOutBizNo } from '../../../../apps/api/src/modules/payout/domain/out-biz-no.ts';
+import type { SelfOrderFact } from '../../../../apps/api/src/modules/payout/domain/risk-flags.ts';
 import type {
   SameDeviceAccountsCheck,
   SameDeviceAccountsInput,
@@ -334,6 +336,15 @@ export async function seedHold(
 }
 
 /**
+ * Moves the binding time of the fixture member's current payout account (payout_accounts.created_at
+ * of the is_current row, as identity writes it) to `at`: ⑩'s anchor (BR-WDR-02 细则).
+ */
+export async function bindCurrentAt(f: Fixture, at: Date): Promise<void> {
+  await sql`UPDATE app.payout_accounts SET created_at = ${at}, updated_at = ${at}
+    WHERE app_id = ${f.actor.appId} AND user_id = ${f.actor.userId} AND is_current`.execute(f.h.db);
+}
+
+/**
  * A payout binding that is no longer current: `hmac` bound by `userId` from `boundAt` until it
  * was changed away at `changedAt` (payout_accounts row updated then, payout_account_changes row).
  */
@@ -363,7 +374,20 @@ export async function seedPastBinding(
       ${randomBytes(32).toString('hex')}, 'user', ${input.changedAt})`.execute(f.h.db);
 }
 
-/** One attributed (or not) sub-order with its key; `rights` adds one order_rights row per status. */
+export interface SeededOrder {
+  readonly orderId: string;
+  /** The ledger order_key of the sub-order (vouchers of its credits carry it). */
+  readonly orderKey: string;
+}
+
+/**
+ * One attributed (or not) sub-order with its key; `rights` adds one order_rights row per status.
+ * The union's synced values: 联盟预估佣金 est_commission_fen (default 100) and 计佣金额
+ * pay_amount_fen (default 10000, 100 bp) — the only synced amount columns besides
+ * settle_commission_fen (orders' OrderSyncColumns). Every derived column that is not a synced value
+ * (base_fen, booked_base_fen, settle_commission_fen, commission_rate_bp) gets a distractor that
+ * would make every order high-commission if read instead. platform_status follows received_at.
+ */
 export async function seedOrder(
   f: Fixture,
   input: {
@@ -372,24 +396,275 @@ export async function seedOrder(
     rebateStatus: 'ESTIMATED' | 'WAITING' | 'CREDITED' | 'VOID' | 'CLAWED_BACK';
     userId?: string;
     rights?: readonly ('PROCESSING' | 'WAIT_COMMISSION' | 'SUCCEEDED' | 'FAILED')[];
+    receivedAt?: Date | null;
+    commissionVersion?: number;
+    estCommissionFen?: bigint | null;
+    payAmountFen?: bigint | null;
   },
-): Promise<string> {
+): Promise<SeededOrder> {
   const orderId = randomUUID();
   const sub = `synthetic-${orderId}`;
+  const received = input.receivedAt ?? null;
+  const est = input.estCommissionFen === undefined ? 100n : input.estCommissionFen;
+  const pay = input.payAmountFen === undefined ? 10000n : input.payAmountFen;
   await sql`INSERT INTO app.order_keys (platform, sub_order_id, order_id, app_id, attr_at)
     VALUES ('taobao', ${sub}, ${orderId}, ${f.actor.appId}, ${input.paidAt})`.execute(f.h.db);
   await sql`INSERT INTO app.orders
     (order_id, app_id, platform, sub_order_id, raw_item_id, user_id, buy_type, platform_status,
-     rebate_status, attr_at, paid_at, pay_amount_fen, est_commission_fen)
+     rebate_status, attr_at, paid_at, received_at, commission_version, pay_amount_fen,
+     est_commission_fen, settle_commission_fen, base_fen, booked_base_fen, commission_rate_bp)
     VALUES (${orderId}, ${f.actor.appId}, 'taobao', ${sub}, 'synthetic-item',
-      ${input.userId ?? f.actor.userId}, ${input.buyType}, 'PAID', ${input.rebateStatus},
-      ${input.paidAt}, ${input.paidAt}, 10000, 100)`.execute(f.h.db);
+      ${input.userId ?? f.actor.userId}, ${input.buyType}, ${received === null ? 'PAID' : 'RECEIVED'},
+      ${input.rebateStatus}, ${input.paidAt}, ${input.paidAt}, ${received},
+      ${input.commissionVersion ?? 1}, ${pay?.toString() ?? null}, ${est?.toString() ?? null},
+      9000000, 1, 1, 9999)`.execute(f.h.db);
   for (const status of input.rights ?? []) {
-    await sql`INSERT INTO app.order_rights (id, app_id, order_id, source, type, status, occurred_at)
+    // A distinct platform_rights_no per row (order_rights_dedupe_key is NULLS NOT DISTINCT).
+    await sql`INSERT INTO app.order_rights
+      (id, app_id, order_id, source, type, status, occurred_at, platform_rights_no)
       VALUES (${randomUUID()}, ${f.actor.appId}, ${orderId}, 'API', 'RIGHTS', ${status},
-        ${input.paidAt})`.execute(f.h.db);
+        ${input.paidAt}, ${`synthetic-${randomUUID()}`})`.execute(f.h.db);
   }
-  return orderId;
+  return { orderId, orderKey: orderKey('taobao', sub) };
+}
+
+export type ShareRole = 'self' | 'share' | 'direct';
+
+/** commission's split amount of one beneficiary at one commission_version of the order. */
+export async function seedSplit(
+  f: Fixture,
+  order: SeededOrder,
+  input: { version: number; userId: string; role: ShareRole; amountFen: bigint },
+): Promise<void> {
+  await sql`INSERT INTO app.commission_split_amounts
+    (app_id, order_id, commission_version, user_id, role, base_fen, amount_fen)
+    VALUES (${f.actor.appId}, ${order.orderId}, ${input.version}, ${input.userId}, ${input.role},
+      1000000000000, ${input.amountFen.toString()})`.execute(f.h.db);
+}
+
+const CREDIT_TYPES: Readonly<Record<ShareRole, string>> = {
+  self: 'REBATE_CREDIT',
+  share: 'SHARE_CREDIT',
+  direct: 'REFERRAL_CREDIT',
+};
+
+/**
+ * One beneficiary voucher of the order through ledger.post (its order_key, beneficiary and role):
+ * CREDIT credits the member `fen`, CLAWBACK takes `fen` back. The ledger's order nets
+ * (BR-FUND-08 已入账净额) are the sum of these per (beneficiary, role).
+ */
+export async function postOrderVoucher(
+  f: Fixture,
+  order: SeededOrder,
+  input: { userId: string; role: ShareRole; kind: 'CREDIT' | 'CLAWBACK'; fen: bigint },
+): Promise<void> {
+  const credit = input.kind === 'CREDIT';
+  const ledgerType = credit ? CREDIT_TYPES[input.role] : 'CLAWBACK';
+  await f.h.db.transaction().execute(async (trx) => {
+    await lockUsersForUpdate(trx, { appId: f.actor.appId, userIds: [input.userId] });
+    const [balance] = await f.ledger.lockBalances(trx, {
+      appId: f.actor.appId,
+      userIds: [input.userId],
+    });
+    if (balance === undefined) throw new Error('kit: the member has no ledger account');
+    const base = voucher(f.actor.appId, balance.account_id, credit ? -input.fen : input.fen, {
+      bizType: credit ? 'ORDER_CREDIT' : 'ORDER_ADJUST',
+      bizId: order.orderKey,
+      orderKey: order.orderKey,
+      beneficiaryUserId: input.userId,
+      role: input.role,
+      voucherKind: input.kind,
+    });
+    await f.ledger.post(trx, {
+      ...base,
+      entries: base.entries.map((entry) => ({ ...entry, ledger_type: ledgerType })),
+    });
+  });
+}
+
+/**
+ * ⑥ denominator fixture at t (BR-WDR-29 ⑥; windows closed): the fixture member's rebate shares as
+ * beneficiary on sub-orders received in [t − 60 d, t] with rebate_status WAITING (the split amount
+ * at the order's current commission_version) or CREDITED (the ledger net of the member's key, not
+ * the split amount). Counted: 300 + 150 + 70 + 480 + 80 + 33 = 1113 fen. Every share that must not
+ * count is a distinct large amount, so any one of them changes the sum. Returns the downline buyer
+ * and another member, who have shares of their own.
+ */
+export async function seedReceivedShares(
+  f: Fixture,
+): Promise<{ readonly buyer: string; readonly stranger: string }> {
+  const me = f.actor.userId;
+  const buyer = await otherMember(f);
+  const stranger = await otherMember(f);
+  const sixty = 60 * DAY;
+  // ① self, WAITING, paid long before the window: the current version's estimate 300 (v1 999 stale).
+  const own = await seedOrder(f, {
+    paidAt: ago(90 * DAY),
+    receivedAt: ago(DAY),
+    buyType: 'self',
+    rebateStatus: 'WAITING',
+    commissionVersion: 2,
+  });
+  await seedSplit(f, own, { version: 1, userId: me, role: 'self', amountFen: 999n });
+  await seedSplit(f, own, { version: 2, userId: me, role: 'self', amountFen: 300n });
+  // ② share, WAITING: 150.
+  const shared = await seedOrder(f, {
+    paidAt: ago(70 * DAY),
+    receivedAt: ago(2 * DAY),
+    buyType: 'share',
+    rebateStatus: 'WAITING',
+  });
+  await seedSplit(f, shared, { version: 1, userId: me, role: 'share', amountFen: 150n });
+  // ③ direct on the downline's self purchase, WAITING: 70 (the buyer's own 500 is not ours).
+  const downline = await seedOrder(f, {
+    paidAt: ago(10 * DAY),
+    receivedAt: ago(3 * DAY),
+    buyType: 'self',
+    rebateStatus: 'WAITING',
+    userId: buyer,
+  });
+  await seedSplit(f, downline, { version: 1, userId: buyer, role: 'self', amountFen: 500n });
+  await seedSplit(f, downline, { version: 1, userId: me, role: 'direct', amountFen: 70n });
+  // ④ self, CREDITED 600 then 120 clawed back: the net 480, not the split's 600.
+  const credited = await seedOrder(f, {
+    paidAt: ago(80 * DAY),
+    receivedAt: ago(4 * DAY),
+    buyType: 'self',
+    rebateStatus: 'CREDITED',
+  });
+  await seedSplit(f, credited, { version: 1, userId: me, role: 'self', amountFen: 600n });
+  await postOrderVoucher(f, credited, { userId: me, role: 'self', kind: 'CREDIT', fen: 600n });
+  await postOrderVoucher(f, credited, { userId: me, role: 'self', kind: 'CLAWBACK', fen: 120n });
+  // ⑤ direct, CREDITED, received exactly t − 60 d: the net 80 (split 90; the buyer's 400 is not ours).
+  const edge = await seedOrder(f, {
+    paidAt: ago(sixty + DAY),
+    receivedAt: ago(sixty),
+    buyType: 'self',
+    rebateStatus: 'CREDITED',
+    userId: buyer,
+  });
+  await seedSplit(f, edge, { version: 1, userId: buyer, role: 'self', amountFen: 400n });
+  await seedSplit(f, edge, { version: 1, userId: me, role: 'direct', amountFen: 90n });
+  await postOrderVoucher(f, edge, { userId: buyer, role: 'self', kind: 'CREDIT', fen: 400n });
+  await postOrderVoucher(f, edge, { userId: me, role: 'direct', kind: 'CREDIT', fen: 80n });
+  // ⑥ share, CREDITED, received exactly t: 33.
+  const atT = await seedOrder(f, {
+    paidAt: ago(5 * DAY),
+    receivedAt: T,
+    buyType: 'share',
+    rebateStatus: 'CREDITED',
+  });
+  await seedSplit(f, atT, { version: 1, userId: me, role: 'share', amountFen: 33n });
+  await postOrderVoucher(f, atT, { userId: me, role: 'share', kind: 'CREDIT', fen: 33n });
+
+  // Not counted (the member's own self-purchase shares).
+  const after = new Date(T.getTime() + 1);
+  const excluded = [
+    // received 1 ms before the window
+    { paid: ago(sixty), received: ago(sixty + 1), status: 'WAITING', fen: 10_000n },
+    { paid: ago(9 * DAY), received: ago(5 * DAY), status: 'VOID', fen: 20_000n },
+    { paid: ago(9 * DAY), received: ago(6 * DAY), status: 'CLAWED_BACK', fen: 40_000n },
+    // paid in the window, not received
+    { paid: ago(10 * DAY), received: null, status: 'ESTIMATED', fen: 80_000n },
+    // paid in the window, received after t
+    { paid: ago(10 * DAY), received: after, status: 'WAITING', fen: 160_000n },
+    // received in the window, still ESTIMATED
+    { paid: ago(10 * DAY), received: ago(7 * DAY), status: 'ESTIMATED', fen: 320_000n },
+  ] as const;
+  for (const row of excluded) {
+    const order = await seedOrder(f, {
+      paidAt: row.paid,
+      receivedAt: row.received,
+      buyType: 'self',
+      rebateStatus: row.status,
+    });
+    await seedSplit(f, order, { version: 1, userId: me, role: 'self', amountFen: row.fen });
+  }
+  // Another member's own purchase, received and credited in the window.
+  const theirs = await seedOrder(f, {
+    paidAt: ago(3 * DAY),
+    receivedAt: ago(DAY),
+    buyType: 'self',
+    rebateStatus: 'CREDITED',
+    userId: stranger,
+  });
+  await seedSplit(f, theirs, { version: 1, userId: stranger, role: 'self', amountFen: 640_000n });
+  await postOrderVoucher(f, theirs, {
+    userId: stranger,
+    role: 'self',
+    kind: 'CREDIT',
+    fen: 640_000n,
+  });
+  return { buyer, stranger };
+}
+
+/**
+ * ④⑤ synced values fixture at t: five counted self-purchase sub-orders, each with distinct
+ * (est_commission_fen, pay_amount_fen) — nulls and a zero base included — and one share order
+ * that must not count. Returns the expected facts (any order).
+ */
+export async function seedCommissionOrders(f: Fixture): Promise<readonly SelfOrderFact[]> {
+  type Row = SelfOrderFact & { readonly status: 'VOID' | 'WAITING' | 'ESTIMATED' };
+  const rows: readonly Row[] = [
+    { invalid: true, status: 'VOID', est_commission_fen: 6000n, commission_base_fen: 10000n },
+    { invalid: false, status: 'WAITING', est_commission_fen: 4999n, commission_base_fen: 10001n },
+    { invalid: false, status: 'ESTIMATED', est_commission_fen: null, commission_base_fen: 2500n },
+    { invalid: false, status: 'ESTIMATED', est_commission_fen: 777n, commission_base_fen: null },
+    { invalid: false, status: 'WAITING', est_commission_fen: 1n, commission_base_fen: 0n },
+  ];
+  for (const [index, row] of rows.entries()) {
+    await seedOrder(f, {
+      paidAt: ago((index + 1) * DAY),
+      buyType: 'self',
+      rebateStatus: row.status,
+      estCommissionFen: row.est_commission_fen,
+      payAmountFen: row.commission_base_fen,
+    });
+  }
+  await seedOrder(f, {
+    paidAt: ago(DAY),
+    buyType: 'share',
+    rebateStatus: 'WAITING',
+    estCommissionFen: 99_999n,
+    payAmountFen: 100_000n,
+  });
+  return rows.map(({ invalid, est_commission_fen, commission_base_fen }) => ({
+    invalid,
+    est_commission_fen,
+    commission_base_fen,
+  }));
+}
+
+/**
+ * ④ order_rights fixture at t: one sub-order per case, two order_rights rows each where the case
+ * says so; a reader that joins the rights row by row would count those sub-orders twice. Counted
+ * 4, invalid 3.
+ */
+export async function seedDoubleRights(f: Fixture): Promise<void> {
+  await seedOrder(f, {
+    paidAt: ago(DAY),
+    buyType: 'self',
+    rebateStatus: 'WAITING',
+    rights: ['FAILED', 'SUCCEEDED'],
+  });
+  await seedOrder(f, {
+    paidAt: ago(2 * DAY),
+    buyType: 'self',
+    rebateStatus: 'CREDITED',
+    rights: ['SUCCEEDED', 'SUCCEEDED'],
+  });
+  await seedOrder(f, {
+    paidAt: ago(3 * DAY),
+    buyType: 'self',
+    rebateStatus: 'VOID',
+    rights: ['SUCCEEDED'],
+  });
+  await seedOrder(f, {
+    paidAt: ago(4 * DAY),
+    buyType: 'self',
+    rebateStatus: 'WAITING',
+    rights: ['FAILED', 'PROCESSING'],
+  });
 }
 
 /**

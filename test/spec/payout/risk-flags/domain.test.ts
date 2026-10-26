@@ -1,6 +1,8 @@
 // B2-11a: BR-WDR-29 ④⑤⑥ as pure functions with their thresholds as parameters (task 9.3 #3 / #7;
 // BR-WDR-30 ⑧ reuses them). Boundaries: ④⑤⑥ compare with「>」exactly (numerator × 10000 >
 // threshold × denominator), ⑤'s single rate and minimum count with「≥」; value = bp floored.
+// Properties run with propParams() (PROP_RUNS / PROP_SEED) and return a boolean.
+import { propParams } from '@couli/testing';
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
 import {
@@ -12,8 +14,20 @@ import {
   type HighCommissionThresholds,
   type InvalidRatioThresholds,
   type WithdrawReceivedThresholds,
+  type WithdrawRiskFlag,
 } from '../../../../apps/api/src/modules/payout/domain/risk-flags.ts';
 import { DEFAULTS, flag } from './oracle.ts';
+
+/** `actual` is exactly `want`: both null, or the same three keys with identical values. */
+function same(actual: WithdrawRiskFlag | null, want: WithdrawRiskFlag | null): boolean {
+  if (want === null || actual === null) return actual === want;
+  return (
+    Object.keys(actual).length === 3 &&
+    actual.code === want.code &&
+    actual.value === want.value &&
+    actual.threshold === want.threshold
+  );
+}
 
 const IR: InvalidRatioThresholds = {
   invalid_ratio_bp: DEFAULTS.invalid_ratio_bp,
@@ -104,14 +118,16 @@ it('[AC-B2-11a#2] ④ 性质：命中当且仅当 分子×10000 > 阈值×分母
         const want = hit
           ? flag('invalid_ratio_60d', Number((BigInt(invalid) * 10000n) / BigInt(total)), bp)
           : null;
-        expect(
+        return same(
           invalidRatioFlag(
             { orders: total, invalid },
             { invalid_ratio_bp: bp, invalid_min_count: min },
           ),
-        ).toEqual(want);
+          want,
+        );
       },
     ),
+    propParams(),
   );
 });
 
@@ -242,15 +258,17 @@ it('[AC-B2-11a#5] ⑤ 性质：分母 = 全部单、分子 = 计佣金额 > 0 �
               ratio,
             )
           : null;
-        expect(
+        return same(
           highCommissionRatioFlag(list, {
             high_commission_rate_bp: rate,
             high_commission_ratio_bp: ratio,
             min_orders: min,
           }),
-        ).toEqual(want);
+          want,
+        );
       },
     ),
+    propParams(),
   );
 });
 
@@ -286,26 +304,50 @@ it.each([
   );
 });
 
+// Amounts up to 2^53 − 1 fen (well past 2^31); pairs whose bp would exceed Number.MAX_SAFE_INTEGER
+// are skipped (value is a JSON-safe integer bp).
+const SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+const fen = (min: bigint) => fc.bigInt({ min, max: SAFE });
+
 it('[AC-B2-11a#7] ⑥ 性质：分母 0 命中（value null）；否则命中当且仅当 分子×10000 > 阈值×分母，value 为向下取整 bp', () => {
   fc.assert(
     fc.property(
-      fc.bigInt({ min: 1n, max: 10n ** 9n }),
-      fc.bigInt({ min: 0n, max: 10n ** 9n }),
+      fen(1n),
+      fc.oneof({ arbitrary: fc.constant(0n), weight: 1 }, { arbitrary: fen(1n), weight: 9 }),
       fc.integer({ min: 0, max: 100000 }),
       (withdrawn, received, bp) => {
+        fc.pre(received === 0n || (withdrawn * 10000n) / received <= SAFE);
         const want =
           received === 0n
             ? flag('withdraw_vs_received', null, bp)
             : withdrawn * 10000n > BigInt(bp) * received
               ? flag('withdraw_vs_received', Number((withdrawn * 10000n) / received), bp)
               : null;
-        expect(
+        return same(
           withdrawVsReceivedFlag(
             { withdrawn_fen: withdrawn, received_fen: received },
             { withdraw_received_ratio_bp: bp },
           ),
-        ).toEqual(want);
+          want,
+        );
       },
     ),
+    propParams(),
   );
+});
+
+it('[AC-B2-11a#7] ⑥ 超过 2^31 的金额按整数精确比较', () => {
+  // 2^40 + 1 over 2^40: 10000.0000…bp > 10000 although the floored value equals the threshold.
+  expect(
+    withdrawVsReceivedFlag(
+      { withdrawn_fen: 2n ** 40n + 1n, received_fen: 2n ** 40n },
+      { withdraw_received_ratio_bp: 10000 },
+    ),
+  ).toEqual(flag('withdraw_vs_received', 10000, 10000));
+  expect(
+    withdrawVsReceivedFlag(
+      { withdrawn_fen: 2n ** 52n, received_fen: 2n ** 52n },
+      { withdraw_received_ratio_bp: 10000 },
+    ),
+  ).toBeNull();
 });

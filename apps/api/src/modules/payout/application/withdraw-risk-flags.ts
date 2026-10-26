@@ -41,7 +41,11 @@ export interface WithdrawRiskFactsReader {
   hasPaidWithdrawal(handle: Kysely<DB>, subject: WithdrawRiskSubject): Promise<boolean>;
   /** ② a REBATE_CREDIT / SHARE_CREDIT / REFERRAL_CREDIT entry of the member in t's day up to t. */
   creditedToday(handle: Kysely<DB>, subject: WithdrawRiskSubject): Promise<boolean>;
-  /** ④⑤ the member's attributed buy_type=self sub-orders with paid_at in the 60-day window. */
+  /**
+   * ④⑤ the member's attributed buy_type=self sub-orders with paid_at in the 60-day window, one
+   * fact per sub-order however many order_rights rows it has; est_commission_fen and
+   * commission_base_fen are the union's synced values (orders.est_commission_fen, pay_amount_fen).
+   */
   selfOrders60d(
     handle: Kysely<DB>,
     subject: WithdrawRiskSubject,
@@ -60,7 +64,12 @@ export interface WithdrawRiskFactsReader {
   hadNegative(handle: Kysely<DB>, subject: WithdrawRiskSubject): Promise<boolean>;
   /** ⑧ a withdraw_holds row of the member with reason recon_diff exists (released ones included). */
   reconDiff(handle: Kysely<DB>, subject: WithdrawRiskSubject): Promise<boolean>;
-  /** ⑩ the payee HMAC was bound by another member within the 90 days up to t (BR-WDR-02). */
+  /**
+   * ⑩ (BR-WDR-02 细则) another member's binding of the payee HMAC was still held at some instant of
+   * the 90 × 24 hours up to the binding time of the member's current payout account (both ends
+   * closed; whenever it ended). The anchor is that binding time, not t: every later withdrawal of
+   * the member carries the label.
+   */
   payeePrevOtherUser(handle: Kysely<DB>, subject: WithdrawRiskSubject): Promise<boolean>;
 }
 
@@ -75,10 +84,7 @@ export interface WithdrawRiskFlagsOptions {
 }
 
 export interface WithdrawRiskFlags {
-  compute(
-    trx: Transaction<DB>,
-    subject: WithdrawRiskSubject,
-  ): Promise<readonly WithdrawRiskFlag[]>;
+  compute(trx: Transaction<DB>, subject: WithdrawRiskSubject): Promise<readonly WithdrawRiskFlag[]>;
 }
 
 /** What W1 (createWithdrawApply's options) takes to write the snapshot. */

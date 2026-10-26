@@ -33,6 +33,7 @@ import {
   T,
   ago,
   applyWith,
+  bindCurrentAt,
   book,
   breakFact,
   failingStatement,
@@ -300,8 +301,9 @@ it.each([
     want: [...BASE, flag('recon_diff')],
   },
   {
-    label: '⑩ 收款账号近 90 天内被其他会员绑定过',
+    label: '⑩ 收款账号在本会员绑定前 90 天内被其他会员绑定过',
     seed: async (f: Fixture) => {
+      await bindCurrentAt(f, ago(5 * DAY));
       const other = await seedUser(h.db, f.actor.appId);
       await seedPastBinding(f, {
         userId: other,
