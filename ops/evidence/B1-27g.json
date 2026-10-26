@@ -1,0 +1,97 @@
+{
+  "task": "B1-27g",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "93174303d3a1ecf2e5fdc43eed821765cc012416",
+  "red_tests": [
+    "test/spec/identity/realname-payout-invalidate/atomic.int.test.ts > [AC-B1-27g#11] 失效在覆盖事务与用户行锁内：等收款账号行时 users 行仍被锁、新实名未提交；端口 CAS 失败 → 整笔回滚（实名、账号、变更行、成功审计、事件都不留）；随后受理只写一条 exempt 行",
+    "test/spec/identity/realname-payout-invalidate/limit.int.test.ts > [AC-B1-27g#5] 本月已用 2 次：更正照常受理并写一条 exempt 行；GET 无账号；首次重绑成功、不写变更行、剩余与更正前相同；再换绑才计次",
+    "test/spec/identity/realname-payout-invalidate/limit.int.test.ts > [AC-B1-27g#5] 本月已用 1 次：更正照常受理并写一条 exempt 行；GET 无账号；首次重绑成功、不写变更行、剩余与更正前相同；再换绑才计次",
+    "test/spec/identity/realname-payout-invalidate/limit.int.test.ts > [AC-B1-27g#6] 更正当月的 exempt 行不占名额：更正后重绑、再换绑用满剩余名额，与没有过更正时的次数一致",
+    "test/spec/identity/realname-payout-invalidate/refusals.int.test.ts > [AC-B1-27g#7] 受理前与供应商的每种拒绝（20001、44001、30407、30405、30406、50401、50301）都不写变更行、账号仍为当前；随后受理只写一条 exempt 行",
+    "test/spec/identity/realname-payout-invalidate/refusals.int.test.ts > [AC-B1-27g#8] 用户行锁内复判拒绝（调用供应商期间出现在途提现 → 30419）：不写变更行、账号仍为当前；提现结束后再更正只写一条 exempt 行",
+    "test/spec/identity/realname-payout-invalidate/refusals.int.test.ts > [AC-B1-27g#9] 覆盖事务回滚（同号同时在别的用户名下核验通过，23505 → 30405）：不写变更行、账号仍为当前；随后受理只写一条 exempt 行",
+    "test/spec/identity/realname-payout-invalidate/scope.int.test.ts > [AC-B1-27g#10] 只失效被更正用户在本 App 的账号：exempt 行带本 App 与该用户；同 App 他人、其他 App 会员的账号与变更行不动",
+    "test/spec/identity/realname-payout-invalidate/success.int.test.ts > [AC-B1-27g#1] 支付宝当前账号（超管=true）：一条 realname_correction 变更行，operator=admin:<id>、changed_at=更正时刻；无当前账号；审计失效数 1",
+    "test/spec/identity/realname-payout-invalidate/success.int.test.ts > [AC-B1-27g#1] 支付宝当前账号（超管=false）：一条 realname_correction 变更行，operator=admin:<id>、changed_at=更正时刻；无当前账号；审计失效数 1",
+    "test/spec/identity/realname-payout-invalidate/success.int.test.ts > [AC-B1-27g#2] 银行卡当前账号：变更行 old_payout_method=bank_card、old_hmac=bank_card_hmac、new_payout_method=bank_card、new_hmac 为空",
+    "test/spec/identity/realname-payout-invalidate/success.int.test.ts > [AC-B1-27g#3] 变更行数 = 审计 payout_accounts_invalidated = 当前账号数：从未绑定 0、只剩历史账号 0、有当前账号 1",
+    "test/spec/identity/realname-payout-invalidate/success.int.test.ts > [AC-B1-27g#4] 本月已有的普通变更行原样保留，exempt 行追加在其后；只追加这一条"
+  ],
+  "risk_note": "Risk level per ops/risk-map.yaml (identity application path). Realname correction (04 §6.6, 08 BR-WDR-02 细则「实名更正后的失效与重绑」, D10-330): the invalidation of the user's current payout accounts now goes through identity's createPayoutAccountInvalidation (B2-05j #1657) inside the same transaction and users row lock as the realname overwrite; each retired account writes one payout_account_changes row with limit_exempt_reason='realname_correction' and operator admin:<id>, so neither the invalidation nor the next first binding counts in the monthly change limit; a CAS miss rolls the whole correction back. payout_accounts_invalidated in the audit and log is the port's retired count. No amounts, no ledger, settlement or payout state; no contract or migration change.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "93174303d3a1ecf2e5fdc43eed821765cc012416",
+      "tree": "09dee3205a411cdea9f94529f4d7b05da3d09242",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-26T05:19:42Z",
+      "finished_at": "2026-10-26T05:20:13Z",
+      "red_tests": [
+        "test/spec/identity/realname-payout-invalidate/atomic.int.test.ts > [AC-B1-27g#11] 失效在覆盖事务与用户行锁内：等收款账号行时 users 行仍被锁、新实名未提交；端口 CAS 失败 → 整笔回滚（实名、账号、变更行、成功审计、事件都不留）；随后受理只写一条 exempt 行",
+        "test/spec/identity/realname-payout-invalidate/limit.int.test.ts > [AC-B1-27g#5] 本月已用 2 次：更正照常受理并写一条 exempt 行；GET 无账号；首次重绑成功、不写变更行、剩余与更正前相同；再换绑才计次",
+        "test/spec/identity/realname-payout-invalidate/limit.int.test.ts > [AC-B1-27g#5] 本月已用 1 次：更正照常受理并写一条 exempt 行；GET 无账号；首次重绑成功、不写变更行、剩余与更正前相同；再换绑才计次",
+        "test/spec/identity/realname-payout-invalidate/limit.int.test.ts > [AC-B1-27g#6] 更正当月的 exempt 行不占名额：更正后重绑、再换绑用满剩余名额，与没有过更正时的次数一致",
+        "test/spec/identity/realname-payout-invalidate/refusals.int.test.ts > [AC-B1-27g#7] 受理前与供应商的每种拒绝（20001、44001、30407、30405、30406、50401、50301）都不写变更行、账号仍为当前；随后受理只写一条 exempt 行",
+        "test/spec/identity/realname-payout-invalidate/refusals.int.test.ts > [AC-B1-27g#8] 用户行锁内复判拒绝（调用供应商期间出现在途提现 → 30419）：不写变更行、账号仍为当前；提现结束后再更正只写一条 exempt 行",
+        "test/spec/identity/realname-payout-invalidate/refusals.int.test.ts > [AC-B1-27g#9] 覆盖事务回滚（同号同时在别的用户名下核验通过，23505 → 30405）：不写变更行、账号仍为当前；随后受理只写一条 exempt 行",
+        "test/spec/identity/realname-payout-invalidate/scope.int.test.ts > [AC-B1-27g#10] 只失效被更正用户在本 App 的账号：exempt 行带本 App 与该用户；同 App 他人、其他 App 会员的账号与变更行不动",
+        "test/spec/identity/realname-payout-invalidate/success.int.test.ts > [AC-B1-27g#1] 支付宝当前账号（超管=true）：一条 realname_correction 变更行，operator=admin:<id>、changed_at=更正时刻；无当前账号；审计失效数 1",
+        "test/spec/identity/realname-payout-invalidate/success.int.test.ts > [AC-B1-27g#1] 支付宝当前账号（超管=false）：一条 realname_correction 变更行，operator=admin:<id>、changed_at=更正时刻；无当前账号；审计失效数 1",
+        "test/spec/identity/realname-payout-invalidate/success.int.test.ts > [AC-B1-27g#2] 银行卡当前账号：变更行 old_payout_method=bank_card、old_hmac=bank_card_hmac、new_payout_method=bank_card、new_hmac 为空",
+        "test/spec/identity/realname-payout-invalidate/success.int.test.ts > [AC-B1-27g#3] 变更行数 = 审计 payout_accounts_invalidated = 当前账号数：从未绑定 0、只剩历史账号 0、有当前账号 1",
+        "test/spec/identity/realname-payout-invalidate/success.int.test.ts > [AC-B1-27g#4] 本月已有的普通变更行原样保留，exempt 行追加在其后；只追加这一条"
+      ],
+      "expected": [
+        "test/spec/identity/realname-payout-invalidate/atomic.int.test.ts",
+        "test/spec/identity/realname-payout-invalidate/limit.int.test.ts",
+        "test/spec/identity/realname-payout-invalidate/refusals.int.test.ts",
+        "test/spec/identity/realname-payout-invalidate/scope.int.test.ts",
+        "test/spec/identity/realname-payout-invalidate/success.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "e9caaffc7541bac6b3cba8bc42b825184008027a6b6d96c36ae84fa7b37b0314"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "nohup claude-run.sh review --review-type money per approvals #36 (RV1 identity path, reviewed on the money checklist because it decides the payout-account change count); round 1 pass, no findings."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "nohup claude-run.sh review --review-type spec-test: r1 fail (S1: no test proved the invalidation shares the overwrite's transaction — a second transaction or an unrolled CAS miss still passed) → a fresh independent Claude added atomic.int.test.ts [AC-B1-27g#11]; r2 pass; r3 pass on the fixture-only fix (D10-209: memberSide() binds a phone before GET /v1/me/payout-account, after the precedent in test/spec/identity/payout-account/kit.ts)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "5395856ebf5d5f54209abb9e5454aa274ae05b3e",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}
