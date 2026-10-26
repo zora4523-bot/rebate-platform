@@ -1390,6 +1390,15 @@ export interface PayQueryAttempts {
   result: string | null;
 }
 
+export interface PayReconDays {
+  app_id: string;
+  bill_date: Timestamp;
+  created_at: Generated<Timestamp>;
+  id: string;
+  pay_channel: string;
+  reconciled_at: Timestamp;
+}
+
 export interface PayRefunds {
   amount_fen: ColumnType<bigint, bigint, bigint>;
   app_id: string;
@@ -2156,6 +2165,7 @@ export interface DB {
   pay_notifications: PayNotifications;
   pay_orders: PayOrders;
   pay_query_attempts: PayQueryAttempts;
+  pay_recon_days: PayReconDays;
   pay_refunds: PayRefunds;
   payout_account_changes: PayoutAccountChanges;
   payout_account_verify_attempts: PayoutAccountVerifyAttempts;

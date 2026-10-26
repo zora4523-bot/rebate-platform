@@ -27,7 +27,13 @@ import { HttpAdapterHost } from '@nestjs/core';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { ContentReader } from '../content/index.ts';
-import { LEDGER, LedgerModule, registerReconDiff, type Ledger } from '../ledger/index.ts';
+import {
+  LEDGER,
+  LedgerModule,
+  registerReconDiff,
+  registerReconDiffOnce,
+  type Ledger,
+} from '../ledger/index.ts';
 import {
   APP_CONFIG,
   CLOCK,
@@ -160,11 +166,15 @@ export function payChannelSetFor(appEnv: AppConfig['appEnv']): PayChannelSet {
   return new PayChannelSet([new FakePayChannel('wechat_pay'), new FakePayChannel('alipay')]);
 }
 
-/** ledger's posting and recon diff registration as payment's port (BR-PAY-07). */
+/**
+ * ledger's posting and recon diff registration as payment's port (BR-PAY-07); B2-15n: with the
+ * registration that tells a new diff from a known one (pay_recon_mismatch alerted once).
+ */
 function ledgerPort(ledger: Ledger, clock: Clock): PayLedgerPort {
   return {
     post: (trx, voucher) => ledger.post(trx, voucher),
     registerReconDiff: (trx, input) => registerReconDiff(trx, input, { clock }),
+    registerReconDiffOnce: (trx, input) => registerReconDiffOnce(trx, input, { clock }),
   };
 }
 

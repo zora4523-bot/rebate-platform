@@ -51,6 +51,16 @@ export interface PayLedgerPort {
     trx: Transaction<DB>,
     input: RegisterReconDiffInput,
   ): Promise<{ readonly id: string }>;
+  /**
+   * B2-15n: the same registration (ledger registerReconDiffOnce), telling whether this call
+   * inserted the diff (the reconciliation alerts pay_recon_mismatch only then). Optional: a port
+   * without it (an older wiring) registers through registerReconDiff and every registration counts
+   * as new, as before B2-15n. The worker's port (payment.module.ts) always has it.
+   */
+  registerReconDiffOnce?(
+    trx: Transaction<DB>,
+    input: RegisterReconDiffInput,
+  ): Promise<{ readonly row: { readonly id: string }; readonly inserted: boolean }>;
 }
 
 export interface PaySettlementDeps {
