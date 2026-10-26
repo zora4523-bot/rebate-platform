@@ -340,8 +340,22 @@ export async function seedHold(
  * of the is_current row, as identity writes it) to `at`: ⑩'s anchor (BR-WDR-02 细则).
  */
 export async function bindCurrentAt(f: Fixture, at: Date): Promise<void> {
-  await sql`UPDATE app.payout_accounts SET created_at = ${at}, updated_at = ${at}
-    WHERE app_id = ${f.actor.appId} AND user_id = ${f.actor.userId} AND is_current`.execute(f.h.db);
+  // couli_app may not update created_at: the current row is retired and re-inserted (same account,
+  // new id) with the binding time `at`, in one transaction.
+  await f.h.db.transaction().execute(async (trx) => {
+    const current = await sql<{ id: string }>`UPDATE app.payout_accounts SET is_current = false
+      WHERE app_id = ${f.actor.appId} AND user_id = ${f.actor.userId} AND is_current
+      RETURNING id`.execute(trx);
+    const id = current.rows[0]?.id;
+    if (id === undefined)
+      throw new Error('bindCurrentAt: the fixture member has no current account');
+    await sql`INSERT INTO app.payout_accounts
+      (id, app_id, user_id, payout_method, payee_name, is_current, alipay_hmac, alipay_logon_id_cipher,
+       bank_card_hmac, bank_card_no_cipher, bank_name, card_bin, created_at, updated_at)
+      SELECT ${randomUUID()}, app_id, user_id, payout_method, payee_name, true, alipay_hmac,
+        alipay_logon_id_cipher, bank_card_hmac, bank_card_no_cipher, bank_name, card_bin, ${at}, ${at}
+      FROM app.payout_accounts WHERE id = ${id}`.execute(trx);
+  });
 }
 
 /**
