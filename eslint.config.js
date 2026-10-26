@@ -2,6 +2,7 @@
 // Protected path, class 2 (verify config): changing it needs owner approval (规划/11 §4.4).
 import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
+import { platform } from './packages/contracts-ts/src/enums.gen.ts';
 
 const TS_FILES = ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'];
 const TEST_FILES = ['**/*.test.ts', '**/*.test.tsx', 'test/**/*.ts'];
@@ -62,6 +63,29 @@ const NO_WALL_CLOCK_IN_APP = [
   {
     selector: "CallExpression[callee.object.name='Date'][callee.property.name='now']",
     message: 'No `Date.now(` in app code: use the injected Clock (modules/platform/clock).',
+  },
+];
+
+// D10-254: orders keeps platform differences in domain/platform-rules, so elsewhere in orders a
+// platform code is never compared directly (`===` / `!==` operand or `case` test). Names come
+// from the contract enum; only direct operands and case tests match, so call arguments, log
+// text and object keys stay allowed.
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+const PLATFORM_NAME = `/^(${platform.map(escapeRegExp).join('|')})$/`;
+const PLATFORM_LITERAL_MESSAGE =
+  'No platform-name comparison in orders: put platform differences in domain/platform-rules.';
+const NO_PLATFORM_LITERAL_COMPARE = [
+  {
+    selector: `BinaryExpression[operator=/^[!=]==$/] > Literal.left[value=${PLATFORM_NAME}]`,
+    message: PLATFORM_LITERAL_MESSAGE,
+  },
+  {
+    selector: `BinaryExpression[operator=/^[!=]==$/] > Literal.right[value=${PLATFORM_NAME}]`,
+    message: PLATFORM_LITERAL_MESSAGE,
+  },
+  {
+    selector: `SwitchCase > Literal.test[value=${PLATFORM_NAME}]`,
+    message: PLATFORM_LITERAL_MESSAGE,
   },
 ];
 
@@ -172,6 +196,14 @@ export default tseslint.config(
     files: ['apps/api/**/*.ts'],
     ignores: ['apps/api/src/modules/platform/clock/**', 'apps/api/scripts/**', ...TEST_FILES],
     rules: { 'no-restricted-syntax': ['error', ...NO_WALL_CLOCK_IN_APP] },
+  },
+  {
+    // Replaces the apps/api entry above for these files, so it repeats NO_WALL_CLOCK_IN_APP.
+    files: ['apps/api/src/modules/orders/**/*.ts'],
+    ignores: ['apps/api/src/modules/orders/domain/platform-rules/**', ...TEST_FILES],
+    rules: {
+      'no-restricted-syntax': ['error', ...NO_WALL_CLOCK_IN_APP, ...NO_PLATFORM_LITERAL_COMPARE],
+    },
   },
   {
     // A later `no-restricted-syntax` entry replaces an earlier one, so money/domain tests get
