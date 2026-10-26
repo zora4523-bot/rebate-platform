@@ -131,7 +131,7 @@ const REFUSALS: Readonly<Record<string, string>> = {
   illegal_transition: '状态不允许这样变更',
   evidence_missing: '尚未补填花卷云确认时间与截图路径',
   duplicate: '记录已存在',
-  conflict: '记录已被并发修改，请重试',
+  conflict: '记录冲突：已被并发修改，或同一联盟账号同场景已有启用中的推广位（先停用那条再启用）',
   idempotency_conflict: '重试键已用于另一请求',
   idempotency_in_progress: '同一重试键的请求正在处理',
 };
@@ -246,7 +246,9 @@ function describeFailure(error: unknown): { readonly exitCode: number; readonly 
     const code = (error as { code?: unknown }).code;
     if (typeof code === 'string' && Object.hasOwn(REFUSALS, code)) {
       const detail =
-        code === 'invalid_input' || code === 'illegal_transition' ? `：${error.message}` : '';
+        code === 'invalid_input' || code === 'illegal_transition' || code === 'conflict'
+          ? `：${error.message}`
+          : '';
       return {
         exitCode: UNION_PIDS_EXIT.refused,
         message: `服务拒绝（${code}）：${REFUSALS[code]}${detail}`,

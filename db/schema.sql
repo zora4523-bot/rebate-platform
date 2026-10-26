@@ -8370,6 +8370,13 @@ CREATE INDEX union_pids_account_idx ON app.union_pids USING btree (app_id, platf
 
 
 --
+-- Name: union_pids_active_account_scene_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX union_pids_active_account_scene_key ON app.union_pids USING btree (app_id, platform, union_account_id, pid_scene) WHERE (status = 'active'::text);
+
+
+--
 -- Name: union_pids_scene_idx; Type: INDEX; Schema: app; Owner: -
 --
 
