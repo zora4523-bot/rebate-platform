@@ -234,6 +234,8 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'pay_refunds',
     'pay_anomalies',
     'pay_fulfillments',
+    // B2-15n: reconciled bill days (pay_ prefix).
+    'pay_recon_days',
     // Payout core tables (B2-06a): batches, batch member outcomes, channel attempts, watermarks.
     'payout_batches',
     'payout_batch_items',

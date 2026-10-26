@@ -1,0 +1,93 @@
+{
+  "task": "B2-15n",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "d54fe8744ae9223b5ce9ac13e91ab0861d019780",
+  "red_tests": [
+    "test/spec/payment/recon-resume/alerts.int.test.ts > [AC-B2-15n#3] 同一账单日重跑只对新差错告警：10-21 的日跑登记两张差错单（微信漏单、支付宝金额不符）各告警 pay_recon_mismatch 一次；次日死信重放 10-21 的日跑时又多出一笔漏单 → 只为新差错单登记并告警一次，已有的两张不再告警，其行（含去重键）不变；再跑支付宝 10-21 的补跑不告警、不新增；PAY_FEE 每渠道仍只一张",
+    "test/spec/payment/recon-resume/apps.int.test.ts > [AC-B2-15n#5] 已对账日按 App 各自续跑、只认库里的记录：进程一（2026-10-24 12:00 +08:00）对账 App A 的 10-19～10-21；App B（种子遍历次序在 A 之后）自 10-19 起有支付单、从未对账。全新模块图的进程二（不沿用进程一的任何内存）的种子为 A 只入队 10-22、为 B 只入队其首个账单日 10-19（都立即到期、singletonKey 含各自的 App 与账单日），不把 A 的已对账日用到 B；A 的链续跑 10-22、10-23，两渠道每个账单日只下载一次，PAY_FEE 每渠道每日一张",
+    "test/spec/payment/recon-resume/catch-up.int.test.ts > [AC-B2-15n#4] 停机多日后追赶（2026-10-24 12:00 +08:00 新进程，自 10-19 起无一日对账）：同一 App 同时在途（已到期待领或执行中）的日跑不超过 1 个——每个日跑在本账单日两渠道账单都已下载、PAY_FEE 已记之后才让下一日到期，进程内的 heal 不另添账单日；逐日推进 10-19～10-23、不跳日、不扇出；10-21 支付宝账单不可得且其补跑入队被拒时，链照常推进到 10-22；追上后 10-24 的日跑不早于 10-24 结束",
+    "test/spec/payment/recon-resume/concurrent-alerts.int.test.ts > [AC-B2-15n#7] 同一新差错两路同时登记只告警一次：10-21 的日跑无差错；次日一笔 10-21 支付宝漏单出现后，两个进程同时跑 10-21 日跑的死信重放与支付宝 10-21 的补跑，两路在登记前都读不到该差错单 → 只有一张差错单（去重键与金额同单路登记）、pay_recon_mismatch 两个进程合计只告警一次；PAY_FEE 每渠道仍只一张",
+    "test/spec/payment/recon-resume/failed-day.int.test.ts > [AC-B2-15n#6] 某账单日一渠道对账失败不断链：停机后追赶（2026-10-24 12:00 +08:00 新进程，自 10-20 起无一日对账），10-21 微信账单有一行读不了（每次投递都整单拒绝），该日跑无论怎样结束，在本日支付宝账单已对账后立即让 10-22 到期；链照常逐日推进到 10-23、不跳日，此后两渠道每个账单日的账单都下载一次、PAY_FEE 照记；每个日跑仍在前一日账单都已下载、可读账单的 PAY_FEE 已记之后才到期；追上后 10-24 的日跑不早于 10-24 结束",
+    "test/spec/payment/recon-resume/resume.int.test.ts > [AC-B2-15n#1] 已对账账单日持久记录、新进程续跑：进程一（2026-10-24 12:00 +08:00）对账 App A 的 10-19、10-20 后退出；新进程的种子为 A 只入队账单日 10-21（立即到期、singletonKey 含 A 与 10-21），不再从首日 10-19 起；续跑的链依次对账 10-21～10-23，两渠道每个账单日只下载一次（10-19、10-20 不再下载）、PAY_FEE 每渠道每日一张；无任何已对账记录的 App B 照 B2-15m 从其首个支付单会计日 10-22 起步",
+    "test/spec/payment/recon-resume/resume.int.test.ts > [AC-B2-15n#2] 追上后重启不重跑历史：App A 的 10-19～10-23 已逐日对账完（2026-10-24 12:00 +08:00），新进程的种子为 A 只入队账单日 10-24 的日跑（singletonKey 含 A 与 10-24、不早于 10-24 结束到期），不入队任何已对账日，也不下载任何账单"
+  ],
+  "risk_note": "RV2 by path (payment, ledger, migration). Pay reconciliation resumes from the reconciled bill day (BR-PAY-07; B2-15m money r1 / r2 follow-ups): migration 0098 creates app.pay_recon_days (App, channel, bill day unique; insert-only via reject_update_delete; couli_app SELECT / INSERT); a daily run records only the channels it reconciled successfully and enqueues the next day once all channels were tried (one daily run in flight per App during catch-up); a new process seeds each App from its earliest last-reconciled day + 1 (B2-15m start when none); pay_recon_mismatch alerts only for newly inserted diffs through the new ledger export registerReconDiffOnce ({ row, inserted }); registerReconDiff keeps its return value (frozen AC-B2-04k) and now delegates to the new export, ledger postings untouched. tools/ci/lint-migrations.test.ts lists pay_recon_days among the funds tables (#1677). No contract change.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "d54fe8744ae9223b5ce9ac13e91ab0861d019780",
+      "tree": "dbf44839b0b719994033fc2004a79d29a37b763e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-26T17:37:57Z",
+      "finished_at": "2026-10-26T17:38:13Z",
+      "gate": {
+        "commit": "219333cffd62200272c3b955f29bc32b229983b9",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/payment/recon-resume/alerts.int.test.ts > [AC-B2-15n#3] 同一账单日重跑只对新差错告警：10-21 的日跑登记两张差错单（微信漏单、支付宝金额不符）各告警 pay_recon_mismatch 一次；次日死信重放 10-21 的日跑时又多出一笔漏单 → 只为新差错单登记并告警一次，已有的两张不再告警，其行（含去重键）不变；再跑支付宝 10-21 的补跑不告警、不新增；PAY_FEE 每渠道仍只一张",
+        "test/spec/payment/recon-resume/apps.int.test.ts > [AC-B2-15n#5] 已对账日按 App 各自续跑、只认库里的记录：进程一（2026-10-24 12:00 +08:00）对账 App A 的 10-19～10-21；App B（种子遍历次序在 A 之后）自 10-19 起有支付单、从未对账。全新模块图的进程二（不沿用进程一的任何内存）的种子为 A 只入队 10-22、为 B 只入队其首个账单日 10-19（都立即到期、singletonKey 含各自的 App 与账单日），不把 A 的已对账日用到 B；A 的链续跑 10-22、10-23，两渠道每个账单日只下载一次，PAY_FEE 每渠道每日一张",
+        "test/spec/payment/recon-resume/catch-up.int.test.ts > [AC-B2-15n#4] 停机多日后追赶（2026-10-24 12:00 +08:00 新进程，自 10-19 起无一日对账）：同一 App 同时在途（已到期待领或执行中）的日跑不超过 1 个——每个日跑在本账单日两渠道账单都已下载、PAY_FEE 已记之后才让下一日到期，进程内的 heal 不另添账单日；逐日推进 10-19～10-23、不跳日、不扇出；10-21 支付宝账单不可得且其补跑入队被拒时，链照常推进到 10-22；追上后 10-24 的日跑不早于 10-24 结束",
+        "test/spec/payment/recon-resume/concurrent-alerts.int.test.ts > [AC-B2-15n#7] 同一新差错两路同时登记只告警一次：10-21 的日跑无差错；次日一笔 10-21 支付宝漏单出现后，两个进程同时跑 10-21 日跑的死信重放与支付宝 10-21 的补跑，两路在登记前都读不到该差错单 → 只有一张差错单（去重键与金额同单路登记）、pay_recon_mismatch 两个进程合计只告警一次；PAY_FEE 每渠道仍只一张",
+        "test/spec/payment/recon-resume/failed-day.int.test.ts > [AC-B2-15n#6] 某账单日一渠道对账失败不断链：停机后追赶（2026-10-24 12:00 +08:00 新进程，自 10-20 起无一日对账），10-21 微信账单有一行读不了（每次投递都整单拒绝），该日跑无论怎样结束，在本日支付宝账单已对账后立即让 10-22 到期；链照常逐日推进到 10-23、不跳日，此后两渠道每个账单日的账单都下载一次、PAY_FEE 照记；每个日跑仍在前一日账单都已下载、可读账单的 PAY_FEE 已记之后才到期；追上后 10-24 的日跑不早于 10-24 结束",
+        "test/spec/payment/recon-resume/resume.int.test.ts > [AC-B2-15n#1] 已对账账单日持久记录、新进程续跑：进程一（2026-10-24 12:00 +08:00）对账 App A 的 10-19、10-20 后退出；新进程的种子为 A 只入队账单日 10-21（立即到期、singletonKey 含 A 与 10-21），不再从首日 10-19 起；续跑的链依次对账 10-21～10-23，两渠道每个账单日只下载一次（10-19、10-20 不再下载）、PAY_FEE 每渠道每日一张；无任何已对账记录的 App B 照 B2-15m 从其首个支付单会计日 10-22 起步",
+        "test/spec/payment/recon-resume/resume.int.test.ts > [AC-B2-15n#2] 追上后重启不重跑历史：App A 的 10-19～10-23 已逐日对账完（2026-10-24 12:00 +08:00），新进程的种子为 A 只入队账单日 10-24 的日跑（singletonKey 含 A 与 10-24、不早于 10-24 结束到期），不入队任何已对账日，也不下载任何账单"
+      ],
+      "expected": [
+        "test/spec/payment/recon-resume/alerts.int.test.ts",
+        "test/spec/payment/recon-resume/apps.int.test.ts",
+        "test/spec/payment/recon-resume/catch-up.int.test.ts",
+        "test/spec/payment/recon-resume/concurrent-alerts.int.test.ts",
+        "test/spec/payment/recon-resume/failed-day.int.test.ts",
+        "test/spec/payment/recon-resume/resume.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "4bef53d8f6e1ab1e4c3d64575512b0371e9e5e03b97fff2287caa7cd8f190024"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable; independent Claude via tools/agent/claude-run.sh per approvals #36. Round 1 pass with S2x2 (a malformed bill day retried while its next day is already due; a mismatch alert lost when the process dies between the diff commit and the log line), recorded as follow-ups. Two earlier calls were rejected by output validation (checklist lines outside the diff) and are not counted. After the review only the migration renumber 0096 -> 0098, a comment's migration number and the rebase."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude contexts in 2 runs (run 2 closes review r1's S1x2 / S2x2: a failed channel day still advances the chain, per-App resume, concurrent replay / catch-up alert once, fresh module graph per worker); 7 tests in 6 files red for the right reason (red/2). Reviewed by separate fresh independent Claude calls: r1 fail, r2 pass (S2x2)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "add5e6ff0f5981a9a89a6acf125714e0f59362d8",
+    "test/spec": "83f0c87c6b20dcddcacbc1f49d74caeed1f83390",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "add5e6ff0f5981a9a89a6acf125714e0f59362d8"
+  }
+}

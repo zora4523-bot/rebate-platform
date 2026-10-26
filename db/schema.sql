@@ -3850,6 +3850,22 @@ CREATE TABLE app.pay_query_attempts (
 
 
 --
+-- Name: pay_recon_days; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.pay_recon_days (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    pay_channel text NOT NULL,
+    bill_date date NOT NULL,
+    reconciled_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT pay_recon_days_app_id_check CHECK ((app_id <> ''::text)),
+    CONSTRAINT pay_recon_days_pay_channel_check CHECK ((pay_channel = ANY (ARRAY['wechat_pay'::text, 'alipay'::text])))
+);
+
+
+--
 -- Name: pay_refunds; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -6614,6 +6630,22 @@ ALTER TABLE ONLY app.pay_query_attempts
 
 
 --
+-- Name: pay_recon_days pay_recon_days_day_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.pay_recon_days
+    ADD CONSTRAINT pay_recon_days_day_key UNIQUE (app_id, pay_channel, bill_date);
+
+
+--
+-- Name: pay_recon_days pay_recon_days_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.pay_recon_days
+    ADD CONSTRAINT pay_recon_days_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: pay_refunds pay_refunds_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -9031,6 +9063,13 @@ CREATE TRIGGER pay_orders_immutable_columns BEFORE UPDATE ON app.pay_orders FOR 
 --
 
 CREATE TRIGGER pay_query_attempts_append_only BEFORE DELETE OR UPDATE ON app.pay_query_attempts FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: pay_recon_days pay_recon_days_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER pay_recon_days_append_only BEFORE DELETE OR UPDATE ON app.pay_recon_days FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
 
 
 --
@@ -13462,6 +13501,14 @@ GRANT UPDATE(updated_at) ON TABLE app.pay_orders TO couli_app;
 
 GRANT SELECT,INSERT ON TABLE app.pay_query_attempts TO couli_app;
 GRANT SELECT ON TABLE app.pay_query_attempts TO couli_readonly;
+
+
+--
+-- Name: TABLE pay_recon_days; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.pay_recon_days TO couli_app;
+GRANT SELECT ON TABLE app.pay_recon_days TO couli_readonly;
 
 
 --

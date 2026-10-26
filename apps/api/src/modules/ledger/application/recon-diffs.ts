@@ -115,6 +115,16 @@ async function findExisting(
   return undefined;
 }
 
+/** B2-15n: what one registration did — the stored row, and whether this call inserted it. */
+export interface ReconDiffRegistration {
+  readonly row: ReconDiff;
+  /**
+   * true only for the call whose INSERT created the row; false when a row under one of the unique
+   * keys already existed or a concurrent registration committed it first.
+   */
+  readonly inserted: boolean;
+}
+
 /**
  * Insert open, or return the existing row under any recon_diffs unique business key.
  *
@@ -130,6 +140,20 @@ export async function registerReconDiff(
   input: RegisterReconDiffInput,
   dependencies: { readonly clock: Clock },
 ): Promise<ReconDiff> {
+  return (await registerReconDiffOnce(trx, input, dependencies)).row;
+}
+
+/**
+ * B2-15n: registerReconDiff (same checks, same single INSERT … ON CONFLICT DO NOTHING, same row
+ * back) that also tells whether this call inserted the row, so a caller can alert a diff once:
+ * only the registration whose INSERT returned the row sees inserted = true; any other — a replay,
+ * or a concurrent registration that waited for the first one's commit — sees false.
+ */
+export async function registerReconDiffOnce(
+  trx: Transaction<DB>,
+  input: RegisterReconDiffInput,
+  dependencies: { readonly clock: Clock },
+): Promise<ReconDiffRegistration> {
   checkInput(input);
   const now = dependencies.clock.now();
   const inserted = await insertReconDiffIfAbsent(trx, {
@@ -151,12 +175,12 @@ export async function registerReconDiff(
     created_at: now,
     updated_at: now,
   });
-  if (inserted !== undefined) return inserted;
+  if (inserted !== undefined) return { row: inserted, inserted: true };
   const existing = await findExisting(trx, input);
   if (existing === undefined) {
     throw new Error('ledger: recon diff conflicted but no existing row was found');
   }
-  return existing;
+  return { row: existing, inserted: false };
 }
 
 /** Uses the supplied connection/snapshot and never locks or writes. */
