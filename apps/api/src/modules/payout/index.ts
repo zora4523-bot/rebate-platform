@@ -171,3 +171,30 @@ export type {
   TransferReviewInput,
   TransferReviewVerdict,
 } from './application/payout-review.ts';
+export { createQueryJob } from './jobs/query-job.ts';
+export type {
+  QueryJobOptions,
+  QueryJobLogger,
+  QuerySleep,
+  QueryAlertMessage,
+} from './jobs/query-job.ts';
+export {
+  manualDue,
+  nextQueryPoint,
+  queryPointOffsetSeconds,
+} from './application/query-schedule.ts';
+export type { QuerySchedule } from './application/query-schedule.ts';
+export { createQueryRecovery } from './application/query-recovery.ts';
+export type {
+  QueryRecovery,
+  QueryRecoveryLogger,
+  QueryRecoveryOptions,
+  QueryRecoveryResult,
+} from './application/query-recovery.ts';
+export { createPayoutLanding, paidAtOf } from './application/payout-landing.ts';
+export type {
+  LandingResult,
+  LandingRow,
+  PayoutLanding,
+  PayoutLandingOptions,
+} from './application/payout-landing.ts';
