@@ -1,0 +1,25 @@
+id: B2-15n
+repo: rebate-platform
+title: 收款对账链按已对账日续跑：payment 自有「已对账账单日」记录（每 App 每渠道，日跑结束写入），种子从其 + 1 起步，不再每次重启从首日重跑全史；ledger registerReconDiff 返回是否新插入，pay_recon_mismatch 只在新差错时告警；追赶期限并发（不占满 pay 队列）
+type: impl
+# 2026-10-26 be 入账：B2-15m（#1668）money r1 / r2 的 S2 留项——payment 读不到持久已对账日（PAY_FEE 在 ledger_vouchers、零手续费无差错日无痕迹），每个新进程从首个收款账单日重跑全史并重复告警；追赶期日跑先入队下一天，链扇出占满 pay 队列 4 个并发槽。**收款上线门槛**（同 B2-15l / B2-15m）。
+# 迁移由实现方写（新表 payment 自有，授权写在建表迁移里，app schema），落地按迁移槽改号；ledger 只加返回字段（inserted），不改差错单口径与去重键。不改对账判定与金额。
+refs: [BR-PAY-07]
+refs_hash:
+  BR-PAY-07: a98350f4412a
+deps: [B2-15m]
+paths:
+  - 'apps/api/src/modules/payment/**'
+  - 'apps/api/src/modules/ledger/**'
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/payment/recon-resume/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payment/recon-resume/**'
+status: todo
+pr: null
