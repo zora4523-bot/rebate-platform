@@ -72,5 +72,12 @@ INSERT INTO app.config_items (app_id, key, value, updated_by) VALUES
   ('couli', 'payout.query_schedule', '{"points_min": [1, 5, 30, 120], "interval_min": 120, "manual_after_min": 1440}'::jsonb, 'seed'), -- BR-WDR-28
   ('couli', 'payout.definite_fail_codes', '[]'::jsonb, 'seed'), -- BR-WDR-28
   ('couli', 'payout.payer_side_codes', '[]'::jsonb, 'seed'), -- BR-WDR-28
-  ('couli', 'payout.query_status_map', '{"SUCCESS": "success"}'::jsonb, 'seed') -- BR-WDR-28
+  ('couli', 'payout.query_status_map', '{"SUCCESS": "success"}'::jsonb, 'seed'), -- BR-WDR-28
+  -- 第 9 批：BR-WDR-29 审核风险标签阈值默认值（B2-11a / B2-11z，D10-368）
+  ('couli', 'risk.withdraw.invalid_ratio_bp', '3000'::jsonb, 'seed'), -- BR-WDR-29
+  ('couli', 'risk.withdraw.invalid_min_count', '3'::jsonb, 'seed'), -- BR-WDR-29
+  ('couli', 'risk.withdraw.high_commission_rate_bp', '5000'::jsonb, 'seed'), -- BR-WDR-29
+  ('couli', 'risk.withdraw.high_commission_ratio_bp', '5000'::jsonb, 'seed'), -- BR-WDR-29
+  ('couli', 'risk.withdraw.min_orders', '5'::jsonb, 'seed'), -- BR-WDR-29
+  ('couli', 'risk.withdraw.withdraw_received_ratio_bp', '10000'::jsonb, 'seed') -- BR-WDR-29
 ON CONFLICT (app_id, key) DO NOTHING;

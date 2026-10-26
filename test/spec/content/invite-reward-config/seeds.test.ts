@@ -12,7 +12,8 @@ import { CONFIGS, ENABLED, PAUSED, PREFIX } from './oracle.ts';
 const ELIGIBILITY = { key: `${PREFIX}eligibility_days`, value: 30 };
 // B2-06bz (D10-244 ②、D10-296): the eight payout.* seed rows follow eligibility_days, in
 // registration order, and nothing else (values are not this test's concern; each must fit its spec,
-// checked below with the other extra rows).
+// checked below with the other extra rows). B2-11z (D10-368): the six risk.withdraw.* rows follow
+// payout.* in registration order, under the same checks.
 const PAYOUT_KEYS = [
   'payout.single_cap_fen',
   'payout.daily_cap_fen',
@@ -22,6 +23,14 @@ const PAYOUT_KEYS = [
   'payout.definite_fail_codes',
   'payout.payer_side_codes',
   'payout.query_status_map',
+];
+const RISK_WITHDRAW_KEYS = [
+  'risk.withdraw.invalid_ratio_bp',
+  'risk.withdraw.invalid_min_count',
+  'risk.withdraw.high_commission_rate_bp',
+  'risk.withdraw.high_commission_ratio_bp',
+  'risk.withdraw.min_orders',
+  'risk.withdraw.withdraw_received_ratio_bp',
 ];
 
 it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；重跑不覆盖', () => {
@@ -43,7 +52,11 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
   ]);
   const extra = rows.slice(i + 6);
   expect(extra[0]).toStrictEqual(ELIGIBILITY);
-  expect(extra.map((row) => row.key)).toStrictEqual([ELIGIBILITY.key, ...PAYOUT_KEYS]);
+  expect(extra.map((row) => row.key)).toStrictEqual([
+    ELIGIBILITY.key,
+    ...PAYOUT_KEYS,
+    ...RISK_WITHDRAW_KEYS,
+  ]);
   for (const row of CONFIGS) {
     const spec = configItemSpecOf(row.key);
     expect(spec, row.key).not.toBeNull();

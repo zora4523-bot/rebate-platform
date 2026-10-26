@@ -27,7 +27,8 @@ it('[AC-F1-02zx#1] 资格天数是唯一的可改业务配置，整数范围 1�
 });
 
 // B2-06bz (D10-244 ②、D10-296): the six keys stay contiguous, now followed directly by the eight
-// payout.* keys in this order (and nothing else), instead of ending the registry.
+// payout.* keys in this order (and nothing else), instead of ending the registry. B2-11z
+// (D10-368): the six risk.withdraw.* keys follow payout.* in this order, ending the tail.
 const PAYOUT_KEYS = [
   'payout.single_cap_fen',
   'payout.daily_cap_fen',
@@ -38,16 +39,25 @@ const PAYOUT_KEYS = [
   'payout.payer_side_codes',
   'payout.query_status_map',
 ];
+const RISK_WITHDRAW_KEYS = [
+  'risk.withdraw.invalid_ratio_bp',
+  'risk.withdraw.invalid_min_count',
+  'risk.withdraw.high_commission_rate_bp',
+  'risk.withdraw.high_commission_ratio_bp',
+  'risk.withdraw.min_orders',
+  'risk.withdraw.withdraw_received_ratio_bp',
+];
 
-it('[AC-F1-02zx#2] 六项邀请奖励配置连续位于 growth 组，资格天数紧接 IP 窗口，其后紧接 payout.* 八项', () => {
+it('[AC-F1-02zx#2] 六项邀请奖励配置连续位于 growth 组，资格天数紧接 IP 窗口，其后紧接 payout.* 八项与 risk.withdraw.* 六项', () => {
   const registry = configRegistry();
   expect(
     registry
       .filter((entry) => entry.key.startsWith('growth.invite_reward.'))
       .map((entry) => entry.key),
   ).toStrictEqual(DEFAULTS.map((row) => row.key));
-  const end = registry.length - PAYOUT_KEYS.length;
-  expect(registry.slice(end).map((entry) => entry.key)).toStrictEqual(PAYOUT_KEYS);
+  const tail = [...PAYOUT_KEYS, ...RISK_WITHDRAW_KEYS];
+  const end = registry.length - tail.length;
+  expect(registry.slice(end).map((entry) => entry.key)).toStrictEqual(tail);
   expect(registry.slice(end - 6, end).map((entry) => entry.key)).toStrictEqual(
     DEFAULTS.map((row) => row.key),
   );

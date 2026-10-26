@@ -26,7 +26,8 @@ it('[AC-F1-02zj#2] 16 项按裁定顺序追加；原 29 项及其无 range 行�
   // F1-02zv / F1-02zw: the CT-25 invite reward group inviteNow() (F1-02zn's five keys followed by
   // F1-02zx's growth.invite_reward.eligibility_days) follows SETTLE; nothing else may follow.
   // F1-02zt：过渡已收紧, the group must be present. B2-06bz (D10-244 ②、D10-296): the eight
-  // payout.* keys follow the invite group, in this order; nothing else may follow.
+  // payout.* keys follow the invite group, in this order; B2-11z (D10-368): then the six
+  // risk.withdraw.* keys, in this order; nothing else may follow.
   presentOf(INVITE_CFG, 'growth.invite_reward.*');
   const invite = inviteNow();
   expect(registry.map((entry) => entry.key)).toStrictEqual([
@@ -41,6 +42,12 @@ it('[AC-F1-02zj#2] 16 项按裁定顺序追加；原 29 项及其无 range 行�
     'payout.definite_fail_codes',
     'payout.payer_side_codes',
     'payout.query_status_map',
+    'risk.withdraw.invalid_ratio_bp',
+    'risk.withdraw.invalid_min_count',
+    'risk.withdraw.high_commission_rate_bp',
+    'risk.withdraw.high_commission_ratio_bp',
+    'risk.withdraw.min_orders',
+    'risk.withdraw.withdraw_received_ratio_bp',
   ]);
   expect(registry.slice(0, 29)).toStrictEqual(
     EXPECTED.map((entry) => ({ ...entry, options: null })),

@@ -155,6 +155,14 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   spec('payout.definite_fail_codes', 'object', 'config.business'),
   spec('payout.payer_side_codes', 'object', 'config.business'),
   spec('payout.query_status_map', 'object', 'config.business'),
+  // B2-11z (D10-368): BR-WDR-29 audit risk-flag thresholds read by payout's snapshot (B2-11a),
+  // after payout.*: ratios in bp, counts in orders; only non-negative integers, no business cap.
+  riskInteger('risk.withdraw.invalid_ratio_bp', 0),
+  riskInteger('risk.withdraw.invalid_min_count', 0),
+  riskInteger('risk.withdraw.high_commission_rate_bp', 0),
+  riskInteger('risk.withdraw.high_commission_ratio_bp', 0),
+  riskInteger('risk.withdraw.min_orders', 0),
+  riskInteger('risk.withdraw.withdraw_received_ratio_bp', 0),
 ]);
 
 const VISIBLE: readonly ConfigItemSpec[] = Object.freeze(
