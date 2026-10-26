@@ -234,6 +234,11 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'pay_refunds',
     'pay_anomalies',
     'pay_fulfillments',
+    // Payout core tables (B2-06a): batches, batch member outcomes, channel attempts, watermarks.
+    'payout_batches',
+    'payout_batch_items',
+    'payout_attempts',
+    'payout_watermarks',
     // B1-09e: order part two tables under the order prefix (attribution side).
     'order_sync_requests',
     'order_assignments',
