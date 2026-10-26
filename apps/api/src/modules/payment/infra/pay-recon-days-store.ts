@@ -1,5 +1,5 @@
 // B2-15n: payment's record of reconciled bill days (app.pay_recon_days, db/migrations/
-// 0096_pay-recon-days.sql; insert-only, payment is its only writer). One row per (app, channel,
+// 0098_pay-recon-days.sql; insert-only, payment is its only writer). One row per (app, channel,
 // bill day) whose bill a bill.recon run reconciled to the end (application/pay-recon.ts); the seed
 // of the daily chain reads them back (application/pay-recon-schedule.ts). Plain SQL that names the
 // schema; bill days travel as 'YYYY-MM-DD' texts (to_char in SQL, never a JS Date of a date
