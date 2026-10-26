@@ -187,8 +187,19 @@ export const PAYOUT: readonly Expected[] = [
   row('payout.payer_side_codes', 'object', 'config.business'),
   row('payout.query_status_map', 'object', 'config.business'),
 ];
+// B2-11z (D10-368): the BR-WDR-29 audit risk-flag thresholds of B2-11a, registered right after
+// PAYOUT in this order. All integers (number), config.risk, editable, options null. Not part of
+// expectedNow() either.
+export const RISK_WITHDRAW: readonly Expected[] = [
+  row('risk.withdraw.invalid_ratio_bp', 'number', 'config.risk'),
+  row('risk.withdraw.invalid_min_count', 'number', 'config.risk'),
+  row('risk.withdraw.high_commission_rate_bp', 'number', 'config.risk'),
+  row('risk.withdraw.high_commission_ratio_bp', 'number', 'config.risk'),
+  row('risk.withdraw.min_orders', 'number', 'config.risk'),
+  row('risk.withdraw.withdraw_received_ratio_bp', 'number', 'config.risk'),
+];
 export const expectedOf = (key: string): Expected => {
-  const found = [...expectedNow(), ...PAYOUT].find((entry) => entry.key === key);
+  const found = [...expectedNow(), ...PAYOUT, ...RISK_WITHDRAW].find((entry) => entry.key === key);
   expect(found, key).toBeDefined();
   return found!;
 };

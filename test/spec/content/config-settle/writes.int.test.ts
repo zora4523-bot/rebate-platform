@@ -200,7 +200,8 @@ it('[AC-F1-02zj#13] GET 配置列表包含全部 16 项，enum 选项按契约�
   // F1-02zz: F1-02zn / F1-02zx append the BR-INV-24 growth.invite_reward.* group after SETTLE.
   // The 16 SETTLE keys stay contiguous and in order, right after the 29 ruling 14 keys, and are
   // followed by exactly inviteNow()'s six keys (F1-02zt：过渡已收紧), and B2-06bz (D10-244 ②、
-  // D10-296) then the eight payout.* keys in registration order.
+  // D10-296) then the eight payout.* keys in registration order, and B2-11z (D10-368) then the six
+  // risk.withdraw.* keys in registration order.
   const keys = items.map((item) => item.key);
   const tail = [
     ...inviteNow().map((entry) => entry.key),
@@ -212,6 +213,12 @@ it('[AC-F1-02zj#13] GET 配置列表包含全部 16 项，enum 选项按契约�
     'payout.definite_fail_codes',
     'payout.payer_side_codes',
     'payout.query_status_map',
+    'risk.withdraw.invalid_ratio_bp',
+    'risk.withdraw.invalid_min_count',
+    'risk.withdraw.high_commission_rate_bp',
+    'risk.withdraw.high_commission_ratio_bp',
+    'risk.withdraw.min_orders',
+    'risk.withdraw.withdraw_received_ratio_bp',
   ];
   const settleEnd = keys.length - tail.length;
   const settleStart = settleEnd - 16;

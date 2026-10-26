@@ -9,6 +9,7 @@ import {
   EXPECTED,
   KEYS,
   PAYOUT,
+  RISK_WITHDRAW,
   ROW_AT,
   UNREGISTERED,
   call,
@@ -36,10 +37,12 @@ it('[AC-F1-10e#10] 列表按注册表顺序列出每个配置项，未写过的 
   const items = await listAll(f);
   expect(items.map((item) => item.key)).toStrictEqual(configRegistry().map((spec) => spec.key));
   expect(items.map(normalized)).toStrictEqual(configRegistry().map((spec) => unwritten(spec.key)));
-  // F1-02zt：过渡已收紧, EXPECTED + settle.* + invite; B2-06bz: + the eight payout.* keys.
-  expect(items).toHaveLength(expectedNow().length + PAYOUT.length);
-  expect(items.slice(-PAYOUT.length).map((item) => item.key)).toStrictEqual(
-    PAYOUT.map((entry) => entry.key),
+  // F1-02zt：过渡已收紧, EXPECTED + settle.* + invite; B2-06bz: + the eight payout.* keys;
+  // B2-11z: + the six risk.withdraw.* keys.
+  const tail = [...PAYOUT, ...RISK_WITHDRAW];
+  expect(items).toHaveLength(expectedNow().length + tail.length);
+  expect(items.slice(-tail.length).map((item) => item.key)).toStrictEqual(
+    tail.map((entry) => entry.key),
   );
 });
 

@@ -29,7 +29,8 @@ it.each(CONFIGS)('[AC-F1-02zn#1] $key：类型、权限、可编辑性与整数�
 // F1-02zw: F1-02zx appends growth.invite_reward.eligibility_days right after the five keys as the
 // sixth key; the five keys still follow settle.statement.grace_days directly. F1-02zt：过渡已收紧,
 // the sixth key must be present. B2-06bz (D10-244 ②、D10-296): the eight payout.* keys follow
-// eligibility_days in this order, and nothing else.
+// eligibility_days in this order, then B2-11z (D10-368) the six risk.withdraw.* keys in this
+// order, and nothing else.
 it('[AC-F1-02zn#2] 五项按指定顺序追加在 SETTLE 之后', () => {
   const keys = configRegistry().map((entry) => entry.key);
   const i = keys.indexOf('settle.statement.grace_days');
@@ -48,6 +49,12 @@ it('[AC-F1-02zn#2] 五项按指定顺序追加在 SETTLE 之后', () => {
     'payout.definite_fail_codes',
     'payout.payer_side_codes',
     'payout.query_status_map',
+    'risk.withdraw.invalid_ratio_bp',
+    'risk.withdraw.invalid_min_count',
+    'risk.withdraw.high_commission_rate_bp',
+    'risk.withdraw.high_commission_ratio_bp',
+    'risk.withdraw.min_orders',
+    'risk.withdraw.withdraw_received_ratio_bp',
   ]);
 });
 
