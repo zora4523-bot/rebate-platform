@@ -1,0 +1,83 @@
+{
+  "task": "B2-04rb",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "23009a851ebabf72444536c12505d01eac53763c",
+  "red_tests": [
+    "test/spec/db/settlement/settle-jobs-supplement/settle-jobs-supplement.int.test.ts > [AC-B2-04rb#1] 约束名不变：settle_jobs_job_check 仍只约束 job、已验证，取值恰为原四值加 supplement；其余约束原样保留",
+    "test/spec/db/settlement/settle-jobs-supplement/settle-jobs-supplement.int.test.ts > [AC-B2-04rb#2] supplement 可由 couli_app 插入（三种运行状态），与同键 bill 并存，重跑同一名义时刻仍撞唯一键",
+    "test/spec/db/settlement/settle-jobs-supplement/settle-jobs-supplement.int.test.ts > [AC-B2-04rb#3] 只放宽：原四个 job 值仍可插入，并与 supplement 在同一键上共存",
+    "test/spec/db/settlement/settle-jobs-supplement/settle-jobs-supplement.int.test.ts > [AC-B2-04rb#4] 其他 job 值（旧 credit / clawback / 批次执行、大小写与空白变体、近似名）被 settle_jobs_job_check 拒绝",
+    "test/spec/db/settlement/settle-jobs-supplement/settle-jobs-supplement.int.test.ts > [AC-B2-04rb#5] 授权不变：couli_app 仍不能改 job（含改成 supplement），状态列照常可更新"
+  ],
+  "risk_note": "RV2 (db/**, funds table settle_jobs). D10-280 ① / BR-FUND-04 ⑧: 0096 drops and re-adds settle_jobs_job_check under the same name NOT VALID with the 0066 values (bill, settle_adjust, recon_union, recon_monthly) plus 'supplement' — only widens, so every existing row passes; 0097 validates it (two-stage, precedent 0057 / 0058, 0071 / 0072, 0077 / 0078); lock_timeout 5s and statement_timeout set in both; grants and the other settle_jobs constraints unchanged; schema.sql changes by that one CHECK line, db.gen.ts unchanged. The rebuild is registered by name and sha256 (c4451a18…) in APPROVED_GUARD_CHANGES by guard-change B2-04rc (#1671), merged first. Handover: written by the funds lane (rule tests, migration, money review r1); funds paused until 10-30, so W1 took it over read-only (orchestrator 22:1x), rebased it on main, renumbered 0081 / 0082 → 0096 / 0097 under the migration slot (file bytes unchanged, so the reviewed content and the pinned hash stay the same) and regenerated the snapshot on the test machine. Codex was unavailable until 10-30, so the rule tests and the money review ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "23009a851ebabf72444536c12505d01eac53763c",
+      "tree": "9bf14a137e718ba8f2df4953e27513a1c2a84a3e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-26T15:06:53Z",
+      "finished_at": "2026-10-26T15:07:00Z",
+      "gate": {
+        "commit": "e9d6488521a3c72cc44f34edbd9a3895487c5a23",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/settlement/settle-jobs-supplement/settle-jobs-supplement.int.test.ts > [AC-B2-04rb#1] 约束名不变：settle_jobs_job_check 仍只约束 job、已验证，取值恰为原四值加 supplement；其余约束原样保留",
+        "test/spec/db/settlement/settle-jobs-supplement/settle-jobs-supplement.int.test.ts > [AC-B2-04rb#2] supplement 可由 couli_app 插入（三种运行状态），与同键 bill 并存，重跑同一名义时刻仍撞唯一键",
+        "test/spec/db/settlement/settle-jobs-supplement/settle-jobs-supplement.int.test.ts > [AC-B2-04rb#3] 只放宽：原四个 job 值仍可插入，并与 supplement 在同一键上共存",
+        "test/spec/db/settlement/settle-jobs-supplement/settle-jobs-supplement.int.test.ts > [AC-B2-04rb#4] 其他 job 值（旧 credit / clawback / 批次执行、大小写与空白变体、近似名）被 settle_jobs_job_check 拒绝",
+        "test/spec/db/settlement/settle-jobs-supplement/settle-jobs-supplement.int.test.ts > [AC-B2-04rb#5] 授权不变：couli_app 仍不能改 job（含改成 supplement），状态列照常可更新"
+      ],
+      "expected": [
+        "test/spec/db/settlement/settle-jobs-supplement/settle-jobs-supplement.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "ae99c1e9efd81e09b4168124dc9a197afa369c7aa4ff20e286dd9023c7a1b587"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 (funds lane, 10-24) pass with no findings; the renumbering to 0096 / 0097 left the migration bytes unchanged (same sha256), so it was not re-run."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude (funds lane, 1 run, 5 tests; they check behaviour and the catalog, not the migration number). Round 1 pass with no findings. Red on the rebased spec commit: 5 of 5."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "c535cff2c337b72e7c4b9e79552327c04c1902c5",
+    "test/spec": "73d9b6bd4db542fbe0b0c8ad0103c32f5754cb82",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "c535cff2c337b72e7c4b9e79552327c04c1902c5"
+  }
+}

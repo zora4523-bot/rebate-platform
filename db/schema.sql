@@ -4791,7 +4791,7 @@ CREATE TABLE app.settle_jobs (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT settle_jobs_counts_check CHECK (((processed_count >= 0) AND (skipped_count >= 0))),
     CONSTRAINT settle_jobs_finished_check CHECK (((status = 'running'::text) = (finished_at IS NULL))),
-    CONSTRAINT settle_jobs_job_check CHECK ((job = ANY (ARRAY['bill'::text, 'settle_adjust'::text, 'recon_union'::text, 'recon_monthly'::text]))),
+    CONSTRAINT settle_jobs_job_check CHECK ((job = ANY (ARRAY['bill'::text, 'settle_adjust'::text, 'recon_union'::text, 'recon_monthly'::text, 'supplement'::text]))),
     CONSTRAINT settle_jobs_platform_check CHECK ((platform <> ''::text)),
     CONSTRAINT settle_jobs_status_check CHECK ((status = ANY (ARRAY['running'::text, 'done'::text, 'failed'::text])))
 );
