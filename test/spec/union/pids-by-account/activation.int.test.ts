@@ -21,7 +21,7 @@ for (const platform of ['taobao', 'pdd', 'jd'] as const) {
     h.clock.advanceMs(1_000);
     const c = await seedAccount(h, { platform });
     h.clock.advanceMs(1_000);
-    await seedPid(h, { platform, union_account_id: a.id, status: 'active', pid_scene: 'share' });
+    await seedPid(h, { platform, union_account_id: a.id, status: 'active', pid_scene: 'self_buy' });
     h.clock.advanceMs(1_000);
     await seedPid(h, { platform, union_account_id: b.id, status: 'active', pid_scene: 'self_buy' });
     h.clock.advanceMs(1_000);
@@ -56,6 +56,13 @@ for (const platform of ['taobao', 'pdd', 'jd'] as const) {
       action: 'union.pid.activate',
       target: `union_pids:${first.id}`,
     });
+    // B1-22i 约束下同账号同场景至多一条 active：先把 first 直接在库里退役（夹具步骤，不经服务、不新增审计），再测 target 的跨账号告警；断言不变。
+    const activeFirst = await storedPid(h, first.id);
+    await h.db
+      .updateTable('union_pids')
+      .set({ status: 'retired', row_version: activeFirst.row_version + 1 })
+      .where('id', '=', first.id)
+      .execute();
 
     const conflicts = [];
     for (const account of [b, c]) {
