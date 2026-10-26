@@ -83,10 +83,23 @@ function scriptedDb(seen: CompiledQuery[]): Kysely<DB> {
       };
     }
     if (sql.startsWith('select "id" from "app"."realname"')) return { rows: [] };
-    if (sql.startsWith('select "id", "row_version" from "app"."payout_accounts"')) {
-      return { rows: [{ id: 'pa-1', row_version: 3 }] };
+    if (sql.startsWith('select "id", "payout_method", "alipay_hmac"')) {
+      return {
+        rows: [
+          {
+            id: 'pa-1',
+            payout_method: 'alipay',
+            alipay_hmac: 'b'.repeat(64),
+            bank_card_hmac: null,
+            row_version: 3,
+          },
+        ],
+      };
     }
     if (sql.startsWith('update')) return { rows: [], numAffectedRows: 1n };
+    if (sql.startsWith('INSERT INTO app.payout_account_changes')) {
+      return { rows: [], numAffectedRows: 1n };
+    }
     throw new Error(`unexpected statement ${sql}`);
   };
   const connection: DatabaseConnection = {
@@ -219,7 +232,7 @@ it('[AC-B1-27a] 后台实名更正（含二要素不一致）不占用户自助�
   );
 });
 
-it('[AC-B1-27a] 更正使收款账号失效：is_current 置 false（row_version CAS），不写 payout_account_changes，不计月度变更次数', async () => {
+it('[AC-B1-27a] 更正使收款账号失效：is_current 置 false（row_version CAS），每行写一条 realname_correction 豁免变更行，不计月度变更次数', async () => {
   const t = setup();
   t.verify.mockResolvedValue({ outcome: 'match', provider: 'unit' });
   expect((await t.service.correct(t.command)).code).toBe(0);
@@ -227,7 +240,22 @@ it('[AC-B1-27a] 更正使收款账号失效：is_current 置 false（row_version
   expect(retire?.sql).toContain('"is_current" = $1');
   expect(retire?.sql).toContain('"row_version" = $');
   expect(retire?.parameters).toEqual(expect.arrayContaining([false, 4, 'pa-1', true, 3]));
-  expect(t.seen.some((query) => query.sql.includes('payout_account_changes'))).toBe(false);
+  const changes = t.seen.filter((query) => query.sql.includes('payout_account_changes'));
+  expect(changes).toHaveLength(1);
+  // old/new method, old HMAC, new_hmac '' (a literal in the statement), operator, changed_at and
+  // created_at = the Clock instant, the exempt reason.
+  expect(changes[0]!.sql).toContain(`''`);
+  expect(changes[0]!.parameters).toEqual([
+    APP,
+    USER,
+    'alipay',
+    'alipay',
+    'b'.repeat(64),
+    `admin:${ADMIN}`,
+    new Date(NOW),
+    new Date(NOW),
+    'realname_correction',
+  ]);
   expect(t.publish).toHaveBeenCalledTimes(1);
   expect(t.audits).toHaveLength(1);
   expect(t.audits[0]!.after).toMatchObject({ result_code: 0, payout_accounts_invalidated: 1 });
