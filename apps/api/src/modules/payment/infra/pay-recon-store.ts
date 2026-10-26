@@ -2,8 +2,9 @@
 // channel of a refund, pay_anomalies; db/schema.sql). Read only, always scoped by app_id; the
 // reconciliation writes nothing here (anomaly rows go through infra/pay-order-store.ts
 // registerAnomalyRow, vouchers and recon diffs through ledger's port). pay_anomalies' evidence is
-// never read. No logging, no clock: the bill day comes in as the [start, end) texts of
-// @couli/domain chinaDayRange.
+// never read. B2-15m: firstCollections, the apps the daily chain is seeded for (every app, the only
+// read that is not scoped by one app_id). No logging, no clock: the bill day comes in as the
+// [start, end) texts of @couli/domain chinaDayRange.
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
 import type { PayOrderRow } from './pay-order-store.ts';
@@ -133,4 +134,39 @@ export async function succeededRefundsOfDay(
     .orderBy('r.id')
     .execute();
   return rows.map(reconRefund);
+}
+
+/** B2-15m: an app with collection records and the instant of its first one. */
+export interface FirstCollectionRow {
+  readonly app_id: string;
+  readonly first_at: Date;
+}
+
+/**
+ * B2-15m: every app with collection records — a PAID order (paid_at) or an anomaly receipt
+ * (created_at, its registration) — with the earliest of those instants, ordered by app_id.
+ */
+export async function firstCollections(db: Kysely<DB>): Promise<FirstCollectionRow[]> {
+  const paid = await db
+    .selectFrom('pay_orders')
+    .select(['app_id', sql<Date>`min(paid_at)`.as('first_at')])
+    .where('status', '=', 'PAID')
+    .where('paid_at', 'is not', null)
+    .groupBy('app_id')
+    .execute();
+  const anomalies = await db
+    .selectFrom('pay_anomalies')
+    .select(['app_id', sql<Date>`min(created_at)`.as('first_at')])
+    .groupBy('app_id')
+    .execute();
+  const first = new Map<string, Date>();
+  for (const row of [...paid, ...anomalies]) {
+    const known = first.get(row.app_id);
+    if (known === undefined || row.first_at.getTime() < known.getTime()) {
+      first.set(row.app_id, row.first_at);
+    }
+  }
+  const rows = [...first].map(([appId, firstAt]) => ({ app_id: appId, first_at: firstAt }));
+  // app_id is unique in the map: never equal.
+  return rows.sort((a, b) => (a.app_id < b.app_id ? -1 : 1));
 }

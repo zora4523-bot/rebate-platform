@@ -46,8 +46,14 @@
 //   skipped. A bill not available yet gets a catch-up run of that channel and that bill day, an
 //   hour later, until CATCH_UP_LIMIT_MS after the bill day, then an alert (r1 S1: the day is never
 //   left to the queue's short retry budget or to the clock at retry time). A daily run then
-//   enqueues the next daily run (singletonKey bill.recon:<app_id>:<bill date>). Any other failure
+//   enqueues the next daily run (singletonKey bill.recon:<app_id>:<bill date>) for the bill day
+//   after the one it reconciled, never for the day after clock.now() (B2-15m; B2-15j money review
+//   r2 S2): a run delayed by a stopped worker, or replayed from the dead letters on a later day,
+//   enqueues the following day, due at once when its run time has passed, until the chain has
+//   caught up; no bill day is skipped. A catch-up run enqueues no daily run. Any other failure
 //   fails the job after the other channels ran; the retry changes nothing that already holds.
+//   The chain's start (and its restart for an app without a chain) is application/
+//   pay-recon-schedule.ts seedBillRecon, run by the worker (payment.module.ts).
 // Also compiled by the `test` project: erasable syntax only.
 import type { DB } from '@couli/db';
 import { chinaDayRange } from '@couli/domain';
@@ -58,8 +64,9 @@ import { newUuidV7 } from '../../platform/index.ts';
 import {
   MIDNIGHT_GRACE_MS,
   billFeeTotal,
+  billReconRunAt,
+  dayAfter,
   dayBefore,
-  nextBillReconRun,
   parseBillRows,
   pickLines,
   previousBillDate,
@@ -609,20 +616,23 @@ function isPayload(value: unknown): value is PayBillReconPayload {
 }
 
 /**
- * Enqueues the daily run after `now` for the app: the start of the next +08:00 accounting day plus
- * the run offset (domain/pay-recon.ts), keyed by and carrying the bill day it reconciles.
+ * Enqueues the app's daily run of bill day `billDate`, keyed by and carrying that bill day: at its
+ * run time (domain/pay-recon.ts billReconRunAt, D+1 10:00 +08:00), or due at once when that time
+ * is not after `now`. A daily run of the same bill day already queued or active absorbs it (queue
+ * pay is exclusive per singletonKey). B2-15m: the bill day is given (the day after the one just
+ * reconciled, or the seed's), never derived from `now`.
  */
 export async function scheduleBillRecon(
   deps: Pick<PayReconDeps, 'queue'>,
   appId: string,
+  billDate: string,
   now: Date,
 ): Promise<void> {
-  const next = nextBillReconRun(now);
-  const payload: PayBillReconPayload = { app_id: appId, bill_date: next.billDate };
+  const payload: PayBillReconPayload = { app_id: appId, bill_date: billDate };
   await deps.queue.send(PAY_QUEUE, BILL_RECON_JOB, payload, {
     trx: null,
-    singletonKey: billReconKey(appId, next.billDate),
-    delaySeconds: delaySecondsUntil(now, next.at),
+    singletonKey: billReconKey(appId, billDate),
+    delaySeconds: delaySecondsUntil(now, billReconRunAt(billDate, now)),
   });
 }
 
@@ -665,10 +675,6 @@ function adapterOf(deps: Pick<PayReconDeps, 'channels'>, channel: PayChannelCode
   }
 }
 
-// TODO(规划/11 §2.3): enqueue the first bill.recon of each app with collection on (the run then
-// enqueues its own next day) — blocked on a recurring-job hook of the worker entry (platform, not
-// in B2-15j's paths); until then the first run is enqueued by hand or by the task that adds it.
-
 /** The handler of `bill.recon`: one bill day of each channel with an adapter (or of one). */
 export async function runBillReconJob(deps: PayReconDeps, payload: unknown): Promise<void> {
   if (!isPayload(payload)) throw new Error('payment: bill.recon payload is malformed');
@@ -702,7 +708,8 @@ export async function runBillReconJob(deps: PayReconDeps, payload: unknown): Pro
       );
     }
   }
-  if (!catchUp) await scheduleBillRecon(deps, appId, now);
+  // The next bill day follows the one just reconciled (B2-15m), whatever the clock says.
+  if (!catchUp) await scheduleBillRecon(deps, appId, dayAfter(billDate, now), now);
   if (failed.length > 0) {
     throw new Error(`payment: bill reconciliation of ${billDate} failed for ${failed.join(', ')}`);
   }

@@ -16,6 +16,12 @@
 // contract smoke of the entries builds without a database). On the api entry the module also
 // installs the raw-body capture of the notification routes on the Fastify instance before it is
 // ready (http/public/notify-body.ts), through Nest's HttpAdapterHost in its init hook.
+// B2-15m: on the worker entry, the daily chain of bill.recon starts and heals itself as B1-22b's
+// chain does (union/auth-expiry/union-auth.module.ts): a timer, unref'd and started on application
+// bootstrap, seeds the chain RECON_SEED_DELAY_MS later (the queue runtime has started by then) and
+// again every RECON_HEAL_INTERVAL_MS (application/pay-recon-schedule.ts seedBillRecon with the
+// process's memory of the Apps already started; a failure is a warn line and is retried on the next
+// tick). Only where the pay queue handler is registered; the timer stops on module destroy.
 import { Module, type DynamicModule } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import type { DB as Database } from '@couli/db';
@@ -47,6 +53,7 @@ import { createBizRegistry } from './application/biz-registry.ts';
 import { PayChannelSet } from './application/pay-channel.ts';
 import { PayAdminReads } from './application/pay-admin-reads.ts';
 import type { PayOrderDeps } from './application/pay-orders.ts';
+import { seedBillRecon, type PayReconSeedDeps } from './application/pay-recon-schedule.ts';
 import type { PayRefundDeps } from './application/pay-refunds.ts';
 import type { PayResolveDeps } from './application/pay-resolve.ts';
 import type { PayLedgerPort } from './application/pay-settlement.ts';
@@ -93,6 +100,59 @@ export interface PaymentAdminOptions {
 export const PAY_JOBS = Symbol('PAYMENT_PAY_JOBS');
 /** Nest token of the api entry's notification body capture (an init hook). */
 const NOTIFY_BODY_CAPTURE = Symbol('PAYMENT_NOTIFY_BODY_CAPTURE');
+/** Nest token of the worker's timer of the bill.recon chain (B2-15m; lifecycle hooks). */
+const RECON_TIMER = Symbol('PAYMENT_RECON_TIMER');
+/** B2-15m: delay of the first seed after bootstrap (the queue runtime starts meanwhile). */
+export const RECON_SEED_DELAY_MS = 15_000;
+/** B2-15m: interval between two heals of the bill.recon chain. */
+export const RECON_HEAL_INTERVAL_MS = 5 * 60_000;
+
+interface ReconChainTimer {
+  onApplicationBootstrap(): void;
+  onModuleDestroy(): void;
+}
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
+}
+
+/** B2-15m: the seed after bootstrap and the heal every interval (see the header); null: inert. */
+function reconChainTimer(deps: PayReconSeedDeps | null): ReconChainTimer {
+  const started = new Map<string, string>();
+  let running = false;
+  let first: ReturnType<typeof setTimeout> | undefined;
+  let interval: ReturnType<typeof setInterval> | undefined;
+  const tick = async (): Promise<void> => {
+    if (deps === null || running) return;
+    running = true;
+    try {
+      await seedBillRecon(deps, { started });
+    } catch (error: unknown) {
+      deps.logger.warn(
+        { queue: PAY_QUEUE, error_name: errorName(error) },
+        'pay_bill_recon_heal_failed',
+      );
+    } finally {
+      running = false;
+    }
+  };
+  return {
+    onApplicationBootstrap() {
+      if (deps === null || first !== undefined) return;
+      first = setTimeout(() => {
+        void tick();
+        interval = setInterval(() => void tick(), RECON_HEAL_INTERVAL_MS);
+        interval.unref();
+      }, RECON_SEED_DELAY_MS);
+      first.unref();
+    },
+    onModuleDestroy() {
+      if (first !== undefined) clearTimeout(first);
+      if (interval !== undefined) clearInterval(interval);
+      interval = undefined;
+    },
+  };
+}
 
 /** The channels of an environment: synthetic outside prod; none in prod until B2-15k. */
 export function payChannelSetFor(appEnv: AppConfig['appEnv']): PayChannelSet {
@@ -325,7 +385,8 @@ export class PaymentModule {
   /**
    * The worker entry: the handler of queue `pay` (order.query, biz.reconcile, order.close,
    * refund.query; B2-15j bill.recon, the T+1 reconciliation over the channel set, ledger's posting
-   * and recon diff registration).
+   * and recon diff registration). B2-15m: beside it, the timer that seeds and heals the bill.recon
+   * chain (see the header).
    */
   static forWorker(options: Pick<PaymentModuleOptions, 'config'>): DynamicModule {
     return {
@@ -376,6 +437,34 @@ export class PaymentModule {
             );
             return { queue: PAY_QUEUE };
           },
+        },
+        {
+          // B2-15m: the bill.recon chain's seed and heal, only beside a registered handler.
+          provide: RECON_TIMER,
+          inject: [
+            PAY_JOBS,
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB, optional: true },
+            { token: JOB_QUEUE, optional: true },
+          ],
+          useFactory: (
+            jobs: { readonly queue: string } | null,
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<Database>,
+            queue?: JobQueue,
+          ): ReconChainTimer =>
+            reconChainTimer(
+              jobs === null || db === undefined || queue === undefined
+                ? null
+                : {
+                    db,
+                    clock,
+                    queue,
+                    logger: logger.child({ module: 'payment', queue: PAY_QUEUE }),
+                  },
+            ),
         },
       ],
       exports: [PayChannelSet],
