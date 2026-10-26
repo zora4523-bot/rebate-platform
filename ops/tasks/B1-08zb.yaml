@@ -17,4 +17,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/orders/platform-literal-lint/**'
-status: todo
+status: done
+pr: 1670
