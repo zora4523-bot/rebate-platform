@@ -4,6 +4,7 @@ title: lint：apps/api/src/modules/orders/**（排除测试与 platform-rules �
 type: impl
 # 2026-10-23 入账（be-codex；R-09，D10-254 ②③：走 eslint、只禁比较与 case，不动日志文案）。eslint.config.js 是第二类保护路径，合并前须负责人在 PR 上加 owner-approved 标签。
 # 注意 flat config 中后写的 no-restricted-syntax 会整体替换前者：orders 块须写成 ['error', ...NO_WALL_CLOCK_IN_APP, ...NO_PLATFORM_LITERAL_COMPARE]。平台名取自 contracts 的 platform 枚举。依赖 B1-08za（否则立即红）。
+# 2026-10-26（W1 接手，编排 19:4x 改派，be 忙 B2-15m）：Codex 至 10-30 不可用，tester 改 claude-independent（approvals #36）。主干 orders（排除测试与 domain/platform-rules/）粗扫无平台名字面量比较 / case，新规则不会让主干变红（实现时以 eslint 实跑为准）。
 refs: []
 refs_hash: {}
 deps: [B1-08za]
@@ -12,7 +13,7 @@ paths:
 test_paths:
   - 'test/spec/orders/platform-literal-lint/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/orders/platform-literal-lint/**'
