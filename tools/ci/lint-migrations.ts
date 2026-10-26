@@ -126,6 +126,12 @@ export const APPROVED_GUARD_CHANGES: Readonly<Record<string, string>> = {
   // migration adds the nullable note column. Money review (independent Claude) passed.
   '0088_pay-refunds-note-idempotency-operator.sql':
     '8d75300755329c8ebbb06fbf10988279df06958406e0c159ca877cdf54638a82',
+  // B2-04rb (funds lane, orchestrator ruling D10-280 ①, registered by B2-04rc): rebuilds
+  // settle_jobs_job_check on the funds table settle_jobs NOT VALID under the same name with the 0066
+  // values plus 'supplement'; it only widens. Validated in 0097. Money review (independent Claude)
+  // passed.
+  '0096_settle-jobs-supplement.sql':
+    'c4451a18cdbac3cd286d2d55fa0322df92c05b8252e53497bb276145e90d189d',
 };
 /** Extensions node-pg-migrate would run from db/migrations besides SQL. */
 const SCRIPT_MIGRATION = /\.(?:js|cjs|mjs|ts|cts|mts|jsx|tsx)$/;

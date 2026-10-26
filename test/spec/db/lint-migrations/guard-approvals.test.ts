@@ -127,6 +127,10 @@ it(
     // D10-352). Same pinning as 0057.
     const b215e = '0088_pay-refunds-note-idempotency-operator.sql';
     const b215eHash = '8d75300755329c8ebbb06fbf10988279df06958406e0c159ca877cdf54638a82';
+    // B2-04rc (guard-change): B2-04rb's 0096 (settle_jobs job CHECK rebuilt NOT VALID with the 0066
+    // values plus 'supplement', validated in 0097; orchestrator ruling D10-280 ①). Same pinning as 0057.
+    const b204rb = '0096_settle-jobs-supplement.sql';
+    const b204rbHash = 'c4451a18cdbac3cd286d2d55fa0322df92c05b8252e53497bb276145e90d189d';
     expect(module.APPROVED_GUARD_CHANGES).toEqual({
       [APPROVED_FILE]: createHash('sha256').update(bytes).digest('hex'),
       [ct25d]: ct25dHash,
@@ -134,6 +138,7 @@ it(
       [b115r]: b115rHash,
       [b215i]: b215iHash,
       [b215e]: b215eHash,
+      [b204rb]: b204rbHash,
     });
     const ct25dPath = join(ROOT, 'db/migrations', ct25d);
     if (existsSync(ct25dPath)) {
