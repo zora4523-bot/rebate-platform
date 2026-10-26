@@ -12,9 +12,8 @@
 // billFeeTotal   — Σ fee_fen of every line (PAY_FEE: one voucher per channel and bill date).
 // previousBillDate / nextBillReconRunAt — the bill day D of a run on D+1 at +08:00 and the instant
 //   of the next daily run, from the accounting day of @couli/domain only.
-// dayAfter / billReconRunAt / firstBillDate — B2-15m: the bill day after a reconciled one (the next
-//   daily run follows the bill day, never the clock), the daily run time of a bill day, and the
-//   first bill day of an app's collection (where a chain without a reconciled day starts).
+// dayAfter / billReconRunAt — B2-15m: the bill day after a reconciled one (the next daily run
+//   follows the bill day, never the clock) and the daily run time of a bill day.
 // Also compiled by the `test` project: erasable syntax only.
 import { accountingDate, chinaDayRange } from '@couli/domain';
 import { InvalidAmount, addFen, parseFen } from '@couli/money';
@@ -251,15 +250,4 @@ export function billReconRunAt(billDate: string, like: Date): Date {
   const at = structuredClone(like);
   at.setTime(Date.parse(chinaDayRange(billDate).end) + BILL_RECON_RUN_OFFSET_MS);
   return at;
-}
-
-/**
- * B2-15m: the first bill day of a collection settled at `settledAt`: its +08:00 accounting day, or
- * the day before when it was settled within MIDNIGHT_GRACE_MS after midnight (the previous day's
- * bill may list it, as the reconciliation itself assumes).
- */
-export function firstBillDate(settledAt: Date): string {
-  const at = structuredClone(settledAt);
-  at.setTime(settledAt.getTime() - MIDNIGHT_GRACE_MS);
-  return accountingDate(at);
 }

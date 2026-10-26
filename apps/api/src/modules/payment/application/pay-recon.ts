@@ -45,13 +45,14 @@
 //   (BR-PAY-01 ④: the switch only stops new orders; r1 S1); a channel without an adapter is
 //   skipped. A bill not available yet gets a catch-up run of that channel and that bill day, an
 //   hour later, until CATCH_UP_LIMIT_MS after the bill day, then an alert (r1 S1: the day is never
-//   left to the queue's short retry budget or to the clock at retry time). A daily run then
-//   enqueues the next daily run (singletonKey bill.recon:<app_id>:<bill date>) for the bill day
-//   after the one it reconciled, never for the day after clock.now() (B2-15m; B2-15j money review
-//   r2 S2): a run delayed by a stopped worker, or replayed from the dead letters on a later day,
-//   enqueues the following day, due at once when its run time has passed, until the chain has
-//   caught up; no bill day is skipped. A catch-up run enqueues no daily run. Any other failure
-//   fails the job after the other channels ran; the retry changes nothing that already holds.
+//   left to the queue's short retry budget or to the clock at retry time). A daily run first,
+//   before any channel (B2-15m money review r1 S2-b), enqueues the next daily run (singletonKey
+//   bill.recon:<app_id>:<bill date>) for the bill day after the one it reconciles, never for
+//   the day after clock.now() (B2-15j money review r2 S2): a run delayed by a stopped worker, or
+//   replayed from the dead letters on a later day, enqueues the following day, due at once when
+//   its run time has passed, until the chain has caught up; no bill day is skipped. A catch-up
+//   run enqueues no daily run. Any other failure fails the job after the other channels ran; the
+//   retry changes nothing that already holds.
 //   The chain's start (and its restart for an app without a chain) is application/
 //   pay-recon-schedule.ts seedBillRecon, run by the worker (payment.module.ts).
 // Also compiled by the `test` project: erasable syntax only.
@@ -219,6 +220,10 @@ async function loadBill(run: Run, adapter: PayChannel, billDate: string): Promis
 }
 
 /** The R4 pay_mismatch of one reference and its alert (ids, numbers and amounts only). */
+// The alert below is logged on every run, also when the diff's dedupe key already existed (a day
+// reconciled again after a restart, B2-15m money review r1 S2-a): ledger's registerReconDiff
+// returns the stored row either way and says nothing of whether it inserted, and payment cannot
+// tell otherwise without reading recon_diffs — left until ledger reports it.
 async function registerMismatch(run: Run, mismatch: Mismatch): Promise<void> {
   const diffFen = subFen(mismatch.expectedFen, mismatch.actualFen);
   await run.deps.db.transaction().execute((trx) =>
@@ -683,6 +688,10 @@ export async function runBillReconJob(deps: PayReconDeps, payload: unknown): Pro
   const billDate = payload.bill_date ?? previousBillDate(now);
   const catchUp = payload.pay_channel !== undefined;
   const channels = payload.pay_channel === undefined ? RECON_CHANNELS : [payload.pay_channel];
+  // The next bill day follows the one reconciled here (B2-15m), whatever the clock says. Enqueued
+  // before any channel is looked at (money review r1 S2-b): nothing that fails below — a channel,
+  // a catch-up send — can leave the chain without its next day.
+  if (!catchUp) await scheduleBillRecon(deps, appId, dayAfter(billDate, now), now);
   const failed: PayChannelCode[] = [];
   for (const channel of channels) {
     if (adapterOf(deps, channel) === null) {
@@ -708,8 +717,6 @@ export async function runBillReconJob(deps: PayReconDeps, payload: unknown): Pro
       );
     }
   }
-  // The next bill day follows the one just reconciled (B2-15m), whatever the clock says.
-  if (!catchUp) await scheduleBillRecon(deps, appId, dayAfter(billDate, now), now);
   if (failed.length > 0) {
     throw new Error(`payment: bill reconciliation of ${billDate} failed for ${failed.join(', ')}`);
   }
