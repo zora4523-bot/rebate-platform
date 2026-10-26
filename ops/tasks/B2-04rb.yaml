@@ -20,5 +20,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/db/settlement/settle-jobs-supplement/**'
-status: todo
-pr: null
+status: done
+pr: 1674
