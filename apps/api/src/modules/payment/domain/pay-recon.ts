@@ -12,6 +12,8 @@
 // billFeeTotal   — Σ fee_fen of every line (PAY_FEE: one voucher per channel and bill date).
 // previousBillDate / nextBillReconRunAt — the bill day D of a run on D+1 at +08:00 and the instant
 //   of the next daily run, from the accounting day of @couli/domain only.
+// dayAfter / billReconRunAt — B2-15m: the bill day after a reconciled one (the next daily run
+//   follows the bill day, never the clock) and the daily run time of a bill day.
 // Also compiled by the `test` project: erasable syntax only.
 import { accountingDate, chinaDayRange } from '@couli/domain';
 import { InvalidAmount, addFen, parseFen } from '@couli/money';
@@ -231,4 +233,21 @@ export function nextBillReconRun(now: Date): { readonly at: Date; readonly billD
   const at = structuredClone(now);
   at.setTime(Date.parse(chinaDayRange(today).end) + BILL_RECON_RUN_OFFSET_MS);
   return { at, billDate: today };
+}
+
+/** B2-15m: the bill day after `billDate` (YYYY-MM-DD, +08:00); `like` is only copied. */
+export function dayAfter(billDate: string, like: Date): string {
+  const instant = structuredClone(like);
+  instant.setTime(Date.parse(chinaDayRange(billDate).end));
+  return accountingDate(instant);
+}
+
+/**
+ * B2-15m: the daily run time of bill day D (D+1 00:00 +08:00 plus the run offset); `like` is only
+ * copied, never read.
+ */
+export function billReconRunAt(billDate: string, like: Date): Date {
+  const at = structuredClone(like);
+  at.setTime(Date.parse(chinaDayRange(billDate).end) + BILL_RECON_RUN_OFFSET_MS);
+  return at;
 }
