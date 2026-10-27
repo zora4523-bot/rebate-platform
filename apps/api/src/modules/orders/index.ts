@@ -230,3 +230,10 @@ export type {
 } from './application/personal-data-copy-read.ts';
 // B1-01zzi: the worker's fund metric (open order_sync_pending rows per reason; read only).
 export { readOrderSyncPendingOpen } from './application/metrics-read.ts';
+// B2-11a: BR-WDR-29 ④⑤⑥ — the member's self-purchase and received sub-orders (read only).
+export { createWithdrawRiskOrderReader } from './ports/withdraw-risk.ts';
+export type {
+  WithdrawRiskOrderReader,
+  WithdrawRiskReceivedOrder,
+  WithdrawRiskSelfOrder,
+} from './ports/withdraw-risk.ts';

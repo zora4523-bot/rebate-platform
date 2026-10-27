@@ -359,3 +359,6 @@ export type { DataCopyFileEntry, PersonalDataCopyContent } from './application/d
 // B1-27h: the account-disable step admin's disable transaction runs (BR-ID-40 细则「重新登记与登记人停用」).
 export { failWecomCopiesOfRegistrant } from './infra/personal-data-copies.ts';
 export type { WecomCopyFailInput } from './infra/personal-data-copies.ts';
+// B2-11a: BR-WDR-29 ⑩ payee_prev_other_user — the payee HMAC's binding history (read only).
+export { createPayeeBindingHistoryReader } from './ports/payee-prev-other-user.ts';
+export type { PayeeBindingHistoryReader } from './ports/payee-prev-other-user.ts';
