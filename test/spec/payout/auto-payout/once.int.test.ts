@@ -208,9 +208,26 @@ it('[AC-B2-11c#58] ⑦ 收款账号次数在串行锁内计算：两个会员同
   const f = await setup(h);
   const other = await f.member();
   const a = await f.start(100n);
+  // Seed only: the second member's W1 snapshot carries the same payee HMAC (W1's payee rules are
+  // B2-05c's). couli_app may not update withdrawals.payee_hmac and payout_accounts' account columns
+  // change only when anonymizing, so the first member's account is retired after its W1 and the
+  // second member's current account is retired and re-inserted with that HMAC before its W1.
+  await sql`UPDATE app.payout_accounts SET is_current = false
+    WHERE app_id = ${f.actor.appId} AND user_id = ${f.actor.userId} AND is_current`.execute(h.db);
+  await h.db.transaction().execute(async (trx) => {
+    const current = await sql<{ id: string }>`UPDATE app.payout_accounts SET is_current = false
+      WHERE app_id = ${other.actor.appId} AND user_id = ${other.actor.userId} AND is_current
+      RETURNING id`.execute(trx);
+    const id = current.rows[0]?.id;
+    if (id === undefined) throw new Error('seed: the second member has no current payout account');
+    await sql`INSERT INTO app.payout_accounts
+      (id, app_id, user_id, payout_method, payee_name, is_current, alipay_hmac, alipay_logon_id_cipher,
+       bank_card_hmac, bank_card_no_cipher, bank_name, card_bin)
+      SELECT ${randomUUID()}, app_id, user_id, payout_method, payee_name, true, ${f.hmac},
+        alipay_logon_id_cipher, bank_card_hmac, bank_card_no_cipher, bank_name, card_bin
+      FROM app.payout_accounts WHERE id = ${id}`.execute(trx);
+  });
   const b = await f.start(100n, other);
-  // Seed only: the second member's snapshot carries the same payee HMAC (W1's payee rules are B2-05c's).
-  await sql`UPDATE app.withdrawals SET payee_hmac = ${f.hmac} WHERE id = ${b}`.execute(h.db);
   const events = [await f.event(a), await f.event(b)];
   await Promise.all(events.map((event) => f.consumer().consume(event)));
   const decisions = [(await f.row(a)).auto_decision, (await f.row(b)).auto_decision];
