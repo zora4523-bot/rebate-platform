@@ -134,6 +134,14 @@ it(
   CLI_TIMEOUT,
 );
 
+it('[CT-06zxg] the host-services lock wait follows the time limit like RuntimeMaxSec (D10-382)', () => {
+  const text = readFileSync(SCRIPT, 'utf8');
+  expect(text).toContain('local lock_wait=$((MAX_TIMEOUT_SECS * 2 + 1800))');
+  expect(text).toContain('flock -w "$lock_wait" 9');
+  expect(text).toContain('RuntimeMaxSec=$((TIMEOUT_SECS * 2 + 1800))');
+  expect(text).not.toContain('flock -w 3600');
+});
+
 it(
   '[CT-06v] the time limit defaults to 3600 s (CT-06zxf) and may not go beyond 3600 s',
   () => {
