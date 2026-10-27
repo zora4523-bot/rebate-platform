@@ -2,7 +2,7 @@ id: B2-15l
 repo: rebate-platform
 title: 收款差错单 diff_fen 统一为 expected_fen − actual_fen：pay_anomaly 差错单（B2-15c registerAnomalyRow 与 B2-15j 对账登记）改为 expected 0、actual = 收款额、diff = −收款额，与契约 AdminPayReconDiff 一致；B2-15c 冻结断言只改符号
 type: impl
-# 2026-10-26 编排裁定 D10-360（改 D10-358 ①）：B2-15c 冻结文件 notify.int.test.ts 的 diff_fen 断言在测试回调外的共用辅助函数里，改符号触发 red-check 整文件判定；须等 ops 线恢复、red-check 对「只改回调外辅助函数的断言值」给出放行口径后做。
+# 2026-10-26 编排裁定 D10-360（改 D10-358 ①）：B2-15c 冻结文件 notify.int.test.ts 的 diff_fen 断言在测试回调外的共用辅助函数里，改符号触发 red-check 整文件判定；放行口径已由 CT-06zxe（#1704，D10-371）落地：两处回调外 helper 的符号改动登记于 expected_values。
 # **收款上线门槛**：pay.enabled 打开前必须合并（编排记 HANDOFF）。收款未上线、无存量数据、diff_fen 只展示不入账，过渡期两种符号无实际影响。不放宽冻结断言（那属削弱资金测试）。
 refs: [BR-PAY-07, BR-PAY-05]
 refs_hash:
@@ -18,8 +18,84 @@ test_paths:
   - 'test/spec/payment/diff-sign/**'
 impl: claude
 tester: claude-independent
+expected_values:
+  - file: test/spec/payment/result/notify.int.test.ts
+    helper: onlyAnomaly
+    from: '    diff_fen: AMOUNT,'
+    to: '    diff_fen: -AMOUNT,'
+  - file: test/spec/payment/result/closed-query.int.test.ts
+    helper: onlyAnomaly
+    from: '    diff_fen: order.amount_fen,'
+    to: '    diff_fen: -order.amount_fen,'
 accept:
   - 'pnpm verify'
   - 'test/spec/payment/diff-sign/**'
 status: todo
 pr: null
+red_exempt:
+  - file: test/spec/payment/recon/anomaly.int.test.ts
+    test: '[AC-B2-15j#15] 通知或查询已登记过的异常收款（同渠道交易号）出现在账单里：不重复登记、不再写 PAY_ANOMALY、不再生成差错单'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/recon/anomaly.int.test.ts
+    test: '[AC-B2-15j#16] 同一账单日重跑（至少一次投递）：CLOSED 单的收款与找不到支付单的收款各只登记一条异常收款、一张 PAY_ANOMALY、一条差错单'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#6] wechat_pay 首次合格通知（开关全关也照常处理）：同一事务 PO2 + 恰一张 PAY_RECEIPT（借 CASH_PAY / 贷 PAY_RECEIPTS）+ 按业务对象入队一次开通 + pay_order.paid；原文加密留存；提交后应答成功；不碰用户余额'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#6] alipay 首次合格通知（开关全关也照常处理）：同一事务 PO2 + 恰一张 PAY_RECEIPT（借 CASH_PAY / 贷 PAY_RECEIPTS）+ 按业务对象入队一次开通 + pay_order.paid；原文加密留存；提交后应答成功；不碰用户余额'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#7] wechat_pay 同一通知重复到达、渠道另发一条同交易的通知：都应答成功，状态、凭证、开通任务、事件只生效一次，每条不同的通知各留存一份'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#7] alipay 同一通知重复到达、渠道另发一条同交易的通知：都应答成功，状态、凭证、开通任务、事件只生效一次，每条不同的通知各留存一份'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#8] wechat_pay 验签通过但金额不等于 amount_fen：不迁移、不记账、不开通；每条通知都留存；告警按单去重；应答不成功'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#8] alipay 验签通过但金额不等于 amount_fen：不迁移、不记账、不开通；每条通知都留存；告警按单去重；应答不成功'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#9] wechat_pay 签名无效（改过正文、换过签名）：拒绝，不写任何表、不迁移，只计数告警 pay_notify_rejected，应答不成功；同一夹具的真通知照常生效'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#9] alipay 签名无效（改过正文、换过签名）：拒绝，不写任何表、不迁移，只计数告警 pay_notify_rejected，应答不成功；同一夹具的真通知照常生效'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#10] wechat_pay 应用或商户标识不是我方（全不是、只有一半是）：签名有效也拒绝，不留业务痕迹，计数告警，应答不成功'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#10] alipay 应用或商户标识不是我方（全不是、只有一半是）：签名有效也拒绝，不留业务痕迹，计数告警，应答不成功'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#11] wechat_pay 渠道状态不在 success_states 清单（支付宝 TRADE_FINISHED 在实测前不算）：不迁移、留存、告警、应答不成功'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#11] alipay 渠道状态不在 success_states 清单（支付宝 TRADE_FINISHED 在实测前不算）：不迁移、留存、告警、应答不成功'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#12] pay.alipay.success_states 被配置为含 TRADE_FINISHED 后，该状态的合格通知照常迁移记账；未配置的微信仍只认 SUCCESS'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#14] wechat_pay 商户单号找不到我方支付单而渠道已收款：登记异常收款（金额以通知为准）+ PAY_ANOMALY + 差错单 + 告警、留存原文，应答不成功（重发不重复登记）；状态不是成功的不登记'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#14] alipay 商户单号找不到我方支付单而渠道已收款：登记异常收款（金额以通知为准）+ PAY_ANOMALY + 差错单 + 告警、留存原文，应答不成功（重发不重复登记）；状态不是成功的不登记'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#15] wechat_pay 应答不含业务信息：各种不成功的应答逐字节相同，各种成功的应答逐字节相同，都不带单号、金额或支付单 id'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#15] alipay 应答不含业务信息：各种不成功的应答逐字节相同，各种成功的应答逐字节相同，都不带单号、金额或支付单 id'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#16] wechat_pay 通知原文、付款人标识、密文、签名不进任何日志行（成功、重复、不符、拒绝都算）'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#16] alipay 通知原文、付款人标识、密文、签名不进任何日志行（成功、重复、不符、拒绝都算）'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
+  - file: test/spec/payment/result/notify.int.test.ts
+    test: '[AC-B2-15c#17] 向渠道下单时给的通知地址就是该渠道的通知入口（/notify/pay/wechat、/notify/pay/alipay）'
+    reason: '冻结用例，测试体未改；本任务只按 expected_values 改 onlyAnomaly 两处符号、只收紧对账异常收款的 diffFen。同目录外的 orders/kit.ts 用 createRequire，可能读到本任务新增的 diff-sign 测试，文件因此被整体判定'
