@@ -197,6 +197,15 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   businessInteger('withdraw.auto_payout.warn.withdraw_received_ratio_bp', 0, 10000),
   businessInteger('withdraw.auto_payout.platform_daily_max_fen', 0),
   spec('withdraw.auto_payout.risk_block_flags', 'object', 'config.business'),
+  // B2-11dz (D10-392 / D10-394): BR-WDR-30 细则「开启前置检查」 keys the owner fills when
+  // enabling, after withdraw.auto_payout.*, all config.business: whether BR-WDR-22 ② ⑤ ⑧ are
+  // judged supported in 规划/09 (seeded false), and the days of daily channel reconciliation
+  // (BR-WDR-23) the owner requires, at least 1 and with no seed row (unset = not passed).
+  // Registration only; nothing reads them yet.
+  spec('payout.auto_enable_check.limits_supported', 'boolean', 'config.business'),
+  spec('payout.auto_enable_check.status_codes_supported', 'boolean', 'config.business'),
+  spec('payout.auto_enable_check.bill_out_biz_no_supported', 'boolean', 'config.business'),
+  businessInteger('payout.auto_enable_check.recon_required_days', 1),
 ]);
 
 const VISIBLE: readonly ConfigItemSpec[] = Object.freeze(

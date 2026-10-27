@@ -97,5 +97,9 @@ INSERT INTO app.config_items (app_id, key, value, updated_by) VALUES
   ('couli', 'withdraw.auto_payout.warn.invalid_ratio_bp', '10000'::jsonb, 'seed'), -- BR-WDR-30
   ('couli', 'withdraw.auto_payout.warn.withdraw_received_ratio_bp', '0'::jsonb, 'seed'), -- BR-WDR-30
   ('couli', 'withdraw.auto_payout.platform_daily_max_fen', '200000'::jsonb, 'seed'), -- BR-WDR-30
-  ('couli', 'withdraw.auto_payout.risk_block_flags', '["same_device_multi_account", "had_negative", "recon_diff", "payee_prev_other_user", "risk_calc_failed"]'::jsonb, 'seed') -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.risk_block_flags', '["same_device_multi_account", "had_negative", "recon_diff", "payee_prev_other_user", "risk_calc_failed"]'::jsonb, 'seed'), -- BR-WDR-30
+  -- 第 11 批：BR-WDR-30 细则开启前置检查（B2-11dz，D10-392 / D10-394）；payout.auto_enable_check.recon_required_days 缺省不设（无种子行，即不满足）
+  ('couli', 'payout.auto_enable_check.limits_supported', 'false'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'payout.auto_enable_check.status_codes_supported', 'false'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'payout.auto_enable_check.bill_out_biz_no_supported', 'false'::jsonb, 'seed') -- BR-WDR-30
 ON CONFLICT (app_id, key) DO NOTHING;

@@ -28,7 +28,8 @@ it('[AC-F1-02zj#2] 16 项按裁定顺序追加；原 29 项及其无 range 行�
   // F1-02zt：过渡已收紧, the group must be present. B2-06bz (D10-244 ②、D10-296): the eight
   // payout.* keys follow the invite group, in this order; B2-11z (D10-368): then the six
   // risk.withdraw.* keys, in this order; B2-11y (D10-373): then the seventeen
-  // withdraw.auto_payout.* keys, in this order; nothing else may follow.
+  // withdraw.auto_payout.* keys, in this order; B2-11dz (D10-392 / D10-394): then the four
+  // payout.auto_enable_check.* keys, in this order; nothing else may follow.
   presentOf(INVITE_CFG, 'growth.invite_reward.*');
   const invite = inviteNow();
   expect(registry.map((entry) => entry.key)).toStrictEqual([
@@ -66,6 +67,10 @@ it('[AC-F1-02zj#2] 16 项按裁定顺序追加；原 29 项及其无 range 行�
     'withdraw.auto_payout.warn.withdraw_received_ratio_bp',
     'withdraw.auto_payout.platform_daily_max_fen',
     'withdraw.auto_payout.risk_block_flags',
+    'payout.auto_enable_check.limits_supported',
+    'payout.auto_enable_check.status_codes_supported',
+    'payout.auto_enable_check.bill_out_biz_no_supported',
+    'payout.auto_enable_check.recon_required_days',
   ]);
   expect(registry.slice(0, 29)).toStrictEqual(
     EXPECTED.map((entry) => ({ ...entry, options: null })),
