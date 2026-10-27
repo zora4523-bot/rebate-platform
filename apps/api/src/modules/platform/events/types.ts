@@ -76,6 +76,7 @@ export interface EventSubscription {
  * inbox message of notification (B1-12p, BR-TEXT-23 / BR-ID-36). notification-claim-result: the
  * CLAIM_RESULT inbox message of notification (B1-12r, BR-TEXT-09).
  * payout-went-negative: the negative balance handling of withdrawals (B2-05e, BR-WDR-05 (a)).
+ * payout-auto-payout: the automatic payout decision of withdrawals (B2-11c, BR-WDR-30).
  */
 export const EVENT_SUBSCRIPTIONS: readonly EventSubscription[] = Object.freeze([
   Object.freeze({
@@ -94,6 +95,11 @@ export const EVENT_SUBSCRIPTIONS: readonly EventSubscription[] = Object.freeze([
   Object.freeze({
     consumer: 'payout-went-negative',
     events: Object.freeze(['account.went_negative']),
+  }),
+  // payout-auto-payout: the automatic payout decision of withdrawals (B2-11c, BR-WDR-30).
+  Object.freeze({
+    consumer: 'payout-auto-payout',
+    events: Object.freeze(['withdrawal.created']),
   }),
 ]);
 

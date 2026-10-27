@@ -123,6 +123,8 @@ it('[规划/02 §11 事件清单] EVENT_NAMES 正好是 02 §11 的 18 个事件
     ...(EVENT_SUBSCRIPTIONS.some((s) => s.consumer === 'payout-went-negative')
       ? [{ consumer: 'payout-went-negative', events: ['account.went_negative'] }]
       : []),
+    // B2-11c（BR-WDR-30）：payout 的自动到账判定，最后一条，只订阅 withdrawal.created。
+    { consumer: 'payout-auto-payout', events: ['withdrawal.created'] },
   ];
   expect({
     names: [...EVENT_NAMES],

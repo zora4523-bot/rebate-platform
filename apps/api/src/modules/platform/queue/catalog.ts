@@ -30,6 +30,8 @@ const BUSINESS_QUEUES = [
   'evt.notification-appeal-result',
   // Event queue of notification's claim.resolved consumer (B1-12r); events/types.ts.
   'evt.notification-claim-result',
+  // Event queue of payout's withdrawal.created consumer (B2-11c, BR-WDR-30); events/types.ts.
+  'evt.payout-auto-payout',
   // Event queue of payout's account.went_negative consumer (B2-05e, BR-WDR-05 (a)); events/types.ts.
   'evt.payout-went-negative',
   // Payment jobs (B2-15b; handlers B2-15c / B2-15d): order.query, order.close of payment's

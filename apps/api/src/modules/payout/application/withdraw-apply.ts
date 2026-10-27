@@ -151,48 +151,65 @@ function datesOf(value: unknown, year: number): string[] | null {
   return dates;
 }
 
+/**
+ * The calendar years a deadline from `from` may reach (BR-WDR-26), read through `config` on
+ * `handle`; an unreadable year counts weekends only (warned `workday_calendar_unconfigured`).
+ * Shared by W1 (switch off) and the automatic decision (B2-11c).
+ */
+export async function readReviewCalendars(
+  options: {
+    config: WithdrawRulesOptions['config'];
+    logger: { warn(fields: Record<string, unknown>, message: string): void };
+  },
+  handle: Kysely<DB>,
+  appId: string,
+  from: Date,
+): Promise<Record<number, WorkdayCalendarYear>> {
+  const { first, last } = reviewDeadlineDays(from);
+  const years = new Set<number>([civilYearOfDay(from, first), civilYearOfDay(from, last)]);
+  const result: Record<number, WorkdayCalendarYear> = {};
+  for (const year of years) {
+    let read: WorkdayCalendarYear | null = null;
+    try {
+      const holidays = await options.config.configValue(
+        appId,
+        CALENDAR_KEYS.holidays(year),
+        handle,
+      );
+      const makeup = await options.config.configValue(
+        appId,
+        CALENDAR_KEYS.makeupWorkdays(year),
+        handle,
+      );
+      const holidayDates = holidays === null ? null : datesOf(holidays.value, year);
+      const makeupDates = makeup === null ? null : datesOf(makeup.value, year);
+      if (holidayDates !== null && makeupDates !== null) {
+        read = { holidays: holidayDates, makeupWorkdays: makeupDates };
+      }
+    } catch {
+      // The error may carry configuration values or driver details: never logged.
+      read = null;
+    }
+    if (read === null) {
+      options.logger.warn({ app_id: appId, year }, 'workday_calendar_unconfigured');
+      continue;
+    }
+    result[year] = read;
+  }
+  return result;
+}
+
 export function createWithdrawApply(options: WithdrawApplyOptions): WithdrawApplyService {
   const { rules, ledger } = options;
-  const { clock, logger } = rules;
+  const { clock } = rules;
 
   /** The calendar years a deadline from `from` may reach; an unreadable year counts weekends only. */
-  async function calendars(
+  function calendars(
     handle: Kysely<DB>,
     appId: string,
     from: Date,
   ): Promise<Record<number, WorkdayCalendarYear>> {
-    const { first, last } = reviewDeadlineDays(from);
-    const years = new Set<number>([civilYearOfDay(from, first), civilYearOfDay(from, last)]);
-    const result: Record<number, WorkdayCalendarYear> = {};
-    for (const year of years) {
-      let read: WorkdayCalendarYear | null = null;
-      try {
-        const holidays = await rules.config.configValue(
-          appId,
-          CALENDAR_KEYS.holidays(year),
-          handle,
-        );
-        const makeup = await rules.config.configValue(
-          appId,
-          CALENDAR_KEYS.makeupWorkdays(year),
-          handle,
-        );
-        const holidayDates = holidays === null ? null : datesOf(holidays.value, year);
-        const makeupDates = makeup === null ? null : datesOf(makeup.value, year);
-        if (holidayDates !== null && makeupDates !== null) {
-          read = { holidays: holidayDates, makeupWorkdays: makeupDates };
-        }
-      } catch {
-        // The error may carry configuration values or driver details: never logged.
-        read = null;
-      }
-      if (read === null) {
-        logger.warn({ app_id: appId, year }, 'workday_calendar_unconfigured');
-        continue;
-      }
-      result[year] = read;
-    }
-    return result;
+    return readReviewCalendars(rules, handle, appId, from);
   }
 
   async function reviewFields(
