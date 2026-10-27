@@ -19,24 +19,24 @@ function precheck(passed: boolean) {
   return vi.fn(() => ({ passed }));
 }
 
-it('[AC-B2-11d#19] 缺省（不注入前置检查）：打开自动到账总开关仍拒绝 value，与现在一致', () => {
+it('[AC-B2-11d#21] 缺省（不注入前置检查）：打开自动到账总开关仍拒绝 value，与现在一致', () => {
   expect(killSwitchChangeRefusalWith(AUTO, true, {})).toBe('value');
   expect(killSwitchChangeRefusal(AUTO, true)).toBe('value');
 });
 
-it('[AC-B2-11d#20] 注入的前置检查不通过 → 拒绝 value，检查被问了一次', () => {
+it('[AC-B2-11d#22] 注入的前置检查不通过 → 拒绝 value，检查被问了一次', () => {
   const check = precheck(false);
   expect(killSwitchChangeRefusalWith(AUTO, true, { autoPayoutEnable: check })).toBe('value');
   expect(check).toHaveBeenCalledTimes(1);
 });
 
-it('[AC-B2-11d#21] 注入的前置检查通过 → 可以打开', () => {
+it('[AC-B2-11d#23] 注入的前置检查通过 → 可以打开', () => {
   const check = precheck(true);
   expect(killSwitchChangeRefusalWith(AUTO, true, { autoPayoutEnable: check })).toBeNull();
   expect(check).toHaveBeenCalledTimes(1);
 });
 
-it('[AC-B2-11d#22] 关闭属安全方向：不问前置检查，检查不通过也可以关', () => {
+it('[AC-B2-11d#24] 关闭属安全方向：不问前置检查，检查不通过也可以关', () => {
   const failing = precheck(false);
   expect(killSwitchChangeRefusalWith(AUTO, false, { autoPayoutEnable: failing })).toBeNull();
   expect(killSwitchChangeRefusalWith(AUTO, false, {})).toBeNull();
@@ -44,7 +44,7 @@ it('[AC-B2-11d#22] 关闭属安全方向：不问前置检查，检查不通过�
 });
 
 it.each([{ value: 'on' }, { value: 1 }, { value: null }, { value: 'true' }, { value: {} }])(
-  '[AC-B2-11d#23] 值不是布尔（$value）：前置检查通过也拒绝 value',
+  '[AC-B2-11d#25] 值不是布尔（$value）：前置检查通过也拒绝 value',
   ({ value }) => {
     expect(killSwitchChangeRefusalWith(AUTO, value, { autoPayoutEnable: precheck(true) })).toBe(
       'value',
@@ -57,7 +57,7 @@ const OTHER_KEYS = switchRegistry()
   .map((spec) => spec.pattern.replace(/<[a-z_]+>/u, 'alipay'))
   .filter((key) => key !== AUTO);
 
-it('[AC-B2-11d#24] 其余开关与未登记的键：结果与 killSwitchChangeRefusal 完全相同，且不问前置检查', () => {
+it('[AC-B2-11d#26] 其余开关与未登记的键：结果与 killSwitchChangeRefusal 完全相同，且不问前置检查', () => {
   expect(OTHER_KEYS.length).toBeGreaterThan(10);
   const values: unknown[] = [true, false, 'on', 'maintenance', 'not_launched', null, 1, {}];
   for (const key of [...OTHER_KEYS, 'withdraw.auto_payout', 'withdraw.auto_payout.enabled.x']) {
@@ -78,17 +78,22 @@ it('[AC-B2-11d#24] 其余开关与未登记的键：结果与 killSwitchChangeRe
   }
 });
 
-it('[AC-B2-11d#25] 接上 payout 的开启前置检查：未登记验证状态与天数时拒绝打开，全部登记且达标后可以打开', () => {
+it('[AC-B2-11d#27] 接上 payout 的开启前置检查：未填验证状态与天数时拒绝打开，全部填好且对账跑通天数达标后可以打开', () => {
   const unregistered = new Map<string, unknown>();
   expect(
     killSwitchChangeRefusalWith(AUTO, true, {
-      autoPayoutEnable: () => checkAutoPayoutEnable(unregistered),
+      autoPayoutEnable: () => checkAutoPayoutEnable(unregistered, 30),
     }),
   ).toBe('value');
   const registered = enablePassing();
   expect(
     killSwitchChangeRefusalWith(AUTO, true, {
-      autoPayoutEnable: () => checkAutoPayoutEnable(registered),
+      autoPayoutEnable: () => checkAutoPayoutEnable(registered, 0),
+    }),
+  ).toBe('value');
+  expect(
+    killSwitchChangeRefusalWith(AUTO, true, {
+      autoPayoutEnable: () => checkAutoPayoutEnable(registered, 7),
     }),
   ).toBeNull();
 });

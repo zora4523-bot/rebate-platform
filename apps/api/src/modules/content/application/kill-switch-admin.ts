@@ -91,6 +91,29 @@ function switchOf(key: string, row: KillSwitchRow | undefined): Switch {
   };
 }
 
+/**
+ * B2-11d: checks the assembler (app.module) injects. autoPayoutEnable is payout's 开启前置检查
+ * (BR-WDR-30) for the caller's app, asked once when withdraw.auto_payout.enabled is turned on and
+ * never otherwise; absent, turning it on stays refused (content/domain/kill-switch.ts).
+ */
+export interface KillSwitchAdminChecks {
+  readonly autoPayoutEnable?: (appId: string) => Promise<{ readonly passed: boolean }>;
+}
+
+/** B2-11d: the switch use case with the injected checks. */
+export function createKillSwitchAdmin(
+  store: KillSwitchStore,
+  clock: Clock,
+  logger: Pick<Logger, 'warn'>,
+  checks: KillSwitchAdminChecks,
+): KillSwitchAdmin {
+  void store;
+  void clock;
+  void logger;
+  void checks;
+  throw new Error('NotImplemented: createKillSwitchAdmin');
+}
+
 /** Permission and step-up checks are the controller's guard; identities are server supplied. */
 export class KillSwitchAdmin {
   readonly #store: KillSwitchStore;

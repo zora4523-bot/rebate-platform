@@ -6,9 +6,11 @@
 //     codes (the real-time blacklist_hit check is fixed and does not depend on the set);
 //     the refused keys come in the order ② ③ ⑨ ⑫, none when the configuration may be saved;
 //   checkAutoPayoutEnable  开启前置检查 before withdraw.auto_payout.enabled is turned on:
-//     BR-WDR-22 ② ⑤ ⑧ judged supported in 规划/09 and the daily channel reconciliation
-//     (BR-WDR-23) run through for the days the owner set, all registered under
-//     payout.auto_enable_check.*; every item is listed, and an unregistered item does not pass.
+//     BR-WDR-22 ② ⑤ ⑧ judged supported in 规划/09 (three boolean keys, default false) and the
+//     daily channel reconciliation (BR-WDR-23) run through for at least the days the owner set
+//     (recon_required_days, unset by default); the days run through are a fact read through a
+//     port, never a configuration key (编排裁定 D10-392). Every item is listed, and an unset
+//     item does not pass.
 
 /** A key the BR-WDR-30 save check refuses. */
 export type AutoPayoutSaveRefusal =
@@ -17,13 +19,12 @@ export type AutoPayoutSaveRefusal =
   | 'withdraw.auto_payout.platform_daily_max_fen'
   | 'withdraw.auto_payout.risk_block_flags';
 
-/** The configuration keys the enable precheck reads (registered by the owner when enabling). */
+/** The configuration keys the enable precheck reads (filled by the owner when enabling). */
 export type AutoPayoutEnableKey =
   | 'payout.auto_enable_check.limits_supported'
   | 'payout.auto_enable_check.status_codes_supported'
   | 'payout.auto_enable_check.bill_out_biz_no_supported'
-  | 'payout.auto_enable_check.recon_required_days'
-  | 'payout.auto_enable_check.recon_passed_days';
+  | 'payout.auto_enable_check.recon_required_days';
 
 /** One precheck item: BR-WDR-22 ②, ⑤, ⑧, then the BR-WDR-23 reconciliation days. */
 export type AutoPayoutEnableItemCode =
@@ -51,7 +52,15 @@ export function autoPayoutSaveRefusals(
   throw new Error('NotImplemented: autoPayoutSaveRefusals');
 }
 
-export function checkAutoPayoutEnable(values: ReadonlyMap<string, unknown>): AutoPayoutEnableCheck {
+/**
+ * `values`: the AutoPayoutEnableKey values (full key → JSON value, an unset key absent);
+ * `reconPassedDays`: the consecutive days the daily channel reconciliation has run through.
+ */
+export function checkAutoPayoutEnable(
+  values: ReadonlyMap<string, unknown>,
+  reconPassedDays: number,
+): AutoPayoutEnableCheck {
   void values;
+  void reconPassedDays;
   throw new Error('NotImplemented: checkAutoPayoutEnable');
 }

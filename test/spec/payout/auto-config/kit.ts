@@ -1,11 +1,14 @@
 // B2-11d fixtures for the BR-WDR-30 save check and enable precheck (规划/08 07_WDR at SPEC_REF
-// 736d24c). Every value is a literal written from the rule text, never read from the
-// implementation:
+// 736d24c). Every value is a literal written from the rule text or the ruling, never read from
+// the implementation:
 //   the save check's keys and 08 defaults (② ¥300 ≤ withdraw.max_amount_fen ¥5,000 (BR-WDR-04);
 //   ③ 09:00:00 / 22:59:59; ⑨ ¥2,000 ≤ payout.daily_cap_fen ¥50,000 (BR-WDR-22); ⑫ the five
 //   default block flags), the BR-WDR-29 label codes ①–⑩ plus risk_calc_failed;
-//   the precheck keys payout.auto_enable_check.* (B2-11d: 08 names no key; the owner registers
-//   BR-WDR-22 ② ⑤ ⑧ as JSON true and the reconciliation days as integers when enabling).
+//   the precheck keys payout.auto_enable_check.* (编排裁定 D10-392: BR-WDR-22 ② ⑤ ⑧ as booleans,
+//   default false, filled by the owner after confirming 规划/09; recon_required_days an integer
+//   ≥ 1, unset by default, which does not pass). The days the daily channel reconciliation
+//   (BR-WDR-23) has run through are a fact read through a port, never a configuration key:
+//   RETIRED_PASSED_DAYS names the key the first draft used, which must stay unregistered and unread.
 
 export const MAX = 'withdraw.auto_payout.max_amount_fen';
 export const WITHDRAW_MAX = 'withdraw.max_amount_fen';
@@ -61,15 +64,14 @@ export const LIMITS_SUPPORTED = 'payout.auto_enable_check.limits_supported';
 export const STATUS_CODES_SUPPORTED = 'payout.auto_enable_check.status_codes_supported';
 export const BILL_SUPPORTED = 'payout.auto_enable_check.bill_out_biz_no_supported';
 export const RECON_REQUIRED_DAYS = 'payout.auto_enable_check.recon_required_days';
-export const RECON_PASSED_DAYS = 'payout.auto_enable_check.recon_passed_days';
+/** Not a configuration key (D10-392): never registered, seeded or read. */
+export const RETIRED_PASSED_DAYS = 'payout.auto_enable_check.recon_passed_days';
 
-export const ENABLE_KEYS = [
-  LIMITS_SUPPORTED,
-  STATUS_CODES_SUPPORTED,
-  BILL_SUPPORTED,
-  RECON_REQUIRED_DAYS,
-  RECON_PASSED_DAYS,
-] as const;
+/** The three BR-WDR-22 support flags (booleans, seeded false). */
+export const SUPPORT_KEYS = [LIMITS_SUPPORTED, STATUS_CODES_SUPPORTED, BILL_SUPPORTED] as const;
+
+/** Every key the precheck reads, in registration order. */
+export const ENABLE_KEYS = [...SUPPORT_KEYS, RECON_REQUIRED_DAYS] as const;
 
 /** Item codes in listing order: BR-WDR-22 ② ⑤ ⑧, then the BR-WDR-23 days. */
 export const ITEM_CODES = [
@@ -81,14 +83,13 @@ export const ITEM_CODES = [
 
 export type ItemCode = (typeof ITEM_CODES)[number];
 
-/** Everything registered: ② ⑤ ⑧ supported, reconciliation run through 7 of 7 days. */
+/** Everything filled in: ② ⑤ ⑧ supported, the owner asks for 7 days of reconciliation. */
 export function enablePassing(): Map<string, unknown> {
   return new Map<string, unknown>([
     [LIMITS_SUPPORTED, true],
     [STATUS_CODES_SUPPORTED, true],
     [BILL_SUPPORTED, true],
     [RECON_REQUIRED_DAYS, 7],
-    [RECON_PASSED_DAYS, 7],
   ]);
 }
 

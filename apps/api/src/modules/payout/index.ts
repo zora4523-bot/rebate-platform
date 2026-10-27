@@ -242,4 +242,8 @@ export type {
   AutoPayoutEnableKey,
   AutoPayoutSaveRefusal,
 } from './domain/auto-config.ts';
-export { readAutoPayoutEnableCheck } from './application/auto-config.ts';
+export {
+  createDefaultReconPassedDays,
+  readAutoPayoutEnableCheck,
+} from './application/auto-config.ts';
+export type { AutoPayoutEnableOptions, ReconPassedDaysPort } from './application/auto-config.ts';

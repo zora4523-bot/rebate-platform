@@ -4,6 +4,7 @@
 // window_end not later than window_start, platform_daily_max_fen > payout.daily_cap_fen, and a
 // risk_block_flags that is not a list of BR-WDR-29 label codes; refused keys come in the order
 // ② ③ ⑨ ⑫. Boundaries are equalities (≤ passes) and same-hour windows (HH:00:00–HH:59:59).
+// That the console's config item writes actually run this check: save-wiring.int.test.ts.
 import { expect, it } from 'vitest';
 import { autoPayoutSaveRefusals } from '../../../../apps/api/src/modules/payout/domain/auto-config.ts';
 import {
