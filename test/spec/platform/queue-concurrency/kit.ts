@@ -13,11 +13,13 @@ export function w(queue: string, concurrency: number, pollingIntervalSeconds = 2
   return { queue, concurrency, pollingIntervalSeconds };
 }
 
-/** ENTRY_PLAN.worker of the trunk (task brief, 现状), in order: 17 queues, 38 slots together. */
+/** ENTRY_PLAN.worker of the trunk (task brief, 现状), in order: 18 queues, 39 slots together. */
 export const TRUNK_WORKER_PLAN: readonly WorkSpec[] = [
   w('order-sync', 1),
   w('order-rescan', 1),
   w('settle', 1),
+  // B2-06fz (D10-326 取 C; D10-376): the worker lands W5 / W6, right after settle.
+  w('payout-landing', 1),
   w('notify', 5),
   w('union-auth', 1),
   w('evt.notification-risk-state', 5),
@@ -49,6 +51,7 @@ const TRUNK_BUSINESS_QUEUES = [
   'order-rescan',
   'settle',
   'payout',
+  'payout-landing',
   'notify',
   'union-auth',
   'evt.notification-risk-state',
@@ -69,6 +72,7 @@ const TRUNK_EXCLUSIVE: ReadonlySet<string> = new Set([
   'order-sync',
   'settle',
   'payout',
+  'payout-landing',
   'risk-scan',
   'union-auth',
   'pay',
@@ -112,6 +116,7 @@ export const ENV_NAME_OF: Readonly<Record<string, string>> = {
   'order-sync': 'QUEUE_CONCURRENCY_ORDER_SYNC',
   'order-rescan': 'QUEUE_CONCURRENCY_ORDER_RESCAN',
   settle: 'QUEUE_CONCURRENCY_SETTLE',
+  'payout-landing': 'QUEUE_CONCURRENCY_PAYOUT_LANDING',
   notify: 'QUEUE_CONCURRENCY_NOTIFY',
   'union-auth': 'QUEUE_CONCURRENCY_UNION_AUTH',
   'evt.notification-risk-state': 'QUEUE_CONCURRENCY_EVT_NOTIFICATION_RISK_STATE',

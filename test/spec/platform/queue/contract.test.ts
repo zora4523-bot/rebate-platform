@@ -189,6 +189,23 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
   });
   expect(QUEUE_CATALOG[payAt - 1]?.name).toBe('evt.payout-went-negative');
   expect(QUEUE_CATALOG[payAt + 1]?.name).toBe('pool-refresh');
+  // B2-06fz（D10-326 取 C）：payout-landing 是 worker 落库 W5 / W6 的队列，重试策略同 payout 行
+  // （exclusive：按 `${withdrawal_id}:${execute_seq}:land:${attempt_id}` 去重），紧跟 payout 之后；
+  // 死信队列 payout-landing.dead 恰一条，设置同其他 `<q>.dead`（下面的列表滤掉 .dead，故在此钉住）。
+  expect(QUEUE_CATALOG.filter((queue) => queue.name === 'payout-landing.dead')).toStrictEqual([
+    {
+      name: 'payout-landing.dead',
+      policy: 'standard',
+      retryLimit: 0,
+      retryDelaySeconds: 1,
+      retryBackoff: false,
+      retryDelayMaxSeconds: null,
+      expireInSeconds: 900,
+      retentionSeconds: 2_592_000,
+      deleteAfterSeconds: 2_592_000,
+      deadLetter: null,
+    },
+  ]);
   expect(
     QUEUE_CATALOG.filter(
       (queue) =>
@@ -207,6 +224,7 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
     { name: 'order-rescan', ...DEFAULT, deadLetter: 'order-rescan.dead' },
     { name: 'settle', ...DEFAULT, policy: 'exclusive', deadLetter: 'settle.dead' },
     { name: 'payout', ...DEFAULT, policy: 'exclusive', deadLetter: 'payout.dead' },
+    { name: 'payout-landing', ...DEFAULT, policy: 'exclusive', deadLetter: 'payout-landing.dead' },
     { name: 'notify', ...DEFAULT, deadLetter: 'notify.dead' },
     {
       name: 'evt.notification-risk-state',
@@ -326,6 +344,9 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
       ENTRY_PLAN[entry].filter((work) => work.queue === 'pay').map(() => entry),
     ),
   ).toStrictEqual([]);
+  // B2-06fz（D10-326 取 C；D10-376）：payout-landing 只由 worker 消费（couli_app 落库），并发 1，
+  // 紧跟 settle（不插在 evt.payout-went-negative 与 pool-refresh 之间，以免与上面 B2-15b 对 pay
+  // 两侧的断言矛盾）；payout 入口不消费它。
   expect({
     ...ENTRY_PLAN,
     worker: ENTRY_PLAN.worker.filter(
@@ -346,6 +367,7 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
     worker: [
       w('order-rescan', 1),
       w('settle', 1),
+      w('payout-landing', 1),
       w('notify', 5),
       w('evt.notification-risk-state', 5),
       w('evt.notification-appeal-result', 5),
@@ -360,10 +382,13 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
 });
 
 it('[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只能为自己计划里的队列注册处理器：其余目录队列一律 not_in_entry', async () => {
+  // B2-06fz: payout-landing is the worker's (couli_app lands W5 / W6), never the payout entry's;
+  // in the worker plan it sits right after settle (D10-376).
   const names = [
     'order-rescan',
     'settle',
     'payout',
+    'payout-landing',
     'notify',
     'pool-refresh',
     'poster',
@@ -388,7 +413,15 @@ it('[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只�
     api: row([]),
     stream: row([]),
     admin: row([]),
-    worker: row(['order-rescan', 'settle', 'notify', 'pool-refresh', 'poster', 'agent-trace']),
+    worker: row([
+      'order-rescan',
+      'settle',
+      'payout-landing',
+      'notify',
+      'pool-refresh',
+      'poster',
+      'agent-trace',
+    ]),
     payout: row(['payout']),
   });
 });
