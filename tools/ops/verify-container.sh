@@ -69,7 +69,7 @@
 # trusted root, never from the task worktree (规划/11 §2.4).
 #
 # Environment: COULI_RUNS, COULI_TRUSTED_ROOT, COULI_SPEC_REPO (conventions C7);
-#   COULI_VERIFY_TIMEOUT_SECS (default 2400, at most 3600; CT-06v); COULI_VERIFY_PREFIX (default couli-verify;
+#   COULI_VERIFY_TIMEOUT_SECS (default 3600, at most 3600; CT-06v, CT-06zxf); COULI_VERIFY_PREFIX (default couli-verify;
 #   prefix of every container, network and volume this script creates);
 #   PROP_SEED / PROP_RUNS are passed through.
 #
@@ -272,9 +272,11 @@ done
 
 # CT-06v (2026-10-19): the default was 1200 and the cap too; with 464 integration test files a full
 # verify ran past it (exit 124 in test:browser). The switch may lower or raise the limit up to the
-# cap; the host-services limits (svc_run, RuntimeMaxSec) follow TIMEOUT_SECS.
+# cap; the host-services limits (svc_run, RuntimeMaxSec) follow TIMEOUT_SECS. CT-06zxf (D10-372,
+# 2026-10-27): default 2400 -> 3600 — 164 full verifies on the test machine 10-23..26 passed in
+# 29.4-39.8 min, and all 9 exit-124 runs stopped at 40.1-40.5 min, the old default.
 MAX_TIMEOUT_SECS=3600
-DEFAULT_TIMEOUT_SECS=2400
+DEFAULT_TIMEOUT_SECS=3600
 TIMEOUT_SECS="${COULI_VERIFY_TIMEOUT_SECS:-$DEFAULT_TIMEOUT_SECS}"
 if ! [[ "$TIMEOUT_SECS" =~ ^[1-9][0-9]*$ ]]; then die "COULI_VERIFY_TIMEOUT_SECS must be a positive integer"; fi
 if [ "$TIMEOUT_SECS" -gt "$MAX_TIMEOUT_SECS" ]; then die "COULI_VERIFY_TIMEOUT_SECS is capped at $MAX_TIMEOUT_SECS"; fi
@@ -909,6 +911,9 @@ svc_check_isolation() {
   if ! printf '%s\n' "$rules" | grep -Eq '^[[:space:]]*type filter hook output priority [^;]+; policy accept;$' ||
     ! printf '%s\n' "$rules" | grep -Eq "^[[:space:]]*meta skuid (\"?$SVC_USER\"?|$uid) (counter packets [0-9]+ bytes [0-9]+ )?(reject|drop)( comment \"[^\"]*\")?\$"; then
     step "nftables chain inet couli_isolation output does not block $SVC_USER (uid $uid)"
+    # CT-06zxf (D10-375): the listing as received, for the cause (firewall rules only: the
+    # `nft list chain` output, no environment, token or password).
+    printf '%s\n' 'nft list chain inet couli_isolation output, as received:' "$rules" >>"$LOG"
     return 1
   fi
   if svc_as_user 10 timeout 3 bash -c ': </dev/tcp/1.1.1.1/443' >/dev/null 2>&1; then
