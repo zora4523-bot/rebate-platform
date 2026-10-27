@@ -1,0 +1,30 @@
+id: B2-11dz
+repo: rebate-platform
+title: 测试修改（D10-394）：登记四个开启前置检查配置键 payout.auto_enable_check.{limits_supported, status_codes_supported, bill_out_biz_no_supported, recon_required_days}（config-registry + db seeds + 冻结注册表测试同改），不带任何行为
+type: test-change
+# 2026-10-27 入账（ops 线，编排裁定 D10-394 (a)，照 B2-11y / D10-373 先例）。B2-11d 的先红在冻结注册表测试上被整文件判（90 条超 red_exempt 上限），
+# 故拆出本前置：只登记四键——三个布尔缺省 false（08 BR-WDR-30「已在 规划/09 判为支持」，负责人确认后填），recon_required_days 整数、缺省不设（null，
+# 即不满足；设了须 ≥ 1），D10-392；recon_passed_days 不做配置键。冻结文件由新鲜独立 Claude 改（approvals #36），另一新鲜独立 Claude 只读复审
+# 「不削弱」，按 approvals #24 请编排加标签；主干上即绿，先合，B2-11d 变基到其后重跑先红。
+refs: []
+refs_hash: {}
+deps: [B2-11y]
+paths:
+  - 'test/spec/content/config-items/registry.test.ts'
+  - 'test/spec/content/config-settle/registry.test.ts'
+  - 'test/spec/content/invite-reward-config/registry.test.ts'
+  - 'test/spec/content/invite-reward-eligibility/registry.test.ts'
+  - 'test/spec/content/invite-reward-config/seeds.test.ts'
+  - 'test/spec/content/config-items/read.int.test.ts'
+  - 'test/spec/content/config-settle/writes.int.test.ts'
+  - 'test/spec/content/config-items/kit.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.test.ts'
+  - 'apps/api/src/modules/content/application/config-item-admin.test.ts'
+  - 'db/seeds/0001_config-defaults.sql'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

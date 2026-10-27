@@ -15,6 +15,9 @@ const ELIGIBILITY = { key: `${PREFIX}eligibility_days`, value: 30 };
 // checked below with the other extra rows). B2-11z (D10-368): the six risk.withdraw.* rows follow
 // payout.* in registration order, under the same checks. B2-11y (D10-373): the seventeen
 // withdraw.auto_payout.* rows follow risk.withdraw.* in registration order, under the same checks.
+// B2-11dz (D10-392 / D10-394): the three payout.auto_enable_check.* boolean rows follow
+// withdraw.auto_payout.* in registration order, under the same checks; recon_required_days is
+// unset by default and has no seed row.
 const PAYOUT_KEYS = [
   'payout.single_cap_fen',
   'payout.daily_cap_fen',
@@ -52,6 +55,11 @@ const AUTO_PAYOUT_KEYS = [
   'withdraw.auto_payout.platform_daily_max_fen',
   'withdraw.auto_payout.risk_block_flags',
 ];
+const AUTO_ENABLE_CHECK_SEEDED_KEYS = [
+  'payout.auto_enable_check.limits_supported',
+  'payout.auto_enable_check.status_codes_supported',
+  'payout.auto_enable_check.bill_out_biz_no_supported',
+];
 
 it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；重跑不覆盖', () => {
   const sql = readFileSync(
@@ -77,6 +85,7 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
     ...PAYOUT_KEYS,
     ...RISK_WITHDRAW_KEYS,
     ...AUTO_PAYOUT_KEYS,
+    ...AUTO_ENABLE_CHECK_SEEDED_KEYS,
   ]);
   for (const row of CONFIGS) {
     const spec = configItemSpecOf(row.key);

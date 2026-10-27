@@ -202,7 +202,8 @@ it('[AC-F1-02zj#13] GET 配置列表包含全部 16 项，enum 选项按契约�
   // followed by exactly inviteNow()'s six keys (F1-02zt：过渡已收紧), and B2-06bz (D10-244 ②、
   // D10-296) then the eight payout.* keys in registration order, and B2-11z (D10-368) then the six
   // risk.withdraw.* keys in registration order, and B2-11y (D10-373) then the seventeen
-  // withdraw.auto_payout.* keys in registration order.
+  // withdraw.auto_payout.* keys in registration order, and B2-11dz (D10-392 / D10-394) then the
+  // four payout.auto_enable_check.* keys in registration order.
   const keys = items.map((item) => item.key);
   const tail = [
     ...inviteNow().map((entry) => entry.key),
@@ -237,6 +238,10 @@ it('[AC-F1-02zj#13] GET 配置列表包含全部 16 项，enum 选项按契约�
     'withdraw.auto_payout.warn.withdraw_received_ratio_bp',
     'withdraw.auto_payout.platform_daily_max_fen',
     'withdraw.auto_payout.risk_block_flags',
+    'payout.auto_enable_check.limits_supported',
+    'payout.auto_enable_check.status_codes_supported',
+    'payout.auto_enable_check.bill_out_biz_no_supported',
+    'payout.auto_enable_check.recon_required_days',
   ];
   const settleEnd = keys.length - tail.length;
   const settleStart = settleEnd - 16;

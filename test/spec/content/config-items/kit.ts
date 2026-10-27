@@ -254,10 +254,28 @@ export const AUTO_PAYOUT: readonly Expected[] = [
   row(`${AUTO}platform_daily_max_fen`, 'number', 'config.business'),
   row(`${AUTO}risk_block_flags`, 'object', 'config.business'),
 ];
+// B2-11dz (D10-392 / D10-394): the BR-WDR-30 细则「开启前置检查」keys the owner fills when enabling,
+// registered right after AUTO_PAYOUT in this order: BR-WDR-22 ② ⑤ ⑧ as booleans (seeded false)
+// and the reconciliation days the owner requires, an integer with no seed row (unset = not
+// passed; AUTO_ENABLE_UNSEEDED). All config.business and editable, options null. Not part of
+// expectedNow() either.
+const ENABLE_CHECK = 'payout.auto_enable_check.';
+export const AUTO_ENABLE_CHECK: readonly Expected[] = [
+  row(`${ENABLE_CHECK}limits_supported`, 'boolean', 'config.business'),
+  row(`${ENABLE_CHECK}status_codes_supported`, 'boolean', 'config.business'),
+  row(`${ENABLE_CHECK}bill_out_biz_no_supported`, 'boolean', 'config.business'),
+  row(`${ENABLE_CHECK}recon_required_days`, 'number', 'config.business'),
+];
+/** B2-11dz (D10-392 / D10-394): registered items that 08 leaves unset by default, hence no seed row. */
+export const AUTO_ENABLE_UNSEEDED: readonly string[] = [`${ENABLE_CHECK}recon_required_days`];
 export const expectedOf = (key: string): Expected => {
-  const found = [...expectedNow(), ...PAYOUT, ...RISK_WITHDRAW, ...AUTO_PAYOUT].find(
-    (entry) => entry.key === key,
-  );
+  const found = [
+    ...expectedNow(),
+    ...PAYOUT,
+    ...RISK_WITHDRAW,
+    ...AUTO_PAYOUT,
+    ...AUTO_ENABLE_CHECK,
+  ].find((entry) => entry.key === key);
   expect(found, key).toBeDefined();
   return found!;
 };
