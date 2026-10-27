@@ -30,8 +30,8 @@ expected_values:
 accept:
   - 'pnpm verify'
   - 'test/spec/payment/diff-sign/**'
-status: todo
-pr: null
+status: done
+pr: 1712
 red_exempt:
   - file: test/spec/payment/recon/anomaly.int.test.ts
     test: '[AC-B2-15j#15] 通知或查询已登记过的异常收款（同渠道交易号）出现在账单里：不重复登记、不再写 PAY_ANOMALY、不再生成差错单'
