@@ -3,14 +3,17 @@
 // (article_id, version, seq) chunks of current revisions are inserted as active; every other active
 // chunk of the app (older version, offline, draft, not help / rule) is retired at the Clock's now.
 // Repeating the call changes nothing (at-least-once delivery); a unique-key conflict on insert
-// counts as already written. `db` is used for app.agent_rule_chunks only. Called by the agent worker
+// counts as already written. Syncs of one app are serialised: one transaction takes the app's
+// advisory lock first, then lists the articles and reads, inserts and retires the chunks, so no sync
+// acts on an article snapshot older than another sync's writes (money review r1 S1).
+// `db` is used for app.agent_rule_chunks only. Called by the agent worker
 // on agent.rag.sync_interval_seconds (wiring with B3-08g).
 // TODO(规划/11 §2.3): build the content reader in app.module and schedule syncRuleChunks per app on
 // the agent worker every agent.rag.sync_interval_seconds — blocked on B3-08g (the wiring is outside
 // B3-08i's paths).
 import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import type { PublishedArticlesReader } from '../../../content/index.ts';
 import type { Clock } from '../../../platform/index.ts';
 import { chunkArticle } from './chunk.ts';
@@ -47,6 +50,23 @@ export async function syncRuleChunks(
   appId: string,
 ): Promise<RuleChunkSyncResult> {
   const { db, clock, articles } = options;
+  return db.transaction().execute(async (trx) => {
+    // Key as content's lockInviteReward / identity's consent lock: hashtextextended of a
+    // module.table:app text. Taken before the articles are listed; READ COMMITTED reads after the
+    // wait see the previous sync's commit.
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`agent.agent_rule_chunks.sync:${appId}`}, 0))`.execute(
+      trx,
+    );
+    return syncLocked(trx, clock, articles, appId);
+  });
+}
+
+async function syncLocked(
+  db: Kysely<DB>,
+  clock: Clock,
+  articles: PublishedArticlesReader,
+  appId: string,
+): Promise<RuleChunkSyncResult> {
   const wanted = new Map<string, WantedChunk>();
   for (const article of await articles.list(appId)) {
     for (const draft of chunkArticle(article)) {
