@@ -81,3 +81,6 @@ export type {
   PersonalDataCopyLedgerRow,
   PersonalDataCopyLedgerSubject,
 } from './application/personal-data-copy-read.ts';
+// B2-11a: BR-WDR-29 ② ⑦ — the member's own entries (read only).
+export { createWithdrawRiskEntryReader } from './ports/withdraw-risk-entries.ts';
+export type { WithdrawRiskEntryReader } from './ports/withdraw-risk-entries.ts';

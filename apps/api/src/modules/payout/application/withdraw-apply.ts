@@ -3,6 +3,11 @@
 // module's executeInTransaction, so the key's result commits with the withdrawal, BR-WDR-07 ⑧).
 // Order inside apply():
 //   first pass   the full BR-WDR-03 chain over fresh reads (B2-05c's validator, no locks taken);
+//   risk flags   BR-WDR-03 ⑭ / BR-WDR-29 (B2-11a): with riskFlags wired, the snapshot at t (the
+//                Clock's now taken for this application before the first pass) under the id the
+//                insert uses, still before any lock; a refused first pass computes nothing. The
+//                labels go into the row (risk_flags, risk_flags_at = t) and are never recomputed;
+//                a refusal under the locks rolls back to a savepoint taken before it (③'s rows);
 //   locks        ① identity's users row lock → ② ledger.lockBalances (the member's balance row) →
 //                ③ pg_advisory_xact_lock(hashtext(app_id || ':' || payee_hmac)::bigint) on the
 //                payee HMAC of the snapshot (BR-WDR-07 ③);
@@ -27,7 +32,7 @@ import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import { buildVouchers } from '@couli/domain';
 import { fenToJsonNumber, subFen } from '@couli/money';
-import { sql, type Insertable, type Kysely, type Transaction } from 'kysely';
+import { sql, type InsertObject, type Kysely, type Transaction } from 'kysely';
 import type { Ledger, PostingEntry } from '../../ledger/index.ts';
 import { newUuidV7, type EventBus } from '../../platform/index.ts';
 import { maskPayeeAccount, payoutChannelName } from '../domain/mask-payee.ts';
@@ -38,7 +43,9 @@ import {
   type WorkdayCalendarYear,
 } from '../domain/review-deadline.ts';
 import { validateLockedWithdrawal } from '../domain/withdraw-locked.ts';
+import type { WithdrawRiskFlag } from '../domain/risk-flags.ts';
 import { validateWithdrawal, type WithdrawBlock } from '../domain/withdraw-rules.ts';
+import type { WithdrawApplyRiskOptions } from './withdraw-risk-flags.ts';
 import {
   readWithdrawInput,
   type WithdrawActor,
@@ -56,7 +63,7 @@ export interface WithdrawPayeeSnapshot {
   account: string;
 }
 
-export interface WithdrawApplyOptions {
+export interface WithdrawApplyOptions extends WithdrawApplyRiskOptions {
   /** Reuse B2-05c's validator and readers for the first pass and locked subset ⑦⑧⑩⑪⑫. */
   rules: WithdrawRulesOptions;
   ledger: Ledger;
@@ -106,6 +113,8 @@ const OUT_BIZ_NO_KEY = 'withdrawals_out_biz_no_key';
 /** The initial candidate plus at most three regenerated ones (BR-WDR-07 out_biz_no). */
 const OUT_BIZ_NO_ATTEMPTS = 4;
 const SAVEPOINT = sql.raw('payout_withdrawal_insert');
+/** Before the risk-flag snapshot: a refusal under the locks takes back ③'s judgement rows. */
+const RISK_SAVEPOINT = sql.raw('payout_withdrawal_risk_flags');
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 function isOutBizNoCollision(error: unknown): boolean {
@@ -202,7 +211,7 @@ export function createWithdrawApply(options: WithdrawApplyOptions): WithdrawAppl
   /** INSERT in a savepoint: an out_biz_no collision regenerates, anything else propagates. */
   async function insertWithdrawal(
     trx: Transaction<DB>,
-    row: Omit<Insertable<DB['withdrawals']>, 'out_biz_no'>,
+    row: Omit<InsertObject<DB, 'withdrawals'>, 'out_biz_no'>,
   ): Promise<void> {
     for (let attempt = 1; ; attempt += 1) {
       const outBizNo = options.outBizNo();
@@ -230,18 +239,41 @@ export function createWithdrawApply(options: WithdrawApplyOptions): WithdrawAppl
         deviceId: command.deviceId,
       };
       const amount = command.amountFen;
+      // t of this application (BR-WDR-29 计算时点).
+      const t = clock.now();
       // First pass: the whole chain, no locks (a refusal here never touches a row).
       const first = await readWithdrawInput(trx, actor, command.stepUpValid, rules);
       const quote = await rules.feeTax.calculate(trx, {
         ...actor,
         amountFen: amount,
-        now: clock.now(),
+        now: t,
       });
       const fee = quote.fee_fen;
       const tax = quote.tax_fen;
       const net = subFen(subFen(amount, fee), tax);
       const refused = validateWithdrawal(first, amount, net);
       if (refused !== null) return refused;
+      // BR-WDR-03 ⑭: the risk-flag snapshot, before the locks; ③ is judged under this id.
+      const id = newUuidV7(t);
+      let riskFlags: readonly WithdrawRiskFlag[] | null = null;
+      if (options.riskFlags !== undefined) {
+        await sql`SAVEPOINT ${RISK_SAVEPOINT}`.execute(trx);
+        const payee = await rules.subject.read(trx, { appId: actor.appId, userId: actor.userId });
+        riskFlags = await options.riskFlags.compute(trx, {
+          appId: actor.appId,
+          userId: actor.userId,
+          withdrawalId: id,
+          amountFen: amount,
+          // The first pass refused a member without a current account (BR-WDR-03 ⑤).
+          payeeHmac: payee === null ? '' : payee.payee_hmac,
+          now: t,
+        });
+      }
+      /** A refusal under the locks: no withdrawal, so nothing of the snapshot (③'s rows) stays. */
+      async function refuse(block: WithdrawBlock): Promise<WithdrawBlock> {
+        if (riskFlags !== null) await sql`ROLLBACK TO SAVEPOINT ${RISK_SAVEPOINT}`.execute(trx);
+        return block;
+      }
       // Locks in the fixed order (BR-WDR-07 ①②③), then the snapshot and the locked re-check ④.
       await options.lockUsersForUpdate(trx, { appId: actor.appId, userIds: [actor.userId] });
       const balances = await ledger.lockBalances(trx, {
@@ -250,18 +282,17 @@ export function createWithdrawApply(options: WithdrawApplyOptions): WithdrawAppl
       });
       const balance = balances.find((row) => row.user_id === actor.userId);
       // No ledger account means no balance: the first pass already refused (available 0 < amount).
-      if (balance === undefined) return { code: 30301, data: {} };
+      if (balance === undefined) return refuse({ code: 30301, data: {} });
       const snapshot = await options.snapshot.read(trx, actor);
-      if (snapshot === null) return { code: 30305, data: {} };
+      if (snapshot === null) return refuse({ code: 30305, data: {} });
       await sql`SELECT pg_advisory_xact_lock(hashtext(${`${actor.appId}:${snapshot.payee_hmac}`})::bigint)`.execute(
         trx,
       );
       const locked = await readWithdrawInput(trx, actor, command.stepUpValid, rules);
       const again = validateLockedWithdrawal(locked, amount);
-      if (again !== null) return again;
+      if (again !== null) return refuse(again);
       // Build the row.
       const now = clock.now();
-      const id = newUuidV7(now);
       const review = await reviewFields(trx, actor.appId, now);
       await insertWithdrawal(trx, {
         id,
@@ -283,6 +314,11 @@ export function createWithdrawApply(options: WithdrawApplyOptions): WithdrawAppl
         review_mode: review.review_mode,
         review_deadline: review.review_deadline,
         payout_channel: snapshot.payout_method,
+        risk_flags:
+          riskFlags === null
+            ? null
+            : sql<DB['withdrawals']['risk_flags']>`CAST(${JSON.stringify(riskFlags)} AS jsonb)`,
+        risk_flags_at: riskFlags === null ? null : t,
         created_at: now,
         updated_at: now,
       });

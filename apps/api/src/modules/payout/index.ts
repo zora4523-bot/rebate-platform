@@ -207,3 +207,29 @@ export type {
   LandingJobPayload,
 } from './jobs/landing-job.ts';
 export { handoffLanding, recordedResponse } from './application/landing-handoff.ts';
+// B2-11a: BR-WDR-29 审核风险标签快照 (W1 writes it; ④⑤⑥ reused by BR-WDR-30 ⑧).
+export {
+  createWithdrawRiskFlags,
+  WITHDRAW_RISK_CONFIG_KEYS,
+  WITHDRAW_RISK_DEFAULTS,
+} from './application/withdraw-risk-flags.ts';
+export type {
+  WithdrawApplyRiskOptions,
+  WithdrawRiskFactsReader,
+  WithdrawRiskFlags,
+  WithdrawRiskFlagsOptions,
+  WithdrawRiskSubject,
+} from './application/withdraw-risk-flags.ts';
+export { createWithdrawRiskFactsReader } from './infra/withdraw-risk-facts.ts';
+export type {
+  WithdrawRiskFactsPorts,
+  WithdrawRiskPayeeHistoryPort,
+  WithdrawRiskSharesPort,
+} from './infra/withdraw-risk-facts.ts';
+export {
+  commissionRateBp,
+  highCommissionRatioFlag,
+  invalidRatioFlag,
+  withdrawVsReceivedFlag,
+} from './domain/risk-flags.ts';
+export type { WithdrawRiskFlag, WithdrawRiskFlagCode } from './domain/risk-flags.ts';

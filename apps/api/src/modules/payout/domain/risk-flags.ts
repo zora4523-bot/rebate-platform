@@ -7,6 +7,7 @@
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports,
 // relative imports with `.ts`.
+import { mulDivCeil, mulDivFloor } from '@couli/money';
 
 /** The labels computed at W1 (⑨ blacklist_hit is checked live, not here), in BR order. */
 export type WithdrawRiskFlagCode =
@@ -82,14 +83,47 @@ export interface WithdrawReceivedAmounts {
   readonly received_fen: bigint;
 }
 
+const BP = 10000n;
+
+/** A bp (or count) bigint as a JSON-safe integer; beyond 2^53 − 1 it throws rather than round. */
+function safeInteger(value: bigint): number {
+  if (value > BigInt(Number.MAX_SAFE_INTEGER) || value < -BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError('risk flag value exceeds the safe integer range');
+  }
+  return Number(value);
+}
+
+/** numerator × 10000 / denominator floored, and whether it is exactly above `thresholdBp`. */
+function ratio(
+  numerator: bigint,
+  denominator: bigint,
+  thresholdBp: number,
+): { bp: bigint; above: boolean } {
+  // For an integer threshold, numerator × 10000 / denominator > threshold ⇔ its ceiling > threshold.
+  return {
+    bp: mulDivFloor(numerator, BP, denominator),
+    above: mulDivCeil(numerator, BP, denominator) > BigInt(thresholdBp),
+  };
+}
+
+/** ⑤ the floored rate as bigint; null when it is undefined (missing value, base ≤ 0, est < 0). */
+function rateBp(fact: CommissionFact): bigint | null {
+  const est = fact.est_commission_fen;
+  const base = fact.commission_base_fen;
+  if (est === null || base === null || base <= 0n || est < 0n) return null;
+  return mulDivFloor(est, BP, base);
+}
+
 /** ⑤ a sub-order's commission rate in bp, floored; null when the base is not positive. */
 export function commissionRateBp(
   estCommissionFen: bigint,
   commissionBaseFen: bigint,
 ): number | null {
-  void estCommissionFen;
-  void commissionBaseFen;
-  throw new Error('NotImplemented: commissionRateBp');
+  const bp = rateBp({
+    est_commission_fen: estCommissionFen,
+    commission_base_fen: commissionBaseFen,
+  });
+  return bp === null ? null : safeInteger(bp);
 }
 
 /** ④ invalid_ratio_60d, or null when it does not hit. */
@@ -97,9 +131,18 @@ export function invalidRatioFlag(
   counts: InvalidRatioCounts,
   thresholds: InvalidRatioThresholds,
 ): WithdrawRiskFlag | null {
-  void counts;
-  void thresholds;
-  throw new Error('NotImplemented: invalidRatioFlag');
+  if (counts.orders <= 0 || counts.invalid < thresholds.invalid_min_count) return null;
+  const { bp, above } = ratio(
+    BigInt(counts.invalid),
+    BigInt(counts.orders),
+    thresholds.invalid_ratio_bp,
+  );
+  if (!above) return null;
+  return {
+    code: 'invalid_ratio_60d',
+    value: safeInteger(bp),
+    threshold: thresholds.invalid_ratio_bp,
+  };
 }
 
 /** ⑤ high_commission_ratio_60d, or null when it does not hit. */
@@ -107,17 +150,33 @@ export function highCommissionRatioFlag(
   orders: readonly CommissionFact[],
   thresholds: HighCommissionThresholds,
 ): WithdrawRiskFlag | null {
-  void orders;
-  void thresholds;
-  throw new Error('NotImplemented: highCommissionRatioFlag');
+  const total = orders.length;
+  if (total <= 0 || total < thresholds.min_orders) return null;
+  const rate = BigInt(thresholds.high_commission_rate_bp);
+  let high = 0n;
+  for (const order of orders) {
+    const bp = rateBp(order);
+    if (bp !== null && bp >= rate) high += 1n;
+  }
+  const { bp, above } = ratio(high, BigInt(total), thresholds.high_commission_ratio_bp);
+  if (!above) return null;
+  return {
+    code: 'high_commission_ratio_60d',
+    value: safeInteger(bp),
+    threshold: thresholds.high_commission_ratio_bp,
+  };
 }
 
-/** ⑥ withdraw_vs_received, or null when it does not hit. */
+/** ⑥ withdraw_vs_received, or null when it does not hit. A denominator ≤ 0 counts as 0. */
 export function withdrawVsReceivedFlag(
   amounts: WithdrawReceivedAmounts,
   thresholds: WithdrawReceivedThresholds,
 ): WithdrawRiskFlag | null {
-  void amounts;
-  void thresholds;
-  throw new Error('NotImplemented: withdrawVsReceivedFlag');
+  const threshold = thresholds.withdraw_received_ratio_bp;
+  if (amounts.received_fen <= 0n) {
+    return { code: 'withdraw_vs_received', value: null, threshold };
+  }
+  const { bp, above } = ratio(amounts.withdrawn_fen, amounts.received_fen, threshold);
+  if (!above) return null;
+  return { code: 'withdraw_vs_received', value: safeInteger(bp), threshold };
 }

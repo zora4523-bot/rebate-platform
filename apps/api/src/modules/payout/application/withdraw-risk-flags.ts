@@ -15,63 +15,26 @@
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports,
 // relative imports with `.ts`.
 import type { DB } from '@couli/db';
-import type { Kysely, Transaction } from 'kysely';
+import { addFen } from '@couli/money';
+import { sql, type Transaction } from 'kysely';
 import type { Logger } from 'pino';
 import type { SameDeviceAccountsCheck } from '../../risk/index.ts';
-import type { SelfOrderFact, WithdrawRiskFlag } from '../domain/risk-flags.ts';
+import {
+  highCommissionRatioFlag,
+  invalidRatioFlag,
+  withdrawVsReceivedFlag,
+  type SelfOrderFact,
+  type WithdrawRiskFlag,
+  type WithdrawRiskFlagCode,
+  type WithdrawRiskThresholds,
+} from '../domain/risk-flags.ts';
+import { createWithdrawRiskFactsReader } from '../infra/withdraw-risk-facts.ts';
+import type { WithdrawRiskFactsReader, WithdrawRiskSubject } from './withdraw-risk-port.ts';
 import type { PayoutConfigPort } from './withdraw-rules.ts';
 
-/** The application being judged, at t. */
-export interface WithdrawRiskSubject {
-  readonly appId: string;
-  readonly userId: string;
-  /** The id the W1 insert uses (③'s ref). */
-  readonly withdrawalId: string;
-  /** This application's amount, counted in ⑥'s numerator. */
-  readonly amountFen: bigint;
-  /** The payee HMAC of the member's current payout account (⑩). */
-  readonly payeeHmac: string;
-  /** t. Windows are [t − N×24 h, t], both ends closed; ② is t's +08:00 day from 00:00 to t. */
-  readonly now: Date;
-}
-
-/** The facts behind ①②④⑤⑥⑦⑧⑩, read on the handle given (the W1 transaction). */
-export interface WithdrawRiskFactsReader {
-  /** ① a withdrawal of the member with status PAID_API or PAID_MANUAL exists. */
-  hasPaidWithdrawal(handle: Kysely<DB>, subject: WithdrawRiskSubject): Promise<boolean>;
-  /** ② a REBATE_CREDIT / SHARE_CREDIT / REFERRAL_CREDIT entry of the member in t's day up to t. */
-  creditedToday(handle: Kysely<DB>, subject: WithdrawRiskSubject): Promise<boolean>;
-  /**
-   * ④⑤ the member's attributed buy_type=self sub-orders with paid_at in the 60-day window, one
-   * fact per sub-order however many order_rights rows it has; est_commission_fen and
-   * commission_base_fen are the union's synced values (orders.est_commission_fen, pay_amount_fen).
-   */
-  selfOrders60d(
-    handle: Kysely<DB>,
-    subject: WithdrawRiskSubject,
-  ): Promise<readonly SelfOrderFact[]>;
-  /**
-   * ⑥ amount_fen of the member's withdrawals created in the 30-day window with status not in
-   * {REJECTED, FAILED}; this application is not among them (compute() adds amountFen).
-   */
-  withdrawn30dFen(handle: Kysely<DB>, subject: WithdrawRiskSubject): Promise<bigint>;
-  /**
-   * ⑥ the member's rebate shares as beneficiary (self, share, direct) on sub-orders with received_at
-   * in the 60-day window and rebate_status WAITING (current estimate) or CREDITED (net credited).
-   */
-  received60dFen(handle: Kysely<DB>, subject: WithdrawRiskSubject): Promise<bigint>;
-  /** ⑦ an entry of the member with balance_after_fen < 0 exists. */
-  hadNegative(handle: Kysely<DB>, subject: WithdrawRiskSubject): Promise<boolean>;
-  /** ⑧ a withdraw_holds row of the member with reason recon_diff exists (released ones included). */
-  reconDiff(handle: Kysely<DB>, subject: WithdrawRiskSubject): Promise<boolean>;
-  /**
-   * ⑩ (BR-WDR-02 细则) another member's binding of the payee HMAC was still held at some instant of
-   * the 90 × 24 hours up to the binding time of the member's current payout account (both ends
-   * closed; whenever it ended). The anchor is that binding time, not t: every later withdrawal of
-   * the member carries the label.
-   */
-  payeePrevOtherUser(handle: Kysely<DB>, subject: WithdrawRiskSubject): Promise<boolean>;
-}
+// The facts port lives in ./withdraw-risk-port.ts so the default reader (../infra) does not
+// import this file back.
+export type { WithdrawRiskFactsReader, WithdrawRiskSubject } from './withdraw-risk-port.ts';
 
 export interface WithdrawRiskFlagsOptions {
   /** risk.withdraw.* thresholds, read on the W1 transaction. */
@@ -79,7 +42,10 @@ export interface WithdrawRiskFlagsOptions {
   readonly logger: Pick<Logger, 'warn'>;
   /** ③ BR-ID-37, judged in the caller's transaction (B1-03k / B1-03n). */
   readonly sameDevice: SameDeviceAccountsCheck;
-  /** Absent: createWithdrawRiskFactsReader(). */
+  /**
+   * Absent: createWithdrawRiskFactsReader() without ports, whose ⑥ and ⑩ then fail (→
+   * risk_calc_failed); production passes the reader with commission's and identity's ports.
+   */
   readonly facts?: WithdrawRiskFactsReader;
 }
 
@@ -92,7 +58,172 @@ export interface WithdrawApplyRiskOptions {
   riskFlags?: WithdrawRiskFlags;
 }
 
+/** 9.3 #6: the configuration keys of the six thresholds and their defaults (BR-WDR-29). */
+export const WITHDRAW_RISK_CONFIG_KEYS: Readonly<Record<keyof WithdrawRiskThresholds, string>> = {
+  invalid_ratio_bp: 'risk.withdraw.invalid_ratio_bp',
+  invalid_min_count: 'risk.withdraw.invalid_min_count',
+  high_commission_rate_bp: 'risk.withdraw.high_commission_rate_bp',
+  high_commission_ratio_bp: 'risk.withdraw.high_commission_ratio_bp',
+  min_orders: 'risk.withdraw.min_orders',
+  withdraw_received_ratio_bp: 'risk.withdraw.withdraw_received_ratio_bp',
+};
+
+export const WITHDRAW_RISK_DEFAULTS: WithdrawRiskThresholds = {
+  invalid_ratio_bp: 3000,
+  invalid_min_count: 3,
+  high_commission_rate_bp: 5000,
+  high_commission_ratio_bp: 5000,
+  min_orders: 5,
+  withdraw_received_ratio_bp: 10000,
+};
+
+const THRESHOLD_NAMES = Object.keys(WITHDRAW_RISK_CONFIG_KEYS) as (keyof WithdrawRiskThresholds)[];
+const SAVEPOINT = sql.raw('payout_withdraw_risk_item');
+/** BR order ①②③④⑤⑥⑦⑧⑩ (risk_calc_failed follows). */
+const WITHDRAW_RISK_FLAG_ORDER: readonly WithdrawRiskFlagCode[] = [
+  'first_withdrawal',
+  'credited_today',
+  'same_device_multi_account',
+  'invalid_ratio_60d',
+  'high_commission_ratio_60d',
+  'withdraw_vs_received',
+  'had_negative',
+  'recon_diff',
+  'payee_prev_other_user',
+];
+
+/** A stored threshold: a non-negative safe integer, else unusable (the default applies). */
+function thresholdOf(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
 export function createWithdrawRiskFlags(options: WithdrawRiskFlagsOptions): WithdrawRiskFlags {
-  void options;
-  throw new Error('NotImplemented: createWithdrawRiskFlags');
+  const facts = options.facts ?? createWithdrawRiskFactsReader();
+  const { config, logger, sameDevice } = options;
+
+  /**
+   * `work` under a savepoint: a failure (a failed statement or one thrown without any) rolls back
+   * to it and answers `failed`; the transaction stays usable. A failure of the rollback itself (the
+   * connection is gone) propagates.
+   */
+  async function isolated<V>(
+    trx: Transaction<DB>,
+    work: () => Promise<V>,
+  ): Promise<{ ok: true; value: V } | { ok: false }> {
+    await sql`SAVEPOINT ${SAVEPOINT}`.execute(trx);
+    let value: V;
+    try {
+      value = await work();
+    } catch {
+      // The error may carry driver details or member data: never logged.
+      await sql`ROLLBACK TO SAVEPOINT ${SAVEPOINT}`.execute(trx);
+      await sql`RELEASE SAVEPOINT ${SAVEPOINT}`.execute(trx);
+      return { ok: false };
+    }
+    await sql`RELEASE SAVEPOINT ${SAVEPOINT}`.execute(trx);
+    return { ok: true, value };
+  }
+
+  async function thresholds(trx: Transaction<DB>, appId: string): Promise<WithdrawRiskThresholds> {
+    const result: Record<keyof WithdrawRiskThresholds, number> = { ...WITHDRAW_RISK_DEFAULTS };
+    for (const name of THRESHOLD_NAMES) {
+      const key = WITHDRAW_RISK_CONFIG_KEYS[name];
+      const read = await isolated(trx, () => config.configValue(appId, key, trx));
+      const value = read.ok && read.value !== null ? thresholdOf(read.value.value) : null;
+      if (value !== null) {
+        result[name] = value;
+      } else if (!read.ok || read.value !== null) {
+        // Unreadable or malformed (unset is the default silently): the key only, never the value.
+        logger.warn({ app_id: appId, key }, 'withdraw_risk_threshold_default');
+      }
+    }
+    return result;
+  }
+
+  return {
+    async compute(trx, subject) {
+      const limits = await thresholds(trx, subject.appId);
+      const hits = new Map<WithdrawRiskFlagCode, WithdrawRiskFlag>();
+      const failed = new Set<WithdrawRiskFlagCode>();
+      /** One item: its labels when it ran, else every code it stands for goes to risk_calc_failed. */
+      async function item(
+        codes: readonly WithdrawRiskFlagCode[],
+        work: () => Promise<readonly (WithdrawRiskFlag | null)[]>,
+      ): Promise<void> {
+        const run = await isolated(trx, work);
+        if (!run.ok) {
+          for (const code of codes) failed.add(code);
+          return;
+        }
+        for (const flag of run.value) {
+          if (flag !== null && flag.code !== 'risk_calc_failed') hits.set(flag.code, flag);
+        }
+      }
+      const yes = (code: WithdrawRiskFlagCode): WithdrawRiskFlag => ({
+        code,
+        value: true,
+        threshold: null,
+      });
+
+      await item(['first_withdrawal'], async () => [
+        (await facts.hasPaidWithdrawal(trx, subject)) ? null : yes('first_withdrawal'),
+      ]);
+      await item(['credited_today'], async () => [
+        (await facts.creditedToday(trx, subject)) ? yes('credited_today') : null,
+      ]);
+      await item(['same_device_multi_account'], async () => {
+        const judged = await sameDevice.judge(trx, {
+          app_id: subject.appId,
+          user_id: subject.userId,
+          ref: { type: 'withdrawal', id: subject.withdrawalId },
+        });
+        return [judged.marked ? yes('same_device_multi_account') : null];
+      });
+      await item(['invalid_ratio_60d', 'high_commission_ratio_60d'], async () => {
+        const orders: readonly SelfOrderFact[] = await facts.selfOrders60d(trx, subject);
+        return [
+          invalidRatioFlag(
+            { orders: orders.length, invalid: orders.filter((order) => order.invalid).length },
+            limits,
+          ),
+          highCommissionRatioFlag(orders, limits),
+        ];
+      });
+      await item(['withdraw_vs_received'], async () => {
+        const withdrawn = await facts.withdrawn30dFen(trx, subject);
+        const received = await facts.received60dFen(trx, subject);
+        return [
+          withdrawVsReceivedFlag(
+            { withdrawn_fen: addFen(withdrawn, subject.amountFen), received_fen: received },
+            limits,
+          ),
+        ];
+      });
+      await item(['had_negative'], async () => [
+        (await facts.hadNegative(trx, subject)) ? yes('had_negative') : null,
+      ]);
+      await item(['recon_diff'], async () => [
+        (await facts.reconDiff(trx, subject)) ? yes('recon_diff') : null,
+      ]);
+      await item(['payee_prev_other_user'], async () => [
+        (await facts.payeePrevOtherUser(trx, subject)) ? yes('payee_prev_other_user') : null,
+      ]);
+
+      const flags: WithdrawRiskFlag[] = [];
+      const failedCodes: WithdrawRiskFlagCode[] = [];
+      for (const code of WITHDRAW_RISK_FLAG_ORDER) {
+        const hit = hits.get(code);
+        if (hit !== undefined) flags.push(hit);
+        if (failed.has(code)) failedCodes.push(code);
+      }
+      if (failedCodes.length > 0) {
+        logger.warn(
+          { app_id: subject.appId, withdrawal_id: subject.withdrawalId, codes: failedCodes },
+          'withdraw_risk_calc_failed',
+        );
+        flags.push({ code: 'risk_calc_failed', value: failedCodes, threshold: null });
+      }
+      return flags;
+    },
+  };
 }

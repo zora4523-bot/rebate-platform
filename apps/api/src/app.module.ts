@@ -63,6 +63,7 @@ import {
 } from './modules/catalog/index.ts';
 import {
   createSelfRebateEstimateReader,
+  createBeneficiaryShareReader,
   COMMISSION_QUOTE_CONFIG_KEYS,
   createCommissionRebateQuoter,
   createCommissionSnapshot,
@@ -122,6 +123,7 @@ import {
   type DataCopyInbox,
   type IdentityDataCopyPorts,
   createWithdrawSubjectReader,
+  createPayeeBindingHistoryReader,
   laborAgreementSigned,
   IdentityAdminModule,
   IdentityModule,
@@ -209,6 +211,8 @@ import {
   PayoutModule,
   createDefaultFeeTaxCalculator,
   createWithdrawApply,
+  createWithdrawRiskFlags,
+  createWithdrawRiskFactsReader,
   createBalanceRecoveredHook,
   createPersonalDataCopyWithdrawalsReader,
   createPayoutAttemptsStore,
@@ -2967,8 +2971,9 @@ function payoutModule(): DynamicModule {
         eventBus?: EventBus,
       ): WithdrawApplyService | null => {
         if (db === undefined || crypto === undefined) return null;
+        const rules = withdrawRuleOptions(clock, logger, db, crypto);
         return createWithdrawApply({
-          rules: withdrawRuleOptions(clock, logger, db, crypto),
+          rules,
           ledger: createLedger({
             clock,
             ...(eventBus === undefined ? {} : { eventBus }),
@@ -2978,6 +2983,22 @@ function payoutModule(): DynamicModule {
           snapshot: createWithdrawPayeeSnapshotReader(crypto),
           outBizNo: () => generateOutBizNo(randomBytes),
           ...(eventBus === undefined ? {} : { eventBus }),
+          // B2-11a: the BR-WDR-29 snapshot at BR-WDR-03 ⑭; thresholds through content's reader on
+          // the W1 transaction, ③ through risk's BR-ID-37 check judged on that transaction.
+          riskFlags: createWithdrawRiskFlags({
+            config: rules.config,
+            logger: rules.logger,
+            sameDevice: createSameDeviceAccountsCheck({
+              clock,
+              logger,
+              logins: createSameDeviceLoginReader(),
+              config: (handle) => createContentReader({ db: handle, clock }),
+            }),
+            facts: createWithdrawRiskFactsReader({
+              shares: createBeneficiaryShareReader(),
+              payeeHistory: createPayeeBindingHistoryReader(),
+            }),
+          }),
         });
       },
     },

@@ -70,3 +70,9 @@ export type {
 } from './application/rule-publication.ts';
 export { readTljDeductFen, TljDeductionMissing } from './infra/tlj-deduction-reader.ts';
 export type { TljDeductionInput } from './infra/tlj-deduction-reader.ts';
+// B2-11a: BR-WDR-29 ⑥ — the member's beneficiary shares from the split snapshot (read only).
+export {
+  createBeneficiaryShareReader,
+  WITHDRAW_RISK_SHARE_ROLES,
+} from './ports/withdraw-risk-shares.ts';
+export type { BeneficiaryShareReader } from './ports/withdraw-risk-shares.ts';
