@@ -1043,10 +1043,12 @@ start_host_services() { # <what the services are for, for the log>
   # One lock for the whole host (every lane, every COULI_RUNS): the container label, the unit
   # prefix and the instance root below are all host-wide, and so is this lock.
   exec 9>>"$SVC_LOCK" || die "cannot open the host-services lock $SVC_LOCK"
-  # CT-06zxg (D10-382): the wait follows TIMEOUT_SECS like RuntimeMaxSec (TIMEOUT_SECS × 2 + 1800),
-  # so a run queued behind a full verify (which may hold the lock up to its own limit plus the
-  # preamble and clean-up) does not give up first; only the wait changes, not the lock.
-  local lock_wait=$((TIMEOUT_SECS * 2 + 1800))
+  # CT-06zxg (D10-382): the wait follows the time limit like RuntimeMaxSec (× 2 + 1800), taken from
+  # the cap MAX_TIMEOUT_SECS, not this run's own TIMEOUT_SECS: the holder may run with a larger
+  # limit than the waiter. It covers the worst hold of one full verify (limit + 930 s + preamble and
+  # clean-up); a --red run with two service containers can in theory hold longer. Only the wait
+  # changes, not the lock.
+  local lock_wait=$((MAX_TIMEOUT_SECS * 2 + 1800))
   step "waiting for the host-services lock $SVC_LOCK ($1)"
   flock -w "$lock_wait" 9 || die "another run holds $SVC_LOCK for more than $lock_wait s"
   SVC_LOCKED=1
