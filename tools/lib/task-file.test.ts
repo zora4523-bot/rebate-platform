@@ -280,6 +280,22 @@ describe('parseTaskFile', () => {
     expect(messageOf(declared(pair(`"''"`, `"'bbb'"`)), 'B2-02a.yaml')).toContain(
       'must hold at least',
     );
+    // D10-379: a number is not a name — the content needs an ASCII letter (from and to alike).
+    for (const numeric of [`"'500'"`, `"'-500'"`, `"'1.5'"`, `"'2026-10-27'"`]) {
+      expect(messageOf(declared(pair(numeric, `"'bbb'"`)), 'B2-02a.yaml'), numeric).toContain(
+        `renames[0].from: ${numeric} must hold at least one ASCII letter`,
+      );
+      expect(messageOf(declared(pair(`"'bbb'"`, numeric)), 'B2-02a.yaml'), numeric).toContain(
+        `renames[0].to: ${numeric} must hold at least one ASCII letter`,
+      );
+    }
+    expect(
+      parseTaskFile(declared(pair(`"'freeze-expiry'"`, `"'freeze_expiry'"`)), 'B2-02a.yaml')
+        .renames,
+    ).toHaveLength(1);
+    expect(parseTaskFile(declared(pair(`"'a1b'"`, `"'a2b'"`)), 'B2-02a.yaml').renames).toEqual([
+      { from: "'a1b'", to: "'a2b'" },
+    ]);
     // Different quotes, from = to, the same from twice.
     expect(messageOf(declared(pair(`"'aaa'"`, `'"bbb"'`)), 'B2-02a.yaml')).toContain(
       'renames[0]: from and to must use the same quote',

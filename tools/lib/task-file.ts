@@ -110,7 +110,9 @@ export const RENAME_CONTENT_MIN = 3;
  * refused. What the shape cannot tell is the meaning of a real literal swapped for another
  * (`'foo'` → `'bar'` may change an expected value): that is caught by the rule-test reviewer, who
  * confirms every pair that hits, and every file it leaves out, in `renames_confirmed`
- * (tools/ci/evidence-check.ts).
+ * (tools/ci/evidence-check.ts). D10-379: the content holds at least one ASCII letter, so a number
+ * (`'500'`, `'-500'`, `'1.5'`, a date) is never a rename: renaming `'500'` to `'-500'` in a frozen
+ * money test would take it out of red-check; changed expected values go through D10-371 instead.
  */
 export const RENAME_NAME_CHARS = 'A-Za-z0-9_.:/@-';
 const RENAME_LITERAL = new RegExp(`^(['"\`])([${RENAME_NAME_CHARS}]*)\\1$`);
@@ -281,6 +283,9 @@ function renameLiteralProblem(value: string): string | null {
   }
   if ((m[2] ?? '').length < RENAME_CONTENT_MIN) {
     return `must hold at least ${RENAME_CONTENT_MIN} characters between its quotes`;
+  }
+  if (!/[A-Za-z]/.test(m[2] ?? '')) {
+    return 'must hold at least one ASCII letter between its quotes (D10-379: a number is not a name)';
   }
   return null;
 }
