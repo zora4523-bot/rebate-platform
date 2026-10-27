@@ -10,7 +10,6 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createSameDeviceLoginReader } from '../../../../apps/api/src/modules/identity/ports/same-device-logins.ts';
 import type { WithdrawRiskFlags } from '../../../../apps/api/src/modules/payout/application/withdraw-risk-flags.ts';
 import type { WithdrawRiskFlag } from '../../../../apps/api/src/modules/payout/domain/risk-flags.ts';
-import { createWithdrawRiskFactsReader } from '../../../../apps/api/src/modules/payout/infra/withdraw-risk-facts.ts';
 import { createRootLogger } from '../../../../apps/api/src/modules/platform/logging/logger.ts';
 import { createSameDeviceAccountsCheck } from '../../../../apps/api/src/modules/risk/application/same-device-accounts.ts';
 import {
@@ -51,6 +50,7 @@ import {
   type FactCall,
   type JudgeCall,
   type RiskServiceInput,
+  realRiskFacts,
 } from './kit.ts';
 import { KEYS, LOUD, LOUD_FLAGS, QUIET, failed, flag } from './oracle.ts';
 
@@ -225,7 +225,7 @@ it('[AC-B2-11a#41] ③ 端口调用报错不阻断申请：照常建单冻结，
 it('[AC-B2-11a#42] 某项事实查询报错不阻断申请：该项写入 risk_calc_failed，其余照算', async () => {
   const f = await fixture(h);
   await seedHold(f, { reason: 'recon_diff', createdAt: ago(20 * DAY), releasedAt: ago(10 * DAY) });
-  const facts = breakFact(createWithdrawRiskFactsReader(), 'reconDiff', failingStatement);
+  const facts = breakFact(realRiskFacts(), 'reconDiff', failingStatement);
   const data = success(await applyIn(f, riskFor(f, { facts })));
   expect((await snapshotOf(f, data.withdrawal_id)).risk_flags).toEqual([
     ...BASE,

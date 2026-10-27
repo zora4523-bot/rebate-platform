@@ -28,6 +28,9 @@ import type {
   SameDeviceAccountsInput,
 } from '../../../../apps/api/src/modules/risk/application/same-device-accounts.ts';
 import { lockUsersForUpdate } from '../../../../apps/api/src/modules/identity/ports/lock-users.ts';
+import { createPayeeBindingHistoryReader } from '../../../../apps/api/src/modules/identity/ports/payee-prev-other-user.ts';
+import { createBeneficiaryShareReader } from '../../../../apps/api/src/modules/commission/ports/withdraw-risk-shares.ts';
+import { createWithdrawRiskFactsReader } from '../../../../apps/api/src/modules/payout/infra/withdraw-risk-facts.ts';
 import { voucher } from '../../ledger/posting/kit.ts';
 import { NOW, fund, seedUser, type Fixture } from '../apply/kit.ts';
 import type { FactValues } from './oracle.ts';
@@ -179,13 +182,24 @@ export interface RiskServiceInput {
   readonly facts?: WithdrawRiskFactsReader;
 }
 
+/**
+ * The real facts reader with the commission (⑥ shares) and identity (⑩ binding history) ports
+ * injected, as app.module wires it (the reader takes them as ports: modules only via index).
+ */
+export function realRiskFacts(): WithdrawRiskFactsReader {
+  return createWithdrawRiskFactsReader({
+    shares: createBeneficiaryShareReader(),
+    payeeHistory: createPayeeBindingHistoryReader(),
+  });
+}
+
 /** createWithdrawRiskFlags with a silent logger; absent ports: no configuration, ③ unmarked. */
 export function riskService(input: RiskServiceInput = {}): WithdrawRiskFlags {
   const options: WithdrawRiskFlagsOptions = {
     config: input.config ?? mapConfig(),
     logger: { warn: () => undefined },
     sameDevice: input.sameDevice ?? stubJudge(false),
-    ...(input.facts === undefined ? {} : { facts: input.facts }),
+    facts: input.facts ?? realRiskFacts(),
   };
   return createWithdrawRiskFlags(options);
 }

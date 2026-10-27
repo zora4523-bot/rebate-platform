@@ -8,7 +8,6 @@ import { randomBytes } from 'node:crypto';
 import { createTestDatabase } from '@couli/db/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { SelfOrderFact } from '../../../../apps/api/src/modules/payout/domain/risk-flags.ts';
-import { createWithdrawRiskFactsReader } from '../../../../apps/api/src/modules/payout/infra/withdraw-risk-facts.ts';
 import { TIMEOUT, close, fixture, open, seedUser, type Harness } from '../apply/kit.ts';
 import {
   DAY,
@@ -25,6 +24,7 @@ import {
   seedReceivedShares,
   seedSelfOrders,
   seedWithdrawal,
+  realRiskFacts,
 } from './kit.ts';
 
 /** Facts as plain {invalid, est_commission_fen, commission_base_fen}, in a fixed order. */
@@ -59,7 +59,7 @@ it.each([
 ] as const)('[AC-B2-11a#24] ① 只有 %s 的提现单时 hasPaidWithdrawal = %s', async (status, want) => {
   const f = await fixture(h);
   await seedWithdrawal(f, { status, amountFen: 1000n, createdAt: ago(40 * DAY) });
-  const facts = createWithdrawRiskFactsReader();
+  const facts = realRiskFacts();
   expect(await facts.hasPaidWithdrawal(h.db, memberSubject(f))).toBe(want);
 });
 
@@ -72,7 +72,7 @@ it('[AC-B2-11a#25] ① 只有其他会员的已打款单时本会员仍是首次
     createdAt: ago(DAY),
     userId: other,
   });
-  const facts = createWithdrawRiskFactsReader();
+  const facts = realRiskFacts();
   expect(await facts.hasPaidWithdrawal(h.db, memberSubject(f))).toBe(false);
   expect(await facts.hasPaidWithdrawal(h.db, memberSubject(f, T, other))).toBe(true);
 });
@@ -85,7 +85,7 @@ it.each([
   { label: '次日 00:00 +08:00', now: '2026-10-19T16:00:00.000Z', want: false },
 ])('[AC-B2-11a#26] ② credited_today 按 +08:00 自然日 00:00 至 t：$label', async ({ now, want }) => {
   const f = await fixture(h);
-  const facts = createWithdrawRiskFactsReader();
+  const facts = realRiskFacts();
   expect(await facts.creditedToday(h.db, memberSubject(f, new Date(now)))).toBe(want);
 });
 
@@ -110,21 +110,21 @@ it.each([
   const f = await fixture(h);
   const member = await otherMember(f);
   await book(f, member, -500n, type, new Date(at));
-  const facts = createWithdrawRiskFactsReader();
+  const facts = realRiskFacts();
   expect(await facts.creditedToday(h.db, memberSubject(f, T, member))).toBe(want);
 });
 
 it('[AC-B2-11a#28] ② 只看本会员的分录', async () => {
   const f = await fixture(h);
   const member = await otherMember(f);
-  const facts = createWithdrawRiskFactsReader();
+  const facts = realRiskFacts();
   expect(await facts.creditedToday(h.db, memberSubject(f, T, member))).toBe(false);
 });
 
 it('[AC-B2-11a#29] ④ 60 天窗口内、已归属、buy_type=self 的子订单；失效 = VOID / CLAWED_BACK / 维权成功', async () => {
   const f = await fixture(h);
   await seedSelfOrders(f);
-  const facts = createWithdrawRiskFactsReader();
+  const facts = realRiskFacts();
   const orders = await facts.selfOrders60d(h.db, memberSubject(f));
   expect(orders).toHaveLength(10);
   expect(orders.filter((order) => order.invalid)).toHaveLength(4);
@@ -133,7 +133,7 @@ it('[AC-B2-11a#29] ④ 60 天窗口内、已归属、buy_type=self 的子订单�
 it('[AC-B2-11a#29] ④⑤ 每单的联盟预估佣金与计佣金额取订单同步回传值（est_commission_fen、pay_amount_fen；缺失为 null）', async () => {
   const f = await fixture(h);
   const want = await seedCommissionOrders(f);
-  const facts = createWithdrawRiskFactsReader();
+  const facts = realRiskFacts();
   const orders = await facts.selfOrders60d(h.db, memberSubject(f));
   expect(sorted(orders)).toEqual(sorted(want));
 });
@@ -141,7 +141,7 @@ it('[AC-B2-11a#29] ④⑤ 每单的联盟预估佣金与计佣金额取订单同
 it('[AC-B2-11a#29] ④ 一单多条 order_rights（FAILED + SUCCEEDED 等）只算一单；有 SUCCEEDED 即失效', async () => {
   const f = await fixture(h);
   await seedDoubleRights(f);
-  const facts = createWithdrawRiskFactsReader();
+  const facts = realRiskFacts();
   const orders = await facts.selfOrders60d(h.db, memberSubject(f));
   expect(orders).toHaveLength(4);
   expect(orders.filter((order) => order.invalid)).toHaveLength(3);
@@ -167,7 +167,7 @@ it('[AC-B2-11a#30] ⑥ 分子：30 天窗口内、状态不是 REJECTED / FAILED
     createdAt: ago(DAY),
     userId: other,
   });
-  const facts = createWithdrawRiskFactsReader();
+  const facts = realRiskFacts();
   expect(await facts.withdrawn30dFen(h.db, memberSubject(f))).toBe(3100n);
   expect(await facts.withdrawn30dFen(h.db, memberSubject(f, T, idle))).toBe(0n);
 });
@@ -175,7 +175,7 @@ it('[AC-B2-11a#30] ⑥ 分子：30 天窗口内、状态不是 REJECTED / FAILED
 it('[AC-B2-11a#31] ⑥ 分母：没有确认收货的子订单时为 0', async () => {
   const f = await fixture(h);
   await seedSelfOrders(f);
-  const facts = createWithdrawRiskFactsReader();
+  const facts = realRiskFacts();
   expect(await facts.received60dFen(h.db, memberSubject(f))).toBe(0n);
 });
 
@@ -183,7 +183,7 @@ it('[AC-B2-11a#31] ⑥ 分母：本会员作为受益人（自购、分享、直
   const f = await fixture(h);
   const { buyer, stranger } = await seedReceivedShares(f);
   const idle = await otherMember(f);
-  const facts = createWithdrawRiskFactsReader();
+  const facts = realRiskFacts();
   // 300 (self, v2) + 150 (share) + 70 (direct) + 480 (self, 600 − 120) + 80 (direct, t − 60 d)
   // + 33 (share, t); not: received before the window or after t, unreceived, ESTIMATED, VOID,
   // CLAWED_BACK, a stale version, the split amount of a credited order, other members' shares.
@@ -205,7 +205,7 @@ it('[AC-B2-11a#32] ⑦ 本会员任一分录 balance_after_fen < 0 即为真，�
   await book(f, recovered, -100n, 'REBATE_CREDIT', ago(10 * DAY));
   await book(f, recovered, 300n, 'CLAWBACK', ago(9 * DAY));
   await book(f, recovered, -500n, 'REBATE_CREDIT', ago(8 * DAY));
-  const facts = createWithdrawRiskFactsReader();
+  const facts = realRiskFacts();
   expect(await facts.hadNegative(h.db, memberSubject(f, T, positive))).toBe(false);
   expect(await facts.hadNegative(h.db, memberSubject(f, T, negative))).toBe(true);
   expect(await facts.hadNegative(h.db, memberSubject(f, T, recovered))).toBe(true);
@@ -229,7 +229,7 @@ it.each([
       releasedAt: released ? ago(150 * DAY) : null,
       userId,
     });
-    const facts = createWithdrawRiskFactsReader();
+    const facts = realRiskFacts();
     expect(await facts.reconDiff(h.db, memberSubject(f))).toBe(want);
   },
 );
@@ -301,7 +301,7 @@ it.each([
       boundAt: ago(bound),
       changedAt: ago(changed),
     });
-    const facts = createWithdrawRiskFactsReader();
+    const facts = realRiskFacts();
     expect(await facts.payeePrevOtherUser(h.db, memberSubject(f))).toBe(want);
   },
 );
@@ -322,7 +322,7 @@ it('[AC-B2-11a#35] ⑩ 银行卡同样判定；其他会员近期绑定的是别
       changedAt: ago(10 * DAY),
     });
   }
-  const facts = createWithdrawRiskFactsReader();
+  const facts = realRiskFacts();
   expect(await facts.payeePrevOtherUser(h.db, memberSubject(hit))).toBe(true);
   expect(await facts.payeePrevOtherUser(h.db, memberSubject(miss))).toBe(false);
 });
