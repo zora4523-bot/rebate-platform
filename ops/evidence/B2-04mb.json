@@ -1,0 +1,90 @@
+{
+  "task": "B2-04mb",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "b17a85585e9cae2333eb6327b3ae2f9e6d1ce635",
+  "red_tests": [
+    "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#1] order-sync 已把 commission_version 升到 2、v2 快照行不存在：WAITING 单照常入账（不因版本断言整单回滚），受益人与比例取自 commission_splits，金额按入账口径 850 / 425 / 85 / 42 / 平台 448，booked 成对写、CREDITED",
+    "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#2] 同一规格两单（本人正常、直推冻结、间推封禁）：一单保持 v1，一单被 order-sync 升到 v2 且无该版本快照行；两单入账结果、凭证分录、余额、义务、受益人事件与 booked 成对值完全一致",
+    "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#2] 同一规格两单（本人正常、直推冻结、间推封禁）：一单保持 v1，一单被 order-sync 升到 v3 且无该版本快照行；两单入账结果、凭证分录、余额、义务、受益人事件与 booked 成对值完全一致",
+    "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#2] 同一规格两单（本人正常、直推冻结、间推封禁）：一单保持 v1，一单被 order-sync 升到 v9 且无该版本快照行；两单入账结果、凭证分录、余额、义务、受益人事件与 booked 成对值完全一致",
+    "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#3] 升版本后锁内逐受益人判定照旧（BR-CALC-13）：本人冻结 → held 事件 + first_credit 义务（split_ref 指向本单已有版本），直推封禁 → FORFEIT 85（banned），间推正常入账 42，平台 448，应收 = N − 暂缓 425",
+    "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#4] 升版本后已没收的受益人终局不变：快照阶段没收的直推与此前已有 forfeited 事件的间推（事件经归属读取带回）都不写凭证、不追加事件，份额留在平台凭证 575，应收 = N",
+    "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#5] 对照：commission_version 未变（=1）时与 B2-04m 一致（850 / 425 / 85 / 42 / 平台 448），归属同样只经 readCommissionAttribution 在调用方事务内读取，不调用 readSnapshot",
+    "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#6] 归属读取抛错（子订单没有分佣快照）：整单抛错且什么都不写，不退回 readSnapshot、不按空归属把整单归平台",
+    "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#7] 升版本后的淘礼金单（tlj_deduct_fen 100 > 0，D10-272）：照常跳过（tlj_deduct_unsupported）并告警，不抛版本错误，什么都不写，保持 WAITING"
+  ],
+  "risk_note": "RV2 by path (settlement credit). Single-order crediting (R5, B2-04m credit-order.ts) takes ratios, beneficiaries and forfeited events from an injected readAttribution (commission's version-independent readCommissionAttribution, B2-04q) instead of the snapshot read that asserts the current commission_version, so a WAITING order whose commission_version was bumped to 2 with no v2 snapshot writer credits instead of rolling the whole batch back (D10-317). Without readAttribution the old path stays (B2-04m rule tests unchanged). Money logic unchanged (applyReserve → planInitialCredit, BR-CALC-02 floor, vouchers). Wiring readAttribution into the batch executor / app composition is outside this task's paths (B2-04zb). Taken over from the funds lane (account 4 paused until 10-30; orchestrator 2026-10-27 16:0x): rule tests by funds' independent Claude contexts, implementation and land by be.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "b17a85585e9cae2333eb6327b3ae2f9e6d1ce635",
+      "tree": "eaddb537c0ef81f3d6556d4624fafbb026ee981a",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-27T08:20:18Z",
+      "finished_at": "2026-10-27T08:20:29Z",
+      "gate": {
+        "commit": "3278759691fa45780c11c3306e3cd4d6663ba951",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#1] order-sync 已把 commission_version 升到 2、v2 快照行不存在：WAITING 单照常入账（不因版本断言整单回滚），受益人与比例取自 commission_splits，金额按入账口径 850 / 425 / 85 / 42 / 平台 448，booked 成对写、CREDITED",
+        "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#2] 同一规格两单（本人正常、直推冻结、间推封禁）：一单保持 v1，一单被 order-sync 升到 v2 且无该版本快照行；两单入账结果、凭证分录、余额、义务、受益人事件与 booked 成对值完全一致",
+        "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#2] 同一规格两单（本人正常、直推冻结、间推封禁）：一单保持 v1，一单被 order-sync 升到 v3 且无该版本快照行；两单入账结果、凭证分录、余额、义务、受益人事件与 booked 成对值完全一致",
+        "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#2] 同一规格两单（本人正常、直推冻结、间推封禁）：一单保持 v1，一单被 order-sync 升到 v9 且无该版本快照行；两单入账结果、凭证分录、余额、义务、受益人事件与 booked 成对值完全一致",
+        "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#3] 升版本后锁内逐受益人判定照旧（BR-CALC-13）：本人冻结 → held 事件 + first_credit 义务（split_ref 指向本单已有版本），直推封禁 → FORFEIT 85（banned），间推正常入账 42，平台 448，应收 = N − 暂缓 425",
+        "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#4] 升版本后已没收的受益人终局不变：快照阶段没收的直推与此前已有 forfeited 事件的间推（事件经归属读取带回）都不写凭证、不追加事件，份额留在平台凭证 575，应收 = N",
+        "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#5] 对照：commission_version 未变（=1）时与 B2-04m 一致（850 / 425 / 85 / 42 / 平台 448），归属同样只经 readCommissionAttribution 在调用方事务内读取，不调用 readSnapshot",
+        "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#6] 归属读取抛错（子订单没有分佣快照）：整单抛错且什么都不写，不退回 readSnapshot、不按空归属把整单归平台",
+        "test/spec/settlement/credit-attribution/attribution.int.test.ts > [AC-B2-04mb#7] 升版本后的淘礼金单（tlj_deduct_fen 100 > 0，D10-272）：照常跳过（tlj_deduct_unsupported）并告警，不抛版本错误，什么都不写，保持 WAITING"
+      ],
+      "expected": ["test/spec/settlement/credit-attribution/attribution.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "0dd128618adcdcfe6f9ed3eabec14b65fbd030bf98d2d7df129ca1a60c09b50b"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable; independent Claude via tools/agent/claude-run.sh per approvals #36; round 1 pass with no findings; out of scope S2: readAttribution is optional and the callers do not pass it yet (B2-04zb wiring)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude contexts of the funds lane in 2 runs (run 2 turns the thrown version error into assertion failures); reviewed by separate fresh independent Claude calls: r1 pass, r2 pass. After the takeover the branch was rebased onto main (spec 4a4f2f33) and the red run repeated on the test machine: 9 tests in 1 file red for the right reason."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "b32564c83f75b1c2e835ccb251fb85c9acfabc42",
+    "test/spec": "70fa1cf4fc569bc297dd521c605ab2d4cd80e59f",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "b32564c83f75b1c2e835ccb251fb85c9acfabc42"
+  }
+}
