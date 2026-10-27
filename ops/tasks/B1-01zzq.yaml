@@ -1,0 +1,24 @@
+id: B1-01zzq
+repo: rebate-platform
+title: 带用户身份的 API 响应统一 Cache-Control no-store：api 的全局 onSend 对已鉴权请求（App / H5 令牌、后台会话）的响应缺省写 no-store，路由自己设了 Cache-Control 的不覆盖
+type: impl
+# 2026-10-28 入账（编排，裁定 D10-396 ③ / 规划/03 §8.3，couli #213）。起因：F-X-25 鸿蒙取证——ArkWeb 清 HTTP 缓存的接口作用于整个应用，
+# 原生容器切号时不再做全局缓存清理，用户相关内容不进 HTTP 缓存改由服务端保证；取证时 GET /v1/me 未带 no-store（现在只有少数后台接口自己设）。
+# 做法：api 启动处（bootstrap.ts 已有 onSend 钩子）对带有效用户 / 后台身份的请求，响应未设 Cache-Control 时写 no-store；匿名接口与
+# 已显式设置的路由（如可缓存的公开资源）不动。新增测试：带身份的代表性接口（GET /v1/me、一条后台读接口）带 no-store，匿名接口不受影响，
+# 显式设置不被覆盖。H5 入口 HTML 的 no-store 属静态托管配置，托管配置入仓库时一并做（不在本任务）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/bootstrap.ts'
+  - 'apps/api/src/modules/platform/http/**'
+test_paths:
+  - 'test/spec/platform/http/no-store/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/http/no-store/**'
+status: todo
+pr: null
