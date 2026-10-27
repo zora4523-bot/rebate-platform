@@ -128,15 +128,20 @@
 // (applyExpectedValues). An entry does not apply — the file is judged as before, the notes say
 // why — when the helper is not a top-level helper of the base (or is declared twice), when `from`
 // occurs in it other than exactly once, when the helper's value skeleton changes (`from` cut
-// out of a longer token), or when a changed value stands neither as an object property value nor
-// as a matcher's expected argument, or inside a query call (test-blocks.ts valueChangeRefusal).
+// out of a longer token), or when a changed value stands neither as an object property value of
+// an expectation nor as the expected argument of an expect chain's matcher, or inside a query
+// call (test-blocks.ts valueChangeRefusal; CT-06zxh: a fixture's or a query's input object, a
+// ternary branch, a type annotation, `n.toString(16)` are refused).
 // When the code outside the tests is then the head's character for
 // character (every change outside the tests is registered), the file is judged test by test: a
 // test block that calls a changed helper, directly or through other top-level helpers, a
 // template's `${…}` included (test-blocks.ts helperImpact), counts as changed and must be red; every other block follows
 // CT-06p (unchanged: exempt). A changed helper that no test block calls is a problem (the entry
 // is void); a helper used anywhere else outside the tests (a hook, a describe body, a top-level
-// table) judges the whole file. When the code outside the tests still differs, the file is
+// table) judges the whole file, and so does a string, template or regular expression literal of
+// the base, outside the changed helpers, naming one of the closure as a whole word (CT-06zxh,
+// review r2 S2-1: `eval('h()')`, `m['h']()` after a dynamic import; helperNamedInLiteral).
+// When the code outside the tests still differs, the file is
 // judged as a whole, as before (if the head does not make a registered change at all, the file
 // is compared without the entries). Without entries nothing changes.
 import { matchesAny } from '../../lib/glob.ts';
@@ -152,6 +157,7 @@ import {
   type ComparedBlock,
   compareTestFile,
   helperImpact,
+  helperNamedInLiteral,
   type PathKind,
   mayReadSupport,
   relativeClosure,
@@ -533,7 +539,11 @@ export function ruleTestBaselines(
       } else {
         compared = withValues;
         const helpers = [...new Set(registered.applied.map((e) => e.helper))];
-        const impact = helperImpact(after, helpers);
+        const found = helperImpact(after, helpers);
+        // CT-06zxh (review r2 S2-1): a literal of the base naming the closure, outside the
+        // changed helpers, may call one by a string: the whole file.
+        const named = found.ok ? helperNamedInLiteral(before, found.closure, helpers) : null;
+        const impact: typeof found = named === null ? found : { ok: false, reason: named };
         if (!impact.ok) {
           ev.whole = impact.reason;
           compared = { whole: true, reason: `registered expected values: ${impact.reason}` };

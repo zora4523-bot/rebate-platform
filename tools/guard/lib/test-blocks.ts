@@ -858,8 +858,11 @@ export function unchangedTest(fullName: string, blocks: readonly ComparedBlock[]
 //   exactly. An entry's `from` and `to`, and the helper around it before and after the change,
 //   must have the same skeleton: only the value of an expectation may change, never an
 //   assertion, a call, a name or the structure.
-// - valueChangeRefusal: where the differing values stand — only an object property value or a
-//   matcher's expected argument, never inside a query call (`.where(`, `sql(` …).
+// - valueChangeRefusal: where the differing values stand — only an object property value inside
+//   an expectation or the expected argument of an expect chain's matcher, never inside a query
+//   call (`.where(`, `sql(` …), a fixture's input, a ternary branch or a type annotation.
+// - helperNamedInLiteral: whether a literal outside the changed helpers names one of them or
+//   their callers (a call by a string: the whole file is judged).
 // - topLevelHelpers: the helpers a file declares at its top level — `[export] [async] function
 //   name(…) {…}` and `[export] const name = [async] (…) => {…}` / `= [async] function (…) {…}`
 //   (a block body only) — with their source ranges; a name declared twice is in `twice`.
@@ -984,8 +987,8 @@ const QUERY_CALLS = new Set([
 /** A matcher's name (`toBe`, `toEqual`, `toBeGreaterThanOrEqual`, …). */
 const MATCHER = /^to[A-Z][A-Za-z]*$/;
 
-/** The identifier a call's `(` at tokens[k] follows (type arguments skipped), or ''. */
-function calleeOf(tokens: readonly Token[], k: number): string {
+/** Index of the identifier a call's `(` at tokens[k] follows (type arguments skipped), or -1. */
+function calleeAt(tokens: readonly Token[], k: number): number {
   let j = k - 1;
   if (tokens[j]?.text === '>') {
     for (let depth = 0; j >= 0; j -= 1) {
@@ -996,17 +999,80 @@ function calleeOf(tokens: readonly Token[], k: number): string {
     }
     j -= 1;
   }
-  const t = tokens[j];
-  return t?.kind === 'id' ? t.text : '';
+  return tokens[j]?.kind === 'id' ? j : -1;
+}
+
+/** The identifier a call's `(` at tokens[k] follows (type arguments skipped), or ''. */
+function calleeOf(tokens: readonly Token[], k: number): string {
+  const j = calleeAt(tokens, k);
+  return j < 0 ? '' : (tokens[j] as Token).text;
+}
+
+/** Links of an expect chain between `expect(…)` and the matcher (`.not`, `.resolves`, …). */
+const CHAIN_MODIFIERS = new Set(['not', 'resolves', 'rejects']);
+
+/** Asymmetric matchers on `expect.` that are an actual value, not an expectation. */
+const EXPECT_ACTUAL = new Set(['soft', 'poll']);
+
+type Chain = 'expect' | 'other' | 'unknown';
+
+/**
+ * Whether the call named at tokens[m] (a matcher's name) ends an expect chain (CT-06zxh, review
+ * r2 S2-2 ②): back along `.` (`.not`, `.resolves`, `.rejects` skipped) to the `)` of `expect(…)`,
+ * `expect.soft(…)` or `expect.poll(…)`. 'unknown' when the fragment begins before that (an entry
+ * is one line; red-check checks the whole helper, where it does not).
+ */
+function expectChain(tokens: readonly Token[], m: number, openOf: readonly number[]): Chain {
+  if (tokens[m - 1]?.text !== '.') return m === 0 ? 'unknown' : 'other';
+  for (let j = m - 2; ;) {
+    const t = tokens[j];
+    if (t === undefined) return 'unknown';
+    if (t.kind === 'id' && CHAIN_MODIFIERS.has(t.text)) {
+      if (j === 0) return 'unknown';
+      if (tokens[j - 1]?.text !== '.') return 'other';
+      j -= 2;
+      continue;
+    }
+    if (t.kind !== 'punct' || t.text !== ')') return 'other';
+    const open = openOf[j] ?? -1;
+    if (open < 0) return 'unknown';
+    const c = calleeAt(tokens, open);
+    if (c < 0) return 'other';
+    const name = (tokens[c] as Token).text;
+    if (name === 'expect') return tokens[c - 1]?.text === '.' ? 'other' : 'expect';
+    const onExpect =
+      EXPECT_ACTUAL.has(name) &&
+      tokens[c - 1]?.text === '.' &&
+      tokens[c - 2]?.text === 'expect' &&
+      tokens[c - 3]?.text !== '.';
+    return onExpect ? 'expect' : 'other';
+  }
+}
+
+/** Whether the call whose name is at tokens[c] is an asymmetric matcher (`expect.objectContaining(`). */
+function asymmetricMatcher(tokens: readonly Token[], c: number): boolean {
+  if (EXPECT_ACTUAL.has((tokens[c] as Token).text) || tokens[c - 1]?.text !== '.') return false;
+  let j = c - 2;
+  if (tokens[j]?.text === 'not' && tokens[j - 1]?.text === '.') j -= 2;
+  return tokens[j]?.text === 'expect' && tokens[j - 1]?.text !== '.';
 }
 
 /**
  * Why the literals / unary minus signs that differ between `before` and `after` (same value
- * skeleton) are not all in an allowed place, or null when they are (CT-06zxe review r1 S2-1 ③).
- * Allowed: an object property value (`key: <value>`) or a matcher's expected argument
- * (`.toBe(<value>)`, inside `[ ]` / `{ }` of it too); never inside the parentheses of a query
- * call (QUERY_CALLS: `.where(`, `.selectFrom(`, `sql(` …). Brackets need not balance (an entry is
- * one line); red-check also checks the whole helper before and after, where they do.
+ * skeleton) are not all in an allowed place, or null when they are (CT-06zxe review r1 S2-1 ③,
+ * tightened by CT-06zxh after review r2 S2-2). Allowed:
+ * - a matcher's expected argument (`.toBe(<value>)`, inside `[ ]` / `{ }` of it too), the matcher
+ *   at the end of an expect chain (`expect(…)` / `expect.soft(…)` / `expect.poll(…)`, through
+ *   `.not` / `.resolves` / `.rejects`; `n.toString(16)`, `n.toFixed(2)` are no matchers);
+ * - an object property value (`key: <value>` with `{` or `,` before the key, inside `{ }`: no
+ *   ternary branch, no type annotation) whose object stands, through `{ }` / `[ ]` / grouping
+ *   parentheses only, in a matcher's argument or an asymmetric matcher's
+ *   (`expect.objectContaining(`): one in a fixture's or a query's input (`insertOrder(db, {…})`,
+ *   `expect(f({…}))`), in a variable (`const q = {…}`) or a returned object is refused.
+ * Never inside the parentheses of a query call (QUERY_CALLS: `.where(`, `.selectFrom(`, `sql(` …).
+ * Brackets need not balance (an entry is one line): what the fragment begins before (no bracket
+ * or key before it, an unmatched `)`) is let through here, and red-check checks the whole helper
+ * before and after with this same function, where nothing is unknown.
  */
 export function valueChangeRefusal(before: string, after: string): string | null {
   let a: Token[];
@@ -1032,14 +1098,38 @@ export function valueChangeRefusal(before: string, after: string): string | null
   const oa = operands(a);
   const ob = operands(b);
   if (oa.length !== ob.length) return 'the value skeletons differ';
-  // The open brackets around every token of `a`.
+  // The open brackets around every token of `a`, and the open bracket every close one matches
+  // (-1: opened before the fragment).
   const open: number[][] = [];
+  const openOf: number[] = [];
   const stack: number[] = [];
   a.forEach((t, k) => {
-    if (t.kind === 'punct' && [')', ']', '}'].includes(t.text)) stack.pop();
+    if (t.kind === 'punct' && [')', ']', '}'].includes(t.text)) openOf[k] = stack.pop() ?? -1;
     open[k] = [...stack];
     if (t.kind === 'punct' && ['(', '[', '{'].includes(t.text)) stack.push(k);
   });
+  // Where an object stands whose innermost open brackets are `around` (outermost first).
+  const objectPlace = (around: readonly number[], first: number): 'ok' | 'unknown' | string => {
+    for (const o of [...around].reverse()) {
+      if (a[o]?.text !== '(') continue;
+      const c = calleeAt(a, o);
+      if (c < 0) {
+        const prev = a[o - 1];
+        // Grouping parentheses (`=> ({…})`), not a call.
+        if (prev === undefined || !(prev.kind === 'punct' && [')', ']'].includes(prev.text)))
+          continue;
+        return 'the argument of a call';
+      }
+      const name = (a[c] as Token).text;
+      if (MATCHER.test(name)) {
+        const chain = expectChain(a, c, openOf);
+        if (chain === 'expect') return 'ok';
+        if (chain === 'unknown') return 'unknown';
+      } else if (asymmetricMatcher(a, c)) return 'ok';
+      return `the argument of a ${name}( call (a fixture or query input, not an expectation)`;
+    }
+    return (around[0] ?? first) === 0 ? 'unknown' : 'outside any expectation';
+  };
   for (let n = 0; n < oa.length; n += 1) {
     const x = oa[n] as { at: number; minus: number };
     const y = ob[n] as { at: number; minus: number };
@@ -1052,20 +1142,28 @@ export function valueChangeRefusal(before: string, after: string): string | null
       if (QUERY_CALLS.has(callee))
         return `${shown} is changed inside a ${callee}( call (a query, not an expectation)`;
     }
-    const colon = a[x.at - x.minus - 1];
-    const key = a[x.at - x.minus - 2];
-    if (colon?.text === ':' && (key?.kind === 'id' || key?.kind === 'str' || key?.kind === 'num'))
-      continue;
-    // The innermost `(` around it (only `[ ]` / `{ }` between): a matcher's, after a `.` (or the
-    // fragment starts with the matcher's name; the whole helper then shows the `.`).
-    const paren = [...around].reverse().find((o) => a[o]?.text === '(');
+    const k = x.at - x.minus - 2;
+    const colon = a[k + 1];
+    const key = a[k];
+    const keyPrev = a[k - 1];
+    const keyIn = open[k]?.at(-1);
     if (
-      paren !== undefined &&
-      MATCHER.test(calleeOf(a, paren)) &&
-      (paren === 1 || a[paren - 2]?.text === '.')
-    )
+      colon?.text === ':' &&
+      (key?.kind === 'id' || key?.kind === 'str' || key?.kind === 'num') &&
+      (keyPrev === undefined || (keyPrev.kind === 'punct' && ['{', ','].includes(keyPrev.text))) &&
+      (keyIn === undefined || a[keyIn]?.text === '{')
+    ) {
+      const place = objectPlace(open[k] ?? [], k);
+      if (place === 'ok' || place === 'unknown') continue;
+      return `${shown} is changed in an object property value that stands ${place}`;
+    }
+    // The innermost `(` around it (only `[ ]` / `{ }` between): a matcher's at the end of an
+    // expect chain (or the fragment begins before the chain; the whole helper then shows it).
+    const paren = [...around].reverse().find((o) => a[o]?.text === '(');
+    const m = paren === undefined ? -1 : calleeAt(a, paren);
+    if (m >= 0 && MATCHER.test((a[m] as Token).text) && expectChain(a, m, openOf) !== 'other')
       continue;
-    return `${shown} is changed outside an object property value (key: <value>) and a matcher's expected argument (.toBe(<value>))`;
+    return `${shown} is changed outside an object property value inside an expectation ({ key: <value> }) and a matcher's expected argument (expect(…).toBe(<value>))`;
   }
   return null;
 }
@@ -1251,6 +1349,56 @@ export function helperImpact(source: string, changed: readonly string[]): Helper
     }
   }
   return { ok: true, closure: [...closure], affected };
+}
+
+/**
+ * Why a helper change cannot be bounded because a literal names one of `names` (CT-06zxh, review
+ * r2 S2-1), or null: a string, a template's static text or a regular expression anywhere in
+ * `source` outside the declarations of the `changed` top-level helpers that holds one of `names`
+ * (the changed helpers and their callers, helperImpact's closure) as a whole word — an
+ * `eval('h()')`, a `m['h']()` after a dynamic import, a test title too. The caller then judges
+ * the whole file: more tests, never fewer.
+ */
+export function helperNamedInLiteral(
+  source: string,
+  names: readonly string[],
+  changed: readonly string[],
+): string | null {
+  let tokens: Token[];
+  let match: number[];
+  try {
+    tokens = tokenize(source);
+    match = matchBrackets(tokens);
+  } catch (err) {
+    return `the file cannot be read (${String(err)})`;
+  }
+  const inChanged = new Array<boolean>(tokens.length).fill(false);
+  for (const d of helperDecls(tokens, match)) {
+    if (!changed.includes(d.name)) continue;
+    for (let k = d.from; k <= d.to; k += 1) inChanged[k] = true;
+  }
+  const words = names.map((n) => ({
+    name: n,
+    re: new RegExp(`(?<![\\w$])${escapeRegex(n)}(?![\\w$])`, 'u'),
+  }));
+  for (let k = 0; k < tokens.length; k += 1) {
+    if (inChanged[k]) continue;
+    for (const t of flatten([tokens[k] as Token])) {
+      const texts =
+        t.kind === 'str'
+          ? [t.text, t.value ?? '']
+          : t.kind === 're'
+            ? [t.text]
+            : t.kind === 'tpl'
+              ? (t.parts ?? []).map((p) => p ?? t.text)
+              : [];
+      const hit = words.find((w) => texts.some((x) => w.re.test(x)));
+      if (hit !== undefined) {
+        return `a literal names "${hit.name}" (${JSON.stringify(t.text.slice(0, 60))}): a call by a string (eval, a key after a dynamic import) cannot be bounded`;
+      }
+    }
+  }
+  return null;
 }
 
 const CODE_FILE = /\.[cm]?[jt]sx?$/;

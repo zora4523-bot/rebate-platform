@@ -223,6 +223,16 @@ it('[CT-06t] the red_exempt section is not counted in the line limit; it has its
   expect(countedLines('id: X\nstatus: todo')).toBe(2);
 });
 
+it('[CT-06zxh] an indented comment line inside the red_exempt / renames / expected_values sections still counts', () => {
+  for (const key of ['red_exempt', 'renames', 'expected_values']) {
+    const text = `id: X\n${key}:\n  # a note\n  - file: a\n    # another\n    test: b\n\t# a tab\nstatus: todo\n`;
+    expect(countedLines(text), key).toBe(5);
+    expect(countedLines(text.replace(/^[ \t]+#.*\n/gm, '')), key).toBe(2);
+  }
+  // A reason that merely contains `#` is part of a declaration.
+  expect(countedLines("id: X\nred_exempt:\n  - reason: 'a # b'\nstatus: todo\n")).toBe(2);
+});
+
 it('[CT-06zxc] the renames section is not counted in the line limit either; it has its own limit of 20 entries', () => {
   const pairs = (n: number): string =>
     Array.from(

@@ -1,0 +1,37 @@
+{
+  "risk_note": "RV2 by the default rule (tools/** is not on the RV whitelist); guard-change to the red-check / evidence tooling, tightening only (D10-387, from CT-06zxe #1704 review r2): a baseline literal naming the edited helper's closure forces the whole-file judgement; expected-value registrations may only touch object-literal property values or expect-chain matcher arguments; the not-to-confirm checklist for renames / expected_values is in tools/agent/prompts/review-spec-test.md; indented comments inside red_exempt / renames / expected_values now count toward the 40-line ledger limit. No business code, money, attribution, ledger, migration or contract path. Replayed against B2-15l's ledger (#1708 head d7a59f4f0bb1): both registrations still apply with the same affected tests, nothing judged red. Ledger tester: none, so no red run.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "review_type": "money",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 2,
+      "note": "round 1 output (verdict pass, 0 findings) was refused by validate-output (a checklist line outside the diff hunks), re-run; round 2 pass, one S2 (an IIFE inside a matcher argument lets a fixture-input literal pass objectPlace; needs a deliberately built form, none in the repository) kept for a follow-up"
+    }
+  ],
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "b32564c83f75b1c2e835ccb251fb85c9acfabc42"
+  },
+  "task": "CT-06zxh",
+  "spec_commit": "923fed67b260a3235e1c3174d1eb87b7c4608c99",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "red_tests": [],
+  "runs": [],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "b32564c83f75b1c2e835ccb251fb85c9acfabc42",
+    "test/spec": "5ed27b23bf5b1dfb8d727cdf385e9c67a94a4bff",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}

@@ -21,7 +21,7 @@ async function onlyAnomaly(order: { id: string }, trade: string) {
 }
 
 function legacyShape() {
-  return { fen: 1n };
+  expect(legacyRow()).toMatchObject({ fen: 1n });
 }
 
 describe('notify', () => {

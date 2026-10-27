@@ -18,6 +18,7 @@ import {
   tokenize,
   unchangedTest,
   helperImpact,
+  helperNamedInLiteral,
   valueChangeRefusal,
   topLevelHelpers,
   valueSkeleton,
@@ -2201,4 +2202,141 @@ it("[CT-06zxe] valueChangeRefusal: only an object property value or a matcher's 
     expect(valueChangeRefusal(from, to), `${from} → ${to}`).not.toBeNull();
   }
   expect(valueChangeRefusal("'unterminated", 'x')).toBe('it cannot be tokenized');
+});
+
+it('[CT-06zxh] valueChangeRefusal: a property value of an expectation only, a matcher at the end of an expect chain only (review r2 S2-2)', () => {
+  for (const [from, to] of [
+    // B2-15l, the whole helper: inside toMatchObject({…}) of expect(diffs[0]).
+    [
+      'function h() {\n  expect(diffs[0]).toMatchObject({\n    expected_fen: 0n,\n    diff_fen: AMOUNT,\n  });\n}',
+      'function h() {\n  expect(diffs[0]).toMatchObject({\n    expected_fen: 0n,\n    diff_fen: -AMOUNT,\n  });\n}',
+    ],
+    ['expect(x).toEqual([{ a: 1 }]);', 'expect(x).toEqual([{ a: 2 }]);'],
+    [
+      'expect(x).toEqual(expect.objectContaining({ a: 1 }));',
+      'expect(x).toEqual(expect.objectContaining({ a: 2 }));',
+    ],
+    [
+      'expect(x).toEqual(expect.not.objectContaining({ a: 1 }));',
+      'expect(x).toEqual(expect.not.objectContaining({ a: 2 }));',
+    ],
+    ['expect.soft(x).toBe(1);', 'expect.soft(x).toBe(2);'],
+    ['expect.poll(() => x()).toBe(1);', 'expect.poll(() => x()).toBe(2);'],
+    ['expect(x, "m").not.toBe(1);', 'expect(x, "m").not.toBe(2);'],
+    ['await expect(p).resolves.toBe(1);', 'await expect(p).resolves.toBe(2);'],
+    ["await expect(p).rejects.toThrow('a');", "await expect(p).rejects.toThrow('b');"],
+    ['expect<number>(x).toBe(1);', 'expect<number>(x).toBe(2);'],
+    ['expect(x).toEqual({ a: { b: 1 } });', 'expect(x).toEqual({ a: { b: 2 } });'],
+    ['expect(x).toEqual(({ a: 1 }));', 'expect(x).toEqual(({ a: 2 }));'],
+    // A fragment that begins before its context: the whole helper decides.
+    ['{ a: 1 }', '{ a: 2 }'],
+    ['.not.toBe(1)', '.not.toBe(2)'],
+    ['not.toBe(1)', 'not.toBe(2)'],
+  ] as const) {
+    expect(valueChangeRefusal(from, to), `${from} → ${to}`).toBeNull();
+  }
+  for (const [from, to, why] of [
+    // A ternary's false branch, a type annotation (no `{` or `,` before the key).
+    ['const lim = strict ? 1 : 0;', 'const lim = strict ? 1 : 99;', 'outside an object property'],
+    ["let s: 'open' = x;", "let s: 'closed' = x;", 'outside an object property'],
+    [
+      'insertOrder({ a: c ? 1 : 2 });',
+      'insertOrder({ a: c ? 1 : 3 });',
+      'outside an object property',
+    ],
+    ["(a, s: 'open') => a", "(a, s: 'closed') => a", 'outside an object property'],
+    // A fixture's input, a query object, the actual side, a returned object.
+    [
+      "insertOrder(db, { status: 'open' })",
+      "insertOrder(db, { status: 'closed' })",
+      'insertOrder( call',
+    ],
+    [
+      "const q = { text: 'select 1 where a = 1' };",
+      "const q = { text: 'select 1 where false' };",
+      'outside any expectation',
+    ],
+    ['expect(f({ amount: 1 })).toBe(3);', 'expect(f({ amount: 2 })).toBe(3);', 'f( call'],
+    ['expect({ a: 1 }).toEqual(x);', 'expect({ a: 2 }).toEqual(x);', 'expect( call'],
+    ['expect.soft({ a: 1 }).toEqual(x);', 'expect.soft({ a: 2 }).toEqual(x);', 'soft( call'],
+    [
+      'function h() { return { a: 1 }; }',
+      'function h() { return { a: 2 }; }',
+      'outside any expectation',
+    ],
+    [
+      'expect(x).toEqual(rows.map((r) => ({ a: 1 })));',
+      'expect(x).toEqual(rows.map((r) => ({ a: 2 })));',
+      'map( call',
+    ],
+    [
+      'expect(x).toEqual(f()({ a: 1 }));',
+      'expect(x).toEqual(f()({ a: 2 }));',
+      'the argument of a call',
+    ],
+    // Not a matcher of an expect chain.
+    ['n.toString(16)', 'n.toString(2)', 'outside an object property'],
+    ['n.toFixed(2)', 'n.toFixed(0)', 'outside an object property'],
+    ['expect(n.toFixed(2)).toBe(x)', 'expect(n.toFixed(0)).toBe(x)', 'outside an object property'],
+    ['a.not.toBe(1)', 'a.not.toBe(2)', 'outside an object property'],
+    ['other(x).toBe(1)', 'other(x).toBe(2)', 'outside an object property'],
+    ['vi.expect.soft(x).toBe(1)', 'vi.expect.soft(x).toBe(2)', 'outside an object property'],
+    ['x.expect(y).toBe(1)', 'x.expect(y).toBe(2)', 'outside an object property'],
+  ] as const) {
+    expect(valueChangeRefusal(from, to), `${from} → ${to}`).toContain(why);
+  }
+});
+
+it('[CT-06zxh] helperNamedInLiteral: a string, template or regex literal naming the closure outside the changed helpers (review r2 S2-1)', () => {
+  const head = [
+    "import { it, expect } from 'vitest';",
+    'function h() { expect(1).toBe(1); }',
+    'function g() { h(); }',
+  ].join('\n');
+  const named = (rest: string, names = ['h', 'g']): string | null =>
+    helperNamedInLiteral(`${head}\n${rest}`, names, ['h']);
+  // The review r2 probes: eval, a key after a dynamic import of the file itself.
+  expect(named("it('[A#1]', () => { eval('h()'); });\nit('[A#2]', () => { h(); });")).toContain(
+    'a literal names "h"',
+  );
+  expect(
+    named(
+      "it('[A#1]', async () => { const m = await import('./x.test.ts'); m['h' as 'h'](); });\nit('[A#2]', () => { h(); });",
+    ),
+  ).toContain('a literal names "h"');
+  for (const rest of [
+    "it('[A#1]', () => { void 'call g'; });", // a caller of h
+    'it(\'[A#1]\', () => { void "h"; });',
+    "it('[A#1]', () => { void `run h now`; });",
+    "it('[A#1]', () => { void `${1} h`; });",
+    "it('[A#1]', () => { void `${'h'}`; });", // a string inside ${…}
+    "it('[A#1]', () => { void /h\\(/; });",
+    "it('h works', () => { h(); });", // a test title
+    "const T = 'g';",
+  ]) {
+    expect(named(rest), rest).not.toBeNull();
+  }
+  for (const rest of [
+    "it('[A#1]', () => { h(); void 'hx gh $h_'; });", // not as a whole word
+    "it('[A#1]', () => { void `${h()}`; });", // an identifier inside ${…} (helperImpact)
+    "it('[A#1]', () => { void 'k'; });",
+  ]) {
+    expect(named(rest), rest).toBeNull();
+  }
+  // Inside the changed helper itself it is no call by a string; inside a caller it is.
+  expect(
+    helperNamedInLiteral(
+      "function h() { expect('h').toBe('h'); }\nit('[A#1]', () => { h(); });",
+      ['h'],
+      ['h'],
+    ),
+  ).toBeNull();
+  expect(
+    helperNamedInLiteral(
+      "function h() { expect(1).toBe(1); }\nfunction g() { void 'h'; h(); }\nit('[A#1]', () => { g(); });",
+      ['h', 'g'],
+      ['h'],
+    ),
+  ).toContain('a literal names "h"');
+  expect(helperNamedInLiteral("it('", ['h'], ['h'])).toContain('cannot be read');
 });

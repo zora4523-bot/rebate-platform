@@ -1,0 +1,33 @@
+id: CT-06zxh
+repo: rebate-platform
+title: CT-06zxh：red-check 期望值登记与改名的三条收紧（字符串引用 helper 整文件判、属性值 / 匹配器实参判定收紧、确认清单进 spec-test 提示词）（D10-387）
+type: guard-change
+# 2026-10-27 入账（ops 线，编排裁定 D10-387，来自 CT-06zxe #1704 对抗评审 r2 的 S2）。① 基线文件里以字符串 / 模板 / 正则字面量
+# 整词提到被改 helper（或其调用闭包里的名字）时，不按影响范围判、改整文件判（只会多判）；② valueChangeRefusal 收紧：属性值须在
+# 对象字面量里（key 前一记号为 { 或 ,），匹配器须沿 . 链回到 expect( / expect.soft( / expect.poll(，非 expect 调用实参里的对象属性值
+# 拒；③ renames / expected_values 的「不得确认」清单（恒真匹配器、查询参数 / 运算符 / SQL、纯改名核对）写进
+# tools/agent/prompts/review-spec-test.md。CT-06zxc「段内注释不计行」只收紧或纯修正才并入，会放宽则单独报编排。
+# 落地前用 B2-15l（#1708 头 d7a59f4f0bb1）的 expected_values 两条 + red_exempt 跑新规则，确认不判红。
+refs: []
+refs_hash: {}
+deps: [CT-06zxe]
+paths:
+  - 'tools/lib/task-file.ts'
+  - 'tools/lib/task-file.test.ts'
+  - 'tools/guard/lib/red-check.ts'
+  - 'tools/guard/lib/red-check.test.ts'
+  - 'tools/guard/lib/test-blocks.ts'
+  - 'tools/guard/lib/test-blocks.test.ts'
+  - 'tools/guard/lib/red-check-fixtures/**'
+  - 'tools/ops/task.ts'
+  - 'tools/ops/task.test.ts'
+  - 'tools/agent/prompts/review-spec-test.md'
+  - 'tools/README.md'
+  - 'tools/agent/README.md'
+  - 'ops/tasks/CT-06zxh.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

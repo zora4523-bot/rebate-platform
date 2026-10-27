@@ -31,7 +31,8 @@ export const MAX_TASK_LINES = 40;
  * indented lines that follow it up to the next top-level line — because yaml-lite writes one
  * declaration as three lines (file / test / reason) and the section has its own limit
  * (RED_EXEMPT_MAX entries, tools/lib/task-file.ts). Everything under that key must parse as
- * such declarations, so nothing else can hide there.
+ * such declarations, so nothing else can hide there; an indented comment line in the section
+ * still counts (CT-06zxh).
  */
 export function countedLines(text: string): number {
   const lines = text.split('\n');
@@ -46,7 +47,11 @@ export function countedLines(text: string): number {
       inExempt = true;
       continue;
     }
-    if (inExempt && /^[ \t]/.test(line)) continue;
+    if (inExempt && /^[ \t]/.test(line)) {
+      // CT-06zxh: an indented comment line inside such a section is no declaration: it counts.
+      if (/^[ \t]+#/.test(line)) count += 1;
+      continue;
+    }
     inExempt = false;
     count += 1;
   }
