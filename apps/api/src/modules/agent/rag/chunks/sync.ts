@@ -5,10 +5,15 @@
 // Repeating the call changes nothing (at-least-once delivery); a unique-key conflict on insert
 // counts as already written. `db` is used for app.agent_rule_chunks only. Called by the agent worker
 // on agent.rag.sync_interval_seconds (wiring with B3-08g).
+// TODO(规划/11 §2.3): build the content reader in app.module and schedule syncRuleChunks per app on
+// the agent worker every agent.rag.sync_interval_seconds — blocked on B3-08g (the wiring is outside
+// B3-08i's paths).
+import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { PublishedArticlesReader } from '../../../content/index.ts';
 import type { Clock } from '../../../platform/index.ts';
+import { chunkArticle } from './chunk.ts';
 
 export interface RuleChunkSyncOptions {
   /** Primary couli_app handle, for app.agent_rule_chunks only. */
@@ -25,11 +30,77 @@ export interface RuleChunkSyncResult {
   readonly retired: number;
 }
 
-export function syncRuleChunks(
+interface WantedChunk {
+  readonly article_id: string;
+  readonly published_version: number;
+  readonly seq: number;
+  readonly title: string;
+  readonly text: string;
+}
+
+function keyOf(articleId: string, version: number, seq: number): string {
+  return `${articleId}/${String(version)}/${String(seq)}`;
+}
+
+export async function syncRuleChunks(
   options: RuleChunkSyncOptions,
   appId: string,
 ): Promise<RuleChunkSyncResult> {
-  void options;
-  void appId;
-  throw new Error('NotImplemented: syncRuleChunks');
+  const { db, clock, articles } = options;
+  const wanted = new Map<string, WantedChunk>();
+  for (const article of await articles.list(appId)) {
+    for (const draft of chunkArticle(article)) {
+      wanted.set(keyOf(article.id, article.version, draft.seq), {
+        article_id: article.id,
+        published_version: article.version,
+        seq: draft.seq,
+        title: draft.title,
+        text: draft.text,
+      });
+    }
+  }
+
+  const stored = await db
+    .withSchema('app')
+    .selectFrom('agent_rule_chunks')
+    .select(['chunk_id', 'article_id', 'published_version', 'seq', 'status'])
+    .where('app_id', '=', appId)
+    .execute();
+  const present = new Set<string>();
+  const stale: string[] = [];
+  for (const row of stored) {
+    const key = keyOf(row.article_id, row.published_version, row.seq);
+    present.add(key);
+    if (row.status === 'active' && !wanted.has(key)) stale.push(row.chunk_id);
+  }
+
+  let inserted = 0;
+  const missing = [...wanted].filter(([key]) => !present.has(key)).map(([, row]) => row);
+  if (missing.length > 0) {
+    // A concurrent or earlier delivery may have written some rows since the read: the unique key
+    // (article_id, published_version, seq) keeps one and the conflict counts as written.
+    const rows = await db
+      .withSchema('app')
+      .insertInto('agent_rule_chunks')
+      .values(missing.map((row) => ({ chunk_id: randomUUID(), app_id: appId, ...row })))
+      .onConflict((oc) => oc.columns(['article_id', 'published_version', 'seq']).doNothing())
+      .returning('chunk_id')
+      .execute();
+    inserted = rows.length;
+  }
+
+  let retired = 0;
+  if (stale.length > 0) {
+    // status = 'active' is re-checked under the row lock: a concurrent sync retires each row once.
+    const result = await db
+      .withSchema('app')
+      .updateTable('agent_rule_chunks')
+      .set({ status: 'retired', retired_at: clock.now() })
+      .where('app_id', '=', appId)
+      .where('chunk_id', 'in', stale)
+      .where('status', '=', 'active')
+      .executeTakeFirst();
+    retired = Number(result.numUpdatedRows);
+  }
+  return { inserted, retired };
 }

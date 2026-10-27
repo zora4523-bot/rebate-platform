@@ -33,6 +33,51 @@ export interface PublishedArticlesReader {
 export function createPublishedArticlesReader(
   options: PublishedArticlesReaderOptions,
 ): PublishedArticlesReader {
-  void options;
-  throw new Error('NotImplemented: createPublishedArticlesReader');
+  const { db, clock } = options;
+  return {
+    async list(appId) {
+      const now = clock.now();
+      const rows = await db
+        .withSchema('app')
+        .selectFrom('articles as a')
+        .select(['a.id', 'a.app_id', 'a.version', 'a.title', 'a.body', 'a.published_at'])
+        .where('a.app_id', '=', appId)
+        .where('a.status', '=', 'published')
+        .where('a.published_at', 'is not', null)
+        .where('a.published_at', '<=', now)
+        // Pick the current revision before the category filter: a newer published revision in
+        // another category must not resurrect an older help / rule one.
+        .where((eb) =>
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom('articles as newer')
+                .select('newer.id')
+                .where('newer.app_id', '=', appId)
+                .whereRef('newer.id', '=', 'a.id')
+                .whereRef('newer.version', '>', 'a.version')
+                .where('newer.status', '=', 'published')
+                .where('newer.published_at', 'is not', null)
+                .where('newer.published_at', '<=', now),
+            ),
+          ),
+        )
+        .where('a.category', 'in', ['help', 'rule'])
+        .orderBy('a.id')
+        .execute();
+      const result: PublishedArticle[] = [];
+      for (const row of rows) {
+        if (row.published_at === null) continue; // Filtered above; narrows the type.
+        result.push({
+          id: row.id,
+          app_id: row.app_id,
+          version: row.version,
+          title: row.title,
+          body: row.body,
+          published_at: row.published_at,
+        });
+      }
+      return result;
+    },
+  };
 }
