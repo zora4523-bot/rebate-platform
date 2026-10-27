@@ -1,0 +1,21 @@
+id: B1-04ca
+repo: rebate-platform
+title: B1-04ca：union replay 单测 [AC-B1-04c-UNIT#7] 加显式 30 秒时限；临时目录改到仓库 .tmp/（CI 负载下偶发 5 秒超时，D10-380）
+type: test-change
+# 2026-10-27 入账（ops 线代做，编排裁定 D10-380；union 线 10-30 才恢复）。起因：apps/api/src/modules/union/infra/replay.test.ts
+# [AC-B1-04c-UNIT#7] 在 #1599 run 40157563601 第 1 次以 5019 ms 撞 5 秒默认超时；主干绿的 verify-unit 里整个文件 12 条只用
+# 42–82 ms，失败那轮 verify-unit 整体 258 秒、import 占 64%。被测 createUnionFileReplay 只有 lstat / open / readFile，没有循环
+# 或等待；这一条是文件里 I/O 最多的（4 次写两份文件 + 4 次读）：负载下的环境偶发。做法：只给这一条 it 加超时 30_000 与注释，
+# 断言一字不动；withRecordings 的临时目录从 os.tmpdir() 改到仓库 .tmp/union-replay-unit/（AGENTS §9）。
+refs: []
+refs_hash: {}
+deps: [B1-04c]
+paths:
+  - 'apps/api/src/modules/union/infra/replay.test.ts'
+  - 'ops/tasks/B1-04ca.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
