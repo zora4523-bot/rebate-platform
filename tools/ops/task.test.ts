@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { listTaskIds, loadTask } from '../lib/task-file.ts';
 import { ruleHash, findRuleInText } from './spec.ts';
@@ -610,11 +611,11 @@ it('[ops/approvals.yaml id 31] mechanical_paths: only on a Codex implementation 
       mechanical_paths: [
         'contracts/openapi.yaml',
         'packages/contracts-ts/src/openapi.gen.ts',
-        'packages/contracts-ts/src/planned-operations.gen.ts',
         'apps/api/src/modules/platform/validation/route-schemas.gen.ts',
       ],
     }),
-    // Codex implementation with the contract and generated files as mechanical paths: accepted.
+    // Codex implementation with the contract and generated files as mechanical paths: the
+    // whitelist accepts them; since CT-06zxd the missing planned-operations.gen.ts is reported.
     'ops/tasks/X1-02m.yaml': good({
       id: 'X1-02m',
       impl: 'codex',
@@ -622,7 +623,7 @@ it('[ops/approvals.yaml id 31] mechanical_paths: only on a Codex implementation 
       test_paths: "\n  - 'test/spec/demo/**'",
       paths: "\n  - 'apps/api/src/modules/content/**'",
       mechanical_paths:
-        "\n  - 'contracts/openapi.yaml'\n  - 'packages/contracts-ts/src/openapi.gen.ts'\n  - 'packages/contracts-ts/src/planned-operations.gen.ts'\n  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'",
+        "\n  - 'contracts/openapi.yaml'\n  - 'packages/contracts-ts/src/openapi.gen.ts'\n  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'",
     }),
     // A mechanical path not on the list, or a wider glob over the contracts.
     'ops/tasks/X1-02n.yaml': good({
@@ -651,7 +652,9 @@ it('[ops/approvals.yaml id 31] mechanical_paths: only on a Codex implementation 
     }),
   });
   try {
-    expect(checkTask('X1-02m', opts('RV1'))).toEqual([]);
+    expect(checkTask('X1-02m', opts('RV1'))).toEqual([
+      'mechanical_paths: reach "contracts/openapi.yaml", so the ledger must also cover the files regenerated from it (CT-06n, CT-06zxd); add: packages/contracts-ts/src/planned-operations.gen.ts',
+    ]);
     expect(checkTask('X1-02n', opts('RV1'))).toEqual([
       'mechanical_paths: "contracts/**" is not one of the mechanical_paths of tools/guard/codex-impl-tasks.json (ops/approvals.yaml id 31)',
       'mechanical_paths: "apps/api/src/modules/content/a.ts" is not one of the mechanical_paths of tools/guard/codex-impl-tasks.json (ops/approvals.yaml id 31)',
@@ -864,7 +867,20 @@ it('[CT-06zxd] planned-operations.gen.ts: required when paths or mechanical_path
   }
 });
 
-it('[CT-06zxd] a contract named in mechanical_paths only is reported against mechanical_paths', () => {
+it('[CT-06zxd] a Codex ledger naming the contract in mechanical_paths only is refused either way under the real whitelist', () => {
+  // The trusted whitelist (tools/guard/codex-impl-tasks.json, frozen, class 3) lists three files and
+  // not planned-operations.gen.ts. Such a ledger cannot pass: without the file this rule refuses it,
+  // with it the whitelist does. Never silently accepted; the fix is a class-3 task on the whitelist
+  // (owner approval label), not a ledger edit (tools/ops/README.md).
+  const WHITELIST = [
+    'contracts/openapi.yaml',
+    'packages/contracts-ts/src/openapi.gen.ts',
+    'apps/api/src/modules/platform/validation/route-schemas.gen.ts',
+  ];
+  const real = JSON.parse(
+    readFileSync(new URL('../guard/codex-impl-tasks.json', import.meta.url), 'utf8'),
+  ) as { mechanical_paths?: string[] };
+  expect(real.mechanical_paths).toEqual(WHITELIST);
   writeFiles(root, {
     'tools/guard/protected-paths.json': JSON.stringify({
       class1_add_only: ['test/spec/**'],
@@ -875,36 +891,36 @@ it('[CT-06zxd] a contract named in mechanical_paths only is reported against mec
       approval: 23,
       tasks: ['X1-02'],
       forbidden_paths: ['contracts/**', 'packages/contracts-ts/**'],
-      mechanical_paths: [
-        'contracts/openapi.yaml',
-        'packages/contracts-ts/src/openapi.gen.ts',
-        'packages/contracts-ts/src/planned-operations.gen.ts',
-      ],
+      mechanical_paths: WHITELIST,
     }),
+    // The whole whitelist, without planned-operations.gen.ts: refused by this rule.
     'ops/tasks/X1-02p.yaml': good({
       id: 'X1-02p',
       impl: 'codex',
       tester: 'claude',
       test_paths: "\n  - 'test/spec/demo/**'",
       paths: "\n  - 'apps/api/src/modules/content/**'",
-      mechanical_paths:
-        "\n  - 'contracts/openapi.yaml'\n  - 'packages/contracts-ts/src/openapi.gen.ts'",
+      mechanical_paths: WHITELIST.map((f) => `\n  - '${f}'`).join(''),
     }),
+    // With planned-operations.gen.ts added: refused by the whitelist.
     'ops/tasks/X1-02q.yaml': good({
       id: 'X1-02q',
       impl: 'codex',
       tester: 'claude',
       test_paths: "\n  - 'test/spec/demo/**'",
       paths: "\n  - 'apps/api/src/modules/content/**'",
-      mechanical_paths:
-        "\n  - 'contracts/openapi.yaml'\n  - 'packages/contracts-ts/src/planned-operations.gen.ts'",
+      mechanical_paths: [...WHITELIST, PLANNED_OPERATIONS_GENERATED]
+        .map((f) => `\n  - '${f}'`)
+        .join(''),
     }),
   });
   try {
     expect(checkTask('X1-02p', opts('RV1'))).toEqual([
       `mechanical_paths: reach "contracts/openapi.yaml", so the ledger must also cover the files regenerated from it (CT-06n, CT-06zxd); add: ${PLANNED_OPERATIONS_GENERATED}`,
     ]);
-    expect(checkTask('X1-02q', opts('RV1'))).toEqual([]);
+    expect(checkTask('X1-02q', opts('RV1'))).toEqual([
+      `mechanical_paths: "${PLANNED_OPERATIONS_GENERATED}" is not one of the mechanical_paths of tools/guard/codex-impl-tasks.json (ops/approvals.yaml id 31)`,
+    ]);
   } finally {
     for (const id of ['X1-02p', 'X1-02q']) removeDir(`${root}/ops/tasks/${id}.yaml`);
     removeDir(`${root}/tools/guard/codex-impl-tasks.json`);
