@@ -10,6 +10,9 @@ import {
 import { TOTP_REPLAY_STORE } from './admin.module.ts';
 import type { TotpReplayStore } from './domain/totp.ts';
 
+// F1-06ba (as D10-380): this case builds and initialises the whole api app (createHttpApp +
+// init); green on main CI it took 0.9–1.8 s, and under a loaded runner it hit the 5 s default
+// (#1698 first verify-unit). Explicit limit only; the assertions are unchanged.
 it('[AC-F1-06b-WIRE#1] the app provides AUDIT_PORT globally; without a database it refuses writes', async () => {
   const app = await createHttpApp('api', {
     config: loadConfig({ APP_ENV: 'test' }),
@@ -34,7 +37,7 @@ it('[AC-F1-06b-WIRE#1] the app provides AUDIT_PORT globally; without a database 
   } finally {
     await app.close();
   }
-});
+}, 30_000);
 
 it('[AC-F1-06b-WIRE#2] the admin module provides the TOTP replay store; without a database it fails closed', async () => {
   const app = await createHttpApp('api', {
