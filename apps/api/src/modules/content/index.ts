@@ -34,6 +34,14 @@ export type {
   PublishedPlatformIconOptions,
   PublishedPlatformIcons,
 } from './application/published-platform-icons.ts';
+// B3-08i: the published help / rule articles reader app.module builds for the agent's rule chunk
+// sync (read-only; D10-386).
+export { createPublishedArticlesReader } from './application/published-articles.ts';
+export type {
+  PublishedArticle,
+  PublishedArticlesReader,
+  PublishedArticlesReaderOptions,
+} from './application/published-articles.ts';
 // F1-02c: GET /v1/config, loaded by app.module on the api entry only with identity's viewer.
 export { ContentPublicModule } from './content-public.module.ts';
 export type { ContentPublicPorts } from './content-public.module.ts';
