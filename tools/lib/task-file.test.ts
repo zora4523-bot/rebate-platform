@@ -3,6 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  EXPECTED_VALUE_LENGTH_MAX,
+  EXPECTED_VALUE_SHAPE,
+  EXPECTED_VALUES_MAX,
   RENAME_CONTENT_MIN,
   RENAMES_MAX,
   listTaskIds,
@@ -63,6 +66,7 @@ describe('parseTaskFile', () => {
       mechanical_paths: [],
       red_exempt: [],
       renames: [],
+      expected_values: [],
       tester: 'claude',
       accept: ['pnpm verify', 'test/spec/ledger/**'],
       status: 'todo',
@@ -312,6 +316,113 @@ describe('parseTaskFile', () => {
     expect(parseTaskFile(many(RENAMES_MAX), 'B2-02a.yaml').renames).toHaveLength(RENAMES_MAX);
     expect(messageOf(many(RENAMES_MAX + 1), 'B2-02a.yaml')).toContain(
       `renames: ${RENAMES_MAX + 1} entries, the limit is ${RENAMES_MAX}`,
+    );
+  });
+
+  it('[CT-06zxe] expected_values: file / helper / from / to of the same value skeleton, optional, every malformed entry refused', () => {
+    const declared = (entries: string): string =>
+      EXAMPLE.replace('tester: claude', `tester: claude\nexpected_values:${entries}`);
+    const entry = (from: string, to: string, helper = 'onlyAnomaly', file = NOTIFY): string =>
+      `\n  - file: ${file}\n    helper: ${helper}\n    from: ${from}\n    to: ${to}`;
+    const NOTIFY = 'test/spec/payment/result/notify.int.test.ts';
+    // The B2-15l entry, as the ledger writes it (leading blanks kept by the quotes).
+    expect(
+      parseTaskFile(
+        declared(entry(`'    diff_fen: AMOUNT,'`, `'    diff_fen: -AMOUNT,'`)),
+        'B2-02a.yaml',
+      ).expected_values,
+    ).toEqual([
+      {
+        file: NOTIFY,
+        helper: 'onlyAnomaly',
+        from: '    diff_fen: AMOUNT,',
+        to: '    diff_fen: -AMOUNT,',
+      },
+    ]);
+    // Literals may change: numbers (bigint too), strings, a unary minus on a member chain.
+    const ok = parseTaskFile(
+      declared(
+        entry(
+          `'diff_fen: order.amount_fen,'`,
+          `'diff_fen: -order.amount_fen,'`,
+          'onlyAnomaly',
+          'test/spec/a.test.ts',
+        ) +
+          entry(`'expect(x).toBe(500n);'`, `'expect(x).toBe(-1500n);'`, 'check') +
+          entry(`"status: 'open',"`, `"status: 'closed',"`, '$h_1'),
+      ),
+      'B2-02a.yaml',
+    ).expected_values;
+    expect(ok.map((e) => e.helper)).toEqual(['onlyAnomaly', 'check', '$h_1']);
+    // An older ledger without the field, an empty list: [].
+    expect(parseTaskFile(EXAMPLE, 'B2-02a.yaml').expected_values).toEqual([]);
+    expect(parseTaskFile(declared(' []'), 'B2-02a.yaml').expected_values).toEqual([]);
+    // Not a list, not a mapping, unknown key, bad file, bad helper, missing or empty side.
+    expect(messageOf(declared(' abc'), 'B2-02a.yaml')).toContain(
+      'expected_values: must be a list of mappings (file / helper / from / to)',
+    );
+    expect(messageOf(declared('\n  - abc'), 'B2-02a.yaml')).toContain(
+      'expected_values[0]: must be a mapping (file / helper / from / to)',
+    );
+    expect(
+      messageOf(declared(`${entry("'a: 1'", "'a: 2'")}\n    regex: true`), 'B2-02a.yaml'),
+    ).toContain('expected_values[0].regex: unknown field');
+    expect(
+      messageOf(declared(entry("'a: 1'", "'a: 2'", 'onlyAnomaly', '../x.test.ts')), 'B2-02a.yaml'),
+    ).toContain('expected_values[0].file: "../x.test.ts"');
+    for (const helper of ["'only Anomaly'", "'1abc'", "'a.b'", "''"]) {
+      expect(messageOf(declared(entry("'a: 1'", "'a: 2'", helper)), 'B2-02a.yaml')).toContain(
+        'expected_values[0].helper: must be the name (an identifier) of a top-level helper',
+      );
+    }
+    expect(messageOf(declared(entry("''", "'a: 2'")), 'B2-02a.yaml')).toContain(
+      'expected_values[0].from: must be a non-empty source snippet',
+    );
+    expect(messageOf(declared(entry("'a: 1'", "'   '")), 'B2-02a.yaml')).toContain(
+      'expected_values[0].to: must be a non-empty source snippet',
+    );
+    expect(messageOf(declared(entry('"a: 1\\nb"', "'a: 2'")), 'B2-02a.yaml')).toContain(
+      'expected_values[0].from: must be a single line',
+    );
+    expect(
+      messageOf(
+        declared(entry(`'a: ${'1'.repeat(EXPECTED_VALUE_LENGTH_MAX)}'`, "'a: 2'")),
+        'B2-02a.yaml',
+      ),
+    ).toContain(`expected_values[0].from: longer than ${EXPECTED_VALUE_LENGTH_MAX} characters`);
+    expect(messageOf(declared(entry("'a: 1'", "'a: 1'")), 'B2-02a.yaml')).toContain(
+      'expected_values[0]: from and to are the same',
+    );
+    // A different skeleton: an assertion removed or added, another matcher or call, a renamed
+    // variable, a literal turned into a name, a binary minus, spacing, a comment.
+    for (const [from, to] of [
+      ["'expect(a).toBe(1);'", "'expect(a);'"],
+      ["'expect(a).toBe(1);'", "'expect(a).toBe(1); expect(b).toBe(2);'"],
+      ["'expect(a).toBe(1);'", "'expect(a).toEqual(1);'"],
+      ["'diff_fen: AMOUNT,'", "'diff_fen: OTHER,'"],
+      ["'diff_fen: AMOUNT,'", "'diff_fen: 100n,'"],
+      ["'diff_fen: AMOUNT,'", "'diff_fen: 0n - AMOUNT,'"],
+      ["'diff_fen: a + 1,'", "'diff_fen: a - 1,'"],
+      ["'diff_fen: AMOUNT,'", "'diff_fen:  -AMOUNT,'"],
+      ["'diff_fen: 1, // x'", "'diff_fen: 1, // y'"],
+      ['"x: `a${b}`,"', '"x: `a${c}`,"'],
+    ] as const) {
+      expect(messageOf(declared(entry(from, to)), 'B2-02a.yaml')).toContain(
+        `must have ${EXPECTED_VALUE_SHAPE}`,
+      );
+    }
+    // The same file + helper + from twice.
+    expect(
+      messageOf(declared(entry("'a: 1'", "'a: 2'") + entry("'a: 1'", "'a: 3'")), 'B2-02a.yaml'),
+    ).toContain(`expected_values[1]: ${NOTIFY} / onlyAnomaly / "a: 1" is registered twice`);
+    // At most EXPECTED_VALUES_MAX entries.
+    const many = (n: number): string =>
+      declared(Array.from({ length: n }, (_, i) => entry(`'a: ${i}'`, `'a: -${i}'`)).join(''));
+    expect(parseTaskFile(many(EXPECTED_VALUES_MAX), 'B2-02a.yaml').expected_values).toHaveLength(
+      EXPECTED_VALUES_MAX,
+    );
+    expect(messageOf(many(EXPECTED_VALUES_MAX + 1), 'B2-02a.yaml')).toContain(
+      `expected_values: ${EXPECTED_VALUES_MAX + 1} entries, the limit is ${EXPECTED_VALUES_MAX}`,
     );
   });
 

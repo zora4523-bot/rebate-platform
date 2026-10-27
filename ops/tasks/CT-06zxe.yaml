@@ -1,0 +1,36 @@
+id: CT-06zxe
+repo: rebate-platform
+title: CT-06zxe：台账登记回调外 helper 的期望值改动（文件 + helper + 原值 → 新值），red-check 按 helper 影响范围判红（D10-371，B2-15l）
+type: guard-change
+# 2026-10-27 入账（ops 线，编排裁定 D10-371，12:4x）。起因：B2-15l 把收款差错单 pay_anomaly 的 diff_fen 统一为 expected − actual，
+# 要把 B2-15c 冻结测试 test/spec/payment/result/notify.int.test.ts 共用 helper onlyAnomaly 里的 `diff_fen: AMOUNT` 改为 `-AMOUNT`；
+# 改在测试回调外，red-check 现按整文件判（全部用例须红），而其余用例在旧实现上本来就绿，过不了。D10-371：只要求调用了被改
+# helper 的 it 块在旧实现上为红、实现后为绿；其余 it 块回调逐字不变照常判；回调外只允许改台账逐条登记的期望值，不得删断言、
+# 不得改断言以外的逻辑，超出登记的回调外改动仍整文件判；机制尽量与 D10-347 renames 共用；编排按 #24 核「不放宽既有判定」后加标签。
+# 先叠在 CT-06zxc（#1686）上实现，#1686 合并后变基到主干开 PR。
+refs: []
+refs_hash: {}
+deps: [CT-06zxc]
+paths:
+  - 'tools/lib/task-file.ts'
+  - 'tools/lib/task-file.test.ts'
+  - 'tools/guard/red-check.ts'
+  - 'tools/guard/lib/red-check.ts'
+  - 'tools/guard/lib/red-check.test.ts'
+  - 'tools/guard/lib/red-check-fixtures/**'
+  - 'tools/guard/lib/test-blocks.ts'
+  - 'tools/guard/lib/test-blocks.test.ts'
+  - 'tools/guard/guard-cli.test.ts'
+  - 'tools/ci/evidence-check.ts'
+  - 'tools/ci/evidence-check.test.ts'
+  - 'tools/ops/task.ts'
+  - 'tools/ops/task.test.ts'
+  - 'tools/README.md'
+  - 'tools/agent/README.md'
+  - 'ops/tasks/CT-06zxe.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

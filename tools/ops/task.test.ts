@@ -336,6 +336,77 @@ it('[CT-06r] red_exempt names rule-test files inside test_paths of a task with a
   }
 });
 
+it('[CT-06zxe] expected_values name rule-test files inside test_paths of a task with a rule-test author; the section is not counted in the line limit', () => {
+  const entry = (file: string, i = 0): string =>
+    `\n  - file: '${file}'\n    helper: onlyAnomaly\n    from: '    diff_fen: AMOUNT${i},'\n    to: '    diff_fen: -AMOUNT${i},'`;
+  const entries = (n: number): string =>
+    Array.from({ length: n }, (_, i) => entry('test/spec/demo/rules.test.ts', i)).join('');
+  const body = (fields: Record<string, string>): string => {
+    const base = good({
+      impl: 'claude',
+      tester: 'codex',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      ...fields,
+    });
+    return `${'# padding\n'.repeat(MAX_TASK_LINES - countedLines(base))}${base}`;
+  };
+  // A body of exactly MAX_TASK_LINES lines plus 20 entries (80 more lines).
+  const full = body({ id: 'X1-02ea', expected_values: entries(20) });
+  expect(countedLines(full)).toBe(MAX_TASK_LINES);
+  writeFiles(root, {
+    'tools/guard/protected-paths.json': JSON.stringify({
+      class1_add_only: ['test/spec/**', 'test/properties/**'],
+      class2_verify_config: [],
+      class3_gates: [],
+    }),
+    'ops/tasks/X1-02ea.yaml': full,
+    // 21 entries: over the section's own limit.
+    'ops/tasks/X1-02eb.yaml': body({ id: 'X1-02eb', expected_values: entries(21) }),
+    // Outside test_paths; not a rule-test file.
+    'ops/tasks/X1-02ec.yaml': good({
+      id: 'X1-02ec',
+      impl: 'claude',
+      tester: 'codex',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      expected_values: entry('test/spec/other/rules.test.ts') + entry('test/spec/demo/kit.ts'),
+    }),
+    // No rule-test author.
+    'ops/tasks/X1-02ed.yaml': good({
+      id: 'X1-02ed',
+      impl: 'claude',
+      tester: 'none',
+      expected_values: entry('test/spec/demo/rules.test.ts'),
+    }),
+  });
+  try {
+    expect(checkTask('X1-02ea', opts('RV1'))).toEqual([]);
+    expect(loadTask('X1-02ea', root).expected_values[0]).toEqual({
+      file: 'test/spec/demo/rules.test.ts',
+      helper: 'onlyAnomaly',
+      from: '    diff_fen: AMOUNT0,',
+      to: '    diff_fen: -AMOUNT0,',
+    });
+    expect(checkTask('X1-02eb', opts('RV1')).join('\n')).toContain(
+      'expected_values: 21 entries, the limit is 20',
+    );
+    expect(checkTask('X1-02ec', opts('RV1'))).toEqual([
+      `expected_values: "test/spec/other/rules.test.ts" is not inside the task's test_paths`,
+      'expected_values: "test/spec/demo/kit.ts" is not a rule-test file (*.test.ts)',
+    ]);
+    expect(checkTask('X1-02ed', opts('RV1'))).toContain(
+      'expected_values: a task without a rule-test author (tester: none) has no red run to register them for',
+    );
+  } finally {
+    for (const id of ['X1-02ea', 'X1-02eb', 'X1-02ec', 'X1-02ed'])
+      removeDir(`${root}/ops/tasks/${id}.yaml`);
+  }
+  expect(
+    countedLines(
+      "id: X\nexpected_values:\n  - file: a\n    helper: h\n    from: 'a: 1'\n    to: 'a: 2'\n# c\nstatus: todo\n",
+    ),
+  ).toBe(3);
+});
+
 it('[ops/approvals.yaml id 19] test_paths stay inside the rule-test assets of a task with a tester', () => {
   writeFiles(root, {
     'tools/guard/protected-paths.json': JSON.stringify({

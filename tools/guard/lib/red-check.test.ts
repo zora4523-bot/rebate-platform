@@ -7,16 +7,19 @@ import type { Change } from '../../lib/git.ts';
 import {
   type BaselineReader,
   type RenamedOnly,
+  applyExpectedValues,
   applyRenames,
   browserCauseVerdict,
   causeVerdict,
   checkRedReports,
   expectedRuleTests,
+  expectedValuesHit,
   redCheckRequired,
   renamedOnlyFiles,
   renamedOnlyNote,
   ruleTestBaselines,
   scriptFaultConsoleError,
+  unusedExpectedValueNotes,
   smokeCauseVerdict,
   smokeDiagnosticsOf,
   smokeDiagnosticsVerdict,
@@ -1628,4 +1631,231 @@ it('[CT-06zxc] renames are literal, ordered, and leave new files and renames wit
   expect(renamed).toEqual(plain);
   expect([...renamed.keys()]).toEqual([BASE_FILE]);
   expect(renamed.get(BASE_FILE)).not.toHaveProperty('renamed');
+});
+
+// CT-06zxe (D10-371): registered expected values in a top-level helper of a frozen test.
+const NOTIFY = 'test/spec/payment/result/notify.int.test.ts';
+const NOTIFY_BASE = readFileSync(join(FIXTURES, 'ct06zxe-notify-base.test.ts.txt'), 'utf8');
+const NOTIFY_HEAD = NOTIFY_BASE.replace('    diff_fen: AMOUNT,', '    diff_fen: -AMOUNT,');
+const DIFF_FEN = {
+  file: NOTIFY,
+  helper: 'onlyAnomaly',
+  from: '    diff_fen: AMOUNT,',
+  to: '    diff_fen: -AMOUNT,',
+};
+const RED = 'AssertionError: expected 500n to be -500n';
+const NOTIFY_CALLERS = [
+  'notify > [AC-2] a notify on a closed order only records an anomaly',
+  'notify > [AC-3] a repeated notify on a closed order records it once',
+  'notify > [AC-4] wechat: a late notify records an anomaly',
+  'notify > [AC-4] alipay: a late notify records an anomaly',
+];
+const NOTIFY_OTHERS = [
+  'notify > [AC-1] a paid notify opens the order',
+  'notify > [AC-5] a wrong amount is refused',
+];
+/** The red run of B2-15l: the callers of onlyAnomaly red, the others green on the old code. */
+const notifyTests = (green: string[] = NOTIFY_OTHERS): RedTest[] =>
+  [...NOTIFY_OTHERS, ...NOTIFY_CALLERS].map((n) =>
+    green.includes(n) ? [n, 'passed'] : [n, 'failed', RED],
+  );
+const notifyBaselines = (
+  head: string,
+  entries: { file: string; helper: string; from: string; to: string }[] = [DIFF_FEN],
+  renames: { from: string; to: string }[] = [],
+  base = NOTIFY_BASE,
+) =>
+  ruleTestBaselines(
+    [NOTIFY],
+    [{ path: NOTIFY, status: 'M' }],
+    ['test/spec/payment/**'],
+    reader({ [NOTIFY]: base }, { [NOTIFY]: head }),
+    renames,
+    entries,
+  );
+
+it('[CT-06zxe] a registered expected value in a helper: only the tests calling it must be red, the others may pass', () => {
+  const b = notifyBaselines(NOTIFY_HEAD);
+  expect(b.get(NOTIFY)).toMatchObject({
+    kind: 'tests',
+    expectedValues: {
+      applied: [DIFF_FEN],
+      skipped: [],
+      void: [],
+      affected: [
+        'notify > [AC-2] a notify on a closed order only records an anomaly',
+        'notify > [AC-3] a repeated notify on a closed order records it once',
+        'notify > [AC-4] *: a late notify records an anomaly',
+      ],
+    },
+  });
+  expect(b.get(NOTIFY)).not.toHaveProperty('expectedValues.whole');
+  const result = checkRedReports([redReport(NOTIFY, notifyTests())], [NOTIFY], ROOT, b);
+  expect(result.problems).toEqual([]);
+  expect(result.ok).toBe(true);
+  expect(result.exempt?.map((e) => [e.test, e.status])).toEqual(
+    NOTIFY_OTHERS.map((n) => [n, 'passed']),
+  );
+  expect(result.notes[0]).toContain(
+    `${NOTIFY}: compared with its base after the registered expected values (D10-371: ${NOTIFY} / onlyAnomaly: "    diff_fen: AMOUNT," → "    diff_fen: -AMOUNT,"); tests calling the changed helper(s), which must be red: notify > [AC-2]`,
+  );
+  // A caller green on the old code has no teeth.
+  const green = checkRedReports(
+    [redReport(NOTIFY, notifyTests([...NOTIFY_OTHERS, NOTIFY_CALLERS[1] as string]))],
+    [NOTIFY],
+    ROOT,
+    b,
+  );
+  expect(green.problems).toEqual([
+    {
+      file: NOTIFY,
+      test: NOTIFY_CALLERS[1],
+      reason: 'green on the skeleton: the test has no teeth (new or changed since the base)',
+    },
+  ]);
+  // Without the entry the helper change judges the whole file, as before: the others must be red.
+  const whole = notifyBaselines(NOTIFY_HEAD, []);
+  expect(whole.get(NOTIFY)).toMatchObject({ kind: 'whole' });
+  expect(
+    checkRedReports([redReport(NOTIFY, notifyTests())], [NOTIFY], ROOT, whole).problems.map(
+      (p) => p.test,
+    ),
+  ).toEqual(NOTIFY_OTHERS);
+  // The non-callers are still compared: one changed next to the entry must be red.
+  const edited = NOTIFY_HEAD.replace("toBe('refused')", "toBe('rejected')");
+  const e = checkRedReports(
+    [redReport(NOTIFY, notifyTests())],
+    [NOTIFY],
+    ROOT,
+    notifyBaselines(edited),
+  );
+  expect(e.problems.map((p) => p.test)).toEqual(['notify > [AC-5] a wrong amount is refused']);
+});
+
+it('[CT-06zxe] a change outside the tests beyond the registered ones judges the whole file', () => {
+  for (const head of [
+    NOTIFY_HEAD.replace("type: 'pay_anomaly',", "type: 'pay_other',"),
+    NOTIFY_HEAD.replace('const AMOUNT = 500n;', 'const AMOUNT = 600n;'),
+    NOTIFY_HEAD.replace('    expected_fen: 0n,\n', ''),
+    NOTIFY_HEAD.replace(
+      "describe('notify', () => {",
+      "describe('notify', () => {\n  const extra = 1;",
+    ),
+  ]) {
+    const b = notifyBaselines(head);
+    expect(b.get(NOTIFY)).toMatchObject({
+      kind: 'whole',
+      reason:
+        'code outside the tests changed (imports, helpers, hooks, top-level tables or describe titles)',
+      expectedValues: { applied: [DIFF_FEN] },
+    });
+    expect(b.get(NOTIFY)?.expectedValues?.whole).toContain(
+      'also after the registered expected values',
+    );
+    const result = checkRedReports([redReport(NOTIFY, notifyTests())], [NOTIFY], ROOT, b);
+    expect(result.problems.map((p) => p.test)).toEqual(NOTIFY_OTHERS);
+  }
+  // A head that does not make the registered change is compared without it (as before).
+  const same = notifyBaselines(NOTIFY_BASE.replace("toBe('refused')", "toBe('rejected')"));
+  expect(same.get(NOTIFY)).toMatchObject({
+    kind: 'tests',
+    expectedValues: {
+      whole:
+        'the head does not make the registered change (compared without the registered expected values)',
+    },
+  });
+  // A helper used by a hook: its impact cannot be bounded, the whole file.
+  const hooked = (s: string): string =>
+    s.replace("describe('notify', () => {", "describe('notify', () => {\n  void onlyAnomaly;");
+  const h = notifyBaselines(hooked(NOTIFY_HEAD), [DIFF_FEN], [], hooked(NOTIFY_BASE));
+  expect(h.get(NOTIFY)).toMatchObject({ kind: 'whole' });
+  expect(h.get(NOTIFY)?.expectedValues?.whole).toContain(
+    '"onlyAnomaly" is used outside the test blocks',
+  );
+});
+
+it('[CT-06zxe] an entry that does not apply leaves the file judged as before: no helper, from 0 or 2 times, a cut token', () => {
+  const cases: [typeof DIFF_FEN, string][] = [
+    [{ ...DIFF_FEN, helper: 'nope' }, 'the base has no top-level helper nope'],
+    [{ ...DIFF_FEN, helper: 'notify' }, 'the base has no top-level helper notify'],
+    [{ ...DIFF_FEN, from: '    diff_fen: OTHER,' }, 'from occurs 0 time(s) in onlyAnomaly'],
+    [{ ...DIFF_FEN, from: '_fen: ', to: '_fen: -' }, 'from occurs 2 time(s) in onlyAnomaly'],
+    [
+      { ...DIFF_FEN, from: 'MOUNT,', to: '-MOUNT,' },
+      'the change alters more than a value of onlyAnomaly',
+    ],
+    [{ ...DIFF_FEN, helper: 'prepared' }, 'from occurs 0 time(s) in prepared'],
+  ];
+  for (const [entry, why] of cases) {
+    const b = notifyBaselines(NOTIFY_HEAD, [entry]);
+    expect(b.get(NOTIFY)).toMatchObject({ kind: 'whole', expectedValues: { applied: [] } });
+    expect(b.get(NOTIFY)?.expectedValues?.skipped[0]).toContain(why);
+    const result = checkRedReports([redReport(NOTIFY, notifyTests())], [NOTIFY], ROOT, b);
+    expect(result.problems.map((p) => p.test)).toEqual(NOTIFY_OTHERS);
+    expect(result.notes[0]).toContain(
+      `${NOTIFY}: registered expected value ${NOTIFY} / ${entry.helper}`,
+    );
+  }
+  // A helper declared twice is ambiguous.
+  const twice = NOTIFY_BASE.replace('function legacyShape()', 'function onlyAnomaly()');
+  expect(applyExpectedValues(NOTIFY, twice, [DIFF_FEN]).skipped).toEqual([
+    `${NOTIFY} / onlyAnomaly: "    diff_fen: AMOUNT," → "    diff_fen: -AMOUNT,": does not apply (onlyAnomaly is declared twice at the top level of the base)`,
+  ]);
+  // Entries of another file are ignored; the replacement is literal ($& is no pattern).
+  expect(applyExpectedValues('other.test.ts', NOTIFY_BASE, [DIFF_FEN])).toEqual({
+    text: NOTIFY_BASE,
+    applied: [],
+    skipped: [],
+  });
+  const literal = applyExpectedValues(NOTIFY, NOTIFY_BASE, [
+    { ...DIFF_FEN, from: "'pay_anomaly'", to: "'$&$&'" },
+  ]);
+  expect(literal.text).toContain("type: '$&$&',");
+});
+
+it('[CT-06zxe] a registered helper no test calls is void; renames run first; without entries nothing changes', () => {
+  const legacy = { file: NOTIFY, helper: 'legacyShape', from: 'fen: 1n', to: 'fen: 2n' };
+  const head = NOTIFY_BASE.replace('fen: 1n', 'fen: 2n');
+  const b = notifyBaselines(head, [legacy]);
+  expect(b.get(NOTIFY)).toMatchObject({ kind: 'tests', expectedValues: { affected: [] } });
+  const result = checkRedReports([redReport(NOTIFY, notifyTests())], [NOTIFY], ROOT, b);
+  expect(result.ok).toBe(false);
+  expect(result.problems).toContainEqual({
+    file: NOTIFY,
+    test: null,
+    reason:
+      'the registered helper legacyShape is called by no test block: the registration is void',
+  });
+  // Renames first, then the entry (written as the renamed base spells it).
+  const renamedBase = NOTIFY_BASE.replace("'pay_anomaly'", "'pay-anomaly'");
+  const r = notifyBaselines(
+    NOTIFY_HEAD,
+    [DIFF_FEN],
+    [{ from: "'pay-anomaly'", to: "'pay_anomaly'" }],
+    renamedBase,
+  );
+  expect(r.get(NOTIFY)).toMatchObject({ kind: 'tests', renamed: { identical: false } });
+  expect(checkRedReports([redReport(NOTIFY, notifyTests())], [NOTIFY], ROOT, r).ok).toBe(true);
+  // Without the field: the same baselines as before CT-06zxe, no expectedValues anywhere.
+  const read = reader({ [NOTIFY]: NOTIFY_BASE }, { [NOTIFY]: NOTIFY_HEAD });
+  const changes: Change[] = [{ path: NOTIFY, status: 'M' }];
+  const before = ruleTestBaselines([NOTIFY], changes, ['test/spec/payment/**'], read);
+  expect(ruleTestBaselines([NOTIFY], changes, ['test/spec/payment/**'], read, [], [])).toEqual(
+    before,
+  );
+  expect(before.get(NOTIFY)).not.toHaveProperty('expectedValues');
+  // An entry of another file: no expectedValues on this one, a note for the entry.
+  const other = { ...DIFF_FEN, file: 'test/spec/payment/other.int.test.ts' };
+  const o = ruleTestBaselines([NOTIFY], changes, ['test/spec/payment/**'], read, [], [other]);
+  expect(o).toEqual(before);
+  expect(unusedExpectedValueNotes([other, DIFF_FEN], o)).toEqual([
+    `registered expected value test/spec/payment/other.int.test.ts / onlyAnomaly: "    diff_fen: AMOUNT," → "    diff_fen: -AMOUNT,": not applied (test/spec/payment/other.int.test.ts is not an expected rule-test file that existed at the base and was compared test by test)`,
+    `registered expected value ${NOTIFY} / onlyAnomaly: "    diff_fen: AMOUNT," → "    diff_fen: -AMOUNT,": not applied (${NOTIFY} is not an expected rule-test file that existed at the base and was compared test by test)`,
+  ]);
+  // The entries evidence-check wants confirmed: the ones that apply to a base, in ledger order.
+  const nope = { ...DIFF_FEN, helper: 'nope' };
+  expect(
+    expectedValuesHit([NOTIFY, 'missing.test.ts'], read, [], [nope, legacy, DIFF_FEN]),
+  ).toEqual([legacy, DIFF_FEN]);
+  expect(expectedValuesHit([NOTIFY], read, [], [])).toEqual([]);
 });

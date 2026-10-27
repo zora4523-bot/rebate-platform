@@ -20,6 +20,9 @@
 // worktree's ledger) are applied to each base: a file whose renamed base is its head is left out of
 // the expected list (here and with --print-expected; the notes, or stderr, say which), and the
 // other files that existed at the base are compared against their renamed base.
+// The trusted ledger's `expected_values` (CT-06zxe, D10-371) are applied to each base after the
+// renames: a file whose only changes outside its tests are registered expected values of its
+// top-level helpers needs only the tests that call those helpers red (lib/red-check.ts).
 //
 //   node tools/guard/red-check.ts --task <id> --cwd <worktree> --base <ref> --print-expected
 //     prints the expected rule-test files, one per line (tools/ops/verify-container.sh --red uses
@@ -41,6 +44,7 @@ import {
   renamedOnlyFiles,
   renamedOnlyNote,
   ruleTestBaselines,
+  unusedExpectedValueNotes,
 } from './lib/red-check.ts';
 
 /** `<ref>:<path>` in the repository at `cwd`, or null when it does not exist. */
@@ -193,7 +197,16 @@ runCli(
         const left = new Set(renamedOnly.map((r) => r.file));
         expected = expected.filter((f) => !left.has(f));
         for (const r of renamedOnly) renamedNotes.push(renamedOnlyNote(r));
-        baselines = ruleTestBaselines(expected, changes, scope, reader, task.renames);
+        // CT-06zxe (D10-371): the trusted ledger's registered expected values, after the renames.
+        baselines = ruleTestBaselines(
+          expected,
+          changes,
+          scope,
+          reader,
+          task.renames,
+          task.expected_values,
+        );
+        renamedNotes.push(...unusedExpectedValueNotes(task.expected_values, baselines));
       } catch (err) {
         baselines = undefined;
         baselineNote = `cannot compare with the base ${base} (${err instanceof Error ? err.message : String(err)}): every test of every expected file must be red`;

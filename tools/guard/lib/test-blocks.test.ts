@@ -17,6 +17,9 @@ import {
   relativeClosure,
   tokenize,
   unchangedTest,
+  helperImpact,
+  topLevelHelpers,
+  valueSkeleton,
 } from './test-blocks.ts';
 
 const HEADER = "import { describe, expect, it } from 'vitest';";
@@ -2030,4 +2033,95 @@ it('[CT-06w] Codex review r10: process.loadEnvFile and a test attachment keep th
       "export const loadExpected = () => [process.pid, process.env['X'], process.platform, process.stdout].length;\n",
   });
   expect(plain.map((m) => m.closed)).toEqual([true, true]);
+});
+
+it('[CT-06zxe] valueSkeleton: only literals and unary minus signs may differ', () => {
+  const same = (a: string, b: string): boolean =>
+    valueSkeleton(a) !== null && valueSkeleton(a) === valueSkeleton(b);
+  expect(same('    diff_fen: AMOUNT,', '    diff_fen: -AMOUNT,')).toBe(true);
+  expect(same('diff_fen: order.amount_fen,', 'diff_fen: -order.amount_fen,')).toBe(true);
+  expect(same('toBe(500n)', 'toBe(-1_500n)')).toBe(true);
+  expect(same("status: 'open',", 'status: "closed",')).toBe(true);
+  expect(same('x: `a`,', "x: 'b',")).toBe(true);
+  expect(same('[1, 2]', '[-1, 0x2]')).toBe(true);
+  // A binary minus, another name, a removed or added call, spacing, comments, a template with
+  // an expression, an unreadable snippet.
+  expect(same('a + 1', 'a - 1')).toBe(false);
+  expect(same('a 1', 'a - 1')).toBe(false);
+  expect(same('f(x) 1', 'f(x) - 1')).toBe(false);
+  expect(same('AMOUNT', 'OTHER')).toBe(false);
+  expect(same('AMOUNT', '1n')).toBe(false);
+  expect(same('expect(a).toBe(1);', 'expect(a);')).toBe(false);
+  expect(same('x: -1', 'x:  1')).toBe(false);
+  expect(same('x: 1 // a', 'x: 1 // b')).toBe(false);
+  expect(same('`a${b}`', '`a${c}`')).toBe(false);
+  expect(valueSkeleton("'unterminated")).toBeNull();
+});
+
+it('[CT-06zxe] topLevelHelpers: function declarations and const arrow / function expressions with a block body', () => {
+  const source = [
+    "import { it } from 'vitest';",
+    'async function a(x: number): Promise<{ v: number }> { return { v: x }; }',
+    'export function b<T>(x: T) { return x; }',
+    'function* g() { yield 1; }',
+    'const c = async (x: number) => { return x; };',
+    'export const d: (x: number) => number = (x) => { return x; };',
+    'const e = function (y) { return y; };',
+    'const f = x => { return x; }',
+    'const expr = (x: number) => x + 1;',
+    'const table = [1, 2];',
+    'function twice() {}',
+    'function twice() {}',
+    "it('t', () => { function inner() {} });",
+  ].join('\n');
+  const { helpers, twice } = topLevelHelpers(source);
+  expect([...helpers.keys()]).toEqual(['a', 'b', 'g', 'c', 'd', 'e', 'f']);
+  expect([...twice]).toEqual(['twice']);
+  const a = helpers.get('a');
+  expect(source.slice(a?.start, a?.end)).toBe(
+    'async function a(x: number): Promise<{ v: number }> { return { v: x }; }',
+  );
+  const d = helpers.get('d');
+  expect(source.slice(d?.start, d?.end)).toBe(
+    'export const d: (x: number) => number = (x) => { return x; }',
+  );
+});
+
+it('[CT-06zxe] helperImpact: the test blocks naming a changed helper, through other helpers too; any other use is refused', () => {
+  const source = [
+    "import { describe, it } from 'vitest';",
+    'function only() { return 1; }',
+    'function viaOnly() { return only(); }',
+    'const viaVia = () => { return viaOnly(); };',
+    'function unrelated() { return 2; }',
+    "describe('s', () => {",
+    "  it('direct', () => { only(); });",
+    "  it('through two helpers', () => { viaVia(); });",
+    "  it('as a value', () => { [1].map(only); });",
+    "  it('none', () => { unrelated(); });",
+    '});',
+  ].join('\n');
+  expect(helperImpact(source, ['only'])).toEqual({
+    ok: true,
+    closure: ['only', 'viaOnly', 'viaVia'],
+    affected: [true, true, true, false],
+  });
+  expect(helperImpact(source, ['unrelated'])).toEqual({
+    ok: true,
+    closure: ['unrelated'],
+    affected: [false, false, false, true],
+  });
+  for (const use of [
+    'beforeEach(() => { only(); });',
+    'const result = only();',
+    'export { viaOnly };',
+    'const table = [viaVia];',
+  ]) {
+    const r = helperImpact(
+      source.replace("describe('s', () => {", `${use}\ndescribe('s', () => {`),
+      ['only'],
+    );
+    expect(r.ok).toBe(false);
+  }
+  expect(helperImpact('it(', ['only'])).toMatchObject({ ok: false });
 });

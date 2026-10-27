@@ -117,17 +117,45 @@
 // the renames is unchanged, any other difference (an assertion, a helper, a title) is caught as
 // before. The head, the support files and new files are never renamed; without renames nothing
 // changes.
+//
+// Registered expected values (CT-06zxe; orchestrator ruling D10-371 after B2-15l, which changes
+// `diff_fen: AMOUNT` to `-AMOUNT` in the top-level helper `onlyAnomaly` of a frozen test): a
+// change in a helper made the file judged as a whole, and its tests that never call the helper
+// are green on the old code. The trusted ledger may register such changes one by one
+// (`expected_values`: file / helper / from / to, from and to of the same value skeleton;
+// tools/lib/task-file.ts). In the base of the file (after the renames), inside the source range
+// of the top-level helper `helper`, the one occurrence of `from` becomes `to`
+// (applyExpectedValues). An entry does not apply — the file is judged as before, the notes say
+// why — when the helper is not a top-level helper of the base (or is declared twice), when `from`
+// occurs in it other than exactly once, or when the helper's value skeleton changes (`from` cut
+// out of a longer token). When the code outside the tests is then the head's character for
+// character (every change outside the tests is registered), the file is judged test by test: a
+// test block that calls a changed helper, directly or through other top-level helpers
+// (test-blocks.ts helperImpact), counts as changed and must be red; every other block follows
+// CT-06p (unchanged: exempt). A changed helper that no test block calls is a problem (the entry
+// is void); a helper used anywhere else outside the tests (a hook, a describe body, a top-level
+// table) judges the whole file. When the code outside the tests still differs, the file is
+// judged as a whole, as before (if the head does not make a registered change at all, the file
+// is compared without the entries). Without entries nothing changes.
 import { matchesAny } from '../../lib/glob.ts';
 import type { Change } from '../../lib/git.ts';
 import { RED_EXEMPT_REASON_MIN } from '../../lib/task-file.ts';
-import type { RedExemptDeclaration, RenameDeclaration, TaskFile } from '../../lib/task-file.ts';
+import type {
+  ExpectedValueDeclaration,
+  RedExemptDeclaration,
+  RenameDeclaration,
+  TaskFile,
+} from '../../lib/task-file.ts';
 import {
   type ComparedBlock,
   compareTestFile,
+  helperImpact,
   type PathKind,
   mayReadSupport,
   relativeClosure,
+  topLevelHelpers,
   unchangedTest,
+  valueSkeleton,
 } from './test-blocks.ts';
 
 /** True when the task must show red rule tests before it is implemented. */
@@ -210,6 +238,21 @@ export type RedResult = {
 export type RenamedBase = { applied: string[]; identical: boolean };
 
 /**
+ * The registered expected values of a file (CT-06zxe): `applied` the entries that changed its
+ * base, `skipped` the entries of the file that did not apply (with why), `affected` the titles of
+ * the test blocks that call a changed helper (they must be red), `void` the problems that make
+ * the registration invalid (a changed helper no test calls), `whole` why they did not lead to a
+ * test-by-test judgement (absent when they did).
+ */
+export type ExpectedValuesBase = {
+  applied: ExpectedValueDeclaration[];
+  skipped: string[];
+  affected: string[];
+  void: string[];
+  whole?: string;
+};
+
+/**
  * How an expected rule-test file that existed at the base is judged (CT-06p). `renamed` (CT-06zxc)
  * is present only when a declared rename changed its base.
  */
@@ -224,7 +267,7 @@ export type RuleTestBaseline =
      * (CT-06r): the file may read a test-support file the task changed, the reason says which.
      */
     | { kind: 'support'; reason: string; blocks: ComparedBlock[] }
-  ) & { renamed?: RenamedBase };
+  ) & { renamed?: RenamedBase; expectedValues?: ExpectedValuesBase };
 
 /**
  * The base content with the declared renames applied (CT-06zxc): in order, every occurrence of
@@ -245,6 +288,99 @@ export function applyRenames(
     applied.push(`${JSON.stringify(from)} → ${JSON.stringify(to)} ×${parts.length - 1}`);
   }
   return { text: out, applied };
+}
+
+/** How a registered expected value is shown in notes and messages. */
+export function expectedValueLabel(e: ExpectedValueDeclaration): string {
+  return `${e.file} / ${e.helper}: ${JSON.stringify(e.from)} → ${JSON.stringify(e.to)}`;
+}
+
+/**
+ * The base content of `file` (renames already applied) with the registered expected values of
+ * that file applied (CT-06zxe, see the header): in ledger order, each inside the current source
+ * range of its top-level helper, where `from` must occur exactly once and the helper keep its
+ * value skeleton. `applied` the entries that changed it, `skipped` why the others did not.
+ */
+export function applyExpectedValues(
+  file: string,
+  text: string,
+  entries: readonly ExpectedValueDeclaration[],
+): { text: string; applied: ExpectedValueDeclaration[]; skipped: string[] } {
+  let out = text;
+  const applied: ExpectedValueDeclaration[] = [];
+  const skipped: string[] = [];
+  for (const e of entries) {
+    if (e.file !== file) continue;
+    const skip = (why: string): void => {
+      skipped.push(`${expectedValueLabel(e)}: does not apply (${why})`);
+    };
+    let found: ReturnType<typeof topLevelHelpers>;
+    try {
+      found = topLevelHelpers(out);
+    } catch (err) {
+      skip(`the base cannot be read (${String(err)})`);
+      continue;
+    }
+    if (found.twice.has(e.helper)) {
+      skip(`${e.helper} is declared twice at the top level of the base`);
+      continue;
+    }
+    const helper = found.helpers.get(e.helper);
+    if (helper === undefined) {
+      skip(`the base has no top-level helper ${e.helper}`);
+      continue;
+    }
+    const body = out.slice(helper.start, helper.end);
+    const count = e.from === '' ? 0 : body.split(e.from).length - 1;
+    if (count !== 1) {
+      skip(`from occurs ${count} time(s) in ${e.helper} at the base, not exactly once`);
+      continue;
+    }
+    const changed = body.replace(e.from, () => e.to);
+    const skeleton = valueSkeleton(body);
+    if (skeleton === null || skeleton !== valueSkeleton(changed)) {
+      skip(`the change alters more than a value of ${e.helper} (its value skeleton differs)`);
+      continue;
+    }
+    out = out.slice(0, helper.start) + changed + out.slice(helper.end);
+    applied.push(e);
+  }
+  return { text: out, applied, skipped };
+}
+
+/**
+ * The registered expected values that apply to the base of at least one of `files` (after the
+ * renames), in ledger order (CT-06zxe). evidence-check wants the rule-test reviewer to confirm
+ * exactly these when there is any.
+ */
+export function expectedValuesHit(
+  files: readonly string[],
+  read: Pick<BaselineReader, 'base'>,
+  renames: readonly RenameDeclaration[],
+  entries: readonly ExpectedValueDeclaration[],
+): ExpectedValueDeclaration[] {
+  if (entries.length === 0) return [];
+  const hit = new Set<ExpectedValueDeclaration>();
+  for (const file of new Set(files)) {
+    const before = read.base(file);
+    if (before === null) continue;
+    const { applied } = applyExpectedValues(file, applyRenames(before, renames).text, entries);
+    for (const e of applied) hit.add(e);
+  }
+  return entries.filter((e) => hit.has(e));
+}
+
+/** Notes for the registered expected values whose file got no baseline (CT-06zxe). */
+export function unusedExpectedValueNotes(
+  entries: readonly ExpectedValueDeclaration[],
+  baselines: ReadonlyMap<string, RuleTestBaseline>,
+): string[] {
+  return entries
+    .filter((e) => baselines.get(e.file)?.expectedValues === undefined)
+    .map(
+      (e) =>
+        `registered expected value ${expectedValueLabel(e)}: not applied (${e.file} is not an expected rule-test file that existed at the base and was compared test by test)`,
+    );
 }
 
 export type BaselineReader = {
@@ -334,6 +470,7 @@ export function ruleTestBaselines(
   scope: readonly string[],
   read: BaselineReader,
   renames: readonly RenameDeclaration[] = [],
+  expectedValues: readonly ExpectedValueDeclaration[] = [],
 ): Map<string, RuleTestBaseline> {
   const out = new Map<string, RuleTestBaseline>();
   const support = new Set<string>();
@@ -351,16 +488,15 @@ export function ruleTestBaselines(
     const after = read.head(file);
     const renamedBase = applyRenames(original, renames);
     const before = renamedBase.text;
+    let ev: ExpectedValuesBase | undefined;
     const set = (baseline: RuleTestBaseline): void => {
-      out.set(
-        file,
-        renamedBase.applied.length === 0
-          ? baseline
-          : {
-              ...baseline,
-              renamed: { applied: renamedBase.applied, identical: before === after },
-            },
-      );
+      out.set(file, {
+        ...baseline,
+        ...(renamedBase.applied.length === 0
+          ? {}
+          : { renamed: { applied: renamedBase.applied, identical: before === after } }),
+        ...(ev === undefined ? {} : { expectedValues: ev }),
+      });
     };
     if (after === null) {
       set({ kind: 'whole', reason: 'its content in the red run cannot be read' });
@@ -373,11 +509,48 @@ export function ruleTestBaselines(
       });
       continue;
     }
-    const compared = compareTestFile(before, after);
+    // CT-06zxe (D10-371): the registered expected values of this file (see the header).
+    const registered = applyExpectedValues(file, before, expectedValues);
+    let compared = compareTestFile(before, after);
+    let affected: boolean[] | null = null;
+    if (registered.applied.length > 0 || registered.skipped.length > 0) {
+      ev = { applied: registered.applied, skipped: registered.skipped, affected: [], void: [] };
+    }
+    if (ev !== undefined && registered.applied.length > 0) {
+      const withValues = compareTestFile(registered.text, after);
+      if (withValues.whole) {
+        ev.whole = compared.whole
+          ? `${withValues.reason}, also after the registered expected values`
+          : 'the head does not make the registered change (compared without the registered expected values)';
+      } else {
+        compared = withValues;
+        const helpers = [...new Set(registered.applied.map((e) => e.helper))];
+        const impact = helperImpact(after, helpers);
+        if (!impact.ok) {
+          ev.whole = impact.reason;
+          compared = { whole: true, reason: `registered expected values: ${impact.reason}` };
+        } else {
+          affected = impact.affected;
+          for (const h of helpers) {
+            const alone = helperImpact(after, [h]);
+            if (alone.ok && !alone.affected.some(Boolean)) {
+              ev.void.push(
+                `the registered helper ${h} is called by no test block: the registration is void`,
+              );
+            }
+          }
+          ev.affected = withValues.blocks.filter((_, i) => impact.affected[i]).map((b) => b.title);
+        }
+      }
+    }
     if (compared.whole) {
       set({ kind: 'whole', reason: compared.reason });
       continue;
     }
+    const blocks =
+      affected === null
+        ? compared.blocks
+        : compared.blocks.map((b, i) => (affected[i] === true ? { ...b, changed: true } : b));
     const others = [...support].filter((s) => s !== file).sort();
     const closure =
       others.length === 0
@@ -395,11 +568,11 @@ export function ruleTestBaselines(
     }
     set(
       why === null
-        ? { kind: 'tests', blocks: compared.blocks }
+        ? { kind: 'tests', blocks }
         : {
             kind: 'support',
             reason: `it may read a test-support file the task changed: ${why}`,
-            blocks: compared.blocks,
+            blocks,
           },
     );
   }
@@ -939,6 +1112,21 @@ export function checkRedReports(
             ? '; the renamed base is identical to the head'
             : '; the renamed base still differs from the head'),
       );
+    }
+    const ev = baseline?.expectedValues;
+    if (ev !== undefined) {
+      for (const why of ev.skipped) notes.push(`${file}: registered expected value ${why}`);
+      if (ev.applied.length > 0) {
+        notes.push(
+          `${file}: compared with its base after the registered expected values (D10-371: ${ev.applied
+            .map(expectedValueLabel)
+            .join('; ')})` +
+            (ev.whole === undefined
+              ? `; tests calling the changed helper(s), which must be red: ${ev.affected.length === 0 ? 'none' : ev.affected.join(' | ')}; the rule-test reviewer confirms the entries change expected values only`
+              : `; not judged by the helpers' impact: ${ev.whole}`),
+        );
+      }
+      for (const why of ev.void) problems.push({ file, test: null, reason: why });
     }
     const declaredHere = baselines === undefined ? [] : declared.filter((d) => d.file === file);
     for (const d of declaredHere) declaredSeen.add(d);
