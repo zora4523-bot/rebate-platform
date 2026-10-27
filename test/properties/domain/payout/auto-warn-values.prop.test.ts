@@ -116,10 +116,10 @@ const rate = fc.oneof(
 const orders = fc.oneof(
   { arbitrary: fc.constant([]), weight: 1 },
   {
-    arbitrary: fc.array(fc.record({ commission_rate_bp: rate, invalid: fc.boolean() }), {
-      minLength: 1,
-      maxLength: 40,
-    }),
+    arbitrary: fc.array(
+      fc.record({ commission_rate_bp: rate, invalid: fc.boolean() }, { noNullPrototype: true }),
+      { minLength: 1, maxLength: 40 },
+    ),
     weight: 9,
   },
 );
