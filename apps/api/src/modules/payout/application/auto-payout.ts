@@ -7,6 +7,9 @@
 //                                auto, status ∉ {REJECTED, FAILED}, reviewed_at in the current +08:00
 //                                day / month; payee by payee_hmac across members, member by user_id)
 //                                and ⑨ (Σ amount_fen of the same rows today, this one included) are read.
+//   config                       withdraw.auto_payout.* and ⑪'s payout.channel_enabled.<channel> as
+//                                one saved state (readAutoPayoutConfigSnapshot); rule_version is the
+//                                Σ of that snapshot's group versions.
 //   inputs                       ⑤ active withdraw_holds or risk_state ∈ {frozen, appealing} or
 //                                frozen_fen > amount_fen; ⑥ ⑧ with t = created_at (B2-11a's facts
 //                                reader); ⑩ adult; ⑪ payout.channel_enabled.<channel of the snapshot>;
@@ -23,7 +26,12 @@
 //                                execute_blocked with the reason. The CAS matching nothing (a human
 //                                reviewed first) ends the consumer: only auto_decision is written.
 //   alert                        today's automatic total reaching 80% of platform_daily_max_fen
-//                                (BR-WDR-24): logger.warn(…, 'auto_payout_daily_near_cap').
+//                                (BR-WDR-24): logger.warn(…, 'auto_payout_daily_near_cap'), the
+//                                fixed-message warn of the repository's event alerts
+//                                (config_change_alert, sms_daily_budget_alert).
+// TODO(规划/11 §2.3): a /metrics gauge of today's automatic total against platform_daily_max_fen and
+// its fund rule in infra/monitoring/rules/couli-fund.yaml (规划/02 §13 夜间资金类「自动到账日合计触顶」)
+// — blocked on a task owning platform/metrics and infra/monitoring (outside B2-11c's paths).
 // processed_events claim and every effect commit in one transaction (consume), as went-negative.ts.
 // Rule tests: test/spec/payout/auto-payout/**, test/properties/domain/payout/auto-payout-once.ts.
 //
@@ -96,8 +104,11 @@ export interface AutoPayoutDecisionRecord extends AutoPayoutDecision {
 export interface AutoPayoutOptions extends WithdrawalCommandsOptions {
   db: Kysely<DB>;
   logger: { warn(fields: Record<string, unknown>, message: string): void };
-  /** content's configuration reader: withdraw.auto_payout.*, payout.channel_enabled.*, calendar.*. */
-  config: PayoutConfigPort;
+  /**
+   * content's configuration reader: withdraw.auto_payout.* with payout.channel_enabled.<channel>
+   * as one snapshot (readAutoPayoutConfigSnapshot), calendar.* for the review deadline.
+   */
+  config: AutoPayoutConfigPort;
   /** ⑤ ⑬ risk_state. */
   risk: RiskStateBatchReader;
   /** ⑬ appealing over frozen / banned. */
@@ -225,107 +236,160 @@ function count(value: string | number | bigint | null | undefined): number {
   return value === null || value === undefined ? 0 : Number(value);
 }
 
+/** One config_items row as read: its value and business version. */
+export interface AutoPayoutConfigEntry {
+  value: unknown;
+  version: number;
+}
+
+/** Keys present in one snapshot; an absent key has no entry. */
+export type AutoPayoutConfigSnapshot = ReadonlyMap<string, AutoPayoutConfigEntry>;
+
+/**
+ * content's configuration reader. `configValues`, when given, reads all `keys` in one statement
+ * (one snapshot of config_items); without it the consumer reads key by key twice (below).
+ */
+export interface AutoPayoutConfigPort extends PayoutConfigPort {
+  configValues?(
+    appId: string,
+    keys: readonly string[],
+    handle: Kysely<DB>,
+  ): Promise<AutoPayoutConfigSnapshot>;
+}
+
+/** The group's names under withdraw.auto_payout. (BR-WDR-30 细则). */
+const GROUP_NAMES: readonly string[] = [
+  'enabled',
+  'max_amount_fen',
+  'window_start',
+  'window_end',
+  'window_limit_enabled',
+  'first_withdrawal_limit_enabled',
+  'frozen_balance_policy',
+  'same_day_policy',
+  'payee_daily_max_count',
+  'payee_monthly_max_count',
+  'user_daily_max_count',
+  'user_monthly_max_count',
+  'warn.high_commission_rate_bp',
+  'warn.high_commission_order_ratio_bp',
+  'warn.invalid_ratio_bp',
+  'warn.withdraw_received_ratio_bp',
+  'platform_daily_max_fen',
+  'risk_block_flags',
+];
+/** Per-key reads that keep differing between two passes this many times end the attempt. */
+const SNAPSHOT_ATTEMPTS = 5;
+
+function sameEntry(a: AutoPayoutConfigEntry | undefined, b: AutoPayoutConfigEntry | undefined) {
+  if (a === undefined || b === undefined) return a === b;
+  return a.version === b.version && JSON.stringify(a.value) === JSON.stringify(b.value);
+}
+
+/**
+ * BR-WDR-30 可追溯: `keys` as one saved state, never old values of some keys with new values of
+ * others (a batch save committing between two per-key reads). With the port's `configValues` that
+ * is one statement. Otherwise every key is read twice; when both passes agree on every key
+ * (presence, version, value), each value held from its first read to its second read, so all of
+ * them held together at the instant between the passes. Passes that differ are read again; still
+ * differing after SNAPSHOT_ATTEMPTS, it throws and the event is retried.
+ */
+export async function readAutoPayoutConfigSnapshot(
+  port: AutoPayoutConfigPort,
+  handle: Kysely<DB>,
+  appId: string,
+  keys: readonly string[],
+): Promise<AutoPayoutConfigSnapshot> {
+  if (port.configValues !== undefined) return port.configValues(appId, keys, handle);
+  async function pass(): Promise<Map<string, AutoPayoutConfigEntry>> {
+    const entries = new Map<string, AutoPayoutConfigEntry>();
+    for (const key of keys) {
+      const row = await port.configValue(appId, key, handle);
+      if (row !== null) entries.set(key, { value: row.value, version: row.version });
+    }
+    return entries;
+  }
+  let previous = await pass();
+  for (let attempt = 0; attempt < SNAPSHOT_ATTEMPTS; attempt += 1) {
+    const current = await pass();
+    if (keys.every((key) => sameEntry(previous.get(key), current.get(key)))) return current;
+    previous = current;
+  }
+  throw new Error('payout: withdraw.auto_payout.* kept changing while it was read');
+}
+
+/**
+ * The group from one snapshot; absent or malformed keys take the 08 defaults (`onDefault`).
+ * rule_version: Σ of the snapshot's withdraw.auto_payout.* versions — every save of any key raises
+ * it, and with the decision time it names the config_item_versions rows the values came from.
+ */
+export function autoPayoutConfigOf(
+  snapshot: AutoPayoutConfigSnapshot,
+  onDefault: (key: string) => void,
+): { config: AutoPayoutConfig; ruleVersion: number } {
+  let ruleVersion = 0;
+  function read<T>(name: string, parse: (v: unknown) => Parsed<T>, fallback: T): T {
+    const key = `${PREFIX}${name}`;
+    const row = snapshot.get(key);
+    if (row === undefined) return fallback;
+    ruleVersion += row.version;
+    const parsed = parse(row.value);
+    if (parsed.ok) return parsed.value;
+    onDefault(key);
+    return fallback;
+  }
+  const d = AUTO_PAYOUT_DEFAULTS;
+  const config: AutoPayoutConfig = {
+    enabled: read('enabled', parseSwitch, d.enabled),
+    max_amount_fen: read('max_amount_fen', parseFenValue, d.max_amount_fen),
+    window_start: read('window_start', parseHms, d.window_start),
+    window_end: read('window_end', parseHms, d.window_end),
+    window_limit_enabled: read('window_limit_enabled', parseSwitch, d.window_limit_enabled),
+    first_withdrawal_limit_enabled: read(
+      'first_withdrawal_limit_enabled',
+      parseSwitch,
+      d.first_withdrawal_limit_enabled,
+    ),
+    frozen_balance_policy: read('frozen_balance_policy', parseNoAuto, d.frozen_balance_policy),
+    same_day_policy: read('same_day_policy', parseNoAuto, d.same_day_policy),
+    payee_daily_max_count: read('payee_daily_max_count', parseCount, d.payee_daily_max_count),
+    payee_monthly_max_count: read('payee_monthly_max_count', parseCount, d.payee_monthly_max_count),
+    user_daily_max_count: read('user_daily_max_count', parseCount, d.user_daily_max_count),
+    user_monthly_max_count: read('user_monthly_max_count', parseCount, d.user_monthly_max_count),
+    warn: {
+      high_commission_rate_bp: read(
+        'warn.high_commission_rate_bp',
+        parseBp,
+        d.warn.high_commission_rate_bp,
+      ),
+      high_commission_order_ratio_bp: read(
+        'warn.high_commission_order_ratio_bp',
+        parseBp,
+        d.warn.high_commission_order_ratio_bp,
+      ),
+      invalid_ratio_bp: read('warn.invalid_ratio_bp', parseBp, d.warn.invalid_ratio_bp),
+      withdraw_received_ratio_bp: read(
+        'warn.withdraw_received_ratio_bp',
+        parseBp,
+        d.warn.withdraw_received_ratio_bp,
+      ),
+    },
+    platform_daily_max_fen: read('platform_daily_max_fen', parseFenValue, d.platform_daily_max_fen),
+    risk_block_flags: read('risk_block_flags', parseFlags, d.risk_block_flags),
+  };
+  return { config, ruleVersion };
+}
+
+type PayoutChannelName = 'alipay' | 'bank_card' | 'wechat';
+
+function channelOf(channel: string): PayoutChannelName | null {
+  return channel === 'alipay' || channel === 'bank_card' || channel === 'wechat' ? channel : null;
+}
+
 export function createAutoPayoutConsumer(options: AutoPayoutOptions): AutoPayoutConsumer {
   const { db, logger, clock, ledger, config } = options;
   const commands = createWithdrawalCommands(options);
   const holds = createWithdrawHoldsReader();
-
-  /**
-   * The group withdraw.auto_payout.* on `trx`; absent or malformed keys take the 08 defaults
-   * (warned). rule_version: Σ of the keys' versions, so every save of any key raises it.
-   */
-  async function readConfig(
-    trx: Transaction<DB>,
-    appId: string,
-  ): Promise<{ config: AutoPayoutConfig; ruleVersion: number }> {
-    let ruleVersion = 0;
-    async function read<T>(name: string, parse: (v: unknown) => Parsed<T>, fallback: T) {
-      const row = await config.configValue(appId, `${PREFIX}${name}`, trx);
-      if (row === null) return fallback;
-      ruleVersion += row.version;
-      const parsed = parse(row.value);
-      if (parsed.ok) return parsed.value;
-      logger.warn({ app_id: appId, config_key: `${PREFIX}${name}` }, 'auto_payout_config_default');
-      return fallback;
-    }
-    const d = AUTO_PAYOUT_DEFAULTS;
-    const result: AutoPayoutConfig = {
-      enabled: await read('enabled', parseSwitch, d.enabled),
-      max_amount_fen: await read('max_amount_fen', parseFenValue, d.max_amount_fen),
-      window_start: await read('window_start', parseHms, d.window_start),
-      window_end: await read('window_end', parseHms, d.window_end),
-      window_limit_enabled: await read('window_limit_enabled', parseSwitch, d.window_limit_enabled),
-      first_withdrawal_limit_enabled: await read(
-        'first_withdrawal_limit_enabled',
-        parseSwitch,
-        d.first_withdrawal_limit_enabled,
-      ),
-      frozen_balance_policy: await read(
-        'frozen_balance_policy',
-        parseNoAuto,
-        d.frozen_balance_policy,
-      ),
-      same_day_policy: await read('same_day_policy', parseNoAuto, d.same_day_policy),
-      payee_daily_max_count: await read(
-        'payee_daily_max_count',
-        parseCount,
-        d.payee_daily_max_count,
-      ),
-      payee_monthly_max_count: await read(
-        'payee_monthly_max_count',
-        parseCount,
-        d.payee_monthly_max_count,
-      ),
-      user_daily_max_count: await read('user_daily_max_count', parseCount, d.user_daily_max_count),
-      user_monthly_max_count: await read(
-        'user_monthly_max_count',
-        parseCount,
-        d.user_monthly_max_count,
-      ),
-      warn: {
-        high_commission_rate_bp: await read(
-          'warn.high_commission_rate_bp',
-          parseBp,
-          d.warn.high_commission_rate_bp,
-        ),
-        high_commission_order_ratio_bp: await read(
-          'warn.high_commission_order_ratio_bp',
-          parseBp,
-          d.warn.high_commission_order_ratio_bp,
-        ),
-        invalid_ratio_bp: await read('warn.invalid_ratio_bp', parseBp, d.warn.invalid_ratio_bp),
-        withdraw_received_ratio_bp: await read(
-          'warn.withdraw_received_ratio_bp',
-          parseBp,
-          d.warn.withdraw_received_ratio_bp,
-        ),
-      },
-      platform_daily_max_fen: await read(
-        'platform_daily_max_fen',
-        parseFenValue,
-        d.platform_daily_max_fen,
-      ),
-      risk_block_flags: await read('risk_block_flags', parseFlags, d.risk_block_flags),
-    };
-    return { config: result, ruleVersion };
-  }
-
-  /** ⑪ payout.channel_enabled.<channel> (BR-WDR-32 defaults: only Alipay on). */
-  async function channelEnabled(
-    trx: Transaction<DB>,
-    appId: string,
-    channel: string,
-  ): Promise<boolean> {
-    if (channel !== 'alipay' && channel !== 'bank_card' && channel !== 'wechat') return false;
-    const key = PAYOUT_EXECUTE_CONFIG_KEYS.channelEnabled(channel);
-    const row = await config.configValue(appId, key, trx);
-    const fallback = PAYOUT_EXECUTE_DEFAULTS.channelEnabled[channel];
-    if (row === null) return fallback;
-    const parsed = parseSwitch(row.value);
-    if (parsed.ok) return parsed.value === 'on';
-    logger.warn({ app_id: appId, config_key: key }, 'auto_payout_config_default');
-    return fallback;
-  }
 
   /** The decision of one withdrawal on `trx` (the claim, when any, is the caller's). */
   async function decide(trx: Transaction<DB>, appId: string, id: string): Promise<void> {
@@ -374,7 +438,24 @@ export function createAutoPayoutConsumer(options: AutoPayoutOptions): AutoPayout
     const now = clock.now();
     const amount = row.amount_fen;
     const createdAt = row.created_at;
-    const { config: group, ruleVersion } = await readConfig(trx, appId);
+    // ① – ⑫'s configuration and ⑪'s channel switch from one saved state (BR-WDR-30 可追溯).
+    const channel = channelOf(row.payout_channel);
+    const channelKey = channel === null ? null : PAYOUT_EXECUTE_CONFIG_KEYS.channelEnabled(channel);
+    const snapshot = await readAutoPayoutConfigSnapshot(config, trx, appId, [
+      ...GROUP_NAMES.map((name) => `${PREFIX}${name}`),
+      ...(channelKey === null ? [] : [channelKey]),
+    ]);
+    const onDefault = (key: string) =>
+      logger.warn({ app_id: appId, config_key: key }, 'auto_payout_config_default');
+    const { config: group, ruleVersion } = autoPayoutConfigOf(snapshot, onDefault);
+    let channelOn = false;
+    if (channel !== null && channelKey !== null) {
+      const fallback = PAYOUT_EXECUTE_DEFAULTS.channelEnabled[channel];
+      const entry = snapshot.get(channelKey);
+      const parsed = entry === undefined ? null : parseSwitch(entry.value);
+      if (parsed !== null && !parsed.ok) onDefault(channelKey);
+      channelOn = parsed === null || !parsed.ok ? fallback : parsed.value === 'on';
+    }
     const own = balances.find((balance) => balance.user_id === userId);
     const available = own === undefined ? 0n : own.available_fen;
     const frozen = own === undefined ? 0n : own.frozen_fen;
@@ -499,7 +580,7 @@ export function createAutoPayoutConsumer(options: AutoPayoutOptions): AutoPayout
       warn_actuals: warnActuals,
       platform_daily_auto_fen: platformToday,
       adult: await options.adult.isAdult(trx, { appId, userId, at: now }),
-      channel_enabled: await channelEnabled(trx, appId, row.payout_channel),
+      channel_enabled: channelOn,
       risk_flags: riskFlagsOf(row.risk_flags),
       blacklist_hit: await options.blacklist.hit(trx, {
         appId,

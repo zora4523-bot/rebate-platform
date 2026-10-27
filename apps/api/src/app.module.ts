@@ -2938,6 +2938,19 @@ function autoPayoutPorts(deps: {
     config: {
       configValue: (appId, key, handle) =>
         createContentReader({ db: handle, clock }).configValue(appId, key),
+      // The decision's group in one statement: one snapshot of config_items, so a batch save is
+      // seen whole or not at all (BR-WDR-30 可追溯). The same rows content's configValue reads.
+      async configValues(appId, keys, handle) {
+        if (keys.length === 0) return new Map();
+        const rows = await handle
+          .withSchema('app')
+          .selectFrom('config_items')
+          .select(['key', 'value', 'version'])
+          .where('app_id', '=', appId)
+          .where('key', 'in', [...keys])
+          .execute();
+        return new Map(rows.map((row) => [row.key, { value: row.value, version: row.version }]));
+      },
     },
     risk: createRiskStateBatchReader({ db }),
     appeal: createAppealPrevStateReader(),
