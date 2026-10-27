@@ -40,5 +40,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/payout/auto-payout/**'
   - 'test/properties/domain/payout/**'
-status: todo
-pr: null
+status: done
+pr: 1719
