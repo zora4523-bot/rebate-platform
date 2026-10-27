@@ -241,6 +241,14 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
       ...DEFAULT,
       deadLetter: 'evt.notification-claim-result.dead',
     },
+    // B2-11c（BR-WDR-30）：payout 的 withdrawal.created 消费者队列，目录默认值，紧跟
+    // evt.notification-claim-result、在 evt.payout-went-negative 之前（不插在 evt.payout-went-negative
+    // 与 pay 之间，以免与上面 B2-15b 对 pay 两侧的断言矛盾）。
+    {
+      name: 'evt.payout-auto-payout',
+      ...DEFAULT,
+      deadLetter: 'evt.payout-auto-payout.dead',
+    },
     ...(hasPayoutWentNegative
       ? [
           {
@@ -372,6 +380,9 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
       w('evt.notification-risk-state', 5),
       w('evt.notification-appeal-result', 5),
       w('evt.notification-claim-result', 5),
+      // B2-11c（BR-WDR-30）：自动到账判定只由 worker 消费，并发 1，紧跟 evt.notification-claim-result
+      // （同目录位置；不插在 evt.payout-went-negative 与 pay 之间）。
+      w('evt.payout-auto-payout', 1),
       ...(plansPayoutWentNegative ? [w('evt.payout-went-negative', 1)] : []),
       w('pool-refresh', 1),
       w('poster', 2, 0.5),
