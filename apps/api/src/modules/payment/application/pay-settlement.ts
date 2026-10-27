@@ -19,6 +19,7 @@
 // Also compiled by the `test` project (through jobs/pay-jobs.ts): erasable syntax only.
 import type { DB } from '@couli/db';
 import { accountingDate, transitionPayOrder, type PayOrderState } from '@couli/domain';
+import { subFen } from '@couli/money';
 import type { Transaction } from 'kysely';
 import type { ContentReader } from '../../content/index.ts';
 import type { PostingResult, PostingVoucher, RegisterReconDiffInput } from '../../ledger/index.ts';
@@ -324,7 +325,8 @@ export async function registerAnomalyReceipt(
     refId: anomaly.id,
     expectedFen: 0n,
     actualFen: anomaly.amount_fen,
-    diffFen: anomaly.amount_fen,
+    // diff_fen = expected − actual (contract AdminPayReconDiff; D10-358 ①, D10-360): −received.
+    diffFen: subFen(0n, anomaly.amount_fen),
     dedupeKey: `pay_anomaly:${anomaly.id}`,
     resolution: null,
   });

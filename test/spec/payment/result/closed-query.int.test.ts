@@ -85,7 +85,7 @@ async function onlyAnomaly(
     ref_id: anomaly.id,
     expected_fen: 0n,
     actual_fen: order.amount_fen,
-    diff_fen: order.amount_fen,
+    diff_fen: -order.amount_fen,
     status: 'open',
   });
   expect(alertsMentioning(kit.logs, [anomaly.id]).length).toBeGreaterThanOrEqual(1);

@@ -1,0 +1,136 @@
+{
+  "task": "B2-15l",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "8a7545426fe9d655bd5f43e63d0b7974ee5b88d3",
+  "red_tests": [
+    "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#1] wechat_pay 通知登记的异常收款（CLOSED 单收到合格通知，B2-15c registerAnomalyRow）：R4 pay_anomaly 差错单 expected 0、actual = 收款额、diff = −收款额（expected − actual）",
+    "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#1] alipay 通知登记的异常收款（CLOSED 单收到合格通知，B2-15c registerAnomalyRow）：R4 pay_anomaly 差错单 expected 0、actual = 收款额、diff = −收款额（expected − actual）",
+    "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#2] wechat_pay 通知登记的异常收款（商户单号找不到我方支付单，金额以通知为准 777 分）：差错单 expected 0、actual 777、diff −777",
+    "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#2] alipay 通知登记的异常收款（商户单号找不到我方支付单，金额以通知为准 777 分）：差错单 expected 0、actual 777、diff −777",
+    "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#3] wechat_pay 查询登记的异常收款（CLOSED 单的 order.query 执行时渠道报已收款，B2-15c registerAnomalyRow）：差错单 expected 0、actual = 收款额、diff = −收款额",
+    "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#3] alipay 查询登记的异常收款（CLOSED 单的 order.query 执行时渠道报已收款，B2-15c registerAnomalyRow）：差错单 expected 0、actual = 收款额、diff = −收款额",
+    "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#4] wechat_pay 对账登记的异常收款（B2-15j：账单证明 CLOSED 单有收款、账单商户单号找不到我方支付单 990 分）：两条 R4 pay_anomaly 差错单都是 expected 0、actual = 账单金额、diff = −账单金额",
+    "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#4] alipay 对账登记的异常收款（B2-15j：账单证明 CLOSED 单有收款、账单商户单号找不到我方支付单 990 分）：两条 R4 pay_anomaly 差错单都是 expected 0、actual = 账单金额、diff = −账单金额",
+    "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#5] 同一账单里异常收款与 pay_mismatch 同一口径：CLOSED 单收款 (0, 12345, −12345)、PENDING 单有收款 (0, 12345, −12345)、金额不一致 (1900, 1899, 1)、PAID 缺行 (990, 0, 990)；每条差错单 diff = expected − actual",
+    "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#6] 后台对账差错列表（listAdminPayReconDiffs）展示对账登记的差错单与库里同号：pay_anomaly 的 diff_fen = −收款额、pay_mismatch（PENDING 有收款）的 diff_fen = −收款额，每项 diff_fen = expected_fen − actual_fen",
+    "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#7] 后台对账差错列表展示通知登记的异常收款差错单：expected_fen 0、actual_fen = 收款额、diff_fen = −收款额",
+    "test/spec/payment/recon/anomaly.int.test.ts > [AC-B2-15j#13] wechat_pay 账单证明渠道对一张 CLOSED 单有收款 → 登记一条异常收款（渠道、账单的渠道交易号、商户单号、该 CLOSED 单、账单金额，open）+ PAY_ANOMALY（借 CASH_PAY / 贷 PAY_SUSPENSE）+ R4 pay_anomaly 差错单（period 为账单日）+ 告警；CLOSED 单不变为 PAID、不写收款凭证、不开通",
+    "test/spec/payment/recon/anomaly.int.test.ts > [AC-B2-15j#13] alipay 账单证明渠道对一张 CLOSED 单有收款 → 登记一条异常收款（渠道、账单的渠道交易号、商户单号、该 CLOSED 单、账单金额，open）+ PAY_ANOMALY（借 CASH_PAY / 贷 PAY_SUSPENSE）+ R4 pay_anomaly 差错单（period 为账单日）+ 告警；CLOSED 单不变为 PAID、不写收款凭证、不开通",
+    "test/spec/payment/recon/anomaly.int.test.ts > [AC-B2-15j#14] wechat_pay 账单里的商户单号找不到我方支付单 → 登记异常收款（out_trade_no 为该单号、pay_order_id 为空、账单金额）+ PAY_ANOMALY + R4 pay_anomaly 差错单 + 告警；不新建支付单、不开通",
+    "test/spec/payment/recon/anomaly.int.test.ts > [AC-B2-15j#14] alipay 账单里的商户单号找不到我方支付单 → 登记异常收款（out_trade_no 为该单号、pay_order_id 为空、账单金额）+ PAY_ANOMALY + R4 pay_anomaly 差错单 + 告警；不新建支付单、不开通",
+    "test/spec/payment/result/closed-query.int.test.ts > [AC-B2-15c#33] wechat_pay 支付单已 CLOSED、之前入队的 order.query 执行时渠道报已收款且金额相等：不迁移；登记异常收款 + PAY_ANOMALY（借 CASH_PAY / 贷 PAY_SUSPENSE）+ 差错单 R4 pay_anomaly（会计日 +08:00）+ 告警，不开通、无事件，记录查询尝试；再查一次不重复登记",
+    "test/spec/payment/result/closed-query.int.test.ts > [AC-B2-15c#33] alipay 支付单已 CLOSED、之前入队的 order.query 执行时渠道报已收款且金额相等：不迁移；登记异常收款 + PAY_ANOMALY（借 CASH_PAY / 贷 PAY_SUSPENSE）+ 差错单 R4 pay_anomaly（会计日 +08:00）+ 告警，不开通、无事件，记录查询尝试；再查一次不重复登记",
+    "test/spec/payment/result/closed-query.int.test.ts > [AC-B2-15c#34] wechat_pay 下单时入队的首次定时查询在该单被关闭之后才执行、渠道报已收款：同样登记异常收款，不迁移、不开通，也不再入队下一档查询或关单任务",
+    "test/spec/payment/result/closed-query.int.test.ts > [AC-B2-15c#34] alipay 下单时入队的首次定时查询在该单被关闭之后才执行、渠道报已收款：同样登记异常收款，不迁移、不开通，也不再入队下一档查询或关单任务",
+    "test/spec/payment/result/notify.int.test.ts > [AC-B2-15c#13] wechat_pay 支付单已 CLOSED 而通知合格：不迁移；登记异常收款 + PAY_ANOMALY（借 CASH_PAY / 贷 PAY_SUSPENSE）+ 差错单 R4 pay_anomaly（会计日 +08:00）+ 告警，不开通；登记提交后应答成功；重复与同交易的新通知只登记一次",
+    "test/spec/payment/result/notify.int.test.ts > [AC-B2-15c#13] alipay 支付单已 CLOSED 而通知合格：不迁移；登记异常收款 + PAY_ANOMALY（借 CASH_PAY / 贷 PAY_SUSPENSE）+ 差错单 R4 pay_anomaly（会计日 +08:00）+ 告警，不开通；登记提交后应答成功；重复与同交易的新通知只登记一次"
+  ],
+  "risk_note": "RV2 by path (payment). pay_anomaly recon diffs (R4) store diff_fen = expected_fen − actual_fen (expected 0, actual = received, diff = −received) on both registration paths — B2-15c registerAnomalyReceipt / registerAnomalyRow (notification, query) and B2-15j registerReconAnomaly (reconciliation) — via subFen(0n, amount); matches contract AdminPayReconDiff (D10-358 ① / D10-360). pay_mismatch, dedupe keys, vouchers, amounts and statuses unchanged; diff_fen is display-only. Frozen B2-15c helpers onlyAnomaly changed only by the sign, registered in the ledger's expected_values (CT-06zxe, D10-371); 22 unchanged tests exempt by red_exempt (orders/kit.ts createRequire may read the new diff-sign test). Collection go-live gate. No migration, no contract change.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "8a7545426fe9d655bd5f43e63d0b7974ee5b88d3",
+      "tree": "54805e3241ea94d0829880b66181cb869aa0340b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-27T11:04:37Z",
+      "finished_at": "2026-10-27T11:04:55Z",
+      "gate": {
+        "commit": "c294cbd1fbedea68d4ddf20812e1908d5ee1acf6",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#1] wechat_pay 通知登记的异常收款（CLOSED 单收到合格通知，B2-15c registerAnomalyRow）：R4 pay_anomaly 差错单 expected 0、actual = 收款额、diff = −收款额（expected − actual）",
+        "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#1] alipay 通知登记的异常收款（CLOSED 单收到合格通知，B2-15c registerAnomalyRow）：R4 pay_anomaly 差错单 expected 0、actual = 收款额、diff = −收款额（expected − actual）",
+        "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#2] wechat_pay 通知登记的异常收款（商户单号找不到我方支付单，金额以通知为准 777 分）：差错单 expected 0、actual 777、diff −777",
+        "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#2] alipay 通知登记的异常收款（商户单号找不到我方支付单，金额以通知为准 777 分）：差错单 expected 0、actual 777、diff −777",
+        "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#3] wechat_pay 查询登记的异常收款（CLOSED 单的 order.query 执行时渠道报已收款，B2-15c registerAnomalyRow）：差错单 expected 0、actual = 收款额、diff = −收款额",
+        "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#3] alipay 查询登记的异常收款（CLOSED 单的 order.query 执行时渠道报已收款，B2-15c registerAnomalyRow）：差错单 expected 0、actual = 收款额、diff = −收款额",
+        "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#4] wechat_pay 对账登记的异常收款（B2-15j：账单证明 CLOSED 单有收款、账单商户单号找不到我方支付单 990 分）：两条 R4 pay_anomaly 差错单都是 expected 0、actual = 账单金额、diff = −账单金额",
+        "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#4] alipay 对账登记的异常收款（B2-15j：账单证明 CLOSED 单有收款、账单商户单号找不到我方支付单 990 分）：两条 R4 pay_anomaly 差错单都是 expected 0、actual = 账单金额、diff = −账单金额",
+        "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#5] 同一账单里异常收款与 pay_mismatch 同一口径：CLOSED 单收款 (0, 12345, −12345)、PENDING 单有收款 (0, 12345, −12345)、金额不一致 (1900, 1899, 1)、PAID 缺行 (990, 0, 990)；每条差错单 diff = expected − actual",
+        "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#6] 后台对账差错列表（listAdminPayReconDiffs）展示对账登记的差错单与库里同号：pay_anomaly 的 diff_fen = −收款额、pay_mismatch（PENDING 有收款）的 diff_fen = −收款额，每项 diff_fen = expected_fen − actual_fen",
+        "test/spec/payment/diff-sign/sign.int.test.ts > [AC-B2-15l#7] 后台对账差错列表展示通知登记的异常收款差错单：expected_fen 0、actual_fen = 收款额、diff_fen = −收款额",
+        "test/spec/payment/recon/anomaly.int.test.ts > [AC-B2-15j#13] wechat_pay 账单证明渠道对一张 CLOSED 单有收款 → 登记一条异常收款（渠道、账单的渠道交易号、商户单号、该 CLOSED 单、账单金额，open）+ PAY_ANOMALY（借 CASH_PAY / 贷 PAY_SUSPENSE）+ R4 pay_anomaly 差错单（period 为账单日）+ 告警；CLOSED 单不变为 PAID、不写收款凭证、不开通",
+        "test/spec/payment/recon/anomaly.int.test.ts > [AC-B2-15j#13] alipay 账单证明渠道对一张 CLOSED 单有收款 → 登记一条异常收款（渠道、账单的渠道交易号、商户单号、该 CLOSED 单、账单金额，open）+ PAY_ANOMALY（借 CASH_PAY / 贷 PAY_SUSPENSE）+ R4 pay_anomaly 差错单（period 为账单日）+ 告警；CLOSED 单不变为 PAID、不写收款凭证、不开通",
+        "test/spec/payment/recon/anomaly.int.test.ts > [AC-B2-15j#14] wechat_pay 账单里的商户单号找不到我方支付单 → 登记异常收款（out_trade_no 为该单号、pay_order_id 为空、账单金额）+ PAY_ANOMALY + R4 pay_anomaly 差错单 + 告警；不新建支付单、不开通",
+        "test/spec/payment/recon/anomaly.int.test.ts > [AC-B2-15j#14] alipay 账单里的商户单号找不到我方支付单 → 登记异常收款（out_trade_no 为该单号、pay_order_id 为空、账单金额）+ PAY_ANOMALY + R4 pay_anomaly 差错单 + 告警；不新建支付单、不开通",
+        "test/spec/payment/result/closed-query.int.test.ts > [AC-B2-15c#33] wechat_pay 支付单已 CLOSED、之前入队的 order.query 执行时渠道报已收款且金额相等：不迁移；登记异常收款 + PAY_ANOMALY（借 CASH_PAY / 贷 PAY_SUSPENSE）+ 差错单 R4 pay_anomaly（会计日 +08:00）+ 告警，不开通、无事件，记录查询尝试；再查一次不重复登记",
+        "test/spec/payment/result/closed-query.int.test.ts > [AC-B2-15c#33] alipay 支付单已 CLOSED、之前入队的 order.query 执行时渠道报已收款且金额相等：不迁移；登记异常收款 + PAY_ANOMALY（借 CASH_PAY / 贷 PAY_SUSPENSE）+ 差错单 R4 pay_anomaly（会计日 +08:00）+ 告警，不开通、无事件，记录查询尝试；再查一次不重复登记",
+        "test/spec/payment/result/closed-query.int.test.ts > [AC-B2-15c#34] wechat_pay 下单时入队的首次定时查询在该单被关闭之后才执行、渠道报已收款：同样登记异常收款，不迁移、不开通，也不再入队下一档查询或关单任务",
+        "test/spec/payment/result/closed-query.int.test.ts > [AC-B2-15c#34] alipay 下单时入队的首次定时查询在该单被关闭之后才执行、渠道报已收款：同样登记异常收款，不迁移、不开通，也不再入队下一档查询或关单任务",
+        "test/spec/payment/result/notify.int.test.ts > [AC-B2-15c#13] wechat_pay 支付单已 CLOSED 而通知合格：不迁移；登记异常收款 + PAY_ANOMALY（借 CASH_PAY / 贷 PAY_SUSPENSE）+ 差错单 R4 pay_anomaly（会计日 +08:00）+ 告警，不开通；登记提交后应答成功；重复与同交易的新通知只登记一次",
+        "test/spec/payment/result/notify.int.test.ts > [AC-B2-15c#13] alipay 支付单已 CLOSED 而通知合格：不迁移；登记异常收款 + PAY_ANOMALY（借 CASH_PAY / 贷 PAY_SUSPENSE）+ 差错单 R4 pay_anomaly（会计日 +08:00）+ 告警，不开通；登记提交后应答成功；重复与同交易的新通知只登记一次"
+      ],
+      "expected": [
+        "test/spec/payment/diff-sign/sign.int.test.ts",
+        "test/spec/payment/recon/anomaly.int.test.ts",
+        "test/spec/payment/result/closed-query.int.test.ts",
+        "test/spec/payment/result/notify.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "e2f04593bdb71aa0a406c0935c6c0117628d572205b3dc2f603b932e4736a091"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable; independent Claude via tools/agent/claude-run.sh per approvals #36; round 1 pass with no findings."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "expected_values_confirmed": {
+      "entries": [
+        {
+          "file": "test/spec/payment/result/notify.int.test.ts",
+          "helper": "onlyAnomaly",
+          "from": "    diff_fen: AMOUNT,",
+          "to": "    diff_fen: -AMOUNT,"
+        },
+        {
+          "file": "test/spec/payment/result/closed-query.int.test.ts",
+          "helper": "onlyAnomaly",
+          "from": "    diff_fen: order.amount_fen,",
+          "to": "    diff_fen: -order.amount_fen,"
+        }
+      ]
+    },
+    "note": "rule tests by an independent Claude context (the two registered onlyAnomaly signs, two in-callback diffFen in recon/anomaly, new diff-sign/sign.int.test.ts with 7 tests); 21 tests red for the right reason, 22 unchanged tests exempt by red_exempt (red/2). Reviewed by a separate fresh independent Claude call: pass with no findings; the reviewer confirmed the 2 expected_values entries (exact text, only a minus sign added, D10-360) and the 22 red_exempt declarations one by one. S2 recorded: admin-list #22 seed row still (0, 990, +990)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "b32564c83f75b1c2e835ccb251fb85c9acfabc42",
+    "test/spec": "17fdddf33428742cd65ee73bdb4506b3bcde6e0f",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "b32564c83f75b1c2e835ccb251fb85c9acfabc42"
+  }
+}
