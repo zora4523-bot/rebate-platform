@@ -10,10 +10,9 @@ refs: [BR-WDR-30, BR-WDR-29]
 refs_hash:
   BR-WDR-30: 1b1ddd9942cf
   BR-WDR-29: 6d588cc80722
-deps: [B2-05c]
+deps: [B2-05c, B2-11y]
 paths:
   - 'apps/api/src/modules/payout/**'
-  - 'apps/api/src/modules/content/domain/config-registry.ts'
 test_paths:
   - 'test/spec/payout/auto-decision/**'
   - 'test/properties/domain/payout/**'
