@@ -1,5 +1,8 @@
 // B2-04m: the single-order credit transaction (rebate transition R5, SETTLE_BATCH_CREDIT).
 // BR-FUND-01 R5; BR-FUND-04 ⑦ ⑩ ⑫; BR-FUND-05; BR-FUND-16 细则「加锁流程」; BR-CALC-13.
+// B2-04mb (D10-317): the attribution is read through commission's version-independent
+// readCommissionAttribution when wired, so an order whose commission_version order-sync moved
+// ahead of the stored amount rows still credits (amounts never come from the snapshot).
 //
 // Everything runs on the caller's transaction (one PG transaction per sub-order, BR-FUND-04 ⑦);
 // the service never opens, commits or rolls back a transaction itself. In order:
@@ -7,7 +10,8 @@
 //   2. re-read the order after the lock: rebate_status = WAITING, hold = false,
 //      rights_pending = false, and the greatest order_settlements seq = expectedSettleSeq;
 //      otherwise return { outcome: 'skipped' } without writing anything;
-//   3. read the commission snapshot (current commission_version) and its tlj_deduct_fen; a
+//   3. read the attribution (readAttribution, version-independent; else the snapshot at the
+//      current commission_version) and the snapshot's tlj_deduct_fen; a
 //      tlj_deduct_fen > 0 skips with 'tlj_deduct_unsupported' plus an alert log and writes
 //      nothing (编排裁定 D10-272); then lock the users rows of the beneficiaries through the
 //      BeneficiaryGate (ascending user_id);
@@ -93,7 +97,22 @@ export interface CreditOrderDependencies {
   readonly logger: Pick<RootLogger, 'info' | 'warn' | 'error'>;
   readonly ledger: Pick<Ledger, 'openUserAccount' | 'lockBalances' | 'post'>;
   readonly gate: BeneficiaryGate;
-  /** commission readCommissionSnapshot; null when the order has no snapshot (throws then). */
+  /**
+   * commission readCommissionAttribution: the immutable attribution (reserve ratio, beneficiaries
+   * with their ratios, forfeited events) without any amount version; throws when there is none.
+   * Preferred over readSnapshot: R5 takes its amounts from N (settle_commission_fen) through the
+   * credit plan, and orders.commission_version may run ahead of the stored amount rows (order-sync
+   * bumps it). When supplied, readSnapshot is never called (no fallback).
+   */
+  readonly readAttribution?: (
+    trx: Transaction<DB>,
+    input: { readonly appId: string; readonly orderId: string },
+  ) => Promise<CreditSnapshot>;
+  /**
+   * commission readCommissionSnapshot (current commission_version); null when the order has no
+   * snapshot (throws then). Used only when readAttribution is not supplied (it asserts the version
+   * is the greatest stored one).
+   */
   readSnapshot(
     trx: Transaction<DB>,
     input: CreditSnapshotSelection,
@@ -287,13 +306,17 @@ export function createCreditOrder(deps: CreditOrderDependencies): CreditOrder {
       throw new Error('settlement credit: R5 is not a legal rebate transition');
     }
 
-    // 3. snapshot (current version) and its 淘礼金 deduction.
+    // 3. attribution (ratios and forfeited events only; amounts come from N) and the 淘礼金
+    // deduction. A throwing attribution read rolls the order back with nothing written.
     const selection: CreditSnapshotSelection = {
       appId,
       orderId,
       commissionVersion: order.commission_version,
     };
-    const snapshot = await deps.readSnapshot(trx, selection);
+    const snapshot =
+      deps.readAttribution === undefined
+        ? await deps.readSnapshot(trx, selection)
+        : await deps.readAttribution(trx, { appId, orderId });
     if (snapshot === null) throw new Error('settlement credit: order has no commission snapshot');
     const tlj = await deps.readTljDeductFen(trx, selection);
     if (typeof tlj !== 'bigint' || tlj < 0n) {
