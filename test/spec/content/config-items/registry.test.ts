@@ -351,19 +351,16 @@ it('[AC-F1-10e#59] payout.auto_enable_check.recon_passed_days 不登记：config
   expect(switchSpecOf(ENABLE_RETIRED_PASSED_DAYS)).toBeNull();
 });
 
-it.each(ENABLE_SUPPORT_KEYS)(
-  '[AC-F1-10e#60] %s 只收 JSON 布尔（B2-11dzb，D10-400）',
-  (key) => {
-    const spec = registered(key);
-    expect(configItemSpecOf(key), key).toBe(spec);
-    for (const value of [true, false]) {
-      expect(configValueFits(spec, value), String(value)).toBe(true);
-    }
-    for (const value of ['true', 'on', 1, 0, null, [], {}]) {
-      expect(configValueFits(spec, value), JSON.stringify(value)).toBe(false);
-    }
-  },
-);
+it.each(ENABLE_SUPPORT_KEYS)('[AC-F1-10e#60] %s 只收 JSON 布尔（B2-11dzb，D10-400）', (key) => {
+  const spec = registered(key);
+  expect(configItemSpecOf(key), key).toBe(spec);
+  for (const value of [true, false]) {
+    expect(configValueFits(spec, value), String(value)).toBe(true);
+  }
+  for (const value of ['true', 'on', 1, 0, null, [], {}]) {
+    expect(configValueFits(spec, value), JSON.stringify(value)).toBe(false);
+  }
+});
 
 it('[AC-F1-10e#61] payout.auto_enable_check.recon_required_days 设了须为 ≥ 1 的整数（B2-11dzb，D10-400）', () => {
   const spec = registered(ENABLE_RECON_REQUIRED_DAYS);
