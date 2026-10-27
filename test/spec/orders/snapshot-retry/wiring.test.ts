@@ -66,7 +66,7 @@ it('[AC-B1-08t#24] worker 只有注入 snapshots 才把补偿任务路由到待�
       handler({
         id: 'synthetic-snapshot-retry',
         queue: 'order-sync',
-        name: 'snapshot-retry',
+        name: 'snapshot_retry',
         payload: { app_id: 'app-a' },
         attempt: 1,
       }),

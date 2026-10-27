@@ -68,7 +68,7 @@ export async function setup(
   const job: ReceivedJob = {
     id: 'synthetic-snapshot-retry',
     queue: 'order-sync',
-    name: 'snapshot-retry',
+    name: 'snapshot_retry',
     payload: { app_id: f.ctx.app_id },
     attempt: 1,
   };

@@ -17,7 +17,7 @@ function job(attempt: number, seq = 0): ReceivedJob {
   return {
     id: 'j1',
     queue: 'order-sync',
-    name: 'manual-window',
+    name: 'manual_window',
     payload: {
       app_id: 'unit',
       platform: 'pdd',

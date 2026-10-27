@@ -50,8 +50,8 @@ import type { SyncAccessPort, SyncAccount, SyncLogger } from './sync-ports.ts';
 import { ORDER_SYNC_QUEUE } from './sync-scheduler.ts';
 
 /** Job names of the manual sync on the shared order-sync queue (jobs/manual-sync.ts takes them). */
-export const MANUAL_SYNC_WINDOW_JOB = 'manual-window';
-export const MANUAL_SYNC_ORDER_NOS_JOB = 'manual-order-nos';
+export const MANUAL_SYNC_WINDOW_JOB = 'manual_window';
+export const MANUAL_SYNC_ORDER_NOS_JOB = 'manual_order_nos';
 /** query_kind of an order-number job (a window job is 'increment', the scheduler's kind). */
 export const MANUAL_SYNC_ORDER_NOS_KIND = 'order_detail';
 

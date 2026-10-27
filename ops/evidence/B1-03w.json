@@ -1,0 +1,127 @@
+{
+  "task": "B1-03w",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "spec_commit": "c3ac4375d3116b56fd119eff19ce841c05cbf73b",
+  "red_tests": [
+    "test/spec/risk/risk-scan-queue/chain.int.test.ts > [B1-03w#1] worker 启动种子（seedRiskScan → seed）被真实队列接受：risk-scan 队列里两种任务各一个、当前槽位 key、立即可取，不记 risk_scan_seed_failed；重复 seed 不重复入队",
+    "test/spec/risk/risk-scan-queue/chain.int.test.ts > [B1-03w#2] heal 把两个「下一槽位」任务送进真实队列（延后到期），重复 heal 由 singletonKey 去重不重复入队，不记 risk_scan_heal_failed",
+    "test/spec/risk/risk-scan-queue/chain.int.test.ts > [B1-03w#3][BR-ID-31] worker 真正消费：freeze_expiry 把 frozen_until 已过的用户经风控状态服务解冻、daily_alerts 记不定期冻结超期告警，两者各自续排下一槽位；先跑的 heal 与续排同键去重，队列里每种任务恰好一个已完成的当前槽与一个排队中的下一槽",
+    "test/spec/risk/risk-scan-queue/job-names.test.ts > [B1-03w#6] risk 模块：任务链的发送点、handler 分派与任务名常量都能静态解析，每个名字都过 validateSend 的任务名规则，发送的名字恰为 freeze_expiry / daily_alerts",
+    "test/spec/risk/risk-scan-queue/job-names.test.ts > [B1-03w#7] apps/api/src 全仓：发送点、handler 分派与任务名常量里静态可解析的任务名零违例",
+    "test/spec/risk/risk-scan-queue/sends.test.ts > [B1-03w#4] seed、续排、自愈三处发送都过 platform/queue 的 validateSend：任务名恰为 freeze_expiry / daily_alerts，seed 不拒绝、不记 enqueue/heal 失败",
+    "test/spec/risk/risk-scan-queue/sends.test.ts > [B1-03w#5] singletonKey 保持可读且同槽同键：seed 取当前槽，续排与自愈在同一时刻算出同一个下一槽键，到点后的 seed 也与之相同",
+    "test/spec/risk/risk-scan-queue/snapshot-retry.int.test.ts > [B1-03w#10] 快照补偿调度器的发送被真实队列接受（order-sync 里出现 snapshot_retry 任务、key 为 snapshot-retry:<app>），worker 的 order-sync 处理器把它交给补偿扫描并完成，不记 snapshot_retry_dispatch_failed / job_failed",
+    "test/spec/risk/risk-scan-queue/snapshot-retry.test.ts > [B1-03w#8] 快照补偿调度器每轮经 JobQueue 的发送过 platform/queue 的 validateSend：order-sync 队列、任务名恰为 snapshot_retry、singletonKey 保持 snapshot-retry:<app>，不记 snapshot_retry_dispatch_failed",
+    "test/spec/risk/risk-scan-queue/snapshot-retry.test.ts > [B1-03w#9] worker 的 order-sync 处理器把 snapshot_retry 任务分派到补偿扫描（查待处理订单、记 snapshot_retry_scan），不当作窗口任务解析失败"
+  ],
+  "risk_note": "RV2 (orders/** with risk/**). Queue job names that platform/queue's validateSend accepts (^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$): the risk-scan chain's 'freeze-expiry' / 'daily-alerts' were rejected with invalid_name at seed, continuation and heal, so the queue never had a job (frozen_until never auto-lifted, daily alerts never sent); renamed freeze_expiry / daily_alerts. Orchestrator ruling D10-343 folded in the same defect in orders: SNAPSHOT_RETRY_JOB 'snapshot-retry' renamed snapshot_retry (the compensation scan was never enqueued). singletonKey prefixes unchanged (freeze-expiry: / daily-alerts: / snapshot-retry:, now explicit constants), log event names and changed_by unchanged; old-name jobs never existed, so no data migration. A repo-wide static scan rule test ([B1-03w#7]) checks every job name in apps/api/src. Frozen tests asserting the old names (risk freeze-expiry / freeze-expiry-heal, orders snapshot-retry / snapshot-wiring; 11 files) had their job-name literals changed in the author commit by a fresh independent Claude and checked change-only by another (couli-runs/B1-03w/frozen-rename-check.md, D10-327 / D10-343); 40 tests of those files judged as a whole are red_exempt (D10-344). Codex was unavailable until 10-30, so tests and reviews ran on fresh independent Claude contexts (approvals id 36). D10-384 (2026-10-27): the repo-wide job-name scan [B1-03w#7] also caught orders' manual sync (B1-09i, merged 10-25 after these rule tests were written): 'manual-window' and 'manual-order-nos' would be refused by validateSend, so the back-office manual sync could never have been enqueued; both renamed to 'manual_window' / 'manual_order_nos' in the same PR (the constants, the job header comment and the unit-test literal only; ledger #1702 adds the paths and the two renames, which hit no rule-test file). Whether these two names were ever enqueued in production was not checked: this lane has no access to production queues, and the queue runtime refuses such names before any row is written.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c3ac4375d3116b56fd119eff19ce841c05cbf73b",
+      "tree": "67a11affbe0aca40fab3d3ebb33f76d3ad036c1d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-27T09:20:22Z",
+      "finished_at": "2026-10-27T09:21:31Z",
+      "gate": {
+        "commit": "7490f5d932435ac8201237c0d3bcf4a6122bee5e",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/risk/risk-scan-queue/chain.int.test.ts > [B1-03w#1] worker 启动种子（seedRiskScan → seed）被真实队列接受：risk-scan 队列里两种任务各一个、当前槽位 key、立即可取，不记 risk_scan_seed_failed；重复 seed 不重复入队",
+        "test/spec/risk/risk-scan-queue/chain.int.test.ts > [B1-03w#2] heal 把两个「下一槽位」任务送进真实队列（延后到期），重复 heal 由 singletonKey 去重不重复入队，不记 risk_scan_heal_failed",
+        "test/spec/risk/risk-scan-queue/chain.int.test.ts > [B1-03w#3][BR-ID-31] worker 真正消费：freeze_expiry 把 frozen_until 已过的用户经风控状态服务解冻、daily_alerts 记不定期冻结超期告警，两者各自续排下一槽位；先跑的 heal 与续排同键去重，队列里每种任务恰好一个已完成的当前槽与一个排队中的下一槽",
+        "test/spec/risk/risk-scan-queue/job-names.test.ts > [B1-03w#6] risk 模块：任务链的发送点、handler 分派与任务名常量都能静态解析，每个名字都过 validateSend 的任务名规则，发送的名字恰为 freeze_expiry / daily_alerts",
+        "test/spec/risk/risk-scan-queue/job-names.test.ts > [B1-03w#7] apps/api/src 全仓：发送点、handler 分派与任务名常量里静态可解析的任务名零违例",
+        "test/spec/risk/risk-scan-queue/sends.test.ts > [B1-03w#4] seed、续排、自愈三处发送都过 platform/queue 的 validateSend：任务名恰为 freeze_expiry / daily_alerts，seed 不拒绝、不记 enqueue/heal 失败",
+        "test/spec/risk/risk-scan-queue/sends.test.ts > [B1-03w#5] singletonKey 保持可读且同槽同键：seed 取当前槽，续排与自愈在同一时刻算出同一个下一槽键，到点后的 seed 也与之相同",
+        "test/spec/risk/risk-scan-queue/snapshot-retry.int.test.ts > [B1-03w#10] 快照补偿调度器的发送被真实队列接受（order-sync 里出现 snapshot_retry 任务、key 为 snapshot-retry:<app>），worker 的 order-sync 处理器把它交给补偿扫描并完成，不记 snapshot_retry_dispatch_failed / job_failed",
+        "test/spec/risk/risk-scan-queue/snapshot-retry.test.ts > [B1-03w#8] 快照补偿调度器每轮经 JobQueue 的发送过 platform/queue 的 validateSend：order-sync 队列、任务名恰为 snapshot_retry、singletonKey 保持 snapshot-retry:<app>，不记 snapshot_retry_dispatch_failed",
+        "test/spec/risk/risk-scan-queue/snapshot-retry.test.ts > [B1-03w#9] worker 的 order-sync 处理器把 snapshot_retry 任务分派到补偿扫描（查待处理订单、记 snapshot_retry_scan），不当作窗口任务解析失败"
+      ],
+      "expected": [
+        "test/spec/risk/risk-scan-queue/chain.int.test.ts",
+        "test/spec/risk/risk-scan-queue/job-names.test.ts",
+        "test/spec/risk/risk-scan-queue/sends.test.ts",
+        "test/spec/risk/risk-scan-queue/snapshot-retry.int.test.ts",
+        "test/spec/risk/risk-scan-queue/snapshot-retry.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "85f938d1e15cc1e65a875b74a3ba74c5a7ed491e0c652247cd3f86895ad8043d"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "88fb42212a63170c674c00f1b5d9a4484aa5102844b881740db6fba8dd3b18a1"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 against the merge base pass with no findings."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude (run 1 risk side; run 2 after D10-343 the orders side [#8]-[#10] and the frozen job-name renames). Round 1 fail with one S1 ([#7] repo-wide scan unsatisfiable while orders snapshot-retry was outside the task paths), closed by D10-343 widening the paths; round 2 pass. The frozen job-name follow-ups are declared as the ledger's renames (CT-06zxc #1686, D10-347; ledger #1694, which also withdrew the earlier 40 red_exempt entries): 'freeze-expiry' → 'freeze_expiry', 'daily-alerts' → 'daily_alerts', 'snapshot-retry' → 'snapshot_retry'. A fresh read-only Claude rule-test review confirmed them pair by pair and file by file (couli-runs/B1-03w/renames-review.json): the seven left-out frozen files equal their base after the three literal replacements byte for byte (hits: scheduling 11 / 7, scans.int 2 / 2, heal 6 / 6, snapshot-retry scheduler 2, wiring 1, snapshot-wiring module 1, scheduler 1), no assertion, expectation or structure changed, and the four kits in those directories change by the same literal follow-ups only.",
+    "renames_confirmed": {
+      "pairs": [
+        {
+          "from": "'freeze-expiry'",
+          "to": "'freeze_expiry'"
+        },
+        {
+          "from": "'daily-alerts'",
+          "to": "'daily_alerts'"
+        },
+        {
+          "from": "'snapshot-retry'",
+          "to": "'snapshot_retry'"
+        }
+      ],
+      "left_out": [
+        "test/spec/orders/snapshot-retry/scheduler.test.ts",
+        "test/spec/orders/snapshot-retry/wiring.test.ts",
+        "test/spec/orders/snapshot-wiring/module.test.ts",
+        "test/spec/orders/snapshot-wiring/scheduler.test.ts",
+        "test/spec/risk/freeze-expiry-heal/heal.test.ts",
+        "test/spec/risk/freeze-expiry/scans.int.test.ts",
+        "test/spec/risk/freeze-expiry/scheduling.test.ts"
+      ]
+    },
+    "model": "claude-opus-5-5"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "b32564c83f75b1c2e835ccb251fb85c9acfabc42",
+    "test/spec": "f089e8ceb26d81619f055a6b3ad1a6562c00e040",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "b32564c83f75b1c2e835ccb251fb85c9acfabc42"
+  }
+}

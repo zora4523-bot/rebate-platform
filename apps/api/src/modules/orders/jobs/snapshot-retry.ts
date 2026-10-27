@@ -30,8 +30,11 @@ import {
   type SubOrderRef,
 } from '../infra/snapshot-retry-store.ts';
 
-/** order-sync 队列里补偿扫描任务的名字（窗口任务是 'window'）。 */
-export const SNAPSHOT_RETRY_JOB = 'snapshot-retry';
+/**
+ * order-sync 队列里补偿扫描任务的名字（窗口任务是 'window'）。须合队列任务名规则（小写字母、数字、下划线、点；
+ * B1-03w，D10-343）；singletonKey 前缀仍是可读的 `snapshot-retry:`，不随任务名改。
+ */
+export const SNAPSHOT_RETRY_JOB = 'snapshot_retry';
 
 /** B1-08t：定时补偿的一轮；只扫描 payload.app_id，按订单串行并在锁内重读待处理行。
  * created_at 是未处置时长的起点，detected_at 刷新不延后升级。
@@ -202,7 +205,7 @@ export interface SnapshotRetrySchedulerDeps {
 }
 
 /**
- * 每 intervalMs 一轮：列出 App、逐个经 JobQueue 投递 order-sync / snapshot-retry（不随业务事务）。某轮失败只记
+ * 每 intervalMs 一轮：列出 App、逐个经 JobQueue 投递 order-sync / snapshot_retry（不随业务事务）。某轮失败只记
  * error，下一轮照常；start() 只起定时器，stop() 清定时器并等在途一轮结束。
  */
 export function createSnapshotRetryScheduler(deps: SnapshotRetrySchedulerDeps): OrderSyncScheduler {
