@@ -20,6 +20,7 @@ test_paths:
   - 'test/spec/payout/process/**'
   - 'test/spec/payout/query/**'
   - 'test/spec/platform/queue/contract.test.ts'
+  - 'test/spec/platform/queue-concurrency/**'
 impl: claude
 tester: claude-independent
 accept:
