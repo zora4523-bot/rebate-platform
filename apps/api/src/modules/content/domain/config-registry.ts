@@ -72,14 +72,18 @@ function riskInteger(key: string, min: number, max = INT4_MAX): ConfigItemSpec {
   });
 }
 
-/** F1-02zj: an editable config.business enum item. */
-function businessEnum(key: string, options: readonly string[]): ConfigItemSpec {
+/** F1-02zj: a config.business enum item (B2-11y: read only when adminEditable is false). */
+function businessEnum(
+  key: string,
+  options: readonly string[],
+  adminEditable = true,
+): ConfigItemSpec {
   return Object.freeze({
     key,
     valueType: 'enum' as const,
     options: Object.freeze([...options]),
     permission: 'config.business' as const,
-    adminEditable: true,
+    adminEditable,
   });
 }
 
@@ -88,6 +92,11 @@ const SETTLE_PLATFORMS = ['taobao', 'jd', 'pdd', 'meituan'] as const;
 
 function perPlatform(prefix: string, make: (key: string) => ConfigItemSpec): ConfigItemSpec[] {
   return SETTLE_PLATFORMS.map((platform) => make(`${prefix}.${platform}`));
+}
+
+/** BR-WDR-30 ③: the whole hours 09 to 22 followed by `suffix` (window_start / window_end). */
+function autoPayoutHours(suffix: string): string[] {
+  return Array.from({ length: 14 }, (_, i) => `${String(9 + i).padStart(2, '0')}${suffix}`);
 }
 
 // F1-10e ruling 14: explicit entries, including the read-only money-rule flags.
@@ -163,6 +172,31 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   riskInteger('risk.withdraw.high_commission_ratio_bp', 0),
   riskInteger('risk.withdraw.min_orders', 0),
   riskInteger('risk.withdraw.withdraw_received_ratio_bp', 0),
+  // B2-11y (D10-373): BR-WDR-30 细则 auto-payout rule group (08 07_WDR at SPEC_REF 736d24c),
+  // after risk.withdraw.*, all config.business; withdraw.auto_payout.enabled stays a switch
+  // (./switch-registry.ts). Ranges as 08 gives them, int4 max where 08 gives no upper bound.
+  // Cross-key save checks of 08 are not expressible here (each item is checked alone):
+  // max_amount_fen <= withdraw.max_amount_fen, window_end > window_start,
+  // platform_daily_max_fen <= payout.daily_cap_fen, and risk_block_flags only holding
+  // BR-WDR-29 label codes (an object item only checks for a JSON array / object).
+  businessInteger('withdraw.auto_payout.max_amount_fen', 0, 1000000),
+  businessEnum('withdraw.auto_payout.window_start', autoPayoutHours(':00:00')),
+  businessEnum('withdraw.auto_payout.window_end', autoPayoutHours(':59:59')),
+  spec('withdraw.auto_payout.window_limit_enabled', 'boolean', 'config.business'),
+  spec('withdraw.auto_payout.first_withdrawal_limit_enabled', 'boolean', 'config.business'),
+  // 08: the console shows ⑤ and ⑥ read only (「不自动到账」).
+  businessEnum('withdraw.auto_payout.frozen_balance_policy', ['no_auto'], false),
+  businessEnum('withdraw.auto_payout.same_day_policy', ['no_auto'], false),
+  businessInteger('withdraw.auto_payout.payee_daily_max_count', 0),
+  businessInteger('withdraw.auto_payout.payee_monthly_max_count', 0),
+  businessInteger('withdraw.auto_payout.user_daily_max_count', 0),
+  businessInteger('withdraw.auto_payout.user_monthly_max_count', 0),
+  businessInteger('withdraw.auto_payout.warn.high_commission_rate_bp', 0, 10000),
+  businessInteger('withdraw.auto_payout.warn.high_commission_order_ratio_bp', 0, 10000),
+  businessInteger('withdraw.auto_payout.warn.invalid_ratio_bp', 0, 10000),
+  businessInteger('withdraw.auto_payout.warn.withdraw_received_ratio_bp', 0, 10000),
+  businessInteger('withdraw.auto_payout.platform_daily_max_fen', 0),
+  spec('withdraw.auto_payout.risk_block_flags', 'object', 'config.business'),
 ]);
 
 const VISIBLE: readonly ConfigItemSpec[] = Object.freeze(

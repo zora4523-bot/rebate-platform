@@ -79,5 +79,23 @@ INSERT INTO app.config_items (app_id, key, value, updated_by) VALUES
   ('couli', 'risk.withdraw.high_commission_rate_bp', '5000'::jsonb, 'seed'), -- BR-WDR-29
   ('couli', 'risk.withdraw.high_commission_ratio_bp', '5000'::jsonb, 'seed'), -- BR-WDR-29
   ('couli', 'risk.withdraw.min_orders', '5'::jsonb, 'seed'), -- BR-WDR-29
-  ('couli', 'risk.withdraw.withdraw_received_ratio_bp', '10000'::jsonb, 'seed') -- BR-WDR-29
+  ('couli', 'risk.withdraw.withdraw_received_ratio_bp', '10000'::jsonb, 'seed'), -- BR-WDR-29
+  -- 第 10 批：BR-WDR-30 细则自动到账规则组默认值（B2-11y，D10-373）；总开关 withdraw.auto_payout.enabled 是紧急开关，不在此
+  ('couli', 'withdraw.auto_payout.max_amount_fen', '30000'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.window_start', '"09:00:00"'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.window_end', '"22:59:59"'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.window_limit_enabled', 'false'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.first_withdrawal_limit_enabled', 'false'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.frozen_balance_policy', '"no_auto"'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.same_day_policy', '"no_auto"'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.payee_daily_max_count', '1'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.payee_monthly_max_count', '2'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.user_daily_max_count', '1'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.user_monthly_max_count', '1'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.warn.high_commission_rate_bp', '10000'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.warn.high_commission_order_ratio_bp', '10000'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.warn.invalid_ratio_bp', '10000'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.warn.withdraw_received_ratio_bp', '0'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.platform_daily_max_fen', '200000'::jsonb, 'seed'), -- BR-WDR-30
+  ('couli', 'withdraw.auto_payout.risk_block_flags', '["same_device_multi_account", "had_negative", "recon_diff", "payee_prev_other_user", "risk_calc_failed"]'::jsonb, 'seed') -- BR-WDR-30
 ON CONFLICT (app_id, key) DO NOTHING;

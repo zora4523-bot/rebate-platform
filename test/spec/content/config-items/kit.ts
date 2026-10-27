@@ -119,8 +119,8 @@ export const EXPECTED: readonly Expected[] = [
 // excerpt 9.2-1/2): appended after external_hosts in this order, platforms taobao / jd / pdd /
 // meituan, every one config.business and editable.
 const PLATFORMS = ['taobao', 'jd', 'pdd', 'meituan'] as const;
-const enumRow = (key: string, options: readonly string[]): Expected => ({
-  ...row(key, 'enum', 'config.business'),
+const enumRow = (key: string, options: readonly string[], adminEditable = true): Expected => ({
+  ...row(key, 'enum', 'config.business', adminEditable),
   options,
 });
 export const SETTLE: readonly Expected[] = [
@@ -198,8 +198,66 @@ export const RISK_WITHDRAW: readonly Expected[] = [
   row('risk.withdraw.min_orders', 'number', 'config.risk'),
   row('risk.withdraw.withdraw_received_ratio_bp', 'number', 'config.risk'),
 ];
+// B2-11y (D10-373): the BR-WDR-30 细则 auto-payout rule group, registered right after
+// RISK_WITHDRAW in this order (withdraw.auto_payout.enabled is a switch, not here). All
+// config.business and editable except the two policies, which 08 has the console show read only
+// (「不自动到账」); the two windows and two policies are enums with exactly 08's options, the two
+// limit flags booleans, risk_block_flags a JSON array (object), the rest
+// integers (number) with options null. Not part of expectedNow() either.
+const AUTO = 'withdraw.auto_payout.';
+export const AUTO_PAYOUT: readonly Expected[] = [
+  row(`${AUTO}max_amount_fen`, 'number', 'config.business'),
+  enumRow(`${AUTO}window_start`, [
+    '09:00:00',
+    '10:00:00',
+    '11:00:00',
+    '12:00:00',
+    '13:00:00',
+    '14:00:00',
+    '15:00:00',
+    '16:00:00',
+    '17:00:00',
+    '18:00:00',
+    '19:00:00',
+    '20:00:00',
+    '21:00:00',
+    '22:00:00',
+  ]),
+  enumRow(`${AUTO}window_end`, [
+    '09:59:59',
+    '10:59:59',
+    '11:59:59',
+    '12:59:59',
+    '13:59:59',
+    '14:59:59',
+    '15:59:59',
+    '16:59:59',
+    '17:59:59',
+    '18:59:59',
+    '19:59:59',
+    '20:59:59',
+    '21:59:59',
+    '22:59:59',
+  ]),
+  row(`${AUTO}window_limit_enabled`, 'boolean', 'config.business'),
+  row(`${AUTO}first_withdrawal_limit_enabled`, 'boolean', 'config.business'),
+  enumRow(`${AUTO}frozen_balance_policy`, ['no_auto'], false),
+  enumRow(`${AUTO}same_day_policy`, ['no_auto'], false),
+  row(`${AUTO}payee_daily_max_count`, 'number', 'config.business'),
+  row(`${AUTO}payee_monthly_max_count`, 'number', 'config.business'),
+  row(`${AUTO}user_daily_max_count`, 'number', 'config.business'),
+  row(`${AUTO}user_monthly_max_count`, 'number', 'config.business'),
+  row(`${AUTO}warn.high_commission_rate_bp`, 'number', 'config.business'),
+  row(`${AUTO}warn.high_commission_order_ratio_bp`, 'number', 'config.business'),
+  row(`${AUTO}warn.invalid_ratio_bp`, 'number', 'config.business'),
+  row(`${AUTO}warn.withdraw_received_ratio_bp`, 'number', 'config.business'),
+  row(`${AUTO}platform_daily_max_fen`, 'number', 'config.business'),
+  row(`${AUTO}risk_block_flags`, 'object', 'config.business'),
+];
 export const expectedOf = (key: string): Expected => {
-  const found = [...expectedNow(), ...PAYOUT, ...RISK_WITHDRAW].find((entry) => entry.key === key);
+  const found = [...expectedNow(), ...PAYOUT, ...RISK_WITHDRAW, ...AUTO_PAYOUT].find(
+    (entry) => entry.key === key,
+  );
   expect(found, key).toBeDefined();
   return found!;
 };

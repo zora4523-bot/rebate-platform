@@ -201,7 +201,8 @@ it('[AC-F1-02zj#13] GET 配置列表包含全部 16 项，enum 选项按契约�
   // The 16 SETTLE keys stay contiguous and in order, right after the 29 ruling 14 keys, and are
   // followed by exactly inviteNow()'s six keys (F1-02zt：过渡已收紧), and B2-06bz (D10-244 ②、
   // D10-296) then the eight payout.* keys in registration order, and B2-11z (D10-368) then the six
-  // risk.withdraw.* keys in registration order.
+  // risk.withdraw.* keys in registration order, and B2-11y (D10-373) then the seventeen
+  // withdraw.auto_payout.* keys in registration order.
   const keys = items.map((item) => item.key);
   const tail = [
     ...inviteNow().map((entry) => entry.key),
@@ -219,6 +220,23 @@ it('[AC-F1-02zj#13] GET 配置列表包含全部 16 项，enum 选项按契约�
     'risk.withdraw.high_commission_ratio_bp',
     'risk.withdraw.min_orders',
     'risk.withdraw.withdraw_received_ratio_bp',
+    'withdraw.auto_payout.max_amount_fen',
+    'withdraw.auto_payout.window_start',
+    'withdraw.auto_payout.window_end',
+    'withdraw.auto_payout.window_limit_enabled',
+    'withdraw.auto_payout.first_withdrawal_limit_enabled',
+    'withdraw.auto_payout.frozen_balance_policy',
+    'withdraw.auto_payout.same_day_policy',
+    'withdraw.auto_payout.payee_daily_max_count',
+    'withdraw.auto_payout.payee_monthly_max_count',
+    'withdraw.auto_payout.user_daily_max_count',
+    'withdraw.auto_payout.user_monthly_max_count',
+    'withdraw.auto_payout.warn.high_commission_rate_bp',
+    'withdraw.auto_payout.warn.high_commission_order_ratio_bp',
+    'withdraw.auto_payout.warn.invalid_ratio_bp',
+    'withdraw.auto_payout.warn.withdraw_received_ratio_bp',
+    'withdraw.auto_payout.platform_daily_max_fen',
+    'withdraw.auto_payout.risk_block_flags',
   ];
   const settleEnd = keys.length - tail.length;
   const settleStart = settleEnd - 16;
