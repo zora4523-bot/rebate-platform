@@ -103,12 +103,17 @@ export const RENAMES_MAX = 20;
 export const RENAME_CONTENT_MIN = 3;
 
 /**
- * One whole quoted string literal (CT-06zxc review r1 S2-1): the same quote `'`, `"` or a backtick
- * at both ends, at least RENAME_CONTENT_MIN characters between them, none of them a quote, a
- * backslash or a line break, and no `${`. So a rename can only swap one string literal for another
- * (a job name), never an assertion (`toBe(100)`), a bare word, blanks or a template expression.
+ * One quoted name literal (CT-06zxc reviews r1 / r2 S2-1): the same quote `'`, `"` or a backtick
+ * at both ends and between them only name characters (RENAME_NAME_CHARS: letters, digits and
+ * `_ . : / @ -`), at least RENAME_CONTENT_MIN of them. Code cannot be written into a rename (no
+ * parenthesis, blank, operator, comma, quote, backslash or `${`): `')).toBe('` or `' + '` is
+ * refused. What the shape cannot tell is the meaning of a real literal swapped for another
+ * (`'foo'` → `'bar'` may change an expected value): that is caught by the rule-test reviewer, who
+ * confirms every pair that hits, and every file it leaves out, in `renames_confirmed`
+ * (tools/ci/evidence-check.ts).
  */
-const RENAME_LITERAL = /^(['"`])([^'"`\\\r\n]*)\1$/;
+export const RENAME_NAME_CHARS = 'A-Za-z0-9_.:/@-';
+const RENAME_LITERAL = new RegExp(`^(['"\`])([${RENAME_NAME_CHARS}]*)\\1$`);
 
 /** The least a red-exemption reason may say (CT-06r: a non-empty reason of ≥ 10 characters). */
 export const RED_EXEMPT_REASON_MIN = 10;
@@ -268,16 +273,13 @@ function redExemptList(value: unknown, problems: string[]): RedExemptDeclaration
   return out;
 }
 
-/** Why `value` is not one whole quoted string literal (RENAME_LITERAL), or null. */
+/** Why `value` is not one quoted name literal (RENAME_LITERAL), or null. */
 function renameLiteralProblem(value: string): string | null {
   const m = RENAME_LITERAL.exec(value);
   if (m === null) {
-    return 'must be one whole quoted string literal (the same quote \', " or ` at both ends; no quote, backslash or line break inside)';
+    return `must be one quoted name literal (the same quote ', " or \` at both ends; inside only ${RENAME_NAME_CHARS})`;
   }
-  const content = m[2] ?? '';
-  if (content.includes('${'))
-    return 'must not contain "${" (a template expression is not a literal)';
-  if (content.length < RENAME_CONTENT_MIN) {
+  if ((m[2] ?? '').length < RENAME_CONTENT_MIN) {
     return `must hold at least ${RENAME_CONTENT_MIN} characters between its quotes`;
   }
   return null;
@@ -285,7 +287,7 @@ function renameLiteralProblem(value: string): string | null {
 
 /**
  * The `renames` list (CT-06zxc, D10-347; review r1 S2-1): a list of mappings with exactly the
- * keys `from` / `to`, each one whole quoted string literal (RENAME_LITERAL, at least
+ * keys `from` / `to`, each one quoted name literal (RENAME_LITERAL, at least
  * RENAME_CONTENT_MIN characters inside), both with the same quote, `from` ≠ `to`, no `from` named
  * twice, at most RENAMES_MAX entries. The values are literal text: red-check never reads them as
  * a pattern.

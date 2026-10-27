@@ -184,7 +184,7 @@ describe('parseTaskFile', () => {
     );
   });
 
-  it('[CT-06zxc] renames: whole quoted string literals, optional, every malformed entry refused', () => {
+  it('[CT-06zxc] renames: quoted name literals, optional, every malformed entry refused', () => {
     const declared = (entries: string): string =>
       EXAMPLE.replace('tester: claude', `tester: claude\nrenames:${entries}`);
     const pair = (from: string, to: string): string => `\n  - from: ${from}\n    to: ${to}`;
@@ -199,15 +199,17 @@ describe('parseTaskFile', () => {
       { from: "'daily-alerts'", to: "'daily_alerts'" },
       { from: "'snapshot-retry'", to: "'snapshot_retry'" },
     ]);
-    // Double quotes and backticks, characters a pattern would read specially stay literal text.
+    // Double quotes and backticks; every name character (letters, digits, _ . : / @ -).
     expect(
       parseTaskFile(
-        declared(pair(`'"a.*(b)"'`, `'"$1-x"'`) + pair("'`job-a`'", "'`job_a`'")),
+        declared(
+          pair(`'"queue.job-a"'`, `'"queue.job_a"'`) + pair("'`@scope/x:1`'", "'`@scope/y:2`'"),
+        ),
         'B2-02a.yaml',
       ).renames,
     ).toEqual([
-      { from: '"a.*(b)"', to: '"$1-x"' },
-      { from: '`job-a`', to: '`job_a`' },
+      { from: '"queue.job-a"', to: '"queue.job_a"' },
+      { from: '`@scope/x:1`', to: '`@scope/y:2`' },
     ]);
     // An older ledger without the field, an empty list: [].
     expect(parseTaskFile(EXAMPLE, 'B2-02a.yaml').renames).toEqual([]);
@@ -231,38 +233,52 @@ describe('parseTaskFile', () => {
     expect(messageOf(declared(pair('1', `"'bbb'"`)), 'B2-02a.yaml')).toContain(
       'renames[0].from: must be a non-empty string',
     );
-    // Not one whole string literal: code, a bare word, a blank, an unquoted or half-quoted text.
-    const literal = 'must be one whole quoted string literal';
+    // Not one quoted name literal: code that closes and reopens the quotes (review r2 S2-1: it
+    // would delete an assertion), blanks, parentheses, operators, commas, a bare word, a half
+    // quote, quotes, backslashes, line breaks, a template expression.
+    const literal = 'must be one quoted name literal';
     for (const bad of [
-      "'toBe(100)'",
+      `"')).toBe('"`,
+      `"')); void ('"`,
+      `"' + '"`,
+      `"' - '"`,
+      `"'toBe(100)'"`,
+      `"'a b c'"`,
+      `"'a(b)c'"`,
+      `"'a+b'"`,
+      `"'a,b,c'"`,
+      `"'a;b;c'"`,
+      `"'a=b'"`,
+      `"'a\\tb'"`,
+      `"'ab\\"c'"`,
+      `"'ab\\\\c'"`,
+      `"'ab\\nc'"`,
+      "'`job-${x}`'",
       "' '",
+      "'toBe(100)'",
       'freeze-expiry',
       `"'freeze-expiry"`,
-      `"'freeze-expiry\\""`,
-      `"'abc' + 'def'"`,
-      `"'a\\\\bc'"`,
-      `"'ab\\nc'"`,
-      `"'abc\\""`,
     ]) {
       expect(messageOf(declared(pair(bad, `"'bbb'"`)), 'B2-02a.yaml'), bad).toContain(
         `renames[0].from: `,
       );
+      expect(messageOf(declared(pair(bad, `"'bbb'"`)), 'B2-02a.yaml'), bad).toContain(literal);
+      expect(messageOf(declared(pair(`"'bbb'"`, bad)), 'B2-02a.yaml'), bad).toContain(
+        `renames[0].to: `,
+      );
     }
-    expect(messageOf(declared(pair("'toBe(100)'", "'toBe(0)'")), 'B2-02a.yaml')).toContain(
-      `renames[0].from: "toBe(100)" ${literal}`,
-    );
-    expect(messageOf(declared(pair("' '", `"'bbb'"`)), 'B2-02a.yaml')).toContain(
-      `renames[0].from: " " ${literal}`,
+    expect(messageOf(declared(pair(`"')).toBe('"`, `"')); void ('"`)), 'B2-02a.yaml')).toContain(
+      `renames[0].from: "')).toBe('" ${literal}`,
     );
     expect(messageOf(declared(pair(`"'aaa'"`, 'daily_alerts')), 'B2-02a.yaml')).toContain(
       `renames[0].to: "daily_alerts" ${literal}`,
     );
-    // Too short inside its quotes, a template expression.
+    // Too short inside its quotes.
     expect(messageOf(declared(pair(`"'ab'"`, `"'bbb'"`)), 'B2-02a.yaml')).toContain(
       `renames[0].from: "'ab'" must hold at least ${RENAME_CONTENT_MIN} characters between its quotes`,
     );
-    expect(messageOf(declared(pair("'`job-${x}`'", "'`job_a`'")), 'B2-02a.yaml')).toContain(
-      'must not contain "${"',
+    expect(messageOf(declared(pair(`"''"`, `"'bbb'"`)), 'B2-02a.yaml')).toContain(
+      'must hold at least',
     );
     // Different quotes, from = to, the same from twice.
     expect(messageOf(declared(pair(`"'aaa'"`, `'"bbb"'`)), 'B2-02a.yaml')).toContain(

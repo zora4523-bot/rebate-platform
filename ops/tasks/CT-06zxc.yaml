@@ -28,6 +28,7 @@ paths:
   - 'tools/ci/evidence-check.test.ts'
   - 'tools/ops/task.ts'
   - 'tools/ops/task.test.ts'
+  - 'tools/agent/README.md'
   - 'ops/tasks/CT-06zxc.yaml'
 impl: claude
 tester: none
