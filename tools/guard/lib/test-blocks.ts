@@ -1057,6 +1057,54 @@ function asymmetricMatcher(tokens: readonly Token[], c: number): boolean {
   return tokens[j]?.text === 'expect' && tokens[j - 1]?.text !== '.';
 }
 
+/** Keywords an object literal may follow (`return {…}`); after any other identifier `{` opens a block. */
+const OBJECT_AFTER = new Set([
+  'return',
+  'typeof',
+  'void',
+  'await',
+  'yield',
+  'in',
+  'of',
+  'instanceof',
+  'throw',
+  'new',
+  'delete',
+  'case',
+]);
+
+/**
+ * Whether the `{` at tokens[o] opens a block (a function's or a method's body, a statement's),
+ * not an object literal (CT-06zxi, D10-388): it follows `=>`, `)` (parameters, `if (…)`), an
+ * identifier other than OBJECT_AFTER (`else`, a return type), `]`, `}` or `>`.
+ */
+function blockBrace(tokens: readonly Token[], o: number): boolean {
+  const prev = tokens[o - 1];
+  if (prev === undefined) return false;
+  if (prev.kind === 'id') return !OBJECT_AFTER.has(prev.text);
+  return prev.kind === 'punct' && ['=>', ')', ']', '}', '>'].includes(prev.text);
+}
+
+/**
+ * Whether tokens[inner] (a token or a bracket directly inside the bracket at tokens[o]) stands in
+ * the body of an arrow function begun inside that bracket (CT-06zxi, D10-388): a `=>` at the
+ * bracket's top level after its last `,` / `;` before `inner` (`(() => ({ a: 1 }))()`,
+ * `[(v) => 1]`; `{ f: () => x, b: 1 }` is not).
+ */
+function inArrowBody(tokens: readonly Token[], o: number, inner: number): boolean {
+  let depth = 0;
+  let arrow = false;
+  for (let k = o + 1; k < inner; k += 1) {
+    const t = tokens[k] as Token;
+    if (t.kind !== 'punct') continue;
+    if (['(', '[', '{'].includes(t.text)) depth += 1;
+    else if ([')', ']', '}'].includes(t.text)) depth -= 1;
+    else if (depth === 0 && t.text === '=>') arrow = true;
+    else if (depth === 0 && (t.text === ',' || t.text === ';')) arrow = false;
+  }
+  return arrow;
+}
+
 /**
  * Why the literals / unary minus signs that differ between `before` and `after` (same value
  * skeleton) are not all in an allowed place, or null when they are (CT-06zxe review r1 S2-1 ③,
@@ -1069,7 +1117,11 @@ function asymmetricMatcher(tokens: readonly Token[], c: number): boolean {
  *   parentheses only, in a matcher's argument or an asymmetric matcher's
  *   (`expect.objectContaining(`): one in a fixture's or a query's input (`insertOrder(db, {…})`,
  *   `expect(f({…}))`), in a variable (`const q = {…}`) or a returned object is refused.
- * Never inside the parentheses of a query call (QUERY_CALLS: `.where(`, `.selectFrom(`, `sql(` …).
+ * Never inside the parentheses of a query call (QUERY_CALLS: `.where(`, `.selectFrom(`, `sql(` …),
+ * never inside a function body between the value and the matcher (CT-06zxi, D10-388: a block body
+ * `=> {…}` / `function (…) {…}` / a method's, an arrow's expression body `=> ({…})` / `=> [<value>]`,
+ * called at once or not: a local input or a fixture's, `expect(x).toEqual((() => { const input =
+ * { amount: 1 }; return make(input); })())`).
  * Brackets need not balance (an entry is one line): what the fragment begins before (no bracket
  * or key before it, an unmatched `)`) is let through here, and red-check checks the whole helper
  * before and after with this same function, where nothing is unknown.
@@ -1108,9 +1160,19 @@ export function valueChangeRefusal(before: string, after: string): string | null
     open[k] = [...stack];
     if (t.kind === 'punct' && ['(', '[', '{'].includes(t.text)) stack.push(k);
   });
-  // Where an object stands whose innermost open brackets are `around` (outermost first).
+  // Whether the bracket at `o` holding `inner` makes it a function body's (D10-388).
+  const inBody = (o: number, inner: number): boolean =>
+    (a[o]?.text === '{' && blockBrace(a, o)) || inArrowBody(a, o, inner);
+  const BODY = 'inside a function body (a local or a fixture input, not an expectation; D10-388)';
+  // Where an object stands whose innermost open brackets are `around` (outermost first); a
+  // function body passed on the way turns what would be let through into a refusal.
   const objectPlace = (around: readonly number[], first: number): 'ok' | 'unknown' | string => {
+    let inner = first;
+    let body = false;
+    const through = (place: 'ok' | 'unknown'): string => (body ? BODY : place);
     for (const o of [...around].reverse()) {
+      body ||= inBody(o, inner);
+      inner = o;
       if (a[o]?.text !== '(') continue;
       const c = calleeAt(a, o);
       if (c < 0) {
@@ -1123,12 +1185,12 @@ export function valueChangeRefusal(before: string, after: string): string | null
       const name = (a[c] as Token).text;
       if (MATCHER.test(name)) {
         const chain = expectChain(a, c, openOf);
-        if (chain === 'expect') return 'ok';
-        if (chain === 'unknown') return 'unknown';
-      } else if (asymmetricMatcher(a, c)) return 'ok';
+        if (chain === 'expect') return through('ok');
+        if (chain === 'unknown') return through('unknown');
+      } else if (asymmetricMatcher(a, c)) return through('ok');
       return `the argument of a ${name}( call (a fixture or query input, not an expectation)`;
     }
-    return (around[0] ?? first) === 0 ? 'unknown' : 'outside any expectation';
+    return (around[0] ?? first) === 0 ? through('unknown') : 'outside any expectation';
   };
   for (let n = 0; n < oa.length; n += 1) {
     const x = oa[n] as { at: number; minus: number };
@@ -1159,10 +1221,20 @@ export function valueChangeRefusal(before: string, after: string): string | null
     }
     // The innermost `(` around it (only `[ ]` / `{ }` between): a matcher's at the end of an
     // expect chain (or the fragment begins before the chain; the whole helper then shows it).
+    // A function body between it and that `(` refuses it (D10-388).
     const paren = [...around].reverse().find((o) => a[o]?.text === '(');
     const m = paren === undefined ? -1 : calleeAt(a, paren);
-    if (m >= 0 && MATCHER.test((a[m] as Token).text) && expectChain(a, m, openOf) !== 'other')
-      continue;
+    if (m >= 0 && MATCHER.test((a[m] as Token).text) && expectChain(a, m, openOf) !== 'other') {
+      let inner = x.at - x.minus;
+      const body = [...around].reverse().some((o) => {
+        if (inner === paren) return false;
+        const hit = inBody(o, inner);
+        inner = o;
+        return hit;
+      });
+      if (!body) continue;
+      return `${shown} is changed in a matcher's argument but ${BODY}`;
+    }
     return `${shown} is changed outside an object property value inside an expectation ({ key: <value> }) and a matcher's expected argument (expect(…).toBe(<value>))`;
   }
   return null;

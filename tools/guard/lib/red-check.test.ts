@@ -1924,6 +1924,68 @@ it('[CT-06zxh] the whole helper shows a fragment that is no expected value: a fi
   expect(applyExpectedValues(at, base, [entry('    n: 1,', '    n: 2,')]).applied).toHaveLength(1);
 });
 
+it('[CT-06zxi] a value inside a function body called in a matcher argument does not apply: the whole file is judged (D10-388)', () => {
+  const at = 'test/spec/iife.test.ts';
+  const base = [
+    "import { expect, it } from 'vitest';",
+    'function check(actual: unknown) {',
+    '  expect(actual).toEqual((() => {',
+    '    const input = {',
+    '      amount: 1,',
+    '    };',
+    '    return makeExpected(input);',
+    '  })());',
+    '  expect(actual).toEqual((function () {',
+    '    return { fee: 3 };',
+    '  })());',
+    '  expect(actual).toEqual(((v: number) => ({',
+    '    rate: 5,',
+    '  }))(0));',
+    '  expect(actual).toEqual(expect.objectContaining({',
+    '    total: { fen: 7 },',
+    '  }));',
+    '}',
+    "it('[AC-1] a', () => { check(x); });",
+    "it('[AC-2] b', () => { expect(1).toBe(1); });",
+  ].join('\n');
+  const entry = (from: string, to: string) => ({ file: at, helper: 'check', from, to });
+  const baselines = (from: string, to: string) =>
+    ruleTestBaselines(
+      [at],
+      [{ path: at, status: 'M' }],
+      ['test/spec/**'],
+      reader({ [at]: base }, { [at]: base.replace(from, to) }),
+      [],
+      [entry(from, to)],
+    );
+  // The review probe (arrow block body), a function body, an arrow's expression body.
+  for (const [from, to] of [
+    ['      amount: 1,', '      amount: 2,'],
+    ['    return { fee: 3 };', '    return { fee: 4 };'],
+    ['    rate: 5,', '    rate: 6,'],
+  ] as const) {
+    const b = baselines(from, to);
+    expect(b.get(at), from).toMatchObject({ kind: 'whole', expectedValues: { applied: [] } });
+    expect(b.get(at)?.expectedValues?.skipped[0], from).toContain('inside a function body');
+    const result = checkRedReports(
+      [
+        redReport(at, [
+          ['[AC-1] a', 'failed', RED],
+          ['[AC-2] b', 'passed'],
+        ]),
+      ],
+      [at],
+      ROOT,
+      b,
+    );
+    expect(result.problems.map((p) => p.test)).toEqual(['[AC-2] b']);
+  }
+  // A nested object of an asymmetric matcher still applies: judged by test.
+  const nested = baselines('    total: { fen: 7 },', '    total: { fen: 8 },');
+  expect(nested.get(at)).toMatchObject({ kind: 'tests', expectedValues: { skipped: [] } });
+  expect(nested.get(at)?.expectedValues?.applied).toHaveLength(1);
+});
+
 it('[CT-06zxe] a registered helper no test calls is void; renames run first; without entries nothing changes', () => {
   const legacy = { file: NOTIFY, helper: 'legacyShape', from: 'fen: 1n', to: 'fen: 2n' };
   const head = NOTIFY_BASE.replace('fen: 1n', 'fen: 2n');
