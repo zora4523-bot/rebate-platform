@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { FixedClock } from '../../platform/index.ts';
 import type { UnionEndpoint } from '../domain/types.ts';
@@ -115,10 +115,16 @@ function replayRequest(scenario: string, body = 'synthetic-input'): UnionTranspo
   };
 }
 
+// Scratch recordings go under the repository's .tmp/ (AGENTS.md §9), not the system temp directory.
+const SCRATCH = fileURLToPath(
+  new URL('../../../../../../.tmp/union-replay-unit/', import.meta.url),
+);
+
 async function withRecordings(
   run: (root: string, write: (scenario: string, meta: unknown) => Promise<string>) => Promise<void>,
 ): Promise<void> {
-  const root = await mkdtemp(join(tmpdir(), 'union-replay-unit-'));
+  await mkdir(SCRATCH, { recursive: true });
+  const root = await mkdtemp(join(SCRATCH, 'run-'));
   const write = async (scenario: string, meta: unknown): Promise<string> => {
     const folder = join(root, 'jd', scenario);
     await mkdir(folder, { recursive: true });
@@ -166,6 +172,9 @@ describe('union file replay report', () => {
     });
   });
 
+  // B1-04ca (D10-380): the file I/O heaviest case here (three writes of both files, four reads);
+  // its 12-case file takes 42–82 ms on a green CI run but once hit the 5 s default under a loaded
+  // runner (#1599 run 40157563601, 5019 ms). Explicit limit only; the assertions are unchanged.
   it('[AC-B1-04c-UNIT#7] keeps a new entry when the same directory changes source', async () => {
     await withRecordings(async (root, write) => {
       const scenario = 'synthetic-swapped';
@@ -198,5 +207,5 @@ describe('union file replay report', () => {
         acceptanceEligible: false,
       });
     });
-  });
+  }, 30_000);
 });
