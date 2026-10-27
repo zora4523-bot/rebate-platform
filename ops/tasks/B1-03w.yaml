@@ -13,11 +13,12 @@ paths:
   - 'apps/api/src/modules/risk/application/risk-scan.test.ts'
   - 'apps/api/src/modules/risk/application/risk-scan-heal.ts'
   - 'apps/api/src/modules/risk/application/risk-scan-heal.test.ts'
-  - 'apps/api/src/modules/risk/domain/risk-scan-slots.ts'
-  - 'apps/api/src/modules/risk/domain/risk-scan-slots.test.ts'
+  - 'apps/api/src/modules/risk/domain/risk-scan-slots{.ts,.test.ts}'
   - 'apps/api/src/modules/orders/jobs/snapshot-retry.ts'
   - 'apps/api/src/modules/orders/worker-runtime.ts'
   - 'apps/api/src/modules/orders/worker-runtime.test.ts'
+  - 'apps/api/src/modules/orders/application/manual-sync.ts'
+  - 'apps/api/src/modules/orders/jobs/manual-sync{.ts,.test.ts}'
 test_paths:
   - 'test/spec/risk/risk-scan-queue/**'
   - 'test/spec/risk/freeze-expiry/scheduling.test.ts'
@@ -38,6 +39,10 @@ renames:
     to: "'daily_alerts'"
   - from: "'snapshot-retry'"
     to: "'snapshot_retry'"
+  - from: "'manual-window'"
+    to: "'manual_window'"
+  - from: "'manual-order-nos'"
+    to: "'manual_order_nos'"
 impl: claude
 tester: claude-independent
 accept:
