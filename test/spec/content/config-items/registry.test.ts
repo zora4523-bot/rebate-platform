@@ -333,3 +333,41 @@ it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接
   expect(configItemSpecOf(key)).toBe(spec);
   expect(switchSpecOf(key)).toBeNull();
 });
+
+// B2-11dzb (D10-400): assertions carried over from B2-11d #33–#35. The days the reconciliation has
+// run through are not a key; the three support flags accept JSON booleans only; the required
+// reconciliation days must be an integer ≥ 1.
+const ENABLE_SUPPORT_KEYS = [
+  'payout.auto_enable_check.limits_supported',
+  'payout.auto_enable_check.status_codes_supported',
+  'payout.auto_enable_check.bill_out_biz_no_supported',
+];
+const ENABLE_RECON_REQUIRED_DAYS = 'payout.auto_enable_check.recon_required_days';
+const ENABLE_RETIRED_PASSED_DAYS = 'payout.auto_enable_check.recon_passed_days';
+
+it('[AC-F1-10e#59] payout.auto_enable_check.recon_passed_days 不登记：configItemSpecOf 查不到、注册表与开关表都没有（B2-11dzb，D10-400）', () => {
+  expect(configItemSpecOf(ENABLE_RETIRED_PASSED_DAYS)).toBeNull();
+  expect(configRegistry().some((spec) => spec.key === ENABLE_RETIRED_PASSED_DAYS)).toBe(false);
+  expect(switchSpecOf(ENABLE_RETIRED_PASSED_DAYS)).toBeNull();
+});
+
+it.each(ENABLE_SUPPORT_KEYS)('[AC-F1-10e#60] %s 只收 JSON 布尔（B2-11dzb，D10-400）', (key) => {
+  const spec = registered(key);
+  expect(configItemSpecOf(key), key).toBe(spec);
+  for (const value of [true, false]) {
+    expect(configValueFits(spec, value), String(value)).toBe(true);
+  }
+  for (const value of ['true', 'on', 1, 0, null, [], {}]) {
+    expect(configValueFits(spec, value), JSON.stringify(value)).toBe(false);
+  }
+});
+
+it('[AC-F1-10e#61] payout.auto_enable_check.recon_required_days 设了须为 ≥ 1 的整数（B2-11dzb，D10-400）', () => {
+  const spec = registered(ENABLE_RECON_REQUIRED_DAYS);
+  expect(configItemSpecOf(ENABLE_RECON_REQUIRED_DAYS)).toBe(spec);
+  for (const value of [1, 2, 7, 30, 365]) {
+    expect(configValueFits(spec, value), String(value)).toBe(true);
+  }
+  const refused = [0, -1, 1.5, 7.5, Number.NaN, Number.POSITIVE_INFINITY, '7', true, null, []];
+  for (const value of refused) expect(configValueFits(spec, value), String(value)).toBe(false);
+});
