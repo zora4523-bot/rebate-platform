@@ -166,6 +166,19 @@ export interface AgentResultSets {
   run_id: string;
 }
 
+export interface AgentRuleChunks {
+  app_id: string;
+  article_id: string;
+  chunk_id: string;
+  created_at: Generated<Timestamp>;
+  published_version: number;
+  retired_at: Timestamp | null;
+  seq: number;
+  status: Generated<string>;
+  text: string;
+  title: string;
+}
+
 export interface AgentRuns {
   accepted_at: Timestamp;
   app_id: string;
@@ -2094,6 +2107,7 @@ export interface DB {
   agent_result_chains: AgentResultChains;
   agent_result_deliveries: AgentResultDeliveries;
   agent_result_sets: AgentResultSets;
+  agent_rule_chunks: AgentRuleChunks;
   agent_runs: AgentRuns;
   agent_sessions: AgentSessions;
   agent_tool_calls: AgentToolCalls;

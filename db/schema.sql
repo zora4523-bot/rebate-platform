@@ -1069,6 +1069,41 @@ $$;
 
 
 --
+-- Name: reject_rule_chunk_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_rule_chunk_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF ROW(NEW.chunk_id, NEW.app_id, NEW.article_id, NEW.published_version, NEW.seq, NEW.title,
+         NEW."text", NEW.created_at)
+      IS DISTINCT FROM
+      ROW(OLD.chunk_id, OLD.app_id, OLD.article_id, OLD.published_version, OLD.seq, OLD.title,
+          OLD."text", OLD.created_at)
+    OR NOT (
+      (
+        NEW.status IS NOT DISTINCT FROM OLD.status
+        AND NEW.retired_at IS NOT DISTINCT FROM OLD.retired_at
+      )
+      OR (
+        OLD.status = 'active'
+        AND OLD.retired_at IS NULL
+        AND NEW.status = 'retired'
+        AND NEW.retired_at IS NOT NULL
+      )
+    )
+  THEN
+    RAISE EXCEPTION 'agent_rule_chunks content is immutable; status may only go active -> retired together with retired_at'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
 -- Name: reject_union_auth_session_rewrite(); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -1619,6 +1654,30 @@ CREATE TABLE app.agent_result_sets (
     conditions jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT agent_result_sets_conditions_check CHECK ((jsonb_typeof(conditions) = 'object'::text))
+);
+
+
+--
+-- Name: agent_rule_chunks; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.agent_rule_chunks (
+    chunk_id uuid NOT NULL,
+    app_id text NOT NULL,
+    article_id uuid NOT NULL,
+    published_version integer NOT NULL,
+    seq integer NOT NULL,
+    title text NOT NULL,
+    text text NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    retired_at timestamp with time zone,
+    CONSTRAINT agent_rule_chunks_published_version_check CHECK ((published_version >= 1)),
+    CONSTRAINT agent_rule_chunks_retired_at_check CHECK (((status = 'retired'::text) = (retired_at IS NOT NULL))),
+    CONSTRAINT agent_rule_chunks_seq_check CHECK ((seq >= 0)),
+    CONSTRAINT agent_rule_chunks_status_check CHECK ((status = ANY (ARRAY['active'::text, 'retired'::text]))),
+    CONSTRAINT agent_rule_chunks_text_check CHECK (((text <> ''::text) AND (char_length(text) <= 200))),
+    CONSTRAINT agent_rule_chunks_title_check CHECK ((title <> ''::text))
 );
 
 
@@ -5734,6 +5793,22 @@ ALTER TABLE ONLY app.agent_result_sets
 
 
 --
+-- Name: agent_rule_chunks agent_rule_chunks_article_id_published_version_seq_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_rule_chunks
+    ADD CONSTRAINT agent_rule_chunks_article_id_published_version_seq_key UNIQUE (article_id, published_version, seq);
+
+
+--
+-- Name: agent_rule_chunks agent_rule_chunks_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_rule_chunks
+    ADD CONSTRAINT agent_rule_chunks_pkey PRIMARY KEY (chunk_id);
+
+
+--
 -- Name: agent_runs agent_runs_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -7526,6 +7601,13 @@ CREATE INDEX agent_result_sets_run_idx ON app.agent_result_sets USING btree (app
 
 
 --
+-- Name: agent_rule_chunks_app_id_status_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_rule_chunks_app_id_status_idx ON app.agent_rule_chunks USING btree (app_id, status);
+
+
+--
 -- Name: agent_runs_created_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -8877,6 +8959,13 @@ CREATE TRIGGER agent_result_sets_no_rewrite BEFORE UPDATE ON app.agent_result_se
 
 
 --
+-- Name: agent_rule_chunks agent_rule_chunks_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER agent_rule_chunks_no_rewrite BEFORE UPDATE ON app.agent_rule_chunks FOR EACH ROW EXECUTE FUNCTION app.reject_rule_chunk_rewrite();
+
+
+--
 -- Name: agent_runs agent_runs_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -9302,6 +9391,14 @@ ALTER TABLE ONLY app.agent_result_deliveries
 
 ALTER TABLE ONLY app.agent_result_sets
     ADD CONSTRAINT agent_result_sets_run_fkey FOREIGN KEY (app_id, run_id) REFERENCES app.agent_runs(app_id, id);
+
+
+--
+-- Name: agent_rule_chunks agent_rule_chunks_article_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_rule_chunks
+    ADD CONSTRAINT agent_rule_chunks_article_fkey FOREIGN KEY (article_id, published_version) REFERENCES app.articles(id, version);
 
 
 --
@@ -10747,6 +10844,13 @@ REVOKE ALL ON FUNCTION app.reject_product_ref_key_rewrite() FROM PUBLIC;
 
 
 --
+-- Name: FUNCTION reject_rule_chunk_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_rule_chunk_rewrite() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION reject_union_auth_session_rewrite(); Type: ACL; Schema: app; Owner: -
 --
 
@@ -11350,6 +11454,71 @@ GRANT UPDATE(conditions) ON TABLE app.agent_result_sets TO couli_app;
 --
 
 GRANT SELECT(created_at) ON TABLE app.agent_result_sets TO couli_readonly;
+
+
+--
+-- Name: TABLE agent_rule_chunks; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.agent_rule_chunks TO couli_app;
+
+
+--
+-- Name: COLUMN agent_rule_chunks.chunk_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(chunk_id) ON TABLE app.agent_rule_chunks TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_rule_chunks.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_id) ON TABLE app.agent_rule_chunks TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_rule_chunks.article_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(article_id) ON TABLE app.agent_rule_chunks TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_rule_chunks.published_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(published_version) ON TABLE app.agent_rule_chunks TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_rule_chunks.seq; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(seq) ON TABLE app.agent_rule_chunks TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_rule_chunks.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.agent_rule_chunks TO couli_app;
+GRANT SELECT(status) ON TABLE app.agent_rule_chunks TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_rule_chunks.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE app.agent_rule_chunks TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_rule_chunks.retired_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(retired_at) ON TABLE app.agent_rule_chunks TO couli_app;
+GRANT SELECT(retired_at) ON TABLE app.agent_rule_chunks TO couli_readonly;
 
 
 --
