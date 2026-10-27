@@ -2,10 +2,12 @@
 // at-least-once delivery deduplicated by processed_events in the same transaction as the effects,
 // a human W2 / W3 first makes the CAS (status = PENDING_REVIEW) match nothing and only
 // auto_decision is written, and ⑦ / ⑨ are read under one serialising lock (two members at once
-// cannot both pass a limit that only one fits).
+// cannot both pass a limit that only one fits). #81 / #82 fix the interleaving: the first decision
+// is made in full on an open transaction, which commits only once the second consumer waits on it.
 import { randomUUID } from 'node:crypto';
+import type { DB } from '@couli/db';
 import { createTestDatabase } from '@couli/db/testing';
-import { sql } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
   CONSUMER,
@@ -18,6 +20,8 @@ import {
   key,
   open,
   setup,
+  type AutoFixture,
+  type Fixture,
   type Harness,
 } from './kit.ts';
 
@@ -28,6 +32,37 @@ beforeAll(async () => {
 afterAll(async () => {
   await close(h);
 }, TIMEOUT);
+
+/** Whether `trx`'s backend holds a granted advisory lock right now. */
+async function holdsAdvisoryLock(trx: Transaction<DB>): Promise<boolean> {
+  const result = await sql<{ held: boolean }>`
+    SELECT EXISTS (
+      SELECT 1 FROM pg_locks WHERE pid = pg_backend_pid() AND locktype = 'advisory' AND granted
+    ) AS held`.execute(trx);
+  return result.rows[0]?.held === true;
+}
+
+/**
+ * Seed only, as #58: `other`'s next W1 snapshots the payee HMAC of `f`'s member (whose W1 is
+ * already made): `f`'s account is retired, `other`'s current account re-inserted with that HMAC.
+ */
+async function sharePayee(f: AutoFixture, other: Fixture) {
+  await sql`UPDATE app.payout_accounts SET is_current = false
+    WHERE app_id = ${f.actor.appId} AND user_id = ${f.actor.userId} AND is_current`.execute(h.db);
+  await h.db.transaction().execute(async (trx) => {
+    const current = await sql<{ id: string }>`UPDATE app.payout_accounts SET is_current = false
+      WHERE app_id = ${other.actor.appId} AND user_id = ${other.actor.userId} AND is_current
+      RETURNING id`.execute(trx);
+    const id = current.rows[0]?.id;
+    if (id === undefined) throw new Error('seed: the second member has no current payout account');
+    await sql`INSERT INTO app.payout_accounts
+      (id, app_id, user_id, payout_method, payee_name, is_current, alipay_hmac, alipay_logon_id_cipher,
+       bank_card_hmac, bank_card_no_cipher, bank_name, card_bin)
+      SELECT ${randomUUID()}, app_id, user_id, payout_method, payee_name, true, ${f.hmac},
+        alipay_logon_id_cipher, bank_card_hmac, bank_card_no_cipher, bank_name, card_bin
+      FROM app.payout_accounts WHERE id = ${id}`.execute(trx);
+  });
+}
 
 /** The row without the columns a consumer that only writes auto_decision may touch. */
 function rest(row: Record<string, unknown>) {
@@ -248,4 +283,70 @@ it('[AC-B2-11c#58] ⑦ 收款账号次数在串行锁内计算：两个会员同
       )
       .execute(),
   ).toHaveLength(2);
+});
+
+it('[AC-B2-11c#81] ⑨ 在 auto_payout_daily 锁内读：A 已判 auto、W2 并执行但未提交（仍持 advisory 锁）时，另一会员 B 的消费者必须等待；A 提交后 B 读到 A 的 100 分 → platform_daily_max', async () => {
+  const f = await setup(h);
+  await f.set(key('platform_daily_max_fen'), 150);
+  const other = await f.member();
+  const a = await f.start(100n);
+  const b = await f.start(100n, other);
+  const first = f.consumer();
+  const second = f.consumer();
+  const eventA = await f.event(a);
+  const eventB = await f.event(b);
+  const outcome = await fenced(
+    h,
+    async (trx) => {
+      await first.handle(eventA, trx);
+      return holdsAdvisoryLock(trx);
+    },
+    () => second.consume(eventB),
+  );
+  expect(outcome.first).toBe(true);
+  expect(outcome.waited).toBe(true);
+  expect(await f.row(a)).toMatchObject({
+    status: 'APPROVED',
+    review_mode: 'auto',
+    auto_decision: decision('auto', []),
+  });
+  expect(await f.row(b)).toMatchObject({
+    status: 'PENDING_REVIEW',
+    review_mode: 'manual',
+    auto_decision: decision('manual', ['platform_daily_max']),
+  });
+  expect(executions(f, a)).toHaveLength(1);
+  expect(executions(f, b)).toEqual([]);
+  expect(await f.approvals(b)).toEqual([]);
+});
+
+it('[AC-B2-11c#82] ⑦ 收款账号次数在 auto_payout_daily 锁内读：两个会员同一收款账号（当日上限 1），A 判 auto 未提交时 B 必须等待，A 提交后 B → payee_daily_count', async () => {
+  const f = await setup(h);
+  const other = await f.member();
+  const a = await f.start(100n);
+  await sharePayee(f, other);
+  const b = await f.start(100n, other);
+  expect((await f.row(b)).payee_hmac).toBe((await f.row(a)).payee_hmac);
+  const first = f.consumer();
+  const second = f.consumer();
+  const eventA = await f.event(a);
+  const eventB = await f.event(b);
+  const outcome = await fenced(
+    h,
+    async (trx) => {
+      await first.handle(eventA, trx);
+      return holdsAdvisoryLock(trx);
+    },
+    () => second.consume(eventB),
+  );
+  expect(outcome.first).toBe(true);
+  expect(outcome.waited).toBe(true);
+  expect((await f.row(a)).auto_decision).toEqual(decision('auto', []));
+  expect(await f.row(b)).toMatchObject({
+    status: 'PENDING_REVIEW',
+    review_mode: 'manual',
+    auto_decision: decision('manual', ['payee_daily_count']),
+  });
+  expect(executions(f, a)).toHaveLength(1);
+  expect(executions(f, b)).toEqual([]);
 });

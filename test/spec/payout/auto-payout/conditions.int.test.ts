@@ -10,12 +10,20 @@ import {
   TIMEOUT,
   close,
   decision,
+  expectOneExecute,
   key,
   open,
   setup,
   type AutoFixture,
   type Harness,
 } from './kit.ts';
+
+const DAY = 24 * 60 * MINUTE;
+
+/** `ms` after NOW (negative: before). */
+function at(ms: number): Date {
+  return new Date(NOW.getTime() + ms);
+}
 
 let h: Harness;
 beforeAll(async () => {
@@ -108,6 +116,8 @@ it('[AC-B2-11c#14] ⑤(a) 生效的 withdraw_holds → frozen_balance，且会�
 it.each([
   ['frozen', null, ['frozen_balance', 'w2_guard']],
   ['appealing', 'frozen', ['frozen_balance', 'w2_guard']],
+  // ⑤(a) names appealing whatever the prior state (BR-WDR-05's mapping is ⑬'s, not ⑤'s).
+  ['appealing', 'banned', ['frozen_balance', 'w2_guard']],
   ['banned', null, ['w2_guard']],
 ] as const)(
   '[AC-B2-11c#15] ⑤(a) / ⑬ 判定时再查 risk_state=%s（申诉前状态 %s）→ %j',
@@ -158,6 +168,83 @@ it('[AC-B2-11c#19] ⑧ W 非 0 时启用：确认收货佣金为 0（分母 0）
   await f.set(key('warn.invalid_ratio_bp'), 1);
   expect(await judge(f, await f.start(100n))).toEqual(
     decision('manual', ['warn_withdraw_received']),
+  );
+});
+
+it('[AC-B2-11c#83] ⑧ 三项实际值按 t = created_at 取数、本单计入 30 天提现额（只计一次）：10:00 申请、11:30 判定 → warn_values {3334, 6667, 7000}，Z、W 命中', async () => {
+  const f = await setup(h);
+  await f.set(key('warn.high_commission_rate_bp'), 5000);
+  await f.set(key('warn.high_commission_order_ratio_bp'), 5000);
+  await f.set(key('warn.invalid_ratio_bp'), 5000);
+  await f.set(key('warn.withdraw_received_ratio_bp'), 6500);
+  // BR-WDR-29 ④⑤ the member's self purchases by paid_at in [t − 60 d, t] (rate est × 10000 / pay).
+  // At t = created_at: the first three (high 1, invalid 2 of 3); at the decision instant the
+  // window has moved: the third is out, the fourth in (high 2, invalid 1 of 3).
+  await f.order({
+    paidAt: at(-DAY),
+    buyType: 'self',
+    rebateStatus: 'VOID',
+    estCommissionFen: 6_000n,
+    payAmountFen: 10_000n,
+  });
+  await f.order({ paidAt: at(-2 * DAY), buyType: 'self', rebateStatus: 'WAITING' });
+  await f.order({ paidAt: at(-60 * DAY), buyType: 'self', rebateStatus: 'CLAWED_BACK' });
+  await f.order({
+    paidAt: at(30 * MINUTE),
+    buyType: 'self',
+    rebateStatus: 'WAITING',
+    estCommissionFen: 9_000n,
+    payAmountFen: 10_000n,
+  });
+  // BR-WDR-29 ⑥ denominator: the member's shares on sub-orders received in [t − 60 d, t]: 1 000 at
+  // created_at (5 000 at the decision instant).
+  const received = await f.order({
+    paidAt: at(-10 * DAY),
+    receivedAt: at(-DAY),
+    buyType: 'share',
+    rebateStatus: 'WAITING',
+  });
+  await f.split(received, { version: 1, role: 'share', amountFen: 1_000n });
+  const late = await f.order({
+    paidAt: at(-10 * DAY),
+    receivedAt: at(30 * MINUTE),
+    buyType: 'share',
+    rebateStatus: 'WAITING',
+  });
+  await f.split(late, { version: 1, role: 'share', amountFen: 4_000n });
+  // BR-WDR-29 ⑥ numerator: the member's withdrawals created in [t − 30 d, t] plus this one:
+  // 200 + 400 + 100 = 700 at created_at (400 + 800 + 100 at the decision instant).
+  for (const [createdAt, amount] of [
+    [at(-30 * DAY), 200n],
+    [at(-10 * DAY), 400n],
+    [at(30 * MINUTE), 800n],
+  ] as const) {
+    await f.seedReviewed({
+      userId: f.actor.userId,
+      amount,
+      status: 'PAID_MANUAL',
+      reviewMode: 'manual',
+      createdAt,
+      reviewedAt: new Date(createdAt.getTime() + 30 * MINUTE),
+    });
+  }
+  const id = await f.start(100n);
+  const later = at(90 * MINUTE);
+  f.clock.set(later);
+  // ⌈1 × 10000 / 3⌉, ⌈2 × 10000 / 3⌉, ⌈700 × 10000 / 1000⌉ (without this one: 6000; twice: 8000).
+  expect(await judge(f, id)).toEqual(
+    decision(
+      'manual',
+      ['warn_invalid_ratio', 'warn_withdraw_received'],
+      {
+        warn_values: {
+          high_commission_order_ratio_bp: 3334,
+          invalid_ratio_bp: 6667,
+          withdraw_received_ratio_bp: 7000,
+        },
+      },
+      later,
+    ),
   );
 });
 
@@ -232,6 +319,19 @@ it('[AC-B2-11c#26] ⑬ 锁内余额 available_fen < 0 → w2_guard，不做系�
   expect(await judge(f, id)).toEqual(decision('manual', ['w2_guard']));
   expect(await f.row(id)).toMatchObject({ status: 'PENDING_REVIEW', reviewer_id: null });
   expect(await f.approvals(id)).toEqual([]);
+});
+
+it('[AC-B2-11c#29] ⑬ 全额提现：余额 200 元全部申请，W1 冻结后 available_fen = 0，守卫 available_fen ≥ 0 含等号 → auto', async () => {
+  const f = await setup(h, { balance: 20_000n });
+  const id = await f.start(20_000n);
+  const [balance] = await f.ledger.getBalances(h.db, {
+    appId: f.appId,
+    userIds: [f.actor.userId],
+  });
+  expect(balance).toMatchObject({ available_fen: 0n, frozen_fen: 20_000n });
+  expect(await judge(f, id)).toEqual(decision('auto', []));
+  expect(await f.row(id)).toMatchObject({ status: 'APPROVED', review_mode: 'auto' });
+  expectOneExecute(f, id);
 });
 
 it('[AC-B2-11c#27] ⑬ blocked_reason 非空 → w2_guard', async () => {

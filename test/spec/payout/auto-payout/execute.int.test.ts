@@ -1,11 +1,14 @@
 // BR-WDR-30 自动路径 / EXECUTE 未通过: after the system W2 the consumer calls B2-06c's executeBatch
 // for this one withdrawal with executor 'system:auto_payout'; a refused batch (BR-WDR-12 ① ③) or
 // the withdrawal left out (②) keeps it APPROVED and appends execute_blocked with the reason to
-// auto_decision; nothing retries EXECUTE. The last three tests run the real executeBatch.
+// auto_decision; nothing retries EXECUTE. Such a withdrawal still gets BR-WDR-26's review_deadline
+// (the overdue check covers every PENDING_REVIEW / APPROVED one). The last three tests run the real
+// executeBatch.
 import { randomUUID } from 'node:crypto';
 import { createTestDatabase } from '@couli/db/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
+  MINUTE,
   NOW,
   TIMEOUT,
   close,
@@ -81,6 +84,24 @@ it('[AC-B2-11c#62] EXECUTE 未通过后系统不自动重试：再次投递（�
   await consumer.consume(await f.event(id, randomUUID()));
   expect(await f.row(id)).toEqual(once);
   expectOneExecute(f, id);
+});
+
+it('[AC-B2-11c#66] EXECUTE 未通过、单据留 APPROVED：BR-WDR-26 超时判定对所有 PENDING_REVIEW / APPROVED 的单适用，review_deadline = created_at + 24 个工作日小时（不是判定时刻起算，不留空）', async () => {
+  const f = await setup(h);
+  f.respond(() => ({ kind: 'rejected', reason: 'queue_paused' }));
+  const id = await f.start(100n);
+  expect((await f.row(id)).review_deadline).toBeNull();
+  const later = new Date(NOW.getTime() + 120 * MINUTE);
+  f.clock.set(later);
+  await f.consumer().consume(await f.event(id));
+  expect(await f.row(id)).toMatchObject({
+    status: 'APPROVED',
+    review_mode: 'auto',
+    // Monday 10:00 +08:00 + 24 working hours (no calendar configured: weekends only).
+    review_deadline: new Date('2026-10-20T02:00:00.000Z'),
+    auto_decision: decision('auto', [], { execute_blocked: 'queue_paused' }, later),
+  });
+  expectOneExecute(f, id, later);
 });
 
 it('[AC-B2-11c#63] 真 executeBatch：系统 W2 后建 kind=auto 单单批次（created_by 空），单据进入 PAYING、executor_id 空，入队一个转账任务', async () => {

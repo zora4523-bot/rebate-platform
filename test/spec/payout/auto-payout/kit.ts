@@ -1,10 +1,11 @@
 // B2-11c rule tests (规划/08 BR-WDR-30 判定时点与并发 / 自动路径 / EXECUTE 未通过 / 告警, BR-WDR-26
 // review_deadline, BR-WDR-05 守卫, BR-WDR-24 告警): the withdrawal.created consumer on a real
 // PostgreSQL. Withdrawals come from the real W1 (B2-05d) with a fixed Clock; the real ledger, the
-// real B2-05e commands, the real event bus (event_log) and B2-11a's facts reader run underneath.
-// Only ports owned by other modules are in-memory: risk's state and appeal readers, identity's
-// adult reader, the live blacklist check, commission's shares (none) — and B2-06c's executeBatch,
-// which is a recording fake unless a test hands in the real one. Rows outside this task (earlier
+// real B2-05e commands, the real event bus (event_log) and B2-11a's facts reader (with commission's
+// real beneficiary-share port, as app.module wires it) run underneath. Only ports owned by other
+// modules are in-memory: risk's state and appeal readers, identity's adult reader, the live
+// blacklist check — and B2-06c's executeBatch, which is a recording fake unless a test hands in
+// the real one. Orders and commission splits are seeded by INSERT. Rows outside this task (earlier
 // automatic withdrawals, holds, snapshots of risk flags) are seeded by INSERT / UPDATE, never by a
 // fake production command. Members are funded on 2026-10-01 with an ADMIN_ADJUST so that nothing
 // is credited "today" (⑥) unless a test posts it.
@@ -15,6 +16,7 @@ import type { DB } from '@couli/db';
 import type { WithdrawalState } from '@couli/domain';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { expect, vi } from 'vitest';
+import { createBeneficiaryShareReader } from '../../../../apps/api/src/modules/commission/ports/withdraw-risk-shares.ts';
 import { lockUsersForUpdate } from '../../../../apps/api/src/modules/identity/ports/lock-users.ts';
 import { createLedger } from '../../../../apps/api/src/modules/ledger/index.ts';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
@@ -34,6 +36,7 @@ import { createWithdrawalCommands } from '../../../../apps/api/src/modules/payou
 import { createWithdrawRiskFactsReader } from '../../../../apps/api/src/modules/payout/infra/withdraw-risk-facts.ts';
 import { voucher } from '../../ledger/posting/kit.ts';
 import { fixture, success, type Fixture, type Harness } from '../apply/kit.ts';
+import { seedOrder, seedSplit, type SeededOrder } from '../risk-flags/kit.ts';
 
 export { open, close, TIMEOUT } from '../apply/kit.ts';
 export type { Harness, Fixture } from '../apply/kit.ts';
@@ -182,9 +185,7 @@ export async function setup(
     attempts: { hasAttempt: async () => false },
     eventBus: f.options.eventBus!,
     ...ports,
-    facts: createWithdrawRiskFactsReader({
-      shares: { orderIds: async () => [], estimate: async () => 0n },
-    }),
+    facts: createWithdrawRiskFactsReader({ shares: createBeneficiaryShareReader() }),
     adult: { isAdult: async (_handle, subject) => !minors.has(subject.userId) },
     blacklist: { hit: async (_handle, subject) => blacklisted.has(subject.userId) },
     execute: { executeBatch: execute },
@@ -314,6 +315,19 @@ export async function setup(
         ${values.released === true ? 'admin:synthetic' : null})`.execute(h.db);
   }
 
+  /** Seed only: one sub-order of the member (B2-11a's kit: synced est / pay amounts, rights). */
+  function order(input: Parameters<typeof seedOrder>[1]) {
+    return seedOrder(f, input);
+  }
+
+  /** Seed only: commission's split amount of the member on `seeded` at one version. */
+  function split(
+    seeded: SeededOrder,
+    input: { version: number; role: 'self' | 'share' | 'direct'; amountFen: bigint },
+  ) {
+    return seedSplit(f, seeded, { ...input, userId: f.actor.userId });
+  }
+
   /** A committed posting of `ledgerType` for `who` at `at` (+ credits, − debits available). */
   async function post(amount: bigint, at: Date, ledgerType: string, who: Fixture = f) {
     await h.db.transaction().execute((trx) => postOn(trx, who, amount, at, ledgerType));
@@ -404,6 +418,8 @@ export async function setup(
     row,
     seedReviewed,
     seedHold,
+    order,
+    split,
     post,
     watermark,
     events,
