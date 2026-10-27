@@ -24,6 +24,7 @@ import {
   type RootLogger,
 } from '../platform/index.ts';
 import { WENT_NEGATIVE_CONSUMER, createWentNegativeConsumer } from './application/went-negative.ts';
+import { PAYOUT_LANDING_QUEUE, createLandingJob } from './jobs/landing-job.ts';
 import type { WithdrawalAttemptsPort } from './application/withdrawal-commands.ts';
 import type { WithdrawApplyOptions, WithdrawApplyService } from './application/withdraw-apply.ts';
 import {
@@ -199,6 +200,24 @@ export class PayoutModule {
               logger,
               handler: (event, trx) => consumer.handle(event, trx),
             });
+            // B2-06fz (D10-326 C): the payout process only records a success / fail attempt and
+            // enqueues one payout-landing job; this worker lands W5 / W6 as couli_app (ledger
+            // voucher, users lock, event) through jobs/landing-job.ts.
+            queue.register(
+              PAYOUT_LANDING_QUEUE,
+              createLandingJob({
+                db,
+                ledger: createLedger({
+                  clock,
+                  eventBus,
+                  balanceRecoveredHook: createBalanceRecoveredHook({ clock }),
+                }),
+                lockUsersForUpdate: options.lockUsersForUpdate,
+                eventBus,
+                clock,
+                logger: logger.child({ module: 'payout' }),
+              }),
+            );
             return true;
           },
         },
