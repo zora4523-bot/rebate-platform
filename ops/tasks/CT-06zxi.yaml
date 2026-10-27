@@ -1,0 +1,26 @@
+id: CT-06zxi
+repo: rebate-platform
+title: CT-06zxi：期望值登记——匹配器实参里立即调用的函数体内的字面量不算可换值，改动即整文件判（D10-388）
+type: guard-change
+# 2026-10-27 入账（ops 线，编排裁定 D10-388，来自 CT-06zxh #1711 Codex money 评审 r2 的 S2）。起因：test-blocks.ts objectPlace 上溯时
+# 跳过函数体花括号与分组括号，matcher 实参里的立即调用函数（如 expect(x).toEqual((() => { const input = { amount: 1 }; return
+# makeExpected(input); })())）中的夹具输入字面量会被当作期望值放过。做法：上溯遇到函数体（箭头函数体 / function 体）即停止，判为非
+# 期望值位置（登记被拒；在 red-check 整个 helper 复核里同样判，改动即整文件判）。只收紧，不放宽；B2-15l 两条登记回放须仍生效。
+refs: []
+refs_hash: {}
+deps: [CT-06zxh]
+paths:
+  - 'tools/guard/lib/test-blocks.ts'
+  - 'tools/guard/lib/test-blocks.test.ts'
+  - 'tools/guard/lib/red-check.ts'
+  - 'tools/guard/lib/red-check.test.ts'
+  - 'tools/lib/task-file.ts'
+  - 'tools/lib/task-file.test.ts'
+  - 'tools/README.md'
+  - 'ops/tasks/CT-06zxi.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
