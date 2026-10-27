@@ -3,7 +3,7 @@
 // 规划/05, impl != tester for funds, line cap, dependency state) live in tools/ops.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { valueSkeleton } from '../guard/lib/test-blocks.ts';
+import { valueChangeRefusal, valueSkeleton } from '../guard/lib/test-blocks.ts';
 import { repoRoot } from './paths.ts';
 import { parseYamlLite } from './yaml-lite.ts';
 
@@ -129,13 +129,16 @@ export const EXPECTED_VALUE_LENGTH_MAX = 200;
  * (tools/guard/lib/test-blocks.ts valueSkeleton: number and string literals replaced by one
  * placeholder, unary minus signs dropped, whitespace and comments kept). Only a value may change
  * (`AMOUNT` → `-AMOUNT`, `500n` → `-500n`, `'open'` → `'closed'`): an assertion cannot be removed,
- * a call or a name cannot be swapped, the structure cannot change. What a literal means (an
+ * a call or a name cannot be swapped, the structure cannot change; a tagged template (sql`…`) is
+ * not a value. The values that differ must stand as an object property value (`key: <value>`)
+ * or a matcher's expected argument (`.toBe(<value>)`), never inside a query call (`.where(`,
+ * `.selectFrom(`, `sql(` …): test-blocks.ts valueChangeRefusal. What a literal means (an
  * expectation, or a query argument that makes the assertion vacuous) the shape cannot tell: the
  * affected tests must still be red on the old code, and the rule-test reviewer confirms every
  * entry (spec_test_review.expected_values_confirmed, tools/ci/evidence-check.ts).
  */
 export const EXPECTED_VALUE_SHAPE =
-  'the same value skeleton (only literals and unary minus signs may differ)';
+  'the same value skeleton (only literals and unary minus signs may differ; a tagged template is not a literal)';
 
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
@@ -472,6 +475,11 @@ function expectedValueList(value: unknown, problems: string[]): ExpectedValueDec
       problems.push(
         `${at}: from ${JSON.stringify(f)} and to ${JSON.stringify(t)} must have ${EXPECTED_VALUE_SHAPE}`,
       );
+      return;
+    }
+    const refusal = valueChangeRefusal(f, t);
+    if (refusal !== null) {
+      problems.push(`${at}: from ${JSON.stringify(f)} → to ${JSON.stringify(t)}: ${refusal}`);
       return;
     }
     const key = `${file as string}\u0000${helper as string}\u0000${f}`;

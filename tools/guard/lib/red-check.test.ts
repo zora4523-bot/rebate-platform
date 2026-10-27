@@ -1813,6 +1813,40 @@ it('[CT-06zxe] an entry that does not apply leaves the file judged as before: no
   expect(literal.text).toContain("type: '$&$&',");
 });
 
+it('[CT-06zxe] an entry whose value stands inside a query call of the helper, or in a tagged template, does not apply (review r1 S2-1)', () => {
+  const base = [
+    "import { expect, it } from 'vitest';",
+    'async function open(db: Db) {',
+    "  const rows = await db.selectFrom('app.pay_anomaly').where({",
+    "    status: 'open',",
+    '  }).execute();',
+    "  const raw = await db.run(sql`select * from app.pay_anomaly where status = 'open'`);",
+    '  expect(rows).toHaveLength(1);',
+    '}',
+    "it('[AC-1] a', async () => { await open(db); });",
+  ].join('\n');
+  const at = 'test/spec/q.test.ts';
+  const entry = (from: string, to: string) => ({ file: at, helper: 'open', from, to });
+  // The fragment alone is a property value; the whole helper shows the where( around it.
+  expect(
+    applyExpectedValues(at, base, [entry("    status: 'open',", "    status: 'closed',")]).skipped,
+  ).toEqual([
+    `${at} / open: "    status: 'open'," → "    status: 'closed',": does not apply (the change in open is not an expected value: "'open'" is changed inside a where( call (a query, not an expectation))`,
+  ]);
+  expect(
+    applyExpectedValues(at, base, [
+      entry(
+        "sql`select * from app.pay_anomaly where status = 'open'`",
+        'sql`select 1 where false`',
+      ),
+    ]).skipped[0],
+  ).toContain('the change alters more than a value of open (its value skeleton differs)');
+  // A matcher's expected argument still applies.
+  expect(
+    applyExpectedValues(at, base, [entry('toHaveLength(1)', 'toHaveLength(2)')]).applied,
+  ).toHaveLength(1);
+});
+
 it('[CT-06zxe] a registered helper no test calls is void; renames run first; without entries nothing changes', () => {
   const legacy = { file: NOTIFY, helper: 'legacyShape', from: 'fen: 1n', to: 'fen: 2n' };
   const head = NOTIFY_BASE.replace('fen: 1n', 'fen: 2n');

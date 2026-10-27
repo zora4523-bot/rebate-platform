@@ -411,6 +411,20 @@ describe('parseTaskFile', () => {
         `must have ${EXPECTED_VALUE_SHAPE}`,
       );
     }
+    // A tagged template is not a value (review r1 S2-1 ①).
+    expect(
+      messageOf(declared(entry("'sql`select 1`'", "'sql`select 2`'")), 'B2-02a.yaml'),
+    ).toContain(`must have ${EXPECTED_VALUE_SHAPE}`);
+    // Only an object property value or a matcher's expected argument (review r1 S2-1 ③).
+    for (const [from, to] of [
+      [`".where('status', '=', 'open')"`, `".where('status', '<>', 'open')"`],
+      [`"const n = 1;"`, `"const n = 2;"`],
+      [`"f(1)"`, `"f(2)"`],
+    ] as const) {
+      expect(messageOf(declared(entry(from, to)), 'B2-02a.yaml')).toMatch(
+        /expected_values\[0\]: from .* → to .*: .* is changed (inside a where\( call|outside an object property value)/,
+      );
+    }
     // The same file + helper + from twice.
     expect(
       messageOf(declared(entry("'a: 1'", "'a: 2'") + entry("'a: 1'", "'a: 3'")), 'B2-02a.yaml'),

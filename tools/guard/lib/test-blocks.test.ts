@@ -18,6 +18,7 @@ import {
   tokenize,
   unchangedTest,
   helperImpact,
+  valueChangeRefusal,
   topLevelHelpers,
   valueSkeleton,
 } from './test-blocks.ts';
@@ -2124,4 +2125,80 @@ it('[CT-06zxe] helperImpact: the test blocks naming a changed helper, through ot
     expect(r.ok).toBe(false);
   }
   expect(helperImpact('it(', ['only'])).toMatchObject({ ok: false });
+});
+
+it("[CT-06zxe] helperImpact: a use inside a template's ${…} counts where the template stands (review r1 S1-1)", () => {
+  const source = [
+    "import { it, expect } from 'vitest';",
+    'function h() { expect(1).toBe(1); }',
+    'function g() { return `${h()}`; }',
+    'function k() { return `a${`b${h()}`}`; }',
+    "it('[AC-X#1] through a helper', () => { g(); });",
+    "it('[AC-X#2] directly', () => { void `${h()}`; });",
+    "it('[AC-X#3] a call', () => { h(); });",
+    "it('[AC-X#4] nested templates', () => { k(); });",
+    "it('[AC-X#5] none', () => { void `${1}`; });",
+  ].join('\n');
+  expect(helperImpact(source, ['h'])).toEqual({
+    ok: true,
+    closure: ['h', 'g', 'k'],
+    affected: [true, true, true, true, false],
+  });
+  // In a hook, a describe body or a top-level statement, inside ${…} too: the whole file.
+  for (const use of [
+    'beforeEach(() => { void `${h()}`; });',
+    'const label = `${g()}`;',
+    "describe('s', () => { const t = `${h()}`; });",
+  ]) {
+    expect(helperImpact(`${use}\n${source}`, ['h'])).toMatchObject({ ok: false });
+  }
+});
+
+it('[CT-06zxe] valueSkeleton: a tagged template is not a value (review r1 S2-1 ①)', () => {
+  const same = (a: string, b: string): boolean =>
+    valueSkeleton(a) !== null && valueSkeleton(a) === valueSkeleton(b);
+  expect(
+    same("sql`select * from app.pay_anomaly where status = 'open'`", 'sql`select 1 where false`'),
+  ).toBe(false);
+  expect(same('db.sql`a`', 'db.sql`b`')).toBe(false);
+  expect(same('f()`a`', 'f()`b`')).toBe(false);
+  expect(same('x[0]`a`', 'x[0]`b`')).toBe(false);
+  expect(same('sql<Row>`a`', 'sql<Row>`b`')).toBe(false);
+  // Untagged templates stay values (after an operator, a keyword, a bracket).
+  expect(same('x: `a`,', 'x: `b`,')).toBe(true);
+  expect(same('return `a`;', 'return `b`;')).toBe(true);
+  expect(same('toBe(`a`)', 'toBe(`b`)')).toBe(true);
+});
+
+it("[CT-06zxe] valueChangeRefusal: only an object property value or a matcher's expected argument may change (review r1 S2-1 ③)", () => {
+  for (const [from, to] of [
+    ['    diff_fen: AMOUNT,', '    diff_fen: -AMOUNT,'],
+    ['diff_fen: order.amount_fen,', 'diff_fen: -order.amount_fen,'],
+    ["status: 'open',", "status: 'closed',"],
+    ["'a-b': 1,", "'a-b': 2,"],
+    ['expect(x).toBe(500n);', 'expect(x).toBe(-1500n);'],
+    ['.length).toBeGreaterThanOrEqual(1);', '.length).toBeGreaterThanOrEqual(2);'],
+    ['expect(x).not.toEqual([1, { a: 2 }]);', 'expect(x).not.toEqual([3, { a: 4 }]);'],
+    ['expect(rows).toMatchObject({ n: 1 })', 'expect(rows).toMatchObject({ n: 2 })'],
+    ['toHaveLength(1);', 'toHaveLength(2);'],
+  ] as const) {
+    expect(valueChangeRefusal(from, to), `${from} → ${to}`).toBeNull();
+  }
+  for (const [from, to] of [
+    [".where('status', '=', 'open')", ".where('status', '<>', 'open')"],
+    [".where('status', '=', 'open')", ".where('status', '=', 'closed')"],
+    [".where({ status: 'open' })", ".where({ status: 'closed' })"],
+    [".selectFrom('app.a').where('n', '>', 1)", ".selectFrom('app.b').where('n', '>', 1)"],
+    ["sql('select 1')", "sql('select 2')"],
+    ['.set({ n: 1 }).execute()', '.set({ n: 2 }).execute()'],
+    ['const n = 1;', 'const n = 2;'],
+    ['f(1)', 'f(2)'],
+    ['x(toBe(1))', 'x(toBe(2))'],
+    ['expect(f(1)).toBe(2)', 'expect(f(3)).toBe(2)'],
+    ['[1, 2]', '[1, 3]'],
+    ['1);', '2);'],
+  ] as const) {
+    expect(valueChangeRefusal(from, to), `${from} → ${to}`).not.toBeNull();
+  }
+  expect(valueChangeRefusal("'unterminated", 'x')).toBe('it cannot be tokenized');
 });

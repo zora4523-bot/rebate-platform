@@ -79,6 +79,10 @@
 //              `spec_test_review` must record the rule-test reviewer's confirmation as for
 //              red_exempt with `expected_values_confirmed: { entries: [{ file, helper, from, to
 //              }] }` — exactly the entries that apply, in ledger order; no hit, nothing required.
+//              A hit is an entry that can be applied to the base, whether or not red-check then
+//              judges the file by the helpers' impact (the head may not make that change, or may
+//              change more outside the tests: the file is judged whole, the confirmation is still
+//              asked — one more confirmation, never a looser check).
 //              The expected list is unchanged by them (such a file still needs a red test).
 //              CI records (`mode: ci`) in the evidence file are refused (CR2-06): nothing a copied
 //              record says can be checked against a run; the CI checks count by themselves.

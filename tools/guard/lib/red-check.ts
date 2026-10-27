@@ -127,11 +127,13 @@
 // of the top-level helper `helper`, the one occurrence of `from` becomes `to`
 // (applyExpectedValues). An entry does not apply — the file is judged as before, the notes say
 // why — when the helper is not a top-level helper of the base (or is declared twice), when `from`
-// occurs in it other than exactly once, or when the helper's value skeleton changes (`from` cut
-// out of a longer token). When the code outside the tests is then the head's character for
+// occurs in it other than exactly once, when the helper's value skeleton changes (`from` cut
+// out of a longer token), or when a changed value stands neither as an object property value nor
+// as a matcher's expected argument, or inside a query call (test-blocks.ts valueChangeRefusal).
+// When the code outside the tests is then the head's character for
 // character (every change outside the tests is registered), the file is judged test by test: a
-// test block that calls a changed helper, directly or through other top-level helpers
-// (test-blocks.ts helperImpact), counts as changed and must be red; every other block follows
+// test block that calls a changed helper, directly or through other top-level helpers, a
+// template's `${…}` included (test-blocks.ts helperImpact), counts as changed and must be red; every other block follows
 // CT-06p (unchanged: exempt). A changed helper that no test block calls is a problem (the entry
 // is void); a helper used anywhere else outside the tests (a hook, a describe body, a top-level
 // table) judges the whole file. When the code outside the tests still differs, the file is
@@ -155,6 +157,7 @@ import {
   relativeClosure,
   topLevelHelpers,
   unchangedTest,
+  valueChangeRefusal,
   valueSkeleton,
 } from './test-blocks.ts';
 
@@ -340,6 +343,11 @@ export function applyExpectedValues(
     const skeleton = valueSkeleton(body);
     if (skeleton === null || skeleton !== valueSkeleton(changed)) {
       skip(`the change alters more than a value of ${e.helper} (its value skeleton differs)`);
+      continue;
+    }
+    const refusal = valueChangeRefusal(body, changed);
+    if (refusal !== null) {
+      skip(`the change in ${e.helper} is not an expected value: ${refusal}`);
       continue;
     }
     out = out.slice(0, helper.start) + changed + out.slice(helper.end);
