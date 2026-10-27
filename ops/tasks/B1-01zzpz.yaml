@@ -1,0 +1,18 @@
+id: B1-01zzpz
+repo: rebate-platform
+title: 测试修改（D10-399 ①）：冻结 test/spec/platform/fund-metrics/rules.test.ts 的 [AC-B1-01zzi#6] 指标白名单只加 couli_auto_payout_daily_total_fen / couli_auto_payout_daily_cap_fen 两条，不带任何行为
+type: test-change
+# 2026-10-28 入账（ops 线，编排裁定 D10-399 ①，照 D10-394 (a) / B2-11dz 先例）。B1-01zzp 先红 r3 在冻结 rules.test.ts 上被整文件判
+# （白名单两条目在骨架上本就绿），故拆出本前置：只加两条白名单（D10-393 (b) 已批的内容，原样取自 B1-01zzp 写测试 r2 提交 cdb18df5），
+# 其余规则仍只许读既有五个资金指标；主干上即绿，编排核后先合，B1-01zzp 变基到其后重跑先红。
+refs: []
+refs_hash: {}
+deps: [B1-01zzi]
+paths:
+  - 'test/spec/platform/fund-metrics/rules.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
