@@ -1,0 +1,24 @@
+id: CT-06zxd
+repo: rebate-platform
+title: CT-06zxd：契约生成物清单 CONTRACT_GENERATED 加 packages/contracts-ts/src/planned-operations.gen.ts（连同既有 todo 台账豁免，口径照 CT-06n）
+type: guard-change
+# 2026-10-27 入账（ops 线，fe 10-24 01:43 报、编排 09:2x 派给 ops 10-27 恢复后做）。起因：F1-06zu（#1445）新增生成文件
+# planned-operations.gen.ts（codegen 从 openapi.yaml 的 x-implementation planned 导出），去掉 planned 的任务重新 codegen 时它会变，
+# 但 tools/ops/task.ts 的 CONTRACT_GENERATED 不含它，台账 paths 漏列时实现中途才被 path-guard 拦或 codegen 漂移检查红（#1448 先例）。
+# 做法：把它加进 CONTRACT_GENERATED；与三张路由表不同，它在只经 mechanical_paths 去掉 planned 时也会变，所以对它，契约出现在
+# mechanical_paths 也触发；已存在、缺它的 todo 台账不改写，单列一份冻结豁免名单（只对这一个文件，新台账不得加入），测试写明。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ops/task.ts'
+  - 'tools/ops/task.test.ts'
+  - 'tools/README.md'
+  - 'tools/ops/README.md'
+  - 'ops/tasks/CT-06zxd.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
