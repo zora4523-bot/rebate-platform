@@ -1531,3 +1531,153 @@ it('[approvals 32] a pure migration rename hotfix needs no task branch and no ev
   refused(hotfix('nothing', {}), 'no migration was renamed');
   git(repo, ['checkout', '-q', back]);
 });
+
+it('[CT-06zxc] a rule-test file that differs from its base only by the ledger renames is not expected', () => {
+  const ROUND = 'test/spec/money/round.test.ts';
+  const renamedTrusted = join(SCRATCH, 'trusted-renames');
+  for (const file of [
+    'tools/guard/protected-paths.json',
+    'ops/risk-map.yaml',
+    'tools/guard/legacy-tasks.json',
+  ]) {
+    write(renamedTrusted, { [file]: readFileSync(join(TRUSTED, file), 'utf8') });
+  }
+  write(renamedTrusted, {
+    'ops/tasks/B2-01a.yaml': `${readFileSync(join(TRUSTED, 'ops/tasks/B2-01a.yaml'), 'utf8').trimEnd()}
+renames:
+  - from: '"rounds"'
+    to: '"rounds_half_up"'
+`,
+  });
+  const onlyRenamed = branchFromBase('ct06zxc-renamed', {
+    [ROUND]: 'it("rounds_half_up", () => {});\n',
+    [FLOOR]: 'it("floors", () => {});\n',
+  });
+  const alsoChanged = branchFromBase('ct06zxc-changed', {
+    [ROUND]: 'it("rounds_half_up", () => { expect(1).toBe(1); });\n',
+    [FLOOR]: 'it("floors", () => {});\n',
+  });
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const req = (spec: string, trusted: string) =>
+    redRequirement(
+      { prDir: repo, base, head, headRef: 'task/B2-01a', trusted },
+      'B2-01a',
+      base,
+      JSON.stringify({ task: 'B2-01a', spec_commit: spec }),
+    );
+  const pair = { from: '"rounds"', to: '"rounds_half_up"' };
+  // Renamed only: left out, as red-check leaves it out of the red run; the rename is to confirm.
+  expect(req(onlyRenamed, renamedTrusted)).toEqual({
+    ...RED,
+    renames: { hit: [pair], left_out: [ROUND], tester: 'codex' },
+  });
+  // Without the declaration: expected as before, nothing to confirm.
+  expect(req(onlyRenamed, TRUSTED)).toEqual({ required: true, expected: [FLOOR, ROUND] });
+  // Another change next to the rename: expected as before, the rename that hit still to confirm.
+  expect(req(alsoChanged, renamedTrusted)).toEqual({
+    required: true,
+    expected: [FLOOR, ROUND],
+    renames: { hit: [pair], left_out: [], tester: 'codex' },
+  });
+  // A declared rename that hits no rule-test file of the task: nothing to confirm.
+  const missTrusted = join(SCRATCH, 'trusted-renames-miss');
+  for (const file of [
+    'tools/guard/protected-paths.json',
+    'ops/risk-map.yaml',
+    'tools/guard/legacy-tasks.json',
+  ]) {
+    write(missTrusted, { [file]: readFileSync(join(TRUSTED, file), 'utf8') });
+  }
+  write(missTrusted, {
+    'ops/tasks/B2-01a.yaml': `${readFileSync(join(TRUSTED, 'ops/tasks/B2-01a.yaml'), 'utf8').trimEnd()}
+renames:
+  - from: '"never-there"'
+    to: '"never_there"'
+`,
+  });
+  expect(req(onlyRenamed, missTrusted)).toEqual({ required: true, expected: [FLOOR, ROUND] });
+});
+
+it("[CT-06zxc] renames that hit need the rule-test reviewer's confirmation, pair by pair and file by file", () => {
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const cfg = loadProtected(REPO);
+  const pairs = [
+    { from: "'freeze-expiry'", to: "'freeze_expiry'" },
+    { from: "'daily-alerts'", to: "'daily_alerts'" },
+  ];
+  const LEFT = 'test/spec/money/scheduling.test.ts';
+  const renamed = (tester: 'codex' | 'claude' = 'codex'): RedRequirement => ({
+    ...RED,
+    renames: { hit: pairs, left_out: [LEFT], tester },
+  });
+  const problemsOf = (doc: Evidence, red: RedRequirement = renamed()): string =>
+    evidenceProblems(doc, { prDir: repo, head, task: 'B2-01a', cfg, red }).join('\n');
+  const want = `the ledger's renames hit 2 pair(s) and leave 1 file(s) out of the expected list (renames, CT-06zxc): the rule-test reviewer (claude) must confirm them in spec_test_review (reviewer claude, last_verdict pass, renames_confirmed { pairs: ${JSON.stringify(pairs)}, left_out: ${JSON.stringify([LEFT])} })`;
+  const confirmed = {
+    reviewer: 'claude',
+    engine: 'claude',
+    rounds: 1,
+    last_verdict: 'pass',
+    renames_confirmed: { pairs, left_out: [LEFT] },
+  };
+  expect(problemsOf(evidence({ spec_test_review: confirmed }))).toBe('');
+  // Missing review or field, the wrong reviewer, a verdict other than pass.
+  expect(problemsOf(evidence())).toBe(`spec_test_review: ${want}`);
+  expect(
+    problemsOf(evidence({ spec_test_review: { ...confirmed, renames_confirmed: undefined } })),
+  ).toBe(`spec_test_review.renames_confirmed: ${want}`);
+  expect(
+    problemsOf(
+      evidence({
+        spec_test_review: {
+          ...confirmed,
+          reviewer: 'codex',
+          engine: 'codex',
+          model: 'gpt-6-astra',
+        },
+      }),
+    ),
+  ).toBe(`spec_test_review.reviewer: ${want}`);
+  expect(problemsOf(evidence({ spec_test_review: { ...confirmed, last_verdict: 'fail' } }))).toBe(
+    `spec_test_review.last_verdict: ${want}`,
+  );
+  // Not exactly the pairs and files: true alone, a pair missing, swapped, changed, a file missing.
+  for (const bad of [
+    true,
+    { pairs, left_out: [] },
+    { pairs: pairs.slice(0, 1), left_out: [LEFT] },
+    { pairs: [...pairs].reverse(), left_out: [LEFT] },
+    { pairs: [pairs[0], { ...pairs[1], to: "'daily_alert'" }], left_out: [LEFT] },
+    { pairs, left_out: [LEFT, FLOOR] },
+    { pairs, left_out: [LEFT], note: 'x' },
+    { pairs: [{ ...pairs[0], note: 'x' }, pairs[1]], left_out: [LEFT] },
+  ]) {
+    expect(
+      problemsOf(evidence({ spec_test_review: { ...confirmed, renames_confirmed: bad } })),
+      JSON.stringify(bad),
+    ).toBe(`spec_test_review.renames_confirmed: ${want}`);
+  }
+  // Claude wrote the rule tests: Codex confirms.
+  expect(
+    problemsOf(
+      evidence({
+        spec_test_review: {
+          ...confirmed,
+          reviewer: 'codex',
+          engine: 'codex',
+          model: 'gpt-6-astra',
+        },
+      }),
+      renamed('claude'),
+    ),
+  ).toBe('');
+  // No renames hit, or the red run not required: nothing asked for.
+  expect(problemsOf(evidence(), RED)).toBe('');
+  expect(
+    problemsOf(evidence({ runs: [] }), {
+      required: false,
+      expected: [],
+      renames: { hit: pairs, left_out: [LEFT], tester: 'codex' },
+    }),
+  ).toBe('');
+});

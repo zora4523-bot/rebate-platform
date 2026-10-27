@@ -1,0 +1,28 @@
+// CT-06zxc fixture (the B1-03w shape): a frozen rule test whose job-name literals the task renames.
+import { expect, it } from 'vitest';
+import { makeQueue } from './kit.ts';
+
+const JOBS = ['freeze_expiry', 'daily_alerts'] as const;
+
+it('[AC-1] seeds both jobs', async () => {
+  const queue = makeQueue();
+  await queue.seed();
+  expect(queue.sent.map((s) => s.name)).toEqual(['freeze_expiry', 'daily_alerts']);
+});
+
+it('[AC-2] freeze-expiry reschedules on the next minute', async () => {
+  const queue = makeQueue();
+  await queue.handle('freeze_expiry');
+  expect(queue.sent[0]?.startAfter).toBe(60);
+});
+
+it('[AC-3] daily-alerts reschedules on the next day', async () => {
+  const queue = makeQueue();
+  await queue.handle('daily_alerts');
+  expect(queue.sent[0]?.startAfter).toBe(86_400);
+});
+
+it('[AC-4] the queue is exclusive', () => {
+  expect(makeQueue().policy).toBe('exclusive');
+  expect(JOBS).toHaveLength(2);
+});

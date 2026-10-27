@@ -46,6 +46,16 @@ export type TaskFile = {
    * Read from the trusted root like test_paths, so a declaration goes through a ledger PR first.
    */
   red_exempt: RedExemptDeclaration[];
+  /**
+   * CT-06zxc (orchestrator ruling D10-347): literal renames the task makes inside rule-test files
+   * that existed at the base (a queue job name 'freeze-expiry' → 'freeze_expiry' its frozen tests
+   * must follow). red-check replaces every `from` by its `to` in the base content of such a file,
+   * in ledger order, before comparing it with the head: what differs only by these renames counts
+   * as unchanged (tools/guard/lib/red-check.ts). Literal strings only (no pattern), read from the
+   * trusted root like red_exempt, so a rename goes through a ledger PR first. Optional, [] when
+   * absent.
+   */
+  renames: RenameDeclaration[];
   impl: 'codex' | 'claude';
   /**
    * Who writes the rule tests. `claude-independent` (owner decision 2026-10-21, ops/approvals.yaml
@@ -71,6 +81,41 @@ export type RedExemptDeclaration = {
   /** Why the test cannot be shown red (at least RED_EXEMPT_REASON_MIN characters). */
   reason: string;
 };
+
+/** One declared literal rename (CT-06zxc, D10-347): every `from` of a base becomes `to`. */
+export type RenameDeclaration = {
+  /** The string literal the base has, quotes included (RENAME_LITERAL; not a pattern). */
+  from: string;
+  /** The string literal it became, with the same quote, different from `from`. */
+  to: string;
+};
+
+/**
+ * The most renames a task may declare (CT-06zxc). A rename is a whole ledger PR's worth of trust
+ * (every frozen test it touches is compared after it), so a task names a handful; 20 is far above
+ * the three of B1-03w and still readable by the rule-test reviewer. Like red_exempt, the section is
+ * left out of the task file's line limit (tools/ops/task.ts countedLines; CT-06zxc review r1 S2-2),
+ * so it has its own, by entries.
+ */
+export const RENAMES_MAX = 20;
+
+/** The least a rename's string content (without its quotes) may hold (CT-06zxc review r1 S2-1). */
+export const RENAME_CONTENT_MIN = 3;
+
+/**
+ * One quoted name literal (CT-06zxc reviews r1 / r2 S2-1): the same quote `'`, `"` or a backtick
+ * at both ends and between them only name characters (RENAME_NAME_CHARS: letters, digits and
+ * `_ . : / @ -`), at least RENAME_CONTENT_MIN of them. Code cannot be written into a rename (no
+ * parenthesis, blank, operator, comma, quote, backslash or `${`): `')).toBe('` or `' + '` is
+ * refused. What the shape cannot tell is the meaning of a real literal swapped for another
+ * (`'foo'` → `'bar'` may change an expected value): that is caught by the rule-test reviewer, who
+ * confirms every pair that hits, and every file it leaves out, in `renames_confirmed`
+ * (tools/ci/evidence-check.ts). D10-379: the content holds at least one ASCII letter, so a number
+ * (`'500'`, `'-500'`, `'1.5'`, a date) is never a rename: renaming `'500'` to `'-500'` in a frozen
+ * money test would take it out of red-check; changed expected values go through D10-371 instead.
+ */
+export const RENAME_NAME_CHARS = 'A-Za-z0-9_.:/@-';
+const RENAME_LITERAL = new RegExp(`^(['"\`])([${RENAME_NAME_CHARS}]*)\\1$`);
 
 /** The least a red-exemption reason may say (CT-06r: a non-empty reason of ≥ 10 characters). */
 export const RED_EXEMPT_REASON_MIN = 10;
@@ -114,6 +159,7 @@ const KNOWN_KEYS = new Set([
   'test_paths',
   'mechanical_paths',
   'red_exempt',
+  'renames',
   'impl',
   'tester',
   'accept',
@@ -229,6 +275,81 @@ function redExemptList(value: unknown, problems: string[]): RedExemptDeclaration
   return out;
 }
 
+/** Why `value` is not one quoted name literal (RENAME_LITERAL), or null. */
+function renameLiteralProblem(value: string): string | null {
+  const m = RENAME_LITERAL.exec(value);
+  if (m === null) {
+    return `must be one quoted name literal (the same quote ', " or \` at both ends; inside only ${RENAME_NAME_CHARS})`;
+  }
+  if ((m[2] ?? '').length < RENAME_CONTENT_MIN) {
+    return `must hold at least ${RENAME_CONTENT_MIN} characters between its quotes`;
+  }
+  if (!/[A-Za-z]/.test(m[2] ?? '')) {
+    return 'must hold at least one ASCII letter between its quotes (D10-379: a number is not a name)';
+  }
+  return null;
+}
+
+/**
+ * The `renames` list (CT-06zxc, D10-347; review r1 S2-1): a list of mappings with exactly the
+ * keys `from` / `to`, each one quoted name literal (RENAME_LITERAL, at least
+ * RENAME_CONTENT_MIN characters inside), both with the same quote, `from` ≠ `to`, no `from` named
+ * twice, at most RENAMES_MAX entries. The values are literal text: red-check never reads them as
+ * a pattern.
+ */
+function renameList(value: unknown, problems: string[]): RenameDeclaration[] {
+  if (!Array.isArray(value)) {
+    problems.push('renames: must be a list of mappings (from / to)');
+    return [];
+  }
+  if (value.length > RENAMES_MAX) {
+    problems.push(`renames: ${value.length} entries, the limit is ${RENAMES_MAX}`);
+  }
+  const out: RenameDeclaration[] = [];
+  const seen = new Set<string>();
+  value.forEach((item, index) => {
+    if (!isRecord(item)) {
+      problems.push(`renames[${index}]: must be a mapping (from / to)`);
+      return;
+    }
+    for (const key of Object.keys(item)) {
+      if (key !== 'from' && key !== 'to') problems.push(`renames[${index}].${key}: unknown field`);
+    }
+    let ok = true;
+    for (const key of ['from', 'to'] as const) {
+      const v = item[key];
+      if (typeof v !== 'string' || v === '') {
+        problems.push(`renames[${index}].${key}: must be a non-empty string`);
+        ok = false;
+        continue;
+      }
+      const problem = renameLiteralProblem(v);
+      if (problem !== null) {
+        problems.push(`renames[${index}].${key}: ${JSON.stringify(v)} ${problem}`);
+        ok = false;
+      }
+    }
+    if (!ok) return;
+    const from = item['from'] as string;
+    const to = item['to'] as string;
+    if (from[0] !== to[0]) {
+      problems.push(`renames[${index}]: from and to must use the same quote`);
+      return;
+    }
+    if (from === to) {
+      problems.push(`renames[${index}]: from and to are the same (${from})`);
+      return;
+    }
+    if (seen.has(from)) {
+      problems.push(`renames[${index}].from: ${from} is renamed twice`);
+      return;
+    }
+    seen.add(from);
+    out.push({ from, to });
+  });
+  return out;
+}
+
 /** Parses and validates one task file; throws a single Error listing every problem found. */
 export function parseTaskFile(text: string, fileName: string): TaskFile {
   const label = basename(fileName);
@@ -251,6 +372,7 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
       key !== 'test_paths' &&
       key !== 'mechanical_paths' &&
       key !== 'red_exempt' &&
+      key !== 'renames' &&
       !Object.hasOwn(doc, key)
     ) {
       problems.push(`${key}: missing`);
@@ -307,6 +429,7 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
   const redExempt = Object.hasOwn(doc, 'red_exempt')
     ? redExemptList(doc['red_exempt'], problems)
     : [];
+  const renames = Object.hasOwn(doc, 'renames') ? renameList(doc['renames'], problems) : [];
   const accept = Object.hasOwn(doc, 'accept')
     ? stringList(doc, 'accept', problems, { nonEmpty: true })
     : [];
@@ -383,6 +506,7 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
     test_paths: testPaths,
     mechanical_paths: mechanicalPaths,
     red_exempt: redExempt,
+    renames,
     impl: impl as TaskFile['impl'],
     tester: tester as TaskFile['tester'],
     accept,

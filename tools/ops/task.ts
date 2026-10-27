@@ -39,7 +39,9 @@ export function countedLines(text: string): number {
   let count = 0;
   let inExempt = false;
   for (const line of lines) {
-    if (/^red_exempt:/.test(line)) {
+    // CT-06zxc (review r1 S2-2): the `renames` section likewise (RENAMES_MAX entries, each a
+    // from / to mapping of string literals: nothing else parses there).
+    if (/^(red_exempt|renames):/.test(line)) {
       inExempt = true;
       continue;
     }
@@ -292,7 +294,7 @@ export function checkTask(id: string, opts: CheckOptions = {}): string[] {
   const lines = countedLines(text);
   if (lines > MAX_TASK_LINES) {
     problems.push(
-      `${lines} lines, the limit is ${MAX_TASK_LINES} (规划/11 §5.1; the red_exempt section is not counted, CT-06t)`,
+      `${lines} lines, the limit is ${MAX_TASK_LINES} (规划/11 §5.1; the red_exempt section is not counted, CT-06t, nor the renames section, CT-06zxc)`,
     );
   }
 

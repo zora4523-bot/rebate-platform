@@ -45,6 +45,11 @@ const DECLARED_TASK = AUTHOR_TASK.replace('id: B2-02b', 'id: B2-02e').replace(
   'test_paths:\n  - "test/spec/ledger/**"',
   'test_paths:\n  - "test/spec/ledger/**"\nred_exempt:\n  - file: test/spec/ledger/post.test.ts\n    test: "[AC-2] keeps"\n    reason: structural, holds for the old csv too\n  - file: test/spec/ledger/post.test.ts\n    test: "[AC-1] posts"\n    reason: declared although the test changed (must not apply)',
 );
+/** CT-06zxc: the same task with a declared literal rename in the trusted ledger. */
+const RENAMES_TASK = AUTHOR_TASK.replace('id: B2-02b', 'id: B2-02f').replace(
+  'test_paths:\n  - "test/spec/ledger/**"',
+  'test_paths:\n  - "test/spec/ledger/**"\nrenames:\n  - from: "\'post-job\'"\n    to: "\'post_job\'"',
+);
 const OLD_LEDGER_TASK = AUTHOR_TASK.replace('id: B2-02b', 'id: B2-02c').replace(
   'test_paths:\n  - "test/spec/ledger/**"\n',
   '',
@@ -125,6 +130,7 @@ beforeAll(() => {
     'ops/tasks/D1-01.yaml': DEPS_TASK,
     'ops/tasks/B2-02b.yaml': AUTHOR_TASK,
     'ops/tasks/B2-02e.yaml': DECLARED_TASK,
+    'ops/tasks/B2-02f.yaml': RENAMES_TASK,
     'ops/tasks/B2-02c.yaml': OLD_LEDGER_TASK,
     'ops/tasks/N1-01.yaml': NO_TESTER_TASK,
     'ops/tasks/B2-02d.yaml': NEW_NO_TEST_PATHS_TASK,
@@ -590,6 +596,95 @@ describe('path-guard.ts, protected-paths.ts, test-guard.ts, run.ts git', () => {
     const old = guard('red-check.ts', args('B2-02e').slice(0, 9));
     expect(old.status).toBe(1);
     expect(old.stderr).toContain('[AC-2] keeps: green on the skeleton: the test has no teeth');
+  });
+
+  it("[CT-06zxc] red-check: a file that differs from its base only by the trusted ledger's renames is not expected", () => {
+    const t = (title: string, body: string): string => `it('${title}', () => {\n  ${body}\n});\n`;
+    const vitest = "import { expect, it } from 'vitest';\n";
+    const file = 'test/spec/ledger/post.test.ts';
+    const renamed = 'test/spec/ledger/job.test.ts';
+    const job = (name: string): string =>
+      `${vitest}const JOB = '${name}';\n${t('[AC-3] job', `expect(send('${name}')).toBe(JOB);`)}`;
+    const { root, base } = makeRepo({
+      [file]: vitest + t('[AC-1] posts', 'expect(1).toBe(1);'),
+      [renamed]: job('post-job'),
+    });
+    writeFiles(root, {
+      [file]: vitest + t('[AC-1] posts', 'expect(1).toBe(3);'),
+      [renamed]: job('post_job'),
+    });
+    fixtureGit(root, ['commit', '-qam', 'test(spec): change [AC-1], rename the job']);
+    const tree = fixtureGit(root, ['rev-parse', 'HEAD^{tree}']);
+    // --print-expected leaves the renamed-only file out (B2-02f), keeps it without renames.
+    const printed = (task: string) =>
+      guard('red-check.ts', ['--task', task, '--cwd', root, '--base', base, '--print-expected']);
+    const left = printed('B2-02f');
+    expect(left.status, left.stderr).toBe(0);
+    expect(left.stdout).toBe(`${file}\n`);
+    expect(left.stderr).toContain(
+      `${renamed}: unchanged after the ledger's renames (D10-347: "'post-job'" → "'post_job'" ×2), left out of the expected list`,
+    );
+    expect(printed('B2-02b').stdout).toBe(`${renamed}\n${file}\n`);
+    // An older expected list that still names it: left out of the check too, said in the notes.
+    const list = join(root, '..', `expected-renamed-${Date.now()}.txt`);
+    writeFileSync(list, `${file}\n${renamed}\n`);
+    const reportFile = join(root, '..', `red-report-renamed-${Date.now()}.json`);
+    writeFileSync(
+      reportFile,
+      JSON.stringify({
+        reporter: 'couli-red-reporter',
+        testResults: [
+          {
+            name: `${root}/${file}`,
+            assertionResults: [
+              {
+                fullName: '[AC-1] posts',
+                status: 'failed',
+                failures: [{ causes: [{ name: 'AssertionError', message: 'expected 1 to be 3' }] }],
+              },
+            ],
+          },
+          {
+            name: `${root}/${renamed}`,
+            assertionResults: [
+              {
+                fullName: '[AC-3] job',
+                status: 'failed',
+                failures: [{ causes: [{ name: 'Error', message: 'unknown job post_job' }] }],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const args = (task: string): string[] => [
+      '--task',
+      task,
+      '--report',
+      reportFile,
+      '--expected-list',
+      list,
+      '--root',
+      root,
+      '--json',
+      '--cwd',
+      root,
+      '--base',
+      base,
+      '--head-tree',
+      tree,
+    ];
+    const res = guard('red-check.ts', args('B2-02f'));
+    expect(res.status, res.stderr).toBe(0);
+    const doc = json<{ ok: boolean; expected: string[]; red: string[]; notes: string[] }>(
+      res.stdout,
+    );
+    expect(doc).toMatchObject({ ok: true, expected: [file], red: [`${file} > [AC-1] posts`] });
+    expect(doc.notes[0]).toContain(`${renamed}: unchanged after the ledger's renames`);
+    // Without the declaration the file is changed: its test is red for no valid reason.
+    const without = guard('red-check.ts', args('B2-02b'));
+    expect(without.status).toBe(1);
+    expect(without.stderr).toContain(`${renamed} > [AC-3] job: red for an unrecognised reason`);
   });
 
   it('rejects wrong usage with exit 2', () => {

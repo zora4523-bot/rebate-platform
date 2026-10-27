@@ -16,7 +16,10 @@
 // ledger's `red_exempt` declarations (CT-06r) are handed to the check with the baselines: an
 // unchanged test of a file judged as a whole only because it may read a changed test-support
 // file may be declared exempt (lib/red-check.ts); the notes say which and that the rule-test
-// reviewer must confirm them.
+// reviewer must confirm them. The trusted ledger's `renames` (CT-06zxc, D10-347; never the
+// worktree's ledger) are applied to each base: a file whose renamed base is its head is left out of
+// the expected list (here and with --print-expected; the notes, or stderr, say which), and the
+// other files that existed at the base are compared against their renamed base.
 //
 //   node tools/guard/red-check.ts --task <id> --cwd <worktree> --base <ref> --print-expected
 //     prints the expected rule-test files, one per line (tools/ops/verify-container.sh --red uses
@@ -35,6 +38,8 @@ import {
   checkRedReports,
   expectedRuleTests,
   redCheckRequired,
+  renamedOnlyFiles,
+  renamedOnlyNote,
   ruleTestBaselines,
 } from './lib/red-check.ts';
 
@@ -123,11 +128,17 @@ runCli(
       const base = args.values.get('base');
       if (base === undefined)
         throw new UsageError('--print-expected needs --cwd <dir> --base <ref>');
-      const files = expectedRuleTests(
-        changedFiles(base, { cwd: resolveRoot(args.values.get('cwd')) }),
-        scope,
+      const cwd = resolveRoot(args.values.get('cwd'));
+      const files = expectedRuleTests(changedFiles(base, { cwd }), scope);
+      // CT-06zxc: a file that differs from its base only by the ledger's renames is not run.
+      const renamedOnly = renamedOnlyFiles(
+        files,
+        { base: (p) => showAt(cwd, base, p), head: (p) => readWorkTree(cwd, p) },
+        task.renames,
       );
-      for (const file of files) console.log(file);
+      const left = new Set(renamedOnly.map((r) => r.file));
+      for (const r of renamedOnly) console.error(`red-check note: ${renamedOnlyNote(r)}`);
+      for (const file of files) if (!left.has(file)) console.log(file);
       return 0;
     }
     if (reportArg === undefined) throw new UsageError('--report is required');
@@ -157,18 +168,32 @@ runCli(
     // CT-06p: which expected files existed at the base, and which of their tests changed.
     let baselines: Map<string, RuleTestBaseline> | undefined;
     let baselineNote: string | null = null;
+    const renamedNotes: string[] = [];
     if (base !== undefined) {
       try {
         const changes: Change[] =
           headTree === undefined
             ? changedFiles(base, { cwd })
             : changedBetweenCommits(base, headTree, { cwd });
-        baselines = ruleTestBaselines(expected, changes, scope, {
-          base: (p) => showAt(cwd, base, p),
-          head: (p) => (headTree === undefined ? readWorkTree(cwd, p) : showAt(cwd, headTree, p)),
-          headKind: (p) =>
+        const reader = {
+          base: (p: string) => showAt(cwd, base, p),
+          head: (p: string) =>
+            headTree === undefined ? readWorkTree(cwd, p) : showAt(cwd, headTree, p),
+          headKind: (p: string) =>
             headTree === undefined ? kindInWorkTree(cwd, p) : kindAt(cwd, headTree, p),
-        });
+        };
+        // CT-06zxc (D10-347): the trusted ledger's literal renames, as red_exempt. A file that
+        // differs from its base only by them is unchanged: out of the expected list (whether the
+        // list came from --print-expected, which already left it out, or from the changes).
+        const renamedOnly = renamedOnlyFiles(
+          [...expected, ...expectedRuleTests(changes, scope)],
+          reader,
+          task.renames,
+        );
+        const left = new Set(renamedOnly.map((r) => r.file));
+        expected = expected.filter((f) => !left.has(f));
+        for (const r of renamedOnly) renamedNotes.push(renamedOnlyNote(r));
+        baselines = ruleTestBaselines(expected, changes, scope, reader, task.renames);
       } catch (err) {
         baselines = undefined;
         baselineNote = `cannot compare with the base ${base} (${err instanceof Error ? err.message : String(err)}): every test of every expected file must be red`;
@@ -191,6 +216,7 @@ runCli(
       baselines,
       task.red_exempt,
     );
+    result.notes.unshift(...renamedNotes);
     if (baselineNote !== null) result.notes.unshift(baselineNote);
     for (const p of result.problems) {
       console.error(`red-check: ${p.file}${p.test === null ? '' : ` > ${p.test}`}: ${p.reason}`);

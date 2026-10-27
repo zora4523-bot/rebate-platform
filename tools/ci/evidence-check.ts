@@ -65,6 +65,14 @@
 //              "claude-independent" for either (ops/approvals.yaml id 36), and for a ledger tester
 //              claude-independent the reviewer is claude or another claude-independent call.
 //              Every expected file still needs a red test; MONEY_PATHS are unchanged.
+//              Declared renames (CT-06zxc, D10-347): a rule-test file whose base, with the
+//              ledger's literal `renames` applied, is its spec_commit content is unchanged and
+//              not expected (red-check leaves it out of the red run the same way). When a
+//              declared rename hits the base of a rule-test file of the task (or leaves one out),
+//              `spec_test_review` must record the rule-test reviewer's confirmation as for
+//              red_exempt (reviewer, last_verdict pass) with `renames_confirmed: { pairs: [{ from,
+//              to }] — exactly the pairs that hit, in ledger order —, left_out: [files] — exactly
+//              the files left out }` (review r1 S2-1); no hit, nothing required.
 //              CI records (`mode: ci`) in the evidence file are refused (CR2-06): nothing a copied
 //              record says can be checked against a run; the CI checks count by themselves.
 //              Owner waiver (owner decision 2026-10-02, ops/approvals.yaml id 12): on a branch
@@ -89,8 +97,8 @@ import { git, tryGit } from '../lib/git.ts';
 import type { Change } from '../lib/git.ts';
 import { loadLegacyTasks } from '../lib/legacy-tasks.ts';
 import { parseTaskFile } from '../lib/task-file.ts';
-import type { TaskFile } from '../lib/task-file.ts';
-import { expectedRuleTests } from '../guard/lib/red-check.ts';
+import type { RenameDeclaration, TaskFile } from '../lib/task-file.ts';
+import { expectedRuleTests, renamedOnlyFiles, renamesHit } from '../guard/lib/red-check.ts';
 import { matchesAny } from '../lib/glob.ts';
 import { loadProtected, splitFragment } from '../guard/lib/protected.ts';
 import type { ProtectedConfig } from '../guard/lib/protected.ts';
@@ -461,6 +469,12 @@ export type RedRequirement = {
    * tests; absent or 0 declared: no confirmation required.
    */
   declared?: { count: number; tester: TaskFile['tester'] };
+  /**
+   * CT-06zxc (review r1 S2-1): the ledger's renames that hit a rule-test file of the task (in
+   * ledger order) and the files they leave out of the expected list; absent when none hit: no
+   * confirmation required.
+   */
+  renames?: { hit: RenameDeclaration[]; left_out: string[]; tester: TaskFile['tester'] };
 };
 
 /** Who produced a review: the reviewer values an evidence entry may carry. */
@@ -518,6 +532,39 @@ export function specTestReviewers(tester: TaskFile['tester']): string[] {
   if (tester === 'claude') return ['codex', 'claude-independent'];
   if (tester === 'claude-independent') return ['claude', 'claude-independent'];
   return ['claude', 'claude-independent'];
+}
+
+/**
+ * Whether `value` confirms exactly these renames (CT-06zxc): a mapping with only `pairs` (the
+ * pairs that hit, each `{ from, to }`, in ledger order) and `left_out` (the files left out of the
+ * expected list, any order), nothing missing and nothing more.
+ */
+export function renamesConfirmed(
+  value: unknown,
+  pairs: readonly RenameDeclaration[],
+  leftOut: readonly string[],
+): boolean {
+  if (!isRecord(value)) return false;
+  if (Object.keys(value).some((k) => k !== 'pairs' && k !== 'left_out')) return false;
+  const got = value['pairs'];
+  const files = value['left_out'];
+  if (!Array.isArray(got) || !Array.isArray(files)) return false;
+  if (got.length !== pairs.length) return false;
+  const pairOk = got.every((g, i) => {
+    const want = pairs[i];
+    return (
+      isRecord(g) &&
+      want !== undefined &&
+      Object.keys(g).length === 2 &&
+      g['from'] === want.from &&
+      g['to'] === want.to
+    );
+  });
+  if (!pairOk) return false;
+  if (!files.every((f) => typeof f === 'string')) return false;
+  const a = [...(files as string[])].sort();
+  const b = [...leftOut].sort();
+  return a.length === b.length && a.every((f, i) => f === b[i]);
 }
 
 /** Validates one evidence document against the PR; returns the problems found. */
@@ -675,6 +722,29 @@ export function evidenceProblems(
         if (engine !== null) at(`${field}.engine`, engine);
         if (review['last_verdict'] !== 'pass') at(`${field}.last_verdict`, want);
         if (review['red_exempt_confirmed'] !== true) at(`${field}.red_exempt_confirmed`, want);
+      }
+    }
+    // CT-06zxc (review r1 S2-1): renames that hit a rule-test file need the rule-test reviewer's
+    // confirmation, pair by pair and file by file: `renames_confirmed` lists exactly the pairs
+    // that hit and the files left out, so a rename cannot slip through unseen.
+    if (red.required && red.renames !== undefined) {
+      const reviewers = specTestReviewers(red.renames.tester);
+      const reviewer = reviewers[0] ?? 'claude';
+      const field = 'spec_test_review';
+      const pairs = red.renames.hit.map((r) => ({ from: r.from, to: r.to }));
+      const leftOut = [...red.renames.left_out].sort();
+      const want = `the ledger's renames hit ${pairs.length} pair(s) and leave ${leftOut.length} file(s) out of the expected list (renames, CT-06zxc): the rule-test reviewer (${reviewer}) must confirm them in ${field} (reviewer ${reviewer}, last_verdict pass, renames_confirmed { pairs: ${JSON.stringify(pairs)}, left_out: ${JSON.stringify(leftOut)} })`;
+      const review = doc[field];
+      if (!isRecord(review)) {
+        at(field, want);
+      } else {
+        if (!reviewers.includes(String(review['reviewer']))) at(`${field}.reviewer`, want);
+        const engine = engineProblem(review);
+        if (engine !== null) at(`${field}.engine`, engine);
+        if (review['last_verdict'] !== 'pass') at(`${field}.last_verdict`, want);
+        if (!renamesConfirmed(review['renames_confirmed'], pairs, leftOut)) {
+          at(`${field}.renames_confirmed`, want);
+        }
       }
     }
     if (red.required && red.expected.length === 0) {
@@ -1025,11 +1095,25 @@ export function redRequirement(
     path: c.path,
     status: c.status as Change['status'],
   }));
+  // CT-06zxc (D10-347): a rule-test file that differs from its base only by the ledger's literal
+  // renames is unchanged, as red-check.ts leaves it out of the red run: no red test is wanted.
+  const all = expectedRuleTests(changes, ledger.test_paths);
+  const read = {
+    base: (p: string) => showOrNull(input.prDir, mergeBase, p),
+    head: (p: string) => showOrNull(input.prDir, specCommit as string, p),
+  };
+  const leftOut = renamedOnlyFiles(all, read, ledger.renames).map((r) => r.file);
+  const left = new Set(leftOut);
+  // Review r1 S2-1: renames that hit a rule-test file of the task need the reviewer's confirmation.
+  const hit = renamesHit(all, read, ledger.renames);
   return {
     required: true,
-    expected: expectedRuleTests(changes, ledger.test_paths),
+    expected: all.filter((f) => !left.has(f)),
     ...(ledger.red_exempt.length > 0
       ? { declared: { count: ledger.red_exempt.length, tester: ledger.tester } }
+      : {}),
+    ...(hit.length > 0 || leftOut.length > 0
+      ? { renames: { hit, left_out: leftOut, tester: ledger.tester } }
       : {}),
   };
 }

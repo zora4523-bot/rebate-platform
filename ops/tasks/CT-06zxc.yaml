@@ -1,0 +1,38 @@
+id: CT-06zxc
+repo: rebate-platform
+title: CT-06zxc：台账可选字段 renames（字面量改名对），red-check 先按 renames 归一化冻结测试的基线再比对（D10-347）
+type: guard-change
+# 2026-10-27 入账（ops 线，编排裁定 D10-347，10-25 01:47）。起因：B1-03w（#1566）把风控扫描的队列任务名 freeze-expiry / daily-alerts
+# 改成下划线（validation.ts 命名规则不许连字符），冻结测试里的任务名字面量必须同一次合并跟着改；red-check 现把这类文件判为
+# 「code outside the tests changed」整文件判定、或把用例判为 changed test，台账声明的 red_exempt 一律不适用，现门禁下任何写法都过不了。
+# 做法：台账新增可选字段 `renames: [{from, to}]`（只许非空字面量字符串，由可信根读）；red-check 判定冻结测试时，先把基线内容按
+# renames 逐对替换再与新内容比较——替换后逐字相同的文件视为未改，其中用例按「未改用例」处理、台账 red_exempt 照常生效；
+# 替换后仍有差异的照现规则（按替换后的基线逐用例判）。「视为未改」即剔出应跑 / 应判清单（--print-expected 不列、evidence-check 的应跑
+# 清单同规则剔除），notes 列出命中的改名与次数供规则测试评审核对。附测试：只改名通过、夹带别的改动仍拦、无 renames 行为不变。
+# 评审后收紧：from / to 只许带引号的名字字面量（同一种引号，内容 A-Za-z0-9_.:/@- ≥3 字符且含 ASCII 字母，D10-379）；有命中时证据须带
+# spec_test_review.renames_confirmed（命中的改名对与被剔出的文件，须与算出的一致）；renames 段不计 40 行（≤20 条）。
+# 用 B1-03w 红跑报告（red/3）回放：带 renames 时 7 个冻结文件剔出、0 问题；不带时与原结果逐字相同。之后 W1 重跑 B1-03w land。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/lib/task-file.ts'
+  - 'tools/lib/task-file.test.ts'
+  - 'tools/guard/red-check.ts'
+  - 'tools/guard/lib/red-check.ts'
+  - 'tools/guard/lib/red-check.test.ts'
+  - 'tools/guard/lib/red-check-fixtures/**'
+  - 'tools/README.md'
+  - 'tools/guard/guard-cli.test.ts'
+  - 'tools/ci/evidence-check.ts'
+  - 'tools/ci/evidence-check.test.ts'
+  - 'tools/ops/task.ts'
+  - 'tools/ops/task.test.ts'
+  - 'tools/agent/README.md'
+  - 'ops/tasks/CT-06zxc.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 1686
