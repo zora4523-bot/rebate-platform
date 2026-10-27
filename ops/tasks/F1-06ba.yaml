@@ -1,0 +1,20 @@
+id: F1-06ba
+repo: rebate-platform
+title: F1-06ba：admin.module 单测 [AC-F1-06b-WIRE#1] 加显式 30 秒时限（整个 api 应用启动，CI 负载下偶发 5 秒超时）
+type: test-change
+# 2026-10-27 入账（ops 线，编排 15:4x 跟进项，照 D10-380 口径）。起因：#1698 首轮 verify-unit 红在
+# apps/api/src/modules/admin/admin.module.test.ts [AC-F1-06b-WIRE#1] 5 秒超时（与 #1698 无关，已重跑）。该用例 createHttpApp('api')
+# 并 init 整个 Nest 应用，主干最近 4 次绿的 verify-unit 里用 0.9–1.8 秒（文件 1.5–4.2 秒），负载下贴近 5 秒默认上限：环境偶发，
+# 不是逻辑挂起。做法：只给这一条 it 加超时 30_000 与注释，断言一字不动。路径属 apps/api/src/modules/admin/**（RV2），走任务分支与证据。
+refs: []
+refs_hash: {}
+deps: [F1-06b]
+paths:
+  - 'apps/api/src/modules/admin/admin.module.test.ts'
+  - 'ops/tasks/F1-06ba.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
