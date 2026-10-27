@@ -73,7 +73,7 @@ export type {
   AddWithdrawHold,
 } from './application/withdraw-holds.ts';
 export type { WithdrawalReaders } from './application/withdrawal-in-flight.ts';
-export type { PayoutWorkerOptions } from './payout.module.ts';
+export type { AutoPayoutPorts, PayoutWorkerOptions } from './payout.module.ts';
 export {
   projectWithdrawalSummary,
   projectWithdrawalDetail,

@@ -14,6 +14,8 @@ export const WORKER_LANES: readonly (readonly [string, number, number])[] = Obje
   Object.freeze(['evt.notification-risk-state', 5, 2] as const),
   Object.freeze(['evt.notification-appeal-result', 5, 2] as const),
   Object.freeze(['evt.notification-claim-result', 5, 2] as const),
+  // B2-11c: one decision per withdrawal under the users / balance / daily-total locks, serially.
+  Object.freeze(['evt.payout-auto-payout', 1, 2] as const),
   // One worker: the member's withdrawals are re-checked under the users lock, serially.
   Object.freeze(['evt.payout-went-negative', 1, 2] as const),
   // B2-15b: payment's queue, worker only, four slots (task §9.10).

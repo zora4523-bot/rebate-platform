@@ -14,16 +14,24 @@ import {
   CLOCK,
   DB as DB_TOKEN,
   EVENT_BUS,
+  FIELD_CRYPTO,
   JOB_QUEUE,
   ROOT_LOGGER,
   registerEventConsumer,
   type Clock,
   type EventBus,
+  type FieldCrypto,
   type QueueRuntime,
   type ReceivedJob,
   type RootLogger,
 } from '../platform/index.ts';
 import { WENT_NEGATIVE_CONSUMER, createWentNegativeConsumer } from './application/went-negative.ts';
+import {
+  AUTO_PAYOUT_CONSUMER,
+  createAutoPayoutConsumer,
+  type AutoPayoutOptions,
+} from './application/auto-payout.ts';
+import { createPayoutExecute } from './application/payout-execute.ts';
 import { PAYOUT_LANDING_QUEUE, createLandingJob } from './jobs/landing-job.ts';
 import type { WithdrawalAttemptsPort } from './application/withdrawal-commands.ts';
 import type { WithdrawApplyOptions, WithdrawApplyService } from './application/withdraw-apply.ts';
@@ -92,7 +100,27 @@ export interface PayoutWorkerOptions {
   lockUsersForUpdate: WithdrawApplyOptions['lockUsersForUpdate'];
   /** payout_attempts reads; until B2-06 app.module hands in a port that reports none. */
   attempts: WithdrawalAttemptsPort;
+  /**
+   * B2-11c: the other modules' ports of the withdrawal.created consumer (content's configuration
+   * reader, risk's state / appeal readers, the risk facts reader with commission's and identity's
+   * ports, identity's adult check and the live blocklist check), built by app.module per process.
+   * Without it the consumer is not registered.
+   */
+  autoPayout?: (deps: {
+    db: Kysely<DB>;
+    clock: Clock;
+    crypto: FieldCrypto | undefined;
+  }) => AutoPayoutPorts;
 }
+
+/** What app.module supplies to the automatic payout decision (BR-WDR-30). */
+export type AutoPayoutPorts = Pick<
+  AutoPayoutOptions,
+  'config' | 'risk' | 'appeal' | 'facts' | 'adult' | 'blacklist'
+>;
+
+/** The automatic payout consumer's registration token (worker entry). */
+export const AUTO_PAYOUT_CONSUMER_TOKEN = Symbol('PAYOUT_AUTO_PAYOUT_CONSUMER');
 
 /**
  * A direct negative-balance recheck job (payout's transfer job, W9 member_blocked: payload exactly
@@ -153,6 +181,71 @@ export class PayoutModule {
     return {
       module: PayoutModule,
       providers: [
+        // B2-11c (BR-WDR-30): withdrawal.created → the automatic payout decision on queue
+        // evt.payout-auto-payout (registerEventConsumer: processed_events claim and the decision's
+        // effects in one transaction). Registration runs no statement.
+        {
+          provide: AUTO_PAYOUT_CONSUMER_TOKEN,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB_TOKEN, optional: true },
+            { token: JOB_QUEUE, optional: true },
+            { token: EVENT_BUS, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<DB>,
+            queue?: QueueRuntime,
+            eventBus?: EventBus,
+            crypto?: FieldCrypto,
+          ): boolean => {
+            if (
+              db === undefined ||
+              queue === undefined ||
+              eventBus === undefined ||
+              options.autoPayout === undefined
+            ) {
+              logger.info({ consumer: AUTO_PAYOUT_CONSUMER }, 'auto_payout_consumer_disabled');
+              return false;
+            }
+            const ports = options.autoPayout({ db, clock, crypto });
+            const child = logger.child({ module: 'payout' });
+            const ledger = createLedger({
+              clock,
+              eventBus,
+              balanceRecoveredHook: createBalanceRecoveredHook({ clock }),
+            });
+            const consumer = createAutoPayoutConsumer({
+              ...ports,
+              db,
+              logger: child,
+              clock,
+              ledger,
+              lockUsersForUpdate: options.lockUsersForUpdate,
+              attempts: options.attempts,
+              eventBus,
+              execute: createPayoutExecute({
+                config: ports.config,
+                risk: ports.risk,
+                appeal: ports.appeal,
+                ledger,
+                queue,
+                eventBus,
+                logger: child,
+              }),
+            });
+            registerEventConsumer(queue, {
+              consumer: AUTO_PAYOUT_CONSUMER,
+              db,
+              logger,
+              handler: (event, trx) => consumer.handle(event, trx),
+            });
+            return true;
+          },
+        },
         {
           provide: WENT_NEGATIVE_CONSUMER_TOKEN,
           inject: [

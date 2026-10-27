@@ -5,6 +5,7 @@ import type { DB as Database } from '@couli/db';
 import {
   ProductKeyUnderivable,
   deriveProductKey,
+  isAtLeastAge,
   orderKey,
   type UnionProductPayload,
 } from '@couli/domain';
@@ -216,6 +217,7 @@ import {
   createBalanceRecoveredHook,
   createPersonalDataCopyWithdrawalsReader,
   createPayoutAttemptsStore,
+  type AutoPayoutPorts,
   createWithdrawalInFlightReader,
   createWithdrawHoldsReader,
   createWithdrawRules,
@@ -2912,6 +2914,80 @@ function withdrawRuleOptions(
   };
 }
 
+/** The nil UUID: no device of the member (the live blocklist check then covers the rest). */
+const NO_DEVICE = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * B2-11c: the ports of payout's withdrawal.created consumer (BR-WDR-30) on the worker entry:
+ * content's configuration reader on the decision's transaction, risk's state and appeal readers,
+ * the BR-WDR-29 facts reader with commission's and identity's ports (as W1's snapshot), ⑩ the
+ * verified realname's birth date (BR-ID-26, 18 at the decision instant; no verified record → not
+ * adult; without the field keyring the check throws and the decision is retried), and ⑫ the live
+ * BR-WDR-29 ⑨ blacklist_hit: risk's blocklist match over the member's phone, id number, every
+ * device of the member and the snapshot payee HMAC.
+ */
+function autoPayoutPorts(deps: {
+  db: Kysely<Database>;
+  clock: Clock;
+  crypto: FieldCrypto | undefined;
+}): AutoPayoutPorts {
+  const { db, clock, crypto } = deps;
+  const realname = crypto === undefined ? null : createRealnameReader(crypto);
+  const blocklist = createBlocklistMatchReader();
+  return {
+    config: {
+      configValue: (appId, key, handle) =>
+        createContentReader({ db: handle, clock }).configValue(appId, key),
+    },
+    risk: createRiskStateBatchReader({ db }),
+    appeal: createAppealPrevStateReader(),
+    facts: createWithdrawRiskFactsReader({
+      shares: createBeneficiaryShareReader(),
+      payeeHistory: createPayeeBindingHistoryReader(),
+    }),
+    adult: {
+      async isAdult(handle, input) {
+        if (realname === null) throw new Error('payout: the adult check needs the field keyring');
+        const verified = await realname.verified(handle, {
+          app_id: input.appId,
+          user_id: input.userId,
+        });
+        return verified !== null && isAtLeastAge(verified.birth_date, 18, input.at);
+      },
+    },
+    blacklist: {
+      async hit(handle, input) {
+        const method =
+          input.payoutMethod === 'alipay' ||
+          input.payoutMethod === 'bank_card' ||
+          input.payoutMethod === 'wechat'
+            ? input.payoutMethod
+            : null;
+        const devices = await handle
+          .withSchema('app')
+          .selectFrom('devices')
+          .select('id')
+          .where('app_id', '=', input.appId)
+          .where('user_id', '=', input.userId)
+          .execute();
+        const now = clock.now();
+        for (const deviceId of [NO_DEVICE, ...devices.map((device) => device.id)]) {
+          const matched = await blocklist.read(handle, {
+            appId: input.appId,
+            userId: input.userId,
+            deviceId,
+            payeeHmac: input.payeeHmac,
+            payoutMethod: method,
+            now,
+          });
+          if (matched !== null) return true;
+        }
+        return false;
+      },
+    },
+  };
+}
+
 function payoutModule(): DynamicModule {
   return PayoutModule.forRoot({
     rules: {
@@ -3271,9 +3347,11 @@ export class AppModule {
               NotificationModule.forWorker({ taobaoReauthReader: needsTaobaoReauth }),
               // account.went_negative → the member's withdrawals re-checked under the locks
               // (B2-05e, BR-WDR-05 (a)); payout_attempts read through payout's own store (B2-06c).
+              // B2-11c (BR-WDR-30): withdrawal.created → the automatic payout decision.
               PayoutModule.forWorker({
                 lockUsersForUpdate,
                 attempts: createPayoutAttemptsStore(),
+                autoPayout: autoPayoutPorts,
               }),
               // Admin data exports (B1-34e, BR-ID-42): the export queue's generate / expire
               // handler over identity's batch users projection (decrypted and masked there) and

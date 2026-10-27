@@ -30,14 +30,37 @@
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports,
 // relative imports with `.ts`.
 import type { DB } from '@couli/db';
-import type { Kysely, Transaction } from 'kysely';
+import { accountingDate, chinaDayRange, chinaMonth, chinaMonthRange } from '@couli/domain';
+import { addFen, fenToJsonNumber, mulDivCeil, parseFen } from '@couli/money';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import type { ReceivedEvent } from '../../platform/index.ts';
 import type { AppealPrevStateReader, RiskStateBatchReader } from '../../risk/index.ts';
-import type { AutoPayoutDecision } from '../domain/auto-decision.ts';
-import type { PayoutBatchRejectReason, PayoutExecute, PayoutLeftReason } from './payout-execute.ts';
-import type { WithdrawRiskFactsReader } from './withdraw-risk-port.ts';
-import type { PayoutConfigPort } from './withdraw-rules.ts';
-import type { WithdrawalCommandsOptions } from './withdrawal-commands.ts';
+import {
+  computeAutoPayoutWarnValues,
+  decideAutoPayout,
+  type AutoPayoutConfig,
+  type AutoPayoutDecision,
+  type AutoPayoutRiskFlag,
+} from '../domain/auto-decision.ts';
+import { reviewDeadline } from '../domain/review-deadline.ts';
+import { commissionRateBp } from '../domain/risk-flags.ts';
+import { createWithdrawHoldsReader } from '../infra/withdraw-holds.ts';
+import {
+  PAYOUT_EXECUTE_CONFIG_KEYS,
+  PAYOUT_EXECUTE_DEFAULTS,
+  SYSTEM_AUTO_PAYOUT,
+  type PayoutBatchRejectReason,
+  type PayoutExecute,
+  type PayoutLeftReason,
+} from './payout-execute.ts';
+import { readReviewCalendars } from './withdraw-apply.ts';
+import type { WithdrawRiskFactsReader, WithdrawRiskSubject } from './withdraw-risk-port.ts';
+import { holdActive, type PayoutConfigPort } from './withdraw-rules.ts';
+import {
+  WithdrawalConflictError,
+  createWithdrawalCommands,
+  type WithdrawalCommandsOptions,
+} from './withdrawal-commands.ts';
 
 /** ⑩ identity's BR-ID-26 adult_at: the member is 18 or older at `at`. */
 export interface AutoPayoutAdultReader {
@@ -48,7 +71,13 @@ export interface AutoPayoutAdultReader {
 export interface AutoPayoutBlacklistReader {
   hit(
     handle: Kysely<DB>,
-    input: { appId: string; userId: string; payeeHmac: string },
+    input: {
+      appId: string;
+      userId: string;
+      payeeHmac: string;
+      /** The snapshot payout method: the blocklist dimension of the payee HMAC. */
+      payoutMethod: string;
+    },
   ): Promise<boolean>;
 }
 
@@ -88,7 +117,518 @@ export interface AutoPayoutConsumer {
   handle(event: ReceivedEvent, trx: Transaction<DB>): Promise<void>;
 }
 
+export const AUTO_PAYOUT_CONSUMER = 'payout-auto-payout';
+/** BR-WDR-24 / BR-WDR-30 告警: today's automatic total reached 80% of platform_daily_max_fen. */
+export const AUTO_PAYOUT_NEAR_CAP = 'auto_payout_daily_near_cap';
+/** BR-WDR-30 判定时点与并发: ⑦ and ⑨ are read under this one transaction-scoped advisory lock. */
+const DAILY_LOCK = 'auto_payout_daily';
+const PREFIX = 'withdraw.auto_payout.';
+const NOT_COUNTED: readonly string[] = ['REJECTED', 'FAILED'];
+const PENDING_REVIEW = 'PENDING_REVIEW';
+/** The alert line: total × 10000 ≥ max × 8000 (no rounding of 80% first). */
+const NEAR_CAP_BP = 8000n;
+const BP = 10000n;
+const HMS = /^\d{2}:\d{2}:\d{2}$/;
+
+/** The 08 defaults of the group (BR-WDR-30 细则 table; ① off until the owner switches it on). */
+export const AUTO_PAYOUT_DEFAULTS: AutoPayoutConfig = {
+  enabled: 'off',
+  max_amount_fen: 30_000n,
+  window_start: '09:00:00',
+  window_end: '22:59:59',
+  window_limit_enabled: 'off',
+  first_withdrawal_limit_enabled: 'off',
+  frozen_balance_policy: 'no_auto',
+  same_day_policy: 'no_auto',
+  payee_daily_max_count: 1,
+  payee_monthly_max_count: 2,
+  user_daily_max_count: 1,
+  user_monthly_max_count: 1,
+  warn: {
+    high_commission_rate_bp: 10000,
+    high_commission_order_ratio_bp: 10000,
+    invalid_ratio_bp: 10000,
+    withdraw_received_ratio_bp: 0,
+  },
+  platform_daily_max_fen: 200_000n,
+  risk_block_flags: [
+    'same_device_multi_account',
+    'had_negative',
+    'recon_diff',
+    'payee_prev_other_user',
+    'risk_calc_failed',
+  ],
+};
+
+type Parsed<T> = { ok: true; value: T } | { ok: false };
+
+function parseSwitch(value: unknown): Parsed<'on' | 'off'> {
+  if (value === true || value === 'on' || value === 'true') return { ok: true, value: 'on' };
+  if (value === false || value === 'off' || value === 'false') return { ok: true, value: 'off' };
+  return { ok: false };
+}
+
+function parseCount(value: unknown): Parsed<number> {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? { ok: true, value }
+    : { ok: false };
+}
+
+function parseBp(value: unknown): Parsed<number> {
+  const parsed = parseCount(value);
+  return parsed.ok && parsed.value <= 10_000 ? parsed : { ok: false };
+}
+
+function parseFenValue(value: unknown): Parsed<bigint> {
+  const parsed = parseCount(value);
+  return parsed.ok ? { ok: true, value: BigInt(parsed.value) } : { ok: false };
+}
+
+function parseHms(value: unknown): Parsed<string> {
+  return typeof value === 'string' && HMS.test(value) ? { ok: true, value } : { ok: false };
+}
+
+function parseNoAuto(value: unknown): Parsed<'no_auto'> {
+  return value === 'no_auto' ? { ok: true, value } : { ok: false };
+}
+
+function parseFlags(value: unknown): Parsed<readonly string[]> {
+  return Array.isArray(value) && value.every((code) => typeof code === 'string')
+    ? { ok: true, value: [...(value as string[])] }
+    : { ok: false };
+}
+
+/** The W1 snapshot; anything but an array of {code} (never computed) blocks as risk_calc_failed. */
+function riskFlagsOf(value: unknown): AutoPayoutRiskFlag[] {
+  if (!Array.isArray(value)) return [{ code: 'risk_calc_failed', value: null, threshold: null }];
+  const flags: AutoPayoutRiskFlag[] = [];
+  for (const item of value as unknown[]) {
+    const code = (item as { code?: unknown } | null)?.code;
+    if (typeof code !== 'string') {
+      return [{ code: 'risk_calc_failed', value: null, threshold: null }];
+    }
+    const flag = item as { value?: unknown; threshold?: unknown };
+    flags.push({ code, value: flag.value ?? null, threshold: flag.threshold ?? null });
+  }
+  return flags;
+}
+
+function withdrawalIdOf(event: ReceivedEvent): string {
+  const value = (event.payload as Record<string, unknown>)['withdrawal_id'];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error('payout: withdrawal.created without withdrawal_id');
+  }
+  return value;
+}
+
+function count(value: string | number | bigint | null | undefined): number {
+  return value === null || value === undefined ? 0 : Number(value);
+}
+
 export function createAutoPayoutConsumer(options: AutoPayoutOptions): AutoPayoutConsumer {
-  void options;
-  throw new Error('NotImplemented: createAutoPayoutConsumer');
+  const { db, logger, clock, ledger, config } = options;
+  const commands = createWithdrawalCommands(options);
+  const holds = createWithdrawHoldsReader();
+
+  /**
+   * The group withdraw.auto_payout.* on `trx`; absent or malformed keys take the 08 defaults
+   * (warned). rule_version: Σ of the keys' versions, so every save of any key raises it.
+   */
+  async function readConfig(
+    trx: Transaction<DB>,
+    appId: string,
+  ): Promise<{ config: AutoPayoutConfig; ruleVersion: number }> {
+    let ruleVersion = 0;
+    async function read<T>(name: string, parse: (v: unknown) => Parsed<T>, fallback: T) {
+      const row = await config.configValue(appId, `${PREFIX}${name}`, trx);
+      if (row === null) return fallback;
+      ruleVersion += row.version;
+      const parsed = parse(row.value);
+      if (parsed.ok) return parsed.value;
+      logger.warn({ app_id: appId, config_key: `${PREFIX}${name}` }, 'auto_payout_config_default');
+      return fallback;
+    }
+    const d = AUTO_PAYOUT_DEFAULTS;
+    const result: AutoPayoutConfig = {
+      enabled: await read('enabled', parseSwitch, d.enabled),
+      max_amount_fen: await read('max_amount_fen', parseFenValue, d.max_amount_fen),
+      window_start: await read('window_start', parseHms, d.window_start),
+      window_end: await read('window_end', parseHms, d.window_end),
+      window_limit_enabled: await read('window_limit_enabled', parseSwitch, d.window_limit_enabled),
+      first_withdrawal_limit_enabled: await read(
+        'first_withdrawal_limit_enabled',
+        parseSwitch,
+        d.first_withdrawal_limit_enabled,
+      ),
+      frozen_balance_policy: await read(
+        'frozen_balance_policy',
+        parseNoAuto,
+        d.frozen_balance_policy,
+      ),
+      same_day_policy: await read('same_day_policy', parseNoAuto, d.same_day_policy),
+      payee_daily_max_count: await read(
+        'payee_daily_max_count',
+        parseCount,
+        d.payee_daily_max_count,
+      ),
+      payee_monthly_max_count: await read(
+        'payee_monthly_max_count',
+        parseCount,
+        d.payee_monthly_max_count,
+      ),
+      user_daily_max_count: await read('user_daily_max_count', parseCount, d.user_daily_max_count),
+      user_monthly_max_count: await read(
+        'user_monthly_max_count',
+        parseCount,
+        d.user_monthly_max_count,
+      ),
+      warn: {
+        high_commission_rate_bp: await read(
+          'warn.high_commission_rate_bp',
+          parseBp,
+          d.warn.high_commission_rate_bp,
+        ),
+        high_commission_order_ratio_bp: await read(
+          'warn.high_commission_order_ratio_bp',
+          parseBp,
+          d.warn.high_commission_order_ratio_bp,
+        ),
+        invalid_ratio_bp: await read('warn.invalid_ratio_bp', parseBp, d.warn.invalid_ratio_bp),
+        withdraw_received_ratio_bp: await read(
+          'warn.withdraw_received_ratio_bp',
+          parseBp,
+          d.warn.withdraw_received_ratio_bp,
+        ),
+      },
+      platform_daily_max_fen: await read(
+        'platform_daily_max_fen',
+        parseFenValue,
+        d.platform_daily_max_fen,
+      ),
+      risk_block_flags: await read('risk_block_flags', parseFlags, d.risk_block_flags),
+    };
+    return { config: result, ruleVersion };
+  }
+
+  /** ⑪ payout.channel_enabled.<channel> (BR-WDR-32 defaults: only Alipay on). */
+  async function channelEnabled(
+    trx: Transaction<DB>,
+    appId: string,
+    channel: string,
+  ): Promise<boolean> {
+    if (channel !== 'alipay' && channel !== 'bank_card' && channel !== 'wechat') return false;
+    const key = PAYOUT_EXECUTE_CONFIG_KEYS.channelEnabled(channel);
+    const row = await config.configValue(appId, key, trx);
+    const fallback = PAYOUT_EXECUTE_DEFAULTS.channelEnabled[channel];
+    if (row === null) return fallback;
+    const parsed = parseSwitch(row.value);
+    if (parsed.ok) return parsed.value === 'on';
+    logger.warn({ app_id: appId, config_key: key }, 'auto_payout_config_default');
+    return fallback;
+  }
+
+  /** The decision of one withdrawal on `trx` (the claim, when any, is the caller's). */
+  async function decide(trx: Transaction<DB>, appId: string, id: string): Promise<void> {
+    const head = await trx
+      .withSchema('app')
+      .selectFrom('withdrawals')
+      .select(['user_id', 'review_mode', 'auto_decision'])
+      .where('app_id', '=', appId)
+      .where('id', '=', id)
+      .executeTakeFirst();
+    if (head === undefined) {
+      logger.warn({ app_id: appId, withdrawal_id: id }, 'auto_payout_withdrawal_missing');
+      return;
+    }
+    // Judged once: switch off at W1 (manual) or an earlier decision ends it.
+    if (head.review_mode !== null || head.auto_decision !== null) return;
+    const userId = head.user_id;
+    const selection = { appId, userIds: [userId] };
+    // BR-WDR-07 lock order, then the serialising lock of ⑦ / ⑨.
+    await options.lockUsersForUpdate(trx, selection);
+    const balances = await ledger.lockBalances(trx, selection);
+    await sql`SELECT pg_advisory_xact_lock(hashtext(${DAILY_LOCK})::bigint)`.execute(trx);
+    const row = await trx
+      .withSchema('app')
+      .selectFrom('withdrawals')
+      .select([
+        'id',
+        'user_id',
+        'amount_fen',
+        'status',
+        'row_version',
+        'review_mode',
+        'auto_decision',
+        'payee_hmac',
+        'payout_method',
+        'payout_channel',
+        'blocked_reason',
+        'risk_flags',
+        'created_at',
+      ])
+      .where('app_id', '=', appId)
+      .where('id', '=', id)
+      .executeTakeFirstOrThrow();
+    if (row.review_mode !== null || row.auto_decision !== null) return;
+
+    const now = clock.now();
+    const amount = row.amount_fen;
+    const createdAt = row.created_at;
+    const { config: group, ruleVersion } = await readConfig(trx, appId);
+    const own = balances.find((balance) => balance.user_id === userId);
+    const available = own === undefined ? 0n : own.available_fen;
+    const frozen = own === undefined ? 0n : own.frozen_fen;
+
+    // ⑤(a) / ⑬ BR-WDR-05: risk state (an expired freeze is over), appeal, holds.
+    const states = await options.risk.read(trx, selection);
+    const risk = states.get(userId) ?? { state: 'normal' as const, frozen_until: null };
+    const expired =
+      risk.state === 'frozen' &&
+      risk.frozen_until !== null &&
+      risk.frozen_until.getTime() <= now.getTime();
+    const riskState = expired ? 'normal' : risk.state;
+    const prev =
+      riskState === 'appealing' ? await options.appeal.read(trx, { appId, userId }) : null;
+    const activeHold = (await holds.read(trx, { appId, userId, deviceId: '' })).some((hold) =>
+      holdActive(hold, now),
+    );
+    const memberBlocked =
+      riskState === 'frozen' ||
+      riskState === 'banned' ||
+      (riskState === 'appealing' && (prev === 'frozen' || prev === 'banned')) ||
+      activeHold;
+
+    // ④ ⑥ ⑧ at t = created_at (BR-WDR-30 ⑧; ⑥ the day of created_at up to it).
+    const subject: WithdrawRiskSubject = {
+      appId,
+      userId,
+      withdrawalId: id,
+      amountFen: amount,
+      payeeHmac: row.payee_hmac,
+      now: createdAt,
+    };
+    const { facts } = options;
+    const firstWithdrawal = !(await facts.hasPaidWithdrawal(trx, subject));
+    const creditedToday = await facts.creditedToday(trx, subject);
+    const orders = await facts.selfOrders60d(trx, subject);
+    // The reader counts this withdrawal (created at t) unless it is no longer counted; it is
+    // counted exactly once either way (BR-WDR-29 ⑥ 含本单).
+    const withdrawnOthers = await facts.withdrawn30dFen(trx, subject);
+    const withdrawn = NOT_COUNTED.includes(row.status)
+      ? addFen(withdrawnOthers, amount)
+      : withdrawnOthers;
+    const received = await facts.received60dFen(trx, subject);
+    const warnActuals = computeAutoPayoutWarnValues(
+      {
+        orders_60d: orders.map((order) => ({
+          // An undefined rate (no base) is never above X.
+          commission_rate_bp:
+            order.est_commission_fen === null || order.commission_base_fen === null
+              ? -1
+              : (commissionRateBp(order.est_commission_fen, order.commission_base_fen) ?? -1),
+          invalid: order.invalid,
+        })),
+        withdrawn_30d_fen: withdrawn,
+        received_60d_fen: received,
+      },
+      group.warn,
+    );
+
+    // ⑦ ⑨ under the advisory lock: auto, still counted, reviewed in the current +08:00 day / month.
+    const day = chinaDayRange(accountingDate(now));
+    const month = chinaMonthRange(chinaMonth(now));
+    const dayStart = sql<Date>`${day.start}::timestamptz`;
+    const dayEnd = sql<Date>`${day.end}::timestamptz`;
+    const monthStart = sql<Date>`${month.start}::timestamptz`;
+    const monthEnd = sql<Date>`${month.end}::timestamptz`;
+    const counted = trx
+      .withSchema('app')
+      .selectFrom('withdrawals')
+      .where('app_id', '=', appId)
+      .where('review_mode', '=', 'auto')
+      .where('status', 'not in', [...NOT_COUNTED])
+      .where('id', '<>', id);
+    const byUser = await counted
+      .select((eb) => [
+        eb.fn
+          .count<string>('id')
+          .filterWhere('reviewed_at', '>=', dayStart)
+          .filterWhere('reviewed_at', '<', dayEnd)
+          .as('daily'),
+        eb.fn.count<string>('id').as('monthly'),
+      ])
+      .where('user_id', '=', userId)
+      .where('reviewed_at', '>=', monthStart)
+      .where('reviewed_at', '<', monthEnd)
+      .executeTakeFirstOrThrow();
+    const byPayee = await counted
+      .select((eb) => [
+        eb.fn
+          .count<string>('id')
+          .filterWhere('reviewed_at', '>=', dayStart)
+          .filterWhere('reviewed_at', '<', dayEnd)
+          .as('daily'),
+        eb.fn.count<string>('id').as('monthly'),
+      ])
+      .where('payee_hmac', '=', row.payee_hmac)
+      .where('reviewed_at', '>=', monthStart)
+      .where('reviewed_at', '<', monthEnd)
+      .executeTakeFirstOrThrow();
+    const platform = await counted
+      .select((eb) => eb.fn.coalesce(eb.fn.sum<string>('amount_fen'), sql<string>`0`).as('total'))
+      .where('reviewed_at', '>=', dayStart)
+      .where('reviewed_at', '<', dayEnd)
+      .executeTakeFirstOrThrow();
+    const platformToday = parseFen(platform.total);
+
+    const decision: AutoPayoutDecision = decideAutoPayout({
+      config: group,
+      amount_fen: amount,
+      created_at: createdAt,
+      first_withdrawal: firstWithdrawal,
+      active_hold: activeHold,
+      risk_state: riskState,
+      frozen_fen: frozen,
+      credited_today: creditedToday,
+      counts: {
+        payee_daily: count(byPayee.daily),
+        payee_monthly: count(byPayee.monthly),
+        user_daily: count(byUser.daily),
+        user_monthly: count(byUser.monthly),
+      },
+      warn_actuals: warnActuals,
+      platform_daily_auto_fen: platformToday,
+      adult: await options.adult.isAdult(trx, { appId, userId, at: now }),
+      channel_enabled: await channelEnabled(trx, appId, row.payout_channel),
+      risk_flags: riskFlagsOf(row.risk_flags),
+      blacklist_hit: await options.blacklist.hit(trx, {
+        appId,
+        userId,
+        payeeHmac: row.payee_hmac,
+        payoutMethod: row.payout_method,
+      }),
+      w2_guard_passed: !memberBlocked && available >= 0n && row.blocked_reason === null,
+    });
+    const record: AutoPayoutDecisionRecord = {
+      ...decision,
+      rule_version: ruleVersion,
+      decided_at: now.toISOString(),
+    };
+
+    /** auto_decision only (a human reviewed first: nothing else moves). */
+    async function writeDecisionOnly(value: AutoPayoutDecisionRecord): Promise<void> {
+      await trx
+        .withSchema('app')
+        .updateTable('withdrawals')
+        .set({
+          auto_decision: sql<
+            DB['withdrawals']['auto_decision']
+          >`CAST(${JSON.stringify(value)} AS jsonb)`,
+          updated_at: now,
+        })
+        .where('app_id', '=', appId)
+        .where('id', '=', id)
+        .execute();
+    }
+
+    /** review_mode, auto_decision and the BR-WDR-26 deadline from created_at. */
+    async function writeReview(mode: 'auto' | 'manual'): Promise<void> {
+      const deadline = reviewDeadline(
+        createdAt,
+        await readReviewCalendars({ config, logger }, trx, appId, createdAt),
+      );
+      await trx
+        .withSchema('app')
+        .updateTable('withdrawals')
+        .set({
+          review_mode: mode,
+          review_deadline: deadline,
+          auto_decision: sql<
+            DB['withdrawals']['auto_decision']
+          >`CAST(${JSON.stringify(record)} AS jsonb)`,
+          updated_at: now,
+        })
+        .where('app_id', '=', appId)
+        .where('id', '=', id)
+        .execute();
+    }
+
+    if (row.status !== PENDING_REVIEW) {
+      await writeDecisionOnly(record);
+      return;
+    }
+    if (decision.result === 'manual') {
+      await writeReview('manual');
+      return;
+    }
+    // System W2 through B2-05e (CAS status = PENDING_REVIEW at the row version read under the locks).
+    let approved = false;
+    try {
+      const result = await commands.approve(trx, {
+        appId,
+        withdrawalId: id,
+        expectedStatus: PENDING_REVIEW,
+        expectedRowVersion: row.row_version,
+        reviewerId: null,
+      });
+      approved = result.kind === 'changed';
+    } catch (error) {
+      if (!(error instanceof WithdrawalConflictError)) throw error;
+    }
+    if (!approved) {
+      await writeDecisionOnly(record);
+      return;
+    }
+    await writeReview('auto');
+    // BR-WDR-24: today's automatic total (this one included) at or above 80% of the cap.
+    // total × 10000 ≥ max × 8000 ⇔ total ≥ ⌈max × 8000 / 10000⌉ (total is whole fen).
+    const total = addFen(platformToday, amount);
+    const line = mulDivCeil(group.platform_daily_max_fen, NEAR_CAP_BP, BP);
+    if (total >= line) {
+      logger.warn(
+        {
+          app_id: appId,
+          withdrawal_id: id,
+          daily_auto_total_fen: fenToJsonNumber(total),
+          platform_daily_max_fen: fenToJsonNumber(group.platform_daily_max_fen),
+          near_cap_line_fen: fenToJsonNumber(line),
+        },
+        AUTO_PAYOUT_NEAR_CAP,
+      );
+    }
+    // W4 by the system: one kind=auto batch of this withdrawal (B2-06c); never retried.
+    const executed = await options.execute.executeBatch(trx, {
+      appId,
+      members: [id],
+      executorId: SYSTEM_AUTO_PAYOUT,
+      now,
+    });
+    let blocked: AutoPayoutExecuteBlocked | null = null;
+    if (executed.kind === 'rejected') {
+      blocked = executed.reason;
+    } else if (!executed.paying.includes(id)) {
+      blocked = executed.left.find((item) => item.id === id)?.reason ?? 'not_approved';
+    }
+    if (blocked !== null) await writeDecisionOnly({ ...record, execute_blocked: blocked });
+  }
+
+  return {
+    async handle(event, trx) {
+      await decide(trx, event.appId, withdrawalIdOf(event));
+    },
+    async consume(event) {
+      const id = withdrawalIdOf(event);
+      await db.transaction().execute(async (trx) => {
+        const claimed = await trx
+          .withSchema('app')
+          .insertInto('processed_events')
+          .values({ consumer: AUTO_PAYOUT_CONSUMER, event_id: event.eventId })
+          .onConflict((oc) => oc.columns(['consumer', 'event_id']).doNothing())
+          .returning('event_id')
+          .executeTakeFirst();
+        if (claimed === undefined) return;
+        await decide(trx, event.appId, id);
+      });
+    },
+  };
 }
