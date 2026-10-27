@@ -13,6 +13,12 @@ import { FUND_METRIC_NAMES, PENDING_METRIC, SCALAR_METRICS } from './kit.ts';
 const FUND_RULES = new URL('infra/monitoring/rules/couli-fund.yaml', ROOT);
 const BASE_RULES = new URL('infra/monitoring/rules/couli.yaml', ROOT);
 
+/** The two auto-payout daily gauges, also worker-exported (B1-01zzp, D10-393 ①(b)). */
+const AUTO_PAYOUT_METRIC_NAMES: readonly string[] = [
+  'couli_auto_payout_daily_total_fen',
+  'couli_auto_payout_daily_cap_fen',
+];
+
 interface Rule {
   readonly alert: string;
   readonly expr: string;
@@ -132,7 +138,8 @@ it('[AC-B1-01zzi#6] couli-fund.yaml 只读 worker 导出的五个资金指标：
   const all = rules(FUND_RULES);
   const named = all.flatMap((rule) => rule.expr.match(/\bcouli_[a-z0-9_]+/g) ?? []);
   expect(named.length).toBeGreaterThanOrEqual(5);
-  expect(named.filter((name) => !FUND_METRIC_NAMES.includes(name))).toEqual([]);
+  const allowed = [...FUND_METRIC_NAMES, ...AUTO_PAYOUT_METRIC_NAMES];
+  expect(named.filter((name) => !allowed.includes(name))).toEqual([]);
   for (const metric of FUND_METRIC_NAMES) {
     expect(named, `some rule reads ${metric}`).toContain(metric);
   }
