@@ -23,11 +23,12 @@
 //   number we have no order of on that channel in that app, is an anomaly receipt (BR-PAY-05 ④): the
 //   pay_anomalies row (once per channel trade number, evidence source recon and the bill date), its
 //   PAY_ANOMALY voucher (借 CASH_PAY:{pay_channel} / 贷 PAY_SUSPENSE) and the R4 pay_anomaly diff of the
-//   bill date (amounts as B2-15c's registration, D10-360: expected 0, actual and diff the received
-//   amount; dedupe key pay_anomaly:<id>, the same as B2-15c), all on one transaction under the
-//   order's business object lock. An anomaly already registered (by a notification, a query or an
-//   earlier run) is found and nothing more is booked or registered. A line whose state is not a
-//   success never counts as money received (BR-PAY-04 细则 state lists).
+//   bill date (amounts as B2-15c's registration, D10-358 ① / D10-360: expected 0, actual the
+//   received amount, diff = expected − actual = −received; dedupe key pay_anomaly:<id>, the same as
+//   B2-15c), all on one transaction under the order's business object lock. An anomaly already
+//   registered (by a notification, a query or an earlier run) is found and nothing more is booked
+//   or registered. A line whose state is not a success never counts as money received (BR-PAY-04
+//   细则 state lists).
 //   Orders and refunds are never moved, no receipt or refund voucher is written, no fulfilment is
 //   enqueued (更正经差错单处理; the three ways to end a diff — query again and settle by BR-PAY-04 /
 //   05, refund the anomaly receipt by BR-PAY-06, close after checking — have no operation in the
@@ -362,7 +363,7 @@ async function registerReconAnomaly(
       refId: anomaly.id,
       expectedFen: 0n,
       actualFen: anomaly.amount_fen,
-      diffFen: anomaly.amount_fen,
+      diffFen: subFen(0n, anomaly.amount_fen),
       dedupeKey: `pay_anomaly:${anomaly.id}`,
       resolution: null,
     });
