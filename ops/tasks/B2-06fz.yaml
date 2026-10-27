@@ -14,12 +14,14 @@ deps: [B2-06d, B2-06e]
 paths:
   - 'apps/api/src/modules/payout/**'
   - 'apps/api/src/modules/platform/queue/catalog.ts'
+  - 'apps/api/src/modules/platform/queue/worker-plan.ts'
   - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/payout/landing/**'
   - 'test/spec/payout/process/**'
   - 'test/spec/payout/query/**'
   - 'test/spec/platform/queue/contract.test.ts'
+  - 'test/spec/platform/queue-concurrency/**'
 impl: claude
 tester: claude-independent
 accept:
