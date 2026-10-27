@@ -28,7 +28,8 @@ it('[AC-F1-02zx#1] 资格天数是唯一的可改业务配置，整数范围 1�
 
 // B2-06bz (D10-244 ②、D10-296): the six keys stay contiguous, now followed directly by the eight
 // payout.* keys in this order (and nothing else), instead of ending the registry. B2-11z
-// (D10-368): the six risk.withdraw.* keys follow payout.* in this order, ending the tail.
+// (D10-368): the six risk.withdraw.* keys follow payout.* in this order. B2-11y (D10-373): the
+// seventeen withdraw.auto_payout.* keys follow risk.withdraw.* in this order, ending the tail.
 const PAYOUT_KEYS = [
   'payout.single_cap_fen',
   'payout.daily_cap_fen',
@@ -47,15 +48,34 @@ const RISK_WITHDRAW_KEYS = [
   'risk.withdraw.min_orders',
   'risk.withdraw.withdraw_received_ratio_bp',
 ];
+const AUTO_PAYOUT_KEYS = [
+  'withdraw.auto_payout.max_amount_fen',
+  'withdraw.auto_payout.window_start',
+  'withdraw.auto_payout.window_end',
+  'withdraw.auto_payout.window_limit_enabled',
+  'withdraw.auto_payout.first_withdrawal_limit_enabled',
+  'withdraw.auto_payout.frozen_balance_policy',
+  'withdraw.auto_payout.same_day_policy',
+  'withdraw.auto_payout.payee_daily_max_count',
+  'withdraw.auto_payout.payee_monthly_max_count',
+  'withdraw.auto_payout.user_daily_max_count',
+  'withdraw.auto_payout.user_monthly_max_count',
+  'withdraw.auto_payout.warn.high_commission_rate_bp',
+  'withdraw.auto_payout.warn.high_commission_order_ratio_bp',
+  'withdraw.auto_payout.warn.invalid_ratio_bp',
+  'withdraw.auto_payout.warn.withdraw_received_ratio_bp',
+  'withdraw.auto_payout.platform_daily_max_fen',
+  'withdraw.auto_payout.risk_block_flags',
+];
 
-it('[AC-F1-02zx#2] 六项邀请奖励配置连续位于 growth 组，资格天数紧接 IP 窗口，其后紧接 payout.* 八项与 risk.withdraw.* 六项', () => {
+it('[AC-F1-02zx#2] 六项邀请奖励配置连续位于 growth 组，资格天数紧接 IP 窗口，其后紧接 payout.* 八项、risk.withdraw.* 六项与 withdraw.auto_payout.* 十七项', () => {
   const registry = configRegistry();
   expect(
     registry
       .filter((entry) => entry.key.startsWith('growth.invite_reward.'))
       .map((entry) => entry.key),
   ).toStrictEqual(DEFAULTS.map((row) => row.key));
-  const tail = [...PAYOUT_KEYS, ...RISK_WITHDRAW_KEYS];
+  const tail = [...PAYOUT_KEYS, ...RISK_WITHDRAW_KEYS, ...AUTO_PAYOUT_KEYS];
   const end = registry.length - tail.length;
   expect(registry.slice(end).map((entry) => entry.key)).toStrictEqual(tail);
   expect(registry.slice(end - 6, end).map((entry) => entry.key)).toStrictEqual(

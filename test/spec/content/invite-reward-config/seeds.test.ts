@@ -13,7 +13,8 @@ const ELIGIBILITY = { key: `${PREFIX}eligibility_days`, value: 30 };
 // B2-06bz (D10-244 ②、D10-296): the eight payout.* seed rows follow eligibility_days, in
 // registration order, and nothing else (values are not this test's concern; each must fit its spec,
 // checked below with the other extra rows). B2-11z (D10-368): the six risk.withdraw.* rows follow
-// payout.* in registration order, under the same checks.
+// payout.* in registration order, under the same checks. B2-11y (D10-373): the seventeen
+// withdraw.auto_payout.* rows follow risk.withdraw.* in registration order, under the same checks.
 const PAYOUT_KEYS = [
   'payout.single_cap_fen',
   'payout.daily_cap_fen',
@@ -31,6 +32,25 @@ const RISK_WITHDRAW_KEYS = [
   'risk.withdraw.high_commission_ratio_bp',
   'risk.withdraw.min_orders',
   'risk.withdraw.withdraw_received_ratio_bp',
+];
+const AUTO_PAYOUT_KEYS = [
+  'withdraw.auto_payout.max_amount_fen',
+  'withdraw.auto_payout.window_start',
+  'withdraw.auto_payout.window_end',
+  'withdraw.auto_payout.window_limit_enabled',
+  'withdraw.auto_payout.first_withdrawal_limit_enabled',
+  'withdraw.auto_payout.frozen_balance_policy',
+  'withdraw.auto_payout.same_day_policy',
+  'withdraw.auto_payout.payee_daily_max_count',
+  'withdraw.auto_payout.payee_monthly_max_count',
+  'withdraw.auto_payout.user_daily_max_count',
+  'withdraw.auto_payout.user_monthly_max_count',
+  'withdraw.auto_payout.warn.high_commission_rate_bp',
+  'withdraw.auto_payout.warn.high_commission_order_ratio_bp',
+  'withdraw.auto_payout.warn.invalid_ratio_bp',
+  'withdraw.auto_payout.warn.withdraw_received_ratio_bp',
+  'withdraw.auto_payout.platform_daily_max_fen',
+  'withdraw.auto_payout.risk_block_flags',
 ];
 
 it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；重跑不覆盖', () => {
@@ -56,6 +76,7 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
     ELIGIBILITY.key,
     ...PAYOUT_KEYS,
     ...RISK_WITHDRAW_KEYS,
+    ...AUTO_PAYOUT_KEYS,
   ]);
   for (const row of CONFIGS) {
     const spec = configItemSpecOf(row.key);
