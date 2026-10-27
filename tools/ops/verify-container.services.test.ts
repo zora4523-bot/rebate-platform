@@ -71,7 +71,7 @@ fs.appendFileSync(logFile, JSON.stringify({ args, env }) + '\n');
 const failures = (process.env.STUB_DOCKER_FAIL || '').split(',');
 const aboutRedis = args.some((a) => a.includes('-redis-'));
 function answer(text, code) {
-  if (text !== '') process.stdout.write(text + '\n');
+  if (text !== '') fs.writeSync(1, text + '\n'); // CT-06zxf (D10-375): written before the exit
   process.exit(code);
 }
 if (args[0] === 'version') answer('28.0.1', 0);
@@ -627,7 +627,7 @@ it(
     // The projects come from the trusted table, in its order; nothing else is handed over.
     expect(browser?.env).toEqual({
       PROP_SEED: '20261001',
-      VERIFY_TIMEOUT_SECS: '2400',
+      VERIFY_TIMEOUT_SECS: '3600',
       BROWSER_PROJECTS:
         'spec-browser:test:vitest.browser.config.ts build-smoke:test:vitest.build-smoke.config.ts',
     });
@@ -847,7 +847,7 @@ const dockerLog = process.env.STUB_DOCKER_LOG;
 const after = fs.existsSync(dockerLog) && fs.readFileSync(dockerLog, 'utf8').includes('couli-verify-entrypoint');
 const late = (mode) => after && fail.includes(mode);
 const out = (text, code) => {
-  if (text !== '') process.stdout.write(text + '\n');
+  if (text !== '') fs.writeSync(1, text + '\n'); // CT-06zxf (D10-375): written before the exit
   process.exit(code);
 };
 const real = (cmd, rest) => {
@@ -941,7 +941,7 @@ const dockerLog = process.env.STUB_DOCKER_LOG;
 const after = fs.existsSync(dockerLog) && fs.readFileSync(dockerLog, 'utf8').includes('couli-verify-entrypoint');
 const late = (mode) => after && fail.includes(mode);
 const out = (text, code) => {
-  if (text !== '') process.stdout.write(text + '\n');
+  if (text !== '') fs.writeSync(1, text + '\n'); // CT-06zxf (D10-375): written before the exit
   process.exit(code);
 };
 if (name === 'findmnt') {
@@ -1401,6 +1401,22 @@ it(
       expect(entrypointRun(res.calls)).toBeUndefined();
       expect(existsSync(join(runs, id, 'verify', '1', 'result.json'))).toBe(false);
     }
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '[CT-06zxf] host services: a rule that does not block writes the nft listing it received to the run log (D10-375)',
+  () => {
+    const res = hostRun(['V4-13', '--worktree', workspace('host-fw-listing')], {
+      STUB_SUDO_FAIL: 'firewall-accept',
+    });
+    expect(res.status).toBe(2);
+    const log = readFileSync(join(runs, 'V4-13', 'verify', '1', 'log.txt'), 'utf8');
+    expect(log).toContain('nft list chain inet couli_isolation output, as received:');
+    expect(log).toContain(
+      'meta skuid 4242 counter packets 0 bytes 0 accept comment "couli-svc: no egress"',
+    );
   },
   CLI_TIMEOUT,
 );

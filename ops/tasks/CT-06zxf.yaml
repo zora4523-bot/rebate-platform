@@ -1,0 +1,26 @@
+id: CT-06zxf
+repo: rebate-platform
+title: CT-06zxf：verify-container 默认时限 2400 → 3600 秒（D10-372）；services.test 桩改同步写出、隔离检查失败把 nft 列表写进 log（D10-375）
+type: guard-change
+# 2026-10-27 入账（ops 线，编排裁定 D10-372、D10-375，两项改同两个文件故合一单）。① D10-372：测试机 10-23～26 共 164 次完整
+# verify，exit 0 的 29.4–39.8 分钟，9 次 exit 124 全停在 40.1–40.5 分钟（旧默认 2400 秒）；默认改 3600，上限不变（3600）。
+# ② D10-375：#1594 run 40150019212 的 services.test「host services: pnpm verify gets a fresh sandboxed…」红在隔离检查读到的
+# `nft list chain` 文本不合正则（桩输出固定、本应命中）；桩 out()/answer() 由 process.stdout.write 改 fs.writeSync(1, …) 再退出，
+# 排除写出与退出竞态这一可能原因（Linux 管道本已同步，评审 S2-2，未必是根因）；verify-container.sh 隔离规则不合时把收到的 nft
+# 列表（只有防火墙规则）写进 log.txt，下次再红即可定因。
+# 不放宽任何断言、不改锁与超时（CLI_TIMEOUT 不动）；时限的两处钉值测试随默认值同步。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ops/verify-container.sh'
+  - 'tools/ops/verify-container.test.ts'
+  - 'tools/ops/verify-container.services.test.ts'
+  - 'tools/ops/README.md'
+  - 'ops/tasks/CT-06zxf.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 1695

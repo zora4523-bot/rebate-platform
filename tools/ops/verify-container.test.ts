@@ -135,7 +135,7 @@ it(
 );
 
 it(
-  '[CT-06v] the time limit defaults to 2400 s and may be raised up to 3600 s, not beyond',
+  '[CT-06v] the time limit defaults to 3600 s (CT-06zxf) and may not go beyond 3600 s',
   () => {
     const ok = fixture('limit', 'true');
     const over = run(['V1-01', '--worktree', ok, '--dry-run'], {
@@ -151,10 +151,10 @@ it(
         run(['V1-01', '--worktree', ok, '--dry-run'], { COULI_VERIFY_TIMEOUT_SECS: value }).stderr,
       ).not.toContain('capped at');
     }
-    // The script's own numbers: default 2400, cap 3600 (the switch may lower or raise up to the cap).
+    // The script's own numbers: default 3600 (CT-06zxf, D10-372), cap 3600 (the switch may lower it).
     const text = readFileSync(SCRIPT, 'utf8');
     expect(text).toContain('MAX_TIMEOUT_SECS=3600');
-    expect(text).toContain('DEFAULT_TIMEOUT_SECS=2400');
+    expect(text).toContain('DEFAULT_TIMEOUT_SECS=3600');
     expect(text).toContain('TIMEOUT_SECS="${COULI_VERIFY_TIMEOUT_SECS:-$DEFAULT_TIMEOUT_SECS}"');
     expect(existsSync(join(runs, 'V1-01'))).toBe(false);
   },
