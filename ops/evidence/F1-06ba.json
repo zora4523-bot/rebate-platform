@@ -1,0 +1,37 @@
+{
+  "risk_note": "RV2 by path (apps/api/src/modules/admin/**), test-only change done by the ops lane (orchestrator follow-up 10-27 15:4x, as D10-380): admin.module.test.ts gives the one case [AC-F1-06b-WIRE#1] an explicit 30 s timeout; the case builds and initialises the whole api app (0.9-1.8 s on green CI) and hit the 5 s default once on a loaded runner (#1698 first verify-unit). Assertions, case names and the other case unchanged; no production code, money, attribution, ledger, migration or contract path touched. Ledger tester: none (no rule tests, as B1-04ca / CT-06zz), so no red run.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "review_type": "money",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "note": "round 1 pass, 0 findings"
+    }
+  ],
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "b32564c83f75b1c2e835ccb251fb85c9acfabc42"
+  },
+  "task": "F1-06ba",
+  "spec_commit": "5729a2e19f489eefb6859abc4567baa5e5341dd6",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "red_tests": [],
+  "runs": [],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "b32564c83f75b1c2e835ccb251fb85c9acfabc42",
+    "test/spec": "d74493b13975f2d9b3ee8dc4ba128c5a0c19c786",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}
