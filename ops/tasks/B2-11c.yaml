@@ -19,6 +19,7 @@ paths:
   - 'apps/api/src/app.module.ts'
   - 'apps/api/src/modules/platform/queue/catalog.ts'
   - 'apps/api/src/modules/platform/events/types.ts'
+  - 'apps/api/src/modules/platform/queue/worker-plan.ts'
 test_paths:
   - 'test/spec/payout/auto-payout/**'
   - 'test/properties/domain/payout/**'
