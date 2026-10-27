@@ -1,8 +1,8 @@
 // B2-11b: the auto-payout decision of 规划/08 BR-WDR-30 ①–⑬ as a pure function over normalised
 // input (money as bigint fen, ratios as integer bp). No clock and no I/O: the caller passes the
 // configuration group withdraw.auto_payout.*, created_at, the counts and sums it read under the
-// BR-WDR-30 locks, the risk_flags snapshot of W1 and the three ⑧ actual values it computed with the
-// BR-WDR-29 ④⑤⑥ functions; the engine only compares.
+// BR-WDR-30 locks, the risk_flags snapshot of W1 and the three ⑧ actual values it computed with
+// computeAutoPayoutWarnValues; the engine only compares.
 //   every condition is checked (no short-circuit); failed_conditions lists the codes in the order
 //   ①–⑬; ① enabled=off → exactly ['disabled'];
 //   ② amount_fen ≤ max_amount_fen (equality passes; 0 → never auto);
@@ -11,10 +11,16 @@
 //   ⑦ existing count + 1 ≤ max (0 = unlimited);
 //   ⑧ strictly '>'; a threshold of 0 disables its item; a null actual value (denominator 0) does
 //     not hit high commission / invalid ratio and hits withdraw_received;
-//   ⑨ existing platform sum + amount_fen ≤ platform_daily_max_fen;
+//   ⑨ existing platform sum + amount_fen ≤ platform_daily_max_fen (0 → never auto, D10-377);
 //   ⑫ risk_flag:<code> for every snapshot code in risk_block_flags plus the real-time
 //     blacklist_hit, in the BR-WDR-29 label order whatever the input order.
-// Not implemented yet (rule-test stage): the body only throws.
+// computeAutoPayoutWarnValues derives the three ⑧ actual values from the rows the caller read
+// for t = created_at (BR-WDR-29 ④⑤⑥ windows and numerators / denominators, BR-WDR-30 ⑧
+// differences): a per-order rate counts only when > X; no minimum order or invalid count; a
+// denominator of 0 gives null; Y, Z, W do not change the values. A ratio is rounded up to whole
+// bp, so that the engine's integer '>' gives the same answer as the exact numerator × 10000 /
+// denominator '>' of the rule.
+// Not implemented yet (rule-test stage): the bodies only throw.
 
 export type AutoPayoutSwitch = 'off' | 'on';
 
@@ -61,6 +67,30 @@ export interface AutoPayoutWarnValues {
   high_commission_order_ratio_bp: number | null;
   invalid_ratio_bp: number | null;
   withdraw_received_ratio_bp: number | null;
+}
+
+/** ⑧ one self-purchase (buy_type=self), attributed sub-order paid in [t − 60×24h, t]. */
+export interface AutoPayoutWarnOrder {
+  /** BR-WDR-29 ⑤: estimated commission × 10000 / commission base, floored. */
+  readonly commission_rate_bp: number;
+  /** BR-WDR-29 ④: rebate_status ∈ {VOID, CLAWED_BACK} or a SUCCEEDED order_rights. */
+  readonly invalid: boolean;
+}
+
+/** ⑧ what the caller read for t = created_at. */
+export interface AutoPayoutWarnSource {
+  /** Denominator of the high-commission and invalid ratios (BR-WDR-29 ④⑤). */
+  readonly orders_60d: readonly AutoPayoutWarnOrder[];
+  /**
+   * BR-WDR-29 ⑥ numerator: Σ amount_fen of the member's withdrawals created in [t − 30×24h, t],
+   * status ∉ {REJECTED, FAILED}, this one included.
+   */
+  readonly withdrawn_30d_fen: bigint;
+  /**
+   * BR-WDR-29 ⑥ denominator: the member's rebate shares on sub-orders received in [t − 60×24h, t]
+   * (WAITING: current estimate; CREDITED: credited net).
+   */
+  readonly received_60d_fen: bigint;
 }
 
 /** ⑦: auto-paid withdrawals already counted today / this month, this one excluded. */
@@ -133,4 +163,13 @@ export interface AutoPayoutDecision {
 export function decideAutoPayout(input: AutoPayoutInput): AutoPayoutDecision {
   void input;
   throw new Error('NotImplemented: decideAutoPayout');
+}
+
+export function computeAutoPayoutWarnValues(
+  source: AutoPayoutWarnSource,
+  warn: AutoPayoutConfig['warn'],
+): AutoPayoutWarnValues {
+  void source;
+  void warn;
+  throw new Error('NotImplemented: computeAutoPayoutWarnValues');
 }
