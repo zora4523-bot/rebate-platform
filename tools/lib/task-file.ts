@@ -84,19 +84,31 @@ export type RedExemptDeclaration = {
 
 /** One declared literal rename (CT-06zxc, D10-347): every `from` of a base becomes `to`. */
 export type RenameDeclaration = {
-  /** The literal text the base has (non-empty, one line, not a pattern). */
+  /** The string literal the base has, quotes included (RENAME_LITERAL; not a pattern). */
   from: string;
-  /** What it became (non-empty, one line, different from `from`). */
+  /** The string literal it became, with the same quote, different from `from`. */
   to: string;
 };
 
 /**
  * The most renames a task may declare (CT-06zxc). A rename is a whole ledger PR's worth of trust
  * (every frozen test it touches is compared after it), so a task names a handful; 20 is far above
- * the three of B1-03w and still readable by the rule-test reviewer. The section counts towards the
- * task file's line limit (tools/ops/task.ts, two lines per entry), which binds first anyway.
+ * the three of B1-03w and still readable by the rule-test reviewer. Like red_exempt, the section is
+ * left out of the task file's line limit (tools/ops/task.ts countedLines; CT-06zxc review r1 S2-2),
+ * so it has its own, by entries.
  */
 export const RENAMES_MAX = 20;
+
+/** The least a rename's string content (without its quotes) may hold (CT-06zxc review r1 S2-1). */
+export const RENAME_CONTENT_MIN = 3;
+
+/**
+ * One whole quoted string literal (CT-06zxc review r1 S2-1): the same quote `'`, `"` or a backtick
+ * at both ends, at least RENAME_CONTENT_MIN characters between them, none of them a quote, a
+ * backslash or a line break, and no `${`. So a rename can only swap one string literal for another
+ * (a job name), never an assertion (`toBe(100)`), a bare word, blanks or a template expression.
+ */
+const RENAME_LITERAL = /^(['"`])([^'"`\\\r\n]*)\1$/;
 
 /** The least a red-exemption reason may say (CT-06r: a non-empty reason of ≥ 10 characters). */
 export const RED_EXEMPT_REASON_MIN = 10;
@@ -256,10 +268,27 @@ function redExemptList(value: unknown, problems: string[]): RedExemptDeclaration
   return out;
 }
 
+/** Why `value` is not one whole quoted string literal (RENAME_LITERAL), or null. */
+function renameLiteralProblem(value: string): string | null {
+  const m = RENAME_LITERAL.exec(value);
+  if (m === null) {
+    return 'must be one whole quoted string literal (the same quote \', " or ` at both ends; no quote, backslash or line break inside)';
+  }
+  const content = m[2] ?? '';
+  if (content.includes('${'))
+    return 'must not contain "${" (a template expression is not a literal)';
+  if (content.length < RENAME_CONTENT_MIN) {
+    return `must hold at least ${RENAME_CONTENT_MIN} characters between its quotes`;
+  }
+  return null;
+}
+
 /**
- * The `renames` list (CT-06zxc, D10-347): a list of mappings with exactly the keys `from` / `to`,
- * each a non-empty string without a line break, `from` ≠ `to`, no `from` named twice, at most
- * RENAMES_MAX entries. The values are literal text: red-check never reads them as a pattern.
+ * The `renames` list (CT-06zxc, D10-347; review r1 S2-1): a list of mappings with exactly the
+ * keys `from` / `to`, each one whole quoted string literal (RENAME_LITERAL, at least
+ * RENAME_CONTENT_MIN characters inside), both with the same quote, `from` ≠ `to`, no `from` named
+ * twice, at most RENAMES_MAX entries. The values are literal text: red-check never reads them as
+ * a pattern.
  */
 function renameList(value: unknown, problems: string[]): RenameDeclaration[] {
   if (!Array.isArray(value)) {
@@ -285,20 +314,27 @@ function renameList(value: unknown, problems: string[]): RenameDeclaration[] {
       if (typeof v !== 'string' || v === '') {
         problems.push(`renames[${index}].${key}: must be a non-empty string`);
         ok = false;
-      } else if (/[\r\n]/.test(v)) {
-        problems.push(`renames[${index}].${key}: must be one line (no line break)`);
+        continue;
+      }
+      const problem = renameLiteralProblem(v);
+      if (problem !== null) {
+        problems.push(`renames[${index}].${key}: ${JSON.stringify(v)} ${problem}`);
         ok = false;
       }
     }
     if (!ok) return;
     const from = item['from'] as string;
     const to = item['to'] as string;
+    if (from[0] !== to[0]) {
+      problems.push(`renames[${index}]: from and to must use the same quote`);
+      return;
+    }
     if (from === to) {
-      problems.push(`renames[${index}]: from and to are the same ("${from}")`);
+      problems.push(`renames[${index}]: from and to are the same (${from})`);
       return;
     }
     if (seen.has(from)) {
-      problems.push(`renames[${index}].from: "${from}" is renamed twice`);
+      problems.push(`renames[${index}].from: ${from} is renamed twice`);
       return;
     }
     seen.add(from);

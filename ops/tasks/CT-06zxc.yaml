@@ -9,6 +9,8 @@ type: guard-change
 # renames 逐对替换再与新内容比较——替换后逐字相同的文件视为未改，其中用例按「未改用例」处理、台账 red_exempt 照常生效；
 # 替换后仍有差异的照现规则（按替换后的基线逐用例判）。「视为未改」即剔出应跑 / 应判清单（--print-expected 不列、evidence-check 的应跑
 # 清单同规则剔除），notes 列出命中的改名与次数供规则测试评审核对。附测试：只改名通过、夹带别的改动仍拦、无 renames 行为不变。
+# 评审 r1 后收紧：from / to 只许完整带引号字符串字面量（同一种引号，去引号 ≥3 字符，内部无引号 / 反斜杠 / ${）；有命中时证据须带
+# spec_test_review.renames_confirmed（命中的改名对与被剔出的文件，须与算出的一致）；renames 段不计 40 行（≤20 条）。
 # 用 B1-03w 红跑报告（red/3）回放：带 renames 时 7 个冻结文件剔出、0 问题；不带时与原结果逐字相同。之后 W1 重跑 B1-03w land。
 refs: []
 refs_hash: {}
@@ -24,6 +26,8 @@ paths:
   - 'tools/guard/guard-cli.test.ts'
   - 'tools/ci/evidence-check.ts'
   - 'tools/ci/evidence-check.test.ts'
+  - 'tools/ops/task.ts'
+  - 'tools/ops/task.test.ts'
   - 'ops/tasks/CT-06zxc.yaml'
 impl: claude
 tester: none

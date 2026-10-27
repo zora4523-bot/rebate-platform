@@ -291,6 +291,32 @@ export function renamedOnlyFiles(
   return out;
 }
 
+/**
+ * The declared renames that hit the base of at least one of `files` (CT-06zxc review r1 S2-1), in
+ * ledger order, each applied after the ones before it as applyRenames does. evidence-check wants
+ * the rule-test reviewer to confirm exactly these (and the files left out) when there is any.
+ */
+export function renamesHit(
+  files: readonly string[],
+  read: Pick<BaselineReader, 'base'>,
+  renames: readonly RenameDeclaration[],
+): RenameDeclaration[] {
+  if (renames.length === 0) return [];
+  const hit = new Set<number>();
+  for (const file of new Set(files)) {
+    let text = read.base(file);
+    if (text === null) continue;
+    renames.forEach(({ from, to }, index) => {
+      if (from === '' || text === null) return;
+      const parts = text.split(from);
+      if (parts.length === 1) return;
+      hit.add(index);
+      text = parts.join(to);
+    });
+  }
+  return renames.filter((_, index) => hit.has(index));
+}
+
 /** The note that says a file was left out of the expected list (CT-06zxc). */
 export function renamedOnlyNote(r: RenamedOnly): string {
   return `${r.file}: unchanged after the ledger's renames (D10-347: ${r.applied.join(', ')}), left out of the expected list (not run, not judged); the rule-test reviewer confirms the renames are literal follow-ups only`;

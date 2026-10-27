@@ -2,7 +2,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { RENAMES_MAX, listTaskIds, loadTask, parseTaskFile } from './task-file.ts';
+import {
+  RENAME_CONTENT_MIN,
+  RENAMES_MAX,
+  listTaskIds,
+  loadTask,
+  parseTaskFile,
+} from './task-file.ts';
 
 const EXAMPLE = [
   'id: B2-02a',
@@ -178,20 +184,31 @@ describe('parseTaskFile', () => {
     );
   });
 
-  it('[CT-06zxc] renames: literal from / to pairs, optional, every malformed entry refused', () => {
+  it('[CT-06zxc] renames: whole quoted string literals, optional, every malformed entry refused', () => {
     const declared = (entries: string): string =>
       EXAMPLE.replace('tester: claude', `tester: claude\nrenames:${entries}`);
-    const two = declared(
-      "\n  - from: \"'freeze-expiry'\"\n    to: \"'freeze_expiry'\"\n  - from: daily-alerts\n    to: 'daily_alerts'",
+    const pair = (from: string, to: string): string => `\n  - from: ${from}\n    to: ${to}`;
+    // The three pairs of B1-03w, as the ledger writes them.
+    const b103w = declared(
+      pair(`"'freeze-expiry'"`, `"'freeze_expiry'"`) +
+        pair(`"'daily-alerts'"`, `"'daily_alerts'"`) +
+        pair(`"'snapshot-retry'"`, `"'snapshot_retry'"`),
     );
-    expect(parseTaskFile(two, 'B2-02a.yaml').renames).toEqual([
+    expect(parseTaskFile(b103w, 'B2-02a.yaml').renames).toEqual([
       { from: "'freeze-expiry'", to: "'freeze_expiry'" },
-      { from: 'daily-alerts', to: 'daily_alerts' },
+      { from: "'daily-alerts'", to: "'daily_alerts'" },
+      { from: "'snapshot-retry'", to: "'snapshot_retry'" },
     ]);
-    // Characters a pattern would read specially stay literal text.
+    // Double quotes and backticks, characters a pattern would read specially stay literal text.
     expect(
-      parseTaskFile(declared("\n  - from: 'a.*(b)'\n    to: '$1'"), 'B2-02a.yaml').renames,
-    ).toEqual([{ from: 'a.*(b)', to: '$1' }]);
+      parseTaskFile(
+        declared(pair(`'"a.*(b)"'`, `'"$1-x"'`) + pair("'`job-a`'", "'`job_a`'")),
+        'B2-02a.yaml',
+      ).renames,
+    ).toEqual([
+      { from: '"a.*(b)"', to: '"$1-x"' },
+      { from: '`job-a`', to: '`job_a`' },
+    ]);
     // An older ledger without the field, an empty list: [].
     expect(parseTaskFile(EXAMPLE, 'B2-02a.yaml').renames).toEqual([]);
     expect(parseTaskFile(declared(' []'), 'B2-02a.yaml').renames).toEqual([]);
@@ -203,36 +220,63 @@ describe('parseTaskFile', () => {
       'renames[0]: must be a mapping (from / to)',
     );
     expect(
-      messageOf(declared('\n  - from: a\n    to: b\n    regex: true'), 'B2-02a.yaml'),
+      messageOf(declared(`${pair(`"'aaa'"`, `"'bbb'"`)}\n    regex: true`), 'B2-02a.yaml'),
     ).toContain('renames[0].regex: unknown field');
-    expect(messageOf(declared('\n  - from: a'), 'B2-02a.yaml')).toContain(
+    expect(messageOf(declared(`\n  - from: "'aaa'"`), 'B2-02a.yaml')).toContain(
       'renames[0].to: must be a non-empty string',
     );
-    expect(messageOf(declared("\n  - from: ''\n    to: b"), 'B2-02a.yaml')).toContain(
+    expect(messageOf(declared(pair("''", `"'bbb'"`)), 'B2-02a.yaml')).toContain(
       'renames[0].from: must be a non-empty string',
     );
-    expect(messageOf(declared('\n  - from: 1\n    to: b'), 'B2-02a.yaml')).toContain(
+    expect(messageOf(declared(pair('1', `"'bbb'"`)), 'B2-02a.yaml')).toContain(
       'renames[0].from: must be a non-empty string',
     );
-    // A line break on either side.
-    expect(messageOf(declared('\n  - from: "a\\nb"\n    to: c'), 'B2-02a.yaml')).toContain(
-      'renames[0].from: must be one line (no line break)',
+    // Not one whole string literal: code, a bare word, a blank, an unquoted or half-quoted text.
+    const literal = 'must be one whole quoted string literal';
+    for (const bad of [
+      "'toBe(100)'",
+      "' '",
+      'freeze-expiry',
+      `"'freeze-expiry"`,
+      `"'freeze-expiry\\""`,
+      `"'abc' + 'def'"`,
+      `"'a\\\\bc'"`,
+      `"'ab\\nc'"`,
+      `"'abc\\""`,
+    ]) {
+      expect(messageOf(declared(pair(bad, `"'bbb'"`)), 'B2-02a.yaml'), bad).toContain(
+        `renames[0].from: `,
+      );
+    }
+    expect(messageOf(declared(pair("'toBe(100)'", "'toBe(0)'")), 'B2-02a.yaml')).toContain(
+      `renames[0].from: "toBe(100)" ${literal}`,
     );
-    expect(messageOf(declared('\n  - from: a\n    to: "b\\rc"'), 'B2-02a.yaml')).toContain(
-      'renames[0].to: must be one line (no line break)',
+    expect(messageOf(declared(pair("' '", `"'bbb'"`)), 'B2-02a.yaml')).toContain(
+      `renames[0].from: " " ${literal}`,
     );
-    // from = to, the same from twice.
-    expect(messageOf(declared('\n  - from: a\n    to: a'), 'B2-02a.yaml')).toContain(
-      'renames[0]: from and to are the same ("a")',
+    expect(messageOf(declared(pair(`"'aaa'"`, 'daily_alerts')), 'B2-02a.yaml')).toContain(
+      `renames[0].to: "daily_alerts" ${literal}`,
+    );
+    // Too short inside its quotes, a template expression.
+    expect(messageOf(declared(pair(`"'ab'"`, `"'bbb'"`)), 'B2-02a.yaml')).toContain(
+      `renames[0].from: "'ab'" must hold at least ${RENAME_CONTENT_MIN} characters between its quotes`,
+    );
+    expect(messageOf(declared(pair("'`job-${x}`'", "'`job_a`'")), 'B2-02a.yaml')).toContain(
+      'must not contain "${"',
+    );
+    // Different quotes, from = to, the same from twice.
+    expect(messageOf(declared(pair(`"'aaa'"`, `'"bbb"'`)), 'B2-02a.yaml')).toContain(
+      'renames[0]: from and to must use the same quote',
+    );
+    expect(messageOf(declared(pair(`"'aaa'"`, `"'aaa'"`)), 'B2-02a.yaml')).toContain(
+      "renames[0]: from and to are the same ('aaa')",
     );
     expect(
-      messageOf(declared('\n  - from: a\n    to: b\n  - from: a\n    to: c'), 'B2-02a.yaml'),
-    ).toContain('renames[1].from: "a" is renamed twice');
+      messageOf(declared(pair(`"'aaa'"`, `"'bbb'"`) + pair(`"'aaa'"`, `"'ccc'"`)), 'B2-02a.yaml'),
+    ).toContain("renames[1].from: 'aaa' is renamed twice");
     // At most RENAMES_MAX entries.
     const many = (n: number): string =>
-      declared(
-        Array.from({ length: n }, (_, i) => `\n  - from: old${i}\n    to: new${i}`).join(''),
-      );
+      declared(Array.from({ length: n }, (_, i) => pair(`"'old${i}'"`, `"'new${i}'"`)).join(''));
     expect(parseTaskFile(many(RENAMES_MAX), 'B2-02a.yaml').renames).toHaveLength(RENAMES_MAX);
     expect(messageOf(many(RENAMES_MAX + 1), 'B2-02a.yaml')).toContain(
       `renames: ${RENAMES_MAX + 1} entries, the limit is ${RENAMES_MAX}`,

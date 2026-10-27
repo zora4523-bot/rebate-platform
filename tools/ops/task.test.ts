@@ -220,6 +220,67 @@ it('[CT-06t] the red_exempt section is not counted in the line limit; it has its
   expect(countedLines('id: X\nstatus: todo')).toBe(2);
 });
 
+it('[CT-06zxc] the renames section is not counted in the line limit either; it has its own limit of 20 entries', () => {
+  const pairs = (n: number): string =>
+    Array.from(
+      { length: n },
+      (_, i) => `\n  - from: "'job-${i + 1}'"\n    to: "'job_${i + 1}'"`,
+    ).join('');
+  const body = (fields: Record<string, string>): string => {
+    const base = good({
+      impl: 'claude',
+      tester: 'codex',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      ...fields,
+    });
+    return `${'# padding\n'.repeat(MAX_TASK_LINES - countedLines(base))}${base}`;
+  };
+  // A body of exactly MAX_TASK_LINES lines (the B1-03w shape) plus 20 renames (40 more lines).
+  const full = body({ id: 'X1-02za', renames: pairs(20) });
+  expect(countedLines(full)).toBe(MAX_TASK_LINES);
+  expect(full.split('\n').length - 1).toBe(MAX_TASK_LINES + 20 * 2 + 1);
+  writeFiles(root, {
+    'tools/guard/protected-paths.json': JSON.stringify({
+      class1_add_only: ['test/spec/**', 'test/properties/**'],
+      class2_verify_config: [],
+      class3_gates: [],
+    }),
+    'ops/tasks/X1-02za.yaml': full,
+    // Both sections next to each other, neither counted.
+    'ops/tasks/X1-02zb.yaml': body({
+      id: 'X1-02zb',
+      renames: pairs(3),
+      red_exempt:
+        "\n  - file: 'test/spec/demo/rules.test.ts'\n    test: '[AC-1] a'\n    reason: structural, holds for the old data too",
+    }),
+    // 21 renames: over the section's own limit.
+    'ops/tasks/X1-02zc.yaml': body({ id: 'X1-02zc', renames: pairs(21) }),
+    // Something other than a rename hides nothing in the section.
+    'ops/tasks/X1-02zd.yaml': body({
+      id: 'X1-02zd',
+      renames: `${pairs(1)}\n  - note: a stray mapping\n  - 'toBe(100)'`,
+    }),
+  });
+  try {
+    expect(checkTask('X1-02za', opts('RV1'))).toEqual([]);
+    expect(loadTask('X1-02za', root).renames).toHaveLength(20);
+    expect(checkTask('X1-02zb', opts('RV1'))).toEqual([]);
+    expect(checkTask('X1-02zc', opts('RV1')).join('\n')).toContain(
+      'renames: 21 entries, the limit is 20',
+    );
+    const stray = checkTask('X1-02zd', opts('RV1')).join('\n');
+    expect(stray).toContain('renames[1].note: unknown field');
+    expect(stray).toContain('renames[2]: must be a mapping (from / to)');
+  } finally {
+    for (const id of ['X1-02za', 'X1-02zb', 'X1-02zc', 'X1-02zd'])
+      removeDir(`${root}/ops/tasks/${id}.yaml`);
+  }
+  // countedLines: the section ends at the next top-level line.
+  expect(
+    countedLines(`id: X\nrenames:\n  - from: "'aaa'"\n    to: "'bbb'"\n# c\nstatus: todo\n`),
+  ).toBe(3);
+});
+
 it('[CT-06r] red_exempt names rule-test files inside test_paths of a task with a rule-test author', () => {
   const entry = (file: string): string =>
     `\n  - file: '${file}'\n    test: '[AC-1] a'\n    reason: structural, holds for the old data too`;
