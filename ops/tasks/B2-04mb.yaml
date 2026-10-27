@@ -20,4 +20,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/settlement/credit-attribution/**'
-status: todo
+status: done
+pr: 1703
