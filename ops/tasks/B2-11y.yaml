@@ -1,0 +1,29 @@
+id: B2-11y
+repo: rebate-platform
+title: 测试修改（D10-373）：content 冻结注册表测试按 B2-11z 口径改为「risk.withdraw.* 之后紧接 withdraw.auto_payout.* 十七项、按登记顺序」（总数 +17，「登记表 = 种子全部非开关键 + EXTRA」不放宽）；同 PR 带十七键（config.business，值类型 / 取值范围 / 默认值照 08 BR-WDR-30 细则，08 未写的不另设上限）的登记、种子行与实现者单测，主干每一步都绿
+type: test-change
+# 2026-10-27 be（编排 D10-373，照 D10-368 / B2-11z #1680）：B2-11b（BR-WDR-30）要登记 withdraw.auto_payout.max_amount_fen 30000 / window_start 09:00:00 / window_end 22:59:59 / window_limit_enabled off / first_withdrawal_limit_enabled off / frozen_balance_policy no_auto / same_day_policy no_auto / payee_daily_max_count 1 / payee_monthly_max_count 2 / user_daily_max_count 1 / user_monthly_max_count 1 / warn.high_commission_rate_bp / warn.high_commission_order_ratio_bp / warn.invalid_ratio_bp 10000 / warn.withdraw_received_ratio_bp 0 / platform_daily_max_fen 200000 / risk_block_flags 默认五项；enabled 已在 switch-registry，不重复。
+# 冻结文件由新鲜独立 Claude 改（approvals #36），另一新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签；先合，B2-11b 不再改 config-registry。
+refs: []
+refs_hash: {}
+deps: [B2-11z]
+paths:
+  - 'test/spec/content/config-items/registry.test.ts'
+  - 'test/spec/content/config-settle/registry.test.ts'
+  - 'test/spec/content/invite-reward-config/registry.test.ts'
+  - 'test/spec/content/invite-reward-eligibility/registry.test.ts'
+  - 'test/spec/content/invite-reward-config/seeds.test.ts'
+  - 'test/spec/content/config-items/read.int.test.ts'
+  - 'test/spec/content/config-settle/writes.int.test.ts'
+  - 'test/spec/content/config-items/kit.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.test.ts'
+  - 'apps/api/src/modules/content/application/config-item-admin.test.ts'
+  - 'db/seeds/0001_config-defaults.sql'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/**'
+status: todo
+pr: null
