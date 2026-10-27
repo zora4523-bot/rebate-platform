@@ -352,14 +352,17 @@ export async function setup(
 
   /** wallet.withdrawal_changed events of `id` with status APPROVED (every W2, human or system). */
   async function approvals(id: string, handle: Kysely<DB> = h.db) {
-    return (await events(handle)).filter((e) => {
-      const payload = e.payload as Record<string, unknown>;
-      return (
-        e.name === 'wallet.withdrawal_changed' &&
-        payload['withdrawal_id'] === id &&
-        payload['status'] === 'APPROVED'
+    return (await events(handle))
+      .map((e) => ({
+        ...e,
+        payload: (e.payload as unknown as { data: Record<string, unknown> }).data,
+      }))
+      .filter(
+        (e) =>
+          e.name === 'wallet.withdrawal_changed' &&
+          e.payload['withdrawal_id'] === id &&
+          e.payload['status'] === 'APPROVED',
       );
-    });
   }
 
   async function claims(eventId: string) {
