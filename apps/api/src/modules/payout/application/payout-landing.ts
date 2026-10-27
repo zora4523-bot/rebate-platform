@@ -8,8 +8,8 @@
 //   fail     W6 CHANNEL_FAIL → FAILED: fail_code = the caller's failCode, else sub_code, else
 //            code; WITHDRAW:RETURN
 //            `wd:{id}:RETURN`; the event.
-// One business transaction per landing under the module's lock order (identity's users row →
-// ledger.lockBalances); the transition is a CAS on (status PAYING, row_version) through the
+// One business transaction per landing (the caller's, or its own) under the module's lock order
+// (identity's users row → ledger.lockBalances); the transition is a CAS on (status PAYING, row_version) through the
 // generated transitionWithdrawal(): 0 rows → logger.warn(conflictMessage), nothing written for it,
 // no retry, no throw (the caller's attempt row stays as recorded). Logs carry ids and codes only.
 import type { DB } from '@couli/db';
@@ -64,10 +64,20 @@ export interface PayoutLandingOptions {
 }
 
 export interface PayoutLanding {
-  /** W5; false when the row moved meanwhile (nothing written). */
-  success(row: LandingRow, result: LandingResult, now: Date): Promise<boolean>;
-  /** W6; false when the row moved meanwhile (nothing written). */
-  fail(row: LandingRow, result: LandingResult, now: Date): Promise<boolean>;
+  /**
+   * W5; false when the row moved meanwhile (nothing written). `trx`: an open business transaction
+   * to land on whose caller already holds the users row (the worker's landing job locks users →
+   * withdrawal first; the users lock is then not taken again); default: one transaction of its own
+   * that takes users → balances itself.
+   */
+  success(
+    row: LandingRow,
+    result: LandingResult,
+    now: Date,
+    trx?: Transaction<DB>,
+  ): Promise<boolean>;
+  /** W6; false when the row moved meanwhile (nothing written). `trx` as for success. */
+  fail(row: LandingRow, result: LandingResult, now: Date, trx?: Transaction<DB>): Promise<boolean>;
 }
 
 const PAYING: WithdrawalState = 'PAYING';
@@ -116,9 +126,17 @@ function userEntries(built: readonly BuiltEntry[], accountId: string): PostingEn
 export function createPayoutLanding(options: PayoutLandingOptions): PayoutLanding {
   const { db, ledger, lockUsersForUpdate, eventBus, logger, conflictMessage } = options;
 
-  /** The locks of a booking transition: users row → balance row (module lock order). */
-  async function lockedAccount(trx: Transaction<DB>, row: LandingRow): Promise<string | null> {
-    await lockUsersForUpdate(trx, { appId: row.app_id, userIds: [row.user_id] });
+  /**
+   * The locks of a booking transition: users row → balance row (module lock order). On a caller's
+   * transaction the users row is already held (the worker's landing job locks users → withdrawal
+   * before calling), so only the balance row is taken here.
+   */
+  async function lockedAccount(
+    trx: Transaction<DB>,
+    row: LandingRow,
+    lockUsers: boolean,
+  ): Promise<string | null> {
+    if (lockUsers) await lockUsersForUpdate(trx, { appId: row.app_id, userIds: [row.user_id] });
     const balances = await ledger.lockBalances(trx, { appId: row.app_id, userIds: [row.user_id] });
     const own = balances.find((balance) => balance.user_id === row.user_id);
     return own === undefined ? null : own.account_id;
@@ -177,8 +195,17 @@ export function createPayoutLanding(options: PayoutLandingOptions): PayoutLandin
     });
   }
 
+  /** Runs `work` on `trx` when given, else on a transaction of its own. */
+  function onTransaction<T>(
+    trx: Transaction<DB> | undefined,
+    work: (trx: Transaction<DB>) => Promise<T>,
+  ): Promise<T> {
+    return trx === undefined ? db.transaction().execute(work) : work(trx);
+  }
+
   return {
-    async success(row, result, now) {
+    async success(row, result, now, trx) {
+      const own = trx === undefined;
       const transition = transitionWithdrawal(PAYING, 'CHANNEL_SUCCESS');
       if (!transition.ok || transition.noop) return false;
       const channel = row.payout_channel as PayoutChannelName;
@@ -188,8 +215,8 @@ export function createPayoutLanding(options: PayoutLandingOptions): PayoutLandin
         return false;
       }
       const paidAt = paidAtOf(result, now);
-      return db.transaction().execute(async (trx) => {
-        const accountId = await lockedAccount(trx, row);
+      return onTransaction(trx, async (trx) => {
+        const accountId = await lockedAccount(trx, row, own);
         if (accountId === null) {
           logger.warn(
             { withdrawal_id: row.id, out_biz_no: row.out_biz_no },
@@ -217,11 +244,12 @@ export function createPayoutLanding(options: PayoutLandingOptions): PayoutLandin
       });
     },
 
-    async fail(row, result, now) {
+    async fail(row, result, now, trx) {
+      const own = trx === undefined;
       const transition = transitionWithdrawal(PAYING, 'CHANNEL_FAIL');
       if (!transition.ok || transition.noop) return false;
-      return db.transaction().execute(async (trx) => {
-        const accountId = await lockedAccount(trx, row);
+      return onTransaction(trx, async (trx) => {
+        const accountId = await lockedAccount(trx, row, own);
         if (accountId === null) {
           logger.warn(
             { withdrawal_id: row.id, out_biz_no: row.out_biz_no },

@@ -23,8 +23,10 @@
 //      kind (timeout, network) is an unknown result; the handler never rethrows it and never calls
 //      transfer again (the job resolves, so the queue does not retry).
 // Landing the synchronous result: the pending attempt row is completed once (response, resp_code,
-// resp_sub_code, result, latency_ms) and, on the business handle (W5 / W6 through
-// application/payout-landing.ts, shared with the query job of B2-06e):
+// resp_sub_code, result, latency_ms). B2-06fz (D10-326 C): this process connects as couli_payout
+// and cannot post vouchers, so a success / fail is handed to the worker as one payout-landing job
+// on the attempt's transaction (application/landing-handoff.ts; the worker's jobs/landing-job.ts
+// does W5 / W6 below) unless the withdrawal changed meanwhile (then only a warn, W10 ends it):
 //   success     W5 CHANNEL_SUCCESS → PAID_API: channel_order_id, paid_at (the channel's time when
 //               given, else Clock.now); the voucher WITHDRAW:SUCCESS:CASH_<ALIPAY|BANK|WECHAT>
 //               `wd:{id}:PAID` through ledger.post on the same transaction (zero fee / tax lines
@@ -66,7 +68,8 @@ import type { AppealPrevStateReader, RiskStateBatchReader } from '../../risk/ind
 import type { Logger } from 'pino';
 import type { ChannelRaw, TransferResult } from '../domain/channel-result.ts';
 import { readPayoutChannelConfig } from '../application/judgement.ts';
-import { createPayoutLanding, instant } from '../application/payout-landing.ts';
+import { instant } from '../application/payout-landing.ts';
+import { handoffLanding, recordedResponse } from '../application/landing-handoff.ts';
 import { reviewTransfer, type TransferHoldReason } from '../application/payout-review.ts';
 import type { WithdrawApplyOptions } from '../application/withdraw-apply.ts';
 import type { PayoutConfigPort } from '../application/withdraw-rules.ts';
@@ -236,15 +239,6 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
     logger,
   } = options;
   const attempts = createPayoutAttemptsStore();
-  /** W5 / W6 landing shared with the query job (application/payout-landing.ts). */
-  const landing = createPayoutLanding({
-    db,
-    ledger,
-    lockUsersForUpdate,
-    eventBus,
-    logger,
-    conflictMessage: 'payout_transfer_cas_conflict',
-  });
   /** readPayoutChannelConfig wants pino's warn; the job's logger has the same two-argument shape. */
   const configLogger = {
     warn: (fields: Record<string, unknown>, message?: string) => logger.warn(fields, message ?? ''),
@@ -557,16 +551,20 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
   }
 
   async function completeAttempt(
+    executor: Kysely<DB> | Transaction<DB>,
     attemptId: string,
     result: TransferResult | null,
     stored: 'success' | 'fail' | 'unknown',
+    receivedAt: Date,
   ): Promise<void> {
-    await attemptsDb
+    await executor
       .withSchema('app')
       .updateTable('payout_attempts')
       .set({
         response: JSON.stringify(
-          result === null ? { transport_error: true } : { raw: result.raw, kind: result.kind },
+          result === null
+            ? { transport_error: true, received_at: receivedAt.toISOString() }
+            : recordedResponse(result, receivedAt),
         ),
         resp_code: result?.raw.code ?? null,
         resp_sub_code: result?.raw.subCode ?? null,
@@ -576,6 +574,28 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
       .where('id', '=', attemptId)
       .where('result', '=', 'pending')
       .execute();
+  }
+
+  /**
+   * A success / fail: the attempt is completed and, when the withdrawal is unchanged, the landing
+   * job is sent to the worker on the same couli_payout transaction (D10-326 C, D10-332 ①).
+   */
+  async function recordAndHandoff(
+    row: WithdrawalRow,
+    attemptId: string,
+    result: TransferResult,
+    receivedAt: Date,
+  ): Promise<void> {
+    await attemptsDb.transaction().execute(async (trx) => {
+      await completeAttempt(
+        trx,
+        attemptId,
+        result,
+        result.kind === 'success' ? 'success' : 'fail',
+        receivedAt,
+      );
+      await handoffLanding({ trx, queue, row, attemptId, logger });
+    });
   }
 
   async function landPayerSide(
@@ -658,7 +678,11 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
             : result.kind === 'unknown'
               ? 'unknown'
               : 'fail';
-      await completeAttempt(attemptId, result, stored);
+      if (result !== null && (result.kind === 'success' || result.kind === 'fail')) {
+        await recordAndHandoff(row, attemptId, result, landedAt);
+      } else {
+        await completeAttempt(attemptsDb, attemptId, result, stored, landedAt);
+      }
       logger.info(
         {
           withdrawal_id: row.id,
@@ -672,13 +696,10 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
       );
       if (result === null || result.kind === 'unknown') {
         await landUnknown(row, result, delay);
-      } else if (result.kind === 'success') {
-        await landing.success(row, result, landedAt);
-      } else if (result.kind === 'fail') {
-        await landing.fail(row, result, landedAt);
-      } else {
+      } else if (result.kind === 'payer_side') {
         await landPayerSide(row, result, landedAt);
       }
+      // success / fail: recorded and handed to the worker above (jobs/landing-job.ts lands W5 / W6).
     } catch (error: unknown) {
       // A database error while landing the result: the transfer is recorded, so a redelivery is
       // stopped at ② and only queries. Try to leave the first query job; if even that fails,

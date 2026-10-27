@@ -198,3 +198,12 @@ export type {
   PayoutLanding,
   PayoutLandingOptions,
 } from './application/payout-landing.ts';
+export { createLandingJob, PAYOUT_LANDING_JOB, PAYOUT_LANDING_QUEUE } from './jobs/landing-job.ts';
+export type {
+  LandingAttempt,
+  LandingAttemptsReader,
+  LandingJobLogger,
+  LandingJobOptions,
+  LandingJobPayload,
+} from './jobs/landing-job.ts';
+export { handoffLanding, recordedResponse } from './application/landing-handoff.ts';

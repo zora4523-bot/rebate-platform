@@ -38,7 +38,7 @@ import type { Ledger } from '../../ledger/index.ts';
 import type { Clock, EventBus, JobHandler, JobQueue, ReceivedJob } from '../../platform/index.ts';
 import type { QueryResult } from '../domain/channel-result.ts';
 import { readPayoutChannelConfig } from '../application/judgement.ts';
-import { createPayoutLanding } from '../application/payout-landing.ts';
+import { handoffLanding, recordedResponse } from '../application/landing-handoff.ts';
 import { markNeedsManual } from '../application/query-manual.ts';
 import { manualDue, nextQueryDueMs, type QuerySchedule } from '../application/query-schedule.ts';
 import type { WithdrawApplyOptions } from '../application/withdraw-apply.ts';
@@ -142,27 +142,8 @@ async function defaultSleep(ms: number): Promise<void> {
 }
 
 export function createQueryJob(options: QueryJobOptions): JobHandler {
-  const {
-    db,
-    attemptsDb,
-    clock,
-    config,
-    ledger,
-    lockUsersForUpdate,
-    queue,
-    eventBus,
-    channels,
-    logger,
-  } = options;
+  const { db, attemptsDb, clock, config, queue, channels, logger } = options;
   const sleep = options.sleep ?? defaultSleep;
-  const landing = createPayoutLanding({
-    db,
-    ledger,
-    lockUsersForUpdate,
-    eventBus,
-    logger,
-    conflictMessage: 'payout_query_cas_conflict',
-  });
   /** readPayoutChannelConfig wants pino's warn; the job's logger has the same two-argument shape. */
   const configLogger = {
     warn: (fields: Record<string, unknown>, message?: string) => logger.warn(fields, message ?? ''),
@@ -255,6 +236,7 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
   }
 
   async function recordTry(
+    executor: Kysely<DB> | Transaction<DB>,
     row: QueryRow,
     point: number,
     tryNo: number,
@@ -262,20 +244,21 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
     errorName: string | null,
     latencyMs: number,
     at: Date,
-  ): Promise<void> {
-    await attemptsDb
+  ): Promise<string> {
+    const id = randomUUID();
+    await executor
       .withSchema('app')
       .insertInto('payout_attempts')
       .values({
-        id: randomUUID(),
+        id,
         app_id: row.app_id,
         withdrawal_id: row.id,
         kind: 'query',
         request: JSON.stringify({ out_biz_no: row.out_biz_no, point, try: tryNo }),
         response: JSON.stringify(
           result === null
-            ? { transport_error: true, error: errorName }
-            : { raw: result.raw, kind: result.kind },
+            ? { transport_error: true, error: errorName, received_at: at.toISOString() }
+            : recordedResponse(result, at),
         ),
         resp_code: result?.raw.code ?? null,
         resp_sub_code: result?.raw.subCode ?? null,
@@ -284,6 +267,7 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
         at,
       })
       .execute();
+    return id;
   }
 
   /** ⑤: up to MAX_TRIES queries, RETRY_GAP_MS apart; the first success / fail ends the point. */
@@ -315,7 +299,25 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
       }
       const finished = clock.now();
       const latencyMs = Math.max(0, finished.getTime() - started.getTime());
-      await recordTry(row, point, tryNo, result, errorName, latencyMs, finished);
+      if (result !== null && result.kind !== 'unknown') {
+        // A settled result: recorded and handed to the worker on one couli_payout transaction
+        // (D10-326 C; the withdrawal is re-read there, D10-332 ①).
+        await attemptsDb.transaction().execute(async (trx) => {
+          const attemptId = await recordTry(
+            trx,
+            row,
+            point,
+            tryNo,
+            result,
+            errorName,
+            latencyMs,
+            finished,
+          );
+          await handoffLanding({ trx, queue, row, attemptId, logger });
+        });
+      } else {
+        await recordTry(attemptsDb, row, point, tryNo, result, errorName, latencyMs, finished);
+      }
       logger.info(
         {
           withdrawal_id: row.id,
@@ -402,12 +404,8 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
     // ⑥
     if (result === null || result.kind === 'unknown') {
       await sendNextPoint(row, schedule, prepared.firstTransferAt, payload.point, landedAt);
-    } else if (result.kind === 'success') {
-      await landing.success(row, result, landedAt);
-    } else {
-      // A query's failure: the mapped order status names it when the response has no sub code.
-      const failCode = result.raw.subCode ?? result.status;
-      await landing.fail(row, failCode === undefined ? result : { ...result, failCode }, landedAt);
     }
+    // success / fail: recorded and handed to the worker in queryPoint (jobs/landing-job.ts lands
+    // W5 / W6; a query's fail_code falls back to the mapped order status there).
   };
 }

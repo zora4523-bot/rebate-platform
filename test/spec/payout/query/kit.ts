@@ -13,6 +13,8 @@
 //   - The next point's job: singletonKey `${id}:${seq}:query:${n}`, delaySeconds T + offset − now.
 // Only *.int.test.ts files call setup (they create the database). The handler and recovery
 // factories are called inside each test before anything is observed: red is NotImplemented.
+// B2-06fz (D10-326 C): `f.queryJob(...)` runs the worker's turn after the handler (landing jobs
+// landed, their rows deleted); `f.rawQueryJob(...)` is the payout process's handler alone.
 import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
@@ -195,8 +197,11 @@ export async function setup(h: Harness) {
   await f.set('payout.query_status_map', QUERY_LISTS.queryStatusMap);
   const sleep = vi.fn<(ms: number) => Promise<void>>(async () => undefined);
 
-  /** The query handler (called inside each test: red is the skeleton's NotImplemented). */
-  function queryJob(channel: PayoutChannel, extra: Partial<QueryJobOptions> = {}): JobHandler {
+  /**
+   * The payout process's query handler alone: nothing lands what it enqueued on payout-landing
+   * (B2-06fz handoff tests; called inside each test: red is the skeleton's NotImplemented).
+   */
+  function rawQueryJob(channel: PayoutChannel, extra: Partial<QueryJobOptions> = {}): JobHandler {
     const { db, attemptsDb, clock, config, ledger, lockUsersForUpdate, queue, eventBus } =
       f.options;
     return createQueryJob({
@@ -213,6 +218,15 @@ export async function setup(h: Harness) {
       logger: f.logger,
       ...extra,
     });
+  }
+
+  /**
+   * The query handler (called inside each test: red is the skeleton's NotImplemented), followed
+   * by the worker's turn (B2-06fz, D10-326 C): the landing jobs it enqueued are landed and their
+   * rows deleted (process kit's withAutoLand), so the assertions read the landed result.
+   */
+  function queryJob(channel: PayoutChannel, extra: Partial<QueryJobOptions> = {}): JobHandler {
+    return f.withAutoLand(rawQueryJob(channel, extra));
   }
 
   /** The recovery scan (called inside each test: red is the skeleton's NotImplemented). */
@@ -277,6 +291,7 @@ export async function setup(h: Harness) {
     ...f,
     sleep,
     queryJob,
+    rawQueryJob,
     recovery,
     queryJobOf,
     seedPaying,

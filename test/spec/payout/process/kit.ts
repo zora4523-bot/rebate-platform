@@ -11,6 +11,11 @@
 // vouchers and write config). Observations use a third couli_app pool (`observer`).
 // Only *.int.test.ts files import this kit (they create the database). The handler factory is
 // called inside each test, before any lock or gate is taken: red is the skeleton's NotImplemented.
+// B2-06fz (D10-326 C, P→A): the payout process only records a success / fail attempt and enqueues
+// a payout-landing job; the worker lands W5 / W6. `f.job(...)` therefore runs the worker's turn
+// right after the handler (withAutoLand: every landing job it left is landed, then its row is
+// deleted), so the 06d / 06e assertions read the landed result and no landing job row.
+// `f.rawJob(...)` is the payout process's handler alone (the landing/** handoff tests).
 import { randomBytes, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createDb, destroyDb, type DB } from '@couli/db';
@@ -24,6 +29,7 @@ import { createEventBus } from '../../../../apps/api/src/modules/platform/events
 import {
   QUEUE_CATALOG,
   type JobHandler,
+  type JobPayload,
   type ReceivedJob,
 } from '../../../../apps/api/src/modules/platform/queue/index.ts';
 import type { JudgementLists } from '../../../../apps/api/src/modules/payout/application/judgement.ts';
@@ -37,6 +43,10 @@ import type {
   PayoutChannel,
   TransferRequest,
 } from '../../../../apps/api/src/modules/payout/infra/channels/payout-channel.ts';
+import {
+  createLandingJob,
+  type LandingJobOptions,
+} from '../../../../apps/api/src/modules/payout/jobs/landing-job.ts';
 import {
   createTransferJob,
   type PayoutQueuePauseInput,
@@ -107,11 +117,23 @@ export const DEALING_STEP: FakeStep = {
 export const UNKNOWN_STEP: FakeStep = { kind: 'unknown' };
 export const TIMEOUT_STEP: FakeStep = { kind: 'timeout' };
 
-/** The production `payout` queue (exclusive), the negative-balance queue and their `<q>.dead`. */
+/**
+ * B2-06fz (D10-326 C): the worker's landing queue. The payout process only records the attempt's
+ * result and enqueues one `land` job per success / fail attempt; the worker lands W5 / W6.
+ */
+export const LANDING_QUEUE = 'payout-landing';
+export const LANDING_JOB = 'land';
+
+/**
+ * The production `payout` queue (exclusive), the worker's `payout-landing` queue (B2-06fz), the
+ * negative-balance queue and their `<q>.dead`.
+ */
 const CATALOG = QUEUE_CATALOG.filter(
   (spec) =>
     spec.name === 'payout' ||
     spec.name === 'payout.dead' ||
+    spec.name === LANDING_QUEUE ||
+    spec.name === `${LANDING_QUEUE}.dead` ||
     spec.name === NEGATIVE_QUEUE ||
     spec.name === `${NEGATIVE_QUEUE}.dead`,
 );
@@ -458,13 +480,24 @@ export async function setup(h: Harness) {
     });
   }
 
-  /** The handler (called inside each test: red is the skeleton's NotImplemented). */
-  function job(channel: PayoutChannel, extra: Partial<TransferJobOptions> = {}): JobHandler {
+  /**
+   * The payout process's transfer handler alone: nothing lands what it enqueued on payout-landing
+   * (B2-06fz handoff tests; called inside each test: red is the skeleton's NotImplemented).
+   */
+  function rawJob(channel: PayoutChannel, extra: Partial<TransferJobOptions> = {}): JobHandler {
     return createTransferJob({
       ...options,
       channels: { alipay: channel, bank_card: channel },
       ...extra,
     });
+  }
+
+  /**
+   * The handler (called inside each test: red is the skeleton's NotImplemented), followed by the
+   * worker's turn: the landing jobs it enqueued are landed and their rows deleted (withAutoLand).
+   */
+  function job(channel: PayoutChannel, extra: Partial<TransferJobOptions> = {}): JobHandler {
+    return withAutoLand(landing, rawJob(channel, extra));
   }
 
   /** The payout job EXECUTE enqueued for `w` (overrides: a stale seq, another app, a redelivery). */
@@ -484,6 +517,15 @@ export async function setup(h: Harness) {
       attempt: overrides.attempt ?? 1,
     });
   }
+
+  /** What the worker's landing handler and the landing helpers read (B2-06fz). */
+  const landing: LandingKit = {
+    h,
+    appId,
+    options,
+    logger,
+    sends: () => send.mock.calls,
+  };
 
   const userId = await newUser();
   await set('payout.enabled', true);
@@ -522,10 +564,207 @@ export async function setup(h: Harness) {
     seedWithdrawHold,
     makeNegative,
     job,
+    rawJob,
     jobOf,
+    /** `handler`, then the worker's turn on what it enqueued (B2-06fz; withAutoLand). */
+    withAutoLand: (handler: JobHandler): JobHandler => withAutoLand(landing, handler),
+    /** The worker's landing handler (B2-06fz; red is the skeleton's NotImplemented). */
+    landingJob: (extra: Partial<LandingJobOptions> = {}): JobHandler => landingJob(landing, extra),
+    /** Runs every created payout-landing job of this app through the worker, then deletes it. */
+    landPending: (extra: Partial<LandingJobOptions> = {}): Promise<number> =>
+      landPending(landing, extra),
+    /** P→A right after a payout-process handler returned (expectLandingQueued). */
+    expectLandingQueued: (w: LandingTarget): Promise<QueuedLanding> =>
+      expectLandingQueued(landing, w),
   };
 }
 export type ProcessFixture = Awaited<ReturnType<typeof setup>>;
+
+/** What the landing helpers read from a process or query fixture (B2-06fz). */
+export interface LandingKit {
+  readonly h: Harness;
+  readonly appId: string;
+  readonly options: Pick<
+    TransferJobOptions,
+    'db' | 'clock' | 'ledger' | 'lockUsersForUpdate' | 'eventBus'
+  >;
+  readonly logger: LandingJobOptions['logger'];
+  /** The arguments of every queue.send of the fixture's recording queue. */
+  sends(): readonly (readonly unknown[])[];
+}
+
+export type LandingTarget = Pick<Seeded, 'id' | 'appId' | 'executeSeq'>;
+
+export interface QueuedLanding {
+  /** The success / fail attempt the landing job names. */
+  readonly attemptId: string;
+  /** Its payout-landing job row as the handler left it (state created). */
+  readonly row: JobRow;
+}
+
+/**
+ * The worker's landing handler (B2-06fz, D10-326 C) on the fixture's couli_app handle, ledger,
+ * users lock, event bus, clock and logger (the worker's own wiring; no couli_payout handle).
+ */
+export function landingJob(f: LandingKit, extra: Partial<LandingJobOptions> = {}): JobHandler {
+  const { db, ledger, lockUsersForUpdate, eventBus, clock } = f.options;
+  return createLandingJob({
+    db,
+    ledger,
+    lockUsersForUpdate,
+    eventBus,
+    clock,
+    logger: f.logger,
+    ...extra,
+  });
+}
+
+interface PendingLanding {
+  id: string;
+  data: { name: string; payload: JobPayload };
+}
+
+/**
+ * The worker's turn: every payout-landing job of this app still in state created, oldest first,
+ * goes through the landing handler with its payload, and once it resolved its row is deleted
+ * (test SQL: only that row, of this app, still created; the api-entry runtime of these tests
+ * works no queue). Returns how many jobs it ran. `eager`: the handler is built before anything
+ * is read (red is the skeleton's NotImplemented even when nothing is queued); otherwise it is
+ * built only when there is a job to run.
+ */
+async function runLandings(
+  f: LandingKit,
+  extra: Partial<LandingJobOptions>,
+  eager: boolean,
+): Promise<number> {
+  let handler: JobHandler | undefined = eager ? landingJob(f, extra) : undefined;
+  const pending = await sql<PendingLanding>`
+    SELECT id::text AS id, data FROM pgboss.job
+    WHERE name = ${LANDING_QUEUE} AND state = 'created'
+      AND data->'payload'->>'app_id' = ${f.appId}
+    ORDER BY created_on, id`.execute(f.h.observer);
+  for (const row of pending.rows) {
+    if (handler === undefined) handler = landingJob(f, extra);
+    await handler(
+      Object.freeze({
+        id: row.id,
+        queue: LANDING_QUEUE,
+        name: row.data.name,
+        payload: row.data.payload,
+        attempt: 1,
+      }),
+    );
+    await sql`DELETE FROM pgboss.job
+      WHERE name = ${LANDING_QUEUE} AND id = ${row.id}::uuid AND state = 'created'
+        AND data->'payload'->>'app_id' = ${f.appId}`.execute(f.h.observer);
+  }
+  return pending.rows.length;
+}
+
+/**
+ * The worker's turn, called by a test (the landing handler is built first: red is the
+ * skeleton's NotImplemented even when nothing is queued). See runLandings.
+ */
+export function landPending(
+  f: LandingKit,
+  extra: Partial<LandingJobOptions> = {},
+): Promise<number> {
+  return runLandings(f, extra, true);
+}
+
+/**
+ * `handler` followed by the worker's turn (B2-06fz, D10-326 C): once it resolved, every
+ * payout-landing job of this app is landed and its row deleted. The landing handler is built
+ * only when a landing job is there, so a handler that enqueued none behaves as before.
+ */
+export function withAutoLand(f: LandingKit, handler: JobHandler): JobHandler {
+  return async (received) => {
+    await handler(received);
+    await runLandings(f, {}, false);
+  };
+}
+
+/**
+ * P→A (规划/02 §5.3; D10-326 C) right after the payout process's handler returned with a success
+ * or fail: the withdrawal is still PAYING with nothing landed (no paid_at, channel_order_id or
+ * fail_code, no voucher but its FREEZE, no wallet.withdrawal_changed), it has exactly one success
+ * / fail attempt, and exactly one payout-landing job names that attempt — key
+ * `${id}:${seq}:land:${attempt_id}`, payload { app_id, withdrawal_id, execute_seq, attempt_id },
+ * no delay — sent once, on a transaction.
+ */
+export async function expectLandingQueued(f: LandingKit, w: LandingTarget): Promise<QueuedLanding> {
+  const db = f.h.observer;
+  expect(
+    await db
+      .withSchema('app')
+      .selectFrom('withdrawals')
+      .select(['status', 'paid_at', 'channel_order_id', 'fail_code'])
+      .where('app_id', '=', w.appId)
+      .where('id', '=', w.id)
+      .executeTakeFirstOrThrow(),
+  ).toEqual({ status: 'PAYING', paid_at: null, channel_order_id: null, fail_code: null });
+  const vouchers = await db
+    .withSchema('app')
+    .selectFrom('ledger_vouchers')
+    .select('uniq_key')
+    .where('app_id', '=', w.appId)
+    .where('uniq_key', 'like', `wd:${w.id}:%`)
+    .orderBy('uniq_key')
+    .execute();
+  expect(vouchers.map((row) => row.uniq_key)).toEqual([`wd:${w.id}:FREEZE`]);
+  const events = await db
+    .withSchema('app')
+    .selectFrom('event_log')
+    .select('payload')
+    .where('app_id', '=', w.appId)
+    .where('name', '=', 'wallet.withdrawal_changed')
+    .execute();
+  expect(
+    events
+      .map((row) => (row.payload as unknown as { data: Record<string, unknown> }).data)
+      .filter((data) => data['withdrawal_id'] === w.id),
+  ).toEqual([]);
+  const results = await db
+    .withSchema('app')
+    .selectFrom('payout_attempts')
+    .select(['id', 'result'])
+    .where('app_id', '=', w.appId)
+    .where('withdrawal_id', '=', w.id)
+    .where('result', 'in', ['success', 'fail'])
+    .execute();
+  expect(results).toHaveLength(1);
+  const attemptId = results[0]!.id;
+  const key = `${w.id}:${w.executeSeq}:land:${attemptId}`;
+  const row: JobRow = {
+    queue: LANDING_QUEUE,
+    singleton_key: key,
+    state: 'created',
+    data: {
+      name: LANDING_JOB,
+      payload: {
+        app_id: w.appId,
+        withdrawal_id: w.id,
+        execute_seq: w.executeSeq,
+        attempt_id: attemptId,
+      },
+    },
+    delay_s: 0,
+  };
+  const queued = await sql<JobRow>`
+    SELECT name AS queue, singleton_key, state::text AS state, data,
+      round(extract(epoch FROM start_after - created_on))::int AS delay_s
+    FROM pgboss.job
+    WHERE name = ${LANDING_QUEUE} AND data->'payload'->>'withdrawal_id' = ${w.id}
+    ORDER BY created_on, id`.execute(db);
+  expect(queued.rows).toEqual([row]);
+  const sends = f.sends().filter((call) => call[0] === LANDING_QUEUE);
+  expect(sends.map((call) => [call[1], call[2]])).toEqual([[LANDING_JOB, row.data.payload]]);
+  const options = sends[0]?.[3] as
+    { trx?: { isTransaction?: boolean } | null; singletonKey?: string } | undefined;
+  expect(options?.singletonKey).toBe(key);
+  expect(options?.trx?.isTransaction).toBe(true);
+  return { attemptId, row };
+}
 
 export async function withdrawal(f: ProcessFixture, id: string, db: Kysely<DB> = f.h.observer) {
   return db
