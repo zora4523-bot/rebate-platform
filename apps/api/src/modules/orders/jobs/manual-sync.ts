@@ -1,6 +1,6 @@
 // B1-09i: the order-sync queue's jobs of a console manual sync (application/manual-sync.ts sends
-// them; 01 F-ORD-10; 02 §7.1). A window job ('manual-window') fetches its fixed
-// [window_start, window_end) like a scheduled window; an order-number job ('manual-order-nos', pdd
+// them; 01 F-ORD-10; 02 §7.1). A window job ('manual_window') fetches its fixed
+// [window_start, window_end) like a scheduled window; an order-number job ('manual_order_nos', pdd
 // only) fetches every number through union's getPddOrderDetail. Every order goes to the pipeline in
 // order. sync_cursors is never read nor advanced.
 // Write-back (order_sync_requests and the job's own row `sync_seq` in order_sync_request_windows):
