@@ -45,6 +45,29 @@ export function killSwitchDescriptor(key: string): KillSwitchDescriptor | null {
 }
 
 /**
+ * B2-11d: checks the caller injects. autoPayoutEnable is payout's 开启前置检查 (BR-WDR-30), asked
+ * only when withdraw.auto_payout.enabled is turned on; absent, turning it on stays refused.
+ */
+export interface KillSwitchChecks {
+  readonly autoPayoutEnable?: () => { readonly passed: boolean };
+}
+
+/**
+ * killSwitchChangeRefusal with injected checks: the same answer for every other change; turning
+ * withdraw.auto_payout.enabled on is allowed only when checks.autoPayoutEnable() passes.
+ */
+export function killSwitchChangeRefusalWith(
+  key: string,
+  value: unknown,
+  checks: KillSwitchChecks,
+): KillSwitchRefusal | null {
+  void key;
+  void value;
+  void checks;
+  throw new Error('NotImplemented: killSwitchChangeRefusalWith');
+}
+
+/**
  * Why the console may not set `key` to `value`, or null when it may: 'key' when the key is not
  * registered or not admin-editable; 'value' when the value does not have the registered type (an
  * enum value outside its options included) or turns withdraw.auto_payout.enabled on (BR-WDR-30).
