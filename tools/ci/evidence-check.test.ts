@@ -1598,6 +1598,168 @@ renames:
   expect(req(onlyRenamed, missTrusted)).toEqual({ required: true, expected: [FLOOR, ROUND] });
 });
 
+it('[CT-06zxe] registered expected values that apply to a rule-test file are to confirm; the expected list is unchanged', () => {
+  const ANOMALY = 'test/spec/money/anomaly.test.ts';
+  const source = (sign: string): string =>
+    [
+      "import { expect, it } from 'vitest';",
+      'const AMOUNT = 500n;',
+      'function onlyAnomaly(diff: bigint) {',
+      `  expect(diff).toBe(${sign}AMOUNT);`,
+      '}',
+      "it('[AC-1] calls it', () => { onlyAnomaly(-AMOUNT); });",
+      "it('[AC-2] does not', () => { expect(1).toBe(1); });",
+      '',
+    ].join('\n');
+  // The frozen file at its own base commit, then the rule-test commit that changes the value.
+  git(repo, ['checkout', '-q', '-b', 'ct06zxe-base', base]);
+  write(repo, { [ANOMALY]: source('') });
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'ct06zxe-base']);
+  const frozen = git(repo, ['rev-parse', 'HEAD']);
+  write(repo, { [ANOMALY]: source('-') });
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'ct06zxe-spec']);
+  const spec = git(repo, ['rev-parse', 'HEAD']);
+  git(repo, ['checkout', '-q', 'task/B2-01a']);
+  const entry = {
+    file: ANOMALY,
+    helper: 'onlyAnomaly',
+    from: '  expect(diff).toBe(AMOUNT);',
+    to: '  expect(diff).toBe(-AMOUNT);',
+  };
+  const trustedWith = (name: string, entries: string): string => {
+    const dir = join(SCRATCH, name);
+    for (const file of [
+      'tools/guard/protected-paths.json',
+      'ops/risk-map.yaml',
+      'tools/guard/legacy-tasks.json',
+    ]) {
+      write(dir, { [file]: readFileSync(join(TRUSTED, file), 'utf8') });
+    }
+    write(dir, {
+      'ops/tasks/B2-01a.yaml': `${readFileSync(join(TRUSTED, 'ops/tasks/B2-01a.yaml'), 'utf8').trimEnd()}
+expected_values:${entries}
+`,
+    });
+    return dir;
+  };
+  const yaml = (e: typeof entry): string =>
+    `\n  - file: ${e.file}\n    helper: ${e.helper}\n    from: '${e.from}'\n    to: '${e.to}'`;
+  const req = (trusted: string) =>
+    redRequirement(
+      { prDir: repo, base: frozen, head: spec, headRef: 'task/B2-01a', trusted },
+      'B2-01a',
+      frozen,
+      JSON.stringify({ task: 'B2-01a', spec_commit: spec }),
+    );
+  // The entry applies: still expected (its caller must be red), the entry is to confirm.
+  expect(req(trustedWith('trusted-values', yaml(entry)))).toEqual({
+    required: true,
+    expected: [ANOMALY],
+    expectedValues: { hit: [entry], tester: 'codex' },
+  });
+  // Without the field, or with an entry that does not apply: nothing to confirm.
+  expect(req(TRUSTED)).toEqual({ required: true, expected: [ANOMALY] });
+  expect(req(trustedWith('trusted-values-miss', yaml({ ...entry, helper: 'nope' })))).toEqual({
+    required: true,
+    expected: [ANOMALY],
+  });
+});
+
+it("[CT-06zxe] registered expected values that apply need the rule-test reviewer's confirmation, entry by entry", () => {
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const cfg = loadProtected(REPO);
+  const entries = [
+    {
+      file: 'test/spec/payment/result/notify.int.test.ts',
+      helper: 'onlyAnomaly',
+      from: '    diff_fen: AMOUNT,',
+      to: '    diff_fen: -AMOUNT,',
+    },
+    {
+      file: 'test/spec/payment/result/closed-query.int.test.ts',
+      helper: 'onlyAnomaly',
+      from: '    diff_fen: order.amount_fen,',
+      to: '    diff_fen: -order.amount_fen,',
+    },
+  ];
+  const registered = (tester: 'codex' | 'claude' = 'codex'): RedRequirement => ({
+    ...RED,
+    expectedValues: { hit: entries, tester },
+  });
+  const problemsOf = (doc: Evidence, red: RedRequirement = registered()): string =>
+    evidenceProblems(doc, { prDir: repo, head, task: 'B2-01a', cfg, red }).join('\n');
+  const want = `the ledger's expected_values apply 2 entries (CT-06zxe, D10-371): the rule-test reviewer (claude) must confirm them in spec_test_review (reviewer claude, last_verdict pass, expected_values_confirmed { entries: ${JSON.stringify(entries)} })`;
+  const confirmed = {
+    reviewer: 'claude',
+    engine: 'claude',
+    rounds: 1,
+    last_verdict: 'pass',
+    expected_values_confirmed: { entries },
+  };
+  expect(problemsOf(evidence({ spec_test_review: confirmed }))).toBe('');
+  // Missing review or field, the wrong reviewer, a verdict other than pass.
+  expect(problemsOf(evidence())).toBe(`spec_test_review: ${want}`);
+  expect(
+    problemsOf(
+      evidence({ spec_test_review: { ...confirmed, expected_values_confirmed: undefined } }),
+    ),
+  ).toBe(`spec_test_review.expected_values_confirmed: ${want}`);
+  expect(
+    problemsOf(
+      evidence({
+        spec_test_review: {
+          ...confirmed,
+          reviewer: 'codex',
+          engine: 'codex',
+          model: 'gpt-6-astra',
+        },
+      }),
+    ),
+  ).toBe(`spec_test_review.reviewer: ${want}`);
+  expect(problemsOf(evidence({ spec_test_review: { ...confirmed, last_verdict: 'fail' } }))).toBe(
+    `spec_test_review.last_verdict: ${want}`,
+  );
+  // Not exactly the entries: true alone, one missing, swapped, changed, an extra key.
+  for (const bad of [
+    true,
+    { entries: entries.slice(0, 1) },
+    { entries: [...entries].reverse() },
+    { entries: [entries[0], { ...entries[1], to: '    diff_fen: order.amount_fen,' }] },
+    { entries, note: 'x' },
+    { entries: [{ ...entries[0], tests: [] }, entries[1]] },
+  ]) {
+    expect(
+      problemsOf(evidence({ spec_test_review: { ...confirmed, expected_values_confirmed: bad } })),
+      JSON.stringify(bad),
+    ).toBe(`spec_test_review.expected_values_confirmed: ${want}`);
+  }
+  // Claude wrote the rule tests: Codex confirms.
+  expect(
+    problemsOf(
+      evidence({
+        spec_test_review: {
+          ...confirmed,
+          reviewer: 'codex',
+          engine: 'codex',
+          model: 'gpt-6-astra',
+        },
+      }),
+      registered('claude'),
+    ),
+  ).toBe('');
+  // None applies, or the red run not required: nothing asked for.
+  expect(problemsOf(evidence(), RED)).toBe('');
+  expect(
+    problemsOf(evidence({ runs: [] }), {
+      required: false,
+      expected: [],
+      expectedValues: { hit: entries, tester: 'codex' },
+    }),
+  ).toBe('');
+});
+
 it("[CT-06zxc] renames that hit need the rule-test reviewer's confirmation, pair by pair and file by file", () => {
   const head = git(repo, ['rev-parse', 'HEAD']);
   const cfg = loadProtected(REPO);

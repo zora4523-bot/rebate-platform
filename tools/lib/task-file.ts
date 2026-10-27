@@ -3,6 +3,7 @@
 // 规划/05, impl != tester for funds, line cap, dependency state) live in tools/ops.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { valueChangeRefusal, valueSkeleton } from '../guard/lib/test-blocks.ts';
 import { repoRoot } from './paths.ts';
 import { parseYamlLite } from './yaml-lite.ts';
 
@@ -56,6 +57,15 @@ export type TaskFile = {
    * absent.
    */
   renames: RenameDeclaration[];
+  /**
+   * CT-06zxe (orchestrator ruling D10-371, after B2-15l): expected values the task changes inside
+   * a top-level helper of a rule-test file that existed at the base (`diff_fen: AMOUNT` →
+   * `diff_fen: -AMOUNT` in `onlyAnomaly`). red-check replaces `from` by `to` inside that helper of
+   * the base (after the renames) and, when the code outside the tests is then the head's, needs
+   * only the tests that call the helper red (tools/guard/lib/red-check.ts). Read from the trusted
+   * root like renames. Optional, [] when absent.
+   */
+  expected_values: ExpectedValueDeclaration[];
   impl: 'codex' | 'claude';
   /**
    * Who writes the rule tests. `claude-independent` (owner decision 2026-10-21, ops/approvals.yaml
@@ -89,6 +99,48 @@ export type RenameDeclaration = {
   /** The string literal it became, with the same quote, different from `from`. */
   to: string;
 };
+
+/**
+ * One registered expected-value change (CT-06zxe, D10-371): in the top-level helper `helper` of
+ * `file`, the one occurrence of `from` became `to`.
+ */
+export type ExpectedValueDeclaration = {
+  /** The rule-test file, repository-relative, inside the task's test_paths (tools/ops/task.ts). */
+  file: string;
+  /** The name of a top-level function / const arrow function of that file. */
+  helper: string;
+  /** One line of the helper as at the base (after the renames), literal text, not a pattern. */
+  from: string;
+  /** What it became: the same value skeleton as `from` (EXPECTED_VALUE_SHAPE). */
+  to: string;
+};
+
+/**
+ * The most expected values a task may register (CT-06zxe). Like renames, the section is left out
+ * of the task file's line limit (tools/ops/task.ts countedLines) and has its own, by entries.
+ */
+export const EXPECTED_VALUES_MAX = 20;
+
+/** The longest `from` / `to` of an expected value (one line of a helper). */
+export const EXPECTED_VALUE_LENGTH_MAX = 200;
+
+/**
+ * The shape of an expected-value change (CT-06zxe): `from` and `to` have the same value skeleton
+ * (tools/guard/lib/test-blocks.ts valueSkeleton: number and string literals replaced by one
+ * placeholder, unary minus signs dropped, whitespace and comments kept). Only a value may change
+ * (`AMOUNT` → `-AMOUNT`, `500n` → `-500n`, `'open'` → `'closed'`): an assertion cannot be removed,
+ * a call or a name cannot be swapped, the structure cannot change; a tagged template (sql`…`) is
+ * not a value. The values that differ must stand as an object property value (`key: <value>`)
+ * or a matcher's expected argument (`.toBe(<value>)`), never inside a query call (`.where(`,
+ * `.selectFrom(`, `sql(` …): test-blocks.ts valueChangeRefusal. What a literal means (an
+ * expectation, or a query argument that makes the assertion vacuous) the shape cannot tell: the
+ * affected tests must still be red on the old code, and the rule-test reviewer confirms every
+ * entry (spec_test_review.expected_values_confirmed, tools/ci/evidence-check.ts).
+ */
+export const EXPECTED_VALUE_SHAPE =
+  'the same value skeleton (only literals and unary minus signs may differ; a tagged template is not a literal)';
+
+const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 /**
  * The most renames a task may declare (CT-06zxc). A rename is a whole ledger PR's worth of trust
@@ -160,6 +212,7 @@ const KNOWN_KEYS = new Set([
   'mechanical_paths',
   'red_exempt',
   'renames',
+  'expected_values',
   'impl',
   'tester',
   'accept',
@@ -350,6 +403,98 @@ function renameList(value: unknown, problems: string[]): RenameDeclaration[] {
   return out;
 }
 
+/**
+ * The `expected_values` list (CT-06zxe, D10-371): mappings with exactly `file` / `helper` /
+ * `from` / `to`; `file` a repository path, `helper` an identifier, `from` / `to` non-empty single
+ * lines of at most EXPECTED_VALUE_LENGTH_MAX characters, different, with the same value skeleton
+ * (EXPECTED_VALUE_SHAPE); no file + helper + from twice; at most EXPECTED_VALUES_MAX entries.
+ * Whether the file lies inside test_paths is checked by tools/ops/task.ts.
+ */
+function expectedValueList(value: unknown, problems: string[]): ExpectedValueDeclaration[] {
+  const label = 'expected_values';
+  if (!Array.isArray(value)) {
+    problems.push(`${label}: must be a list of mappings (file / helper / from / to)`);
+    return [];
+  }
+  if (value.length > EXPECTED_VALUES_MAX) {
+    problems.push(`${label}: ${value.length} entries, the limit is ${EXPECTED_VALUES_MAX}`);
+  }
+  const out: ExpectedValueDeclaration[] = [];
+  const seen = new Set<string>();
+  value.forEach((item, index) => {
+    const at = `${label}[${index}]`;
+    if (!isRecord(item)) {
+      problems.push(`${at}: must be a mapping (file / helper / from / to)`);
+      return;
+    }
+    for (const key of Object.keys(item)) {
+      if (!['file', 'helper', 'from', 'to'].includes(key)) {
+        problems.push(`${at}.${key}: unknown field`);
+      }
+    }
+    const { file, helper, from, to } = item;
+    let ok = true;
+    if (typeof file !== 'string' || file === '') {
+      problems.push(`${at}.file: must be a non-empty repository path`);
+      ok = false;
+    } else {
+      const problem = pathProblem(file);
+      if (problem !== null) {
+        problems.push(`${at}.file: "${file}" ${problem}`);
+        ok = false;
+      }
+    }
+    if (typeof helper !== 'string' || !IDENTIFIER.test(helper)) {
+      problems.push(`${at}.helper: must be the name (an identifier) of a top-level helper`);
+      ok = false;
+    }
+    for (const [key, v] of [
+      ['from', from],
+      ['to', to],
+    ] as const) {
+      if (typeof v !== 'string' || v.trim() === '') {
+        problems.push(`${at}.${key}: must be a non-empty source snippet`);
+        ok = false;
+      } else if (/[\n\r\u2028\u2029]/.test(v)) {
+        problems.push(`${at}.${key}: must be a single line`);
+        ok = false;
+      } else if (v.length > EXPECTED_VALUE_LENGTH_MAX) {
+        problems.push(`${at}.${key}: longer than ${EXPECTED_VALUE_LENGTH_MAX} characters`);
+        ok = false;
+      }
+    }
+    if (!ok) return;
+    const f = from as string;
+    const t = to as string;
+    if (f === t) {
+      problems.push(`${at}: from and to are the same`);
+      return;
+    }
+    const skeleton = valueSkeleton(f);
+    if (skeleton === null || skeleton !== valueSkeleton(t)) {
+      problems.push(
+        `${at}: from ${JSON.stringify(f)} and to ${JSON.stringify(t)} must have ${EXPECTED_VALUE_SHAPE}`,
+      );
+      return;
+    }
+    const refusal = valueChangeRefusal(f, t);
+    if (refusal !== null) {
+      problems.push(`${at}: from ${JSON.stringify(f)} → to ${JSON.stringify(t)}: ${refusal}`);
+      return;
+    }
+    const key = `${file as string}\u0000${helper as string}\u0000${f}`;
+    if (seen.has(key)) {
+      problems.push(
+        `${at}: ${file as string} / ${helper as string} / ${JSON.stringify(f)} is registered twice`,
+      );
+      return;
+    }
+    seen.add(key);
+    out.push({ file: file as string, helper: helper as string, from: f, to: t });
+  });
+  return out;
+}
+
 /** Parses and validates one task file; throws a single Error listing every problem found. */
 export function parseTaskFile(text: string, fileName: string): TaskFile {
   const label = basename(fileName);
@@ -373,6 +518,7 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
       key !== 'mechanical_paths' &&
       key !== 'red_exempt' &&
       key !== 'renames' &&
+      key !== 'expected_values' &&
       !Object.hasOwn(doc, key)
     ) {
       problems.push(`${key}: missing`);
@@ -430,6 +576,9 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
     ? redExemptList(doc['red_exempt'], problems)
     : [];
   const renames = Object.hasOwn(doc, 'renames') ? renameList(doc['renames'], problems) : [];
+  const expectedValues = Object.hasOwn(doc, 'expected_values')
+    ? expectedValueList(doc['expected_values'], problems)
+    : [];
   const accept = Object.hasOwn(doc, 'accept')
     ? stringList(doc, 'accept', problems, { nonEmpty: true })
     : [];
@@ -507,6 +656,7 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
     mechanical_paths: mechanicalPaths,
     red_exempt: redExempt,
     renames,
+    expected_values: expectedValues,
     impl: impl as TaskFile['impl'],
     tester: tester as TaskFile['tester'],
     accept,

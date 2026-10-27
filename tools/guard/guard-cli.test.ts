@@ -50,6 +50,11 @@ const RENAMES_TASK = AUTHOR_TASK.replace('id: B2-02b', 'id: B2-02f').replace(
   'test_paths:\n  - "test/spec/ledger/**"',
   'test_paths:\n  - "test/spec/ledger/**"\nrenames:\n  - from: "\'post-job\'"\n    to: "\'post_job\'"',
 );
+/** CT-06zxe: the same task with a registered expected value in the trusted ledger. */
+const VALUES_TASK = AUTHOR_TASK.replace('id: B2-02b', 'id: B2-02g').replace(
+  'test_paths:\n  - "test/spec/ledger/**"',
+  "test_paths:\n  - \"test/spec/ledger/**\"\nexpected_values:\n  - file: test/spec/ledger/anomaly.test.ts\n    helper: onlyAnomaly\n    from: '  expect(diff).toBe(AMOUNT);'\n    to: '  expect(diff).toBe(-AMOUNT);'",
+);
 const OLD_LEDGER_TASK = AUTHOR_TASK.replace('id: B2-02b', 'id: B2-02c').replace(
   'test_paths:\n  - "test/spec/ledger/**"\n',
   '',
@@ -131,6 +136,7 @@ beforeAll(() => {
     'ops/tasks/B2-02b.yaml': AUTHOR_TASK,
     'ops/tasks/B2-02e.yaml': DECLARED_TASK,
     'ops/tasks/B2-02f.yaml': RENAMES_TASK,
+    'ops/tasks/B2-02g.yaml': VALUES_TASK,
     'ops/tasks/B2-02c.yaml': OLD_LEDGER_TASK,
     'ops/tasks/N1-01.yaml': NO_TESTER_TASK,
     'ops/tasks/B2-02d.yaml': NEW_NO_TEST_PATHS_TASK,
@@ -685,6 +691,72 @@ describe('path-guard.ts, protected-paths.ts, test-guard.ts, run.ts git', () => {
     const without = guard('red-check.ts', args('B2-02b'));
     expect(without.status).toBe(1);
     expect(without.stderr).toContain(`${renamed} > [AC-3] job: red for an unrecognised reason`);
+  });
+
+  it("[CT-06zxe] red-check: with the trusted ledger's expected value only the tests calling the helper must be red", () => {
+    const vitest = "import { expect, it } from 'vitest';\n";
+    const file = 'test/spec/ledger/anomaly.test.ts';
+    const source = (sign: string): string =>
+      `${vitest}const AMOUNT = 500n;\nfunction onlyAnomaly(diff: bigint) {\n  expect(diff).toBe(${sign}AMOUNT);\n}\n` +
+      "it('[AC-1] calls it', () => {\n  onlyAnomaly(post());\n});\n" +
+      "it('[AC-2] does not', () => {\n  expect(post()).toBeDefined();\n});\n";
+    const { root, base } = makeRepo({ [file]: source('') });
+    writeFiles(root, { [file]: source('-') });
+    fixtureGit(root, ['commit', '-qam', 'test(spec): diff_fen is expected - actual']);
+    const tree = fixtureGit(root, ['rev-parse', 'HEAD^{tree}']);
+    const reportFile = join(root, '..', `red-report-values-${Date.now()}.json`);
+    const failed = (fullName: string) => ({
+      fullName,
+      status: 'failed',
+      failures: [{ causes: [{ name: 'AssertionError', message: 'expected 500n to be -500n' }] }],
+    });
+    writeFileSync(
+      reportFile,
+      JSON.stringify({
+        reporter: 'couli-red-reporter',
+        testResults: [
+          {
+            name: `${root}/${file}`,
+            assertionResults: [
+              failed('[AC-1] calls it'),
+              { fullName: '[AC-2] does not', status: 'passed' },
+            ],
+          },
+        ],
+      }),
+    );
+    const args = (task: string): string[] => [
+      '--task',
+      task,
+      '--report',
+      reportFile,
+      '--root',
+      root,
+      '--json',
+      '--cwd',
+      root,
+      '--base',
+      base,
+      '--head-tree',
+      tree,
+    ];
+    const res = guard('red-check.ts', args('B2-02g'));
+    expect(res.status, res.stderr).toBe(0);
+    const doc = json<{ ok: boolean; red: string[]; notes: string[]; exempt: unknown[] }>(
+      res.stdout,
+    );
+    expect(doc).toMatchObject({
+      ok: true,
+      red: [`${file} > [AC-1] calls it`],
+      exempt: [{ file, test: '[AC-2] does not', status: 'passed' }],
+    });
+    expect(doc.notes.join('\n')).toContain(
+      `${file}: compared with its base after the registered expected values (D10-371: ${file} / onlyAnomaly: "  expect(diff).toBe(AMOUNT);" → "  expect(diff).toBe(-AMOUNT);"); tests calling the changed helper(s), which must be red: [AC-1] calls it`,
+    );
+    // Without the registration the helper change judges the whole file: [AC-2] must be red too.
+    const without = guard('red-check.ts', args('B2-02b'));
+    expect(without.status).toBe(1);
+    expect(without.stderr).toContain(`${file} > [AC-2] does not: green on the skeleton`);
   });
 
   it('rejects wrong usage with exit 2', () => {

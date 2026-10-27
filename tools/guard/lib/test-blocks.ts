@@ -670,8 +670,17 @@ export type ParsedTestFile = {
   blocks: TestBlock[];
 };
 
-/** Test blocks and shared rest of a rule-test file (see the header); throws TestParseError. */
-export function parseTestFile(source: string): ParsedTestFile {
+type Scanned = {
+  tokens: Token[];
+  match: number[];
+  sep: Separator;
+  suites: Call[];
+  /** The outermost test calls, in source order (the order of ParsedTestFile.blocks). */
+  tests: Call[];
+};
+
+/** Tokens and test / suite calls of a rule-test file; throws TestParseError. */
+function scanTests(source: string): Scanned {
   const tokens = tokenize(source);
   const match = matchBrackets(tokens);
   const names = vitestNames(tokens);
@@ -691,6 +700,12 @@ export function parseTestFile(source: string): ParsedTestFile {
       i = call.end; // outermost test calls only
     }
   }
+  return { tokens, match, sep, suites, tests };
+}
+
+/** Test blocks and shared rest of a rule-test file (see the header); throws TestParseError. */
+export function parseTestFile(source: string): ParsedTestFile {
+  const { tokens, sep, suites, tests } = scanTests(source);
   const inBlock = new Array<boolean>(tokens.length).fill(false);
   for (const c of tests) for (let k = c.start; k <= c.end; k += 1) inBlock[k] = true;
   let shared = '';
@@ -830,6 +845,412 @@ export function unchangedTest(fullName: string, blocks: readonly ComparedBlock[]
   if (fullName === '') return false;
   const hits = blocks.filter((b) => b.pattern.test(fullName));
   return hits.length === 1 && hits[0]?.changed === false;
+}
+
+// Registered expected values (CT-06zxe; orchestrator ruling D10-371 after B2-15l): a task may
+// change an expected value inside a top-level helper of a frozen rule-test file (`diff_fen:
+// AMOUNT` → `diff_fen: -AMOUNT` in `onlyAnomaly`), registered entry by entry in its trusted ledger
+// (`expected_values`: file / helper / from / to; tools/lib/task-file.ts). The functions below
+// serve tools/guard/lib/red-check.ts (valueSkeleton and valueChangeRefusal tools/lib/task-file.ts
+// too):
+// - valueSkeleton: a source text with its number and string literals (untagged templates without
+//   `${…}`; a tagged one such as sql`…` is kept as written) replaced by one placeholder and its unary minus signs dropped, whitespace and comments kept
+//   exactly. An entry's `from` and `to`, and the helper around it before and after the change,
+//   must have the same skeleton: only the value of an expectation may change, never an
+//   assertion, a call, a name or the structure.
+// - valueChangeRefusal: where the differing values stand — only an object property value or a
+//   matcher's expected argument, never inside a query call (`.where(`, `sql(` …).
+// - topLevelHelpers: the helpers a file declares at its top level — `[export] [async] function
+//   name(…) {…}` and `[export] const name = [async] (…) => {…}` / `= [async] function (…) {…}`
+//   (a block body only) — with their source ranges; a name declared twice is in `twice`.
+// - helperImpact: which test blocks a change of the named helpers affects. A block is affected
+//   when its text names one of them, or a top-level helper that names one of them (transitively:
+//   the closure of helpers calling helpers). A name that occurs anywhere else outside the test
+//   blocks (a hook, a describe body, a top-level table or statement, an export list) cannot be
+//   bounded: the impact is refused and the caller judges the whole file. Any occurrence of the
+//   identifier counts (a property of the same name too, one inside a template's `${…}` too,
+//   where the template stands): more tests affected, never fewer.
+
+/** Whether a `-` at tokens[k] is a unary minus: no operand before it. */
+function unaryMinus(tokens: readonly Token[], k: number): boolean {
+  const t = tokens[k] as Token;
+  if (t.kind !== 'punct' || t.text !== '-') return false;
+  const prev = tokens[k - 1];
+  if (prev === undefined) return true;
+  if (prev.kind === 'id' || prev.kind === 'num' || prev.kind === 'str') return false;
+  if (prev.kind === 'tpl' || prev.kind === 're') return false;
+  return !(prev.text === ')' || prev.text === ']' || prev.text === '}');
+}
+
+/** Keywords a template may follow without being tagged by them (`return \`…\``). */
+const UNTAGGING = new Set([
+  'return',
+  'typeof',
+  'void',
+  'await',
+  'yield',
+  'case',
+  'in',
+  'of',
+  'instanceof',
+  'throw',
+  'new',
+  'delete',
+  'else',
+  'do',
+]);
+
+/**
+ * Whether the template at tokens[k] is tagged (CT-06zxe review r1 S2-1 ①): it follows an
+ * identifier (`sql\`…\``, a `.` chain's last name), a `)`, a `]` or a `>` (type arguments, a
+ * comparison counted too: refused more, never less).
+ */
+function taggedTemplate(tokens: readonly Token[], k: number): boolean {
+  const prev = tokens[k - 1];
+  if (prev === undefined) return false;
+  if (prev.kind === 'id') return !UNTAGGING.has(prev.text);
+  return prev.kind === 'punct' && [')', ']', '>'].includes(prev.text);
+}
+
+/**
+ * Whether tokens[k] is a value literal: a number, a string, or a template without `${…}` that is
+ * not tagged (a tagged template is a query or a call, its text is kept in the skeleton).
+ */
+function valueLiteral(tokens: readonly Token[], k: number): boolean {
+  const t = tokens[k] as Token;
+  if (t.kind === 'num' || t.kind === 'str') return true;
+  return t.kind === 'tpl' && (t.inner ?? []).length === 0 && !taggedTemplate(tokens, k);
+}
+
+/**
+ * The value skeleton of a source text (see above), or null when it cannot be tokenized. Brackets
+ * need not balance (an entry is one line of a larger expression).
+ */
+export function valueSkeleton(source: string): string | null {
+  let tokens: Token[];
+  try {
+    tokens = tokenize(source);
+  } catch {
+    return null;
+  }
+  let out = '';
+  let gap = '';
+  tokens.forEach((t, k) => {
+    gap += t.gap ?? '';
+    if (unaryMinus(tokens, k)) return;
+    out += `${gap}${valueLiteral(tokens, k) ? '\u0000' : t.text}`;
+    gap = '';
+  });
+  return out + gap + source.slice(sourceEnd(tokens));
+}
+
+/**
+ * Calls whose arguments are a query, not an expectation (CT-06zxe review r1 S2-1 ③): a literal
+ * changed anywhere inside their parentheses is refused.
+ */
+const QUERY_CALLS = new Set([
+  'where',
+  'orWhere',
+  'andWhere',
+  'whereRef',
+  'having',
+  'on',
+  'onRef',
+  'select',
+  'selectAll',
+  'selectFrom',
+  'insertInto',
+  'updateTable',
+  'deleteFrom',
+  'set',
+  'values',
+  'from',
+  'join',
+  'innerJoin',
+  'leftJoin',
+  'rightJoin',
+  'orderBy',
+  'groupBy',
+  'limit',
+  'offset',
+  'returning',
+  'with',
+  'sql',
+  'raw',
+  'query',
+  'execute',
+]);
+
+/** A matcher's name (`toBe`, `toEqual`, `toBeGreaterThanOrEqual`, …). */
+const MATCHER = /^to[A-Z][A-Za-z]*$/;
+
+/** The identifier a call's `(` at tokens[k] follows (type arguments skipped), or ''. */
+function calleeOf(tokens: readonly Token[], k: number): string {
+  let j = k - 1;
+  if (tokens[j]?.text === '>') {
+    for (let depth = 0; j >= 0; j -= 1) {
+      const text = tokens[j]?.text;
+      if (text === '>') depth += 1;
+      else if (text === '<') depth -= 1;
+      if (depth === 0) break;
+    }
+    j -= 1;
+  }
+  const t = tokens[j];
+  return t?.kind === 'id' ? t.text : '';
+}
+
+/**
+ * Why the literals / unary minus signs that differ between `before` and `after` (same value
+ * skeleton) are not all in an allowed place, or null when they are (CT-06zxe review r1 S2-1 ③).
+ * Allowed: an object property value (`key: <value>`) or a matcher's expected argument
+ * (`.toBe(<value>)`, inside `[ ]` / `{ }` of it too); never inside the parentheses of a query
+ * call (QUERY_CALLS: `.where(`, `.selectFrom(`, `sql(` …). Brackets need not balance (an entry is
+ * one line); red-check also checks the whole helper before and after, where they do.
+ */
+export function valueChangeRefusal(before: string, after: string): string | null {
+  let a: Token[];
+  let b: Token[];
+  try {
+    a = tokenize(before);
+    b = tokenize(after);
+  } catch {
+    return 'it cannot be tokenized';
+  }
+  const operands = (tokens: Token[]): { at: number; minus: number }[] => {
+    const out: { at: number; minus: number }[] = [];
+    let minus = 0;
+    tokens.forEach((_, k) => {
+      if (unaryMinus(tokens, k)) minus += 1;
+      else {
+        out.push({ at: k, minus });
+        minus = 0;
+      }
+    });
+    return out;
+  };
+  const oa = operands(a);
+  const ob = operands(b);
+  if (oa.length !== ob.length) return 'the value skeletons differ';
+  // The open brackets around every token of `a`.
+  const open: number[][] = [];
+  const stack: number[] = [];
+  a.forEach((t, k) => {
+    if (t.kind === 'punct' && [')', ']', '}'].includes(t.text)) stack.pop();
+    open[k] = [...stack];
+    if (t.kind === 'punct' && ['(', '[', '{'].includes(t.text)) stack.push(k);
+  });
+  for (let n = 0; n < oa.length; n += 1) {
+    const x = oa[n] as { at: number; minus: number };
+    const y = ob[n] as { at: number; minus: number };
+    const t = a[x.at] as Token;
+    if (t.text === (b[y.at] as Token).text && x.minus === y.minus) continue;
+    const shown = JSON.stringify(t.text);
+    const around = open[x.at] ?? [];
+    for (const o of around) {
+      const callee = a[o]?.text === '(' ? calleeOf(a, o) : '';
+      if (QUERY_CALLS.has(callee))
+        return `${shown} is changed inside a ${callee}( call (a query, not an expectation)`;
+    }
+    const colon = a[x.at - x.minus - 1];
+    const key = a[x.at - x.minus - 2];
+    if (colon?.text === ':' && (key?.kind === 'id' || key?.kind === 'str' || key?.kind === 'num'))
+      continue;
+    // The innermost `(` around it (only `[ ]` / `{ }` between): a matcher's, after a `.` (or the
+    // fragment starts with the matcher's name; the whole helper then shows the `.`).
+    const paren = [...around].reverse().find((o) => a[o]?.text === '(');
+    if (
+      paren !== undefined &&
+      MATCHER.test(calleeOf(a, paren)) &&
+      (paren === 1 || a[paren - 2]?.text === '.')
+    )
+      continue;
+    return `${shown} is changed outside an object property value (key: <value>) and a matcher's expected argument (.toBe(<value>))`;
+  }
+  return null;
+}
+
+/** Offset just after the last token (what follows is whitespace or comments). */
+function sourceEnd(tokens: readonly Token[]): number {
+  const last = tokens[tokens.length - 1];
+  return last === undefined ? 0 : (last.start ?? 0) + last.text.length;
+}
+
+/** A top-level helper: its name and source range [start, end). */
+export type TopLevelHelper = { name: string; start: number; end: number };
+
+type HelperDecl = { name: string; from: number; to: number };
+
+/** End (index of the body's `}`) of a function whose parameter list closes at `close`, or -1. */
+function functionBody(tokens: readonly Token[], match: readonly number[], close: number): number {
+  for (let k = close + 1; k < tokens.length; k += 1) {
+    const t = tokens[k] as Token;
+    if (t.kind !== 'punct') continue;
+    if (t.text === '{') {
+      const prev = tokens[k - 1]?.text ?? '';
+      // An object type in the return annotation (`): { a: number } {`) is not the body.
+      if (![':', '<', '|', '&', ',', '(', '=>'].includes(prev)) return match[k] as number;
+      k = match[k] as number;
+    } else if (t.text === '(' || t.text === '[') {
+      k = match[k] as number;
+    } else if (t.text === ';' || t.text === ')' || t.text === ']' || t.text === '}') {
+      return -1;
+    }
+  }
+  return -1;
+}
+
+/** End of an arrow function whose parameters close at `close`: its block body's `}`, or -1. */
+function arrowBody(tokens: readonly Token[], match: readonly number[], close: number): number {
+  for (let k = close + 1; k < tokens.length; k += 1) {
+    const t = tokens[k] as Token;
+    if (t.text === '=>') return tokens[k + 1]?.text === '{' ? (match[k + 1] as number) : -1;
+    if (t.kind !== 'punct') continue;
+    if (t.text === '(' || t.text === '[' || t.text === '{') k = match[k] as number;
+    else if ([';', ')', ']', '}', '='].includes(t.text)) return -1;
+  }
+  return -1;
+}
+
+/** The top-level helper declarations (token ranges), see topLevelHelpers. */
+function helperDecls(tokens: readonly Token[], match: readonly number[]): HelperDecl[] {
+  const out: HelperDecl[] = [];
+  const at = (k: number, text: string): boolean =>
+    tokens[k]?.text === text && tokens[k]?.kind === 'id';
+  for (let i = 0; i < tokens.length; i += 1) {
+    const t = tokens[i] as Token;
+    if (t.kind === 'punct' && (t.text === '(' || t.text === '[' || t.text === '{')) {
+      i = match[i] as number; // top level only
+      continue;
+    }
+    const prev = tokens[i - 1];
+    if (prev !== undefined && !(prev.text === ';' || prev.text === '}' || t.nl)) continue;
+    let j = i;
+    if (at(j, 'export')) j += 1;
+    if (at(j, 'async') && at(j + 1, 'function')) j += 1;
+    if (at(j, 'function')) {
+      j += 1;
+      if (tokens[j]?.text === '*') j += 1;
+      const name = tokens[j];
+      if (name?.kind !== 'id') continue;
+      j += 1;
+      if (tokens[j]?.text === '<') j = skipTypeArgs(tokens, match, j) ?? -1;
+      if (j < 0 || tokens[j]?.text !== '(') continue;
+      const end = functionBody(tokens, match, match[j] as number);
+      if (end < 0) continue;
+      out.push({ name: name.text, from: i, to: end });
+      i = end;
+      continue;
+    }
+    if (!at(j, 'const')) continue;
+    const name = tokens[j + 1];
+    if (name?.kind !== 'id') continue;
+    j += 2;
+    // A type annotation, up to the `=` (brackets skipped).
+    while (j < tokens.length && tokens[j]?.text !== '=') {
+      const u = tokens[j] as Token;
+      if (u.text === ';') break;
+      j = u.text === '(' || u.text === '[' || u.text === '{' ? (match[j] as number) + 1 : j + 1;
+    }
+    if (tokens[j]?.text !== '=') continue;
+    j += 1;
+    if (at(j, 'async')) j += 1;
+    let end = -1;
+    if (at(j, 'function')) {
+      j += 1;
+      if (tokens[j]?.text === '*') j += 1;
+      if (tokens[j]?.kind === 'id') j += 1;
+      if (tokens[j]?.text === '(') end = functionBody(tokens, match, match[j] as number);
+    } else {
+      if (tokens[j]?.text === '<') j = skipTypeArgs(tokens, match, j) ?? -1;
+      if (j >= 0 && tokens[j]?.text === '(') end = arrowBody(tokens, match, match[j] as number);
+      else if (j >= 0 && tokens[j]?.kind === 'id') end = arrowBody(tokens, match, j);
+    }
+    if (end < 0) continue;
+    out.push({ name: name.text, from: i, to: end });
+    i = end;
+  }
+  return out;
+}
+
+/** The top-level helpers of a source (see above); throws TestParseError. */
+export function topLevelHelpers(source: string): {
+  helpers: Map<string, TopLevelHelper>;
+  twice: Set<string>;
+} {
+  const tokens = tokenize(source);
+  const match = matchBrackets(tokens);
+  const helpers = new Map<string, TopLevelHelper>();
+  const twice = new Set<string>();
+  for (const d of helperDecls(tokens, match)) {
+    if (helpers.has(d.name)) twice.add(d.name);
+    const last = tokens[d.to] as Token;
+    helpers.set(d.name, {
+      name: d.name,
+      start: tokens[d.from]?.start ?? 0,
+      end: (last.start ?? 0) + last.text.length,
+    });
+  }
+  for (const name of twice) helpers.delete(name);
+  return { helpers, twice };
+}
+
+export type HelperImpact =
+  /** `closure`: the helpers whose change reaches a test; `affected[i]`: block i is affected. */
+  { ok: true; closure: string[]; affected: boolean[] } | { ok: false; reason: string };
+
+/** Which test blocks of `source` a change of `changed` (top-level helpers) affects; see above. */
+export function helperImpact(source: string, changed: readonly string[]): HelperImpact {
+  let scanned: Scanned;
+  try {
+    scanned = scanTests(source);
+  } catch (err) {
+    return { ok: false, reason: `the file cannot be read as tests (${String(err)})` };
+  }
+  const { tokens, match, tests } = scanned;
+  const decls = helperDecls(tokens, match);
+  const blockOf = new Array<number>(tokens.length).fill(-1);
+  tests.forEach((c, b) => {
+    for (let k = c.start; k <= c.end; k += 1) blockOf[k] = b;
+  });
+  const declOf = new Array<number>(tokens.length).fill(-1);
+  decls.forEach((d, n) => {
+    for (let k = d.from; k <= d.to; k += 1) if (blockOf[k] === -1) declOf[k] = n;
+  });
+  const closure = new Set(changed);
+  const affected = tests.map(() => false);
+  // The identifiers at every top-level token: itself, or those inside a template's `${…}`
+  // (CT-06zxe review r1 S1-1), which belong where the template stands.
+  const names = tokens.map((t) =>
+    t.kind === 'id'
+      ? [t.text]
+      : flatten(t.inner ?? []).flatMap((u) => (u.kind === 'id' ? [u.text] : [])),
+  );
+  for (let grew = true; grew;) {
+    grew = false;
+    for (let k = 0; k < tokens.length; k += 1) {
+      const name = (names[k] as string[]).find((x) => closure.has(x));
+      if (name === undefined) continue;
+      const b = blockOf[k] as number;
+      if (b >= 0) {
+        affected[b] = true;
+        continue;
+      }
+      const n = declOf[k] as number;
+      const decl = n >= 0 ? decls[n] : undefined;
+      if (decl === undefined) {
+        return {
+          ok: false,
+          reason: `"${name}" is used outside the test blocks and the top-level helpers (a hook, a describe body, a top-level statement or table): its impact cannot be bounded`,
+        };
+      }
+      if (!closure.has(decl.name)) {
+        closure.add(decl.name);
+        grew = true;
+      }
+    }
+  }
+  return { ok: true, closure: [...closure], affected };
 }
 
 const CODE_FILE = /\.[cm]?[jt]sx?$/;

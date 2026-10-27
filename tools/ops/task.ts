@@ -40,8 +40,9 @@ export function countedLines(text: string): number {
   let inExempt = false;
   for (const line of lines) {
     // CT-06zxc (review r1 S2-2): the `renames` section likewise (RENAMES_MAX entries, each a
-    // from / to mapping of string literals: nothing else parses there).
-    if (/^(red_exempt|renames):/.test(line)) {
+    // from / to mapping of string literals: nothing else parses there); CT-06zxe: and the
+    // `expected_values` section (EXPECTED_VALUES_MAX entries of file / helper / from / to).
+    if (/^(red_exempt|renames|expected_values):/.test(line)) {
       inExempt = true;
       continue;
     }
@@ -294,7 +295,7 @@ export function checkTask(id: string, opts: CheckOptions = {}): string[] {
   const lines = countedLines(text);
   if (lines > MAX_TASK_LINES) {
     problems.push(
-      `${lines} lines, the limit is ${MAX_TASK_LINES} (规划/11 §5.1; the red_exempt section is not counted, CT-06t, nor the renames section, CT-06zxc)`,
+      `${lines} lines, the limit is ${MAX_TASK_LINES} (规划/11 §5.1; the red_exempt section is not counted, CT-06t, nor the renames section, CT-06zxc, nor expected_values, CT-06zxe)`,
     );
   }
 
@@ -460,6 +461,23 @@ export function checkTask(id: string, opts: CheckOptions = {}): string[] {
         problems.push(`red_exempt: "${entry.file}" is not a rule-test file (*.test.ts)`);
       } else if (!matchesAny(entry.file, task.test_paths)) {
         problems.push(`red_exempt: "${entry.file}" is not inside the task's test_paths`);
+      }
+    }
+  }
+
+  // CT-06zxe (D10-371): registered expected values name rule-test files of the task's own
+  // test_paths, and only a task with a rule-test author has a red run they matter to.
+  if (task.expected_values.length > 0) {
+    if (task.tester === 'none') {
+      problems.push(
+        'expected_values: a task without a rule-test author (tester: none) has no red run to register them for',
+      );
+    }
+    for (const entry of task.expected_values) {
+      if (!RULE_TEST_FILE.test(entry.file)) {
+        problems.push(`expected_values: "${entry.file}" is not a rule-test file (*.test.ts)`);
+      } else if (!matchesAny(entry.file, task.test_paths)) {
+        problems.push(`expected_values: "${entry.file}" is not inside the task's test_paths`);
       }
     }
   }

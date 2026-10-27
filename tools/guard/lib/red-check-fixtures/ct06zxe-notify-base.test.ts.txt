@@ -1,0 +1,56 @@
+// CT-06zxe fixture: the shape of test/spec/payment/result/notify.int.test.ts (B2-15c) — a
+// top-level helper onlyAnomaly with an expected diff_fen, three tests calling it, others not.
+import { describe, expect, it } from 'vitest';
+import { notify, payOrder, reconDiffs } from './kit.ts';
+
+const AMOUNT = 500n;
+
+async function prepared(amount: bigint = AMOUNT) {
+  return { order: { id: 'o1', amount_fen: amount } };
+}
+
+async function onlyAnomaly(order: { id: string }, trade: string) {
+  expect(await payOrder(order.id)).toMatchObject({ status: 'closed' });
+  const diffs = await reconDiffs();
+  expect(diffs[0]).toMatchObject({
+    type: 'pay_anomaly',
+    trade,
+    expected_fen: 0n,
+    diff_fen: AMOUNT,
+  });
+}
+
+function legacyShape() {
+  return { fen: 1n };
+}
+
+describe('notify', () => {
+  it('[AC-1] a paid notify opens the order', async () => {
+    const { order } = await prepared();
+    expect(await notify(order.id, AMOUNT)).toBe('paid');
+  });
+
+  it('[AC-2] a notify on a closed order only records an anomaly', async () => {
+    const { order } = await prepared();
+    await notify(order.id, AMOUNT);
+    await onlyAnomaly(order, 't2');
+  });
+
+  it('[AC-3] a repeated notify on a closed order records it once', async () => {
+    const { order } = await prepared();
+    await notify(order.id, AMOUNT);
+    await notify(order.id, AMOUNT);
+    await onlyAnomaly(order, 't3');
+  });
+
+  it.each(['wechat', 'alipay'])('[AC-4] %s: a late notify records an anomaly', async (ch) => {
+    const { order } = await prepared();
+    await notify(order.id, AMOUNT, ch);
+    await onlyAnomaly(order, ch);
+  });
+
+  it('[AC-5] a wrong amount is refused', async () => {
+    const { order } = await prepared();
+    expect(await notify(order.id, 1n)).toBe('refused');
+  });
+});

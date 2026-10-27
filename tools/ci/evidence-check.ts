@@ -73,6 +73,17 @@
 //              red_exempt (reviewer, last_verdict pass) with `renames_confirmed: { pairs: [{ from,
 //              to }] — exactly the pairs that hit, in ledger order —, left_out: [files] — exactly
 //              the files left out }` (review r1 S2-1); no hit, nothing required.
+//              Registered expected values (CT-06zxe, D10-371): when an entry of the ledger's
+//              `expected_values` applies to the base of a rule-test file of the task (after the
+//              renames; red-check then needs only the tests calling that helper red),
+//              `spec_test_review` must record the rule-test reviewer's confirmation as for
+//              red_exempt with `expected_values_confirmed: { entries: [{ file, helper, from, to
+//              }] }` — exactly the entries that apply, in ledger order; no hit, nothing required.
+//              A hit is an entry that can be applied to the base, whether or not red-check then
+//              judges the file by the helpers' impact (the head may not make that change, or may
+//              change more outside the tests: the file is judged whole, the confirmation is still
+//              asked — one more confirmation, never a looser check).
+//              The expected list is unchanged by them (such a file still needs a red test).
 //              CI records (`mode: ci`) in the evidence file are refused (CR2-06): nothing a copied
 //              record says can be checked against a run; the CI checks count by themselves.
 //              Owner waiver (owner decision 2026-10-02, ops/approvals.yaml id 12): on a branch
@@ -97,8 +108,13 @@ import { git, tryGit } from '../lib/git.ts';
 import type { Change } from '../lib/git.ts';
 import { loadLegacyTasks } from '../lib/legacy-tasks.ts';
 import { parseTaskFile } from '../lib/task-file.ts';
-import type { RenameDeclaration, TaskFile } from '../lib/task-file.ts';
-import { expectedRuleTests, renamedOnlyFiles, renamesHit } from '../guard/lib/red-check.ts';
+import type { ExpectedValueDeclaration, RenameDeclaration, TaskFile } from '../lib/task-file.ts';
+import {
+  expectedRuleTests,
+  expectedValuesHit,
+  renamedOnlyFiles,
+  renamesHit,
+} from '../guard/lib/red-check.ts';
 import { matchesAny } from '../lib/glob.ts';
 import { loadProtected, splitFragment } from '../guard/lib/protected.ts';
 import type { ProtectedConfig } from '../guard/lib/protected.ts';
@@ -475,6 +491,11 @@ export type RedRequirement = {
    * confirmation required.
    */
   renames?: { hit: RenameDeclaration[]; left_out: string[]; tester: TaskFile['tester'] };
+  /**
+   * CT-06zxe (D10-371): the ledger's registered expected values that apply to a rule-test file of
+   * the task (in ledger order); absent when none: no confirmation required.
+   */
+  expectedValues?: { hit: ExpectedValueDeclaration[]; tester: TaskFile['tester'] };
 };
 
 /** Who produced a review: the reviewer values an evidence entry may carry. */
@@ -565,6 +586,32 @@ export function renamesConfirmed(
   const a = [...(files as string[])].sort();
   const b = [...leftOut].sort();
   return a.length === b.length && a.every((f, i) => f === b[i]);
+}
+
+/**
+ * Whether `value` confirms exactly these expected values (CT-06zxe): a mapping with only
+ * `entries`, each `{ file, helper, from, to }` equal to the entry that applies, in ledger order.
+ */
+export function expectedValuesConfirmed(
+  value: unknown,
+  entries: readonly ExpectedValueDeclaration[],
+): boolean {
+  if (!isRecord(value)) return false;
+  if (Object.keys(value).some((k) => k !== 'entries')) return false;
+  const got = value['entries'];
+  if (!Array.isArray(got) || got.length !== entries.length) return false;
+  return got.every((g, i) => {
+    const want = entries[i];
+    return (
+      isRecord(g) &&
+      want !== undefined &&
+      Object.keys(g).length === 4 &&
+      g['file'] === want.file &&
+      g['helper'] === want.helper &&
+      g['from'] === want.from &&
+      g['to'] === want.to
+    );
+  });
 }
 
 /** Validates one evidence document against the PR; returns the problems found. */
@@ -744,6 +791,32 @@ export function evidenceProblems(
         if (review['last_verdict'] !== 'pass') at(`${field}.last_verdict`, want);
         if (!renamesConfirmed(review['renames_confirmed'], pairs, leftOut)) {
           at(`${field}.renames_confirmed`, want);
+        }
+      }
+    }
+    // CT-06zxe (D10-371): registered expected values that apply need the rule-test reviewer's
+    // confirmation entry by entry (only an expected value changed; the affected tests are right).
+    if (red.required && red.expectedValues !== undefined) {
+      const reviewers = specTestReviewers(red.expectedValues.tester);
+      const reviewer = reviewers[0] ?? 'claude';
+      const field = 'spec_test_review';
+      const entries = red.expectedValues.hit.map((e) => ({
+        file: e.file,
+        helper: e.helper,
+        from: e.from,
+        to: e.to,
+      }));
+      const want = `the ledger's expected_values apply ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} (CT-06zxe, D10-371): the rule-test reviewer (${reviewer}) must confirm them in ${field} (reviewer ${reviewer}, last_verdict pass, expected_values_confirmed { entries: ${JSON.stringify(entries)} })`;
+      const review = doc[field];
+      if (!isRecord(review)) {
+        at(field, want);
+      } else {
+        if (!reviewers.includes(String(review['reviewer']))) at(`${field}.reviewer`, want);
+        const engine = engineProblem(review);
+        if (engine !== null) at(`${field}.engine`, engine);
+        if (review['last_verdict'] !== 'pass') at(`${field}.last_verdict`, want);
+        if (!expectedValuesConfirmed(review['expected_values_confirmed'], entries)) {
+          at(`${field}.expected_values_confirmed`, want);
         }
       }
     }
@@ -1106,15 +1179,19 @@ export function redRequirement(
   const left = new Set(leftOut);
   // Review r1 S2-1: renames that hit a rule-test file of the task need the reviewer's confirmation.
   const hit = renamesHit(all, read, ledger.renames);
+  // CT-06zxe (D10-371): registered expected values that apply need the reviewer's confirmation.
+  const expected = all.filter((f) => !left.has(f));
+  const values = expectedValuesHit(expected, read, ledger.renames, ledger.expected_values);
   return {
     required: true,
-    expected: all.filter((f) => !left.has(f)),
+    expected,
     ...(ledger.red_exempt.length > 0
       ? { declared: { count: ledger.red_exempt.length, tester: ledger.tester } }
       : {}),
     ...(hit.length > 0 || leftOut.length > 0
       ? { renames: { hit, left_out: leftOut, tester: ledger.tester } }
       : {}),
+    ...(values.length > 0 ? { expectedValues: { hit: values, tester: ledger.tester } } : {}),
   };
 }
 
