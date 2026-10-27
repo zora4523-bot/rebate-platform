@@ -172,7 +172,7 @@ describe('union file replay report', () => {
     });
   });
 
-  // B1-04ca (D10-380): the file I/O heaviest case here (four writes of both files, four reads);
+  // B1-04ca (D10-380): the file I/O heaviest case here (three writes of both files, four reads);
   // its 12-case file takes 42–82 ms on a green CI run but once hit the 5 s default under a loaded
   // runner (#1599 run 40157563601, 5019 ms). Explicit limit only; the assertions are unchanged.
   it('[AC-B1-04c-UNIT#7] keeps a new entry when the same directory changes source', async () => {
