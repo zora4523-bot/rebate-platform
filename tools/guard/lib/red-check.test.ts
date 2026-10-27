@@ -6,11 +6,15 @@ import { expect, it } from 'vitest';
 import type { Change } from '../../lib/git.ts';
 import {
   type BaselineReader,
+  type RenamedOnly,
+  applyRenames,
   browserCauseVerdict,
   causeVerdict,
   checkRedReports,
   expectedRuleTests,
   redCheckRequired,
+  renamedOnlyFiles,
+  renamedOnlyNote,
   ruleTestBaselines,
   scriptFaultConsoleError,
   smokeCauseVerdict,
@@ -1437,4 +1441,191 @@ it('[CT-06w] ruleTestBaselines: an import of a same-named file in another direct
     // specifier with the name, ../db/kit.ts, already counts.)
     reason: `it may read a test-support file the task changed: ${QUEUE} names kit.ts in an unresolved import ../db/kit.ts (${QUEUE} is not closed: it imports queue-kit/kit.ts, a package not known to read no files)`,
   });
+});
+
+// CT-06zxc (D10-347, B1-03w): the ledger's literal renames are applied to the base of a frozen
+// rule-test file before it is compared with the head.
+const SCHED = 'test/spec/risk/freeze-expiry/scheduling.test.ts';
+const SCHED_KIT = 'test/spec/risk/freeze-expiry/kit.ts';
+const SCHED_SCOPE = ['test/spec/risk/freeze-expiry/**'];
+const schedFixture = (side: 'base' | 'head'): string =>
+  readFileSync(join(FIXTURES, `ct06zxc-scheduling-${side}.test.ts.txt`), 'utf8');
+const RENAMES = [
+  { from: "'freeze-expiry'", to: "'freeze_expiry'" },
+  { from: "'daily-alerts'", to: "'daily_alerts'" },
+];
+const SCHED_TESTS: RedTest[] = [
+  ['[AC-1] seeds both jobs', 'failed', 'Error: NotImplemented: seed'],
+  ['[AC-2] freeze-expiry reschedules on the next minute', 'passed'],
+  ['[AC-3] daily-alerts reschedules on the next day', 'passed'],
+  ['[AC-4] the queue is exclusive', 'passed'],
+];
+const schedBaselines = (
+  head: string,
+  renames: { from: string; to: string }[] = RENAMES,
+  changes: Change[] = [{ path: SCHED, status: 'M' }],
+) =>
+  ruleTestBaselines(
+    [SCHED],
+    changes,
+    SCHED_SCOPE,
+    reader({ [SCHED]: schedFixture('base') }, { [SCHED]: head }),
+    renames,
+  );
+const RENAMED_NOTE = `${SCHED}: compared with its base after the ledger's renames (D10-347: "'freeze-expiry'" → "'freeze_expiry'" ×3, "'daily-alerts'" → "'daily_alerts'" ×3)`;
+
+it('[CT-06zxc] a file that differs only by the declared renames is unchanged: left out of the expected list', () => {
+  const head = schedFixture('head');
+  const read = reader({ [SCHED]: schedFixture('base') }, { [SCHED]: head });
+  // Without the renames: the top-level table changed, the whole file must be red (as before).
+  expect(renamedOnlyFiles([SCHED], read, [])).toEqual([]);
+  expect(schedBaselines(head, [])).toEqual(
+    new Map([
+      [
+        SCHED,
+        {
+          kind: 'whole',
+          reason:
+            'code outside the tests changed (imports, helpers, hooks, top-level tables or describe titles)',
+        },
+      ],
+    ]),
+  );
+  // With them: unchanged, whatever its tests would have done (B1-03w: red for an unknown job name).
+  const left = renamedOnlyFiles([SCHED, SCHED], read, RENAMES);
+  expect(left).toEqual([
+    {
+      file: SCHED,
+      applied: [
+        `"'freeze-expiry'" → "'freeze_expiry'" ×3`,
+        `"'daily-alerts'" → "'daily_alerts'" ×3`,
+      ],
+    },
+  ]);
+  expect(renamedOnlyNote(left[0] as RenamedOnly)).toBe(
+    `${RENAMED_NOTE.replace(": compared with its base after the ledger's renames", ": unchanged after the ledger's renames")}, left out of the expected list (not run, not judged); the rule-test reviewer confirms the renames are literal follow-ups only`,
+  );
+  // It does not matter whether it may read a changed kit: only its own content is compared.
+  // A head that cannot be read, a new file, a rename that does not hit: stays expected.
+  const NEW = 'test/spec/risk/freeze-expiry/new.test.ts';
+  expect(
+    renamedOnlyFiles(
+      [SCHED, NEW, BASE_FILE],
+      reader(
+        { [SCHED]: schedFixture('base'), [BASE_FILE]: BASE_SOURCE },
+        { [NEW]: head, [BASE_FILE]: BASE_SOURCE },
+      ),
+      RENAMES,
+    ),
+  ).toEqual([]);
+  // What ruleTestBaselines says of such a file when a caller still hands it over.
+  expect(schedBaselines(head).get(SCHED)).toMatchObject({
+    kind: 'tests',
+    renamed: { identical: true },
+  });
+});
+
+it('[CT-06zxc] renamed and still different, reading a changed kit: red_exempt applies as before against the renamed base', () => {
+  const head = schedFixture('head').replace('toBe(86_400)', 'toBe(86_401)');
+  const b = schedBaselines(head, RENAMES, [
+    { path: SCHED, status: 'M' },
+    { path: SCHED_KIT, status: 'M' },
+  ]);
+  expect(b.get(SCHED)).toMatchObject({ kind: 'support', renamed: { identical: false } });
+  const reason = 'frozen test body unchanged, only the job-name literals follow D10-343';
+  const declared = [
+    { file: SCHED, test: '[AC-2] freeze-expiry reschedules on the next minute', reason },
+    { file: SCHED, test: '[AC-4] the queue is exclusive', reason },
+  ];
+  const tests = SCHED_TESTS.map(([n, s, c]) =>
+    n.startsWith('[AC-3]')
+      ? [n, 'failed', 'AssertionError: expected 86400 to be 86401']
+      : [n, s, c],
+  ) as RedTest[];
+  const result = checkRedReports([redReport(SCHED, tests)], [SCHED], ROOT, b, declared);
+  expect(result.problems).toEqual([]);
+  expect(result.ok).toBe(true);
+  expect(result.exempt?.filter((e) => e.declared === true).map((e) => e.test)).toEqual([
+    '[AC-2] freeze-expiry reschedules on the next minute',
+    '[AC-4] the queue is exclusive',
+  ]);
+  // Undeclared: the unchanged test stays held to the red rule (the file may read the kit).
+  const undeclared = checkRedReports(
+    [redReport(SCHED, tests)],
+    [SCHED],
+    ROOT,
+    b,
+    declared.slice(0, 1),
+  );
+  expect(undeclared.problems.map((p) => p.test)).toEqual(['[AC-4] the queue is exclusive']);
+  // A declaration of the changed test does not apply.
+  const changed = checkRedReports([redReport(SCHED, SCHED_TESTS)], [SCHED], ROOT, b, [
+    ...declared,
+    { file: SCHED, test: '[AC-3] daily-alerts reschedules on the next day', reason },
+  ]);
+  expect(changed.problems.map((p) => p.test)).toEqual([
+    '[AC-3] daily-alerts reschedules on the next day',
+  ]);
+});
+
+it('[CT-06zxc] a rename plus any other change is still caught: a changed assertion, a changed helper', () => {
+  const head = schedFixture('head');
+  // One assertion weakened next to the renames: that test is changed and must be red.
+  const weakened = head.replace('toBe(60)', 'toBeGreaterThan(0)');
+  const b = schedBaselines(weakened);
+  expect(b.get(SCHED)).toMatchObject({ kind: 'tests', renamed: { identical: false } });
+  const result = checkRedReports([redReport(SCHED, SCHED_TESTS)], [SCHED], ROOT, b);
+  expect(result.ok).toBe(false);
+  expect(result.problems).toEqual([
+    {
+      file: SCHED,
+      test: '[AC-2] freeze-expiry reschedules on the next minute',
+      reason: 'green on the skeleton: the test has no teeth (new or changed since the base)',
+    },
+  ]);
+  expect(result.notes[0]).toBe(`${RENAMED_NOTE}; the renamed base still differs from the head`);
+  // A change outside the tests next to the renames: the whole file must be red, as before.
+  const helper = head.replace('as const;', 'as const;\nconst extra = 1;');
+  const whole = schedBaselines(helper);
+  expect(whole.get(SCHED)).toMatchObject({ kind: 'whole', renamed: { identical: false } });
+  const w = checkRedReports([redReport(SCHED, SCHED_TESTS)], [SCHED], ROOT, whole);
+  expect(w.problems.map((p) => p.test)).toEqual([
+    '[AC-2] freeze-expiry reschedules on the next minute',
+    '[AC-3] daily-alerts reschedules on the next day',
+    '[AC-4] the queue is exclusive',
+  ]);
+  // A rename the ledger does not declare is a change like any other.
+  const partial = schedBaselines(head, [RENAMES[0] as { from: string; to: string }]);
+  expect(partial.get(SCHED)).toMatchObject({ kind: 'whole' });
+});
+
+it('[CT-06zxc] renames are literal, ordered, and leave new files and renames without a hit alone', () => {
+  expect(applyRenames('a.b a.b axb $&', [{ from: 'a.b', to: '$&-$1' }])).toEqual({
+    text: '$&-$1 $&-$1 axb $&',
+    applied: ['"a.b" → "$&-$1" ×2'],
+  });
+  // In ledger order: the second rename sees the first one's output.
+  expect(
+    applyRenames('x', [
+      { from: 'x', to: 'y' },
+      { from: 'y', to: 'z' },
+      { from: 'never', to: 'there' },
+    ]),
+  ).toEqual({ text: 'z', applied: ['"x" → "y" ×1', '"y" → "z" ×1'] });
+  // A new file has no baseline with or without renames; a file no rename hits has no `renamed`.
+  const NEW = 'test/spec/risk/freeze-expiry/new.test.ts';
+  const read = reader(
+    { [BASE_FILE]: BASE_SOURCE },
+    { [BASE_FILE]: HEAD_SOURCE, [NEW]: schedFixture('head') },
+  );
+  const changes: Change[] = [
+    { path: BASE_FILE, status: 'M' },
+    { path: NEW, status: 'A' },
+  ];
+  const scope = ['test/spec/notify/**', 'test/spec/risk/freeze-expiry/**'];
+  const plain = ruleTestBaselines([BASE_FILE, NEW], changes, scope, read);
+  const renamed = ruleTestBaselines([BASE_FILE, NEW], changes, scope, read, RENAMES);
+  expect(renamed).toEqual(plain);
+  expect([...renamed.keys()]).toEqual([BASE_FILE]);
+  expect(renamed.get(BASE_FILE)).not.toHaveProperty('renamed');
 });

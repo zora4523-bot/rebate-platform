@@ -65,6 +65,9 @@
 //              "claude-independent" for either (ops/approvals.yaml id 36), and for a ledger tester
 //              claude-independent the reviewer is claude or another claude-independent call.
 //              Every expected file still needs a red test; MONEY_PATHS are unchanged.
+//              Declared renames (CT-06zxc, D10-347): a rule-test file whose base, with the
+//              ledger's literal `renames` applied, is its spec_commit content is unchanged and
+//              not expected (red-check leaves it out of the red run the same way).
 //              CI records (`mode: ci`) in the evidence file are refused (CR2-06): nothing a copied
 //              record says can be checked against a run; the CI checks count by themselves.
 //              Owner waiver (owner decision 2026-10-02, ops/approvals.yaml id 12): on a branch
@@ -90,7 +93,7 @@ import type { Change } from '../lib/git.ts';
 import { loadLegacyTasks } from '../lib/legacy-tasks.ts';
 import { parseTaskFile } from '../lib/task-file.ts';
 import type { TaskFile } from '../lib/task-file.ts';
-import { expectedRuleTests } from '../guard/lib/red-check.ts';
+import { expectedRuleTests, renamedOnlyFiles } from '../guard/lib/red-check.ts';
 import { matchesAny } from '../lib/glob.ts';
 import { loadProtected, splitFragment } from '../guard/lib/protected.ts';
 import type { ProtectedConfig } from '../guard/lib/protected.ts';
@@ -1025,9 +1028,22 @@ export function redRequirement(
     path: c.path,
     status: c.status as Change['status'],
   }));
+  // CT-06zxc (D10-347): a rule-test file that differs from its base only by the ledger's literal
+  // renames is unchanged, as red-check.ts leaves it out of the red run: no red test is wanted.
+  const all = expectedRuleTests(changes, ledger.test_paths);
+  const renamedOnly = new Set(
+    renamedOnlyFiles(
+      all,
+      {
+        base: (p) => showOrNull(input.prDir, mergeBase, p),
+        head: (p) => showOrNull(input.prDir, specCommit as string, p),
+      },
+      ledger.renames,
+    ).map((r) => r.file),
+  );
   return {
     required: true,
-    expected: expectedRuleTests(changes, ledger.test_paths),
+    expected: all.filter((f) => !renamedOnly.has(f)),
     ...(ledger.red_exempt.length > 0
       ? { declared: { count: ledger.red_exempt.length, tester: ledger.tester } }
       : {}),

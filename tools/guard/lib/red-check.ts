@@ -100,10 +100,27 @@
 // rule-test reviewer must confirm them: tools/ci/evidence-check.ts requires
 // `spec_test_review.red_exempt_confirmed` when the ledger declares any. A file whose every test is
 // declared fails (nothing would be shown red).
+//
+// Declared renames (CT-06zxc; orchestrator ruling D10-347 of 2026-10-25 after B1-03w, round 2 of
+// 10-27): a task that renames a literal its frozen rule tests spell (a queue job name
+// 'freeze-expiry' → 'freeze_expiry') must change those files in the same merge, which made a file
+// judged as a whole ("code outside the tests changed") or its tests count as changed, and their
+// unchanged tests, red on the old code for an unknown job name, red for no valid reason. The
+// trusted ledger may declare such renames (`renames`: from / to, literal strings;
+// tools/lib/task-file.ts). In the base content of a rule-test file that existed at the base, each
+// `from` becomes its `to` (in ledger order, every occurrence, never a pattern: applyRenames).
+// A file whose renamed base is its head character for character is an unchanged file: it is left
+// out of the expected list (renamedOnlyFiles; red-check.ts --print-expected, the check itself and
+// tools/ci/evidence-check.ts all leave it out), so it is neither run nor judged, and the notes say
+// which, with the renames that hit, for the rule-test reviewer. A file that still differs is
+// compared test by test against the renamed base (ruleTestBaselines): a test that differs only by
+// the renames is unchanged, any other difference (an assertion, a helper, a title) is caught as
+// before. The head, the support files and new files are never renamed; without renames nothing
+// changes.
 import { matchesAny } from '../../lib/glob.ts';
 import type { Change } from '../../lib/git.ts';
 import { RED_EXEMPT_REASON_MIN } from '../../lib/task-file.ts';
-import type { RedExemptDeclaration, TaskFile } from '../../lib/task-file.ts';
+import type { RedExemptDeclaration, RenameDeclaration, TaskFile } from '../../lib/task-file.ts';
 import {
   type ComparedBlock,
   compareTestFile,
@@ -185,17 +202,50 @@ export type RedResult = {
   exempt?: RedExempt[];
 };
 
-/** How an expected rule-test file that existed at the base is judged (CT-06p). */
+/**
+ * The declared renames that changed the base of a file (CT-06zxc): `applied` says each one and how
+ * often it hit; `identical` whether the renamed base is the head, character for character (such a
+ * file is normally left out of the expected list: renamedOnlyFiles).
+ */
+export type RenamedBase = { applied: string[]; identical: boolean };
+
+/**
+ * How an expected rule-test file that existed at the base is judged (CT-06p). `renamed` (CT-06zxc)
+ * is present only when a declared rename changed its base.
+ */
 export type RuleTestBaseline =
   /** Every test must be red, as for a new file (the reason goes into the notes). */
-  | { kind: 'whole'; reason: string }
-  /** Only the tests of changed blocks must be red. */
-  | { kind: 'tests'; blocks: ComparedBlock[] }
-  /**
-   * Every test must be red unless the ledger declares it exempt and its block is unchanged
-   * (CT-06r): the file may read a test-support file the task changed, the reason says which.
-   */
-  | { kind: 'support'; reason: string; blocks: ComparedBlock[] };
+  (
+    | { kind: 'whole'; reason: string }
+    /** Only the tests of changed blocks must be red. */
+    | { kind: 'tests'; blocks: ComparedBlock[] }
+    /**
+     * Every test must be red unless the ledger declares it exempt and its block is unchanged
+     * (CT-06r): the file may read a test-support file the task changed, the reason says which.
+     */
+    | { kind: 'support'; reason: string; blocks: ComparedBlock[] }
+  ) & { renamed?: RenamedBase };
+
+/**
+ * The base content with the declared renames applied (CT-06zxc): in order, every occurrence of
+ * `from` becomes `to`, as literal text (split / join: no pattern, no `$` replacement syntax).
+ * `applied` lists the renames that hit, with their count.
+ */
+export function applyRenames(
+  text: string,
+  renames: readonly RenameDeclaration[],
+): { text: string; applied: string[] } {
+  let out = text;
+  const applied: string[] = [];
+  for (const { from, to } of renames) {
+    if (from === '') continue; // never declared (task-file.ts refuses it); an empty split is no rename
+    const parts = out.split(from);
+    if (parts.length === 1) continue;
+    out = parts.join(to);
+    applied.push(`${JSON.stringify(from)} → ${JSON.stringify(to)} ×${parts.length - 1}`);
+  }
+  return { text: out, applied };
+}
 
 export type BaselineReader = {
   /** Content of a file at the base, null when it does not exist there. */
@@ -213,16 +263,51 @@ export type BaselineReader = {
 /** Rule-test files compared test by test: TypeScript / JavaScript without JSX. */
 const COMPARABLE = /\.[cm]?[jt]s$/;
 
+/** A rule-test file that differs from its base only by the declared renames (CT-06zxc). */
+export type RenamedOnly = { file: string; applied: string[] };
+
+/**
+ * The files among `files` that existed at the base, can be read at the head and whose base, with
+ * the declared renames applied, is the head character for character (CT-06zxc): unchanged files,
+ * left out of the expected list. Without renames, none. What cannot be read stays expected.
+ */
+export function renamedOnlyFiles(
+  files: readonly string[],
+  read: Pick<BaselineReader, 'base' | 'head'>,
+  renames: readonly RenameDeclaration[],
+): RenamedOnly[] {
+  if (renames.length === 0) return [];
+  const out: RenamedOnly[] = [];
+  for (const file of [...new Set(files)].sort()) {
+    const before = read.base(file);
+    if (before === null) continue;
+    const after = read.head(file);
+    if (after === null) continue;
+    const renamed = applyRenames(before, renames);
+    if (renamed.applied.length > 0 && renamed.text === after) {
+      out.push({ file, applied: renamed.applied });
+    }
+  }
+  return out;
+}
+
+/** The note that says a file was left out of the expected list (CT-06zxc). */
+export function renamedOnlyNote(r: RenamedOnly): string {
+  return `${r.file}: unchanged after the ledger's renames (D10-347: ${r.applied.join(', ')}), left out of the expected list (not run, not judged); the rule-test reviewer confirms the renames are literal follow-ups only`;
+}
+
 /**
  * The baselines of the expected files that existed at the base (same path; a renamed or new file
  * has none: every test must be red). `changes` are the task's changes against the base; the ones
- * inside `scope` (test_paths) other than the file itself are its test-support files.
+ * inside `scope` (test_paths) other than the file itself are its test-support files. `renames`
+ * (CT-06zxc, the trusted ledger's) are applied to each base before it is compared (see the header).
  */
 export function ruleTestBaselines(
   expected: readonly string[],
   changes: readonly Change[],
   scope: readonly string[],
   read: BaselineReader,
+  renames: readonly RenameDeclaration[] = [],
 ): Map<string, RuleTestBaseline> {
   const out = new Map<string, RuleTestBaseline>();
   const support = new Set<string>();
@@ -235,15 +320,28 @@ export function ruleTestBaselines(
   const follow = (p: string): boolean =>
     p.startsWith('test/') || p.startsWith('packages/testing/') || matchesAny(p, scope);
   for (const file of expected) {
-    const before = read.base(file);
-    if (before === null) continue;
+    const original = read.base(file);
+    if (original === null) continue;
     const after = read.head(file);
+    const renamedBase = applyRenames(original, renames);
+    const before = renamedBase.text;
+    const set = (baseline: RuleTestBaseline): void => {
+      out.set(
+        file,
+        renamedBase.applied.length === 0
+          ? baseline
+          : {
+              ...baseline,
+              renamed: { applied: renamedBase.applied, identical: before === after },
+            },
+      );
+    };
     if (after === null) {
-      out.set(file, { kind: 'whole', reason: 'its content in the red run cannot be read' });
+      set({ kind: 'whole', reason: 'its content in the red run cannot be read' });
       continue;
     }
     if (!COMPARABLE.test(file)) {
-      out.set(file, {
+      set({
         kind: 'whole',
         reason: 'only .ts / .js rule-test files are compared test by test (JSX is not read)',
       });
@@ -251,7 +349,7 @@ export function ruleTestBaselines(
     }
     const compared = compareTestFile(before, after);
     if (compared.whole) {
-      out.set(file, { kind: 'whole', reason: compared.reason });
+      set({ kind: 'whole', reason: compared.reason });
       continue;
     }
     const others = [...support].filter((s) => s !== file).sort();
@@ -269,8 +367,7 @@ export function ruleTestBaselines(
       why = mayReadSupport(file, s, closure);
       if (why !== null) break;
     }
-    out.set(
-      file,
+    set(
       why === null
         ? { kind: 'tests', blocks: compared.blocks }
         : {
@@ -809,6 +906,14 @@ export function checkRedReports(
     // CT-06p: a file that existed at the base needs only its new and changed tests red.
     // CT-06r: a file of kind `support` needs every test red except the declared, unchanged ones.
     const baseline = baselines?.get(file);
+    if (baseline?.renamed !== undefined) {
+      notes.push(
+        `${file}: compared with its base after the ledger's renames (D10-347: ${baseline.renamed.applied.join(', ')})` +
+          (baseline.renamed.identical
+            ? '; the renamed base is identical to the head'
+            : '; the renamed base still differs from the head'),
+      );
+    }
     const declaredHere = baselines === undefined ? [] : declared.filter((d) => d.file === file);
     for (const d of declaredHere) declaredSeen.add(d);
     let blocks: ComparedBlock[] | null = null;

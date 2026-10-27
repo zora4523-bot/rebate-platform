@@ -1531,3 +1531,43 @@ it('[approvals 32] a pure migration rename hotfix needs no task branch and no ev
   refused(hotfix('nothing', {}), 'no migration was renamed');
   git(repo, ['checkout', '-q', back]);
 });
+
+it('[CT-06zxc] a rule-test file that differs from its base only by the ledger renames is not expected', () => {
+  const ROUND = 'test/spec/money/round.test.ts';
+  const renamedTrusted = join(SCRATCH, 'trusted-renames');
+  for (const file of [
+    'tools/guard/protected-paths.json',
+    'ops/risk-map.yaml',
+    'tools/guard/legacy-tasks.json',
+  ]) {
+    write(renamedTrusted, { [file]: readFileSync(join(TRUSTED, file), 'utf8') });
+  }
+  write(renamedTrusted, {
+    'ops/tasks/B2-01a.yaml': `${readFileSync(join(TRUSTED, 'ops/tasks/B2-01a.yaml'), 'utf8').trimEnd()}
+renames:
+  - from: '"rounds"'
+    to: '"rounds_half_up"'
+`,
+  });
+  const onlyRenamed = branchFromBase('ct06zxc-renamed', {
+    [ROUND]: 'it("rounds_half_up", () => {});\n',
+    [FLOOR]: 'it("floors", () => {});\n',
+  });
+  const alsoChanged = branchFromBase('ct06zxc-changed', {
+    [ROUND]: 'it("rounds_half_up", () => { expect(1).toBe(1); });\n',
+    [FLOOR]: 'it("floors", () => {});\n',
+  });
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const req = (spec: string, trusted: string) =>
+    redRequirement(
+      { prDir: repo, base, head, headRef: 'task/B2-01a', trusted },
+      'B2-01a',
+      base,
+      JSON.stringify({ task: 'B2-01a', spec_commit: spec }),
+    );
+  // Renamed only: left out, as red-check leaves it out of the red run.
+  expect(req(onlyRenamed, renamedTrusted)).toEqual(RED);
+  // Without the declaration, or with another change next to the rename: expected as before.
+  expect(req(onlyRenamed, TRUSTED)).toEqual({ required: true, expected: [FLOOR, ROUND] });
+  expect(req(alsoChanged, renamedTrusted)).toEqual({ required: true, expected: [FLOOR, ROUND] });
+});
