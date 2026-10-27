@@ -59,7 +59,7 @@ it.each(CHANNELS)(
       refId: anomaly.id,
       expectedFen: 0n,
       actualFen: order.amount_fen,
-      diffFen: order.amount_fen,
+      diffFen: -order.amount_fen,
     });
     alerted(r, [anomaly.id]);
     noFulfilment(r);
@@ -98,7 +98,7 @@ it.each(CHANNELS)(
       refId: anomaly.id,
       expectedFen: 0n,
       actualFen: 990n,
-      diffFen: 990n,
+      diffFen: -990n,
     });
     expect(await diffs(r)).toHaveLength(1);
     alerted(r, [anomaly.id]);
