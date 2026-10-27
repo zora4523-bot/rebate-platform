@@ -154,3 +154,89 @@ it('[AC-B2-11d#43] 回滚到违规的历史值同样拒绝：withdraw.max_amount
   );
   expect(await current(h, f.appId, MAX)).toMatchObject({ value: 30000, version: 2 });
 });
+
+// ⑨ binds both keys: lowering payout.daily_cap_fen below the stored platform_daily_max_fen leaves
+// the same violation as raising the latter, so the check runs on writes to the cap as well.
+// The stored 300000 differs from the 08 default 200000, so a check reading defaults only fails.
+
+it.each([
+  { platform: 300000, below: 299999 },
+  { platform: undefined, below: 199999 },
+])(
+  '[AC-B2-11d#44] ⑨ 已存 platform_daily_max_fen=$platform（缺省 200000）时把 payout.daily_cap_fen 降到 $below → 20001 [value]、不写；降到等于可存',
+  async ({ platform, below }) => {
+    const f = await setup(h);
+    await putRow(h, f.appId, DAILY_CAP, 5000000);
+    if (platform !== undefined) await putRow(h, f.appId, PLATFORM_MAX, platform);
+    await refusedValue(f, DAILY_CAP, below, 1);
+    expect(await current(h, f.appId, DAILY_CAP)).toMatchObject({ value: 5000000, version: 1 });
+    await saved(f, DAILY_CAP, below + 1, 1);
+    expect(await current(h, f.appId, DAILY_CAP)).toMatchObject({ value: below + 1, version: 2 });
+  },
+);
+
+it('[AC-B2-11d#45] ⑨ 批量只降 payout.daily_cap_fen 到已存 platform_daily_max_fen 以下 → 20001 [payout.daily_cap_fen]、不写；降到等于可存；两键一起降可存', async () => {
+  const f = await setup(h);
+  await putRow(h, f.appId, DAILY_CAP, 5000000);
+  await putRow(h, f.appId, PLATFORM_MAX, 300000);
+  const below = await batch(
+    f,
+    { items: [{ key: DAILY_CAP, value: 299999, expected_version: 1 }] },
+    { stepUp: await stepUp(f) },
+  );
+  await rejected(below, 'batch', 20001, { fields: [DAILY_CAP] });
+  expect(await current(h, f.appId, DAILY_CAP)).toMatchObject({ value: 5000000, version: 1 });
+  await success(
+    await batch(
+      f,
+      { items: [{ key: DAILY_CAP, value: 300000, expected_version: 1 }] },
+      { stepUp: await stepUp(f) },
+    ),
+    'batch',
+  );
+  expect(await current(h, f.appId, DAILY_CAP)).toMatchObject({ value: 300000, version: 2 });
+  await success(
+    await batch(
+      f,
+      {
+        items: [
+          { key: DAILY_CAP, value: 250000, expected_version: 2 },
+          { key: PLATFORM_MAX, value: 250000, expected_version: 1 },
+        ],
+      },
+      { stepUp: await stepUp(f) },
+    ),
+    'batch',
+  );
+  expect(await current(h, f.appId, DAILY_CAP)).toMatchObject({ value: 250000, version: 3 });
+  expect(await current(h, f.appId, PLATFORM_MAX)).toMatchObject({ value: 250000, version: 2 });
+});
+
+it('[AC-B2-11d#46] ⑨ 已存 platform_daily_max_fen=300000 时把 payout.daily_cap_fen 回滚到 250000 → 20001 [to_version]、不写；回滚到 300000 可存', async () => {
+  const f = await setup(h);
+  await written(h, f.appId, DAILY_CAP, [250000, 300000, 5000000], f.actor);
+  await putRow(h, f.appId, PLATFORM_MAX, 300000);
+  await rejected(
+    await rollback(
+      f,
+      DAILY_CAP,
+      { to_version: 1, expected_version: 3 },
+      { stepUp: await stepUp(f) },
+    ),
+    'rollback',
+    20001,
+    { fields: ['to_version'] },
+  );
+  expect(await current(h, f.appId, DAILY_CAP)).toMatchObject({ value: 5000000, version: 3 });
+  const item = await success<Item>(
+    await rollback(
+      f,
+      DAILY_CAP,
+      { to_version: 2, expected_version: 3 },
+      { stepUp: await stepUp(f) },
+    ),
+    'rollback',
+  );
+  expect(item).toMatchObject({ key: DAILY_CAP, value: 300000, version: 4 });
+  expect(await current(h, f.appId, DAILY_CAP)).toMatchObject({ value: 300000, version: 4 });
+});
