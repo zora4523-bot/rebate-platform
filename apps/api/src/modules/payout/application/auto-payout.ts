@@ -31,7 +31,8 @@
 //                                (config_change_alert, sms_daily_budget_alert).
 // TODO(规划/11 §2.3): a /metrics gauge of today's automatic total against platform_daily_max_fen and
 // its fund rule in infra/monitoring/rules/couli-fund.yaml (规划/02 §13 夜间资金类「自动到账日合计触顶」)
-// — blocked on a task owning platform/metrics and infra/monitoring (outside B2-11c's paths).
+// — blocked on B1-01zzp (D10-389: log-type fund alerts to metrics and couli-fund rules; it must be
+// merged before the automatic payout switch is turned on in a real-money environment).
 // processed_events claim and every effect commit in one transaction (consume), as went-negative.ts.
 // Rule tests: test/spec/payout/auto-payout/**, test/properties/domain/payout/auto-payout-once.ts.
 //
