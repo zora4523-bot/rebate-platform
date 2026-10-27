@@ -1,12 +1,14 @@
-// B1-01zzp: collectAutoPayoutDaily(db, clock) over a database stand-in that compiles and logs every
-// query but never connects (B1-01zzi's recordingDb). It reads app.withdrawals (review_mode,
-// reviewed_at, amount_fen: the BR-WDR-30 ⑨ 口径) and app.config_items (the cap), never writes, never
-// reads the database's own clock, and a failed read rejects the collection instead of becoming 0.
-// The values themselves are checked against PostgreSQL in collect.int.test.ts.
+// B1-01zzp: collectAutoPayoutDaily(db, clock, capFenOf) over a database stand-in that compiles and
+// logs every query but never connects (B1-01zzi's recordingDb). It reads app.withdrawals
+// (review_mode, reviewed_at, amount_fen: the BR-WDR-30 ⑨ 口径) and app.config_items (the cap row
+// handed to B2-11c's capFenOf), never writes, never reads the database's own clock, and a failed
+// read rejects the collection instead of becoming 0. The values themselves are checked against
+// PostgreSQL in collect.int.test.ts and default-cap.int.test.ts.
 import { expect, it } from 'vitest';
 import { FixedClock } from '../../../../../apps/api/src/modules/platform/clock/index.ts';
 import { collectAutoPayoutDaily } from '../../../../../apps/api/src/modules/platform/metrics/index.ts';
 import { SQL_CLOCK, WRITE_SQL, mentions, recordingDb } from '../../fund-metrics/kit.ts';
+import { payoutCapFenOf } from './default-cap-kit.ts';
 import { NOW } from './kit.ts';
 
 const TABLES = ['withdrawals', 'config_items'] as const;
@@ -14,7 +16,9 @@ const TABLES = ['withdrawals', 'config_items'] as const;
 /** One collection; a synchronous throw counts as its rejection. */
 function collect(answer: (query: string) => readonly Record<string, unknown>[], queries: string[]) {
   const db = recordingDb(queries, answer);
-  return Promise.resolve().then(() => collectAutoPayoutDaily(db, new FixedClock(NOW)));
+  return Promise.resolve().then(() =>
+    collectAutoPayoutDaily(db, new FixedClock(NOW), payoutCapFenOf),
+  );
 }
 
 it('[AC-B1-01zzp#8] 采集读 withdrawals（按 review_mode、reviewed_at 取 amount_fen）与 config_items：只读、不读数据库时钟；没有行时快照为空而不是报错', async () => {

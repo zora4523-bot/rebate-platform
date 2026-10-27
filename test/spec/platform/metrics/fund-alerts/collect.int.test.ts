@@ -1,7 +1,9 @@
-// B1-01zzp: collectAutoPayoutDaily(db, clock) against PostgreSQL. Per app_id, the total is
-// BR-WDR-30 ⑨'s 口径: Σ amount_fen of withdrawals with review_mode = auto, status ∉ {REJECTED,
-// FAILED}, reviewed_at on the current +08:00 natural day of the injected clock (created_at does not
-// matter); the cap is that app_id's withdraw.auto_payout.platform_daily_max_fen. "now" is the
+// B1-01zzp: collectAutoPayoutDaily(db, clock, capFenOf) against PostgreSQL, capFenOf being B2-11c's
+// own reading (default-cap-kit.ts). Per app_id, the total is BR-WDR-30 ⑨'s 口径: Σ amount_fen of
+// withdrawals with review_mode = auto, status ∉ {REJECTED, FAILED}, reviewed_at on the current
+// +08:00 natural day of the injected clock (created_at does not matter); the cap is that app_id's
+// withdraw.auto_payout.platform_daily_max_fen (all valid here; absent or malformed caps are
+// default-cap.int.test.ts's). "now" is the
 // injected clock, never the database's now(): the fixture's clock is years after the database's
 // real time, and NOW is 01:30 +08:00 while still the previous UTC date. It runs on a session whose
 // every transaction is READ ONLY, so any write fails in PostgreSQL itself. Finally the worker
@@ -15,6 +17,7 @@ import {
   createMetricsRegistry,
 } from '../../../../../apps/api/src/modules/platform/metrics/index.ts';
 import { readOnlyUrl } from '../kit.ts';
+import { payoutCapFenOf } from './default-cap-kit.ts';
 import {
   APP_A,
   APP_B,
@@ -58,7 +61,7 @@ it('[AC-B1-01zzp#10] 当日自动到账合计按 app_id：只计 review_mode=aut
     const withdrawalsBefore = await withdrawalSnapshot(t.db);
     const configBefore = await configSnapshot(t.db);
 
-    const snapshot = await collectAutoPayoutDaily(t.readOnly, new FixedClock(NOW));
+    const snapshot = await collectAutoPayoutDaily(t.readOnly, new FixedClock(NOW), payoutCapFenOf);
     expectSnapshot(snapshot, expected.atNow);
 
     expect(await withdrawalSnapshot(t.db)).toEqual(withdrawalsBefore);
@@ -73,18 +76,19 @@ it('[AC-B1-01zzp#11] 「当日」随注入时钟走、按 +08:00 切日：00:00 
   try {
     const expected = await seedAutoPayout(t.db);
     const clock = new FixedClock(NOW);
-    expectSnapshot(await collectAutoPayoutDaily(t.readOnly, clock), expected.atNow);
+    const collect = () => collectAutoPayoutDaily(t.readOnly, clock, payoutCapFenOf);
+    expectSnapshot(await collect(), expected.atNow);
 
     // 2031-04-05 23:59:59.999 at +08:00: the previous +08:00 day.
     clock.set(shift(DAY_START, -1));
-    expectSnapshot(await collectAutoPayoutDaily(t.readOnly, clock), expected.dayBefore);
+    expectSnapshot(await collect(), expected.dayBefore);
 
     clock.set(shift(NOW, DAY_MS));
-    expectSnapshot(await collectAutoPayoutDaily(t.readOnly, clock), expected.dayAfter);
+    expectSnapshot(await collect(), expected.dayAfter);
 
     // Back at NOW: the same values again (nothing was cached across days).
     clock.set(NOW);
-    expectSnapshot(await collectAutoPayoutDaily(t.readOnly, clock), expected.atNow);
+    expectSnapshot(await collect(), expected.atNow);
   } finally {
     await t.close();
   }
@@ -97,7 +101,7 @@ it('[AC-B1-01zzp#12] worker registry 以真实采集渲染：两个 gauge 的值
     const clock = new FixedClock(NOW);
     const registry = createMetricsRegistry({
       entry: 'worker',
-      collectAutoPayout: () => collectAutoPayoutDaily(t.readOnly, clock),
+      collectAutoPayout: () => collectAutoPayoutDaily(t.readOnly, clock, payoutCapFenOf),
     });
     const rendered = autoFromText(await registry.render());
     expectSnapshot(rendered, expected.atNow);

@@ -5,11 +5,15 @@
 // follow B1-01zzi's entry test: the platform exports are spied on the platform surface and on
 // platform/metrics, the database compiles and logs every query but never connects (B1-01zzi's
 // recordingDb), nothing listens. Dynamic imports keep Nest decorators out of the spec project's
-// TypeScript compilation.
+// TypeScript compilation. D10-393 (c): the cap function the worker hands collectAutoPayoutDaily is
+// payout's (B2-11c), wired by entry.ts; platform/** itself imports no payout module.
 import { afterEach, expect, it, vi } from 'vitest';
 import * as platform from '../../../../../apps/api/src/modules/platform/index.ts';
 import * as metrics from '../../../../../apps/api/src/modules/platform/metrics/index.ts';
-import type { MetricsServerOptions } from '../../../../../apps/api/src/modules/platform/metrics/index.ts';
+import type {
+  AutoPayoutCapSnapshot,
+  MetricsServerOptions,
+} from '../../../../../apps/api/src/modules/platform/metrics/index.ts';
 import {
   FUND_TABLES,
   SQL_CLOCK,
@@ -19,6 +23,16 @@ import {
   recordingDb,
 } from '../../fund-metrics/kit.ts';
 import { ROOT, families } from '../kit.ts';
+import {
+  MALFORMED_CAPS,
+  VALID_CAPS,
+  capSnapshot,
+  payoutCapFenOf,
+  platformImports,
+  platformImportsOfPayout,
+  shiftedDefaultCap,
+  withPayoutDefaultCap,
+} from './default-cap-kit.ts';
 import { AUTO_METRIC_NAMES, autoGauge, autoNamesIn } from './kit.ts';
 
 type Entry = 'api' | 'stream' | 'admin' | 'worker' | 'payout';
@@ -171,6 +185,57 @@ it('[AC-B1-01zzp#13] worker 的 /metrics 在 scrape 时经本入口库读 withdr
       }
       await f.stop();
     }
+  } finally {
+    await f.stop();
+  }
+}, 30_000);
+
+it('[AC-B1-01zzp#16] entry.ts 把 payout 的上限解析（B2-11c autoPayoutConfigOf）注入 worker 的自动到账采集：scrape 时调 collectAutoPayoutDaily 所带的上限函数，对未配置 / 不合法 / 合法的上限与 B2-11c 同值，B2-11c 的默认值一变它随之变（不是 platform 或 entry 另写的默认）；platform/** 不 import payout 模块', async () => {
+  // Static: platform/** reaches no payout module; the function comes in through entry.ts.
+  expect(platformImports().length, 'imports of platform/** were found').toBeGreaterThan(0);
+  expect(platformImportsOfPayout(), 'platform/** imports of modules/payout').toEqual([]);
+
+  const f = await fixture();
+  // The collector is replaced (its SQL is the other tests'); what it is handed is recorded.
+  const calls: Parameters<typeof metrics.collectAutoPayoutDaily>[] = [];
+  const standIn = async (...args: Parameters<typeof metrics.collectAutoPayoutDaily>) => {
+    calls.push(args);
+    return { totalFen: {}, capFen: {} };
+  };
+  vi.spyOn(metrics, 'collectAutoPayoutDaily').mockImplementation(standIn);
+  if ('collectAutoPayoutDaily' in platform) {
+    vi.spyOn(platform as unknown as typeof metrics, 'collectAutoPayoutDaily').mockImplementation(
+      standIn,
+    );
+  }
+  try {
+    await f.runEntry('worker');
+    expect(process.exitCode, 'worker failed to start').toBe(originalExitCode);
+    expect(f.servers, 'worker: metrics servers started').toHaveLength(1);
+    f.answer.scraping = true;
+    await f.servers.at(-1)!.options.registry.render();
+    f.answer.scraping = false;
+
+    expect(calls.length, 'the worker scrape runs collectAutoPayoutDaily').toBeGreaterThan(0);
+    const [, clock, capFenOf] = calls.at(-1)!;
+    expect(clock.now, 'the worker clock').toEqual(expect.any(Function));
+    expect(capFenOf, 'the injected cap function').toEqual(expect.any(Function));
+    const cases: (readonly [string, AutoPayoutCapSnapshot])[] = [
+      ['no cap row', new Map()],
+      ...[...MALFORMED_CAPS, ...VALID_CAPS].map(
+        (value) => [JSON.stringify(value), capSnapshot(value)] as const,
+      ),
+    ];
+    for (const [label, snapshot] of cases) {
+      expect(capFenOf(snapshot), `cap of ${label}`).toBe(payoutCapFenOf(snapshot));
+    }
+    // B2-11c's default moves: the injected function follows (it is B2-11c's, not a copy).
+    const shifted = shiftedDefaultCap();
+    await withPayoutDefaultCap(shifted, () => {
+      expect(capFenOf(new Map()), 'unconfigured').toBe(shifted);
+      expect(capFenOf(capSnapshot(MALFORMED_CAPS[0])), 'malformed').toBe(shifted);
+      expect(capFenOf(capSnapshot(VALID_CAPS[1])), 'valid').toBe(BigInt(VALID_CAPS[1]!));
+    });
   } finally {
     await f.stop();
   }
