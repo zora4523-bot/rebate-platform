@@ -7,6 +7,7 @@
 // build Node cannot import), so no third-party metrics library is used at runtime.
 import { performance } from 'node:perf_hooks';
 import type { EntryName } from '../entries.ts';
+import type { AutoPayoutDailySnapshot } from './auto-payout.ts';
 import type { WorkerMetricsSnapshot } from './collect.ts';
 import type { FundMetricsSnapshot } from './fund.ts';
 
@@ -16,6 +17,8 @@ export interface MetricsRegistryOptions {
   readonly collect?: () => Promise<WorkerMetricsSnapshot>;
   /** The fund gauges (B1-01zzi). Used only when entry is 'worker'; called once per render(). */
   readonly collectFund?: () => Promise<FundMetricsSnapshot>;
+  /** The auto-payout daily gauges (B1-01zzp). Used only on 'worker'; called once per render(). */
+  readonly collectAutoPayout?: () => Promise<AutoPayoutDailySnapshot>;
 }
 
 export interface MetricsRegistry {
