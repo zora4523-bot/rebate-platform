@@ -104,3 +104,29 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
     expect(statement).toMatch(/ON\s+CONFLICT\s*(?:\(\s*app_id\s*,\s*key\s*\))?\s+DO\s+NOTHING/iu);
   }
 });
+
+it('[AC-F1-02zn#18] 种子：payout.auto_enable_check.* 三项支持状态缺省 false（重跑不覆盖）；recon_required_days 与 recon_passed_days 没有种子行，全文不含 recon_passed_days（B2-11dzb，D10-400）', () => {
+  const sql = readFileSync(
+    new URL('../../../../db/seeds/0001_config-defaults.sql', import.meta.url),
+    'utf8',
+  );
+  const rows = [...sql.matchAll(/\('couli',\s*'([^']+)',\s*'([^']*)'::jsonb/g)].map((match) => ({
+    key: match[1]!,
+    value: JSON.parse(match[2]!) as unknown,
+  }));
+  for (const key of AUTO_ENABLE_CHECK_SEEDED_KEYS) {
+    expect(
+      rows.filter((row) => row.key === key),
+      key,
+    ).toStrictEqual([{ key, value: false }]);
+    const statement = sql.split(';').find((part) => part.includes(`'${key}'`));
+    expect(statement, key).toMatch(
+      /ON\s+CONFLICT\s*(?:\(\s*app_id\s*,\s*key\s*\))?\s+DO\s+NOTHING/iu,
+    );
+  }
+  const required = 'payout.auto_enable_check.recon_required_days';
+  const retired = 'payout.auto_enable_check.recon_passed_days';
+  expect(rows.some((row) => row.key === required)).toBe(false);
+  expect(rows.some((row) => row.key === retired)).toBe(false);
+  expect(sql).not.toContain(retired);
+});
