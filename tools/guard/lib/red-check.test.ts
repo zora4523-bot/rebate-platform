@@ -1847,6 +1847,83 @@ it('[CT-06zxe] an entry whose value stands inside a query call of the helper, or
   ).toHaveLength(1);
 });
 
+it('[CT-06zxh] a literal of the base naming the changed helper or a caller judges the whole file (review r2 S2-1)', () => {
+  const tail = "  it('[AC-5] a wrong amount is refused'";
+  for (const [label, use] of [
+    ['eval', "  it('[AC-6] by eval', () => { eval('onlyAnomaly()'); });\n"],
+    [
+      'a dynamic import',
+      "  it('[AC-6] by a key', async () => { const m = await import('./notify.int.test.ts'); await m['onlyAnomaly' as 'onlyAnomaly']({ id: 'o' }, 't'); });\n",
+    ],
+    ['a template', "  it('[AC-6] by a template', () => { void `onlyAnomaly`; });\n"],
+    ['a regex', "  it('[AC-6] by a regex', () => { void /onlyAnomaly/; });\n"],
+  ] as const) {
+    const base = NOTIFY_BASE.replace(tail, `${use}${tail}`);
+    const head = base.replace('    diff_fen: AMOUNT,', '    diff_fen: -AMOUNT,');
+    const b = notifyBaselines(head, [DIFF_FEN], [], base).get(NOTIFY);
+    expect(b, label).toMatchObject({
+      kind: 'whole',
+      reason: expect.stringContaining('registered expected values: a literal names "onlyAnomaly"'),
+      expectedValues: { applied: [DIFF_FEN], whole: expect.stringContaining('a literal names') },
+    });
+    // The others must be red again, as before CT-06zxe.
+    const problems = checkRedReports(
+      [redReport(NOTIFY, notifyTests())],
+      [NOTIFY],
+      ROOT,
+      notifyBaselines(head, [DIFF_FEN], [], base),
+    ).problems;
+    expect(
+      problems.map((p) => p.test),
+      label,
+    ).toEqual(NOTIFY_OTHERS);
+  }
+  // A literal inside the changed helper itself is no call by a string.
+  const inside = NOTIFY_BASE.replace(
+    "type: 'pay_anomaly',",
+    "type: 'pay_anomaly', note: 'onlyAnomaly',",
+  );
+  expect(
+    notifyBaselines(
+      inside.replace('    diff_fen: AMOUNT,', '    diff_fen: -AMOUNT,'),
+      [DIFF_FEN],
+      [],
+      inside,
+    ).get(NOTIFY),
+  ).toMatchObject({ kind: 'tests' });
+});
+
+it('[CT-06zxh] the whole helper shows a fragment that is no expected value: a fixture input, a returned object, a non-matcher (review r2 S2-2)', () => {
+  const base = [
+    "import { expect, it } from 'vitest';",
+    'async function open(db: Db, n: number) {',
+    '  await insertOrder(db, {',
+    "    status: 'open',",
+    '  });',
+    '  const q = {',
+    "    text: 'select 1',",
+    '  };',
+    '  expect(n.toString(16)).toBe(x);',
+    '  expect(await rows(db, q)).toMatchObject({',
+    '    n: 1,',
+    '  });',
+    '}',
+    "it('[AC-1] a', async () => { await open(db, 1); });",
+  ].join('\n');
+  const at = 'test/spec/q.test.ts';
+  const entry = (from: string, to: string) => ({ file: at, helper: 'open', from, to });
+  const refused = (from: string, to: string): string | undefined =>
+    applyExpectedValues(at, base, [entry(from, to)]).skipped[0];
+  expect(refused("    status: 'open',", "    status: 'closed',")).toContain(
+    'stands the argument of a insertOrder( call',
+  );
+  expect(refused("    text: 'select 1',", "    text: 'select 2',")).toContain(
+    'stands outside any expectation',
+  );
+  expect(refused('toString(16)', 'toString(2)')).toContain("a matcher's expected argument");
+  expect(applyExpectedValues(at, base, [entry('    n: 1,', '    n: 2,')]).applied).toHaveLength(1);
+});
+
 it('[CT-06zxe] a registered helper no test calls is void; renames run first; without entries nothing changes', () => {
   const legacy = { file: NOTIFY, helper: 'legacyShape', from: 'fen: 1n', to: 'fen: 2n' };
   const head = NOTIFY_BASE.replace('fen: 1n', 'fen: 2n');

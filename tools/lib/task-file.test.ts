@@ -440,6 +440,47 @@ describe('parseTaskFile', () => {
     );
   });
 
+  it('[CT-06zxh] expected_values: the value stands in an expectation, as red-check checks it in the whole helper (review r2 S2-2)', () => {
+    const declared = (entries: string): string =>
+      EXAMPLE.replace('tester: claude', `tester: claude\nexpected_values:${entries}`);
+    const entry = (from: string, to: string): string =>
+      `\n  - file: test/spec/a.test.ts\n    helper: h\n    from: ${from}\n    to: ${to}`;
+    // Still accepted: B2-15l's two lines, a matcher at the end of an expect chain, a property of
+    // an expectation's object.
+    for (const [from, to] of [
+      [`'    diff_fen: AMOUNT,'`, `'    diff_fen: -AMOUNT,'`],
+      [`'    diff_fen: order.amount_fen,'`, `'    diff_fen: -order.amount_fen,'`],
+      [`'expect.soft(x).not.toBe(1);'`, `'expect.soft(x).not.toBe(2);'`],
+      [
+        `'await expect(p).resolves.toEqual({ a: 1 });'`,
+        `'await expect(p).resolves.toEqual({ a: 2 });'`,
+      ],
+      [`'.length).toBeGreaterThanOrEqual(1);'`, `'.length).toBeGreaterThanOrEqual(2);'`],
+    ] as const) {
+      expect(parseTaskFile(declared(entry(from, to)), 'B2-02a.yaml').expected_values).toHaveLength(
+        1,
+      );
+    }
+    // The review r2 bypasses: a ternary branch, a type annotation, a fixture input, a query
+    // object, the actual side's input, a non-matcher .toXxx(.
+    for (const [from, to] of [
+      [`'const lim = strict ? 1 : 0;'`, `'const lim = strict ? 1 : 99;'`],
+      [`"let s: 'open' = x;"`, `"let s: 'closed' = x;"`],
+      [`"insertOrder(db, { status: 'open' })"`, `"insertOrder(db, { status: 'closed' })"`],
+      [
+        `"const q = { text: 'select 1 where a = 1' };"`,
+        `"const q = { text: 'select 1 where false' };"`,
+      ],
+      [`'expect(f({ amount: 1 })).toBe(3);'`, `'expect(f({ amount: 2 })).toBe(3);'`],
+      [`'n.toString(16)'`, `'n.toString(2)'`],
+      [`'n.toFixed(2)'`, `'n.toFixed(0)'`],
+    ] as const) {
+      expect(messageOf(declared(entry(from, to)), 'B2-02a.yaml'), from).toMatch(
+        /expected_values\[0\]: from .* → to .*: .* is changed (in an object property value that stands|outside an object property value)/,
+      );
+    }
+  });
+
   it('lists every problem in one error', () => {
     const text = [
       'id: b2',

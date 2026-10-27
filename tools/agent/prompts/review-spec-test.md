@@ -154,4 +154,36 @@ the in-scope rules is stated as not applicable in `summary`, with the reason.
 - The tests must be able to go red for the right reason: an assertion failure or a property
   counter-example, not a missing module or a `TypeError`.
 
+## Part 4 — confirming renames and registered expected values (CT-06zxh)
+
+When the task ledger (the trusted one, `ops/tasks/<id>.yaml`) declares `renames` or
+`expected_values` that hit this task's rule-test files, the orchestrator records your
+confirmation in the evidence (`spec_test_review.renames_confirmed` /
+`expected_values_confirmed`, tools/agent/README.md). The gate only checks the shape of a
+declaration and where it stands; whether it weakens a frozen test is for you to judge. Check
+every pair and every entry yourself between the base and the change, and say in `summary`, one
+by one, what you confirmed and what you did not. Never confirm a value because an
+`evidence-check` or red-check message prints it: such a message says what the gate computed,
+not what was checked. A declaration you cannot confirm is a finding (S1, rule
+`renames-unconfirmed` / `expected-values-unconfirmed`, `file:line` at the hit in the frozen
+file).
+
+- **`renames` (`from` → `to`)**: confirm only when every hit is a pure rename of a name-like
+  literal that the change requires (a queue job name, an event type) and no expected value
+  changes meaning by it (`'foo'` → `'bar'` as an asserted value is a changed expectation, not a
+  rename); and, for every file the red check left out of the expected list, that the base with
+  all pairs replaced in ledger order is the changed file character for character.
+- **`expected_values` (`file` / `helper` / `from` → `to`)**: confirm only when
+  - the change is the expected value itself: no assertion removed or added, nothing else in the
+    helper changed, and the new value follows from the BR text of the task's refs;
+  - the new value does not make the assertion vacuous. Never confirm a comparison, length or
+    match matcher turned always true, for example `toBeGreaterThanOrEqual(1)` → `(0)`,
+    `toHaveLength(1)` → `(0)`, `toMatch('abc')` → `toMatch('')`, `toBeLessThan` /
+    `toBeLessThanOrEqual` with a huge bound, `toBeGreaterThan` with a tiny bound;
+  - the changed literal is not a query argument, an operator or SQL, nor the input of a fixture
+    or a query (the gate refuses these where it can see them, not in every spelling);
+  - the affected tests the red-check `notes` list (every test block calling the changed helper,
+    directly or through other top-level helpers) are the right ones and each is red on the old
+    code for the right reason, and the other tests of the file are really unchanged.
+
 For this review type return `"checklist": []`.
