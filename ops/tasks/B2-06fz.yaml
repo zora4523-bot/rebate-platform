@@ -27,7 +27,8 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payout/**'
-status: todo
+status: done
+pr: 1692
 red_exempt:
   - file: test/spec/platform/queue-concurrency/limits.test.ts
     test: '[B1-01zzk 其他入口不受影响] api / stream / admin / payout：有没有 limits 都只取自己的计划值，没有共享预算（dbBudget null）'
