@@ -5,6 +5,10 @@ type: impl
 # 2026-10-23 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。Codex 写规则测试（缺省挂点下打开仍被拒、各校验边界）、Codex 评审。
 # D10-224 ①：kill-switch.ts 只加挂点，归本线；content 线知悉、后续改 kill-switch 时保留挂点。保存校验经 content 配置写入口的校验挂点（若 content 没有通用校验挂点，本任务只加一个与 kill-switch 同形的注入点）。
 # 状态备注：等 B2-11b 合并。
+# 2026-10-27 补（ops 线，编排裁定 D10-392，照 D10-327 / B2-11y 先例）：开启前置检查的配置键要进 config-registry 与 db seeds，冻结注册表测试
+# （registry == seeds == kit）随之只许为 payout.auto_enable_check.{limits_supported, status_codes_supported, bill_out_biz_no_supported}
+# （布尔，缺省 false）与 recon_required_days（整数，缺省不设即不满足，设了须 ≥ 1）加条目；recon_passed_days 不做配置键，经注入端口读
+# 连续跑通天数（BR-WDR-23 落地前缺省 0，fail-closed）；保存校验与 kill-switch 挂点接到 config-item-admin.ts / kill-switch-admin.ts。
 refs: [BR-WDR-30, BR-WDR-17, BR-WDR-22]
 refs_hash:
   BR-WDR-30: 1b1ddd9942cf
@@ -16,8 +20,16 @@ paths:
   - 'apps/api/src/modules/content/domain/kill-switch.ts'
   - 'apps/api/src/modules/content/domain/config-registry.ts'
   - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/content/application/config-item-admin.ts'
+  - 'apps/api/src/modules/content/application/kill-switch-admin.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.test.ts'
+  - 'apps/api/src/modules/content/application/config-item-admin.test.ts'
+  - 'db/seeds/0001_config-defaults.sql'
 test_paths:
   - 'test/spec/payout/auto-config/**'
+  - 'test/spec/content/config-items/registry.test.ts'
+  - 'test/spec/content/config-items/kit.ts'
+  - 'test/spec/content/config-items/read.int.test.ts'
 impl: claude
 tester: claude-independent
 accept:
