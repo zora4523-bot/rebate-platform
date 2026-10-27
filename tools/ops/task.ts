@@ -212,24 +212,32 @@ export function insideGlobs(glob: string, globs: readonly string[]): boolean {
 /** The contract source; a task that may change it regenerates the files below (CT-06n). */
 export const CONTRACT_SOURCE = 'contracts/openapi.yaml';
 
+/** Regenerated from contracts/openapi.yaml whenever a `x-implementation: planned` marker changes (CT-06zxd). */
+export const PLANNED_OPERATIONS_GENERATED = 'packages/contracts-ts/src/planned-operations.gen.ts';
+
 /**
  * Files regenerated from contracts/openapi.yaml whenever an operation is added or removed
  * (planned ones included): the contract types and the three route tables of apps/api. A ledger
  * whose `paths` reach contracts/openapi.yaml must also cover these (CT-06n; CT-15n, CT-02i, CT-22a
  * and CT-22b had to extend their ledgers mid-run, #563, #605). route-schemas.gen.ts is left out:
  * it lists implemented operations only and belongs to the task that implements them.
+ * planned-operations.gen.ts (F1-06zu, #1445) lists the operations still marked planned, so it also
+ * changes when a ledger only removes planned markers: for it alone `mechanical_paths` reaching the
+ * contract triggers the rule as well (CT-06zxd).
  */
 export const CONTRACT_GENERATED = [
   'packages/contracts-ts/src/openapi.gen.ts',
   'apps/api/src/modules/platform/http/auth-routes.gen.ts',
   'apps/api/src/modules/platform/validation/signing-routes.gen.ts',
   'apps/api/src/modules/risk/application/min-version-routes.gen.ts',
+  PLANNED_OPERATIONS_GENERATED,
 ] as const;
 
 /**
  * Open ledgers written before CT-06n whose `paths` reach contracts/openapi.yaml without covering
- * every file of CONTRACT_GENERATED. Frozen: ledgers are not rewritten by a guard task, and a new
- * ledger never joins the list (tools/ops/task.test.ts). Done ledgers are not checked at all.
+ * every file of CONTRACT_GENERATED except planned-operations.gen.ts. Frozen: ledgers are not
+ * rewritten by a guard task, and a new ledger never joins the list (tools/ops/task.test.ts). Done
+ * ledgers are not checked at all.
  */
 export const CONTRACT_GENERATED_EXEMPT: ReadonlySet<string> = new Set([
   'B1-08l',
@@ -246,18 +254,33 @@ export const CONTRACT_GENERATED_EXEMPT: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The files of CONTRACT_GENERATED an open task misses: [] unless the task is todo and its `paths`
- * reach contracts/openapi.yaml. Only `paths` triggers the rule: a Codex implementation that names
- * the contract in `mechanical_paths` only removes planned markers, which changes route-schemas.gen.ts
- * but none of the three route tables (they list planned operations too). Coverage counts `paths`
- * and `mechanical_paths`, literally or by glob (e.g. `packages/contracts-ts/**`).
+ * Open ledgers written before CT-06zxd whose `paths` or `mechanical_paths` reach
+ * contracts/openapi.yaml without covering planned-operations.gen.ts, exempt from that one file
+ * only. `task.ts check` on main at c5f973f3 found none (the only such open ledger, CT-02x, covers
+ * `packages/contracts-ts/**`), so the list is empty. Frozen like CONTRACT_GENERATED_EXEMPT: a new
+ * ledger never joins it, it lists the file instead (tools/ops/task.test.ts).
+ */
+export const PLANNED_OPERATIONS_GEN_EXEMPT: ReadonlySet<string> = new Set<string>([]);
+
+/**
+ * The files of CONTRACT_GENERATED an open task misses: [] unless the task is todo and reaches
+ * contracts/openapi.yaml. The three route tables and openapi.gen.ts are required only when `paths`
+ * reach it: a Codex implementation that names the contract in `mechanical_paths` only removes
+ * planned markers, which leaves them unchanged (they list planned operations too). That does change
+ * planned-operations.gen.ts, so it is required when either `paths` or `mechanical_paths` reach the
+ * contract. Coverage counts `paths` and `mechanical_paths`, literally or by glob (e.g.
+ * `packages/contracts-ts/**`). Exemptions (by id) are applied by checkTask.
  */
 export function missingContractGenerated(
   task: Pick<TaskFile, 'status' | 'paths' | 'mechanical_paths'>,
 ): string[] {
-  if (task.status !== 'todo' || !matchesAny(CONTRACT_SOURCE, task.paths)) return [];
+  if (task.status !== 'todo') return [];
+  const inPaths = matchesAny(CONTRACT_SOURCE, task.paths);
+  if (!inPaths && !matchesAny(CONTRACT_SOURCE, task.mechanical_paths)) return [];
   const covered = [...task.paths, ...task.mechanical_paths];
-  return CONTRACT_GENERATED.filter((file) => !matchesAny(file, covered));
+  return CONTRACT_GENERATED.filter(
+    (file) => (inPaths || file === PLANNED_OPERATIONS_GENERATED) && !matchesAny(file, covered),
+  );
 }
 
 /** All problems of one task file; an empty list means the file is valid. */
@@ -439,10 +462,15 @@ export function checkTask(id: string, opts: CheckOptions = {}): string[] {
     }
   }
 
-  const missingGenerated = missingContractGenerated(task);
-  if (missingGenerated.length > 0 && !CONTRACT_GENERATED_EXEMPT.has(task.id)) {
+  const missingGenerated = missingContractGenerated(task).filter((file) =>
+    file === PLANNED_OPERATIONS_GENERATED
+      ? !PLANNED_OPERATIONS_GEN_EXEMPT.has(task.id)
+      : !CONTRACT_GENERATED_EXEMPT.has(task.id),
+  );
+  if (missingGenerated.length > 0) {
+    const field = matchesAny(CONTRACT_SOURCE, task.paths) ? 'paths' : 'mechanical_paths';
     problems.push(
-      `paths: reach "${CONTRACT_SOURCE}", so they must also cover the files regenerated from it (CT-06n); add: ${missingGenerated.join(', ')}`,
+      `${field}: reach "${CONTRACT_SOURCE}", so the ledger must also cover the files regenerated from it (CT-06n, CT-06zxd); add: ${missingGenerated.join(', ')}`,
     );
   }
 
