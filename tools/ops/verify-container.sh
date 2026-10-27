@@ -1043,8 +1043,12 @@ start_host_services() { # <what the services are for, for the log>
   # One lock for the whole host (every lane, every COULI_RUNS): the container label, the unit
   # prefix and the instance root below are all host-wide, and so is this lock.
   exec 9>>"$SVC_LOCK" || die "cannot open the host-services lock $SVC_LOCK"
+  # CT-06zxg (D10-382): the wait follows TIMEOUT_SECS like RuntimeMaxSec (TIMEOUT_SECS × 2 + 1800),
+  # so a run queued behind a full verify (which may hold the lock up to its own limit plus the
+  # preamble and clean-up) does not give up first; only the wait changes, not the lock.
+  local lock_wait=$((TIMEOUT_SECS * 2 + 1800))
   step "waiting for the host-services lock $SVC_LOCK ($1)"
-  flock -w 3600 9 || die "another run holds $SVC_LOCK for more than an hour"
+  flock -w "$lock_wait" 9 || die "another run holds $SVC_LOCK for more than $lock_wait s"
   SVC_LOCKED=1
   svc_check_isolation || die "the host services' isolation is not in place, see $LOG"
   svc_check_root || die "the instance root is not the dedicated tmpfs, see $LOG"

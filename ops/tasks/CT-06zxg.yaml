@@ -1,0 +1,21 @@
+id: CT-06zxg
+repo: rebate-platform
+title: CT-06zxg：host-services 等锁时限（flock -w）挂钩 TIMEOUT_SECS（× 2 + 1800，同 RuntimeMaxSec）（D10-382）
+type: guard-change
+# 2026-10-27 入账（ops 线，编排裁定 D10-382；来自 CT-06zxf #1695 评审 S2-1）。起因：CT-06zxf 把 verify-container 默认时限提到
+# 3600 秒后，测试机上排在一次完整 verify 后面的运行 `flock -w 3600` 可能等满一小时、以基础设施错误（exit 2、无结果）退出——
+# 持锁者最长可达 svc_run 上限（TIMEOUT_SECS + 900）加前置与清理。做法：等锁时限改为 TIMEOUT_SECS × 2 + 1800（默认 9000 秒），
+# 与同函数里 RuntimeMaxSec 同口径；只改等锁时限，不改锁本身、判定与其他超时。附静态测试钉住写法。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ops/verify-container.sh'
+  - 'tools/ops/verify-container.test.ts'
+  - 'ops/tasks/CT-06zxg.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
