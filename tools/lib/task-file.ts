@@ -133,8 +133,10 @@ export const EXPECTED_VALUE_LENGTH_MAX = 200;
  * not a value. The values that differ must stand as an object property value (`{ key: <value> }`)
  * of an expectation's object or the expected argument of an expect chain's matcher
  * (`expect(…).toBe(<value>)`), never inside a query call (`.where(`, `.selectFrom(`, `sql(` …), a
- * fixture's or a query's input object, a ternary branch, a type annotation or a non-matcher
- * `.toString(` (CT-06zxh): test-blocks.ts valueChangeRefusal, the same function red-check runs on
+ * fixture's or a query's input object, a ternary branch, a type annotation, a non-matcher
+ * `.toString(` (CT-06zxh) or a function body between the value and the matcher, called at once or
+ * not (CT-06zxi, D10-388: `toEqual((() => { const input = { amount: 1 }; … })())`):
+ * test-blocks.ts valueChangeRefusal, the same function red-check runs on
  * the whole helper, where a one-line fragment shows its context. What a literal means (an
  * expectation, or a query argument that makes the assertion vacuous) the shape cannot tell: the
  * affected tests must still be red on the old code, and the rule-test reviewer confirms every

@@ -131,7 +131,8 @@
 // out of a longer token), or when a changed value stands neither as an object property value of
 // an expectation nor as the expected argument of an expect chain's matcher, or inside a query
 // call (test-blocks.ts valueChangeRefusal; CT-06zxh: a fixture's or a query's input object, a
-// ternary branch, a type annotation, `n.toString(16)` are refused).
+// ternary branch, a type annotation, `n.toString(16)` are refused; CT-06zxi, D10-388: so is a
+// value inside a function body between it and the matcher, an IIFE's local input included).
 // When the code outside the tests is then the head's character for
 // character (every change outside the tests is registered), the file is judged test by test: a
 // test block that calls a changed helper, directly or through other top-level helpers, a

@@ -481,6 +481,51 @@ describe('parseTaskFile', () => {
     }
   });
 
+  it('[CT-06zxi] expected_values: a value inside a function body between it and the matcher is refused (D10-388)', () => {
+    const declared = (entries: string): string =>
+      EXAMPLE.replace('tester: claude', `tester: claude\nexpected_values:${entries}`);
+    const entry = (from: string, to: string): string =>
+      `\n  - file: test/spec/a.test.ts\n    helper: h\n    from: ${from}\n    to: ${to}`;
+    for (const [from, to] of [
+      [
+        `'expect(actual).toEqual((() => { const input = { amount: 1 }; return makeExpected(input); })());'`,
+        `'expect(actual).toEqual((() => { const input = { amount: 2 }; return makeExpected(input); })());'`,
+      ],
+      [
+        `'expect(x).toEqual((function () { return { a: 1 }; })());'`,
+        `'expect(x).toEqual((function () { return { a: 2 }; })());'`,
+      ],
+      [
+        `'expect(x).toEqual(function () { return { a: 1 }; }());'`,
+        `'expect(x).toEqual(function () { return { a: 2 }; }());'`,
+      ],
+      [
+        `'expect(x).toEqual(((v) => ({ a: 1 }))(0));'`,
+        `'expect(x).toEqual(((v) => ({ a: 2 }))(0));'`,
+      ],
+      [`'expect(x).toEqual((() => [1])());'`, `'expect(x).toEqual((() => [2])());'`],
+      [`'expect(x).toEqual([() => 1]);'`, `'expect(x).toEqual([() => 2]);'`],
+    ] as const) {
+      expect(messageOf(declared(entry(from, to)), 'B2-02a.yaml'), from).toMatch(
+        /expected_values\[0\]: from .* → to .*: .* is changed .*(inside a function body|outside an object property value)/,
+      );
+    }
+    // Still accepted: B2-15l's two lines, an asymmetric matcher's nested object.
+    for (const [from, to] of [
+      [`'    diff_fen: AMOUNT,'`, `'    diff_fen: -AMOUNT,'`],
+      [`'    diff_fen: order.amount_fen,'`, `'    diff_fen: -order.amount_fen,'`],
+      [
+        `'expect(x).toEqual(expect.objectContaining({ a: { b: 1 } }));'`,
+        `'expect(x).toEqual(expect.objectContaining({ a: { b: 2 } }));'`,
+      ],
+      [`'expect(x).toEqual([{ a: [{ b: 1 }] }]);'`, `'expect(x).toEqual([{ a: [{ b: 2 }] }]);'`],
+    ] as const) {
+      expect(parseTaskFile(declared(entry(from, to)), 'B2-02a.yaml').expected_values).toHaveLength(
+        1,
+      );
+    }
+  });
+
   it('lists every problem in one error', () => {
     const text = [
       'id: b2',

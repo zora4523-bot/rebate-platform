@@ -2287,6 +2287,87 @@ it('[CT-06zxh] valueChangeRefusal: a property value of an expectation only, a ma
   }
 });
 
+it('[CT-06zxi] valueChangeRefusal: a value inside a function body between it and the matcher is no expected value (D10-388)', () => {
+  const body = 'inside a function body';
+  for (const [from, to] of [
+    // The review r2 probe of CT-06zxh: an IIFE's local input, arrow and function, with and
+    // without grouping parentheses.
+    [
+      'expect(actual).toEqual((() => { const input = { amount: 1 }; return makeExpected(input); })());',
+      'expect(actual).toEqual((() => { const input = { amount: 2 }; return makeExpected(input); })());',
+    ],
+    [
+      'expect(actual).toEqual((function () { const input = { amount: 1 }; return makeExpected(input); })());',
+      'expect(actual).toEqual((function () { const input = { amount: 2 }; return makeExpected(input); })());',
+    ],
+    [
+      'expect(actual).toEqual(function () { const input = { amount: 1 }; return makeExpected(input); }());',
+      'expect(actual).toEqual(function () { const input = { amount: 2 }; return makeExpected(input); }());',
+    ],
+    [
+      'expect(actual).toEqual((() => { return { amount: 1 }; })());',
+      'expect(actual).toEqual((() => { return { amount: 2 }; })());',
+    ],
+    // An expression body called at once, with and without its grouping parentheses.
+    [
+      'expect(x).toEqual((() => ({ amount: 1 }))());',
+      'expect(x).toEqual((() => ({ amount: 2 }))());',
+    ],
+    ['expect(x).toEqual(((v) => ({ a: 1 }))(0));', 'expect(x).toEqual(((v) => ({ a: 2 }))(0));'],
+    ['expect(x).toEqual((() => [{ a: 1 }])());', 'expect(x).toEqual((() => [{ a: 2 }])());'],
+    [
+      'expect(x).toEqual({ b: ((v) => ({ a: 1 }))(0) });',
+      'expect(x).toEqual({ b: ((v) => ({ a: 2 }))(0) });',
+    ],
+    // Not called: a function body, a method's body, an arrow in an array.
+    [
+      'expect(x).toEqual(() => { return { a: 1 }; });',
+      'expect(x).toEqual(() => { return { a: 2 }; });',
+    ],
+    ['expect(x).toEqual(() => { return [1]; });', 'expect(x).toEqual(() => { return [2]; });'],
+    [
+      'expect(x).toEqual({ m() { return { a: 1 }; } });',
+      'expect(x).toEqual({ m() { return { a: 2 }; } });',
+    ],
+    ['expect(x).toEqual([() => 1]);', 'expect(x).toEqual([() => 2]);'],
+    [
+      'expect(x).toEqual(expect.objectContaining({ f: () => ({ a: 1 }) }));',
+      'expect(x).toEqual(expect.objectContaining({ f: () => ({ a: 2 }) }));',
+    ],
+    // The whole helper, as red-check checks it.
+    [
+      'function h() {\n  expect(a).toEqual((() => {\n    const input = {\n      amount: 1,\n    };\n    return make(input);\n  })());\n}',
+      'function h() {\n  expect(a).toEqual((() => {\n    const input = {\n      amount: 2,\n    };\n    return make(input);\n  })());\n}',
+    ],
+  ] as const) {
+    expect(valueChangeRefusal(from, to), `${from} → ${to}`).toContain(body);
+  }
+  // Still accepted: an asymmetric matcher's object, nested objects and arrays, an arrow before a
+  // `,` of the same object, B2-15l's whole helper.
+  for (const [from, to] of [
+    [
+      'expect(x).toEqual(expect.objectContaining({ a: { b: 1 } }));',
+      'expect(x).toEqual(expect.objectContaining({ a: { b: 2 } }));',
+    ],
+    ['expect(x).toEqual([{ a: [{ b: 1 }] }]);', 'expect(x).toEqual([{ a: [{ b: 2 }] }]);'],
+    ['expect(x).toEqual({ f: () => y, b: 1 });', 'expect(x).toEqual({ f: () => y, b: 2 });'],
+    ['expect(x).toEqual([() => y, 1]);', 'expect(x).toEqual([() => y, 2]);'],
+    ['expect.poll(() => x()).toEqual({ a: 1 });', 'expect.poll(() => x()).toEqual({ a: 2 });'],
+    ['await expect(p).resolves.toEqual({ a: 1 });', 'await expect(p).resolves.toEqual({ a: 2 });'],
+    ['expect(x).toEqual({ a: { b: 1 } });', 'expect(x).toEqual({ a: { b: 2 } });'],
+    [
+      'async function h() {\n  expect(diffs[0]).toMatchObject({\n    expected_fen: 0n,\n    diff_fen: AMOUNT,\n  });\n}',
+      'async function h() {\n  expect(diffs[0]).toMatchObject({\n    expected_fen: 0n,\n    diff_fen: -AMOUNT,\n  });\n}',
+    ],
+    [
+      'const h = async () => {\n  expect(rows).toMatchObject({\n    diff_fen: order.amount_fen,\n  });\n};',
+      'const h = async () => {\n  expect(rows).toMatchObject({\n    diff_fen: -order.amount_fen,\n  });\n};',
+    ],
+  ] as const) {
+    expect(valueChangeRefusal(from, to), `${from} → ${to}`).toBeNull();
+  }
+});
+
 it('[CT-06zxh] helperNamedInLiteral: a string, template or regex literal naming the closure outside the changed helpers (review r2 S2-1)', () => {
   const head = [
     "import { it, expect } from 'vitest';",

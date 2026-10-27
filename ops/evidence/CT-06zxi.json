@@ -1,0 +1,37 @@
+{
+  "risk_note": "RV2 by the default rule (tools/** is not on the RV whitelist); guard-change to the red-check tooling, tightening only (D10-388, from CT-06zxh #1711 Codex review r2 S2): an expected-value registration whose change sits inside a function body (an IIFE in a matcher argument, a function / method body, an expression-bodied arrow called in place) is no longer an expected-value position: the ledger check refuses it and red-check's whole-helper re-check falls back to the whole-file judgement. No business code, money, attribution, ledger, migration or contract path. Replayed against B2-15l's two registrations on main: both still apply with the same affected tests, nothing judged red. Ledger tester: none, so no red run.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "review_type": "money",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "note": "round 1 pass, one S2 (a function expression with a string-literal return type annotation before its body brace is not recognised as a function body; needs a deliberately built form, none in the repository) kept for a follow-up"
+    }
+  ],
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "b32564c83f75b1c2e835ccb251fb85c9acfabc42"
+  },
+  "task": "CT-06zxi",
+  "spec_commit": "c294cbd1fbedea68d4ddf20812e1908d5ee1acf6",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "red_tests": [],
+  "runs": [],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "b32564c83f75b1c2e835ccb251fb85c9acfabc42",
+    "test/spec": "b66338773eb55758758a9092c1c2138c65409872",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}
