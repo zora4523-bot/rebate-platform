@@ -1,0 +1,25 @@
+id: B1-01zzp
+repo: rebate-platform
+title: 日志型资金告警接指标与告警规则：自动到账日合计触顶（80% / 100%）及属资金类的日志告警，经 worker /metrics 导出、infra/monitoring/rules/couli-fund.yaml（fund 'true'）告警
+type: impl
+# 2026-10-27 入账（ops 线，编排裁定 D10-389 ②，来自 B2-11c #1719 Codex money r1 / r2 S1-2）。起因：B2-11c 的 80% 日上限告警按仓库现行约定
+# 写固定消息名的 logger.warn('auto_payout_daily_near_cap')，但规划/02 §13 定业务告警走 /metrics 指标 + couli-fund.yaml（资金类夜间推送明列
+# 「自动到账日合计触顶」），仓库没有按日志消息名路由告警的规则。做法：worker 的 /metrics（B1-01zzh 已有，platform/metrics）按 SQL 导出当日
+# 自动到账合计与平台日上限之比（或合计与上限两条 gauge），couli-fund.yaml 加 80% / 100% 告警（fund: 'true'）；并核对 config_change_alert、
+# sms_daily_budget_alert、device_hash_hot_alert 中属资金类的，同样接指标或规则。新增测试，不改既有冻结断言。
+# **上线门槛（D10-389 ③）**：真实资金环境打开自动到账总开关前必须合并。B2-11c 的 auto-payout.ts TODO 指向本任务。
+refs: []
+refs_hash: {}
+deps: [B1-01zzh, B2-11c]
+paths:
+  - 'apps/api/src/modules/platform/metrics/**'
+  - 'infra/monitoring/rules/couli-fund.yaml'
+test_paths:
+  - 'test/spec/platform/metrics/fund-alerts/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/metrics/fund-alerts/**'
+status: todo
+pr: null
