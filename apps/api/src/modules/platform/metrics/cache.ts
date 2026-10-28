@@ -19,12 +19,29 @@ export function cacheFundCollector(
   clock: Clock,
   ttlMs = DEFAULT_TTL_MS,
 ): () => Promise<FundMetricsSnapshot> {
-  let cached: { readonly value: FundMetricsSnapshot; readonly at: number } | undefined;
-  let inFlight: Promise<FundMetricsSnapshot> | undefined;
+  return cacheCollector(collect, clock, ttlMs);
+}
+
+/**
+ * cacheFundCollector's cache for any snapshot. With `windowOf`, a snapshot is served only while
+ * windowOf(now) equals its value at the instant the collection started (e.g. the +08:00 day).
+ */
+export function cacheCollector<T>(
+  collect: () => Promise<T>,
+  clock: Clock,
+  ttlMs: number,
+  windowOf: (now: Date) => string = () => '',
+): () => Promise<T> {
+  let cached: { readonly value: T; readonly at: number; readonly window: string } | undefined;
+  let inFlight: Promise<T> | undefined;
 
   return () => {
-    const now = clock.now().getTime();
-    if (cached !== undefined && now - cached.at < ttlMs) return Promise.resolve(cached.value);
+    const instant = clock.now();
+    const now = instant.getTime();
+    const window = windowOf(instant);
+    if (cached !== undefined && now - cached.at < ttlMs && cached.window === window) {
+      return Promise.resolve(cached.value);
+    }
     // Expired: drop it, so a failing collection cannot fall back to it.
     cached = undefined;
     if (inFlight !== undefined) return inFlight;
@@ -35,7 +52,7 @@ export function cacheFundCollector(
       (value) => {
         if (inFlight === shared) {
           inFlight = undefined;
-          cached = { value, at: now };
+          cached = { value, at: now, window };
         }
         return value;
       },

@@ -9,6 +9,12 @@
 # ports at scrape time, across every app_id. A failed read fails the scrape (target down), it is
 # never exported as 0.
 # Granularity: the common 5m.
+# Auto-payout daily cap (B1-01zzp; 规划/02 §13 资金类「自动到账日合计触顶」; BR-WDR-30 ⑨): the worker
+# exports today's automatic total and the cap per app_id; both rules divide them and alert on
+# reaching 80 % and 100 % (>=). The cap is the one B2-11c executes with (payout's reading, injected
+# by entry.ts): an app_id with no cap row or a malformed one carries B2-11c's default (D10-393 (c)).
+# The log alerts config_change_alert, sms_daily_budget_alert and device_hash_hot_alert are not in
+# the fund list of 规划/02 §13, so they get no rule here (D10-393 (d)).
 # TODO(规划/11 §2.3): W6 ratio and repeated W6 (BR-WDR-24) — blocked on B2-06a.
 # TODO(规划/11 §2.3): corporate Alipay balance watermark W < 1.5P (BR-WDR-18) — blocked on B2-06fz.
 groups:
@@ -63,3 +69,21 @@ groups:
         annotations:
           summary: 'Withdrawals in PAYING with an unknown result need a person'
           description: 'PAYING withdrawals set to needs_manual (BR-WDR-14, BR-WDR-24): only query the channel, never pay again.'
+      - alert: CouliAutoPayoutDailyNearCap
+        expr: 'couli_auto_payout_daily_total_fen / couli_auto_payout_daily_cap_fen >= 0.8'
+        for: '5m'
+        labels:
+          severity: warning
+          fund: 'true'
+        annotations:
+          summary: 'Automatic payouts today reached 80% of the platform daily cap'
+          description: 'Sum of amount_fen of auto-reviewed withdrawals (not REJECTED or FAILED) reviewed in the current +08:00 day reached 80% of withdraw.auto_payout.platform_daily_max_fen (BR-WDR-30 ⑨, BR-WDR-24); finance should check.'
+      - alert: CouliAutoPayoutDailyCapReached
+        expr: 'couli_auto_payout_daily_total_fen / couli_auto_payout_daily_cap_fen >= 1'
+        for: '5m'
+        labels:
+          severity: critical
+          fund: 'true'
+        annotations:
+          summary: 'Automatic payouts today reached the platform daily cap'
+          description: 'The automatic total of the current +08:00 day reached withdraw.auto_payout.platform_daily_max_fen (BR-WDR-30 ⑨).'
