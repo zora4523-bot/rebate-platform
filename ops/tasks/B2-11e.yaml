@@ -22,5 +22,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/content/admin-check-options/**'
-status: todo
-pr: null
+status: done
+pr: 1742
