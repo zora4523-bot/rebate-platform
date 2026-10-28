@@ -45,6 +45,7 @@ import { DashboardPage, dashboardTargetOf } from './pages/dashboard/index.ts';
 import { ExportsPage } from './pages/exports/index.ts';
 import { HomeConfigPage } from './pages/home-config/index.ts';
 import { KillSwitchesPage } from './pages/kill-switches/index.ts';
+import { MessagesPage } from './pages/messages/index.ts';
 import { OrderDetailPage, OrdersPage } from './pages/orders/index.ts';
 import { PlatformIconsPage } from './pages/platform-icons/index.ts';
 import { RiskPage } from './pages/risk/index.ts';
@@ -573,6 +574,9 @@ function ShellFrame({
       content = <AdminsPage />;
     } else if (match !== undefined && match.item.id === 'platform-icons') {
       content = <PlatformIconsPage />;
+    } else if (match !== undefined && match.item.id === 'messages') {
+      // 消息模板: notify.channels reads and writes; the page itself says so without it.
+      content = <MessagesPage access={access} />;
     } else if (match !== undefined && match.item.id === UNIONS_MENU_ID) {
       content = <UnionsPage access={access} clock={options.clock} />;
     } else if (match !== undefined && match.item.id === APP_VERSIONS_MENU_ID) {
