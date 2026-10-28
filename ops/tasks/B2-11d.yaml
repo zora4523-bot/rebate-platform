@@ -35,5 +35,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payout/auto-config/**'
-status: todo
-pr: null
+status: done
+pr: 1733
