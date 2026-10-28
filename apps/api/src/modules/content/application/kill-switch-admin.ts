@@ -7,11 +7,17 @@ import {
   inviteRewardOpenRefused,
   inviteRewardTurnsOn,
 } from '../domain/invite-reward.ts';
-import { killSwitchChangeRefusal, killSwitchDescriptor } from '../domain/kill-switch.ts';
+import {
+  killSwitchChangeRefusalWith,
+  killSwitchDescriptor,
+  type KillSwitchChecks,
+} from '../domain/kill-switch.ts';
 import { switchRegistry, switchSpecOf } from '../domain/switch-registry.ts';
 
 type Json = DB['config_items']['value'];
 type Switch = Schema<'AdminKillSwitch'>;
+
+const AUTO_PAYOUT_KEY = 'withdraw.auto_payout.enabled';
 
 export interface KillSwitchRow {
   readonly key: string;
@@ -107,11 +113,7 @@ export function createKillSwitchAdmin(
   logger: Pick<Logger, 'warn'>,
   checks: KillSwitchAdminChecks,
 ): KillSwitchAdmin {
-  void store;
-  void clock;
-  void logger;
-  void checks;
-  throw new Error('NotImplemented: createKillSwitchAdmin');
+  return new KillSwitchAdmin(store, clock, logger, checks);
 }
 
 /** Permission and step-up checks are the controller's guard; identities are server supplied. */
@@ -119,11 +121,23 @@ export class KillSwitchAdmin {
   readonly #store: KillSwitchStore;
   readonly #clock: Clock;
   readonly #logger: Pick<Logger, 'warn'>;
+  readonly #checks: KillSwitchAdminChecks;
 
-  constructor(store: KillSwitchStore, clock: Clock, logger: Pick<Logger, 'warn'>) {
+  constructor(
+    store: KillSwitchStore,
+    clock: Clock,
+    logger: Pick<Logger, 'warn'>,
+    checks: KillSwitchAdminChecks = {},
+  ) {
     this.#store = store;
     this.#clock = clock;
     this.#logger = logger;
+    this.#checks = checks;
+  }
+
+  /** B2-11d: the same use case over the same store, with `checks` (the assembler's injection). */
+  withChecks(checks: KillSwitchAdminChecks): KillSwitchAdmin {
+    return new KillSwitchAdmin(this.#store, this.#clock, this.#logger, checks);
   }
 
   async list(
@@ -164,7 +178,11 @@ export class KillSwitchAdmin {
     key: string,
     body: Schema<'AdminKillSwitchUpdateRequest'>,
   ): Promise<Switch> {
-    const refusal = killSwitchChangeRefusal(key, body.value);
+    const refusal = killSwitchChangeRefusalWith(
+      key,
+      body.value,
+      await this.#enableChecks(actor, key, body.value),
+    );
     if (refusal !== null) throw new KillSwitchFieldsError([refusal]);
     // All admin-editable entries currently accept only boolean or enum-string values.
     // Keep the store boundary narrow even if a later registry change adds another type.
@@ -228,5 +246,20 @@ export class KillSwitchAdmin {
       );
     }
     return switchOf(key, result.row);
+  }
+
+  /**
+   * B2-11d: the precheck answer for the domain check. Asked (once, for the caller's app) only when
+   * withdraw.auto_payout.enabled is turned on and the assembler injected the precheck.
+   */
+  async #enableChecks(
+    actor: KillSwitchActor,
+    key: string,
+    value: unknown,
+  ): Promise<KillSwitchChecks> {
+    const precheck = this.#checks.autoPayoutEnable;
+    if (key !== AUTO_PAYOUT_KEY || value !== true || precheck === undefined) return {};
+    const answer = await precheck(actor.appId);
+    return { autoPayoutEnable: () => answer };
   }
 }

@@ -153,6 +153,22 @@ function sameValue(left: Json, right: Json): boolean {
   );
 }
 
+/**
+ * B2-11d: checks the assembler (app.module) injects. save is payout's BR-WDR-30 保存时校验: `keys`
+ * the configuration it reads, `refusals(stored, written)` the written keys it refuses given the
+ * caller's stored rows of `keys` (absent = unset) and the values the write sets. Absent, every
+ * write is checked on its own item only, as before.
+ */
+export interface ConfigItemAdminChecks {
+  readonly save?: {
+    readonly keys: readonly string[];
+    refusals(
+      stored: ReadonlyMap<string, unknown>,
+      written: ReadonlyMap<string, unknown>,
+    ): readonly string[];
+  };
+}
+
 interface ChangeResult {
   readonly row: ConfigItemRow;
   readonly before: Json;
@@ -163,11 +179,23 @@ export class ConfigItemAdmin {
   readonly #store: ConfigItemStore;
   readonly #clock: Clock;
   readonly #logger: Pick<Logger, 'warn'>;
+  readonly #checks: ConfigItemAdminChecks;
 
-  constructor(store: ConfigItemStore, clock: Clock, logger: Pick<Logger, 'warn'>) {
+  constructor(
+    store: ConfigItemStore,
+    clock: Clock,
+    logger: Pick<Logger, 'warn'>,
+    checks: ConfigItemAdminChecks = {},
+  ) {
     this.#store = store;
     this.#clock = clock;
     this.#logger = logger;
+    this.#checks = checks;
+  }
+
+  /** B2-11d: the same use case over the same store, with `checks` (the assembler's injection). */
+  withChecks(checks: ConfigItemAdminChecks): ConfigItemAdmin {
+    return new ConfigItemAdmin(this.#store, this.#clock, this.#logger, checks);
   }
 
   async list(appId: string, query: ConfigPageQuery): Promise<Schema<'AdminConfigItemPage'>> {
@@ -210,6 +238,10 @@ export class ConfigItemAdmin {
     const result = await this.#store.transaction(async (tx) => {
       // Campaign lock first, then the row lock: the same order as the switch write.
       if (zeroed.length > 0) await tx.lockInviteReward(actor.appId);
+      if (this.#saveChecked([key])) {
+        await this.#lockSaveKeys(tx, actor.appId);
+        await this.#refuseSave(tx, actor.appId, new Map([[key, body.value]]), () => ['value']);
+      }
       const before = await tx.lock(actor.appId, key);
       if (zeroed.length > 0) await this.#refuseWhileEnabled(tx, actor.appId, ['value']);
       return this.#change(tx, actor, { key, ...body }, before, body.reason ?? null);
@@ -230,6 +262,13 @@ export class ConfigItemAdmin {
       if (zeroed.length > 0) {
         await tx.lockInviteReward(actor.appId);
         await this.#refuseWhileEnabled(tx, actor.appId, zeroed);
+      }
+      // B2-11d: the whole batch is refused, before any write, when the configuration it would
+      // leave breaks the BR-WDR-30 save check; fields name the refused written keys.
+      if (this.#saveChecked(body.items.map((item) => item.key))) {
+        await this.#lockSaveKeys(tx, actor.appId);
+        const written = new Map(body.items.map((item) => [item.key, item.value]));
+        await this.#refuseSave(tx, actor.appId, written, (refused) => refused);
       }
       // Finish each key in sorted order, including INSERTs: absent rows cannot be locked
       // by SELECT FOR UPDATE. Any later conflict rolls back every earlier key's writes.
@@ -255,6 +294,8 @@ export class ConfigItemAdmin {
     const guarded = inviteRewardGuardedKey(key);
     const result = await this.#store.transaction(async (tx) => {
       if (guarded) await tx.lockInviteReward(actor.appId);
+      const saveChecked = this.#saveChecked([key]);
+      if (saveChecked) await this.#lockSaveKeys(tx, actor.appId);
       const before = await tx.lock(actor.appId, key);
       const historical = await tx.version(actor.appId, key, body.to_version);
       // Check the historical value and target before the expected_version comparison.
@@ -265,6 +306,10 @@ export class ConfigItemAdmin {
         !configValueFits(spec, historical.value)
       ) {
         throw new ConfigItemFieldsError(['to_version']);
+      }
+      if (saveChecked) {
+        const written = new Map([[key, historical.value]]);
+        await this.#refuseSave(tx, actor.appId, written, () => ['to_version']);
       }
       if (guarded && !inviteRewardPositive(historical.value)) {
         await this.#refuseWhileEnabled(tx, actor.appId, ['to_version']);
@@ -280,6 +325,38 @@ export class ConfigItemAdmin {
     });
     this.#alert(actor, result);
     return itemOf(key, result.row);
+  }
+
+  /** B2-11d: whether a write of `keys` touches the configuration the save check reads. */
+  #saveChecked(keys: readonly string[]): boolean {
+    const save = this.#checks.save;
+    return save !== undefined && keys.some((key) => save.keys.includes(key));
+  }
+
+  /**
+   * B2-11d: locks the existing rows the save check reads, in key order and before any written
+   * row, so two writes of keys the check compares (e.g. platform_daily_max_fen and
+   * payout.daily_cap_fen) see each other's committed value instead of both passing.
+   */
+  async #lockSaveKeys(tx: ConfigItemTx, appId: string): Promise<void> {
+    const keys = [...(this.#checks.save?.keys ?? [])].sort();
+    for (const key of keys) await tx.lock(appId, key);
+  }
+
+  /**
+   * B2-11d: 20001 `fields(refused)` when the configuration `written` would leave breaks the save
+   * check (call under #lockSaveKeys, only when #saveChecked).
+   */
+  async #refuseSave(
+    tx: ConfigItemTx,
+    appId: string,
+    written: ReadonlyMap<string, unknown>,
+    fields: (refused: readonly string[]) => readonly string[],
+  ): Promise<void> {
+    const save = this.#checks.save;
+    if (save === undefined) return;
+    const refused = save.refusals(await tx.values(appId, save.keys), written);
+    if (refused.length > 0) throw new ConfigItemFieldsError(fields(refused));
   }
 
   /** F1-02zn: 20001 `fields` when the invite reward switch is currently on (call under lock). */

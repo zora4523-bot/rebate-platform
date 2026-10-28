@@ -61,10 +61,10 @@ export function killSwitchChangeRefusalWith(
   value: unknown,
   checks: KillSwitchChecks,
 ): KillSwitchRefusal | null {
-  void key;
-  void value;
-  void checks;
-  throw new Error('NotImplemented: killSwitchChangeRefusalWith');
+  const refusal = killSwitchChangeRefusal(key, value);
+  if (key !== 'withdraw.auto_payout.enabled' || value !== true || refusal === 'key') return refusal;
+  const check = checks.autoPayoutEnable;
+  return check !== undefined && check().passed ? null : 'value';
 }
 
 /**

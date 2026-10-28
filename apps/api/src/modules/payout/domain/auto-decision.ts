@@ -164,7 +164,7 @@ export interface AutoPayoutDecision {
 }
 
 /** ⑫ the BR-WDR-29 labels in their numbering ①–⑩, then risk_calc_failed. */
-const RISK_LABEL_ORDER: readonly string[] = [
+export const RISK_LABEL_ORDER: readonly string[] = [
   'first_withdrawal',
   'credited_today',
   'same_device_multi_account',
