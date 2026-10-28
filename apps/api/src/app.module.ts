@@ -78,20 +78,13 @@ import {
   ContentAdminModule,
   ContentPublicModule,
   ContentWorkerModule,
+  configRegistry,
   createContentReader,
   switchSpecOf,
+  type ContentAdminOptions,
   type ContentReader,
   type PageAudienceReads,
 } from './modules/content/index.ts';
-// The configuration registry is pure data that content's index.ts does not export yet; the audit
-// search only needs its key → permission column (B1-34a).
-// TODO(规划/11 §2.3): 配置注册表改从 content 的 index.ts 导入 — blocked on content 任务补该导出（不在 B1-34a 路径内）
-import { configRegistry } from './modules/content/domain/config-registry.ts';
-// B2-11d: the console's config item and switch use cases, whose providers the admin entry rebuilds
-// with payout's BR-WDR-30 checks (contentAdminModule below).
-// TODO(规划/11 §2.3): 两个用例改从 content 的 index.ts 导入，检查改经 ContentAdminModule.forAdmin 的选项注入 — blocked on content 任务补该导出与选项（content/index.ts、content-admin.module.ts 不在 B2-11d 路径内）
-import { ConfigItemAdmin } from './modules/content/application/config-item-admin.ts';
-import { KillSwitchAdmin } from './modules/content/application/kill-switch-admin.ts';
 import { HealthModule } from './modules/health/index.ts';
 // The token of B1-27e's second keyring (not on the platform barrel): the isolated store of the
 // real-name correction (B1-27a) encrypts with it.
@@ -480,42 +473,23 @@ function streamIdentityModule(): DynamicModule {
  * turning withdraw.auto_payout.enabled on asks payout's 开启前置检查 for the caller's app, reading
  * its keys through content's reader and the reconciliation days through the default port (0 until
  * BR-WDR-23 lands, so it stays refused). Without a database handle the switch keeps its refusal.
- * The two providers ContentAdminModule builds are replaced by ones that add the checks to them.
+ * They go to ContentAdminModule.forAdmin as options (B2-11e).
  */
-function contentAdminModule(module: DynamicModule): DynamicModule {
+function contentAdminChecks(): Pick<ContentAdminOptions, 'configItemChecks' | 'killSwitchChecks'> {
   const save = { keys: AUTO_PAYOUT_SAVE_KEYS, refusals: autoPayoutWriteRefusals };
   const recon = createDefaultReconPassedDays();
-  const withChecks = (provider: Provider): Provider => {
-    if (typeof provider !== 'object' || !('useFactory' in provider)) return provider;
-    const base = provider.useFactory;
-    const inject = provider.inject ?? [];
-    if (provider.provide === ConfigItemAdmin) {
-      return {
-        ...provider,
-        useFactory: async (...args: unknown[]) =>
-          ((await base(...args)) as ConfigItemAdmin).withChecks({ save }),
+  return {
+    configItemChecks: { save },
+    killSwitchChecks: (db, clock) => {
+      const config = {
+        configValue: (appId: string, key: string, handle: Kysely<Database>) =>
+          createContentReader({ db: handle, clock }).configValue(appId, key),
       };
-    }
-    if (provider.provide !== KillSwitchAdmin) return provider;
-    return {
-      ...provider,
-      inject: [...inject, CLOCK, { token: DB, optional: true }],
-      useFactory: async (...args: unknown[]) => {
-        const switches = (await base(...args.slice(0, inject.length))) as KillSwitchAdmin;
-        const clock = args[inject.length] as Clock;
-        const db = args[inject.length + 1] as Kysely<Database> | undefined;
-        if (db === undefined) return switches;
-        const config = {
-          configValue: (appId: string, key: string, handle: Kysely<Database>) =>
-            createContentReader({ db: handle, clock }).configValue(appId, key),
-        };
-        return switches.withChecks({
-          autoPayoutEnable: (appId) => readAutoPayoutEnableCheck(appId, db, { config, recon }),
-        });
-      },
-    };
+      return {
+        autoPayoutEnable: (appId) => readAutoPayoutEnableCheck(appId, db, { config, recon }),
+      };
+    },
   };
-  return { ...module, providers: (module.providers ?? []).map(withChecks) };
 }
 
 function streamRiskModule(
@@ -3302,12 +3276,11 @@ export class AppModule {
         // writes append audit rows through admin's writer bound to their own transaction.
         ...(options.entry === 'admin'
           ? [
-              contentAdminModule(
-                ContentAdminModule.forAdmin({
-                  auditWriter: (db, clock) =>
-                    createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
-                }),
-              ),
+              ContentAdminModule.forAdmin({
+                auditWriter: (db, clock) =>
+                  createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                ...contentAdminChecks(),
+              }),
             ]
           : []),
         // identity's /admin/v1 user reveal (F1-07a, BR-ID-33): guarded by AdminOperationGuard,

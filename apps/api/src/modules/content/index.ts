@@ -27,6 +27,19 @@ export { getBannedWords, getFundTermKeys } from './specs/text-specs.ts';
 export type { AppVersionRow } from './domain/app-version.ts';
 // F1-06w: the admin console's platform mark reads, loaded by app.module on the admin entry only.
 export { ContentAdminModule } from './content-admin.module.ts';
+// B2-11e: forAdmin's options (the checks app.module injects into the console's config item and
+// switch use cases), those use cases, and the configuration registry (pure data).
+export type {
+  ContentAdminOptions,
+  ContentAuditWriterFactory,
+  ContentKillSwitchChecksFactory,
+} from './content-admin.module.ts';
+export { ConfigItemAdmin } from './application/config-item-admin.ts';
+export type { ConfigItemAdminChecks } from './application/config-item-admin.ts';
+export { KillSwitchAdmin } from './application/kill-switch-admin.ts';
+export type { KillSwitchAdminChecks } from './application/kill-switch-admin.ts';
+export { configRegistry } from './domain/config-registry.ts';
+export type { ConfigItemSpec, ConfigPermission } from './domain/config-registry.ts';
 // F1-09p: scheduled page publish due jobs, loaded by app.module on the worker entry only.
 export { ContentWorkerModule } from './content-worker.module.ts';
 export { publishedPlatformIcons } from './application/published-platform-icons.ts';
