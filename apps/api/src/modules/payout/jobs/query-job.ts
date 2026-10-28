@@ -210,15 +210,17 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
     const found = await trx
       .withSchema('app')
       .selectFrom('payout_attempts')
-      .select('id')
+      .select(['kind', 'result', sql<string | null>`response->>'kind'`.as('response_kind')])
       .where('app_id', '=', row.app_id)
       .where('withdrawal_id', '=', row.id)
       .where('kind', '=', 'transfer')
       .where('result', '=', 'fail')
       .where(sql<string | null>`response->>'kind'`, '=', 'payer_side')
-      .limit(1)
-      .executeTakeFirst();
-    return found !== undefined;
+      .execute();
+    // Only a row that explicitly carries every column counts; a row lacking them is not one.
+    return found.some(
+      (a) => a.kind === 'transfer' && a.result === 'fail' && a.response_kind === 'payer_side',
+    );
   }
 
   /** ① to ④'s decision on one short business transaction (the row lock ends with it). */
