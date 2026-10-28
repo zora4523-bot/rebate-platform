@@ -1380,6 +1380,21 @@ export interface PayoutBatchItems {
   withdrawal_id: string;
 }
 
+export interface PayoutReconRuns {
+  app_id: string;
+  bill_date: Timestamp;
+  bill_rows: number;
+  channel: string;
+  created_at: Generated<Timestamp>;
+  diffs: number;
+  finished_at: Timestamp;
+  id: string;
+  matched: number;
+  started_at: Timestamp;
+  status: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface PayoutWatermarks {
   app_id: string;
   available_fen: ColumnType<bigint, bigint, bigint>;
@@ -1593,6 +1608,22 @@ export interface RealnamePriorIdentities {
   name_cipher: Buffer;
   user_id: string;
   verified_at: Timestamp;
+}
+
+export interface ReconChannel {
+  app_id: string;
+  bill_date: Timestamp;
+  channel_amount_fen: ColumnType<bigint, bigint, bigint> | null;
+  channel_order_id: string | null;
+  channel_status: string | null;
+  created_at: Generated<Timestamp>;
+  date: Timestamp;
+  id: string;
+  our_amount_fen: ColumnType<bigint, bigint, bigint> | null;
+  our_status: string | null;
+  out_biz_no: string | null;
+  result: string;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface ReconDiffs {
@@ -2187,6 +2218,7 @@ export interface DB {
   payout_attempts: PayoutAttempts;
   payout_batch_items: PayoutBatchItems;
   payout_batches: PayoutBatches;
+  payout_recon_runs: PayoutReconRuns;
   payout_watermarks: PayoutWatermarks;
   personal_data_copies: PersonalDataCopies;
   platform_icon_uploads: PlatformIconUploads;
@@ -2200,6 +2232,7 @@ export interface DB {
   push_tokens: PushTokens;
   realname: Realname;
   realname_prior_identities: RealnamePriorIdentities;
+  recon_channel: ReconChannel;
   recon_diffs: ReconDiffs;
   recon_union: ReconUnion;
   refresh_tokens: RefreshTokens;
