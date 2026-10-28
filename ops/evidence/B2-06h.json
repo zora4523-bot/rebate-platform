@@ -1,0 +1,79 @@
+{
+  "risk_note": "RV2 money (apps/api/src/modules/payout/jobs/transfer-job.ts, query-job.ts): the follow-up of B2-06g money r1 S2 (ledger #1739; before payout.enabled is turned on with real money). When release() judges a payer-side result it records the channel result in the process (judgedPayerSide, key withdrawal_id:execute_seq) before pauseAndAlert. landPayerSide first commits the attempt's completion on its own (result=fail, channel code, response.kind=payer_side: the durable record any process's ② recognises through payerSideRecorded), then does the W9 payer_side_after_transfer in a new transaction; each step is tried twice. If the completion itself fails twice, the redelivered release's ② finds the in-process record, completes the pending attempt and lands the W9 on one transaction, with no query and no transfer. query-job checks, under its row lock, whether a durable payer_side transfer attempt exists (columns compared explicitly, not 'any row') and then holds with W9 instead of querying, so the query chain never lands W6 or refunds. Ordinary unknown results, unknown_code pauses and pending attempts left by a crash carry no record and still query. couli_payout writes only granted columns (payout_attempts 0094:182, withdrawals 0075:199-203). Record-then-send and idempotency are unchanged (completion WHERE result='pending', W9 CAS). Residual, stated honestly: if PG is down long enough for both completions to fail and the process restarts, or query-recovery's scan runs first, the pending attempt cannot be told apart from a crash and is queried (follow-up recorded). Rule tests by fresh independent Claude runs (approvals #36), two rounds, red PASS on the spec commit (3 red). Implementation by Opus 5.5 subagents in three runs (r2 restored the separate completion after the first review flagged a regression; r3 fixed the query check that a frozen test's fake database read as true). verify:fast in the test-machine container exit 0 (fast-6). Full verify on the test machine (verify/2, on aab187c7): exit 124 at the 3600 s limit with no failing case before it; payer-side-pending.int 3/3, payer-side-pause.int 4/4, review-release.int 17/17 and the frozen entry/assembly tests passed; recorded per D10-319, CI verify-int is the check. Two earlier fast runs were lost to test-machine disconnects (exit 2, no result).",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "review_type": "money",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "note": "Codex out of quota until 2026-11-02 (approvals #36). A first money review on r1 was rejected by the wrapper for its output format (exit 10, no usable output, not counted); its draft (pass, S2x2: completion merged into the W9 transaction was a regression; the query chain ignored the durable record) led to implementation r2. The counted round on r3 passed with S2x1 (the double-failure residual), recorded in couli-runs/followups.md."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "r1 fail S1x2 (an unknown_code pause or a crash-left pending attempt could be held as payer-side and still pass), S2x2; r2 pass with all four closed"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "B2-06h",
+  "spec_commit": "f4a4ec40a09428acc4373676550385fc6067164a",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "red_tests": [
+    "test/spec/payout/payer-side-pending/pending-redelivery.int.test.ts > [AC-B2-06h#1] 付款方侧失败已识别、completeAttempt 遇瞬时 PG 错误（尝试仍 pending、response 为空）：重投的 release 在 ② 认出付款方异常，W9 hold_reason=payer_side_after_transfer，尝试补记 40004 / TEST_PAYER_SIDE，不发查询、不再转账、不走 W6、不退回余额；对照：普通未知结果与须暂停的未知码（同样先暂停告警）的 completeAttempt 同样失败，重投后照旧恰一条首个查询、单据仍 PAYING，查询明确失败照旧 W6 退回",
+    "test/spec/payout/payer-side-pending/pending-redelivery.int.test.ts > [AC-B2-06h#2] 付款方侧失败已识别、completeAttempt 遇瞬时 PG 错误后，release 重投之前该单的查询任务先到（如恢复扫描补投）：查询链也认出付款方异常，即使通道查询返回明确失败也不走 W6、不退回余额、不查询，W9 hold_reason=payer_side_after_transfer、不再排下一个查询点；之后重投的 release 不再转账、不重复留单；对照：同一 app、同一组处理器上转账尝试 pending 且 response 为空但从未识别（进程在 ④ 与完成之间崩溃）的单照常查询，明确失败 W6 退回、成功 W5",
+    "test/spec/payout/payer-side-pending/pending-redelivery.int.test.ts > [AC-B2-06h#3] 付款方侧失败已识别后 PG 短暂中断（completeAttempt 与 W9 都失败，release 被拒）：同一进程重投的 release 认出付款方异常，补记尝试 40004 / TEST_PAYER_SIDE 并 W9 hold_reason=payer_side_after_transfer，不发查询、不再转账、不走 W6、不退回余额；之后投到的首个查询也不退回"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "f4a4ec40a09428acc4373676550385fc6067164a",
+      "tree": "7321b994121824fc0b909159f4aca4b07d1dcd1a",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-28T17:43:58Z",
+      "finished_at": "2026-10-28T17:44:12Z",
+      "red_tests": [
+        "test/spec/payout/payer-side-pending/pending-redelivery.int.test.ts > [AC-B2-06h#1] 付款方侧失败已识别、completeAttempt 遇瞬时 PG 错误（尝试仍 pending、response 为空）：重投的 release 在 ② 认出付款方异常，W9 hold_reason=payer_side_after_transfer，尝试补记 40004 / TEST_PAYER_SIDE，不发查询、不再转账、不走 W6、不退回余额；对照：普通未知结果与须暂停的未知码（同样先暂停告警）的 completeAttempt 同样失败，重投后照旧恰一条首个查询、单据仍 PAYING，查询明确失败照旧 W6 退回",
+        "test/spec/payout/payer-side-pending/pending-redelivery.int.test.ts > [AC-B2-06h#2] 付款方侧失败已识别、completeAttempt 遇瞬时 PG 错误后，release 重投之前该单的查询任务先到（如恢复扫描补投）：查询链也认出付款方异常，即使通道查询返回明确失败也不走 W6、不退回余额、不查询，W9 hold_reason=payer_side_after_transfer、不再排下一个查询点；之后重投的 release 不再转账、不重复留单；对照：同一 app、同一组处理器上转账尝试 pending 且 response 为空但从未识别（进程在 ④ 与完成之间崩溃）的单照常查询，明确失败 W6 退回、成功 W5",
+        "test/spec/payout/payer-side-pending/pending-redelivery.int.test.ts > [AC-B2-06h#3] 付款方侧失败已识别后 PG 短暂中断（completeAttempt 与 W9 都失败，release 被拒）：同一进程重投的 release 认出付款方异常，补记尝试 40004 / TEST_PAYER_SIDE 并 W9 hold_reason=payer_side_after_transfer，不发查询、不再转账、不走 W6、不退回余额；之后投到的首个查询也不退回"
+      ],
+      "expected": ["test/spec/payout/payer-side-pending/pending-redelivery.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "37cd85677c60648256fd1334baa371d0b6224a22dcf13c0392b736d5649358b9"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "b01bc8c1cd1d8439adbafc455a0c610d88b8e09e",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "e15ac20bf5638eaf1e6ae2802b921243f2169527",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}
