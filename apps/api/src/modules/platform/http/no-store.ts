@@ -1,5 +1,5 @@
 // B1-01zzq · Cache-Control: no-store on responses that carry a user's identity (orchestrator
-// ruling D10-396 ③; 规划/03 §8.3). Skeleton: every function throws NotImplemented.
+// ruling D10-396 ③; 规划/03 §8.3).
 //
 // A request carries an identity when the request checks attached a verified one to it: the
 // stage ② principal of an App access token or of an h5_token (`principal`, read with
@@ -18,6 +18,11 @@
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports,
 // relative imports with `.ts`, no NestJS, no `process.env`, no logging.
+import { adminPrincipal } from './admin-context.ts';
+import { tokenPrincipal } from './token-context.ts';
+
+const CACHE_CONTROL = 'Cache-Control';
+const NO_STORE = 'no-store';
 
 /** The parts of the Fastify reply the onSend step reads and writes (names are case-insensitive). */
 export interface NoStoreReply {
@@ -31,8 +36,7 @@ export interface NoStoreReply {
  * `adminPrincipal` object); false for an anonymous request. Works on the Fastify request.
  */
 export function carriesIdentity(request: object): boolean {
-  void request;
-  throw new Error('NotImplemented: carriesIdentity');
+  return tokenPrincipal(request) !== undefined || adminPrincipal(request) !== undefined;
 }
 
 /**
@@ -41,7 +45,6 @@ export function carriesIdentity(request: object): boolean {
  * every anonymous reply unchanged.
  */
 export function applyNoStore(request: object, reply: NoStoreReply): void {
-  void request;
-  void reply;
-  throw new Error('NotImplemented: applyNoStore');
+  if (!carriesIdentity(request) || reply.hasHeader(CACHE_CONTROL)) return;
+  reply.header(CACHE_CONTROL, NO_STORE);
 }

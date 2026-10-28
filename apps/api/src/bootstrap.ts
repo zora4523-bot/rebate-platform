@@ -16,6 +16,7 @@ import {
   ADMIN_MULTIPART_ROUTES,
   installMultipartRouteLimits,
 } from './modules/platform/http/multipart-limits.ts';
+import { applyNoStore } from './modules/platform/http/no-store.ts';
 import { createValidatorCompiler } from './modules/platform/validation/index.ts';
 import {
   type AppConfig,
@@ -168,8 +169,10 @@ export async function createHttpApp(
     });
     adapter.getInstance().setValidatorCompiler(createValidatorCompiler());
     // Cover every HTTP entry, including errors and responses without an envelope/body.
+    // B1-01zzq: a response to a request with a verified identity defaults to no-store (D10-396 ③).
     adapter.getInstance().addHook('onSend', (request, reply, payload, done) => {
       reply.header('X-Trace-Id', request.id);
+      applyNoStore(request, reply);
       done(null, payload);
     });
     const startQueue = overrides.startQueue ?? overrides.dbHandles !== undefined;
