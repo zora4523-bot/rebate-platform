@@ -1,0 +1,81 @@
+{
+  "risk_note": "RV2 money (apps/api/src/modules/payout/jobs/transfer-job.ts only): the fix of B2-06f money r4's out_of_scope S2 (ledger #1735, a launch gate before payout.enabled is turned on with real money). As soon as release() judges a payer-side result (payer_side_codes) or an unknown code that pauses, pauseAndAlert runs first. It sets the in-process mark (D10-404: the payout.queue_paused version read under the payout_daily lock), raises payout_queue_paused, and sends payout-landing/pause with trx:null; a failed send only warns and the mark stays. Only then come completeAttempt, the W9 payer_side_after_transfer or the first query, and none of the earlier steps is undone. A failing W9 or attempt write rejects for the queue to redeliver. On redelivery ② finds the recorded payer_side fail attempt and lands W9 on that transaction under a status / row_version CAS, with no query and no repeated alert or pause (the pause job is also deduplicated by singletonKey). A failed first-query send for an unknown code is tried once more on a fresh transaction. query-job.ts is unchanged (a query never pauses, BR-WDR-17). Rule tests by a fresh independent Claude (approvals #36), red PASS on the spec commit (4 red, all assertion failures). Implementation by an Opus 5.5 subagent in one run. verify:fast in the test-machine container exit 0. Full verify on the test machine: full-1 lost its ssh connection five minutes in (Connection reset by peer, exit 2, no result); the queued re-run was withdrawn per the orchestrator (20:0x); landed with SKIP_VERIFY as B1-01zzp / B2-11d, CI verify-int is the check (D10-319).",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "review_type": "money",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "note": "Codex out of quota until 2026-11-02 (approvals #36). r1 pass, S2x1: if completeAttempt itself fails transiently the redelivery cannot see the payer_side result and sends a query; pause and alert have already taken effect. Recorded in couli-runs/followups.md as a money follow-up."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "r1 pass, S2x1 (the tests allowed sending the pause job only after a W9 redelivery); the implementation sends it before the W9 independently"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "B2-06g",
+  "spec_commit": "a2d7f2942a57bf4a658709ba49c5f0c6f73c8c5b",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "red_tests": [
+    "test/spec/payout/payer-side-pause/pause-first.int.test.ts > [AC-B2-06g#1] 付款方侧失败且 W9（payer_side_after_transfer）事务遇瞬时 PG 错误：告警与进程内暂停已生效，下一单 release W9 queue_paused、不调用通道；W9 最终落下（本次已落或任务被拒以待重投），重投 release 不再转账、不多写尝试 / 事件 / pause 任务，不退回余额，暂停标记仍在",
+    "test/spec/payout/payer-side-pause/pause-first.int.test.ts > [AC-B2-06g#2] 清单外业务码（未知并暂停）且首个查询任务遇瞬时 PG 错误：告警与进程内暂停已生效，下一单 release W9 queue_paused、不调用通道；单据仍 PAYING，首个查询最终恰一条（本次已投或任务被拒以待重投），重投 release 不再转账、不多写尝试 / pause 任务，暂停标记仍在",
+    "test/spec/payout/payer-side-pause/pause-first.int.test.ts > [AC-B2-06g#3] 付款方侧失败（payer_side_codes 内） 正常落地：payout_queue_paused 告警先于 W9 payer_side_after_transfer 语句 / 首个查询任务发出，之后 W9 或首个查询照常落下、pause 任务恰一条、告警恰一次",
+    "test/spec/payout/payer-side-pause/pause-first.int.test.ts > [AC-B2-06g#3] 清单外业务码（未知并暂停） 正常落地：payout_queue_paused 告警先于 W9 payer_side_after_transfer 语句 / 首个查询任务发出，之后 W9 或首个查询照常落下、pause 任务恰一条、告警恰一次"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "a2d7f2942a57bf4a658709ba49c5f0c6f73c8c5b",
+      "tree": "7250aca3153b47ba5cab70650483194abfae977e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-28T12:47:08Z",
+      "finished_at": "2026-10-28T12:47:18Z",
+      "red_tests": [
+        "test/spec/payout/payer-side-pause/pause-first.int.test.ts > [AC-B2-06g#1] 付款方侧失败且 W9（payer_side_after_transfer）事务遇瞬时 PG 错误：告警与进程内暂停已生效，下一单 release W9 queue_paused、不调用通道；W9 最终落下（本次已落或任务被拒以待重投），重投 release 不再转账、不多写尝试 / 事件 / pause 任务，不退回余额，暂停标记仍在",
+        "test/spec/payout/payer-side-pause/pause-first.int.test.ts > [AC-B2-06g#2] 清单外业务码（未知并暂停）且首个查询任务遇瞬时 PG 错误：告警与进程内暂停已生效，下一单 release W9 queue_paused、不调用通道；单据仍 PAYING，首个查询最终恰一条（本次已投或任务被拒以待重投），重投 release 不再转账、不多写尝试 / pause 任务，暂停标记仍在",
+        "test/spec/payout/payer-side-pause/pause-first.int.test.ts > [AC-B2-06g#3] 付款方侧失败（payer_side_codes 内） 正常落地：payout_queue_paused 告警先于 W9 payer_side_after_transfer 语句 / 首个查询任务发出，之后 W9 或首个查询照常落下、pause 任务恰一条、告警恰一次",
+        "test/spec/payout/payer-side-pause/pause-first.int.test.ts > [AC-B2-06g#3] 清单外业务码（未知并暂停） 正常落地：payout_queue_paused 告警先于 W9 payer_side_after_transfer 语句 / 首个查询任务发出，之后 W9 或首个查询照常落下、pause 任务恰一条、告警恰一次"
+      ],
+      "expected": ["test/spec/payout/payer-side-pause/pause-first.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "2f8535e08b247fd6b18b545da7a965835240886b3655e16afdda0a1dde53c942"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "66964efc93a3cb4bd33c6f898e7bb0ebaa5269a7",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "0fc3ecb4e99ce4933a9913d1b84eacd05c35893e",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}
