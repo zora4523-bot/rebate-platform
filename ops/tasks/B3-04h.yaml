@@ -12,7 +12,7 @@ type: impl
 refs: [BR-PROD-03, BR-AI-04, BR-TEXT-14]
 refs_hash:
   BR-PROD-03: 1708058a2ff7
-  BR-AI-04: 8727d7987a2a
+  BR-AI-04: 303f0a08df60
   BR-TEXT-14: b3ce1a010a35
 deps: [B1-07a, B3-04f]
 paths:

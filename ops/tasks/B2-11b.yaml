@@ -8,7 +8,7 @@ type: impl
 # 状态备注：等 B2-05c 合并（payout 配置读取先例）。
 refs: [BR-WDR-30, BR-WDR-29]
 refs_hash:
-  BR-WDR-30: 1b1ddd9942cf
+  BR-WDR-30: ec74379ec48c
   BR-WDR-29: 6d588cc80722
 deps: [B2-05c, B2-11y]
 paths:
