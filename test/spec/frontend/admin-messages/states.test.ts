@@ -7,10 +7,10 @@ import {
   FLOW_TIMEOUT,
   SMS_TAB,
   action,
-  channelRow,
   click,
   main,
   mount,
+  openTab,
   panelOf,
   rowsOf,
   settle,
@@ -42,7 +42,6 @@ it(
     }
     await settled(server);
     await waitFor(() => expect(rowsOf(panelOf(CHANNELS_TAB), ['WD_FAILED'])).toHaveLength(1));
-    expect(channelRow('WD_FAILED')).toBeDefined();
   },
   FLOW_TIMEOUT,
 );
@@ -51,7 +50,7 @@ it(
   '[AC-F1-06zv-STATE#2] 出错可重试：列表请求失败显示出错与【重试】，重试成功后列出',
   async () => {
     const server = createServer();
-    server.once('GET', LIST, () => failure(50001, null, '服务暂时不可用'));
+    server.once('GET', LIST, () => failure(50001, undefined, '服务暂时不可用'));
     await mount(server);
     await waitFor(() => expect(server.requests('GET', LIST)).toHaveLength(1));
     await settled(server);
@@ -72,15 +71,12 @@ it(
     await mount(server);
     await waitFor(() => expect(server.requests('GET', LIST)).toHaveLength(1));
     await settled(server);
+    await openTab(CHANNELS_TAB);
     await waitFor(() =>
       expect(panelOf(CHANNELS_TAB).textContent).toMatch(/暂无|没有.*(?:编码|模板|数据|记录)/),
     );
     expect(switchesOf(main())).toEqual([]);
-    const smsTab = Array.from(main().querySelectorAll<HTMLElement>('[role="tab"]')).find(
-      (tab) => (tab.textContent ?? '').replace(/\s+/g, '') === SMS_TAB,
-    );
-    expect(smsTab, 'tab 短信').toBeDefined();
-    await click(smsTab!);
+    await openTab(SMS_TAB);
     await waitFor(() =>
       expect(panelOf(SMS_TAB).textContent).toMatch(/暂无|没有.*(?:编码|模板|数据|记录|登记)/),
     );

@@ -1,23 +1,40 @@
 // @vitest-environment jsdom
 import { expect, it } from 'vitest';
-import { CODES, LIST, createServer, items, type ChannelItem } from './fixtures.ts';
+import {
+  CODES,
+  LIST,
+  createServer,
+  items,
+  unregistered,
+  withItem,
+  type ChannelItem,
+} from './fixtures.ts';
 import {
   CHANNELS_TAB,
   FLOW_TIMEOUT,
   channelCell,
   channelRow,
+  click,
   isDisabled,
   isOn,
   mount,
   openChannels,
+  otherDialogs,
   panelOf,
   rowsOf,
+  settled,
   squash,
+  stepUpOpen,
   switchesOf,
   toggle,
 } from './helpers.ts';
 
 const ALWAYS_ON = '恒开';
+const NOT_READY = '未就绪';
+
+function cellText(code: string, channel: 'push' | 'sms'): string {
+  return squash(channelCell(code, channel).textContent);
+}
 
 it(
   '[AC-F1-06zv-LIST#1] 「消息模板」页签：一次不分页的列表请求，每个编码一行',
@@ -29,45 +46,40 @@ it(
     expect(reads[0]!.query).toEqual({});
     for (const code of CODES)
       expect(rowsOf(panelOf(CHANNELS_TAB), [code]), `row ${code}`).toHaveLength(1);
+    expect(server.writes()).toEqual([]);
     expect(directFetch).not.toHaveBeenCalled();
   },
   FLOW_TIMEOUT,
 );
 
 it(
-  '[AC-F1-06zv-LIST#2] 三列照接口字段画：可开关的给开关（值取 channels），恒开 / 只发站内信 / 不含站内信按字段显示',
+  '[AC-F1-06zv-LIST#2] 推送 / 短信照接口字段画：可开关的给开关（值取 channels），sms_fixed 的短信格显示恒开、没有开关，只发站内信与订阅类没有短信开关',
   async () => {
     await mount();
     await openChannels('WD_FAILED');
     // WD_FAILED: push + inbox + SMS on, both switchable.
     expect(isOn('push', 'WD_FAILED')).toBe(true);
     expect(isOn('sms', 'WD_FAILED')).toBe(true);
-    expect(squash(channelCell('WD_FAILED', 'inbox').textContent)).toContain(ALWAYS_ON);
-    // WD_SUCCESS: push on, SMS off.
+    expect(isDisabled(toggle('push', 'WD_FAILED'))).toBe(false);
+    expect(isDisabled(toggle('sms', 'WD_FAILED'))).toBe(false);
+    // WD_SUCCESS: push on, SMS off but ready.
     expect(isOn('push', 'WD_SUCCESS')).toBe(true);
     expect(isOn('sms', 'WD_SUCCESS')).toBe(false);
-    // CLAIM_RESULT: inbox only by default; push and SMS may be opened.
+    expect(isDisabled(toggle('sms', 'WD_SUCCESS'))).toBe(false);
+    // CLAIM_RESULT: inbox only by default; push may be opened.
     expect(isOn('push', 'CLAIM_RESULT')).toBe(false);
-    expect(isOn('sms', 'CLAIM_RESULT')).toBe(false);
-    expect(squash(channelCell('CLAIM_RESULT', 'inbox').textContent)).toContain(ALWAYS_ON);
+    expect(isDisabled(toggle('push', 'CLAIM_RESULT'))).toBe(false);
     // BALANCE_ADJUSTED: inbox only, nothing to switch.
     expect(switchesOf(channelRow('BALANCE_ADJUSTED'))).toEqual([]);
-    expect(squash(channelCell('BALANCE_ADJUSTED', 'inbox').textContent)).toContain(ALWAYS_ON);
-    // SMS_CODE and UNION_AUTH_EXPIRING: SMS fixed on, no inbox, no switch.
-    for (const code of ['SMS_CODE', 'UNION_AUTH_EXPIRING']) {
+    // WATCH_DIGEST (subscription): push switch, never an SMS switch.
+    expect(isOn('push', 'WATCH_DIGEST')).toBe(true);
+    expect(switchesOf(channelRow('WATCH_DIGEST'), 'sms', 'WATCH_DIGEST')).toEqual([]);
+    // SMS_CODE, UNION_AUTH_EXPIRING, DATA_COPY_CODE: SMS fixed on (a locked cell, no switch).
+    for (const code of ['SMS_CODE', 'UNION_AUTH_EXPIRING', 'DATA_COPY_CODE']) {
       expect(switchesOf(channelRow(code)), code).toEqual([]);
-      expect(squash(channelCell(code, 'sms').textContent), code).toContain(ALWAYS_ON);
-      expect(squash(channelCell(code, 'inbox').textContent), code).not.toContain(ALWAYS_ON);
+      expect(cellText(code, 'sms'), code).toContain(ALWAYS_ON);
     }
-    for (const [channel, code] of [
-      ['push', 'WD_FAILED'],
-      ['sms', 'WD_FAILED'],
-      ['push', 'WD_SUCCESS'],
-      ['sms', 'WD_SUCCESS'],
-      ['push', 'CLAIM_RESULT'],
-      ['sms', 'CLAIM_RESULT'],
-    ] as const)
-      expect(isDisabled(toggle(channel, code)), `${channel} ${code}`).toBe(false);
+    expect(cellText('WD_FAILED', 'sms')).not.toContain(ALWAYS_ON);
   },
   FLOW_TIMEOUT,
 );
@@ -87,8 +99,59 @@ it(
     expect(isOn('push', 'BALANCE_ADJUSTED')).toBe(false);
     expect(switchesOf(channelRow('BALANCE_ADJUSTED'), 'sms', 'BALANCE_ADJUSTED')).toEqual([]);
     expect(isOn('sms', 'SMS_CODE')).toBe(true);
-    expect(squash(channelCell('SMS_CODE', 'sms').textContent)).not.toContain(ALWAYS_ON);
+    expect(cellText('SMS_CODE', 'sms')).not.toContain(ALWAYS_ON);
     expect(switchesOf(channelRow('SMS_CODE'), 'push', 'SMS_CODE')).toEqual([]);
+  },
+  FLOW_TIMEOUT,
+);
+
+it(
+  '[AC-F1-06zv-LIST#4] 短信未就绪（sms_ready=false）且关着：短信开关置灰，点了不弹确认、不要动态码、不写',
+  async () => {
+    const { server } = await mount();
+    await openChannels('WD_REJECTED');
+    for (const code of ['WD_REJECTED', 'CLAIM_RESULT']) {
+      const sms = toggle('sms', code);
+      expect(sms.getAttribute('aria-checked'), code).toBe('false');
+      expect(isDisabled(sms), `${code} SMS switch greyed out`).toBe(true);
+      // Push of the same code is not affected.
+      expect(isDisabled(toggle('push', code)), `${code} push`).toBe(false);
+      await click(sms);
+    }
+    await settled(server);
+    expect(otherDialogs()).toEqual([]);
+    expect(stepUpOpen()).toBe(false);
+    expect(server.writes()).toEqual([]);
+  },
+  FLOW_TIMEOUT,
+);
+
+it(
+  '[AC-F1-06zv-LIST#5] 就绪置灰只看 sms_ready：同一编码 sms_ready 为真时短信开关可用',
+  async () => {
+    await mount(createServer(withItem('WD_REJECTED', { sms_ready: true })));
+    await openChannels('WD_REJECTED');
+    expect(isOn('sms', 'WD_REJECTED')).toBe(false);
+    expect(isDisabled(toggle('sms', 'WD_REJECTED'))).toBe(false);
+  },
+  FLOW_TIMEOUT,
+);
+
+it(
+  '[AC-F1-06zv-LIST#6] 默认含短信、开着但未就绪（sms_state=enabled_not_ready）：短信格显示「开（未就绪）」，推送格不显示',
+  async () => {
+    const data = withItem('WD_FAILED', {
+      sms_ready: false,
+      sms_state: 'enabled_not_ready',
+      sms_registrations: [unregistered(['amount'])],
+    });
+    await mount(createServer(data));
+    await openChannels('WD_FAILED');
+    expect(cellText('WD_FAILED', 'sms')).toContain(NOT_READY);
+    expect(cellText('WD_FAILED', 'push')).not.toContain(NOT_READY);
+    // Codes whose SMS is on and ready, or off, show no 未就绪.
+    expect(cellText('UNION_AUTH_EXPIRING', 'sms')).not.toContain(NOT_READY);
+    expect(cellText('WD_SUCCESS', 'sms')).not.toContain(NOT_READY);
   },
   FLOW_TIMEOUT,
 );
