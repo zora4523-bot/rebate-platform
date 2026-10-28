@@ -15,6 +15,7 @@ import type { Clock } from '../../../platform/index.ts';
 import { judgeQuery, judgeTransfer, type JudgementLists } from '../../application/judgement.ts';
 import {
   PayoutAmountInvalidError,
+  PayoutBillUnavailableError,
   PayoutChannelNotConfiguredError,
   PayoutPayeeNameRequiredError,
   type ChannelBillLine,
@@ -280,11 +281,12 @@ export class AlipayChannel implements PayoutChannel {
    * sandbox and nothing is recorded — neither the API, nor the bill format, nor whether a line
    * carries out_biz_no is known. Until a recorded sample exists this rejects with
    * PayoutBillUnavailableError without any gateway call; no bill format is assumed or made up.
+   * TODO(规划/11 §2.3): download and normalise the daily bill — blocked on 规划/09 账单下载实测与录制.
    */
   billDetails(appId: string, billDate: string): Promise<readonly ChannelBillLine[]> {
     void appId;
     void billDate;
-    throw new Error('NotImplemented: AlipayChannel.billDetails');
+    return Promise.reject(new PayoutBillUnavailableError());
   }
 
   /** One signed gateway call; the outcome is either transport-class or a verified business node. */

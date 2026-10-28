@@ -4,6 +4,7 @@
 // (fail closed: no scripted success is ever repeated).
 import { judgeQuery, judgeTransfer, type JudgementLists } from '../../application/judgement.ts';
 import {
+  PayoutBillUnavailableError,
   PayoutModeMustBeDryRunError,
   type ChannelBillLine,
   type ChannelRaw,
@@ -46,11 +47,13 @@ export class FakeChannel implements PayoutChannel {
   readonly calls: readonly FakeCall[];
   private readonly log: FakeCall[] = [];
   private readonly lists: JudgementLists;
+  private readonly bills: FakeBills;
   private readonly queues = new Map<string, { transfer: FakeStep[]; query: FakeStep[] }>();
 
   constructor(options: FakeChannelOptions) {
     if (options.mode !== 'dry_run') throw new PayoutModeMustBeDryRunError();
     this.lists = options.lists;
+    this.bills = options.bills ?? {};
     this.calls = this.log;
     for (const [outBizNo, steps] of Object.entries(options.script)) {
       this.queues.set(outBizNo, {
@@ -102,8 +105,10 @@ export class FakeChannel implements PayoutChannel {
    * with PayoutBillUnavailableError; an injected [] is a bill without lines.
    */
   billDetails(appId: string, billDate: string): Promise<readonly ChannelBillLine[]> {
-    void appId;
-    void billDate;
-    throw new Error('NotImplemented: FakeChannel.billDetails');
+    this.log.push({ kind: 'bill', appId, billDate });
+    const days = Object.hasOwn(this.bills, appId) ? this.bills[appId] : undefined;
+    const lines = days !== undefined && Object.hasOwn(days, billDate) ? days[billDate] : undefined;
+    if (lines === undefined) return Promise.reject(new PayoutBillUnavailableError());
+    return Promise.resolve(lines.map((line) => ({ ...line })));
   }
 }

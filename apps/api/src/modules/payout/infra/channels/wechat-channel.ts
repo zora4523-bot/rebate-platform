@@ -20,6 +20,6 @@ export class WechatChannel implements PayoutChannel {
   billDetails(appId: string, billDate: string): Promise<readonly ChannelBillLine[]> {
     void appId;
     void billDate;
-    throw new Error('NotImplemented: WechatChannel.billDetails');
+    return Promise.reject(new ChannelDisabledError());
   }
 }

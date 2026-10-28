@@ -54,7 +54,7 @@ export interface ChannelBillLine {
 export class PayoutBillUnavailableError extends Error {
   constructor() {
     super('PAYOUT_BILL_UNAVAILABLE');
-    throw new Error('NotImplemented: PayoutBillUnavailableError');
+    this.name = 'PayoutBillUnavailableError';
   }
 }
 

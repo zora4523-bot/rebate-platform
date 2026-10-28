@@ -21,6 +21,6 @@ export class BankCardChannel implements PayoutChannel {
   billDetails(appId: string, billDate: string): Promise<readonly ChannelBillLine[]> {
     void appId;
     void billDate;
-    throw new Error('NotImplemented: BankCardChannel.billDetails');
+    return Promise.reject(new ChannelDisabledError());
   }
 }
