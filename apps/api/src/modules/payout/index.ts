@@ -233,3 +233,22 @@ export {
   withdrawVsReceivedFlag,
 } from './domain/risk-flags.ts';
 export type { WithdrawRiskFlag, WithdrawRiskFlagCode } from './domain/risk-flags.ts';
+// B2-11d: BR-WDR-30 保存时校验 and 开启前置检查 (content injects the precheck into its switch check).
+export {
+  AUTO_PAYOUT_SAVE_KEYS,
+  autoPayoutSaveRefusals,
+  autoPayoutWriteRefusals,
+  checkAutoPayoutEnable,
+} from './domain/auto-config.ts';
+export type {
+  AutoPayoutEnableCheck,
+  AutoPayoutEnableItem,
+  AutoPayoutEnableItemCode,
+  AutoPayoutEnableKey,
+  AutoPayoutSaveRefusal,
+} from './domain/auto-config.ts';
+export {
+  createDefaultReconPassedDays,
+  readAutoPayoutEnableCheck,
+} from './application/auto-config.ts';
+export type { AutoPayoutEnableOptions, ReconPassedDaysPort } from './application/auto-config.ts';
