@@ -13,10 +13,12 @@ type: impl
 refs: []
 refs_hash: {}
 deps: [B1-01zzh, B2-11c]
+# 2026-10-28 补（D10-393 (c) 后续）：payout/index.ts 只为导出 B2-11c 的上限解析（autoPayoutConfigOf / 上限读取），供 entry.ts 注入 metrics；platform 不引 payout。
 paths:
   - 'apps/api/src/modules/platform/metrics/**'
   - 'infra/monitoring/rules/couli-fund.yaml'
   - 'apps/api/src/entry.ts'
+  - 'apps/api/src/modules/payout/index.ts'
 test_paths:
   - 'test/spec/platform/metrics/fund-alerts/**'
   - 'test/spec/platform/fund-metrics/rules.test.ts'
