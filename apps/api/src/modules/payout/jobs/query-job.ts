@@ -5,6 +5,11 @@
 //   ① read the withdrawal (app_id and id of the payload, row lock FOR NO KEY UPDATE). Missing,
 //      status ≠ PAYING or execute_seq ≠ the payload's → resolve; nothing written, no query.
 //   ② needs_manual = true → resolve: automatic queries have stopped (W10's "query now" is B2-09).
+//      B2-06h (BR-WDR-17): a transfer attempt of the withdrawal recorded as payer-side (result
+//      fail, response kind payer_side: the release judged it, its W9 did not commit) → W9 PAYING →
+//      APPROVED hold_reason payer_side_after_transfer (CAS) on this transaction, as the release's
+//      ② does; no query, no W6, no next point. Only that durable record counts: a transfer attempt
+//      still pending (an ordinary unknown, an unknown_code pause, a crash) is queried as before.
 //   ③ T = `at` of the withdrawal's earliest kind=transfer attempt; none → warn and resolve.
 //   ④ manualDue(schedule, T, now) → CAS needs_manual = true (row_version + 1, status and amounts
 //      unchanged), logger.warn({ withdrawal_id, out_biz_no, point }, 'payout_needs_manual'), no
@@ -32,13 +37,14 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as wait } from 'node:timers/promises';
 import type { DB } from '@couli/db';
-import type { Kysely, Transaction } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import type { Logger } from 'pino';
 import type { Ledger } from '../../ledger/index.ts';
 import type { Clock, EventBus, JobHandler, JobQueue, ReceivedJob } from '../../platform/index.ts';
 import type { QueryResult } from '../domain/channel-result.ts';
 import { readPayoutChannelConfig } from '../application/judgement.ts';
 import { handoffLanding, recordedResponse } from '../application/landing-handoff.ts';
+import { holdWithdrawal } from '../application/transfer-gates.ts';
 import { markNeedsManual } from '../application/query-manual.ts';
 import { manualDue, nextQueryDueMs, type QuerySchedule } from '../application/query-schedule.ts';
 import type { WithdrawApplyOptions } from '../application/withdraw-apply.ts';
@@ -148,7 +154,7 @@ async function defaultSleep(ms: number): Promise<void> {
 }
 
 export function createQueryJob(options: QueryJobOptions): JobHandler {
-  const { db, attemptsDb, clock, config, queue, channels, logger } = options;
+  const { db, attemptsDb, clock, config, queue, eventBus, channels, logger } = options;
   const sleep = options.sleep ?? defaultSleep;
   /** readPayoutChannelConfig wants pino's warn; the job's logger has the same two-argument shape. */
   const configLogger = {
@@ -199,6 +205,24 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
     return at instanceof Date ? at : null;
   }
 
+  /** B2-06h: a transfer attempt of the withdrawal completed with a payer_side result. */
+  async function payerSideRecorded(trx: Transaction<DB>, row: QueryRow): Promise<boolean> {
+    const found = await trx
+      .withSchema('app')
+      .selectFrom('payout_attempts')
+      .select(['kind', 'result', sql<string | null>`response->>'kind'`.as('response_kind')])
+      .where('app_id', '=', row.app_id)
+      .where('withdrawal_id', '=', row.id)
+      .where('kind', '=', 'transfer')
+      .where('result', '=', 'fail')
+      .where(sql<string | null>`response->>'kind'`, '=', 'payer_side')
+      .execute();
+    // Only a row that explicitly carries every column counts; a row lacking them is not one.
+    return found.some(
+      (a) => a.kind === 'transfer' && a.result === 'fail' && a.response_kind === 'payer_side',
+    );
+  }
+
   /** ① to ④'s decision on one short business transaction (the row lock ends with it). */
   async function prepare(payload: QueryJobPayload, now: Date): Promise<Prepared> {
     return db.transaction().execute(async (trx): Promise<Prepared> => {
@@ -219,6 +243,19 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
         logger.info(
           { withdrawal_id: row.id, out_biz_no: row.out_biz_no, point: payload.point },
           'payout_query_stopped_manual',
+        );
+        return { kind: 'done' };
+      }
+      if (await payerSideRecorded(trx, row)) {
+        await holdWithdrawal(trx, { eventBus, logger }, row, 'payer_side_after_transfer', now);
+        logger.info(
+          {
+            withdrawal_id: row.id,
+            out_biz_no: row.out_biz_no,
+            point: payload.point,
+            hold_reason: 'payer_side_after_transfer',
+          },
+          'payout_query_payer_side_held',
         );
         return { kind: 'done' };
       }
