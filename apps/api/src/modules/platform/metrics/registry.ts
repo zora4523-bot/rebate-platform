@@ -1,7 +1,8 @@
 // Prometheus registry of one entry (B1-01zzh): process-level metrics everywhere; the five business
 // gauges only on the worker, filled by `collect` at scrape time (no polling loop). The five fund
 // gauges (B1-01zzi) likewise only on the worker, filled by `collectFund` at scrape time; a rejected
-// collection rejects render() (the scrape fails visibly, no value is made up).
+// collection rejects render() (the scrape fails visibly, no value is made up). The two auto-payout
+// daily gauges (B1-01zzp) likewise only on the worker, filled by `collectAutoPayout`.
 // The text exposition format 0.0.4 is written here from Node built-ins only: the client library
 // cannot be loaded in the test environment (its @opentelemetry/api dependency resolves to an ESM
 // build Node cannot import), so no third-party metrics library is used at runtime.
@@ -101,6 +102,24 @@ const SCALAR_FUND_GAUGES: Readonly<Record<ScalarFundKey, { name: string; help: s
 };
 
 const SCALAR_FUND_KEYS = Object.keys(SCALAR_FUND_GAUGES) as ScalarFundKey[];
+
+/** The two auto-payout daily gauges (B1-01zzp), both labelled app_id so the rules divide them. */
+const AUTO_PAYOUT_GAUGES: Readonly<
+  Record<keyof AutoPayoutDailySnapshot, { name: string; help: string }>
+> = {
+  totalFen: {
+    name: 'couli_auto_payout_daily_total_fen',
+    help: 'Sum of amount_fen of auto-reviewed withdrawals not REJECTED or FAILED, reviewed in the current +08:00 day, per app_id.',
+  },
+  capFen: {
+    name: 'couli_auto_payout_daily_cap_fen',
+    help: 'The withdraw.auto_payout.platform_daily_max_fen B2-11c executes with (its default when absent or malformed), per app_id with a cap row or a nonzero total.',
+  },
+};
+
+const AUTO_PAYOUT_KEYS = Object.keys(AUTO_PAYOUT_GAUGES) as (keyof AutoPayoutDailySnapshot)[];
+
+const AUTO_PAYOUT_LABEL = 'app_id';
 
 function escapeHelp(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/\n/g, '\\n');
@@ -215,20 +234,37 @@ function fundFamilies(snapshot: FundMetricsSnapshot): Family[] {
   return [pending, ...scalars];
 }
 
+function autoPayoutFamilies(snapshot: AutoPayoutDailySnapshot): Family[] {
+  // Only this snapshot's app_ids: one that disappeared does not keep its previous value.
+  return AUTO_PAYOUT_KEYS.map((key) => ({
+    name: AUTO_PAYOUT_GAUGES[key].name,
+    help: AUTO_PAYOUT_GAUGES[key].help,
+    type: 'gauge' as const,
+    samples: Object.entries(snapshot[key]).map(([appId, value]) => ({
+      labels: { [AUTO_PAYOUT_LABEL]: appId },
+      value,
+    })),
+  }));
+}
+
 export function createMetricsRegistry(options: MetricsRegistryOptions): MetricsRegistry {
   const worker = options.entry === 'worker';
   const collect = worker ? options.collect : undefined;
   const collectFund = worker ? options.collectFund : undefined;
+  const collectAutoPayout = worker ? options.collectAutoPayout : undefined;
   return {
     contentType: CONTENT_TYPE,
     async render() {
-      // Business and fund values first, then the process values of the same scrape. Either
-      // collection rejecting rejects the whole render.
-      const [business, fund] = await Promise.all([
+      // Business, fund and auto-payout values first, then the process values of the same scrape.
+      // Any collection rejecting (or throwing synchronously) rejects the whole render.
+      const [business, fund, autoPayout] = await Promise.all([
         collect === undefined ? [] : collect().then(businessFamilies),
         collectFund === undefined ? [] : collectFund().then(fundFamilies),
+        collectAutoPayout === undefined
+          ? []
+          : Promise.resolve().then(collectAutoPayout).then(autoPayoutFamilies),
       ]);
-      return [...business, ...fund, ...processFamilies()].map(renderFamily).join('');
+      return [...business, ...fund, ...autoPayout, ...processFamilies()].map(renderFamily).join('');
     },
   };
 }

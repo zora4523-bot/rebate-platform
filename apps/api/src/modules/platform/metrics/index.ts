@@ -1,5 +1,5 @@
 // Public surface of platform/metrics (B1-01zzh).
-export { collectAutoPayoutDaily } from './auto-payout.ts';
+export { cacheAutoPayoutCollector, collectAutoPayoutDaily } from './auto-payout.ts';
 export type {
   AutoPayoutCapEntry,
   AutoPayoutCapFenOf,

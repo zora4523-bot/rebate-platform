@@ -46,8 +46,15 @@ import {
   readOrderSyncPendingOpen,
   type OrderSyncRuntime,
 } from './modules/orders/index.ts';
-import { readPayoutFundMetrics } from './modules/payout/index.ts';
-import { cacheFundCollector, type FundMetricsSnapshot } from './modules/platform/metrics/index.ts';
+import { autoPayoutConfigOf, readPayoutFundMetrics } from './modules/payout/index.ts';
+import {
+  cacheAutoPayoutCollector,
+  cacheFundCollector,
+  collectAutoPayoutDaily,
+  type AutoPayoutCapFenOf,
+  type AutoPayoutDailySnapshot,
+  type FundMetricsSnapshot,
+} from './modules/platform/metrics/index.ts';
 import { readSettlementFundMetrics } from './modules/settlement/index.ts';
 import {
   armRedisGeneration,
@@ -207,7 +214,8 @@ function startGenerationRenewal(
  * Every entry exports process-level metrics; only the worker passes `collect` (whole-database
  * gauges read through its own handle at scrape time) and, since B1-01zzi, `collectFund` (the fund
  * gauges from the orders, settlement and payout read ports; the worker hands it in wrapped by
- * `cacheFundCollector`, B1-01zzo). Not on the Nest application, not in the OAS.
+ * `cacheFundCollector`, B1-01zzo) and, since B1-01zzp, `collectAutoPayout` (today's automatic
+ * total against the cap, cached per +08:00 day). Not on the Nest application, not in the OAS.
  */
 async function openMetrics(
   entry: EntryName,
@@ -216,6 +224,7 @@ async function openMetrics(
   collectors?: {
     readonly collect: () => Promise<WorkerMetricsSnapshot>;
     readonly collectFund: () => Promise<FundMetricsSnapshot>;
+    readonly collectAutoPayout: () => Promise<AutoPayoutDailySnapshot>;
   },
 ): Promise<MetricsServer | undefined> {
   if (config.metrics === undefined) return undefined;
@@ -230,6 +239,14 @@ async function openMetrics(
   logger.info({ host: config.metrics.host, port: server.port }, 'metrics_listening');
   return server;
 }
+
+/**
+ * The cap of the auto-payout gauge (B1-01zzp, D10-393 (c)): B2-11c's own reading of
+ * platform_daily_max_fen, so an absent or malformed row alerts on the default the decision
+ * executes with. The decision logs the fallback; the scrape does not repeat it.
+ */
+const payoutCapFenOf: AutoPayoutCapFenOf = (snapshot) =>
+  autoPayoutConfigOf(snapshot, () => undefined).config.platform_daily_max_fen;
 
 /**
  * The worker's fund gauges (B1-01zzi) through each module's read-only port over the worker's own
@@ -390,6 +407,11 @@ async function start(
           // Cached for 5 minutes (B1-01zzo): the held-beneficiary count groups a whole table.
           // A failed collection is not cached and never falls back to an older snapshot.
           collectFund: cacheFundCollector(() => collectFundMetrics(dbHandles.db, clock), clock),
+          // The auto-payout daily gauges (B1-01zzp), cached the same way and per +08:00 day.
+          collectAutoPayout: cacheAutoPayoutCollector(
+            () => collectAutoPayoutDaily(dbHandles.db, clock, payoutCapFenOf),
+            clock,
+          ),
         });
       } catch (error) {
         signals.fail();

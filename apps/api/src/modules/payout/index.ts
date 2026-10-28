@@ -105,6 +105,10 @@ export type {
 // B1-01zzi: the worker's fund metric (PAYING withdrawals that need a person; read only).
 export { readPayoutFundMetrics } from './application/metrics-read.ts';
 export type { PayoutFundMetrics } from './application/metrics-read.ts';
+// B1-01zzp: B2-11c's reading of withdraw.auto_payout.* (absent or malformed → its 08 default), so
+// the worker's auto-payout cap gauge carries the cap the decision executes with.
+export { autoPayoutConfigOf } from './application/auto-payout.ts';
+export type { AutoPayoutConfigSnapshot } from './application/auto-payout.ts';
 // B2-06c: EXECUTE (BR-WDR-12), the watermark check (BR-WDR-18) and the batch / attempts stores.
 export {
   createPayoutExecute,
