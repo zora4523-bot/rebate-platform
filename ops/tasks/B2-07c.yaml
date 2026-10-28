@@ -1,0 +1,31 @@
+id: B2-07c
+repo: rebate-platform
+title: 打款通道日对账作业（R2，BR-WDR-23）：worker 队列 payout-recon 每日 T+1 对前一自然日（+08:00）的支付宝账单与提现单核对（接口单按 out_biz_no、手动成功单按 channel_order_id、金额对 net_fen、近日界的 PAID_* 须当日与次日两份都无才算差异），按 ①②③ 处置（① 走现有查询链、非成功置 needs_manual + 差错单 + 告警；② 只记明细与待处置提示；③ recon_diffs(R2, channel_mismatch) + withdraw_holds(recon_diff，不自动到期) + 告警，W9 退回单附账单行），终态单只读，每次运行写 payout_recon_runs
+type: impl
+# 2026-10-29 入账（ops 线，D10-408）。验收照规划/05 B2-07：注入 1 笔重复打款与 1 笔漏单，次日全部发现。手动触发入口留给后台对账页（F1-08e）；告警规则另行。
+refs: [BR-WDR-23, BR-WDR-15, BR-FUND-24]
+refs_hash:
+  BR-WDR-23: 98981fee10c7
+  BR-WDR-15: 7e3fa7b3f0f5
+  BR-FUND-24: 0f824b6d86f9
+deps: [B2-07a, B2-07b, B2-06h]
+paths:
+  - 'apps/api/src/modules/payout/jobs/recon-*.ts'
+  - 'apps/api/src/modules/payout/application/recon-*.ts'
+  - 'apps/api/src/modules/payout/payout.module.ts'
+  - 'apps/api/src/modules/payout/index.ts'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
+  - 'apps/api/src/modules/platform/queue/worker-plan.ts'
+  - 'apps/api/src/modules/platform/queue/worker-plan.test.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/payout/recon-channel/**'
+  - 'test/spec/platform/queue/contract.test.ts'
+  - 'test/spec/platform/queue-concurrency/kit.ts'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/recon-channel/**'
+status: todo
+pr: null
