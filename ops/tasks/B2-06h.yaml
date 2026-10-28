@@ -1,0 +1,26 @@
+id: B2-06h
+repo: rebate-platform
+title: 付款方异常已识别但尝试结果未落库时重投不退款——completeAttempt 自身瞬时失败（尝试行仍 pending、response 为空）后，重投的 release ② 与查询链也能认出「付款方异常已识别」，W9 留单（hold_reason=payer_side_after_transfer），不发查询、不走 W6 退回；真实资金环境打开 payout.enabled 前排期
+type: impl
+# 2026-10-28 入账（ops 线，编排 HANDOFF 19:4x；B2-06g money 评审 r1 S2，couli-runs/B2-06g/review-claude-independent.json）。
+# 现状（B2-06g）：release 识别付款方异常后先暂停 / 告警 / 发 pause，再 completeAttempt(fail, kind=payer_side) 与 W9；completeAttempt 自身遇瞬时 PG 错误时尝试行留
+# result=pending、response NULL，重投时 ② 的 payerSideRecorded 看不到，改走首查；查询若映射 FAIL 则 W6 FAILED 退回资金（违 BR-WDR-17「付款方异常不退回」），或进 needs_manual。
+# 要求：重投也能识别「付款方异常已被识别但尝试结果未落库」（例如在调用渠道前 / 识别当刻先持久化可读的标记，或以进程内暂停标记 + 渠道码复核，方案由实现定、证据写明），
+# 此时 W9 留单、不发查询、不 W6；BR-WDR-13 先记后发与幂等不放松；新增测试，不改冻结断言。真实资金环境打开 payout.enabled 前排期。
+refs: [BR-WDR-17, BR-WDR-13]
+refs_hash:
+  BR-WDR-17: f6119a685e00
+  BR-WDR-13: 11b5c3e1a9b3
+deps: [B2-06g]
+paths:
+  - 'apps/api/src/modules/payout/jobs/**'
+  - 'apps/api/src/modules/payout/application/landing-handoff.ts'
+test_paths:
+  - 'test/spec/payout/payer-side-pending/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/payer-side-pending/**'
+status: todo
+pr: null
