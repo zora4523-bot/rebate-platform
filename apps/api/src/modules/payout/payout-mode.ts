@@ -8,7 +8,7 @@
 //     set and not blank; the values are returned as set.
 //   - Anything else (live outside prod, a missing credential, an unknown value) throws platform's
 //     ConfigError: startup fails. Its message and problems name variables only, never a value.
-import type { AppEnv } from '../platform/index.ts';
+import { ConfigError, type AppEnv } from '../platform/index.ts';
 
 export type PayoutMode = 'dry_run' | 'live';
 
@@ -17,10 +17,7 @@ export type PayoutModeEnvName = 'PAYOUT_MODE';
 
 /** The Alipay credential variables live requires (prod only; all set and not blank). */
 export type PayoutLiveCredentialEnvName =
-  | 'ALIPAY_APP_ID'
-  | 'ALIPAY_APP_PRIVATE_KEY'
-  | 'ALIPAY_PUBLIC_KEY'
-  | 'ALIPAY_GATEWAY_URL';
+  'ALIPAY_APP_ID' | 'ALIPAY_APP_PRIVATE_KEY' | 'ALIPAY_PUBLIC_KEY' | 'ALIPAY_GATEWAY_URL';
 
 /** ALIPAY_APP_ID, ALIPAY_APP_PRIVATE_KEY, ALIPAY_PUBLIC_KEY and ALIPAY_GATEWAY_URL, in this order. */
 export interface PayoutLiveCredentials {
@@ -34,11 +31,38 @@ export type PayoutModeDecision =
   | { readonly mode: 'dry_run' }
   | { readonly mode: 'live'; readonly credentials: PayoutLiveCredentials };
 
+/** In the order of PayoutLiveCredentials. */
+const CREDENTIALS: ReadonlyArray<
+  readonly [PayoutLiveCredentialEnvName, keyof PayoutLiveCredentials]
+> = [
+  ['ALIPAY_APP_ID', 'appId'],
+  ['ALIPAY_APP_PRIVATE_KEY', 'privateKey'],
+  ['ALIPAY_PUBLIC_KEY', 'alipayPublicKey'],
+  ['ALIPAY_GATEWAY_URL', 'gatewayUrl'],
+];
+
+const MODE: PayoutModeEnvName = 'PAYOUT_MODE';
+
 export function resolvePayoutMode(
   appEnv: AppEnv,
   env: Readonly<Record<string, string | undefined>>,
 ): PayoutModeDecision {
-  void appEnv;
-  void env;
-  throw new Error('NotImplemented: resolvePayoutMode');
+  const mode = env[MODE];
+  if (mode === undefined || mode === '' || mode === 'dry_run') return { mode: 'dry_run' };
+  // Problems name variables only: the value of PAYOUT_MODE is not echoed either.
+  if (mode !== 'live') throw new ConfigError([`${MODE} must be dry_run or live`]);
+  if (appEnv !== 'prod') {
+    throw new ConfigError([`${MODE}=live is only allowed when APP_ENV is prod`]);
+  }
+  const missing: string[] = [];
+  const values: Partial<Record<keyof PayoutLiveCredentials, string>> = {};
+  for (const [name, field] of CREDENTIALS) {
+    const value = env[name];
+    if (value === undefined || value.trim() === '') missing.push(name);
+    else values[field] = value;
+  }
+  if (missing.length > 0) {
+    throw new ConfigError(missing.map((name) => `${name} is required when ${MODE}=live`));
+  }
+  return { mode: 'live', credentials: values as PayoutLiveCredentials };
 }

@@ -6,11 +6,17 @@
 //   queue.send('payout-landing', 'pause', { app_id, reason }, ...)
 // This handler (worker, couli_app) writes payout.queue_paused = true through content's system
 // write (PayoutQueuePausePort: only the safe direction, system as the writer). A new payout
-// process reads the pause from PG.
+// process reads the pause from PG. A rejection is rethrown so the queue retries the job.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
-import type { JobHandler } from '../../platform/index.ts';
-import type { PayoutQueuePausePort, TransferJobLogger } from './transfer-job.ts';
+import type { JobHandler, ReceivedJob } from '../../platform/index.ts';
+import {
+  PAYOUT_PAUSE_JOB,
+  type PayoutQueuePausePort,
+  type TransferJobLogger,
+} from './transfer-job.ts';
+
+export { PAYOUT_PAUSE_JOB };
 
 /** The pause job's payload; reason is 'payer_side' or 'unknown_code'. */
 export interface PayoutPausePayload {
@@ -25,7 +31,37 @@ export interface PauseJobOptions {
   readonly logger: TransferJobLogger;
 }
 
+/** The pause's origin as content's version history records it (`<source>:<reason>`). */
+const PAUSE_SOURCE = 'payout_transfer';
+const REASONS: ReadonlySet<string> = new Set(['payer_side', 'unknown_code']);
+
+function parsePayload(job: ReceivedJob): PayoutPausePayload | null {
+  const payload = job.payload as Record<string, unknown>;
+  const appId = payload['app_id'];
+  const reason = payload['reason'];
+  if (typeof appId !== 'string' || appId === '') return null;
+  if (typeof reason !== 'string' || !REASONS.has(reason)) return null;
+  return { app_id: appId, reason };
+}
+
 export function createPauseJob(options: PauseJobOptions): JobHandler {
-  void options;
-  throw new Error('NotImplemented: createPauseJob');
+  const { db, pauseQueue, logger } = options;
+  return async function pauseJob(job: ReceivedJob): Promise<void> {
+    const payload = job.name === PAYOUT_PAUSE_JOB ? parsePayload(job) : null;
+    if (payload === null) {
+      logger.warn({ job_id: job.id, queue: job.queue, name: job.name }, 'payout_pause_bad_job');
+      return;
+    }
+    const result = await db.transaction().execute((trx) =>
+      pauseQueue.pause(trx, {
+        appId: payload.app_id,
+        source: PAUSE_SOURCE,
+        reason: payload.reason,
+      }),
+    );
+    logger.info(
+      { app_id: payload.app_id, reason: payload.reason, changed: result.changed },
+      'payout_queue_pause_persisted',
+    );
+  };
 }

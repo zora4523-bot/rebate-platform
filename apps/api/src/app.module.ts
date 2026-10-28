@@ -10,7 +10,7 @@ import {
   type UnionProductPayload,
 } from '@couli/domain';
 import { addFen } from '@couli/money';
-import type { Kysely, Transaction } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import {
   ADMIN_ACTIVE_STATUS,
   ADMIN_CHECK,
@@ -235,6 +235,8 @@ import {
   createWithdrawUsageReader,
   generateOutBizNo,
   type DecryptWithdrawalAccount,
+  type PayoutProcessOptions,
+  type PayoutQueuePausePort,
   type ReverifyGatePort,
   type WithdrawApplyService,
   type WithdrawRulesOptions,
@@ -3054,6 +3056,128 @@ function autoPayoutPorts(deps: {
   };
 }
 
+/**
+ * The payee snapshot decryption over the process's field cipher (payout_accounts.* contexts, the
+ * same the binding used): the api entry's records (B2-05f) and the payout entry's transfer (B2-06f).
+ */
+const payeeDecrypt = {
+  inject: [{ token: FIELD_CRYPTO, optional: true }],
+  useFactory: (crypto?: FieldCrypto): DecryptWithdrawalAccount | null => {
+    if (crypto === undefined) return null;
+    const contexts = blocklistHmacContexts();
+    return (cipher: Buffer, method: string) => {
+      const context =
+        method === 'alipay' ? contexts.alipay : method === 'bank_card' ? contexts.bank_card : null;
+      if (context === null) throw new Error('payout: no cipher context for the payout method');
+      return crypto.decrypt(cipher.toString('utf8'), context);
+    };
+  },
+};
+
+const QUEUE_PAUSED_KEY = 'payout.queue_paused';
+const QUEUE_PAUSED_ON = sql<Database['config_items']['value']>`'true'::jsonb`;
+
+/**
+ * B2-06f (BR-WDR-17 / BR-WDR-28, D10-398 ②): the worker's system write of payout.queue_paused =
+ * true for the payout process's `pause` job (payout-landing), on the worker's couli_app transaction
+ * (config_items SELECT / INSERT / UPDATE 0010:92, config_item_versions SELECT / INSERT 0033:47), in
+ * the shape of content's system switch write (row lock first, version + 1, a config_item_versions
+ * row by `system` with reason `<source>:<reason>`). Only the safe direction; releasing the pause
+ * stays an admin write with step-up. The payout process (couli_payout, SELECT only) never calls it.
+ */
+function payoutQueuePause(clock: Clock): PayoutQueuePausePort {
+  return {
+    async pause(trx, input) {
+      const app = trx.withSchema('app');
+      const at = clock.now();
+      const reason = `${input.source}:${input.reason}`;
+      const history = async (version: number): Promise<void> => {
+        await app
+          .insertInto('config_item_versions')
+          .values({
+            app_id: input.appId,
+            key: QUEUE_PAUSED_KEY,
+            version,
+            value: QUEUE_PAUSED_ON,
+            updated_by: 'system',
+            updated_by_admin_id: null,
+            reason,
+            created_at: at,
+          })
+          .execute();
+      };
+      const lock = () =>
+        app
+          .selectFrom('config_items')
+          .select(['value', 'version'])
+          .where('app_id', '=', input.appId)
+          .where('key', '=', QUEUE_PAUSED_KEY)
+          .forUpdate()
+          .executeTakeFirst();
+      let before = await lock();
+      if (before === undefined) {
+        const inserted = await app
+          .insertInto('config_items')
+          .values({
+            app_id: input.appId,
+            key: QUEUE_PAUSED_KEY,
+            value: QUEUE_PAUSED_ON,
+            version: 1,
+            row_version: 0,
+            updated_by: 'system',
+            created_at: at,
+            updated_at: at,
+          })
+          .onConflict((oc) => oc.columns(['app_id', 'key']).doNothing())
+          .returning(['version'])
+          .executeTakeFirst();
+        if (inserted !== undefined) {
+          await history(inserted.version);
+          return { changed: true };
+        }
+        // A concurrent first write committed in between: lock that row and decide again.
+        before = await lock();
+        if (before === undefined) throw new Error('payout: queue_paused row vanished');
+      }
+      if (before.value === true) return { changed: false };
+      const updated = await app
+        .updateTable('config_items')
+        .set((eb) => ({
+          value: QUEUE_PAUSED_ON,
+          version: eb('version', '+', 1),
+          row_version: eb('row_version', '+', 1),
+          updated_by: 'system',
+          updated_at: at,
+        }))
+        .where('app_id', '=', input.appId)
+        .where('key', '=', QUEUE_PAUSED_KEY)
+        .where('version', '=', before.version)
+        .returning(['version'])
+        .executeTakeFirst();
+      if (updated === undefined) throw new Error('payout: locked queue_paused row changed');
+      await history(updated.version);
+      return { changed: true };
+    },
+  };
+}
+
+/**
+ * B2-06f: the payout entry's ports (BR-WDR-13 / BR-WDR-14): content's configuration read straight
+ * from PG on the caller's handle each time (no cache, no Redis), identity's users lock (the query
+ * job's port) and the payee decryption. The member review and the persisted pause are the
+ * worker's (D10-398; PayoutModule.forWorker below).
+ */
+function payoutProcessOptions(): PayoutProcessOptions {
+  return {
+    lockUsersForUpdate,
+    config: (_db, clock) => ({
+      configValue: (appId, key, handle) =>
+        createContentReader({ db: handle, clock }).configValue(appId, key),
+    }),
+    decryptPayee: payeeDecrypt,
+  };
+}
+
 function payoutModule(): DynamicModule {
   return PayoutModule.forRoot({
     rules: {
@@ -3078,23 +3202,7 @@ function payoutModule(): DynamicModule {
     stepUp: withStepUp,
     // B2-05f: the snapshot decryption of the records (payout_accounts.* cipher contexts, the same
     // the binding used); registered once for read.ts, used by the two GET handlers.
-    reads: {
-      inject: [{ token: FIELD_CRYPTO, optional: true }],
-      useFactory: (crypto?: FieldCrypto): DecryptWithdrawalAccount | null => {
-        if (crypto === undefined) return null;
-        const contexts = blocklistHmacContexts();
-        return (cipher, method) => {
-          const context =
-            method === 'alipay'
-              ? contexts.alipay
-              : method === 'bank_card'
-                ? contexts.bank_card
-                : null;
-          if (context === null) throw new Error('payout: no cipher context for the payout method');
-          return crypto.decrypt(cipher.toString('utf8'), context);
-        };
-      },
-    },
+    reads: payeeDecrypt,
     // The application use case runs on the idempotency claim's transaction (the controller's
     // executeInTransaction); the freeze voucher and the two events share it.
     apply: {
@@ -3397,6 +3505,9 @@ export class AppModule {
         // payout's recovery port for that ledger (B2-05k, BR-WDR-05 (a)): the posting that takes a
         // member's available back to >= 0 clears the member's NEGATIVE_BALANCE blocks.
         ...(options.entry === 'stream' ? [] : [PayoutModule.recovery()]),
+        // The payout process's queue `payout` (B2-06f, BR-WDR-13 / BR-WDR-14): the runtime under
+        // payoutRuntimeToken(); entry.ts starts it with the PAYOUT_MODE decision before the queue.
+        ...(options.entry === 'payout' ? [PayoutModule.forPayout(payoutProcessOptions())] : []),
         // Freeze expiry and the daily risk alerts (BR-ID-36, B1-03j): the risk-scan queue's
         // handler, worked by the worker entry only; entry.ts seeds the chain after the queue starts.
         ...(options.entry === 'worker'
@@ -3415,11 +3526,23 @@ export class AppModule {
               NotificationModule.forWorker({ taobaoReauthReader: needsTaobaoReauth }),
               // account.went_negative → the member's withdrawals re-checked under the locks
               // (B2-05e, BR-WDR-05 (a)); payout_attempts read through payout's own store (B2-06c).
-              // B2-11c (BR-WDR-30): withdrawal.created → the automatic payout decision.
+              // B2-11c (BR-WDR-30): withdrawal.created → the automatic payout decision; B2-06f
+              // (D10-398): the transfer review (payout-review, BR-WDR-13 ③ under the users lock) and the
+              // persisted pause (payout-landing `pause`) on couli_app.
               PayoutModule.forWorker({
                 lockUsersForUpdate,
                 attempts: createPayoutAttemptsStore(),
                 autoPayout: autoPayoutPorts,
+                config: (_db, clock) => ({
+                  configValue: (appId, key, handle) =>
+                    createContentReader({ db: handle, clock }).configValue(appId, key),
+                }),
+                risk: {
+                  read: (executor, input) =>
+                    createRiskStateBatchReader({ db: executor }).read(executor, input),
+                },
+                appeal: createAppealPrevStateReader(),
+                pauseQueue: payoutQueuePause,
               }),
               // Admin data exports (B1-34e, BR-ID-42): the export queue's generate / expire
               // handler over identity's batch users projection (decrypted and masked there) and

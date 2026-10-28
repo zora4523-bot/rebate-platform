@@ -180,6 +180,16 @@ export type {
   TransferJobOptions,
 } from './jobs/transfer-job.ts';
 export { reviewTransfer } from './application/payout-review.ts';
+// B2-06f (D10-398): the worker's transfer review (payout-review) and persisted pause (payout-landing).
+export {
+  createReviewJob,
+  PAYOUT_REVIEW_QUEUE,
+  PAYOUT_REVIEW_JOB,
+  PAYOUT_RELEASE_JOB,
+} from './jobs/review-job.ts';
+export type { ReviewJobOptions, PayoutReviewPayload } from './jobs/review-job.ts';
+export { createPauseJob, PAYOUT_PAUSE_JOB } from './jobs/pause-job.ts';
+export type { PauseJobOptions, PayoutPausePayload } from './jobs/pause-job.ts';
 export type {
   TransferHoldReason,
   WithdrawalHoldReason,

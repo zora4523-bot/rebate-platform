@@ -43,7 +43,11 @@ import { markNeedsManual } from '../application/query-manual.ts';
 import { manualDue, nextQueryDueMs, type QuerySchedule } from '../application/query-schedule.ts';
 import type { WithdrawApplyOptions } from '../application/withdraw-apply.ts';
 import type { PayoutConfigPort } from '../application/withdraw-rules.ts';
-import type { PayoutChannel, PayoutChannelName } from '../infra/channels/payout-channel.ts';
+import type {
+  ChannelJudgement,
+  PayoutChannel,
+  PayoutChannelName,
+} from '../infra/channels/payout-channel.ts';
 import { PAYOUT_QUERY_JOB, PAYOUT_QUEUE, type QueryJobPayload } from './transfer-job.ts';
 
 export type { QueryJobPayload } from './transfer-job.ts';
@@ -109,6 +113,8 @@ type Prepared =
       readonly row: QueryRow;
       readonly firstTransferAt: Date;
       readonly schedule: QuerySchedule;
+      /** The app's judgement lists, read with the schedule (BR-WDR-28 query_status_map). */
+      readonly judgement: ChannelJudgement;
     };
 
 function parsePayload(job: ReceivedJob): QueryJobPayload | null {
@@ -224,14 +230,22 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
         );
         return { kind: 'done' };
       }
-      const { querySchedule } = await readPayoutChannelConfig(
-        row.app_id,
-        trx,
-        config,
-        configLogger,
-      );
+      const channelConfig = await readPayoutChannelConfig(row.app_id, trx, config, configLogger);
+      const { querySchedule } = channelConfig;
       if (manualDue(querySchedule, t, now)) return { kind: 'manual', row };
-      return { kind: 'query', row, firstTransferAt: t, schedule: querySchedule };
+      return {
+        kind: 'query',
+        row,
+        firstTransferAt: t,
+        schedule: querySchedule,
+        judgement: {
+          lists: {
+            definiteFailCodes: channelConfig.definiteFailCodes,
+            payerSideCodes: channelConfig.payerSideCodes,
+            queryStatusMap: channelConfig.queryStatusMap,
+          },
+        },
+      };
     });
   }
 
@@ -275,6 +289,7 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
     row: QueryRow,
     adapter: PayoutChannel,
     point: number,
+    judgement: ChannelJudgement,
   ): Promise<QueryResult | null> {
     let last: QueryResult | null = null;
     for (let tryNo = 1; tryNo <= MAX_TRIES; tryNo += 1) {
@@ -283,7 +298,7 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
       let result: QueryResult | null = null;
       let errorName: string | null = null;
       try {
-        result = await adapter.query(row.out_biz_no);
+        result = await adapter.query(row.out_biz_no, judgement);
       } catch (error: unknown) {
         errorName = error instanceof Error ? error.name : 'unknown';
         logger.warn(
@@ -399,7 +414,7 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
       return;
     }
     // ⑤ outside any transaction.
-    const result = await queryPoint(row, adapter, payload.point);
+    const result = await queryPoint(row, adapter, payload.point, prepared.judgement);
     const landedAt = clock.now();
     // ⑥
     if (result === null || result.kind === 'unknown') {

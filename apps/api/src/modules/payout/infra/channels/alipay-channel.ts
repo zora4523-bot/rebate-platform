@@ -22,7 +22,7 @@ import {
   type TransferResult,
 } from '../../domain/channel-result.ts';
 import { signAlipayParams, verifyAlipayResponse } from './alipay-sign.ts';
-import type { PayoutChannel, TransferRequest } from './payout-channel.ts';
+import type { ChannelJudgement, PayoutChannel, TransferRequest } from './payout-channel.ts';
 
 export type ChannelTransport = (
   url: string,
@@ -180,7 +180,7 @@ export class AlipayChannel implements PayoutChannel {
     this.transport = options.transport ?? undiciTransport;
   }
 
-  async transfer(request: TransferRequest): Promise<TransferResult> {
+  async transfer(request: TransferRequest, judgement?: ChannelJudgement): Promise<TransferResult> {
     if (request.payee.name.replace(/\s/g, '') === '') throw new PayoutPayeeNameRequiredError();
     // Money arithmetic and formatting only through @couli/money; a non-positive amount never leaves.
     if (typeof request.netFen !== 'bigint' || request.netFen <= 0n)
@@ -192,7 +192,10 @@ export class AlipayChannel implements PayoutChannel {
       product_code: PRODUCT_CODE,
       biz_scene: BIZ_SCENE,
       order_title: ORDER_TITLE,
-      transfer_scene_name: this.options.bizScene,
+      transfer_scene_name:
+        judgement?.bizScene !== undefined && judgement.bizScene !== ''
+          ? judgement.bizScene
+          : this.options.bizScene,
       payee_info: {
         identity_type: 'ALIPAY_LOGON_ID',
         identity: request.payee.identity,
@@ -217,7 +220,7 @@ export class AlipayChannel implements PayoutChannel {
       return { kind: 'unknown', raw, latencyMs };
     }
     const { node, raw, status } = outcome.verified;
-    const judged = judgeTransfer(raw, status, this.options.lists);
+    const judged = judgeTransfer(raw, status, judgement?.lists ?? this.options.lists);
     const result: TransferResult = { ...judged, latencyMs };
     if (typeof node['order_id'] === 'string') result.channelOrderId = node['order_id'];
     if (judged.kind === 'success') {
@@ -238,7 +241,7 @@ export class AlipayChannel implements PayoutChannel {
     return result;
   }
 
-  async query(outBizNo: string): Promise<QueryResult> {
+  async query(outBizNo: string, judgement?: ChannelJudgement): Promise<QueryResult> {
     const started = this.options.clock.now();
     const bizContent = { out_biz_no: outBizNo, product_code: PRODUCT_CODE, biz_scene: BIZ_SCENE };
     const outcome = await this.call('query', QUERY_METHOD, bizContent, started, outBizNo);
@@ -251,7 +254,7 @@ export class AlipayChannel implements PayoutChannel {
       return { kind: 'unknown', raw: { code: outcome.code } };
     }
     const { node, raw, status } = outcome.verified;
-    const result: QueryResult = judgeQuery(raw, status, this.options.lists);
+    const result: QueryResult = judgeQuery(raw, status, judgement?.lists ?? this.options.lists);
     if (status !== undefined) result.status = status;
     if (typeof node['order_id'] === 'string') result.channelOrderId = node['order_id'];
     if (result.kind === 'success') {
