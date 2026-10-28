@@ -25,6 +25,7 @@ import {
   type ReceivedJob,
   type RootLogger,
 } from '../platform/index.ts';
+import type { AppealPrevStateReader, RiskStateBatchReader } from '../risk/index.ts';
 import { WENT_NEGATIVE_CONSUMER, createWentNegativeConsumer } from './application/went-negative.ts';
 import {
   AUTO_PAYOUT_CONSUMER,
@@ -33,13 +34,17 @@ import {
 } from './application/auto-payout.ts';
 import { createPayoutExecute } from './application/payout-execute.ts';
 import { PAYOUT_LANDING_QUEUE, createLandingJob } from './jobs/landing-job.ts';
+import { PAYOUT_PAUSE_JOB, createPauseJob } from './jobs/pause-job.ts';
+import { PAYOUT_REVIEW_QUEUE, createReviewJob } from './jobs/review-job.ts';
+import { PAYOUT_QUEUE, type PayoutQueuePausePort } from './jobs/transfer-job.ts';
+import { createPayoutRuntime, payoutRuntimeToken, type PayoutRuntime } from './payout-runtime.ts';
 import type { WithdrawalAttemptsPort } from './application/withdrawal-commands.ts';
 import type { WithdrawApplyOptions, WithdrawApplyService } from './application/withdraw-apply.ts';
 import {
   registerWithdrawalAccountDecrypt,
   type DecryptWithdrawalAccount,
 } from './application/withdrawal-reads.ts';
-import type { WithdrawRulesService } from './application/withdraw-rules.ts';
+import type { PayoutConfigPort, WithdrawRulesService } from './application/withdraw-rules.ts';
 import {
   WithdrawalsController,
   type WithdrawStepUp,
@@ -92,13 +97,16 @@ function isApplyService(
   return typeof (value as WithdrawApplyService).apply === 'function';
 }
 
+/** The payout entry's payee decryption (resolved from PayoutProcessOptions.decryptPayee). */
+const PAYOUT_DECRYPT_PAYEE = Symbol('PAYOUT_DECRYPT_PAYEE');
+
 /** The negative balance consumer's registration token (worker entry). */
 export const WENT_NEGATIVE_CONSUMER_TOKEN = Symbol('PAYOUT_WENT_NEGATIVE_CONSUMER');
 
 export interface PayoutWorkerOptions {
   /** identity's users row lock (dependency inversion: app.module hands it in). */
   lockUsersForUpdate: WithdrawApplyOptions['lockUsersForUpdate'];
-  /** payout_attempts reads; until B2-06 app.module hands in a port that reports none. */
+  /** payout_attempts reads through payout's own store (B2-06c; app.module hands it in). */
   attempts: WithdrawalAttemptsPort;
   /**
    * B2-11c: the other modules' ports of the withdrawal.created consumer (content's configuration
@@ -111,6 +119,16 @@ export interface PayoutWorkerOptions {
     clock: Clock;
     crypto: FieldCrypto | undefined;
   }) => AutoPayoutPorts;
+  /**
+   * B2-06f (D10-398 ①): the transfer review's ports (BR-WDR-13 ③ on couli_app): content's
+   * configuration reader over the worker handle (payout.* read straight from PG), risk's state and
+   * appeal readers (BR-WDR-05).
+   */
+  config: (db: Kysely<DB>, clock: Clock) => PayoutConfigPort;
+  risk: RiskStateBatchReader;
+  appeal: AppealPrevStateReader;
+  /** B2-06f (D10-398 ②): content's system write of payout.queue_paused = true (worker). */
+  pauseQueue: (clock: Clock) => PayoutQueuePausePort;
 }
 
 /** What app.module supplies to the automatic payout decision (BR-WDR-30). */
@@ -121,6 +139,16 @@ export type AutoPayoutPorts = Pick<
 
 /** The automatic payout consumer's registration token (worker entry). */
 export const AUTO_PAYOUT_CONSUMER_TOKEN = Symbol('PAYOUT_AUTO_PAYOUT_CONSUMER');
+
+/** B2-06f: the payout process's ports, assembled by app.module (dependency inversion). */
+export interface PayoutProcessOptions {
+  /** identity's users row lock (module lock order: users → balances; the query job's port). */
+  lockUsersForUpdate: WithdrawApplyOptions['lockUsersForUpdate'];
+  /** content's configuration reader over the process handle: payout.* read straight from PG. */
+  config: (db: Kysely<DB>, clock: Clock) => PayoutConfigPort;
+  /** The payee snapshot decryption over the process's field cipher. */
+  decryptPayee: Factory<DecryptWithdrawalAccount>;
+}
 
 /**
  * A direct negative-balance recheck job (payout's transfer job, W9 member_blocked: payload exactly
@@ -295,26 +323,117 @@ export class PayoutModule {
             });
             // B2-06fz (D10-326 C): the payout process only records a success / fail attempt and
             // enqueues one payout-landing job; this worker lands W5 / W6 as couli_app (ledger
-            // voucher, users lock, event) through jobs/landing-job.ts.
+            // voucher, users lock, event) through jobs/landing-job.ts. B2-06f (D10-398 ②): a
+            // `pause` job on the same queue persists payout.queue_paused (jobs/pause-job.ts).
+            const payoutLogger = logger.child({ module: 'payout' });
+            const workerLedger = createLedger({
+              clock,
+              eventBus,
+              balanceRecoveredHook: createBalanceRecoveredHook({ clock }),
+            });
+            const land = createLandingJob({
+              db,
+              ledger: workerLedger,
+              lockUsersForUpdate: options.lockUsersForUpdate,
+              eventBus,
+              clock,
+              logger: payoutLogger,
+            });
+            const pause = createPauseJob({
+              db,
+              pauseQueue: options.pauseQueue(clock),
+              logger: payoutLogger,
+            });
+            queue.register(PAYOUT_LANDING_QUEUE, (job) =>
+              job.name === PAYOUT_PAUSE_JOB ? pause(job) : land(job),
+            );
+            // B2-06f (D10-398 ①): BR-WDR-13 ③ payout_disabled → queue_paused → channel_disabled →
+            // member_blocked under the users lock; a pass sends `release` back to queue `payout`.
             queue.register(
-              PAYOUT_LANDING_QUEUE,
-              createLandingJob({
+              PAYOUT_REVIEW_QUEUE,
+              createReviewJob({
                 db,
-                ledger: createLedger({
-                  clock,
-                  eventBus,
-                  balanceRecoveredHook: createBalanceRecoveredHook({ clock }),
-                }),
-                lockUsersForUpdate: options.lockUsersForUpdate,
-                eventBus,
                 clock,
-                logger: logger.child({ module: 'payout' }),
+                config: options.config(db, clock),
+                risk: options.risk,
+                appeal: options.appeal,
+                ledger: workerLedger,
+                lockUsersForUpdate: options.lockUsersForUpdate,
+                queue,
+                eventBus,
+                logger: payoutLogger,
               }),
             );
             return true;
           },
         },
       ],
+    };
+  }
+
+  /**
+   * B2-06f: the payout entry's runtime under payoutRuntimeToken() (payout-runtime.ts); entry.ts
+   * starts it with the PAYOUT_MODE decision before the queue runs.
+   */
+  static forPayout(options: PayoutProcessOptions): DynamicModule {
+    const decrypt = options.decryptPayee;
+    return {
+      module: PayoutModule,
+      providers: [
+        {
+          provide: PAYOUT_DECRYPT_PAYEE,
+          inject: decrypt.inject ?? [],
+          useFactory: async (...deps: unknown[]): Promise<DecryptWithdrawalAccount | null> =>
+            (await decrypt.useFactory(...deps)) ?? null,
+        },
+        {
+          provide: payoutRuntimeToken(),
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            PAYOUT_DECRYPT_PAYEE,
+            { token: DB_TOKEN, optional: true },
+            { token: JOB_QUEUE, optional: true },
+            { token: EVENT_BUS, optional: true },
+          ],
+          // Assembly runs no statement and registers nothing: entry.ts calls start(decision).
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            decryptPayee: DecryptWithdrawalAccount | null,
+            db?: Kysely<DB>,
+            queue?: QueueRuntime,
+            eventBus?: EventBus,
+          ): PayoutRuntime | null => {
+            if (
+              db === undefined ||
+              queue === undefined ||
+              eventBus === undefined ||
+              decryptPayee === null
+            ) {
+              logger.info({ queue: PAYOUT_QUEUE }, 'payout_runtime_disabled');
+              return null;
+            }
+            return createPayoutRuntime({
+              db,
+              queue,
+              eventBus,
+              clock,
+              logger: logger.child({ module: 'payout' }),
+              // Built once over the process handle; every read goes to PG (no cache, no Redis).
+              config: options.config(db, clock),
+              ledger: createLedger({
+                clock,
+                eventBus,
+                balanceRecoveredHook: createBalanceRecoveredHook({ clock }),
+              }),
+              lockUsersForUpdate: options.lockUsersForUpdate,
+              decryptPayee,
+            });
+          },
+        },
+      ],
+      exports: [payoutRuntimeToken()],
     };
   }
 

@@ -46,7 +46,14 @@ import {
   readOrderSyncPendingOpen,
   type OrderSyncRuntime,
 } from './modules/orders/index.ts';
-import { autoPayoutConfigOf, readPayoutFundMetrics } from './modules/payout/index.ts';
+import {
+  autoPayoutConfigOf,
+  payoutRuntimeToken,
+  readPayoutFundMetrics,
+  resolvePayoutMode,
+  type PayoutModeDecision,
+  type PayoutRuntime,
+} from './modules/payout/index.ts';
 import {
   cacheAutoPayoutCollector,
   cacheFundCollector,
@@ -165,6 +172,27 @@ function startOrderSync(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The payout process's runtime (B2-06f): resolved optionally as the worker's order sync, and
+ * started with the PAYOUT_MODE decision before the queue starts, so queue `payout` has its handler
+ * from the first job. A context without the provider, a null provider (no database, queue, event
+ * bus or field cipher) or a value without start registers nothing; a failing start fails startup.
+ */
+function startPayoutRuntime(
+  resolve: () => unknown,
+  queue: QueueRuntime,
+  decision: PayoutModeDecision,
+): void {
+  let runtime: Partial<PayoutRuntime> | null | undefined;
+  try {
+    runtime = resolve() as Partial<PayoutRuntime> | null | undefined;
+  } catch {
+    return;
+  }
+  if (runtime === (queue as unknown) || typeof runtime?.start !== 'function') return;
+  runtime.start(decision);
 }
 
 /**
@@ -555,11 +583,14 @@ async function start(
     return;
   }
 
+  // payout: PAYOUT_MODE first (BR-WDR-13: default dry_run; live only in prod with every credential
+  // variable set): a refusal is a ConfigError naming variables only, before anything is built.
+  const decision = resolvePayoutMode(config.appEnv, process.env);
   // payout: redisUrl is null (it never reads Redis, ADR-0001 §4.2 #20), so no REDIS provider.
   const context = await createWorkerContext(entry, { config, logger, dbHandles, redisUrl });
   const queue = context.get<QueueRuntime>(JOB_QUEUE);
   if (config.exitAfterInit) {
-    logger.info({ listening: false }, 'started');
+    logger.info({ listening: false, payout_mode: decision.mode }, 'started');
     await context.close();
     return;
   }
@@ -569,6 +600,12 @@ async function start(
   }
   let metricsServer: MetricsServer | undefined;
   try {
+    // Queue `payout`'s handler is registered before the queue starts (B2-06f).
+    startPayoutRuntime(
+      () => context.get<unknown>(payoutRuntimeToken(), { strict: false }),
+      queue,
+      decision,
+    );
     await queue.start();
     // B1-01zzh: process-level metrics only; payout never reads business tables for them.
     metricsServer = await openMetrics(entry, config, logger);

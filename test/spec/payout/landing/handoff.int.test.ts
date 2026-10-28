@@ -325,9 +325,9 @@ it('[AC-B2-06fz#5] 付款方侧失败（payer_side，W9 归 payout 进程）：�
     `wd:${w.id}:FREEZE`,
   ]);
   expect(await balanceOf(f, owner)).toEqual({ available_fen: 1_200n, frozen_fen: 800n });
-  expect(f.pause).toHaveBeenCalledTimes(1);
 
   expect(await f.landPending()).toBe(0);
+  expect(f.pause).toHaveBeenCalledTimes(1);
   expect((await withdrawal(f, w.id)).status).toBe('APPROVED');
   expectNoPayeeInLogs(f);
 });

@@ -23,7 +23,7 @@ import {
   concurrencyOf,
 } from './kit.ts';
 
-it('[B1-01zzk 冻结结构不变] ENTRY_PLAN 与 QUEUE_CATALOG 与主干逐字一致且仍冻结；不给 limits 时 worker 19 个队列取计划值（合计 40），共享预算缺省 7 = floor(POOL_SIZES.worker.db × 0.7)，至少留 3 个连接', () => {
+it('[B1-01zzk 冻结结构不变] ENTRY_PLAN 与 QUEUE_CATALOG 与主干逐字一致且仍冻结；不给 limits 时 worker 20 个队列取计划值（合计 41；B2-06f D10-398 ① 加 payout-review），共享预算缺省 7 = floor(POOL_SIZES.worker.db × 0.7)，至少留 3 个连接', () => {
   expect(ENTRY_PLAN).toStrictEqual(TRUNK_ENTRY_PLAN);
   expect(QUEUE_CATALOG).toStrictEqual(TRUNK_CATALOG);
   expect(
@@ -31,7 +31,7 @@ it('[B1-01zzk 冻结结构不变] ENTRY_PLAN 与 QUEUE_CATALOG 与主干逐字�
       (value) => Object.isFrozen(value),
     ),
   ).toBe(true);
-  expect(TRUNK_WORKER_PLAN.reduce((sum, item) => sum + item.concurrency, 0)).toBe(40);
+  expect(TRUNK_WORKER_PLAN.reduce((sum, item) => sum + item.concurrency, 0)).toBe(41);
   expect(DEFAULT_DB_BUDGET).toBe(Math.floor(POOL_SIZES.worker.db * 0.7));
   expect(POOL_SIZES.worker.db - DEFAULT_DB_BUDGET).toBeGreaterThanOrEqual(RESERVED_CONNECTIONS);
   expect(effectiveLimits('worker', ENTRY_PLAN)).toStrictEqual({

@@ -225,6 +225,8 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
     { name: 'settle', ...DEFAULT, policy: 'exclusive', deadLetter: 'settle.dead' },
     { name: 'payout', ...DEFAULT, policy: 'exclusive', deadLetter: 'payout.dead' },
     { name: 'payout-landing', ...DEFAULT, policy: 'exclusive', deadLetter: 'payout-landing.dead' },
+    // B2-06f（D10-398 ①）：worker 复核 BR-WDR-13 ③ 的队列，exclusive（按 `${withdrawal_id}:${execute_seq}:review` 去重）。
+    { name: 'payout-review', ...DEFAULT, policy: 'exclusive', deadLetter: 'payout-review.dead' },
     { name: 'notify', ...DEFAULT, deadLetter: 'notify.dead' },
     {
       name: 'evt.notification-risk-state',
@@ -376,6 +378,7 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
       w('order-rescan', 1),
       w('settle', 1),
       w('payout-landing', 1),
+      w('payout-review', 1),
       w('notify', 5),
       w('evt.notification-risk-state', 5),
       w('evt.notification-appeal-result', 5),
@@ -400,6 +403,7 @@ it('[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只�
     'settle',
     'payout',
     'payout-landing',
+    'payout-review',
     'notify',
     'pool-refresh',
     'poster',
@@ -428,6 +432,7 @@ it('[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只�
       'order-rescan',
       'settle',
       'payout-landing',
+      'payout-review',
       'notify',
       'pool-refresh',
       'poster',

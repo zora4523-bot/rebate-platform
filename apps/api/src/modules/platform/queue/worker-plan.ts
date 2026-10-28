@@ -9,6 +9,8 @@ export const WORKER_LANES: readonly (readonly [string, number, number])[] = Obje
   Object.freeze(['settle', 1, 2] as const),
   // One worker lands W5 / W6 of the payout results, serially (B2-06fz, D10-326 C).
   Object.freeze(['payout-landing', 1, 2] as const),
+  // One worker reviews BR-WDR-13 ③ of a transfer under the users lock (B2-06f, D10-398 ①).
+  Object.freeze(['payout-review', 1, 2] as const),
   Object.freeze(['notify', 5, 2] as const),
   Object.freeze(['union-auth', 1, 2] as const),
   Object.freeze(['evt.notification-risk-state', 5, 2] as const),
