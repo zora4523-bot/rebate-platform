@@ -5,7 +5,7 @@ type: impl
 # 2026-10-29 入账（ops 线，D10-408）。BR-WDR-30 开启前置检查（B2-11d）里 recon_required_days 对比的就是这个天数。
 refs: [BR-WDR-30, BR-WDR-23]
 refs_hash:
-  BR-WDR-30: 1b1ddd9942cf
+  BR-WDR-30: ec74379ec48c
   BR-WDR-23: 98981fee10c7
 deps: [B2-07c, B2-11d]
 paths:

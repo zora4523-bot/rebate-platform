@@ -11,7 +11,7 @@ type: impl
 # 连续跑通天数（BR-WDR-23 落地前缺省 0，fail-closed）；保存校验与 kill-switch 挂点接到 config-item-admin.ts / kill-switch-admin.ts。
 refs: [BR-WDR-30, BR-WDR-17, BR-WDR-22]
 refs_hash:
-  BR-WDR-30: 1b1ddd9942cf
+  BR-WDR-30: ec74379ec48c
   BR-WDR-17: f6119a685e00
   BR-WDR-22: 3fc7a8bd4852
 deps: [B2-11b]

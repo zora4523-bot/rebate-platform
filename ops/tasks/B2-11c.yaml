@@ -9,7 +9,7 @@ type: impl
 # 2026-10-27 W1 接手（编排 17:5x 改派，withdraw 暂停到 10-30）：新消费者队列要改的别任务冻结契约测试按 D10-327（先例 B2-06fz）列进 test_paths，由独立 Claude 在作者提交里改（断言口径经规则测试评审，合并时 #24 标签）；未改测试的 red_exempt 待先红后另开台账补。
 refs: [BR-WDR-30, BR-WDR-26, BR-WDR-05, BR-WDR-24]
 refs_hash:
-  BR-WDR-30: 1b1ddd9942cf
+  BR-WDR-30: ec74379ec48c
   BR-WDR-26: 158db40de631
   BR-WDR-05: 99e2e2654ce0
   BR-WDR-24: 1e9585c4b8bf
