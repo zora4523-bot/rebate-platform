@@ -16,6 +16,16 @@
 // right after the handler (withAutoLand: every landing job it left is landed, then its row is
 // deleted), so the 06d / 06e assertions read the landed result and no landing job row.
 // `f.rawJob(...)` is the payout process's handler alone (the landing/** handoff tests).
+// B2-06f (D10-398, D10-327: fixtures and drive steps only, assertions unchanged): the payout
+// process connects as couli_payout only, so its transfer handler gets `h.payout` as `db` and reads
+// neither users nor balances. BR-WDR-13 ③ is two-step: past ① ② the transfer job enqueues a
+// `review` job on the worker's `payout-review` queue; the worker (couli_app) reviews
+// payout_disabled → queue_paused → channel_disabled → member_blocked and either does W9 or
+// enqueues a `release` job back on queue `payout`, which the same transfer handler runs (re-check
+// inside the payout_daily lock, then ④ ⑤). `f.rawJob(...)` therefore is the transfer handler
+// followed by the worker's review turn and the release (withReview); `f.job(...)` adds the
+// worker's landing turn, which also persists a `pause` job (payout-landing, D10-398 ②) through
+// content's system write (`f.pause`).
 import { randomBytes, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createDb, destroyDb, type DB } from '@couli/db';
@@ -47,9 +57,15 @@ import {
   createLandingJob,
   type LandingJobOptions,
 } from '../../../../apps/api/src/modules/payout/jobs/landing-job.ts';
+import { createPauseJob } from '../../../../apps/api/src/modules/payout/jobs/pause-job.ts';
+import {
+  createReviewJob,
+  type ReviewJobOptions,
+} from '../../../../apps/api/src/modules/payout/jobs/review-job.ts';
 import {
   createTransferJob,
   type PayoutQueuePauseInput,
+  type PayoutQueuePausePort,
   type TransferJobOptions,
 } from '../../../../apps/api/src/modules/payout/jobs/transfer-job.ts';
 import type { RiskStateBatchValue } from '../../../../apps/api/src/modules/risk/index.ts';
@@ -123,6 +139,14 @@ export const TIMEOUT_STEP: FakeStep = { kind: 'timeout' };
  */
 export const LANDING_QUEUE = 'payout-landing';
 export const LANDING_JOB = 'land';
+/**
+ * B2-06f (D10-398): the worker's review queue and job, the release job back on queue `payout`,
+ * and the pause job the worker persists (on payout-landing).
+ */
+export const REVIEW_QUEUE = 'payout-review';
+export const REVIEW_JOB = 'review';
+export const RELEASE_JOB = 'release';
+export const PAUSE_JOB = 'pause';
 
 /**
  * The production `payout` queue (exclusive), the worker's `payout-landing` queue (B2-06fz), the
@@ -134,6 +158,8 @@ const CATALOG = QUEUE_CATALOG.filter(
     spec.name === 'payout.dead' ||
     spec.name === LANDING_QUEUE ||
     spec.name === `${LANDING_QUEUE}.dead` ||
+    spec.name === REVIEW_QUEUE ||
+    spec.name === `${REVIEW_QUEUE}.dead` ||
     spec.name === NEGATIVE_QUEUE ||
     spec.name === `${NEGATIVE_QUEUE}.dead`,
 );
@@ -257,6 +283,10 @@ export async function setup(h: Harness) {
   const risk = new Map<string, RiskStateBatchValue>();
   const appeals = new Map<string, 'frozen' | 'banned'>();
   const send = vi.fn(h.setup.runtime.send.bind(h.setup.runtime));
+  /** B2-06f (D10-398 ②): the `pause` jobs rawJob's handler sends on payout-landing. */
+  const pauseSend = vi.fn(h.setup.runtime.send.bind(h.setup.runtime));
+  const sendApartFromPause = (...args: Parameters<typeof send>) =>
+    args[0] === LANDING_QUEUE && args[1] === PAUSE_JOB ? pauseSend(...args) : send(...args);
   const eventBus = createEventBus({ clock, queue: { send }, subscriptions: [] });
   const logger = { info: vi.fn(), warn: vi.fn() };
   /** content's system write stands in here: payout.queue_paused = true on the caller's trx. */
@@ -277,7 +307,7 @@ export async function setup(h: Harness) {
   const decryptPayee = vi.fn((cipher: Buffer, method: string) =>
     cipher.length > 0 && method !== '' ? LOGON_ID : '',
   );
-  const options: Omit<TransferJobOptions, 'channels'> = {
+  const options: KitOptions = {
     db: h.db,
     attemptsDb: h.payout,
     clock,
@@ -481,15 +511,29 @@ export async function setup(h: Harness) {
   }
 
   /**
-   * The payout process's transfer handler alone: nothing lands what it enqueued on payout-landing
-   * (B2-06fz handoff tests; called inside each test: red is the skeleton's NotImplemented).
+   * The payout process's transfer handler on couli_payout (B2-06f, D10-326 / D10-398), with the
+   * worker's review turn and the release in between (withReview); nothing lands what it enqueued
+   * on payout-landing (B2-06fz handoff tests; called inside each test: red is the skeleton's
+   * NotImplemented). `extra` overrides the transfer handler's options only: the worker's review
+   * reads with the fixture's own ports, so a gated config stops the release's re-check, which runs
+   * inside the payout_daily lock. A `pause` job it sends on payout-landing (D10-398 ②) is
+   * recorded on `pauseSend`, not on `send`, so `f.send` on payout-landing holds `land` jobs only
+   * (the handoff tests count those; f.pause is read after the worker's turn).
    */
   function rawJob(channel: PayoutChannel, extra: Partial<TransferJobOptions> = {}): JobHandler {
-    return createTransferJob({
+    return reviewed(channel, { queue: { send: sendApartFromPause }, ...extra });
+  }
+
+  /** The transfer handler on couli_payout with the worker's review turn and the release. */
+  function reviewed(channel: PayoutChannel, extra: Partial<TransferJobOptions>): JobHandler {
+    const transfer = createTransferJob({
       ...options,
+      db: h.payout,
+      attemptsDb: h.payout,
       channels: { alipay: channel, bank_card: channel },
       ...extra,
     });
+    return withReview(landing, onPayoutRole(transfer));
   }
 
   /**
@@ -497,7 +541,7 @@ export async function setup(h: Harness) {
    * worker's turn: the landing jobs it enqueued are landed and their rows deleted (withAutoLand).
    */
   function job(channel: PayoutChannel, extra: Partial<TransferJobOptions> = {}): JobHandler {
-    return withAutoLand(landing, rawJob(channel, extra));
+    return withAutoLand(landing, reviewed(channel, extra));
   }
 
   /** The payout job EXECUTE enqueued for `w` (overrides: a stale seq, another app, a redelivery). */
@@ -524,6 +568,7 @@ export async function setup(h: Harness) {
     appId,
     options,
     logger,
+    pauseQueue: { pause },
     sends: () => send.mock.calls,
   };
 
@@ -550,6 +595,7 @@ export async function setup(h: Harness) {
     ledger,
     options,
     send,
+    pauseSend,
     risk,
     appeals,
     logger,
@@ -573,6 +619,12 @@ export async function setup(h: Harness) {
     /** Runs every created payout-landing job of this app through the worker, then deletes it. */
     landPending: (extra: Partial<LandingJobOptions> = {}): Promise<number> =>
       landPending(landing, extra),
+    /** The worker's review handler (B2-06f, D10-398 ①; red is the skeleton's NotImplemented). */
+    reviewJob: (extra: Partial<ReviewJobOptions> = {}): JobHandler => reviewJob(landing, extra),
+    /** The worker's pause handler (B2-06f, D10-398 ②; red is the skeleton's NotImplemented). */
+    pauseJob: (): JobHandler => pauseJob(landing),
+    /** `handler` (a transfer handler) with the worker's review turn and the release (withReview). */
+    withReview: (handler: JobHandler): JobHandler => withReview(landing, handler),
     /** P→A right after a payout-process handler returned (expectLandingQueued). */
     expectLandingQueued: (w: LandingTarget): Promise<QueuedLanding> =>
       expectLandingQueued(landing, w),
@@ -580,15 +632,21 @@ export async function setup(h: Harness) {
 }
 export type ProcessFixture = Awaited<ReturnType<typeof setup>>;
 
+/**
+ * The fixture's ports: the transfer handler's (its `db` is replaced by couli_payout in rawJob) and
+ * the worker's (review: risk, appeal, ledger, users lock; pause: content's system write).
+ */
+export type KitOptions = Omit<TransferJobOptions, 'channels'> &
+  Omit<ReviewJobOptions, 'db'> & { readonly pauseQueue: PayoutQueuePausePort };
+
 /** What the landing helpers read from a process or query fixture (B2-06fz). */
 export interface LandingKit {
   readonly h: Harness;
   readonly appId: string;
-  readonly options: Pick<
-    TransferJobOptions,
-    'db' | 'clock' | 'ledger' | 'lockUsersForUpdate' | 'eventBus'
-  >;
+  readonly options: KitOptions;
   readonly logger: LandingJobOptions['logger'];
+  /** content's system write of payout.queue_paused (the worker's pause job, D10-398 ②). */
+  readonly pauseQueue: PayoutQueuePausePort;
   /** The arguments of every queue.send of the fixture's recording queue. */
   sends(): readonly (readonly unknown[])[];
 }
@@ -628,7 +686,8 @@ interface PendingLanding {
  * The worker's turn: every payout-landing job of this app still in state created, oldest first,
  * goes through the landing handler with its payload, and once it resolved its row is deleted
  * (test SQL: only that row, of this app, still created; the api-entry runtime of these tests
- * works no queue). Returns how many jobs it ran. `eager`: the handler is built before anything
+ * works no queue). A `pause` job (B2-06f, D10-398 ②) goes through the worker's pause handler
+ * instead. Returns how many land jobs it ran (pause jobs not counted). `eager`: the handler is built before anything
  * is read (red is the skeleton's NotImplemented even when nothing is queued); otherwise it is
  * built only when there is a job to run.
  */
@@ -638,14 +697,23 @@ async function runLandings(
   eager: boolean,
 ): Promise<number> {
   let handler: JobHandler | undefined = eager ? landingJob(f, extra) : undefined;
+  let pauser: JobHandler | undefined;
+  let landed = 0;
   const pending = await sql<PendingLanding>`
     SELECT id::text AS id, data FROM pgboss.job
     WHERE name = ${LANDING_QUEUE} AND state = 'created'
       AND data->'payload'->>'app_id' = ${f.appId}
     ORDER BY created_on, id`.execute(f.h.observer);
   for (const row of pending.rows) {
-    if (handler === undefined) handler = landingJob(f, extra);
-    await handler(
+    // B2-06f (D10-398 ②): a pause job goes to the worker's pause handler, not counted as landed.
+    const isPause = row.data.name === PAUSE_JOB;
+    if (isPause) {
+      if (pauser === undefined) pauser = pauseJob(f);
+    } else {
+      landed += 1;
+      if (handler === undefined) handler = landingJob(f, extra);
+    }
+    await (isPause ? pauser! : handler!)(
       Object.freeze({
         id: row.id,
         queue: LANDING_QUEUE,
@@ -658,7 +726,119 @@ async function runLandings(
       WHERE name = ${LANDING_QUEUE} AND id = ${row.id}::uuid AND state = 'created'
         AND data->'payload'->>'app_id' = ${f.appId}`.execute(f.h.observer);
   }
-  return pending.rows.length;
+  return landed;
+}
+
+/**
+ * The worker's review handler (B2-06f, D10-398 ①) on the fixture's couli_app handle and ports:
+ * config, risk and appeal readers, ledger, users lock, recording queue, event bus, clock, logger.
+ */
+export function reviewJob(f: LandingKit, extra: Partial<ReviewJobOptions> = {}): JobHandler {
+  const { db, clock, config, risk, appeal, ledger, lockUsersForUpdate, queue, eventBus } =
+    f.options;
+  return createReviewJob({
+    db,
+    clock,
+    config,
+    risk,
+    appeal,
+    ledger,
+    lockUsersForUpdate,
+    queue,
+    eventBus,
+    logger: f.logger,
+    ...extra,
+  });
+}
+
+/** The worker's pause handler (B2-06f, D10-398 ②): content's system write on couli_app. */
+export function pauseJob(f: LandingKit): JobHandler {
+  return createPauseJob({ db: f.options.db, pauseQueue: f.pauseQueue, logger: f.logger });
+}
+
+/** What a handler call came to: resolved, or the rejection it carried. */
+export type Settled = { readonly ok: true } | { readonly ok: false; readonly error: unknown };
+
+export async function settle(run: Promise<unknown>): Promise<Settled> {
+  try {
+    await run;
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+/** Whether `error` (or a cause of it) is PG's insufficient_privilege (SQLSTATE 42501). */
+function privilegeDenied(error: unknown): boolean {
+  for (let e = error, depth = 0; e !== null && typeof e === 'object' && depth < 8; depth += 1) {
+    if ((e as { code?: unknown }).code === '42501') return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
+ * `handler` run on couli_payout (B2-06f, D10-398 ①; D10-327 drive step only): a statement the
+ * payout role has no grant for (42501: users, account_balances …) fails as an expectation, the
+ * call must settle without it; every other rejection is rethrown unchanged.
+ */
+export function onPayoutRole(handler: JobHandler): JobHandler {
+  return async (received) => {
+    const outcome = await settle(handler(received));
+    if (outcome.ok) return;
+    if (privilegeDenied(outcome.error)) expect(outcome).toEqual({ ok: true });
+    throw outcome.error;
+  };
+}
+
+/** Claims (deletes) one created job row of this app; whether this caller got it. */
+async function claim(f: LandingKit, queue: string, id: string): Promise<boolean> {
+  const deleted = await sql<{ id: string }>`
+    DELETE FROM pgboss.job
+    WHERE name = ${queue} AND id = ${id}::uuid AND state = 'created'
+      AND data->'payload'->>'app_id' = ${f.appId}
+    RETURNING id::text AS id`.execute(f.h.observer);
+  return deleted.rows.length === 1;
+}
+
+/**
+ * `handler` (the payout process's transfer handler) followed by the worker's review turn and the
+ * release (B2-06f, D10-398 ①; D10-327 drive steps): every created `review` job of this app on
+ * payout-review is claimed (its row deleted) and run through the worker's review handler; every
+ * created `release` job of this app on queue `payout` is claimed and run through `handler`;
+ * repeated until neither is left. The review handler is built only when a review job is there.
+ * Rows are claimed before they run, so two drives running at once never run the same job twice.
+ */
+export function withReview(f: LandingKit, handler: JobHandler): JobHandler {
+  return async (received) => {
+    await handler(received);
+    let review: JobHandler | undefined;
+    for (let round = 0; round < 8; round += 1) {
+      const pending = await sql<PendingLanding & { queue: string }>`
+        SELECT id::text AS id, name AS queue, data FROM pgboss.job
+        WHERE state = 'created' AND data->'payload'->>'app_id' = ${f.appId}
+          AND ((name = ${REVIEW_QUEUE} AND data->>'name' = ${REVIEW_JOB})
+            OR (name = 'payout' AND data->>'name' = ${RELEASE_JOB}))
+        ORDER BY created_on, id`.execute(f.h.observer);
+      if (pending.rows.length === 0) return;
+      for (const row of pending.rows) {
+        if (!(await claim(f, row.queue, row.id))) continue;
+        const job = Object.freeze({
+          id: row.id,
+          queue: row.queue,
+          name: row.data.name,
+          payload: row.data.payload,
+          attempt: 1,
+        });
+        if (row.queue === REVIEW_QUEUE) {
+          if (review === undefined) review = reviewJob(f);
+          await review(job);
+        } else {
+          await handler(job);
+        }
+      }
+    }
+  };
 }
 
 /**

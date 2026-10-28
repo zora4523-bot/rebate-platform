@@ -25,6 +25,7 @@ import {
   type ReceivedJob,
   type RootLogger,
 } from '../platform/index.ts';
+import type { AppealPrevStateReader, RiskStateBatchReader } from '../risk/index.ts';
 import { WENT_NEGATIVE_CONSUMER, createWentNegativeConsumer } from './application/went-negative.ts';
 import {
   AUTO_PAYOUT_CONSUMER,
@@ -33,13 +34,14 @@ import {
 } from './application/auto-payout.ts';
 import { createPayoutExecute } from './application/payout-execute.ts';
 import { PAYOUT_LANDING_QUEUE, createLandingJob } from './jobs/landing-job.ts';
+import type { PayoutQueuePausePort } from './jobs/transfer-job.ts';
 import type { WithdrawalAttemptsPort } from './application/withdrawal-commands.ts';
 import type { WithdrawApplyOptions, WithdrawApplyService } from './application/withdraw-apply.ts';
 import {
   registerWithdrawalAccountDecrypt,
   type DecryptWithdrawalAccount,
 } from './application/withdrawal-reads.ts';
-import type { WithdrawRulesService } from './application/withdraw-rules.ts';
+import type { PayoutConfigPort, WithdrawRulesService } from './application/withdraw-rules.ts';
 import {
   WithdrawalsController,
   type WithdrawStepUp,
@@ -121,6 +123,21 @@ export type AutoPayoutPorts = Pick<
 
 /** The automatic payout consumer's registration token (worker entry). */
 export const AUTO_PAYOUT_CONSUMER_TOKEN = Symbol('PAYOUT_AUTO_PAYOUT_CONSUMER');
+
+/** B2-06f: the payout process's ports, assembled by app.module (dependency inversion). */
+export interface PayoutProcessOptions {
+  /** identity's users row lock (module lock order: users → balances). */
+  lockUsersForUpdate: WithdrawApplyOptions['lockUsersForUpdate'];
+  /** content's configuration reader over the process handle: payout.* read straight from PG. */
+  config: (db: Kysely<DB>, clock: Clock) => PayoutConfigPort;
+  /** risk's state and appeal readers (BR-WDR-05, review step member_blocked). */
+  risk: RiskStateBatchReader;
+  appeal: AppealPrevStateReader;
+  /** content's system write of payout.queue_paused = true. */
+  pauseQueue: (db: Kysely<DB>, clock: Clock) => PayoutQueuePausePort;
+  /** The payee snapshot decryption over the process's field cipher. */
+  decryptPayee: Factory<DecryptWithdrawalAccount>;
+}
 
 /**
  * A direct negative-balance recheck job (payout's transfer job, W9 member_blocked: payload exactly
@@ -316,6 +333,15 @@ export class PayoutModule {
         },
       ],
     };
+  }
+
+  /**
+   * B2-06f: the payout entry's runtime under payoutRuntimeToken() (payout-runtime.ts); entry.ts
+   * starts it with the PAYOUT_MODE decision before the queue runs.
+   */
+  static forPayout(options: PayoutProcessOptions): DynamicModule {
+    void options;
+    throw new Error('NotImplemented: PayoutModule.forPayout');
   }
 
   static forRoot(options?: PayoutModuleOptions): DynamicModule {

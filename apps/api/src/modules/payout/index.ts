@@ -41,7 +41,18 @@ export type {
 export { createWithdrawUsageReader } from './infra/withdraw-usage.ts';
 export { createWithdrawHoldsReader } from './infra/withdraw-holds.ts';
 export { PayoutModule } from './payout.module.ts';
-export type { PayoutModuleOptions } from './payout.module.ts';
+export type { PayoutModuleOptions, PayoutProcessOptions } from './payout.module.ts';
+// B2-06f: PAYOUT_MODE and the payout process's runtime (entry.ts resolves and starts it).
+export { resolvePayoutMode } from './payout-mode.ts';
+export type {
+  PayoutLiveCredentialEnvName,
+  PayoutLiveCredentials,
+  PayoutMode,
+  PayoutModeDecision,
+  PayoutModeEnvName,
+} from './payout-mode.ts';
+export { payoutRuntimeToken } from './payout-runtime.ts';
+export type { PayoutRuntime, PayoutStarted } from './payout-runtime.ts';
 export { WITHDRAW_RULES, WITHDRAW_APPLY, WITHDRAW_STEP_UP, WITHDRAW_READS } from './tokens.ts';
 export type { WithdrawStepUp } from './http/public/withdrawals.controller.ts';
 export {
