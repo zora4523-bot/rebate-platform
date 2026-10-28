@@ -363,6 +363,7 @@ export class ContentAdminModule {
                 : createKyselyConfigItemStore(db, (trx) => options.auditWriter(trx, clock)),
               clock,
               logger,
+              options.configItemChecks,
             ),
         },
         {
@@ -410,6 +411,9 @@ export class ContentAdminModule {
                 : createKyselyKillSwitchStore(db, (trx) => options.auditWriter(trx, clock)),
               clock,
               logger,
+              // Without a database the checks are not built: turning the auto payout switch on
+              // stays refused.
+              db === undefined ? undefined : options.killSwitchChecks?.(db, clock),
             ),
         },
         {
