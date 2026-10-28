@@ -11,7 +11,11 @@
 //      first query job (below) and resolve. The attempt row is left as it is. B2-06g: an attempt
 //      recorded as payer_side (response kind) whose W9 did not commit → that W9 on this
 //      transaction instead of the query; the pause and the alert are not repeated (they were done
-//      when the result was judged, below).
+//      when the result was judged, below). B2-06h: an attempt still pending whose payer-side
+//      result this process judged (the in-process record below) → its completion with that result
+//      and the W9 on this transaction, likewise instead of the query. A pending attempt this process
+//      never judged as payer-side (an ordinary unknown, an unknown_code pause, a crash between ④ and
+//      the completion) still gets the first query.
 //   ③ (D10-398 ①) the review of payout_disabled → queue_paused → channel_disabled → member_blocked
 //      runs on the worker (jobs/review-job.ts, couli_app, under the users lock): on the same
 //      transaction one job
@@ -47,13 +51,16 @@
 //   success     W5 CHANNEL_SUCCESS → PAID_API (worker).
 //   fail        W6 CHANNEL_FAIL → FAILED (worker).
 //   payer_side  W9 → APPROVED with hold_reason payer_side_after_transfer (no refund, frozen stays)
-//               on this process's own transaction; attempt fail; no query.
+//               with the attempt's completion (fail) on one transaction of this process; no query.
+//               B2-06h: that transaction is tried once more on a fresh one before rejecting.
 //   unknown     stays PAYING; attempt unknown; the first query job (below).
 // B2-06g: a payer_side result, or an unknown one with pauseQueue (a code outside the three lists),
 // pauses first: as soon as the result is judged, before the attempt is completed, the W9 or the
 // first query, the in-process mark is set, the alert is raised and the pause job is sent (below).
-// None of it is undone when a later step throws. A failed payer-side W9 (or attempt write) rejects
-// so the queue redelivers the release, and ② lands the W9 then; a failed first query send is tried
+// None of it is undone when a later step throws. B2-06h: a judged payer-side result is also kept in
+// process (withdrawal, execute_seq, attempt, the channel's answer) until its W9 commits, so a
+// failed completion / W9 (both tried twice) rejects and the release redelivered to this process
+// completes the attempt with the channel's code and lands the W9 at ②; a failed first query send is tried
 // once more on a fresh transaction before rejecting (② then sends it).
 // The pause (D10-398 ②): this process cannot write payout.queue_paused, so it pauses the app in
 // process at once (every later release of the app is W9 queue_paused) and sends
@@ -224,6 +231,16 @@ function maskName(name: string): string {
   return first === undefined ? '' : `${first}**`;
 }
 
+interface JudgedPayerSide {
+  readonly attemptId: string;
+  readonly result: TransferResult;
+  readonly receivedAt: Date;
+}
+
+function judgedKey(row: Pick<WithdrawalRow, 'id' | 'execute_seq'>): string {
+  return `${row.id}:${row.execute_seq}`;
+}
+
 type Outcome =
   | { readonly kind: 'done' }
   | {
@@ -254,6 +271,12 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
    * version (D10-404 ②: the worker persisted the pause or an admin released it).
    */
   const unpersistedPauses = new Map<string, number>();
+  /**
+   * B2-06h: payer-side results this process judged whose completion and W9 have not committed,
+   * by `${withdrawal_id}:${execute_seq}` (dropped once ① sees the withdrawal left PAYING). A new
+   * process starts with none: its redelivery then only sees a pending attempt and queries.
+   */
+  const judgedPayerSide = new Map<string, JudgedPayerSide>();
 
   async function readRow(
     trx: Transaction<DB>,
@@ -383,6 +406,7 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
     // ①
     const row = await readRow(trx, payload.app_id, payload.withdrawal_id);
     if (row === null || row.status !== PAYING || row.execute_seq !== payload.execute_seq) {
+      judgedPayerSide.delete(`${payload.withdrawal_id}:${payload.execute_seq}`);
       logger.info(
         {
           withdrawal_id: payload.withdrawal_id,
@@ -395,9 +419,14 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
     }
     // ②
     if (await attempts.hasTransfer(trx, { appId: row.app_id, withdrawalId: row.id })) {
-      if (await payerSideRecorded(trx, row)) {
+      const judged = judgedPayerSide.get(judgedKey(row));
+      if (judged !== undefined || (await payerSideRecorded(trx, row))) {
         // B2-06g: the W9 of a judged payer-side result did not commit; land it now (paused and
-        // alerted already when it was judged).
+        // alerted already when it was judged). B2-06h: judged by this process but its completion
+        // did not commit either → complete the pending attempt with the channel's answer first.
+        if (judged !== undefined) {
+          await completeAttempt(trx, judged.attemptId, judged.result, 'fail', judged.receivedAt);
+        }
         await holdWithdrawal(trx, { eventBus, logger }, row, 'payer_side_after_transfer', now);
         logger.info(
           { withdrawal_id: row.id, out_biz_no: row.out_biz_no, hold_reason: PAYER_SIDE_HOLD },
@@ -636,11 +665,35 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
     }
   }
 
-  /** W9 payer_side_after_transfer on this process's own transaction (paused and alerted before). */
-  async function landPayerSide(row: WithdrawalRow, now: Date): Promise<void> {
-    await db.transaction().execute(async (trx) => {
-      await holdWithdrawal(trx, { eventBus, logger }, row, PAYER_SIDE_HOLD, now);
-    });
+  /**
+   * The attempt's completion (fail, the channel's answer) and W9 payer_side_after_transfer on one
+   * transaction of this process (paused and alerted before); a failed one is tried once more on a
+   * fresh transaction, then rethrown (the in-process record stays for the redelivery's ②).
+   */
+  async function landPayerSide(
+    row: WithdrawalRow,
+    judged: JudgedPayerSide,
+    now: Date,
+  ): Promise<void> {
+    const land = () =>
+      db.transaction().execute(async (trx) => {
+        await completeAttempt(trx, judged.attemptId, judged.result, 'fail', judged.receivedAt);
+        await holdWithdrawal(trx, { eventBus, logger }, row, PAYER_SIDE_HOLD, now);
+      });
+    try {
+      await land();
+    } catch (error: unknown) {
+      logger.warn(
+        {
+          withdrawal_id: row.id,
+          out_biz_no: row.out_biz_no,
+          error: error instanceof Error ? error.message : 'unknown',
+        },
+        'payout_transfer_landing_retried',
+      );
+      await land();
+    }
+    judgedPayerSide.delete(judgedKey(row));
   }
 
   async function landUnknown(row: WithdrawalRow, delaySeconds: number): Promise<void> {
@@ -689,6 +742,7 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
     const landedAt = clock.now();
     // B2-06g: pause and alert as soon as the result is judged, before anything below can fail.
     if (result !== null && result.kind === 'payer_side') {
+      judgedPayerSide.set(judgedKey(row), { attemptId, result, receivedAt: landedAt });
       await pauseAndAlert(row, result.raw, 'payer_side', queuePausedVersion);
     } else if (result !== null && result.kind === 'unknown' && result.pauseQueue === true) {
       await pauseAndAlert(row, result.raw, 'unknown_code', queuePausedVersion);
@@ -704,9 +758,10 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
               : 'fail';
       if (result !== null && (result.kind === 'success' || result.kind === 'fail')) {
         await recordAndHandoff(row, attemptId, result, landedAt);
-      } else {
+      } else if (result === null || result.kind === 'unknown') {
         await completeAttempt(attemptsDb, attemptId, result, stored, landedAt);
       }
+      // payer_side: completed together with its W9 below (landPayerSide).
       logger.info(
         {
           withdrawal_id: row.id,
@@ -721,13 +776,14 @@ export function createTransferJob(options: TransferJobOptions): JobHandler {
       if (result === null || result.kind === 'unknown') {
         await landUnknown(row, delay);
       } else if (result.kind === 'payer_side') {
-        await landPayerSide(row, landedAt);
+        await landPayerSide(row, { attemptId, result, receivedAt: landedAt }, landedAt);
       }
       // success / fail: recorded and handed to the worker above (jobs/landing-job.ts lands W5 / W6).
     } catch (error: unknown) {
       // A database error while landing the result: the transfer is recorded, so a redelivery is
-      // stopped at ②. A payer-side result rejects at once: no query, the redelivery lands its W9
-      // at ② (paused and alerted above, kept). Otherwise try to leave the first query job; if even
+      // stopped at ②. A payer-side result rejects (after landPayerSide's second try): no query, the
+      // redelivery to this process completes the attempt and lands its W9 at ② (paused, alerted and
+      // recorded in process above, kept). Otherwise try to leave the first query job; if even
       // that fails, reject so the queue redelivers (② then enqueues the query).
       logger.warn(
         {
