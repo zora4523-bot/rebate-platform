@@ -67,10 +67,18 @@ import {
   createKyselyPlatformIconUploadStore,
   createKyselyPlatformIconWriteStore,
 } from './infra/kysely-platform-icon-store.ts';
-import { KillSwitchAdmin, type KillSwitchStore } from './application/kill-switch-admin.ts';
+import {
+  KillSwitchAdmin,
+  type KillSwitchAdminChecks,
+  type KillSwitchStore,
+} from './application/kill-switch-admin.ts';
 import { AdminKillSwitchesController } from './http/admin/kill-switches.controller.ts';
 import { createKyselyKillSwitchStore } from './infra/kysely-kill-switch-store.ts';
-import { ConfigItemAdmin, type ConfigItemStore } from './application/config-item-admin.ts';
+import {
+  ConfigItemAdmin,
+  type ConfigItemAdminChecks,
+  type ConfigItemStore,
+} from './application/config-item-admin.ts';
 import { AdminConfigItemsController } from './http/admin/config-items.controller.ts';
 import { createKyselyConfigItemStore } from './infra/kysely-config-item-store.ts';
 import { PagePreviewService, type PagePreviewStore } from './application/page-preview.ts';
@@ -110,8 +118,22 @@ import { createKyselyAppVersionAdminStore } from './infra/kysely-app-version-adm
 /** Binds the audit port to a transaction handle (app.module: admin's createAuditWriter). */
 export type ContentAuditWriterFactory = (db: Kysely<Database>, clock: Clock) => AuditPort;
 
+/**
+ * B2-11e: builds the switch checks (payout's 开启前置检查, BR-WDR-30) over the entry's database
+ * handle; called only when the entry has one (without it, turning the auto payout switch on stays
+ * refused).
+ */
+export type ContentKillSwitchChecksFactory = (
+  db: Kysely<Database>,
+  clock: Clock,
+) => KillSwitchAdminChecks;
+
 export interface ContentAdminOptions {
   readonly auditWriter: ContentAuditWriterFactory;
+  /** B2-11e: config item write checks (payout's 保存时校验, BR-WDR-30); absent, none. */
+  readonly configItemChecks?: ConfigItemAdminChecks;
+  /** B2-11e: switch checks over the entry's database handle; absent, none. */
+  readonly killSwitchChecks?: ContentKillSwitchChecksFactory;
 }
 
 const refuse = (): Promise<never> =>
