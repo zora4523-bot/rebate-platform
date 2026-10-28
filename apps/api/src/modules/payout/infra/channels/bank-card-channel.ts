@@ -3,6 +3,7 @@
 // disabled evidence; the payout review (BR-WDR-13 ③ channel_disabled) stops such withdrawals earlier.
 import {
   ChannelDisabledError,
+  type ChannelBillLine,
   type QueryResult,
   type TransferResult,
 } from '../../domain/channel-result.ts';
@@ -16,5 +17,10 @@ export class BankCardChannel implements PayoutChannel {
   query(outBizNo: string): Promise<QueryResult> {
     void outBizNo;
     return Promise.reject(new ChannelDisabledError());
+  }
+  billDetails(appId: string, billDate: string): Promise<readonly ChannelBillLine[]> {
+    void appId;
+    void billDate;
+    throw new Error('NotImplemented: BankCardChannel.billDetails');
   }
 }

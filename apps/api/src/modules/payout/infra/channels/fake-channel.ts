@@ -5,6 +5,7 @@
 import { judgeQuery, judgeTransfer, type JudgementLists } from '../../application/judgement.ts';
 import {
   PayoutModeMustBeDryRunError,
+  type ChannelBillLine,
   type ChannelRaw,
   type QueryResult,
   type TransferResult,
@@ -22,14 +23,22 @@ export type FakeStep =
   | { kind: 'unknown' }
   | { kind: 'timeout' };
 
+/** B2-07b: demo bills by our app id, then by accounting day (YYYY-MM-DD at +08:00). */
+export type FakeBills = Readonly<
+  Record<string, Readonly<Record<string, readonly ChannelBillLine[]>>>
+>;
+
 export interface FakeChannelOptions {
   mode: 'dry_run' | 'live';
   lists: JudgementLists;
   script: Readonly<Record<string, { transfer?: readonly FakeStep[]; query?: readonly FakeStep[] }>>;
+  bills?: FakeBills;
 }
 
 export type FakeCall =
-  { kind: 'transfer'; request: TransferRequest } | { kind: 'query'; outBizNo: string };
+  | { kind: 'transfer'; request: TransferRequest }
+  | { kind: 'query'; outBizNo: string }
+  | { kind: 'bill'; appId: string; billDate: string };
 
 const NO_SCRIPT: ChannelRaw = { code: 'FAKE_NO_SCRIPT' };
 
@@ -85,5 +94,16 @@ export class FakeChannel implements PayoutChannel {
     if (step.channelOrderId !== undefined) result.channelOrderId = step.channelOrderId;
     if (result.kind === 'success' && step.paidAt !== undefined) result.paidAt = step.paidAt;
     return Promise.resolve(result);
+  }
+
+  /**
+   * B2-07b: the injected demo bill of (appId, billDate), unchanged and as often as asked (the next
+   * day's run reads a bill again); the call is recorded. A day without an injected bill rejects
+   * with PayoutBillUnavailableError; an injected [] is a bill without lines.
+   */
+  billDetails(appId: string, billDate: string): Promise<readonly ChannelBillLine[]> {
+    void appId;
+    void billDate;
+    throw new Error('NotImplemented: FakeChannel.billDetails');
   }
 }

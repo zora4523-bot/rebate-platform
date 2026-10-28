@@ -1,5 +1,5 @@
 import type { JudgementLists } from '../../application/judgement.ts';
-import type { QueryResult, TransferResult } from '../../domain/channel-result.ts';
+import type { ChannelBillLine, QueryResult, TransferResult } from '../../domain/channel-result.ts';
 
 export type PayoutChannelName = 'alipay' | 'bank_card' | 'wechat';
 
@@ -24,4 +24,12 @@ export interface ChannelJudgement {
 export interface PayoutChannel {
   transfer(request: TransferRequest, judgement?: ChannelJudgement): Promise<TransferResult>;
   query(outBizNo: string, judgement?: ChannelJudgement): Promise<QueryResult>;
+  /**
+   * B2-07b (BR-WDR-23, BR-WDR-22 ⑧): the channel's bill of one accounting day (`billDate`,
+   * YYYY-MM-DD at +08:00) for one app of ours. Resolves only with a bill the channel gave (an
+   * empty array is a bill without lines); otherwise rejects with PayoutBillUnavailableError
+   * (closed channels: ChannelDisabledError), never with an empty or made-up bill. An adapter
+   * without it has no bill: the reconciliation treats that as unavailable too.
+   */
+  billDetails?(appId: string, billDate: string): Promise<readonly ChannelBillLine[]>;
 }
