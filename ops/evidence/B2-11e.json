@@ -1,0 +1,89 @@
+{
+  "risk_note": "RV2 (apps/api/src/modules/content/index.ts, content-admin.module.ts, apps/api/src/app.module.ts): a structural change with no change in behaviour (ledger #1741, follow-up of B2-11d / B1-34a). content/index.ts now exports ContentAdminOptions, ConfigItemAdmin / KillSwitchAdmin with their check types, and configRegistry. ContentAdminModule.forAdmin takes configItemChecks / killSwitchChecks and passes them to the two use cases. The defaults keep the old behaviour: no save checks, and the switch-on stays refused; with no database no switch checks are built, as the old wrapper did. app.module drops the three imports of content internals, the two TODOs and the wrapper that rebuilt forAdmin's providers. It passes the same payout checks through the options: save = AUTO_PAYOUT_SAVE_KEYS with autoPayoutWriteRefusals, and autoPayoutEnable = readAutoPayoutEnableCheck with content's reader per handle and one createDefaultReconPassedDays. The existing payout/auto-config, save-wiring, content/config-items and kill-switch tests pass unchanged. Rule tests (admin-check-options, 7) by a fresh independent Claude (approvals #36), red PASS on the spec commit. Implementation by an Opus 5.5 subagent in one run. verify:fast in the test-machine container exit 0. Full verify on the test machine (verify/1): exit 124 at the 3600 s limit with no failing case before it; save-wiring.int 12/12, content config-items / kill-switches integration suites and admin-check-options passed; recorded per D10-319, CI verify-int is the check.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "review_type": "money",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "note": "Codex out of quota until 2026-11-02 (approvals #36). r1 pass, no findings; the reviewer compared the removed provider wrapper with the new option path step by step."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "r1 pass, S2x1 (the app.module wiring test is a source regex; the implementation wires the real payout checks, and the existing save-wiring / auto-config tests run through them)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "B2-11e",
+  "spec_commit": "e7bac40a10739b1604af1730618b798ef30696b3",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "red_tests": [
+    "test/spec/content/admin-check-options/app-module.test.ts > [AC-B2-11e#6] app.module 只经 content 的 index.ts 导入，直接引 content 内部文件的 TODO 去掉",
+    "test/spec/content/admin-check-options/app-module.test.ts > [AC-B2-11e#7] admin 入口把保存校验与开启前置检查作为 ContentAdminModule.forAdmin 的选项传入，不再改写它返回的 provider",
+    "test/spec/content/admin-check-options/options.test.ts > [AC-B2-11e#1] forAdmin 的 configItemChecks 接到单条保存：写校验读的键时问一次 save 校验（本 app 存量、写入值），拒绝 → 20001 [value]；不读的键不问",
+    "test/spec/content/admin-check-options/options.test.ts > [AC-B2-11e#2] forAdmin 的 configItemChecks 接到批量保存：整批按写入值问一次，拒绝 → 20001，fields 为被拒的键",
+    "test/spec/content/admin-check-options/options.test.ts > [AC-B2-11e#3] forAdmin 的 killSwitchChecks：有库时以入口的库与时钟建检查；打开自动到账总开关问本 app 一次，不通过 → 20001 [value]",
+    "test/spec/content/admin-check-options/options.test.ts > [AC-B2-11e#4] killSwitchChecks 的前置检查通过时不再因 value 拒绝打开；无库时不建检查、打开仍拒绝 [value]（与现在一致）",
+    "test/spec/content/admin-check-options/options.test.ts > [AC-B2-11e#5] 只有传了选项才校验：同一写入有 configItemChecks 时停在校验，没有时照常进库；不传 killSwitchChecks 打开自动到账总开关仍拒绝 [value]"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "e7bac40a10739b1604af1730618b798ef30696b3",
+      "tree": "fa43351ee0ef3626062d2b846ffa24f78648dbb0",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-28T19:22:36Z",
+      "finished_at": "2026-10-28T19:22:46Z",
+      "red_tests": [
+        "test/spec/content/admin-check-options/app-module.test.ts > [AC-B2-11e#6] app.module 只经 content 的 index.ts 导入，直接引 content 内部文件的 TODO 去掉",
+        "test/spec/content/admin-check-options/app-module.test.ts > [AC-B2-11e#7] admin 入口把保存校验与开启前置检查作为 ContentAdminModule.forAdmin 的选项传入，不再改写它返回的 provider",
+        "test/spec/content/admin-check-options/options.test.ts > [AC-B2-11e#1] forAdmin 的 configItemChecks 接到单条保存：写校验读的键时问一次 save 校验（本 app 存量、写入值），拒绝 → 20001 [value]；不读的键不问",
+        "test/spec/content/admin-check-options/options.test.ts > [AC-B2-11e#2] forAdmin 的 configItemChecks 接到批量保存：整批按写入值问一次，拒绝 → 20001，fields 为被拒的键",
+        "test/spec/content/admin-check-options/options.test.ts > [AC-B2-11e#3] forAdmin 的 killSwitchChecks：有库时以入口的库与时钟建检查；打开自动到账总开关问本 app 一次，不通过 → 20001 [value]",
+        "test/spec/content/admin-check-options/options.test.ts > [AC-B2-11e#4] killSwitchChecks 的前置检查通过时不再因 value 拒绝打开；无库时不建检查、打开仍拒绝 [value]（与现在一致）",
+        "test/spec/content/admin-check-options/options.test.ts > [AC-B2-11e#5] 只有传了选项才校验：同一写入有 configItemChecks 时停在校验，没有时照常进库；不传 killSwitchChecks 打开自动到账总开关仍拒绝 [value]"
+      ],
+      "expected": [
+        "test/spec/content/admin-check-options/app-module.test.ts",
+        "test/spec/content/admin-check-options/options.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "69cd0feffaf186f6572778975cc38c2138e7bdf6a61ef72e95249176b16f0d18"
+        }
+      ],
+      "gate": {
+        "commit": "f089571c8e243a63dff80d888838ed1a7c719ab4",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "3624ed0b450aba38380d481886508dfad7b49b25",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}
