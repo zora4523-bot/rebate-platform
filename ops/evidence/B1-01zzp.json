@@ -1,0 +1,116 @@
+{
+  "risk_note": "RV2 (apps/api/src/modules/platform/metrics/**, entry.ts, payout/index.ts export only, infra/monitoring/rules/couli-fund.yaml): worker-exported gauges couli_auto_payout_daily_total_fen / couli_auto_payout_daily_cap_fen per app_id and two couli-fund rules (total / cap >= 0.8 warning, >= 1 critical, fund 'true', for 5m), closing B2-11c Codex money S1-2 moved here by D10-389. Read-only SQL over app.withdrawals and app.config_items; total uses B2-11c's ⑨ basis (review_mode auto, status not REJECTED / FAILED, reviewed_at on the injected Clock's +08:00 accounting day via packages/domain); the cap comes from payout's own autoPayoutConfigOf injected by entry.ts (D10-393 (c)): a missing or malformed cap is the default B2-11c executes with, no copy in platform, and platform/** does not import payout. No writes, no database clock, amounts are integer fen. Rule tests by fresh independent Claude runs (approvals #36), three test(spec) rounds; the frozen rules.test.ts whitelist change went in first as B1-01zzpz (#1728, D10-399), red PASS on the rebased spec commit (16 red, 0 problems). Implementation by Opus 5.5 subagents in two runs (run 2 after the default-cap test). verify:fast in the test-machine container exit 0. Full verify on the test machine (verify/1): exit 124 at the 3600 s limit with no failing case before it; every fund-alerts test passed, including collect.int and default-cap.int; recorded per D10-319, CI verify-int is the check.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "review_type": "money",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "note": "Codex out of quota until 2026-11-02 (approvals #36). r1 pass, S2x1 (an 80% crossing just before midnight can miss the 5m for-window when the day rolls; recorded in couli-runs/followups.md). A general-review attempt before it was refused by the wrapper (RV2 needs money) with no output and is not a review round."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "r1 by Codex pass (first test round); r2 by a fresh independent Claude pass on the r3 tests (default cap through B2-11c's parser, #14-#16), out_of_scope S2 led to ledger #1731 (payout/index.ts export path)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "B1-01zzp",
+  "spec_commit": "69e0cd46cd9d379e5a6dee34b1744d102b60512c",
+  "spec_ref": "736d24c50f574d1ecd1adedc16ce01b6832812e7",
+  "red_tests": [
+    "test/spec/platform/metrics/fund-alerts/collect.int.test.ts > [AC-B1-01zzp#10] 当日自动到账合计按 app_id：只计 review_mode=auto、status ∉ {REJECTED, FAILED}、reviewed_at 落在注入时钟的 +08:00 当日（含 00:00 整、按 reviewed_at 不按 created_at、按 amount_fen）；上限取该 app_id 的 platform_daily_max_fen；有上限没合计的 app_id 为 0",
+    "test/spec/platform/metrics/fund-alerts/collect.int.test.ts > [AC-B1-01zzp#11] 「当日」随注入时钟走、按 +08:00 切日：00:00 前 1 毫秒的时钟只计前一日的单；次日的时钟合计归零（上限不变）",
+    "test/spec/platform/metrics/fund-alerts/collect.int.test.ts > [AC-B1-01zzp#12] worker registry 以真实采集渲染：两个 gauge 的值与夹具一致（合计 / 上限 = 0.5、0.8、0）",
+    "test/spec/platform/metrics/fund-alerts/collect.test.ts > [AC-B1-01zzp#8] 采集读 withdrawals（按 review_mode、reviewed_at 取 amount_fen）与 config_items：只读、不读数据库时钟；没有行时快照为空而不是报错",
+    "test/spec/platform/metrics/fund-alerts/collect.test.ts > [AC-B1-01zzp#9] withdrawals 或 config_items 任一读失败时采集拒绝（原错误），不以 0 或空快照代替",
+    "test/spec/platform/metrics/fund-alerts/default-cap.int.test.ts > [AC-B1-01zzp#14] 上限未配置的 app_id（当日有自动到账合计、没有 platform_daily_max_fen 行）仍出上限序列，值等于 B2-11c 执行所用的默认上限；值不合法（负数、非整数、字符串、null、布尔、超出安全整数、对象）同样回落到该默认，合法值（含 0）照用；B2-11c 默认值一变，未配置与不合法的上限随之变（取自注入的 payout 函数，不是 platform 另写的默认）",
+    "test/spec/platform/metrics/fund-alerts/default-cap.int.test.ts > [AC-B1-01zzp#15] 上限未配置时 80% 告警按默认上限、按 BR-WDR-24 触发：合计恰为 ⌈默认上限 × 80%⌉ 的 app_id 触发 couli-fund.yaml 的 80% 规则，少 1 分的不触发（worker registry 渲染值）",
+    "test/spec/platform/metrics/fund-alerts/entry.test.ts > [AC-B1-01zzp#13] worker 的 /metrics 在 scrape 时经本入口库读 withdrawals（reviewed_at）与 config_items、导出两个自动到账 gauge（没有行时有 TYPE 行无序列）、不写、不读数据库时钟；其余四个入口没有这两个指标",
+    "test/spec/platform/metrics/fund-alerts/entry.test.ts > [AC-B1-01zzp#16] entry.ts 把 payout 的上限解析（B2-11c autoPayoutConfigOf）注入 worker 的自动到账采集：scrape 时调 collectAutoPayoutDaily 所带的上限函数，对未配置 / 不合法 / 合法的上限与 B2-11c 同值，B2-11c 的默认值一变它随之变（不是 platform 或 entry 另写的默认）；platform/** 不 import payout 模块",
+    "test/spec/platform/metrics/fund-alerts/registry.test.ts > [AC-B1-01zzp#4] worker 的 registry 在 scrape 时调 collectAutoPayout：两个 gauge 按 app_id 各一条序列、值与快照一致（0 照样输出），B1-01zzh 业务 gauge、B1-01zzi 资金 gauge 与进程级指标照旧",
+    "test/spec/platform/metrics/fund-alerts/registry.test.ts > [AC-B1-01zzp#5] 自动到账 gauge 只在 worker 且给了 collectAutoPayout 时出现：api / stream / admin / payout 给了也不调用、不出指标名；worker 不给也没有",
+    "test/spec/platform/metrics/fund-alerts/registry.test.ts > [AC-B1-01zzp#6] 每次 scrape 取最新快照：不常驻轮询；消失的 app_id 不留旧序列；大额按整数输出；没有任何 app_id 时两个指标族仍有 TYPE 行而无序列",
+    "test/spec/platform/metrics/fund-alerts/registry.test.ts > [AC-B1-01zzp#7] collectAutoPayout 拒绝或同步抛出时 render() 拒绝（抓取失败可见）：不把合计编造成 0，也不沿用上一次的快照；恢复后下一次 scrape 取新值",
+    "test/spec/platform/metrics/fund-alerts/rules.test.ts > [AC-B1-01zzp#1] couli-fund.yaml 两条自动到账日合计告警：都读 合计 / 上限（按 app_id 相除），阈值分别为「达到」80% 与 100%（>=，不是 >），labels.fund 为字符串 \"true\"、severity 为 critical / warning、for 通用 5m、有 summary",
+    "test/spec/platform/metrics/fund-alerts/rules.test.ts > [AC-B1-01zzp#2] 阈值边界：上限 200000 分时合计 159999 两条都不触发、160000 只触发 80%、199999 仍只 80%、200000 两条都触发；上限 0 且合计 0（不自动到账）不触发",
+    "test/spec/platform/metrics/fund-alerts/rules.test.ts > [AC-B1-01zzp#3] 上限 gauge 只在这两条的除法里读；规则读的 couli_auto_payout_* 都是 worker 导出的两个名字；couli.yaml 不读它们（夜间只推资金类）"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "69e0cd46cd9d379e5a6dee34b1744d102b60512c",
+      "tree": "4eb37768422da6711e54fbee4fe8c5dc18cfb2dd",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-28T05:01:46Z",
+      "finished_at": "2026-10-28T05:02:23Z",
+      "red_tests": [
+        "test/spec/platform/metrics/fund-alerts/collect.int.test.ts > [AC-B1-01zzp#10] 当日自动到账合计按 app_id：只计 review_mode=auto、status ∉ {REJECTED, FAILED}、reviewed_at 落在注入时钟的 +08:00 当日（含 00:00 整、按 reviewed_at 不按 created_at、按 amount_fen）；上限取该 app_id 的 platform_daily_max_fen；有上限没合计的 app_id 为 0",
+        "test/spec/platform/metrics/fund-alerts/collect.int.test.ts > [AC-B1-01zzp#11] 「当日」随注入时钟走、按 +08:00 切日：00:00 前 1 毫秒的时钟只计前一日的单；次日的时钟合计归零（上限不变）",
+        "test/spec/platform/metrics/fund-alerts/collect.int.test.ts > [AC-B1-01zzp#12] worker registry 以真实采集渲染：两个 gauge 的值与夹具一致（合计 / 上限 = 0.5、0.8、0）",
+        "test/spec/platform/metrics/fund-alerts/collect.test.ts > [AC-B1-01zzp#8] 采集读 withdrawals（按 review_mode、reviewed_at 取 amount_fen）与 config_items：只读、不读数据库时钟；没有行时快照为空而不是报错",
+        "test/spec/platform/metrics/fund-alerts/collect.test.ts > [AC-B1-01zzp#9] withdrawals 或 config_items 任一读失败时采集拒绝（原错误），不以 0 或空快照代替",
+        "test/spec/platform/metrics/fund-alerts/default-cap.int.test.ts > [AC-B1-01zzp#14] 上限未配置的 app_id（当日有自动到账合计、没有 platform_daily_max_fen 行）仍出上限序列，值等于 B2-11c 执行所用的默认上限；值不合法（负数、非整数、字符串、null、布尔、超出安全整数、对象）同样回落到该默认，合法值（含 0）照用；B2-11c 默认值一变，未配置与不合法的上限随之变（取自注入的 payout 函数，不是 platform 另写的默认）",
+        "test/spec/platform/metrics/fund-alerts/default-cap.int.test.ts > [AC-B1-01zzp#15] 上限未配置时 80% 告警按默认上限、按 BR-WDR-24 触发：合计恰为 ⌈默认上限 × 80%⌉ 的 app_id 触发 couli-fund.yaml 的 80% 规则，少 1 分的不触发（worker registry 渲染值）",
+        "test/spec/platform/metrics/fund-alerts/entry.test.ts > [AC-B1-01zzp#13] worker 的 /metrics 在 scrape 时经本入口库读 withdrawals（reviewed_at）与 config_items、导出两个自动到账 gauge（没有行时有 TYPE 行无序列）、不写、不读数据库时钟；其余四个入口没有这两个指标",
+        "test/spec/platform/metrics/fund-alerts/entry.test.ts > [AC-B1-01zzp#16] entry.ts 把 payout 的上限解析（B2-11c autoPayoutConfigOf）注入 worker 的自动到账采集：scrape 时调 collectAutoPayoutDaily 所带的上限函数，对未配置 / 不合法 / 合法的上限与 B2-11c 同值，B2-11c 的默认值一变它随之变（不是 platform 或 entry 另写的默认）；platform/** 不 import payout 模块",
+        "test/spec/platform/metrics/fund-alerts/registry.test.ts > [AC-B1-01zzp#4] worker 的 registry 在 scrape 时调 collectAutoPayout：两个 gauge 按 app_id 各一条序列、值与快照一致（0 照样输出），B1-01zzh 业务 gauge、B1-01zzi 资金 gauge 与进程级指标照旧",
+        "test/spec/platform/metrics/fund-alerts/registry.test.ts > [AC-B1-01zzp#5] 自动到账 gauge 只在 worker 且给了 collectAutoPayout 时出现：api / stream / admin / payout 给了也不调用、不出指标名；worker 不给也没有",
+        "test/spec/platform/metrics/fund-alerts/registry.test.ts > [AC-B1-01zzp#6] 每次 scrape 取最新快照：不常驻轮询；消失的 app_id 不留旧序列；大额按整数输出；没有任何 app_id 时两个指标族仍有 TYPE 行而无序列",
+        "test/spec/platform/metrics/fund-alerts/registry.test.ts > [AC-B1-01zzp#7] collectAutoPayout 拒绝或同步抛出时 render() 拒绝（抓取失败可见）：不把合计编造成 0，也不沿用上一次的快照；恢复后下一次 scrape 取新值",
+        "test/spec/platform/metrics/fund-alerts/rules.test.ts > [AC-B1-01zzp#1] couli-fund.yaml 两条自动到账日合计告警：都读 合计 / 上限（按 app_id 相除），阈值分别为「达到」80% 与 100%（>=，不是 >），labels.fund 为字符串 \"true\"、severity 为 critical / warning、for 通用 5m、有 summary",
+        "test/spec/platform/metrics/fund-alerts/rules.test.ts > [AC-B1-01zzp#2] 阈值边界：上限 200000 分时合计 159999 两条都不触发、160000 只触发 80%、199999 仍只 80%、200000 两条都触发；上限 0 且合计 0（不自动到账）不触发",
+        "test/spec/platform/metrics/fund-alerts/rules.test.ts > [AC-B1-01zzp#3] 上限 gauge 只在这两条的除法里读；规则读的 couli_auto_payout_* 都是 worker 导出的两个名字；couli.yaml 不读它们（夜间只推资金类）"
+      ],
+      "expected": [
+        "test/spec/platform/metrics/fund-alerts/collect.int.test.ts",
+        "test/spec/platform/metrics/fund-alerts/collect.test.ts",
+        "test/spec/platform/metrics/fund-alerts/default-cap.int.test.ts",
+        "test/spec/platform/metrics/fund-alerts/entry.test.ts",
+        "test/spec/platform/metrics/fund-alerts/registry.test.ts",
+        "test/spec/platform/metrics/fund-alerts/rules.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "6ef5d78e92e73cd85412d2f15c21657227f688f9438e748b95d4ab3cc0691c5a"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "54a23aca861f1b37fa60fc2c2618d2ee80c0a36c7caaf8c4f4b8baaa558c3170"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "23ee9a7228ef5e7b6c012d19be32166b02f28afc",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "b91220849763cfa5c634a0479c246f1f3b398778",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}
