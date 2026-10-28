@@ -4,6 +4,8 @@
 // transfer and the query of one out_biz_no, and the end state of a payer-side result that was held
 // (W9 payer_side_after_transfer, nothing refunded, nothing queried). Built on the B2-06d process
 // kit (process/kit.ts, read only); only *.int.test.ts files import this kit.
+// r2 (spec-test review r1): an outage from the completion on (completion and W9 both fail), and the
+// held end state requires the channel's code on the attempt once the same process landed it.
 import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
 import { PostgresQueryCompiler, type Kysely, type KyselyPlugin } from 'kysely';
@@ -28,9 +30,12 @@ import {
   type ProcessFixture,
   type Seeded,
 } from '../process/kit.ts';
+import { SCHEDULE } from '../query/kit.ts';
 
 export const PAYER_SIDE_HOLD = 'payer_side_after_transfer';
 export type Cause = 'payer_side' | 'unknown_code';
+/** The first query's delay on a query fixture (its payout.query_schedule, points_min[0]). */
+export const FIRST_QUERY_S = (SCHEDULE.points_min[0] ?? 1) * 60;
 
 /** A transient database failure (serialization failure), thrown once by the injection below. */
 export function transient(): Error {
@@ -64,6 +69,37 @@ export function onFirstStatement(
     transformResult: async (args) => args.result,
   };
   return { db: db.withPlugin(plugin), seen: () => seen };
+}
+
+/**
+ * `db` down from the first statement `matches` picks on: that statement and every later one
+ * reject with the transient error (raw sql included) until `heal()` — a short PG outage over the
+ * whole landing of one release (the completion, the W9 and any write after them).
+ */
+export function outageFrom(
+  db: Kysely<DB>,
+  matches: (text: string, parameters: readonly unknown[]) => boolean,
+) {
+  const compiler = new PostgresQueryCompiler();
+  let state: 'up' | 'down' | 'healed' = 'up';
+  const plugin: KyselyPlugin = {
+    transformQuery(args) {
+      if (state === 'up') {
+        const compiled = compiler.compileQuery(args.node, args.queryId);
+        if (matches(compiled.sql, compiled.parameters)) state = 'down';
+      }
+      if (state === 'down') throw transient();
+      return args.node;
+    },
+    transformResult: async (args) => args.result,
+  };
+  return {
+    db: db.withPlugin(plugin),
+    seen: () => state !== 'up',
+    heal: () => {
+      state = 'healed';
+    },
+  };
 }
 
 /**
@@ -139,13 +175,26 @@ export function scriptedBoth(
   };
 }
 
+export interface HeldExpectation {
+  /**
+   * The process that judged the result landed the hold on a healthy database (the same transfer
+   * handler: at once, or on the redelivered release), so it knows the channel's answer and must
+   * have written it: the attempt is result=fail with 40004 / TEST_PAYER_SIDE and its response
+   * (otherwise it shows no answer and dailySentFen keeps counting it as pending). False only where
+   * the hold may have been landed by a handler that never saw the answer (the query handler, built
+   * apart, while the release had rejected): the attempt may then still be pending with no response.
+   */
+  readonly recorded: boolean;
+}
+
 /**
  * BR-WDR-17: `w` is held with payer_side_after_transfer — W9 back to APPROVED (executor cleared,
  * batch and execute_seq kept), one wallet.withdrawal_changed, its one transfer attempt never
- * recorded as anything but the payer-side failure (or still pending), no W5 / W6 and no voucher but
- * its FREEZE (frozen stays, nothing refunded), and no query or landing job left for it.
+ * recorded as anything but the payer-side failure (still pending only as `expected.recorded`
+ * allows), no W5 / W6 and no voucher of it but its FREEZE (frozen stays, nothing refunded), and no
+ * query or landing job left for it.
  */
-export async function expectPayerSideHeld(f: ProcessFixture, w: Seeded) {
+export async function expectPayerSideHeld(f: ProcessFixture, w: Seeded, expected: HeldExpectation) {
   expect(await withdrawal(f, w.id)).toMatchObject({
     status: 'APPROVED',
     hold_reason: PAYER_SIDE_HOLD,
@@ -160,14 +209,22 @@ export async function expectPayerSideHeld(f: ProcessFixture, w: Seeded) {
   });
   const rows = await attempts(f, w.id);
   expect(rows.map((row) => row.kind)).toEqual(['transfer']);
-  expect(['pending', 'fail']).toContain(rows[0]?.result);
-  if (rows[0]?.result === 'fail') {
-    expect(rows[0]).toMatchObject({ resp_code: '40004', resp_sub_code: 'TEST_PAYER_SIDE' });
+  if (expected.recorded || rows[0]?.result !== 'pending') {
+    expect(rows[0]).toMatchObject({
+      result: 'fail',
+      resp_code: '40004',
+      resp_sub_code: 'TEST_PAYER_SIDE',
+      response: expect.anything(),
+    });
+  } else {
+    expect(rows[0]).toMatchObject({ result: 'pending', resp_code: null, resp_sub_code: null });
   }
   expect((await changes(f)).filter((data) => data['withdrawal_id'] === w.id)).toEqual([
     expect.objectContaining({ withdrawal_id: w.id, status: 'APPROVED' }),
   ]);
-  expect(await withdrawalVouchers(f)).toEqual([`wd:${w.id}:FREEZE`]);
+  expect((await withdrawalVouchers(f)).filter((key) => key.startsWith(`wd:${w.id}:`))).toEqual([
+    `wd:${w.id}:FREEZE`,
+  ]);
   const left = jobsOf(await jobs(f), w);
   expect(queryJobs(left)).toEqual([]);
   expect(landJobs(left)).toEqual([]);
