@@ -53,5 +53,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payout/entry/**'
-status: todo
-pr: null
+status: done
+pr: 1724
