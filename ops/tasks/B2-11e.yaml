@@ -1,0 +1,26 @@
+id: B2-11e
+repo: rebate-platform
+title: 结构整理（行为不变）：content 的 ConfigItemAdmin / KillSwitchAdmin（及配置注册表 configRegistry）经 content/index.ts 导出，ContentAdminModule.forAdmin 加选项注入保存校验 / 开启前置检查；app.module 改经此接入，去掉 B2-11d（与 B1-34a）留下的直接引 content 内部文件的 TODO
+type: impl
+# 2026-10-29 入账（ops 线，编排 HANDOFF 10-28 12:3x 跟进；原记 content 线，content 10-30 才恢复，本线先做）。
+# 现状：app.module.ts:88-94 直接 import content/domain/config-registry.ts 与 content/application/{config-item-admin,kill-switch-admin}.ts，并在 contentAdminModule 里替换
+# ContentAdminModule 生成的两个 provider 来接 payout 的 BR-WDR-30 保存校验与开启前置检查（B2-11d）。要求：content/index.ts 导出所需类型 / 函数，
+# forAdmin 选项接收这两个检查（缺省维持现在的行为：保存不加校验、开启无条件拒绝），app.module 只经 index.ts 与选项接入，删掉两处 TODO。
+# 纯结构整理、行为不变：既有测试（含 test/spec/payout/auto-config/**、save-wiring.int、config-items/**）原样全绿即验收；另由规则测试钉住 forAdmin 选项注入（给了检查即在保存 / 开启时调用、不给维持缺省），先红。
+refs: []
+refs_hash: {}
+deps: [B2-11d]
+paths:
+  - 'apps/api/src/modules/content/index.ts'
+  - 'apps/api/src/modules/content/content-admin.module.ts'
+  - 'apps/api/src/modules/content/content-admin.module.test.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/content/admin-check-options/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/admin-check-options/**'
+status: todo
+pr: null
