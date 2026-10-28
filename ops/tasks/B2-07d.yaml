@@ -1,0 +1,24 @@
+id: B2-07d
+repo: rebate-platform
+title: 开启前置检查的「连续跑通天数」真实端口：ReconPassedDaysPort 按 payout_recon_runs 从昨日往回数连续 succeeded 的天数（发现差错不打断，partial / failed 或缺天打断，D10-408），替换 D10-392 的缺省 0 并接入 app.module
+type: impl
+# 2026-10-29 入账（ops 线，D10-408）。BR-WDR-30 开启前置检查（B2-11d）里 recon_required_days 对比的就是这个天数。
+refs: [BR-WDR-30, BR-WDR-23]
+refs_hash:
+  BR-WDR-30: 1b1ddd9942cf
+  BR-WDR-23: 98981fee10c7
+deps: [B2-07c, B2-11d]
+paths:
+  - 'apps/api/src/modules/payout/application/auto-config.ts'
+  - 'apps/api/src/modules/payout/application/recon-passed-days.ts'
+  - 'apps/api/src/modules/payout/index.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/payout/recon-passed-days/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/recon-passed-days/**'
+status: todo
+pr: null

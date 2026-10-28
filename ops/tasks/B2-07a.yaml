@@ -1,0 +1,24 @@
+id: B2-07a
+repo: rebate-platform
+title: 迁移：打款通道对账（R2，BR-WDR-23）的两张表——app.recon_channel（04 原样：date、out_biz_no、channel_order_id、our_status、channel_status、our_amount_fen、channel_amount_fen、result）与 app.payout_recon_runs（每日运行登记：app_id、channel、bill_date、status ∈ succeeded / partial / failed、started_at、finished_at、bill_rows、matched、diffs；唯一 (app_id, channel, bill_date)），授权 worker couli_app 读写、couli_payout 只读
+type: impl
+# 2026-10-29 入账（ops 线，编排裁定 D10-408：BR-WDR-23 拆分照准，payout_recon_runs 形状已回写 04，couli #215；R2 先只做支付宝）。需迁移槽，入账后报编排排槽。
+# recon_channel 唯一键：(app_id, bill_date, out_biz_no) 对接口单、(app_id, bill_date, channel_order_id) 对手动单（各为部分唯一索引）；recon_diffs / withdraw_holds 表与枚举已在主干，不动。
+# payout_recon_runs 是 B2-07d「连续跑通天数」的来源：跑通 = 当天作业 succeeded（发现差错不打断），partial / failed 打断（D10-408）。
+refs: [BR-WDR-23]
+refs_hash:
+  BR-WDR-23: 98981fee10c7
+deps: [B2-06h]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/**'
+test_paths:
+  - 'test/spec/payout/recon-channel-schema/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/recon-channel-schema/**'
+status: todo
+pr: null
