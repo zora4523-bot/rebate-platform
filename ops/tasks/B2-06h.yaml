@@ -22,5 +22,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payout/payer-side-pending/**'
-status: todo
-pr: null
+status: done
+pr: 1740
