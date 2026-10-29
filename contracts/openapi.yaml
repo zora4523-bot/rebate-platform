@@ -49,7 +49,8 @@ info:
     with admin or super also 10001 and 10403 (data.reason=admin_permission_denied). An operation
     guarded by a permission point (enum admin_permission) names it in its description
     (「Permission point `<key>`」); console writes use CAS where state is replaced (20902 with
-    data.resource) and, except the original-route refund, carry no Idempotency-Key (04 §6.6).
+    data.resource) and, except the original-route refunds and the recon-diff close, carry no
+    Idempotency-Key (04 §6.6).
 servers:
   - url: http://127.0.0.1:3100
     description: Local `api` entry (API_HOST / API_PORT defaults).
@@ -21603,6 +21604,127 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/recon-diffs/{recon_diff_id}/close:
+    post:
+      operationId: closeAdminReconDiff
+      tags:
+        - admin-recon
+      summary: Close a reconciliation difference of source R1–R3 without further handling (结案)
+      description: |
+        Closes a 差错单 as 「已关闭（不处理）」 with a required reason (01 F-ADM-08; 04 §3.2
+        recon_diffs, withdraw_holds; BR-FUND-19, BR-FUND-22; design/specs/admin-recon.md §4).
+        Permission point `fund.recon` (04 §11.2; `fund.view` alone is not enough); no step-up
+        (04 §11.2, design/specs/admin-recon.md §5).
+
+        Request: `reason`, required: after trimming surrounding whitespace 1–200 characters, else
+        20001 with `data.fields=[reason]`. Only a difference of source R1, R2 or R3 whose `status`
+        is `open` or `processing` can be closed.
+
+        Order of checks: `fund.recon` (10403 with `data.reason=admin_permission_denied`) → body
+        (20001 with `data.fields=[reason]`) → an unknown `recon_diff_id`, a difference of another
+        app, or one of source R4 (see GET /admin/v1/pay-recon-diffs) is 20001 with
+        `data.fields=[recon_diff_id]` (no 404) → a difference already `closed`, `adjusted` or
+        `written_off` is 20902 with `data.resource=recon_diff`, nothing changed (refresh the
+        detail).
+
+        Effects, in one transaction: `status` becomes `closed`, `closed_at` and `updated_at` the
+        server's current time, `handler_id` the caller, and `resolution` records the trimmed
+        reason under the key `reason`. Every withdrawal hold (withdraw_holds) whose source is this
+        difference and that is not released yet is released in the same transaction (BR-FUND-19:
+        差错单关闭时解除冻结记录); `released_hold_count` is the number of holds this call released
+        (holds released earlier are not counted; 0 when there are none). Closing does not restore
+        an order, post an adjustment, write anything off or recalculate a balance cache; those
+        are other operations. Writes an audit record (action recon_diff_close, with the reason
+        and, before and after, the `status` and `released_hold_count`; no personal data). The
+        response is the difference as GET /admin/v1/recon-diffs/{recon_diff_id} returns it after
+        closing, with `released_hold_count`.
+
+        `Idempotency-Key` is required: same key and body → the first result (the same
+        `released_hold_count`); same key with another body → 20901; same key while still running
+        → 40901. A new key for a difference that is already closed is 20902.
+      x-auth: admin
+      x-idempotent: true
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20901
+        - 20902
+        - 40901
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminReconDiffIdPath'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminReconDiffCloseRequest'
+            example:
+              reason: 联盟结算明细已核对，差额由联盟侧调整
+      responses:
+        '200':
+          description: The difference after closing with the number of holds released, or the first result of the same key.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminReconDiffCloseResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  recon_diff:
+                    recon_diff_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e01
+                    source: R1
+                    type: union_mismatch
+                    period: '2026-09'
+                    ref_type: order
+                    ref_id: 'taobao:5550001'
+                    expected_fen: 1234
+                    actual_fen: 1200
+                    diff_fen: 34
+                    status: closed
+                    created_at: '2026-10-20T10:00:00+08:00'
+                    closed_at: '2026-10-20T16:30:00+08:00'
+                    handler_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                    updated_at: '2026-10-20T16:30:00+08:00'
+                    resolution:
+                      reason: 联盟结算明细已核对，差额由联盟侧调整
+                  released_hold_count: 1
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not closed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                reasonInvalid:
+                  $ref: '#/components/examples/AdminReconDiffCloseReasonInvalid'
+                reconDiffInvalid:
+                  $ref: '#/components/examples/AdminReconDiffIdInvalid'
+                alreadyHandled:
+                  $ref: '#/components/examples/AdminReconDiffConflict'
+                idempotencyConflict:
+                  $ref: '#/components/examples/AdminReconDiffCloseIdempotencyConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/kill-switches:
     get:
       operationId: adminListKillSwitches
@@ -26095,6 +26217,29 @@ components:
         data:
           fields:
             - recon_diff_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminReconDiffCloseReasonInvalid:
+      summary: 20001 reason empty after trimming, or longer than 200 characters
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - reason
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminReconDiffConflict:
+      summary: 20902 the difference is already closed, adjusted or written off; refresh
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: recon_diff
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminReconDiffCloseIdempotencyConflict:
+      summary: 20901 the same Idempotency-Key with another body
+      value:
+        code: 20901
+        msg: 请求内容有变化，请重新提交
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminPayAnomalyIdInvalid:
       summary: 20001 unknown pay_anomaly_id (or an anomaly of another app)
@@ -42554,6 +42699,49 @@ components:
             - 'null'
           description: The handling summary as stored (recon_diffs.resolution), for display only; its keys are not fixed by this contract. Null while unhandled.
           additionalProperties: true
+    AdminReconDiffCloseRequest:
+      type: object
+      description: Body of POST /admin/v1/recon-diffs/{recon_diff_id}/close.
+      additionalProperties: false
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Why the difference is closed without further handling; 1–200 characters after trimming, else 20001 with data.fields=[reason]. Stored as resolution.reason.
+    AdminReconDiffClose:
+      type: object
+      additionalProperties: false
+      required:
+        - recon_diff
+        - released_hold_count
+      properties:
+        recon_diff:
+          $ref: '#/components/schemas/AdminReconDiffDetail'
+        released_hold_count:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Withdrawal holds whose source is this difference that this call released (holds released earlier are not counted).
+    AdminReconDiffCloseResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminReconDiffClose'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
     AdminReconDiffDetailResponse:
       type: object
       additionalProperties: false
