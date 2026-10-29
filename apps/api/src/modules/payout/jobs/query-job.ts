@@ -40,6 +40,11 @@
 // lands as usual. Against the race, an ordinary query's definite failure goes the same way, not
 // W6, when recon_channel (read only for couli_payout) already shows the bill's success for this
 // out_biz_no (a channel_status that payout.query_status_map maps to success).
+// review-money r1 S1: the reconciliation's query that finds the withdrawal no longer PAYING under
+// its execute_seq and not PAID_* (another landing came first; or its W9 here), or that ends in a
+// success handed to landing, or in a needs_manual update that hit nothing, sends the worker's
+// `recon_check` on the same transaction: the worker rereads the withdrawal and registers ③
+// (diff, recon_diff hold, alert) when the bill paid what ours returned.
 // No transaction or lock is held across a channel call or a sleep (the ① read ends before ⑤).
 // payout.enabled = off and payout.queue_paused = true do not stop queries (BR-WDR-17). Logs carry
 // withdrawal_id, out_biz_no, point, code, sub_code only — never the payee's account or name.
@@ -56,7 +61,11 @@ import { handoffLanding, recordedResponse } from '../application/landing-handoff
 import { holdWithdrawal } from '../application/transfer-gates.ts';
 import { markNeedsManual } from '../application/query-manual.ts';
 import { manualDue, nextQueryDueMs, type QuerySchedule } from '../application/query-schedule.ts';
-import { PAYOUT_RECON_SOURCE, sendReconManualDiff } from '../application/recon-schedule.ts';
+import {
+  PAYOUT_RECON_SOURCE,
+  sendReconCheck,
+  sendReconManualDiff,
+} from '../application/recon-schedule.ts';
 import type { WithdrawApplyOptions } from '../application/withdraw-apply.ts';
 import type { PayoutConfigPort } from '../application/withdraw-rules.ts';
 import type {
@@ -106,6 +115,7 @@ export interface QueryJobOptions {
 const MAX_TRIES = 3;
 const RETRY_GAP_MS = 10_000;
 const PAYING = 'PAYING';
+const PAID: ReadonlySet<string> = new Set(['PAID_API', 'PAID_MANUAL']);
 const CHANNELS: ReadonlySet<string> = new Set(['alipay', 'bank_card', 'wechat']);
 const RECON_MANUAL_ALERT: QueryReconManualMessage = 'payout_needs_manual_by_bill';
 
@@ -248,11 +258,38 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
     );
   }
 
+  /** S1: the worker's recon_check of the reconciliation's query, due at once (round 0). */
+  async function reconCheck(
+    trx: Transaction<DB>,
+    payload: QueryJobPayload,
+    delaySeconds: number,
+  ): Promise<void> {
+    await sendReconCheck(
+      queue,
+      trx,
+      {
+        app_id: payload.app_id,
+        withdrawal_id: payload.withdrawal_id,
+        execute_seq: payload.execute_seq,
+        round: 0,
+      },
+      delaySeconds,
+    );
+    logger.info(
+      { withdrawal_id: payload.withdrawal_id, point: payload.point },
+      'payout_query_recon_check_sent',
+    );
+  }
+
   /** ① to ④'s decision on one short business transaction (the row lock ends with it). */
-  async function prepare(payload: QueryJobPayload, now: Date): Promise<Prepared> {
+  async function prepare(payload: ParsedQuery, now: Date): Promise<Prepared> {
     return db.transaction().execute(async (trx): Promise<Prepared> => {
       const row = await readRow(trx, payload.app_id, payload.withdrawal_id);
       if (row === null || row.status !== PAYING || row.execute_seq !== payload.execute_seq) {
+        // S1: the bill paid it, ours left PAYING otherwise (W6, W9, …) → the worker judges ③.
+        if (payload.recon && row !== null && !PAID.has(row.status)) {
+          await reconCheck(trx, payload, 0);
+        }
         logger.info(
           {
             withdrawal_id: payload.withdrawal_id,
@@ -282,6 +319,7 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
           },
           'payout_query_payer_side_held',
         );
+        if (payload.recon) await reconCheck(trx, payload, 0);
         return { kind: 'done' };
       }
       const t = await firstTransferAt(trx, row);
@@ -381,7 +419,7 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
     point: number,
     now: Date,
     recon: boolean,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const fields = { withdrawal_id: row.id, out_biz_no: row.out_biz_no, point, recon };
     const updated = await trx
       .withSchema('app')
@@ -399,7 +437,7 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
       .executeTakeFirst();
     if (updated.numUpdatedRows !== 1n) {
       logger.info(fields, 'payout_query_by_bill_skipped');
-      return;
+      return false;
     }
     logger.warn(fields, RECON_MANUAL_ALERT);
     await sendReconManualDiff(queue, trx, {
@@ -407,6 +445,12 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
       withdrawal_id: row.id,
       execute_seq: row.execute_seq,
     });
+    return true;
+  }
+
+  /** The QueryJobPayload of `row` at `point` (for the worker's recon_check). */
+  function payloadOf(row: QueryRow, point: number): QueryJobPayload {
+    return { withdrawal_id: row.id, execute_seq: row.execute_seq, app_id: row.app_id, point };
   }
 
   /** ⑤: up to MAX_TRIES queries, RETRY_GAP_MS apart; the first success / fail ends the point. */
@@ -457,8 +501,12 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
           const byBill =
             result.kind === 'fail' &&
             (recon || (await billSuccessRecorded(trx, row, judgement.lists.queryStatusMap)));
-          if (byBill) await manualByBill(trx, row, point, finished, recon);
+          // S1: a recon query's success handed to landing (an earlier W6 may still beat it), or a
+          // needs_manual update that hit nothing → the worker's recon_check judges ③ after landing.
+          let hit = false;
+          if (byBill) hit = await manualByBill(trx, row, point, finished, recon);
           else await handoffLanding({ trx, queue, row, attemptId, logger });
+          if (recon && !hit) await reconCheck(trx, payloadOf(row, point), 0);
         });
       } else {
         await recordTry(attemptsDb, row, point, tryNo, result, errorName, latencyMs, finished);
@@ -550,9 +598,10 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
     if (result === null || result.kind === 'unknown') {
       if (payload.recon) {
         // D10-415 ②: the reconciliation's query still unknown → needs_manual, no next point.
-        await attemptsDb
-          .transaction()
-          .execute((trx) => manualByBill(trx, row, payload.point, landedAt, true));
+        await attemptsDb.transaction().execute(async (trx) => {
+          const hit = await manualByBill(trx, row, payload.point, landedAt, true);
+          if (!hit) await reconCheck(trx, payload, 0);
+        });
         return;
       }
       await sendNextPoint(row, schedule, prepared.firstTransferAt, payload.point, landedAt);

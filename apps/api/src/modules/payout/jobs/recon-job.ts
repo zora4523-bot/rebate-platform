@@ -19,8 +19,18 @@
 // manual_diff (D10-416): the R2 diff of that withdrawal (ours 0, the bill line's amount, period
 //   its bill day, deduplicated per withdrawal) and an alert when new; no hold (then BR-WDR-15,
 //   W10). The bill line is read back from the withdrawal's success row in recon_channel.
+// recon_check (review-money r1 S1): sent by the payout process when ①'s query found the withdrawal
+//   no longer PAYING (and not PAID_*), handed a success to landing, or set needs_manual on nothing.
+//   The withdrawal reread: FAILED / REJECTED / APPROVED / PENDING_REVIEW, or PAYING under another
+//   execute_seq → ③ against its success row in recon_channel (diff with that row, recon_diff hold,
+//   alert; the dedupe and business keys of the run's ③ of that bill day, so once per withdrawal);
+//   PAID_* or needs_manual → nothing; still PAYING → checked again later (bounded rounds).
 //   - ② line success, ours PAYING with needs_manual = true → only the row (with the bill line) and
 //     a pending-disposal hint (info line); W10 ends it.
+//   - A PAID_MANUAL withdrawal is matched only by channel_order_id. A success line reaching it by
+//     out_biz_no (its interface transfer), or a second success line of a withdrawal already met
+//     on the bill, is a duplicate payout: ③ (diff referencing the line, hold, alert); a non-success
+//     such line is only logged.
 //   - ③ line success and ours APPROVED / FAILED / REJECTED (or PENDING_REVIEW) or none; ours PAID_*
 //     and no success line (near the day boundary: neither paid_at's day's bill nor the next day's);
 //     amounts differ → recon_diffs (source R2, type channel_mismatch, dedupe_key; through ledger's
@@ -54,15 +64,20 @@ import {
 import { readPayoutChannelConfig, type JudgementLists } from '../application/judgement.ts';
 import { nextQueryPoint } from '../application/query-schedule.ts';
 import {
+  PAYOUT_RECON_CHECK_JOB,
   PAYOUT_RECON_JOB,
   PAYOUT_RECON_MANUAL_JOB,
   PAYOUT_RECON_QUEUE,
   PAYOUT_RECON_SOURCE,
+  RECON_CHECK_DELAY_SECONDS,
+  RECON_CHECK_MAX_ROUNDS,
   reconDayAfter,
   reconDayBefore,
   reconDayEndMs,
   reconDayStartMs,
   scheduleReconDay,
+  sendReconCheck,
+  type PayoutReconCheckPayload,
   type PayoutReconLogger,
   type PayoutReconManualPayload,
 } from '../application/recon-schedule.ts';
@@ -110,6 +125,8 @@ export interface PayoutReconJobOptions {
 export { PAYOUT_RECON_JOB, PAYOUT_RECON_QUEUE };
 /** ①'s follow-up on the same queue: the payout process set needs_manual against the bill. */
 export { PAYOUT_RECON_MANUAL_JOB };
+/** ①'s follow-up when its query found (or left) the withdrawal returned against the bill (S1). */
+export { PAYOUT_RECON_CHECK_JOB };
 /** The alert of a new R2 diff (fixed message; the alert rule is another task's). */
 export const PAYOUT_RECON_DIFF_ALERT = 'payout_recon_diff';
 /** ②'s pending-disposal hint (W10 ends the withdrawal). */
@@ -132,6 +149,7 @@ type DiffCase =
   | 'paid_line_not_success'
   | 'amount_mismatch'
   | 'duplicate_payout'
+  | 'duplicate_line'
   | 'payer_side_returned'
   | 'unknown_line'
   | 'query_not_success';
@@ -181,6 +199,8 @@ interface DiffInput {
   readonly hold: boolean;
   /** ①: the recon_channel row standing in for the bill line (not kept as a ChannelBillLine). */
   readonly billRow?: BillRowJson;
+  /** The diff references the bill line (a duplicate line of a withdrawal), not the withdrawal. */
+  readonly refByLine?: boolean;
 }
 
 interface BillRowJson {
@@ -195,6 +215,13 @@ interface RunCounts {
   billRows: number;
   matched: number;
   diffs: number;
+}
+
+/** ③'s case of a withdrawal the bill paid and ours did not (W9-returned: W11 by the bill line). */
+function returnedKind(w: WithdrawalRow): DiffCase {
+  return w.status === 'APPROVED' && w.hold_reason === PAYER_SIDE_HOLD
+    ? 'payer_side_returned'
+    : 'duplicate_payout';
 }
 
 function isText(value: unknown): value is string {
@@ -252,6 +279,15 @@ function parseManual(job: ReceivedJob): PayoutReconManualPayload | null {
     return null;
   }
   return { app_id: appId, withdrawal_id: withdrawalId, execute_seq: executeSeq };
+}
+
+function parseCheck(job: ReceivedJob): PayoutReconCheckPayload | null {
+  const manual = parseManual(job);
+  const round = (job.payload as Record<string, unknown>)['round'];
+  if (manual === null || typeof round !== 'number' || !Number.isInteger(round) || round < 0) {
+    return null;
+  }
+  return { ...manual, round };
 }
 
 export function createPayoutReconJob(options: PayoutReconJobOptions): JobHandler {
@@ -334,6 +370,9 @@ export function createPayoutReconJob(options: PayoutReconJobOptions): JobHandler
     if (input.withdrawal === null) {
       return `R2:alipay:${billDate}:line:${input.line?.channelOrderId ?? 'none'}`;
     }
+    if (input.kind === 'duplicate_line') {
+      return `R2:alipay:${billDate}:wd:${input.withdrawal.id}:line:${input.line?.channelOrderId ?? 'none'}`;
+    }
     if (input.kind === 'paid_not_in_bill') return `R2:alipay:missing:wd:${input.withdrawal.id}`;
     // D10-416: one diff per withdrawal whichever query set needs_manual.
     if (input.kind === 'query_not_success') return `R2:alipay:paying:wd:${input.withdrawal.id}`;
@@ -365,8 +404,11 @@ export function createPayoutReconJob(options: PayoutReconJobOptions): JobHandler
     input: DiffInput,
     holdsToAdd: { userId: string; diffId: string }[],
   ): Promise<ReconDiffRegistration> {
-    const refType = input.withdrawal === null ? 'channel_order_id' : 'withdrawal';
-    const refId = input.withdrawal?.id ?? input.line?.channelOrderId ?? 'none';
+    const byLine = input.withdrawal === null || input.refByLine === true;
+    const refType = byLine ? 'channel_order_id' : 'withdrawal';
+    const refId = byLine
+      ? (input.line?.channelOrderId ?? 'none')
+      : (input.withdrawal?.id ?? input.line?.channelOrderId ?? 'none');
     const registration = await registerReconDiffOnce(
       trx,
       {
@@ -646,13 +688,74 @@ export function createPayoutReconJob(options: PayoutReconJobOptions): JobHandler
         (a, b) => Number(isSuccess(statusMap, b.status)) - Number(isSuccess(statusMap, a.status)),
       );
       const seen = new Set<string>();
+      /** S2: a success line of a withdrawal that is not its own payment → ③ duplicate payout. */
+      const duplicateLine = async (w: WithdrawalRow, line: ChannelBillLine) => {
+        await diff(
+          {
+            outBizNo: null,
+            channelOrderId: line.channelOrderId,
+            ourStatus: w.status,
+            ourAmountFen: w.net_fen,
+            line,
+            result: 'diff',
+          },
+          {
+            withdrawal: w,
+            line,
+            kind: 'duplicate_line',
+            expectedFen: 0n,
+            actualFen: line.amountFen,
+            hold: true,
+            refByLine: true,
+          },
+        );
+      };
+      const seenOrders = new Set<string>();
       for (const line of ordered) {
-        const w =
-          (line.outBizNo === null ? undefined : byOutBizNo.get(line.outBizNo)) ??
-          byOrder.get(line.channelOrderId) ??
-          null;
+        // The same channel order listed again is one payment (a repeated row), never a second one.
+        if (seenOrders.has(line.channelOrderId)) {
+          logger.warn(
+            { app_id: appId, bill_date: billDate, channel_order_id: line.channelOrderId },
+            'payout_recon_line_repeated',
+          );
+          continue;
+        }
+        seenOrders.add(line.channelOrderId);
+        const byOut = line.outBizNo === null ? undefined : byOutBizNo.get(line.outBizNo);
+        const byOwnOrder = byOrder.get(line.channelOrderId);
+        // A PAID_MANUAL withdrawal is matched by channel_order_id only (BR-WDR-23).
+        const strayManual =
+          byOut !== undefined &&
+          byOut.status === 'PAID_MANUAL' &&
+          byOut.channel_order_id !== line.channelOrderId
+            ? byOut
+            : null;
+        const w = (strayManual === null ? byOut : undefined) ?? byOwnOrder ?? null;
+        const success = isSuccess(statusMap, line.status);
+        if (strayManual !== null && (w === null || w.id === strayManual.id)) {
+          // Its interface transfer's line: a success is a second payment, never its match.
+          if (success) await duplicateLine(strayManual, line);
+          else {
+            logger.info(
+              {
+                app_id: appId,
+                bill_date: billDate,
+                withdrawal_id: strayManual.id,
+                channel_order_id: line.channelOrderId,
+                channel_status: line.status,
+              },
+              'payout_recon_line_not_success',
+            );
+          }
+          continue;
+        }
         const key = w === null ? `line:${line.channelOrderId}` : `wd:${w.id}`;
         if (seen.has(key)) {
+          if (w !== null && success) {
+            // A second success line of a withdrawal already met on this bill: paid twice.
+            await duplicateLine(w, line);
+            continue;
+          }
           logger.warn(
             {
               app_id: appId,
@@ -675,7 +778,7 @@ export function createPayoutReconJob(options: PayoutReconJobOptions): JobHandler
           result,
         });
 
-        if (!isSuccess(statusMap, line.status)) {
+        if (!success) {
           if (w !== null && PAID.has(w.status)) {
             // Ours paid, the bill shows no success for it (③: 内部 PAID_*、支付宝没有成功记录).
             await diff(rowOf('diff'), {
@@ -769,10 +872,7 @@ export function createPayoutReconJob(options: PayoutReconJobOptions): JobHandler
         await diff(rowOf('diff'), {
           withdrawal: w,
           line,
-          kind:
-            w.status === 'APPROVED' && w.hold_reason === PAYER_SIDE_HOLD
-              ? 'payer_side_returned'
-              : 'duplicate_payout',
+          kind: returnedKind(w),
           expectedFen: 0n,
           actualFen: line.amountFen,
           hold: true,
@@ -877,6 +977,47 @@ export function createPayoutReconJob(options: PayoutReconJobOptions): JobHandler
     );
   }
 
+  /** The withdrawal's latest success row in recon_channel (the bill line ① judged), if any. */
+  async function billSuccessRow(
+    trx: Transaction<DB>,
+    appId: string,
+    w: WithdrawalRow,
+  ): Promise<{ billDate: string; amountFen: bigint; json: BillRowJson } | null> {
+    const { queryStatusMap } = await lists(trx, appId);
+    const rows = await trx
+      .withSchema('app')
+      .selectFrom('recon_channel')
+      .select([
+        'id',
+        sql<string>`bill_date::text`.as('bill_date'),
+        'channel_order_id',
+        'channel_status',
+        'channel_amount_fen',
+      ])
+      .where('app_id', '=', appId)
+      .where('out_biz_no', '=', w.out_biz_no)
+      .where('channel_status', 'is not', null)
+      .where('channel_amount_fen', 'is not', null)
+      .orderBy('bill_date', 'desc')
+      .execute();
+    const row = rows.find(
+      (r) => r.channel_status !== null && isSuccess(queryStatusMap, r.channel_status),
+    );
+    if (row === undefined || row.channel_status === null || row.channel_amount_fen === null) {
+      return null;
+    }
+    return {
+      billDate: row.bill_date,
+      amountFen: row.channel_amount_fen,
+      json: {
+        recon_channel_id: row.id,
+        channel_order_id: row.channel_order_id,
+        channel_status: row.channel_status,
+        channel_amount_fen: row.channel_amount_fen.toString(),
+      },
+    };
+  }
+
   /**
    * ①'s follow-up (D10-416): the payout process set needs_manual against the bill's success. The
    * withdrawal's success row in recon_channel (latest bill day) gives the period and amount.
@@ -895,54 +1036,109 @@ export function createPayoutReconJob(options: PayoutReconJobOptions): JobHandler
         logger.warn(fields, 'payout_recon_manual_missing');
         return;
       }
-      const { queryStatusMap } = await lists(trx, payload.app_id);
-      const rows = await trx
-        .withSchema('app')
-        .selectFrom('recon_channel')
-        .select([
-          'id',
-          sql<string>`bill_date::text`.as('bill_date'),
-          'channel_order_id',
-          'channel_status',
-          'channel_amount_fen',
-        ])
-        .where('app_id', '=', payload.app_id)
-        .where('out_biz_no', '=', w.out_biz_no)
-        .where('channel_status', 'is not', null)
-        .where('channel_amount_fen', 'is not', null)
-        .orderBy('bill_date', 'desc')
-        .execute();
-      const row = rows.find(
-        (r) => r.channel_status !== null && isSuccess(queryStatusMap, r.channel_status),
-      );
-      if (row === undefined || row.channel_status === null || row.channel_amount_fen === null) {
+      const row = await billSuccessRow(trx, payload.app_id, w);
+      if (row === null) {
         logger.warn({ ...fields, out_biz_no: w.out_biz_no }, 'payout_recon_manual_no_bill');
         return;
       }
       await registerDiff(
         trx,
         payload.app_id,
-        row.bill_date,
+        row.billDate,
         {
           withdrawal: w,
           line: null,
           kind: 'query_not_success',
           expectedFen: 0n,
-          actualFen: row.channel_amount_fen,
+          actualFen: row.amountFen,
           hold: false,
-          billRow: {
-            recon_channel_id: row.id,
-            channel_order_id: row.channel_order_id,
-            channel_status: row.channel_status,
-            channel_amount_fen: row.channel_amount_fen.toString(),
-          },
+          billRow: row.json,
         },
         [],
       );
     });
   }
 
+  /**
+   * ①'s other follow-up (review-money r1 S1): the payout process's query found or left the
+   * withdrawal outside PAYING. Returned against the bill's success → ③ with its recon_channel row.
+   */
+  async function reconCheck(payload: PayoutReconCheckPayload): Promise<void> {
+    const fields = {
+      app_id: payload.app_id,
+      withdrawal_id: payload.withdrawal_id,
+      round: payload.round,
+    };
+    await db.transaction().execute(async (trx) => {
+      const w = await trx
+        .withSchema('app')
+        .selectFrom('withdrawals')
+        .select(WITHDRAWAL_COLUMNS)
+        .where('app_id', '=', payload.app_id)
+        .where('id', '=', payload.withdrawal_id)
+        .executeTakeFirst();
+      if (w === undefined) {
+        logger.warn(fields, 'payout_recon_check_missing');
+        return;
+      }
+      if (PAID.has(w.status)) {
+        logger.info({ ...fields, status: w.status }, 'payout_recon_check_paid');
+        return;
+      }
+      if (w.status === 'PAYING' && w.execute_seq === payload.execute_seq) {
+        if (w.needs_manual) {
+          // ② / D10-416 (the payout process's manual_diff) and W10 take it from here.
+          logger.info(fields, 'payout_recon_check_manual');
+          return;
+        }
+        const round = payload.round + 1;
+        if (round >= RECON_CHECK_MAX_ROUNDS) {
+          logger.warn({ ...fields, out_biz_no: w.out_biz_no }, 'payout_recon_check_exhausted');
+          return;
+        }
+        // Its landing is still to come: checked again later.
+        await sendReconCheck(queue, trx, { ...payload, round }, RECON_CHECK_DELAY_SECONDS);
+        return;
+      }
+      const row = await billSuccessRow(trx, payload.app_id, w);
+      if (row === null) {
+        logger.warn({ ...fields, out_biz_no: w.out_biz_no }, 'payout_recon_check_no_bill');
+        return;
+      }
+      // ③ 支付宝成功而内部已退回: the run's diff of that bill day (same keys: once per withdrawal).
+      const holdsToAdd: { userId: string; diffId: string }[] = [];
+      await registerDiff(
+        trx,
+        payload.app_id,
+        row.billDate,
+        {
+          withdrawal: w,
+          line: null,
+          kind: returnedKind(w),
+          expectedFen: 0n,
+          actualFen: row.amountFen,
+          hold: true,
+          billRow: row.json,
+        },
+        holdsToAdd,
+      );
+      await addHolds(trx, payload.app_id, holdsToAdd);
+    });
+  }
+
   return async function payoutReconJob(job: ReceivedJob): Promise<void> {
+    if (job.name === PAYOUT_RECON_CHECK_JOB) {
+      const payload = parseCheck(job);
+      if (payload === null) {
+        logger.warn(
+          { job_id: job.id, queue: job.queue, name: job.name },
+          'payout_recon_bad_payload',
+        );
+        return;
+      }
+      await reconCheck(payload);
+      return;
+    }
     if (job.name === PAYOUT_RECON_MANUAL_JOB) {
       const payload = parseManual(job);
       if (payload === null) {

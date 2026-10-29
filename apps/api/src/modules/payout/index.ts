@@ -235,6 +235,7 @@ export { handoffLanding, recordedResponse } from './application/landing-handoff.
 // B2-07c (BR-WDR-23, D10-408): the worker's daily R2 reconciliation (payout-recon) and its chain.
 export {
   createPayoutReconJob,
+  PAYOUT_RECON_CHECK_JOB,
   PAYOUT_RECON_DIFF_ALERT,
   PAYOUT_RECON_JOB,
   PAYOUT_RECON_MANUAL_JOB,

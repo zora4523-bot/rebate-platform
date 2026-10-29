@@ -54,6 +54,24 @@ export interface PayoutReconManualPayload {
 }
 
 /**
+ * ①'s other follow-up (review-money r1 S1): the reconciliation's immediate query found the
+ * withdrawal no longer PAYING (another landing came first), or got a success / a fail it could not
+ * act on. The worker rereads the withdrawal: FAILED / REJECTED / APPROVED (or PAYING under another
+ * execute_seq) against the bill's success → ③; PAID_* or needs_manual → nothing; still PAYING →
+ * checked again later (`round` + 1, at most RECON_CHECK_MAX_ROUNDS).
+ */
+export const PAYOUT_RECON_CHECK_JOB = 'recon_check';
+
+export interface PayoutReconCheckPayload extends PayoutReconManualPayload {
+  readonly round: number;
+}
+
+/** A withdrawal still PAYING is checked again after this many seconds. */
+export const RECON_CHECK_DELAY_SECONDS = 600;
+/** At most this many rounds (a day): by then T + manual_after has set needs_manual. */
+export const RECON_CHECK_MAX_ROUNDS = 144;
+
+/**
  * The daily run of bill day D: D+1 00:00 +08:00 plus this offset (10:00 +08:00, as the T+1 run of
  * payment's bill.recon; the Alipay bill of the previous day is ready by then — 待实测).
  */
@@ -142,6 +160,29 @@ export function sendReconManualDiff(
       trx,
       singletonKey: `manual_diff:${payload.app_id}:${payload.withdrawal_id}`,
       delaySeconds: 0,
+    },
+  );
+}
+
+/**
+ * The worker's `recon_check` of a withdrawal on the caller's transaction (the payout process's
+ * couli_payout one, or the worker's own for the next round). One queued job per withdrawal and
+ * round; the diff itself is deduplicated by its dedupe_key.
+ */
+export function sendReconCheck(
+  queue: JobQueue,
+  trx: Transaction<DB>,
+  payload: PayoutReconCheckPayload,
+  delaySeconds: number,
+): Promise<string | null> {
+  return queue.send(
+    PAYOUT_RECON_QUEUE,
+    PAYOUT_RECON_CHECK_JOB,
+    { ...payload },
+    {
+      trx,
+      singletonKey: `recon_check:${payload.app_id}:${payload.withdrawal_id}:${payload.round}`,
+      delaySeconds,
     },
   );
 }
