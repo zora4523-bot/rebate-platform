@@ -1,0 +1,124 @@
+{
+  "risk_note": "RV2 migration (db/migrations/0100_payout-recon.sql, db/schema.sql and packages/db/src/db.gen.ts generated): the two R2 channel-reconciliation tables of BR-WDR-23 (D10-408; 04 rows at SPEC_REF 37808a50 after #1749). app.recon_channel holds the detail rows: result ∈ matched / paying_query / paying_manual / diff, our_status null or one of the seven withdrawal statuses, non-negative amounts in bigint fen. It has named partial unique indexes (app_id, bill_date, out_biz_no) WHERE out_biz_no IS NOT NULL and (app_id, bill_date, channel_order_id) WHERE channel_order_id IS NOT NULL. app.payout_recon_runs is the daily run record: status ∈ succeeded / partial / failed, channel alipay only, non-negative counts, finished_at ≥ started_at, unique (app_id, channel, bill_date); it is the source of the consecutive-success days (B2-07d). Grants are in the migration: couli_app gets SELECT / INSERT plus a column-level UPDATE only on the rerun columns, including out_biz_no and channel_order_id so a same-day rerun can fill the key the first run lacked; there is no DELETE / TRUNCATE. couli_payout and couli_readonly read only; couli_maint has no access. All constraints and indexes are named, and lint-migrations passes. Both tables are guarded as funds tables by CT-06zxj (#1752: recon_channel in FUNDS_TABLE_NAMES, payout_recon_runs through the payout prefix, both in the gate test's expected set). The schema snapshot was regenerated on the test machine (remote-snapshot), and db:check passed after the rebase. Rule tests by a fresh independent Claude (approvals #36), red PASS on the rebased spec commit (24 red, 0 problems). Implementation by Opus 5.5 subagents in two runs (r2: the rerun column grants). Full verify on the test machine: full-1 (before the rebase) exit 1 only on tools/ci/lint-migrations.test.ts, fixed on main by CT-06zxj; full-2 (after the rebase) lost its ssh connection mid-run (Connection closed by the remote host, exit 2, no result). Landed with SKIP_VERIFY as the B2-06g precedent (orchestrator 20:0x); CI verify-int is the check (D10-319).",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "review_type": "money",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 2,
+      "note": "Codex out of quota until 2026-11-02 (approvals #36). r1 pass with S2x3: payout_recon_runs missing from the gate test's expected funds set (CI red); recon_channel not guarded as a funds table; no column UPDATE for rerun keys. The first two were fixed on main by CT-06zxj (#1752, D10-411 / D10-413) and the third in implementation r2. r2 (incremental) pass, all three closed, no new finding."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "r1 pass, no findings (out-of-scope items logged)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "B2-07a",
+  "spec_commit": "fc0958261ecab4c201f43f660a46b167cbfcaf65",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "red_tests": [
+    "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] recon_channel couli_app 可读、可插入、可改重跑字段，不可删除或清表",
+    "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] recon_channel couli_payout 只读，couli_readonly 只读，couli_maint 无权限（表级与逐列）",
+    "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] recon_channel couli_app 写入后 couli_payout 读到同一行，其余角色的写入与所有删除被拒绝",
+    "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] payout_recon_runs couli_app 可读、可插入、可改重跑字段，不可删除或清表",
+    "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] payout_recon_runs couli_payout 只读，couli_readonly 只读，couli_maint 无权限（表级与逐列）",
+    "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] payout_recon_runs couli_app 写入后 couli_payout 读到同一行，其余角色的写入与所有删除被拒绝",
+    "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] couli_app 重跑同一账单日时按 (app_id, channel, bill_date) 覆盖运行登记：failed → succeeded",
+    "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] couli_app 重跑同一账单日时改写对账明细的状态、金额与结果",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 列名、类型、可空性和默认值逐一匹配，金额列为 bigint 分",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 主键为 id，必填列拒绝 NULL，取值原样写入",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] payout_recon_runs 列名、类型、可空性和默认值逐一匹配，金额列为 bigint 分",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] payout_recon_runs 主键为 id，必填列拒绝 NULL，取值原样写入",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 金额整数分超出 2^53 原样往返，不丢精度",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel.result 只接受 ①②③ 与一致四种处置结果",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel.our_status 为空（没有对应单）或取提现单状态之一",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 两侧可各自缺失：支付宝成功而查无此单、内部已成功而支付宝无记录",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 每行至少有 out_biz_no 或 channel_order_id 之一，单号不为空串，金额不为负",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 接口单按 (app_id, bill_date, out_biz_no) 唯一：次日账单与别的 App 不冲突",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 手动单按 (app_id, bill_date, channel_order_id) 唯一：次日账单与别的 App 不冲突",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 两个唯一键都是有效的部分唯一索引",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] payout_recon_runs.status 只接受 succeeded / partial / failed",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] payout_recon_runs.channel 现在只接受 alipay（R2 先只做支付宝）",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] payout_recon_runs 计数不为负，结束时刻不早于开始时刻",
+    "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] payout_recon_runs 按 (app_id, channel, bill_date) 唯一：每个 App 每天一行"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "fc0958261ecab4c201f43f660a46b167cbfcaf65",
+      "tree": "d7f0ca21a92eeabee55dde49e1568bbc30504b06",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-29T02:23:44Z",
+      "finished_at": "2026-10-29T02:23:56Z",
+      "red_tests": [
+        "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] recon_channel couli_app 可读、可插入、可改重跑字段，不可删除或清表",
+        "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] recon_channel couli_payout 只读，couli_readonly 只读，couli_maint 无权限（表级与逐列）",
+        "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] recon_channel couli_app 写入后 couli_payout 读到同一行，其余角色的写入与所有删除被拒绝",
+        "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] payout_recon_runs couli_app 可读、可插入、可改重跑字段，不可删除或清表",
+        "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] payout_recon_runs couli_payout 只读，couli_readonly 只读，couli_maint 无权限（表级与逐列）",
+        "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] payout_recon_runs couli_app 写入后 couli_payout 读到同一行，其余角色的写入与所有删除被拒绝",
+        "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] couli_app 重跑同一账单日时按 (app_id, channel, bill_date) 覆盖运行登记：failed → succeeded",
+        "test/spec/payout/recon-channel-schema/access.int.test.ts > [BR-WDR-23] couli_app 重跑同一账单日时改写对账明细的状态、金额与结果",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 列名、类型、可空性和默认值逐一匹配，金额列为 bigint 分",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 主键为 id，必填列拒绝 NULL，取值原样写入",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] payout_recon_runs 列名、类型、可空性和默认值逐一匹配，金额列为 bigint 分",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] payout_recon_runs 主键为 id，必填列拒绝 NULL，取值原样写入",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 金额整数分超出 2^53 原样往返，不丢精度",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel.result 只接受 ①②③ 与一致四种处置结果",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel.our_status 为空（没有对应单）或取提现单状态之一",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 两侧可各自缺失：支付宝成功而查无此单、内部已成功而支付宝无记录",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 每行至少有 out_biz_no 或 channel_order_id 之一，单号不为空串，金额不为负",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 接口单按 (app_id, bill_date, out_biz_no) 唯一：次日账单与别的 App 不冲突",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 手动单按 (app_id, bill_date, channel_order_id) 唯一：次日账单与别的 App 不冲突",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] recon_channel 两个唯一键都是有效的部分唯一索引",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] payout_recon_runs.status 只接受 succeeded / partial / failed",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] payout_recon_runs.channel 现在只接受 alipay（R2 先只做支付宝）",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] payout_recon_runs 计数不为负，结束时刻不早于开始时刻",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts > [BR-WDR-23] payout_recon_runs 按 (app_id, channel, bill_date) 唯一：每个 App 每天一行"
+      ],
+      "expected": [
+        "test/spec/payout/recon-channel-schema/access.int.test.ts",
+        "test/spec/payout/recon-channel-schema/shape.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "3d0051f54c9503e2812f76fb781d6ed29565e45410fc7cfa5aee7d5579490c8c"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "ce25b53277103b4c55c0554d6fa902c4f5fe3cfe",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "1323959946c43de7b28a8b2dd69d97634aa81e07",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}
