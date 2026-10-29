@@ -107,7 +107,7 @@ function channel(
   };
 }
 
-it('[AC-F1-02h#33] 非空频道按 PlatformCode 顺序去重，不限制 sort_basis，忽略未知和不可选平台', () => {
+it('[AC-F1-02h#33] 非空频道按 PlatformCode 顺序去重，只认 sales / popularity，忽略未知和不可选平台', () => {
   const spec: MaterialChannelsSpec = {
     version: 'synthetic',
     channels: [
@@ -122,7 +122,7 @@ it('[AC-F1-02h#33] 非空频道按 PlatformCode 顺序去重，不限制 sort_ba
       channel('Taobao', true, 'sales'),
     ],
   };
-  expect(rankPlatforms(spec)).toEqual(['taobao', 'jd', 'pdd', 'suning']);
+  expect(rankPlatforms(spec)).toEqual(['jd', 'pdd']);
 });
 
 it('[AC-F1-02h#34] 全部 PlatformCode 都支持，输入顺序不影响枚举序', () => {
