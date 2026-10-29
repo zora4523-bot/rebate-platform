@@ -75,6 +75,18 @@ export type {
   WalletSummaryDependencies,
   WalletSummaryQuery,
 } from './application/wallet-summary.ts';
+// B2-13a: GET /v1/earnings/summary (BR-FUND-25; read only, order facts through settlement's port).
+export { EarningsSummaryModule } from './earnings-summary.module.ts';
+export type { EarningsSummaryModuleOptions } from './earnings-summary.module.ts';
+export type {
+  EarningsDashboardSwitches,
+  EarningsOrderFacts,
+  EarningsOrdersRequest,
+  EarningsSummaryDependencies,
+  EarningsSummaryQuery,
+  EarningsSummaryRequest,
+  EarningsSummaryResult,
+} from './application/earnings-summary.ts';
 // B1-27f: the balance ledger section of a personal information copy (read only; app.module).
 export { readPersonalDataCopyLedgerEntries } from './application/personal-data-copy-read.ts';
 export type {
