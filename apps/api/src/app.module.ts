@@ -54,6 +54,7 @@ import {
   deleteFavoritesForUser,
   createItemRefService,
   processItemRefCipher,
+  searchConfigSaveCheck,
   type Catalog,
   type CatalogCardEntry,
   type CatalogConfigReader,
@@ -78,6 +79,7 @@ import {
   ContentAdminModule,
   ContentPublicModule,
   ContentWorkerModule,
+  combineConfigItemSaveChecks,
   configRegistry,
   createContentReader,
   switchSpecOf,
@@ -489,7 +491,12 @@ function streamIdentityModule(): DynamicModule {
  * They go to ContentAdminModule.forAdmin as options (B2-11e).
  */
 function contentAdminChecks(): Pick<ContentAdminOptions, 'configItemChecks' | 'killSwitchChecks'> {
-  const save = { keys: AUTO_PAYOUT_SAVE_KEYS, refusals: autoPayoutWriteRefusals };
+  // B1-05m: one save hook, payout's check and catalog's search.hot_words / search.keyword_routes
+  // check (D10-419 (a) 2), each run only for writes of its own keys.
+  const save = combineConfigItemSaveChecks(
+    { keys: AUTO_PAYOUT_SAVE_KEYS, refusals: autoPayoutWriteRefusals },
+    searchConfigSaveCheck(),
+  );
   return {
     configItemChecks: { save },
     killSwitchChecks: (db, clock) => {

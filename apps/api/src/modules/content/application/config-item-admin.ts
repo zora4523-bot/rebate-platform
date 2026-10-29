@@ -160,12 +160,38 @@ function sameValue(left: Json, right: Json): boolean {
  * write is checked on its own item only, as before.
  */
 export interface ConfigItemAdminChecks {
-  readonly save?: {
-    readonly keys: readonly string[];
-    refusals(
-      stored: ReadonlyMap<string, unknown>,
-      written: ReadonlyMap<string, unknown>,
-    ): readonly string[];
+  readonly save?: ConfigItemSaveCheck;
+}
+
+export interface ConfigItemSaveCheck {
+  readonly keys: readonly string[];
+  refusals(
+    stored: ReadonlyMap<string, unknown>,
+    written: ReadonlyMap<string, unknown>,
+  ): readonly string[];
+}
+
+/**
+ * B1-05m: one save check made of several (payout's BR-WDR-30 and catalog's search keys): it reads
+ * every check's keys, and a check runs only when the write sets one of its own keys, so each keeps
+ * the behaviour it has alone; the refused keys are joined in check order without repeats.
+ */
+export function combineConfigItemSaveChecks(
+  ...checks: readonly ConfigItemSaveCheck[]
+): ConfigItemSaveCheck {
+  return {
+    keys: [...new Set(checks.flatMap((check) => check.keys))],
+    refusals(stored, written) {
+      const refused: string[] = [];
+      for (const check of checks) {
+        if (!check.keys.some((key) => written.has(key))) continue;
+        const own = new Map([...stored].filter(([key]) => check.keys.includes(key)));
+        for (const key of check.refusals(own, written)) {
+          if (!refused.includes(key)) refused.push(key);
+        }
+      }
+      return refused;
+    },
   };
 }
 

@@ -34,8 +34,13 @@ export type {
   ContentAuditWriterFactory,
   ContentKillSwitchChecksFactory,
 } from './content-admin.module.ts';
-export { ConfigItemAdmin } from './application/config-item-admin.ts';
-export type { ConfigItemAdminChecks } from './application/config-item-admin.ts';
+export { ConfigItemAdmin, combineConfigItemSaveChecks } from './application/config-item-admin.ts';
+export type {
+  ConfigItemAdminChecks,
+  ConfigItemSaveCheck,
+} from './application/config-item-admin.ts';
+// B1-05m: the ExternalPage url host checks (BR-ATTR-29 ①), for catalog's keyword shortcut saves.
+export { isUnionHost, normalisedHttpsHost } from './domain/pages/validate/external-url.ts';
 export { KillSwitchAdmin } from './application/kill-switch-admin.ts';
 export type { KillSwitchAdminChecks } from './application/kill-switch-admin.ts';
 export { configRegistry } from './domain/config-registry.ts';
