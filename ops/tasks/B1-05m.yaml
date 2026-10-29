@@ -1,0 +1,32 @@
+id: B1-05m
+repo: rebate-platform
+title: catalog：搜索热词与关键词直达 GET /v1/search/hot-words（契约 CT-22c，planned → 实现；匿名、基础模式可读、无需设备号）——按配置顺序返回 search.hot_words 与 search.keyword_routes，未配置为空列表；配置保存校验（经现有配置项后台）：热词项只有非空 text，直达项 keyword 非空且 target 为 contracts/routes.json 里的路由（参数照 routes.json），外链只经 ExternalPage 且落在联盟域名时拒绝（BR-ATTR-29），任一项非法整条拒绝保存
+type: impl
+# 2026-10-29 W1 入账（编排裁定 D10-419 (a)，F-PROD-03）。依据：01 F-PROD-03、04 §6.3 hot-words 行（形状【待规划回写】由编排回写）、契约 getSearchHotWords 描述（关键词整词、忽略大小写由客户端比较；target 保存时校验）。
+# 保存校验挂在 content 的配置项保存路径（config-item-admin.ts），只为这两个键加形状校验，不改其他键的口径；路由表与参数校验复用现有 RouteTarget 校验（notification 已有先例），不另抄一份。不做搜索统计（F-PROD-10 为 P1）。
+# refs 实为 BR-ATTR-29（SPEC_REF 37808a50 时 refs_hash 14ed5b2fb63a）；任务书超 24 KB，照 #1748 先例 refs 改空，任务书 §2b 逐字摘，评审仍按它对照。
+refs: []
+refs_hash: {}
+deps: [B1-05l, B1-28h, CT-22c]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+  - 'apps/api/src/modules/content/application/config-item-admin.ts'
+  - 'apps/api/src/modules/content/application/config-item-admin.test.ts'
+  - 'apps/api/src/modules/content/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+test_paths:
+  - 'test/spec/catalog/hot-words/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/hot-words/**'
+status: todo
+pr: null
