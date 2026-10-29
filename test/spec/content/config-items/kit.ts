@@ -268,6 +268,12 @@ export const AUTO_ENABLE_CHECK: readonly Expected[] = [
 ];
 /** B2-11dz (D10-392 / D10-394): registered items that 08 leaves unset by default, hence no seed row. */
 export const AUTO_ENABLE_UNSEEDED: readonly string[] = [`${ENABLE_CHECK}recon_required_days`];
+// B1-28g (D10-419): the server-side cache lifetime of the hot-sales rank (规划/04 §10.1 服务端业务
+// 配置键, seeded 600), registered right after AUTO_ENABLE_CHECK: an editable config.business
+// integer, options null. Not part of expectedNow() either.
+export const RANK: readonly Expected[] = [
+  row('rank.cache_ttl_seconds', 'number', 'config.business'),
+];
 export const expectedOf = (key: string): Expected => {
   const found = [
     ...expectedNow(),
@@ -275,6 +281,7 @@ export const expectedOf = (key: string): Expected => {
     ...RISK_WITHDRAW,
     ...AUTO_PAYOUT,
     ...AUTO_ENABLE_CHECK,
+    ...RANK,
   ].find((entry) => entry.key === key);
   expect(found, key).toBeDefined();
   return found!;

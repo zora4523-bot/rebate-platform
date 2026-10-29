@@ -31,8 +31,8 @@ it.each(CONFIGS)('[AC-F1-02zn#1] $key：类型、权限、可编辑性与整数�
 // the sixth key must be present. B2-06bz (D10-244 ②、D10-296): the eight payout.* keys follow
 // eligibility_days in this order, then B2-11z (D10-368) the six risk.withdraw.* keys in this
 // order, then B2-11y (D10-373) the seventeen withdraw.auto_payout.* keys in this order, then
-// B2-11dz (D10-392 / D10-394) the four payout.auto_enable_check.* keys in this order, and
-// nothing else.
+// B2-11dz (D10-392 / D10-394) the four payout.auto_enable_check.* keys in this order, then
+// B1-28g (D10-419) rank.cache_ttl_seconds, and nothing else.
 it('[AC-F1-02zn#2] 五项按指定顺序追加在 SETTLE 之后', () => {
   const keys = configRegistry().map((entry) => entry.key);
   const i = keys.indexOf('settle.statement.grace_days');
@@ -78,6 +78,7 @@ it('[AC-F1-02zn#2] 五项按指定顺序追加在 SETTLE 之后', () => {
     'payout.auto_enable_check.status_codes_supported',
     'payout.auto_enable_check.bill_out_biz_no_supported',
     'payout.auto_enable_check.recon_required_days',
+    'rank.cache_ttl_seconds',
   ]);
 });
 

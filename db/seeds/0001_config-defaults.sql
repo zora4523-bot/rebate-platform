@@ -101,5 +101,7 @@ INSERT INTO app.config_items (app_id, key, value, updated_by) VALUES
   -- 第 11 批：BR-WDR-30 细则开启前置检查（B2-11dz，D10-392 / D10-394）；payout.auto_enable_check.recon_required_days 缺省不设（无种子行，即不满足）
   ('couli', 'payout.auto_enable_check.limits_supported', 'false'::jsonb, 'seed'), -- BR-WDR-30
   ('couli', 'payout.auto_enable_check.status_codes_supported', 'false'::jsonb, 'seed'), -- BR-WDR-30
-  ('couli', 'payout.auto_enable_check.bill_out_biz_no_supported', 'false'::jsonb, 'seed') -- BR-WDR-30
+  ('couli', 'payout.auto_enable_check.bill_out_biz_no_supported', 'false'::jsonb, 'seed'), -- BR-WDR-30
+  -- 第 12 批：热销榜服务端缓存时长（B1-28g，D10-419；规划/04 §10.1 服务端业务配置键，代理补全的默认、负责人 2026-10-05 确认）
+  ('couli', 'rank.cache_ttl_seconds', '600'::jsonb, 'seed') -- 规划/04 §10.1、规划/01 F-PROD-13
 ON CONFLICT (app_id, key) DO NOTHING;
