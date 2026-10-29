@@ -1,0 +1,18 @@
+id: B1-28k
+repo: rebate-platform
+title: 测试修改（B1-28i 复审 S2，D10-422 同口径）：冻结 [AC-F1-02h#17]（test/spec/content/config-etag/delivery.int.test.ts）的期望 rank_platforms 仍按旧口径自算（只看 selectable），改为与 rankPlatforms 同口径（可选且 sort_basis ∈ sales / popularity）；断言仍 toEqual 精确比较，「配置行与 features.flags 不能覆盖」部分一字不动
+type: test-change
+# 2026-10-30 W1 入账。起因：B1-28i（#1787）只读复审 S2——白名单为空时新旧口径都得 []、不红；一旦登记只有 personalized 频道的平台，实现不含该平台而该测试期望含它，会红。
+# 新鲜独立 Claude 改、另一位只读复审「只改期望的计算口径、不放宽」，按 approvals #24 加标签。无实现改动。
+refs: []
+refs_hash: {}
+deps: [B1-28i]
+paths:
+  - 'test/spec/content/config-etag/delivery.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/config-etag/**'
+status: todo
+pr: null
