@@ -3,6 +3,9 @@ repo: rebate-platform
 title: 打款通道日对账作业（R2，BR-WDR-23）：worker 队列 payout-recon 每日 T+1 对前一自然日（+08:00）的支付宝账单与提现单核对（接口单按 out_biz_no、手动成功单按 channel_order_id、金额对 net_fen、近日界的 PAID_* 须当日与次日两份都无才算差异），按 ①②③ 处置（① 走现有查询链、非成功置 needs_manual + 差错单 + 告警；② 只记明细与待处置提示；③ recon_diffs(R2, channel_mismatch) + withdraw_holds(recon_diff，不自动到期) + 告警，W9 退回单附账单行），终态单只读，每次运行写 payout_recon_runs
 type: impl
 # 2026-10-29 入账（ops 线，D10-408）。验收照规划/05 B2-07：注入 1 笔重复打款与 1 笔漏单，次日全部发现。手动触发入口留给后台对账页（F1-08e）；告警规则另行。
+# 2026-10-29 补（编排裁定 D10-415）：① test_paths 加 queue-concurrency/limits.test.ts——新鲜独立 Claude 单列 test(spec) 把 worker 计划合计 41→42（含标题），排在实现前、不计写测试轮次，其余未改用例 red_exempt；
+# ② paths 加 payout/jobs/query-job.ts——对账触发的查询负载带 source=recon，query-job（couli_payout）见此标记且结果非成功：条件更新 status='PAYING' AND needs_manual=false → 置 needs_manual、留 PAYING、不交接 W6，成功照常落地；
+# 防竞态：常规查询遇明确失败准备 W6 前，若能只读到本笔「账单成功」的对账证据（现有表与授权内，recon_channel 对 couli_payout 只读），同样改走 needs_manual，读不到则记 FU-RECON-RACE 进 HANDOFF。不改授权、不加迁移。
 refs: [BR-WDR-23, BR-WDR-15, BR-FUND-24]
 refs_hash:
   BR-WDR-23: 98981fee10c7
@@ -18,10 +21,19 @@ paths:
   - 'apps/api/src/modules/platform/queue/worker-plan.ts'
   - 'apps/api/src/modules/platform/queue/worker-plan.test.ts'
   - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/payout/jobs/query-job.ts'
 test_paths:
   - 'test/spec/payout/recon-channel/**'
   - 'test/spec/platform/queue/contract.test.ts'
   - 'test/spec/platform/queue-concurrency/kit.ts'
+  - 'test/spec/platform/queue-concurrency/limits.test.ts'
+red_exempt:
+  - file: test/spec/platform/queue-concurrency/limits.test.ts
+    test: '[B1-01zzk 其他入口不受影响] api / stream / admin / payout：有没有 limits 都只取自己的计划值，没有共享预算（dbBudget null）'
+    reason: 冻结 B1-01zzk 用例，测试体未改；同目录 kit.ts 只为新队列 payout-recon 加入 worker 计划（D10-415 ①，同 B2-06f / B2-11c 先例 D10-327）
+  - file: test/spec/platform/queue-concurrency/limits.test.ts
+    test: '[B1-01zzk 配置覆盖] 合法的 limits 被接受；超过计划值、非整数、不在 worker 计划里的队列、预算不在 1..7、多键缺键、不是普通对象 → 同步抛 QueueError invalid_option（固定文案、无 cause），payout 入口同样检查'
+    reason: 冻结 B1-01zzk 用例，测试体未改；同目录 kit.ts 只为新队列 payout-recon 加入 worker 计划（D10-415 ①，同 B2-06f / B2-11c 先例 D10-327）
 impl: claude
 tester: claude-independent
 accept:
