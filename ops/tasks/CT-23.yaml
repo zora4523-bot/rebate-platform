@@ -1,0 +1,21 @@
+id: CT-23
+repo: rebate-platform
+title: 依赖升级自动化：.github/dependabot.yml（npm 生态、pnpm 工作区，每周一批、小版本分组、只开 PR 不自动合并，cooldown default-days 对齐 ADR-0001 §2 的 7 天规则），规则测试静态钉住配置形状；cooldown 对 pnpm 是否生效的实测结论与「CI 冻结锁文件安装不受 7 天规则保护」的缺口记进 ADR-0001 §7 待核项（规划仓库，编排另提）
+type: impl
+# 2026-10-29 入账（ops 线，编排续跑提示 ③：本线依赖已满足、尚未入账的下一批；规划/05 CT-23，docs/changes/20261007-基础设施开源接入规划.md §2；规划/05 的依赖 CT-06（CI 门禁）早已完成，台账无同名条目故 deps 记空）。
+# 依赖 PR 仍走 deps 任务与对抗评审（一家，approvals #27）；dependabot 只开 PR，不改锁文件以外的东西，不自动合并。.github/** 属第三类保护路径，合并前按 #24 加标签。
+# 实测（cooldown 对 pnpm 是否生效）须在 GitHub 上开启后观察一周批次，结论由编排回写规划仓库 ADR-0001 §7，不在本仓库改 ADR。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/dependabot.yml'
+test_paths:
+  - 'test/spec/ci/dependabot/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ci/dependabot/**'
+status: todo
+pr: null
