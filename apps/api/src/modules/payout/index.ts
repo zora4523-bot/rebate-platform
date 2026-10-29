@@ -294,3 +294,6 @@ export {
   readAutoPayoutEnableCheck,
 } from './application/auto-config.ts';
 export type { AutoPayoutEnableOptions, ReconPassedDaysPort } from './application/auto-config.ts';
+// B2-07d: the real port of the days the daily channel reconciliation ran through (D10-408).
+export { createReconPassedDays } from './application/recon-passed-days.ts';
+export type { ReconPassedDaysOptions } from './application/recon-passed-days.ts';

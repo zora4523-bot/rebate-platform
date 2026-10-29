@@ -211,7 +211,7 @@ import {
   AUTO_PAYOUT_SAVE_KEYS,
   PayoutModule,
   autoPayoutWriteRefusals,
-  createDefaultReconPassedDays,
+  createReconPassedDays,
   readAutoPayoutEnableCheck,
   createDefaultFeeTaxCalculator,
   createWithdrawApply,
@@ -472,16 +472,16 @@ function streamIdentityModule(): DynamicModule {
  * B2-11d (规划/08 BR-WDR-30, BR-WDR-17): content's console writes with payout's checks. Config item
  * writes (single, batch, rollback) run payout's 保存时校验 over the configuration they would leave;
  * turning withdraw.auto_payout.enabled on asks payout's 开启前置检查 for the caller's app, reading
- * its keys through content's reader and the reconciliation days through the default port (0 until
- * BR-WDR-23 lands, so it stays refused). Without a database handle the switch keeps its refusal.
+ * its keys through content's reader and the reconciliation days through payout's real port over
+ * app.payout_recon_runs (B2-07d, D10-408). Without a database handle the switch keeps its refusal.
  * They go to ContentAdminModule.forAdmin as options (B2-11e).
  */
 function contentAdminChecks(): Pick<ContentAdminOptions, 'configItemChecks' | 'killSwitchChecks'> {
   const save = { keys: AUTO_PAYOUT_SAVE_KEYS, refusals: autoPayoutWriteRefusals };
-  const recon = createDefaultReconPassedDays();
   return {
     configItemChecks: { save },
     killSwitchChecks: (db, clock) => {
+      const recon = createReconPassedDays({ clock });
       const config = {
         configValue: (appId: string, key: string, handle: Kysely<Database>) =>
           createContentReader({ db: handle, clock }).configValue(appId, key),

@@ -1,0 +1,145 @@
+{
+  "task": "B2-07d",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "3ced659526e3ea29b749c9ab60ffb61e5993065a",
+  "red_tests": [
+    "test/spec/payout/recon-passed-days/app-module.test.ts > [AC-B2-07d#17] payout 的 index.ts 导出真实端口 createReconPassedDays，app.module 经它取用并替换恒 0 的缺省端口",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#1] 没有任何对账记录 → 0 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#2] 从昨日起连续 1 天 succeeded → 同样天数",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#2] 从昨日起连续 2 天 succeeded → 同样天数",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#2] 从昨日起连续 5 天 succeeded → 同样天数",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#2] 从昨日起连续 7 天 succeeded → 同样天数",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#3] 连续 40 天 succeeded（跨 9 月 / 10 月月界）→ 40 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#4] 昨日、前日 succeeded，第 3 天 partial，更早 6 天 succeeded → 只数到它之前：2 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#4] 昨日、前日 succeeded，第 3 天 failed，更早 6 天 succeeded → 只数到它之前：2 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#5] 第 3 天缺行（那天作业没留下记录）→ 缺天打断：2 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#6] 昨日为 partial、更早 10 天全部 succeeded → 0 天（只从昨日起数）",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#6] 昨日为 failed、更早 10 天全部 succeeded → 0 天（只从昨日起数）",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#6] 昨日为 missing、更早 10 天全部 succeeded → 0 天（只从昨日起数）",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#7] 发现差错不打断（D10-408 ②）：连续 5 天 succeeded、其中 3 天 diffs > 0 → 5 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#8] 每天都发现差错（diffs > 0）的 succeeded 也照计：3 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#9] 今天（succeeded）的行不计也不打断：今天有行、昨日起 3 天 succeeded → 3 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#9] 今天（partial）的行不计也不打断：今天有行、昨日起 3 天 succeeded → 3 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#9] 今天（failed）的行不计也不打断：今天有行、昨日起 3 天 succeeded → 3 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#10] 只有今天的 succeeded 行 → 0 天（还没到 T+1）",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#11] 别的 app 不串：别 app 的 succeeded 不算、不补本 app 的缺天，别 app 的 failed 不打断本 app",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#12] 日界按 +08:00：10-27、10-28 两天 succeeded，时钟 2026-10-28T15:59:59.999Z → 1 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#12] 日界按 +08:00：10-27、10-28 两天 succeeded，时钟 2026-10-28T16:00:00.000Z → 2 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#12] 日界按 +08:00：10-27、10-28 两天 succeeded，时钟 2026-10-28T20:00:00.000Z → 2 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#12] 日界按 +08:00：10-27、10-28 两天 succeeded，时钟 2026-10-29T15:59:59.999Z → 2 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#12] 日界按 +08:00：10-27、10-28 两天 succeeded，时钟 2026-10-29T16:00:00.000Z → 0 天",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#13] 每次调用按当时的时钟与当时的库：重跑改为 succeeded、时钟前进一天、补上一天都立刻反映",
+    "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#14] 性质：昨日起任意至多 25 天的状态（另含今天的行）→ 结果等于从昨日起连续 succeeded 的天数",
+    "test/spec/payout/recon-passed-days/query.test.ts > [AC-B2-07d#15] 只在调用方给的 handle 上只读：读 payout_recon_runs、不写不锁、不取库里的时间，只问本 app 的 alipay",
+    "test/spec/payout/recon-passed-days/query.test.ts > [AC-B2-07d#16] 端口不自带库连接：同一个端口对两个 handle 各问一次，语句各自落在被问的那个 handle 上",
+    "test/spec/payout/recon-passed-days/wiring.int.test.ts > [AC-B2-07d#18] 后台打开自动到账：负责人定 3 天，库里从昨日起只连续跑通 2 天 → 20001 [value] 不写；补上第 3 天（当天发现差错）后可以打开",
+    "test/spec/payout/recon-passed-days/wiring.int.test.ts > [AC-B2-07d#19] 后台打开自动到账：昨日 partial 打断连续天数 → 20001 [value]；重跑改为 succeeded 后连续 5 天 ≥ 5 → 可以打开",
+    "test/spec/payout/recon-passed-days/wiring.int.test.ts > [AC-B2-07d#20] 未配置 recon_required_days：库里连续跑通 30 天也拒绝 20001 [value]；负责人定 30 天后同样的记录可以打开"
+  ],
+  "risk_note": "RV2 (payout). BR-WDR-30 enable pre-check / BR-WDR-23 R2: the real ReconPassedDaysPort counts the consecutive succeeded payout_recon_runs rows of this app's alipay channel back from yesterday (+08:00 day of the injected Clock); a succeeded day with diffs still counts and partial / failed / a missing day stops the count (D10-408 ② reading A), today's row neither counts nor breaks, the query is read only, takes no lock and has no window cap. app.module wires it in place of D10-392's constant 0; an unset recon_required_days still fails the check, and until the real Alipay bill download exists only FakeChannel runs can advance the count, so the switch stays closed (D10-408). No money moves. The full verify on the test machine was stopped at 3600 s in test:int (exit 124) with this task's four rule-test files green and no failure in the log; per D10-319 the required CI verify-int decides. Codex was unavailable until 11-02, so the rule tests and reviews ran on fresh independent Claude contexts (approvals id 36); W1 took the task over from the ops lane (orchestrator 10-29 16:15).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "3ced659526e3ea29b749c9ab60ffb61e5993065a",
+      "tree": "f9bcb92fc61129482255ce0a8776de253743f38c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-29T11:08:02Z",
+      "finished_at": "2026-10-29T11:08:21Z",
+      "gate": {
+        "commit": "a0dbf6aee032e205230743e392d3097ad4d23f75",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/payout/recon-passed-days/app-module.test.ts > [AC-B2-07d#17] payout 的 index.ts 导出真实端口 createReconPassedDays，app.module 经它取用并替换恒 0 的缺省端口",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#1] 没有任何对账记录 → 0 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#2] 从昨日起连续 1 天 succeeded → 同样天数",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#2] 从昨日起连续 2 天 succeeded → 同样天数",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#2] 从昨日起连续 5 天 succeeded → 同样天数",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#2] 从昨日起连续 7 天 succeeded → 同样天数",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#3] 连续 40 天 succeeded（跨 9 月 / 10 月月界）→ 40 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#4] 昨日、前日 succeeded，第 3 天 partial，更早 6 天 succeeded → 只数到它之前：2 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#4] 昨日、前日 succeeded，第 3 天 failed，更早 6 天 succeeded → 只数到它之前：2 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#5] 第 3 天缺行（那天作业没留下记录）→ 缺天打断：2 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#6] 昨日为 partial、更早 10 天全部 succeeded → 0 天（只从昨日起数）",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#6] 昨日为 failed、更早 10 天全部 succeeded → 0 天（只从昨日起数）",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#6] 昨日为 missing、更早 10 天全部 succeeded → 0 天（只从昨日起数）",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#7] 发现差错不打断（D10-408 ②）：连续 5 天 succeeded、其中 3 天 diffs > 0 → 5 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#8] 每天都发现差错（diffs > 0）的 succeeded 也照计：3 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#9] 今天（succeeded）的行不计也不打断：今天有行、昨日起 3 天 succeeded → 3 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#9] 今天（partial）的行不计也不打断：今天有行、昨日起 3 天 succeeded → 3 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#9] 今天（failed）的行不计也不打断：今天有行、昨日起 3 天 succeeded → 3 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#10] 只有今天的 succeeded 行 → 0 天（还没到 T+1）",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#11] 别的 app 不串：别 app 的 succeeded 不算、不补本 app 的缺天，别 app 的 failed 不打断本 app",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#12] 日界按 +08:00：10-27、10-28 两天 succeeded，时钟 2026-10-28T15:59:59.999Z → 1 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#12] 日界按 +08:00：10-27、10-28 两天 succeeded，时钟 2026-10-28T16:00:00.000Z → 2 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#12] 日界按 +08:00：10-27、10-28 两天 succeeded，时钟 2026-10-28T20:00:00.000Z → 2 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#12] 日界按 +08:00：10-27、10-28 两天 succeeded，时钟 2026-10-29T15:59:59.999Z → 2 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#12] 日界按 +08:00：10-27、10-28 两天 succeeded，时钟 2026-10-29T16:00:00.000Z → 0 天",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#13] 每次调用按当时的时钟与当时的库：重跑改为 succeeded、时钟前进一天、补上一天都立刻反映",
+        "test/spec/payout/recon-passed-days/count.int.test.ts > [AC-B2-07d#14] 性质：昨日起任意至多 25 天的状态（另含今天的行）→ 结果等于从昨日起连续 succeeded 的天数",
+        "test/spec/payout/recon-passed-days/query.test.ts > [AC-B2-07d#15] 只在调用方给的 handle 上只读：读 payout_recon_runs、不写不锁、不取库里的时间，只问本 app 的 alipay",
+        "test/spec/payout/recon-passed-days/query.test.ts > [AC-B2-07d#16] 端口不自带库连接：同一个端口对两个 handle 各问一次，语句各自落在被问的那个 handle 上",
+        "test/spec/payout/recon-passed-days/wiring.int.test.ts > [AC-B2-07d#18] 后台打开自动到账：负责人定 3 天，库里从昨日起只连续跑通 2 天 → 20001 [value] 不写；补上第 3 天（当天发现差错）后可以打开",
+        "test/spec/payout/recon-passed-days/wiring.int.test.ts > [AC-B2-07d#19] 后台打开自动到账：昨日 partial 打断连续天数 → 20001 [value]；重跑改为 succeeded 后连续 5 天 ≥ 5 → 可以打开",
+        "test/spec/payout/recon-passed-days/wiring.int.test.ts > [AC-B2-07d#20] 未配置 recon_required_days：库里连续跑通 30 天也拒绝 20001 [value]；负责人定 30 天后同样的记录可以打开"
+      ],
+      "expected": [
+        "test/spec/payout/recon-passed-days/app-module.test.ts",
+        "test/spec/payout/recon-passed-days/count.int.test.ts",
+        "test/spec/payout/recon-passed-days/query.test.ts",
+        "test/spec/payout/recon-passed-days/wiring.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "d1f6b81c8d31e99cea42ebc14959f23eb29b7511f0466d4c584475ccd876de85"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "41c03e4afd824141fd3b38e4e25c05ee9e340eecca6d60525f152521b182180c"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 against the merge base pass with no findings."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude (1 run, red 32 / 32 on the skeleton). Round 1 pass with two S2 (the property test uses a fixed run count without propParams; no case beyond 40 days, so a window-capped reader would pass), recorded as follow-ups; the implementation has no window cap."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "7d1514dd6c958c2c3c870c8edb90f3d1a49b80df",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
