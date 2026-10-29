@@ -7,7 +7,7 @@ type: impl
 # staging 验收是对外动作（部署到 staging、开 VictoriaTraces 端点），由本线照 B1-01zc 部署流程做，不碰 prod。导出失败不得影响请求（fail-open，只计数 / 打日志）。
 refs: []
 refs_hash: {}
-deps: [B1-01zc]
+deps: [B1-01zc, B1-31a]
 paths:
   - 'apps/api/src/modules/platform/tracing/**'
   - 'apps/api/src/bootstrap.ts'
