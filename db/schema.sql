@@ -4097,6 +4097,33 @@ CREATE TABLE app.payout_batches (
 
 
 --
+-- Name: payout_recon_runs; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.payout_recon_runs (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    channel text NOT NULL,
+    bill_date date NOT NULL,
+    status text NOT NULL,
+    started_at timestamp with time zone NOT NULL,
+    finished_at timestamp with time zone NOT NULL,
+    bill_rows integer NOT NULL,
+    matched integer NOT NULL,
+    diffs integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT payout_recon_runs_app_id_check CHECK ((app_id <> ''::text)),
+    CONSTRAINT payout_recon_runs_bill_rows_check CHECK ((bill_rows >= 0)),
+    CONSTRAINT payout_recon_runs_channel_check CHECK ((channel = 'alipay'::text)),
+    CONSTRAINT payout_recon_runs_diffs_check CHECK ((diffs >= 0)),
+    CONSTRAINT payout_recon_runs_finished_at_check CHECK ((finished_at >= started_at)),
+    CONSTRAINT payout_recon_runs_matched_check CHECK ((matched >= 0)),
+    CONSTRAINT payout_recon_runs_status_check CHECK ((status = ANY (ARRAY['succeeded'::text, 'partial'::text, 'failed'::text])))
+);
+
+
+--
 -- Name: payout_watermarks; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4423,6 +4450,36 @@ CREATE TABLE app.realname_prior_identities (
     corrected_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT realname_prior_identities_id_no_hmac_check CHECK ((id_no_hmac ~ '^[0-9a-f]{64}$'::text))
+);
+
+
+--
+-- Name: recon_channel; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.recon_channel (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    date date NOT NULL,
+    bill_date date NOT NULL,
+    out_biz_no text,
+    channel_order_id text,
+    our_status text,
+    channel_status text,
+    our_amount_fen bigint,
+    channel_amount_fen bigint,
+    result text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT recon_channel_app_id_check CHECK ((app_id <> ''::text)),
+    CONSTRAINT recon_channel_channel_amount_fen_check CHECK ((channel_amount_fen >= 0)),
+    CONSTRAINT recon_channel_channel_order_id_check CHECK ((channel_order_id <> ''::text)),
+    CONSTRAINT recon_channel_channel_status_check CHECK ((channel_status <> ''::text)),
+    CONSTRAINT recon_channel_key_check CHECK (((out_biz_no IS NOT NULL) OR (channel_order_id IS NOT NULL))),
+    CONSTRAINT recon_channel_our_amount_fen_check CHECK ((our_amount_fen >= 0)),
+    CONSTRAINT recon_channel_our_status_check CHECK ((our_status = ANY (ARRAY['PENDING_REVIEW'::text, 'APPROVED'::text, 'PAYING'::text, 'REJECTED'::text, 'PAID_API'::text, 'PAID_MANUAL'::text, 'FAILED'::text]))),
+    CONSTRAINT recon_channel_out_biz_no_check CHECK ((out_biz_no <> ''::text)),
+    CONSTRAINT recon_channel_result_check CHECK ((result = ANY (ARRAY['matched'::text, 'paying_query'::text, 'paying_manual'::text, 'diff'::text])))
 );
 
 
@@ -6809,6 +6866,22 @@ ALTER TABLE ONLY app.payout_batches
 
 
 --
+-- Name: payout_recon_runs payout_recon_runs_day_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_recon_runs
+    ADD CONSTRAINT payout_recon_runs_day_key UNIQUE (app_id, channel, bill_date);
+
+
+--
+-- Name: payout_recon_runs payout_recon_runs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_recon_runs
+    ADD CONSTRAINT payout_recon_runs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: payout_watermarks payout_watermarks_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -6966,6 +7039,14 @@ ALTER TABLE ONLY app.realname
 
 ALTER TABLE ONLY app.realname
     ADD CONSTRAINT realname_user_key UNIQUE (app_id, user_id);
+
+
+--
+-- Name: recon_channel recon_channel_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.recon_channel
+    ADD CONSTRAINT recon_channel_pkey PRIMARY KEY (id);
 
 
 --
@@ -8431,6 +8512,20 @@ CREATE INDEX realname_prior_identities_user_idx ON app.realname_prior_identities
 --
 
 CREATE UNIQUE INDEX realname_verified_id_no_hmac_key ON app.realname USING btree (app_id, id_no_hmac) WHERE (status = 'verified'::text);
+
+
+--
+-- Name: recon_channel_channel_order_id_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX recon_channel_channel_order_id_key ON app.recon_channel USING btree (app_id, bill_date, channel_order_id) WHERE (channel_order_id IS NOT NULL);
+
+
+--
+-- Name: recon_channel_out_biz_no_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX recon_channel_out_biz_no_key ON app.recon_channel USING btree (app_id, bill_date, out_biz_no) WHERE (out_biz_no IS NOT NULL);
 
 
 --
@@ -13915,6 +14010,64 @@ GRANT SELECT ON TABLE app.payout_batches TO couli_readonly;
 
 
 --
+-- Name: TABLE payout_recon_runs; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.payout_recon_runs TO couli_app;
+GRANT SELECT ON TABLE app.payout_recon_runs TO couli_payout;
+GRANT SELECT ON TABLE app.payout_recon_runs TO couli_readonly;
+
+
+--
+-- Name: COLUMN payout_recon_runs.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.payout_recon_runs TO couli_app;
+
+
+--
+-- Name: COLUMN payout_recon_runs.started_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(started_at) ON TABLE app.payout_recon_runs TO couli_app;
+
+
+--
+-- Name: COLUMN payout_recon_runs.finished_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(finished_at) ON TABLE app.payout_recon_runs TO couli_app;
+
+
+--
+-- Name: COLUMN payout_recon_runs.bill_rows; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(bill_rows) ON TABLE app.payout_recon_runs TO couli_app;
+
+
+--
+-- Name: COLUMN payout_recon_runs.matched; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(matched) ON TABLE app.payout_recon_runs TO couli_app;
+
+
+--
+-- Name: COLUMN payout_recon_runs.diffs; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(diffs) ON TABLE app.payout_recon_runs TO couli_app;
+
+
+--
+-- Name: COLUMN payout_recon_runs.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.payout_recon_runs TO couli_app;
+
+
+--
 -- Name: TABLE payout_watermarks; Type: ACL; Schema: app; Owner: -
 --
 
@@ -14447,6 +14600,71 @@ GRANT UPDATE(tax_retained) ON TABLE app.realname TO couli_app;
 --
 
 GRANT INSERT ON TABLE app.realname_prior_identities TO couli_app;
+
+
+--
+-- Name: TABLE recon_channel; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.recon_channel TO couli_app;
+GRANT SELECT ON TABLE app.recon_channel TO couli_payout;
+GRANT SELECT ON TABLE app.recon_channel TO couli_readonly;
+
+
+--
+-- Name: COLUMN recon_channel.out_biz_no; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(out_biz_no) ON TABLE app.recon_channel TO couli_app;
+
+
+--
+-- Name: COLUMN recon_channel.channel_order_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(channel_order_id) ON TABLE app.recon_channel TO couli_app;
+
+
+--
+-- Name: COLUMN recon_channel.our_status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(our_status) ON TABLE app.recon_channel TO couli_app;
+
+
+--
+-- Name: COLUMN recon_channel.channel_status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(channel_status) ON TABLE app.recon_channel TO couli_app;
+
+
+--
+-- Name: COLUMN recon_channel.our_amount_fen; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(our_amount_fen) ON TABLE app.recon_channel TO couli_app;
+
+
+--
+-- Name: COLUMN recon_channel.channel_amount_fen; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(channel_amount_fen) ON TABLE app.recon_channel TO couli_app;
+
+
+--
+-- Name: COLUMN recon_channel.result; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(result) ON TABLE app.recon_channel TO couli_app;
+
+
+--
+-- Name: COLUMN recon_channel.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.recon_channel TO couli_app;
 
 
 --
