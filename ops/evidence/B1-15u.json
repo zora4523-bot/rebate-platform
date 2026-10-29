@@ -1,0 +1,149 @@
+{
+  "task": "B1-15u",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "31c3aeea10af992173936ff871f1a4f5aa1935c6",
+  "red_tests": [
+    "test/spec/linking/share-page/default-materials.int.test.ts > [AC-B1-15u#9] 缺省物料提供者：淘宝分享 link 有 promo_url → 200，jump_url 即 promo_url，任何 UA（含系统浏览器）下 tpwd_ticket 都为 null；GET 只读、不转链",
+    "test/spec/linking/share-page/default-materials.int.test.ts > [AC-B1-15u#9] 缺省物料提供者：取口令一律 20001 data.fields=[ticket]、不返回口令（淘宝有 promo_url、无 promo_url，京东、拼多多分享 link，任何票据，系统浏览器 UA）",
+    "test/spec/linking/share-page/default-materials.int.test.ts > [AC-B1-15u#10] 缺省物料提供者：淘宝分享 link 无 promo_url（null 或空串）、京东或拼多多分享 link（现有数据里无物料）→ 30144，与不存在的 link 同一个响应，不带任何卡片字段",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#1] 只答本 App 的 pid_scene=share link；其他场景、不存在、别的 App、非 uuid 都是同一个 30144",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#2] 卡片是共享子集并带 quoted_at 与分享者短链 jump_url；任何 UA 下 GET 响应都不含口令",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#3] open_in_app_url 是 LinkLanding 深链，只看 share.open_in_app.enabled：缺省开、关时为 null，与 UA 无关",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 taobao 绑定为 absent → 30102，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 pdd 绑定为 absent → 30111，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 taobao 绑定为 unbound → 30102，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 pdd 绑定为 unbound → 30111，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 taobao 绑定为 pending_auth → 30102，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 pdd 绑定为 pending_auth → 30111，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 taobao 绑定为 invalid → 30102，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 pdd 绑定为 invalid → 30111，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 taobao 绑定为 blocked → 30102，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 pdd 绑定为 blocked → 30111，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 taobao 绑定为 released → 30102，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 pdd 绑定为 released → 30111，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 站长授权中断期间同样按分享者的绑定判断：sharer_auth_invalid，不返回 auth_unavailable 或 50301",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 站长授权中断期间，分享者绑定有效的淘宝、拼多多分享 link 照常出卡（200，带分享者短链，淘宝在浏览器下有票据），不返回 50301 或 30102 / 30111",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 京东不判分享者授权：分享者的淘宝、拼多多授权都失效时京东分享 link 照常出卡",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#5] tpwd_ticket 只在 UA 判为非微信且 link 有口令时下发；微信、无 UA、空 UA、link 无口令都为 null",
+    "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#8] 匿名、不签名、不带 X-Device-Id 即可读取；成功与拒绝都 no-store；GET 只读：不登记 link、不写日志与授权会话、不转链",
+    "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#6] 有效票据换回口令；票据绑定 link_id：换别的 link、不存在的 link、别的 App 都是 20001",
+    "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#6] 票据 600 秒有效：599 秒时仍可换，过期后 20001 且不返回口令（注入时钟）",
+    "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#6] 一张票据最多换 3 次：第 4 次 20001；新票据照常可换",
+    "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#6] 取口令的 UA 为微信内置浏览器、缺失或为空 → 20001 data.fields=[ticket]，不返回口令",
+    "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#6] 伪造或篡改的票据、没有口令的 link → 20001 data.fields=[ticket]，不返回口令",
+    "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#7] 同一 IP 对同一 link 每分钟超过 5 次 → 42901 带 Retry-After；别的 IP、别的 link 不受影响；过一分钟恢复",
+    "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#7] share.tpwd_rate_per_min 改小后按新值限频（配置经缓存刷新后生效）",
+    "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#7] share.tpwd_rate_per_min 为 \"five\"（读不到或越界）时按缺省 5 次限频",
+    "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#7] share.tpwd_rate_per_min 为 -3（读不到或越界）时按缺省 5 次限频",
+    "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#7] share.tpwd_rate_per_min 为 {\"per_min\":2}（读不到或越界）时按缺省 5 次限频",
+    "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#7] 被拒的取口令请求（伪造、篡改、过期票据，微信或无 UA）同样计入 IP × link_id 限频：5 次 20001 后第 6 次即使票据有效也 42901",
+    "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#6] 同一张票据并发换口令：6 个请求同时到达，恰好 3 个换到口令，其余 20001",
+    "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#7] 同一 IP 对同一 link 并发取口令：8 个请求同时到达，恰好 5 个换到口令，其余 42901 带 Retry-After"
+  ],
+  "risk_note": "RV2 by path (linking, attribution). GET /v1/share-pages/{link_id} and POST /v1/share-pages/{link_id}/tpwd (BR-ATTR-10 细则, BR-ATTR-05 细则): only the request app's pid_scene=share links (others 30144); shared card subset without rebate fields; the GET never carries the token; sharer authorization judged only by the sharer's own binding / filing (30102 / 30111, reason sharer_auth_invalid, no auth fields), site-authorization outages never read; open_in_app_url per share.open_in_app.enabled. Ticket only for non-WeChat UAs when the link has a token, stored in Redis (app + link keyed, hashed, 600 s by the injected clock, atomic use count > 3 refused, D10-421); tpwd rate per IP x link_id counted atomically before any other check, share.tpwd_rate_per_min read through configValue with default 5 (not registered, sms.* precedent, orchestrator 2026-10-29 22:55), 42901 with Retry-After. Material source per D10-424: POST /v1/shares not yet specified, the default provider reads only Taobao links.promo_url (no token, so no ticket); no material → 30144; TODO blocked on POST /v1/shares; nothing forged. GET read only (no link registration, no link_log, no conversion). Cache-Control no-store set in the handlers. Contract: getSharePage / getShareTpwd no longer planned; route-schemas.gen.ts and planned-operations.gen.ts regenerated. No migration.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "31c3aeea10af992173936ff871f1a4f5aa1935c6",
+      "tree": "a37b5bafeb862f59ae9d320fe4620b55384f3ed2",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-29T20:17:21Z",
+      "finished_at": "2026-10-29T20:17:34Z",
+      "gate": {
+        "commit": "91b04a8b74f80681b816a630870ded17f7b4b00a",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/linking/share-page/default-materials.int.test.ts > [AC-B1-15u#9] 缺省物料提供者：淘宝分享 link 有 promo_url → 200，jump_url 即 promo_url，任何 UA（含系统浏览器）下 tpwd_ticket 都为 null；GET 只读、不转链",
+        "test/spec/linking/share-page/default-materials.int.test.ts > [AC-B1-15u#9] 缺省物料提供者：取口令一律 20001 data.fields=[ticket]、不返回口令（淘宝有 promo_url、无 promo_url，京东、拼多多分享 link，任何票据，系统浏览器 UA）",
+        "test/spec/linking/share-page/default-materials.int.test.ts > [AC-B1-15u#10] 缺省物料提供者：淘宝分享 link 无 promo_url（null 或空串）、京东或拼多多分享 link（现有数据里无物料）→ 30144，与不存在的 link 同一个响应，不带任何卡片字段",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#1] 只答本 App 的 pid_scene=share link；其他场景、不存在、别的 App、非 uuid 都是同一个 30144",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#2] 卡片是共享子集并带 quoted_at 与分享者短链 jump_url；任何 UA 下 GET 响应都不含口令",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#3] open_in_app_url 是 LinkLanding 深链，只看 share.open_in_app.enabled：缺省开、关时为 null，与 UA 无关",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 taobao 绑定为 absent → 30102，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 pdd 绑定为 absent → 30111，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 taobao 绑定为 unbound → 30102，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 pdd 绑定为 unbound → 30111，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 taobao 绑定为 pending_auth → 30102，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 pdd 绑定为 pending_auth → 30111，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 taobao 绑定为 invalid → 30102，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 pdd 绑定为 invalid → 30111，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 taobao 绑定为 blocked → 30102，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 pdd 绑定为 blocked → 30111，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 taobao 绑定为 released → 30102，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 分享者 pdd 绑定为 released → 30111，data.reason=sharer_auth_invalid，不带 auth_url / state / auth_jump，不写授权会话",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 站长授权中断期间同样按分享者的绑定判断：sharer_auth_invalid，不返回 auth_unavailable 或 50301",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 站长授权中断期间，分享者绑定有效的淘宝、拼多多分享 link 照常出卡（200，带分享者短链，淘宝在浏览器下有票据），不返回 50301 或 30102 / 30111",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#4] 京东不判分享者授权：分享者的淘宝、拼多多授权都失效时京东分享 link 照常出卡",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#5] tpwd_ticket 只在 UA 判为非微信且 link 有口令时下发；微信、无 UA、空 UA、link 无口令都为 null",
+        "test/spec/linking/share-page/page.int.test.ts > [AC-B1-15u#8] 匿名、不签名、不带 X-Device-Id 即可读取；成功与拒绝都 no-store；GET 只读：不登记 link、不写日志与授权会话、不转链",
+        "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#6] 有效票据换回口令；票据绑定 link_id：换别的 link、不存在的 link、别的 App 都是 20001",
+        "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#6] 票据 600 秒有效：599 秒时仍可换，过期后 20001 且不返回口令（注入时钟）",
+        "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#6] 一张票据最多换 3 次：第 4 次 20001；新票据照常可换",
+        "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#6] 取口令的 UA 为微信内置浏览器、缺失或为空 → 20001 data.fields=[ticket]，不返回口令",
+        "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#6] 伪造或篡改的票据、没有口令的 link → 20001 data.fields=[ticket]，不返回口令",
+        "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#7] 同一 IP 对同一 link 每分钟超过 5 次 → 42901 带 Retry-After；别的 IP、别的 link 不受影响；过一分钟恢复",
+        "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#7] share.tpwd_rate_per_min 改小后按新值限频（配置经缓存刷新后生效）",
+        "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#7] share.tpwd_rate_per_min 为 \"five\"（读不到或越界）时按缺省 5 次限频",
+        "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#7] share.tpwd_rate_per_min 为 -3（读不到或越界）时按缺省 5 次限频",
+        "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#7] share.tpwd_rate_per_min 为 {\"per_min\":2}（读不到或越界）时按缺省 5 次限频",
+        "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#7] 被拒的取口令请求（伪造、篡改、过期票据，微信或无 UA）同样计入 IP × link_id 限频：5 次 20001 后第 6 次即使票据有效也 42901",
+        "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#6] 同一张票据并发换口令：6 个请求同时到达，恰好 3 个换到口令，其余 20001",
+        "test/spec/linking/share-page/tpwd.int.test.ts > [AC-B1-15u#7] 同一 IP 对同一 link 并发取口令：8 个请求同时到达，恰好 5 个换到口令，其余 42901 带 Retry-After"
+      ],
+      "expected": [
+        "test/spec/linking/share-page/default-materials.int.test.ts",
+        "test/spec/linking/share-page/page.int.test.ts",
+        "test/spec/linking/share-page/tpwd.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "e272fe253ff9ec9526bb0df0f0d37ef0d3612d57971462984c25df1a5a7d4622"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; independent Claude via tools/agent/claude-run.sh per approvals #36 (attribution checklist). Round 1 pass, no S0/S1; 1 S2 recorded as a follow-up (a request rejected by the route schema before the handler carries no Cache-Control: no-store; the global onSend hook is outside this task's paths)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "rule tests by an independent Claude context in 3 counted attempts: run 1 (402896e3, 29 tests red), run 2 for review round 1's 2 S1 and the concurrency S2 (6fc9b852), run 3 for the default material provider per D10-424 (1bde7137, 36 tests red). Review round 1 fail (2 S1, 2 S2); round 2 incremental by another fresh independent Claude: pass, all closed. D10-425 机械修正，单列一次，不计入写测试 3 次: a fresh independent Claude moved the @couli/db/testing imports from kit.ts into the *.int.test.ts files (depcruise rule testcontainers-only-in-int-tests); assertions, test count, titles and expected values unchanged (diff checked: no it / expect line changed); separate test(spec) commit 63a583ec placed before the implementation, red/4 PASS with the same 36 tests. No red_exempt or expected_values entries in this task."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "2cfc87bc5d7ce5d051b48a4f12a03f9c19af302e",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
