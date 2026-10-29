@@ -7520,6 +7520,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/withdrawals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Withdrawals of the app, page by page, newest applied first
+         * @description The review list of the withdrawal console (01 F-ADM-07; 04 §3.2 withdrawals;
+         *     design/specs/admin-withdrawals.md §1, §2, §4). Read only, no step-up. Permission point:
+         *     any of `withdraw.review` or `fund.view` (04 §11.1, §11.2); a super admin holds every
+         *     point. Each row is one withdrawal of the console's app with its `withdrawal_id` for the
+         *     detail route, its withdrawal number `out_biz_no`, the user (`user_id` and the phone number
+         *     masked 3 + 4, BR-ID-33; never the full number), `status`, `display_status` (enum
+         *     admin_withdrawal_display_status, derived from status + review_mode + hold_reason as the
+         *     BR-WDR-08 细则 table, not stored and not a new status), `review_mode`, `payout_channel`,
+         *     the four amounts in fen (`amount_fen`, `fee_fen`, `tax_fen`, `net_fen`), the
+         *     reason columns (`auto_decision` with the 转人工原因 `failed_conditions` and the 执行受阻
+         *     `execute_blocked`, `hold_reason`, `blocked_reason` for the「暂停」mark, `needs_manual`,
+         *     `reject_reason_code` with the internal `reject_note`), the review (`reviewer_id`,
+         *     `reviewed_at`), `batch_id`, the W1 `risk_flags` snapshot with `risk_flags_at`
+         *     (BR-WDR-29), `created_at` and `paid_at`. No payee account or payee name is in a row.
+         *
+         *     Filters combine with AND: `status`, `display_status` (the quick filters 待审 / 驳回 / 手动
+         *     / 自动 of BR-WDR-08 细则 are pending_review, rejected, paid_manual and paid_auto_system or
+         *     paid_auto_review), `review_mode`, `payout_channel`, `user_id` (the user_id only; UID and
+         *     phone number lookups go through GET /admin/v1/search), `out_biz_no` (the full withdrawal
+         *     number, exact match), `amount_min_fen` and `amount_max_fen` (both inclusive, on
+         *     `amount_fen`), `created_from` (inclusive) and `created_to` (exclusive) on `created_at`
+         *     (ISO 8601 with offset, 04 §5), `hold_reason` (the W9 受阻原因), `blocked` (true = only rows
+         *     with a `blocked_reason`, false = only rows without) and `risk_flag` (only rows whose
+         *     `risk_flags` snapshot holds that code). A value outside an enum or a pattern is 20001
+         *     with `data.fields` naming the parameter; `amount_min_fen` greater than `amount_max_fen`
+         *     is 20001 with `data.fields=[amount_min_fen, amount_max_fen]`, and `created_from` later
+         *     than `created_to` is 20001 with `data.fields=[created_from, created_to]`. A `user_id` or
+         *     `out_biz_no` that names nothing of the app, or a filter set nothing matches, is an empty
+         *     page (`items=[]`, `total=0`), not an error.
+         *
+         *     Order: `created_at` descending (then `withdrawal_id` descending). Pages with `page` (as
+         *     AdminPage; a page past the last one is `items=[]`) and `page_size` ≤ 200 (above 200 is
+         *     20001, as AdminPageSize); `total` is the count of the filter set. The Chinese names of the
+         *     statuses, condition codes and risk flags come from the console dictionary (BR-TEXT-25
+         *     admin_dict), not from this contract. Writes (approve, reject, batch approve, batch and
+         *     single manual payout, automatic payout settings, cancelling a WeChat transfer), the export
+         *     and the risk flag recalculation are not part of this operation. Reading does not write an
+         *     audit record.
+         */
+        get: operations["listAdminWithdrawals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/withdrawals/{withdrawal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One withdrawal with its amounts, batch, transfer attempts, holds, decision and risk flags
+         * @description The withdrawal detail of the console (01 F-ADM-07; 04 §3.2 withdrawals, payout_batches,
+         *     payout_batch_items, payout_attempts, withdraw_holds; design/specs/admin-withdrawal-detail.md
+         *     §1, §2, §4). Read only, no step-up. Permission point: any of `withdraw.review` or
+         *     `fund.view` (04 §11.1, §11.2). The fields of a list row, plus:
+         *     - the remaining columns of the withdrawal: `payout_method`, `review_deadline` (BR-WDR-26),
+         *       `fail_code`, `executor_id`, `executed_at`, `execute_seq`, `manual_resolution`,
+         *       `resolver_ids`, `manual_entry_by`, `manual_confirm_by`, `hold_at`, `channel_state`,
+         *       `confirm_deadline` (BR-WDR-33 ⑤⑥), `channel_order_id`, `updated_at` and `row_version`;
+         *     - `payee`, the payee snapshot of the application masked only (BR-ID-33): `masked_account`,
+         *       `masked_name` and `bank_name` (bank cards only). This operation never returns the full
+         *       account or name, the WeChat openid or the launch data; showing them in full belongs to
+         *       the audited reveal of the user (POST /admin/v1/users/{user_id}/reveal,
+         *       `pii.reveal_identity`, step-up), which this task does not extend;
+         *     - `batch`: the payout batch the withdrawal is in now (payout_batches row of `batch_id`:
+         *       `batch_id`, `kind`, `created_at`; null when `batch_id` is null), and `batch_items`, every
+         *       payout_batch_items row of this withdrawal, oldest first (`batch_id`, `result`, `reason`,
+         *       `moved_to_batch_id`, `at`);
+         *     - `payout_attempts`: every payout_attempts row of this withdrawal, oldest first, as a
+         *       summary only (`attempt_id`, `kind`, `result`, `resp_code`, `resp_sub_code`, `at`); the
+         *       channel request and response bodies are never returned;
+         *     - `holds`: the user's withdraw_holds in effect at response time (released_at null and
+         *       hold_until null or later than the clock; BR-WDR-05, BR-FUND-19), oldest first
+         *       (`hold_id`, `reason`, `source_ref`, `created_at`, `hold_until`).
+         *     There is no status history table for withdrawals (04 §3.2); the history of a withdrawal is
+         *     read from its stored time points (`created_at`, `auto_decision.decided_at`, `reviewed_at`
+         *     with `reviewer_id`, `executed_at` with `executor_id`, `hold_at` with `hold_reason`,
+         *     `paid_at`, `updated_at`), the batch items and the transfer attempts; admin actions are in
+         *     the audit log (GET /admin/v1/audit-logs). An unknown `withdrawal_id` or a withdrawal of
+         *     another app is 20001 with `data.fields=[withdrawal_id]` (no 404). Reading does not write
+         *     an audit record.
+         */
+        get: operations["getAdminWithdrawal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/kill-switches": {
         parameters: {
             query?: never;
@@ -15672,6 +15778,358 @@ export interface components {
             data: components["schemas"]["AdminReconDiffDetail"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /**
+         * @description contracts/enums/admin.yaml admin_withdrawal_display_status: the console's display status
+         *     of a withdrawal, derived by the server from status + review_mode + hold_reason as the
+         *     BR-WDR-08 细则 table (花卷云「会员提现管理」mapping); not stored and not a withdrawal status.
+         *     pending_review = PENDING_REVIEW, or APPROVED with hold_reason other than
+         *     payer_side_after_transfer; pending_handle = APPROVED with hold_reason
+         *     payer_side_after_transfer; rejected = REJECTED; paid_manual = PAID_MANUAL;
+         *     paid_auto_system = PAID_API with review_mode auto; paid_auto_review = PAID_API otherwise;
+         *     paying = PAYING (needs_manual included); failed = FAILED. Chinese names from BR-TEXT-25
+         *     admin_dict.
+         * @enum {string}
+         */
+        AdminWithdrawalDisplayStatus: "pending_review" | "pending_handle" | "rejected" | "paid_manual" | "paid_auto_system" | "paid_auto_review" | "paying" | "failed";
+        /**
+         * @description contracts/enums/fund.yaml withdrawal_hold_reason (withdrawals.hold_reason, BR-WDR-13, BR-WDR-17).
+         * @enum {string}
+         */
+        AdminWithdrawalHoldReason: "payout_disabled" | "queue_paused" | "channel_disabled" | "member_blocked" | "single_cap" | "daily_cap" | "payer_side_after_transfer";
+        /**
+         * @description contracts/enums/fund.yaml withdrawal_blocked_reason (withdrawals.blocked_reason, BR-WDR-05).
+         * @enum {string}
+         */
+        AdminWithdrawalBlockedReason: "NEGATIVE_BALANCE";
+        /**
+         * @description contracts/enums/fund.yaml withdraw_reject_reason (withdrawals.reject_reason_code, BR-WDR-10; NEGATIVE_BALANCE system only).
+         * @enum {string}
+         */
+        AdminWithdrawalRejectReason: "RISK_SUSPECT" | "ORDER_ABNORMAL" | "PAYEE_INFO_INVALID" | "USER_REQUEST" | "OTHER" | "NEGATIVE_BALANCE";
+        /**
+         * @description contracts/enums/fund.yaml withdrawal_manual_resolution (BR-WDR-15).
+         * @enum {string}
+         */
+        AdminWithdrawalManualResolution: "paid" | "failed";
+        /**
+         * @description contracts/enums/fund.yaml withdraw_hold_kind (withdraw_holds.reason).
+         * @enum {string}
+         */
+        AdminWithdrawHoldKind: "manual" | "recon_diff" | "ledger_mismatch" | "manual_failed_watch";
+        /**
+         * @description contracts/enums/fund.yaml payout_batch_kind (payout_batches.kind).
+         * @enum {string}
+         */
+        AdminPayoutBatchKind: "manual" | "auto";
+        /**
+         * @description contracts/enums/fund.yaml payout_batch_item_result (payout_batch_items.result, BR-WDR-11, BR-WDR-12).
+         * @enum {string}
+         */
+        AdminPayoutBatchItemResult: "paying" | "skipped" | "blocked" | "moved_out";
+        /**
+         * @description contracts/enums/fund.yaml payout_attempt_kind (payout_attempts.kind; cancel only for wechat withdrawals).
+         * @enum {string}
+         */
+        AdminPayoutAttemptKind: "transfer" | "query" | "cancel";
+        /**
+         * @description payout_attempts.result as stored (04 §3.2; BR-WDR-13, BR-WDR-14); unknown = result not known, query only, never resend.
+         * @enum {string}
+         */
+        AdminPayoutAttemptResult: "pending" | "success" | "fail" | "unknown";
+        /**
+         * @description A code of the withdrawals.risk_flags snapshot (04 §3.2): the labels ①–⑩ of BR-WDR-29 and
+         *     risk_calc_failed. Chinese names from BR-TEXT-25 admin_dict.withdrawals.risk_flags.
+         * @enum {string}
+         */
+        AdminWithdrawalRiskFlagCode: "first_withdrawal" | "credited_today" | "same_device_multi_account" | "invalid_ratio_60d" | "high_commission_ratio_60d" | "withdraw_vs_received" | "had_negative" | "recon_diff" | "blacklist_hit" | "payee_prev_other_user" | "risk_calc_failed";
+        /** @description The withdrawal number (withdrawals.out_biz_no, BR-WDR-07), 1–32 letters or digits. */
+        AdminWithdrawalOutBizNo: string;
+        /** @description The user of a withdrawal as the console shows it; the phone number only masked (BR-ID-33). */
+        AdminWithdrawalUser: {
+            user_id: components["schemas"]["Id"];
+            phone_masked: components["schemas"]["AdminMaskedPhone"];
+        };
+        /**
+         * @description withdrawals.auto_decision (04 §3.2; BR-WDR-30 细则「可追溯」): `result`, every unmet
+         *     condition code (`failed_conditions`, the 转人工原因, in the order ①–⑬; risk flags as
+         *     `risk_flag:<code>`), the three ⑧ actual values in bp (`warn_values`, each null when its
+         *     denominator is 0), `rule_version`, `decided_at`, and `execute_blocked`, the reason added when
+         *     a withdrawal decided auto could not be executed (执行受阻, kept apart from the condition list,
+         *     BR-WDR-08 细则). A key missing in the stored object reads as null. The values of the codes
+         *     are maintained in BR-WDR-30 only; Chinese names from BR-TEXT-25
+         *     admin_dict.withdrawals.auto_decision.failed_conditions.
+         */
+        AdminWithdrawalAutoDecision: {
+            result: components["schemas"]["WithdrawalReviewMode"];
+            failed_conditions: string[];
+            warn_values: components["schemas"]["AdminWithdrawalWarnValues"] | null;
+            /** Format: int32 */
+            rule_version: number | null;
+            /** Format: date-time */
+            decided_at: string | null;
+            /**
+             * @description Why EXECUTE did not run after an auto decision (BR-WDR-30, BR-WDR-12 ①–③, such as
+             *     payout_disabled, queue_paused, channel_disabled or a watermark reason); null otherwise.
+             */
+            execute_blocked: string | null;
+        };
+        /** @description The three BR-WDR-30 ⑧ actual values in bp; null when the denominator is 0. */
+        AdminWithdrawalWarnValues: {
+            /** Format: int64 */
+            high_commission_order_ratio_bp: number | null;
+            /** Format: int64 */
+            invalid_ratio_bp: number | null;
+            /** Format: int64 */
+            withdraw_received_ratio_bp: number | null;
+        };
+        /**
+         * @description One hit of the risk_flags snapshot (04 §3.2; BR-WDR-29): `value` is true for the yes / no
+         *     labels, a ratio in bp for ④⑤⑥ (null for ⑥ with a zero denominator), and for
+         *     risk_calc_failed the codes whose calculation failed; `threshold` is the bp threshold of
+         *     ④⑤⑥, otherwise null.
+         */
+        AdminWithdrawalRiskFlag: {
+            code: components["schemas"]["AdminWithdrawalRiskFlagCode"];
+            value: boolean | number | null | components["schemas"]["AdminWithdrawalRiskFlagCode"][];
+            /** Format: int32 */
+            threshold: number | null;
+        };
+        /**
+         * @description The payee snapshot of the application (BR-WDR-07), masked only (BR-ID-33): no full
+         *     account, full name, openid or launch data.
+         */
+        AdminWithdrawalPayee: {
+            /** @description Masked by payout method as BR-ID-33 细则 (alipay `138****5678` or `zh***@example.com`, bank card `尾号 1234`). */
+            masked_account: string;
+            /** @description Payee name with only the last character kept (`**三`, BR-ID-33). */
+            masked_name: string;
+            /** @description Bank of a bank_card withdrawal; null for the other methods. */
+            bank_name: string | null;
+        };
+        /** @description A payout batch (04 §3.2 payout_batches). */
+        AdminWithdrawalBatch: {
+            batch_id: components["schemas"]["Id"];
+            kind: components["schemas"]["AdminPayoutBatchKind"];
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description One payout_batch_items row of the withdrawal (04 §3.2; insert only). */
+        AdminWithdrawalBatchItem: {
+            batch_id: components["schemas"]["Id"];
+            result: components["schemas"]["AdminPayoutBatchItemResult"];
+            /** @description Why the withdrawal was skipped or blocked; null for paying and moved_out. */
+            reason: string | null;
+            /** @description The batch it moved to (moved_out only); null otherwise. */
+            moved_to_batch_id: string | null;
+            /** Format: date-time */
+            at: string;
+        };
+        /** @description Summary of one payout_attempts row (04 §3.2); the channel request and response bodies are not returned. */
+        AdminWithdrawalPayoutAttempt: {
+            attempt_id: components["schemas"]["Id"];
+            kind: components["schemas"]["AdminPayoutAttemptKind"];
+            result: components["schemas"]["AdminPayoutAttemptResult"];
+            /** @description The channel's response code; null when none. */
+            resp_code: string | null;
+            /** @description The channel's sub-code; null when none. */
+            resp_sub_code: string | null;
+            /** Format: date-time */
+            at: string;
+        };
+        /** @description A withdraw_holds row of the user in effect (04 §3.2; BR-WDR-05, BR-FUND-19). */
+        AdminWithdrawalHold: {
+            hold_id: components["schemas"]["Id"];
+            reason: components["schemas"]["AdminWithdrawHoldKind"];
+            /** @description What caused the hold, such as a recon_diffs id; null when none. */
+            source_ref: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description End of a timed hold (manual_failed_watch); null = until released.
+             */
+            hold_until: string | null;
+        };
+        /** @description One withdrawal of the console's list (04 §3.2 withdrawals); amounts in fen, net_fen = amount_fen − fee_fen − tax_fen. */
+        AdminWithdrawalListItem: {
+            withdrawal_id: components["schemas"]["Id"];
+            out_biz_no: components["schemas"]["AdminWithdrawalOutBizNo"];
+            user: components["schemas"]["AdminWithdrawalUser"];
+            status: components["schemas"]["WithdrawalStatus"];
+            display_status: components["schemas"]["AdminWithdrawalDisplayStatus"];
+            /** @description Null until decided after submission (BR-WDR-30). */
+            review_mode: components["schemas"]["WithdrawalReviewMode"] | null;
+            payout_channel: components["schemas"]["AdminPayoutChannelCode"];
+            amount_fen: components["schemas"]["Fen"];
+            fee_fen: components["schemas"]["Fen"];
+            tax_fen: components["schemas"]["Fen"];
+            net_fen: components["schemas"]["Fen"];
+            /** @description withdrawals.auto_decision; null while no decision is stored. */
+            auto_decision: components["schemas"]["AdminWithdrawalAutoDecision"] | null;
+            /** @description Why W9 returned the withdrawal to APPROVED (BR-WDR-13, BR-WDR-17); null otherwise. */
+            hold_reason: components["schemas"]["AdminWithdrawalHoldReason"] | null;
+            /** @description The withdrawal block (BR-WDR-05), shown as the「暂停」mark; null when not blocked. */
+            blocked_reason: components["schemas"]["AdminWithdrawalBlockedReason"] | null;
+            /** @description withdrawals.needs_manual (BR-WDR-15); ends only through W10. */
+            needs_manual: boolean;
+            /** @description Set on a REJECTED withdrawal (BR-WDR-10), otherwise null. */
+            reject_reason_code: components["schemas"]["AdminWithdrawalRejectReason"] | null;
+            /** @description Internal note of the rejection, admin only (BR-WDR-10); null when none. */
+            reject_note: string | null;
+            /** @description admin_users.id of the reviewer; null before review and for a system review (review_mode auto). */
+            reviewer_id: string | null;
+            /** Format: date-time */
+            reviewed_at: string | null;
+            /** @description The payout batch the withdrawal is in now (payout_batches.id); null when none. */
+            batch_id: string | null;
+            /** @description The risk flag snapshot written with W1 and never recalculated here (BR-WDR-29); [] when nothing hit. */
+            risk_flags: components["schemas"]["AdminWithdrawalRiskFlag"][];
+            /**
+             * Format: date-time
+             * @description When the risk_flags snapshot was computed; null when none is stored.
+             */
+            risk_flags_at: string | null;
+            /**
+             * Format: date-time
+             * @description Application time.
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description Set only in PAID_API / PAID_MANUAL, otherwise null.
+             */
+            paid_at: string | null;
+        };
+        AdminWithdrawalPage: {
+            items: components["schemas"]["AdminWithdrawalListItem"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminWithdrawalPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminWithdrawalPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description One withdrawal with the fields of AdminWithdrawalListItem plus the remaining columns, the
+         *     masked payee snapshot, the batch, its batch items, the transfer attempt summaries and the
+         *     user's holds in effect. Withdrawals have no status history table (04 §3.2): the time
+         *     points of the row stand for it.
+         */
+        AdminWithdrawalDetail: {
+            withdrawal_id: components["schemas"]["Id"];
+            out_biz_no: components["schemas"]["AdminWithdrawalOutBizNo"];
+            user: components["schemas"]["AdminWithdrawalUser"];
+            status: components["schemas"]["WithdrawalStatus"];
+            display_status: components["schemas"]["AdminWithdrawalDisplayStatus"];
+            /** @description Null until decided after submission (BR-WDR-30). */
+            review_mode: components["schemas"]["WithdrawalReviewMode"] | null;
+            payout_channel: components["schemas"]["AdminPayoutChannelCode"];
+            amount_fen: components["schemas"]["Fen"];
+            fee_fen: components["schemas"]["Fen"];
+            tax_fen: components["schemas"]["Fen"];
+            net_fen: components["schemas"]["Fen"];
+            /** @description withdrawals.auto_decision; null while no decision is stored. */
+            auto_decision: components["schemas"]["AdminWithdrawalAutoDecision"] | null;
+            /** @description Why W9 returned the withdrawal to APPROVED (BR-WDR-13, BR-WDR-17); null otherwise. */
+            hold_reason: components["schemas"]["AdminWithdrawalHoldReason"] | null;
+            /** @description The withdrawal block (BR-WDR-05), shown as the「暂停」mark; null when not blocked. */
+            blocked_reason: components["schemas"]["AdminWithdrawalBlockedReason"] | null;
+            /** @description withdrawals.needs_manual (BR-WDR-15); ends only through W10. */
+            needs_manual: boolean;
+            /** @description Set on a REJECTED withdrawal (BR-WDR-10), otherwise null. */
+            reject_reason_code: components["schemas"]["AdminWithdrawalRejectReason"] | null;
+            /** @description Internal note of the rejection, admin only (BR-WDR-10); null when none. */
+            reject_note: string | null;
+            /** @description admin_users.id of the reviewer; null before review and for a system review (review_mode auto). */
+            reviewer_id: string | null;
+            /** Format: date-time */
+            reviewed_at: string | null;
+            /** @description The payout batch the withdrawal is in now (payout_batches.id); null when none. */
+            batch_id: string | null;
+            /** @description The risk flag snapshot written with W1 and never recalculated here (BR-WDR-29); [] when nothing hit. */
+            risk_flags: components["schemas"]["AdminWithdrawalRiskFlag"][];
+            /**
+             * Format: date-time
+             * @description When the risk_flags snapshot was computed; null when none is stored.
+             */
+            risk_flags_at: string | null;
+            /**
+             * Format: date-time
+             * @description Application time.
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description Set only in PAID_API / PAID_MANUAL, otherwise null.
+             */
+            paid_at: string | null;
+            payout_method: components["schemas"]["AdminPayoutChannelCode"];
+            /**
+             * Format: date-time
+             * @description The manual-review deadline (BR-WDR-26); null when the withdrawal has none.
+             */
+            review_deadline: string | null;
+            /** @description Failure code of a FAILED withdrawal (BR-TEXT-08); null otherwise. */
+            fail_code: string | null;
+            /** @description admin_users.id of who executed the payout; null before execution, for a system execution and again after W9 (BR-WDR-13). */
+            executor_id: string | null;
+            /**
+             * Format: date-time
+             * @description Null before execution and again after a W9 return to APPROVED (BR-WDR-13).
+             */
+            executed_at: string | null;
+            /**
+             * Format: int32
+             * @description withdrawals.execute_seq, plus 1 on every EXECUTE (BR-WDR-12).
+             */
+            execute_seq: number;
+            /** @description The W10 resolution of a needs_manual withdrawal (BR-WDR-15); null otherwise. */
+            manual_resolution: components["schemas"]["AdminWithdrawalManualResolution"] | null;
+            /** @description admin_users.id of who resolved the needs_manual withdrawal (BR-WDR-15); [] when none. */
+            resolver_ids: components["schemas"]["Id"][];
+            /** @description admin_users.id of who entered the manual payout (BR-WDR-16); null otherwise. */
+            manual_entry_by: string | null;
+            /** @description admin_users.id of who confirmed the manual payout (BR-WDR-16; may be the same admin); null otherwise. */
+            manual_confirm_by: string | null;
+            /**
+             * Format: date-time
+             * @description When W9 returned the withdrawal to APPROVED; null together with hold_reason.
+             */
+            hold_at: string | null;
+            /** @description Only a wechat withdrawal in PAYING has a value (BR-WDR-33 ⑤); not a withdrawal status. */
+            channel_state: components["schemas"]["WithdrawalChannelState"] | null;
+            /**
+             * Format: date-time
+             * @description Latest time to confirm the transfer in WeChat (BR-WDR-33 ⑥); wechat withdrawals only, otherwise null.
+             */
+            confirm_deadline: string | null;
+            /** @description Channel serial number when recorded (BR-WDR-16); null otherwise. */
+            channel_order_id: string | null;
+            /** Format: date-time */
+            updated_at: string;
+            row_version: components["schemas"]["AdminRowVersion"];
+            payee: components["schemas"]["AdminWithdrawalPayee"];
+            /** @description The payout_batches row of batch_id; null when batch_id is null. */
+            batch: components["schemas"]["AdminWithdrawalBatch"] | null;
+            /** @description Every payout_batch_items row of this withdrawal, oldest first (insert only, BR-WDR-11, BR-WDR-12). */
+            batch_items: components["schemas"]["AdminWithdrawalBatchItem"][];
+            /** @description Every payout_attempts row of this withdrawal, oldest first, summary only (no request or response body). */
+            payout_attempts: components["schemas"]["AdminWithdrawalPayoutAttempt"][];
+            /** @description The user's withdraw_holds in effect at response time, oldest first (BR-WDR-05, BR-FUND-19); [] when none. */
+            holds: components["schemas"]["AdminWithdrawalHold"][];
+        };
+        AdminWithdrawalDetailResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminWithdrawalDetail"];
+            trace_id: components["schemas"]["TraceId"];
+        };
     };
     responses: {
         /** @description Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则). */
@@ -16080,6 +16538,34 @@ export interface components {
         AdminReconDiffRefIdFilter: string;
         /** @description The reconciliation difference (recon_diffs.id) as a list row carries it; unknown, of another app or of source R4 → 20001 with data.fields=[recon_diff_id]. */
         AdminReconDiffIdPath: components["schemas"]["Id"];
+        /** @description Only withdrawals in this status (enum withdrawal_status); absent = all. */
+        AdminWithdrawalStatusFilter: components["schemas"]["WithdrawalStatus"];
+        /** @description Only withdrawals whose derived display status is this one (enum admin_withdrawal_display_status, BR-WDR-08 细则); absent = all. */
+        AdminWithdrawalDisplayStatusFilter: components["schemas"]["AdminWithdrawalDisplayStatus"];
+        /** @description Only withdrawals with this review_mode (enum withdrawal_review_mode); a withdrawal not yet decided (review_mode null) never matches; absent = all. */
+        AdminWithdrawalReviewModeFilter: components["schemas"]["WithdrawalReviewMode"];
+        /** @description Only withdrawals of this payout channel (withdrawals.payout_channel, enum payout_method); absent = all. */
+        AdminWithdrawalChannelFilter: components["schemas"]["AdminPayoutChannelCode"];
+        /** @description Only withdrawals of this user (the user_id; UID and phone lookups go through the top-bar search); one of no user of the app → empty page. */
+        AdminWithdrawalUserFilter: components["schemas"]["Id"];
+        /** @description Only the withdrawal with this full withdrawal number (withdrawals.out_biz_no, exact match); absent = all. */
+        AdminWithdrawalOutBizNoFilter: components["schemas"]["AdminWithdrawalOutBizNo"];
+        /** @description Smallest amount_fen, inclusive; greater than amount_max_fen → 20001 with data.fields=[amount_min_fen, amount_max_fen]. */
+        AdminWithdrawalAmountMin: number;
+        /** @description Largest amount_fen, inclusive. */
+        AdminWithdrawalAmountMax: number;
+        /** @description Earliest created_at (application time), inclusive (ISO 8601 with offset); later than created_to → 20001 with data.fields=[created_from, created_to]. */
+        AdminWithdrawalCreatedFrom: string;
+        /** @description Latest created_at (application time), exclusive (ISO 8601 with offset). */
+        AdminWithdrawalCreatedTo: string;
+        /** @description Only withdrawals returned to APPROVED by W9 with this hold_reason (enum withdrawal_hold_reason, BR-WDR-13); absent = all. */
+        AdminWithdrawalHoldReasonFilter: components["schemas"]["AdminWithdrawalHoldReason"];
+        /** @description true = only withdrawals with a blocked_reason (the「暂停」mark, BR-WDR-05); false = only those without; absent = all. */
+        AdminWithdrawalBlockedFilter: boolean;
+        /** @description Only withdrawals whose risk_flags snapshot (BR-WDR-29) holds this code; absent = all. */
+        AdminWithdrawalRiskFlagFilter: components["schemas"]["AdminWithdrawalRiskFlagCode"];
+        /** @description The withdrawal (withdrawals.id) as a list row carries it; unknown or of another app → 20001 with data.fields=[withdrawal_id]. */
+        AdminWithdrawalIdPath: components["schemas"]["Id"];
     };
     requestBodies: never;
     headers: {
@@ -32822,6 +33308,307 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not closed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listAdminWithdrawals: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+                /** @description Only withdrawals in this status (enum withdrawal_status); absent = all. */
+                status?: components["parameters"]["AdminWithdrawalStatusFilter"];
+                /** @description Only withdrawals whose derived display status is this one (enum admin_withdrawal_display_status, BR-WDR-08 细则); absent = all. */
+                display_status?: components["parameters"]["AdminWithdrawalDisplayStatusFilter"];
+                /** @description Only withdrawals with this review_mode (enum withdrawal_review_mode); a withdrawal not yet decided (review_mode null) never matches; absent = all. */
+                review_mode?: components["parameters"]["AdminWithdrawalReviewModeFilter"];
+                /** @description Only withdrawals of this payout channel (withdrawals.payout_channel, enum payout_method); absent = all. */
+                payout_channel?: components["parameters"]["AdminWithdrawalChannelFilter"];
+                /** @description Only withdrawals of this user (the user_id; UID and phone lookups go through the top-bar search); one of no user of the app → empty page. */
+                user_id?: components["parameters"]["AdminWithdrawalUserFilter"];
+                /** @description Only the withdrawal with this full withdrawal number (withdrawals.out_biz_no, exact match); absent = all. */
+                out_biz_no?: components["parameters"]["AdminWithdrawalOutBizNoFilter"];
+                /** @description Smallest amount_fen, inclusive; greater than amount_max_fen → 20001 with data.fields=[amount_min_fen, amount_max_fen]. */
+                amount_min_fen?: components["parameters"]["AdminWithdrawalAmountMin"];
+                /** @description Largest amount_fen, inclusive. */
+                amount_max_fen?: components["parameters"]["AdminWithdrawalAmountMax"];
+                /** @description Earliest created_at (application time), inclusive (ISO 8601 with offset); later than created_to → 20001 with data.fields=[created_from, created_to]. */
+                created_from?: components["parameters"]["AdminWithdrawalCreatedFrom"];
+                /** @description Latest created_at (application time), exclusive (ISO 8601 with offset). */
+                created_to?: components["parameters"]["AdminWithdrawalCreatedTo"];
+                /** @description Only withdrawals returned to APPROVED by W9 with this hold_reason (enum withdrawal_hold_reason, BR-WDR-13); absent = all. */
+                hold_reason?: components["parameters"]["AdminWithdrawalHoldReasonFilter"];
+                /** @description true = only withdrawals with a blocked_reason (the「暂停」mark, BR-WDR-05); false = only those without; absent = all. */
+                blocked?: components["parameters"]["AdminWithdrawalBlockedFilter"];
+                /** @description Only withdrawals whose risk_flags snapshot (BR-WDR-29) holds this code; absent = all. */
+                risk_flag?: components["parameters"]["AdminWithdrawalRiskFlagFilter"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of withdrawals, newest applied first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "withdrawal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f9a02",
+                     *             "out_biz_no": "W20261029000102",
+                     *             "user": {
+                     *               "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
+                     *               "phone_masked": "138****5678"
+                     *             },
+                     *             "status": "PENDING_REVIEW",
+                     *             "display_status": "pending_review",
+                     *             "review_mode": "manual",
+                     *             "payout_channel": "alipay",
+                     *             "amount_fen": 50000,
+                     *             "fee_fen": 0,
+                     *             "tax_fen": 0,
+                     *             "net_fen": 50000,
+                     *             "auto_decision": {
+                     *               "result": "manual",
+                     *               "failed_conditions": [
+                     *                 "max_amount",
+                     *                 "risk_flag:first_withdrawal"
+                     *               ],
+                     *               "warn_values": {
+                     *                 "high_commission_order_ratio_bp": 1200,
+                     *                 "invalid_ratio_bp": 300,
+                     *                 "withdraw_received_ratio_bp": 4500
+                     *               },
+                     *               "rule_version": 3,
+                     *               "decided_at": "2026-10-29T10:00:01+08:00",
+                     *               "execute_blocked": null
+                     *             },
+                     *             "hold_reason": null,
+                     *             "blocked_reason": null,
+                     *             "needs_manual": false,
+                     *             "reject_reason_code": null,
+                     *             "reject_note": null,
+                     *             "reviewer_id": null,
+                     *             "reviewed_at": null,
+                     *             "batch_id": null,
+                     *             "risk_flags": [
+                     *               {
+                     *                 "code": "first_withdrawal",
+                     *                 "value": true,
+                     *                 "threshold": null
+                     *               }
+                     *             ],
+                     *             "risk_flags_at": "2026-10-29T10:00:00+08:00",
+                     *             "created_at": "2026-10-29T10:00:00+08:00",
+                     *             "paid_at": null
+                     *           },
+                     *           {
+                     *             "withdrawal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f9a01",
+                     *             "out_biz_no": "W20261028000101",
+                     *             "user": {
+                     *               "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *               "phone_masked": "139****1234"
+                     *             },
+                     *             "status": "PAID_API",
+                     *             "display_status": "paid_auto_system",
+                     *             "review_mode": "auto",
+                     *             "payout_channel": "alipay",
+                     *             "amount_fen": 2000,
+                     *             "fee_fen": 0,
+                     *             "tax_fen": 0,
+                     *             "net_fen": 2000,
+                     *             "auto_decision": {
+                     *               "result": "auto",
+                     *               "failed_conditions": [],
+                     *               "warn_values": {
+                     *                 "high_commission_order_ratio_bp": 0,
+                     *                 "invalid_ratio_bp": 0,
+                     *                 "withdraw_received_ratio_bp": 2000
+                     *               },
+                     *               "rule_version": 3,
+                     *               "decided_at": "2026-10-28T09:30:01+08:00",
+                     *               "execute_blocked": null
+                     *             },
+                     *             "hold_reason": null,
+                     *             "blocked_reason": null,
+                     *             "needs_manual": false,
+                     *             "reject_reason_code": null,
+                     *             "reject_note": null,
+                     *             "reviewer_id": null,
+                     *             "reviewed_at": "2026-10-28T09:30:01+08:00",
+                     *             "batch_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f9b01",
+                     *             "risk_flags": [],
+                     *             "risk_flags_at": "2026-10-28T09:30:00+08:00",
+                     *             "created_at": "2026-10-28T09:30:00+08:00",
+                     *             "paid_at": "2026-10-28T09:31:10+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminWithdrawalPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getAdminWithdrawal: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description The withdrawal (withdrawals.id) as a list row carries it; unknown or of another app → 20001 with data.fields=[withdrawal_id]. */
+                withdrawal_id: components["parameters"]["AdminWithdrawalIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The withdrawal with its batch, transfer attempts, holds in effect, decision and risk flags. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "withdrawal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f9a03",
+                     *         "out_biz_no": "W20261029000103",
+                     *         "user": {
+                     *           "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c03",
+                     *           "phone_masked": "137****0001"
+                     *         },
+                     *         "status": "APPROVED",
+                     *         "display_status": "pending_review",
+                     *         "review_mode": "auto",
+                     *         "payout_channel": "bank_card",
+                     *         "amount_fen": 30000,
+                     *         "fee_fen": 100,
+                     *         "tax_fen": 0,
+                     *         "net_fen": 29900,
+                     *         "auto_decision": {
+                     *           "result": "auto",
+                     *           "failed_conditions": [],
+                     *           "warn_values": {
+                     *             "high_commission_order_ratio_bp": null,
+                     *             "invalid_ratio_bp": null,
+                     *             "withdraw_received_ratio_bp": 1500
+                     *           },
+                     *           "rule_version": 3,
+                     *           "decided_at": "2026-10-29T11:00:01+08:00",
+                     *           "execute_blocked": "watermark_below_forecast"
+                     *         },
+                     *         "hold_reason": null,
+                     *         "blocked_reason": null,
+                     *         "needs_manual": false,
+                     *         "reject_reason_code": null,
+                     *         "reject_note": null,
+                     *         "reviewer_id": null,
+                     *         "reviewed_at": "2026-10-29T11:00:01+08:00",
+                     *         "batch_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f9b03",
+                     *         "risk_flags": [],
+                     *         "risk_flags_at": "2026-10-29T11:00:00+08:00",
+                     *         "created_at": "2026-10-29T11:00:00+08:00",
+                     *         "paid_at": null,
+                     *         "payout_method": "bank_card",
+                     *         "review_deadline": null,
+                     *         "fail_code": null,
+                     *         "executor_id": null,
+                     *         "executed_at": null,
+                     *         "execute_seq": 0,
+                     *         "manual_resolution": null,
+                     *         "resolver_ids": [],
+                     *         "manual_entry_by": null,
+                     *         "manual_confirm_by": null,
+                     *         "hold_at": null,
+                     *         "channel_state": null,
+                     *         "confirm_deadline": null,
+                     *         "channel_order_id": null,
+                     *         "updated_at": "2026-10-29T11:00:02+08:00",
+                     *         "row_version": 2,
+                     *         "payee": {
+                     *           "masked_account": "尾号 1234",
+                     *           "masked_name": "**三",
+                     *           "bank_name": "招商银行"
+                     *         },
+                     *         "batch": {
+                     *           "batch_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f9b03",
+                     *           "kind": "auto",
+                     *           "created_at": "2026-10-29T11:00:01+08:00"
+                     *         },
+                     *         "batch_items": [
+                     *           {
+                     *             "batch_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f9b03",
+                     *             "result": "blocked",
+                     *             "reason": "watermark_below_forecast",
+                     *             "moved_to_batch_id": null,
+                     *             "at": "2026-10-29T11:00:02+08:00"
+                     *           }
+                     *         ],
+                     *         "payout_attempts": [],
+                     *         "holds": [
+                     *           {
+                     *             "hold_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f9c01",
+                     *             "reason": "recon_diff",
+                     *             "source_ref": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e02",
+                     *             "created_at": "2026-10-21T01:05:00+08:00",
+                     *             "hold_until": null
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminWithdrawalDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

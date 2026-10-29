@@ -1,0 +1,37 @@
+{
+  "task": "CT-24y",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "8516388043c8f794d92d22a52bae24d59df894b3",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only). contracts/openapi.yaml gains two read-only console operations for withdrawals (B2-09; 01 F-ADM-08; 04 §3.2 withdrawals / payout_batches / payout_attempts / withdraw_holds, §11.2; design/specs/admin-withdrawals.md, admin-withdrawal-detail.md §4): GET /admin/v1/withdrawals (listAdminWithdrawals: status / display_status / review_mode / payout_channel / user_id / out_biz_no / amount and created ranges / hold_reason / blocked / risk_flag filters, AdminPage / AdminPageSize, created_at then withdrawal_id descending) and GET /admin/v1/withdrawals/{withdrawal_id} (getAdminWithdrawal: amount items in fen, the document's timestamps — no status history table exists, so none is invented —, batch and batch items, payout attempt summaries without request / response bodies, holds in effect, auto decision and risk flags, payee masked only); permission withdraw.review or fund.view, read only, no audit; unknown / foreign ids 20001 [withdrawal_id]; both x-implementation: planned until B2-09c. New enum admin_withdrawal_display_status (contracts/enums/admin.yaml; derived from status, review_mode and hold_reason per 08 BR-WDR-08 细则, not stored); other enums reused from fund.yaml and bound in packages/contracts-ts/scripts/conformance.ts ENUM_BINDINGS (checks added only). Generated files from pnpm codegen; one prettier line in openapi.yaml fixed mechanically (D10-206). tester: none, so no red run. Test-machine full verification verify/2 exit 0 (4053bf36, PROP_RUNS=2000); verify/1 had failed only on that prettier line.",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "fresh independent Claude via nohup claude-run.sh --review-type contract (Codex unavailable until 2026-11-02, approvals 36): pass; one S2 recorded as a follow-up (04 §11.1 lets user.lookup see a looked-up user's withdrawals, the contract only admits withdraw.review / fund.view — narrower, a compatible later addition)."
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "8ca9da1d3a7abe02a2e65a72e1aa54f84f62a3a2",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}

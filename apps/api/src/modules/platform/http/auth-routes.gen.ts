@@ -1153,6 +1153,16 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/withdrawals",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/withdrawals/:withdrawal_id",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "auth": "admin"
   },

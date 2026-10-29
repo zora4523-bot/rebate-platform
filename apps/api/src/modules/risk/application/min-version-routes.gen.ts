@@ -2325,6 +2325,26 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": true
   },
   {
+    "operationId": "listAdminWithdrawals",
+    "method": "GET",
+    "path": "/admin/v1/withdrawals",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "getAdminWithdrawal",
+    "method": "GET",
+    "path": "/admin/v1/withdrawals/:withdrawal_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListKillSwitches",
     "method": "GET",
     "path": "/admin/v1/kill-switches",

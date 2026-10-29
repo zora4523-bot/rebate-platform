@@ -314,6 +314,22 @@ export const notify_sms_test_status = [
 export type NotifySmsTestStatus = (typeof notify_sms_test_status)[number];
 
 /**
+ * GET /admin/v1/withdrawals 列表项与详情的 display_status 及同名筛选；由 status + review_mode + hold_reason 推导、不入库，不是新的提现状态（withdrawal_status 不变）；中文名取 BR-TEXT-25 admin_dict，本契约不补文案
+ * Source: 规划/08 BR-WDR-08 细则「与花卷云『会员提现管理』状态的映射」与「快捷筛选」；规划/01 F-ADM-07；design/specs/admin-withdrawals.md §2、§7 ⑤（CT-24y） (contracts/enums/admin.yaml).
+ */
+export const admin_withdrawal_display_status = [
+  "pending_review", // 等待审核（PENDING_REVIEW，以及 hold_reason 不是 payer_side_after_transfer 的 APPROVED：人工审核通过待执行、判 auto 后执行受阻、发出转账前经 W9 退回）
+  "pending_handle", // 等待处理（APPROVED 且 hold_reason=payer_side_after_transfer：已发出转账、付款方侧失败后经 W9 退回，不可再次执行，BR-WDR-17）
+  "rejected", // 审核驳回（REJECTED）
+  "paid_manual", // 手动成功（PAID_MANUAL）
+  "paid_auto_system", // 自动成功 · 系统自动（PAID_API 且 review_mode=auto）
+  "paid_auto_review", // 自动成功 · 审核自动（PAID_API 且 review_mode 不是 auto）
+  "paying", // 打款中（PAYING，含 needs_manual=true）
+  "failed", // 提现失败（FAILED）
+] as const;
+export type AdminWithdrawalDisplayStatus = (typeof admin_withdrawal_display_status)[number];
+
+/**
  * 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
  * Source: 规划/04 §2.4；BR-FUND-15；08 §13.4 (contracts/enums/fund.yaml).
  */
@@ -2016,6 +2032,7 @@ export const enums = {
   sms_template_type,
   notify_sms_state,
   notify_sms_test_status,
+  admin_withdrawal_display_status,
   ledger_type,
   referral_credit_sub_type,
   clawback_sub_type,
