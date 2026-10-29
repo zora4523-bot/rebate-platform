@@ -1,0 +1,102 @@
+{
+  "task": "B2-09b",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "f5d9b756866014786c9d252ac0e6b0beb0472a3b",
+  "red_tests": [
+    "test/spec/ledger/admin-recon-close/close.int.test.ts > [AC-B2-09b#2] 关闭结案（fund.recon，不要二次验证）：open 与 processing 的 R1 / R2 / R3 差错单都能关——status closed、handler_id 为操作人（处理中单的原处理人被替换）、closed_at 与 updated_at 为服务端时钟、resolution.reason 为去掉首尾空白的原因，其余列不变；应答恰好是 recon_diff（与关闭后 GET 详情一致）加 released_hold_count（无冻结时为 0）；关闭不记账",
+    "test/spec/ledger/admin-recon-close/close.int.test.ts > [AC-B2-09b#3] 权限：只有 fund.recon（或超管）能关；只有 fund.view、没有权限点、只有别的权限点 → 10403 data.reason=admin_permission_denied（原因全空白也先判权限）；不带令牌 → 10001；被拒时差错单、冻结记录都不变，不写审计",
+    "test/spec/ledger/admin-recon-close/close.int.test.ts > [AC-B2-09b#4] 原因：空串、全空白、去空白后超过 200 字、缺 reason → 20001 data.fields=[reason]，什么都不改；恰好 200 字可以关并原样记入 resolution.reason；原因不合格时先于差错单 id 与状态报 [reason]",
+    "test/spec/ledger/admin-recon-close/close.int.test.ts > [AC-B2-09b#5] 差错单 id：不存在的 id、其他应用的差错单、source R4 的收款差错、不是 UUID 的 id → 20001 data.fields=[recon_diff_id]（不回 404，前三种应答一样）；这些单与其冻结记录都不动，不写审计",
+    "test/spec/ledger/admin-recon-close/close.int.test.ts > [AC-B2-09b#6] 已 closed / adjusted / written_off 的差错单 → 20902 data.resource=recon_diff：差错单不变、来源为它的未解除冻结仍不解除、不写审计；20902 不存为幂等结果（同一 Idempotency-Key 再发仍是 20902）",
+    "test/spec/ledger/admin-recon-close/concurrency.int.test.ts > [AC-B2-09b#11] 两个账号同时关同一张差错单（各用自己的 Idempotency-Key）：恰好一个 0、另一个 20902 data.resource=recon_diff；handler_id 与每条冻结的 released_by 都是成功的那个账号，冻结只解除一次，只有一条 recon_diff_close 审计",
+    "test/spec/ledger/admin-recon-close/concurrency.int.test.ts > [AC-B2-09b#12] 解除前先锁 users 行（BR-WDR-07 锁序，按 user_id 排序）：两张差错单冻结了同一批用户，users 行被占时两次关闭都等待、库里看不到半截结果；放行后两次都成功（不死锁），各自只解除自己来源的冻结",
+    "test/spec/ledger/admin-recon-close/concurrency.int.test.ts > [AC-B2-09b#13] 任一步失败整笔回滚：解除冻结的 UPDATE、差错单的 UPDATE、withdraw_hold.release 审计、recon_diff_close 审计任一处失败 → 50001，差错单仍是原样、冻结都未解除、没有审计、不留幂等记录；同一 Idempotency-Key 重试照常关闭",
+    "test/spec/ledger/admin-recon-close/contract.test.ts > [AC-B2-09b#1] closeAdminReconDiff 去掉 x-implementation: planned（生成的 planned 清单同步），x-auth admin、x-idempotent true、x-error-codes [10001, 10403, 20001, 20901, 20902, 40901] 不变；admin 入口恰好挂一次 POST 并带契约的请求 schema（body、路径参数、Idempotency-Key 请求头），api 入口不挂",
+    "test/spec/ledger/admin-recon-close/holds.int.test.ts > [AC-B2-09b#7] 关闭时解除来源为该单（source_ref = recon_diff:<id>）的全部未解除冻结：写 released_at（服务端时钟）与 released_by（操作人），不论 reason、不论 hold_until 是否已过；已解除的、人工冻结、别的差错单的、source_ref 只写裸 id 或大小写不同的、其他应用的都不动；released_hold_count 只计本次解除的条数",
+    "test/spec/ledger/admin-recon-close/holds.int.test.ts > [AC-B2-09b#8] 没有冻结、或来源为该单的冻结都已解除 → released_hold_count 0，已解除的记录原样不动，不写 withdraw_hold.release，只写一条 recon_diff_close（前后 released_hold_count 0）",
+    "test/spec/ledger/admin-recon-close/idempotency.int.test.ts > [AC-B2-09b#9] 同一 Idempotency-Key 同一请求体重放：原样返回第一次的应答（同一 released_hold_count），不再解除、不再写审计（第一次之后新加的同源冻结仍生效）；同 key 换请求体 → 20901；新 key → 20902；别的账号用同一 key 是它自己的作用域 → 20902",
+    "test/spec/ledger/admin-recon-close/idempotency.int.test.ts > [AC-B2-09b#10] Idempotency-Key 必填：不带或格式不对 → 20001，差错单与冻结不动、不留幂等记录；同一 key 的第一次还在执行时再发（同体或换体）→ 40901，放行后第一次照常完成，之后重放得到它的应答"
+  ],
+  "risk_note": "RV2 (ledger + payout port). Console close of a reconciliation difference (CT-24w closeAdminReconDiff; 08 BR-FUND-19 「差错单关闭时解除冻结记录」, BR-WDR-05; 04 §3.2, §11.2 fund.recon; admin-recon.md §4 / §5; orchestrator ruling 2026-10-29 20:00: no step-up, hold source matched exactly as the existing writer's recon_diff:<id>). Single writers kept: ledger alone changes recon_diffs (row FOR UPDATE, status CAS from open / processing for the app's own R1–R3 rows to closed with handler_id, closed_at from the injected Clock, resolution.reason kept with the existing keys); payout alone changes withdraw_holds — new releaseWithdrawHoldsBySource (source_ref exactly recon_diff:<id>, users rows locked in user_id order and re-read under the lock, sharing releaseLocked with release, one withdraw_hold.release audit per hold, released ones skipped); ledger does not import payout, app.module injects payout's port into LedgerAdminModule. Lock order: difference row, then users rows — the same order as payout's recon-job (register difference, then add holds). Audit recon_diff_close (target the difference, before / after status and released_hold_count, no personal data); Idempotency-Key replay returns the first answer; any failure rolls the whole close back. No amounts change. Test-machine full verification verify/2 exit 0 (b9f9bf61, PROP_RUNS=2000, after rebasing onto main with CT-24w #1778); verify/1 had failed only on CT-24w's catalog.test line, which #1778 fixed.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "f5d9b756866014786c9d252ac0e6b0beb0472a3b",
+      "tree": "c2f0d47073b1c0ef5aa096ae6c8f8fa4237f4936",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-29T15:54:14Z",
+      "finished_at": "2026-10-29T15:54:48Z",
+      "red_tests": [
+        "test/spec/ledger/admin-recon-close/close.int.test.ts > [AC-B2-09b#2] 关闭结案（fund.recon，不要二次验证）：open 与 processing 的 R1 / R2 / R3 差错单都能关——status closed、handler_id 为操作人（处理中单的原处理人被替换）、closed_at 与 updated_at 为服务端时钟、resolution.reason 为去掉首尾空白的原因，其余列不变；应答恰好是 recon_diff（与关闭后 GET 详情一致）加 released_hold_count（无冻结时为 0）；关闭不记账",
+        "test/spec/ledger/admin-recon-close/close.int.test.ts > [AC-B2-09b#3] 权限：只有 fund.recon（或超管）能关；只有 fund.view、没有权限点、只有别的权限点 → 10403 data.reason=admin_permission_denied（原因全空白也先判权限）；不带令牌 → 10001；被拒时差错单、冻结记录都不变，不写审计",
+        "test/spec/ledger/admin-recon-close/close.int.test.ts > [AC-B2-09b#4] 原因：空串、全空白、去空白后超过 200 字、缺 reason → 20001 data.fields=[reason]，什么都不改；恰好 200 字可以关并原样记入 resolution.reason；原因不合格时先于差错单 id 与状态报 [reason]",
+        "test/spec/ledger/admin-recon-close/close.int.test.ts > [AC-B2-09b#5] 差错单 id：不存在的 id、其他应用的差错单、source R4 的收款差错、不是 UUID 的 id → 20001 data.fields=[recon_diff_id]（不回 404，前三种应答一样）；这些单与其冻结记录都不动，不写审计",
+        "test/spec/ledger/admin-recon-close/close.int.test.ts > [AC-B2-09b#6] 已 closed / adjusted / written_off 的差错单 → 20902 data.resource=recon_diff：差错单不变、来源为它的未解除冻结仍不解除、不写审计；20902 不存为幂等结果（同一 Idempotency-Key 再发仍是 20902）",
+        "test/spec/ledger/admin-recon-close/concurrency.int.test.ts > [AC-B2-09b#11] 两个账号同时关同一张差错单（各用自己的 Idempotency-Key）：恰好一个 0、另一个 20902 data.resource=recon_diff；handler_id 与每条冻结的 released_by 都是成功的那个账号，冻结只解除一次，只有一条 recon_diff_close 审计",
+        "test/spec/ledger/admin-recon-close/concurrency.int.test.ts > [AC-B2-09b#12] 解除前先锁 users 行（BR-WDR-07 锁序，按 user_id 排序）：两张差错单冻结了同一批用户，users 行被占时两次关闭都等待、库里看不到半截结果；放行后两次都成功（不死锁），各自只解除自己来源的冻结",
+        "test/spec/ledger/admin-recon-close/concurrency.int.test.ts > [AC-B2-09b#13] 任一步失败整笔回滚：解除冻结的 UPDATE、差错单的 UPDATE、withdraw_hold.release 审计、recon_diff_close 审计任一处失败 → 50001，差错单仍是原样、冻结都未解除、没有审计、不留幂等记录；同一 Idempotency-Key 重试照常关闭",
+        "test/spec/ledger/admin-recon-close/contract.test.ts > [AC-B2-09b#1] closeAdminReconDiff 去掉 x-implementation: planned（生成的 planned 清单同步），x-auth admin、x-idempotent true、x-error-codes [10001, 10403, 20001, 20901, 20902, 40901] 不变；admin 入口恰好挂一次 POST 并带契约的请求 schema（body、路径参数、Idempotency-Key 请求头），api 入口不挂",
+        "test/spec/ledger/admin-recon-close/holds.int.test.ts > [AC-B2-09b#7] 关闭时解除来源为该单（source_ref = recon_diff:<id>）的全部未解除冻结：写 released_at（服务端时钟）与 released_by（操作人），不论 reason、不论 hold_until 是否已过；已解除的、人工冻结、别的差错单的、source_ref 只写裸 id 或大小写不同的、其他应用的都不动；released_hold_count 只计本次解除的条数",
+        "test/spec/ledger/admin-recon-close/holds.int.test.ts > [AC-B2-09b#8] 没有冻结、或来源为该单的冻结都已解除 → released_hold_count 0，已解除的记录原样不动，不写 withdraw_hold.release，只写一条 recon_diff_close（前后 released_hold_count 0）",
+        "test/spec/ledger/admin-recon-close/idempotency.int.test.ts > [AC-B2-09b#9] 同一 Idempotency-Key 同一请求体重放：原样返回第一次的应答（同一 released_hold_count），不再解除、不再写审计（第一次之后新加的同源冻结仍生效）；同 key 换请求体 → 20901；新 key → 20902；别的账号用同一 key 是它自己的作用域 → 20902",
+        "test/spec/ledger/admin-recon-close/idempotency.int.test.ts > [AC-B2-09b#10] Idempotency-Key 必填：不带或格式不对 → 20001，差错单与冻结不动、不留幂等记录；同一 key 的第一次还在执行时再发（同体或换体）→ 40901，放行后第一次照常完成，之后重放得到它的应答"
+      ],
+      "expected": [
+        "test/spec/ledger/admin-recon-close/close.int.test.ts",
+        "test/spec/ledger/admin-recon-close/concurrency.int.test.ts",
+        "test/spec/ledger/admin-recon-close/contract.test.ts",
+        "test/spec/ledger/admin-recon-close/holds.int.test.ts",
+        "test/spec/ledger/admin-recon-close/idempotency.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "2b1d137e4529a131864b80feaef5bd3ee36adec5c6b1261799a0d21119037f6c"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "6f8d4e055fcc42d88fe124db7c5aab132fa65ef61cfb1e9df2e0100acaf8459c"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "nohup claude-run.sh review --review-type money (Codex unavailable until 2026-11-02, approvals 36): round 1 pass, no findings; idempotency, concurrency, clock and app_id ok; rounding / sign / partial refund n/a (no amount changes)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "nohup claude-run.sh review --review-type spec-test: round 1 pass."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "36993859b19066dfac36aa021783ea8d39e98e87",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
