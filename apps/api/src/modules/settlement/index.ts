@@ -29,6 +29,9 @@ export type {
   EarningsOwnOrder,
   EarningsReferralOrder,
 } from './reads/earnings.ts';
+// B2-04zc: the wallet ledger's order links (order_key → order_id; read only, for ledger's port).
+export { readOrderIdsByKey } from './reads/wallet-ledger.ts';
+export type { OrderIdsByKeyInput } from './reads/wallet-ledger.ts';
 // B1-01zzi: the worker's fund metrics (failed bill jobs, PARTIAL batches, held shares; read only).
 export { readSettlementFundMetrics } from './application/metrics-read.ts';
 export type { SettlementFundMetrics } from './application/metrics-read.ts';

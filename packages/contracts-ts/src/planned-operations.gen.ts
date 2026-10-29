@@ -36,7 +36,6 @@ export const plannedOperations: ReadonlySet<string> = new Set([
   "getShareTpwd",
   "listAdminPayRefunds",
   "listAgentSessionMessages",
-  "listWalletLedger",
   "loginByHuawei",
   "mergeAccount",
   "reportAgentMessage",

@@ -201,11 +201,13 @@ import {
   EarningsSummaryModule,
   LedgerAdminModule,
   LedgerModule,
+  WalletLedgerModule,
   WalletSummaryModule,
   createLedger,
   getOrderNets,
   readPersonalDataCopyLedgerEntries,
   type EarningsSummaryDependencies,
+  type WalletLedgerDependencies,
   type WalletSummaryDependencies,
 } from './modules/ledger/index.ts';
 import { PaymentModule } from './modules/payment/index.ts';
@@ -231,6 +233,7 @@ import {
   isWithdrawalApplication,
   createWithdrawUsageReader,
   generateOutBizNo,
+  readPaidWithdrawalSummaries,
   type DecryptWithdrawalAccount,
   type PayoutProcessOptions,
   type PayoutQueuePausePort,
@@ -371,6 +374,7 @@ import {
 import {
   createEarningsOrdersSource,
   createPendingEarningsSource,
+  readOrderIdsByKey,
 } from './modules/settlement/index.ts';
 import {
   REGISTERED_PLATFORMS,
@@ -867,6 +871,16 @@ function earningsSummaryDependencies(
     },
   };
 }
+
+/**
+ * GET /v1/wallet/ledger's owner-module read ports (B2-04zc; BR-FUND-15 / BR-TEXT-19), on the read
+ * transaction ledger passes: payout's paid withdrawals (one WITHDRAW_PAID summary entry each) and
+ * settlement's order_key → order_id for the self / share entries' links.
+ */
+const walletLedgerDependencies: WalletLedgerDependencies = {
+  withdrawals: { readPaid: readPaidWithdrawalSummaries },
+  orders: { readOrderIds: readOrderIdsByKey },
+};
 
 /**
  * B1-15f: the working-day calendar of the deletion overdue alarm (calendar.cn_holidays.<year>,
@@ -3528,6 +3542,11 @@ export class AppModule {
         // GET /v1/earnings/summary (B2-13a): ledger's credited sums and settlement's order facts.
         ...(options.entry === 'api'
           ? [EarningsSummaryModule.forApi({ dependencies: earningsSummaryDependencies })]
+          : []),
+        // GET /v1/wallet/ledger (B2-04zc): ledger's available entries, payout's paid withdrawals and
+        // settlement's order ids.
+        ...(options.entry === 'api'
+          ? [WalletLedgerModule.forApi({ dependencies: walletLedgerDependencies })]
           : []),
         // payment's /v1/pay/orders routes (B2-15b): on the api entry, over content's shared
         // configuration reader (pay.enabled, pay.channel_enabled.*, pay.biz.*.platforms,

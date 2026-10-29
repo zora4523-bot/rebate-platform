@@ -298,3 +298,10 @@ export type { AutoPayoutEnableOptions, ReconPassedDaysPort } from './application
 // B2-07d: the real port of the days the daily channel reconciliation ran through (D10-408).
 export { createReconPassedDays } from './application/recon-passed-days.ts';
 export type { ReconPassedDaysOptions } from './application/recon-passed-days.ts';
+// B2-04zc: the wallet ledger's WITHDRAW_PAID summary entries (PAID_API / PAID_MANUAL; read only,
+// for ledger's port).
+export { readPaidWithdrawalSummaries } from './application/wallet-ledger.ts';
+export type {
+  PaidWithdrawalSummariesInput,
+  PaidWithdrawalSummary,
+} from './application/wallet-ledger.ts';
