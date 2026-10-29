@@ -135,6 +135,16 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminSmsTemplateType: 'sms_template_type',
   AdminNotifySmsState: 'notify_sms_state',
   AdminNotifySmsTestStatus: 'notify_sms_test_status',
+  // CT-24y: admin withdrawal console, read only (04 §3.2 withdrawals, BR-WDR-08 细则).
+  AdminWithdrawalDisplayStatus: 'admin_withdrawal_display_status',
+  AdminWithdrawalHoldReason: 'withdrawal_hold_reason',
+  AdminWithdrawalBlockedReason: 'withdrawal_blocked_reason',
+  AdminWithdrawalRejectReason: 'withdraw_reject_reason',
+  AdminWithdrawalManualResolution: 'withdrawal_manual_resolution',
+  AdminWithdrawHoldKind: 'withdraw_hold_kind',
+  AdminPayoutBatchKind: 'payout_batch_kind',
+  AdminPayoutBatchItemResult: 'payout_batch_item_result',
+  AdminPayoutAttemptKind: 'payout_attempt_kind',
 };
 
 /**

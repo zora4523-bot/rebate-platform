@@ -1,6 +1,6 @@
 # 后台权限点（规划/04 §2.5 admin_permission、§11）。超管拥有全部权限点；其他后台账号按权限点逐项勾选。
 # 「后台账号与权限」只限超管、不可授予，不是权限点，不列入。specs/permissions.yaml（B1-18）另记 step-up 与守卫。
-# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）；风控规则清单的规则状态 risk_rule_status 与命中动作 risk_action（CT-24f）；站长联盟账号与推广位 union_auth_status、union_reauth_mode、admin_union_auth_session_status、union_pid_status（CT-24h）；后台通知渠道与短信登记的渠道 notify_channel、短信模板类型 sms_template_type、短信状态 notify_sms_state 与待测试登记的测试结果 notify_sms_test_status（CT-24t）。
+# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）；风控规则清单的规则状态 risk_rule_status 与命中动作 risk_action（CT-24f）；站长联盟账号与推广位 union_auth_status、union_reauth_mode、admin_union_auth_session_status、union_pid_status（CT-24h）；后台通知渠道与短信登记的渠道 notify_channel、短信模板类型 sms_template_type、短信状态 notify_sms_state 与待测试登记的测试结果 notify_sms_test_status（CT-24t）；后台提现单的展示状态 admin_withdrawal_display_status（CT-24y）。
 enums:
   admin_permission:
     source: 规划/04 §11（拍板第二批 §8 ADD-04、ADD-05）
@@ -222,3 +222,15 @@ enums:
       accepted: 已受理（受理不等于送达），可启用新配置；选「稍后再启用」后仍是此值
       failed: 测试失败（服务商拒收、出错或超时），原配置继续生效
       not_sent_no_verify_phone: 未发送：保存时操作人没有登记验证手机号
+  admin_withdrawal_display_status:
+    source: 规划/08 BR-WDR-08 细则「与花卷云『会员提现管理』状态的映射」与「快捷筛选」；规划/01 F-ADM-07；design/specs/admin-withdrawals.md §2、§7 ⑤（CT-24y）
+    description: GET /admin/v1/withdrawals 列表项与详情的 display_status 及同名筛选；由 status + review_mode + hold_reason 推导、不入库，不是新的提现状态（withdrawal_status 不变）；中文名取 BR-TEXT-25 admin_dict，本契约不补文案
+    values:
+      pending_review: 等待审核（PENDING_REVIEW，以及 hold_reason 不是 payer_side_after_transfer 的 APPROVED：人工审核通过待执行、判 auto 后执行受阻、发出转账前经 W9 退回）
+      pending_handle: 等待处理（APPROVED 且 hold_reason=payer_side_after_transfer：已发出转账、付款方侧失败后经 W9 退回，不可再次执行，BR-WDR-17）
+      rejected: 审核驳回（REJECTED）
+      paid_manual: 手动成功（PAID_MANUAL）
+      paid_auto_system: 自动成功 · 系统自动（PAID_API 且 review_mode=auto）
+      paid_auto_review: 自动成功 · 审核自动（PAID_API 且 review_mode 不是 auto）
+      paying: 打款中（PAYING，含 needs_manual=true）
+      failed: 提现失败（FAILED）

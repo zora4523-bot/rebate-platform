@@ -1153,6 +1153,16 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/withdrawals",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/withdrawals/:withdrawal_id",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "signed": false
   },
