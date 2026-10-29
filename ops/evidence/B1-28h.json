@@ -1,0 +1,138 @@
+{
+  "task": "B1-28h",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "4f74838af83f3fbd84afa3bca2a7ade1fd2797ad",
+  "red_tests": [
+    "test/spec/catalog/hot-rank/cache.test.ts > [AC-B1-28h#18] 缓存期内同一（平台、频道、类目、页码）再请求不再取联盟；名次、销量、类目与频道不变，卡片仍逐次组装并登记",
+    "test/spec/catalog/hot-rank/cache.test.ts > [AC-B1-28h#19] rank.cache_ttl_seconds 未配置时按 600 秒：599 秒仍命中，601 秒重新取联盟并换成新数据",
+    "test/spec/catalog/hot-rank/cache.test.ts > [AC-B1-28h#20] 缓存时长按本 app 的 rank.cache_ttl_seconds：配 120 时 119 秒命中、121 秒重新取",
+    "test/spec/catalog/hot-rank/cache.test.ts > [AC-B1-28h#21] 缓存按（平台、频道、类目、页码）分开：任一维度不同都单独取一次，各自再请求都命中",
+    "test/spec/catalog/hot-rank/cache.test.ts > [AC-B1-28h#22] 联盟故障时有缓存读缓存（已过缓存时长的也读），按原名次与销量下发",
+    "test/spec/catalog/hot-rank/cache.test.ts > [AC-B1-28h#23] 联盟故障（不可用、限流）且没有缓存 → 50304、data 不带 reason（可重试），不下发任何卡片",
+    "test/spec/catalog/hot-rank/cards.test.ts > [AC-B1-28h#16] 每张下发的卡登记一次链接（带该条的商品引用、联盟数据与报价），link_id 即登记结果；ProductCard 形状，ad_label=null",
+    "test/spec/catalog/hot-rank/cards.test.ts > [AC-B1-28h#17] 卡片经 catalog 的单一卡片入口按检索场景组装（同搜索卡），每条频道商品各组装一次",
+    "test/spec/catalog/hot-rank/categories.test.ts > [AC-B1-28h#7] categories 取所用频道给的类目，按频道给的顺序原样下发 category_id 与 name；带 category 时同样下发整份列表",
+    "test/spec/catalog/hot-rank/categories.test.ts > [AC-B1-28h#8] category 取列表内的 id 时按该类目取频道第 1 页；不带 category 时取整榜（categoryId=null）",
+    "test/spec/catalog/hot-rank/categories.test.ts > [AC-B1-28h#9] category 不在该频道的列表里（别的平台的类目、大小写不同、未知 id）→ 20001，不按它取数",
+    "test/spec/catalog/hot-rank/channels.test.ts > [AC-B1-28h#1] 只取该平台白名单里可选的频道，一次请求只用一个频道（不合并多个频道），channel 即所用频道",
+    "test/spec/catalog/hot-rank/channels.test.ts > [AC-B1-28h#2] 该平台没有合规频道（白名单空、只有别的平台、只有不可选的）→ 50304 data.reason=rank_unavailable，不向联盟取数",
+    "test/spec/catalog/hot-rank/channels.test.ts > [AC-B1-28h#3] 每次取数前都核对白名单：频道改为不可选后，下一次请求不再取数、按 rank_unavailable 处理并告警（带平台与频道）",
+    "test/spec/catalog/hot-rank/channels.test.ts > [AC-B1-28h#4] 频道从白名单移出后，即使缓存里还有它的榜单也不再下发（保存时的校验管不到之后的白名单变更）",
+    "test/spec/catalog/hot-rank/channels.test.ts > [AC-B1-28h#5] 平台的可选频道换成另一个后，下一次请求用新频道取数，不拿旧频道的缓存冒充",
+    "test/spec/catalog/hot-rank/channels.test.ts > [AC-B1-28h#6] 属性：任意白名单下，某平台 rank_unavailable 当且仅当它不在 rankPlatforms（features.rank_platforms 的口径）里；可用时 channel 是该平台的可选频道",
+    "test/spec/catalog/hot-rank/contract.test.ts > [AC-B1-28h#29] 契约 getHotRank 不再标 planned、生成请求 schema；游客可访问（x-auth none、security []）、只有 20001 / 50304，响应形状不变",
+    "test/spec/catalog/hot-rank/cursor.test.ts > [AC-B1-28h#14] 非法游标（任意字符串、空对象的 base64url、乱码）→ 20001，不登记链接",
+    "test/spec/catalog/hot-rank/cursor.test.ts > [AC-B1-28h#15] 别的平台发出的游标拿到本平台用 → 20001，不按它取数",
+    "test/spec/catalog/hot-rank/http.test.ts > [AC-B1-28h#24] 真实装配按 specs/material-channels.yaml 判定：没有合规频道的平台 → 503/50304 data.reason=rank_unavailable；游客可访问、路由存在",
+    "test/spec/catalog/hot-rank/http.test.ts > [AC-B1-28h#25] 游客 GET /v1/rank/hot 得到契约 HotRankResponse：频道顺序的名次、原样的 sales_text、notice_key；查询参数原样交给用例",
+    "test/spec/catalog/hot-rank/http.test.ts > [AC-B1-28h#26] category 不在该频道类目里 → 400/20001 data.fields=[category]",
+    "test/spec/catalog/hot-rank/http.test.ts > [AC-B1-28h#27] 非法游标与别的平台的游标 → 400/20001 data.fields=[cursor]",
+    "test/spec/catalog/hot-rank/http.test.ts > [AC-B1-28h#28] 联盟故障无缓存 → 503/50304 只带 data.platform、不带 reason；没有合规频道 → 503/50304 reason=rank_unavailable",
+    "test/spec/catalog/hot-rank/order.test.ts > [AC-B1-28h#10] 名次按频道返回顺序：到手价、返利、销量都不参与排序，rank 从 1 起连续；sales_text 原样、无则 null；notice_key=rank.notice",
+    "test/spec/catalog/hot-rank/order.test.ts > [AC-B1-28h#11] 每页向频道要 20 条；第 1 页有更多时给 next_cursor，用它取第 2 页，rank 接着 21 起；最后一页 next_cursor=null",
+    "test/spec/catalog/hot-rank/order.test.ts > [AC-B1-28h#12] 类目榜翻页：带同一 category 与 next_cursor 取该类目第 2 页，rank 从 21 接着计",
+    "test/spec/catalog/hot-rank/order.test.ts > [AC-B1-28h#13] 属性：任意价格、返利与销量字段的一页，下发顺序与频道顺序一致、rank=1..n、sales_text 与频道字段逐字相同"
+  ],
+  "risk_note": "RV2 (catalog, links registered from rank cards). GET /v1/rank/hot (F-PROD-13, BR-TEXT-17 / BR-TEXT-13 / BR-PROD-03; refs carried in the ledger comment per #1748): only selectable sales / popularity channels of specs/material-channels.yaml, checked before each fetch; categories from the channel and category / cursor validated (20001); items in channel order with the channel's rank kept, a skipped card leaving a gap (D10-422 ②); sales_text passed through or null; cards through catalog's single card entry, registering a link with its quote snapshot and never converting; cache per (platform, channel, category, page) for rank.cache_ttl_seconds (registered by B1-28g), the stale copy served on a union outage; 50304 rank_unavailable without a compliant channel, 50304 without reason on an outage without cache. getHotRank is no longer planned; codegen and the route generators were rerun. Known limit: union has no channel-scoped hot-list port (MaterialReq carries only a cursor) and union internals are outside this task's paths, so the production upstream answers as a union outage behind a TODO until a union task adds the port with CAP-*-10 records (reported to the orchestrator); the whitelist is empty today, so production answers rank_unavailable first. No money moves. The full verify on the test machine gave no result within 3600 s; this task's nine rule-test files (29 tests) passed in verify:fast; per D10-319 the required CI decides. Codex was unavailable until 11-02, so the rule tests and reviews ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "4f74838af83f3fbd84afa3bca2a7ade1fd2797ad",
+      "tree": "61fa79a534c4055ef09ffdb3d2aede94e7989c79",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-29T19:42:29Z",
+      "finished_at": "2026-10-29T19:43:01Z",
+      "gate": {
+        "commit": "91b04a8b74f80681b816a630870ded17f7b4b00a",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "red_tests": [
+        "test/spec/catalog/hot-rank/cache.test.ts > [AC-B1-28h#18] 缓存期内同一（平台、频道、类目、页码）再请求不再取联盟；名次、销量、类目与频道不变，卡片仍逐次组装并登记",
+        "test/spec/catalog/hot-rank/cache.test.ts > [AC-B1-28h#19] rank.cache_ttl_seconds 未配置时按 600 秒：599 秒仍命中，601 秒重新取联盟并换成新数据",
+        "test/spec/catalog/hot-rank/cache.test.ts > [AC-B1-28h#20] 缓存时长按本 app 的 rank.cache_ttl_seconds：配 120 时 119 秒命中、121 秒重新取",
+        "test/spec/catalog/hot-rank/cache.test.ts > [AC-B1-28h#21] 缓存按（平台、频道、类目、页码）分开：任一维度不同都单独取一次，各自再请求都命中",
+        "test/spec/catalog/hot-rank/cache.test.ts > [AC-B1-28h#22] 联盟故障时有缓存读缓存（已过缓存时长的也读），按原名次与销量下发",
+        "test/spec/catalog/hot-rank/cache.test.ts > [AC-B1-28h#23] 联盟故障（不可用、限流）且没有缓存 → 50304、data 不带 reason（可重试），不下发任何卡片",
+        "test/spec/catalog/hot-rank/cards.test.ts > [AC-B1-28h#16] 每张下发的卡登记一次链接（带该条的商品引用、联盟数据与报价），link_id 即登记结果；ProductCard 形状，ad_label=null",
+        "test/spec/catalog/hot-rank/cards.test.ts > [AC-B1-28h#17] 卡片经 catalog 的单一卡片入口按检索场景组装（同搜索卡），每条频道商品各组装一次",
+        "test/spec/catalog/hot-rank/categories.test.ts > [AC-B1-28h#7] categories 取所用频道给的类目，按频道给的顺序原样下发 category_id 与 name；带 category 时同样下发整份列表",
+        "test/spec/catalog/hot-rank/categories.test.ts > [AC-B1-28h#8] category 取列表内的 id 时按该类目取频道第 1 页；不带 category 时取整榜（categoryId=null）",
+        "test/spec/catalog/hot-rank/categories.test.ts > [AC-B1-28h#9] category 不在该频道的列表里（别的平台的类目、大小写不同、未知 id）→ 20001，不按它取数",
+        "test/spec/catalog/hot-rank/channels.test.ts > [AC-B1-28h#1] 只取该平台白名单里可选的频道，一次请求只用一个频道（不合并多个频道），channel 即所用频道",
+        "test/spec/catalog/hot-rank/channels.test.ts > [AC-B1-28h#2] 该平台没有合规频道（白名单空、只有别的平台、只有不可选的）→ 50304 data.reason=rank_unavailable，不向联盟取数",
+        "test/spec/catalog/hot-rank/channels.test.ts > [AC-B1-28h#3] 每次取数前都核对白名单：频道改为不可选后，下一次请求不再取数、按 rank_unavailable 处理并告警（带平台与频道）",
+        "test/spec/catalog/hot-rank/channels.test.ts > [AC-B1-28h#4] 频道从白名单移出后，即使缓存里还有它的榜单也不再下发（保存时的校验管不到之后的白名单变更）",
+        "test/spec/catalog/hot-rank/channels.test.ts > [AC-B1-28h#5] 平台的可选频道换成另一个后，下一次请求用新频道取数，不拿旧频道的缓存冒充",
+        "test/spec/catalog/hot-rank/channels.test.ts > [AC-B1-28h#6] 属性：任意白名单下，某平台 rank_unavailable 当且仅当它不在 rankPlatforms（features.rank_platforms 的口径）里；可用时 channel 是该平台的可选频道",
+        "test/spec/catalog/hot-rank/contract.test.ts > [AC-B1-28h#29] 契约 getHotRank 不再标 planned、生成请求 schema；游客可访问（x-auth none、security []）、只有 20001 / 50304，响应形状不变",
+        "test/spec/catalog/hot-rank/cursor.test.ts > [AC-B1-28h#14] 非法游标（任意字符串、空对象的 base64url、乱码）→ 20001，不登记链接",
+        "test/spec/catalog/hot-rank/cursor.test.ts > [AC-B1-28h#15] 别的平台发出的游标拿到本平台用 → 20001，不按它取数",
+        "test/spec/catalog/hot-rank/http.test.ts > [AC-B1-28h#24] 真实装配按 specs/material-channels.yaml 判定：没有合规频道的平台 → 503/50304 data.reason=rank_unavailable；游客可访问、路由存在",
+        "test/spec/catalog/hot-rank/http.test.ts > [AC-B1-28h#25] 游客 GET /v1/rank/hot 得到契约 HotRankResponse：频道顺序的名次、原样的 sales_text、notice_key；查询参数原样交给用例",
+        "test/spec/catalog/hot-rank/http.test.ts > [AC-B1-28h#26] category 不在该频道类目里 → 400/20001 data.fields=[category]",
+        "test/spec/catalog/hot-rank/http.test.ts > [AC-B1-28h#27] 非法游标与别的平台的游标 → 400/20001 data.fields=[cursor]",
+        "test/spec/catalog/hot-rank/http.test.ts > [AC-B1-28h#28] 联盟故障无缓存 → 503/50304 只带 data.platform、不带 reason；没有合规频道 → 503/50304 reason=rank_unavailable",
+        "test/spec/catalog/hot-rank/order.test.ts > [AC-B1-28h#10] 名次按频道返回顺序：到手价、返利、销量都不参与排序，rank 从 1 起连续；sales_text 原样、无则 null；notice_key=rank.notice",
+        "test/spec/catalog/hot-rank/order.test.ts > [AC-B1-28h#11] 每页向频道要 20 条；第 1 页有更多时给 next_cursor，用它取第 2 页，rank 接着 21 起；最后一页 next_cursor=null",
+        "test/spec/catalog/hot-rank/order.test.ts > [AC-B1-28h#12] 类目榜翻页：带同一 category 与 next_cursor 取该类目第 2 页，rank 从 21 接着计",
+        "test/spec/catalog/hot-rank/order.test.ts > [AC-B1-28h#13] 属性：任意价格、返利与销量字段的一页，下发顺序与频道顺序一致、rank=1..n、sales_text 与频道字段逐字相同"
+      ],
+      "expected": [
+        "test/spec/catalog/hot-rank/cache.test.ts",
+        "test/spec/catalog/hot-rank/cards.test.ts",
+        "test/spec/catalog/hot-rank/categories.test.ts",
+        "test/spec/catalog/hot-rank/channels.test.ts",
+        "test/spec/catalog/hot-rank/contract.test.ts",
+        "test/spec/catalog/hot-rank/cursor.test.ts",
+        "test/spec/catalog/hot-rank/http.test.ts",
+        "test/spec/catalog/hot-rank/order.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8ae354d49e277edc9665add35b070016651f9e7a6e4f795c8ea39c04aec3360f"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 against the merge base pass with no findings (general review is refused for RV2 tasks, so the money review type was used)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude (1 run, red 29 / 29). Round 1 pass with one S2 (the rank of a channel item skipped by the card entry was not pinned; the orchestrator fixed it as the channel's rank with a gap, D10-422 ②) and one out-of-scope S1 (content rankPlatforms counted personalized channels), taken up as B1-28i. After CI verify-props ran out of heap at PROP_RUNS=100000 (a fixture per property iteration, each holding 14 vi.fn that Vitest's mock registry keeps alive), the orchestrator replaced vi.fn in the kit with a light call-recording spy (calls / results / toHaveBeenCalled(Times) unchanged, no assertion changed, D10-206 precedent); reproduced and confirmed locally (8000 runs 1.1 GB before, 100000 runs 0.78 GB peak after)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "fbb3c2335e89d555408ad47020c240b80a53eb69",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}

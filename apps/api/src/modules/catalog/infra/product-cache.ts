@@ -59,7 +59,7 @@ export function normalizeKeyword(q: string): string {
  * breaker, exhausted quota; UnionError upstream_unavailable / rate_limited. Only these may fall
  * back to a stale entry; business refusals (off shelf, invalid_policy …) and anything else never do.
  */
-function isDependencyFailure(error: unknown): boolean {
+export function isDependencyFailure(error: unknown): boolean {
   if (error instanceof GovernanceError) return error.code !== 'invalid_policy';
   if (error instanceof UnionError) {
     return error.code === 'upstream_unavailable' || error.code === 'rate_limited';
@@ -134,7 +134,7 @@ function isRecord(value: unknown): value is Json {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function storeItem(item: UnionItem): Json {
+export function storeItem(item: UnionItem): Json {
   const source = item as unknown as Json;
   const out: Json = { platform: item.platform };
   for (const name of ITEM_STRINGS) {
@@ -145,9 +145,10 @@ function storeItem(item: UnionItem): Json {
   return out;
 }
 
-class Unreadable extends Error {}
+/** A stored value of another shape; readers treat it as a miss. */
+export class Unreadable extends Error {}
 
-function loadItem(value: unknown): UnionItemDetail {
+export function loadItem(value: unknown): UnionItemDetail {
   if (!isRecord(value) || typeof value['platform'] !== 'string') throw new Unreadable();
   const out: Json = { platform: value['platform'] };
   for (const name of ITEM_STRINGS) {
@@ -183,14 +184,14 @@ function loadDetail(value: unknown): CachedDetail {
   return { item, rawItemId: typeof raw === 'string' ? raw : null };
 }
 
-function storeRef(ref: ProductRef): Json {
+export function storeRef(ref: ProductRef): Json {
   const source = ref as unknown as Json;
   const out: Json = {};
   for (const name of REF_STRINGS) out[name] = source[name] ?? null;
   return out;
 }
 
-function loadRef(value: unknown): ProductRef {
+export function loadRef(value: unknown): ProductRef {
   if (!isRecord(value)) throw new Unreadable();
   const out: Json = { canonicalUrl: null };
   for (const name of REF_STRINGS) {

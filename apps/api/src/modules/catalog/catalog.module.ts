@@ -10,6 +10,7 @@ import {
   FIELD_CRYPTO,
   REDIS,
   ROOT_LOGGER,
+  getMaterialChannels,
   type AppConfig,
   type Clock,
   type FieldCrypto,
@@ -20,6 +21,7 @@ import { createUnionPidService, type UnionPidService } from '../union/index.ts';
 import { createCatalogCardEntry } from './application/card-entry.ts';
 import { createCatalog } from './application/catalog.ts';
 import { CatalogDetailService } from './application/detail-service.ts';
+import { CatalogHotRankService } from './application/hot-rank-service.ts';
 import { createItemRefService, type ItemRefService } from './application/item-ref.ts';
 import { CatalogSearchService } from './application/search-service.ts';
 import { markFreshDetail, type ProductDetailUpstream } from './detail.ts';
@@ -35,11 +37,14 @@ import {
   type FavoritesRoutePorts,
 } from './http/public/favorites.controller.ts';
 import { ProductController } from './http/public/product.controller.ts';
+import { HotRankController } from './http/public/hot-rank.controller.ts';
 import { createFavoriteCardPort } from './favorites/card-port.ts';
 import { createFavoritesService } from './favorites/service.ts';
 import { createDbCatalogProductReader } from './infra/product-reader-wiring.ts';
 import { SearchController } from './http/public/search.controller.ts';
 import { createUnionDetailUpstream } from './infra/detail-wiring.ts';
+import { HOT_RANK_CACHE_NAMESPACE, cacheHotRankUpstream } from './infra/hot-rank-cache.ts';
+import { createUnionHotRankUpstream } from './infra/hot-rank-wiring.ts';
 import { processItemRefCipher } from './infra/process-item-ref-cipher.ts';
 import {
   PRODUCT_CACHE_NAMESPACE,
@@ -249,6 +254,10 @@ function freshDetailUpstream(upstream: ProductDetailUpstream): ProductDetailUpst
  * detail upstream as the detail route (retrieval scene: registers a link and quote snapshot,
  * never converts). The detail's `favorited` reads the same service. Without a DB handle there
  * is no favorites service and the routes fail closed.
+ * B1-28h: GET /v1/rank/hot (HotRankController → CatalogHotRankService → getHotRank), request
+ * scoped on the same card ports; the whitelist is specs/material-channels.yaml re-read on every
+ * request, the union side (infra/hot-rank-wiring.ts) sits behind the Redis hot list cache
+ * (infra/hot-rank-cache.ts; without REDIS it is read directly).
  */
 @Module({})
 export class CatalogModule {
@@ -259,7 +268,13 @@ export class CatalogModule {
         : { ...ports.viewerContext, provide: ViewerContext };
     return {
       module: CatalogModule,
-      controllers: [SearchController, ProductController, PriceTrendController, FavoritesController],
+      controllers: [
+        SearchController,
+        ProductController,
+        PriceTrendController,
+        FavoritesController,
+        HotRankController,
+      ],
       providers: [
         {
           provide: CATALOG,
@@ -499,6 +514,52 @@ export class CatalogModule {
               newSessionId: randomUUID,
               logger,
               ...(priceHistory === undefined ? {} : { priceHistory }),
+            }),
+        },
+        {
+          provide: CatalogHotRankService,
+          scope: Scope.REQUEST,
+          inject: [
+            ViewerContext,
+            CatalogConfigReader,
+            CLOCK,
+            ROOT_LOGGER,
+            LinkRegistrar,
+            RebateQuoter,
+            SourceLinkReader,
+            ITEM_REFS,
+            { token: REDIS, optional: true },
+          ],
+          useFactory: (
+            viewerContext: ViewerContext,
+            config: CatalogConfigReader,
+            clock: Clock,
+            logger: RootLogger,
+            registrar: LinkRegistrar,
+            quoter: RebateQuoter,
+            sourceLinks: SourceLinkReader,
+            itemRefs: ItemRefService,
+            redis?: RedisHandle,
+          ): CatalogHotRankService =>
+            new CatalogHotRankService({
+              clock,
+              viewerContext,
+              cards: createCatalogCardEntry({
+                clock,
+                viewerContext,
+                quoter,
+                registrar,
+                sourceLinks,
+                itemRefs,
+                logger,
+              }),
+              channels: getMaterialChannels,
+              upstream: cacheHotRankUpstream(createUnionHotRankUpstream(), {
+                redis: redis === undefined ? null : redis.namespace(HOT_RANK_CACHE_NAMESPACE),
+                clock,
+                config,
+              }),
+              logger,
             }),
         },
         {
