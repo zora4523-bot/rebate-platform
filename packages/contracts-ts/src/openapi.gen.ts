@@ -7404,6 +7404,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/recon-diffs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reconciliation differences of sources R1–R3, page by page
+         * @description The 差错单 list of the reconciliation console (01 F-ADM-08; 04 §3.2 recon_diffs;
+         *     design/specs/admin-recon.md §4). Read only, no step-up. Permission point: any of
+         *     `fund.recon` or `fund.view` (04 §11.1, §11.2). Only recon_diffs of source R1 (联盟对账),
+         *     R2 (通道对账) or R3 (内部日终与月末核对) are listed; source R4 (收款对账: `pay_mismatch`,
+         *     `pay_anomaly`) stays in GET /admin/v1/pay-recon-diffs and is not a value of `source` here.
+         *     Each row has its `recon_diff_id`, `source`, `type`, `period`, what it refers to
+         *     (`ref_type`, `ref_id`), the three amounts in fen (`expected_fen`, `actual_fen`, `diff_fen`),
+         *     its `status`, `created_at` and `closed_at`. Filters combine with AND: `type`, `source`,
+         *     `status`, `ref_id` (exact match), `period_from` and `period_to` (both inclusive, compared
+         *     with `period` as strings, so a YYYY-MM period sorts before the days of its month); a
+         *     value outside an enum or pattern is 20001 with `data.fields` naming the parameter, and
+         *     `period_from` greater than `period_to` is 20001 with
+         *     `data.fields=[period_from, period_to]`. Order: `created_at` descending (then
+         *     `recon_diff_id` descending). Pages with `page` (as AdminPage; a page past the last one is
+         *     `items=[]`) and `page_size` ≤ 200 (above 200 is 20001, as AdminPageSize); `total` is the
+         *     count of the filter set. No user phone number or other personal data is returned.
+         *     Handling a difference (close, appeal restore, balance recalculation, write-off) is not
+         *     part of this operation. Reading does not write an audit record.
+         */
+        get: operations["listAdminReconDiffs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/recon-diffs/{recon_diff_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One reconciliation difference of source R1–R3 with its handling summary
+         * @description The 差错单 detail of the reconciliation console (01 F-ADM-08; 04 §3.2 recon_diffs;
+         *     design/specs/admin-recon.md §4). Read only, no step-up. Permission point: any of
+         *     `fund.recon` or `fund.view` (04 §11.1, §11.2). The fields of a list row, plus the admin
+         *     who handled it (`handler_id`, null until someone handles it), `updated_at` and
+         *     `resolution`: the stored handling summary (recon_diffs.resolution, an object, null while
+         *     unhandled), returned for display only; its keys are not fixed by this contract and
+         *     clients must not branch on them. An unknown `recon_diff_id`, a difference of another app,
+         *     or one of source R4 (see GET /admin/v1/pay-recon-diffs) is 20001 with
+         *     `data.fields=[recon_diff_id]` (no 404). No user phone number or other personal data is
+         *     returned. Reading does not write an audit record.
+         */
+        get: operations["getAdminReconDiff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/kill-switches": {
         parameters: {
             query?: never;
@@ -15455,6 +15521,88 @@ export interface components {
             data: components["schemas"]["AdminPayReconDiffPage"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /**
+         * @description The R1–R3 types of contracts/enums/fund.yaml recon_diff_type (BR-FUND-01, BR-FUND-04, BR-FUND-19, BR-FUND-22, BR-FUND-23); the R4 types pay_mismatch and pay_anomaly are AdminPayReconDiffType.
+         * @enum {string}
+         */
+        AdminReconDiffType: "union_mismatch" | "channel_mismatch" | "ledger_mismatch" | "platform_restore" | "month_end_unbalanced" | "settle_amount_mismatch" | "settle_missing" | "appeal_restore" | "estimate_changed_after_credit";
+        /**
+         * @description Source of a difference listed under /admin/v1/recon-diffs (recon_diffs.source without R4) — R1 联盟对账, R2 通道对账, R3 内部日终与月末核对.
+         * @enum {string}
+         */
+        AdminReconDiffSource: "R1" | "R2" | "R3";
+        /** @description A reconciliation period, a month (YYYY-MM) or a day (YYYY-MM-DD), as recon_diffs.period. */
+        AdminReconDiffPeriod: string;
+        /** @description One reconciliation difference of source R1, R2 or R3 (04 §3.2 recon_diffs). `diff_fen` = `expected_fen` − `actual_fen`. */
+        AdminReconDiff: {
+            recon_diff_id: components["schemas"]["Id"];
+            source: components["schemas"]["AdminReconDiffSource"];
+            type: components["schemas"]["AdminReconDiffType"];
+            period: components["schemas"]["AdminReconDiffPeriod"];
+            /** @description What the difference refers to, such as order, account or settlement. */
+            ref_type: string;
+            ref_id: string;
+            expected_fen: components["schemas"]["Fen"];
+            actual_fen: components["schemas"]["Fen"];
+            diff_fen: components["schemas"]["Fen"];
+            status: components["schemas"]["AdminReconDiffStatus"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            closed_at: string | null;
+        };
+        AdminReconDiffPage: {
+            items: components["schemas"]["AdminReconDiff"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminReconDiffPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminReconDiffPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description One reconciliation difference of source R1, R2 or R3 with its handling summary: the fields
+         *     of AdminReconDiff plus `handler_id` (admin_users.id of who handled it; null until handled),
+         *     `updated_at` and `resolution` (recon_diffs.resolution; null while unhandled). The keys of
+         *     `resolution` are not fixed by this contract; it is for display only.
+         */
+        AdminReconDiffDetail: {
+            recon_diff_id: components["schemas"]["Id"];
+            source: components["schemas"]["AdminReconDiffSource"];
+            type: components["schemas"]["AdminReconDiffType"];
+            period: components["schemas"]["AdminReconDiffPeriod"];
+            /** @description What the difference refers to, such as order, account or settlement. */
+            ref_type: string;
+            ref_id: string;
+            expected_fen: components["schemas"]["Fen"];
+            actual_fen: components["schemas"]["Fen"];
+            diff_fen: components["schemas"]["Fen"];
+            status: components["schemas"]["AdminReconDiffStatus"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            closed_at: string | null;
+            /** @description admin_users.id of the admin who handled the difference; null until handled. */
+            handler_id: components["schemas"]["Id"] | null;
+            /** Format: date-time */
+            updated_at: string;
+            /** @description The handling summary as stored (recon_diffs.resolution), for display only; its keys are not fixed by this contract. Null while unhandled. */
+            resolution: {
+                [key: string]: unknown;
+            } | null;
+        };
+        AdminReconDiffDetailResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminReconDiffDetail"];
+            trace_id: components["schemas"]["TraceId"];
+        };
     };
     responses: {
         /** @description Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则). */
@@ -15849,6 +15997,20 @@ export interface components {
         AdminPayReconDiffTypeFilter: components["schemas"]["AdminPayReconDiffType"];
         /** @description Only differences in this status (enum recon_diff_status); absent = all. */
         AdminPayReconDiffStatusFilter: components["schemas"]["AdminReconDiffStatus"];
+        /** @description Only differences of this R1–R3 type (AdminReconDiffType); absent = all. */
+        AdminReconDiffTypeFilter: components["schemas"]["AdminReconDiffType"];
+        /** @description Only differences of this source (R1, R2 or R3; R4 is not accepted here); absent = all three. */
+        AdminReconDiffSourceFilter: components["schemas"]["AdminReconDiffSource"];
+        /** @description Only differences in this status (enum recon_diff_status); absent = all. */
+        AdminReconDiffStatusFilter: components["schemas"]["AdminReconDiffStatus"];
+        /** @description Smallest period, inclusive, compared with `period` as a string (YYYY-MM or YYYY-MM-DD); greater than period_to → 20001 with data.fields=[period_from, period_to]. */
+        AdminReconDiffPeriodFrom: components["schemas"]["AdminReconDiffPeriod"];
+        /** @description Largest period, inclusive, compared with `period` as a string (YYYY-MM or YYYY-MM-DD). */
+        AdminReconDiffPeriodTo: components["schemas"]["AdminReconDiffPeriod"];
+        /** @description Only differences referring to this ref_id (exact match); absent = all. */
+        AdminReconDiffRefIdFilter: string;
+        /** @description The reconciliation difference (recon_diffs.id) as a list row carries it; unknown, of another app or of source R4 → 20001 with data.fields=[recon_diff_id]. */
+        AdminReconDiffIdPath: components["schemas"]["Id"];
     };
     requestBodies: never;
     headers: {
@@ -32343,6 +32505,166 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["AdminPayReconDiffPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listAdminReconDiffs: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+                /** @description Only differences of this R1–R3 type (AdminReconDiffType); absent = all. */
+                type?: components["parameters"]["AdminReconDiffTypeFilter"];
+                /** @description Only differences of this source (R1, R2 or R3; R4 is not accepted here); absent = all three. */
+                source?: components["parameters"]["AdminReconDiffSourceFilter"];
+                /** @description Only differences in this status (enum recon_diff_status); absent = all. */
+                status?: components["parameters"]["AdminReconDiffStatusFilter"];
+                /** @description Smallest period, inclusive, compared with `period` as a string (YYYY-MM or YYYY-MM-DD); greater than period_to → 20001 with data.fields=[period_from, period_to]. */
+                period_from?: components["parameters"]["AdminReconDiffPeriodFrom"];
+                /** @description Largest period, inclusive, compared with `period` as a string (YYYY-MM or YYYY-MM-DD). */
+                period_to?: components["parameters"]["AdminReconDiffPeriodTo"];
+                /** @description Only differences referring to this ref_id (exact match); absent = all. */
+                ref_id?: components["parameters"]["AdminReconDiffRefIdFilter"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of R1–R3 reconciliation differences, newest first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "recon_diff_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e02",
+                     *             "source": "R3",
+                     *             "type": "ledger_mismatch",
+                     *             "period": "2026-10-20",
+                     *             "ref_type": "account",
+                     *             "ref_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
+                     *             "expected_fen": 12000,
+                     *             "actual_fen": 11800,
+                     *             "diff_fen": 200,
+                     *             "status": "open",
+                     *             "created_at": "2026-10-21T01:05:00+08:00",
+                     *             "closed_at": null
+                     *           },
+                     *           {
+                     *             "recon_diff_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e01",
+                     *             "source": "R1",
+                     *             "type": "union_mismatch",
+                     *             "period": "2026-09",
+                     *             "ref_type": "order",
+                     *             "ref_id": "taobao:5550001",
+                     *             "expected_fen": 1234,
+                     *             "actual_fen": 1200,
+                     *             "diff_fen": 34,
+                     *             "status": "closed",
+                     *             "created_at": "2026-10-20T10:00:00+08:00",
+                     *             "closed_at": "2026-10-20T16:30:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminReconDiffPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getAdminReconDiff: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description The reconciliation difference (recon_diffs.id) as a list row carries it; unknown, of another app or of source R4 → 20001 with data.fields=[recon_diff_id]. */
+                recon_diff_id: components["parameters"]["AdminReconDiffIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The reconciliation difference with its handling summary. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "recon_diff_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e01",
+                     *         "source": "R1",
+                     *         "type": "union_mismatch",
+                     *         "period": "2026-09",
+                     *         "ref_type": "order",
+                     *         "ref_id": "taobao:5550001",
+                     *         "expected_fen": 1234,
+                     *         "actual_fen": 1200,
+                     *         "diff_fen": 34,
+                     *         "status": "closed",
+                     *         "created_at": "2026-10-20T10:00:00+08:00",
+                     *         "closed_at": "2026-10-20T16:30:00+08:00",
+                     *         "handler_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *         "updated_at": "2026-10-20T16:30:00+08:00",
+                     *         "resolution": {
+                     *           "reason": "联盟结算明细已核对，差额由联盟侧调整"
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminReconDiffDetailResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

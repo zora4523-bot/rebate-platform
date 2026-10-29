@@ -106,6 +106,8 @@ tags:
     description: Station-owner union accounts and PIDs (推广位) in the admin console — accounts with authorization expiry and probe results, OAuth re-authorization sessions and their completion, manual credential entry, alert phones, and PID registration, change of pending rows, activation with the 花卷云 ignore confirmation and retirement (permission points union.account_auth, union.pid; 04 §6.6 union-accounts, union-pids, §11.2; BR-ID-24, BR-ATTR-02).
   - name: admin-pay
     description: Admin pay console — pay orders with their refunds and channel request summaries, the manual settlement of a needs_manual pay order (step-up), original-route refunds of a pay order or a pay anomaly (Idempotency-Key, no step-up), the refund list, pay anomalies and the R4 reconciliation differences (permission points pay.view, pay.resolve, pay.refund; 04 §6.6 pay-orders, §11.2; BR-PAY-05, BR-PAY-06, BR-PAY-07).
+  - name: admin-recon
+    description: Admin reconciliation console — the R1–R3 reconciliation differences (差错单) page by page with filters and one difference with its handling summary, read only (permission point fund.recon or fund.view; 01 F-ADM-08, 04 §3.2 recon_diffs, §11). Handling a difference follows in CT-24w; source R4 stays under admin-pay.
   - name: agent
     description: Agent sessions, history, the reply stream, stop, feedback and report (04 §6.5, §8).
 paths:
@@ -21417,6 +21419,193 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/recon-diffs:
+    get:
+      operationId: listAdminReconDiffs
+      tags:
+        - admin-recon
+      summary: Reconciliation differences of sources R1–R3, page by page
+      description: |
+        The 差错单 list of the reconciliation console (01 F-ADM-08; 04 §3.2 recon_diffs;
+        design/specs/admin-recon.md §4). Read only, no step-up. Permission point: any of
+        `fund.recon` or `fund.view` (04 §11.1, §11.2). Only recon_diffs of source R1 (联盟对账),
+        R2 (通道对账) or R3 (内部日终与月末核对) are listed; source R4 (收款对账: `pay_mismatch`,
+        `pay_anomaly`) stays in GET /admin/v1/pay-recon-diffs and is not a value of `source` here.
+        Each row has its `recon_diff_id`, `source`, `type`, `period`, what it refers to
+        (`ref_type`, `ref_id`), the three amounts in fen (`expected_fen`, `actual_fen`, `diff_fen`),
+        its `status`, `created_at` and `closed_at`. Filters combine with AND: `type`, `source`,
+        `status`, `ref_id` (exact match), `period_from` and `period_to` (both inclusive, compared
+        with `period` as strings, so a YYYY-MM period sorts before the days of its month); a
+        value outside an enum or pattern is 20001 with `data.fields` naming the parameter, and
+        `period_from` greater than `period_to` is 20001 with
+        `data.fields=[period_from, period_to]`. Order: `created_at` descending (then
+        `recon_diff_id` descending). Pages with `page` (as AdminPage; a page past the last one is
+        `items=[]`) and `page_size` ≤ 200 (above 200 is 20001, as AdminPageSize); `total` is the
+        count of the filter set. No user phone number or other personal data is returned.
+        Handling a difference (close, appeal restore, balance recalculation, write-off) is not
+        part of this operation. Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - $ref: '#/components/parameters/AdminReconDiffTypeFilter'
+        - $ref: '#/components/parameters/AdminReconDiffSourceFilter'
+        - $ref: '#/components/parameters/AdminReconDiffStatusFilter'
+        - $ref: '#/components/parameters/AdminReconDiffPeriodFrom'
+        - $ref: '#/components/parameters/AdminReconDiffPeriodTo'
+        - $ref: '#/components/parameters/AdminReconDiffRefIdFilter'
+      responses:
+        '200':
+          description: One page of R1–R3 reconciliation differences, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminReconDiffPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - recon_diff_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e02
+                      source: R3
+                      type: ledger_mismatch
+                      period: '2026-10-20'
+                      ref_type: account
+                      ref_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02
+                      expected_fen: 12000
+                      actual_fen: 11800
+                      diff_fen: 200
+                      status: open
+                      created_at: '2026-10-21T01:05:00+08:00'
+                      closed_at: null
+                    - recon_diff_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e01
+                      source: R1
+                      type: union_mismatch
+                      period: '2026-09'
+                      ref_type: order
+                      ref_id: 'taobao:5550001'
+                      expected_fen: 1234
+                      actual_fen: 1200
+                      diff_fen: 34
+                      status: closed
+                      created_at: '2026-10-20T10:00:00+08:00'
+                      closed_at: '2026-10-20T16:30:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 2
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                periodRangeInvalid:
+                  $ref: '#/components/examples/AdminReconDiffPeriodRangeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/recon-diffs/{recon_diff_id}:
+    get:
+      operationId: getAdminReconDiff
+      tags:
+        - admin-recon
+      summary: One reconciliation difference of source R1–R3 with its handling summary
+      description: |
+        The 差错单 detail of the reconciliation console (01 F-ADM-08; 04 §3.2 recon_diffs;
+        design/specs/admin-recon.md §4). Read only, no step-up. Permission point: any of
+        `fund.recon` or `fund.view` (04 §11.1, §11.2). The fields of a list row, plus the admin
+        who handled it (`handler_id`, null until someone handles it), `updated_at` and
+        `resolution`: the stored handling summary (recon_diffs.resolution, an object, null while
+        unhandled), returned for display only; its keys are not fixed by this contract and
+        clients must not branch on them. An unknown `recon_diff_id`, a difference of another app,
+        or one of source R4 (see GET /admin/v1/pay-recon-diffs) is 20001 with
+        `data.fields=[recon_diff_id]` (no 404). No user phone number or other personal data is
+        returned. Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminReconDiffIdPath'
+      responses:
+        '200':
+          description: The reconciliation difference with its handling summary.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminReconDiffDetailResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  recon_diff_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e01
+                  source: R1
+                  type: union_mismatch
+                  period: '2026-09'
+                  ref_type: order
+                  ref_id: 'taobao:5550001'
+                  expected_fen: 1234
+                  actual_fen: 1200
+                  diff_fen: 34
+                  status: closed
+                  created_at: '2026-10-20T10:00:00+08:00'
+                  closed_at: '2026-10-20T16:30:00+08:00'
+                  handler_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                  updated_at: '2026-10-20T16:30:00+08:00'
+                  resolution:
+                    reason: 联盟结算明细已核对，差额由联盟侧调整
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                reconDiffInvalid:
+                  $ref: '#/components/examples/AdminReconDiffIdInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/kill-switches:
     get:
       operationId: adminListKillSwitches
@@ -23557,6 +23746,57 @@ components:
       description: Only differences in this status (enum recon_diff_status); absent = all.
       schema:
         $ref: '#/components/schemas/AdminReconDiffStatus'
+    AdminReconDiffTypeFilter:
+      name: type
+      in: query
+      required: false
+      description: Only differences of this R1–R3 type (AdminReconDiffType); absent = all.
+      schema:
+        $ref: '#/components/schemas/AdminReconDiffType'
+    AdminReconDiffSourceFilter:
+      name: source
+      in: query
+      required: false
+      description: Only differences of this source (R1, R2 or R3; R4 is not accepted here); absent = all three.
+      schema:
+        $ref: '#/components/schemas/AdminReconDiffSource'
+    AdminReconDiffStatusFilter:
+      name: status
+      in: query
+      required: false
+      description: Only differences in this status (enum recon_diff_status); absent = all.
+      schema:
+        $ref: '#/components/schemas/AdminReconDiffStatus'
+    AdminReconDiffPeriodFrom:
+      name: period_from
+      in: query
+      required: false
+      description: Smallest period, inclusive, compared with `period` as a string (YYYY-MM or YYYY-MM-DD); greater than period_to → 20001 with data.fields=[period_from, period_to].
+      schema:
+        $ref: '#/components/schemas/AdminReconDiffPeriod'
+    AdminReconDiffPeriodTo:
+      name: period_to
+      in: query
+      required: false
+      description: Largest period, inclusive, compared with `period` as a string (YYYY-MM or YYYY-MM-DD).
+      schema:
+        $ref: '#/components/schemas/AdminReconDiffPeriod'
+    AdminReconDiffRefIdFilter:
+      name: ref_id
+      in: query
+      required: false
+      description: Only differences referring to this ref_id (exact match); absent = all.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+    AdminReconDiffIdPath:
+      name: recon_diff_id
+      in: path
+      required: true
+      description: The reconciliation difference (recon_diffs.id) as a list row carries it; unknown, of another app or of source R4 → 20001 with data.fields=[recon_diff_id].
+      schema:
+        $ref: '#/components/schemas/Id'
   responses:
     NoStoreClientError:
       description: Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则).
@@ -25839,6 +26079,25 @@ components:
         data:
           fields:
             - pay_refund_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminReconDiffPeriodRangeInvalid:
+      summary: 20001 period_from greater than period_to
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - period_from
+            - period_to
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminReconDiffIdInvalid:
+      summary: 20001 unknown recon_diff_id (or a difference of another app, or of source R4)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - recon_diff_id
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminPayAnomalyIdInvalid:
       summary: 20001 unknown pay_anomaly_id (or an anomaly of another app)
@@ -42106,5 +42365,212 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/AdminPayReconDiffPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminReconDiffType:
+      type: string
+      description: The R1–R3 types of contracts/enums/fund.yaml recon_diff_type (BR-FUND-01, BR-FUND-04, BR-FUND-19, BR-FUND-22, BR-FUND-23); the R4 types pay_mismatch and pay_anomaly are AdminPayReconDiffType.
+      enum:
+        - union_mismatch
+        - channel_mismatch
+        - ledger_mismatch
+        - platform_restore
+        - month_end_unbalanced
+        - settle_amount_mismatch
+        - settle_missing
+        - appeal_restore
+        - estimate_changed_after_credit
+    AdminReconDiffSource:
+      type: string
+      description: Source of a difference listed under /admin/v1/recon-diffs (recon_diffs.source without R4) — R1 联盟对账, R2 通道对账, R3 内部日终与月末核对.
+      enum:
+        - R1
+        - R2
+        - R3
+    AdminReconDiffPeriod:
+      type: string
+      pattern: '^[0-9]{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12][0-9]|3[01]))?$'
+      description: A reconciliation period, a month (YYYY-MM) or a day (YYYY-MM-DD), as recon_diffs.period.
+    AdminReconDiff:
+      type: object
+      description: One reconciliation difference of source R1, R2 or R3 (04 §3.2 recon_diffs). `diff_fen` = `expected_fen` − `actual_fen`.
+      additionalProperties: false
+      required:
+        - recon_diff_id
+        - source
+        - type
+        - period
+        - ref_type
+        - ref_id
+        - expected_fen
+        - actual_fen
+        - diff_fen
+        - status
+        - created_at
+        - closed_at
+      properties:
+        recon_diff_id:
+          $ref: '#/components/schemas/Id'
+        source:
+          $ref: '#/components/schemas/AdminReconDiffSource'
+        type:
+          $ref: '#/components/schemas/AdminReconDiffType'
+        period:
+          $ref: '#/components/schemas/AdminReconDiffPeriod'
+        ref_type:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: What the difference refers to, such as order, account or settlement.
+        ref_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        expected_fen:
+          $ref: '#/components/schemas/Fen'
+        actual_fen:
+          $ref: '#/components/schemas/Fen'
+        diff_fen:
+          $ref: '#/components/schemas/Fen'
+        status:
+          $ref: '#/components/schemas/AdminReconDiffStatus'
+        created_at:
+          type: string
+          format: date-time
+        closed_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    AdminReconDiffPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminReconDiff'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminReconDiffPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminReconDiffPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminReconDiffDetail:
+      type: object
+      description: |
+        One reconciliation difference of source R1, R2 or R3 with its handling summary: the fields
+        of AdminReconDiff plus `handler_id` (admin_users.id of who handled it; null until handled),
+        `updated_at` and `resolution` (recon_diffs.resolution; null while unhandled). The keys of
+        `resolution` are not fixed by this contract; it is for display only.
+      additionalProperties: false
+      required:
+        - recon_diff_id
+        - source
+        - type
+        - period
+        - ref_type
+        - ref_id
+        - expected_fen
+        - actual_fen
+        - diff_fen
+        - status
+        - created_at
+        - closed_at
+        - handler_id
+        - updated_at
+        - resolution
+      properties:
+        recon_diff_id:
+          $ref: '#/components/schemas/Id'
+        source:
+          $ref: '#/components/schemas/AdminReconDiffSource'
+        type:
+          $ref: '#/components/schemas/AdminReconDiffType'
+        period:
+          $ref: '#/components/schemas/AdminReconDiffPeriod'
+        ref_type:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: What the difference refers to, such as order, account or settlement.
+        ref_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        expected_fen:
+          $ref: '#/components/schemas/Fen'
+        actual_fen:
+          $ref: '#/components/schemas/Fen'
+        diff_fen:
+          $ref: '#/components/schemas/Fen'
+        status:
+          $ref: '#/components/schemas/AdminReconDiffStatus'
+        created_at:
+          type: string
+          format: date-time
+        closed_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        handler_id:
+          description: admin_users.id of the admin who handled the difference; null until handled.
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        updated_at:
+          type: string
+          format: date-time
+        resolution:
+          type:
+            - object
+            - 'null'
+          description: The handling summary as stored (recon_diffs.resolution), for display only; its keys are not fixed by this contract. Null while unhandled.
+          additionalProperties: true
+    AdminReconDiffDetailResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminReconDiffDetail'
         trace_id:
           $ref: '#/components/schemas/TraceId'

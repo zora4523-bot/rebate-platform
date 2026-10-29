@@ -1138,6 +1138,16 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/recon-diffs",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/recon-diffs/:recon_diff_id",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "auth": "admin"
   },
