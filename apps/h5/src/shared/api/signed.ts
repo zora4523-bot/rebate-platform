@@ -27,6 +27,8 @@ const SIGNED_OPERATIONS: readonly (readonly [method: string, path: string])[] = 
   ['POST', '/v1/inputs/parse'],
   ['POST', '/v1/links/{link_id}/open'],
   ['POST', '/v1/links/convert'],
+  // CT-15t: share material generation is native-only (signed).
+  ['POST', '/v1/shares'],
   ['POST', '/v1/orders/claims'],
   // CT-21c: pay order creation, return and cancel are native-only (BR-PAY-01 ②).
   ['POST', '/v1/pay/orders'],
