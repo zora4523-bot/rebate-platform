@@ -227,6 +227,8 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
     { name: 'payout-landing', ...DEFAULT, policy: 'exclusive', deadLetter: 'payout-landing.dead' },
     // B2-06f（D10-398 ①）：worker 复核 BR-WDR-13 ③ 的队列，exclusive（按 `${withdrawal_id}:${execute_seq}:review` 去重）。
     { name: 'payout-review', ...DEFAULT, policy: 'exclusive', deadLetter: 'payout-review.dead' },
+    // B2-07c（D10-408）：worker 的 R2 打款通道日对账队列，exclusive（按 (app, channel, 账单日) 键去重），紧跟 payout-review。
+    { name: 'payout-recon', ...DEFAULT, policy: 'exclusive', deadLetter: 'payout-recon.dead' },
     { name: 'notify', ...DEFAULT, deadLetter: 'notify.dead' },
     {
       name: 'evt.notification-risk-state',
@@ -379,6 +381,8 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
       w('settle', 1),
       w('payout-landing', 1),
       w('payout-review', 1),
+      // B2-07c（D10-408）：R2 日对账只由 worker（couli_app）消费，并发 1，紧跟 payout-review。
+      w('payout-recon', 1),
       w('notify', 5),
       w('evt.notification-risk-state', 5),
       w('evt.notification-appeal-result', 5),
@@ -404,6 +408,8 @@ it('[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只�
     'payout',
     'payout-landing',
     'payout-review',
+    // B2-07c (D10-408): the worker's R2 reconciliation, never the payout entry's.
+    'payout-recon',
     'notify',
     'pool-refresh',
     'poster',
@@ -433,6 +439,7 @@ it('[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只�
       'settle',
       'payout-landing',
       'payout-review',
+      'payout-recon',
       'notify',
       'pool-refresh',
       'poster',
