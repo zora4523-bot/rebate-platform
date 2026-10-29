@@ -1,0 +1,40 @@
+id: B1-15w
+repo: rebate-platform
+title: 实现 POST /v1/shares（契约 CT-15t，planned → 实现；BR-ATTR-10 细则「分享页与分享赚入口页」、BR-TEXT-20 细则「分享页文案」、BR-PRICE-06、BR-INV-19）——以分享者身份按 share 场景登记新 link（pid_scene=share）并实时转链，京东 / 拼多多落 share_materials（share_url；tpwd 空）；淘宝取不到推广链接或口令时整次不生成、不留 link 与物料（现有错误码，D10-426）；未授权 30101 / 30111，未满 18 周岁 30413；images 取联盟商品详情主图与多图（≤9，不入库、不转存）；copy 六段按商品实际返回字段渲染（缺省段不返回或 null，include_default 只列本次返回的段）；est_promo 按 buy_type=share 报价，只回给分享者本人；poster_url 一律 null（TODO blocked on TECH-13 出图 worker 与 OSS 凭据）；source_link_id 只记来源、不改原 link；同时把 B1-15u 分享页的缺省物料提供者改读 share_materials（淘宝 promo_url 兜底保留）
+type: impl
+# 2026-10-30 be 入账（编排 D10-426）。放 linking 模块，照 link-open / link-convert 的登记与转链写法；报价走 catalog 已导出的报价端口（linking/application/link-open-requote.ts 先例），不跨模块读表。淘宝分享赚上线依赖 规划/09 2_TB §2.5 口令生成权限（编排报负责人）；在那之前淘宝分享整次报错，不伪造口令或链接。开工前在 notices 占契约槽。
+refs: [BR-ATTR-10, BR-TEXT-20, BR-PRICE-06, BR-INV-19]
+refs_hash:
+  BR-ATTR-10: 310f8ddda3b0
+  BR-TEXT-20: f1a1f1898b2d
+  BR-PRICE-06: '0e2803911445'
+  BR-INV-19: ae0ccc6cc588
+deps: [CT-15t, B1-15v]
+paths:
+  - 'apps/api/src/modules/linking/application/shares*.ts'
+  - 'apps/api/src/modules/linking/application/share-page*.ts'
+  - 'apps/api/src/modules/linking/domain/share-copy*.ts'
+  - 'apps/api/src/modules/linking/infra/share-material*.ts'
+  - 'apps/api/src/modules/linking/infra/share-page*.ts'
+  - 'apps/api/src/modules/linking/http/public/shares*.ts'
+  - 'apps/api/src/modules/linking/linking.module.ts'
+  - 'apps/api/src/modules/linking/index.ts'
+  - 'apps/api/src/modules/catalog/index.ts'
+  - 'apps/api/src/modules/catalog/application/share-quote*.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/linking/shares/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/shares/**'
+status: todo
+pr: null

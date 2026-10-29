@@ -1,0 +1,23 @@
+id: B1-15v
+repo: rebate-platform
+title: 迁移：分享物料表 app.share_materials（D10-426）——app_id、link_id（主键，引用 links.link_id，只存 pid_scene=share 的 link）、share_url（分享者转链短链，非空）、tpwd（淘宝口令，可空）、created_at；linking 唯一写者，只插入、不改不删（物料随分享生成一次）；授权写在本迁移：couli_app 只给 SELECT、INSERT
+type: impl
+# 2026-10-30 be 入账（编排 D10-426：物料用新表 share_materials，linking 唯一写者；迁移排迁移槽；不是资金表，常规审）。供 B1-15w 的 POST /v1/shares 落物料、B1-15u 分享页缺省物料提供者改读本表。
+# 新迁移号取入账时主干最大号 + 1（落地前按迁移槽再定）；跑 scripts/remote-snapshot.sh 重生成 db/schema.sql 与 packages/db 的类型。
+refs: [BR-ATTR-10]
+refs_hash:
+  BR-ATTR-10: 310f8ddda3b0
+deps: [B1-15u]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/**'
+test_paths:
+  - 'test/spec/linking/share-materials-schema/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/share-materials-schema/**'
+status: todo
+pr: null
