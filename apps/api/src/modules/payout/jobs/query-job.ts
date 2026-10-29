@@ -31,6 +31,15 @@
 //      (the next job never lands after T + manual_after, so that decision is taken on time even
 //      when manual_after_min is not one of the points).
 //      A CAS that hits nothing (row_version moved) only warns. A query never pauses the queue.
+// B2-07c (BR-WDR-23 ①; 编排裁定 D10-415 ②, D10-416): the reconciliation's immediate query carries
+// source = 'recon' in its payload. Its result not a success (a definite failure, or unknown after
+// the three tries) → no W6 and no next point: on one couli_payout transaction the attempt, the
+// conditional update `status = 'PAYING' AND needs_manual = false` → needs_manual = true
+// (row_version + 1, still PAYING) and, when it hit the row, the worker's `manual_diff` on queue
+// payout-recon (the R2 diff and alert are the worker's, deduplicated per withdrawal). A success
+// lands as usual. Against the race, an ordinary query's definite failure goes the same way, not
+// W6, when recon_channel (read only for couli_payout) already shows the bill's success for this
+// out_biz_no (a channel_status that payout.query_status_map maps to success).
 // No transaction or lock is held across a channel call or a sleep (the ① read ends before ⑤).
 // payout.enabled = off and payout.queue_paused = true do not stop queries (BR-WDR-17). Logs carry
 // withdrawal_id, out_biz_no, point, code, sub_code only — never the payee's account or name.
@@ -47,6 +56,7 @@ import { handoffLanding, recordedResponse } from '../application/landing-handoff
 import { holdWithdrawal } from '../application/transfer-gates.ts';
 import { markNeedsManual } from '../application/query-manual.ts';
 import { manualDue, nextQueryDueMs, type QuerySchedule } from '../application/query-schedule.ts';
+import { PAYOUT_RECON_SOURCE, sendReconManualDiff } from '../application/recon-schedule.ts';
 import type { WithdrawApplyOptions } from '../application/withdraw-apply.ts';
 import type { PayoutConfigPort } from '../application/withdraw-rules.ts';
 import type {
@@ -60,6 +70,9 @@ export type { QueryJobPayload } from './transfer-job.ts';
 
 /** The alert line when T + manual_after is reached (BR-WDR-14). */
 export type QueryAlertMessage = 'payout_needs_manual';
+
+/** needs_manual set because of the bill's success (D10-415 ②). */
+export type QueryReconManualMessage = 'payout_needs_manual_by_bill';
 
 /** Waits `ms` milliseconds (the gap between two tries of one point). */
 export type QuerySleep = (ms: number) => Promise<void>;
@@ -94,6 +107,12 @@ const MAX_TRIES = 3;
 const RETRY_GAP_MS = 10_000;
 const PAYING = 'PAYING';
 const CHANNELS: ReadonlySet<string> = new Set(['alipay', 'bank_card', 'wechat']);
+const RECON_MANUAL_ALERT: QueryReconManualMessage = 'payout_needs_manual_by_bill';
+
+/** The chain's payload and whether the reconciliation sent it (source = 'recon'). */
+interface ParsedQuery extends QueryJobPayload {
+  readonly recon: boolean;
+}
 
 interface QueryRow {
   readonly id: string;
@@ -123,7 +142,7 @@ type Prepared =
       readonly judgement: ChannelJudgement;
     };
 
-function parsePayload(job: ReceivedJob): QueryJobPayload | null {
+function parsePayload(job: ReceivedJob): ParsedQuery | null {
   const payload = job.payload as Record<string, unknown>;
   const withdrawalId = payload['withdrawal_id'];
   const executeSeq = payload['execute_seq'];
@@ -142,7 +161,13 @@ function parsePayload(job: ReceivedJob): QueryJobPayload | null {
   ) {
     return null;
   }
-  return { withdrawal_id: withdrawalId, execute_seq: executeSeq, app_id: appId, point };
+  return {
+    withdrawal_id: withdrawalId,
+    execute_seq: executeSeq,
+    app_id: appId,
+    point,
+    recon: payload['source'] === PAYOUT_RECON_SOURCE,
+  };
 }
 
 function isChannel(value: string): value is PayoutChannelName {
@@ -321,12 +346,76 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
     return id;
   }
 
+  /**
+   * D10-415 ②'s evidence: a recon_channel row of this out_biz_no whose channel status the app's
+   * query_status_map maps to success (the bill shows the transfer paid).
+   */
+  async function billSuccessRecorded(
+    trx: Transaction<DB>,
+    row: QueryRow,
+    statusMap: ChannelJudgement['lists']['queryStatusMap'],
+  ): Promise<boolean> {
+    const found = await trx
+      .withSchema('app')
+      .selectFrom('recon_channel')
+      .select('channel_status')
+      .where('app_id', '=', row.app_id)
+      .where('out_biz_no', '=', row.out_biz_no)
+      .where('channel_status', 'is not', null)
+      .execute();
+    return found.some(
+      (r) =>
+        r.channel_status !== null &&
+        Object.hasOwn(statusMap, r.channel_status) &&
+        statusMap[r.channel_status] === 'success',
+    );
+  }
+
+  /**
+   * D10-415 ②: needs_manual = true on `status = 'PAYING' AND needs_manual = false` (no W6), and the
+   * worker's manual_diff on the same transaction when the update hit the row (D10-416).
+   */
+  async function manualByBill(
+    trx: Transaction<DB>,
+    row: QueryRow,
+    point: number,
+    now: Date,
+    recon: boolean,
+  ): Promise<void> {
+    const fields = { withdrawal_id: row.id, out_biz_no: row.out_biz_no, point, recon };
+    const updated = await trx
+      .withSchema('app')
+      .updateTable('withdrawals')
+      .set((eb) => ({
+        needs_manual: true,
+        row_version: eb('row_version', '+', 1),
+        updated_at: now,
+      }))
+      .where('app_id', '=', row.app_id)
+      .where('id', '=', row.id)
+      .where('execute_seq', '=', row.execute_seq)
+      .where('status', '=', PAYING)
+      .where('needs_manual', '=', false)
+      .executeTakeFirst();
+    if (updated.numUpdatedRows !== 1n) {
+      logger.info(fields, 'payout_query_by_bill_skipped');
+      return;
+    }
+    logger.warn(fields, RECON_MANUAL_ALERT);
+    await sendReconManualDiff(queue, trx, {
+      app_id: row.app_id,
+      withdrawal_id: row.id,
+      execute_seq: row.execute_seq,
+    });
+  }
+
   /** ⑤: up to MAX_TRIES queries, RETRY_GAP_MS apart; the first success / fail ends the point. */
   async function queryPoint(
     row: QueryRow,
     adapter: PayoutChannel,
     point: number,
     judgement: ChannelJudgement,
+    recon: boolean,
   ): Promise<QueryResult | null> {
     let last: QueryResult | null = null;
     for (let tryNo = 1; tryNo <= MAX_TRIES; tryNo += 1) {
@@ -365,7 +454,11 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
             latencyMs,
             finished,
           );
-          await handoffLanding({ trx, queue, row, attemptId, logger });
+          const byBill =
+            result.kind === 'fail' &&
+            (recon || (await billSuccessRecorded(trx, row, judgement.lists.queryStatusMap)));
+          if (byBill) await manualByBill(trx, row, point, finished, recon);
+          else await handoffLanding({ trx, queue, row, attemptId, logger });
         });
       } else {
         await recordTry(attemptsDb, row, point, tryNo, result, errorName, latencyMs, finished);
@@ -451,10 +544,17 @@ export function createQueryJob(options: QueryJobOptions): JobHandler {
       return;
     }
     // ⑤ outside any transaction.
-    const result = await queryPoint(row, adapter, payload.point, prepared.judgement);
+    const result = await queryPoint(row, adapter, payload.point, prepared.judgement, payload.recon);
     const landedAt = clock.now();
     // ⑥
     if (result === null || result.kind === 'unknown') {
+      if (payload.recon) {
+        // D10-415 ②: the reconciliation's query still unknown → needs_manual, no next point.
+        await attemptsDb
+          .transaction()
+          .execute((trx) => manualByBill(trx, row, payload.point, landedAt, true));
+        return;
+      }
       await sendNextPoint(row, schedule, prepared.firstTransferAt, payload.point, landedAt);
     }
     // success / fail: recorded and handed to the worker in queryPoint (jobs/landing-job.ts lands

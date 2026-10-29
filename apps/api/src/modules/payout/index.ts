@@ -232,6 +232,22 @@ export type {
   LandingJobPayload,
 } from './jobs/landing-job.ts';
 export { handoffLanding, recordedResponse } from './application/landing-handoff.ts';
+// B2-07c (BR-WDR-23, D10-408): the worker's daily R2 reconciliation (payout-recon) and its chain.
+export {
+  createPayoutReconJob,
+  PAYOUT_RECON_DIFF_ALERT,
+  PAYOUT_RECON_JOB,
+  PAYOUT_RECON_MANUAL_JOB,
+  PAYOUT_RECON_QUEUE,
+} from './jobs/recon-job.ts';
+export type {
+  PayoutBillPort,
+  PayoutReconJobOptions,
+  PayoutReconJobPayload,
+  PayoutReconLogger,
+} from './jobs/recon-job.ts';
+export { seedPayoutRecon } from './application/recon-schedule.ts';
+export type { PayoutReconSeedOptions } from './application/recon-schedule.ts';
 // B2-11a: BR-WDR-29 审核风险标签快照 (W1 writes it; ④⑤⑥ reused by BR-WDR-30 ⑧).
 export {
   createWithdrawRiskFlags,
