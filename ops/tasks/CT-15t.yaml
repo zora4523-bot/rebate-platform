@@ -10,6 +10,7 @@ contract_sections: ['6.3']
 deps: [B1-15u]
 paths:
   - 'contracts/openapi.yaml'
+  - 'apps/h5/src/shared/api/signed.ts'
   - 'packages/contracts-ts/**'
   - 'packages/contracts-ts/src/planned-operations.gen.ts'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
