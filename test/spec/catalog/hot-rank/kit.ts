@@ -5,7 +5,7 @@
 // use case; specs/material-channels.yaml itself is read only by the HTTP test of the real wiring.
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { expect, vi } from 'vitest';
+import { expect } from 'vitest';
 import { addFen } from '@couli/money';
 import {
   createCatalogCardEntry,
@@ -37,6 +37,42 @@ import {
   type JsonSchema,
 } from '../../../../apps/api/src/modules/platform/validation/index.ts';
 import type { Platform, UnionItem } from '../../../../apps/api/src/modules/union/index.ts';
+
+/**
+ * A light call-recording stand-in for vi.fn (calls, results, toHaveBeenCalled / Times): Vitest keeps
+ * every vi.fn alive in its mock registry, so a fixture per property iteration (PROP_RUNS=100000)
+ * ran the worker out of heap. Only what these tests read is recorded.
+ */
+interface Spy<A extends unknown[], R> {
+  (...args: A): R;
+  readonly mock: {
+    readonly calls: A[];
+    readonly results: { type: 'return' | 'throw'; value: R }[];
+  };
+  readonly _isMockFunction: true;
+  getMockName(): string;
+}
+
+function spy<A extends unknown[], R>(impl?: (...args: A) => R): Spy<A, R> {
+  const calls: A[] = [];
+  const results: { type: 'return' | 'throw'; value: R }[] = [];
+  const fn = (...args: A): R => {
+    calls.push(args);
+    try {
+      const value = (impl ? impl(...args) : undefined) as R;
+      results.push({ type: 'return', value });
+      return value;
+    } catch (error) {
+      results.push({ type: 'throw', value: error as R });
+      throw error;
+    }
+  };
+  return Object.assign(fn, {
+    mock: { calls, results },
+    _isMockFunction: true as const,
+    getMockName: () => 'spy',
+  });
+}
 
 export const NOW = '2026-10-06T10:00:00+08:00';
 export const APP = 'synthetic_rank';
@@ -132,13 +168,13 @@ export function unionSide() {
   const categoryLists = new Map<string, HotRankCategoryEntry[]>();
   const pages = new Map<string, HotRankUpstreamPage>();
   let failure: Error | null = null;
-  const categories = vi.fn(
+  const categories = spy(
     async (input: HotRankCategoriesRequest): Promise<HotRankCategoryEntry[]> => {
       if (failure !== null) throw failure;
       return structuredClone(categoryLists.get(slot(input.platform, input.channelId)) ?? []);
     },
   );
-  const page = vi.fn(async (input: HotRankPageRequest): Promise<HotRankUpstreamPage> => {
+  const page = spy(async (input: HotRankPageRequest): Promise<HotRankUpstreamPage> => {
     if (failure !== null) throw failure;
     const stored = pages.get(slot(input.platform, input.channelId, input.categoryId, input.pageNo));
     return structuredClone(stored ?? { items: [], hasMore: false });
@@ -170,15 +206,15 @@ export function unionSide() {
 /** Storage only: never expires rows, so freshness cannot rely on the physical TTL. */
 export function memoryRedis() {
   const rows = new Map<string, string>();
-  const get = vi.fn(async (key: string) => rows.get(key) ?? null);
-  const set = vi.fn(async (key: string, value: string, ttlSeconds: number) => {
+  const get = spy(async (key: string) => rows.get(key) ?? null);
+  const set = spy(async (key: string, value: string, ttlSeconds: number) => {
     void ttlSeconds;
     rows.set(key, value);
   });
   const redis: RedisNamespace = {
     get,
     set,
-    eval: vi.fn(async () => {
+    eval: spy(async () => {
       throw new Error('Unexpected Lua on the hot list cache');
     }),
   };
@@ -193,22 +229,22 @@ export interface FixtureSetup {
 export function fixture(setup: FixtureSetup = {}) {
   const clock = new FixedClock(NOW);
   const viewer: Viewer = { appId: APP, userId: null, deviceId: 'synthetic-device' };
-  const current = vi.fn(async () => viewer);
+  const current = spy(async () => viewer);
   let version = 1;
   let spec: MaterialChannelsSpec = {
     version: `synthetic-${version}`,
     channels: [channel('taobao', TB_CHANNEL)],
   };
-  const channels = vi.fn(() => spec);
+  const channels = spy(() => spec);
   const union = unionSide();
   const memory = memoryRedis();
   const settings = new Map<string, number>();
-  const configValue = vi.fn(async (_appId: string, key: string) =>
+  const configValue = spy(async (_appId: string, key: string) =>
     settings.has(key) ? { value: settings.get(key)!, version: 1 } : null,
   );
   const config: CatalogConfigReader = { configValue };
   const quotes = new Map<string, { min: bigint; max: bigint }>();
-  const quote = vi.fn(
+  const quote = spy(
     async (item: UnionItem, _viewer: Viewer, context?: CardQuoteContext): Promise<RebateQuote> => {
       const bounds = quotes.get(item.title) ?? { min: 10n, max: 20n };
       const basis = context?.rebateBasis ?? 'normal';
@@ -221,21 +257,21 @@ export function fixture(setup: FixtureSetup = {}) {
     },
   );
   let registered = 0;
-  const register = vi.fn(async (input: RegisterLinkInput) => {
+  const register = spy(async (input: RegisterLinkInput) => {
     void input;
     return { linkId: `00000000-0000-7000-8000-${String(++registered).padStart(12, '0')}` };
   });
-  const warn = vi.fn();
+  const warn = spy();
   const entry = createCatalogCardEntry({
     clock,
     viewerContext: { current },
     quoter: { quote },
     registrar: { register },
-    sourceLinks: { entrySource: vi.fn(async () => null) },
-    itemRefs: { issue: vi.fn(() => 'synthetic-item-ref') },
+    sourceLinks: { entrySource: spy(async () => null) },
+    itemRefs: { issue: spy(() => 'synthetic-item-ref') },
     logger: { warn },
   });
-  const assemble = vi.fn(entry.assemble);
+  const assemble = spy(entry.assemble);
   const upstream =
     setup.cached === true
       ? cacheHotRankUpstream(union.upstream, { redis: memory.redis, clock, config })
