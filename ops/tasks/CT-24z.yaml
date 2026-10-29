@@ -1,0 +1,27 @@
+id: CT-24z
+repo: rebate-platform
+title: 契约：后台月结账单只读——GET /admin/v1/settle-bills（listAdminSettleBills：账单月区间 / 派生账单状态筛选，页码分页，账单月降序）、GET /admin/v1/settle-bills/{bill_id}（getAdminSettleBill：账单日任务合计与差错 / 暂缓数、各平台批次摘要与派生账单状态）、GET /admin/v1/settle-batches/{batch_id}/items（listAdminSettleBatchItems：批次明细行，按类型 / 结果筛选，页码分页）；权限 settle.bill 或 fund.view，只读不审计；写操作（确认 / 定时 / 撤销定时 / 驳回 / 继续执行 / 补充批次 / 结算明细上传）留后续
+type: contract
+# 2026-10-30 入账（admin-backend，编排 10-30 05:5x 派工：财务类后台接口第二段，月结账单只读）。依据 01 F-ADM-08（月结部分）、04 §3.2 settle_bills / settle_batches / settle_batch_items、§11.2（settle.bill；fund.view 只读）、design/specs/admin-settle-bills.md §1 / §4（负责人 2026-10-18 后台定稿；operationId 暂拟 adminListSettleBills / adminGetSettleBill / adminListSettleBatchItems）；账单状态的派生口径在 08 BR-FUND-04「月结账单状态」表（不另存状态，由最近一轮非 CANCELLED 批次派生）。
+# 技术取舍沿用 CT-24v / CT-24y：另建 AdminSettleBill* 结构；新增枚举 admin_settle_bill_status（派生值，五项）登记在 contracts/enums/admin.yaml，批次状态 / kind / settle_mode / 明细 item_type / result / role 复用或照库表取值；operationId 照仓库惯例取 listAdminSettleBills / getAdminSettleBill / listAdminSettleBatchItems；分页 AdminPage / AdminPageSize（≤200）；未知或别 app 的 bill_id / batch_id 20001 [id]（后台先例）；金额整数分。
+#   settle_bills 上的合计与差错数只反映账单日任务、补充批次不回写（D10-280 ③），契约描述须写明「只作展示、金额判断按明细行」。明细行只给 user_id，不给手机号。
+#   不含：所有写操作、结算明细上传与校验、导出、一致性校验结果的逐行列表（差错单走已有 /admin/v1/recon-diffs）。
+refs: []
+refs_hash: {}
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'packages/contracts-ts/**'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo

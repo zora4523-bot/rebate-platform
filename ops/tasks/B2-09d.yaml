@@ -1,0 +1,32 @@
+id: B2-09d
+repo: rebate-platform
+title: settlement：后台月结账单只读接口实现（CT-24z listAdminSettleBills、getAdminSettleBill、listAdminSettleBatchItems）——按 app 隔离读 settle_bills / settle_batches / settle_batch_items，账单状态按 BR-FUND-04「月结账单状态」表由最近一轮非 CANCELLED 批次派生（不存不写）；权限 settle.bill 或 fund.view 经 AdminOperationGuard，不写审计；去掉三个接口的 planned
+type: impl
+# 2026-10-30 入账（admin-backend，编排 10-30 05:5x 派工；规划/05 B2-09「财务类后台接口……月结……」第二段）。
+# 单一写者：settle_bills / settle_batches / settle_batch_items 的写者都是 settlement；本任务只读，读也放 settlement（照 B2-09a / B2-09c：模块内 application 读 + admin 控制器 + forAdmin 只挂 admin 入口），不改任何状态字段、不调批次命令服务。
+# 不含写操作（确认 / 定时 / 撤销 / 驳回 / 继续执行 / 补充批次 / 上传），后续另入账（step-up 动态码在 HTTP 层，B2-04o 注释）。
+refs: [BR-FUND-04]
+refs_hash:
+  BR-FUND-04: f4b8b2be46ea
+deps: [CT-24z]
+paths:
+  - 'apps/api/src/modules/settlement/application/admin-settle-bills*.ts'
+  - 'apps/api/src/modules/settlement/http/admin/**'
+  - 'apps/api/src/modules/settlement/settlement.module.ts'
+  - 'apps/api/src/modules/settlement/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/settlement/admin-settle-bills/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/admin-settle-bills/**'
+status: todo
