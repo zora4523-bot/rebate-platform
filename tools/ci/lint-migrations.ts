@@ -190,6 +190,9 @@ export const FUNDS_TABLE_NAMES: readonly string[] = [
   // `reconcil` does not match recon_union): beneficiary credit obligations and union reconciliation.
   'beneficiary_credits',
   'recon_union',
+  // R2 channel reconciliation detail rows (B2-07a, BR-WDR-23; D10-411): both sides' amounts in fen,
+  // and `reconcil` does not match recon_channel.
+  'recon_channel',
   // Per-platform union receivable of an asset snapshot (B2-04b child table, decision 40).
   'asset_snapshot_receivables',
 ];
