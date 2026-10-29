@@ -1,0 +1,29 @@
+id: CT-24w
+repo: rebate-platform
+title: 契约：后台差错单关闭结案——POST /admin/v1/recon-diffs/{recon_diff_id}/close（closeAdminReconDiff：body reason 必填非空 ≤200 字；只收 open / processing 的 R1–R3 差错单，置 closed，记处理人、结案时刻与 resolution.reason；同事务解除以该差错单为来源的全部提现冻结，响应带结案后的详情与 released_hold_count）；权限 fund.recon，不要二次验证，写审计，x-idempotent（Idempotency-Key）；x-implementation planned（实现 B2-09b）
+type: contract
+# 2026-10-29 入账（admin-backend，编排 10-29 19:xx 派工：差错单处理类写操作评估）。依据 08 BR-FUND-19 正文与全局例（「冻结方式：为每个涉及用户新增 1 条 withdraw_holds……source_ref=差错单 id」「差错单关闭时解除冻结记录」）、BR-FUND-22、04 §3.2 recon_diffs / withdraw_holds、§11.2 fund.recon（「对账与差错单处理（含以『已关闭（不处理）』结案，必填原因）」，admin.yaml）、design/specs/admin-recon.md §4 adminCloseReconDiff（「原因为空 20001；关闭时解除冻结失败按 error-codes.yaml」）、§5（fund.recon 普通操作不需二次验证）。
+# 授权边界：只做「关闭结案 + 解除该单来源的冻结」；不恢复订单、不调账、不核销、不重算余额缓存（申诉恢复 ADMIN_RESTORE 要 order.restore 动态码 step-up 并改订单状态与写 ADMIN_ADJUST，R12 / R13；重算余额缓存要短信档；R2 迟到成功核销归 payout W11——三者另入账，见 notices）。
+# 契约取舍：状态已是 closed / adjusted / written_off 的再关闭回 20902（状态不允许，照仓库已有状态冲突先例，同 Idempotency-Key 重放回原结果）；未知 / 别 app / R4 的 id 20001 [recon_diff_id]（同 CT-24v）；reason 空或超长 20001 [reason]；released_hold_count 为本次实际解除条数（已解除的不计）。审计动作名与字段由契约定、实现照写（before / after 含 status、released_hold_count，不含个人信息）。
+# 冻结来源的对应：08 写 source_ref = 差错单 id，现有写者 B2-07c（payout recon-job）写的是 `recon_diff:<id>`——契约 description 写「来源为该差错单的冻结」，具体匹配格式由 B2-09b 按现存写者核对后定（必要时同步 08 / 规划 04，由编排回写），契约不钉格式。
+refs: []
+refs_hash: {}
+contract_sections: ['11.1']
+deps: [CT-24v]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'packages/contracts-ts/**'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

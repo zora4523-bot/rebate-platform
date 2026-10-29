@@ -1,0 +1,40 @@
+id: B2-09b
+repo: rebate-platform
+title: 后台差错单关闭结案实现（CT-24w closeAdminReconDiff）——ledger 置 recon_diffs closed（只 open / processing 的 R1–R3，row 锁 + 状态 CAS，记 handler_id、closed_at、resolution.reason），同事务经注入的 payout 端口解除来源为该差错单的全部 withdraw_holds（payout 唯一写者，users 行锁序照 BR-WDR-07），写审计、Idempotency-Key 幂等；去掉 planned
+type: impl
+# 2026-10-29 入账（admin-backend，编排 10-29 19:xx 派工）。依据 08 BR-FUND-19（日终校验冻结与「差错单关闭时解除冻结记录」）、BR-WDR-05（提现冻结记录逐条解除）、04 §3.2 recon_diffs / withdraw_holds、design/specs/admin-recon.md §4 / §5。
+# 单一写者：recon_diffs 只由 ledger 写（application/recon-diffs.ts、infra/recon-diffs-store.ts）；withdraw_holds 只由 payout 写（application/withdraw-holds.ts 的 createWithdrawHolds，add / release，release 内先锁 users 行、同事务审计 withdraw_hold.release）。本任务在 payout 加「按来源批量解除」releaseBySource(trx, {appId, sourceRef, releasedBy}) → {released}（逐条走现有 release 逻辑与锁序、按 user_id 排序，已解除的跳过），经 payout index 导出；ledger 不 import payout（payout 依赖 ledger），ledger 的关闭命令只认注入的端口接口（照 B3-08k / D10-386：app.module 组装后注入），admin 入口控制器挂在 ledger 的 LedgerAdminModule（B2-09a）。
+# 锁序：先 recon_diffs 行 FOR UPDATE 判状态，再经端口解除冻结（端口内 users 行锁）；实现前 grep 现有同时触及 recon_diffs 与 withdraw_holds 的流程（payout recon-job 先 users 后 diff？ledger daily-check），锁序与之一致，不一致时写进 notes 并按资金评审意见改。
+# 冻结来源格式：现存写者 B2-07c 用 source_ref = `recon_diff:<diff id>`；ledger 日终校验若写入则核对其格式；releaseBySource 按现存格式精确匹配（不做模糊匹配），与 08「source_ref = 差错单 id」不一致处在 notes 报编排回写。
+# 不含：申诉恢复 ADMIN_RESTORE（R12 / R13，order.restore 动态码，改订单状态并写 ADMIN_ADJUST）、重算余额缓存（短信档）、R2 迟到成功核销（payout W11）——另入账。
+refs: [BR-FUND-19, BR-WDR-05]
+refs_hash:
+  BR-FUND-19: e6205ee4fcc1
+  BR-WDR-05: 99e2e2654ce0
+deps: [CT-24w, B2-09a]
+paths:
+  - 'apps/api/src/modules/ledger/application/*recon-diff*.ts'
+  - 'apps/api/src/modules/ledger/infra/recon-diffs-store.ts'
+  - 'apps/api/src/modules/ledger/http/admin/**'
+  - 'apps/api/src/modules/ledger/ledger.module.ts'
+  - 'apps/api/src/modules/ledger/index.ts'
+  - 'apps/api/src/modules/payout/application/withdraw-holds.ts'
+  - 'apps/api/src/modules/payout/application/withdraw-holds.test.ts'
+  - 'apps/api/src/modules/payout/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/ledger/admin-recon-close/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/admin-recon-close/**'
+status: todo
+pr: null
