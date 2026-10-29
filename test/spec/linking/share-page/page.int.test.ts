@@ -163,6 +163,35 @@ it('[AC-B1-15u#4] 站长授权中断期间同样按分享者的绑定判断：sh
   await expectSharerInvalid(await h.get(t.appId, pdd.linkId), 30111);
 }, 60_000);
 
+it('[AC-B1-15u#4] 站长授权中断期间，分享者绑定有效的淘宝、拼多多分享 link 照常出卡（200，带分享者短链，淘宝在浏览器下有票据），不返回 50301 或 30102 / 30111', async () => {
+  const t = await h.tenant();
+  await t.expireSiteAuth('taobao');
+  await t.expireSiteAuth('pdd');
+  const taobao = await t.link(await t.sharer({ taobao: 'active' }), 'taobao');
+  const pdd = await t.link(await t.sharer({ pdd: 'active' }), 'pdd');
+  const before = await persisted(h.db());
+  for (const ua of [UA.safariIos, UA.wechatIos, null]) {
+    const response = await h.get(t.appId, taobao.linkId, { ua });
+    const data = await pageData(response);
+    expect(data).toMatchObject({
+      quoted_at: QUOTED,
+      jump_url: taobao.jumpUrl,
+      product_card: { link_id: taobao.linkId, platform: 'taobao' },
+    });
+    expectNoToken(response, taobao.tpwdCore);
+    const pddData = await pageData(await h.get(t.appId, pdd.linkId, { ua }));
+    expect(pddData).toMatchObject({
+      quoted_at: QUOTED,
+      jump_url: pdd.jumpUrl,
+      tpwd_ticket: null,
+      product_card: { link_id: pdd.linkId, platform: 'pdd' },
+    });
+  }
+  // Outside WeChat the Taobao page still hands out a ticket during the outage.
+  ticketOf(await pageData(await h.get(t.appId, taobao.linkId, { ua: UA.safariIos })));
+  expect(await persisted(h.db())).toEqual(before);
+}, 60_000);
+
 it('[AC-B1-15u#4] 京东不判分享者授权：分享者的淘宝、拼多多授权都失效时京东分享 link 照常出卡', async () => {
   const t = await h.tenant();
   const link = await t.link(await t.sharer({ taobao: 'invalid', pdd: 'blocked' }), 'jd');

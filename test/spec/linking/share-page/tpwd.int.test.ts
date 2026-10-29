@@ -20,6 +20,7 @@ import {
   tampered,
   ticketOf,
   tpwdOf,
+  type InjectResponse,
   type ShareLink,
   type Tenant,
 } from './kit.ts';
@@ -209,3 +210,69 @@ it.each(UNUSABLE_RATES)(
   },
   60_000,
 );
+
+it('[AC-B1-15u#7] 被拒的取口令请求（伪造、篡改、过期票据，微信或无 UA）同样计入 IP × link_id 限频：5 次 20001 后第 6 次即使票据有效也 42901', async () => {
+  const t = await h.tenant();
+  const link = await taobaoShare(t);
+  const expired = await ticketFor(t, link);
+  // The page stayed open past 600 s; the later tickets are issued now, all requests within a minute.
+  h.clock.advanceMs(TICKET_TTL_MS + 1_000);
+  const wechat = await ticketFor(t, link);
+  const valid = await ticketFor(t, link);
+  const ip = '203.0.113.90';
+  const refusals: [string, string | null][] = [
+    [expired, UA.safariIos],
+    ['forged-ticket', UA.chromeAndroid],
+    [tampered(valid), UA.safariIos],
+    [wechat, UA.wechatIos],
+    [wechat, null],
+  ];
+  expect(refusals).toHaveLength(DEFAULT_RATE);
+  for (const [ticket, ua] of refusals) {
+    await expectTicketRefused(
+      await h.tpwd(t.appId, link.linkId, ticket, { ua, ip }),
+      link.tpwdCore,
+    );
+  }
+  await expectRateLimited(await h.tpwd(t.appId, link.linkId, valid, { ip }), link.tpwdCore);
+  // Another address is not limited and the same ticket still exchanges there.
+  expect(await tpwdOf(await h.tpwd(t.appId, link.linkId, valid, { ip: '203.0.113.91' }))).toBe(
+    link.tpwd,
+  );
+}, 60_000);
+
+it('[AC-B1-15u#6] 同一张票据并发换口令：6 个请求同时到达，恰好 3 个换到口令，其余 20001', async () => {
+  const t = await h.tenant();
+  const link = await taobaoShare(t);
+  const ticket = await ticketFor(t, link);
+  const pending: Promise<InjectResponse>[] = [];
+  // Each request from its own address: only the ticket's use count decides.
+  for (let request = 0; request < 2 * TICKET_USES; request++) {
+    pending.push(h.tpwd(t.appId, link.linkId, ticket, { ip: `203.0.113.${100 + request}` }));
+  }
+  const responses = await Promise.all(pending);
+  const granted = responses.filter((each) => each.statusCode === 200);
+  const refused = responses.filter((each) => each.statusCode !== 200);
+  expect(granted).toHaveLength(TICKET_USES);
+  for (const response of granted) expect(await tpwdOf(response)).toBe(link.tpwd);
+  for (const response of refused) await expectTicketRefused(response, link.tpwdCore);
+}, 60_000);
+
+it('[AC-B1-15u#7] 同一 IP 对同一 link 并发取口令：8 个请求同时到达，恰好 5 个换到口令，其余 42901 带 Retry-After', async () => {
+  const t = await h.tenant();
+  const link = await taobaoShare(t);
+  // One fresh ticket per request: only the rate limit decides.
+  const tickets: string[] = [];
+  for (let request = 0; request < DEFAULT_RATE + 3; request++) {
+    tickets.push(await ticketFor(t, link));
+  }
+  const ip = '203.0.113.120';
+  const responses = await Promise.all(
+    tickets.map((ticket) => h.tpwd(t.appId, link.linkId, ticket, { ip })),
+  );
+  const granted = responses.filter((each) => each.statusCode === 200);
+  const refused = responses.filter((each) => each.statusCode !== 200);
+  expect(granted).toHaveLength(DEFAULT_RATE);
+  for (const response of granted) expect(await tpwdOf(response)).toBe(link.tpwd);
+  for (const response of refused) await expectRateLimited(response, link.tpwdCore);
+}, 60_000);
