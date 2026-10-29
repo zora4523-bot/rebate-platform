@@ -28,6 +28,8 @@ import { CLI_TIMEOUT, removeDir, runCli, scratchDir } from './test-helpers.ts';
 
 const T0 = new Date('2026-10-01T04:00:00.000Z');
 const later = (ms: number): Date => new Date(T0.getTime() + ms);
+/** A bump one second before a call that started at `iso` (the runners bump right before). */
+const before = (iso: string): Date => new Date(Date.parse(iso) - 1000);
 
 let runs = '';
 
@@ -53,6 +55,7 @@ it('creates the state file on first use and writes it atomically', () => {
     ask_created_at: null,
     last_error: null,
     uncounted_calls: [],
+    pending_bumps: [],
     opus_failures: { total: 0, consecutive: 0, last_reason: null },
     opus_runs: [],
     updated_at: T0.toISOString(),
@@ -140,8 +143,8 @@ it('[规划/11 §2.5] only a call that ended without output gives its round back
 });
 
 it('[规划/11 §2.5] settle takes a timed-out review back once, on its own counter', () => {
-  bumpAttempt('A1-08', 'spec-test', T0);
-  bumpAttempt('A1-08', 'code', T0);
+  bumpAttempt('A1-08', 'spec-test', before('2026-10-02T03:14:01Z'));
+  bumpAttempt('A1-08', 'code', before('2026-10-02T04:00:00Z'));
   const timedOut = meta({ exit_code: 124, has_output: false, validation: 'not-run' });
   const first = settleCall('A1-08', timedOut, later(1000));
   expect(first).toMatchObject({ kind: 'spec-test', counted: false, changed: true });
@@ -158,11 +161,16 @@ it('[规划/11 §2.5] settle takes a timed-out review back once, on its own coun
     'spec-test': 0,
     code: 1,
   });
-  // A call with output keeps its round.
+  // A call with output keeps its round (and spends its bump).
   const ok = meta({ review_type: 'money', started_at: '2026-10-02T04:00:00Z' });
-  expect(settleCall('A1-08', ok, later(3000))).toMatchObject({ counted: true, changed: false });
+  expect(settleCall('A1-08', ok, later(3000))).toMatchObject({
+    counted: true,
+    pre_counted: true,
+    changed: true,
+  });
+  expect(readState('A1-08')?.attempts.code).toBe(1);
   // An implementation killed by the hard timeout does not use up an attempt either.
-  bumpAttempt('A1-08', 'impl', T0);
+  bumpAttempt('A1-08', 'impl', before('2026-10-02T05:00:00Z'));
   const implTimeout = meta({
     mode: 'impl',
     review_type: null,
@@ -174,6 +182,197 @@ it('[规划/11 §2.5] settle takes a timed-out review back once, on its own coun
   expect(settleCall('A1-08', implTimeout, later(4000)).state?.attempts.impl).toBe(0);
   // Without a state file there is nothing to settle.
   expect(settleCall('Z9-99', timedOut, T0)).toMatchObject({ state: null, changed: false });
+});
+
+const NO_OUTPUT = { exit_code: 10, has_output: false, validation: 'not-run' } as const;
+
+it('[CT-06zxk] settle gives back a bumped round without output, keeps one with output', () => {
+  const id = 'H1-01';
+  const s1 = '2026-10-03T01:00:00Z';
+  bumpAttempt(id, 'spec-test', before(s1));
+  expect(readState(id)?.pending_bumps).toEqual([
+    {
+      kind: 'spec-test',
+      engine: 'codex',
+      bumped_at: before(s1).toISOString(),
+      consumed_by: null,
+      outcome: null,
+    },
+  ]);
+  expect(settleCall(id, meta({ ...NO_OUTPUT, started_at: s1 }), T0)).toMatchObject({
+    counted: false,
+    pre_counted: true,
+    changed: true,
+  });
+  expect(readState(id)?.attempts['spec-test']).toBe(0);
+  expect(readState(id)?.pending_bumps?.[0]).toMatchObject({ consumed_by: s1, outcome: 'refunded' });
+  // With output: the round stays counted, the bump is spent all the same.
+  const s2 = '2026-10-03T02:00:00Z';
+  bumpAttempt(id, 'spec-test', before(s2));
+  expect(settleCall(id, meta({ started_at: s2 }), T0)).toMatchObject({
+    counted: true,
+    pre_counted: true,
+    changed: true,
+  });
+  const state = readState(id);
+  expect(state?.attempts['spec-test']).toBe(1);
+  expect(state?.pending_bumps?.[1]).toMatchObject({ consumed_by: s2, outcome: 'kept' });
+  // A later call without output cannot pair with the spent bump.
+  const s3 = '2026-10-03T02:10:00Z';
+  expect(settleCall(id, meta({ ...NO_OUTPUT, started_at: s3 }), T0)).toMatchObject({
+    pre_counted: false,
+  });
+  expect(readState(id)?.attempts['spec-test']).toBe(1);
+  removeDir(stateFile(id));
+});
+
+it('[CT-06zxk] a call that was never counted leaves attempts alone, but is still recorded', () => {
+  const id = 'H1-02';
+  // Three rounds used, the fourth bump refused at the limit; the call starts anyway and aborts.
+  for (const n of [1, 2, 3]) {
+    const s = `2026-10-03T0${n}:00:00Z`;
+    bumpAttempt(id, 'test', before(s));
+    const ok = meta({ mode: 'impl', review_type: null, phase: 'test', started_at: s });
+    expect(settleCall(id, ok, T0).pre_counted).toBe(true);
+  }
+  expect(() => bumpAttempt(id, 'test', before('2026-10-03T04:00:00Z'))).toThrow(/exhausted/);
+  const stray = meta({
+    mode: 'impl',
+    review_type: null,
+    phase: 'test',
+    ...NO_OUTPUT,
+    started_at: '2026-10-03T04:00:00Z',
+  });
+  const res = settleCall(id, stray, T0);
+  expect(res).toMatchObject({ kind: 'test', counted: false, pre_counted: false, changed: true });
+  expect(res.state?.attempts.test).toBe(3);
+  expect(res.state?.uncounted_calls).toEqual([
+    {
+      kind: 'test',
+      started_at: stray.started_at,
+      exit_code: 10,
+      reason: 'no-output',
+      refunded: false,
+    },
+  ]);
+  // Idempotent: settling it again changes nothing.
+  expect(settleCall(id, stray, T0)).toMatchObject({ pre_counted: false, changed: false });
+  expect(readState(id)?.attempts.test).toBe(3);
+  // An orchestrator exception round (no bump at all) of another kind: same.
+  const review = meta({ ...NO_OUTPUT, review_type: 'money', started_at: '2026-10-03T05:00:00Z' });
+  expect(settleCall(id, review, T0)).toMatchObject({ kind: 'code', pre_counted: false });
+  expect(readState(id)?.attempts.code).toBe(0);
+  // A bump of another engine is no bump of this call.
+  bumpAttempt(id, 'code', before('2026-10-03T06:00:00Z'), 'claude-independent');
+  const codex = meta({ ...NO_OUTPUT, review_type: 'money', started_at: '2026-10-03T06:00:00Z' });
+  expect(settleCall(id, codex, T0).pre_counted).toBe(false);
+  expect(readState(id)?.attempts.code).toBe(1);
+  removeDir(stateFile(id));
+});
+
+it('[CT-06zxk] settling twice is idempotent; two bumps and two calls pair one to one', () => {
+  const id = 'H1-03';
+  const s1 = '2026-10-03T01:00:00Z';
+  const s2 = '2026-10-03T01:20:00Z';
+  // Bumped right before each call; the first call's meta.json has whole seconds, bumped 0.7 s
+  // "after" it (clock skew).
+  bumpAttempt(id, 'code', new Date(Date.parse(s1) + 700));
+  const first = meta({ ...NO_OUTPUT, review_type: 'general', started_at: s1 });
+  expect(settleCall(id, first, T0)).toMatchObject({ pre_counted: true, changed: true });
+  expect(settleCall(id, first, T0)).toMatchObject({ pre_counted: true, changed: false });
+  expect(readState(id)?.attempts.code).toBe(0);
+  bumpAttempt(id, 'code', before(s2));
+  bumpAttempt(id, 'code', before('2026-10-03T01:40:00Z'));
+  const second = meta({ ...NO_OUTPUT, review_type: 'general', started_at: s2 });
+  expect(settleCall(id, second, T0)).toMatchObject({ pre_counted: true, changed: true });
+  expect(settleCall(id, second, T0).changed).toBe(false);
+  // Two bumps outstanding minus one given back: one round counted, for the third call.
+  expect(readState(id)?.attempts.code).toBe(1);
+  const third = meta({ review_type: 'general', started_at: '2026-10-03T01:40:00Z' });
+  expect(settleCall(id, third, T0)).toMatchObject({ pre_counted: true, changed: true });
+  expect(settleCall(id, third, T0)).toMatchObject({ pre_counted: true, changed: false });
+  expect(readState(id)?.pending_bumps?.map((b) => [b.consumed_by, b.outcome])).toEqual([
+    [s1, 'refunded'],
+    [s2, 'refunded'],
+    ['2026-10-03T01:40:00Z', 'kept'],
+  ]);
+  expect(readState(id)?.attempts.code).toBe(1);
+  removeDir(stateFile(id));
+});
+
+it('[CT-06zxk] a bump whose call died without a trace is not given back by a later call', () => {
+  const id = 'H1-04';
+  // Superseded: the next paired call spends the older bump too, which stays counted.
+  bumpAttempt(id, 'test', before('2026-10-03T01:00:00Z'));
+  bumpAttempt(id, 'test', before('2026-10-03T02:00:00Z'));
+  const next = meta({
+    mode: 'impl',
+    review_type: null,
+    phase: 'test',
+    ...NO_OUTPUT,
+    started_at: '2026-10-03T02:00:00Z',
+  });
+  expect(settleCall(id, next, T0).state?.attempts.test).toBe(1);
+  expect(readState(id)?.pending_bumps?.map((b) => b.outcome)).toEqual(['superseded', 'refunded']);
+  // Too old: a stray call long after the last bump does not pair with it.
+  bumpAttempt(id, 'test', before('2026-10-03T03:00:00Z'));
+  const stray = { ...next, started_at: '2026-10-03T04:00:00Z' };
+  expect(settleCall(id, stray, T0)).toMatchObject({ pre_counted: false });
+  expect(readState(id)?.attempts.test).toBe(2);
+  // A bump after the call started (beyond the clock skew) is the next call's.
+  const early = { ...next, started_at: '2026-10-03T02:59:00Z' };
+  expect(settleCall(id, early, T0).pre_counted).toBe(false);
+  removeDir(stateFile(id));
+});
+
+it('[CT-06zxk] a state file without pending bumps: an old call is not given back', () => {
+  const id = 'H1-05';
+  // The shape before CT-06zxk: a round counted, no pending_bumps.
+  bumpAttempt(id, 'code', before('2026-10-03T01:00:00Z'));
+  const raw = JSON.parse(readFileSync(stateFile(id), 'utf8')) as Record<string, unknown>;
+  delete raw.pending_bumps;
+  writeFileSync(stateFile(id), JSON.stringify(raw));
+  expect(readState(id)?.pending_bumps).toEqual([]);
+  const old = meta({ ...NO_OUTPUT, review_type: 'money', started_at: '2026-10-03T01:00:00Z' });
+  expect(settleCall(id, old, T0)).toMatchObject({ pre_counted: false, changed: true });
+  expect(readState(id)?.attempts.code).toBe(1);
+  // An uncounted call of an older file (no `refunded`) was given back: settling it is a no-op.
+  const prior = meta({ ...NO_OUTPUT, review_type: 'money', started_at: '2026-10-02T01:00:00Z' });
+  const withOld = JSON.parse(readFileSync(stateFile(id), 'utf8')) as Record<string, unknown>;
+  writeFileSync(
+    stateFile(id),
+    JSON.stringify({
+      ...withOld,
+      uncounted_calls: [
+        { kind: 'code', started_at: prior.started_at, exit_code: 10, reason: 'no-output' },
+      ],
+    }),
+  );
+  expect(settleCall(id, prior, T0)).toMatchObject({ pre_counted: true, changed: false });
+  // A damaged pending bump is refused.
+  writeFileSync(stateFile(id), JSON.stringify({ ...raw, pending_bumps: [{ kind: 'code' }] }));
+  expect(() => readState(id)).toThrow(/pending_bumps\[0\]/);
+  removeDir(stateFile(id));
+});
+
+it('[CT-06zxk] an Opus run spends its impl bump, so a later Codex impl call cannot pair with it', () => {
+  const id = 'H1-06';
+  bumpAttempt(id, 'impl', T0);
+  recordOpusRun(id, 'opus-1', 'ok', 'RV1', later(3600_000));
+  expect(readState(id)?.pending_bumps?.[0]).toMatchObject({
+    consumed_by: 'opus:opus-1',
+    outcome: 'kept',
+  });
+  const legacy = meta({
+    mode: 'impl',
+    review_type: null,
+    phase: 'impl',
+    ...NO_OUTPUT,
+    started_at: later(60_000).toISOString(),
+  });
+  expect(settleCall(id, legacy, T0).pre_counted).toBe(false);
+  expect(readState(id)?.attempts.impl).toBe(1);
+  removeDir(stateFile(id));
 });
 
 it('[ops/approvals.yaml id 19] Codex writing tests, the Opus implementation and a handover count apart', () => {
@@ -212,7 +411,7 @@ it('[ops/approvals.yaml id 19] an impl-mode Codex call is counted by its phase',
     parseCallMeta({ ...meta(), phase: 'test', finished_at: '2026-10-05T01:00:00Z' })?.phase,
   ).toBeNull();
   // A test-writing call killed by the hard timeout gives its round back to `test`, not `impl`.
-  bumpAttempt('E1-02', 'test', T0);
+  bumpAttempt('E1-02', 'test', before('2026-10-05T02:00:00Z'));
   bumpAttempt('E1-02', 'impl', T0);
   const timedOut = meta({
     ...impl,
@@ -598,8 +797,9 @@ it(
       JSON.stringify({
         mode: 'review',
         review_type: 'money',
-        started_at: '2026-10-02T06:00:00Z',
-        finished_at: '2026-10-02T06:15:00Z',
+        // After the bumps above (real clock): the call pairs with the money round's bump.
+        started_at: new Date().toISOString(),
+        finished_at: new Date().toISOString(),
         exit_code: 124,
         has_output: false,
         idle_killed: false,
@@ -611,6 +811,7 @@ it(
     expect(JSON.parse(settled.stdout)).toMatchObject({
       kind: 'code',
       counted: false,
+      pre_counted: true,
       changed: true,
       attempts: { test: 0, impl: 3, handover: 0, 'spec-test': 1, code: 0 },
     });
