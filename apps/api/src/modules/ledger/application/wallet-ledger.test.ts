@@ -14,6 +14,7 @@ import {
   projectWalletLedger,
   WalletLedgerQueryError,
   withdrawalsAfter,
+  type WalletLedgerCursor,
   type WalletLedgerDependencies,
   type WalletLedgerPaidWithdrawal,
   type WalletLedgerPosition,
@@ -51,30 +52,35 @@ function paid(withdrawalId: string, paidAt: string, netFen = 910n): WalletLedger
 const T1 = '2026-10-14T02:00:00.000000Z';
 const T0 = '2026-10-13T02:00:00.000000Z';
 
-it('[AC-B2-04zc-UNIT#1] 游标往返不变；不是本接口给出的游标（篡改、旧版本、坏时刻、坏 id）一律 null', () => {
-  const positions: WalletLedgerPosition[] = [
-    { at: T1, source: 'entry', id: '42' },
-    { at: '2026-10-14T02:00:00.123456Z', source: 'withdrawal', id: WD },
+it('[AC-B2-04zc-UNIT#1] 游标只含来源与 id、不含任何时刻；往返不变；不是本接口给出的游标（篡改、旧版本带时刻、坏 id）一律 null', () => {
+  const cursors: WalletLedgerCursor[] = [
+    { source: 'entry', id: '42' },
+    { source: 'withdrawal', id: WD },
   ];
-  for (const position of positions) {
-    const cursor = encodeWalletLedgerCursor(position);
-    expect(cursor).toMatch(/^[A-Za-z0-9_-]+$/);
-    expect(decodeWalletLedgerCursor(cursor)).toEqual(position);
+  for (const cursor of cursors) {
+    const encoded = encodeWalletLedgerCursor(cursor);
+    expect(encoded).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(decodeWalletLedgerCursor(encoded)).toEqual(cursor);
   }
+  // 位置带着时刻也不进游标（masked 的邀请分佣行只到日，BR-TEXT-19 / J7）。
+  const withInstant: WalletLedgerPosition = { at: T1, source: 'entry', id: '42' };
+  const plain = Buffer.from(encodeWalletLedgerCursor(withInstant), 'base64url').toString('utf8');
+  expect(plain).toBe('["wl2","e","42"]');
+  expect(plain).not.toMatch(/\d{4}-\d{2}-\d{2}|T\d{2}:/);
   const forged = (value: unknown) =>
     Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
   const rejected = [
     '',
     'not a cursor!',
-    forged(['wl0', T1, 'e', '42']),
-    forged(['wl1', '2026-10-14T02:00:00Z', 'e', '42']),
-    forged(['wl1', T1, 'e', '0']),
-    forged(['wl1', T1, 'e', '9223372036854775808']),
-    forged(['wl1', T1, 'e', '42 OR 1=1']),
-    forged(['wl1', T1, 'w', '42']),
-    forged(['wl1', T1, 'x', WD]),
-    forged(['wl1', T1, 'e']),
-    forged({ at: T1 }),
+    forged(['wl1', T1, 'e', '42']),
+    forged(['wl2', T1, 'e', '42']),
+    forged(['wl2', 'e', '0']),
+    forged(['wl2', 'e', '9223372036854775808']),
+    forged(['wl2', 'e', '42 OR 1=1']),
+    forged(['wl2', 'w', '42']),
+    forged(['wl2', 'x', WD]),
+    forged(['wl2', 'e']),
+    forged({ source: 'e', id: '42' }),
   ];
   for (const bad of rejected) {
     expect(decodeWalletLedgerCursor(bad), bad).toBeNull();
@@ -223,11 +229,7 @@ it('[AC-B2-04zc-UNIT#5] 投影：分录金额取相反数、带变动后余额�
       balance_after_fen: -80,
     },
   ]);
-  expect(decodeWalletLedgerCursor(data.next_cursor ?? '')).toEqual({
-    at: T0,
-    source: 'entry',
-    id: '3',
-  });
+  expect(decodeWalletLedgerCursor(data.next_cursor ?? '')).toEqual({ source: 'entry', id: '3' });
   expect(JSON.stringify(data)).not.toContain('taobao:2');
   // 订单号查不到时不跳转，也不 masked。
   const orphan = projectWalletLedger(page.slice(0, 1), new Map(), null);
@@ -240,7 +242,10 @@ it('[AC-B2-04zc-UNIT#5] 投影：分录金额取相反数、带变动后余额�
 it('[AC-B2-04zc-UNIT#6] 坏游标与越界 limit 在读库之前就拒绝（字段 cursor / limit）', async () => {
   const unused = {} as Kysely<DB>;
   const ports: WalletLedgerDependencies = {
-    withdrawals: { readPaid: () => Promise.reject(new Error('not reached')) },
+    withdrawals: {
+      readPaid: () => Promise.reject(new Error('not reached')),
+      readPaidAt: () => Promise.reject(new Error('not reached')),
+    },
     orders: { readOrderIds: () => Promise.reject(new Error('not reached')) },
   };
   const subject = { appId: 'couli', userId: '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a93' };
@@ -255,4 +260,27 @@ it('[AC-B2-04zc-UNIT#6] 坏游标与越界 limit 在读库之前就拒绝（字�
     expect(refused).toBeInstanceOf(WalletLedgerQueryError);
     expect((refused as WalletLedgerQueryError).fields).toEqual([field]);
   }
+});
+
+it('[AC-B2-04zc-UNIT#7] 游标所指的提现单只在本人范围内回查；查不到（别人的、未到账的）→ cursor 拒绝，不读流水', async () => {
+  // 已在事务里的句柄：查询直接跑在它上面；这里走不到任何 SQL。
+  const trx = { isTransaction: true } as unknown as Kysely<DB>;
+  const asked: unknown[] = [];
+  const ports: WalletLedgerDependencies = {
+    withdrawals: {
+      readPaid: () => Promise.reject(new Error('not reached')),
+      readPaidAt: (_handle, input) => {
+        asked.push(input);
+        return Promise.resolve(null);
+      },
+    },
+    orders: { readOrderIds: () => Promise.reject(new Error('not reached')) },
+  };
+  const subject = { appId: 'couli', userId: '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a93' };
+  const cursor = encodeWalletLedgerCursor({ source: 'withdrawal', id: WD });
+  const pending = getWalletLedger(trx, { ...subject, cursor }, ports);
+  const refused = await pending.catch((error: unknown) => error);
+  expect(refused).toBeInstanceOf(WalletLedgerQueryError);
+  expect((refused as WalletLedgerQueryError).fields).toEqual(['cursor']);
+  expect(asked).toEqual([{ ...subject, withdrawalId: WD }]);
 });

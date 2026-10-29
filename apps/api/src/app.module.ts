@@ -233,6 +233,7 @@ import {
   isWithdrawalApplication,
   createWithdrawUsageReader,
   generateOutBizNo,
+  readPaidWithdrawalAt,
   readPaidWithdrawalSummaries,
   type DecryptWithdrawalAccount,
   type PayoutProcessOptions,
@@ -874,11 +875,12 @@ function earningsSummaryDependencies(
 
 /**
  * GET /v1/wallet/ledger's owner-module read ports (B2-04zc; BR-FUND-15 / BR-TEXT-19), on the read
- * transaction ledger passes: payout's paid withdrawals (one WITHDRAW_PAID summary entry each) and
- * settlement's order_key → order_id for the self / share entries' links.
+ * transaction ledger passes: payout's paid withdrawals (one WITHDRAW_PAID summary entry each, and
+ * the paid_at of the member's own one a cursor names) and settlement's order_key → order_id for the
+ * self / share entries' links.
  */
 const walletLedgerDependencies: WalletLedgerDependencies = {
-  withdrawals: { readPaid: readPaidWithdrawalSummaries },
+  withdrawals: { readPaid: readPaidWithdrawalSummaries, readPaidAt: readPaidWithdrawalAt },
   orders: { readOrderIds: readOrderIdsByKey },
 };
 

@@ -5,8 +5,10 @@
 // - 汇总条目：每张打款成功（PAID_API / PAID_MANUAL）的提现单 1 条 WITHDRAW_PAID，来自 payout 实现的端口
 //   （ledger 声明，app.module 接线）：amount_fen = −实际到账，fee_fen、tax_fen 为明细，
 //   balance_after_fen 为 null，按 paid_at 排序、会计日取 paid_at 的 +08:00 日期（payout 用 @couli/domain 算）。
-// - 顺序：时刻倒序；同一时刻汇总条目在前、分录在后，各自按 id 倒序。游标记下一页之前最后一条的
-//   (时刻, 来源, id)，两个来源各取 limit + 1 条再归并，翻页不重不漏。
+// - 顺序：时刻倒序；同一时刻汇总条目在前、分录在后，各自按 id 倒序。游标只记本页最后一条的来源与
+//   id（分录 id 或提现单号），不含任何时刻（masked 的邀请分佣行只能到日，BR-TEXT-19 / J7）；翻页时
+//   在本人范围内按 id 回查该行的排序时刻（查不到或不属本人 → cursor 拒绝），两个来源各取
+//   limit + 1 条再归并，翻页不重不漏。分录 id 是自增序列，只透露本人分录的先后，不透露时刻。
 // - 跳转与 masked（BR-TEXT-19 / J7）：REFERRAL_CREDIT 与受益角色为 direct / indirect 的任何分录都
 //   masked、不跳转，也不去问订单号；提现凭证（biz_type withdrawal）跳提现单；带 order_key、受益角色为
 //   self / share 的分录经 settlement 的端口换成子订单号后跳订单；其余（无关联单据的 ADMIN_ADJUST、
@@ -17,8 +19,8 @@ import type { DB } from '@couli/db';
 import { fenToJsonNumber, subFen } from '@couli/money';
 import type { Kysely, Transaction } from 'kysely';
 import {
-  INSTANT_PATTERN,
   readAvailableEntries,
+  readAvailableEntryAt,
   type AvailableEntryRow,
 } from '../infra/wallet-ledger-store.ts';
 
@@ -59,6 +61,11 @@ export interface WalletLedgerDependencies {
       handle: Kysely<DB>,
       input: WalletLedgerPaidInput,
     ): Promise<readonly WalletLedgerPaidWithdrawal[]>;
+    /** 本人一张打款成功的提现单的 paid_at（UTC 微秒文本）；不是本人的或未到账的 → null。 */
+    readPaidAt(
+      handle: Kysely<DB>,
+      input: { readonly appId: string; readonly userId: string; readonly withdrawalId: string },
+    ): Promise<string | null>;
   };
   readonly orders: {
     /** order_key → 子订单号（orders.order_id）；查不到的键不在结果里。 */
@@ -91,37 +98,42 @@ export interface WalletLedgerPosition {
   readonly id: string;
 }
 
-const CURSOR_VERSION = 'wl1';
+/** 游标里只有来源与 id，不含时刻；时刻由服务端在本人范围内回查。 */
+export interface WalletLedgerCursor {
+  readonly source: 'withdrawal' | 'entry';
+  readonly id: string;
+}
+
+const CURSOR_VERSION = 'wl2';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ENTRY_ID = /^[1-9][0-9]{0,18}$/;
 const MAX_BIGINT = 9_223_372_036_854_775_807n;
 
-export function encodeWalletLedgerCursor(position: WalletLedgerPosition): string {
-  const source = position.source === 'entry' ? 'e' : 'w';
-  const json = JSON.stringify([CURSOR_VERSION, position.at, source, position.id]);
+export function encodeWalletLedgerCursor(cursor: WalletLedgerCursor): string {
+  const source = cursor.source === 'entry' ? 'e' : 'w';
+  const json = JSON.stringify([CURSOR_VERSION, source, cursor.id]);
   return Buffer.from(json, 'utf8').toString('base64url');
 }
 
 /** null for anything that is not a cursor of encodeWalletLedgerCursor; never throws. */
-export function decodeWalletLedgerCursor(value: string): WalletLedgerPosition | null {
+export function decodeWalletLedgerCursor(value: string): WalletLedgerCursor | null {
   if (!/^[A-Za-z0-9_-]{1,512}$/.test(value)) return null;
   try {
     const parsed: unknown = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
-    if (!Array.isArray(parsed) || parsed.length !== 4) return null;
-    const [version, at, source, id] = parsed as unknown[];
-    if (version !== CURSOR_VERSION || typeof at !== 'string' || typeof id !== 'string') return null;
-    if (!INSTANT_PATTERN.test(at) || !Number.isFinite(Date.parse(at))) return null;
-    let position: WalletLedgerPosition;
+    if (!Array.isArray(parsed) || parsed.length !== 3) return null;
+    const [version, source, id] = parsed as unknown[];
+    if (version !== CURSOR_VERSION || typeof id !== 'string') return null;
+    let cursor: WalletLedgerCursor;
     if (source === 'e') {
       if (!ENTRY_ID.test(id) || BigInt(id) > MAX_BIGINT) return null;
-      position = { at, source: 'entry', id };
+      cursor = { source: 'entry', id };
     } else if (source === 'w') {
       if (!UUID.test(id)) return null;
-      position = { at, source: 'withdrawal', id };
+      cursor = { source: 'withdrawal', id };
     } else {
       return null;
     }
-    return encodeWalletLedgerCursor(position) === value ? position : null;
+    return encodeWalletLedgerCursor(cursor) === value ? cursor : null;
   } catch {
     return null;
   }
@@ -282,7 +294,7 @@ export function orderKeysOf(items: readonly WalletLedgerItem[]): string[] {
 export function projectWalletLedger(
   page: readonly WalletLedgerItem[],
   orderIds: ReadonlyMap<string, string>,
-  next: WalletLedgerPosition | null,
+  next: WalletLedgerCursor | null,
 ): Schema<'LedgerListData'> {
   return {
     items: page.map((item) => entryJson(item, orderIds)),
@@ -300,19 +312,39 @@ async function readOnly<T>(db: Kysely<DB>, run: (trx: Kysely<DB>) => Promise<T>)
     .execute((trx: Transaction<DB>) => run(trx));
 }
 
+/**
+ * 游标所指那一行的排序时刻，只在本人范围内回查（本人 available 子户上会出现在流水里的分录、本人
+ * 打款成功的提现单）；查不到或不属本人 → cursor 拒绝。
+ */
+async function resolveCursor(
+  trx: Kysely<DB>,
+  subject: { readonly appId: string; readonly userId: string },
+  cursor: WalletLedgerCursor | null,
+  dependencies: WalletLedgerDependencies,
+): Promise<WalletLedgerPosition | null> {
+  if (cursor === null) return null;
+  const at =
+    cursor.source === 'entry'
+      ? await readAvailableEntryAt(trx, { ...subject, entryId: cursor.id })
+      : await dependencies.withdrawals.readPaidAt(trx, { ...subject, withdrawalId: cursor.id });
+  if (at === null) throw new WalletLedgerQueryError(['cursor']);
+  return { at, source: cursor.source, id: cursor.id };
+}
+
 export async function getWalletLedger(
   db: Kysely<DB>,
   request: WalletLedgerRequest,
   dependencies: WalletLedgerDependencies,
 ): Promise<Schema<'LedgerListData'>> {
   const limit = pageSize(request.limit);
-  let position: WalletLedgerPosition | null = null;
+  let cursor: WalletLedgerCursor | null = null;
   if (request.cursor !== undefined) {
-    position = decodeWalletLedgerCursor(request.cursor);
-    if (position === null) throw new WalletLedgerQueryError(['cursor']);
+    cursor = decodeWalletLedgerCursor(request.cursor);
+    if (cursor === null) throw new WalletLedgerQueryError(['cursor']);
   }
   const subject = { appId: request.appId, userId: request.userId };
   return readOnly(db, async (trx) => {
+    const position = await resolveCursor(trx, subject, cursor, dependencies);
     // 每个来源多取 1 条：归并后超过 limit 即还有下一页；不超过时两个来源都已读完。
     const entries = await readAvailableEntries(trx, {
       ...subject,

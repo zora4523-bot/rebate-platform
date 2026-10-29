@@ -2,7 +2,7 @@
 // PAID_MANUAL）的提现单，每张 1 行：申请金额、手续费、代扣税、实际到账（net_fen）与到账时刻
 // paid_at。由 ledger 的余额流水经 app.module 接线调用，ledger 不读本模块的表。
 // 顺序：paid_at DESC、id DESC；paid_at 以 UTC 微秒文本返回（YYYY-MM-DDTHH:MM:SS.ffffffZ），供调用方
-// 按同一格式比较与编游标。只读调用方句柄上的 SELECT：不加锁、不写库、不读时钟、不打日志。
+// 按同一格式比较（时刻只在服务端用，不进游标）。只读调用方句柄上的 SELECT：不加锁、不写库、不读时钟、不打日志。
 //
 // Also compiled by the `test` project: erasable syntax only.
 import type { DB } from '@couli/db';
@@ -88,4 +88,32 @@ export async function readPaidWithdrawalSummaries(
       paidDate: accountingDate(row.paid_at),
     };
   });
+}
+
+export interface PaidWithdrawalAtInput {
+  readonly appId: string;
+  readonly userId: string;
+  /** 提现单号（调用方已校验为 UUID）。 */
+  readonly withdrawalId: string;
+}
+
+/**
+ * 游标回查：本人这张打款成功的提现单的 paid_at（UTC 微秒文本，与 readPaidWithdrawalSummaries 的
+ * paidAt 同一格式）；别人的、别的 app 的、未到账的 → null。
+ */
+export async function readPaidWithdrawalAt(
+  handle: Kysely<DB>,
+  input: PaidWithdrawalAtInput,
+): Promise<string | null> {
+  const row = await handle
+    .withSchema('app')
+    .selectFrom('withdrawals')
+    .select(PAID_AT_UTC.as('paid_at_text'))
+    .where('app_id', '=', input.appId)
+    .where('user_id', '=', input.userId)
+    .where('id', '=', input.withdrawalId)
+    .where('status', 'in', [...PAID])
+    .where('paid_at', 'is not', null)
+    .executeTakeFirst();
+  return row === undefined ? null : row.paid_at_text;
 }

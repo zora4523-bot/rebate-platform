@@ -2,7 +2,7 @@
 // 分录，带所在凭证的会计日、业务类型与单号、order_key 与受益角色（跳转与 masked 由调用方判定）。
 // frozen 子户、平台科目、别人与别的 app 的分录都不取；WITHDRAW_FEE、TAX_WITHHOLD 不单独成行，
 // WITHDRAW_PAID 由提现单的汇总条目代替（都只记在 frozen 子户上，这里按类型再排除一次）。
-// 顺序：booked_at DESC、id DESC；时刻以 UTC 微秒文本返回，游标比较不丢精度。
+// 顺序：booked_at DESC、id DESC；时刻以 UTC 微秒文本返回，翻页比较不丢精度（时刻只在服务端用，不进游标）。
 // 只读调用方句柄上的 SELECT：不加锁、不写库、不读 SQL 时钟。
 import type { DB } from '@couli/db';
 import { parseFen } from '@couli/money';
@@ -23,9 +23,6 @@ export const WALLET_LEDGER_ENTRY_TYPES = [
   'BAD_DEBT_WRITEOFF',
 ] as const;
 export type WalletLedgerEntryType = (typeof WALLET_LEDGER_ENTRY_TYPES)[number];
-
-/** UTC 微秒精度的时刻文本（YYYY-MM-DDTHH:MM:SS.ffffffZ），定长，可按字符串比较先后。 */
-export const INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
 
 export interface AvailableEntriesInput {
   readonly appId: string;
@@ -136,4 +133,39 @@ export async function readAvailableEntries(
       role: row.role,
     };
   });
+}
+
+export interface AvailableEntryAtInput {
+  readonly appId: string;
+  readonly userId: string;
+  /** ledger_entries.id（bigint 的十进制文本，调用方已校验格式）。 */
+  readonly entryId: string;
+}
+
+/**
+ * 游标回查：本人 USER_BALANCE 账户 available 子户上、会出现在余额流水里的这条分录的 booked_at（UTC
+ * 微秒文本，与 readAvailableEntries 的 at 同一格式）；别人的、别的 app 的、frozen 子户或平台科目的、
+ * 不出现在流水里的类型 → null。
+ */
+export async function readAvailableEntryAt(
+  handle: Kysely<DB>,
+  input: AvailableEntryAtInput,
+): Promise<string | null> {
+  const row = await handle
+    .withSchema('app')
+    .selectFrom('ledger_entries as e')
+    .innerJoin('ledger_accounts as a', (join) =>
+      join.onRef('a.app_id', '=', 'e.app_id').onRef('a.id', '=', 'e.account_id'),
+    )
+    .select(BOOKED_AT_UTC.as('at'))
+    .where('a.app_id', '=', input.appId)
+    .where('a.owner_type', '=', 'user')
+    .where('a.owner_id', '=', input.userId)
+    .where('a.subject', '=', USER_SUBJECT)
+    .where('e.app_id', '=', input.appId)
+    .where('e.sub_account', '=', 'available')
+    .where('e.ledger_type', 'in', [...WALLET_LEDGER_ENTRY_TYPES])
+    .where(sql<boolean>`e.id = cast(${input.entryId} as bigint)`)
+    .executeTakeFirst();
+  return row === undefined ? null : row.at;
 }
