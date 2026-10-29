@@ -935,6 +935,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "createShare",
+    "method": "POST",
+    "path": "/v1/shares",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
     "operationId": "adminLogin",
     "method": "POST",
     "path": "/admin/v1/auth/login",

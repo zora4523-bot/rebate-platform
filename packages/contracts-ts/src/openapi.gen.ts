@@ -2599,6 +2599,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate the share materials of a product (share page)
+         * @description Called when the share page ProductShare opens (F-SHARE-10; BR-ATTR-10 细则「分享页与分享赚入口页」).
+         *     With the caller (the sharer) as the identity, the server registers a new link with
+         *     pid_scene=share and converts it in real time, returning in one response the share link
+         *     (share_url) and, for Taobao, the token (tpwd), the poster, the image addresses, the default
+         *     copy with its parts, and the share quote. Copy, save and system share on that page all use
+         *     this one link; opening the share page again calls this operation again with a new
+         *     Idempotency-Key and gets a new link, never the old one (the old link stays valid,
+         *     BR-ATTR-05 / 13). A retry of the same request reuses the key and gets the same link_id.
+         *     The share page does not go through POST /v1/links/convert, and the link registered by
+         *     POST /v1/inputs/parse for the card is neither turned into a share link nor used for
+         *     sharing; it may only be passed as source_link_id, which is recorded as the source and never
+         *     changed. A missing item_ref is not an error (BR-PROD-11).
+         *     Open only to users with a bound phone (10005 otherwise), aged 18 or over (an identified
+         *     minor gets 30413 with data.reason=self_minor, BR-INV-19) and authorized on that platform
+         *     (Taobao needs an active binding → otherwise 30101; Pinduoduo needs the filing → otherwise
+         *     30111; BR-ATTR-10). A request stopped by 30101 or 30111 and sent again after the user
+         *     authorized is a new request with a new Idempotency-Key (BR-ID-10 细则). 30101 carries
+         *     auth_url, state and auth_methods; 30111 carries auth_jump. Product off shelf → 30141;
+         *     product information no longer valid → 30143.
+         *     Taobao: when the promotion link or the token cannot be obtained, nothing is generated and
+         *     the whole call fails, never a half result and never the original link instead (BR-ATTR-10
+         *     细则「淘宝分享实现」): while the token generation permission is not granted → 50301 with
+         *     data.reason=not_launched and data.platform=taobao; a temporary failure (upstream timeout,
+         *     rate limit, circuit open, or the conversion failed) → 50303. The platform refusing the
+         *     conversion (such as JD without conversion permission) → 30121, not retryable; a temporary conversion failure → 50303, retry later (as convertLink); a
+         *     platform in maintenance → 50301 (maintenance).
+         *     poster_url is always null until the poster worker ships (orchestrator decision D10-426;
+         *     the poster is drawn by the server from a unified template, TECH-13). images are the
+         *     addresses returned by the union product API, passed on unchanged and never stored
+         *     (BR-ATTR-10 细则). est_promo is the buy_type=share quote of the caller's own share
+         *     (BR-PRICE-06) and is only for the sharer on this page: it never appears in the copy, the
+         *     poster, the images, the share page or LinkLanding.
+         *     Version gate: applied.
+         */
+        post: operations["createShare"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/auth/login": {
         parameters: {
             query?: never;
@@ -11415,6 +11467,112 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["ShareTpwdData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description Body of POST /v1/shares (04 §6.3). The share page only carries platform and product_key
+         *     (plus the card's item_ref when it has one), whether it was opened from a card, ShareHub or
+         *     the favorites (BR-ATTR-10 细则「分享页与分享赚入口页」).
+         */
+        CreateShareRequest: {
+            platform: components["schemas"]["PlatformCode"];
+            product_key: components["schemas"]["ProductKey"];
+            item_ref?: components["schemas"]["ItemRef"];
+            /**
+             * @description The link of the card the share page was opened from; only recorded as the source,
+             *     never changed and never used for sharing.
+             */
+            source_link_id?: components["schemas"]["Id"];
+        };
+        ShareImage: {
+            /**
+             * Format: uri
+             * @description Image address as returned by the union product API; not stored.
+             */
+            url: string;
+        };
+        /**
+         * @description A tickable part of the share copy (BR-TEXT-20 细则「分享页文案」); the fixed price-basis
+         *     line is not a part.
+         * @enum {string}
+         */
+        ShareCopyPart: "title" | "price_line" | "pre_coupon_line" | "coupon_line" | "tpwd_line" | "link_line";
+        /**
+         * @description Rendered text of each part; the client joins the ticked parts line by line in this order.
+         *     A part that does not apply, or whose field the platform API did not return for this
+         *     product, is absent or null; the client treats both alike and shows neither the part nor
+         *     its tick box. price_line is the sale-price wording without a coupon; pre_coupon_line and
+         *     coupon_line are only returned with a coupon. tpwd_line is Taobao only. No part ever carries
+         *     a rebate or promotion amount (BR-TEXT-20 细则「分享页文案」, BR-PRICE-06).
+         */
+        ShareCopyParts: {
+            title?: string | null;
+            price_line?: string | null;
+            pre_coupon_line?: string | null;
+            coupon_line?: string | null;
+            tpwd_line?: string | null;
+            link_line?: string | null;
+        };
+        /**
+         * @description Default copy of the share page, from the platform's full template (BR-TEXT-20 细则「分享页文案」).
+         *     default_text is every returned part in order followed by the fixed price-basis line
+         *     (price_basis with a coupon, price_basis.general without, BR-PRICE-17), which has no tick
+         *     box and does not change with the ticks.
+         */
+        ShareCopy: {
+            default_text: string;
+            parts: components["schemas"]["ShareCopyParts"];
+            /** @description Parts ticked by default; only parts returned in this response (all of them by default). */
+            include_default: components["schemas"]["ShareCopyPart"][];
+        };
+        /**
+         * @description Quote of the caller's own share (buy_type=share, BR-PRICE-06; computed by
+         *     packages/domain.quoteRebate(), BR-CALC-20). Shown only to the sharer on the share page as
+         *     the estimated promotion earnings; never in the copy, poster, images or share page.
+         */
+        ShareEstPromo: {
+            rebate_min_fen: components["schemas"]["Fen"];
+            rebate_max_fen: components["schemas"]["Fen"];
+            rebate_basis: components["schemas"]["RebateBasis"];
+        };
+        /** @description Share materials of a newly registered share link (04 §6.3 POST /v1/shares). */
+        ShareMaterials: {
+            /** @description The share link registered by this call (pid_scene=share). */
+            link_id: components["schemas"]["Id"];
+            /**
+             * Format: uri
+             * @description Short share link of the sharer's converted link.
+             */
+            share_url: string;
+            /**
+             * @description Taobao token; always present for Taobao (otherwise the whole call fails, BR-ATTR-10
+             *     细则「淘宝分享实现」), null for JD and Pinduoduo.
+             */
+            tpwd: string | null;
+            /**
+             * Format: uri
+             * @description Poster drawn by the server from a unified template (TECH-13); always null until the
+             *     poster worker ships (D10-426).
+             */
+            poster_url: string | null;
+            /**
+             * @description Main image and the extra images returned by the union product API, unchanged, at most 9;
+             *     only the main image when no extra images are available. Not downloaded, edited,
+             *     watermarked or stored (BR-ATTR-10 细则「分享页与分享赚入口页」).
+             */
+            images: components["schemas"]["ShareImage"][];
+            copy: components["schemas"]["ShareCopy"];
+            est_promo: components["schemas"]["ShareEstPromo"];
+            /**
+             * Format: date-time
+             * @description Receipt time of the union response the price is based on (BR-PRICE-11).
+             */
+            quoted_at: string;
+        };
+        CreateShareResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["ShareMaterials"];
             trace_id: components["schemas"]["TraceId"];
         };
         /** @description One period of the self or share column (BR-FUND-25). */
@@ -22724,6 +22882,73 @@ export interface operations {
             429: components["responses"]["NoStoreTooManyRequests"];
             "4XX": components["responses"]["NoStoreClientError"];
             "5XX": components["responses"]["NoStoreServerError"];
+        };
+    };
+    createShare: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "platform": "taobao",
+                 *       "product_key": "tb:7Kq9LmN3pQ",
+                 *       "item_ref": "v1.dGJfN0txOUxtTjNwUQ.c2ln",
+                 *       "source_link_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70"
+                 *     }
+                 */
+                "application/json": components["schemas"]["CreateShareRequest"];
+            };
+        };
+        responses: {
+            /** @description The newly registered share link and its materials. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateShareResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
         };
     };
     adminLogin: {
