@@ -1,0 +1,37 @@
+{
+  "task": "CT-15t",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "8075bb974fce02913c52ffa99c4edaf991a8ce05",
+  "red_tests": [],
+  "risk_note": "RV1 contract task (contracts/openapi.yaml): adds POST /v1/shares (createShare; x-auth phone, signed, idempotent, min-version gate; request platform, product_key, optional item_ref and source_link_id; response link_id, share_url, tpwd nullable, poster_url nullable (always null until the TECH-13 poster worker, D10-426), images (maxItems 9, not stored), copy (default_text, six optional nullable parts, include_default), est_promo (Fen, buy_type=share, sharer only), quoted_at), x-implementation planned (B1-15w). Error codes only from the existing table (D10-426): 10005, 30101 / 30111, 30121 (platform refuses conversion, not retryable; added after contract review round 1 S2), 30141 / 30143, 30413, 50301 (data.reason=not_launched while the Taobao token-generation permission is not granted), 50303, 10405. H5 signed-operation list (apps/h5/src/shared/api/signed.ts) gains POST /v1/shares ([AC-F1-01q-SIGNED#1]; CT-21c precedent). 04 §6.3 POST /v1/shares row; orchestrator rulings D10-424 / D10-426. tester none (contract task); regenerated openapi.gen.ts, planned-operations.gen.ts and the auth / signing / min-version / route-schema tables; contracts:check passes. Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "fresh independent Claude via claude-run.sh --review-type contract (Codex unavailable until 2026-11-02, approvals 36). Round 1 pass with 1 S2 (JD permission-denied conversion should map to 30121 as in convertLink, not the retryable 50303); fixed; round 2 incremental review by another fresh independent Claude: pass, no findings."
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "c11be8c4f6452003812ac96a47d20ebbcec7e467",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
