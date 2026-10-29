@@ -8,12 +8,6 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { createDb, destroyDb, type DB } from '@couli/db';
-import {
-  acquireTestRedis,
-  createTestDatabase,
-  type TestDatabase,
-  type TestRedis,
-} from '@couli/db/testing';
 import type { Kysely } from 'kysely';
 import { afterAll, beforeAll, beforeEach, expect, vi } from 'vitest';
 import type { components } from '../../../../packages/contracts-ts/src/index.ts';
@@ -79,6 +73,21 @@ export type BindingStatus =
 export type SharePageData = components['schemas']['SharePageData'];
 type SharePageResponse = components['schemas']['SharePageResponse'];
 type ShareTpwdResponse = components['schemas']['ShareTpwdResponse'];
+
+// The *.int.test.ts files hand in the test-database and Redis helpers: only they may depend on
+// @couli/db/testing (depcruise rule testcontainers-only-in-int-tests, type-only imports included).
+interface TestDatabase {
+  urlFor(role: 'couli_app'): string;
+  drop(): Promise<void>;
+}
+interface TestRedis {
+  readonly url: string;
+  stop(): Promise<void>;
+}
+export interface Provisioning {
+  createTestDatabase(): Promise<TestDatabase>;
+  acquireTestRedis(): Promise<TestRedis>;
+}
 
 export interface InjectResponse {
   readonly statusCode: number;
@@ -173,7 +182,7 @@ function headersFor(
  * Registers the file's hooks: one api entry for the whole file, built with the real default
  * wiring except the SharePageMaterials provider of LinkingModule.
  */
-export function shareHarness(): ShareHarness {
+export function shareHarness({ createTestDatabase, acquireTestRedis }: Provisioning): ShareHarness {
   const clock = new FixedClock(NOW);
   const logger = createRootLogger({ level: 'silent', entry: 'api', appEnv: 'test' });
   const materials = new Map<string, SharePageMaterial>();

@@ -1,6 +1,7 @@
 // B1-15u: GET /v1/share-pages/{link_id} through the real api entry (BR-ATTR-10 细则「中间页的口令按
 // 打开环境区分」「分享页与分享赚入口页」; BR-ATTR-05 细则「App 内打开链接的入口」「别人的分享 link
 // 不可用」; contracts getSharePage, error-codes 30102 / 30111 / 30144).
+import { acquireTestRedis, createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   BROWSER_UAS,
@@ -23,7 +24,7 @@ import {
   type SharerPlatform,
 } from './kit.ts';
 
-const h = shareHarness();
+const h = shareHarness({ createTestDatabase, acquireTestRedis });
 
 const AUTH_FIELDS = ['auth_url', 'state', 'auth_methods', 'auth_jump'] as const;
 

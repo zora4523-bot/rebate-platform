@@ -3,6 +3,7 @@
 // per IP × link_id share.tpwd_rate_per_min, default 5 → 42901 with Retry-After; no-store).
 // Tickets are fetched with GET from their own address, so only exchanges count in the buckets.
 import { randomUUID } from 'node:crypto';
+import { acquireTestRedis, createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   DEFAULT_RATE,
@@ -25,7 +26,7 @@ import {
   type Tenant,
 } from './kit.ts';
 
-const h = shareHarness();
+const h = shareHarness({ createTestDatabase, acquireTestRedis });
 
 /** The page as a system browser opens it; GETs never share an address with the exchanges. */
 async function ticketFor(t: Tenant, link: ShareLink): Promise<string> {
