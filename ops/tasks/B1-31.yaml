@@ -4,14 +4,20 @@ title: 链路追踪接 VictoriaTraces（Pigsty 自带，0.x，零费用、数据
 type: impl
 # 2026-10-29 入账（ops 线，编排续跑提示 ③；规划/05 B1-31，负责人 2026-10-09 确认改用 VictoriaTraces，06 Q-A9 / TECH-15；02 §13 链路行与 §15.2 已改）。
 # 前置：@opentelemetry/* 包尚未入仓库——实现前须由编排先开 deps 任务入账（精确版本、7 天规则、许可证白名单），本任务 deps_needed 只列包名不改锁文件。
+# 2026-10-30 withdraw 接手（账号 2 停到 11-03）：paths 补 platform/config/**（OTEL_* 三个变量经 loadConfig，硬规则 6）、platform/index.ts（导出）与 main.api / stream / worker.ts（插桩须在入口模块加载前启动）。
 # staging 验收是对外动作（部署到 staging、开 VictoriaTraces 端点），由本线照 B1-01zc 部署流程做，不碰 prod。导出失败不得影响请求（fail-open，只计数 / 打日志）。
 refs: []
 refs_hash: {}
 deps: [B1-01zc, B1-31a]
 paths:
   - 'apps/api/src/modules/platform/tracing/**'
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/platform/index.ts'
   - 'apps/api/src/bootstrap.ts'
   - 'apps/api/src/entry.ts'
+  - 'apps/api/src/main.api.ts'
+  - 'apps/api/src/main.stream.ts'
+  - 'apps/api/src/main.worker.ts'
   - 'infra/staging/**'
 test_paths:
   - 'test/spec/platform/tracing/**'
