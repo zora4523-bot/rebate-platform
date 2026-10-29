@@ -1,0 +1,28 @@
+id: CT-24y
+repo: rebate-platform
+title: 契约：后台提现单只读——GET /admin/v1/withdrawals（listAdminWithdrawals：状态 / 审核方式 / 通道 / 用户 / 提现单号 / 金额区间 / 申请时间区间 / 阻断与风险标记筛选，页码分页）与 GET /admin/v1/withdrawals/{withdrawal_id}（getAdminWithdrawal：单据摘要与金额分项、状态历史、批次、转账尝试摘要、生效的提现冻结、自动判定结果与风险标记、收款账号脱敏）；权限 withdraw.review 或 fund.view，只读不审计；写操作（审核 / 驳回 / 批量通过 / 批量与单笔手动打款 / 自动到账设置 / 撤销微信转账）留后续
+type: contract
+# 2026-10-30 入账（admin-backend，编排 10-30 00:xx 派工：B2-09 财务类后台接口第一段）。依据 01 F-ADM-08（提现审核）、04 §3.2 withdrawals / payout_batches / payout_attempts / withdraw_holds、§11.2（withdraw.review、fund.view「单个用户流水、提现单、对账明细」）、design/specs/admin-withdrawals.md §1 / §4、admin-withdrawal-detail.md §4 / §5（负责人 2026-10-18 后台定稿；operationId 暂拟 adminListWithdrawals / adminGetWithdrawal）。
+# 技术取舍沿用 CT-24m / CT-24v：另建 AdminWithdrawalListItem / AdminWithdrawalDetail，只复用已有枚举（withdrawal 状态、payout_channel、hold_reason、自动判定结果等），operationId 照仓库惯例取 listAdminWithdrawals / getAdminWithdrawal；分页 AdminPage / AdminPageSize（≤200），申请时间降序；筛选越枚举 20001 data.fields；未知或别 app 的 id 20001 [withdrawal_id]（后台先例）；金额整数分（amount / fee / tax / net 分项）。
+#   个人信息：收款账号与收款人姓名只给脱敏值（BR-ID-33），查看全量走已有 users/{id}/reveal，本接口不加；用户只给 user_id 与脱敏手机号（若列表需要，照 CT-24m）。转账尝试只给摘要（kind、result、resp_code / resp_sub_code、at），不返回请求 / 响应原文。
+#   不含：所有写操作与自动到账设置、导出（已有 exports 资源另议）、风险标记重算（adminRecalcRiskFlags）。
+refs: []
+refs_hash: {}
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'packages/contracts-ts/**'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
