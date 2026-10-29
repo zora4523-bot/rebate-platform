@@ -1147,6 +1147,11 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "POST",
+    "path": "/admin/v1/recon-diffs/:recon_diff_id/close",
+    "signed": false
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/kill-switches",
     "signed": false

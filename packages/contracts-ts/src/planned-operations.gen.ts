@@ -28,6 +28,7 @@ export const plannedOperations: ReadonlySet<string> = new Set([
   "adminResolveAppeal",
   "adminSearch",
   "adminUnholdOrder",
+  "closeAdminReconDiff",
   "getAdminPayRefund",
   "getHotRank",
   "getReverify",

@@ -7470,6 +7470,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/recon-diffs/{recon_diff_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close a reconciliation difference of source R1–R3 without further handling (结案)
+         * @description Closes a 差错单 as 「已关闭（不处理）」 with a required reason (01 F-ADM-08; 04 §3.2
+         *     recon_diffs, withdraw_holds; BR-FUND-19, BR-FUND-22; design/specs/admin-recon.md §4).
+         *     Permission point `fund.recon` (04 §11.2; `fund.view` alone is not enough); no step-up
+         *     (04 §11.2, design/specs/admin-recon.md §5).
+         *
+         *     Request: `reason`, required: after trimming surrounding whitespace 1–200 characters, else
+         *     20001 with `data.fields=[reason]`. Only a difference of source R1, R2 or R3 whose `status`
+         *     is `open` or `processing` can be closed.
+         *
+         *     Order of checks: `fund.recon` (10403 with `data.reason=admin_permission_denied`) → body
+         *     (20001 with `data.fields=[reason]`) → an unknown `recon_diff_id`, a difference of another
+         *     app, or one of source R4 (see GET /admin/v1/pay-recon-diffs) is 20001 with
+         *     `data.fields=[recon_diff_id]` (no 404) → a difference already `closed`, `adjusted` or
+         *     `written_off` is 20902 with `data.resource=recon_diff`, nothing changed (refresh the
+         *     detail).
+         *
+         *     Effects, in one transaction: `status` becomes `closed`, `closed_at` and `updated_at` the
+         *     server's current time, `handler_id` the caller, and `resolution` records the trimmed
+         *     reason under the key `reason`. Every withdrawal hold (withdraw_holds) whose source is this
+         *     difference and that is not released yet is released in the same transaction (BR-FUND-19:
+         *     差错单关闭时解除冻结记录); `released_hold_count` is the number of holds this call released
+         *     (holds released earlier are not counted; 0 when there are none). Closing does not restore
+         *     an order, post an adjustment, write anything off or recalculate a balance cache; those
+         *     are other operations. Writes an audit record (action recon_diff_close, with the reason
+         *     and, before and after, the `status` and `released_hold_count`; no personal data). The
+         *     response is the difference as GET /admin/v1/recon-diffs/{recon_diff_id} returns it after
+         *     closing, with `released_hold_count`.
+         *
+         *     `Idempotency-Key` is required: same key and body → the first result (the same
+         *     `released_hold_count`); same key with another body → 20901; same key while still running
+         *     → 40901. A new key for a difference that is already closed is 20902.
+         */
+        post: operations["closeAdminReconDiff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/kill-switches": {
         parameters: {
             query?: never;
@@ -15596,6 +15646,25 @@ export interface components {
             resolution: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** @description Body of POST /admin/v1/recon-diffs/{recon_diff_id}/close. */
+        AdminReconDiffCloseRequest: {
+            /** @description Why the difference is closed without further handling; 1–200 characters after trimming, else 20001 with data.fields=[reason]. Stored as resolution.reason. */
+            reason: string;
+        };
+        AdminReconDiffClose: {
+            recon_diff: components["schemas"]["AdminReconDiffDetail"];
+            /**
+             * Format: int32
+             * @description Withdrawal holds whose source is this difference that this call released (holds released earlier are not counted).
+             */
+            released_hold_count: number;
+        };
+        AdminReconDiffCloseResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminReconDiffClose"];
+            trace_id: components["schemas"]["TraceId"];
         };
         AdminReconDiffDetailResponse: {
             code: components["schemas"]["SuccessCode"];
@@ -32669,6 +32738,90 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    closeAdminReconDiff: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The reconciliation difference (recon_diffs.id) as a list row carries it; unknown, of another app or of source R4 → 20001 with data.fields=[recon_diff_id]. */
+                recon_diff_id: components["parameters"]["AdminReconDiffIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "reason": "联盟结算明细已核对，差额由联盟侧调整"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminReconDiffCloseRequest"];
+            };
+        };
+        responses: {
+            /** @description The difference after closing with the number of holds released, or the first result of the same key. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "recon_diff": {
+                     *           "recon_diff_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e01",
+                     *           "source": "R1",
+                     *           "type": "union_mismatch",
+                     *           "period": "2026-09",
+                     *           "ref_type": "order",
+                     *           "ref_id": "taobao:5550001",
+                     *           "expected_fen": 1234,
+                     *           "actual_fen": 1200,
+                     *           "diff_fen": 34,
+                     *           "status": "closed",
+                     *           "created_at": "2026-10-20T10:00:00+08:00",
+                     *           "closed_at": "2026-10-20T16:30:00+08:00",
+                     *           "handler_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *           "updated_at": "2026-10-20T16:30:00+08:00",
+                     *           "resolution": {
+                     *             "reason": "联盟结算明细已核对，差额由联盟侧调整"
+                     *           }
+                     *         },
+                     *         "released_hold_count": 1
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminReconDiffCloseResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not closed (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
