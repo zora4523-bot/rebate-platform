@@ -1,0 +1,31 @@
+id: B1-28h
+repo: rebate-platform
+title: catalog：热销榜 GET /v1/rank/hot（契约 CT-22c，planned → 实现）——按平台取 specs/material-channels.yaml 白名单里可选的榜单频道（BR-TEXT-17 细则「联盟物料频道」，每次取数前核对白名单，移出即不取并告警），categories 来自该频道、category 只收列表内 id，items 保持频道返回顺序不重排（rank 跨页从 1 计），sales_text 原样透传、无则 null，卡片同搜索卡只登记 link 与报价快照不转链；按（平台、频道、类目、页码）缓存 rank.cache_ttl_seconds；无合规频道 50304 rank_unavailable，联盟故障无缓存 50304 无 reason；游标非法 20001
+type: impl
+# 2026-10-29 W1 入账（编排 19:4x：本线按 规划/05 §3.2 B1-28 找未入账的后半）。B1-28a–f 只做了收藏；热销榜（F-PROD-13，M-公开）未入账。
+# 依据：05 B1-28 行（AC-S1-139、AC-S1-140）、01 F-PROD-13、04 §6.3 rank/hot 行与 50304 reason、契约 CT-22c（x-implementation: planned）。联盟物料能力 CAP-*-10 未全部实测时只用演示适配器与录制，不伪造平台报文（硬规则 7）。
+# 前置：B1-28g 先登记 rank.cache_ttl_seconds。/v1/config.features.rank_platforms 已由 content 下发（client-config.ts），本单不改其口径，只核一致。
+# refs 实为 BR-TEXT-17、BR-TEXT-13、BR-PROD-03（SPEC_REF 37808a50 时 refs_hash 486f4508575e / 122ea490ebc5 / 1708058a2ff7）；任务书 42 KB 超限，照 #1748 先例 refs 改空，任务书 §2b 逐字摘，评审仍按这三条对照。
+refs: []
+refs_hash: {}
+deps: [B1-28g, B1-28c, CT-22c, B1-05f]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+  - 'apps/api/src/modules/union/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+test_paths:
+  - 'test/spec/catalog/hot-rank/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/hot-rank/**'
+status: todo
+pr: null
