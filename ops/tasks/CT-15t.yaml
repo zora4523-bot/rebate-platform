@@ -1,0 +1,25 @@
+id: CT-15t
+repo: rebate-platform
+title: 契约：POST /v1/shares（生成分享物料，规划/04 §6.3）——请求 platform、product_key、item_ref（可选，BR-PROD-11）、source_link_id（可选，只记来源）；响应 link_id（新登记的 pid_scene=share link）、share_url（短链）、tpwd（淘宝口令，可空）、poster_url（可空，D10-426：出图 worker 前一律 null）、images[]（{url}，≤9）、copy（default_text、parts 六段各可缺省或 null、include_default）、est_promo（rebate_min_fen、rebate_max_fen、rebate_basis，buy_type=share 报价只给分享者本人）、quoted_at；x-auth phone、签名与最低版本按 04 §6.3 与同组接口惯例；错误码 30101 / 30111（未授权）、30413（未满 18 周岁）与淘宝取不到推广链接或口令时整次报错所用的现有码（不新增错误码，D10-426）；x-implementation planned
+type: contract
+# 2026-10-30 be 入账（编排 D10-424 / D10-426：POST /v1/shares 拆为 CT-15t → B1-15v 迁移 → B1-15w 实现，都归 be、排 B1-15u 后）。依据 04 §6.3 POST /v1/shares 行（负责人 2026-10-05 确认按默认）、BR-ATTR-10 细则「分享页与分享赚入口页」、BR-TEXT-20 细则「分享页文案」、BR-PRICE-06、BR-INV-19。
+# 海报：TECH-13 出图 worker 与 OSS 凭据未到位，poster_url 照邀请海报先例（growth/application/my-invite.ts）可为 null。淘宝：union convert 对淘宝只给百川打开指令，取不到推广链接或口令时整次不生成（BR-ATTR-10 细则原文），用现有错误码，不伪造。开工前在 notices 占契约槽。
+refs: []
+refs_hash: {}
+contract_sections: ['6.3']
+deps: [B1-15u]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
