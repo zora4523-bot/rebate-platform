@@ -1,7 +1,7 @@
 // SQL of app.recon_diffs for the ledger (its single writer, 04 §3.2). Every statement runs on the
 // handle or transaction it is given; reads never lock.
 import type { DB } from '@couli/db';
-import type { Insertable, Kysely, Selectable, Transaction } from 'kysely';
+import { sql, type Insertable, type Kysely, type Selectable, type Transaction } from 'kysely';
 
 type ReconDiffRow = Selectable<DB['recon_diffs']>;
 
@@ -96,4 +96,77 @@ export async function selectReconDiffs(
     query = query.where('ref_type', '=', 'order').where('ref_id', '=', filter.orderKey);
   }
   return query.orderBy('created_at').orderBy('id').execute();
+}
+
+/** B2-09a: the console filter of the R1–R3 recon diffs (every field ANDed; absent = all). */
+export interface AdminReconDiffFilter {
+  readonly appId: string;
+  readonly type: string | undefined;
+  readonly source: string | undefined;
+  readonly status: string | undefined;
+  readonly periodFrom: string | undefined;
+  readonly periodTo: string | undefined;
+  readonly refId: string | undefined;
+}
+
+/** The console's sources: R4 (收款对账) is payment's listAdminPayReconDiffs. */
+const ADMIN_SOURCES = ['R1', 'R2', 'R3'];
+const PERIOD_C = sql<string>`period collate "C"`;
+
+function adminReconDiffQuery(db: Kysely<DB>, filter: AdminReconDiffFilter) {
+  let query = db
+    .withSchema('app')
+    .selectFrom('recon_diffs')
+    .where('app_id', '=', filter.appId)
+    .where('source', 'in', ADMIN_SOURCES);
+  if (filter.type !== undefined) query = query.where('type', '=', filter.type);
+  if (filter.source !== undefined) query = query.where('source', '=', filter.source);
+  if (filter.status !== undefined) query = query.where('status', '=', filter.status);
+  // Plain string order (a YYYY-MM period before the days of its month), whatever the collation.
+  if (filter.periodFrom !== undefined) query = query.where(PERIOD_C, '>=', filter.periodFrom);
+  if (filter.periodTo !== undefined) query = query.where(PERIOD_C, '<=', filter.periodTo);
+  if (filter.refId !== undefined) query = query.where('ref_id', '=', filter.refId);
+  return query;
+}
+
+export async function countAdminReconDiffs(
+  db: Kysely<DB>,
+  filter: AdminReconDiffFilter,
+): Promise<number> {
+  const row = await adminReconDiffQuery(db, filter)
+    .select((eb) => eb.fn.countAll<string>().as('total'))
+    .executeTakeFirstOrThrow();
+  return Number(row.total);
+}
+
+/** One page of the filter set, created_at then id descending. */
+export async function pageAdminReconDiffs(
+  db: Kysely<DB>,
+  filter: AdminReconDiffFilter,
+  offset: number,
+  limit: number,
+): Promise<ReconDiffRow[]> {
+  return adminReconDiffQuery(db, filter)
+    .selectAll()
+    .orderBy('created_at', 'desc')
+    .orderBy('id', 'desc')
+    .offset(offset)
+    .limit(limit)
+    .execute();
+}
+
+/** The app's R1–R3 recon diff of this id (undefined for any other). */
+export async function findAdminReconDiff(
+  db: Kysely<DB>,
+  appId: string,
+  id: string,
+): Promise<ReconDiffRow | undefined> {
+  return db
+    .withSchema('app')
+    .selectFrom('recon_diffs')
+    .selectAll()
+    .where('app_id', '=', appId)
+    .where('source', 'in', ADMIN_SOURCES)
+    .where('id', '=', id)
+    .executeTakeFirst();
 }

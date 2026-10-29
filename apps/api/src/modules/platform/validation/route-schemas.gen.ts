@@ -13525,6 +13525,121 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "listAdminReconDiffs": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        },
+        "type": {
+          "type": "string",
+          "description": "The R1–R3 types of contracts/enums/fund.yaml recon_diff_type (BR-FUND-01, BR-FUND-04, BR-FUND-19, BR-FUND-22, BR-FUND-23); the R4 types pay_mismatch and pay_anomaly are AdminPayReconDiffType.",
+          "enum": [
+            "union_mismatch",
+            "channel_mismatch",
+            "ledger_mismatch",
+            "platform_restore",
+            "month_end_unbalanced",
+            "settle_amount_mismatch",
+            "settle_missing",
+            "appeal_restore",
+            "estimate_changed_after_credit"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "description": "Source of a difference listed under /admin/v1/recon-diffs (recon_diffs.source without R4) — R1 联盟对账, R2 通道对账, R3 内部日终与月末核对.",
+          "enum": [
+            "R1",
+            "R2",
+            "R3"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "description": "Reconciliation difference status (contracts/enums/fund.yaml recon_diff_status).",
+          "enum": [
+            "open",
+            "processing",
+            "adjusted",
+            "written_off",
+            "closed"
+          ]
+        },
+        "period_from": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12][0-9]|3[01]))?$",
+          "description": "A reconciliation period, a month (YYYY-MM) or a day (YYYY-MM-DD), as recon_diffs.period."
+        },
+        "period_to": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12][0-9]|3[01]))?$",
+          "description": "A reconciliation period, a month (YYYY-MM) or a day (YYYY-MM-DD), as recon_diffs.period."
+        },
+        "ref_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "getAdminReconDiff": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "recon_diff_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "recon_diff_id"
+      ],
+      "additionalProperties": false
+    }
+  },
   "adminListKillSwitches": {
     "headers": {
       "type": "object",

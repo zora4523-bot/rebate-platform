@@ -21445,7 +21445,6 @@ paths:
         Handling a difference (close, appeal restore, balance recalculation, write-off) is not
         part of this operation. Reading does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -21545,7 +21544,6 @@ paths:
         `data.fields=[recon_diff_id]` (no 404). No user phone number or other personal data is
         returned. Reading does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

@@ -198,6 +198,7 @@ import {
   type PersonalDataCopySources,
 } from './modules/identity/index.ts';
 import {
+  LedgerAdminModule,
   LedgerModule,
   WalletSummaryModule,
   createLedger,
@@ -3395,6 +3396,8 @@ export class AppModule {
               }),
             ]
           : []),
+        // B2-09a: ledger's R1–R3 recon diff reads (fund.recon or fund.view, read only, no audit).
+        ...(options.entry === 'admin' ? [LedgerAdminModule.forAdmin()] : []),
         // content's GET /v1/config (F1-02c): agent availability and the h5_release bucket read
         // identity's request viewer (token principal, else the X-App-Id guest). GET
         // /v1/pages/{page_key} (F1-09d) reads the same viewer for its login condition.
