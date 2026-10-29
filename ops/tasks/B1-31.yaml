@@ -1,0 +1,24 @@
+id: B1-31
+repo: rebate-platform
+title: 链路追踪接 VictoriaTraces（Pigsty 自带，0.x，零费用、数据不出节点）：api / stream / worker 三个入口的 OpenTelemetry 导出（HTTP、pg、外部 HTTP 自动插桩），trace_id 进日志与响应头照 02 §13 不变；staging 配置导出端点；验收 staging 上 API → DB → 外部依赖一条真实链路可查、span 的 trace_id 与日志对得上；链路数据只用于排障，不作资金判定依据
+type: impl
+# 2026-10-29 入账（ops 线，编排续跑提示 ③；规划/05 B1-31，负责人 2026-10-09 确认改用 VictoriaTraces，06 Q-A9 / TECH-15；02 §13 链路行与 §15.2 已改）。
+# 前置：@opentelemetry/* 包尚未入仓库——实现前须由编排先开 deps 任务入账（精确版本、7 天规则、许可证白名单），本任务 deps_needed 只列包名不改锁文件。
+# staging 验收是对外动作（部署到 staging、开 VictoriaTraces 端点），由本线照 B1-01zc 部署流程做，不碰 prod。导出失败不得影响请求（fail-open，只计数 / 打日志）。
+refs: []
+refs_hash: {}
+deps: [B1-01zc]
+paths:
+  - 'apps/api/src/modules/platform/tracing/**'
+  - 'apps/api/src/bootstrap.ts'
+  - 'apps/api/src/entry.ts'
+  - 'infra/staging/**'
+test_paths:
+  - 'test/spec/platform/tracing/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/tracing/**'
+status: todo
+pr: null
