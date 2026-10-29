@@ -206,6 +206,10 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   spec('payout.auto_enable_check.status_codes_supported', 'boolean', 'config.business'),
   spec('payout.auto_enable_check.bill_out_biz_no_supported', 'boolean', 'config.business'),
   businessInteger('payout.auto_enable_check.recon_required_days', 1),
+  // B1-28g (D10-419): the server-side cache lifetime of GET /v1/rank/hot in seconds (规划/04
+  // §10.1 服务端业务配置键, seeded 600), config.business, at least 1. Registration only;
+  // B1-28h reads it.
+  businessInteger('rank.cache_ttl_seconds', 1),
 ]);
 
 const VISIBLE: readonly ConfigItemSpec[] = Object.freeze(
