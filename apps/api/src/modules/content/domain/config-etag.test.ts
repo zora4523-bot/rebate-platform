@@ -28,19 +28,63 @@ it('[AC-F1-02h] If-None-Match uses weak comparison over a comma list', () => {
   expect(ifNoneMatchHits('"*"', TAG)).toBe(false);
 });
 
-it('[AC-F1-02h] rank platforms: selectable only, PlatformCode order, deduplicated', () => {
-  const ch = (platform: string, selectable: boolean) => ({
+it('[AC-F1-02h] rank platforms: selectable sales / popularity only, PlatformCode order, deduplicated', () => {
+  const ch = (
+    platform: string,
+    selectable: boolean,
+    sort_basis: 'sales' | 'popularity' | 'personalized' = 'popularity',
+  ) => ({
     platform,
     channel_id: platform,
     name: 'n',
-    sort_basis: 'popularity' as const,
+    sort_basis,
     selectable,
     source: 's',
   });
   const spec: MaterialChannelsSpec = {
     version: 'x',
-    channels: [ch('suning', true), ch('jd', true), ch('jd', true), ch('pdd', false), ch('x', true)],
+    channels: [
+      ch('suning', true),
+      ch('jd', true),
+      ch('jd', true, 'sales'),
+      ch('pdd', false),
+      ch('x', true),
+      ch('taobao', true, 'personalized'),
+    ],
   };
   expect(rankPlatforms(spec)).toEqual(['jd', 'suning']);
   expect(rankPlatforms({ version: 'x', channels: [] })).toEqual([]);
+});
+
+it('[AC-F1-02h] rank platforms: a platform with only personalized channels is left out', () => {
+  const spec: MaterialChannelsSpec = {
+    version: 'x',
+    channels: [
+      {
+        platform: 'taobao',
+        channel_id: 't1',
+        name: 'n',
+        sort_basis: 'personalized',
+        selectable: true,
+        source: 's',
+      },
+      {
+        platform: 'pdd',
+        channel_id: 'p1',
+        name: 'n',
+        sort_basis: 'personalized',
+        selectable: true,
+        source: 's',
+      },
+      {
+        platform: 'pdd',
+        channel_id: 'p2',
+        name: 'n',
+        sort_basis: 'sales',
+        selectable: true,
+        source: 's',
+      },
+    ],
+  };
+  expect(rankPlatforms(spec)).toEqual(['pdd']);
 });

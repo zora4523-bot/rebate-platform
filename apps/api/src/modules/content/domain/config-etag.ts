@@ -49,9 +49,20 @@ export function ifNoneMatchHits(header: string | undefined, etag: string): boole
   });
 }
 
-/** F1-02h §9.2-2: selectable platforms in PlatformCode order, without duplicates. */
+/** Sort bases that make a rank list; `personalized` channels are not one (F-PROD-13 ③, D10-422). */
+const RANK_SORT_BASES: ReadonlySet<string> = new Set(['sales', 'popularity']);
+
+/**
+ * F1-02h §9.2-2: platforms with at least one selectable sales / popularity channel, in
+ * PlatformCode order, without duplicates. Same channel rule as rank_unavailable (50304).
+ */
 export function rankPlatforms(spec: MaterialChannelsSpec): Schema<'PlatformCode'>[] {
   return PLATFORM_CODES.filter((platform) =>
-    spec.channels.some((channel) => channel.platform === platform && channel.selectable),
+    spec.channels.some(
+      (channel) =>
+        channel.platform === platform &&
+        channel.selectable &&
+        RANK_SORT_BASES.has(channel.sort_basis),
+    ),
   );
 }
