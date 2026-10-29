@@ -72,7 +72,7 @@ export type {
   RejectWithdrawalCommand,
   WithdrawalCommandResult,
 } from './application/withdrawal-commands.ts';
-export { createWithdrawHolds } from './application/withdraw-holds.ts';
+export { createWithdrawHolds, releaseWithdrawHoldsBySource } from './application/withdraw-holds.ts';
 export { createWithdrawalInFlightReader } from './application/withdrawal-in-flight.ts';
 export { createWentNegativeConsumer, WENT_NEGATIVE_CONSUMER } from './application/went-negative.ts';
 export type { WentNegativeConsumer, WentNegativeOptions } from './application/went-negative.ts';
@@ -82,6 +82,7 @@ export type {
   WithdrawHolds,
   WithdrawHoldsOptions,
   AddWithdrawHold,
+  ReleaseWithdrawHoldsBySource,
 } from './application/withdraw-holds.ts';
 export type { WithdrawalReaders } from './application/withdrawal-in-flight.ts';
 export type { AutoPayoutPorts, PayoutWorkerOptions } from './payout.module.ts';

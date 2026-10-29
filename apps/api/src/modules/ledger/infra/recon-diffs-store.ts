@@ -170,3 +170,55 @@ export async function findAdminReconDiff(
     .where('id', '=', id)
     .executeTakeFirst();
 }
+
+/** B2-09b: the app's R1–R3 recon diff of this id, its row locked (FOR UPDATE) on `trx`. */
+export async function lockAdminReconDiff(
+  trx: Transaction<DB>,
+  appId: string,
+  id: string,
+): Promise<ReconDiffRow | undefined> {
+  return trx
+    .withSchema('app')
+    .selectFrom('recon_diffs')
+    .selectAll()
+    .where('app_id', '=', appId)
+    .where('source', 'in', ADMIN_SOURCES)
+    .where('id', '=', id)
+    .forUpdate()
+    .executeTakeFirst();
+}
+
+/** The statuses a console close starts from (contract closeAdminReconDiff). */
+const CLOSABLE = ['open', 'processing'];
+
+/**
+ * B2-09b: open / processing → closed, compare-and-set on the status (undefined when the row is no
+ * longer closable or not the app's R1–R3 diff). handler_id the operator, closed_at = updated_at.
+ */
+export async function closeAdminReconDiffRow(
+  trx: Transaction<DB>,
+  input: {
+    readonly appId: string;
+    readonly id: string;
+    readonly handlerId: string;
+    readonly at: Date;
+    readonly resolution: object;
+  },
+): Promise<ReconDiffRow | undefined> {
+  return trx
+    .withSchema('app')
+    .updateTable('recon_diffs')
+    .set({
+      status: 'closed',
+      handler_id: input.handlerId,
+      closed_at: input.at,
+      updated_at: input.at,
+      resolution: sql`${JSON.stringify(input.resolution)}::jsonb`,
+    })
+    .where('app_id', '=', input.appId)
+    .where('id', '=', input.id)
+    .where('source', 'in', ADMIN_SOURCES)
+    .where('status', 'in', CLOSABLE)
+    .returningAll()
+    .executeTakeFirst();
+}

@@ -1,9 +1,26 @@
 import type { DynamicModule } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
-import { CLOCK, DB, EVENT_BUS, type Clock, type EventBus } from '../platform/index.ts';
+import {
+  CLOCK,
+  DB,
+  EVENT_BUS,
+  IDEMPOTENCY,
+  type AuditPort,
+  type Clock,
+  type EventBus,
+  type Idempotency,
+} from '../platform/index.ts';
+import type {
+  CloseAdminReconDiffDeps,
+  ReconDiffHoldRelease,
+} from './application/admin-recon-diff-close.ts';
 import { BalanceRecoveredHook, createLedger } from './application/recovered-ledger.ts';
 import type { Ledger } from './application/reverse.ts';
+import {
+  AdminReconDiffCloseController,
+  RECON_DIFF_CLOSE_DEPS,
+} from './http/admin/recon-diff-close.controller.ts';
 import {
   AdminReconDiffsController,
   RECON_DIFF_READ_DB,
@@ -49,21 +66,49 @@ export class LedgerModule {
   }
 }
 
+/** B2-09b: what app.module hands in for the close (ledger imports neither admin nor payout). */
+export interface LedgerAdminOptions {
+  /** Binds the audit port to a transaction handle (app.module: admin's createAuditWriter). */
+  readonly auditWriter: (db: Kysely<Database>, clock: Clock) => AuditPort;
+  /** payout's release of the holds whose source is the diff (its single writer of withdraw_holds). */
+  readonly holdRelease: (clock: Clock) => ReconDiffHoldRelease;
+}
+
 /**
  * B2-09a: the admin entry's R1–R3 recon diff reads (GET /admin/v1/recon-diffs and its detail),
- * guarded through platform's AdminOperationGuard and read on the primary handle. Without the
- * database the routes still register and fail closed (50001).
+ * guarded through platform's AdminOperationGuard and read on the primary handle. B2-09b: the close
+ * (POST /admin/v1/recon-diffs/{recon_diff_id}/close, fund.recon) under platform idempotency, with
+ * payout's hold release and admin's audit writer on the closing transaction. Without the database
+ * the routes still register and fail closed (50001).
  */
 export class LedgerAdminModule {
-  static forAdmin(): DynamicModule {
+  static forAdmin(options: LedgerAdminOptions): DynamicModule {
     return {
       module: LedgerAdminModule,
-      controllers: [AdminReconDiffsController],
+      controllers: [AdminReconDiffsController, AdminReconDiffCloseController],
       providers: [
         {
           provide: RECON_DIFF_READ_DB,
           inject: [{ token: DB, optional: true }],
           useFactory: (db?: Kysely<Database>): Kysely<Database> | null => db ?? null,
+        },
+        {
+          provide: RECON_DIFF_CLOSE_DEPS,
+          inject: [CLOCK, { token: DB, optional: true }, { token: IDEMPOTENCY, optional: true }],
+          useFactory: (
+            clock: Clock,
+            db?: Kysely<Database>,
+            idempotency?: Idempotency,
+          ): CloseAdminReconDiffDeps | null =>
+            db === undefined || idempotency === undefined
+              ? null
+              : {
+                  db,
+                  clock,
+                  idempotency,
+                  auditOn: (trx) => options.auditWriter(trx, clock),
+                  holds: options.holdRelease(clock),
+                },
         },
       ],
     };
