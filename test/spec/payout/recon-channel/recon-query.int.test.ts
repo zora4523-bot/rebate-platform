@@ -22,11 +22,13 @@ import {
   TIMEOUT,
   TRANSFERRED_AT,
   UNKNOWN_STEP,
+  alertsAbout,
   allHolds,
   balanceOf,
   channelOrderId,
   close,
   diffs,
+  expectDiff,
   lineOf,
   open,
   queryJobsOf,
@@ -223,7 +225,7 @@ it.each([
 );
 
 it(
-  '[AC-B2-07c#23] D10-415 ② (d) 常规查询（不带 source=recon）明确失败，而 recon_channel 已有本笔「账单成功」的对账行：同样置 needs_manual=true、仍 PAYING，不走 W6（不退回、不投 land）',
+  '[AC-B2-07c#23] D10-415 ② (d) 常规查询（不带 source=recon）明确失败，而 recon_channel 已有本笔「账单成功」的对账行：同样置 needs_manual=true、仍 PAYING，不走 W6（不退回、不投 land）；排空对账投出的查询后，恰一条 R2 差错单（本方 0、账单金额）并告警，不冻结会员提现',
   async () => {
     const f = await setup(h);
     const handler = f.reconJob();
@@ -258,6 +260,23 @@ it(
       `wd:${w.id}:FREEZE`,
     ]);
     expect(await balanceOf(f, owner)).toEqual({ available_fen: 3_500n, frozen_fen: 1_500n });
+
+    // The queued source=recon query runs afterwards (not a success): ① still ends with diff + alert.
+    const recon = queryScripted({ [w.outBizNo]: [QUERY_FAIL_STEP] });
+    expect(await f.runImmediateQuery(w, recon.channel)).toBe(1);
+    expect(recon.transfers()).toBe(0);
+    expect(await withdrawal(f, w.id)).toMatchObject({ status: 'PAYING', needs_manual: true });
+    expect(landingSendsSince(f, sendsThen, w)).toEqual([]);
+    const found = await diffs(f);
+    expect(found).toHaveLength(1);
+    expectDiff(f, found[0], {
+      refType: 'withdrawal',
+      refIds: [w.id],
+      expectedFen: 0n,
+      actualFen: 1_500n,
+    });
+    expect(alertsAbout(f, [w.id, w.outBizNo]).length).toBeGreaterThanOrEqual(1);
+    expect(await allHolds(f)).toEqual([]);
   },
   TIMEOUT,
 );
