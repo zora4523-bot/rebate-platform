@@ -1,0 +1,37 @@
+{
+  "task": "CT-24w",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "c1e5af26b00c7419975c72bd8911c8ecfa65327f",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only). contracts/openapi.yaml gains closeAdminReconDiff, POST /admin/v1/recon-diffs/{recon_diff_id}/close (F1-08e; 08 BR-FUND-19 「差错单关闭时解除冻结记录」; 04 §3.2 recon_diffs / withdraw_holds, §11.2 fund.recon; design/specs/admin-recon.md §4 / §5): reason 1–200 characters after trimming; only open / processing R1–R3 differences; the difference becomes closed with handler, closing time and resolution.reason, and every withdrawal hold whose source is that difference is released in the same transaction; the answer carries the closed difference's detail and released_hold_count. Permission fund.recon, no step-up (orchestrator ruling 2026-10-29 20:00), audited (recon_diff_close), x-idempotent (Idempotency-Key); an already closed / adjusted / written-off difference is 20902 (error-codes.yaml 20902 gains resource recon_diff, source BR-FUND-22); unknown / foreign-app / R4 ids are 20001 [recon_diff_id]. The hold source format is not pinned in the contract (B2-09b matches the existing writer's recon_diff:<id>). x-implementation: planned until B2-09b. Generated files from pnpm codegen; packages/contracts-ts catalog.test [AC-CT-01c#3] lists recon_diff among the 20902 resources. tester: none, so no red run. Test-machine full verification verify/2 exit 0 (d9418951, PROP_RUNS=2000); verify/1 had failed only on that catalog.test line, fixed by the implementer.",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "fresh independent Claude via nohup claude-run.sh --review-type contract (Codex unavailable until 2026-11-02, approvals 36); pass with no findings. The later unit-test line in catalog.test.ts (20902 resource list) follows the reviewed contract change."
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "ec49584c51e5f92466dbf8d685dfc0787277d432",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
