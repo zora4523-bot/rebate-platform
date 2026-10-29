@@ -1,4 +1,9 @@
-import type { HotRankData, HotRankOptions, HotRankQuery } from '../hot-rank.ts';
+import {
+  getHotRank,
+  type HotRankData,
+  type HotRankOptions,
+  type HotRankQuery,
+} from '../hot-rank.ts';
 
 /**
  * Request-scoped HTTP use-case port of GET /v1/rank/hot: the contract-validated query plus the
@@ -6,13 +11,10 @@ import type { HotRankData, HotRankOptions, HotRankQuery } from '../hot-rank.ts';
  * file.
  */
 export class CatalogHotRankService {
-  constructor(options: HotRankOptions) {
-    void options;
-    throw new Error('NotImplemented: CatalogHotRankService');
-  }
+  // The options stay in a closure: the instance type is exactly { hot }.
+  readonly hot: (query: HotRankQuery) => Promise<HotRankData>;
 
-  hot(query: HotRankQuery): Promise<HotRankData> {
-    void query;
-    throw new Error('NotImplemented: CatalogHotRankService.hot');
+  constructor(options: HotRankOptions) {
+    this.hot = (query) => getHotRank(query, options);
   }
 }

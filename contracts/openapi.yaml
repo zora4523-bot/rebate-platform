@@ -6186,7 +6186,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 20001
         - 50304

@@ -24,6 +24,17 @@ export type {
 } from './application/card-entry.ts';
 export { CatalogSearchService } from './application/search-service.ts';
 export { CatalogDetailService } from './application/detail-service.ts';
+export { CatalogHotRankService } from './application/hot-rank-service.ts';
+export { HOT_RANK_MAX_PAGE_NO, HOT_RANK_PAGE_SIZE, getHotRank } from './hot-rank.ts';
+export type {
+  HotRankCandidate,
+  HotRankCategoryEntry,
+  HotRankData,
+  HotRankOptions,
+  HotRankQuery,
+  HotRankUpstream,
+  HotRankUpstreamPage,
+} from './hot-rank.ts';
 export { getProduct } from './detail.ts';
 export type {
   ProductDetailData,
