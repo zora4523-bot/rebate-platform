@@ -90,6 +90,17 @@ export type {
   EarningsSummaryRequest,
   EarningsSummaryResult,
 } from './application/earnings-summary.ts';
+// B2-04zc: GET /v1/wallet/ledger (BR-FUND-15 / BR-TEXT-19; read only, paid withdrawals through
+// payout's port, order ids through settlement's).
+export { WalletLedgerModule } from './wallet-ledger.module.ts';
+export type { WalletLedgerModuleOptions } from './wallet-ledger.module.ts';
+export type {
+  WalletLedgerDependencies,
+  WalletLedgerPaidInput,
+  WalletLedgerPaidWithdrawal,
+  WalletLedgerQuery,
+  WalletLedgerRequest,
+} from './application/wallet-ledger.ts';
 // B1-27f: the balance ledger section of a personal information copy (read only; app.module).
 export { readPersonalDataCopyLedgerEntries } from './application/personal-data-copy-read.ts';
 export type {

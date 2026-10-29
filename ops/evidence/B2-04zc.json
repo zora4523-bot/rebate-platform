@@ -1,0 +1,102 @@
+{
+  "task": "B2-04zc",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "c914948ed34f7ef10d4c11aad0a8dedba81d0e18",
+  "red_tests": [
+    "test/spec/ledger/wallet-ledger/contract.test.ts > [AC-B2-04zc#9] 契约 listWalletLedger 不再标 planned、生成请求 schema；登录权限、cursor + limit 与两种条目形状不变",
+    "test/spec/ledger/wallet-ledger/entries.int.test.ts > [AC-B2-04zc#1] BR-FUND-15 只列本人 available 子户分录与打款成功的汇总条目：frozen 子户、平台科目、他人与别的 app 的分录都不出现，WITHDRAW_FEE / TAX_WITHHOLD 不单独成行",
+    "test/spec/ledger/wallet-ledger/entries.int.test.ts > [AC-B2-04zc#2] BR-FUND-15 每张 PAID_API / PAID_MANUAL 提现单恰好 1 条 WITHDRAW_PAID 汇总条目（−实际到账、税费、无变动后余额）；审核中、已通过、打款中、驳回、失败的没有汇总条目",
+    "test/spec/ledger/wallet-ledger/entries.int.test.ts > [AC-B2-04zc#3] BR-FUND-15 / BR-TEXT-19 分录行带符号金额、ledger_type、sub_type、会计日与记账后的可用余额：扣回、补差、调账可使余额为负，红冲沿用原类型且为负",
+    "test/spec/ledger/wallet-ledger/entries.int.test.ts > [AC-B2-04zc#4] BR-TEXT-19 跳转：分享单的 SHARE_CREDIT / CLAWBACK / SETTLE_ADJUST 关联子订单号，WITHDRAW_FREEZE / RETURN 关联提现单号，无关联单据的 ADMIN_ADJUST 不跳转",
+    "test/spec/ledger/wallet-ledger/entries.int.test.ts > [AC-B2-04zc#5] BR-TEXT-19 / J7 邀请分佣（REFERRAL_CREDIT 直推、间推）与 referrer 角色的 CLAWBACK / SETTLE_ADJUST 一律 masked、不跳转、只到日，响应里没有任何订单号与下级 uid",
+    "test/spec/ledger/wallet-ledger/paging.int.test.ts > [AC-B2-04zc#6] BR-FUND-15 按记账时刻倒序（与写入顺序无关）：跨午夜的分录各归其会计日，汇总条目按打款成功时刻排进分录之间",
+    "test/spec/ledger/wallet-ledger/paging.int.test.ts > [AC-B2-04zc#7] BR-FUND-15 cursor + limit 翻页不重不漏：缺省每页 20、上限 50；同一时刻的 6 条（含汇总条目）跨页不丢；翻页之间新记的分录不让后续页重复",
+    "test/spec/ledger/wallet-ledger/paging.int.test.ts > [AC-B2-04zc#8] BR-FUND-15 只读本人：别人的分录与游标都读不到本人的条目、没有分录时为空列表；未登录 401 / 10001；读取不写库",
+    "test/spec/ledger/wallet-ledger/restore-link.int.test.ts > [AC-B2-04zc#10] BR-TEXT-19 本人自购与分享单上的 ADMIN_ADJUST / RESTORE（R13 恢复、延后差额补记）关联子订单、不 masked；无关联单据的 ADMIN_ADJUST / BAD_DEBT_WRITEOFF 不跳转"
+  ],
+  "risk_note": "RV2 by path (ledger, payout, settlement reads). Read-only GET /v1/wallet/ledger (BR-FUND-15, BR-TEXT-19): the caller's own USER_BALANCE available-subaccount entries newest first (signed amount = negated stored amount, balance_after_fen as booked, voucher accounting_date), WITHDRAW_FEE / TAX_WITHHOLD not listed; one WITHDRAW_PAID summary entry per PAID_API / PAID_MANUAL withdrawal from a payout read port (amount −net_fen, fee_fen, tax_fen, balance_after_fen null, link withdrawal). Links per BR-TEXT-19: self / share order entries (including ADMIN_ADJUST / RESTORE with an order) link to the sub-order via a settlement read port; REFERRAL_CREDIT and every referrer-role (direct / indirect) entry masked with null link and no order or invitee data; unlinked ADMIN_ADJUST / BAD_DEBT_WRITEOFF null. Opaque keyset cursor [source, id] with no timestamp (money r1 S1), resolved server-side within the caller's own rows. One read-only REPEATABLE READ transaction; no ledger write path touched. Contract: listWalletLedger no longer planned; route-schemas.gen.ts and planned-operations.gen.ts regenerated. No migration.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c914948ed34f7ef10d4c11aad0a8dedba81d0e18",
+      "tree": "85b457de90dd873d89be9f9b8d1d0412c0193086",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-29T16:33:52Z",
+      "finished_at": "2026-10-29T16:34:10Z",
+      "gate": {
+        "commit": "ef7044a449ee86433de267c34cc0df62abea945c",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/wallet-ledger/contract.test.ts > [AC-B2-04zc#9] 契约 listWalletLedger 不再标 planned、生成请求 schema；登录权限、cursor + limit 与两种条目形状不变",
+        "test/spec/ledger/wallet-ledger/entries.int.test.ts > [AC-B2-04zc#1] BR-FUND-15 只列本人 available 子户分录与打款成功的汇总条目：frozen 子户、平台科目、他人与别的 app 的分录都不出现，WITHDRAW_FEE / TAX_WITHHOLD 不单独成行",
+        "test/spec/ledger/wallet-ledger/entries.int.test.ts > [AC-B2-04zc#2] BR-FUND-15 每张 PAID_API / PAID_MANUAL 提现单恰好 1 条 WITHDRAW_PAID 汇总条目（−实际到账、税费、无变动后余额）；审核中、已通过、打款中、驳回、失败的没有汇总条目",
+        "test/spec/ledger/wallet-ledger/entries.int.test.ts > [AC-B2-04zc#3] BR-FUND-15 / BR-TEXT-19 分录行带符号金额、ledger_type、sub_type、会计日与记账后的可用余额：扣回、补差、调账可使余额为负，红冲沿用原类型且为负",
+        "test/spec/ledger/wallet-ledger/entries.int.test.ts > [AC-B2-04zc#4] BR-TEXT-19 跳转：分享单的 SHARE_CREDIT / CLAWBACK / SETTLE_ADJUST 关联子订单号，WITHDRAW_FREEZE / RETURN 关联提现单号，无关联单据的 ADMIN_ADJUST 不跳转",
+        "test/spec/ledger/wallet-ledger/entries.int.test.ts > [AC-B2-04zc#5] BR-TEXT-19 / J7 邀请分佣（REFERRAL_CREDIT 直推、间推）与 referrer 角色的 CLAWBACK / SETTLE_ADJUST 一律 masked、不跳转、只到日，响应里没有任何订单号与下级 uid",
+        "test/spec/ledger/wallet-ledger/paging.int.test.ts > [AC-B2-04zc#6] BR-FUND-15 按记账时刻倒序（与写入顺序无关）：跨午夜的分录各归其会计日，汇总条目按打款成功时刻排进分录之间",
+        "test/spec/ledger/wallet-ledger/paging.int.test.ts > [AC-B2-04zc#7] BR-FUND-15 cursor + limit 翻页不重不漏：缺省每页 20、上限 50；同一时刻的 6 条（含汇总条目）跨页不丢；翻页之间新记的分录不让后续页重复",
+        "test/spec/ledger/wallet-ledger/paging.int.test.ts > [AC-B2-04zc#8] BR-FUND-15 只读本人：别人的分录与游标都读不到本人的条目、没有分录时为空列表；未登录 401 / 10001；读取不写库",
+        "test/spec/ledger/wallet-ledger/restore-link.int.test.ts > [AC-B2-04zc#10] BR-TEXT-19 本人自购与分享单上的 ADMIN_ADJUST / RESTORE（R13 恢复、延后差额补记）关联子订单、不 masked；无关联单据的 ADMIN_ADJUST / BAD_DEBT_WRITEOFF 不跳转"
+      ],
+      "expected": [
+        "test/spec/ledger/wallet-ledger/contract.test.ts",
+        "test/spec/ledger/wallet-ledger/entries.int.test.ts",
+        "test/spec/ledger/wallet-ledger/paging.int.test.ts",
+        "test/spec/ledger/wallet-ledger/restore-link.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "67da127a9e520dbfa7ad87230a6a44b5da3a7c30e964017e6a4aff94f2ea8c1f"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "7ea300a25970c0ee3ff0b31c990756bc824244d2f5532c2f5b04124e1768b90e"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "Codex unavailable until 11-02; independent Claude via tools/agent/claude-run.sh per approvals #36. Round 1 fail with 1 S1 (next_cursor carried the last row's microsecond timestamp, leaking a masked referrer row's exact time, BR-TEXT-19); fixed in implementation r2 (opaque cursor, server-side lookup within the caller's rows). Round 2 incremental review by a fresh independent Claude: pass, S1 closed."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "rule tests by an independent Claude context in 2 counted attempts (the counter also holds one refused call that started no model: the trusted root lacked the ledger). Round 1 (fresh independent Claude) fail with 1 S1: no ADMIN_ADJUST / RESTORE with an order link; attempt 2 added restore-link.int.test.ts (red/2 PASS, 10 tests red for the right reason). Round 2 incremental review by another fresh independent Claude: pass. Out-of-scope items (writer-side BR-FUND-15 clauses, H5 type names, BALANCE_ADJUSTED inbox, BR-TEXT-02 order-number rule) recorded in couli-runs/B2-04zc/out-of-scope.md. No red_exempt or expected_values entries in this task."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "8ca9da1d3a7abe02a2e65a72e1aa54f84f62a3a2",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
