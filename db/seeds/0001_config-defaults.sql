@@ -103,5 +103,8 @@ INSERT INTO app.config_items (app_id, key, value, updated_by) VALUES
   ('couli', 'payout.auto_enable_check.status_codes_supported', 'false'::jsonb, 'seed'), -- BR-WDR-30
   ('couli', 'payout.auto_enable_check.bill_out_biz_no_supported', 'false'::jsonb, 'seed'), -- BR-WDR-30
   -- 第 12 批：热销榜服务端缓存时长（B1-28g，D10-419；规划/04 §10.1 服务端业务配置键，代理补全的默认、负责人 2026-10-05 确认）
-  ('couli', 'rank.cache_ttl_seconds', '600'::jsonb, 'seed') -- 规划/04 §10.1、规划/01 F-PROD-13
+  ('couli', 'rank.cache_ttl_seconds', '600'::jsonb, 'seed'), -- 规划/04 §10.1、规划/01 F-PROD-13
+  -- 第 13 批：搜索热词与关键词直达（B1-05l，D10-419 (a)）；默认空列表 = 不展示热词、无直达，不编造热词
+  ('couli', 'search.hot_words', '[]'::jsonb, 'seed'), -- D10-419 (a)
+  ('couli', 'search.keyword_routes', '[]'::jsonb, 'seed') -- D10-419 (a)
 ON CONFLICT (app_id, key) DO NOTHING;

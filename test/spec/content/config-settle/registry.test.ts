@@ -30,7 +30,8 @@ it('[AC-F1-02zj#2] 16 项按裁定顺序追加；原 29 项及其无 range 行�
   // risk.withdraw.* keys, in this order; B2-11y (D10-373): then the seventeen
   // withdraw.auto_payout.* keys, in this order; B2-11dz (D10-392 / D10-394): then the four
   // payout.auto_enable_check.* keys, in this order; B1-28g (D10-419): then
-  // rank.cache_ttl_seconds; nothing else may follow.
+  // rank.cache_ttl_seconds; B1-05l (D10-419 (a)): then search.hot_words and
+  // search.keyword_routes, in this order; nothing else may follow.
   presentOf(INVITE_CFG, 'growth.invite_reward.*');
   const invite = inviteNow();
   expect(registry.map((entry) => entry.key)).toStrictEqual([
@@ -73,6 +74,8 @@ it('[AC-F1-02zj#2] 16 项按裁定顺序追加；原 29 项及其无 range 行�
     'payout.auto_enable_check.bill_out_biz_no_supported',
     'payout.auto_enable_check.recon_required_days',
     'rank.cache_ttl_seconds',
+    'search.hot_words',
+    'search.keyword_routes',
   ]);
   expect(registry.slice(0, 29)).toStrictEqual(
     EXPECTED.map((entry) => ({ ...entry, options: null })),
