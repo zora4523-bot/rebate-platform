@@ -2,7 +2,7 @@ id: B2-13a
 repo: rebate-platform
 title: 收益看板 GET /v1/earnings/summary（BR-FUND-25）：自购 / 分享两栏各四个期间（今日、昨日、本月、上月，+08:00 自然日月）的付款笔数、预估、已结算，邀请栏只给本月、上月的预估与已结算合计、不给笔数；付款笔数与预估按 paid_at 归期、已结算按入账分录会计日归期（REBATE_CREDIT / SHARE_CREDIT / REFERRAL_CREDIT 代数和，红冲记负）；platform 只筛自购 / 分享；开关 earnings.dashboard.enabled（关 → 30701）与 referral_visible（关 → referral 为 null）；契约去 planned
 type: impl
-# 2026-10-29 be 入账（编排派工 16:20：规划/05 §3.3 B2-13，依赖 B2-02 / B2-03 / B2-04 均已 done）。放 ledger 模块，照钱包汇总 B2-04y：已结算从 ledger 自有分录按会计日聚合；预估份额算法同 BR-FUND-18、复用 settlement 已导出的待入账收益读取（createPendingEarningsSource 一类端口），由 app.module 组装注入，不深导入、不跨模块直读表。
+# 2026-10-29 be 入账（编排派工 16:20：规划/05 §3.3 B2-13，依赖 B2-02 / B2-03 / B2-04 均已 done）。放 ledger 模块，照钱包汇总 B2-04y：已结算从 ledger 自有分录按会计日聚合；预估份额算法同 BR-FUND-18、复用 settlement 已导出的待入账收益读取（createPendingEarningsSource 一类端口），由 app.module 组装注入，不深导入、不跨模块直读表。paths 按编排 10-29 16:25 收窄为本单新文件与必要接线：只读任务不得覆盖记账 / 余额 / 分录写路径。
 # 只读接口，不写库、不参与资金计算；售后扣回、结算补差、人工调账不并入（BR-FUND-25：待财务确认）。两个开关已在 config-registry 登记。开工前在 notices 占契约槽；契约去 planned 时同列 planned-operations.gen.ts（CT-06zxd）。
 refs: [BR-FUND-25, BR-INV-16, BR-INV-17]
 refs_hash:
@@ -11,10 +11,15 @@ refs_hash:
   BR-INV-17: 16d6035f8ee0
 deps: [B2-04y]
 paths:
-  - 'apps/api/src/modules/ledger/**'
+  - 'apps/api/src/modules/ledger/earnings-summary.module.ts'
+  - 'apps/api/src/modules/ledger/application/earnings-summary*.ts'
+  - 'apps/api/src/modules/ledger/infra/earnings-summary*.ts'
+  - 'apps/api/src/modules/ledger/http/public/earnings-summary*.ts'
+  - 'apps/api/src/modules/ledger/index.ts'
+  - 'apps/api/src/modules/ledger/ledger.module.ts'
   - 'apps/api/src/app.module.ts'
   - 'apps/api/src/modules/settlement/index.ts'
-  - 'apps/api/src/modules/settlement/reads/**'
+  - 'apps/api/src/modules/settlement/reads/earnings*.ts'
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/openapi.gen.ts'
   - 'packages/contracts-ts/src/planned-operations.gen.ts'
