@@ -59,6 +59,14 @@ import {
   WithdrawalsController,
   type WithdrawStepUp,
 } from './http/public/withdrawals.controller.ts';
+import type {
+  AdminPayeeDecrypt,
+  AdminWithdrawalReadDeps,
+} from './application/admin-withdrawals.ts';
+import {
+  ADMIN_WITHDRAWAL_READS,
+  AdminWithdrawalsController,
+} from './http/admin/withdrawals.controller.ts';
 import {
   WITHDRAW_APPLY,
   WITHDRAW_RULES,
@@ -646,6 +654,57 @@ export class PayoutModule {
       controllers: [WithdrawalsController],
       providers: [rulesProvider, applyProvider, stepUpProvider, readsProvider, handleProvider],
       exports: [WITHDRAW_RULES, WITHDRAW_APPLY],
+    };
+  }
+}
+
+/** B2-09c: what app.module hands in for the console reads (payout imports no identity). */
+export interface PayoutAdminOptions {
+  /** identity's masked phones (BR-ID-33 3 + 4) over the entry's handle and field cipher. */
+  readonly phones: (
+    db: Kysely<DB>,
+    crypto: FieldCrypto | null,
+  ) => AdminWithdrawalReadDeps['phones'];
+  /** The payee snapshot decryption (payout_accounts.* contexts); null without the field cipher. */
+  readonly decryptPayee: (crypto: FieldCrypto | null) => AdminPayeeDecrypt | null;
+}
+
+/**
+ * B2-09c: the admin entry's withdrawal reads (GET /admin/v1/withdrawals and its detail;
+ * withdraw.review or fund.view, read only, no audit), guarded through platform's
+ * AdminOperationGuard and read on the primary handle. Without the database or the field cipher
+ * the routes still register and fail closed (50001).
+ */
+export class PayoutAdminModule {
+  static forAdmin(options: PayoutAdminOptions): DynamicModule {
+    return {
+      module: PayoutAdminModule,
+      controllers: [AdminWithdrawalsController],
+      providers: [
+        {
+          provide: ADMIN_WITHDRAWAL_READS,
+          inject: [
+            CLOCK,
+            { token: DB_TOKEN, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            db?: Kysely<DB>,
+            crypto?: FieldCrypto,
+          ): AdminWithdrawalReadDeps | null => {
+            if (db === undefined) return null;
+            const decryptPayee = options.decryptPayee(crypto ?? null);
+            if (decryptPayee === null) return null;
+            return {
+              db,
+              now: () => clock.now(),
+              phones: options.phones(db, crypto ?? null),
+              decryptPayee,
+            };
+          },
+        },
+      ],
     };
   }
 }

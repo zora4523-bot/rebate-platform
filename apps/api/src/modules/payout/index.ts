@@ -40,8 +40,12 @@ export type {
 } from './application/withdraw-apply.ts';
 export { createWithdrawUsageReader } from './infra/withdraw-usage.ts';
 export { createWithdrawHoldsReader } from './infra/withdraw-holds.ts';
-export { PayoutModule } from './payout.module.ts';
-export type { PayoutModuleOptions, PayoutProcessOptions } from './payout.module.ts';
+export { PayoutAdminModule, PayoutModule } from './payout.module.ts';
+export type {
+  PayoutAdminOptions,
+  PayoutModuleOptions,
+  PayoutProcessOptions,
+} from './payout.module.ts';
 // B2-06f: PAYOUT_MODE and the payout process's runtime (entry.ts resolves and starts it).
 export { resolvePayoutMode } from './payout-mode.ts';
 export type {
