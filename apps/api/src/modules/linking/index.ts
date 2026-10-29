@@ -105,6 +105,11 @@ export type {
   LinkLandingOptions,
   SnapshotCardOptions,
 } from './application/link-landing.ts';
+// Task B1-15u: the share page outside the app (GET /v1/share-pages/{link_id}, POST …/tpwd); the
+// SharePageMaterials class is the replaceable material port (D10-424 default: promo_url only).
+// Rule tests: test/spec/linking/share-page/**.
+export { SharePageMaterials, SharePageService } from './application/share-page.ts';
+export type { SharePageMaterial } from './application/share-page.ts';
 // Task B1-06g: GET /v1/unions/{platform}/auth-url, the one-time authorization state (BR-ID-17,
 // BR-ID-22, BR-ID-24). Rule tests: test/spec/linking/auth-url/**.
 export { createUnionAuthUrl } from './application/union-auth-url.ts';

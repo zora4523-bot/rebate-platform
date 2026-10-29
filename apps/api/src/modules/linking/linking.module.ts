@@ -70,6 +70,14 @@ import {
   createSnapshotCardReader,
 } from './application/link-landing.ts';
 import { LinkLandingController } from './http/public/landing.controller.ts';
+import { SharePageMaterials, SharePageService, createSharePage } from './application/share-page.ts';
+import { SharePageController } from './http/public/share-page.controller.ts';
+import {
+  NO_SHARE_TICKET_STORE,
+  SHARE_PAGE_REDIS_NAMESPACE,
+  createRedisShareTicketStore,
+} from './infra/share-page-store.ts';
+import { createShareSharerBindings } from './infra/share-page-reads.ts';
 import { LinkOpenController } from './http/public/open.controller.ts';
 import { LinkConvertController } from './http/public/convert.controller.ts';
 import { UNION_AUTH_URL, UnionAuthUrlController } from './http/public/auth-url.controller.ts';
@@ -397,6 +405,8 @@ function openParts(...args: OpenFactoryArgs): LinkOpenParts | null {
  * apps.json, verified jump paths), the process's Redis jump cache and single-flight windows.
  * B1-06j: GET /v1/links/{link_id} (link landing card) reads only: no registration, no link_log,
  * no conversion.
+ * B1-15u: GET /v1/share-pages/{link_id} and POST /v1/share-pages/{link_id}/tpwd (share page
+ * outside the app), over the same read ports plus the SharePageMaterials port and Redis tickets.
  */
 @Module({})
 export class LinkingModule {
@@ -415,6 +425,7 @@ export class LinkingModule {
         LinkOpenController,
         LinkConvertController,
         LinkLandingController,
+        SharePageController,
         UnionAuthUrlController,
         UnionBindingsController,
       ],
@@ -493,6 +504,61 @@ export class LinkingModule {
                       itemRefs: ports.itemRefs,
                       products: landingPorts?.products ?? NO_PRODUCTS,
                     }),
+            }),
+        },
+        // B1-15u: the share material of a share link (D10-424 default: links.promo_url only);
+        // replaceable by a later provider of the same class token.
+        { provide: SharePageMaterials, useClass: SharePageMaterials },
+        {
+          // B1-15u: GET /v1/share-pages/{link_id} and POST …/tpwd, one per process (no caller:
+          // anonymous, the app is the request's X-App-Id). Read-only on the database: the links
+          // row, the sharer's binding and the landing card port (no conversion, no registration,
+          // no link_log); tickets and rate-limit buckets live in Redis. Without a database handle
+          // every call fails at call time; without Redis no ticket is issued and every exchange
+          // is refused (42901).
+          provide: SharePageService,
+          inject: [
+            { token: DB, optional: true },
+            { token: LINK_OPEN_PORTS, optional: true },
+            { token: LINK_LANDING_PORTS, optional: true },
+            { token: REDIS, optional: true },
+            APP_CONFIG,
+            CLOCK,
+            ROOT_LOGGER,
+            LinkingConfigReader,
+            SharePageMaterials,
+          ],
+          useFactory: (
+            db: Kysely<Database> | undefined,
+            ports: LinkOpenPorts | undefined,
+            landingPorts: LinkLandingPorts | undefined,
+            redis: RedisHandle | undefined,
+            appConfig: AppConfig,
+            clock: Clock,
+            logger: RootLogger,
+            config: LinkingConfigReader,
+            materials: SharePageMaterials,
+          ): SharePageService =>
+            createSharePage({
+              clock,
+              appEnv: appConfig.appEnv,
+              logger,
+              links: db === undefined ? { find: unavailable } : createLandingLinks(db),
+              cards:
+                ports === undefined
+                  ? { read: unavailable }
+                  : createSnapshotCardReader({
+                      clock,
+                      itemRefs: ports.itemRefs,
+                      products: landingPorts?.products ?? NO_PRODUCTS,
+                    }),
+              bindings: db === undefined ? { active: unavailable } : createShareSharerBindings(db),
+              materials,
+              config,
+              tickets:
+                redis === undefined
+                  ? NO_SHARE_TICKET_STORE
+                  : createRedisShareTicketStore(redis.namespace(SHARE_PAGE_REDIS_NAMESPACE)),
             }),
         },
         {

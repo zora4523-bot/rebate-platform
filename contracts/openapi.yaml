@@ -6957,7 +6957,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 30102
         - 30111
@@ -7038,7 +7037,6 @@ paths:
       x-signed: false
       x-idempotent: false
       x-min-version-gate: false
-      x-implementation: planned
       x-error-codes:
         - 20001
         - 42901
