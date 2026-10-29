@@ -39,5 +39,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payout/recon-channel/**'
-status: todo
-pr: null
+status: done
+pr: 1755
