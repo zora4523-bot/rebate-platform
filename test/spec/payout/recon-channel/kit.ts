@@ -7,9 +7,13 @@
 // specs (pgboss.job read with plain SQL), and for ① the existing query chain of the payout process
 // (B2-06e createQueryJob through ../query/kit.ts) and the worker's landing (B2-06fz). B2-06d's process
 // kit seeds the withdrawals. Synthetic: the bill — FakeChannel's injectable demo bill (B2-07b), lines
-// in the normalised ChannelBillLine shape with status 'SUCCESS' (not a captured Alipay bill).
+// in the normalised ChannelBillLine shape, status 'SUCCESS' unless a test sets a status the query
+// kit's payout.query_status_map maps to fail / unknown (not a captured Alipay bill).
 // Conventions written out here, from the rule text and the task brief:
 //   - The run of the 2026-10-18 bill happens T+1, the clock at 2026-10-19 10:00 +08:00 (NOW).
+//   - PAID_* and W9-returned withdrawals carry fee and tax (amount_fen ≠ net_fen); the bill amount
+//     is compared with net_fen and our_amount_fen records net_fen.
+//   - Only a line whose status query_status_map maps to success is "支付宝成功".
 //   - A recon diff: source R2, type channel_mismatch, period the bill day, open, deduplicated;
 //     expected_fen = what our books paid out for it (net_fen of a PAID_* withdrawal, 0 otherwise),
 //     actual_fen = the bill line's amount (0 without a line), diff_fen = expected − actual (as the
@@ -61,6 +65,7 @@ export {
   MINUTE,
   NOW,
   QUERY_FAIL_STEP,
+  QUERY_LISTS,
   TIMEOUT,
   UNKNOWN_STEP,
   balanceOf,
@@ -91,6 +96,15 @@ export const END_OF_DAY_AFTER = Date.parse('2026-10-20T16:00:00.000Z');
 export const TRANSFERRED_AT = new Date(NOW.getTime() - 14 * HOUR);
 /** The bill's success status of these synthetic lines (query_status_map maps it to success). */
 export const LINE_SUCCESS = 'SUCCESS';
+/** Bill statuses that are not a success: query_status_map maps them to fail / unknown (query kit). */
+export const LINE_FAIL = 'TEST_CLOSED';
+export const LINE_UNKNOWN = 'DEALING';
+/**
+ * The fee and tax of the kit's PAID_* and W9-returned withdrawals unless given: amount_fen =
+ * net_fen + 300 + 200, so a comparison with amount_fen instead of net_fen is visible.
+ */
+export const FEE = 300n;
+export const TAX = 200n;
 
 /** The production specs of the queues these tests send to, and their `<q>.dead`. */
 const QUEUES = new Set([
@@ -132,6 +146,14 @@ export async function close(h: Harness | undefined): Promise<void> {
   await teardown([h.setup]);
   await Promise.all([destroyDb(h.db), destroyDb(h.observer), destroyDb(h.payout)]);
   await h.database.drop();
+}
+
+/** What a kit seed may set (fee / tax default to FEE / TAX: amount_fen ≠ net_fen). */
+export interface WithdrawalValues {
+  readonly net?: bigint;
+  readonly fee?: bigint;
+  readonly tax?: bigint;
+  readonly userId?: string;
 }
 
 export interface PaidSeed extends Seeded {
@@ -224,12 +246,9 @@ export async function setup(h: Harness) {
     });
   }
 
-  /** A PAID_API withdrawal paid at `paidAt` with its channel_order_id. */
-  async function seedPaid(
-    paidAt: Date,
-    values: { net?: bigint; userId?: string } = {},
-  ): Promise<PaidSeed> {
-    const w = await f.seedWithdrawal({ ...values, status: 'PAID_API' });
+  /** A PAID_API withdrawal paid at `paidAt` with its channel_order_id (fee / tax FEE / TAX). */
+  async function seedPaid(paidAt: Date, values: WithdrawalValues = {}): Promise<PaidSeed> {
+    const w = await f.seedWithdrawal({ fee: FEE, tax: TAX, ...values, status: 'PAID_API' });
     const order = channelOrderId();
     await sql`UPDATE app.withdrawals SET paid_at = ${paidAt}, channel_order_id = ${order}
       WHERE app_id = ${w.appId} AND id = ${w.id}`.execute(h.db);
@@ -237,11 +256,8 @@ export async function setup(h: Harness) {
   }
 
   /** A PAID_MANUAL withdrawal (manual transfer entered and confirmed) paid at `paidAt`. */
-  async function seedManual(
-    paidAt: Date,
-    values: { net?: bigint; userId?: string } = {},
-  ): Promise<PaidSeed> {
-    const w = await f.seedWithdrawal({ ...values, status: 'PAID_API' });
+  async function seedManual(paidAt: Date, values: WithdrawalValues = {}): Promise<PaidSeed> {
+    const w = await f.seedWithdrawal({ fee: FEE, tax: TAX, ...values, status: 'PAID_API' });
     const order = channelOrderId();
     await sql`UPDATE app.withdrawals SET status = 'PAID_MANUAL', paid_at = ${paidAt},
         channel_order_id = ${order}, manual_entry_by = ${randomUUID()},
@@ -251,8 +267,14 @@ export async function setup(h: Harness) {
   }
 
   /** An APPROVED withdrawal returned by W9 after a payer-side failure of its transfer. */
-  async function seedReturned(values: { net?: bigint; userId?: string } = {}): Promise<Seeded> {
-    const w = await f.seedWithdrawal({ ...values, status: 'APPROVED', executeSeq: 1 });
+  async function seedReturned(values: WithdrawalValues = {}): Promise<Seeded> {
+    const w = await f.seedWithdrawal({
+      fee: FEE,
+      tax: TAX,
+      ...values,
+      status: 'APPROVED',
+      executeSeq: 1,
+    });
     await f.seedAttempt(w.id, 'transfer', 'fail', TRANSFERRED_AT, w.appId);
     await sql`UPDATE app.withdrawals SET hold_reason = 'payer_side_after_transfer',
         hold_at = ${TRANSFERRED_AT}

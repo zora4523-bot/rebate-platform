@@ -5,12 +5,19 @@
 // an alert and, for the member, a withdraw hold recon_diff that never expires by itself; an APPROVED
 // withdrawal returned by W9 after a payer-side failure gets the bill line on its diff (W11 is not
 // this task). Terminal withdrawals are read only: no status, amount, voucher or balance changes
-// (corrections only by diff + adjustment). Top-level it() only (规划/11 §4.3).
+// (corrections only by diff + adjustment). The withdrawals carry fee and tax (amount_fen ≠ net_fen);
+// only a line whose status payout.query_status_map maps to success is "支付宝成功". Top-level it()
+// only (规划/11 §4.3).
 import { createTestDatabase } from '@couli/db/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
   BILL_DATE,
+  FEE,
   IN_DAY,
+  LINE_FAIL,
+  LINE_UNKNOWN,
+  QUERY_LISTS,
+  TAX,
   TIMEOUT,
   alertsAbout,
   allHolds,
@@ -39,11 +46,12 @@ afterAll(async () => {
 }, TIMEOUT);
 
 it(
-  '[AC-B2-07c#6] 接口打款单按 out_biz_no 一致：明细 matched（本方 PAID_API / net_fen，账单的 channel_order_id / 状态 / 金额），无差错单、无冻结、无告警',
+  '[AC-B2-07c#6] 接口打款单按 out_biz_no 一致（有手续费与税，账单金额 = net_fen ≠ amount_fen）：明细 matched（本方 PAID_API / net_fen，账单的 channel_order_id / 状态 / 金额），无差错单、无冻结、无告警',
   async () => {
     const f = await setup(h);
     const handler = f.reconJob();
     const w = await f.seedPaid(IN_DAY, { net: 1_234n });
+    expect(w.amount).toBe(1_234n + FEE + TAX);
     const line = lineOf(w, { channelOrderId: w.channelOrderId });
     f.setBill(BILL_DATE, [line]);
     const before = await books(f);
@@ -104,7 +112,7 @@ it.each([['FAILED'], ['REJECTED']] as const)(
     const f = await setup(h);
     const handler = f.reconJob();
     const owner = await f.newUser();
-    const w = await f.seedWithdrawal({ status, net: 10_000n, userId: owner });
+    const w = await f.seedWithdrawal({ status, net: 10_000n, fee: FEE, tax: TAX, userId: owner });
     const line = lineOf(w);
     f.setBill(BILL_DATE, [line]);
     const before = await books(f);
@@ -297,6 +305,187 @@ it(
       }),
     ]);
     expect(await books(f)).toEqual(before);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-07c#11] 金额对 net_fen 而不是 amount_fen：amount 10000、手续费 300、net 9700，账单 9700 的单 matched；账单 10000（多付 300）的单 → 差错单（本方 9700、账单 10000、差 −300）、recon_diff 冻结，明细本方金额记 9700',
+  async () => {
+    const f = await setup(h);
+    const handler = f.reconJob();
+    const agreedOwner = await f.newUser();
+    const overpaidOwner = await f.newUser();
+    const agreed = await f.seedPaid(IN_DAY, {
+      net: 9_700n,
+      fee: 300n,
+      tax: 0n,
+      userId: agreedOwner,
+    });
+    const overpaid = await f.seedPaid(IN_DAY, {
+      net: 9_700n,
+      fee: 300n,
+      tax: 0n,
+      userId: overpaidOwner,
+    });
+    expect([agreed.amount, overpaid.amount]).toEqual([10_000n, 10_000n]);
+    const agreedLine = lineOf(agreed, { channelOrderId: agreed.channelOrderId });
+    const overpaidLine = lineOf(overpaid, {
+      channelOrderId: overpaid.channelOrderId,
+      amountFen: 10_000n,
+    });
+    f.setBill(BILL_DATE, [agreedLine, overpaidLine]);
+    const before = await books(f);
+    await expect(handler(f.reconJobOf(BILL_DATE))).resolves.toBeUndefined();
+
+    expect(await rowsOf(f, { outBizNo: agreed.outBizNo })).toEqual([
+      expect.objectContaining({
+        our_status: 'PAID_API',
+        our_amount_fen: 9_700n,
+        channel_amount_fen: 9_700n,
+        result: 'matched',
+      }),
+    ]);
+    expect(await diffsOf(f, [agreed.id])).toEqual([]);
+    expect(await holdsOf(f, agreedOwner)).toEqual([]);
+
+    const found = await diffsOf(f, [overpaid.id]);
+    expect(found).toHaveLength(1);
+    expectDiff(f, found[0], {
+      refType: 'withdrawal',
+      refIds: [overpaid.id],
+      expectedFen: 9_700n,
+      actualFen: 10_000n,
+    });
+    await expectReconHold(f, overpaidOwner, found[0]);
+    expect(alertsAbout(f, [overpaid.id, overpaid.outBizNo]).length).toBeGreaterThanOrEqual(1);
+    expect(await rowsOf(f, { outBizNo: overpaid.outBizNo })).toEqual([
+      expect.objectContaining({
+        our_amount_fen: 9_700n,
+        channel_amount_fen: 10_000n,
+        result: 'diff',
+      }),
+    ]);
+    expect(await books(f)).toEqual(before);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-07c#11] 手动成功单（PAID_MANUAL，有手续费与税）按 channel_order_id 对 net_fen：账单金额 = amount_fen 时 → 差错单（本方 net、账单 amount）与 recon_diff 冻结',
+  async () => {
+    const f = await setup(h);
+    const handler = f.reconJob();
+    const owner = await f.newUser();
+    const w = await f.seedManual(IN_DAY, { net: 4_000n, userId: owner });
+    f.setBill(BILL_DATE, [
+      lineOf(w, { outBizNo: null, channelOrderId: w.channelOrderId, amountFen: w.amount }),
+    ]);
+    await expect(handler(f.reconJobOf(BILL_DATE))).resolves.toBeUndefined();
+
+    const found = await diffsOf(f, [w.id]);
+    expect(found).toHaveLength(1);
+    expectDiff(f, found[0], {
+      refType: 'withdrawal',
+      refIds: [w.id],
+      expectedFen: 4_000n,
+      actualFen: 4_000n + FEE + TAX,
+    });
+    await expectReconHold(f, owner, found[0]);
+    expect(await rowsOf(f, { channelOrderId: w.channelOrderId })).toEqual([
+      expect.objectContaining({
+        our_status: 'PAID_MANUAL',
+        our_amount_fen: 4_000n,
+        channel_amount_fen: 4_000n + FEE + TAX,
+        result: 'diff',
+      }),
+    ]);
+  },
+  TIMEOUT,
+);
+
+it.each([
+  ['FAILED', LINE_FAIL],
+  ['FAILED', LINE_UNKNOWN],
+  ['REJECTED', LINE_FAIL],
+  ['REJECTED', LINE_UNKNOWN],
+  ['APPROVED（W9 付款方侧退回）', LINE_FAIL],
+  ['APPROVED（W9 付款方侧退回）', LINE_UNKNOWN],
+] as const)(
+  '[AC-B2-07c#7] 账单行不是成功：内部 %s，账单行状态 %s（payout.query_status_map 映射为 fail / unknown）→ 不算「支付宝成功」：无差错单、无冻结；提现单与账务不变',
+  async (ours, status) => {
+    const f = await setup(h);
+    const handler = f.reconJob();
+    const owner = await f.newUser();
+    const w =
+      ours === 'FAILED' || ours === 'REJECTED'
+        ? await f.seedWithdrawal({
+            status: ours,
+            net: 10_000n,
+            fee: FEE,
+            tax: TAX,
+            userId: owner,
+          })
+        : await f.seedReturned({ net: 10_000n, userId: owner });
+    f.setBill(BILL_DATE, [lineOf(w, { status })]);
+    const before = await books(f);
+    await expect(handler(f.reconJobOf(BILL_DATE))).resolves.toBeUndefined();
+
+    expect(await diffs(f)).toEqual([]);
+    expect(await allHolds(f)).toEqual([]);
+    expect(await books(f)).toEqual(before);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-07c#9] 账单行不是成功、内部没有对应单（不认识的 out_biz_no 映射为 fail；没有单号、映射为 unknown）→ 无差错单、无冻结',
+  async () => {
+    const f = await setup(h);
+    const handler = f.reconJob();
+    const closed = lineOf({ outBizNo: 'W20261018UNKNOWN0002', net: 600n }, { status: LINE_FAIL });
+    const dealing = lineOf(
+      { outBizNo: 'unused', net: 700n },
+      { outBizNo: null, status: LINE_UNKNOWN },
+    );
+    f.setBill(BILL_DATE, [closed, dealing]);
+    await expect(handler(f.reconJobOf(BILL_DATE))).resolves.toBeUndefined();
+
+    expect(await diffs(f)).toEqual([]);
+    expect(await allHolds(f)).toEqual([]);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-07c#7] 成功按 payout.query_status_map 判：配置另一状态 TEST_PAID 映射为 success，内部 FAILED 单的 TEST_PAID 行 → 差错单与 recon_diff 冻结',
+  async () => {
+    const f = await setup(h);
+    await f.set('payout.query_status_map', {
+      ...QUERY_LISTS.queryStatusMap,
+      TEST_PAID: 'success',
+    });
+    const handler = f.reconJob();
+    const owner = await f.newUser();
+    const w = await f.seedWithdrawal({
+      status: 'FAILED',
+      net: 3_000n,
+      fee: FEE,
+      tax: TAX,
+      userId: owner,
+    });
+    f.setBill(BILL_DATE, [lineOf(w, { status: 'TEST_PAID' })]);
+    await expect(handler(f.reconJobOf(BILL_DATE))).resolves.toBeUndefined();
+
+    const found = await diffsOf(f, [w.id]);
+    expect(found).toHaveLength(1);
+    expectDiff(f, found[0], {
+      refType: 'withdrawal',
+      refIds: [w.id],
+      expectedFen: 0n,
+      actualFen: 3_000n,
+    });
+    await expectReconHold(f, owner, found[0]);
   },
   TIMEOUT,
 );
