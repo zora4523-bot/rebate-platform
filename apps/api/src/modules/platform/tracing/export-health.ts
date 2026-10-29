@@ -21,7 +21,30 @@ export interface ExportHealth {
   failures(): number;
 }
 
+const WARN_INTERVAL_MS = 60_000;
+
 export function createExportHealth(options: ExportHealthOptions): ExportHealth {
-  void options;
-  throw new Error('NotImplemented: createExportHealth');
+  const { logger, clock } = options;
+  let failures = 0;
+  let lastWarnAt: number | null = null;
+  return {
+    recordFailure(error: unknown): void {
+      failures += 1;
+      try {
+        const now = clock.now().getTime();
+        if (lastWarnAt !== null && now - lastWarnAt < WARN_INTERVAL_MS) return;
+        lastWarnAt = now;
+        const errorName =
+          error instanceof Error && error.name !== ''
+            ? error.name
+            : typeof error === 'string'
+              ? 'Error'
+              : 'Error';
+        logger.warn({ error_name: errorName, count: failures }, 'otel_export_failed');
+      } catch {
+        // Fail-open: a logger (or clock) that throws must not reach the exporter's caller.
+      }
+    },
+    failures: () => failures,
+  };
 }

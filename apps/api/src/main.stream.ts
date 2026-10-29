@@ -1,8 +1,14 @@
 // Entry `stream`: Agent SSE streaming endpoint. Listens on API_HOST:STREAM_PORT.
-// AppModule mounts AgentModule.forStream, identity's token checks and risk's ordered guards.
-// Nest's destroy hook waits for the agent runtime before platform closes its stores;
-// only worker starts the sweeper.
+// B1-31: tracing starts before the entry module is loaded (instrumentation precedes http / pg /
+// undici); the entry module is imported only afterwards. The handle is shut down when the entry
+// returns, whatever the outcome.
 import 'reflect-metadata';
-import { runEntry } from './entry.ts';
+import { bootTracing } from './modules/platform/tracing/boot.ts';
 
-await runEntry('stream');
+const tracing = await bootTracing('stream');
+try {
+  const { runEntry } = await import('./entry.ts');
+  await runEntry('stream');
+} finally {
+  await tracing.shutdown();
+}

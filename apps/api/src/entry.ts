@@ -40,6 +40,7 @@ import {
   isHttpEntry,
   loadConfig,
   loadConnectionConfig,
+  startTracing,
 } from './modules/platform/index.ts';
 import {
   orderSyncToken,
@@ -688,6 +689,9 @@ export async function runEntry(entry: EntryName): Promise<void> {
   // Installed before anything is created; removed only after a failed startup's cleanup, so a
   // signal during that cleanup neither logs `stopping` nor ends the process early (B1-01zs).
   const signals = watchSignals(logger, !config.exitAfterInit);
+  // B1-31: tracing (idempotent: main.<entry>.ts started it before this module was loaded; a
+  // direct runEntry call starts it here, before any database handle or application exists).
+  const tracing = await startTracing({ entry, config, logger });
   try {
     handles = createDbHandles(connections, { logger });
     if (maintConnection !== null) maintHandle = createMaintDbHandle(maintConnection, { logger });
@@ -702,5 +706,7 @@ export async function runEntry(entry: EntryName): Promise<void> {
     } finally {
       signals.detach();
     }
+  } finally {
+    await tracing.shutdown();
   }
 }

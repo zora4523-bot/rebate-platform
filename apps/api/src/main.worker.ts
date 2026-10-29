@@ -1,6 +1,14 @@
 // Entry `worker`: background jobs and domain-event consumers. No HTTP port.
-// Starts queue supervision and the handlers registered by business modules.
+// B1-31: tracing starts before the entry module is loaded (instrumentation precedes http / pg /
+// undici); the entry module is imported only afterwards. The handle is shut down when the entry
+// returns, whatever the outcome.
 import 'reflect-metadata';
-import { runEntry } from './entry.ts';
+import { bootTracing } from './modules/platform/tracing/boot.ts';
 
-await runEntry('worker');
+const tracing = await bootTracing('worker');
+try {
+  const { runEntry } = await import('./entry.ts');
+  await runEntry('worker');
+} finally {
+  await tracing.shutdown();
+}

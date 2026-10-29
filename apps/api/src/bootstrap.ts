@@ -41,7 +41,7 @@ import {
   isContractSignedRoute,
   loadConfig,
   refuseRoutes,
-  resolveTraceId,
+  requestIdForTrace,
 } from './modules/platform/index.ts';
 import { ADMIN_HTTP_POLICY, isAdminCheck, type AdminHttpPolicy } from './modules/admin/index.ts';
 import { isTokenCheck } from './modules/identity/index.ts';
@@ -159,7 +159,11 @@ export async function createHttpApp(
     const trustedProxies = options.config.trustedProxies ?? [];
     const adapter = new PlatformFastifyAdapter({
       loggerInstance: options.logger,
-      genReqId: (request: IncomingMessage) => resolveTraceId(request.headers['x-trace-id']),
+      // B1-31: with tracing on, a request without a well-formed X-Trace-Id takes its trace id
+      // (as a UUID) from the server span the http instrumentation opened, so the response header,
+      // the log lines and the exported span name the same trace; a well-formed inbound value is
+      // kept as sent (02 §13) and the propagator adopted it as the trace id already.
+      genReqId: (request: IncomingMessage) => requestIdForTrace(request.headers['x-trace-id']),
       // B1-01zze: the contract's longest path parameter is ProductKey (maxLength 128); × 3 leaves
       // room for percent-encoding, so a contract-valid key reaches the route instead of Fastify's
       // default 100 answering 414, and an over-long key is refused by the route schema (20001).
