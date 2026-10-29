@@ -1,0 +1,34 @@
+id: B2-09c
+repo: rebate-platform
+title: payout：后台提现单只读接口实现（CT-24y listAdminWithdrawals、getAdminWithdrawal）——按 app 隔离读 withdrawals 及其批次、转账尝试摘要、生效冻结、自动判定结果；收款账号与姓名只给脱敏值；权限 withdraw.review 或 fund.view 经 AdminOperationGuard，不写审计；去掉两个接口的 planned
+type: impl
+# 2026-10-30 入账（admin-backend，编排 10-30 00:xx 派工；规划/05 B2-09「财务类后台接口……提现审核……」第一段）。
+# 单一写者：withdrawals / payout_batches / payout_attempts / withdraw_holds 的写者都是 payout；本任务只读，读也放 payout（照 B2-15f / B2-09a：模块内 application 读 + admin 控制器 + forAdmin 只挂 admin 入口），不改任何状态字段。用户脱敏手机号若需要，经 identity 的公开导出读，不直读 users。
+# 不含写操作（审核、驳回、批量通过、手动打款、批次执行、自动到账设置、撤销微信转账）与风险标记重算，后续另入账。
+refs: [BR-WDR-10]
+refs_hash:
+  BR-WDR-10: 1db6b508e224
+deps: [CT-24y]
+paths:
+  - 'apps/api/src/modules/payout/application/admin-withdrawals*.ts'
+  - 'apps/api/src/modules/payout/infra/admin-withdrawals*.ts'
+  - 'apps/api/src/modules/payout/http/admin/**'
+  - 'apps/api/src/modules/payout/payout.module.ts'
+  - 'apps/api/src/modules/payout/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/payout/admin-withdrawals/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/admin-withdrawals/**'
+status: todo
+pr: null
