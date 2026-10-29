@@ -2295,6 +2295,26 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "listAdminReconDiffs",
+    "method": "GET",
+    "path": "/admin/v1/recon-diffs",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "getAdminReconDiff",
+    "method": "GET",
+    "path": "/admin/v1/recon-diffs/:recon_diff_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListKillSwitches",
     "method": "GET",
     "path": "/admin/v1/kill-switches",
