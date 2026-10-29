@@ -1,0 +1,21 @@
+id: CT-06zxj
+repo: rebate-platform
+title: CT-06zxj：迁移门禁的资金表名单 FUNDS_TABLE_NAMES 加 recon_channel（R2 通道对账明细，含双方金额列），lint-migrations.test.ts 期望资金表集合加 payout_recon_runs / recon_channel 并以 PENDING_FUNDS_TABLES 允许两表在 B2-07a 合并前暂缺（D10-411 / D10-413）
+type: guard-change
+# 2026-10-29 入账（ops 线，编排裁定 D10-411 / D10-412）。起因：B2-07a（#1751）新建 app.recon_channel（our_amount_fen / channel_amount_fen），其名不匹配任何
+# FUNDS_TABLE_PREFIXES（`reconcil` 不匹配 recon_channel），与 recon_diffs / recon_union 同样须逐名列入，否则后续迁移可绕过资金表保护（money r1 S2-2）。
+# 只收紧、不放宽；主干上该表尚不存在，名单多一项不影响现有分类。D10-413（取代 D10-412 ②）：测试期望集合加两表，「期望表须已在 schema」不删、改为 expected ⊆ schema ∪ PENDING_FUNDS_TABLES
+# （写死 ['payout_recon_runs','recon_channel']），其余名字照旧必须存在；分类 == 期望 ∩ schema 照旧。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ci/lint-migrations.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+  - 'ops/tasks/CT-06zxj.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

@@ -246,8 +246,18 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'order_assignments',
     // B1-09i: per-window progress of manual order sync (order prefix, attribution side).
     'order_sync_request_windows',
+    // B2-07a: R2 channel reconciliation (BR-WDR-23) — the daily run record (payout prefix) and the
+    // detail rows (listed by name, CT-06zxj).
+    'payout_recon_runs',
+    'recon_channel',
   ]);
-  for (const name of funds) expect(tables, name).toContain(name);
+  // Funds tables whose migration has not landed yet (B2-07a, D10-413): they may be missing from
+  // db/schema.sql; every other expected name must exist.
+  const PENDING_FUNDS_TABLES: readonly string[] = ['payout_recon_runs', 'recon_channel'];
+  for (const name of funds) {
+    if (PENDING_FUNDS_TABLES.includes(name) && !tables.includes(name)) continue;
+    expect(tables, name).toContain(name);
+  }
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));
 });
 
