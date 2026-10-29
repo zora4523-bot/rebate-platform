@@ -1,0 +1,22 @@
+id: B1-08zc
+repo: rebate-platform
+title: 订单平台恢复检测（BR-FUND-22）：作废 / 扣回子订单被平台恢复（P9 回到非失效状态，或佣金由 ≤0 恢复为 >0）且原因属 REFUND / RIGHTS / COMMISSION_ZERO 时，告警并经 orders 声明的端口登记 platform_restore 差错单；PUNISH / BLACKLIST 作废的只更新 platform_status；不复活订单
+type: impl
+# 2026-10-30 入账（content-client；编排 10-30 06:1x 派工：orders 侧检测、ledger 写差错单经端口，不跨模块直写表）。
+# 现状：orders/application/update-step.ts P9 只打 invalid_recovered warn；settlement rebate.ts:334 有「P9 差错单登记 — blocked on B2-04k」TODO（settlement 尚未接进 orders worker，B2-04zb 未入账）；ledger 已导出 registerReconDiffOnce（B2-04k），recon_diffs.type 已含 platform_restore。
+# 02 §4.1：orders 不依赖 ledger → orders 声明差错单登记端口，app.module 以 ledger 的 registerReconDiffOnce 注入（先例 payment.module pay_mismatch）。只读 orders 自有表的 rebate_status / reason / order_status_history 判定，不写 rebate_status。
+refs: [BR-FUND-22]
+refs_hash:
+  BR-FUND-22: 022deb8da97d
+deps: []
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/orders/platform-restore/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
