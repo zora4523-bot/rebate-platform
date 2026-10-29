@@ -30,6 +30,34 @@ export interface TransferResult extends Omit<QueryResult, 'kind'> {
   pauseQueue?: boolean;
 }
 
+/**
+ * B2-07b (BR-WDR-23): one line of the channel's bill of one accounting day, normalised by the
+ * adapter. The reconciliation matches interface transfers by outBizNo and manual successes by
+ * channelOrderId, and compares amountFen with net_fen.
+ */
+export interface ChannelBillLine {
+  /** Our out_biz_no; null when the line carries none (a manual transfer; BR-WDR-22 ⑧ unverified). */
+  outBizNo: string | null;
+  channelOrderId: string;
+  /** The transferred amount in integer fen. */
+  amountFen: bigint;
+  /** The channel's own status of the line, as the bill gives it. */
+  status: string;
+  /** 入账时间: ISO timestamp with an explicit offset. */
+  bookedAt: string;
+}
+
+/**
+ * B2-07b: the bill of the day cannot be had (not downloadable, not recorded, not injected). Never
+ * answered with an empty bill: an empty bill would report every paid withdrawal as missing.
+ */
+export class PayoutBillUnavailableError extends Error {
+  constructor() {
+    super('PAYOUT_BILL_UNAVAILABLE');
+    this.name = 'PayoutBillUnavailableError';
+  }
+}
+
 /** Closed adapters reject; the normalized evidence travels on the rejection. */
 export class ChannelDisabledError extends Error {
   readonly result: QueryResult;

@@ -1,0 +1,95 @@
+{
+  "risk_note": "RV2 money (apps/api/src/modules/payout/domain/channel-result.ts, infra/channels/**): the channel bill port of R2 (BR-WDR-23, D10-408; Alipay first). PayoutChannel gains billDetails(appId, billDate), returning bill rows with out_biz_no, channel_order_id, amount in fen (bigint passed through), channel status and booking time. FakeChannel serves injected demo bills per (appId, billDate); with no injection it rejects with PayoutBillUnavailableError, and an injected [] is an empty bill. AlipayChannel sends no gateway request and rejects with PAYOUT_BILL_UNAVAILABLE, with TODO(规划/11 §2.3) blocked on the 规划/09 bill-download test and recording; no platform bill format is assumed or forged (hard rule 7). BankCard and Wechat reject with ChannelDisabledError, like transfer and query. No amount arithmetic, no clock, no database change. Rule tests by a fresh independent Claude (approvals #36), red PASS on the spec commit (10 red, 0 problems). Implementation by an Opus 5.5 subagent in one run. verify:fast exit 0. Full verify on the test machine (verify/1): exit 124 at the 3600 s limit with no failing case before it; channel-bill and the existing channel suites passed; recorded per D10-319, CI verify-int is the check.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "review_type": "money",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "note": "Codex out of quota until 2026-11-02 (approvals #36). r1 pass, no findings."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "r1 pass, no findings (out-of-scope items logged)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "B2-07b",
+  "spec_commit": "4a144ca0195b1e432b045a86224c13a4b9d0f860",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "red_tests": [
+    "test/spec/payout/channel-bill/fake-bill.test.ts > [AC-B2-07b#1] the fake hands over the injected demo bill of the app and day as given, never fetching",
+    "test/spec/payout/channel-bill/fake-bill.test.ts > [AC-B2-07b#2] each bill belongs to one app and one accounting day only",
+    "test/spec/payout/channel-bill/fake-bill.test.ts > [AC-B2-07b#3] a bill is read again unchanged (the next day re-reads it), unlike scripted steps",
+    "test/spec/payout/channel-bill/fake-bill.test.ts > [AC-B2-07b#4] a day without an injected bill rejects as unavailable; only an injected [] is an empty bill",
+    "test/spec/payout/channel-bill/fake-bill.test.ts > [AC-B2-07b#5] bill reads are recorded with the other calls, in order",
+    "test/spec/payout/channel-bill/no-bill.test.ts > [AC-B2-07b#6] AlipayChannel bill of 2026-10-28 rejects as unavailable and never calls the gateway",
+    "test/spec/payout/channel-bill/no-bill.test.ts > [AC-B2-07b#6] AlipayChannel bill of 2026-10-01 rejects as unavailable and never calls the gateway",
+    "test/spec/payout/channel-bill/no-bill.test.ts > [AC-B2-07b#6] AlipayChannel bill of 2026-12-31 rejects as unavailable and never calls the gateway",
+    "test/spec/payout/channel-bill/no-bill.test.ts > [AC-B2-07b#7] closed bank_card bill rejects with the normalized disabled evidence",
+    "test/spec/payout/channel-bill/no-bill.test.ts > [AC-B2-07b#7] closed wechat bill rejects with the normalized disabled evidence"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "4a144ca0195b1e432b045a86224c13a4b9d0f860",
+      "tree": "3d08998e5fd490ea2e182f7c60f4cf3de021eb33",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-29T00:27:09Z",
+      "finished_at": "2026-10-29T00:27:19Z",
+      "red_tests": [
+        "test/spec/payout/channel-bill/fake-bill.test.ts > [AC-B2-07b#1] the fake hands over the injected demo bill of the app and day as given, never fetching",
+        "test/spec/payout/channel-bill/fake-bill.test.ts > [AC-B2-07b#2] each bill belongs to one app and one accounting day only",
+        "test/spec/payout/channel-bill/fake-bill.test.ts > [AC-B2-07b#3] a bill is read again unchanged (the next day re-reads it), unlike scripted steps",
+        "test/spec/payout/channel-bill/fake-bill.test.ts > [AC-B2-07b#4] a day without an injected bill rejects as unavailable; only an injected [] is an empty bill",
+        "test/spec/payout/channel-bill/fake-bill.test.ts > [AC-B2-07b#5] bill reads are recorded with the other calls, in order",
+        "test/spec/payout/channel-bill/no-bill.test.ts > [AC-B2-07b#6] AlipayChannel bill of 2026-10-28 rejects as unavailable and never calls the gateway",
+        "test/spec/payout/channel-bill/no-bill.test.ts > [AC-B2-07b#6] AlipayChannel bill of 2026-10-01 rejects as unavailable and never calls the gateway",
+        "test/spec/payout/channel-bill/no-bill.test.ts > [AC-B2-07b#6] AlipayChannel bill of 2026-12-31 rejects as unavailable and never calls the gateway",
+        "test/spec/payout/channel-bill/no-bill.test.ts > [AC-B2-07b#7] closed bank_card bill rejects with the normalized disabled evidence",
+        "test/spec/payout/channel-bill/no-bill.test.ts > [AC-B2-07b#7] closed wechat bill rejects with the normalized disabled evidence"
+      ],
+      "expected": [
+        "test/spec/payout/channel-bill/fake-bill.test.ts",
+        "test/spec/payout/channel-bill/no-bill.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "a094cd6ed63e6007dc85beb4efc442857a2aec663f91d38a1875e326f8db4dec"
+        }
+      ],
+      "gate": {
+        "commit": "22daa583906eb37d2e391731178e62ed2452badd",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "02c255a47b3e5c2c7d5a76e04ea3fe0fefd39e45",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}

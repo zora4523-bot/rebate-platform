@@ -4,7 +4,9 @@
 // (fail closed: no scripted success is ever repeated).
 import { judgeQuery, judgeTransfer, type JudgementLists } from '../../application/judgement.ts';
 import {
+  PayoutBillUnavailableError,
   PayoutModeMustBeDryRunError,
+  type ChannelBillLine,
   type ChannelRaw,
   type QueryResult,
   type TransferResult,
@@ -22,14 +24,22 @@ export type FakeStep =
   | { kind: 'unknown' }
   | { kind: 'timeout' };
 
+/** B2-07b: demo bills by our app id, then by accounting day (YYYY-MM-DD at +08:00). */
+export type FakeBills = Readonly<
+  Record<string, Readonly<Record<string, readonly ChannelBillLine[]>>>
+>;
+
 export interface FakeChannelOptions {
   mode: 'dry_run' | 'live';
   lists: JudgementLists;
   script: Readonly<Record<string, { transfer?: readonly FakeStep[]; query?: readonly FakeStep[] }>>;
+  bills?: FakeBills;
 }
 
 export type FakeCall =
-  { kind: 'transfer'; request: TransferRequest } | { kind: 'query'; outBizNo: string };
+  | { kind: 'transfer'; request: TransferRequest }
+  | { kind: 'query'; outBizNo: string }
+  | { kind: 'bill'; appId: string; billDate: string };
 
 const NO_SCRIPT: ChannelRaw = { code: 'FAKE_NO_SCRIPT' };
 
@@ -37,11 +47,13 @@ export class FakeChannel implements PayoutChannel {
   readonly calls: readonly FakeCall[];
   private readonly log: FakeCall[] = [];
   private readonly lists: JudgementLists;
+  private readonly bills: FakeBills;
   private readonly queues = new Map<string, { transfer: FakeStep[]; query: FakeStep[] }>();
 
   constructor(options: FakeChannelOptions) {
     if (options.mode !== 'dry_run') throw new PayoutModeMustBeDryRunError();
     this.lists = options.lists;
+    this.bills = options.bills ?? {};
     this.calls = this.log;
     for (const [outBizNo, steps] of Object.entries(options.script)) {
       this.queues.set(outBizNo, {
@@ -85,5 +97,18 @@ export class FakeChannel implements PayoutChannel {
     if (step.channelOrderId !== undefined) result.channelOrderId = step.channelOrderId;
     if (result.kind === 'success' && step.paidAt !== undefined) result.paidAt = step.paidAt;
     return Promise.resolve(result);
+  }
+
+  /**
+   * B2-07b: the injected demo bill of (appId, billDate), unchanged and as often as asked (the next
+   * day's run reads a bill again); the call is recorded. A day without an injected bill rejects
+   * with PayoutBillUnavailableError; an injected [] is a bill without lines.
+   */
+  billDetails(appId: string, billDate: string): Promise<readonly ChannelBillLine[]> {
+    this.log.push({ kind: 'bill', appId, billDate });
+    const days = Object.hasOwn(this.bills, appId) ? this.bills[appId] : undefined;
+    const lines = days !== undefined && Object.hasOwn(days, billDate) ? days[billDate] : undefined;
+    if (lines === undefined) return Promise.reject(new PayoutBillUnavailableError());
+    return Promise.resolve(lines.map((line) => ({ ...line })));
   }
 }
