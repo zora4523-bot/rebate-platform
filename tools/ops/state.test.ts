@@ -375,6 +375,28 @@ it('[CT-06zxk] an Opus run spends its impl bump, so a later Codex impl call cann
   removeDir(stateFile(id));
 });
 
+it('[CT-06zxk] an Opus run started after a refused impl bump gives no round back', () => {
+  const id = 'H1-07';
+  for (const n of [1, 2, 3]) expect(bumpAttempt(id, 'impl', T0).attempts.impl).toBe(n);
+  for (const r of ['o1', 'o2', 'o3']) recordOpusRun(id, r, 'ok', 'RV1', T0);
+  expect(() => bumpAttempt(id, 'impl', T0)).toThrow(/impl attempts exhausted \(3 of 3/);
+  // Started anyway (or an exception round that never bumped) and produced nothing.
+  const run = recordOpusRun(id, 'o4', 'no-output', 'RV1', later(60_000));
+  expect(run.state.attempts.impl).toBe(3);
+  expect(run.state.uncounted_calls.at(-1)).toEqual({
+    kind: 'impl',
+    started_at: 'o4',
+    exit_code: -1,
+    reason: 'no-output',
+    refunded: false,
+  });
+  // It still counts as an Opus failure, and settling it again changes nothing.
+  expect(run.state.opus_failures).toMatchObject({ total: 1, consecutive: 1 });
+  expect(recordOpusRun(id, 'o4', 'no-output', 'RV1', later(120_000)).state.attempts.impl).toBe(3);
+  expect(readState(id)?.uncounted_calls).toHaveLength(1);
+  removeDir(stateFile(id));
+});
+
 it('[ops/approvals.yaml id 19] Codex writing tests, the Opus implementation and a handover count apart', () => {
   // Codex writes the rule tests: its rounds never use up an implementation attempt.
   for (const n of [1, 2, 3]) expect(bumpAttempt('E1-01', 'test', T0).attempts.test).toBe(n);

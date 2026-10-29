@@ -36,7 +36,7 @@
 
 ### Opus 实现的失败计数（`state.ts opus-run`）
 
-规划评审 RO2-03、Codex 评审 CR-07（2026-10-05）。Opus 实现子代理不是 Codex 调用、不留 `meta.json`，所以由编排者在每一轮结束后结算：`state.ts opus-run <编号> --run-id <运行编号> --outcome ok|no-output|timeout|capacity --risk RV0|RV1|RV2`。没有结果（无产出、超时、容量或额度错误）的一轮把派工前计上的 `attempts.impl` 还回去（记进 `uncounted_calls`，`kind: impl`），并算一次失败，记进状态文件的 `opus_failures`（`total`、`consecutive`、`last_reason`）；每一轮记进 `opus_runs`，同一运行编号重复结算不改任何东西；有结果的一轮把 `consecutive` 清零。连续 3 次或累计 5 次时输出 `next: handover`（RV0 / RV1：`tools/agent/dispatch.sh <编号> --handover`，Codex 实现一次）或 `next: blocked`（RV2：不换家，标 blocked，规划/11 §2.5）；否则 `next: continue`。Opus 的轮次不计入每任务 10 次 Codex 调用上限。
+规划评审 RO2-03、Codex 评审 CR-07（2026-10-05）。Opus 实现子代理不是 Codex 调用、不留 `meta.json`，所以由编排者在每一轮结束后结算：`state.ts opus-run <编号> --run-id <运行编号> --outcome ok|no-output|timeout|capacity --risk RV0|RV1|RV2`。没有结果（无产出、超时、容量或额度错误）的一轮把派工前计上的 `attempts.impl` 还回去（记进 `uncounted_calls`，`kind: impl`；与 `settle` 同口径，只有配到一条待结算的 `impl` 预计数才还，`bump-attempt` 被拒后误起或例外轮没计数的不还、记 `refunded: false`，CT-06zxk），并算一次失败，记进状态文件的 `opus_failures`（`total`、`consecutive`、`last_reason`）；每一轮记进 `opus_runs`，同一运行编号重复结算不改任何东西；有结果的一轮把 `consecutive` 清零。连续 3 次或累计 5 次时输出 `next: handover`（RV0 / RV1：`tools/agent/dispatch.sh <编号> --handover`，Codex 实现一次）或 `next: blocked`（RV2：不换家，标 blocked，规划/11 §2.5）；否则 `next: continue`。Opus 的轮次不计入每任务 10 次 Codex 调用上限。
 
 ### 失败熔断（`state.ts`），没有额度闸门
 

@@ -53,7 +53,9 @@
 //   recorded in `uncounted_calls` (`refunded: false`) and the result says `pre_counted: false`.
 //   Rather count once too often than give back a round that was never taken. Settling is
 //   idempotent per kind + started_at + engine. `opus-run` consumes the pending `impl` bump of
-//   its run so that it cannot be paired with a later call.
+//   its run so that it cannot be paired with a later call, and by the same rule gives the round
+//   back only when a bump paired (a run without a result that pairs with none still counts as an
+//   Opus failure and is recorded with `refunded: false`).
 //
 // Opus failure breaker (RO2-03; default split of 2026-10-05, ops/approvals.yaml id 19): the
 // Opus implementation subagent is no Codex call and leaves no meta.json, so its runs are
@@ -551,7 +553,7 @@ const OPUS_UNCOUNTED: Record<Exclude<OpusOutcome, 'ok'>, UncountedCall['reason']
 /**
  * Settles one run of the Opus implementation subagent (RO2-03, CR-07). Its round was counted
  * before it started (`bump-attempt impl`); a run without a result (no output, timeout, capacity)
- * gives that round back, like a Codex call without output (uncounted_calls, kind impl), and counts
+ * gives that round back (only when it pairs with a pending impl bump, CT-06zxk), like a Codex call without output (uncounted_calls, kind impl), and counts
  * as an Opus failure: 3 in a row or 5 in total hand the task over to Codex once (RV0 / RV1) or
  * block it (RV2). A run with a result keeps its round and resets the run of failures. Idempotent
  * per run id: settling the same run again changes nothing.
@@ -570,7 +572,7 @@ export function recordOpusRun(
     const f = prev.opus_failures;
     const failed = outcome !== 'ok';
     // The run's own `bump-attempt impl` is spent here, so no later call can pair with it.
-    const { bumps } = consumeBump(
+    const { bumps, paired } = consumeBump(
       prev.pending_bumps ?? [],
       'impl',
       null,
@@ -582,13 +584,21 @@ export function recordOpusRun(
     state = {
       ...prev,
       pending_bumps: bumps,
-      attempts: failed
-        ? { ...prev.attempts, impl: Math.max(0, prev.attempts.impl - 1) }
-        : prev.attempts,
+      // Only a round that bump-attempt really counted is given back, as in settleCall.
+      attempts:
+        failed && paired
+          ? { ...prev.attempts, impl: Math.max(0, prev.attempts.impl - 1) }
+          : prev.attempts,
       uncounted_calls: failed
         ? [
             ...prev.uncounted_calls,
-            { kind: 'impl', started_at: runId, exit_code: -1, reason: OPUS_UNCOUNTED[outcome] },
+            {
+              kind: 'impl',
+              started_at: runId,
+              exit_code: -1,
+              reason: OPUS_UNCOUNTED[outcome],
+              ...(paired ? {} : { refunded: false as const }),
+            },
           ]
         : prev.uncounted_calls,
       opus_failures: failed
