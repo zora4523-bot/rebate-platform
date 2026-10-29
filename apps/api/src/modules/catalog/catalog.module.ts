@@ -36,6 +36,7 @@ import {
   FavoritesController,
   type FavoritesRoutePorts,
 } from './http/public/favorites.controller.ts';
+import { HotWordsController } from './http/public/hot-words.controller.ts';
 import { ProductController } from './http/public/product.controller.ts';
 import { HotRankController } from './http/public/hot-rank.controller.ts';
 import { createFavoriteCardPort } from './favorites/card-port.ts';
@@ -258,6 +259,8 @@ function freshDetailUpstream(upstream: ProductDetailUpstream): ProductDetailUpst
  * scoped on the same card ports; the whitelist is specs/material-channels.yaml re-read on every
  * request, the union side (infra/hot-rank-wiring.ts) sits behind the Redis hot list cache
  * (infra/hot-rank-cache.ts; without REDIS it is read directly).
+ * B1-05m: GET /v1/search/hot-words (HotWordsController → readSearchHotWords over the configuration
+ * reader; anonymous, no device id).
  */
 @Module({})
 export class CatalogModule {
@@ -274,6 +277,7 @@ export class CatalogModule {
         PriceTrendController,
         FavoritesController,
         HotRankController,
+        HotWordsController,
       ],
       providers: [
         {

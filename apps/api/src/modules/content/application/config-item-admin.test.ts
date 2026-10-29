@@ -3,6 +3,7 @@ import type { AuditInput, Clock } from '../../platform/index.ts';
 import {
   ConfigItemAdmin,
   ConfigItemFieldsError,
+  combineConfigItemSaveChecks,
   type ConfigItemActor,
   type ConfigItemRow,
   type ConfigItemStore,
@@ -137,4 +138,42 @@ it('[AC-F1-02zj#11] list exposes the enum options of settle.* items', async () =
   const source = page.items.find((item) => item.key === 'settle.statement_source.taobao');
   expect(source?.options).toStrictEqual(['api', 'upload']);
   expect(page.total).toBe(89);
+});
+
+it('[AC-B1-05m] combined save checks run only for their own written keys and read only their keys', () => {
+  const seen: string[][] = [];
+  const check = (keys: string[], refuse: string[]) => ({
+    keys,
+    refusals: (stored: ReadonlyMap<string, unknown>, written: ReadonlyMap<string, unknown>) => {
+      seen.push([...stored.keys()]);
+      return refuse.filter((key) => written.has(key));
+    },
+  });
+  const combined = combineConfigItemSaveChecks(
+    check(['a', 'b'], ['a']),
+    check(['b', 'c'], ['b', 'c']),
+  );
+  expect(combined.keys).toEqual(['a', 'b', 'c']);
+  const stored = new Map<string, unknown>([
+    ['a', 1],
+    ['b', 2],
+    ['c', 3],
+  ]);
+  expect(combined.refusals(stored, new Map([['c', 0]]))).toEqual(['c']);
+  expect(seen).toEqual([['b', 'c']]);
+  seen.length = 0;
+  expect(
+    combined.refusals(
+      stored,
+      new Map([
+        ['a', 0],
+        ['b', 0],
+      ]),
+    ),
+  ).toEqual(['a', 'b']);
+  expect(seen).toEqual([
+    ['a', 'b'],
+    ['b', 'c'],
+  ]);
+  expect(combined.refusals(stored, new Map([['z', 0]]))).toEqual([]);
 });
