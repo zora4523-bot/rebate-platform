@@ -128,3 +128,6 @@ export * from './price-history/index.ts';
 export * from './price-trend/index.ts';
 export type { CatalogConfigReaderFactory } from './catalog.module.ts';
 export * from './favorites/index.ts';
+// Task B1-05m: the save checks of search.hot_words / search.keyword_routes (app.module hands them
+// to content's configuration center), rule tests test/spec/catalog/hot-words/**.
+export * from './hot-words/index.ts';
