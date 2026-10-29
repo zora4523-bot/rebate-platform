@@ -5,6 +5,7 @@ type: impl
 # 2026-10-29 入账（ops 线，编排裁定 D10-408：BR-WDR-23 拆分照准，payout_recon_runs 形状已回写 04，couli #215；R2 先只做支付宝）。需迁移槽，入账后报编排排槽。
 # recon_channel 唯一键：(app_id, bill_date, out_biz_no) 对接口单、(app_id, bill_date, channel_order_id) 对手动单（各为部分唯一索引）；recon_diffs / withdraw_holds 表与枚举已在主干，不动。
 # payout_recon_runs 是 B2-07d「连续跑通天数」的来源：跑通 = 当天作业 succeeded（发现差错不打断），partial / failed 打断（D10-408）。
+# 2026-10-29 补（D10-412 ②）：test_paths 加 tools/ci/lint-migrations.test.ts——规则测试作者只在其期望资金表集合加 payout_recon_runs、recon_channel（只加不删，同 B2-11c 改冻结 kit 先例），land 时编排按 #24 加标签。
 refs: [BR-WDR-23]
 refs_hash:
   BR-WDR-23: 98981fee10c7
@@ -15,6 +16,7 @@ paths:
   - 'packages/db/src/**'
 test_paths:
   - 'test/spec/payout/recon-channel-schema/**'
+  - 'tools/ci/lint-migrations.test.ts'
 impl: claude
 tester: claude-independent
 accept:
