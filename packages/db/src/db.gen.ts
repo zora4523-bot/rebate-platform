@@ -1863,6 +1863,14 @@ export interface SettleJobs {
   status: string;
 }
 
+export interface ShareMaterials {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  link_id: string;
+  share_url: string;
+  tpwd: string | null;
+}
+
 export interface SmsSendAttempts {
   app_id: string;
   attempt_id: string;
@@ -2249,6 +2257,7 @@ export interface DB {
   settle_batches: SettleBatches;
   settle_bills: SettleBills;
   settle_jobs: SettleJobs;
+  share_materials: ShareMaterials;
   sms_send_attempts: SmsSendAttempts;
   sync_cursors: SyncCursors;
   union_accounts: UnionAccounts;

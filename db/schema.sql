@@ -4930,6 +4930,22 @@ CREATE TABLE app.settle_jobs (
 
 
 --
+-- Name: share_materials; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.share_materials (
+    app_id text NOT NULL,
+    link_id uuid NOT NULL,
+    share_url text NOT NULL,
+    tpwd text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT share_materials_app_id_check CHECK ((app_id <> ''::text)),
+    CONSTRAINT share_materials_share_url_check CHECK ((share_url <> ''::text)),
+    CONSTRAINT share_materials_tpwd_check CHECK ((tpwd <> ''::text))
+);
+
+
+--
 -- Name: sms_send_attempts; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -7266,6 +7282,14 @@ ALTER TABLE ONLY app.settle_jobs
 
 
 --
+-- Name: share_materials share_materials_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.share_materials
+    ADD CONSTRAINT share_materials_pkey PRIMARY KEY (link_id);
+
+
+--
 -- Name: sms_send_attempts sms_send_attempts_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -9327,6 +9351,13 @@ CREATE TRIGGER rights_import_failures_append_only BEFORE DELETE OR UPDATE ON app
 
 
 --
+-- Name: share_materials share_materials_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER share_materials_append_only BEFORE DELETE OR UPDATE ON app.share_materials FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
 -- Name: union_auth_sessions union_auth_sessions_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -10566,6 +10597,14 @@ ALTER TABLE ONLY app.settle_batches
 
 ALTER TABLE ONLY app.settle_batches
     ADD CONSTRAINT settle_batches_confirmed_by_fkey FOREIGN KEY (app_id, confirmed_by) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: share_materials share_materials_link_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.share_materials
+    ADD CONSTRAINT share_materials_link_id_fkey FOREIGN KEY (link_id) REFERENCES app.links(link_id);
 
 
 --
@@ -15353,6 +15392,14 @@ GRANT UPDATE(finished_at) ON TABLE app.settle_jobs TO couli_app;
 --
 
 GRANT UPDATE(row_version) ON TABLE app.settle_jobs TO couli_app;
+
+
+--
+-- Name: TABLE share_materials; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.share_materials TO couli_app;
+GRANT SELECT ON TABLE app.share_materials TO couli_readonly;
 
 
 --
