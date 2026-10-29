@@ -41,6 +41,7 @@ import {
   loadConfig,
   loadConnectionConfig,
   startTracing,
+  type TracingHandle,
 } from './modules/platform/index.ts';
 import {
   orderSyncToken,
@@ -697,15 +698,19 @@ export async function runEntry(entry: EntryName): Promise<void> {
   let maintHandle: MaintDbHandle | null = null;
   // Installed before anything is created; removed only after a failed startup's cleanup, so a
   // signal during that cleanup neither logs `stopping` nor ends the process early (B1-01zs).
-  // B1-31: tracing (idempotent: main.<entry>.ts started it before this module was loaded; a
-  // direct runEntry call starts it here, before any database handle or application exists). It
-  // stops with the entry: after the entry's close on a signal (watchSignals), after a startup
-  // failure's cleanup, or right away with COULI_EXIT_AFTER_INIT — never while the entry serves.
-  const tracing = await startTracing({ entry, config, logger });
-  const signals = watchSignals(logger, !config.exitAfterInit, () => tracing.shutdown());
+  // B1-31: tracing (idempotent: main.<entry>.ts started it before this module was loaded, so
+  // this is a no-op there; a direct runEntry call starts it here, before the application is
+  // built). The signal watchers and the database handles stay synchronous, as before (B1-01t).
+  // Tracing stops with the entry: after the entry's close on a signal (watchSignals), after a
+  // startup failure's cleanup, or right away with COULI_EXIT_AFTER_INIT — never while it serves.
+  let tracing: TracingHandle | undefined;
+  const signals = watchSignals(logger, !config.exitAfterInit, async () => {
+    await tracing?.shutdown();
+  });
   try {
     handles = createDbHandles(connections, { logger });
     if (maintConnection !== null) maintHandle = createMaintDbHandle(maintConnection, { logger });
+    tracing = await startTracing({ entry, config, logger });
     await start(entry, config, logger, handles, maintHandle, connections.redisUrl, signals);
     if (config.exitAfterInit) await tracing.shutdown();
   } catch (error) {
@@ -717,7 +722,7 @@ export async function runEntry(entry: EntryName): Promise<void> {
       process.exitCode = 1;
     } finally {
       signals.detach();
-      await tracing.shutdown();
+      await tracing?.shutdown();
     }
   }
 }
