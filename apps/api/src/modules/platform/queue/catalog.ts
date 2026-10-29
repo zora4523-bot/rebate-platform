@@ -23,6 +23,9 @@ const BUSINESS_QUEUES = [
   // The worker's BR-WDR-13 ③ review of a transfer (B2-06f, D10-398 ①): job `review`, singletonKey
   // `${withdrawal_id}:${execute_seq}:review`; a pass enqueues `release` back on queue `payout`.
   'payout-review',
+  // The worker's daily R2 reconciliation of the payout channel (B2-07c, D10-408): job `recon`,
+  // singletonKey `recon:${app_id}:${channel}:${bill_date}`, and its `check` after a ① query.
+  'payout-recon',
   'notify',
   // Site union authorization check chain, its probe retry, expiry and alert delivery jobs
   // (B1-22b): union's UnionAuthModule, worker only; one queued or active job per singletonKey.
@@ -71,6 +74,7 @@ export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
         name === 'payout' ||
         name === 'payout-landing' ||
         name === 'payout-review' ||
+        name === 'payout-recon' ||
         name === 'risk-scan' ||
         name === 'union-auth' ||
         name === 'pay'

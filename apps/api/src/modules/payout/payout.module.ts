@@ -11,6 +11,7 @@ import type { Kysely } from 'kysely';
 import { BALANCE_RECOVERED_HOOK, createLedger } from '../ledger/index.ts';
 import { createBalanceRecoveredHook } from './application/balance-recovered.ts';
 import {
+  APP_CONFIG,
   CLOCK,
   DB as DB_TOKEN,
   EVENT_BUS,
@@ -18,9 +19,12 @@ import {
   JOB_QUEUE,
   ROOT_LOGGER,
   registerEventConsumer,
+  type AppConfig,
+  type AuditPort,
   type Clock,
   type EventBus,
   type FieldCrypto,
+  type JobQueue,
   type QueueRuntime,
   type ReceivedJob,
   type RootLogger,
@@ -36,6 +40,12 @@ import { createPayoutExecute } from './application/payout-execute.ts';
 import { PAYOUT_LANDING_QUEUE, createLandingJob } from './jobs/landing-job.ts';
 import { PAYOUT_PAUSE_JOB, createPauseJob } from './jobs/pause-job.ts';
 import { PAYOUT_REVIEW_QUEUE, createReviewJob } from './jobs/review-job.ts';
+import { createPayoutReconJob, type PayoutBillPort } from './jobs/recon-job.ts';
+import { PAYOUT_RECON_QUEUE, seedPayoutRecon } from './application/recon-schedule.ts';
+import { createWithdrawHolds } from './application/withdraw-holds.ts';
+import { defaultPayoutChannelConfig } from './application/judgement.ts';
+import { FakeChannel } from './infra/channels/fake-channel.ts';
+import type { PayoutChannelName } from './infra/channels/payout-channel.ts';
 import { PAYOUT_QUEUE, type PayoutQueuePausePort } from './jobs/transfer-job.ts';
 import { createPayoutRuntime, payoutRuntimeToken, type PayoutRuntime } from './payout-runtime.ts';
 import type { WithdrawalAttemptsPort } from './application/withdrawal-commands.ts';
@@ -174,6 +184,104 @@ function withEnvelope(job: ReceivedJob, clock: Clock): ReceivedJob {
       v: 1,
       occurred_at: clock.now().toISOString(),
       data: { app_id: payload['app_id'], user_id: payload['user_id'] },
+    },
+  };
+}
+
+/** The worker's registration of the R2 reconciliation's handler (B2-07c; null: not registered). */
+export const PAYOUT_RECON_JOBS_TOKEN = Symbol('PAYOUT_RECON_JOBS');
+/** The worker's timer of the payout-recon chain (B2-07c; lifecycle hooks). */
+const PAYOUT_RECON_TIMER = Symbol('PAYOUT_RECON_TIMER');
+/** B2-07c: delay of the first seed after bootstrap (the queue runtime starts meanwhile). */
+export const PAYOUT_RECON_SEED_DELAY_MS = 15_000;
+/** B2-07c: interval between two heals of the payout-recon chain. */
+export const PAYOUT_RECON_HEAL_INTERVAL_MS = 30 * 60_000;
+
+/**
+ * B2-07c: the bill ports of the worker. Only the payout process reads channel secrets (payout
+ * AGENTS.md rule 4), so prod has no port here until a bill download lands (every run then records
+ * partial, never succeeded); outside prod the synthetic FakeChannel, whose days without an injected
+ * bill are unavailable too.
+ */
+function reconBillsFor(
+  appEnv: AppConfig['appEnv'],
+): Readonly<Partial<Record<PayoutChannelName, PayoutBillPort>>> {
+  if (appEnv === 'prod') return {};
+  const defaults = defaultPayoutChannelConfig();
+  return {
+    alipay: new FakeChannel({
+      mode: 'dry_run',
+      lists: {
+        definiteFailCodes: defaults.definiteFailCodes,
+        payerSideCodes: defaults.payerSideCodes,
+        queryStatusMap: defaults.queryStatusMap,
+      },
+      script: {},
+    }),
+  };
+}
+
+/**
+ * B2-07c: the audit of the system's recon_diff holds. audit_logs records admin writes (its actor
+ * is an admin_users row); a hold added by the reconciliation has no admin, so its audit is an info
+ * line with the hold's ids only (the hold row itself keeps created_by and source_ref).
+ */
+function systemHoldAudit(logger: RootLogger): AuditPort {
+  return {
+    append(input) {
+      logger.info(
+        { app_id: input.appId, actor: input.actor, action: input.action, target: input.target },
+        'withdraw_hold_system_audit',
+      );
+      return Promise.resolve();
+    },
+  };
+}
+
+interface ReconChainTimer {
+  onApplicationBootstrap(): void;
+  onModuleDestroy(): void;
+}
+
+/** B2-07c: the payout-recon seed after bootstrap and its heal every interval; null deps: inert. */
+function reconChainTimer(
+  deps: { db: Kysely<DB>; clock: Clock; queue: JobQueue; logger: RootLogger } | null,
+): ReconChainTimer {
+  const started = new Map<string, string>();
+  let running = false;
+  let first: ReturnType<typeof setTimeout> | undefined;
+  let interval: ReturnType<typeof setInterval> | undefined;
+  const tick = async (): Promise<void> => {
+    if (deps === null || running) return;
+    running = true;
+    try {
+      await seedPayoutRecon({ ...deps, started });
+    } catch (error: unknown) {
+      deps.logger.warn(
+        {
+          queue: PAYOUT_RECON_QUEUE,
+          error_name: error instanceof Error ? error.name : typeof error,
+        },
+        'payout_recon_heal_failed',
+      );
+    } finally {
+      running = false;
+    }
+  };
+  return {
+    onApplicationBootstrap() {
+      if (deps === null || first !== undefined) return;
+      first = setTimeout(() => {
+        void tick();
+        interval = setInterval(() => void tick(), PAYOUT_RECON_HEAL_INTERVAL_MS);
+        interval.unref();
+      }, PAYOUT_RECON_SEED_DELAY_MS);
+      first.unref();
+    },
+    onModuleDestroy() {
+      if (first !== undefined) clearTimeout(first);
+      if (interval !== undefined) clearInterval(interval);
+      interval = undefined;
     },
   };
 }
@@ -366,6 +474,77 @@ export class PayoutModule {
             );
             return true;
           },
+        },
+        // B2-07c (BR-WDR-23, D10-408): the daily R2 reconciliation on queue payout-recon
+        // (couli_app): the bill of the previous +08:00 day against the withdrawals, recon diffs,
+        // recon_diff holds under the users lock, the run record and the next day's run.
+        {
+          provide: PAYOUT_RECON_JOBS_TOKEN,
+          inject: [
+            APP_CONFIG,
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB_TOKEN, optional: true },
+            { token: JOB_QUEUE, optional: true },
+          ],
+          useFactory: (
+            appConfig: AppConfig,
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<DB>,
+            queue?: QueueRuntime,
+          ): boolean => {
+            if (db === undefined || queue === undefined) {
+              logger.info({ queue: PAYOUT_RECON_QUEUE }, 'payout_recon_disabled');
+              return false;
+            }
+            const reconLogger = logger.child({ module: 'payout', queue: PAYOUT_RECON_QUEUE });
+            queue.register(
+              PAYOUT_RECON_QUEUE,
+              createPayoutReconJob({
+                db,
+                clock,
+                config: options.config(db, clock),
+                queue,
+                bills: reconBillsFor(appConfig.appEnv),
+                holds: createWithdrawHolds({
+                  clock,
+                  lockUsersForUpdate: options.lockUsersForUpdate,
+                  audit: systemHoldAudit(reconLogger),
+                }),
+                logger: reconLogger,
+              }),
+            );
+            return true;
+          },
+        },
+        {
+          // B2-07c: the payout-recon chain's seed and heal, only beside a registered handler.
+          provide: PAYOUT_RECON_TIMER,
+          inject: [
+            PAYOUT_RECON_JOBS_TOKEN,
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB_TOKEN, optional: true },
+            { token: JOB_QUEUE, optional: true },
+          ],
+          useFactory: (
+            registered: boolean,
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<DB>,
+            queue?: JobQueue,
+          ): ReconChainTimer =>
+            reconChainTimer(
+              !registered || db === undefined || queue === undefined
+                ? null
+                : {
+                    db,
+                    clock,
+                    queue,
+                    logger: logger.child({ module: 'payout', queue: PAYOUT_RECON_QUEUE }),
+                  },
+            ),
         },
       ],
     };
