@@ -1,0 +1,109 @@
+{
+  "task": "B1-15v",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "ff56f5bab7c53a6ca54daa63a534152c15178793",
+  "red_tests": [
+    "test/spec/linking/share-materials-schema/access.int.test.ts > [AC-B1-15v#4] couli_app 只有 SELECT、INSERT：不可改、不可删、不可清表（表级）",
+    "test/spec/linking/share-materials-schema/access.int.test.ts > [AC-B1-15v#4] 各角色逐列权限：couli_app 逐列可读可插、无一列可改；couli_readonly 只读；couli_payout、couli_maint 无权限",
+    "test/spec/linking/share-materials-schema/access.int.test.ts > [AC-B1-15v#4] couli_app 写入的物料 couli_readonly 读到同一行；任何角色的改、删、清表都被拒绝，行不变",
+    "test/spec/linking/share-materials-schema/access.int.test.ts > [AC-B1-15v#4] couli_app 重复生成同一 link 的物料只能靠冲突不写（ON CONFLICT DO NOTHING），不能改写已有物料",
+    "test/spec/linking/share-materials-schema/shape.int.test.ts > [AC-B1-15v#1] share_materials 列名、类型、可空性和默认值逐一匹配：只有 app_id、link_id、share_url、tpwd、created_at",
+    "test/spec/linking/share-materials-schema/shape.int.test.ts > [AC-B1-15v#1] 必填列拒绝 NULL；取值原样写入，created_at 不传时由库填写",
+    "test/spec/linking/share-materials-schema/shape.int.test.ts > [AC-B1-15v#1] tpwd 可空：没有口令的平台只存短链",
+    "test/spec/linking/share-materials-schema/shape.int.test.ts > [AC-B1-15v#2] 主键为 link_id：同一 link 的物料只生成一次，第二次插入因主键冲突失败",
+    "test/spec/linking/share-materials-schema/shape.int.test.ts > [AC-B1-15v#2] link_id 外键引用 app.links(link_id)，不级联：不存在的 link 插入失败",
+    "test/spec/linking/share-materials-schema/shape.int.test.ts > [AC-B1-15v#3] share_url 不得为空串；tpwd 为 NULL 或非空串",
+    "test/spec/linking/share-materials-schema/shape.int.test.ts > [AC-B1-15v#3] 短链与口令原样往返：口令符号、大小写与长短链不被改写",
+    "test/spec/linking/share-materials-schema/snapshot.test.ts > [AC-B1-15v#5] 只新增迁移：恰有一个编号在已合并迁移之后的新迁移建 app.share_materials，0001～0100 不出现本表",
+    "test/spec/linking/share-materials-schema/snapshot.test.ts > [AC-B1-15v#4] 授权写在建表的同一迁移：couli_app 只给 SELECT、INSERT，不给 UPDATE、DELETE",
+    "test/spec/linking/share-materials-schema/snapshot.test.ts > [AC-B1-15v#5] schema 快照 db/schema.sql 含本表、主键、到 app.links 的外键与授权"
+  ],
+  "risk_note": "RV2 by path (db/**). Migration 0101_share-materials.sql (D10-426): new table app.share_materials (app_id text not empty, link_id uuid primary key referencing app.links(link_id) without cascade, share_url text not empty, tpwd text nullable and never empty, created_at timestamptz default now()); written only by linking, insert-only: couli_app SELECT / INSERT, couli_readonly SELECT, plus the app.reject_update_delete() append-only trigger (0098 precedent; no existing delete path touches app.links or this table). lock_timeout 5s / statement_timeout 30s. db/schema.sql and packages/db/src/db.gen.ts regenerated from a live database (scripts/remote-snapshot.sh). Not a funds table (D10-426: ordinary review). Writer B1-15w (POST /v1/shares) must take app_id from the link itself.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "ff56f5bab7c53a6ca54daa63a534152c15178793",
+      "tree": "56448480eca5dceaf5757a8982ead9f6ccf1295c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-29T22:45:40Z",
+      "finished_at": "2026-10-29T22:45:51Z",
+      "gate": {
+        "commit": "89f94a476b53fd8dc67c24ea1ee3abd04ebb598c",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/linking/share-materials-schema/access.int.test.ts > [AC-B1-15v#4] couli_app 只有 SELECT、INSERT：不可改、不可删、不可清表（表级）",
+        "test/spec/linking/share-materials-schema/access.int.test.ts > [AC-B1-15v#4] 各角色逐列权限：couli_app 逐列可读可插、无一列可改；couli_readonly 只读；couli_payout、couli_maint 无权限",
+        "test/spec/linking/share-materials-schema/access.int.test.ts > [AC-B1-15v#4] couli_app 写入的物料 couli_readonly 读到同一行；任何角色的改、删、清表都被拒绝，行不变",
+        "test/spec/linking/share-materials-schema/access.int.test.ts > [AC-B1-15v#4] couli_app 重复生成同一 link 的物料只能靠冲突不写（ON CONFLICT DO NOTHING），不能改写已有物料",
+        "test/spec/linking/share-materials-schema/shape.int.test.ts > [AC-B1-15v#1] share_materials 列名、类型、可空性和默认值逐一匹配：只有 app_id、link_id、share_url、tpwd、created_at",
+        "test/spec/linking/share-materials-schema/shape.int.test.ts > [AC-B1-15v#1] 必填列拒绝 NULL；取值原样写入，created_at 不传时由库填写",
+        "test/spec/linking/share-materials-schema/shape.int.test.ts > [AC-B1-15v#1] tpwd 可空：没有口令的平台只存短链",
+        "test/spec/linking/share-materials-schema/shape.int.test.ts > [AC-B1-15v#2] 主键为 link_id：同一 link 的物料只生成一次，第二次插入因主键冲突失败",
+        "test/spec/linking/share-materials-schema/shape.int.test.ts > [AC-B1-15v#2] link_id 外键引用 app.links(link_id)，不级联：不存在的 link 插入失败",
+        "test/spec/linking/share-materials-schema/shape.int.test.ts > [AC-B1-15v#3] share_url 不得为空串；tpwd 为 NULL 或非空串",
+        "test/spec/linking/share-materials-schema/shape.int.test.ts > [AC-B1-15v#3] 短链与口令原样往返：口令符号、大小写与长短链不被改写",
+        "test/spec/linking/share-materials-schema/snapshot.test.ts > [AC-B1-15v#5] 只新增迁移：恰有一个编号在已合并迁移之后的新迁移建 app.share_materials，0001～0100 不出现本表",
+        "test/spec/linking/share-materials-schema/snapshot.test.ts > [AC-B1-15v#4] 授权写在建表的同一迁移：couli_app 只给 SELECT、INSERT，不给 UPDATE、DELETE",
+        "test/spec/linking/share-materials-schema/snapshot.test.ts > [AC-B1-15v#5] schema 快照 db/schema.sql 含本表、主键、到 app.links 的外键与授权"
+      ],
+      "expected": [
+        "test/spec/linking/share-materials-schema/access.int.test.ts",
+        "test/spec/linking/share-materials-schema/shape.int.test.ts",
+        "test/spec/linking/share-materials-schema/snapshot.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "c294a8bf6a5b2019947e1ece40486c919f1b366ccf23c874cb622741ef61018f"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d602e1b331a458d79f83e20241b5268ad9688e00eb765751cdcdafbe0fea1d6f"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; independent Claude via tools/agent/claude-run.sh per approvals #36. Round 1 pass, no S0/S1; 1 S2 recorded for B1-15w (the single-column foreign key does not tie app_id to the link's app; the writer must take app_id from the link)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "rule tests by an independent Claude context in 1 attempt (test/spec/linking/share-materials-schema/**: shape, access, snapshot; 14 tests red for the right reason, red/1 PASS ca8c2887); round 1 review by a fresh independent Claude: pass. No red_exempt or expected_values entries in this task."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "300a9e844efd9a0c908c089945bfc03522ae6115",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
