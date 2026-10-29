@@ -13,8 +13,7 @@ refs_hash:
   BR-WDR-05: 99e2e2654ce0
 deps: [CT-24w, B2-09a]
 paths:
-  - 'apps/api/src/modules/ledger/application/admin-recon-diffs*.ts'
-  - 'apps/api/src/modules/ledger/application/recon-diff-close*.ts'
+  - 'apps/api/src/modules/ledger/application/*recon-diff*.ts'
   - 'apps/api/src/modules/ledger/infra/recon-diffs-store.ts'
   - 'apps/api/src/modules/ledger/http/admin/**'
   - 'apps/api/src/modules/ledger/ledger.module.ts'
@@ -25,6 +24,7 @@ paths:
   - 'apps/api/src/app.module.ts'
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
