@@ -1,7 +1,13 @@
 import type { DynamicModule } from '@nestjs/common';
-import { CLOCK, EVENT_BUS, type Clock, type EventBus } from '../platform/index.ts';
+import type { DB as Database } from '@couli/db';
+import type { Kysely } from 'kysely';
+import { CLOCK, DB, EVENT_BUS, type Clock, type EventBus } from '../platform/index.ts';
 import { BalanceRecoveredHook, createLedger } from './application/recovered-ledger.ts';
 import type { Ledger } from './application/reverse.ts';
+import {
+  AdminReconDiffsController,
+  RECON_DIFF_READ_DB,
+} from './http/admin/recon-diffs.controller.ts';
 
 /** Nest injection token for the process ledger (the Clock-backed posting port, with the optional event bus and recovery port). */
 export const LEDGER = Symbol('LEDGER');
@@ -39,6 +45,27 @@ export class LedgerModule {
         },
       ],
       exports: [LEDGER],
+    };
+  }
+}
+
+/**
+ * B2-09a: the admin entry's R1–R3 recon diff reads (GET /admin/v1/recon-diffs and its detail),
+ * guarded through platform's AdminOperationGuard and read on the primary handle. Without the
+ * database the routes still register and fail closed (50001).
+ */
+export class LedgerAdminModule {
+  static forAdmin(): DynamicModule {
+    return {
+      module: LedgerAdminModule,
+      controllers: [AdminReconDiffsController],
+      providers: [
+        {
+          provide: RECON_DIFF_READ_DB,
+          inject: [{ token: DB, optional: true }],
+          useFactory: (db?: Kysely<Database>): Kysely<Database> | null => db ?? null,
+        },
+      ],
     };
   }
 }
