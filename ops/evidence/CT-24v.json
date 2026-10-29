@@ -1,0 +1,37 @@
+{
+  "task": "CT-24v",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "1f3f2e1fbc92a321c848a6512d19dd4d5c5f7d08",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only). contracts/openapi.yaml gains two read-only console operations for the reconciliation differences of F1-08e (01 F-ADM-08; 04 §3.2 recon_diffs, §11.2; design/specs/admin-recon.md §4): GET /admin/v1/recon-diffs (listAdminReconDiffs: sources R1–R3 only, R4 stays on listAdminPayReconDiffs; filters type / source / status / period_from–period_to (string order, both ends) / ref_id; AdminPage / AdminPageSize; created_at descending) and GET /admin/v1/recon-diffs/{recon_diff_id} (getAdminReconDiff: the list fields plus handler_id, closed_at, updated_at and a display-only resolution object; unknown, foreign-app or R4 ids are all 20001 [recon_diff_id]); permission fund.recon or fund.view, read only, no audit; both x-implementation: planned until B2-09a. New schemas AdminReconDiff / AdminReconDiffPage(Response) / AdminReconDiffDetail(Response), AdminReconDiffType (the nine non-R4 recon_diff_type values; the contract does not pin type-to-source pairs, which 08 does not state one by one), AdminReconDiffSource (R1–R3), AdminReconDiffPeriod; status reuses AdminReconDiffStatus; tag admin-recon. Generated files from pnpm codegen. tester: none, so no red run.",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "fresh independent Claude via nohup claude-run.sh --review-type contract (Codex unavailable until 2026-11-02, approvals 36); pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "f69379f9f2ffacaeffecfba21df86b9e4985ceb7",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
