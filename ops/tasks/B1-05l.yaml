@@ -1,0 +1,29 @@
+id: B1-05l
+repo: rebate-platform
+title: 测试修改（B1-05m 前置，照 B2-11z / B1-28g）：content config-registry 登记 search.hot_words 与 search.keyword_routes（object、config.business、可改，默认空列表 []），同 PR 带种子行与冻结注册表测试的键表 / 顺序 / 总数更新（接在现有末尾之后，「登记表 = 种子全部非开关键 + EXTRA」等既有断言不放宽），实现者单测总数随之改
+type: test-change
+# 2026-10-29 W1 入账（编排裁定 D10-419 (a)）：搜索热词与关键词直达做成两个配置项，经现有配置项后台改（不新建后台页、不新表），默认空列表（空 = 不展示热词、无直达，不编造热词）；登记会撞 content 冻结注册表测试的精确键表，照 D10-368 / B1-28g 先开前置 test-change。
+# 新鲜独立 Claude 改、另一位只读复审「不削弱」，按 approvals #24 加标签；先合，B1-05m 再开工。排在 B1-28h 之后（D10-419）。
+refs: []
+refs_hash: {}
+deps: [B1-28g, CT-22c]
+paths:
+  - 'test/spec/content/config-items/registry.test.ts'
+  - 'test/spec/content/config-settle/registry.test.ts'
+  - 'test/spec/content/invite-reward-config/registry.test.ts'
+  - 'test/spec/content/invite-reward-eligibility/registry.test.ts'
+  - 'test/spec/content/invite-reward-config/seeds.test.ts'
+  - 'test/spec/content/config-items/read.int.test.ts'
+  - 'test/spec/content/config-settle/writes.int.test.ts'
+  - 'test/spec/content/config-items/kit.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.test.ts'
+  - 'apps/api/src/modules/content/application/config-item-admin.test.ts'
+  - 'db/seeds/0001_config-defaults.sql'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/**'
+status: todo
+pr: null
