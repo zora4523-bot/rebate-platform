@@ -1,0 +1,20 @@
+id: B1-28i
+repo: rebate-platform
+title: 测试修改 + 实现（D10-422 (a)）：content 的 rankPlatforms（config-etag.ts，/v1/config features.rank_platforms）收紧为「白名单里至少有一个可选的销量 / 热度榜频道（sort_basis ∈ sales / popularity）」的平台，personalized 频道不再计入，与 F-PROD-13 ③ / 50304 rank_unavailable、B1-28h 的取频道口径一致；冻结 [AC-F1-02h#33]「不限制 sort_basis」改为只认 sales / popularity（期望由 [taobao, jd, pdd, suning] 改为 [jd, pdd]），#34 / #35 与 delivery 测试不动；同 PR 改实现与实现者单测
+type: test-change
+# 2026-10-29 W1 入账（编排裁定 D10-422 ①：另开 content 小任务；B1-28h 不扩 paths，两单可并行，B1-28i 合并前 rank_platforms 的不一致可接受）。起因：B1-28h 规则测试评审 r1 范围外 S1（config-etag.ts:53 rankPlatforms 计入 personalized 频道）。
+# 冻结测试 test/spec/content/config-etag/domain.int.test.ts 的 [AC-F1-02h#33] 断言改口径（D10-422 授权），由新鲜独立 Claude 改、另一位只读复审「只改该条口径、其余不放宽」，按 approvals #24 加标签；实现（一行过滤条件）与 config-etag.test.ts 同 PR。
+refs: []
+refs_hash: {}
+deps: [F1-02h]
+paths:
+  - 'apps/api/src/modules/content/domain/config-etag.ts'
+  - 'apps/api/src/modules/content/domain/config-etag.test.ts'
+  - 'test/spec/content/config-etag/domain.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/config-etag/**'
+status: todo
+pr: null
