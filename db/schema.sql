@@ -14612,6 +14612,20 @@ GRANT SELECT ON TABLE app.recon_channel TO couli_readonly;
 
 
 --
+-- Name: COLUMN recon_channel.out_biz_no; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(out_biz_no) ON TABLE app.recon_channel TO couli_app;
+
+
+--
+-- Name: COLUMN recon_channel.channel_order_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(channel_order_id) ON TABLE app.recon_channel TO couli_app;
+
+
+--
 -- Name: COLUMN recon_channel.our_status; Type: ACL; Schema: app; Owner: -
 --
 
