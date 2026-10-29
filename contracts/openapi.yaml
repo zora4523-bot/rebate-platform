@@ -21770,7 +21770,6 @@ paths:
         and the risk flag recalculation are not part of this operation. Reading does not write an
         audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -21950,7 +21949,6 @@ paths:
         another app is 20001 with `data.fields=[withdrawal_id]` (no 404). Reading does not write
         an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

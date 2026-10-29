@@ -213,6 +213,7 @@ import {
 import { PaymentModule } from './modules/payment/index.ts';
 import {
   AUTO_PAYOUT_SAVE_KEYS,
+  PayoutAdminModule,
   PayoutModule,
   autoPayoutWriteRefusals,
   createReconPassedDays,
@@ -3475,6 +3476,20 @@ export class AppModule {
                       input,
                     ),
                 }),
+              }),
+            ]
+          : []),
+        // B2-09c: payout's withdrawal reads (withdraw.review or fund.view, read only, no audit):
+        // the user's masked phone through identity's port, the payee snapshot decrypted only to
+        // be masked (alipay / bank_card contexts of the binding; a WeChat openid is not decrypted).
+        ...(options.entry === 'admin'
+          ? [
+              PayoutAdminModule.forAdmin({
+                phones: (db, crypto) => {
+                  const reader = createMaskedPhoneReader(db, crypto);
+                  return (appId, userIds) => reader.maskedPhones(appId, userIds);
+                },
+                decryptPayee: (crypto) => payeeDecrypt.useFactory(crypto ?? undefined),
               }),
             ]
           : []),

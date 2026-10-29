@@ -13954,6 +13954,177 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "listAdminWithdrawals": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        },
+        "status": {
+          "type": "string",
+          "description": "contracts/enums/fund.yaml withdrawal_status (BR-WDR-08; user texts BR-TEXT-06).",
+          "enum": [
+            "PENDING_REVIEW",
+            "APPROVED",
+            "REJECTED",
+            "PAYING",
+            "PAID_API",
+            "PAID_MANUAL",
+            "FAILED"
+          ]
+        },
+        "display_status": {
+          "type": "string",
+          "description": "contracts/enums/admin.yaml admin_withdrawal_display_status: the console's display status\nof a withdrawal, derived by the server from status + review_mode + hold_reason as the\nBR-WDR-08 细则 table (花卷云「会员提现管理」mapping); not stored and not a withdrawal status.\npending_review = PENDING_REVIEW, or APPROVED with hold_reason other than\npayer_side_after_transfer; pending_handle = APPROVED with hold_reason\npayer_side_after_transfer; rejected = REJECTED; paid_manual = PAID_MANUAL;\npaid_auto_system = PAID_API with review_mode auto; paid_auto_review = PAID_API otherwise;\npaying = PAYING (needs_manual included); failed = FAILED. Chinese names from BR-TEXT-25\nadmin_dict.\n",
+          "enum": [
+            "pending_review",
+            "pending_handle",
+            "rejected",
+            "paid_manual",
+            "paid_auto_system",
+            "paid_auto_review",
+            "paying",
+            "failed"
+          ]
+        },
+        "review_mode": {
+          "type": "string",
+          "description": "contracts/enums/fund.yaml withdrawal_review_mode (BR-WDR-30).",
+          "enum": [
+            "auto",
+            "manual"
+          ]
+        },
+        "payout_channel": {
+          "type": "string",
+          "description": "Payout channel (enum payout_method; the <channel> of payout.channel_paused.<channel>).",
+          "enum": [
+            "alipay",
+            "bank_card",
+            "wechat"
+          ]
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "out_biz_no": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9]{1,32}$",
+          "description": "The withdrawal number (withdrawals.out_biz_no, BR-WDR-07), 1–32 letters or digits."
+        },
+        "amount_min_fen": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "amount_max_fen": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "created_from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "created_to": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "hold_reason": {
+          "type": "string",
+          "description": "contracts/enums/fund.yaml withdrawal_hold_reason (withdrawals.hold_reason, BR-WDR-13, BR-WDR-17).",
+          "enum": [
+            "payout_disabled",
+            "queue_paused",
+            "channel_disabled",
+            "member_blocked",
+            "single_cap",
+            "daily_cap",
+            "payer_side_after_transfer"
+          ]
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "risk_flag": {
+          "type": "string",
+          "description": "A code of the withdrawals.risk_flags snapshot (04 §3.2): the labels ①–⑩ of BR-WDR-29 and\nrisk_calc_failed. Chinese names from BR-TEXT-25 admin_dict.withdrawals.risk_flags.\n",
+          "enum": [
+            "first_withdrawal",
+            "credited_today",
+            "same_device_multi_account",
+            "invalid_ratio_60d",
+            "high_commission_ratio_60d",
+            "withdraw_vs_received",
+            "had_negative",
+            "recon_diff",
+            "blacklist_hit",
+            "payee_prev_other_user",
+            "risk_calc_failed"
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "getAdminWithdrawal": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "withdrawal_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "withdrawal_id"
+      ],
+      "additionalProperties": false
+    }
+  },
   "adminListKillSwitches": {
     "headers": {
       "type": "object",
