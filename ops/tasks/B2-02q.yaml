@@ -1,0 +1,26 @@
+id: B2-02q
+repo: rebate-platform
+title: ledger 日终校验排程与装配：worker 每日 01:00 +08:00 对会计日 D−1 跑 createDailyCheck 并交 B2-02p 执行段处置（新队列 ledger-check，自我续排的延迟任务 + 模块补种定时器，同 payment bill.recon / union-auth 先例，singletonKey 按 app 与 D 去重）；app.module 把 payout createWithdrawHolds 与 content createSystemSwitchWriter 注入 B2-02p 的端口
+type: impl
+# 2026-10-30 编排派工（HANDOFF 10-30 00:4x ①）后半段：funds 线入账，依赖 B2-02p。RV2，独立 Claude 写测试与 money 评审。
+# 新队列要改 platform/queue 目录与 worker 计划；冻结的 platform 队列契约 / 并发测试只按 D10-327 / D10-415 先例加入新队列（落地时报编排核）。D−1 用 @couli/domain accountingDate / chinaDayRange（参照 ledger asset-snapshot-days.ts）；时间只读注入 Clock。
+refs: [BR-FUND-19]
+refs_hash:
+  BR-FUND-19: e6205ee4fcc1
+deps: [B2-02p]
+paths:
+  - 'apps/api/src/modules/ledger/**'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
+  - 'apps/api/src/modules/platform/queue/worker-plan.ts'
+  - 'apps/api/src/modules/platform/queue/worker-plan.test.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/ledger/daily-check-schedule/**'
+  - 'test/spec/platform/queue/contract.test.ts'
+  - 'test/spec/platform/queue-concurrency/kit.ts'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/daily-check-schedule/**'
+status: todo
