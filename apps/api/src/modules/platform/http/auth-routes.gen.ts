@@ -458,6 +458,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "POST",
+    "path": "/v1/shares",
+    "auth": "phone"
+  },
+  {
+    "method": "POST",
     "path": "/admin/v1/auth/login",
     "auth": "none"
   },

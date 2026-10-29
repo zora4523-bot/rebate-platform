@@ -458,6 +458,11 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "POST",
+    "path": "/v1/shares",
+    "signed": true
+  },
+  {
+    "method": "POST",
     "path": "/admin/v1/auth/login",
     "signed": false
   },
