@@ -225,6 +225,7 @@ import {
   type AutoPayoutPorts,
   createWithdrawalInFlightReader,
   createWithdrawHoldsReader,
+  releaseWithdrawHoldsBySource,
   createWithdrawRules,
   createWithdrawSwitchCheck,
   isWithdrawalApplication,
@@ -3437,7 +3438,30 @@ export class AppModule {
             ]
           : []),
         // B2-09a: ledger's R1–R3 recon diff reads (fund.recon or fund.view, read only, no audit).
-        ...(options.entry === 'admin' ? [LedgerAdminModule.forAdmin()] : []),
+        // B2-09b: the close (fund.recon, no step-up, platform idempotency): the diff row, payout's
+        // release of the holds whose source is the diff (users rows locked first, one
+        // withdraw_hold.release audit each) and the recon_diff_close audit row (admin's writer
+        // bound to the closing transaction) commit together.
+        ...(options.entry === 'admin'
+          ? [
+              LedgerAdminModule.forAdmin({
+                auditWriter: (db, clock) =>
+                  createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                holdRelease: (clock) => ({
+                  releaseBySource: (trx, input) =>
+                    releaseWithdrawHoldsBySource(
+                      {
+                        clock,
+                        lockUsersForUpdate,
+                        audit: createAuditWriter({ db: trx, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                      },
+                      trx,
+                      input,
+                    ),
+                }),
+              }),
+            ]
+          : []),
         // content's GET /v1/config (F1-02c): agent availability and the h5_release bucket read
         // identity's request viewer (token principal, else the X-App-Id guest). GET
         // /v1/pages/{page_key} (F1-09d) reads the same viewer for its login condition.

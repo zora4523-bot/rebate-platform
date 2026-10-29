@@ -31,7 +31,7 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
 
 /** recon_diffs.id is a uuid column; any other text names no row (contract Id is any short string). */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type ReconDiffRow = Selectable<DB['recon_diffs']>;
 
@@ -70,7 +70,7 @@ function listView(row: ReconDiffRow): Schema<'AdminReconDiff'> {
 }
 
 /** The contract AdminReconDiffDetail: the list fields plus handler, updated_at and resolution. */
-function detailView(row: ReconDiffRow): Schema<'AdminReconDiffDetail'> {
+export function detailView(row: ReconDiffRow): Schema<'AdminReconDiffDetail'> {
   return {
     ...listView(row),
     handler_id: row.handler_id,

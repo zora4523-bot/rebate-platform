@@ -56,6 +56,7 @@ export type {
 export { LedgerError } from './application/errors.ts';
 export type { LedgerErrorCode } from './application/errors.ts';
 export { LEDGER, LedgerAdminModule, LedgerModule } from './ledger.module.ts';
+export type { LedgerAdminOptions } from './ledger.module.ts';
 // B2-09b: the port the admin close of a recon diff releases its withdrawal holds through (payout).
 export type { ReconDiffHoldRelease } from './application/admin-recon-diff-close.ts';
 export { createDailyCheck } from './application/daily-check.ts';

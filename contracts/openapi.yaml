@@ -21644,7 +21644,6 @@ paths:
         → 40901. A new key for a difference that is already closed is 20902.
       x-auth: admin
       x-idempotent: true
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
