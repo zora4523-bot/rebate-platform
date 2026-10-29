@@ -18,7 +18,9 @@ const ELIGIBILITY = { key: `${PREFIX}eligibility_days`, value: 30 };
 // B2-11dz (D10-392 / D10-394): the three payout.auto_enable_check.* boolean rows follow
 // withdraw.auto_payout.* in registration order, under the same checks; recon_required_days is
 // unset by default and has no seed row. B1-28g (D10-419): the rank.cache_ttl_seconds row follows
-// payout.auto_enable_check.* in registration order, under the same checks.
+// payout.auto_enable_check.* in registration order, under the same checks. B1-05l (D10-419 (a)):
+// the search.hot_words and search.keyword_routes rows follow it in registration order, under the
+// same checks, each seeded as an empty list (no invented hot words or routes).
 const PAYOUT_KEYS = [
   'payout.single_cap_fen',
   'payout.daily_cap_fen',
@@ -62,6 +64,7 @@ const AUTO_ENABLE_CHECK_SEEDED_KEYS = [
   'payout.auto_enable_check.bill_out_biz_no_supported',
 ];
 const RANK_KEYS = ['rank.cache_ttl_seconds'];
+const SEARCH_KEYS = ['search.hot_words', 'search.keyword_routes'];
 
 it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；重跑不覆盖', () => {
   const sql = readFileSync(
@@ -89,7 +92,14 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
     ...AUTO_PAYOUT_KEYS,
     ...AUTO_ENABLE_CHECK_SEEDED_KEYS,
     ...RANK_KEYS,
+    ...SEARCH_KEYS,
   ]);
+  for (const key of SEARCH_KEYS) {
+    expect(
+      rows.filter((row) => row.key === key),
+      key,
+    ).toStrictEqual([{ key, value: [] }]);
+  }
   for (const row of CONFIGS) {
     const spec = configItemSpecOf(row.key);
     expect(spec, row.key).not.toBeNull();

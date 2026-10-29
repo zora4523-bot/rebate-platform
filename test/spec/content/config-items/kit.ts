@@ -274,6 +274,13 @@ export const AUTO_ENABLE_UNSEEDED: readonly string[] = [`${ENABLE_CHECK}recon_re
 export const RANK: readonly Expected[] = [
   row('rank.cache_ttl_seconds', 'number', 'config.business'),
 ];
+// B1-05l (D10-419 (a)): the search hot words and keyword direct routes, registered right after
+// RANK in this order: editable config.business objects, options null, seeded as empty lists
+// (empty = no hot words, no direct route). Not part of expectedNow() either.
+export const SEARCH: readonly Expected[] = [
+  row('search.hot_words', 'object', 'config.business'),
+  row('search.keyword_routes', 'object', 'config.business'),
+];
 export const expectedOf = (key: string): Expected => {
   const found = [
     ...expectedNow(),
@@ -282,6 +289,7 @@ export const expectedOf = (key: string): Expected => {
     ...AUTO_PAYOUT,
     ...AUTO_ENABLE_CHECK,
     ...RANK,
+    ...SEARCH,
   ].find((entry) => entry.key === key);
   expect(found, key).toBeDefined();
   return found!;

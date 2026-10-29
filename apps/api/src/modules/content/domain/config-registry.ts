@@ -210,6 +210,11 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   // §10.1 服务端业务配置键, seeded 600), config.business, at least 1. Registration only;
   // B1-28h reads it.
   businessInteger('rank.cache_ttl_seconds', 1),
+  // B1-05l (D10-419 (a)): the search hot words and keyword direct routes, edited through the
+  // general configuration center, config.business objects seeded as empty lists (empty = no hot
+  // words, no direct route). Registration only; B1-05m checks their shape on save and reads them.
+  spec('search.hot_words', 'object', 'config.business'),
+  spec('search.keyword_routes', 'object', 'config.business'),
 ]);
 
 const VISIBLE: readonly ConfigItemSpec[] = Object.freeze(
