@@ -1,0 +1,91 @@
+{
+  "risk_note": "RV2 by default for .github/** (class-3 protected path; owner label needed per #24). Adds only .github/dependabot.yml (规划/05 CT-23): version 2; one npm entry at directory '/' (the pnpm workspace is covered by the root lockfile); weekly schedule (Monday 09:00 Asia/Shanghai); cooldown default-days and semver-major / minor / patch days all 7, matching ADR-0001 §2 (install only versions released at least 7 days ago) and pnpm-workspace.yaml minimumReleaseAge 10080; one minor-and-patch group (update-types [minor, patch], no narrowing keys); open-pull-requests-limit 5; commit-message prefix chore(deps). There is no ignore and no automatic merge or approval, and dependency PRs still go through a deps task and an adversarial review. No code, lockfile, workflow or package.json change. Whether cooldown applies to pnpm will be observed after enabling; the orchestrator records the result in the planning repo's ADR-0001 §7. Rule tests by a fresh independent Claude (approvals #36) statically pin the config shape and scan the workflows for auto-merge; red PASS on the spec commit (8 red, 0 problems). Implementation by an Opus 5.5 subagent in one run. verify:fast exit 0. Full verify on the test machine (verify/1): exit 124 at the 3600 s limit with no failing case before it (the dependabot rule tests are unit tests and passed in verify:fast); recorded per D10-319, CI verify-int is the check.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "review_type": "money",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "note": "Codex out of quota until 2026-11-02 (approvals #36). r1 pass, no findings."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "r1 pass, S2x2 (wildcard ignore and a dependency-type-narrowed group would pass the tests); the implementation has neither"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "CT-23",
+  "spec_commit": "0c79ff7c936551f6f9debd7dc390766da67aec46",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "red_tests": [
+    "test/spec/ci/dependabot/config.test.ts > [CT-23#1] 配置为 version 2，updates 恰有一项 npm 生态、根目录（pnpm 工作区由根锁文件覆盖）",
+    "test/spec/ci/dependabot/config.test.ts > [CT-23#2] 每周一批：schedule.interval 为 weekly，可带固定星期 / 时刻 / Asia/Shanghai 时区",
+    "test/spec/ci/dependabot/config.test.ts > [CT-23#3] cooldown.default-days 为 7，对齐 ADR-0001 §2 与 pnpm-workspace.yaml 的 minimumReleaseAge",
+    "test/spec/ci/dependabot/config.test.ts > [CT-23#4] semver-major / minor / patch 的 cooldown 不小于 7 天，且不给任何包开豁免",
+    "test/spec/ci/dependabot/config.test.ts > [CT-23#5] 小版本与补丁合并为一组（update-types 只含 minor、patch），主版本不进任何分组",
+    "test/spec/ci/dependabot/config.test.ts > [CT-23#6] open-pull-requests-limit 显式写出且有界（1 ≤ n ≤ 10）",
+    "test/spec/ci/dependabot/no-automerge.test.ts > [CT-23#7] dependabot.yml 里没有任何自动合并 / 自动批准的写法",
+    "test/spec/ci/dependabot/no-automerge.test.ts > [CT-23#8] 交付 dependabot.yml，且 .github/workflows 里没有对依赖 PR 的自动合并 / 自动批准"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0c79ff7c936551f6f9debd7dc390766da67aec46",
+      "tree": "a6cd46d3d1ca080ebc090a6869d13c15eaddc28c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-29T12:47:41Z",
+      "finished_at": "2026-10-29T12:47:50Z",
+      "red_tests": [
+        "test/spec/ci/dependabot/config.test.ts > [CT-23#1] 配置为 version 2，updates 恰有一项 npm 生态、根目录（pnpm 工作区由根锁文件覆盖）",
+        "test/spec/ci/dependabot/config.test.ts > [CT-23#2] 每周一批：schedule.interval 为 weekly，可带固定星期 / 时刻 / Asia/Shanghai 时区",
+        "test/spec/ci/dependabot/config.test.ts > [CT-23#3] cooldown.default-days 为 7，对齐 ADR-0001 §2 与 pnpm-workspace.yaml 的 minimumReleaseAge",
+        "test/spec/ci/dependabot/config.test.ts > [CT-23#4] semver-major / minor / patch 的 cooldown 不小于 7 天，且不给任何包开豁免",
+        "test/spec/ci/dependabot/config.test.ts > [CT-23#5] 小版本与补丁合并为一组（update-types 只含 minor、patch），主版本不进任何分组",
+        "test/spec/ci/dependabot/config.test.ts > [CT-23#6] open-pull-requests-limit 显式写出且有界（1 ≤ n ≤ 10）",
+        "test/spec/ci/dependabot/no-automerge.test.ts > [CT-23#7] dependabot.yml 里没有任何自动合并 / 自动批准的写法",
+        "test/spec/ci/dependabot/no-automerge.test.ts > [CT-23#8] 交付 dependabot.yml，且 .github/workflows 里没有对依赖 PR 的自动合并 / 自动批准"
+      ],
+      "expected": [
+        "test/spec/ci/dependabot/config.test.ts",
+        "test/spec/ci/dependabot/no-automerge.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "746b286b4872738c6d0051a935a8f7cc8536bd602a7188f16778fd4f6ef19cec"
+        }
+      ],
+      "gate": {
+        "commit": "cda5d159744f0b106bdc32536cd431648cb4a8d6",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "d8c2fc1c86a044a6318d22785ffae5d34220a40d",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}
