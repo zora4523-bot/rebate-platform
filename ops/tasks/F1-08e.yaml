@@ -1,0 +1,25 @@
+id: F1-08e
+repo: rebate-platform
+title: 后台「对账与差错」页第一段（资源 recon，菜单 资金 / 对账与差错）——「差错单」页签：R1–R3 差错单列表（类型 / 来源 / 状态 / 周期区间 / 关联单据号筛选、页码分页，类型 / 来源 / 状态中文名取后台字典 BR-TEXT-25）、详情抽屉（三项金额分、处理人、结案时刻、resolution 摘要）、「已关闭（不处理）」结案（必填原因、Idempotency-Key，提示随单解除的提现冻结数）；持 fund.recon 或 fund.view 可看，结案只给 fund.recon；接口 CT-24v listAdminReconDiffs / getAdminReconDiff、CT-24w closeAdminReconDiff（B2-09a / b 已实现）
+type: impl
+# 2026-10-30 入账（前端线 f1-frontend-7，编排 10-30 06:05 派工：F1-08e 前端部分，CT-24v / CT-24w / CT-24y 契约与 B2-09a / b / c 已合并）。规格 couli design/specs/admin-recon.md（负责人 2026-10-18 第 2 批定稿）§1–§6；画板 AdmReconDiffsList、AdmReconDiffs（布局参考）。
+# 不做（契约未出，另开后续任务）：「对账任务」页签（adminListReconRuns / 手动触发 R1 / 月末三项与导出）、申诉恢复（adminRestoreOrders）、去调账、R2 迟到成功核销、重算余额缓存（短信档）；R4 收款对账在支付单页（F1-13），本页只放规格 §2 的 R4 提示。
+# 菜单：规格 §1 与 CT-24v 都是 fund.recon 或 fund.view 任一可看，resources/index.ts 的 recon 现只认 fund.recon——补 fund.view。冻结 test/spec/frontend/admin-shell/fixtures.ts MENU recon 行逐项写死 [fund.recon]（[AC-F1-06e-MENU#2]），由本任务规则测试作者在 test_paths 内只补 fund.view；第一类保护路径改动，合并需编排按 #24 加 owner-approved 标签。资金页面（结案解除提现冻结），评审走 money 口径。
+# Codex 到 11-02 不可用：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude；独立 Claude 每任务 10 次上限（D10-319 / D10-417）。
+refs: []
+refs_hash: {}
+deps: [CT-24v, CT-24w, B2-09a, B2-09b]
+paths:
+  - 'apps/admin/src/pages/recon/**'
+  - 'apps/admin/src/texts/recon.ts'
+  - 'apps/admin/src/resources/index.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-recon/**'
+  - 'test/spec/frontend/admin-shell/fixtures.ts'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-recon/**'
+status: todo
