@@ -1,0 +1,109 @@
+{
+  "risk_note": "RV2 by path (ledger, settlement). Read-only GET /v1/earnings/summary (BR-FUND-25, BR-INV-16/17): self / share columns give paid_count, estimate and credited for today / yesterday / this month / last month (+08:00, injected Clock, @couli/domain); referral column gives only this / last month estimate and credited totals (direct + indirect, all platforms), null when earnings.dashboard.referral_visible is off; earnings.dashboard.enabled off returns 30701. Counts and estimates bucket by orders.paid_at; estimates reuse the settlement pending-earnings share rules (effective commission settle-first, floor per order and per role via packages/money). Credited = −Σ amount_fen of the caller's USER_BALANCE available REBATE / SHARE / REFERRAL_CREDIT entries by voucher accounting_date. One read-only REPEATABLE READ transaction; no ledger write path touched. Contract: getEarningsSummary no longer planned; generated route-schemas.gen.ts and planned-operations.gen.ts regenerated. No migration.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; independent Claude via tools/agent/claude-run.sh per approvals #36; round 1 pass, no S0/S1; 2 S2 recorded as follow-ups (deposit-only order restored by ADMIN_RESTORE counted while INVALID + ESTIMATED; referral estimate scans every estimating order of the app for two months)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "rule tests by an independent Claude context in 3 counted attempts (runs 1-2 failed red-check on fixture errors: DELETE on config_items without grant, share ratios over 10000; run 3 red/3 PASS, 2cbaf240). Review round 1 (fresh independent Claude) fail with 4 S1 (per-order floor not pinned, no attr_at != paid_at recovered order, no multi-beneficiary snapshot, no settle_commission_fen); the 60 s cache finding was ruled out of refs by the orchestrator. D10-418 例外轮 (one extra test-writing round granted by the orchestrator, not counted in 3/3): a fresh independent Claude added share-basis.int.test.ts [AC-B2-13a#11-#14] only (b97cc68a, red/4 PASS, 14 tests red for the right reason); round 2 incremental review by another fresh independent Claude: pass, all 4 S1 closed. No red_exempt or expected_values entries in this task."
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "red_tests": [
+    "test/spec/ledger/earnings-summary/contract.test.ts > [AC-B2-13a#10] 契约 getEarningsSummary 不再标 planned、生成请求 schema；登录权限、30701 与三栏响应形状不变",
+    "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#1] BR-FUND-25 付款笔数与预估按 paid_at 归 +08:00 自然日与自然月：跨午夜、跨月末各归其期间",
+    "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#2] BR-FUND-25 跨年：as_of 恰为 2027-01-01 00:00 +08:00 时上月是 2026-12，付款时刻与会计日各按边界归期",
+    "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#3] BR-FUND-25 计入笔数：已归因本人、到过 PAID、ESTIMATED / WAITING / CREDITED；预估只合计 ESTIMATED / WAITING 的本人份额",
+    "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#4] BR-FUND-25 已结算按会计日取 REBATE / SHARE / REFERRAL_CREDIT 的代数和：入账正、红冲负，只有红冲的期间为负；不含扣回、补差、调账、奖励与他人分录",
+    "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#5] BR-FUND-25 / BR-INV-16、17 邀请栏只有本月、上月的预估与已结算合计（直推 + 间推、全部平台），没有笔数",
+    "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#6] BR-FUND-25 platform 只筛自购与分享的笔数、预估、已结算；邀请栏始终是全部平台合计；未知平台 20001",
+    "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#7] BR-FUND-25 earnings.dashboard.referral_visible 关闭时 referral 为 null，自购与分享照常",
+    "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#8] BR-FUND-25 earnings.dashboard.enabled 关闭时接口返回 404 / 30701，不返回任何数字",
+    "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#9] BR-FUND-25 只返回本人数据、没有收益时各栏照常为 0；未登录 401 / 10001；读取不写库",
+    "test/spec/ledger/earnings-summary/share-basis.int.test.ts > [AC-B2-13a#11] BR-FUND-25 / BR-FUND-18 预估逐单逐角色向下取整后再合计：有余数的份额不四舍五入、不在期间合计后才取整",
+    "test/spec/ledger/earnings-summary/share-basis.int.test.ts > [AC-B2-13a#12] BR-FUND-25 找回后归因（attr_at 晚于 paid_at、落在另一期间）的订单按 paid_at 归期，不按 attr_at",
+    "test/spec/ledger/earnings-summary/share-basis.int.test.ts > [AC-B2-13a#13] BR-FUND-25 自购、分享栏只取本人 role=self / share 的份额：同单另有直推受益人时不计入整单用户份额合计；该份额进上级的邀请栏",
+    "test/spec/ledger/earnings-summary/share-basis.int.test.ts > [AC-B2-13a#14] BR-FUND-25 / BR-CALC-02 预估基数取有效联盟佣金：settle_commission_fen 非空时用结算佣金而非预估佣金或下单时的快照金额"
+  ],
+  "task": "B2-13a",
+  "spec_commit": "c7614fca5dc8ad7914e39268738f34f4639da046",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c7614fca5dc8ad7914e39268738f34f4639da046",
+      "tree": "41b1929b72205fa434cbdac788d384cde56a08a3",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-29T12:55:37Z",
+      "finished_at": "2026-10-29T12:55:55Z",
+      "red_tests": [
+        "test/spec/ledger/earnings-summary/contract.test.ts > [AC-B2-13a#10] 契约 getEarningsSummary 不再标 planned、生成请求 schema；登录权限、30701 与三栏响应形状不变",
+        "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#1] BR-FUND-25 付款笔数与预估按 paid_at 归 +08:00 自然日与自然月：跨午夜、跨月末各归其期间",
+        "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#2] BR-FUND-25 跨年：as_of 恰为 2027-01-01 00:00 +08:00 时上月是 2026-12，付款时刻与会计日各按边界归期",
+        "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#3] BR-FUND-25 计入笔数：已归因本人、到过 PAID、ESTIMATED / WAITING / CREDITED；预估只合计 ESTIMATED / WAITING 的本人份额",
+        "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#4] BR-FUND-25 已结算按会计日取 REBATE / SHARE / REFERRAL_CREDIT 的代数和：入账正、红冲负，只有红冲的期间为负；不含扣回、补差、调账、奖励与他人分录",
+        "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#5] BR-FUND-25 / BR-INV-16、17 邀请栏只有本月、上月的预估与已结算合计（直推 + 间推、全部平台），没有笔数",
+        "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#6] BR-FUND-25 platform 只筛自购与分享的笔数、预估、已结算；邀请栏始终是全部平台合计；未知平台 20001",
+        "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#7] BR-FUND-25 earnings.dashboard.referral_visible 关闭时 referral 为 null，自购与分享照常",
+        "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#8] BR-FUND-25 earnings.dashboard.enabled 关闭时接口返回 404 / 30701，不返回任何数字",
+        "test/spec/ledger/earnings-summary/http.int.test.ts > [AC-B2-13a#9] BR-FUND-25 只返回本人数据、没有收益时各栏照常为 0；未登录 401 / 10001；读取不写库",
+        "test/spec/ledger/earnings-summary/share-basis.int.test.ts > [AC-B2-13a#11] BR-FUND-25 / BR-FUND-18 预估逐单逐角色向下取整后再合计：有余数的份额不四舍五入、不在期间合计后才取整",
+        "test/spec/ledger/earnings-summary/share-basis.int.test.ts > [AC-B2-13a#12] BR-FUND-25 找回后归因（attr_at 晚于 paid_at、落在另一期间）的订单按 paid_at 归期，不按 attr_at",
+        "test/spec/ledger/earnings-summary/share-basis.int.test.ts > [AC-B2-13a#13] BR-FUND-25 自购、分享栏只取本人 role=self / share 的份额：同单另有直推受益人时不计入整单用户份额合计；该份额进上级的邀请栏",
+        "test/spec/ledger/earnings-summary/share-basis.int.test.ts > [AC-B2-13a#14] BR-FUND-25 / BR-CALC-02 预估基数取有效联盟佣金：settle_commission_fen 非空时用结算佣金而非预估佣金或下单时的快照金额"
+      ],
+      "expected": [
+        "test/spec/ledger/earnings-summary/contract.test.ts",
+        "test/spec/ledger/earnings-summary/http.int.test.ts",
+        "test/spec/ledger/earnings-summary/share-basis.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "bd32376363113c8646af816a8f6737c8844458321a8bf245e4e409e7ff6f34d7"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "f8721ed4f6839e6b93284f9a238b8efb8dbcae01bd828ef64f017acb6f540fe4"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "e3309f85cc78b710df88af106283eeda00c28657",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "fc18c53dfacef56359409121ec778ef22285ec64",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}
