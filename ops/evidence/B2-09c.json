@@ -1,0 +1,107 @@
+{
+  "task": "B2-09c",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "249ba955400375c3518778090e43ab606b590487",
+  "red_tests": [
+    "test/spec/payout/admin-withdrawals/contract.test.ts > [AC-B2-09c#15] listAdminWithdrawals / getAdminWithdrawal 去掉 x-implementation: planned（生成的 planned 清单同步），x-auth admin、x-error-codes [10001, 10403, 20001] 不变；admin 入口各挂一次 GET 并带契约请求 schema，api 入口不挂",
+    "test/spec/payout/admin-withdrawals/detail.int.test.ts > [AC-B2-09c#9] 提现单详情（withdraw.review 或 fund.view 任一即可，超管也能读）：恰好是契约的 AdminWithdrawalDetail——列表行的全部字段（与列表里同一单的值一致）加其余各列（打款方式、审核时限、失败码、执行人与时刻、执行序号、人工处置与处置人、手动打款录入与确认人、受阻时刻、通道状态、确认时限、通道流水号、updated_at、row_version）、脱敏收款人、当前批次及其明细、转账尝试摘要、该用户生效的冻结；自动判定存储里缺的键读作 null，没有判定为 null，风险标签快照原样（没有为 []），resolver_ids 没有为 []",
+    "test/spec/payout/admin-withdrawals/detail.int.test.ts > [AC-B2-09c#10] 提现单详情的收款人只出脱敏值（BR-ID-33）：支付宝手机号 138****5678、支付宝邮箱 sy***@example.test、银行卡「尾号 1234」并带开户行（其他方式 bank_name 为 null），姓名只留末字（**甲）；应答正文任何位置都不含收款人姓名、收款账号明文、账号密文与盲索引、用户完整手机号",
+    "test/spec/payout/admin-withdrawals/detail.int.test.ts > [AC-B2-09c#11] 提现单详情的批次：batch 是 batch_id 指向的 payout_batches 行（批次号、类型、创建时刻；没有 batch_id 为 null），batch_items 是本单全部 payout_batch_items 行按 at 正序（含被拦下、移出到新批次与进入打款），别的单的明细不出现",
+    "test/spec/payout/admin-withdrawals/detail.int.test.ts > [AC-B2-09c#12] 提现单详情的转账尝试只给摘要：本单全部 payout_attempts 按 at 正序，每条恰好是 attempt_id、kind、result、resp_code、resp_sub_code、at；通道请求与应答正文（含其中的收款信息）不出现；别的单的尝试不出现",
+    "test/spec/payout/admin-withdrawals/detail.int.test.ts > [AC-B2-09c#13] 提现单详情的冻结：只列该用户在应答时刻生效的 withdraw_holds（released_at 为空，且 hold_until 为空或晚于时钟），按创建时刻正序；已解除、已到期（含恰好等于时钟）的不列，别的用户与别的应用的冻结不列；同一用户的每张单看到同样的冻结",
+    "test/spec/payout/admin-withdrawals/detail.int.test.ts > [AC-B2-09c#14] 提现单详情的拒绝：不存在的 id、其他应用的提现单 → 20001 data.fields=[withdrawal_id]（不回 404，两种情形应答一样）；id 不是 UUID 或超过 64 字符 → 20001 [withdrawal_id]；没有 withdraw.review / fund.view → 10403；不带令牌 → 10001；读取不写审计、不改任何行",
+    "test/spec/payout/admin-withdrawals/display-status.test.ts > [AC-B2-09c#16] display_status 推导覆盖 status × review_mode × hold_reason × needs_manual 的全部组合：只有 APPROVED 看 hold_reason（payer_side_after_transfer 为 pending_handle，其余与 null 为 pending_review），只有 PAID_API 看 review_mode（auto 为 paid_auto_system，manual 与 null 为 paid_auto_review），needs_manual 不改变结果；八个取值都会出现",
+    "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#1] 提现单列表（withdraw.review 或 fund.view 任一即可，两点都有、超管也能读，不要 step-up）：只列本应用的提现单，按申请时间倒序，每行恰好是契约的 AdminWithdrawalListItem——用户（手机号 3+4，没绑手机为 null）、状态与推导的 display_status、审核方式、通道、四个金额、自动判定（存储里缺的键读作 null）、受阻原因、「暂停」、needs_manual、驳回原因与内部备注、审核人与时刻、批次、风险标签快照（没有为 []）、申请与到账时刻；其他应用的单不出现；默认 page 1 / page_size 20；读取不写审计、不改任何行",
+    "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#2] 提现单列表的排序与分页：created_at 倒序，同一时刻按 withdrawal_id 倒序；page / page_size 翻页，total 为全部条数；超过最后一页是空 items（不报错）；page_size 200 可用",
+    "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#3] 提现单列表的筛选：status、review_mode（未判定的 null 永不命中）、payout_channel、user_id（他应用的用户、不存在或不是 UUID 的值是空页）、out_biz_no（完整单号精确匹配，不是前缀、区分大小写）、amount_min_fen / amount_max_fen（两端都含）、created_from（含）/ created_to（不含，ISO 8601 带时区）、hold_reason、blocked（true 只要有 blocked_reason 的，false 只要没有的）、risk_flag（快照里有该 code 的；risk_calc_failed 值里列出的 code 不算命中）按 AND 组合，total 为过滤后的总数",
+    "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#4] display_status 按 BR-WDR-08 细则由 status + review_mode + hold_reason 推导：PENDING_REVIEW 与 APPROVED（hold_reason 不是 payer_side_after_transfer）为 pending_review，APPROVED + payer_side_after_transfer 为 pending_handle，REJECTED 为 rejected，PAID_MANUAL 为 paid_manual，PAID_API 判 auto 为 paid_auto_system、其余为 paid_auto_review，PAYING（含 needs_manual）为 paying，FAILED 为 failed；display_status 筛选恰好返回推导为该值的单，可与 status 组合",
+    "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#5] 提现单列表的金额是整数分原样（不换算、不改符号）：amount_fen、fee_fen、tax_fen、net_fen 照存储返回，含 1 分、零手续费与 2^53−1",
+    "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#6] 提现单列表的拒绝：status、display_status、review_mode、payout_channel、hold_reason、risk_flag 不在枚举，out_biz_no 不是 1–32 位字母数字，user_id 超过 64 字符，amount_min_fen / amount_max_fen 不是非负整数，created_from / created_to 不是带时区的时刻，blocked 不是 true / false → 20001 data.fields 指名该参数；amount_min_fen > amount_max_fen → 20001 [amount_min_fen, amount_max_fen]；created_from 晚于 created_to → 20001 [created_from, created_to]；page_size 超过 200 → 20001 [page_size]；边界值照常返回",
+    "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#7] 提现单列表的权限：既没有 withdraw.review 也没有 fund.view（无权限点，或只有 fund.recon、payout.execute、payout.manual_entry、pii.reveal_identity、pay.view 等别的点）→ 10403；不带令牌 → 10001；空应用是空页；读取不写审计、不改提现单",
+    "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#8] 提现单列表不出收款信息（BR-ID-33）：行里没有收款账号与姓名，应答正文任何位置都不含收款人姓名、收款账号明文（支付宝手机号 / 邮箱、银行卡号、微信 openid）、账号密文与盲索引、用户完整手机号；手机号只出 3+4"
+  ],
+  "risk_note": "RV2 (payout). Console reads of withdrawals (CT-24y listAdminWithdrawals / getAdminWithdrawal; B2-09; 01 F-ADM-08; 04 §3.2, §11.2; admin-withdrawals.md, admin-withdrawal-detail.md): PayoutAdminModule.forAdmin mounts the controller on the admin entry only (permission withdraw.review or fund.view through AdminOperationGuard, read only, no audit, appId from the guard's actor); reads by app_id withdrawals, batches and batch items, payout attempt summaries (request / response never selected) and the holds in effect at the injected Clock; display_status derived per 08 BR-WDR-08 细则; blocked_reason read from its own column in list and detail. Personal data: payee account decrypted with the existing payeeDecrypt and masked at once (WeChat openid not decrypted, shown as a fixed mask), the user's phone masked through identity's createMaskedPhoneReader; no clear name, account, phone, ciphertext or HMAC in any answer. Amounts stay integer fen. No state change. x-implementation: planned removed, generated files from pnpm codegen. Test-machine full verification verify/3 exit 0 (95e0ab27, PROP_RUNS=2000, after rebasing onto main with CT-24y #1789); an earlier run lost its SSH connection mid-way (no result, not a code failure) and was rerun.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "249ba955400375c3518778090e43ab606b590487",
+      "tree": "16bdce292fd9ec3ee5842b233942b3dd858c33f5",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-29T20:55:08Z",
+      "finished_at": "2026-10-29T20:55:25Z",
+      "red_tests": [
+        "test/spec/payout/admin-withdrawals/contract.test.ts > [AC-B2-09c#15] listAdminWithdrawals / getAdminWithdrawal 去掉 x-implementation: planned（生成的 planned 清单同步），x-auth admin、x-error-codes [10001, 10403, 20001] 不变；admin 入口各挂一次 GET 并带契约请求 schema，api 入口不挂",
+        "test/spec/payout/admin-withdrawals/detail.int.test.ts > [AC-B2-09c#9] 提现单详情（withdraw.review 或 fund.view 任一即可，超管也能读）：恰好是契约的 AdminWithdrawalDetail——列表行的全部字段（与列表里同一单的值一致）加其余各列（打款方式、审核时限、失败码、执行人与时刻、执行序号、人工处置与处置人、手动打款录入与确认人、受阻时刻、通道状态、确认时限、通道流水号、updated_at、row_version）、脱敏收款人、当前批次及其明细、转账尝试摘要、该用户生效的冻结；自动判定存储里缺的键读作 null，没有判定为 null，风险标签快照原样（没有为 []），resolver_ids 没有为 []",
+        "test/spec/payout/admin-withdrawals/detail.int.test.ts > [AC-B2-09c#10] 提现单详情的收款人只出脱敏值（BR-ID-33）：支付宝手机号 138****5678、支付宝邮箱 sy***@example.test、银行卡「尾号 1234」并带开户行（其他方式 bank_name 为 null），姓名只留末字（**甲）；应答正文任何位置都不含收款人姓名、收款账号明文、账号密文与盲索引、用户完整手机号",
+        "test/spec/payout/admin-withdrawals/detail.int.test.ts > [AC-B2-09c#11] 提现单详情的批次：batch 是 batch_id 指向的 payout_batches 行（批次号、类型、创建时刻；没有 batch_id 为 null），batch_items 是本单全部 payout_batch_items 行按 at 正序（含被拦下、移出到新批次与进入打款），别的单的明细不出现",
+        "test/spec/payout/admin-withdrawals/detail.int.test.ts > [AC-B2-09c#12] 提现单详情的转账尝试只给摘要：本单全部 payout_attempts 按 at 正序，每条恰好是 attempt_id、kind、result、resp_code、resp_sub_code、at；通道请求与应答正文（含其中的收款信息）不出现；别的单的尝试不出现",
+        "test/spec/payout/admin-withdrawals/detail.int.test.ts > [AC-B2-09c#13] 提现单详情的冻结：只列该用户在应答时刻生效的 withdraw_holds（released_at 为空，且 hold_until 为空或晚于时钟），按创建时刻正序；已解除、已到期（含恰好等于时钟）的不列，别的用户与别的应用的冻结不列；同一用户的每张单看到同样的冻结",
+        "test/spec/payout/admin-withdrawals/detail.int.test.ts > [AC-B2-09c#14] 提现单详情的拒绝：不存在的 id、其他应用的提现单 → 20001 data.fields=[withdrawal_id]（不回 404，两种情形应答一样）；id 不是 UUID 或超过 64 字符 → 20001 [withdrawal_id]；没有 withdraw.review / fund.view → 10403；不带令牌 → 10001；读取不写审计、不改任何行",
+        "test/spec/payout/admin-withdrawals/display-status.test.ts > [AC-B2-09c#16] display_status 推导覆盖 status × review_mode × hold_reason × needs_manual 的全部组合：只有 APPROVED 看 hold_reason（payer_side_after_transfer 为 pending_handle，其余与 null 为 pending_review），只有 PAID_API 看 review_mode（auto 为 paid_auto_system，manual 与 null 为 paid_auto_review），needs_manual 不改变结果；八个取值都会出现",
+        "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#1] 提现单列表（withdraw.review 或 fund.view 任一即可，两点都有、超管也能读，不要 step-up）：只列本应用的提现单，按申请时间倒序，每行恰好是契约的 AdminWithdrawalListItem——用户（手机号 3+4，没绑手机为 null）、状态与推导的 display_status、审核方式、通道、四个金额、自动判定（存储里缺的键读作 null）、受阻原因、「暂停」、needs_manual、驳回原因与内部备注、审核人与时刻、批次、风险标签快照（没有为 []）、申请与到账时刻；其他应用的单不出现；默认 page 1 / page_size 20；读取不写审计、不改任何行",
+        "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#2] 提现单列表的排序与分页：created_at 倒序，同一时刻按 withdrawal_id 倒序；page / page_size 翻页，total 为全部条数；超过最后一页是空 items（不报错）；page_size 200 可用",
+        "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#3] 提现单列表的筛选：status、review_mode（未判定的 null 永不命中）、payout_channel、user_id（他应用的用户、不存在或不是 UUID 的值是空页）、out_biz_no（完整单号精确匹配，不是前缀、区分大小写）、amount_min_fen / amount_max_fen（两端都含）、created_from（含）/ created_to（不含，ISO 8601 带时区）、hold_reason、blocked（true 只要有 blocked_reason 的，false 只要没有的）、risk_flag（快照里有该 code 的；risk_calc_failed 值里列出的 code 不算命中）按 AND 组合，total 为过滤后的总数",
+        "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#4] display_status 按 BR-WDR-08 细则由 status + review_mode + hold_reason 推导：PENDING_REVIEW 与 APPROVED（hold_reason 不是 payer_side_after_transfer）为 pending_review，APPROVED + payer_side_after_transfer 为 pending_handle，REJECTED 为 rejected，PAID_MANUAL 为 paid_manual，PAID_API 判 auto 为 paid_auto_system、其余为 paid_auto_review，PAYING（含 needs_manual）为 paying，FAILED 为 failed；display_status 筛选恰好返回推导为该值的单，可与 status 组合",
+        "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#5] 提现单列表的金额是整数分原样（不换算、不改符号）：amount_fen、fee_fen、tax_fen、net_fen 照存储返回，含 1 分、零手续费与 2^53−1",
+        "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#6] 提现单列表的拒绝：status、display_status、review_mode、payout_channel、hold_reason、risk_flag 不在枚举，out_biz_no 不是 1–32 位字母数字，user_id 超过 64 字符，amount_min_fen / amount_max_fen 不是非负整数，created_from / created_to 不是带时区的时刻，blocked 不是 true / false → 20001 data.fields 指名该参数；amount_min_fen > amount_max_fen → 20001 [amount_min_fen, amount_max_fen]；created_from 晚于 created_to → 20001 [created_from, created_to]；page_size 超过 200 → 20001 [page_size]；边界值照常返回",
+        "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#7] 提现单列表的权限：既没有 withdraw.review 也没有 fund.view（无权限点，或只有 fund.recon、payout.execute、payout.manual_entry、pii.reveal_identity、pay.view 等别的点）→ 10403；不带令牌 → 10001；空应用是空页；读取不写审计、不改提现单",
+        "test/spec/payout/admin-withdrawals/list.int.test.ts > [AC-B2-09c#8] 提现单列表不出收款信息（BR-ID-33）：行里没有收款账号与姓名，应答正文任何位置都不含收款人姓名、收款账号明文（支付宝手机号 / 邮箱、银行卡号、微信 openid）、账号密文与盲索引、用户完整手机号；手机号只出 3+4"
+      ],
+      "expected": [
+        "test/spec/payout/admin-withdrawals/contract.test.ts",
+        "test/spec/payout/admin-withdrawals/detail.int.test.ts",
+        "test/spec/payout/admin-withdrawals/display-status.test.ts",
+        "test/spec/payout/admin-withdrawals/list.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "ad529757af545096846bbae557d9e731a5bc8e99afd020911aeeb5f4268b790b"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "e7a0ed1f8e30c758b6a753b9f5a930a7170379fd18c4264bd58aa4c5ac568527"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "nohup claude-run.sh review --review-type money (Codex unavailable until 2026-11-02, approvals 36): round 1 pass, no findings; idempotency / concurrency / partial refund n/a (read only). A first launch had been killed with the host command before producing output and was rerun."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "nohup claude-run.sh review --review-type spec-test: round 1 pass, one S2 recorded as a follow-up (no detail case with a non-null blocked_reason)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "dd2e301e04ac68a91090bd2c011cef53a14fce6c",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
