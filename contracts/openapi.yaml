@@ -7111,8 +7111,9 @@ paths:
         the whole call fails, never a half result and never the original link instead (BR-ATTR-10
         细则「淘宝分享实现」): while the token generation permission is not granted → 50301 with
         data.reason=not_launched and data.platform=taobao; a temporary failure (upstream timeout,
-        rate limit, circuit open, or the conversion failed) → 50303. The same 50303 applies to a
-        failed conversion on JD and Pinduoduo; a platform in maintenance → 50301 (maintenance).
+        rate limit, circuit open, or the conversion failed) → 50303. The platform refusing the
+        conversion (such as JD without conversion permission) → 30121, not retryable; a temporary conversion failure → 50303, retry later (as convertLink); a
+        platform in maintenance → 50301 (maintenance).
         poster_url is always null until the poster worker ships (orchestrator decision D10-426;
         the poster is drawn by the server from a unified template, TECH-13). images are the
         addresses returned by the union product API, passed on unchanged and never stored
@@ -7130,6 +7131,7 @@ paths:
         - 30413
         - 30101
         - 30111
+        - 30121
         - 30141
         - 30143
         - 50301
