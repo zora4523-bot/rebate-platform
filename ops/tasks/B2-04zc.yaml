@@ -1,0 +1,38 @@
+id: B2-04zc
+repo: rebate-platform
+title: 余额流水 GET /v1/wallet/ledger（BR-FUND-15、BR-TEXT-19，契约 planned → 实现）：本人 available 子户分录按时间倒序游标分页（含 ledger_type、sub_type、带符号 amount_fen、accounting_date、balance_after_fen），另每张打款成功（PAID_API / PAID_MANUAL）的提现单合并为 1 条 WITHDRAW_PAID 汇总条目（实际到账、tax_fen、fee_fen，balance_after_fen 为 null）；WITHDRAW_FEE、TAX_WITHHOLD 不单独成行；跳转：自购与分享单的 REBATE_CREDIT / SHARE_CREDIT / CLAWBACK / SETTLE_ADJUST 关联子订单，WITHDRAW_* 关联提现单；REFERRAL_CREDIT（直推、间推）及 referrer 角色的 CLAWBACK / SETTLE_ADJUST 一律 masked、link 为 null、日期只到日、不带任何订单与下级信息；ADMIN_ADJUST / BAD_DEBT_WRITEOFF 无关联单据时 link 为 null
+type: impl
+# 2026-10-29 be 入账（编排派工：用户端后端下一批）。契约 listWalletLedger 已在主干（planned）；前端 F1-04a 已 done。放 ledger 模块，照钱包汇总 B2-04y / 收益看板 B2-13a：分录从 ledger 自有表读；汇总条目的提现单由 payout 导出只读读口、订单关联由 settlement 读口给出，app.module 组装注入，不深导入、不跨模块读表。
+# 只读接口，不写库、不碰记账 / 余额 / 分录写路径。C-26 已按默认处理（税费只作汇总条目明细）。开工前在 notices 占契约槽；契约去 planned 时同列 planned-operations.gen.ts（CT-06zxd）。
+refs: [BR-FUND-15, BR-TEXT-19]
+refs_hash:
+  BR-FUND-15: 849cd1eab9f2
+  BR-TEXT-19: 49112cf6e025
+deps: [B2-04y, B2-13a]
+paths:
+  - 'apps/api/src/modules/ledger/wallet-ledger.module.ts'
+  - 'apps/api/src/modules/ledger/application/wallet-ledger*.ts'
+  - 'apps/api/src/modules/ledger/infra/wallet-ledger*.ts'
+  - 'apps/api/src/modules/ledger/http/public/wallet-ledger*.ts'
+  - 'apps/api/src/modules/ledger/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/payout/index.ts'
+  - 'apps/api/src/modules/payout/application/wallet-ledger*.ts'
+  - 'apps/api/src/modules/settlement/index.ts'
+  - 'apps/api/src/modules/settlement/reads/wallet-ledger*.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/ledger/wallet-ledger/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/wallet-ledger/**'
+status: todo
+pr: null

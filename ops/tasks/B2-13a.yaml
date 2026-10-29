@@ -34,5 +34,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/ledger/earnings-summary/**'
-status: todo
-pr: null
+status: done
+pr: 1764
