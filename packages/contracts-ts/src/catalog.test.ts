@@ -247,6 +247,8 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     'pay_refund',
     // CT-24r: admin appeal claim / resolve CAS (04 §6.6 appeals, BR-ID-36).
     'appeal',
+    // CT-24w: admin recon diff close CAS (04 §6.6, BR-FUND-19).
+    'recon_diff',
   ]);
 });
 
