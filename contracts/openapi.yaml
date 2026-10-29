@@ -44024,7 +44024,7 @@ components:
           type: array
           description: The user's withdraw_holds in effect at response time, oldest first (BR-WDR-05, BR-FUND-19); [] when none.
           items:
-            $ref: '#/components/schemas/AdminWithdrawalHold' 
+            $ref: '#/components/schemas/AdminWithdrawalHold'
     AdminWithdrawalDetailResponse:
       type: object
       additionalProperties: false
