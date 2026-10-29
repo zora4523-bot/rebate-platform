@@ -103,3 +103,29 @@ export function createWithdrawHolds(options: WithdrawHoldsOptions): WithdrawHold
     },
   };
 }
+
+/** B2-09b: the holds of one source (a recon diff being closed), released together. */
+export interface ReleaseWithdrawHoldsBySource {
+  appId: string;
+  /** Matched exactly against withdraw_holds.source_ref (`recon_diff:<recon_diffs.id>`, B2-07c). */
+  sourceRef: string;
+  releasedBy: string;
+}
+
+/**
+ * B2-09b skeleton (rule-test phase): every hold of the app whose source_ref is exactly
+ * `sourceRef` and released_at is null is released through the same steps as `release` (users row
+ * locks first, in user_id order; one withdraw_hold.release audit per hold on the same
+ * transaction); holds released earlier are skipped. `released` = the holds this call released.
+ * The implementation may fold this into WithdrawHolds as `releaseBySource(trx, input)`.
+ */
+export function releaseWithdrawHoldsBySource(
+  options: WithdrawHoldsOptions,
+  trx: Transaction<DB>,
+  input: ReleaseWithdrawHoldsBySource,
+): Promise<{ released: number }> {
+  void options;
+  void trx;
+  void input;
+  throw new Error('NotImplemented: releaseWithdrawHoldsBySource');
+}
