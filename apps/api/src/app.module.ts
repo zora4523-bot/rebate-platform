@@ -198,12 +198,14 @@ import {
   type PersonalDataCopySources,
 } from './modules/identity/index.ts';
 import {
+  EarningsSummaryModule,
   LedgerAdminModule,
   LedgerModule,
   WalletSummaryModule,
   createLedger,
   getOrderNets,
   readPersonalDataCopyLedgerEntries,
+  type EarningsSummaryDependencies,
   type WalletSummaryDependencies,
 } from './modules/ledger/index.ts';
 import { PaymentModule } from './modules/payment/index.ts';
@@ -365,7 +367,10 @@ import {
   type BlocklistService,
   type RiskStateService,
 } from './modules/risk/index.ts';
-import { createPendingEarningsSource } from './modules/settlement/index.ts';
+import {
+  createEarningsOrdersSource,
+  createPendingEarningsSource,
+} from './modules/settlement/index.ts';
 import {
   REGISTERED_PLATFORMS,
   UNION_ENDPOINTS,
@@ -822,6 +827,41 @@ function walletSummaryDependencies(db: Kysely<Database>, clock: Clock): WalletSu
         const value = item === null ? withdrawDefault : item.value;
         // Anything but a boolean is a broken setting: the button greys out, balances still show.
         return value === true;
+      },
+    },
+  };
+}
+
+/**
+ * GET /v1/earnings/summary's owner-module ports (B2-13a; BR-FUND-25), on the entry's database:
+ * - order facts (paid counts and estimated shares): settlement's earnings reads over the read
+ *   transaction, priced with commission's snapshot and tlj_deduct_fen read ports (BR-CALC-02);
+ * - switches: earnings.dashboard.enabled / referral_visible through content's reader, default on
+ *   (a missing item or anything but false counts as on, like the client's derived entry key).
+ */
+function earningsSummaryDependencies(
+  db: Kysely<Database>,
+  clock: Clock,
+): EarningsSummaryDependencies {
+  const orders = createEarningsOrdersSource({
+    readSnapshot: readCommissionSnapshot,
+    readTljDeductFen,
+  });
+  // One cached reader for this entry (switch cache lifetime, like the client configuration).
+  const reader = createContentReader({ db, clock });
+  return {
+    clock,
+    orders: {
+      read: (handle, input) => onReadTransaction(handle, (trx) => orders.read(trx, input)),
+    },
+    config: {
+      async readSwitches(appId) {
+        const enabled = await reader.configValue(appId, 'earnings.dashboard.enabled');
+        const referral = await reader.configValue(appId, 'earnings.dashboard.referral_visible');
+        return {
+          enabled: enabled?.value !== false,
+          referralVisible: referral?.value !== false,
+        };
       },
     },
   };
@@ -3460,6 +3500,10 @@ export class AppModule {
         // GET /v1/wallet/summary (B2-04y): ledger's read.ts query over the owners' ports.
         ...(options.entry === 'api'
           ? [WalletSummaryModule.forApi({ dependencies: walletSummaryDependencies })]
+          : []),
+        // GET /v1/earnings/summary (B2-13a): ledger's credited sums and settlement's order facts.
+        ...(options.entry === 'api'
+          ? [EarningsSummaryModule.forApi({ dependencies: earningsSummaryDependencies })]
           : []),
         // payment's /v1/pay/orders routes (B2-15b): on the api entry, over content's shared
         // configuration reader (pay.enabled, pay.channel_enabled.*, pay.biz.*.platforms,
