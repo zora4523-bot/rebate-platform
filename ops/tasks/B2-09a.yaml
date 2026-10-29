@@ -1,0 +1,34 @@
+id: B2-09a
+repo: rebate-platform
+title: ledger：后台对账差错单只读接口实现（CT-24v listAdminReconDiffs、getAdminReconDiff）——按 app 隔离读 recon_diffs（只 R1–R3），type / source / status / period 区间 / ref_id 筛选、created_at 降序页码分页，详情含处理人与结案时刻、resolution 摘要；权限 fund.recon 或 fund.view 经 AdminOperationGuard，不写审计；去掉两个接口的 planned
+type: impl
+# 2026-10-29 入账（admin-backend，编排 10-29 16:20 派工；规划/05 B2-09「财务类后台接口……对账」与 F1-08e 后端部分）。
+# recon_diffs 唯一写者是 ledger（application/recon-diffs.ts、infra/recon-diffs-store.ts）；读也放 ledger，照 B2-15j 的 listAdminPayReconDiffs（payment 经 ledger index 的 getReconDiffs 读、不直读表）的口径，本任务在 ledger 自己加分页读与详情读、后台控制器与模块注册。
+# 不含写操作（关闭结案并解除提现冻结、申诉恢复、重算余额缓存、核销，后续 CT-24w / B2-09b），不含对账任务列表与月末三项（运行表未建）。
+refs: [BR-FUND-22]
+refs_hash:
+  BR-FUND-22: 022deb8da97d
+deps: [CT-24v]
+paths:
+  - 'apps/api/src/modules/ledger/application/admin-recon-diffs*.ts'
+  - 'apps/api/src/modules/ledger/infra/recon-diffs-store.ts'
+  - 'apps/api/src/modules/ledger/http/admin/**'
+  - 'apps/api/src/modules/ledger/ledger.module.ts'
+  - 'apps/api/src/modules/ledger/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/ledger/admin-recon-diffs/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/admin-recon-diffs/**'
+status: todo
+pr: null

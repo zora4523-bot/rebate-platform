@@ -1,0 +1,28 @@
+id: CT-24v
+repo: rebate-platform
+title: 契约：后台对账差错单只读——GET /admin/v1/recon-diffs（来源 R1 / R2 / R3，type / source / status / period 区间 / ref_id 筛选，页码分页）与 GET /admin/v1/recon-diffs/{recon_diff_id}（摘要、关联单据、三项金额分、处理人与结案时刻、resolution 摘要），权限 fund.recon 或 fund.view，只读不审计；去处理类写操作（关闭结案、申诉恢复、重算余额缓存、核销）留给后续 CT-24w
+type: contract
+# 2026-10-29 入账（admin-backend，编排 10-29 16:20 派工）。依据 01 F-ADM-08、04 §3.2 recon_diffs、§11.2（fund.recon / fund.view）、design/specs/admin-recon.md §4（负责人 2026-10-18 第 2 批定稿；operationId 暂拟，由 CT-24 recon-diffs 分配）、F1-08e。
+# 技术取舍沿用 CT-24m / B2-15j：另建 AdminReconDiff / AdminReconDiffDetail，条目字段对齐已有 AdminPayReconDiff（recon_diff_id、source、type、period、ref_type、ref_id、expected_fen、actual_fen、diff_fen、status、created_at），复用已有 ReconDiffStatus 枚举，type 取 recon_diffs.type 的全部取值中 R1–R3 会产生的那些；R4（pay_mismatch / pay_anomaly）仍只在 listAdminPayReconDiffs，本接口 source 不收 R4（admin-recon.md「R4 提示」）。
+#   operationId 照仓库命名惯例取 listAdminReconDiffs / getAdminReconDiff（规格暂拟 adminListReconDiffs / adminGetReconDiff）。分页沿用 AdminPage / AdminPageSize（≤200），created_at 降序；筛选值越枚举 20001 data.fields；period 区间按 YYYY-MM 或 YYYY-MM-DD 字典序；未知或别 app 的 id 20001 [recon_diff_id]（后台先例）；金额整数分；不返回用户手机号等个人信息。
+#   不含：对账任务列表 / 月末三项（R1 / R3 的运行表尚未建，另入账）、写操作（CT-24w）。
+refs: []
+refs_hash: {}
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'packages/contracts-ts/**'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
