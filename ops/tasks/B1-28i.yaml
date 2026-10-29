@@ -16,5 +16,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/content/config-etag/**'
-status: todo
-pr: null
+status: done
+pr: 1787
