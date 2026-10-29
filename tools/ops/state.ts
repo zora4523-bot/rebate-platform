@@ -39,6 +39,23 @@
 //   a call still counts towards the per-task Codex call cap and the no-output breaker (below).
 //   An answer that failed validation (exit 10, validation "failed") and a position assertion
 //   failure (exit 12) stay counted.
+// - settle only gives back a round that was in fact counted for that call (CT-06zxk,
+//   FU-OPS-COUNTER): every successful `bump-attempt` records a pending bump (`pending_bumps`:
+//   kind, engine, bumped_at). `settle` pairs the call with the latest unconsumed pending bump of
+//   the same kind and engine bumped no later than the call's `started_at` (plus a few seconds of
+//   clock skew: meta.json times are whole seconds, and the wrapper may run in another clock) and
+//   no earlier than a window before it (the runners start the call right after the bump). A
+//   paired call consumes the bump: without output it gives the round back, with output it keeps
+//   it; older unconsumed bumps of the same kind and engine are superseded (their calls died
+//   without a trace and stay counted). A call that pairs with no bump (bump-attempt refused at
+//   the limit and the call started anyway, an orchestrator exception round that never bumped,
+//   a state file from before pending bumps) leaves `attempts` alone; without output it is still
+//   recorded in `uncounted_calls` (`refunded: false`) and the result says `pre_counted: false`.
+//   Rather count once too often than give back a round that was never taken. Settling is
+//   idempotent per kind + started_at + engine. `opus-run` consumes the pending `impl` bump of
+//   its run so that it cannot be paired with a later call, and by the same rule gives the round
+//   back only when a bump paired (a run without a result that pairs with none still counts as an
+//   Opus failure and is recorded with `refunded: false`).
 //
 // Opus failure breaker (RO2-03; default split of 2026-10-05, ops/approvals.yaml id 19): the
 // Opus implementation subagent is no Codex call and leaves no meta.json, so its runs are
@@ -136,7 +153,41 @@ export type UncountedCall = {
   started_at: string;
   exit_code: number;
   reason: 'timeout' | 'inactivity-kill' | 'capacity' | 'no-output';
+  /**
+   * false: the call paired with no pending bump, so no round was given back (CT-06zxk). Absent:
+   * the round was given back (also every entry of an older file).
+   */
+  refunded?: false;
 };
+
+/**
+ * One successful `bump-attempt`, waiting for `settle` to pair it with its call (CT-06zxk). It is
+ * consumed once: `refunded` / `kept` by the call it paired with, `superseded` when a later bump
+ * of the same kind and engine was paired first.
+ */
+export type PendingBump = {
+  kind: AttemptKind;
+  engine: Engine;
+  bumped_at: string;
+  /** `started_at` of the call (or `opus:<run id>`) that consumed it; null while pending. */
+  consumed_by: string | null;
+  outcome: 'refunded' | 'kept' | 'superseded' | null;
+};
+
+const PENDING_OUTCOMES = ['refunded', 'kept', 'superseded'] as const;
+
+/**
+ * A bump pairs with a call that started at most this long before it: meta.json times are whole
+ * seconds (a bump at 03:14:01.700 precedes a call recorded as 03:14:01) and the wrapper may read
+ * a slightly different clock (container, another host).
+ */
+export const BUMP_CLOCK_SKEW_MS = 5_000;
+/**
+ * ...and at most this long after it. The runners start the call right after the bump (dispatch.sh,
+ * the orchestrator before a review); an older pending bump belongs to a call that died without
+ * a trace and must not be given back by a later call that was never counted.
+ */
+export const BUMP_MATCH_WINDOW_MS = 30 * 60_000;
 
 export const OPUS_OUTCOMES = ['ok', 'no-output', 'timeout', 'capacity'] as const;
 export type OpusOutcome = (typeof OPUS_OUTCOMES)[number];
@@ -173,6 +224,11 @@ export type TaskState = {
   last_error: string | null;
   /** Calls that ended without output and therefore did not use up a round. */
   uncounted_calls: UncountedCall[];
+  /**
+   * Bumps waiting to be paired with their call by `settle` (CT-06zxk); absent in older files
+   * (parseState reads them as an empty list).
+   */
+  pending_bumps?: PendingBump[];
   /** Runs of the Opus implementation subagent without a result (RO2-03); absent in older files. */
   opus_failures: OpusFailures;
   /** Every settled Opus run, by its run id (CR-07: settling is idempotent); absent in older files. */
@@ -210,6 +266,7 @@ function initialState(id: string, now: Date): TaskState {
     ask_created_at: null,
     last_error: null,
     uncounted_calls: [],
+    pending_bumps: [],
     opus_failures: noOpusFailures(),
     opus_runs: [],
     updated_at: now.toISOString(),
@@ -267,9 +324,30 @@ export function parseState(raw: unknown, file: string): TaskState {
       typeof e.started_at !== 'string' ||
       typeof e.exit_code !== 'number' ||
       typeof e.reason !== 'string' ||
-      (e.engine !== undefined && !(ENGINES as readonly unknown[]).includes(e.engine))
+      (e.engine !== undefined && !(ENGINES as readonly unknown[]).includes(e.engine)) ||
+      (e.refunded !== undefined && e.refunded !== false)
     ) {
-      bad(`uncounted_calls[${i}] must be {kind, started_at, exit_code, reason[, engine]}`);
+      bad(
+        `uncounted_calls[${i}] must be {kind, started_at, exit_code, reason[, engine, refunded]}`,
+      );
+    }
+  });
+  // Absent before CT-06zxk: no call of such a file pairs with a bump, so none is given back.
+  const pending = o.pending_bumps ?? [];
+  if (!Array.isArray(pending)) bad('pending_bumps must be an array');
+  (pending as unknown[]).forEach((b, i) => {
+    const e = b as Record<string, unknown>;
+    if (
+      typeof b !== 'object' ||
+      b === null ||
+      !(ATTEMPT_KINDS as readonly unknown[]).includes(e.kind) ||
+      !(ENGINES as readonly unknown[]).includes(e.engine) ||
+      typeof e.bumped_at !== 'string' ||
+      !isNullableString(e.consumed_by) ||
+      !(e.outcome === null || (PENDING_OUTCOMES as readonly unknown[]).includes(e.outcome)) ||
+      (e.consumed_by === null) !== (e.outcome === null)
+    ) {
+      bad(`pending_bumps[${i}] must be {kind, engine, bumped_at, consumed_by, outcome}`);
     }
   });
   if (!(o.pid === null || isCount(o.pid))) bad('pid must be an integer or null');
@@ -318,6 +396,7 @@ export function parseState(raw: unknown, file: string): TaskState {
   return {
     ...(raw as TaskState),
     attempts: filled as Record<AttemptKind, number>,
+    pending_bumps: pending as PendingBump[],
     opus_failures: opus,
     opus_runs: runs as TaskState['opus_runs'],
     implementer: implementer as TaskState['implementer'],
@@ -352,7 +431,13 @@ export function writeState(state: TaskState): void {
 export type StatePatch = Partial<
   Omit<
     TaskState,
-    'id' | 'attempts' | 'uncounted_calls' | 'opus_failures' | 'updated_at' | 'ask_created_at'
+    | 'id'
+    | 'attempts'
+    | 'uncounted_calls'
+    | 'pending_bumps'
+    | 'opus_failures'
+    | 'updated_at'
+    | 'ask_created_at'
   >
 >;
 
@@ -372,7 +457,8 @@ export function updateState(id: string, patch: StatePatch, now: Date = new Date(
 /**
  * Counts an attempt BEFORE the dispatch (规划/11 §2.5), so that a run that dies
  * without a trace is still counted. Past the limit nothing is written. An open failure
- * breaker (`taskCalls`) refuses first, with BreakerError (exit 3).
+ * breaker (`taskCalls`) refuses first, with BreakerError (exit 3). A counted bump is recorded
+ * as pending, for `settle` to pair with its call.
  */
 export function bumpAttempt(
   id: string,
@@ -394,10 +480,53 @@ export function bumpAttempt(
   const next: TaskState = {
     ...prev,
     attempts: { ...prev.attempts, [kind]: used + 1 },
+    pending_bumps: [
+      ...(prev.pending_bumps ?? []),
+      { kind, engine, bumped_at: now.toISOString(), consumed_by: null, outcome: null },
+    ],
     updated_at: now.toISOString(),
   };
   writeState(next);
   return next;
+}
+
+/**
+ * Consumes the pending bump a call pairs with: the latest unconsumed one of its kind and engine
+ * (any engine when null) bumped in [started - window, started + skew]. Older unconsumed ones of
+ * that kind and engine are superseded. Returns the new list and whether one paired.
+ */
+function consumeBump(
+  bumps: PendingBump[],
+  kind: AttemptKind,
+  engine: Engine | null,
+  startedMs: number,
+  window: number,
+  by: string,
+  outcome: 'refunded' | 'kept',
+): { bumps: PendingBump[]; paired: boolean } {
+  const sameKind = (b: PendingBump): boolean =>
+    b.outcome === null && b.kind === kind && (engine === null || b.engine === engine);
+  let pick = -1;
+  bumps.forEach((b, i) => {
+    const at = Date.parse(b.bumped_at);
+    if (!sameKind(b) || Number.isNaN(at) || Number.isNaN(startedMs)) return;
+    if (at > startedMs + BUMP_CLOCK_SKEW_MS || at < startedMs - window) return;
+    const best = pick < 0 ? undefined : bumps[pick];
+    if (best === undefined || at >= Date.parse(best.bumped_at)) pick = i;
+  });
+  const chosen = pick < 0 ? undefined : bumps[pick];
+  if (chosen === undefined) return { bumps, paired: false };
+  const pickedAt = Date.parse(chosen.bumped_at);
+  return {
+    paired: true,
+    bumps: bumps.map((b, i) => {
+      if (i === pick) return { ...b, consumed_by: by, outcome };
+      if (sameKind(b) && Date.parse(b.bumped_at) <= pickedAt) {
+        return { ...b, consumed_by: by, outcome: 'superseded' };
+      }
+      return b;
+    }),
+  };
 }
 
 export type OpusRunResult = {
@@ -424,7 +553,7 @@ const OPUS_UNCOUNTED: Record<Exclude<OpusOutcome, 'ok'>, UncountedCall['reason']
 /**
  * Settles one run of the Opus implementation subagent (RO2-03, CR-07). Its round was counted
  * before it started (`bump-attempt impl`); a run without a result (no output, timeout, capacity)
- * gives that round back, like a Codex call without output (uncounted_calls, kind impl), and counts
+ * gives that round back (only when it pairs with a pending impl bump, CT-06zxk), like a Codex call without output (uncounted_calls, kind impl), and counts
  * as an Opus failure: 3 in a row or 5 in total hand the task over to Codex once (RV0 / RV1) or
  * block it (RV2). A run with a result keeps its round and resets the run of failures. Idempotent
  * per run id: settling the same run again changes nothing.
@@ -442,15 +571,34 @@ export function recordOpusRun(
   if (!prev.opus_runs.some((r) => r.run_id === runId)) {
     const f = prev.opus_failures;
     const failed = outcome !== 'ok';
+    // The run's own `bump-attempt impl` is spent here, so no later call can pair with it.
+    const { bumps, paired } = consumeBump(
+      prev.pending_bumps ?? [],
+      'impl',
+      null,
+      now.getTime(),
+      Number.POSITIVE_INFINITY,
+      `opus:${runId}`,
+      failed ? 'refunded' : 'kept',
+    );
     state = {
       ...prev,
-      attempts: failed
-        ? { ...prev.attempts, impl: Math.max(0, prev.attempts.impl - 1) }
-        : prev.attempts,
+      pending_bumps: bumps,
+      // Only a round that bump-attempt really counted is given back, as in settleCall.
+      attempts:
+        failed && paired
+          ? { ...prev.attempts, impl: Math.max(0, prev.attempts.impl - 1) }
+          : prev.attempts,
       uncounted_calls: failed
         ? [
             ...prev.uncounted_calls,
-            { kind: 'impl', started_at: runId, exit_code: -1, reason: OPUS_UNCOUNTED[outcome] },
+            {
+              kind: 'impl',
+              started_at: runId,
+              exit_code: -1,
+              reason: OPUS_UNCOUNTED[outcome],
+              ...(paired ? {} : { refunded: false as const }),
+            },
           ]
         : prev.uncounted_calls,
       opus_failures: failed
@@ -547,46 +695,81 @@ export function uncountedReason(meta: CallMeta): UncountedCall['reason'] | null 
 export type SettleResult = {
   state: TaskState | null;
   kind: AttemptKind | null;
-  /** True when the call uses up a round (nothing was taken back). */
+  /** True when the call uses up a round by its outcome (it ended with output). */
   counted: boolean;
+  /**
+   * True when the call paired with a pending bump (CT-06zxk): only then was a round counted for
+   * it, and only then can one be given back.
+   */
+  pre_counted: boolean;
   /** True when this invocation changed the state file. */
   changed: boolean;
 };
 
 /**
- * Takes the pre-counted round back when the call ended without output. Idempotent: a call
- * (kind + started_at) is taken back at most once. Without a state file nothing happens.
+ * Settles one finished call (CT-06zxk). It pairs with its pending bump (`consumeBump`): without
+ * output the round is given back, with output it is kept; either way the bump is consumed. A call
+ * that pairs with no bump leaves `attempts` alone; without output it is still recorded in
+ * `uncounted_calls` with `refunded: false`. Idempotent: a call (kind + started_at + engine) is
+ * settled at most once. Without a state file nothing happens.
  */
 export function settleCall(id: string, meta: CallMeta, now: Date = new Date()): SettleResult {
   const kind = callKind(meta);
   const reason = uncountedReason(meta);
+  const counted = reason === null;
+  const engine = meta.engine ?? 'codex';
   const prev = readState(id);
-  if (prev === null) return { state: null, kind, counted: reason === null, changed: false };
-  if (reason === null) return { state: prev, kind, counted: true, changed: false };
-  const seen = prev.uncounted_calls.some(
-    (c) =>
-      c.kind === kind &&
-      c.started_at === meta.started_at &&
-      (c.engine ?? 'codex') === (meta.engine ?? 'codex'),
+  if (prev === null) return { state: null, kind, counted, pre_counted: false, changed: false };
+  const settled = (prev.pending_bumps ?? []).some(
+    (b) =>
+      b.kind === kind &&
+      b.engine === engine &&
+      b.consumed_by === meta.started_at &&
+      (b.outcome === 'refunded' || b.outcome === 'kept'),
   );
-  if (seen) return { state: prev, kind, counted: false, changed: false };
+  const recorded = prev.uncounted_calls.find(
+    (c) => c.kind === kind && c.started_at === meta.started_at && (c.engine ?? 'codex') === engine,
+  );
+  if (settled || recorded !== undefined) {
+    // An entry of an older file without `refunded` was given back, so it was counted.
+    const preCounted = settled || (recorded !== undefined && recorded.refunded !== false);
+    return { state: prev, kind, counted, pre_counted: preCounted, changed: false };
+  }
+  const { bumps, paired } = consumeBump(
+    prev.pending_bumps ?? [],
+    kind,
+    engine,
+    Date.parse(meta.started_at),
+    BUMP_MATCH_WINDOW_MS,
+    meta.started_at,
+    counted ? 'kept' : 'refunded',
+  );
+  if (!paired && counted) return { state: prev, kind, counted, pre_counted: false, changed: false };
   const next: TaskState = {
     ...prev,
-    attempts: { ...prev.attempts, [kind]: Math.max(0, prev.attempts[kind] - 1) },
-    uncounted_calls: [
-      ...prev.uncounted_calls,
-      {
-        kind,
-        ...(meta.engine === 'claude-independent' ? { engine: meta.engine } : {}),
-        started_at: meta.started_at,
-        exit_code: meta.exit_code,
-        reason,
-      },
-    ],
+    attempts:
+      paired && !counted
+        ? { ...prev.attempts, [kind]: Math.max(0, prev.attempts[kind] - 1) }
+        : prev.attempts,
+    uncounted_calls:
+      reason === null
+        ? prev.uncounted_calls
+        : [
+            ...prev.uncounted_calls,
+            {
+              kind,
+              ...(engine === 'claude-independent' ? { engine } : {}),
+              started_at: meta.started_at,
+              exit_code: meta.exit_code,
+              reason,
+              ...(paired ? {} : { refunded: false as const }),
+            },
+          ],
+    pending_bumps: bumps,
     updated_at: now.toISOString(),
   };
   writeState(next);
-  return { state: next, kind, counted: false, changed: true };
+  return { state: next, kind, counted, pre_counted: paired, changed: true };
 }
 
 /** Finished call metas of a run directory: meta.<mode>.json and attempts/<n>/meta.json. */
@@ -909,6 +1092,7 @@ function main(argv: string[]): number {
         task: id,
         kind: res.kind,
         counted: res.counted,
+        pre_counted: res.pre_counted,
         changed: res.changed,
         attempts: res.state?.attempts ?? null,
       }),

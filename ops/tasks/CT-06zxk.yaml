@@ -1,0 +1,23 @@
+id: CT-06zxk
+repo: rebate-platform
+title: CT-06zxk：轮次计数修正（FU-OPS-COUNTER）——state.ts settle 只退还确实被 bump-attempt 预计数的那一轮；bump-attempt 被拒后误起、或编排例外轮不计次而起的调用，无产出结束时 settle 不得改计数
+type: guard-change
+# 2026-10-29 入账（ops 线，HANDOFF 10-29 18:0x 编排：FU-OPS-COUNTER；D10-418 发现）。起因：B2-13a 的 bump-attempt 已被上限拒绝，随后误起的 claude-run 被中止（exit 10 无产出），
+# settle 仍把 test 计数从 3 退回 2（settleCall 只看「无产出」就减一，不核这次调用是否被计过数）；同样情形也出现在编排例外轮（D10-404 / D10-416 / D10-417，不 bump 直接运行）。
+# 做法：bump-attempt 记一条待结算（kind、bumped_at、engine），settle 按 kind / engine 与 started_at 匹配并消耗它；匹配到且无产出才退还，匹配不到（未预计数）只记 uncounted_calls、不改 attempts；
+# 有产出的调用也消耗匹配的待结算。旧状态文件经 migrate 兼容（无待结算字段时按「不退还」处理，宁可多计）。只收紧计数、不放宽上限；合并前按 #24 加标签。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ops/state.ts'
+  - 'tools/ops/state.test.ts'
+  - 'tools/README.md'
+  - 'tools/ops/README.md'
+  - 'ops/tasks/CT-06zxk.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
