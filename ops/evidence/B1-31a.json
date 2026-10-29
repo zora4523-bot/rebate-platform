@@ -1,0 +1,46 @@
+{
+  "risk_note": "Dependency-only change (apps/api/package.json dependencies, pnpm-lock.yaml; class-2 protected path, owner label needed). It is the prerequisite of B1-31 tracing. Ten OpenTelemetry packages are exact-pinned from one self-consistent 3.0 / 0.300 generation, all published 2026-10-20 (at least 7 days before install, ADR-0001 §2) and all Apache-2.0: api 1.10.0, sdk-trace 3.0.0, context-async-hooks 3.0.0, resources 3.0.0, semantic-conventions 1.43.0 (1.44.0 of 10-28 is under 7 days), exporter-trace-otlp-http 0.300.0, instrumentation 0.300.0, instrumentation-http 0.300.0, instrumentation-pg 0.77.0 and instrumentation-undici 0.34.0. New transitive packages are the OpenTelemetry core, otlp-transformer, otlp-exporter-base, sdk-logs, sdk-metrics and sql-common (10-20), plus 8 others: @types/pg-pool 2.0.7, @types/pg 8.15.6, cjs-module-lexer 2.3.0, es-module-lexer 3.0.4, forwarded-parse 2.1.2, import-in-the-middle 3.5.2, module-details-from-path 1.0.4 and require-in-the-middle 8.0.1. They are MIT / Apache-2.0, have no preinstall / install / postinstall script, and are all older than 7 days. Side effect: vitest's optional peer @opentelemetry/api moves from 1.9.1 to 1.10.0. pnpm-workspace.yaml minimumReleaseAge 10080 is in force. Installed with pnpm --filter @couli/api add -E (pnpm 10.33.1). No code, scripts or other manifest change. verify:fast in the test-machine container exit 0; the full verify was not run for a dependency-only change, and CI verify-int is the check (D10-319).",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "review_type": "money",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "note": "Codex out of quota until 2026-11-02 (approvals #36). Adversarial dependency review r1 pass, no findings: exact versions and peer ranges, licenses, install scripts and transitive entries checked; scripts unchanged; no source change."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 0,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "deps task, tester none (ledger B1-31a, as precedent F1-06t): no rule tests"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "B1-31a",
+  "spec_commit": "ad6dafaee520573614aca9cb00330bccce80c5c6",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "red_tests": [],
+  "runs": [],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "8f3833d874a9d07db4e990b704704ece65152595",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}
