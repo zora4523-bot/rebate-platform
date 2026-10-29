@@ -1,0 +1,26 @@
+id: B2-02p
+repo: rebate-platform
+title: ledger 日终校验执行段（BR-FUND-19 R3）：把运行器的处置建议真正执行——每条差异登记 ledger_mismatch 差错单（source R3，经 registerReconDiffOnce），非 pay- 差异经注入的 payout 端口为涉及用户各加 1 条 withdraw_holds（reason ledger_mismatch、source_ref = recon_diff:<差错单 id>，与差错单同事务），全局差异（②③④⑤⑨ 等 scope=global）经注入的 content 端口把该 app 的 settle.auto.enabled 置 off 并在提交后告警
+type: impl
+# 2026-10-30 编排派工（HANDOFF 10-30 00:4x ①、FU-HOLD-SRC）：funds 线入账。只改 ledger 模块；排程（01:00 跑 D−1）与 app.module 装配另见 B2-02q。RV2，独立 Claude 写测试与 money 评审（Codex 至 11-02 不可用，approvals #36）。
+# 端口照 B2-09b ReconDiffHoldRelease 先例由 ledger 声明、装配注入（ledger 不得 import payout / content：payout → ledger 已有依赖，反向成环）：
+#   holds：add(trx, { appId, userId, reason: 'ledger_mismatch', sourceRef: 'recon_diff:<id>', createdBy: 'system' })（payout 锁 users 行，锁序同 B2-09b：先差错单行、后用户行）；
+#   autoSettlement：turnOff(trx, { appId, source, reason }) + alertCommitted（content SystemSwitchWriter 形状，F1-02zk）。
+# 差错单取值（报编排回写 04 recon_diffs.ref_type）：type ledger_mismatch、source R3、period = 被校验的会计日 D（YYYY-MM-DD）；ref_type 按差异指向的实体：账户级 → 'ledger_account'（ref_id 部分取 ledger_accounts.id），②凭证不平 → 'voucher'（凭证 id），以子订单为键的（③④⑤⑧⑨）→ 'order'（order_key，同 settlement 扣回已用的 'order'）；为满足业务唯一 (app_id, type, period, ref_id)，ref_id = '<invariant>:<实体 id>'（同一实体同日不同不变量各一张）；dedupe_key = 'R3:<D>:<invariant>:<实体 id>'；detail 里有成对金额（缓存 / 分录合计等）时写 expected / actual / diff，否则 0 / 0 / 0，detail 原样放 resolution 供后台核对（不含个人信息以外的字段照 SQL 输出）。
+# 涉及用户：账户级取该 USER_BALANCE 账户的 owner；全局差异按各不变量 detail / 分录解析到受益人或凭证上的用户账户 owner（解析不到用户的只登记差错单并告警，不臆造冻结）。同一差错单对同一用户只加 1 条：差错单首次插入的同一事务里加冻结，重跑同日（ON CONFLICT 未插入）不再加。
+# pay- 前缀不变量（收款，D10-358 ②）：只登记差错单、不冻结、不关开关（B2-02o 建议口径不变）。差异按 app 分组，关开关每 app 一次。
+refs: [BR-FUND-19, BR-WDR-05]
+refs_hash:
+  BR-FUND-19: e6205ee4fcc1
+  BR-WDR-05: 99e2e2654ce0
+deps: [B2-02o, B2-09b]
+paths:
+  - 'apps/api/src/modules/ledger/**'
+test_paths:
+  - 'test/spec/ledger/daily-check-execute/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/daily-check-execute/**'
+status: todo
