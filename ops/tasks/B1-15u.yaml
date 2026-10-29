@@ -1,0 +1,36 @@
+id: B1-15u
+repo: rebate-platform
+title: 分享中间页 GET /v1/share-pages/{link_id} 与取口令 POST /v1/share-pages/{link_id}/tpwd（BR-ATTR-10 细则「分享页与分享赚入口页」、BR-ATTR-05 细则；契约 CT-15f / CT-02h，planned → 实现）：只答 pid_scene=share 的 link（其他、未知、别的 app → 30144）；卡片为共享子集（无 rebate_*、est_net_price_fen）、quoted_at、jump_url（分享者转链短链，任何环境都不含口令）、open_in_app_url（share.open_in_app.enabled 关时 null）；分享者授权失效（淘宝绑定非 active、拼多多备案失效，京东不判）→ 30102 / 30111、data.reason=sharer_auth_invalid、无 auth_url / state / auth_jump，站长授权中断时同样如此；tpwd_ticket 只在 UA 判为非微信且 link 有口令时下发，否则 null（无 UA 按微信）；取口令：票据绑定 link_id、600 秒有效、最多换 3 次，UA 为微信或缺失、票据无效 / 过期 / 用尽 → 20001 data.fields=[ticket]；按 IP × link_id 限频（share.tpwd_rate_per_min，缺省 5）→ 42901 带 Retry-After；两个响应都 Cache-Control 为 no-store；不签名、不要 X-Device-Id
+type: impl
+# 2026-10-29 be 入账（编排 D10-421：分享中间页给 be，排在 B2-04zc 之后）。放 linking 模块，照链接落地页 B1-06j（link-landing.ts / landing.controller.ts）：卡片走同一只读卡片端口，不登记、不转链、不写 link_log。
+# 口令票据按 D10-421 存 Redis（现有 RedisHandle / RedisNamespace，键带 app 前缀，TTL 600 s，领取次数原子自增、>3 拒绝），不加新表与迁移。
+# share.tpwd_rate_per_min 照短信风控 sms.*（risk/application/sms-risk.ts）的先例：限频阈值属风控参数，种子按 2026-10-04 编排口径不收（db/seeds/0001 头注 D-7），代码带缺省值 5（BR-ATTR-10 细则）经 configValue 读、读不到或越界用缺省；不登记 config-registry，不需要前置 test-change（编排 2026-10-29 22:55 同意，修正 D10-421「先登记」半句；若要后台可改，再另开 test-change 登记 config.risk）。
+# 开工前在 notices 占契约槽；契约去 planned 时同列 planned-operations.gen.ts（CT-06zxd）。
+refs: [BR-ATTR-10, BR-ATTR-05]
+refs_hash:
+  BR-ATTR-10: 310f8ddda3b0
+  BR-ATTR-05: e2864d6024ae
+deps: [B1-06j, CT-15f, CT-02h, B2-04zc]
+paths:
+  - 'apps/api/src/modules/linking/application/share-page*.ts'
+  - 'apps/api/src/modules/linking/infra/share-page*.ts'
+  - 'apps/api/src/modules/linking/http/public/share-page*.ts'
+  - 'apps/api/src/modules/linking/linking.module.ts'
+  - 'apps/api/src/modules/linking/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/linking/share-page/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/share-page/**'
+status: todo
+pr: null
