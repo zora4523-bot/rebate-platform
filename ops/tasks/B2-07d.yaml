@@ -3,10 +3,11 @@ repo: rebate-platform
 title: 开启前置检查的「连续跑通天数」真实端口：ReconPassedDaysPort 按 payout_recon_runs 从昨日往回数连续 succeeded 的天数（发现差错不打断，partial / failed 或缺天打断，D10-408），替换 D10-392 的缺省 0 并接入 app.module
 type: impl
 # 2026-10-29 入账（ops 线，D10-408）。BR-WDR-30 开启前置检查（B2-11d）里 recon_required_days 对比的就是这个天数。
-refs: [BR-WDR-30, BR-WDR-23]
-refs_hash:
-  BR-WDR-30: ec74379ec48c
-  BR-WDR-23: 98981fee10c7
+# 2026-10-29 台账瘦身（编排，照 #1748 B2-15k 先例）：带 refs 时任务书约 41 KB > 24 KB，B2-07a / b / c 标 done 后本任务成主干第一个 todo，
+# tools/ops/brief.test.ts 会让 verify-unit 变红，故 refs 改空；派工任务书须加 §2b 逐字摘 BR-WDR-30（开启前置检查行）与 BR-WDR-23（原 refs_hash：
+# BR-WDR-30 ec74379ec48c、BR-WDR-23 98981fee10c7，派工时按当时 SPEC_REF 核对），评审仍按这两条对照。
+refs: []
+refs_hash: {}
 deps: [B2-07c, B2-11d]
 paths:
   - 'apps/api/src/modules/payout/application/auto-config.ts'
