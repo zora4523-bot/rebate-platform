@@ -934,16 +934,18 @@ export interface paths {
          *     `channels`, with or without `mix`; the order inside a channel is kept and no commission or
          *     rebate weight is added. Items in a blocked category, with an abnormal price or with
          *     rebate_basis=no_rebate are not sent (BR-PRICE-08). When filtering leaves fewer than a page,
-         *     at most one more upstream page is fetched to top it up, and what is left is returned as it
-         *     is. `has_more` is what upstream reports and `cursor` records the upstream page, never a
-         *     filtered offset (BR-PRICE-08). `ad_label` is null on every card.
+         *     at most one more round of upstream pages is fetched per request to top it up, and what is
+         *     left is returned as it is. `has_more` is true while any channel still reports more or
+         *     one channel failed while another answered, and `cursor` records each channel's upstream
+         *     page, never a filtered offset (BR-PRICE-08); that failed channel keeps its page and is
+         *     tried again on the next request. `ad_label` is null on every card.
          *
          *     A union failure of one channel only drops that channel from this page. Failure of every
          *     channel, no data from any channel and a refused data source all answer 200 with
-         *     `items: []`, `next_cursor: null` and `has_more: false`, never 50304. An empty first page
-         *     with `next_cursor: null` hides the card (03 §6.2). A later page ends the list only when
-         *     `next_cursor` is null, and keeps the cards already shown; `items: []` with a cursor means
-         *     fetch on. Page size is the server constant 20 (no limit parameter, as getHotRank).
+         *     `items: []`, `next_cursor: null` and `has_more: false`, never 50304. When a list ends with
+         *     no card shown at all, the client hides the card (03 §6.2). A later page ends the list only
+         *     when `next_cursor` is null and keeps the cards already shown; `items: []` with a cursor
+         *     means fetch on. Page size is the server constant 20 (no limit parameter, as getHotRank).
          *     `cursor` is opaque: the client sends `next_cursor` back unchanged.
          */
         get: operations["listPageSectionItems"];
