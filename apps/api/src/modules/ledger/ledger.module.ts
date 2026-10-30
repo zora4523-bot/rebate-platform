@@ -18,6 +18,10 @@ import type {
 import { BalanceRecoveredHook, createLedger } from './application/recovered-ledger.ts';
 import type { Ledger } from './application/reverse.ts';
 import {
+  ASSET_SNAPSHOT_READ_DB,
+  AdminAssetSnapshotsController,
+} from './http/admin/asset-snapshots.controller.ts';
+import {
   AdminReconDiffCloseController,
   RECON_DIFF_CLOSE_DEPS,
 } from './http/admin/recon-diff-close.controller.ts';
@@ -78,17 +82,27 @@ export interface LedgerAdminOptions {
  * B2-09a: the admin entry's R1–R3 recon diff reads (GET /admin/v1/recon-diffs and its detail),
  * guarded through platform's AdminOperationGuard and read on the primary handle. B2-09b: the close
  * (POST /admin/v1/recon-diffs/{recon_diff_id}/close, fund.recon) under platform idempotency, with
- * payout's hold release and admin's audit writer on the closing transaction. Without the database
+ * payout's hold release and admin's audit writer on the closing transaction. B2-09e: the daily
+ * asset snapshot list (GET /admin/v1/asset-snapshots, fund.view, read only). Without the database
  * the routes still register and fail closed (50001).
  */
 export class LedgerAdminModule {
   static forAdmin(options: LedgerAdminOptions): DynamicModule {
     return {
       module: LedgerAdminModule,
-      controllers: [AdminReconDiffsController, AdminReconDiffCloseController],
+      controllers: [
+        AdminReconDiffsController,
+        AdminReconDiffCloseController,
+        AdminAssetSnapshotsController,
+      ],
       providers: [
         {
           provide: RECON_DIFF_READ_DB,
+          inject: [{ token: DB, optional: true }],
+          useFactory: (db?: Kysely<Database>): Kysely<Database> | null => db ?? null,
+        },
+        {
+          provide: ASSET_SNAPSHOT_READ_DB,
           inject: [{ token: DB, optional: true }],
           useFactory: (db?: Kysely<Database>): Kysely<Database> | null => db ?? null,
         },
