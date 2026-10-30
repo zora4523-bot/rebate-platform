@@ -10,7 +10,7 @@ refs: [BR-PAY-05, BR-PAY-06]
 refs_hash:
   BR-PAY-05: cc6a654d316e
   BR-PAY-06: 102e1fb8839f
-deps: [CT-21e, B2-15e, B2-15f, F1-13a]
+deps: [CT-21e, B2-15e, B2-15f, F1-13a, F1-13ba]
 paths:
   - 'apps/admin/src/pages/pay-orders/**'
   - 'apps/admin/src/texts/pay-orders.ts'
