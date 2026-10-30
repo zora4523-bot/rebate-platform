@@ -229,6 +229,8 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
     { name: 'payout-review', ...DEFAULT, policy: 'exclusive', deadLetter: 'payout-review.dead' },
     // B2-07c（D10-408）：worker 的 R2 打款通道日对账队列，exclusive（按 (app, channel, 账单日) 键去重），紧跟 payout-review。
     { name: 'payout-recon', ...DEFAULT, policy: 'exclusive', deadLetter: 'payout-recon.dead' },
+    // B2-02q（D10-415 ①）：worker 的 ledger 日终校验队列，exclusive（按 `daily:<app_id>:<D>` 去重），紧跟 payout-recon。
+    { name: 'ledger-check', ...DEFAULT, policy: 'exclusive', deadLetter: 'ledger-check.dead' },
     { name: 'notify', ...DEFAULT, deadLetter: 'notify.dead' },
     {
       name: 'evt.notification-risk-state',
@@ -383,6 +385,8 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
       w('payout-review', 1),
       // B2-07c（D10-408）：R2 日对账只由 worker（couli_app）消费，并发 1，紧跟 payout-review。
       w('payout-recon', 1),
+      // B2-02q（D10-415 ①）：ledger 日终校验只由 worker（couli_app）消费，并发 1，紧跟 payout-recon。
+      w('ledger-check', 1),
       w('notify', 5),
       w('evt.notification-risk-state', 5),
       w('evt.notification-appeal-result', 5),
@@ -410,6 +414,8 @@ it('[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只�
     'payout-review',
     // B2-07c (D10-408): the worker's R2 reconciliation, never the payout entry's.
     'payout-recon',
+    // B2-02q (D10-415 ①): the worker's daily ledger check, never another entry's.
+    'ledger-check',
     'notify',
     'pool-refresh',
     'poster',
@@ -440,6 +446,7 @@ it('[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只�
       'payout-landing',
       'payout-review',
       'payout-recon',
+      'ledger-check',
       'notify',
       'pool-refresh',
       'poster',

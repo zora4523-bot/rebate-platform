@@ -14,8 +14,8 @@ export function w(queue: string, concurrency: number, pollingIntervalSeconds = 2
 }
 
 /**
- * ENTRY_PLAN.worker of the trunk (task brief, 现状), in order: 21 queues, 42 slots together (B2-06f
- * D10-398 ①: payout-review; B2-07c D10-408: payout-recon).
+ * ENTRY_PLAN.worker of the trunk (task brief, 现状), in order: 22 queues, 43 slots together (B2-06f
+ * D10-398 ①: payout-review; B2-07c D10-408: payout-recon; B2-02q D10-415 ①: ledger-check).
  */
 export const TRUNK_WORKER_PLAN: readonly WorkSpec[] = [
   w('order-sync', 1),
@@ -27,6 +27,8 @@ export const TRUNK_WORKER_PLAN: readonly WorkSpec[] = [
   w('payout-review', 1),
   // B2-07c (D10-408): the worker's daily R2 channel reconciliation, right after payout-review.
   w('payout-recon', 1),
+  // B2-02q (D10-415 ①): the worker's daily ledger check (BR-FUND-19), right after payout-recon.
+  w('ledger-check', 1),
   w('notify', 5),
   w('union-auth', 1),
   w('evt.notification-risk-state', 5),
@@ -63,6 +65,7 @@ const TRUNK_BUSINESS_QUEUES = [
   'payout-landing',
   'payout-review',
   'payout-recon',
+  'ledger-check',
   'notify',
   'union-auth',
   'evt.notification-risk-state',
@@ -87,6 +90,7 @@ const TRUNK_EXCLUSIVE: ReadonlySet<string> = new Set([
   'payout-landing',
   'payout-review',
   'payout-recon',
+  'ledger-check',
   'risk-scan',
   'union-auth',
   'pay',
@@ -133,6 +137,7 @@ export const ENV_NAME_OF: Readonly<Record<string, string>> = {
   'payout-landing': 'QUEUE_CONCURRENCY_PAYOUT_LANDING',
   'payout-review': 'QUEUE_CONCURRENCY_PAYOUT_REVIEW',
   'payout-recon': 'QUEUE_CONCURRENCY_PAYOUT_RECON',
+  'ledger-check': 'QUEUE_CONCURRENCY_LEDGER_CHECK',
   notify: 'QUEUE_CONCURRENCY_NOTIFY',
   'union-auth': 'QUEUE_CONCURRENCY_UNION_AUTH',
   'evt.notification-risk-state': 'QUEUE_CONCURRENCY_EVT_NOTIFICATION_RISK_STATE',
