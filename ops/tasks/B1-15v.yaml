@@ -19,5 +19,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/linking/share-materials-schema/**'
-status: todo
-pr: null
+status: done
+pr: 1806
