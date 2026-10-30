@@ -40,11 +40,15 @@ function ticketBody(ticket: unknown): string {
   return JSON.stringify({ ticket });
 }
 
-/** A refusal before the controller; `status` / `code` are pinned where the cause fixes them. */
+/**
+ * A refusal before the controller; `status` / `code` are pinned where the cause fixes them,
+ * `statuses` lists the statuses the contract allows where it leaves the choice to the platform.
+ */
 interface Refusal {
   readonly what: string;
   readonly request: Request;
   readonly status?: number;
+  readonly statuses?: readonly number[];
   readonly code?: number;
 }
 
@@ -167,7 +171,9 @@ const TPWD_REFUSALS: readonly Refusal[] = [
       headers: { 'content-type': 'text/plain' },
       payload: 'synthetic-ticket',
     },
-    status: 415,
+    // A Fastify body error keeps Fastify's status (global-errors.ts); 20001 allows 400 and, as
+    // http_also, 415.
+    statuses: [400, 415],
     code: 20001,
   },
   {
@@ -236,6 +242,9 @@ it('[AC-B1-15y#6] POST /v1/share-pages/{link_id}/tpwd：空票据、超长票据
   for (const refusal of TPWD_REFUSALS) {
     const response = await entry.request(refusal.request);
     await expectNoStoreClientError(response, refusal.what, refusal);
+    if (refusal.statuses !== undefined) {
+      expect(refusal.statuses, refusal.what).toContain(response.statusCode);
+    }
     // Neither the request body nor the ticket is echoed back.
     expect(response.payload, refusal.what).not.toContain('synthetic-ticket');
   }
