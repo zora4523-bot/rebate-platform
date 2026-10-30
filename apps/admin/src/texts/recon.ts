@@ -1,4 +1,4 @@
-// 对账与差错页文案（规格 admin-recon.md，画板 AdmReconDiffsList / AdmReconDiffs；F1-08e）。
+// 对账与差错页文案（规格 admin-recon.md，画板 AdmReconDiffsList / AdmReconDiffs；F1-08e，核销 F1-08eb）。
 // 差错单类型、来源、状态的中文名只从后台字典读（BR-TEXT-25 admin_dict.recon_diff_type.*、
 // admin_dict.recon_diffs.source.*、admin_dict.recon_diff_status.*，contracts/texts.admin.default.json），
 // 缺键显示编码，所以这里不写这些名字。错误措辞按 contracts/error-codes.yaml（BR-TEXT-14）。
@@ -71,6 +71,7 @@ export const reconTexts = {
     resolution: '结案原因',
     closeEntry: '已关闭（不处理）',
     readOnly: '当前账号只读（fund.view），关闭差错单需要 fund.recon。',
+    writeOffEntry: '核销',
   },
   close: {
     title: '关闭差错单（不处理）',
@@ -90,5 +91,37 @@ export const reconTexts = {
     forbidden: '无权限关闭差错单（需要 fund.recon）。',
     missing: '差错单不存在或已不可见，已重新读取列表。',
     failed: '关闭失败，请稍后重试。',
+  },
+  writeOff: {
+    title: '核销差错单（迟到成功）',
+    note: '确认后会凭支付宝账单行把原提现单记为接口打款成功，不会重复打款；同时解除以本差错单为来源的提现冻结。',
+    target: (id: string): string => `差错单号：${id}`,
+    withdrawal: (ref: string): string => `原提现单：${ref}`,
+    label: '备注（选填）',
+    placeholder: '选填，最多 200 字，会记入处理结果与操作日志',
+    submit: '确认核销',
+    cancel: '取消',
+    invalid: '备注去掉首尾空白后最多 200 字',
+    rejected: '备注不符合要求（去掉首尾空白后 1–200 字），请修改后再提交',
+    stepUpOperation: '核销差错单（原提现单记为接口打款成功）',
+    stepUpAgain: '动态码已失效，请重新验证后继续（沿用同一次提交）。',
+    done: (released: number): string =>
+      `差错单已核销，原提现单已记为接口打款成功，已解除 ${released} 笔提现冻结。`,
+    conflictDiff: '该差错单的状态已变化（可能已被他人处理），本次未核销；已重新读取最新状态。',
+    conflictWithdrawal:
+      '原提现单的状态已变化（已不是待打款），本次未核销；已重新读取差错单，请核对后再处理。',
+    changed: '请求内容有变化，请关闭对话框后重新提交。',
+    running: '上一次提交仍在处理中，请稍后刷新查看结果。',
+    network: '网络异常，未确认是否核销成功；可再点【确认核销】重试（沿用同一次提交）。',
+    forbidden: '无权限核销差错单（需要 payout.execute）。',
+    missing: '差错单不存在或已不可见，已重新读取列表。',
+    failed: '核销失败，请稍后重试。',
+    guard: {
+      not_payer_side_case: '不能核销：该差错单不是「付款方侧失败退回、账单显示成功」的情形。',
+      writeoff_disabled: '不能核销：核销功能当前未开启，请联系超管。',
+      withdrawal_not_returned: '不能核销：原提现单没有经付款方侧失败退回（不是待打款的退回单）。',
+      transfer_attempts_mismatch: '不能核销：原提现单的转账次数与账单不一致，请走调账处理。',
+      amount_mismatch: '不能核销：账单金额与原提现单实付金额不一致，请走调账处理。',
+    },
   },
 } as const;
