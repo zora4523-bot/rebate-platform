@@ -177,6 +177,8 @@ export async function scenario(suite: Suite) {
   const snapshotFen = new Map<string, bigint>();
   /** subject → the platform ledger account of this app. */
   const platformAccounts = new Map<string, string>();
+  /** uniq_key of every FORFEIT voucher written in this app. */
+  const bookedForfeits = new Set<string>();
 
   function keyOf(orderId: string): string {
     const key = orderKeys.get(orderId);
@@ -217,6 +219,11 @@ export async function scenario(suite: Suite) {
     at: Date,
   ): Promise<void> {
     const orderKey = keyOf(orderId);
+    const uniqKey = forfeitKey(orderKey, userId, role);
+    // The ledger books one FORFEIT voucher per share (UNIQUE (app_id, uniq_key)): a later
+    // forfeiture of the same share books nothing, the first voucher stands.
+    if (bookedForfeits.has(uniqKey)) return;
+    bookedForfeits.add(uniqKey);
     const voucherId = randomUUID();
     await db
       .insertInto('ledger_vouchers')
@@ -225,7 +232,7 @@ export async function scenario(suite: Suite) {
         app_id: appId,
         biz_type: 'ORDER_CREDIT',
         biz_id: orderKey,
-        uniq_key: forfeitKey(orderKey, userId, role),
+        uniq_key: uniqKey,
         accounting_date: chinaDate(at),
         operator: 'system',
         memo: `forfeit_reason=${reason}`,
