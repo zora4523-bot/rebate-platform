@@ -156,6 +156,12 @@ it('identity codes of 08 §13.11 (功能对照补缺 1–3 批) carry their data
     'notify_channel_locked',
     'notify_preview_vars_mismatch',
     'notify_code_ttl_mismatch',
+    // CT-24za: admin-only W11 write-off guard refusals (BR-WDR-08 W11, BR-WDR-23 ③, BR-WDR-17).
+    'not_payer_side_case',
+    'writeoff_disabled',
+    'withdrawal_not_returned',
+    'transfer_attempts_mismatch',
+    'amount_mismatch',
   ]);
   expect(errorCodes[30701].sources).toEqual(['规划/04 §7', 'BR-ID-10', 'BR-ID-40']);
 });
