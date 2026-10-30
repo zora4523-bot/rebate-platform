@@ -17,5 +17,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/risk/share-rate-limit/**'
-status: todo
-pr: null
+status: done
+pr: 1844
