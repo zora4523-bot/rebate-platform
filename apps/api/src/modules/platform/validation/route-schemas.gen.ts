@@ -2878,11 +2878,13 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "properties": {
         "type": {
           "type": "string",
-          "description": "Agreement type (04 §6.2 agreements.type).",
+          "description": "Agreement type (04 §6.2 agreements.type; 01 §4.2). sdk_list (the SDK list) and collect_list\n(the personal information collection list) are versioned public notices only: published\nlike the others (BR-ID-12) but taking no part in consent (D10-465) — min_version always\nequals version, never in first-launch consent, re-consent or re-signing, and never listed\nby GET /v1/agreements. Consent and signing fields keep their own types without these two.\n",
           "enum": [
             "privacy",
             "agreement",
-            "labor_agreement"
+            "labor_agreement",
+            "sdk_list",
+            "collect_list"
           ]
         }
       },
@@ -12428,11 +12430,13 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "properties": {
         "type": {
           "type": "string",
-          "description": "Agreement type (04 §6.2 agreements.type).",
+          "description": "Agreement type (04 §6.2 agreements.type; 01 §4.2). sdk_list (the SDK list) and collect_list\n(the personal information collection list) are versioned public notices only: published\nlike the others (BR-ID-12) but taking no part in consent (D10-465) — min_version always\nequals version, never in first-launch consent, re-consent or re-signing, and never listed\nby GET /v1/agreements. Consent and signing fields keep their own types without these two.\n",
           "enum": [
             "privacy",
             "agreement",
-            "labor_agreement"
+            "labor_agreement",
+            "sdk_list",
+            "collect_list"
           ]
         },
         "page": {
@@ -12477,11 +12481,13 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "properties": {
         "type": {
           "type": "string",
-          "description": "Agreement type (04 §6.2 agreements.type).",
+          "description": "Agreement type (04 §6.2 agreements.type; 01 §4.2). sdk_list (the SDK list) and collect_list\n(the personal information collection list) are versioned public notices only: published\nlike the others (BR-ID-12) but taking no part in consent (D10-465) — min_version always\nequals version, never in first-launch consent, re-consent or re-signing, and never listed\nby GET /v1/agreements. Consent and signing fields keep their own types without these two.\n",
           "enum": [
             "privacy",
             "agreement",
-            "labor_agreement"
+            "labor_agreement",
+            "sdk_list",
+            "collect_list"
           ]
         }
       },
@@ -12519,7 +12525,7 @@ export const CONTRACT_ROUTE_SCHEMAS = {
           "type": "integer",
           "format": "int32",
           "minimum": 1,
-          "description": "Where re-consent or re-signing starts; not below the current version's, not above the new version."
+          "description": "Where re-consent or re-signing starts; not below the current version's, not above the new version; for sdk_list and collect_list exactly the new version (D10-465)."
         },
         "requires_resign": {
           "type": "boolean",
@@ -12570,11 +12576,13 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "properties": {
         "type": {
           "type": "string",
-          "description": "Agreement type (04 §6.2 agreements.type).",
+          "description": "Agreement type (04 §6.2 agreements.type; 01 §4.2). sdk_list (the SDK list) and collect_list\n(the personal information collection list) are versioned public notices only: published\nlike the others (BR-ID-12) but taking no part in consent (D10-465) — min_version always\nequals version, never in first-launch consent, re-consent or re-signing, and never listed\nby GET /v1/agreements. Consent and signing fields keep their own types without these two.\n",
           "enum": [
             "privacy",
             "agreement",
-            "labor_agreement"
+            "labor_agreement",
+            "sdk_list",
+            "collect_list"
           ]
         },
         "version": {

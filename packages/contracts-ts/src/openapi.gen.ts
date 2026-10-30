@@ -723,7 +723,9 @@ export interface paths {
          *     /v1/articles/{article_id}?version=), the lower-case hex sha256 of that text, the address of
          *     the full text and when it was published. A type never published is null. The labor
          *     agreement is not listed here; it is read with GET /v1/me/labor-agreement (BR-WDR-31) or,
-         *     anonymously and by version, with GET /v1/agreements/{type}.
+         *     anonymously and by version, with GET /v1/agreements/{type}. The SDK list (sdk_list) and the
+         *     personal information collection list (collect_list) are never listed here either: they are
+         *     public notices outside consent (01 §4.2, D10-465), read with GET /v1/agreements/{type}.
          *     Readable anonymously in basic mode, without a device id (BR-ID-11 细则).
          */
         get: operations["getAgreements"];
@@ -744,15 +746,20 @@ export interface paths {
         };
         /**
          * One version of an agreement
-         * @description Metadata of one version of the privacy policy, the user agreement or the labor agreement
-         *     (04 §6.2 agreements): without version the current version of that type (the same "current"
+         * @description Metadata of one version of the privacy policy, the user agreement, the labor agreement, the
+         *     SDK list (sdk_list) or the personal information collection list (collect_list) (04 §6.2
+         *     agreements; 01 §4.2): without version the current version of that type (the same "current"
          *     as GET /v1/agreements: the highest published version of the type for the app), with version
          *     that version. A type never published, or a version that does not exist → 30701. The text is
-         *     read with GET /v1/articles/{article_id}?version={article_version}. All three types,
-         *     including the labor agreement and earlier versions, are public text and readable
-         *     anonymously, without a device id (BR-ID-11 细则); signing the labor agreement stays in the
-         *     native app and need_sign stays on GET /v1/me/labor-agreement (BR-WDR-31). Re-consent is not
-         *     decided here (no requires_resign). Not cached across requests.
+         *     read with GET /v1/articles/{article_id}?version={article_version}. sdk_list and
+         *     collect_list are versioned public notices that take no part in consent (D10-465): their
+         *     min_version always equals version, they are not part of first-launch consent or
+         *     re-consent, and while one has never been published it is 30701 (the client shows a
+         *     placeholder). All five types, including the labor agreement and earlier versions, are
+         *     public text and readable anonymously, without a device id (BR-ID-11 细则); signing the
+         *     labor agreement stays in the native app and need_sign stays on GET /v1/me/labor-agreement
+         *     (BR-WDR-31). Re-consent is not decided here (no requires_resign). Not cached across
+         *     requests.
          */
         get: operations["getAgreementVersion"];
         put?: never;
@@ -6055,7 +6062,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Published versions of the privacy policy, user agreement and labor agreement
+         * Published versions of the agreements and public notices
          * @description Permission point `content.agreement` (04 §11.2; read only, no step-up). Every published
          *     version, newest first (by published_at), page by page (`page`, `page_size` ≤ 200),
          *     optionally of one `type`; without the text (read one version for its title and body).
@@ -6087,7 +6094,9 @@ export interface paths {
          *     The version number is the type's current newest version + 1 (1 for the first), set by the
          *     server. `title` and `body` (tiptap JSON as a string, nodes and marks within the agreement
          *     body whitelist) are the text; `min_version` is where re-consent (privacy, agreement,
-         *     BR-ID-12) or re-signing (labor_agreement, BR-WDR-31) starts; `legal_confirmed_by`,
+         *     BR-ID-12) or re-signing (labor_agreement, BR-WDR-31) starts; sdk_list and collect_list
+         *     take no part in consent (D10-465), so their min_version must equal the new version and
+         *     requires_resign must be false; `legal_confirmed_by`,
          *     `legal_confirm_note` and `legal_confirmed_on` record the legal confirmation (OPS-14,
          *     BR-ID-12). A failed check is 20001 with `data.fields` naming the field: min_version below
          *     the current version's min_version or above the new version, requires_resign not as the
@@ -10185,10 +10194,14 @@ export interface components {
             agreed: boolean;
         };
         /**
-         * @description Agreement type (04 §6.2 agreements.type).
+         * @description Agreement type (04 §6.2 agreements.type; 01 §4.2). sdk_list (the SDK list) and collect_list
+         *     (the personal information collection list) are versioned public notices only: published
+         *     like the others (BR-ID-12) but taking no part in consent (D10-465) — min_version always
+         *     equals version, never in first-launch consent, re-consent or re-signing, and never listed
+         *     by GET /v1/agreements. Consent and signing fields keep their own types without these two.
          * @enum {string}
          */
-        AgreementType: "privacy" | "agreement" | "labor_agreement";
+        AgreementType: "privacy" | "agreement" | "labor_agreement" | "sdk_list" | "collect_list";
         /** @description The currently effective version of the privacy policy or the user agreement (04 §6.2). */
         PublicAgreement: {
             /** @enum {string} */
@@ -10231,7 +10244,7 @@ export interface components {
             data: components["schemas"]["AgreementsData"];
             trace_id: components["schemas"]["TraceId"];
         };
-        /** @description One version of the privacy policy, the user agreement or the labor agreement (04 §6.2). */
+        /** @description One version of an agreement or public notice (04 §6.2; types in AgreementType). */
         PublicAgreementVersion: {
             type: components["schemas"]["AgreementType"];
             /**
@@ -10241,7 +10254,7 @@ export interface components {
             version: number;
             /**
              * Format: int32
-             * @description Consent to a version below this one must be given again (BR-ID-12), as recorded on this version.
+             * @description Consent to a version below this one must be given again (BR-ID-12), as recorded on this version; always equals version for sdk_list and collect_list (D10-465).
              */
             min_version: number;
             article_id: components["schemas"]["Id"];
@@ -13086,7 +13099,7 @@ export interface components {
             version: number;
             /**
              * Format: int32
-             * @description Where re-consent (privacy, agreement, BR-ID-12) or re-signing (labor_agreement, BR-WDR-31) starts.
+             * @description Where re-consent (privacy, agreement, BR-ID-12) or re-signing (labor_agreement, BR-WDR-31) starts; equals version for sdk_list and collect_list (D10-465).
              */
             min_version: number;
             /** @description Whether this version is marked as requiring a new signature (04 §6.2). */
@@ -13119,7 +13132,7 @@ export interface components {
             version: number;
             /**
              * Format: int32
-             * @description Where re-consent (privacy, agreement, BR-ID-12) or re-signing (labor_agreement, BR-WDR-31) starts.
+             * @description Where re-consent (privacy, agreement, BR-ID-12) or re-signing (labor_agreement, BR-WDR-31) starts; equals version for sdk_list and collect_list (D10-465).
              */
             min_version: number;
             /** @description Whether this version is marked as requiring a new signature (04 §6.2). */
@@ -13182,7 +13195,7 @@ export interface components {
             body: string;
             /**
              * Format: int32
-             * @description Where re-consent or re-signing starts; not below the current version's, not above the new version.
+             * @description Where re-consent or re-signing starts; not below the current version's, not above the new version; for sdk_list and collect_list exactly the new version (D10-465).
              */
             min_version: number;
             /** @description Whether the new version requires a new signature; must agree with the publish rules for the type and min_version. */
@@ -17753,7 +17766,7 @@ export interface components {
         PlatformIconKeyPath: components["schemas"]["PlatformIconKey"];
         /** @description Version of the mark, counted per mark from 1; unknown → 20001 with data.fields=[version]. */
         PlatformIconVersionPath: number;
-        /** @description Agreement type (privacy, agreement or labor_agreement); another value → 20001 with data.fields=[type]. */
+        /** @description Agreement type (privacy, agreement, labor_agreement, sdk_list or collect_list); another value → 20001 with data.fields=[type]. */
         AgreementTypePath: components["schemas"]["AgreementType"];
         /** @description Version of the agreement, counted per type from 1. */
         AgreementVersionPath: number;
@@ -19668,7 +19681,7 @@ export interface operations {
                 "X-Trace-Id"?: components["parameters"]["TraceId"];
             };
             path: {
-                /** @description Agreement type (privacy, agreement or labor_agreement); another value → 20001 with data.fields=[type]. */
+                /** @description Agreement type (privacy, agreement, labor_agreement, sdk_list or collect_list); another value → 20001 with data.fields=[type]. */
                 type: components["parameters"]["AgreementTypePath"];
             };
             cookie?: never;
@@ -31056,7 +31069,7 @@ export interface operations {
     adminListAgreements: {
         parameters: {
             query?: {
-                /** @description Only versions of this type; absent = all three types. */
+                /** @description Only versions of this type; absent = all five types (including sdk_list and collect_list). */
                 type?: components["schemas"]["AgreementType"];
                 /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
                 page?: components["parameters"]["AdminPage"];
@@ -31139,7 +31152,7 @@ export interface operations {
                 "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
             };
             path: {
-                /** @description Agreement type (privacy, agreement or labor_agreement); another value → 20001 with data.fields=[type]. */
+                /** @description Agreement type (privacy, agreement, labor_agreement, sdk_list or collect_list); another value → 20001 with data.fields=[type]. */
                 type: components["parameters"]["AgreementTypePath"];
             };
             cookie?: never;
@@ -31215,7 +31228,7 @@ export interface operations {
                 "X-Trace-Id"?: components["parameters"]["TraceId"];
             };
             path: {
-                /** @description Agreement type (privacy, agreement or labor_agreement); another value → 20001 with data.fields=[type]. */
+                /** @description Agreement type (privacy, agreement, labor_agreement, sdk_list or collect_list); another value → 20001 with data.fields=[type]. */
                 type: components["parameters"]["AgreementTypePath"];
                 /** @description Version of the agreement, counted per type from 1. */
                 version: components["parameters"]["AgreementVersionPath"];
