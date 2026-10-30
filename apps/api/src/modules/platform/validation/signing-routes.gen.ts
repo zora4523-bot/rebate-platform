@@ -1168,6 +1168,21 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/settle-bills",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/settle-bills/:bill_id",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/settle-batches/:batch_id/items",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "signed": false
   },

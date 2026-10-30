@@ -2355,6 +2355,36 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "listAdminSettleBills",
+    "method": "GET",
+    "path": "/admin/v1/settle-bills",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "getAdminSettleBill",
+    "method": "GET",
+    "path": "/admin/v1/settle-bills/:bill_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "listAdminSettleBatchItems",
+    "method": "GET",
+    "path": "/admin/v1/settle-batches/:batch_id/items",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListKillSwitches",
     "method": "GET",
     "path": "/admin/v1/kill-switches",

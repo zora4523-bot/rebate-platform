@@ -1,6 +1,6 @@
 # 后台权限点（规划/04 §2.5 admin_permission、§11）。超管拥有全部权限点；其他后台账号按权限点逐项勾选。
 # 「后台账号与权限」只限超管、不可授予，不是权限点，不列入。specs/permissions.yaml（B1-18）另记 step-up 与守卫。
-# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）；风控规则清单的规则状态 risk_rule_status 与命中动作 risk_action（CT-24f）；站长联盟账号与推广位 union_auth_status、union_reauth_mode、admin_union_auth_session_status、union_pid_status（CT-24h）；后台通知渠道与短信登记的渠道 notify_channel、短信模板类型 sms_template_type、短信状态 notify_sms_state 与待测试登记的测试结果 notify_sms_test_status（CT-24t）；后台提现单的展示状态 admin_withdrawal_display_status（CT-24y）。
+# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）；风控规则清单的规则状态 risk_rule_status 与命中动作 risk_action（CT-24f）；站长联盟账号与推广位 union_auth_status、union_reauth_mode、admin_union_auth_session_status、union_pid_status（CT-24h）；后台通知渠道与短信登记的渠道 notify_channel、短信模板类型 sms_template_type、短信状态 notify_sms_state 与待测试登记的测试结果 notify_sms_test_status（CT-24t）；后台提现单的展示状态 admin_withdrawal_display_status（CT-24y）；后台月结账单的派生状态 admin_settle_bill_status（CT-24z）。
 enums:
   admin_permission:
     source: 规划/04 §11（拍板第二批 §8 ADD-04、ADD-05）
@@ -234,3 +234,12 @@ enums:
       paid_auto_review: 自动成功 · 审核自动（PAID_API 且 review_mode 不是 auto）
       paying: 打款中（PAYING，含 needs_manual=true）
       failed: 提现失败（FAILED）
+  admin_settle_bill_status:
+    source: 规划/08 BR-FUND-04 细则「月结账单状态」；规划/04 §2.5（月结账单状态由批次派生、不入库）；规划/01 F-ADM-08；design/specs/admin-settle-bills.md §1、§4（CT-24z）
+    description: GET /admin/v1/settle-bills 列表项与详情的 status 及同名筛选；读时由账单最近一轮批次（首轮 = 该账单全部 kind=main 批次；每次补充发起一轮 = kind=supplement 且 (platform, created_at) 相同的批次；轮时刻取其批次 created_at 最大值，最近一轮 = 轮时刻最大者，并列取含最大 batch_id 的轮；驳回的 CANCELLED 不参与）派生、不另存状态（settle_bills 无状态列）；按下列顺序取第一条成立的；中文名取 BR-TEXT-25 admin_dict
+    values:
+      generating: 出账中（generated_at 为空：账单日任务校验与批次尚未全部生成）
+      issued: 已出账（已生成，最近一轮无非 CANCELLED 批次——无候选、平台 credit.enabled 为 off 只留校验结果或本轮全被驳回——或本轮有 DRAFT 批次）
+      settled: 已结算（本轮批次全部 DONE）
+      settling: 结算中（本轮有 EXECUTING / PARTIAL，或 CONFIRMED 且立即执行或 scheduled_at 已到）
+      scheduled: 待结算（其余：本轮未完成的批次都是 CONFIRMED 且 scheduled_at 未到）

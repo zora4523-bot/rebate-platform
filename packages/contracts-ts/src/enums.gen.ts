@@ -330,6 +330,19 @@ export const admin_withdrawal_display_status = [
 export type AdminWithdrawalDisplayStatus = (typeof admin_withdrawal_display_status)[number];
 
 /**
+ * GET /admin/v1/settle-bills 列表项与详情的 status 及同名筛选；读时由账单最近一轮批次（首轮 = 该账单全部 kind=main 批次；每次补充发起一轮 = kind=supplement 且 (platform, created_at) 相同的批次；轮时刻取其批次 created_at 最大值，最近一轮 = 轮时刻最大者，并列取含最大 batch_id 的轮；驳回的 CANCELLED 不参与）派生、不另存状态（settle_bills 无状态列）；按下列顺序取第一条成立的；中文名取 BR-TEXT-25 admin_dict
+ * Source: 规划/08 BR-FUND-04 细则「月结账单状态」；规划/04 §2.5（月结账单状态由批次派生、不入库）；规划/01 F-ADM-08；design/specs/admin-settle-bills.md §1、§4（CT-24z） (contracts/enums/admin.yaml).
+ */
+export const admin_settle_bill_status = [
+  "generating", // 出账中（generated_at 为空：账单日任务校验与批次尚未全部生成）
+  "issued", // 已出账（已生成，最近一轮无非 CANCELLED 批次——无候选、平台 credit.enabled 为 off 只留校验结果或本轮全被驳回——或本轮有 DRAFT 批次）
+  "settled", // 已结算（本轮批次全部 DONE）
+  "settling", // 结算中（本轮有 EXECUTING / PARTIAL，或 CONFIRMED 且立即执行或 scheduled_at 已到）
+  "scheduled", // 待结算（其余：本轮未完成的批次都是 CONFIRMED 且 scheduled_at 未到）
+] as const;
+export type AdminSettleBillStatus = (typeof admin_settle_bill_status)[number];
+
+/**
  * 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
  * Source: 规划/04 §2.4；BR-FUND-15；08 §13.4 (contracts/enums/fund.yaml).
  */
@@ -2033,6 +2046,7 @@ export const enums = {
   notify_sms_state,
   notify_sms_test_status,
   admin_withdrawal_display_status,
+  admin_settle_bill_status,
   ledger_type,
   referral_credit_sub_type,
   clawback_sub_type,
