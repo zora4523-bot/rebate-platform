@@ -32,6 +32,13 @@ export type {
 // B2-04zc: the wallet ledger's order links (order_key → order_id; read only, for ledger's port).
 export { readOrderIdsByKey } from './reads/wallet-ledger.ts';
 export type { OrderIdsByKeyInput } from './reads/wallet-ledger.ts';
+// B2-04la: the attribution ports R3 / R3b for orders (claim approval, admin assignment).
+export { createAttributionRebatePort } from './attribution/attribution.ts';
+export type {
+  AttributionInput,
+  AttributionRebateDependencies,
+  AttributionRebatePort,
+} from './attribution/attribution.ts';
 // B1-01zzi: the worker's fund metrics (failed bill jobs, PARTIAL batches, held shares; read only).
 export { readSettlementFundMetrics } from './application/metrics-read.ts';
 export type { SettlementFundMetrics } from './application/metrics-read.ts';
