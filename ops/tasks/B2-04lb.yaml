@@ -1,0 +1,31 @@
+id: B2-04lb
+repo: rebate-platform
+title: 维权与入账口径收口（D10-463，会多付）：① 入账前部分维权——入账金额按扣减后的有效佣金（BR-CALC-15 联盟更新后佣金重算；未回传新佣金前按维权应扣数保守扣减），反例「结算佣金 1000、维权扣 400 不得按 1000 入账」；② 已有结算记录的入账订单——维权成功经新结算记录 / 调整路径关闭 WAIT_COMMISSION 维权记录；③ 入账前 WAIT_COMMISSION 后联盟回传新佣金——关闭维权记录，订单不长挂
+type: impl
+# 2026-10-31 编排 D10-463：排在 B2-04l 之后、B2-04la 之前（多付比找回处理更急）。来源：B2-04l 规则测试评审 r1 / r2 移出范围的三条（两条 S1 会多付、一条少付长挂）。RV2，独立 Claude 写测试与 money 评审（Codex 至 11-02 不可用，approvals #36）。
+# 口径以 08 为准；08 未写清处（例如「未回传新佣金前保守扣减」的具体取值、多次部分维权的累计口径）由实现方列出报编排，不臆造。状态只经生成的 transition()；金额只经 @couli/money；入账计划若在 packages/domain 内改，须保持纯函数并补属性测试。
+refs: [BR-FUND-06, BR-FUND-07, BR-FUND-08, BR-CALC-15]
+refs_hash:
+  BR-FUND-06: 2076b932478c
+  BR-FUND-07: c5eb4ee32b94
+  BR-FUND-08: 0f044cf6e3f7
+  BR-CALC-15: 84083d5f0e01
+deps: [B2-04l]
+paths:
+  - 'apps/api/src/modules/settlement/rebate/**'
+  - 'apps/api/src/modules/settlement/credit/credit-order.ts'
+  - 'apps/api/src/modules/settlement/credit/credit-store.ts'
+  - 'apps/api/src/modules/settlement/clawback/**'
+  - 'apps/api/src/modules/settlement/rights/**'
+  - 'apps/api/src/modules/settlement/index.ts'
+  - 'packages/domain/src/settlement/credit/**'
+test_paths:
+  - 'test/spec/settlement/rights-credit/**'
+  - 'test/properties/settlement/rights-credit/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/rights-credit/**'
+  - 'test/properties/settlement/rights-credit/**'
+status: todo
