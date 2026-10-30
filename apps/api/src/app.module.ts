@@ -2919,6 +2919,22 @@ export function dataCopyPorts(config: AppConfig): IdentityDataCopyPorts {
  * /v1/config), so an admin change to a minimum version reaches both at the same refresh.
  */
 type SharedContentReader = (db: Kysely<Database>, clock: Clock) => ContentReader;
+/**
+ * B2-07e: an audit port whose actor may be written as `admin:<admin_users.id>` (payout's hold
+ * release records the releasing account that way on the hold row); audit_logs.admin_id is the
+ * account itself. A plain id passes through unchanged.
+ */
+function adminActorAudit(writer: AuditPort): AuditPort {
+  return {
+    append: (input) =>
+      writer.append(
+        input.actor.startsWith('admin:')
+          ? { ...input, actor: input.actor.slice('admin:'.length) }
+          : input,
+      ),
+  };
+}
+
 function sharedContentReader(): SharedContentReader {
   let shared:
     | { readonly db: Kysely<Database>; readonly clock: Clock; readonly reader: ContentReader }
@@ -3555,7 +3571,11 @@ export class AppModule {
                       {
                         clock,
                         lockUsersForUpdate,
-                        audit: createAuditWriter({ db: trx, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                        // B2-07e: the write-off releases as `admin:<admin_users.id>` (the hold
+                        // row's released_by, task §9.2); the audit row's admin_id is the account.
+                        audit: adminActorAudit(
+                          createAuditWriter({ db: trx, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                        ),
                       },
                       trx,
                       input,
