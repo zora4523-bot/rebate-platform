@@ -1,10 +1,13 @@
-// B1-08zd 规则测试评审 r1 S1 补充：编排 9.2 第 1 条的「SETTLED」是本次更新**之后**的 platform_status。
-// 同一报文把订单由 RECEIVED / PAID 推进到 SETTLED 时，佣金触发已经只看结算佣金（BR-FUND-22「佣金恢复为 >0」；
-// 结算后有效佣金是结算佣金，BR-FUND-01）：
-// ① 结算佣金 0 或空、预估佣金 0 → 300 → 不登记、不告警；之后结算佣金 0 → 500 才登记一张 expected_fen 500。
-// ② 结算佣金空 → 500（预估不变或 0 → 280）→ 当次登记一张 expected_fen 500（trigger=commission、platform SETTLED）；
-//    之后平台已 SETTLED、只有预估佣金变化，不再调用登记端口。
-// 骗法：按更新前的状态分流（「前为 SETTLED 才只看结算佣金」：①红）；更新前非 SETTLED 只看预估佣金（②红）。
+// B1-08zd 规则测试评审 r1 S1 补充、编排第 11 节更正：同一报文把订单由 RECEIVED / PAID 推进到 SETTLED 时，佣金触发
+// 按本次更新前后的「有效佣金」判定（BR-FUND-22「佣金恢复为 >0」；BR-CALC-02：结算佣金非空取它，否则取预估佣金），
+// 与 platform_status 是否 SETTLED 无关；expected_fen = 新的有效佣金：
+// ① 结算佣金 0（非空）、预估佣金 0 → 300 → 有效佣金 0 → 0，不登记、不告警；之后结算佣金 0 → 500 才登记一张 500。
+// ② 结算佣金为空、预估佣金 0 → 300 → 有效佣金 0 → 300，当次登记一张 expected_fen 300（trigger=commission、
+//    platform SETTLED）；之后结算佣金空 → 0（有效佣金 300 → 0）、预估 300 → 0 → 450（结算佣金已非空）不再调用登记端口。
+// ③ 结算佣金空 → 500（预估不变或 0 → 280）→ 当次登记一张 expected_fen 500（取结算佣金，不取预估 280）；
+//    之后结算佣金不变、只有预估佣金变化，不再调用登记端口。
+// 骗法：按平台状态切换（更新后 SETTLED 就不看预估：②红；更新前非 SETTLED 只看预估：③红）；结算佣金非空时
+// 仍看预估（①、②后半红）。
 // 订单的前序状态（返利状态、原因、进入行）由 B1-08zc 的 kit 直接写入，代表 settlement 先前的处理。
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
@@ -75,10 +78,12 @@ interface QuietCase extends Origin {
 const NOTHING: Report = {};
 const SETTLE_ZERO: Report = { settle_commission_fen: 0n };
 const EST_280: Report = { est_commission_fen: 280n };
-const QUIET_CASES: readonly QuietCase[] = ORIGINS.flatMap((origin): QuietCase[] => [
-  { ...origin, label: '结算佣金 0', settle: SETTLE_ZERO, stored: 0n },
-  { ...origin, label: '结算佣金为空', settle: NOTHING, stored: null },
-]);
+const QUIET_CASES: readonly QuietCase[] = ORIGINS.map((origin): QuietCase => ({
+  ...origin,
+  label: '结算佣金 0',
+  settle: SETTLE_ZERO,
+  stored: 0n,
+}));
 
 interface RestoreCase extends Origin {
   readonly label: string;
@@ -172,6 +177,38 @@ it.each(QUIET_CASES)(
     expect(row.est_commission_fen).toBe(300n);
     expect(row.settle_commission_fen).toBe(500n);
     await expectOneSettledDiff(f, spec, 500n);
+  },
+);
+
+it.each(ORIGINS)(
+  '[AC-B1-08zd#7] 平台 $platform → SETTLED 的同一报文、结算佣金为空、预估佣金 0 → 300 → 有效佣金是预估佣金，当次登记一张 expected_fen 300（trigger=commission、platform SETTLED）；之后结算佣金空 → 0、预估 300 → 0 → 450 不再调用登记端口',
+  async ({ platform, spec }) => {
+    const f = await scenario(db, spec);
+    await expectOrigin(f, platform);
+
+    const moved = await f.sync(toSettled({ est_commission_fen: 300n }));
+    expect(moved).toMatchObject({ ok: true, value: { kind: 'updated' } });
+    await expectSettledNow(f, { est: 300n, settle: null });
+    await expectOneSettledDiff(f, spec, 300n);
+
+    // 结算佣金空 → 0：有效佣金 300 → 0，不触发；之后结算佣金非空，预估 300 → 0 → 450 只存档，不触发。
+    const diffs = await f.diffs();
+    const steps: readonly { change: Report; est: bigint }[] = [
+      { change: SETTLE_ZERO, est: 300n },
+      { change: { est_commission_fen: 0n }, est: 0n },
+      { change: { est_commission_fen: 450n }, est: 450n },
+    ];
+    for (const step of steps) {
+      expect(await f.sync(step.change)).toMatchObject({ ok: true, value: { kind: 'updated' } });
+      const row = await f.order();
+      expect(row.platform_status).toBe('SETTLED');
+      expect(row.est_commission_fen).toBe(step.est);
+      expect(row.settle_commission_fen).toBe(0n);
+      expect(f.register).toHaveBeenCalledTimes(1);
+      expect(await f.diffs()).toEqual(diffs);
+      expect(f.restoreWarns()).toHaveLength(1);
+    }
+    await expectOneSettledDiff(f, spec, 300n);
   },
 );
 

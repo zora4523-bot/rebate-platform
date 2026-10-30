@@ -1,9 +1,11 @@
-// B1-08zd 回归（编排 9.2 第 1、2 条）：只有更新后 platform_status = SETTLED 时佣金触发才改看结算佣金。
-// ① 非 SETTLED（PAID / RECEIVED）时预估佣金由 0 变 >0 照常登记，expected_fen = 新预估佣金；同一测试里对照一张
-//    平台 SETTLED、结算佣金 0 的单，同样的预估变化不登记——钉住「按平台状态分流」，而不是一律看或一律不看预估。
+// B1-08zd 回归（编排 9.2 第 2 条、第 11 节更正后的第 1 条）：佣金触发按「有效佣金」判定（结算佣金非空取它，
+// 否则取预估佣金，BR-CALC-02）。
+// ① 结算佣金为空（PAID / RECEIVED）时预估佣金由 0 变 >0 照常登记，expected_fen = 新预估佣金；同一测试里对照一张
+//    平台 SETTLED、结算佣金 0（非空）的单，同样的预估变化不登记——钉住「结算佣金非空时预估只存档」，而不是一律看
+//    或一律不看预估。
 // ② 状态触发（P9：INVALID → SETTLED）不受影响：照常出一张 trigger=status、金额取结算佣金的单；之后结算佣金不变、
 //    只有预估佣金 0 → 300 时不再调用登记端口（同一进入行不会因预估变化再登记一次）。
-// 骗法：一律只看结算佣金（①红）；SETTLED 时预估仍触发（①对照与②红）。
+// 骗法：一律只看结算佣金（①红）；结算佣金非空时预估仍触发（①对照与②红）。
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import type { Kysely } from 'kysely';
