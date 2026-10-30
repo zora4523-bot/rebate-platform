@@ -19,3 +19,7 @@ accept:
   - 'pnpm verify'
 status: todo
 pr: null
+red_exempt:
+  - file: test/spec/orders/platform-restore/boundary.int.test.ts
+    test: '[AC-B1-08zc#26] P9 去向 SETTLED：VOID(REFUND) 由 INVALID 直接结算、结算佣金为 0 → 状态触发出一张单，金额按结算佣金（0），不取预估佣金 789'
+    reason: 冻结 B1-08zc 用例的「结算佣金为 0」行期望仍为 0、断言未变；同一 it.each 只为「结算佣金为空」行改期望为有效佣金 789（BR-CALC-02，D10-327）而在参数表加了 expected 字段，故该行被判为已改但在基线上本就绿
