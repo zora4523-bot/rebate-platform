@@ -67,7 +67,7 @@ export interface DailyCheckRunner {
   runDailyCheck(db: Kysely<DB>, input: DailyCheckInput): Promise<DailyCheckResult>;
 }
 
-// TODO(规划/11 §4.2): 冻结提现、关闭 settle.auto.enabled、生成差错单仅返回处置建议 — blocked on B2-04 / B2-05
+// TODO(规划/11 §4.2): 运行器仍只返回处置建议，执行段是 daily-check-execute.ts（B2-02p）；把运行结果连同文件名交给执行段 — blocked on B2-02q（排程与装配）
 // TODO(规划/11 §4.2): worker 每日 01:00 +08:00 调用运行器，传入 D−1 — blocked on worker 装配任务（本任务路径之外）
 export function createDailyCheck(dependencies: DailyCheckDependencies): DailyCheckRunner {
   const { clock, logger } = dependencies;
