@@ -1,0 +1,144 @@
+{
+  "task": "B2-02p",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "08fb0fb1ddc48e67c767c14810d378ec62925bf3",
+  "red_tests": [
+    "test/spec/ledger/daily-check-execute/concurrency.int.test.ts > [AC-B2-02p#30] 同日两次运行并发：每张差错单只插入一次，每人每单只 1 条冻结，只有插入方报 inserted",
+    "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#10] 账户级差异：为账户 owner 经端口加 1 条冻结（ledger_mismatch、recon_diff:<差错单 id>、system、无期限）",
+    "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#11] 冻结与差错单同一事务：端口拿到的事务里已有该差错单，而事务外此刻还看不到",
+    "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#12] ③ 同一子订单两位受益人：只 1 张差错单（03:<子订单键>），两人各 1 条冻结，都指向该单",
+    "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#13] 同一差错单对同一用户只加 1 条：同一受益人在同一子订单有两个角色",
+    "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#14] ② 凭证不平：按该凭证分录所在的用户账户解析涉及用户并各加 1 条冻结，平台账户不算",
+    "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#15] 全局差异解析不到用户：只登记差错单并告警，不臆造冻结",
+    "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#16] ⑤ 应收不符：冻结该子订单的受益人",
+    "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#17] pay- 差异（账户级与全局）只登记差错单，不调冻结端口",
+    "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#18] 同日重跑（差错单已存在）不再加冻结；次日的新差错单另加 1 条",
+    "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#19] 同一用户涉及两张差错单（① 与 ⑦）：各加 1 条，source_ref 各指向自己的差错单",
+    "test/spec/ledger/daily-check-execute/order-08.int.test.ts > [AC-B2-02p#31] ⑧ 同一子订单两位受益人各一行 account：恰 1 张差错单（08:<子订单键>），两人各 1 条冻结，不关开关",
+    "test/spec/ledger/daily-check-execute/order-08.int.test.ts > [AC-B2-02p#32] ⑧ 的 global 行（受益人都没有账户）：仍不关开关；detail.unlocated_user_ids 给出的用户照样各加 1 条冻结",
+    "test/spec/ledger/daily-check-execute/order-08.int.test.ts > [AC-B2-02p#33] ⑧ 的 global 行没有任何可冻结的用户：只登记差错单并告警，不冻结、不关开关",
+    "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#1] 账户级差异（①）：登记 1 张 ledger_mismatch 差错单，R3、会计日 D、open，ref 指向用户账户，金额取缓存与分录合计",
+    "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#2] ② 凭证不平：ref_type voucher、ref_id 02:<凭证 id>，期望 0、实际为分录合计",
+    "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#3] ③ 同键多张 CREDIT：ref_type order、ref_id 03:<子订单键>，没有成对金额时三项金额为 0",
+    "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#4] ⑤ 应收不符：ref_type order、ref_id 05:<子订单键>，期望为应有应收净额、实际为应收净额",
+    "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#5] pay- 差异（账户级与全局）照样各登记 1 张 ledger_mismatch / R3 差错单",
+    "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#6] 同一账户同日：不同不变量各 1 张；同一不变量的多行差异只 1 张",
+    "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#7] 差错单按差异所属 app 登记，不串 app",
+    "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#8] 同日重跑不新增、不改写已有差错单（inserted=false）；次日同一差异另登记 period 为次日的一张",
+    "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#9] 没有差异：不登记、不冻结、不关开关",
+    "test/spec/ledger/daily-check-execute/rollback.int.test.ts > [AC-B2-02p#27] 冻结端口失败：本次运行失败，差错单与冻结都不留下；重跑同日补齐差错单与冻结",
+    "test/spec/ledger/daily-check-execute/rollback.int.test.ts > [AC-B2-02p#28] 同一差错单的第二位用户冻结失败：第一位的冻结与差错单一起回滚；重跑后两人各 1 条",
+    "test/spec/ledger/daily-check-execute/rollback.int.test.ts > [AC-B2-02p#29] 关开关失败：本次运行失败且不告警；重跑同日照样关开关并在提交后告警，差错单与每人冻结仍各只 1 份",
+    "test/spec/ledger/daily-check-execute/switch.int.test.ts > [AC-B2-02p#20] 非 pay- 全局差异：该 app 调一次 turnOff（settle.auto.enabled，原因含 D 与不变量），提交后才 alertCommitted，入参与结果原样",
+    "test/spec/ledger/daily-check-execute/switch.int.test.ts > [AC-B2-02p#21] 同一 app 多条全局差异（②③⑤）：只关一次，原因列出这些不变量",
+    "test/spec/ledger/daily-check-execute/switch.int.test.ts > [AC-B2-02p#22] 只有账户级差异：照常登记与冻结，不关开关、不告警",
+    "test/spec/ledger/daily-check-execute/switch.int.test.ts > [AC-B2-02p#23] 只有 pay- 全局差异：只登记差错单，不关开关、不冻结",
+    "test/spec/ledger/daily-check-execute/switch.int.test.ts > [AC-B2-02p#24] pay- 全局差异与非 pay- 账户级差异同时出现：冻结账户 owner，不关开关",
+    "test/spec/ledger/daily-check-execute/switch.int.test.ts > [AC-B2-02p#25] 按 app 关开关：有全局差异的 app 各关一次，只有账户级或 pay- 差异的 app 不关",
+    "test/spec/ledger/daily-check-execute/switch.int.test.ts > [AC-B2-02p#26] 全局差异即使解析不到任何用户也关开关"
+  ],
+  "risk_note": "RV2 ledger (B2-02p; BR-FUND-19 R3, BR-WDR-05). Daily-check execution step: per app, settle.auto.enabled turned off through an injected content port (own transaction, alertCommitted only after commit) when any non-pay- global difference exists (⑧ always account-level, never turns the switch off); then one transaction per (app, invariant, entity) registering a ledger_mismatch recon diff (source R3, period D, ref_type ledger_account / voucher / order, ref_id <invariant>:<entity>, dedupe_key R3:<D>:<invariant>:<entity>) through registerReconDiffOnce and, only on first insert, one withdraw_holds row per involved user through an injected payout port (reason ledger_mismatch, source_ref recon_diff:<id>, created_by system). pay- invariants register only. users / user_risk_state untouched; involved users resolved only from ledger tables and invariant detail. Same-day reruns are idempotent; a failing step rolls back only itself and the run reports DAILY_CHECK_FAILED.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "08fb0fb1ddc48e67c767c14810d378ec62925bf3",
+      "tree": "ff2a879f652aa2f0cfe60596ea7d95c7f6a0756d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T02:10:48Z",
+      "finished_at": "2026-10-30T02:11:02Z",
+      "gate": {
+        "commit": "af504c57d800e05a81a9c3140b4358fd56326e5f",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/daily-check-execute/concurrency.int.test.ts > [AC-B2-02p#30] 同日两次运行并发：每张差错单只插入一次，每人每单只 1 条冻结，只有插入方报 inserted",
+        "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#10] 账户级差异：为账户 owner 经端口加 1 条冻结（ledger_mismatch、recon_diff:<差错单 id>、system、无期限）",
+        "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#11] 冻结与差错单同一事务：端口拿到的事务里已有该差错单，而事务外此刻还看不到",
+        "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#12] ③ 同一子订单两位受益人：只 1 张差错单（03:<子订单键>），两人各 1 条冻结，都指向该单",
+        "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#13] 同一差错单对同一用户只加 1 条：同一受益人在同一子订单有两个角色",
+        "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#14] ② 凭证不平：按该凭证分录所在的用户账户解析涉及用户并各加 1 条冻结，平台账户不算",
+        "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#15] 全局差异解析不到用户：只登记差错单并告警，不臆造冻结",
+        "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#16] ⑤ 应收不符：冻结该子订单的受益人",
+        "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#17] pay- 差异（账户级与全局）只登记差错单，不调冻结端口",
+        "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#18] 同日重跑（差错单已存在）不再加冻结；次日的新差错单另加 1 条",
+        "test/spec/ledger/daily-check-execute/holds.int.test.ts > [AC-B2-02p#19] 同一用户涉及两张差错单（① 与 ⑦）：各加 1 条，source_ref 各指向自己的差错单",
+        "test/spec/ledger/daily-check-execute/order-08.int.test.ts > [AC-B2-02p#31] ⑧ 同一子订单两位受益人各一行 account：恰 1 张差错单（08:<子订单键>），两人各 1 条冻结，不关开关",
+        "test/spec/ledger/daily-check-execute/order-08.int.test.ts > [AC-B2-02p#32] ⑧ 的 global 行（受益人都没有账户）：仍不关开关；detail.unlocated_user_ids 给出的用户照样各加 1 条冻结",
+        "test/spec/ledger/daily-check-execute/order-08.int.test.ts > [AC-B2-02p#33] ⑧ 的 global 行没有任何可冻结的用户：只登记差错单并告警，不冻结、不关开关",
+        "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#1] 账户级差异（①）：登记 1 张 ledger_mismatch 差错单，R3、会计日 D、open，ref 指向用户账户，金额取缓存与分录合计",
+        "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#2] ② 凭证不平：ref_type voucher、ref_id 02:<凭证 id>，期望 0、实际为分录合计",
+        "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#3] ③ 同键多张 CREDIT：ref_type order、ref_id 03:<子订单键>，没有成对金额时三项金额为 0",
+        "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#4] ⑤ 应收不符：ref_type order、ref_id 05:<子订单键>，期望为应有应收净额、实际为应收净额",
+        "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#5] pay- 差异（账户级与全局）照样各登记 1 张 ledger_mismatch / R3 差错单",
+        "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#6] 同一账户同日：不同不变量各 1 张；同一不变量的多行差异只 1 张",
+        "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#7] 差错单按差异所属 app 登记，不串 app",
+        "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#8] 同日重跑不新增、不改写已有差错单（inserted=false）；次日同一差异另登记 period 为次日的一张",
+        "test/spec/ledger/daily-check-execute/register.int.test.ts > [AC-B2-02p#9] 没有差异：不登记、不冻结、不关开关",
+        "test/spec/ledger/daily-check-execute/rollback.int.test.ts > [AC-B2-02p#27] 冻结端口失败：本次运行失败，差错单与冻结都不留下；重跑同日补齐差错单与冻结",
+        "test/spec/ledger/daily-check-execute/rollback.int.test.ts > [AC-B2-02p#28] 同一差错单的第二位用户冻结失败：第一位的冻结与差错单一起回滚；重跑后两人各 1 条",
+        "test/spec/ledger/daily-check-execute/rollback.int.test.ts > [AC-B2-02p#29] 关开关失败：本次运行失败且不告警；重跑同日照样关开关并在提交后告警，差错单与每人冻结仍各只 1 份",
+        "test/spec/ledger/daily-check-execute/switch.int.test.ts > [AC-B2-02p#20] 非 pay- 全局差异：该 app 调一次 turnOff（settle.auto.enabled，原因含 D 与不变量），提交后才 alertCommitted，入参与结果原样",
+        "test/spec/ledger/daily-check-execute/switch.int.test.ts > [AC-B2-02p#21] 同一 app 多条全局差异（②③⑤）：只关一次，原因列出这些不变量",
+        "test/spec/ledger/daily-check-execute/switch.int.test.ts > [AC-B2-02p#22] 只有账户级差异：照常登记与冻结，不关开关、不告警",
+        "test/spec/ledger/daily-check-execute/switch.int.test.ts > [AC-B2-02p#23] 只有 pay- 全局差异：只登记差错单，不关开关、不冻结",
+        "test/spec/ledger/daily-check-execute/switch.int.test.ts > [AC-B2-02p#24] pay- 全局差异与非 pay- 账户级差异同时出现：冻结账户 owner，不关开关",
+        "test/spec/ledger/daily-check-execute/switch.int.test.ts > [AC-B2-02p#25] 按 app 关开关：有全局差异的 app 各关一次，只有账户级或 pay- 差异的 app 不关",
+        "test/spec/ledger/daily-check-execute/switch.int.test.ts > [AC-B2-02p#26] 全局差异即使解析不到任何用户也关开关"
+      ],
+      "expected": [
+        "test/spec/ledger/daily-check-execute/concurrency.int.test.ts",
+        "test/spec/ledger/daily-check-execute/holds.int.test.ts",
+        "test/spec/ledger/daily-check-execute/order-08.int.test.ts",
+        "test/spec/ledger/daily-check-execute/register.int.test.ts",
+        "test/spec/ledger/daily-check-execute/rollback.int.test.ts",
+        "test/spec/ledger/daily-check-execute/switch.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "4a28ec9a470c16b4630461750b560b7d00bb69b1c52e1adb517e512efe82f074"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; adversarial money review by a fresh independent Claude via claude-run.sh (approvals #36); round 1 pass with two open S2 (⑥/④ diffs recorded with 0 amounts, switch reason budget 181 not 200) recorded as followups",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by an independent Claude via claude-run.sh in 2 runs; round 1 fail (S1 users row unchanged not asserted; S2 no ⑧ case, alert timing racy), closed in run 2 (⑧ treated as account-level per BR-FUND-19, orchestrator 08:18), round 2 pass",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "1866f912011ee45226cb4575149c4fe4dd526074",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
