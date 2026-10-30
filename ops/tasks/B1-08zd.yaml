@@ -1,0 +1,20 @@
+id: B1-08zd
+repo: rebate-platform
+title: 平台恢复检测收紧（BR-FUND-22）：订单 platform_status 为 SETTLED 时佣金恢复只看 settle_commission_fen（结算佣金仍 ≤0、仅预估 0→>0 不再登记 platform_restore 差错单）
+type: impl
+# 2026-10-30 入账（content-client；B1-08zc #1815 money r1 S2：SETTLED 且 settle=0 的 CLAWED_BACK(COMMISSION_ZERO) 单，仅预估由 0 变 300 时 detectPlatformRestore 误登记 expected_fen 300 的差错单）。
+# 本任务：orders/domain/platform-restore.ts 的佣金触发在 SETTLED 时只认结算佣金列；其余判定、幂等键、金额与告警不变。B1-08zc 的冻结规则测试不改，新规则测试另列目录。
+refs: [BR-FUND-22]
+refs_hash:
+  BR-FUND-22: 022deb8da97d
+deps: [B1-08zc]
+paths:
+  - 'apps/api/src/modules/orders/**'
+test_paths:
+  - 'test/spec/orders/platform-restore-settled/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

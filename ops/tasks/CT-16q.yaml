@@ -1,0 +1,23 @@
+id: CT-16q
+repo: rebate-platform
+title: 契约说明（D10-204）：后台字典分类 agreement 的描述补表 C 实名同意弹层前缀 real_name.consent.（openapi 两处，原只写表 D 的 privacy. / perm.），codegen 同步
+type: contract
+# 2026-10-30 入账（content-client；F1-02zzi #1347 money 评审 out_of_scope S2，编排 10-23 10:46 D10-234 记：AdminDictKeyClass 契约描述补 real_name.consent.）。
+# 现状：contracts/openapi.yaml 约 l.17924「agreement = privacy and permission texts of table D (privacy., perm.)」、约 l.38104「agreement (table D, privacy. and perm.) → content.agreement」；主干 classifyTextKey 自 F1-02zzi 起含 real_name.consent.，CT-16o #1542 已建这些键。
+# 只改描述文字与生成物，不改 schema 形状与取值。原文由编排者摘入任务书，refs 置空。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
