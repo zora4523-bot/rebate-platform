@@ -1,0 +1,37 @@
+{
+  "task": "CT-24zc",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "d0d7f14dea008a7ec2deacf8ee679a36325ea996",
+  "red_tests": [],
+  "risk_note": "Contract description only (contracts/openapi.yaml, contracts/error-codes.yaml; generated openapi.gen.ts, error-codes.gen.ts): 30155 and the activate / retire link wording per D10-231 and BR-ATTR-05 细则 ⑦. No rule tests (tester none). Implementation model: Claude Opus 5.5 plus lane edits after contract review. contracts:check exit 0.",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 3,
+      "review_type": "contract",
+      "checklist_complete": true,
+      "note": "contract r1 fail (S1 extra wording withdrawn), r2 fail (S1 old wording also wrong after D10-231, rewritten), r3 pass with one S2 (couli-runs/CT-24zc/review-contract-r3.json); Codex unavailable until 11-02 (approvals #36)"
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "2bb3f888e6843418e2d32bf80b54a3a37fbea7ce",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
