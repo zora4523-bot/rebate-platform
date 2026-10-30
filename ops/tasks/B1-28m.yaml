@@ -1,0 +1,28 @@
+id: B1-28m
+repo: rebate-platform
+title: 热销榜按当前用户报价（D10-462 ③，BR-PRICE-11）——契约 getHotRank 由 x-auth none 改 optional（security 同 searchProducts），已登录用户的榜单卡片按本人报价，未登录仍是游客，身份只由服务端注入
+type: impl
+# 2026-10-31 W1 入账（编排 D10-462 ③，排在 B1-05o 之后）。04 第 627 行已同步 optional（couli #223）。CatalogHotRankService 已用 identity 的 ViewerContext，缺的是路由没有 optional 鉴权，token 不被解析。
+# 前置：冻结的 test/spec/catalog/hot-rank/contract.test.ts 第 17 行钉着 x-auth none，开工时先走测试修改（只改这一项，#24）。要排契约槽。
+refs: [BR-PRICE-11]
+refs_hash:
+  BR-PRICE-11: 193429dfd0bf
+deps: [B1-28h, B1-05o]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/catalog/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+test_paths:
+  - 'test/spec/catalog/hot-rank-viewer/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/hot-rank-viewer/**'
+status: todo
+pr: null

@@ -10,6 +10,9 @@ deps: [CT-07c, B1-22p, B1-05n]
 paths:
   - 'apps/api/src/modules/catalog/**'
   - 'apps/api/src/modules/content/index.ts'
+  - 'apps/api/src/modules/content/application/page-reader.ts'
+  - 'apps/api/src/modules/content/application/page-reader.test.ts'
+  - 'apps/api/src/modules/content/content-public.module.ts'
   - 'apps/api/src/app.module.ts'
   - 'contracts/openapi.yaml'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
