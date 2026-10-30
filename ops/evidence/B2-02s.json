@@ -1,0 +1,94 @@
+{
+  "task": "B2-02s",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "18a357ec11e2a469e9d68ed4d3273a0490472d18",
+  "red_tests": [
+    "test/spec/ledger/daily-check-done/chain.int.test.ts > [AC-B2-02s#6] 处理跑完但该次尝试被判 failed 进死信（超过 expireInSeconds）：(app, D) 是 done，之后的修复与重启后的修复都不再入队，到期也不告警，链上的 D+1 只有 1 个；没跑完就进死信的 app 不留完成记录，照常再入队并告警 1 次",
+    "test/spec/ledger/daily-check-done/chain.int.test.ts > [AC-B2-02s#7] 跑完的尝试超时后队列再投（还有剩余次数）：等待再跑期间已是 done；再跑一遍不报错，完成记录仍 1 条、D+1 仍只 1 个；之后该任务进死信，(app, D) 仍是 done，修复不再入队、到期不告警",
+    "test/spec/ledger/daily-check-done/event-id.test.ts > [AC-B2-02s#1] 完成记录的 event_id 由 (app_id, D) 确定：同一 (app, D) 每次相同且是 uuid；换 app 或换 D 各不相同",
+    "test/spec/ledger/daily-check-done/handler.int.test.ts > [AC-B2-02s#2] daily 处理器跑完（运行器 + 执行段）即写 1 条完成记录（processed_events，consumer ledger.daily_check_done，event_id = dailyCheckDoneEventId(app, D)），与续排 D+1 在同一事务；有差异的一天同样记；重投不多记、不报错；只记本 (app, D)",
+    "test/spec/ledger/daily-check-done/handler.int.test.ts > [AC-B2-02s#3] 处理没跑完就抛错时不写完成记录：校验本身失败、执行段失败（冻结端口抛错）、续排 D+1 失败（同一事务回滚）都不留记录，任务照常以失败交队列；之后重跑成功才记 1 条",
+    "test/spec/ledger/daily-check-done/store.int.test.ts > [AC-B2-02s#4] stateOf 先认完成记录：(app, D) 有完成记录即 done——该 key 只有 failed 及其死信副本、被取消、从未入队、或又有一次排队 / 等待重试时都是 done；新实例同样",
+    "test/spec/ledger/daily-check-done/store.int.test.ts > [AC-B2-02s#5] 没有本 (app, D) 的完成记录时 stateOf 同 B2-02r：从未入队、死信、被取消是 absent，排队与等待重试是 pending；别的 app、别的 D 的完成记录与同 event_id 的断链告警认领都不算本 (app, D) 完成"
+  ],
+  "risk_note": "RV2 ledger (B2-02s; BR-FUND-19; FU-B202R-DONE-MARK). The daily handler, once the runner and the B2-02p execution step have finished, records (app, D) as done in app.processed_events (consumer ledger.daily_check_done, deterministic uuid) in the same transaction that enqueues D+1 (INSERT … ON CONFLICT DO NOTHING); stateOf / heal treat that record as done before looking at the queue, so a completed day whose attempts overran expireInSeconds and went to dead is no longer re-sent; a handler that throws writes no record. No migration.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "18a357ec11e2a469e9d68ed4d3273a0490472d18",
+      "tree": "df34641e4b6fe9be92bb970792ae6b6767a4ff6d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T14:42:29Z",
+      "finished_at": "2026-10-30T14:42:43Z",
+      "gate": {
+        "commit": "6af88dbb1e070a8fd24b833adc65d1614b0c0e3b",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/daily-check-done/chain.int.test.ts > [AC-B2-02s#6] 处理跑完但该次尝试被判 failed 进死信（超过 expireInSeconds）：(app, D) 是 done，之后的修复与重启后的修复都不再入队，到期也不告警，链上的 D+1 只有 1 个；没跑完就进死信的 app 不留完成记录，照常再入队并告警 1 次",
+        "test/spec/ledger/daily-check-done/chain.int.test.ts > [AC-B2-02s#7] 跑完的尝试超时后队列再投（还有剩余次数）：等待再跑期间已是 done；再跑一遍不报错，完成记录仍 1 条、D+1 仍只 1 个；之后该任务进死信，(app, D) 仍是 done，修复不再入队、到期不告警",
+        "test/spec/ledger/daily-check-done/event-id.test.ts > [AC-B2-02s#1] 完成记录的 event_id 由 (app_id, D) 确定：同一 (app, D) 每次相同且是 uuid；换 app 或换 D 各不相同",
+        "test/spec/ledger/daily-check-done/handler.int.test.ts > [AC-B2-02s#2] daily 处理器跑完（运行器 + 执行段）即写 1 条完成记录（processed_events，consumer ledger.daily_check_done，event_id = dailyCheckDoneEventId(app, D)），与续排 D+1 在同一事务；有差异的一天同样记；重投不多记、不报错；只记本 (app, D)",
+        "test/spec/ledger/daily-check-done/handler.int.test.ts > [AC-B2-02s#3] 处理没跑完就抛错时不写完成记录：校验本身失败、执行段失败（冻结端口抛错）、续排 D+1 失败（同一事务回滚）都不留记录，任务照常以失败交队列；之后重跑成功才记 1 条",
+        "test/spec/ledger/daily-check-done/store.int.test.ts > [AC-B2-02s#4] stateOf 先认完成记录：(app, D) 有完成记录即 done——该 key 只有 failed 及其死信副本、被取消、从未入队、或又有一次排队 / 等待重试时都是 done；新实例同样",
+        "test/spec/ledger/daily-check-done/store.int.test.ts > [AC-B2-02s#5] 没有本 (app, D) 的完成记录时 stateOf 同 B2-02r：从未入队、死信、被取消是 absent，排队与等待重试是 pending；别的 app、别的 D 的完成记录与同 event_id 的断链告警认领都不算本 (app, D) 完成"
+      ],
+      "expected": [
+        "test/spec/ledger/daily-check-done/chain.int.test.ts",
+        "test/spec/ledger/daily-check-done/event-id.test.ts",
+        "test/spec/ledger/daily-check-done/handler.int.test.ts",
+        "test/spec/ledger/daily-check-done/store.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "fde2fae9236ede476142b0e568356e33733290f80fede1811fff37884b8acf30"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "85e0d12727a5fd4deab96fba371ebb81a836f1093774098517b27a55f0bc1cb6"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; adversarial money review by a fresh independent Claude via claude-run.sh (approvals #36); round 1 pass, no findings",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by an independent Claude via claude-run.sh in 1 run; round 1 pass with one S2 (event_id determinism compared in one process only) recorded",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "2ec5f4d7c5508adfc21160957349383bacf4ba83",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
