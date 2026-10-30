@@ -1,0 +1,25 @@
+id: B2-08c
+repo: rebate-platform
+title: payout：税额计算按 BR-WDR-20 配置化——FeeTaxCalculator 按 tax.SERVICE_FEE.method ∈ {none, flat_rate, cumulative} 计算：none → 0；flat_rate → round_half_up(amount × rate_bp / 10000)；cumulative → max(0, 应扣(本年已到账累计收入（tax_ytd 当前身份行）+ 同年度在途同类申请额 + 本次 amount) − 本年已扣累计 − 同年度在途同类税额)，应扣按配置的累进税率表（档位 JSON：起点分、税率 bp、速算扣除分）；tax_fen 四舍五入到分、≥ 0；tax_rule_version 固化为配置版本；年度按 created_at +08:00；缺省 method=none（税率表到位前，FUND-04）；配置键 tax.SERVICE_FEE.method / rate_bp / rate_table 登记 content 注册表与种子（随 B2-08cz 的冻结注册表测试 test-change 先合）
+type: impl
+# 2026-10-31 入账（withdraw 线，D10-456 ④；拆分草案见 notices）。取值只以 08 BR-WDR-20 为准：代码不得硬编码税率；在途 = 同用户、同计税年度、同类所得、状态 ∈ {PENDING_REVIEW, APPROVED, PAYING}。税率表数值等税务师意见（06 Q-F6），本任务只做形状与算法，默认 none，AC-S2-44 ⑤ 的税额数值等税率表到位后补。
+# 配置键登记会改 content 四个冻结注册表测试（同 B2-06bz 先例 D10-296：test-change 由 withdraw 起草、先合再落本任务）。
+refs: [BR-WDR-20]
+refs_hash:
+  BR-WDR-20: 3127fc4b4b65
+deps: [B2-08b, B2-08cz]
+paths:
+  - 'apps/api/src/modules/payout/application/withdraw-rules.ts'
+  - 'apps/api/src/modules/payout/application/fee-tax*.ts'
+  - 'apps/api/src/modules/payout/application/withdraw-apply.ts'
+  - 'apps/api/src/modules/payout/index.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/payout/tax-calc/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/tax-calc/**'
+status: todo
+pr: null

@@ -1,0 +1,21 @@
+id: B2-08d
+repo: rebate-platform
+title: payout：涉税季度导出只读端口（BR-WDR-21）——按自然季度（+08:00，按 paid_at）列出已到账提现（PAID_API / PAID_MANUAL）的涉税明细行：user_id、所得类型、收入额 amount_fen、已扣税额 tax_fen、到账时间 paid_at、收款账户（脱敏，经 payout 既有脱敏）、out_biz_no，按 paid_at、id 游标分页；姓名 / 证件号由 admin 导出 worker 经 identity 端口取（全量 / 脱敏两版），本端口不含；只在 index.ts 导出，不开接口
+type: impl
+# 2026-10-31 入账（withdraw 线，D10-456 ④）。后台导出入口（exports 新 kind、权限点「涉税全量导出」契约、step-up 与用途、OSS 签名 URL、审计）属 admin 的导出框架（B1-34c / B1-34e），请编排派给 admin 线另入账（CT + 实现），依赖本端口；本任务只做 payout 侧只读端口与其规则测试。
+refs: [BR-WDR-21]
+refs_hash:
+  BR-WDR-21: 174182279ca6
+deps: [B2-08b]
+paths:
+  - 'apps/api/src/modules/payout/application/tax-export*.ts'
+  - 'apps/api/src/modules/payout/index.ts'
+test_paths:
+  - 'test/spec/payout/tax-export/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/tax-export/**'
+status: todo
+pr: null
