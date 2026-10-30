@@ -3,7 +3,7 @@ repo: rebate-platform
 title: 迁移：年度个税台账 app.tax_ytd（BR-WDR-20、04 §3.2）——app_id、user_id、year（计税年度，取提现单 created_at 的 +08:00 自然年）、income_type（现只有 SERVICE_FEE）、identity_hmac（身份维度：累加时该用户实名的 id_no_hmac，实名更正后新身份另起一行，BR-ID-25 细则「实名更正」/ D10-181 ②）、cum_income_fen、cum_withheld_fen（bigint ≥ 0）、continuous_months、created_at / updated_at；唯一 (app_id, user_id, year, income_type, identity_hmac)；只在 PAID_API / PAID_MANUAL 时累加（写者 payout：couli_app SELECT / INSERT / UPDATE(cum_income_fen, cum_withheld_fen, continuous_months, updated_at)，couli_payout / couli_readonly SELECT）；资金表受 lint-migrations 约束
 type: impl
 # 2026-10-31 入账（withdraw 线，编排裁定 D10-456 ④：B2-08 归 withdraw；拆分草案见 notices，请编排核）。身份维度取 id_no_hmac（64 位 hex，同 realname_prior_identities.id_no_hmac 形状），不存姓名 / 证件号明文；无实名的用户不会有到账提现（BR-WDR-03），identity_hmac 非空。需迁移槽，落地按 D10-116 取主干最大 +1。
-# 列为代理补全的默认（04 §3.2 未列 identity_hmac），编排核后回写 04；AC-S2-44 ③ 的「tax_ytd(U1, 2026, SERVICE_FEE)」口径不变（同身份只一行）。
+# 2026-10-31 补 paths：tax_ytd 不匹配 lint-migrations 的资金表前缀（tax 不在清单），按 B2-05a 注「建表时再登记」把 tax_ytd 加进 FUNDS_TABLE_NAMES（tools/** 门禁类改动，PR 由编排核标签）。列为代理补全的默认（04 §3.2 未列 identity_hmac），编排核后回写 04；AC-S2-44 ③ 的「tax_ytd(U1, 2026, SERVICE_FEE)」口径不变（同身份只一行）。
 refs: [BR-WDR-20, BR-ID-25]
 refs_hash:
   BR-WDR-20: 3127fc4b4b65
@@ -13,6 +13,8 @@ paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/**'
+  - 'tools/ci/lint-migrations.ts'
+  - 'tools/ci/lint-migrations.test.ts'
 test_paths:
   - 'test/spec/payout/tax-ytd-schema/**'
 impl: claude
