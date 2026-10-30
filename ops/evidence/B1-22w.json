@@ -1,0 +1,153 @@
+{
+  "task": "B1-22w",
+  "spec_ref": "812734156b57ba648ee1df733dafac3dba9bdb15",
+  "spec_commit": "05c3cdfcdb974ac19e9cb40ae5d492445d49e9dd",
+  "red_tests": [
+    "test/spec/union/taobao-price-config-fallback/demo.test.ts > [AC-B1-22w-DEMO#1] 五个键全部读取抛错（普通场景）：搜索、详情、物料流、榜单照常给出淘宝商品，与 08 默认映射一致",
+    "test/spec/union/taobao-price-config-fallback/demo.test.ts > [AC-B1-22w-DEMO#1] 五个键全部读取抛错（清单外名称场景）：搜索、详情、物料流、榜单照常给出淘宝商品，与 08 默认映射一致",
+    "test/spec/union/taobao-price-config-fallback/demo.test.ts > [AC-B1-22w-DEMO#2] unknown_promo 读取抛错时四个入口按默认 unavailable 映射，恢复后即按配置 add_back",
+    "test/spec/union/taobao-price-config-fallback/demo.test.ts > [AC-B1-22w-DEMO#3] basis 读取抛错时不切到 coupon_only：四个入口与默认映射一致",
+    "test/spec/union/taobao-price-config-fallback/demo.test.ts > [AC-B1-22w-DEMO#4] 读取失败的告警不带商品信息、错误全文与凭据",
+    "test/spec/union/taobao-price-config-fallback/demo.test.ts > [AC-B1-22w-DEMO#5] 登记表装配的淘宝演示适配器在配置读取抛错时照常搜索",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.member_title_keywords 读取抛错（reject，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.member_title_keywords 读取抛错（reject，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.member_title_keywords 读取抛错（throw，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.member_title_keywords 读取抛错（throw，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.coupon_titles 读取抛错（reject，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.coupon_titles 读取抛错（reject，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.coupon_titles 读取抛错（throw，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.coupon_titles 读取抛错（throw，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.discount_titles 读取抛错（reject，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.discount_titles 读取抛错（reject，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.discount_titles 读取抛错（throw，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.discount_titles 读取抛错（throw，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.unknown_promo 读取抛错（reject，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.unknown_promo 读取抛错（reject，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.unknown_promo 读取抛错（throw，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.unknown_promo 读取抛错（throw，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.basis 读取抛错（reject，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.basis 读取抛错（reject，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.basis 读取抛错（throw，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.basis 读取抛错（throw，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#2] 五个键全部读取抛错（reject）：全部用 08 默认，各键告警一条，read 正常返回",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#2] 五个键全部读取抛错（throw）：全部用 08 默认，各键告警一条，read 正常返回",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#3] 读取失败的事件名固定，且不同于取值不合法的事件名",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#4] 一键读取抛错、另一键不合法：各自回落默认，各告警一条，事件各归其类",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#5] 告警不带错误全文、凭据、堆栈或错误对象本身",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#6] 抛出的不是 Error（字符串）也不上抛：该键用默认，告警一条且不带抛出的文本",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#7] 只影响读失败的那个应用：另一应用照常用自己的配置、不告警",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#8] 读失败的 basis 不会切到降级口径：配置为 coupon_only 时按默认 promotion_path 映射",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#9] 读失败的 unknown_promo 按默认 unavailable：配置为 add_back 时清单外名称仍不出价",
+    "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#10] 读失败的名称清单按默认清单归类：自定义券名不再生效，默认券名照常计券",
+    "test/spec/union/taobao-price-config-fallback/reread.test.ts > [AC-B1-22w-REREAD#1] 读成功 → 读失败 → 读成功：失败那次用 08 默认（不沿用上次的值），恢复后即用配置值",
+    "test/spec/union/taobao-price-config-fallback/reread.test.ts > [AC-B1-22w-REREAD#2] 不缓存失败：持续失败时每次 read 都重新读五个键并各告警一次",
+    "test/spec/union/taobao-price-config-fallback/reread.test.ts > [AC-B1-22w-REREAD#3] 失败期间改了配置：恢复后的下一次 read 用改后的新值"
+  ],
+  "risk_note": "RV2 (union Taobao price settings: a configuration read failure falls back to the 08 default for that key with one warning; display mapping only). Independent Claude (approvals #36, Codex unavailable until 11-02) wrote test/spec/union/taobao-price-config-fallback/** (1 attempt, prettier-formatted before commit per D10-292). Implementation model: Claude Opus 5.5 (1 round). verify:fast on the AWS runner exit 0.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "05c3cdfcdb974ac19e9cb40ae5d492445d49e9dd",
+      "tree": "7127ad1c235dfc94536ac5c1bc7eb7ad892c5617",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T15:30:24Z",
+      "finished_at": "2026-10-30T15:30:35Z",
+      "red_tests": [
+        "test/spec/union/taobao-price-config-fallback/demo.test.ts > [AC-B1-22w-DEMO#1] 五个键全部读取抛错（普通场景）：搜索、详情、物料流、榜单照常给出淘宝商品，与 08 默认映射一致",
+        "test/spec/union/taobao-price-config-fallback/demo.test.ts > [AC-B1-22w-DEMO#1] 五个键全部读取抛错（清单外名称场景）：搜索、详情、物料流、榜单照常给出淘宝商品，与 08 默认映射一致",
+        "test/spec/union/taobao-price-config-fallback/demo.test.ts > [AC-B1-22w-DEMO#2] unknown_promo 读取抛错时四个入口按默认 unavailable 映射，恢复后即按配置 add_back",
+        "test/spec/union/taobao-price-config-fallback/demo.test.ts > [AC-B1-22w-DEMO#3] basis 读取抛错时不切到 coupon_only：四个入口与默认映射一致",
+        "test/spec/union/taobao-price-config-fallback/demo.test.ts > [AC-B1-22w-DEMO#4] 读取失败的告警不带商品信息、错误全文与凭据",
+        "test/spec/union/taobao-price-config-fallback/demo.test.ts > [AC-B1-22w-DEMO#5] 登记表装配的淘宝演示适配器在配置读取抛错时照常搜索",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.member_title_keywords 读取抛错（reject，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.member_title_keywords 读取抛错（reject，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.member_title_keywords 读取抛错（throw，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.member_title_keywords 读取抛错（throw，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.coupon_titles 读取抛错（reject，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.coupon_titles 读取抛错（reject，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.coupon_titles 读取抛错（throw，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.coupon_titles 读取抛错（throw，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.discount_titles 读取抛错（reject，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.discount_titles 读取抛错（reject，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.discount_titles 读取抛错（throw，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.discount_titles 读取抛错（throw，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.unknown_promo 读取抛错（reject，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.unknown_promo 读取抛错（reject，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.unknown_promo 读取抛错（throw，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.unknown_promo 读取抛错（throw，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.basis 读取抛错（reject，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.basis 读取抛错（reject，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.basis 读取抛错（throw，SyntheticStoreError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#1] price.taobao.basis 读取抛错（throw，SyntheticDeadlineError）：read 正常返回，该键用 08 默认，其他四键照常用配置值，告警一条",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#2] 五个键全部读取抛错（reject）：全部用 08 默认，各键告警一条，read 正常返回",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#2] 五个键全部读取抛错（throw）：全部用 08 默认，各键告警一条，read 正常返回",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#3] 读取失败的事件名固定，且不同于取值不合法的事件名",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#4] 一键读取抛错、另一键不合法：各自回落默认，各告警一条，事件各归其类",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#5] 告警不带错误全文、凭据、堆栈或错误对象本身",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#6] 抛出的不是 Error（字符串）也不上抛：该键用默认，告警一条且不带抛出的文本",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#7] 只影响读失败的那个应用：另一应用照常用自己的配置、不告警",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#8] 读失败的 basis 不会切到降级口径：配置为 coupon_only 时按默认 promotion_path 映射",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#9] 读失败的 unknown_promo 按默认 unavailable：配置为 add_back 时清单外名称仍不出价",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts > [AC-B1-22w-READ#10] 读失败的名称清单按默认清单归类：自定义券名不再生效，默认券名照常计券",
+        "test/spec/union/taobao-price-config-fallback/reread.test.ts > [AC-B1-22w-REREAD#1] 读成功 → 读失败 → 读成功：失败那次用 08 默认（不沿用上次的值），恢复后即用配置值",
+        "test/spec/union/taobao-price-config-fallback/reread.test.ts > [AC-B1-22w-REREAD#2] 不缓存失败：持续失败时每次 read 都重新读五个键并各告警一次",
+        "test/spec/union/taobao-price-config-fallback/reread.test.ts > [AC-B1-22w-REREAD#3] 失败期间改了配置：恢复后的下一次 read 用改后的新值"
+      ],
+      "expected": [
+        "test/spec/union/taobao-price-config-fallback/demo.test.ts",
+        "test/spec/union/taobao-price-config-fallback/read.test.ts",
+        "test/spec/union/taobao-price-config-fallback/reread.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "133d1a47a313d03da8df424465995a25e130d08b03c9b3f5a91b45c8ba471204"
+        }
+      ],
+      "gate": {
+        "commit": "c6736e367f9e98a8e2e8d78959be252fb31cd233",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "money r1 pass, no findings (couli-runs/B1-22w/review-money-r1.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "r1 pass, no findings"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "9591752e2eeba538e945b230c56121bd7f2ab78e",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
