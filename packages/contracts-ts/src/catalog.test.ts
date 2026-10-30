@@ -168,6 +168,9 @@ it('identity codes of 08 §13.11 (功能对照补缺 1–3 批) carry their data
     'pending_draft',
     'snapshot_pending',
     'switches_off',
+    // CT-24ze: admin-only appeal restore refusals (BR-FUND-22 ③, D10-468 ①, D10-469 ①).
+    'restore_not_supported',
+    'restore_user_deleted',
   ]);
   expect(errorCodes[30701].sources).toEqual(['规划/04 §7', 'BR-ID-10', 'BR-ID-40']);
 });

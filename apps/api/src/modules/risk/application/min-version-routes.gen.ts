@@ -2355,6 +2355,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": true
   },
   {
+    "operationId": "restoreAdminReconDiff",
+    "method": "POST",
+    "path": "/admin/v1/recon-diffs/:recon_diff_id/restore",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
     "operationId": "listAdminWithdrawals",
     "method": "GET",
     "path": "/admin/v1/withdrawals",

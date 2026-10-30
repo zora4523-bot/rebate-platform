@@ -36,6 +36,7 @@ export const plannedOperations: ReadonlySet<string> = new Set([
   "loginByHuawei",
   "mergeAccount",
   "reportAgentMessage",
+  "restoreAdminReconDiff",
   "reverifyByIdNumber",
   "reverifyByOauth",
   "setAgentMessageFeedback",

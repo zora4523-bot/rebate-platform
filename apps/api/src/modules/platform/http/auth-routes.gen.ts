@@ -1167,6 +1167,11 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "admin"
   },
   {
+    "method": "POST",
+    "path": "/admin/v1/recon-diffs/:recon_diff_id/restore",
+    "auth": "admin"
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/withdrawals",
     "auth": "admin"
