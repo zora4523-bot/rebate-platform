@@ -1,0 +1,25 @@
+id: B1-22u
+repo: rebate-platform
+title: 拼多多授权门预检遇非 50301 的读错误答 50303 并写 link_log（不再 500）；linking 构造 createUnionAuthReads 时传入注入的 Clock（linking.module、link-open-taobao、link-open-pdd-auth、union-auth-url）
+type: impl
+# 2026-10-30 入账（union 线，编排裁定 D10-434 ②）。① B1-22n money S2：link-open-pdd-auth.ts slotRefusal 预检里推广位 / attr_code 读取的非 50301 错误被原样重抛，settle 只认 50301 → 事务回滚、500、无 link_log；B1-22n 前同一故障走 conversionFailure 答 50303。② B1-22b followup：上述处构造 createUnionAuthReads 未传 Clock（默认 SystemClock，prod 一致，测试不可控）。linking 文件属本线 B1-22n / B1-22b 遗留，编排同意本线改。依据 08 BR-ATTR-05（转链失败 50303）、BR-ID-24（请求侧到期守卫读注入时钟）。Codex 不可用至 11-02，测试与评审由独立 Claude（approvals #36）。
+refs: [BR-ATTR-05, BR-ID-24]
+refs_hash:
+  BR-ATTR-05: e2864d6024ae
+  BR-ID-24: 4cba1bd5dd15
+deps: [B1-22n, B1-22b]
+paths:
+  - 'apps/api/src/modules/linking/application/link-open-pdd-auth.ts'
+  - 'apps/api/src/modules/linking/application/link-open-taobao.ts'
+  - 'apps/api/src/modules/linking/application/union-auth-url.ts'
+  - 'apps/api/src/modules/linking/linking.module.ts'
+  - 'apps/api/src/modules/linking/application/link-open-pdd-auth.test.ts'
+test_paths:
+  - 'test/spec/linking/pdd-auth-read-failure/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/pdd-auth-read-failure/**'
+status: todo
+pr: null
