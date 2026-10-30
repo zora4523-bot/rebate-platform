@@ -1,0 +1,20 @@
+id: B1-31b
+repo: rebate-platform
+title: B1-31 链路追踪评审 S2 收尾（不扩范围）：① runEntry 级用例钉「api / stream / worker 在建 app 前留下 tracing 足迹、admin / payout 无」；② fail-open.int 钉 stream 的 service.name / couli.entry；③ correlation.test 两条 fc.assert 补 propParams、属性体不用 expect；④ export-health.test 的 logger 桩补 child()；⑤ runEntry 里 createDbHandles / createMaintDbHandle 抛错时也 flush 已由 main.<entry>.ts 启动的 tracing（startTracing 暴露 active 句柄，失败 finally 回退到它）
+type: impl
+# 2026-10-30 入账（withdraw 线，编排 10-30 10:05 派工「顺手收 B1-31 的 S2×5 followups」）。来源：B1-31 spec-test r1 S2×4 与 money r3 S2×1（WITHDRAW-lane/followups.md 10-30）。①–④ 是规则测试侧（新鲜独立 Claude 写 / 改），⑤ 是实现侧；B1-31 已合并（#1809），本任务只补这五条，不改 02 §13 口径、不加配置。
+refs: []
+refs_hash: {}
+deps: [B1-31]
+paths:
+  - 'apps/api/src/modules/platform/tracing/**'
+  - 'apps/api/src/entry.ts'
+test_paths:
+  - 'test/spec/platform/tracing/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/tracing/**'
+status: todo
+pr: null

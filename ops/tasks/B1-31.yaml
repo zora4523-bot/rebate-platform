@@ -26,5 +26,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/tracing/**'
-status: todo
-pr: null
+status: done
+pr: 1809
