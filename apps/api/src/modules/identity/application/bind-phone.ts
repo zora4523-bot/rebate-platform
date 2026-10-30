@@ -14,15 +14,17 @@
 // the account registered with wechat / apple / huawei and has no phone; AccountAssetsPort reports
 // no order, no claim and no ledger entry; parent_id is null and no user has it as parent; the
 // target account is status 'normal', is not banned (readRiskState fresh; appealing after banned
-// counts as banned) and has no user_oauth row of a provider the account itself has. The ticket
-// (at least 128 random bits) is stored in Redis namespace `merge_ticket`, key the SHA-256 hex of
+// counts as banned), is not in the deletion process (identity's deletion stage: cooling or
+// processing refuses; B1-20e) and has no user_oauth row of a provider the account itself has.
+// The ticket (at least 128 random bits) is stored in Redis namespace `merge_ticket`, key the SHA-256 hex of
 // the ticket, value JSON {app_id, uid, phone_hmac}, 300 seconds; Redis unavailable → 50001.
 // Nothing logs a phone number, a code or a ticket.
 //
 // AccountAssetsPort is assembled by app.module and handed to IdentityModule.forRoot as the option
 // `accountAssets` (a factory provider, like `blocklist`): countOrders is a read-only count of
-// app.orders rows of the user (any status); hasClaims and hasLedgerEntries answer false until the
-// claim and ledger modules exist (TODO lines in app.module). B1-02z's invite backfill shares it.
+// app.orders rows of the user (any status); hasClaims reads app.claims (any claim of the user as
+// the applicant, any status) and hasLedgerEntries the ledger's hasUserBalanceEntries (B1-20e), all on
+// the caller's transaction, read only. B1-02z's invite backfill shares it.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for types.
 import { createHash, randomBytes } from 'node:crypto';
@@ -37,6 +39,7 @@ import {
 import type { BlocklistService } from '../../risk/index.ts';
 import { normalize_phone } from '../domain/normalize-phone.ts';
 import { PHONE_BLIND_INDEX_CONTEXT, PHONE_CIPHER_CONTEXT } from '../domain/registration.ts';
+import { createDeletionStageReader } from '../ports/deletion-stage.ts';
 import type { SmsCodeService } from './sms-codes.ts';
 
 /** One account of one app. */
@@ -52,9 +55,9 @@ export interface AccountRef {
 export interface AccountAssetsPort {
   /** Rows of app.orders whose user_id is the account, whatever their status. */
   countOrders(db: Kysely<DB>, account: AccountRef): Promise<number>;
-  /** True when the account has any order claim (找回申请); false until B1-10 exists. */
+  /** True when the account has any order claim (找回申请) as the applicant, whatever its status. */
   hasClaims(db: Kysely<DB>, account: AccountRef): Promise<boolean>;
-  /** True when the account's balance has any ledger entry; false until the ledger exists. */
+  /** True when the account's balance has any ledger entry (entries netting to zero included). */
   hasLedgerEntries(db: Kysely<DB>, account: AccountRef): Promise<boolean>;
 }
 
@@ -173,13 +176,19 @@ export function createBindPhoneService(options: BindPhoneOptions): BindPhoneServ
         .where('status', '<>', 'deleted')
         .executeTakeFirst();
       if (target !== undefined) {
-        // TODO(规划/11 §2.3): 并号条件读注销冷静期 — blocked on B1-15a 注销表
         if (
           !['wechat', 'apple', 'huawei'].includes(current.register_method) ||
           current.parent_id !== null ||
           target.status !== 'normal'
         )
           return { code: 30411 };
+        // BR-ID-06: a target in the deletion process (cooling period or processing) is not merged.
+        const stages = await createDeletionStageReader({ db: trx }).read(trx, {
+          appId: account.app_id,
+          userIds: [target.id],
+        });
+        const stage = stages.get(target.id) ?? 'none';
+        if (stage === 'cooling' || stage === 'processing') return { code: 30411 };
         if (
           (await assets.countOrders(trx, account)) !== 0 ||
           (await assets.hasClaims(trx, account)) ||

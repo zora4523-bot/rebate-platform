@@ -19,11 +19,22 @@ export interface UserLedgerActivitySelection {
 }
 
 /** True when the user's balance account of the app has any ledger entry. */
-export function hasUserBalanceEntries(
+export async function hasUserBalanceEntries(
   executor: Kysely<DB> | Transaction<DB>,
   input: UserLedgerActivitySelection,
 ): Promise<boolean> {
-  void executor;
-  void input;
-  throw new Error('NotImplemented: hasUserBalanceEntries');
+  const row = await executor
+    .withSchema('app')
+    .selectFrom('ledger_entries as e')
+    .innerJoin('ledger_accounts as a', (join) =>
+      join.onRef('a.app_id', '=', 'e.app_id').onRef('a.id', '=', 'e.account_id'),
+    )
+    .select('e.id')
+    .where('a.app_id', '=', input.appId)
+    .where('a.owner_type', '=', 'user')
+    .where('a.owner_id', '=', input.userId)
+    .where('a.subject', '=', 'USER_BALANCE')
+    .limit(1)
+    .executeTakeFirst();
+  return row !== undefined;
 }

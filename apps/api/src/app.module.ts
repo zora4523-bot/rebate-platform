@@ -212,6 +212,7 @@ import {
   WalletSummaryModule,
   createLedger,
   getOrderNets,
+  hasUserBalanceEntries,
   readForfeitAmount,
   readPersonalDataCopyLedgerEntries,
   registerReconDiffOnce,
@@ -983,10 +984,21 @@ function identityModule(contentReader: SharedContentReader): DynamicModule {
             .executeTakeFirstOrThrow();
           return Number(row.count);
         },
-        // TODO(规划/11 §2.3): 并号条件读找回申请 — blocked on B1-10 找回申请
-        hasClaims: () => Promise.resolve(false),
-        // TODO(规划/11 §2.3): 并号条件读余额流水 — blocked on ledger 模块（B2）
-        hasLedgerEntries: () => Promise.resolve(false),
+        // B1-20e: any claim of the account as the applicant, whatever its status (read only).
+        async hasClaims(db, account) {
+          const row = await db
+            .withSchema('app')
+            .selectFrom('claims')
+            .select('id')
+            .where('app_id', '=', account.app_id)
+            .where('user_id', '=', account.user_id)
+            .limit(1)
+            .executeTakeFirst();
+          return row !== undefined;
+        },
+        // B1-20e: any entry on the account's balance, through the ledger's read-only export.
+        hasLedgerEntries: (db, account) =>
+          hasUserBalanceEntries(db, { appId: account.app_id, userId: account.user_id }),
       }),
     },
     accountRisk: {
