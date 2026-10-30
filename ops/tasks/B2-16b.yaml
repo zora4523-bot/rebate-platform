@@ -20,4 +20,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/ledger/invite-reward-grant/**'
-status: todo
+status: done
+pr: 1926
