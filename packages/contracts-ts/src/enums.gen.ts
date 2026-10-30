@@ -340,7 +340,7 @@ export const admin_settle_supplement_outcome = [
 export type AdminSettleSupplementOutcome = (typeof admin_settle_supplement_outcome)[number];
 
 /**
- * GET /admin/v1/settle-bills 列表项与详情的 status 及同名筛选；读时由账单最近一轮批次（首轮 = 该账单全部 kind=main 批次；每次补充发起一轮 = kind=supplement 且 (platform, created_at) 相同的批次；轮时刻取其批次 created_at 最大值，最近一轮 = 轮时刻最大者，并列取含最大 batch_id 的轮；驳回的 CANCELLED 不参与）派生、不另存状态（settle_bills 无状态列）；按下列顺序取第一条成立的；中文名取 BR-TEXT-25 admin_dict
+ * GET /admin/v1/settle-bills 列表项与详情的 status 及同名筛选；读时由账单最近一轮批次（首轮 = 该账单全部 kind=main 批次；每次补充发起一轮 = kind=supplement 且 (platform, created_at) 相同的批次；轮时刻取其批次 created_at 最大值，最近一轮 = 轮时刻最大者，并列取含最大 batch_id 的轮；驳回的 CANCELLED 不参与）派生、不另存状态（settle_bills 无状态列）；撤销定时回到 DRAFT 的批次可能不在最近一轮，不影响本状态，却仍由确认接口覆盖，此时账单状态可与待确认批次不一致，待确认以批次 status=DRAFT 为准（编排裁定 D10-444）；按下列顺序取第一条成立的；中文名取 BR-TEXT-25 admin_dict
  * Source: 规划/08 BR-FUND-04 细则「月结账单状态」；规划/04 §2.5（月结账单状态由批次派生、不入库）；规划/01 F-ADM-08；design/specs/admin-settle-bills.md §1、§4（CT-24z） (contracts/enums/admin.yaml).
  */
 export const admin_settle_bill_status = [

@@ -7875,16 +7875,21 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Confirm every DRAFT batch of the bill's latest round, to run now or at a set time (SB2)
+         * Confirm every DRAFT batch of the bill, to run now or at a set time (SB2)
          * @description The 【确认立即执行】 and 【定时执行】 of the bill detail (01 F-ADM-08 月结; BR-FUND-04 ⑥,
          *     迁移表 SB2; design/specs/admin-settle-bills.md §4). Permission point `settle.bill` (04
          *     §11.2; `fund.view` alone is not enough). Step-up: totp tier (BR-ID-34): without a valid
          *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`. One person confirms.
          *
-         *     One confirmation covers the whole latest round of the bill, never a choice of batches and
-         *     never an older round; the round is the one defined in AdminSettleBillStatus, as the read
-         *     operations give it through `in_current_round` (编排裁定 D10-437). Request:
-         *     `expected_batches`, one `{batch_id, expected_row_version}` per DRAFT batch of that round,
+         *     One confirmation covers every DRAFT batch of the bill, whatever its round and platform,
+         *     never a choice of batches (BR-FUND-04 ⑥「一次确认该账单全部 DRAFT 批次」; 编排裁定
+         *     D10-444, which replaces the latest-round scope of D10-437 ② and D10-440). A batch can be
+         *     DRAFT outside the latest round: a schedule cancelled (SB3) after a later supplement launch
+         *     leaves it DRAFT with `in_current_round` false, and this confirmation covers it too. The
+         *     rounds of AdminSettleBillStatus only derive the bill's `status`, which can therefore differ
+         *     from what is waiting to be confirmed: go by the batches with `status` DRAFT, not by the
+         *     bill's `status`. Request:
+         *     `expected_batches`, one `{batch_id, expected_row_version}` per DRAFT batch of the bill,
          *     taken from GET /admin/v1/settle-bills/{bill_id}, at most 1000 entries; `settle_mode`,
          *     IMMEDIATE when absent, or SCHEDULED; `scheduled_at`, required with SCHEDULED and not
          *     allowed with IMMEDIATE, later than the moment of confirmation and outside the nominal
@@ -7897,13 +7902,12 @@ export interface paths {
          *     one or one of another app is 20001 with `data.fields=[bill_id]` (no 404) → a bill still
          *     generating is 20001 with `data.fields=[bill_id]` and `data.reason=bill_not_ready` → 20902
          *     with `data.resource=settle_batch`, nothing changed (refresh the detail): `expected_batches`
-         *     is not exactly the round's DRAFT batches (one missing, one extra, one twice, or none in
-         *     the round), or an `expected_row_version` is out of date. `scheduled_at` is checked again
+         *     is not exactly the bill's DRAFT batches (one missing, one extra, one twice, or the bill
+         *     has none), or an `expected_row_version` is out of date. `scheduled_at` is checked again
          *     at the moment of confirmation, after the locks are taken; a time no longer allowed is the
-         *     same 20001 with `data.fields=[scheduled_at]`, nothing changed. A round the server cannot
-         *     determine is 50001, nothing changed.
+         *     same 20001 with `data.fields=[scheduled_at]`, nothing changed.
          *
-         *     Effects, in one transaction: every DRAFT batch of the round moves to CONFIRMED (SB2, a
+         *     Effects, in one transaction: every DRAFT batch of the bill moves to CONFIRMED (SB2, a
          *     compare-and-set on each `row_version`, `row_version` + 1), with `settle_mode`,
          *     `scheduled_at` (null for IMMEDIATE), `confirmed_by` the caller and `confirmed_at` the
          *     server's current time. Confirming only reaches CONFIRMED: execution is a later step (SB5,
@@ -7943,7 +7947,8 @@ export interface paths {
          *     Request: `platform`, the one platform to check. The server checks that platform's orders
          *     of the bill as the bill-day task does and generates DRAFT batches of kind supplement
          *     (SB1). They form one new round (AdminSettleBillStatus, 编排裁定 D10-437) and are confirmed
-         *     on their own through POST /admin/v1/settle-bills/{bill_id}/confirm.
+         *     through POST /admin/v1/settle-bills/{bill_id}/confirm, which covers every DRAFT batch of the
+         *     bill (编排裁定 D10-444).
          *
          *     Order of checks: `settle.bill` (10403 with `data.reason=admin_permission_denied`) →
          *     step-up (10003) → body (20001 with `data.fields=[platform]`) → a `bill_id` that does not
@@ -7953,9 +7958,10 @@ export interface paths {
          *     `credit.enabled.<platform>` is off, BR-FUND-04 ⑨); `bill_not_ready` with
          *     `data.fields=[bill_id]` (the bill is still generating, or the bill-day task has no result
          *     for this platform on this bill); `pending_draft` with `data.fields=[bill_id]` (the bill
-         *     still has a DRAFT batch of any platform, the requested one included: confirming covers
-         *     only the latest round, so a new round would strand it; 先确认或驳回现有 DRAFT 再发起,
-         *     编排裁定 D10-440, which replaces D10-437 ②).
+         *     still has a DRAFT batch of any platform and any round, the requested one included;
+         *     先确认或驳回现有 DRAFT 再发起, and both work on it whatever its round, 编排裁定 D10-440,
+         *     D10-444). A CONFIRMED batch does not refuse the launch, SCHEDULED included; if its schedule
+         *     is cancelled after the launch it is DRAFT again and the same confirmation covers it.
          *
          *     `outcome`: `generated` = the check ran; `batch_ids` are the new batches. `batch_ids` may be
          *     empty: nothing to include is not an error and no empty batch is generated (SB1).
@@ -8050,7 +8056,10 @@ export interface paths {
          *
          *     Effects: the batch moves to DRAFT (SB3, `row_version` + 1): `confirmed_by`, `confirmed_at`
          *     and `scheduled_at` are cleared and `settle_mode` returns to IMMEDIATE, so it must be confirmed
-         *     again before it can run. `paused_by_switch_at` stays (BR-FUND-04 SB3). Writes an audit record
+         *     again before it can run. POST /admin/v1/settle-bills/{bill_id}/confirm covers it with every
+         *     other DRAFT batch of the bill, also when a later supplement launch has put it outside the
+         *     latest round (`in_current_round` false, 编排裁定 D10-444). `paused_by_switch_at` stays
+         *     (BR-FUND-04 SB3). Writes an audit record
          *     (action settle_batch_cancel_schedule, with the batch and, before and after, its `status`,
          *     `settle_mode` and `scheduled_at`; no personal data). The response is the batch's bill as
          *     GET /admin/v1/settle-bills/{bill_id} returns it afterwards.
@@ -16873,6 +16882,10 @@ export interface components {
          *     IMMEDIATE or with scheduled_at not later than now (due, not started yet);
          *     scheduled = otherwise (the batches not yet DONE are all CONFIRMED with scheduled_at later
          *     than now). Chinese names from BR-TEXT-25 admin_dict.
+         *     Only the latest round counts, so a batch that is DRAFT outside it (a schedule cancelled
+         *     after a later supplement launch) does not make the bill issued: the status can be, for
+         *     example, settled while that batch waits for confirmation (编排裁定 D10-444). Which batches
+         *     wait for confirmation is read from the batches with status DRAFT, not from this status.
          * @enum {string}
          */
         AdminSettleBillStatus: "generating" | "issued" | "scheduled" | "settling" | "settled";
@@ -17037,19 +17050,20 @@ export interface components {
             created_at: string;
             /** @description The version the batch commands take as expected_row_version (POST /admin/v1/settle-bills/{bill_id}/confirm, POST /admin/v1/settle-batches/{batch_id}/cancel-schedule, /reject, /resume). Returned on every batch from B2-09f. */
             row_version?: components["schemas"]["AdminSettleBatchRowVersion"];
-            /** @description Whether the batch belongs to the bill's latest round as defined in AdminSettleBillStatus (main round = all kind main batches; supplement round = kind supplement batches sharing (platform, created_at); latest = largest round time, a tie going to the round holding the largest batch_id); a CANCELLED batch of that round is true but takes no part. */
+            /** @description Whether the batch belongs to the bill's latest round as defined in AdminSettleBillStatus (main round = all kind main batches; supplement round = kind supplement batches sharing (platform, created_at); latest = largest round time, a tie going to the round holding the largest batch_id); a CANCELLED batch of that round is true but takes no part. It only says which batches the derived status comes from; a DRAFT batch can be false (a schedule cancelled after a later supplement launch) and POST /admin/v1/settle-bills/{bill_id}/confirm still covers it (编排裁定 D10-444). */
             in_current_round: boolean;
             item_counts: components["schemas"]["AdminSettleBatchItemCounts"];
         };
-        /** @description One DRAFT batch of the round as the console read it. */
+        /** @description One DRAFT batch of the bill as the console read it. */
         AdminSettleExpectedBatch: {
             batch_id: components["schemas"]["Id"];
             expected_row_version: components["schemas"]["AdminSettleBatchRowVersion"];
         };
         /**
-         * @description Body of POST /admin/v1/settle-bills/{bill_id}/confirm. `expected_batches` must match the
-         *     DRAFT batches of the bill's latest round one to one (AdminSettleBillStatus), never a choice
-         *     among them; any other set is 20902 with data.resource=settle_batch.
+         * @description Body of POST /admin/v1/settle-bills/{bill_id}/confirm. `expected_batches` must match all
+         *     the DRAFT batches of the bill one to one, whatever their round and platform (BR-FUND-04 ⑥,
+         *     编排裁定 D10-444), never a choice among them; any other set is 20902 with
+         *     data.resource=settle_batch.
          */
         AdminSettleBillConfirmRequest: {
             expected_batches: components["schemas"]["AdminSettleExpectedBatch"][];
