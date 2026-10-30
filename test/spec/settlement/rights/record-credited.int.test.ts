@@ -574,3 +574,67 @@ it(
   },
   TIMEOUT,
 );
+
+/**
+ * Fixture step of #42: the credited order's settlement commission column emptied, so the effective
+ * union commission is the estimate (BR-FUND-08 ①「结算佣金为空时是预估佣金的新值」).
+ * order_settlements is append-only, so its credit-time rows stay; only the orders column changes.
+ */
+async function withoutSettleCommission(h: Harness, o: SeededOrder): Promise<void> {
+  await p.db
+    .updateTable('orders')
+    .set({ settle_commission_fen: null })
+    .where('app_id', '=', h.appId)
+    .where('order_id', '=', o.orderId)
+    .execute();
+}
+
+it(
+  '[AC-B2-04l#42] 入账后 WAIT_COMMISSION 期间联盟新佣金经订单同步回调进来（无结算佣金、预估改为 600，不带维权记录引用）：按 R9 部分扣回 170 / 34 / 17、平台 179，键带 C{commission_version}；同事务把该维权记录关闭为 SUCCEEDED（id 不变）、rights_pending 回到 false、待处理行关闭（resolved）；之后平台用同一维权单号再给应扣佣金 400 → duplicate，凭证只有一套、什么都不变',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.credited();
+    await withoutSettleCommission(h, o);
+    expect(await h.record(o, { deductionFen: null })).toEqual({ kind: 'applied' });
+    const waiting = await h.onlyRights(o);
+    expect(waiting).toMatchObject({ status: 'WAIT_COMMISSION' });
+    expect(await h.pendingRows(o)).toEqual([
+      expect.objectContaining({ reason: 'CLAWBACK_NO_COMMISSION', status: 'open' }),
+    ]);
+
+    const { result, commissionVersion } = await h.sync(o, {
+      event: 'PLATFORM_SETTLED',
+      estAfter: 600n,
+    });
+    const id = `C${String(commissionVersion)}`;
+    expect(result).toMatchObject({
+      outcome: 'clawed_back',
+      transition: 'R9',
+      rightsEventId: id,
+      bookedBaseFen: 510n,
+      bookedNFen: 600n,
+    });
+    await expectPartial400(h, o, id);
+    expect(await h.onlyRights(o)).toMatchObject({
+      id: waiting.id,
+      status: 'SUCCEEDED',
+      row_version: waiting.row_version + 1,
+      updated_at: h.clock.now(),
+    });
+    expect(await h.pendingRows(o)).toEqual([
+      expect.objectContaining({ reason: 'CLAWBACK_NO_COMMISSION', status: 'resolved' }),
+    ]);
+    expect(await h.rebateHistoryAfterCredit(o)).toEqual([
+      expect.objectContaining({ from_status: 'CREDITED', to_status: 'CREDITED' }),
+    ]);
+    expect(await h.balance(o.user('self'))).toBe(255n);
+    expect(await h.balance(o.user('direct'))).toBe(51n);
+    expect(await h.balance(o.user('indirect'))).toBe(25n);
+    const closed = await h.everything();
+
+    expect(await h.record(o, { deductionFen: 400n })).toEqual({ kind: 'duplicate' });
+    expect(await h.everything()).toEqual(closed);
+    expect(await h.clawbackKeys(o)).toEqual(keysOf(o, id));
+  },
+  TIMEOUT,
+);
