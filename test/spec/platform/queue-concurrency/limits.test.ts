@@ -33,6 +33,7 @@ it('[B1-01zzk 冻结结构不变] ENTRY_PLAN 与 QUEUE_CATALOG 与主干逐字�
   ).toBe(true);
   // B1-03z: evt.risk-appeal-restore adds one slot (43 → 44 after B2-02q's ledger-check); the title keeps its frozen wording.
   expect(TRUNK_WORKER_PLAN.reduce((sum, item) => sum + item.concurrency, 0)).toBe(44);
+  expect(TRUNK_ENTRY_PLAN.payout.reduce((sum, item) => sum + item.concurrency, 0)).toBe(2);
   expect(DEFAULT_DB_BUDGET).toBe(Math.floor(POOL_SIZES.worker.db * 0.7));
   expect(POOL_SIZES.worker.db - DEFAULT_DB_BUDGET).toBeGreaterThanOrEqual(RESERVED_CONNECTIONS);
   expect(effectiveLimits('worker', ENTRY_PLAN)).toStrictEqual({
@@ -74,7 +75,7 @@ it('[B1-01zzk 配置覆盖] 覆盖只往下调：列出的队列取覆盖值（�
   ).toStrictEqual({ concurrency: { 'c-a': 1, 'c-b': 4, 'c-c': 2 }, dbBudget: DEFAULT_DB_BUDGET });
 });
 
-it('[B1-01zzk 其他入口不受影响] api / stream / admin / payout：有没有 limits 都只取自己的计划值，没有共享预算（dbBudget null）', () => {
+it('[B1-01zzk 其他入口不受影响] api / stream / admin / payout：有没有 limits 都只取自己的计划值（B2-07e：payout 为 payout 1 与 payout-attempt-append 1），没有共享预算（dbBudget null）', () => {
   const limits: QueueLimits = { concurrency: { notify: 1, 'order-sync': 1 }, dbBudget: 1 };
   const seen: Record<string, unknown> = {};
   for (const entry of ['api', 'stream', 'admin', 'payout'] as const) {
@@ -85,7 +86,7 @@ it('[B1-01zzk 其他入口不受影响] api / stream / admin / payout：有没�
     dbBudget: 1,
   });
   const none = { concurrency: {}, dbBudget: null };
-  const payout = { concurrency: { payout: 1 }, dbBudget: null };
+  const payout = { concurrency: { payout: 1, 'payout-attempt-append': 1 }, dbBudget: null };
   expect(seen).toStrictEqual({
     api: [none, none],
     stream: [none, none],

@@ -29,6 +29,9 @@ const BUSINESS_QUEUES = [
   // The worker's daily ledger check (B2-02q, BR-FUND-19, D10-415 ①): job `daily`, singletonKey
   // `daily:${app_id}:${accounting_date}`; each run enqueues the next day.
   'ledger-check',
+  // The payout process's W11 attempt records (B2-07e, D10-428): job `append`, singletonKey
+  // `${withdrawal_id}:${recon_diff_id}:attempt-append`, queued on the write-off transaction.
+  'payout-attempt-append',
   'notify',
   // Site union authorization check chain, its probe retry, expiry and alert delivery jobs
   // (B1-22b): union's UnionAuthModule, worker only; one queued or active job per singletonKey.
@@ -81,6 +84,7 @@ export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
         name === 'payout-review' ||
         name === 'payout-recon' ||
         name === 'ledger-check' ||
+        name === 'payout-attempt-append' ||
         name === 'risk-scan' ||
         name === 'union-auth' ||
         name === 'pay'
@@ -119,5 +123,6 @@ export const ENTRY_PLAN: EntryPlan = Object.freeze({
   worker: Object.freeze(
     WORKER_LANES.map(([queue, concurrency, polling]) => work(queue, concurrency, polling)),
   ),
-  payout: Object.freeze([work('payout', 1)]),
+  // B2-07e (D10-428): the W11 attempt records, appended only by the payout process (couli_payout).
+  payout: Object.freeze([work('payout', 1), work('payout-attempt-append', 1)]),
 });

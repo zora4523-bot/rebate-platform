@@ -237,6 +237,7 @@ import {
   createWithdrawalInFlightReader,
   createWithdrawHolds,
   createWithdrawHoldsReader,
+  createWithdrawalProvenSuccess,
   releaseWithdrawHoldsBySource,
   createWithdrawRules,
   createWithdrawSwitchCheck,
@@ -2918,6 +2919,22 @@ export function dataCopyPorts(config: AppConfig): IdentityDataCopyPorts {
  * /v1/config), so an admin change to a minimum version reaches both at the same refresh.
  */
 type SharedContentReader = (db: Kysely<Database>, clock: Clock) => ContentReader;
+/**
+ * B2-07e: an audit port whose actor may be written as `admin:<admin_users.id>` (payout's hold
+ * release records the releasing account that way on the hold row); audit_logs.admin_id is the
+ * account itself. A plain id passes through unchanged.
+ */
+function adminActorAudit(writer: AuditPort): AuditPort {
+  return {
+    append: (input) =>
+      writer.append(
+        input.actor.startsWith('admin:')
+          ? { ...input, actor: input.actor.slice('admin:'.length) }
+          : input,
+      ),
+  };
+}
+
 function sharedContentReader(): SharedContentReader {
   let shared:
     | { readonly db: Kysely<Database>; readonly clock: Clock; readonly reader: ContentReader }
@@ -3554,12 +3571,35 @@ export class AppModule {
                       {
                         clock,
                         lockUsersForUpdate,
-                        audit: createAuditWriter({ db: trx, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                        // B2-07e: the write-off releases as `admin:<admin_users.id>` (the hold
+                        // row's released_by, task §9.2); the audit row's admin_id is the account.
+                        audit: adminActorAudit(
+                          createAuditWriter({ db: trx, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                        ),
                       },
                       trx,
                       input,
                     ),
                 }),
+                // B2-07e (BR-WDR-08 W11, D10-428): payout's W11 on the write-off transaction —
+                // users row → ledger.lockBalances, the CAS to PAID_API, the success voucher, the
+                // attempt-append job for the payout process and the wallet event; the switch
+                // payout.proven_success_writeoff.enabled through content's reader.
+                writeOff: ({ clock, queue, eventBus }) =>
+                  createWithdrawalProvenSuccess({
+                    ledger: createLedger({
+                      clock,
+                      eventBus,
+                      balanceRecoveredHook: createBalanceRecoveredHook({ clock }),
+                    }),
+                    lockUsersForUpdate,
+                    config: {
+                      configValue: (appId, key, handle) =>
+                        createContentReader({ db: handle, clock }).configValue(appId, key),
+                    },
+                    queue,
+                    eventBus,
+                  }),
               }),
             ]
           : []),

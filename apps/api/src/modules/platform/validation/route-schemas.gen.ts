@@ -14299,6 +14299,73 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "writeOffAdminReconDiff": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Value of the Idempotency-Key header (04 §5「幂等」).",
+          "minLength": 8,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "idempotency-key"
+      ]
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "recon_diff_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "recon_diff_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/recon-diffs/{recon_diff_id}/write-off. The console confirms the\nwithdrawal status it showed and may leave a note; the evidence is the bill line stored with\nthe difference, never sent by the console.\n",
+      "additionalProperties": false,
+      "required": [
+        "expected_withdrawal_status"
+      ],
+      "properties": {
+        "expected_withdrawal_status": {
+          "type": "string",
+          "description": "Compare-and-set on the withdrawal status; only APPROVED (subset of withdrawal_status), else 20902 with data.resource=withdrawal.",
+          "enum": [
+            "APPROVED"
+          ]
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Optional operator note, 1–200 characters after trimming (else 20001 with data.fields=[note]); recorded under resolution.note."
+        }
+      }
+    }
+  },
   "listAdminWithdrawals": {
     "headers": {
       "type": "object",

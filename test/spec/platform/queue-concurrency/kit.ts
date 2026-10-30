@@ -50,13 +50,17 @@ export const TRUNK_WORKER_PLAN: readonly WorkSpec[] = [
   w('risk-scan', 1),
 ];
 
-/** ENTRY_PLAN of the trunk: only the worker and payout work queues; payout 1 (规划/02 §3.1). */
+/**
+ * ENTRY_PLAN of the trunk: only the worker and payout work queues; payout 1 (规划/02 §3.1). B2-07e
+ * (D10-428, D10-415 ①): the payout process also appends the W11 attempt records, queue
+ * payout-attempt-append, concurrency 1, after payout.
+ */
 export const TRUNK_ENTRY_PLAN: EntryPlan = {
   api: [],
   stream: [],
   admin: [],
   worker: TRUNK_WORKER_PLAN,
-  payout: [w('payout', 1)],
+  payout: [w('payout', 1), w('payout-attempt-append', 1)],
 };
 
 /** Business queues of the trunk catalog, in catalog order. */
@@ -69,6 +73,8 @@ const TRUNK_BUSINESS_QUEUES = [
   'payout-review',
   'payout-recon',
   'ledger-check',
+  // B2-07e (D10-428): the payout process's W11 attempt records, right after payout-recon.
+  'payout-attempt-append',
   'notify',
   'union-auth',
   'evt.notification-risk-state',
@@ -95,6 +101,8 @@ const TRUNK_EXCLUSIVE: ReadonlySet<string> = new Set([
   'payout-review',
   'payout-recon',
   'ledger-check',
+  // B2-07e: one queued or active job per (withdrawal, difference) singletonKey.
+  'payout-attempt-append',
   'risk-scan',
   'union-auth',
   'pay',
