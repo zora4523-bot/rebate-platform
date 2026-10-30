@@ -29,6 +29,7 @@ import {
   type RebateDependencies,
   type RebatePort,
 } from './rebate/application/rebate.ts';
+import type { SettlementWorkerPorts } from './worker/ports.ts';
 
 /** Nest injection token for the pre-credit rebate port (orders' rebate.onImported / onUpdated). */
 export const REBATE_PORT = Symbol('REBATE_PORT');
@@ -46,6 +47,20 @@ export class SettlementModule {
       ],
       exports: [REBATE_PORT],
     };
+  }
+
+  /**
+   * B2-04ze (D10-443): the worker entry's settle queue. With DB, JOB_QUEUE, FIELD_CRYPTO and
+   * EVENT_BUS resolved (CLOCK, ROOT_LOGGER always), registers exactly one handler on queue settle
+   * (worker/schedule.ts createSettleJobHandler) over createBillJob (production readSource and
+   * saveBillValidations), createBatchExecutor, createCreditOrder and createBeneficiaryCredit (both
+   * with readAttribution = ports.readAttribution) and createBeneficiaryGate (ports' identity,
+   * risk and minors readers), plus the timer of the daily bill seed and the due batch scan (after
+   * bootstrap, unref, stopped on destroy). Without a database or queue nothing is registered.
+   */
+  static forWorker(ports: SettlementWorkerPorts): DynamicModule {
+    void ports;
+    throw new Error('NotImplemented: SettlementModule.forWorker');
   }
 }
 
