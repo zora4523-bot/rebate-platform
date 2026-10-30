@@ -56,6 +56,13 @@ export type {
   RealnameStatusBatchReader,
   RealnameStatusBatchReaderOptions,
 } from './ports/realname-status-batch.ts';
+// B1-03zc: under-18 users at an instant (BR-ID-26), for settlement BeneficiaryGate's minors port.
+export { createMinorStatusBatchReader } from './ports/minor-status-batch.ts';
+export type {
+  MinorStatusBatchInput,
+  MinorStatusBatchReader,
+  MinorStatusBatchReaderOptions,
+} from './ports/minor-status-batch.ts';
 export { laborAgreementSigned } from './ports/labor-agreement.ts';
 // B1-13h: the labor agreement's configuration port app.module assembles (IdentityModuleOptions).
 export type { LaborAgreementConfigReader } from './ports/labor-agreement.ts';
