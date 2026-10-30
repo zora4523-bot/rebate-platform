@@ -215,6 +215,16 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   // words, no direct route). Registration only; B1-05m checks their shape on save and reads them.
   spec('search.hot_words', 'object', 'config.business'),
   spec('search.keyword_routes', 'object', 'config.business'),
+  // B1-15zd (D10-454, BR-ID-30 ⑥⑦⑮⑯⑱): the purge master switch (an ordinary item, not a 04 §10.2
+  // kill switch) and each table's retention in whole days, config.risk. D10-458: each lower bound
+  // equals the key's value in 08, so a key can only be lengthened; shortening needs 08 changed first.
+  spec('retention.purge.enabled', 'boolean', 'config.risk'),
+  riskInteger('retention.login_logs_days', 180),
+  riskInteger('retention.device_registrations_days', 180),
+  riskInteger('retention.sms_send_attempts_days', 190),
+  riskInteger('retention.inbox_messages_days', 180),
+  riskInteger('retention.notify_logs_days', 190),
+  riskInteger('retention.union_raw_payloads_days', 180),
 ]);
 
 const VISIBLE: readonly ConfigItemSpec[] = Object.freeze(

@@ -106,5 +106,13 @@ INSERT INTO app.config_items (app_id, key, value, updated_by) VALUES
   ('couli', 'rank.cache_ttl_seconds', '600'::jsonb, 'seed'), -- 规划/04 §10.1、规划/01 F-PROD-13
   -- 第 13 批：搜索热词与关键词直达（B1-05l，D10-419 (a)）；默认空列表 = 不展示热词、无直达，不编造热词
   ('couli', 'search.hot_words', '[]'::jsonb, 'seed'), -- D10-419 (a)
-  ('couli', 'search.keyword_routes', '[]'::jsonb, 'seed') -- D10-419 (a)
+  ('couli', 'search.keyword_routes', '[]'::jsonb, 'seed'), -- D10-419 (a)
+  -- 第 14 批：个人数据留存清理总开关与各表保留天数（B1-15zd，D10-454）；缺省取 08 现值
+  ('couli', 'retention.purge.enabled', 'true'::jsonb, 'seed'), -- D10-454
+  ('couli', 'retention.login_logs_days', '180'::jsonb, 'seed'), -- BR-ID-30 ⑥
+  ('couli', 'retention.device_registrations_days', '180'::jsonb, 'seed'), -- BR-ID-30 ⑱
+  ('couli', 'retention.sms_send_attempts_days', '190'::jsonb, 'seed'), -- BR-ID-30 ⑥
+  ('couli', 'retention.inbox_messages_days', '180'::jsonb, 'seed'), -- BR-ID-30 ⑮
+  ('couli', 'retention.notify_logs_days', '190'::jsonb, 'seed'), -- BR-ID-30 ⑯
+  ('couli', 'retention.union_raw_payloads_days', '180'::jsonb, 'seed') -- BR-ID-30 ⑦
 ON CONFLICT (app_id, key) DO NOTHING;

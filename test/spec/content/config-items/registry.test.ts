@@ -13,6 +13,7 @@
 // (AUTO_ENABLE_UNSEEDED).
 // B1-28g (D10-419): rank.cache_ttl_seconds follows payout.auto_enable_check.* (kit RANK).
 // B1-05l (D10-419 (a)): search.hot_words and search.keyword_routes follow it (kit SEARCH).
+// B1-15zd (D10-454, BR-ID-30): the seven retention.* keys follow search.* (kit RETENTION).
 import { expect, it } from 'vitest';
 import {
   configItemSpecOf,
@@ -34,6 +35,7 @@ import {
   INVITE_ELIG,
   PAYOUT,
   RANK,
+  RETENTION,
   RISK_WITHDRAW,
   SEARCH,
   SETTLE,
@@ -68,7 +70,7 @@ it('[AC-F1-10e#1] 裁定 14：注册表恰好是种子里全部非开关键加 a
   // F1-02zt：过渡已收紧: EXPECTED + settle.* + growth.invite_reward.* + payout.* (B2-06bz)
   // + risk.withdraw.* (B2-11z) + withdraw.auto_payout.* (B2-11y)
   // + payout.auto_enable_check.* (B2-11dz) + rank.cache_ttl_seconds (B1-28g)
-  // + search.hot_words / search.keyword_routes (B1-05l), all present.
+  // + search.hot_words / search.keyword_routes (B1-05l) + retention.* (B1-15zd), all present.
   expect(sorted(keys)).toStrictEqual(
     sorted(
       [
@@ -79,6 +81,7 @@ it('[AC-F1-10e#1] 裁定 14：注册表恰好是种子里全部非开关键加 a
         ...AUTO_ENABLE_CHECK,
         ...RANK,
         ...SEARCH,
+        ...RETENTION,
       ].map((entry) => entry.key),
     ),
   );
@@ -222,8 +225,8 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
   // F1-02zm / F1-02zw: the only keys after this group are the whole growth.invite_reward.* group
   // inviteNow() followed by the eight payout.* keys (B2-06bz), the six risk.withdraw.* keys
   // (B2-11z), the seventeen withdraw.auto_payout.* keys (B2-11y), the four
-  // payout.auto_enable_check.* keys (B2-11dz), rank.cache_ttl_seconds (B1-28g) and the two
-  // search.* keys (B1-05l; checked key by key in #57 and #58).
+  // payout.auto_enable_check.* keys (B2-11dz), rank.cache_ttl_seconds (B1-28g), the two search.*
+  // keys (B1-05l) and the seven retention.* keys (B1-15zd; checked key by key in #57 and #58).
   presentOf(INVITE_CFG, 'growth.invite_reward.*');
   const inviteTail = [
     ...inviteNow(),
@@ -233,6 +236,7 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
     ...AUTO_ENABLE_CHECK,
     ...RANK,
     ...SEARCH,
+    ...RETENTION,
   ].map((e) => e.key);
   expect(keys.slice(EXPECTED.length, EXPECTED.length + SETTLE.length)).toStrictEqual(
     SETTLE.map((entry) => entry.key),
@@ -253,10 +257,10 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
 
 // F1-02zm: the BR-INV-24 细则 growth.invite_reward.* group of F1-02zn is registered whole right
 // after SETTLE, in its own order, followed by eligibility_days, then payout.*, risk.withdraw.*,
-// withdraw.auto_payout.*, payout.auto_enable_check.*, rank.cache_ttl_seconds and the two search.*
-// keys (#58).
+// withdraw.auto_payout.*, payout.auto_enable_check.*, rank.cache_ttl_seconds, the two search.*
+// keys and the seven retention.* keys (#58).
 // F1-02zt：过渡已收紧, the absent branch is gone.
-it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登记（紧接 settle.* 之后、其后是 eligibility_days、payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds 与 search.* 两项，逐键值类型、options、权限点、可改标记）', () => {
+it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登记（紧接 settle.* 之后、其后是 eligibility_days、payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds、search.* 两项与 retention.* 七项，逐键值类型、options、权限点、可改标记）', () => {
   expect(INVITE_CFG).toHaveLength(5);
   const keys = configRegistry().map((spec) => spec.key);
   const present = INVITE_CFG.filter((entry) => keys.includes(entry.key));
@@ -264,7 +268,8 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
   // F1-02zw: the tail is inviteNow(), the five keys followed by eligibility_days (checked in #58),
   // then the eight payout.* keys (B2-06bz), the six risk.withdraw.* keys (B2-11z), the
   // seventeen withdraw.auto_payout.* keys (B2-11y), the four payout.auto_enable_check.* keys
-  // (B2-11dz), rank.cache_ttl_seconds (B1-28g) and the two search.* keys (B1-05l).
+  // (B2-11dz), rank.cache_ttl_seconds (B1-28g), the two search.* keys (B1-05l) and the seven
+  // retention.* keys (B1-15zd).
   const tail = [
     ...inviteNow(),
     ...PAYOUT,
@@ -273,6 +278,7 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
     ...AUTO_ENABLE_CHECK,
     ...RANK,
     ...SEARCH,
+    ...RETENTION,
   ];
   const head = keys.length - tail.length;
   expect(keys.slice(head)).toStrictEqual(tail.map((entry) => entry.key));
@@ -301,9 +307,10 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
 // withdraw.auto_payout.* keys in AUTO_PAYOUT order (enum options exactly as the kit), then
 // B2-11dz (D10-392 / D10-394) the four payout.auto_enable_check.* keys in AUTO_ENABLE_CHECK order,
 // then B1-28g (D10-419) rank.cache_ttl_seconds (RANK), then B1-05l (D10-419 (a)) the two search.*
-// keys in SEARCH order, and nothing else.
+// keys in SEARCH order, then B1-15zd (D10-454) the seven retention.* keys in RETENTION order, and
+// nothing else.
 // F1-02zt：过渡已收紧, the absent branch is gone.
-it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接 ip_window_hours 登记、其后紧接 payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds 与 search.* 两项（按登记顺序，逐键值类型、options、权限点、可改标记；options 为 null、config.business、可改）', () => {
+it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接 ip_window_hours 登记、其后紧接 payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds、search.* 两项与 retention.* 七项（按登记顺序，逐键值类型、options、权限点、可改标记；options 为 null、config.business、可改）', () => {
   expect(INVITE_ELIG).toHaveLength(1);
   const key = 'growth.invite_reward.eligibility_days';
   expect(INVITE_ELIG[0]!.key).toBe(key);
@@ -314,11 +321,24 @@ it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接
   const at = keys.indexOf(key);
   expect(keys[at - 1]).toBe('growth.invite_reward.ip_window_hours');
   expect(keys.slice(at + 1)).toStrictEqual(
-    [...PAYOUT, ...RISK_WITHDRAW, ...AUTO_PAYOUT, ...AUTO_ENABLE_CHECK, ...RANK, ...SEARCH].map(
-      (entry) => entry.key,
-    ),
+    [
+      ...PAYOUT,
+      ...RISK_WITHDRAW,
+      ...AUTO_PAYOUT,
+      ...AUTO_ENABLE_CHECK,
+      ...RANK,
+      ...SEARCH,
+      ...RETENTION,
+    ].map((entry) => entry.key),
   );
-  for (const entry of [...PAYOUT, ...RISK_WITHDRAW, ...AUTO_ENABLE_CHECK, ...RANK, ...SEARCH]) {
+  for (const entry of [
+    ...PAYOUT,
+    ...RISK_WITHDRAW,
+    ...AUTO_ENABLE_CHECK,
+    ...RANK,
+    ...SEARCH,
+    ...RETENTION,
+  ]) {
     const payoutSpec = registered(entry.key);
     expect({
       key: payoutSpec.key,
@@ -396,4 +416,65 @@ it('[AC-F1-10e#61] payout.auto_enable_check.recon_required_days 设了须为 ≥
   }
   const refused = [0, -1, 1.5, 7.5, Number.NaN, Number.POSITIVE_INFINITY, '7', true, null, []];
   for (const value of refused) expect(configValueFits(spec, value), String(value)).toBe(false);
+});
+
+// B1-15zd (D10-454, BR-ID-30): the type, permission and editable flag of each retention.* key are
+// checked in #58; here the lower bound (D10-458: each key's value in 08, so it can only be
+// lengthened; upper bound the int4 default) and the master switch's JSON booleans.
+const RETENTION_ENABLED = 'retention.purge.enabled';
+const RETENTION_DAYS_KEYS = [
+  ['retention.login_logs_days', 180],
+  ['retention.device_registrations_days', 180],
+  ['retention.sms_send_attempts_days', 190],
+  ['retention.inbox_messages_days', 180],
+  ['retention.notify_logs_days', 190],
+  ['retention.union_raw_payloads_days', 180],
+] as const;
+
+it.each(RETENTION_DAYS_KEYS)(
+  '[AC-F1-10e#62] %s 是可改的 config.risk 整数，下限 %i、上限 int4，只能往长调（B1-15zd，D10-454、D10-458）',
+  (key, min) => {
+    const spec = registered(key);
+    expect(spec).toMatchObject({
+      valueType: 'number',
+      options: null,
+      permission: 'config.risk',
+      adminEditable: true,
+    });
+    expect(spec.range).toStrictEqual({ integer: true, min, max: 2147483647 });
+    for (const value of [min, min + 1, 2147483647]) {
+      expect(configValueFits(spec, value), String(value)).toBe(true);
+    }
+    const refused = [
+      min - 1,
+      30,
+      0,
+      -1,
+      min + 0.5,
+      2147483648,
+      Number.NaN,
+      String(min),
+      true,
+      null,
+      [],
+    ];
+    for (const value of refused) expect(configValueFits(spec, value), String(value)).toBe(false);
+  },
+);
+
+it('[AC-F1-10e#63] retention.purge.enabled 是可改的 config.risk 布尔项，不是开关，只收 JSON 布尔（B1-15zd，D10-454）', () => {
+  const spec = registered(RETENTION_ENABLED);
+  expect(spec).toMatchObject({
+    valueType: 'boolean',
+    options: null,
+    permission: 'config.risk',
+    adminEditable: true,
+  });
+  expect(switchSpecOf(RETENTION_ENABLED)).toBeNull();
+  for (const value of [true, false]) {
+    expect(configValueFits(spec, value), String(value)).toBe(true);
+  }
+  for (const value of ['true', 'on', 1, 0, null, [], {}]) {
+    expect(configValueFits(spec, value), JSON.stringify(value)).toBe(false);
+  }
 });
