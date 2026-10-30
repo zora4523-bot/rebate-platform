@@ -186,7 +186,7 @@ it.each(['staging', 'prod'] as const)(
     const governed = createGovernedAdapter(raw, {
       endpoint: endpoint('jd'),
       scheduler,
-      quota: fallback.limiter(config({ bucketKey: 'union:jd:synthetic-app' })),
+      quota: fallback.limiter(config({ bucketKey: endpoint('jd').quotaKey })),
     });
     const link = 'https://item.jd.com/100012345678.html';
     const governedError = await governed.resolveLink(link, online).then(
