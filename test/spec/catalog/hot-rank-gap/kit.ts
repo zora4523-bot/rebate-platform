@@ -29,7 +29,7 @@ export function ranks(data: HotRankData): number[] {
   return data.items.map((item) => item.rank);
 }
 
-export function rows(data: HotRankData): [number, string, string | null][] {
+export function rows(data: HotRankData): [number, string | null, string | null][] {
   return data.items.map((item) => [item.rank, item.product_card.title, item.sales_text]);
 }
 
