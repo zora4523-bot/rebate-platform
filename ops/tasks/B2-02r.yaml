@@ -1,0 +1,23 @@
+id: B2-02r
+repo: rebate-platform
+title: ledger 日终校验断链修复：daily 任务重试耗尽进 ledger-check.dead 后，补种 / 修复定时器仍能为该 (app, D) 重新入队（不以进程内存里的「已开跑」跳过，按队列 / 结果的实际状态判定），续排链不因一次失败静默停跑；断链（某 app 的会计日 D 到期未完成）告警
+type: impl
+# 2026-10-30 编排 15:17 派工（#1838 核定）：B2-02q money r1 S2——started[app]=X 的内存判定使 dead 后整日跳过、链不再续排，日终校验静默停跑。#1838 合并后立即入账、排在其他新活之前。RV2，独立 Claude 写测试与 money 评审（Codex 至 11-02 不可用，approvals #36）。
+# 做法（代理默认，规则测试钉住行为）：补种判定改为查本 (app, D) 是否已有完成记录（日终结果已登记，或队列里同 singletonKey 的 job 已 completed）与是否有排队 / 进行中的 job；只有已完成或在排队 / 进行中才跳过，dead / failed / 缺失一律重新入队（exclusive singletonKey 仍保证不并发）。到期未完成（D+1 01:00 后超过阈值仍无完成）按 app 告警（pino 告警行，事件名照现有资金告警口径），每 (app, D) 只告警一次。时间只读注入 Clock。
+refs: [BR-FUND-19]
+refs_hash:
+  BR-FUND-19: e6205ee4fcc1
+deps: [B2-02q]
+paths:
+  - 'apps/api/src/modules/ledger/application/daily-check-schedule*.ts'
+  - 'apps/api/src/modules/ledger/daily-check.module.ts'
+  - 'apps/api/src/modules/ledger/infra/daily-check-*.ts'
+  - 'apps/api/src/modules/ledger/index.ts'
+test_paths:
+  - 'test/spec/ledger/daily-check-heal/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/daily-check-heal/**'
+status: todo
