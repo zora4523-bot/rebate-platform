@@ -1,0 +1,37 @@
+{
+  "task": "CT-24z",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "d34d17e03907a2d89ffe8b7c9e50805e00b19719",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only). contracts/openapi.yaml gains three read-only console operations for monthly settlement bills (B2-09; 01 F-ADM-08; 04 §3.2 settle_bills / settle_batches / settle_batch_items, §11.2; design/specs/admin-settle-bills.md §1 / §4): GET /admin/v1/settle-bills (listAdminSettleBills: bill month range and derived status filters, AdminPage / AdminPageSize, bill_id descending), GET /admin/v1/settle-bills/{bill_id} (getAdminSettleBill: bill-day totals, error and held counts, every batch with in_current_round and item counts summed at read time) and GET /admin/v1/settle-batches/{batch_id}/items (listAdminSettleBatchItems: items without phone numbers); permission settle.bill or fund.view, read only, no audit; unknown / foreign ids 20001; all three x-implementation: planned until B2-09d. New enum admin_settle_bill_status (contracts/enums/admin.yaml) derived at read time per 08 BR-FUND-04 月结账单状态, not stored; rounds decidable from the table (main round = all kind=main batches; each supplement launch = kind=supplement batches sharing platform and created_at). Totals reflect the bill-day task only (D10-280 ③). Enum bound in packages/contracts-ts/scripts/conformance.ts ENUM_BINDINGS (checks added only); generated files from pnpm codegen. tester: none, so no red run. Test-machine full verification verify/1 exit 0 (8fecb1b1, PROP_RUNS=2000).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "fresh independent Claude via nohup claude-run.sh --review-type contract (Codex unavailable until 2026-11-02, approvals 36): pass, no findings."
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "cfc66c514e04edf2f7672aae61e57fac2392276f",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
