@@ -1,0 +1,31 @@
+id: B2-08cz
+repo: rebate-platform
+title: 测试修改（B2-08c 前置，同 B2-06bz 先例 D10-296）：content 冻结注册表测试与种子随 tax.SERVICE_FEE.method（string，none / flat_rate / cumulative，默认 none）、tax.SERVICE_FEE.rate_bp（number，默认 0）、tax.SERVICE_FEE.rate_table（object，默认空档位）三键登记——config-registry.ts 登记（排在 payout.* 之后）、db/seeds 三行种子、registry.test.ts 等位置 / 总数断言、config-items kit 行与 read / writes 用例同步；只改合计与登记，不放宽任何断言
+type: test-change
+# 2026-10-31 入账（withdraw 线，D10-456 ④）。冻结文件由新鲜独立 Claude 改（approvals #36），另一新鲜独立 Claude 只读复审「不削弱」，PR 按 approvals #24 请编排加标签；先合再落 B2-08c。
+refs: [BR-WDR-20]
+refs_hash:
+  BR-WDR-20: 3127fc4b4b65
+deps: [B2-06bz]
+paths:
+  - 'test/spec/content/config-items/registry.test.ts'
+  - 'test/spec/content/config-settle/registry.test.ts'
+  - 'test/spec/content/invite-reward-config/registry.test.ts'
+  - 'test/spec/content/invite-reward-eligibility/registry.test.ts'
+  - 'test/spec/content/invite-reward-config/seeds.test.ts'
+  - 'test/spec/content/config-items/read.int.test.ts'
+  - 'test/spec/content/config-settle/writes.int.test.ts'
+  - 'test/spec/content/config-items/kit.ts'
+  - 'test/spec/content/kill-switches/*.ts'
+  - 'test/spec/content/switch-read/kit.ts'
+  - 'test/spec/db/content/config-seed.int.test.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.test.ts'
+  - 'apps/api/src/modules/content/application/config-item-admin.test.ts'
+  - 'db/seeds/0001_config-defaults.sql'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

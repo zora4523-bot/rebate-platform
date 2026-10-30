@@ -1,0 +1,31 @@
+id: B2-08b
+repo: rebate-platform
+title: payout：到账即累加 tax_ytd（BR-WDR-20：只在 PAID_API / PAID_MANUAL 时累加，year 取该单 created_at 的 +08:00 年，cum_income += amount_fen、cum_withheld += tax_fen，驳回与失败不累加）——W5（payout-landing）、W11（withdrawal-proven-success）在落地 / 核销的同一事务里 upsert tax_ytd，身份维度取 identity 新只读端口 realname-identity-key（该用户当前实名的 id_no_hmac；端口在 identity/ports 声明、identity/index.ts 导出、app.module 注入，02 §4.1 D10-181 ①）；实名更正后新身份自然另起一行，旧身份行不再累加（提现建单与计税都不依赖 user.realname_corrected 已被消费，02 §11）；W8 / W10 实现时同样接入（随各自任务）
+type: impl
+# 2026-10-31 入账（withdraw 线，D10-456 ④；拆分草案见 notices）。请编排裁定：05 B2-08 行写「消费 identity 的 user.realname_corrected」——按本方案，累加与计税都按当前实名 hmac 取行，消费者只能做「给旧身份行记 closed_at」这类标注；新建事件消费者要动约 18 份冻结测试（队列目录 / 事件订阅 / 指标登记），本线建议 B2-08 不建消费者、记 followup，由编排定（若要建，另开 B2-08bz test-change）。
+# 旧身份行只读留存（BR-ID-29 同等保护口径由 identity 的隔离存储承担，tax_ytd 只存 hmac）；累加金额经 @couli/money，年份经 @couli/domain 日切；失败回滚整笔落地 / 核销（同事务）。
+refs: [BR-WDR-20, BR-ID-25]
+refs_hash:
+  BR-WDR-20: 3127fc4b4b65
+  BR-ID-25: dcab91fa0ccc
+deps: [B2-08a]
+paths:
+  - 'apps/api/src/modules/payout/application/tax-ytd*.ts'
+  - 'apps/api/src/modules/payout/infra/tax-ytd*.ts'
+  - 'apps/api/src/modules/payout/application/payout-landing.ts'
+  - 'apps/api/src/modules/payout/application/withdrawal-proven-success.ts'
+  - 'apps/api/src/modules/payout/jobs/landing-job.ts'
+  - 'apps/api/src/modules/payout/payout.module.ts'
+  - 'apps/api/src/modules/payout/index.ts'
+  - 'apps/api/src/modules/identity/ports/realname-identity-key.ts'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/payout/tax-ytd/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/tax-ytd/**'
+status: todo
+pr: null
