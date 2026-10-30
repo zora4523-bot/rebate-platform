@@ -6,6 +6,7 @@ type: impl
 # 现状：后台结案 adminResolveAppeal 仍 planned，appeal.resolved 尚无发布者；本任务做事件消费者（EVENT_SUBSCRIPTIONS 加 consumer），结案实现上线后自动生效。订单申诉撤销的 appeal_restore 由 settlement 从同一事件生成（openapi adminResolveAppeal 说明），不在本任务。
 # 技术取舍（本线定）：「本次封禁」= 该账户申诉的 penalty_started_at（B1-03v）至结案时刻之间、reason=banned 的 forfeited 份额事件；penalty_started_at 为空时退回该用户最近一次进入 banned 的时刻（user_risk_state 历史不可得时以申诉 created_at 前最近的 banned 份额事件为界，写明）；每份额一条差错单，金额取该份额被没收的分值（commission 只读端口给出），去重键含 app_id / order_id / user_id / role / appeal_id（经 registerReconDiffOnce，至少一次投递安全）；recon_diffs 只经 ledger 端口写，commission 只读不写。
 # 2026-10-30 再补：refs 留空（三条 BR 原文合计使任务书 57KB 超 24KB 上限，brief.test 红），规划原文已抽进 couli-runs/B1-03z/excerpt.md；依据仍是 BR-FUND-22、BR-CALC-13 细则「申诉恢复」、BR-ID-36。按编排 06:09 提醒（B2-07c / D10-415 ① 先例）补新队列会撞的 worker-plan 与冻结的 queue-concurrency 计数测试，单列 test(spec) 改数。
+# 2026-10-30 三补：新队列 evt.risk-appeal-restore 与订阅 risk-appeal-restore 还会撞冻结的 queue/contract.test.ts（目录与 worker 计划逐项精确）与 events/contract.test.ts（订阅表精确），照 B2-07c 先例列入 test_paths，由规则测试作者在 spec 提交里一并改（只加该项，含义不变）。
 refs: []
 refs_hash: {}
 deps: [B1-03v, B1-03i]
@@ -26,6 +27,8 @@ test_paths:
   - 'test/spec/risk/appeal-restore/**'
   - 'test/spec/platform/queue-concurrency/limits.test.ts'
   - 'test/spec/platform/queue-concurrency/kit.ts'
+  - 'test/spec/platform/queue/contract.test.ts'
+  - 'test/spec/platform/events/contract.test.ts'
 impl: claude
 tester: claude-independent
 accept:
