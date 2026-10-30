@@ -1,27 +1,25 @@
-// B1-28h: the union side of the hot-sales list (HotRankUpstream) in the server's wiring.
-// The union adapters have no channel-scoped list yet: MaterialReq carries only a cursor, no
-// channel_id, no category and no sales field, and the platform ranking capabilities (规划/09
-// CAP-TB-10, CAP-JD-10, CAP-PDD-10) are not recorded. Serving the generic material feed under a
-// whitelisted channel's name would not be that channel's order (F-PROD-13 ②), so every call
-// fails as a union outage (50304 without reason) instead. With the whitelist empty today the use
-// case answers rank_unavailable before ever reaching this side.
-// TODO(规划/11 §4.5): 按 channel_id / 类目取联盟榜单频道并透传销量字段 — blocked on 联盟 MaterialReq 的频道参数与 CAP-TB-10、CAP-JD-10、CAP-PDD-10 实测记录
-import { UnionError, type Platform } from '../../union/index.ts';
+// B1-28j: the union side of the hot-sales list (HotRankUpstream) in the server's wiring, over the
+// union's material-channel ranking port (createUnionChannelRanking, B1-22p). Channel check, order,
+// sales field and cache rules stay those of B1-28h.
+// Rule tests: test/spec/catalog/hot-rank-upstream/**.
+import type { Clock, MaterialChannelsSpec, RootLogger } from '../../platform/index.ts';
+import type { Catalog } from '../domain/types.ts';
 import type { HotRankUpstream } from '../hot-rank.ts';
+import type { CatalogConfigReader, GovernedUnion } from '../ports.ts';
 
-function noChannelList(platform: Platform): Promise<never> {
-  return Promise.reject(
-    new UnionError(
-      'upstream_unavailable',
-      'rank: the union adapter has no channel-scoped hot list',
-      platform,
-    ),
-  );
+export interface UnionHotRankUpstreamOptions {
+  readonly union: GovernedUnion;
+  /** key_prefix of the platform, as search-wiring reads it. */
+  readonly catalog: Pick<Catalog, 'listPlatforms'>;
+  /** JD item / sku mode (product_key.jd.mode), as search-wiring reads it. */
+  readonly config: CatalogConfigReader;
+  readonly clock: Clock;
+  /** Production: platform's getMaterialChannels; read again before every fetch. */
+  readonly channels: () => MaterialChannelsSpec;
+  readonly logger: Pick<RootLogger, 'warn'>;
 }
 
-export function createUnionHotRankUpstream(): HotRankUpstream {
-  return {
-    categories: (input) => noChannelList(input.platform),
-    page: (input) => noChannelList(input.platform),
-  };
+export function createUnionHotRankUpstream(options: UnionHotRankUpstreamOptions): HotRankUpstream {
+  void options;
+  throw new Error('NotImplemented: createUnionHotRankUpstream');
 }
