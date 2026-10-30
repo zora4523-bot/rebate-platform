@@ -1,0 +1,37 @@
+{
+  "task": "CT-24ze",
+  "spec_ref": "812734156b57ba648ee1df733dafac3dba9bdb15",
+  "spec_commit": "6d5bd632f640f94074e3d5f0a72737cf2d400985",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only). contracts/openapi.yaml gains POST /admin/v1/recon-diffs/{recon_diff_id}/restore (restoreAdminReconDiff, ADMIN_RESTORE; 08 BR-FUND-22 ③ for account-ban appeal differences only; 04 §11.2 order.restore; orchestrator rulings D10-468 ①, D10-469 agent-completed defaults): totp-tier step-up, Idempotency-Key, audited; the difference moves to adjusted; amounts are computed by the server, expected_fen is display only; other difference kinds answer 20001 restore_not_supported, a deleted beneficiary restore_user_deleted. New 20001 data.reason values registered in error-codes.yaml, no new error code. x-implementation: planned until B2-09g. Generated files from pnpm codegen. tester: none, so no red run. Test-machine full verification verify/1 exit 0 (a38a2ea4, PROP_RUNS=2000).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "fresh independent Claude via nohup claude-run.sh --review-type contract (Codex unavailable until 2026-11-02, approvals 36): round 1 pass; one S2 recorded as a follow-up (restored_fen string in the free-form resolution example, integer at the top level)."
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "b28e70229cb90317f7b7908f7e4bebe6cb46a3c4",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
