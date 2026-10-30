@@ -17927,8 +17927,9 @@ paths:
         and the console's `admin_dict.*` names of BR-TEXT-25, 编排者默认), in key order, page by
         page (`page`, `page_size` ≤ 200), optionally narrowed by `class` and `key_prefix`: the
         key's class (which permission point writes it, BR-TEXT-12 细则: `fund_terms` = a fund term
-        key, `agreement` = privacy and permission texts of table D (`privacy.`, `perm.`),
-        `general` = every other key; fund term keys as classified in specs/fund-term-keys.yaml,
+        key, `agreement` = privacy and permission texts of table D (`privacy.`, `perm.`) and
+        the real-name consent sheet of table C (`real_name.consent.`, D10-204), `general` =
+        every other key; fund term keys as classified in specs/fund-term-keys.yaml,
         `admin_dict.*` keys included), the bundled default (from whichever of the two files holds
         the key), the current override (null = the bundled default applies) and
         the version of the key's current row (null = never written). `dict_version` is the
@@ -38450,7 +38451,8 @@ components:
       description: |
         Which permission point writes a dictionary key (BR-TEXT-12 细则, 04 §11.2): general →
         config.general, fund_terms → content.fund_terms, agreement (table D, `privacy.` and
-        `perm.`) → content.agreement.
+        `perm.`; table C real-name consent sheet, `real_name.consent.`, D10-204) →
+        content.agreement.
       enum:
         - general
         - fund_terms
