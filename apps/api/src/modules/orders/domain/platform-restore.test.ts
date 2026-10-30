@@ -16,7 +16,7 @@ const QUIET: PlatformRestoreChange = {
   settleAfter: null,
 };
 
-it('[AC-B1-08zc#u1] P9 三个去向都是状态触发；金额 SETTLED 取结算佣金、其余取预估佣金，空按 0', () => {
+it('[AC-B1-08zc#u1] P9 三个去向都是状态触发；金额取有效佣金（结算佣金非空取它，否则预估佣金），空按 0', () => {
   const invalid = { ...QUIET, platformBefore: 'INVALID', estAfter: 789n };
   expect(detectPlatformRestore({ ...invalid, platformAfter: 'PAID' })).toEqual({
     trigger: 'status',
@@ -29,7 +29,7 @@ it('[AC-B1-08zc#u1] P9 三个去向都是状态触发；金额 SETTLED 取结算
   expect(
     detectPlatformRestore({ ...invalid, platformAfter: 'SETTLED', settleAfter: 1234n }),
   ).toEqual({ trigger: 'status', expectedFen: 1234n });
-  expect(detectPlatformRestore({ ...invalid, platformAfter: 'SETTLED' })).toEqual({
+  expect(detectPlatformRestore({ ...invalid, platformAfter: 'SETTLED', estAfter: null })).toEqual({
     trigger: 'status',
     expectedFen: 0n,
   });
@@ -181,4 +181,46 @@ it('[AC-B1-08zc#u5] 前提：VOID / CLAWED_BACK 且 reason 属 (i) 或进入事�
       entryEvent: 'PLATFORM_INVALID',
     }),
   ).toBe(false);
+});
+
+it('[AC-B1-08ze#u1] P9 状态触发金额取更新后的有效佣金：结算佣金为空取预估佣金（拼多多形状），非空取结算佣金（含 0）', () => {
+  const invalid = { ...QUIET, platformBefore: 'INVALID', estBefore: 0n };
+  // SETTLED、结算佣金空、预估 450 → 450。
+  expect(detectPlatformRestore({ ...invalid, platformAfter: 'SETTLED', estAfter: 450n })).toEqual({
+    trigger: 'status',
+    expectedFen: 450n,
+  });
+  // SETTLED、结算佣金 600、预估 450 → 600。
+  expect(
+    detectPlatformRestore({
+      ...invalid,
+      platformAfter: 'SETTLED',
+      estAfter: 450n,
+      settleAfter: 600n,
+    }),
+  ).toEqual({ trigger: 'status', expectedFen: 600n });
+  // SETTLED、结算佣金 0、预估 789 → 0（结算佣金非空只取它）。
+  expect(
+    detectPlatformRestore({
+      ...invalid,
+      platformAfter: 'SETTLED',
+      estAfter: 789n,
+      settleAfter: 0n,
+    }),
+  ).toEqual({ trigger: 'status', expectedFen: 0n });
+  // RECEIVED / PAID 同一口径：结算佣金空取预估 300；结算佣金非空取它。
+  for (const after of ['RECEIVED', 'PAID']) {
+    expect(detectPlatformRestore({ ...invalid, platformAfter: after, estAfter: 300n })).toEqual({
+      trigger: 'status',
+      expectedFen: 300n,
+    });
+    expect(
+      detectPlatformRestore({
+        ...invalid,
+        platformAfter: after,
+        estAfter: 300n,
+        settleAfter: 250n,
+      }),
+    ).toEqual({ trigger: 'status', expectedFen: 250n });
+  }
 });

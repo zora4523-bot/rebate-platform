@@ -3,6 +3,7 @@
 // {PLATFORM_INVALID, INVALID_AFTER_SETTLE} 时，经端口登记一张 platform_restore 差错单；PUNISH / BLACKLIST 的只更新
 // platform_status。一次作废 / 扣回（进入当前返利状态的那条 order_status_history 行）只出一张单。
 // B1-08zd：佣金触发按有效佣金（结算佣金非空取它，否则取预估佣金）越过 0 判定，不按 platform_status 切换。
+// B1-08ze：P9 状态触发的金额同样取更新后的有效佣金（BR-CALC-02 取值阶段），不按 platform_status 选列。
 // 差错单的 ref_id 与 dedupe_key 只在这里构造（settlement 的 P9 登记接线复用同一个 dedupe_key，单一出处）。
 
 /** 触发：status = P9（INVALID → PAID / RECEIVED / SETTLED）；commission = 有效佣金由 ≤0 或空变为 >0。 */
@@ -66,13 +67,14 @@ function effectiveCommission(est: bigint | null, settle: bigint | null): bigint 
 
 /**
  * 触发判定（B1-08zc 编排 9.2 第 2、4 条；B1-08zd 编排第 11 节）：status = P9（INVALID → PAID / RECEIVED /
- * SETTLED），金额取恢复后的有效佣金列（SETTLED 用结算佣金，否则预估佣金，空按 0）；commission = 本次更新使有效佣金
+ * SETTLED），金额取更新后的有效佣金（结算佣金非空取它，否则取预估佣金，空按 0；B1-08ze）；commission = 本次更新使有效佣金
  * （结算佣金非空取它，否则取预估佣金）由空或 ≤0 变为 >0，与 platform_status 无关，金额取新的有效佣金。结算佣金非空时
  * 预估佣金的变化不触发。两者同时成立按 status。都不成立返回 null。
  */
 export function detectPlatformRestore(change: PlatformRestoreChange): PlatformRestoreSignal | null {
   if (change.platformBefore === 'INVALID' && ACTIVE_PLATFORM.has(change.platformAfter)) {
-    const effective = change.platformAfter === 'SETTLED' ? change.settleAfter : change.estAfter;
+    // B1-08ze：金额一律取更新后的有效佣金（不按 platform_status 选列；拼多多结算单结算佣金恒空，取预估佣金）。
+    const effective = effectiveCommission(change.estAfter, change.settleAfter);
     return { trigger: 'status', expectedFen: effective ?? 0n };
   }
   const effBefore = effectiveCommission(change.estBefore, change.settleBefore);
