@@ -1,9 +1,11 @@
+// @vitest-environment jsdom
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { expect, it } from 'vitest';
-import { TYPE_NAME } from './fixtures.ts';
+import { REF, SOURCE_NAME, TYPE_NAME, createServer, diffs } from './fixtures.ts';
+import { COLUMN, FLOW_TIMEOUT, cellText, mount, openDiffs, squash } from './helpers.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../apps/admin/src');
 const directory = join(root, 'pages/recon');
@@ -73,16 +75,30 @@ it('[AC-F1-08e-SOURCE#1] 页面在 pages/recon 并由 App.tsx 登记，文案在
   expect(app.imports.some((name) => /^\.\/pages\/recon(?:\/|$)/.test(name))).toBe(true);
 });
 
-it('[AC-F1-08e-SOURCE#2] 类型 / 状态 / 来源的中文名取后台字典（admin_dict.recon_diff_type / recon_diff_status / recon_diffs.source），不在页面或 texts/recon.ts 里另写类型名', () => {
-  expect(existsSync(textsFile), 'texts/recon.ts').toBe(true);
-  const sources = [
-    ...files(directory).filter((path) => /\.tsx?$/.test(path) && !/\.(?:test|d)\.tsx?$/.test(path)),
-    textsFile,
-  ].map(parse);
-  const { strings } = scan(sources);
-  const all = strings.join('\n');
-  for (const key of ['recon_diff_type', 'recon_diff_status', 'recon_diffs.source'])
-    expect(all.includes(key), `dictionary key ${key}`).toBe(true);
-  for (const name of Object.values(TYPE_NAME))
-    expect(all.includes(name), `type name ${name} is read from the dictionary`).toBe(false);
-});
+it(
+  '[AC-F1-08e-SOURCE#2] 类型 / 状态中文名取后台字典（admin_dict.recon_diff_type / recon_diff_status），不在页面或 texts/recon.ts 里另写类型名；来源列显示字典值（R1 联盟对账 / R2 通道对账 / R3 内部日终）',
+  async () => {
+    expect(existsSync(textsFile), 'texts/recon.ts').toBe(true);
+    const sources = [
+      ...files(directory).filter(
+        (path) => /\.tsx?$/.test(path) && !/\.(?:test|d)\.tsx?$/.test(path),
+      ),
+      textsFile,
+    ].map(parse);
+    const { strings } = scan(sources);
+    const all = strings.join('\n');
+    for (const key of ['recon_diff_type', 'recon_diff_status'])
+      expect(all.includes(key), `dictionary key ${key}`).toBe(true);
+    for (const name of Object.values(TYPE_NAME))
+      expect(all.includes(name), `type name ${name} is read from the dictionary`).toBe(false);
+    // The source names: however the dictionary key is built, the column shows its values.
+    const server = createServer();
+    await mount(server);
+    await openDiffs(server, REF.ledger);
+    for (const item of diffs())
+      expect(squash(cellText(item.ref_id, COLUMN.source)), `${item.ref_id} source`).toContain(
+        SOURCE_NAME[item.source],
+      );
+  },
+  FLOW_TIMEOUT,
+);

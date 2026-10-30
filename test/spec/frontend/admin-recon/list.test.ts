@@ -2,6 +2,7 @@
 import { waitFor } from '@testing-library/react';
 import { expect, it } from 'vitest';
 import {
+  FILTER_PARAMS,
   LIST_PARAMS,
   R4_NAMES,
   REF,
@@ -41,14 +42,19 @@ it(
     await mount(server);
     await openDiffs(server, REF.ledger);
     await settled(server);
-    const first = server.reads()[0]!;
-    expect(extraParams(first, LIST_PARAMS)).toEqual([]);
-    expect(first.query['page'] ?? '1').toBe('1');
-    const size = Number(first.query['page_size'] ?? '20');
-    expect(size).toBeGreaterThanOrEqual(1);
-    expect(size).toBeLessThanOrEqual(200);
-    for (const name of ['type', 'source', 'status', 'ref_id', 'period_from', 'period_to'])
-      expect(first.query[name], `no ${name} before a query`).toBeUndefined();
+    // Every read is a valid listAdminReconDiffs query (page_size ≤ 200)…
+    for (const read of server.reads()) {
+      expect(extraParams(read, LIST_PARAMS)).toEqual([]);
+      const size = Number(read.query['page_size'] ?? '20');
+      expect(size).toBeGreaterThanOrEqual(1);
+      expect(size).toBeLessThanOrEqual(200);
+    }
+    // …and the table's read is page 1 without any filter (count reads with a status aside).
+    const table = server
+      .reads()
+      .filter((read) => FILTER_PARAMS.every((name) => read.query[name] === undefined));
+    expect(table.length, 'an unfiltered list read before any query').toBeGreaterThan(0);
+    expect(table[0]!.query['page'] ?? '1').toBe('1');
     const order = diffs().map((item) => item.ref_id);
     const shown = order.map((ref) => rowsOf(scope(), [ref]));
     for (const [index, rows] of shown.entries()) expect(rows, order[index]).toHaveLength(1);
@@ -153,14 +159,30 @@ it(
     await openDiffs(server, REF.ledger);
     await settled(server);
     const reads = server.reads().length;
-    const size = Number(server.reads()[0]!.query['page_size'] ?? '20');
     await nextPage();
-    await waitFor(() => expect(server.reads().length).toBeGreaterThan(reads));
+    const paged = () =>
+      server
+        .reads()
+        .slice(reads)
+        .filter((read) => read.query['page'] === '2');
+    await waitFor(() => expect(paged().length).toBeGreaterThan(0));
     await settled(server);
-    const second = server.reads().at(-1)!;
-    expect(second.query['page']).toBe('2');
-    expect(Number(second.query['page_size'] ?? '20')).toBe(size);
+    const second = paged().at(-1)!;
     expect(extraParams(second, LIST_PARAMS)).toEqual([]);
+    const size = Number(second.query['page_size'] ?? '20');
+    // The same page_size as the unfiltered page-1 read of the table.
+    const firstPages = server
+      .reads()
+      .slice(0, reads)
+      .filter(
+        (read) =>
+          (read.query['page'] ?? '1') === '1' &&
+          FILTER_PARAMS.every((name) => read.query[name] === undefined),
+      );
+    expect(
+      firstPages.some((read) => Number(read.query['page_size'] ?? '20') === size),
+      'page 2 keeps the page_size of page 1',
+    ).toBe(true);
     // The six samples come first, then the filler (one created_at, so id descending: fill-0200,
     // fill-0199, …); row index `size` (0-based) opens page 2.
     const firstOfPage = `fill-${String(206 - size).padStart(4, '0')}`;

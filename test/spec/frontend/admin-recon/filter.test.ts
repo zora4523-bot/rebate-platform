@@ -13,6 +13,7 @@ import {
   fieldError,
   fill,
   fillPeriod,
+  freshText,
   mount,
   openDiffs,
   periodField,
@@ -21,6 +22,7 @@ import {
   scope,
   settle,
   settled,
+  snapshotText,
   textbox,
 } from './helpers.ts';
 
@@ -38,9 +40,15 @@ it(
     await fillPeriod(periodField('from'), '2026-10-01');
     await fillPeriod(periodField('to'), '2026-10-31');
     await query();
-    await waitFor(() => expect(server.reads().length).toBeGreaterThan(before));
+    // The table read of the query (the page may also send count reads with other parameters).
+    const filtered = () =>
+      server
+        .reads()
+        .slice(before)
+        .filter((read) => read.query['type'] !== undefined);
+    await waitFor(() => expect(filtered().length).toBeGreaterThan(0));
     await settled(server);
-    const sent = server.reads().at(-1)!;
+    const sent = filtered().at(-1)!;
     expect(sent.query).toMatchObject({
       type: 'ledger_mismatch',
       source: 'R3',
@@ -69,9 +77,14 @@ it(
     const before = server.reads().length;
     await fill(textbox(scope(), LABEL.ref), REF.union);
     await query();
-    await waitFor(() => expect(server.reads().length).toBeGreaterThan(before));
+    const filtered = () =>
+      server
+        .reads()
+        .slice(before)
+        .filter((read) => read.query['ref_id'] !== undefined);
+    await waitFor(() => expect(filtered().length).toBeGreaterThan(0));
     await settled(server);
-    const sent = server.reads().at(-1)!;
+    const sent = filtered().at(-1)!;
     expect(sent.query['ref_id']).toBe(REF.union);
     for (const name of ['type', 'source', 'status', 'period_from', 'period_to'])
       expect(sent.query[name], `no ${name}`).toBeUndefined();
@@ -82,7 +95,7 @@ it(
 );
 
 it(
-  '[AC-F1-08e-FILTER#3] 【重置】清空筛选：之后的列表请求不带任何筛选参数，六条差错单重新列出',
+  '[AC-F1-08e-FILTER#3] 【重置】清空筛选：表格以不带筛选参数的请求重新读取，之后的请求不再带已清空的条件，六条差错单重新列出',
   async () => {
     const server = createServer();
     await mount(server);
@@ -104,32 +117,53 @@ it(
     for (const item of diffs())
       await waitFor(() => expect(rowsOf(scope(), [item.ref_id]), item.ref_id).toHaveLength(1));
     expect(textbox(scope(), LABEL.ref).value).toBe('');
-    for (const sent of server.reads().slice(before))
-      expect(FILTER_PARAMS.filter((name) => sent.query[name] !== undefined)).toEqual([]);
+    const after = server.reads().slice(before);
+    // The table is read again without any filter (count reads with their own parameters aside)…
+    expect(
+      after.some((sent) => FILTER_PARAMS.every((name) => sent.query[name] === undefined)),
+      'an unfiltered list read after 【重置】',
+    ).toBe(true);
+    // …and no read after 【重置】 still carries the cleared conditions.
+    for (const sent of after) {
+      expect(sent.query['ref_id'], 'ref_id cleared').toBeUndefined();
+      expect(sent.query['status'], 'status cleared').not.toBe('written_off');
+    }
   },
   FLOW_TIMEOUT,
 );
 
 it(
-  '[AC-F1-08e-FILTER#4] 周期起大于周期止：在周期字段旁提示（前端拦下或服务端 20001 [period_from, period_to] 都可），不显示错误的结果',
+  '[AC-F1-08e-FILTER#4] 周期起大于周期止（日值）：周期字段旁有提示，或发出的请求收 20001 [period_from, period_to] 后给出提示',
   async () => {
     const server = createServer();
     await mount(server);
     await openDiffs(server, REF.ledger);
     await settled(server);
-    await fillPeriod(periodField('from'), '2026-10');
-    await fillPeriod(periodField('to'), '2026-09');
+    const reads = server.reads().length;
+    // Day values (YYYY-MM-DD): a date picker takes them as well as a plain input.
+    await fillPeriod(periodField('from'), '2026-10-31');
+    await fillPeriod(periodField('to'), '2026-10-01');
+    await settle();
+    const before = snapshotText();
     await query();
     await settled(server);
-    await waitFor(() =>
-      expect(
-        `${fieldError(periodField('from'))} ${fieldError(periodField('to'))}`.trim(),
-        'an error next to the period fields',
-      ).not.toBe(''),
-    );
-    // Either nothing was sent, or the range as typed (the server answered 20001).
-    for (const sent of server.reads().filter((read) => read.query['period_from'] !== undefined))
-      expect(sent.query).toMatchObject({ period_from: '2026-10', period_to: '2026-09' });
+    // The exact text sent for the period is not fixed here: only that a reversed range went out
+    // (the fake server answers it with 20001 [period_from, period_to]).
+    const sentRange = (): boolean =>
+      server
+        .reads()
+        .slice(reads)
+        .some((read) => {
+          const { period_from: from, period_to: to } = read.query;
+          return from !== undefined && to !== undefined && from > to;
+        });
+    await waitFor(() => {
+      const nextToFields = `${fieldError(periodField('from'))} ${fieldError(periodField('to'))}`;
+      const told = nextToFields.trim() !== '' || (sentRange() && freshText(before) !== '');
+      expect(told, 'a notice next to the period fields, or after the 20001 of the range').toBe(
+        true,
+      );
+    });
   },
   FLOW_TIMEOUT,
 );

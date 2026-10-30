@@ -35,7 +35,7 @@ function menuLinks(): HTMLElement[] {
 }
 
 it(
-  '[AC-F1-08e-ACCESS#1] 只持 fund.view 可看差错单列表；fund.recon 与 fund.view 都没有：菜单不出现、不请求 recon-diffs、不显示差错单',
+  '[AC-F1-08e-ACCESS#1] 只持 fund.view 可看差错单列表；fund.recon 与 fund.view 都没有：菜单不出现、不请求 recon-diffs、直达本页显示无权限提示、不显示差错单',
   async () => {
     const viewer = createServer(undefined, { permissions: VIEW_GRANTS });
     await mount(viewer);
@@ -44,11 +44,15 @@ it(
     expect(viewer.reads().length).toBeGreaterThan(0);
     cleanup();
 
+    // A direct address to /recon with unrelated permissions: the page itself says so and sends
+    // nothing (as the users page does without user.list / user.lookup).
     const other = createServer(undefined, { permissions: OTHER_GRANTS });
     await mount(other);
     await settle();
     await settled(other);
     expect(menuLinks(), 'no menu 对账与差错').toEqual([]);
+    await waitFor(() => expect(main().textContent).toMatch(FORBIDDEN));
+    await settled(other);
     expect(other.diffRequests()).toEqual([]);
     expect(rowsOf(main(), [REF.ledger])).toEqual([]);
   },
