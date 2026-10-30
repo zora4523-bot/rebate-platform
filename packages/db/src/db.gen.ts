@@ -1893,6 +1893,20 @@ export interface SyncCursors {
   updated_at: Timestamp;
 }
 
+export interface TaxYtd {
+  app_id: string;
+  continuous_months: Generated<number>;
+  created_at: Generated<Timestamp>;
+  cum_income_fen: Generated<ColumnType<bigint, bigint, bigint>>;
+  cum_withheld_fen: Generated<ColumnType<bigint, bigint, bigint>>;
+  id: string;
+  identity_hmac: string;
+  income_type: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  year: number;
+}
+
 export interface UnionAccounts {
   account_name: string;
   alert_stage: Generated<string>;
@@ -2260,6 +2274,7 @@ export interface DB {
   share_materials: ShareMaterials;
   sms_send_attempts: SmsSendAttempts;
   sync_cursors: SyncCursors;
+  tax_ytd: TaxYtd;
   union_accounts: UnionAccounts;
   union_auth_sessions: UnionAuthSessions;
   union_binding_conflicts: UnionBindingConflicts;
