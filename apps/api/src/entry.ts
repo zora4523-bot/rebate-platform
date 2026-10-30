@@ -40,6 +40,7 @@ import {
   isHttpEntry,
   loadConfig,
   loadConnectionConfig,
+  activeTracing,
   startTracing,
   type TracingHandle,
 } from './modules/platform/index.ts';
@@ -722,7 +723,9 @@ export async function runEntry(entry: EntryName): Promise<void> {
       process.exitCode = 1;
     } finally {
       signals.detach();
-      await tracing?.shutdown();
+      // B1-31b: a startup that failed before startTracing returned (createDbHandles threw) still
+      // flushes the tracing main.<entry>.ts booted; nothing is started here.
+      await (tracing ?? activeTracing())?.shutdown();
     }
   }
 }

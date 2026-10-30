@@ -210,7 +210,7 @@ function registerEsmHook(logger: RootLogger): void {
  * started through it).
  */
 export function activeTracing(): TracingHandle | null {
-  throw new Error('NotImplemented: activeTracing');
+  return active;
 }
 
 export function startTracing(options: TracingOptions): Promise<TracingHandle> {
