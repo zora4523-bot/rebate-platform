@@ -25,8 +25,8 @@ export interface TaobaoPriceInput {
   readonly promotions?: readonly TaobaoPromotion[];
 }
 
-/** Omitted settings use BR-PRICE-02 defaults; explicit arrays replace those defaults.
- * TODO(规划/11 §9.2): 配置端口接入 app.module — blocked on followups F-36
+/** Omitted settings use BR-PRICE-02 defaults; explicit arrays replace those defaults. B1-22q:
+ * read per app from price.taobao.* (createTaobaoPriceSettings; app.module passes content's reader).
  */
 export interface TaobaoPriceOptions {
   readonly member_title_keywords?: readonly string[];
