@@ -254,6 +254,17 @@ export function shareUrlOf(platform: 'jd' | 'pdd', result: ConvertResult): strin
 }
 
 /**
+ * B1-15z (BR-ATTR-10 素材图): the response images of a union detail: main image first, deduplicated,
+ * at most 9, addresses unchanged; [] when the detail has none.
+ */
+export function shareImages(
+  item: Pick<UnionItemDetail, 'main_image_url' | 'image_urls'>,
+): ShareMaterials['images'] {
+  void item;
+  throw new Error('NotImplemented: shareImages');
+}
+
+/**
  * A conversion failure → share code (contract createShare): the platform refusing the conversion
  * → 30121 (not retryable); the product gone → 30141; anything else (timeout, rate limit, breaker,
  * upstream unavailable, an unexpected answer) → 50303.
