@@ -44,6 +44,7 @@ import {
   type TaobaoPriceWarning,
   type TaobaoPromotion,
 } from '../../domain/taobao-price.ts';
+import { normalizeItemImages, type ItemImages } from '../../domain/item-images.ts';
 
 /** Internal demo scenarios in CallCtx.scenario; never vendor response codes or payloads.
  * timeout -> Error.code=timeout; rate_limit -> Error.code=quota_exceeded (both GovernanceError);
@@ -164,6 +165,45 @@ interface CatalogEntry {
   readonly commission_rate_bp: bigint;
   /** Taobao only: synthetic promotion detail (domain structure, not a platform payload). */
   readonly promotions?: readonly DemoPromotion[];
+  /** B1-22s: detail-only image fields, already through normalizeItemImages. */
+  readonly images: ItemImages;
+}
+
+/** B1-22s: synthetic image layouts by catalog position (raw main present, raw gallery size). */
+const DEMO_IMAGE_LAYOUTS: readonly { readonly main: boolean; readonly gallery: number }[] = [
+  // Position 0 (the first search result) has no images at all, so its detail keeps the search
+  // fields plus description only (B1-04o DATA#5).
+  { main: false, gallery: 0 },
+  { main: true, gallery: 1 },
+  { main: true, gallery: 3 },
+  // 12 raw entries, truncated to 9 by normalizeItemImages.
+  { main: true, gallery: 12 },
+  // Main image only, no gallery.
+  { main: true, gallery: 0 },
+  { main: true, gallery: 9 },
+  // Gallery without a main image.
+  { main: false, gallery: 5 },
+  // Gallery that repeats an entry and also lists the main image (dedup keeps the first).
+  { main: true, gallery: -1 },
+];
+
+/**
+ * B1-22s: deterministic synthetic images of one catalog item, unique per item (the path carries
+ * the link identifier) and only under https://demo.invalid/; never a platform image address.
+ */
+function demoImages(platform: RegisteredPlatform, linkId: string, index: number): ItemImages {
+  const layout = DEMO_IMAGE_LAYOUTS[index % DEMO_IMAGE_LAYOUTS.length]!;
+  const base = `https://${DEMO_HOST}/${platform}/images/${encodeURIComponent(linkId)}`;
+  const main = `${base}/main.jpg`;
+  const at = (n: number): string => `${base}/${String(n)}.jpg`;
+  const gallery =
+    layout.gallery < 0
+      ? [at(1), main, at(2), at(1), at(3)]
+      : Array.from({ length: layout.gallery }, (_, n) => at(n + 1));
+  return normalizeItemImages({
+    ...(layout.main ? { main_image_url: main } : {}),
+    image_urls: gallery,
+  });
 }
 
 /** Times are offsets from the injected fetch time, so the detail never ages out. */
@@ -275,6 +315,7 @@ function buildCatalog(platform: RegisteredPlatform, seed: string): readonly Cata
         ...(platform === 'taobao'
           ? { promotions: taobaoPromotions(index, hash, price, couponBp) }
           : {}),
+        images: demoImages(platform, linkId, index),
       }),
     );
   }
@@ -334,7 +375,11 @@ export class DemoUnionAdapter implements UnionAdapter {
     const entry = this.#lookup(ref);
     if (scenario === 'delisted') throw this.#delisted();
     const price = await this.#priceOptions(ctx);
-    return Object.freeze({ ...this.#item(entry, scenario, price), description: DETAIL_TEXT });
+    return Object.freeze({
+      ...this.#item(entry, scenario, price),
+      description: DETAIL_TEXT,
+      ...entry.images,
+    });
   }
 
   async resolveLink(raw: string, ctx: CallCtx): Promise<ResolvedLink> {

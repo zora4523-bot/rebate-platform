@@ -10,6 +10,9 @@
 // by union.module.ts. B1-04x: `pddLive.queryIdentity` (assembled by union.module.ts) is handed to
 // the adapter as is; without it every goods call is refused `upstream_rejected` by the adapter. Real jd / taobao adapters replace their entries in later tasks.
 // TODO(规划/11 §4.5): jd / taobao 凭据读取 — blocked on 推广位 / siteId
+// B1-22s: real jd / taobao adapters must not map UnionItemDetail image fields until tested; when
+// wired they go through normalizeItemImages (domain/item-images.ts).
+// TODO(规划/09 CAP-TB-02、CAP-JD-02、CAP-PDD-02): 商品素材图字段 — blocked on 联盟接口实测记录
 import {
   REGISTERED_PLATFORMS,
   UnionError,
