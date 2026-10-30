@@ -6109,7 +6109,9 @@ export interface paths {
          *     legal.privacy.min_version, 04 §10.1). Writes an audit record with the legal confirmer,
          *     the confirmation date and min_version and requires_resign before and after (BR-ID-12).
          *     Published versions are never changed or deleted. The response is the new version. No
-         *     Idempotency-Key (04 §6.6; the CAS keeps a retry from publishing twice).
+         *     Idempotency-Key (04 §6.6; the CAS keeps a retry from publishing twice). Until
+         *     F1-02zzs is merged, publishing sdk_list or collect_list returns 20001 with
+         *     data.fields=[type].
          */
         post: operations["adminPublishAgreementVersion"];
         delete?: never;
