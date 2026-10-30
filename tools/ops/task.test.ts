@@ -577,6 +577,10 @@ it('shows a task together with its computed risk', () => {
 
 // The cases below use the real ledger, the real guard and the planning repository at SPEC_REF.
 
+// The whole ledger (over 1000 tasks) takes 24–30 s on a loaded test machine; D10-438 gives this
+// one case 90 s.
+const LEDGER_CHECK_TIMEOUT = 90_000;
+
 it(
   'the real ledger passes `task.ts check`',
   () => {
@@ -587,7 +591,7 @@ it(
     expect(doc.ok).toBe(true);
     expect(doc.tasks.map((t) => t.id)).toEqual(listTaskIds());
   },
-  CLI_TIMEOUT,
+  LEDGER_CHECK_TIMEOUT,
 );
 
 it(
