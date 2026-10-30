@@ -28,7 +28,7 @@ import {
   voucherUserOwners,
 } from '../infra/daily-check-execute-store.ts';
 import type { DailyCheckLogger } from './daily-check.ts';
-import type { LedgerDifference } from './daily-check-types.ts';
+import type { DailyCheckFiledDifference, LedgerDifference } from './daily-check-types.ts';
 import { LedgerError } from './errors.ts';
 import { registerReconDiffOnce } from './recon-diffs.ts';
 
@@ -81,10 +81,8 @@ export interface DailyCheckExecuteDependencies {
   readonly autoSettlement: AutoSettlementSwitch;
 }
 
-/** One reported difference and the invariant file (basename) it came from. */
-export interface DailyCheckFiledDifference extends LedgerDifference {
-  readonly file: string;
-}
+// One reported difference and the invariant file it came from (shared with the runner).
+export type { DailyCheckFiledDifference } from './daily-check-types.ts';
 
 export interface DailyCheckExecutionInput {
   /** The checked accounting day D (YYYY-MM-DD), the period of every diff. */

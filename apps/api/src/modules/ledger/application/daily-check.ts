@@ -13,7 +13,11 @@ import {
   orderInvariantFiles,
   readInvariantRows,
 } from './daily-check-rows.ts';
-import type { LedgerDifference, LedgerInvariantSource } from './daily-check-types.ts';
+import type {
+  DailyCheckFiledDifference,
+  LedgerDifference,
+  LedgerInvariantSource,
+} from './daily-check-types.ts';
 import { LedgerError } from './errors.ts';
 
 export type {
@@ -55,6 +59,11 @@ export interface DailyCheckResult {
   }[];
   readonly accountDifferences: readonly LedgerDifference[];
   readonly globalDifferences: readonly LedgerDifference[];
+  /**
+   * B2-02q: every reported difference (account and global) in file order, each with the basename
+   * of the invariant file it came from: the input of the B2-02p execution step.
+   */
+  readonly filedDifferences: readonly DailyCheckFiledDifference[];
   readonly emptyChecks: readonly string[];
   readonly recommendations: {
     readonly createDiscrepancies: boolean;
@@ -67,8 +76,8 @@ export interface DailyCheckRunner {
   runDailyCheck(db: Kysely<DB>, input: DailyCheckInput): Promise<DailyCheckResult>;
 }
 
-// TODO(规划/11 §4.2): 运行器仍只返回处置建议，执行段是 daily-check-execute.ts（B2-02p）；把运行结果连同文件名交给执行段 — blocked on B2-02q（排程与装配）
-// TODO(规划/11 §4.2): worker 每日 01:00 +08:00 调用运行器，传入 D−1 — blocked on worker 装配任务（本任务路径之外）
+// The runner only reports; its filedDifferences go to the B2-02p execution step
+// (daily-check-execute.ts) through the worker's daily job (daily-check-schedule.ts, B2-02q).
 export function createDailyCheck(dependencies: DailyCheckDependencies): DailyCheckRunner {
   const { clock, logger } = dependencies;
   const source = dependencies.invariants ?? directoryInvariantSource();
@@ -98,6 +107,7 @@ export function createDailyCheck(dependencies: DailyCheckDependencies): DailyChe
       const checks: { file: string; invariant: string; checkedRows: bigint }[] = [];
       const accountDifferences: LedgerDifference[] = [];
       const globalDifferences: LedgerDifference[] = [];
+      const filedDifferences: DailyCheckFiledDifference[] = [];
       const emptyChecks: string[] = [];
       const findings: DailyCheckFinding[] = [];
       for (const file of files) {
@@ -136,6 +146,7 @@ export function createDailyCheck(dependencies: DailyCheckDependencies): DailyChe
           (difference.scope === 'account' ? accountDifferences : globalDifferences).push(
             difference,
           );
+          filedDifferences.push({ ...difference, file: file.name });
           findings.push({ file: file.name, scope: difference.scope });
           // Flat fields only; detail stays in the result (it may name beneficiaries).
           logger.warn(
@@ -158,10 +169,11 @@ export function createDailyCheck(dependencies: DailyCheckDependencies): DailyChe
         checks,
         accountDifferences,
         globalDifferences,
+        filedDifferences,
         emptyChecks,
         // Account-level (①⑥⑦⑧): discrepancy + withdraw hold. Global (②③④⑤): also switch
         // settle.auto.enabled off and hold every involved user. pay- files (collections,
-        // BR-PAY-07) only ask for a discrepancy. Only advice here (TODO above).
+        // BR-PAY-07) only ask for a discrepancy. Only advice here; the execution step acts.
         recommendations: recommendDailyCheckActions(findings),
       };
     },
