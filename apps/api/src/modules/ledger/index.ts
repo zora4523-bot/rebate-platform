@@ -70,6 +70,21 @@ export type {
   LedgerInvariantFile,
   LedgerInvariantSource,
 } from './application/daily-check.ts';
+// B2-02p: the execution step of the daily check (recon diffs, withdrawal holds, settle switch).
+export { createDailyCheckExecutor } from './application/daily-check-execute.ts';
+export type {
+  AutoSettlementSwitch,
+  AutoSettlementSwitchInput,
+  AutoSettlementSwitchResult,
+  DailyCheckExecuteDependencies,
+  DailyCheckExecutedDiff,
+  DailyCheckExecution,
+  DailyCheckExecutionInput,
+  DailyCheckExecutor,
+  DailyCheckFiledDifference,
+  LedgerMismatchHoldInput,
+  LedgerMismatchHolds,
+} from './application/daily-check-execute.ts';
 // B2-04y: GET /v1/wallet/summary (the query itself is exported only by read.ts, BR-AI-02 ④).
 export { WalletSummaryModule } from './wallet-summary.module.ts';
 export type { WalletSummaryModuleOptions } from './wallet-summary.module.ts';
