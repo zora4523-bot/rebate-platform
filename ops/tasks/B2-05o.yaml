@@ -1,0 +1,26 @@
+id: B2-05o
+repo: rebate-platform
+title: "审核超时接资金指标与夜间告警（D10-475 ②(b)，照 D10-389 / B1-01zzp）：payout 只读端口计数「review_overdue_at 非空且 status ∈ {PENDING_REVIEW, APPROVED}」的提现单（按 app_id）→ worker /metrics 导出 gauge couli_withdrawals_review_overdue → infra/monitoring/rules/couli-fund.yaml 加规则 > 0 告警（fund: 'true'，BR-WDR-26「不受夜间限制」）；冻结 test/spec/platform/fund-metrics/rules.test.ts [AC-B1-01zzi#6] 的指标白名单只为该指标加条目（D10-393 (b) 先例，规则测试作者提交里改）"
+type: impl
+# 2026-10-31 入账（withdraw 线，编排裁定 D10-475 ②(b)）。上线门槛：真实资金环境开提现前须合并（编排记 HANDOFF）。platform 不引 payout：payout/index.ts 只导出该只读计数端口，entry.ts 注入 metrics（照 B1-01zzp 的 D10-393 (c) 做法）；计数 SQL 只读 withdrawals，不写。
+refs: [BR-WDR-26, BR-WDR-24]
+refs_hash:
+  BR-WDR-26: 158db40de631
+  BR-WDR-24: 1e9585c4b8bf
+deps: [B2-05n, B1-01zzp]
+paths:
+  - 'apps/api/src/modules/platform/metrics/**'
+  - 'infra/monitoring/rules/couli-fund.yaml'
+  - 'apps/api/src/entry.ts'
+  - 'apps/api/src/modules/payout/index.ts'
+  - 'apps/api/src/modules/payout/application/review-overdue-count*.ts'
+test_paths:
+  - 'test/spec/platform/metrics/review-overdue/**'
+  - 'test/spec/platform/fund-metrics/rules.test.ts'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/metrics/review-overdue/**'
+status: todo
+pr: null
