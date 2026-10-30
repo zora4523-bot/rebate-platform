@@ -18,19 +18,86 @@ export type PlatformRestoreResolution = {
   readonly platform_status: string;
 };
 
+/** 前提 (i)：orders.reason 属这几类（08 BR-FUND-22）。PUNISH / BLACKLIST 等不在内。 */
+const RESTORE_REASONS: ReadonlySet<string> = new Set(['REFUND', 'RIGHTS', 'COMMISSION_ZERO']);
+/** 前提 (ii)：进入当前返利状态的那条 rebate 历史事件属这几类。 */
+const RESTORE_ENTRY_EVENTS: ReadonlySet<string> = new Set([
+  'PLATFORM_INVALID',
+  'INVALID_AFTER_SETTLE',
+]);
+/** 只有作废 / 扣回的子订单才谈得上「被平台恢复」。 */
+const RESTORABLE_REBATE: ReadonlySet<string> = new Set(['VOID', 'CLAWED_BACK']);
+/** P9 的去向：INVALID 回到非失效状态。 */
+const ACTIVE_PLATFORM: ReadonlySet<string> = new Set(['PAID', 'RECEIVED', 'SETTLED']);
+
+/** 本次更新前后的平台状态与两列联盟佣金（after = 本次 UPDATE 写入后的值；未改即等于 before）。 */
+export interface PlatformRestoreChange {
+  readonly platformBefore: string;
+  readonly platformAfter: string;
+  readonly estBefore: bigint | null;
+  readonly estAfter: bigint | null;
+  readonly settleBefore: bigint | null;
+  readonly settleAfter: bigint | null;
+}
+
+export interface PlatformRestoreSignal {
+  readonly trigger: PlatformRestoreTrigger;
+  /** 平台恢复后的联盟佣金（分）；只作差错单展示。 */
+  readonly expectedFen: bigint;
+}
+
+/** 由空或 ≤0 变为严格 >0（恰好 0 不算恢复）。 */
+function crossedPositive(before: bigint | null, after: bigint | null): boolean {
+  return (before === null || before <= 0n) && after !== null && after > 0n;
+}
+
+/** 返利状态是否可能被平台恢复（VOID / CLAWED_BACK）；不是则无须读历史。 */
+export function isRestorableRebate(rebateStatus: string): boolean {
+  return RESTORABLE_REBATE.has(rebateStatus);
+}
+
+/**
+ * 触发判定（编排 9.2 第 2、4 条）：status = P9（INVALID → PAID / RECEIVED / SETTLED），金额取恢复后的有效佣金列
+ * （SETTLED 用结算佣金，否则预估佣金，空按 0）；commission = 本次写入的佣金列由空或 ≤0 变为 >0，金额取该列新值
+ * （两列同时恢复取结算佣金）。两者同时成立按 status。都不成立返回 null。
+ */
+export function detectPlatformRestore(change: PlatformRestoreChange): PlatformRestoreSignal | null {
+  if (change.platformBefore === 'INVALID' && ACTIVE_PLATFORM.has(change.platformAfter)) {
+    const effective = change.platformAfter === 'SETTLED' ? change.settleAfter : change.estAfter;
+    return { trigger: 'status', expectedFen: effective ?? 0n };
+  }
+  if (crossedPositive(change.settleBefore, change.settleAfter) && change.settleAfter !== null) {
+    return { trigger: 'commission', expectedFen: change.settleAfter };
+  }
+  if (crossedPositive(change.estBefore, change.estAfter) && change.estAfter !== null) {
+    return { trigger: 'commission', expectedFen: change.estAfter };
+  }
+  return null;
+}
+
+/**
+ * 前提判定（08 BR-FUND-22）：返利状态 VOID / CLAWED_BACK，且 reason ∈ {REFUND, RIGHTS, COMMISSION_ZERO}（支 i）
+ * 或进入当前返利状态的事件 ∈ {PLATFORM_INVALID, INVALID_AFTER_SETTLE}（支 ii）。entryEvent 为 null 表示没有进入行。
+ */
+export function isPlatformRestoreEligible(input: {
+  readonly rebateStatus: string;
+  readonly reason: string | null;
+  readonly entryEvent: string | null;
+}): boolean {
+  if (!RESTORABLE_REBATE.has(input.rebateStatus)) return false;
+  if (input.reason !== null && RESTORE_REASONS.has(input.reason)) return true;
+  return input.entryEvent !== null && RESTORE_ENTRY_EVENTS.has(input.entryEvent);
+}
+
 /**
  * 差错单的 dedupe_key：`platform_restore:{order_key}:{entry_id}`。entry_id 是进入当前返利状态的那条
  * order_status_history（field='rebate'）行的 id；重新作废产生新行，因而是新单。
  */
 export function platformRestoreDedupeKey(orderKey: string, entryId: bigint): string {
-  void orderKey;
-  void entryId;
-  throw new Error('NotImplemented: platformRestoreDedupeKey');
+  return `platform_restore:${orderKey}:${entryId.toString(10)}`;
 }
 
 /** 差错单的 ref_id：`{order_key}#RESTORE#{entry_id}`（ref_type='order'）。 */
 export function platformRestoreRefId(orderKey: string, entryId: bigint): string {
-  void orderKey;
-  void entryId;
-  throw new Error('NotImplemented: platformRestoreRefId');
+  return `${orderKey}#RESTORE#${entryId.toString(10)}`;
 }

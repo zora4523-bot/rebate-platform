@@ -208,6 +208,7 @@ import {
   createLedger,
   getOrderNets,
   readPersonalDataCopyLedgerEntries,
+  registerReconDiffOnce,
   type EarningsSummaryDependencies,
   type WalletLedgerDependencies,
   type WalletSummaryDependencies,
@@ -310,6 +311,7 @@ import {
   createOrderSourcePorts,
   type CommissionSnapshotPort,
   type OrderSourcePorts,
+  type PlatformRestoreDiffPort,
   readPersonalDataCopyOrders,
   type OrdersWorkerOptions,
 } from './modules/orders/index.ts';
@@ -1664,6 +1666,7 @@ function governedUnion(
  * and shares as the api's governedUnion; each process keeps its own bucket and breakers).
  * B1-08q: the source backfill ports (orderSourcePorts).
  * B1-08w: commission's snapshot port (orderSnapshotPort) for step ⑥ and the compensation retry.
+ * B1-08zc: ledger's recon diff registration as orders' platform-restore port (orderPlatformRestorePort).
  */
 function orderSyncPorts(union: DynamicModule): OrdersWorkerOptions {
   return {
@@ -1677,6 +1680,23 @@ function orderSyncPorts(union: DynamicModule): OrdersWorkerOptions {
       ),
     sources: (db, clock, logger) => orderSourcePorts(db, clock, logger),
     snapshots: (db, clock, logger) => orderSnapshotPort(db, clock, logger),
+    platformRestore: (clock) => orderPlatformRestorePort(clock),
+  };
+}
+
+/**
+ * B1-08zc: orders' platform-restore port (BR-FUND-22) — ledger's registerReconDiffOnce on the
+ * caller's transaction (the order's lock transaction) with the worker's CLOCK; recon_diffs stays
+ * ledger's table (04: registered through ledger's command). The input (type platform_restore,
+ * source R1, ref_type order, keys) is built by orders and passed through unchanged; the result is
+ * mapped to { inserted, id }. Building reads nothing.
+ */
+function orderPlatformRestorePort(clock: Clock): PlatformRestoreDiffPort {
+  return {
+    register: async (trx, input) => {
+      const registration = await registerReconDiffOnce(trx, input, { clock });
+      return { inserted: registration.inserted, id: registration.row.id };
+    },
   };
 }
 
