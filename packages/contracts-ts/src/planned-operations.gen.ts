@@ -30,7 +30,6 @@ export const plannedOperations: ReadonlySet<string> = new Set([
   "adminUnholdOrder",
   "getAdminPayRefund",
   "getReverify",
-  "listAdminAssetSnapshots",
   "listAdminPayRefunds",
   "listAgentSessionMessages",
   "loginByHuawei",

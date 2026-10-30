@@ -22819,7 +22819,6 @@ paths:
         collection entry itself (`fund.cash_entry`), the fund dashboard and reports, and the
         export. Reading does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

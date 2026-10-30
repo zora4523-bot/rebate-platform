@@ -1,0 +1,89 @@
+{
+  "task": "B2-09e",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "c4751b33ab5c3029b00e9161c8895509fef46966",
+  "red_tests": [
+    "test/spec/ledger/admin-asset-snapshots/contract.test.ts > [AC-B2-09e#1] listAdminAssetSnapshots 去掉 x-implementation: planned（生成的 planned 清单同步），x-auth admin、x-error-codes [10001, 10403, 20001] 不变；admin 入口恰好挂一次 GET /admin/v1/asset-snapshots 并带契约请求 schema，api 入口不挂",
+    "test/spec/ledger/admin-asset-snapshots/list.int.test.ts > [AC-B2-09e#2] 资产快照列表（fund.view，不要 step-up）：只列本应用的 asset_snapshots，按 snapshot_date 倒序，每行恰好是契约的 AdminAssetSnapshot（快照日、五项合计、waiting_comparable、各平台应收、写入与更新时刻）；其他应用同一天与更晚的快照不出现；默认 page 1 / page_size 20；带其他权限点或超管也能读；读取不写审计、不改两张表",
+    "test/spec/ledger/admin-asset-snapshots/list.int.test.ts > [AC-B2-09e#3] 资产快照列表的排序与分页：snapshot_date 倒序（与写入先后无关）；page / page_size 翻页，total 为全部条数；超过最后一页是空 items（不报错）；page_size 200 一页取完",
+    "test/spec/ledger/admin-asset-snapshots/list.int.test.ts > [AC-B2-09e#4] 资产快照列表的快照日区间：date_from、date_to 两端都含，可只给一端，可相等；没有命中是空页（total 0）；区间内没写入快照的日子没有行（不补零）；与分页组合时 total 为区间内条数",
+    "test/spec/ledger/admin-asset-snapshots/list.int.test.ts > [AC-B2-09e#5] 资产快照列表的金额是快照写入时的整数分原样（不按当前余额或订单重算、不改符号）：五项合计含 0 与 2^53−1；waiting_comparable 的 true / false 照存；各平台应收按平台代码排序、含负数与大整数，没有应收行时是空数组；updated_at 与 created_at 各自照存",
+    "test/spec/ledger/admin-asset-snapshots/list.int.test.ts > [AC-B2-09e#6] 资产快照列表的拒绝：date_from / date_to 不是 YYYY-MM-DD 日期（月份 13、32 日、2 月 30 日、斜杠、缺位、只有年月、带时刻）→ 20001 data.fields 指名该参数；date_from 晚于 date_to → 20001 data.fields=[date_from, date_to]；page_size 超过 200 → 20001 [page_size]；拒绝不写审计、不写快照",
+    "test/spec/ledger/admin-asset-snapshots/list.int.test.ts > [AC-B2-09e#7] 资产快照列表的权限：只认 fund.view（超管除外）——没有权限点、只有 fund.recon、或只有 fund.cash_entry / pay.view / fund.settle_adjust 等别的点 → 10403；不带令牌 → 10001；空应用是空页；读取不写审计、不改快照",
+    "test/spec/ledger/admin-asset-snapshots/list.int.test.ts > [AC-B2-09e#8] 未写入的快照日没有行，读取不触发补写：当前 2026-10-30 10:00 +08:00，10-28 的快照没写、10-30 的还没到 → 列表与区间筛选都不出现这两天、不补零；读后 asset_snapshots / asset_snapshot_receivables 不新增不改（超时未确认的 waiting_comparable=false 仍是 false），没有快照或告警事件"
+  ],
+  "risk_note": "RV2 (ledger). Console read of daily asset snapshots (CT-24zb listAdminAssetSnapshots; B2-09; 01 F-ADM-08; 04 §3.2, §11.2; admin-fund-dashboard.md): the controller is mounted through the existing LedgerAdminModule.forAdmin on the admin entry only (permission fund.view through AdminOperationGuard, read only, no audit, appId from the guard's actor); reads by app_id ledger's own asset_snapshots and asset_snapshot_receivables only; amounts and waiting_comparable as stored, integer fen, nothing recomputed; receivables ordered by platform code; snapshot_date read as text to avoid time-zone conversion; no snapshot backfill. No state change. x-implementation: planned removed, generated files from pnpm codegen. Test-machine full verification verify/1 exit 0 (tree b5817518, PROP_RUNS=2000; the same tree as the implementation commit).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c4751b33ab5c3029b00e9161c8895509fef46966",
+      "tree": "fa54e040efd46bea00dc475b8ba730e321296af6",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T08:26:13Z",
+      "finished_at": "2026-10-30T08:26:44Z",
+      "red_tests": [
+        "test/spec/ledger/admin-asset-snapshots/contract.test.ts > [AC-B2-09e#1] listAdminAssetSnapshots 去掉 x-implementation: planned（生成的 planned 清单同步），x-auth admin、x-error-codes [10001, 10403, 20001] 不变；admin 入口恰好挂一次 GET /admin/v1/asset-snapshots 并带契约请求 schema，api 入口不挂",
+        "test/spec/ledger/admin-asset-snapshots/list.int.test.ts > [AC-B2-09e#2] 资产快照列表（fund.view，不要 step-up）：只列本应用的 asset_snapshots，按 snapshot_date 倒序，每行恰好是契约的 AdminAssetSnapshot（快照日、五项合计、waiting_comparable、各平台应收、写入与更新时刻）；其他应用同一天与更晚的快照不出现；默认 page 1 / page_size 20；带其他权限点或超管也能读；读取不写审计、不改两张表",
+        "test/spec/ledger/admin-asset-snapshots/list.int.test.ts > [AC-B2-09e#3] 资产快照列表的排序与分页：snapshot_date 倒序（与写入先后无关）；page / page_size 翻页，total 为全部条数；超过最后一页是空 items（不报错）；page_size 200 一页取完",
+        "test/spec/ledger/admin-asset-snapshots/list.int.test.ts > [AC-B2-09e#4] 资产快照列表的快照日区间：date_from、date_to 两端都含，可只给一端，可相等；没有命中是空页（total 0）；区间内没写入快照的日子没有行（不补零）；与分页组合时 total 为区间内条数",
+        "test/spec/ledger/admin-asset-snapshots/list.int.test.ts > [AC-B2-09e#5] 资产快照列表的金额是快照写入时的整数分原样（不按当前余额或订单重算、不改符号）：五项合计含 0 与 2^53−1；waiting_comparable 的 true / false 照存；各平台应收按平台代码排序、含负数与大整数，没有应收行时是空数组；updated_at 与 created_at 各自照存",
+        "test/spec/ledger/admin-asset-snapshots/list.int.test.ts > [AC-B2-09e#6] 资产快照列表的拒绝：date_from / date_to 不是 YYYY-MM-DD 日期（月份 13、32 日、2 月 30 日、斜杠、缺位、只有年月、带时刻）→ 20001 data.fields 指名该参数；date_from 晚于 date_to → 20001 data.fields=[date_from, date_to]；page_size 超过 200 → 20001 [page_size]；拒绝不写审计、不写快照",
+        "test/spec/ledger/admin-asset-snapshots/list.int.test.ts > [AC-B2-09e#7] 资产快照列表的权限：只认 fund.view（超管除外）——没有权限点、只有 fund.recon、或只有 fund.cash_entry / pay.view / fund.settle_adjust 等别的点 → 10403；不带令牌 → 10001；空应用是空页；读取不写审计、不改快照",
+        "test/spec/ledger/admin-asset-snapshots/list.int.test.ts > [AC-B2-09e#8] 未写入的快照日没有行，读取不触发补写：当前 2026-10-30 10:00 +08:00，10-28 的快照没写、10-30 的还没到 → 列表与区间筛选都不出现这两天、不补零；读后 asset_snapshots / asset_snapshot_receivables 不新增不改（超时未确认的 waiting_comparable=false 仍是 false），没有快照或告警事件"
+      ],
+      "expected": [
+        "test/spec/ledger/admin-asset-snapshots/contract.test.ts",
+        "test/spec/ledger/admin-asset-snapshots/list.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "739909b41eb21c575c487f7b063d109e8e3d4f1ee5ec34b95da236dc1c1e36d7"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "006ff6541bde2542bd2868ebb417fca65c949dd92c52ed2ee81f546030eb6643"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "nohup claude-run.sh review --review-type money (Codex unavailable until 2026-11-02, approvals 36): round 1 pass; one S2 recorded as a follow-up (date_from / date_to with year 0000 passes the route schema and would answer 50001 rather than 20001; hand-written only, fails closed); idempotency / concurrency / partial refund n/a (read only)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "nohup claude-run.sh review --review-type spec-test: round 1 pass, no findings."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "ce095141a0b2f16b3b4d2742dea9a397250c6a32",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
