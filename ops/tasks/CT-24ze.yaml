@@ -1,0 +1,27 @@
+id: CT-24ze
+repo: rebate-platform
+title: 契约：后台差错单恢复处理 ADMIN_RESTORE——POST /admin/v1/recon-diffs/{recon_diff_id}/restore（restoreAdminReconDiff）：先做账户封禁申诉的 appeal_restore（BR-FUND-22 ③）；权限 order.restore，动态码档 step-up，写审计，Idempotency-Key；差错单到 adjusted；订单申诉与平台恢复（R12 / R13）留后续
+type: contract
+# 2026-10-31 入账（admin-backend，编排 D10-468 ①）。依据 08 BR-FUND-22 ③、BR-CALC-09 / 13 申诉恢复、04 §11.2 order.restore（动态码，一人可完成，ADD-05）、identity 10-30 19:05 交接。写法照 CT-24za writeOffAdminReconDiff（检查顺序、20001 data.reason、20902 recon_diff、Idempotency-Key 与 X-Step-Up-Token 同带）。列表与详情沿用 listAdminReconDiffs / getAdminReconDiff（type=appeal_restore），不另开。
+# 本段只收 ③ 那一种（resolution.reason_code=APPEAL_RESTORE、带 user_id 与 shares 的差错单）；别的 type 或没有这些字段的差错单 20001 [recon_diff_id] data.reason=restore_not_supported。platform_restore（orders 已在产出）与订单申诉的 R12 / R13 单开下一段，这里不写半截。
+# 不改分录规则：金额只按 BR-FUND-22 ③ 现算，expected_fen 只作展示。
+refs: []
+refs_hash: {}
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'packages/contracts-ts/**'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
