@@ -18,6 +18,12 @@
 //     user_id, role) — the latest split of that share (04 commission_split_amounts: one row per
 //     version and beneficiary). A forfeited share without any snapshot row is an inconsistency:
 //     the call throws (the consumer's job retries, then dead-letters) instead of answering 0.
+//     B1-03z r2 (funds review S0): this is the snapshot-time ESTIMATE of the share (only version 1
+//     is ever written), not the amount booked to the platform when the share was forfeited (the
+//     FORFEIT voucher, at B_credit). risk's producer does not use it as the restore amount.
+//   - orderKey (B1-03z r2): the sub-order's order key `{platform}:{sub_order_id}` (@couli/domain
+//     orderKey, from order_keys — read the same way rule-publication-store reads the platform),
+//     the ref_id of recon_diffs rows about an order (ledger ReconDiffSelection.orderKey).
 //   - forfeitedAt: created_at of that forfeited event (the latest one in the window when there are
 //     several for the same share).
 //   - orderKey: the sub-order's order key `{platform}:{sub_order_id}` (order_keys of order_id), the
@@ -34,8 +40,22 @@
 //     earliest banned forfeiture; no banned forfeiture in (notBefore, until] → null.
 //   - Used by risk's appeal restore producer for appeals without penalty_started_at (存量).
 //
+// findBannedRunStart(trx, { appId, userId, until, notBefore }) (B1-03z r2, funds review S1)
+//   - 「本次封禁」's start for an appeal without penalty_started_at: the created_at of the earliest
+//     forfeited (banned) event of the member's last unbroken run of banned forfeitures at or
+//     before `until` (the appeal's created_at). Walking the member's share events (every order and
+//     role, by created_at then event_seq) back from the latest banned forfeiture, the run stops at
+//     the first event that is not a banned forfeiture: an active or held event, or a forfeiture
+//     for another reason (deleted / minor). A held event means the member was frozen or appealing
+//     (not banned) when that share was credited; an active event is a snapshot or a restore. Events
+//     before `notBefore` (exclusive; null: none) are not looked at: the caller passes the close of
+//     the member's previous appeal that ended a ban or a freeze.
+//   - null when there is no banned forfeiture in (notBefore, until].
+//   - Plain SELECTs on the given handle, commission's events table only.
+//
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
 import type { DB } from '@couli/db';
+import { orderKey } from '@couli/domain';
 import type { Kysely } from 'kysely';
 
 const ROLES: ReadonlySet<string> = new Set(['self', 'share', 'direct', 'indirect']);
@@ -57,7 +77,7 @@ export interface BannedForfeitedShare {
   /** The sub-order's order key `{platform}:{sub_order_id}` (order_keys). */
   readonly orderKey: string;
   readonly role: ForfeitedShareRole;
-  /** The forfeited share's value in fen (split snapshot). */
+  /** The share's snapshot-time estimate in fen (split snapshot v1), not the forfeited amount. */
   readonly amountFen: bigint;
   /** created_at of the share's forfeited (banned) event inside the window. */
   readonly forfeitedAt: Date;
@@ -93,6 +113,19 @@ export async function listBannedForfeitedShares(
       forfeited.map((row) => row.order_id),
     )
     .execute();
+  const keys = await db
+    .selectFrom('order_keys')
+    .select(['order_id', 'platform', 'sub_order_id'])
+    .where('app_id', '=', input.appId)
+    .where(
+      'order_id',
+      'in',
+      forfeited.map((row) => row.order_id),
+    )
+    .execute();
+  const keyOf = new Map(
+    keys.map((row) => [row.order_id, orderKey(row.platform, row.sub_order_id)]),
+  );
   const latest = new Map<string, { version: number; amountFen: bigint }>();
   for (const row of amounts) {
     const key = `${row.order_id}:${row.role}`;
@@ -109,8 +142,13 @@ export async function listBannedForfeitedShares(
     if (amount === undefined) {
       throw new Error('commission: forfeited share without a split snapshot amount');
     }
+    const key = keyOf.get(row.order_id);
+    if (key === undefined) {
+      throw new Error('commission: forfeited share without an order key');
+    }
     return {
       orderId: row.order_id,
+      orderKey: key,
       role: row.role as ForfeitedShareRole,
       amountFen: amount.amountFen,
       forfeitedAt: row.forfeited_at,
@@ -131,18 +169,35 @@ function compare(a: string, b: string): number {
 export interface FindBannedRunStartInput {
   readonly appId: string;
   readonly userId: string;
-  /** Inclusive upper bound of the share events' created_at. */
+  /** Inclusive upper bound (the appeal's created_at). */
   readonly until: Date;
-  /** Exclusive lower bound of the share events' created_at; null: none. */
+  /** Exclusive lower bound; null: from the member's first event. */
   readonly notBefore: Date | null;
 }
 
-/** Start of the member's last unbroken run of banned forfeitures; none → null. */
+/** BR-CALC-13 细则「申诉恢复」, appeals without penalty_started_at: start of the last banned run. */
 export async function findBannedRunStart(
   trx: Kysely<DB>,
   input: FindBannedRunStartInput,
 ): Promise<Date | null> {
-  void trx;
-  void input;
-  throw new Error('NotImplemented: findBannedRunStart');
+  let query = trx
+    .withSchema('app')
+    .selectFrom('commission_split_beneficiary_events')
+    .select(['status', 'reason', 'created_at'])
+    .where('app_id', '=', input.appId)
+    .where('user_id', '=', input.userId)
+    .where('created_at', '<=', input.until);
+  if (input.notBefore !== null) query = query.where('created_at', '>', input.notBefore);
+  const events = await query.orderBy('created_at', 'desc').orderBy('event_seq', 'desc').execute();
+  let start: Date | null = null;
+  for (const event of events) {
+    const banned = event.status === 'forfeited' && event.reason === 'banned';
+    if (banned) {
+      start = event.created_at;
+      continue;
+    }
+    // Before the first banned forfeiture (walking back) other events are after the run: skip.
+    if (start !== null) break;
+  }
+  return start;
 }

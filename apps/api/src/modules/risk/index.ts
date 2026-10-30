@@ -228,7 +228,10 @@ export { createAppealRestoreHandler } from './application/appeal-restore.ts';
 export type {
   AppealRestoreConsumer,
   AppealRestoreOptions,
+  AppealRestoreLogger,
   AppealRestoreShare,
   BannedForfeitedSharesPort,
+  BannedRunStartPort,
+  ForfeitedAmountPort,
 } from './application/appeal-restore.ts';
 export type { RiskScanWorkerPorts } from './risk-scan.module.ts';

@@ -9,8 +9,9 @@
 // B1-03z: it also registers the appeal.resolved consumer `risk-appeal-restore` (appeal_restore
 // differences of revoked ban appeals, BR-FUND-22 / BR-CALC-13 细则「申诉恢复」) on queue
 // `evt.risk-appeal-restore` through registerEventConsumer, as notification-appeal-result does.
-// commission's shares port comes from app.module (ports.appealRestoreShares, dependency inversion:
-// commission's index.ts reaches risk's through identity / growth). Registration runs no statement;
+// commission's ports come from app.module (ports.appealRestoreShares / appealRestoreRunStart, and
+// ledger's forfeited amount once ledger exports it; dependency inversion: commission's index.ts
+// reaches risk's through identity / growth). Registration runs no statement;
 // without a database handle or queue nothing is registered and one info line
 // `appeal_restore_disabled` is logged.
 //
@@ -46,6 +47,8 @@ import {
   createAppealRestoreHandler,
   type AppealRestoreConsumer,
   type BannedForfeitedSharesPort,
+  type BannedRunStartPort,
+  type ForfeitedAmountPort,
 } from './application/appeal-restore.ts';
 import {
   createRedisGenerationRenewal,
@@ -63,6 +66,13 @@ const APPEAL_RESTORE_CONSUMER: AppealRestoreConsumer = 'risk-appeal-restore';
 export interface RiskScanWorkerPorts {
   /** B1-03z: commission's listBannedForfeitedShares, assembled by app.module. */
   readonly appealRestoreShares: BannedForfeitedSharesPort;
+  /** B1-03z r2: commission's findBannedRunStart (appeals without penalty_started_at). */
+  readonly appealRestoreRunStart: BannedRunStartPort;
+  /**
+   * B1-03z r2: the FORFEIT voucher amount (a ledger read). Absent until ledger exports it: a
+   * revoked ban appeal with shares then rejects (appeal_restore_amount_unavailable).
+   */
+  readonly appealRestoreForfeitedAmount?: ForfeitedAmountPort;
 }
 
 @Module({})
@@ -160,6 +170,11 @@ export class RiskScanModule {
               handler: createAppealRestoreHandler({
                 clock,
                 shares: ports.appealRestoreShares,
+                bannedRunStart: ports.appealRestoreRunStart,
+                ...(ports.appealRestoreForfeitedAmount === undefined
+                  ? {}
+                  : { forfeitedAmount: ports.appealRestoreForfeitedAmount }),
+                logger: logger.child({ consumer: APPEAL_RESTORE_CONSUMER }),
               }),
             });
             return true;
