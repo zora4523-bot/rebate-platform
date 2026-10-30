@@ -67,3 +67,59 @@ it('[AC-B1-28h] 读不懂的缓存条目按未命中处理；联盟故障时也�
   );
   await expect(cached.categories(request)).rejects.toBeInstanceOf(UnionError);
 });
+
+function memoryRedis() {
+  const rows = new Map<string, string>();
+  const redis: RedisNamespace = {
+    get: async (key) => rows.get(key) ?? null,
+    set: async (key, value) => {
+      rows.set(key, value);
+    },
+    eval: async () => {
+      throw new Error('no Lua');
+    },
+  };
+  return { rows, redis };
+}
+
+const pageInput = { ...request, categoryId: null, pageNo: 1, pageSize: 20 };
+
+it('[AC-B1-28l] 空页不带 positions：不写这个键，命中后也没有', async () => {
+  const { rows, redis } = memoryRedis();
+  const union = upstream();
+  const cached = cacheHotRankUpstream(union, {
+    redis,
+    clock: new FixedClock(NOW),
+    config: noConfig,
+  });
+
+  await cached.page(pageInput);
+  const hit = await cached.page(pageInput);
+
+  expect(union.page).toHaveBeenCalledTimes(1);
+  expect('positions' in hit).toBe(false);
+  const [text] = [...rows.values()];
+  expect(JSON.parse(text!)).toMatchObject({ data: { items: [], has_more: false } });
+  expect(text).not.toContain('positions');
+});
+
+it('[AC-B1-28l] 存储里 positions 第一个元素就是负数：按读不出重新取数', async () => {
+  const { rows, redis } = memoryRedis();
+  const union = upstream();
+  const clock = new FixedClock(NOW);
+  const cached = cacheHotRankUpstream(union, { redis, clock, config: noConfig });
+  await cached.page(pageInput);
+  const [key] = [...rows.keys()];
+  rows.set(
+    key!,
+    JSON.stringify({
+      v: 1,
+      fetched_at_ms: clock.now().getTime(),
+      data: { has_more: false, items: [], positions: [-1] },
+    }),
+  );
+
+  await cached.page(pageInput);
+
+  expect(union.page).toHaveBeenCalledTimes(2);
+});

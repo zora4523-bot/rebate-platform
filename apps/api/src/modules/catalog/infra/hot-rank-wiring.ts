@@ -13,7 +13,12 @@ import {
 } from '../../union/index.ts';
 import { CatalogError } from '../domain/rules.ts';
 import type { Catalog, ProductRef } from '../domain/types.ts';
-import type { HotRankCandidate, HotRankCategoriesRequest, HotRankUpstream } from '../hot-rank.ts';
+import type {
+  HotRankCandidate,
+  HotRankCategoriesRequest,
+  HotRankUpstream,
+  HotRankUpstreamPage,
+} from '../hot-rank.ts';
 import type { CatalogConfigReader, GovernedUnion } from '../ports.ts';
 
 const JD_MODE = 'product_key.jd.mode';
@@ -54,7 +59,8 @@ function rawItemIdOf(item: UnionItem, jdMode: 'item' | 'sku'): string | undefine
  * caller's app and purpose `online`. Before every fetch the whitelist is read here as well: a
  * (platform, channel_id) not listed or not selectable is 50304 rank_unavailable with one warning
  * and no union call, so the port's "no data" never passes for the channel's empty list.
- * Positions keep the channel's order; one without a product key or of another platform is dropped.
+ * Positions keep the channel's order; one without a product key or of another platform is dropped
+ * and the page then carries `positions`, so the rest keep their channel rank (D10-422 ②).
  * The B1-28h cache (infra/hot-rank-cache.ts) wraps this upstream.
  */
 export function createUnionHotRankUpstream(options: UnionHotRankUpstreamOptions): HotRankUpstream {
@@ -96,14 +102,15 @@ export function createUnionHotRankUpstream(options: UnionHotRankUpstreamOptions)
     appId: string,
     platform: Platform,
     entries: readonly { readonly item: UnionItem; readonly salesText: string | null }[],
-  ): Promise<HotRankCandidate[]> {
+  ): Promise<Pick<HotRankUpstreamPage, 'items' | 'positions'>> {
     const row = (await catalog.listPlatforms()).find((entry) => entry.code === platform);
     const jdEntry = platform === 'jd' ? await config.configValue(appId, JD_MODE) : null;
     // Absent means item (BR-PROD-03); any other value fails closed in deriveProductKey.
     const jdMode = (jdEntry === null ? 'item' : String(jdEntry.value)) as 'item' | 'sku';
     const receivedAt = clock.now().toISOString();
     const out: HotRankCandidate[] = [];
-    for (const { item, salesText } of entries) {
+    const positions: number[] = [];
+    for (const [position, { item, salesText }] of entries.entries()) {
       if (item.platform !== platform) continue;
       let productKey: string;
       try {
@@ -135,8 +142,12 @@ export function createUnionHotRankUpstream(options: UnionHotRankUpstreamOptions)
         source: 'search',
       };
       out.push({ item, ref, salesText });
+      positions.push(position);
     }
-    return out;
+    // No item left means no rank to express, so an emptied page has no `positions` either.
+    return out.length > 0 && out.length < entries.length
+      ? { items: out, positions }
+      : { items: out };
   }
 
   return {
@@ -148,7 +159,7 @@ export function createUnionHotRankUpstream(options: UnionHotRankUpstreamOptions)
       ensureSelectable(input, 'channelRanking');
       const page = await ranking.page(input);
       return {
-        items: await toCandidates(input.appId, input.platform, page.items),
+        ...(await toCandidates(input.appId, input.platform, page.items)),
         hasMore: page.hasMore,
       };
     },
