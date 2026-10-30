@@ -127,8 +127,12 @@ export interface QuotaConfig {
 
 export interface QuotaLimiter {
   readonly bucketKey: string;
-  /** Takes one token for `purpose`; false when none is available. */
-  tryAcquire(purpose: QuotaPurpose): boolean;
+  /**
+   * Takes one token for `purpose`; false when none is available. B1-22v: may answer with a
+   * promise (the shared Redis bucket of ./redis-quota.ts); the governor awaits it, and a `false`
+   * or a rejection is `quota_exceeded`. The memory limiter answers synchronously.
+   */
+  tryAcquire(purpose: QuotaPurpose): boolean | Promise<boolean>;
 }
 
 export interface CallOptions {

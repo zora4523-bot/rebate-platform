@@ -13,6 +13,9 @@ export type {
   IdempotencyPostMissCheck,
 } from './idempotency/post-miss.ts';
 export * from './http/index.ts';
+// B1-22v: the union quota bucket shared by every process (Redis); app.module calls it from here.
+export { createRedisQuotaLimiter } from './http/redis-quota.ts';
+export type { RedisQuotaDeps, RedisQuotaLimiter } from './http/redis-quota.ts';
 export { createResilienceRegistry } from './resilience/index.ts';
 export type {
   DependencyId,
