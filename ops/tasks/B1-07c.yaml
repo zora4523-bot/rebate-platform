@@ -1,0 +1,25 @@
+id: B1-07c
+repo: rebate-platform
+title: parsing：POST /v1/inputs/parse 接已登录查看者——控制器不再一律用游客 ViewerContext，改用 identity 的请求身份（同搜索、详情），出卡报价与 link 登记按当前登录用户，未登录仍是游客；身份只由服务端注入，请求体不接收身份字段
+type: impl
+# 2026-10-30 W1 入账（编排 19:3x：对照 05 找缺口）。parse-input.controller.ts 的 TODO 写 blocked on B1-02m，B1-02m 已完成但这里没接：x-auth optional 的路由对已登录用户仍按 userId=null 报价并登记 link。
+# 已有 test/spec/parsing/** 冻结：不带登录的请求仍是游客，未注入身份端口的进程（隔离测试）退回游客。
+refs: [BR-PRICE-12, BR-ATTR-05]
+refs_hash:
+  BR-PRICE-12: 6aa98fc3ce46
+  BR-ATTR-05: e2864d6024ae
+deps: [B1-07b, B1-02m]
+paths:
+  - 'apps/api/src/modules/parsing/http/public/parse-input.controller.ts'
+  - 'apps/api/src/modules/parsing/parsing.module.ts'
+  - 'apps/api/src/modules/parsing/ports.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/parsing/viewer/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/parsing/viewer/**'
+status: todo
+pr: null

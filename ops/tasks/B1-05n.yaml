@@ -1,0 +1,24 @@
+id: B1-05n
+repo: rebate-platform
+title: catalog：搜索无结果兜底改走 union 按频道榜单端口（B1-22p）——search-wiring 的 materialFeed 不再用不带频道的通用物料流顶替所选白名单频道，改取该频道第 1 页前 10 条，顺序不变，频道核对、出卡与失败降级口径不变
+type: impl
+# 2026-10-30 W1 入账（编排 19:3x：对照 05 找缺口）。search-wiring.ts 的 TODO blocked on 联盟 MaterialReq 的频道参数，B1-22p 已给出端口。白名单今天为空所以未触发，但一旦登记频道，通用物料流会顶着频道名下发（BR-TEXT-17 细则「联盟物料频道」）。
+# 前置：test/spec/catalog/cache/kit.ts 的假 adapter 只有 materialFeed，走真实 wiring 的兜底用例要先经测试修改补 channelRanking（不削弱断言），开工前由编排定是否走 #24。
+refs: [BR-TEXT-17]
+refs_hash:
+  BR-TEXT-17: 486f4508575e
+deps: [B1-22p, B1-05j, B1-28j]
+paths:
+  - 'apps/api/src/modules/catalog/infra/search-wiring.ts'
+  - 'apps/api/src/modules/catalog/infra/search-redis-down.test.ts'
+  - 'apps/api/src/modules/catalog/catalog.module.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/catalog/search-fallback-channel/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/search-fallback-channel/**'
+status: todo
+pr: null
