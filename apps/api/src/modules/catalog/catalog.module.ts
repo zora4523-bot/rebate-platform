@@ -505,6 +505,7 @@ export class CatalogModule {
                     config,
                     clock,
                     ledger: redis === undefined ? null : redis.namespace(SEARCH_REDIS_NAMESPACE),
+                    logger,
                   }),
                 ),
                 {

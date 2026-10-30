@@ -1,0 +1,121 @@
+{
+  "task": "B1-05n",
+  "spec_ref": "812734156b57ba648ee1df733dafac3dba9bdb15",
+  "spec_commit": "3ec79085ccd7a7155028126788415791895f71e9",
+  "red_tests": [
+    "test/spec/catalog/search-fallback-channel/cards.test.ts > [AC-B1-05n#5][BR-TEXT-17] 下发卡片顺序等于频道条目顺序（不按佣金、价格重排），只含该频道的商品，不混入通用物料流；搜索的排序与筛选不作用于兜底",
+    "test/spec/catalog/search-fallback-channel/cards.test.ts > [AC-B1-05n#6] 频道条目同样过统一出卡入口：异常价、无返利、重复商品不下发，不登记链接，其余保持相对顺序",
+    "test/spec/catalog/search-fallback-channel/cards.test.ts > [AC-B1-05n#7] 频道条目多于 10 条时兜底只下发前 10 条；搜索本身的 items、next_cursor、has_more 不受频道页影响",
+    "test/spec/catalog/search-fallback-channel/cards.test.ts > [AC-B1-05n#8] 候选的 ref 同 toCandidates：淘宝、京东 item 与 sku 口径、拼多多的 productKey 与 rawItemId，rawFetchedAt 为 quoted_at，receivedAt 为取数时的时钟，source=search，候选不带 salesText",
+    "test/spec/catalog/search-fallback-channel/cards.test.ts > [AC-B1-05n#9] 推导不出 product_key 或平台不符的条目丢掉，其余保持相对顺序",
+    "test/spec/catalog/search-fallback-channel/cards.test.ts > [AC-B1-05n#10] 只取前 limit 条候选：丢掉的条目不占名额，多出的条目不改 hasMore",
+    "test/spec/catalog/search-fallback-channel/cards.test.ts > [AC-B1-05n#11] hasMore 取端口的 hasMore，与通用物料流的游标无关",
+    "test/spec/catalog/search-fallback-channel/failures.test.ts > [AC-B1-05n#17] adapter 没有 channelRanking：搜索仍成功，fallback_items 为空，不退回 materialFeed，告警 search_fallback_unavailable",
+    "test/spec/catalog/search-fallback-channel/failures.test.ts > [AC-B1-05n#18] adapter 没有 channelRanking（不论有无 materialFeed）：materialFeed 抛端口的 UnionError(upstream_unavailable)，不再是 CatalogError 30131",
+    "test/spec/catalog/search-fallback-channel/failures.test.ts > [AC-B1-05n#19] 白名单里有可选频道但平台未登记联盟适配器：不向 GovernedUnion 要该平台，抛 UnionError(upstream_unavailable)",
+    "test/spec/catalog/search-fallback-channel/failures.test.ts > [AC-B1-05n#20] channelRanking 的治理与联盟失败原样上抛，用例按失败降级吞掉：搜索成功、fallback_items 为空、告警带频道",
+    "test/spec/catalog/search-fallback-channel/failures.test.ts > [AC-B1-05n#21] channelRanking 抛出的程序缺陷不被吞掉：搜索失败，原样传播",
+    "test/spec/catalog/search-fallback-channel/property.test.ts > [AC-B1-05n#22][BR-TEXT-17] 属性：任意条目序列与 limit，结果恰为可用条目按频道顺序的前 limit 条，不超过 limit，hasMore 取端口的，请求的 pageSize 为 limit",
+    "test/spec/catalog/search-fallback-channel/request.test.ts > [AC-B1-05n#1][BR-TEXT-17] 搜索无结果走到兜底：channelRanking 恰收到一次 { channelId, categoryId: null, pageNo: 1, pageSize: 10 }，adapter.materialFeed 未被调用",
+    "test/spec/catalog/search-fallback-channel/request.test.ts > [AC-B1-05n#2] 三个平台各走自己的白名单频道与 adapter，别的平台不被调用",
+    "test/spec/catalog/search-fallback-channel/request.test.ts > [AC-B1-05n#3] pageSize 等于入参 limit，channelId 原样转给端口，推广位不进联盟请求",
+    "test/spec/catalog/search-fallback-channel/request.test.ts > [AC-B1-05n#4] 调用上下文同现有 context(appId)：入参的 app、purpose online，每次一个新的 requestId",
+    "test/spec/catalog/search-fallback-channel/whitelist.test.ts > [AC-B1-05n#12][BR-TEXT-17] 用例选中频道后白名单变了：不调 channelRanking 也不调 materialFeed，兜底为空，告警一条（带平台、频道、原因）",
+    "test/spec/catalog/search-fallback-channel/whitelist.test.ts > [AC-B1-05n#13][BR-TEXT-17] 每次取数都重读白名单：同一 upstream 上频道移出后下一次即空，恢复后又能取数",
+    "test/spec/catalog/search-fallback-channel/whitelist.test.ts > [AC-B1-05n#14] 兜底不进搜索页缓存：同一搜索再来一次，频道已移出时不拿上次的频道页顶替",
+    "test/spec/catalog/search-fallback-channel/whitelist.test.ts > [AC-B1-05n#15] 不传 channels 时默认读 platform 的 getMaterialChannels，且每次取数重读",
+    "test/spec/catalog/search-fallback-channel/whitelist.test.ts > [AC-B1-05n#16] 不传 logger 时拒绝仍是空结果：冻结调用方的选项形状不因告警而失败"
+  ],
+  "risk_note": "RV2 by path (app.module.ts). The search fallback (TRADE-20) took the channel the use case selected from the whitelist but served the generic material feed under its name; it now reads that channel through union's createUnionChannelRanking (B1-22p): page 1, the channel's order, the first limit items (BR-TEXT-17 联盟物料频道). A channel removed at fetch time gives nothing with an alert; an adapter without the channel method degrades to no fallback with an alert and the search still succeeds. search.ts is unchanged. channels and logger are optional options because frozen kits call createUnionSearchUpstream without them; both production callers pass the logger (checked by the review, no rule test pins it). The whitelist is empty today, so this path does not run yet; real adapters still need CAP-*-10. No money moves. verify:fast exit 0 (api 3674, spec-tests 20530). Codex was unavailable until 11-02, so the rule tests and reviews ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "3ec79085ccd7a7155028126788415791895f71e9",
+      "tree": "0302f63a41f43ed8a916f20811de047052fdffcb",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T15:20:17Z",
+      "finished_at": "2026-10-30T15:20:24Z",
+      "gate": {
+        "commit": "c6736e367f9e98a8e2e8d78959be252fb31cd233",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "red_tests": [
+        "test/spec/catalog/search-fallback-channel/cards.test.ts > [AC-B1-05n#5][BR-TEXT-17] 下发卡片顺序等于频道条目顺序（不按佣金、价格重排），只含该频道的商品，不混入通用物料流；搜索的排序与筛选不作用于兜底",
+        "test/spec/catalog/search-fallback-channel/cards.test.ts > [AC-B1-05n#6] 频道条目同样过统一出卡入口：异常价、无返利、重复商品不下发，不登记链接，其余保持相对顺序",
+        "test/spec/catalog/search-fallback-channel/cards.test.ts > [AC-B1-05n#7] 频道条目多于 10 条时兜底只下发前 10 条；搜索本身的 items、next_cursor、has_more 不受频道页影响",
+        "test/spec/catalog/search-fallback-channel/cards.test.ts > [AC-B1-05n#8] 候选的 ref 同 toCandidates：淘宝、京东 item 与 sku 口径、拼多多的 productKey 与 rawItemId，rawFetchedAt 为 quoted_at，receivedAt 为取数时的时钟，source=search，候选不带 salesText",
+        "test/spec/catalog/search-fallback-channel/cards.test.ts > [AC-B1-05n#9] 推导不出 product_key 或平台不符的条目丢掉，其余保持相对顺序",
+        "test/spec/catalog/search-fallback-channel/cards.test.ts > [AC-B1-05n#10] 只取前 limit 条候选：丢掉的条目不占名额，多出的条目不改 hasMore",
+        "test/spec/catalog/search-fallback-channel/cards.test.ts > [AC-B1-05n#11] hasMore 取端口的 hasMore，与通用物料流的游标无关",
+        "test/spec/catalog/search-fallback-channel/failures.test.ts > [AC-B1-05n#17] adapter 没有 channelRanking：搜索仍成功，fallback_items 为空，不退回 materialFeed，告警 search_fallback_unavailable",
+        "test/spec/catalog/search-fallback-channel/failures.test.ts > [AC-B1-05n#18] adapter 没有 channelRanking（不论有无 materialFeed）：materialFeed 抛端口的 UnionError(upstream_unavailable)，不再是 CatalogError 30131",
+        "test/spec/catalog/search-fallback-channel/failures.test.ts > [AC-B1-05n#19] 白名单里有可选频道但平台未登记联盟适配器：不向 GovernedUnion 要该平台，抛 UnionError(upstream_unavailable)",
+        "test/spec/catalog/search-fallback-channel/failures.test.ts > [AC-B1-05n#20] channelRanking 的治理与联盟失败原样上抛，用例按失败降级吞掉：搜索成功、fallback_items 为空、告警带频道",
+        "test/spec/catalog/search-fallback-channel/failures.test.ts > [AC-B1-05n#21] channelRanking 抛出的程序缺陷不被吞掉：搜索失败，原样传播",
+        "test/spec/catalog/search-fallback-channel/property.test.ts > [AC-B1-05n#22][BR-TEXT-17] 属性：任意条目序列与 limit，结果恰为可用条目按频道顺序的前 limit 条，不超过 limit，hasMore 取端口的，请求的 pageSize 为 limit",
+        "test/spec/catalog/search-fallback-channel/request.test.ts > [AC-B1-05n#1][BR-TEXT-17] 搜索无结果走到兜底：channelRanking 恰收到一次 { channelId, categoryId: null, pageNo: 1, pageSize: 10 }，adapter.materialFeed 未被调用",
+        "test/spec/catalog/search-fallback-channel/request.test.ts > [AC-B1-05n#2] 三个平台各走自己的白名单频道与 adapter，别的平台不被调用",
+        "test/spec/catalog/search-fallback-channel/request.test.ts > [AC-B1-05n#3] pageSize 等于入参 limit，channelId 原样转给端口，推广位不进联盟请求",
+        "test/spec/catalog/search-fallback-channel/request.test.ts > [AC-B1-05n#4] 调用上下文同现有 context(appId)：入参的 app、purpose online，每次一个新的 requestId",
+        "test/spec/catalog/search-fallback-channel/whitelist.test.ts > [AC-B1-05n#12][BR-TEXT-17] 用例选中频道后白名单变了：不调 channelRanking 也不调 materialFeed，兜底为空，告警一条（带平台、频道、原因）",
+        "test/spec/catalog/search-fallback-channel/whitelist.test.ts > [AC-B1-05n#13][BR-TEXT-17] 每次取数都重读白名单：同一 upstream 上频道移出后下一次即空，恢复后又能取数",
+        "test/spec/catalog/search-fallback-channel/whitelist.test.ts > [AC-B1-05n#14] 兜底不进搜索页缓存：同一搜索再来一次，频道已移出时不拿上次的频道页顶替",
+        "test/spec/catalog/search-fallback-channel/whitelist.test.ts > [AC-B1-05n#15] 不传 channels 时默认读 platform 的 getMaterialChannels，且每次取数重读",
+        "test/spec/catalog/search-fallback-channel/whitelist.test.ts > [AC-B1-05n#16] 不传 logger 时拒绝仍是空结果：冻结调用方的选项形状不因告警而失败"
+      ],
+      "expected": [
+        "test/spec/catalog/search-fallback-channel/cards.test.ts",
+        "test/spec/catalog/search-fallback-channel/failures.test.ts",
+        "test/spec/catalog/search-fallback-channel/property.test.ts",
+        "test/spec/catalog/search-fallback-channel/request.test.ts",
+        "test/spec/catalog/search-fallback-channel/whitelist.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "abe5c8ba989c7758cbf42907ce71af397b4ba6e6541cd98a34f578a10a48a8a5"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 against the merge base pass, no findings."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude (1 run, red 22 / 22 across 5 files); round 1 pass with two S2 and one out-of-scope S1 test gap (search cards have no ad_label assertion, no defect today), all in followups."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "38665b80bf35e5f73bd9330ec88fc8962c53e52e",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
