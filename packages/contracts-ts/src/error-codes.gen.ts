@@ -556,8 +556,8 @@ export const errorCodes = {
   30155: {
     http: 422,
     http_also: [],
-    meaning: "同一平台同一推广位场景已有启用中的推广位（只出现在 /admin/v1 的 union-pids/{pid_id}/activate：同一 app × platform × pid_scene 至多一条 active，要换先停用原来那条再启用新的，BR-ATTR-02 细则「后台修改与启用的裁定」，编排裁定 D10-152；不带 data。码值按 08 §13.11 301 段顺序取号，CT-24h）",
-    action: "后台：刷新推广位列表，提示先停用该场景当前启用的推广位",
+    meaning: "同一平台、同一联盟账号的同一推广位场景已有启用中的推广位（只出现在 /admin/v1 的 union-pids/{pid_id}/activate：同一 app × platform × 联盟账号 × pid_scene 至多一条 active，同平台同场景的其他联盟账号可以各有一条，要换先停用原来那条再启用新的，BR-ATTR-02 细则「后台修改与启用的裁定」，编排裁定 D10-152、D10-231；不带 data。码值按 08 §13.11 301 段顺序取号，CT-24h）",
+    action: "后台：刷新推广位列表，提示先停用该联盟账号该场景当前启用的推广位",
     retry: "否",
     retry_kind: "never",
     retry_kind_by_reason: {},

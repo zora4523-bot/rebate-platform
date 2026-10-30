@@ -5424,15 +5424,19 @@ export interface paths {
          *     are), the screenshot not PNG / JPEG or above 5 MB → 20001 with
          *     `data.fields=[hjy_ignore_evidence]`, another part invalid → 20001 naming it → the row is
          *     not pending, or `expected_row_version` differs → 20902 with `data.resource=union_pid` →
-         *     another PID of the same app × platform × pid_scene is active → 30155 (only one active
-         *     per scene; retire it first, BR-ATTR-02 细则). A request body above the global limit stays
-         *     413 with `data.fields=[body]`. Effects, in one transaction: the screenshot is stored in
-         *     the private OSS bucket and its path written to hjy_ignore_evidence_path, with
-         *     hjy_ignore_confirmed_at, status becomes active and row_version goes up by 1; from then
-         *     on links of that scene use this PID (BR-ATTR-02). The partial unique index on (app,
-         *     platform, pid_scene) for active rows is the last line against a concurrent second
-         *     activation, which also answers 30155. Writes an audit record (action union_pid_activate,
-         *     reason). The response is the row as it is now. No Idempotency-Key.
+         *     another PID of the same app × platform × union account (union_account_id) × pid_scene
+         *     is active → 30155 (only one active per union account and scene; PIDs of other union
+         *     accounts of the same platform and scene may be active at the same time; retire it
+         *     first, BR-ATTR-02 细则「后台登记与启停」, orchestrator ruling D10-231). A request body
+         *     above the global limit stays 413 with `data.fields=[body]`. Effects, in one
+         *     transaction: the screenshot is stored in the private OSS bucket and its path written
+         *     to hjy_ignore_evidence_path, with hjy_ignore_confirmed_at, status becomes active and
+         *     row_version goes up by 1; from then on links of that scene that use this union
+         *     account use this PID (BR-ATTR-02, BR-ATTR-08).
+         *     The partial unique index on (app, platform, union_account_id, pid_scene) for active
+         *     rows is the last line against a concurrent second activation, which also answers
+         *     30155. Writes an audit record (action union_pid_activate, reason). The response is
+         *     the row as it is now. No Idempotency-Key.
          */
         post: operations["adminActivateUnionPid"];
         delete?: never;
@@ -5461,7 +5465,8 @@ export interface paths {
          *     `expected_row_version` that differs, is 20902 with `data.resource=union_pid`. There is no
          *     pending → retired and no retired → active. A retired PID stays on the whitelist, so
          *     orders from links already sent keep coming in (BR-ATTR-02 「为什么保留 retired」); new links
-         *     of the scene use the active PID, and until one is activated the scene has none.
+         *     of the scene that use this union account use its active PID, and until one is activated
+         *     that account has none in the scene (another account's PID never stands in, BR-ATTR-08).
          *     row_version goes up by 1. Writes an audit record (action union_pid_retire, reason). The
          *     response is the row as it is now. No Idempotency-Key.
          */
