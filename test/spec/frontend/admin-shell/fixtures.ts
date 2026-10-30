@@ -16,7 +16,7 @@ export const MENU = [
   ],
   ['资金', 'ledger', '余额流水', ['fund.view']],
   ['资金', 'fund-ledger', '平台资金台账', ['fund.cash_entry']],
-  ['资金', 'recon', '对账与差错', ['fund.recon']],
+  ['资金', 'recon', '对账与差错', ['fund.recon', 'fund.view']],
   ['资金', 'adjustments', '调账与核销', ['fund.adjust', 'fund.writeoff']],
   ['资金', 'pay-orders', '支付单', ['pay.view', 'pay.refund', 'pay.resolve']],
   ['运营', 'pages', '首页配置', ['content.page']],
