@@ -1,0 +1,17 @@
+id: F1-13ba
+repo: rebate-platform
+title: F1-13ba：冻结支付单只读测试 [AC-F1-13a-READONLY#2] / [AC-F1-13a-READONLY#3] 的账号样例由超管改为只持 pay.view（F1-13b 前置；「只读账号看不到写入口」的断言不变）
+type: test-change
+# 2026-10-31 入账（前端线 f1-frontend-7，先例 F1-08aa #1845 / F1-08gaa #1889）。F1-13a 时支付单页只读，这两条用超管账号断言部分退款的已支付单、待人工处置单详情里没有可用的【发起退款】【立即查询】【处置】。F1-13b 给持 pay.refund / pay.resolve 的账号（超管持有全部权限）加上这两个入口，两条与 F1-13b 的新规则测试同一入参、不能同时满足。
+# 只改两条 mount 的 snapshot：SUPER → 只持 pay.view 的样例（fixtures 已有 VIEW_GRANTS / snapshot()）；标题里「超管」改为「只持 pay.view」，其余断言（无可用写入口、只发四个 GET、不弹动态码、不读退款单列表）零改动。超管 / pay.refund / pay.resolve 看得到入口由 F1-13b 的新测试覆盖。现行主干改前改后都绿，可先于 F1-13b 合并。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件；新鲜独立 Claude 改、另一新鲜独立 Claude 只读复审 pass（写进 PR 正文）；标签由编排核对后加（#24）。
+refs: []
+refs_hash: {}
+deps: [F1-13a]
+paths:
+  - 'test/spec/frontend/admin-pay-orders/readonly.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo

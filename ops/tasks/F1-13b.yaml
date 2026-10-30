@@ -1,0 +1,24 @@
+id: F1-13b
+repo: rebate-platform
+title: 后台「支付单」页第二段（写操作）——支付单详情【发起退款】与异常收款【退款】（原路退款：金额分、必选原因码、选填备注，Idempotency-Key 同一对话框重试复用，不设二次验证，可退金额前端预检、超额 20001 字段旁提示，提交后显示「退款中」并刷新详情退款记录）与 needs_manual 待支付单【立即查询】（pay.resolve + 动态码，按返回的已支付 / 已关闭 / 未变化分别提示并刷新）；接口 CT-21e createAdminPayRefund / createAdminPayAnomalyRefund（B2-15e 已实现）、resolveAdminPayOrder（B2-15f 已实现）
+type: impl
+# 2026-10-31 入账（前端线 f1-frontend-7，F1-13a 合并后接写段；编排 D10-435 ①：写操作在对应写接口去 planned 后另入账——三个写接口均已非 planned）。画板 AdmPayRefund / AdmPayRefundInvalid / AdmPayRefundProcessing / AdmPayRefundFailed / AdmPayOrderResolve（布局参考，以契约与 BR-PAY-05 / 06 为准）。
+# 不做：退款单列表页签与单笔退款详情（GET /admin/v1/pay-refunds 未实现）、差错处理（AdmPayDiffResolve，无接口）、导出、微信零钱画板。后台数据层的 meta.idempotencyKey 已由 F1-08e 加好，直接用。
+# 菜单不改；pay.refund 才有退款入口、pay.resolve 才有立即查询入口，只持 pay.view 时两入口不出现。资金写操作：评审走 money 口径（幂等、金额上限、重复提交）。
+# Codex 到 11-02 不可用：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude；独立 Claude 每任务 10 次上限（D10-319 / D10-417）。
+refs: [BR-PAY-05, BR-PAY-06]
+refs_hash:
+  BR-PAY-05: cc6a654d316e
+  BR-PAY-06: 102e1fb8839f
+deps: [CT-21e, B2-15e, B2-15f, F1-13a, F1-13ba]
+paths:
+  - 'apps/admin/src/pages/pay-orders/**'
+  - 'apps/admin/src/texts/pay-orders.ts'
+test_paths:
+  - 'test/spec/frontend/admin-pay-orders-write/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-pay-orders-write/**'
+status: todo
