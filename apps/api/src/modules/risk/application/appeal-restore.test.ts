@@ -13,8 +13,7 @@ import {
   type QueryResult,
 } from 'kysely';
 import { expect, it, vi } from 'vitest';
-import { FixedClock } from '../../platform/clock/index.ts';
-import type { ReceivedEvent } from '../../platform/index.ts';
+import { FixedClock, type ReceivedEvent } from '../../platform/index.ts';
 import {
   createAppealRestoreHandler,
   type AppealRestoreShare,
