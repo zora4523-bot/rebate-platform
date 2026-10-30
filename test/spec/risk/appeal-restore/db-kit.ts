@@ -5,6 +5,8 @@ import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { PostgresQueryCompiler, type Kysely, type KyselyPlugin } from 'kysely';
 import { expect } from 'vitest';
+// By file path, not commission/index.ts: the index reaches identity's decorated controllers.
+import { listBannedForfeitedShares } from '../../../../apps/api/src/modules/commission/application/forfeited-shares.ts';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
 import type { ReceivedEvent } from '../../../../apps/api/src/modules/platform/index.ts';
 import { createAppealRestoreHandler } from '../../../../apps/api/src/modules/risk/application/appeal-restore.ts';
@@ -287,15 +289,19 @@ export async function scenario(suite: Suite) {
     forfeit,
     appeal,
     event(a: Appeal, eventId?: string): ReceivedEvent {
-      return eventId === undefined ? resolvedEvent(a.data) : resolvedEvent(a.data, eventId);
+      const received = resolvedEvent(a.data);
+      return eventId === undefined ? received : { ...received, eventId };
     },
-    /** The SUT, created in the test body so that every case fails on the skeleton. */
+    /**
+     * The SUT, created in the test body so that every case fails on the skeleton. commission's
+     * shares port is injected as the worker assembly does (RiskScanModule.forWorker).
+     */
     handler() {
-      return createAppealRestoreHandler({ clock });
+      return createAppealRestoreHandler({ clock, shares: listBannedForfeitedShares });
     },
     /** Delivers one event directly to a new handler on one transaction of the suite. */
     async deliver(received: ReceivedEvent): Promise<void> {
-      const handle = createAppealRestoreHandler({ clock });
+      const handle = createAppealRestoreHandler({ clock, shares: listBannedForfeitedShares });
       await db.transaction().execute((trx) => handle(received, trx));
     },
     /** recon_diffs of this app, smallest expected amount first. */
