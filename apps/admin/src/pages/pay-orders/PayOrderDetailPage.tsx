@@ -1,7 +1,11 @@
 // 支付单详情（pay-orders/{pay_order_id}；画板 AdmPayOrderDetail，F1-13a 第一段只读）：
 // GET /admin/v1/pay-orders/{pay_order_id} 的基本信息与金额、退款记录、近期渠道请求摘要（只有类型、
 // 结果与时间）。不存在或他 app 的支付单（20001）显示未找到。持 pay.view 可看；不显示渠道侧用户标识。
-// TODO(规划/11 §7): 【立即查询】【发起退款】【处置】、渠道通知记录、状态历史与收款凭证 — blocked on 写接口 / 读接口契约未出
+// F1-13b 第二段写操作：持 pay.refund 时已支付的单有【发起退款】（原路退款，CT-21e createAdminPayRefund，
+// 不设二次验证，成功后提示退款中并重新读取详情）；持 pay.resolve 时待支付且需人工处理的单有【立即查询】
+// （resolveAdminPayOrder：totp 动态码、固定请求体、无 Idempotency-Key，按结果提示并重新读取详情）。
+// TODO(规划/11 §7): 单笔退款详情与退款单列表 — blocked on pay-refunds 读接口未实现
+// TODO(规划/11 §7): 【处置】、渠道通知记录、状态历史与收款凭证 — blocked on 写接口 / 读接口契约未出
 import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useDataProvider } from '@refinedev/core';
 import {
@@ -17,7 +21,7 @@ import {
   theme,
   type TableColumnsType,
 } from 'antd';
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { useNavigate } from 'react-router';
 import { PlannedPage, usePlanned } from '../../components/planned/index.ts';
 import type { AccessControl } from '../../providers/access-control/index.ts';
@@ -30,20 +34,36 @@ import {
   bizTypeLabel,
   channelLabel,
   codeOf,
+  isNetwork,
   money,
   orDash,
+  orderRefundUrl,
+  orderRefundable,
+  orderResolveUrl,
   orderStatusLabel,
   orderUrl,
+  RESOLVE_BODY,
   refundReasonLabel,
   refundState,
   refundStatusLabel,
+  type PayOrder,
   type PayOrderDetail,
+  type PayOrderResolveResult,
   type PayRefund,
   type QueryAttempt,
 } from './model.ts';
 import { PayForbidden, PayTitle, canReadPayOrders } from './PayOrdersPage.tsx';
+import { useRefund } from './useRefund.tsx';
+import { useStepUp } from './useStepUp.tsx';
 
 const t = payOrdersTexts.detail;
+const r = payOrdersTexts.resolve;
+
+interface Notice {
+  readonly id: number;
+  readonly type: 'success' | 'info' | 'warning' | 'error';
+  readonly text: string;
+}
 
 type DetailState =
   | { readonly status: 'loading' }
@@ -61,10 +81,19 @@ export function PayOrderDetailPage({ access, payOrderId }: PayOrderDetailPagePro
   const planned = usePlanned('getAdminPayOrder');
   if (planned) return <PlannedPage title={payOrdersTexts.title} />;
   if (!canReadPayOrders(access)) return <PayForbidden />;
-  return <DetailContent payOrderId={payOrderId} />;
+  return <DetailContent access={access} payOrderId={payOrderId} />;
 }
 
-function DetailContent({ payOrderId }: { readonly payOrderId: string }): ReactElement {
+/** 【发起退款】: pay.refund and a PAID pay order (BR-PAY-06 ①). */
+function mayRefund(access: AccessControl, order: PayOrder): boolean {
+  return access.can('pay.refund') && order.status === 'PAID';
+}
+/** 【立即查询】: pay.resolve and a PENDING pay order with needs_manual (BR-PAY-05 ③). */
+function mayResolve(access: AccessControl, order: PayOrder): boolean {
+  return access.can('pay.resolve') && order.status === 'PENDING' && order.needs_manual;
+}
+
+function DetailContent({ access, payOrderId }: PayOrderDetailPageProps): ReactElement {
   const getProvider = useDataProvider();
   const navigate = useNavigate();
   const { token } = theme.useToken();
@@ -95,6 +124,102 @@ function DetailContent({ payOrderId }: { readonly payOrderId: string }): ReactEl
   const retry = () => {
     setState({ status: 'loading' });
     setAttempt((value) => value + 1);
+  };
+  /** Reads the detail again, keeping the current one on screen until the answer. */
+  const reload = () => setAttempt((value) => value + 1);
+
+  const notices = useRef(0);
+  const [notice, setNotice] = useState<Notice>();
+  const tell = (type: Notice['type'], text: string) => {
+    notices.current += 1;
+    setNotice({ id: notices.current, type, text });
+  };
+
+  const refund = useRefund({
+    onAccepted: (created) => {
+      tell('success', t.accepted(money(created.amount_fen)));
+      reload();
+    },
+    onConflict: () => {
+      tell('warning', t.conflict);
+      reload();
+    },
+    onMissing: () => {
+      tell('error', payOrdersTexts.refund.missingOrder);
+      reload();
+    },
+  });
+
+  const stepUp = useStepUp();
+  const resolving = useRef(false);
+  const [resolveBusy, setResolveBusy] = useState(false);
+
+  const sendResolve = async (outTradeNo: string, stepUpToken: string) => {
+    const custom = getProvider().custom;
+    if (custom === undefined) throw new Error('Missing custom data provider');
+    resolving.current = true;
+    setResolveBusy(true);
+    try {
+      const response = await custom<PayOrderResolveResult>({
+        url: orderResolveUrl(payOrderId),
+        method: 'post',
+        payload: RESOLVE_BODY,
+        meta: { stepUpToken },
+      });
+      const status = response.data.pay_order.status;
+      if (status === 'PAID') tell('success', r.paid);
+      else if (status === 'CLOSED') tell('success', r.closed);
+      else tell('warning', r.unchanged);
+      reload();
+    } catch (cause) {
+      const code = codeOf(cause);
+      if (code === 10003) {
+        // The verification was not accepted: ask for a new code, never resend on its own.
+        askResolve(outTradeNo, true);
+      } else if (code === 20902) {
+        tell('warning', r.conflict);
+        reload();
+      } else if (code === 20001) {
+        tell('error', r.missing);
+        reload();
+      } else if (code === 10403) {
+        tell('error', r.forbidden);
+      } else if (isNetwork(cause)) {
+        tell('error', r.network);
+        reload();
+      } else {
+        tell('error', r.failed);
+      }
+    } finally {
+      resolving.current = false;
+      setResolveBusy(false);
+    }
+  };
+
+  function askResolve(outTradeNo: string, again = false): void {
+    stepUp.ask({
+      operation: r.operation,
+      details: [t.refundTarget(outTradeNo)],
+      again,
+      run: (stepUpToken) => void sendResolve(outTradeNo, stepUpToken),
+    });
+  }
+
+  const startResolve = (order: PayOrder) => {
+    if (resolving.current || stepUp.open || !mayResolve(access, order)) return;
+    setNotice(undefined);
+    askResolve(order.out_trade_no);
+  };
+
+  const startRefund = (order: PayOrder, refundable: bigint) => {
+    if (!mayRefund(access, order) || refundable <= 0n) return;
+    setNotice(undefined);
+    refund.start({
+      url: orderRefundUrl(payOrderId),
+      label: t.refundTarget(order.out_trade_no),
+      refundable,
+      refundableNote: t.refundableNote,
+    });
   };
 
   const code = { fontFamily: token.fontFamilyCode, wordBreak: 'break-all' } as const;
@@ -207,11 +332,37 @@ function DetailContent({ payOrderId }: { readonly payOrderId: string }): ReactEl
   } else {
     const { pay_order: order, refunds, query_attempts: attempts } = state.data;
     const refunded = refundState(order);
+    const refundable = orderRefundable(order, refunds);
+    // Two attempts may share time, kind and result: their position keeps the keys unique.
+    const attemptKeys = new Map(
+      attempts.map((row, index): [QueryAttempt, string] => [row, `${index}`]),
+    );
     const f = t.fields;
+    const actions = (
+      <Flex gap={8} wrap>
+        {mayResolve(access, order) ? (
+          <Button autoInsertSpace={false} loading={resolveBusy} onClick={() => startResolve(order)}>
+            {t.resolveEntry}
+          </Button>
+        ) : null}
+        {mayRefund(access, order) ? (
+          <Button
+            type="primary"
+            danger
+            autoInsertSpace={false}
+            disabled={refundable <= 0n}
+            title={refundable <= 0n ? t.nothingRefundable : undefined}
+            onClick={() => startRefund(order, refundable)}
+          >
+            {t.refundEntry}
+          </Button>
+        ) : null}
+      </Flex>
+    );
     // Only contract fields are read one by one: anything else the server sends is never shown.
     body = (
       <Flex vertical gap={16}>
-        <Card title={t.basic}>
+        <Card title={t.basic} extra={actions}>
           <Descriptions
             column={{ xs: 1, md: 2, xl: 3 }}
             items={[
@@ -330,7 +481,7 @@ function DetailContent({ payOrderId }: { readonly payOrderId: string }): ReactEl
           styles={{ body: { padding: 0 } }}
         >
           <Table<QueryAttempt>
-            rowKey={(row) => `${row.at}:${row.kind}:${row.result}`}
+            rowKey={(row) => attemptKeys.get(row) ?? `${row.at}:${row.kind}:${row.result}`}
             columns={attemptColumns}
             dataSource={attempts as QueryAttempt[]}
             pagination={false}
@@ -354,7 +505,20 @@ function DetailContent({ payOrderId }: { readonly payOrderId: string }): ReactEl
         <PayTitle>{t.title}</PayTitle>
       </Flex>
       <Alert type="info" showIcon role="note" message={payOrdersTexts.balanceNotice} />
+      {notice === undefined ? null : (
+        <Alert
+          key={notice.id}
+          type={notice.type}
+          showIcon
+          closable
+          role={notice.type === 'error' || notice.type === 'warning' ? 'alert' : 'status'}
+          message={notice.text}
+          onClose={() => setNotice(undefined)}
+        />
+      )}
       {body}
+      {refund.modal}
+      {stepUp.modal}
     </Flex>
   );
 }

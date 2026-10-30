@@ -1,12 +1,15 @@
 // 支付单页文案（画板 AdmPayOrders / AdmPayOrderDetail / AdmPayRecon；F1-13a 第一段只读）。支付单
 // 状态、渠道、退款状态与原因码、差错类型与状态的中文名只从后台字典读（BR-TEXT-25 admin_dict.*，
-// contracts/texts.admin.default.json），缺键显示编码，所以这里不写这些名字。
+// contracts/texts.admin.default.json），缺键显示编码，所以这里不写这些名字。F1-13b 第二段加原路
+// 退款与【立即查询】的文案（refund / resolve / writeNotice）；查询结果的提示不写支付单状态的字典名。
 export const payOrdersTexts = {
   title: '支付单',
   dash: '—',
   balanceNotice: '收款不进用户余额，也不参与分佣、月结和提现（BR-PAY-07）。',
   readOnlyNotice:
     '原路退款、立即查询、人工处置、导出与对账任务尚未接入，接口定稿后开放；本页先提供只读查看。',
+  writeNotice:
+    '原路退款需 pay.refund 权限，【立即查询】需 pay.resolve 权限并输入动态码；人工处置、导出与对账任务尚未接入。',
   forbiddenTitle: '无权限查看支付单',
   forbiddenDescription: '查看支付单需要 pay.view 权限点，请联系超管勾选。',
   retry: '重试',
@@ -70,7 +73,14 @@ export const payOrdersTexts = {
       refunded: '已退',
       received: '收到时间',
       status: '状态',
+      actions: '操作',
     },
+    refundEntry: '退款',
+    refundTarget: (tradeNo: string): string => `异常收款 ${tradeNo}`,
+    refundableNote: '按收款金额减去已退成功的金额计算，未扣除尚未完成的退款，以提交结果为准。',
+    accepted: (amount: string): string =>
+      `退款已受理（${amount}），退款中；结果以渠道回执为准，可以离开本页。`,
+    conflict: '异常收款状态已变化，已重新读取列表，请核对后再操作。',
   },
   recon: {
     listTitle: '收款差错单',
@@ -134,5 +144,51 @@ export const payOrdersTexts = {
       kind: '类型',
       result: '结果',
     },
+    refundEntry: '发起退款',
+    resolveEntry: '立即查询',
+    refundTarget: (outTradeNo: string): string => `支付单 ${outTradeNo}`,
+    nothingRefundable: '可退金额为 0，不能再发起退款。',
+    refundableNote: '可退 = 订单金额 − 已退成功 − 处理中的退款。',
+    accepted: (amount: string): string =>
+      `退款已受理（${amount}），退款中；结果以渠道回执为准，可以离开本页。`,
+    conflict: '支付单状态已变化，已重新读取详情，请核对后再操作。',
+  },
+  refund: {
+    title: '发起原路退款',
+    note: '钱原路退回付款账户，不进用户余额；提交后占用可退额度，结果以渠道回执为准。不需要动态码。',
+    refundable: (amount: string): string => `可退金额：${amount}`,
+    amount: '退款金额（元）',
+    amountPlaceholder: '例如 12.34',
+    amountRequired: '请输入退款金额',
+    amountInvalid: '请输入大于 0 的数，最多两位小数',
+    amountOver: (amount: string): string => `超过可退金额 ${amount}，请改小`,
+    amountRejected: '超过可退金额（可能刚有其他退款），请改小后再提交',
+    reason: '退款原因',
+    reasonPlaceholder: '请选择原因码',
+    reasonRequired: '请选择退款原因',
+    noteLabel: '备注（选填）',
+    notePlaceholder: '最多 200 字，记入审计',
+    noteTooLong: '备注最多 200 字',
+    cancel: '取消',
+    submit: '确认退款',
+    missingOrder: '支付单不存在或已不可见，未发起退款。',
+    missingAnomaly: '异常收款不存在或已不可见，未发起退款。',
+    changed: '请求内容有变化，本对话框不再重复提交；请取消后重新发起。',
+    running: '上一次提交还在进行，请稍后刷新查看，不要重复提交。',
+    forbidden: '没有 pay.refund 权限，不能发起退款。',
+    network: '网络异常，未确认是否发出；可在本对话框重试，不会重复退款。',
+    failed: '退款提交失败，请稍后重试。',
+  },
+  resolve: {
+    operation: '立即查询支付单并按渠道结果结束',
+    paid: '查询结果：渠道确认支付成功，支付单已结束，详情已刷新。',
+    closed: '查询结果：渠道确认已关闭，支付单已关单，详情已刷新。',
+    unchanged: '查询结果：状态未变化，仍需人工处理，请稍后再查。',
+    conflict: '支付单状态已变化，已重新读取详情。',
+    missing: '支付单不存在或已不可见。',
+    forbidden: '没有 pay.resolve 权限，不能立即查询。',
+    network: '网络异常，未确认查询结果，已重新读取详情。',
+    failed: '立即查询失败，请稍后重试。',
+    stepUpAgain: '上次验证已失效，请重新输入动态码',
   },
 } as const;
