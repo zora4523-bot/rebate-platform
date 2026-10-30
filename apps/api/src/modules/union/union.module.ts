@@ -118,10 +118,12 @@ function queryRefused(reason: string): UnionError {
  * The pdd goods ports' query identity (B1-04u D-u2, B1-04x): per call, the active pdd / query PID
  * of ctx.appId (read again every call; no other scene or app is ever used, BR-ATTR-08) and the
  * configured custom_parameters verbatim. Reads only ctx.appId. Any gap is `upstream_rejected`.
+ * Several active candidates: the reader logs which one it chose (D10-427 ③).
  */
 function pddQueryIdentity(
   source: QueryPidSource,
   customParameters: string | null | undefined,
+  logger: RootLogger,
 ): (ctx: CallCtx) => Promise<PddQueryIdentity> {
   return async (ctx) => {
     if (customParameters == null || customParameters === '') {
@@ -129,7 +131,7 @@ function pddQueryIdentity(
     }
     const db = source.db;
     if (db === undefined) throw queryRefused('no database to read the query PID from');
-    const pid = await readActivePddQueryPid(db, ctx.appId);
+    const pid = await readActivePddQueryPid(db, ctx.appId, logger);
     if (pid === null) throw queryRefused('no active query PID for this app');
     return { pid, customParameters };
   };
@@ -167,7 +169,7 @@ async function startUnionRegistry(
       credentials,
       transport: archivedTransport(createUnionHttpTransport(), source, clock, logger),
       warn: (warning: PddWarning) => logPddWarning(logger, warning),
-      queryIdentity: pddQueryIdentity(source, customParameters),
+      queryIdentity: pddQueryIdentity(source, customParameters, logger),
     },
   });
 }

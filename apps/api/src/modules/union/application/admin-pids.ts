@@ -31,6 +31,7 @@ import { pid_scene, type PidScene, type Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import { sql, type Kysely, type Selectable } from 'kysely';
 import { newUuidV7, type AuditPort, type Clock } from '../../platform/index.ts';
+import { validAdminUnionReason } from '../domain/admin-reason.ts';
 import { inspectHjyIgnoreEvidence } from '../domain/hjy-ignore-evidence.ts';
 import { canTransitionPid } from '../domain/pid-status.ts';
 import { isPlatform } from '../domain/types.ts';
@@ -154,14 +155,6 @@ function isUniqueViolation(error: unknown): boolean {
   );
 }
 
-/** Contract AdminUnionOptionalReason: absent, or 1–200 characters. */
-function validReason(reason: unknown): boolean {
-  if (reason === undefined) return true;
-  if (typeof reason !== 'string') return false;
-  const length = [...reason].length;
-  return length >= 1 && length <= 200;
-}
-
 /**
  * An RFC 3339 date-time as a Date (built from `like`, never from the wall clock: apps/api Clock
  * rule), or undefined.
@@ -273,7 +266,7 @@ export class AdminUnionPids {
   async create(actor: AdminPidActor, body: AdminPidCreate): Promise<AdminPid> {
     const siteId = body.site_id ?? null;
     checkIdentity({ ...body, site_id: siteId });
-    if (!validReason(body.reason)) throw new AdminPidFieldsError(['reason']);
+    if (!validAdminUnionReason(body.reason)) throw new AdminPidFieldsError(['reason']);
     const platform = body.platform as Platform;
     const { clock } = this.#options;
     try {
@@ -338,7 +331,7 @@ export class AdminUnionPids {
           if (!EDITABLE.some((field) => Object.hasOwn(body, field))) {
             throw new AdminPidFieldsError(['body']);
           }
-          if (!validReason(body.reason)) throw new AdminPidFieldsError(['reason']);
+          if (!validAdminUnionReason(body.reason)) throw new AdminPidFieldsError(['reason']);
           const merged = {
             platform: body.platform ?? before.platform,
             union_account_id: body.union_account_id ?? before.union_account_id,
@@ -456,7 +449,8 @@ export class AdminUnionPids {
     ) {
       invalid.push('hjy_ignore_confirmed_at');
     }
-    if (!validReason(parts.reason) || parts.invalid.includes('reason')) invalid.push('reason');
+    if (!validAdminUnionReason(parts.reason) || parts.invalid.includes('reason'))
+      invalid.push('reason');
     for (const name of parts.invalid) {
       if (!invalid.includes(name) && name !== 'hjy_ignore_evidence') invalid.push(name);
     }
@@ -564,7 +558,7 @@ export class AdminUnionPids {
   /** adminRetireUnionPid: active → retired only; the row stays on the whitelist. */
   async retire(actor: AdminPidActor, pidId: string, body: AdminPidRetire): Promise<AdminPid> {
     if (!isUuid(pidId)) throw new AdminPidFieldsError(['pid_id']);
-    if (!validReason(body.reason)) throw new AdminPidFieldsError(['reason']);
+    if (!validAdminUnionReason(body.reason)) throw new AdminPidFieldsError(['reason']);
     const { clock } = this.#options;
     const row = await this.#db()
       .transaction()
