@@ -5,7 +5,8 @@ type: impl
 # 2026-10-30 入账（admin-backend，编排 D10-436）。单一写者不变：settle_batches 只经命令服务与生成的 transition()，本任务不自写状态；HTTP 层只做权限、step-up、审计与错误映射（B2-04o 注释约定）。
 # currentRound：按 CT-24z 轮次口径在命令事务内读（取代 service.ts 里 blocked 的 TODO，须编排裁定后才开工）；readiness：settle.auto.enabled、credit.enabled.<platform> 经 content config 读，快照状态经 ledger 公开导出 getAssetSnapshotStatus，不读别模块的表。
 # 补充发起的 requestedAt 取注入 Clock 的当前时刻（B2-04r 要求每次发起不同）。
-# 不含：账单日任务与批次执行器的 worker 装配（createBillJob、createBatchExecutor 目前没有生产装配，见台账 PR，须另开任务）；SB10；上传；预校验。
+# D10-437：① 轮次沿用 kind + (platform, created_at)，微秒精度，注释写明依据；② 发起补充时账单下还有别平台 DRAFT 就拒绝（20001 [bill_id] data.reason=pending_draft_other_round），不改确认范围；③ B2-09d 冻结测试 [AC-B2-09d#10] 跟改只加 row_version，单独 test-change 提交。
+# 不含：worker 装配（funds B2-04x）；SB10；上传；预校验。
 refs: [BR-FUND-04]
 refs_hash:
   BR-FUND-04: f4b8b2be46ea
@@ -13,6 +14,7 @@ deps: [CT-24zd]
 paths:
   - 'apps/api/src/modules/settlement/application/admin-settle-*.ts'
   - 'apps/api/src/modules/settlement/batch/commands/service.ts'
+  - 'apps/api/src/modules/settlement/bill/supplement/command.ts'
   - 'apps/api/src/modules/settlement/http/admin/**'
   - 'apps/api/src/modules/settlement/settlement.module.ts'
   - 'apps/api/src/modules/settlement/index.ts'
