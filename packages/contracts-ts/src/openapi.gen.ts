@@ -7725,6 +7725,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/recon-diffs/{recon_diff_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Handle an account-appeal restore difference by paying the member back (申诉恢复处理, ADMIN_RESTORE)
+         * @description The ADMIN_RESTORE of BR-FUND-22 ③ (拍板第二批 FUND-14; 编排裁定 D10-468 ①): an account (ban)
+         *     appeal was revoked, and the shares of the member forfeited for `banned` during the ban
+         *     (BR-CALC-13) and kept as platform revenue are paid back. The difference is the
+         *     `appeal_restore` the system registered when the appeal closed; the list and the detail are
+         *     GET /admin/v1/recon-diffs and GET /admin/v1/recon-diffs/{recon_diff_id}. Permission point
+         *     `order.restore` (04 §11.2; one person can complete it, ADD-05). Step-up: totp tier
+         *     (BR-ID-34): without a valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`.
+         *
+         *     Request: `note`, optional, 1–200 characters after trimming (else 20001 with
+         *     `data.fields=[note]`), recorded under `resolution.note`; the body is `{}` without it. The
+         *     console sends no amount. `expected_fen` of the difference is for display only: what is
+         *     paid is calculated by the server when this operation runs, and may differ from it.
+         *
+         *     Order of checks: `order.restore` (10403 with `data.reason=admin_permission_denied`) →
+         *     step-up (10003) → body (20001) → an unknown `recon_diff_id`, a difference of another app,
+         *     or one of source R4 is 20001 with `data.fields=[recon_diff_id]` (no 404) → a difference
+         *     already `adjusted`, `written_off` or `closed` is 20902 with `data.resource=recon_diff` →
+         *     a difference that is not an account-appeal restore (its `type` is not `appeal_restore`,
+         *     or its `resolution.reason_code` is not `APPEAL_RESTORE`, or it has no `user_id` or
+         *     `shares` there) is 20001 with `data.fields=[recon_diff_id]` and
+         *     `data.reason=restore_not_supported`. That covers `platform_restore` and the order-appeal
+         *     R12 and R13 of BR-FUND-22, which are not handled by this operation → the member has been
+         *     deleted: 20001 with `data.fields=[recon_diff_id]` and `data.reason=restore_user_deleted`;
+         *     the difference is ended with POST .../close instead (D10-469 ①, default filled in by the
+         *     agent).
+         *
+         *     Effects, in one transaction, for each role listed in `resolution.shares` (BR-FUND-22 ③):
+         *     an `active` beneficiary event is appended for the member's role, so that later adjustments
+         *     of the order count the re-split share as owed (the appeal-restore exception of BR-CALC-09).
+         *     The member's entitlement for the role is recalculated from the order's `booked_base_fen`
+         *     and the commission snapshot, and its difference from what is already booked for the role
+         *     (net as in BR-FUND-08) is posted as ADMIN_ADJUST (sub_type RESTORE, debit
+         *     COMMISSION_REVENUE, credit USER_BALANCE.available) with uniq_key
+         *     `{order_key}:{user_id}:{role}:RESTORE:{recon_diff_id}`. A difference ≤ 0 posts nothing and
+         *     pays 0 for the role: a negative one is not taken back, and the difference is still
+         *     handled (D10-469 ③, default filled in by the agent). A member banned again by a later
+         *     round is still paid (D10-469 ②, default filled in by the agent). The `status` of the
+         *     difference becomes `adjusted`, `closed_at` and `updated_at` the server's current time,
+         *     `handler_id` the caller, and `resolution` keeps its keys and adds `restore` (the amount
+         *     paid for each role, the total, the operator and the time) and the trimmed `note` when
+         *     given. `expected_fen`, `actual_fen` and `diff_fen` stay as registered. Writes an audit
+         *     record (action recon_diff_restore, with the `user_id`, the `order_key`, the amount paid
+         *     for each role, `restored_fen` (0 when nothing was posted) and, before and after, the
+         *     `status`; no personal data). `restored_fen` in the response is the total paid by this
+         *     call. Nothing else changes: the order's `rebate_status` is not touched, and no withdrawal
+         *     hold is released (an `appeal_restore` difference carries none, BR-FUND-19).
+         *
+         *     `Idempotency-Key` is required: same key and body → the first result (the same
+         *     `restored_fen`); same key with another body → 20901; same key while still running →
+         *     40901. A new key for a difference that is already `adjusted` is 20902. The step-up token
+         *     is a header and not part of the body hash, so a replay after a 10003 keeps its key.
+         */
+        post: operations["restoreAdminReconDiff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/withdrawals": {
         parameters: {
             query?: never;
@@ -16574,6 +16644,28 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["AdminReconDiffWriteOff"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description Body of POST /admin/v1/recon-diffs/{recon_diff_id}/restore. The console sends no amount:
+         *     the amount is calculated by the server (BR-FUND-22 ③); `expected_fen` is for display only.
+         */
+        AdminReconDiffRestoreRequest: {
+            /** @description Optional operator note, 1–200 characters after trimming (else 20001 with data.fields=[note]); recorded under resolution.note. */
+            note?: string;
+        };
+        AdminReconDiffRestore: {
+            recon_diff: components["schemas"]["AdminReconDiffDetail"];
+            /**
+             * Format: int64
+             * @description Total this call paid to the member over all roles; 0 when nothing was posted (D10-469 ③). Never `expected_fen` taken as is.
+             */
+            restored_fen: number;
+        };
+        AdminReconDiffRestoreResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminReconDiffRestore"];
             trace_id: components["schemas"]["TraceId"];
         };
         AdminReconDiffDetailResponse: {
@@ -34860,6 +34952,121 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not written off (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    restoreAdminReconDiff: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The reconciliation difference (recon_diffs.id) as a list row carries it; unknown, of another app or of source R4 → 20001 with data.fields=[recon_diff_id]. */
+                recon_diff_id: components["parameters"]["AdminReconDiffIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "note": "封禁申诉已撤销，核对后补发"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminReconDiffRestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description The difference after the restore with the total paid, or the first result of the same key. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "recon_diff": {
+                     *           "recon_diff_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e03",
+                     *           "source": "R3",
+                     *           "type": "appeal_restore",
+                     *           "period": "2026-12",
+                     *           "ref_type": "order",
+                     *           "ref_id": "taobao:5550001",
+                     *           "expected_fen": 123,
+                     *           "actual_fen": 0,
+                     *           "diff_fen": 123,
+                     *           "status": "adjusted",
+                     *           "created_at": "2026-12-01T10:00:00+08:00",
+                     *           "closed_at": "2026-12-02T09:30:00+08:00",
+                     *           "handler_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *           "updated_at": "2026-12-02T09:30:00+08:00",
+                     *           "resolution": {
+                     *             "reason_code": "APPEAL_RESTORE",
+                     *             "appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f9a01",
+                     *             "order_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6d01",
+                     *             "order_key": "taobao:5550001",
+                     *             "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
+                     *             "forfeit_reason": "banned",
+                     *             "shares": [
+                     *               {
+                     *                 "role": "direct",
+                     *                 "amount_fen": "123",
+                     *                 "forfeited_at": "2026-11-24T02:00:00+08:00"
+                     *               }
+                     *             ],
+                     *             "restore": {
+                     *               "shares": [
+                     *                 {
+                     *                   "role": "direct",
+                     *                   "restored_fen": "123"
+                     *                 }
+                     *               ],
+                     *               "restored_fen": "123",
+                     *               "operator": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *               "restored_at": "2026-12-02T09:30:00+08:00"
+                     *             },
+                     *             "note": "封禁申诉已撤销，核对后补发"
+                     *           }
+                     *         },
+                     *         "restored_fen": 123
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminReconDiffRestoreResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not restored (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
