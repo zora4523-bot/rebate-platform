@@ -25,6 +25,7 @@ import {
   dayRows,
   extraParams,
   listed,
+  main,
   mount,
   nextPageNear,
   receivableText,
@@ -127,6 +128,41 @@ const EXPECTED: readonly Expected[] = [
 ];
 
 const BALANCE_COLUMNS = ['available', 'negative', 'frozen', 'waiting', 'estimated'] as const;
+
+/**
+ * Columns of the board that are not in this operation (the contract leaves out W, P and the
+ * water-level state, the union collection entry and the company Alipay balance): none may be a
+ * column title. Matched against each squashed title; W and P only as standalone capitals.
+ */
+const BOARD_ONLY_TITLES: readonly (readonly [string, RegExp])[] = [
+  ['企业支付宝余额', /企业支付宝|支付宝余额/],
+  ['W', /(?<![A-Za-z])W(?![A-Za-z])/],
+  ['预计提现', /预计提现/],
+  ['P', /(?<![A-Za-z])P(?![A-Za-z])/],
+  ['水位', /水位/],
+  ['状态', /^状态$|^正常$|超告警线/],
+  ['当日联盟回款', /当日.{0,4}回款|^(?:联盟)?回款(?:金额|额)?$/],
+];
+/** Board-only words that must not show inside a row either. */
+const BOARD_ONLY_WORDS = /企业支付宝|预计提现|水位|超告警线|当日.{0,4}回款/;
+
+/**
+ * Every amount the row of `expected` may show: its own contract fields (the negative total with
+ * or without a minus sign) and, for a receivable total, the sum of its receivables.
+ */
+function allowedAmounts(expected: Expected): string[] {
+  const magnitude = expected.negative.replace(/^-/, '');
+  return [
+    expected.available,
+    magnitude,
+    `-${magnitude}`,
+    expected.frozen,
+    expected.waiting,
+    expected.estimated,
+    ...Object.values(expected.receivables),
+    expected.receivableSum,
+  ];
+}
 
 /** Every amount of the row except `except`. */
 function otherValues(expected: Expected, except: string): string[] {
@@ -292,6 +328,36 @@ it(
     const firstOfPage = dayBefore(DAY.latest, size);
     await waitFor(() => expect(dayRows(firstOfPage), firstOfPage).toHaveLength(1));
     expect(dayRows(DAY.latest)).toEqual([]);
+  },
+  FLOW_TIMEOUT,
+);
+
+it(
+  '[AC-F1-08ga-LIST#7] 只显示契约字段：表头没有企业支付宝余额、W、预计提现、P、水位 / 状态、当日联盟回款等画板列；每行出现的金额都能在该日快照的契约字段里找到，主区不出现夹具之外的金额',
+  async () => {
+    const server = createServer();
+    await mount(server);
+    await listed(DAY.bare);
+    await settled(server);
+    const titles = columnTitles(dayRow(DAY.latest));
+    for (const [name, pattern] of BOARD_ONLY_TITLES) {
+      expect(
+        titles.filter((title) => pattern.test(title)),
+        `no column 「${name}」 among ${titles.join(' | ')}`,
+      ).toEqual([]);
+    }
+    const everyAllowed = new Set(EXPECTED.flatMap((expected) => allowedAmounts(expected)));
+    for (const expected of EXPECTED) {
+      const row = dayRow(expected.day);
+      const hint = rowHint(row);
+      expect(hint, `${expected.day} shows no board-only value`).not.toMatch(BOARD_ONLY_WORDS);
+      const allowed = new Set(allowedAmounts(expected));
+      const foreign = amountsIn(textOf(row)).filter((yuan) => !allowed.has(yuan));
+      expect(foreign, `${expected.day} amounts not in its snapshot`).toEqual([]);
+    }
+    // Nothing outside the rows (a summary row, a card) shows an amount the snapshots do not hold.
+    const outside = amountsIn(textOf(main())).filter((yuan) => !everyAllowed.has(yuan));
+    expect(outside, 'amounts on the page not in the snapshots').toEqual([]);
   },
   FLOW_TIMEOUT,
 );

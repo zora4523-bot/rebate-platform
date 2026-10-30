@@ -87,21 +87,55 @@ it(
 );
 
 it(
-  '[AC-F1-08ga-FILTER#3] 起始日期晚于截止日期：日期字段旁出现提示（前端拦下不发请求，或发出后收 20001 [date_from, date_to] 再提示）',
+  '[AC-F1-08ga-FILTER#3] 起始日期晚于截止日期：日期字段旁出现提示（前端拦下不发请求，或发出后收 20001 [date_from, date_to] 再提示），或控件自动调换后按调换后的区间请求；不得原样发出颠倒的区间而无任何提示',
   async () => {
     const server = createServer();
     await mount(server);
     await listed(DAY.latest);
     await settled(server);
-    const before = `${fieldError(dateField('from'))} ${fieldError(dateField('to'))}`.trim();
-    expect(before, 'no notice next to the dates before the query').toBe('');
+    const notices = () => `${fieldError(dateField('from'))} ${fieldError(dateField('to'))}`.trim();
+    expect(notices(), 'no notice next to the dates before the query').toBe('');
+    const before = server.reads().length;
     await fillRange('2026-10-29', '2026-10-25');
     await query();
     await settled(server);
+    const sent = () => server.reads().slice(before);
+    const reversed = () =>
+      sent().filter((read) => {
+        const from = read.query['date_from'];
+        const to = read.query['date_to'];
+        return from !== undefined && to !== undefined && from > to;
+      });
+    const swapped = () =>
+      sent().filter((read) => {
+        const from = read.query['date_from'];
+        const to = read.query['date_to'];
+        return from === '2026-10-25' && to === '2026-10-29';
+      });
+    const described = () =>
+      sent()
+        .map((read) => `${read.query['date_from'] ?? '-'}..${read.query['date_to'] ?? '-'}`)
+        .join(', ');
+    // Three accepted ways: a notice next to the dates (checked before sending, or after the
+    // server's 20001), or the control swaps the ends and the swapped range is what goes out.
     await waitFor(() => {
-      const nextToFields = `${fieldError(dateField('from'))} ${fieldError(dateField('to'))}`;
-      expect(nextToFields.trim(), 'a notice next to the date fields').not.toBe('');
+      const noticed = notices() !== '';
+      const swappedOnly = swapped().length > 0 && reversed().length === 0;
+      expect(
+        noticed || swappedOnly,
+        `a notice next to the date fields, or only the swapped range sent (sent: ${described()})`,
+      ).toBe(true);
     });
+    await settled(server);
+    if (notices() === '') {
+      // The swapped range: read from page 1 with only the contract's parameters.
+      expect(reversed(), 'the reversed range never went out').toEqual([]);
+      const last = swapped().at(-1)!;
+      expect(last.query['page'] ?? '1').toBe('1');
+      expect(extraParams(last.query, LIST_PARAMS)).toEqual([]);
+      for (const day of [DAY.latest, DAY.late, DAY.older, DAY.bare]) await listed(day);
+      expect(dayRows(DAY.missing)).toEqual([]);
+    }
   },
   FLOW_TIMEOUT,
 );

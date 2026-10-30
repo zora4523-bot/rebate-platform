@@ -58,16 +58,16 @@ export const STEP_UP = /二次验证|动态码/;
 
 /** Field labels of the date range (antd Form.Item label, aria-label or placeholder). */
 export const LABEL = {
-  dateFrom: /(?:日期|快照日?|账务日).*(?:起|从|开始)|起始|开始|date_from/i,
-  dateTo: /(?:日期|快照日?|账务日).*(?:止|至|到|结束)|截止|结束|date_to/i,
+  dateFrom: /(?:日期|快照日?|账务日|会计日).*(?:起|从|开始)|起始|开始|date_from/i,
+  dateTo: /(?:日期|快照日?|账务日|会计日).*(?:止|至|到|结束)|截止|结束|date_to/i,
 } as const;
 
 /**
  * Column titles of the daily ledger (spaces removed; a grouped column's title is its group's
- * title followed by its own).
+ * title followed by its own). The date column may be titled 日期, 快照日(期), 会计日(期) and the like.
  */
 export const COLUMN = {
-  date: /^(?:快照|账务|记账|台账)?日期?$/,
+  date: /^(?:快照|账务|记账|台账|会计)?日期?$/,
   available: /^(?!.*负).*(?:可用|正余额)/,
   negative: /负/,
   frozen: /冻结/,
