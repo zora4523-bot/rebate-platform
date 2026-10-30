@@ -78,6 +78,9 @@ import {
   createRedisShareTicketStore,
 } from './infra/share-page-store.ts';
 import { createShareSharerBindings } from './infra/share-page-reads.ts';
+import { StoredSharePageMaterials } from './infra/share-material-store.ts';
+import { SharesService, createShares, type CreateShareInput } from './application/shares.ts';
+import { SharesController } from './http/public/shares.controller.ts';
 import { LinkOpenController } from './http/public/open.controller.ts';
 import { LinkConvertController } from './http/public/convert.controller.ts';
 import { UNION_AUTH_URL, UnionAuthUrlController } from './http/public/auth-url.controller.ts';
@@ -148,6 +151,18 @@ export interface LinkOpenPorts {
    * database handle) every convert fails closed with 50301.
    */
   readonly convert?: LinkConvertPorts;
+  /**
+   * B1-15w: what POST /v1/shares reads outside linking beyond the convert's ports — identity's
+   * realname reader (the verified birth date, BR-INV-19). Absent (no database handle or field
+   * keyring) every share fails closed with 50301.
+   */
+  readonly shares?: LinkSharePorts;
+}
+
+/** B1-15w: the share's ports outside linking, assembled by app.module.ts. */
+export interface LinkSharePorts {
+  /** The verified birth date (YYYY-MM-DD) of the user, or null when not verified. */
+  verifiedBirthDate(appId: string, userId: string): Promise<string | null>;
 }
 
 /** B1-06i: the convert's ports outside linking, assembled by app.module.ts. */
@@ -259,6 +274,20 @@ class PausedLinkConvert extends LinkConvertService {
       envelope: {
         code: 50301,
         msg: '该平台暂时无法购买，请稍后再试',
+        trace_id: input.traceId,
+      },
+    });
+  }
+}
+
+/** The share of a process without its ports: 50301 like the convert, nothing registered. */
+class PausedShares extends SharesService {
+  override create(input: CreateShareInput): Promise<HandlerResult> {
+    return Promise.resolve({
+      status: 503,
+      envelope: {
+        code: 50301,
+        msg: '该平台维护中，请稍后再试',
         trace_id: input.traceId,
       },
     });
@@ -407,6 +436,8 @@ function openParts(...args: OpenFactoryArgs): LinkOpenParts | null {
  * no conversion.
  * B1-15u: GET /v1/share-pages/{link_id} and POST /v1/share-pages/{link_id}/tpwd (share page
  * outside the app), over the same read ports plus the SharePageMaterials port and Redis tickets.
+ * B1-15w: POST /v1/shares registers and converts the sharer's share link and writes its
+ * share_materials row, which the share page's material provider reads.
  */
 @Module({})
 export class LinkingModule {
@@ -424,6 +455,7 @@ export class LinkingModule {
       controllers: [
         LinkOpenController,
         LinkConvertController,
+        SharesController,
         LinkLandingController,
         SharePageController,
         UnionAuthUrlController,
@@ -473,6 +505,51 @@ export class LinkingModule {
           },
         },
         {
+          // B1-15w: POST /v1/shares, per request like the convert, over the same parts, the convert
+          // ports (catalog, item_ref verifier), the process quoter, the auth-url service of the
+          // request (30101 / 30111 states) and the share ports (verified birth date).
+          provide: SharesService,
+          scope: Scope.REQUEST,
+          inject: OPEN_INJECT,
+          useFactory: (...args: OpenFactoryArgs): SharesService => {
+            const parts = openParts(...args);
+            const convert = parts?.ports.convert;
+            const shares = parts?.ports.shares;
+            if (parts === null || convert === undefined || shares === undefined) {
+              return new PausedShares();
+            }
+            const { db, clock, logger, appConfig, callerContext, config, pids, ports } = parts;
+            const appEnv = appConfig.appEnv;
+            return createShares({
+              db,
+              clock,
+              appEnv,
+              logger,
+              callerContext,
+              attrCodes: parts.attrCodes,
+              config,
+              pids,
+              registry: { get: (platform) => ports.union.adapter(platform) },
+              idempotency: parts.idempotency,
+              products: convert.products,
+              itemRefs: convert.itemRefs,
+              quoter: ports.quoter,
+              authUrl: createUnionAuthUrl({
+                db,
+                clock,
+                callerContext,
+                config,
+                appEnv,
+                authApps: parts.authApps ?? createDemoUnionAuthApps(),
+                pids,
+                jumpEnvironment: { appEnv, apps: ports.apps, verifiedPaths: ports.verifiedPaths },
+                logger,
+              }),
+              verifiedBirthDate: (appId, userId) => shares.verifiedBirthDate(appId, userId),
+            });
+          },
+        },
+        {
           // B1-06j: the landing card, per request like its CallerContext. Read-only: the links
           // row in the caller's app scope and a card priced from its quote snapshot (item_ref
           // issuer of LINK_OPEN_PORTS; product fields from catalog's read-only product port of
@@ -506,9 +583,15 @@ export class LinkingModule {
                     }),
             }),
         },
-        // B1-15u: the share material of a share link (D10-424 default: links.promo_url only);
-        // replaceable by a later provider of the same class token.
-        { provide: SharePageMaterials, useClass: SharePageMaterials },
+        // B1-15u / B1-15w: the share material of a share link — its app.share_materials row by
+        // (app_id, link_id), else the D10-424 fallback (a Taobao link's promo_url, no token);
+        // without a database handle the fallback alone. Replaceable by a provider of the same token.
+        {
+          provide: SharePageMaterials,
+          inject: [{ token: DB, optional: true }],
+          useFactory: (db: Kysely<Database> | undefined): SharePageMaterials =>
+            db === undefined ? new SharePageMaterials() : new StoredSharePageMaterials(db),
+        },
         {
           // B1-15u: GET /v1/share-pages/{link_id} and POST …/tpwd, one per process (no caller:
           // anonymous, the app is the request's X-App-Id). Read-only on the database: the links

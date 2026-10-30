@@ -88,10 +88,14 @@ function isWebUrl(value: string): boolean {
  * Port and Nest injection token: the share material of one share link, resolved inside
  * LinkingModule (the rule tests replace this provider there). null: the link has no material.
  *
- * The default (orchestrator ruling D10-424) reads the existing data only: a Taobao share link whose
+ * This class is the fallback (orchestrator ruling D10-424): a Taobao share link whose
  * links.promo_url is a web address → that address as jump_url and no token. Anything else (no
  * promo_url, JD, Pinduoduo) has no material. Nothing is converted and nothing is made up.
- * TODO(规划/11 §4.5): 分享物料（转链短链、淘口令）— blocked on POST /v1/shares 立项
+ * B1-15w (D10-426): LinkingModule provides infra/share-material-store.ts StoredSharePageMaterials,
+ * which reads the link's app.share_materials row written by POST /v1/shares (share_url, tpwd) by
+ * (app_id, link_id) and falls back to this class when the link has none.
+ * TODO(规划/11 §4.5): 淘宝分享口令 — blocked on 规划/09 2_TB §2.5 口令生成权限（在此之前淘宝分享 link
+ * 没有物料行，只有 promo_url 兜底）
  */
 export class SharePageMaterials {
   read(link: LandingLink): Promise<SharePageMaterial | null> {
