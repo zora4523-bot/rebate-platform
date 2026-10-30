@@ -8,6 +8,7 @@ refs_hash:
   BR-TEXT-17: 486f4508575e
 deps: [CT-07a]
 paths:
+  - 'apps/h5/src/shared/api/anonymous.ts'
   - 'contracts/openapi.yaml'
   - 'contracts/routes.json'
   - 'packages/contracts-ts/**'
