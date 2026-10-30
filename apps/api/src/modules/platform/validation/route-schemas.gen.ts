@@ -12871,7 +12871,7 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "properties": {
         "class": {
           "type": "string",
-          "description": "Which permission point writes a dictionary key (BR-TEXT-12 细则, 04 §11.2): general →\nconfig.general, fund_terms → content.fund_terms, agreement (table D, `privacy.` and\n`perm.`) → content.agreement.\n",
+          "description": "Which permission point writes a dictionary key (BR-TEXT-12 细则, 04 §11.2): general →\nconfig.general, fund_terms → content.fund_terms, agreement (table D, `privacy.` and\n`perm.`; table C real-name consent sheet, `real_name.consent.`, D10-204) →\ncontent.agreement.\n",
           "enum": [
             "general",
             "fund_terms",
