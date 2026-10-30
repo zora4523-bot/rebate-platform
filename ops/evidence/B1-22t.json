@@ -1,0 +1,126 @@
+{
+  "task": "B1-22t",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "e3e26a3c47b654ee372179e8a55b3aef1019d917",
+  "red_tests": [
+    "test/spec/notification/site-alert-claim/current-claim-throw.int.test.ts > [AC-B1-22t#5] 本次领取发送抛错（恢复先查询得 not_sent，领取与抛错同一时刻）：行退回 queued、交付 reject、一条 warn，下一次交付恰好发送一次；旧领取迟到抛错不退回当前领取，当前领取（恢复所得）抛错照常退回；最后落定 success",
+    "test/spec/notification/site-alert-claim/current-claim-throw.int.test.ts > [AC-B1-22t#5] 本次领取发送抛错（恢复先查询得 not_sent，领取与抛错之间时钟推进 1 分钟）：行退回 queued、交付 reject、一条 warn，下一次交付恰好发送一次；旧领取迟到抛错不退回当前领取，当前领取（恢复所得）抛错照常退回；最后落定 success",
+    "test/spec/notification/site-alert-claim/current-claim-throw.int.test.ts > [AC-B1-22t#5] 本次领取发送抛错（发送器无 query、恢复即重发，领取与抛错同一时刻）：行退回 queued、交付 reject、一条 warn，下一次交付恰好发送一次；旧领取迟到抛错不退回当前领取，当前领取（恢复所得）抛错照常退回；最后落定 success",
+    "test/spec/notification/site-alert-claim/current-claim-throw.int.test.ts > [AC-B1-22t#5] 本次领取发送抛错（发送器无 query、恢复即重发，领取与抛错之间时钟推进 1 分钟）：行退回 queued、交付 reject、一条 warn，下一次交付恰好发送一次；旧领取迟到抛错不退回当前领取，当前领取（恢复所得）抛错照常退回；最后落定 success",
+    "test/spec/notification/site-alert-claim/late-query.int.test.ts > [AC-B1-22t#4] B 的恢复查询挂起超 10 分钟、C 再恢复并在发送中：B 迟到 sent 不改 C 的领取、不据此发送，只记一条 warn；C 落定 success，A 迟到抛错也不改；全程只有 C 一次发出",
+    "test/spec/notification/site-alert-claim/late-query.int.test.ts > [AC-B1-22t#4] B 的恢复查询挂起超 10 分钟、C 再恢复并在发送中：B 迟到 not_sent 不改 C 的领取、不据此发送，只记一条 warn；C 落定 success，A 迟到抛错也不改；全程只有 C 一次发出",
+    "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#1] A 挂起超 10 分钟、B 恢复领取并在发送中（恢复先查询得 not_sent）：A 迟到 accepted 不把 B 的行改成 success，只记一条 warn；B 落定 success，之后不再发送",
+    "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#1] A 挂起超 10 分钟、B 恢复领取并在发送中（发送器无 query、恢复即重发）：A 迟到 accepted 不把 B 的行改成 success，只记一条 warn；B 落定 success，之后不再发送",
+    "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#2] A 挂起超 10 分钟、B 恢复领取并在发送中（恢复先查询得 not_sent）：A 迟到抛错不把 B 退回 queued，只记一条 warn，A 的交付不要求重试；此时再交付不发送；B 落定后全程只有 B 一次发出",
+    "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#2] A 挂起超 10 分钟、B 恢复领取并在发送中（发送器无 query、恢复即重发）：A 迟到抛错不把 B 退回 queued，只记一条 warn，A 的交付不要求重试；此时再交付不发送；B 落定后全程只有 B 一次发出",
+    "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#3] B 恢复领取并已落定 success 后 A 迟到 accepted：不覆盖 B 的结果，只记一条 warn（不记 error），A 的交付正常结束，之后不再发送",
+    "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#3] B 恢复领取并已落定 success 后 A 迟到 unknown：不覆盖 B 的结果，只记一条 warn（不记 error），A 的交付正常结束，之后不再发送",
+    "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#3] B 恢复领取并已落定 success 后 A 迟到 rejected：不覆盖 B 的结果，只记一条 warn（不记 error），A 的交付正常结束，之后不再发送",
+    "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#3] B 恢复领取并已落定 success 后 A 迟到 throws：不覆盖 B 的结果，只记一条 warn（不记 error），A 的交付正常结束，之后不再发送",
+    "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（恢复先查询得 not_sent）：A 迟到 rejected 不改 B 的领取，只记一条 warn、不记 error；B 随后 accepted 落定 success，之后不再发送",
+    "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（恢复先查询得 not_sent）：A 迟到 rejected 不改 B 的领取，只记一条 warn、不记 error；B 随后发送抛错照常退回 queued、交付 reject，再交付恰好发送一次落定 success",
+    "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（恢复先查询得 not_sent）：A 迟到 unknown 不改 B 的领取，只记一条 warn、不记 error；B 随后 accepted 落定 success，之后不再发送",
+    "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（恢复先查询得 not_sent）：A 迟到 unknown 不改 B 的领取，只记一条 warn、不记 error；B 随后发送抛错照常退回 queued、交付 reject，再交付恰好发送一次落定 success",
+    "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（发送器无 query、恢复即重发）：A 迟到 rejected 不改 B 的领取，只记一条 warn、不记 error；B 随后 accepted 落定 success，之后不再发送",
+    "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（发送器无 query、恢复即重发）：A 迟到 rejected 不改 B 的领取，只记一条 warn、不记 error；B 随后发送抛错照常退回 queued、交付 reject，再交付恰好发送一次落定 success",
+    "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（发送器无 query、恢复即重发）：A 迟到 unknown 不改 B 的领取，只记一条 warn、不记 error；B 随后 accepted 落定 success，之后不再发送",
+    "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（发送器无 query、恢复即重发）：A 迟到 unknown 不改 B 的领取，只记一条 warn、不记 error；B 随后发送抛错照常退回 queued、交付 reject，再交付恰好发送一次落定 success",
+    "test/spec/notification/site-alert-claim/recovery-query.int.test.ts > [AC-B1-22t#7] A 挂起超 10 分钟、B 恢复领取，查询 1 分钟后得 sent：行落定 success（sent_at 是 B 落定时刻）、不再发送；A 迟到 accepted 不改结果，只记一条 warn",
+    "test/spec/notification/site-alert-claim/recovery-query.int.test.ts > [AC-B1-22t#7] A 挂起超 10 分钟、B 恢复领取，查询 1 分钟后得 unknown：领取保留、不发送；A 迟到 accepted 不改 B 的领取，只记一条 warn；再超 10 分钟 C 恢复查得 sent 落定 success，全程不再发送"
+  ],
+  "risk_note": "RV2 (site alert SMS claim identity: settle / reopen / recovery compare the claim's own updated_at, no migration). Independent Claude (approvals #36, Codex unavailable until 11-02) wrote test/spec/notification/site-alert-claim/** in 3 attempts (attempt 2 voided by the position assertion: the lane created a branch in the same clone during the run, reported to the orchestrator), prettier-formatted before commit per D10-292. Implementation model: Claude Opus 5.5 (1 round). verify:fast on the AWS runner exit 0; 24 rule tests green.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "e3e26a3c47b654ee372179e8a55b3aef1019d917",
+      "tree": "c1a2a13a68335fb426d2593260bd4939bd46a53e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T11:41:43Z",
+      "finished_at": "2026-10-30T11:41:55Z",
+      "red_tests": [
+        "test/spec/notification/site-alert-claim/current-claim-throw.int.test.ts > [AC-B1-22t#5] 本次领取发送抛错（恢复先查询得 not_sent，领取与抛错同一时刻）：行退回 queued、交付 reject、一条 warn，下一次交付恰好发送一次；旧领取迟到抛错不退回当前领取，当前领取（恢复所得）抛错照常退回；最后落定 success",
+        "test/spec/notification/site-alert-claim/current-claim-throw.int.test.ts > [AC-B1-22t#5] 本次领取发送抛错（恢复先查询得 not_sent，领取与抛错之间时钟推进 1 分钟）：行退回 queued、交付 reject、一条 warn，下一次交付恰好发送一次；旧领取迟到抛错不退回当前领取，当前领取（恢复所得）抛错照常退回；最后落定 success",
+        "test/spec/notification/site-alert-claim/current-claim-throw.int.test.ts > [AC-B1-22t#5] 本次领取发送抛错（发送器无 query、恢复即重发，领取与抛错同一时刻）：行退回 queued、交付 reject、一条 warn，下一次交付恰好发送一次；旧领取迟到抛错不退回当前领取，当前领取（恢复所得）抛错照常退回；最后落定 success",
+        "test/spec/notification/site-alert-claim/current-claim-throw.int.test.ts > [AC-B1-22t#5] 本次领取发送抛错（发送器无 query、恢复即重发，领取与抛错之间时钟推进 1 分钟）：行退回 queued、交付 reject、一条 warn，下一次交付恰好发送一次；旧领取迟到抛错不退回当前领取，当前领取（恢复所得）抛错照常退回；最后落定 success",
+        "test/spec/notification/site-alert-claim/late-query.int.test.ts > [AC-B1-22t#4] B 的恢复查询挂起超 10 分钟、C 再恢复并在发送中：B 迟到 sent 不改 C 的领取、不据此发送，只记一条 warn；C 落定 success，A 迟到抛错也不改；全程只有 C 一次发出",
+        "test/spec/notification/site-alert-claim/late-query.int.test.ts > [AC-B1-22t#4] B 的恢复查询挂起超 10 分钟、C 再恢复并在发送中：B 迟到 not_sent 不改 C 的领取、不据此发送，只记一条 warn；C 落定 success，A 迟到抛错也不改；全程只有 C 一次发出",
+        "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#1] A 挂起超 10 分钟、B 恢复领取并在发送中（恢复先查询得 not_sent）：A 迟到 accepted 不把 B 的行改成 success，只记一条 warn；B 落定 success，之后不再发送",
+        "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#1] A 挂起超 10 分钟、B 恢复领取并在发送中（发送器无 query、恢复即重发）：A 迟到 accepted 不把 B 的行改成 success，只记一条 warn；B 落定 success，之后不再发送",
+        "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#2] A 挂起超 10 分钟、B 恢复领取并在发送中（恢复先查询得 not_sent）：A 迟到抛错不把 B 退回 queued，只记一条 warn，A 的交付不要求重试；此时再交付不发送；B 落定后全程只有 B 一次发出",
+        "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#2] A 挂起超 10 分钟、B 恢复领取并在发送中（发送器无 query、恢复即重发）：A 迟到抛错不把 B 退回 queued，只记一条 warn，A 的交付不要求重试；此时再交付不发送；B 落定后全程只有 B 一次发出",
+        "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#3] B 恢复领取并已落定 success 后 A 迟到 accepted：不覆盖 B 的结果，只记一条 warn（不记 error），A 的交付正常结束，之后不再发送",
+        "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#3] B 恢复领取并已落定 success 后 A 迟到 unknown：不覆盖 B 的结果，只记一条 warn（不记 error），A 的交付正常结束，之后不再发送",
+        "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#3] B 恢复领取并已落定 success 后 A 迟到 rejected：不覆盖 B 的结果，只记一条 warn（不记 error），A 的交付正常结束，之后不再发送",
+        "test/spec/notification/site-alert-claim/late-result.int.test.ts > [AC-B1-22t#3] B 恢复领取并已落定 success 后 A 迟到 throws：不覆盖 B 的结果，只记一条 warn（不记 error），A 的交付正常结束，之后不再发送",
+        "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（恢复先查询得 not_sent）：A 迟到 rejected 不改 B 的领取，只记一条 warn、不记 error；B 随后 accepted 落定 success，之后不再发送",
+        "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（恢复先查询得 not_sent）：A 迟到 rejected 不改 B 的领取，只记一条 warn、不记 error；B 随后发送抛错照常退回 queued、交付 reject，再交付恰好发送一次落定 success",
+        "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（恢复先查询得 not_sent）：A 迟到 unknown 不改 B 的领取，只记一条 warn、不记 error；B 随后 accepted 落定 success，之后不再发送",
+        "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（恢复先查询得 not_sent）：A 迟到 unknown 不改 B 的领取，只记一条 warn、不记 error；B 随后发送抛错照常退回 queued、交付 reject，再交付恰好发送一次落定 success",
+        "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（发送器无 query、恢复即重发）：A 迟到 rejected 不改 B 的领取，只记一条 warn、不记 error；B 随后 accepted 落定 success，之后不再发送",
+        "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（发送器无 query、恢复即重发）：A 迟到 rejected 不改 B 的领取，只记一条 warn、不记 error；B 随后发送抛错照常退回 queued、交付 reject，再交付恰好发送一次落定 success",
+        "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（发送器无 query、恢复即重发）：A 迟到 unknown 不改 B 的领取，只记一条 warn、不记 error；B 随后 accepted 落定 success，之后不再发送",
+        "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts > [AC-B1-22t#6] A 挂起超 10 分钟、B 恢复领取并在发送中（发送器无 query、恢复即重发）：A 迟到 unknown 不改 B 的领取，只记一条 warn、不记 error；B 随后发送抛错照常退回 queued、交付 reject，再交付恰好发送一次落定 success",
+        "test/spec/notification/site-alert-claim/recovery-query.int.test.ts > [AC-B1-22t#7] A 挂起超 10 分钟、B 恢复领取，查询 1 分钟后得 sent：行落定 success（sent_at 是 B 落定时刻）、不再发送；A 迟到 accepted 不改结果，只记一条 warn",
+        "test/spec/notification/site-alert-claim/recovery-query.int.test.ts > [AC-B1-22t#7] A 挂起超 10 分钟、B 恢复领取，查询 1 分钟后得 unknown：领取保留、不发送；A 迟到 accepted 不改 B 的领取，只记一条 warn；再超 10 分钟 C 恢复查得 sent 落定 success，全程不再发送"
+      ],
+      "expected": [
+        "test/spec/notification/site-alert-claim/current-claim-throw.int.test.ts",
+        "test/spec/notification/site-alert-claim/late-query.int.test.ts",
+        "test/spec/notification/site-alert-claim/late-result.int.test.ts",
+        "test/spec/notification/site-alert-claim/late-settle-in-flight.int.test.ts",
+        "test/spec/notification/site-alert-claim/recovery-query.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "cf3cbfe7650d6df97a995e9e869c1c8a6b65527f7996ff24abc4dd3f8ae0f554"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "757d83c12dce206dfb30f177177aad7dcc7bc4ca",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "money r1 pass, no findings (couli-runs/B1-22t/review-money-r1.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "r1 fail (two S1: current-claim throw reopen, rejected in flight) fixed in test attempt 3; r2 pass with one S2"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "8bac8a526857729eb969ed86b4923a01cad25caa",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
