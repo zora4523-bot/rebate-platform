@@ -129,11 +129,22 @@ export const STATUS_TABS: readonly StatusTab[] = [
   'auto',
 ];
 
-function tabQuery(tab: StatusTab): Record<string, string> {
+/**
+ * The quick filters of CT-24y listAdminWithdrawals (BR-WDR-08 细则): 待审 = display_status
+ * pending_review, 驳回 = rejected, 手动 = paid_manual (PAID_MANUAL), 自动 = PAID_API (either
+ * paid_auto_system or paid_auto_review, sent as status=PAID_API). review_mode is only the
+ * 审核方式 filter's.
+ */
+function tabQuery(tab: StatusTab, status: WithdrawalStatus | undefined): Record<string, string> {
   if (tab === 'pendingReview') return { display_status: 'pending_review' };
   if (tab === 'rejected') return { display_status: 'rejected' };
-  if (tab === 'manual') return { review_mode: 'manual' };
-  if (tab === 'auto') return { review_mode: 'auto' };
+  if (tab === 'manual') return { display_status: 'paid_manual' };
+  if (tab === 'auto') {
+    // The 状态 filter ANDs with the tab: another status than PAID_API keeps that status and
+    // adds a PAID_API-only display status, so the server answers the (empty) intersection.
+    if (status === undefined || status === 'PAID_API') return { status: 'PAID_API' };
+    return { display_status: 'paid_auto_system' };
+  }
   return {};
 }
 
@@ -240,8 +251,8 @@ export function checkDraft(draft: Draft): { filters: Filters } | { errors: Draft
 }
 
 /**
- * Query parameters of listAdminWithdrawals for a page: the status tab's condition, then the
- * applied filters (a filter of the same parameter wins over the tab).
+ * Query parameters of listAdminWithdrawals for a page: the status tab's quick filter AND the
+ * applied filters (all conditions combine with AND on the server).
  */
 export function listQuery(
   tab: StatusTab,
@@ -251,7 +262,7 @@ export function listQuery(
   return {
     page,
     page_size: PAGE_SIZE,
-    ...tabQuery(tab),
+    ...tabQuery(tab, filters.status),
     ...(filters.status === undefined ? {} : { status: filters.status }),
     ...(filters.reviewMode === undefined ? {} : { review_mode: filters.reviewMode }),
     ...(filters.channel === undefined ? {} : { payout_channel: filters.channel }),
