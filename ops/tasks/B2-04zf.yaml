@@ -1,8 +1,9 @@
 id: B2-04zf
 repo: rebate-platform
-title: settle_run 级完成事件（D10-467 ③）：同一 settle_run 的全部批次进入 DONE 时发布一次完成事件（载荷带 settle_run_id、app_id、账单期间与批次数；任一批次 PARTIAL 不发），供 identity B1-12t「返利已到账」通知按 run 汇总；发布与最后一个批次 DONE 的事务同一事务，幂等（同 run 只发一次）
+title: settle_run 级完成事件 settle.run_done（D10-477 定稿，更正 D10-467 ③）：(a) 该 run 全部批次 DONE 发 outcome='done'；(b) 执行因开关停止、有批次置 PARTIAL 发 outcome='partial'；PARTIAL 后继续执行（SB8）再到 (a) / (b) 再发、part+1；载荷 {settle_run_id, bill_id, part, outcome, batch_count}；每个 (settle_run_id, part) 并发与重放只发一次，与触发它的批次状态迁移同事务；settle.batch_done 保留、不再触发 CREDITED
 type: impl
 # 2026-10-31 编排 05:0x 补 D10-467 ③：B2-04ze 已在写测试不打断，单开本单，紧接 B2-04ze 之后；identity B1-12t 依赖本单。RV2，独立 Claude 写测试与 money 评审（Codex 至 11-02 不可用，approvals #36）。
+# D10-477：02 §11 已回写 settle.run_done（couli #228，计数 32）；冻结 test/spec/platform/events/kit.ts 的 PLAN_02_EVENTS 由新鲜独立 Claude 单列 test(spec) 只加该名（同 B2-15c 先例），与按 D10-477 改写本单规则测试同为编排例外轮、不计写测试次数（证据写 D10-477）。
 # 事件名与载荷照 02 §11 / EVENT_NAMES 既有命名口径（两段式 a.b）；若需新增事件名，进 EVENT_NAMES 并在 PR 说明标出；契约 / 事件清单未写清处报编排。
 refs: [BR-FUND-04, BR-TEXT-09]
 refs_hash:
@@ -15,6 +16,7 @@ paths:
   - 'apps/api/src/modules/platform/events/types.ts'
 test_paths:
   - 'test/spec/settlement/run-done/**'
+  - 'test/spec/platform/events/kit.ts'
 impl: claude
 tester: claude-independent
 accept:
