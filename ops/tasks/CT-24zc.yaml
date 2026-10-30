@@ -3,6 +3,7 @@ repo: rebate-platform
 title: 契约：adminActivateUnionPid 的 30155 描述按 D10-231 改为「同 app × platform × 联盟账号 × pid_scene 已有 active」（只改 description，不改形状与错误码）
 type: contract
 # 2026-10-30 入账（union 线，编排裁定 D10-434 ③；B1-22h r4 S2）。现 CT-24h 描述仍写「同 app × platform × pid_scene」旧口径，实现（B1-22h / B1-22i）已按 D10-231 同账号判定。依据 04 §6.6 union-pids，08 BR-ATTR-02 细则「后台登记与启停」。契约槽排队，落地前报编排。
+# 2026-10-30 paths 补 contracts/error-codes.yaml：30155 的 meaning 也是旧口径（同 app × platform × pid_scene），同改为同联盟账号；error-codes.gen.ts 已在 packages/contracts-ts/** 内。
 refs: [BR-ATTR-02]
 refs_hash:
   BR-ATTR-02: f8cda78b8778
@@ -10,6 +11,7 @@ contract_sections: ['6.6']
 deps: [CT-24h]
 paths:
   - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
   - 'packages/contracts-ts/**'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
