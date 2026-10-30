@@ -1,0 +1,131 @@
+{
+  "task": "B2-16b",
+  "spec_ref": "812734156b57ba648ee1df733dafac3dba9bdb15",
+  "spec_commit": "7313c99fd6d86628f3eb892e992c208fc8868ce9",
+  "red_tests": [
+    "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#1] 邀请人一方：借 MKT_EXPENSE、贷 available，键 :inviter",
+    "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#2] 被邀请人一方：账户不存在先开户再入账，键 :invitee",
+    "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#3] 同一事务两方各一张凭证，各自余额加 reward_fen",
+    "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#4] 同键重放返回原 voucher_id，不追加分录、不改余额",
+    "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#5] 键只按被邀请人与受益方区分",
+    "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#6] reward_fen 为 0 不出凭证、不占键",
+    "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#7] 已有余额经 ledger 累加，balance_after 与版本接续",
+    "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#8] Clock 2032-06-15T15:59:59.999Z 定 booked_at 与 +08:00 会计日 2032-06-15",
+    "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#8] Clock 2032-06-15T16:00:00.000Z 定 booked_at 与 +08:00 会计日 2032-06-16",
+    "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 amount_fen 为负：SQL 之前拒绝，LedgerError INVALID_INPUT",
+    "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 amount_fen 为 number 整数：SQL 之前拒绝，LedgerError INVALID_INPUT",
+    "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 amount_fen 为非整数：SQL 之前拒绝，LedgerError INVALID_INPUT",
+    "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 amount_fen 为字符串：SQL 之前拒绝，LedgerError INVALID_INPUT",
+    "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 party 不是 inviter / invitee：SQL 之前拒绝，LedgerError INVALID_INPUT",
+    "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 invitee 一方付给了别人：SQL 之前拒绝，LedgerError INVALID_INPUT",
+    "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 inviter 一方付给了被邀请人本人：SQL 之前拒绝，LedgerError INVALID_INPUT",
+    "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 app_id 为空：SQL 之前拒绝，LedgerError INVALID_INPUT",
+    "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 invitee_id 为空：SQL 之前拒绝，LedgerError INVALID_INPUT",
+    "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 user_id 为空：SQL 之前拒绝，LedgerError INVALID_INPUT",
+    "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 at 不是有效时间：SQL 之前拒绝，LedgerError INVALID_INPUT",
+    "test/spec/ledger/invite-reward-grant/transactions.int.test.ts > [AC-B2-16b#9] 调用方事务内写入，调用方抛错时一并回滚",
+    "test/spec/ledger/invite-reward-grant/transactions.int.test.ts > [AC-B2-16b#10] 并发同键：后者等前者提交后得 duplicate",
+    "test/spec/ledger/invite-reward-grant/transactions.int.test.ts > [AC-B2-16b#11] 负余额入奖励回正，经同一 ledger 的回正端口",
+    "test/spec/ledger/invite-reward-grant/transactions.int.test.ts > [AC-B2-16b#12] 拒绝 negative-amount：INVALID_INPUT，零写入且事务可继续",
+    "test/spec/ledger/invite-reward-grant/transactions.int.test.ts > [AC-B2-16b#12] 拒绝 inviter-is-invitee：INVALID_INPUT，零写入且事务可继续",
+    "test/spec/ledger/invite-reward-grant/transactions.int.test.ts > [AC-B2-16b#12] 拒绝 invitee-paid-to-other：INVALID_INPUT，零写入且事务可继续"
+  ],
+  "risk_note": "RV2 ledger (B2-16b; BR-INV-24 ⑦⑧, BR-FUND-15, BR-FUND-16). Ledger implements growth's InviteRewardGrantWriter: on the caller's transaction it posts one REWARD:INVITE voucher per side (debit platform MKT_EXPENSE, credit the user's USER_BALANCE available, ledger-templates.csv 252–253) through ledger's existing posting, uniq_key INVITE_REWARD:{invitee_user_id}:{side}; a replay of the same key returns the original voucher_id without posting again; amount 0 posts nothing; input checks (side / beneficiary, amount) throw INVALID_INPUT before any SQL; time from the injected Clock. Growth / app.module wiring (thin adapter for the zero result) is out of this task.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "7313c99fd6d86628f3eb892e992c208fc8868ce9",
+      "tree": "9fccc94094aa84820981b764cc7ccad05fedfc2b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T19:01:47Z",
+      "finished_at": "2026-10-30T19:02:01Z",
+      "gate": {
+        "commit": "cef8b973cbe1277264fe859b3b84b0dfe213cc07",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#1] 邀请人一方：借 MKT_EXPENSE、贷 available，键 :inviter",
+        "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#2] 被邀请人一方：账户不存在先开户再入账，键 :invitee",
+        "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#3] 同一事务两方各一张凭证，各自余额加 reward_fen",
+        "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#4] 同键重放返回原 voucher_id，不追加分录、不改余额",
+        "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#5] 键只按被邀请人与受益方区分",
+        "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#6] reward_fen 为 0 不出凭证、不占键",
+        "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#7] 已有余额经 ledger 累加，balance_after 与版本接续",
+        "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#8] Clock 2032-06-15T15:59:59.999Z 定 booked_at 与 +08:00 会计日 2032-06-15",
+        "test/spec/ledger/invite-reward-grant/grant.int.test.ts > [AC-B2-16b#8] Clock 2032-06-15T16:00:00.000Z 定 booked_at 与 +08:00 会计日 2032-06-16",
+        "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 amount_fen 为负：SQL 之前拒绝，LedgerError INVALID_INPUT",
+        "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 amount_fen 为 number 整数：SQL 之前拒绝，LedgerError INVALID_INPUT",
+        "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 amount_fen 为非整数：SQL 之前拒绝，LedgerError INVALID_INPUT",
+        "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 amount_fen 为字符串：SQL 之前拒绝，LedgerError INVALID_INPUT",
+        "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 party 不是 inviter / invitee：SQL 之前拒绝，LedgerError INVALID_INPUT",
+        "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 invitee 一方付给了别人：SQL 之前拒绝，LedgerError INVALID_INPUT",
+        "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 inviter 一方付给了被邀请人本人：SQL 之前拒绝，LedgerError INVALID_INPUT",
+        "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 app_id 为空：SQL 之前拒绝，LedgerError INVALID_INPUT",
+        "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 invitee_id 为空：SQL 之前拒绝，LedgerError INVALID_INPUT",
+        "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 user_id 为空：SQL 之前拒绝，LedgerError INVALID_INPUT",
+        "test/spec/ledger/invite-reward-grant/refusals.test.ts > [AC-B2-16b#13] 入参 at 不是有效时间：SQL 之前拒绝，LedgerError INVALID_INPUT",
+        "test/spec/ledger/invite-reward-grant/transactions.int.test.ts > [AC-B2-16b#9] 调用方事务内写入，调用方抛错时一并回滚",
+        "test/spec/ledger/invite-reward-grant/transactions.int.test.ts > [AC-B2-16b#10] 并发同键：后者等前者提交后得 duplicate",
+        "test/spec/ledger/invite-reward-grant/transactions.int.test.ts > [AC-B2-16b#11] 负余额入奖励回正，经同一 ledger 的回正端口",
+        "test/spec/ledger/invite-reward-grant/transactions.int.test.ts > [AC-B2-16b#12] 拒绝 negative-amount：INVALID_INPUT，零写入且事务可继续",
+        "test/spec/ledger/invite-reward-grant/transactions.int.test.ts > [AC-B2-16b#12] 拒绝 inviter-is-invitee：INVALID_INPUT，零写入且事务可继续",
+        "test/spec/ledger/invite-reward-grant/transactions.int.test.ts > [AC-B2-16b#12] 拒绝 invitee-paid-to-other：INVALID_INPUT，零写入且事务可继续"
+      ],
+      "expected": [
+        "test/spec/ledger/invite-reward-grant/grant.int.test.ts",
+        "test/spec/ledger/invite-reward-grant/refusals.test.ts",
+        "test/spec/ledger/invite-reward-grant/transactions.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "ce2469ee40f115c3820632e8c3f3cd694e06e65bcfbb9925c6e28e04f7eb6034"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "6e5b3107f62e4dedfc9ab0bba26085eaa9e1c2028861761af6f12b713f8f78d6"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; adversarial money review by a fresh independent Claude via claude-run.sh (approvals #36); round 1 pass with 1 open S2 recorded as followups",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by an independent Claude via claude-run.sh in 1 run; round 1 pass with two S2 recorded",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "f8544c146799a237ae95c9eb7e5021b093e0c555",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
