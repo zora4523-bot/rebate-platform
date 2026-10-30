@@ -103,6 +103,14 @@ export type {
   DailyCheckScheduleLogger,
   DailyCheckSeedOptions,
 } from './application/daily-check-schedule.ts';
+// B2-02r: the heal of the chain from the actual state of the queue and the results.
+export { dailyCheckOverdueAtMs, healDailyCheck } from './application/daily-check-schedule-heal.ts';
+export type {
+  DailyCheckHealOptions,
+  DailyCheckRunState,
+  DailyCheckRunStore,
+} from './application/daily-check-schedule-heal.ts';
+export { createDailyCheckRunStore } from './infra/daily-check-run-store.ts';
 export { LedgerDailyCheckModule } from './daily-check.module.ts';
 export type { LedgerDailyCheckWorkerOptions } from './daily-check.module.ts';
 // B2-04y: GET /v1/wallet/summary (the query itself is exported only by read.ts, BR-AI-02 ④).
