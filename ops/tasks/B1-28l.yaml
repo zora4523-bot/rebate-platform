@@ -1,0 +1,25 @@
+id: B1-28l
+repo: rebate-platform
+title: catalog：热销榜名次 = 频道原始名次（D10-422 ②）——上游（hot-rank-wiring）丢掉推导不出 product_key 或平台不符的条目时，后续条目名次不前移、留空号，跨页按频道位置连续、不重排；hot-rank.ts 改为按条目在频道里的原始位置编名次，候选条目携带原始位置并经热销榜缓存原样存取
+type: impl
+# 2026-10-30 W1 入账（编排派工 14:3x：B1-28j #1832 资金评审范围外 S2「丢弃条目后名次前移」与 D10-422 ② 冲突）。
+# 已有 test/spec/catalog/hot-rank/** 冻结不改，未带原始位置的候选仍按下标编名次；缓存里不带位置的旧条目按读不出处理（重新取数）。
+refs: [BR-TEXT-17]
+refs_hash:
+  BR-TEXT-17: 486f4508575e
+deps: [B1-28h, B1-28j]
+paths:
+  - 'apps/api/src/modules/catalog/hot-rank.ts'
+  - 'apps/api/src/modules/catalog/infra/hot-rank-wiring.ts'
+  - 'apps/api/src/modules/catalog/infra/hot-rank-wiring.test.ts'
+  - 'apps/api/src/modules/catalog/infra/hot-rank-cache.ts'
+  - 'apps/api/src/modules/catalog/infra/hot-rank-cache.test.ts'
+test_paths:
+  - 'test/spec/catalog/hot-rank-gap/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/hot-rank-gap/**'
+status: todo
+pr: null
