@@ -916,8 +916,10 @@ export interface paths {
          *     and gets the gray version when its bucket is in range; without it (basic mode) it gets the
          *     fully released version. Drafts are never read. The section's min_app_version is compared with X-Platform
          *     and X-App-Version as in getPage, and a section filtered out by it counts as not being in
-         *     the version. This operation has no bearer token, so `condition` is not evaluated: the
-         *     caller got the section from getPage, which has evaluated it.
+         *     the version. `condition` is not evaluated: the caller got the section from getPage, which
+         *     has evaluated it. `x-auth` is optional although 04 §6 lists none: cards are computed for
+         *     the current user and links are registered per user (BR-PRICE-11, BR-PRICE-12; 08 wins over
+         *     04, as searchProducts).
          *
          *     30701: the page_key does not exist, it has no published version, that version has no such
          *     section, or the section's data source kind is not `union_material`.
@@ -930,14 +932,18 @@ export interface paths {
          *     source is not fetched at all, the block counts as having no data and an alert is raised
          *     (BR-TEXT-17 细则「取数时再查一次」). Several channels are always interleaved in the order of
          *     `channels`, with or without `mix`; the order inside a channel is kept and no commission or
-         *     rebate weight is added. Items in a blocked category or with an abnormal price are not sent.
-         *     `ad_label` is null on every card.
+         *     rebate weight is added. Items in a blocked category, with an abnormal price or with
+         *     rebate_basis=no_rebate are not sent (BR-PRICE-08). When filtering leaves fewer than a page,
+         *     at most one more upstream page is fetched to top it up, and what is left is returned as it
+         *     is. `has_more` is what upstream reports and `cursor` records the upstream page, never a
+         *     filtered offset (BR-PRICE-08). `ad_label` is null on every card.
          *
          *     A union failure of one channel only drops that channel from this page. Failure of every
          *     channel, no data from any channel and a refused data source all answer 200 with
-         *     `items: []` and `next_cursor: null`, never 50304. An empty first page (no `cursor` sent)
-         *     hides the card (03 §6.2); an empty later page only ends the list and keeps the cards
-         *     already shown. Page size is the server constant 20 (no limit parameter, as getHotRank).
+         *     `items: []`, `next_cursor: null` and `has_more: false`, never 50304. An empty first page
+         *     with `next_cursor: null` hides the card (03 §6.2). A later page ends the list only when
+         *     `next_cursor` is null, and keeps the cards already shown; `items: []` with a cursor means
+         *     fetch on. Page size is the server constant 20 (no limit parameter, as getHotRank).
          *     `cursor` is opaque: the client sends `next_cursor` back unchanged.
          */
         get: operations["listPageSectionItems"];
@@ -10577,6 +10583,8 @@ export interface components {
             /** @description In server order; the client does not reorder them. */
             items: components["schemas"]["ProductCard"][];
             next_cursor: string | null;
+            /** @description As upstream reports it (BR-PRICE-08), never rewritten by our own filters. */
+            has_more: boolean;
         };
         PageSectionItemsResponse: {
             code: components["schemas"]["SuccessCode"];
@@ -20004,7 +20012,8 @@ export interface operations {
                      *             "availability": "ok"
                      *           }
                      *         ],
-                     *         "next_cursor": "Y3Vyc29yLWV4YW1wbGU"
+                     *         "next_cursor": "Y3Vyc29yLWV4YW1wbGU",
+                     *         "has_more": true
                      *       },
                      *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
                      *     }
