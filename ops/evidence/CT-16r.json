@@ -1,0 +1,37 @@
+{
+  "task": "CT-16r",
+  "spec_ref": "812734156b57ba648ee1df733dafac3dba9bdb15",
+  "spec_commit": "5a68ab52b10ca50cf1ab77460403e5873123bf10",
+  "red_tests": [],
+  "risk_note": "RV1 (contract texts only). texts.default.json gains five keys finalised in 08 12_TEXT but never created: settings.nickname.hint.plain, reverify.id.fail_limit.plain (l.1123, l.1084; l.714 says ordinary), risk_notice.data_copy_entry (l.1102, D10-185), tag.presale and presale.price_note (l.703, TRADE-10), copied verbatim; risk_notice.banned.desc / .desc_beta gain the D10-185 second half. The five keys are registered in the ordinary segment of specs/fund-term-keys.yaml and fund-term-keys.gen.ts is regenerated. New keys plus two default-text corrections; no frozen snapshot quotes those sentences. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "fresh independent Claude via claude-run.sh; r1 fail (S1: fund-term-keys.gen.ts not regenerated) -> regenerated; r2 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "c7319d64a6f70ca86a9ea872642f278c779779fa",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
