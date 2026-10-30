@@ -1,0 +1,20 @@
+id: B1-22s
+repo: rebate-platform
+title: 联盟商品详情 DTO 补图片字段（union）：UnionItemDetail 加可选主图 main_image_url 与多图 image_urls（https、去重、至多 9 张、顺序按上游）；demo 适配器（非 prod）给确定性图片；淘宝 / 京东 / 拼多多真实适配器在 CAP-TB-02 / CAP-JD-02 / CAP-PDD-02 实测前不映射（字段缺省），不伪造
+type: impl
+# 2026-10-30 入账（union 线，编排 FU-UNION-ITEM-IMAGES，10-30 12:14 派工）。供 B1-15w 分享 images（linking/application/shares.ts 的 TODO「分享素材图取联盟商品详情主图与多图（≤9）」）。依据 08 BR-ATTR-10 细则「分享」素材图：只取联盟商品接口返回的图片地址，各平台能否用于分享以 规划/09 实测为准；09 CAP-TB-02（small_images）、CAP-JD-02（imageInfo.imageList）、CAP-PDD-02（goods_gallery_urls）均「文档已查、未实测」，拼多多现行映射字段清单不含图片 → 三平台本任务不映射、留 TODO blocked on CAP-*-02。linking 分享读取图片的接线另列（不在本任务 paths）。Codex 不可用至 11-02，测试与评审由独立 Claude（approvals #36）。
+refs: [BR-ATTR-10]
+refs_hash:
+  BR-ATTR-10: 310f8ddda3b0
+deps: [B1-04u]
+paths:
+  - 'apps/api/src/modules/union/**'
+test_paths:
+  - 'test/spec/union/item-images/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/item-images/**'
+status: todo
+pr: null
