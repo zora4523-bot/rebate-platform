@@ -1,0 +1,95 @@
+{
+  "task": "B1-31b",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "477133c89d57e23ded370a84bc6910ba1db89d79",
+  "red_tests": [
+    "test/spec/platform/tracing/entry-failure.int.test.ts > [B1-31b ⑤] runEntry(api), db-handles throws: startup_failed, exit 1, and the tracing main.<entry>.ts started is flushed and stopped before runEntry returns",
+    "test/spec/platform/tracing/entry-failure.int.test.ts > [B1-31b ⑤] runEntry(stream), db-handles throws: startup_failed, exit 1, and the tracing main.<entry>.ts started is flushed and stopped before runEntry returns",
+    "test/spec/platform/tracing/entry-failure.int.test.ts > [B1-31b ⑤] runEntry(worker), db-handles throws: startup_failed, exit 1, and the tracing main.<entry>.ts started is flushed and stopped before runEntry returns",
+    "test/spec/platform/tracing/entry-failure.int.test.ts > [B1-31b ⑤] runEntry(worker), maint-handle throws: startup_failed, exit 1, and the tracing main.<entry>.ts started is flushed and stopped before runEntry returns",
+    "test/spec/platform/tracing/entry-failure.int.test.ts > [B1-31b ⑤] activeTracing() is the running handle startTracing returned, null otherwise, and never starts one",
+    "test/spec/platform/tracing/entry.int.test.ts > [B1-31b ①] runEntry(admin) with the endpoint set: no tracing footprint while it builds, none after, nothing exported",
+    "test/spec/platform/tracing/entry.int.test.ts > [B1-31b ①] runEntry(payout) with the endpoint set: no tracing footprint while it builds, none after, nothing exported",
+    "test/spec/platform/tracing/entry.int.test.ts > [B1-31b ①②] runEntry(api): tracing is in place before the app is built, exports with the entry resource, and is closed on exit",
+    "test/spec/platform/tracing/entry.int.test.ts > [B1-31b ①②] runEntry(stream): tracing is in place before the app is built, exports with the entry resource, and is closed on exit",
+    "test/spec/platform/tracing/entry.int.test.ts > [B1-31b ①②] runEntry(worker): tracing is in place before the app is built, exports with the entry resource, and is closed on exit"
+  ],
+  "risk_note": "RV2 platform follow-up of B1-31 (withdraw lane, model Claude Fable 5.1): closes the review S2s of B1-31 without widening it. Tests (fresh independent Claude): a runEntry-level file pins that api / stream / worker leave a tracing footprint before their app is built and have flushed by the time runEntry returns under COULI_EXIT_AFTER_INIT, that admin / payout leave none, and stream's service.name / couli.entry; a failure file pins that a startup failing in createDbHandles / createMaintDbHandle still flushes the tracing main.<entry>.ts booted. Implementation: otel.ts exports activeTracing() (the process's running handle, never starts one) and runEntry's failed-startup finally shuts down (tracing ?? activeTracing()); the serving path and the success path are unchanged (tracing is never stopped while the entry serves, money r1 of B1-31). The two remaining B1-31 S2s that edit frozen test files (fast-check propParams in correlation.test, the logger stub's child() in export-health.test) are not in this task: test/spec/** is add-only and both are test-writing style only; reported to the orchestrator. No money, ledger, attribution or app_id path is touched.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "477133c89d57e23ded370a84bc6910ba1db89d79",
+      "tree": "318fe5949fc4a31d171349784836bb5505b70fc0",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T05:45:37Z",
+      "finished_at": "2026-10-30T05:45:54Z",
+      "gate": {
+        "commit": "1efff643cce4d657646eef802ede8ef3d310f085",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/platform/tracing/entry-failure.int.test.ts > [B1-31b ⑤] runEntry(api), db-handles throws: startup_failed, exit 1, and the tracing main.<entry>.ts started is flushed and stopped before runEntry returns",
+        "test/spec/platform/tracing/entry-failure.int.test.ts > [B1-31b ⑤] runEntry(stream), db-handles throws: startup_failed, exit 1, and the tracing main.<entry>.ts started is flushed and stopped before runEntry returns",
+        "test/spec/platform/tracing/entry-failure.int.test.ts > [B1-31b ⑤] runEntry(worker), db-handles throws: startup_failed, exit 1, and the tracing main.<entry>.ts started is flushed and stopped before runEntry returns",
+        "test/spec/platform/tracing/entry-failure.int.test.ts > [B1-31b ⑤] runEntry(worker), maint-handle throws: startup_failed, exit 1, and the tracing main.<entry>.ts started is flushed and stopped before runEntry returns",
+        "test/spec/platform/tracing/entry-failure.int.test.ts > [B1-31b ⑤] activeTracing() is the running handle startTracing returned, null otherwise, and never starts one",
+        "test/spec/platform/tracing/entry.int.test.ts > [B1-31b ①] runEntry(admin) with the endpoint set: no tracing footprint while it builds, none after, nothing exported",
+        "test/spec/platform/tracing/entry.int.test.ts > [B1-31b ①] runEntry(payout) with the endpoint set: no tracing footprint while it builds, none after, nothing exported",
+        "test/spec/platform/tracing/entry.int.test.ts > [B1-31b ①②] runEntry(api): tracing is in place before the app is built, exports with the entry resource, and is closed on exit",
+        "test/spec/platform/tracing/entry.int.test.ts > [B1-31b ①②] runEntry(stream): tracing is in place before the app is built, exports with the entry resource, and is closed on exit",
+        "test/spec/platform/tracing/entry.int.test.ts > [B1-31b ①②] runEntry(worker): tracing is in place before the app is built, exports with the entry resource, and is closed on exit"
+      ],
+      "expected": [
+        "test/spec/platform/tracing/entry-failure.int.test.ts",
+        "test/spec/platform/tracing/entry.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "37d7b0964ed63cca0b2bca9c81c10ae31f71ce5af47f23a99fe37ae9fc34f742"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "RV2 platform task: claude-run.sh requires the money review type. Round 1 pass, no findings (base 9698c75b2, the main the branch was cut from)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "test round 1 (10 tests / 2 int files + entry-kit.ts + the activeTracing skeleton; the author declined the frozen-test edits ③④ as outside add-only test_paths) → red/1 PASS (10 red in 2 files, exempt 0) → spec-test round 1 pass with S2 ×2 in the lane's followups (no serving-mode case; no failure case without booted tracing)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "94703b2cba93bdd36c7c9316a73627050c730a68",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money or packages/domain.",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}

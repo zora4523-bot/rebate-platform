@@ -204,6 +204,15 @@ function registerEsmHook(logger: RootLogger): void {
   }
 }
 
+/**
+ * The process's running enabled tracing (the handle startTracing returned), or null when none is
+ * running; never starts one (B1-31b: runEntry's failed startup flushes the tracing main.<entry>.ts
+ * started through it).
+ */
+export function activeTracing(): TracingHandle | null {
+  return active;
+}
+
 export function startTracing(options: TracingOptions): Promise<TracingHandle> {
   const { entry, config, logger } = options;
   if (active !== null) return Promise.resolve(active);
