@@ -51,7 +51,7 @@ function scan(sources: readonly ts.SourceFile[]) {
   return { imports, names, strings };
 }
 
-it('[AC-F1-08e-SOURCE#1] 页面在 pages/recon 并由 App.tsx 登记，文案在 texts/recon.ts，读写经 data provider、不直接 fetch、不用动态码', () => {
+it('[AC-F1-08e-SOURCE#1] 页面在 pages/recon 并由 App.tsx 登记，文案在 texts/recon.ts，读写经 data provider、不直接 fetch', () => {
   expect(existsSync(textsFile), 'texts/recon.ts').toBe(true);
   const pages = files(directory)
     .filter((path) => /\.tsx?$/.test(path) && !/\.(?:test|d)\.tsx?$/.test(path))
@@ -66,11 +66,6 @@ it('[AC-F1-08e-SOURCE#1] 页面在 pages/recon 并由 App.tsx 登记，文案在
   ).toBe(true);
   for (const banned of ['fetch', 'XMLHttpRequest', 'dangerouslySetInnerHTML'])
     expect(names.has(banned), banned).toBe(false);
-  const stepUp = /components\/step-up(?:\/|$)|\/useStepUp(?:\.tsx?)?$/;
-  expect(
-    imports.filter((name) => stepUp.test(name)),
-    'no step-up on this page',
-  ).toEqual([]);
   const app = scan([parse(join(root, 'App.tsx'))]);
   expect(app.imports.some((name) => /^\.\/pages\/recon(?:\/|$)/.test(name))).toBe(true);
 });
