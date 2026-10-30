@@ -1,0 +1,23 @@
+id: F1-08ga
+repo: rebate-platform
+title: 后台「平台资金台账」页第一段（资源 fund-ledger，菜单 资金 / 平台资金台账）只读——按日台账（资产快照视图）：日期区间筛选、页码分页（按契约）、各平台已入账未回款与合计、当日联盟回款、W、P 等契约字段按列显示、三态；接口 CT-24zb listAdminAssetSnapshots（B2-09e 已实现）
+type: impl
+# 2026-10-30 入账（前端线 f1-frontend-7，编排 D10-445 ①）。规格 couli design/specs/admin-fund-dashboard.md（「按日台账」部分；§7：资产快照不单独画板，按日台账即快照视图，字段以 04 asset-snapshots / 契约为准）；画板参照该规格所列平台资金台账画板（布局参考）。
+# 不做（写接口未出）：台账录入、联盟回款录入、W 录入、导出、资金看板页签；写入口不出现、不画入口，不发 GET 以外请求。
+# 菜单不改（fund.cash_entry）；读权限以契约为准（若契约允许 fund.view 读，只持 fund.view 时经直达地址可看，照 recon / withdrawals 先例，菜单不改）。前置 F1-08gaa（冻结工作台测试落地菜单改到 /adjustments）须先合并。
+# 资金页面（只读）：评审走 money 口径。Codex 到 11-02 不可用：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude；独立 Claude 每任务 10 次上限（D10-319 / D10-417）。
+refs: []
+refs_hash: {}
+deps: [CT-24zb, B2-09e, F1-08gaa]
+paths:
+  - 'apps/admin/src/pages/fund-ledger/**'
+  - 'apps/admin/src/texts/fund-ledger.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-fund-ledger/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-fund-ledger/**'
+status: todo

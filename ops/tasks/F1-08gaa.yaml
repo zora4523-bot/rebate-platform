@@ -1,0 +1,17 @@
+id: F1-08gaa
+repo: rebate-platform
+title: F1-08gaa：冻结工作台菜单测试 [AC-F1-14a-MENU#3] / [AC-F1-14a-MENU#4] 的落地菜单由将上线的 /fund-ledger 改为仍是占位页的 /adjustments（F1-08ga 前置；断言含义不变）
+type: test-change
+# 2026-10-30 入账（前端线 f1-frontend-7，编排 D10-445 ②，先例 F1-08aa #1845）。F1-08aa 已把这两条的落地菜单改到 /fund-ledger（fund.cash_entry）；F1-08ga 让「平台资金台账」显示按日台账（资产快照只读），进页即读，两条又不能成立。
+# 只改两条的 permissions 样例与落地路径期望：fund.cash_entry → fund.adjust（「调账与核销」adjustments，仍无页面、显示占位）；样例里的 fund.recon 因「对账与差错」（排在 adjustments 之前、已是真页面）也须换成排在 adjustments 之后、仍是占位页的菜单权限（由修改者按 resources/index.ts 当时顺序核实后选定，如 content.pool）；'/fund-ledger' → '/adjustments'。「尚未接入」、请求日志、无重试等断言零改动；现行主干改前改后都绿，可先于 F1-08ga 合并。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件；新鲜独立 Claude 改、另一新鲜独立 Claude 只读复审 pass（写进 PR 正文）；标签由编排核对后加（#24）。
+refs: []
+refs_hash: {}
+deps: [F1-08aa]
+paths:
+  - 'test/spec/frontend/admin-dashboard/menu.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
