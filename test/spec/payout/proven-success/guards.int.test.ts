@@ -109,19 +109,20 @@ it(
 );
 
 it(
-  '[AC-B2-07e#9] 转账尝试不是「恰一条且 result=fail」（没有、一条 success / unknown / pending、两条 fail）→ refused transfer_attempts_mismatch；什么都不写',
+  '[AC-B2-07e#9] 转账尝试不是「恰一条且 result=fail」（没有；只有失败的查询记录、没有转账；一条 success / unknown / pending，带不带查询记录）→ refused transfer_attempts_mismatch；什么都不写（每单至多一条转账由 payout_attempts_transfer_once_key 保证，造不出两条）',
   async () => {
     const f = await setup(h);
     const port = f.port();
     const seeds = [
       await f.seed({ attempts: [] }),
+      await f.seed({ attempts: [['query', 'fail']] }),
       await f.seed({ attempts: [['transfer', 'success']] }),
       await f.seed({ attempts: [['transfer', 'unknown']] }),
       await f.seed({ attempts: [['transfer', 'pending']] }),
       await f.seed({
         attempts: [
-          ['transfer', 'fail'],
-          ['transfer', 'fail'],
+          ['transfer', 'unknown'],
+          ['query', 'fail'],
         ],
       }),
     ];

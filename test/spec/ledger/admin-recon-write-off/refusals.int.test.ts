@@ -211,17 +211,20 @@ it('[AC-B2-07e#28] 开关 payout.proven_success_writeoff.enabled=false → 20001
   });
 });
 
-it('[AC-B2-07e#29] W11 守卫：单 APPROVED 但不是付款方侧退回 → withdrawal_not_returned；转账尝试没有、成功、两条失败 → transfer_attempts_mismatch；账单金额 ≠ net_fen → amount_mismatch；什么都不变、冻结不变量成立', async () => {
+it('[AC-B2-07e#29] W11 守卫：单 APPROVED 但不是付款方侧退回 → withdrawal_not_returned；转账尝试没有、只有失败的查询记录没有转账、转账成功、转账结果未知（另有失败的查询）→ transfer_attempts_mismatch；账单金额 ≠ net_fen → amount_mismatch；什么都不变、冻结不变量成立', async () => {
   const f = fixture(s);
   const notReturned = await seedCase(f, { withdrawal: { holdReason: null } });
+  // One transfer row per withdrawal at most (payout_attempts_transfer_once_key): two failed
+  // transfers cannot exist, so the "not exactly one failed transfer" cases are these.
   const cases = [
     await seedCase(f, { withdrawal: { attempts: [] } }),
+    await seedCase(f, { withdrawal: { attempts: [['query', 'fail']] } }),
     await seedCase(f, { withdrawal: { attempts: [['transfer', 'success']] } }),
     await seedCase(f, {
       withdrawal: {
         attempts: [
-          ['transfer', 'fail'],
-          ['transfer', 'fail'],
+          ['transfer', 'unknown'],
+          ['query', 'fail'],
         ],
       },
     }),

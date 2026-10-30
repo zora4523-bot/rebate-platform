@@ -16,7 +16,13 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { buildVouchers } from '@couli/domain';
-import { sql, type Kysely, type Transaction } from 'kysely';
+import {
+  PostgresQueryCompiler,
+  sql,
+  type Kysely,
+  type KyselyPlugin,
+  type Transaction,
+} from 'kysely';
 import { expect, vi } from 'vitest';
 import { lockUsersForUpdate } from '../../../../apps/api/src/modules/identity/ports/lock-users.ts';
 import {
@@ -51,8 +57,16 @@ export const BILL_DATE = '2026-10-28';
 /** 入账时间 of the bill line (2026-10-28 07:02:11 UTC). */
 export const BOOKED_AT = '2026-10-28T15:02:11+08:00';
 export const BOOKED_AT_MS = Date.parse(BOOKED_AT);
-/** The channel's order id on the bill line (synthetic). */
-export const CHANNEL_ORDER = '20261028110070001502110012345678';
+/**
+ * The channel's order id on the bill line of `w` (synthetic, one per withdrawal:
+ * withdrawals_channel_order_id_key is unique per app, so two withdrawals proven in one app need
+ * two ids).
+ */
+export function channelOrderOf(w: Pick<Seeded, 'outBizNo'>): string {
+  return `20261028${w.outBizNo}`;
+}
+/** retryLimit of the payout-attempt-append queue (queue.test.ts): attempt 6 is the last one. */
+export const ATTEMPT_RETRY_LIMIT = 5;
 export const PAYER_SIDE_HOLD = 'payer_side_after_transfer';
 /** content's switch of W11 (BR-WDR-08 细则: default on). */
 export const SWITCH = 'payout.proven_success_writeoff.enabled';
@@ -287,7 +301,7 @@ export function billLineJson(
 ): Record<string, string | null> {
   return {
     out_biz_no: w.outBizNo,
-    channel_order_id: CHANNEL_ORDER,
+    channel_order_id: channelOrderOf(w),
     amount_fen: w.net.toString(),
     status: 'SUCCESS',
     booked_at: BOOKED_AT,
@@ -515,7 +529,7 @@ export async function setup(h: Harness) {
     return {
       billDate: BILL_DATE,
       outBizNo: w.outBizNo,
-      channelOrderId: CHANNEL_ORDER,
+      channelOrderId: channelOrderOf(w),
       bookedAt: BOOKED_AT,
       ...patch,
     } satisfies ProvenBillLine;
@@ -553,9 +567,9 @@ export async function setup(h: Harness) {
       .execute((trx: Transaction<DB>) => built.proveChannelSuccess(trx, request));
   }
 
-  /** The payout process's attempt-append handler on couli_payout. */
-  function appendJob(): JobHandler {
-    return createAttemptAppendJob({ db: h.payout, clock, logger });
+  /** The payout process's attempt-append handler on couli_payout (or the given handle of it). */
+  function appendJob(db: Kysely<DB> = h.payout): JobHandler {
+    return createAttemptAppendJob({ db, clock, logger });
   }
 
   /** The job W11 queued, as the payout process receives it (attempt 1 unless given). */
@@ -598,6 +612,132 @@ export type Fixture = Awaited<ReturnType<typeof setup>>;
 /** The sends of the fixture's queue on the attempt-append queue. */
 export function appendSends(f: Fixture): Sent[] {
   return f.sent.filter((item) => item.queue === ATTEMPT_QUEUE);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Deterministic races: a users row held from another connection, a change made behind W11's back.
+
+export interface HeldUsersRow {
+  /**
+   * Runs `during` on the holding transaction (the row still locked), then commits it: the
+   * waiting W11 goes on and sees what `during` wrote.
+   */
+  release(during?: (trx: Transaction<DB>) => Promise<void>): Promise<void>;
+}
+
+/** Locks the member's users row (FOR UPDATE) on a transaction of `db` and keeps it locked. */
+export async function lockUsersRow(
+  db: Kysely<DB>,
+  appId: string,
+  userId: string,
+): Promise<HeldUsersRow> {
+  type During = ((trx: Transaction<DB>) => Promise<void>) | undefined;
+  let openGate!: (during: During) => void;
+  const gate = new Promise<During>((resolve) => {
+    openGate = resolve;
+  });
+  let locked!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    locked = resolve;
+  });
+  const done = db.transaction().execute(async (trx) => {
+    const rows = await sql`SELECT id FROM app.users
+      WHERE app_id = ${appId} AND id = ${userId} FOR UPDATE`.execute(trx);
+    expect(rows.rows, `users ${userId}`).toHaveLength(1);
+    locked();
+    const during = await gate;
+    if (during !== undefined) await during(trx);
+  });
+  await Promise.race([ready, done]);
+  return {
+    async release(during) {
+      openGate(during);
+      await done;
+    },
+  };
+}
+
+/**
+ * Another transaction rejects the APPROVED withdrawal (status REJECTED with a reason code,
+ * row_version + 1, updated_at `at`); exactly one row must change.
+ */
+export async function rejectWithdrawal(
+  trx: Transaction<DB>,
+  appId: string,
+  id: string,
+  at: Date,
+): Promise<void> {
+  const result = await sql`UPDATE app.withdrawals
+    SET status = 'REJECTED', reject_reason_code = 'OTHER', row_version = row_version + 1,
+      updated_at = ${at}
+    WHERE app_id = ${appId} AND id = ${id} AND status = 'APPROVED'`.execute(trx);
+  expect(result.numAffectedRows, `withdrawal ${id} rejected behind W11`).toBe(1n);
+}
+
+export type Outcome<T> =
+  { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: unknown };
+
+export interface Watched<T> {
+  /** Never rejects. */
+  readonly outcome: Promise<Outcome<T>>;
+  readonly settled: boolean;
+}
+
+/** A call whose end can be looked at while it runs. */
+export function watch<T>(run: Promise<T>): Watched<T> {
+  const state = { settled: false };
+  const outcome = run
+    .then(
+      (value): Outcome<T> => ({ ok: true, value }),
+      (error: unknown): Outcome<T> => ({ ok: false, error }),
+    )
+    .finally(() => {
+      state.settled = true;
+    });
+  return {
+    outcome,
+    get settled() {
+      return state.settled;
+    },
+  };
+}
+
+/**
+ * True once a backend of the test database waits on a lock; false when `call` ended first or
+ * after the timeout (the caller asserts).
+ */
+export async function lockWaited(
+  db: Kysely<DB>,
+  call: { readonly settled: boolean },
+  timeoutMs = 10_000,
+): Promise<boolean> {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    const result = await sql<{ n: string }>`
+      SELECT count(*)::text AS n FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock'`.execute(db);
+    if (Number(result.rows[0]?.n ?? '0') >= 1) return true;
+    if (call.settled) return false;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return false;
+}
+
+/** A plugin whose handle fails every INSERT into app.<table> (a synthetic database failure). */
+export function failingInserts(table: string): KyselyPlugin {
+  const compiler = new PostgresQueryCompiler();
+  const pattern = new RegExp(`^\\s*insert\\s+into\\s+(?:"?app"?\\s*\\.\\s*)?"?${table}\\b`, 'i');
+  return {
+    transformQuery({ node, queryId }) {
+      if (pattern.test(compiler.compileQuery(node, queryId).sql)) {
+        throw new Error(`synthetic failure: insert into ${table}`);
+      }
+      return node;
+    },
+    async transformResult({ result }) {
+      return result;
+    },
+  };
 }
 
 /** `run` rejects with W11's conflict: 20902, data.resource=withdrawal. */

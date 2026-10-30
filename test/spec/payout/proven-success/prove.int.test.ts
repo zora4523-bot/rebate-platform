@@ -4,7 +4,9 @@
 // operator recorded as the executor), BR-WDR-09 (WITHDRAW:SUCCESS:CASH_ALIPAY `wd:{id}:PAID`, one
 // voucher, zero lines dropped, against frozen), BR-WDR-07 (lock order users → balances), task
 // §9.2 (operator admin:<id>; the attempt-append job queued on the same transaction;
-// wallet.withdrawal_changed) and the frozen invariant before and after.
+// wallet.withdrawal_changed) and the frozen invariant before and after. The guard counts only
+// kind=transfer (query rows after the failed transfer do not stop W11); a withdrawal changed by
+// another transaction while W11 waits on the users row → 20902 resource=withdrawal (CAS).
 // W11's port runs on a real PostgreSQL (kit.ts); the job queue records its sends.
 // Top-level it() only (规划/11 §4.3).
 import { createTestDatabase } from '@couli/db/testing';
@@ -12,7 +14,6 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
   ATTEMPT_QUEUE,
   BOOKED_AT_MS,
-  CHANNEL_ORDER,
   NOW,
   PAYEE_NAME,
   SWITCH,
@@ -21,13 +22,18 @@ import {
   attemptRows,
   balanceOf,
   changes,
+  channelOrderOf,
   close,
   entries,
   frozenMismatches,
+  lockUsersRow,
+  lockWaited,
   open,
   paidEntries,
+  rejectWithdrawal,
   setup,
   voucherOf,
+  watch,
   withdrawalRow,
   withdrawalVouchers,
   type Harness,
@@ -56,13 +62,13 @@ it(
       kind: 'proven',
       status: 'PAID_API',
       paidAt: new Date(BOOKED_AT_MS),
-      channelOrderId: CHANNEL_ORDER,
+      channelOrderId: channelOrderOf(w),
     });
     expect(await withdrawalRow(h.observer, f.appId, w.id)).toEqual({
       ...before,
       status: 'PAID_API',
       paid_at: new Date(BOOKED_AT_MS),
-      channel_order_id: CHANNEL_ORDER,
+      channel_order_id: channelOrderOf(w),
       hold_reason: null,
       hold_at: null,
       executor_id: f.operatorId,
@@ -195,6 +201,104 @@ it(
 
     expect(await f.snapshot()).toEqual(after);
     expect(f.sent).toHaveLength(sendCount);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-07e#36] CAS（双连接、确定性）：W11 在会员 users 行锁上等待时，持锁事务把该单 APPROVED → REJECTED（row_version + 1）后提交；W11 放行后抛 20902 resource=withdrawal——不记 wd:{id}:PAID、不发钱包事件、不入队 attempt-append，单保持持锁事务写下的样子，尝试记录与余额不变',
+  async () => {
+    const f = await setup(h);
+    const port = f.port();
+    const w = await f.seed();
+    const row = await withdrawalRow(h.observer, f.appId, w.id);
+    const before = await f.snapshot();
+
+    const lock = await lockUsersRow(h.observer, f.appId, w.userId);
+    const call = watch(f.prove(f.input(w), port));
+    try {
+      expect(await lockWaited(h.observer, call), 'W11 应在 users 行锁上等待').toBe(true);
+    } finally {
+      await lock.release((trx) => rejectWithdrawal(trx, f.appId, w.id, f.clock.now()));
+    }
+    const outcome = await call.outcome;
+
+    expect(outcome.ok, 'W11 must throw the withdrawal conflict').toBe(false);
+    expect(outcome.ok ? null : outcome.error).toMatchObject({
+      code: 20902,
+      data: { resource: 'withdrawal' },
+    });
+    expect(await withdrawalRow(h.observer, f.appId, w.id)).toEqual({
+      ...row,
+      status: 'REJECTED',
+      reject_reason_code: 'OTHER',
+      row_version: row.row_version + 1,
+      updated_at: new Date(NOW),
+    });
+    const after = await f.snapshot();
+    expect({ ...after, withdrawals: [] }).toEqual({ ...before, withdrawals: [] });
+    expect(after.vouchers).not.toContain(`wd:${w.id}:PAID`);
+    expect(await changes(h.observer, f.appId)).toEqual([]);
+    expect(appendSends(f)).toEqual([]);
+    expect(f.sent).toEqual([]);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-07e#38] 转账失败之后还有查询记录（query unknown、query fail）：守卫只数 kind=transfer，照常 PAID_API、记 wd:{id}:PAID 一张、入队 attempt-append；既有的转账与查询记录原样不动',
+  async () => {
+    const f = await setup(h);
+    const port = f.port();
+    const seeds = [
+      await f.seed({
+        attempts: [
+          ['transfer', 'fail'],
+          ['query', 'unknown'],
+        ],
+      }),
+      await f.seed({
+        net: 1000n,
+        fee: 30n,
+        tax: 20n,
+        attempts: [
+          ['transfer', 'fail'],
+          ['query', 'fail'],
+        ],
+      }),
+    ];
+    expect(await frozenMismatches(h.observer, f.appId)).toEqual([]);
+
+    for (const w of seeds) {
+      const attemptsBefore = await attemptRows(h.observer, f.appId, w.id);
+      expect(attemptsBefore.map((attempt) => attempt.kind).sort()).toEqual(['query', 'transfer']);
+
+      expect(await f.prove(f.input(w), port)).toEqual({
+        kind: 'proven',
+        status: 'PAID_API',
+        paidAt: new Date(BOOKED_AT_MS),
+        channelOrderId: channelOrderOf(w),
+      });
+
+      expect(await withdrawalRow(h.observer, f.appId, w.id)).toMatchObject({
+        status: 'PAID_API',
+        paid_at: new Date(BOOKED_AT_MS),
+        channel_order_id: channelOrderOf(w),
+        hold_reason: null,
+        hold_at: null,
+        executor_id: f.operatorId,
+      });
+      expect(await entries(h.observer, f.appId, `wd:${w.id}:PAID`)).toEqual(paidEntries(w));
+      expect(await attemptRows(h.observer, f.appId, w.id)).toEqual(attemptsBefore);
+    }
+
+    expect((await withdrawalVouchers(h.observer, f.appId)).sort()).toEqual(
+      seeds.flatMap((w) => [`wd:${w.id}:FREEZE`, `wd:${w.id}:PAID`]).sort(),
+    );
+    expect(appendSends(f).map((item) => item.payload['withdrawal_id'])).toEqual(
+      seeds.map((w) => w.id),
+    );
+    expect(await frozenMismatches(h.observer, f.appId)).toEqual([]);
   },
   TIMEOUT,
 );

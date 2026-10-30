@@ -10,23 +10,26 @@
 // recon_diff_write_off (statuses before / after, withdrawal_id, released_hold_count, no personal
 // data); wallet.withdrawal_changed; the attempt-append job queued on the same transaction
 // (D10-428). The response is the detail as GET returns it, the withdrawal's four fields and
-// released_hold_count. The frozen invariant holds before and after.
+// released_hold_count. The frozen invariant holds before and after. The W11 guard counts only
+// kind=transfer: query rows after the failed transfer do not stop the write-off and stay as they
+// were.
 // Requests go through the real admin entry (kit.ts). Top-level it() only (规划/11 §4.3).
 import { randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
 import {
   BOOKED_AT_MS,
   BODY,
-  CHANNEL_ORDER,
   DETAIL_KEYS,
   PAYEE_NAME,
   WRITE_OFF_ACTION,
   allHolds,
   answer,
   attemptJobs,
+  attemptRows,
   audits,
   balanceOf,
   changes,
+  channelOrderOf,
   detailView,
   entries,
   expectWrittenOff,
@@ -77,7 +80,7 @@ it('[AC-B2-07e#17] 核销（payout.execute + totp 二次验证）：提现单 AP
       ...before,
       status: 'PAID_API',
       paid_at: new Date(BOOKED_AT_MS),
-      channel_order_id: CHANNEL_ORDER,
+      channel_order_id: channelOrderOf(c.w),
       hold_reason: null,
       hold_at: null,
       executor_id: h.executor.id,
@@ -180,7 +183,7 @@ it('[AC-B2-07e#19] 账单行以 bill_row 形式保存（无入账时间）→ pa
           ...returnedResolution(w, null),
           bill_row: {
             recon_channel_id: randomUUID(),
-            channel_order_id: CHANNEL_ORDER,
+            channel_order_id: channelOrderOf(w),
             channel_status: 'SUCCESS',
             channel_amount_fen: w.net.toString(),
           },
@@ -203,7 +206,7 @@ it('[AC-B2-07e#19] 账单行以 bill_row 形式保存（无入账时间）→ pa
     expect(await withdrawalRow(f.db, f.appId, c.w.id)).toMatchObject({
       status: 'PAID_API',
       paid_at: f.clock.now(),
-      channel_order_id: CHANNEL_ORDER,
+      channel_order_id: channelOrderOf(c.w),
       hold_reason: null,
       hold_at: null,
       executor_id: root.id,
@@ -253,5 +256,60 @@ it('[AC-B2-07e#21] 核销后 GET 详情与应答里的 recon_diff 一致；只�
     const data = await writtenOff(await h.writeOff(c.diff.id, BODY));
     const detail = await answer(await h.detail(c.diff.id), 0);
     expect(normalize(detail.data)).toEqual(data.recon_diff);
+  });
+});
+
+it('[AC-B2-07e#39] 转账失败之后还有查询记录（query unknown、query fail）：守卫只数 kind=transfer，照常核销——提现单 PAID_API、wd:{id}:PAID 一张（自 frozen 出）、差错单 written_off、解冻、attempt-append 任务一条；既有的转账与查询记录一字不改', async () => {
+  const f = fixture(s);
+  const cases = [
+    await seedCase(f, {
+      withdrawal: {
+        attempts: [
+          ['transfer', 'fail'],
+          ['query', 'unknown'],
+        ],
+      },
+    }),
+    await seedCase(f, {
+      withdrawal: {
+        net: 1000n,
+        fee: 30n,
+        tax: 20n,
+        attempts: [
+          ['transfer', 'fail'],
+          ['query', 'fail'],
+        ],
+      },
+    }),
+  ];
+  const attemptsBefore = await Promise.all(cases.map((c) => attemptRows(f.db, f.appId, c.w.id)));
+  expect(await frozenMismatches(f.db, f.appId)).toEqual([]);
+  await withWriteOffAdmin(f, async (h) => {
+    for (const [i, c] of cases.entries()) {
+      const data = await writtenOff(await h.writeOff(c.diff.id, BODY));
+      expect(data.withdrawal).toEqual(paidView(c.w, BOOKED_AT_MS));
+      expect(data.released_hold_count).toBe(1);
+
+      expect(await withdrawalRow(f.db, f.appId, c.w.id)).toMatchObject({
+        status: 'PAID_API',
+        paid_at: new Date(BOOKED_AT_MS),
+        channel_order_id: channelOrderOf(c.w),
+        hold_reason: null,
+        hold_at: null,
+        executor_id: h.executor.id,
+      });
+      expect(
+        (await withdrawalVouchers(f.db, f.appId)).filter((k) => k === `wd:${c.w.id}:PAID`),
+      ).toHaveLength(1);
+      expect(await entries(f.db, f.appId, `wd:${c.w.id}:PAID`)).toEqual(paidEntries(c.w));
+      await expectWrittenOff(f, c.diff, {
+        adminId: h.executor.id,
+        withdrawalId: c.w.id,
+        paidAtMs: BOOKED_AT_MS,
+      });
+      expect(await attemptRows(f.db, f.appId, c.w.id)).toEqual(attemptsBefore[i]);
+      expect(await attemptJobs(f, c.w.id)).toHaveLength(1);
+    }
+    expect(await frozenMismatches(f.db, f.appId)).toEqual([]);
   });
 });

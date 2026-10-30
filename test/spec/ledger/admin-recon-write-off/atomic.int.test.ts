@@ -6,7 +6,9 @@
 // (D10-428: the attempt-append job commits with the write-off or not at all), no event, the
 // difference and holds as they were and no idempotency record; BR-WDR-07 lock order (the users
 // row is locked: a write-off waits for it); two write-offs of one difference at once → exactly one
-// settles, the other 20902 resource=recon_diff; one voucher. Requests go through the real admin
+// settles, the other 20902 resource=recon_diff; one voucher. A withdrawal rejected by another
+// transaction while the write-off waits on the users row → 20902 resource=withdrawal, nothing
+// written (CAS, BR-WDR-07 / payout AGENTS.md 硬规则 1). Requests go through the real admin
 // entry (kit.ts). Top-level it() only (规划/11 §4.3).
 import { expect, it } from 'vitest';
 import {
@@ -19,12 +21,15 @@ import {
   audits,
   changes,
   diffConflict,
+  diffNow,
   everything,
   fixture,
   holdNow,
   holdRow,
   idempotencyRows,
+  lockUsersRow,
   newKey,
+  rejectWithdrawal,
   seedCase,
   seedHold,
   sourceOf,
@@ -32,6 +37,7 @@ import {
   track,
   waiting,
   withWriteOffAdmin,
+  withdrawalConflict,
   withdrawalRow,
   withdrawalVouchers,
   writeOffPath,
@@ -170,5 +176,44 @@ it('[AC-B2-07e#35] 锁序 BR-WDR-07：会员 users 行被别的事务锁着时�
       (await changes(f.db, f.appId)).filter((data) => data['withdrawal_id'] === twin.w.id),
     ).toHaveLength(1);
     expect(await audits(f, WRITE_OFF_ACTION)).toHaveLength(2);
+  });
+});
+
+it('[AC-B2-07e#37] CAS（双连接、确定性）：核销在会员 users 行锁上等待时，持锁事务把提现单 APPROVED → REJECTED（row_version + 1）后提交 → 20902 data.resource=withdrawal；没有 wd:{id}:PAID、没有钱包事件、没有 attempt-append 任务、没有审计，差错单仍 open、冻结不动，不存为幂等结果', async () => {
+  const f = fixture(s);
+  const c = await seedCase(f);
+  await withWriteOffAdmin(f, async (h) => {
+    const row = await withdrawalRow(f.db, f.appId, c.w.id);
+    const before = await everything(f);
+    const key = newKey();
+
+    const lock = await lockUsersRow(s.holder(), f.appId, c.userId);
+    const pending = track(h.writeOff(c.diff.id, BODY, { key }));
+    try {
+      expect(await waiting(f, 1, [pending]), '核销应在 users 行锁上等待').toBe(true);
+    } finally {
+      await lock.release((trx) => rejectWithdrawal(trx, f.appId, c.w.id, f.clock.now()));
+    }
+    await withdrawalConflict(await pending.promise);
+
+    expect(await withdrawalRow(f.db, f.appId, c.w.id)).toEqual({
+      ...row,
+      status: 'REJECTED',
+      reject_reason_code: 'OTHER',
+      row_version: row.row_version + 1,
+      updated_at: f.clock.now(),
+    });
+    const after = await everything(f);
+    expect({ ...after, withdrawals: [] }).toEqual({ ...before, withdrawals: [] });
+    expect(
+      (await withdrawalVouchers(f.db, f.appId)).filter((k) => k === `wd:${c.w.id}:PAID`),
+    ).toEqual([]);
+    expect(await changes(f.db, f.appId)).toEqual([]);
+    expect(await attemptJobs(f, c.w.id)).toEqual([]);
+    expect(await audits(f, WRITE_OFF_ACTION)).toEqual([]);
+    expect(await diffNow(f, c.diff.id)).toEqual(c.diff);
+    expect(c.diff.status).toBe('open');
+    expect(await holdNow(f, c.hold!)).toEqual(c.hold);
+    expect((await idempotencyRows(f)).filter((r) => r.key === key)).toEqual([]);
   });
 });

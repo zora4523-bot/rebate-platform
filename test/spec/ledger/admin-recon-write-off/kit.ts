@@ -48,8 +48,8 @@ import {
 import { createValidatorCompiler } from '../../../../apps/api/src/modules/platform/validation/index.ts';
 import {
   BILL_DATE,
-  CHANNEL_ORDER,
   billLineJson,
+  channelOrderOf,
   newMember,
   seedReturned,
   setConfig,
@@ -71,15 +71,18 @@ export {
   BILL_DATE,
   BOOKED_AT,
   BOOKED_AT_MS,
-  CHANNEL_ORDER,
   PAYEE_NAME,
   SWITCH,
+  attemptRows,
   balanceOf,
   billLineJson,
   changes,
+  channelOrderOf,
   entries,
   frozenMismatches,
+  lockUsersRow,
   paidEntries,
+  rejectWithdrawal,
   seedAttempt,
   voucherOf,
   withdrawalRow,
@@ -824,9 +827,9 @@ export async function expectWrittenOff(
 
 /** The withdrawal part of the response after W11 (paid_at as epoch milliseconds). */
 export function paidView(
-  w: Pick<Seeded, 'id'>,
+  w: Pick<Seeded, 'id' | 'outBizNo'>,
   paidAtMs: number,
-  channelOrderId: string | null = CHANNEL_ORDER,
+  channelOrderId: string | null = channelOrderOf(w),
 ): Record<string, unknown> {
   return {
     withdrawal_id: w.id,
