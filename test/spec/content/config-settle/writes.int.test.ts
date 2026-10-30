@@ -205,7 +205,8 @@ it('[AC-F1-02zj#13] GET 配置列表包含全部 16 项，enum 选项按契约�
   // withdraw.auto_payout.* keys in registration order, and B2-11dz (D10-392 / D10-394) then the
   // four payout.auto_enable_check.* keys in registration order, and B1-28g (D10-419) then
   // rank.cache_ttl_seconds, and B1-05l (D10-419 (a)) then search.hot_words and
-  // search.keyword_routes.
+  // search.keyword_routes, and B1-15zd (D10-454) then the seven retention.* keys in registration
+  // order.
   const keys = items.map((item) => item.key);
   const tail = [
     ...inviteNow().map((entry) => entry.key),
@@ -247,6 +248,13 @@ it('[AC-F1-02zj#13] GET 配置列表包含全部 16 项，enum 选项按契约�
     'rank.cache_ttl_seconds',
     'search.hot_words',
     'search.keyword_routes',
+    'retention.purge.enabled',
+    'retention.login_logs_days',
+    'retention.device_registrations_days',
+    'retention.sms_send_attempts_days',
+    'retention.inbox_messages_days',
+    'retention.notify_logs_days',
+    'retention.union_raw_payloads_days',
   ];
   const settleEnd = keys.length - tail.length;
   const settleStart = settleEnd - 16;

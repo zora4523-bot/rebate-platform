@@ -281,6 +281,18 @@ export const SEARCH: readonly Expected[] = [
   row('search.hot_words', 'object', 'config.business'),
   row('search.keyword_routes', 'object', 'config.business'),
 ];
+// B1-15zd (D10-454, BR-ID-30): the retention purge master switch (an ordinary item, not a 04
+// §10.2 kill switch) and each table's retention in whole days, registered right after SEARCH in
+// this order: editable config.risk, options null. Not part of expectedNow() either.
+export const RETENTION: readonly Expected[] = [
+  row('retention.purge.enabled', 'boolean', 'config.risk'),
+  row('retention.login_logs_days', 'number', 'config.risk'),
+  row('retention.device_registrations_days', 'number', 'config.risk'),
+  row('retention.sms_send_attempts_days', 'number', 'config.risk'),
+  row('retention.inbox_messages_days', 'number', 'config.risk'),
+  row('retention.notify_logs_days', 'number', 'config.risk'),
+  row('retention.union_raw_payloads_days', 'number', 'config.risk'),
+];
 export const expectedOf = (key: string): Expected => {
   const found = [
     ...expectedNow(),
@@ -290,6 +302,7 @@ export const expectedOf = (key: string): Expected => {
     ...AUTO_ENABLE_CHECK,
     ...RANK,
     ...SEARCH,
+    ...RETENTION,
   ].find((entry) => entry.key === key);
   expect(found, key).toBeDefined();
   return found!;

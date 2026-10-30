@@ -20,7 +20,9 @@ const ELIGIBILITY = { key: `${PREFIX}eligibility_days`, value: 30 };
 // unset by default and has no seed row. B1-28g (D10-419): the rank.cache_ttl_seconds row follows
 // payout.auto_enable_check.* in registration order, under the same checks. B1-05l (D10-419 (a)):
 // the search.hot_words and search.keyword_routes rows follow it in registration order, under the
-// same checks, each seeded as an empty list (no invented hot words or routes).
+// same checks, each seeded as an empty list (no invented hot words or routes). B1-15zd (D10-454):
+// the seven retention.* rows follow search.* in registration order, under the same checks, with
+// the master switch on and the BR-ID-30 days of 08.
 const PAYOUT_KEYS = [
   'payout.single_cap_fen',
   'payout.daily_cap_fen',
@@ -65,6 +67,16 @@ const AUTO_ENABLE_CHECK_SEEDED_KEYS = [
 ];
 const RANK_KEYS = ['rank.cache_ttl_seconds'];
 const SEARCH_KEYS = ['search.hot_words', 'search.keyword_routes'];
+const RETENTION_SEEDS = [
+  { key: 'retention.purge.enabled', value: true },
+  { key: 'retention.login_logs_days', value: 180 },
+  { key: 'retention.device_registrations_days', value: 180 },
+  { key: 'retention.sms_send_attempts_days', value: 190 },
+  { key: 'retention.inbox_messages_days', value: 180 },
+  { key: 'retention.notify_logs_days', value: 190 },
+  { key: 'retention.union_raw_payloads_days', value: 180 },
+];
+const RETENTION_KEYS = RETENTION_SEEDS.map((row) => row.key);
 
 it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；重跑不覆盖', () => {
   const sql = readFileSync(
@@ -93,6 +105,7 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
     ...AUTO_ENABLE_CHECK_SEEDED_KEYS,
     ...RANK_KEYS,
     ...SEARCH_KEYS,
+    ...RETENTION_KEYS,
   ]);
   for (const key of SEARCH_KEYS) {
     expect(
@@ -100,6 +113,7 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
       key,
     ).toStrictEqual([{ key, value: [] }]);
   }
+  expect(rows.filter((row) => RETENTION_KEYS.includes(row.key))).toStrictEqual(RETENTION_SEEDS);
   for (const row of CONFIGS) {
     const spec = configItemSpecOf(row.key);
     expect(spec, row.key).not.toBeNull();

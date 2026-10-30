@@ -33,7 +33,8 @@ it.each(CONFIGS)('[AC-F1-02zn#1] $key：类型、权限、可编辑性与整数�
 // order, then B2-11y (D10-373) the seventeen withdraw.auto_payout.* keys in this order, then
 // B2-11dz (D10-392 / D10-394) the four payout.auto_enable_check.* keys in this order, then
 // B1-28g (D10-419) rank.cache_ttl_seconds, then B1-05l (D10-419 (a)) search.hot_words and
-// search.keyword_routes in this order, and nothing else.
+// search.keyword_routes in this order, then B1-15zd (D10-454) the seven retention.* keys in this
+// order, and nothing else.
 it('[AC-F1-02zn#2] 五项按指定顺序追加在 SETTLE 之后', () => {
   const keys = configRegistry().map((entry) => entry.key);
   const i = keys.indexOf('settle.statement.grace_days');
@@ -82,6 +83,13 @@ it('[AC-F1-02zn#2] 五项按指定顺序追加在 SETTLE 之后', () => {
     'rank.cache_ttl_seconds',
     'search.hot_words',
     'search.keyword_routes',
+    'retention.purge.enabled',
+    'retention.login_logs_days',
+    'retention.device_registrations_days',
+    'retention.sms_send_attempts_days',
+    'retention.inbox_messages_days',
+    'retention.notify_logs_days',
+    'retention.union_raw_payloads_days',
   ]);
 });
 

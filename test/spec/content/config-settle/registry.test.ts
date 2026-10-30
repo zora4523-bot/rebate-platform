@@ -31,7 +31,8 @@ it('[AC-F1-02zj#2] 16 项按裁定顺序追加；原 29 项及其无 range 行�
   // withdraw.auto_payout.* keys, in this order; B2-11dz (D10-392 / D10-394): then the four
   // payout.auto_enable_check.* keys, in this order; B1-28g (D10-419): then
   // rank.cache_ttl_seconds; B1-05l (D10-419 (a)): then search.hot_words and
-  // search.keyword_routes, in this order; nothing else may follow.
+  // search.keyword_routes, in this order; B1-15zd (D10-454): then the seven retention.* keys, in
+  // this order; nothing else may follow.
   presentOf(INVITE_CFG, 'growth.invite_reward.*');
   const invite = inviteNow();
   expect(registry.map((entry) => entry.key)).toStrictEqual([
@@ -76,6 +77,13 @@ it('[AC-F1-02zj#2] 16 项按裁定顺序追加；原 29 项及其无 range 行�
     'rank.cache_ttl_seconds',
     'search.hot_words',
     'search.keyword_routes',
+    'retention.purge.enabled',
+    'retention.login_logs_days',
+    'retention.device_registrations_days',
+    'retention.sms_send_attempts_days',
+    'retention.inbox_messages_days',
+    'retention.notify_logs_days',
+    'retention.union_raw_payloads_days',
   ]);
   expect(registry.slice(0, 29)).toStrictEqual(
     EXPECTED.map((entry) => ({ ...entry, options: null })),
