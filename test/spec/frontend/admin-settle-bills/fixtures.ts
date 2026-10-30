@@ -139,6 +139,7 @@ function batch(fields: BatchFields): Batch {
     started_at: null,
     finished_at: null,
     paused_by_switch_at: null,
+    row_version: 0,
     in_current_round: true,
     item_counts: {
       order: { credited: 0, skipped: 0, pending: fields.order_count },
