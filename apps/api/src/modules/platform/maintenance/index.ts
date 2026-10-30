@@ -373,11 +373,12 @@
 //    Module — only when `dayPartitions` is true, inside the C.4 gate, right after section J, with
 //    the same single `now`:
 //    - Configuration is read once per run, never cached, in its own short transaction with the
-//      5 s lock timeout of C.3, directly from app.config_items (app_id 'couli'): couli_maint has
-//      SELECT on it (0102), because createWorkerMaintenance takes no reader and platform may not
-//      depend on the content module. A failing read skips the whole cleanup (the switch below is
-//      unknown, so nothing may be deleted): one `retention_purge_failed` { table: 'config_items',
-//      sqlstate }, failed += 1, and the run goes on with C.5.
+//      5 s lock timeout of C.3, through `app.read_retention_settings('couli')`: couli_maint has
+//      EXECUTE on that function (0102) and no privilege on app.config_items itself, and
+//      createWorkerMaintenance takes no reader while platform may not depend on the content module.
+//      A failing read skips the whole cleanup (the switch below is unknown, so nothing may be
+//      deleted): one `retention_purge_failed` { table: 'config_items', sqlstate }, failed += 1, and
+//      the run goes on with C.5.
 //    - retention.purge.enabled exactly false: nothing below runs. Any other value, or no row: on.
 //    - retention.<table>_days: an integer at or above the table's BR-ID-30 value is used; a missing
 //      or invalid value falls back to that BR-ID-30 value, without a failure. A value above the
@@ -651,15 +652,10 @@ export function createPartitionMaintenance(
   async function purgeExpiredRows(now: Date): Promise<number> {
     let settings: ReadonlyMap<string, unknown>;
     try {
-      const keys = [
-        RETENTION_ENABLED_KEY,
-        ...RETENTION_TABLES.map(({ table }) => `retention.${table}_days`),
-      ];
       const result = await db.transaction().execute(async (trx) => {
         await sql`SELECT set_config('lock_timeout', '5s', true)`.execute(trx);
         return sql<{ key: string; value: unknown }>`
-          SELECT key, value FROM app.config_items
-          WHERE app_id = ${RETENTION_APP_ID} AND key = ANY (${keys}::text[])
+          SELECT key, value FROM app.read_retention_settings(${RETENTION_APP_ID}::text)
         `.execute(trx);
       });
       settings = new Map(result.rows.map((row) => [row.key, row.value]));

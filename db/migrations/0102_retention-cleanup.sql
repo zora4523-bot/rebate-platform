@@ -26,11 +26,15 @@
 -- Single-column created_at indexes keep every batch bounded instead of scanning the table;
 -- deleted_identities_expire_at_idx already exists and is not duplicated.
 --
--- Grants: couli_maint had no way to read configuration. It gets SELECT on app.config_items (same as
--- couli_payout and couli_readonly) and nothing else: the retention keys live there, and the
--- maintenance worker reads them each run. It stays unable to write them.
+-- Reading configuration: the maintenance worker needs the retention.* keys of app.config_items each
+-- run, but couli_maint holds EXECUTE on maintenance functions and no table privilege at all
+-- (db/bootstrap/roles.sql; the frozen test [AC-F1-02a#12] pins this for config_items). So there is
+-- no table grant: app.read_retention_settings (SECURITY DEFINER, owner couli_migrator, EXECUTE for
+-- couli_maint only) returns the rows of one app whose key starts with the exact text 'retention.',
+-- which is narrower than SELECT on the table. starts_with is used because it takes no wildcards, so
+-- `_` and `%` in a key mean themselves. The role still cannot write configuration.
 --
--- Compatibility: additive (six functions, five indexes, one SELECT grant).
+-- Compatibility: additive (seven functions, five indexes).
 -- Recovery: set retention.purge.enabled to false, then apply a corrective migration; rows deleted by
 -- later maintenance calls can only be recovered from a backup.
 --
@@ -48,7 +52,23 @@ CREATE INDEX inbox_messages_created_at_idx ON app.inbox_messages (created_at);
 CREATE INDEX notify_logs_created_at_idx ON app.notify_logs (created_at);
 CREATE INDEX sms_send_attempts_created_at_idx ON app.sms_send_attempts (created_at);
 
-GRANT SELECT ON TABLE app.config_items TO couli_maint;
+-- configuration -------------------------------------------------------------------------------
+
+CREATE FUNCTION app.read_retention_settings(p_app_id text)
+RETURNS TABLE (key text, value jsonb)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT c.key, c.value
+  FROM app.config_items c
+  WHERE c.app_id = p_app_id AND starts_with(c.key, 'retention.')
+$$;
+
+ALTER FUNCTION app.read_retention_settings(text) OWNER TO couli_migrator;
+REVOKE ALL ON FUNCTION app.read_retention_settings(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.read_retention_settings(text) TO couli_maint;
 
 -- login_logs ----------------------------------------------------------------------------------
 

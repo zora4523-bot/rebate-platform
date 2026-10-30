@@ -69,7 +69,7 @@ async function fixture(instant = '2026-11-20T03:04:05Z', dayPartitions = false) 
         rows = [{ partition: `${String(query.parameters[0])}:${String(query.parameters[1])}` }];
       } else if (/drop_expired_(month|day)_partitions/.test(query.sql)) rows = [{ partitions: [] }];
       else if (query.sql.includes('delete_expired_')) rows = [{ deleted: 0n }];
-      else if (query.sql.includes('config_items')) rows = [];
+      else if (query.sql.includes('read_retention_settings')) rows = [];
       else if (query.sql.includes('partition_default_rows')) rows = [];
       else if (query.sql.includes('set_config')) rows = [];
       else throw new Error('unexpected statement');
@@ -839,6 +839,7 @@ const RETENTION_ORDER = [
   'deleted_identities',
 ];
 const RETENTION_CALL = /delete_expired_(?!link_open_attempts)([a-z_]+)/;
+const SETTINGS = 'read_retention_settings';
 
 function retentionCalls(queries: readonly CompiledQuery[]): CompiledQuery[] {
   return queries.filter((q) => RETENTION_CALL.test(q.sql));
@@ -864,7 +865,7 @@ it.each([
     const report = await f.maintenance.runOnce();
     const batches = retentionCalls(f.queries);
     expect(batches).toHaveLength(calls);
-    expect(f.queries.some((q) => q.sql.includes('config_items'))).toBe(calls > 0);
+    expect(f.queries.some((q) => q.sql.includes(SETTINGS))).toBe(calls > 0);
     expect(f.now).toHaveBeenCalledTimes(1);
     expect(report).toMatchObject({ dropped: [], failed: 0 });
     expect(f.transactions.some((t) => t.queries.some((q) => RETENTION_CALL.test(q.sql)))).toBe(
@@ -886,11 +887,12 @@ it.each([
         ['sms_send_attempts', [now, 190, 1000]],
         ['deleted_identities', [now, 1000]],
       ]);
+      expect(f.queries.find((q) => q.sql.includes(SETTINGS))?.parameters).toEqual(['couli']);
       const order = f.queries.map((q) => q.sql);
       expect(order.findIndex((sql) => sql.includes(OPEN_ATTEMPTS))).toBeLessThan(
-        order.findIndex((sql) => sql.includes('config_items')),
+        order.findIndex((sql) => sql.includes(SETTINGS)),
       );
-      expect(order.findIndex((sql) => sql.includes('config_items'))).toBeLessThan(
+      expect(order.findIndex((sql) => sql.includes(SETTINGS))).toBeLessThan(
         order.findIndex((sql) => RETENTION_CALL.test(sql)),
       );
       expect(order.findLastIndex((sql) => RETENTION_CALL.test(sql))).toBeLessThan(
@@ -931,9 +933,7 @@ it.each([
   async (value, days) => {
     const f = await fixture('2026-10-08T20:00:00.000Z', true);
     f.control.respond = async (query) =>
-      query.sql.includes('config_items')
-        ? [{ key: 'retention.login_logs_days', value }]
-        : undefined;
+      query.sql.includes(SETTINGS) ? [{ key: 'retention.login_logs_days', value }] : undefined;
     const report = await f.maintenance.runOnce();
     expect(daysOf(f.queries, 'login_logs')).toBe(days);
     expect(daysOf(f.queries, 'notify_logs')).toBe(190);
@@ -948,9 +948,7 @@ it('[AC-B1-15zb#11] 配置每轮重读：改长后下一轮按新值', async () 
   expect(daysOf(f.queries, 'notify_logs')).toBe(190);
   f.queries.length = 0;
   f.control.respond = async (query) =>
-    query.sql.includes('config_items')
-      ? [{ key: 'retention.notify_logs_days', value: 365 }]
-      : undefined;
+    query.sql.includes(SETTINGS) ? [{ key: 'retention.notify_logs_days', value: 365 }] : undefined;
   await f.maintenance.runOnce();
   expect(daysOf(f.queries, 'notify_logs')).toBe(365);
 });
@@ -965,7 +963,7 @@ it.each([
   async (value, calls) => {
     const f = await fixture('2026-10-08T20:00:00.000Z', true);
     f.control.respond = async (query) =>
-      query.sql.includes('config_items') ? [{ key: 'retention.purge.enabled', value }] : undefined;
+      query.sql.includes(SETTINGS) ? [{ key: 'retention.purge.enabled', value }] : undefined;
     const report = await f.maintenance.runOnce();
     expect(retentionCalls(f.queries)).toHaveLength(calls);
     expect(f.queries.filter((q) => q.sql.includes(OPEN_ATTEMPTS))).toHaveLength(1);
@@ -978,7 +976,7 @@ it.each([
 it('[AC-B1-15zb#12] 读不到配置时开关未知：本轮一行都不删，只记一次失败，DEFAULT 检查照常', async () => {
   const f = await fixture('2026-10-08T20:00:00.000Z', true);
   f.control.respond = async (query) => {
-    if (query.sql.includes('config_items')) throw { code: '55P03', detail: 'private row data' };
+    if (query.sql.includes(SETTINGS)) throw { code: '55P03', detail: 'private row data' };
     return undefined;
   };
   const report = await f.maintenance.runOnce();

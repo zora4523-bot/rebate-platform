@@ -1022,6 +1022,20 @@ $$;
 
 
 --
+-- Name: read_retention_settings(text); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.read_retention_settings(p_app_id text) RETURNS TABLE(key text, value jsonb)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+  SELECT c.key, c.value
+  FROM app.config_items c
+  WHERE c.app_id = p_app_id AND starts_with(c.key, 'retention.')
+$$;
+
+
+--
 -- Name: reject_agent_card_rewrite(); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -11301,6 +11315,14 @@ REVOKE ALL ON FUNCTION app.payout_accounts_reject_identifier_update() FROM PUBLI
 
 
 --
+-- Name: FUNCTION read_retention_settings(p_app_id text); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.read_retention_settings(p_app_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION app.read_retention_settings(p_app_id text) TO couli_maint;
+
+
+--
 -- Name: FUNCTION reject_agent_card_rewrite(); Type: ACL; Schema: app; Owner: -
 --
 
@@ -13059,7 +13081,6 @@ GRANT SELECT ON TABLE app.config_item_versions TO couli_payout;
 GRANT SELECT,INSERT,UPDATE ON TABLE app.config_items TO couli_app;
 GRANT SELECT ON TABLE app.config_items TO couli_readonly;
 GRANT SELECT ON TABLE app.config_items TO couli_payout;
-GRANT SELECT ON TABLE app.config_items TO couli_maint;
 
 
 --
