@@ -4,10 +4,16 @@ import type { Kysely } from 'kysely';
 import {
   CLOCK,
   DB as DB_TOKEN,
+  EVENT_BUS,
+  FIELD_CRYPTO,
   IDEMPOTENCY,
+  JOB_QUEUE,
   ROOT_LOGGER,
   type Clock,
+  type EventBus,
+  type FieldCrypto,
   type Idempotency,
+  type QueueRuntime,
   type RootLogger,
 } from '../platform/index.ts';
 import type { AdminSettleBillReadDeps } from './application/admin-settle-bills.ts';
@@ -29,7 +35,21 @@ import {
   type RebateDependencies,
   type RebatePort,
 } from './rebate/application/rebate.ts';
+import { createSettleWorkerHandler, createSettleWorkerTimer } from './worker/assemble.ts';
 import type { SettlementWorkerPorts } from './worker/ports.ts';
+
+/** The settle queue's registration and timer on the worker entry (lifecycle hooks). */
+const SETTLE_WORKER = Symbol('SETTLEMENT_SETTLE_WORKER');
+const SETTLE_QUEUE = 'settle';
+
+interface SettleWorkerLifecycle {
+  onApplicationBootstrap(): void;
+  onModuleDestroy(): Promise<void>;
+}
+
+function inertLifecycle(): SettleWorkerLifecycle {
+  return { onApplicationBootstrap: () => undefined, onModuleDestroy: () => Promise.resolve() };
+}
 
 /** Nest injection token for the pre-credit rebate port (orders' rebate.onImported / onUpdated). */
 export const REBATE_PORT = Symbol('REBATE_PORT');
@@ -64,8 +84,62 @@ export class SettlementModule {
    * registered and no timer runs.
    */
   static forWorker(ports: SettlementWorkerPorts): DynamicModule {
-    void ports;
-    throw new Error('NotImplemented: SettlementModule.forWorker');
+    return {
+      module: SettlementModule,
+      providers: [
+        {
+          provide: SETTLE_WORKER,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB_TOKEN, optional: true },
+            { token: JOB_QUEUE, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+            { token: EVENT_BUS, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<DB>,
+            queue?: QueueRuntime,
+            crypto?: FieldCrypto,
+            events?: EventBus,
+          ): SettleWorkerLifecycle => {
+            if (
+              db === undefined ||
+              queue === undefined ||
+              crypto === undefined ||
+              events === undefined
+            ) {
+              logger.info({ queue: SETTLE_QUEUE }, 'settle_worker_disabled');
+              return inertLifecycle();
+            }
+            const workerLogger = logger.child({ module: 'settlement', queue: SETTLE_QUEUE });
+            queue.register(
+              SETTLE_QUEUE,
+              createSettleWorkerHandler(ports, {
+                db,
+                clock,
+                queue,
+                crypto,
+                events,
+                logger: workerLogger,
+              }),
+            );
+            const timer = createSettleWorkerTimer(ports, {
+              db,
+              clock,
+              queue,
+              logger: workerLogger,
+            });
+            return {
+              onApplicationBootstrap: () => timer.start(),
+              onModuleDestroy: () => timer.stop(),
+            };
+          },
+        },
+      ],
+    };
   }
 }
 

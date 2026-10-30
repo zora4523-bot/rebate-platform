@@ -18,8 +18,9 @@
 // (settle_jobs, settle_batches), never from process memory: a restarted worker decides the same.
 // Time only from the injected Clock; days only through @couli/domain.
 import type { DB } from '@couli/db';
+import { accountingDate, chinaDayRange } from '@couli/domain';
 import type { Kysely, Transaction } from 'kysely';
-import type { Clock, JobHandler, JobQueue } from '../../platform/index.ts';
+import type { Clock, JobHandler, JobPayload, JobQueue } from '../../platform/index.ts';
 import type { BatchExecutor } from '../batch/executor/executor.ts';
 import type { BillJob } from '../bill/job.ts';
 
@@ -61,25 +62,59 @@ export interface SettleScheduleLogger {
   error(fields: Record<string, unknown>, message?: string): void;
 }
 
+const QUEUE: SettleQueueName = 'settle';
+const BILL_JOB: SettleJobName = 'bill';
+const EXECUTE_JOB: SettleJobName = 'batch_execute';
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
+}
+
+function nonEmptyText(payload: JobPayload, field: string, job: string): string {
+  const value = payload[field];
+  if (typeof value !== 'string' || value === '') {
+    throw new Error(`settle ${job}: payload field ${field} is not a nonempty string`);
+  }
+  return value;
+}
+
+/** The (app, platform, D) of a bill payload and D's nominal run_at; anything else is refused. */
+function billPayload(payload: JobPayload) {
+  const appId = nonEmptyText(payload, 'app_id', BILL_JOB);
+  const platform = nonEmptyText(payload, 'platform', BILL_JOB);
+  const day = nonEmptyText(payload, 'accounting_date', BILL_JOB);
+  let runAt: Date;
+  try {
+    runAt = settleBillRunAt(day);
+  } catch {
+    throw new Error('settle bill: payload field accounting_date is not a date (YYYY-MM-DD)');
+  }
+  return { appId, platform, accountingDate: day, runAt };
+}
+
+function executePayload(payload: JobPayload) {
+  return {
+    appId: nonEmptyText(payload, 'app_id', EXECUTE_JOB),
+    batchId: nonEmptyText(payload, 'batch_id', EXECUTE_JOB),
+  };
+}
+
 /** One queued or active bill run per (app, platform, D): `bill:<app_id>:<platform>:<D>`. */
 export function settleBillJobKey(appId: string, platform: string, accountingDate: string): string {
-  void appId;
-  void platform;
-  void accountingDate;
-  throw new Error('NotImplemented: settleBillJobKey');
+  return `${BILL_JOB}:${appId}:${platform}:${accountingDate}`;
 }
 
 /** The nominal run_at of D's bill run: D 00:00 +08:00. A malformed or nonexistent D throws. */
 export function settleBillRunAt(accountingDate: string): Date {
-  void accountingDate;
-  throw new Error('NotImplemented: settleBillRunAt');
+  // chinaDayRange refuses a malformed or nonexistent D (RangeError). The Date is built from D's own
+  // midnight string, never from the current time.
+  // eslint-disable-next-line no-restricted-syntax
+  return new Date(chinaDayRange(accountingDate).start);
 }
 
 /** One queued or active execution per batch: `batch_execute:<app_id>:<batch_id>`. */
 export function settleBatchExecuteJobKey(appId: string, batchId: string): string {
-  void appId;
-  void batchId;
-  throw new Error('NotImplemented: settleBatchExecuteJobKey');
+  return `${EXECUTE_JOB}:${appId}:${batchId}`;
 }
 
 /** Sends the `bill` job of (app, platform, D) on `trx` (null: outside a transaction), at once. */
@@ -88,10 +123,20 @@ export function scheduleSettleBill(
   trx: Transaction<DB> | null,
   input: SettleBillJobInput,
 ): Promise<string | null> {
-  void queue;
-  void trx;
-  void input;
-  throw new Error('NotImplemented: scheduleSettleBill');
+  const payload: SettleBillJobPayload = {
+    app_id: input.appId,
+    platform: input.platform,
+    accounting_date: input.accountingDate,
+  };
+  return queue.send(
+    QUEUE,
+    BILL_JOB,
+    { ...payload },
+    {
+      trx,
+      singletonKey: settleBillJobKey(input.appId, input.platform, input.accountingDate),
+    },
+  );
 }
 
 /** Sends the `batch_execute` job of the batch on `trx` (null: outside a transaction), at once. */
@@ -100,10 +145,16 @@ export function scheduleBatchExecute(
   trx: Transaction<DB> | null,
   input: SettleBatchExecuteJobInput,
 ): Promise<string | null> {
-  void queue;
-  void trx;
-  void input;
-  throw new Error('NotImplemented: scheduleBatchExecute');
+  const payload: SettleBatchExecuteJobPayload = { app_id: input.appId, batch_id: input.batchId };
+  return queue.send(
+    QUEUE,
+    EXECUTE_JOB,
+    { ...payload },
+    {
+      trx,
+      singletonKey: settleBatchExecuteJobKey(input.appId, input.batchId),
+    },
+  );
 }
 
 export interface SettleJobHandlerDependencies {
@@ -118,8 +169,38 @@ export interface SettleJobHandlerDependencies {
  * port is called.
  */
 export function createSettleJobHandler(dependencies: SettleJobHandlerDependencies): JobHandler {
-  void dependencies;
-  throw new Error('NotImplemented: createSettleJobHandler');
+  const { db, logger, bill, executor } = dependencies;
+  return async (job) => {
+    if (job.name === BILL_JOB) {
+      const { appId, platform, accountingDate, runAt } = billPayload(job.payload);
+      const result = await bill.run(db, { appId, platform, runAt });
+      logger.info(
+        {
+          job: BILL_JOB,
+          app_id: appId,
+          platform,
+          accounting_date: accountingDate,
+          outcome: result.outcome,
+        },
+        'settle_bill_run',
+      );
+      if (result.outcome === 'deferred') {
+        // The day's asset snapshot is not ready: the delivery fails so the queue / the seed sends it again.
+        throw new Error('settle bill deferred: the asset snapshot of the day is not complete');
+      }
+      return;
+    }
+    if (job.name === EXECUTE_JOB) {
+      const { appId, batchId } = executePayload(job.payload);
+      const result = await executor.run({ appId, batchId });
+      logger.info(
+        { job: EXECUTE_JOB, app_id: appId, batch_id: batchId, outcome: result.outcome },
+        'settle_batch_execute_run',
+      );
+      return;
+    }
+    throw new Error(`settle queue: unknown job name ${JSON.stringify(job.name)}`);
+  };
 }
 
 /**
@@ -153,9 +234,39 @@ export interface SettleBillSeedOptions {
  * platform whose run state is 'absent' gets its `bill` job (outside a transaction). A failure of
  * one does not stop the others; the first failure is rethrown after all of them.
  */
-export function seedSettleBills(options: SettleBillSeedOptions): Promise<void> {
-  void options;
-  throw new Error('NotImplemented: seedSettleBills');
+export async function seedSettleBills(options: SettleBillSeedOptions): Promise<void> {
+  const { db, clock, queue, logger, runs, platforms } = options;
+  const day = accountingDate(clock.now());
+  const apps = await db
+    .withSchema('app')
+    .selectFrom('orders')
+    .select('app_id')
+    .distinct()
+    .orderBy('app_id')
+    .execute();
+  const failures: unknown[] = [];
+  for (const { app_id: appId } of apps) {
+    for (const platform of platforms) {
+      try {
+        const state = await runs.billStateOf(appId, platform, day);
+        if (state !== 'absent') continue;
+        await scheduleSettleBill(queue, null, { appId, platform, accountingDate: day });
+      } catch (error: unknown) {
+        failures.push(error);
+        logger.warn(
+          {
+            job: BILL_JOB,
+            app_id: appId,
+            platform,
+            accounting_date: day,
+            error_name: errorName(error),
+          },
+          'settle_bill_seed_failed',
+        );
+      }
+    }
+  }
+  if (failures.length > 0) throw failures[0];
 }
 
 export interface SettleBatchScanOptions {
@@ -171,7 +282,44 @@ export interface SettleBatchScanOptions {
  * singletonKey absorbs a batch already queued or running. A failed send does not stop the others;
  * the first failure is rethrown after all of them.
  */
-export function scanDueBatches(options: SettleBatchScanOptions): Promise<void> {
-  void options;
-  throw new Error('NotImplemented: scanDueBatches');
+export async function scanDueBatches(options: SettleBatchScanOptions): Promise<void> {
+  const { db, clock, queue, logger } = options;
+  const now = clock.now();
+  const batches = await db
+    .withSchema('app')
+    .selectFrom('settle_batches')
+    .select(['app_id', 'batch_id'])
+    .where((eb) =>
+      eb.or([
+        eb('status', '=', 'EXECUTING'),
+        eb.and([
+          eb('status', '=', 'CONFIRMED'),
+          eb('paused_by_switch_at', 'is', null),
+          eb.or([
+            eb('settle_mode', '=', 'IMMEDIATE'),
+            eb.and([
+              eb('settle_mode', '=', 'SCHEDULED'),
+              eb('scheduled_at', 'is not', null),
+              eb('scheduled_at', '<=', now),
+            ]),
+          ]),
+        ]),
+      ]),
+    )
+    .orderBy('app_id')
+    .orderBy('batch_id')
+    .execute();
+  const failures: unknown[] = [];
+  for (const { app_id: appId, batch_id: batchId } of batches) {
+    try {
+      await scheduleBatchExecute(queue, null, { appId, batchId });
+    } catch (error: unknown) {
+      failures.push(error);
+      logger.warn(
+        { job: EXECUTE_JOB, app_id: appId, batch_id: batchId, error_name: errorName(error) },
+        'settle_batch_scan_send_failed',
+      );
+    }
+  }
+  if (failures.length > 0) throw failures[0];
 }
