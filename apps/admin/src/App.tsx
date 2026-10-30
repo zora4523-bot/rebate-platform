@@ -47,6 +47,7 @@ import { HomeConfigPage } from './pages/home-config/index.ts';
 import { KillSwitchesPage } from './pages/kill-switches/index.ts';
 import { MessagesPage } from './pages/messages/index.ts';
 import { OrderDetailPage, OrdersPage } from './pages/orders/index.ts';
+import { PayOrderDetailPage, PayOrdersPage } from './pages/pay-orders/index.ts';
 import { PlatformIconsPage } from './pages/platform-icons/index.ts';
 import { ReconPage } from './pages/recon/index.ts';
 import { RiskPage } from './pages/risk/index.ts';
@@ -87,6 +88,7 @@ import { claimsTexts } from './texts/claims.ts';
 import { auditLogsTexts } from './texts/audit-logs.ts';
 import { exportsTexts } from './texts/exports.ts';
 import { ordersTexts } from './texts/orders.ts';
+import { payOrdersTexts } from './texts/pay-orders.ts';
 import { settleBillsTexts } from './texts/settle-bills.ts';
 import { shellTexts } from './texts/shell.ts';
 import { unionsTexts } from './texts/unions.ts';
@@ -106,6 +108,19 @@ const CLAIMS_MENU_ID = 'claims';
 const RECON_MENU_ID = 'recon';
 const SETTLE_BILLS_MENU_ID = 'settle-bills';
 const SETTLE_BILL_DETAIL = /^settle-bills\/([^/]+)$/;
+const PAY_ORDERS_MENU_ID = 'pay-orders';
+const PAY_ORDER_DETAIL = /^pay-orders\/([^/]+)$/;
+
+/** The pay_order_id of a pay order detail address (/pay-orders/<pay_order_id>), else undefined. */
+function payOrderIdOf(path: string): string | undefined {
+  const found = PAY_ORDER_DETAIL.exec(path)?.[1];
+  if (found === undefined) return undefined;
+  try {
+    return decodeURIComponent(found);
+  } catch {
+    return found;
+  }
+}
 
 /** The bill month of a bill detail address (/settle-bills/<bill_id>), else undefined. */
 function settleBillIdOf(path: string): string | undefined {
@@ -523,6 +538,8 @@ function ShellFrame({
   const appVersionEdit = editTargetOf(menuId) !== undefined;
   // A bill's detail page (/settle-bills/<bill_id>) belongs to 月结账单 (sidebar, crumbs).
   const settleBillId = settleBillIdOf(menuId);
+  // A pay order's detail page (/pay-orders/<pay_order_id>) belongs to 支付单 (sidebar, crumbs).
+  const payOrderId = payOrderIdOf(menuId);
   const match = findMenuItem(
     groups,
     claimId !== undefined
@@ -535,7 +552,9 @@ function ShellFrame({
             ? APP_VERSIONS_MENU_ID
             : settleBillId !== undefined
               ? SETTLE_BILLS_MENU_ID
-              : menuId,
+              : payOrderId !== undefined
+                ? PAY_ORDERS_MENU_ID
+                : menuId,
   );
   let subpage = match === undefined ? undefined : (auditSubpage ?? subpageOf(location.state));
   if (match !== undefined && claimId !== undefined) subpage = claimsTexts.review.crumb;
@@ -544,6 +563,7 @@ function ShellFrame({
   if (match !== undefined && unionCallback) subpage = unionsTexts.callback.crumb;
   if (match !== undefined && appVersionEdit) subpage = appVersionsTexts.editor.crumb;
   if (match !== undefined && settleBillId !== undefined) subpage = settleBillsTexts.detail.crumb;
+  if (match !== undefined && payOrderId !== undefined) subpage = payOrdersTexts.detail.crumb;
   // A workbench card opened a route whose page is not in the catalogue yet (e.g. /risk/appeals):
   // the placeholder shows under the card's page name instead of falling back home.
   const cardTarget =
@@ -594,6 +614,9 @@ function ShellFrame({
       content = (
         <WithdrawalDetailPage key={withdrawalId} access={access} withdrawalId={withdrawalId} />
       );
+    } else if (match !== undefined && payOrderId !== undefined) {
+      // Direct address or 【详情】 of a row: only this pay order is read, never the list.
+      content = <PayOrderDetailPage key={payOrderId} access={access} payOrderId={payOrderId} />;
     } else if (match !== undefined && auditLogId !== undefined) {
       // Direct address or 【查看】 of a row: only this record is read, never the list.
       content = <AuditLogDetailPage key={auditLogId} id={auditLogId} access={access} />;
@@ -634,6 +657,9 @@ function ShellFrame({
     } else if (match !== undefined && match.item.id === WITHDRAWALS_MENU_ID) {
       // 提现审核: withdraw.review or fund.view reads; payout.* alone shows the menu but not the list.
       content = <WithdrawalsPage access={access} />;
+    } else if (match !== undefined && match.item.id === PAY_ORDERS_MENU_ID) {
+      // 支付单: pay.view reads; pay.refund / pay.resolve alone get the page's notice.
+      content = <PayOrdersPage access={access} />;
     } else if (match !== undefined && match.item.id === UNIONS_MENU_ID) {
       content = <UnionsPage access={access} clock={options.clock} />;
     } else if (match !== undefined && match.item.id === APP_VERSIONS_MENU_ID) {
