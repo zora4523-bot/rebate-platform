@@ -190,6 +190,11 @@ codes:
         - notify_channel_locked
         - notify_preview_vars_mismatch
         - notify_code_ttl_mismatch
+        - not_payer_side_case
+        - writeoff_disabled
+        - withdrawal_not_returned
+        - transfer_attempts_mismatch
+        - amount_mismatch
     sources:
       - BR-ID-05
       - BR-ID-09
@@ -200,6 +205,8 @@ codes:
       - BR-WDR-03
       - BR-WATCH-04
       - BR-ATTR-31
+      - BR-WDR-23
+      - BR-WDR-08
       - BR-TEXT-20
   - code: 20002
     http: 400

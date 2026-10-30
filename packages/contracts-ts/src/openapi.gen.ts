@@ -7575,6 +7575,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/recon-diffs/{recon_diff_id}/write-off": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write off an R2 late-success difference by settling the returned withdrawal as paid (核销, W11)
+         * @description The 【核销】 of design/specs/admin-recon.md §2 for one case only: the channel
+         *     reconciliation (R2, BR-WDR-23 ③) found the Alipay bill showing a transfer as successful
+         *     while the withdrawal had been returned to APPROVED as a payer-side failure (W9,
+         *     hold_reason `payer_side_after_transfer`). The difference carries that bill line; this
+         *     operation settles the original withdrawal as PAID_API on that evidence (BR-WDR-08 W11,
+         *     owner decision 2026-10-03 决-08 A), so the member is paid once, never twice.
+         *     Permission point `payout.execute` (04 §11.2; the reviewer of the withdrawal may do it,
+         *     ADD-05). Step-up: totp tier (BR-ID-34): without a valid totp-tier `X-Step-Up-Token` →
+         *     10003 with `data.tier=totp`.
+         *
+         *     Request: `expected_withdrawal_status`, fixed `APPROVED` (the console confirms what it
+         *     showed); `note`, optional, 1–200 characters after trimming (else 20001 with
+         *     `data.fields=[note]`), recorded under `resolution.note`. The console sends no channel
+         *     result, amount or evidence of its own: the evidence is the bill line the reconciliation
+         *     stored with the difference.
+         *
+         *     Order of checks: `payout.execute` (10403 with `data.reason=admin_permission_denied`) →
+         *     step-up (10003) → body (20001) → an unknown `recon_diff_id`, a difference of another
+         *     app, or one of source R4 is 20001 with `data.fields=[recon_diff_id]` (no 404) → a
+         *     difference already `closed`, `adjusted` or `written_off` is 20902 with
+         *     `data.resource=recon_diff` → the W11 guard, each refusal 20001 with
+         *     `data.fields=[recon_diff_id]` and `data.reason`: `not_payer_side_case` (the difference
+         *     is not an R2 「支付宝成功、内部为付款方侧失败经 W9 退回」 case, for example a duplicate payout
+         *     or a missing withdrawal, which go to adjustment instead); `writeoff_disabled` (the
+         *     switch `payout.proven_success_writeoff.enabled` is off, BR-WDR-17: W11 is not enabled,
+         *     handle it as a difference plus adjustment); `withdrawal_not_returned` (the withdrawal is
+         *     APPROVED but not held as `payer_side_after_transfer`); `transfer_attempts_mismatch` (the
+         *     withdrawal does not have exactly one transfer attempt, or that attempt is not a definite
+         *     failure); `amount_mismatch` (the bill line's amount is not the withdrawal's `net_fen`).
+         *     A withdrawal that is no longer APPROVED (rejected, executed again, or settled meanwhile)
+         *     is 20902 with `data.resource=withdrawal` (BR-WDR-08: the transition is a compare-and-set;
+         *     refresh the detail), nothing changed.
+         *
+         *     Effects, in one transaction: the withdrawal moves APPROVED → PAID_API (W11, event
+         *     CHANNEL_SUCCESS_PROVEN; `paid_at` the bill line's time when it carries one, else the
+         *     server's current time; `channel_order_id` from the bill line; the payer-side hold is
+         *     cleared; the operator is recorded as the executor) and the success voucher
+         *     `wd:{withdrawal_id}:PAID` (WITHDRAW_PAID, WITHDRAW_FEE, TAX_WITHHOLD; BR-WDR-09) is
+         *     posted against the member's frozen balance — the only money movement, and the same one
+         *     W5 would have written. The difference's `status` becomes `written_off`, `closed_at` and
+         *     `updated_at` the server's current time, `handler_id` the caller, and `resolution` keeps
+         *     its keys and adds `w11` (the withdrawal id, `paid_at` and the operator) and the trimmed
+         *     `note` when given. Every withdrawal hold whose source is this difference and that is not
+         *     released yet is released in the same transaction (the difference is handled, as for the
+         *     close; BR-FUND-19); `released_hold_count` as POST .../close. Writes an audit record
+         *     (action recon_diff_write_off, with the withdrawal id, `released_hold_count` and, before
+         *     and after, the statuses of the difference and the withdrawal; no personal data) and
+         *     publishes the withdrawal change to the wallet. The attempt record of W11 (kind `query`,
+         *     result `success`, the bill line as its evidence; BR-WDR-08 W11) is appended by the payout
+         *     process from a task queued in this same transaction (D10-428), so it shows in
+         *     GET /admin/v1/withdrawals/{withdrawal_id} shortly after, not necessarily in the response.
+         *     Nothing else changes: no adjustment, no order restore, no balance recalculation, and
+         *     `payout.queue_paused` stays as it is (BR-WDR-17). A terminal withdrawal is never touched
+         *     (BR-WDR-23).
+         *
+         *     `Idempotency-Key` is required: same key and body → the first result; same key with
+         *     another body → 20901; same key while still running → 40901. The step-up token is a
+         *     header and not part of the body hash, so a replay after a 10003 keeps its key.
+         */
+        post: operations["writeOffAdminReconDiff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/withdrawals": {
         parameters: {
             query?: never;
@@ -16068,6 +16145,47 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["AdminReconDiffClose"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description Body of POST /admin/v1/recon-diffs/{recon_diff_id}/write-off. The console confirms the
+         *     withdrawal status it showed and may leave a note; the evidence is the bill line stored with
+         *     the difference, never sent by the console.
+         */
+        AdminReconDiffWriteOffRequest: {
+            /**
+             * @description Compare-and-set on the withdrawal status; only APPROVED (subset of withdrawal_status), else 20902 with data.resource=withdrawal.
+             * @enum {string}
+             */
+            expected_withdrawal_status: "APPROVED";
+            /** @description Optional operator note, 1–200 characters after trimming (else 20001 with data.fields=[note]); recorded under resolution.note. */
+            note?: string;
+        };
+        /** @description The withdrawal after W11, as GET /admin/v1/withdrawals/{withdrawal_id} shows these fields. */
+        AdminReconDiffWriteOffWithdrawal: {
+            withdrawal_id: components["schemas"]["Id"];
+            status: components["schemas"]["WithdrawalStatus"];
+            /**
+             * Format: date-time
+             * @description The bill line's time when it carries one, else the server's time of the write-off.
+             */
+            paid_at: string;
+            /** @description The channel's order id from the bill line; null when the line has none. */
+            channel_order_id: string | null;
+        };
+        AdminReconDiffWriteOff: {
+            recon_diff: components["schemas"]["AdminReconDiffDetail"];
+            withdrawal: components["schemas"]["AdminReconDiffWriteOffWithdrawal"];
+            /**
+             * Format: int32
+             * @description Withdrawal holds whose source is this difference that this call released (holds released earlier are not counted).
+             */
+            released_hold_count: number;
+        };
+        AdminReconDiffWriteOffResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminReconDiffWriteOff"];
             trace_id: components["schemas"]["TraceId"];
         };
         AdminReconDiffDetailResponse: {
@@ -33997,6 +34115,112 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not closed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    writeOffAdminReconDiff: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The reconciliation difference (recon_diffs.id) as a list row carries it; unknown, of another app or of source R4 → 20001 with data.fields=[recon_diff_id]. */
+                recon_diff_id: components["parameters"]["AdminReconDiffIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_withdrawal_status": "APPROVED",
+                 *       "note": "支付宝账单 2026-10-20 显示该笔已到账，按账单行核销"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminReconDiffWriteOffRequest"];
+            };
+        };
+        responses: {
+            /** @description The difference and the withdrawal after the write-off with the number of holds released, or the first result of the same key. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "recon_diff": {
+                     *           "recon_diff_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e02",
+                     *           "source": "R2",
+                     *           "type": "channel_mismatch",
+                     *           "period": "2026-10-20",
+                     *           "ref_type": "withdrawal",
+                     *           "ref_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7d01",
+                     *           "expected_fen": 0,
+                     *           "actual_fen": 10000,
+                     *           "diff_fen": -10000,
+                     *           "status": "written_off",
+                     *           "created_at": "2026-10-21T01:10:00+08:00",
+                     *           "closed_at": "2026-10-21T10:30:00+08:00",
+                     *           "handler_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *           "updated_at": "2026-10-21T10:30:00+08:00",
+                     *           "resolution": {
+                     *             "case": "payer_side_returned",
+                     *             "bill_date": "2026-10-20",
+                     *             "w11_by_bill_line": true,
+                     *             "w11": {
+                     *               "withdrawal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7d01",
+                     *               "paid_at": "2026-10-20T15:02:11+08:00",
+                     *               "operator": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01"
+                     *             },
+                     *             "note": "支付宝账单 2026-10-20 显示该笔已到账，按账单行核销"
+                     *           }
+                     *         },
+                     *         "withdrawal": {
+                     *           "withdrawal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7d01",
+                     *           "status": "PAID_API",
+                     *           "paid_at": "2026-10-20T15:02:11+08:00",
+                     *           "channel_order_id": "20261020110070001502110012345678"
+                     *         },
+                     *         "released_hold_count": 1
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminReconDiffWriteOffResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not written off (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
