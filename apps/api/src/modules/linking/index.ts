@@ -58,6 +58,7 @@ export type {
   LinkLandingPorts,
   LinkOpenPorts,
   LinkRegistrations,
+  LinkSharePorts,
   LinkingConfigReaderFactory,
 } from './linking.module.ts';
 // Task B1-06w: the open's production wiring (jump-path admission per environment, apps.json,
@@ -110,6 +111,13 @@ export type {
 // Rule tests: test/spec/linking/share-page/**.
 export { SharePageMaterials, SharePageService } from './application/share-page.ts';
 export type { SharePageMaterial } from './application/share-page.ts';
+// Task B1-15w: POST /v1/shares (share link of the sharer, share_materials, copy, share quote) and
+// the share page's stored material provider. Rule tests: test/spec/linking/shares/**.
+export { SharesService, createShares } from './application/shares.ts';
+export type { CreateShareInput, SharesOptions } from './application/shares.ts';
+export { renderShareCopy } from './domain/share-copy.ts';
+export type { ShareCopy, ShareCopyFacts, SharePriceBasisTexts } from './domain/share-copy.ts';
+export { StoredSharePageMaterials } from './infra/share-material-store.ts';
 // Task B1-06g: GET /v1/unions/{platform}/auth-url, the one-time authorization state (BR-ID-17,
 // BR-ID-22, BR-ID-24). Rule tests: test/spec/linking/auth-url/**.
 export { createUnionAuthUrl } from './application/union-auth-url.ts';

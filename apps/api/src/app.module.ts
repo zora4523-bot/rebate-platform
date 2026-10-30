@@ -277,6 +277,7 @@ import {
   type LinkOpenQuoteReads,
   type LinkOpenReadPlan,
   type LinkRegistrations,
+  type LinkSharePorts,
   needsTaobaoReauth,
   blockForDeletion,
 } from './modules/linking/index.ts';
@@ -2006,6 +2007,18 @@ const NO_PARSE_CARDS: CatalogCardEntry = {
 };
 
 /**
+ * B1-15w: the share's ports — identity's realname reader for the verified birth date (BR-INV-19 /
+ * BR-ID-26); the decrypted name is dropped here and the birth date never reaches a log.
+ */
+function sharePorts(db: Kysely<Database>, crypto: FieldCrypto): LinkSharePorts {
+  const realname = createRealnameReader(crypto);
+  return {
+    verifiedBirthDate: async (appId, userId) =>
+      (await realname.verified(db, { app_id: appId, user_id: userId }))?.birth_date ?? null,
+  };
+}
+
+/**
  * B1-06i: the convert's ports — catalog over the database handle, the item_ref service of the
  * open, and parsing's by-URL port (parseUrl over content's configuration reader and the same
  * governed adapters), so linking imports neither catalog's providers nor parsing.
@@ -2141,6 +2154,9 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
             ...(db === undefined
               ? {}
               : { convert: convertPorts(db, clock, logger, union, itemRefs) }),
+            // B1-15w: POST /v1/shares reads the verified birth date (BR-INV-19) through identity's
+            // realname reader; without the field keyring it cannot, and every share fails closed.
+            ...(db === undefined || crypto === undefined ? {} : { shares: sharePorts(db, crypto) }),
           };
         },
       },

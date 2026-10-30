@@ -88,6 +88,9 @@ export type {
   ProductCard,
   UnlinkedCard,
 } from './application/card-assembler.ts';
+// Task B1-15w: the buy_type=share quote of POST /v1/shares (BR-PRICE-06), same quoter port.
+export { SHARE_ENTRY_SOURCE, quoteShare, settleShareQuote } from './application/share-quote.ts';
+export type { ShareEstPromo, ShareQuote, ShareQuoteContext } from './application/share-quote.ts';
 export { createItemRefService } from './application/item-ref.ts';
 export { processItemRefCipher } from './infra/process-item-ref-cipher.ts';
 export type {
