@@ -1,15 +1,23 @@
 // Database fixtures of the B1-03z rule tests: synthetic rows only (users, order_keys, the split
-// snapshot of commission, its share events, appeals). No implementation code computes an expected
-// value. Each test makes its own app_id, so tests sharing one database never see each other.
+// snapshot of commission, its share events, the FORFEIT vouchers of the forfeitures, appeals). No
+// implementation code computes an expected value. Each test makes its own app_id, so tests sharing
+// one database never see each other.
 import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { PostgresQueryCompiler, type Kysely, type KyselyPlugin } from 'kysely';
 import { expect } from 'vitest';
 // By file path, not commission/index.ts: the index reaches identity's decorated controllers.
-import { listBannedForfeitedShares } from '../../../../apps/api/src/modules/commission/application/forfeited-shares.ts';
+import {
+  findBannedRunStart,
+  listBannedForfeitedShares,
+} from '../../../../apps/api/src/modules/commission/application/forfeited-shares.ts';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
 import type { ReceivedEvent } from '../../../../apps/api/src/modules/platform/index.ts';
-import { createAppealRestoreHandler } from '../../../../apps/api/src/modules/risk/application/appeal-restore.ts';
+import {
+  createAppealRestoreHandler,
+  type AppealRestoreLogger,
+  type ForfeitedAmountPort,
+} from '../../../../apps/api/src/modules/risk/application/appeal-restore.ts';
 import {
   APPEAL_AT,
   CLOSED_AT,
@@ -18,11 +26,50 @@ import {
   ORDER_AT,
   PENALTY_AT,
   PERIOD,
+  REF_ID_MAX,
   RESTORE_SOURCES,
+  forfeitKey,
   resolvedEvent,
   type AppealResolvedData,
   type ShareRole,
 } from './kit.ts';
+
+/**
+ * Test double of the ledger read the producer is given (ForfeitedAmountPort, review S0): what the
+ * share's FORFEIT voucher `{order_key}:PLATFORM:FORFEIT:{uid}:{role}` booked to COMMISSION_REVENUE
+ * (its credit line, stored negative: debit positive), read from the rows the fixture wrote; null
+ * when there is no such voucher. Runs on the handle it is given (the consumer's transaction).
+ */
+export const voucherForfeitedAmount: ForfeitedAmountPort = async (trx, input) => {
+  const voucher = await trx
+    .selectFrom('ledger_vouchers')
+    .select('id')
+    .where('app_id', '=', input.appId)
+    .where('uniq_key', '=', `${input.orderKey}:PLATFORM:FORFEIT:${input.userId}:${input.role}`)
+    .executeTakeFirst();
+  if (voucher === undefined) return null;
+  const lines = await trx
+    .selectFrom('ledger_entries')
+    .innerJoin('ledger_accounts', 'ledger_accounts.id', 'ledger_entries.account_id')
+    .select('ledger_entries.amount_fen')
+    .where('ledger_entries.app_id', '=', input.appId)
+    .where('ledger_entries.voucher_id', '=', voucher.id)
+    .where('ledger_accounts.subject', '=', 'COMMISSION_REVENUE')
+    .execute();
+  return lines.reduce((sum, line) => sum - line.amount_fen, 0n);
+};
+
+/** The ports the worker assembly gives the producer (RiskScanModule.forWorker). */
+export const PORTS = {
+  shares: listBannedForfeitedShares,
+  bannedRunStart: findBannedRunStart,
+  forfeitedAmount: voucherForfeitedAmount,
+} as const;
+
+/** The China (+08:00) calendar date of an instant, for ledger_vouchers.accounting_date. */
+function chinaDate(at: Date): string {
+  return new Date(at.getTime() + 8 * 3_600_000).toISOString().slice(0, 10);
+}
 
 // Structural type instead of importing @couli/db/testing: only *.int.test.ts may import it
 // (.dependency-cruiser.cjs testcontainers-only-in-int-tests); the int test passes its factory.
@@ -54,6 +101,13 @@ export interface SharePerson {
   readonly amountFen: bigint;
 }
 
+export interface OrderOptions {
+  /** created_at of the snapshot and of its initial active events (default ORDER_AT). */
+  readonly at?: Date;
+  /** order_keys.sub_order_id (default `appeal-restore-<order_id>`). */
+  readonly subOrderId?: string;
+}
+
 export interface AppealInput {
   readonly userId: string | null;
   readonly targetType?: 'account' | 'order' | 'blocked_request';
@@ -63,6 +117,10 @@ export interface AppealInput {
   readonly penaltyStartedAt?: Date | null;
   readonly requestType?: 'register' | 'withdraw';
   readonly targetId?: string;
+  /** appeals.created_at (default APPEAL_AT). */
+  readonly createdAt?: Date;
+  /** appeals.closed_at (default CLOSED_AT). */
+  readonly closedAt?: Date;
 }
 
 export interface Appeal {
@@ -70,13 +128,28 @@ export interface Appeal {
   readonly data: AppealResolvedData;
 }
 
-/** The restore difference expected for one share of one appeal (task brief 9.2 ④). */
+/**
+ * The restore difference expected for one (sub-order, member) of one appeal (task brief 9.2 ④;
+ * attempt 4, review S2: the member's roles on that sub-order are one difference).
+ */
 export interface ExpectedRestore {
   readonly appealId: string;
   readonly orderId: string;
   readonly userId: string;
-  readonly role: ShareRole;
+  /** The member's forfeited role(s) on the sub-order. */
+  readonly role: ShareRole | readonly ShareRole[];
+  /** Σ of what the member's FORFEIT vouchers on the sub-order booked to the platform. */
   readonly amountFen: bigint;
+  /**
+   * 'order_key' (default): ref_id is the order key. 'member': another difference already holds
+   * the order key in the period, so ref_id is the order key with a member-specific `#` suffix.
+   */
+  readonly ref?: 'order_key' | 'member';
+}
+
+/** A short sub_order_id (order_keys' primary key is (platform, sub_order_id), across apps). */
+export function shortSubOrderId(): string {
+  return randomUUID().replaceAll('-', '').slice(0, 12);
 }
 
 const N_FEN = 1000n;
@@ -98,6 +171,96 @@ export async function scenario(suite: Suite) {
     })
     .execute();
   const clock = new FixedClock(NOW);
+  /** order_id → order key `{platform}:{sub_order_id}`. */
+  const orderKeys = new Map<string, string>();
+  /** `${order_id}:${user_id}:${role}` → the snapshot's amount_fen. */
+  const snapshotFen = new Map<string, bigint>();
+  /** subject → the platform ledger account of this app. */
+  const platformAccounts = new Map<string, string>();
+
+  function keyOf(orderId: string): string {
+    const key = orderKeys.get(orderId);
+    if (key === undefined) throw new Error(`fixture: unknown order ${orderId}`);
+    return key;
+  }
+
+  async function platformAccount(subject: string): Promise<string> {
+    const known = platformAccounts.get(subject);
+    if (known !== undefined) return known;
+    const id = randomUUID();
+    await db
+      .insertInto('ledger_accounts')
+      .values({
+        id,
+        app_id: appId,
+        owner_type: 'platform',
+        owner_id: 'platform',
+        subject,
+        created_at: ORDER_AT,
+      })
+      .execute();
+    platformAccounts.set(subject, id);
+    return id;
+  }
+
+  /**
+   * The FORFEIT voucher of one forfeited share as settlement's first credit books it
+   * (specs/ledger-templates.csv FORFEIT: debit UNION_RECEIVABLE:{platform}, credit
+   * COMMISSION_REVENUE, REBATE_CREDIT; memo forfeit_reason=<reason>; debit positive).
+   */
+  async function forfeitVoucher(
+    orderId: string,
+    userId: string,
+    role: ShareRole,
+    reason: 'banned' | 'deleted' | 'minor',
+    amountFen: bigint,
+    at: Date,
+  ): Promise<void> {
+    const orderKey = keyOf(orderId);
+    const voucherId = randomUUID();
+    await db
+      .insertInto('ledger_vouchers')
+      .values({
+        id: voucherId,
+        app_id: appId,
+        biz_type: 'ORDER_CREDIT',
+        biz_id: orderKey,
+        uniq_key: forfeitKey(orderKey, userId, role),
+        accounting_date: chinaDate(at),
+        operator: 'system',
+        memo: `forfeit_reason=${reason}`,
+        order_key: orderKey,
+        beneficiary_user_id: null,
+        role: null,
+        voucher_kind: 'FORFEIT',
+        created_at: at,
+      })
+      .execute();
+    const receivable = await platformAccount('UNION_RECEIVABLE:taobao');
+    const revenue = await platformAccount('COMMISSION_REVENUE');
+    await db
+      .insertInto('ledger_entries')
+      .values(
+        [
+          { account_id: receivable, amount_fen: amountFen },
+          { account_id: revenue, amount_fen: -amountFen },
+        ].map((line) => ({
+          app_id: appId,
+          voucher_id: voucherId,
+          account_id: line.account_id,
+          sub_account: 'available',
+          amount_fen: line.amount_fen,
+          ledger_type: 'REBATE_CREDIT',
+          sub_type: null,
+          income_type: null,
+          balance_after_fen: null,
+          account_version: null,
+          booked_at: at,
+          created_at: at,
+        })),
+      )
+      .execute();
+  }
 
   async function user(): Promise<string> {
     const id = randomUUID();
@@ -118,18 +281,25 @@ export async function scenario(suite: Suite) {
   }
 
   /** One sub-order with its split snapshot (version 1) and an initial active event per person. */
-  async function order(people: readonly SharePerson[]): Promise<string> {
+  async function order(
+    people: readonly SharePerson[],
+    options: OrderOptions = {},
+  ): Promise<string> {
     const orderId = randomUUID();
+    const at = options.at ?? ORDER_AT;
+    const subOrderId = options.subOrderId ?? `appeal-restore-${orderId}`;
     await db
       .insertInto('order_keys')
       .values({
         app_id: appId,
         order_id: orderId,
         platform: 'taobao',
-        sub_order_id: `appeal-restore-${orderId}`,
-        attr_at: ORDER_AT,
+        sub_order_id: subOrderId,
+        attr_at: at,
       })
       .execute();
+    orderKeys.set(orderId, `taobao:${subOrderId}`);
+    for (const p of people) snapshotFen.set(`${orderId}:${p.userId}:${p.role}`, p.amountFen);
     const userTotal = people.reduce((sum, p) => sum + p.amountFen, 0n);
     await db
       .insertInto('commission_splits')
@@ -140,7 +310,7 @@ export async function scenario(suite: Suite) {
         order_type: people.some((p) => p.role === 'share') ? 'share' : 'self',
         activity_type: null,
         rebate_mode: null,
-        paid_at: ORDER_AT,
+        paid_at: at,
         paid_at_source: 'platform',
         raw_n_fen: N_FEN,
         subsidy_commission_fen: 0n,
@@ -159,7 +329,7 @@ export async function scenario(suite: Suite) {
             forfeit_reason: null,
           })),
         ),
-        created_at: ORDER_AT,
+        created_at: at,
       })
       .execute();
     await db
@@ -174,7 +344,7 @@ export async function scenario(suite: Suite) {
         user_share_total_fen: userTotal,
         tlj_redpacket_fen: 0n,
         platform_est_profit_fen: N_FEN - userTotal,
-        created_at: ORDER_AT,
+        created_at: at,
       })
       .execute();
     await db
@@ -188,12 +358,12 @@ export async function scenario(suite: Suite) {
           role: p.role,
           base_fen: BASE_FEN,
           amount_fen: p.amountFen,
-          created_at: ORDER_AT,
+          created_at: at,
         })),
       )
       .execute();
     for (const p of people) {
-      await shareEvent(orderId, p.userId, p.role, 'active', null, ORDER_AT);
+      await shareEvent(orderId, p.userId, p.role, 'active', null, at);
     }
     return orderId;
   }
@@ -220,14 +390,25 @@ export async function scenario(suite: Suite) {
       .execute();
   }
 
-  /** A forfeited event of one share (BR-CALC-13 forfeit_reason). */
+  /**
+   * A forfeiture of one share as settlement's first credit records it (BR-CALC-13): the forfeited
+   * event with its forfeit_reason and the FORFEIT voucher booking `bookedFen` to the platform.
+   * bookedFen: undefined → the snapshot's amount of the share; null → no voucher (a forfeiture
+   * whose voucher the ledger does not have).
+   */
   async function forfeit(
     orderId: string,
     p: Pick<SharePerson, 'userId' | 'role'>,
     reason: 'banned' | 'deleted' | 'minor',
     at: Date,
+    bookedFen?: bigint | null,
   ): Promise<void> {
     await shareEvent(orderId, p.userId, p.role, 'forfeited', reason, at);
+    if (bookedFen === null) return;
+    const snapshot = snapshotFen.get(`${orderId}:${p.userId}:${p.role}`);
+    const amount = bookedFen ?? snapshot;
+    if (amount === undefined) throw new Error('fixture: forfeiture of a share not in the snapshot');
+    await forfeitVoucher(orderId, p.userId, p.role, reason, amount, at);
   }
 
   /** A closed appeal row (risk's appeals) and the appeal.resolved data of its closing. */
@@ -255,9 +436,9 @@ export async function scenario(suite: Suite) {
         content: 'fixture appeal content',
         deadline_at: DEADLINE_AT,
         handler_id: 'fixture-admin',
-        closed_at: CLOSED_AT,
-        created_at: APPEAL_AT,
-        updated_at: CLOSED_AT,
+        closed_at: input.closedAt ?? CLOSED_AT,
+        created_at: input.createdAt ?? APPEAL_AT,
+        updated_at: input.closedAt ?? CLOSED_AT,
         penalty_started_at: account
           ? input.penaltyStartedAt === undefined
             ? PENALTY_AT
@@ -279,6 +460,19 @@ export async function scenario(suite: Suite) {
     };
   }
 
+  /**
+   * The SUT, created in the test body so that every case fails on the skeleton. Its ports are the
+   * worker assembly's (RiskScanModule.forWorker): commission's listBannedForfeitedShares and
+   * findBannedRunStart, and the FORFEIT voucher amount (test double over the fixture's vouchers).
+   */
+  function handler(logger?: AppealRestoreLogger) {
+    return createAppealRestoreHandler({
+      clock,
+      ...PORTS,
+      ...(logger === undefined ? {} : { logger }),
+    });
+  }
+
   return {
     db,
     appId,
@@ -288,20 +482,16 @@ export async function scenario(suite: Suite) {
     shareEvent,
     forfeit,
     appeal,
+    /** The order key `{platform}:{sub_order_id}` of a fixture order. */
+    orderKey: keyOf,
     event(a: Appeal, eventId?: string): ReceivedEvent {
       const received = resolvedEvent(a.data);
       return eventId === undefined ? received : { ...received, eventId };
     },
-    /**
-     * The SUT, created in the test body so that every case fails on the skeleton. commission's
-     * shares port is injected as the worker assembly does (RiskScanModule.forWorker).
-     */
-    handler() {
-      return createAppealRestoreHandler({ clock, shares: listBannedForfeitedShares });
-    },
+    handler,
     /** Delivers one event directly to a new handler on one transaction of the suite. */
     async deliver(received: ReceivedEvent): Promise<void> {
-      const handle = createAppealRestoreHandler({ clock, shares: listBannedForfeitedShares });
+      const handle = handler();
       await db.transaction().execute((trx) => handle(received, trx));
     },
     /** recon_diffs of this app, smallest expected amount first. */
@@ -368,14 +558,20 @@ export type Scenario = Awaited<ReturnType<typeof scenario>>;
 type DiffRow = Awaited<ReturnType<Scenario['diffs']>>[number];
 
 /**
- * One appeal_restore row of a share (task brief 9.2 ④; contracts AdminReconDiff: diff_fen =
- * expected_fen − actual_fen): registered open, ref to the sub-order, expected the share's amount,
- * actual 0, dedupe key naming app, order, user, role and appeal. Source and period are the
- * implementation's (written down there): only their allowed shapes are checked.
+ * One appeal_restore row of a (sub-order, member) (task brief 9.2 ④; contracts AdminReconDiff:
+ * diff_fen = expected_fen − actual_fen; attempt 4, review S0 / S2): registered open, ref_type
+ * order and ref_id the order key (or, when another difference holds it in the period, the order
+ * key with a member-specific `#` suffix, at most 64 characters), expected = what the member's
+ * FORFEIT vouchers booked, actual 0, dedupe key naming app, order, user, every role and appeal.
+ * Source and period are the implementation's (written down there): only their shapes are checked.
  */
-export function expectRestore(row: DiffRow | undefined, appId: string, share: ExpectedRestore) {
+export function expectRestore(
+  row: DiffRow | undefined,
+  f: { readonly appId: string; orderKey(orderId: string): string },
+  share: ExpectedRestore,
+) {
   expect(row).toMatchObject({
-    app_id: appId,
+    app_id: f.appId,
     type: 'appeal_restore',
     ref_type: 'order',
     expected_fen: share.amountFen,
@@ -385,12 +581,19 @@ export function expectRestore(row: DiffRow | undefined, appId: string, share: Ex
     handler_id: null,
     closed_at: null,
   });
-  expect(row?.ref_id).toContain(share.orderId);
+  const orderKey = f.orderKey(share.orderId);
+  if ((share.ref ?? 'order_key') === 'order_key') {
+    expect(row?.ref_id).toBe(orderKey);
+  } else {
+    expect(row?.ref_id.startsWith(`${orderKey}#`)).toBe(true);
+    expect(row?.ref_id.length).toBeLessThanOrEqual(REF_ID_MAX);
+  }
   expect(RESTORE_SOURCES).toContain(row?.source);
   expect(row?.period).toMatch(PERIOD);
   const key = row?.dedupe_key;
   expect(typeof key).toBe('string');
-  for (const part of [appId, share.orderId, share.userId, share.role, share.appealId]) {
+  const roles: readonly ShareRole[] = typeof share.role === 'string' ? [share.role] : share.role;
+  for (const part of [f.appId, share.orderId, share.userId, ...roles, share.appealId]) {
     expect(key).toContain(part);
   }
 }
