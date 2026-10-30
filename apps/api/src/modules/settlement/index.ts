@@ -35,3 +35,6 @@ export type { OrderIdsByKeyInput } from './reads/wallet-ledger.ts';
 // B1-01zzi: the worker's fund metrics (failed bill jobs, PARTIAL batches, held shares; read only).
 export { readSettlementFundMetrics } from './application/metrics-read.ts';
 export type { SettlementFundMetrics } from './application/metrics-read.ts';
+// B2-04l: orders' rights ports (rights.record; rebate.adminHold / adminUnhold, R11).
+export { createRebateAdminCommandPort, createRightsCommandPort } from './rights/index.ts';
+export type { RebateAdminDependencies, RightsCommandDependencies } from './rights/index.ts';
