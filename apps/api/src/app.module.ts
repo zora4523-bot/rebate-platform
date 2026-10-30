@@ -71,6 +71,7 @@ import {
   createCommissionSnapshot,
   createRuleSetReader,
   createSnapshotBeneficiaryResolver,
+  listBannedForfeitedShares,
   readCommissionSnapshot,
   readTljDeductFen,
   type RuleSetReader,
@@ -3676,7 +3677,9 @@ export class AppModule {
         // handler, worked by the worker entry only; entry.ts seeds the chain after the queue starts.
         ...(options.entry === 'worker'
           ? [
-              RiskScanModule.forWorker(),
+              // B1-03z: appeal.resolved → appeal_restore differences of revoked ban appeals
+              // (BR-FUND-22 / BR-CALC-13 细则「申诉恢复」) over commission's read-only shares port.
+              RiskScanModule.forWorker({ appealRestoreShares: listBannedForfeitedShares }),
               // payment's queue `pay` (B2-15c / B2-15d / B2-15e): order.query (the result judgement and
               // the query rhythm), biz.reconcile (the business object's fulfilment), order.close (the
               // close flow) and refund.query (the refund result, reading pay.<pay_channel>.refund_*_states)

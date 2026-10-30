@@ -50,91 +50,236 @@
 //      writes appeals: the restoring ADMIN_RESTORE is the admin line's (处理前不入账).
 //    - Time only from options.clock.
 //
+// 3. Choices of the implementation (B1-03z)
+//    - source R3: AdminReconDiff's sources are R1 (union reconciliation), R2 (payout channel) and
+//      R3 (internal ledger check, fund.yaml ledger_mismatch 内部日终差异). A restore is internal to
+//      our books — a share kept as platform COMMISSION_REVENUE that is owed back to the member
+//      (BR-FUND-22 ③) — with no union or channel party, so R3.
+//    - period: chinaMonth(appeals.closed_at) (YYYY-MM, +08:00 via @couli/domain): the month the
+//      revocation (BR-ID-36 结案撤销) happened. It comes from the appeal row, not the clock, so a
+//      replay on another day lands on the same business key.
+//    - refId: `${order_id}:${role}:${user tag}` where the user tag is the first 16 hex digits of
+//      sha256(user_id): contains the sub-order id, distinct per (order_id, user_id, role), and at
+//      most 36 + 1 + 8 + 1 + 16 = 62 characters (contracts AdminReconDiff ref_id maxLength 64).
+//      The full ids are in dedupeKey and resolution.
+//    - dedupeKey: `appeal_restore:${app_id}:${appeal_id}:${order_id}:${user_id}:${role}`.
+//    - resolution: { reason_code: 'APPEAL_RESTORE', appeal_id, order_id, user_id, role,
+//      forfeit_reason: 'banned', forfeited_at } for the processing admin (ADMIN_RESTORE).
+//    - A share whose amount is 0 has nothing to restore: no difference is registered for it.
+//    - An appeal.resolved whose appeal row is missing, or whose row disagrees with the event
+//      (target, user, status), or a revoked account appeal without user_id, rejects (retry, then
+//      dead letter): a money producer does not guess.
+//    - Fallback window: with no banned forfeiture at or before created_at there is nothing of this
+//      ban to restore and nothing is written.
+//    - Shares port (options.shares): commission's listBannedForfeitedShares, injected by the
+//      worker assembly (app.module → RiskScanModule.forWorker) and not imported here. commission's
+//      index.ts reaches identity's index.ts (types of beneficiary-resolver / rebate-quoter), which
+//      reaches risk's index.ts — an import from here would close a cycle (no-circular) and pull
+//      identity's decorated controllers into the erasable `test` project. Without the port, a
+//      revoked ban appeal rejects with `risk: appeal restore needs commission's shares port`
+//      (retry, then dead letter) instead of reading commission's tables itself (规划/02 §4.1);
+//      every other event is still acknowledged.
+//
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
+import { createHash } from 'node:crypto';
 import type { DB } from '@couli/db';
-import type { Kysely } from 'kysely';
-import type { Clock, EventHandler } from '../../platform/index.ts';
+import { chinaMonth } from '@couli/domain';
+import { subFen } from '@couli/money';
+import type { Kysely, Transaction } from 'kysely';
+import { registerReconDiffOnce } from '../../ledger/index.ts';
+import type { Clock, EventHandler, JobPayload, ReceivedEvent } from '../../platform/index.ts';
 
 /** The consumer name of EVENT_SUBSCRIPTIONS; its queue is `evt.risk-appeal-restore`. */
 export type AppealRestoreConsumer = 'risk-appeal-restore';
 
-/** Beneficiary roles of a share (推广 / 自购份额). */
-export type AppealRestoreShareRole = 'self' | 'share' | 'direct' | 'indirect';
-
-/** One banned forfeited share as the `shares` port answers it (commission). */
+/** One share forfeited for a ban (commission's BannedForfeitedShare, structurally). */
 export interface AppealRestoreShare {
   readonly orderId: string;
-  /** The sub-order's order key `{platform}:{sub_order_id}`. */
-  readonly orderKey: string;
-  readonly role: AppealRestoreShareRole;
-  /** The split snapshot's value of the share (an estimate; never the restored amount). */
+  readonly role: string;
   readonly amountFen: bigint;
   readonly forfeitedAt: Date;
 }
 
-export interface AppealRestoreSharesInput {
-  readonly appId: string;
-  readonly userId: string;
-  /** Inclusive. */
-  readonly since: Date;
-  /** Inclusive. */
-  readonly until: Date;
-}
-
-/** The member's shares forfeited for a ban within [since, until] (commission). */
-export type AppealRestoreSharesPort = (
+/** commission's listBannedForfeitedShares (both window ends inclusive). */
+export type BannedForfeitedSharesPort = (
   trx: Kysely<DB>,
-  input: AppealRestoreSharesInput,
+  input: {
+    readonly appId: string;
+    readonly userId: string;
+    readonly since: Date;
+    readonly until: Date;
+  },
 ) => Promise<readonly AppealRestoreShare[]>;
-
-export interface BannedRunStartInput {
-  readonly appId: string;
-  readonly userId: string;
-  /** Inclusive. */
-  readonly until: Date;
-  /** Exclusive; null: no lower bound. */
-  readonly notBefore: Date | null;
-}
-
-/** Start of the member's last unbroken run of banned forfeitures (commission). */
-export type BannedRunStartPort = (
-  trx: Kysely<DB>,
-  input: BannedRunStartInput,
-) => Promise<Date | null>;
-
-export interface ForfeitedAmountInput {
-  readonly appId: string;
-  readonly orderId: string;
-  /** The FORFEIT voucher's order key `{platform}:{sub_order_id}`. */
-  readonly orderKey: string;
-  readonly userId: string;
-  readonly role: AppealRestoreShareRole;
-}
-
-/**
- * What the share's FORFEIT voucher `{order_key}:PLATFORM:FORFEIT:{uid}:{role}` booked to the
- * platform, in fen; null when the ledger has no such voucher (ledger read, on the given handle).
- */
-export type ForfeitedAmountPort = (
-  trx: Kysely<DB>,
-  input: ForfeitedAmountInput,
-) => Promise<bigint | null>;
-
-/** The producer's logger (a pino logger fits). */
-export interface AppealRestoreLogger {
-  error(fields: Readonly<Record<string, unknown>>, message: string): void;
-}
 
 export interface AppealRestoreOptions {
   readonly clock: Clock;
-  readonly shares?: AppealRestoreSharesPort;
-  readonly bannedRunStart?: BannedRunStartPort;
-  readonly forfeitedAmount?: ForfeitedAmountPort;
-  readonly logger?: AppealRestoreLogger;
+  /** commission's listBannedForfeitedShares; the worker assembly always passes it (section 3). */
+  readonly shares?: BannedForfeitedSharesPort;
 }
 
 /** The appeal.resolved handler that registers one appeal_restore difference per banned share. */
 export function createAppealRestoreHandler(options: AppealRestoreOptions): EventHandler {
-  void options;
-  throw new Error('NotImplemented: createAppealRestoreHandler');
+  const { clock } = options;
+  return async (event, trx) => {
+    const data = readPayload(event);
+    if (data.target_type !== 'account' || data.status !== 'revoked') return;
+    if (data.user_id === null) throw new Error('risk: revoked account appeal without user_id');
+    const appeal = await trx
+      .withSchema('app')
+      .selectFrom('appeals')
+      .select([
+        'target_type',
+        'user_id',
+        'status',
+        'prev_risk_state',
+        'penalty_started_at',
+        'closed_at',
+        'created_at',
+      ])
+      .where('app_id', '=', data.app_id)
+      .where('id', '=', data.appeal_id)
+      .executeTakeFirst();
+    if (
+      appeal === undefined ||
+      appeal.target_type !== 'account' ||
+      appeal.user_id !== data.user_id ||
+      appeal.status !== 'revoked' ||
+      appeal.closed_at === null
+    ) {
+      throw new Error('risk: appeal.resolved does not match a revoked account appeal');
+    }
+    if (appeal.prev_risk_state !== 'banned') return;
+    const listShares = options.shares;
+    if (listShares === undefined) {
+      throw new Error("risk: appeal restore needs commission's shares port");
+    }
+    const userId = data.user_id;
+    const until = appeal.closed_at;
+    const since = await windowStart(trx, listShares, data.app_id, userId, appeal);
+    if (since === null) return;
+    const shares = await listShares(trx, {
+      appId: data.app_id,
+      userId,
+      since,
+      until,
+    });
+    const period = chinaMonth(until);
+    for (const share of shares) {
+      if (share.amountFen === 0n) continue;
+      await register(
+        trx,
+        clock,
+        { appId: data.app_id, appealId: data.appeal_id, userId, period },
+        share,
+      );
+    }
+  };
+}
+
+const TARGET_TYPES: ReadonlySet<string> = new Set(['account', 'order', 'blocked_request']);
+const STATUSES: ReadonlySet<string> = new Set(['revoked', 'upheld']);
+
+interface AppealResolvedData {
+  readonly app_id: string;
+  readonly appeal_id: string;
+  readonly user_id: string | null;
+  readonly target_type: string;
+  readonly target_id: string;
+  readonly status: string;
+}
+
+/** 04 adminResolveAppeal's appeal.resolved data; extra keys (need_reauth) are ignored. */
+function readPayload(event: ReceivedEvent): AppealResolvedData {
+  if (event.name !== 'appeal.resolved') {
+    throw new Error('risk: appeal restore consumes appeal.resolved only');
+  }
+  const value = event.payload as Partial<Record<keyof AppealResolvedData, unknown>>;
+  if (
+    value.app_id !== event.appId ||
+    typeof value.appeal_id !== 'string' ||
+    value.appeal_id.length === 0 ||
+    !(value.user_id === null || typeof value.user_id === 'string') ||
+    typeof value.target_type !== 'string' ||
+    !TARGET_TYPES.has(value.target_type) ||
+    typeof value.target_id !== 'string' ||
+    typeof value.status !== 'string' ||
+    !STATUSES.has(value.status)
+  ) {
+    throw new Error('risk: invalid appeal.resolved payload');
+  }
+  return value as AppealResolvedData;
+}
+
+/**
+ * 「本次封禁」's start: penalty_started_at (B1-03v); without it, the member's most recent banned
+ * forfeiture at or before the appeal's created_at (null: none, nothing to restore).
+ */
+async function windowStart(
+  trx: Transaction<DB>,
+  listShares: BannedForfeitedSharesPort,
+  appId: string,
+  userId: string,
+  appeal: { readonly penalty_started_at: Date | null; readonly created_at: Date },
+): Promise<Date | null> {
+  if (appeal.penalty_started_at !== null) return appeal.penalty_started_at;
+  const before = await listShares(trx, {
+    appId,
+    userId,
+    since: epochLike(appeal.created_at),
+    until: appeal.created_at,
+  });
+  let latest: Date | null = null;
+  for (const share of before) {
+    if (latest === null || share.forfeitedAt.getTime() > latest.getTime()) {
+      latest = share.forfeitedAt;
+    }
+  }
+  return latest;
+}
+
+/** 1970-01-01T00:00Z as a Date (no `new Date`: same pattern as risk/domain/appeal-deadline.ts). */
+function epochLike(like: Date): Date {
+  const result = structuredClone(like);
+  result.setTime(0);
+  return result;
+}
+
+async function register(
+  trx: Transaction<DB>,
+  clock: Clock,
+  scope: {
+    readonly appId: string;
+    readonly appealId: string;
+    readonly userId: string;
+    readonly period: string;
+  },
+  share: AppealRestoreShare,
+): Promise<void> {
+  const userTag = createHash('sha256').update(scope.userId).digest('hex').slice(0, 16);
+  const resolution: JobPayload = {
+    reason_code: 'APPEAL_RESTORE',
+    appeal_id: scope.appealId,
+    order_id: share.orderId,
+    user_id: scope.userId,
+    role: share.role,
+    forfeit_reason: 'banned',
+    forfeited_at: share.forfeitedAt.toISOString(),
+  };
+  await registerReconDiffOnce(
+    trx,
+    {
+      appId: scope.appId,
+      type: 'appeal_restore',
+      source: 'R3',
+      period: scope.period,
+      refType: 'order',
+      refId: `${share.orderId}:${share.role}:${userTag}`,
+      expectedFen: share.amountFen,
+      actualFen: 0n,
+      diffFen: subFen(share.amountFen, 0n),
+      dedupeKey: `appeal_restore:${scope.appId}:${scope.appealId}:${share.orderId}:${scope.userId}:${share.role}`,
+      resolution,
+    },
+    { clock },
+  );
 }

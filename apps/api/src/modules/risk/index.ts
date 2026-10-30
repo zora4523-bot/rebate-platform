@@ -227,14 +227,8 @@ export type { BlocklistMatchReader } from './ports/blocklist-match.ts';
 export { createAppealRestoreHandler } from './application/appeal-restore.ts';
 export type {
   AppealRestoreConsumer,
-  AppealRestoreLogger,
   AppealRestoreOptions,
   AppealRestoreShare,
-  AppealRestoreShareRole,
-  AppealRestoreSharesInput,
-  AppealRestoreSharesPort,
-  BannedRunStartInput,
-  BannedRunStartPort,
-  ForfeitedAmountInput,
-  ForfeitedAmountPort,
+  BannedForfeitedSharesPort,
 } from './application/appeal-restore.ts';
+export type { RiskScanWorkerPorts } from './risk-scan.module.ts';
