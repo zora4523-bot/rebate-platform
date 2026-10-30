@@ -54,9 +54,14 @@ export class SettlementModule {
    * EVENT_BUS resolved (CLOCK, ROOT_LOGGER always), registers exactly one handler on queue settle
    * (worker/schedule.ts createSettleJobHandler) over createBillJob (production readSource and
    * saveBillValidations), createBatchExecutor, createCreditOrder and createBeneficiaryCredit (both
-   * with readAttribution = ports.readAttribution) and createBeneficiaryGate (ports' identity,
-   * risk and minors readers), plus the timer of the daily bill seed and the due batch scan (after
-   * bootstrap, unref, stopped on destroy). Without a database or queue nothing is registered.
+   * with readAttribution = ports.readAttribution, so readSnapshot is never their attribution read)
+   * and createBeneficiaryGate (ports' identity and risk readers, minors = ports.minors(FIELD_CRYPTO)),
+   * plus the module's own timer of the daily bill seed and the due batch scan: after bootstrap the
+   * first tick runs within 60 s, later ones at most 60 s apart (unref); each tick runs
+   * seedSettleBills (createSettleRunStore(db), ports.platforms) and scanDueBatches with the injected
+   * Clock, a failure logged and not thrown. On destroy the timer stops and a tick in flight is
+   * awaited: nothing is sent once the module is closed. Without a database or queue nothing is
+   * registered and no timer runs.
    */
   static forWorker(ports: SettlementWorkerPorts): DynamicModule {
     void ports;
