@@ -1,0 +1,26 @@
+id: B2-04zd
+repo: rebate-platform
+title: 月结生产端口（D10-443）：settlement 实现账单任务的 readSource（本 app / 平台的 orders + order_settlements + 差错单结论读出的「以联盟为准」）与 saveValidations（取 B：不逐单落库，只留 settle_bills 合计与差错单）；commission 导出 appendBeneficiaryEvent（commission_split_beneficiary_events 追加，单一写者 commission）；ledger 导出差错单「以联盟为准」结论只读读口；供 B2-04ze 装配
+type: impl
+# 2026-10-30 编排 D10-443（替 D10-437 ④ 的编号）：拆 B2-04zd 生产端口 / B2-04ze worker 装配与调度。minors 读口改派 identity B1-03zc（#1872，D10-443 (b) 19:12），本单不含 identity 文件（minors 只在 B2-04ze 装配用）。RV2，独立 Claude 写测试与 money 评审（Codex 至 11-02 不可用，approvals #36）。
+# 要点：readSource 只读，范围 / 截点 / 最大 seq 仍由账单任务校验（job.ts 注释）；「以联盟为准」只认差错单的结论（resolution），不以 closed 状态冒充（job.ts:44）；saveValidations 生产为不落库实现并在代码注明依据 D10-443 (a)；appendBeneficiaryEvent 形状同 settlement credit-order 的 BeneficiaryEventInput，事件只追加。读写只经各模块 index 导出（settlement/AGENTS.md 规则 7）。
+refs: [BR-FUND-04, BR-FUND-09]
+refs_hash:
+  BR-FUND-04: f4b8b2be46ea
+  BR-FUND-09: 6b72b55621fb
+deps: [B2-04n, B2-04m]
+paths:
+  - 'apps/api/src/modules/settlement/bill/infra/**'
+  - 'apps/api/src/modules/settlement/bill/index.ts'
+  - 'apps/api/src/modules/commission/application/beneficiary-events*.ts'
+  - 'apps/api/src/modules/commission/index.ts'
+  - 'apps/api/src/modules/ledger/application/recon-diff-conclusion*.ts'
+  - 'apps/api/src/modules/ledger/index.ts'
+test_paths:
+  - 'test/spec/settlement/bill-ports/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/bill-ports/**'
+status: todo
