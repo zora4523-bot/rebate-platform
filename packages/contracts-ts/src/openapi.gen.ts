@@ -2641,8 +2641,10 @@ export interface paths {
          *     platform in maintenance → 50301 (maintenance).
          *     poster_url is always null until the poster worker ships (orchestrator decision D10-426;
          *     the poster is drawn by the server from a unified template, TECH-13). images are the
-         *     addresses returned by the union product API, passed on unchanged and never stored
-         *     (BR-ATTR-10 细则). est_promo is the buy_type=share quote of the caller's own share
+         *     addresses returned by the union product API, passed on unchanged and kept in no business
+         *     table; the only exception is the whole response the platform idempotency module keeps for
+         *     its retention period, replayed unchanged on the same key (BR-ATTR-10 细则, D10-439).
+         *     est_promo is the buy_type=share quote of the caller's own share
          *     (BR-PRICE-06) and is only for the sharer on this page: it never appears in the copy, the
          *     poster, the images, the share page or LinkLanding.
          *     Version gate: applied.
@@ -11762,7 +11764,9 @@ export interface components {
         ShareImage: {
             /**
              * Format: uri
-             * @description Image address as returned by the union product API; not stored.
+             * @description Image address as returned by the union product API; kept in no business table, the only
+             *     exception being the whole response the platform idempotency module keeps for its
+             *     retention period, replayed unchanged on the same key (D10-439).
              */
             url: string;
         };
@@ -11832,8 +11836,10 @@ export interface components {
             poster_url: string | null;
             /**
              * @description Main image and the extra images returned by the union product API, unchanged, at most 9;
-             *     only the main image when no extra images are available. Not downloaded, edited,
-             *     watermarked or stored (BR-ATTR-10 细则「分享页与分享赚入口页」).
+             *     only the main image when no extra images are available. Not downloaded, edited or
+             *     watermarked, and kept in no business table; the only exception is the whole response
+             *     the platform idempotency module keeps for its retention period, replayed unchanged on
+             *     the same key (BR-ATTR-10 细则「分享页与分享赚入口页」, D10-439).
              */
             images: components["schemas"]["ShareImage"][];
             copy: components["schemas"]["ShareCopy"];
