@@ -1,0 +1,18 @@
+id: F1-02zzs
+repo: rebate-platform
+title: 协议 sdk_list / collect_list 实现（D10-465）：后台发布与读取接受两类型（BR-ID-12 发布流程不变），min_version 恒等于 version、不进首启同意与重签，GET /v1/agreements 列表排除两类，GET /v1/agreements/{type} 未发布回 30701
+type: impl
+# 2026-10-31 入账（content-client；编排裁定 D10-465 方案 A）。前端（后台发布页类型下拉、App / H5 Agreement 页按 type 读）合并后交 fe 入账。法务正文由负责人确认前只放占位、不对外（01 §4.2）。
+refs: []
+refs_hash: {}
+deps: [CT-02zb, F1-02zzr]
+paths:
+  - 'apps/api/src/modules/content/**'
+test_paths:
+  - 'test/spec/content/agreements-sdk-collect/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

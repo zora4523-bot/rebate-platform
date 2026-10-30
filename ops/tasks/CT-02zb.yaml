@@ -1,0 +1,24 @@
+id: CT-02zb
+repo: rebate-platform
+title: 契约（D10-465）：AgreementType 加 sdk_list、collect_list——两类纳入协议版本表，发布沿用 BR-ID-12，不参与同意（min_version 恒等于 version、不进首启同意与重签），GET /v1/agreements（无 type）不返回，GET /v1/agreements/{type} 未发布回 30701
+type: contract
+# 2026-10-31 入账（content-client；编排裁定 D10-465 取方案 A，草案 couli-runs/CONTENT-client/drafts/agreement-sdk-collect-list.md）。
+# 依据（SPEC_REF 8127341）：01 §4.2 Agreement 行（l.183，type 含 sdk_list / collect_list，正文与对应交内容契约线定，发布走 content.agreement）；04 §11.2 content.agreement（l.1085）。原文由编排者摘入任务书，refs 置空。
+# 只改契约形状与描述；实现另见 F1-02zzr（迁移）、F1-02zzs（实现）。排在 #1923 各项之后占契约槽。
+refs: []
+refs_hash: {}
+deps: [CT-02z]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
