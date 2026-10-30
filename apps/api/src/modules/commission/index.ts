@@ -76,6 +76,14 @@ export {
   WITHDRAW_RISK_SHARE_ROLES,
 } from './ports/withdraw-risk-shares.ts';
 export type { BeneficiaryShareReader } from './ports/withdraw-risk-shares.ts';
+// B2-04zd (D10-443): the only writer of commission_split_beneficiary_events (append only).
+export { appendBeneficiaryEvent } from './application/beneficiary-events.ts';
+export type {
+  BeneficiaryEventDependencies,
+  BeneficiaryEventForfeitReason,
+  BeneficiaryEventInput,
+  BeneficiaryEventRole,
+} from './application/beneficiary-events.ts';
 // B1-03z: BR-CALC-13 细则「申诉恢复」 — the member's shares forfeited for a ban (read only).
 export { findBannedRunStart, listBannedForfeitedShares } from './application/forfeited-shares.ts';
 export type {
