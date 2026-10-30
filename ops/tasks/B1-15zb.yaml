@@ -1,0 +1,25 @@
+id: B1-15zb
+repo: rebate-platform
+title: BR-ID-30 保留期清理第一批（迁移 + worker 维护）：每日 04:00（+08:00）后分批删除到期行——login_logs 180 天（⑥）、device_registrations 180 天（⑱）、inbox_messages 180 天（⑮）、notify_logs 190 天（⑯ 推送与站内信发送记录）按「created_at < 运行当日 00:00（+08:00）− 留存天数」，deleted_identities 按 expire_at < 运行时刻（⑩）；照 maintenance 第 J 节 app.delete_expired_link_open_attempts：每表一个 SECURITY DEFINER 函数、只授 couli_maint、分批、一次失败不影响其他表；不碰账务、订单、审计、提现类表（⑧⑫⑰）
+type: impl
+# 2026-10-31 be 入账（编排 D10-451）。盘点见 notices：这几张表 couli_app 没有 DELETE（deleted_identities 除外），所以不走 B1-15za 的应用账号，改走 maintenance 第 J 节的 couli_maint 函数，已在 worker 的 04:00 门内运行，与 D10-451「沿用内部定时队列」的差别报编排核。
+# 需迁移槽。保留天数只写在函数里并注明 BR-ID-30 条目；BR-ID-30 状态为待决策、⑥⑱ 待法务，按 08 现值执行。
+refs: [BR-ID-30]
+refs_hash:
+  BR-ID-30: 24c70bf4ac65
+deps: [B1-15za]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/**'
+  - 'apps/api/src/modules/platform/maintenance/index.ts'
+  - 'apps/api/src/modules/platform/maintenance/index.test.ts'
+test_paths:
+  - 'test/spec/platform/retention/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/retention/**'
+status: todo
+pr: null
