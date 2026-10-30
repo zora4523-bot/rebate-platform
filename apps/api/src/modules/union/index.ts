@@ -40,6 +40,11 @@ export type {
   BindReq,
   BindResult,
   CallCtx,
+  ChannelCategoriesReq,
+  ChannelRankingCategory,
+  ChannelRankingEntry,
+  ChannelRankingPage,
+  ChannelRankingReq,
   ConvertReq,
   ConvertResult,
   IdentityClaims,
@@ -131,6 +136,14 @@ export type {
   WriteContext as UnionWriteContext,
 } from './pids/service.ts';
 export type { GovernedAdapterOptions } from './application/governed-adapter.ts';
+// B1-22p: material-channel ranking port (BR-TEXT-17 细则「联盟物料频道」), for catalog's hot list.
+export { createUnionChannelRanking } from './application/channel-ranking.ts';
+export type {
+  ChannelRankingCategoriesInput,
+  ChannelRankingPageInput,
+  UnionChannelRanking,
+  UnionChannelRankingOptions,
+} from './application/channel-ranking.ts';
 export {
   createUnionFileReplay,
   createUnionReplayClient,

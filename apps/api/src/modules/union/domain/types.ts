@@ -357,6 +357,37 @@ export interface OrderQueryOpt {
 export interface MaterialReq {
   readonly cursor?: string;
 }
+
+/** B1-22p: one category a material channel offers, as the union reports it. */
+export interface ChannelRankingCategory {
+  readonly categoryId: string;
+  readonly name: string;
+}
+
+/** B1-22p: one channel position; salesText is the union's sales field as is, null when absent. */
+export interface ChannelRankingEntry {
+  readonly item: UnionItem;
+  readonly salesText: string | null;
+}
+
+/** B1-22p: one channel page, in the channel's own order. */
+export interface ChannelRankingPage {
+  readonly items: readonly ChannelRankingEntry[];
+  readonly hasMore: boolean;
+}
+
+/** B1-22p: the categories of one material channel. */
+export interface ChannelCategoriesReq {
+  readonly channelId: string;
+}
+
+/** B1-22p: one page of a material channel; categoryId null is the whole list, pageNo from 1. */
+export interface ChannelRankingReq {
+  readonly channelId: string;
+  readonly categoryId: string | null;
+  readonly pageNo: number;
+  readonly pageSize: number;
+}
 export interface TljCreateReq {
   readonly item: ItemRef;
   readonly amount_fen: bigint;
@@ -386,6 +417,13 @@ export interface UnionAdapter {
   listRefunds?(win: TimeWindow, ctx: CallCtx): Promise<Page<UnionRefund>>;
   listPunishments?(win: TimeWindow, ctx: CallCtx): Promise<Page<UnionPunish>>;
   materialFeed?(req: MaterialReq, ctx: CallCtx): Promise<Page<UnionItem>>;
+  /** B1-22p: categories of a material channel (BR-TEXT-17 细则「联盟物料频道」); an idempotent read. */
+  channelCategories?(
+    req: ChannelCategoriesReq,
+    ctx: CallCtx,
+  ): Promise<readonly ChannelRankingCategory[]>;
+  /** B1-22p: one page of a material channel in the channel's own order; an idempotent read. */
+  channelRanking?(req: ChannelRankingReq, ctx: CallCtx): Promise<ChannelRankingPage>;
   createTaolijin?(req: TljCreateReq, ctx: CallCtx): Promise<TljCreateResult>;
   /**
    * B1-06v: whether the user the server-built identity names (Pinduoduo custom_parameters

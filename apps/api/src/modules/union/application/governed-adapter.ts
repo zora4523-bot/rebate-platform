@@ -157,6 +157,8 @@ export function governAdapter(
     listRefunds,
     listPunishments,
     materialFeed,
+    channelCategories,
+    channelRanking,
     createTaolijin,
     getPddOrderDetail,
     queryPddAuthority,
@@ -213,6 +215,19 @@ export function governAdapter(
       : {
           materialFeed: (req, ctx) =>
             run('idempotent_read', ctx, (c) => materialFeed.call(adapter, req, c)),
+        }),
+    // B1-22p: material-channel categories and ranking pages are idempotent reads.
+    ...(channelCategories === undefined
+      ? {}
+      : {
+          channelCategories: (req, ctx) =>
+            run('idempotent_read', ctx, (c) => channelCategories.call(adapter, req, c)),
+        }),
+    ...(channelRanking === undefined
+      ? {}
+      : {
+          channelRanking: (req, ctx) =>
+            run('idempotent_read', ctx, (c) => channelRanking.call(adapter, req, c)),
         }),
     ...(createTaolijin === undefined
       ? {}

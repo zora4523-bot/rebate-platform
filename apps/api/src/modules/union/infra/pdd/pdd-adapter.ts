@@ -149,6 +149,9 @@ interface OrderReply {
   readonly page: PddOrderPage;
 }
 
+// B1-22p：按物料频道取类目 / 榜单（channelCategories / channelRanking）不实现：频道参数、类目与排序
+// 依据未实测，端口按联盟故障（upstream_unavailable）答，不发请求、不取凭据、不伪造报文。
+// TODO(规划/09 CAP-TB-10、CAP-JD-10、CAP-PDD-10): 按频道取榜单 — blocked on 联盟接口实测记录
 export class PddUnionAdapter implements UnionAdapter {
   readonly platform = 'pdd' as const;
   /**

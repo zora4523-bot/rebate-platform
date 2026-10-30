@@ -13,6 +13,10 @@ import {
   type BindReq,
   type BindResult,
   type CallCtx,
+  type ChannelCategoriesReq,
+  type ChannelRankingCategory,
+  type ChannelRankingPage,
+  type ChannelRankingReq,
   type ConvertReq,
   type ConvertResult,
   type IdentityClaims,
@@ -122,6 +126,23 @@ const DAY_MS = 86_400_000;
 /** A synthetic name outside every default list; used only by the unknown_promo scenario. */
 const DEMO_UNLISTED_TITLE = '演示清单外优惠';
 const DETAIL_TEXT = '演示商品详情：合成数据，仅供开发联调，不对应任何平台的真实商品。';
+/** B1-22p: synthetic categories every demo material channel offers (not any platform's). */
+const DEMO_CHANNEL_CATEGORIES: readonly ChannelRankingCategory[] = Object.freeze(
+  [
+    { categoryId: 'demo-cat-1', name: '演示类目 一' },
+    { categoryId: 'demo-cat-2', name: '演示类目 二' },
+    { categoryId: 'demo-cat-3', name: '演示类目 三' },
+  ].map((category) => Object.freeze(category)),
+);
+/** B1-22p: same page bound as the ranking port. */
+const DEMO_RANKING_MAX_PAGE_SIZE = 50;
+
+/** B1-22p: a synthetic sales text from a digest; one position in seven has none (null). */
+function demoSalesText(hex: string): string | null {
+  const n = Number.parseInt(hex.slice(0, 6), 16);
+  if (n % 7 === 0) return null;
+  return `演示销量 ${String(100 + (n % 9_900))}+`;
+}
 
 interface CatalogEntry {
   /** The identifier that appears in a demo link: item_id, itemId or goods_sign. */
@@ -357,6 +378,74 @@ export class DemoUnionAdapter implements UnionAdapter {
   }
 
   /**
+   * B1-22p: deterministic synthetic categories of any material channel (non-prod only). The
+   * demo catalog is split into DEMO_CHANNEL_CATEGORIES.length categories by index, so every
+   * category has items. Never a capability claim (CAP-*-10).
+   */
+  async channelCategories(
+    req: ChannelCategoriesReq,
+    ctx: CallCtx,
+  ): Promise<readonly ChannelRankingCategory[]> {
+    this.#scenario(ctx);
+    this.#channelId(req);
+    return DEMO_CHANNEL_CATEGORIES;
+  }
+
+  /**
+   * B1-22p: deterministic synthetic channel pages (non-prod only). The channel's own order is a
+   * seeded permutation of the demo catalog per channel id; a category keeps the positions of
+   * its items in that order. Items are the same DTO materialFeed returns; salesText is a
+   * synthetic sales text or null. pageNo past the end answers an empty page.
+   */
+  async channelRanking(req: ChannelRankingReq, ctx: CallCtx): Promise<ChannelRankingPage> {
+    const scenario = this.#scenario(ctx);
+    const channelId = this.#channelId(req);
+    const { categoryId, pageNo, pageSize } = req;
+    if (typeof pageNo !== 'number' || !Number.isInteger(pageNo) || pageNo < 1) {
+      throw this.#invalid('pageNo must be an integer from 1');
+    }
+    if (
+      typeof pageSize !== 'number' ||
+      !Number.isInteger(pageSize) ||
+      pageSize < 1 ||
+      pageSize > DEMO_RANKING_MAX_PAGE_SIZE
+    ) {
+      throw this.#invalid('pageSize is out of range');
+    }
+    let slot: number | null = null;
+    if (categoryId !== null) {
+      const found =
+        typeof categoryId === 'string'
+          ? DEMO_CHANNEL_CATEGORIES.findIndex((category) => category.categoryId === categoryId)
+          : -1;
+      if (found < 0) throw this.#invalid('unknown channel category');
+      slot = found;
+    }
+    if (scenario === 'delisted') return Object.freeze({ items: Object.freeze([]), hasMore: false });
+    const ranked = this.#catalog
+      .map((entry, index) => ({
+        entry,
+        index,
+        key: digest(['demo-channel-rank', this.platform, this.#seed, channelId, entry.linkId]),
+      }))
+      .filter(({ index }) => slot === null || index % DEMO_CHANNEL_CATEGORIES.length === slot)
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    const offset = (pageNo - 1) * pageSize;
+    const slice = offset < ranked.length ? ranked.slice(offset, offset + pageSize) : [];
+    return Object.freeze({
+      items: Object.freeze(
+        slice.map(({ entry, key }) =>
+          Object.freeze({
+            item: this.#item(entry, scenario),
+            salesText: demoSalesText(key),
+          }),
+        ),
+      ),
+      hasMore: offset + pageSize < ranked.length,
+    });
+  }
+
+  /**
    * B1-06v: the demo Pinduoduo authority (备案) query of a server-built identity: authorized unless
    * the call carries the pdd_unauthorized scenario. Synthetic; never a capability claim (CAP-PDD-05).
    */
@@ -575,6 +664,14 @@ export class DemoUnionAdapter implements UnionAdapter {
     const entry = this.#byLinkId.get(linkId);
     if (entry === undefined) throw this.#invalid('link does not point at a demo item');
     return entry;
+  }
+
+  /** B1-22p: any non-empty channel id; the port has already checked the whitelist. */
+  #channelId(req: { readonly channelId: string }): string {
+    if (typeof req !== 'object' || req === null || !filled(req.channelId)) {
+      throw this.#invalid('channelId must be a non-empty string');
+    }
+    return req.channelId;
   }
 
   #invalid(message: string): UnionError {

@@ -67,6 +67,9 @@ function unimplementedAdapter(platform: RegisteredPlatform): UnionAdapter {
     // B1-06v: the Pinduoduo authority query is optional; the placeholder refuses it like the rest.
     // TODO(规划/11 §4.5): 真实备案查询 — blocked on CAP-PDD-05。
     ...(platform === 'pdd' ? { queryPddAuthority: () => reject('queryPddAuthority') } : {}),
+    // B1-22p: channelCategories / channelRanking stay absent, so the ranking port answers a union
+    // outage (upstream_unavailable) without any request.
+    // TODO(规划/09 CAP-TB-10、CAP-JD-10、CAP-PDD-10): 按频道取榜单 — blocked on 联盟接口实测记录
   });
 }
 
