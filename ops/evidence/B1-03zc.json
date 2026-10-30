@@ -1,0 +1,135 @@
+{
+  "red_tests": [
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：生日当天 00:00",
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：生日当天 23:59:59.999",
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：生日次日 00:00",
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：生日次日 08:00（UTC 零点）",
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：2-29 生，2-28 23:59:59.999",
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：2-29 生，3-1 00:00",
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：2-29 生，3-1 23:59:59.999",
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：2-29 生，3-2 00:00",
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：12-31 生，生日当天 23:59:59.999",
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：12-31 生，次年 1-1 00:00",
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：满 14 未满 18",
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：76 岁",
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#15][BR-ID-26] 同一批里按各自出生日期判定，同一 at 下边界两侧分开",
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#16][BR-ID-26] 识别时刻：verified_at 晚于 at 不在集合，等于或早于 at 在",
+    "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#17][BR-ID-26] 识别后满 18：识别时未成年、at 时已满 18 的不在集合",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#1][BR-ID-26] 只有已实名且未满 18 周岁的请求用户在集合内",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#2][BR-ID-26] 同一 user_id 只在自己的 app 下可见，交错读取不串应用",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#3][BR-ID-26] 重复 id 只算一次，每条 SQL 里每个 id 只绑定一次",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#4][BR-ID-26] 空 userIds 返回空集，不查库、不解密",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#5][BR-ID-26] 形状可直接当 settlement BeneficiaryGate 的 MinorStatusReader 用",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#6][BR-ID-26] 在调用方事务上读：未提交的实名插入与更新可见，回滚后消失",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#7][BR-ID-26] 不缓存：同一 reader 立即反映已提交的实名变化",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#8][BR-ID-26] 只读不加锁：只读事务内可用，不写不锁，表内容不变",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#9][BR-ID-25] 只按 realname.birth_date 域解密出生日期，不解密姓名与证件号",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#10][BR-ID-26] 集合只含请求的 user_id，不带出生日期；各分支都不写应用日志",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#11][BR-ID-25] 坏库：verified 行的出生日期密文不可解密时整批拒绝，不返回集合",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#12][BR-ID-25] 坏库：出生日期按别的域加密（解不开）时拒绝，错误不含出生日期",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#13][BR-ID-25] 坏库：解密出的出生日期非法（不存在的日期）时拒绝，不当成年放过也不当未成年吞掉",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#13][BR-ID-25] 坏库：解密出的出生日期非法（格式不是 YYYY-MM-DD）时拒绝，不当成年放过也不当未成年吞掉",
+    "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#13][BR-ID-25] 坏库：解密出的出生日期非法（不是日期）时拒绝，不当成年放过也不当未成年吞掉"
+  ],
+  "risk_note": "RV2 by the orchestrator's call (D10-443 (b): user authorisation boundary; path risk-map RV1 identity). BR-ID-26: new identity read-only port createMinorStatusBatchReader({crypto}).read(executor, {appId, userIds, at}) → the users of the app whose realname is verified, identified (verified_at) no later than at, and under 18 at at by the decrypted birth_date (@couli/domain isAtLeastAge: the 18th birthday's next 00:00 +08:00, Feb 29 → Mar 2). One read-only statement on the caller's executor; no lock, write, cache or log; a broken verified row throws a fixed message without cause. Same shape as settlement BeneficiaryGate's MinorStatusReader; wiring is funds B2-04zd. Ledger refs gained BR-ID-26 with refs_hash (orchestrator 10-30 19:5x). Full verification on the AWS test machine hit the 3600 s limit on unrelated slow tests; this task's 30 rule tests and 9 unit tests were green in that log and nothing had failed; verify:fast green; required CI checks run on the PR head.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "money-level adversarial review round 1 pass, 0 findings (couli-runs/B1-03zc/review-money-r1.json); Codex unavailable until 11-02 (approvals #36)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude through claude-run.sh (attempt 1); red PASS 30 tests in 2 files; review r1 pass with one S2 moved out of scope (couli-runs/B1-03zc/review-spec-r1.json); the r1 output was renamed .rejected only because the parallel Opus implementation edited the worktree (position_changed=worktree, validate-output ok) and was accepted on inspection (review-spec-r1-discretion.md)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "44c5c2e38ddc861ba7569e3d141967475eea9e37",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "task": "B1-03zc",
+  "spec_commit": "702354bfab93fbbee2da2f25e101d5d7ae3aa36f",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "702354bfab93fbbee2da2f25e101d5d7ae3aa36f",
+      "tree": "329c2a5f95a1ec2a99168f1c073f24a79546ae81",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T14:37:25Z",
+      "finished_at": "2026-10-30T14:37:35Z",
+      "red_tests": [
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：生日当天 00:00",
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：生日当天 23:59:59.999",
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：生日次日 00:00",
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：生日次日 08:00（UTC 零点）",
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：2-29 生，2-28 23:59:59.999",
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：2-29 生，3-1 00:00",
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：2-29 生，3-1 23:59:59.999",
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：2-29 生，3-2 00:00",
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：12-31 生，生日当天 23:59:59.999",
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：12-31 生，次年 1-1 00:00",
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：满 14 未满 18",
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#14][BR-ID-26] 满 18 周岁边界：76 岁",
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#15][BR-ID-26] 同一批里按各自出生日期判定，同一 at 下边界两侧分开",
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#16][BR-ID-26] 识别时刻：verified_at 晚于 at 不在集合，等于或早于 at 在",
+        "test/spec/identity/minor-status/boundary.int.test.ts > [AC-B1-03zc#17][BR-ID-26] 识别后满 18：识别时未成年、at 时已满 18 的不在集合",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#1][BR-ID-26] 只有已实名且未满 18 周岁的请求用户在集合内",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#2][BR-ID-26] 同一 user_id 只在自己的 app 下可见，交错读取不串应用",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#3][BR-ID-26] 重复 id 只算一次，每条 SQL 里每个 id 只绑定一次",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#4][BR-ID-26] 空 userIds 返回空集，不查库、不解密",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#5][BR-ID-26] 形状可直接当 settlement BeneficiaryGate 的 MinorStatusReader 用",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#6][BR-ID-26] 在调用方事务上读：未提交的实名插入与更新可见，回滚后消失",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#7][BR-ID-26] 不缓存：同一 reader 立即反映已提交的实名变化",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#8][BR-ID-26] 只读不加锁：只读事务内可用，不写不锁，表内容不变",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#9][BR-ID-25] 只按 realname.birth_date 域解密出生日期，不解密姓名与证件号",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#10][BR-ID-26] 集合只含请求的 user_id，不带出生日期；各分支都不写应用日志",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#11][BR-ID-25] 坏库：verified 行的出生日期密文不可解密时整批拒绝，不返回集合",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#12][BR-ID-25] 坏库：出生日期按别的域加密（解不开）时拒绝，错误不含出生日期",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#13][BR-ID-25] 坏库：解密出的出生日期非法（不存在的日期）时拒绝，不当成年放过也不当未成年吞掉",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#13][BR-ID-25] 坏库：解密出的出生日期非法（格式不是 YYYY-MM-DD）时拒绝，不当成年放过也不当未成年吞掉",
+        "test/spec/identity/minor-status/reader.int.test.ts > [AC-B1-03zc#13][BR-ID-25] 坏库：解密出的出生日期非法（不是日期）时拒绝，不当成年放过也不当未成年吞掉"
+      ],
+      "expected": [
+        "test/spec/identity/minor-status/boundary.int.test.ts",
+        "test/spec/identity/minor-status/reader.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "c926d41b67089895b844779d2d6ac1e45b94b35a52444cf90a3b93c21a2e91c4"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "ca9984c60b6f562d20912f92df189fbd1c5f0316",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ]
+}
