@@ -1,0 +1,37 @@
+{
+  "task": "CT-07c",
+  "spec_ref": "812734156b57ba648ee1df733dafac3dba9bdb15",
+  "spec_commit": "cef8b973cbe1277264fe859b3b84b0dfe213cc07",
+  "red_tests": [],
+  "risk_note": "Contract only: contracts/openapi.yaml gains listPageSectionItems (GET /v1/pages/{page_key}/sections/{section_id}/items, planned, no route yet), 04 §6 M-内测, union_material data source; the h5 anonymous list and generated files follow. x-auth is optional although 04 listed none (BR-PRICE-11; 08 wins, D10-462; 04 synced by couli #223). Any unselectable channel refuses the whole data source (BR-TEXT-17); channels are interleaved without commission weight; BR-PRICE-08 no_rebate filter, one top-up round and has_more are written in. product_pool and the union-failure fall-back to the pool come with CT-07d. verify:fast exit 0 at 3e152ebe8; the last commit only rewords the description after round 3. Codex was unavailable until 11-02, so reviews ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 3,
+      "note": "round 1 fail with two S1 (device id must stay optional; any unselectable channel refuses the whole source), fixed; round 2 pass with two out-of-scope items (x-auth, BR-PRICE-08), written in on D10-462; round 3 pass with two S2 on multi-channel has_more and the empty card, fixed in a description-only commit after round 3, not re-reviewed."
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "0b9bbf37a86b9fbfaa937e842c9735eb49adc37e",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
