@@ -1,0 +1,19 @@
+id: B1-02zn
+repo: rebate-platform
+title: GET /v1/me 的 balance 摘要改读 ledger（BR-FUND-18、拍板第二批 §8 ADD-06）——app.module 里 MeBalancePort.balanceOf 恒 0 的桩换成 ledger 钱包摘要的同一口径（available_fen、withdrawable_fen、estimated_total_fen 与 GET /v1/wallet/summary 对同一用户同一时刻一致），只读、按 app_id + user_id
+type: impl
+# 草稿 2026-10-30（身份与风控线 identity-lane）。现状：app.module MeBalancePort 恒返回 0（注释 blocked on ledger 模块 B2）；ledger getWalletSummary 已随 B2-04y 合并（查询经 ledger 只读入口导出）。只改装配，不改 ledger 口径；ledger 无合适只读导出时在 index 只读导出（同 D10-432 先例）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/ledger/index.ts'
+test_paths:
+  - 'test/spec/identity/me-balance/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/me-balance/**'
+status: todo
