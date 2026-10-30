@@ -43,7 +43,12 @@
 // `deps.logger`.
 import type { AppEnv } from '../config/index.ts';
 import type { RootLogger } from '../logging/index.ts';
-import type { QuotaConfig, QuotaLimiter, Scheduler } from './index.ts';
+import {
+  createMemoryQuotaLimiter,
+  type QuotaConfig,
+  type QuotaLimiter,
+  type Scheduler,
+} from './index.ts';
 
 /** 'memory' (local / test) or 'refuse' (staging / prod). */
 export type UnionQuotaFallbackMode = 'memory' | 'refuse';
@@ -65,6 +70,18 @@ export interface UnionQuotaFallback {
 
 /** The union quota of an entry that has no REDIS handle (see the contract above). */
 export function createUnionQuotaFallback(deps: UnionQuotaFallbackDeps): UnionQuotaFallback {
-  void deps;
-  throw new Error('NotImplemented: createUnionQuotaFallback');
+  const { appEnv, logger, scheduler } = deps;
+  const mode: UnionQuotaFallbackMode =
+    appEnv === 'local' || appEnv === 'test' ? 'memory' : 'refuse';
+  logger.warn({ app_env: appEnv, mode }, 'union_quota_redis_absent');
+  return {
+    mode,
+    limiter(config) {
+      // Validation is the memory limiter's own (invalid_policy, synchronous) in both modes; the
+      // memory bucket built here is used only in 'memory' mode.
+      const memory = createMemoryQuotaLimiter(config, scheduler);
+      if (mode === 'memory') return memory;
+      return { bucketKey: memory.bucketKey, tryAcquire: () => false };
+    },
+  };
 }

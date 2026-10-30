@@ -306,7 +306,10 @@ it('[AC-B1-01za#5] an unknown error after the response was sent keeps that respo
     expect(records[0]!['stack']).toMatch(/^TypeError: after send\n/);
     const warnings = lines
       .map((line) => JSON.parse(line) as Record<string, unknown>)
-      .filter((entry) => (entry['level'] as number) >= 40);
+      .filter((entry) => (entry['level'] as number) >= 40)
+      // B1-22v (D10-460): the api entry booted without REDIS logs its union quota fallback once
+      // at assembly; that line is not about this request.
+      .filter((entry) => entry['msg'] !== 'union_quota_redis_absent');
     expect(warnings).toEqual(records);
     const next = await post('/__global_errors/echo', '{"ok":true}');
     expect(next.statusCode).toBe(201);
