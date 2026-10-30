@@ -16,5 +16,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/union/taobao-price-config-fallback/**'
-status: todo
-pr: null
+status: done
+pr: 1900
