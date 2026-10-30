@@ -10,7 +10,9 @@ import {
   SHARE_PRICE_BASIS,
   conversionRefusal,
   createShares,
+  isFreshRaw,
   isIdentifiedMinor,
+  linkRawRef,
   shareIdentity,
   shareUrlOf,
   type SharesOptions,
@@ -59,6 +61,29 @@ describe('shares helpers (B1-15w)', () => {
       relationId: '9',
     });
     expect(baichuan).toBeNull();
+  });
+
+  it('[AC-B1-15w] BR-PROD-05 ①: a fresh links raw ID stands in for a missing item_ref', () => {
+    const nowMs = Date.parse(NOW);
+    const row = {
+      product_key: 'jd:i_100012043978',
+      raw_item_id: 'dm0123456789_100012043978',
+      raw_fetched_at: new Date(nowMs - 1_800_000),
+    };
+    expect(linkRawRef(row, APP, 'jd', nowMs)).toEqual({
+      appId: APP,
+      platform: 'jd',
+      productKey: 'jd:i_100012043978',
+      rawItemId: 'dm0123456789_100012043978',
+      fetchedAt: '2026-10-30T01:30:00.000Z',
+      source: 'link',
+    });
+    const stale = { ...row, raw_fetched_at: '2026-10-30T01:29:59.999Z' };
+    expect(linkRawRef(stale, APP, 'jd', nowMs)).toBeNull();
+    expect(linkRawRef({ ...row, raw_item_id: null }, APP, 'jd', nowMs)).toBeNull();
+    expect(linkRawRef({ ...row, product_key: null }, APP, 'jd', nowMs)).toBeNull();
+    expect(linkRawRef(undefined, APP, 'jd', nowMs)).toBeNull();
+    expect(isFreshRaw('not an instant', nowMs)).toBe(false);
   });
 
   it('[AC-B1-15w] conversion failures: refused 30121, off shelf 30141, anything else 50303', () => {

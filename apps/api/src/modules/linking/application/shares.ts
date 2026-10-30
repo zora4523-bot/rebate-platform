@@ -41,10 +41,12 @@ import {
 } from '@couli/domain';
 import type { Kysely } from 'kysely';
 import {
+  RAW_ID_MAX_AGE_MS,
   quoteShare,
   type CardRebateQuoter,
   type Catalog,
   type ItemRefService,
+  type RequestRawRef,
   type ShareQuote,
 } from '../../catalog/index.ts';
 import {
@@ -271,6 +273,47 @@ export function isIdentifiedMinor(birthDate: string | null, at: Date): boolean {
   return birthDate !== null && !isAtLeastAge(birthDate, SHARER_MIN_AGE, at);
 }
 
+/** links.link_id is a uuid column: any other source_link_id is never queried. */
+const LINK_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** BR-PROD-05: a raw ID is usable only when obtained ≤ 1800 s ago. */
+export function isFreshRaw(obtainedAt: string, nowMs: number): boolean {
+  const at = Date.parse(obtainedAt);
+  return Number.isFinite(at) && nowMs - at <= RAW_ID_MAX_AGE_MS;
+}
+
+/** The links columns a step-① raw ID is read from. */
+export interface LinkRawRow {
+  readonly product_key: string | null;
+  readonly raw_item_id: string | null;
+  readonly raw_fetched_at: Date | string | null;
+}
+
+/**
+ * BR-PROD-05 ①: a links row's raw ID as catalog's request reference (source 'link'); null when the
+ * row is missing, has no product key or raw ID, or its raw ID is not fresh.
+ */
+export function linkRawRef(
+  row: LinkRawRow | undefined,
+  appId: string,
+  platform: 'jd' | 'pdd',
+  nowMs: number,
+): RequestRawRef | null {
+  if (row === undefined || row.product_key === null || row.raw_item_id === null) return null;
+  const at = row.raw_fetched_at;
+  if (row.raw_item_id === '' || at === null) return null;
+  const fetchedAt = typeof at === 'string' ? at : at.toISOString();
+  if (!isFreshRaw(fetchedAt, nowMs)) return null;
+  return {
+    appId,
+    platform,
+    productKey: row.product_key,
+    rawItemId: row.raw_item_id,
+    fetchedAt,
+    source: 'link',
+  };
+}
+
 function envelope(code: number, traceId: string, data?: unknown, msg?: string): HandlerResult {
   return {
     status: STATUS[code] ?? 500,
@@ -367,7 +410,7 @@ class ComposedShares extends SharesService {
     if ('code' in local) return fail(local);
     const { snapshot, parts } = local;
 
-    const resolution = await this.#resolve(caller.appId, body, platform, input.traceId);
+    const resolution = await this.#resolve(caller.appId, userId, body, platform, input.traceId);
     if ('code' in resolution) return fail(resolution);
     const target = resolution;
 
@@ -596,9 +639,14 @@ class ComposedShares extends SharesService {
    * The product of the request (as POST /v1/links/convert by product_key): the platform's key
    * prefix, the item_ref (unusable → ignored; another product's → 20001), the raw-ID order and one
    * governed union detail (the quote snapshot, the copy's fields and est_promo's item).
+   * BR-PROD-05 ①: without a fresh item_ref (BR-PROD-11: it is optional — a share page opened from
+   * the favorites carries only platform and product_key) the raw ID of a fresh links row of this
+   * product is used (linkRawRef): the source card's link, else the sharer's latest own link of the
+   * product; then ② product_refs. Only when none is fresh is the product 30143.
    */
   async #resolve(
     appId: string,
+    userId: string,
     body: Body,
     platform: 'jd' | 'pdd',
     traceId: string,
@@ -634,6 +682,13 @@ class ComposedShares extends SharesService {
       }
       throw error;
     }
+    const nowMs = this.#options.clock.now().getTime();
+    let requestRef = token;
+    if (token === null || !isFreshRaw(token.fetchedAt, nowMs)) {
+      const sourceLinkId = body.source_link_id;
+      const linked = await this.#linkRawRef(appId, userId, platform, productKey, sourceLinkId);
+      if (linked !== null) requestRef = linked;
+    }
 
     let rawItemId: string;
     let canonical: string;
@@ -642,7 +697,7 @@ class ComposedShares extends SharesService {
         appId,
         platform,
         productKey,
-        requestRef: token,
+        requestRef,
         fallbackEnabled: false,
         capabilities: CAPABILITIES,
         // TODO(规划/11 §4.5): 按 product_key 重新解析原串（BR-PROD-05 第③步）— blocked on
@@ -667,6 +722,42 @@ class ComposedShares extends SharesService {
     // D33: a price anomaly never gets a link.
     if (isPriceAnomaly(item)) return refused(50303);
     return { platform, productKey: canonical, rawItemId, rawFetchedAt: item.quoted_at, item };
+  }
+
+  /**
+   * BR-PROD-05 ① links.raw_item_id: the source card's link when the request names one of this
+   * product in the app, else the caller's own most recently fetched link of the product (the card
+   * the share page was opened from, or the favorites' search card). Read only; null when the row
+   * is missing, not fresh (≤ 1800 s) or carries no raw ID. catalog re-checks app, platform, key and
+   * freshness before using it.
+   */
+  async #linkRawRef(
+    appId: string,
+    userId: string,
+    platform: 'jd' | 'pdd',
+    productKey: string,
+    sourceLinkId: string | undefined,
+  ): Promise<RequestRawRef | null> {
+    const nowMs = this.#options.clock.now().getTime();
+    const scope = this.#options.db
+      .selectFrom('links')
+      .select(['product_key', 'raw_item_id', 'raw_fetched_at'])
+      .where('app_id', '=', appId)
+      .where('platform', '=', platform)
+      .where('product_key', '=', productKey)
+      .where('raw_item_id', 'is not', null)
+      .where('raw_fetched_at', 'is not', null);
+    if (sourceLinkId !== undefined && LINK_ID.test(sourceLinkId)) {
+      const source = await scope.where('link_id', '=', sourceLinkId).executeTakeFirst();
+      const ref = linkRawRef(source, appId, platform, nowMs);
+      if (ref !== null) return ref;
+    }
+    const own = await scope
+      .where('user_id', '=', userId)
+      .orderBy('raw_fetched_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    return linkRawRef(own, appId, platform, nowMs);
   }
 
   #detailRefusal(error: unknown, productKey: string): Refusal {
