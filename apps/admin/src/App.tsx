@@ -48,6 +48,7 @@ import { KillSwitchesPage } from './pages/kill-switches/index.ts';
 import { MessagesPage } from './pages/messages/index.ts';
 import { OrderDetailPage, OrdersPage } from './pages/orders/index.ts';
 import { PlatformIconsPage } from './pages/platform-icons/index.ts';
+import { ReconPage } from './pages/recon/index.ts';
 import { RiskPage } from './pages/risk/index.ts';
 import {
   UnionOAuthCallbackPage,
@@ -93,6 +94,7 @@ const NO_GROUPS: readonly AdminMenuGroup[] = [];
 const NO_PLANNED: ReadonlySet<string> = new Set();
 const USERS_MENU_ID = 'users';
 const CLAIMS_MENU_ID = 'claims';
+const RECON_MENU_ID = 'recon';
 
 /** The claim id of a review page address (/claims/<claim_id>), else undefined. */
 function claimIdOf(path: string): string | undefined {
@@ -577,6 +579,9 @@ function ShellFrame({
     } else if (match !== undefined && match.item.id === 'messages') {
       // 消息模板: notify.channels reads and writes; the page itself says so without it.
       content = <MessagesPage access={access} />;
+    } else if (match !== undefined && match.item.id === RECON_MENU_ID) {
+      // 对账与差错: fund.recon or fund.view reads; only fund.recon closes a difference.
+      content = <ReconPage access={access} />;
     } else if (match !== undefined && match.item.id === UNIONS_MENU_ID) {
       content = <UnionsPage access={access} clock={options.clock} />;
     } else if (match !== undefined && match.item.id === APP_VERSIONS_MENU_ID) {
@@ -608,6 +613,10 @@ function ShellFrame({
       // A direct address to the users page without user.list / user.lookup: the page itself says
       // so (and sends nothing) instead of silently landing on the home page.
       content = <UsersPage access={access} />;
+    } else if (menuId === RECON_MENU_ID && (snapshot.isSuper || snapshot.permissions.length > 0)) {
+      // A direct address to /recon without fund.recon / fund.view: the page itself says so (and
+      // sends nothing), as the users page does.
+      content = <ReconPage access={access} />;
     } else if (menuId === DASHBOARD_MENU_ID) {
       // The workbench without dashboard.view: the first permitted menu instead (never a request).
       content = <Navigate to={fallback} replace />;

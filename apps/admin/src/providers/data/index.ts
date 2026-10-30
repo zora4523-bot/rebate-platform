@@ -1,7 +1,8 @@
 // Refine data provider for the admin REST API (规划/03 §9.1, contracts/openapi.yaml /admin/v1):
 // every response is the {code, msg, data} envelope; success is HTTP 200 and code === 0. Lists use
 // page / page_size (≤200). Requests carry `Authorization: Bearer <admin_token>` and, for step-up
-// operations, `X-Step-Up-Token`; no App headers or signature. Every failure becomes an
+// operations, `X-Step-Up-Token`; for idempotent writes, `Idempotency-Key` (meta.idempotencyKey);
+// no App headers or signature. Every failure becomes an
 // AdminApiError handed once to `onError` (the unified error handling) and then rethrown.
 import type {
   BaseRecord,
@@ -169,6 +170,12 @@ function stepUpTokenOf(meta: MetaQuery | undefined): string | undefined {
   return typeof token === 'string' && token !== '' ? token : undefined;
 }
 
+/** The Idempotency-Key a write carries (meta.idempotencyKey); absent sends no header. */
+function idempotencyKeyOf(meta: MetaQuery | undefined): string | undefined {
+  const value: unknown = meta?.['idempotencyKey'];
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
 function headerTraceId(response: Response, body: unknown): string | undefined {
   const header = response.headers.get('X-Trace-Id');
   if (header !== null && header !== '') return header;
@@ -257,6 +264,8 @@ export function createDataProvider(options: DataProviderOptions): AdminDataProvi
     if (token !== null && token !== '') headers.set('Authorization', `Bearer ${token}`);
     const stepUpToken = stepUpTokenOf(request.meta);
     if (stepUpToken !== undefined) headers.set('X-Step-Up-Token', stepUpToken);
+    const idempotencyKey = idempotencyKeyOf(request.meta);
+    if (idempotencyKey !== undefined) headers.set('Idempotency-Key', idempotencyKey);
     let body: string | FormData | undefined;
     if (request.body !== undefined && request.method !== 'GET' && request.method !== 'HEAD') {
       if (request.body instanceof FormData) body = request.body;

@@ -54,7 +54,7 @@ const CATALOGUE: readonly CatalogueRow[] = [
       ['settle-bills', any('settle.bill', 'settle.statement_upload', 'fund.settle_adjust')],
       ['ledger', any('fund.view')],
       ['fund-ledger', any('fund.cash_entry')],
-      ['recon', any('fund.recon')],
+      ['recon', any('fund.recon', 'fund.view')],
       ['adjustments', any('fund.adjust', 'fund.writeoff')],
       ['pay-orders', any('pay.view', 'pay.refund', 'pay.resolve')],
     ],

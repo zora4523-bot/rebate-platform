@@ -172,3 +172,38 @@ it('an unexpected throw keeps the raw exception on cause only', async () => {
   expect(error.cause).toBe(boom);
   expect(onError).toHaveBeenCalledExactlyOnceWith(error);
 });
+
+function sentHeaders(fetch: ReturnType<typeof setup>['fetch']): Headers {
+  return new Headers(fetch.mock.calls[0]?.[1]?.headers);
+}
+
+it('meta.idempotencyKey is sent as the Idempotency-Key header next to the other headers', async () => {
+  const { fetch, provider } = setup(async () => json({ code: 0, msg: '', data: {} }));
+  await provider.custom({
+    url: '/admin/v1/recon-diffs/x/close',
+    method: 'post',
+    payload: { reason: 'r' },
+    meta: { idempotencyKey: 'idem-sample-1', stepUpToken: 'step-sample' },
+  });
+  const headers = sentHeaders(fetch);
+  expect(headers.get('Idempotency-Key')).toBe('idem-sample-1');
+  expect(headers.get('Authorization')).toBe('Bearer t');
+  expect(headers.get('X-Step-Up-Token')).toBe('step-sample');
+  expect(headers.get('Content-Type')).toBe('application/json');
+});
+
+it('without meta.idempotencyKey (or with an empty one) no Idempotency-Key header is sent', async () => {
+  for (const meta of [undefined, {}, { idempotencyKey: '' }, { idempotencyKey: 42 }]) {
+    const { fetch, provider } = setup(async () => json({ code: 0, msg: '', data: {} }));
+    await provider.custom({
+      url: '/admin/v1/recon-diffs/x/close',
+      method: 'post',
+      payload: { reason: 'r' },
+      ...(meta === undefined ? {} : { meta }),
+    });
+    const headers = sentHeaders(fetch);
+    expect(headers.has('Idempotency-Key')).toBe(false);
+    expect(headers.get('Authorization')).toBe('Bearer t');
+    expect(headers.has('X-Step-Up-Token')).toBe(false);
+  }
+});
