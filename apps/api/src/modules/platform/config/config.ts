@@ -65,7 +65,41 @@ const envSchema = z.object({
     .pipe(z.number().int().min(1024).max(65535))
     .optional(),
   METRICS_HOST: z.string().min(1).default('127.0.0.1'),
+  // B1-31 (02 §13): OpenTelemetry trace export of the api / stream / worker entries to
+  // VictoriaTraces over OTLP/HTTP. Unset = no export and no instrumentation. The endpoint is an
+  // http(s) URL with a host and without credentials; the message never repeats the value.
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: z
+    .string()
+    .refine(isTraceEndpoint, 'must be an http(s) URL with a host and without credentials')
+    .optional(),
+  // Sampling ratio of new traces, 0..1 (default 1: every request).
+  OTEL_TRACES_SAMPLER_ARG: z
+    .string()
+    .regex(/^(?:0(?:\.\d+)?|1(?:\.0+)?)$/, 'must be a ratio between 0 and 1')
+    .transform(Number)
+    .optional(),
+  // service.name of the exported spans; default `couli-<entry>`.
+  OTEL_SERVICE_NAME: z
+    .string()
+    .regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/, 'must be a service name ([A-Za-z0-9_.-], 1–128)')
+    .optional(),
 });
+
+/** B1-31: http(s), a non-empty host, no username / password (the value is never echoed). */
+function isTraceEndpoint(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  return (
+    (url.protocol === 'http:' || url.protocol === 'https:') &&
+    url.hostname !== '' &&
+    url.username === '' &&
+    url.password === ''
+  );
+}
 
 type EnvKey = keyof z.input<typeof envSchema>;
 const ENV_KEYS = Object.keys(envSchema.shape) as EnvKey[];
@@ -183,6 +217,12 @@ export interface AppConfig {
    */
   readonly metrics?: MetricsConfig | undefined;
   /**
+   * OTEL_EXPORTER_OTLP_TRACES_ENDPOINT / OTEL_TRACES_SAMPLER_ARG / OTEL_SERVICE_NAME (B1-31,
+   * 规划/02 §13): trace export of the api / stream / worker entries. Present only when the endpoint
+   * is set; a hand-built config without it exports nothing and installs no instrumentation.
+   */
+  readonly tracing?: TracingConfig | undefined;
+  /**
    * QUEUE_CONCURRENCY_<Q> / QUEUE_DB_BUDGET (./queue-concurrency.ts, B1-01zzk): the worker's
    * per-queue concurrency overrides (only lower than ENTRY_PLAN) and its shared budget of handler
    * calls running at once. Present only when one of them is set; a hand-built config without it
@@ -195,6 +235,15 @@ export interface AppConfig {
 export interface MetricsConfig {
   readonly port: number;
   readonly host: string;
+}
+
+/** The trace export of an entry (B1-31): OTLP/HTTP endpoint, sampling ratio, service name. */
+export interface TracingConfig {
+  readonly endpoint: string;
+  /** 0..1; 1 = every new trace is sampled. */
+  readonly sampleRatio: number;
+  /** service.name of the spans; undefined = `couli-<entry>`. */
+  readonly serviceName?: string | undefined;
 }
 
 /** Thrown by `loadConfig`; `problems` lists every finding. Messages never contain values. */
@@ -372,6 +421,18 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     ...(values.METRICS_PORT === undefined
       ? {}
       : { metrics: { port: values.METRICS_PORT, host: values.METRICS_HOST } }),
+    // Only present when configured (B1-31), so the documented shape of an unconfigured result is unchanged.
+    ...(values.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT === undefined
+      ? {}
+      : {
+          tracing: {
+            endpoint: values.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
+            sampleRatio: values.OTEL_TRACES_SAMPLER_ARG ?? 1,
+            ...(values.OTEL_SERVICE_NAME === undefined
+              ? {}
+              : { serviceName: values.OTEL_SERVICE_NAME }),
+          },
+        }),
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(queueLimits === null ? {} : { queueLimits }),
   };

@@ -270,3 +270,12 @@ worker 与 payout 没有端口，它们的健康检查除了启动次数与 30 �
 - 部署时：`docker compose up --wait` 要等五个都 healthy，依赖不通的 worker / payout 一直 unhealthy，第 3 步因此失败并自动回退（第 4 节）。回退后的旧版本没有这项探测时可能显示健康，所以回退成功不代表依赖已经恢复，要先修好数据库或 Redis 再重新部署。
 - 运行中：数据库或 Redis 中途不通时，`docker compose ps` 会显示对应容器 unhealthy；探测程序不打印连接串，也不打印驱动的错误消息，原因要看数据库、Redis 本身和进程日志。
 - api / stream / admin 的健康检查不变，仍只看本进程的 `/healthz`。
+
+## 8. 链路追踪（B1-31）
+
+api / stream / worker 三个进程把 OpenTelemetry 链路以 OTLP/HTTP 导出到 Pigsty 节点自带的 VictoriaTraces（02 §13；只用于排障，不作资金判定依据，单节点期不承诺留存）。admin、payout 不导出。
+
+- 开关：在节点上的 env 文件（§1.2 的写法）里给这三个进程加 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=<VictoriaTraces 的 OTLP/HTTP 接收地址>`（形如 `http://<pigsty>:10428/insert/opentelemetry/v1/traces`，以 Pigsty 实际配置为准）；可选 `OTEL_TRACES_SAMPLER_ARG`（0..1 的采样比例，默认 1）与 `OTEL_SERVICE_NAME`（默认 `couli-<entry>`）。**不设即不导出、不装插桩**，进程行为与之前完全一样；删掉变量再 `deploy.sh` 即关闭。
+- 对请求零影响：导出失败只计数并每分钟最多记一条 `otel_export_failed`（含 error_name 与 count），不会抛到请求或任务；进程退出时最多等 2 秒把未发出的 span 发完。
+- 查一条链路：请求的响应头 `X-Trace-Id`（也是日志行的 `reqId`、错误信封的 `trace_id`）就是链路 id 的 UUID 写法；在 VictoriaTraces / Grafana 里按去掉连字符的 32 位十六进制查即可看到 api → pg → 外部 HTTP 的 span（server span 另带 `couli.trace_id` 属性为原 UUID）。span 只带方法、路径、状态码，不带请求体、查询参数值、鉴权头或数据库口令。
+- 验收（B1-31）：部署后发一条真实请求，按其 `X-Trace-Id` 在 VictoriaTraces 查到 api → pg → 外部依赖的 span，且日志行 `reqId` 一致。VictoriaTraces 是否已开、接收地址是什么，待负责人 / ops 确认后填入 env 文件。
