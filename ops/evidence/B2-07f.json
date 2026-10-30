@@ -1,0 +1,80 @@
+{
+  "task": "B2-07f",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "b7e537ef00c800f84986fa2616cfb4c5aad68485",
+  "red_tests": [
+    "test/spec/ledger/admin-recon-write-off/write-off.int.test.ts > [AC-B2-07e#19] 依 D10-431：账单行以 bill_row 形式保存（无入账时间）→ paid_at 为账单日 00:00 +08:00（账单日 2026-10-28 → 2026-10-27T16:00:00Z），不再取服务端当前时间；channel_order_id 取 bill_row；不带 note → resolution 不加 note；处理中（processing）的差错单也能核销，原处理人被操作人替换；没有冻结时 released_hold_count 为 0；超管也能核销",
+    "test/spec/payout/proven-success/prove.int.test.ts > [AC-B2-07e#4] 依 D10-431：账单行没有入账时间 → paid_at 取账单日 00:00 +08:00（账单日 2026-10-28 → 2026-10-27T16:00:00Z），不再取服务端当前时间；账单行没有渠道单号 → channel_order_id 为 null；开关显式为 true 时同样放行"
+  ],
+  "risk_note": "RV2 money follow-up of B2-07e (withdraw lane, model Claude Fable 5.1), orchestrator ruling D10-431: W11's paid_at is the bill line's booked time when it carries a readable one, else 00:00 +08:00 of the bill day (@couli/domain chinaDayRange(billDate).start through instant()); only a bill day that is not a date falls back to the injected Clock. Before, a bill row without a booked time made paid_at the time of the write-off, which a later R2 run reads as paid_not_in_bill (a false difference plus a member hold) and which could move the BR-WDR-21 tax quarter. The contract CT-24za's paid_at wording (operation description and AdminReconDiffWriteOffWithdrawal.paid_at) is changed to the same rule and openapi.gen regenerated; no operation, shape or code is added. Rule tests: the frozen cases [AC-B2-07e#4] and [AC-B2-07e#19] change their expected paid_at to the bill day's start, in a separate test(spec) commit marked as the D10-431 test-change for the orchestrator's label; the five unchanged tests of write-off.int.test.ts are declared red_exempt because red-check judges that file as a whole (its kit imports by a computed name). The switch payout.proven_success_writeoff.enabled stays off by default and must not be turned on before this merges. No money amount, direction or voucher changes; only the paid_at instant.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "b7e537ef00c800f84986fa2616cfb4c5aad68485",
+      "tree": "e5ea4fbb69a13527fb5cf0ee25c90a4d16565a63",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T14:51:25Z",
+      "finished_at": "2026-10-30T14:51:44Z",
+      "gate": {
+        "commit": "42048faaf7de0f0cd60917079ce9277388b7e990",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/admin-recon-write-off/write-off.int.test.ts > [AC-B2-07e#19] 依 D10-431：账单行以 bill_row 形式保存（无入账时间）→ paid_at 为账单日 00:00 +08:00（账单日 2026-10-28 → 2026-10-27T16:00:00Z），不再取服务端当前时间；channel_order_id 取 bill_row；不带 note → resolution 不加 note；处理中（processing）的差错单也能核销，原处理人被操作人替换；没有冻结时 released_hold_count 为 0；超管也能核销",
+        "test/spec/payout/proven-success/prove.int.test.ts > [AC-B2-07e#4] 依 D10-431：账单行没有入账时间 → paid_at 取账单日 00:00 +08:00（账单日 2026-10-28 → 2026-10-27T16:00:00Z），不再取服务端当前时间；账单行没有渠道单号 → channel_order_id 为 null；开关显式为 true 时同样放行"
+      ],
+      "expected": [
+        "test/spec/ledger/admin-recon-write-off/write-off.int.test.ts",
+        "test/spec/payout/proven-success/prove.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "730b9567cf26c10da69585e0471824a7dbe8b4bacf558d67bb477b079d6ee1d0"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "Round 1 (full, base a9cfd0632) pass with no findings: D10-431 applied, the bill day computed through @couli/domain and built through instant(), no Date.now; billDate traced from the difference's resolution.bill_date (else its period). Codex unavailable until 2026-11-02; fresh independent Claude."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "test round 1 (fresh independent Claude): only [AC-B2-07e#4] and [AC-B2-07e#19] change (titles say 依 D10-431; expected 2026-10-27T16:00:00Z for bill day 2026-10-28), one test(spec) commit flagged as the frozen-file test-change → red/1: both changed tests red on assertion against the old paidAtOf; the five unchanged tests of write-off.int.test.ts are reported green because the file is judged whole (its kit imports by a computed name, CT-06p) → red_exempt in the ledger (#1886) → spec-test round 1 pass with one S2 (an unparsable booked time: the implementation treats it as none and uses the bill day's start). Round 2 (brief §9d, after the ledger patch #1886) pass: the reviewer confirmed all five red_exempt entries ([AC-B2-07e#17], #18, #20, #21, #39 — none edited; they seed a bill line with booked_at, so paid_at is the booked time under both the old and the new paidAtOf, and being green on the old code is expected), that the test-change commit touches only #4 / #19's titles, expectations and guards, and that the implementation d11c9cc9 follows D10-431; the round-1 S2 (no test for an unparsable booked time; the implementation treats it as none) stays open in the followups.",
+    "red_exempt_confirmed": true
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "e95b6489a62fa6cc72e57b20867c02a1ddd893c9",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money or packages/domain.",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}

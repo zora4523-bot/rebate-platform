@@ -1,6 +1,7 @@
 // B2-07e write-off rule tests, the effects (claude-independent, SPEC_REF 37808a50):
 // contracts/openapi.yaml writeOffAdminReconDiff — in one transaction the withdrawal APPROVED →
-// PAID_API (paid_at the bill line's time when it carries one, else the server's time;
+// PAID_API (paid_at the bill line's time when it carries one, else 00:00 +08:00 of the bill day —
+// orchestrator ruling D10-431, B2-07f test-change of #19;
 // channel_order_id from the bill line; the payer-side hold cleared; the operator the executor) and
 // the success voucher `wd:{id}:PAID` (BR-WDR-09) against frozen; the difference written_off
 // (handler the caller, closed_at = updated_at = the server clock, resolution keeps its keys and
@@ -171,7 +172,7 @@ it('[AC-B2-07e#18] 解冻、审计、事件与入队：来源为该差错单且�
   });
 });
 
-it('[AC-B2-07e#19] 账单行以 bill_row 形式保存（无入账时间）→ paid_at 为服务端当前时间、channel_order_id 取 bill_row；不带 note → resolution 不加 note；处理中（processing）的差错单也能核销，原处理人被操作人替换；没有冻结时 released_hold_count 为 0；超管也能核销', async () => {
+it('[AC-B2-07e#19] 依 D10-431：账单行以 bill_row 形式保存（无入账时间）→ paid_at 为账单日 00:00 +08:00（账单日 2026-10-28 → 2026-10-27T16:00:00Z），不再取服务端当前时间；channel_order_id 取 bill_row；不带 note → resolution 不加 note；处理中（processing）的差错单也能核销，原处理人被操作人替换；没有冻结时 released_hold_count 为 0；超管也能核销', async () => {
   const f = fixture(s);
   await withWriteOffAdmin(f, async (h) => {
     const c = await seedCase(f, {
@@ -194,18 +195,22 @@ it('[AC-B2-07e#19] 账单行以 bill_row 形式保存（无入账时间）→ pa
     const sent = await h.writeOff(c.diff.id, BODY, { caller: root });
     const data = await writtenOff(sent);
 
-    const nowMs = f.clock.now().getTime();
+    // D10-431: no time on the bill row → 00:00 +08:00 of the bill day (not the server's time).
+    expect((c.diff.resolution as Record<string, unknown>)['bill_date']).toBe('2026-10-28');
+    const billDayStart = new Date('2026-10-27T16:00:00.000Z');
+    const billDayStartMs = billDayStart.getTime();
+    expect(billDayStartMs).not.toBe(f.clock.now().getTime());
     const after = await expectWrittenOff(f, c.diff, {
       adminId: root.id,
       withdrawalId: c.w.id,
-      paidAtMs: nowMs,
+      paidAtMs: billDayStartMs,
     });
     expect(data.recon_diff).toEqual(detailView(after));
-    expect(data.withdrawal).toEqual(paidView(c.w, nowMs));
+    expect(data.withdrawal).toEqual(paidView(c.w, billDayStartMs));
     expect(data.released_hold_count).toBe(0);
     expect(await withdrawalRow(f.db, f.appId, c.w.id)).toMatchObject({
       status: 'PAID_API',
-      paid_at: f.clock.now(),
+      paid_at: billDayStart,
       channel_order_id: channelOrderOf(c.w),
       hold_reason: null,
       hold_at: null,

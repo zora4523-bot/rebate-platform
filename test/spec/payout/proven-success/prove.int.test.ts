@@ -1,6 +1,7 @@
 // B2-07e W11 rule tests, the proven path (claude-independent, SPEC_REF 37808a50): 规划/08 BR-WDR-08
 // W11 (APPROVED → PAID_API on the channel's proof; paid_at the bill line's time when it has one,
-// else the server's time; channel_order_id from the bill line; the payer-side hold cleared; the
+// else 00:00 +08:00 of the bill day — orchestrator ruling D10-431, B2-07f test-change of #4;
+// channel_order_id from the bill line; the payer-side hold cleared; the
 // operator recorded as the executor), BR-WDR-09 (WITHDRAW:SUCCESS:CASH_ALIPAY `wd:{id}:PAID`, one
 // voucher, zero lines dropped, against frozen), BR-WDR-07 (lock order users → balances), task
 // §9.2 (operator admin:<id>; the attempt-append job queued on the same transaction;
@@ -146,27 +147,29 @@ it(
 );
 
 it(
-  '[AC-B2-07e#4] 账单行没有入账时间 → paid_at 取服务端当前时间；账单行没有渠道单号 → channel_order_id 为 null；开关显式为 true 时同样放行',
+  '[AC-B2-07e#4] 依 D10-431：账单行没有入账时间 → paid_at 取账单日 00:00 +08:00（账单日 2026-10-28 → 2026-10-27T16:00:00Z），不再取服务端当前时间；账单行没有渠道单号 → channel_order_id 为 null；开关显式为 true 时同样放行',
   async () => {
     const f = await setup(h);
     await f.set(SWITCH, true);
     const port = f.port();
     const w = await f.seed();
+    const request = f.input(w, { billLine: { bookedAt: null, channelOrderId: null } });
+    // D10-431: no time on the bill line → 00:00 +08:00 of the bill day (not the server's time).
+    expect(request.billLine.billDate).toBe('2026-10-28');
+    const billDayStart = new Date('2026-10-27T16:00:00.000Z');
+    expect(billDayStart.getTime()).not.toBe(Date.parse(NOW));
 
-    const result = await f.prove(
-      f.input(w, { billLine: { bookedAt: null, channelOrderId: null } }),
-      port,
-    );
+    const result = await f.prove(request, port);
 
     expect(result).toEqual({
       kind: 'proven',
       status: 'PAID_API',
-      paidAt: new Date(NOW),
+      paidAt: billDayStart,
       channelOrderId: null,
     });
     expect(await withdrawalRow(h.observer, f.appId, w.id)).toMatchObject({
       status: 'PAID_API',
-      paid_at: new Date(NOW),
+      paid_at: billDayStart,
       channel_order_id: null,
       hold_reason: null,
       hold_at: null,
