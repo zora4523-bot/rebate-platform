@@ -1,0 +1,91 @@
+{
+  "task": "B1-15y",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "13483be1bc7e01e6b5956d483448bab42889f280",
+  "red_tests": [
+    "test/spec/platform/http/share-page-no-store/entries.test.ts > [AC-B1-15y#5] GET /v1/share-pages/{link_id}：路由层先拒的请求（缺或坏请求头、超长 link_id）也带 no-store，且仍是契约错误体",
+    "test/spec/platform/http/share-page-no-store/entries.test.ts > [AC-B1-15y#6] POST /v1/share-pages/{link_id}/tpwd：空票据、超长票据、坏 body、超长 link_id、缺请求头等先拒的请求也带 no-store，且仍是契约错误体",
+    "test/spec/platform/http/share-page-no-store/entries.test.ts > [AC-B1-15y#7] 进入处理器的成功与错误响应照旧只带一个 no-store（含 64 字符 link_id、256 字符票据的边界、429 与 5xx）；同一路由先拒的请求同样 no-store",
+    "test/spec/platform/http/share-page-no-store/entries.test.ts > [AC-B1-15y#8] 其他匿名接口不因本改动加 no-store（含先拒与 404）；带身份请求缺省 no-store、路由自设的保留",
+    "test/spec/platform/http/share-page-no-store/rule.test.ts > [AC-B1-15y#1] isNoStoreRoute：只有 GET /v1/share-pages/:link_id 与 POST …/:link_id/tpwd 两个路由模板",
+    "test/spec/platform/http/share-page-no-store/rule.test.ts > [AC-B1-15y#2] 分享中间页两路由的匿名请求：路由没设 Cache-Control 时写 no-store，其他响应头不动",
+    "test/spec/platform/http/share-page-no-store/rule.test.ts > [AC-B1-15y#3] 分享中间页两路由：处理器已设的 no-store 原样保留（一个值，不重复、不冲突），带身份时同样",
+    "test/spec/platform/http/share-page-no-store/rule.test.ts > [AC-B1-15y#4] 其他匿名请求仍不加 Cache-Control；带身份请求的既有规则不变（缺省 no-store、路由自设的保留）"
+  ],
+  "risk_note": "RV2 by path (platform http, bootstrap's global onSend step). no-store.ts gains isNoStoreRoute: GET /v1/share-pages/:link_id, POST /v1/share-pages/:link_id/tpwd and HEAD on the GET template (exposeHeadRoutes convention) are matched by method and Fastify route template; applyNoStore writes Cache-Control no-store on those routes for every response, including requests the route schema or a request check refuses before the controller (contract NoStoreClientError, BR-ATTR-10 细则「缓存」), keeping a Cache-Control the route set; the identity rule of B1-01zzq is unchanged and every other anonymous response stays untouched. bootstrap.ts unchanged (its existing onSend hook already covers error replies). No contract change, no migration.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "13483be1bc7e01e6b5956d483448bab42889f280",
+      "tree": "06847a939321d24336132ddebc8597e7047cb786",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T07:14:35Z",
+      "finished_at": "2026-10-30T07:14:46Z",
+      "gate": {
+        "commit": "10c07d7401885091fe5a2f756e8875c49441ad0a",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "red_tests": [
+        "test/spec/platform/http/share-page-no-store/entries.test.ts > [AC-B1-15y#5] GET /v1/share-pages/{link_id}：路由层先拒的请求（缺或坏请求头、超长 link_id）也带 no-store，且仍是契约错误体",
+        "test/spec/platform/http/share-page-no-store/entries.test.ts > [AC-B1-15y#6] POST /v1/share-pages/{link_id}/tpwd：空票据、超长票据、坏 body、超长 link_id、缺请求头等先拒的请求也带 no-store，且仍是契约错误体",
+        "test/spec/platform/http/share-page-no-store/entries.test.ts > [AC-B1-15y#7] 进入处理器的成功与错误响应照旧只带一个 no-store（含 64 字符 link_id、256 字符票据的边界、429 与 5xx）；同一路由先拒的请求同样 no-store",
+        "test/spec/platform/http/share-page-no-store/entries.test.ts > [AC-B1-15y#8] 其他匿名接口不因本改动加 no-store（含先拒与 404）；带身份请求缺省 no-store、路由自设的保留",
+        "test/spec/platform/http/share-page-no-store/rule.test.ts > [AC-B1-15y#1] isNoStoreRoute：只有 GET /v1/share-pages/:link_id 与 POST …/:link_id/tpwd 两个路由模板",
+        "test/spec/platform/http/share-page-no-store/rule.test.ts > [AC-B1-15y#2] 分享中间页两路由的匿名请求：路由没设 Cache-Control 时写 no-store，其他响应头不动",
+        "test/spec/platform/http/share-page-no-store/rule.test.ts > [AC-B1-15y#3] 分享中间页两路由：处理器已设的 no-store 原样保留（一个值，不重复、不冲突），带身份时同样",
+        "test/spec/platform/http/share-page-no-store/rule.test.ts > [AC-B1-15y#4] 其他匿名请求仍不加 Cache-Control；带身份请求的既有规则不变（缺省 no-store、路由自设的保留）"
+      ],
+      "expected": [
+        "test/spec/platform/http/share-page-no-store/entries.test.ts",
+        "test/spec/platform/http/share-page-no-store/rule.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "570554b86eab80c0b5ce39fbc5fed2f63a8c0091e810fd3686e43bb807bee028"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; independent Claude via tools/agent/claude-run.sh per approvals #36; round 1 pass, no findings."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "rule tests by an independent Claude context in 2 counted attempts: run 1 (9c99ff2f, 8 tests red; review round 1 pass with 1 S2 recorded: HEAD not pinned, the implementation treats HEAD on the GET template as GET); run 2 a test defect found when running the rule tests on the implementation: [AC-B1-15y#6] pinned 415 for a non-JSON Content-Type while the platform answers 400 (global-errors.ts keeps Fastify's status; 20001 allows 400 and, as http_also, 415); now asserts the status is in {400, 415} with 20001 and no-store, nothing else changed (e29f6970, red/3 PASS, 8 red); placed before the implementation commit. All 8 pass on the implementation (test machine red mode, not evidence). No red_exempt or expected_values entries."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "3f58484e78e2e7bce7254b45e6fb4f4b88fe0987",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
