@@ -1,0 +1,32 @@
+id: B2-09e
+repo: rebate-platform
+title: ledger：后台资产快照只读接口实现（CT-24zb listAdminAssetSnapshots）——按 app 隔离读 asset_snapshots 与 asset_snapshot_receivables，金额原样、不重算、不触发补写；权限 fund.view 经 AdminOperationGuard，不写审计；去掉接口的 planned
+type: impl
+# 2026-10-30 入账（admin-backend，编排 10-30 05:5x 派工；规划/05 B2-09「财务类后台接口……快照……」第三段）。
+# 单一写者：asset_snapshots / asset_snapshot_receivables 的写者是 ledger（asset-snapshot-write.ts）；本任务只读，读也放 ledger（照 B2-09a：application 读 + admin 控制器 + forAdmin 只挂 admin 入口），不调快照写入、不改任何表。
+# 不含 W / P / 水位、联盟回款录入、资金看板，后续另入账。
+refs: [BR-FUND-18]
+refs_hash:
+  BR-FUND-18: c7ebd23ee75e
+deps: [CT-24zb]
+paths:
+  - 'apps/api/src/modules/ledger/application/admin-asset-snapshots*.ts'
+  - 'apps/api/src/modules/ledger/http/admin/**'
+  - 'apps/api/src/modules/ledger/ledger.module.ts'
+  - 'apps/api/src/modules/ledger/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/ledger/admin-asset-snapshots/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/admin-asset-snapshots/**'
+status: todo
