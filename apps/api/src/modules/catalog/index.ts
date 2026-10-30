@@ -35,6 +35,17 @@ export type {
   HotRankUpstream,
   HotRankUpstreamPage,
 } from './hot-rank.ts';
+// Task B1-05o: GET /v1/pages/{page_key}/sections/{section_id}/items, the union_material data source
+// (SectionItemsController in CatalogModule), rule tests test/spec/catalog/section-items/**.
+export { CatalogSectionItemsService } from './application/section-items-service.ts';
+export { getSectionItems } from './section-items.ts';
+export type {
+  PageSectionItemsData,
+  SectionItemsOptions,
+  SectionItemsPages,
+  SectionItemsQuery,
+  SectionItemsSection,
+} from './section-items.ts';
 export { getProduct } from './detail.ts';
 export type {
   ProductDetailData,

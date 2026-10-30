@@ -203,3 +203,45 @@ it('[AC-F1-09p#u9] 指针指向真草稿时重读一次后仍不出', async () =
   expect(await f.reader.read('a', 'home', null, guest)).toBeNull();
   expect(f.version).toHaveBeenCalledTimes(2);
 });
+
+const IOS = { platform: 'ios', appVersion: '2.0.0' };
+
+it('[AC-B1-05o#u1] section：按 id 取已发布版本的卡片，不判 condition；不存在或页面不可下发返回 null', async () => {
+  const hidden = { id: 'hidden', condition: { login: 'yes' } };
+  const f = fixture(
+    { 'a|home': { currentVersion: 1, grayVersion: null, grayPercent: 0 } },
+    { 'a|home|1': { status: 'published', sections: [{ id: 'x' }, hidden] } },
+  );
+  expect(await f.reader.section('a', 'home', 'hidden', null, IOS)).toEqual(hidden);
+  expect(await f.reader.section('a', 'home', 'x', '', IOS)).toEqual({ id: 'x' });
+  expect(await f.reader.section('a', 'home', 'none', null, IOS)).toBeNull();
+  expect(await f.reader.section('a', 'missing', 'x', null, IOS)).toBeNull();
+});
+
+it('[AC-B1-05o#u2] section：被 min_app_version 滤掉的卡片按不在版本里处理', async () => {
+  const gated = { id: 'gated', min_app_version: { ios: '3.0.0' } };
+  const f = fixture(
+    { 'a|home': { currentVersion: 1, grayVersion: null, grayPercent: 0 } },
+    { 'a|home|1': { status: 'published', sections: [gated] } },
+  );
+  expect(await f.reader.section('a', 'home', 'gated', null, IOS)).toBeNull();
+  expect(
+    await f.reader.section('a', 'home', 'gated', null, { ...IOS, appVersion: '3.0.0' }),
+  ).toEqual(gated);
+});
+
+it('[AC-B1-05o#u3] section：版本选择同 read，灰度设备读灰度版，没有设备读全量版', async () => {
+  const f = fixture(
+    { 'a|home': { currentVersion: 1, grayVersion: 2, grayPercent: 50 } },
+    { 'a|home|1': published('v1'), 'a|home|2': published('v2') },
+  );
+  const gray = deviceIn('a', true, 50);
+  expect(await f.reader.section('a', 'home', 'v2', gray, IOS)).toEqual({ id: 'v2' });
+  expect(await f.reader.section('a', 'home', 'v2', null, IOS)).toBeNull();
+  expect(await f.reader.section('a', 'home', 'v1', null, IOS)).toEqual({ id: 'v1' });
+});
+
+it('[AC-B1-05o#u4] section：没有库句柄时拒绝', async () => {
+  const reader = new PageReader(null, new FixedClock(START));
+  await expect(reader.section('a', 'home', 'x', null, IOS)).rejects.toThrow(/database/);
+});

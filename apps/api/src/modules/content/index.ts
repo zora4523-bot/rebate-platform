@@ -63,6 +63,8 @@ export type {
 // F1-02c: GET /v1/config, loaded by app.module on the api entry only with identity's viewer.
 export { ContentPublicModule } from './content-public.module.ts';
 export type { ContentPublicPorts } from './content-public.module.ts';
+// B1-05o: the published section read behind catalog's section items, assembled by app.module.
+export { PageReader } from './application/page-reader.ts';
 export { InviteRewardBudgetReader } from './application/invite-reward-budget-reader.ts';
 export { createAgreementReader } from './application/agreement-reader.ts';
 export type {

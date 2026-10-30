@@ -24,6 +24,7 @@ import { CatalogDetailService } from './application/detail-service.ts';
 import { CatalogHotRankService } from './application/hot-rank-service.ts';
 import { createItemRefService, type ItemRefService } from './application/item-ref.ts';
 import { CatalogSearchService } from './application/search-service.ts';
+import { CatalogSectionItemsService } from './application/section-items-service.ts';
 import { markFreshDetail, type ProductDetailUpstream } from './detail.ts';
 import type { Catalog, CatalogWarning } from './domain/types.ts';
 import {
@@ -39,6 +40,7 @@ import {
 import { HotWordsController } from './http/public/hot-words.controller.ts';
 import { ProductController } from './http/public/product.controller.ts';
 import { HotRankController } from './http/public/hot-rank.controller.ts';
+import { SectionItemsController } from './http/public/section-items.controller.ts';
 import { createFavoriteCardPort } from './favorites/card-port.ts';
 import { createFavoritesService } from './favorites/service.ts';
 import { createDbCatalogProductReader } from './infra/product-reader-wiring.ts';
@@ -71,6 +73,7 @@ import {
   type Viewer,
 } from './ports.ts';
 import type { SearchCursorCodec, SearchSessionStore, SearchUpstream } from './search.ts';
+import type { SectionItemsPages } from './section-items.ts';
 import { createPriceSnapshotRecorder } from './price-history/recorder.ts';
 import { createKyselyPriceSnapshotStore } from './price-history/store.ts';
 import { createKyselyPriceTrendStore } from './price-trend/store.ts';
@@ -86,6 +89,7 @@ const QUERY_PIDS = Symbol('CATALOG_QUERY_PIDS');
 const SEARCH_SESSIONS = Symbol('CATALOG_SEARCH_SESSIONS');
 const SEARCH_CURSORS = Symbol('CATALOG_SEARCH_CURSORS');
 const PRICE_HISTORY = Symbol('CATALOG_PRICE_HISTORY');
+const SECTION_PAGES = Symbol('CATALOG_SECTION_PAGES');
 
 type PidReader = Pick<UnionPidService, 'getActivePid'>;
 
@@ -127,6 +131,7 @@ const UNAVAILABLE_CATALOG: Catalog = {
 const UNAVAILABLE_CONFIG: CatalogConfigReader = { configValue: unavailable };
 const UNAVAILABLE_PIDS: PidReader = { getActivePid: unavailable };
 const UNAVAILABLE_PRICE_TREND: PriceTrendStore = { keyStability: unavailable, rows: unavailable };
+const UNAVAILABLE_SECTION_PAGES: SectionItemsPages = { section: unavailable };
 
 /** Built on first read, not at startup: entries whose DB handle is a stand-in still start. */
 function lazyPriceTrendStore(db: Kysely<Database>): PriceTrendStore {
@@ -158,6 +163,8 @@ export type CatalogPortProvider<T> = Omit<FactoryProvider<T>, 'provide'>;
  */
 export interface CatalogPorts {
   readonly viewerContext?: CatalogPortProvider<ViewerContext>;
+  /** B1-05o: content's published sections, assembled by app.module; absent, reads fail closed. */
+  readonly sectionPages?: CatalogPortProvider<SectionItemsPages>;
 }
 
 const GUEST_VIEWER: FactoryProvider<ViewerContext> = {
@@ -261,6 +268,9 @@ function freshDetailUpstream(upstream: ProductDetailUpstream): ProductDetailUpst
  * (infra/hot-rank-cache.ts; without REDIS it is read directly).
  * B1-05m: GET /v1/search/hot-words (HotWordsController → readSearchHotWords over the configuration
  * reader; anonymous, no device id).
+ * B1-05o: GET /v1/pages/{page_key}/sections/{section_id}/items (SectionItemsController →
+ * CatalogSectionItemsService → getSectionItems), request scoped on the same card ports and the hot
+ * list's cached union side; the published section comes through the `sectionPages` port.
  */
 @Module({})
 export class CatalogModule {
@@ -278,6 +288,7 @@ export class CatalogModule {
         FavoritesController,
         HotRankController,
         HotWordsController,
+        SectionItemsController,
       ],
       providers: [
         {
@@ -395,6 +406,12 @@ export class CatalogModule {
           },
         },
         viewerContext,
+        {
+          provide: SECTION_PAGES,
+          ...(ports?.sectionPages ?? {
+            useFactory: (): SectionItemsPages => UNAVAILABLE_SECTION_PAGES,
+          }),
+        },
         {
           provide: ITEM_REFS,
           inject: [APP_CONFIG, { token: FIELD_CRYPTO, optional: true }],
@@ -578,6 +595,68 @@ export class CatalogModule {
                   config,
                 },
               ),
+              logger,
+            }),
+        },
+        {
+          provide: CatalogSectionItemsService,
+          scope: Scope.REQUEST,
+          inject: [
+            ViewerContext,
+            CATALOG,
+            CatalogConfigReader,
+            CLOCK,
+            ROOT_LOGGER,
+            LinkRegistrar,
+            RebateQuoter,
+            SourceLinkReader,
+            GovernedUnion,
+            ITEM_REFS,
+            SECTION_PAGES,
+            { token: REDIS, optional: true },
+          ],
+          useFactory: (
+            viewerContext: ViewerContext,
+            catalog: Catalog,
+            config: CatalogConfigReader,
+            clock: Clock,
+            logger: RootLogger,
+            registrar: LinkRegistrar,
+            quoter: RebateQuoter,
+            sourceLinks: SourceLinkReader,
+            union: GovernedUnion,
+            itemRefs: ItemRefService,
+            pages: SectionItemsPages,
+            redis?: RedisHandle,
+          ): CatalogSectionItemsService =>
+            new CatalogSectionItemsService({
+              viewerContext,
+              cards: createCatalogCardEntry({
+                clock,
+                viewerContext,
+                quoter,
+                registrar,
+                sourceLinks,
+                itemRefs,
+                logger,
+              }),
+              channels: getMaterialChannels,
+              upstream: cacheHotRankUpstream(
+                createUnionHotRankUpstream({
+                  union,
+                  catalog,
+                  config,
+                  clock,
+                  channels: getMaterialChannels,
+                  logger,
+                }),
+                {
+                  redis: redis === undefined ? null : redis.namespace(HOT_RANK_CACHE_NAMESPACE),
+                  clock,
+                  config,
+                },
+              ),
+              pages,
               logger,
             }),
         },

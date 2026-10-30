@@ -63,6 +63,7 @@ import {
   type ProductCapabilities,
   type ProductRef,
   type RegisterLinkInput,
+  type SectionItemsPages,
 } from './modules/catalog/index.ts';
 import {
   createSelfRebateEstimateReader,
@@ -84,6 +85,7 @@ import {
   ContentAdminModule,
   ContentPublicModule,
   ContentWorkerModule,
+  PageReader,
   combineConfigItemSaveChecks,
   configRegistry,
   createContentReader,
@@ -3114,6 +3116,34 @@ const identityViewer = {
   inject: [REQUEST],
   useFactory: (request: IdentityRequest): IdentityContext => createIdentityViewerContext(request),
 };
+/**
+ * B1-05o: catalog's published sections over content's PageReader. The version and the
+ * min_app_version gate read the same headers as getPage, so a guest keeps the gray bucket of its
+ * X-Device-Id on this unsigned route, where identity's viewer knows no device (contract
+ * listPageSectionItems: "the same rule as getPage"); the viewer's deviceId is not used here.
+ */
+const sectionPages = {
+  scope: Scope.REQUEST,
+  inject: [REQUEST, PageReader],
+  useFactory: (request: IdentityRequest, reader: PageReader): SectionItemsPages => {
+    const header = (name: string): string | undefined => {
+      const value = request.headers?.[name];
+      return typeof value === 'string' && value !== '' ? value : undefined;
+    };
+    return {
+      section: async ({ appId, pageKey, sectionId }) => {
+        const section = await reader.section(
+          appId,
+          pageKey,
+          sectionId,
+          header('x-device-id') ?? null,
+          { platform: header('x-platform') ?? '', appVersion: header('x-app-version') },
+        );
+        return section === null ? null : { dataSource: section['data_source'] };
+      },
+    };
+  },
+};
 const identityCaller = {
   scope: Scope.REQUEST,
   inject: [REQUEST],
@@ -4042,6 +4072,7 @@ export class AppModule {
               catalogPorts(union, linking, unionQuotaSource),
               CatalogModule.forRoot((db, clock) => createContentReader({ db, clock }), {
                 viewerContext: identityViewer,
+                sectionPages,
               }),
               linking,
               parsingPorts(),
