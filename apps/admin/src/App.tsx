@@ -50,6 +50,7 @@ import { OrderDetailPage, OrdersPage } from './pages/orders/index.ts';
 import { PlatformIconsPage } from './pages/platform-icons/index.ts';
 import { ReconPage } from './pages/recon/index.ts';
 import { RiskPage } from './pages/risk/index.ts';
+import { SettleBillDetailPage, SettleBillsPage } from './pages/settle-bills/index.ts';
 import {
   UnionOAuthCallbackPage,
   UnionOAuthCallbackSignedOut,
@@ -80,6 +81,7 @@ import { claimsTexts } from './texts/claims.ts';
 import { auditLogsTexts } from './texts/audit-logs.ts';
 import { exportsTexts } from './texts/exports.ts';
 import { ordersTexts } from './texts/orders.ts';
+import { settleBillsTexts } from './texts/settle-bills.ts';
 import { shellTexts } from './texts/shell.ts';
 import { unionsTexts } from './texts/unions.ts';
 import { createAntdTheme, sameAntdTheme } from './theme.ts';
@@ -95,6 +97,19 @@ const NO_PLANNED: ReadonlySet<string> = new Set();
 const USERS_MENU_ID = 'users';
 const CLAIMS_MENU_ID = 'claims';
 const RECON_MENU_ID = 'recon';
+const SETTLE_BILLS_MENU_ID = 'settle-bills';
+const SETTLE_BILL_DETAIL = /^settle-bills\/([^/]+)$/;
+
+/** The bill month of a bill detail address (/settle-bills/<bill_id>), else undefined. */
+function settleBillIdOf(path: string): string | undefined {
+  const found = SETTLE_BILL_DETAIL.exec(path)?.[1];
+  if (found === undefined) return undefined;
+  try {
+    return decodeURIComponent(found);
+  } catch {
+    return found;
+  }
+}
 
 /** The claim id of a review page address (/claims/<claim_id>), else undefined. */
 function claimIdOf(path: string): string | undefined {
@@ -496,6 +511,8 @@ function ShellFrame({
   const orderId = claimId === undefined ? orderIdOf(menuId) : undefined;
   // A version row's edit subpage (/app-versions/<platform>/<channel>) belongs to 版本管理.
   const appVersionEdit = editTargetOf(menuId) !== undefined;
+  // A bill's detail page (/settle-bills/<bill_id>) belongs to 月结账单 (sidebar, crumbs).
+  const settleBillId = settleBillIdOf(menuId);
   const match = findMenuItem(
     groups,
     claimId !== undefined
@@ -504,13 +521,16 @@ function ShellFrame({
         ? ORDERS_MENU_ID
         : appVersionEdit
           ? APP_VERSIONS_MENU_ID
-          : menuId,
+          : settleBillId !== undefined
+            ? SETTLE_BILLS_MENU_ID
+            : menuId,
   );
   let subpage = match === undefined ? undefined : (auditSubpage ?? subpageOf(location.state));
   if (match !== undefined && claimId !== undefined) subpage = claimsTexts.review.crumb;
   if (match !== undefined && orderId !== undefined) subpage = ordersTexts.detail.crumb;
   if (match !== undefined && unionCallback) subpage = unionsTexts.callback.crumb;
   if (match !== undefined && appVersionEdit) subpage = appVersionsTexts.editor.crumb;
+  if (match !== undefined && settleBillId !== undefined) subpage = settleBillsTexts.detail.crumb;
   // A workbench card opened a route whose page is not in the catalogue yet (e.g. /risk/appeals):
   // the placeholder shows under the card's page name instead of falling back home.
   const cardTarget =
@@ -548,6 +568,9 @@ function ShellFrame({
     } else if (match !== undefined && orderId !== undefined) {
       // Direct address or 【详情】 of a row: only this order is read, never the list.
       content = <OrderDetailPage key={orderId} access={access} orderId={orderId} />;
+    } else if (match !== undefined && settleBillId !== undefined) {
+      // Direct address or 【查看】 of a row: only this bill is read, never the list.
+      content = <SettleBillDetailPage key={settleBillId} access={access} billId={settleBillId} />;
     } else if (match !== undefined && auditLogId !== undefined) {
       // Direct address or 【查看】 of a row: only this record is read, never the list.
       content = <AuditLogDetailPage key={auditLogId} id={auditLogId} access={access} />;
@@ -582,6 +605,9 @@ function ShellFrame({
     } else if (match !== undefined && match.item.id === RECON_MENU_ID) {
       // 对账与差错: fund.recon or fund.view reads; only fund.recon closes a difference.
       content = <ReconPage access={access} />;
+    } else if (match !== undefined && match.item.id === SETTLE_BILLS_MENU_ID) {
+      // 月结账单: settle.bill or fund.view reads; the other menu points get the page's notice.
+      content = <SettleBillsPage access={access} />;
     } else if (match !== undefined && match.item.id === UNIONS_MENU_ID) {
       content = <UnionsPage access={access} clock={options.clock} />;
     } else if (match !== undefined && match.item.id === APP_VERSIONS_MENU_ID) {
@@ -617,6 +643,18 @@ function ShellFrame({
       // A direct address to /recon without fund.recon / fund.view: the page itself says so (and
       // sends nothing), as the users page does.
       content = <ReconPage access={access} />;
+    } else if (
+      (menuId === SETTLE_BILLS_MENU_ID || settleBillId !== undefined) &&
+      (snapshot.isSuper || snapshot.permissions.length > 0)
+    ) {
+      // A direct address to 月结账单 without a menu point (fund.view reads but does not show the
+      // menu): the page itself reads, or says there is no permission (and sends nothing).
+      content =
+        settleBillId === undefined ? (
+          <SettleBillsPage access={access} />
+        ) : (
+          <SettleBillDetailPage key={settleBillId} access={access} billId={settleBillId} />
+        );
     } else if (menuId === DASHBOARD_MENU_ID) {
       // The workbench without dashboard.view: the first permitted menu instead (never a request).
       content = <Navigate to={fallback} replace />;
