@@ -1,0 +1,25 @@
+id: F1-13a
+repo: rebate-platform
+title: 后台「支付单」页第一段只读（资源 pay-orders，菜单 资金 / 支付单）——支付单列表（契约筛选、页码分页、三态）与详情（支付单摘要、退款记录、近期通道请求摘要）、收款异常列表（pay-anomalies）、收款对账差错列表（R4 pay-recon-diffs）；状态与类型中文名取后台字典 BR-TEXT-25；持 pay.view 可看；接口 CT-21e listAdminPayOrders / getAdminPayOrder / listAdminPayAnomalies / listAdminPayReconDiffs（已实现）
+type: impl
+# 2026-10-30 入账（前端线 f1-frontend-7，编排 D10-435 ①：F1-13 解封，按封存画板支付单部分做只读段；B2-15a～n 除 k 外已 done）。画板 couli-runs/design-hifi/project/AdmPayOrders、AdmPayOrderDetail、AdmPayRecon（布局参考；无定稿规格文件，以契约与 BR-PAY-06 / 07 为准）。
+# 不做（写接口或不在本段）：原路退款（AdmPayRefund*）、支付单处置 resolve（AdmPayOrderResolve）、差错处理（AdmPayDiffResolve）、退款单列表页签（AdmPayRefunds，若无已实现读接口）、微信零钱 2 张画板；写入口不出现或置灰，不发 GET 以外请求。
+# 菜单不改（pay.view、pay.refund、pay.resolve 任一可见）；只持 pay.refund / pay.resolve 而无 pay.view 的进页显示无权限。不碰冻结 admin-shell 夹具。
+# 资金页面（收款、R4 差错）：评审走 money 口径。Codex 到 11-02 不可用：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude；独立 Claude 每任务 10 次上限（D10-319 / D10-417）。
+refs: [BR-PAY-06, BR-PAY-07]
+refs_hash:
+  BR-PAY-06: 102e1fb8839f
+  BR-PAY-07: a98350f4412a
+deps: [CT-21e, B2-15f, B2-15j]
+paths:
+  - 'apps/admin/src/pages/pay-orders/**'
+  - 'apps/admin/src/texts/pay-orders.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-pay-orders/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-pay-orders/**'
+status: todo
