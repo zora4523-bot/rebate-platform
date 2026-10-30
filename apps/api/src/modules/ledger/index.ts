@@ -37,6 +37,9 @@ export type {
   ReconDiffSelection,
   ReconDiff,
 } from './application/recon-diffs.ts';
+// B2-04zd (D10-443): the recon diff 「以联盟为准」 conclusions (read only, for the bill job).
+export { readUnionAuthoritativeOrderKeys } from './application/recon-diff-conclusion.ts';
+export type { UnionAuthoritativeSelection } from './application/recon-diff-conclusion.ts';
 export { openUserAccount } from './application/accounts.ts';
 // B1-03z (D10-432): the amount a share's FORFEIT voucher booked to the platform (read only).
 export { readForfeitAmount } from './application/forfeit-amount-read.ts';
