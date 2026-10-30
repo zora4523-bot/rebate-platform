@@ -1,0 +1,23 @@
+id: B1-22r
+repo: rebate-platform
+title: 联盟后台写接口 reason 含控制字符统一答 20001 [reason]（告警手机号增删、联盟账号重新授权 / manual 录入、推广位写接口，不再 5XX）；拼多多查询身份多账号时查询位改确定性（updated_at 最早、相同按 id 升序，选中哪条写日志、不含凭据）
+type: impl
+# 2026-10-30 入账（union 线，编排裁定 D10-427 ① ③）。① B1-22g money S2：告警手机号 reason 带换行时路由放行、content 写入端口拒收 → 5XX；同查 union-accounts / union-pids 的 reason。② query-reader.ts：D10-231 后各账号可各有同场景 active，现取最早更新的一条但同时刻不确定；保持现行口径、补 id 升序并记日志，按业务挑账号待多账号启用时再定（FU-PDD-QUERY-ACCT）。依据 08 BR-ID-24、BR-ATTR-08。Codex 不可用至 11-02，测试与评审由独立 Claude（approvals #36）。
+refs: [BR-ID-24, BR-ATTR-08]
+refs_hash:
+  BR-ID-24: 4cba1bd5dd15
+  BR-ATTR-08: 96af3c5dec56
+deps: [B1-22g, B1-22h, B1-22d]
+paths:
+  - 'apps/api/src/modules/union/**'
+test_paths:
+  - 'test/spec/union/admin-reason/**'
+  - 'test/spec/union/pdd-query-pid/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/admin-reason/**'
+  - 'test/spec/union/pdd-query-pid/**'
+status: todo
+pr: null

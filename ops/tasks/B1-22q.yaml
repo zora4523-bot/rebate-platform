@@ -1,0 +1,21 @@
+id: B1-22q
+repo: rebate-platform
+title: 淘宝价格清单与开关接配置（union）：price.taobao.member_title_keywords / coupon_titles / discount_titles / unknown_promo / basis 由 union 定义的配置端口每次映射时读取（app.module 传 ContentReader），取值缺失或不合法回落 08 默认并告警（不带商品信息）；去掉 followups F-36 的 TODO
+type: impl
+# 2026-10-30 入账（union 线，编排裁定 D10-427 ①）。依据 08 BR-PRICE-02 细则（D33）：清单与降级开关是服务端配置项；B1-04r 只作纯函数参数并给 08 默认值，接线留 TODO 指 followups F-36（须在真实淘宝适配器开工前接好）。union 不依赖 content（02 §4.1）：端口由 union 定义、app.module 装配。Codex 不可用至 11-02，测试与评审由独立 Claude（approvals #36）。
+refs: [BR-PRICE-02]
+refs_hash:
+  BR-PRICE-02: b622624c8da7
+deps: [B1-04r]
+paths:
+  - 'apps/api/src/modules/union/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/union/taobao-price-config/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/taobao-price-config/**'
+status: todo
+pr: null
