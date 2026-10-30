@@ -1,0 +1,82 @@
+{
+  "red_tests": [
+    "test/spec/identity/me-balance/balance.int.test.ts > [AC-B1-02zn#1] BR-FUND-18 无任何流水的用户：/v1/me 三项为 0，经 ledger 钱包摘要查询按 token 的 app_id + user_id 读取，不开账户",
+    "test/spec/identity/me-balance/balance.int.test.ts > [AC-B1-02zn#2] BR-FUND-18 有可用分录（REBATE_CREDIT）与待结算预估：/v1/me 三项与 /v1/wallet/summary 同名字段逐一相等且非 0",
+    "test/spec/identity/me-balance/balance.int.test.ts > [AC-B1-02zn#3] BR-FUND-18 可用为负时 withdrawable_fen = 0（同 wallet 口径），available_fen 照负值返回",
+    "test/spec/identity/me-balance/balance.int.test.ts > [AC-B1-02zn#4] BR-FUND-18 别的用户、别的 app 的余额与预估不计入：只按 token 的 app_id + user_id",
+    "test/spec/identity/me-balance/balance.int.test.ts > [AC-B1-02zn#5] BR-FUND-18 钱包摘要读取失败时 /v1/me 照现有错误处理答 50001，不吞成 0"
+  ],
+  "risk_note": "RV2 (app.module wiring). BR-FUND-18 / ADD-06: GET /v1/me's balance (MeBalance) no longer returns three zeros; it calls ledger's getWalletSummary (ledger/read.ts, B2-04y) with the same walletSummaryDependencies as GET /v1/wallet/summary and returns available_fen, withdrawable_fen and estimated_total_fen; read only by the token's app_id + user_id; a failed read propagates (50001), never zeros. Ledger logic and index untouched; depcruise clean. verify:fast green; full verification on the AWS test machine hit the 3600 s limit on unrelated slow property tests, the 5 me-balance rule tests were green in that log with no failures; required CI checks run on the PR head.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "money-level adversarial review round 1 pass, 0 findings (couli-runs/B1-02zn/review-money-r1.json); Codex unavailable until 11-02 (approvals #36)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude through claude-run.sh (attempt 1); red PASS 5 tests; review r1 pass, 0 findings (couli-runs/B1-02zn/review-spec-r1.json)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "89d3768f5feb3154bedacebfec4b4b72296345ac",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "task": "B1-02zn",
+  "spec_commit": "118f5888b36addcd91a3fb4143e3b1791088d45b",
+  "spec_ref": "812734156b57ba648ee1df733dafac3dba9bdb15",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "118f5888b36addcd91a3fb4143e3b1791088d45b",
+      "tree": "63df40bc53b2ddf415168febb8c547aab0c1ea78",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T18:49:08Z",
+      "finished_at": "2026-10-30T18:49:21Z",
+      "red_tests": [
+        "test/spec/identity/me-balance/balance.int.test.ts > [AC-B1-02zn#1] BR-FUND-18 无任何流水的用户：/v1/me 三项为 0，经 ledger 钱包摘要查询按 token 的 app_id + user_id 读取，不开账户",
+        "test/spec/identity/me-balance/balance.int.test.ts > [AC-B1-02zn#2] BR-FUND-18 有可用分录（REBATE_CREDIT）与待结算预估：/v1/me 三项与 /v1/wallet/summary 同名字段逐一相等且非 0",
+        "test/spec/identity/me-balance/balance.int.test.ts > [AC-B1-02zn#3] BR-FUND-18 可用为负时 withdrawable_fen = 0（同 wallet 口径），available_fen 照负值返回",
+        "test/spec/identity/me-balance/balance.int.test.ts > [AC-B1-02zn#4] BR-FUND-18 别的用户、别的 app 的余额与预估不计入：只按 token 的 app_id + user_id",
+        "test/spec/identity/me-balance/balance.int.test.ts > [AC-B1-02zn#5] BR-FUND-18 钱包摘要读取失败时 /v1/me 照现有错误处理答 50001，不吞成 0"
+      ],
+      "expected": ["test/spec/identity/me-balance/balance.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "705e60c48e81e1a90cafac1b2be56ab874a660b0d4db23d98165c51f2f334437"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "0de6d880688df44f2b56542ac1c0a39588b16db9",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ]
+}
