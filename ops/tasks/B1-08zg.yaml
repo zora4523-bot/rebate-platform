@@ -14,5 +14,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/orders/platform-restore/**'
-status: todo
-pr: null
+status: done
+pr: 1920
