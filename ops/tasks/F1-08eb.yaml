@@ -9,7 +9,7 @@ type: impl
 refs: [BR-WDR-23]
 refs_hash:
   BR-WDR-23: 98981fee10c7
-deps: [CT-24za, B2-07e, B2-07f, F1-08e]
+deps: [CT-24za, B2-07e, B2-07f, F1-08e, F1-08eba]
 paths:
   - 'apps/admin/src/pages/recon/**'
   - 'apps/admin/src/texts/recon.ts'

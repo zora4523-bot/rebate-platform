@@ -1,0 +1,17 @@
+id: F1-08eba
+repo: rebate-platform
+title: F1-08eba：冻结对账页源码测试 [AC-F1-08e-SOURCE#1] 去掉「pages/recon 不得引用动态码组件」一条断言（F1-08eb 前置；其余源码检查不变）
+type: test-change
+# 2026-10-31 入账（前端线 f1-frontend-7，先例 F1-13ba #1940）。F1-08e 时对账页只读加结案（结案不要动态码），SOURCE#1 断言 pages/recon 不引用 components/step-up / useStepUp。F1-08eb 的【核销】按契约 writeOffAdminReconDiff 要 totp 动态码，必须用现有动态码组件（不在页面里另造一份），两者不能同时满足（F1-08eb 规则测试作者 r1 报）。
+# 只删 SOURCE#1 里的动态码导入禁令（regex 与对应 expect），标题如含「不用动态码」字样同步去掉；texts 文件、经 data provider 读、不用 fetch / XMLHttpRequest / dangerouslySetInnerHTML、App.tsx 登记等其余检查与 SOURCE#2 不变。「结案不弹动态码」仍由 admin-recon 的行为测试覆盖。现行主干改前改后都绿，可先于 F1-08eb 合并。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件；新鲜独立 Claude 改、另一新鲜独立 Claude 只读复审 pass（写进 PR 正文）；标签由编排核对后加（#24）。
+refs: []
+refs_hash: {}
+deps: [F1-08e]
+paths:
+  - 'test/spec/frontend/admin-recon/source.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
