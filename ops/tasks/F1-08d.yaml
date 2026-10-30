@@ -1,0 +1,23 @@
+id: F1-08d
+repo: rebate-platform
+title: 后台「月结账单」页第一段（资源 settle-bills，菜单 资金 / 月结账单）只读——账单列表（账单月 / 账单状态筛选、聚合字段、三态）、账单详情 settle-bills/{id}（账单状态、统计、一致性校验结果、结算批次表）与批次明细（settle-batches/{id}/items，分页）；账单状态与批次状态中文名取后台字典 BR-TEXT-25；持 settle.bill 或 fund.view 可看；接口 CT-24z listAdminSettleBills / getAdminSettleBill / listAdminSettleBatchItems（planned，B2-09d 实现中，测试用假服务端）
+type: impl
+# 2026-10-30 入账（前端线 f1-frontend-7，编排续跑派工：月结账单只读，CT-24z 已合并、B2-09d 实现中，先按契约做页面）。规格 couli design/specs/admin-settle-bills.md（列表、详情、批次明细部分），负责人 2026-10-18 第 2 批定稿；画板 AdmSettleBills、AdmSettleBillDetail、AdmSettleBillRunning（布局参考）。
+# 不做（写接口契约未出，另开后续段）：确认立即 / 定时执行、撤销定时、驳回、继续执行、发起补充批次、上传结算明细（P1，前端延后）；下一期卡的上传入口不出现。合计金额照契约「只作展示、金额判断按明细行」只显示。
+# 正式入口经 F1-06zu planned 清单在 B2-09d 去掉 planned 前显示「功能开发中」；测试直接调 createAdminShell 不传清单。菜单不改（settle.bill、settle.statement_upload、fund.settle_adjust 任一），只持后两者而无 settle.bill / fund.view 的进页显示无权限。不碰冻结 admin-shell 夹具。
+# 资金页面（只读）：评审走 money 口径。Codex 到 11-02 不可用：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude。App.tsx 与 F1-08a 同改登记，两任务先后落地时后者变基。
+refs: []
+refs_hash: {}
+deps: [CT-24z]
+paths:
+  - 'apps/admin/src/pages/settle-bills/**'
+  - 'apps/admin/src/texts/settle-bills.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-settle-bills/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-settle-bills/**'
+status: todo
