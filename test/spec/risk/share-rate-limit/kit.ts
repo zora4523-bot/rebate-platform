@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { sql } from 'kysely';
 import {
@@ -28,11 +28,27 @@ interface Request {
 }
 type Handler = (req: Request) => unknown;
 
+/**
+ * Idempotency-Key for a case-local label: a uuid derived from the label alone, so the same label
+ * is the same key (a replay) and every label meets contracts IdempotencyKey (8–64 chars of
+ * [A-Za-z0-9_-]; a short label such as `share_0` alone would be refused with 20001).
+ */
+export function idempotencyKey(label: string): string {
+  const hex = createHash('sha256').update(`B1-15x:${label}`).digest('hex');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join('-');
+}
+
 export interface ShareFixture extends HttpFixture {
-  /** POST /v1/shares, signed, with the given Idempotency-Key. */
-  share(key: string): Promise<Response>;
-  /** POST /v1/links/convert, signed, with the given Idempotency-Key. */
-  convert(key: string): Promise<Response>;
+  /** POST /v1/shares, signed, with the Idempotency-Key derived from the label. */
+  share(label: string): Promise<Response>;
+  /** POST /v1/links/convert, signed, with the Idempotency-Key derived from the label. */
+  convert(label: string): Promise<Response>;
   /** Share bodies the fixture handler ran (idempotency misses past every gate). */
   created(): number;
   /** Upserts a config_items row of this app (couli_app has no DELETE on config_items). */
@@ -89,8 +105,9 @@ export async function withShares(
         WHERE app_id = ${f.id} AND id = ${f.uid}`.execute(suite.kit.db);
       await run({
         ...f,
-        share: (key) => f.post(SHARES, SHARE, { 'idempotency-key': key }),
-        convert: (key) => f.post(CONVERT, CONVERSION, { 'idempotency-key': key }),
+        share: (label) => f.post(SHARES, SHARE, { 'idempotency-key': idempotencyKey(label) }),
+        convert: (label) =>
+          f.post(CONVERT, CONVERSION, { 'idempotency-key': idempotencyKey(label) }),
         created: () => created,
         config: async (key, value) => {
           await sql`INSERT INTO app.config_items (app_id, key, value, updated_by)
