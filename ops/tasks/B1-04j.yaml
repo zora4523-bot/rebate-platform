@@ -1,0 +1,27 @@
+id: B1-04j
+repo: rebate-platform
+title: 淘宝 Adapter 请求底座：TOP md5 签名与公共参数（app_key、method、timestamp 取注入的 Clock 按北京时间、format=json、v=2.0、sign_method=md5）、凭据经构造参数注入、经既有 https UnionTransport 发表单 POST 到 eco.taobao.com/router/rest、按接口登记的响应外层键解包、error_response 分类到 UnionError、端口方法先以 adapter_unimplemented 占位
+type: impl
+# 草稿 2026-10-31（union 线，账号 4），编排 D10-455 第 ① 段的前半；照拼多多 B1-04g（底座）/ B1-04t（装配）分两段，装配见 B1-04k。
+# 依据：规划/09 2_TB §2.5～§2.9（权限包、code 11 实测）、02 §6.2（治理、超时）；编排 10-30 23:5x 凑狸应用权限核对（couli-runs/probes/out/taobao-couli-perm-20261030-235542.json，探测脚本 probes/tb_couli_perm.py 与 probe_common.py 的签名 / 公共参数做法，实测可用），由编排者摘入任务书第 2 节；不读本机凭据文件。
+# 签名（TOP md5，同探测脚本实测）：去掉值为空的参数 → 参数名 ASCII 升序 → 名值依次拼接 → 头尾各加 app_secret → MD5 → 大写十六进制；sign 本身不参与。单元测试用合成 secret（低熵重复串）给出固定向量，由测试作者按上述规则独立算出。数组 / 对象参数按 JSON 字符串参与签名并原样作表单值，标 TODO 待录制核对。
+# 公共参数：method、app_key、timestamp（「yyyy-MM-dd HH:mm:ss」，Asia/Shanghai，取注入 Clock，不读系统时间）、format=json、v=2.0、sign_method=md5；业务参数与公共参数同在表单里签名。不加 simplify（非精简 JSON，数组外有一层包装，留给 ② 段映射）。
+# 凭据：app_key / app_secret 是应用级密钥；适配器只经构造参数注入的凭据提供者取，不读环境变量、不读文件；secret 只在内存参与签名，不进日志、错误、录制（B1-04p 去敏名单已含 app_key / sign / *secret，本段不改 archive.ts）。PID（推广位）本段不用，② 段转链时再注入。
+# 传输：复用 union/infra/http-transport.ts（只 https、拒绝跳转、取消走 signal），本段不改它；Content-Type application/x-www-form-urlencoded;charset=utf-8。单元测试只用内存假传输，不联网、不 listen。
+# 解包：外层键按接口逐个登记（本段表可为空，② 段随接口按录制登记），不由方法名推导；未登记的方法调用一律 adapter_unimplemented。body 顶层有 error_response 先判错误。
+# 错误分类（error_response{code,msg,sub_code,sub_msg,request_id}，编排 D10-455）：code 11（isv.permission-api-package-limit 等，无权限）→ upstream_rejected 并发告警事件（只带方法名与 code / sub_code，不带 sub_msg 里的 scope 列表）；code 15（业务错，如实测 sub_code 50001「无结果」、26「链接不符合规范」）→ upstream_rejected（按 sub_code 细分为 item_unavailable / link_unrecognized 留给 ② 段按录制定，本段不细分）；code 7 与 sub_code 以 isp.call-limited 开头 → rate_limited；HTTP 5xx、网络错误、超时、响应不是 JSON → upstream_unavailable；表外 code → upstream_rejected。错误信息只带方法名与 code / sub_code。
+# 占位：searchItems / getItem / resolveLink / convert / listOrders 一律抛 UnionError('adapter_unimplemented')。不写任何商品 / 订单 / 转链字段映射（AGENTS §4 第 7 条、规划/11 §4.5），不新增 fixtures/union-recordings/ 场景（第一类测试 test/spec/load/wiremock/union.test.ts 只认 synthetic-smoke）。
+# 目录：只改 union/infra/taobao/**。test_paths：test/spec/union/taobao-core/**。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04g, B1-04p]
+paths:
+  - 'apps/api/src/modules/union/infra/taobao/**'
+test_paths:
+  - 'test/spec/union/taobao-core/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/taobao-core/**'
+status: todo
