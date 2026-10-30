@@ -4,6 +4,7 @@ import type { Schema } from '@couli/contracts-ts';
 import {
   createCatalogCardEntry,
   createGuestViewerContext,
+  ViewerContext,
   type PriceSnapshotRecorder,
 } from '../../../catalog/index.ts';
 import {
@@ -84,6 +85,7 @@ export class ParseInputController {
   readonly #logger: RootLogger;
   readonly #createParsing: ParsingFactory;
   readonly #priceHistory: PriceSnapshotRecorder | undefined;
+  readonly #viewerContext: ViewerContext | undefined;
 
   constructor(
     config: ParsingConfigReader,
@@ -93,6 +95,7 @@ export class ParseInputController {
     logger: RootLogger,
     createParsing: ParsingFactory,
     priceHistory?: PriceSnapshotRecorder,
+    viewerContext?: ViewerContext,
   ) {
     this.#config = config;
     this.#ports = ports;
@@ -101,21 +104,24 @@ export class ParseInputController {
     this.#logger = logger.child({ module: 'parsing' });
     this.#createParsing = createParsing;
     this.#priceHistory = priceHistory;
+    this.#viewerContext = viewerContext;
   }
 
   /**
    * Contract operation `parseInput` (x-auth optional): one result per hit in input order, at most
    * three (04 §8.5). Cards only register a link with its quote snapshot through catalog's card
-   * entry; nothing is converted here (拍板第二批 TRADE-03). The viewer is a guest of the request's
-   * app until identity is wired (B1-02m): no client header promotes it. Identity and scene never
-   * come from the body (the route schema rejects any other field). Nothing that names a concrete
-   * product answers 30132 without candidate cards (拍板第二批 TRADE-07).
+   * entry; nothing is converted here (拍板第二批 TRADE-03). The viewer is the injected request
+   * identity (B1-07c), read by the card entry, so a viewer that fails ends only its hit and never
+   * becomes a guest; a process without one has a guest of the request's app. No client header
+   * promotes it. Identity and scene never come from the body (the route schema rejects any other
+   * field). Nothing that names a concrete product answers 30132 without candidate cards (拍板第二批
+   * TRADE-07).
    * x-signed and the minimum-version gate are global request checks of the risk tasks.
    */
   async parse(request: ParseInputRequest): Promise<ParseInputResponse> {
     const appId = request.headers['x-app-id'];
-    // TODO(规划/11 §4.5): 已登录查看者 — blocked on B1-02m（identity 接入 ViewerContext）
-    const viewerContext = createGuestViewerContext({ appId, deviceId: null });
+    const viewerContext =
+      this.#viewerContext ?? createGuestViewerContext({ appId, deviceId: null });
     const cards = createCatalogCardEntry({
       clock: this.#clock,
       viewerContext,
@@ -165,6 +171,8 @@ Inject(ROOT_LOGGER)(ParseInputController, undefined, 4);
 Inject(PARSING_FACTORY)(ParseInputController, undefined, 5);
 Inject(PARSING_PRICE_HISTORY)(ParseInputController, undefined, 6);
 Optional()(ParseInputController, undefined, 6);
+Inject(ViewerContext)(ParseInputController, undefined, 7);
+Optional()(ParseInputController, undefined, 7);
 const parseMethod = Object.getOwnPropertyDescriptor(ParseInputController.prototype, 'parse')!;
 Post('inputs/parse')(ParseInputController.prototype, 'parse', parseMethod);
 HttpCode(200)(ParseInputController.prototype, 'parse', parseMethod);
