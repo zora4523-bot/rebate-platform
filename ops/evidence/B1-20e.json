@@ -1,0 +1,128 @@
+{
+  "red_tests": [
+    "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#1] 第三方空号有一条 submitted 的找回申请 → 只返回 30411（无 mergeable、无 ticket）",
+    "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#1] 第三方空号有一条 auto_matched 的找回申请 → 只返回 30411（无 mergeable、无 ticket）",
+    "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#1] 第三方空号有一条 manual_review 的找回申请 → 只返回 30411（无 mergeable、无 ticket）",
+    "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#1] 第三方空号有一条 approved 的找回申请 → 只返回 30411（无 mergeable、无 ticket）",
+    "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#1] 第三方空号有一条 rejected 的找回申请 → 只返回 30411（无 mergeable、无 ticket）",
+    "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#1] 第三方空号有一条 cancelled 的找回申请 → 只返回 30411（无 mergeable、无 ticket）",
+    "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#2] 找回申请只看当前账号作为申请人：目标账号与其他用户的申请不算，当前账号有一条已取消的申请即不并号",
+    "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#3] 无订单、无找回申请的华为空号先可并号；补一条待审核申请后再绑同一号码 → 只返回 30411",
+    "test/spec/identity/bind-phone-merge-conditions/deletion.int.test.ts > [AC-B1-20e#13] 目标手机号账号处于注销冷静期（deletion_requests cooling）→ 只返回 30411（无 mergeable、无 ticket）",
+    "test/spec/identity/bind-phone-merge-conditions/deletion.int.test.ts > [AC-B1-20e#14] 目标账号冷静期已到期、任务尚未处理（仍是 cooling）→ 只返回 30411",
+    "test/spec/identity/bind-phone-merge-conditions/deletion.int.test.ts > [AC-B1-20e#15] 目标账号注销处理中（deletion_requests processing）→ 只返回 30411",
+    "test/spec/identity/bind-phone-merge-conditions/deletion.int.test.ts > [AC-B1-20e#16] 目标账号只有已撤回的注销申请、别的用户在冷静期 → 可并号；目标账号再次申请注销后 → 只返回 30411",
+    "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#4] 第三方空号余额有一条分录（REBATE_CREDIT 入账）→ 只返回 30411（无 mergeable、无 ticket）",
+    "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#4] 第三方空号余额有一条分录（REWARD 奖励）→ 只返回 30411（无 mergeable、无 ticket）",
+    "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#4] 第三方空号余额有一条分录（ADMIN_ADJUST 调账）→ 只返回 30411（无 mergeable、无 ticket）",
+    "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#4] 第三方空号余额有一条分录（CLAWBACK 追回）→ 只返回 30411（无 mergeable、无 ticket）",
+    "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#4] 第三方空号余额有一条分录（WITHDRAW_FREEZE 冻结子账户）→ 只返回 30411（无 mergeable、无 ticket）",
+    "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#4] 第三方空号余额有一条分录（SHARE_CREDIT 分享入账）→ 只返回 30411（无 mergeable、无 ticket）",
+    "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#5] 分录相互抵消、余额为 0 仍算有流水 → 只返回 30411",
+    "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#6] 只有余额账户行、没有任何分录 → 仍可并号；只读函数答 false 且不开户、不记账",
+    "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#7] 别的 app 下同一 user_id 的余额分录、本 app 目标账号的分录都不影响本 app 当前账号的判定",
+    "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#8] 先可并号；当前账号余额记一条分录后再绑同一号码 → 只返回 30411",
+    "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#9] 只读函数：没有余额账户行 → false，且不开户",
+    "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#10] 只读函数：平台账户与他人余额账户的分录不算；只认该用户 USER_BALANCE 账户上的分录",
+    "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#11] 只读函数在调用方的执行器上读：事务内未提交的分录可见，事务外不可见",
+    "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#12] 只读函数不加锁：别的事务锁住账户行与分录时照常返回（lock_timeout 内）"
+  ],
+  "risk_note": "RV2 (app.module, identity bind-phone, ledger read-only port). BR-ID-06 并号 (OPS-04): the merge offer (30411 + reason=mergeable + merge_ticket) now reads real data — hasClaims: any app.claims row of the user as applicant, any status; hasLedgerEntries: new ledger read-only hasUserBalanceEntries (any app.ledger_entries row on the user's USER_BALANCE account; no account → false; one LIMIT 1 read, no lock or write), exported from ledger/index.ts; target account in the deletion process (identity deletion stage cooling / processing) → plain 30411. All on the caller's transaction. Replaces two always-false stubs and a TODO whose blockers (B1-10, ledger, B1-15a) had merged. verify:fast green; full verification on the AWS test machine hit the 3600 s limit on an unrelated slow property test, this task's 26 rule tests were green in that log with no failures; required CI checks run on the PR head.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "money-level adversarial review round 1 pass, 0 findings (couli-runs/B1-20e/review-money-r1.json); Codex unavailable until 11-02 (approvals #36)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude through claude-run.sh (attempt 1; attempt 2 only the [AC-B1-20e#12] lock-holder fixture, the test role cannot FOR UPDATE ledger tables); red/2 PASS 26 tests; review r1 pass, 0 findings (couli-runs/B1-20e/review-spec-r1.json)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "d125caed9183ef2f5cb16cfd600900dfc5fef688",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "task": "B1-20e",
+  "spec_commit": "2124262a78f058ac3272a892b65debd1df237556",
+  "spec_ref": "812734156b57ba648ee1df733dafac3dba9bdb15",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "2124262a78f058ac3272a892b65debd1df237556",
+      "tree": "d50fc11fa319b8671fc67e3020c128ce8763b151",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T19:12:15Z",
+      "finished_at": "2026-10-30T19:12:29Z",
+      "red_tests": [
+        "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#1] 第三方空号有一条 submitted 的找回申请 → 只返回 30411（无 mergeable、无 ticket）",
+        "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#1] 第三方空号有一条 auto_matched 的找回申请 → 只返回 30411（无 mergeable、无 ticket）",
+        "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#1] 第三方空号有一条 manual_review 的找回申请 → 只返回 30411（无 mergeable、无 ticket）",
+        "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#1] 第三方空号有一条 approved 的找回申请 → 只返回 30411（无 mergeable、无 ticket）",
+        "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#1] 第三方空号有一条 rejected 的找回申请 → 只返回 30411（无 mergeable、无 ticket）",
+        "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#1] 第三方空号有一条 cancelled 的找回申请 → 只返回 30411（无 mergeable、无 ticket）",
+        "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#2] 找回申请只看当前账号作为申请人：目标账号与其他用户的申请不算，当前账号有一条已取消的申请即不并号",
+        "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts > [AC-B1-20e#3] 无订单、无找回申请的华为空号先可并号；补一条待审核申请后再绑同一号码 → 只返回 30411",
+        "test/spec/identity/bind-phone-merge-conditions/deletion.int.test.ts > [AC-B1-20e#13] 目标手机号账号处于注销冷静期（deletion_requests cooling）→ 只返回 30411（无 mergeable、无 ticket）",
+        "test/spec/identity/bind-phone-merge-conditions/deletion.int.test.ts > [AC-B1-20e#14] 目标账号冷静期已到期、任务尚未处理（仍是 cooling）→ 只返回 30411",
+        "test/spec/identity/bind-phone-merge-conditions/deletion.int.test.ts > [AC-B1-20e#15] 目标账号注销处理中（deletion_requests processing）→ 只返回 30411",
+        "test/spec/identity/bind-phone-merge-conditions/deletion.int.test.ts > [AC-B1-20e#16] 目标账号只有已撤回的注销申请、别的用户在冷静期 → 可并号；目标账号再次申请注销后 → 只返回 30411",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#4] 第三方空号余额有一条分录（REBATE_CREDIT 入账）→ 只返回 30411（无 mergeable、无 ticket）",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#4] 第三方空号余额有一条分录（REWARD 奖励）→ 只返回 30411（无 mergeable、无 ticket）",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#4] 第三方空号余额有一条分录（ADMIN_ADJUST 调账）→ 只返回 30411（无 mergeable、无 ticket）",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#4] 第三方空号余额有一条分录（CLAWBACK 追回）→ 只返回 30411（无 mergeable、无 ticket）",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#4] 第三方空号余额有一条分录（WITHDRAW_FREEZE 冻结子账户）→ 只返回 30411（无 mergeable、无 ticket）",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#4] 第三方空号余额有一条分录（SHARE_CREDIT 分享入账）→ 只返回 30411（无 mergeable、无 ticket）",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#5] 分录相互抵消、余额为 0 仍算有流水 → 只返回 30411",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#6] 只有余额账户行、没有任何分录 → 仍可并号；只读函数答 false 且不开户、不记账",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#7] 别的 app 下同一 user_id 的余额分录、本 app 目标账号的分录都不影响本 app 当前账号的判定",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#8] 先可并号；当前账号余额记一条分录后再绑同一号码 → 只返回 30411",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#9] 只读函数：没有余额账户行 → false，且不开户",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#10] 只读函数：平台账户与他人余额账户的分录不算；只认该用户 USER_BALANCE 账户上的分录",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#11] 只读函数在调用方的执行器上读：事务内未提交的分录可见，事务外不可见",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts > [AC-B1-20e#12] 只读函数不加锁：别的事务锁住账户行与分录时照常返回（lock_timeout 内）"
+      ],
+      "expected": [
+        "test/spec/identity/bind-phone-merge-conditions/claims.int.test.ts",
+        "test/spec/identity/bind-phone-merge-conditions/deletion.int.test.ts",
+        "test/spec/identity/bind-phone-merge-conditions/ledger.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "27f2d99eb662e8d8fb46cb7661010ef57f286dfdc33b132072cce42bc46ec9c5"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "4124a111e3cbc081a1f5a7703204b7ea51af80ab",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ]
+}
