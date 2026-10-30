@@ -1,0 +1,111 @@
+{
+  "red_tests": [
+    "test/spec/orders/platform-restore-settled/commission.int.test.ts > [AC-B1-08zd#1] 平台 SETTLED、CLAWED_BACK(COMMISSION_ZERO)，结算佣金 0：只有预估佣金 0 → 300（结算佣金不变）→ 预估照常写入，不登记差错单、不打 platform_restore 告警",
+    "test/spec/orders/platform-restore-settled/commission.int.test.ts > [AC-B1-08zd#1] 平台 SETTLED、VOID(REFUND)，结算佣金 0：只有预估佣金 0 → 300（结算佣金不变）→ 预估照常写入，不登记差错单、不打 platform_restore 告警",
+    "test/spec/orders/platform-restore-settled/commission.int.test.ts > [AC-B1-08zd#1] 平台 SETTLED、CLAWED_BACK(COMMISSION_ZERO)、结算佣金为空：预估佣金 0 → 300 → 有效佣金是预估佣金，登记一张 expected_fen 300；之后结算佣金空 → 0、预估 300 → 0 → 450（结算佣金已非空）都不再调用登记端口",
+    "test/spec/orders/platform-restore-settled/commission.int.test.ts > [AC-B1-08zd#1] 平台 SETTLED、VOID(REFUND)、结算佣金为空：预估佣金 0 → 300 → 有效佣金是预估佣金，登记一张 expected_fen 300；之后结算佣金空 → 0、预估 300 → 0 → 450（结算佣金已非空）都不再调用登记端口",
+    "test/spec/orders/platform-restore-settled/commission.int.test.ts > [AC-B1-08zd#2] 平台 SETTLED、CLAWED_BACK(COMMISSION_ZERO)：预估佣金反复 0 → 300 → 0 → 450 都安静；结算佣金之后 0 → 500 才登记一张 expected_fen 500",
+    "test/spec/orders/platform-restore-settled/commission.int.test.ts > [AC-B1-08zd#3] 平台 SETTLED、CLAWED_BACK 经 INVALID_AFTER_SETTLE 进入（reason 为空）、结算佣金为空、预估佣金 300：预估 300 → 450（未越过 0）、450 → 0 安静；预估 0 → 300 登记一张 expected_fen 300；之后结算佣金空 → 0（有效佣金 300 → 0）、预估 300 → 0 → 280 都不再调用登记端口",
+    "test/spec/orders/platform-restore-settled/commission.int.test.ts > [AC-B1-08zd#4] 平台 SETTLED、VOID(REFUND)：预估 0 → 300 安静；结算佣金 0 → 1 分登记一张 expected_fen 1（边界仍是新值 >0）",
+    "test/spec/orders/platform-restore-settled/regression.int.test.ts > [AC-B1-08zd#5] 平台 PAID：预估佣金 0 → 300 照常登记一张 expected_fen 300（trigger=commission）；对照的 SETTLED、结算佣金 0 的单同样变化不登记",
+    "test/spec/orders/platform-restore-settled/regression.int.test.ts > [AC-B1-08zd#5] 平台 RECEIVED：预估佣金 0 → 300 照常登记一张 expected_fen 300（trigger=commission）；对照的 SETTLED、结算佣金 0 的单同样变化不登记",
+    "test/spec/orders/platform-restore-settled/regression.int.test.ts > [AC-B1-08zd#6] P9 到 SETTLED 不受影响：VOID(REFUND) 由 INVALID 直接结算、结算佣金 450 → 状态触发一张 expected_fen 450；之后只有预估佣金 0 → 300 不再调用登记端口",
+    "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#7] 平台 RECEIVED → SETTLED 的同一报文、结算佣金 0、预估佣金 0 → 300 → 不登记、不告警；之后结算佣金 → 500 才登记一张 expected_fen 500",
+    "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#7] 平台 PAID → SETTLED 的同一报文、结算佣金 0、预估佣金 0 → 300 → 不登记、不告警；之后结算佣金 → 500 才登记一张 expected_fen 500",
+    "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#7] 平台 RECEIVED → SETTLED 的同一报文、结算佣金为空、预估佣金 0 → 300 → 有效佣金是预估佣金，当次登记一张 expected_fen 300（trigger=commission、platform SETTLED）；之后结算佣金空 → 0、预估 300 → 0 → 450 不再调用登记端口",
+    "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#7] 平台 PAID → SETTLED 的同一报文、结算佣金为空、预估佣金 0 → 300 → 有效佣金是预估佣金，当次登记一张 expected_fen 300（trigger=commission、platform SETTLED）；之后结算佣金空 → 0、预估 300 → 0 → 450 不再调用登记端口",
+    "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#8] 平台 RECEIVED → SETTLED 的同一报文、结算佣金空 → 500、预估佣金不变（0） → 当次登记一张 expected_fen 500；之后只有预估佣金变化不再调用登记端口",
+    "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#8] 平台 RECEIVED → SETTLED 的同一报文、结算佣金空 → 500、预估佣金 0 → 280 → 当次登记一张 expected_fen 500；之后只有预估佣金变化不再调用登记端口",
+    "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#8] 平台 PAID → SETTLED 的同一报文、结算佣金空 → 500、预估佣金不变（0） → 当次登记一张 expected_fen 500；之后只有预估佣金变化不再调用登记端口",
+    "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#8] 平台 PAID → SETTLED 的同一报文、结算佣金空 → 500、预估佣金 0 → 280 → 当次登记一张 expected_fen 500；之后只有预估佣金变化不再调用登记端口"
+  ],
+  "risk_note": "RV2 (orders; BR-FUND-22 with BR-CALC-02). The platform-restore commission trigger now uses the effective commission: settle_commission_fen when non-null, otherwise est_commission_fen (08 BR-CALC-02: once settle is non-null, estimate changes are archived only). It fires when the effective commission moves from null / <=0 to >0, independent of platform_status; expected_fen = the new effective commission. This fixes the B1-08zc money S2 (a SETTLED clawed-back order with settle 0 whose estimate alone moved 0 -> >0 registered a false diff) without missing PDD orders, whose adapter always leaves settle null. P9 status trigger, eligibility branches, dedupe keys and alerts are unchanged; B1-08zc frozen rule tests untouched. Rule tests by a fresh independent Claude in three rounds (spec-test r1 fail S1 -> round 2; money r1 found the brief's SETTLED-only wording wrong for null settle -> round 3 rewrote this task's own unmerged tests to the effective-commission rule; r3 pass). Test-machine verify:fast passed on 14fbc754; full verify hits the 3600 s container limit (exit 124) and per D10-319 the CI verify-int decides. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "fresh independent Claude via claude-run.sh (Codex unavailable until 11-02). r1 fail (S1x2: null settle must fall back to the estimate per BR-CALC-02; the tests pinned the defect) -> brief corrected, tests and implementation redone; r2 pass with no in-scope findings, one out-of-scope S2 (P9 amount for PDD should also use the effective commission) recorded as a follow-up"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "rule tests by a fresh independent Claude; spec-test r1 fail (no same-report RECEIVED -> SETTLED case), r2 pass, round 3 after the money correction, r3 pass (one S2 on judging settle and estimate separately, handled in the implementation); test machine showed 9, 17 and 18 red tests failing for the right reason"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "B1-08zd",
+  "spec_commit": "690971154fe3ffbabbeb9645af61eef940a2497a",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "690971154fe3ffbabbeb9645af61eef940a2497a",
+      "tree": "0b269a6ed46b51d36b7c0fdf1c1b3aeb08d9a5d7",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T07:18:55Z",
+      "finished_at": "2026-10-30T07:19:10Z",
+      "red_tests": [
+        "test/spec/orders/platform-restore-settled/commission.int.test.ts > [AC-B1-08zd#1] 平台 SETTLED、CLAWED_BACK(COMMISSION_ZERO)，结算佣金 0：只有预估佣金 0 → 300（结算佣金不变）→ 预估照常写入，不登记差错单、不打 platform_restore 告警",
+        "test/spec/orders/platform-restore-settled/commission.int.test.ts > [AC-B1-08zd#1] 平台 SETTLED、VOID(REFUND)，结算佣金 0：只有预估佣金 0 → 300（结算佣金不变）→ 预估照常写入，不登记差错单、不打 platform_restore 告警",
+        "test/spec/orders/platform-restore-settled/commission.int.test.ts > [AC-B1-08zd#1] 平台 SETTLED、CLAWED_BACK(COMMISSION_ZERO)、结算佣金为空：预估佣金 0 → 300 → 有效佣金是预估佣金，登记一张 expected_fen 300；之后结算佣金空 → 0、预估 300 → 0 → 450（结算佣金已非空）都不再调用登记端口",
+        "test/spec/orders/platform-restore-settled/commission.int.test.ts > [AC-B1-08zd#1] 平台 SETTLED、VOID(REFUND)、结算佣金为空：预估佣金 0 → 300 → 有效佣金是预估佣金，登记一张 expected_fen 300；之后结算佣金空 → 0、预估 300 → 0 → 450（结算佣金已非空）都不再调用登记端口",
+        "test/spec/orders/platform-restore-settled/commission.int.test.ts > [AC-B1-08zd#2] 平台 SETTLED、CLAWED_BACK(COMMISSION_ZERO)：预估佣金反复 0 → 300 → 0 → 450 都安静；结算佣金之后 0 → 500 才登记一张 expected_fen 500",
+        "test/spec/orders/platform-restore-settled/commission.int.test.ts > [AC-B1-08zd#3] 平台 SETTLED、CLAWED_BACK 经 INVALID_AFTER_SETTLE 进入（reason 为空）、结算佣金为空、预估佣金 300：预估 300 → 450（未越过 0）、450 → 0 安静；预估 0 → 300 登记一张 expected_fen 300；之后结算佣金空 → 0（有效佣金 300 → 0）、预估 300 → 0 → 280 都不再调用登记端口",
+        "test/spec/orders/platform-restore-settled/commission.int.test.ts > [AC-B1-08zd#4] 平台 SETTLED、VOID(REFUND)：预估 0 → 300 安静；结算佣金 0 → 1 分登记一张 expected_fen 1（边界仍是新值 >0）",
+        "test/spec/orders/platform-restore-settled/regression.int.test.ts > [AC-B1-08zd#5] 平台 PAID：预估佣金 0 → 300 照常登记一张 expected_fen 300（trigger=commission）；对照的 SETTLED、结算佣金 0 的单同样变化不登记",
+        "test/spec/orders/platform-restore-settled/regression.int.test.ts > [AC-B1-08zd#5] 平台 RECEIVED：预估佣金 0 → 300 照常登记一张 expected_fen 300（trigger=commission）；对照的 SETTLED、结算佣金 0 的单同样变化不登记",
+        "test/spec/orders/platform-restore-settled/regression.int.test.ts > [AC-B1-08zd#6] P9 到 SETTLED 不受影响：VOID(REFUND) 由 INVALID 直接结算、结算佣金 450 → 状态触发一张 expected_fen 450；之后只有预估佣金 0 → 300 不再调用登记端口",
+        "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#7] 平台 RECEIVED → SETTLED 的同一报文、结算佣金 0、预估佣金 0 → 300 → 不登记、不告警；之后结算佣金 → 500 才登记一张 expected_fen 500",
+        "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#7] 平台 PAID → SETTLED 的同一报文、结算佣金 0、预估佣金 0 → 300 → 不登记、不告警；之后结算佣金 → 500 才登记一张 expected_fen 500",
+        "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#7] 平台 RECEIVED → SETTLED 的同一报文、结算佣金为空、预估佣金 0 → 300 → 有效佣金是预估佣金，当次登记一张 expected_fen 300（trigger=commission、platform SETTLED）；之后结算佣金空 → 0、预估 300 → 0 → 450 不再调用登记端口",
+        "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#7] 平台 PAID → SETTLED 的同一报文、结算佣金为空、预估佣金 0 → 300 → 有效佣金是预估佣金，当次登记一张 expected_fen 300（trigger=commission、platform SETTLED）；之后结算佣金空 → 0、预估 300 → 0 → 450 不再调用登记端口",
+        "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#8] 平台 RECEIVED → SETTLED 的同一报文、结算佣金空 → 500、预估佣金不变（0） → 当次登记一张 expected_fen 500；之后只有预估佣金变化不再调用登记端口",
+        "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#8] 平台 RECEIVED → SETTLED 的同一报文、结算佣金空 → 500、预估佣金 0 → 280 → 当次登记一张 expected_fen 500；之后只有预估佣金变化不再调用登记端口",
+        "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#8] 平台 PAID → SETTLED 的同一报文、结算佣金空 → 500、预估佣金不变（0） → 当次登记一张 expected_fen 500；之后只有预估佣金变化不再调用登记端口",
+        "test/spec/orders/platform-restore-settled/transition.int.test.ts > [AC-B1-08zd#8] 平台 PAID → SETTLED 的同一报文、结算佣金空 → 500、预估佣金 0 → 280 → 当次登记一张 expected_fen 500；之后只有预估佣金变化不再调用登记端口"
+      ],
+      "expected": [
+        "test/spec/orders/platform-restore-settled/commission.int.test.ts",
+        "test/spec/orders/platform-restore-settled/regression.int.test.ts",
+        "test/spec/orders/platform-restore-settled/transition.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "a61e6b4c0041883134843e8ce256eee2a37389c52b3738142d181295238e3b65"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "10c07d7401885091fe5a2f756e8875c49441ad0a",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "169efa5427362ecf96e728725510576893f02c8b",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}
