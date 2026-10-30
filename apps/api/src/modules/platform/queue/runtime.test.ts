@@ -2,8 +2,9 @@ import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { RootLogger } from '../logging/logger.ts';
+import { scheduleIdempotencyPurge } from './idempotency-purge.ts';
 import { createQueueRuntime } from './runtime.ts';
-import type { JobPayload, QueueRuntime, QueueSpec } from './types.ts';
+import type { JobPayload, QueueLimits, QueueRuntime, QueueSpec } from './types.ts';
 
 // No database runs: fetch is observed independently from business handler calls.
 // Each statement records its text and the executor it ran on (B1-01zs: the version read).
@@ -41,6 +42,11 @@ const fake = vi.hoisted(() => ({
   stop: vi.fn(async () => undefined),
   getQueues: vi.fn(async (): Promise<unknown[]> => []),
   bossStart: vi.fn(async (): Promise<void> => undefined),
+  createQueue: vi.fn<(name: string, options: Record<string, unknown>) => Promise<void>>(
+    async () => undefined,
+  ),
+  schedule: vi.fn(async (): Promise<void> => undefined),
+  supervise: vi.fn(async (): Promise<void> => undefined),
   options: undefined as
     | { db: { executeSql(text: string, values?: unknown[]): Promise<{ rows: unknown[] }> } }
     | undefined,
@@ -54,7 +60,9 @@ vi.mock('pg-boss', () => ({
     on() {}
     getQueues = fake.getQueues;
     start = fake.bossStart;
-    async createQueue() {}
+    createQueue = fake.createQueue;
+    schedule = fake.schedule;
+    supervise = fake.supervise;
     async findJobs() {
       return [];
     }
@@ -429,4 +437,138 @@ it('[AC-B1-01zs#3] 版本读取等锁超时：start 立即以同一错误拒绝�
   expect(fake.fetch).not.toHaveBeenCalled();
   expect(logger.warn).not.toHaveBeenCalled();
   expect(logger.error).not.toHaveBeenCalled();
+});
+
+const PURGE_QUEUE = 'idempotency-purge';
+const PURGE_TICK = { name: 'idempotency.purge', payload: {} };
+const SCAN_SCHEDULE = [
+  'dead-letter-scan',
+  '*/5 * * * *',
+  { name: 'dead_letter.scan', payload: {} },
+  { tz: 'UTC' },
+];
+const PURGE_SCHEDULE = [PURGE_QUEUE, '0 20 * * *', PURGE_TICK, { tz: 'UTC' }];
+
+function purgeFixture(
+  entry: 'worker' | 'payout',
+  extra: { catalog?: readonly string[]; limits?: QueueLimits } = {},
+) {
+  vi.useFakeTimers();
+  fake.fetch.mockReset();
+  fake.complete.mockClear();
+  fake.fail.mockClear();
+  fake.stop.mockClear();
+  fake.createQueue.mockClear();
+  fake.schedule.mockClear();
+  const pending = new Map<string, FetchedJob[]>();
+  fake.fetch.mockImplementation(async (queue) => pending.get(queue)?.splice(0, 1) ?? []);
+  const catalog: QueueSpec[] = (extra.catalog ?? ['notify']).map((name) => ({
+    name,
+    policy: 'standard',
+    retryLimit: 0,
+    retryDelaySeconds: 1,
+    retryBackoff: false,
+    retryDelayMaxSeconds: null,
+    expireInSeconds: 1,
+    retentionSeconds: 60,
+    deleteAfterSeconds: 60,
+    deadLetter: null,
+  }));
+  const works = [{ queue: 'notify', concurrency: 1, pollingIntervalSeconds: 0.5 }];
+  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const runtime = createQueueRuntime({
+    entry,
+    db: {
+      executeQuery: vi.fn(),
+      transaction: () => ({ execute: async (run: (trx: unknown) => Promise<unknown>) => run({}) }),
+    } as unknown as Kysely<DB>,
+    logger: logger as unknown as RootLogger,
+    catalog,
+    plan: {
+      api: [],
+      stream: [],
+      admin: [],
+      worker: entry === 'worker' ? works : [],
+      payout: entry === 'payout' ? works : [],
+    },
+    stopTimeoutMs: 100,
+    ...(extra.limits === undefined ? {} : { limits: extra.limits }),
+  });
+  runtimes.push(runtime);
+  return { runtime, logger, pending };
+}
+
+const fetchedQueues = (): string[] => fake.fetch.mock.calls.map(([queue]) => queue);
+
+it('[AC-B1-15za#1] worker 运行时拿到清理后建内部队列、登记 schedule、开独立 lane，启动时不跑一轮', async () => {
+  const { runtime, pending, logger } = purgeFixture('worker');
+  const purgeExpired = vi.fn(async () => 4);
+  scheduleIdempotencyPurge(runtime, { purgeExpired });
+  await runtime.start();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fake.createQueue.mock.calls.map(([name]) => name)).toEqual([
+    'notify',
+    'dead-letter-scan',
+    PURGE_QUEUE,
+  ]);
+  const created = fake.createQueue.mock.calls.find(([name]) => name === PURGE_QUEUE)?.[1];
+  expect(created).toMatchObject({
+    policy: 'standard',
+    retryLimit: 0,
+    retryBackoff: false,
+    partition: false,
+  });
+  expect(created).not.toHaveProperty('deadLetter');
+  expect(fake.schedule.mock.calls).toEqual([SCAN_SCHEDULE, PURGE_SCHEDULE]);
+  expect(fetchedQueues()).toContain(PURGE_QUEUE);
+  expect(purgeExpired).not.toHaveBeenCalled();
+
+  pending.set(PURGE_QUEUE, [job('tick', { data: PURGE_TICK })]);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(purgeExpired).toHaveBeenCalledTimes(1);
+  expect(fake.complete).toHaveBeenCalledWith(PURGE_QUEUE, 'tick', undefined, { db: {} });
+  expect(logger.info.mock.calls).toEqual([[{ deleted: 4 }, 'idempotency_purged']]);
+});
+
+it.each(['worker', 'payout'] as const)(
+  '[AC-B1-15za#1] %s：没拿到清理的 worker 与拿到清理的 payout 都不建队列、不登记、不开 lane',
+  async (entry) => {
+    const { runtime } = purgeFixture(entry);
+    if (entry === 'payout') scheduleIdempotencyPurge(runtime, { purgeExpired: async () => 0 });
+    await runtime.start();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fake.createQueue.mock.calls.map(([name]) => name)).not.toContain(PURGE_QUEUE);
+    expect(fake.schedule.mock.calls).toEqual(entry === 'worker' ? [SCAN_SCHEDULE] : []);
+    expect(fetchedQueues()).not.toContain(PURGE_QUEUE);
+  },
+);
+
+it('[AC-B1-15za#1] 目录里已有同名队列时目录优先：运行时不另建、不登记、不开 lane', async () => {
+  const { runtime } = purgeFixture('worker', { catalog: ['notify', PURGE_QUEUE] });
+  scheduleIdempotencyPurge(runtime, { purgeExpired: async () => 0 });
+  await runtime.start();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(
+    fake.createQueue.mock.calls.filter(([name]) => name === PURGE_QUEUE).map(([name]) => name),
+  ).toEqual([PURGE_QUEUE]);
+  expect(fake.schedule.mock.calls).toEqual([SCAN_SCHEDULE]);
+  expect(fetchedQueues()).not.toContain(PURGE_QUEUE);
+});
+
+it('[AC-B1-15za#2] 清理 lane 不占业务预算：预算被业务任务占满时定时任务照常执行', async () => {
+  const { runtime, pending } = purgeFixture('worker', {
+    limits: { concurrency: {}, dbBudget: 1 },
+  });
+  const release = Promise.withResolvers<void>();
+  runtime.register('notify', () => release.promise);
+  pending.set('notify', [job('held', { expireInSeconds: 600 }), job('waiting')]);
+  pending.set(PURGE_QUEUE, [job('tick', { data: PURGE_TICK })]);
+  const purgeExpired = vi.fn(async () => 0);
+  scheduleIdempotencyPurge(runtime, { purgeExpired });
+  await runtime.start();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(purgeExpired).toHaveBeenCalledTimes(1);
+  expect(fetchedQueues().filter((queue) => queue === 'notify')).toEqual(['notify']);
+  release.resolve();
+  await vi.advanceTimersByTimeAsync(0);
 });

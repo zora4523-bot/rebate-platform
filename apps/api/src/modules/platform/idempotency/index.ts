@@ -231,7 +231,7 @@
 //    a lease takeover sets both anew. The column default now() is never relied on.
 //    `purgeExpired()` deletes every row (any status, any app) whose expire_at < clock.now() and
 //    resolves with the number deleted; rows with expire_at = 'infinity' are never deleted. The
-//    04:00 schedule that calls it belongs to the worker (BR-ID-30), not to this task.
+//    04:00 schedule that calls it belongs to the worker (BR-ID-30): queue/idempotency-purge.ts.
 //
 // 8. Abandon primitive — `idempotency.abandon({ appId, userId, action, key, traceId })`
 //    (04 §6.1; BR-ID-10 细则「作废接口」). The HTTP route is task B1-02; it passes the token's

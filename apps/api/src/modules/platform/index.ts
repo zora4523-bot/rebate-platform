@@ -118,6 +118,9 @@ export type {
   JobHandler,
   QueueRuntime,
 } from './queue/index.ts';
+// The worker entry hands its Idempotency to the queue runtime (B1-15za, BR-ID-30).
+export { scheduleIdempotencyPurge } from './queue/idempotency-purge.ts';
+export type { IdempotencyPurger } from './queue/idempotency-purge.ts';
 // Stage ② context (BR-ID-01, BR-ID-07): identity's token check attaches it at the registration
 // point; handlers and later stages of any module read it with tokenPrincipal.
 export { tokenPrincipal, type TokenPrincipal } from './http/token-context.ts';

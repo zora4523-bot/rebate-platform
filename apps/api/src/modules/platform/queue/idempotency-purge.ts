@@ -35,7 +35,7 @@
 //    implementation.
 import type { Idempotency } from '../idempotency/index.ts';
 import type { RootLogger } from '../logging/logger.ts';
-import type { QueueRuntime } from './types.ts';
+import type { QueueRuntime, QueueSpec } from './types.ts';
 
 /** The one method a tick needs of the platform/idempotency instance. */
 export type IdempotencyPurger = Pick<Idempotency, 'purgeExpired'>;
@@ -45,18 +45,57 @@ export interface IdempotencyPurgeOptions {
   readonly logger: RootLogger;
 }
 
+/**
+ * The worker's internal queue and schedule of the purge ticks. Not a catalog queue: no entry plan
+ * names it and business code cannot send to it.
+ */
+export const IDEMPOTENCY_PURGE_QUEUE = 'idempotency-purge';
+
+/** 04:00 +08:00 (BR-ID-30), in UTC. */
+export const IDEMPOTENCY_PURGE_CRON = '0 20 * * *';
+
+/** The job data of every scheduled tick: the runtime's ordinary job envelope. */
+export const IDEMPOTENCY_PURGE_JOB = Object.freeze({
+  name: 'idempotency.purge',
+  payload: Object.freeze({}),
+});
+
+/**
+ * Settings of the purge queue (section 2). The expiry is the business queues'; a tick waiting for
+ * longer than a day is no use, the next one has come; finished ticks stay a week for inspection.
+ */
+export const IDEMPOTENCY_PURGE_SPEC: QueueSpec = Object.freeze({
+  name: IDEMPOTENCY_PURGE_QUEUE,
+  policy: 'standard',
+  retryLimit: 0,
+  retryDelaySeconds: 1,
+  retryBackoff: false,
+  retryDelayMaxSeconds: null,
+  expireInSeconds: 900,
+  retentionSeconds: 86_400,
+  deleteAfterSeconds: 604_800,
+  deadLetter: null,
+});
+
 /** Section 1. */
-export function runIdempotencyPurge(options: IdempotencyPurgeOptions): Promise<void> {
-  void options;
-  throw new Error('NotImplemented: runIdempotencyPurge');
+export async function runIdempotencyPurge(options: IdempotencyPurgeOptions): Promise<void> {
+  const { idempotency, logger } = options;
+  const deleted = await idempotency.purgeExpired();
+  logger.info({ deleted }, 'idempotency_purged');
 }
+
+/** What each runtime was handed; types.ts stays as it is, QueueRuntime has no method for this. */
+const purgers = new WeakMap<QueueRuntime, IdempotencyPurger>();
 
 /** Section 3. */
 export function scheduleIdempotencyPurge(
   runtime: QueueRuntime,
   idempotency: IdempotencyPurger,
 ): void {
-  void runtime;
-  void idempotency;
-  throw new Error('NotImplemented: scheduleIdempotencyPurge');
+  purgers.set(runtime, idempotency);
+}
+
+/** What `runtime` was handed, for its own start() (./runtime.ts); undefined when nothing was. */
+export function idempotencyPurgerOf(runtime: QueueRuntime): IdempotencyPurger | undefined {
+  return purgers.get(runtime);
 }

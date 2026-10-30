@@ -157,8 +157,9 @@
 //           not (待编排会话确认). No LISTEN/NOTIFY. Cron schedules: only the worker runs pg-boss's
 //           scheduler, for one internal schedule (B1-01zzg): `dead-letter-scan` every five
 //           minutes on the internal queue of the same name (not in the catalog), worked by one
-//           extra lane of the worker runtime that runs scanDeadLetters (dead-letter-scan.ts). The
-//           other entries keep schedule:false.
+//           extra lane of the worker runtime that runs scanDeadLetters (dead-letter-scan.ts); and,
+//           once the worker entry handed it over, `idempotency-purge` daily (B1-15za,
+//           idempotency-purge.ts). The other entries keep schedule:false.
 //      A failed start leaves nothing running; stop() then resolves at once. Database errors (e.g.
 //      the database cannot be reached) reject unchanged.
 //    - Connections: every statement runs on a connection of the given `db` handle's pool (the
@@ -210,6 +211,7 @@
 //                          release of an already expired fetched lease without calling its handler.
 //      `dead_letter_jobs`  level error, fields exactly { queue, count } or, for order-sync.dead,
 //                          { queue, platform, count } — the dead letter scan found waiting jobs;
+//      `idempotency_purged` level info, fields exactly { deleted } — one purge tick (B1-15za), 0 too;
 //      `job_handler_overrun` level warn, fields exactly { queue, jobId, attempt } — handler still
 //                          running when expireInSeconds elapses; it continues holding its slot.
 //      `job_attempt_superseded` level warn, fields exactly { queue, jobId, attempt } — settlement
@@ -262,7 +264,7 @@
 //     - Heavy queues (long-running or connection-holding; inventory in the header of ./runtime.ts):
 //       order-sync, order-rescan, settle, export, data-copy, pay, poster, and the notification
 //       fan-out (notify, evt.notification-*). Senders and business semantics do not change. The
-//       dead letter scan lane (B1-01zzg) takes no permit.
+//       dead letter scan lane (B1-01zzg) and the idempotency purge lane (B1-15za) take no permit.
 //     - ENTRY_PLAN, QUEUE_CATALOG, QueueSpec and WorkSpec do not change (frozen rule tests pin
 //       them): a queue's plan concurrency stays its upper bound; limits can only lower it.
 //     - `QueueLimits`: a plain object with exactly the keys concurrency and dbBudget.
