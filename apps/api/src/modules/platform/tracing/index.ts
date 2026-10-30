@@ -7,7 +7,7 @@ export {
   traceIdFromRequestId,
 } from './trace-correlation.ts';
 export type { TracePropagatorOptions } from './trace-correlation.ts';
-export { requestIdForTrace, startTracing } from './otel.ts';
+export { activeTracing, requestIdForTrace, startTracing } from './otel.ts';
 export type { TracingHandle, TracingOptions } from './otel.ts';
 export { bootTracing } from './boot.ts';
 export { createExportHealth } from './export-health.ts';
