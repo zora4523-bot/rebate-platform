@@ -1,0 +1,21 @@
+id: B1-15z
+repo: rebate-platform
+title: 分享素材图接线（BR-ATTR-10 细则「分享页与分享赚入口页」素材图一项）——POST /v1/shares 响应 images 取联盟商品详情 getItem 的 main_image_url 与 image_urls 组图：主图在前、去重、最多 9 张、地址原样下发，拿不到多图时只给主图，都没有时为 []；不下载转存、不改图、不加水印，任何表都不存图片地址；poster_url 仍一律 null（D10-426，海报待 TECH-13 与 OSS，不在本单）
+type: impl
+# 2026-10-30 be 入账（编排 15:50 / 17:0x 派工：union B1-22s #1848 已补详情图片字段）。只改 linking/application/shares.ts 的组图与其单测，把 B1-15w 留的 images TODO 换成实现；不改契约（ShareMaterials.images 已有）。
+refs: [BR-ATTR-10]
+refs_hash:
+  BR-ATTR-10: 310f8ddda3b0
+deps: [B1-15w, B1-22s]
+paths:
+  - 'apps/api/src/modules/linking/application/shares.ts'
+  - 'apps/api/src/modules/linking/application/shares.test.ts'
+test_paths:
+  - 'test/spec/linking/share-images/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/share-images/**'
+status: todo
+pr: null
