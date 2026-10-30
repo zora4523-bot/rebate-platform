@@ -1,0 +1,25 @@
+id: B1-20e
+repo: rebate-platform
+title: 并号条件改读真实数据（BR-ID-06 并号 OPS-04）——绑手机 30411 判 mergeable 时，「无找回申请」读 app.claims（该账号作为申请人的任一条，不论状态）、「余额无任何流水」读 ledger（该用户余额账户有任一分录，经 ledger 导出的只读函数）、「目标手机号账号未处于注销流程」读注销阶段（冷静期 / 处理中都算），替换 app.module 两处恒 false 桩与 bind-phone.ts 的冷静期 TODO；任一条件不满足只回 30411（不带 mergeable / merge_ticket）
+type: impl
+# 草稿 2026-10-30（身份与风控线 identity-lane）。编排 10-30 23:xx 派「找身份 / 风控 / 通知缺口」。现状：app.module AccountAssetsPort 的 hasClaims / hasLedgerEntries 恒 false（注释 blocked on B1-10 / ledger B2，两者均已合并），bind-phone.ts 冷静期条件 TODO blocked on B1-15a（已合并）——有找回申请或有余额流水的账号、注销冷静期中的目标账号仍可能拿到 mergeable 与 merge_ticket。
+# 取舍（本线定）：claims 在 app.module 装配处按 countOrders 同样写法直查（只读）；余额流水经 ledger index 新导出的只读函数（只读、不写分录、不改余额；同 D10-432 先例，请编排确认 funds 归属）；注销阶段用 identity 自有 createDeletionStageReader。并号接口 POST /v1/auth/merge 不在本任务。
+refs: [BR-ID-06]
+refs_hash:
+  BR-ID-06: 1b8572f798d4
+deps: []
+paths:
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/identity/application/bind-phone.ts'
+  - 'apps/api/src/modules/identity/application/bind-phone.test.ts'
+  - 'apps/api/src/modules/ledger/application/user-ledger-activity.ts'
+  - 'apps/api/src/modules/ledger/application/user-ledger-activity.test.ts'
+  - 'apps/api/src/modules/ledger/index.ts'
+test_paths:
+  - 'test/spec/identity/bind-phone-merge-conditions/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/bind-phone-merge-conditions/**'
+status: todo
