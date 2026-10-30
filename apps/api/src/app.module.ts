@@ -222,6 +222,8 @@ import {
   type WalletLedgerDependencies,
   type WalletSummaryDependencies,
 } from './modules/ledger/index.ts';
+// B1-02zn: GET /v1/me's balance reads the wallet summary query through ledger's read-only entry.
+import { getWalletSummary } from './modules/ledger/read.ts';
 import { PaymentModule } from './modules/payment/index.ts';
 import {
   AUTO_PAYOUT_SAVE_KEYS,
@@ -1600,13 +1602,26 @@ function identityMePorts(risk: DynamicModule): DynamicModule {
             // binding() has no PID dependency. Refuse accidental use of an auth command here.
             pids: { getActivePid: () => Promise.reject(new Error('me: binding projection only')) },
           });
+          const walletDependencies = walletSummaryDependencies(db, clock);
           return {
             risk: riskState,
             activity: createInviteBackfillActivityReader(db),
             balance: {
-              // TODO(规划/11 §2.3): 余额摘要读 ledger — blocked on ledger 模块（B2）
-              balanceOf: () =>
-                Promise.resolve({ available_fen: 0, withdrawable_fen: 0, estimated_total_fen: 0 }),
+              // B1-02zn (BR-FUND-18, ADD-06): the same query and owner ports as
+              // GET /v1/wallet/summary, read only, by the token's app_id + user_id; a failed read
+              // propagates (never zeros).
+              async balanceOf(subject) {
+                const summary = await getWalletSummary(
+                  db,
+                  { appId: subject.appId, userId: subject.userId },
+                  walletDependencies,
+                );
+                return {
+                  available_fen: summary.available_fen,
+                  withdrawable_fen: summary.withdrawable_fen,
+                  estimated_total_fen: summary.estimated_total_fen,
+                };
+              },
             },
             unionBindings: {
               async statusOf(subject, platform): Promise<MeUnionBindingStatus> {
