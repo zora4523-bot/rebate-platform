@@ -10,7 +10,11 @@
 // - deliver(appId, unionAccountId, phones): the deliverable rows of exactly that account and
 //   app — queued, or claims left unconfirmed for 10 minutes. Per row: claim and commit first
 //   (FOR UPDATE SKIP LOCKED; failed ∧ sent_at null ∧ row_version 1, see V_* below), then send with
-//   the dedupe key as outId. accepted / unknown → success with sent_at; rejected → failed for
+//   the dedupe key as outId. Each claim has its own identity, the exact updated_at it wrote
+//   (Clock; B1-22t, D10-434 ①): every outcome below — settle, hand back, the recovery query's
+//   result — is a compare-and-set on row_version 1 ∧ updated_at = that value. When it misses (the
+//   claim was recovered by a later delivery meanwhile) nothing changes and one warn is logged
+//   (union_auth_sms_claim_superseded, masked phone only); such a delivery asks no retry. accepted / unknown → success with sent_at; rejected → failed for
 //   good (row_version 2, error line); a throwing sender → back to queued and deliver rejects so
 //   the queue retries; a phone no longer configured → failed for good. A claim left unconfirmed
 //   (process died after claiming) is recovered: sms.query when the sender has it (sent → success,
@@ -167,6 +171,15 @@ function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
+/** One claim of a row; claimedAt (the updated_at it wrote) is its identity. */
+interface Claim {
+  readonly id: string;
+  readonly code: string;
+  readonly dedupe_key: string;
+  readonly recovered: boolean;
+  readonly claimedAt: Date;
+}
+
 export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertPort {
   const { clock, sms, logger } = o;
   const db = o.db.withSchema('app');
@@ -189,12 +202,10 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
   /**
    * Claims one row and commits: queued (or a claim unconfirmed for UNCONFIRMED_MS) → failed with
    * sent_at null and row_version V_CLAIMED, updated_at now. FOR UPDATE SKIP LOCKED plus the same
-   * conditions on the UPDATE: two deliveries never hold one claim. null when nothing was claimed.
+   * conditions on the UPDATE: two deliveries never hold one claim. null when nothing was claimed;
+   * otherwise the claim with claimedAt, the exact updated_at written (its identity).
    */
-  async function claim(
-    appId: string,
-    rowId: string,
-  ): Promise<{ id: string; code: string; dedupe_key: string; recovered: boolean } | null> {
+  async function claim(appId: string, rowId: string): Promise<Claim | null> {
     return o.db.transaction().execute(async (trx) => {
       const t = trx.withSchema('app');
       const now = clock.now();
@@ -208,30 +219,36 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
         .skipLocked()
         .executeTakeFirst();
       if (row === undefined) return null;
-      await t
+      const updated = await t
         .updateTable('notify_logs')
         .set({ status: 'failed', sent_at: null, row_version: V_CLAIMED, updated_at: now })
         .where('app_id', '=', appId)
         .where('id', '=', row.id)
         .where(deliverable(now))
-        .execute();
+        .executeTakeFirst();
+      if (updated.numUpdatedRows === 0n) return null;
       return {
         id: row.id,
         code: row.code,
         dedupe_key: row.dedupe_key,
         recovered: row.status !== 'queued',
+        claimedAt: now,
       };
     });
   }
 
-  /** Concludes a claim (only while it is still the open claim: failed ∧ sent_at null ∧ V_CLAIMED). */
+  /**
+   * Concludes `claim` only while the row is still that claim (failed ∧ sent_at null ∧ V_CLAIMED ∧
+   * updated_at = the value the claim wrote); the new state carries the settle instant. false when
+   * the row is no longer this claim (nothing changed).
+   */
   async function settle(
     appId: string,
-    rowId: string,
+    claim: Claim,
     to: 'success' | 'failed' | 'reopen',
-  ): Promise<void> {
+  ): Promise<boolean> {
     const now = clock.now();
-    await db
+    const result = await db
       .updateTable('notify_logs')
       .set(
         to === 'success'
@@ -241,11 +258,28 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
             : { status: 'queued', row_version: V_OPEN, updated_at: now },
       )
       .where('app_id', '=', appId)
-      .where('id', '=', rowId)
+      .where('id', '=', claim.id)
       .where('status', '=', 'failed')
       .where('sent_at', 'is', null)
       .where('row_version', '=', V_CLAIMED)
-      .execute();
+      .where('updated_at', '=', claim.claimedAt)
+      .executeTakeFirst();
+    return result.numUpdatedRows > 0n;
+  }
+
+  /** Whether the row is still `claim` (same conditions as settle, nothing written). */
+  async function stillHeld(appId: string, claim: Claim): Promise<boolean> {
+    const row = await db
+      .selectFrom('notify_logs')
+      .select('id')
+      .where('app_id', '=', appId)
+      .where('id', '=', claim.id)
+      .where('status', '=', 'failed')
+      .where('sent_at', 'is', null)
+      .where('row_version', '=', V_CLAIMED)
+      .where('updated_at', '=', claim.claimedAt)
+      .executeTakeFirst();
+    return row !== undefined;
   }
 
   /**
@@ -274,9 +308,14 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
       code: claimed.code,
       stage: parsed?.stage ?? null,
     };
+    /** A late outcome of a claim recovered meanwhile: nothing changed, one warn. */
+    const superseded = (outcome: string, extra: Record<string, unknown> = {}): false => {
+      logger.warn({ ...fields, ...extra, outcome }, 'union_auth_sms_claim_superseded');
+      return false;
+    };
     if (parsed === null || phone === undefined || name === undefined) {
       // The phone was removed meanwhile (or the row cannot be rendered): failed for good.
-      await settle(appId, claimed.id, 'failed');
+      if (!(await settle(appId, claimed, 'failed'))) return superseded('unsendable');
       logger.error(
         {
           ...fields,
@@ -295,12 +334,15 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
         } catch {
           state = 'unknown';
         }
+        const extra = { phone_masked: masked };
         if (state === 'sent') {
-          await settle(appId, claimed.id, 'success');
+          if (!(await settle(appId, claimed, 'success'))) return superseded('query_sent', extra);
           return false;
         }
+        // not_sent / unknown act on the claim only while it is still this one.
+        if (!(await stillHeld(appId, claimed))) return superseded(`query_${state}`, extra);
         if (state === 'unknown') {
-          // Still unconfirmed: the claim stays (updated_at now), looked at again in 10 minutes.
+          // Still unconfirmed: the claim stays (its claim instant), looked at again in 10 minutes.
           logger.warn({ ...fields, phone_masked: masked }, 'union_auth_sms_unconfirmed');
           return false;
         }
@@ -323,27 +365,31 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
       });
     } catch (error) {
       // Not sent as far as we know (a transient error before the provider answered): back to
-      // queued (row_version V_OPEN), so the job's retry or the next heal sends it.
-      await settle(appId, claimed.id, 'reopen');
+      // queued (row_version V_OPEN), so the job's retry or the next heal sends it. A claim
+      // recovered meanwhile is not handed back (its new holder decides) and asks no retry.
+      const errorName = error instanceof Error ? error.name : typeof error;
+      if (!(await settle(appId, claimed, 'reopen'))) {
+        return superseded('send_threw', { phone_masked: masked, error_name: errorName });
+      }
       logger.warn(
-        {
-          ...fields,
-          phone_masked: masked,
-          error_name: error instanceof Error ? error.name : typeof error,
-        },
+        { ...fields, phone_masked: masked, error_name: errorName },
         'union_auth_sms_retry',
       );
       return true;
     }
     if (result === 'rejected') {
-      await settle(appId, claimed.id, 'failed');
+      if (!(await settle(appId, claimed, 'failed'))) {
+        return superseded('rejected', { phone_masked: masked });
+      }
       logger.error(
         { ...fields, phone_masked: masked, reason: 'rejected' },
         'union_auth_sms_failed',
       );
       return false;
     }
-    await settle(appId, claimed.id, 'success');
+    if (!(await settle(appId, claimed, 'success'))) {
+      return superseded(result, { phone_masked: masked });
+    }
     return false;
   }
 
