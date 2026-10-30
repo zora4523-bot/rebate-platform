@@ -7,11 +7,15 @@ import {
   FIELD_CRYPTO_MESSAGES,
   FieldCryptoError,
   RedisUnavailableError,
+  getMaterialChannels,
   type Clock,
   type FieldCrypto,
+  type MaterialChannelsSpec,
   type RedisNamespace,
+  type RootLogger,
 } from '../../platform/index.ts';
 import {
+  createUnionChannelRanking,
   isRegisteredPlatform,
   type CallCtx,
   type Page,
@@ -74,7 +78,13 @@ export interface UnionSearchUpstreamOptions {
   readonly clock: Clock;
   /** Remembers the union cursor of page n+1; null walks from page 1 instead. */
   readonly ledger: RedisNamespace | null;
+  /** The fallback's whitelist, read again before every fetch; default platform's getMaterialChannels. */
+  readonly channels?: () => MaterialChannelsSpec;
+  /** Takes the channel port's refusal warning; production passes one, without it none is logged. */
+  readonly logger?: Pick<RootLogger, 'warn'>;
 }
+
+const NO_WARNINGS: Pick<RootLogger, 'warn'> = { warn: () => undefined };
 
 function nonEmpty(value: string | null | undefined): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined;
@@ -103,9 +113,20 @@ function rawItemIdOf(item: UnionItem, jdMode: 'item' | 'sku'): string | undefine
  * filtered on our side (BR-PRICE-15) until the adapters accept them.
  * TODO(规划/11 §4.5): 向联盟透传 sort / has_coupon / price_min_fen 与查询专用推广位 — blocked on 真实适配器的检索参数（CAP-*-03）
  * The BR-PROD-07 page cache wraps this upstream (infra/product-cache.ts cacheSearchUpstream).
+ * The no-result fallback reads the selected whitelisted channel through union's ranking port
+ * (B1-22p), never the general material feed (BR-TEXT-17 细则「联盟物料频道」): a channel gone from the
+ * whitelist at fetch time is an empty page, an adapter without the channel method an outage.
  */
 export function createUnionSearchUpstream(options: UnionSearchUpstreamOptions): SearchUpstream {
-  const { union, catalog, config, clock, ledger } = options;
+  const {
+    union,
+    catalog,
+    config,
+    clock,
+    ledger,
+    channels = getMaterialChannels,
+    logger = NO_WARNINGS,
+  } = options;
 
   function adapterOf(platform: Platform) {
     if (!isRegisteredPlatform(platform)) {
@@ -117,6 +138,14 @@ export function createUnionSearchUpstream(options: UnionSearchUpstreamOptions): 
   function context(appId: string): CallCtx {
     return { appId, requestId: randomUUID(), purpose: 'online' };
   }
+
+  const ranking = createUnionChannelRanking({
+    adapterFor: (platform) =>
+      isRegisteredPlatform(platform) ? union.adapter(platform) : undefined,
+    channels,
+    callCtx: ({ appId }) => context(appId),
+    logger,
+  });
 
   async function toCandidates(
     appId: string,
@@ -242,14 +271,20 @@ export function createUnionSearchUpstream(options: UnionSearchUpstreamOptions): 
       };
     },
     async materialFeed(input): Promise<SearchUpstreamPage> {
-      const adapter = adapterOf(input.platform);
-      if (adapter.materialFeed === undefined) {
-        throw new CatalogError(30131, `search: no material feed for ${input.platform}`);
-      }
-      // TODO(规划/11 §4.5): 按 channel_id 取指定物料频道 — blocked on 联盟 MaterialReq 的频道参数
-      const page = await adapter.materialFeed.call(adapter, {}, context(input.appId));
-      const candidates = await toCandidates(input.appId, input.platform, page.items);
-      return { items: candidates.slice(0, input.limit), hasMore: page.nextCursor !== null };
+      const page = await ranking.page({
+        appId: input.appId,
+        platform: input.platform,
+        channelId: input.channelId,
+        categoryId: null,
+        pageNo: 1,
+        pageSize: input.limit,
+      });
+      const candidates = await toCandidates(
+        input.appId,
+        input.platform,
+        page.items.map((entry) => entry.item),
+      );
+      return { items: candidates.slice(0, input.limit), hasMore: page.hasMore };
     },
   };
 }

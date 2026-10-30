@@ -2428,7 +2428,14 @@ function agentStreamPorts(union: DynamicModule): DynamicModule {
           });
           const pids = { getActivePid: pidService.getActivePid.bind(pidService) };
           const sourceLinks = createSourceLinkReader(db);
-          const search = createUnionSearchUpstream({ union, catalog, config, clock, ledger: null });
+          const search = createUnionSearchUpstream({
+            union,
+            catalog,
+            config,
+            clock,
+            ledger: null,
+            logger,
+          });
           const detail = createUnionDetailUpstream({ union });
           const parsing: ParsingOptions = {
             config,
