@@ -174,6 +174,9 @@ export type {
   PersonalDataCopyLedgerRow,
   PersonalDataCopyLedgerSubject,
 } from './application/personal-data-copy-read.ts';
+// B1-20e: BR-ID-06 merge condition「余额无任何流水」 — any entry on the user's balance (read only).
+export { hasUserBalanceEntries } from './application/user-ledger-activity.ts';
+export type { UserLedgerActivitySelection } from './application/user-ledger-activity.ts';
 // B2-11a: BR-WDR-29 ② ⑦ — the member's own entries (read only).
 export { createWithdrawRiskEntryReader } from './ports/withdraw-risk-entries.ts';
 export type { WithdrawRiskEntryReader } from './ports/withdraw-risk-entries.ts';
