@@ -1,0 +1,18 @@
+id: B1-08zg
+repo: rebate-platform
+title: 测试修改（纯文字）：冻结 test/spec/orders/platform-restore/boundary.int.test.ts 的 [AC-B1-08zc#26]「结算佣金为空」用例标题与文件头注释第 ② 条，改为与现行断言（有效佣金 789）及 08 BR-CALC-02 一致
+type: test-change
+# 2026-10-31 入账（content-client；B1-08ze 冻结测试复审 S2：标题「金额按结算佣金（0），不取预估佣金 789」与注释「空按 0」在 B1-08ze #1898 后已与断言相反）。
+# 只改文字，不改代码、断言、期望；全新上下文 Claude 修改，另一全新上下文 Claude 只读复审 PASS（0/0/0），按 approvals #24 请编排加标签。
+refs: []
+refs_hash: {}
+deps: [B1-08ze]
+paths:
+  - 'test/spec/orders/platform-restore/boundary.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/platform-restore/**'
+status: todo
+pr: null

@@ -2,8 +2,8 @@
 // ① 佣金触发的边界是「新值 >0」：由空或 ≤0 变为恰好 0 不是平台恢复，不登记、不告警；变为 1 分就登记。
 //    骗法：用 >= 0 判新值（空 → 0、-10 → 0 会给运营一张 expected_fen 0 的假单）。
 // ② 状态触发含 INVALID → SETTLED（P9 第三个去向）：结算佣金为 0 或空时也出单，trigger 为 status，
-//    金额按 SETTLED 取结算佣金（编排 9.2 第 4 条：SETTLED 用 settle、否则 est，空按 0），不取预估佣金。
-//    骗法：P9 只认 PAID / RECEIVED；SETTLED 时仍取 est。
+//    金额取有效佣金（结算佣金非空取结算佣金，为空取预估佣金，08 BR-CALC-02；B1-08ze）。
+//    骗法：P9 只认 PAID / RECEIVED；结算佣金为空时仍按 0 记金额，或结算佣金非空时改取预估。
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import type { Kysely } from 'kysely';
@@ -202,7 +202,7 @@ it.each([{ settle: 0n as bigint | null, label: '0' }])(
   },
 );
 
-it('[AC-B1-08zc#26] P9 去向 SETTLED：VOID(REFUND) 由 INVALID 直接结算、结算佣金为 空 → 状态触发出一张单，金额按结算佣金（0），不取预估佣金 789', async () => {
+it('[AC-B1-08zc#26] P9 去向 SETTLED：VOID(REFUND) 由 INVALID 直接结算、结算佣金为 空 → 状态触发出一张单，金额按有效佣金（结算佣金为空取预估佣金 789，BR-CALC-02）', async () => {
   const f = await scenario(db, {
     rebate: 'VOID',
     reason: 'REFUND',
