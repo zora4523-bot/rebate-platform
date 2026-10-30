@@ -16,5 +16,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/union/item-images/**'
-status: todo
-pr: null
+status: done
+pr: 1848
