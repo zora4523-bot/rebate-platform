@@ -5,8 +5,6 @@ type: impl
 # 草稿 2026-10-30（身份与风控线 identity-lane）。编排 10-30 06:05 派工。依据：08 05_CALC「申诉恢复（拍板第二批 FUND-14）」「封禁经申诉撤销（BR-ID-36 结案撤销）时，系统为该用户因本次封禁 forfeited 的份额（forfeit_reason=banned）自动生成『申诉恢复』差错单（BR-FUND-22，与风控作废订单的恢复同一入口），由有权限者一人 step-up 处理后恢复…处理前不入账。注销、未成年导致的 forfeited 不恢复。」
 # 现状：后台结案 adminResolveAppeal 仍 planned，appeal.resolved 尚无发布者；本任务做事件消费者（EVENT_SUBSCRIPTIONS 加 consumer），结案实现上线后自动生效。订单申诉撤销的 appeal_restore 由 settlement 从同一事件生成（openapi adminResolveAppeal 说明），不在本任务。
 # 技术取舍（本线定）：「本次封禁」= 该账户申诉的 penalty_started_at（B1-03v）至结案时刻之间、reason=banned 的 forfeited 份额事件；penalty_started_at 为空时退回该用户最近一次进入 banned 的时刻（user_risk_state 历史不可得时以申诉 created_at 前最近的 banned 份额事件为界，写明）；每份额一条差错单，金额取该份额被没收的分值（commission 只读端口给出），去重键含 app_id / order_id / user_id / role / appeal_id（经 registerReconDiffOnce，至少一次投递安全）；recon_diffs 只经 ledger 端口写，commission 只读不写。
-# 2026-10-30 再补：refs 留空（三条 BR 原文合计使任务书 57KB 超 24KB 上限，brief.test 红），规划原文已抽进 couli-runs/B1-03z/excerpt.md；依据仍是 BR-FUND-22、BR-CALC-13 细则「申诉恢复」、BR-ID-36。按编排 06:09 提醒（B2-07c / D10-415 ① 先例）补新队列会撞的 worker-plan 与冻结的 queue-concurrency 计数测试，单列 test(spec) 改数。
-# 2026-10-30 三补：新队列 evt.risk-appeal-restore 与订阅 risk-appeal-restore 还会撞冻结的 queue/contract.test.ts（目录与 worker 计划逐项精确）与 events/contract.test.ts（订阅表精确），照 B2-07c 先例列入 test_paths，由规则测试作者在 spec 提交里一并改（只加该项，含义不变）。
 # 2026-10-30 四补（money r1 S0）：差错单金额须取实际没收额——FORFEIT 凭证 {order_key}:PLATFORM:FORFEIT:{uid}:{role} 记入 COMMISSION_REVENUE 的金额（首次入账即没收不建 beneficiary_credits 行，不能用其 voucher_id）；ledger 尚无按凭证键读金额的只读接口，本任务在 ledger 加一个只读函数并从 index 导出（只读、不写分录、不改余额），app.module 注入给 risk 的 ForfeitedAmountPort。
 refs: []
 refs_hash: {}
