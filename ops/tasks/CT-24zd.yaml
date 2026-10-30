@@ -1,0 +1,28 @@
+id: CT-24zd
+repo: rebate-platform
+title: 契约：后台月结批次写操作——POST /admin/v1/settle-bills/{bill_id}/confirm（确认本轮全部 DRAFT，立即 / 定时，SB2）、POST /admin/v1/settle-batches/{batch_id}/cancel-schedule（SB3）、/reject（必填原因，SB4）、/resume（SB8）、POST /admin/v1/settle-bills/{bill_id}/supplement-batches（发起补充批次）；权限 settle.bill，动态码档 step-up，写审计；AdminSettleBatch 加 row_version（CAS 用）；手动开始（SB10）、结算明细上传、补充预校验不含
+type: contract
+# 2026-10-30 入账（admin-backend，编排 D10-436：月结批次写操作，复用命令服务 B2-04o / B2-04r）。依据 01 F-ADM-08、04 §11.2 settle.bill（动态码）、08 BR-FUND-04 结算批次迁移表、design/specs/admin-settle-bills.md §4 / §6（operationId 暂拟）。
+# 写法照 CT-24za writeOffAdminReconDiff：检查顺序 10403 → 10003（totp 档）→ 20001 → 未知或别 app 的 id 20001 [id] → 状态冲突 20902 data.resource=settle_batch → 守卫 20001 data.fields + data.reason；不新增错误码。
+#   命令服务内部错误映射：BatchConflict → 20902；IllegalTransition → 20902；invalid_schedule → 20001 [scheduled_at]；reason_required → 20001 [reason]；switches_off、snapshot_pending → 20001 [batch_id] data.reason；bill_not_ready → 20001 [bill_id] data.reason；SupplementRejected 三种 → 20001 [bill_id] 或 [platform] data.reason。
+#   CAS：确认带 expected_batches[{batch_id, expected_row_version}]（必须与本轮全部 DRAFT 一一对应），单批操作带 expected_row_version；读接口因此加 row_version。为保主干绿，本任务只把 row_version 写成可选属性，B2-09f 实现时改必填并跟改 B2-09d 冻结测试。
+#   轮次沿用 CT-24z 口径（编排另裁，见台账 PR）。不含 SB10（BR-FUND-04：财务确认前不开放，命令恒拒）、上传、补充预校验（无现成服务）、导出。
+refs: []
+refs_hash: {}
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'packages/contracts-ts/**'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
