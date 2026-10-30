@@ -26,6 +26,7 @@ const ANONYMOUS_OPERATIONS: readonly (readonly [method: string, path: string])[]
   ['GET', '/v1/agreements/{type}'],
   ['GET', '/v1/pages/{page_key}'],
   ['GET', '/v1/pages/{page_key}/preview'],
+  ['GET', '/v1/pages/{page_key}/sections/{section_id}/items'],
   ['GET', '/v1/products/search'],
   ['GET', '/v1/products/{product_key}'],
   ['GET', '/v1/products/{product_key}/price-trend'],
