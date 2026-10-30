@@ -1,0 +1,151 @@
+{
+  "task": "B2-04ze",
+  "spec_ref": "812734156b57ba648ee1df733dafac3dba9bdb15",
+  "spec_commit": "ad60bc5763212784f8b55df574f60d549765609f",
+  "red_tests": [
+    "test/spec/settlement/worker/assembly.test.ts > [AC-B2-04ze#20] app.module 只在 worker 入口调用 SettlementModule.forWorker（恰 1 次）；api / admin / stream / payout 入口都不调用",
+    "test/spec/settlement/worker/assembly.test.ts > [AC-B2-04ze#21] worker 入口的端口取自各属主导出：readAttribution 恰为 commission.readCommissionAttribution（必传）；快照、淘礼金、受益人事件取 commission；联盟为准读口、资产快照状态取 ledger；锁用户取 identity.lockUsersForUpdate；平台 = union 已注册平台；其余端口都已给出",
+    "test/spec/settlement/worker/bill-source-snapshot.int.test.ts > [AC-B2-04ze#29] readSource 的订单与结算记录来自同一时点：两次读之间另一连接提交（X 进 WAITING 并到结算、新单 Y 连同结算到达），返回结果要么全是提交前、要么全是提交后，不混读",
+    "test/spec/settlement/worker/credit-wiring.int.test.ts > [AC-B2-04ze#29] forWorker 装配的 batch_execute：两个 WAITING 子订单（一单 commission_version=1，一单被 order-sync 升到 2 且无 v2 快照行）都经注入的 readAttribution 读归属并照常入账（400 / 80），批次 DONE；readSnapshot 一次都不调用（不整单回滚）",
+    "test/spec/settlement/worker/credit-wiring.int.test.ts > [AC-B2-04ze#30] forWorker 装配的 batch_execute：受益人补记项（直推入账时冻结开了首次入账义务，现已恢复正常；订单此后被 order-sync 升到 commission_version=2、无 v2 快照行）经注入的 readAttribution 执行，补记 85 写 CREDIT 键凭证、义务完成（R5a，closed_ref = 批次明细 id），明细 credited 85，批次 DONE；readSnapshot 不调用",
+    "test/spec/settlement/worker/credit-wiring.int.test.ts > [AC-B2-04ze#31] forWorker 的闸门用注入的 minors 读口（经进程字段密钥构造）：已识别未成年的直推份额没收（FORFEIT 85，forfeited 事件 reason=minor），本人 425 与间推 42 照常入账，平台 448；明细 credited，批次 DONE",
+    "test/spec/settlement/worker/lifecycle.int.test.ts > [AC-B2-04ze#32] forWorker 自己起补种与扫描：启动后由模块定时器（≤60 秒首次、之后 ≤60 秒一次）按注入 Clock 补种当日 bill、投递到点的 CONFIRMED 批次；Clock 越过零点与定时时刻后补种新一天的 bill、投递定时批次；模块关闭后再推进定时器与 Clock 不再投递",
+    "test/spec/settlement/worker/module.int.test.ts > [AC-B2-04ze#22] forWorker：有库、队列（与密钥、事件总线）时在 settle 队列上恰注册 1 个处理器、不注册别的队列；没有库或没有队列时什么都不注册",
+    "test/spec/settlement/worker/module.int.test.ts > [AC-B2-04ze#23] 装配的处理器：非账单日的 bill 正常完成（not_due，不写 settle_jobs / settle_bills）；不存在的批次的 batch_execute 正常完成且什么都不写",
+    "test/spec/settlement/worker/module.int.test.ts > [AC-B2-04ze#24] 装配的处理器：账单日而当日资产快照未完成时 bill 本次投递失败（deferred），不写 settle_jobs、settle_bills",
+    "test/spec/settlement/worker/module.int.test.ts > [AC-B2-04ze#25] 装配的处理器：账单日快照已完成时 bill 经生产 readSource（联盟为准读口取本平台订单键）生成账单，应结未结登记差错单，settle_jobs 记 (bill, 平台, D 00:00 +08:00) done；credit.enabled 未设（缺省 off）不生成批次、不读归属",
+    "test/spec/settlement/worker/module.int.test.ts > [AC-B2-04ze#26] 装配的处理器：CONFIRMED 立即批次在 credit.enabled 未设（缺省 off）时只记 paused_by_switch_at、保持 CONFIRMED、不入账；credit.enabled=on 而 settle.auto.enabled 未设（缺省 on）时执行到 DONE 并发 settle.batch_done",
+    "test/spec/settlement/worker/ports.int.test.ts > [AC-B2-04ze#27] 配置端口照现状：credit.enabled.<platform> 未设时不是 on、设为 true 后为 true；settle.auto.enabled 未设时不是 off",
+    "test/spec/settlement/worker/ports.int.test.ts > [AC-B2-04ze#28] 闸门端口是真实读口：在调用方事务内锁本 app 的用户行、读注销状态与风控状态（无风控行 = normal），未知 id 与别的 app 的用户不返回；未成年人读口对无实名的用户返回空集",
+    "test/spec/settlement/worker/scan.int.test.ts > [AC-B2-04ze#17] 扫描：CONFIRMED 立即结算、CONFIRMED 定时且 scheduled_at ≤ 当前（含恰好等于）、EXECUTING 各送 1 个 batch_execute（各 app）；定时未到、被开关停住（paused_by_switch_at）、DRAFT / PARTIAL / DONE / CANCELLED 不送；事务外、立即",
+    "test/spec/settlement/worker/scan.int.test.ts > [AC-B2-04ze#18] 一批送失败不挡其他批次：其余照送，失败在全部试完后抛出",
+    "test/spec/settlement/worker/scan.int.test.ts > [AC-B2-04ze#19] 真实队列上按 singletonKey 去重：连续两次扫描每批只有 1 个排队任务；任务完成而批次仍到点（如快照未完成）时下一次扫描再送 1 个",
+    "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#1] bill 的 singletonKey = bill:<app_id>:<platform>:<D>，按 app、平台、D 各不相同，只用队列允许的字符",
+    "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#2] batch_execute 的 singletonKey = batch_execute:<app_id>:<batch_id>，每批一个",
+    "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#3] bill 的名义 run_at = D 当日 00:00 +08:00（月末、年初、闰日照样），同一 D 每次都相同；不存在或格式不对的 D 被拒绝",
+    "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#4] scheduleSettleBill：送 settle / bill，负载 { app_id, platform, accounting_date }，singletonKey bill:<app>:<platform>:<D>，立即（无延迟）；事务原样交给队列，返回队列的结果",
+    "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#5] scheduleBatchExecute：送 settle / batch_execute，负载 { app_id, batch_id }，singletonKey batch_execute:<app>:<batch>，立即；事务原样交给队列",
+    "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#6] 处理器 bill：以负载的 (app, platform) 与 run_at = D 00:00 +08:00 调用账单任务一次（db 为装配的库句柄）；generated / duplicate / not_due 都正常完成",
+    "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#7] 处理器 bill：账单任务 deferred（当日资产快照未完成）时本次投递失败（不算完成，留给重投递 / 补种）；账单任务抛错时原样失败",
+    "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#8] 处理器 batch_execute：以负载的 (app, batch) 调用执行器一次；done / partial / day_rollover / not_due / snapshot_pending / switched_off / idle / busy 都正常完成（进度在批次表，扫描会再投）；执行器抛错时原样失败",
+    "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#9] 处理器拒绝未知任务名与不合格负载，且不调用账单任务或执行器",
+    "test/spec/settlement/worker/seed.int.test.ts > [AC-B2-04ze#10] 补种：每个有订单的 app × 每个平台各送 1 个当日（+08:00）的 bill 任务（一个 app 多单也只 1 个），事务外、立即；账单日与非账单日一样补种",
+    "test/spec/settlement/worker/seed.int.test.ts > [AC-B2-04ze#11] 补种的 D 是时钟所在的 +08:00 自然日：07-23 23:59:59.999 +08:00 给 07-23，07-24 00:00 +08:00 给 07-24（跨 UTC 零点不受影响）",
+    "test/spec/settlement/worker/seed.int.test.ts > [AC-B2-04ze#12] 补种按运行状态取舍：每个 (app, 平台, D) 都问状态存储；done 或 pending 不送，absent 才送；新进程（新的调用）判定相同",
+    "test/spec/settlement/worker/seed.int.test.ts > [AC-B2-04ze#13] 一个 app 送失败不挡其他 app：其余照送，失败在全部试完后抛出；下次补种再送",
+    "test/spec/settlement/worker/seed.int.test.ts > [AC-B2-04ze#14] 运行状态存储（pg-boss + settle_jobs）：未送 absent；排队、执行中、等待重试 pending；完成 done；失败进 settle.dead 或被取消 absent（死信副本不算 pending）；别的平台 / 别的日子互不影响",
+    "test/spec/settlement/worker/seed.int.test.ts > [AC-B2-04ze#15] 持久完成：settle_jobs 有 (app, bill, 平台, D 00:00 +08:00) 的 done 行即 done（队列里没有任务也一样）；failed 行不算完成；别的 run_at（如补充批次顺延 1 ms）或别的平台的 done 行不算",
+    "test/spec/settlement/worker/seed.int.test.ts > [AC-B2-04ze#16] 补种在真实队列上去重：连续两次补种每个键只有 1 个排队任务（第二次不再送）；任务完成后不再送；任务失败进死信后下一次补种重新送"
+  ],
+  "risk_note": "RV2 settlement + app.module (B2-04ze; D10-443; BR-FUND-04, BR-FUND-20). SettlementModule.forWorker registers bill and batch_execute on the existing settle queue (exclusive, singletonKey) and, in the worker entry only, starts a daily bill seed (apps × union platforms; not-due days answered by the job) and a due-batch scan (CONFIRMED with scheduled_at reached, and EXECUTING for take-over), judged by queue / table state, stopped on module destroy. app.module wires createBillJob, createBatchExecutor, createCreditOrder and createBeneficiaryCredit with readAttribution = commission.readCommissionAttribution, the BeneficiaryGate (identity users lock, realname / deletion readers, risk state reader, B1-03zc minors) and commission appendBeneficiaryEvent through a thin adapter. FU-B204ZD-SNAPSHOT: bill readSource is one statement. Switches unchanged: settle.auto.enabled default on, credit.enabled.<platform> default off, so production credits nothing by default.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "ad60bc5763212784f8b55df574f60d549765609f",
+      "tree": "8f8b4d0c235e0cdcb41b072583b9b30643cadc1d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T23:02:25Z",
+      "finished_at": "2026-10-30T23:02:45Z",
+      "gate": {
+        "commit": "9c5176b224614a41762d85e330255a1a7fc3fe3e",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/settlement/worker/assembly.test.ts > [AC-B2-04ze#20] app.module 只在 worker 入口调用 SettlementModule.forWorker（恰 1 次）；api / admin / stream / payout 入口都不调用",
+        "test/spec/settlement/worker/assembly.test.ts > [AC-B2-04ze#21] worker 入口的端口取自各属主导出：readAttribution 恰为 commission.readCommissionAttribution（必传）；快照、淘礼金、受益人事件取 commission；联盟为准读口、资产快照状态取 ledger；锁用户取 identity.lockUsersForUpdate；平台 = union 已注册平台；其余端口都已给出",
+        "test/spec/settlement/worker/bill-source-snapshot.int.test.ts > [AC-B2-04ze#29] readSource 的订单与结算记录来自同一时点：两次读之间另一连接提交（X 进 WAITING 并到结算、新单 Y 连同结算到达），返回结果要么全是提交前、要么全是提交后，不混读",
+        "test/spec/settlement/worker/credit-wiring.int.test.ts > [AC-B2-04ze#29] forWorker 装配的 batch_execute：两个 WAITING 子订单（一单 commission_version=1，一单被 order-sync 升到 2 且无 v2 快照行）都经注入的 readAttribution 读归属并照常入账（400 / 80），批次 DONE；readSnapshot 一次都不调用（不整单回滚）",
+        "test/spec/settlement/worker/credit-wiring.int.test.ts > [AC-B2-04ze#30] forWorker 装配的 batch_execute：受益人补记项（直推入账时冻结开了首次入账义务，现已恢复正常；订单此后被 order-sync 升到 commission_version=2、无 v2 快照行）经注入的 readAttribution 执行，补记 85 写 CREDIT 键凭证、义务完成（R5a，closed_ref = 批次明细 id），明细 credited 85，批次 DONE；readSnapshot 不调用",
+        "test/spec/settlement/worker/credit-wiring.int.test.ts > [AC-B2-04ze#31] forWorker 的闸门用注入的 minors 读口（经进程字段密钥构造）：已识别未成年的直推份额没收（FORFEIT 85，forfeited 事件 reason=minor），本人 425 与间推 42 照常入账，平台 448；明细 credited，批次 DONE",
+        "test/spec/settlement/worker/lifecycle.int.test.ts > [AC-B2-04ze#32] forWorker 自己起补种与扫描：启动后由模块定时器（≤60 秒首次、之后 ≤60 秒一次）按注入 Clock 补种当日 bill、投递到点的 CONFIRMED 批次；Clock 越过零点与定时时刻后补种新一天的 bill、投递定时批次；模块关闭后再推进定时器与 Clock 不再投递",
+        "test/spec/settlement/worker/module.int.test.ts > [AC-B2-04ze#22] forWorker：有库、队列（与密钥、事件总线）时在 settle 队列上恰注册 1 个处理器、不注册别的队列；没有库或没有队列时什么都不注册",
+        "test/spec/settlement/worker/module.int.test.ts > [AC-B2-04ze#23] 装配的处理器：非账单日的 bill 正常完成（not_due，不写 settle_jobs / settle_bills）；不存在的批次的 batch_execute 正常完成且什么都不写",
+        "test/spec/settlement/worker/module.int.test.ts > [AC-B2-04ze#24] 装配的处理器：账单日而当日资产快照未完成时 bill 本次投递失败（deferred），不写 settle_jobs、settle_bills",
+        "test/spec/settlement/worker/module.int.test.ts > [AC-B2-04ze#25] 装配的处理器：账单日快照已完成时 bill 经生产 readSource（联盟为准读口取本平台订单键）生成账单，应结未结登记差错单，settle_jobs 记 (bill, 平台, D 00:00 +08:00) done；credit.enabled 未设（缺省 off）不生成批次、不读归属",
+        "test/spec/settlement/worker/module.int.test.ts > [AC-B2-04ze#26] 装配的处理器：CONFIRMED 立即批次在 credit.enabled 未设（缺省 off）时只记 paused_by_switch_at、保持 CONFIRMED、不入账；credit.enabled=on 而 settle.auto.enabled 未设（缺省 on）时执行到 DONE 并发 settle.batch_done",
+        "test/spec/settlement/worker/ports.int.test.ts > [AC-B2-04ze#27] 配置端口照现状：credit.enabled.<platform> 未设时不是 on、设为 true 后为 true；settle.auto.enabled 未设时不是 off",
+        "test/spec/settlement/worker/ports.int.test.ts > [AC-B2-04ze#28] 闸门端口是真实读口：在调用方事务内锁本 app 的用户行、读注销状态与风控状态（无风控行 = normal），未知 id 与别的 app 的用户不返回；未成年人读口对无实名的用户返回空集",
+        "test/spec/settlement/worker/scan.int.test.ts > [AC-B2-04ze#17] 扫描：CONFIRMED 立即结算、CONFIRMED 定时且 scheduled_at ≤ 当前（含恰好等于）、EXECUTING 各送 1 个 batch_execute（各 app）；定时未到、被开关停住（paused_by_switch_at）、DRAFT / PARTIAL / DONE / CANCELLED 不送；事务外、立即",
+        "test/spec/settlement/worker/scan.int.test.ts > [AC-B2-04ze#18] 一批送失败不挡其他批次：其余照送，失败在全部试完后抛出",
+        "test/spec/settlement/worker/scan.int.test.ts > [AC-B2-04ze#19] 真实队列上按 singletonKey 去重：连续两次扫描每批只有 1 个排队任务；任务完成而批次仍到点（如快照未完成）时下一次扫描再送 1 个",
+        "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#1] bill 的 singletonKey = bill:<app_id>:<platform>:<D>，按 app、平台、D 各不相同，只用队列允许的字符",
+        "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#2] batch_execute 的 singletonKey = batch_execute:<app_id>:<batch_id>，每批一个",
+        "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#3] bill 的名义 run_at = D 当日 00:00 +08:00（月末、年初、闰日照样），同一 D 每次都相同；不存在或格式不对的 D 被拒绝",
+        "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#4] scheduleSettleBill：送 settle / bill，负载 { app_id, platform, accounting_date }，singletonKey bill:<app>:<platform>:<D>，立即（无延迟）；事务原样交给队列，返回队列的结果",
+        "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#5] scheduleBatchExecute：送 settle / batch_execute，负载 { app_id, batch_id }，singletonKey batch_execute:<app>:<batch>，立即；事务原样交给队列",
+        "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#6] 处理器 bill：以负载的 (app, platform) 与 run_at = D 00:00 +08:00 调用账单任务一次（db 为装配的库句柄）；generated / duplicate / not_due 都正常完成",
+        "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#7] 处理器 bill：账单任务 deferred（当日资产快照未完成）时本次投递失败（不算完成，留给重投递 / 补种）；账单任务抛错时原样失败",
+        "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#8] 处理器 batch_execute：以负载的 (app, batch) 调用执行器一次；done / partial / day_rollover / not_due / snapshot_pending / switched_off / idle / busy 都正常完成（进度在批次表，扫描会再投）；执行器抛错时原样失败",
+        "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#9] 处理器拒绝未知任务名与不合格负载，且不调用账单任务或执行器",
+        "test/spec/settlement/worker/seed.int.test.ts > [AC-B2-04ze#10] 补种：每个有订单的 app × 每个平台各送 1 个当日（+08:00）的 bill 任务（一个 app 多单也只 1 个），事务外、立即；账单日与非账单日一样补种",
+        "test/spec/settlement/worker/seed.int.test.ts > [AC-B2-04ze#11] 补种的 D 是时钟所在的 +08:00 自然日：07-23 23:59:59.999 +08:00 给 07-23，07-24 00:00 +08:00 给 07-24（跨 UTC 零点不受影响）",
+        "test/spec/settlement/worker/seed.int.test.ts > [AC-B2-04ze#12] 补种按运行状态取舍：每个 (app, 平台, D) 都问状态存储；done 或 pending 不送，absent 才送；新进程（新的调用）判定相同",
+        "test/spec/settlement/worker/seed.int.test.ts > [AC-B2-04ze#13] 一个 app 送失败不挡其他 app：其余照送，失败在全部试完后抛出；下次补种再送",
+        "test/spec/settlement/worker/seed.int.test.ts > [AC-B2-04ze#14] 运行状态存储（pg-boss + settle_jobs）：未送 absent；排队、执行中、等待重试 pending；完成 done；失败进 settle.dead 或被取消 absent（死信副本不算 pending）；别的平台 / 别的日子互不影响",
+        "test/spec/settlement/worker/seed.int.test.ts > [AC-B2-04ze#15] 持久完成：settle_jobs 有 (app, bill, 平台, D 00:00 +08:00) 的 done 行即 done（队列里没有任务也一样）；failed 行不算完成；别的 run_at（如补充批次顺延 1 ms）或别的平台的 done 行不算",
+        "test/spec/settlement/worker/seed.int.test.ts > [AC-B2-04ze#16] 补种在真实队列上去重：连续两次补种每个键只有 1 个排队任务（第二次不再送）；任务完成后不再送；任务失败进死信后下一次补种重新送"
+      ],
+      "expected": [
+        "test/spec/settlement/worker/assembly.test.ts",
+        "test/spec/settlement/worker/bill-source-snapshot.int.test.ts",
+        "test/spec/settlement/worker/credit-wiring.int.test.ts",
+        "test/spec/settlement/worker/lifecycle.int.test.ts",
+        "test/spec/settlement/worker/module.int.test.ts",
+        "test/spec/settlement/worker/ports.int.test.ts",
+        "test/spec/settlement/worker/scan.int.test.ts",
+        "test/spec/settlement/worker/schedule.test.ts",
+        "test/spec/settlement/worker/seed.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "50a1f795dbc254c1e1e2ea45a86ce1bb270403d0ae204828e9c5e3e46be1c143"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "75261463372952e3ee80a37d158ec66ee75d67ffa57d53c450f301ee5702748a"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; adversarial money review by a fresh independent Claude via claude-run.sh (approvals #36); round 1 pass with two open S2 (bill-day seed before D−1 snapshot burns queue attempts; a missed bill day is never re-seeded) recorded as followups and reported to the orchestrator",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by an independent Claude via claude-run.sh in 2 runs; round 1 fail (S1 readAttribution not pinned into the credit factories; S1 forWorker not starting seed / scan; S2 minors stub), closed in run 2; round 2 pass with one S2 (duplicate AC id #29) recorded",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "cd204ef5a1a56be1ea07013ca19bda5294f6a018",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
