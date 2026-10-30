@@ -1,0 +1,29 @@
+id: B1-05o
+repo: rebate-platform
+title: catalog：首页物料信息流取数（TRADE-15，BR-TEXT-17 联盟物料频道）——GET /v1/pages/{page_key}/sections/{section_id}/items 的 union_material 数据源：读已发布页面的该卡片，每次取数前核对白名单，移出的频道不取并告警，多频道按 interleave 交错合并、不加佣金或返利权重，经类目黑名单过滤，出卡走唯一出卡入口（ad_label 为 null），游标分页，全部取不到时按空列表
+type: impl
+# 2026-10-30 W1 入账（编排 19:3x：对照 05 找缺口）。union 端口用 B1-22p，catalog 接法同 B1-28j / B1-05n。白名单今天为空，真实适配器等 CAP-*-10。商品池数据源不在本任务（表 product_pools / pool_items 尚未建）。
+refs: [BR-TEXT-17]
+refs_hash:
+  BR-TEXT-17: 486f4508575e
+deps: [CT-07c, B1-22p, B1-05n]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+  - 'apps/api/src/modules/content/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+test_paths:
+  - 'test/spec/catalog/section-items/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/section-items/**'
+status: todo
+pr: null
