@@ -1,0 +1,29 @@
+id: B1-03zd
+repo: rebate-platform
+title: risk：后台申诉只读接口实现（CT-24r）——GET /admin/v1/appeals（adminListAppeals 列表与筛选）、GET /admin/v1/appeals/{appeal_id}（adminGetAppeal 详情，含 revoke_permission）、GET /admin/v1/blocked-requests（adminListBlockedRequests 被拦请求查找，供代为登记）；权限点 risk.appeal，按契约返回与错误码，读 app.appeals 与相关只读端口，不写；去掉这三个接口的 x-implementation planned 并重生成生成物
+type: impl
+# 2026-10-31 入账（identity-lane，D10-453 ④ (a) 拆只读 / 写两单）。契约 CT-24r 已合并、六接口仍 planned；app.appeals 表已在（B1-03i / B1-03v）。只读单先做，写单 B1-03ze 依赖本单。
+# 契约改动只去 planned 标记（不改形状）；落地前在 notices 报契约槽。
+# BR-ID-36 原文过长（任务书超 24KB），refs 留空、原文摘录放任务书第 9 节。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/risk/application/admin-appeals-read.ts'
+  - 'apps/api/src/modules/risk/application/admin-appeals-read.test.ts'
+  - 'apps/api/src/modules/risk/http/admin/**'
+  - 'apps/api/src/modules/risk/risk.module.ts'
+  - 'apps/api/src/modules/risk/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/*.gen.ts'
+  - 'apps/api/src/modules/platform/**/*.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/risk/admin-appeals-read/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/admin-appeals-read/**'
+status: todo
