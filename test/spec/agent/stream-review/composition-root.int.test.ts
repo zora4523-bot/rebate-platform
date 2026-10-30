@@ -152,11 +152,22 @@ it.each([
       // Likewise the prior identity keyring (B1-27e): kms in staging, never opened here.
       ...{ priorIdentityKeyring: null },
     };
-    const app = await boot.createHttpApp('stream', {
+    // The entry's REDIS (D10-464): since B1-22v the union quota bucket lives in Redis, and a
+    // staging entry without Redis refuses every token. TEST_REDIS_URL, else Testcontainers.
+    const { acquireTestRedis } = await import('@couli/db/testing');
+    const { connection } = await import('../../platform/redis/kit.ts');
+    const redis = await acquireTestRedis();
+    const booting = boot.createHttpApp('stream', {
       config,
       clock: f.time.clock,
       logger: f.logs.logger,
       dbHandles: { db: pg.db, dbRead: null, close: async () => undefined },
+      // loadConfig does not read REDIS_URL; bootstrap takes the entry's Redis as redisUrl.
+      redisUrl: connection('stream', redis.url).redisUrl,
+    });
+    const app = await booting.catch(async (error: unknown) => {
+      await redis.stop();
+      throw error;
     });
     try {
       await app.init();
@@ -239,7 +250,11 @@ it.each([
       expect(wire.unexpectedFetch).not.toHaveBeenCalled();
       expect(f.logs.lines.join('\n')).not.toContain(credentials.accessKeySecret);
     } finally {
-      await app.close();
+      try {
+        await app.close();
+      } finally {
+        await redis.stop();
+      }
     }
   },
   120_000,
