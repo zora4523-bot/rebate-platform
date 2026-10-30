@@ -1,0 +1,145 @@
+{
+  "task": "B2-02q",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "9da251b0064916decd63f8156e05d9494b11d20b",
+  "red_tests": [
+    "test/spec/ledger/daily-check-schedule/assembly.int.test.ts > [AC-B2-02q#20] 装配后的真实端口：账户级差异经 payout 端口写 1 条 withdraw_holds（ledger_mismatch、recon_diff:<id>、system、无期限）并记 withdraw_hold.add 审计；全局差异经 content 端口把 settle.auto.enabled 置 off（system 写、留历史）并在提交后告警",
+    "test/spec/ledger/daily-check-schedule/assembly.int.test.ts > [AC-B2-02q#21] 锁序：冻结在差错单行之后取 users 行锁——users 行被他人锁住时，执行段已写入差错单行并在 users 行上等待；对方放锁后照常完成 1 条冻结",
+    "test/spec/ledger/daily-check-schedule/assembly.int.test.ts > [AC-B2-02q#22] 并发：两次执行同一天的同一批差异（真实端口）都完成、不死锁；只 1 张差错单、每人 1 条冻结，只有一方登记",
+    "test/spec/ledger/daily-check-schedule/assembly.int.test.ts > [AC-B2-02q#23] worker 模块：有库有队列时只在 ledger-check 上注册 1 个处理器；处理器用真实不变量与装配的端口跑完一天并在事务内排下一天",
+    "test/spec/ledger/daily-check-schedule/assembly.int.test.ts > [AC-B2-02q#24] worker 模块：没有数据库时不注册处理器、启动不报错",
+    "test/spec/ledger/daily-check-schedule/assembly.test.ts > [AC-B2-02q#8] 装配：worker 入口的 app.module 恰调用一次 LedgerDailyCheckModule.forWorker，给出 holds 与 autoSettlement 两个工厂；工厂按 (clock, logger) 造出 B2-02p 的两个端口",
+    "test/spec/ledger/daily-check-schedule/assembly.test.ts > [AC-B2-02q#9] 装配（源码）：app.module 用 payout 的 createWithdrawHolds 与 content 的 createSystemSwitchWriter 造端口；ledger 模块自己不导入 payout 或 content",
+    "test/spec/ledger/daily-check-schedule/job.int.test.ts > [AC-B2-02q#10] 一次 daily 任务按负载的 (app, D) 跑校验并交执行段：本 app 的非 pay- 账户级差异登记 R3 差错单（期间 D）并冻结账户 owner，pay- 差异只登记不冻结，他 app 的差异不登记；D 不取时钟",
+    "test/spec/ledger/daily-check-schedule/job.int.test.ts > [AC-B2-02q#11] 跑完在事务内排下一天：准点运行时延迟到 D+2 01:00（86400 秒），晚到的运行立即补跑下一天；无差异的一天照样续排，只排这一条",
+    "test/spec/ledger/daily-check-schedule/job.int.test.ts > [AC-B2-02q#12] 同一 (app, D) 的任务重复投递：差错单与冻结都不重复，续排仍是同一 singletonKey（排他队列合并）",
+    "test/spec/ledger/daily-check-schedule/job.int.test.ts > [AC-B2-02q#13] 校验本身失败（不变量文件不合输出约定）：任务以 DAILY_CHECK_FAILED 失败交队列重试，不登记差错单、不冻结、不关开关",
+    "test/spec/ledger/daily-check-schedule/job.int.test.ts > [AC-B2-02q#14] 执行段失败（冻结端口抛错）：任务失败交队列重试，该差错单连同冻结整体回滚；重试成功后恰 1 张差错单、1 条冻结",
+    "test/spec/ledger/daily-check-schedule/job.int.test.ts > [AC-B2-02q#15] 负载不合法（缺 app_id、空 app_id、缺 D、D 不存在或格式不对、D 不是文本）：任务被拒绝，不跑校验、不登记、不冻结、不续排",
+    "test/spec/ledger/daily-check-schedule/job.int.test.ts > [AC-B2-02q#16] 本 app 有非 pay- 全局差异：经端口把本 app 的 settle.auto.enabled 置 off 一次并在提交后告警；pay- 全局差异与他 app 的全局差异不关本 app 的开关",
+    "test/spec/ledger/daily-check-schedule/schedule.test.ts > [AC-B2-02q#1] 队列目录：ledger-check 恰一条，exclusive（按 singletonKey 去重）、目录默认值、死信 ledger-check.dead，紧跟 payout-recon；死信队列设置同其他 <q>.dead",
+    "test/spec/ledger/daily-check-schedule/schedule.test.ts > [AC-B2-02q#2] 入口计划：只有 worker 消费 ledger-check，并发 1、轮询 2 秒，紧跟 payout-recon；api / stream / admin / payout 都不消费",
+    "test/spec/ledger/daily-check-schedule/schedule.test.ts > [AC-B2-02q#3] singletonKey 按 app 与 D：daily:<app_id>:<D>；不同 app 或不同 D 各不相同；只用队列允许的字符",
+    "test/spec/ledger/daily-check-schedule/schedule.test.ts > [AC-B2-02q#4] D 的运行时刻 = D+1 01:00 +08:00（月末、年末、闰日照样）；D 的下一天按 +08:00 日历",
+    "test/spec/ledger/daily-check-schedule/schedule.test.ts > [AC-B2-02q#5] 触发时刻所在 +08:00 日的前一天就是 D：00:00 / 00:59 / 01:00 / 23:59 +08:00 都给 D−1，跨 UTC 零点不受影响；D 的运行时刻落在当天 01:00",
+    "test/spec/ledger/daily-check-schedule/schedule.test.ts > [AC-B2-02q#6] 不存在或格式不对的 D 被拒绝（不算出一个时刻或日期）",
+    "test/spec/ledger/daily-check-schedule/schedule.test.ts > [AC-B2-02q#7] scheduleDailyCheck：送 ledger-check / daily，负载 { app_id, accounting_date }，singletonKey daily:<app>:<D>，延迟到 D+1 01:00（不足 1 秒按 1 秒，已过则 0）；事务原样交给队列，返回队列的结果",
+    "test/spec/ledger/daily-check-schedule/seed.int.test.ts > [AC-B2-02q#17] 补种：每个有账户的 app 各排 1 个 D−1 的任务（一个 app 多个账户也只 1 个），00:30 +08:00 补种时延迟到 01:00",
+    "test/spec/ledger/daily-check-schedule/seed.int.test.ts > [AC-B2-02q#18] 补种时刻在当天 00:00、01:00 与 23:59 +08:00：D 都是前一天；01:00 前延迟到 01:00，01:00 及之后立即（重启不回补历史）",
+    "test/spec/ledger/daily-check-schedule/seed.int.test.ts > [AC-B2-02q#19] 同一进程的修复：已为该 D 排过的 app 不再送，新出现的 app 补上；一个 app 送失败不挡其他 app，失败在全部试完后抛出，下次修复再送；到了下一天各 app 送新的 D",
+    "test/spec/ledger/daily-check-schedule/timer.int.test.ts > [AC-B2-02q#25] worker 模块的补种 / 修复定时器：启动后 1 分钟内为有账户的 app 排 D−1 的任务，30 分钟内的修复补上后来出现的 app；模块销毁后不再发送",
+    "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 冻结结构不变] ENTRY_PLAN 与 QUEUE_CATALOG 与主干逐字一致且仍冻结；不给 limits 时 worker 22 个队列取计划值（合计 43；B2-06f D10-398 ① 加 payout-review，B2-07c D10-408 / D10-415 ① 加 payout-recon，B2-02q D10-415 ① 加 ledger-check），共享预算缺省 7 = floor(POOL_SIZES.worker.db × 0.7)，至少留 3 个连接",
+    "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 配置覆盖] 覆盖只往下调：列出的队列取覆盖值（等于计划值也接受），没列出的仍取计划值，dbBudget 取给定值（1 与 7 都接受）；计划与 limits 本身都不被改动",
+    "test/spec/platform/queue/contract.test.ts > [规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项确切（待编排会话确认的默认值）：payout、settle 为 exclusive（risk-scan 若有亦然），其余 standard，死信队列 dead-letter",
+    "test/spec/platform/queue/contract.test.ts > [规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 秒] 生产入口计划逐项确切：api / stream / admin 不执行任务，worker 六个队列，payout 只有 payout 并发 1",
+    "test/spec/platform/queue/contract.test.ts > [规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只能为自己计划里的队列注册处理器：其余目录队列一律 not_in_entry"
+  ],
+  "risk_note": "RV2 ledger + platform queue + app.module (B2-02q; BR-FUND-19). Schedules the daily ledger check: new exclusive worker-only queue ledger-check (concurrency 1), self-rescheduling job daily:<app>:<D> run at D+1 01:00 +08:00 (Clock only, @couli/domain calendar), next day enqueued in a transaction, plus a seed/heal timer in the worker entry. The runner result now carries filedDifferences (file name per difference) handed to the B2-02p execution step. app.module wires, in the worker entry only, payout createWithdrawHolds (with identity's users lock; system audit as an info line, same as B2-07c) as the holds port and content createSystemSwitchWriter as the auto-settlement port. Frozen queue tests changed only to add ledger-check (limits count 42→43 in its own test(spec) commit, D10-415 ①).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "9da251b0064916decd63f8156e05d9494b11d20b",
+      "tree": "57e5bafe9c7302fd0804e76753ed87c5fcaacc3a",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T07:13:05Z",
+      "finished_at": "2026-10-30T07:13:26Z",
+      "gate": {
+        "commit": "10c07d7401885091fe5a2f756e8875c49441ad0a",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/daily-check-schedule/assembly.int.test.ts > [AC-B2-02q#20] 装配后的真实端口：账户级差异经 payout 端口写 1 条 withdraw_holds（ledger_mismatch、recon_diff:<id>、system、无期限）并记 withdraw_hold.add 审计；全局差异经 content 端口把 settle.auto.enabled 置 off（system 写、留历史）并在提交后告警",
+        "test/spec/ledger/daily-check-schedule/assembly.int.test.ts > [AC-B2-02q#21] 锁序：冻结在差错单行之后取 users 行锁——users 行被他人锁住时，执行段已写入差错单行并在 users 行上等待；对方放锁后照常完成 1 条冻结",
+        "test/spec/ledger/daily-check-schedule/assembly.int.test.ts > [AC-B2-02q#22] 并发：两次执行同一天的同一批差异（真实端口）都完成、不死锁；只 1 张差错单、每人 1 条冻结，只有一方登记",
+        "test/spec/ledger/daily-check-schedule/assembly.int.test.ts > [AC-B2-02q#23] worker 模块：有库有队列时只在 ledger-check 上注册 1 个处理器；处理器用真实不变量与装配的端口跑完一天并在事务内排下一天",
+        "test/spec/ledger/daily-check-schedule/assembly.int.test.ts > [AC-B2-02q#24] worker 模块：没有数据库时不注册处理器、启动不报错",
+        "test/spec/ledger/daily-check-schedule/assembly.test.ts > [AC-B2-02q#8] 装配：worker 入口的 app.module 恰调用一次 LedgerDailyCheckModule.forWorker，给出 holds 与 autoSettlement 两个工厂；工厂按 (clock, logger) 造出 B2-02p 的两个端口",
+        "test/spec/ledger/daily-check-schedule/assembly.test.ts > [AC-B2-02q#9] 装配（源码）：app.module 用 payout 的 createWithdrawHolds 与 content 的 createSystemSwitchWriter 造端口；ledger 模块自己不导入 payout 或 content",
+        "test/spec/ledger/daily-check-schedule/job.int.test.ts > [AC-B2-02q#10] 一次 daily 任务按负载的 (app, D) 跑校验并交执行段：本 app 的非 pay- 账户级差异登记 R3 差错单（期间 D）并冻结账户 owner，pay- 差异只登记不冻结，他 app 的差异不登记；D 不取时钟",
+        "test/spec/ledger/daily-check-schedule/job.int.test.ts > [AC-B2-02q#11] 跑完在事务内排下一天：准点运行时延迟到 D+2 01:00（86400 秒），晚到的运行立即补跑下一天；无差异的一天照样续排，只排这一条",
+        "test/spec/ledger/daily-check-schedule/job.int.test.ts > [AC-B2-02q#12] 同一 (app, D) 的任务重复投递：差错单与冻结都不重复，续排仍是同一 singletonKey（排他队列合并）",
+        "test/spec/ledger/daily-check-schedule/job.int.test.ts > [AC-B2-02q#13] 校验本身失败（不变量文件不合输出约定）：任务以 DAILY_CHECK_FAILED 失败交队列重试，不登记差错单、不冻结、不关开关",
+        "test/spec/ledger/daily-check-schedule/job.int.test.ts > [AC-B2-02q#14] 执行段失败（冻结端口抛错）：任务失败交队列重试，该差错单连同冻结整体回滚；重试成功后恰 1 张差错单、1 条冻结",
+        "test/spec/ledger/daily-check-schedule/job.int.test.ts > [AC-B2-02q#15] 负载不合法（缺 app_id、空 app_id、缺 D、D 不存在或格式不对、D 不是文本）：任务被拒绝，不跑校验、不登记、不冻结、不续排",
+        "test/spec/ledger/daily-check-schedule/job.int.test.ts > [AC-B2-02q#16] 本 app 有非 pay- 全局差异：经端口把本 app 的 settle.auto.enabled 置 off 一次并在提交后告警；pay- 全局差异与他 app 的全局差异不关本 app 的开关",
+        "test/spec/ledger/daily-check-schedule/schedule.test.ts > [AC-B2-02q#1] 队列目录：ledger-check 恰一条，exclusive（按 singletonKey 去重）、目录默认值、死信 ledger-check.dead，紧跟 payout-recon；死信队列设置同其他 <q>.dead",
+        "test/spec/ledger/daily-check-schedule/schedule.test.ts > [AC-B2-02q#2] 入口计划：只有 worker 消费 ledger-check，并发 1、轮询 2 秒，紧跟 payout-recon；api / stream / admin / payout 都不消费",
+        "test/spec/ledger/daily-check-schedule/schedule.test.ts > [AC-B2-02q#3] singletonKey 按 app 与 D：daily:<app_id>:<D>；不同 app 或不同 D 各不相同；只用队列允许的字符",
+        "test/spec/ledger/daily-check-schedule/schedule.test.ts > [AC-B2-02q#4] D 的运行时刻 = D+1 01:00 +08:00（月末、年末、闰日照样）；D 的下一天按 +08:00 日历",
+        "test/spec/ledger/daily-check-schedule/schedule.test.ts > [AC-B2-02q#5] 触发时刻所在 +08:00 日的前一天就是 D：00:00 / 00:59 / 01:00 / 23:59 +08:00 都给 D−1，跨 UTC 零点不受影响；D 的运行时刻落在当天 01:00",
+        "test/spec/ledger/daily-check-schedule/schedule.test.ts > [AC-B2-02q#6] 不存在或格式不对的 D 被拒绝（不算出一个时刻或日期）",
+        "test/spec/ledger/daily-check-schedule/schedule.test.ts > [AC-B2-02q#7] scheduleDailyCheck：送 ledger-check / daily，负载 { app_id, accounting_date }，singletonKey daily:<app>:<D>，延迟到 D+1 01:00（不足 1 秒按 1 秒，已过则 0）；事务原样交给队列，返回队列的结果",
+        "test/spec/ledger/daily-check-schedule/seed.int.test.ts > [AC-B2-02q#17] 补种：每个有账户的 app 各排 1 个 D−1 的任务（一个 app 多个账户也只 1 个），00:30 +08:00 补种时延迟到 01:00",
+        "test/spec/ledger/daily-check-schedule/seed.int.test.ts > [AC-B2-02q#18] 补种时刻在当天 00:00、01:00 与 23:59 +08:00：D 都是前一天；01:00 前延迟到 01:00，01:00 及之后立即（重启不回补历史）",
+        "test/spec/ledger/daily-check-schedule/seed.int.test.ts > [AC-B2-02q#19] 同一进程的修复：已为该 D 排过的 app 不再送，新出现的 app 补上；一个 app 送失败不挡其他 app，失败在全部试完后抛出，下次修复再送；到了下一天各 app 送新的 D",
+        "test/spec/ledger/daily-check-schedule/timer.int.test.ts > [AC-B2-02q#25] worker 模块的补种 / 修复定时器：启动后 1 分钟内为有账户的 app 排 D−1 的任务，30 分钟内的修复补上后来出现的 app；模块销毁后不再发送",
+        "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 冻结结构不变] ENTRY_PLAN 与 QUEUE_CATALOG 与主干逐字一致且仍冻结；不给 limits 时 worker 22 个队列取计划值（合计 43；B2-06f D10-398 ① 加 payout-review，B2-07c D10-408 / D10-415 ① 加 payout-recon，B2-02q D10-415 ① 加 ledger-check），共享预算缺省 7 = floor(POOL_SIZES.worker.db × 0.7)，至少留 3 个连接",
+        "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 配置覆盖] 覆盖只往下调：列出的队列取覆盖值（等于计划值也接受），没列出的仍取计划值，dbBudget 取给定值（1 与 7 都接受）；计划与 limits 本身都不被改动",
+        "test/spec/platform/queue/contract.test.ts > [规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项确切（待编排会话确认的默认值）：payout、settle 为 exclusive（risk-scan 若有亦然），其余 standard，死信队列 dead-letter",
+        "test/spec/platform/queue/contract.test.ts > [规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 秒] 生产入口计划逐项确切：api / stream / admin 不执行任务，worker 六个队列，payout 只有 payout 并发 1",
+        "test/spec/platform/queue/contract.test.ts > [规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只能为自己计划里的队列注册处理器：其余目录队列一律 not_in_entry"
+      ],
+      "expected": [
+        "test/spec/ledger/daily-check-schedule/assembly.int.test.ts",
+        "test/spec/ledger/daily-check-schedule/assembly.test.ts",
+        "test/spec/ledger/daily-check-schedule/job.int.test.ts",
+        "test/spec/ledger/daily-check-schedule/schedule.test.ts",
+        "test/spec/ledger/daily-check-schedule/seed.int.test.ts",
+        "test/spec/ledger/daily-check-schedule/timer.int.test.ts",
+        "test/spec/platform/queue-concurrency/limits.test.ts",
+        "test/spec/platform/queue/contract.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "3ef85788ef07f78b336261251cb492c507f1a679e190bdd3603b54d9d3ab7157"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "6139303c1f0b3e35353ffabe47db703bcbb25dfe63ebade2d071876a8ae4b859"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; adversarial money review by a fresh independent Claude via claude-run.sh (approvals #36); a first attempt produced no valid output (exit 10, cited a non-existent path) and was not counted; round 1 pass with one open S2 (after a dead-lettered daily job the heal timer skips the day so the chain stops) recorded as a followup",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by an independent Claude via claude-run.sh in 1 run (limits.test.ts count change in its own commit, D10-415 ①, not counted); round 1 pass with two S2 recorded as followups; the ledger's two red_exempt entries (frozen B1-01zzk cases in queue-concurrency/limits.test.ts, bodies unchanged, may stay green because kit.ts in test_paths pulls the whole file in, CT-06r) confirmed byte-for-byte unchanged by a fresh read-only Claude (round 2)",
+    "engine": "claude",
+    "red_exempt_confirmed": true
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "ad85037b5b1bd0d5643ee81065748546cf6274ad",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
