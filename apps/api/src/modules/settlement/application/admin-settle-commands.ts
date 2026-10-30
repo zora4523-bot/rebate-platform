@@ -20,7 +20,9 @@
 // The launch runs under platform idempotency in its transactional mode (subject a:<admin_users.id>,
 // the concrete path, the Idempotency-Key header): checks, differences, batches, the audit record and
 // the idempotency record commit together; 2xxxx refusals are not stored. Each launch's nominal moment
-// is the injected Clock, so the same instant is a replay of settle_jobs' key (outcome duplicate).
+// is the injected Clock, so the same instant is a replay of settle_jobs' key (outcome duplicate). A
+// failed launch rolls all of that back and records nothing: no settle_jobs row stays claimed, and the
+// retry under the same key is a launch of its own at its own moment.
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import { accountingDate } from '@couli/domain';
@@ -165,6 +167,7 @@ export function createAdminSettleCommandDeps(
       clock,
       currentRound: draftBatchIds,
       readiness: readinessOf(ports, db, clock),
+      readinessOn: (trx) => readinessOf(ports, trx, clock),
     }),
     supplement: (handle) =>
       createSupplementCommand({
@@ -480,63 +483,48 @@ export async function launchAdminSettleSupplement(
   const { appId, adminId, ip } = operator;
   const { body, traceId } = call;
   const launch = { appId, billId, platform: body.platform, requestedAt: deps.clock.now() };
-  let launching = false;
-  try {
-    return await deps.idempotency.executeInTransaction(
-      {
-        appId,
-        actor: { userId: null, deviceId: null, phoneHmac: null, adminUserId: adminId },
-        method: 'POST',
-        path: `/admin/v1/settle-bills/${billId}/supplement-batches`,
-        key: call.key,
-        body,
-        traceId,
-      },
-      async (trx): Promise<HandlerResult> => {
-        const bill = await trx
-          .withSchema('app')
-          .selectFrom('settle_bills')
-          .select('bill_id')
-          .where('app_id', '=', appId)
-          .where('bill_id', '=', billId)
-          .executeTakeFirst();
-        if (bill === undefined) return fieldsRefusal(['bill_id'], traceId);
-        launching = true;
-        let result;
-        try {
-          result = await deps.supplement(trx).launchInTransaction(trx, launch);
-        } catch (error: unknown) {
-          if (!(error instanceof SupplementRejectedError)) throw error;
-          launching = false;
-          return supplementRefusal(error, traceId);
-        }
-        const data: Schema<'AdminSettleSupplementResponse'>['data'] = {
-          bill_id: result.billId,
-          platform: body.platform,
-          outcome: result.outcome,
-          batch_ids: [...result.batchIds],
-        };
-        await deps.auditOn(trx).append({
-          appId,
-          actor: adminId,
-          action: SUPPLEMENT_AUDIT_ACTION,
-          target: result.billId,
-          before: null,
-          after: { ...data },
-          ip,
-        });
-        return { status: 200, envelope: { code: 0, msg: '', data, trace_id: traceId } };
-      },
-    );
-  } catch (error: unknown) {
-    // The whole launch rolled back; the key's row goes to failed and the same key retries it.
-    if (launching) {
+  return deps.idempotency.executeInTransaction(
+    {
+      appId,
+      actor: { userId: null, deviceId: null, phoneHmac: null, adminUserId: adminId },
+      method: 'POST',
+      path: `/admin/v1/settle-bills/${billId}/supplement-batches`,
+      key: call.key,
+      body,
+      traceId,
+    },
+    async (trx): Promise<HandlerResult> => {
+      const bill = await trx
+        .withSchema('app')
+        .selectFrom('settle_bills')
+        .select('bill_id')
+        .where('app_id', '=', appId)
+        .where('bill_id', '=', billId)
+        .executeTakeFirst();
+      if (bill === undefined) return fieldsRefusal(['bill_id'], traceId);
+      let result;
       try {
-        await deps.supplement(deps.db).recordLaunchFailure(deps.db, launch);
-      } catch {
-        // Keeps the original error; the row stays missing or failed, a retry recovers either way.
+        result = await deps.supplement(trx).launchInTransaction(trx, launch);
+      } catch (error: unknown) {
+        if (!(error instanceof SupplementRejectedError)) throw error;
+        return supplementRefusal(error, traceId);
       }
-    }
-    throw error;
-  }
+      const data: Schema<'AdminSettleSupplementResponse'>['data'] = {
+        bill_id: result.billId,
+        platform: body.platform,
+        outcome: result.outcome,
+        batch_ids: [...result.batchIds],
+      };
+      await deps.auditOn(trx).append({
+        appId,
+        actor: adminId,
+        action: SUPPLEMENT_AUDIT_ACTION,
+        target: result.billId,
+        before: null,
+        after: { ...data },
+        ip,
+      });
+      return { status: 200, envelope: { code: 0, msg: '', data, trace_id: traceId } };
+    },
+  );
 }

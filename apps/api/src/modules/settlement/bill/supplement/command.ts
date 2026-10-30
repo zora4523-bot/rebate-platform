@@ -80,13 +80,12 @@ export interface SupplementCommand {
   /** finance 对指定账单、指定平台发起补充校验与批次。 */
   launch(db: Kysely<DB>, input: SupplementInput): Promise<SupplementResult>;
   /**
-   * 后台发起（B2-09f）：在调用方事务内运行，幂等记录与审计同事务，失败由调用方回滚后调
-   * recordLaunchFailure。账单下还有任何 DRAFT 时拒绝（pending_draft，编排裁定 D10-440），
+   * 后台发起（B2-09f）：在调用方事务内运行，幂等记录与审计同事务；失败时整笔回滚，不留 claim，
+   * 也不记 failed（重试的名义时刻是新的，记了就永远没人收，告警常亮），由 Idempotency-Key 重试。
+   * 账单下还有任何 DRAFT 时拒绝（pending_draft，编排裁定 D10-440），
    * 在账单行锁内、credit_disabled 与 bill_not_ready 之后判定。
    */
   launchInTransaction(trx: Transaction<DB>, input: SupplementInput): Promise<SupplementResult>;
-  /** 调用方的发起事务已回滚后，另起事务把该键记为 failed，同键重试经 RETRY 重跑。 */
-  recordLaunchFailure(db: Kysely<DB>, input: SupplementInput): Promise<void>;
   /** 开关打开后对当期账单重校验并生成补充批次；当期账单 = bill_id 最大的一份账单。 */
   recheckCurrentBill(db: Kysely<DB>, input: RecheckInput): Promise<SupplementResult>;
 }
@@ -725,11 +724,6 @@ export function createSupplementCommand(dependencies: SupplementDependencies): S
       const jobRunAt = supplementJobRunAt(requestedAt, await readBillDay(appId));
       const target = { billId, refusePendingDraft: true };
       return generate(trx, appId, platform, requestedAt, jobRunAt, target, now);
-    },
-    async recordLaunchFailure(db, input) {
-      const { appId, platform, requestedAt } = input;
-      const { runAt } = supplementJobRunAt(requestedAt, await readBillDay(appId));
-      await failSettleJob(db, { appId, job: JOB, platform, runAt }, deps.clock.now());
     },
     recheckCurrentBill(db, input) {
       return execute(db, input.appId, input.platform, input.requestedAt, { billId: null });

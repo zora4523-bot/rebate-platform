@@ -61,6 +61,11 @@ export interface BatchCommandDeps {
     readonly platform: string;
     readonly at: Date;
   }) => Promise<ExecutionReadiness>;
+  /**
+   * 给了就在命令事务句柄上查（优先于 readiness）：持行锁的事务不再占一条连接等第二条，
+   * 连接池耗尽时不互相死等（B2-09f money r1）。
+   */
+  readonly readinessOn?: (trx: Transaction<DB>) => BatchCommandDeps['readiness'];
 }
 
 /** 批次写成功后、提交前的回调（B2-09f：审计与响应回读同事务）；抛错则整笔回滚。 */
@@ -379,8 +384,9 @@ export function createBatchCommandService(deps: BatchCommandDeps): BatchCommandS
         const to = nextState(row.status, 'RESUME');
         // 时刻取在行锁之后：等待连接或行锁跨过午夜时，按新会计日的快照判定，不沿用等待前的日期。
         let at = clock.now();
+        const readiness = deps.readinessOn?.(trx) ?? deps.readiness;
         for (let recheck = 0; ; recheck += 1) {
-          const ready = await deps.readiness({ appId: input.appId, platform: row.platform, at });
+          const ready = await readiness({ appId: input.appId, platform: row.platform, at });
           // SB8 守卫：两个开关都为 on；当日快照已完成或已超时。
           if (!ready.autoEnabled || !ready.creditEnabled) {
             throw new BatchCommandRejectedError('switches_off');
