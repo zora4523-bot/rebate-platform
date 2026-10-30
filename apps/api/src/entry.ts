@@ -25,7 +25,9 @@ import {
   type RootLogger,
   type QueueRuntime,
   type MetricsServer,
+  type IdempotencyPurger,
   type WorkerMetricsSnapshot,
+  IDEMPOTENCY,
   JOB_QUEUE,
   collectWorkerMetrics,
   createMetricsRegistry,
@@ -36,6 +38,7 @@ import {
   loadMaintConnectionConfig,
   createWorkerMaintenance,
   startWorkerServices,
+  scheduleIdempotencyPurge,
   clockFromConfig,
   isHttpEntry,
   loadConfig,
@@ -205,6 +208,23 @@ function startPayoutRuntime(
   }
   if (runtime === (queue as unknown) || typeof runtime?.start !== 'function') return;
   runtime.start(decision);
+}
+
+/**
+ * The daily purge of expired idempotency records (B1-15za, BR-ID-30): handed to the queue runtime
+ * before its start, which then creates the internal queue, schedule and lane. Optional like the
+ * other worker runtimes: a context without the provider, a null provider or a value without
+ * purgeExpired → not handed over, no crash, no log.
+ */
+function wireIdempotencyPurge(resolve: () => unknown, queue: QueueRuntime): void {
+  let idempotency: Partial<IdempotencyPurger> | null | undefined;
+  try {
+    idempotency = resolve() as Partial<IdempotencyPurger> | null | undefined;
+  } catch {
+    return;
+  }
+  if (typeof idempotency?.purgeExpired !== 'function') return;
+  scheduleIdempotencyPurge(queue, idempotency as IdempotencyPurger);
 }
 
 /**
@@ -413,6 +433,7 @@ async function start(
         return;
       }
       const queue = context.get<QueueRuntime>(JOB_QUEUE);
+      wireIdempotencyPurge(() => context.get<unknown>(IDEMPOTENCY, { strict: false }), queue);
       const maintenance =
         maintHandle === null
           ? null

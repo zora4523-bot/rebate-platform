@@ -27,6 +27,13 @@
 // scanDeadLetters, which counts the jobs of the dead letter queues in SQL and logs; it never takes
 // a job from a dead letter queue.
 //
+// Idempotency purge (B1-15za, idempotency-purge.ts). A worker runtime handed a purge through
+// scheduleIdempotencyPurge does the same during start(): its internal queue and schedule
+// `idempotency-purge` (daily 04:00 +08:00) and one more extra lane, each tick running
+// runIdempotencyPurge. It needs the cron monitor, so it goes with the dead letter scan: a catalog
+// that owns the scan's queue name, or the purge's, gets neither from this runtime. Other entries
+// ignore the hand-over.
+//
 // Concurrency limits (B1-01zzk, section 12 of ./index.ts). Each registered queue gets as many lanes
 // as its effective concurrency (option `limits` lowers the plan's, never raises it). The worker's
 // business lanes share one pool of dbBudget permits (default 7 of its 10 pool connections): a lane
@@ -47,6 +54,14 @@ import {
   scanDeadLetters,
 } from './dead-letter-scan.ts';
 import { reportQueueError, runExecutor } from './executor.ts';
+import {
+  IDEMPOTENCY_PURGE_CRON,
+  IDEMPOTENCY_PURGE_JOB,
+  IDEMPOTENCY_PURGE_QUEUE,
+  IDEMPOTENCY_PURGE_SPEC,
+  idempotencyPurgerOf,
+  runIdempotencyPurge,
+} from './idempotency-purge.ts';
 import { effectiveLimits } from './limits.ts';
 import { createPermits } from './permits.ts';
 import {
@@ -74,6 +89,13 @@ const DEAD_LETTER_SCAN_WORK: WorkSpec = Object.freeze({
   pollingIntervalSeconds: 2,
 });
 
+/** The worker's lane of the idempotency purge ticks (B1-15za): one at a time. */
+const IDEMPOTENCY_PURGE_WORK: WorkSpec = Object.freeze({
+  queue: IDEMPOTENCY_PURGE_QUEUE,
+  concurrency: 1,
+  pollingIntervalSeconds: 2,
+});
+
 function queueSettings(spec: QueueSpec) {
   return {
     retryLimit: spec.retryLimit,
@@ -91,8 +113,9 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
   const { db, logger, entry, catalog, plan, stopTimeoutMs } = options;
   // B1-01zzk (section 12): checked after the other options; invalid → invalid_option.
   const limits = effectiveLimits(entry, plan, input.limits);
-  // The worker's business lanes share one permit pool; the dead letter scan lane stays outside
-  // it, on the connections the budget keeps free. Other entries: no shared budget.
+  // The worker's business lanes share one permit pool; the dead letter scan and idempotency purge
+  // lanes stay outside it, on the connections the budget keeps free. Other entries: no shared
+  // budget.
   const permits = limits.dbBudget === null ? undefined : createPermits(limits.dbBudget);
   const specs = new Map(catalog.map((spec) => [spec.name, spec]));
   // The worker also owns the internal scan queue (B1-01zzg); a catalog queue of that name wins.
@@ -160,7 +183,8 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
     schema: PGBOSS_SCHEMA,
     migrate: false,
     supervise: entry === 'worker',
-    // Only the worker runs the cron monitor: the dead letter scan schedule (B1-01zzg).
+    // Only the worker runs the cron monitor: the dead letter scan schedule (B1-01zzg) and the
+    // idempotency purge schedule (B1-15za).
     schedule: scanning,
     reindex: false,
     persistQueueStats: false,
@@ -175,6 +199,10 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
   let stopped: Promise<void> | undefined;
 
   const start = async (): Promise<void> => {
+    // B1-15za: read here, the entry hands the purge over after the runtime was built.
+    const purger =
+      scanning && !specs.has(IDEMPOTENCY_PURGE_QUEUE) ? idempotencyPurgerOf(runtime) : undefined;
+    const queues = purger === undefined ? managed : [...managed, IDEMPOTENCY_PURGE_SPEC];
     bounding = true;
     try {
       const version = await readVersion();
@@ -184,7 +212,7 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
       // Check ALL existing queues before making any changes or starting pg-boss timers.
       const existing = await boss.getQueues();
       const byName = new Map(existing.map((queue) => [queue.name, queue]));
-      for (const spec of managed) {
+      for (const spec of queues) {
         const queue = byName.get(spec.name);
         if (
           queue !== undefined &&
@@ -198,8 +226,8 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
       if (stopping) return;
       // A dead-letter target must exist before a queue referencing it is created.
       const ordered = [
-        ...managed.filter((spec) => spec.deadLetter === null),
-        ...managed.filter((spec) => spec.deadLetter !== null),
+        ...queues.filter((spec) => spec.deadLetter === null),
+        ...queues.filter((spec) => spec.deadLetter !== null),
       ];
       for (const spec of ordered) {
         if (stopping) return;
@@ -225,11 +253,21 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
         });
       }
       if (stopping) return;
+      // The same upsert for the purge schedule (B1-15za).
+      if (purger !== undefined) {
+        await boss.schedule(
+          IDEMPOTENCY_PURGE_QUEUE,
+          IDEMPOTENCY_PURGE_CRON,
+          IDEMPOTENCY_PURGE_JOB,
+          { tz: 'UTC' },
+        );
+      }
+      if (stopping) return;
       // createQueue/updateQueue evict pg-boss's metadata cache. A read through findJobs
       // fills it (getQueue/getQueues do not), without claiming or inserting a job.
       // Warm every queue before send is available: a cold lookup uses the shared pool
       // even when send itself is given a transaction, which can deadlock a full pool.
-      for (const spec of managed) {
+      for (const spec of queues) {
         if (stopping) return;
         await boss.findJobs(spec.name, { id: '00000000-0000-0000-0000-000000000000' });
       }
@@ -250,6 +288,20 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
             logger,
             work: DEAD_LETTER_SCAN_WORK,
             handler: () => scanDeadLetters({ db, logger }),
+            shutdown: shutdown.signal,
+            deadline: deadline.signal,
+            runningHandlers,
+          }),
+        );
+      }
+      if (purger !== undefined && !stopping) {
+        executors.push(
+          runExecutor({
+            db,
+            boss,
+            logger,
+            work: IDEMPOTENCY_PURGE_WORK,
+            handler: () => runIdempotencyPurge({ idempotency: purger, logger }),
             shutdown: shutdown.signal,
             deadline: deadline.signal,
             runningHandlers,
@@ -325,7 +377,7 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
     }
   };
 
-  return {
+  const runtime: QueueRuntime = {
     register(queue, handler): void {
       if (!specs.has(queue)) throw new QueueError('unknown_queue');
       if (!work.has(queue)) throw new QueueError('not_in_entry');
@@ -370,4 +422,5 @@ export function createQueueRuntime(input: QueueRuntimeOptions): QueueRuntime {
       return stopped;
     },
   };
+  return runtime;
 }
