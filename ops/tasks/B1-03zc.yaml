@@ -5,8 +5,9 @@ type: impl
 # 草稿 2026-10-30（身份与风控线 identity-lane）。依据：编排 D10-443 (b) 及 10-30 19:12 改派——minors 读口由 identity 导出只读端口，不做「永远无未成年」的假实现；funds 的 B2-04zd 改为 deps B1-03zc 并负责装配。
 # 接口取舍（本线定）：形状对齐 settlement credit/beneficiary-gate.ts 的 MinorStatusReader——read(executor, { appId, userIds, at }) → ReadonlySet<user_id>；工厂 createMinorStatusBatchReader({ crypto: FieldCrypto })，解密域沿用 REALNAME_CONTEXT.birthDate；一条语句（app.users 内连 app.realname，status=verified），重复 id 去重，空数组不查库；verified 行缺 birth_date 密文或解密 / 日期非法时抛错（库已坏，不当成年人放过）。
 # 识别时刻：BR-ID-26「以 realname verified 的时刻为识别时刻」——verified_at > at 的不算已识别。涉及用户授权边界，按编排要求过 money 级对抗评审（独立 Claude，Codex 到 11-02 不可用）。
-refs: []
-refs_hash: {}
+refs: [BR-ID-26]
+refs_hash:
+  BR-ID-26: 5a5a56cd755e
 deps: []
 paths:
   - 'apps/api/src/modules/identity/ports/minor-status-batch.ts'
