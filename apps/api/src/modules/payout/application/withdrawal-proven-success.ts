@@ -19,7 +19,7 @@
 //   wallet.withdrawal_changed on the same transaction.
 // A refusal writes nothing. Logs carry ids and codes only, never the payee.
 import type { DB } from '@couli/db';
-import { buildVouchers, transitionWithdrawal } from '@couli/domain';
+import { buildVouchers, chinaDayRange, transitionWithdrawal } from '@couli/domain';
 import type { Transaction } from 'kysely';
 import type { Ledger, PostingEntry } from '../../ledger/index.ts';
 import type { EventBus, JobQueue } from '../../platform/index.ts';
@@ -156,11 +156,23 @@ function postingEntries(built: readonly BuiltEntry[], accountId: string): Postin
   }));
 }
 
-/** The bill line's 入账时间 as an instant; the server's time when absent or unreadable. */
+/**
+ * paid_at of W11 (orchestrator ruling D10-431): the bill line's 入账时间 when it carries a readable
+ * one, else 00:00 +08:00 of the bill day (so a later R2 run and the BR-WDR-21 quarter both see
+ * the day the channel paid, not the day of the write-off). An unreadable booked time counts as
+ * none; only a bill day that is not a date falls back to the server's time.
+ */
 function paidAtOf(line: ProvenBillLine, now: Date): Date {
-  if (line.bookedAt === null) return now;
-  const parsed = Date.parse(line.bookedAt);
-  return Number.isNaN(parsed) ? now : instant(now, parsed);
+  if (line.bookedAt !== null) {
+    const booked = Date.parse(line.bookedAt);
+    if (!Number.isNaN(booked)) return instant(now, booked);
+  }
+  try {
+    const start = Date.parse(chinaDayRange(line.billDate).start);
+    return Number.isNaN(start) ? now : instant(now, start);
+  } catch {
+    return now;
+  }
 }
 
 /** The switch value as the registry stores it (boolean, or its JSON text); unreadable → default on. */

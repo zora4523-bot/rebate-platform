@@ -7631,9 +7631,11 @@ export interface paths {
          *     refresh the detail), nothing changed.
          *
          *     Effects, in one transaction: the withdrawal moves APPROVED → PAID_API (W11, event
-         *     CHANNEL_SUCCESS_PROVEN; `paid_at` the bill line's time when it carries one, else the
-         *     server's current time; `channel_order_id` from the bill line; the payer-side hold is
-         *     cleared; the operator is recorded as the executor) and the success voucher
+         *     CHANNEL_SUCCESS_PROVEN; `paid_at` the bill line's time when it carries one, else 00:00
+         *     +08:00 of the bill day — never the time of the write-off (orchestrator ruling D10-431: a
+         *     later R2 run and the BR-WDR-21 tax quarter go by the day the channel paid);
+         *     `channel_order_id` from the bill line; the payer-side hold is cleared; the operator is
+         *     recorded as the executor) and the success voucher
          *     `wd:{withdrawal_id}:PAID` (WITHDRAW_PAID, WITHDRAW_FEE, TAX_WITHHOLD; BR-WDR-09) is
          *     posted against the member's frozen balance — the only money movement, and the same one
          *     W5 would have written. The difference's `status` becomes `written_off`, `closed_at` and
@@ -16480,7 +16482,7 @@ export interface components {
             status: components["schemas"]["WithdrawalStatus"];
             /**
              * Format: date-time
-             * @description The bill line's time when it carries one, else the server's time of the write-off.
+             * @description The bill line's time when it carries one, else 00:00 +08:00 of the bill day (D10-431); never the time of the write-off.
              */
             paid_at: string;
             /** @description The channel's order id from the bill line; null when the line has none. */
