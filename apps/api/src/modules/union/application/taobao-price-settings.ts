@@ -28,7 +28,10 @@ export interface TaobaoPriceSettingsOptions {
  * unknown_promo / basis of the app (no cache). A missing value (null / undefined) uses the 08
  * default without a warning; an invalid value falls back to the 08 default for that key only and
  * warns once with a fixed event and the key name (no item data, no credentials). Arrays replace
- * the defaults; they are not merged with them.
+ * the defaults; they are not merged with them. B1-22w: a configValue that throws or rejects (store
+ * error, deadline …) uses the 08 default for that key on this read only (never the last good
+ * value, nothing cached) and warns once with its own fixed event, the key and the error class
+ * name (no error text); the other keys are unaffected and read() does not reject.
  */
 export function createTaobaoPriceSettings(
   options: TaobaoPriceSettingsOptions,
@@ -43,6 +46,8 @@ export function createTaobaoPriceSettings(
 
 /** The fixed warn event of an invalid price.taobao.* value; the fields are this and the key. */
 const TAOBAO_PRICE_CONFIG_INVALID = 'TAOBAO_PRICE_CONFIG_INVALID';
+/** The fixed warn event of a price.taobao.* read that threw; the fields are this, key, error class. */
+const TAOBAO_PRICE_CONFIG_READ_FAILED = 'TAOBAO_PRICE_CONFIG_READ_FAILED';
 
 const MEMBER_KEY = 'price.taobao.member_title_keywords';
 const COUPON_KEY = 'price.taobao.coupon_titles';
@@ -64,6 +69,19 @@ function storedValue(answer: unknown): unknown {
   if (typeof answer !== 'object' || !Object.hasOwn(answer, 'value')) return INVALID;
   const value: unknown = (answer as { readonly value: unknown }).value;
   return value === null || value === undefined ? MISSING : value;
+}
+
+/**
+ * The class name of a thrown value, for the log only: the constructor name of an object (e.g.
+ * 'TimeoutError'), else its typeof. Never the message, stack or the value itself.
+ */
+function errorClass(error: unknown): string {
+  if (typeof error === 'object' && error !== null) {
+    const name: unknown = (error as { readonly constructor?: { readonly name?: unknown } })
+      .constructor?.name;
+    return typeof name === 'string' && name !== '' ? name : 'Object';
+  }
+  return typeof error;
 }
 
 /** A non-empty array of strings, none blank after NFKC + trim (the mapping's normalization). */
@@ -98,7 +116,18 @@ async function readTaobaoPriceSettings(
     key: string,
     parse: (value: unknown) => T | typeof INVALID,
   ): Promise<T | undefined> => {
-    const value = storedValue(await config.configValue(appId, key));
+    let answer: unknown;
+    try {
+      answer = await config.configValue(appId, key);
+    } catch (error: unknown) {
+      // Only the fixed event, the key and the error class: no error text, item data or credentials.
+      logger.warn(
+        { event: TAOBAO_PRICE_CONFIG_READ_FAILED, key, error_class: errorClass(error) },
+        'taobao price configuration read failed; the default applies',
+      );
+      return undefined;
+    }
+    const value = storedValue(answer);
     if (value === MISSING) return undefined;
     const parsed = value === INVALID ? INVALID : parse(value);
     if (parsed !== INVALID) return parsed;
