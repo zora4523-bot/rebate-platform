@@ -231,6 +231,13 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
     { name: 'payout-recon', ...DEFAULT, policy: 'exclusive', deadLetter: 'payout-recon.dead' },
     // B2-02q（D10-415 ①）：worker 的 ledger 日终校验队列，exclusive（按 `daily:<app_id>:<D>` 去重），紧跟 payout-recon。
     { name: 'ledger-check', ...DEFAULT, policy: 'exclusive', deadLetter: 'ledger-check.dead' },
+    // B2-07e（D10-428 / D10-415 ①）：payout 进程追加 W11 尝试记录的队列，exclusive（按 (提现单, 差错单) 键去重），紧跟 payout-recon。
+    {
+      name: 'payout-attempt-append',
+      ...DEFAULT,
+      policy: 'exclusive',
+      deadLetter: 'payout-attempt-append.dead',
+    },
     { name: 'notify', ...DEFAULT, deadLetter: 'notify.dead' },
     {
       name: 'evt.notification-risk-state',
@@ -289,7 +296,7 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
   ]);
 });
 
-it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 秒] 生产入口计划逐项确切：api / stream / admin 不执行任务，worker 六个队列，payout 只有 payout 并发 1', () => {
+it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 秒] 生产入口计划逐项确切：api / stream / admin 不执行任务，worker 六个队列，payout 为 payout 并发 1 与 payout-attempt-append 并发 1（B2-07e D10-428 / D10-415 ①）', () => {
   const w = (queue: string, concurrency: number, pollingIntervalSeconds = 2) => ({
     queue,
     concurrency,
@@ -408,7 +415,8 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
       w('poster', 2, 0.5),
       w('agent-trace', 2),
     ],
-    payout: [w('payout', 1)],
+    // B2-07e（D10-428）：W11 尝试记录只由 payout 进程（couli_payout）追加，并发 1，紧跟 payout。
+    payout: [w('payout', 1), w('payout-attempt-append', 1)],
   });
 });
 
@@ -425,6 +433,8 @@ it('[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只�
     'payout-recon',
     // B2-02q (D10-415 ①): the worker's daily ledger check, never another entry's.
     'ledger-check',
+    // B2-07e (D10-428): the payout process's W11 attempt records, never the worker's.
+    'payout-attempt-append',
     'notify',
     'pool-refresh',
     'poster',
@@ -461,7 +471,7 @@ it('[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只�
       'poster',
       'agent-trace',
     ]),
-    payout: row(['payout']),
+    payout: row(['payout', 'payout-attempt-append']),
   });
 });
 
