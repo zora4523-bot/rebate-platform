@@ -99,6 +99,38 @@ it('[B1-03e §10] defaults: convert and search groups, no rule for an unnamed di
   expect(await reader.rules(APP, 'search', 'device')).toEqual([]);
 });
 
+it('[B1-15x] createShare defaults to convert; ops can remap or remove it without touching convertLink', async () => {
+  const defaults = createRateLimitThresholdReader(config({}));
+  expect(await defaults.groupFor(APP, 'createShare')).toBe('convert');
+  const remapped = createRateLimitThresholdReader(
+    config({ 'rate_limit.ops': { createShare: 'share' } }),
+  );
+  expect(await remapped.groupFor(APP, 'createShare')).toBe('share');
+  expect(await remapped.groupFor(APP, 'convertLink')).toBe('convert');
+  const removed = createRateLimitThresholdReader(
+    config({ 'rate_limit.ops': { createShare: null } }),
+  );
+  expect(await removed.groupFor(APP, 'createShare')).toBeNull();
+  expect(await removed.groupFor(APP, 'openLink')).toBe('convert');
+});
+
+it('[B1-15x] createShare and convertLink of one user hit the same convert bucket keys', async () => {
+  const { service, calls } = setup(() => [1, 0]);
+  await service.check(request({ operationId: 'createShare' }));
+  await service.check(request({ operationId: 'convertLink' }));
+  expect(calls).toHaveLength(2);
+  expect(calls[0]!.options.keys).toEqual(calls[1]!.options.keys);
+  expect(calls[0]!.options.keys[0]).toMatch(/^couli:convert:user:[0-9a-f]{32}:60$/);
+  expect(calls[0]!.options.args.slice(1)).toEqual([
+    '30',
+    '60000',
+    '120',
+    '500',
+    '86400000',
+    '172800',
+  ]);
+});
+
 it('[B1-03e §10] a configured group replaces its defaults; a JSON text value is parsed', async () => {
   const reader = createRateLimitThresholdReader(
     config({ 'rate_limit.search': JSON.stringify({ device: [{ limit: 3, window_sec: 10 }] }) }),

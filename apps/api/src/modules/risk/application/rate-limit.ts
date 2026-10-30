@@ -69,10 +69,15 @@ export type RateLimitDimension = 'user' | 'device' | 'ip';
 
 const DIMENSIONS: readonly RateLimitDimension[] = ['user', 'device', 'ip'];
 
-/** Operation → interface group of the code defaults (06 Q-B4; ruling B1-03e §9.2). */
+/**
+ * Operation → interface group of the code defaults (06 Q-B4; ruling B1-03e §9.2). createShare
+ * (POST /v1/shares) joins convert like convertLink (B1-15x, 编排 2026-10-30: 照 convertLink 口径),
+ * sharing its user buckets and default thresholds; no group or configuration key of its own.
+ */
 const DEFAULT_GROUPS: Readonly<Record<string, string>> = Object.freeze({
   openLink: 'convert',
   convertLink: 'convert',
+  createShare: 'convert',
   searchProducts: 'search',
 });
 
