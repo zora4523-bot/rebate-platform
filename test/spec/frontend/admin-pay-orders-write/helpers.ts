@@ -80,9 +80,30 @@ export const TAB = {
   anomalies: /^异常收款(?:\d+|[（(]\d+[)）])?$/,
 } as const;
 
+/** The servers mounted in this case, with the writes (method and path) each may receive. */
+const mounted = new Map<Server, (readonly [string, string])[]>();
+
+/**
+ * Lets `server` receive the writes `allowed` in this case besides the four reads of F1-13a; any
+ * other request, and any read of the refund list, fails the case after it ran (error and retry
+ * paths included).
+ */
+export function permitWrites(server: Server, ...allowed: (readonly [string, string])[]): void {
+  mounted.set(server, [...(mounted.get(server) ?? []), ...allowed]);
+}
+
 afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
+  const checked = [...mounted];
+  mounted.clear();
+  try {
+    cleanup();
+    vi.unstubAllGlobals();
+  } finally {
+    for (const [server, allowed] of checked) {
+      expect(server.refundReads(), 'the refund list is never read').toEqual([]);
+      expect(server.unexpected(allowed), 'only the reads and the writes of this case').toEqual([]);
+    }
+  }
 });
 
 export interface MountOptions {
@@ -94,6 +115,7 @@ export interface MountOptions {
 
 /** Mounts the real admin shell on 资金 / 支付单 (or a detail address) over the fake server. */
 export async function mount(server: Server = createServer(), options: MountOptions = {}) {
+  if (!mounted.has(server)) mounted.set(server, []);
   installMediaQuery();
   const directFetch = vi.fn<typeof globalThis.fetch>(() =>
     Promise.reject(new Error('unexpected direct fetch')),
@@ -206,13 +228,16 @@ export function showsYuan(text: string | null | undefined, yuan: string): boolea
   return new RegExp(`(?<![\\d.-])${escape(yuan)}(?!\\d)`).test(moneyText(text));
 }
 /**
- * The amounts `root` shows right after 「可退」 (「可退金额：82.50」, 「最多可退 ¥82.50」); empty
- * when it shows none.
+ * The amounts `root` shows right after 「可退」 in any of its wordings (「可退 82.50」,
+ * 「可退金额：82.50」, 「可退款 82.50」, 「可退款金额（元）：82.50」, 「最多可退 ¥82.50」,
+ * 「剩余可退回 82.50 元」); empty when it shows none.
  */
 export function refundableShown(root: HTMLElement): string[] {
   const text = moneyText(textOf(root));
   return Array.from(
-    text.matchAll(/可退(?:金额|余额)?\s?[:：]?\s?(?:为|是)?\s?(-?\d+(?:\.\d+)?)/g),
+    text.matchAll(
+      /可退(?:款|回)?(?:金额|余额|额度)?\s*(?:[(（]元[)）])?\s*[:：]?\s*(?:为|是)?\s*(-?\d+(?:\.\d+)?)/g,
+    ),
     (match) => match[1]!,
   );
 }
@@ -520,6 +545,20 @@ export async function openAnomalyRefund(row: HTMLElement): Promise<HTMLElement> 
   expect(entries.length, 'a usable 【退款】 on the anomaly').toBeGreaterThan(0);
   await click(entries[0]!);
   return refundDialog();
+}
+/**
+ * Opens a new refund dialog of the anomaly `tradeNo` once the earlier one is closed: the 【退款】
+ * of a row detail still open, or else of the row (looked up again, the list may have been re-read).
+ */
+export async function reopenAnomalyRefund(tradeNo: string): Promise<HTMLElement> {
+  await waitFor(() => expect(refundDialogs()).toEqual([]));
+  const inDetail = openDialogs().flatMap((node) => usable(node, REFUND_ENTRY));
+  if (inDetail.length > 0) {
+    await click(inDetail[0]!);
+    return refundDialog();
+  }
+  await waitFor(() => expect(rowsOf(main(), tradeNo), `row ${tradeNo}`).toHaveLength(1));
+  return openAnomalyRefund(rowsOf(main(), tradeNo)[0]!);
 }
 
 export interface RefundInput {

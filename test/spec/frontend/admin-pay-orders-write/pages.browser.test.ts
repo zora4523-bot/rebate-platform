@@ -33,16 +33,30 @@ const FIRST = { timeout: 10_000 };
 const TEST_TIMEOUT = 60_000;
 let root: Root | undefined;
 let auth: AdminAuthProvider | undefined;
+/** The server of the case and the writes (method and path) it may receive. */
+let shown: { server: Server; allowed: readonly (readonly [string, string])[] } | undefined;
 afterEach(() => {
+  const checked = shown;
+  shown = undefined;
   root?.unmount();
   root = undefined;
   auth?.dispose();
   auth = undefined;
   document.body.replaceChildren();
   window.history.replaceState(null, '', '/');
+  // Every case, its error and retry paths included: only the reads and the writes of the case.
+  if (checked !== undefined) {
+    expect(checked.server.refundReads(), 'the refund list is never read').toEqual([]);
+    expect(checked.server.unexpected(checked.allowed)).toEqual([]);
+  }
 });
 
-async function show(server: Server, path: string): Promise<Server> {
+async function show(
+  server: Server,
+  path: string,
+  allowed: readonly (readonly [string, string])[],
+): Promise<Server> {
+  shown = { server, allowed };
   auth = harness().create();
   await signIn(auth);
   window.history.replaceState(null, '', path);
@@ -107,6 +121,7 @@ it(
     const server = await show(
       createServer(undefined, { permissions: VIEW_REFUND_GRANTS }),
       `/pay-orders/${ORDER.refunded}`,
+      [['POST', refundPath(ORDER.refunded)]],
     );
     const entry = page
       .getByRole('main')
@@ -152,7 +167,10 @@ it(
     await page.viewport(1440, 1080);
     const server = createServer(undefined, { permissions: VIEW_RESOLVE_GRANTS });
     server.setResolveOutcome('paid');
-    await show(server, `/pay-orders/${ORDER.manual}`);
+    await show(server, `/pay-orders/${ORDER.manual}`, [
+      ['POST', VERIFY],
+      ['POST', resolvePath(ORDER.manual)],
+    ]);
     const entry = page.getByRole('main').getByRole('button', { name: /^立即查询$/ });
     await expect.element(entry, FIRST).toBeVisible();
     await entry.click();

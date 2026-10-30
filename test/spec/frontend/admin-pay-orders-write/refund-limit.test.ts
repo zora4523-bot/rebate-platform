@@ -10,24 +10,37 @@ import {
   newOutRefundNo,
   refundPath,
   rejected,
+  type Server,
 } from './fixtures.ts';
 import {
+  ACCEPTED,
   FLOW_TIMEOUT,
   LABEL,
   assertRefund,
   fieldError,
   fill,
   fillRefund,
+  freshText,
   main,
   openDetail,
   openRefund,
+  permitWrites,
   refundDialogs,
   refundableShown,
   rowsOf,
+  settle,
   settled,
+  snapshotText,
   submitRefund,
   textbox,
 } from './helpers.ts';
+
+/** A pay.view + pay.refund server that may receive refunds of the pay order `payOrderId` only. */
+function refundServer(payOrderId: string): Server {
+  const server = createServer(undefined, { permissions: VIEW_REFUND_GRANTS });
+  permitWrites(server, ['POST', refundPath(payOrderId)]);
+  return server;
+}
 
 it.each([
   {
@@ -45,7 +58,7 @@ it.each([
 ] as const)(
   '[AC-F1-13b-LIMIT#1] $name：可退金额若显示须等于手算值；比可退多 1 分时在金额旁提示（前端预检不发，或发出后收 20001 [amount_fen]），不受理、不出新退款记录；改成恰好可退金额后照常提交',
   async ({ id, outTradeNo, limit }) => {
-    const server = createServer(undefined, { permissions: VIEW_REFUND_GRANTS });
+    const server = refundServer(id);
     await openDetail(server, id, outTradeNo);
     const modal = await openRefund();
     for (const shown of refundableShown(modal)) expect(shown).toBe(limit.yuan);
@@ -73,7 +86,7 @@ it.each([
 it(
   '[AC-F1-13b-LIMIT#2] 前端看来未超额、服务端仍回 20001 data.fields=[amount_fen]（他人刚退过）：请求照发一次，在金额旁提示，对话框不关、不提示受理',
   async () => {
-    const server = createServer(undefined, { permissions: VIEW_REFUND_GRANTS });
+    const server = refundServer(ORDER.paid);
     server.once('POST', refundPath(ORDER.paid), () => rejected(['amount_fen']));
     await openDetail(server, ORDER.paid, OUT_TRADE_NO.paid);
     const modal = await openRefund();
@@ -99,17 +112,31 @@ it.each([
   { typed: 'abc' },
   { typed: '' },
 ] as const)(
-  '[AC-F1-13b-LIMIT#3] 金额「$typed」（≤ 0、不足一分、不是数或为空）：不发请求，在金额旁提示，对话框不关',
+  '[AC-F1-13b-LIMIT#3] 金额「$typed」（≤ 0、不足一分、不是数或为空）：在金额旁提示（前端拦下不发，或发出后收 20001 [amount_fen]——不得按正整数分发出），对话框不关、不受理、不出新退款记录',
   async ({ typed }) => {
-    const server = createServer(undefined, { permissions: VIEW_REFUND_GRANTS });
+    const server = refundServer(ORDER.refunded);
     await openDetail(server, ORDER.refunded, OUT_TRADE_NO.refunded);
     const modal = await openRefund();
     await fillRefund(modal, { amount: typed, reason: 'USER_REQUEST' });
+    const before = snapshotText();
     await submitRefund(modal);
     await settled(server);
     await waitFor(() => expect(fieldError(textbox(modal, LABEL.amount))).not.toBe(''));
-    expect(server.refunds()).toEqual([]);
+    await settle();
+    await settled(server);
+    const sent = server.refunds();
+    expect(sent.length, 'at most the one refused request').toBeLessThanOrEqual(1);
+    for (const request of sent) {
+      // Sent at all, it carries no positive whole fen: the server refuses it with 20001.
+      const amount = (request.body as Record<string, unknown> | undefined)?.['amount_fen'];
+      expect(
+        typeof amount === 'number' && Number.isSafeInteger(amount) && amount >= 1,
+        `「${typed}」 is not sent as a positive amount_fen (${String(amount)})`,
+      ).toBe(false);
+    }
     expect(refundDialogs()).toHaveLength(1);
+    expect(rowsOf(main(), newOutRefundNo(1))).toEqual([]);
+    expect(freshText(before)).not.toMatch(ACCEPTED);
   },
   FLOW_TIMEOUT,
 );

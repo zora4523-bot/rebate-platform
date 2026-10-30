@@ -25,6 +25,7 @@ import {
   freshText,
   main,
   openDetail,
+  permitWrites,
   refundEntries,
   resolveEntries,
   settle,
@@ -39,6 +40,12 @@ import {
 /** The status shown in the detail's labelled status item matches `code`'s dictionary name. */
 function showsStatus(code: string): boolean {
   return namePattern('payStatus', code).test(main().textContent ?? '');
+}
+/** A pay.view + pay.resolve server that may receive the verification and the manual resolve. */
+function resolveServer(): Server {
+  const server = createServer(undefined, { permissions: VIEW_RESOLVE_GRANTS });
+  permitWrites(server, ['POST', VERIFY], ['POST', resolvePath(ORDER.manual)]);
+  return server;
 }
 /** Only the four reads, the verification and the resolve of the manual sample went out. */
 function onlyResolveSent(server: Server): void {
@@ -55,7 +62,7 @@ function onlyResolveSent(server: Server): void {
 it(
   '[AC-F1-13b-RESOLVE#1] 待人工处置单【立即查询】：先弹动态码（此前不发 POST），验证后 POST …/resolve 带 X-Step-Up-Token、固定请求体 {expected_status: PENDING, action: query_and_settle}、无 Idempotency-Key；渠道已支付 → 提示已支付并重新读取详情，状态变「已支付」，入口消失',
   async () => {
-    const server = createServer(undefined, { permissions: VIEW_RESOLVE_GRANTS });
+    const server = resolveServer();
     server.setResolveOutcome('paid');
     await openDetail(server, ORDER.manual, OUT_TRADE_NO.manual);
     const modal = await startResolve();
@@ -89,7 +96,7 @@ it.each([
 ] as const)(
   '[AC-F1-13b-RESOLVE#2] 【立即查询】$name：提示已关闭（不提示已支付），重新读取详情，状态变「已关闭」，入口消失',
   async ({ outcome }) => {
-    const server = createServer(undefined, { permissions: VIEW_RESOLVE_GRANTS });
+    const server = resolveServer();
     server.setResolveOutcome(outcome);
     await openDetail(server, ORDER.manual, OUT_TRADE_NO.manual);
     const modal = await startResolve();
@@ -117,7 +124,7 @@ it.each([
 ] as const)(
   '[AC-F1-13b-RESOLVE#3] 【立即查询】$name：支付单仍待支付、仍需人工处置——提示未变化 / 稍后再查（不提示已支付或已关闭），重新读取详情，入口仍在',
   async ({ outcome }) => {
-    const server = createServer(undefined, { permissions: VIEW_RESOLVE_GRANTS });
+    const server = resolveServer();
     server.setResolveOutcome(outcome);
     await openDetail(server, ORDER.manual, OUT_TRADE_NO.manual);
     const modal = await startResolve();
@@ -142,7 +149,7 @@ it.each([
 it(
   '[AC-F1-13b-RESOLVE#4] 服务端回 10003（需动态码）：不自动重发，再弹动态码；再次验证后用新的验证结果重发',
   async () => {
-    const server = createServer(undefined, { permissions: VIEW_RESOLVE_GRANTS });
+    const server = resolveServer();
     server.once('POST', resolvePath(ORDER.manual), stepUpRequired);
     await openDetail(server, ORDER.manual, OUT_TRADE_NO.manual);
     await verify(await startResolve());
@@ -165,7 +172,7 @@ it(
 it(
   '[AC-F1-13b-RESOLVE#5] 20902（支付单已不在人工处置）：提示状态已变化并重新读取详情，不重发；刷新后入口消失',
   async () => {
-    const server = createServer(undefined, { permissions: VIEW_RESOLVE_GRANTS });
+    const server = resolveServer();
     await openDetail(server, ORDER.manual, OUT_TRADE_NO.manual);
     const modal = await startResolve();
     // Meanwhile the automatic handling settled it as paid.
@@ -196,7 +203,7 @@ it(
 it(
   '[AC-F1-13b-RESOLVE#6] 连续两次【立即查询】（第一次结果未变化）：第二次重新弹动态码，不复用第一次的验证结果',
   async () => {
-    const server = createServer(undefined, { permissions: VIEW_RESOLVE_GRANTS });
+    const server = resolveServer();
     await openDetail(server, ORDER.manual, OUT_TRADE_NO.manual);
     await verify(await startResolve());
     await waitFor(() => expect(server.resolves(ORDER.manual)).toHaveLength(1));
@@ -222,7 +229,7 @@ it(
 it(
   '[AC-F1-13b-RESOLVE#7] 动态码弹窗点取消：不验证、不发 POST …/resolve，入口仍在',
   async () => {
-    const server = createServer(undefined, { permissions: VIEW_RESOLVE_GRANTS });
+    const server = resolveServer();
     await openDetail(server, ORDER.manual, OUT_TRADE_NO.manual);
     const modal = await startResolve();
     await click(within(modal).getByRole('button', { name: '取消' }));

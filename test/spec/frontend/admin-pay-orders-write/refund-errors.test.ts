@@ -13,6 +13,7 @@ import {
   newOutRefundNo,
   refundPath,
   rejected,
+  type Server,
 } from './fixtures.ts';
 import {
   ACCEPTED,
@@ -32,6 +33,7 @@ import {
   main,
   openDetail,
   openRefund,
+  permitWrites,
   refundDialog,
   refundDialogs,
   requestKey,
@@ -44,10 +46,17 @@ import {
 
 const AMOUNT = { typed: '5.00', fen: 500 } as const;
 
+/** A pay.view + pay.refund server that may receive refunds of ORDER.paid only. */
+function refundServer(): Server {
+  const server = createServer(undefined, { permissions: VIEW_REFUND_GRANTS });
+  permitWrites(server, ['POST', refundPath(ORDER.paid)]);
+  return server;
+}
+
 it(
   '[AC-F1-13b-REFUNDERR#1] 20902（支付单已非已支付）：提示状态已变化并重新读取详情，只发一次 POST',
   async () => {
-    const server = createServer(undefined, { permissions: VIEW_REFUND_GRANTS });
+    const server = refundServer();
     server.once('POST', refundPath(ORDER.paid), conflict);
     await openDetail(server, ORDER.paid, OUT_TRADE_NO.paid);
     const modal = await openRefund();
@@ -73,7 +82,7 @@ it(
 it(
   '[AC-F1-13b-REFUNDERR#2] 20901（同键不同请求体）：提示请求内容有变化，不自动重发',
   async () => {
-    const server = createServer(undefined, { permissions: VIEW_REFUND_GRANTS });
+    const server = refundServer();
     server.once('POST', refundPath(ORDER.paid), changedBody);
     await openDetail(server, ORDER.paid, OUT_TRADE_NO.paid);
     const modal = await openRefund();
@@ -94,7 +103,7 @@ it(
 it(
   '[AC-F1-13b-REFUNDERR#3] 40901（同一请求处理中）：提示稍后查看，不自动重发',
   async () => {
-    const server = createServer(undefined, { permissions: VIEW_REFUND_GRANTS });
+    const server = refundServer();
     server.once('POST', refundPath(ORDER.paid), inProgress);
     await openDetail(server, ORDER.paid, OUT_TRADE_NO.paid);
     const modal = await openRefund();
@@ -114,7 +123,7 @@ it(
 it(
   '[AC-F1-13b-REFUNDERR#4] 20001 data.fields=[pay_order_id]（支付单不存在或非本应用）：提示未找到，不提示受理',
   async () => {
-    const server = createServer(undefined, { permissions: VIEW_REFUND_GRANTS });
+    const server = refundServer();
     server.once('POST', refundPath(ORDER.paid), () => rejected(['pay_order_id']));
     await openDetail(server, ORDER.paid, OUT_TRADE_NO.paid);
     const modal = await openRefund();
@@ -133,7 +142,7 @@ it(
 it(
   '[AC-F1-13b-REFUNDERR#5] 网络失败后在同一对话框重试：两次 POST 的 Idempotency-Key 与请求体都相同，重试成功后提示受理并出现新退款记录',
   async () => {
-    const server = createServer(undefined, { permissions: VIEW_REFUND_GRANTS });
+    const server = refundServer();
     server.once('POST', refundPath(ORDER.paid), networkDown);
     await openDetail(server, ORDER.paid, OUT_TRADE_NO.paid);
     const modal = await openRefund();
@@ -161,7 +170,7 @@ it(
 it(
   '[AC-F1-13b-REFUNDERR#6] 网络失败后取消、重新打开对话框再提交：用新的 Idempotency-Key',
   async () => {
-    const server = createServer(undefined, { permissions: VIEW_REFUND_GRANTS });
+    const server = refundServer();
     server.once('POST', refundPath(ORDER.paid), networkDown);
     await openDetail(server, ORDER.paid, OUT_TRADE_NO.paid);
     const modal = await openRefund();
@@ -191,7 +200,7 @@ it(
 it(
   '[AC-F1-13b-REFUNDERR#7] 两次各自成功的退款（两个对话框）：两次 Idempotency-Key 不同，退款记录出现两笔',
   async () => {
-    const server = createServer(undefined, { permissions: VIEW_REFUND_GRANTS });
+    const server = refundServer();
     await openDetail(server, ORDER.paid, OUT_TRADE_NO.paid);
     const first = await openRefund();
     await fillRefund(first, { amount: '3.00', reason: 'USER_REQUEST' });
@@ -202,13 +211,13 @@ it(
     await dismissRefundDialogs();
 
     const second = await openRefund();
-    await fillRefund(second, { amount: '4.00', reason: 'OTHER' });
+    await fillRefund(second, { amount: '4.00', reason: 'OTHER', note: '其他原因退回' });
     await submitRefund(second);
     await waitFor(() => expect(server.refunds(ORDER.paid)).toHaveLength(2));
     await settled(server);
     const [one, two] = server.refunds(ORDER.paid);
     assertRefund(one!, 300, 'USER_REQUEST');
-    assertRefund(two!, 400, 'OTHER');
+    assertRefund(two!, 400, 'OTHER', '其他原因退回');
     expect(requestKey(two!), 'another refund, another key').not.toBe(requestKey(one!));
     await waitFor(() => expect(rowsOf(main(), newOutRefundNo(2))).toHaveLength(1));
   },
@@ -218,7 +227,7 @@ it(
 it(
   '[AC-F1-13b-REFUNDERR#8] 请求在途时再点提交（连点两下）：只发一次 POST',
   async () => {
-    const server = createServer(undefined, { permissions: VIEW_REFUND_GRANTS });
+    const server = refundServer();
     await openDetail(server, ORDER.paid, OUT_TRADE_NO.paid);
     const modal = await openRefund();
     await fillRefund(modal, { amount: AMOUNT.typed, reason: 'USER_REQUEST' });
