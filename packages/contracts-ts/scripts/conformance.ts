@@ -154,6 +154,8 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminSettleBatchItemType: 'settle_batch_item_type',
   AdminSettleBatchItemResult: 'settle_batch_item_result',
   AdminSettleBatchItemRole: 'beneficiary_role',
+  // CT-24zd: the supplement launch of the monthly settlement console (BR-FUND-04 ⑧).
+  AdminSettleSupplementOutcome: 'admin_settle_supplement_outcome',
 };
 
 /**
