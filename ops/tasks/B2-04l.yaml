@@ -1,0 +1,26 @@
+id: B2-04l
+repo: rebate-platform
+title: settlement 维权端口：实现 orders 声明的 rights.record（登记 order_rights）与 rebate.adminHold / adminUnhold（R11 人工挂起 / 解除），以及扣回编排的维权成功入口（clawback-order.ts:59 / :922 TODO）；状态只经生成的 transition()，加锁照 B2-04m / s 顺序
+type: impl
+# 2026-10-30 funds 线（编排 23:xx ③）：orders/application/rights-ports.ts:73 未注入时抛 unavailable，维权导入写不进 order_rights；B1-09c.yaml:6 注释引用 B2-04l，台账一直未入账。RV2，独立 Claude 写测试与 money 评审。
+# BR-FUND-06 状态「待验证」（平台有无「处理中」信号）：规则原文已写无信号时只在结果回传时处理，按原文做、任务书注明，不臆造平台信号。端口形状以 orders 现有声明为准（RightsCommandPort / RebateAdminCommandPort）。生产装配（orders worker 注入）随 B2-04ze 或另开装配任务。
+refs: [BR-FUND-06, BR-FUND-07, BR-FUND-08, BR-FUND-01]
+refs_hash:
+  BR-FUND-06: 2076b932478c
+  BR-FUND-07: c5eb4ee32b94
+  BR-FUND-08: 0f044cf6e3f7
+  BR-FUND-01: b541996f8582
+deps: [B1-09c, B1-09e, B1-09l, B2-04s]
+paths:
+  - 'apps/api/src/modules/settlement/rights/**'
+  - 'apps/api/src/modules/settlement/clawback/clawback-order.ts'
+  - 'apps/api/src/modules/settlement/clawback/index.ts'
+  - 'apps/api/src/modules/settlement/index.ts'
+test_paths:
+  - 'test/spec/settlement/rights/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/rights/**'
+status: todo
