@@ -249,13 +249,15 @@ const PROPERTY_TIMEOUT_MS: number = Math.max(30_000, Math.ceil(propRuns() * 0.3)
 it(
   '[AC-B1-15w#5] 任意平台、标题与价格组合：标题按 BR-TEXT-20 清洗，各段只按联盟实际返回的字段渲染，include_default 只列返回的段，default_text 逐行拼接并以价格口径说明收尾，文案里只有返回的价格、没有收益字样',
   () => {
-    fc.assert(
-      fc.property(
-        factsArb,
-        (facts) => shareCopyViolations(renderShareCopy(facts, TEXTS), facts).length === 0,
+    expect(() =>
+      fc.assert(
+        fc.property(
+          factsArb,
+          (facts) => shareCopyViolations(renderShareCopy(facts, TEXTS), facts).length === 0,
+        ),
+        propParams(),
       ),
-      propParams(),
-    );
+    ).not.toThrow();
   },
   PROPERTY_TIMEOUT_MS,
 );
