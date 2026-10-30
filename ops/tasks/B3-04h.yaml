@@ -13,7 +13,7 @@ refs: [BR-PROD-03, BR-AI-04, BR-TEXT-14]
 refs_hash:
   BR-PROD-03: 1708058a2ff7
   BR-AI-04: 303f0a08df60
-  BR-TEXT-14: b3ce1a010a35
+  BR-TEXT-14: 7d370ee882ba
 deps: [B1-07a, B3-04f]
 paths:
   - 'apps/api/src/modules/parsing/application/**'

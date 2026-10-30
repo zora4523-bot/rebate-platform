@@ -8,7 +8,7 @@ type: impl
 # 开工前在 notices 占契约槽；契约去 planned 时同列 planned-operations.gen.ts（CT-06zxd）。
 refs: [BR-ATTR-10, BR-ATTR-05]
 refs_hash:
-  BR-ATTR-10: 310f8ddda3b0
+  BR-ATTR-10: 0ef7e9245dba
   BR-ATTR-05: e2864d6024ae
 deps: [B1-06j, CT-15f, CT-02h, B2-04zc]
 paths:
