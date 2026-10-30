@@ -23,5 +23,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/idempotency-purge/**'
-status: todo
-pr: null
+status: done
+pr: 1896
