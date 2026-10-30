@@ -162,6 +162,12 @@ it('identity codes of 08 §13.11 (功能对照补缺 1–3 批) carry their data
     'withdrawal_not_returned',
     'transfer_attempts_mismatch',
     'amount_mismatch',
+    // CT-24zd: admin-only settle batch write guards (BR-FUND-04, D10-437, D10-440).
+    'bill_not_ready',
+    'credit_disabled',
+    'pending_draft',
+    'snapshot_pending',
+    'switches_off',
   ]);
   expect(errorCodes[30701].sources).toEqual(['规划/04 §7', 'BR-ID-10', 'BR-ID-40']);
 });

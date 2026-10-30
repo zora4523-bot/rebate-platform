@@ -330,6 +330,16 @@ export const admin_withdrawal_display_status = [
 export type AdminWithdrawalDisplayStatus = (typeof admin_withdrawal_display_status)[number];
 
 /**
+ * POST /admin/v1/settle-bills/{bill_id}/supplement-batches 响应的 outcome；无可纳入数据不是错误，outcome 仍为 generated、batch_ids 为空，不生成空批次
+ * Source: 规划/08 BR-FUND-04 ⑧⑫；规划/01 F-ADM-08；design/specs/admin-settle-bills.md §4（CT-24zd） (contracts/enums/admin.yaml).
+ */
+export const admin_settle_supplement_outcome = [
+  "generated", // 已执行补充校验（本次新生成的批次在 batch_ids，可为空）
+  "duplicate", // 同一名义时刻已被认领（settle_jobs 唯一键），本次未生成，batch_ids 为空
+] as const;
+export type AdminSettleSupplementOutcome = (typeof admin_settle_supplement_outcome)[number];
+
+/**
  * GET /admin/v1/settle-bills 列表项与详情的 status 及同名筛选；读时由账单最近一轮批次（首轮 = 该账单全部 kind=main 批次；每次补充发起一轮 = kind=supplement 且 (platform, created_at) 相同的批次；轮时刻取其批次 created_at 最大值，最近一轮 = 轮时刻最大者，并列取含最大 batch_id 的轮；驳回的 CANCELLED 不参与）派生、不另存状态（settle_bills 无状态列）；按下列顺序取第一条成立的；中文名取 BR-TEXT-25 admin_dict
  * Source: 规划/08 BR-FUND-04 细则「月结账单状态」；规划/04 §2.5（月结账单状态由批次派生、不入库）；规划/01 F-ADM-08；design/specs/admin-settle-bills.md §1、§4（CT-24z） (contracts/enums/admin.yaml).
  */
@@ -2046,6 +2056,7 @@ export const enums = {
   notify_sms_state,
   notify_sms_test_status,
   admin_withdrawal_display_status,
+  admin_settle_supplement_outcome,
   admin_settle_bill_status,
   ledger_type,
   referral_credit_sub_type,

@@ -1182,8 +1182,33 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "POST",
+    "path": "/admin/v1/settle-bills/:bill_id/confirm",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/settle-bills/:bill_id/supplement-batches",
+    "signed": false
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/settle-batches/:batch_id/items",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/settle-batches/:batch_id/cancel-schedule",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/settle-batches/:batch_id/reject",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/settle-batches/:batch_id/resume",
     "signed": false
   },
   {

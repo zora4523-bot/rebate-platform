@@ -2385,9 +2385,59 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "confirmAdminSettleBill",
+    "method": "POST",
+    "path": "/admin/v1/settle-bills/:bill_id/confirm",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "createAdminSettleSupplementBatches",
+    "method": "POST",
+    "path": "/admin/v1/settle-bills/:bill_id/supplement-batches",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
     "operationId": "listAdminSettleBatchItems",
     "method": "GET",
     "path": "/admin/v1/settle-batches/:batch_id/items",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "cancelAdminSettleBatchSchedule",
+    "method": "POST",
+    "path": "/admin/v1/settle-batches/:batch_id/cancel-schedule",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "rejectAdminSettleBatch",
+    "method": "POST",
+    "path": "/admin/v1/settle-batches/:batch_id/reject",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "resumeAdminSettleBatch",
+    "method": "POST",
+    "path": "/admin/v1/settle-batches/:batch_id/resume",
     "gate": null,
     "sessionScopes": [
       "full"

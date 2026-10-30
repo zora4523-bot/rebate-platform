@@ -1182,8 +1182,33 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "admin"
   },
   {
+    "method": "POST",
+    "path": "/admin/v1/settle-bills/:bill_id/confirm",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/settle-bills/:bill_id/supplement-batches",
+    "auth": "admin"
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/settle-batches/:batch_id/items",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/settle-batches/:batch_id/cancel-schedule",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/settle-batches/:batch_id/reject",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/settle-batches/:batch_id/resume",
     "auth": "admin"
   },
   {

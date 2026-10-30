@@ -7837,8 +7837,8 @@ export interface paths {
          *     row of the bill, main and supplement, CANCELLED included, ordered by `created_at` then
          *     `batch_id`. Each batch carries its columns (`batch_id`, `platform`, `kind`, `status`,
          *     `settle_mode`, `scheduled_at`, `confirmed_by`, `confirmed_at`, `cancelled_reason`,
-         *     `order_count`, `started_at`, `finished_at`, `paused_by_switch_at`, `created_at`),
-         *     `in_current_round` (whether it belongs to the bill's latest round as defined in
+         *     `order_count`, `started_at`, `finished_at`, `paused_by_switch_at`, `created_at`,
+         *     `row_version`), `in_current_round` (whether it belongs to the bill's latest round as defined in
          *     AdminSettleBillStatus, the batches the derived status is computed from) and `item_counts`, the count of its settle_batch_items
          *     by item_type × result, summed at read time (not stored).
          *
@@ -7859,6 +7859,123 @@ export interface paths {
         get: operations["getAdminSettleBill"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/settle-bills/{bill_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm every DRAFT batch of the bill's latest round, to run now or at a set time (SB2)
+         * @description The 【确认立即执行】 and 【定时执行】 of the bill detail (01 F-ADM-08 月结; BR-FUND-04 ⑥,
+         *     迁移表 SB2; design/specs/admin-settle-bills.md §4). Permission point `settle.bill` (04
+         *     §11.2; `fund.view` alone is not enough). Step-up: totp tier (BR-ID-34): without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`. One person confirms.
+         *
+         *     One confirmation covers the whole latest round of the bill, never a choice of batches and
+         *     never an older round; the round is the one defined in AdminSettleBillStatus, as the read
+         *     operations give it through `in_current_round` (编排裁定 D10-437). Request:
+         *     `expected_batches`, one `{batch_id, expected_row_version}` per DRAFT batch of that round,
+         *     taken from GET /admin/v1/settle-bills/{bill_id}, at most 1000 entries; `settle_mode`,
+         *     IMMEDIATE when absent, or SCHEDULED; `scheduled_at`, required with SCHEDULED and not
+         *     allowed with IMMEDIATE, later than the moment of confirmation and outside the nominal
+         *     asset snapshot window (BR-FUND-04 ⑥, BR-FUND-18).
+         *
+         *     Order of checks: `settle.bill` (10403 with `data.reason=admin_permission_denied`) →
+         *     step-up (10003) → body (20001 with `data.fields` naming the field; `settle_mode` and
+         *     `scheduled_at` not fitting each other, or a time not allowed, is 20001 with
+         *     `data.fields=[scheduled_at]`) → a `bill_id` that does not match the pattern, an unknown
+         *     one or one of another app is 20001 with `data.fields=[bill_id]` (no 404) → a bill still
+         *     generating is 20001 with `data.fields=[bill_id]` and `data.reason=bill_not_ready` → 20902
+         *     with `data.resource=settle_batch`, nothing changed (refresh the detail): `expected_batches`
+         *     is not exactly the round's DRAFT batches (one missing, one extra, one twice, or none in
+         *     the round), or an `expected_row_version` is out of date. `scheduled_at` is checked again
+         *     at the moment of confirmation, after the locks are taken; a time no longer allowed is the
+         *     same 20001 with `data.fields=[scheduled_at]`, nothing changed. A round the server cannot
+         *     determine is 50001, nothing changed.
+         *
+         *     Effects, in one transaction: every DRAFT batch of the round moves to CONFIRMED (SB2, a
+         *     compare-and-set on each `row_version`, `row_version` + 1), with `settle_mode`,
+         *     `scheduled_at` (null for IMMEDIATE), `confirmed_by` the caller and `confirmed_at` the
+         *     server's current time. Confirming only reaches CONFIRMED: execution is a later step (SB5,
+         *     BR-FUND-04 ⑦), and no money moves in this operation. Writes an audit record (action
+         *     settle_bill_confirm, with the bill, `settle_mode`, `scheduled_at` and each batch with its
+         *     status before and after; no personal data). The response is the bill as
+         *     GET /admin/v1/settle-bills/{bill_id} returns it afterwards.
+         *
+         *     No Idempotency-Key (04 §6.6): the compare-and-set makes a repeated submission a 20902.
+         *     The manual start (SB10, not open before the finance confirmation of BR-FUND-04), the
+         *     upload of a union settlement statement, a supplement pre-check and the export are not
+         *     part of this operation.
+         */
+        post: operations["confirmAdminSettleBill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/settle-bills/{bill_id}/supplement-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Launch a supplement check and its batches for one platform of a bill
+         * @description The 【发起补充批次】 of the bill detail (01 F-ADM-08 月结; BR-FUND-04 ⑧ ⑫;
+         *     design/specs/admin-settle-bills.md §4). Permission point `settle.bill` (04 §11.2). Step-up:
+         *     totp tier (BR-ID-34): without a valid totp-tier `X-Step-Up-Token` → 10003 with
+         *     `data.tier=totp`.
+         *
+         *     Request: `platform`, the one platform to check. The server checks that platform's orders
+         *     of the bill as the bill-day task does and generates DRAFT batches of kind supplement
+         *     (SB1). They form one new round (AdminSettleBillStatus, 编排裁定 D10-437) and are confirmed
+         *     on their own through POST /admin/v1/settle-bills/{bill_id}/confirm.
+         *
+         *     Order of checks: `settle.bill` (10403 with `data.reason=admin_permission_denied`) →
+         *     step-up (10003) → body (20001 with `data.fields=[platform]`) → a `bill_id` that does not
+         *     match the pattern, an unknown one or one of another app is 20001 with
+         *     `data.fields=[bill_id]` (no 404) → the launch guard, each refusal 20001 with `data.reason`,
+         *     nothing written: `credit_disabled` with `data.fields=[platform]` (the switch
+         *     `credit.enabled.<platform>` is off, BR-FUND-04 ⑨); `bill_not_ready` with
+         *     `data.fields=[bill_id]` (the bill is still generating, or the bill-day task has no result
+         *     for this platform on this bill); `pending_draft` with `data.fields=[bill_id]` (the bill
+         *     still has a DRAFT batch of any platform, the requested one included: confirming covers
+         *     only the latest round, so a new round would strand it; 先确认或驳回现有 DRAFT 再发起,
+         *     编排裁定 D10-440, which replaces D10-437 ②).
+         *
+         *     `outcome`: `generated` = the check ran; `batch_ids` are the new batches. `batch_ids` may be
+         *     empty: nothing to include is not an error and no empty batch is generated (SB1).
+         *     `duplicate` = the launch had already been claimed for the same nominal moment (settle_jobs
+         *     unique key); nothing was generated and `batch_ids` is empty. Refresh the detail.
+         *
+         *     This operation has no compare-and-set, so `Idempotency-Key` is required, as on the
+         *     recon-diff close and write-off: same key and body → the first result, the same
+         *     `batch_ids`, without a second launch; same key with another body → 20901; same key while
+         *     still running → 40901. A deliberate second launch uses a new key. The step-up token is a
+         *     header and not part of the body hash, so a replay after a 10003 keeps its key.
+         *
+         *     Effects: the check results, differences of the supplement run (registered as on the bill
+         *     day) and the batches with their items, in one transaction. The totals of settle_bills are
+         *     not written back (编排裁定 D10-280 ③). No money moves in this operation. Writes an audit
+         *     record (action settle_supplement_create, with the bill, `platform`, `outcome` and
+         *     `batch_ids`; no personal data). The supplement pre-check, the upload of a union settlement
+         *     statement and the export are not part of this operation.
+         */
+        post: operations["createAdminSettleSupplementBatches"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7900,6 +8017,128 @@ export interface paths {
         get: operations["listAdminSettleBatchItems"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/settle-batches/{batch_id}/cancel-schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel the schedule of a confirmed batch, back to DRAFT (SB3)
+         * @description The 【撤销定时】 of a batch (01 F-ADM-08 月结; BR-FUND-04 ⑥, 迁移表 SB3;
+         *     design/specs/admin-settle-bills.md §4). Permission point `settle.bill` (04 §11.2; `fund.view` alone is not enough). Step-up: totp
+         *     tier (BR-ID-34): without a valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`.
+         *
+         *     Request: `expected_row_version` is the batch's `row_version` from GET
+         *     /admin/v1/settle-bills/{bill_id}. Only a CONFIRMED batch with `settle_mode` SCHEDULED that has not started can
+         *     be cancelled.
+         *
+         *     Order of checks: `settle.bill` (10403 with `data.reason=admin_permission_denied`) →
+         *     step-up (10003) → body (20001) → an unknown `batch_id` or a batch of another app is 20001
+         *     with `data.fields=[batch_id]` (no 404) → 20902 with `data.resource=settle_batch`, nothing changed (refresh the detail):
+         *     `expected_row_version` out of date, or a batch that is not CONFIRMED, not SCHEDULED, or
+         *     already started.
+         *
+         *     Effects: the batch moves to DRAFT (SB3, `row_version` + 1): `confirmed_by`, `confirmed_at`
+         *     and `scheduled_at` are cleared and `settle_mode` returns to IMMEDIATE, so it must be confirmed
+         *     again before it can run. `paused_by_switch_at` stays (BR-FUND-04 SB3). Writes an audit record
+         *     (action settle_batch_cancel_schedule, with the batch and, before and after, its `status`,
+         *     `settle_mode` and `scheduled_at`; no personal data). The response is the batch's bill as
+         *     GET /admin/v1/settle-bills/{bill_id} returns it afterwards.
+         *
+         *     No Idempotency-Key (04 §6.6): the compare-and-set makes a repeated submission a 20902.
+         */
+        post: operations["cancelAdminSettleBatchSchedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/settle-batches/{batch_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject a DRAFT batch with a reason (SB4)
+         * @description The 【驳回】 of a batch (01 F-ADM-08 月结; BR-FUND-04 ⑥, 迁移表 SB4;
+         *     design/specs/admin-settle-bills.md §4). Permission point `settle.bill` (04 §11.2; `fund.view` alone is not enough). Step-up: totp
+         *     tier (BR-ID-34): without a valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`.
+         *
+         *     Request: `expected_row_version` is the batch's `row_version` from GET
+         *     /admin/v1/settle-bills/{bill_id}. `reason`, required: after trimming surrounding whitespace 1–200 characters,
+         *     else 20001 with `data.fields=[reason]`. Only a DRAFT batch can be rejected.
+         *
+         *     Order of checks: `settle.bill` (10403 with `data.reason=admin_permission_denied`) →
+         *     step-up (10003) → body (20001) → an unknown `batch_id` or a batch of another app is 20001
+         *     with `data.fields=[batch_id]` (no 404) → 20902 with `data.resource=settle_batch`, nothing changed (refresh the detail):
+         *     `expected_row_version` out of date, or a batch that is not DRAFT.
+         *
+         *     Effects: the batch moves to CANCELLED, a terminal state (SB4, `row_version` + 1), and
+         *     `cancelled_reason` records the trimmed reason. The orders of the batch stay WAITING and its
+         *     items and the ledger are not touched. Writes an audit record (action settle_batch_reject,
+         *     with the batch, the reason and, before and after, its `status`; no personal data). The
+         *     response is the batch's bill as GET /admin/v1/settle-bills/{bill_id} returns it afterwards.
+         *
+         *     No Idempotency-Key (04 §6.6): the compare-and-set makes a repeated submission a 20902.
+         */
+        post: operations["rejectAdminSettleBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/settle-batches/{batch_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Continue a PARTIAL batch after the switches are back on (SB8)
+         * @description The 【继续执行】 of a batch (01 F-ADM-08 月结; BR-FUND-04 ⑦, 迁移表 SB8;
+         *     design/specs/admin-settle-bills.md §4). Permission point `settle.bill` (04 §11.2; `fund.view` alone is not enough). Step-up: totp
+         *     tier (BR-ID-34): without a valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`.
+         *
+         *     Request: `expected_row_version` is the batch's `row_version` from GET
+         *     /admin/v1/settle-bills/{bill_id}. Only a PARTIAL batch can continue.
+         *
+         *     Order of checks: `settle.bill` (10403 with `data.reason=admin_permission_denied`) →
+         *     step-up (10003) → body (20001) → an unknown `batch_id` or a batch of another app is 20001
+         *     with `data.fields=[batch_id]` (no 404) → 20902 with `data.resource=settle_batch`, nothing changed (refresh the detail):
+         *     `expected_row_version` out of date, or a batch that is not PARTIAL → the guard, each refusal
+         *     20001 with `data.fields=[batch_id]` and `data.reason`, the batch stays PARTIAL:
+         *     `switches_off` (`settle.auto.enabled` or `credit.enabled.<platform>` of the batch's platform
+         *     is off); `snapshot_pending` (the day's asset snapshot is neither completed nor timed out,
+         *     BR-FUND-18).
+         *
+         *     Effects: only the status: the batch moves to EXECUTING (SB8, `row_version` + 1); `started_at`
+         *     and `paused_by_switch_at` stay. Its open items are picked up by the executor afterwards, so
+         *     no money moves in this operation. Writes an audit record (action settle_batch_resume, with
+         *     the batch and, before and after, its `status`; no personal data). The response is the batch's
+         *     bill as GET /admin/v1/settle-bills/{bill_id} returns it afterwards.
+         *
+         *     No Idempotency-Key (04 §6.6): the compare-and-set makes a repeated submission a 20902.
+         */
+        post: operations["resumeAdminSettleBatch"];
         delete?: never;
         options?: never;
         head?: never;
@@ -16757,6 +16996,11 @@ export interface components {
                 pending: number;
             };
         };
+        /**
+         * Format: int32
+         * @description settle_batches.row_version, the compare-and-set version of a batch; each batch command adds one.
+         */
+        AdminSettleBatchRowVersion: number;
         /** @description One settle_batches row of a bill (04 §3.2) with whether it is in the bill's latest round and its item counts. */
         AdminSettleBatch: {
             batch_id: components["schemas"]["Id"];
@@ -16791,9 +17035,66 @@ export interface components {
             paused_by_switch_at: string | null;
             /** Format: date-time */
             created_at: string;
+            /** @description The version the batch commands take as expected_row_version (POST /admin/v1/settle-bills/{bill_id}/confirm, POST /admin/v1/settle-batches/{batch_id}/cancel-schedule, /reject, /resume). Returned on every batch from B2-09f. */
+            row_version?: components["schemas"]["AdminSettleBatchRowVersion"];
             /** @description Whether the batch belongs to the bill's latest round as defined in AdminSettleBillStatus (main round = all kind main batches; supplement round = kind supplement batches sharing (platform, created_at); latest = largest round time, a tie going to the round holding the largest batch_id); a CANCELLED batch of that round is true but takes no part. */
             in_current_round: boolean;
             item_counts: components["schemas"]["AdminSettleBatchItemCounts"];
+        };
+        /** @description One DRAFT batch of the round as the console read it. */
+        AdminSettleExpectedBatch: {
+            batch_id: components["schemas"]["Id"];
+            expected_row_version: components["schemas"]["AdminSettleBatchRowVersion"];
+        };
+        /**
+         * @description Body of POST /admin/v1/settle-bills/{bill_id}/confirm. `expected_batches` must match the
+         *     DRAFT batches of the bill's latest round one to one (AdminSettleBillStatus), never a choice
+         *     among them; any other set is 20902 with data.resource=settle_batch.
+         */
+        AdminSettleBillConfirmRequest: {
+            expected_batches: components["schemas"]["AdminSettleExpectedBatch"][];
+            /**
+             * @description IMMEDIATE when absent.
+             * @default IMMEDIATE
+             */
+            settle_mode?: components["schemas"]["AdminSettleMode"];
+            /**
+             * Format: date-time
+             * @description Required with SCHEDULED, not allowed with IMMEDIATE; later than the moment of confirmation and outside the nominal asset snapshot window (BR-FUND-04 ⑥, BR-FUND-18), else 20001 with data.fields=[scheduled_at].
+             */
+            scheduled_at?: string;
+        };
+        /** @description Body of POST /admin/v1/settle-batches/{batch_id}/cancel-schedule and /resume. */
+        AdminSettleBatchVersionRequest: {
+            expected_row_version: components["schemas"]["AdminSettleBatchRowVersion"];
+        };
+        /** @description Body of POST /admin/v1/settle-batches/{batch_id}/reject. */
+        AdminSettleBatchRejectRequest: {
+            expected_row_version: components["schemas"]["AdminSettleBatchRowVersion"];
+            /** @description Why the batch is rejected; 1–200 characters after trimming, else 20001 with data.fields=[reason]. Stored as cancelled_reason. */
+            reason: string;
+        };
+        /** @description Body of POST /admin/v1/settle-bills/{bill_id}/supplement-batches. */
+        AdminSettleSupplementRequest: {
+            platform: components["schemas"]["PlatformCode"];
+        };
+        /**
+         * @description contracts/enums/admin.yaml admin_settle_supplement_outcome — generated = the check ran (batch_ids may be empty); duplicate = already claimed for the same nominal moment, nothing generated.
+         * @enum {string}
+         */
+        AdminSettleSupplementOutcome: "generated" | "duplicate";
+        AdminSettleSupplement: {
+            bill_id: components["schemas"]["AdminSettleBillId"];
+            platform: components["schemas"]["PlatformCode"];
+            outcome: components["schemas"]["AdminSettleSupplementOutcome"];
+            /** @description The batches this launch generated; empty when there was nothing to include (no empty batch is generated) and on outcome duplicate. */
+            batch_ids: components["schemas"]["Id"][];
+        };
+        AdminSettleSupplementResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminSettleSupplement"];
+            trace_id: components["schemas"]["TraceId"];
         };
         AdminSettleBillPage: {
             items: components["schemas"]["AdminSettleBill"][];
@@ -34916,6 +35217,145 @@ export interface operations {
             "5XX": components["responses"]["ServerError"];
         };
     };
+    confirmAdminSettleBill: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description The bill month (settle_bills.bill_id, YYYY-MM); not matching the pattern, or no bill of the app → 20001 with data.fields=[bill_id]. */
+                bill_id: components["parameters"]["AdminSettleBillIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_batches": [
+                 *         {
+                 *           "batch_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa101",
+                 *           "expected_row_version": 0
+                 *         }
+                 *       ],
+                 *       "settle_mode": "SCHEDULED",
+                 *       "scheduled_at": "2026-10-31T10:00:00+08:00"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminSettleBillConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description The bill after the confirmation. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSettleBillDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not confirmed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    createAdminSettleSupplementBatches: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The bill month (settle_bills.bill_id, YYYY-MM); not matching the pattern, or no bill of the app → 20001 with data.fields=[bill_id]. */
+                bill_id: components["parameters"]["AdminSettleBillIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "platform": "taobao"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminSettleSupplementRequest"];
+            };
+        };
+        responses: {
+            /** @description The result of the launch, or the first result of the same key. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "bill_id": "2026-09",
+                     *         "platform": "taobao",
+                     *         "outcome": "generated",
+                     *         "batch_ids": [
+                     *           "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa103"
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminSettleSupplementResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not launched (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
     listAdminSettleBatchItems: {
         parameters: {
             query?: {
@@ -34994,6 +35434,172 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    cancelAdminSettleBatchSchedule: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description The settlement batch (settle_batches.batch_id) as a bill detail carries it; unknown or of another app → 20001 with data.fields=[batch_id]. */
+                batch_id: components["parameters"]["AdminSettleBatchIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_row_version": 1
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminSettleBatchVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description The bill of the batch after the change. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSettleBillDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    rejectAdminSettleBatch: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description The settlement batch (settle_batches.batch_id) as a bill detail carries it; unknown or of another app → 20001 with data.fields=[batch_id]. */
+                batch_id: components["parameters"]["AdminSettleBatchIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_row_version": 0,
+                 *       "reason": "联盟结算数据待核对，本批不入账"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminSettleBatchRejectRequest"];
+            };
+        };
+        responses: {
+            /** @description The bill of the batch after the change. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSettleBillDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    resumeAdminSettleBatch: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description The settlement batch (settle_batches.batch_id) as a bill detail carries it; unknown or of another app → 20001 with data.fields=[batch_id]. */
+                batch_id: components["parameters"]["AdminSettleBatchIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_row_version": 3
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminSettleBatchVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description The bill of the batch after the change. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSettleBillDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
