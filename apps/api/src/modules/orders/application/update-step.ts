@@ -33,6 +33,10 @@
 //   返利状态处置（application/blacklist-step.ts）：未入账经 rebate.onBlacklistHit（R6），先于 settlement 端口；
 //   已入账入队 order.blacklist_hit_after_credit；VOID / CLAWED_BACK 不处理。将经 R6 作废的不生成快照、不补偿重试。
 //   只在 content_hash 变化时运行（同内容已被流水线短路），不回扫；不改 user_id、buy_type。
+// - 平台恢复（B1-08zc，BR-FUND-22，application/platform-restore-step.ts）：注入 platformRestore 时，CAS 写入之后、
+//   ⑥ 之前同事务判定：库内返利状态 VOID / CLAWED_BACK、reason 属 REFUND / RIGHTS / COMMISSION_ZERO 或进入当前返利
+//   状态的历史事件属 PLATFORM_INVALID / INVALID_AFTER_SETTLE，且本次为 P9 或佣金列由空 / ≤0 变为 >0 → 经端口登记
+//   platform_restore 差错单（键用进入行 id，一次作废 / 扣回一张），新插入才打一条告警；不改返利状态、不写分录。
 // - 返利状态、hold、order_rights、order_settlements 只由 settlement 经端口决定；本模块不写这些列。
 //   端口除 change / info 外另带本次报文的来源（映射事件与原始码），settlement 据此区分维权与处罚（P8）。
 // 日志只打平铺字段（platform、app_id、reason、outcome、rule、event），不打子订单号与买家参数。
@@ -109,6 +113,11 @@ import type {
   OrderPipelineDeps,
   OrderPipelineResult,
 } from './pipeline-types.ts';
+import {
+  runPlatformRestore,
+  type PlatformRestoreDiffPort,
+  type PlatformRestoreOutcome,
+} from './platform-restore-step.ts';
 
 export interface OrderUpdateChange {
   readonly app_id: string;
@@ -178,6 +187,11 @@ export interface OrderUpdateDeps extends Pick<
   readonly regressionHold?: (platform: Parameters<OrderPipelineDeps['statusMaps']>[0]) => boolean;
   /** 分佣快照端口（B1-08k）；同 OrderPipelineDeps.snapshots，未注入时第 ⑥ 步整步跳过。订单推广位场景经 pids 取。 */
   readonly snapshots?: CommissionSnapshotPort;
+  /**
+   * B1-08zc 平台恢复差错单端口（BR-FUND-22，ledger 实现、app.module 注入）；与本次写库同一事务调用，抛错整事务回滚。
+   * 未注入时不登记，只保留 P9 原有告警。
+   */
+  readonly platformRestore?: PlatformRestoreDiffPort;
 }
 
 type OrderRow = Selectable<DB['orders']>;
@@ -191,6 +205,8 @@ const NO_PARAMS: UnionOrderAttrParams = {
 /** 告警级别：08 未写明，order_attr_param_changed 为 P2（BR-ATTR-01），其余订单同步异常按 P1。 */
 const ALERT_SYNC = 'P1';
 const ALERT_PARAM = 'P2';
+/** B1-08zc：新登记一张 platform_restore 差错单时的告警（BR-FUND-22）。 */
+const ALERT_PLATFORM_RESTORE = 'platform_restore';
 
 /** orders.buy_type 由首次入库写定（BR-ATTR-08，self / share）；别的值是数据损坏，不猜。 */
 function orderBuyType(value: string | null): 'self' | 'share' {
@@ -543,6 +559,26 @@ export function createOrderUpdateStep(
         current.rebate_status,
       );
     }
+    // B1-08zc 平台恢复检测（BR-FUND-22）：CAS 写入之后、同一事务；按库内（锁内读、本模块不改）的返利状态与原因判定，
+    // 经端口登记 platform_restore 差错单。不复活订单、不写分录；端口抛错不吞，整事务回滚。
+    const restore: PlatformRestoreOutcome =
+      deps.platformRestore === undefined
+        ? { kind: 'none' }
+        : await runPlatformRestore(trx, deps.platformRestore, {
+            app_id: current.app_id,
+            order_id: current.order_id,
+            platform,
+            sub_order_id: current.sub_order_id,
+            rebate_status: current.rebate_status,
+            reason: current.reason,
+            platformBefore: from,
+            platformAfter: plan.platform_status,
+            estBefore: current.est_commission_fen,
+            estAfter: columns.est_commission_fen,
+            settleBefore: current.settle_commission_fen,
+            settleAfter: columns.settle_commission_fen,
+            now,
+          });
     // ⑥ 分佣快照：history、待处理之后、settlement 端口之前；端口抛错不吞，整事务回滚。
     let snapshot: SnapshotOutcome | undefined;
     let retryAlert: SnapshotRetryAlert | null = null;
@@ -727,6 +763,31 @@ export function createOrderUpdateStep(
       log?.warn(
         { ...base, alert: ALERT_SYNC, rule: 'P9', outcome: 'invalid_recovered' },
         'invalid order reported active again; rebate status unchanged',
+      );
+    }
+    if (restore.kind === 'registered' && restore.inserted) {
+      log?.warn(
+        {
+          ...base,
+          alert: ALERT_PLATFORM_RESTORE,
+          order_id: current.order_id,
+          recon_diff_id: restore.reconDiffId,
+          trigger: restore.trigger,
+          reason_code: restore.reasonCode,
+          rebate_status: restore.rebateStatus,
+        },
+        'voided or clawed-back order restored by the platform; recon diff registered',
+      );
+    } else if (restore.kind === 'entry_missing') {
+      log?.warn(
+        {
+          ...base,
+          alert: ALERT_SYNC,
+          order_id: current.order_id,
+          trigger: restore.trigger,
+          outcome: 'platform_restore_entry_missing',
+        },
+        'platform restore detected but no rebate history row entered the current status; not registered',
       );
     }
     if (!unattributed && paramsChanged) {

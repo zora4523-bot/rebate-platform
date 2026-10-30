@@ -28,6 +28,10 @@
 //   ports.suffixVoidEnabled; absent → false, the 08 default (suffix hits only recorded for review).
 //   Until settlement wires rebate.onBlacklistHit, an uncredited hit is recorded as manual_review
 //   with a P1 warning and the order is left unchanged.
+// - B1-08zc: when ports.platformRestore is given (ledger's registerReconDiffOnce as orders' port, from
+//   app.module), it is built once at assembly (no read) and goes to the update step: a VOID /
+//   CLAWED_BACK order restored by the platform registers one platform_restore recon diff
+//   (BR-FUND-22) in the update's transaction. Absent → nothing is registered.
 // - B1-09g: the order-sync handler routes job name 'rights_import' (the admin Excel import tasks,
 //   sent by application/rights-imports.ts) to jobs/rights-import.ts with the runtime's db, clock and
 //   logger plus `rightsImports` (the import store, the column template registry and the per-kind row
@@ -75,6 +79,7 @@ import {
 } from './application/sync-scheduler.ts';
 import { createOrderUpdateStep, type OrderUpdateDeps } from './application/update-step.ts';
 import type { CommissionSnapshotPort } from './application/commission-snapshot-step.ts';
+import type { PlatformRestoreDiffPort } from './application/platform-restore-step.ts';
 import { SNAPSHOT_RETRY_SCAN_INTERVAL_MS } from './domain/snapshot-retry.ts';
 import { listSnapshotRetryAppIds } from './infra/snapshot-retry-store.ts';
 import {
@@ -132,6 +137,12 @@ export interface OrderSyncReadPorts {
     db: Kysely<DB>,
     clock: Clock,
   ) => (appId: string) => Promise<boolean>;
+  /**
+   * B1-08zc: ledger's recon diff registration as the platform-restore port (BR-FUND-22), called once
+   * at assembly with the worker's clock and reading nothing until used. Absent → the update step
+   * registers no platform_restore diff (the P9 warning stays).
+   */
+  readonly platformRestore?: (clock: Clock) => PlatformRestoreDiffPort;
 }
 
 export interface OrderSyncRuntimeDeps {
@@ -249,6 +260,7 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
           blocklist,
           suffixVoidEnabled: deps.ports.suffixVoidEnabled?.(db, clock) ?? (async () => false),
         };
+  const platformRestore = deps.ports.platformRestore?.(clock);
   const updateStep = createOrderUpdateStep({
     clock,
     users,
@@ -261,6 +273,7 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
     ...(sources === undefined ? {} : { sources }),
     ...(snapshots === undefined ? {} : { snapshots }),
     ...(blacklist === undefined ? {} : { blacklist }),
+    ...(platformRestore === undefined ? {} : { platformRestore }),
   });
   const pipeline = createOrderPipeline({
     db,
