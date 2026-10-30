@@ -115,6 +115,9 @@ export type {
 export type { UnionRegistration, UnionRegistry } from './infra/registry.ts';
 export { loadUnionEndpoints, parseUnionEndpoints } from './infra/endpoints.ts';
 export { createGovernedAdapter } from './application/governed-adapter.ts';
+// B1-22v: the union quota bucket shared by every process (Redis; fail-closed without it).
+export { UNION_QUOTA_NAMESPACE, createSharedUnionQuota } from './application/shared-quota.ts';
+export type { UnionQuotaDeps } from './application/shared-quota.ts';
 // B1-08n: the order-sync wiring's union side (SyncAccessPort, pipeline readers, worker governance).
 export {
   createUnionSyncAccess,

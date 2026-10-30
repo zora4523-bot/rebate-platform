@@ -4,7 +4,8 @@
 //   specs/order-status-map/<platform>.csv once per scheduled platform (a missing file is
 //   MISSING_STATUS_MAP, any other read error is rethrown: the worker does not start), wraps every
 //   configured union adapter once in the worker's own governance (offline breaker readable by the
-//   access port; quota and breakers per process, 待裁定 6), builds the cursor store, the update
+//   access port; breakers per process, 待裁定 6; the quota bucket comes from ports.quota — B1-22v:
+//   app.module's shared Redis bucket, whose answer may be a promise the governor awaits), builds the cursor store, the update
 //   step (B1-08i) and the attribution pipeline (B1-08h) over the platform EVENT_BUS, and registers
 //   the order-sync handler. The scheduler and the handler share the same access instance.
 // - start() starts the scheduler's timer loops only (createOrderSyncScheduler); every call starts
@@ -116,7 +117,11 @@ export interface OrderSyncReadPorts {
   readonly users: (db: Kysely<DB>) => OrderPipelineDeps['users'];
   /** linking: union_bindings of (App, account, relation_id), any status. */
   readonly bindings: (db: Kysely<DB>) => OrderPipelineDeps['bindings'];
-  /** The quota bucket of one platform's governed adapter in this process (endpoint.quotaKey). */
+  /**
+   * The quota bucket of one platform's governed adapter (endpoint.quotaKey), called once per
+   * endpoint while the runtime is built. B1-22v: app.module gives the union bucket shared by every
+   * process (tryAcquire may answer with a promise; the governor awaits it).
+   */
   readonly quota: (endpoint: UnionEndpoint, scheduler: Scheduler) => QuotaLimiter;
   /**
    * B1-08q: the source backfill ports (BR-ATTR-15; linking's link_logs, catalog's key prefixes,
