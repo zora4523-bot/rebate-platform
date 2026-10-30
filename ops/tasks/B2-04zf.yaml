@@ -1,0 +1,23 @@
+id: B2-04zf
+repo: rebate-platform
+title: settle_run 级完成事件（D10-467 ③）：同一 settle_run 的全部批次进入 DONE 时发布一次完成事件（载荷带 settle_run_id、app_id、账单期间与批次数；任一批次 PARTIAL 不发），供 identity B1-12t「返利已到账」通知按 run 汇总；发布与最后一个批次 DONE 的事务同一事务，幂等（同 run 只发一次）
+type: impl
+# 2026-10-31 编排 05:0x 补 D10-467 ③：B2-04ze 已在写测试不打断，单开本单，紧接 B2-04ze 之后；identity B1-12t 依赖本单。RV2，独立 Claude 写测试与 money 评审（Codex 至 11-02 不可用，approvals #36）。
+# 事件名与载荷照 02 §11 / EVENT_NAMES 既有命名口径（两段式 a.b）；若需新增事件名，进 EVENT_NAMES 并在 PR 说明标出；契约 / 事件清单未写清处报编排。
+refs: [BR-FUND-04, BR-TEXT-09]
+refs_hash:
+  BR-FUND-04: f4b8b2be46ea
+  BR-TEXT-09: f943366b1a3b
+deps: [B2-04ze]
+paths:
+  - 'apps/api/src/modules/settlement/batch/**'
+  - 'apps/api/src/modules/settlement/index.ts'
+  - 'apps/api/src/modules/platform/events/types.ts'
+test_paths:
+  - 'test/spec/settlement/run-done/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/run-done/**'
+status: todo
