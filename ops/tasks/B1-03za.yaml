@@ -1,0 +1,16 @@
+id: B1-03za
+repo: rebate-platform
+title: 测试修改：[AC-B1-12p#28]（test/spec/notification/appeal-result-message/consumer.int.test.ts）发布后入队清单按订阅表两态判定，为 B1-03z（appeal.resolved 新消费者 risk-appeal-restore、队列 evt.risk-appeal-restore）让路——EVENT_SUBSCRIPTIONS 含 risk-appeal-restore 时期望多一项（队列 evt.risk-appeal-restore、事件 appeal.resolved），否则保持原两项；其余断言不变
+type: test-change
+# 草稿 2026-10-30（身份与风控线 identity-lane）。B1-03z 完整验证只红这一条（清单精确比对）；照 B1-15p 先例拆非任务分支两态 test-change 先合，主干现状与叠 B1-03z 都绿。独立 Claude 改，新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签。B1-03z 合并后另开收紧任务改单态。
+refs: []
+refs_hash: {}
+deps: [B1-12p]
+paths:
+  - 'test/spec/notification/appeal-result-message/consumer.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/appeal-result-message/**'
+status: todo

@@ -1,6 +1,9 @@
 import { createTestDatabase } from '@couli/db/testing';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
-import { createEventBus } from '../../../../apps/api/src/modules/platform/events/index.ts';
+import {
+  createEventBus,
+  EVENT_SUBSCRIPTIONS,
+} from '../../../../apps/api/src/modules/platform/events/index.ts';
 import type {
   JobQueue,
   ReceivedEvent,
@@ -74,13 +77,33 @@ it('[AC-B1-12p#28] 直接发布结案与 appealing→normal 事件，生产路�
         });
       }
     });
-    expect(send.mock.calls.map(([queue, name]) => ({ queue, name }))).toEqual([
-      { queue: QUEUE, name: 'appeal.resolved' },
-      { queue: 'evt.notification-risk-state', name: 'risk.state_changed' },
-    ]);
+    // Two states to make way for B1-03z (appeal.resolved consumer risk-appeal-restore, queue
+    // evt.risk-appeal-restore); tighten to the single subscribed state once B1-03z is merged.
+    // bus.publish sends one job per subscription in EVENT_SUBSCRIPTIONS order, and that table lists
+    // notification-appeal-result before risk-appeal-restore.
+    const restoreSubscribed = EVENT_SUBSCRIPTIONS.some(
+      (subscription) => subscription.consumer === 'risk-appeal-restore',
+    );
+    expect(send.mock.calls.map(([queue, name]) => ({ queue, name }))).toEqual(
+      restoreSubscribed
+        ? [
+            { queue: QUEUE, name: 'appeal.resolved' },
+            { queue: 'evt.risk-appeal-restore', name: 'appeal.resolved' },
+            { queue: 'evt.notification-risk-state', name: 'risk.state_changed' },
+          ]
+        : [
+            { queue: QUEUE, name: 'appeal.resolved' },
+            { queue: 'evt.notification-risk-state', name: 'risk.state_changed' },
+          ],
+    );
+    // B1-03z: risk's restore job needs an app.appeals row this notification fixture never writes, so
+    // only the two notification jobs are delivered (without B1-03z this keeps every job).
+    const notificationCalls = send.mock.calls.filter(
+      ([queue]) => queue !== 'evt.risk-appeal-restore',
+    );
     // Deliver in reverse order, then repeat both jobs: neither ordering nor retries may double-notify.
     for (const attempt of [1, 2]) {
-      for (const [queue, name, payload, options] of [...send.mock.calls].reverse()) {
+      for (const [queue, name, payload, options] of [...notificationCalls].reverse()) {
         const matches = app.registrations.filter((registration) => registration.name === queue);
         expect(matches).toHaveLength(1);
         await matches[0]!.handler({ id: options.id!, queue, name, payload, attempt });
