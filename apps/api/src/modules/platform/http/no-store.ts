@@ -50,16 +50,46 @@ export function carriesIdentity(request: object): boolean {
   return tokenPrincipal(request) !== undefined || adminPrincipal(request) !== undefined;
 }
 
+/** `METHOD template` of the routes whose every response is no-store (B1-15y, BR-ATTR-10). */
+const NO_STORE_ROUTES: ReadonlySet<string> = new Set([
+  'GET /v1/share-pages/:link_id',
+  'POST /v1/share-pages/:link_id/tpwd',
+]);
+
+function routeKey(method: string, template: string): string {
+  return `${method} ${template}`;
+}
+
 /**
  * B1-15y: true for the routes whose every response is no-store whoever asks — exactly
  * (`GET`, `/v1/share-pages/:link_id`) and (`POST`, `/v1/share-pages/:link_id/tpwd`), compared as
  * the method (upper case, as Fastify gives it) and the Fastify route template. Any other method or
- * template, a concrete URL, an empty or missing template is false.
+ * template, a concrete URL, an empty or missing template is false. Fastify answers HEAD on a GET
+ * route with the GET handler (exposeHeadRoutes), so a HEAD on the GET template is judged as that
+ * GET (as signing-routes.ts and auth-routes.ts do).
  */
 export function isNoStoreRoute(method: string, template: string | undefined): boolean {
-  void method;
-  void template;
-  throw new Error('NotImplemented: isNoStoreRoute');
+  if (typeof method !== 'string' || typeof template !== 'string' || template === '') return false;
+  const upper = method.toUpperCase();
+  if (NO_STORE_ROUTES.has(routeKey(upper, template))) return true;
+  return upper === 'HEAD' && NO_STORE_ROUTES.has(routeKey('GET', template));
+}
+
+/** The method and route template of a Fastify request; undefined parts when absent. */
+function routeOf(request: object): { method: unknown; template: unknown } {
+  const { method, routeOptions } = request as { method?: unknown; routeOptions?: unknown };
+  const template =
+    typeof routeOptions === 'object' && routeOptions !== null
+      ? (routeOptions as { url?: unknown }).url
+      : undefined;
+  return { method, template };
+}
+
+function onNoStoreRoute(request: object): boolean {
+  const { method, template } = routeOf(request);
+  return typeof method === 'string' && typeof template === 'string'
+    ? isNoStoreRoute(method, template)
+    : false;
 }
 
 /**
@@ -69,6 +99,7 @@ export function isNoStoreRoute(method: string, template: string | undefined): bo
  * every other anonymous reply unchanged.
  */
 export function applyNoStore(request: object, reply: NoStoreReply): void {
-  if (!carriesIdentity(request) || reply.hasHeader(CACHE_CONTROL)) return;
+  if (!carriesIdentity(request) && !onNoStoreRoute(request)) return;
+  if (reply.hasHeader(CACHE_CONTROL)) return;
   reply.header(CACHE_CONTROL, NO_STORE);
 }
