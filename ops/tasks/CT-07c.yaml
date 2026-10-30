@@ -1,0 +1,24 @@
+id: CT-07c
+repo: rebate-platform
+title: 契约：GET /v1/pages/{page_key}/sections/{section_id}/items（04 §6 卡片数据源分页）——operationId listPageSectionItems，x-auth none，x-implementation planned；本期只描述 union_material 数据源：items 为 ProductCard 列表、next_cursor、失败与无数据口径，商品池数据源留到商品池任务
+type: contract
+# 2026-10-30 W1 入账（编排 19:3x：对照 05 找缺口）。04 第 597 行 M-内测 的接口，契约里没有；03 §6.2 规定 union_material 卡片各自发请求，失败或为空隐藏该卡，所以现在首页没有商品。
+refs: [BR-TEXT-17]
+refs_hash:
+  BR-TEXT-17: 486f4508575e
+deps: [CT-07a]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/routes.json'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
