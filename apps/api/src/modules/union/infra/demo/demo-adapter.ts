@@ -39,6 +39,7 @@ import {
 } from '../../domain/types.ts';
 import {
   mapTaobaoPrice,
+  type TaobaoPriceSettingsReader,
   type TaobaoPriceWarning,
   type TaobaoPromotion,
 } from '../../domain/taobao-price.ts';
@@ -87,6 +88,11 @@ export interface DemoUnionOptions {
   readonly environment: UnionEnvironment;
   /** Receives PRICE_CALC_DIFF / PRICE_PROMO_UNKNOWN events (name only, no item data). */
   readonly warn?: (warning: TaobaoPriceWarning) => void;
+  /**
+   * B1-22q: Taobao price settings, read with ctx.appId for every price mapping and passed to
+   * mapTaobaoPrice as its options. Without it the BR-PRICE-02 defaults apply.
+   */
+  readonly taobaoPriceSettings?: TaobaoPriceSettingsReader;
 }
 
 /** Optional argument of createUnionRegistry: endpoints with mode=demo get a DemoUnionAdapter. */
@@ -96,6 +102,8 @@ export interface DemoUnionRegistryOptions {
   readonly clock: Clock;
   readonly environment: UnionEnvironment;
   readonly warn?: (warning: TaobaoPriceWarning) => void;
+  /** B1-22q: handed to every demo adapter as DemoUnionOptions.taobaoPriceSettings. */
+  readonly taobaoPriceSettings?: TaobaoPriceSettingsReader;
 }
 
 export type DemoUnionErrorCode = 'demo_delisted' | 'demo_unknown_scenario';

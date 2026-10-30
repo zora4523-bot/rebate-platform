@@ -36,6 +36,14 @@ export interface TaobaoPriceOptions {
   readonly basis?: 'promotion_path' | 'coupon_only';
 }
 
+/**
+ * B1-22q: where an adapter gets the BR-PRICE-02 settings (price.taobao.*) of the calling app.
+ * Read again for every mapping, so a configuration change applies to the next call.
+ */
+export interface TaobaoPriceSettingsReader {
+  read(appId: string): Promise<TaobaoPriceOptions>;
+}
+
 /** Pure function returns flat warning events for the adapter to log through pino. */
 export type TaobaoPriceWarning =
   | { readonly code: 'PRICE_CALC_DIFF' }
