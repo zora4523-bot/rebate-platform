@@ -2,11 +2,13 @@ id: B2-07e
 repo: rebate-platform
 title: 后台差错单核销实现（CT-24za writeOffAdminReconDiff，R2 迟到成功 → 提现 W11）——ledger 用例锁差错单行（只 R2、case=payer_side_returned、open / processing，否则 20001 [recon_diff_id] / 20902 recon_diff），经注入的 payout 端口在同一事务执行 W11：users 行锁 → ledger.lockBalances → 守卫（APPROVED 且 hold_reason=payer_side_after_transfer；payout_attempts 中 kind=transfer 恰一条且 result=fail；差错单 bill_row 含该 out_biz_no 且 actual_fen = net_fen；content 开关 payout.proven_success_writeoff.enabled=on）→ transitionWithdrawal(APPROVED, CHANNEL_SUCCESS_PROVEN) CAS（置 PAID_API、paid_at 取账单行入账时间否则 now、channel_order_id 取账单行、hold_reason / hold_at 清空、executor_id 记操作人）→ WITHDRAW:SUCCESS:CASH_<channel> 凭证 wd:{id}:PAID（BR-WDR-09）→ 同事务入队 payout 的 attempt-append 任务（D10-428：pg-boss 与业务同库，入队与核销原子提交；payout 进程以 couli_payout 按 withdrawal_id + 差错单 id 幂等追加 kind=query、result=success 的尝试记录，request 记 source=w11、recon_diff_id、bill_date，response 记账单行摘要，不改原记录；重试耗尽告警）→ 发 wallet.withdrawal_changed；再把差错单置 written_off（handler_id、closed_at、resolution 加 w11 {withdrawal_id, paid_at, operator}、note）、解除 source_ref=recon_diff:<id> 的冻结（payout releaseWithdrawHoldsBySource）、写审计 recon_diff_write_off（含前后状态、withdrawal_id、released_hold_count，无个人信息）；全程 platform 幂等（subject a:<admin>）+ AdminOperationGuard（payout.execute，totp 档）
 type: impl
-# 2026-10-30 入账（withdraw 线，编排 10-30 10:05 派工）。资金类（RV2，payout 单一写者）：Codex 不可用至 11-02，规则测试与 money 评审均由新鲜独立 Claude 做；money 评审必过。
-# 装配照 B2-09b：ledger 不 import payout / admin，app.module 把 payout 的 W11 命令（新端口 ReconDiffWriteOff：proveChannelSuccess(trx, {...})）与 admin 的审计写者注入 LedgerAdminModule.forAdmin；控制器放 ledger/http/admin/recon-diff-write-off.controller.ts，用例 ledger/application/admin-recon-diff-write-off.ts，W11 命令放 payout/application/withdrawal-proven-success.ts（只经生成的 transitionWithdrawal、CAS 0 行抛 WithdrawalConflictError 20902 withdrawal、分录只经 ledger.post、锁序 BR-WDR-07）。
+# 2026-10-30 入账（withdraw 线，编排 10-30 10:05 派工）。资金类（RV2，payout 单一写者）：Codex 不可用至 11-02，规则测试与 money 评审均由新鲜独立 Claude 做；money 评审必过。装配照 B2-09b：ledger 不 import payout / admin，app.module 把 payout 的 W11 命令（新端口 ReconDiffWriteOff：proveChannelSuccess(trx, {...})）与 admin 的审计写者注入 LedgerAdminModule.forAdmin；控制器放 ledger/http/admin/recon-diff-write-off.controller.ts，用例 ledger/application/admin-recon-diff-write-off.ts，W11 命令放 payout/application/withdrawal-proven-success.ts（只经生成的 transitionWithdrawal、CAS 0 行抛 WithdrawalConflictError 20902 withdrawal、分录只经 ledger.post、锁序 BR-WDR-07）。
 # 尝试记录按编排裁定 D10-428（否 A 授权迁移、否 B 不记）：不加迁移、不改授权；新 payout 队列 attempt-append 登记 platform/queue/catalog.ts 与 worker-plan.ts，队列冻结计数测试照 D10-415 ①（新鲜独立 Claude 单列 test(spec) 调计划合计，其余未改用例 red_exempt）。开关 payout.proven_success_writeoff.enabled 经 content 的 ContentReader.configValue 读，缺省按 08 BR-WDR-08 细则「默认 on」。
-refs: [BR-WDR-23, BR-WDR-08, BR-WDR-09, BR-WDR-17, BR-FUND-19, BR-WDR-07]
-refs_hash: { BR-WDR-23: 98981fee10c7, BR-WDR-08: 8c55a3ce6b57, BR-WDR-09: 68225c9af85f, BR-WDR-17: f6119a685e00, BR-FUND-19: e6205ee4fcc1, BR-WDR-07: 488ce83ba0e3 }
+refs: [BR-WDR-23, BR-WDR-08, BR-WDR-09]
+refs_hash:
+  BR-WDR-23: 98981fee10c7
+  BR-WDR-08: 8c55a3ce6b57
+  BR-WDR-09: 68225c9af85f
 deps: [CT-24za, B2-07c, B2-09b, B2-09c]
 paths:
   - 'apps/api/src/modules/ledger/application/admin-recon-diff-write-off.ts'
@@ -33,7 +35,6 @@ impl: claude
 tester: claude-independent
 accept:
   - 'pnpm verify'
-  - 'test/spec/ledger/admin-recon-write-off/**'
   - 'test/spec/payout/proven-success/**'
 status: todo
 pr: null
