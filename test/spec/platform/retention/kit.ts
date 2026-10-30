@@ -8,8 +8,8 @@
 // - 每次最多删 p_batch_size 行，按时间列从旧到新，覆盖所有 app_id，返回实际删除数；被写入方锁住的行跳过
 //   （SKIP LOCKED），留给后面的批次。
 // - 前五个：created_at 严格小于截断点才删。截断点 = p_now 的 +08:00 日历日 − p_days 个日历天，再取该日
-//   00:00（+08:00）；不看会话时区。deleted_identities：expire_at 严格小于 p_now 才删（⑩），不截到日界，
-//   不看 created_at、deleted_at。
+//   00:00（+08:00）；不看会话时区。notify_logs 不分 channel：inbox、push、sms 都是 190 天（⑥⑯）。
+//   deleted_identities：expire_at 严格小于 p_now 才删（⑩），不截到日界，不看 created_at、deleted_at。
 // - 入参：p_now、p_days、p_batch_size 为 NULL → 22004；p_now 非有限、p_batch_size 不在 1..10000、
 //   p_days 不在 [下限, 36500] → 22023。下限即 08 现值：login_logs、device_registrations、inbox_messages
 //   180，notify_logs、sms_send_attempts 190；36500 是防溢出的技术上限。下限写死在函数里，所以配置被改小
@@ -26,8 +26,8 @@
 //   - retention.purge.enabled：值为 false 时本批清理全部不跑（deleted_identities 也不跑），其他维护照常；
 //     缺行按 on。
 //   - retention.<login_logs|device_registrations|inbox_messages|notify_logs|sms_send_attempts>_days：
-//     缺行或值不合法（不是整数、低于配置下限 30）回落 08 现值；改长后按新值。
-//     30 ≤ 值 < 表下限时可以回落，也可以记一次失败，本测试只钉「不删过头」。
+//     缺行或值不合法（不是整数、低于该键的 08 现值）回落 08 现值并照常清理，不记失败，不让该表停摆
+//     （D10-458：配置下限就是 180 / 190）；改长后按新值。
 // - 每表独立分批：每批 1000 行、各自一条语句（不开显式事务，单连接池够用），直到返回 0 或做满 100 批；
 //   积压留到下一轮。一张表失败不影响其他表，维护继续。
 // - 报告形状不变，删除行不进 dropped、ensured 和 partition_maintenance_done 的计数。
@@ -79,6 +79,11 @@ export const CREATED_AT_TABLES: readonly CreatedAtTable[] = [
 ];
 
 export const PURGED_TABLES: readonly PurgedTable[] = [...CREATED_AT_TABLES, 'deleted_identities'];
+
+/** notify_logs.channel 的全部取值（notify_logs_channel_check）。 */
+export const NOTIFY_CHANNELS = ['inbox', 'push', 'sms'] as const;
+
+export type NotifyChannel = (typeof NOTIFY_CHANNELS)[number];
 
 export const HOUR_MS = 3_600_000;
 export const DAY_MS = 24 * HOUR_MS;
@@ -253,6 +258,32 @@ export async function seedRow(
     case 'deleted_identities':
       await seedIdentity(app, at, { appId });
   }
+}
+
+/** 一行已发出的 notify_logs，created_at 取 `at`；sms 行带供应商回执号（sms_biz_id 只许 sms）。 */
+export async function seedNotifyLog(
+  app: Kysely<DB>,
+  channel: NotifyChannel,
+  at: string,
+): Promise<void> {
+  await sql`
+    INSERT INTO app.notify_logs
+      (id, app_id, code, channel, dedupe_key, planned_at, sent_at, status, sms_biz_id, created_at)
+    VALUES (${randomUUID()}, 'couli', 'SPEC', ${channel}, ${randomUUID()},
+      ${at}::timestamptz, ${at}::timestamptz, 'success',
+      ${channel === 'sms' ? randomUUID() : null}, ${at}::timestamptz)
+  `.execute(app);
+}
+
+/** notify_logs 现存行的渠道与 created_at，按渠道、时间排序。 */
+export async function notifyRows(db: Kysely<DB>): Promise<{ channel: string; at: string }[]> {
+  const result = await sql<{ channel: string; at: string }>`
+    SELECT channel,
+      to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS at
+    FROM app.notify_logs
+    ORDER BY channel, created_at
+  `.execute(db);
+  return result.rows;
 }
 
 /** login_logs 里 `count` 行，最新一行取 `newest`，每行早一毫秒。 */

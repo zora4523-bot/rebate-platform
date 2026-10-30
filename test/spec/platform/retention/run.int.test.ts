@@ -31,6 +31,8 @@ import {
   expectLeft,
   holdLock,
   inWorld,
+  NOTIFY_CHANNELS,
+  notifyRows,
   NOW,
   PURGED_TABLES,
   requireFunctions,
@@ -38,6 +40,7 @@ import {
   retentionLines,
   seedAround,
   seedLoginLogs,
+  seedNotifyLog,
   seedRow,
   setConfig,
   shift,
@@ -119,23 +122,32 @@ it.each(['"200"', '200.5', 'true', 'null', '{"days":200}', '[200]', '0', '-1', '
 );
 
 it.each([1, 90, 150])(
-  '[AC-B1-15zb#10] 配置比 08 现值少 %i 天：删不过头，分界上与更新的行都保留',
+  '[AC-B1-15zb#10] 配置比 08 现值少 %i 天：视同不合法，回落 08 现值照常清理不记失败，到期行删掉，分界上与更新的行都保留',
   async (below) => {
     await withWorld(async (world) => {
       const { app, maint } = world;
       await requireFunctions(maint);
       for (const table of CREATED_AT_TABLES) {
         await setConfig(app, daysKey(table), String(RETAINED_DAYS[table] - below));
+        await seedRow(app, table, shift(boundary(table), -1));
         await seedRow(app, table, boundary(table));
         await seedRow(app, table, shift(boundary(table), DAY_MS));
       }
-      await startWorker(world).maintenance.runOnce();
+      const { maintenance, lines } = startWorker(world);
+      expect((await maintenance.runOnce()).failed).toBe(0);
       for (const table of CREATED_AT_TABLES) {
         expect(await times(app, table), table).toEqual([
           boundary(table),
           shift(boundary(table), DAY_MS),
         ]);
       }
+      const written = retentionLines(lines);
+      expect(written).toHaveLength(CREATED_AT_TABLES.length);
+      expect(written).toEqual(
+        expect.arrayContaining(
+          CREATED_AT_TABLES.map((table) => line('info', 'retention_purged', { table, rows: 1 })),
+        ),
+      );
     });
   },
   60_000,
@@ -325,5 +337,24 @@ it('[AC-B1-15zb#17] order_sync_drop_keys 与 blocklist 本批不清：同一轮�
     await expectLeft(app, boundaryRow);
     expect(await countRows(app, 'order_sync_drop_keys')).toBe(1n);
     expect(await countRows(app, 'blocklist')).toBe(1n);
+  });
+}, 60_000);
+
+it('[AC-B1-15zb#18] notify_logs 的 inbox、push、sms 三个渠道同按 190 天：到期行都删，分界上的行都留（⑥⑯）', async () => {
+  await withWorld(async (world) => {
+    const { app } = world;
+    const cutoff = boundary('notify_logs');
+    for (const channel of NOTIFY_CHANNELS) {
+      await seedNotifyLog(app, channel, shift(cutoff, -1));
+      await seedNotifyLog(app, channel, cutoff);
+    }
+    const { maintenance, lines } = startWorker(world);
+    expect((await maintenance.runOnce()).failed).toBe(0);
+    expect(await notifyRows(app)).toEqual(
+      NOTIFY_CHANNELS.map((channel) => ({ channel, at: cutoff })),
+    );
+    expect(retentionLines(lines)).toEqual([
+      line('info', 'retention_purged', { table: 'notify_logs', rows: NOTIFY_CHANNELS.length }),
+    ]);
   });
 }, 60_000);
