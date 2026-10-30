@@ -1,0 +1,22 @@
+id: B2-04zg
+repo: rebate-platform
+title: 月结补出账（D10-476）：每日补种与 worker 启动自愈回看「最近一个已到账单日、账单月 M 的月结账单尚未生成」的那一期并补投 bill（bill_id = M 幂等，只生成一次；快照前提按补跑当天判定）；快照未完成的 deferred 不当失败——延后重排、不消耗队列重试；补跑仍失败照现有 CouliSettleBillJobFailed 告警；更早期次不追溯
+type: impl
+# 2026-10-31 编排 D10-476（B2-04ze money r1 两条 S2）：排在 B2-04zf 之后、B2-16c 之前。**上线门槛：首个真实账单日（settle.bill_day，默认 11-24）之前须合并（记 HANDOFF）。** RV2，独立 Claude 写测试与 money 评审（Codex 至 11-02 不可用，approvals #36）。
+# 测试至少钉：账单日整日停机 → 次日补种补出 M 且只一次；账单日 bill 全失败 → 之后补出；deferred 不耗重试；M 已生成 → 补种不重复生成。判定依据库内实际状态（settle_bills / settle_jobs / 队列），不用进程内存；时间只读注入 Clock。
+refs: [BR-FUND-04]
+refs_hash:
+  BR-FUND-04: f4b8b2be46ea
+deps: [B2-04ze]
+paths:
+  - 'apps/api/src/modules/settlement/worker/**'
+  - 'apps/api/src/modules/settlement/settlement.module.ts'
+  - 'apps/api/src/modules/settlement/index.ts'
+test_paths:
+  - 'test/spec/settlement/worker-catchup/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/worker-catchup/**'
+status: todo
