@@ -129,7 +129,8 @@ export interface ParsingModuleOptions {
  * B1-07b adds the POST /v1/inputs/parse route and its ports; the parsing service itself
  * (createParsing) is built per request by the route, with catalog's card entry for the request's
  * viewer. The route needs app.module's global providers GovernedUnion, RebateQuoter,
- * SourceLinkReader (B1-05j) and ParsingLinkRegistrars (linking's per-request registration).
+ * SourceLinkReader (B1-05j) and ParsingLinkRegistrars (linking's per-request registration), and
+ * takes its global ViewerContext (identity's request identity, B1-07c) when the process has one.
  */
 @Module({})
 export class ParsingModule {

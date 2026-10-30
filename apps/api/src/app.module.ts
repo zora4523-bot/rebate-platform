@@ -45,6 +45,7 @@ import {
   PRODUCT_CACHE_NAMESPACE,
   LinkRegistrar,
   RebateQuoter,
+  ViewerContext,
   createCatalog,
   createCatalogCardEntry,
   createDbCatalogProductReader,
@@ -2217,6 +2218,8 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
  * Parsing's card-time link registration (POST /v1/inputs/parse, B1-07b): linking's per-request
  * registration in the request's entry scene (clipboard / search / share_ext), assembled here so
  * parsing never imports linking. Global beside catalogPorts, whose linking export it uses.
+ * ViewerContext (B1-07c) is identity's request identity, as for search and detail, so the route's
+ * cards are quoted and registered for the request's viewer.
  */
 @Module({})
 class ParsingPortsModule {}
@@ -2236,8 +2239,9 @@ function parsingPorts(): DynamicModule {
           },
         }),
       },
+      { provide: ViewerContext, ...identityViewer },
     ],
-    exports: [ParsingLinkRegistrars],
+    exports: [ParsingLinkRegistrars, ViewerContext],
   };
 }
 
