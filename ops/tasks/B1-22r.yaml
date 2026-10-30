@@ -19,5 +19,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/union/admin-reason/**'
   - 'test/spec/union/pdd-query-pid/**'
-status: todo
-pr: null
+status: done
+pr: 1827
