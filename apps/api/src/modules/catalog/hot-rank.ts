@@ -55,6 +55,8 @@ export interface HotRankUpstreamPage {
    * Only on a page that lost positions upstream; without it a position is the index in `items`.
    */
   readonly positions?: readonly number[];
+  /** Only on an old copy answered during a union failure (BR-PROD-07, infra/hot-rank-cache.ts). */
+  readonly stale?: true;
 }
 
 /** Union seam of the hot list: one whitelisted channel, never the product pool. */

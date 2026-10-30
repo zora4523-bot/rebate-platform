@@ -90,6 +90,7 @@ const SEARCH_SESSIONS = Symbol('CATALOG_SEARCH_SESSIONS');
 const SEARCH_CURSORS = Symbol('CATALOG_SEARCH_CURSORS');
 const PRICE_HISTORY = Symbol('CATALOG_PRICE_HISTORY');
 const SECTION_PAGES = Symbol('CATALOG_SECTION_PAGES');
+const FEED_LINK_REGISTRAR = Symbol('CATALOG_FEED_LINK_REGISTRAR');
 
 type PidReader = Pick<UnionPidService, 'getActivePid'>;
 
@@ -132,6 +133,7 @@ const UNAVAILABLE_CONFIG: CatalogConfigReader = { configValue: unavailable };
 const UNAVAILABLE_PIDS: PidReader = { getActivePid: unavailable };
 const UNAVAILABLE_PRICE_TREND: PriceTrendStore = { keyStability: unavailable, rows: unavailable };
 const UNAVAILABLE_SECTION_PAGES: SectionItemsPages = { section: unavailable };
+const UNAVAILABLE_FEED_REGISTRAR: LinkRegistrar = { register: unavailable };
 
 /** Built on first read, not at startup: entries whose DB handle is a stand-in still start. */
 function lazyPriceTrendStore(db: Kysely<Database>): PriceTrendStore {
@@ -165,6 +167,8 @@ export interface CatalogPorts {
   readonly viewerContext?: CatalogPortProvider<ViewerContext>;
   /** B1-05o: content's published sections, assembled by app.module; absent, reads fail closed. */
   readonly sectionPages?: CatalogPortProvider<SectionItemsPages>;
+  /** B1-05o: linking's registration in the feed scene (BR-ATTR-08); absent, it fails closed. */
+  readonly feedLinkRegistrar?: CatalogPortProvider<LinkRegistrar>;
 }
 
 const GUEST_VIEWER: FactoryProvider<ViewerContext> = {
@@ -270,7 +274,8 @@ function freshDetailUpstream(upstream: ProductDetailUpstream): ProductDetailUpst
  * reader; anonymous, no device id).
  * B1-05o: GET /v1/pages/{page_key}/sections/{section_id}/items (SectionItemsController →
  * CatalogSectionItemsService → getSectionItems), request scoped on the same card ports and the hot
- * list's cached union side; the published section comes through the `sectionPages` port.
+ * list's cached union side; the published section comes through the `sectionPages` port and the
+ * cards register their links in the feed scene through the `feedLinkRegistrar` port.
  */
 @Module({})
 export class CatalogModule {
@@ -410,6 +415,12 @@ export class CatalogModule {
           provide: SECTION_PAGES,
           ...(ports?.sectionPages ?? {
             useFactory: (): SectionItemsPages => UNAVAILABLE_SECTION_PAGES,
+          }),
+        },
+        {
+          provide: FEED_LINK_REGISTRAR,
+          ...(ports?.feedLinkRegistrar ?? {
+            useFactory: (): LinkRegistrar => UNAVAILABLE_FEED_REGISTRAR,
           }),
         },
         {
@@ -607,7 +618,7 @@ export class CatalogModule {
             CatalogConfigReader,
             CLOCK,
             ROOT_LOGGER,
-            LinkRegistrar,
+            FEED_LINK_REGISTRAR,
             RebateQuoter,
             SourceLinkReader,
             GovernedUnion,

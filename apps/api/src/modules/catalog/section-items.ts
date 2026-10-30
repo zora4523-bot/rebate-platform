@@ -181,7 +181,8 @@ function errorFields(error: unknown): Record<string, string> {
  * the whitelist as it is now: one refused channel means no fetch at all, an alert and the empty
  * answer. A union-side failure drops only that channel's page and keeps its page number; a
  * programming error propagates. The cursor records upstream pages, so cards cut at 20 are never
- * shown (BR-PRICE-08). Merging reads no price, rebate or commission and ad_label stays null.
+ * shown (BR-PRICE-08). Merging reads no price, rebate or commission. Every card carries an explicit
+ * ad_label: null, the field BR-TEXT-17 keeps; a page answered from an old copy is marked stale.
  */
 export async function getSectionItems(
   query: SectionItemsQuery,
@@ -254,7 +255,7 @@ export async function getSectionItems(
       return false;
     }
     const pages = await Promise.all(active.map(fetchPage));
-    const lists: (readonly HotRankCandidate[])[] = [];
+    const lists: (readonly { candidate: HotRankCandidate; stale: boolean }[])[] = [];
     for (const [index, page] of pages.entries()) {
       const channel = active[index]!;
       if (page === null) {
@@ -264,15 +265,17 @@ export async function getSectionItems(
       answered = true;
       channel.more = page.hasMore && channel.next < HOT_RANK_MAX_PAGE_NO;
       channel.next = channel.more ? channel.next + 1 : 0;
-      lists.push(page.items);
+      const stale = page.stale === true;
+      lists.push(page.items.map((candidate) => ({ candidate, stale })));
     }
-    for (const { item, ref } of interleave(lists)) {
+    for (const { candidate, stale } of interleave(lists)) {
       if (delivered.length >= SECTION_PAGE_SIZE) break;
+      const { item, ref } = candidate;
       const result = await cards.assemble({
         item,
         ref,
         entrySource: FEED_ENTRY_SOURCE,
-        stale: false,
+        stale,
         scene: 'retrieval',
         deferLink: true,
       });
@@ -295,7 +298,7 @@ export async function getSectionItems(
   }
 
   const items: PageSectionItemsData['items'] = [];
-  for (const card of delivered) items.push(await card.commit());
+  for (const card of delivered) items.push({ ...(await card.commit()), ad_label: null });
   const hasMore =
     channels.some((channel) => channel.more) ||
     (answered && channels.some((channel) => channel.failed));

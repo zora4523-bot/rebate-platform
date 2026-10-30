@@ -3117,6 +3117,17 @@ const identityViewer = {
   useFactory: (request: IdentityRequest): IdentityContext => createIdentityViewerContext(request),
 };
 /**
+ * B1-05o: linking's card registration in the feed scene for the home material feed, so its links
+ * are recorded as scene=feed (BR-ATTR-08), not as the global LinkRegistrar's search scene.
+ */
+const feedLinkRegistrar = {
+  inject: [LINK_REGISTRATIONS],
+  useFactory: (registrations: LinkRegistrations): LinkRegistrar => {
+    const registration = registrations.forContext({ scene: 'feed' });
+    return { register: (input: RegisterLinkInput) => registration.register(input) };
+  },
+};
+/**
  * B1-05o: catalog's published sections over content's PageReader. The version and the
  * min_app_version gate read the same headers as getPage, so a guest keeps the gray bucket of its
  * X-Device-Id on this unsigned route, where identity's viewer knows no device (contract
@@ -4073,6 +4084,7 @@ export class AppModule {
               CatalogModule.forRoot((db, clock) => createContentReader({ db, clock }), {
                 viewerContext: identityViewer,
                 sectionPages,
+                feedLinkRegistrar,
               }),
               linking,
               parsingPorts(),
