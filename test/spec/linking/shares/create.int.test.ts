@@ -84,6 +84,70 @@ it.each(['jd', 'pdd'] as const)(
   120_000,
 );
 
+it.each(['jd', 'pdd'] as const)(
+  '[AC-B1-15w#2] %s：请求体只有 platform 与 product_key（收藏页打开，无 item_ref、无 source_link_id）也照样以分享者身份新登记 share link 并转链，share_materials 恰好一行，copy 按商品返回的字段渲染',
+  async (platform) => {
+    const t = await h.tenant();
+    const sharer = await t.user();
+    const card = cardWith(await sharer.search(platform), true);
+    const before = await h.persisted(t.appId);
+    h.clearObservations();
+
+    const body = { platform: card.platform, product_key: String(card.product_key) };
+    const data = await expectShared(await sharer.share(body));
+    const after = await h.persisted(t.appId);
+
+    const links = added(before.links, after.links);
+    expect(links.map((row) => row.link_id)).toEqual([data.link_id]);
+    expect(links[0]).toMatchObject({
+      app_id: t.appId,
+      user_id: sharer.uid,
+      platform,
+      product_key: card.product_key,
+      scene: 'share',
+      pid_scene: 'share',
+    });
+    expect(links[0]!.identity_snapshot).toMatchObject({ user_id: sharer.uid });
+    expect(data.link_id).not.toBe(card.link_id);
+    expect(after.links.filter((row) => row.link_id !== data.link_id)).toEqual(before.links);
+
+    expect(added(before.materials, after.materials)).toEqual([
+      expect.objectContaining({
+        app_id: t.appId,
+        link_id: data.link_id,
+        share_url: data.share_url,
+        tpwd: null,
+      }),
+    ]);
+    expect(after.materials.filter((row) => row.link_id !== data.link_id)).toEqual(before.materials);
+    expect(data).toMatchObject({ tpwd: null, poster_url: null });
+
+    const converts = h.converts();
+    expect(converts).toHaveLength(1);
+    expect(converts[0]!.identity).toMatchObject({
+      claims: {
+        appId: t.appId,
+        platform,
+        userId: sharer.attrCode,
+        promotionSlot: t.pid(platform, 'share'),
+      },
+    });
+    expect(webUrlsOf(converts[0]!.result)).toContain(data.share_url);
+
+    expectShareCopy(data.copy, {
+      platform,
+      title: card.title,
+      priceFen: fen(card.price_fen),
+      couponFen: fen(card.coupon_fen),
+      finalPriceFen: fen(card.final_price_fen),
+      quotedAt: new Date(data.quoted_at),
+      shareUrl: data.share_url,
+      tpwd: null,
+    });
+  },
+  120_000,
+);
+
 it('[AC-B1-15w#4] images 只取联盟商品详情返回的图片地址、原样下发、最多 9 张；links、share_materials 都不存图片地址', async () => {
   const t = await h.tenant();
   const sharer = await t.user();

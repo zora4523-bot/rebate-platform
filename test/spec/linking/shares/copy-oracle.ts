@@ -1,7 +1,10 @@
 // B1-15w: the share copy oracle (BR-TEXT-20 细则「分享页文案」, BR-PRICE-04 / 05 / 17, BR-TEXT-10 / 11,
 // BR-PRICE-06), shared by the pure rule test of renderShareCopy and the HTTP cases. Written from
 // the rules, not from an implementation:
-// - parts in the order of ShareCopyParts: title; price_line「券后 ¥x · MM-DD 取价」with a coupon
+// - parts in the order of ShareCopyParts: title, cleaned as BR-TEXT-20 renders #标题# (a leading
+//   ^[【[]?(淘宝|天猫|京东|拼多多|美团|阿里|支付宝)[】\]]? removed, then every「官方」deleted; absent
+//   when nothing is left; e.g.「【天猫】伊利官方旗舰店纯牛奶」→「伊利旗舰店纯牛奶」), and the copy's
+//   first line never starts with a platform name; price_line「券后 ¥x · MM-DD 取价」with a coupon
 //   (coupon_fen > 0),「售价 ¥x · MM-DD 取价」without; pre_coupon_line「券前价 ¥x」(Pinduoduo
 //  「拼单券前价 ¥x」) and coupon_line「券面额 ¥y」only with a coupon; tpwd_line「复制 #口令# 打开淘宝」
 //   Taobao only; link_line「下单链接 #链接#」JD and Pinduoduo only (the default template has one
@@ -14,6 +17,8 @@
 //   price_basis.general without, contracts/texts.default.json);
 // - MM-DD is the Asia/Shanghai date of quoted_at (BR-TEXT-11); amounts are BR-TEXT-10 app yuan;
 // - no amount other than the returned prices and no earnings wording anywhere in the copy.
+// shareCopyViolations lists every broken rule (a property returns it empty as its boolean);
+// expectShareCopy asserts that list is empty.
 import { readFileSync } from 'node:fs';
 import { expect } from 'vitest';
 import type { components } from '../../../../packages/contracts-ts/src/index.ts';
@@ -80,15 +85,45 @@ export function partOf(copy: ShareCopy, part: Part): string | null {
   return value === undefined ? null : value;
 }
 
-export function expectShareCopy(copy: ShareCopy, facts: CopyFacts): void {
+/** BR-TEXT-20: a title or first line starting with a platform name. */
+const PLATFORM_LEAD = /^[【[]?(?:淘宝|天猫|京东|拼多多|美团|阿里|支付宝)/u;
+/** BR-TEXT-20: the prefix removed from the product title before rendering. */
+const PLATFORM_PREFIX = /^[【[]?(?:淘宝|天猫|京东|拼多多|美团|阿里|支付宝)[】\]]?/u;
+
+/** #标题# as BR-TEXT-20 renders it: prefix removed, then「官方」deleted; null when nothing is left. */
+export function cleanTitle(title: string | null): string | null {
+  if (title === null) return null;
+  const cleaned = title.replace(PLATFORM_PREFIX, '').replaceAll('官方', '');
+  return cleaned === '' ? null : cleaned;
+}
+
+/** Every rule of the copy the facts break; empty when the copy is right. */
+export function shareCopyViolations(copy: ShareCopy, facts: CopyFacts): string[] {
+  const violations: string[] = [];
+  const show = (value: unknown) => JSON.stringify(value);
+  const same = (what: string, actual: unknown, expected: unknown) => {
+    if (actual !== expected) {
+      violations.push(`${what}: ${show(actual)}, expected ${show(expected)}`);
+    }
+  };
   const pdd = facts.platform === 'pdd';
   const couponFen = facts.couponFen !== null && facts.couponFen > 0n ? facts.couponFen : null;
   const known: readonly string[] = PART_ORDER;
-  expect(Object.keys(copy.parts).filter((key) => !known.includes(key))).toEqual([]);
+  const unknown = Object.keys(copy.parts).filter((key) => !known.includes(key));
+  if (unknown.length > 0) violations.push(`parts not in ShareCopyParts: ${show(unknown)}`);
 
-  expect(partOf(copy, 'title')).toBe(facts.title === '' ? null : facts.title);
+  const title = cleanTitle(facts.title);
+  if (title !== null && (PLATFORM_LEAD.test(title) || title.includes('官方'))) {
+    // Still a platform name or「官方」after cleaning: only the title part's own rule is fixed.
+    const rendered = partOf(copy, 'title');
+    if (rendered !== null && (PLATFORM_LEAD.test(rendered) || rendered.includes('官方'))) {
+      violations.push(`title still starts with a platform name or has 官方: ${show(rendered)}`);
+    }
+  } else {
+    same('title', partOf(copy, 'title'), title);
+  }
   if (facts.finalPriceFen === null) {
-    expect(partOf(copy, 'price_line')).toBeNull();
+    same('price_line', partOf(copy, 'price_line'), null);
   } else {
     const tail = `${yuan(facts.finalPriceFen)} · ${monthDay(facts.quotedAt)} 取价`;
     const labels =
@@ -99,35 +134,67 @@ export function expectShareCopy(copy: ShareCopy, facts: CopyFacts): void {
         : pdd
           ? ['售价', '拼单售价', '拼单价']
           : ['售价'];
-    expect(labels.map((label) => `${label} ${tail}`)).toContain(partOf(copy, 'price_line'));
+    const expected = labels.map((label) => `${label} ${tail}`);
+    const actual = partOf(copy, 'price_line');
+    if (actual === null || !expected.includes(actual)) {
+      violations.push(`price_line: ${show(actual)}, expected one of ${show(expected)}`);
+    }
   }
-  expect(partOf(copy, 'pre_coupon_line')).toBe(
+  same(
+    'pre_coupon_line',
+    partOf(copy, 'pre_coupon_line'),
     couponFen === null || facts.priceFen === null
       ? null
       : `${pdd ? '拼单券前价' : '券前价'} ${yuan(facts.priceFen)}`,
   );
-  expect(partOf(copy, 'coupon_line')).toBe(couponFen === null ? null : `券面额 ${yuan(couponFen)}`);
-  expect(partOf(copy, 'tpwd_line')).toBe(
+  same(
+    'coupon_line',
+    partOf(copy, 'coupon_line'),
+    couponFen === null ? null : `券面额 ${yuan(couponFen)}`,
+  );
+  same(
+    'tpwd_line',
+    partOf(copy, 'tpwd_line'),
     facts.platform === 'taobao' && facts.tpwd !== null ? `复制 ${facts.tpwd} 打开淘宝` : null,
   );
-  expect(partOf(copy, 'link_line')).toBe(
+  same(
+    'link_line',
+    partOf(copy, 'link_line'),
     facts.platform === 'taobao' ? null : `下单链接 ${facts.shareUrl}`,
   );
 
   const returned = PART_ORDER.filter((part) => partOf(copy, part) !== null);
-  expect(new Set(copy.include_default).size).toBe(copy.include_default.length);
-  expect([...copy.include_default].sort()).toEqual([...returned].sort());
-  expect(copy.default_text).toBe(
+  same(
+    'include_default without repeats',
+    new Set(copy.include_default).size,
+    copy.include_default.length,
+  );
+  same('include_default', show([...copy.include_default].sort()), show([...returned].sort()));
+  same(
+    'default_text',
+    copy.default_text,
     [
       ...returned.map((part) => partOf(copy, part)),
       couponFen === null ? PRICE_BASIS_GENERAL : PRICE_BASIS,
     ].join('\n'),
   );
+  if (PLATFORM_LEAD.test(copy.default_text)) {
+    violations.push(`default_text starts with a platform name: ${show(copy.default_text)}`);
+  }
 
   const prices = [facts.finalPriceFen, couponFen === null ? null : facts.priceFen, couponFen];
   const allowed = prices.filter((fen): fen is bigint => fen !== null).map(yuan);
   for (const amount of copy.default_text.match(/¥[0-9]+(?:\.[0-9]+)?/g) ?? []) {
-    expect(allowed).toContain(amount);
+    if (!allowed.includes(amount)) violations.push(`amount ${amount} not among ${show(allowed)}`);
   }
-  for (const word of EARNINGS_WORDS) expect(copy.default_text).not.toContain(word);
+  for (const word of EARNINGS_WORDS) {
+    if (copy.default_text.includes(word)) {
+      violations.push(`earnings wording「${word}」in default_text`);
+    }
+  }
+  return violations;
+}
+
+export function expectShareCopy(copy: ShareCopy, facts: CopyFacts): void {
+  expect(shareCopyViolations(copy, facts)).toEqual([]);
 }
