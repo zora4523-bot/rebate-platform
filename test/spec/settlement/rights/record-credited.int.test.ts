@@ -4,6 +4,9 @@
 // 150); UNION_RECEIVABLE 1000. Deduction 400 → N_new 600 → B 510 → 255 / 51 / 25, platform 269:
 // clawback 170 / 34 / 17, platform 179. A second deduction 100 on top → N_new 500 → B 425 →
 // 212 / 42 / 21, platform 225: clawback 43 / 9 / 4, platform 44.
+// Boundary order (#40 / #41), reserve 0: N 1000 → B 1000 → 500 / 100 / 50, platform 350.
+// Deduction 1000 → N_new 0 → R8, clawback 500 / 100 / 50, platform 350. Deduction 999 → N_new 1 →
+// B 1 → shares 0 / 0 / 0, platform 1: R9, clawback 500 / 100 / 50, platform 349.
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
@@ -202,7 +205,7 @@ it(
 );
 
 it(
-  '[AC-B2-04l#5] 入账后维权成功而既无联盟新佣金也无应扣佣金（BR-FUND-08 ③）：不写扣回，记录置 WAIT_COMMISSION，rights_pending=true，订单进待处理表（CLAWBACK_NO_COMMISSION），booked 与余额不变',
+  '[AC-B2-04l#5] 入账后维权成功而既无联盟新佣金也无应扣佣金（BR-FUND-08 ③）：不写扣回，记录置 WAIT_COMMISSION，rights_pending=true，订单进待处理表（CLAWBACK_NO_COMMISSION）并告警（warn 日志带 alert 与 app_id），booked 与余额不变',
   async () => {
     const h = await harness(p.db);
     const o = await h.credited();
@@ -222,6 +225,12 @@ it(
     expect(await h.pendingRows(o)).toEqual([
       expect.objectContaining({ reason: 'CLAWBACK_NO_COMMISSION', status: 'open' }),
     ]);
+    expect(
+      [...h.logs, ...h.rightsLogs].some(
+        (line) =>
+          line['level'] === 40 && typeof line['alert'] === 'string' && line['app_id'] === h.appId,
+      ),
+    ).toBe(true);
     expect(await h.rebateHistoryAfterCredit(o)).toEqual([]);
     expect(await h.balance(o.user('self'))).toBe(425n);
   },
@@ -425,6 +434,143 @@ it(
       ),
     ).rejects.toThrow('caller rolls back');
     expect(await h.everything()).toEqual(before);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04l#39] 入账后 WAIT_COMMISSION 之后联盟回传新佣金 600（扣回编排的维权成功入口，① 新佣金，ref 该维权记录）：按 R9 部分扣回 170 / 34 / 17、平台 179，键带 R{id}；同事务把该记录关闭为 SUCCEEDED（id 不变）、rights_pending 回到 false；之后平台用同一维权单号再给应扣佣金 400 → duplicate，凭证只有一套、什么都不变',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.credited();
+    expect(await h.record(o, { deductionFen: null })).toEqual({ kind: 'applied' });
+    const waiting = await h.onlyRights(o);
+    expect(waiting).toMatchObject({ status: 'WAIT_COMMISSION' });
+    const id = `R${waiting.id}`;
+
+    expect(
+      await h.apply(o, {
+        cause: 'RIGHTS',
+        ref: { kind: 'rights', orderRightsId: waiting.id },
+        newCommissionFen: 600n,
+      }),
+    ).toMatchObject({
+      outcome: 'clawed_back',
+      transition: 'R9',
+      rightsEventId: id,
+      bookedBaseFen: 510n,
+      bookedNFen: 600n,
+    });
+    expect(await h.onlyRights(o)).toMatchObject({
+      id: waiting.id,
+      status: 'SUCCEEDED',
+      row_version: waiting.row_version + 1,
+      updated_at: h.clock.now(),
+    });
+    await expectPartial400(h, o, id);
+    expect(await h.rebateHistoryAfterCredit(o)).toEqual([
+      expect.objectContaining({
+        from_status: 'CREDITED',
+        to_status: 'CREDITED',
+        event: 'RIGHTS_PARTIAL',
+      }),
+    ]);
+    const closed = await h.everything();
+
+    expect(await h.record(o, { deductionFen: 400n })).toEqual({ kind: 'duplicate' });
+    expect(await h.everything()).toEqual(closed);
+    expect(await h.clawbackKeys(o)).toEqual(keysOf(o, id));
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04l#40] 全额 / 部分分界（入账后，预留 0，booked_n 1000）：应扣佣金恰为 1000 → N_new 0 → 全额，按 R8 RIGHTS_FULL 扣回 500 / 100 / 50、平台 350，CLAWED_BACK（原因码 RIGHTS），booked 0 / 0，发 order.clawed_back',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.credited({ reserveBp: 0 });
+    expect(await h.balance(o.user('self'))).toBe(500n);
+    const published = h.publish.mock.calls.length;
+
+    expect(await h.record(o, { deductionFen: 1000n })).toEqual({ kind: 'applied' });
+    const id = `R${(await h.onlyRights(o)).id}`;
+    expect(await h.clawbackKeys(o)).toEqual(keysOf(o, id));
+    expect(await h.voucherLines(clawbackKey(o, 'self', id))).toEqual(
+      userClawbackLines(o, 'self', 500n),
+    );
+    expect(await h.voucherLines(clawbackKey(o, 'direct', id))).toEqual(
+      userClawbackLines(o, 'direct', 100n),
+    );
+    expect(await h.voucherLines(clawbackKey(o, 'indirect', id))).toEqual(
+      userClawbackLines(o, 'indirect', 50n),
+    );
+    expect(await h.voucherLines(platformClawbackKey(o, id))).toEqual(
+      platformDecreaseLines(o, 350n),
+    );
+    expect(await h.orderSubjectNet(o, receivable(o))).toBe(0n);
+    expect(await h.rebateColumns(o)).toMatchObject({
+      rebate_status: 'CLAWED_BACK',
+      booked_base_fen: 0n,
+      booked_n_fen: 0n,
+      reason: 'RIGHTS',
+      rights_pending: false,
+    });
+    expect(await h.rebateHistoryAfterCredit(o)).toEqual([
+      expect.objectContaining({
+        from_status: 'CREDITED',
+        to_status: 'CLAWED_BACK',
+        event: 'RIGHTS_FULL',
+      }),
+    ]);
+    expect(h.publishedSince(published)).toEqual(['order.clawed_back']);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04l#41] 全额 / 部分分界的另一侧（入账后，预留 0，booked_n 1000）：应扣佣金 999 → N_new 1、B_new 1 > 0 → 部分，按 R9 RIGHTS_PARTIAL 扣回 500 / 100 / 50、平台 349，保持 CREDITED，booked 1 / 1，差额原因 PART_REFUND，不发 order.clawed_back',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.credited({ reserveBp: 0 });
+    const published = h.publish.mock.calls.length;
+
+    expect(await h.record(o, { deductionFen: 999n })).toEqual({ kind: 'applied' });
+    const id = `R${(await h.onlyRights(o)).id}`;
+    expect(await h.clawbackKeys(o)).toEqual(keysOf(o, id));
+    expect(await h.voucherLines(clawbackKey(o, 'self', id))).toEqual(
+      userClawbackLines(o, 'self', 500n),
+    );
+    expect(await h.voucherLines(clawbackKey(o, 'direct', id))).toEqual(
+      userClawbackLines(o, 'direct', 100n),
+    );
+    expect(await h.voucherLines(clawbackKey(o, 'indirect', id))).toEqual(
+      userClawbackLines(o, 'indirect', 50n),
+    );
+    expect(await h.voucherLines(platformClawbackKey(o, id))).toEqual(
+      platformDecreaseLines(o, 349n),
+    );
+    for (const key of keysOf(o, id)) {
+      expect(await h.voucherTypes(key)).toEqual(['CLAWBACK|RIGHTS']);
+    }
+    expect(await h.orderSubjectNet(o, receivable(o))).toBe(1n);
+    expect(await h.rebateColumns(o)).toEqual({
+      rebate_status: 'CREDITED',
+      booked_base_fen: 1n,
+      booked_n_fen: 1n,
+      reason: null,
+      diff_reason_code: 'PART_REFUND',
+      rights_pending: false,
+      hold: false,
+    });
+    expect(await h.rebateHistoryAfterCredit(o)).toEqual([
+      expect.objectContaining({
+        from_status: 'CREDITED',
+        to_status: 'CREDITED',
+        event: 'RIGHTS_PARTIAL',
+      }),
+    ]);
+    expect(h.publishedSince(published)).not.toContain('order.clawed_back');
+    expect(await h.balance(o.user('self'))).toBe(0n);
   },
   TIMEOUT,
 );
