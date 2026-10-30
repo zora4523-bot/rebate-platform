@@ -255,6 +255,9 @@ export function mapPddGoods(
   if (typeof title !== 'string') throw invalid('goods_name must be a string');
   const commission = commissionBp(field(row, 'promotion_rate'));
   const description = source === 'detail' ? field(row, 'goods_desc') : undefined;
+  // B1-22s：UnionItemDetail 的 main_image_url / image_urls 在实测前不映射（不读 goods_image_url、
+  // goods_gallery_urls 等上游字段，也不伪造），字段缺省；接入时经 domain/item-images.ts 的 normalizeItemImages。
+  // TODO(规划/09 CAP-TB-02、CAP-JD-02、CAP-PDD-02): 商品素材图字段 — blocked on 联盟接口实测记录
   const base = {
     ...ref,
     title,

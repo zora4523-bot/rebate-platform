@@ -139,6 +139,16 @@ export interface UnionItem extends ItemRef {
 
 export interface UnionItemDetail extends UnionItem {
   readonly description?: string;
+  /**
+   * B1-22s (BR-ATTR-10 素材图): main image, an https address as the union returned it; absent
+   * when the upstream gave none or it failed normalizeItemImages (domain/item-images.ts).
+   */
+  readonly main_image_url?: string;
+  /**
+   * B1-22s: the upstream multi-image list after normalizeItemImages — https only, deduplicated,
+   * upstream order, 1–9 entries; the main image is neither added nor removed. Absent when empty.
+   */
+  readonly image_urls?: readonly string[];
 }
 
 /** Domain data, never an invented upstream response format. Percent is e.g. "12.34". */

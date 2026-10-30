@@ -91,6 +91,12 @@ export type {
   TaobaoPriceWarning,
   TaobaoPromotion,
 } from './domain/taobao-price.ts';
+export {
+  MAX_ITEM_IMAGES,
+  MAX_ITEM_IMAGE_URL_LENGTH,
+  normalizeItemImages,
+} from './domain/item-images.ts';
+export type { ItemImages, RawItemImages } from './domain/item-images.ts';
 // B1-22q: price.taobao.* read through a union-defined config port (app.module passes ContentReader).
 export { createTaobaoPriceSettings } from './application/taobao-price-settings.ts';
 export type {
