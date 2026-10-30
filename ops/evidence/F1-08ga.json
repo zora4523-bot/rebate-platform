@@ -1,0 +1,126 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-fund-ledger/access.test.ts > [AC-F1-08ga-ACCESS#1] 只持 fund.view：菜单不出现（菜单仍只认 fund.cash_entry），直达 /fund-ledger 照常读取并列出按日台账；同持 fund.cash_entry 时菜单出现、同样列出",
+    "test/spec/frontend/admin-fund-ledger/access.test.ts > [AC-F1-08ga-ACCESS#2] 只持 fund.cash_entry（菜单可见、没有 fund.view）：进页不请求资产快照，显示无权限提示",
+    "test/spec/frontend/admin-fund-ledger/access.test.ts > [AC-F1-08ga-ACCESS#3] 列表返回 10403（本地快照有 fund.view、服务端不认）：显示无权限提示，不显示任何快照行",
+    "test/spec/frontend/admin-fund-ledger/dictionary.test.ts > [AC-F1-08ga-DICT#1] 后台字典清空时各平台未回款仍与平台绑定（平台名或编码），没有名字的平台显示原编码（xianyu 43.21），不显示 undefined、空白或键路径",
+    "test/spec/frontend/admin-fund-ledger/filter.test.ts > [AC-F1-08ga-FILTER#1] 日期区间筛选：【查询】带 date_from / date_to（含两端），从第 1 页起，只列区间内写了快照的日子（缺日仍无行）",
+    "test/spec/frontend/admin-fund-ledger/filter.test.ts > [AC-F1-08ga-FILTER#2] 【重置】清空日期区间：表格以不带 date_from / date_to 的请求重新读取，之后的请求不再带已清空的日期，四个快照日重新列出",
+    "test/spec/frontend/admin-fund-ledger/filter.test.ts > [AC-F1-08ga-FILTER#3] 起始日期晚于截止日期：日期字段旁出现提示（前端拦下不发请求，或发出后收 20001 [date_from, date_to] 再提示），或控件自动调换后按调换后的区间请求；不得原样发出颠倒的区间而无任何提示",
+    "test/spec/frontend/admin-fund-ledger/list.test.ts > [AC-F1-08ga-LIST#1] 进入后读第 1 页（只带契约参数、page_size ≤ 200、不带日期筛选），按返回顺序（快照日降序）列出四个快照日",
+    "test/spec/frontend/admin-fund-ledger/list.test.ts > [AC-F1-08ga-LIST#2] 每行在各自的列下显示快照日期、可用余额合计、负余额合计、冻结合计、已收货待结算合计、预估合计（元，两位小数，按分手算，照快照原样不重算）",
+    "test/spec/frontend/admin-fund-ledger/list.test.ts > [AC-F1-08ga-LIST#3] 各平台已入账未回款与其平台绑定（按分手算、负值保留负号、对调必红）；若显示未回款合计，等于各平台值之和",
+    "test/spec/frontend/admin-fund-ledger/list.test.ts > [AC-F1-08ga-LIST#4] waiting_comparable=false 的快照日（2026-10-28）行内有「不可比」类提示；可比的行没有",
+    "test/spec/frontend/admin-fund-ledger/list.test.ts > [AC-F1-08ga-LIST#5] 没写快照的日子（2026-10-27）没有行，不补零：表格只有四行，没有全为 0.00 的补行",
+    "test/spec/frontend/admin-fund-ledger/list.test.ts > [AC-F1-08ga-LIST#6] 页码分页：切到第 2 页请求 page=2（同一 page_size），显示该页的快照日、不再显示第 1 页的",
+    "test/spec/frontend/admin-fund-ledger/list.test.ts > [AC-F1-08ga-LIST#7] 只显示契约字段：表头没有企业支付宝余额、W、预计提现、P、水位 / 状态、当日联盟回款等画板列；每行出现的金额都能在该日快照的契约字段里找到，主区不出现夹具之外的金额",
+    "test/spec/frontend/admin-fund-ledger/pages.browser.test.ts > [AC-F1-08ga-BROWSER#1] /fund-ledger：按日台账列出快照日，2026-10-29 行显示可用余额合计 12,500.34、淘宝未回款 8,640.12 与拼多多 -23.00，2026-10-26 行显示 11,004.50；只发 GET /admin/v1/asset-snapshots",
+    "test/spec/frontend/admin-fund-ledger/readonly.test.ts > [AC-F1-08ga-READONLY#1] 持 fund.view 与 fund.cash_entry：页面没有可用的【录入企业支付宝余额】【录入联盟回款】【导出】等写入口；点了、筛选、翻页也只发 GET /admin/v1/asset-snapshots，不弹动态码",
+    "test/spec/frontend/admin-fund-ledger/readonly.test.ts > [AC-F1-08ga-READONLY#2] 超管：同样没有可用的录入 / 导出入口；点了也只发 GET /admin/v1/asset-snapshots，不弹动态码",
+    "test/spec/frontend/admin-fund-ledger/states.test.ts > [AC-F1-08ga-STATE#1] 加载中：表格请求未返回时显示加载状态、没有快照行，返回后列出",
+    "test/spec/frontend/admin-fund-ledger/states.test.ts > [AC-F1-08ga-STATE#2] 出错可重试：表格请求失败显示出错与【重试】、没有快照行，重试成功后列出",
+    "test/spec/frontend/admin-fund-ledger/states.test.ts > [AC-F1-08ga-STATE#3] 再查失败不显示旧数据：换日期区间【查询】的表格请求失败时显示出错、不再显示之前的快照行，重试后按该区间列出",
+    "test/spec/frontend/admin-fund-ledger/states.test.ts > [AC-F1-08ga-STATE#4] 空列表：显示空状态，没有快照行，也没有补出来的日期行"
+  ],
+  "risk_note": "Admin 平台资金台账 page, read-only part: the daily ledger = asset snapshot list (apps/admin pages/fund-ledger/**, texts/fund-ledger.ts, App.tsx). Contract CT-24zb listAdminAssetSnapshots; backend B2-09e merged. Date range filter, paging, receivables per platform and the totals shown exactly as the snapshot wrote them (no client summing, sign kept), days without a snapshot not zero-filled, waiting_comparable notice, three states; only the one GET is sent; no entry/export/dashboard entry and no column outside the contract (W, P, water level, status). fund.view reads by direct address (menu unchanged). Prerequisite test-change F1-08gaa (#1889) merged. No frozen test changed here. Rule tests written by an independent Claude in two rounds (Codex unavailable until 2026-11-02; ledger tester claude-independent, approvals id 36); Claude spec-test review r1 fail (1 S1: columns outside the contract not caught) then r2 pass; red on the test machine (red/2). Implementation by Opus 5.5; test machine verify-fast/2 and browser/1 green. Adversarial money review by a fresh independent Claude r1 pass with one S2. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, one S2 (suning platform label missing); independent Claude because Codex is unavailable until 2026-11-02"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (1 S1: columns outside the contract not caught), round 2 pass with two S2; tests written by an independent Claude (claude-run.sh)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "F1-08ga",
+  "spec_ref": "812734156b57ba648ee1df733dafac3dba9bdb15",
+  "spec_commit": "c5226b73cf6f35354c27af8f9e47b426b2b99e02",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c5226b73cf6f35354c27af8f9e47b426b2b99e02",
+      "tree": "a6298d42d821dcbfacaf2c52839424a7727dcf2c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T15:36:52Z",
+      "finished_at": "2026-10-30T15:38:34Z",
+      "gate": {
+        "commit": "c6736e367f9e98a8e2e8d78959be252fb31cd233",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-fund-ledger/access.test.ts > [AC-F1-08ga-ACCESS#1] 只持 fund.view：菜单不出现（菜单仍只认 fund.cash_entry），直达 /fund-ledger 照常读取并列出按日台账；同持 fund.cash_entry 时菜单出现、同样列出",
+        "test/spec/frontend/admin-fund-ledger/access.test.ts > [AC-F1-08ga-ACCESS#2] 只持 fund.cash_entry（菜单可见、没有 fund.view）：进页不请求资产快照，显示无权限提示",
+        "test/spec/frontend/admin-fund-ledger/access.test.ts > [AC-F1-08ga-ACCESS#3] 列表返回 10403（本地快照有 fund.view、服务端不认）：显示无权限提示，不显示任何快照行",
+        "test/spec/frontend/admin-fund-ledger/dictionary.test.ts > [AC-F1-08ga-DICT#1] 后台字典清空时各平台未回款仍与平台绑定（平台名或编码），没有名字的平台显示原编码（xianyu 43.21），不显示 undefined、空白或键路径",
+        "test/spec/frontend/admin-fund-ledger/filter.test.ts > [AC-F1-08ga-FILTER#1] 日期区间筛选：【查询】带 date_from / date_to（含两端），从第 1 页起，只列区间内写了快照的日子（缺日仍无行）",
+        "test/spec/frontend/admin-fund-ledger/filter.test.ts > [AC-F1-08ga-FILTER#2] 【重置】清空日期区间：表格以不带 date_from / date_to 的请求重新读取，之后的请求不再带已清空的日期，四个快照日重新列出",
+        "test/spec/frontend/admin-fund-ledger/filter.test.ts > [AC-F1-08ga-FILTER#3] 起始日期晚于截止日期：日期字段旁出现提示（前端拦下不发请求，或发出后收 20001 [date_from, date_to] 再提示），或控件自动调换后按调换后的区间请求；不得原样发出颠倒的区间而无任何提示",
+        "test/spec/frontend/admin-fund-ledger/list.test.ts > [AC-F1-08ga-LIST#1] 进入后读第 1 页（只带契约参数、page_size ≤ 200、不带日期筛选），按返回顺序（快照日降序）列出四个快照日",
+        "test/spec/frontend/admin-fund-ledger/list.test.ts > [AC-F1-08ga-LIST#2] 每行在各自的列下显示快照日期、可用余额合计、负余额合计、冻结合计、已收货待结算合计、预估合计（元，两位小数，按分手算，照快照原样不重算）",
+        "test/spec/frontend/admin-fund-ledger/list.test.ts > [AC-F1-08ga-LIST#3] 各平台已入账未回款与其平台绑定（按分手算、负值保留负号、对调必红）；若显示未回款合计，等于各平台值之和",
+        "test/spec/frontend/admin-fund-ledger/list.test.ts > [AC-F1-08ga-LIST#4] waiting_comparable=false 的快照日（2026-10-28）行内有「不可比」类提示；可比的行没有",
+        "test/spec/frontend/admin-fund-ledger/list.test.ts > [AC-F1-08ga-LIST#5] 没写快照的日子（2026-10-27）没有行，不补零：表格只有四行，没有全为 0.00 的补行",
+        "test/spec/frontend/admin-fund-ledger/list.test.ts > [AC-F1-08ga-LIST#6] 页码分页：切到第 2 页请求 page=2（同一 page_size），显示该页的快照日、不再显示第 1 页的",
+        "test/spec/frontend/admin-fund-ledger/list.test.ts > [AC-F1-08ga-LIST#7] 只显示契约字段：表头没有企业支付宝余额、W、预计提现、P、水位 / 状态、当日联盟回款等画板列；每行出现的金额都能在该日快照的契约字段里找到，主区不出现夹具之外的金额",
+        "test/spec/frontend/admin-fund-ledger/pages.browser.test.ts > [AC-F1-08ga-BROWSER#1] /fund-ledger：按日台账列出快照日，2026-10-29 行显示可用余额合计 12,500.34、淘宝未回款 8,640.12 与拼多多 -23.00，2026-10-26 行显示 11,004.50；只发 GET /admin/v1/asset-snapshots",
+        "test/spec/frontend/admin-fund-ledger/readonly.test.ts > [AC-F1-08ga-READONLY#1] 持 fund.view 与 fund.cash_entry：页面没有可用的【录入企业支付宝余额】【录入联盟回款】【导出】等写入口；点了、筛选、翻页也只发 GET /admin/v1/asset-snapshots，不弹动态码",
+        "test/spec/frontend/admin-fund-ledger/readonly.test.ts > [AC-F1-08ga-READONLY#2] 超管：同样没有可用的录入 / 导出入口；点了也只发 GET /admin/v1/asset-snapshots，不弹动态码",
+        "test/spec/frontend/admin-fund-ledger/states.test.ts > [AC-F1-08ga-STATE#1] 加载中：表格请求未返回时显示加载状态、没有快照行，返回后列出",
+        "test/spec/frontend/admin-fund-ledger/states.test.ts > [AC-F1-08ga-STATE#2] 出错可重试：表格请求失败显示出错与【重试】、没有快照行，重试成功后列出",
+        "test/spec/frontend/admin-fund-ledger/states.test.ts > [AC-F1-08ga-STATE#3] 再查失败不显示旧数据：换日期区间【查询】的表格请求失败时显示出错、不再显示之前的快照行，重试后按该区间列出",
+        "test/spec/frontend/admin-fund-ledger/states.test.ts > [AC-F1-08ga-STATE#4] 空列表：显示空状态，没有快照行，也没有补出来的日期行"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-fund-ledger/access.test.ts",
+        "test/spec/frontend/admin-fund-ledger/dictionary.test.ts",
+        "test/spec/frontend/admin-fund-ledger/filter.test.ts",
+        "test/spec/frontend/admin-fund-ledger/list.test.ts",
+        "test/spec/frontend/admin-fund-ledger/pages.browser.test.ts",
+        "test/spec/frontend/admin-fund-ledger/readonly.test.ts",
+        "test/spec/frontend/admin-fund-ledger/states.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "5b94067d51b329d7e411165455c2a12bdd125dc8f96c2516a6d87df855dd7cf2"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "0a7402d64c5e0c8aa61149969f7482612e24d7c5d2df80a7f8a9d489dcefff86"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "9498238a028e3de14b43dd2bf4e69d568774a161",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}
