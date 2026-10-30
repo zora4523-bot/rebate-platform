@@ -14,6 +14,7 @@ deps: []
 paths:
   - 'contracts/openapi.yaml'
   - 'contracts/enums/admin.yaml'
+  - 'contracts/error-codes.yaml'
   - 'packages/contracts-ts/**'
   - 'packages/contracts-ts/src/planned-operations.gen.ts'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
