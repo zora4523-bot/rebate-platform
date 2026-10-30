@@ -211,9 +211,12 @@ import {
   WalletLedgerModule,
   WalletSummaryModule,
   createLedger,
+  getAssetSnapshotStatus,
   getOrderNets,
   readForfeitAmount,
   readPersonalDataCopyLedgerEntries,
+  readUnionAuthoritativeOrderKeys,
+  registerReconDiff,
   registerReconDiffOnce,
   type EarningsSummaryDependencies,
   type WalletLedgerDependencies,
@@ -3630,7 +3633,27 @@ export class AppModule {
           : []),
         // B2-09d: settlement's monthly bill reads (settle.bill or fund.view, read only, no audit):
         // the bill status derived from the latest round of batches at the injected clock.
-        ...(options.entry === 'admin' ? [SettlementAdminModule.forAdmin()] : []),
+        // B2-09f: the five writes (settle.bill, step-up totp), admin's audit writer on each
+        // command's transaction; content's switches read fresh on the given handle, ledger's
+        // snapshot status and diff registration, commission's snapshot reads. The batches are run
+        // by the worker (B2-04ze), not from here.
+        ...(options.entry === 'admin'
+          ? [
+              SettlementAdminModule.forAdmin({
+                auditWriter: (db, clock) =>
+                  createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                config: (db, clock) => ({
+                  get: async (appId, key) =>
+                    (await createContentReader({ db, clock }).configValue(appId, key))?.value,
+                }),
+                snapshotStatus: getAssetSnapshotStatus,
+                readSnapshot: readCommissionSnapshot,
+                readTljDeductFen,
+                registerDiff: registerReconDiff,
+                readUnionAuthoritative: readUnionAuthoritativeOrderKeys,
+              }),
+            ]
+          : []),
         // content's GET /v1/config (F1-02c): agent availability and the h5_release bucket read
         // identity's request viewer (token principal, else the X-App-Id guest). GET
         // /v1/pages/{page_key} (F1-09d) reads the same viewer for its login condition.

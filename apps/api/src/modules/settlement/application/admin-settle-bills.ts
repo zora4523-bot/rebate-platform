@@ -13,7 +13,7 @@
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import { fenToJsonNumber } from '@couli/money';
-import type { Kysely, Selectable } from 'kysely';
+import { sql, type Kysely, type Selectable } from 'kysely';
 
 export type AdminSettleBillStatus = Schema<'AdminSettleBillStatus'>;
 
@@ -26,6 +26,11 @@ export interface AdminSettleRoundBatch {
   readonly settle_mode: string;
   readonly scheduled_at: Date | null;
   readonly created_at: Date;
+  /**
+   * created_at as epoch microseconds, the column's precision (a Date keeps milliseconds), as text;
+   * the reads below always select it.
+   */
+  readonly created_micros?: string;
 }
 
 /** What AdminSettleBillStatus derives for one bill at one instant. */
@@ -38,11 +43,18 @@ export interface AdminSettleBillDerivation {
   readonly currentRound: readonly string[];
 }
 
+/** A batch's created_at in microseconds: the column's value, else the Date's milliseconds. */
+function createdMicros(batch: AdminSettleRoundBatch): bigint {
+  return batch.created_micros === undefined
+    ? BigInt(batch.created_at.getTime()) * 1000n
+    : BigInt(batch.created_micros);
+}
+
 /** The round a batch belongs to: every main batch is one round, a supplement launch another. */
 function roundKey(batch: AdminSettleRoundBatch): string {
   return batch.kind === 'main'
     ? 'main'
-    : `supplement|${batch.platform}|${batch.created_at.getTime()}`;
+    : `supplement|${batch.platform}|${String(createdMicros(batch))}`;
 }
 
 /** The batches of the latest round: largest round time, a tie to the round with the largest id. */
@@ -54,12 +66,13 @@ function latestRound(batches: readonly AdminSettleRoundBatch[]): AdminSettleRoun
     if (round === undefined) rounds.set(key, [batch]);
     else round.push(batch);
   }
-  let best: { time: number; maxId: string; batches: AdminSettleRoundBatch[] } | undefined;
+  let best: { time: bigint; maxId: string; batches: AdminSettleRoundBatch[] } | undefined;
   for (const round of rounds.values()) {
-    let time = -Infinity;
+    let time = createdMicros(round[0]!);
     let maxId = '';
     for (const batch of round) {
-      time = Math.max(time, batch.created_at.getTime());
+      const created = createdMicros(batch);
+      if (created > time) time = created;
       // uuid text in lower case orders as PostgreSQL orders the uuid column.
       const id = batch.batch_id.toLowerCase();
       if (id > maxId) maxId = id;
@@ -176,6 +189,11 @@ function billView(
   };
 }
 
+/** Exact on PostgreSQL 14 and later (extract returns numeric); never through a JS Date. */
+const CREATED_MICROS = sql<string>`(extract(epoch from created_at) * 1000000)::bigint::text`.as(
+  'created_micros',
+);
+
 const ROUND_COLUMNS = [
   'bill_id',
   'batch_id',
@@ -210,7 +228,7 @@ export async function listAdminSettleBills(
   let batches = deps.db
     .withSchema('app')
     .selectFrom('settle_batches')
-    .select(ROUND_COLUMNS)
+    .select([...ROUND_COLUMNS, CREATED_MICROS])
     .where('app_id', '=', appId);
   if (from !== undefined) {
     bills = bills.where('bill_id', '>=', from);
@@ -302,6 +320,7 @@ function batchView(
     finished_at: iso(row.finished_at),
     paused_by_switch_at: iso(row.paused_by_switch_at),
     created_at: row.created_at.toISOString(),
+    row_version: row.row_version,
     in_current_round: inCurrentRound,
     item_counts: counts,
   };
@@ -325,6 +344,7 @@ export async function getAdminSettleBill(
     .withSchema('app')
     .selectFrom('settle_batches')
     .selectAll()
+    .select(CREATED_MICROS)
     .where('app_id', '=', appId)
     .where('bill_id', '=', billId)
     .orderBy('created_at')

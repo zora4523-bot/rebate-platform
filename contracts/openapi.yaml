@@ -22628,6 +22628,7 @@ paths:
                       finished_at: null
                       paused_by_switch_at: null
                       created_at: '2026-10-24T02:12:00+08:00'
+                      row_version: 1
                       in_current_round: true
                       item_counts:
                         order:
@@ -22653,6 +22654,7 @@ paths:
                       finished_at: null
                       paused_by_switch_at: null
                       created_at: '2026-10-24T02:12:10+08:00'
+                      row_version: 1
                       in_current_round: true
                       item_counts:
                         order:
@@ -22737,7 +22739,6 @@ paths:
         upload of a union settlement statement, a supplement pre-check and the export are not
         part of this operation.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -22855,7 +22856,6 @@ paths:
         statement and the export are not part of this operation.
       x-auth: admin
       x-idempotent: true
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -23069,7 +23069,6 @@ paths:
 
         No Idempotency-Key (04 §6.6): the compare-and-set makes a repeated submission a 20902.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -23157,7 +23156,6 @@ paths:
 
         No Idempotency-Key (04 §6.6): the compare-and-set makes a repeated submission a 20902.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -23249,7 +23247,6 @@ paths:
 
         No Idempotency-Key (04 §6.6): the compare-and-set makes a repeated submission a 20902.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -46374,6 +46371,7 @@ components:
         - finished_at
         - paused_by_switch_at
         - created_at
+        - row_version
         - in_current_round
         - item_counts
       properties:
@@ -46438,7 +46436,7 @@ components:
         row_version:
           allOf:
             - $ref: '#/components/schemas/AdminSettleBatchRowVersion'
-          description: The version the batch commands take as expected_row_version (POST /admin/v1/settle-bills/{bill_id}/confirm, POST /admin/v1/settle-batches/{batch_id}/cancel-schedule, /reject, /resume). Returned on every batch from B2-09f.
+          description: The version the batch commands take as expected_row_version (POST /admin/v1/settle-bills/{bill_id}/confirm, POST /admin/v1/settle-batches/{batch_id}/cancel-schedule, /reject, /resume).
         in_current_round:
           type: boolean
           description: Whether the batch belongs to the bill's latest round as defined in AdminSettleBillStatus (main round = all kind main batches; supplement round = kind supplement batches sharing (platform, created_at); latest = largest round time, a tie going to the round holding the largest batch_id); a CANCELLED batch of that round is true but takes no part. It only says which batches the derived status comes from; a DRAFT batch can be false (a schedule cancelled after a later supplement launch) and POST /admin/v1/settle-bills/{bill_id}/confirm still covers it (编排裁定 D10-444).
