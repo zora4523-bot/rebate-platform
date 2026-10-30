@@ -158,8 +158,10 @@ export function createUnionHotRankUpstream(options: UnionHotRankUpstreamOptions)
     async page(input) {
       ensureSelectable(input, 'channelRanking');
       const page = await ranking.page(input);
+      // Entries past pageSize are not this page's: their positions would overlap the next page.
+      const entries = page.items.slice(0, input.pageSize);
       return {
-        ...(await toCandidates(input.appId, input.platform, page.items)),
+        ...(await toCandidates(input.appId, input.platform, entries)),
         hasMore: page.hasMore,
       };
     },

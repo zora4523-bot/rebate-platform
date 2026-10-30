@@ -140,3 +140,15 @@ it('[AC-B1-28l] 有条目被丢时 positions 与 items 等长，取频道这一�
   expect(result.items).toHaveLength(2);
   expect(result.positions).toEqual([1, 2]);
 });
+
+it('[AC-B1-28l] 适配器给出多于 pageSize 的条目时，超出部分不属于这一页、不占名次', async () => {
+  const { upstream } = setup(true, [
+    entry(''),
+    entry('synthetic-a-1'),
+    entry('synthetic-b-2'),
+    entry('synthetic-c-3'),
+  ]);
+  const result = await upstream.page({ ...page, pageNo: 1, pageSize: 2 });
+  expect(result.items.map((candidate) => candidate.ref.rawItemId)).toEqual(['synthetic-a-1']);
+  expect(result.positions).toEqual([1]);
+});
