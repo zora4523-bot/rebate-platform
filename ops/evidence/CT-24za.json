@@ -1,0 +1,37 @@
+{
+  "task": "CT-24za",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "c17b49a1f7af61a1b5db35a1eb142389f0f28581",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; withdraw lane, model Claude Fable 5.1). contracts/openapi.yaml gains writeOffAdminReconDiff, POST /admin/v1/recon-diffs/{recon_diff_id}/write-off (x-implementation: planned): the console 【核销】 of design/specs/admin-recon.md §2 for the one R2 case of 08 BR-WDR-23 ③ — the Alipay bill shows a transfer as successful while the withdrawal was returned to APPROVED as a payer-side failure (W9) — settling the original withdrawal as PAID_API on the stored bill line (BR-WDR-08 W11, owner decision 2026-10-03 决-08 A; success voucher per BR-WDR-09; switch payout.proven_success_writeoff.enabled per BR-WDR-17; holds of the difference released per BR-FUND-19). Permission point payout.execute with a totp-tier step-up (04 §11.2) and a required Idempotency-Key (as the recon-diff close); body expected_withdrawal_status=APPROVED (CAS confirmation) plus an optional note. Refusals: 20001 [recon_diff_id] for an unknown / other-app / R4 id and, with data.reason (five new values registered in error-codes.yaml 20001 and catalog.test.ts), for the W11 guard (not_payer_side_case, writeoff_disabled, withdrawal_not_returned, transfer_attempts_mismatch, amount_mismatch); 20902 recon_diff when the difference is already handled; 20902 withdrawal when the withdrawal is no longer APPROVED. The attempt record of W11 is appended by the payout process from a task queued in the write-off transaction (orchestrator ruling D10-428: no grant to couli_app, payout stays the single writer). Shapes reuse CT-24w (AdminReconDiffIdPath, AdminReconDiffDetail, released_hold_count) and resolveAdminPayOrder (expected_status). Generated: contracts:codegen outputs and the api auth / signing / min-version route tables; route-schemas.gen unchanged (planned operations get no validation schema). No business code; nothing in this PR moves money.",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "fresh independent Claude via nohup claude-run.sh --review-type contract (Codex unavailable until 2026-11-02); base a68a2dbd1 (main at the rebase). Round 1 pass, 0 open S0 / S1; one S2 (an admin holding payout.execute but not fund.recon can release the difference's recon_diff hold through the write-off) recorded in the lane's followups for the orchestrator."
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "12dcf1e8128e72f3d7131eb4b6ad528686ae202f",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
