@@ -75,6 +75,8 @@ export interface EventSubscription {
  * message of notification (B1-12g, BR-TEXT-23). notification-appeal-result: the APPEAL_RESULT
  * inbox message of notification (B1-12p, BR-TEXT-23 / BR-ID-36). notification-claim-result: the
  * CLAIM_RESULT inbox message of notification (B1-12r, BR-TEXT-09).
+ * risk-appeal-restore: risk's appeal restore differences of revoked ban appeals (B1-03z,
+ * BR-FUND-22 / BR-CALC-13 细则「申诉恢复」).
  * payout-went-negative: the negative balance handling of withdrawals (B2-05e, BR-WDR-05 (a)).
  * payout-auto-payout: the automatic payout decision of withdrawals (B2-11c, BR-WDR-30).
  */
@@ -90,6 +92,11 @@ export const EVENT_SUBSCRIPTIONS: readonly EventSubscription[] = Object.freeze([
   Object.freeze({
     consumer: 'notification-claim-result',
     events: Object.freeze(['claim.resolved']),
+  }),
+  // risk-appeal-restore: appeal_restore differences of revoked ban appeals (B1-03z, BR-FUND-22).
+  Object.freeze({
+    consumer: 'risk-appeal-restore',
+    events: Object.freeze(['appeal.resolved']),
   }),
   // payout-went-negative: the negative balance handling of withdrawals (B2-05e, BR-WDR-05 (a)).
   Object.freeze({
