@@ -1,0 +1,120 @@
+{
+  "red_tests": [
+    "test/spec/content/config-nickname/contract.test.ts > [AC-F1-02zzq#6] 契约 ConfigNickname 去掉待合并说明，仍是封闭的三整数对象并接受规则值",
+    "test/spec/content/config-nickname/contract.test.ts > [AC-F1-02zzq#6] 生成的 openapi.gen.ts 中 ConfigNickname 注释已同步去掉待合并说明",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#1] 最小有效配置下 nickname 总是下发 {1, 16, 3} 整数且整体过契约",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#1] 非缺省可选键下 nickname 总是下发 {1, 16, 3} 整数且整体过契约",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#1] 形状非法的可选键下 nickname 总是下发 {1, 16, 3} 整数且整体过契约",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] config_items 存在同名或近似键 nickname={\"min_len\":2,\"max_len\":20,\"monthly_limit\":5} 时下发值不变，且不读该键",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] config_items 存在同名或近似键 nickname.min_len=2 时下发值不变，且不读该键",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] config_items 存在同名或近似键 nickname.max_len=20 时下发值不变，且不读该键",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] config_items 存在同名或近似键 nickname.monthly_limit=5 时下发值不变，且不读该键",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] config_items 存在同名或近似键 identity.nickname.max_len=30 时下发值不变，且不读该键",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] config_items 存在同名或近似键 identity.nickname.monthly_limit=9 时下发值不变，且不读该键",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] 同名键 nickname 为null时仍 200、下发常量，不 warn 也不 50001",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] 同名键 nickname 为字符串时仍 200、下发常量，不 warn 也不 50001",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] 同名键 nickname 为数组时仍 200、下发常量，不 warn 也不 50001",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] 同名键 nickname 为多余字段时仍 200、下发常量，不 warn 也不 50001",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] 同名键 nickname 为零与负数时仍 200、下发常量，不 warn 也不 50001",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#3] 缓存过期后新增全部近似键：响应与 config_version 都不变",
+    "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#4] 两个 app 交替读取：nickname 相同，各自其余配置不受影响",
+    "test/spec/content/config-nickname/domain.test.ts > [AC-F1-02zzq#5] 任意 config_items 与调用者：nickname 恒为 {1, 16, 3} 整数，近似键从不上报",
+    "test/spec/content/config-nickname/domain.test.ts > [AC-F1-02zzq#5] 同名键 nickname 写入合法形状的其他取值也不覆盖常量"
+  ],
+  "risk_note": "RV2 (content). /v1/config now always sends nickname {min_len:1, max_len:16, monthly_limit:3} from a content constant (04 l.973 / l.1003, 08 BR-ID-39, 05 B1-20), never read from config_items; config_version / ETag change with the body as before. Contract ConfigNickname drops its not-yet-implemented note; openapi.gen.ts regenerated. identity is untouched. Frozen [AC-F1-02c#1] is handled by the preceding two-state test-change F1-02zzt (#1953); this task does not touch that file. Rule tests by a fresh independent Claude (round 2 reads PROP_RUNS / PROP_SEED via @couli/testing). Test-machine verify:fast passed on 3e2e56cb. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "fresh independent Claude via claude-run.sh (Codex unavailable until 11-02); pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by a fresh independent Claude reviewed by another: r1 fail (S1 frozen [AC-F1-02c#1] -> handled by F1-02zzt #1953; S2 property runs not from PROP_RUNS / PROP_SEED -> fixed in round 2), r2 pass; red-check PASS (20 red)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "F1-02zzq",
+  "spec_commit": "fad4f463326d74f1ac3cd4902032c04bffa5bb3b",
+  "spec_ref": "812734156b57ba648ee1df733dafac3dba9bdb15",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "fad4f463326d74f1ac3cd4902032c04bffa5bb3b",
+      "tree": "7b2646a6f235dcfaaa8f7a9c5af18941f995972b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T22:59:14Z",
+      "finished_at": "2026-10-30T22:59:32Z",
+      "red_tests": [
+        "test/spec/content/config-nickname/contract.test.ts > [AC-F1-02zzq#6] 契约 ConfigNickname 去掉待合并说明，仍是封闭的三整数对象并接受规则值",
+        "test/spec/content/config-nickname/contract.test.ts > [AC-F1-02zzq#6] 生成的 openapi.gen.ts 中 ConfigNickname 注释已同步去掉待合并说明",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#1] 最小有效配置下 nickname 总是下发 {1, 16, 3} 整数且整体过契约",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#1] 非缺省可选键下 nickname 总是下发 {1, 16, 3} 整数且整体过契约",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#1] 形状非法的可选键下 nickname 总是下发 {1, 16, 3} 整数且整体过契约",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] config_items 存在同名或近似键 nickname={\"min_len\":2,\"max_len\":20,\"monthly_limit\":5} 时下发值不变，且不读该键",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] config_items 存在同名或近似键 nickname.min_len=2 时下发值不变，且不读该键",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] config_items 存在同名或近似键 nickname.max_len=20 时下发值不变，且不读该键",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] config_items 存在同名或近似键 nickname.monthly_limit=5 时下发值不变，且不读该键",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] config_items 存在同名或近似键 identity.nickname.max_len=30 时下发值不变，且不读该键",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] config_items 存在同名或近似键 identity.nickname.monthly_limit=9 时下发值不变，且不读该键",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] 同名键 nickname 为null时仍 200、下发常量，不 warn 也不 50001",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] 同名键 nickname 为字符串时仍 200、下发常量，不 warn 也不 50001",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] 同名键 nickname 为数组时仍 200、下发常量，不 warn 也不 50001",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] 同名键 nickname 为多余字段时仍 200、下发常量，不 warn 也不 50001",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#2] 同名键 nickname 为零与负数时仍 200、下发常量，不 warn 也不 50001",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#3] 缓存过期后新增全部近似键：响应与 config_version 都不变",
+        "test/spec/content/config-nickname/delivery.int.test.ts > [AC-F1-02zzq#4] 两个 app 交替读取：nickname 相同，各自其余配置不受影响",
+        "test/spec/content/config-nickname/domain.test.ts > [AC-F1-02zzq#5] 任意 config_items 与调用者：nickname 恒为 {1, 16, 3} 整数，近似键从不上报",
+        "test/spec/content/config-nickname/domain.test.ts > [AC-F1-02zzq#5] 同名键 nickname 写入合法形状的其他取值也不覆盖常量"
+      ],
+      "expected": [
+        "test/spec/content/config-nickname/contract.test.ts",
+        "test/spec/content/config-nickname/delivery.int.test.ts",
+        "test/spec/content/config-nickname/domain.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "60aeb36eb9fa40d16f7c4f6c56f91f6b2f49fca2188b3eb4006d7ed0768ff4b7"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "9dfd192b42d46edb2db52d6afe263259d252dbcd2d0f9d10c78761f861e7078a"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "9c5176b224614a41762d85e330255a1a7fc3fe3e",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "fa3054cc3460afd9a9442f8fc9a24324ddaf6e0b",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  }
+}
