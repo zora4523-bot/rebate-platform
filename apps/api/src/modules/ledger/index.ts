@@ -120,6 +120,9 @@ export type {
   DailyCheckRunStore,
 } from './application/daily-check-schedule-heal.ts';
 export { createDailyCheckRunStore } from './infra/daily-check-run-store.ts';
+// B2-02s: the durable completion record of (app, D) the handler writes and stateOf reads.
+export { dailyCheckDoneEventId } from './application/daily-check-schedule-done.ts';
+export type { DailyCheckDoneConsumer } from './application/daily-check-schedule-done.ts';
 export { LedgerDailyCheckModule } from './daily-check.module.ts';
 export type { LedgerDailyCheckWorkerOptions } from './daily-check.module.ts';
 // B2-04y: GET /v1/wallet/summary (the query itself is exported only by read.ts, BR-AI-02 ④).
