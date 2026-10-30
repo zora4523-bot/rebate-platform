@@ -1,0 +1,29 @@
+id: B1-05q
+repo: rebate-platform
+title: catalog：后台商品池增删改查实现（CT-07d，权限 content.pool；deriveProductKey 入库，同一商品一行，上下架）
+type: impl
+# 2026-10-31 W1 入账（编排 D10-452 ②）。F1-09 商品池页面在 CT-07d 合并后交 fe。
+refs: [BR-PROD-08, BR-PROD-03]
+refs_hash:
+  BR-PROD-08: 7c9abf38989c
+  BR-PROD-03: 1708058a2ff7
+deps: [B1-05p]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+test_paths:
+  - 'test/spec/catalog/product-pool-admin/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/product-pool-admin/**'
+status: todo
+pr: null

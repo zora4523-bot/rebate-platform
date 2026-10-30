@@ -1,0 +1,27 @@
+id: CT-07d
+repo: rebate-platform
+title: 契约：后台商品池增删改查（权限 content.pool；01 F-ADM-10：入库、标签、上下架）与 listPageSectionItems 的 product_pool 数据源、联盟故障改读商品池（02 §14）的描述
+type: contract
+# 2026-10-31 W1 入账（编排 D10-452 ②，排在 B1-05o 之后）。上线后一月内才做的标签筛选、官方物料频道入库不写进本契约。
+refs: [BR-PROD-08, BR-TEXT-17]
+refs_hash:
+  BR-PROD-08: 7c9abf38989c
+  BR-TEXT-17: 486f4508575e
+deps: [CT-07c, B1-05o]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/routes.json'
+  - 'specs/permissions.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/h5/src/shared/api/anonymous.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

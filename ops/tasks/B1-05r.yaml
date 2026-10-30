@@ -1,0 +1,23 @@
+id: B1-05r
+repo: rebate-platform
+title: catalog：商品池读路径——listPageSectionItems 的 product_pool 数据源（卡片 ad_label=「推广」，BR-TEXT-17）、首页信息流联盟故障改读商品池（02 §14）、详情联盟故障用商品池价并标 stale（TRADE-12）、商品池价格 3600 秒刷新与超 7200 秒不展示（BR-PRICE-11）
+type: impl
+# 2026-10-31 W1 入账（编排 D10-452 ②）。B1-05e 注释留的详情降级在这里接。搜索不读商品池（BR-PROD-07）。
+refs: [BR-PRICE-11, BR-TEXT-17, BR-PROD-07]
+refs_hash:
+  BR-PRICE-11: 193429dfd0bf
+  BR-TEXT-17: 486f4508575e
+  BR-PROD-07: 975e639e6dd5
+deps: [B1-05q]
+paths:
+  - 'apps/api/src/modules/catalog/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/catalog/product-pool-read/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/product-pool-read/**'
+status: todo
+pr: null

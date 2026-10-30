@@ -1,0 +1,22 @@
+id: B1-05p
+repo: rebate-platform
+title: 迁移：product_pools / pool_items（04 第 411 行，pool_items 唯一 (app_id, pool_id, product_key)，BR-PROD-08；写者 catalog）
+type: impl
+# 2026-10-31 W1 入账（编排 D10-452 ②）。原定一单，范围太大拆三单：本单只迁移，B1-05q 后台实现，B1-05r 读路径。排迁移槽。
+refs: [BR-PROD-08]
+refs_hash:
+  BR-PROD-08: 7c9abf38989c
+deps: [CT-07d]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/**'
+test_paths:
+  - 'test/spec/catalog/product-pool-schema/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/product-pool-schema/**'
+status: todo
+pr: null
