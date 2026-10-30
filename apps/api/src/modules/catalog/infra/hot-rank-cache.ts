@@ -2,10 +2,11 @@
 // (platform, channel, category, page) for rank.cache_ttl_seconds; on a union failure an existing
 // entry is read, without one the failure propagates (the use case answers 50304).
 // Like the search cache (product-cache.ts) only the union's normalized public data is stored —
-// the item allow-list, the product ref and the sales field — plus fetched_at; cards, quotes and
-// links are assembled per request by the use case. Freshness is decided by fetched_at against
-// the configured TTL, never by the physical Redis TTL, which only cleans up. Without Redis (no
-// provider, or RedisUnavailableError on a command) the union is read directly (02 §14).
+// the item allow-list, the product ref, the sales field and the page's positions when it has
+// them — plus fetched_at; cards, quotes and links are assembled per request by the use case.
+// Freshness is decided by fetched_at against the configured TTL, never by the physical Redis TTL,
+// which only cleans up. Without Redis (no provider, or RedisUnavailableError on a command) the
+// union is read directly (02 §14).
 import { createHash } from 'node:crypto';
 import { RedisUnavailableError, type Clock, type RedisNamespace } from '../../platform/index.ts';
 import type {
@@ -76,11 +77,26 @@ function loadCategories(value: unknown): HotRankCategoryEntry[] {
   });
 }
 
+/** Same shape as HotRankUpstreamPage.positions: anything else reads as unreadable. */
+function loadPositions(value: unknown, itemCount: number): number[] {
+  if (!Array.isArray(value) || value.length !== itemCount) throw new Unreadable();
+  const positions: number[] = [];
+  for (const position of value as unknown[]) {
+    if (typeof position !== 'number' || !Number.isSafeInteger(position) || position < 0) {
+      throw new Unreadable();
+    }
+    if (position <= (positions.at(-1) ?? -1)) throw new Unreadable();
+    positions.push(position);
+  }
+  return positions;
+}
+
 function loadPage(value: unknown): HotRankUpstreamPage {
   if (!isRecord(value) || typeof value['has_more'] !== 'boolean') throw new Unreadable();
   const items = value['items'];
   if (!Array.isArray(items)) throw new Unreadable();
   return {
+    ...('positions' in value ? { positions: loadPositions(value['positions'], items.length) } : {}),
     hasMore: value['has_more'],
     items: items.map((entry: unknown): HotRankCandidate => {
       if (!isRecord(entry)) throw new Unreadable();
@@ -192,6 +208,7 @@ export function cacheHotRankUpstream(
             ref: storeRef(entry.ref),
             sales_text: entry.salesText,
           })),
+          ...(page.positions === undefined ? {} : { positions: page.positions }),
         }),
       );
     },

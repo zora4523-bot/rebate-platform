@@ -50,6 +50,11 @@ export interface HotRankPageRequest extends HotRankCategoriesRequest {
 export interface HotRankUpstreamPage {
   readonly items: readonly HotRankCandidate[];
   readonly hasMore: boolean;
+  /**
+   * As long as `items`: each one's position in this channel page, from 0 and strictly increasing.
+   * Only on a page that lost positions upstream; without it a position is the index in `items`.
+   */
+  readonly positions?: readonly number[];
 }
 
 /** Union seam of the hot list: one whitelisted channel, never the product pool. */
@@ -219,8 +224,8 @@ function errorFields(error: unknown): Record<string, string> {
  *
  * Order: whitelist (50304 rank_unavailable) → cursor (20001) → viewer → categories → category
  * (20001) → channel page → one card per position through the single card entry. A position the
- * card entry skips (price anomaly) leaves its rank number unused: ranks are the channel's own
- * positions, never renumbered or refilled.
+ * card entry skips (price anomaly) or the upstream dropped (D10-422 ②, `positions`) leaves its rank
+ * number unused: ranks are the channel's own positions, never renumbered or refilled.
  */
 export async function getHotRank(
   query: HotRankQuery,
@@ -300,7 +305,12 @@ export async function getHotRank(
       scene: 'retrieval',
     });
     if (result.kind !== 'card') continue;
-    items.push({ rank: first + index + 1, sales_text: entry.salesText, product_card: result.card });
+    const position = page.positions?.[index] ?? index;
+    items.push({
+      rank: first + position + 1,
+      sales_text: entry.salesText,
+      product_card: result.card,
+    });
   }
 
   const more = page.hasMore && pageNo < HOT_RANK_MAX_PAGE_NO;
