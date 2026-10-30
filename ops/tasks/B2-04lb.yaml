@@ -19,6 +19,8 @@ paths:
   - 'apps/api/src/modules/settlement/rights/**'
   - 'apps/api/src/modules/settlement/index.ts'
   - 'packages/domain/src/settlement/credit/**'
+  # D10-467 ②：R9 部分退款扣回补发 order.clawed_back（进 EVENT_NAMES），供 identity B1-12s 消费。
+  - 'apps/api/src/modules/platform/events/types.ts'
 test_paths:
   - 'test/spec/settlement/rights-credit/**'
   - 'test/properties/settlement/rights-credit/**'
