@@ -61,7 +61,9 @@ it('[AC-B1-15za#6] purgeExpired 失败时同一错误原样抛出，这次清理
   const purgeExpired = vi.fn(async () => {
     throw failure;
   });
-  await expect(runIdempotencyPurge({ idempotency: { purgeExpired }, logger })).rejects.toBe(failure);
+  await expect(runIdempotencyPurge({ idempotency: { purgeExpired }, logger })).rejects.toBe(
+    failure,
+  );
   expect(purgeExpired).toHaveBeenCalledTimes(1);
   expect(lines).toEqual([]);
 });
