@@ -2,6 +2,7 @@ id: B1-08ze
 repo: rebate-platform
 title: 平台恢复差错单金额（BR-FUND-22 / BR-CALC-02）：P9 状态触发的 platform_restore expected_fen 改取有效佣金（settle 非空取 settle，否则取 est），修拼多多已结算单金额记 0
 type: impl
+# 2026-10-30 补 test_paths（D10-327 写法）：冻结 [AC-B1-08zc#26] 把 P9 → SETTLED、settle 为空的 expected_fen 钉为 0，与本任务（有效佣金，BR-CALC-02）冲突，由独立 Claude 在测试阶段只改该行期望为有效佣金、另一位复审，按 #24 请编排加标签。
 # 2026-10-30 入账（content-client；B1-08zd #1839 money r2 out_of_scope S2：P9 INVALID → SETTLED 的拼多多单（适配器 settle 恒空）expected_fen = settleAfter ?? 0 = 0，未用同文件 effectiveCommission）。仅展示金额，ADMIN_RESTORE 重算；不改触发、幂等与告警。
 refs: [BR-FUND-22]
 refs_hash:
@@ -11,6 +12,7 @@ paths:
   - 'apps/api/src/modules/orders/**'
 test_paths:
   - 'test/spec/orders/platform-restore-amount/**'
+  - 'test/spec/orders/platform-restore/boundary.int.test.ts'
 impl: claude
 tester: claude-independent
 accept:
