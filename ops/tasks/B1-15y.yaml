@@ -1,0 +1,23 @@
+id: B1-15y
+repo: rebate-platform
+title: 分享中间页两接口（GET /v1/share-pages/{link_id}、POST /v1/share-pages/{link_id}/tpwd）的响应一律带 Cache-Control no-store，包括在进入控制器之前就被路由 schema 或公共检查拒掉的请求（空票据、超长参数、缺请求头等，契约 NoStoreClientError；BR-ATTR-10 细则「缓存」）：在 bootstrap 全局 onSend 钩子所用的 platform/http/no-store.ts 里加按路由模板判定的规则，不改带身份请求的既有规则（B1-01zzq），其他匿名请求仍不加
+type: impl
+# 2026-10-30 be 入账（编排 12:14 派工，B1-15u money 评审 S2 遗留 ⑤：share-page.controller.ts 只在处理器里设 no-store，路由层先拒的 400 / 20001 不带）。
+# 冻结测试 test/spec/platform/http/no-store/** 只对 /__no_store/anonymous 断言匿名不加，本规则只认分享页两条路由模板，不冲突；no-store.ts 头注「名称、签名、语义是契约」按新增函数扩展，不改既有导出的语义。
+refs: [BR-ATTR-10]
+refs_hash:
+  BR-ATTR-10: 310f8ddda3b0
+deps: [B1-15u, B1-01zzq]
+paths:
+  - 'apps/api/src/modules/platform/http/no-store.ts'
+  - 'apps/api/src/modules/platform/http/no-store.test.ts'
+  - 'apps/api/src/bootstrap.ts'
+test_paths:
+  - 'test/spec/platform/http/share-page-no-store/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/http/share-page-no-store/**'
+status: todo
+pr: null
