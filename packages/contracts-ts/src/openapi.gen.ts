@@ -17050,8 +17050,8 @@ export interface components {
             paused_by_switch_at: string | null;
             /** Format: date-time */
             created_at: string;
-            /** @description The version the batch commands take as expected_row_version (POST /admin/v1/settle-bills/{bill_id}/confirm, POST /admin/v1/settle-batches/{batch_id}/cancel-schedule, /reject, /resume). Returned on every batch from B2-09f. */
-            row_version?: components["schemas"]["AdminSettleBatchRowVersion"];
+            /** @description The version the batch commands take as expected_row_version (POST /admin/v1/settle-bills/{bill_id}/confirm, POST /admin/v1/settle-batches/{batch_id}/cancel-schedule, /reject, /resume). */
+            row_version: components["schemas"]["AdminSettleBatchRowVersion"];
             /** @description Whether the batch belongs to the bill's latest round as defined in AdminSettleBillStatus (main round = all kind main batches; supplement round = kind supplement batches sharing (platform, created_at); latest = largest round time, a tie going to the round holding the largest batch_id); a CANCELLED batch of that round is true but takes no part. It only says which batches the derived status comes from; a DRAFT batch can be false (a schedule cancelled after a later supplement launch) and POST /admin/v1/settle-bills/{bill_id}/confirm still covers it (编排裁定 D10-444). */
             in_current_round: boolean;
             item_counts: components["schemas"]["AdminSettleBatchItemCounts"];
@@ -35166,6 +35166,7 @@ export interface operations {
                      *             "finished_at": null,
                      *             "paused_by_switch_at": null,
                      *             "created_at": "2026-10-24T02:12:00+08:00",
+                     *             "row_version": 1,
                      *             "in_current_round": true,
                      *             "item_counts": {
                      *               "order": {
@@ -35196,6 +35197,7 @@ export interface operations {
                      *             "finished_at": null,
                      *             "paused_by_switch_at": null,
                      *             "created_at": "2026-10-24T02:12:10+08:00",
+                     *             "row_version": 1,
                      *             "in_current_round": true,
                      *             "item_counts": {
                      *               "order": {

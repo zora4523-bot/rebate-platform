@@ -14622,6 +14622,164 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "confirmAdminSettleBill": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "bill_id": {
+          "type": "string",
+          "description": "A bill month (settle_bills.bill_id, YYYY-MM; BR-FUND-04 ③).",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+        }
+      },
+      "required": [
+        "bill_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/settle-bills/{bill_id}/confirm. `expected_batches` must match all\nthe DRAFT batches of the bill one to one, whatever their round and platform (BR-FUND-04 ⑥,\n编排裁定 D10-444), never a choice among them; any other set is 20902 with\ndata.resource=settle_batch.\n",
+      "additionalProperties": false,
+      "required": [
+        "expected_batches"
+      ],
+      "properties": {
+        "expected_batches": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "description": "One DRAFT batch of the bill as the console read it.",
+            "additionalProperties": false,
+            "required": [
+              "batch_id",
+              "expected_row_version"
+            ],
+            "properties": {
+              "batch_id": {
+                "type": "string",
+                "description": "Entity id, a UUIDv7 string (04 §5).",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "expected_row_version": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0,
+                "description": "settle_batches.row_version, the compare-and-set version of a batch; each batch command adds one."
+              }
+            }
+          }
+        },
+        "settle_mode": {
+          "allOf": [
+            {
+              "type": "string",
+              "description": "contracts/enums/fund.yaml settle_mode (BR-FUND-04).",
+              "enum": [
+                "IMMEDIATE",
+                "SCHEDULED"
+              ]
+            }
+          ],
+          "default": "IMMEDIATE",
+          "description": "IMMEDIATE when absent."
+        },
+        "scheduled_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Required with SCHEDULED, not allowed with IMMEDIATE; later than the moment of confirmation and outside the nominal asset snapshot window (BR-FUND-04 ⑥, BR-FUND-18), else 20001 with data.fields=[scheduled_at]."
+        }
+      }
+    }
+  },
+  "createAdminSettleSupplementBatches": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Value of the Idempotency-Key header (04 §5「幂等」).",
+          "minLength": 8,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "idempotency-key"
+      ]
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "bill_id": {
+          "type": "string",
+          "description": "A bill month (settle_bills.bill_id, YYYY-MM; BR-FUND-04 ③).",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+        }
+      },
+      "required": [
+        "bill_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/settle-bills/{bill_id}/supplement-batches.",
+      "additionalProperties": false,
+      "required": [
+        "platform"
+      ],
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "Platform (contracts/enums/platform.yaml platform).",
+          "enum": [
+            "taobao",
+            "jd",
+            "pdd",
+            "meituan",
+            "vip",
+            "douyin",
+            "eleme",
+            "kuaishou",
+            "suning"
+          ]
+        }
+      }
+    }
+  },
   "listAdminSettleBatchItems": {
     "headers": {
       "type": "object",
@@ -14688,6 +14846,166 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       },
       "required": [],
       "additionalProperties": false
+    }
+  },
+  "cancelAdminSettleBatchSchedule": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "batch_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "batch_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/settle-batches/{batch_id}/cancel-schedule and /resume.",
+      "additionalProperties": false,
+      "required": [
+        "expected_row_version"
+      ],
+      "properties": {
+        "expected_row_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "settle_batches.row_version, the compare-and-set version of a batch; each batch command adds one."
+        }
+      }
+    }
+  },
+  "rejectAdminSettleBatch": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "batch_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "batch_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/settle-batches/{batch_id}/reject.",
+      "additionalProperties": false,
+      "required": [
+        "expected_row_version",
+        "reason"
+      ],
+      "properties": {
+        "expected_row_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "settle_batches.row_version, the compare-and-set version of a batch; each batch command adds one."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Why the batch is rejected; 1–200 characters after trimming, else 20001 with data.fields=[reason]. Stored as cancelled_reason."
+        }
+      }
+    }
+  },
+  "resumeAdminSettleBatch": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "batch_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "batch_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/settle-batches/{batch_id}/cancel-schedule and /resume.",
+      "additionalProperties": false,
+      "required": [
+        "expected_row_version"
+      ],
+      "properties": {
+        "expected_row_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "settle_batches.row_version, the compare-and-set version of a batch; each batch command adds one."
+        }
+      }
     }
   },
   "listAdminAssetSnapshots": {

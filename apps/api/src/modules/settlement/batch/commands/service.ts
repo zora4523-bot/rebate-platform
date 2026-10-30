@@ -7,10 +7,10 @@ import {
   type SettleBatchEvent,
   type SettleBatchState,
 } from '@couli/domain';
-import type { Kysely, Transaction, Updateable } from 'kysely';
+import type { Kysely, Selectable, Transaction, Updateable } from 'kysely';
 import type { Clock } from '../../../platform/index.ts';
 
-/** 服务端已鉴权的调用上下文；step-up 与 HTTP 错误映射归 B2-09。 */
+/** 服务端已鉴权的调用上下文；step-up 与 HTTP 错误映射在后台入口（B2-09f）。 */
 export interface CommandActor {
   readonly appId: string;
   readonly adminId: string;
@@ -23,7 +23,7 @@ export interface BatchVersion {
 
 export interface ConfirmBillInput extends CommandActor {
   readonly billId: string;
-  /** 本轮全部 DRAFT 的读版本；不能借此挑选部分批次确认。 */
+  /** 账单下全部 DRAFT 的读版本（D10-444）；不能借此挑选部分批次确认。 */
   readonly expectedBatches: readonly BatchVersion[];
   /** 省略时为 IMMEDIATE。 */
   readonly mode?: 'IMMEDIATE' | 'SCHEDULED';
@@ -47,10 +47,9 @@ export interface BatchCommandDeps {
   readonly db: Kysely<DB>;
   readonly clock: Clock;
   /**
-   * settlement 内部端口，由生成流程提供权威的最近一轮成员，包含该轮非 DRAFT。
-   * 必须在命令事务内读取；null 表示无法确定，保守拒绝，不能退化成全账单 DRAFT。
-   * 现有 schema 无 round 列；不把 settle_run_id 或 created_at 臆定为轮次身份。
-   * TODO(规划/11 §4.2): 接入生成流程的轮次成员持久化查询 — blocked on 编排确定轮次存储映射
+   * settlement 内部端口：本次确认覆盖的批次。一次确认覆盖账单下全部 DRAFT，不分轮次与平台
+   * （BR-FUND-04 ⑥，编排裁定 D10-444），生产实现（B2-09f）返回账单下全部 DRAFT 的 batch_id。
+   * 必须在命令事务内读取；null 表示无法确定，保守拒绝。
    */
   readonly currentRound: (
     trx: Transaction<DB>,
@@ -62,6 +61,40 @@ export interface BatchCommandDeps {
     readonly platform: string;
     readonly at: Date;
   }) => Promise<ExecutionReadiness>;
+  /**
+   * 给了就在命令事务句柄上查（优先于 readiness）：持行锁的事务不再占一条连接等第二条，
+   * 连接池耗尽时不互相死等（B2-09f money r1）。
+   */
+  readonly readinessOn?: (trx: Transaction<DB>) => BatchCommandDeps['readiness'];
+}
+
+/** 批次写成功后、提交前的回调（B2-09f：审计与响应回读同事务）；抛错则整笔回滚。 */
+export type AfterBatchWrite<Change> = (trx: Transaction<DB>, change: Change) => Promise<void>;
+
+/** 确认写入的结果：账单、结算方式与每个批次确认前后的状态。 */
+export interface ConfirmChange {
+  readonly billId: string;
+  readonly mode: 'IMMEDIATE' | 'SCHEDULED';
+  readonly scheduledAt: Date | null;
+  readonly batches: readonly {
+    readonly batchId: string;
+    readonly from: string;
+    readonly to: string;
+  }[];
+}
+
+export interface BatchFacts {
+  readonly status: string;
+  readonly settleMode: string;
+  readonly scheduledAt: Date | null;
+}
+
+/** 单批命令写入的结果：批次所属账单与写入前后的状态、结算方式、定时时刻。 */
+export interface BatchChange {
+  readonly batchId: string;
+  readonly billId: string;
+  readonly before: BatchFacts;
+  readonly after: BatchFacts;
 }
 
 /** 内部错误形状；只有并发冲突已有契约码，其余不抢先分配 HTTP 错误码。 */
@@ -87,19 +120,22 @@ export interface BatchCommandRejected extends Error {
 }
 
 export interface BatchCommandService {
-  /** SB2：同事务确认本轮全部 DRAFT，每批 row_version CAS；只到 CONFIRMED。 */
-  confirmBill(input: ConfirmBillInput): Promise<void>;
+  /** SB2：同事务确认账单下全部 DRAFT，每批 row_version CAS；只到 CONFIRMED。 */
+  confirmBill(input: ConfirmBillInput, afterWrite?: AfterBatchWrite<ConfirmChange>): Promise<void>;
   /** SB3：仅 CONFIRMED + SCHEDULED 且尚未开始执行。 */
-  cancelSchedule(input: BatchCommandInput): Promise<void>;
+  cancelSchedule(
+    input: BatchCommandInput,
+    afterWrite?: AfterBatchWrite<BatchChange>,
+  ): Promise<void>;
   /** SB4：仅 DRAFT，原因必填；不处置批内订单。 */
-  rejectBatch(input: RejectBatchInput): Promise<void>;
+  rejectBatch(input: RejectBatchInput, afterWrite?: AfterBatchWrite<BatchChange>): Promise<void>;
   /** SB8：仅 PARTIAL，两个开关开启且当日快照完成或超时。 */
-  resumeBatch(input: BatchCommandInput): Promise<void>;
+  resumeBatch(input: BatchCommandInput, afterWrite?: AfterBatchWrite<BatchChange>): Promise<void>;
   /** TODO(规划/11 §4.2): 开放 SB10 手动开始 — blocked on 财务确认 */
   manualStart(input: BatchCommandInput): Promise<void>;
 }
 
-/** 20902（data.resource=settle_batch）：读版本过期、整轮集合不符或并发输家。HTTP 映射随 B2-09。 */
+/** 20902（data.resource=settle_batch）：读版本过期、DRAFT 集合不符或并发输家。 */
 export class BatchConflictError extends Error implements BatchConflict {
   readonly code = 20902 as const;
   readonly data = { resource: 'settle_batch' } as const;
@@ -117,7 +153,7 @@ export class IllegalTransitionError extends Error implements IllegalTransition {
   }
 }
 
-/** 命令前置条件不成立；内部错误，契约码待 B2-09 分配。 */
+/** 命令前置条件不成立；内部错误，契约码由后台入口映射（B2-09f）。 */
 export class BatchCommandRejectedError extends Error implements BatchCommandRejected {
   override readonly name = 'BatchCommandRejected' as const;
   readonly reason: BatchCommandRejected['reason'];
@@ -167,6 +203,19 @@ function settleMode(
   return { mode, scheduledAt: at };
 }
 
+function statusOnly(row: Selectable<DB['settle_batches']>, status: string): BatchFacts {
+  return { status, settleMode: row.settle_mode, scheduledAt: row.scheduled_at };
+}
+
+function batchChange(row: Selectable<DB['settle_batches']>, after: BatchFacts): BatchChange {
+  return {
+    batchId: row.batch_id,
+    billId: row.bill_id,
+    before: statusOnly(row, row.status),
+    after,
+  };
+}
+
 export function createBatchCommandService(deps: BatchCommandDeps): BatchCommandService {
   const { db, clock } = deps;
 
@@ -204,11 +253,11 @@ export function createBatchCommandService(deps: BatchCommandDeps): BatchCommandS
   }
 
   return {
-    async confirmBill(input) {
+    async confirmBill(input, afterWrite) {
       // 事务前先按当前时刻快速拒绝明显无效的结算方式；锁后再按锁后时刻复核（见下）。
       settleMode(input, clock.now());
       await db.transaction().execute(async (trx) => {
-        // 账单行锁串行化同一账单的整轮确认；生成未完成不得确认（防止只确认部分批次）。
+        // 账单行锁串行化同一账单的确认；生成未完成不得确认（防止只确认部分批次）。
         const bill = await trx
           .selectFrom('settle_bills')
           .select(['generated_at'])
@@ -234,7 +283,7 @@ export function createBatchCommandService(deps: BatchCommandDeps): BatchCommandS
                 .orderBy('batch_id')
                 .forUpdate()
                 .execute();
-        // 本轮成员必须全部属于本 app、本账单；否则整轮拒绝，不越 app / 越账单确认。
+        // 成员必须全部属于本 app、本账单；否则整笔拒绝，不越 app / 越账单确认。
         if (members.length !== roundIds.length || members.some((m) => m.bill_id !== input.billId)) {
           throw new BatchConflictError('settle_batch round membership mismatch');
         }
@@ -244,7 +293,7 @@ export function createBatchCommandService(deps: BatchCommandDeps): BatchCommandS
         if (drafts.size === 0 && input.expectedBatches.length === 0) {
           throw new IllegalTransitionError('settle bill has no DRAFT batch to confirm');
         }
-        // 一次确认本轮全部 DRAFT：读版本集合必须与本轮 DRAFT 一一对应，不能挑选、重复或夹带。
+        // 一次确认全部 DRAFT：读版本集合必须与这些 DRAFT 一一对应，不能挑选、重复或夹带。
         const seen = new Set<string>();
         for (const expected of input.expectedBatches) {
           const draft = drafts.get(expected.batchId);
@@ -261,6 +310,7 @@ export function createBatchCommandService(deps: BatchCommandDeps): BatchCommandS
         // 确认时刻取在全部行锁之后：等待连接或行锁期间时钟前进，定时守卫与 confirmed_at 都按锁后时刻。
         const now = clock.now();
         const { mode, scheduledAt } = settleMode(input, now);
+        const batches: ConfirmChange['batches'][number][] = [];
         for (const draft of drafts.values()) {
           const to = nextState(draft.status, 'CONFIRM');
           await casUpdate(
@@ -280,11 +330,13 @@ export function createBatchCommandService(deps: BatchCommandDeps): BatchCommandS
               confirmed_at: now,
             },
           );
+          batches.push({ batchId: draft.batch_id, from: draft.status, to });
         }
+        await afterWrite?.(trx, { billId: input.billId, mode, scheduledAt, batches });
       });
     },
 
-    async cancelSchedule(input) {
+    async cancelSchedule(input, afterWrite) {
       await db.transaction().execute(async (trx) => {
         const row = await lockBatch(trx, input);
         const to = nextState(row.status, 'CANCEL_SCHEDULE');
@@ -306,10 +358,14 @@ export function createBatchCommandService(deps: BatchCommandDeps): BatchCommandS
           confirmed_by: null,
           confirmed_at: null,
         });
+        await afterWrite?.(
+          trx,
+          batchChange(row, { status: to, settleMode: 'IMMEDIATE', scheduledAt: null }),
+        );
       });
     },
 
-    async rejectBatch(input) {
+    async rejectBatch(input, afterWrite) {
       if (typeof input.reason !== 'string' || input.reason.trim() === '') {
         throw new BatchCommandRejectedError('reason_required');
       }
@@ -318,17 +374,19 @@ export function createBatchCommandService(deps: BatchCommandDeps): BatchCommandS
         const to = nextState(row.status, 'REJECT');
         // SB4：批内订单保持 WAITING，明细与账务不动。
         await casUpdate(trx, input, row.status, { status: to, cancelled_reason: input.reason });
+        await afterWrite?.(trx, batchChange(row, statusOnly(row, to)));
       });
     },
 
-    async resumeBatch(input) {
+    async resumeBatch(input, afterWrite) {
       await db.transaction().execute(async (trx) => {
         const row = await lockBatch(trx, input);
         const to = nextState(row.status, 'RESUME');
         // 时刻取在行锁之后：等待连接或行锁跨过午夜时，按新会计日的快照判定，不沿用等待前的日期。
         let at = clock.now();
+        const readiness = deps.readinessOn?.(trx) ?? deps.readiness;
         for (let recheck = 0; ; recheck += 1) {
-          const ready = await deps.readiness({ appId: input.appId, platform: row.platform, at });
+          const ready = await readiness({ appId: input.appId, platform: row.platform, at });
           // SB8 守卫：两个开关都为 on；当日快照已完成或已超时。
           if (!ready.autoEnabled || !ready.creditEnabled) {
             throw new BatchCommandRejectedError('switches_off');
@@ -344,6 +402,7 @@ export function createBatchCommandService(deps: BatchCommandDeps): BatchCommandS
         }
         // 只迁移批次；明细由执行器（B2-04p）续跑。
         await casUpdate(trx, input, row.status, { status: to });
+        await afterWrite?.(trx, batchChange(row, statusOnly(row, to)));
       });
     },
 

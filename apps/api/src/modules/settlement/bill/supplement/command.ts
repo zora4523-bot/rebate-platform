@@ -67,9 +67,10 @@ export interface SupplementResult {
   readonly batchIds: readonly string[];
 }
 
-export type SupplementRejectReason = 'bill_not_found' | 'bill_not_ready' | 'credit_disabled';
+export type SupplementRejectReason =
+  'bill_not_found' | 'bill_not_ready' | 'credit_disabled' | 'pending_draft';
 
-/** 发起前置条件不成立；不写任何表。内部错误，契约码待 B2-09 分配。 */
+/** 发起前置条件不成立；不写任何表。内部错误，契约码由后台入口映射（B2-09f）。 */
 export interface SupplementRejected extends Error {
   readonly name: 'SupplementRejected';
   readonly reason: SupplementRejectReason;
@@ -78,6 +79,13 @@ export interface SupplementRejected extends Error {
 export interface SupplementCommand {
   /** finance 对指定账单、指定平台发起补充校验与批次。 */
   launch(db: Kysely<DB>, input: SupplementInput): Promise<SupplementResult>;
+  /**
+   * 后台发起（B2-09f）：在调用方事务内运行，幂等记录与审计同事务；失败时整笔回滚，不留 claim，
+   * 也不记 failed（重试的名义时刻是新的，记了就永远没人收，告警常亮），由 Idempotency-Key 重试。
+   * 账单下还有任何 DRAFT 时拒绝（pending_draft，编排裁定 D10-440），
+   * 在账单行锁内、credit_disabled 与 bill_not_ready 之后判定。
+   */
+  launchInTransaction(trx: Transaction<DB>, input: SupplementInput): Promise<SupplementResult>;
   /** 开关打开后对当期账单重校验并生成补充批次；当期账单 = bill_id 最大的一份账单。 */
   recheckCurrentBill(db: Kysely<DB>, input: RecheckInput): Promise<SupplementResult>;
 }
@@ -194,6 +202,8 @@ interface CreditedFacts {
 
 interface Target {
   readonly billId: string | null;
+  /** 账单下还有 DRAFT 时拒绝（后台发起，D10-440）。 */
+  readonly refusePendingDraft?: boolean;
 }
 
 function positiveInteger(value: unknown, name: string): number | null {
@@ -351,6 +361,18 @@ export function createSupplementCommand(dependencies: SupplementDependencies): S
     if (bill.generated_at === null) throw new SupplementRejectedError('bill_not_ready');
     if (!Object.prototype.hasOwnProperty.call(parseCounts(bill.platform_order_counts), platform)) {
       throw new SupplementRejectedError('bill_not_ready');
+    }
+    if (target.refusePendingDraft === true) {
+      const draft = await trx
+        .withSchema('app')
+        .selectFrom('settle_batches')
+        .select('batch_id')
+        .where('app_id', '=', appId)
+        .where('bill_id', '=', bill.bill_id)
+        .where('status', '=', 'DRAFT')
+        .limit(1)
+        .executeTakeFirst();
+      if (draft !== undefined) throw new SupplementRejectedError('pending_draft');
     }
     return bill.bill_id;
   }
@@ -656,10 +678,9 @@ export function createSupplementCommand(dependencies: SupplementDependencies): S
       batchIds.push(batchId);
     }
 
-    // 取舍（待编排裁定）：补充轮不回写 settle_bills 的分平台子订单数、联盟结算佣金合计、受益人份额 /
-    // 平台留存合计与差错单数 / 暂缓数——它们是账单日那一刻的出账快照；补充轮的校验结果在
-    // saveValidations 的记录里、子订单数在各补充批次的 order_count、差错单在 recon_diffs，
-    // 是否把补充轮并入账单合计或另记批次级合计由后续任务（B2-09 后台详情）定。不影响入账金额。
+    // 补充轮不回写 settle_bills 的分平台子订单数、联盟结算佣金合计、受益人份额 / 平台留存合计与
+    // 差错单数 / 暂缓数（编排裁定 D10-280 ③）：它们只反映账单日任务；补充轮的子订单数在各补充批次的
+    // order_count、差错单在 recon_diffs，金额判断与对账只按明细行算。不影响入账金额。
     await completeSettleJob(trx, jobId, now, validations.length, heldCount);
     return { outcome: 'generated', billId, platform, batchIds };
   }
@@ -696,6 +717,13 @@ export function createSupplementCommand(dependencies: SupplementDependencies): S
       return execute(db, input.appId, input.platform, input.requestedAt, {
         billId: input.billId,
       });
+    },
+    async launchInTransaction(trx, input) {
+      const now = deps.clock.now();
+      const { appId, platform, requestedAt, billId } = input;
+      const jobRunAt = supplementJobRunAt(requestedAt, await readBillDay(appId));
+      const target = { billId, refusePendingDraft: true };
+      return generate(trx, appId, platform, requestedAt, jobRunAt, target, now);
     },
     recheckCurrentBill(db, input) {
       return execute(db, input.appId, input.platform, input.requestedAt, { billId: null });
