@@ -1,0 +1,103 @@
+{
+  "task": "B1-07c",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "5c64c206c236c0a7c696b2f027e1dfd5e9b7d1c3",
+  "red_tests": [
+    "test/spec/parsing/viewer/app.int.test.ts > [AC-B1-07c#8] 真实 AppModule：登录 token 解析出卡，links 行与报价都按当前用户，登录与游客交替不串身份",
+    "test/spec/parsing/viewer/app.int.test.ts > [AC-B1-07c#9] 真实 AppModule：不带 token 是验证过的设备游客，伪造 x-user-id 不提升身份",
+    "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#1] clipboard 已登录出卡：报价第二参与 register 的查看者都取自注入的查看者，只登记不转链",
+    "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#1] search 已登录出卡：报价第二参与 register 的查看者都取自注入的查看者，只登记不转链",
+    "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#1] share_ext 已登录出卡：报价第二参与 register 的查看者都取自注入的查看者，只登记不转链",
+    "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#2] 卡面返利是报价器按当前登录用户算的结果，不是游客的报价",
+    "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#3] 一条消息三个命中：每张卡都按同一查看者报价和登记",
+    "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#4] 设备游客：userId 为空，deviceId 随查看者传到报价与 register",
+    "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#5] 已登录查看者：伪造身份头不起作用，结果只认注入的查看者",
+    "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#5] 设备游客：伪造身份头不起作用，结果只认注入的查看者",
+    "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#6] appId 也取自查看者：查看者属于别的 App 时该命中失败，不报价不登记",
+    "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#7] 注入的查看者读取失败时该命中失败，不退回游客报价和登记"
+  ],
+  "risk_note": "RV2 by path (app.module.ts). POST /v1/inputs/parse used a guest viewer for every request although B1-02m wired identity into catalog: a logged-in user's card was quoted as userId null. parsingPorts now provides identity's ViewerContext globally and the route takes it when injected, so the quoter gets the token's user and level; a viewer that fails or names another app ends only its hit (50001), never a guest. Link ownership did not change: links.user_id already came from linking's CallerContext and input.viewer is ignored (BR-ATTR-05), which is why the rule tests assert the quote's viewer. Identity never comes from the body or headers. The guest fallback for a process without the port is the original line, unchanged; no test reaches it through AppModule any more (S2, followups). No money moves: display quotes only. verify:fast exit 0 (api 3670, spec-tests 20461); [AC-B1-07c#8] and [#9] need a database and run in the required verify-int check. Codex was unavailable until 11-02, so the rule tests and reviews ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "5c64c206c236c0a7c696b2f027e1dfd5e9b7d1c3",
+      "tree": "6f231061b93ee04a8ff87adf4c7c480be43e3d31",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T14:35:29Z",
+      "finished_at": "2026-10-30T14:35:55Z",
+      "gate": {
+        "commit": "ca9984c60b6f562d20912f92df189fbd1c5f0316",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/parsing/viewer/app.int.test.ts > [AC-B1-07c#8] 真实 AppModule：登录 token 解析出卡，links 行与报价都按当前用户，登录与游客交替不串身份",
+        "test/spec/parsing/viewer/app.int.test.ts > [AC-B1-07c#9] 真实 AppModule：不带 token 是验证过的设备游客，伪造 x-user-id 不提升身份",
+        "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#1] clipboard 已登录出卡：报价第二参与 register 的查看者都取自注入的查看者，只登记不转链",
+        "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#1] search 已登录出卡：报价第二参与 register 的查看者都取自注入的查看者，只登记不转链",
+        "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#1] share_ext 已登录出卡：报价第二参与 register 的查看者都取自注入的查看者，只登记不转链",
+        "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#2] 卡面返利是报价器按当前登录用户算的结果，不是游客的报价",
+        "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#3] 一条消息三个命中：每张卡都按同一查看者报价和登记",
+        "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#4] 设备游客：userId 为空，deviceId 随查看者传到报价与 register",
+        "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#5] 已登录查看者：伪造身份头不起作用，结果只认注入的查看者",
+        "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#5] 设备游客：伪造身份头不起作用，结果只认注入的查看者",
+        "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#6] appId 也取自查看者：查看者属于别的 App 时该命中失败，不报价不登记",
+        "test/spec/parsing/viewer/route.test.ts > [AC-B1-07c#7] 注入的查看者读取失败时该命中失败，不退回游客报价和登记"
+      ],
+      "expected": [
+        "test/spec/parsing/viewer/app.int.test.ts",
+        "test/spec/parsing/viewer/route.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "76e295c5abe420fb07a9b7af96d1d3376ae46b6782be44d12e85f523d114d362"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d29097c42f824a08279aeee807f2af83f75f3a0004b35bd74c8e6d48b21baaf4"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 against the merge base pass, no findings (orchestrator asked for the money level: link registration, guest path, identity injected by the server only)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude (1 run, red 12 / 12 including two real AppModule tests); round 1 pass with one S2 (the guest fallback is no longer reached through AppModule), recorded in followups."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "13bcfec6fc65d6955e71966c376be1fa1d8def3e",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
