@@ -2,8 +2,9 @@ id: B1-15zd
 repo: rebate-platform
 title: 测试修改（B1-15zb 前置，照 B2-11z / B1-28g）：content 配置登记表登记 BR-ID-30 保留期配置——总开关 retention.purge.enabled（缺省 true）与 retention.login_logs_days（180）、retention.device_registrations_days（180）、retention.sms_send_attempts_days（190）、retention.inbox_messages_days（180）、retention.notify_logs_days（190）、retention.union_raw_payloads_days（180），均为整数、下限 30，同 PR 带种子行与冻结注册表测试的键表 / 顺序 / 总数更新（接在现有末尾之后，既有断言不放宽），实现者单测总数随之改
 type: test-change
-# 2026-10-31 be 入账（编排 D10-454：各表保留天数做成配置项、缺省取 08 现值，总开关 retention.purge.enabled 缺省 on）。登记才能后台改，总开关不能改就没有意义，所以不走 sms.* 的不登记口径，照 D10-368（B2-11z）先开前置 test-change。下限 30 是防误配的技术取值，08 没有写，请编排确认；归类 config.risk。
+# 2026-10-31 be 入账（编排 D10-454：各表保留天数做成配置项、缺省取 08 现值，总开关 retention.purge.enabled 缺省 on）。登记才能后台改，总开关不能改就没有意义，所以不走 sms.* 的不登记口径，照 D10-368（B2-11z）先开前置 test-change。归类 config.risk。
 # 新鲜独立 Claude 改、另一位只读复审「不削弱」，按 approvals #24 加标签；先合，B1-15zb 再开工。
+# 2026-10-31 补（编排 D10-458，标题不得改故记于此）：标题里的「下限 30」作废，下限取各键 08 现值（180 / 190），只能往长调，往短调须先改 08。
 refs: []
 refs_hash: {}
 deps: [B1-15za]

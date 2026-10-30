@@ -4,16 +4,19 @@ title: BR-ID-30 保留期清理第一批（迁移 + worker 维护）：每日 04
 type: impl
 # 2026-10-31 be 入账（编排 D10-451）。盘点见 notices：这几张表 couli_app 没有 DELETE（deleted_identities 除外），所以不走 B1-15za 的应用账号，改走 maintenance 第 J 节的 couli_maint 函数，已在 worker 的 04:00 门内运行，与 D10-451「沿用内部定时队列」的差别报编排核。
 # 需迁移槽。保留天数只写在函数里并注明 BR-ID-30 条目；BR-ID-30 状态为待决策、⑥⑱ 待法务，按 08 现值执行。
+# 2026-10-31 补（编排 D10-454 / D10-457，标题不得改故记于此）：范围另含 sms_send_attempts 190 天（⑥ 短信发送记录）；保留天数读 retention.<表>_days（缺省 08 现值，函数内再守下限），总开关 retention.purge.enabled 关时不跑；日志只记表名与删除行数；不碰 order_sync_drop_keys（D10-457）与 blocklist（D10-454）。
 refs: [BR-ID-30]
 refs_hash:
   BR-ID-30: 24c70bf4ac65
-deps: [B1-15za]
+deps: [B1-15za, B1-15zd]
 paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/**'
   - 'apps/api/src/modules/platform/maintenance/index.ts'
   - 'apps/api/src/modules/platform/maintenance/index.test.ts'
+  - 'apps/api/src/modules/platform/maintenance/worker.ts'
+  - 'apps/api/src/entry.ts'
 test_paths:
   - 'test/spec/platform/retention/**'
 impl: claude

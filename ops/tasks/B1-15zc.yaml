@@ -3,6 +3,7 @@ repo: rebate-platform
 title: BR-ID-30 ⑦ union_raw_payloads 保留 180 天：把它加入 app.drop_expired_month_partitions 的保留规则与 maintenance 的 DROPPABLE_TABLES，每日 04:00（+08:00）后丢弃整月都已过期的月分区（按 fetched_at；DEFAULT 分区不丢）；不改 event_log 既有规则，RETAINED 表仍拒绝
 type: impl
 # 2026-10-31 be 入账（编排 D10-451）。表带只增触发器，只能按分区 DROP TABLE，不能逐行删。需迁移槽（CREATE OR REPLACE 函数），排 B1-15zb 后。maintenance 头注写 DROPPABLE_TABLES「exactly ['event_log']」，冻结测试若钉死，随单列 test-change。
+# 2026-10-31 补（编排 D10-454，标题不得改故记于此）：保留天数读 retention.union_raw_payloads_days，下限 180，总开关同 B1-15zb。
 refs: [BR-ID-30]
 refs_hash:
   BR-ID-30: 24c70bf4ac65
@@ -13,6 +14,7 @@ paths:
   - 'packages/db/src/**'
   - 'apps/api/src/modules/platform/maintenance/index.ts'
   - 'apps/api/src/modules/platform/maintenance/index.test.ts'
+  - 'apps/api/src/modules/platform/maintenance/worker.ts'
 test_paths:
   - 'test/spec/platform/retention-partitions/**'
 impl: claude
