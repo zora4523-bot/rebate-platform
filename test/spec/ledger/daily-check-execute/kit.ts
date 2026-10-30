@@ -16,13 +16,17 @@
 // ports — the payout hold port writes the withdraw_holds row on the transaction it is given (as
 // payout's WithdrawHolds.add does, without its audit) so a roll-back is observable, and records
 // whether the diff it points at was visible inside that transaction and from another connection;
-// the content switch port records its calls, takes a transaction-scoped advisory lock and, when
-// alerted, checks from another connection that the lock (its transaction) is gone. The differences
+// the content switch port records its calls and the transaction turnOff was given and, when
+// alerted, runs one query on that transaction: Kysely rejects it once the transaction committed
+// ("Transaction is already committed"), so an alert raised before the commit is told apart without
+// depending on timing. BR-WDR-05 末句 (R2 与日终校验只追加 withdraw_holds，不改 risk_state) is read
+// back on users and user_risk_state (risk_state lives there; users has no withdraw_blocked_reason
+// column, and BR-WDR-05 says not to use one). The differences
 // are written by hand in the unified invariant output shape of db/invariants/ledger (detail keys
 // as the SQL files emit them). No real user data.
 import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { sql, type Kysely, type Selectable } from 'kysely';
+import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import { expect } from 'vitest';
 import {
   createDailyCheckExecutor,
@@ -59,6 +63,7 @@ export const FILES = {
   '03': '09_credit-unique-net.sql',
   '05': '05_union-receivable.sql',
   '07': '07_negative-balance-drops.sql',
+  '08': '08_invalid-still-credited.sql',
   'pay-01': 'pay-01_voucher-no-user-balance.sql',
   'pay-04': 'pay-04_suspense-equals-open-anomalies.sql',
 } as const;
@@ -95,7 +100,7 @@ export interface FakeSwitch extends AutoSettlementSwitch {
   readonly alerts: SwitchCall[];
   /** `turnOff:<app>` and `alert:<app>` in call order. */
   readonly events: string[];
-  /** Per alert: whether the transaction of that app's turnOff had ended when the alert came. */
+  /** Per alert: whether the transaction of that app's turnOff had committed when the alert came. */
   readonly alertChecks: Promise<boolean>[];
   /** When true, turnOff throws (nothing switched). */
   fail: boolean;
@@ -168,15 +173,13 @@ function fakeHolds(clock: FixedClock, connections: Connections): FakeHolds {
   };
 }
 
-function lockName(appId: string): string {
-  return `b2-02p-switch:${appId}`;
-}
-
-function fakeSwitch(connections: Connections): FakeSwitch {
+function fakeSwitch(): FakeSwitch {
   const turnOffs: SwitchCall[] = [];
   const alerts: SwitchCall[] = [];
   const events: string[] = [];
   const alertChecks: Promise<boolean>[] = [];
+  /** The transaction of each app's latest successful turnOff. */
+  const transactions = new Map<string, Transaction<DB>>();
   const state = { fail: false };
   return {
     turnOffs,
@@ -192,8 +195,9 @@ function fakeSwitch(connections: Connections): FakeSwitch {
     async turnOff(trx, input) {
       events.push(`turnOff:${input.appId}`);
       if (state.fail) throw new Error('synthetic switch failure');
-      // Held until the transaction ends (commit or roll-back).
-      await sql`SELECT pg_advisory_xact_lock(hashtext(${lockName(input.appId)}))`.execute(trx);
+      // The port works on the transaction it is given (as content's writer does).
+      await sql`SELECT 1`.execute(trx);
+      transactions.set(input.appId, trx);
       const result: AutoSettlementSwitchResult = {
         key: SWITCH_KEY,
         changed: true,
@@ -206,16 +210,25 @@ function fakeSwitch(connections: Connections): FakeSwitch {
     alertCommitted(input, result) {
       events.push(`alert:${input.appId}`);
       alerts.push({ input, result });
-      alertChecks.push(lockReleased(observerOf(connections), input.appId));
+      alertChecks.push(committed(transactions.get(input.appId)));
     },
   };
 }
 
-/** True when no transaction holds the app's switch lock (one autocommit statement). */
-async function lockReleased(observer: Kysely<DB>, appId: string): Promise<boolean> {
-  const result = await sql<{ got: boolean }>`
-    SELECT pg_try_advisory_xact_lock(hashtext(${lockName(appId)})) AS got`.execute(observer);
-  return result.rows[0]?.got === true;
+/**
+ * True only when `trx` has committed: Kysely refuses any query on a committed transaction. The
+ * query is issued at the moment of the alert, so an open transaction (alert before the commit)
+ * accepts it and gives false; a rolled-back one or no turnOff at all also gives false.
+ */
+async function committed(trx: Transaction<DB> | undefined): Promise<boolean> {
+  if (trx === undefined) return false;
+  try {
+    // Runs synchronously up to Kysely's state check, i.e. at the moment alertCommitted is called.
+    await sql`SELECT 1`.execute(trx);
+    return false;
+  } catch (error) {
+    return error instanceof Error && /already committed/u.test(error.message);
+  }
 }
 
 /**
@@ -238,7 +251,7 @@ export async function withHarness(
   };
   const connections: Connections = {};
   const holds = fakeHolds(clock, connections);
-  const settle = fakeSwitch(connections);
+  const settle = fakeSwitch();
   const dependencies = { clock, logger, holds, autoSettlement: settle };
   const executor = createDailyCheckExecutor(dependencies);
   const database = await create();
@@ -287,6 +300,43 @@ export async function member(h: Harness, appId = APP): Promise<string> {
     updated_at: h.clock.now(),
   });
   return id;
+}
+
+/** The member's user_risk_state row, state normal (as risk writes it for a new member). */
+export async function normalRiskState(h: Harness, userId: string, appId = APP): Promise<void> {
+  await insert(h.db, 'user_risk_state', {
+    user_id: userId,
+    app_id: appId,
+    state: 'normal',
+    changed_by: 'system',
+    changed_at: h.clock.now(),
+    created_at: h.clock.now(),
+    updated_at: h.clock.now(),
+  });
+}
+
+export interface Standing {
+  readonly users: Selectable<DB['users']>[];
+  readonly riskStates: Selectable<DB['user_risk_state']>[];
+}
+
+/** The users rows and user_risk_state rows of these users, by id (every column). */
+export async function standingOf(h: Harness, userIds: readonly string[]): Promise<Standing> {
+  const ids = [...userIds];
+  const users = await h.db
+    .selectFrom('users')
+    .selectAll()
+    .where('id', 'in', ids)
+    .orderBy('id')
+    .execute();
+  const riskStates = await h.db
+    .selectFrom('user_risk_state')
+    .selectAll()
+    .where('user_id', 'in', ids)
+    .orderBy('user_id')
+    .execute();
+  expect(users, 'users rows read back').toHaveLength(ids.length);
+  return { users, riskStates };
 }
 
 export interface UserAccount {
@@ -583,6 +633,61 @@ export function receivableDiff(
         },
       ],
     },
+  };
+}
+
+export interface InvalidCreditedOrder {
+  readonly orderKey: string;
+  readonly orderId: string;
+  /** Every beneficiary of the sub-order (users.id). */
+  readonly beneficiaryUserIds: readonly string[];
+  /** The beneficiaries with no USER_BALANCE account. */
+  readonly unlocatedUserIds: readonly string[];
+}
+
+function invalidCreditedDetail(order: InvalidCreditedOrder, reasons: readonly string[]) {
+  return {
+    order_id: order.orderId,
+    order_key: order.orderKey,
+    platform_status: 'INVALID',
+    rebate_status: 'CREDITED',
+    reasons: [...reasons],
+    succeeded_invalid_after_settle_rights: '0',
+    beneficiary_user_ids: [...order.beneficiaryUserIds].sort(),
+    unlocated_user_ids: [...order.unlocatedUserIds].sort(),
+  };
+}
+
+/** ⑧ account row: one located beneficiary account of the sub-order (as the 08 SQL emits it). */
+export function invalidCreditedAccountDiff(
+  order: InvalidCreditedOrder,
+  account: UserAccount,
+): DailyCheckFiledDifference {
+  return {
+    file: FILES['08'],
+    invariant: '08',
+    scope: 'account',
+    app_id: account.appId,
+    account_id: account.accountId,
+    detail: {
+      ...invalidCreditedDetail(order, ['platform_invalid']),
+      user_id: account.userId,
+    },
+  };
+}
+
+/** ⑧ global row: a sub-order none of whose beneficiaries has an account. */
+export function invalidCreditedGlobalDiff(
+  order: InvalidCreditedOrder,
+  appId = APP,
+): DailyCheckFiledDifference {
+  return {
+    file: FILES['08'],
+    invariant: '08',
+    scope: 'global',
+    app_id: appId,
+    account_id: null,
+    detail: invalidCreditedDetail(order, ['platform_invalid', 'no_beneficiary_account']),
   };
 }
 

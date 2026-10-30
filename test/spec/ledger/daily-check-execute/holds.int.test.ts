@@ -19,12 +19,14 @@ import {
   holdInput,
   holdsOf,
   negativeDropDiff,
+  normalRiskState,
   orderKey,
   payAccountDiff,
   paySuspenseDiff,
   platformAccount,
   receivableDiff,
   sourceOf,
+  standingOf,
   userAccount,
   voucher,
   voucherDiff,
@@ -37,6 +39,8 @@ it(
     await withHarness(createTestDatabase, async (h) => {
       const account = await userAccount(h);
       const bystander = await userAccount(h);
+      await normalRiskState(h, account.userId);
+      const before = await standingOf(h, [account.userId]);
       const execution = await h.executor.execute(h.db, {
         accountingDate: DAY,
         differences: [balanceCacheDiff(account, { expected: 300n, cache: 500n })],
@@ -48,6 +52,9 @@ it(
       expectHold(holds[0], diff, account.userId, h);
       expect(holds.some((hold) => hold.user_id === bystander.userId)).toBe(false);
       expect(executedOf(execution, diff).heldUserIds).toEqual([account.userId]);
+      // BR-WDR-05: the freeze is the withdraw_holds row only; users and risk_state stay as they were.
+      expect(await standingOf(h, [account.userId])).toEqual(before);
+      expect(before.riskStates.map((row) => row.state)).toEqual(['normal']);
     });
   },
   TIMEOUT,
@@ -81,7 +88,13 @@ it(
         await duplicateCredits(h, key, first, 'self', receivable),
         await duplicateCredits(h, key, second, 'parent', receivable),
       ];
+      const involved = [first.userId, second.userId];
+      for (const userId of involved) await normalRiskState(h, userId);
+      const before = await standingOf(h, involved);
       const execution = await h.executor.execute(h.db, { accountingDate: DAY, differences });
+      // BR-WDR-05: the freeze is the withdraw_holds rows only; users and risk_state stay unchanged.
+      expect(await standingOf(h, involved)).toEqual(before);
+      expect(before.riskStates.map((row) => row.state)).toEqual(['normal', 'normal']);
       const rows = await diffsOf(h);
       expect(rows.map((row) => row.ref_id)).toEqual([`03:${key}`]);
       const diff = rows[0]!;
