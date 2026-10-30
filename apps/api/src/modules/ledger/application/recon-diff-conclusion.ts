@@ -20,7 +20,10 @@ export function readUnionAuthoritativeOrderKeys(
   db: Kysely<DB>,
   selection: UnionAuthoritativeSelection,
 ): Promise<ReadonlySet<string>> {
+  // 待编排裁定 (B2-04zd): no resolution value of the current writers means 「以联盟为准」, so the
+  // port does not guess one and returns no key (the frozen rule tests pin this). Once the value is
+  // ruled, read recon_diffs (source R1, ref_type order, ref_id in orderKeys, closed with it) on `db`.
   void db;
   void selection;
-  throw new Error('NotImplemented: readUnionAuthoritativeOrderKeys');
+  return Promise.resolve(new Set<string>());
 }

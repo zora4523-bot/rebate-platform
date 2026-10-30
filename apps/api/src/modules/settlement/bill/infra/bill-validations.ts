@@ -10,8 +10,9 @@ export function saveBillValidations(
   input: BillSourceSelection,
   rows: readonly BillValidation[],
 ): Promise<void> {
+  // D10-443 (a) 取 B: deliberately no write (see above).
   void trx;
   void input;
   void rows;
-  throw new Error('NotImplemented: saveBillValidations');
+  return Promise.resolve();
 }

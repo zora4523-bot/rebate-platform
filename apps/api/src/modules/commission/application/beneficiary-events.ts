@@ -24,13 +24,25 @@ export interface BeneficiaryEventDependencies {
   readonly clock: Clock;
 }
 
-export function appendBeneficiaryEvent(
+export async function appendBeneficiaryEvent(
   trx: Transaction<DB>,
   input: BeneficiaryEventInput,
   dependencies: BeneficiaryEventDependencies,
 ): Promise<void> {
-  void trx;
-  void input;
-  void dependencies;
-  throw new Error('NotImplemented: appendBeneficiaryEvent');
+  if (input.status === 'held' ? input.reason !== null : input.reason === null) {
+    throw new Error('commission beneficiary event: reason does not match status');
+  }
+  await trx
+    .withSchema('app')
+    .insertInto('commission_split_beneficiary_events')
+    .values({
+      app_id: input.appId,
+      order_id: input.orderId,
+      user_id: input.userId,
+      role: input.role,
+      status: input.status,
+      reason: input.reason,
+      created_at: dependencies.clock.now(),
+    })
+    .execute();
 }
