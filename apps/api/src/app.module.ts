@@ -237,6 +237,7 @@ import {
   createWithdrawalInFlightReader,
   createWithdrawHolds,
   createWithdrawHoldsReader,
+  createWithdrawalProvenSuccess,
   releaseWithdrawHoldsBySource,
   createWithdrawRules,
   createWithdrawSwitchCheck,
@@ -3560,6 +3561,25 @@ export class AppModule {
                       input,
                     ),
                 }),
+                // B2-07e (BR-WDR-08 W11, D10-428): payout's W11 on the write-off transaction —
+                // users row → ledger.lockBalances, the CAS to PAID_API, the success voucher, the
+                // attempt-append job for the payout process and the wallet event; the switch
+                // payout.proven_success_writeoff.enabled through content's reader.
+                writeOff: ({ clock, queue, eventBus }) =>
+                  createWithdrawalProvenSuccess({
+                    ledger: createLedger({
+                      clock,
+                      eventBus,
+                      balanceRecoveredHook: createBalanceRecoveredHook({ clock }),
+                    }),
+                    lockUsersForUpdate,
+                    config: {
+                      configValue: (appId, key, handle) =>
+                        createContentReader({ db: handle, clock }).configValue(appId, key),
+                    },
+                    queue,
+                    eventBus,
+                  }),
               }),
             ]
           : []),

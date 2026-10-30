@@ -222,3 +222,36 @@ export async function closeAdminReconDiffRow(
     .returningAll()
     .executeTakeFirst();
 }
+
+/**
+ * B2-07e: open / processing → written_off, compare-and-set on the status (undefined when the row
+ * is no longer open / processing or not the app's R1–R3 diff). handler_id the operator,
+ * closed_at = updated_at; resolution as given (the stored keys plus w11 and the note).
+ */
+export async function writeOffAdminReconDiffRow(
+  trx: Transaction<DB>,
+  input: {
+    readonly appId: string;
+    readonly id: string;
+    readonly handlerId: string;
+    readonly at: Date;
+    readonly resolution: object;
+  },
+): Promise<ReconDiffRow | undefined> {
+  return trx
+    .withSchema('app')
+    .updateTable('recon_diffs')
+    .set({
+      status: 'written_off',
+      handler_id: input.handlerId,
+      closed_at: input.at,
+      updated_at: input.at,
+      resolution: sql`${JSON.stringify(input.resolution)}::jsonb`,
+    })
+    .where('app_id', '=', input.appId)
+    .where('id', '=', input.id)
+    .where('source', 'in', ADMIN_SOURCES)
+    .where('status', 'in', CLOSABLE)
+    .returningAll()
+    .executeTakeFirst();
+}

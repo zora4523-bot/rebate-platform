@@ -41,6 +41,8 @@ import { PAYOUT_LANDING_QUEUE, createLandingJob } from './jobs/landing-job.ts';
 import { PAYOUT_PAUSE_JOB, createPauseJob } from './jobs/pause-job.ts';
 import { PAYOUT_REVIEW_QUEUE, createReviewJob } from './jobs/review-job.ts';
 import { createPayoutReconJob, type PayoutBillPort } from './jobs/recon-job.ts';
+import { createAttemptAppendJob } from './jobs/attempt-append-job.ts';
+import { PAYOUT_ATTEMPT_APPEND_QUEUE } from './application/withdrawal-proven-success.ts';
 import { PAYOUT_RECON_QUEUE, seedPayoutRecon } from './application/recon-schedule.ts';
 import { createWithdrawHolds } from './application/withdraw-holds.ts';
 import { defaultPayoutChannelConfig } from './application/judgement.ts';
@@ -198,6 +200,8 @@ function withEnvelope(job: ReceivedJob, clock: Clock): ReceivedJob {
 
 /** The worker's registration of the R2 reconciliation's handler (B2-07c; null: not registered). */
 export const PAYOUT_RECON_JOBS_TOKEN = Symbol('PAYOUT_RECON_JOBS');
+/** B2-07e: whether the payout process registered the attempt-append handler (false without db / queue). */
+export const PAYOUT_ATTEMPT_APPEND_TOKEN = Symbol('PAYOUT_ATTEMPT_APPEND');
 /** The worker's timer of the payout-recon chain (B2-07c; lifecycle hooks). */
 const PAYOUT_RECON_TIMER = Symbol('PAYOUT_RECON_TIMER');
 /** B2-07c: delay of the first seed after bootstrap (the queue runtime starts meanwhile). */
@@ -619,8 +623,41 @@ export class PayoutModule {
             });
           },
         },
+        // B2-07e (D10-428): the W11 attempt records. The admin write-off queues one job per
+        // (withdrawal, difference) on its own transaction; this process (couli_payout, the only
+        // role with INSERT on payout_attempts) appends the kind=query / result=success row,
+        // idempotently. Registered at assembly, before entry.ts starts the queue.
+        {
+          provide: PAYOUT_ATTEMPT_APPEND_TOKEN,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB_TOKEN, optional: true },
+            { token: JOB_QUEUE, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<DB>,
+            queue?: QueueRuntime,
+          ): boolean => {
+            if (db === undefined || queue === undefined) {
+              logger.info({ queue: PAYOUT_ATTEMPT_APPEND_QUEUE }, 'payout_attempt_append_disabled');
+              return false;
+            }
+            queue.register(
+              PAYOUT_ATTEMPT_APPEND_QUEUE,
+              createAttemptAppendJob({
+                db,
+                clock,
+                logger: logger.child({ module: 'payout', queue: PAYOUT_ATTEMPT_APPEND_QUEUE }),
+              }),
+            );
+            return true;
+          },
+        },
       ],
-      exports: [payoutRuntimeToken()],
+      exports: [payoutRuntimeToken(), PAYOUT_ATTEMPT_APPEND_TOKEN],
     };
   }
 

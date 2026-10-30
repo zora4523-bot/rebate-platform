@@ -62,6 +62,12 @@ export { LEDGER, LedgerAdminModule, LedgerModule } from './ledger.module.ts';
 export type { LedgerAdminOptions } from './ledger.module.ts';
 // B2-09b: the port the admin close of a recon diff releases its withdrawal holds through (payout).
 export type { ReconDiffHoldRelease } from './application/admin-recon-diff-close.ts';
+// B2-07e: the port the admin write-off of an R2 payer-side difference settles its withdrawal through (payout's W11).
+export type {
+  ReconDiffWriteOff,
+  ReconDiffWriteOffBillLine,
+  ReconDiffWriteOffRefusal,
+} from './application/admin-recon-diff-write-off.ts';
 export { createDailyCheck } from './application/daily-check.ts';
 export type {
   DailyCheckDependencies,

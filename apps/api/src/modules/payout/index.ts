@@ -310,3 +310,23 @@ export type {
   PaidWithdrawalSummariesInput,
   PaidWithdrawalSummary,
 } from './application/wallet-ledger.ts';
+// B2-07e: W11 — the returned withdrawal settled as PAID_API on the channel's proof (the port the
+// admin write-off of an R2 difference calls, through app.module; D10-428: the attempt record is
+// appended by the payout process from the job queued on the write-off transaction).
+export {
+  PAYOUT_ATTEMPT_APPEND_JOB,
+  PAYOUT_ATTEMPT_APPEND_QUEUE,
+  PROVEN_SUCCESS_SWITCH,
+  createWithdrawalProvenSuccess,
+} from './application/withdrawal-proven-success.ts';
+export type {
+  AttemptAppendPayload,
+  ProveChannelSuccessInput,
+  ProveChannelSuccessResult,
+  ProvenBillLine,
+  ProvenSuccessRefusal,
+  WithdrawalProvenSuccess,
+  WithdrawalProvenSuccessOptions,
+} from './application/withdrawal-proven-success.ts';
+export { PAYOUT_ATTEMPT_APPEND_ALERT, createAttemptAppendJob } from './jobs/attempt-append-job.ts';
+export type { AttemptAppendJobOptions, AttemptAppendLogger } from './jobs/attempt-append-job.ts';

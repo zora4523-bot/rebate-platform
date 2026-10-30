@@ -6,15 +6,25 @@ import {
   DB,
   EVENT_BUS,
   IDEMPOTENCY,
+  JOB_QUEUE,
   type AuditPort,
   type Clock,
   type EventBus,
   type Idempotency,
+  type JobQueue,
 } from '../platform/index.ts';
 import type {
   CloseAdminReconDiffDeps,
   ReconDiffHoldRelease,
 } from './application/admin-recon-diff-close.ts';
+import type {
+  ReconDiffWriteOff,
+  WriteOffAdminReconDiffDeps,
+} from './application/admin-recon-diff-write-off.ts';
+import {
+  AdminReconDiffWriteOffController,
+  RECON_DIFF_WRITE_OFF_DEPS,
+} from './http/admin/recon-diff-write-off.controller.ts';
 import { BalanceRecoveredHook, createLedger } from './application/recovered-ledger.ts';
 import type { Ledger } from './application/reverse.ts';
 import {
@@ -76,6 +86,16 @@ export interface LedgerAdminOptions {
   readonly auditWriter: (db: Kysely<Database>, clock: Clock) => AuditPort;
   /** payout's release of the holds whose source is the diff (its single writer of withdraw_holds). */
   readonly holdRelease: (clock: Clock) => ReconDiffHoldRelease;
+  /**
+   * B2-07e: payout's W11 over the entry's handle, clock, job queue and event bus (the port the
+   * write-off of an R2 payer-side difference calls; payout is the single writer of withdrawals).
+   */
+  readonly writeOff: (context: {
+    readonly db: Kysely<Database>;
+    readonly clock: Clock;
+    readonly queue: JobQueue;
+    readonly eventBus: EventBus;
+  }) => ReconDiffWriteOff;
 }
 
 /**
@@ -94,6 +114,7 @@ export class LedgerAdminModule {
         AdminReconDiffsController,
         AdminReconDiffCloseController,
         AdminAssetSnapshotsController,
+        AdminReconDiffWriteOffController,
       ],
       providers: [
         {
@@ -122,6 +143,40 @@ export class LedgerAdminModule {
                   idempotency,
                   auditOn: (trx) => options.auditWriter(trx, clock),
                   holds: options.holdRelease(clock),
+                },
+        },
+        // B2-07e: the write-off (payout.execute, step-up totp, platform idempotency): payout's W11
+        // on the write-off transaction (voucher, attempt-append job, wallet event), the diff row,
+        // the hold release and the recon_diff_write_off audit row commit together. Without the
+        // database, the queue, the event bus or idempotency the route fails closed (50001).
+        {
+          provide: RECON_DIFF_WRITE_OFF_DEPS,
+          inject: [
+            CLOCK,
+            { token: DB, optional: true },
+            { token: IDEMPOTENCY, optional: true },
+            { token: JOB_QUEUE, optional: true },
+            { token: EVENT_BUS, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            db?: Kysely<Database>,
+            idempotency?: Idempotency,
+            queue?: JobQueue,
+            eventBus?: EventBus,
+          ): WriteOffAdminReconDiffDeps | null =>
+            db === undefined ||
+            idempotency === undefined ||
+            queue === undefined ||
+            eventBus === undefined
+              ? null
+              : {
+                  db,
+                  clock,
+                  idempotency,
+                  auditOn: (trx) => options.auditWriter(trx, clock),
+                  holds: options.holdRelease(clock),
+                  writeOff: options.writeOff({ db, clock, queue, eventBus }),
                 },
         },
       ],

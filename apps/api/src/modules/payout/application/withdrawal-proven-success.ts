@@ -19,11 +19,14 @@
 //   wallet.withdrawal_changed on the same transaction.
 // A refusal writes nothing. Logs carry ids and codes only, never the payee.
 import type { DB } from '@couli/db';
+import { buildVouchers, transitionWithdrawal } from '@couli/domain';
 import type { Transaction } from 'kysely';
-import type { Ledger } from '../../ledger/index.ts';
+import type { Ledger, PostingEntry } from '../../ledger/index.ts';
 import type { EventBus, JobQueue } from '../../platform/index.ts';
 import type { WithdrawApplyOptions } from './withdraw-apply.ts';
 import type { PayoutConfigPort } from './withdraw-rules.ts';
+import { instant } from './payout-landing.ts';
+import { WithdrawalConflictError } from './withdrawal-commands.ts';
 
 /** The guard conditions of W11 a call may be refused on (contract data.reason). */
 export type ProvenSuccessRefusal =
@@ -89,9 +92,242 @@ export interface WithdrawalProvenSuccessOptions {
   readonly eventBus: EventBus;
 }
 
+/** content's switch of W11 (08 BR-WDR-08 细则, BR-WDR-17): default on. */
+export const PROVEN_SUCCESS_SWITCH = 'payout.proven_success_writeoff.enabled';
+/** The payout process's queue and job of the W11 attempt records (D10-428). */
+export const PAYOUT_ATTEMPT_APPEND_QUEUE = 'payout-attempt-append';
+export const PAYOUT_ATTEMPT_APPEND_JOB = 'append';
+/** BR-WDR-08 W11: the hold W9 leaves on the returned withdrawal. */
+const PAYER_SIDE_HOLD = 'payer_side_after_transfer';
+const APPROVED = 'APPROVED';
+/** BR-WDR-09: the cash subject of the success voucher by channel (specs/ledger-templates.csv). */
+const CASH_SUBJECT: Readonly<Record<string, string>> = {
+  alipay: 'CASH_ALIPAY',
+  bank_card: 'CASH_BANK',
+  wechat: 'CASH_WECHAT',
+};
+
+/** The job W11 queues for the payout process (jobs/attempt-append-job.ts reads it). */
+export interface AttemptAppendPayload {
+  readonly app_id: string;
+  readonly withdrawal_id: string;
+  readonly recon_diff_id: string;
+  readonly bill_date: string;
+  readonly out_biz_no: string;
+  readonly channel_order_id: string | null;
+  readonly amount_fen: string;
+  readonly booked_at: string | null;
+  readonly operator: string;
+  readonly at: string;
+}
+
+interface ProvenRow {
+  readonly id: string;
+  readonly user_id: string;
+  readonly status: string;
+  readonly hold_reason: string | null;
+  readonly out_biz_no: string;
+  readonly net_fen: bigint;
+  readonly fee_fen: bigint;
+  readonly tax_fen: bigint;
+  readonly payout_channel: string;
+  readonly row_version: number;
+}
+
+type BuiltEntry = {
+  account: { owner_type: string; subject: string };
+  sub_account: 'available' | 'frozen' | null;
+  amount_fen: bigint;
+  ledger_type: string;
+  sub_type: string | null;
+};
+
+function postingEntries(built: readonly BuiltEntry[], accountId: string): PostingEntry[] {
+  return built.map((entry) => ({
+    account:
+      entry.account.owner_type === 'user'
+        ? { ownerType: 'user', accountId }
+        : { ownerType: 'platform', subject: entry.account.subject },
+    sub_account: entry.sub_account === 'frozen' ? 'frozen' : 'available',
+    amount_fen: entry.amount_fen,
+    ledger_type: entry.ledger_type,
+    sub_type: entry.sub_type,
+    income_type: null,
+  }));
+}
+
+/** The bill line's 入账时间 as an instant; the server's time when absent or unreadable. */
+function paidAtOf(line: ProvenBillLine, now: Date): Date {
+  if (line.bookedAt === null) return now;
+  const parsed = Date.parse(line.bookedAt);
+  return Number.isNaN(parsed) ? now : instant(now, parsed);
+}
+
+/** The switch value as the registry stores it (boolean, or its JSON text); unreadable → default on. */
+function switchOn(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (value === 'false' || value === 'off' || value === 0) return false;
+  if (value === 'true' || value === 'on' || value === 1) return true;
+  return true;
+}
+
 export function createWithdrawalProvenSuccess(
   options: WithdrawalProvenSuccessOptions,
 ): WithdrawalProvenSuccess {
-  void options;
-  throw new Error('NotImplemented: createWithdrawalProvenSuccess');
+  const { ledger, config, queue, eventBus } = options;
+
+  async function readRow(
+    trx: Transaction<DB>,
+    appId: string,
+    withdrawalId: string,
+  ): Promise<ProvenRow | null> {
+    const row = await trx
+      .withSchema('app')
+      .selectFrom('withdrawals')
+      .select([
+        'id',
+        'user_id',
+        'status',
+        'hold_reason',
+        'out_biz_no',
+        'net_fen',
+        'fee_fen',
+        'tax_fen',
+        'payout_channel',
+        'row_version',
+      ])
+      .where('app_id', '=', appId)
+      .where('id', '=', withdrawalId)
+      .executeTakeFirst();
+    return row ?? null;
+  }
+
+  /** The transfer attempts of the withdrawal (kind=transfer only; query rows never count). */
+  async function transferResults(
+    trx: Transaction<DB>,
+    appId: string,
+    withdrawalId: string,
+  ): Promise<string[]> {
+    const rows = await trx
+      .withSchema('app')
+      .selectFrom('payout_attempts')
+      .select('result')
+      .where('app_id', '=', appId)
+      .where('withdrawal_id', '=', withdrawalId)
+      .where('kind', '=', 'transfer')
+      .execute();
+    return rows.map((row) => row.result);
+  }
+
+  return {
+    async proveChannelSuccess(trx, input) {
+      const { appId, withdrawalId, billLine, now } = input;
+      const setting = await config.configValue(appId, PROVEN_SUCCESS_SWITCH, trx);
+      if (setting !== null && !switchOn(setting.value)) {
+        return { kind: 'refused', reason: 'writeoff_disabled' };
+      }
+      // The user id for the users lock comes from a first read; everything is judged on the
+      // reread under the locks (BR-WDR-07: users row → balance row), and the CAS below guards
+      // the status and row_version again.
+      const first = await readRow(trx, appId, withdrawalId);
+      if (first === null || first.status !== APPROVED) throw new WithdrawalConflictError();
+      await options.lockUsersForUpdate(trx, { appId, userIds: [first.user_id] });
+      const balances = await ledger.lockBalances(trx, { appId, userIds: [first.user_id] });
+      const balance = balances.find((row) => row.user_id === first.user_id);
+      const row = await readRow(trx, appId, withdrawalId);
+      if (row === null || row.status !== APPROVED || balance === undefined) {
+        throw new WithdrawalConflictError();
+      }
+      if (row.hold_reason !== PAYER_SIDE_HOLD) {
+        return { kind: 'refused', reason: 'withdrawal_not_returned' };
+      }
+      const transfers = await transferResults(trx, appId, withdrawalId);
+      if (transfers.length !== 1 || transfers[0] !== 'fail') {
+        return { kind: 'refused', reason: 'transfer_attempts_mismatch' };
+      }
+      if (billLine.outBizNo === null || billLine.outBizNo !== row.out_biz_no) {
+        return { kind: 'refused', reason: 'not_payer_side_case' };
+      }
+      if (input.expectedFen !== row.net_fen) return { kind: 'refused', reason: 'amount_mismatch' };
+      const subject = CASH_SUBJECT[row.payout_channel];
+      if (subject === undefined)
+        throw new Error(`payout: no cash subject for ${row.payout_channel}`);
+      const transition = transitionWithdrawal(APPROVED, 'CHANNEL_SUCCESS_PROVEN');
+      if (!transition.ok || transition.noop) throw new WithdrawalConflictError();
+      const paidAt = paidAtOf(billLine, now);
+      const updated = await trx
+        .withSchema('app')
+        .updateTable('withdrawals')
+        .set({
+          status: transition.to,
+          paid_at: paidAt,
+          channel_order_id: billLine.channelOrderId,
+          hold_reason: null,
+          hold_at: null,
+          executor_id: input.operatorId,
+          executed_at: now,
+          row_version: row.row_version + 1,
+          updated_at: now,
+        })
+        .where('app_id', '=', appId)
+        .where('id', '=', withdrawalId)
+        .where('status', '=', APPROVED)
+        .where('row_version', '=', row.row_version)
+        .executeTakeFirst();
+      if (updated.numUpdatedRows !== 1n) throw new WithdrawalConflictError();
+      const [voucher] = buildVouchers(`WITHDRAW:SUCCESS:${subject}`, {
+        withdrawal_id: row.id,
+        user_id: row.user_id,
+        net_fen: row.net_fen,
+        fee_fen: row.fee_fen,
+        tax_fen: row.tax_fen,
+      });
+      if (voucher === undefined) throw new Error('payout: WITHDRAW:SUCCESS built no voucher');
+      await ledger.post(trx, {
+        appId,
+        uniqKey: voucher.uniq_key,
+        bizType: 'withdrawal',
+        bizId: row.id,
+        operator: `admin:${input.operatorId}`,
+        memo: null,
+        orderKey: null,
+        beneficiaryUserId: null,
+        role: null,
+        voucherKind: null,
+        entries: postingEntries(voucher.entries, balance.account_id),
+      });
+      const payload: AttemptAppendPayload = {
+        app_id: appId,
+        withdrawal_id: row.id,
+        recon_diff_id: input.reconDiffId,
+        bill_date: billLine.billDate,
+        out_biz_no: row.out_biz_no,
+        channel_order_id: billLine.channelOrderId,
+        amount_fen: row.net_fen.toString(),
+        booked_at: billLine.bookedAt,
+        operator: `admin:${input.operatorId}`,
+        at: now.toISOString(),
+      };
+      await queue.send(
+        PAYOUT_ATTEMPT_APPEND_QUEUE,
+        PAYOUT_ATTEMPT_APPEND_JOB,
+        { ...payload },
+        {
+          trx,
+          singletonKey: `${row.id}:${input.reconDiffId}:attempt-append`,
+        },
+      );
+      await eventBus.publish(trx, {
+        appId,
+        name: 'wallet.withdrawal_changed',
+        payload: { withdrawal_id: row.id, user_id: row.user_id, status: transition.to },
+      });
+      return {
+        kind: 'proven',
+        status: 'PAID_API',
+        paidAt,
+        channelOrderId: billLine.channelOrderId,
+      };
+    },
+  };
 }
