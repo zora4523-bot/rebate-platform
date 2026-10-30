@@ -7678,6 +7678,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/settle-bills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Monthly settlement bills of the app, page by page, newest bill month first
+         * @description The bill list of the settlement console (01 F-ADM-08 月结; 04 §3.2 settle_bills,
+         *     settle_batches; design/specs/admin-settle-bills.md §1, §4). Read only, no step-up.
+         *     Permission point: any of `settle.bill` or `fund.view` (04 §11.1, §11.2); a super admin
+         *     holds every point. Each row is one settle_bills row of the console's app: `bill_id` (the
+         *     bill month M, YYYY-MM, BR-FUND-04 ③), the derived `status` (enum
+         *     admin_settle_bill_status; see AdminSettleBillStatus for the rule and for how the latest
+         *     round is read from settle_batches — derived at read time, not stored), `generation_started_at`,
+         *     `generated_at`, the bill-day totals `platform_order_counts`,
+         *     `platform_settle_commission_totals`, `beneficiary_total_fen`, `platform_retained_fen`,
+         *     `error_count` and `held_count`, the batch summary (`batch_count`, `draft_batch_count`)
+         *     and `created_at`.
+         *
+         *     The totals and the counts `error_count` / `held_count` of settle_bills reflect the
+         *     bill-day task only; supplement batches do not write them back (编排裁定 D10-280 ③,
+         *     BR-FUND-04 细则「补充批次」). They are for display only: every amount judgement and
+         *     reconciliation goes by the batch items (GET /admin/v1/settle-batches/{batch_id}/items),
+         *     never by these totals. The differences found by the consistency check (差错单) are not
+         *     listed by this resource; they are read through GET /admin/v1/recon-diffs.
+         *
+         *     Filters combine with AND: `bill_from` and `bill_to` (bill months YYYY-MM, both inclusive)
+         *     and `status` (the derived status at response time). A value outside the enum or the
+         *     pattern is 20001 with `data.fields` naming the parameter; `bill_from` later than
+         *     `bill_to` is 20001 with `data.fields=[bill_from, bill_to]`. A filter set nothing matches
+         *     is an empty page (`items=[]`, `total=0`), not an error.
+         *
+         *     Order: `bill_id` descending. Pages with `page` (as AdminPage; a page past the last one is
+         *     `items=[]`) and `page_size` ≤ 200 (above 200 is 20001, as AdminPageSize); `total` is the
+         *     count of the filter set. The Chinese names of the statuses come from the console
+         *     dictionary (BR-TEXT-25 admin_dict), not from this contract. Writes (confirm, schedule,
+         *     cancel a schedule, reject, continue execution, supplement batches, upload, check and
+         *     import of a union settlement statement) and the export are not part of this operation.
+         *     Reading does not write an audit record.
+         */
+        get: operations["listAdminSettleBills"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/settle-bills/{bill_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One monthly settlement bill with its bill-day totals and the summary of every batch
+         * @description The bill detail of the settlement console (01 F-ADM-08 月结; 04 §3.2 settle_bills,
+         *     settle_batches, settle_batch_items; design/specs/admin-settle-bills.md §1, §4). Read
+         *     only, no step-up. Permission point: any of `settle.bill` or `fund.view` (04 §11.1,
+         *     §11.2). The fields of a list row (the derived `status`, the bill-day totals with
+         *     `error_count` and `held_count`, the batch summary), plus `batches`: every settle_batches
+         *     row of the bill, main and supplement, CANCELLED included, ordered by `created_at` then
+         *     `batch_id`. Each batch carries its columns (`batch_id`, `platform`, `kind`, `status`,
+         *     `settle_mode`, `scheduled_at`, `confirmed_by`, `confirmed_at`, `cancelled_reason`,
+         *     `order_count`, `started_at`, `finished_at`, `paused_by_switch_at`, `created_at`),
+         *     `in_current_round` (whether it belongs to the bill's latest round as defined in
+         *     AdminSettleBillStatus, the batches the derived status is computed from) and `item_counts`, the count of its settle_batch_items
+         *     by item_type × result, summed at read time (not stored).
+         *
+         *     As on the list: the totals and the counts of settle_bills reflect the bill-day task only
+         *     and supplement batches do not write them back (编排裁定 D10-280 ③); they are for display
+         *     only, every amount judgement and reconciliation goes by the batch items. The
+         *     consistency-check differences are read through GET /admin/v1/recon-diffs, not here. A
+         *     bill whose platform had credit.enabled off at generation keeps only its check results
+         *     and has no batch for that platform; a bill with no batch at all is `issued` once
+         *     generated (AdminSettleBillStatus).
+         *
+         *     A `bill_id` that does not match ^[0-9]{4}-(0[1-9]|1[0-2])$, or for which the app has no
+         *     bill, is 20001 with `data.fields=[bill_id]` (no 404). Writes (confirm, schedule, cancel a
+         *     schedule, reject, continue execution, supplement batches, upload, check and import of a
+         *     union settlement statement) and the export are not part of this operation. Reading does
+         *     not write an audit record.
+         */
+        get: operations["getAdminSettleBill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/settle-batches/{batch_id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The items of one settlement batch, page by page, in check order
+         * @description The batch items of the settlement console (01 F-ADM-08 月结; 04 §3.2
+         *     settle_batch_items; BR-FUND-04 ⑦ ⑫; design/specs/admin-settle-bills.md §1, §4). Read
+         *     only, no step-up. Permission point: any of `settle.bill` or `fund.view` (04 §11.1,
+         *     §11.2). Each row is one settle_batch_items row of the batch: `id`, `item_type` (order =
+         *     a sub-order row, beneficiary = a beneficiary make-up item, BR-FUND-04 ⑫), `order_id`,
+         *     `user_id`, `role` and `beneficiary_credit_id` (beneficiary items only, null on order
+         *     rows), `settle_seq` (order_settlements.seq at check time), `b_settle_fen` (order rows;
+         *     null on a beneficiary item when not recorded), `amount_fen` (beneficiary items, the
+         *     amount recomputed at execution; null on order rows and before execution), `result`
+         *     (null while the item is not executed yet), `skip_reason` and `created_at`. A row carries
+         *     the user_id only, never a phone number. These rows are what every amount judgement and
+         *     reconciliation of a bill goes by (the settle_bills totals are display only, D10-280 ③).
+         *
+         *     Filters combine with AND: `item_type` and `result` (credited, skipped, deferred, or
+         *     pending = the item has no result yet, result null). A value outside the enums is 20001
+         *     with `data.fields` naming the parameter; a filter set nothing matches is an empty page.
+         *
+         *     Order: `settle_seq` ascending, then `id` ascending. Pages with `page` (as AdminPage) and
+         *     `page_size` ≤ 200 (as AdminPageSize); `total` is the count of the filter set. An unknown
+         *     `batch_id` or a batch of another app is 20001 with `data.fields=[batch_id]` (no 404). The
+         *     upload, check and import of a union settlement statement and the export are not part of
+         *     this operation. Reading does not write an audit record.
+         */
+        get: operations["listAdminSettleBatchItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/kill-switches": {
         parameters: {
             query?: never;
@@ -16288,6 +16425,316 @@ export interface components {
             data: components["schemas"]["AdminWithdrawalDetail"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /** @description A bill month (settle_bills.bill_id, YYYY-MM; BR-FUND-04 ③). */
+        AdminSettleBillId: string;
+        /**
+         * @description contracts/enums/admin.yaml admin_settle_bill_status: the console status of a monthly
+         *     settlement bill (BR-FUND-04 细则「月结账单状态」), derived by the server at read time and
+         *     not stored (settle_bills has no status column). It is derived from the batches of the
+         *     bill's latest round, read from settle_batches: the first round is every batch of the bill
+         *     with kind main (generated by the bill-day task); each supplement launch is one round, the
+         *     batches with kind supplement sharing the same (platform, created_at) (one launch inserts
+         *     all its batches in one transaction, so they share the column-default created_at). A
+         *     round's time is the largest created_at of its batches; the latest round is the one with
+         *     the largest round time (on a tie, the round holding the largest batch_id). Batches
+         *     rejected (CANCELLED) do not take part. In this order, the first rule that holds wins
+         *     (now = the server clock):
+         *     generating = generated_at is null (the bill-day task is still checking and generating);
+         *     issued = the round has no batch left that is not CANCELLED (no candidate, a platform
+         *     with credit.enabled off keeping only its check results, or every batch of the round
+         *     rejected), or any batch of the round is DRAFT;
+         *     settled = every batch of the round is DONE;
+         *     settling = some batch of the round is EXECUTING or PARTIAL, or CONFIRMED with settle_mode
+         *     IMMEDIATE or with scheduled_at not later than now (due, not started yet);
+         *     scheduled = otherwise (the batches not yet DONE are all CONFIRMED with scheduled_at later
+         *     than now). Chinese names from BR-TEXT-25 admin_dict.
+         * @enum {string}
+         */
+        AdminSettleBillStatus: "generating" | "issued" | "scheduled" | "settling" | "settled";
+        /** @description Count per platform (settle_bills.platform_order_counts); a platform without sub-orders in the bill is absent. */
+        AdminSettleBillPlatformCounts: {
+            [key: string]: number;
+        };
+        /** @description Amount in fen per platform (settle_bills.platform_settle_commission_totals); a platform without sub-orders in the bill is absent. */
+        AdminSettleBillPlatformTotals: {
+            [key: string]: components["schemas"]["Fen"];
+        };
+        /**
+         * @description settle_batches.kind (04 §3.2; BR-FUND-04 ⑤ ⑨) — main = generated by the bill-day task, supplement = generated by a supplement launch. Values as the table's check constraint; contracts/enums has no entry for it yet.
+         * @enum {string}
+         */
+        AdminSettleBatchKind: "main" | "supplement";
+        /**
+         * @description contracts/enums/fund.yaml settle_batch_status (BR-FUND-04; transitions 04 §4 4.7).
+         * @enum {string}
+         */
+        AdminSettleBatchStatus: "DRAFT" | "CONFIRMED" | "EXECUTING" | "PARTIAL" | "DONE" | "CANCELLED";
+        /**
+         * @description contracts/enums/fund.yaml settle_mode (BR-FUND-04).
+         * @enum {string}
+         */
+        AdminSettleMode: "IMMEDIATE" | "SCHEDULED";
+        /**
+         * @description contracts/enums/fund.yaml settle_batch_item_type — order = sub-order row, beneficiary = beneficiary make-up item (BR-FUND-04 ⑫).
+         * @enum {string}
+         */
+        AdminSettleBatchItemType: "order" | "beneficiary";
+        /**
+         * @description contracts/enums/fund.yaml settle_batch_item_result (BR-FUND-04 ⑦ ⑫).
+         * @enum {string}
+         */
+        AdminSettleBatchItemResult: "credited" | "skipped" | "deferred";
+        /**
+         * @description The `result` filter of the batch items — a settle_batch_item_result value, or pending = not executed yet (result null). pending is a filter value only, never a result.
+         * @enum {string}
+         */
+        AdminSettleBatchItemResultFilterValue: "credited" | "skipped" | "deferred" | "pending";
+        /**
+         * @description contracts/enums/fund.yaml beneficiary_role (settle_batch_items.role, beneficiary items only).
+         * @enum {string}
+         */
+        AdminSettleBatchItemRole: "self" | "share" | "direct" | "indirect";
+        /**
+         * @description One monthly settlement bill of the console's list (04 §3.2 settle_bills) with its derived
+         *     status and batch summary. The totals and error_count / held_count reflect the bill-day
+         *     task only — supplement batches do not write them back (编排裁定 D10-280 ③) — and are for
+         *     display only: amount judgements and reconciliation go by the batch items.
+         */
+        AdminSettleBill: {
+            bill_id: components["schemas"]["AdminSettleBillId"];
+            status: components["schemas"]["AdminSettleBillStatus"];
+            /**
+             * Format: date-time
+             * @description When the bill-day task started generating this bill (BR-FUND-04 ③).
+             */
+            generation_started_at: string;
+            /**
+             * Format: date-time
+             * @description When the check and every batch of the bill-day task were generated; null while generating.
+             */
+            generated_at: string | null;
+            /** @description Sub-orders in the bill per platform (bill-day task only); null while generating. */
+            platform_order_counts: components["schemas"]["AdminSettleBillPlatformCounts"] | null;
+            /** @description Union settlement commission per platform in fen (bill-day task only); null while generating. */
+            platform_settle_commission_totals: components["schemas"]["AdminSettleBillPlatformTotals"] | null;
+            /**
+             * Format: int64
+             * @description Total of the beneficiary shares in fen (bill-day task only); null while generating.
+             */
+            beneficiary_total_fen: number | null;
+            /**
+             * Format: int64
+             * @description Total retained by the platform in fen (bill-day task only); null while generating.
+             */
+            platform_retained_fen: number | null;
+            /**
+             * Format: int32
+             * @description Differences (差错单) opened by the bill-day task; null while generating. The rows are in GET /admin/v1/recon-diffs.
+             */
+            error_count: number | null;
+            /**
+             * Format: int32
+             * @description Sub-orders put aside (暂缓, hold or rights pending) by the bill-day task; null while generating.
+             */
+            held_count: number | null;
+            /**
+             * Format: int32
+             * @description Batches of the bill, main and supplement, CANCELLED included (counted at read time).
+             */
+            batch_count: number;
+            /**
+             * Format: int32
+             * @description Batches of the bill in DRAFT, waiting for confirmation (counted at read time).
+             */
+            draft_batch_count: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description Items of a batch by item_type × result, summed at read time (not stored); pending = result null (not executed yet). */
+        AdminSettleBatchItemCounts: {
+            order: {
+                /** Format: int32 */
+                credited: number;
+                /** Format: int32 */
+                skipped: number;
+                /** Format: int32 */
+                pending: number;
+            };
+            beneficiary: {
+                /** Format: int32 */
+                credited: number;
+                /** Format: int32 */
+                skipped: number;
+                /** Format: int32 */
+                deferred: number;
+                /** Format: int32 */
+                pending: number;
+            };
+        };
+        /** @description One settle_batches row of a bill (04 §3.2) with whether it is in the bill's latest round and its item counts. */
+        AdminSettleBatch: {
+            batch_id: components["schemas"]["Id"];
+            platform: components["schemas"]["PlatformCode"];
+            kind: components["schemas"]["AdminSettleBatchKind"];
+            status: components["schemas"]["AdminSettleBatchStatus"];
+            settle_mode: components["schemas"]["AdminSettleMode"];
+            /**
+             * Format: date-time
+             * @description The scheduled execution time; null unless settle_mode is SCHEDULED.
+             */
+            scheduled_at: string | null;
+            /** @description The admin who confirmed the batch; null until confirmed (and again after a schedule is cancelled). */
+            confirmed_by: string | null;
+            /** Format: date-time */
+            confirmed_at: string | null;
+            /** @description The rejection reason; set exactly when status is CANCELLED. */
+            cancelled_reason: string | null;
+            /**
+             * Format: int32
+             * @description Sub-orders in the batch.
+             */
+            order_count: number;
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: date-time */
+            finished_at: string | null;
+            /**
+             * Format: date-time
+             * @description When execution stopped because a switch was off (BR-FUND-04 SB10); null otherwise.
+             */
+            paused_by_switch_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether the batch belongs to the bill's latest round as defined in AdminSettleBillStatus (main round = all kind main batches; supplement round = kind supplement batches sharing (platform, created_at); latest = largest round time, a tie going to the round holding the largest batch_id); a CANCELLED batch of that round is true but takes no part. */
+            in_current_round: boolean;
+            item_counts: components["schemas"]["AdminSettleBatchItemCounts"];
+        };
+        AdminSettleBillPage: {
+            items: components["schemas"]["AdminSettleBill"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminSettleBillPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminSettleBillPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description One monthly settlement bill with the fields of AdminSettleBill plus every batch of the
+         *     bill. Totals and counts of settle_bills reflect the bill-day task only and are for
+         *     display only (编排裁定 D10-280 ③).
+         */
+        AdminSettleBillDetail: {
+            bill_id: components["schemas"]["AdminSettleBillId"];
+            status: components["schemas"]["AdminSettleBillStatus"];
+            /**
+             * Format: date-time
+             * @description When the bill-day task started generating this bill (BR-FUND-04 ③).
+             */
+            generation_started_at: string;
+            /**
+             * Format: date-time
+             * @description When the check and every batch of the bill-day task were generated; null while generating.
+             */
+            generated_at: string | null;
+            /** @description Sub-orders in the bill per platform (bill-day task only); null while generating. */
+            platform_order_counts: components["schemas"]["AdminSettleBillPlatformCounts"] | null;
+            /** @description Union settlement commission per platform in fen (bill-day task only); null while generating. */
+            platform_settle_commission_totals: components["schemas"]["AdminSettleBillPlatformTotals"] | null;
+            /**
+             * Format: int64
+             * @description Total of the beneficiary shares in fen (bill-day task only); null while generating.
+             */
+            beneficiary_total_fen: number | null;
+            /**
+             * Format: int64
+             * @description Total retained by the platform in fen (bill-day task only); null while generating.
+             */
+            platform_retained_fen: number | null;
+            /**
+             * Format: int32
+             * @description Differences (差错单) opened by the bill-day task; null while generating. The rows are in GET /admin/v1/recon-diffs.
+             */
+            error_count: number | null;
+            /**
+             * Format: int32
+             * @description Sub-orders put aside (暂缓, hold or rights pending) by the bill-day task; null while generating.
+             */
+            held_count: number | null;
+            /**
+             * Format: int32
+             * @description Batches of the bill, main and supplement, CANCELLED included (counted at read time).
+             */
+            batch_count: number;
+            /**
+             * Format: int32
+             * @description Batches of the bill in DRAFT, waiting for confirmation (counted at read time).
+             */
+            draft_batch_count: number;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Every batch of the bill, main and supplement, CANCELLED included, ordered by created_at then batch_id; [] when none. */
+            batches: components["schemas"]["AdminSettleBatch"][];
+        };
+        AdminSettleBillDetailResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminSettleBillDetail"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description One settle_batch_items row (04 §3.2; BR-FUND-04 ⑦ ⑫); user_id only, never a phone number. */
+        AdminSettleBatchItem: {
+            id: components["schemas"]["Id"];
+            item_type: components["schemas"]["AdminSettleBatchItemType"];
+            order_id: components["schemas"]["Id"];
+            /** @description The beneficiary (beneficiary items only); null on order rows. */
+            user_id: string | null;
+            /** @description The beneficiary role (beneficiary items only); null on order rows. */
+            role: components["schemas"]["AdminSettleBatchItemRole"] | null;
+            /** @description The make-up obligation (beneficiary items only); null on order rows. */
+            beneficiary_credit_id: string | null;
+            /**
+             * Format: int32
+             * @description order_settlements.seq at check time; execution skips the item when it no longer matches (BR-FUND-04 ⑦).
+             */
+            settle_seq: number;
+            /**
+             * Format: int64
+             * @description B_settle in fen (order rows always; beneficiary items when recorded).
+             */
+            b_settle_fen: number | null;
+            /**
+             * Format: int64
+             * @description The amount credited in fen, recomputed at execution (beneficiary items); null on order rows and before execution.
+             */
+            amount_fen: number | null;
+            /** @description Null while the item is not executed yet. */
+            result: components["schemas"]["AdminSettleBatchItemResult"] | null;
+            /** @description Why the item was skipped; null otherwise. */
+            skip_reason: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminSettleBatchItemPage: {
+            items: components["schemas"]["AdminSettleBatchItem"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminSettleBatchItemPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminSettleBatchItemPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
     };
     responses: {
         /** @description Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则). */
@@ -16724,6 +17171,20 @@ export interface components {
         AdminWithdrawalRiskFlagFilter: components["schemas"]["AdminWithdrawalRiskFlagCode"];
         /** @description The withdrawal (withdrawals.id) as a list row carries it; unknown or of another app → 20001 with data.fields=[withdrawal_id]. */
         AdminWithdrawalIdPath: components["schemas"]["Id"];
+        /** @description Earliest bill month (YYYY-MM), inclusive; later than bill_to → 20001 with data.fields=[bill_from, bill_to]. */
+        AdminSettleBillFrom: components["schemas"]["AdminSettleBillId"];
+        /** @description Latest bill month (YYYY-MM), inclusive. */
+        AdminSettleBillTo: components["schemas"]["AdminSettleBillId"];
+        /** @description Only bills whose derived status at response time is this one (enum admin_settle_bill_status, BR-FUND-04 细则「月结账单状态」); absent = all. */
+        AdminSettleBillStatusFilter: components["schemas"]["AdminSettleBillStatus"];
+        /** @description The bill month (settle_bills.bill_id, YYYY-MM); not matching the pattern, or no bill of the app → 20001 with data.fields=[bill_id]. */
+        AdminSettleBillIdPath: components["schemas"]["AdminSettleBillId"];
+        /** @description The settlement batch (settle_batches.batch_id) as a bill detail carries it; unknown or of another app → 20001 with data.fields=[batch_id]. */
+        AdminSettleBatchIdPath: components["schemas"]["Id"];
+        /** @description Only items of this type (enum settle_batch_item_type); absent = all. */
+        AdminSettleBatchItemTypeFilter: components["schemas"]["AdminSettleBatchItemType"];
+        /** @description Only items with this result (enum settle_batch_item_result), or pending = items not executed yet (result null); absent = all. */
+        AdminSettleBatchItemResultFilter: components["schemas"]["AdminSettleBatchItemResultFilterValue"];
     };
     requestBodies: never;
     headers: {
@@ -33830,6 +34291,326 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["AdminWithdrawalDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listAdminSettleBills: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+                /** @description Earliest bill month (YYYY-MM), inclusive; later than bill_to → 20001 with data.fields=[bill_from, bill_to]. */
+                bill_from?: components["parameters"]["AdminSettleBillFrom"];
+                /** @description Latest bill month (YYYY-MM), inclusive. */
+                bill_to?: components["parameters"]["AdminSettleBillTo"];
+                /** @description Only bills whose derived status at response time is this one (enum admin_settle_bill_status, BR-FUND-04 细则「月结账单状态」); absent = all. */
+                status?: components["parameters"]["AdminSettleBillStatusFilter"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of monthly settlement bills, newest bill month first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "bill_id": "2026-09",
+                     *             "status": "issued",
+                     *             "generation_started_at": "2026-10-24T02:00:00+08:00",
+                     *             "generated_at": "2026-10-24T02:12:30+08:00",
+                     *             "platform_order_counts": {
+                     *               "taobao": 1200,
+                     *               "jd": 300
+                     *             },
+                     *             "platform_settle_commission_totals": {
+                     *               "taobao": 864000,
+                     *               "jd": 151000
+                     *             },
+                     *             "beneficiary_total_fen": 712000,
+                     *             "platform_retained_fen": 303000,
+                     *             "error_count": 4,
+                     *             "held_count": 2,
+                     *             "batch_count": 2,
+                     *             "draft_batch_count": 2,
+                     *             "created_at": "2026-10-24T02:00:00+08:00"
+                     *           },
+                     *           {
+                     *             "bill_id": "2026-08",
+                     *             "status": "settled",
+                     *             "generation_started_at": "2026-09-24T02:00:00+08:00",
+                     *             "generated_at": "2026-09-24T02:10:05+08:00",
+                     *             "platform_order_counts": {
+                     *               "taobao": 980
+                     *             },
+                     *             "platform_settle_commission_totals": {
+                     *               "taobao": 702500
+                     *             },
+                     *             "beneficiary_total_fen": 491750,
+                     *             "platform_retained_fen": 210750,
+                     *             "error_count": 0,
+                     *             "held_count": 1,
+                     *             "batch_count": 2,
+                     *             "draft_batch_count": 0,
+                     *             "created_at": "2026-09-24T02:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminSettleBillPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getAdminSettleBill: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description The bill month (settle_bills.bill_id, YYYY-MM); not matching the pattern, or no bill of the app → 20001 with data.fields=[bill_id]. */
+                bill_id: components["parameters"]["AdminSettleBillIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The bill with its bill-day totals, derived status and batches. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "bill_id": "2026-09",
+                     *         "status": "scheduled",
+                     *         "generation_started_at": "2026-10-24T02:00:00+08:00",
+                     *         "generated_at": "2026-10-24T02:12:30+08:00",
+                     *         "platform_order_counts": {
+                     *           "taobao": 1200,
+                     *           "jd": 300
+                     *         },
+                     *         "platform_settle_commission_totals": {
+                     *           "taobao": 864000,
+                     *           "jd": 151000
+                     *         },
+                     *         "beneficiary_total_fen": 712000,
+                     *         "platform_retained_fen": 303000,
+                     *         "error_count": 4,
+                     *         "held_count": 2,
+                     *         "batch_count": 2,
+                     *         "draft_batch_count": 0,
+                     *         "created_at": "2026-10-24T02:00:00+08:00",
+                     *         "batches": [
+                     *           {
+                     *             "batch_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa101",
+                     *             "platform": "taobao",
+                     *             "kind": "main",
+                     *             "status": "CONFIRMED",
+                     *             "settle_mode": "SCHEDULED",
+                     *             "scheduled_at": "2026-10-31T10:00:00+08:00",
+                     *             "confirmed_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01",
+                     *             "confirmed_at": "2026-10-29T15:20:00+08:00",
+                     *             "cancelled_reason": null,
+                     *             "order_count": 1200,
+                     *             "started_at": null,
+                     *             "finished_at": null,
+                     *             "paused_by_switch_at": null,
+                     *             "created_at": "2026-10-24T02:12:00+08:00",
+                     *             "in_current_round": true,
+                     *             "item_counts": {
+                     *               "order": {
+                     *                 "credited": 0,
+                     *                 "skipped": 0,
+                     *                 "pending": 1200
+                     *               },
+                     *               "beneficiary": {
+                     *                 "credited": 0,
+                     *                 "skipped": 0,
+                     *                 "deferred": 0,
+                     *                 "pending": 3
+                     *               }
+                     *             }
+                     *           },
+                     *           {
+                     *             "batch_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa102",
+                     *             "platform": "jd",
+                     *             "kind": "main",
+                     *             "status": "CONFIRMED",
+                     *             "settle_mode": "SCHEDULED",
+                     *             "scheduled_at": "2026-10-31T10:00:00+08:00",
+                     *             "confirmed_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01",
+                     *             "confirmed_at": "2026-10-29T15:20:00+08:00",
+                     *             "cancelled_reason": null,
+                     *             "order_count": 300,
+                     *             "started_at": null,
+                     *             "finished_at": null,
+                     *             "paused_by_switch_at": null,
+                     *             "created_at": "2026-10-24T02:12:10+08:00",
+                     *             "in_current_round": true,
+                     *             "item_counts": {
+                     *               "order": {
+                     *                 "credited": 0,
+                     *                 "skipped": 0,
+                     *                 "pending": 300
+                     *               },
+                     *               "beneficiary": {
+                     *                 "credited": 0,
+                     *                 "skipped": 0,
+                     *                 "deferred": 0,
+                     *                 "pending": 0
+                     *               }
+                     *             }
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminSettleBillDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listAdminSettleBatchItems: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+                /** @description Only items of this type (enum settle_batch_item_type); absent = all. */
+                item_type?: components["parameters"]["AdminSettleBatchItemTypeFilter"];
+                /** @description Only items with this result (enum settle_batch_item_result), or pending = items not executed yet (result null); absent = all. */
+                result?: components["parameters"]["AdminSettleBatchItemResultFilter"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description The settlement batch (settle_batches.batch_id) as a bill detail carries it; unknown or of another app → 20001 with data.fields=[batch_id]. */
+                batch_id: components["parameters"]["AdminSettleBatchIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of the batch's items in check order. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa201",
+                     *             "item_type": "order",
+                     *             "order_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6d01",
+                     *             "user_id": null,
+                     *             "role": null,
+                     *             "beneficiary_credit_id": null,
+                     *             "settle_seq": 1,
+                     *             "b_settle_fen": 720,
+                     *             "amount_fen": null,
+                     *             "result": "credited",
+                     *             "skip_reason": null,
+                     *             "created_at": "2026-10-24T02:12:00+08:00"
+                     *           },
+                     *           {
+                     *             "id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa202",
+                     *             "item_type": "beneficiary",
+                     *             "order_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6d02",
+                     *             "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *             "role": "direct",
+                     *             "beneficiary_credit_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa301",
+                     *             "settle_seq": 2,
+                     *             "b_settle_fen": null,
+                     *             "amount_fen": 36,
+                     *             "result": "credited",
+                     *             "skip_reason": null,
+                     *             "created_at": "2026-10-24T02:12:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminSettleBatchItemPageResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

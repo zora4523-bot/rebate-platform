@@ -1168,6 +1168,21 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/settle-bills",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/settle-bills/:bill_id",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/settle-batches/:batch_id/items",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "auth": "admin"
   },

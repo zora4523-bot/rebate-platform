@@ -145,6 +145,15 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminPayoutBatchKind: 'payout_batch_kind',
   AdminPayoutBatchItemResult: 'payout_batch_item_result',
   AdminPayoutAttemptKind: 'payout_attempt_kind',
+  // CT-24z: admin monthly settlement bills, read only (04 §3.2 settle_bills, settle_batches,
+  // settle_batch_items; BR-FUND-04 细则). AdminSettleBatchKind (main / supplement) and the
+  // result filter AdminSettleBatchItemResultFilterValue (adds pending) have no catalog enum.
+  AdminSettleBillStatus: 'admin_settle_bill_status',
+  AdminSettleBatchStatus: 'settle_batch_status',
+  AdminSettleMode: 'settle_mode',
+  AdminSettleBatchItemType: 'settle_batch_item_type',
+  AdminSettleBatchItemResult: 'settle_batch_item_result',
+  AdminSettleBatchItemRole: 'beneficiary_role',
 };
 
 /**
