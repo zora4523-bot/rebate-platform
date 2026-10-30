@@ -63,7 +63,7 @@ it(
         await heal();
         expect(await statesOf(db, APP, DAY)).toStrictEqual(['failed', 'created']);
 
-        // The re-sent job fails once and waits for its retry: nothing more is sent.
+        // The re-sent job fails once and waits to be run again: nothing more is sent.
         await transition(db, (await liveJob(db, APP, DAY)).id, 'retry');
         await heal();
         expect(sendsOf(queue, APP, DAY)).toHaveLength(2);

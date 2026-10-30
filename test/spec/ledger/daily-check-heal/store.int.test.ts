@@ -1,7 +1,7 @@
 // B2-02r: the run store over PostgreSQL (infra createDailyCheckRunStore). stateOf reports the
 // actual state of (app, D) from the queue and the results (task brief §9.2): pg-boss on the test
 // database holds the `daily` jobs (sent through the B2-02q scheduleDailyCheck), and the state
-// changes a worker makes (active, retry, retries exhausted into ledger-check.dead, cancelled) are
+// changes a worker makes (active, to run again, exhausted into ledger-check.dead, cancelled) are
 // written as plain SQL; a completed run is the B2-02q handler actually run, then completed. Nothing
 // is remembered in memory: a new store instance (a restarted worker) answers the same.
 // claimOverdueAlert is durable and has one winner.
