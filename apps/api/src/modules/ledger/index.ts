@@ -85,6 +85,26 @@ export type {
   LedgerMismatchHoldInput,
   LedgerMismatchHolds,
 } from './application/daily-check-execute.ts';
+// B2-02q: the daily chain of the check on queue ledger-check (worker entry only).
+export {
+  createDailyCheckJob,
+  dailyCheckDayAfter,
+  dailyCheckDayOf,
+  dailyCheckJobKey,
+  dailyCheckRunAtMs,
+  scheduleDailyCheck,
+  seedDailyCheck,
+} from './application/daily-check-schedule.ts';
+export type {
+  DailyCheckJobDependencies,
+  DailyCheckJobName,
+  DailyCheckJobPayload,
+  DailyCheckQueue,
+  DailyCheckScheduleLogger,
+  DailyCheckSeedOptions,
+} from './application/daily-check-schedule.ts';
+export { LedgerDailyCheckModule } from './daily-check.module.ts';
+export type { LedgerDailyCheckWorkerOptions } from './daily-check.module.ts';
 // B2-04y: GET /v1/wallet/summary (the query itself is exported only by read.ts, BR-AI-02 ④).
 export { WalletSummaryModule } from './wallet-summary.module.ts';
 export type { WalletSummaryModuleOptions } from './wallet-summary.module.ts';

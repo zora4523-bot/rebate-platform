@@ -26,6 +26,9 @@ const BUSINESS_QUEUES = [
   // The worker's daily R2 reconciliation of the payout channel (B2-07c, D10-408): job `recon`,
   // singletonKey `recon:${app_id}:${channel}:${bill_date}`, and its `check` after a ① query.
   'payout-recon',
+  // The worker's daily ledger check (B2-02q, BR-FUND-19, D10-415 ①): job `daily`, singletonKey
+  // `daily:${app_id}:${accounting_date}`; each run enqueues the next day.
+  'ledger-check',
   'notify',
   // Site union authorization check chain, its probe retry, expiry and alert delivery jobs
   // (B1-22b): union's UnionAuthModule, worker only; one queued or active job per singletonKey.
@@ -75,6 +78,7 @@ export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
         name === 'payout-landing' ||
         name === 'payout-review' ||
         name === 'payout-recon' ||
+        name === 'ledger-check' ||
         name === 'risk-scan' ||
         name === 'union-auth' ||
         name === 'pay'

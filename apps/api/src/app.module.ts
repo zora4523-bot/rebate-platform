@@ -82,6 +82,7 @@ import {
   combineConfigItemSaveChecks,
   configRegistry,
   createContentReader,
+  createSystemSwitchWriter,
   switchSpecOf,
   type ContentAdminOptions,
   type ContentReader,
@@ -202,6 +203,7 @@ import {
 import {
   EarningsSummaryModule,
   LedgerAdminModule,
+  LedgerDailyCheckModule,
   LedgerModule,
   WalletLedgerModule,
   WalletSummaryModule,
@@ -230,6 +232,7 @@ import {
   createPayoutAttemptsStore,
   type AutoPayoutPorts,
   createWithdrawalInFlightReader,
+  createWithdrawHolds,
   createWithdrawHoldsReader,
   releaseWithdrawHoldsBySource,
   createWithdrawRules,
@@ -339,6 +342,7 @@ import {
   quotaShares,
   systemScheduler,
   type AppConfig,
+  type AuditPort,
   type Clock,
   type FieldCrypto,
   type EventBus,
@@ -3244,6 +3248,38 @@ function payoutQueuePause(clock: Clock): PayoutQueuePausePort {
  * job's port) and the payee decryption. The member review and the persisted pause are the
  * worker's (D10-398; PayoutModule.forWorker below).
  */
+/**
+ * B2-02q: the audit of the daily ledger check's ledger_mismatch holds. audit_logs.admin_id is a
+ * non-null reference to admin_users and a hold added by the system has no admin, so its
+ * withdraw_hold.add record is an info line with the hold's ids only (as payout's B2-07c system
+ * holds; the hold row keeps created_by and source_ref).
+ */
+function ledgerCheckHoldAudit(logger: RootLogger): AuditPort {
+  return {
+    append(input) {
+      logger.info(
+        { app_id: input.appId, actor: input.actor, action: input.action, target: input.target },
+        'withdraw_hold_system_audit',
+      );
+      return Promise.resolve();
+    },
+  };
+}
+
+/**
+ * B2-02q (BR-FUND-19): the worker's daily ledger check on queue ledger-check, with the two ports
+ * of the B2-02p execution step: payout's withdraw holds under identity's users lock (reason
+ * ledger_mismatch, created_by system, set by the execution step) and content's system switch
+ * writer for settle.auto.enabled (off only; reopening stays an admin step-up write).
+ */
+function ledgerDailyCheckModule(): DynamicModule {
+  return LedgerDailyCheckModule.forWorker({
+    holds: (clock, logger) =>
+      createWithdrawHolds({ clock, lockUsersForUpdate, audit: ledgerCheckHoldAudit(logger) }),
+    autoSettlement: (clock, logger) => createSystemSwitchWriter({ clock, logger }),
+  });
+}
+
 function payoutProcessOptions(): PayoutProcessOptions {
   return {
     lockUsersForUpdate,
@@ -3672,6 +3708,9 @@ export class AppModule {
                 appeal: createAppealPrevStateReader(),
                 pauseQueue: payoutQueuePause,
               }),
+              // B2-02q (BR-FUND-19): the daily ledger check at 01:00 +08:00 for D−1 (queue
+              // ledger-check), its seed / heal timer and the B2-02p ports assembled above.
+              ledgerDailyCheckModule(),
               // Admin data exports (B1-34e, BR-ID-42): the export queue's generate / expire
               // handler over identity's batch users projection (decrypted and masked there) and
               // content's configuration reader (admin.export.* overrides of the code defaults).

@@ -18,3 +18,8 @@ export interface LedgerDifference {
   readonly account_id: string | null;
   readonly detail: unknown;
 }
+
+/** One reported difference and the invariant file (basename) it came from (B2-02p / B2-02q). */
+export interface DailyCheckFiledDifference extends LedgerDifference {
+  readonly file: string;
+}

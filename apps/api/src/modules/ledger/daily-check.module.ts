@@ -1,0 +1,142 @@
+// B2-02q: the worker entry's daily ledger check (BR-FUND-19): queue ledger-check's handler
+// (application/daily-check-schedule.ts createDailyCheckJob) and the chain's seed / heal timer
+// (unref, after bootstrap; stopped on destroy). Without a database or queue nothing is registered.
+// The two ports of the B2-02p execution step come from app.module (ledger imports neither payout
+// nor content): payout's createWithdrawHolds and content's createSystemSwitchWriter.
+import type { DynamicModule } from '@nestjs/common';
+import type { DB } from '@couli/db';
+import type { Kysely } from 'kysely';
+import {
+  CLOCK,
+  DB as DB_TOKEN,
+  JOB_QUEUE,
+  ROOT_LOGGER,
+  type Clock,
+  type QueueRuntime,
+  type RootLogger,
+} from '../platform/index.ts';
+import type {
+  AutoSettlementSwitch,
+  LedgerMismatchHolds,
+} from './application/daily-check-execute.ts';
+import { createDailyCheckJob, seedDailyCheck } from './application/daily-check-schedule.ts';
+
+/** What app.module hands in on the worker entry. */
+export interface LedgerDailyCheckWorkerOptions {
+  /** payout's createWithdrawHolds as the hold port (reason ledger_mismatch, created_by system). */
+  readonly holds: (clock: Clock, logger: RootLogger) => LedgerMismatchHolds;
+  /** content's createSystemSwitchWriter as the settle.auto.enabled port. */
+  readonly autoSettlement: (clock: Clock, logger: RootLogger) => AutoSettlementSwitch;
+}
+
+const QUEUE = 'ledger-check';
+/** The registration of the handler (null: no database or queue, nothing registered). */
+const DAILY_CHECK_WORKER = Symbol('LEDGER_DAILY_CHECK_WORKER');
+/** The seed / heal timer (lifecycle hooks). */
+const DAILY_CHECK_TIMER = Symbol('LEDGER_DAILY_CHECK_TIMER');
+/** Delay of the first seed after bootstrap (the queue runtime starts meanwhile). */
+export const LEDGER_DAILY_CHECK_SEED_DELAY_MS = 15_000;
+/** Interval between two heals of the chain. */
+export const LEDGER_DAILY_CHECK_HEAL_INTERVAL_MS = 30 * 60_000;
+
+interface SeedDependencies {
+  readonly db: Kysely<DB>;
+  readonly clock: Clock;
+  readonly queue: QueueRuntime;
+  readonly logger: RootLogger;
+}
+
+interface DailyCheckTimer {
+  onApplicationBootstrap(): void;
+  onModuleDestroy(): void;
+}
+
+/** The seed after bootstrap and the heal every interval; null deps: inert. */
+function dailyCheckTimer(deps: SeedDependencies | null): DailyCheckTimer {
+  const started = new Map<string, string>();
+  let running = false;
+  let stopped = false;
+  let first: ReturnType<typeof setTimeout> | undefined;
+  let interval: ReturnType<typeof setInterval> | undefined;
+  const tick = async (): Promise<void> => {
+    if (deps === null || running || stopped) return;
+    running = true;
+    try {
+      await seedDailyCheck({ ...deps, started });
+    } catch (error: unknown) {
+      deps.logger.warn(
+        { queue: QUEUE, error_name: error instanceof Error ? error.name : typeof error },
+        'ledger_daily_check_heal_failed',
+      );
+    } finally {
+      running = false;
+    }
+  };
+  return {
+    onApplicationBootstrap() {
+      if (deps === null || first !== undefined || stopped) return;
+      first = setTimeout(() => {
+        void tick();
+        if (stopped) return;
+        interval = setInterval(() => void tick(), LEDGER_DAILY_CHECK_HEAL_INTERVAL_MS);
+        interval.unref();
+      }, LEDGER_DAILY_CHECK_SEED_DELAY_MS);
+      first.unref();
+    },
+    onModuleDestroy() {
+      stopped = true;
+      if (first !== undefined) clearTimeout(first);
+      if (interval !== undefined) clearInterval(interval);
+      interval = undefined;
+    },
+  };
+}
+
+export class LedgerDailyCheckModule {
+  static forWorker(options: LedgerDailyCheckWorkerOptions): DynamicModule {
+    return {
+      module: LedgerDailyCheckModule,
+      providers: [
+        {
+          provide: DAILY_CHECK_WORKER,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB_TOKEN, optional: true },
+            { token: JOB_QUEUE, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<DB>,
+            queue?: QueueRuntime,
+          ): SeedDependencies | null => {
+            if (db === undefined || queue === undefined) {
+              logger.info({ queue: QUEUE }, 'ledger_daily_check_disabled');
+              return null;
+            }
+            const checkLogger = logger.child({ module: 'ledger', queue: QUEUE });
+            queue.register(
+              QUEUE,
+              createDailyCheckJob({
+                db,
+                clock,
+                queue,
+                logger: checkLogger,
+                holds: options.holds(clock, checkLogger),
+                autoSettlement: options.autoSettlement(clock, checkLogger),
+              }),
+            );
+            return { db, clock, queue, logger: checkLogger };
+          },
+        },
+        {
+          // The chain's seed and heal, only beside a registered handler.
+          provide: DAILY_CHECK_TIMER,
+          inject: [DAILY_CHECK_WORKER],
+          useFactory: (deps: SeedDependencies | null): DailyCheckTimer => dailyCheckTimer(deps),
+        },
+      ],
+    };
+  }
+}
