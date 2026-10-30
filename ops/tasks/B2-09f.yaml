@@ -1,0 +1,35 @@
+id: B2-09f
+repo: rebate-platform
+title: settlement：后台月结批次写操作实现（CT-24zd）——装配命令服务 B2-04o 与补充批次 B2-04r 到 admin 入口（settle.bill，动态码 step-up，写审计）；实现 currentRound 与 readiness 两个端口；AdminSettleBatch 输出 row_version 并改必填；分轮键改微秒精度（B2-09d money S2）；错误映射到契约；去掉五个接口的 planned
+type: impl
+# 2026-10-30 入账（admin-backend，编排 D10-436）。单一写者不变：settle_batches 只经命令服务与生成的 transition()，本任务不自写状态；HTTP 层只做权限、step-up、审计与错误映射（B2-04o 注释约定）。
+# currentRound：按 CT-24z 轮次口径在命令事务内读（取代 service.ts 里 blocked 的 TODO，须编排裁定后才开工）；readiness：settle.auto.enabled、credit.enabled.<platform> 经 content config 读，快照状态经 ledger 公开导出 getAssetSnapshotStatus，不读别模块的表。
+# 补充发起的 requestedAt 取注入 Clock 的当前时刻（B2-04r 要求每次发起不同）。
+# 不含：账单日任务与批次执行器的 worker 装配（createBillJob、createBatchExecutor 目前没有生产装配，见台账 PR，须另开任务）；SB10；上传；预校验。
+refs: [BR-FUND-04]
+refs_hash:
+  BR-FUND-04: f4b8b2be46ea
+deps: [CT-24zd]
+paths:
+  - 'apps/api/src/modules/settlement/application/admin-settle-*.ts'
+  - 'apps/api/src/modules/settlement/batch/commands/service.ts'
+  - 'apps/api/src/modules/settlement/http/admin/**'
+  - 'apps/api/src/modules/settlement/settlement.module.ts'
+  - 'apps/api/src/modules/settlement/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/settlement/admin-settle-commands/**'
+  - 'test/spec/settlement/admin-settle-bills/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/admin-settle-commands/**'
+status: todo
