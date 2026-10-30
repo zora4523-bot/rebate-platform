@@ -1,0 +1,100 @@
+{
+  "task": "B2-02r",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "73d63a54ad2e80d943e8b5fcc86fcb746560ecff",
+  "red_tests": [
+    "test/spec/ledger/daily-check-heal/chain.int.test.ts > [AC-B2-02r#10] 死信后的修复与续排：进死信的 (app, D) 下一次修复重新入队；排队 / 重试中不再送；重跑完成后下一天已排上，之后的修复与重启后的修复都不再排已完成的 D，也不重复排链上的下一天",
+    "test/spec/ledger/daily-check-heal/chain.int.test.ts > [AC-B2-02r#11] 断链告警（真实存储）：进死信未重跑完成的 (app, D) 到期告警 1 次并照常再入队；重启后的修复不再告警；已完成的 app 不告警也不再入队",
+    "test/spec/ledger/daily-check-heal/heal.int.test.ts > [AC-B2-02r#1] 修复按 (app, D) 的实际状态判定：absent 照常入队，pending / done 不送；同一进程里送过的 (app, D) 进死信后下一次修复照常再送，完成后不再送，重启后同样",
+    "test/spec/ledger/daily-check-heal/heal.int.test.ts > [AC-B2-02r#2] 修复的 D 是时钟所在 +08:00 日的前一天：01:00 前送出时延迟到 01:00；到了下一天只看新的 D，链上已排好的下一天（pending）不重复送，旧的 D 不回补",
+    "test/spec/ledger/daily-check-heal/heal.int.test.ts > [AC-B2-02r#3] 一个 app 送失败不挡其他 app，失败在全部试完后抛出；下一次修复（不靠进程记忆）把失败的 app 补上",
+    "test/spec/ledger/daily-check-heal/heal.int.test.ts > [AC-B2-02r#4] 断链告警的时刻：D+1 01:00 +08:00 之后一个固定宽限（同一宽限适用于每一天，且早于 D+1 结束）",
+    "test/spec/ledger/daily-check-heal/heal.int.test.ts > [AC-B2-02r#5] 断链告警：到期未完成的 (app, D)（absent 或仍 pending）在宽限到时告警 1 次（error，event ledger_daily_check_overdue，带 app_id 与 D，不带个人信息）；宽限前不告警，已完成的不告警；之后的修复与重启都不再告警，absent 的照常再送",
+    "test/spec/ledger/daily-check-heal/heal.int.test.ts > [AC-B2-02r#6] 告警按 (app, D) 各 1 次：同一 app 的下一天到期未完成时另告警 1 次；他 app 已告警不影响本 app",
+    "test/spec/ledger/daily-check-heal/store.int.test.ts > [AC-B2-02r#7] stateOf 跟随队列与结果：从未入队 absent；排队（含延迟）、进行中、等待重试都是 pending；重试耗尽进死信（ledger-check.dead 里的副本不算）、被取消都是 absent；跑完是 done；新实例答案相同",
+    "test/spec/ledger/daily-check-heal/store.int.test.ts > [AC-B2-02r#8] 一个 (app, D) 的死信不影响别的 key：他 app 同一天的任务仍 pending，本 app 已完成的前一天仍 done",
+    "test/spec/ledger/daily-check-heal/store.int.test.ts > [AC-B2-02r#9] claimOverdueAlert 持久且只有一个赢家：同一 (app, D) 首次 true、之后 false，新实例（重启）也 false；别的 app 或别的 D 各自首次 true；并发争同一 (app, D) 恰 1 个 true",
+    "test/spec/ledger/daily-check-heal/timer.int.test.ts > [AC-B2-02r#12] worker 模块的修复定时器按实际状态：启动后补种入队；同一进程里该 (app, D) 进死信后，30 分钟内的修复重新入队；重跑完成后，之后的修复与重启后的补种都不再排该 D，链上的下一天只有 1 个"
+  ],
+  "risk_note": "RV2 ledger (B2-02r; BR-FUND-19). Daily-check chain healing: the worker timer uses healDailyCheck, which re-sends (app, D) unless the queue / results show it completed or already created / retry / active (no in-process memory, survives restarts), so a daily job that exhausted its retries into ledger-check.dead no longer silently stops the chain; seedDailyCheck is kept as frozen by B2-02q. An overdue (app, D) (no completion past D+1 01:00 + grace) logs one alert per (app, D), claimed durably in app.processed_events (consumer ledger.daily_check_overdue_alert, deterministic uuid; INSERT … ON CONFLICT DO NOTHING; no migration). Clock only.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "73d63a54ad2e80d943e8b5fcc86fcb746560ecff",
+      "tree": "f0adf2a63110c721e2d547d5730eb59248e16d1a",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T10:38:08Z",
+      "finished_at": "2026-10-30T10:38:35Z",
+      "gate": {
+        "commit": "88b17f68fb7ecb8c35792b0f37946a6b3c5547b9",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/daily-check-heal/chain.int.test.ts > [AC-B2-02r#10] 死信后的修复与续排：进死信的 (app, D) 下一次修复重新入队；排队 / 重试中不再送；重跑完成后下一天已排上，之后的修复与重启后的修复都不再排已完成的 D，也不重复排链上的下一天",
+        "test/spec/ledger/daily-check-heal/chain.int.test.ts > [AC-B2-02r#11] 断链告警（真实存储）：进死信未重跑完成的 (app, D) 到期告警 1 次并照常再入队；重启后的修复不再告警；已完成的 app 不告警也不再入队",
+        "test/spec/ledger/daily-check-heal/heal.int.test.ts > [AC-B2-02r#1] 修复按 (app, D) 的实际状态判定：absent 照常入队，pending / done 不送；同一进程里送过的 (app, D) 进死信后下一次修复照常再送，完成后不再送，重启后同样",
+        "test/spec/ledger/daily-check-heal/heal.int.test.ts > [AC-B2-02r#2] 修复的 D 是时钟所在 +08:00 日的前一天：01:00 前送出时延迟到 01:00；到了下一天只看新的 D，链上已排好的下一天（pending）不重复送，旧的 D 不回补",
+        "test/spec/ledger/daily-check-heal/heal.int.test.ts > [AC-B2-02r#3] 一个 app 送失败不挡其他 app，失败在全部试完后抛出；下一次修复（不靠进程记忆）把失败的 app 补上",
+        "test/spec/ledger/daily-check-heal/heal.int.test.ts > [AC-B2-02r#4] 断链告警的时刻：D+1 01:00 +08:00 之后一个固定宽限（同一宽限适用于每一天，且早于 D+1 结束）",
+        "test/spec/ledger/daily-check-heal/heal.int.test.ts > [AC-B2-02r#5] 断链告警：到期未完成的 (app, D)（absent 或仍 pending）在宽限到时告警 1 次（error，event ledger_daily_check_overdue，带 app_id 与 D，不带个人信息）；宽限前不告警，已完成的不告警；之后的修复与重启都不再告警，absent 的照常再送",
+        "test/spec/ledger/daily-check-heal/heal.int.test.ts > [AC-B2-02r#6] 告警按 (app, D) 各 1 次：同一 app 的下一天到期未完成时另告警 1 次；他 app 已告警不影响本 app",
+        "test/spec/ledger/daily-check-heal/store.int.test.ts > [AC-B2-02r#7] stateOf 跟随队列与结果：从未入队 absent；排队（含延迟）、进行中、等待重试都是 pending；重试耗尽进死信（ledger-check.dead 里的副本不算）、被取消都是 absent；跑完是 done；新实例答案相同",
+        "test/spec/ledger/daily-check-heal/store.int.test.ts > [AC-B2-02r#8] 一个 (app, D) 的死信不影响别的 key：他 app 同一天的任务仍 pending，本 app 已完成的前一天仍 done",
+        "test/spec/ledger/daily-check-heal/store.int.test.ts > [AC-B2-02r#9] claimOverdueAlert 持久且只有一个赢家：同一 (app, D) 首次 true、之后 false，新实例（重启）也 false；别的 app 或别的 D 各自首次 true；并发争同一 (app, D) 恰 1 个 true",
+        "test/spec/ledger/daily-check-heal/timer.int.test.ts > [AC-B2-02r#12] worker 模块的修复定时器按实际状态：启动后补种入队；同一进程里该 (app, D) 进死信后，30 分钟内的修复重新入队；重跑完成后，之后的修复与重启后的补种都不再排该 D，链上的下一天只有 1 个"
+      ],
+      "expected": [
+        "test/spec/ledger/daily-check-heal/chain.int.test.ts",
+        "test/spec/ledger/daily-check-heal/heal.int.test.ts",
+        "test/spec/ledger/daily-check-heal/store.int.test.ts",
+        "test/spec/ledger/daily-check-heal/timer.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "3f9cbb1279523e7671749b3ed62a09114472ee57e95813fbe8e36fb64e673ede"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; adversarial money review by a fresh independent Claude via claude-run.sh (approvals #36); round 1 pass with one open S2 (a daily handler overrunning expireInSeconds is retried into dead and re-sent by heal; durable completion record suggested) recorded as a followup",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by an independent Claude via claude-run.sh in 1 run; round 1 pass (two S2 recorded); one mechanical test(spec) commit (orchestrator rule D10-206, counter unchanged) rewording two comments that test-guard's no-retry check misread (pg-boss state retry), assertions unchanged",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "1b3d19480f9532d26663eb06c53cd4253cca44c2",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
