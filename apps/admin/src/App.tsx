@@ -43,6 +43,7 @@ import { AuditLogDetailPage, AuditLogsPage } from './pages/audit-logs/index.ts';
 import { ConfigCenterPage } from './pages/config-center/index.ts';
 import { DashboardPage, dashboardTargetOf } from './pages/dashboard/index.ts';
 import { ExportsPage } from './pages/exports/index.ts';
+import { FundLedgerPage } from './pages/fund-ledger/index.ts';
 import { HomeConfigPage } from './pages/home-config/index.ts';
 import { KillSwitchesPage } from './pages/kill-switches/index.ts';
 import { MessagesPage } from './pages/messages/index.ts';
@@ -106,6 +107,7 @@ const NO_PLANNED: ReadonlySet<string> = new Set();
 const USERS_MENU_ID = 'users';
 const CLAIMS_MENU_ID = 'claims';
 const RECON_MENU_ID = 'recon';
+const FUND_LEDGER_MENU_ID = 'fund-ledger';
 const SETTLE_BILLS_MENU_ID = 'settle-bills';
 const SETTLE_BILL_DETAIL = /^settle-bills\/([^/]+)$/;
 const PAY_ORDERS_MENU_ID = 'pay-orders';
@@ -651,6 +653,9 @@ function ShellFrame({
     } else if (match !== undefined && match.item.id === RECON_MENU_ID) {
       // 对账与差错: fund.recon or fund.view reads; only fund.recon closes a difference.
       content = <ReconPage access={access} />;
+    } else if (match !== undefined && match.item.id === FUND_LEDGER_MENU_ID) {
+      // 平台资金台账: fund.view reads the daily ledger; fund.cash_entry alone gets the page's notice.
+      content = <FundLedgerPage access={access} />;
     } else if (match !== undefined && match.item.id === SETTLE_BILLS_MENU_ID) {
       // 月结账单: settle.bill or fund.view reads; the other menu points get the page's notice.
       content = <SettleBillsPage access={access} />;
@@ -707,6 +712,13 @@ function ShellFrame({
         ) : (
           <SettleBillDetailPage key={settleBillId} access={access} billId={settleBillId} />
         );
+    } else if (
+      menuId === FUND_LEDGER_MENU_ID &&
+      (snapshot.isSuper || snapshot.permissions.length > 0)
+    ) {
+      // A direct address to /fund-ledger without the menu (fund.view alone reads; without it the
+      // page itself says so and sends nothing).
+      content = <FundLedgerPage access={access} />;
     } else if (
       menuId === WITHDRAWALS_MENU_ID &&
       (snapshot.isSuper || snapshot.permissions.length > 0)
