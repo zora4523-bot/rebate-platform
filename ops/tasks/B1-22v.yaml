@@ -1,0 +1,25 @@
+id: B1-22v
+repo: rebate-platform
+title: 联盟配额跨进程共享（union + platform）：联盟适配器的配额令牌桶改为 Redis 共享桶（按 app × 平台一桶，容量 / 速率沿用现值 capacity 100、10/s 与现行份额划分），api / admin / payout / stream / worker 各进程共用；QuotaLimiter.tryAcquire 改为异步，platform/http、union 治理层、orders 同步运行时与各装配处一并改；Redis 不可用按 R-04 失败即拒（不放行、不回落进程内桶）
+type: impl
+# 2026-10-30 入账（union 线，编排裁定 D10-446 ①）。现状 app.module 每个进程各建 createMemoryQuotaLimiter，真实上游配额会被按进程数放大；容量数值仍待 09 CAP-TB-12 / CAP-JD-12 / CAP-PDD-12 实测，实测后只改配置值。碰 platform 的部分请 be 线评审一眼（D10-446）。依据 02 §6.2 治理层、架构评估 R-04（Redis 关键路径失败即拒），无对应 08 BR（refs 空）。Codex 不可用至 11-02，测试与评审由独立 Claude（approvals #36）。
+refs: []
+refs_hash: {}
+deps: [B1-05j]
+paths:
+  - 'apps/api/src/modules/platform/http/**'
+  - 'apps/api/src/modules/platform/config/keyring-startup.ts'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/modules/union/**'
+  - 'apps/api/src/modules/orders/worker-runtime.ts'
+  - 'apps/api/src/modules/orders/worker-runtime.test.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/union/shared-quota/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/shared-quota/**'
+status: todo
+pr: null

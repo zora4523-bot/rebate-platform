@@ -1,0 +1,20 @@
+id: B1-22w
+repo: rebate-platform
+title: 淘宝价格配置读取抛错时回落 08 默认值（union）：createTaobaoPriceSettings 读 price.taobao.* 时 configValue 抛错（库错误、超时等）不再让淘宝映射失败，该次按 08 默认值映射并写 warn 日志 / 告警（不带商品信息与凭据）；只限展示映射，不涉金额计算口径
+type: impl
+# 2026-10-30 入账（union 线，编排裁定 D10-446 ②，B1-22q 遗留）。现状 configValue 抛错时 read() 上抛，demo / 将来真实淘宝适配器的搜索、详情、物料流、榜单随之失败。依据 08 BR-PRICE-02 细则（D33）。Codex 不可用至 11-02，测试与评审由独立 Claude（approvals #36）。
+refs: [BR-PRICE-02]
+refs_hash:
+  BR-PRICE-02: b622624c8da7
+deps: [B1-22q]
+paths:
+  - 'apps/api/src/modules/union/**'
+test_paths:
+  - 'test/spec/union/taobao-price-config-fallback/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/taobao-price-config-fallback/**'
+status: todo
+pr: null
