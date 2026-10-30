@@ -148,6 +148,9 @@ function DetailContent({ access, payOrderId }: PayOrderDetailPageProps): ReactEl
       tell('error', payOrdersTexts.refund.missingOrder);
       reload();
     },
+    onUncertainClose: () => {
+      reload();
+    },
   });
 
   const stepUp = useStepUp();

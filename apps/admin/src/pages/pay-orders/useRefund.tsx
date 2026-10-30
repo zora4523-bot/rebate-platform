@@ -2,6 +2,8 @@
 // （经数据层 meta.idempotencyKey），同一对话框内重试沿用、重新打开换新；不带 X-Step-Up-Token。
 // 20901 / 10403 之后本对话框不再提交，40901 与网络失败留在对话框里可重试；20902 与未找到关闭对话框，
 // 由页面提示并重新读取；成功（PROCESSING）关闭对话框，交给页面提示并刷新。
+// 网络失败、20901、40901 之后结果未知（服务端可能已建退款）：此后取消对话框时页面重新读取，
+// 下一个对话框（新键）按最新的退款记录与可退金额预检。
 import { useDataProvider } from '@refinedev/core';
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { payOrdersTexts } from '../../texts/pay-orders.ts';
@@ -33,6 +35,8 @@ export interface RefundHandlers {
   readonly onConflict: () => void;
   /** 20001 on the target id: unknown or no longer visible. */
   readonly onMissing: () => void;
+  /** The dialog was cancelled after an unknown outcome (network failure, 20901, 40901). */
+  readonly onUncertainClose: () => void;
 }
 
 interface Flow {
@@ -43,6 +47,8 @@ interface Flow {
   readonly sending: boolean;
   readonly canSubmit: boolean;
   readonly amountRejected: number;
+  /** A submit of this dialog may have created a refund the page does not show yet. */
+  readonly uncertain: boolean;
   readonly error?: string;
 }
 
@@ -86,12 +92,15 @@ export function useRefund(handlers: RefundHandlers): Refund {
       sending: false,
       canSubmit: true,
       amountRejected: 0,
+      uncertain: false,
     });
   };
 
   const cancel = () => {
-    if (flowRef.current?.sending === true) return;
+    const current = flowRef.current;
+    if (current === undefined || current.sending) return;
     setFlow(undefined);
+    if (current.uncertain) handlersRef.current.onUncertainClose();
   };
 
   const submit = async (body: PayRefundCreateRequest) => {
@@ -105,6 +114,7 @@ export function useRefund(handlers: RefundHandlers): Refund {
       sending: false,
       canSubmit: current.canSubmit,
       amountRejected: current.amountRejected,
+      uncertain: current.uncertain,
     };
     setFlow({ ...rest, sending: true });
     const custom = getProvider().custom;
@@ -137,14 +147,14 @@ export function useRefund(handlers: RefundHandlers): Refund {
         handlersRef.current.onConflict();
       } else if (code === 20901) {
         // The same key with another body: never resent from this dialog.
-        keep({ error: t.changed, canSubmit: false });
+        keep({ error: t.changed, canSubmit: false, uncertain: true });
       } else if (code === 40901) {
-        keep({ error: t.running });
+        keep({ error: t.running, uncertain: true });
       } else if (code === 10403) {
         keep({ error: t.forbidden, canSubmit: false });
       } else if (isNetwork(cause)) {
         // Not known whether it was created: a retry here resends the same key and body.
-        keep({ error: t.network });
+        keep({ error: t.network, uncertain: true });
       } else {
         keep({ error: t.failed });
       }

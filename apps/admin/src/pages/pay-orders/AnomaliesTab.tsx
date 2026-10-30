@@ -65,6 +65,9 @@ export function AnomaliesTab({ access }: AnomaliesTabProps): ReactElement {
       tell('error', payOrdersTexts.refund.missingAnomaly);
       read.reload();
     },
+    onUncertainClose: () => {
+      read.reload();
+    },
   });
   const startRefund = (row: PayAnomaly) => {
     const refundable = anomalyRefundable(row);
