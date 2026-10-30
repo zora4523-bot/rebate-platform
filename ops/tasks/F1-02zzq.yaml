@@ -1,0 +1,25 @@
+id: F1-02zzq
+repo: rebate-platform
+title: /v1/config 下发 nickname 块 {min_len, max_len, monthly_limit}（取值只按 BR-ID-39，服务端常量下发、不读 config_items），去掉契约「Not returned until its implementation is merged」说明
+type: impl
+# 2026-10-31 入账（content-client）。契约 ConfigNickname 已写、content client-config 未实现；04 l.973「nickname｜昵称限制…取值只按 BR-ID-39，服务端按该条下发、不读 config_items」、l.1003「服务端总是下发」；08 BR-ID-39 昵称 1–16 字符、05 B1-20 每月 3 次。原文由编排者摘入任务书，refs 置空。
+# 冻结的 /v1/config 精确比较测试（F1-02c）若受影响，先开两态过渡 test-change（先例 F1-02zzd）。identity 侧的字面量不在本任务（不碰 identity）。
+refs: []
+refs_hash: {}
+deps: [F1-02c]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/content/config-nickname/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

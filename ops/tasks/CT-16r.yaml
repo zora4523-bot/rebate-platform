@@ -1,0 +1,21 @@
+id: CT-16r
+repo: rebate-platform
+title: 文案（CT-16 续）：texts 补 08 已定稿未建的键 settings.nickname.hint.plain、reverify.id.fail_limit.plain、risk_notice.data_copy_entry、tag.presale、presale.price_note，并按 D10-185 把 risk_notice.banned.desc / .desc_beta 补后半句；登记 fund-term-keys
+type: contract
+# 2026-10-31 入账（content-client）。依据（SPEC_REF 8127341）12_TEXT：l.1123、l.1084（l.714 写明归普通）、l.95 / l.1102（D10-185 个人信息副本入口）、l.703（拍板第二批 TRADE-10 预售）。逐字照抄；排除标「待法务」「保留不用」的键。原文由编排者摘入任务书，refs 置空。
+# 改 .banned.desc 默认文字前核对 H5 / 原生冻结快照；受影响则先开 test-change。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
