@@ -154,41 +154,6 @@ export async function hasWaitingRights(
   return row !== undefined;
 }
 
-export interface PendingTarget {
-  readonly appId: string;
-  readonly platform: string;
-  readonly subOrderId: string;
-  readonly at: Date;
-}
-
-/**
- * Closes the sub-order's open CLAWBACK_NO_COMMISSION pending rows (system resolution, resolved_by
- * empty). 待编排裁定: order_sync_pending is orders' table and orders exports no closing port for this
- * reason yet; settlement writes only status / resolved_at / resolution_note of the rows it opened
- * (through ClawbackDependencies.pending.open), on the same transaction. Move behind an orders port
- * when one exists.
- */
-export async function resolveNoCommissionPending(
-  trx: Transaction<DB>,
-  target: PendingTarget,
-): Promise<void> {
-  await trx
-    .withSchema('app')
-    .updateTable('order_sync_pending')
-    .set({
-      status: 'resolved',
-      resolved_at: target.at,
-      resolved_by: null,
-      resolution_note: 'clawback written after the union commission arrived',
-    })
-    .where('app_id', '=', target.appId)
-    .where('platform', '=', target.platform)
-    .where('sub_order_id', '=', target.subOrderId)
-    .where('reason', '=', 'CLAWBACK_NO_COMMISSION')
-    .where('status', '=', 'open')
-    .execute();
-}
-
 export interface OrderCasKey {
   readonly app_id: string;
   readonly order_id: string;

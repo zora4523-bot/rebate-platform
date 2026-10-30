@@ -44,7 +44,8 @@
 //      order_rights rows this event answers are closed as SUCCEEDED (a rights ref: that row; a
 //      platform / commission ref: every WAIT_COMMISSION row of the order), orders.rights_pending is
 //      recomputed with a CAS, and when no WAIT_COMMISSION row is left the sub-order's open
-//      CLAWBACK_NO_COMMISSION pending rows are resolved.
+//      CLAWBACK_NO_COMMISSION pending rows are resolved through deps.pending.resolve (orders' port;
+//      settlement never writes order_sync_pending itself).
 //
 // | cause                | R8 history event                       | R9 history event | sub_type        | R8 reason       |
 // | PLATFORM_INVALID     | PLATFORM_INVALID                       | —                | FULL            | REFUND          |
@@ -112,6 +113,8 @@ import {
 } from '../../ledger/index.ts';
 import {
   lockOrderKey,
+  resolveClawbackNoCommissionPending,
+  type ClawbackPendingResolveInput,
   type OrderStatusSource,
   type OrderUpdateChange,
 } from '../../orders/index.ts';
@@ -129,11 +132,7 @@ import {
   readRebateOrder,
   type OrderRow,
 } from '../rebate/infra/rebate-store.ts';
-import {
-  closeWaitingRights,
-  hasWaitingRights,
-  resolveNoCommissionPending,
-} from '../rights/rights-store.ts';
+import { closeWaitingRights, hasWaitingRights } from '../rights/rights-store.ts';
 import {
   casClawbackOrder,
   casRightsPending,
@@ -173,7 +172,7 @@ export interface ClawbackCommand {
   readonly rightsDeductFen: bigint | null;
 }
 
-/** One order_sync_pending entry (orders owns the table; 待编排裁定: writer port at assembly). */
+/** One order_sync_pending entry (orders owns the table; written only through deps.pending). */
 export interface ClawbackPendingInput {
   readonly appId: string;
   readonly orderId: string;
@@ -195,8 +194,14 @@ export interface ClawbackDependencies {
   ): Promise<CreditSnapshot | null>;
   /** Writer of commission_split_beneficiary_events (same port as B2-04m). */
   appendBeneficiaryEvent(trx: Transaction<DB>, input: BeneficiaryEventInput): Promise<void>;
+  /**
+   * orders' CLAWBACK_NO_COMMISSION pending port (orders createClawbackPendingPort). resolve closes the
+   * sub-order's open rows; when it is not injected, orders' exported resolveClawbackNoCommissionPending
+   * is used (still orders' code, same transaction).
+   */
   readonly pending: {
     open(trx: Transaction<DB>, input: ClawbackPendingInput): Promise<void>;
+    resolve?(trx: Transaction<DB>, input: ClawbackPendingResolveInput): Promise<void>;
   };
   /** settle.estimate_change_diff.enabled (default on; false / 'false' / 'off' turn it off). */
   readonly config: {
@@ -705,12 +710,14 @@ export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
       if (!ok) throw new Error('settlement clawback: rights_pending CAS matched no row');
     }
     if (!(await hasWaitingRights(trx, order.app_id, order.order_id))) {
-      await resolveNoCommissionPending(trx, {
+      const target: ClawbackPendingResolveInput = {
         appId: order.app_id,
         platform: order.platform,
         subOrderId: order.sub_order_id,
         at: now,
-      });
+      };
+      if (deps.pending.resolve !== undefined) await deps.pending.resolve(trx, target);
+      else await resolveClawbackNoCommissionPending(trx, target);
     }
   }
 

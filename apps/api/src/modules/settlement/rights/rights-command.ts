@@ -92,6 +92,8 @@ function storedStatusOf(input: RightsRecordInput): StoredStatus {
     input.deduction_commission_fen === null &&
     !isTerminal(input.before.rebate_status)
   ) {
+    // TODO(规划/11 §4.2): 入账前部分维权 N_new 落库与 WAIT_COMMISSION 入账前关闭 — blocked on B2-04lb（D10-470）
+    // (before credit nothing closes this row when the union's new commission arrives.)
     return 'WAIT_COMMISSION';
   }
   return 'SUCCEEDED';
@@ -169,6 +171,8 @@ export function createRightsCommandPort(deps: RightsCommandDependencies): Rights
           return;
         }
         event = 'RIGHTS_PARTIAL';
+        // TODO(规划/11 §4.2): 入账前部分维权 N_new 落库与 WAIT_COMMISSION 入账前关闭 — blocked on B2-04lb（D10-470）
+        // (N_new reaches only the read-only valuation here; it is not stored for the later credit.)
         // The effective commission becomes N_new for commission's valuation (R7 重算预估).
         change =
           order.settle_commission_fen === null

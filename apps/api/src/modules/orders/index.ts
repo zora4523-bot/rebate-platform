@@ -248,3 +248,16 @@ export type {
   WithdrawRiskReceivedOrder,
   WithdrawRiskSelfOrder,
 } from './ports/withdraw-risk.ts';
+// B2-04l: CLAWBACK_NO_COMMISSION pending rows (order_sync_pending, written by orders) for settlement's clawback.
+export {
+  CLAWBACK_NO_COMMISSION_REASON,
+  CLAWBACK_PENDING_RESOLUTION_NOTE,
+  createClawbackPendingPort,
+  openClawbackNoCommissionPending,
+  resolveClawbackNoCommissionPending,
+} from './application/clawback-pending.ts';
+export type {
+  ClawbackPendingOpenInput,
+  ClawbackPendingPort,
+  ClawbackPendingResolveInput,
+} from './application/clawback-pending.ts';
