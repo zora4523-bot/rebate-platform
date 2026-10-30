@@ -1,0 +1,35 @@
+id: CT-24za
+repo: rebate-platform
+title: 契约：后台差错单核销（R2 迟到成功 → 提现 W11）——POST /admin/v1/recon-diffs/{recon_diff_id}/write-off（writeOffAdminReconDiff：只收 R2 source、resolution.case=payer_side_returned、open / processing 的差错单；权限点 payout.execute、step-up 动态码档、Idempotency-Key 必带；服务端按 BR-WDR-08 W11 守卫核对原单仍为 APPROVED 且 hold_reason=payer_side_after_transfer、唯一一条转账尝试 result=fail、账单行金额 = net_fen、开关 payout.proven_success_writeoff.enabled 为 on，同事务把原单核销为 PAID_API 并写成功凭证、差错单置 written_off、解除以该差错单为来源的提现冻结；守卫不满足回 20001 [recon_diff_id] 带 data.reason，状态已变化回 20902；响应为核销后的差错单详情 + 提现单状态 + released_hold_count）
+type: contract
+# 2026-10-30 入账（withdraw 线，编排 10-30 10:05 派工：核查并入账「R2 迟到成功核销 W11」）。依据 08 BR-WDR-23 ③（内部为付款方侧失败经 W9 退回的 APPROVED 单，差错单附账单行，可按 BR-WDR-08 W11 凭账单行核销为 PAID_API，决-08 A）、BR-WDR-08 迁移表 W11 行（守卫：hold_reason=payer_side_after_transfer；该单唯一的转账尝试 result=fail；通道成功凭证=含该 out_biz_no 的账单行且金额 = net_fen；step-up 权限点同 W10；开关 payout.proven_success_writeoff.enabled=on；结果 PAID_API，写成功分录，追加一条 kind=query、result=success 的尝试记录）、BR-WDR-09（W11 成功凭证 wd:{id}:PAID，WITHDRAW_PAID / WITHDRAW_FEE / TAX_WITHHOLD 一张凭证）、BR-WDR-17（开关 off 时不启用 W11）、BR-FUND-19（差错单处理完解除以其为来源的冻结）、04 §11.2 payout.execute（动态码；W11 凭通道成功证据核销原单，可为本单审核人）、04 §2.5 recon_diff_status written_off=已核销、design/specs/admin-recon.md §2「处理抽屉（其他类型）【核销】（R2 迟到成功 → W11，payout.execute）」。
+# 依赖已在主干：B2-07c 的对账作业对此类单登记 R2 差错单（type channel_mismatch、resolution.case=payer_side_returned、w11_by_bill_line=true、bill_row / bill_line、withdrawal_id、expected_fen 0、actual_fen=账单金额）并加 recon_diff 冻结；CT-24v / B2-09a 差错单只读、CT-24w / B2-09b 结案（本契约沿用其 AdminReconDiffIdPath、20001 [recon_diff_id] 与 20902 recon_diff 口径、released_hold_count）；枚举 withdrawal_status 已含 W11 事件 CHANNEL_SUCCESS_PROVEN，权限点 payout.execute 已登记 step_up_tier totp；分录模板 WITHDRAW:SUCCESS:* 已标 W11。
+# 契约取舍（代理自定，可改）：① 只做「凭账单行」一种凭证（BR-WDR-23 ③ 的路径）；「查询返回成功」的 W11（BR-WDR-17：W3 / W8 前先查询）随后台提现审核写操作（W2 / W3 / W4 / W8 / W10 契约尚未入账）另行。② 请求体固定 expected_withdrawal_status=APPROVED（与 resolveAdminPayOrder 的 expected_status 同款，防止看着旧详情点核销），可选 note ≤200 字记入 resolution。③ 守卫不满足用 20001 data.fields=[recon_diff_id] + data.reason ∈ not_payer_side_case / withdrawal_not_returned / transfer_attempts_mismatch / amount_mismatch / writeoff_disabled（取值登记在 error-codes.yaml 20001 行与 enums/admin.yaml），不新开错误码；差错单已 adjusted / written_off / closed → 20902 recon_diff；提现单 CAS 0 行 → 20902 withdrawal（同 BR-WDR-08）。④ 核销即解除该差错单来源的冻结（written_off 与 closed 同为处理完毕；BR-FUND-19 全局例「差错单关闭时解除冻结记录」），released_hold_count 口径同 CT-24w。⑤ Idempotency-Key 与 X-Step-Up-Token 同带：token 在请求头不进请求体哈希（04 §6.6 用户侧同款），重放沿用原键。
+# 授权边界：本契约只核销「付款方侧失败经 W9 退回、支付宝账单显示成功」的原单；不调账、不恢复订单、不重算余额缓存、不触碰 payout.queue_paused；终态单不可再改（BR-WDR-23 末句）。
+refs: [BR-WDR-23, BR-WDR-08, BR-WDR-09, BR-WDR-17, BR-FUND-19]
+refs_hash:
+  BR-WDR-23: 98981fee10c7
+  BR-WDR-08: 8c55a3ce6b57
+  BR-WDR-09: 68225c9af85f
+  BR-WDR-17: f6119a685e00
+  BR-FUND-19: e6205ee4fcc1
+contract_sections: ['11.1']
+deps: [CT-24w]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'contracts/enums/fund.yaml'
+  - 'packages/contracts-ts/**'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
