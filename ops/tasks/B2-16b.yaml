@@ -1,0 +1,23 @@
+id: B2-16b
+repo: rebate-platform
+title: 邀请奖励发放写入（ledger 实现 growth 声明的 InviteRewardGrantWriter）：在调用方事务内按 REWARD:INVITE 模板（ledger-templates.csv 252–253：借 MKT_EXPENSE、贷用户 USER_BALANCE available）为每个受益方写一张凭证，uniq_key INVITE_REWARD:{invitee_user_id}:{side}，幂等（同键重放回原 voucher_id、不重复入账），reward_fen 为 0 不出凭证，余额只经 ledger 更新
+type: impl
+# 2026-10-30 funds 线（编排 23:xx ③：对照规划 05 找资金方向依赖已满足的缺口）。growth/application/invite-reward.ts:82 声明端口、:899 TODO blocked on B2-16b，现不接线即不发奖；notices 1297 行「发奖写入端口待 B2-16b」后无人认领。RV2，独立 Claude 写测试与 money 评审（Codex 至 11-02 不可用，approvals #36）。
+# 只做 ledger 写入端口与导出；growth 侧接线（把端口注入 invite-reward）若需改 growth 或 app.module，另开装配任务报编排。
+refs: [BR-INV-24, BR-FUND-15, BR-FUND-16]
+refs_hash:
+  BR-INV-24: be947be8fb22
+  BR-FUND-15: 849cd1eab9f2
+  BR-FUND-16: 077f6d412d5a
+deps: [B2-16a]
+paths:
+  - 'apps/api/src/modules/ledger/application/invite-reward-grant*.ts'
+  - 'apps/api/src/modules/ledger/index.ts'
+test_paths:
+  - 'test/spec/ledger/invite-reward-grant/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/invite-reward-grant/**'
+status: todo
