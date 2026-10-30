@@ -1,0 +1,126 @@
+{
+  "task": "B1-22r",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "0539a627cbd50ed805213c9e1f20ff50a35ec6f3",
+  "red_tests": [
+    "test/spec/union/admin-reason/accounts.int.test.ts > [B1-22r][D10-427 ①] 发起重新授权：reason 含 \\n \\t \\u0000 \\u007f → 20001 [reason]，不建会话、不写审计、不向联盟要授权地址",
+    "test/spec/union/admin-reason/accounts.int.test.ts > [B1-22r][D10-427 ①] 发起重新授权：控制字符被拒之后，合法 reason（200 字、中文、空格）照常建会话并把原因记入审计",
+    "test/spec/union/admin-reason/accounts.int.test.ts > [B1-22r][D10-427 ①] manual 录入凭据：reason 含 \\n \\t \\u0000 \\u007f → 20001 [reason]，不存凭据、账号不变、不写审计，错误与日志不回显凭据",
+    "test/spec/union/admin-reason/accounts.int.test.ts > [B1-22r][D10-427 ①] manual 录入凭据：控制字符被拒之后，合法 reason 照常轮换凭据并把原因记入审计",
+    "test/spec/union/admin-reason/alert-phones.int.test.ts > [B1-22r][D10-427 ①] 新增告警手机号：reason 含 \\n \\t \\u0000 \\u007f → 20001 [reason]，号码组、配置历史与审计都不变，不再 5XX",
+    "test/spec/union/admin-reason/alert-phones.int.test.ts > [B1-22r][D10-427 ①] 新增告警手机号：控制字符的 reason 在组从未写过（版本 0）时也是 20001 [reason]、不建行；同号重复添加也不写审计",
+    "test/spec/union/admin-reason/alert-phones.int.test.ts > [B1-22r][D10-427 ①] 新增告警手机号：控制字符被拒之后，不含控制字符的合法 reason 照常成功并记入审计（200 字、中文、空格）",
+    "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] create：reason 含 \\n \\t \\u0000 \\u007f → 20001 [reason]，推广位、账号与审计不变，不存截图",
+    "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] create：控制字符被拒之后，合法 reason（200 字、中文、空格）照常成功并记入审计",
+    "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] update：reason 含 \\n \\t \\u0000 \\u007f → 20001 [reason]，推广位、账号与审计不变，不存截图",
+    "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] update：控制字符被拒之后，合法 reason（200 字、中文、空格）照常成功并记入审计",
+    "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] activate：reason 含 \\n \\t \\u0000 \\u007f → 20001 [reason]，推广位、账号与审计不变，不存截图",
+    "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] activate：控制字符被拒之后，合法 reason（200 字、中文、空格）照常成功并记入审计",
+    "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] retire：reason 含 \\n \\t \\u0000 \\u007f → 20001 [reason]，推广位、账号与审计不变，不存截图",
+    "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] retire：控制字符被拒之后，合法 reason（200 字、中文、空格）照常成功并记入审计",
+    "test/spec/union/admin-reason/reason.test.ts > [B1-22r][D10-427 ①] 不给原因照常通过；合法原因（200 字边界、中文、空格、非 Cc 的不可见字符）照常通过",
+    "test/spec/union/admin-reason/reason.test.ts > [B1-22r][D10-427 ①] 全部 65 个 Cc 控制字符（U+0000–U+001F、U+007F–U+009F）在开头、中间、结尾都判不合格",
+    "test/spec/union/admin-reason/reason.test.ts > [B1-22r][D10-427 ①] 原有的长度与类型规则不变：空串、201 字、非字符串都判不合格",
+    "test/spec/union/admin-reason/reason.test.ts > [B1-22r][D10-427 ①] 性质：不含 Cc 的 1–199 字原因合格；任意位置插入一个 Cc（总长不超过 200）就不合格",
+    "test/spec/union/pdd-query-pid/reader.int.test.ts > [B1-22r][D10-427 ③] 多个账号各有 active 查询位：取 updated_at 最早的一条（与 id 顺序相反也一样），并写一条选取日志（app_id、所选 id 与账号、候选条数），无凭据",
+    "test/spec/union/pdd-query-pid/reader.int.test.ts > [B1-22r][D10-427 ③] updated_at 相同按 id 升序取（与插入顺序无关），每次调用结果相同、各写一条选取日志，无凭据",
+    "test/spec/union/pdd-query-pid/reader.int.test.ts > [B1-22r][D10-427 ③] 候选条数只数本 app 同场景 active 的查询位：两条 active 加退役、待启用、别的场景时记 2，所选账号写在日志里"
+  ],
+  "risk_note": "RV2 (union admin write endpoints: reason with Unicode control characters refused as 20001 before any write; PDD query PID selection log). Independent Claude (approvals #36, Codex unavailable until 11-02) wrote test/spec/union/admin-reason/** and pdd-query-pid/** (1 attempt, prettier-formatted before commit per D10-292); zero-width space and line separator in a fixture string escaped per D10-206 (same string). Implementation model: Claude Opus 5.5 (1 round). 22 rule tests green on the AWS runner.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0539a627cbd50ed805213c9e1f20ff50a35ec6f3",
+      "tree": "050ffeeb6bb638168386e677d1b10b26c6e418c5",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T04:11:55Z",
+      "finished_at": "2026-10-30T04:12:18Z",
+      "red_tests": [
+        "test/spec/union/admin-reason/accounts.int.test.ts > [B1-22r][D10-427 ①] 发起重新授权：reason 含 \\n \\t \\u0000 \\u007f → 20001 [reason]，不建会话、不写审计、不向联盟要授权地址",
+        "test/spec/union/admin-reason/accounts.int.test.ts > [B1-22r][D10-427 ①] 发起重新授权：控制字符被拒之后，合法 reason（200 字、中文、空格）照常建会话并把原因记入审计",
+        "test/spec/union/admin-reason/accounts.int.test.ts > [B1-22r][D10-427 ①] manual 录入凭据：reason 含 \\n \\t \\u0000 \\u007f → 20001 [reason]，不存凭据、账号不变、不写审计，错误与日志不回显凭据",
+        "test/spec/union/admin-reason/accounts.int.test.ts > [B1-22r][D10-427 ①] manual 录入凭据：控制字符被拒之后，合法 reason 照常轮换凭据并把原因记入审计",
+        "test/spec/union/admin-reason/alert-phones.int.test.ts > [B1-22r][D10-427 ①] 新增告警手机号：reason 含 \\n \\t \\u0000 \\u007f → 20001 [reason]，号码组、配置历史与审计都不变，不再 5XX",
+        "test/spec/union/admin-reason/alert-phones.int.test.ts > [B1-22r][D10-427 ①] 新增告警手机号：控制字符的 reason 在组从未写过（版本 0）时也是 20001 [reason]、不建行；同号重复添加也不写审计",
+        "test/spec/union/admin-reason/alert-phones.int.test.ts > [B1-22r][D10-427 ①] 新增告警手机号：控制字符被拒之后，不含控制字符的合法 reason 照常成功并记入审计（200 字、中文、空格）",
+        "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] create：reason 含 \\n \\t \\u0000 \\u007f → 20001 [reason]，推广位、账号与审计不变，不存截图",
+        "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] create：控制字符被拒之后，合法 reason（200 字、中文、空格）照常成功并记入审计",
+        "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] update：reason 含 \\n \\t \\u0000 \\u007f → 20001 [reason]，推广位、账号与审计不变，不存截图",
+        "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] update：控制字符被拒之后，合法 reason（200 字、中文、空格）照常成功并记入审计",
+        "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] activate：reason 含 \\n \\t \\u0000 \\u007f → 20001 [reason]，推广位、账号与审计不变，不存截图",
+        "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] activate：控制字符被拒之后，合法 reason（200 字、中文、空格）照常成功并记入审计",
+        "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] retire：reason 含 \\n \\t \\u0000 \\u007f → 20001 [reason]，推广位、账号与审计不变，不存截图",
+        "test/spec/union/admin-reason/pids.int.test.ts > [B1-22r][D10-427 ①] retire：控制字符被拒之后，合法 reason（200 字、中文、空格）照常成功并记入审计",
+        "test/spec/union/admin-reason/reason.test.ts > [B1-22r][D10-427 ①] 不给原因照常通过；合法原因（200 字边界、中文、空格、非 Cc 的不可见字符）照常通过",
+        "test/spec/union/admin-reason/reason.test.ts > [B1-22r][D10-427 ①] 全部 65 个 Cc 控制字符（U+0000–U+001F、U+007F–U+009F）在开头、中间、结尾都判不合格",
+        "test/spec/union/admin-reason/reason.test.ts > [B1-22r][D10-427 ①] 原有的长度与类型规则不变：空串、201 字、非字符串都判不合格",
+        "test/spec/union/admin-reason/reason.test.ts > [B1-22r][D10-427 ①] 性质：不含 Cc 的 1–199 字原因合格；任意位置插入一个 Cc（总长不超过 200）就不合格",
+        "test/spec/union/pdd-query-pid/reader.int.test.ts > [B1-22r][D10-427 ③] 多个账号各有 active 查询位：取 updated_at 最早的一条（与 id 顺序相反也一样），并写一条选取日志（app_id、所选 id 与账号、候选条数），无凭据",
+        "test/spec/union/pdd-query-pid/reader.int.test.ts > [B1-22r][D10-427 ③] updated_at 相同按 id 升序取（与插入顺序无关），每次调用结果相同、各写一条选取日志，无凭据",
+        "test/spec/union/pdd-query-pid/reader.int.test.ts > [B1-22r][D10-427 ③] 候选条数只数本 app 同场景 active 的查询位：两条 active 加退役、待启用、别的场景时记 2，所选账号写在日志里"
+      ],
+      "expected": [
+        "test/spec/union/admin-reason/accounts.int.test.ts",
+        "test/spec/union/admin-reason/alert-phones.int.test.ts",
+        "test/spec/union/admin-reason/pids.int.test.ts",
+        "test/spec/union/admin-reason/reason.test.ts",
+        "test/spec/union/pdd-query-pid/reader.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "72ef48fbdd02fb43d9d16fdf2af12aee3660e67c375dc07bf3aecb7e6afcf3c0"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "2b09e34e8c61c8944bdf889ac078171b2d6aeb48f4d9f75f97b3f3f3280e785c"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "c17b49a1f7af61a1b5db35a1eb142389f0f28581",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "money r1 pass, no findings (couli-runs/B1-22r/review-money-r1.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "r1 pass with three S2 (C1 at endpoint level, logger wiring, property returns boolean); implementation follows the first two"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "fe313c8c0934d73f25ab1d289f670cbeb680ee99",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
