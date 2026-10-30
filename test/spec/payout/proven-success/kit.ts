@@ -23,7 +23,7 @@ import {
   type KyselyPlugin,
   type Transaction,
 } from 'kysely';
-import { expect, vi } from 'vitest';
+import { expect, vi, type Mock } from 'vitest';
 import { lockUsersForUpdate } from '../../../../apps/api/src/modules/identity/ports/lock-users.ts';
 import {
   createLedger,
@@ -489,10 +489,11 @@ export interface Sent {
   readonly options: SendOptions;
 }
 
+type LogFn = (fields: Record<string, unknown>, message: string) => void;
 export interface AppendLogger {
-  readonly info: ReturnType<typeof vi.fn>;
-  readonly warn: ReturnType<typeof vi.fn>;
-  readonly error: ReturnType<typeof vi.fn>;
+  readonly info: Mock<LogFn>;
+  readonly warn: Mock<LogFn>;
+  readonly error: Mock<LogFn>;
 }
 
 export async function setup(h: Harness) {
