@@ -49,8 +49,7 @@
 //      Without the port, or when it answers null (no such voucher), a revoked ban appeal with
 //      shares rejects and logs `appeal_restore_amount_unavailable` (error): nothing is registered
 //      and the snapshot value is never used instead.
-//      TODO(规划/11 §2.3): ledger 导出按 uniq_key 读 FORFEIT 凭证金额的只读接口，并在 app.module 注入
-//      forfeitedAmount — blocked on ledger 路径不在 B1-03z 任务范围内
+//      Production: ledger's readForfeitAmount (D10-432), injected by app.module.
 //    - One difference per (sub-order, member) of the appeal (r2, review S2): ref_type 'order',
 //      ref_id = the order key (ledger ReconDiffSelection.orderKey, so getReconDiffs({ orderKey })
 //      and the admin ref_id filter find it); expected_fen = Σ of the member's forfeited amounts on
@@ -155,7 +154,7 @@ export interface AppealRestoreOptions {
   readonly shares?: BannedForfeitedSharesPort;
   /** commission's findBannedRunStart (section 3). */
   readonly bannedRunStart?: BannedRunStartPort;
-  /** ledger's FORFEIT voucher amount (section 3; not yet exported by ledger). */
+  /** ledger's FORFEIT voucher amount (section 3; readForfeitAmount). */
   readonly forfeitedAmount?: ForfeitedAmountPort;
   readonly logger?: AppealRestoreLogger;
 }

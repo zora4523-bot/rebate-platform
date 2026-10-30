@@ -38,6 +38,9 @@ export type {
   ReconDiff,
 } from './application/recon-diffs.ts';
 export { openUserAccount } from './application/accounts.ts';
+// B1-03z (D10-432): the amount a share's FORFEIT voucher booked to the platform (read only).
+export { readForfeitAmount } from './application/forfeit-amount-read.ts';
+export type { ForfeitAmountSelection } from './application/forfeit-amount-read.ts';
 export { getOrderNets } from './application/order-nets.ts';
 export type {
   OrderNetSelection,

@@ -211,6 +211,7 @@ import {
   WalletSummaryModule,
   createLedger,
   getOrderNets,
+  readForfeitAmount,
   readPersonalDataCopyLedgerEntries,
   registerReconDiffOnce,
   type EarningsSummaryDependencies,
@@ -3679,12 +3680,12 @@ export class AppModule {
         ...(options.entry === 'worker'
           ? [
               // B1-03z: appeal.resolved → appeal_restore differences of revoked ban appeals
-              // (BR-FUND-22 / BR-CALC-13 细则「申诉恢复」) over commission's read-only ports.
-              // TODO(规划/11 §2.3): 注入 ledger 的 FORFEIT 凭证金额端口（appealRestoreForfeitedAmount）
-              // — blocked on ledger 尚未导出该只读接口；未注入前被撤销的封禁申诉拒绝登记并记 error
+              // (BR-FUND-22 / BR-CALC-13 细则「申诉恢复」) over commission's read-only ports and
+              // ledger's FORFEIT voucher amount (D10-432).
               RiskScanModule.forWorker({
                 appealRestoreShares: listBannedForfeitedShares,
                 appealRestoreRunStart: findBannedRunStart,
+                appealRestoreForfeitedAmount: readForfeitAmount,
               }),
               // payment's queue `pay` (B2-15c / B2-15d / B2-15e): order.query (the result judgement and
               // the query rhythm), biz.reconcile (the business object's fulfilment), order.close (the

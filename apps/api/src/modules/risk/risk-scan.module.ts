@@ -9,8 +9,8 @@
 // B1-03z: it also registers the appeal.resolved consumer `risk-appeal-restore` (appeal_restore
 // differences of revoked ban appeals, BR-FUND-22 / BR-CALC-13 细则「申诉恢复」) on queue
 // `evt.risk-appeal-restore` through registerEventConsumer, as notification-appeal-result does.
-// commission's ports come from app.module (ports.appealRestoreShares / appealRestoreRunStart, and
-// ledger's forfeited amount once ledger exports it; dependency inversion: commission's index.ts
+// commission's and ledger's ports come from app.module (ports.appealRestoreShares /
+// appealRestoreRunStart / appealRestoreForfeitedAmount; dependency inversion: commission's index.ts
 // reaches risk's through identity / growth). Registration runs no statement;
 // without a database handle or queue nothing is registered and one info line
 // `appeal_restore_disabled` is logged.
@@ -69,8 +69,8 @@ export interface RiskScanWorkerPorts {
   /** B1-03z r2: commission's findBannedRunStart (appeals without penalty_started_at). */
   readonly appealRestoreRunStart: BannedRunStartPort;
   /**
-   * B1-03z r2: the FORFEIT voucher amount (a ledger read). Absent until ledger exports it: a
-   * revoked ban appeal with shares then rejects (appeal_restore_amount_unavailable).
+   * B1-03z r2: the FORFEIT voucher amount (ledger readForfeitAmount, D10-432). Absent: a revoked
+   * ban appeal with shares rejects (appeal_restore_amount_unavailable).
    */
   readonly appealRestoreForfeitedAmount?: ForfeitedAmountPort;
 }
