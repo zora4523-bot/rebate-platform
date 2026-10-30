@@ -1,0 +1,26 @@
+id: CT-24zb
+repo: rebate-platform
+title: 契约：后台资产快照只读——GET /admin/v1/asset-snapshots（listAdminAssetSnapshots：快照日区间筛选，页码分页，快照日降序；每行一日：可提现正余额 / 负余额 / 冻结 / 已收货预估 / 预估合计、waiting_comparable、各平台联盟应收 union_receivable_fen 与写入 / 更新时刻）；权限 fund.view，只读不审计；按日台账的 W / P / 联盟回款录入（fund.cash_entry）与资金看板留后续
+type: contract
+# 2026-10-30 入账（admin-backend，编排 10-30 05:5x 派工：财务类后台接口逐段，第三段资产快照只读）。依据 01 F-ADM-08（资产快照）、04 §3.2 asset_snapshots / asset_snapshot_receivables、§11.2（fund.view「资金看板」）、design/specs/admin-fund-dashboard.md §1 / §4（「资产快照页未单独画板，按日台账即快照视图，字段以 04 asset-snapshots 为准」）；快照口径在 08 BR-FUND-18。
+# 技术取舍沿用 CT-24v / CT-24y / CT-24z：另建 AdminAssetSnapshot 结构，operationId 照仓库惯例取 listAdminAssetSnapshots；分页 AdminPage / AdminPageSize（≤200）；快照日区间 date_from / date_to（YYYY-MM-DD，含端点，倒置 20001 data.fields）；金额整数分原样，不重算；各平台应收为数组或对象按库表行。
+#   不含：按日台账的 W、P 与水位状态（BR-WDR-18，依赖 fund.cash_entry 录入）、联盟回款录入、资金看板与报表、导出。
+refs: []
+refs_hash: {}
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'packages/contracts-ts/**'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
