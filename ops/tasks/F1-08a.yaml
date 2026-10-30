@@ -1,0 +1,23 @@
+id: F1-08a
+repo: rebate-platform
+title: 后台「提现审核」页第一段（资源 withdrawals，菜单 资金 / 提现审核）只读——「审核列表」页签：状态页签与筛选（状态、审核方式、收款方式、申请时间等，按 CT-24y 参数）、页码分页、列表列（提现单号、用户 / 收款方式、金额分项、展示状态与附加态、风险标签、转人工原因 / 审核人 / 批次、申请时间）、三态；提现单详情 withdrawals/{id} 只读（单据摘要与金额分项、状态历史、批次、转账尝试摘要、生效冻结、自动判定结果与风险标签、收款账号脱敏）；中文名取后台字典 BR-TEXT-25；持 withdraw.review 或 fund.view 可看；接口 CT-24y listAdminWithdrawals / getAdminWithdrawal（B2-09c 已实现）
+type: impl
+# 2026-10-30 入账（前端线 f1-frontend-7，编排续跑派工：后台提现单只读，CT-24y / B2-09c 已合并）。规格 couli design/specs/admin-withdrawals.md（审核列表部分）与 admin-withdrawal-detail.md（只读部分），负责人 2026-10-18 第 2 批定稿；画板 AdmWithdrawList*、AdmWithdrawDetail、AdmWithdrawAutoDecision（布局参考，状态名以 BR-TEXT-25 为准，规格 §7 ①）。
+# 不做（写接口契约未出，另开后续段）：审核通过 / 驳回、批量通过、批量手动打款、批量自动打款与一键组批、手动成功、撤销微信转账、执行打款、自动到账设置页签、导出；打款队列 / 结果待确认页签属 F1-08b。按钮不出现或置灰，不发未定接口请求。
+# 菜单不改：resources/index.ts 的 withdrawals 仍为 withdraw.review、payout.execute、payout.manual_entry 任一（sample-data §10.1）；只持 payout.* 而无 withdraw.review / fund.view 的进页显示无权限。不碰冻结 admin-shell 夹具。
+# 资金页面、路径 apps/admin/src/**/withdrawals/** 属 RV2：评审走 money 口径。Codex 到 11-02 不可用：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude；独立 Claude 每任务 10 次上限（D10-319 / D10-417）。
+refs: []
+refs_hash: {}
+deps: [CT-24y, B2-09c]
+paths:
+  - 'apps/admin/src/pages/withdrawals/**'
+  - 'apps/admin/src/texts/withdrawals.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-withdrawals/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-withdrawals/**'
+status: todo
