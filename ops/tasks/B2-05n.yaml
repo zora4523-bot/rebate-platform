@@ -1,9 +1,8 @@
 id: B2-05n
 repo: rebate-platform
-title: payout worker：审核超时检查任务（BR-WDR-26 ③ 超时判定；BR-WDR-24 告警）——队列 payout-overdue（exclusive，按 5 分钟时间槽 singletonKey 链式自排：处理完当前槽即入队下一槽，seed + heal 照 payout-recon / risk-scan）：每槽选 review_deadline ≤ now、review_overdue_at IS NULL、status ∈ {PENDING_REVIEW, APPROVED} 的单，逐单在 users 行锁下重读、CAS 置 review_overdue_at = now（0 行跳过），同事务 logger.warn 告警 withdrawal_review_overdue（财务，不受夜间限制；只带 id 与时刻）并发布专用领域事件 withdrawal.review_overdue（载荷 withdrawal_id、user_id、review_deadline、overdue_at；02 §11 登记）；用户通知（WD_OVERDUE、免打扰顺延、幂等键 withdrawal_id:OVERDUE、发送前复查状态）由 identity 线的 notification 消费该事件实现，不在本任务
+title: payout worker：审核超时检查任务（BR-WDR-26 ③ 超时判定；BR-WDR-24 告警）——队列 payout-overdue（exclusive，按 5 分钟时间槽 singletonKey 链式自排：处理完当前槽即入队下一槽，seed + heal 照 payout-recon / risk-scan）：每槽选 review_deadline ≤ now、review_overdue_at IS NULL、status ∈ {PENDING_REVIEW, APPROVED} 的单，逐单在 users 行锁下重读、CAS 置 review_overdue_at = now（0 行跳过）并在同一事务发布专用领域事件 withdrawal.review_overdue（载荷 {withdrawal_id, user_id, review_deadline, overdue_at}，app_id 走事件信封，不带金额与个人信息；02 §11 已登记，D10-475 ②(a)）；事务**提交后**按仓库约定 logger.warn('withdrawal_review_overdue')（固定消息、只带 id 与时刻；回滚不告警；不进 B1-01zzi，D10-475 ②(b)）；用户通知（WD_OVERDUE、免打扰顺延、幂等键 withdrawal_id:OVERDUE、发送前复查状态）与 notification 的订阅由 identity 线接 WD_OVERDUE 时做，不在本任务
 type: impl
-# 2026-10-31 入账（withdraw 线，D10-467 ④）。时间只读注入的 Clock，日切 / 槽位用 @couli/domain；每单只判定一次由 review_overdue_at 保证（B2-05m）；review_deadline 为空的单（自动到账判定中 / 自动单）不判。新队列与新事件名各要动冻结测试（队列目录 / 入口计划 / 事件清单 EVENT_NAMES），照 D10-415 ① 由规则测试作者单列 test(spec) 提交（B2-05nz），其余未改用例 red_exempt。
-# 请编排核：事件名 withdrawal.review_overdue（02 §11 需回写登记）；告警名 withdrawal_review_overdue 若须进 B1-01zzi 告警规则登记另报。
+# 2026-10-31 入账（withdraw 线，D10-467 ④；D10-475 ② 定稿）。时间只读注入的 Clock，日切 / 槽位用 @couli/domain；每单只判定一次由 review_overdue_at 保证（B2-05m）；review_deadline 为空的单（自动到账判定中 / 自动单）不判。EVENT_NAMES、队列目录 / worker-plan / limits 计数照 D10-415 ① 由规则测试作者单列 test(spec) 提交（排在实现前、不计写测试轮次），其余未改用例 red_exempt（入账时按变基后主干的实际用例补）；计数以变基后主干为准（identity 的 order.snapshot_created、funds 的 run 级完成事件也在加）。
 refs: [BR-WDR-26, BR-WDR-24]
 refs_hash:
   BR-WDR-26: 158db40de631
