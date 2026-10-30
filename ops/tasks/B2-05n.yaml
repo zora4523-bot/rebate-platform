@@ -23,6 +23,9 @@ test_paths:
   - 'test/spec/platform/queue-concurrency/kit.ts'
   - 'test/spec/platform/queue-concurrency/limits.test.ts'
   - 'test/spec/platform/events/contract.test.ts'
+  # 编排 07:3x：新事件名进 events/kit.ts 的 PLAN_02_EVENTS（按 02 §11 顺序、在末尾）并追加进 snapshot-retry-alert 的 PLAN_02_AFTER_RETRY_EXHAUSTED，[AC-B1-08u#1] 测试体不改、列 red_exempt（照 B2-15c 先例）。
+  - 'test/spec/platform/events/kit.ts'
+  - 'test/spec/orders/snapshot-retry-alert/contract.test.ts'
 impl: claude
 tester: claude-independent
 accept:
