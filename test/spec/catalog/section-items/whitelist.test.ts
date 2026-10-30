@@ -1,7 +1,8 @@
 // B1-05o: before every fetch every channel of the data source is checked against the whitelist as
 // it is now (BR-TEXT-17 细则「取数时再查一次」: the save check cannot see later whitelist changes). One
 // channel missing or not selectable refuses the whole data source: nothing is fetched, the block has
-// no data and one section_channel_refused alert names the channel.
+// no data and one section_channel_refused alert names the channel. sort_basis has no say here: the
+// hot list's sales / popularity limit is not this source's rule (细则「可选频道」also allows 猜你喜欢).
 import { expect, it } from 'vitest';
 import { candidate, channel, type ChannelEntry, series } from '../hot-rank/kit.ts';
 import {
@@ -11,8 +12,11 @@ import {
   TB,
   entryOf,
   expectPages,
+  interleave,
+  names,
   pagesCursor,
   sectionFixture,
+  titlesOf,
   type ChannelRef,
 } from './kit.ts';
 
@@ -130,3 +134,34 @@ it('[AC-B1-05o#12] 白名单在取数之前读：每个上游调用发生时，�
   expect(f.readsAtFetch[0]).toBeGreaterThan(0);
   expect(f.readsAtFetch[1]).toBeGreaterThan(reads);
 });
+
+const SORT_BASES: readonly {
+  readonly label: string;
+  readonly bases: readonly ChannelEntry['sort_basis'][];
+}[] = [
+  { label: '唯一频道按猜你喜欢排序（personalized）', bases: ['personalized'] },
+  { label: '唯一频道按热度排序（popularity）', bases: ['popularity'] },
+  { label: 'personalized 与 popularity 两个频道', bases: ['personalized', 'popularity'] },
+];
+
+it.each(SORT_BASES)(
+  '[AC-B1-05o#62] $label：只要可选就照常取数下发，不因排序依据拒绝，也不告警',
+  async ({ bases }) => {
+    const refs = THREE.slice(0, bases.length);
+    const f = sectionFixture({ channels: refs });
+    f.setChannels(
+      refs.map((ref, at) =>
+        channel(ref.platform, ref.channel_id, { sort_basis: bases[at]!, selectable: true }),
+      ),
+    );
+    for (const ref of refs) {
+      f.answer(ref, 1, series(ref.channel_id, 2, 1, ref.platform));
+    }
+
+    const data = await f.run();
+
+    expect(titlesOf(data)).toEqual(interleave(refs.map((ref) => names(ref.channel_id, 2))));
+    for (const ref of refs) expect(f.pageNos(ref)).toEqual([1]);
+    expect(f.warnings()).toEqual([]);
+  },
+);

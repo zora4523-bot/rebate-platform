@@ -1,7 +1,9 @@
 // B1-05o: properties over any number of channels and any page sequence. The delivered order is the
 // channels' interleave, round by round, with the filtered and repeated cards left out; price, rebate
 // and commission have no say (BR-TEXT-17 细则「联盟物料频道」). `expectedStep` is the rule of
-// 编排补充说明 D10-452 written out on plain data. Fixtures per iteration use no vi.fn (see kit.ts).
+// 编排补充说明 D10-452 written out on plain data. Amounts run through the tiers of `finalFenArb` and
+// each delivered card keeps its candidate's exact price. Fixtures per iteration use no vi.fn (see
+// kit.ts).
 import { propParams } from '@couli/testing';
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
@@ -33,6 +35,7 @@ type ChannelPages = readonly (readonly Row[])[];
 
 interface Step {
   readonly titles: readonly string[];
+  readonly prices: readonly number[];
   readonly hasMore: boolean;
   readonly next: readonly number[];
 }
@@ -54,6 +57,7 @@ function expectedStep(layout: readonly ChannelPages[], pages: readonly number[])
   const next = [...pages];
   const more = pages.map(() => false);
   const titles: string[] = [];
+  const prices: number[] = [];
   const delivered = new Set<number>();
 
   const round = (active: readonly number[]): void => {
@@ -69,6 +73,7 @@ function expectedStep(layout: readonly ChannelPages[], pages: readonly number[])
       if (row.anomaly || isNoRebate(row.product) || delivered.has(row.product)) continue;
       delivered.add(row.product);
       titles.push(title(nameOf(row.product)));
+      prices.push(Number(row.finalFen));
     }
   };
 
@@ -76,13 +81,25 @@ function expectedStep(layout: readonly ChannelPages[], pages: readonly number[])
   const again = more.flatMap((hasMore, index) => (hasMore ? [index] : []));
   if (titles.length < SECTION_PAGE_SIZE && again.length > 0) round(again);
 
-  return { titles: titles.slice(0, SECTION_PAGE_SIZE), hasMore: more.some(Boolean), next };
+  return {
+    titles: titles.slice(0, SECTION_PAGE_SIZE),
+    prices: prices.slice(0, SECTION_PAGE_SIZE),
+    hasMore: more.some(Boolean),
+    next,
+  };
 }
+
+/** Amount tiers: the smallest price, ordinary prices, past 2^31 up to the largest JSON-safe fen. */
+const finalFenArb = fc.oneof(
+  fc.constant(1n),
+  fc.bigInt({ min: 100n, max: 10_000_000n }),
+  fc.bigInt({ min: 2_147_483_649n, max: 9_007_199_254_740_991n }),
+);
 
 const rowArb: fc.Arbitrary<Row> = fc.record({
   product: fc.oneof(fc.nat({ max: 12 }), fc.nat({ max: 400 })),
   anomaly: fc.boolean(),
-  finalFen: fc.bigInt({ min: 100n, max: 10_000_000n }),
+  finalFen: finalFenArb,
   commissionBp: fc.bigInt({ min: 0n, max: 9_000n }),
 });
 
@@ -130,6 +147,7 @@ it('[AC-B1-05o#60] 属性：任意频道数与页序列，顺着游标翻到底�
         const data = await f.run(cursor === undefined ? {} : { cursor });
 
         expect(titlesOf(data)).toEqual(want.titles);
+        expect(data.items.map((card) => card.final_price_fen)).toEqual(want.prices);
         expect(f.registered().slice(registered)).toEqual(want.titles);
         expect(data.has_more).toBe(want.hasMore);
         if (!want.hasMore) {
@@ -152,7 +170,7 @@ it('[AC-B1-05o#60] 属性：任意频道数与页序列，顺着游标翻到底�
 }, 240_000);
 
 const economicsArb = fc.record({
-  finalFen: fc.bigInt({ min: 100n, max: 10_000_000n }),
+  finalFen: finalFenArb,
   commissionBp: fc.bigInt({ min: 0n, max: 9_000n }),
   rebateFen: fc.bigInt({ min: 1n, max: 99n }),
 });
