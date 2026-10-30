@@ -2627,8 +2627,11 @@ export interface paths {
          *     (Taobao needs an active binding → otherwise 30101; Pinduoduo needs the filing → otherwise
          *     30111; BR-ATTR-10). A request stopped by 30101 or 30111 and sent again after the user
          *     authorized is a new request with a new Idempotency-Key (BR-ID-10 细则). 30101 carries
-         *     auth_url, state and auth_methods; 30111 carries auth_jump. Product off shelf → 30141;
-         *     product information no longer valid → 30143.
+         *     auth_url, state and auth_methods; 30111 carries auth_jump. The sharer's binding on that
+         *     platform blocked (union_bindings status=blocked) → 30153 (as links/convert and open), not
+         *     the 30101 / 30111 of a missing authorization. An unsupported platform (body.platform not
+         *     taobao / jd / pdd, or a product_key whose prefix belongs to an unsupported platform) → 30131
+         *     (as convertLink). Product off shelf → 30141; product information no longer valid → 30143.
          *     Taobao: when the promotion link or the token cannot be obtained, nothing is generated and
          *     the whole call fails, never a half result and never the original link instead (BR-ATTR-10
          *     细则「淘宝分享实现」): while the token generation permission is not granted → 50301 with
