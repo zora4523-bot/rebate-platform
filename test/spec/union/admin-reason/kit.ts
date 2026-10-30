@@ -31,7 +31,7 @@ export const VALID_REASONS: readonly string[] = [
   '到期前 提前 续期',
   ' 前后有空格 ',
   'Renew before expiry (ticket #42) – 运营确认',
-  '零宽​空格与 行分隔不是 Cc',
+  '零宽\u200B空格与\u2028行分隔不是 Cc',
 ];
 
 /** JSON text of a reason as a test title shows it (control characters escaped). */
