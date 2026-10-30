@@ -14,8 +14,10 @@ import {
   PAYEE,
   RISK_NAME,
   STATUS_NAME,
+  UNMASKED_VALUES,
   createServer,
   detailPath,
+  disallowedRequests,
   snapshot,
 } from './fixtures.ts';
 
@@ -26,6 +28,9 @@ const FIRST = { timeout: 10_000 };
 const ENTRY = /^(?:详\s*情|查\s*看.*详\s*情|查\s*看)$/;
 const WRITE =
   /^(?:审核通过|驳回|批量通过|批量手动打款|批量自动打款|一键组批|手动成功|执行打款|撤销微信转账|重新计算|导出$)/;
+/** A reveal entry beside a masked value (this section offers none). */
+const REVEAL =
+  /^(?:查看|显示)(?:全量|完整|明文)?$|^(?:查看|显示)(?:全量|完整|明文)?(?:收款)?(?:账号|手机号?|号码|姓名|实名|身份证号?)$|揭示|reveal/i;
 let root: Root | undefined;
 let auth: AdminAuthProvider | undefined;
 afterEach(() => {
@@ -63,18 +68,40 @@ async function show(server = createServer(undefined, { permissions: ALL_GRANTS }
   return server;
 }
 
+function usable(name: RegExp): HTMLElement[] {
+  const main = page.getByRole('main');
+  return [
+    ...main.getByRole('button', { name }).elements(),
+    ...main.getByRole('link', { name }).elements(),
+  ].filter(
+    (node) =>
+      !(node as HTMLButtonElement).disabled && node.getAttribute('aria-disabled') !== 'true',
+  ) as HTMLElement[];
+}
 function usableWrites(): HTMLElement[] {
-  return page
-    .getByRole('main')
-    .getByRole('button', { name: WRITE })
-    .elements()
-    .filter(
-      (node) =>
-        !(node as HTMLButtonElement).disabled && node.getAttribute('aria-disabled') !== 'true',
-    ) as HTMLElement[];
+  return usable(WRITE);
+}
+/** Usable reveal entries, leaving out the 【查看】 detail entries of list rows. */
+function usableReveals(): HTMLElement[] {
+  return usable(REVEAL).filter((node) => {
+    const row = node.closest<HTMLElement>('.ant-table-row, [role="row"]');
+    return (
+      row === null ||
+      row.closest('.ant-descriptions') !== null ||
+      !/W\d{14}/.test(row.textContent ?? '')
+    );
+  });
+}
+/** Unmasked comparison values in the document's text or field values. */
+function unmaskedShown(): string[] {
+  const fields = Array.from(document.querySelectorAll('input, textarea'), (node) =>
+    node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement ? node.value : '',
+  );
+  const all = [document.body.textContent ?? '', ...fields].join('\n');
+  return UNMASKED_VALUES.filter((value) => all.includes(value));
 }
 
-it('[AC-F1-08a-BROWSER#1] /withdrawals 审核列表：列出字典中文名与风险标签，行【详情】进入 /withdrawals/{id}，详情只显示脱敏收款账号与姓名，全部写权限下也没有可点的写入口，只发 GET', async () => {
+it('[AC-F1-08a-BROWSER#1] /withdrawals 审核列表：列出字典中文名与风险标签，行【详情】进入 /withdrawals/{id}，详情只显示脱敏收款账号与姓名、没有可点的【查看】全量入口，全部写与查看全量权限下也没有可点的写入口，全程只发允许的 GET', async () => {
   await page.viewport(1440, 1080);
   const server = await show();
   const area = page.getByRole('main');
@@ -102,5 +129,8 @@ it('[AC-F1-08a-BROWSER#1] /withdrawals 审核列表：列出字典中文名与�
   await expect.element(area).toMatchTextContent(STATUS_NAME.REJECTED);
   expect(server.requests('GET', detailPath(ID.rejected)).length).toBeGreaterThan(0);
   expect(usableWrites(), 'no usable write entry on the detail').toEqual([]);
+  expect(usableReveals(), 'no usable reveal entry on the detail').toEqual([]);
+  expect(unmaskedShown(), 'no unmasked phone number, payee account or payee name').toEqual([]);
   expect(server.writes(), 'only GET requests').toEqual([]);
+  expect(disallowedRequests(server.log), 'only the allowed GET reads').toEqual([]);
 });

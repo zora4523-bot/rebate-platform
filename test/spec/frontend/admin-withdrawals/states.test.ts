@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { waitFor } from '@testing-library/react';
 import { expect, it } from 'vitest';
-import { LIST, NO, createServer, failure } from './fixtures.ts';
+import { NO, createServer, failure } from './fixtures.ts';
 import {
   EMPTY,
   FLOW_TIMEOUT,
@@ -13,13 +13,20 @@ import {
   click,
   main,
   mount,
+  occurrences,
   openList,
   query,
+  readsWhere,
   rowsOf,
   scope,
   settle,
   settled,
+  tableRead,
+  textBesideRows,
 } from './helpers.ts';
+
+// Only the table's read (identified by its list parameters, tableRead) is held or fails; count
+// reads of the status tabs, if the page makes them, are answered as usual.
 
 function busy(): boolean {
   const area = main();
@@ -28,16 +35,17 @@ function busy(): boolean {
     /加载/.test(area.textContent ?? '')
   );
 }
+const unavailable = () => failure(50001, undefined, '服务暂时不可用');
 
 it(
-  '[AC-F1-08a-STATE#1] 加载中：列表请求未返回时显示加载状态、没有提现单行，返回后列出',
+  '[AC-F1-08a-STATE#1] 加载中：表格请求未返回时显示加载状态、没有提现单行，返回后列出',
   async () => {
     const server = createServer();
-    const release = server.hold('GET', LIST);
+    const release = server.holdWhere(tableRead());
     try {
       await mount(server);
       await openList(server);
-      await waitFor(() => expect(server.reads().length).toBeGreaterThan(0));
+      await waitFor(() => expect(readsWhere(server, tableRead()).length).toBeGreaterThan(0));
       await settle();
       expect(busy(), 'a loading state in the main area').toBe(true);
       expect(rowsOf(main(), [NO.pending])).toEqual([]);
@@ -51,19 +59,19 @@ it(
 );
 
 it(
-  '[AC-F1-08a-STATE#2] 出错可重试：列表请求失败显示出错与【重试】，重试成功后列出',
+  '[AC-F1-08a-STATE#2] 出错可重试：表格请求失败显示出错与【重试】，重试成功后列出',
   async () => {
     const server = createServer();
-    server.once('GET', LIST, () => failure(50001, undefined, '服务暂时不可用'));
+    server.onceWhere(tableRead(), unavailable);
     await mount(server);
     await openList(server);
-    await waitFor(() => expect(server.reads().length).toBeGreaterThan(0));
+    await waitFor(() => expect(readsWhere(server, tableRead()).length).toBeGreaterThan(0));
     await settled(server);
-    await waitFor(() => expect(main().textContent).toMatch(LOAD_FAILED));
+    await waitFor(() => expect(textBesideRows(main())).toMatch(LOAD_FAILED));
     expect(rowsOf(main(), [NO.pending])).toEqual([]);
-    const reads = server.reads().length;
+    const reads = readsWhere(server, tableRead()).length;
     await click(action(main(), RETRY));
-    await waitFor(() => expect(server.reads().length).toBeGreaterThan(reads));
+    await waitFor(() => expect(readsWhere(server, tableRead()).length).toBeGreaterThan(reads));
     await settled(server);
     await openList(server, NO.pending);
   },
@@ -71,32 +79,31 @@ it(
 );
 
 it(
-  '[AC-F1-08a-STATE#3] 再查失败不显示旧数据：换条件【查询】失败时显示出错、不再显示之前的行，重试后按新条件列出',
+  '[AC-F1-08a-STATE#3] 再查失败不显示旧数据：换条件【查询】后表格请求失败时新出现出错提示、不再显示之前的行，重试后按新条件列出',
   async () => {
     const server = createServer();
     await mount(server);
     await openList(server, NO.autoPaid);
     await settled(server);
-    server.once('GET', LIST, () => failure(50001, undefined, '服务暂时不可用'));
-    const reads = server.reads().length;
+    const manual = tableRead({ review_mode: 'manual' });
+    server.onceWhere(manual, unavailable);
+    const notices = occurrences(textBesideRows(main()), LOAD_FAILED);
     await choose(scope(), LABEL.reviewMode, /^人工审核$/);
     await query();
-    await waitFor(() => expect(server.reads().length).toBeGreaterThan(reads));
+    await waitFor(() => expect(readsWhere(server, manual).length).toBeGreaterThan(0));
     await settled(server);
-    await waitFor(() => expect(main().textContent).toMatch(LOAD_FAILED));
+    await waitFor(() =>
+      expect(
+        occurrences(textBesideRows(main()), LOAD_FAILED),
+        'a failure notice that was not there before',
+      ).toBeGreaterThan(notices),
+    );
     expect(rowsOf(main(), [NO.autoPaid]), 'no stale rows').toEqual([]);
     expect(rowsOf(main(), [NO.pending]), 'no stale rows').toEqual([]);
-    const failed = server.reads().length;
+    const failed = readsWhere(server, manual).length;
     await click(action(main(), RETRY));
-    await waitFor(() => expect(server.reads().length).toBeGreaterThan(failed));
+    await waitFor(() => expect(readsWhere(server, manual).length).toBeGreaterThan(failed));
     await settled(server);
-    expect(
-      server
-        .reads()
-        .slice(failed)
-        .some((read) => read.query['review_mode'] === 'manual'),
-      'the retry keeps the new condition',
-    ).toBe(true);
     await waitFor(() => expect(rowsOf(scope(), [NO.pending])).toHaveLength(1));
     expect(rowsOf(scope(), [NO.autoPaid])).toEqual([]);
   },
@@ -109,7 +116,7 @@ it(
     const server = createServer([]);
     await mount(server);
     await openList(server);
-    await waitFor(() => expect(server.reads().length).toBeGreaterThan(0));
+    await waitFor(() => expect(readsWhere(server, tableRead()).length).toBeGreaterThan(0));
     await settled(server);
     await waitFor(() => expect(scope().textContent).toMatch(EMPTY));
     expect(rowsOf(main(), [NO.pending])).toEqual([]);

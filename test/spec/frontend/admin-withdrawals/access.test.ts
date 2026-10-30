@@ -73,14 +73,28 @@ it(
 );
 
 it(
-  '[AC-F1-08a-ACCESS#3] withdraw.review 与 fund.view 都没有（直达 /withdrawals）：不请求提现单，页面显示无权限提示',
+  '[AC-F1-08a-ACCESS#3] 直达 /withdrawals：持 fund.view（另有 user.lookup）照常列出；withdraw.review 与 fund.view 都没有（只 user.lookup）时不请求提现单，显示无权限提示或沿用外壳原有跳转（离开提现审核）二者之一',
   async () => {
+    const viewer = createServer(undefined, { permissions: [...VIEW_GRANTS, ...OTHER_GRANTS] });
+    await mount(viewer);
+    await openList(viewer, NO.pending);
+    expect(viewer.reads().length).toBeGreaterThan(0);
+    cleanup();
+
     const server = createServer(undefined, { permissions: OTHER_GRANTS });
     await mount(server);
     await settle();
     await settled(server);
     expect(menuLinks(), 'no menu 提现审核').toEqual([]);
-    await waitFor(() => expect(main().textContent).toMatch(FORBIDDEN));
+    // Either the page's own no-permission notice, or the shell's usual redirect away from
+    // 提现审核 (its crumb is gone and no list is shown).
+    const banner = (): string => document.querySelector('[role="banner"]')?.textContent ?? '';
+    await waitFor(() =>
+      expect(
+        FORBIDDEN.test(main().textContent ?? '') || !banner().includes('提现审核'),
+        'a no-permission notice or the redirect away from 提现审核',
+      ).toBe(true),
+    );
     await settled(server);
     expect(server.withdrawalRequests()).toEqual([]);
     expect(rowsOf(main(), [NO.pending])).toEqual([]);

@@ -14,10 +14,14 @@ import { createDataProvider } from '../../../../apps/admin/src/providers/data/in
 import { installMediaQuery } from '../admin-auth-qr/helpers.ts';
 import {
   BASE_URL,
+  FILTER_PARAMS,
   LIST,
+  UNMASKED_VALUES,
   createServer,
+  disallowedRequests,
   snapshot as snapshotOf,
   type RequestLog,
+  type RequestMatch,
   type Server,
 } from './fixtures.ts';
 
@@ -51,18 +55,103 @@ export const RETRY = /重试/;
 export const WRITE =
   /^(?:审核通过|通过审核|驳回|批量通过|批量手动打款|批量自动打款|一键组批|手动成功|录入并确认|执行打款|撤销微信转账|导出(?!记录)|重新计算|恢复默认值)/;
 
-/** Field labels (antd Form.Item label, aria-label or placeholder). */
+/**
+ * A reveal entry (【查看】 beside a masked value, 「显示完整账号」 …). This section offers none:
+ * the audited reveal belongs to a later section.
+ */
+export const REVEAL =
+  /^(?:查看|显示)(?:全量|完整|明文)?$|^(?:查看|显示)(?:全量|完整|明文)?(?:收款)?(?:账号|手机号?|号码|姓名|实名|身份证号?)$|揭示|reveal/i;
+
+/**
+ * Field labels (antd Form.Item label, aria-label or placeholder), case-insensitive. The date
+ * range also takes antd's default RangePicker placeholders (Start date / End date, 开始日期 /
+ * 结束日期).
+ */
 export const LABEL = {
   reviewMode: /审核方式|review_mode/i,
   channel: /收款方式|payout_channel|payout_method/i,
   outBizNo: /提现单号|out_biz_no/i,
-  createdFrom: /起始|开始|^start\b|created_from/i,
-  createdTo: /截止|结束|^end\b|created_to/i,
+  createdFrom: /起始|开始|\bstart\b|created_from/i,
+  createdTo: /截止|结束|\bend\b|created_to/i,
 } as const;
 
+// ---- every request and every rendering of a test -------------------------------------------
+
+/** The fake servers and direct-fetch stubs of the current test. */
+const mounted: {
+  readonly server: Server;
+  readonly directFetch: { readonly mock: { readonly calls: readonly unknown[] } };
+}[] = [];
+/** Unmasked comparison values seen in the document at any time during the current test. */
+const sightings = new Set<string>();
+let watcher: MutationObserver | undefined;
+const SHOWN_ATTRIBUTES = ['title', 'aria-label', 'value', 'placeholder', 'alt'];
+
+function note(text: string): void {
+  for (const value of UNMASKED_VALUES) if (text.includes(value)) sightings.add(value);
+}
+/** The shown attributes and field values of `nodes`. */
+function noteAttributes(nodes: readonly Element[]): void {
+  for (const node of nodes) {
+    for (const name of SHOWN_ATTRIBUTES) {
+      const value = node.getAttribute(name);
+      if (value !== null) note(value);
+    }
+    if (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement) note(node.value);
+  }
+}
+/** Records every unmasked comparison value in the whole document (text, titles, labels, fields). */
+function lookForUnmasked(): void {
+  note(document.body.textContent ?? '');
+  noteAttributes(Array.from(document.body.querySelectorAll('*')));
+}
+/** After each change: the document text, changed attributes and added elements. */
+function lookAtChanges(records: MutationRecord[]): void {
+  note(document.body.textContent ?? '');
+  for (const record of records) {
+    if (record.type === 'attributes' && record.target instanceof Element)
+      noteAttributes([record.target]);
+    for (const added of Array.from(record.addedNodes))
+      if (added instanceof Element)
+        noteAttributes([added, ...Array.from(added.querySelectorAll('*'))]);
+  }
+}
+function watchUnmasked(): void {
+  if (watcher !== undefined) return;
+  watcher = new MutationObserver(lookAtChanges);
+  watcher.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: true,
+  });
+}
+
+/**
+ * Throughout the test: no request but the allowed reads (GET /admin/v1/withdrawals, GET
+ * /admin/v1/withdrawals/{id}, the common reads), no direct fetch, and no unmasked phone number,
+ * payee account or payee name on the page at any time.
+ */
+export function assertOnlyReads(): void {
+  lookForUnmasked();
+  for (const { server, directFetch } of mounted) {
+    expect(disallowedRequests(server.log), 'only the allowed GET reads').toEqual([]);
+    expect(directFetch.mock.calls.length, 'no direct fetch').toBe(0);
+  }
+  expect([...sightings], 'no unmasked phone number, payee account or payee name').toEqual([]);
+}
+
 afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
+  try {
+    if (mounted.length > 0) assertOnlyReads();
+  } finally {
+    watcher?.disconnect();
+    watcher = undefined;
+    mounted.length = 0;
+    sightings.clear();
+    cleanup();
+    vi.unstubAllGlobals();
+  }
 });
 
 export interface MountOptions {
@@ -80,6 +169,8 @@ export async function mount(server: Server = createServer(), options: MountOptio
     Promise.reject(new Error('unexpected direct fetch')),
   );
   vi.stubGlobal('fetch', directFetch);
+  mounted.push({ server, directFetch });
+  watchUnmasked();
   const onError = vi.fn();
   const dataProvider = createDataProvider({
     baseUrl: BASE_URL,
@@ -239,6 +330,136 @@ export function listed(numbers: readonly string[]): string[] {
   return numbers.filter((number) => rowsOf(scope(), [number]).length > 0);
 }
 
+/** Column titles of the list's header row (spaces removed). */
+export function columnTitles(): string[] {
+  const panel = scope();
+  const header =
+    panel.querySelector<HTMLElement>('thead tr') ??
+    Array.from(panel.querySelectorAll<HTMLElement>('[role="row"]')).find(
+      (node) => node.querySelector('[role="columnheader"]') !== null,
+    ) ??
+    null;
+  expect(header, 'a header row with column titles').not.toBeNull();
+  return Array.from(header!.children, (cell) => squash(cell.textContent));
+}
+/** Text of the cell of the row `number` under the one column whose title matches `title`. */
+export function cellText(number: string, title: RegExp): string {
+  const titles = columnTitles();
+  const indexes = titles.flatMap((text, index) => (title.test(text) ? [index] : []));
+  expect(indexes, `one column titled ${String(title)} among ${titles.join(' | ')}`).toHaveLength(1);
+  const cell = rowOf(number).children[indexes[0]!];
+  expect(cell, `${number} / ${String(title)}`).toBeDefined();
+  return textOf(cell!);
+}
+
+// ---- labelled fields and sections of the detail --------------------------------------------
+
+/** `words` (a regex alternation) as a whole label, with an optional 「（元）」 and colon. */
+export function labelled(words: string): RegExp {
+  return new RegExp(`^(?:${words})(?:[（(]元[)）])?[:：]?$`);
+}
+/** Detail amount labels (金额明细: 申请金额、手续费、代扣个税、实付金额). */
+export const AMOUNT_LABEL = {
+  amount: labelled('申请金额|提现金额'),
+  fee: labelled('手续费'),
+  tax: labelled('代扣个税|个税|代扣个人所得税|个人所得税|税费?|代扣税费?'),
+  net: labelled('实付金额|实付|实发金额|实发|到账金额|到账'),
+} as const;
+/** List amount columns: 申请金额 and 实付 (titles may carry a unit). */
+export const AMOUNT_COLUMN = {
+  amount: /^(?:申请|提现)金额/,
+  net: /^(?:实付|实发|到账)/,
+} as const;
+
+/** The innermost of `nodes` (no other of them inside it). */
+function innermost(nodes: readonly HTMLElement[]): HTMLElement[] {
+  return nodes.filter((node) => !nodes.some((other) => other !== node && node.contains(other)));
+}
+/** The value element paired with the label element `label` (Descriptions, table, dl, plain). */
+function valueOf(label: HTMLElement, root: HTMLElement): HTMLElement | null {
+  const cell = label.closest<HTMLElement>('.ant-descriptions-item-label');
+  if (cell !== null) {
+    const next = cell.nextElementSibling;
+    if (next?.matches('.ant-descriptions-item-content')) return next as HTMLElement;
+    const inItem = cell.parentElement?.querySelector<HTMLElement>('.ant-descriptions-item-content');
+    if (inItem !== null && inItem !== undefined) return inItem;
+    // Vertical bordered layout: the content sits in the same column of the next row.
+    const row = cell.closest('tr');
+    const index = row === null ? -1 : Array.from(row.children).indexOf(cell);
+    return (row?.nextElementSibling?.children.item(index) as HTMLElement | null) ?? null;
+  }
+  const th = label.closest<HTMLElement>('th');
+  if (th !== null && th.nextElementSibling !== null) return th.nextElementSibling as HTMLElement;
+  const dt = label.closest<HTMLElement>('dt');
+  if (dt !== null && dt.nextElementSibling?.matches('dd'))
+    return dt.nextElementSibling as HTMLElement;
+  for (let node: HTMLElement | null = label; node !== null && node !== root;) {
+    if (node.nextElementSibling !== null) return node.nextElementSibling as HTMLElement;
+    node = node.parentElement;
+  }
+  return null;
+}
+/**
+ * Texts of the values paired with every label matching `label` (a whole-label pattern such as
+ * AMOUNT_LABEL.amount) inside `root`; at least one such field must be there.
+ */
+export function fieldValues(root: HTMLElement, label: RegExp): string[] {
+  const labels = innermost(
+    Array.from(root.querySelectorAll<HTMLElement>('*')).filter((node) =>
+      label.test(squash(node.textContent)),
+    ),
+  );
+  expect(labels.length, `a field labelled ${String(label)}`).toBeGreaterThan(0);
+  return labels.map((node) => {
+    const value = valueOf(node, root);
+    expect(value, `the value of the field ${String(label)}`).not.toBeNull();
+    return textOf(value!);
+  });
+}
+
+const TITLE = [
+  'h1, h2, h3, h4, h5, h6, [role="heading"]',
+  '.ant-card-head-title, .ant-descriptions-title, .ant-collapse-header-text, legend, caption',
+].join(', ');
+const SECTION = [
+  '.ant-card, .ant-descriptions, section, [role="region"], [role="group"]',
+  '.ant-collapse-item, fieldset',
+].join(', ');
+/**
+ * The part of `root` owned by the section titled `title`: the Card, Descriptions, region … whose
+ * first title it is, else the largest ancestor of the title holding no other title, else (titles
+ * side by side in one container) a copy of the title and its following siblings up to the next
+ * title.
+ */
+export function section(root: HTMLElement, title: RegExp): HTMLElement {
+  const titles = Array.from(root.querySelectorAll<HTMLElement>(TITLE));
+  const own = titles.filter((node) => title.test(squash(node.textContent)));
+  expect(own.length, `a section titled ${String(title)}`).toBeGreaterThan(0);
+  const heading = own[0]!;
+  const isOther = (other: HTMLElement): boolean => other !== heading && !heading.contains(other);
+  let area: HTMLElement = heading;
+  let node = heading.parentElement;
+  while (node !== null && node !== root) {
+    const current: HTMLElement = node;
+    if (current.matches(SECTION)) {
+      const first = titles.find((other) => current.contains(other));
+      if (first !== undefined && !isOther(first)) area = current;
+      break;
+    }
+    if (titles.some((other) => isOther(other) && current.contains(other))) break;
+    area = current;
+    node = current.parentElement;
+  }
+  if (area !== heading) return area;
+  const copy = document.createElement('div');
+  copy.append(heading.cloneNode(true));
+  for (let next = heading.nextElementSibling; next !== null; next = next.nextElementSibling) {
+    if (next.matches(TITLE) || next.querySelector(TITLE) !== null) break;
+    copy.append(next.cloneNode(true));
+  }
+  return copy;
+}
+
 // ---- buttons -------------------------------------------------------------------------------
 
 export function isDisabled(node: HTMLElement): boolean {
@@ -267,33 +488,72 @@ export function usable(root: HTMLElement, name: RegExp): HTMLElement[] {
   return actions(root, name).filter((node) => !isDisabled(node));
 }
 
+/** Whether `node` sits in a row of the review list (a table row holding a withdrawal number). */
+function inListRow(node: HTMLElement): boolean {
+  const row = node.closest<HTMLElement>('.ant-table-row, [role="row"]');
+  return row !== null && row.closest('.ant-descriptions') === null && /W\d{14}/.test(textOf(row));
+}
+/** Usable reveal entries of `root`, leaving out the 【查看】 detail entries of list rows. */
+export function revealEntries(root: HTMLElement): HTMLElement[] {
+  return usable(root, REVEAL).filter((node) => !inListRow(node));
+}
+
 /**
- * The page offers no usable write entry; pressing any (disabled) one sends nothing but GETs.
- * Returns the names of the write entries found (all disabled).
+ * The page offers no usable write entry (and, on a detail, no usable reveal entry); pressing every
+ * write, reveal or 【查看】-like entry, usable or not, sends nothing but the allowed reads and
+ * shows no unmasked value.
  */
-export async function assertReadOnly(server: Server, root: HTMLElement = main()) {
-  const found = actions(root, WRITE);
-  const names = found.map(
-    (node) => squash(node.textContent) || squash(node.getAttribute('aria-label')),
-  );
+export async function assertReadOnly(
+  server: Server,
+  options: { readonly root?: HTMLElement; readonly detail?: boolean } = {},
+) {
+  const root = options.root ?? main();
   expect(
     usable(root, WRITE).map((node) => squash(node.textContent)),
     'no usable write entry (approve / reject / batch / payout / export …)',
   ).toEqual([]);
-  for (const node of found) if (node.isConnected) await click(node);
+  if (options.detail === true)
+    expect(
+      revealEntries(root).map(
+        (node) => squash(node.textContent) || squash(node.getAttribute('aria-label')),
+      ),
+      'no usable reveal entry beside the masked values',
+    ).toEqual([]);
+  const pressable = [...actions(root, WRITE), ...actions(root, REVEAL), ...actions(root, /^查看/)];
+  for (const node of new Set(pressable)) if (node.isConnected) await click(node);
   await settled(server);
   expect(server.writes(), 'no request other than GET').toEqual([]);
-  return names;
+  assertOnlyReads();
 }
-/** Requests that are not one of the two reads of this task (list, detail). */
-export function otherWithdrawalRequests(server: Server): RequestLog[] {
-  const allowed = /^\/admin\/v1\/withdrawals(?:\/[^/]+)?$/;
-  return server.log.filter(
-    (request) =>
-      request.method !== 'GET' ||
-      (request.path.startsWith(LIST) && !allowed.test(request.path)) ||
-      /payout|export|auto-payout|risk-flags|reveal/.test(request.path),
-  );
+
+/**
+ * A read of the review table: GET /admin/v1/withdrawals with exactly the filter parameters
+ * `filters` (paging aside) and a page size other than 1, so a count read of the status tabs (other
+ * filters, or page_size=1) is not one.
+ */
+export function tableRead(filters: Readonly<Record<string, string>> = {}): RequestMatch {
+  return (request) =>
+    request.method === 'GET' &&
+    request.path === LIST &&
+    (request.query['page_size'] ?? '20') !== '1' &&
+    FILTER_PARAMS.every((name) => request.query[name] === filters[name]);
+}
+/** The reads of `server` matching `match`. */
+export function readsWhere(server: Server, match: RequestMatch): RequestLog[] {
+  return server.log.filter(match);
+}
+
+/** Text of `root` without the rows of withdrawals (W + 14 digits): notices, headings, filters. */
+export function textBesideRows(root: HTMLElement): string {
+  const copy = root.cloneNode(true) as HTMLElement;
+  for (const row of Array.from(copy.querySelectorAll(ROW)))
+    if (/W\d{14}/.test(row.textContent ?? '')) row.remove();
+  return textOf(copy);
+}
+/** How often `pattern` occurs in `text`. */
+export function occurrences(text: string, pattern: RegExp): number {
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  return (text.match(new RegExp(pattern.source, flags)) ?? []).length;
 }
 
 // ---- dialogs and the detail ----------------------------------------------------------------

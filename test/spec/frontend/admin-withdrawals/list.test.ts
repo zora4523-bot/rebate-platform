@@ -18,8 +18,10 @@ import {
   withFiller,
 } from './fixtures.ts';
 import {
+  AMOUNT_COLUMN,
   DETAIL_ENTRY,
   FLOW_TIMEOUT,
+  cellText,
   extraParams,
   mount,
   moneyText,
@@ -70,7 +72,7 @@ it(
 );
 
 it(
-  '[AC-F1-08a-LIST#2] 每行显示提现单号、用户（UID 与脱敏手机号）与收款方式、申请金额与实付金额、状态中文名（admin_dict.withdrawal_status）、申请时间（北京时间）与【详情】',
+  '[AC-F1-08a-LIST#2] 每行显示提现单号、用户（UID 与脱敏手机号）与收款方式、申请金额列与实付列各自的金额、状态中文名（admin_dict.withdrawal_status）、申请时间（北京时间）与【详情】',
   async () => {
     const server = createServer(undefined, { permissions: VIEW_GRANTS });
     await mount(server);
@@ -96,39 +98,51 @@ it(
       expect(text, `${number} applied at`).toContain(applied[number]!);
       expect(usable(row, DETAIL_ENTRY).length, `${number} 【详情】`).toBeGreaterThan(0);
     }
-    // Amounts, computed by hand from the fen of the samples.
-    const amounts: Readonly<Record<string, readonly string[]>> = {
-      [NO.pending]: ['500.00'],
-      [NO.autoPaid]: ['20.00'],
-      [NO.approved]: ['1234.56', '1210.11'],
-      [NO.paying]: ['100.00'],
-      [NO.rejected]: ['300.00'],
-      [NO.manualPaid]: ['1234567.89', '1209876.53'],
-      [NO.failed]: ['88.00'],
+    // Amounts in their own columns, computed by hand from the fen of the samples: 申请金额
+    // (amount_fen) and 实付 (net_fen); where the two differ, a swap fails.
+    const amounts: Readonly<Record<string, { applied: string; net: string }>> = {
+      [NO.pending]: { applied: '500.00', net: '500.00' },
+      [NO.autoPaid]: { applied: '20.00', net: '20.00' },
+      [NO.approved]: { applied: '1234.56', net: '1210.11' },
+      [NO.paying]: { applied: '100.00', net: '100.00' },
+      [NO.rejected]: { applied: '300.00', net: '300.00' },
+      [NO.manualPaid]: { applied: '1234567.89', net: '1209876.53' },
+      [NO.failed]: { applied: '88.00', net: '88.00' },
     };
-    for (const [number, yuan] of Object.entries(amounts))
-      for (const value of yuan)
-        expect(showsYuan(textOf(rowOf(number)), value), `${number} shows ${value}`).toBe(true);
+    for (const [number, { applied, net }] of Object.entries(amounts)) {
+      const appliedCell = cellText(number, AMOUNT_COLUMN.amount);
+      const netCell = cellText(number, AMOUNT_COLUMN.net);
+      expect(showsYuan(appliedCell, applied), `${number} 申请金额 ${applied}`).toBe(true);
+      expect(showsYuan(netCell, net), `${number} 实付 ${net}`).toBe(true);
+      if (applied !== net) {
+        expect(showsYuan(appliedCell, net), `${number} 申请金额 is not ${net}`).toBe(false);
+        expect(showsYuan(netCell, applied), `${number} 实付 is not ${applied}`).toBe(false);
+      }
+    }
   },
   FLOW_TIMEOUT,
 );
 
 it(
-  '[AC-F1-08a-LIST#3] 金额按分换算为元：不显示分值原数，千分位可有可无，两位小数（123456789 分 → 1,234,567.89）',
+  '[AC-F1-08a-LIST#3] 金额按分换算为元：申请金额列与实付列不显示分值原数，千分位可有可无，两位小数（123456789 分 → 1,234,567.89）',
   async () => {
     const server = createServer();
     await mount(server);
     await openList(server, NO.manualPaid);
-    const big = moneyText(textOf(rowOf(NO.manualPaid)));
+    const big = moneyText(cellText(NO.manualPaid, AMOUNT_COLUMN.amount));
     expect(showsYuan(big, '1234567.89')).toBe(true);
     expect(big, 'no raw fen').not.toMatch(/(?<![\d.])123456789(?![\d.])/);
-    expect(big, 'no raw fen').not.toMatch(/(?<![\d.])120987653(?![\d.])/);
-    const fee = moneyText(textOf(rowOf(NO.approved)));
-    expect(showsYuan(fee, '1234.56')).toBe(true);
-    expect(fee, 'no raw fen').not.toMatch(/(?<![\d.])123456(?![\d.])/);
+    const bigNet = moneyText(cellText(NO.manualPaid, AMOUNT_COLUMN.net));
+    expect(showsYuan(bigNet, '1209876.53')).toBe(true);
+    expect(bigNet, 'no raw fen').not.toMatch(/(?<![\d.])120987653(?![\d.])/);
+    const row = moneyText(textOf(rowOf(NO.approved)));
+    expect(showsYuan(cellText(NO.approved, AMOUNT_COLUMN.amount), '1234.56')).toBe(true);
+    expect(row, 'no raw fen').not.toMatch(/(?<![\d.])123456(?![\d.])/);
+    expect(row, 'no raw fen').not.toMatch(/(?<![\d.])121011(?![\d.])/);
     // A small amount keeps its leading zero part (20 yuan, not 0.20 or 2000).
-    expect(showsYuan(textOf(rowOf(NO.autoPaid)), '20.00')).toBe(true);
-    expect(showsYuan(textOf(rowOf(NO.autoPaid)), '0.20')).toBe(false);
+    const small = cellText(NO.autoPaid, AMOUNT_COLUMN.amount);
+    expect(showsYuan(small, '20.00')).toBe(true);
+    expect(showsYuan(small, '0.20')).toBe(false);
   },
   FLOW_TIMEOUT,
 );

@@ -121,6 +121,35 @@ export const PAYEE = {
 } as const;
 export const REJECT_NOTE = '同设备多账号集中提现，内部核查中';
 
+/**
+ * Comparison values only, never in a contract field of the fake server's withdrawal reads: the
+ * full phone numbers, payee accounts and payee names behind the masked samples. The fake server
+ * hands them out only through the audited reveal (POST /admin/v1/users/{user_id}/reveal), which
+ * this read-only page must never call; the page must never show any of them.
+ */
+export const UNMASKED = {
+  phone: {
+    [USER.a]: '13800005678',
+    [USER.b]: '13900001234',
+    [USER.c]: '13700000001',
+  } as Readonly<Record<string, string>>,
+  account: [
+    'zhangming@example.com',
+    'wangfang@example.com',
+    '6225880000001234',
+    'lifang@example.com',
+    '6222020000009876',
+    '小明同学',
+  ],
+  name: ['王小明', '李晓芳', '张小三', '刘建华', '陈丽芳'],
+} as const;
+/** Every unmasked comparison value. */
+export const UNMASKED_VALUES: readonly string[] = [
+  ...Object.values(UNMASKED.phone),
+  ...UNMASKED.account,
+  ...UNMASKED.name,
+];
+
 function blank(): Withdrawal {
   return {
     withdrawal_id: '',
@@ -477,7 +506,9 @@ export function samples(): Withdrawal[] {
       created_at: '2026-10-05T09:00:00+08:00',
       fail_code: 'PAYEE_NOT_EXIST',
       executor_id: EXECUTOR,
-      executed_at: '2026-10-05T09:01:00+08:00',
+      // Every time point of this sample has its own minute (09:00 applied and decided, 09:02 batch
+      // item, 09:03 executed, 09:04 transfer attempt, 09:06 query attempt).
+      executed_at: '2026-10-05T09:03:00+08:00',
       execute_seq: 1,
       updated_at: '2026-10-05T09:06:00+08:00',
       row_version: 3,
@@ -489,7 +520,7 @@ export function samples(): Withdrawal[] {
           result: 'paying',
           reason: null,
           moved_to_batch_id: null,
-          at: '2026-10-05T09:01:00+08:00',
+          at: '2026-10-05T09:02:00+08:00',
         },
       ],
       payout_attempts: [
@@ -499,7 +530,7 @@ export function samples(): Withdrawal[] {
           result: 'fail',
           resp_code: 'PAYEE_NOT_EXIST',
           resp_sub_code: 'PAYEE_USER_INFO_ERROR',
-          at: '2026-10-05T09:01:05+08:00',
+          at: '2026-10-05T09:04:05+08:00',
         },
         {
           attempt_id: ATTEMPT.failedQuery,
@@ -540,7 +571,7 @@ export type Grants = readonly KnownPermission[];
 export const REVIEW_GRANTS: Grants = ['withdraw.review'];
 /** fund.view: reads only; the menu stays hidden (it shows for withdraw.review / payout.*). */
 export const VIEW_GRANTS: Grants = ['fund.view'];
-/** Every write point a full finance account could hold, on top of reading. */
+/** Every write and reveal point a full finance account could hold, on top of reading. */
 export const ALL_GRANTS: Grants = [
   'withdraw.review',
   'fund.view',
@@ -548,6 +579,8 @@ export const ALL_GRANTS: Grants = [
   'payout.manual_entry',
   'export',
   'config.business',
+  'pii.reveal_identity',
+  'pii.reveal_phone',
 ];
 /** Neither withdraw.review nor fund.view. */
 export const OTHER_GRANTS: Grants = ['user.lookup'];
@@ -590,6 +623,14 @@ export interface RequestLog {
   body: unknown;
 }
 type Reply = (request: RequestLog) => Response | Promise<Response>;
+/** Which requests a scripted reply answers. */
+export type RequestMatch = (request: RequestLog) => boolean;
+interface Rule {
+  readonly match: RequestMatch;
+  readonly reply: Reply;
+  /** Removed after answering one request. */
+  readonly once: boolean;
+}
 
 export interface ServerOptions {
   /** Permission points of the account (the server checks them; 10403 otherwise). */
@@ -659,6 +700,32 @@ export const LIST_PARAMS: readonly string[] = [
 /** The filter parameters (everything but paging). */
 export const FILTER_PARAMS: readonly string[] = LIST_PARAMS.slice(2);
 const DETAIL = /^\/admin\/v1\/withdrawals\/([^/]+)$/;
+const REVEAL = /^\/admin\/v1\/users\/([^/]+)\/reveal$/;
+
+/** Common reads any console page may make: the console dictionary and the own permissions. */
+export const PUBLIC_READS: readonly string[] = ['/admin/v1/dict', '/admin/v1/me/permissions'];
+/** GET /admin/v1/withdrawals/{withdrawal_id} (a UUID; no other path below the list). */
+function isDetailRead(path: string): boolean {
+  const one = DETAIL.exec(path);
+  return one !== null && UUID.test(one[1]!);
+}
+/**
+ * The only requests this read-only page may send: GET /admin/v1/withdrawals, GET
+ * /admin/v1/withdrawals/{withdrawal_id} and the common reads. Anything else (a write, the
+ * reveal, an export, the automatic payout settings, a risk flag recalculation …) is not.
+ */
+export function allowedRequest(request: RequestLog): boolean {
+  return (
+    request.method === 'GET' &&
+    (request.path === LIST || isDetailRead(request.path) || PUBLIC_READS.includes(request.path))
+  );
+}
+/** The requests of `log` this page may not send (method and path, for a readable diff). */
+export function disallowedRequests(log: readonly RequestLog[]): string[] {
+  return log
+    .filter((request) => !allowedRequest(request))
+    .map((request) => `${request.method} ${request.path}`);
+}
 
 /** A list row: the detail without the detail-only fields (no payee in a row). */
 export function rowOf(item: Withdrawal): WithdrawalRow {
@@ -703,7 +770,7 @@ const matches = (value: string | undefined, pattern: RegExp): boolean =>
 export function createServer(initial: Withdrawal[] = samples(), options: ServerOptions = {}) {
   const state = structuredClone(initial);
   const log: RequestLog[] = [];
-  const overrides: { method: string; path: string; reply: Reply }[] = [];
+  const rules: Rule[] = [];
   const permissions = options.permissions ?? REVIEW_GRANTS;
   let inFlight = 0;
 
@@ -785,6 +852,15 @@ export function createServer(initial: Withdrawal[] = samples(), options: ServerO
     if (method === 'GET' && path === LIST) return list(request.query);
     const one = DETAIL.exec(path);
     if (method === 'GET' && one !== null) return detail(decodeURIComponent(one[1]!));
+    // The audited reveal answers with the full value (so a page that called it would show it).
+    const reveal = REVEAL.exec(path);
+    if (method === 'POST' && reveal !== null) {
+      const userId = decodeURIComponent(reveal[1]!);
+      const field = (request.body as { field?: unknown } | undefined)?.field;
+      const value =
+        field === 'phone' ? UNMASKED.phone[userId] : `${UNMASKED.account[0]} ${UNMASKED.name[0]}`;
+      return ok({ user_id: userId, field, value });
+    }
     return rejected(['path']);
   }
 
@@ -801,14 +877,19 @@ export function createServer(initial: Withdrawal[] = samples(), options: ServerO
     log.push(request);
     inFlight += 1;
     try {
-      const index = overrides.findIndex(
-        (entry) => entry.method === request.method && entry.path === request.path,
-      );
-      return await (index < 0 ? normal(request) : overrides.splice(index, 1)[0]!.reply(request));
+      const index = rules.findIndex((rule) => rule.match(request));
+      if (index < 0) return await normal(request);
+      const rule = rules[index]!;
+      if (rule.once) rules.splice(index, 1);
+      return await rule.reply(request);
     } finally {
       inFlight -= 1;
     }
   };
+  const exactly =
+    (method: string, path: string): RequestMatch =>
+    (request) =>
+      request.method === method && request.path === path;
 
   return {
     state,
@@ -842,19 +923,44 @@ export function createServer(initial: Withdrawal[] = samples(), options: ServerO
       return log.filter((r) => r.method !== 'GET');
     },
     once(method: string, path: string, reply: Reply) {
-      overrides.push({ method, path, reply });
+      rules.push({ match: exactly(method, path), reply, once: true });
+    },
+    /** The next request matching `match` gets `reply`; every other request is answered normally. */
+    onceWhere(match: RequestMatch, reply: Reply) {
+      rules.push({ match, reply, once: true });
     },
     hold(method: string, path: string, reply: Reply = normal) {
       const gate = Promise.withResolvers<void>();
-      overrides.push({
-        method,
-        path,
+      rules.push({
+        match: exactly(method, path),
         reply: async (request) => {
           await gate.promise;
           return reply(request);
         },
+        once: true,
       });
       return gate.resolve;
+    },
+    /**
+     * Every request matching `match` waits until the returned release is called (then answered
+     * normally); every other request is answered at once.
+     */
+    holdWhere(match: RequestMatch) {
+      const gate = Promise.withResolvers<void>();
+      const rule: Rule = {
+        match,
+        reply: async (request) => {
+          await gate.promise;
+          return normal(request);
+        },
+        once: false,
+      };
+      rules.push(rule);
+      return () => {
+        const index = rules.indexOf(rule);
+        if (index >= 0) rules.splice(index, 1);
+        gate.resolve();
+      };
     },
   };
 }
