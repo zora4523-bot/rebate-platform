@@ -1,0 +1,27 @@
+id: B1-15za
+repo: rebate-platform
+title: 幂等记录过期清理的生产装配（BR-ID-30）：worker 入口每日 04:00（+08:00，cron 0 20 * * * UTC）调用 idempotency.purgeExpired() 删除 app.idempotency_keys 中 expire_at 已过的行，expire_at = infinity 的行（提现与收款账号接口例外）不删；照 dead-letter-scan（B1-01zzg）用 worker 运行时内部的 pg-boss 定时队列，不进业务队列目录，只有 worker 登记、重启不累积；一次失败不重试不进死信，第二天再清；日志只记删除行数
+type: impl
+# 2026-10-30 be 入账（编排 D10-448 ①）。money r3 发现 purgeExpired 无生产调用，而 D10-439 的前提是「幂等缓存有保留期」，所以先做。保留期沿用各行 expire_at（现配置），不改写入口径。不新增业务队列，不动 catalog 与冻结队列计数测试。
+# 请评审判断一处细节：BR-ID-30 表头写「删除条件 created_at < 运行当日 00:00（+08:00）− 留存天数」，现有 purgeExpired 按 expire_at < clock.now()，在 04:00 跑时比表头早约 4 小时截断；两者差异只在这 4 小时内，是否要改由评审判断，改的话在 paths 内（platform/idempotency/index.ts）。
+refs: [BR-ID-30]
+refs_hash:
+  BR-ID-30: 24c70bf4ac65
+deps: [B1-15z]
+paths:
+  - 'apps/api/src/modules/platform/queue/idempotency-purge*.ts'
+  - 'apps/api/src/modules/platform/queue/runtime.ts'
+  - 'apps/api/src/modules/platform/queue/runtime.test.ts'
+  - 'apps/api/src/modules/platform/queue/index.ts'
+  - 'apps/api/src/modules/platform/idempotency/index.ts'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/entry.ts'
+test_paths:
+  - 'test/spec/platform/idempotency-purge/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/idempotency-purge/**'
+status: todo
+pr: null
