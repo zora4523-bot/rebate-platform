@@ -378,6 +378,7 @@ import {
   type RiskStateService,
 } from './modules/risk/index.ts';
 import {
+  SettlementAdminModule,
   createEarningsOrdersSource,
   createPendingEarningsSource,
   readOrderIdsByKey,
@@ -3520,6 +3521,9 @@ export class AppModule {
               }),
             ]
           : []),
+        // B2-09d: settlement's monthly bill reads (settle.bill or fund.view, read only, no audit):
+        // the bill status derived from the latest round of batches at the injected clock.
+        ...(options.entry === 'admin' ? [SettlementAdminModule.forAdmin()] : []),
         // content's GET /v1/config (F1-02c): agent availability and the h5_release bucket read
         // identity's request viewer (token principal, else the X-App-Id guest). GET
         // /v1/pages/{page_key} (F1-09d) reads the same viewer for its login condition.

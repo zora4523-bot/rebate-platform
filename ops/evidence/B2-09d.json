@@ -1,0 +1,110 @@
+{
+  "task": "B2-09d",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "aba9de0e5d3ea0e5a3f8be51cea360cc8de7d839",
+  "red_tests": [
+    "test/spec/settlement/admin-settle-bills/contract.test.ts > [AC-B2-09d#14] listAdminSettleBills / getAdminSettleBill / listAdminSettleBatchItems 去掉 x-implementation: planned（生成的 planned 清单同步），x-auth admin、x-error-codes [10001, 10403, 20001] 不变；admin 入口各挂一次 GET 并带契约请求 schema，api 入口不挂",
+    "test/spec/settlement/admin-settle-bills/derive.test.ts > [AC-B2-09d#1] 账单状态按表逐条判定（只有首轮批次时）：generated_at 为空是 generating（即使已有批次）；无批次、有 DRAFT、全部被驳回都是 issued；全部 DONE（驳回的不算）是 settled；有 EXECUTING / PARTIAL，或 CONFIRMED 且立即结算或 scheduled_at 不晚于当前时刻是 settling；未完成的全是 CONFIRMED 且 scheduled_at 晚于当前时刻是 scheduled",
+    "test/spec/settlement/admin-settle-bills/derive.test.ts > [AC-B2-09d#2] 最近一轮的判定：首轮 = 全部 main 批次（不论平台与 created_at）；每次补充 = (platform, created_at) 相同的 supplement 批次；轮时刻取轮内最大 created_at，最大者为最近一轮，同刻取含最大 batch_id 的一轮；只按最近一轮派生（旧轮的 DRAFT / DONE 不影响），本轮全被驳回回到 issued；currentRound 恰好是最近一轮的全部批次（含驳回的）",
+    "test/spec/settlement/admin-settle-bills/derive.test.ts > [AC-B2-09d#3] 随机批次集合（主批次 / 补充批次、六种状态、立即 / 定时且定时时刻在当前时刻前后、轮时刻相同）：派生状态与 currentRound 与契约规则逐一相同，且与批次的输入顺序无关",
+    "test/spec/settlement/admin-settle-bills/detail.int.test.ts > [AC-B2-09d#10] 账单详情（settle.bill 或 fund.view 任一即可，超管也能读）：恰好是契约的 AdminSettleBillDetail——列表行的字段加 batches：该账单的全部批次（首批与补充、含驳回的），按 created_at、再按 batch_id 升序，每个批次的列原样、in_current_round 只在最近一轮为 true、item_counts 按 item_type × result 读时汇总（pending = 未执行）；详情的列表字段与列表行一致；其他应用同一账单月的批次与明细不出现、不计入计数与派生状态；读取不写审计、不改三张表",
+    "test/spec/settlement/admin-settle-bills/detail.int.test.ts > [AC-B2-09d#11] 账单状态各分支（详情与列表一致，不存不写）：generating（生成中，即使已有批次）；issued（DRAFT、无批次、全部被驳回）；scheduled（定时未到）；settling（EXECUTING、PARTIAL、CONFIRMED 立即结算、定时已过）；settled（全部 DONE，驳回的不算）；时钟走到定时时刻（不晚于当前时刻）即转为 settling，三张表不变",
+    "test/spec/settlement/admin-settle-bills/detail.int.test.ts > [AC-B2-09d#12] 首轮与补充轮的切换：首轮全部 DONE 为 settled；发起补充批次（更晚的 created_at）后只看补充轮——DRAFT 为 issued，被驳回仍在本轮（in_current_round 为 true）且回到 issued；再次发起的补充轮取代它，立即结算为 settling、执行完为 settled；in_current_round 只标最近一轮的批次",
+    "test/spec/settlement/admin-settle-bills/detail.int.test.ts > [AC-B2-09d#13] 账单详情的拒绝：bill_id 不是 YYYY-MM（13 月、00 月、一位月份、带日、无连字符）→ 20001 data.fields=[bill_id]；本应用没有该账单月（不存在，或只有其他应用有）→ 20001 [bill_id]（不回 404，应答一样）；没有 settle.bill / fund.view → 10403；不带令牌 → 10001；读取不写审计",
+    "test/spec/settlement/admin-settle-bills/items.int.test.ts > [AC-B2-09d#15] 批次明细（settle.bill 或 fund.view 任一即可，超管也能读）：只列该批次的明细，按 settle_seq、再按 id 升序，每行恰好是契约的 AdminSettleBatchItem——订单行的 user_id / role / beneficiary_credit_id 为 null、受益人项带受益人、角色与补记义务；金额整数分原样（含 2^53−1），执行前 amount_fen 为 null，未执行 result 为 null；同账单其他批次与其他应用的明细不出现；只有 user_id，不出手机号（明文与 3+4 掩码都不出现）；默认 page 1 / page_size 20；读取不写审计、不改三张表",
+    "test/spec/settlement/admin-settle-bills/items.int.test.ts > [AC-B2-09d#16] 批次明细的筛选与分页：item_type、result（credited、skipped、deferred，或 pending = 尚未执行、result 为 null）按 AND 组合，total 为过滤后的总数，无匹配是空页；page / page_size 翻页，超过最后一页是空 items；page_size 200 可用",
+    "test/spec/settlement/admin-settle-bills/items.int.test.ts > [AC-B2-09d#17] 批次明细的拒绝：不存在的 batch_id、其他应用的批次、不是 UUID 的 batch_id → 20001 data.fields=[batch_id]（不回 404，应答一样）；item_type、result 不在枚举 → 20001 指名该参数；page_size 超过 200 → [page_size]；没有 settle.bill / fund.view → 10403；不带令牌 → 10001；被驳回批次的明细照常可读；读取不写审计",
+    "test/spec/settlement/admin-settle-bills/list.int.test.ts > [AC-B2-09d#4] 月结账单列表（settle.bill 或 fund.view 任一即可，不要 step-up；两点都有、超管也能读）：只列本应用的账单，按 bill_id 倒序，每行恰好是契约的 AdminSettleBill——账单列原样、派生 status、batch_count（含驳回的批次）与 draft_batch_count 读时计数；其他应用的账单（含同一账单月）不出现；默认 page 1 / page_size 20；读取不写审计、不改三张表",
+    "test/spec/settlement/admin-settle-bills/list.int.test.ts > [AC-B2-09d#5] 账单列表的排序与分页：bill_id 倒序（跨年也按账单月，不按插入顺序或创建时刻）；page / page_size 翻页，total 为全部条数；超过最后一页是空 items（不报错）；page_size 200 可用",
+    "test/spec/settlement/admin-settle-bills/list.int.test.ts > [AC-B2-09d#6] 账单列表的筛选：bill_from、bill_to 两端都含、可只给一端；status 按响应时刻的派生状态筛（读注入的时钟：定时时刻一到，scheduled 的账单即转入 settling）；与区间按 AND 组合，total 为过滤后的总数；无匹配是空页",
+    "test/spec/settlement/admin-settle-bills/list.int.test.ts > [AC-B2-09d#7] 账单列表的拒绝：bill_from / bill_to 不是 YYYY-MM（13 月、00 月、斜杠、一位月份、带日）→ 20001 data.fields 指名该参数；status 不在 admin_settle_bill_status（批次状态 DONE、pending、未知值）→ 20001 [status]；bill_from 晚于 bill_to → 20001 data.fields=[bill_from, bill_to]；page_size 超过 200 → [page_size]；page 为 0 → [page]；边界值可用",
+    "test/spec/settlement/admin-settle-bills/list.int.test.ts > [AC-B2-09d#8] 账单列表的权限：没有 settle.bill 也没有 fund.view（无权限点，或只有 fund.recon、settle.statement_upload、withdraw.review 等别的点）→ 10403；不带令牌 → 10001；只有 settle.bill 且未做 step-up 也能读；空应用是空页；读取不写审计、不改账单",
+    "test/spec/settlement/admin-settle-bills/list.int.test.ts > [AC-B2-09d#9] 账单日合计原样读出、不按明细重算（D10-280 ③）：platform_order_counts、platform_settle_commission_totals、beneficiary_total_fen（含 2^53−1）、platform_retained_fen、error_count、held_count 照 settle_bills 返回，与批次明细之和无关；随后发起的补充批次只改变派生状态与批次计数，合计仍是存储值"
+  ],
+  "risk_note": "RV2 (settlement). Console reads of monthly settlement bills (CT-24z listAdminSettleBills / getAdminSettleBill / listAdminSettleBatchItems; B2-09; 01 F-ADM-08; 04 §3.2, §11.2; design/specs/admin-settle-bills.md): SettlementAdminModule.forAdmin mounts the controller on the admin entry only (permission settle.bill or fund.view through AdminOperationGuard, read only, no step-up, no audit, appId from the guard's actor); reads by app_id settlement's own settle_bills, settle_batches and settle_batch_items only; the bill status is derived at read time per 08 BR-FUND-04 月结账单状态 from the latest round (main round = all kind=main batches; each supplement launch = kind=supplement batches sharing platform and created_at; CANCELLED batches take no part) with the injected Clock for scheduled vs settling, not stored; bill-day totals returned as stored (D10-280 ③); items carry user_id only, no phone. Amounts stay integer fen, nothing recomputed. No state change, no lock, no write. x-implementation: planned removed, generated files from pnpm codegen. Test-machine full verification verify/1 exit 0 (60238958, PROP_RUNS=2000).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "aba9de0e5d3ea0e5a3f8be51cea360cc8de7d839",
+      "tree": "4650cb2b1a73ac14b80f887723c3d6e86adfb8d2",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T03:35:57Z",
+      "finished_at": "2026-10-30T03:36:20Z",
+      "red_tests": [
+        "test/spec/settlement/admin-settle-bills/contract.test.ts > [AC-B2-09d#14] listAdminSettleBills / getAdminSettleBill / listAdminSettleBatchItems 去掉 x-implementation: planned（生成的 planned 清单同步），x-auth admin、x-error-codes [10001, 10403, 20001] 不变；admin 入口各挂一次 GET 并带契约请求 schema，api 入口不挂",
+        "test/spec/settlement/admin-settle-bills/derive.test.ts > [AC-B2-09d#1] 账单状态按表逐条判定（只有首轮批次时）：generated_at 为空是 generating（即使已有批次）；无批次、有 DRAFT、全部被驳回都是 issued；全部 DONE（驳回的不算）是 settled；有 EXECUTING / PARTIAL，或 CONFIRMED 且立即结算或 scheduled_at 不晚于当前时刻是 settling；未完成的全是 CONFIRMED 且 scheduled_at 晚于当前时刻是 scheduled",
+        "test/spec/settlement/admin-settle-bills/derive.test.ts > [AC-B2-09d#2] 最近一轮的判定：首轮 = 全部 main 批次（不论平台与 created_at）；每次补充 = (platform, created_at) 相同的 supplement 批次；轮时刻取轮内最大 created_at，最大者为最近一轮，同刻取含最大 batch_id 的一轮；只按最近一轮派生（旧轮的 DRAFT / DONE 不影响），本轮全被驳回回到 issued；currentRound 恰好是最近一轮的全部批次（含驳回的）",
+        "test/spec/settlement/admin-settle-bills/derive.test.ts > [AC-B2-09d#3] 随机批次集合（主批次 / 补充批次、六种状态、立即 / 定时且定时时刻在当前时刻前后、轮时刻相同）：派生状态与 currentRound 与契约规则逐一相同，且与批次的输入顺序无关",
+        "test/spec/settlement/admin-settle-bills/detail.int.test.ts > [AC-B2-09d#10] 账单详情（settle.bill 或 fund.view 任一即可，超管也能读）：恰好是契约的 AdminSettleBillDetail——列表行的字段加 batches：该账单的全部批次（首批与补充、含驳回的），按 created_at、再按 batch_id 升序，每个批次的列原样、in_current_round 只在最近一轮为 true、item_counts 按 item_type × result 读时汇总（pending = 未执行）；详情的列表字段与列表行一致；其他应用同一账单月的批次与明细不出现、不计入计数与派生状态；读取不写审计、不改三张表",
+        "test/spec/settlement/admin-settle-bills/detail.int.test.ts > [AC-B2-09d#11] 账单状态各分支（详情与列表一致，不存不写）：generating（生成中，即使已有批次）；issued（DRAFT、无批次、全部被驳回）；scheduled（定时未到）；settling（EXECUTING、PARTIAL、CONFIRMED 立即结算、定时已过）；settled（全部 DONE，驳回的不算）；时钟走到定时时刻（不晚于当前时刻）即转为 settling，三张表不变",
+        "test/spec/settlement/admin-settle-bills/detail.int.test.ts > [AC-B2-09d#12] 首轮与补充轮的切换：首轮全部 DONE 为 settled；发起补充批次（更晚的 created_at）后只看补充轮——DRAFT 为 issued，被驳回仍在本轮（in_current_round 为 true）且回到 issued；再次发起的补充轮取代它，立即结算为 settling、执行完为 settled；in_current_round 只标最近一轮的批次",
+        "test/spec/settlement/admin-settle-bills/detail.int.test.ts > [AC-B2-09d#13] 账单详情的拒绝：bill_id 不是 YYYY-MM（13 月、00 月、一位月份、带日、无连字符）→ 20001 data.fields=[bill_id]；本应用没有该账单月（不存在，或只有其他应用有）→ 20001 [bill_id]（不回 404，应答一样）；没有 settle.bill / fund.view → 10403；不带令牌 → 10001；读取不写审计",
+        "test/spec/settlement/admin-settle-bills/items.int.test.ts > [AC-B2-09d#15] 批次明细（settle.bill 或 fund.view 任一即可，超管也能读）：只列该批次的明细，按 settle_seq、再按 id 升序，每行恰好是契约的 AdminSettleBatchItem——订单行的 user_id / role / beneficiary_credit_id 为 null、受益人项带受益人、角色与补记义务；金额整数分原样（含 2^53−1），执行前 amount_fen 为 null，未执行 result 为 null；同账单其他批次与其他应用的明细不出现；只有 user_id，不出手机号（明文与 3+4 掩码都不出现）；默认 page 1 / page_size 20；读取不写审计、不改三张表",
+        "test/spec/settlement/admin-settle-bills/items.int.test.ts > [AC-B2-09d#16] 批次明细的筛选与分页：item_type、result（credited、skipped、deferred，或 pending = 尚未执行、result 为 null）按 AND 组合，total 为过滤后的总数，无匹配是空页；page / page_size 翻页，超过最后一页是空 items；page_size 200 可用",
+        "test/spec/settlement/admin-settle-bills/items.int.test.ts > [AC-B2-09d#17] 批次明细的拒绝：不存在的 batch_id、其他应用的批次、不是 UUID 的 batch_id → 20001 data.fields=[batch_id]（不回 404，应答一样）；item_type、result 不在枚举 → 20001 指名该参数；page_size 超过 200 → [page_size]；没有 settle.bill / fund.view → 10403；不带令牌 → 10001；被驳回批次的明细照常可读；读取不写审计",
+        "test/spec/settlement/admin-settle-bills/list.int.test.ts > [AC-B2-09d#4] 月结账单列表（settle.bill 或 fund.view 任一即可，不要 step-up；两点都有、超管也能读）：只列本应用的账单，按 bill_id 倒序，每行恰好是契约的 AdminSettleBill——账单列原样、派生 status、batch_count（含驳回的批次）与 draft_batch_count 读时计数；其他应用的账单（含同一账单月）不出现；默认 page 1 / page_size 20；读取不写审计、不改三张表",
+        "test/spec/settlement/admin-settle-bills/list.int.test.ts > [AC-B2-09d#5] 账单列表的排序与分页：bill_id 倒序（跨年也按账单月，不按插入顺序或创建时刻）；page / page_size 翻页，total 为全部条数；超过最后一页是空 items（不报错）；page_size 200 可用",
+        "test/spec/settlement/admin-settle-bills/list.int.test.ts > [AC-B2-09d#6] 账单列表的筛选：bill_from、bill_to 两端都含、可只给一端；status 按响应时刻的派生状态筛（读注入的时钟：定时时刻一到，scheduled 的账单即转入 settling）；与区间按 AND 组合，total 为过滤后的总数；无匹配是空页",
+        "test/spec/settlement/admin-settle-bills/list.int.test.ts > [AC-B2-09d#7] 账单列表的拒绝：bill_from / bill_to 不是 YYYY-MM（13 月、00 月、斜杠、一位月份、带日）→ 20001 data.fields 指名该参数；status 不在 admin_settle_bill_status（批次状态 DONE、pending、未知值）→ 20001 [status]；bill_from 晚于 bill_to → 20001 data.fields=[bill_from, bill_to]；page_size 超过 200 → [page_size]；page 为 0 → [page]；边界值可用",
+        "test/spec/settlement/admin-settle-bills/list.int.test.ts > [AC-B2-09d#8] 账单列表的权限：没有 settle.bill 也没有 fund.view（无权限点，或只有 fund.recon、settle.statement_upload、withdraw.review 等别的点）→ 10403；不带令牌 → 10001；只有 settle.bill 且未做 step-up 也能读；空应用是空页；读取不写审计、不改账单",
+        "test/spec/settlement/admin-settle-bills/list.int.test.ts > [AC-B2-09d#9] 账单日合计原样读出、不按明细重算（D10-280 ③）：platform_order_counts、platform_settle_commission_totals、beneficiary_total_fen（含 2^53−1）、platform_retained_fen、error_count、held_count 照 settle_bills 返回，与批次明细之和无关；随后发起的补充批次只改变派生状态与批次计数，合计仍是存储值"
+      ],
+      "expected": [
+        "test/spec/settlement/admin-settle-bills/contract.test.ts",
+        "test/spec/settlement/admin-settle-bills/derive.test.ts",
+        "test/spec/settlement/admin-settle-bills/detail.int.test.ts",
+        "test/spec/settlement/admin-settle-bills/items.int.test.ts",
+        "test/spec/settlement/admin-settle-bills/list.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "38fde447fb36eecc275374727cf613bb19709ea15cdc55bcc2901471eafc0906"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "2eb0cc8cde9acaacbde359e75835a8375051dd4d0f835007cd303edc6d3e787c"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "nohup claude-run.sh review --review-type money (Codex unavailable until 2026-11-02, approvals 36): round 1 pass; one S2 recorded as a follow-up (round key uses JS millisecond time while created_at is microseconds: two supplement launches of one platform within the same millisecond would merge, not reachable in ordinary use); idempotency / concurrency / partial refund n/a (read only)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "nohup claude-run.sh review --review-type spec-test: round 1 fail (S1 detail app isolation with a foreign bill of the same month, S2 property params), fixed by the test author in round 2 (db0aee04); round 2 pass."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "aecb924715d2524edef44366f6fdb78754a21ae1",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
