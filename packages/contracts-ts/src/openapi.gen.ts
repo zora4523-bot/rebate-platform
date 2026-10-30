@@ -7895,6 +7895,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/asset-snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daily asset snapshots of the app, page by page, latest snapshot day first
+         * @description The asset snapshot list of the fund console (01 F-ADM-08 资产快照; 04 §3.2
+         *     asset_snapshots, asset_snapshot_receivables; BR-FUND-18; design/specs/admin-fund-dashboard.md
+         *     §1, §4 — the daily ledger is the snapshot view, its fields follow this resource). Read
+         *     only, no step-up. Permission point: `fund.view` (04 §11.1, §11.2 资金看板); a super admin
+         *     holds every point. Each row is one asset_snapshots row of the console's app — the
+         *     snapshot of accounting day D written at D+1 00:01:00 +08:00 (BR-FUND-18): `snapshot_date`
+         *     (D), `total_available_positive_fen`, `total_negative_fen`, `total_frozen_fen`,
+         *     `total_waiting_fen`, `total_estimated_fen`, `waiting_comparable`, `receivables` (the
+         *     asset_snapshot_receivables rows of the snapshot: `platform` and `union_receivable_fen`,
+         *     ordered by platform code) and `created_at` / `updated_at`. The amounts are integer fen
+         *     exactly as the snapshot wrote them; they are not recomputed from the current balances or
+         *     orders. The balance totals cover the ledger entries with accounting_date ≤ D; the waiting
+         *     and estimated totals are the order states at the time the snapshot ran (BR-FUND-18).
+         *
+         *     A day whose snapshot has not been written (before D+1 00:01, or still pending) simply
+         *     has no row: it is not filled with zeros and is not an error. Reading never triggers or
+         *     rewrites a snapshot.
+         *
+         *     Filters combine with AND: `date_from` and `date_to` (snapshot days YYYY-MM-DD, both
+         *     inclusive). A value not matching the format is 20001 with `data.fields` naming the
+         *     parameter; `date_from` later than `date_to` is 20001 with
+         *     `data.fields=[date_from, date_to]`. A filter set nothing matches is an empty page
+         *     (`items=[]`, `total=0`), not an error.
+         *
+         *     Order: `snapshot_date` descending. Pages with `page` (as AdminPage; a page past the last
+         *     one is `items=[]`) and `page_size` ≤ 200 (above 200 is 20001, as AdminPageSize); `total`
+         *     is the count of the filter set. Not part of this operation: the daily ledger with W, P
+         *     and the water-level state (BR-WDR-18, depends on the union collection entry), the union
+         *     collection entry itself (`fund.cash_entry`), the fund dashboard and reports, and the
+         *     export. Reading does not write an audit record.
+         */
+        get: operations["listAdminAssetSnapshots"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/kill-switches": {
         parameters: {
             query?: never;
@@ -16856,6 +16905,89 @@ export interface components {
             data: components["schemas"]["AdminSettleBatchItemPage"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /** @description One asset_snapshot_receivables row of the snapshot (04 §3.2; BR-FUND-18, BR-FUND-20). */
+        AdminAssetSnapshotReceivable: {
+            platform: components["schemas"]["PlatformCode"];
+            /**
+             * Format: int64
+             * @description Balance in fen of the platform's union receivable account (UNION_RECEIVABLE:{platform}) over the entries with accounting_date ≤ D, as the snapshot wrote it.
+             */
+            union_receivable_fen: number;
+        };
+        /**
+         * @description One daily asset snapshot (04 §3.2 asset_snapshots) of accounting day D, written at D+1
+         *     00:01:00 +08:00 (BR-FUND-18). Amounts are integer fen exactly as the snapshot wrote them,
+         *     never recomputed. The balance totals cover the entries with accounting_date ≤ D; the
+         *     waiting and estimated totals are the order states at the time the snapshot ran.
+         */
+        AdminAssetSnapshot: {
+            /**
+             * Format: date
+             * @description The accounting day D (YYYY-MM-DD, +08:00); unique per app, the row key.
+             */
+            snapshot_date: string;
+            /**
+             * Format: int64
+             * @description Sum of the positive available balances in fen (withdrawable side, BR-FUND-18).
+             */
+            total_available_positive_fen: number;
+            /**
+             * Format: int64
+             * @description Sum of the magnitudes of the negative available balances in fen (BR-FUND-18 negative_fen side).
+             */
+            total_negative_fen: number;
+            /**
+             * Format: int64
+             * @description Sum of the frozen balances in fen.
+             */
+            total_frozen_fen: number;
+            /**
+             * Format: int64
+             * @description Shares in fen of the orders with rebate_status WAITING (已收货预估) when the snapshot ran.
+             */
+            total_waiting_fen: number;
+            /**
+             * Format: int64
+             * @description Estimated total in fen (rebate_status ESTIMATED or WAITING, 预估合计) when the snapshot ran.
+             */
+            total_estimated_fen: number;
+            /**
+             * @description Whether the snapshot completed in time (BR-FUND-18): true only when it was confirmed
+             *     before D+1 00:30 +08:00, the latest the settlement batches wait for it. false when it
+             *     timed out (an alert is raised and batches could run meanwhile) or was not yet
+             *     confirmed; settlement batches may then have run before the snapshot read the orders,
+             *     so `total_waiting_fen` / `total_estimated_fen` of that day are not comparable with
+             *     other days. The balance totals do not depend on it (they go by accounting_date).
+             */
+            waiting_comparable: boolean;
+            /** @description The union receivable per platform of the snapshot (asset_snapshot_receivables), ordered by platform code; only platforms with at least one receivable entry dated ≤ D; empty when none. */
+            receivables: components["schemas"]["AdminAssetSnapshotReceivable"][];
+            /**
+             * Format: date-time
+             * @description When the snapshot row was written.
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description When the row last changed (the confirmation that sets waiting_comparable).
+             */
+            updated_at: string;
+        };
+        AdminAssetSnapshotPage: {
+            items: components["schemas"]["AdminAssetSnapshot"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminAssetSnapshotPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminAssetSnapshotPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
     };
     responses: {
         /** @description Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则). */
@@ -17306,6 +17438,10 @@ export interface components {
         AdminSettleBatchItemTypeFilter: components["schemas"]["AdminSettleBatchItemType"];
         /** @description Only items with this result (enum settle_batch_item_result), or pending = items not executed yet (result null); absent = all. */
         AdminSettleBatchItemResultFilter: components["schemas"]["AdminSettleBatchItemResultFilterValue"];
+        /** @description Earliest snapshot day (YYYY-MM-DD, the accounting day D), inclusive; not a date → 20001 with data.fields=[date_from]; later than date_to → 20001 with data.fields=[date_from, date_to]. */
+        AdminAssetSnapshotDateFrom: string;
+        /** @description Latest snapshot day (YYYY-MM-DD, the accounting day D), inclusive; not a date → 20001 with data.fields=[date_to]. */
+        AdminAssetSnapshotDateTo: string;
     };
     requestBodies: never;
     headers: {
@@ -34838,6 +34974,103 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["AdminSettleBatchItemPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listAdminAssetSnapshots: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+                /** @description Earliest snapshot day (YYYY-MM-DD, the accounting day D), inclusive; not a date → 20001 with data.fields=[date_from]; later than date_to → 20001 with data.fields=[date_from, date_to]. */
+                date_from?: components["parameters"]["AdminAssetSnapshotDateFrom"];
+                /** @description Latest snapshot day (YYYY-MM-DD, the accounting day D), inclusive; not a date → 20001 with data.fields=[date_to]. */
+                date_to?: components["parameters"]["AdminAssetSnapshotDateTo"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of daily asset snapshots, latest snapshot day first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "snapshot_date": "2026-10-29",
+                     *             "total_available_positive_fen": 1250000,
+                     *             "total_negative_fen": 3200,
+                     *             "total_frozen_fen": 48000,
+                     *             "total_waiting_fen": 860000,
+                     *             "total_estimated_fen": 2310000,
+                     *             "waiting_comparable": true,
+                     *             "receivables": [
+                     *               {
+                     *                 "platform": "jd",
+                     *                 "union_receivable_fen": 151000
+                     *               },
+                     *               {
+                     *                 "platform": "taobao",
+                     *                 "union_receivable_fen": 864000
+                     *               }
+                     *             ],
+                     *             "created_at": "2026-10-30T00:01:02+08:00",
+                     *             "updated_at": "2026-10-30T00:01:03+08:00"
+                     *           },
+                     *           {
+                     *             "snapshot_date": "2026-10-28",
+                     *             "total_available_positive_fen": 1198000,
+                     *             "total_negative_fen": 3200,
+                     *             "total_frozen_fen": 52000,
+                     *             "total_waiting_fen": 845000,
+                     *             "total_estimated_fen": 2287000,
+                     *             "waiting_comparable": false,
+                     *             "receivables": [
+                     *               {
+                     *                 "platform": "taobao",
+                     *                 "union_receivable_fen": 850500
+                     *               }
+                     *             ],
+                     *             "created_at": "2026-10-29T00:31:10+08:00",
+                     *             "updated_at": "2026-10-29T00:31:10+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAssetSnapshotPageResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];
