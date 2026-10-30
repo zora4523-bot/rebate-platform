@@ -76,3 +76,10 @@ export {
   WITHDRAW_RISK_SHARE_ROLES,
 } from './ports/withdraw-risk-shares.ts';
 export type { BeneficiaryShareReader } from './ports/withdraw-risk-shares.ts';
+// B1-03z: BR-CALC-13 细则「申诉恢复」 — the member's shares forfeited for a ban (read only).
+export { listBannedForfeitedShares } from './application/forfeited-shares.ts';
+export type {
+  BannedForfeitedShare,
+  ForfeitedShareRole,
+  ListBannedForfeitedSharesInput,
+} from './application/forfeited-shares.ts';
