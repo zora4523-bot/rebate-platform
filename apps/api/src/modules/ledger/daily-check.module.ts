@@ -1,6 +1,9 @@
 // B2-02q: the worker entry's daily ledger check (BR-FUND-19): queue ledger-check's handler
 // (application/daily-check-schedule.ts createDailyCheckJob) and the chain's seed / heal timer
-// (unref, after bootstrap; stopped on destroy). Without a database or queue nothing is registered.
+// (unref, after bootstrap; stopped on destroy). B2-02r: every tick is healDailyCheck over the run
+// store (the actual state of the queue and the results, no process memory), so a run that failed
+// into ledger-check.dead is sent again and an overdue (app, D) is alerted once. Without a database
+// or queue nothing is registered.
 // The two ports of the B2-02p execution step come from app.module (ledger imports neither payout
 // nor content): payout's createWithdrawHolds and content's createSystemSwitchWriter.
 import type { DynamicModule } from '@nestjs/common';
@@ -19,7 +22,12 @@ import type {
   AutoSettlementSwitch,
   LedgerMismatchHolds,
 } from './application/daily-check-execute.ts';
-import { createDailyCheckJob, seedDailyCheck } from './application/daily-check-schedule.ts';
+import { createDailyCheckJob } from './application/daily-check-schedule.ts';
+import {
+  healDailyCheck,
+  type DailyCheckRunStore,
+} from './application/daily-check-schedule-heal.ts';
+import { createDailyCheckRunStore } from './infra/daily-check-run-store.ts';
 
 /** What app.module hands in on the worker entry. */
 export interface LedgerDailyCheckWorkerOptions {
@@ -44,6 +52,7 @@ interface SeedDependencies {
   readonly clock: Clock;
   readonly queue: QueueRuntime;
   readonly logger: RootLogger;
+  readonly runs: DailyCheckRunStore;
 }
 
 interface DailyCheckTimer {
@@ -53,7 +62,6 @@ interface DailyCheckTimer {
 
 /** The seed after bootstrap and the heal every interval; null deps: inert. */
 function dailyCheckTimer(deps: SeedDependencies | null): DailyCheckTimer {
-  const started = new Map<string, string>();
   let running = false;
   let stopped = false;
   let first: ReturnType<typeof setTimeout> | undefined;
@@ -62,7 +70,7 @@ function dailyCheckTimer(deps: SeedDependencies | null): DailyCheckTimer {
     if (deps === null || running || stopped) return;
     running = true;
     try {
-      await seedDailyCheck({ ...deps, started });
+      await healDailyCheck(deps);
     } catch (error: unknown) {
       deps.logger.warn(
         { queue: QUEUE, error_name: error instanceof Error ? error.name : typeof error },
@@ -127,7 +135,7 @@ export class LedgerDailyCheckModule {
                 autoSettlement: options.autoSettlement(clock, checkLogger),
               }),
             );
-            return { db, clock, queue, logger: checkLogger };
+            return { db, clock, queue, logger: checkLogger, runs: createDailyCheckRunStore(db) };
           },
         },
         {
