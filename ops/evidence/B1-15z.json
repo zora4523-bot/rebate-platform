@@ -1,0 +1,121 @@
+{
+  "task": "B1-15z",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "01eb881b0afa8d20674d916de63a1a72140225cf",
+  "red_tests": [
+    "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 主图 + 多图：主图在前，多图按联盟返回的顺序跟在后面，每项只有 url",
+    "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 主图同时出现在多图里：只留一张，位置在最前",
+    "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 多图内重复：去重，保留首次出现的位置",
+    "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 主图 + 9 张多图共 10 张：截到 9 张，主图保留，舍去多图最后一张",
+    "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 重复的地址不占名额：先去重再截到 9 张",
+    "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 只有主图：一张",
+    "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 只有多图：按多图的顺序给，不多不少；超过 9 张时只给前 9 张",
+    "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 主图与多图都没有：[]",
+    "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 地址一字不改：大小写、编码、查询串、片段、结尾都原样，只差大小写或查询串的是不同地址",
+    "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 入参不被改动：联盟 DTO 的多图是冻结数组，组图后原样不变",
+    "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 任意主图与多图组合：主图在首位，无重复，至多 9 张，只含联盟返回的地址，顺序取首次出现，名额没有被重复占掉",
+    "test/spec/linking/share-images/failures.int.test.ts > [AC-B1-15z#3] 淘宝 50301 data.reason=not_launched：同租户京东分享有图，淘宝整次不生成，响应不带 images",
+    "test/spec/linking/share-images/failures.int.test.ts > [AC-B1-15z#3] 京东平台拒绝转链：商品详情的图已取到，失败响应也不带 images 和任何图片地址",
+    "test/spec/linking/share-images/failures.int.test.ts > [AC-B1-15z#3] 京东临时转链失败：商品详情的图已取到，失败响应也不带 images 和任何图片地址",
+    "test/spec/linking/share-images/http.int.test.ts > [AC-B1-15z#2] jd：一页商品逐个分享，images 为 [{url}]，与该次 getItem 的组图一致：主图在首位、去重、至多 9 张、地址原样，无图商品为 []；poster_url 仍 null",
+    "test/spec/linking/share-images/http.int.test.ts > [AC-B1-15z#2] pdd：一页商品逐个分享，images 为 [{url}]，与该次 getItem 的组图一致：主图在首位、去重、至多 9 张、地址原样，无图商品为 []；poster_url 仍 null",
+    "test/spec/linking/share-images/http.int.test.ts > [AC-B1-15z#2] jd：图片地址只在响应里：links、share_materials、link_logs 的整行都不含联盟返回的图片地址",
+    "test/spec/linking/share-images/http.int.test.ts > [AC-B1-15z#2] pdd：图片地址只在响应里：links、share_materials、link_logs 的整行都不含联盟返回的图片地址",
+    "test/spec/linking/share-images/http.int.test.ts > [AC-B1-15z#2] jd：服务端不抓取图片：分享期间没有任何 fetch 指向联盟返回的图片地址（不下载转存）",
+    "test/spec/linking/share-images/http.int.test.ts > [AC-B1-15z#2] pdd：服务端不抓取图片：分享期间没有任何 fetch 指向联盟返回的图片地址（不下载转存）"
+  ],
+  "risk_note": "RV2 by path (linking). POST /v1/shares images (BR-ATTR-10 细则 素材图): shareImages composes the response images from the one governed union detail of the request (main_image_url / image_urls, B1-22s): main image first, deduplicated before the cut to 9, addresses unchanged, [] when the detail has none; no additional union call, no fetch or re-hosting; failure paths carry no images; poster_url stays null (D10-426). Contract: three descriptions (createShare, ShareImage, ShareMaterials.images) now say kept in no business table, the only exception being the response the platform idempotency module keeps for its retention period (D10-439 / D10-441); wording only, no shape change; openapi.gen.ts regenerated. No migration. Ruling D10-439 is written back in planning commit couli 8127341 (#222), later than this repository's SPEC_REF 37808a50; recorded in ops/tasks/B1-15z.yaml; the SPEC_REF bump is FU-SPECREF-BUMP.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "01eb881b0afa8d20674d916de63a1a72140225cf",
+      "tree": "50306bc023008b30ab9b9776ac65a165eaccdeb0",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T12:48:46Z",
+      "finished_at": "2026-10-30T12:49:27Z",
+      "gate": {
+        "commit": "450c937efdff3db35a191acbf43dc4caef9ef989",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 主图 + 多图：主图在前，多图按联盟返回的顺序跟在后面，每项只有 url",
+        "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 主图同时出现在多图里：只留一张，位置在最前",
+        "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 多图内重复：去重，保留首次出现的位置",
+        "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 主图 + 9 张多图共 10 张：截到 9 张，主图保留，舍去多图最后一张",
+        "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 重复的地址不占名额：先去重再截到 9 张",
+        "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 只有主图：一张",
+        "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 只有多图：按多图的顺序给，不多不少；超过 9 张时只给前 9 张",
+        "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 主图与多图都没有：[]",
+        "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 地址一字不改：大小写、编码、查询串、片段、结尾都原样，只差大小写或查询串的是不同地址",
+        "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 入参不被改动：联盟 DTO 的多图是冻结数组，组图后原样不变",
+        "test/spec/linking/share-images/compose.test.ts > [AC-B1-15z#1] 任意主图与多图组合：主图在首位，无重复，至多 9 张，只含联盟返回的地址，顺序取首次出现，名额没有被重复占掉",
+        "test/spec/linking/share-images/failures.int.test.ts > [AC-B1-15z#3] 淘宝 50301 data.reason=not_launched：同租户京东分享有图，淘宝整次不生成，响应不带 images",
+        "test/spec/linking/share-images/failures.int.test.ts > [AC-B1-15z#3] 京东平台拒绝转链：商品详情的图已取到，失败响应也不带 images 和任何图片地址",
+        "test/spec/linking/share-images/failures.int.test.ts > [AC-B1-15z#3] 京东临时转链失败：商品详情的图已取到，失败响应也不带 images 和任何图片地址",
+        "test/spec/linking/share-images/http.int.test.ts > [AC-B1-15z#2] jd：一页商品逐个分享，images 为 [{url}]，与该次 getItem 的组图一致：主图在首位、去重、至多 9 张、地址原样，无图商品为 []；poster_url 仍 null",
+        "test/spec/linking/share-images/http.int.test.ts > [AC-B1-15z#2] pdd：一页商品逐个分享，images 为 [{url}]，与该次 getItem 的组图一致：主图在首位、去重、至多 9 张、地址原样，无图商品为 []；poster_url 仍 null",
+        "test/spec/linking/share-images/http.int.test.ts > [AC-B1-15z#2] jd：图片地址只在响应里：links、share_materials、link_logs 的整行都不含联盟返回的图片地址",
+        "test/spec/linking/share-images/http.int.test.ts > [AC-B1-15z#2] pdd：图片地址只在响应里：links、share_materials、link_logs 的整行都不含联盟返回的图片地址",
+        "test/spec/linking/share-images/http.int.test.ts > [AC-B1-15z#2] jd：服务端不抓取图片：分享期间没有任何 fetch 指向联盟返回的图片地址（不下载转存）",
+        "test/spec/linking/share-images/http.int.test.ts > [AC-B1-15z#2] pdd：服务端不抓取图片：分享期间没有任何 fetch 指向联盟返回的图片地址（不下载转存）"
+      ],
+      "expected": [
+        "test/spec/linking/share-images/compose.test.ts",
+        "test/spec/linking/share-images/failures.int.test.ts",
+        "test/spec/linking/share-images/http.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "b1a130a7858c86e83c4617baa934f952f2aafb923e837f7fa4e19a9a6ddccc62"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "ff65520a10069baeea219a1646a9881987ef04ab7c60c1b9ed93ecea806e9d49"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "Codex unavailable until 11-02; independent Claude via tools/agent/claude-run.sh per approvals #36 (attribution checklist). Round 1 fail: 2 S1 with one root: images enter idempotency_keys.response while the SPEC_REF text says no table; the brief had told the reviewer not to report this, and the reviewer rightly treated the brief as data and refused. Round 2 fail: 1 S1: the ruling was not readable from the task worktree and the contract still said not stored. Fixed by recording D10-439 / D10-441 in the ledger (#1859, #1868), rebasing the worktree so the ledger is in it, and correcting the three contract descriptions; the brief no longer told the reviewer what to skip. Round 3 by a fresh independent Claude: pass, S1 closed on the ledger's record of the rulings and the corrected contract; the reviewer states it could not read the planning commit itself and that the SPEC_REF copy of 08 still has the old sentence. Out of scope recorded: purgeExpired has no production caller, so the idempotency retention period the contract mentions is not enforced yet."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "rule tests by an independent Claude context in 2 counted attempts: run 1 (18 tests red, HTTP cases red on empty images, checked by hand), run 2 after review round 1 and ruling D10-439 (scan scope comment and a no-fetch assertion, 20 red). Review round 1 fail (S1 the rule conflict, escalated and ruled D10-439; S2 no-fetch), round 2 incremental pass. All 20 pass on the implementation (test machine red mode, not evidence). No red_exempt or expected_values entries."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "95373e52097b433c50e47f22189077ebdc47477a",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}

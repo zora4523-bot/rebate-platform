@@ -14,6 +14,7 @@ import {
   isIdentifiedMinor,
   linkRawRef,
   shareIdentity,
+  shareImages,
   shareUrlOf,
   type SharesOptions,
 } from './shares.ts';
@@ -111,6 +112,46 @@ describe('shares helpers (B1-15w)', () => {
     const pdd = shareIdentity(APP, { platform: 'pdd', ...parts }, null);
     expect(pdd.custom_parameters).toEqual({ app: 'n', uid: 'abcd1234', sc: 'share' });
     expect(Object.hasOwn(pdd, 'subUnionId')).toBe(false);
+  });
+});
+
+describe('shareImages (B1-15z)', () => {
+  const MAIN = 'https://img.example.test/p/main.jpg';
+  const gallery = (count: number): string[] =>
+    Array.from({ length: count }, (_, n) => `https://img.example.test/p/${String(n)}.jpg`);
+
+  it('[AC-B1-15z] main image first, then the gallery in order, each entry only a url', () => {
+    const [one, two] = gallery(2) as [string, string];
+    expect(shareImages({ main_image_url: MAIN, image_urls: [two, one] })).toEqual([
+      { url: MAIN },
+      { url: two },
+      { url: one },
+    ]);
+  });
+
+  it('[AC-B1-15z] duplicates are dropped before the cut to 9, keeping the first position', () => {
+    const eight = gallery(8);
+    const result = shareImages({ main_image_url: MAIN, image_urls: [MAIN, ...eight, MAIN] });
+    expect(result.map((image) => image.url)).toEqual([MAIN, ...eight]);
+    const ten = shareImages({ main_image_url: MAIN, image_urls: gallery(10) });
+    expect(ten.map((image) => image.url)).toEqual([MAIN, ...gallery(8)]);
+  });
+
+  it('[AC-B1-15z] only one of the two fields, or neither', () => {
+    expect(shareImages({ main_image_url: MAIN })).toEqual([{ url: MAIN }]);
+    const [one] = gallery(1) as [string];
+    expect(shareImages({ image_urls: [one] })).toEqual([{ url: one }]);
+    expect(shareImages({})).toEqual([]);
+  });
+
+  it('[AC-B1-15z] a frozen gallery is read, not changed, and its address stays exact', () => {
+    const exact = 'https://IMG.example.test/p/%E5%9B%BE.JPG?w=800&h=800#top';
+    const frozen = Object.freeze([exact, MAIN]);
+    expect(shareImages({ main_image_url: MAIN, image_urls: frozen })).toEqual([
+      { url: MAIN },
+      { url: exact },
+    ]);
+    expect(frozen).toEqual([exact, MAIN]);
   });
 });
 

@@ -25,9 +25,10 @@
 // TODO(规划/11 §4.5): 淘宝分享口令 — blocked on 规划/09 2_TB §2.5 口令生成权限
 // poster_url is always null.
 // TODO(规划/11 §4.5): 海报出图 — blocked on TECH-13 出图 worker 与 OSS 凭据
-// images: the union detail DTO carries no image field yet, so none is passed on (never invented,
-// never stored).
-// TODO(规划/11 §4.5): 分享素材图取联盟商品详情主图与多图（≤9）— blocked on 联盟商品 DTO 的图片字段（规划/09 实测）
+// images (B1-15z, BR-ATTR-10 素材图): shareImages of this request's one union detail; the addresses
+// are passed on unchanged, never fetched, rehosted or edited, and written to no business table.
+// D10-439: the idempotent answer retained by the platform module holds them and is no business
+// table, so the stored answer stays whole and a replay answers the same images.
 // source_link_id is only part of the idempotent body: the card's link is never read or changed.
 // est_promo is only in this response (BR-PRICE-06); the copy never carries an earnings amount.
 // Logs carry flat fields only: never the token, the item_ref, the share_url or a user identity.
@@ -151,6 +152,8 @@ const SHARER_MIN_AGE = 18;
 const ATTR_CODE = /^[0-9a-z]{8}$/;
 const JD_USER_KEY_MODE = 'attr.jd.user_key_mode';
 const URL_MAX = 2048;
+/** BR-ATTR-10 素材图: the images of one share (contract ShareMaterials.images maxItems). */
+const SHARE_IMAGES_MAX = 9;
 /** BR-PROD-10: as the convert, a share resolves products like parsing and detail do. */
 const CAPABILITIES = Object.freeze({ parseEnabled: true, searchEnabled: false });
 
@@ -251,6 +254,19 @@ export function shareUrlOf(platform: 'jd' | 'pdd', result: ConvertResult): strin
   if (result.kind !== 'url') return null;
   const short = platform === 'pdd' ? [result.mobile_short_url, result.short_url] : [];
   return [...short, result.url].find(isWebUrl) ?? null;
+}
+
+/**
+ * B1-15z (BR-ATTR-10 素材图): the response images of a union detail: main image first, then the
+ * gallery in the union's order; deduplicated before the cut, so a repeat never takes a place; at
+ * most 9, addresses unchanged; [] when the detail has none. The detail is only read.
+ */
+export function shareImages(
+  item: Pick<UnionItemDetail, 'main_image_url' | 'image_urls'>,
+): ShareMaterials['images'] {
+  const { main_image_url: main, image_urls: gallery = [] } = item;
+  const urls = new Set(main === undefined ? gallery : [main, ...gallery]);
+  return [...urls].slice(0, SHARE_IMAGES_MAX).map((url) => ({ url }));
 }
 
 /**
@@ -463,7 +479,7 @@ class ComposedShares extends SharesService {
       tpwd: null,
       // TODO(规划/11 §4.5): 海报出图 — blocked on TECH-13 出图 worker 与 OSS 凭据
       poster_url: null,
-      images: [],
+      images: shareImages(target.item),
       copy,
       est_promo: quote.estPromo,
       quoted_at: quote.quotedAt,
@@ -638,7 +654,7 @@ class ComposedShares extends SharesService {
   /**
    * The product of the request (as POST /v1/links/convert by product_key): the platform's key
    * prefix, the item_ref (unusable → ignored; another product's → 20001), the raw-ID order and one
-   * governed union detail (the quote snapshot, the copy's fields and est_promo's item).
+   * governed union detail (the quote snapshot, the copy's fields, est_promo's item, the images).
    * BR-PROD-05 ①: without a fresh item_ref (BR-PROD-11: it is optional — a share page opened from
    * the favorites carries only platform and product_key) the raw ID of a fresh links row of this
    * product is used (linkRawRef): the source card's link, else the sharer's latest own link of the
