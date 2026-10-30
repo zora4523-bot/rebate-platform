@@ -1,0 +1,18 @@
+id: F1-02zzt
+repo: rebate-platform
+title: 过渡测试改动（F1-02zzq 前置）：冻结 [AC-F1-02c#1] 对 /v1/config 的精确比较接受「无 nickname」或「nickname 恰好为 {min_len:1, max_len:16, monthly_limit:3}」，其余字段精确比较不变
+type: test-change
+# 2026-10-31 入账（content-client；先例 F1-02zzd）。F1-02zzq 若在同任务内改此冻结文件，先红检查因 config/kit.ts 用 createRequire 会把整份文件判为「可能读到本任务新增测试文件」，128 条旧用例都须红，无法通过；故拆成前置两态过渡，F1-02zzq 不再碰本文件。
+# 主干全绿；全新上下文 Claude 修改，另一全新上下文 Claude 只读复审 PASS（0/0/0）；按 approvals #24 请编排加标签。F1-02zzq 合并后另开收紧为单态。
+refs: []
+refs_hash: {}
+deps: [F1-02c]
+paths:
+  - 'test/spec/content/config/delivery.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/config/**'
+status: done
+pr: 1953
