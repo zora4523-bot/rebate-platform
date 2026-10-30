@@ -1,0 +1,149 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-settle-bills/access.test.ts > [AC-F1-08d-ACCESS#1] 持 settle.bill 或 fund.view 任一可看账单列表；只持 fund.view 时菜单仍不出现（菜单不改），直达本页照常列出",
+    "test/spec/frontend/admin-settle-bills/access.test.ts > [AC-F1-08d-ACCESS#2] 只持 settle.statement_upload（菜单可见、没有 settle.bill 与 fund.view）：进页不请求账单，显示无权限提示",
+    "test/spec/frontend/admin-settle-bills/access.test.ts > [AC-F1-08d-ACCESS#2] 只持 fund.settle_adjust（菜单可见、没有 settle.bill 与 fund.view）：进页不请求账单，显示无权限提示",
+    "test/spec/frontend/admin-settle-bills/access.test.ts > [AC-F1-08d-ACCESS#3] 列表返回 10403（本地快照有 settle.bill、服务端不认）：显示无权限提示，不显示账单",
+    "test/spec/frontend/admin-settle-bills/access.test.ts > [AC-F1-08d-ACCESS#4] planned 清单含 listAdminSettleBills：整页「功能开发中」，不发任何请求；清单不含时照常请求并列出、不显示「功能开发中」",
+    "test/spec/frontend/admin-settle-bills/detail.test.ts > [AC-F1-08d-DETAIL#1] 【查看】结算中的账单：读 settle-bills/2026-07，显示账单状态、各统计项的值在其标签项内（子订单数、联盟结算佣金、受益人份额、平台留存按分手算，差错单、暂缓）与两个批次（批次号、平台、类型、子订单数、批次状态与结算方式的字典名、定时时刻、确认人）",
+    "test/spec/frontend/admin-settle-bills/detail.test.ts > [AC-F1-08d-DETAIL#2] 已结算账单的批次表：首批与补充批次都列出，类型与批次状态显示字典名（缺键显示编码）",
+    "test/spec/frontend/admin-settle-bills/detail.test.ts > [AC-F1-08d-DETAIL#3] 详情地址 settle-bills/2026-08（只持 fund.view）：直接读该账单（页面或抽屉均可），两个待确认批次显示批次状态字典名，各统计项（含差错单 4、暂缓 2）在其标签项内按分换算",
+    "test/spec/frontend/admin-settle-bills/detail.test.ts > [AC-F1-08d-DETAIL#4] 不存在的账单月（详情返回 20001 [bill_id]）：显示未找到类提示，不显示批次",
+    "test/spec/frontend/admin-settle-bills/dictionary.test.ts > [AC-F1-08d-DICT#1] 后台字典缺键时账单状态、批次状态、结算方式、批次类型、明细类型与结果显示原编码（如 settling / PARTIAL / SCHEDULED / main / order / credited），不显示 undefined、空白或键路径",
+    "test/spec/frontend/admin-settle-bills/filter.test.ts > [AC-F1-08d-FILTER#1] 账单月区间 + 账单状态筛选：【查询】带 bill_from / bill_to / status（契约参数名），从第 1 页起，只列命中的账单",
+    "test/spec/frontend/admin-settle-bills/filter.test.ts > [AC-F1-08d-FILTER#2] 【重置】清空筛选：表格以不带筛选参数的请求重新读取，之后的请求不再带已清空的账单月，四张账单重新列出",
+    "test/spec/frontend/admin-settle-bills/items.test.ts > [AC-F1-08d-ITEMS#1] 【明细】读 settle-batches/{batch_id}/items（只带契约参数、第 1 页、page_size ≤ 200），逐行显示子订单 / 补记项、类型（字典名，缺键显示编码）、受益人、入账金额（按分手算）、结果（同上）与跳过原因",
+    "test/spec/frontend/admin-settle-bills/items.test.ts > [AC-F1-08d-ITEMS#2] 明细分页：切到第 2 页请求 page=2（同一 page_size），显示该页的明细、不再显示第 1 页的明细",
+    "test/spec/frontend/admin-settle-bills/items.test.ts > [AC-F1-08d-ITEMS#3] 批次不存在（明细返回 20001 [batch_id]）：给出未找到类提示，不显示明细行",
+    "test/spec/frontend/admin-settle-bills/items.test.ts > [AC-F1-08d-ITEMS#4] 第二个批次的【明细】：只读该批次的 items（不读第一个批次），显示该批次的明细（类型、受益人、金额），负的结算金额保留负号（−1234 分 = -12.34）",
+    "test/spec/frontend/admin-settle-bills/items.test.ts > [AC-F1-08d-ITEMS#5] 明细筛选：选类型 order、结果 pending（未执行）后请求带 item_type=order、result=pending（契约参数名），从第 1 页起，只列命中的明细",
+    "test/spec/frontend/admin-settle-bills/items.test.ts > [AC-F1-08d-ITEMS#6] 筛选后翻页：item_type=order、result=credited 下切到第 2 页请求 page=2 并保留两个筛选参数与 page_size",
+    "test/spec/frontend/admin-settle-bills/list.test.ts > [AC-F1-08d-LIST#1] 进入后读第 1 页（page_size ≤ 200、不带筛选），按返回顺序（账单月倒序）列出四张账单",
+    "test/spec/frontend/admin-settle-bills/list.test.ts > [AC-F1-08d-LIST#2] 每行在各自的列下显示账单状态（字典名，缺键显示编码）、生成时间、子订单数、联盟结算佣金、受益人份额、平台留存（元，两位小数，按分手算）、差错单、暂缓，并有【查看】",
+    "test/spec/frontend/admin-settle-bills/list.test.ts > [AC-F1-08d-LIST#3] 出账中的账单（generated_at 与各合计为 null）：状态显示字典名（缺键显示编码），合计不显示为 0.00、NaN 或 null",
+    "test/spec/frontend/admin-settle-bills/list.test.ts > [AC-F1-08d-LIST#4] 页码分页：切到第 2 页请求 page=2（同一 page_size），显示该页的账单、不再显示第 1 页的账单",
+    "test/spec/frontend/admin-settle-bills/pages.browser.test.ts > [AC-F1-08d-BROWSER#1] /settle-bills：列出账单，【查看】2026-07 显示 PARTIAL / CONFIRMED 批次状态与 SCHEDULED 结算方式的字典名，【明细】列出该批次的子订单与入账金额 720.12；只发三个 GET",
+    "test/spec/frontend/admin-settle-bills/readonly.test.ts > [AC-F1-08d-READONLY#1] 持 settle.bill：列表与已出账账单详情（两个待确认批次）都没有可用的确认 / 定时 / 驳回 / 补充批次 / 上传等写入口；点了也只发三个 GET，不弹动态码",
+    "test/spec/frontend/admin-settle-bills/readonly.test.ts > [AC-F1-08d-READONLY#2] 超管看结算中的账单（PARTIAL 被开关停下、CONFIRMED 定时）：没有可用的【继续执行】【撤销定时】【发起补充批次】等写入口；点了也只发三个 GET",
+    "test/spec/frontend/admin-settle-bills/source.test.ts > [AC-F1-08d-SOURCE#1] 页面在 pages/settle-bills 并由 App.tsx 登记，文案在 texts/settle-bills.ts，读经 data provider、不直接 fetch、不用动态码",
+    "test/spec/frontend/admin-settle-bills/source.test.ts > [AC-F1-08d-SOURCE#2] 批次状态与结算方式的中文名取后台字典（admin_dict.settle_batch.status / settle_mode），不在页面或 texts/settle-bills.ts 里另写",
+    "test/spec/frontend/admin-settle-bills/states.test.ts > [AC-F1-08d-STATE#1] 加载中：表格请求未返回时显示加载状态、没有账单行，返回后列出",
+    "test/spec/frontend/admin-settle-bills/states.test.ts > [AC-F1-08d-STATE#2] 出错可重试：表格请求失败显示出错与【重试】，重试成功后列出",
+    "test/spec/frontend/admin-settle-bills/states.test.ts > [AC-F1-08d-STATE#3] 再查失败不显示旧数据：换条件【查询】的表格请求失败时显示出错、不再显示之前的账单，重试后按该条件列出",
+    "test/spec/frontend/admin-settle-bills/states.test.ts > [AC-F1-08d-STATE#4] 空列表：显示空状态，没有账单行，不发 GET 以外的请求"
+  ],
+  "risk_note": "Admin 月结账单 page, first part, read only (apps/admin pages/settle-bills/**, texts/settle-bills.ts, App.tsx). Contract CT-24z (listAdminSettleBills, getAdminSettleBill, listAdminSettleBatchItems) is still planned; backend B2-09d in progress, tests use a fake server. Bill list with filters and dictionary names (raw code when a key is missing), bill detail with statistics and settle batches, batch items drawer with filters and paging; amounts shown through @couli/money (display only, sign kept, totals shown as given, no client summing); only the three GETs are sent, no write entry; planned placeholder via the F1-06zu list; fund.view reaches the pages by direct address (menu unchanged). No frozen test changed. Rule tests written by an independent Claude in two rounds (Codex unavailable until 2026-11-02; ledger tester claude-independent, approvals id 36); Claude spec-test review r1 fail (5 S1) then r2 pass; red on the test machine (red/2). Implementation by Opus 5.5; test machine verify-fast/3 and browser/3 green. Adversarial money review by a fresh independent Claude r1 pass with one S2. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, one S2 (null amount on order rows labelled 未入账); independent Claude because Codex is unavailable until 2026-11-02"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (5 S1: amounts and statistics not bound to labels, wrong batch not caught, item type and item filters untested), round 2 pass with two S2; tests written by an independent Claude (claude-run.sh)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "F1-08d",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "0dce8e05f43ca4e1cbf43bf432efd18aa00fa12b",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0dce8e05f43ca4e1cbf43bf432efd18aa00fa12b",
+      "tree": "18d8b5eb5caeccb1c9a25142f9e7a4ae9c2efd08",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T07:51:29Z",
+      "finished_at": "2026-10-30T07:52:55Z",
+      "gate": {
+        "commit": "10c07d7401885091fe5a2f756e8875c49441ad0a",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-settle-bills/access.test.ts > [AC-F1-08d-ACCESS#1] 持 settle.bill 或 fund.view 任一可看账单列表；只持 fund.view 时菜单仍不出现（菜单不改），直达本页照常列出",
+        "test/spec/frontend/admin-settle-bills/access.test.ts > [AC-F1-08d-ACCESS#2] 只持 settle.statement_upload（菜单可见、没有 settle.bill 与 fund.view）：进页不请求账单，显示无权限提示",
+        "test/spec/frontend/admin-settle-bills/access.test.ts > [AC-F1-08d-ACCESS#2] 只持 fund.settle_adjust（菜单可见、没有 settle.bill 与 fund.view）：进页不请求账单，显示无权限提示",
+        "test/spec/frontend/admin-settle-bills/access.test.ts > [AC-F1-08d-ACCESS#3] 列表返回 10403（本地快照有 settle.bill、服务端不认）：显示无权限提示，不显示账单",
+        "test/spec/frontend/admin-settle-bills/access.test.ts > [AC-F1-08d-ACCESS#4] planned 清单含 listAdminSettleBills：整页「功能开发中」，不发任何请求；清单不含时照常请求并列出、不显示「功能开发中」",
+        "test/spec/frontend/admin-settle-bills/detail.test.ts > [AC-F1-08d-DETAIL#1] 【查看】结算中的账单：读 settle-bills/2026-07，显示账单状态、各统计项的值在其标签项内（子订单数、联盟结算佣金、受益人份额、平台留存按分手算，差错单、暂缓）与两个批次（批次号、平台、类型、子订单数、批次状态与结算方式的字典名、定时时刻、确认人）",
+        "test/spec/frontend/admin-settle-bills/detail.test.ts > [AC-F1-08d-DETAIL#2] 已结算账单的批次表：首批与补充批次都列出，类型与批次状态显示字典名（缺键显示编码）",
+        "test/spec/frontend/admin-settle-bills/detail.test.ts > [AC-F1-08d-DETAIL#3] 详情地址 settle-bills/2026-08（只持 fund.view）：直接读该账单（页面或抽屉均可），两个待确认批次显示批次状态字典名，各统计项（含差错单 4、暂缓 2）在其标签项内按分换算",
+        "test/spec/frontend/admin-settle-bills/detail.test.ts > [AC-F1-08d-DETAIL#4] 不存在的账单月（详情返回 20001 [bill_id]）：显示未找到类提示，不显示批次",
+        "test/spec/frontend/admin-settle-bills/dictionary.test.ts > [AC-F1-08d-DICT#1] 后台字典缺键时账单状态、批次状态、结算方式、批次类型、明细类型与结果显示原编码（如 settling / PARTIAL / SCHEDULED / main / order / credited），不显示 undefined、空白或键路径",
+        "test/spec/frontend/admin-settle-bills/filter.test.ts > [AC-F1-08d-FILTER#1] 账单月区间 + 账单状态筛选：【查询】带 bill_from / bill_to / status（契约参数名），从第 1 页起，只列命中的账单",
+        "test/spec/frontend/admin-settle-bills/filter.test.ts > [AC-F1-08d-FILTER#2] 【重置】清空筛选：表格以不带筛选参数的请求重新读取，之后的请求不再带已清空的账单月，四张账单重新列出",
+        "test/spec/frontend/admin-settle-bills/items.test.ts > [AC-F1-08d-ITEMS#1] 【明细】读 settle-batches/{batch_id}/items（只带契约参数、第 1 页、page_size ≤ 200），逐行显示子订单 / 补记项、类型（字典名，缺键显示编码）、受益人、入账金额（按分手算）、结果（同上）与跳过原因",
+        "test/spec/frontend/admin-settle-bills/items.test.ts > [AC-F1-08d-ITEMS#2] 明细分页：切到第 2 页请求 page=2（同一 page_size），显示该页的明细、不再显示第 1 页的明细",
+        "test/spec/frontend/admin-settle-bills/items.test.ts > [AC-F1-08d-ITEMS#3] 批次不存在（明细返回 20001 [batch_id]）：给出未找到类提示，不显示明细行",
+        "test/spec/frontend/admin-settle-bills/items.test.ts > [AC-F1-08d-ITEMS#4] 第二个批次的【明细】：只读该批次的 items（不读第一个批次），显示该批次的明细（类型、受益人、金额），负的结算金额保留负号（−1234 分 = -12.34）",
+        "test/spec/frontend/admin-settle-bills/items.test.ts > [AC-F1-08d-ITEMS#5] 明细筛选：选类型 order、结果 pending（未执行）后请求带 item_type=order、result=pending（契约参数名），从第 1 页起，只列命中的明细",
+        "test/spec/frontend/admin-settle-bills/items.test.ts > [AC-F1-08d-ITEMS#6] 筛选后翻页：item_type=order、result=credited 下切到第 2 页请求 page=2 并保留两个筛选参数与 page_size",
+        "test/spec/frontend/admin-settle-bills/list.test.ts > [AC-F1-08d-LIST#1] 进入后读第 1 页（page_size ≤ 200、不带筛选），按返回顺序（账单月倒序）列出四张账单",
+        "test/spec/frontend/admin-settle-bills/list.test.ts > [AC-F1-08d-LIST#2] 每行在各自的列下显示账单状态（字典名，缺键显示编码）、生成时间、子订单数、联盟结算佣金、受益人份额、平台留存（元，两位小数，按分手算）、差错单、暂缓，并有【查看】",
+        "test/spec/frontend/admin-settle-bills/list.test.ts > [AC-F1-08d-LIST#3] 出账中的账单（generated_at 与各合计为 null）：状态显示字典名（缺键显示编码），合计不显示为 0.00、NaN 或 null",
+        "test/spec/frontend/admin-settle-bills/list.test.ts > [AC-F1-08d-LIST#4] 页码分页：切到第 2 页请求 page=2（同一 page_size），显示该页的账单、不再显示第 1 页的账单",
+        "test/spec/frontend/admin-settle-bills/pages.browser.test.ts > [AC-F1-08d-BROWSER#1] /settle-bills：列出账单，【查看】2026-07 显示 PARTIAL / CONFIRMED 批次状态与 SCHEDULED 结算方式的字典名，【明细】列出该批次的子订单与入账金额 720.12；只发三个 GET",
+        "test/spec/frontend/admin-settle-bills/readonly.test.ts > [AC-F1-08d-READONLY#1] 持 settle.bill：列表与已出账账单详情（两个待确认批次）都没有可用的确认 / 定时 / 驳回 / 补充批次 / 上传等写入口；点了也只发三个 GET，不弹动态码",
+        "test/spec/frontend/admin-settle-bills/readonly.test.ts > [AC-F1-08d-READONLY#2] 超管看结算中的账单（PARTIAL 被开关停下、CONFIRMED 定时）：没有可用的【继续执行】【撤销定时】【发起补充批次】等写入口；点了也只发三个 GET",
+        "test/spec/frontend/admin-settle-bills/source.test.ts > [AC-F1-08d-SOURCE#1] 页面在 pages/settle-bills 并由 App.tsx 登记，文案在 texts/settle-bills.ts，读经 data provider、不直接 fetch、不用动态码",
+        "test/spec/frontend/admin-settle-bills/source.test.ts > [AC-F1-08d-SOURCE#2] 批次状态与结算方式的中文名取后台字典（admin_dict.settle_batch.status / settle_mode），不在页面或 texts/settle-bills.ts 里另写",
+        "test/spec/frontend/admin-settle-bills/states.test.ts > [AC-F1-08d-STATE#1] 加载中：表格请求未返回时显示加载状态、没有账单行，返回后列出",
+        "test/spec/frontend/admin-settle-bills/states.test.ts > [AC-F1-08d-STATE#2] 出错可重试：表格请求失败显示出错与【重试】，重试成功后列出",
+        "test/spec/frontend/admin-settle-bills/states.test.ts > [AC-F1-08d-STATE#3] 再查失败不显示旧数据：换条件【查询】的表格请求失败时显示出错、不再显示之前的账单，重试后按该条件列出",
+        "test/spec/frontend/admin-settle-bills/states.test.ts > [AC-F1-08d-STATE#4] 空列表：显示空状态，没有账单行，不发 GET 以外的请求"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-settle-bills/access.test.ts",
+        "test/spec/frontend/admin-settle-bills/detail.test.ts",
+        "test/spec/frontend/admin-settle-bills/dictionary.test.ts",
+        "test/spec/frontend/admin-settle-bills/filter.test.ts",
+        "test/spec/frontend/admin-settle-bills/items.test.ts",
+        "test/spec/frontend/admin-settle-bills/list.test.ts",
+        "test/spec/frontend/admin-settle-bills/pages.browser.test.ts",
+        "test/spec/frontend/admin-settle-bills/readonly.test.ts",
+        "test/spec/frontend/admin-settle-bills/source.test.ts",
+        "test/spec/frontend/admin-settle-bills/states.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "0a1ab99e1dbe62ce468970c22008219e82f96d98532c4639a98e439257d5d3c5"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "2aa0bd046c31e8ab0f8034b1f54ac18e48244da2713f930e8e8e94cf7435905f"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "9adaf15120593f816efbefcb3ba63279cbc5f831",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  }
+}
