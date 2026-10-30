@@ -1,0 +1,21 @@
+id: B1-15x
+repo: rebate-platform
+title: 风控限频（判定顺序 ⑬）把 createShare（POST /v1/shares）归入 convert 接口组，照 convertLink / openLink 口径：代码缺省分组表 DEFAULT_GROUPS 加 createShare → convert（缺省阈值同 convert 组：用户 30 次 / 60 秒、500 次 / 天）；后台 rate_limit.ops 改映射时照常生效；超限 42901 带 Retry-After；不新增配置键、不改其他接口的分组与阈值
+type: impl
+# 2026-10-30 be 入账（编排 12:14 派工，B1-15w 遗留 ②：分享会新登记 link 并实时转链，与 convertLink 同属转链类接口，按同组限频）。依据 B1-03e 三维限流（06 Q-B4 缺省分组表、编排裁定 B1-03e §9.2），refs 同 B1-03e 为空。
+# 只改 risk/application/rate-limit.ts 的缺省分组表；冻结测试 test/spec/risk/rate-limit/policies.test.ts 不钉整表，不受影响。
+refs: []
+refs_hash: {}
+deps: [B1-15w, B1-03e]
+paths:
+  - 'apps/api/src/modules/risk/application/rate-limit.ts'
+  - 'apps/api/src/modules/risk/application/rate-limit.test.ts'
+test_paths:
+  - 'test/spec/risk/share-rate-limit/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/share-rate-limit/**'
+status: todo
+pr: null
