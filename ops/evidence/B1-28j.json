@@ -1,0 +1,131 @@
+{
+  "task": "B1-28j",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "2ee780395817f57bc094c31b852e8b2e55437c07",
+  "red_tests": [
+    "test/spec/catalog/hot-rank-upstream/categories.test.ts > [AC-B1-28j#1] categories 经该平台 adapter 的 channelCategories({ channelId }) 取，顺序与内容原样，不调 channelRanking",
+    "test/spec/catalog/hot-rank-upstream/categories.test.ts > [AC-B1-28j#2] categories 的 CallCtx：appId 为调用方的 app，purpose=online，每次调用带非空 requestId",
+    "test/spec/catalog/hot-rank-upstream/categories.test.ts > [AC-B1-28j#3] 京东、拼多多的 categories 各走自己平台的 adapter 与白名单频道",
+    "test/spec/catalog/hot-rank-upstream/categories.test.ts > [AC-B1-28j#4] 经 getHotRank：接口 categories 即 adapter 给的类目，顺序不变",
+    "test/spec/catalog/hot-rank-upstream/end-to-end.test.ts > [AC-B1-28j#23][BR-TEXT-17] 经 getHotRank：接口条目按频道顺序、sales_text 原样（含 null），hasMore 时给 next_cursor",
+    "test/spec/catalog/hot-rank-upstream/end-to-end.test.ts > [AC-B1-28j#24] 经 getHotRank 翻到第二页：wiring 向 channelRanking 要的是第 2 页、同一频道与类目、每页 20",
+    "test/spec/catalog/hot-rank-upstream/end-to-end.test.ts > [AC-B1-28j#25] 缓存仍生效：cacheHotRankUpstream(createUnionHotRankUpstream(...)) 同一请求第二次不再调 adapter，答案相同",
+    "test/spec/catalog/hot-rank-upstream/end-to-end.test.ts > [AC-B1-28j#26] 缓存口径不变：超过 rank.cache_ttl_seconds 后再次请求会重新经 wiring 取数",
+    "test/spec/catalog/hot-rank-upstream/end-to-end.test.ts > [AC-B1-28j#27] 演示环境：wiring 经演示适配器取类目与榜单，与演示适配器同一请求的答案逐项同序，salesText、hasMore 原样，ref 按 deriveProductKey",
+    "test/spec/catalog/hot-rank-upstream/failures.test.ts > [AC-B1-28j#13] adapter 没有 channelCategories：categories 抛 UnionError(upstream_unavailable)，接口 50304 且无 reason",
+    "test/spec/catalog/hot-rank-upstream/failures.test.ts > [AC-B1-28j#14] adapter 有 channelCategories、没有 channelRanking：page 抛 UnionError(upstream_unavailable)，接口 50304 且无 reason",
+    "test/spec/catalog/hot-rank-upstream/failures.test.ts > [AC-B1-28j#15] 白名单里有可选频道但平台未登记联盟适配器：不向 GovernedUnion 要该平台，categories / page 抛 UnionError(upstream_unavailable)，接口 50304 且无 reason",
+    "test/spec/catalog/hot-rank-upstream/failures.test.ts > [AC-B1-28j#16] adapter 抛的 GovernanceError（超时、熔断）由 categories / page 原样上抛，接口 50304 且无 reason",
+    "test/spec/catalog/hot-rank-upstream/failures.test.ts > [AC-B1-28j#17] 类目取到、榜单那一步无能力时仍是 50304 无 reason，不拿通用物料流或搜索冒充频道榜单",
+    "test/spec/catalog/hot-rank-upstream/nodata.test.ts > [AC-B1-28j#18][BR-TEXT-17] categories / page 取数前自己核对白名单：不在白名单、只在别的平台或不可选 → 50304 rank_unavailable，不调 adapter，告警一条（带频道）",
+    "test/spec/catalog/hot-rank-upstream/nodata.test.ts > [AC-B1-28j#19] 每次取数前都重读白名单：频道改为不可选后下一次即拒绝，恢复可选后又能取数",
+    "test/spec/catalog/hot-rank-upstream/nodata.test.ts > [AC-B1-28j#20] 经 getHotRank：用例那一刻频道可用、wiring 取数时已不可选 → 50304 rank_unavailable，不向联盟取数",
+    "test/spec/catalog/hot-rank-upstream/nodata.test.ts > [AC-B1-28j#21] 白名单内频道上游给空页：page 为空列表、hasMore=false，接口 items 为空、next_cursor=null，不是错误",
+    "test/spec/catalog/hot-rank-upstream/nodata.test.ts > [AC-B1-28j#22] 一页条目全都推导不出 product_key 时同样是空列表而不是错误",
+    "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#5] page 只调 channelRanking：channelId、categoryId（含 null）、pageNo、pageSize 与请求一致，不调 channelCategories",
+    "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#6][BR-TEXT-17] 条目顺序与频道一致（不按佣金、价格重排，不去掉无销量项），salesText 原样（含 null、空串、带空白），hasMore 原样",
+    "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#7] 淘宝条目的 ref：productKey 按 key_prefix 与 item_id 末段推导，rawItemId 为 item_id，rawFetchedAt 为 quoted_at，receivedAt 为取数时的时钟，source=search，其余为 null",
+    "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#8] key_prefix 取自 catalog.listPlatforms（不写死）；该平台没有可用 key_prefix 时条目推导不出、全部丢掉，hasMore 原样",
+    "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#9] 京东条目按 product_key.jd.mode：未配置即 item（jd:i_<n>，rawItemId=itemId）；sku 时为 jd:<skuId>、rawItemId=skuId，缺 skuId 的丢掉",
+    "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#10] 拼多多条目：productKey 为 pdd:<goods_id>，rawItemId 优先 goods_sign、没有时用 goods_id",
+    "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#11] 推导不出 product_key 或平台不符的条目丢掉，其余保持相对顺序与各自的 salesText",
+    "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#12] 属性：任意平台、京东口径与条目组合，page 的结果恰为频道条目中可推导且平台相符者，顺序、商品、salesText、ref 逐项对应，hasMore 原样"
+  ],
+  "risk_note": "RV2 (catalog). B1-28j wires the hot list's production upstream (infra/hot-rank-wiring.ts) to union's material-channel ranking port createUnionChannelRanking (B1-22p) in place of B1-28h's outage TODO (BR-TEXT-17 联盟物料频道): categories / page through the port, channel order, sales text and hasMore as given, refs derived as search-wiring does; the whitelist is read again before each fetch (not listed / not selectable → 50304 rank_unavailable, no union call, one warning); an unregistered platform or an adapter without the channel methods is a union outage (50304 without reason). B1-28h's use case and cache are unchanged; catalog.module.ts injects GovernedUnion and CATALOG; app.module.ts and union untouched. Demo adapter only, no platform payloads (CAP-*-10 unrecorded); the whitelist is empty today, so production still answers rank_unavailable first. Known limit (S2, out of scope, followups): an entry without a product key is dropped, so later ranks move up one (D10-422 gap needs a use-case change). No money moves. verify:fast exit 0 (27 rule tests pass); the full verify on the test machine hit 3600 s with no failure, so per D10-319 the required CI decides. Codex was unavailable until 11-02, so rule tests and reviews ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "2ee780395817f57bc094c31b852e8b2e55437c07",
+      "tree": "a16da7068c42fd3f5cb722ec23a5a8dd317475b9",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T05:36:00Z",
+      "finished_at": "2026-10-30T05:36:12Z",
+      "gate": {
+        "commit": "1efff643cce4d657646eef802ede8ef3d310f085",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "red_tests": [
+        "test/spec/catalog/hot-rank-upstream/categories.test.ts > [AC-B1-28j#1] categories 经该平台 adapter 的 channelCategories({ channelId }) 取，顺序与内容原样，不调 channelRanking",
+        "test/spec/catalog/hot-rank-upstream/categories.test.ts > [AC-B1-28j#2] categories 的 CallCtx：appId 为调用方的 app，purpose=online，每次调用带非空 requestId",
+        "test/spec/catalog/hot-rank-upstream/categories.test.ts > [AC-B1-28j#3] 京东、拼多多的 categories 各走自己平台的 adapter 与白名单频道",
+        "test/spec/catalog/hot-rank-upstream/categories.test.ts > [AC-B1-28j#4] 经 getHotRank：接口 categories 即 adapter 给的类目，顺序不变",
+        "test/spec/catalog/hot-rank-upstream/end-to-end.test.ts > [AC-B1-28j#23][BR-TEXT-17] 经 getHotRank：接口条目按频道顺序、sales_text 原样（含 null），hasMore 时给 next_cursor",
+        "test/spec/catalog/hot-rank-upstream/end-to-end.test.ts > [AC-B1-28j#24] 经 getHotRank 翻到第二页：wiring 向 channelRanking 要的是第 2 页、同一频道与类目、每页 20",
+        "test/spec/catalog/hot-rank-upstream/end-to-end.test.ts > [AC-B1-28j#25] 缓存仍生效：cacheHotRankUpstream(createUnionHotRankUpstream(...)) 同一请求第二次不再调 adapter，答案相同",
+        "test/spec/catalog/hot-rank-upstream/end-to-end.test.ts > [AC-B1-28j#26] 缓存口径不变：超过 rank.cache_ttl_seconds 后再次请求会重新经 wiring 取数",
+        "test/spec/catalog/hot-rank-upstream/end-to-end.test.ts > [AC-B1-28j#27] 演示环境：wiring 经演示适配器取类目与榜单，与演示适配器同一请求的答案逐项同序，salesText、hasMore 原样，ref 按 deriveProductKey",
+        "test/spec/catalog/hot-rank-upstream/failures.test.ts > [AC-B1-28j#13] adapter 没有 channelCategories：categories 抛 UnionError(upstream_unavailable)，接口 50304 且无 reason",
+        "test/spec/catalog/hot-rank-upstream/failures.test.ts > [AC-B1-28j#14] adapter 有 channelCategories、没有 channelRanking：page 抛 UnionError(upstream_unavailable)，接口 50304 且无 reason",
+        "test/spec/catalog/hot-rank-upstream/failures.test.ts > [AC-B1-28j#15] 白名单里有可选频道但平台未登记联盟适配器：不向 GovernedUnion 要该平台，categories / page 抛 UnionError(upstream_unavailable)，接口 50304 且无 reason",
+        "test/spec/catalog/hot-rank-upstream/failures.test.ts > [AC-B1-28j#16] adapter 抛的 GovernanceError（超时、熔断）由 categories / page 原样上抛，接口 50304 且无 reason",
+        "test/spec/catalog/hot-rank-upstream/failures.test.ts > [AC-B1-28j#17] 类目取到、榜单那一步无能力时仍是 50304 无 reason，不拿通用物料流或搜索冒充频道榜单",
+        "test/spec/catalog/hot-rank-upstream/nodata.test.ts > [AC-B1-28j#18][BR-TEXT-17] categories / page 取数前自己核对白名单：不在白名单、只在别的平台或不可选 → 50304 rank_unavailable，不调 adapter，告警一条（带频道）",
+        "test/spec/catalog/hot-rank-upstream/nodata.test.ts > [AC-B1-28j#19] 每次取数前都重读白名单：频道改为不可选后下一次即拒绝，恢复可选后又能取数",
+        "test/spec/catalog/hot-rank-upstream/nodata.test.ts > [AC-B1-28j#20] 经 getHotRank：用例那一刻频道可用、wiring 取数时已不可选 → 50304 rank_unavailable，不向联盟取数",
+        "test/spec/catalog/hot-rank-upstream/nodata.test.ts > [AC-B1-28j#21] 白名单内频道上游给空页：page 为空列表、hasMore=false，接口 items 为空、next_cursor=null，不是错误",
+        "test/spec/catalog/hot-rank-upstream/nodata.test.ts > [AC-B1-28j#22] 一页条目全都推导不出 product_key 时同样是空列表而不是错误",
+        "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#5] page 只调 channelRanking：channelId、categoryId（含 null）、pageNo、pageSize 与请求一致，不调 channelCategories",
+        "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#6][BR-TEXT-17] 条目顺序与频道一致（不按佣金、价格重排，不去掉无销量项），salesText 原样（含 null、空串、带空白），hasMore 原样",
+        "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#7] 淘宝条目的 ref：productKey 按 key_prefix 与 item_id 末段推导，rawItemId 为 item_id，rawFetchedAt 为 quoted_at，receivedAt 为取数时的时钟，source=search，其余为 null",
+        "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#8] key_prefix 取自 catalog.listPlatforms（不写死）；该平台没有可用 key_prefix 时条目推导不出、全部丢掉，hasMore 原样",
+        "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#9] 京东条目按 product_key.jd.mode：未配置即 item（jd:i_<n>，rawItemId=itemId）；sku 时为 jd:<skuId>、rawItemId=skuId，缺 skuId 的丢掉",
+        "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#10] 拼多多条目：productKey 为 pdd:<goods_id>，rawItemId 优先 goods_sign、没有时用 goods_id",
+        "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#11] 推导不出 product_key 或平台不符的条目丢掉，其余保持相对顺序与各自的 salesText",
+        "test/spec/catalog/hot-rank-upstream/page.test.ts > [AC-B1-28j#12] 属性：任意平台、京东口径与条目组合，page 的结果恰为频道条目中可推导且平台相符者，顺序、商品、salesText、ref 逐项对应，hasMore 原样"
+      ],
+      "expected": [
+        "test/spec/catalog/hot-rank-upstream/categories.test.ts",
+        "test/spec/catalog/hot-rank-upstream/end-to-end.test.ts",
+        "test/spec/catalog/hot-rank-upstream/failures.test.ts",
+        "test/spec/catalog/hot-rank-upstream/nodata.test.ts",
+        "test/spec/catalog/hot-rank-upstream/page.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "c4585cddb363d0a4a6cb096b23305abcf33559665ae0c837f37e8e9095c779d6"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 against the merge base pass, no findings in scope; one out-of-scope S2 (rank gap for a dropped entry) recorded in followups (general review is refused for RV2 tasks, so the money review type was used)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude (1 run, red 27 / 27 across 5 files); round 1 pass with no findings."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "9c5bbc99d35909a975126ed55474b27cbc123cb6",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
