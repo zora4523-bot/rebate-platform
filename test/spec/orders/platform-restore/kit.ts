@@ -63,7 +63,7 @@ export interface ScenarioOptions {
   readonly port?: boolean;
 }
 
-function importedReport(spec: RestoreSpec): Partial<UnionOrder> {
+function importedReport(spec: RestoreSpec) {
   const settledEst = spec.est === undefined ? 1234n : spec.est;
   const est = spec.est === undefined ? 789n : spec.est;
   const settle = spec.settle ?? null;
@@ -178,7 +178,7 @@ export async function scenario(db: Kysely<DB>, spec: RestoreSpec, options: Scena
     ...f,
     original,
     entryId,
-    key: orderKey(f.incoming.platform, f.incoming.sub_order_id),
+    key: orderKey(f.incoming.platform, f.incoming.sub_order_id as string),
     rebateBefore,
     onUpdated,
     onUnmappedStatus,
