@@ -1,0 +1,16 @@
+id: B1-03zb
+repo: rebate-platform
+title: 测试修改（收紧，FU-B103ZA-TIGHTEN）：B1-03z 已合并，把 B1-03za 在 [AC-B1-12p#28]（test/spec/notification/appeal-result-message/consumer.int.test.ts）加的订阅表两态收紧为单态——发布后入队清单固定为含 evt.risk-appeal-restore 的三项，投递段对该队列作业的处理保持；其余断言不变
+type: test-change
+# 草稿 2026-10-30（身份与风控线 identity-lane）。编排 18:1x 派工；先例 CT-26h 收紧 CT-26f、B1-15q 收紧 B1-15p。独立 Claude 改，新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签。
+refs: []
+refs_hash: {}
+deps: [B1-03z, B1-03za]
+paths:
+  - 'test/spec/notification/appeal-result-message/consumer.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/appeal-result-message/**'
+status: todo
