@@ -2395,6 +2395,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "listAdminAssetSnapshots",
+    "method": "GET",
+    "path": "/admin/v1/asset-snapshots",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListKillSwitches",
     "method": "GET",
     "path": "/admin/v1/kill-switches",

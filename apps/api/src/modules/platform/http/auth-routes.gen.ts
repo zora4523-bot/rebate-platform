@@ -1188,6 +1188,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/asset-snapshots",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "auth": "admin"
   },
