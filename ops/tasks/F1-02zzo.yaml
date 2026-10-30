@@ -1,0 +1,23 @@
+id: F1-02zzo
+repo: rebate-platform
+title: 迁移：app.articles 加 faq_rank（int 可空、无缺省），CHECK faq_rank 在 1–999、另一 CHECK 要求 faq_rank IS NULL OR category = 'help'；授权不变（不进列级 UPDATE 清单）
+type: migration
+# 2026-10-31 入账（content-client；编排 10-31 02:1x 派：对照 05 找内容缺口）。CT-26a（#1157）契约已写 faq_rank，实现「另开任务（F1 内容线）」未入账。
+# 依据（SPEC_REF 8127341）：04 l.478 articles「faq_rank（int 1–999，可空…）」；01 §4.2 Help 行「『常见问题』按 faq_rank 从小到大排」。原文由编排者摘入任务书，refs 置空。
+# 照 F1-02zq（help_section）先例：每个版本行各存一份；两个具名 CHECK；articles 非资金表，照 0049 先例直接 ADD CONSTRAINT（squawk-ignore 写明理由）。
+# 迁移号落地时取主干最大 +1，先在 notices 报迁移槽；schema.sql 与 db.gen.ts 由编排者沙箱外 pnpm db:snapshot 生成（outside_needed）。
+refs: []
+refs_hash: {}
+deps: [CT-26a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/content/articles-faq-rank/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

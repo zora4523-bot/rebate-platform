@@ -1,0 +1,26 @@
+id: F1-02zzp
+repo: rebate-platform
+title: 文章 faq_rank / faq 筛选 / 列表 summary 实现（CT-26a 契约）：公共列表与详情返回 faq_rank、GET /v1/articles 的 faq=true 只筛帮助常见问题（与非 help 分类同用回 20001 fields=[faq]）、列表 summary 取当前版本正文首个非空段落转纯文本截 80 字；后台新建与存草稿写 faq_rank（非 help 回 20001）
+type: impl
+# 2026-10-31 入账（content-client）。契约已写（openapi faq 参数「Until its implementation is merged the server ignores this parameter」、summary / faq_rank「Not returned until its implementation is merged」），本任务实现并去掉这些说明。
+# 依据（SPEC_REF 8127341）：01 §4.2 Help 行（列表摘要取当前版本正文第一个非空段落、转纯文本截到 80 字以内，后台不另录；常见问题按 faq_rank 升序）；04 l.478、l.600。原文由编排者摘入任务书，refs 置空。
+# 先例 F1-02zs（按 help_section 筛选）。
+refs: []
+refs_hash: {}
+deps: [F1-02zzo]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/content/articles-faq/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
