@@ -1,0 +1,23 @@
+id: F1-08eb
+repo: rebate-platform
+title: 后台「对账与差错」页第二段——差错单详情【核销】（R2 迟到成功 → 提现 W11）：只对 open / processing 的 R2 差错单、持 payout.execute 时出现；确认对话框（说明将把原提现单记为接口打款成功、不会重复打款，选填备注 ≤200）→ 动态码（totp）→ POST 带 Idempotency-Key 与 expected_withdrawal_status=APPROVED；成功提示已核销与解除冻结数并刷新；W11 守卫的 20001（data.reason 五值）、20902（差错单或提现单已变化）、10003、20901 / 40901 分别提示；接口 CT-24za writeOffAdminReconDiff（B2-07e / B2-07f 已实现）
+type: impl
+# 2026-10-31 入账（前端线 f1-frontend-7，编排 10-31 02:xx 续跑：B2-07f 已合并后入 F1-08e 第二段）。规格 couli design/specs/admin-recon.md §2 处理抽屉「其他类型」行【核销】（R2 迟到成功 → W11，payout.execute）；F1-08e（#1816）的差错单页已上线。
+# 不做：申诉恢复、去调账、重算余额缓存、对账任务页签（契约未出）；核销只走契约给定的一条路径，前端不传渠道结果、金额或证据。后台数据层 meta.idempotencyKey 已由 F1-08e 加好，直接用；动态码用现有 step-up 组件。
+# 资金写操作（把提现单记为已打款并过账）：评审走 money 口径（幂等、重复提交、动态码令牌不复用、只在 R2 且状态允许时出现入口）。冻结 admin-recon 测试必须仍全绿（ACCESS#4 只打开详情不点按钮，其样例账号不持 payout.execute）。
+# Codex 到 11-02 不可用：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude；独立 Claude 每任务 10 次上限（D10-319 / D10-417）。
+refs: [BR-WDR-23]
+refs_hash:
+  BR-WDR-23: 98981fee10c7
+deps: [CT-24za, B2-07e, B2-07f, F1-08e]
+paths:
+  - 'apps/admin/src/pages/recon/**'
+  - 'apps/admin/src/texts/recon.ts'
+test_paths:
+  - 'test/spec/frontend/admin-recon-writeoff/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-recon-writeoff/**'
+status: todo
