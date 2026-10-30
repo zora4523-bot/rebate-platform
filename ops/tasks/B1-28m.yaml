@@ -16,6 +16,7 @@ paths:
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
   - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
 test_paths:
   - 'test/spec/catalog/hot-rank-viewer/**'
 impl: claude
