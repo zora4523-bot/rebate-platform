@@ -136,8 +136,33 @@ export async function helpSectionReady(db: Connection): Promise<void> {
 
 // F1-02zzc: the full stored row expected for an article fixture (which writes no help_section), so
 // help_section is null. F1-02zzf：过渡已收紧.
-export function rowOf(row: Row): Row {
-  return { ...row, help_section: null };
+// F1-02zzu: `faqRank` (default false keeps today's row) adds faq_rank: null — two-state until F1-02zzo.
+export function rowOf(row: Row, faqRank = false): Row {
+  return faqRank ? { ...row, help_section: null, faq_rank: null } : { ...row, help_section: null };
+}
+
+// F1-02zzu: articles may gain faq_rank (F1-02zzo) — two-state until F1-02zzo. When present it must
+// be the only such column, int4, nullable and without default; returns whether it exists.
+export async function faqRankPresent(db: Connection): Promise<boolean> {
+  const result = await sql<{
+    type: string;
+    nullable: string;
+    defaultValue: string | null;
+  }>`SELECT udt_name AS type, is_nullable AS nullable, column_default AS "defaultValue"
+    FROM information_schema.columns
+    WHERE table_schema = 'app' AND table_name = 'articles' AND column_name = 'faq_rank'`.execute(
+    db,
+  );
+  if (result.rows.length === 0) return false;
+  expect(
+    result.rows.map((c) => ({
+      type: c.type,
+      nullable: c.nullable === 'YES',
+      default: c.defaultValue,
+    })),
+    'app.articles.faq_rank shape',
+  ).toEqual([{ type: 'int4', nullable: true, default: null }]);
+  return true;
 }
 
 export async function rejects(

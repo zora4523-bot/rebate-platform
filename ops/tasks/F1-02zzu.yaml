@@ -1,0 +1,24 @@
+id: F1-02zzu
+repo: rebate-platform
+title: 过渡测试改动（F1-02zzo 前置）：articles 整行与列清单相关冻结测试接受「无 faq_rank 列」或「有该列、int4、可空、无缺省、不可 UPDATE、值为 null」二选一
+type: test-change
+# 2026-10-31 入账（content-client；先例 F1-02zzc 对 help_section 的两态过渡）。
+# 现状：F1-02zzo 给 app.articles 加 faq_rank 列后，以下冻结测试因 SELECT * / RETURNING * 整行 toEqual 或 pg_attribute 列清单精确比较必红：
+#   db/content/dict-items/articles.int.test.ts [AC-F1-02q#17]–[#21]（kit.ts rowOf）；
+#   db/content/articles-help-section/articles.int.test.ts [AC-F1-02zq#3]、[#6]–[#11]。应用代码都读显式列，其余测试核过不受影响。
+# 做法：按 information_schema 有无 faq_rank 列选分支；新支严格（int4、可空、无缺省、couli_app 不可 UPDATE 且不可转授、readonly 不可写、行内为 null）；
+#   断言、标题与测试数不变，kit 只新增辅助，既有导出语义在「无列」分支下不变。主干现在与 F1-02zzo 合并后都成立；F1-02zzo 合并后另开收紧为只认新支。
+# 改既有规则测试属第一类保护路径：走非 task 分支、台账同 PR；全新上下文 Claude 修改、另一全新上下文 Claude 只读复审，按 approvals #24 由编排加 owner-approved 标签。
+refs: []
+refs_hash: {}
+deps: [F1-02q, F1-02zq]
+paths:
+  - 'test/spec/db/content/dict-items/articles.int.test.ts'
+  - 'test/spec/db/content/dict-items/kit.ts'
+  - 'test/spec/db/content/articles-help-section/articles.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
