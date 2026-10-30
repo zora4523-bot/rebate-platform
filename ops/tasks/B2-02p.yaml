@@ -23,4 +23,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/ledger/daily-check-execute/**'
-status: todo
+status: done
+pr: 1818
