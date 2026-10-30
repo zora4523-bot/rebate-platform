@@ -41,6 +41,7 @@ import {
   statusFor,
 } from '../auth-expiry/schedule.ts';
 import { decodeAlertPhones } from '../auth-expiry/service.ts';
+import { validAdminUnionReason } from '../domain/admin-reason.ts';
 import { isRegisteredPlatform, type RegisteredPlatform } from '../domain/types.ts';
 import type { UnionAuditWriter } from '../pids/service.ts';
 
@@ -116,7 +117,6 @@ export function reauthAuditWriter(
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAY_MS = 86_400_000;
-const REASON_MAX = 200;
 const CREDENTIAL_MAX = 512;
 const ACCESS_CONTEXT = 'union_credentials.access';
 const KEY_PHONES = 'union.auth_alert_phones';
@@ -169,7 +169,8 @@ function errorName(error: unknown): string {
 
 function optionalReason(value: unknown): string | null {
   if (value === undefined) return null;
-  if (typeof value !== 'string' || value.length === 0 || value.length > REASON_MAX) {
+  // D10-427 ①: 1–200 characters without a Cc control character, else 20001 [reason].
+  if (typeof value !== 'string' || !validAdminUnionReason(value)) {
     throw new AdminUnionAccountFieldsError(['reason'], null);
   }
   return value;

@@ -32,6 +32,7 @@ import {
 import type { Clock, FieldCrypto, RootLogger } from '../../platform/index.ts';
 import { normalizeAlertPhone } from '../auth-expiry/phone.ts';
 import { alertPhoneId, decodeAlertPhones, encodeAlertPhones } from '../auth-expiry/service.ts';
+import { validAdminUnionReason } from '../domain/admin-reason.ts';
 import type { UnionAuditWriter } from '../pids/service.ts';
 
 export type AdminUnionAlertPhones = Schema<'AdminUnionAlertPhones'>;
@@ -86,7 +87,6 @@ export class AdminUnionAlertPhonesConflictError extends Error {
 const KEY = 'union.auth_alert_phones';
 /** BR-ID-24 细则: at most 10 alert phones. */
 const MAX_PHONES = 10;
-const REASON_MAX = 200;
 const ACTION_ADD = 'union_alert_phone_add';
 const ACTION_REMOVE = 'union_alert_phone_remove';
 
@@ -106,7 +106,8 @@ function errorName(error: unknown): string {
 
 function optionalReason(value: unknown): string | null {
   if (value === undefined) return null;
-  if (typeof value !== 'string' || value.length === 0 || [...value].length > REASON_MAX) {
+  // D10-427 ①: a Cc control character is 20001 [reason] here, not the content writer's refusal.
+  if (typeof value !== 'string' || !validAdminUnionReason(value)) {
     throw new AdminUnionAlertPhonesFieldsError(['reason'], null);
   }
   return value;
