@@ -1,0 +1,24 @@
+id: B1-28j
+repo: rebate-platform
+title: catalog：热销榜生产上游改接 union 的按频道榜单端口（B1-22p）——infra/hot-rank-wiring.ts 由「一律按联盟故障答」的 TODO 换成调用 union 端口（categories / page），频道核对、顺序、名次、销量字段与缓存口径照 B1-28h 不变；union 端口答「无数据」时按 B1-28h 的 50304 规则处理；演示环境仍走演示适配器，不伪造平台报文
+type: impl
+# 2026-10-30 W1 入账（编排续跑：热销榜接真实上游待 union B1-22p 合并后由本线接，catalog 侧把 B1-28h 的上游换成 union 端口）。B1-28h #1786 已合并，生产上游 TODO 见其 risk_note。
+# 只改 catalog 侧接线（及 app.module 装配），不改 union；规则测试只钉「catalog 经 union 端口取数、端口失败 / 无数据时的 50304 两种口径、缓存仍生效」，平台真实报文仍等 CAP-*-10 录制。
+refs: [BR-TEXT-17]
+refs_hash:
+  BR-TEXT-17: 486f4508575e
+deps: [B1-22p, B1-28h]
+paths:
+  - 'apps/api/src/modules/catalog/infra/hot-rank-wiring.ts'
+  - 'apps/api/src/modules/catalog/infra/hot-rank-wiring.test.ts'
+  - 'apps/api/src/modules/catalog/catalog.module.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/catalog/hot-rank-upstream/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/hot-rank-upstream/**'
+status: todo
+pr: null
