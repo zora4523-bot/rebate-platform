@@ -150,7 +150,13 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
   /** B1-22n: ⑦, the conversion's identity built ahead of the re-check. */
   const precheck = createConversionPrecheck(options);
 
-  /** ⑦ for this open: null when the conversion's identity builds, else the 50301 refusal. */
+  /**
+   * ⑦ for this open: null when the conversion's identity builds, else the 50301 refusal. B1-22u
+   * (D10-434): a read failing with anything but 50301 (a database timeout, the union pid service
+   * failing) is the conversion's temporary failure, 50303 — as the same read failing inside the
+   * conversion — refused (one link_log, nothing else written), never rethrown into a 500. The log
+   * carries the error's code only, never its text (a driver's text may hold a DSN).
+   */
   async function slotRefusal(
     input: LinkOpenAuthorizationInput,
     noRebate: boolean,
@@ -167,8 +173,23 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
       });
       return null;
     } catch (error) {
-      if ((error as { code?: unknown } | null)?.code !== 50301) throw error;
-      return blocked ? { ...NO_SLOT, noRebateReason: 'binding_blocked' } : NO_SLOT;
+      const code = (error as { code?: unknown } | null)?.code;
+      let refused = NO_SLOT;
+      if (code !== 50301) {
+        logger.warn(
+          {
+            event: 'linking.open.precheck_read_failed',
+            app_id: input.owner.link.app_id,
+            platform: input.owner.link.platform,
+            trace_id: input.traceId,
+            error_code:
+              typeof code === 'string' || typeof code === 'number' ? String(code) : 'unknown',
+          },
+          'linking: identity read failed before the re-check',
+        );
+        refused = QUERY_FAILED;
+      }
+      return blocked ? { ...refused, noRebateReason: 'binding_blocked' } : refused;
     }
   }
 
@@ -290,7 +311,13 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
     const { link, identitySnapshot: snapshot } = owner;
     const appId = link.app_id;
     const subject = snapshot.user_id;
-    const reads = createUnionAuthReads({ db: executor, config: options.config, appEnv, pids });
+    const reads = createUnionAuthReads({
+      db: executor,
+      config: options.config,
+      appEnv,
+      pids,
+      clock,
+    });
     const sharedByOther = snapshot.pid_scene === 'share' && subject !== caller.userId;
     if (subject === null) {
       // Only a guest's unclaimed share link can name no user: its sharer has no binding.

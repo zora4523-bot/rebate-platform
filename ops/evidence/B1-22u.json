@@ -1,0 +1,134 @@
+{
+  "task": "B1-22u",
+  "spec_ref": "37808a500ce8e02c975107d376b4e456f5ff148d",
+  "spec_commit": "055f1ef81f15503db54ecc81bbcb03208bf70991",
+  "red_tests": [
+    "test/spec/linking/pdd-auth-read-failure/clock-auth-url.int.test.ts > [B1-22u] auth-url taobao：注入的 FixedClock 早于系统时间，站长授权到期时刻在两者之间 → 按注入时钟未到期，照常签发 state",
+    "test/spec/linking/pdd-auth-read-failure/clock-auth-url.int.test.ts > [B1-22u] auth-url pdd：注入的 FixedClock 早于系统时间，站长授权到期时刻在两者之间 → 按注入时钟未到期，照常签发 state",
+    "test/spec/linking/pdd-auth-read-failure/clock-auth-url.int.test.ts > [B1-22u] auth-url taobao：注入的 FixedClock 晚于系统时间，站长授权到期时刻在两者之间 → 按注入时钟已到期，拒绝且不写 state",
+    "test/spec/linking/pdd-auth-read-failure/clock-auth-url.int.test.ts > [B1-22u] auth-url pdd：注入的 FixedClock 晚于系统时间，站长授权到期时刻在两者之间 → 按注入时钟已到期，拒绝且不写 state",
+    "test/spec/linking/pdd-auth-read-failure/clock-bindings.int.test.ts > [B1-22u] bindings unbound：注入的 FixedClock 早于系统时间，站长授权到期时刻在两者之间 → 按注入时钟未到期，照常绑定",
+    "test/spec/linking/pdd-auth-read-failure/clock-bindings.int.test.ts > [B1-22u] bindings invalid：注入的 FixedClock 早于系统时间，站长授权到期时刻在两者之间 → 按注入时钟未到期，照常绑定",
+    "test/spec/linking/pdd-auth-read-failure/clock-bindings.int.test.ts > [B1-22u] bindings unbound：注入的 FixedClock 晚于系统时间，站长授权到期时刻在两者之间 → 按注入时钟已到期，auth_unavailable 且不消费 state、不改绑定",
+    "test/spec/linking/pdd-auth-read-failure/clock-bindings.int.test.ts > [B1-22u] bindings invalid：注入的 FixedClock 晚于系统时间，站长授权到期时刻在两者之间 → 按注入时钟已到期，auth_unavailable 且不消费 state、不改绑定",
+    "test/spec/linking/pdd-auth-read-failure/clock-open-pdd.int.test.ts > [B1-22u] 拼多多 open detail/a no_rebate=false：站长授权到期时刻晚于注入的 FixedClock、早于系统时间 → 按注入时钟未到期，照常转链；已过注入时钟时仍 50301 maintenance",
+    "test/spec/linking/pdd-auth-read-failure/clock-open-pdd.int.test.ts > [B1-22u] 拼多多 open share/b no_rebate=false：站长授权到期时刻晚于注入的 FixedClock、早于系统时间 → 按注入时钟未到期，照常转链；已过注入时钟时仍 50301 maintenance",
+    "test/spec/linking/pdd-auth-read-failure/clock-open-pdd.int.test.ts > [B1-22u] 拼多多 open detail/a no_rebate=true：站长授权到期时刻晚于注入的 FixedClock、早于系统时间 → 按注入时钟未到期，照常转链；已过注入时钟时仍 50301 maintenance",
+    "test/spec/linking/pdd-auth-read-failure/clock-open-taobao.int.test.ts > [B1-22u] 淘宝 open 绑定 absent：站长授权到期时刻早于注入的 FixedClock、晚于系统时间 → 按注入时钟已到期，30101 auth_unavailable、不签发 state；未到注入时钟时照常签发",
+    "test/spec/linking/pdd-auth-read-failure/clock-open-taobao.int.test.ts > [B1-22u] 淘宝 open 绑定 unbound：站长授权到期时刻早于注入的 FixedClock、晚于系统时间 → 按注入时钟已到期，30101 auth_unavailable、不签发 state；未到注入时钟时照常签发",
+    "test/spec/linking/pdd-auth-read-failure/clock-open-taobao.int.test.ts > [B1-22u] 淘宝 open 绑定 pending_auth：站长授权到期时刻早于注入的 FixedClock、晚于系统时间 → 按注入时钟已到期，30101 auth_unavailable、不签发 state；未到注入时钟时照常签发",
+    "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] pdd detail/a 价格复核前预检读推广位遇数据库超时（非 50301）：答 50303、写一条 link_log、不 500、无其他写入；推广位缺失时仍答 50301",
+    "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] pdd detail/a 价格复核前预检读 attr_code 失败（无错误码）：答 50303、写一条 link_log、不 500、无其他写入；attr_code 缺失时仍答 50301",
+    "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] pdd agent/a 价格复核前预检读推广位遇数据库超时（非 50301）：答 50303、写一条 link_log、不 500、无其他写入；推广位缺失时仍答 50301",
+    "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] pdd agent/a 价格复核前预检读 attr_code 失败（无错误码）：答 50303、写一条 link_log、不 500、无其他写入；attr_code 缺失时仍答 50301",
+    "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] pdd share/b 价格复核前预检读推广位遇数据库超时（非 50301）：答 50303、写一条 link_log、不 500、无其他写入；推广位缺失时仍答 50301",
+    "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] pdd share/b 价格复核前预检读 attr_code 失败（无错误码）：答 50303、写一条 link_log、不 500、无其他写入；attr_code 缺失时仍答 50301",
+    "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] pdd no_rebate 预检读 self_buy 推广位遇数据库超时：答 50303、写一条 no_rebate link_log、不 500、无其他写入；self_buy 位缺失时仍答 50301",
+    "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] jd detail/a 价格复核前预检读推广位遇数据库超时（非 50301）：答 50303、写一条 link_log、不 500、无其他写入；推广位缺失时仍答 50301",
+    "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] jd detail/a 价格复核前预检读 attr_code 失败（无错误码）：答 50303、写一条 link_log、不 500、无其他写入；attr_code 缺失时仍答 50301",
+    "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] jd agent/a 价格复核前预检读推广位遇数据库超时（非 50301）：答 50303、写一条 link_log、不 500、无其他写入；推广位缺失时仍答 50301",
+    "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] jd agent/a 价格复核前预检读 attr_code 失败（无错误码）：答 50303、写一条 link_log、不 500、无其他写入；attr_code 缺失时仍答 50301",
+    "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] jd share/b 价格复核前预检读推广位遇数据库超时（非 50301）：答 50303、写一条 link_log、不 500、无其他写入；推广位缺失时仍答 50301",
+    "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] jd share/b 价格复核前预检读 attr_code 失败（无错误码）：答 50303、写一条 link_log、不 500、无其他写入；attr_code 缺失时仍答 50301",
+    "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] jd no_rebate 预检读 self_buy 推广位遇数据库超时：答 50303、写一条 no_rebate link_log、不 500、无其他写入；self_buy 位缺失时仍答 50301"
+  ],
+  "risk_note": "RV2 (linking: PDD / JD authorization precheck read failures answer 50303 with a link_log instead of 500; injected Clock passed to createUnionAuthReads). Independent Claude (approvals #36, Codex unavailable until 11-02) wrote test/spec/linking/pdd-auth-read-failure/** in 2 attempts (spec-test r1 S1 bindings Clock fixed), prettier-formatted before commit per D10-292. Implementation model: Claude Opus 5.5 (1 round). verify:fast on the AWS runner exit 0; 28 rule tests green. Fixture SECRET in kit.ts made a repeated low-entropy string and folded into the rule-test commit (gitleaks cn-doc-secret; D10-329 precedent, not counted): a fresh independent Claude changed it, another fresh independent Claude reviewed it; local gitleaks over origin/main..HEAD: no leaks.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "055f1ef81f15503db54ecc81bbcb03208bf70991",
+      "tree": "ecb520c5f6e2c6c4a73bf2f9bbf6fe8581c3f44a",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T12:56:40Z",
+      "finished_at": "2026-10-30T12:56:54Z",
+      "red_tests": [
+        "test/spec/linking/pdd-auth-read-failure/clock-auth-url.int.test.ts > [B1-22u] auth-url taobao：注入的 FixedClock 早于系统时间，站长授权到期时刻在两者之间 → 按注入时钟未到期，照常签发 state",
+        "test/spec/linking/pdd-auth-read-failure/clock-auth-url.int.test.ts > [B1-22u] auth-url pdd：注入的 FixedClock 早于系统时间，站长授权到期时刻在两者之间 → 按注入时钟未到期，照常签发 state",
+        "test/spec/linking/pdd-auth-read-failure/clock-auth-url.int.test.ts > [B1-22u] auth-url taobao：注入的 FixedClock 晚于系统时间，站长授权到期时刻在两者之间 → 按注入时钟已到期，拒绝且不写 state",
+        "test/spec/linking/pdd-auth-read-failure/clock-auth-url.int.test.ts > [B1-22u] auth-url pdd：注入的 FixedClock 晚于系统时间，站长授权到期时刻在两者之间 → 按注入时钟已到期，拒绝且不写 state",
+        "test/spec/linking/pdd-auth-read-failure/clock-bindings.int.test.ts > [B1-22u] bindings unbound：注入的 FixedClock 早于系统时间，站长授权到期时刻在两者之间 → 按注入时钟未到期，照常绑定",
+        "test/spec/linking/pdd-auth-read-failure/clock-bindings.int.test.ts > [B1-22u] bindings invalid：注入的 FixedClock 早于系统时间，站长授权到期时刻在两者之间 → 按注入时钟未到期，照常绑定",
+        "test/spec/linking/pdd-auth-read-failure/clock-bindings.int.test.ts > [B1-22u] bindings unbound：注入的 FixedClock 晚于系统时间，站长授权到期时刻在两者之间 → 按注入时钟已到期，auth_unavailable 且不消费 state、不改绑定",
+        "test/spec/linking/pdd-auth-read-failure/clock-bindings.int.test.ts > [B1-22u] bindings invalid：注入的 FixedClock 晚于系统时间，站长授权到期时刻在两者之间 → 按注入时钟已到期，auth_unavailable 且不消费 state、不改绑定",
+        "test/spec/linking/pdd-auth-read-failure/clock-open-pdd.int.test.ts > [B1-22u] 拼多多 open detail/a no_rebate=false：站长授权到期时刻晚于注入的 FixedClock、早于系统时间 → 按注入时钟未到期，照常转链；已过注入时钟时仍 50301 maintenance",
+        "test/spec/linking/pdd-auth-read-failure/clock-open-pdd.int.test.ts > [B1-22u] 拼多多 open share/b no_rebate=false：站长授权到期时刻晚于注入的 FixedClock、早于系统时间 → 按注入时钟未到期，照常转链；已过注入时钟时仍 50301 maintenance",
+        "test/spec/linking/pdd-auth-read-failure/clock-open-pdd.int.test.ts > [B1-22u] 拼多多 open detail/a no_rebate=true：站长授权到期时刻晚于注入的 FixedClock、早于系统时间 → 按注入时钟未到期，照常转链；已过注入时钟时仍 50301 maintenance",
+        "test/spec/linking/pdd-auth-read-failure/clock-open-taobao.int.test.ts > [B1-22u] 淘宝 open 绑定 absent：站长授权到期时刻早于注入的 FixedClock、晚于系统时间 → 按注入时钟已到期，30101 auth_unavailable、不签发 state；未到注入时钟时照常签发",
+        "test/spec/linking/pdd-auth-read-failure/clock-open-taobao.int.test.ts > [B1-22u] 淘宝 open 绑定 unbound：站长授权到期时刻早于注入的 FixedClock、晚于系统时间 → 按注入时钟已到期，30101 auth_unavailable、不签发 state；未到注入时钟时照常签发",
+        "test/spec/linking/pdd-auth-read-failure/clock-open-taobao.int.test.ts > [B1-22u] 淘宝 open 绑定 pending_auth：站长授权到期时刻早于注入的 FixedClock、晚于系统时间 → 按注入时钟已到期，30101 auth_unavailable、不签发 state；未到注入时钟时照常签发",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] pdd detail/a 价格复核前预检读推广位遇数据库超时（非 50301）：答 50303、写一条 link_log、不 500、无其他写入；推广位缺失时仍答 50301",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] pdd detail/a 价格复核前预检读 attr_code 失败（无错误码）：答 50303、写一条 link_log、不 500、无其他写入；attr_code 缺失时仍答 50301",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] pdd agent/a 价格复核前预检读推广位遇数据库超时（非 50301）：答 50303、写一条 link_log、不 500、无其他写入；推广位缺失时仍答 50301",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] pdd agent/a 价格复核前预检读 attr_code 失败（无错误码）：答 50303、写一条 link_log、不 500、无其他写入；attr_code 缺失时仍答 50301",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] pdd share/b 价格复核前预检读推广位遇数据库超时（非 50301）：答 50303、写一条 link_log、不 500、无其他写入；推广位缺失时仍答 50301",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] pdd share/b 价格复核前预检读 attr_code 失败（无错误码）：答 50303、写一条 link_log、不 500、无其他写入；attr_code 缺失时仍答 50301",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] pdd no_rebate 预检读 self_buy 推广位遇数据库超时：答 50303、写一条 no_rebate link_log、不 500、无其他写入；self_buy 位缺失时仍答 50301",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] jd detail/a 价格复核前预检读推广位遇数据库超时（非 50301）：答 50303、写一条 link_log、不 500、无其他写入；推广位缺失时仍答 50301",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] jd detail/a 价格复核前预检读 attr_code 失败（无错误码）：答 50303、写一条 link_log、不 500、无其他写入；attr_code 缺失时仍答 50301",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] jd agent/a 价格复核前预检读推广位遇数据库超时（非 50301）：答 50303、写一条 link_log、不 500、无其他写入；推广位缺失时仍答 50301",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] jd agent/a 价格复核前预检读 attr_code 失败（无错误码）：答 50303、写一条 link_log、不 500、无其他写入；attr_code 缺失时仍答 50301",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] jd share/b 价格复核前预检读推广位遇数据库超时（非 50301）：答 50303、写一条 link_log、不 500、无其他写入；推广位缺失时仍答 50301",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] jd share/b 价格复核前预检读 attr_code 失败（无错误码）：答 50303、写一条 link_log、不 500、无其他写入；attr_code 缺失时仍答 50301",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts > [B1-22u] jd no_rebate 预检读 self_buy 推广位遇数据库超时：答 50303、写一条 no_rebate link_log、不 500、无其他写入；self_buy 位缺失时仍答 50301"
+      ],
+      "expected": [
+        "test/spec/linking/pdd-auth-read-failure/clock-auth-url.int.test.ts",
+        "test/spec/linking/pdd-auth-read-failure/clock-bindings.int.test.ts",
+        "test/spec/linking/pdd-auth-read-failure/clock-open-pdd.int.test.ts",
+        "test/spec/linking/pdd-auth-read-failure/clock-open-taobao.int.test.ts",
+        "test/spec/linking/pdd-auth-read-failure/open.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "dfb97ca13b6c23743a1cd08ba829db8186e873a8e389c21fa0c50fb71ac30423"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "a9cfd0632f131b5803d7126bd6bf53cb994226ca",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "money r1 pass, no findings (couli-runs/B1-22u/review-money-r1.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "r1 fail (S1 bindings Clock injection not covered) fixed in test attempt 2; r2 pass"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "0595414816ecc27993bddfe9960d527ca09e0ef3",
+    "specs": "360fd16268dba1bc67dc6d621a7730a4edec3476"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}

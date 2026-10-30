@@ -281,7 +281,7 @@ function createTaobaoConversion(
     const appId = link.app_id;
     const sharedByOther = snapshot.pid_scene === 'share' && snapshot.user_id !== caller.userId;
     const subject = snapshot.user_id;
-    const reads = createUnionAuthReads({ db: executor, config, appEnv, pids });
+    const reads = createUnionAuthReads({ db: executor, config, appEnv, pids, clock });
     // B1-19d: the account this open uses decides the slot; a guest's share link has no binding.
     const { status, accountId: bound } =
       subject === null
@@ -367,7 +367,7 @@ function createTaobaoConversion(
       throw error;
     }
     if (client === 'missing') return { kind: 'refused', code: 10001 };
-    const reads = createUnionAuthReads({ db: executor, config, appEnv, pids });
+    const reads = createUnionAuthReads({ db: executor, config, appEnv, pids, clock });
     const methods = await reads.configuredMethods(appId, client);
     const refs = await authAppRefs(authApps, appEnv, appId, client, methods);
     const now = clock.now();

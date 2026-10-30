@@ -162,7 +162,7 @@ export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlSe
   const { db, clock, callerContext, config, appEnv, authApps, jumpEnvironment, logger } = options;
   const pids = options.pids ?? createLinkingPidReader(db, clock);
   // The same judgements the bindings submission makes (union-auth-reads.ts).
-  const reads = createUnionAuthReads({ db, config, appEnv, pids });
+  const reads = createUnionAuthReads({ db, config, appEnv, pids, clock });
 
   async function issue(input: UnionAuthUrlInput): Promise<HandlerResult> {
     const caller = await callerContext.current();
