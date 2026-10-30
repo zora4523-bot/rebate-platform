@@ -1,0 +1,29 @@
+id: B2-07f
+repo: rebate-platform
+title: W11 核销的 paid_at 取值改按编排裁定 D10-431——账单行有交易时间取交易时间，没有时取账单日 00:00 +08:00（不再取服务端当前时间）：① 契约 CT-24za writeOffAdminReconDiff 的 paid_at 一句（description 与 AdminReconDiffWriteOffWithdrawal.paid_at）改口径并重生成生成物；② payout withdrawal-proven-success.ts 的 paidAtOf 改为「bookedAt 否则 billDate 当日 00:00 +08:00」（只读注入的 Clock，日切用 @couli/domain）；③ 规则测试 test-change：payout proven-success #4 与 ledger admin-recon-write-off #19（「paid_at 为服务端当前时间」改为账单日零点，写明依据 D10-431），其余用例不动；B2-07f 合并前不得打开 payout.proven_success_writeoff.enabled
+type: impl
+# 2026-10-30 入账（withdraw 线，编排裁定 D10-431：B2-07e S2 ①——「取服务端当前时间」是 CT-24za 代理默认，会让次日 R2 对该单误登 paid_not_in_bill 并冻结会员、涉税导出（BR-WDR-21 按 paid_at 分季度）跨季；改为账单行交易时间，无则账单日 00:00 +08:00；B2-07e 照现状先落地，紧接着入账本任务，money 评审必做）。
+# 改冻结测试（test/spec/** add-only）：#4 / #19 两条用例的期望值随 D10-431 改，属 test-change，PR 由编排核对后加标签；红检时这两条按改动后期望应在旧实现上为红。契约只改描述文字与字段说明，不增删操作、不改形状，照 B2-09b 列进 paths 同一 PR 落地，不单排契约槽（编排 17:13 口径）。
+# 开关 payout.proven_success_writeoff.enabled 现为默认关（content 注册表），生产不触发；本任务合并前不得打开。
+refs: [BR-WDR-23, BR-WDR-08, BR-WDR-21]
+refs_hash:
+  BR-WDR-23: 98981fee10c7
+  BR-WDR-08: 8c55a3ce6b57
+  BR-WDR-21: 174182279ca6
+deps: [B2-07e]
+paths:
+  - 'apps/api/src/modules/payout/application/withdrawal-proven-success.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/*.gen.ts'
+  - 'apps/api/src/modules/platform/**/*.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/payout/proven-success/**'
+  - 'test/spec/ledger/admin-recon-write-off/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/proven-success/**'
+status: todo
+pr: null
