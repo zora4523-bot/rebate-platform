@@ -39,6 +39,8 @@ import {
 } from '../../domain/types.ts';
 import {
   mapTaobaoPrice,
+  type TaobaoPriceOptions,
+  type TaobaoPriceSettingsReader,
   type TaobaoPriceWarning,
   type TaobaoPromotion,
 } from '../../domain/taobao-price.ts';
@@ -87,6 +89,11 @@ export interface DemoUnionOptions {
   readonly environment: UnionEnvironment;
   /** Receives PRICE_CALC_DIFF / PRICE_PROMO_UNKNOWN events (name only, no item data). */
   readonly warn?: (warning: TaobaoPriceWarning) => void;
+  /**
+   * B1-22q: Taobao price settings, read with ctx.appId for every price mapping and passed to
+   * mapTaobaoPrice as its options. Without it the BR-PRICE-02 defaults apply.
+   */
+  readonly taobaoPriceSettings?: TaobaoPriceSettingsReader;
 }
 
 /** Optional argument of createUnionRegistry: endpoints with mode=demo get a DemoUnionAdapter. */
@@ -96,6 +103,8 @@ export interface DemoUnionRegistryOptions {
   readonly clock: Clock;
   readonly environment: UnionEnvironment;
   readonly warn?: (warning: TaobaoPriceWarning) => void;
+  /** B1-22q: handed to every demo adapter as DemoUnionOptions.taobaoPriceSettings. */
+  readonly taobaoPriceSettings?: TaobaoPriceSettingsReader;
 }
 
 export type DemoUnionErrorCode = 'demo_delisted' | 'demo_unknown_scenario';
@@ -284,6 +293,7 @@ export class DemoUnionAdapter implements UnionAdapter {
   readonly #feed: readonly CatalogEntry[];
   readonly #byLinkId: ReadonlyMap<string, CatalogEntry>;
   readonly #warn: ((warning: TaobaoPriceWarning) => void) | undefined;
+  readonly #priceSettings: TaobaoPriceSettingsReader | undefined;
 
   constructor(options: DemoUnionOptions) {
     const { platform, seed, clock, environment } = options;
@@ -302,6 +312,7 @@ export class DemoUnionAdapter implements UnionAdapter {
     this.#seed = seed;
     this.#clock = clock;
     this.#warn = options.warn;
+    this.#priceSettings = options.taobaoPriceSettings;
     this.#catalog = buildCatalog(platform, seed);
     // The feed walks the same catalog in a different order, so every feed item has a detail.
     this.#feed = Object.freeze([...this.#catalog].reverse());
@@ -314,14 +325,16 @@ export class DemoUnionAdapter implements UnionAdapter {
       throw this.#invalid('search keyword must be a non-empty string');
     }
     const matches = this.#catalog.filter((entry) => entry.title.includes(q.keyword));
-    return this.#page(matches, q.cursor, SEARCH_PAGE_SIZE, scenario);
+    const price = await this.#priceOptions(ctx);
+    return this.#page(matches, q.cursor, SEARCH_PAGE_SIZE, scenario, price);
   }
 
   async getItem(ref: ItemRef, ctx: CallCtx): Promise<UnionItemDetail> {
     const scenario = this.#scenario(ctx);
     const entry = this.#lookup(ref);
     if (scenario === 'delisted') throw this.#delisted();
-    return Object.freeze({ ...this.#item(entry, scenario), description: DETAIL_TEXT });
+    const price = await this.#priceOptions(ctx);
+    return Object.freeze({ ...this.#item(entry, scenario, price), description: DETAIL_TEXT });
   }
 
   async resolveLink(raw: string, ctx: CallCtx): Promise<ResolvedLink> {
@@ -374,7 +387,8 @@ export class DemoUnionAdapter implements UnionAdapter {
   async materialFeed(req: MaterialReq, ctx: CallCtx): Promise<Page<UnionItem>> {
     const scenario = this.#scenario(ctx);
     if (typeof req !== 'object' || req === null) throw this.#invalid('feed request missing');
-    return this.#page(this.#feed, req.cursor, FEED_PAGE_SIZE, scenario);
+    const price = await this.#priceOptions(ctx);
+    return this.#page(this.#feed, req.cursor, FEED_PAGE_SIZE, scenario, price);
   }
 
   /**
@@ -432,11 +446,12 @@ export class DemoUnionAdapter implements UnionAdapter {
       .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     const offset = (pageNo - 1) * pageSize;
     const slice = offset < ranked.length ? ranked.slice(offset, offset + pageSize) : [];
+    const price = await this.#priceOptions(ctx);
     return Object.freeze({
       items: Object.freeze(
         slice.map(({ entry, key }) =>
           Object.freeze({
-            item: this.#item(entry, scenario),
+            item: this.#item(entry, scenario, price),
             salesText: demoSalesText(key),
           }),
         ),
@@ -472,6 +487,15 @@ export class DemoUnionAdapter implements UnionAdapter {
       `Demo union adapter for ${this.platform} has no order feed`,
       this.platform,
     );
+  }
+
+  /**
+   * B1-22q: the calling app's BR-PRICE-02 settings, read again on every call that maps Taobao
+   * prices (no cache); undefined (08 defaults) without a settings port or for other platforms.
+   */
+  async #priceOptions(ctx: CallCtx): Promise<TaobaoPriceOptions | undefined> {
+    if (this.platform !== 'taobao' || this.#priceSettings === undefined) return undefined;
+    return this.#priceSettings.read(ctx.appId);
   }
 
   /** Reads CallCtx.scenario; timeout and rate limit fail the call before any other work. */
@@ -527,6 +551,7 @@ export class DemoUnionAdapter implements UnionAdapter {
     cursor: string | undefined,
     size: number,
     scenario: DemoScenario | undefined,
+    price: TaobaoPriceOptions | undefined,
   ): Page<UnionItem> {
     let offset = 0;
     if (cursor !== undefined) {
@@ -538,14 +563,18 @@ export class DemoUnionAdapter implements UnionAdapter {
     const slice = entries.slice(offset, offset + size);
     const next = offset + size;
     return Object.freeze({
-      items: Object.freeze(slice.map((entry) => this.#item(entry, scenario))),
+      items: Object.freeze(slice.map((entry) => this.#item(entry, scenario, price))),
       nextCursor: next < entries.length ? `demo-${String(next)}` : null,
     });
   }
 
-  #item(entry: CatalogEntry, scenario: DemoScenario | undefined): UnionItem {
+  #item(
+    entry: CatalogEntry,
+    scenario: DemoScenario | undefined,
+    price: TaobaoPriceOptions | undefined,
+  ): UnionItem {
     const now = this.#clock.now();
-    if (entry.promotions !== undefined) return this.#taobaoItem(entry, scenario, now);
+    if (entry.promotions !== undefined) return this.#taobaoItem(entry, scenario, now, price);
     // coupon_fen = floor(price * bp / 10000); final_price_fen = price - coupon (the remainder).
     const couponBp = scenario === 'coupon_expired' ? 0n : entry.coupon_bp;
     const split = splitByBp(entry.price_fen, [couponBp]);
@@ -561,7 +590,12 @@ export class DemoUnionAdapter implements UnionAdapter {
   }
 
   /** Taobao: the synthetic detail goes through the same pure mapping as live data would. */
-  #taobaoItem(entry: CatalogEntry, scenario: DemoScenario | undefined, now: Date): UnionItem {
+  #taobaoItem(
+    entry: CatalogEntry,
+    scenario: DemoScenario | undefined,
+    now: Date,
+    price: TaobaoPriceOptions | undefined,
+  ): UnionItem {
     const nowMs = now.getTime();
     const source = entry.promotions ?? [];
     const kept =
@@ -588,6 +622,7 @@ export class DemoUnionAdapter implements UnionAdapter {
     const result = mapTaobaoPrice(
       { discount_fen: entry.price_fen, promotion_final_fen: promotionFinal, promotions },
       nowMs,
+      price,
     );
     if (this.#warn !== undefined) for (const warning of result.warnings) this.#warn(warning);
     return Object.freeze({

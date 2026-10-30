@@ -107,6 +107,9 @@ export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegist
         clock: options.clock,
         environment: options.environment,
         ...(options.warn === undefined ? {} : { warn: options.warn }),
+        ...(options.taobaoPriceSettings === undefined
+          ? {}
+          : { taobaoPriceSettings: options.taobaoPriceSettings }),
       });
     }
     return unimplementedAdapter(platform);

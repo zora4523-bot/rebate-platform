@@ -87,9 +87,17 @@ export type {
   TaobaoPriceInput,
   TaobaoPriceOptions,
   TaobaoPriceResult,
+  TaobaoPriceSettingsReader,
   TaobaoPriceWarning,
   TaobaoPromotion,
 } from './domain/taobao-price.ts';
+// B1-22q: price.taobao.* read through a union-defined config port (app.module passes ContentReader).
+export { createTaobaoPriceSettings } from './application/taobao-price-settings.ts';
+export type {
+  TaobaoPriceConfigReader,
+  TaobaoPriceSettings,
+  TaobaoPriceSettingsOptions,
+} from './application/taobao-price-settings.ts';
 export { createUnionRegistry } from './infra/registry.ts';
 export { DemoUnionAdapter, DemoUnionError } from './infra/demo/demo-adapter.ts';
 export type {
@@ -170,6 +178,7 @@ export {
   UNION_REGISTRY,
   UnionModule,
 } from './union.module.ts';
+export type { UnionModuleOptions } from './union.module.ts';
 // B1-22h: the /admin/v1/union-pids routes, assembled by app.module on the admin entry only.
 export { UnionAdminModule } from './union-admin.module.ts';
 export type { UnionAdminOptions, UnionAuditWriterFactory } from './union-admin.module.ts';

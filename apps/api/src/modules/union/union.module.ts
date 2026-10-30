@@ -14,7 +14,11 @@ import {
   type Clock,
   type RootLogger,
 } from '../platform/index.ts';
-import type { TaobaoPriceWarning } from './domain/taobao-price.ts';
+import {
+  createTaobaoPriceSettings,
+  type TaobaoPriceConfigReader,
+} from './application/taobao-price-settings.ts';
+import type { TaobaoPriceSettingsReader, TaobaoPriceWarning } from './domain/taobao-price.ts';
 import { UnionError, type CallCtx, type UnionEndpoint } from './domain/types.ts';
 import { createArchivingTransport } from './infra/archive.ts';
 import { loadUnionEndpoints } from './infra/endpoints.ts';
@@ -25,6 +29,17 @@ import { createUnionRegistry, type UnionRegistry } from './infra/registry.ts';
 import type { UnionTransport } from './infra/replay.ts';
 import { readActivePddQueryPid } from './pids/query-reader.ts';
 
+/**
+ * B1-22q: the second argument of UnionModule.forRoot(directory, options). `config` builds union's
+ * Taobao price configuration port over the entry's database handle and clock (app.module:
+ * content's createContentReader, as UnionAdminModule's `config`). The demo adapters map Taobao
+ * prices with createTaobaoPriceSettings over it, read with ctx.appId on every mapping. The
+ * UNION_REGISTRY factory keeps its four dependencies.
+ */
+export interface UnionModuleOptions {
+  readonly config?: (db: Kysely<Database>, clock: Clock) => TaobaoPriceConfigReader;
+}
+
 /** Nest injection tokens provided by `UnionModule`. */
 export const UNION_ENDPOINTS = Symbol('UNION_ENDPOINTS');
 export const UNION_REGISTRY = Symbol('UNION_REGISTRY');
@@ -34,6 +49,11 @@ export const UNION_REGISTRY = Symbol('UNION_REGISTRY');
  * an entry or isolated test without a database still starts (goods calls are then refused).
  */
 export const UNION_QUERY_PID_SOURCE = Symbol('UNION_QUERY_PID_SOURCE');
+/**
+ * B1-22q: builds the Taobao price configuration port from UnionModuleOptions.config over the
+ * optional database handle and the clock; a provider of its own for the same reason.
+ */
+const UNION_TAOBAO_PRICE_CONFIG = Symbol('UNION_TAOBAO_PRICE_CONFIG');
 
 /** Fixed seed of the demo catalog: the same synthetic items on every start (规划/11 §4.5). */
 export const UNION_DEMO_SEED = 'couli-demo';
@@ -57,7 +77,6 @@ export const UNION_ENDPOINTS_DIR = fileURLToPath(
  */
 /** BR-PRICE-01 / BR-PRICE-02 alarms as flat pino fields: the code, and for an unknown name only
  * the name (no item data).
- * TODO(规划/11 §9.2): 名称清单与 unknown_promo、basis 开关的配置接线 — blocked on followups F-36
  */
 function logPriceWarning(logger: RootLogger, warning: TaobaoPriceWarning): void {
   if (warning.code === 'PRICE_PROMO_UNKNOWN') {
@@ -86,6 +105,30 @@ function logPddWarning(logger: RootLogger, warning: PddWarning): void {
 /** Filled by the UNION_QUERY_PID_SOURCE provider; `db` stays undefined without a database. */
 interface QueryPidSource {
   db: Kysely<Database> | undefined;
+}
+
+/** Filled by the UNION_TAOBAO_PRICE_CONFIG provider; `reader` stays undefined without a database. */
+interface PriceConfigSource {
+  reader: TaobaoPriceConfigReader | undefined;
+}
+
+/**
+ * B1-22q: the demo adapters' price.taobao.* settings over the configuration port (content's reader,
+ * from app.module), read with ctx.appId on every mapping; invalid values warn through the root
+ * logger. Before the port is built, or without a database, every key reads as missing (08
+ * defaults, no warning).
+ */
+function taobaoPriceSettings(
+  source: PriceConfigSource,
+  logger: RootLogger,
+): TaobaoPriceSettingsReader {
+  return createTaobaoPriceSettings({
+    config: {
+      configValue: (appId, key) =>
+        source.reader === undefined ? Promise.resolve(null) : source.reader.configValue(appId, key),
+    },
+    logger,
+  });
 }
 
 /**
@@ -147,6 +190,7 @@ async function startUnionRegistry(
   clock: Clock,
   logger: RootLogger,
   source: QueryPidSource,
+  priceConfig: PriceConfigSource | undefined,
 ): Promise<UnionRegistry> {
   const options = {
     endpoints,
@@ -154,6 +198,9 @@ async function startUnionRegistry(
     seed: UNION_DEMO_SEED,
     clock,
     warn: (warning: TaobaoPriceWarning) => logPriceWarning(logger, warning),
+    ...(priceConfig === undefined
+      ? {}
+      : { taobaoPriceSettings: taobaoPriceSettings(priceConfig, logger) }),
   };
   const pdd = endpoints.find((endpoint) => endpoint.platform === 'pdd');
   if (pdd?.mode !== 'live') return createUnionRegistry(options);
@@ -201,9 +248,16 @@ function startUnionEndpoints(
 
 @Module({})
 export class UnionModule {
-  static forRoot(directory: string = UNION_ENDPOINTS_DIR): DynamicModule {
+  static forRoot(
+    directory: string = UNION_ENDPOINTS_DIR,
+    options: UnionModuleOptions = {},
+  ): DynamicModule {
     // One source per module instance: the registry's query identity reads it lazily, per call.
     const source: QueryPidSource = { db: undefined };
+    // Likewise the price configuration port (B1-22q), only when `config` is given.
+    const buildConfig = options.config;
+    const priceConfig: PriceConfigSource | undefined =
+      buildConfig === undefined ? undefined : { reader: undefined };
     return {
       module: UnionModule,
       providers: [
@@ -220,7 +274,7 @@ export class UnionModule {
             config: AppConfig,
             clock: Clock,
             logger: RootLogger,
-          ) => startUnionRegistry(endpoints, config, clock, logger, source),
+          ) => startUnionRegistry(endpoints, config, clock, logger, source, priceConfig),
         },
         {
           provide: UNION_QUERY_PID_SOURCE,
@@ -230,6 +284,18 @@ export class UnionModule {
             return source;
           },
         },
+        ...(buildConfig === undefined || priceConfig === undefined
+          ? []
+          : [
+              {
+                provide: UNION_TAOBAO_PRICE_CONFIG,
+                inject: [{ token: DB, optional: true }, CLOCK],
+                useFactory: (db: Kysely<Database> | undefined, clock: Clock) => {
+                  priceConfig.reader = db == null ? undefined : buildConfig(db, clock);
+                  return priceConfig;
+                },
+              },
+            ]),
       ],
       exports: [UNION_ENDPOINTS, UNION_REGISTRY],
     };

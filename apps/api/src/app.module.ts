@@ -3352,10 +3352,11 @@ export class AppModule {
     // Stage ⑦ (B1-02zh) is not assembled on stream: it judges only x-auth login / phone / realname
     // routes, and every /v1/agent/ route is optional.
     // Stage ⑥ (B1-15m) is assembled on stream alone, in streamRiskModule's two lists.
-    // One module object per import: Nest builds union and linking once.
+    // One module object per import: Nest builds union and linking once. B1-22q: union reads
+    // price.taobao.* (BR-PRICE-02) through content's configuration reader, per call.
     const union =
       options.entry === 'api' || options.entry === 'worker' || options.entry === 'stream'
-        ? UnionModule.forRoot()
+        ? UnionModule.forRoot(undefined, { config: contentReader })
         : undefined;
     const linking =
       options.entry === 'api'
