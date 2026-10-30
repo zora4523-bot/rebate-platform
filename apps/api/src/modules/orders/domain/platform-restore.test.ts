@@ -1,4 +1,4 @@
-// B1-08zc 实现者单元测试：平台恢复的触发与前提判定（规则测试在 test/spec/orders/platform-restore/**）。
+// B1-08zc / B1-08zd 实现者单元测试：平台恢复的触发与前提判定（规则测试在 test/spec/orders/platform-restore/**）。
 import { expect, it } from 'vitest';
 import {
   detectPlatformRestore,
@@ -61,8 +61,11 @@ it('[AC-B1-08zc#u3] 佣金触发只认由空或 ≤0 变为严格 >0', () => {
   for (const [before, after, fires] of cases) {
     const est = detectPlatformRestore({ ...QUIET, estBefore: before, estAfter: after });
     expect(est).toEqual(fires ? { trigger: 'commission', expectedFen: after } : null);
+    // 结算佣金非空才是有效佣金；预估佣金 0 使「结算佣金空 → x」的前值也 ≤0。
     const settle = detectPlatformRestore({
       ...QUIET,
+      estBefore: 0n,
+      estAfter: 0n,
       platformBefore: 'SETTLED',
       platformAfter: 'SETTLED',
       settleBefore: before,
@@ -72,7 +75,7 @@ it('[AC-B1-08zc#u3] 佣金触发只认由空或 ≤0 变为严格 >0', () => {
   }
 });
 
-it('[AC-B1-08zc#u4] 两列同时恢复时金额取结算佣金', () => {
+it('[AC-B1-08zc#u4] 两列同时恢复时金额取结算佣金（有效佣金）', () => {
   expect(
     detectPlatformRestore({
       ...QUIET,
@@ -84,6 +87,67 @@ it('[AC-B1-08zc#u4] 两列同时恢复时金额取结算佣金', () => {
       settleAfter: 40n,
     }),
   ).toEqual({ trigger: 'commission', expectedFen: 40n });
+});
+
+const SETTLED_QUIET: PlatformRestoreChange = {
+  platformBefore: 'SETTLED',
+  platformAfter: 'SETTLED',
+  estBefore: 0n,
+  estAfter: 0n,
+  settleBefore: null,
+  settleAfter: null,
+};
+
+it('[AC-B1-08zd#u1] 结算佣金非空时预估佣金的变化不触发（平台 SETTLED / PAID 一样）', () => {
+  for (const platform of ['SETTLED', 'PAID']) {
+    expect(
+      detectPlatformRestore({
+        ...SETTLED_QUIET,
+        platformBefore: platform,
+        platformAfter: platform,
+        estAfter: 300n,
+        settleBefore: 0n,
+        settleAfter: 0n,
+      }),
+    ).toBeNull();
+  }
+});
+
+it('[AC-B1-08zd#u2] 结算佣金为空时有效佣金是预估佣金：平台 SETTLED 预估 0 → 300 照常触发，金额 300', () => {
+  expect(detectPlatformRestore({ ...SETTLED_QUIET, estAfter: 300n })).toEqual({
+    trigger: 'commission',
+    expectedFen: 300n,
+  });
+  // 同一报文 RECEIVED / PAID → SETTLED 也一样。
+  for (const before of ['RECEIVED', 'PAID']) {
+    expect(
+      detectPlatformRestore({ ...SETTLED_QUIET, platformBefore: before, estAfter: 300n }),
+    ).toEqual({ trigger: 'commission', expectedFen: 300n });
+  }
+});
+
+it('[AC-B1-08zd#u3] 有效佣金未越过 0 不触发：结算佣金空 → 500 而预估原 300；结算佣金空 → 0 而预估原 300；结算空、预估 300 → 450', () => {
+  expect(
+    detectPlatformRestore({ ...SETTLED_QUIET, estBefore: 300n, estAfter: 300n, settleAfter: 500n }),
+  ).toBeNull();
+  expect(
+    detectPlatformRestore({ ...SETTLED_QUIET, estBefore: 300n, estAfter: 300n, settleAfter: 0n }),
+  ).toBeNull();
+  expect(detectPlatformRestore({ ...SETTLED_QUIET, estBefore: 300n, estAfter: 450n })).toBeNull();
+});
+
+it('[AC-B1-08zd#u4] 结算佣金空 → 500、预估 0 → 280：金额取结算佣金 500；结算佣金 0 → 1 触发金额 1', () => {
+  expect(
+    detectPlatformRestore({
+      ...SETTLED_QUIET,
+      platformBefore: 'RECEIVED',
+      estAfter: 280n,
+      settleAfter: 500n,
+    }),
+  ).toEqual({ trigger: 'commission', expectedFen: 500n });
+  expect(
+    detectPlatformRestore({ ...SETTLED_QUIET, estAfter: 300n, settleBefore: 0n, settleAfter: 1n }),
+  ).toEqual({ trigger: 'commission', expectedFen: 1n });
 });
 
 it('[AC-B1-08zc#u5] 前提：VOID / CLAWED_BACK 且 reason 属 (i) 或进入事件属 (ii)；PUNISH / BLACKLIST 与其他状态不成立', () => {

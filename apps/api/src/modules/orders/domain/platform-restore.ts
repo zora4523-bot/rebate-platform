@@ -2,9 +2,10 @@
 // 或佣金由 ≤0 / 空恢复为 >0），且 reason ∈ {REFUND, RIGHTS, COMMISSION_ZERO} 或进入当前返利状态的事件 ∈
 // {PLATFORM_INVALID, INVALID_AFTER_SETTLE} 时，经端口登记一张 platform_restore 差错单；PUNISH / BLACKLIST 的只更新
 // platform_status。一次作废 / 扣回（进入当前返利状态的那条 order_status_history 行）只出一张单。
+// B1-08zd：佣金触发按有效佣金（结算佣金非空取它，否则取预估佣金）越过 0 判定，不按 platform_status 切换。
 // 差错单的 ref_id 与 dedupe_key 只在这里构造（settlement 的 P9 登记接线复用同一个 dedupe_key，单一出处）。
 
-/** 触发：status = P9（INVALID → PAID / RECEIVED / SETTLED）；commission = 本次写入的佣金列由 ≤0 或空变为 >0。 */
+/** 触发：status = P9（INVALID → PAID / RECEIVED / SETTLED）；commission = 有效佣金由 ≤0 或空变为 >0。 */
 export type PlatformRestoreTrigger = 'status' | 'commission';
 
 /** 差错单 resolution（只作展示；ADMIN_RESTORE 处理时按 R12 / R13 重算）。 */
@@ -57,20 +58,27 @@ export function isRestorableRebate(rebateStatus: string): boolean {
 }
 
 /**
- * 触发判定（编排 9.2 第 2、4 条）：status = P9（INVALID → PAID / RECEIVED / SETTLED），金额取恢复后的有效佣金列
- * （SETTLED 用结算佣金，否则预估佣金，空按 0）；commission = 本次写入的佣金列由空或 ≤0 变为 >0，金额取该列新值
- * （两列同时恢复取结算佣金）。两者同时成立按 status。都不成立返回 null。
+ * 有效佣金（08 BR-CALC-02 取值阶段）：结算佣金非空时只取结算佣金，否则取预估佣金；两列都空为空。
+ */
+function effectiveCommission(est: bigint | null, settle: bigint | null): bigint | null {
+  return settle !== null ? settle : est;
+}
+
+/**
+ * 触发判定（B1-08zc 编排 9.2 第 2、4 条；B1-08zd 编排第 11 节）：status = P9（INVALID → PAID / RECEIVED /
+ * SETTLED），金额取恢复后的有效佣金列（SETTLED 用结算佣金，否则预估佣金，空按 0）；commission = 本次更新使有效佣金
+ * （结算佣金非空取它，否则取预估佣金）由空或 ≤0 变为 >0，与 platform_status 无关，金额取新的有效佣金。结算佣金非空时
+ * 预估佣金的变化不触发。两者同时成立按 status。都不成立返回 null。
  */
 export function detectPlatformRestore(change: PlatformRestoreChange): PlatformRestoreSignal | null {
   if (change.platformBefore === 'INVALID' && ACTIVE_PLATFORM.has(change.platformAfter)) {
     const effective = change.platformAfter === 'SETTLED' ? change.settleAfter : change.estAfter;
     return { trigger: 'status', expectedFen: effective ?? 0n };
   }
-  if (crossedPositive(change.settleBefore, change.settleAfter) && change.settleAfter !== null) {
-    return { trigger: 'commission', expectedFen: change.settleAfter };
-  }
-  if (crossedPositive(change.estBefore, change.estAfter) && change.estAfter !== null) {
-    return { trigger: 'commission', expectedFen: change.estAfter };
+  const effBefore = effectiveCommission(change.estBefore, change.settleBefore);
+  const effAfter = effectiveCommission(change.estAfter, change.settleAfter);
+  if (crossedPositive(effBefore, effAfter) && effAfter !== null) {
+    return { trigger: 'commission', expectedFen: effAfter };
   }
   return null;
 }
