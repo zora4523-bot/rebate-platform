@@ -1,0 +1,17 @@
+id: F1-08aa
+repo: rebate-platform
+title: F1-08aa：冻结工作台菜单测试 [AC-F1-14a-MENU#3] / [AC-F1-14a-MENU#4] 的样例权限把 withdraw.review 换成 fund.cash_entry，落地菜单由已将上线的 /withdrawals 改为仍是占位页的 /fund-ledger（F1-08a 前置；断言含义不变）
+type: test-change
+# 2026-10-30 入账（前端线 f1-frontend-7）。F1-14a 写这两条时提现审核还是占位页：持 withdraw.review 的账号落到 /withdrawals，断言主区含「尚未接入」且不发 /admin/v1/withdrawals 请求。F1-08a（提现单只读）上线后进 /withdrawals 就读列表，与 F1-08a 冻结的 ACCESS / LIST 用例同一入参、无法同时满足（F1-08a Opus 实现 r1 报）。
+# 只改两条的 permissions 样例与落地路径期望：withdraw.review → fund.cash_entry（首个获准业务菜单变为「平台资金台账」fund-ledger，仍无页面、显示占位），'/withdrawals' → '/fund-ledger'；「尚未接入」、不请求 dashboard / 只请求一次 ENDPOINT、无重试按钮等断言不动。现行主干下改前改后都绿，可先于 F1-08a 合并。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件；新鲜独立 Claude 改、另一新鲜独立 Claude 只读复审 pass（写进 PR 正文）；标签由编排核对后加（#24）。
+refs: []
+refs_hash: {}
+deps: [F1-14a]
+paths:
+  - 'test/spec/frontend/admin-dashboard/menu.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done

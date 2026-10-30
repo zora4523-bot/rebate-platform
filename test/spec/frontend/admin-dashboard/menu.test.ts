@@ -108,10 +108,10 @@ it('[AC-F1-14a-MENU#3] 直接打开工作台但没有权限：落第一个获准
   await mount(server, {
     permissionsProvider: async () => ({
       isSuper: false,
-      permissions: ['fund.recon', 'withdraw.review'],
+      permissions: ['fund.recon', 'fund.cash_entry'],
     }),
   });
-  await waitFor(() => expect(window.location.pathname).toBe('/withdrawals'));
+  await waitFor(() => expect(window.location.pathname).toBe('/fund-ledger'));
   expect(mainElement().textContent).toContain('尚未接入');
   expect(
     within(screen.getByRole('navigation', { name: '主导航' })).queryByRole('link', {
@@ -127,10 +127,10 @@ it('[AC-F1-14a-MENU#4] 服务端 10403 权限已撤回，跳过工作台落首�
   await mount(server, {
     permissionsProvider: async () => ({
       isSuper: false,
-      permissions: ['dashboard.view', 'withdraw.review', 'fund.recon'],
+      permissions: ['dashboard.view', 'fund.cash_entry', 'fund.recon'],
     }),
   });
-  await waitFor(() => expect(window.location.pathname).toBe('/withdrawals'));
+  await waitFor(() => expect(window.location.pathname).toBe('/fund-ledger'));
   expect(mainElement().textContent).toContain('尚未接入');
   await settled(server);
   expect(server.log.map(({ path }) => path)).toEqual([ENDPOINT]);
