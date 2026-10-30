@@ -29,6 +29,7 @@ paths:
 test_paths:
   - 'test/spec/settlement/admin-settle-commands/**'
   - 'test/spec/settlement/admin-settle-bills/**'
+  - 'test/spec/frontend/admin-settle-bills/**'
 impl: claude
 tester: claude-independent
 accept:
