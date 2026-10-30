@@ -4,12 +4,14 @@
 // ratio_bp / 10000) of the snapshot less the role's net (BR-FUND-08) as ADMIN_ADJUST (RESTORE),
 // debit COMMISSION_REVENUE / credit the member's available, uniq_key
 // `{order_key}:{user_id}:{role}:RESTORE:{recon_diff_id}`; never expected_fen, the FORFEIT voucher's
-// amount or the snapshot's amounts. D10-469: ② a member banned again is still paid; ③ a difference
-// ≤ 0 posts nothing, pays 0, takes nothing back and the difference is still handled. The difference
-// adjusted (handler the caller, closed_at = updated_at = the server clock, the three amounts as
-// registered, resolution keeps its keys and adds restore and the trimmed note); audit
-// recon_diff_restore; rebate_status and withdrawal holds untouched. Expected amounts are written by
-// hand. Requests go through the real admin entry (kit.ts). Top-level it() only (规划/11 §4.3).
+// amount, the snapshot's amounts or the current settled commission; the net counts every voucher
+// kind of BR-FUND-08; a PUNISH clawback leaves nothing to restore. D10-469: ② a member banned again
+// is still paid; ③ a difference ≤ 0 posts nothing, pays 0, takes nothing back and the difference is
+// still handled. The difference adjusted (handler the caller, closed_at = updated_at = the server
+// clock, the three amounts as registered, resolution keeps its keys and adds restore and the
+// trimmed note); audit recon_diff_restore; rebate_status and withdrawal holds untouched. Expected
+// amounts are written by hand. Requests go through the real admin entry (kit.ts). Top-level it()
+// only (规划/11 §4.3).
 import { expect, it } from 'vitest';
 import {
   DETAIL_KEYS,
@@ -44,6 +46,7 @@ import {
   voucherLines,
   withRestoreAdmin,
   type Case,
+  type NetStep,
   type Role,
 } from './kit.ts';
 
@@ -85,12 +88,13 @@ it('[AC-B2-09g#9] BR-FUND-22 例：直推上级入账时被封禁，份额 123 �
   });
 });
 
-it('[AC-B2-09g#10] 金额现算：按 booked_base_fen 与快照比例，不取差错单登记额、FORFEIT 凭证额或快照金额。expected_fen 被改大（85 → 999999）实发仍 85；订单基数已升（N 1200 → 1020，份额 102，凭证 85）实发 102；基数已降（N 500 → 425，份额 42，凭证 85）实发 42；差错单三个金额都按登记不变', async () => {
+it('[AC-B2-09g#10] 金额现算：按 booked_base_fen 与快照比例，不取差错单登记额、FORFEIT 凭证额、快照金额或当前结算佣金。expected_fen 被改大（85 → 999999）实发仍 85；订单基数已升（N 1200 → 1020，份额 102，凭证 85）实发 102；基数已降（N 500 → 425，份额 42，凭证 85）实发 42；新结算额 1200 待批准、booked_base_fen 仍 850（BR-FUND-09）实发 85，不是 R13 口径的 102；差错单三个金额都按登记不变', async () => {
   const f = await fixture(s);
   const inflatedOrder = await seedOrder(f);
   const inflated = await seedRestoreDiff(f, inflatedOrder, {
     patch: { expected_fen: 999_999n, diff_fen: 999_999n },
   });
+  const unbooked = await seedCase(f, { newSettleFen: 1200n });
   const raised = await seedCase(f, {
     settleFen: 1200n,
     people: [
@@ -111,6 +115,7 @@ it('[AC-B2-09g#10] 金额现算：按 booked_base_fen 与快照比例，不取�
     { diff: inflated, order: inflatedOrder, fen: 85n },
     { diff: raised.diff, order: raised.order, fen: 102n },
     { diff: lowered.diff, order: lowered.order, fen: 42n },
+    { diff: unbooked.diff, order: unbooked.order, fen: 85n },
   ];
   await withRestoreAdmin(f, async (h) => {
     for (const { diff, order, fen } of rows) {
@@ -465,5 +470,126 @@ it('[AC-B2-09g#23] 四种受益角色都按快照比例补发（self 5000 / shar
       const key = restoreKey(c.order.orderKey, c.userId, role, c.diff.id);
       expect(await voucherLines(f, key)).toEqual(restoreLines(c.userId, fen));
     }
+  });
+});
+
+it('[AC-B2-09g#31] 已入账净额按 BR-FUND-08 的全部凭证类型算，不只 CREDIT 与 RESTORE：CREDIT 60 + CLAWBACK −20 → 净额 40、应得 85、补 45；CREDIT 60 + SETTLE_ADJUST +17 → 净额 77、基数 1020 应得 102、补 25；CREDIT 85 + SETTLE_ADJUST +17 → 净额 102、补 0 不写分录；CREDIT 60 + REASSIGN_REV −60 + REASSIGN_CREDIT +40 → 净额 40、补 45；五类都有 → 净额 30、补 72；余额与净额都只多实发额', async () => {
+  const f = await fixture(s);
+  const rows: readonly {
+    readonly settleFen: bigint;
+    readonly creditedFen: bigint;
+    readonly steps: readonly NetStep[];
+    readonly net: bigint;
+    readonly paid: bigint;
+  }[] = [
+    {
+      settleFen: 1000n,
+      creditedFen: 60n,
+      steps: [{ kind: 'CLAWBACK', fen: -20n }],
+      net: 40n,
+      paid: 45n,
+    },
+    {
+      settleFen: 1200n,
+      creditedFen: 60n,
+      steps: [{ kind: 'SETTLE_ADJUST', fen: 17n }],
+      net: 77n,
+      paid: 25n,
+    },
+    {
+      settleFen: 1200n,
+      creditedFen: 85n,
+      steps: [{ kind: 'SETTLE_ADJUST', fen: 17n }],
+      net: 102n,
+      paid: 0n,
+    },
+    {
+      settleFen: 1000n,
+      creditedFen: 60n,
+      steps: [
+        { kind: 'REASSIGN_REV', fen: -60n },
+        { kind: 'REASSIGN_CREDIT', fen: 40n },
+      ],
+      net: 40n,
+      paid: 45n,
+    },
+    {
+      settleFen: 1200n,
+      creditedFen: 60n,
+      steps: [
+        { kind: 'SETTLE_ADJUST', fen: 17n },
+        { kind: 'CLAWBACK', fen: -20n },
+        { kind: 'REASSIGN_REV', fen: -57n },
+        { kind: 'REASSIGN_CREDIT', fen: 30n },
+      ],
+      net: 30n,
+      paid: 72n,
+    },
+  ];
+  const cases: { readonly c: Case; readonly net: bigint; readonly paid: bigint }[] = [];
+  for (const { settleFen, creditedFen, steps, net, paid } of rows) {
+    const c = await seedCase(f, {
+      settleFen,
+      people: [
+        { role: 'self', ratioBp: 5000 },
+        { role: 'direct', ratioBp: 1000, forfeited: true, creditedFen, steps },
+      ],
+    });
+    cases.push({ c, net, paid });
+  }
+  await withRestoreAdmin(f, async (h) => {
+    for (const { c, net, paid } of cases) {
+      const { orderKey } = c.order;
+      expect(netOf(await netsOf(f, orderKey), c.userId, 'direct')).toBe(net);
+      expect(await available(f, c.userId)).toBe(net);
+
+      expect((await restored(await h.restore(c.diff.id))).restored_fen).toBe(Number(paid));
+      await expectRestored(f, c.diff, { adminId: h.operator.id, paid: { direct: paid } });
+      expect(await voucherLines(f, restoreKey(orderKey, c.userId, 'direct', c.diff.id))).toEqual(
+        paid > 0n ? restoreLines(c.userId, paid) : [],
+      );
+      expect(await available(f, c.userId)).toBe(net + paid);
+      expect(netOf(await netsOf(f, orderKey), c.userId, 'direct')).toBe(net + paid);
+    }
+  });
+});
+
+it('[AC-B2-09g#32] BR-FUND-22：PUNISH（联盟处罚）作废的订单不在申诉恢复范围：入账时份额被没收，订单随后因 PUNISH 全额扣回（R8：booked_base_fen 0，settle_commission_fen 保留），封禁申诉撤销后差错单照常登记（expected_fen 85）→ 处理实发 0、无 RESTORE 凭证、分录与余额不变、订单不动；依 D10-469 ③ 差错单照样 adjusted，active 事件照追加，审计 restored_fen 为 0', async () => {
+  const f = await fixture(s);
+  const c = await seedCase(f, { punished: true });
+  expect(c.diff.expected_fen).toBe(85n);
+  const eventsBefore = await shareEvents(f, c.order.orderId);
+  await withRestoreAdmin(f, async (h) => {
+    const before = await everything(f);
+    expect(before.orders).toHaveLength(1);
+    expect(before.orders[0]).toMatchObject({
+      rebate_status: 'CLAWED_BACK',
+      reason: 'PUNISH',
+      booked_base_fen: 0n,
+      booked_n_fen: 0n,
+      settle_commission_fen: 1000n,
+    });
+    const nets = await netsOf(f, c.order.orderKey);
+    expect(netOf(nets, c.userId, 'direct')).toBe(0n);
+    expect(netOf(nets, c.order.user('self'), 'self')).toBe(0n);
+    expect(nets.platform_net_fen).toBe(0n);
+    expect(nets.union_receivable_net_fen).toBe(0n);
+
+    expect((await restored(await h.restore(c.diff.id))).restored_fen).toBe(0);
+    await expectRestored(f, c.diff, { adminId: h.operator.id, paid: { direct: 0n } });
+
+    expect(await restoreVouchers(f)).toEqual([]);
+    expect(await available(f, c.userId)).toBe(0n);
+    const after = await everything(f);
+    expect(after.orders).toEqual(before.orders);
+    expect(after.entries).toEqual(before.entries);
+    expect(after.balances).toEqual(before.balances);
+    const added = (await shareEvents(f, c.order.orderId)).slice(eventsBefore.length);
+    expect(added.map((e) => [e.user_id, e.role, e.status])).toEqual([
+      [c.userId, 'direct', 'active'],
+    ]);
+    const records = await audits(f, RESTORE_ACTION);
+    expect(records).toHaveLength(1);
+    expect(JSON.stringify(records[0]!.after)).toMatch(/"restored_fen":"?0"?[,}]/);
   });
 });

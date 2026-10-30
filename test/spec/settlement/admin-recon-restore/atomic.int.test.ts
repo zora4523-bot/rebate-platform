@@ -5,7 +5,8 @@
 // anywhere (the share event, the voucher, the difference's update, the audit record) leaves no
 // voucher, no event, the balance and the difference as they were and no idempotency record; settlement
 // AGENTS.md 硬规则 3 and 12 §4.8: the order key's lock, then the users row (a restore waits for
-// them); two restores at once pay exactly once. Requests go through the real admin entry (kit.ts).
+// them, reads the net inside the order key's lock and the member's status after the users row's
+// lock); two restores at once pay exactly once. Requests go through the real admin entry (kit.ts).
 // Top-level it() only (规划/11 §4.3).
 import { expect, it } from 'vitest';
 import {
@@ -21,9 +22,11 @@ import {
   fixture,
   holdOrderKey,
   holdRow,
+  holdUserIntoDeleting,
   idempotencyRows,
   memberOf,
   newKey,
+  refused,
   restoreKey,
   restorePath,
   restoreVouchers,
@@ -189,18 +192,46 @@ it('[AC-B2-09g#29] 并发：同一差错单两个处理同时到（不同 key）
   });
 });
 
-it('[AC-B2-09g#30] 并发：同一份额的两张差错单同时处理：都成功，合计只补一次 85（净额在锁内读，键不同也不重复补）', async () => {
+it('[AC-B2-09g#30] 并发：同一份额的两张差错单：订单键锁被占时两个处理都在等，放行后都成功，合计只补一次 85（净额在订单键锁内读，键不同也不重复补）', async () => {
   const f = await fixture(s);
   const order = await seedOrder(f);
   const userId = order.user('direct');
   const first = await seedRestoreDiff(f, order);
   const second = await seedRestoreDiff(f, order, { patch: { period: '2026-09' } });
   await withRestoreAdmin(f, async (h) => {
-    const results = await Promise.all([h.restore(first.id), h.restore(second.id)]);
+    const lock = await holdOrderKey(f, order.orderKey);
+    const pending = [track(h.restore(first.id)), track(h.restore(second.id))];
+    try {
+      expect(await waiting(f, 2, pending), '两个处理都应在订单键锁上等待').toBe(true);
+      expect(await restoreVouchers(f)).toEqual([]);
+    } finally {
+      await lock.release();
+    }
+    const results = await Promise.all(pending.map((request) => request.promise));
     const paid: number[] = [];
     for (const sent of results) paid.push(Number((await restored(sent)).restored_fen));
     expect(paid.sort((a, b) => a - b)).toEqual([0, 85]);
     expect(await restoreVouchers(f)).toHaveLength(1);
     expect(await available(f, userId)).toBe(85n);
+  });
+});
+
+it('[AC-B2-09g#33] 依 D10-469 ① 与 12 §4.8：处理在 users 行锁上等待时，持锁事务把会员改成 deleting 并提交（deletion-expiry）→ 处理按锁内状态拒绝 20001 data.fields=[recon_diff_id] reason=restore_user_deleted：不写分录、不追加事件、余额与差错单不变、不存为幂等结果（会员状态在 users 行锁之后读）', async () => {
+  const f = await fixture(s);
+  const c = await seedCase(f);
+  await withRestoreAdmin(f, async (h) => {
+    const before = await everything(f);
+    const key = newKey();
+    const lock = await holdUserIntoDeleting(f, c.userId);
+    const pending = track(h.restore(c.diff.id, {}, { key }));
+    try {
+      expect(await waiting(f, 1, [pending]), '处理应在 users 行锁上等待').toBe(true);
+      expect(await restoreVouchers(f)).toEqual([]);
+    } finally {
+      await lock.release();
+    }
+    await refused(await pending.promise, 'restore_user_deleted');
+    expect(await everything(f)).toEqual(before);
+    expect((await idempotencyRows(f)).filter((row) => row.key === key)).toEqual([]);
   });
 });

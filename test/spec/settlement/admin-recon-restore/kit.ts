@@ -11,11 +11,13 @@
 // (../../payment/orders/kit.ts suite).
 // Synthetic: the difference as risk's producer registers it (resolution of
 // apps/api/src/modules/risk/application/appeal-restore.ts), a CREDITED order with its commission
-// snapshot and the vouchers its credit left, members, risk and deletion rows, admin accounts, and a
-// one-shot fault in the entry's database handle for the roll-back cases. The totp step-up token is
-// issued the way POST /admin/v1/auth/step-up issues it after a correct authenticator code. No real
-// user or merchant data. Expected amounts are written by hand in the tests; the seeds derive their
-// own vouchers from the BR-CALC-02 / BR-CALC-04 formulas.
+// snapshot and the vouchers its credit left (optionally the later vouchers of a role key, a newer
+// settled amount still waiting for approval, or a full clawback for PUNISH), members, risk and
+// deletion rows, admin accounts, and a one-shot fault in the entry's database handle for the
+// roll-back cases. The totp step-up token is issued the way POST /admin/v1/auth/step-up issues it
+// after a correct authenticator code. No real user or merchant data. Expected amounts are written
+// by hand in the tests; the seeds derive their own vouchers from the BR-CALC-02 / BR-CALC-04
+// formulas.
 //
 // Default order: N = 1000, reserve_bp 1500 → booked_base_fen 850, reserve 150; self 5000 / direct
 // 1000 / indirect 500 → 425 / 85 / 42. Direct was forfeited for banned at the credit: no credit, a
@@ -117,6 +119,8 @@ const RESTORE_PERIOD = '2026-10';
 /** The snapshot's estimate is N + this, so its amounts never equal the booked ones. */
 const SNAPSHOT_DRIFT_FEN = 3333n;
 const SUBSIDY_FEN = 111n;
+/** The rights_event_id of the fixture's PUNISH clawback (platform ref: `P{row_version}`). */
+const PUNISH_EVENT = 'P1';
 
 const ROOT = new URL('../../../../', import.meta.url);
 
@@ -239,13 +243,28 @@ export interface PersonSpec {
   readonly creditedFen?: bigint;
   /** What the role's FORFEIT voucher booked (default: the share less creditedFen). */
   readonly forfeitFen?: bigint;
+  /** Vouchers of the role's key after its credit, in order. */
+  readonly steps?: readonly NetStep[];
+}
+
+/** One voucher of a role's key after its credit (BR-FUND-08): the signed change of the net. */
+export interface NetStep {
+  readonly kind: 'SETTLE_ADJUST' | 'CLAWBACK' | 'REASSIGN_REV' | 'REASSIGN_CREDIT';
+  readonly fen: bigint;
 }
 
 export interface OrderSpec {
   readonly people?: readonly PersonSpec[];
-  /** N: orders.settle_commission_fen and booked_n_fen. */
+  /** N: booked_n_fen and, without newSettleFen, orders.settle_commission_fen. */
   readonly settleFen?: bigint;
+  /**
+   * A newer settled amount whose positive difference waits for approval (BR-FUND-09):
+   * orders.settle_commission_fen and a second order_settlements row; the booked pair stays at N.
+   */
+  readonly newSettleFen?: bigint;
   readonly reserveBp?: number;
+  /** Clawed back in full for PUNISH after the credit (R8): booked pair 0, settled amount kept. */
+  readonly punished?: boolean;
 }
 
 export interface SeededPerson {
@@ -255,6 +274,7 @@ export interface SeededPerson {
   readonly forfeited: boolean;
   readonly creditedFen: bigint;
   readonly forfeitFen: bigint;
+  readonly steps: readonly NetStep[];
 }
 
 export interface SeededOrder {
@@ -366,7 +386,86 @@ function creditVoucher(
   };
 }
 
-/** A CREDITED order with its snapshot, share events and the vouchers of its credit. */
+const STEP_KEYS: Readonly<Record<NetStep['kind'], string>> = {
+  SETTLE_ADJUST: 'ADJ',
+  CLAWBACK: 'CLAWBACK',
+  REASSIGN_REV: 'REASSIGN_REV',
+  REASSIGN_CREDIT: 'REASSIGN_CREDIT',
+};
+
+/**
+ * A later voucher of the member's key between UNION_RECEIVABLE:{platform} and the member's
+ * available, in the BR-FUND-05 types of its kind (R14 keeps the types of the credit).
+ */
+function stepVoucher(
+  f: RestoreFixture,
+  order: { readonly platform: string; readonly orderKey: string },
+  person: SeededPerson,
+  step: NetStep,
+  event: string,
+  clawbackSub = 'RIGHTS',
+): PostingVoucher {
+  const accountId = f.accounts.get(person.userId);
+  if (accountId === undefined) throw new Error('fixture: the member has no account');
+  const { type, sub } =
+    step.kind === 'SETTLE_ADJUST'
+      ? { type: 'SETTLE_ADJUST', sub: 'SETTLE_DIFF' }
+      : step.kind === 'CLAWBACK'
+        ? { type: 'CLAWBACK', sub: clawbackSub }
+        : CREDIT_TYPES[person.role];
+  return {
+    appId: f.appId,
+    uniqKey: `${order.orderKey}:${person.userId}:${person.role}:${STEP_KEYS[step.kind]}:${event}`,
+    bizType: `ORDER_${step.kind}`,
+    bizId: order.orderKey,
+    operator: 'system',
+    memo: null,
+    orderKey: order.orderKey,
+    beneficiaryUserId: person.userId,
+    role: person.role,
+    voucherKind: step.kind,
+    entries: [
+      platformLine(`UNION_RECEIVABLE:${order.platform}`, step.fen, type, sub),
+      {
+        account: { ownerType: 'user', accountId },
+        sub_account: 'available',
+        amount_fen: -step.fen,
+        ledger_type: type,
+        sub_type: sub,
+        income_type: null,
+      },
+    ],
+  };
+}
+
+/** Debit COMMISSION_REVENUE, credit UNION_RECEIVABLE:{platform}: the platform's PUNISH clawback. */
+function punishPlatformVoucher(
+  f: RestoreFixture,
+  order: { readonly platform: string; readonly orderKey: string },
+  amount: bigint,
+): PostingVoucher {
+  return {
+    appId: f.appId,
+    uniqKey: `${order.orderKey}:PLATFORM:CLAWBACK:${PUNISH_EVENT}`,
+    bizType: 'ORDER_CLAWBACK',
+    bizId: order.orderKey,
+    operator: 'system',
+    memo: null,
+    orderKey: order.orderKey,
+    beneficiaryUserId: null,
+    role: null,
+    voucherKind: 'CLAWBACK',
+    entries: [
+      platformLine('COMMISSION_REVENUE', amount, 'CLAWBACK', 'PUNISH'),
+      platformLine(`UNION_RECEIVABLE:${order.platform}`, -amount, 'CLAWBACK', 'PUNISH'),
+    ],
+  };
+}
+
+/**
+ * A CREDITED order with its snapshot, share events and the vouchers of its credit, plus the steps
+ * of each role; CLAWED_BACK with the vouchers of the clawback when `punished`.
+ */
 export async function seedOrder(f: RestoreFixture, spec: OrderSpec = {}): Promise<SeededOrder> {
   const orderId = randomUUID();
   const platform = 'taobao';
@@ -374,11 +473,14 @@ export async function seedOrder(f: RestoreFixture, spec: OrderSpec = {}): Promis
   const orderKey = `${platform}:${subOrderId}`;
   const n = spec.settleFen ?? 1000n;
   const reserveBp = spec.reserveBp ?? 1500;
-  const bookedBaseFen = baseAt(n, reserveBp);
+  const punished = spec.punished === true;
+  // The base of the credit; R8 leaves booked_base_fen 0 on a punished order.
+  const creditBaseFen = baseAt(n, reserveBp);
+  const bookedBaseFen = punished ? 0n : creditBaseFen;
 
   const people: SeededPerson[] = [];
   for (const p of spec.people ?? DEFAULT_PEOPLE) {
-    const shareFen = shareAt(bookedBaseFen, p.ratioBp);
+    const shareFen = shareAt(creditBaseFen, p.ratioBp);
     const forfeited = p.forfeited === true;
     const creditedFen = p.creditedFen ?? (forfeited ? 0n : shareFen);
     people.push({
@@ -388,6 +490,7 @@ export async function seedOrder(f: RestoreFixture, spec: OrderSpec = {}): Promis
       forfeited,
       creditedFen,
       forfeitFen: forfeited ? (p.forfeitFen ?? subFen(shareFen, creditedFen)) : 0n,
+      steps: p.steps ?? [],
     });
   }
 
@@ -424,12 +527,13 @@ export async function seedOrder(f: RestoreFixture, spec: OrderSpec = {}): Promis
       user_basis: 'param',
       buy_type: orderType,
       platform_status: 'SETTLED',
-      rebate_status: 'CREDITED',
+      rebate_status: punished ? 'CLAWED_BACK' : 'CREDITED',
+      reason: punished ? 'PUNISH' : null,
       hold: false,
       rights_pending: false,
       commission_version: 1,
       est_commission_fen: rawN,
-      settle_commission_fen: n,
+      settle_commission_fen: spec.newSettleFen ?? n,
       subsidy_commission_fen: SUBSIDY_FEN,
       initial_est_fen: rawN,
       n_total_fen: nTotal,
@@ -441,7 +545,7 @@ export async function seedOrder(f: RestoreFixture, spec: OrderSpec = {}): Promis
       received_at: ATTR_AT,
       settle_period: SETTLE_PERIOD,
       booked_base_fen: bookedBaseFen,
-      booked_n_fen: n,
+      booked_n_fen: punished ? 0n : n,
       credited_at: CREDITED_AT,
       quantity: 1,
       refunded_quantity: 0,
@@ -523,6 +627,21 @@ export async function seedOrder(f: RestoreFixture, spec: OrderSpec = {}): Promis
       created_at: ATTR_AT,
     })
     .execute();
+  if (spec.newSettleFen !== undefined) {
+    await f.db
+      .insertInto('order_settlements')
+      .values({
+        app_id: f.appId,
+        order_id: orderId,
+        seq: 2,
+        source: 'STATEMENT',
+        settle_commission_fen: spec.newSettleFen,
+        settled_at: CREDITED_AT,
+        content_hash: randomUUID(),
+        created_at: CREDITED_AT,
+      })
+      .execute();
+  }
   for (const p of people) {
     await f.db
       .insertInto('commission_split_beneficiary_events')
@@ -577,6 +696,23 @@ export async function seedOrder(f: RestoreFixture, spec: OrderSpec = {}): Promis
       f,
       platformVoucher(f, ref, `${orderKey}:PLATFORM:CREDIT`, 'CREDIT', platformFen, null),
     );
+  }
+  for (const p of people) {
+    for (const [index, step] of p.steps.entries()) {
+      await post(f, stepVoucher(f, ref, p, step, String(index + 1)));
+    }
+  }
+  if (punished) {
+    let revenueFen = n;
+    for (const p of people) {
+      const net = p.steps.reduce((sum, step) => addFen(sum, step.fen), p.creditedFen);
+      revenueFen = subFen(revenueFen, net);
+      if (net > 0n) {
+        const step: NetStep = { kind: 'CLAWBACK', fen: subFen(0n, net) };
+        await post(f, stepVoucher(f, ref, p, step, PUNISH_EVENT, 'PUNISH'));
+      }
+    }
+    if (revenueFen > 0n) await post(f, punishPlatformVoucher(f, ref, revenueFen));
   }
 
   return {
@@ -833,6 +969,44 @@ export async function holdOrderKey(f: RestoreFixture, orderKey: string): Promise
       await sql`select pg_advisory_xact_lock(hashtextextended(${text}, 0))`.execute(trx);
       locked();
       await gate;
+    });
+  await Promise.race([ready, done]);
+  return {
+    async release() {
+      open();
+      await done;
+    },
+  };
+}
+
+/**
+ * Holds the member's users row from the suite's second pool; release() sets users.status to
+ * deleting on that transaction and commits, as deletion-expiry does under the same row lock
+ * (identity/application/deletion-expiry.ts ① ⑥).
+ */
+export async function holdUserIntoDeleting(f: RestoreFixture, userId: string): Promise<HeldLock> {
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  let locked!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    locked = resolve;
+  });
+  const done = f.s
+    .holder()
+    .transaction()
+    .execute(async (trx) => {
+      const rows = await sql`SELECT id FROM app.users
+        WHERE app_id = ${f.appId} AND id = ${userId} FOR UPDATE`.execute(trx);
+      expect(rows.rows, `users ${userId}`).toHaveLength(1);
+      locked();
+      await gate;
+      const moved = await sql`UPDATE app.users
+        SET status = 'deleting', row_version = row_version + 1, updated_at = ${f.clock.now()}
+        WHERE app_id = ${f.appId} AND id = ${userId} AND status = 'normal'
+        RETURNING id`.execute(trx);
+      expect(moved.rows, `users ${userId}`).toHaveLength(1);
     });
   await Promise.race([ready, done]);
   return {
