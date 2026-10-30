@@ -325,6 +325,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "listPageSectionItems",
+    "method": "GET",
+    "path": "/v1/pages/:page_key/sections/:section_id/items",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "getMessage",
     "method": "GET",
     "path": "/v1/messages/:message_id",

@@ -158,6 +158,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/pages/:page_key/sections/:section_id/items",
+    "auth": "none"
+  },
+  {
+    "method": "GET",
     "path": "/v1/messages/:message_id",
     "auth": "login"
   },

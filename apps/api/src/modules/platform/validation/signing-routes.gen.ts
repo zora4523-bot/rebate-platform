@@ -158,6 +158,11 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/pages/:page_key/sections/:section_id/items",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/v1/messages/:message_id",
     "signed": false
   },

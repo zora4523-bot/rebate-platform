@@ -897,6 +897,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/pages/{page_key}/sections/{section_id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One page of a section's product data source (union_material)
+         * @description Paged items of a section whose cards are fetched by the card itself (04 §6 卡片数据源分页;
+         *     03 §6.2 item 3; BR-TEXT-17 细则「联盟物料频道」). This version covers only the
+         *     `union_material` data source; `product_pool` and the fall-back to the product pool on a
+         *     union failure (02 §14) are added by later contracts. The rules below are 编排者默认
+         *     (D10-452).
+         *
+         *     Which version is read: the same rule as getPage. X-Device-Id is required here (every card
+         *     carries a registered link_id, as getHotRank): the device is bucketed and gets the gray
+         *     version when its bucket is in range, otherwise the fully released version; drafts are
+         *     never read. The section's min_app_version is compared with X-Platform
+         *     and X-App-Version as in getPage, and a section filtered out by it counts as not being in
+         *     the version. This operation has no bearer token, so `condition` is not evaluated: the
+         *     caller got the section from getPage, which has evaluated it.
+         *
+         *     30701: the page_key does not exist, it has no published version, that version has no such
+         *     section, or the section's data source kind is not `union_material`.
+         *     20001: `cursor` is invalid or does not belong to this page and section, with
+         *     data.fields=[cursor]; a page_key or section_id of the wrong shape gives data.fields=[page_key]
+         *     or [section_id].
+         *
+         *     Fetching: before every fetch the server checks each channel of the data source against
+         *     specs/material-channels.yaml; a channel that is missing or no longer selectable is not
+         *     fetched and an alert is raised (BR-TEXT-17 细则「取数时再查一次」). Several channels with
+         *     `mix: interleave` are merged by interleaving; the order inside a channel is kept, and no
+         *     commission or rebate weight is added. Items in a blocked category or with an abnormal price
+         *     are not sent. `ad_label` is null on every card.
+         *
+         *     No usable channel, no data from any channel and a union failure all answer 200 with
+         *     `items: []` and `next_cursor: null`, never 50304; the client hides the card when it is
+         *     empty (03 §6.2). Page size is the server constant 20 (no limit parameter, as getHotRank).
+         *     `cursor` is opaque: the client sends `next_cursor` back unchanged.
+         */
+        get: operations["listPageSectionItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/messages/{message_id}": {
         parameters: {
             query?: never;
@@ -10521,6 +10571,17 @@ export interface components {
             data: components["schemas"]["Page"];
             trace_id: components["schemas"]["TraceId"];
         };
+        PageSectionItemsData: {
+            /** @description In server order; the client does not reorder them. */
+            items: components["schemas"]["ProductCard"][];
+            next_cursor: string | null;
+        };
+        PageSectionItemsResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["PageSectionItemsData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
         InboxMessage: {
             message_id: components["schemas"]["Id"];
             /** @description Message template code (notify_templates). */
@@ -19851,6 +19912,102 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["PagePreviewResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listPageSectionItems: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                /**
+                 * @description Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
+                 *     another shape → 20001 with data.fields=[page_key].
+                 */
+                page_key: components["parameters"]["PageKeyPath"];
+                /** @description Section id, the `id` of the section in contracts/home-schema.json. */
+                section_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of the section's items; empty when there is nothing to show. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "product_key": "tb:7Kq9LmN3pQ",
+                     *             "item_ref": "v1.dGJfN0txOUxtTjNwUQ.c2ln",
+                     *             "platform": "taobao",
+                     *             "shop_type": "tmall",
+                     *             "title": "降噪蓝牙耳机 5.3",
+                     *             "image": "https://img.example.test/p/7Kq9LmN3pQ.jpg",
+                     *             "shop_name": "示例旗舰店",
+                     *             "price_fen": 3990,
+                     *             "coupon_fen": 1000,
+                     *             "final_price_fen": 2990,
+                     *             "est_net_price_fen": 2721,
+                     *             "rebate_min_fen": 269,
+                     *             "rebate_max_fen": 269,
+                     *             "rebate_basis": "normal",
+                     *             "benefit_tags": [
+                     *               "有券"
+                     *             ],
+                     *             "spec_text": null,
+                     *             "is_presale": false,
+                     *             "link_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70",
+                     *             "cta": {
+                     *               "text_key": "btn.buy.coupon"
+                     *             },
+                     *             "quoted_at": "2026-10-05T10:00:00+08:00",
+                     *             "stale": false,
+                     *             "age_sec": 12,
+                     *             "source": "taobao_union",
+                     *             "disclaimer_keys": [
+                     *               "price_basis"
+                     *             ],
+                     *             "ad_label": null,
+                     *             "availability": "ok"
+                     *           }
+                     *         ],
+                     *         "next_cursor": "Y3Vyc29yLWV4YW1wbGU"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PageSectionItemsResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];
