@@ -145,7 +145,7 @@ it('[AC-B2-09f#28] 一次发起是新的一轮：生成的批次 in_current_roun
   });
 });
 
-it('[AC-B2-09f#29] 校验范围：只看所发起平台和本应用的子订单；hold、维权中的单不入批；金额不符的单不入批且登记 R1 差错 settle_amount_mismatch，账期为账单月；已入账子订单上开着的补记义务生成受益人明细（order_count 不计）', async () => {
+it('[AC-B2-09f#29] 校验范围：只看所发起平台和本应用的子订单；hold、维权中的单不入批；金额不符的单不入批且登记 R1 差错 settle_amount_mismatch，账期为账单月；已入账子订单上开着的补记义务生成受益人明细（order_count 不计）；差错数与暂缓数不回写账单（D10-280 ③）', async () => {
   const f = fixture(s);
   const other = fixture(s);
   await creditOn(f, 'taobao', 'jd');
@@ -161,6 +161,7 @@ it('[AC-B2-09f#29] 校验范围：只看所发起平台和本应用的子订单�
   const creditId = await seedObligation(f, credited);
   await seedOrder(other);
   await withCommandsAdmin(f, async (h) => {
+    const { bills } = await everything(f);
     const data = await launched(await h.supplement(bill.bill_id, TAOBAO));
     expect(data.outcome).toBe('generated');
     const batches = await allBatches(f);
@@ -190,6 +191,8 @@ it('[AC-B2-09f#29] 校验范围：只看所发起平台和本应用的子订单�
       actual_fen: 935n,
     });
     expect(await allBatches(other)).toEqual([]);
+    // One difference and two deferred orders in this run: error_count and held_count stay.
+    expect((await everything(f)).bills).toEqual(bills);
   });
 });
 
@@ -220,7 +223,7 @@ it('[AC-B2-09f#30] 无可纳入数据不是错误：outcome=generated、batch_id
   });
 });
 
-it('[AC-B2-09f#31] 账单下还有 DRAFT 就拒绝发起（D10-440）：同平台、别的平台、别的轮次（撤销定时回来的）的 DRAFT → 20001 data.fields=[bill_id] data.reason=pending_draft，什么都不写、不写审计；驳回或确认后可发起', async () => {
+it('[AC-B2-09f#31] 账单下还有 DRAFT 就拒绝发起（D10-440）：同平台、别的平台、别的轮次（撤销定时回来的）的 DRAFT → 20001 data.fields=[bill_id] data.reason=pending_draft，什么都不写、不写审计；驳回或确认后可发起，不在最近一轮的 DRAFT 同样能驳回（D10-444）', async () => {
   const f = fixture(s);
   await creditOn(f, 'taobao', 'jd');
   await seedOrder(f);
@@ -229,7 +232,7 @@ it('[AC-B2-09f#31] 账单下还有 DRAFT 就拒绝发起（D10-440）：同平�
   const otherBill = await seedBill(f, '2026-08');
   await seedBatch(f, otherBill, { platform: 'jd' });
   const oldRoundBill = await seedBill(f, '2026-07');
-  await seedBatch(f, oldRoundBill, { platform: 'jd' });
+  const oldDraft = await seedBatch(f, oldRoundBill, { platform: 'jd' });
   await seedBatch(f, oldRoundBill, { kind: 'supplement', status: 'DONE', created_at: ago(f, 60) });
   await withCommandsAdmin(f, async (h) => {
     const before = await everything(f);
@@ -243,6 +246,19 @@ it('[AC-B2-09f#31] 账单下还有 DRAFT 就拒绝发起（D10-440）：同平�
       0,
     );
     expect((await launched(await h.supplement(sameBill.bill_id, TAOBAO))).outcome).toBe(
+      'generated',
+    );
+
+    const rows = await batchesOf(
+      await h.reject(oldDraft.batch_id, { expected_row_version: 0, reason: '驳回旧一轮' }),
+    );
+    expect(rows.find((row) => row['batch_id'] === oldDraft.batch_id)).toMatchObject({
+      status: 'CANCELLED',
+      in_current_round: false,
+    });
+    // A later nominal moment: settle_jobs' key has no bill, the same instant would be a replay.
+    f.clock.set(later(f, 1));
+    expect((await launched(await h.supplement(oldRoundBill.bill_id, TAOBAO))).outcome).toBe(
       'generated',
     );
   });
@@ -269,23 +285,31 @@ it('[AC-B2-09f#32] 这些不拦发起：CONFIRMED（立即与定时，D10-440）
   });
 });
 
-it('[AC-B2-09f#33] 发起守卫：credit.enabled.<platform> 未配置或为 off → 20001 data.fields=[platform] data.reason=credit_disabled；账单生成中、账单日任务在该账单上没有这个平台的结果 → 20001 data.fields=[bill_id] data.reason=bill_not_ready；什么都不写、不写审计；开关打开后放行', async () => {
+it('[AC-B2-09f#33] 发起守卫：credit.enabled.<platform> 未配置或为 off → 20001 data.fields=[platform] data.reason=credit_disabled；账单生成中、账单日任务在该账单上没有这个平台的结果 → 20001 data.fields=[bill_id] data.reason=bill_not_ready；两者都先于 pending_draft（账单上有 DRAFT 也先报它们）；什么都不写、不写审计；开关打开后放行', async () => {
   const f = fixture(s);
   await creditOn(f, 'taobao');
   await seedBill(f, '2026-09', { platform_order_counts: { taobao: 3 } });
   await seedBill(f, '2026-08', GENERATING);
+  const drafted = await seedBill(f, '2026-07', { platform_order_counts: { taobao: 3 } });
+  await seedBatch(f, drafted);
+  await seedBatch(f, await seedBill(f, '2026-06', GENERATING));
   await seedOrder(f, { platform: 'jd' });
   await withCommandsAdmin(f, async (h) => {
     const before = await everything(f);
     const jd = { platform: 'jd' };
     await refused(await h.supplement('2026-09', jd), ['platform'], 'credit_disabled');
+    await refused(await h.supplement('2026-07', jd), ['platform'], 'credit_disabled');
     await setSwitch(f, creditSwitch('jd'), false);
     pastConfigCache(f);
     await refused(await h.supplement('2026-09', jd), ['platform'], 'credit_disabled');
+    await refused(await h.supplement('2026-07', jd), ['platform'], 'credit_disabled');
     await refused(await h.supplement('2026-08', TAOBAO), ['bill_id'], 'bill_not_ready');
+    await refused(await h.supplement('2026-06', TAOBAO), ['bill_id'], 'bill_not_ready');
     await setSwitch(f, creditSwitch('jd'), true);
     pastConfigCache(f);
     await refused(await h.supplement('2026-09', jd), ['bill_id'], 'bill_not_ready');
+    await refused(await h.supplement('2026-07', jd), ['bill_id'], 'bill_not_ready');
+    await refused(await h.supplement('2026-07', TAOBAO), ['bill_id'], 'pending_draft');
     expect(await everything(f)).toEqual(before);
 
     expect((await launched(await h.supplement('2026-09', TAOBAO))).outcome).toBe('generated');

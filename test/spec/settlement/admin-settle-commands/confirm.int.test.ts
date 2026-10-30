@@ -143,23 +143,34 @@ it('[AC-B2-09f#7] 确认立即结算（settle_mode 缺省即 IMMEDIATE）：账�
   });
 });
 
-it('[AC-B2-09f#8] 定时结算：SCHEDULED 带 scheduled_at（带时区偏移的写法按同一瞬间存），恰好 00:30:00 已不在快照时段内可以保存；批次记 settle_mode SCHEDULED 与 scheduled_at，账单派生为 scheduled；settle_mode 明写 IMMEDIATE 与缺省等价；审计含结算方式与定时时刻', async () => {
+it('[AC-B2-09f#8] 定时结算：SCHEDULED 带 scheduled_at（带时区偏移的写法按同一瞬间存），恰好 00:30:00 已不在快照时段内可以保存；批次记 settle_mode SCHEDULED 与 scheduled_at，账单派生为 scheduled；补充批次同样可以定时（⑧），与首批同在一次确认里或账单只有补充批次 DRAFT 都一样；settle_mode 明写 IMMEDIATE 与缺省等价；审计含结算方式与定时时刻', async () => {
   const f = fixture(s);
   const at = '2026-10-31T00:30:00+08:00';
   const bill = await seedBill(f, '2026-09');
   const taobao = await seedBatch(f, bill);
   const jd = await seedBatch(f, bill, { platform: 'jd', row_version: 1 });
+  const mixed = await seedBatch(f, bill, {
+    kind: 'supplement',
+    platform: 'pdd',
+    created_at: ago(f, 60),
+  });
   const plain = await seedBill(f, '2026-08');
   const immediate = await seedBatch(f, plain);
+  const roundBill = await seedBill(f, '2026-07');
+  const finished = await seedBatch(f, roundBill, { status: 'DONE' });
+  const onlySupplement = await seedBatch(f, roundBill, {
+    kind: 'supplement',
+    created_at: ago(f, 60),
+  });
   await withCommandsAdmin(f, async (h) => {
     const data = await billOf(
       await h.confirm(bill.bill_id, {
-        expected_batches: expected([taobao, jd]),
+        expected_batches: expected([taobao, jd, mixed]),
         settle_mode: 'SCHEDULED',
         scheduled_at: at,
       }),
     );
-    for (const batch of [taobao, jd]) {
+    for (const batch of [taobao, jd, mixed]) {
       expect(await batchNow(f, batch)).toEqual(
         confirmed(f, batch, h.biller.id, 'SCHEDULED', new Date(at)),
       );
@@ -179,16 +190,31 @@ it('[AC-B2-09f#8] 定时结算：SCHEDULED 带 scheduled_at（带时区偏移的
     expect(await batchNow(f, immediate)).toEqual(
       confirmed(f, immediate, h.biller.id, 'IMMEDIATE', null),
     );
+
+    const round = await billOf(
+      await h.confirm(roundBill.bill_id, {
+        expected_batches: expected([onlySupplement]),
+        settle_mode: 'SCHEDULED',
+        scheduled_at: at,
+      }),
+    );
+    expect(await batchNow(f, onlySupplement)).toEqual(
+      confirmed(f, onlySupplement, h.biller.id, 'SCHEDULED', new Date(at)),
+    );
+    expect(round['status']).toBe('scheduled');
+    expect(await batchNow(f, finished)).toEqual(finished);
   });
 });
 
-it('[AC-B2-09f#9] 确认覆盖不在最近一轮的 DRAFT（D10-444）：撤销定时回到 DRAFT 的首批在后来的补充轮之外（in_current_round false），账单派生甚至是 settled；再确认必须连它一起，只报最近一轮的 DRAFT → 20902；连它一起确认后账单下不再有 DRAFT，不悬空', async () => {
+it('[AC-B2-09f#9] 确认覆盖不在最近一轮的 DRAFT（D10-444）：撤销定时回到 DRAFT 的首批在后来的补充轮之外（in_current_round false），账单派生甚至是 settled；再确认必须连它一起，只报最近一轮的 DRAFT → 20902；连它一起确认后账单下不再有 DRAFT，不悬空；带「因开关为 off 停住」标记的批次撤销定时再确认后标记不动（SB3，不能按 SB5 自动开始）', async () => {
   const f = fixture(s);
   const bill = await seedBill(f, '2026-09');
+  const paused = ago(f, 5);
   const scheduled = await seedBatch(f, bill, {
     status: 'CONFIRMED',
     settle_mode: 'SCHEDULED',
     row_version: 1,
+    paused_by_switch_at: paused,
   });
   const executed = await seedBatch(f, bill, {
     kind: 'supplement',
@@ -213,6 +239,7 @@ it('[AC-B2-09f#9] 确认覆盖不在最近一轮的 DRAFT（D10-444）：撤销�
       created_at: ago(f, 30),
     });
     const draft = await batchNow(f, scheduled);
+    expect(draft.paused_by_switch_at).toEqual(paused);
     await conflict(await h.confirm(bill.bill_id, { expected_batches: expected([latest]) }));
     await conflict(await h.confirm(bill.bill_id, { expected_batches: expected([draft]) }));
     expect(await batchNow(f, draft)).toEqual(draft);
@@ -222,6 +249,7 @@ it('[AC-B2-09f#9] 确认覆盖不在最近一轮的 DRAFT（D10-444）：撤销�
       await h.confirm(bill.bill_id, { expected_batches: expected([draft, latest]) }),
     );
     expect(data['draft_batch_count']).toBe(0);
+    // confirmed() keeps paused_by_switch_at: a confirmation that cleared it would let SB5 start it.
     expect(await batchNow(f, draft)).toEqual(confirmed(f, draft, h.biller.id, 'IMMEDIATE', null));
     expect(await batchNow(f, latest)).toEqual(confirmed(f, latest, h.biller.id, 'IMMEDIATE', null));
     expect(await batchNow(f, executed)).toEqual(executed);
