@@ -15241,11 +15241,14 @@ paths:
         another PID of the same app × platform × union account (union_account_id) × pid_scene
         is active → 30155 (only one active per union account and scene; PIDs of other union
         accounts of the same platform and scene may be active at the same time; retire it
-        first, BR-ATTR-02 细则「后台登记与启停」, orchestrator ruling D10-231). A request body
+        first, BR-ATTR-02 细则「后台修改与启用的裁定」, orchestrator ruling D10-231). A request body
         above the global limit stays 413 with `data.fields=[body]`. Effects, in one
         transaction: the screenshot is stored in the private OSS bucket and its path written
         to hjy_ignore_evidence_path, with hjy_ignore_confirmed_at, status becomes active and
-        row_version goes up by 1; from then on links of that scene use this PID (BR-ATTR-02).
+        row_version goes up by 1; which union account's active PID a new link of the scene
+        uses follows BR-ATTR-05 细则 ⑦ (Taobao / Pinduoduo: the bound account's; JD: the
+        earliest-activated active PID of the scene), so activating this PID does not by itself
+        switch other accounts' links.
         The partial unique index on (app, platform, union_account_id, pid_scene) for active
         rows is the last line against a concurrent second activation, which also answers
         30155. Writes an audit record (action union_pid_activate, reason). The response is
@@ -15360,8 +15363,10 @@ paths:
         Only active → retired (BR-ATTR-02 细则「后台登记与启停」): a pending or retired row, or an
         `expected_row_version` that differs, is 20902 with `data.resource=union_pid`. There is no
         pending → retired and no retired → active. A retired PID stays on the whitelist, so
-        orders from links already sent keep coming in (BR-ATTR-02 「为什么保留 retired」); new links
-        of the scene use the active PID, and until one is activated the scene has none.
+        orders from links already sent keep coming in (BR-ATTR-02 「为什么保留 retired」); retiring
+        leaves that union account without an active PID in the scene until one is activated,
+        and which account's active PID new links of the scene use follows BR-ATTR-05 细则 ⑦
+        (Taobao / Pinduoduo: the bound account's; JD: the earliest-activated active PID).
         row_version goes up by 1. Writes an audit record (action union_pid_retire, reason). The
         response is the row as it is now. No Idempotency-Key.
       x-auth: admin
