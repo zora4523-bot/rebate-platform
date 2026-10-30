@@ -45,13 +45,28 @@ import {
 const s = suite();
 const DAY = 24 * 60;
 
-it('[AC-B2-09d#10] 账单详情（settle.bill 或 fund.view 任一即可，超管也能读）：恰好是契约的 AdminSettleBillDetail——列表行的字段加 batches：该账单的全部批次（首批与补充、含驳回的），按 created_at、再按 batch_id 升序，每个批次的列原样、in_current_round 只在最近一轮为 true、item_counts 按 item_type × result 读时汇总（pending = 未执行）；详情的列表字段与列表行一致；读取不写审计、不改三张表', async () => {
+it('[AC-B2-09d#10] 账单详情（settle.bill 或 fund.view 任一即可，超管也能读）：恰好是契约的 AdminSettleBillDetail——列表行的字段加 batches：该账单的全部批次（首批与补充、含驳回的），按 created_at、再按 batch_id 升序，每个批次的列原样、in_current_round 只在最近一轮为 true、item_counts 按 item_type × result 读时汇总（pending = 未执行）；详情的列表字段与列表行一致；其他应用同一账单月的批次与明细不出现、不计入计数与派生状态；读取不写审计、不改三张表', async () => {
   const f = fixture(s);
   const bill = await seedBill(f, '2026-09', {
     generation_started_at: ago(f, 5 * DAY + 15),
     generated_at: ago(f, 5 * DAY),
   });
   const other = await seedBill(f, '2026-08');
+  // Another app's bill of the same month: a main batch executed (confirmed_by that app's admin)
+  // and a later supplement launch waiting for confirmation, both with items. Read by bill_id
+  // alone, they would join this bill's batches, counts and round (the status would turn issued).
+  const foreignApp = fixture(s);
+  const foreignBill = await seedBill(foreignApp, '2026-09', {
+    generation_started_at: ago(foreignApp, 5 * DAY + 15),
+    generated_at: ago(foreignApp, 5 * DAY),
+  });
+  const foreignMain = await seedBatch(foreignApp, foreignBill, { status: 'DONE' });
+  await seedOrderItem(foreignApp, foreignMain, { result: 'credited' });
+  const foreignLatest = await seedBatch(foreignApp, foreignBill, {
+    kind: 'supplement',
+    created_at: ago(foreignApp, DAY),
+  });
+  await seedOrderItem(foreignApp, foreignLatest);
   await withSettleAdmin(f, async (h) => {
     const member = await seedMember(f, h.crypto);
     // The bill-day task: taobao executed, jd rejected; both created at the same instant.
@@ -107,6 +122,7 @@ it('[AC-B2-09d#10] 账单详情（settle.bill 或 fund.view 任一即可，超�
       ),
     };
     const before = await footprint(f);
+    const foreignBefore = await footprint(foreignApp);
     const root = await h.caller([], { superAdmin: true });
     for (const who of [h.biller, h.viewer, root]) {
       const sent = await h.detail(bill.bill_id, who);
@@ -115,14 +131,17 @@ it('[AC-B2-09d#10] 账单详情（settle.bill 或 fund.view 任一即可，超�
       for (const b of data['batches'] as Record<string, unknown>[]) {
         expect(Object.keys(b).sort(), sent.body).toEqual([...BATCH_KEYS]);
       }
+      // Exactly this app's batches, counts and status: none of the other app's same-month bill.
       expect(data, sent.body).toEqual(expected);
     }
     // The list row of the bill is the detail without its batches.
     const listed = await page(await h.list({ bill_from: '2026-09' }));
     expect(listed.items.map(normalize)).toEqual([billView(bill, 'scheduled', all)]);
     expect(await footprint(f)).toEqual(before);
+    expect(await footprint(foreignApp)).toEqual(foreignBefore);
   });
   expect(await allAudits(f)).toEqual([]);
+  expect(await allAudits(foreignApp)).toEqual([]);
 });
 
 it('[AC-B2-09d#11] 账单状态各分支（详情与列表一致，不存不写）：generating（生成中，即使已有批次）；issued（DRAFT、无批次、全部被驳回）；scheduled（定时未到）；settling（EXECUTING、PARTIAL、CONFIRMED 立即结算、定时已过）；settled（全部 DONE，驳回的不算）；时钟走到定时时刻（不晚于当前时刻）即转为 settling，三张表不变', async () => {

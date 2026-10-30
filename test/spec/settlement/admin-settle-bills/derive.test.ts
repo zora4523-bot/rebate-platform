@@ -8,8 +8,10 @@
 // generating = generated_at null; issued = no batch of the round left that is not CANCELLED, or
 // one is DRAFT; settled = every one DONE; settling = one EXECUTING / PARTIAL, or CONFIRMED with
 // IMMEDIATE or scheduled_at not later than now; scheduled = otherwise. Pure function, no database.
-// Top-level it() only (规划/11 §4.3).
+// Top-level it() only; properties run with propParams() (PROP_RUNS / PROP_SEED) and return a
+// boolean (规划/11 §4.3).
 import { randomUUID } from 'node:crypto';
+import { propParams } from '@couli/testing';
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
 import {
@@ -258,20 +260,30 @@ const arbBatch: fc.Arbitrary<AdminSettleRoundBatch> = fc
     created_at: new Date(GENERATED.getTime() + r.createdStep * 60 * 24 * MINUTE),
   }));
 
+/** The derivation of `batches` in both input orders agrees with the oracle. */
+function agrees(generatedAt: Date | null, batches: readonly AdminSettleRoundBatch[]): boolean {
+  const want = oracle(generatedAt, batches, NOW);
+  return [batches, [...batches].reverse()].every((order) => {
+    const got = deriveAdminSettleBill(generatedAt, order, NOW);
+    if (got.status !== want.status) return false;
+    if (generatedAt === null) return true;
+    const round = sorted(got.currentRound);
+    return (
+      round.length === want.currentRound.length &&
+      round.every((id, index) => id === want.currentRound[index])
+    );
+  });
+}
+
 it('[AC-B2-09d#3] 随机批次集合（主批次 / 补充批次、六种状态、立即 / 定时且定时时刻在当前时刻前后、轮时刻相同）：派生状态与 currentRound 与契约规则逐一相同，且与批次的输入顺序无关', () => {
-  fc.assert(
-    fc.property(
-      fc.option(fc.constant(GENERATED), { freq: 6 }),
-      fc.uniqueArray(arbBatch, { maxLength: 8, selector: (b) => b.batch_id }),
-      (generatedAt, batches) => {
-        const want = oracle(generatedAt, batches, NOW);
-        for (const order of [batches, [...batches].reverse()]) {
-          const got = deriveAdminSettleBill(generatedAt, order, NOW);
-          expect(got.status).toBe(want.status);
-          if (generatedAt !== null) expect(sorted(got.currentRound)).toEqual(want.currentRound);
-        }
-      },
+  expect(() =>
+    fc.assert(
+      fc.property(
+        fc.option(fc.constant(GENERATED), { freq: 6 }),
+        fc.uniqueArray(arbBatch, { maxLength: 8, selector: (b) => b.batch_id }),
+        agrees,
+      ),
+      propParams(),
     ),
-    { numRuns: 400 },
-  );
+  ).not.toThrow();
 });
