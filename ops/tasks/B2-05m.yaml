@@ -1,0 +1,23 @@
+id: B2-05m
+repo: rebate-platform
+title: 迁移：withdrawals 加列 review_overdue_at timestamptz NULL（BR-WDR-26「每单只判定一次」的判定时刻；超时检查任务置位，couli_app UPDATE(review_overdue_at)）；只加列、不回填、不动既有约束
+type: impl
+# 2026-10-31 入账（withdraw 线，编排裁定 D10-467 ④：WD_OVERDUE 超时检查任务归 withdraw，排在 B2-08a 之后）。资金表 withdrawals 的加列迁移（lint-migrations 资金表规则；无 DROP / 改型），需迁移槽，落地按 D10-116 取主干最大 +1。
+# 列语义：NULL = 未判定；非空 = 超时检查任务在该时刻判定「审核超时」（判定时 status ∈ {PENDING_REVIEW, APPROVED}）；终态单不再写。快照 db/schema.sql / db.gen.ts 由本线在测试机 pnpm db:snapshot 生成。
+refs: [BR-WDR-26]
+refs_hash:
+  BR-WDR-26: 158db40de631
+deps: [B2-08a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/**'
+test_paths:
+  - 'test/spec/payout/review-overdue-schema/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/review-overdue-schema/**'
+status: todo
+pr: null
