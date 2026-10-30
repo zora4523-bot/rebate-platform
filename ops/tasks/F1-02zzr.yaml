@@ -1,0 +1,20 @@
+id: F1-02zzr
+repo: rebate-platform
+title: 迁移（D10-465）：app.agreements 的 agreements_type_check 增加 sdk_list、collect_list
+type: migration
+# 2026-10-31 入账（content-client；编排裁定 D10-465 方案 A）。CHECK 同名重建（NOT VALID → VALIDATE 两步，照迁移门禁惯例），授权不变；迁移号落地时取主干最大 +1，先报迁移槽；schema.sql 与 db.gen.ts 由编排者沙箱外 pnpm db:snapshot 生成。
+refs: []
+refs_hash: {}
+deps: [CT-02zb]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/content/agreements-sdk-collect/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
