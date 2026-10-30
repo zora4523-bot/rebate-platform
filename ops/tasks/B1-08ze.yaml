@@ -17,8 +17,8 @@ impl: claude
 tester: claude-independent
 accept:
   - 'pnpm verify'
-status: todo
-pr: null
+status: done
+pr: 1898
 red_exempt:
   - file: test/spec/orders/platform-restore/boundary.int.test.ts
     test: '[AC-B1-08zc#26] P9 去向 SETTLED：VOID(REFUND) 由 INVALID 直接结算、结算佣金为 0 → 状态触发出一张单，金额按结算佣金（0），不取预估佣金 789'

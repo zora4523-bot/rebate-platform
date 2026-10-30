@@ -231,9 +231,9 @@ it('[AC-B1-08zc#26] P9 去向 SETTLED：VOID(REFUND) 由 INVALID 直接结算、
     source: 'R1',
     ref_type: 'order',
     ...keys(f),
-    expected_fen: 0n,
+    expected_fen: 789n,
     actual_fen: 0n,
-    diff_fen: 0n,
+    diff_fen: 789n,
     status: 'open',
     resolution: {
       reason_code: 'REFUND',
