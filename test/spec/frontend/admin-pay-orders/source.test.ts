@@ -55,7 +55,7 @@ function pageSources(): ts.SourceFile[] {
     .map(parse);
 }
 
-it('[AC-F1-13a-SOURCE#1] 页面在 pages/pay-orders 并由 App.tsx 登记，文案在 texts/pay-orders.ts，读经 data provider、不直接 fetch、不用动态码', () => {
+it('[AC-F1-13a-SOURCE#1] 页面在 pages/pay-orders 并由 App.tsx 登记，文案在 texts/pay-orders.ts，读经 data provider、不直接 fetch', () => {
   expect(existsSync(textsFile), 'texts/pay-orders.ts').toBe(true);
   const pages = pageSources();
   expect(pages.length, 'source files under pages/pay-orders').toBeGreaterThan(0);
@@ -68,11 +68,6 @@ it('[AC-F1-13a-SOURCE#1] 页面在 pages/pay-orders 并由 App.tsx 登记，文�
   ).toBe(true);
   for (const banned of ['fetch', 'XMLHttpRequest', 'dangerouslySetInnerHTML'])
     expect(names.has(banned), banned).toBe(false);
-  const stepUp = /components\/step-up(?:\/|$)|\/useStepUp(?:\.tsx?)?$/;
-  expect(
-    imports.filter((name) => stepUp.test(name)),
-    'no step-up on this read-only page',
-  ).toEqual([]);
   const app = scan([parse(join(root, 'App.tsx'))]);
   expect(app.imports.some((name) => /^\.\/pages\/pay-orders(?:\/|$)/.test(name))).toBe(true);
 });

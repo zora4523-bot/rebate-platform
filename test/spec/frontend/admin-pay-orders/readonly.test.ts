@@ -7,9 +7,10 @@ import {
   OUT_REFUND_NO,
   OUT_TRADE_NO,
   PERIOD,
-  SUPER,
+  VIEW_GRANTS,
   createServer,
   detailRoute,
+  snapshot,
 } from './fixtures.ts';
 import {
   FLOW_TIMEOUT,
@@ -66,10 +67,10 @@ it(
 );
 
 it(
-  '[AC-F1-13a-READONLY#2] 超管看部分退款的已支付单详情：没有可用的【发起退款】【立即查询】【处置】等写入口；点了也只发四个 GET 之一，不弹动态码',
+  '[AC-F1-13a-READONLY#2] 只持 pay.view 的账号看部分退款的已支付单详情：没有可用的【发起退款】【立即查询】【处置】等写入口；点了也只发四个 GET 之一，不弹动态码',
   async () => {
     const server = createServer();
-    await mount(server, { snapshot: SUPER, route: detailRoute(ORDER.refunded) });
+    await mount(server, { snapshot: snapshot(VIEW_GRANTS), route: detailRoute(ORDER.refunded) });
     await waitFor(() => expect(server.detailReads(ORDER.refunded).length).toBeGreaterThan(0));
     await settled(server);
     await waitFor(() =>
@@ -86,10 +87,10 @@ it(
 );
 
 it(
-  '[AC-F1-13a-READONLY#3] 超管看待人工处置的支付单详情（PENDING、needs_manual）：没有可用的【立即查询】【处置】；不读退款单列表等其他接口',
+  '[AC-F1-13a-READONLY#3] 只持 pay.view 的账号看待人工处置的支付单详情（PENDING、needs_manual）：没有可用的【立即查询】【处置】；不读退款单列表等其他接口',
   async () => {
     const server = createServer();
-    await mount(server, { snapshot: SUPER, route: detailRoute(ORDER.manual) });
+    await mount(server, { snapshot: snapshot(VIEW_GRANTS), route: detailRoute(ORDER.manual) });
     await waitFor(() => expect(server.detailReads(ORDER.manual).length).toBeGreaterThan(0));
     await settled(server);
     await waitFor(() => expect(document.body.textContent).toContain(OUT_TRADE_NO.manual));
