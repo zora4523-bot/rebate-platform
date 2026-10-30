@@ -14,6 +14,7 @@ import {
   type Clock,
   type RootLogger,
 } from '../platform/index.ts';
+import type { TaobaoPriceConfigReader } from './application/taobao-price-settings.ts';
 import type { TaobaoPriceWarning } from './domain/taobao-price.ts';
 import { UnionError, type CallCtx, type UnionEndpoint } from './domain/types.ts';
 import { createArchivingTransport } from './infra/archive.ts';
@@ -24,6 +25,17 @@ import type { PddWarning } from './infra/pdd/response.ts';
 import { createUnionRegistry, type UnionRegistry } from './infra/registry.ts';
 import type { UnionTransport } from './infra/replay.ts';
 import { readActivePddQueryPid } from './pids/query-reader.ts';
+
+/**
+ * B1-22q: the second argument of UnionModule.forRoot(directory, options). `config` builds union's
+ * Taobao price configuration port over the entry's database handle and clock (app.module:
+ * content's createContentReader, as UnionAdminModule's `config`). The demo adapters map Taobao
+ * prices with createTaobaoPriceSettings over it, read with ctx.appId on every mapping. The
+ * UNION_REGISTRY factory keeps its four dependencies.
+ */
+export interface UnionModuleOptions {
+  readonly config?: (db: Kysely<Database>, clock: Clock) => TaobaoPriceConfigReader;
+}
 
 /** Nest injection tokens provided by `UnionModule`. */
 export const UNION_ENDPOINTS = Symbol('UNION_ENDPOINTS');
