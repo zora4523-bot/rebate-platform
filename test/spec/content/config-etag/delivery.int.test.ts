@@ -307,10 +307,15 @@ it('[AC-F1-02h#16] 同名 config_items 不作为 lkg、bridge、config_version �
   expect(data.config_version).not.toBe('poison');
 });
 
-it('[AC-F1-02h#17] rank_platforms 总下发且只从物料频道派生，配置行和 features.flags 均不能覆盖', async () => {
+it('[AC-F1-02h#17] rank_platforms 总下发且只从物料频道派生，配置行和 features.flags 均不能覆盖（只认 sales / popularity，D10-422）', async () => {
   const spec = getMaterialChannels();
   const expected = PLATFORMS.filter((platform) =>
-    spec.channels.some((channel) => channel.platform === platform && channel.selectable),
+    spec.channels.some(
+      (channel) =>
+        channel.platform === platform &&
+        channel.selectable &&
+        (channel.sort_basis === 'sales' || channel.sort_basis === 'popularity'),
+    ),
   );
   const plain = await configured(h);
   expect((await snapshot(h.app, plain)).data.features.rank_platforms).toEqual(expected);
