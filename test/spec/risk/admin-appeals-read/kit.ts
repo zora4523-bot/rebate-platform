@@ -466,12 +466,27 @@ export async function snapshot(s: Scenario) {
       .where('app_id', '=', s.appId)
       .orderBy('order_id')
       .execute(),
-    audits: await audits(s),
+    audits: await db
+      .selectFrom('audit_logs')
+      .selectAll()
+      .where('app_id', '=', s.appId)
+      .orderBy('id')
+      .execute(),
   };
 }
 
+/**
+ * The app's phone-lookup audit records (the only audit a read may write). Filtered by action so
+ * the admin.login record that setup()'s sign-in writes is not counted.
+ */
 export const audits = (s: Scenario) =>
-  s.h.db.selectFrom('audit_logs').selectAll().where('app_id', '=', s.appId).orderBy('id').execute();
+  s.h.db
+    .selectFrom('audit_logs')
+    .selectAll()
+    .where('app_id', '=', s.appId)
+    .where('action', '=', 'blocked_request_lookup')
+    .orderBy('id')
+    .execute();
 
 // ---- contract checks ----
 
