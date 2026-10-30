@@ -198,6 +198,17 @@ export type {
   UnmappedOrderInfo,
 } from './application/update-step.ts';
 export type { PlatformStatusEvent } from './domain/status-map.ts';
+// B1-08zc：平台恢复差错单（BR-FUND-22）的 ref_id / dedupe_key（settlement 的 P9 登记复用）与登记端口形状。
+export { platformRestoreDedupeKey, platformRestoreRefId } from './domain/platform-restore.ts';
+export type {
+  PlatformRestoreResolution,
+  PlatformRestoreTrigger,
+} from './domain/platform-restore.ts';
+export type {
+  PlatformRestoreDiffInput,
+  PlatformRestoreDiffPort,
+  PlatformRestoreDiffResult,
+} from './application/platform-restore-step.ts';
 // B1-08i（D10-47 / D10-48）：order.attr_param_changed 载荷 changed 里的列名（告警事件与领域事件同经 events 总线）。
 export type { OrderAttrParamColumn } from './application/alert-events.ts';
 // B1-09b：第 ③ 步黑名单的纯判定与端口形状（BR-ATTR-26；返利端口 onBlacklistHit 的接线在资金线）。

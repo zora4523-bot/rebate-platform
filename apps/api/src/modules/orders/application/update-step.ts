@@ -109,6 +109,7 @@ import type {
   OrderPipelineDeps,
   OrderPipelineResult,
 } from './pipeline-types.ts';
+import type { PlatformRestoreDiffPort } from './platform-restore-step.ts';
 
 export interface OrderUpdateChange {
   readonly app_id: string;
@@ -178,6 +179,11 @@ export interface OrderUpdateDeps extends Pick<
   readonly regressionHold?: (platform: Parameters<OrderPipelineDeps['statusMaps']>[0]) => boolean;
   /** 分佣快照端口（B1-08k）；同 OrderPipelineDeps.snapshots，未注入时第 ⑥ 步整步跳过。订单推广位场景经 pids 取。 */
   readonly snapshots?: CommissionSnapshotPort;
+  /**
+   * B1-08zc 平台恢复差错单端口（BR-FUND-22，ledger 实现、app.module 注入）；与本次写库同一事务调用，抛错整事务回滚。
+   * 未注入时不登记，只保留 P9 原有告警。
+   */
+  readonly platformRestore?: PlatformRestoreDiffPort;
 }
 
 type OrderRow = Selectable<DB['orders']>;
