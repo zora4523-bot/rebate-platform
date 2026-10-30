@@ -15,6 +15,7 @@ import {
   title,
   titlesOf,
   withCommission,
+  withTitle,
 } from './kit.ts';
 
 it('[AC-B1-05o#35] 每张卡走唯一出卡入口：entrySource=feed、scene=retrieval、deferLink=true', async () => {
@@ -63,14 +64,16 @@ it('[AC-B1-05o#38] 异常价由出卡入口跳过：记 PRICE_ANOMALY，不下�
   expect(f.anomalies()).toHaveLength(1);
 });
 
-it('[AC-B1-05o#39] 同一响应内按 product_key 去重：留交错后先出现的那张，不比价也不比佣金，后者不登记链接', async () => {
+it('[AC-B1-05o#39] 同一响应内按 product_key 去重：留交错后先出现的那张，不比价、不比佣金也不比返利，后者不登记链接', async () => {
   const [first, second] = refsOf(2);
   const f = sectionFixture({ channels: [first!, second!] });
   f.answer(first!, 1, [withCommission(candidate('same', { finalFen: 5_000n }), 100n)]);
   f.answer(second!, 1, [
     candidate('other'),
-    withCommission(candidate('same', { finalFen: 100n }), 9_000n),
+    withTitle(withCommission(candidate('same', { finalFen: 100n }), 9_000n), 'same-later'),
   ]);
+  f.quotes.set(title('same'), { min: 10n, max: 10n });
+  f.quotes.set(title('same-later'), { min: 900n, max: 900n });
 
   const data = await f.run();
 

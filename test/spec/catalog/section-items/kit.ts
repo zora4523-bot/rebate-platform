@@ -88,6 +88,11 @@ export function withCommission(entry: HotRankCandidate, rateBp: bigint): HotRank
   return { ...entry, item: { ...entry.item, commission_rate_bp: rateBp } };
 }
 
+/** The same product_key under its own card title, so the fake quoter can price it apart. */
+export function withTitle(entry: HotRankCandidate, name: string): HotRankCandidate {
+  return { ...entry, item: { ...entry.item, title: title(name) } };
+}
+
 export function encodeCursor(claims: unknown): string {
   return Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url');
 }
