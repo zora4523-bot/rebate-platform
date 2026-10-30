@@ -148,10 +148,7 @@ it('[AC-B1-08zc#25] 结算佣金同理：CLAWED_BACK(REFUND) 平台一直 SETTLE
   await expectNotRevived(f, 'CLAWED_BACK', 'REFUND');
 });
 
-it.each([
-  { settle: 0n as bigint | null, label: '0' },
-  { settle: null as bigint | null, label: '空' },
-])(
+it.each([{ settle: 0n as bigint | null, label: '0' }])(
   '[AC-B1-08zc#26] P9 去向 SETTLED：VOID(REFUND) 由 INVALID 直接结算、结算佣金为 $label → 状态触发出一张单，金额按结算佣金（0），不取预估佣金 789',
   async ({ settle }) => {
     const f = await scenario(db, {
@@ -204,3 +201,54 @@ it.each([
     expectP9Warn(f);
   },
 );
+
+it('[AC-B1-08zc#26] P9 去向 SETTLED：VOID(REFUND) 由 INVALID 直接结算、结算佣金为 空 → 状态触发出一张单，金额按结算佣金（0），不取预估佣金 789', async () => {
+  const f = await scenario(db, {
+    rebate: 'VOID',
+    reason: 'REFUND',
+    entry: { from: 'ESTIMATED', event: 'PLATFORM_INVALID', to: 'VOID' },
+    imported: 'invalid',
+    est: 789n,
+  });
+  expect(
+    await f.sync({
+      raw_status: 'settled',
+      received_at: at(RECEIVED),
+      settled_at: at(SETTLED),
+      settle_commission_fen: null,
+    }),
+  ).toMatchObject({ ok: true, value: { kind: 'updated' } });
+  const row = await f.order();
+  expect(row.platform_status).toBe('SETTLED');
+  expect(row.est_commission_fen).toBe(789n);
+  expect(row.settle_commission_fen).toBe(null);
+  await expectNotRevived(f, 'VOID', 'REFUND');
+
+  const diffs = await f.diffs();
+  expect(diffs).toHaveLength(1);
+  expect(diffs[0]).toMatchObject({
+    type: 'platform_restore',
+    source: 'R1',
+    ref_type: 'order',
+    ...keys(f),
+    expected_fen: 0n,
+    actual_fen: 0n,
+    diff_fen: 0n,
+    status: 'open',
+    resolution: {
+      reason_code: 'REFUND',
+      rebate_status: 'VOID',
+      trigger: 'status',
+      platform_status: 'SETTLED',
+    },
+  });
+  const warns = f.restoreWarns();
+  expect(warns).toHaveLength(1);
+  expect(warns[0]?.[0]).toMatchObject({
+    alert: RESTORE_ALERT,
+    recon_diff_id: diffs[0]?.id,
+    trigger: 'status',
+    reason_code: 'REFUND',
+  });
+  expectP9Warn(f);
+});

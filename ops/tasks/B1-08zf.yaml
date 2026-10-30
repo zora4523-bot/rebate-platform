@@ -1,0 +1,18 @@
+id: B1-08zf
+repo: rebate-platform
+title: 测试修改（纯结构）：冻结 [AC-B1-08zc#26] 的「结算佣金为空」行从 it.each 拆成同 AC、同标题的独立 it，期望不变（仍 0）；「为 0」行留在 it.each、标题与体逐字不变——为 B1-08ze 只改那条独立 it 的期望让路
+type: test-change
+# 2026-10-30 入账（content-client；编排裁定 D10-450：撤回 D10-449 的先红例外，改两步走，先例 F1-08gaa #1889）。
+# 纯结构调整，主干上全绿、断言强度不变；全新上下文 Claude 修改，另一全新上下文 Claude 只读复审 PASS（0/0/0），按 approvals #24 请编排加标签。
+refs: []
+refs_hash: {}
+deps: [B1-08zc]
+paths:
+  - 'test/spec/orders/platform-restore/boundary.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/platform-restore/**'
+status: todo
+pr: null
