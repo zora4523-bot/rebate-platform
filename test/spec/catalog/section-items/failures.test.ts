@@ -1,8 +1,8 @@
 // B1-05o: a union failure of one channel drops only that channel's page: one alert, its page number
 // stays and the next request asks for the same page. Failure of every channel fetched is the empty
-// answer, never 50304 (contract listPageSectionItems). What counts as a failure is the hot list's
-// isUnionOutage for UnionError and GovernanceError; a business refusal and a programming error
-// (编排补充说明 D10-452) are not swallowed.
+// answer, never 50304 (contract listPageSectionItems). A union-side error counts as a failure,
+// a business refusal included (编排裁定 D10-473, as isFeedFailure of the search use case); a
+// programming error (编排补充说明 D10-452) is not swallowed.
 import { expect, it } from 'vitest';
 import { GovernanceError } from '../../../../apps/api/src/modules/platform/index.ts';
 import { DemoUnionError, UnionError } from '../../../../apps/api/src/modules/union/index.ts';
@@ -149,15 +149,19 @@ const REFUSALS = [
 ];
 
 it.each(REFUSALS)(
-  '[AC-B1-05o#28] $label 按 isUnionOutage 不算上游失败：不吞，原样上抛',
+  '[AC-B1-05o#28] $label 也算联盟失败：只丢这个频道这一页，别的频道照常下发并注册链接，告警一条点名该频道，页码不前进',
   async ({ refusal }) => {
     const f = sectionFixture();
     f.failChannel(JD, refusal);
     f.answer(TB, 1, series('tb', 2));
 
-    const error = await rejection(() => f.run());
+    const data = await f.run();
 
-    expect(error === refusal).toBe(true);
-    expect(f.register).not.toHaveBeenCalled();
+    expect(titlesOf(data)).toEqual(names('tb', 2));
+    expect(f.registered()).toEqual(names('tb', 2));
+    expectPages(data, [0, 1]);
+    expect(f.warnings()).toEqual([
+      expect.objectContaining({ platform: JD.platform, channel_id: JD.channel_id }),
+    ]);
   },
 );
