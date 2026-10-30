@@ -2479,10 +2479,9 @@ paths:
         union failure (02 §14) are added by later contracts. The rules below are 编排者默认
         (D10-452).
 
-        Which version is read: the same rule as getPage. X-Device-Id is required here (every card
-        carries a registered link_id, as getHotRank): the device is bucketed and gets the gray
-        version when its bucket is in range, otherwise the fully released version; drafts are
-        never read. The section's min_app_version is compared with X-Platform
+        Which version is read: the same rule as getPage. With X-Device-Id the device is bucketed
+        and gets the gray version when its bucket is in range; without it (basic mode) it gets the
+        fully released version. Drafts are never read. The section's min_app_version is compared with X-Platform
         and X-App-Version as in getPage, and a section filtered out by it counts as not being in
         the version. This operation has no bearer token, so `condition` is not evaluated: the
         caller got the section from getPage, which has evaluated it.
@@ -2493,16 +2492,19 @@ paths:
         data.fields=[cursor]; a page_key or section_id of the wrong shape gives data.fields=[page_key]
         or [section_id].
 
-        Fetching: before every fetch the server checks each channel of the data source against
-        specs/material-channels.yaml; a channel that is missing or no longer selectable is not
-        fetched and an alert is raised (BR-TEXT-17 细则「取数时再查一次」). Several channels with
-        `mix: interleave` are merged by interleaving; the order inside a channel is kept, and no
-        commission or rebate weight is added. Items in a blocked category or with an abnormal price
-        are not sent. `ad_label` is null on every card.
+        Fetching: before every fetch the server checks every channel of the data source against
+        specs/material-channels.yaml. If any channel is missing or no longer selectable the data
+        source is not fetched at all, the block counts as having no data and an alert is raised
+        (BR-TEXT-17 细则「取数时再查一次」). Several channels are always interleaved in the order of
+        `channels`, with or without `mix`; the order inside a channel is kept and no commission or
+        rebate weight is added. Items in a blocked category or with an abnormal price are not sent.
+        `ad_label` is null on every card.
 
-        No usable channel, no data from any channel and a union failure all answer 200 with
-        `items: []` and `next_cursor: null`, never 50304; the client hides the card when it is
-        empty (03 §6.2). Page size is the server constant 20 (no limit parameter, as getHotRank).
+        A union failure of one channel only drops that channel from this page. Failure of every
+        channel, no data from any channel and a refused data source all answer 200 with
+        `items: []` and `next_cursor: null`, never 50304. An empty first page (no `cursor` sent)
+        hides the card (03 §6.2); an empty later page only ends the list and keeps the cards
+        already shown. Page size is the server constant 20 (no limit parameter, as getHotRank).
         `cursor` is opaque: the client sends `next_cursor` back unchanged.
       x-auth: none
       x-signed: false
@@ -2519,7 +2521,7 @@ paths:
         - $ref: '#/components/parameters/Build'
         - $ref: '#/components/parameters/Channel'
         - $ref: '#/components/parameters/TraceId'
-        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/OptionalDeviceId'
         - $ref: '#/components/parameters/PageKeyPath'
         - name: section_id
           in: path
