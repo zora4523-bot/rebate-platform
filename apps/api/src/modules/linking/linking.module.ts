@@ -747,7 +747,7 @@ export class LinkingModule {
               db,
               clock,
               callerContext,
-              reads: createUnionAuthReads({ db, config, appEnv: appConfig.appEnv, pids }),
+              reads: createUnionAuthReads({ db, config, appEnv: appConfig.appEnv, pids, clock }),
               idempotency,
               exchanger,
               logger,
