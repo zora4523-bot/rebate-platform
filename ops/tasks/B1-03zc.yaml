@@ -20,4 +20,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/minor-status/**'
-status: todo
+status: done
+pr: 1892
