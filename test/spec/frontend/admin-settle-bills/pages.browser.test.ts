@@ -6,20 +6,12 @@ import { createAdminShell } from '../../../../apps/admin/src/App.tsx';
 import type { AdminAuthProvider } from '../../../../apps/admin/src/providers/auth/index.ts';
 import { createDataProvider } from '../../../../apps/admin/src/providers/data/index.ts';
 import { harness, signIn } from '../admin-auth/fixtures.ts';
-import {
-  BASE_URL,
-  BATCH,
-  BATCH_STATUS_NAME,
-  BILL,
-  ORDER,
-  SETTLE_MODE_NAME,
-  createServer,
-  snapshot,
-} from './fixtures.ts';
+import { BASE_URL, BATCH, BILL, ORDER, createServer, namePattern, snapshot } from './fixtures.ts';
 
 // The real /settle-bills route of the admin app in Chromium: the bill list, 【查看】 of the
-// settling bill with its batch table (dictionary names), and 【明细】 of the PARTIAL batch with
-// its items; only the three GETs of CT-24z go out. Waits use expect.element only.
+// settling bill with its batch table (names read from the console dictionary when the test runs,
+// the code without a row), and 【明细】 of the PARTIAL batch with its items; only the three GETs
+// of CT-24z go out. Waits use expect.element only.
 const FIRST = { timeout: 10_000 };
 let root: Root | undefined;
 let auth: AdminAuthProvider | undefined;
@@ -58,7 +50,7 @@ async function show(server = createServer()) {
   return server;
 }
 
-it('[AC-F1-08d-BROWSER#1] /settle-bills：列出账单，【查看】2026-07 显示批次状态「部分完成」「已确认」与「定时执行」，【明细】列出该批次的子订单与入账金额 720.12；只发三个 GET', async () => {
+it('[AC-F1-08d-BROWSER#1] /settle-bills：列出账单，【查看】2026-07 显示 PARTIAL / CONFIRMED 批次状态与 SCHEDULED 结算方式的字典名，【明细】列出该批次的子订单与入账金额 720.12；只发三个 GET', async () => {
   await page.viewport(1440, 1080);
   const server = await show();
   const bill = page
@@ -66,7 +58,7 @@ it('[AC-F1-08d-BROWSER#1] /settle-bills：列出账单，【查看】2026-07 显
     .getByRole('row')
     .filter({ hasText: /(?<![\d-])2026-07(?!-?\d)/ });
   await expect.element(bill, FIRST).toBeVisible();
-  await expect.element(bill).toMatchTextContent(/settling/);
+  await expect.element(bill).toMatchTextContent(namePattern('billStatus', 'settling'));
   await bill
     .getByText(/^(?:查\s*看|详\s*情)$/)
     .first()
@@ -75,9 +67,9 @@ it('[AC-F1-08d-BROWSER#1] /settle-bills：列出账单，【查看】2026-07 显
   const partial = page.getByRole('row').filter({ hasText: BATCH.partial.slice(0, 8) });
   const scheduled = page.getByRole('row').filter({ hasText: BATCH.scheduled.slice(0, 8) });
   await expect.element(partial, FIRST).toBeVisible();
-  await expect.element(partial).toMatchTextContent(BATCH_STATUS_NAME.PARTIAL);
-  await expect.element(scheduled).toMatchTextContent(BATCH_STATUS_NAME.CONFIRMED);
-  await expect.element(scheduled).toMatchTextContent(SETTLE_MODE_NAME.SCHEDULED);
+  await expect.element(partial).toMatchTextContent(namePattern('batchStatus', 'PARTIAL'));
+  await expect.element(scheduled).toMatchTextContent(namePattern('batchStatus', 'CONFIRMED'));
+  await expect.element(scheduled).toMatchTextContent(namePattern('settleMode', 'SCHEDULED'));
   expect(server.billReads(BILL.settling).length).toBeGreaterThan(0);
 
   await partial

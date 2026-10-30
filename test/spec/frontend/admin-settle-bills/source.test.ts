@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { expect, it } from 'vitest';
-import { BATCH_STATUS_NAME } from './fixtures.ts';
+import { dictNames } from './fixtures.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../apps/admin/src');
 const directory = join(root, 'pages/settle-bills');
@@ -81,6 +81,9 @@ it('[AC-F1-08d-SOURCE#2] 批次状态与结算方式的中文名取后台字典�
   const all = strings.join('\n');
   for (const key of ['settle_batch', 'settle_mode'])
     expect(all.includes(key), `dictionary key ${key}`).toBe(true);
-  for (const name of [BATCH_STATUS_NAME.PARTIAL, BATCH_STATUS_NAME.EXECUTING])
-    expect(all.includes(name), `batch status name ${name} is read from the dictionary`).toBe(false);
+  // The names the dictionary has (read when the test runs) are not written again here.
+  const names = [...dictNames('batchStatus', 'PARTIAL'), ...dictNames('batchStatus', 'EXECUTING')];
+  expect(names.length, 'the dictionary has these rows').toBeGreaterThan(0);
+  for (const name of names)
+    expect(all.includes(name), `name ${name} is read from the dictionary`).toBe(false);
 });

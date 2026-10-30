@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { waitFor } from '@testing-library/react';
 import { expect, it } from 'vitest';
-import { BILL, FILTER_PARAMS, LIST_PARAMS, createServer } from './fixtures.ts';
+import { BILL, FILTER_PARAMS, LIST_PARAMS, createServer, namePattern } from './fixtures.ts';
 import {
   FLOW_TIMEOUT,
   LABEL,
@@ -28,25 +28,17 @@ it(
     await mount(server);
     await listed(BILL.issued);
     await settled(server);
-    const before = server.reads().length;
+    const filters = { bill_from: '2026-07', bill_to: '2026-08', status: 'settling' };
     await fillMonth(monthField('from'), '2026-07');
     await fillMonth(monthField('to'), '2026-08');
-    // No admin_dict row for the bill status: the option shows its code.
-    await choose(main(), LABEL.status, /settling/);
+    // The option shows the dictionary name of the status (its code without a row).
+    await choose(main(), LABEL.status, namePattern('billStatus', 'settling', true));
     await query();
-    const filtered = () =>
-      server
-        .reads()
-        .slice(before)
-        .filter((read) => read.query['status'] !== undefined);
-    await waitFor(() => expect(filtered().length).toBeGreaterThan(0));
+    // The table read of the query (count reads with their own parameters aside).
+    await waitFor(() => expect(server.tableReads(filters).length).toBeGreaterThan(0));
     await settled(server);
-    const sent = filtered().at(-1)!;
-    expect(sent.query).toMatchObject({
-      bill_from: '2026-07',
-      bill_to: '2026-08',
-      status: 'settling',
-    });
+    const sent = server.tableReads(filters).at(-1)!;
+    expect(sent.query).toMatchObject(filters);
     expect(sent.query['page'] ?? '1').toBe('1');
     expect(extraParams(sent.query, LIST_PARAMS)).toEqual([]);
     await waitFor(() => expect(billRows(BILL.issued)).toEqual([]));
@@ -57,18 +49,19 @@ it(
 );
 
 it(
-  '[AC-F1-08d-FILTER#2] 【重置】清空筛选：以不带筛选参数的请求重新读取，之后的请求不再带已清空的条件，四张账单重新列出',
+  '[AC-F1-08d-FILTER#2] 【重置】清空筛选：表格以不带筛选参数的请求重新读取，之后的请求不再带已清空的账单月，四张账单重新列出',
   async () => {
     const server = createServer();
     await mount(server);
     await listed(BILL.issued);
     await fillMonth(monthField('from'), '2026-06');
     await fillMonth(monthField('to'), '2026-06');
-    await choose(main(), LABEL.status, /settled/);
+    await choose(main(), LABEL.status, namePattern('billStatus', 'settled', true));
     await query();
     await waitFor(() => expect(billRows(BILL.issued)).toEqual([]));
     await settled(server);
     const before = server.reads().length;
+    const tableBefore = server.tableReads().length;
     await click(action(main(), RESET));
     await settle();
     await settled(server);
@@ -81,16 +74,16 @@ it(
       await waitFor(() => expect(billRows(month), month).toHaveLength(1));
     expect(monthField('from').value).toBe('');
     expect(monthField('to').value).toBe('');
+    const unfiltered = server.tableReads().length;
+    expect(unfiltered, 'an unfiltered table read after 【重置】').toBeGreaterThan(tableBefore);
     const after = server.reads().slice(before);
-    expect(
-      after.some((sent) => FILTER_PARAMS.every((name) => sent.query[name] === undefined)),
-      'an unfiltered list read after 【重置】',
-    ).toBe(true);
     for (const sent of after) {
       expect(sent.query['bill_from'], 'bill_from cleared').toBeUndefined();
       expect(sent.query['bill_to'], 'bill_to cleared').toBeUndefined();
-      expect(sent.query['status'], 'status cleared').toBeUndefined();
     }
+    // Table reads (not count reads) carry no filter at all.
+    for (const sent of after.filter((read) => read.query['page_size'] !== '1'))
+      for (const name of FILTER_PARAMS) expect(sent.query[name], `${name} cleared`).toBeUndefined();
   },
   FLOW_TIMEOUT,
 );

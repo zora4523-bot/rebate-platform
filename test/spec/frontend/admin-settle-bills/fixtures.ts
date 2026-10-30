@@ -1,4 +1,5 @@
 import type { Schema } from '../../../../packages/contracts-ts/src/index.ts';
+import dictionary from '../../../../contracts/texts.admin.default.json' with { type: 'json' };
 import type {
   KnownPermission,
   PermissionSnapshot,
@@ -10,9 +11,9 @@ import type {
 // getAdminSettleBill GET /admin/v1/settle-bills/{bill_id} and listAdminSettleBatchItems GET
 // /admin/v1/settle-batches/{batch_id}/items. The fake server checks in the order the descriptions
 // give. Ids are obvious fake UUIDs whose first 8 characters differ; bill months, amounts and
-// admins are samples. Chinese names are transcribed from the console dictionary
-// (contracts/texts.admin.default.json, BR-TEXT-25) as an independent oracle; the dictionary has no
-// row for the bill status, the batch kind or the item result, so those show their codes.
+// admins are samples. The Chinese names a status, kind, item type or result must show are read
+// from the console dictionary (contracts/texts.admin.default.json, BR-TEXT-25) when the test runs:
+// a code with a row shows its name, a code without one shows the code itself.
 export const BASE_URL = 'https://admin-api.example.test';
 export const TRACE_ID = '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b';
 export const MENU_ID = 'settle-bills';
@@ -30,20 +31,47 @@ export type BillStatus = Schema<'AdminSettleBillStatus'>;
 export type BatchStatus = Schema<'AdminSettleBatchStatus'>;
 export type SettleMode = Schema<'AdminSettleMode'>;
 
-/** admin_dict.settle_batch.status.* */
-export const BATCH_STATUS_NAME: Readonly<Record<BatchStatus, string>> = {
-  DRAFT: '待确认',
-  CONFIRMED: '已确认',
-  EXECUTING: '执行中',
-  PARTIAL: '部分完成',
-  DONE: '已完成',
-  CANCELLED: '已取消',
-};
-/** admin_dict.settle_mode.* */
-export const SETTLE_MODE_NAME: Readonly<Record<SettleMode, string>> = {
-  IMMEDIATE: '立即执行',
-  SCHEDULED: '定时执行',
-};
+// ---- console dictionary (BR-TEXT-25 admin_dict) --------------------------------------------
+
+/**
+ * Where the dictionary keeps each kind of name. admin_dict.settle_batch.status.* and
+ * admin_dict.settle_mode.* exist; the bill status, batch kind, item type and item result have no
+ * row yet (design §3: the contract line adds them), so their likely key paths are all accepted.
+ */
+export const DICT_FIELD = {
+  billStatus: /^admin_dict\.(?:admin_)?settle_bills?(?:\.status|_status)\.([^.]+)$/,
+  batchStatus: /^admin_dict\.settle_batch(?:es)?(?:\.status|_status)\.([^.]+)$/,
+  settleMode: /^admin_dict\.(?:settle_batch(?:es)?\.)?settle_mode\.([^.]+)$/,
+  batchKind: /^admin_dict\.settle_batch(?:es)?(?:\.kind|_kind)\.([^.]+)$/,
+  itemType: /^admin_dict\.settle_(?:batch_)?items?(?:\.item_type|\.type|_type)\.([^.]+)$/,
+  itemResult: /^admin_dict\.settle_(?:batch_)?items?(?:\.result|_result)\.([^.]+)$/,
+} as const;
+export type DictField = keyof typeof DICT_FIELD;
+
+function dictionaryTexts(): Readonly<Record<string, string>> {
+  return (dictionary as { texts?: Record<string, string> }).texts ?? {};
+}
+/** The dictionary's names for `code` of `field`; empty when it has no row (the code shows). */
+export function dictNames(field: DictField, code: string): string[] {
+  return Object.entries(dictionaryTexts()).flatMap(([name, value]) =>
+    DICT_FIELD[field].exec(name)?.[1] === code ? [value] : [],
+  );
+}
+function escapeText(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+/**
+ * What the page shows for `code` of `field`: one of its dictionary names, or the code as a whole
+ * word when the dictionary has no row. `exact`: the whole (trimmed) text, as in a select option.
+ */
+export function namePattern(field: DictField, code: string, exact = false): RegExp {
+  const names = dictNames(field, code);
+  const body =
+    names.length > 0
+      ? `(?:${names.map(escapeText).join('|')})`
+      : `(?<![A-Za-z0-9_])${escapeText(code)}(?![A-Za-z0-9_])`;
+  return new RegExp(exact ? `^\\s*${body}\\s*$` : body);
+}
 
 /** The four sample bills (bill_id descending, the list's order). */
 export const BILL = {
@@ -80,10 +108,18 @@ export const ORDER = {
   deferred: 'a7000004-0000-4000-8000-000000000004',
   pending: 'a7000005-0000-4000-8000-000000000005',
 } as const;
+/** Sub-orders of the items of the scheduled jd batch (the bill's second batch; settle_seq 1–3). */
+export const JD_ORDER = {
+  /** An order row clawed back after an earlier settlement: B_settle −1234 fen. */
+  adjusted: 'a7100001-0000-4000-8000-000000000001',
+  plain: 'a7100002-0000-4000-8000-000000000002',
+  shared: 'a7100003-0000-4000-8000-000000000003',
+} as const;
 /** Beneficiaries of the make-up items (user_id only, never a phone number). */
 export const USER = {
   direct: 'c7000001-0000-4000-8000-000000000001',
   indirect: 'c7000002-0000-4000-8000-000000000002',
+  share: 'c7100003-0000-4000-8000-000000000003',
 } as const;
 export const SKIP_REASON = 'settle_seq_changed';
 
@@ -207,6 +243,10 @@ export function bills(): Bill[] {
           confirmed_at: '2026-08-27T09:30:00+08:00',
           order_count: 118,
           created_at: '2026-08-24T02:10:40+08:00',
+          item_counts: {
+            order: { credited: 0, skipped: 0, pending: 118 },
+            beneficiary: { credited: 0, skipped: 0, deferred: 0, pending: 1 },
+          },
         }),
       ],
     },
@@ -361,6 +401,52 @@ export function partialItems(): BatchItem[] {
   ];
 }
 
+/**
+ * The three items of the scheduled jd batch (not executed yet: every result null): an order row
+ * with a negative B_settle (−1234 fen = −12.34), a plain order row (5678 fen) and a beneficiary
+ * make-up item.
+ */
+export function scheduledItems(): BatchItem[] {
+  const base = {
+    user_id: null,
+    role: null,
+    beneficiary_credit_id: null,
+    amount_fen: null,
+    result: null,
+    skip_reason: null,
+    created_at: '2026-08-24T02:10:40+08:00',
+  } as const;
+  return [
+    {
+      ...base,
+      id: 'e7100001-0000-4000-8000-000000000001',
+      item_type: 'order',
+      order_id: JD_ORDER.adjusted,
+      settle_seq: 1,
+      b_settle_fen: -1234,
+    },
+    {
+      ...base,
+      id: 'e7100002-0000-4000-8000-000000000002',
+      item_type: 'order',
+      order_id: JD_ORDER.plain,
+      settle_seq: 2,
+      b_settle_fen: 5678,
+    },
+    {
+      ...base,
+      id: 'e7100003-0000-4000-8000-000000000003',
+      item_type: 'beneficiary',
+      order_id: JD_ORDER.shared,
+      user_id: USER.share,
+      role: 'share',
+      beneficiary_credit_id: 'd7100001-0000-4000-8000-000000000001',
+      settle_seq: 3,
+      b_settle_fen: null,
+    },
+  ];
+}
+
 /** The order_id of filler item `n` (1-based): f0000001-…, f0000002-… */
 export function fillerOrder(n: number): string {
   return `f${String(n).padStart(7, '0')}-0000-4000-8000-000000000000`;
@@ -435,6 +521,8 @@ export interface RequestLog {
   body: unknown;
 }
 type Reply = (request: RequestLog) => Response | Promise<Response>;
+/** Which requests an override answers (all of its method and path when left out). */
+export type When = (request: RequestLog) => boolean;
 
 export interface ServerOptions {
   /** Permission points of the account (the server checks them; 10403 otherwise). */
@@ -466,6 +554,23 @@ export const LIST_PARAMS: readonly string[] = [
 export const FILTER_PARAMS: readonly string[] = ['bill_from', 'bill_to', 'status'];
 /** Every query parameter listAdminSettleBatchItems takes. */
 export const ITEM_PARAMS: readonly string[] = ['page', 'page_size', 'item_type', 'result'];
+
+/**
+ * A list query of the bill table under exactly the filters `filters` (a parameter not named there
+ * is absent). A count read (one row asked for, page_size=1) is not a table read.
+ */
+export function isTableQuery(
+  query: Readonly<Record<string, string>>,
+  filters: Readonly<Record<string, string>> = {},
+): boolean {
+  if (query['page_size'] === '1') return false;
+  return FILTER_PARAMS.every((name) => query[name] === filters[name]);
+}
+/** Matches the table read of the list under `filters` (see isTableQuery). */
+export function tableRead(filters: Readonly<Record<string, string>> = {}): When {
+  return (request) =>
+    request.method === 'GET' && request.path === LIST && isTableQuery(request.query, filters);
+}
 const DETAIL = /^\/admin\/v1\/settle-bills\/([^/]+)$/;
 const ITEMS = /^\/admin\/v1\/settle-batches\/([^/]+)\/items$/;
 
@@ -503,11 +608,14 @@ function pageOf<T>(rows: readonly T[], page: string | undefined, size: string | 
 /** Fake /admin/v1 server with the CT-24z checks. */
 export function createServer(initial: Bill[] = bills(), options: ServerOptions = {}) {
   const state = structuredClone(initial);
-  const items = new Map<string, BatchItem[]>([[BATCH.partial, partialItems()]]);
+  const items = new Map<string, BatchItem[]>([
+    [BATCH.partial, partialItems()],
+    [BATCH.scheduled, scheduledItems()],
+  ]);
   for (const [batchId, rows] of Object.entries(options.items ?? {}))
     items.set(batchId, structuredClone([...rows]));
   const log: RequestLog[] = [];
-  const overrides: { method: string; path: string; reply: Reply }[] = [];
+  const overrides: { method: string; path: string; when: When | undefined; reply: Reply }[] = [];
   const permissions = options.permissions ?? SETTLE_GRANTS;
   let inFlight = 0;
 
@@ -599,7 +707,10 @@ export function createServer(initial: Bill[] = bills(), options: ServerOptions =
     inFlight += 1;
     try {
       const index = overrides.findIndex(
-        (entry) => entry.method === request.method && entry.path === request.path,
+        (entry) =>
+          entry.method === request.method &&
+          entry.path === request.path &&
+          (entry.when === undefined || entry.when(request)),
       );
       return await (index < 0 ? normal(request) : overrides.splice(index, 1)[0]!.reply(request));
     } finally {
@@ -621,6 +732,10 @@ export function createServer(initial: Bill[] = bills(), options: ServerOptions =
     /** GET /admin/v1/settle-bills (the list). */
     reads() {
       return log.filter((r) => r.method === 'GET' && r.path === LIST);
+    },
+    /** The list reads of the bill table under exactly `filters` (count reads aside). */
+    tableReads(filters: Readonly<Record<string, string>> = {}) {
+      return log.filter(tableRead(filters));
     },
     /** GET /admin/v1/settle-bills/{bill_id}. */
     billReads(billId: string) {
@@ -646,14 +761,17 @@ export function createServer(initial: Bill[] = bills(), options: ServerOptions =
           r.method !== 'GET' || !(r.path === LIST || DETAIL.test(r.path) || ITEMS.test(r.path)),
       );
     },
-    once(method: string, path: string, reply: Reply) {
-      overrides.push({ method, path, reply });
+    /** Answers the next request of `method` `path` (matching `when`) with `reply`. */
+    once(method: string, path: string, reply: Reply, when?: When) {
+      overrides.push({ method, path, when, reply });
     },
-    hold(method: string, path: string, reply: Reply = normal) {
+    /** Holds the next request of `method` `path` (matching `when`) until the returned call. */
+    hold(method: string, path: string, reply: Reply = normal, when?: When) {
       const gate = Promise.withResolvers<void>();
       overrides.push({
         method,
         path,
+        when,
         reply: async (request) => {
           await gate.promise;
           return reply(request);

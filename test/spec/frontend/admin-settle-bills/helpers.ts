@@ -17,7 +17,9 @@ import {
   MENU_ID,
   VERIFY,
   createServer,
+  namePattern,
   snapshot as snapshotOf,
+  type DictField,
   type Server,
 } from './fixtures.ts';
 
@@ -62,12 +64,52 @@ export const LABEL = {
   status: /状态/,
 } as const;
 
-/** Column titles of the bill list (spaces removed; matched at the start of the title). */
+/** Column titles of the bill list (spaces removed; design §2 列表). */
 export const COLUMN = {
   status: /^(?:账单)?状态/,
+  generated: /^(?:生成|出账)时间/,
+  orders: /^子订单/,
+  commission: /佣金/,
+  beneficiary: /^受益人/,
+  retained: /留存/,
   errors: /^差错/,
   held: /^暂缓/,
 } as const;
+/** Column titles of the batch table (design §2 结算批次). */
+export const BATCH_COLUMN = {
+  kind: /^(?:批次)?类型/,
+  status: /^(?:批次)?状态/,
+  mode: /^(?:结算|执行)方式/,
+  confirmer: /^确认人/,
+} as const;
+/** Column titles of the batch items (design §2 批次明细). */
+export const ITEM_COLUMN = {
+  type: /^(?:明细)?类型/,
+  result: /^(?:处理|执行|入账)?结果/,
+  reason: /原因/,
+} as const;
+/** Labels of the bill's statistics on the detail (design §2 统计卡). */
+export const STAT = {
+  orders: /^子订单(?:数|总数)?/,
+  commission: /^(?:联盟)?结算佣金/,
+  beneficiary: /^受益人(?:份额)?/,
+  retained: /^平台留存/,
+  errors: /^差错(?:单)?/,
+  held: /^暂缓/,
+} as const;
+/** Labels of the batch items filter (contract item_type / result). */
+export const ITEM_LABEL = {
+  type: /类型/,
+  result: /结果/,
+} as const;
+
+/**
+ * `text` shows `code` of `field` as the console dictionary has it: one of its names, or the code
+ * as a whole word when the dictionary has no row (read when the test runs).
+ */
+export function showsName(text: string, field: DictField, code: string): boolean {
+  return namePattern(field, code).test(squash(text)) || namePattern(field, code).test(text);
+}
 
 afterEach(() => {
   cleanup();
@@ -233,6 +275,36 @@ export function cellText(row: HTMLElement, title: RegExp): string {
   return textOf(cell!);
 }
 
+// ---- labelled items (statistics) -----------------------------------------------------------
+
+const DIGIT = /\d/;
+/**
+ * Texts of the items labelled `label` in `root` (a statistic, a description item, a label with
+ * its value): for each innermost visible element outside a table header whose text starts with
+ * `label`, the label with the first sibling after it (or after an ancestor) that holds a number.
+ */
+export function labelledTexts(root: HTMLElement, label: RegExp): string[] {
+  const matching = Array.from(root.querySelectorAll<HTMLElement>('*')).filter(
+    (node) =>
+      node.closest('thead, [role="columnheader"]') === null &&
+      visible(node) &&
+      label.test(squash(node.textContent)),
+  );
+  const labels = matching.filter(
+    (node) => !Array.from(node.children).some((child) => label.test(squash(child.textContent))),
+  );
+  return labels.map((node) => {
+    if (DIGIT.test(squash(node.textContent).replace(label, ''))) return textOf(node);
+    let current: Element | null = node;
+    while (current !== null && current !== root) {
+      for (let next = current.nextElementSibling; next !== null; next = next.nextElementSibling)
+        if (DIGIT.test(next.textContent ?? '')) return `${textOf(current)} ${textOf(next)}`;
+      current = current.parentElement;
+    }
+    return textOf(node);
+  });
+}
+
 // ---- buttons -------------------------------------------------------------------------------
 
 export function isDisabled(node: HTMLElement): boolean {
@@ -259,6 +331,14 @@ export function action(root: HTMLElement, name: RegExp): HTMLElement {
 /** Usable (not disabled) actions of `root` named `name`. */
 export function usable(root: HTMLElement, name: RegExp): HTMLElement[] {
   return actions(root, name).filter((node) => !isDisabled(node));
+}
+/** The usable action named `name` closest to `node` (in its nearest ancestor holding one). */
+export function nearestUsable(node: HTMLElement, name: RegExp): HTMLElement | undefined {
+  for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
+    const found = usable(parent, name);
+    if (found.length > 0) return found[0];
+  }
+  return undefined;
 }
 
 // ---- dialogs and drawers -------------------------------------------------------------------
@@ -356,14 +436,18 @@ function optionNodes(combo: HTMLElement): HTMLElement[] {
     Array.from(node.querySelectorAll<HTMLElement>('.ant-select-item-option-content')),
   );
 }
+/** The one select (antd Select or native) labelled `label` inside `root`. */
+export function combobox(root: HTMLElement, label: RegExp): HTMLElement {
+  const combos = within(root).queryAllByRole('combobox', { name: label });
+  expect(combos, `one select labelled ${String(label)}`).toHaveLength(1);
+  return combos[0]!;
+}
 /**
  * Chooses `option` in the select (antd Select or native) labelled `label` inside `root`; returns
  * the texts of every option that was offered.
  */
 export async function choose(root: HTMLElement, label: RegExp, option: RegExp): Promise<string[]> {
-  const combos = within(root).queryAllByRole('combobox', { name: label });
-  expect(combos, `one select labelled ${String(label)}`).toHaveLength(1);
-  const combo = combos[0]!;
+  const combo = combobox(root, label);
   if (combo instanceof HTMLSelectElement) {
     const offered = Array.from(combo.options);
     const target = offered.find((item) => option.test(item.text.trim()));
