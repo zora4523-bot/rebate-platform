@@ -57,6 +57,12 @@ import {
   UnionsPage,
 } from './pages/unions/index.ts';
 import { UsersPage } from './pages/users/index.ts';
+import {
+  WITHDRAWALS_MENU_ID,
+  WithdrawalDetailPage,
+  WithdrawalsPage,
+  withdrawalIdOf,
+} from './pages/withdrawals/index.ts';
 import { UserDetailView } from './pages/users/UserDetailView.tsx';
 import { LoginPage } from './pages/login/index.ts';
 import {
@@ -84,6 +90,7 @@ import { ordersTexts } from './texts/orders.ts';
 import { settleBillsTexts } from './texts/settle-bills.ts';
 import { shellTexts } from './texts/shell.ts';
 import { unionsTexts } from './texts/unions.ts';
+import { withdrawalsTexts } from './texts/withdrawals.ts';
 import { createAntdTheme, sameAntdTheme } from './theme.ts';
 
 type PermissionState =
@@ -509,6 +516,9 @@ function ShellFrame({
   const claimId = claimIdOf(menuId);
   // An order's detail page (/orders/<order_id>) belongs to the orders menu (sidebar, crumbs).
   const orderId = claimId === undefined ? orderIdOf(menuId) : undefined;
+  // A withdrawal's detail page (/withdrawals/<withdrawal_id>) belongs to 提现审核.
+  const withdrawalId =
+    claimId === undefined && orderId === undefined ? withdrawalIdOf(menuId) : undefined;
   // A version row's edit subpage (/app-versions/<platform>/<channel>) belongs to 版本管理.
   const appVersionEdit = editTargetOf(menuId) !== undefined;
   // A bill's detail page (/settle-bills/<bill_id>) belongs to 月结账单 (sidebar, crumbs).
@@ -519,15 +529,18 @@ function ShellFrame({
       ? CLAIMS_MENU_ID
       : orderId !== undefined
         ? ORDERS_MENU_ID
-        : appVersionEdit
-          ? APP_VERSIONS_MENU_ID
-          : settleBillId !== undefined
-            ? SETTLE_BILLS_MENU_ID
-            : menuId,
+        : withdrawalId !== undefined
+          ? WITHDRAWALS_MENU_ID
+          : appVersionEdit
+            ? APP_VERSIONS_MENU_ID
+            : settleBillId !== undefined
+              ? SETTLE_BILLS_MENU_ID
+              : menuId,
   );
   let subpage = match === undefined ? undefined : (auditSubpage ?? subpageOf(location.state));
   if (match !== undefined && claimId !== undefined) subpage = claimsTexts.review.crumb;
   if (match !== undefined && orderId !== undefined) subpage = ordersTexts.detail.crumb;
+  if (match !== undefined && withdrawalId !== undefined) subpage = withdrawalsTexts.detail.crumb;
   if (match !== undefined && unionCallback) subpage = unionsTexts.callback.crumb;
   if (match !== undefined && appVersionEdit) subpage = appVersionsTexts.editor.crumb;
   if (match !== undefined && settleBillId !== undefined) subpage = settleBillsTexts.detail.crumb;
@@ -571,6 +584,16 @@ function ShellFrame({
     } else if (match !== undefined && settleBillId !== undefined) {
       // Direct address or 【查看】 of a row: only this bill is read, never the list.
       content = <SettleBillDetailPage key={settleBillId} access={access} billId={settleBillId} />;
+    } else if (
+      withdrawalId !== undefined &&
+      (match !== undefined || snapshot.isSuper || snapshot.permissions.length > 0)
+    ) {
+      // Direct address or 【详情】 of a row: only this withdrawal is read, never the list. Without
+      // the menu (fund.view alone) the page still opens; without withdraw.review / fund.view it
+      // says so and sends nothing.
+      content = (
+        <WithdrawalDetailPage key={withdrawalId} access={access} withdrawalId={withdrawalId} />
+      );
     } else if (match !== undefined && auditLogId !== undefined) {
       // Direct address or 【查看】 of a row: only this record is read, never the list.
       content = <AuditLogDetailPage key={auditLogId} id={auditLogId} access={access} />;
@@ -608,6 +631,9 @@ function ShellFrame({
     } else if (match !== undefined && match.item.id === SETTLE_BILLS_MENU_ID) {
       // 月结账单: settle.bill or fund.view reads; the other menu points get the page's notice.
       content = <SettleBillsPage access={access} />;
+    } else if (match !== undefined && match.item.id === WITHDRAWALS_MENU_ID) {
+      // 提现审核: withdraw.review or fund.view reads; payout.* alone shows the menu but not the list.
+      content = <WithdrawalsPage access={access} />;
     } else if (match !== undefined && match.item.id === UNIONS_MENU_ID) {
       content = <UnionsPage access={access} clock={options.clock} />;
     } else if (match !== undefined && match.item.id === APP_VERSIONS_MENU_ID) {
@@ -655,6 +681,13 @@ function ShellFrame({
         ) : (
           <SettleBillDetailPage key={settleBillId} access={access} billId={settleBillId} />
         );
+    } else if (
+      menuId === WITHDRAWALS_MENU_ID &&
+      (snapshot.isSuper || snapshot.permissions.length > 0)
+    ) {
+      // A direct address to /withdrawals without the menu (fund.view alone reads; no read key at
+      // all: the page itself says so and sends nothing).
+      content = <WithdrawalsPage access={access} />;
     } else if (menuId === DASHBOARD_MENU_ID) {
       // The workbench without dashboard.view: the first permitted menu instead (never a request).
       content = <Navigate to={fallback} replace />;
