@@ -22,6 +22,7 @@ import {
   type AutoSettlementSwitch,
   type LedgerMismatchHolds,
 } from './daily-check-execute.ts';
+import { recordDailyCheckDone } from './daily-check-schedule-done.ts';
 import type { LedgerInvariantSource } from './daily-check-types.ts';
 import { LedgerError } from './errors.ts';
 
@@ -210,9 +211,12 @@ export function createDailyCheckJob(dependencies: DailyCheckJobDependencies): Jo
       differences: result.filedDifferences,
     });
     const next = dailyCheckDayAfter(day);
-    await db
-      .transaction()
-      .execute((trx) => scheduleDailyCheck(queue, trx, appId, next, clock.now()));
+    // B2-02s: D+1 and the completion record of (app, D) on one transaction — both or neither.
+    await db.transaction().execute(async (trx) => {
+      const now = clock.now();
+      await scheduleDailyCheck(queue, trx, appId, next, now);
+      await recordDailyCheckDone(trx, appId, day, now);
+    });
     logger.info(
       {
         app_id: appId,
