@@ -1,0 +1,123 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-recon-writeoff/entry.test.ts > [AC-F1-08eb-ENTRY#1] 持 fund.recon + payout.execute：R2 待处理 / 处理中的差错单详情有可用的【核销】；R3、R1 的待处理差错单与 R2 已关闭 / 已调账 / 已核销的都没有可用的【核销】，点置灰的也不弹框、不发 POST",
+    "test/spec/frontend/admin-recon-writeoff/entry.test.ts > [AC-F1-08eb-ENTRY#2] 不持 payout.execute（只持 fund.recon）：R2 待处理 / 处理中的差错单都没有可用的【核销】，不发 POST；同样的差错单换成持 payout.execute 的账号就有",
+    "test/spec/frontend/admin-recon-writeoff/entry.test.ts > [AC-F1-08eb-ENTRY#3] 持 fund.view + payout.execute（不持 fund.recon）：R2 待处理差错单详情照样有可用的【核销】，只打开不提交时不发 POST",
+    "test/spec/frontend/admin-recon-writeoff/entry.test.ts > [AC-F1-08eb-ENTRY#4] 【核销】确认对话框：说明会把原提现单记为接口打款成功、不会重复打款，有选填的备注；点【取消】关闭对话框，不弹动态码、不发任何 POST，入口仍可用",
+    "test/spec/frontend/admin-recon-writeoff/errors.test.ts > [AC-F1-08eb-ERR#1] 10003（动态码令牌失效）：不自动重发，重新弹动态码；再次验证后重放，Idempotency-Key 与第一次相同、动态码令牌是新的，成功解除 1 笔冻结",
+    "test/spec/frontend/admin-recon-writeoff/errors.test.ts > [AC-F1-08eb-ERR#2] 网络失败后在同一对话框重试：两次 POST 的 Idempotency-Key 相同、请求体相同，重试成功后提示解除 1 笔冻结",
+    "test/spec/frontend/admin-recon-writeoff/errors.test.ts > [AC-F1-08eb-ERR#3] 网络失败后取消、重新打开【核销】再提交：用新的 Idempotency-Key",
+    "test/spec/frontend/admin-recon-writeoff/errors.test.ts > [AC-F1-08eb-ERR#4] 20902 resource=recon_diff（差错单已被他人关闭）：提示已变化并重新读取详情，显示「已关闭（不处理）」，【核销】消失，不显示成功、不重发",
+    "test/spec/frontend/admin-recon-writeoff/errors.test.ts > [AC-F1-08eb-ERR#5] 20902 resource=withdrawal（原提现单已不是 APPROVED）：提示已变化并重新读取详情，不显示成功、不重发，差错单仍待处理",
+    "test/spec/frontend/admin-recon-writeoff/errors.test.ts > [AC-F1-08eb-ERR#6] 20901（同键不同请求体）：提示请求内容有变化，不自动重发、不显示成功",
+    "test/spec/frontend/admin-recon-writeoff/errors.test.ts > [AC-F1-08eb-ERR#7] 40901（同一请求处理中）：提示稍后查看，不自动重发、不显示成功",
+    "test/spec/frontend/admin-recon-writeoff/guard.test.ts > [AC-F1-08eb-GUARD#1] W11 守卫拒绝（20001 data.fields=[recon_diff_id]，data.reason 五值 not_payer_side_case / writeoff_disabled / withdrawal_not_returned / transfer_attempts_mismatch / amount_mismatch）：每种都给出提示、彼此不同，都不显示成功、不重发，差错单仍待处理",
+    "test/spec/frontend/admin-recon-writeoff/note.test.ts > [AC-F1-08eb-NOTE#1] 备注去首尾空白后 201 字：不成功、在备注旁提示、对话框不关、差错单仍待处理（不发请求，或发出后收 20001 [note]，两种都可）；改成正好 200 字再提交即核销成功",
+    "test/spec/frontend/admin-recon-writeoff/note.test.ts > [AC-F1-08eb-NOTE#2] 服务端 20001 data.fields=[note]：在备注旁提示，对话框不关、不显示成功，差错单状态不变",
+    "test/spec/frontend/admin-recon-writeoff/pages.browser.test.ts > [AC-F1-08eb-BROWSER#1] /recon 处理中的 R2 差错单：抽屉【核销】→ 确认对话框填备注 → 动态码验证后 POST write-off（Idempotency-Key + X-Step-Up-Token + {expected_withdrawal_status: APPROVED, note}），提示解除 2 笔冻结，该行变为「已核销」",
+    "test/spec/frontend/admin-recon-writeoff/writeoff.test.ts > [AC-F1-08eb-WRITEOFF#1] 待处理的 R2 差错单【核销】填备注：确认后先弹动态码，验证后才 POST write-off（X-Step-Up-Token + Idempotency-Key + {expected_withdrawal_status: APPROVED, note}）；成功提示已核销并解除 1 笔冻结，该行变为「已核销」、入口消失",
+    "test/spec/frontend/admin-recon-writeoff/writeoff.test.ts > [AC-F1-08eb-WRITEOFF#2] 处理中的 R2 差错单不填备注核销：请求体只有 expected_withdrawal_status=APPROVED（不带 note、金额、渠道结果或凭证），成功提示解除 2 笔冻结",
+    "test/spec/frontend/admin-recon-writeoff/writeoff.test.ts > [AC-F1-08eb-WRITEOFF#3] 没有提现冻结的 R2 差错单核销：照样给已核销提示，提示里出现解除 0 笔冻结",
+    "test/spec/frontend/admin-recon-writeoff/writeoff.test.ts > [AC-F1-08eb-WRITEOFF#4] 连点两次确认、再连点两次【验证并继续】：只弹一个动态码对话框，只发一次 write-off POST",
+    "test/spec/frontend/admin-recon-writeoff/writeoff.test.ts > [AC-F1-08eb-WRITEOFF#5] 连续核销两张差错单：第二次重新弹动态码，两次 POST 的动态码令牌与 Idempotency-Key 都不相同"
+  ],
+  "risk_note": "Admin 对账与差错 page, second part: 【核销】 on the difference detail (apps/admin pages/recon/**, texts/recon.ts). Contract CT-24za writeOffAdminReconDiff (B2-07e, paid_at fix B2-07f); refs BR-WDR-23. The entry shows only with payout.execute for an R2 difference in open / processing; confirmation dialog (settles the returned withdrawal as API-paid, never pays twice), optional note; totp step-up per call; POST with Idempotency-Key (meta.idempotencyKey, created per dialog, reused on retry and on a 10003 replay) and a body of only expected_withdrawal_status=APPROVED and the note — no amount, channel result or evidence. Success notice with released_hold_count and refresh; the five W11 guard reasons, 20001 [note], 20902 (recon_diff / withdrawal), 20901 / 40901 each handled without a success notice; double click sends once. The close flow and its no-step-up behaviour are unchanged. Prerequisite test-change F1-08eba (#1955) merged. No frozen test changed here. Rule tests written by an independent Claude (Codex unavailable until 2026-11-02; ledger tester claude-independent, approvals id 36); Claude spec-test review r1 pass (4 S2); red on the test machine (red/1). Implementation by Opus 5.5; test machine verify-fast and browser green after rebasing onto F1-08eba. Adversarial money review by a fresh independent Claude r1 pass with one S2 (a first run had reviewed the wrong worktree because of an orchestrator script error and was discarded). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with one S2 (5xx / parse failure shown as failed instead of unknown; server idempotency and the W11 guard prevent a second payment); an earlier run on the wrong worktree was discarded; independent Claude because Codex is unavailable until 2026-11-02"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagent: round 1 pass with four S2; tests written by an independent Claude (claude-run.sh)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "F1-08eb",
+  "spec_ref": "812734156b57ba648ee1df733dafac3dba9bdb15",
+  "spec_commit": "c3411e271346c09367143d5185c77989272fda12",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c3411e271346c09367143d5185c77989272fda12",
+      "tree": "b80236ea2cd69a524d6b4b1a4b58f7a371f20f56",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-30T23:41:25Z",
+      "finished_at": "2026-10-30T23:41:53Z",
+      "gate": {
+        "commit": "fe637ff5945a20b5793e67cf8ce7e9d4604b5954",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-recon-writeoff/entry.test.ts > [AC-F1-08eb-ENTRY#1] 持 fund.recon + payout.execute：R2 待处理 / 处理中的差错单详情有可用的【核销】；R3、R1 的待处理差错单与 R2 已关闭 / 已调账 / 已核销的都没有可用的【核销】，点置灰的也不弹框、不发 POST",
+        "test/spec/frontend/admin-recon-writeoff/entry.test.ts > [AC-F1-08eb-ENTRY#2] 不持 payout.execute（只持 fund.recon）：R2 待处理 / 处理中的差错单都没有可用的【核销】，不发 POST；同样的差错单换成持 payout.execute 的账号就有",
+        "test/spec/frontend/admin-recon-writeoff/entry.test.ts > [AC-F1-08eb-ENTRY#3] 持 fund.view + payout.execute（不持 fund.recon）：R2 待处理差错单详情照样有可用的【核销】，只打开不提交时不发 POST",
+        "test/spec/frontend/admin-recon-writeoff/entry.test.ts > [AC-F1-08eb-ENTRY#4] 【核销】确认对话框：说明会把原提现单记为接口打款成功、不会重复打款，有选填的备注；点【取消】关闭对话框，不弹动态码、不发任何 POST，入口仍可用",
+        "test/spec/frontend/admin-recon-writeoff/errors.test.ts > [AC-F1-08eb-ERR#1] 10003（动态码令牌失效）：不自动重发，重新弹动态码；再次验证后重放，Idempotency-Key 与第一次相同、动态码令牌是新的，成功解除 1 笔冻结",
+        "test/spec/frontend/admin-recon-writeoff/errors.test.ts > [AC-F1-08eb-ERR#2] 网络失败后在同一对话框重试：两次 POST 的 Idempotency-Key 相同、请求体相同，重试成功后提示解除 1 笔冻结",
+        "test/spec/frontend/admin-recon-writeoff/errors.test.ts > [AC-F1-08eb-ERR#3] 网络失败后取消、重新打开【核销】再提交：用新的 Idempotency-Key",
+        "test/spec/frontend/admin-recon-writeoff/errors.test.ts > [AC-F1-08eb-ERR#4] 20902 resource=recon_diff（差错单已被他人关闭）：提示已变化并重新读取详情，显示「已关闭（不处理）」，【核销】消失，不显示成功、不重发",
+        "test/spec/frontend/admin-recon-writeoff/errors.test.ts > [AC-F1-08eb-ERR#5] 20902 resource=withdrawal（原提现单已不是 APPROVED）：提示已变化并重新读取详情，不显示成功、不重发，差错单仍待处理",
+        "test/spec/frontend/admin-recon-writeoff/errors.test.ts > [AC-F1-08eb-ERR#6] 20901（同键不同请求体）：提示请求内容有变化，不自动重发、不显示成功",
+        "test/spec/frontend/admin-recon-writeoff/errors.test.ts > [AC-F1-08eb-ERR#7] 40901（同一请求处理中）：提示稍后查看，不自动重发、不显示成功",
+        "test/spec/frontend/admin-recon-writeoff/guard.test.ts > [AC-F1-08eb-GUARD#1] W11 守卫拒绝（20001 data.fields=[recon_diff_id]，data.reason 五值 not_payer_side_case / writeoff_disabled / withdrawal_not_returned / transfer_attempts_mismatch / amount_mismatch）：每种都给出提示、彼此不同，都不显示成功、不重发，差错单仍待处理",
+        "test/spec/frontend/admin-recon-writeoff/note.test.ts > [AC-F1-08eb-NOTE#1] 备注去首尾空白后 201 字：不成功、在备注旁提示、对话框不关、差错单仍待处理（不发请求，或发出后收 20001 [note]，两种都可）；改成正好 200 字再提交即核销成功",
+        "test/spec/frontend/admin-recon-writeoff/note.test.ts > [AC-F1-08eb-NOTE#2] 服务端 20001 data.fields=[note]：在备注旁提示，对话框不关、不显示成功，差错单状态不变",
+        "test/spec/frontend/admin-recon-writeoff/pages.browser.test.ts > [AC-F1-08eb-BROWSER#1] /recon 处理中的 R2 差错单：抽屉【核销】→ 确认对话框填备注 → 动态码验证后 POST write-off（Idempotency-Key + X-Step-Up-Token + {expected_withdrawal_status: APPROVED, note}），提示解除 2 笔冻结，该行变为「已核销」",
+        "test/spec/frontend/admin-recon-writeoff/writeoff.test.ts > [AC-F1-08eb-WRITEOFF#1] 待处理的 R2 差错单【核销】填备注：确认后先弹动态码，验证后才 POST write-off（X-Step-Up-Token + Idempotency-Key + {expected_withdrawal_status: APPROVED, note}）；成功提示已核销并解除 1 笔冻结，该行变为「已核销」、入口消失",
+        "test/spec/frontend/admin-recon-writeoff/writeoff.test.ts > [AC-F1-08eb-WRITEOFF#2] 处理中的 R2 差错单不填备注核销：请求体只有 expected_withdrawal_status=APPROVED（不带 note、金额、渠道结果或凭证），成功提示解除 2 笔冻结",
+        "test/spec/frontend/admin-recon-writeoff/writeoff.test.ts > [AC-F1-08eb-WRITEOFF#3] 没有提现冻结的 R2 差错单核销：照样给已核销提示，提示里出现解除 0 笔冻结",
+        "test/spec/frontend/admin-recon-writeoff/writeoff.test.ts > [AC-F1-08eb-WRITEOFF#4] 连点两次确认、再连点两次【验证并继续】：只弹一个动态码对话框，只发一次 write-off POST",
+        "test/spec/frontend/admin-recon-writeoff/writeoff.test.ts > [AC-F1-08eb-WRITEOFF#5] 连续核销两张差错单：第二次重新弹动态码，两次 POST 的动态码令牌与 Idempotency-Key 都不相同"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-recon-writeoff/entry.test.ts",
+        "test/spec/frontend/admin-recon-writeoff/errors.test.ts",
+        "test/spec/frontend/admin-recon-writeoff/guard.test.ts",
+        "test/spec/frontend/admin-recon-writeoff/note.test.ts",
+        "test/spec/frontend/admin-recon-writeoff/pages.browser.test.ts",
+        "test/spec/frontend/admin-recon-writeoff/writeoff.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "a8916c2f39b21b52fe41fa2408888dbea9fbc076f690205ce3dd1cc34caf1fed"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "663acfdcf001cdd8fdc028932d095e4240d3111ca10b59811f98def90355c31f"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "275b54c5b432bd732abf3a7a6ba27d671bbb1e69",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  }
+}
