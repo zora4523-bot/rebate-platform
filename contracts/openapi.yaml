@@ -22266,7 +22266,6 @@ paths:
         import of a union settlement statement) and the export are not part of this operation.
         Reading does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -22387,7 +22386,6 @@ paths:
         union settlement statement) and the export are not part of this operation. Reading does
         not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -22530,7 +22528,6 @@ paths:
         upload, check and import of a union settlement statement and the export are not part of
         this operation. Reading does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
