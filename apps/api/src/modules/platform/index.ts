@@ -16,6 +16,13 @@ export * from './http/index.ts';
 // B1-22v: the union quota bucket shared by every process (Redis); app.module calls it from here.
 export { createRedisQuotaLimiter } from './http/redis-quota.ts';
 export type { RedisQuotaDeps, RedisQuotaLimiter } from './http/redis-quota.ts';
+// B1-22v (D10-460): the union quota of an entry without REDIS (memory in local / test, else refuse).
+export { createUnionQuotaFallback } from './http/union-quota.ts';
+export type {
+  UnionQuotaFallback,
+  UnionQuotaFallbackDeps,
+  UnionQuotaFallbackMode,
+} from './http/union-quota.ts';
 export { createResilienceRegistry } from './resilience/index.ts';
 export type {
   DependencyId,
