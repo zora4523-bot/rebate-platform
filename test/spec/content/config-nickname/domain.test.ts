@@ -1,6 +1,8 @@
 // F1-02zzq §9.3 ① ②: whatever config_items holds, the assembled Config carries nickname
 // {1, 16, 3} (BR-ID-39 / 05 B1-20) and no nickname-like key is ever reported. Independent oracle
-// from ./nickname-kit.ts; never derived from content's own constants.
+// from ./nickname-kit.ts; never derived from content's own constants. Property runs and seed come
+// only from @couli/testing (PROP_RUNS / PROP_SEED); each property returns a boolean.
+import { propParams, propRuns } from '@couli/testing';
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
 import {
@@ -64,52 +66,83 @@ const inputArb = fc.record({
   budget: fc.option(fc.nat({ max: 1_000_000_000 }), { nil: undefined }),
 });
 
-it('[AC-F1-02zzq#5] 任意 config_items 与调用者：nickname 恒为 {1, 16, 3} 整数，近似键从不上报', () => {
-  fc.assert(
-    fc.property(inputArb, (input) => {
-      const reported: string[] = [];
-      const report = {
-        missing: (key: string) => void reported.push(key),
-        invalid: (key: string) => void reported.push(key),
-      };
-      const config = buildClientConfig({
-        values: input.values,
-        viewer: { appId: input.appId, userId: input.userId },
-        deviceId: input.deviceId,
-        linkPatterns,
-        rankPlatforms: input.rankPlatforms,
-        ...(input.budget === undefined ? {} : { inviteRewardBudgetFen: input.budget }),
-        report,
-      });
-      expect(config).toBeDefined();
-      expect(config?.nickname).toStrictEqual(NICKNAME);
-      expect(Object.values(config?.nickname ?? {}).every((v) => Number.isInteger(v))).toBe(true);
-      expect(reported.filter((key) => key.includes('nickname'))).toEqual([]);
-    }),
-    { numRuns: 200 },
+/** Exactly the three keys of NICKNAME, each the same JSON integer; nothing else. */
+function isExactNickname(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const actual = value as Record<string, unknown>;
+  const keys = Object.keys(actual).sort();
+  const expected = Object.keys(NICKNAME).sort();
+  return (
+    keys.length === expected.length &&
+    keys.every((key, i) => key === expected[i]) &&
+    Object.entries(NICKNAME).every(
+      ([key, want]) => Number.isInteger(actual[key]) && actual[key] === want,
+    )
   );
-});
+}
 
-it('[AC-F1-02zzq#5] 同名键 nickname 写入合法形状的其他取值也不覆盖常量', () => {
-  fc.assert(
-    fc.property(
-      fc.record({
-        min_len: fc.integer({ min: 1, max: 2_147_483_647 }),
-        max_len: fc.integer({ min: 1, max: 2_147_483_647 }),
-        monthly_limit: fc.integer({ min: 1, max: 2_147_483_647 }),
-      }),
-      (poison) => {
-        const config = buildClientConfig({
-          values: new Map<string, unknown>([...Object.entries(REQUIRED), ['nickname', poison]]),
-          viewer: { appId: 'f102zzq_domain', userId: null },
-          deviceId: null,
-          linkPatterns,
-          rankPlatforms: [],
-          report: { missing: () => undefined, invalid: () => undefined },
-        });
-        expect(config?.nickname).toStrictEqual(NICKNAME);
-      },
-    ),
-    { numRuns: 100 },
-  );
-});
+// The timeout grows with PROP_RUNS (10 000 locally, 100 000 in the long run).
+const PROPERTY_TIMEOUT_MS: number = Math.max(30_000, Math.ceil(propRuns() * 0.3));
+
+it(
+  '[AC-F1-02zzq#5] 任意 config_items 与调用者：nickname 恒为 {1, 16, 3} 整数，近似键从不上报',
+  () => {
+    expect(() =>
+      fc.assert(
+        fc.property(inputArb, (input) => {
+          const reported: string[] = [];
+          const report = {
+            missing: (key: string) => void reported.push(key),
+            invalid: (key: string) => void reported.push(key),
+          };
+          const config = buildClientConfig({
+            values: input.values,
+            viewer: { appId: input.appId, userId: input.userId },
+            deviceId: input.deviceId,
+            linkPatterns,
+            rankPlatforms: input.rankPlatforms,
+            ...(input.budget === undefined ? {} : { inviteRewardBudgetFen: input.budget }),
+            report,
+          });
+          return (
+            config !== undefined &&
+            isExactNickname(config.nickname) &&
+            reported.every((key) => !key.includes('nickname'))
+          );
+        }),
+        propParams(),
+      ),
+    ).not.toThrow();
+  },
+  PROPERTY_TIMEOUT_MS,
+);
+
+it(
+  '[AC-F1-02zzq#5] 同名键 nickname 写入合法形状的其他取值也不覆盖常量',
+  () => {
+    expect(() =>
+      fc.assert(
+        fc.property(
+          fc.record({
+            min_len: fc.integer({ min: 1, max: 2_147_483_647 }),
+            max_len: fc.integer({ min: 1, max: 2_147_483_647 }),
+            monthly_limit: fc.integer({ min: 1, max: 2_147_483_647 }),
+          }),
+          (poison) => {
+            const config = buildClientConfig({
+              values: new Map<string, unknown>([...Object.entries(REQUIRED), ['nickname', poison]]),
+              viewer: { appId: 'f102zzq_domain', userId: null },
+              deviceId: null,
+              linkPatterns,
+              rankPlatforms: [],
+              report: { missing: () => undefined, invalid: () => undefined },
+            });
+            return config !== undefined && isExactNickname(config.nickname);
+          },
+        ),
+        propParams(),
+      ),
+    ).not.toThrow();
+  },
+  PROPERTY_TIMEOUT_MS,
+);
