@@ -13,6 +13,10 @@ import {
   type BindReq,
   type BindResult,
   type CallCtx,
+  type ChannelCategoriesReq,
+  type ChannelRankingCategory,
+  type ChannelRankingPage,
+  type ChannelRankingReq,
   type ConvertReq,
   type ConvertResult,
   type IdentityClaims,
@@ -354,6 +358,23 @@ export class DemoUnionAdapter implements UnionAdapter {
     const scenario = this.#scenario(ctx);
     if (typeof req !== 'object' || req === null) throw this.#invalid('feed request missing');
     return this.#page(this.#feed, req.cursor, FEED_PAGE_SIZE, scenario);
+  }
+
+  /** B1-22p: deterministic synthetic categories of a material channel (non-prod only). */
+  async channelCategories(
+    req: ChannelCategoriesReq,
+    ctx: CallCtx,
+  ): Promise<readonly ChannelRankingCategory[]> {
+    void req;
+    void ctx;
+    throw new Error('NotImplemented: DemoUnionAdapter.channelCategories');
+  }
+
+  /** B1-22p: deterministic synthetic channel pages from the demo catalog (non-prod only). */
+  async channelRanking(req: ChannelRankingReq, ctx: CallCtx): Promise<ChannelRankingPage> {
+    void req;
+    void ctx;
+    throw new Error('NotImplemented: DemoUnionAdapter.channelRanking');
   }
 
   /**
