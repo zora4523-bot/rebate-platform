@@ -40,6 +40,12 @@
 //      a rebate history row; R8 also writes orders.reason, R9 writes diff_reason_code PART_REFUND
 //      and leaves orders.reason unchanged.
 //  10. R8 publishes order.clawed_back on the same transaction.
+//  11. (B2-04l, BR-FUND-06「等联盟回传新佣金后按 R7/R9 处理并关闭」) after an R8 / R9: the WAIT_COMMISSION
+//      order_rights rows this event answers are closed as SUCCEEDED (a rights ref: that row; a
+//      platform / commission ref: every WAIT_COMMISSION row of the order), orders.rights_pending is
+//      recomputed with a CAS, and when no WAIT_COMMISSION row is left the sub-order's open
+//      CLAWBACK_NO_COMMISSION pending rows are resolved through deps.pending.resolve (orders' port;
+//      settlement never writes order_sync_pending itself).
 //
 // | cause                | R8 history event                       | R9 history event | sub_type        | R8 reason       |
 // | PLATFORM_INVALID     | PLATFORM_INVALID                       | —                | FULL            | REFUND          |
@@ -56,8 +62,9 @@
 //   - source.event PLATFORM_INVALID (or to_status INVALID) → apply cause INVALID_AFTER_SETTLE
 //     when change.from_status is SETTLED (P7), else PLATFORM_INVALID (P6); ref platform;
 //   - source.event PLATFORM_PUNISH (P8) → apply cause PUNISH, ref platform;
-//   - source.event PLATFORM_RIGHTS → skipped; TODO(规划/11 §4.2): rights success entry — blocked
-//     on B2-04l;
+//   - source.event PLATFORM_RIGHTS → skipped 'not_reverse': the status signal carries no rights
+//     record; the rights success entry is settlement's rights.record (B2-04l), which orders calls
+//     with the record and which calls apply with ref rights `R{order_rights.id}`;
 //   - refunded_quantity increased in this sync, or an order_rights row exists for the order → R9
 //     (BR-FUND-01「R9 与 R9b 的判定」), never R9b: N_new per step 3; with the settlement record
 //     unchanged and no deduction that is ③ WAIT_COMMISSION (an existing order_rights row →
@@ -106,6 +113,8 @@ import {
 } from '../../ledger/index.ts';
 import {
   lockOrderKey,
+  resolveClawbackNoCommissionPending,
+  type ClawbackPendingResolveInput,
   type OrderStatusSource,
   type OrderUpdateChange,
 } from '../../orders/index.ts';
@@ -123,6 +132,7 @@ import {
   readRebateOrder,
   type OrderRow,
 } from '../rebate/infra/rebate-store.ts';
+import { closeWaitingRights, hasWaitingRights } from '../rights/rights-store.ts';
 import {
   casClawbackOrder,
   casRightsPending,
@@ -162,7 +172,7 @@ export interface ClawbackCommand {
   readonly rightsDeductFen: bigint | null;
 }
 
-/** One order_sync_pending entry (orders owns the table; 待编排裁定: writer port at assembly). */
+/** One order_sync_pending entry (orders owns the table; written only through deps.pending). */
 export interface ClawbackPendingInput {
   readonly appId: string;
   readonly orderId: string;
@@ -184,8 +194,14 @@ export interface ClawbackDependencies {
   ): Promise<CreditSnapshot | null>;
   /** Writer of commission_split_beneficiary_events (same port as B2-04m). */
   appendBeneficiaryEvent(trx: Transaction<DB>, input: BeneficiaryEventInput): Promise<void>;
+  /**
+   * orders' CLAWBACK_NO_COMMISSION pending port (orders createClawbackPendingPort). resolve closes the
+   * sub-order's open rows; when it is not injected, orders' exported resolveClawbackNoCommissionPending
+   * is used (still orders' code, same transaction).
+   */
   readonly pending: {
     open(trx: Transaction<DB>, input: ClawbackPendingInput): Promise<void>;
+    resolve?(trx: Transaction<DB>, input: ClawbackPendingResolveInput): Promise<void>;
   };
   /** settle.estimate_change_diff.enabled (default on; false / 'false' / 'off' turn it off). */
   readonly config: {
@@ -673,6 +689,38 @@ export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
     );
   }
 
+  /** Step 11: WAIT_COMMISSION rows → SUCCEEDED, rights_pending, CLAWBACK_NO_COMMISSION pending. */
+  async function closeAnsweredRights(
+    trx: Transaction<DB>,
+    ref: ClawbackEventRef,
+    order: OrderRow,
+    now: Date,
+  ): Promise<void> {
+    const rightsId = ref.kind === 'rights' ? ref.orderRightsId : null;
+    await closeWaitingRights(trx, order.app_id, order.order_id, rightsId, now);
+    const pending = await computeRightsPending(trx, order.app_id, order.order_id);
+    const fresh = await readRebateOrder(trx, {
+      appId: order.app_id,
+      orderId: order.order_id,
+      attrAt: order.attr_at,
+    });
+    if (fresh === undefined) throw new Error('settlement clawback: order not found for app');
+    if (pending !== fresh.rights_pending) {
+      const ok = await casRightsPending(trx, fresh, pending, now);
+      if (!ok) throw new Error('settlement clawback: rights_pending CAS matched no row');
+    }
+    if (!(await hasWaitingRights(trx, order.app_id, order.order_id))) {
+      const target: ClawbackPendingResolveInput = {
+        appId: order.app_id,
+        platform: order.platform,
+        subOrderId: order.sub_order_id,
+        at: now,
+      };
+      if (deps.pending.resolve !== undefined) await deps.pending.resolve(trx, target);
+      else await resolveClawbackNoCommissionPending(trx, target);
+    }
+  }
+
   async function apply(trx: Transaction<DB>, command: ClawbackCommand): Promise<ClawbackResult> {
     checkCommand(command);
     const { appId, orderId, cause } = command;
@@ -815,6 +863,9 @@ export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
       await registerJdReview(trx, order, key, rightsEventId, booked.n, nPositive);
     }
 
+    // 11. close the WAIT_COMMISSION rights rows this event answers (BR-FUND-06), same transaction.
+    await closeAnsweredRights(trx, command.ref, order, now);
+
     // 10. order.clawed_back on the same transaction (R8 only).
     if (transition === 'R8') {
       await events.publish(trx, {
@@ -919,7 +970,7 @@ export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
       return apply(trx, { ...base, cause: 'PUNISH', ref: { kind: 'platform' } });
     }
     if (source.event === 'PLATFORM_RIGHTS') {
-      // TODO(规划/11 §4.2): rights success entry (维权成功入口) — blocked on B2-04l.
+      // The rights success entry is rights.record (B2-04l): this status signal has no record.
       return { outcome: 'skipped', reason: 'not_reverse' };
     }
 
