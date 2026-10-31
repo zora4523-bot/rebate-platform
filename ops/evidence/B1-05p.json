@@ -1,0 +1,136 @@
+{
+  "task": "B1-05p",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "50a5fd645c75abbfeccbb7558ae96cdb4b9c702a",
+  "red_tests": [
+    "test/spec/catalog/product-pool-schema/access.int.test.ts > [BR-PROD-08] 各角色表级权限：couli_app 增删改查，couli_readonly 只读，couli_payout、couli_maint 无；清表、MAINTAIN 谁都没有",
+    "test/spec/catalog/product-pool-schema/access.int.test.ts > [BR-PROD-08] 各角色逐列权限与表级一致：没有只放一部分列的授权",
+    "test/spec/catalog/product-pool-schema/access.int.test.ts > [BR-PROD-08] couli_app 能建池、改池、上下架、改条目、删条目、删空池",
+    "test/spec/catalog/product-pool-schema/access.int.test.ts > [BR-PROD-08] 两张表都不是只追加表：没有业务触发器",
+    "test/spec/catalog/product-pool-schema/access.int.test.ts > [BR-PROD-08] couli_readonly 读到 couli_app 写入的同一行；其余角色不可读；除 couli_app 外的写入都被拒绝，任何角色都不能清表，行不变",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] product_pools 列名、类型、可空性和默认值逐一匹配：revision 为 bigint 缺省 0，只有时间戳用库时钟",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] pool_items 列名、类型、可空性和默认值逐一匹配：金额 bigint 分，sort 为 integer 缺省 0，image、start_at、end_at、invalid_reason 可空",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 两张表的必填列都拒绝 NULL",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 缺省值：revision、sort 为 0，可空列为 NULL，created_at、updated_at 由库填写",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 取值原样往返：图片、有效期、下架原因照存，金额超出 2^53 不丢精度",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 有效期两端各自可空：只有 start_at、只有 end_at 都能写入",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] product_pools 主键为 (app_id, pool_id)：同一 App 同一 pool_id 第二次插入失败，原行不变",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] ③ pool_items 主键为 (app_id, pool_id, product_key)：同池同商品直接重复插入失败，池内仍只有 1 条",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] ③ 重复入库按唯一键覆盖 sort、start_at、end_at：池内仍只有 1 条，created_at 和创建人不变",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] ③ 唯一键含 pool_id 与 product_key：同池不同商品、同一商品进不同池各成一条",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] pool_items 复合外键 (app_id, pool_id) 引用 product_pools；两张表的外键都不级联",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 条目必须落在本 App 已有的池里：不存在的池、别的 App 的池都插入失败",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 有条目的池不能删、不能改 pool_id，条目不被连带；条目删光后池才能删",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] product_pools 的 CHECK：name 不为空串，status 只取 active / disabled，revision 不为负",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] pool_items 的 CHECK：product_key、raw_item_id 不为空串，status 只取 online / offline",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] pool_items 三个金额不为负，0 可写入",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 有效期两端都有值时 end_at 必须晚于 start_at：相等、更早都拒绝，晚 1 毫秒可写入",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] CHECK 对 UPDATE 同样生效：非法取值改不进去，行不变",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 池内读路径有 btree 索引 (app_id, pool_id, sort, product_key)，全表、升序、非唯一",
+    "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] app_id 不串：同一 pool_id、同一 product_key 在两个 App 各自独立，改删互不影响",
+    "test/spec/catalog/product-pool-schema/snapshot.test.ts > [BR-PROD-08] 只新增迁移：恰有一个编号在已合并迁移之后的新迁移同时建两张表，0001～0104 不碰它们",
+    "test/spec/catalog/product-pool-schema/snapshot.test.ts > [BR-PROD-08] 授权写在建表的同一迁移：couli_app 增删改查，couli_readonly 只读，couli_payout、couli_maint 不授权",
+    "test/spec/catalog/product-pool-schema/snapshot.test.ts > [BR-PROD-08] schema 快照 db/schema.sql 含两张表、主键、不级联的复合外键、读路径索引与授权"
+  ],
+  "risk_note": "RV2 by path (db). Adds the empty tables app.product_pools and app.pool_items (04 line 411, BR-PROD-08 ③ unique key (app_id, pool_id, product_key)), fields as contract AdminProductPool / AdminPoolItem (CT-07d), composite foreign keys to product_pools and admin_users with no cascade, checks on status, amounts, sort and validity, grants couli_app read/write and couli_readonly read. Additive, no business code reads them yet (B1-05q, B1-05r). No money moves. Codex was unavailable until 11-02, so tests and reviews ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "50a5fd645c75abbfeccbb7558ae96cdb4b9c702a",
+      "tree": "8bbf5a93505b47051ad36a5968d20576a69b05d1",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T12:50:20Z",
+      "finished_at": "2026-10-31T12:50:36Z",
+      "gate": {
+        "commit": "68de34ab80eb0dc99924c34485a83ef68feca915",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/catalog/product-pool-schema/access.int.test.ts > [BR-PROD-08] 各角色表级权限：couli_app 增删改查，couli_readonly 只读，couli_payout、couli_maint 无；清表、MAINTAIN 谁都没有",
+        "test/spec/catalog/product-pool-schema/access.int.test.ts > [BR-PROD-08] 各角色逐列权限与表级一致：没有只放一部分列的授权",
+        "test/spec/catalog/product-pool-schema/access.int.test.ts > [BR-PROD-08] couli_app 能建池、改池、上下架、改条目、删条目、删空池",
+        "test/spec/catalog/product-pool-schema/access.int.test.ts > [BR-PROD-08] 两张表都不是只追加表：没有业务触发器",
+        "test/spec/catalog/product-pool-schema/access.int.test.ts > [BR-PROD-08] couli_readonly 读到 couli_app 写入的同一行；其余角色不可读；除 couli_app 外的写入都被拒绝，任何角色都不能清表，行不变",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] product_pools 列名、类型、可空性和默认值逐一匹配：revision 为 bigint 缺省 0，只有时间戳用库时钟",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] pool_items 列名、类型、可空性和默认值逐一匹配：金额 bigint 分，sort 为 integer 缺省 0，image、start_at、end_at、invalid_reason 可空",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 两张表的必填列都拒绝 NULL",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 缺省值：revision、sort 为 0，可空列为 NULL，created_at、updated_at 由库填写",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 取值原样往返：图片、有效期、下架原因照存，金额超出 2^53 不丢精度",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 有效期两端各自可空：只有 start_at、只有 end_at 都能写入",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] product_pools 主键为 (app_id, pool_id)：同一 App 同一 pool_id 第二次插入失败，原行不变",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] ③ pool_items 主键为 (app_id, pool_id, product_key)：同池同商品直接重复插入失败，池内仍只有 1 条",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] ③ 重复入库按唯一键覆盖 sort、start_at、end_at：池内仍只有 1 条，created_at 和创建人不变",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] ③ 唯一键含 pool_id 与 product_key：同池不同商品、同一商品进不同池各成一条",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] pool_items 复合外键 (app_id, pool_id) 引用 product_pools；两张表的外键都不级联",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 条目必须落在本 App 已有的池里：不存在的池、别的 App 的池都插入失败",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 有条目的池不能删、不能改 pool_id，条目不被连带；条目删光后池才能删",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] product_pools 的 CHECK：name 不为空串，status 只取 active / disabled，revision 不为负",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] pool_items 的 CHECK：product_key、raw_item_id 不为空串，status 只取 online / offline",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] pool_items 三个金额不为负，0 可写入",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 有效期两端都有值时 end_at 必须晚于 start_at：相等、更早都拒绝，晚 1 毫秒可写入",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] CHECK 对 UPDATE 同样生效：非法取值改不进去，行不变",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] 池内读路径有 btree 索引 (app_id, pool_id, sort, product_key)，全表、升序、非唯一",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts > [BR-PROD-08] app_id 不串：同一 pool_id、同一 product_key 在两个 App 各自独立，改删互不影响",
+        "test/spec/catalog/product-pool-schema/snapshot.test.ts > [BR-PROD-08] 只新增迁移：恰有一个编号在已合并迁移之后的新迁移同时建两张表，0001～0104 不碰它们",
+        "test/spec/catalog/product-pool-schema/snapshot.test.ts > [BR-PROD-08] 授权写在建表的同一迁移：couli_app 增删改查，couli_readonly 只读，couli_payout、couli_maint 不授权",
+        "test/spec/catalog/product-pool-schema/snapshot.test.ts > [BR-PROD-08] schema 快照 db/schema.sql 含两张表、主键、不级联的复合外键、读路径索引与授权"
+      ],
+      "expected": [
+        "test/spec/catalog/product-pool-schema/access.int.test.ts",
+        "test/spec/catalog/product-pool-schema/shape.int.test.ts",
+        "test/spec/catalog/product-pool-schema/snapshot.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "30a91467ea4bc86f095dd91401c4c0d94eee9f4fc76b54234a5305485bb35d17"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d2366d9158c63e14b0aed0ce14bed98647fcbf688ce9d19f4070d422859235c5"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with two S2: the placeholder migration number (renamed at land) and missing created_by foreign keys (added; the rest of the review stands, one incremental check of the foreign keys by the rule tests in CI)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude, red 28 / 28 across 3 files, round 1 pass with one S2 (snapshot regex and ON DELETE RESTRICT, not reachable with the default action)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "e4aa25f27cc093d72157f7fcbf486925a9e54bcf",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}

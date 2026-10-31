@@ -4730,6 +4730,42 @@ CREATE TABLE app.platforms (
 
 
 --
+-- Name: pool_items; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.pool_items (
+    app_id text NOT NULL,
+    pool_id uuid NOT NULL,
+    product_key text NOT NULL,
+    platform text NOT NULL,
+    raw_item_id text NOT NULL,
+    title text NOT NULL,
+    image text,
+    price_fen bigint NOT NULL,
+    coupon_fen bigint NOT NULL,
+    final_price_fen bigint NOT NULL,
+    quoted_at timestamp with time zone NOT NULL,
+    status text NOT NULL,
+    sort integer DEFAULT 0 NOT NULL,
+    start_at timestamp with time zone,
+    end_at timestamp with time zone,
+    invalid_reason text,
+    created_by uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT pool_items_coupon_fen_check CHECK ((coupon_fen >= 0)),
+    CONSTRAINT pool_items_final_price_fen_check CHECK ((final_price_fen >= 0)),
+    CONSTRAINT pool_items_platform_check CHECK ((platform = ANY (ARRAY['taobao'::text, 'jd'::text, 'pdd'::text, 'meituan'::text, 'vip'::text, 'douyin'::text, 'eleme'::text, 'kuaishou'::text, 'suning'::text]))),
+    CONSTRAINT pool_items_price_fen_check CHECK ((price_fen >= 0)),
+    CONSTRAINT pool_items_product_key_check CHECK ((product_key <> ''::text)),
+    CONSTRAINT pool_items_raw_item_id_check CHECK ((raw_item_id <> ''::text)),
+    CONSTRAINT pool_items_sort_check CHECK ((sort >= 0)),
+    CONSTRAINT pool_items_status_check CHECK ((status = ANY (ARRAY['online'::text, 'offline'::text]))),
+    CONSTRAINT pool_items_validity_check CHECK ((end_at > start_at))
+);
+
+
+--
 -- Name: price_snapshot; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4828,6 +4864,26 @@ CREATE TABLE app.product_key_aliases (
     CONSTRAINT product_key_aliases_new_key_check CHECK (((char_length(new_key) <= 128) AND (new_key ~ '^[a-z0-9]+:[!-"$-.0->@-~]{1,124}$'::text))),
     CONSTRAINT product_key_aliases_old_key_check CHECK (((char_length(old_key) <= 128) AND (old_key ~ '^[a-z0-9]+:[!-"$-.0->@-~]{1,124}$'::text))),
     CONSTRAINT product_key_aliases_reason_check CHECK ((reason <> ''::text))
+);
+
+
+--
+-- Name: product_pools; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.product_pools (
+    app_id text NOT NULL,
+    pool_id uuid NOT NULL,
+    name text NOT NULL,
+    status text NOT NULL,
+    revision bigint DEFAULT 0 NOT NULL,
+    created_by uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT product_pools_app_id_check CHECK ((app_id <> ''::text)),
+    CONSTRAINT product_pools_name_check CHECK ((name <> ''::text)),
+    CONSTRAINT product_pools_revision_check CHECK ((revision >= 0)),
+    CONSTRAINT product_pools_status_check CHECK ((status = ANY (ARRAY['active'::text, 'disabled'::text])))
 );
 
 
@@ -7464,6 +7520,14 @@ ALTER TABLE ONLY app.platforms
 
 
 --
+-- Name: pool_items pool_items_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.pool_items
+    ADD CONSTRAINT pool_items_pkey PRIMARY KEY (app_id, pool_id, product_key);
+
+
+--
 -- Name: price_snapshot price_snapshot_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -7501,6 +7565,14 @@ ALTER TABLE ONLY app.product_key_aliases
 
 ALTER TABLE ONLY app.product_key_aliases
     ADD CONSTRAINT product_key_aliases_pkey PRIMARY KEY (old_key);
+
+
+--
+-- Name: product_pools product_pools_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.product_pools
+    ADD CONSTRAINT product_pools_pkey PRIMARY KEY (app_id, pool_id);
 
 
 --
@@ -9025,6 +9097,13 @@ CREATE INDEX personal_data_copies_retry_of_idx ON app.personal_data_copies USING
 --
 
 CREATE INDEX personal_data_copies_user_idx ON app.personal_data_copies USING btree (app_id, user_id);
+
+
+--
+-- Name: pool_items_read_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX pool_items_read_idx ON app.pool_items USING btree (app_id, pool_id, sort, product_key);
 
 
 --
@@ -10909,6 +10988,30 @@ ALTER TABLE ONLY app.platform_icons
 
 ALTER TABLE ONLY app.platform_icons
     ADD CONSTRAINT platform_icons_updated_by_admin_id_fkey FOREIGN KEY (updated_by_admin_id) REFERENCES app.admin_users(id);
+
+
+--
+-- Name: pool_items pool_items_created_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.pool_items
+    ADD CONSTRAINT pool_items_created_by_fkey FOREIGN KEY (app_id, created_by) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: pool_items pool_items_pool_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.pool_items
+    ADD CONSTRAINT pool_items_pool_fkey FOREIGN KEY (app_id, pool_id) REFERENCES app.product_pools(app_id, pool_id);
+
+
+--
+-- Name: product_pools product_pools_created_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.product_pools
+    ADD CONSTRAINT product_pools_created_by_fkey FOREIGN KEY (app_id, created_by) REFERENCES app.admin_users(app_id, id);
 
 
 --
@@ -14968,6 +15071,14 @@ GRANT UPDATE(updated_at) ON TABLE app.platforms TO couli_app;
 
 
 --
+-- Name: TABLE pool_items; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE app.pool_items TO couli_app;
+GRANT SELECT ON TABLE app.pool_items TO couli_readonly;
+
+
+--
 -- Name: TABLE price_snapshot; Type: ACL; Schema: app; Owner: -
 --
 
@@ -15004,6 +15115,14 @@ GRANT SELECT ON TABLE app.processed_events TO couli_readonly;
 
 GRANT SELECT,INSERT ON TABLE app.product_key_aliases TO couli_app;
 GRANT SELECT ON TABLE app.product_key_aliases TO couli_readonly;
+
+
+--
+-- Name: TABLE product_pools; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE app.product_pools TO couli_app;
+GRANT SELECT ON TABLE app.product_pools TO couli_readonly;
 
 
 --
