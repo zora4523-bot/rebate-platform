@@ -310,15 +310,16 @@ export function createWithdrawApply(options: WithdrawApplyOptions): WithdrawAppl
       const locked = await readWithdrawInput(trx, actor, command.stepUpValid, rules);
       const again = validateLockedWithdrawal(locked, amount);
       if (again !== null) return refuse(again);
+      // Build the row. One clock reading serves the locked quote and the row's created_at, so the
+      // tax year the quote used is the year the row is created in (money review r1 S0).
+      const now = clock.now();
       // B2-08c (BR-WDR-20 累计方法, BR-WDR-07 lock order): the quote that the row stores is taken
       // under the users row lock, so a concurrent application of the member that committed since
       // the first pass counts as in flight.
-      quote = await rules.feeTax.calculate(trx, { ...actor, amountFen: amount, now: t });
+      quote = await rules.feeTax.calculate(trx, { ...actor, amountFen: amount, now });
       fee = quote.fee_fen;
       tax = quote.tax_fen;
       net = subFen(subFen(amount, fee), tax);
-      // Build the row.
-      const now = clock.now();
       const review = await reviewFields(trx, actor.appId, now);
       await insertWithdrawal(trx, {
         id,
