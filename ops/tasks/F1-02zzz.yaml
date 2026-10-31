@@ -1,0 +1,20 @@
+id: F1-02zzz
+repo: rebate-platform
+title: 收紧测试（FU-F102ZZU-TIGHTEN）：articles 整行与列清单相关冻结测试只认「有 faq_rank 列、int4、可空、无缺省、不可 UPDATE、值为 null」单态，去掉「无列」分支
+type: test-change
+# 2026-10-31 入账（content-client；编排 06:5x 记 FU-F102ZZU-TIGHTEN，先例 F1-02zzf 收紧 F1-02zzc）。F1-02zzo（#1967）已合并，faq_rank 列已在主干。
+# 涉及 F1-02zzu 改过的 dict-items/articles.int.test.ts [AC-F1-02q#17]–[#21]、dict-items/kit.ts、articles-help-section/articles.int.test.ts [AC-F1-02zq#3]、[#6]–[#11]。
+# 改既有规则测试属第一类保护路径：走非 task 分支、台账同 PR；全新上下文 Claude 修改、另一全新上下文 Claude 只读复审，按 approvals #24 由编排加 owner-approved 标签。
+refs: []
+refs_hash: {}
+deps: [F1-02zzu, F1-02zzo]
+paths:
+  - 'test/spec/db/content/dict-items/articles.int.test.ts'
+  - 'test/spec/db/content/dict-items/kit.ts'
+  - 'test/spec/db/content/articles-help-section/articles.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
