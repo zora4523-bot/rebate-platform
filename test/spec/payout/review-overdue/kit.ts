@@ -28,7 +28,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { sql, type Kysely, type Transaction } from 'kysely';
+import { sql, type Kysely, type RawBuilder, type Transaction } from 'kysely';
 import { expect, vi } from 'vitest';
 import { lockUsersForUpdate } from '../../../../apps/api/src/modules/identity/ports/lock-users.ts';
 import {
@@ -163,10 +163,13 @@ export interface Seeded {
   readonly appId: string;
   readonly userId: string;
   readonly status: Status;
+  readonly reviewMode: ReviewMode;
   readonly reviewDeadline: Date | null;
   readonly payeeHmac: string;
   readonly outBizNo: string;
 }
+
+export type ReviewMode = 'auto' | 'manual';
 
 export interface SeedValues {
   readonly status?: Status;
@@ -174,15 +177,39 @@ export interface SeedValues {
   readonly reviewDeadline?: Date | null;
   /** Already judged at this instant. Default null. */
   readonly reviewOverdueAt?: Date | null;
+  /**
+   * Default 'manual'. 'auto': auto-payout's writeReview('auto') ran (review_mode auto, an
+   * auto_decision, the deadline), and an APPROVED one was approved by the system W2 (reviewer_id
+   * null) and then left there (EXECUTE refused: auto_decision.execute_blocked).
+   */
+  readonly reviewMode?: ReviewMode;
+}
+
+/** auto_decision of a fixture: null when manual, a synthetic one when auto (never read). */
+function autoDecision(status: Status, reviewMode: ReviewMode): RawBuilder<unknown> | null {
+  if (reviewMode !== 'auto') return null;
+  const value = {
+    result: 'auto',
+    failed_conditions: [],
+    warn_values: {},
+    rule_version: 'fixture',
+    decided_at: CREATED_AT.toISOString(),
+    ...(status === 'APPROVED' ? { execute_blocked: { reason: 'fixture' } } : {}),
+  };
+  return sql`CAST(${JSON.stringify(value)} AS jsonb)`;
 }
 
 /** The columns a status needs beyond the common ones (the table's CHECK constraints). */
-function statusColumns(status: Status): Record<string, unknown> {
+function statusColumns(status: Status, reviewMode: ReviewMode): Record<string, unknown> {
   switch (status) {
     case 'PENDING_REVIEW':
       return {};
     case 'APPROVED':
-      return { reviewer_id: randomUUID(), reviewed_at: CREATED_AT };
+      // The system W2 approves with reviewer_id null (auto-payout.ts → B2-05e approve).
+      return {
+        reviewer_id: reviewMode === 'auto' ? null : randomUUID(),
+        reviewed_at: CREATED_AT,
+      };
     case 'PAYING':
       return { executor_id: randomUUID(), executed_at: CREATED_AT, execute_seq: 1 };
     case 'PAID_API':
@@ -206,7 +233,10 @@ function statusColumns(status: Status): Record<string, unknown> {
   }
 }
 
-/** A manual-review alipay withdrawal of `user` in `status` (default PENDING_REVIEW, DEADLINE). */
+/**
+ * An alipay withdrawal of `user` in `status` (default PENDING_REVIEW, DEADLINE, review_mode
+ * manual).
+ */
 export async function seedWithdrawal(
   db: Kysely<DB>,
   app: string,
@@ -214,6 +244,7 @@ export async function seedWithdrawal(
   values: SeedValues = {},
 ): Promise<Seeded> {
   const status = values.status ?? 'PENDING_REVIEW';
+  const reviewMode = values.reviewMode ?? 'manual';
   const reviewDeadline = values.reviewDeadline === undefined ? DEADLINE : values.reviewDeadline;
   const id = randomUUID();
   const payeeHmac = randomBytes(32).toString('hex');
@@ -234,17 +265,18 @@ export async function seedWithdrawal(
     status,
     out_biz_no: outBizNo,
     payout_channel: 'alipay',
-    review_mode: 'manual',
+    review_mode: reviewMode,
+    auto_decision: autoDecision(status, reviewMode),
     review_deadline: reviewDeadline,
     review_overdue_at: values.reviewOverdueAt ?? null,
     created_at: CREATED_AT,
     updated_at: CREATED_AT,
-    ...statusColumns(status),
+    ...statusColumns(status, reviewMode),
   };
   await sql`INSERT INTO app.withdrawals
     (${sql.join(Object.keys(row).map((name) => sql.ref(name)))})
     VALUES (${sql.join(Object.values(row))})`.execute(db);
-  return { id, appId: app, userId: user, status, reviewDeadline, payeeHmac, outBizNo };
+  return { id, appId: app, userId: user, status, reviewMode, reviewDeadline, payeeHmac, outBizNo };
 }
 
 /** A fresh member of `app` and one withdrawal of theirs. */
