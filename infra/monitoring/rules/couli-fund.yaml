@@ -69,6 +69,15 @@ groups:
         annotations:
           summary: 'Withdrawals in PAYING with an unknown result need a person'
           description: 'PAYING withdrawals set to needs_manual (BR-WDR-14, BR-WDR-24): only query the channel, never pay again.'
+      - alert: CouliWithdrawalReviewOverdue
+        expr: 'couli_withdrawals_review_overdue > 0'
+        for: '5m'
+        labels:
+          severity: critical
+          fund: 'true'
+        annotations:
+          summary: 'Withdrawals past their review deadline are still waiting for a person'
+          description: 'Withdrawals the review-overdue check judged overdue (review_overdue_at set, BR-WDR-26) that are still PENDING_REVIEW or APPROVED. The finance alert is not subject to quiet hours (BR-WDR-24); the count drops as reviews end (PAYING, PAID_MANUAL or REJECTED).'
       - alert: CouliAutoPayoutDailyNearCap
         expr: 'couli_auto_payout_daily_total_fen / couli_auto_payout_daily_cap_fen >= 0.8'
         for: '5m'
