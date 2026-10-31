@@ -1,6 +1,6 @@
 id: B1-05s
 repo: rebate-platform
-title: 测试修改（B1-05r 前置，照 B1-28g / B2-11dz，D10-480）：content config-registry 登记 feed.fallback_pool_id（字符串，默认不配置，未配置时信息流联盟故障答空列表）与 pool.max_age_sec（整数、下限 1、默认 7200，BR-PRICE-11），种子与冻结注册表测试同步只加这两键
+title: 测试修改（B1-05r 前置，照 B1-28g / B2-11dz，D10-480）：content config-registry 登记 feed.fallback_pool_id（字符串，默认不配置，未配置时信息流联盟故障答空列表）、pool.max_age_sec（整数、下限 1、默认 7200）与 pool.refresh_interval_sec（整数、下限 1、默认 3600，BR-PRICE-11），种子与冻结注册表测试同步只加这三键
 type: test-change
 # 2026-10-31 W1 入账（编排 D10-480）。分类 config.business。新鲜独立 Claude 改、另一位只读复审「不削弱」，报 #24。
 refs: []
