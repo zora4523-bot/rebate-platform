@@ -1747,3 +1747,104 @@ it(
   },
   CLI_TIMEOUT,
 );
+
+/** result.json of the latest run of task `id` under `dir` (verify, verify-fast, browser, red). */
+function latestResult(id: string, dir: string): Record<string, unknown> {
+  const n = readdirSync(join(runs, id, dir))
+    .map(Number)
+    .sort((x, y) => x - y)
+    .at(-1);
+  const file = join(runs, id, dir, String(n), 'result.json');
+  return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+}
+
+/** A --red run of one new rule test whose report shows it red, so the run ends with a result. */
+function redRunWithReport(name: string, env: Record<string, string>): Run {
+  const file = 'test/spec/identity/devices.test.ts';
+  const repo = redFixture(name, { [file]: "it('[BR-ID-05] x', () => {});\n" });
+  const report = join(base, `${name}.json`);
+  writeFileSync(
+    report,
+    JSON.stringify({
+      reporter: 'couli-red-reporter',
+      testResults: [
+        {
+          name: `/work/repo/${file}`,
+          assertionResults: [
+            {
+              fullName: '[BR-ID-05] x',
+              status: 'failed',
+              failures: [{ causes: [{ name: 'AssertionError', message: 'expected 1 to be 2' }] }],
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  return run(['B1-02b', '--worktree', repo, '--red', '--base', 'main'], {
+    STUB_DOCKER_RED_REPORT: report,
+    ...env,
+  });
+}
+
+/**
+ * verify, --fast, --browser and --red: the container gets `count` and result.json records it;
+ * with null the container gets no PROP_RUNS at all and result.json records JSON null.
+ */
+function expectPropRunsInEveryMode(
+  id: string,
+  label: string,
+  env: Record<string, string>,
+  count: number | null,
+): void {
+  const lock = lockWithPlaywright('1.63.0');
+  const cases: [Run, string, string][] = [
+    [run([id, '--worktree', workspace(`${label}-verify`)], env), id, 'verify'],
+    [run([id, '--worktree', workspace(`${label}-fast`), '--fast'], env), id, 'verify-fast'],
+    [
+      run([id, '--worktree', workspace(`${label}-browser`, lock), '--browser'], {
+        STUB_DOCKER_SCREENSHOT: '1',
+        ...env,
+      }),
+      id,
+      'browser',
+    ],
+    [redRunWithReport(`${label}-red`, env), 'B1-02b', 'red'],
+  ];
+  for (const [res, task, dir] of cases) {
+    expect(res.status, res.stderr).toBe(0);
+    const passed = passedEnv(entrypointRun(res.calls)?.args ?? []);
+    expect(entrypointRun(res.calls)?.env['PROP_RUNS']).toBe(
+      count === null ? undefined : String(count),
+    );
+    expect(passed.includes('PROP_RUNS')).toBe(count !== null);
+    expect(latestResult(task, dir)['prop_runs']).toBe(count);
+  }
+}
+
+it(
+  '[CT-06zzc] no PROP_RUNS from the caller: no mode gets one and result.json records null (D10-499)',
+  () => {
+    expectPropRunsInEveryMode('V5-01', 'runs-unset', {}, null);
+    expect(Object.keys(latestResult('V5-01', 'verify'))).toEqual([
+      'mode',
+      'script',
+      'exit_code',
+      'commit',
+      'tree',
+      'prop_seed',
+      'prop_runs',
+      'started_at',
+      'finished_at',
+    ]);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '[CT-06zzc] PROP_RUNS from the caller reaches every mode and result.json records it as a number',
+  () => {
+    expectPropRunsInEveryMode('V5-02', 'runs-caller', { PROP_RUNS: '7' }, 7);
+  },
+  CLI_TIMEOUT,
+);

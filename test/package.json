@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "test:int": "vitest run --config vitest.integration.config.ts",
+    "test:int": "PROP_RUNS=${PROP_RUNS:-2000} vitest run --config vitest.integration.config.ts",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:smoke": "vitest run --config vitest.build-smoke.config.ts",
     "test:longrun": "vitest run --config vitest.longrun.config.ts"

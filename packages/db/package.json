@@ -23,7 +23,7 @@
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run",
-    "test:int": "vitest run --config vitest.integration.config.ts",
+    "test:int": "PROP_RUNS=${PROP_RUNS:-2000} vitest run --config vitest.integration.config.ts",
     "bootstrap": "node scripts/bootstrap.ts",
     "migrate": "node scripts/migrate.ts",
     "partitions": "node scripts/partitions.ts",
