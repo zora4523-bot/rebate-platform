@@ -106,6 +106,27 @@ export function nextReviewOverdueSlot(now: Date): ReviewOverdueSlot {
   };
 }
 
+// ---- the seed's gate ---------------------------------------------------------------------------
+
+/**
+ * Whether any withdrawal waits for a review with a deadline (status PENDING_REVIEW or APPROVED,
+ * review_deadline set), in any app: the worker's timer seeds the chain only then (as the payout
+ * recon and ledger daily-check seeds read the apps that exist first), so an empty database runs no
+ * chain; the heal every 30 minutes seeds it once such a withdrawal exists, long before its
+ * deadline (24 workday hours after creation). A failed read rejects.
+ */
+export async function anyReviewWaiting(db: Kysely<DB>): Promise<boolean> {
+  const row = await db
+    .withSchema('app')
+    .selectFrom('withdrawals')
+    .select('id')
+    .where('status', 'in', [...JUDGEABLE])
+    .where('review_deadline', 'is not', null)
+    .limit(1)
+    .executeTakeFirst();
+  return row !== undefined;
+}
+
 // ---- the check ---------------------------------------------------------------------------------
 
 export function createReviewOverdueCheck(options: ReviewOverdueCheckOptions): ReviewOverdueCheck {

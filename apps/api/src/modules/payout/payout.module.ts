@@ -38,7 +38,7 @@ import {
 } from './application/auto-payout.ts';
 import { createPayoutExecute } from './application/payout-execute.ts';
 import { PAYOUT_LANDING_QUEUE, createLandingJob } from './jobs/landing-job.ts';
-import { createReviewOverdueCheck } from './application/review-overdue.ts';
+import { anyReviewWaiting, createReviewOverdueCheck } from './application/review-overdue.ts';
 import {
   PAYOUT_OVERDUE_QUEUE,
   createReviewOverdueJob,
@@ -324,7 +324,7 @@ function reconChainTimer(
  * null deps: inert. Same shape as the payout-recon timer above.
  */
 function overdueChainTimer(
-  deps: { clock: Clock; queue: JobQueue; logger: RootLogger } | null,
+  deps: { db: Kysely<DB>; clock: Clock; queue: JobQueue; logger: RootLogger } | null,
 ): ReconChainTimer {
   let running = false;
   let first: ReturnType<typeof setTimeout> | undefined;
@@ -333,7 +333,9 @@ function overdueChainTimer(
     if (deps === null || running) return;
     running = true;
     try {
-      await seedReviewOverdue(deps);
+      // Only while a withdrawal waits for a review with a deadline (anyReviewWaiting): an empty
+      // database runs no chain, as the recon and ledger daily-check seeds read their apps first.
+      if (await anyReviewWaiting(deps.db)) await seedReviewOverdue(deps);
     } catch (error: unknown) {
       deps.logger.warn(
         {
@@ -644,18 +646,21 @@ export class PayoutModule {
             PAYOUT_OVERDUE_JOBS_TOKEN,
             CLOCK,
             ROOT_LOGGER,
+            { token: DB_TOKEN, optional: true },
             { token: JOB_QUEUE, optional: true },
           ],
           useFactory: (
             registered: boolean,
             clock: Clock,
             logger: RootLogger,
+            db?: Kysely<DB>,
             queue?: JobQueue,
           ): ReconChainTimer =>
             overdueChainTimer(
-              !registered || queue === undefined
+              !registered || db === undefined || queue === undefined
                 ? null
                 : {
+                    db,
                     clock,
                     queue,
                     logger: logger.child({ module: 'payout', queue: PAYOUT_OVERDUE_QUEUE }),
