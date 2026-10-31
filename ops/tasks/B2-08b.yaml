@@ -29,8 +29,8 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payout/tax-ytd/**'
-status: todo
-pr: null
+status: done
+pr: 1999
 red_exempt:
   - file: test/spec/ledger/admin-recon-write-off/atomic.int.test.ts
     test: '[AC-B2-07e#32] 同一 Idempotency-Key 同一请求体重放：原样返回第一次的应答，不再记账、不再入队、不再发事件、不再写审计、不再解冻（第一次之后新加的同源冻结仍生效）；同 key 换请求体 → 20901；新 key → 20902 recon_diff；别的账号用同一 key 是它自己的作用域 → 20902 recon_diff'
