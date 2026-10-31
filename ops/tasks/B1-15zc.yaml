@@ -23,5 +23,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/retention-partitions/**'
-status: todo
-pr: null
+status: done
+pr: 1980
