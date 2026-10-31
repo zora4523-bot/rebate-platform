@@ -1,0 +1,21 @@
+id: B1-04zj
+repo: rebate-platform
+title: B1-04l 小修：淘宝详情价格元转分改用 packages/domain.parseYuanToFen（null 交 mapTaobaoPrice 判 missing_field），去掉 @couli/money yuanStrToFen 的截断口径（BR-PRICE-01，D10-515 ④）
+type: impl
+# 草稿 2026-11-01（union 线，账号 4）。起因：B1-04l（#2001）union/infra/taobao/goods.ts 的 yuanFen 用了 yuanStrToFen（超两位小数 floor），与 BR-PRICE-01「超过两位小数视为字段缺失、不得四舍五入」不符（编排须知写错，D10-515）。做法：goods.ts 元转分改用 parseYuanToFen（B1-04zi），返回 null 时按缺失交 mapTaobaoPrice（判 missing_field 价格异常，既有口径）；促销项 promotion_fee 同样；商品详情 JSON 若含 number 金额（录制为字符串，10-06 同族形状），字符串以外按缺失。冻结的 test/spec/union/taobao-goods/** 若有用例钉了截断口径则停下报编排走 test-change（D10-509），不自行改测试。
+# 规则测试补 test/spec/union/taobao-detail-yuan/**（三位小数 / 末尾 0 三位 / 负数 / 空串的 zk_final_price、final_promotion_price、promotion_fee → 价格异常 missing_field，不出截断值）。整体 RV2。
+refs: [BR-PRICE-01]
+refs_hash:
+  BR-PRICE-01: 9ff41b3629dd
+deps: [B1-04zi, B1-04l]
+paths:
+  - 'apps/api/src/modules/union/infra/taobao/goods.ts'
+  - 'apps/api/src/modules/union/infra/taobao/goods.test.ts'
+test_paths:
+  - 'test/spec/union/taobao-detail-yuan/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/taobao-detail-yuan/**'
+status: todo
