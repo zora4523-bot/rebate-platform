@@ -11,6 +11,7 @@ import type { EntryName } from '../entries.ts';
 import type { AutoPayoutDailySnapshot } from './auto-payout.ts';
 import type { WorkerMetricsSnapshot } from './collect.ts';
 import type { FundMetricsSnapshot } from './fund.ts';
+import type { ReviewOverdueSnapshot } from './review-overdue.ts';
 
 export interface MetricsRegistryOptions {
   readonly entry: EntryName;
@@ -20,6 +21,8 @@ export interface MetricsRegistryOptions {
   readonly collectFund?: () => Promise<FundMetricsSnapshot>;
   /** The auto-payout daily gauges (B1-01zzp). Used only on 'worker'; called once per render(). */
   readonly collectAutoPayout?: () => Promise<AutoPayoutDailySnapshot>;
+  /** The review overdue gauge (B2-05o). Used only on 'worker'; called once per render(). */
+  readonly collectReviewOverdue?: () => Promise<ReviewOverdueSnapshot>;
 }
 
 export interface MetricsRegistry {
