@@ -90,6 +90,7 @@ import {
   mapPrivilegeLink,
   privilegeLinkParameters,
 } from './privilege-link.ts';
+import type { TaobaoOrderSlotReader, TaobaoOrderWarning } from './orders.ts';
 import { unwrapTaobaoResponse, type TaobaoSubCodeMap, type TaobaoWarning } from './response.ts';
 import {
   signTaobaoParameters,
@@ -100,6 +101,11 @@ import {
 
 export type { TaobaoParameter, TaobaoParameters } from './sign.ts';
 export type { TaobaoWarning } from './response.ts';
+export type {
+  TaobaoOrderSlotReader,
+  TaobaoOrderWarning,
+  TaobaoOrderWarningEvent,
+} from './orders.ts';
 
 /** Application-level key pair; fetched once per request, never stored on the adapter. */
 export interface TaobaoCredentials {
@@ -139,6 +145,14 @@ export interface TaobaoAdapterOptions {
    * nothing fetched or sent).
    */
   readonly searchSource?: TaobaoSearchSource;
+  /**
+   * B1-04f (D10-488 ③): every Taobao PID registered in union_pids, retired ones included; listOrders
+   * keeps only the orders of these promotion slots (see orders.ts). Without it listOrders is
+   * adapter_unimplemented, like without orderSource.
+   */
+  readonly orderSlots?: TaobaoOrderSlotReader;
+  /** B1-04f: order mapping and slot-filter warnings (see TaobaoOrderWarning in orders.ts). */
+  readonly orderWarn?: (event: TaobaoOrderWarning) => void;
 }
 
 /** B1-04d: the convert data-source switch; the default is 'baichuan' (behaviour unchanged). */
