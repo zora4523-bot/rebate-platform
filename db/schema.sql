@@ -2313,7 +2313,7 @@ CASE
     ELSE (requires_resign = false)
 END),
     CONSTRAINT agreements_text_sha256_check CHECK ((text_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT agreements_type_check CHECK ((type = ANY (ARRAY['privacy'::text, 'agreement'::text, 'labor_agreement'::text]))),
+    CONSTRAINT agreements_type_check CHECK ((type = ANY (ARRAY['privacy'::text, 'agreement'::text, 'labor_agreement'::text, 'sdk_list'::text, 'collect_list'::text]))),
     CONSTRAINT agreements_url_check CHECK ((url ~ '^https://'::text)),
     CONSTRAINT agreements_version_check CHECK ((version >= 1))
 );
