@@ -287,6 +287,11 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "login"
   },
   {
+    "method": "POST",
+    "path": "/v1/me/oauth-bindings",
+    "auth": "login"
+  },
+  {
     "method": "GET",
     "path": "/v1/me/payout-account",
     "auth": "realname"
@@ -684,6 +689,16 @@ export const CONTRACT_AUTH_ROUTES = [
   {
     "method": "PATCH",
     "path": "/admin/v1/users/:user_id/profile",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/users/:user_id/devices",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/reverified-devices",
     "auth": "admin"
   },
   {

@@ -587,6 +587,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": true
   },
   {
+    "operationId": "bindOauthIdentity",
+    "method": "POST",
+    "path": "/v1/me/oauth-bindings",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
     "operationId": "getPayoutAccount",
     "method": "GET",
     "path": "/v1/me/payout-account",
@@ -1388,6 +1398,26 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "operationId": "adminEditUserProfile",
     "method": "PATCH",
     "path": "/admin/v1/users/:user_id/profile",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListUserDevices",
+    "method": "GET",
+    "path": "/admin/v1/users/:user_id/devices",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminAddUserReverifiedDevice",
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/reverified-devices",
     "gate": null,
     "sessionScopes": [
       "full"
