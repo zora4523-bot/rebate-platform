@@ -5,6 +5,8 @@ type: contract
 # 2026-10-31 入账（content-client；编排裁定 D10-465 取方案 A，草案 couli-runs/CONTENT-client/drafts/agreement-sdk-collect-list.md）。
 # 依据（SPEC_REF 8127341）：01 §4.2 Agreement 行（l.183，type 含 sdk_list / collect_list，正文与对应交内容契约线定，发布走 content.agreement）；04 §11.2 content.agreement（l.1085）。原文由编排者摘入任务书，refs 置空。
 # 只改契约形状与描述；实现另见 F1-02zzr（迁移）、F1-02zzs（实现）。排在 #1923 各项之后占契约槽。
+# 2026-10-31 补 paths（content-client）：契约枚举加两值后 tsc 在 content/http/admin/agreements.controller.ts:77/:88 报错（契约五值传给领域三值）。
+#   只在 controller 收窄：详情遇 sdk_list / collect_list 回 30701（库里本就没有），发布回 20001 data.fields=[type]（与今天一致），契约描述注明 F1-02zzs 合并前如此；领域类型与发布规则仍归 F1-02zzs。
 refs: []
 refs_hash: {}
 deps: [CT-02z]
@@ -15,6 +17,7 @@ paths:
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  - 'apps/api/src/modules/content/http/admin/agreements.controller.ts'
 impl: claude
 tester: none
 accept:
