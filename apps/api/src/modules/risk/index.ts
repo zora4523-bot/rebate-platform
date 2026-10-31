@@ -44,8 +44,29 @@ export type {
   AdminAppealsReadPorts,
   AdminAppealsReadOptions,
 } from './application/admin-appeals-read.ts';
+// Task B1-03ze: the appeal console writes (POST /admin/v1/appeals, …/claim, …/resolve; CT-24r,
+// BR-ID-36, BR-ID-31; admin entry only). Rule tests: test/spec/risk/admin-appeals-write/**.
+export {
+  AdminAppealsWrite,
+  AdminAppealsWriteFieldsError,
+  AdminAppealConflictError,
+  AdminAppealAttemptsUsedUpError,
+  appealConsoleText,
+  appealResolveRequirement,
+} from './application/admin-appeals-write.ts';
+export type {
+  AdminAppealsWriteActor,
+  AdminAppealsWriteOptions,
+  AdminAppealsWritePorts,
+  AppealResolveRequirement,
+  AppealResolveRequirementInput,
+  PreparedResolution,
+} from './application/admin-appeals-write.ts';
 export { RiskAppealsAdminModule } from './http/admin/appeals-admin.module.ts';
-export type { RiskAppealsAdminOptions } from './http/admin/appeals-admin.module.ts';
+export type {
+  RiskAppealsAdminOptions,
+  RiskAppealsAdminWriteOptions,
+} from './http/admin/appeals-admin.module.ts';
 export { createInviteRelationHitWriter } from './application/invite-relation-hits.ts';
 export type {
   InviteRelationHitRuleId,
