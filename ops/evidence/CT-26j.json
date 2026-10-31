@@ -1,0 +1,26 @@
+{
+  "red_tests": [],
+  "risk_note": "Contract only (RV1 contracts), all new operations x-implementation planned. D10-513 / orchestrator 23:39 ①②: POST /admin/v1/users/{user_id}/reverified-devices (user.phone_change + totp step-up, device_id + reason 1–200, audit, does not clear the flag, 30419 reason=reverify_not_pending), GET /admin/v1/users/{user_id}/devices (same point, read only, no step-up; no device_hash / install_secret / last_login_sid; last_seen_at desc), adminEditUserProfile description (phone change on a flagged account clears the flag and unbinds non-trusted third-party identities in the same transaction; Apple revocation via outbox after commit per BR-ID-28), POST /v1/me/oauth-bindings (P1, signed / idempotent like reverifyByOauth; 20001 / 20004 / 10010 / 50305 / 10405; conflict codes and the bind attempt purpose left to P1). Generated files regenerated with pnpm codegen; h5 signed list updated. verify:fast green; required CI checks run on the PR head.",
+  "reviews": [],
+  "spec_test_review": null,
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "d892332e0c556465fb916814cd279a232d2dc310",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "task": "CT-26j",
+  "spec_commit": "9713b59cf7eebe459f8f20f3c78f019580dd79fb",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "runs": []
+}
