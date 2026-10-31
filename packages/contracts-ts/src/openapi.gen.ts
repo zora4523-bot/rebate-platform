@@ -6212,12 +6212,20 @@ export interface paths {
          *     and no fall-back items.
          *
          *     A row carries the server-signed `item_ref` (BR-PROD-11), the quoted prices and `quoted_at`.
-         *     No rebate is computed or returned and no link is registered, so a no_rebate product can appear
-         *     here; listPageSectionItems filters it when reading the pool (BR-PRICE-08). Nothing is added to a
-         *     pool until adminAddPoolItem. The `item_ref` ages as on any card, so an old row can be refused
-         *     there with 30143 (BR-PROD-05); search again. `cursor` is opaque and carries only the search
+         *     No rebate is returned and no link is registered, so a no_rebate product can appear here;
+         *     listPageSectionItems filters it when reading the pool (BR-PRICE-08). A tie in BR-PROD-08 ①
+         *     (same key, same final price) is broken by a rebate computed only for that comparison, as
+         *     searchProducts breaks it, and never returned, so the row keeps the better plan's item_ref. Nothing is added to a
+         *     pool until adminAddPoolItem. The `item_ref` ages as on any card; adminAddPoolItem then falls
+         *     back as BR-PROD-05 says. `cursor` is opaque and carries only the search
          *     session and page; the console sends `next_cursor` back unchanged with the same `platform` and
-         *     `q`. A malformed or foreign cursor → 20001 `data.fields=[cursor]`. Read-only, no audit record.
+         *     `q`. A cursor that fails decoding → 20001 `data.fields=[cursor]`; an expired or other-session
+         *     cursor starts a new session without an error, as searchProducts (BR-PROD-08). A platform
+         *     without search capability → 30131 (BR-PROD-10). Read-only, no audit record.
+         *
+         *     Paging differs from the other /admin/v1 lists (04 §5, page + page_size + total) by design:
+         *     the union reports no total, so this is the one cursor-paged console operation and the
+         *     console calls it directly, not through its shared list provider (编排者默认).
          */
         get: operations["adminSearchPoolCandidates"];
         put?: never;
@@ -6287,7 +6295,8 @@ export interface paths {
          *     server derives product_key (BR-PROD-03); the console never sends it. Refused, nothing written,
          *     the reason shown to the operator (BR-PROD-03 细则「派生失败的处理」, BR-PROD-08): nothing
          *     recognisable → 30132; a recognised product whose key cannot be derived → 30131; an `item_ref`
-         *     that is expired or derives another key → 30143; the union cannot answer now → 50401, retry.
+         *     that has aged out falls back through product_refs and re-resolution (BR-PROD-05), and only
+         *     when that finds no matching key or derives another key → 30143; the union cannot answer now → 50401, retry.
          *
          *     The pool item key is (app_id, pool_id, product_key) (BR-PROD-08 ③). `sort`, `start_at` and
          *     `end_at` are required, null for no bound, so a repeat overwrites with exactly what was submitted;
