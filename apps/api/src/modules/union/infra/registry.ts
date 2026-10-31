@@ -8,8 +8,12 @@
 // wrapped once by the existing caller (app.module.ts governedUnion), not here. Without `pddLive`,
 // pdd live / replay stay `adapter_unimplemented`; which environments may pass `pddLive` is decided
 // by union.module.ts. B1-04x: `pddLive.queryIdentity` (assembled by union.module.ts) is handed to
-// the adapter as is; without it every goods call is refused `upstream_rejected` by the adapter. Real jd / taobao adapters replace their entries in later tasks.
-// TODO(规划/11 §4.5): jd / taobao 凭据读取 — blocked on 推广位 / siteId
+// the adapter as is; without it every goods call is refused `upstream_rejected` by the adapter.
+// B1-04k: likewise only `taobaoLive` (credentials provider + transport) turns a taobao endpoint with
+// mode=live into the real TaobaoUnionAdapter of B1-04j, returned as is; without it taobao live /
+// replay stay `adapter_unimplemented`; union.module.ts decides which environments may pass it.
+// The real jd adapter replaces its entry in a later task.
+// TODO(规划/11 §4.5): jd 凭据读取 — blocked on 推广位 / siteId
 // B1-22s: real jd / taobao adapters must not map UnionItemDetail image fields until tested; when
 // wired they go through normalizeItemImages (domain/item-images.ts).
 // TODO(规划/09 CAP-TB-02、CAP-JD-02、CAP-PDD-02): 商品素材图字段 — blocked on 联盟接口实测记录
@@ -25,6 +29,11 @@ import { parseUnionEndpoints } from './endpoints.ts';
 import { PddUnionAdapter, type PddCredentials, type PddQueryIdentity } from './pdd/pdd-adapter.ts';
 import type { PddWarning } from './pdd/response.ts';
 import type { UnionTransport } from './replay.ts';
+import {
+  TaobaoUnionAdapter,
+  type TaobaoCredentials,
+  type TaobaoWarning,
+} from './taobao/taobao-adapter.ts';
 
 /** The real Pinduoduo adapter's injected dependencies (B1-04t); used only for mode=live. */
 export interface PddLiveOptions {
@@ -36,13 +45,25 @@ export interface PddLiveOptions {
   readonly queryIdentity?: (ctx: CallCtx) => Promise<PddQueryIdentity>;
 }
 
+/** The real Taobao adapter's injected dependencies (B1-04k); used only for mode=live. */
+export interface TaobaoLiveOptions {
+  /** Hands out the credentials already read at startup; never reads a file or the environment. */
+  readonly credentials: () => Promise<TaobaoCredentials>;
+  readonly transport: UnionTransport;
+  readonly warn?: (event: TaobaoWarning) => void;
+}
+
 export interface UnionRegistryOptions extends DemoUnionRegistryOptions {
   readonly pddLive?: PddLiveOptions;
+  readonly taobaoLive?: TaobaoLiveOptions;
 }
 
 export interface UnionRegistration {
   readonly platform: RegisteredPlatform;
-  /** True for a demo adapter and for the real pdd adapter assembled through `pddLive`. */
+  /**
+   * True for a demo adapter and for the real pdd / taobao adapter assembled through `pddLive` /
+   * `taobaoLive`.
+   */
   readonly implemented: boolean;
 }
 
@@ -79,11 +100,13 @@ function unimplementedAdapter(platform: RegisteredPlatform): UnionAdapter {
 /**
  * Exactly jd, pdd and taobao registered. Without options every call rejects
  * `adapter_unimplemented`; with options, mode=demo endpoints get a demo adapter, and a pdd
- * endpoint with mode=live gets the real PddUnionAdapter when `pddLive` is given.
+ * endpoint with mode=live gets the real PddUnionAdapter when `pddLive` is given, a taobao endpoint
+ * with mode=live the real TaobaoUnionAdapter when `taobaoLive` is given.
  */
 export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegistry {
   const demoPlatforms = new Set<RegisteredPlatform>();
   let pddLive: UnionAdapter | undefined;
+  let taobaoLive: UnionAdapter | undefined;
   if (options !== undefined) {
     // Same validation as startup: incomplete sets, and demo / replay in prod, are refused.
     for (const endpoint of parseUnionEndpoints(options.endpoints, options.environment)) {
@@ -99,10 +122,21 @@ export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegist
           ...(live.queryIdentity === undefined ? {} : { queryIdentity: live.queryIdentity }),
         });
       }
+      if (endpoint.platform === 'taobao' && endpoint.mode === 'live' && options.taobaoLive) {
+        const live = options.taobaoLive;
+        taobaoLive = new TaobaoUnionAdapter({
+          credentials: live.credentials,
+          transport: live.transport,
+          clock: options.clock,
+          endpoint,
+          ...(live.warn === undefined ? {} : { warn: live.warn }),
+        });
+      }
     }
   }
   const adapterFor = (platform: RegisteredPlatform): UnionAdapter => {
     if (platform === 'pdd' && pddLive !== undefined) return pddLive;
+    if (platform === 'taobao' && taobaoLive !== undefined) return taobaoLive;
     if (options !== undefined && demoPlatforms.has(platform)) {
       return new DemoUnionAdapter({
         platform,
@@ -124,7 +158,10 @@ export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegist
     REGISTERED_PLATFORMS.map((platform) =>
       Object.freeze({
         platform,
-        implemented: demoPlatforms.has(platform) || (platform === 'pdd' && pddLive !== undefined),
+        implemented:
+          demoPlatforms.has(platform) ||
+          (platform === 'pdd' && pddLive !== undefined) ||
+          (platform === 'taobao' && taobaoLive !== undefined),
       }),
     ),
   );

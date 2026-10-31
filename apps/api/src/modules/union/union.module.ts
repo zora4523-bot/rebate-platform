@@ -10,6 +10,7 @@ import {
   ROOT_LOGGER,
   UNION_ENDPOINT_OVERRIDE_DIR_ENV,
   openPddCredentials,
+  openTaobaoCredentials,
   type AppConfig,
   type Clock,
   type RootLogger,
@@ -25,8 +26,14 @@ import { loadUnionEndpoints } from './infra/endpoints.ts';
 import { createUnionHttpTransport } from './infra/http-transport.ts';
 import type { PddQueryIdentity } from './infra/pdd/pdd-adapter.ts';
 import type { PddWarning } from './infra/pdd/response.ts';
-import { createUnionRegistry, type UnionRegistry } from './infra/registry.ts';
+import {
+  createUnionRegistry,
+  type PddLiveOptions,
+  type TaobaoLiveOptions,
+  type UnionRegistry,
+} from './infra/registry.ts';
 import type { UnionTransport } from './infra/replay.ts';
+import type { TaobaoWarning } from './infra/taobao/response.ts';
 import { readActivePddQueryPid } from './pids/query-reader.ts';
 
 /**
@@ -72,8 +79,12 @@ export const UNION_ENDPOINTS_DIR = fileURLToPath(
  * reads PDD_CLIENT_SECRET_FILE once here and assembles the real PddUnionAdapter over the HTTPS
  * transport (registry option `pddLive`); a failure stops the entry before it serves anything.
  * B1-04p: with the optional DB that HTTPS transport writes one union_raw_payloads row per request.
+ * taobao with mode=live (B1-04k): local / test and prod refuse like pdd; staging with both
+ * TAOBAO_APP_KEY and TAOBAO_APP_SECRET_FILE reads the secret file once here and assembles the real
+ * TaobaoUnionAdapter over its own archived HTTPS transport (registry option `taobaoLive`); staging
+ * with neither variable keeps taobao unimplemented. pdd and taobao are assembled independently.
  * TODO(规划/11 §4.5): 配额桶容量与 Redis 令牌桶 — blocked on CAP-TB-12、CAP-JD-12、CAP-PDD-12 配额口径
- * TODO(规划/11 §4.5): jd / taobao 凭据读取 — blocked on 推广位 / siteId
+ * TODO(规划/11 §4.5): jd 凭据读取 — blocked on 推广位 / siteId
  */
 /** BR-PRICE-01 / BR-PRICE-02 alarms as flat pino fields: the code, and for an unknown name only
  * the name (no item data).
@@ -99,6 +110,22 @@ function logPddWarning(logger: RootLogger, warning: PddWarning): void {
   logger.warn(
     { event: 'PDD_ERROR_CODE_UNKNOWN', error_code: warning.error_code, method: warning.type },
     'unknown pinduoduo error code',
+  );
+}
+
+/**
+ * The Taobao warn hook (B1-04j: an API permission refusal) as flat pino fields: only the method
+ * name and code / sub_code; no message text, request id or request content.
+ */
+function logTaobaoWarning(logger: RootLogger, warning: TaobaoWarning): void {
+  logger.warn(
+    {
+      event: 'TAOBAO_API_PERMISSION_DENIED',
+      method: warning.method,
+      code: warning.code,
+      ...(warning.sub_code === undefined ? {} : { sub_code: warning.sub_code }),
+    },
+    'taobao api permission denied',
   );
 }
 
@@ -132,9 +159,10 @@ function taobaoPriceSettings(
 }
 
 /**
- * B1-04p: the pdd live HTTPS transport wrapped in the raw payload archive. The database is read
- * from the same optional source per request: without one the request goes straight through, no
- * row and no log (startup and calls stay as before B1-04p); with one every request is archived.
+ * B1-04p: a live HTTPS transport (pdd; taobao since B1-04k, one per platform) wrapped in the raw
+ * payload archive. The database is read from the same optional source per request: without one
+ * the request goes straight through, no row and no log (startup and calls stay as before B1-04p);
+ * with one every request is archived.
  */
 function archivedTransport(
   inner: UnionTransport,
@@ -203,21 +231,42 @@ async function startUnionRegistry(
       : { taobaoPriceSettings: taobaoPriceSettings(priceConfig, logger) }),
   };
   const pdd = endpoints.find((endpoint) => endpoint.platform === 'pdd');
-  if (pdd?.mode !== 'live') return createUnionRegistry(options);
-  // Refusals (environment, missing or unreadable credentials) throw PddStartupError: fixed text.
-  const credentials = await openPddCredentials(config.appEnv, config.pdd);
-  const customParameters = config.pddQueryCustomParameters;
-  if (customParameters == null || customParameters === '') {
-    logger.warn(PDD_QUERY_CUSTOM_PARAMETERS_ENV);
-  }
-  return createUnionRegistry({
-    ...options,
-    pddLive: {
+  const taobao = endpoints.find((endpoint) => endpoint.platform === 'taobao');
+  let pddLive: PddLiveOptions | undefined;
+  if (pdd?.mode === 'live') {
+    // Refusals (environment, missing or unreadable credentials) throw PddStartupError: fixed text.
+    const credentials = await openPddCredentials(config.appEnv, config.pdd);
+    const customParameters = config.pddQueryCustomParameters;
+    if (customParameters == null || customParameters === '') {
+      logger.warn(PDD_QUERY_CUSTOM_PARAMETERS_ENV);
+    }
+    pddLive = {
       credentials,
       transport: archivedTransport(createUnionHttpTransport(), source, clock, logger),
       warn: (warning: PddWarning) => logPddWarning(logger, warning),
       queryIdentity: pddQueryIdentity(source, customParameters, logger),
-    },
+    };
+  }
+  let taobaoLive: TaobaoLiveOptions | undefined;
+  // staging without either taobao variable (config.taobao null; only one set is a ConfigError of
+  // loadConfig) keeps taobao `adapter_unimplemented` like jd, and logs nothing: the frozen pdd
+  // wiring tests run staging with taobao live, no taobao variable and an exact warn count.
+  const taobaoUnconfigured =
+    config.appEnv === 'staging' && (config.taobao === null || config.taobao === undefined);
+  if (taobao?.mode === 'live' && !taobaoUnconfigured) {
+    // Checked after pdd, so pdd's own refusals come first. local / test, prod (no KMS yet) and a
+    // staging secret file that is unreadable or empty throw TaobaoStartupError (fixed text).
+    const credentials = await openTaobaoCredentials(config.appEnv, config.taobao);
+    taobaoLive = {
+      credentials,
+      transport: archivedTransport(createUnionHttpTransport(), source, clock, logger),
+      warn: (warning: TaobaoWarning) => logTaobaoWarning(logger, warning),
+    };
+  }
+  return createUnionRegistry({
+    ...options,
+    ...(pddLive === undefined ? {} : { pddLive }),
+    ...(taobaoLive === undefined ? {} : { taobaoLive }),
   });
 }
 

@@ -6,6 +6,7 @@ export type { PriorIdentityKeyringConfig } from './keyring-prior-identity.ts';
 export {
   PDD_CREDENTIAL_ENV_NAMES,
   SMS_CREDENTIAL_ENV_NAMES,
+  TAOBAO_CREDENTIAL_ENV_NAMES,
   findCredentialLikeEnvNames,
   looksLikeRealCredentialEnvName,
 } from './credential-env.ts';
@@ -62,6 +63,16 @@ export {
   openPddCredentials,
 } from './pdd-startup.ts';
 export type { PddClientCredentials, PddStartupErrorCode } from './pdd-startup.ts';
+// Taobao live adapter credentials (B1-04k): staging reads the secret file once at startup.
+export { readTaobaoConfig } from './taobao.ts';
+export type { TaobaoAppConfig } from './taobao.ts';
+export {
+  TAOBAO_SECRET_FILE_MAX_BYTES,
+  TAOBAO_STARTUP_MESSAGES,
+  TaobaoStartupError,
+  openTaobaoCredentials,
+} from './taobao-startup.ts';
+export type { TaobaoAppCredentials, TaobaoStartupErrorCode } from './taobao-startup.ts';
 // Worker queue concurrency limits (B1-01zzk): per-queue overrides and the shared budget.
 export { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 export type { QueueConcurrencyConfigResult } from './queue-concurrency.ts';

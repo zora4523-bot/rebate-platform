@@ -4,10 +4,9 @@
 // afterwards (changing or deleting the file later changes nothing). Same discipline as
 // ./keyring-startup.ts: errors carry a fixed text per code, never the path, the file content,
 // the client id or the underlying error (no `cause`); nothing is logged here; no process.env.
-import { constants } from 'node:fs';
-import { open } from 'node:fs/promises';
 import type { AppEnv } from './app-env.ts';
 import type { PddClientConfig } from './pdd.ts';
+import { readStartupSecretFile } from './startup-secret-file.ts';
 
 /** Largest client_secret file accepted. */
 export const PDD_SECRET_FILE_MAX_BYTES = 4096;
@@ -62,51 +61,14 @@ export async function openPddCredentials(
   if (pdd === null || pdd === undefined || pdd.clientId === '' || pdd.secretFile === '') {
     throw new PddStartupError('credentials_missing');
   }
-  const clientSecret = await readSecretFile(pdd.secretFile);
+  const clientSecret = await readStartupSecretFile(
+    pdd.secretFile,
+    PDD_SECRET_FILE_MAX_BYTES,
+    (reason) => new PddStartupError(reason),
+  );
   const credentials: PddClientCredentials = Object.freeze({
     clientId: pdd.clientId,
     clientSecret,
   });
   return async () => credentials;
-}
-
-/** One open of the path; trailing `\n` or `\r\n` removed once; empty afterwards is invalid. */
-async function readSecretFile(path: string): Promise<string> {
-  let bytes: Buffer;
-  try {
-    const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
-    try {
-      const stat = await file.stat();
-      if (!stat.isFile()) throw new PddStartupError('secret_unreadable');
-      if (stat.size > PDD_SECRET_FILE_MAX_BYTES) throw new PddStartupError('secret_invalid');
-      const buffer = Buffer.alloc(PDD_SECRET_FILE_MAX_BYTES + 1);
-      let offset = 0;
-      while (offset < buffer.length) {
-        const { bytesRead } = await file.read(buffer, offset, buffer.length - offset, offset);
-        if (bytesRead === 0) break;
-        offset += bytesRead;
-      }
-      if (offset > PDD_SECRET_FILE_MAX_BYTES) {
-        buffer.fill(0);
-        throw new PddStartupError('secret_invalid');
-      }
-      bytes = buffer.subarray(0, offset);
-    } finally {
-      await file.close();
-    }
-  } catch (error) {
-    throw new PddStartupError(error instanceof PddStartupError ? error.code : 'secret_unreadable');
-  }
-  let text: string;
-  try {
-    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
-  } catch {
-    throw new PddStartupError('secret_invalid');
-  } finally {
-    bytes.fill(0);
-  }
-  if (text.endsWith('\r\n')) text = text.slice(0, -2);
-  else if (text.endsWith('\n')) text = text.slice(0, -1);
-  if (text === '') throw new PddStartupError('secret_invalid');
-  return text;
 }

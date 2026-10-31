@@ -25,6 +25,7 @@ import { readPddConfig, type PddClientConfig } from './pdd.ts';
 import { readPddQueryConfig } from './pdd-query.ts';
 import { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 import { readSmsConfig, type SmsConfig } from './sms.ts';
+import { readTaobaoConfig, type TaobaoAppConfig } from './taobao.ts';
 import { readTrustedProxies } from './trusted-proxies.ts';
 import { readUnionEndpointOverrideConfig } from './union-endpoint-override.ts';
 
@@ -184,6 +185,12 @@ export interface AppConfig {
    */
   readonly pddQueryCustomParameters?: string | null;
   /**
+   * TAOBAO_APP_KEY / TAOBAO_APP_SECRET_FILE (./taobao.ts, B1-04k): staging only, both or neither.
+   * The secret file is read once by the union module's startup factory; this holds only the app key
+   * and the path. Absent when not configured; a hand-built config without it counts as null.
+   */
+  readonly taobao?: TaobaoAppConfig | null;
+  /**
    * UNION_ENDPOINT_OVERRIDE_DIR (./union-endpoint-override.ts, B1-04y): staging only, an absolute
    * path of the mounted directory the UNION_ENDPOINTS factory reads <platform>.json from instead
    * of the packaged config/union-endpoints/. Existence is not checked here. Null when unset; a
@@ -334,6 +341,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     problems.push(...readMediaConfig(appEnv.success ? appEnv.data : undefined, env).problems);
     problems.push(...readExportStoreConfig(appEnv.success ? appEnv.data : undefined, env).problems);
     if (appEnv.success) problems.push(...readPddConfig(appEnv.data, env).problems);
+    if (appEnv.success) problems.push(...readTaobaoConfig(appEnv.data, env).problems);
     problems.push(...readPddQueryConfig(env).problems);
     if (appEnv.success)
       problems.push(...readUnionEndpointOverrideConfig(appEnv.data, env).problems);
@@ -367,6 +375,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   violations.push(...exportStoreProblems);
   const { pdd, problems: pddProblems } = readPddConfig(values.APP_ENV, env);
   violations.push(...pddProblems);
+  const { taobao, problems: taobaoProblems } = readTaobaoConfig(values.APP_ENV, env);
+  violations.push(...taobaoProblems);
   const { pddQueryCustomParameters, problems: pddQueryProblems } = readPddQueryConfig(env);
   violations.push(...pddQueryProblems);
   const { unionEndpointOverrideDir, problems: overrideProblems } = readUnionEndpointOverrideConfig(
@@ -411,6 +421,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     exportStoreSigningKey,
     pdd,
     pddQueryCustomParameters,
+    // Only present when configured, so the documented shape of an unconfigured result is unchanged.
+    ...(taobao === null ? {} : { taobao }),
     unionEndpointOverrideDir,
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(agentReview === null ? {} : { agentReview }),
