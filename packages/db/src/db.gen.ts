@@ -997,6 +997,7 @@ export interface OrderKeys {
 
 export interface OrderRights {
   amount_fen: ColumnType<bigint, bigint, bigint> | null;
+  answered_at: Timestamp | null;
   app_id: string;
   created_at: Generated<Timestamp>;
   deduction_commission_fen: ColumnType<bigint, bigint, bigint> | null;

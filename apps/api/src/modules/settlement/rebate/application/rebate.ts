@@ -43,6 +43,7 @@ import {
   closeAnsweredWaitingRights,
   hasWaitingRights,
   hasWaitingRightsBefore,
+  markRightsAnswered,
   readLatestSettlementAt,
 } from '../../rights/rights-store.ts';
 import { IllegalTransition, RebateError } from './errors.ts';
@@ -499,11 +500,12 @@ export function createRebatePort(deps: RebateDependencies): RebatePort {
   }
 
   /**
-   * B2-04lb (D10-463 ③; BR-FUND-06「等联盟回传新佣金后按 R7/R9 处理并关闭」): before credit, the
-   * union's new commission closes the WAIT_COMMISSION rights rows it answers on the sync
-   * transaction, and rights_pending is recomputed. With a settlement record only a settlement
-   * record received after the row counts (BR-FUND-08 ①); without one, a new estimate. A CREDITED
-   * order is left to the clawback's sync hook.
+   * B2-04lb (D10-463 ③, D10-483; BR-FUND-06「等联盟回传新佣金后按 R7/R9 处理并关闭」): before credit,
+   * the union's updated commission answers the rights records it absorbed, on the sync transaction.
+   * With a settlement record only a settlement record received after the row counts (BR-FUND-08 ①);
+   * without one, a new estimate. The open SUCCEEDED deductions it absorbed get answered_at (never
+   * subtracted again); the WAIT_COMMISSION rows it answers close and rights_pending is recomputed.
+   * A CREDITED order is left to the clawback's sync hook.
    */
   async function closeAnsweredRights(
     trx: Transaction<DB>,
@@ -516,28 +518,36 @@ export function createRebatePort(deps: RebateDependencies): RebatePort {
     if (change.settle_commission_fen !== null) {
       before = await readLatestSettlementAt(trx, ref.appId, ref.orderId);
       if (before === null) return;
-      if (!(await hasWaitingRightsBefore(trx, ref.appId, ref.orderId, before))) return;
     } else {
       if (change.est_after === null || change.est_after === change.est_before) return;
-      if (!(await hasWaitingRights(trx, ref.appId, ref.orderId))) return;
       before = null;
     }
     const now = deps.clock.now();
-    const closed = await closeAnsweredWaitingRights(trx, ref.appId, ref.orderId, before, now);
-    const pending = await computeRightsPending(trx, ref.appId, ref.orderId);
-    if (pending !== row.rights_pending) {
-      const ok = await casRightsPending(trx, row, pending, now);
-      if (!ok) throw new RebateError('ORDER_CAS_CONFLICT', 'rights_pending CAS matched no row');
+    const answered = await markRightsAnswered(trx, ref.appId, ref.orderId, before, now);
+    const waiting =
+      before === null
+        ? await hasWaitingRights(trx, ref.appId, ref.orderId)
+        : await hasWaitingRightsBefore(trx, ref.appId, ref.orderId, before);
+    let closed = 0n;
+    if (waiting) {
+      closed = await closeAnsweredWaitingRights(trx, ref.appId, ref.orderId, before, now);
+      const pending = await computeRightsPending(trx, ref.appId, ref.orderId);
+      if (pending !== row.rights_pending) {
+        const ok = await casRightsPending(trx, row, pending, now);
+        if (!ok) throw new RebateError('ORDER_CAS_CONFLICT', 'rights_pending CAS matched no row');
+      }
     }
+    if (answered === 0n && closed === 0n) return;
     logger.info(
       {
         app_id: row.app_id,
         platform: row.platform,
         rebate_status: row.rebate_status,
+        answered: String(answered),
         closed: String(closed),
         outcome: 'rights_answered',
       },
-      'waiting rights answered by the union commission',
+      'rights answered by the union commission',
     );
   }
 

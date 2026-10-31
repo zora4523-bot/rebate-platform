@@ -166,15 +166,10 @@ export function createRightsCommandPort(deps: RightsCommandDependencies): Rights
         );
         return;
       }
-      // D10-474 ①: every deduction the union has not answered yet adds up (this record is already
-      // stored, so it is among them); with a settlement record only those received at or after
-      // the latest one count. N_new = effective − total, at or below 0 → the full side (R6).
-      const open = await readOpenDeductionTotal(
-        trx,
-        order.app_id,
-        order.order_id,
-        order.settle_commission_fen !== null,
-      );
+      // D10-474 ① / D10-483: every deduction the union has not answered yet (answered_at empty)
+      // adds up; this record is already stored, so it is among them. N_new = effective − total,
+      // at or below 0 → the full side (R6).
+      const open = await readOpenDeductionTotal(trx, order.app_id, order.order_id);
       const nNew = subFen(effective, open > deduction ? open : deduction);
       if (nNew <= 0n) {
         event = 'RIGHTS_FULL';
@@ -187,7 +182,7 @@ export function createRightsCommandPort(deps: RightsCommandDependencies): Rights
         event = 'RIGHTS_PARTIAL';
         // The effective commission becomes N_new for commission's valuation (R7 重算预估). N_new is
         // not a column: the stored order_rights rows carry it, and the credit (R5) subtracts the
-        // open deductions again from the settlement record (B2-04lb).
+        // deductions still open (answered_at empty) from the settlement record (B2-04lb).
         change =
           order.settle_commission_fen === null
             ? { ...unchanged, estAfter: nNew }

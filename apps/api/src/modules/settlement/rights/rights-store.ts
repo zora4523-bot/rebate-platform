@@ -235,17 +235,16 @@ export async function readLatestSettlementAt(
 }
 
 /**
- * B2-04lb (D10-474 ①): the deductions (deduction_commission_fen) of the order's successful RIGHTS
- * records the union has not answered yet: received (updated_at) at or after `since`, every one
- * when `since` is null. Returned one by one; the caller sums them through @couli/money.
+ * B2-04lb (D10-474 ①, D10-483): the deductions (deduction_commission_fen) of the order's successful
+ * RIGHTS records the union has not answered yet (answered_at empty). Returned one by one; the
+ * caller sums them through @couli/money.
  */
 export async function readOpenRightsDeductions(
   trx: Transaction<DB>,
   appId: string,
   orderId: string,
-  since: Date | null,
 ): Promise<readonly bigint[]> {
-  let query = trx
+  const rows = await trx
     .withSchema('app')
     .selectFrom('order_rights')
     .select('deduction_commission_fen')
@@ -253,14 +252,44 @@ export async function readOpenRightsDeductions(
     .where('order_id', '=', orderId)
     .where('type', '=', 'RIGHTS')
     .where('status', '=', 'SUCCEEDED')
-    .where('deduction_commission_fen', 'is not', null);
-  if (since !== null) query = query.where('updated_at', '>=', since);
-  const rows = await query.orderBy('id').execute();
+    .where('deduction_commission_fen', 'is not', null)
+    .where('answered_at', 'is', null)
+    .orderBy('id')
+    .execute();
   const out: bigint[] = [];
   for (const row of rows) {
     if (row.deduction_commission_fen !== null) out.push(row.deduction_commission_fen);
   }
   return out;
+}
+
+/**
+ * B2-04lb (D10-483): the union's updated commission (a new estimate on the order sync, or a new
+ * settlement record) absorbed the open deductions: answered_at set to `at` (the injected clock) on
+ * the sync transaction, so they are never subtracted again. With `receivedBefore`, only the rows
+ * received (updated_at) strictly before it (the new record's created_at); every open row when
+ * null. Returns the rows answered.
+ */
+export async function markRightsAnswered(
+  trx: Transaction<DB>,
+  appId: string,
+  orderId: string,
+  receivedBefore: Date | null,
+  at: Date,
+): Promise<bigint> {
+  let query = trx
+    .withSchema('app')
+    .updateTable('order_rights')
+    .set({ answered_at: at })
+    .where('app_id', '=', appId)
+    .where('order_id', '=', orderId)
+    .where('type', '=', 'RIGHTS')
+    .where('status', '=', 'SUCCEEDED')
+    .where('deduction_commission_fen', 'is not', null)
+    .where('answered_at', 'is', null);
+  if (receivedBefore !== null) query = query.where('updated_at', '<', receivedBefore);
+  const result = await query.executeTakeFirst();
+  return result.numUpdatedRows ?? 0n;
 }
 
 /**
@@ -312,19 +341,16 @@ export async function hasWaitingRightsBefore(
 }
 
 /**
- * B2-04lb (D10-474 ①): the total deduction still open on the order, through @couli/money. With a
- * settlement record (`settled`), only the deductions received at or after the latest record count
- * (the union's latest N_new replaces the earlier ones, never subtracted again); without one, every
- * successful deduction counts (conservative, until the union sends its updated commission).
+ * B2-04lb (D10-474 ①, D10-483): the total deduction still open on the order (answered_at empty),
+ * through @couli/money. The union's latest commission replaces the deductions it answered (never
+ * subtracted again); the open ones add up (conservative, until the union sends its update).
  */
 export async function readOpenDeductionTotal(
   trx: Transaction<DB>,
   appId: string,
   orderId: string,
-  settled: boolean,
 ): Promise<bigint> {
-  const since = settled ? await readLatestSettlementAt(trx, appId, orderId) : null;
-  const deductions = await readOpenRightsDeductions(trx, appId, orderId, since);
+  const deductions = await readOpenRightsDeductions(trx, appId, orderId);
   let total = 0n;
   for (const fen of deductions) total = addFen(total, fen);
   return total;
