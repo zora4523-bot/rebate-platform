@@ -1,0 +1,17 @@
+id: F1-02zzza
+repo: rebate-platform
+title: 收紧测试（FU-F102ZZX-TIGHTEN）：冻结 [AC-F1-02k#6] agreements.type 只认五值单态（sdk_list、collect_list 可插入，其余非法值被 agreements_type_check 拒绝），去掉三值分支
+type: test-change
+# 2026-10-31 入账（content-client；编排 08:5x 记 FU-F102ZZX-TIGHTEN，先例 F1-02zzw / F1-02zzz）。F1-02zzr（#1984）已合并，CHECK 已为五值。
+# 改既有规则测试属第一类保护路径：走非 task 分支、台账同 PR；全新上下文 Claude 修改、另一全新上下文 Claude 只读复审，按 approvals #24 由编排加 owner-approved 标签。
+refs: []
+refs_hash: {}
+deps: [F1-02zzx, F1-02zzr]
+paths:
+  - 'test/spec/db/content/agreements/constraints.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

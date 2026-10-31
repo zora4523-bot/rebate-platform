@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 
 import { createDb, destroyDb } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
-import { sql } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 
 import { SHAPE, appId, fixture, insert, rejects, type Connection } from './kit.ts';
@@ -20,34 +19,22 @@ afterAll(async () => {
 
 it('[AC-F1-02k#6] type accepts exactly privacy, agreement and labor_agreement', async () => {
   const row = await fixture(app);
-  // F1-02zzx: two-state until F1-02zzr (D10-465)
-  const definition = (
-    await sql<{ def: string | null }>`SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
-      WHERE conname = 'agreements_type_check' AND conrelid = to_regclass('app.agreements')`.execute(
-      app,
-    )
-  ).rows;
-  expect(definition, 'agreements_type_check definition').toHaveLength(1);
-  const widened = definition[0]!.def!.includes("'sdk_list'");
-  const invalid = widened
-    ? [
-        '',
-        'Privacy',
-        'AGREEMENT',
-        'labor',
-        'privacy ',
-        'privacy\n',
-        'SDK_LIST',
-        'collect_list ',
-        'collectlist',
-      ]
-    : ['', 'sdk_list', 'Privacy', 'AGREEMENT', 'labor', 'privacy ', 'privacy\n'];
+  // F1-02zzza：收紧为五值单态（F1-02zzr 已合并）
+  const invalid = [
+    '',
+    'Privacy',
+    'AGREEMENT',
+    'labor',
+    'privacy ',
+    'privacy\n',
+    'SDK_LIST',
+    'collect_list ',
+    'collectlist',
+  ];
   for (const type of invalid) {
     await rejects(insert(app, { ...row, type }), 'agreements_type_check');
   }
-  const valid = widened
-    ? ['privacy', 'agreement', 'labor_agreement', 'sdk_list', 'collect_list']
-    : ['privacy', 'agreement', 'labor_agreement'];
+  const valid = ['privacy', 'agreement', 'labor_agreement', 'sdk_list', 'collect_list'];
   for (const type of valid) {
     expect(
       await insert(app, {
