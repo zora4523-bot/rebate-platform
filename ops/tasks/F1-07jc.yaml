@@ -1,0 +1,22 @@
+id: F1-07jc
+repo: rebate-platform
+title: 后台「用户详情」联盟授权行操作——【重置授权】（union.binding_reset）、【停用返利】/【恢复】（union.binding_disable，必填原因 1–200）；每次都要 totp 动态码，带 expected row_version，20902 data.resource=union_binding 提示并刷新详情、30154 等按契约提示；无 Idempotency-Key；接口 adminResetUserUnionBinding / adminDisableUserUnionBinding / adminEnableUserUnionBinding（F1-07c 已实现）
+type: impl
+# 2026-10-31 入账（前端线 f1-frontend-7，编排 10-31 14:0x ①）。规格 couli design/specs/admin-user-detail.md（第 1 批定稿）§1、§2 联盟授权表操作列、§4、§5；画板以规格登记为准（布局参考，以契约为准）。后端 F1-07c（#796，linking 模块）已实现，契约 CT-02j。
+# 归属相关写（解除授权影响后续归因，规格「是否资金或归属页面：是」）：评审走 money 口径（入口按权限与状态、动态码令牌不复用、row_version 冲突刷新、连点一次、原因必填）。依赖 F1-07jb（同改 pages/users/**，串行）。
+# Codex 到 11-02 不可用：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude。
+refs: []
+refs_hash: {}
+deps: [CT-02j, F1-07c, F1-07ja, F1-07jb]
+paths:
+  - 'apps/admin/src/pages/users/**'
+  - 'apps/admin/src/texts/users.ts'
+test_paths:
+  - 'test/spec/frontend/admin-user-bindings/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-user-bindings/**'
+status: todo
+pr: null

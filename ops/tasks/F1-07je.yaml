@@ -1,0 +1,22 @@
+id: F1-07je
+repo: rebate-platform
+title: 后台「用户查询」标题行【导出】【导出记录】——POST adminCreateExport（resource=users，带当前筛选；要 export + user.list；勾选明文手机号另要 pii.reveal_phone、totp 动态码与原因），成功用 message 提示并指向已有导出记录页；无 Idempotency-Key（每次新任务，连点只发一次）；后端 B1-34f 已实现
+type: impl
+# 2026-10-31 入账（前端线 f1-frontend-7，编排 10-31 14:0x ①）。规格 couli design/specs/admin-users.md（第 1 批定稿）§2 标题行、§4、§5；导出记录页已有（apps/admin/src/pages/exports）。契约 CT-24k，后端 B1-34f（#1145）已实现。
+# 只改用户列表页，与 F1-07jb–jd 的详情改动同目录但不同文件；仍排在 F1-07jd 之后，避免并行冲突（编排可调）。含 PII 明文导出：评审走 general 口径并核对 pii.reveal_phone + 动态码 + 原因。前置 F1-07ja 须先合并。
+# Codex 到 11-02 不可用：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude。
+refs: []
+refs_hash: {}
+deps: [CT-24k, B1-34f, F1-07ja, F1-07jd]
+paths:
+  - 'apps/admin/src/pages/users/**'
+  - 'apps/admin/src/texts/users.ts'
+test_paths:
+  - 'test/spec/frontend/admin-users-export/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-users-export/**'
+status: todo
+pr: null

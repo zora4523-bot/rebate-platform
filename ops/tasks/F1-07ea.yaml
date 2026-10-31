@@ -1,0 +1,19 @@
+id: F1-07ea
+repo: rebate-platform
+title: F1-07ea：冻结订单只读测试的「不得出现」名单去掉手动同步 / 同步记录 / 同步此单三个入口名（orders-helpers.ts readOnly()、[AC-F1-07e-BROWSER#1] / [#2]；F1-07eb 前置；其余断言不变）
+type: test-change
+# 2026-10-31 入账（前端线 f1-frontend-7，编排 10-31 14:0x ①；先例 F1-08da #1981、F1-13ba #1940）。F1-07e 时订单页只读：readOnly() 断言超管看不到【手动同步】【同步记录】【同步此单】等按钮 / 链接，BROWSER#1 / #2 同样断言不可见。F1-07eb 按契约 adminCreateOrderSync（权限 order.view，无动态码、无 Idempotency-Key）给持 order.view 者（超管持全部）加这三个入口，与冻结断言同一入参不能同时满足。order.view 本身就是查询权限，无法像 F1-08da 那样换成只读样例，故只删这三个名字。
+# 只改：readOnly() 正则删去「手动同步|同步记录|同步此单」，其余名字（导入维权 / 导入违规 / 暂停结算 / 恢复结算 / 指定归属 / 导出 / 查看金额变更记录）、「原始报文」与「不发非 GET 请求」断言零改动；BROWSER#1 两处正则删去「手动同步」「同步记录」，BROWSER#2 删去「同步此单」，其余不变。三个入口可见、点击后才发请求由 F1-07eb 新测试覆盖。现行主干改前改后都绿，可先于 F1-07eb 合并。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件；新鲜独立 Claude 改、另一新鲜独立 Claude 只读复审 pass（写进 PR 正文）；标签由编排核对后加（#24）。
+refs: []
+refs_hash: {}
+deps: [F1-07e]
+paths:
+  - 'test/spec/frontend/admin-orders/orders-helpers.ts'
+  - 'test/spec/frontend/admin-orders/pages.browser.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

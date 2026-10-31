@@ -1,0 +1,22 @@
+id: F1-07ja
+repo: rebate-platform
+title: F1-07ja：冻结用户详情只读测试为 F1-07jb–je 让位——页签禁令只放开 订单 / 找回 / 提现 三个页签，动作禁令只放开 重置授权 / 停用返利 / 冻结 / 封禁 / 导出 / 导出记录（及对应解冻 / 解封 / 恢复），其余占位与禁令不变
+type: test-change
+# 2026-10-31 入账（前端线 f1-frontend-7，编排 10-31 14:0x ①；先例 F1-08da #1981、F1-13ba #1940、F1-14a MENU 两轮）。F1-07i / F1-07j 时用户页只读：超管样例断言详情无任何页签（[AC-F1-07j-NOPE#1]）、无【导出】【导出记录】【冻结】【封禁】【重置授权】【停用返利】按钮或链接（同条 expectContractScope()），正文不含「订单 / 提现 / 冻结账号 / 封禁账号 / 重置授权 / 停用返利 / 导出」（[AC-F1-07i-DETAIL#1]），联盟授权表无操作列、无按钮（[AC-F1-07j-DETAIL#3]、[AC-F1-07i-BROWSER#2]），与 F1-07jb（页签）、F1-07jc（联盟授权行操作）、F1-07jd（冻结 / 封禁）、F1-07je（导出）同一入参不能同时满足。
+# 改法优先「换样例」：能改成不持新权限点的账号（如只持 user.list + user.lookup，或 user.lookup 单项）而保留原断言的，就换样例并同步标题；超管断言必须放宽的，只删上面列出的名字 / 页签，「余额与流水」「风控命中」「风控与名单」「客服代办」「实名」「收款账号」等占位、【加入黑名单】【调整余额】动作禁令、请求断言一律不动。页签禁令改为「只允许 基本信息 / 订单 / 找回 / 提现 这些契约已接入的页签」，不得放开资金、风控页签。具体到每条用例的改法由改测试的独立 Claude 定，复审逐条核对没有多放。现行主干改前改后都绿，可先于 F1-07jb–je 合并。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件；新鲜独立 Claude 改、另一新鲜独立 Claude 只读复审 pass（写进 PR 正文）；标签由编排核对后加（#24）。
+refs: []
+refs_hash: {}
+deps: [F1-07i, F1-07j]
+paths:
+  - 'test/spec/frontend/admin-users-visual/scope.test.ts'
+  - 'test/spec/frontend/admin-users-visual/detail.test.ts'
+  - 'test/spec/frontend/admin-users-visual/pages.browser.test.ts'
+  - 'test/spec/frontend/admin-users/detail.test.ts'
+  - 'test/spec/frontend/admin-users/pages.browser.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

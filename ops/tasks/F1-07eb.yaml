@@ -1,0 +1,23 @@
+id: F1-07eb
+repo: rebate-platform
+title: 后台「订单查询」写入口第一段——标题行【手动同步】（时间窗或单号二选一，输入范围按 adminGetOrderSyncLimits 限制）、【同步记录】（adminListOrderSyncs 列表）、订单详情【同步此单】；权限 order.view，无动态码、无 Idempotency-Key；20001 字段旁提示、排队或执行中重复与站长授权暂停等拒绝按契约码提示；接口 CT-24n adminCreateOrderSync / adminListOrderSyncs / adminGetOrderSyncLimits（B1-09i 已实现）
+type: impl
+# 2026-10-31 入账（前端线 f1-frontend-7，编排 10-31 14:0x ①：画板已定稿 + 契约非 planned + 后端已实现、前端未做）。规格 couli design/specs/admin-orders.md（负责人 2026-10-18 第 1 批定稿）§1 画板 AdmOrderSync（f9056167321e）/ AdmOrderSyncRecords（8b00d0ca32cd）、§4、§5；admin-order-detail.md §2、§4（详情【同步此单】）。
+# 不做：导入维权 / 违规（adminCreateRightsImport，D10-70 J-1 未挂载）、暂停 / 恢复结算、指定归属（未挂载）、导出。非资金写（只触发拉单，不改金额与归属），评审走 general 口径。前置 F1-07ea 须先合并。
+# Codex 到 11-02 不可用：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude；独立 Claude 每任务 10 次上限（D10-319 / D10-417）。
+refs: []
+refs_hash: {}
+deps: [CT-24n, B1-09i, F1-07e, F1-07ea]
+paths:
+  - 'apps/admin/src/pages/orders/**'
+  - 'apps/admin/src/texts/orders.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-orders-sync/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-orders-sync/**'
+status: todo
+pr: null

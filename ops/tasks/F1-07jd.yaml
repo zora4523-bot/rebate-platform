@@ -1,0 +1,23 @@
+id: F1-07jd
+repo: rebate-platform
+title: 后台「用户详情」标题行【冻结】/【解冻】（risk.freeze）与【封禁】/【解封】（risk.ban）——PUT adminUpdateUserRiskState，每次 totp 动态码，带 expected_row_version（详情 risk.row_version），20902 刷新、44004 等按契约提示；注销中 / 已注销不显示按钮；后端 F1-07d 已实现
+type: impl
+# 2026-10-31 入账（前端线 f1-frontend-7，编排 10-31 14:0x ①）。规格 couli design/specs/admin-user-detail.md（第 1 批定稿）§1 画板 AdmUserFreeze（b9037fbe7bb9）/ AdmUserUnfreeze（093f14218510）、§2 标题行按钮组、§4、§5。契约 CT-02j，后端 F1-07d（#841，risk 模块）已实现。
+# 封禁 / 解封无对话框画板（规格只在标题行按钮组列出）：技术决定照冻结 / 解冻对话框同款（去掉时长），已报编排，有异议改本条。【加入黑名单】契约未出，不做。
+# 账号状态写：评审走 money 口径（入口按权限与状态、动态码令牌不复用、row_version 冲突刷新、连点一次）。依赖 F1-07jc（同改 pages/users/**，串行）。
+# Codex 到 11-02 不可用：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude。
+refs: []
+refs_hash: {}
+deps: [CT-02j, F1-07d, F1-07ja, F1-07jc]
+paths:
+  - 'apps/admin/src/pages/users/**'
+  - 'apps/admin/src/texts/users.ts'
+test_paths:
+  - 'test/spec/frontend/admin-user-risk-state/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-user-risk-state/**'
+status: todo
+pr: null
