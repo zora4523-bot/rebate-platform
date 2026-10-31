@@ -33,3 +33,64 @@ accept:
   - 'test/spec/payout/review-overdue/**'
 status: todo
 pr: null
+red_exempt:
+  - file: test/spec/orders/snapshot-retry-alert/contract.test.ts
+    test: '[AC-B1-08u#1] 耗尽告警登记一次并位于规划事件清单中的位置（其后只有 02 §11 排在它之后的事件）'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[contract §9] EventError：每个错误码的 name、code、固定文案、堆栈首行与自有属性都确切，没有 cause；EVENT_ERROR_MESSAGES 与契约逐字一致'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[ADR-0001 §4.2 #1; 规划/02 §11 任务 ID = event_id] newEventId：小写规范 UUIDv7（版本 7、变体 10），前 48 位正好是给定时刻的毫秒数（含 0 与 2^48−1）'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[ADR-0001 §4.2 #1; contract §3] newEventId：同一毫秒 4000 个互不相同；74 个随机位每一位都出现过 0 和 1；不合法的时刻（NaN、负数、2^48、非 Date）抛 EventError invalid_option'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[contract §7] createEventBus：合法选项返回带 publish 的对象且创建时不发任务、不读时钟；选项不对（非普通对象、多键、缺 queue 或 clock、send / now 不是函数、catalog 不是数组）一律同步抛 invalid_option'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[contract §6] 订阅表规则：consumer 名格式、长度（46 可、47 不可）与唯一、events 非空不重复且都在事件清单、每个消费者的 evt.<consumer> 在目录里且是 standard；违反任一条 createEventBus 抛 invalid_subscriptions'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[规划/02 §11 同事务入队; contract §4] publish 的事务检查：null、undefined、空对象、isTransaction 不是 true（false、字符串）、db 句柄一类对象都拒绝 invalid_transaction，不读时钟、不发任务'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[contract §2] 事件形状：非普通对象、缺 appId / name / payload、多出键（occurredAt、id）、访问器、符号键都拒绝 invalid_event；只读过事务的 isTransaction，不读时钟、不发任务'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[contract §2] appId：1..64 个 [A-Za-z0-9._-] 字符；空串、65 个字符、空格、非 ASCII、非字符串都拒绝 invalid_app_id'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[规划/02 §11 事件清单; contract §1] 事件名只认 EVENT_NAMES：清单外的名字、大小写不同、带空白、三段式、非字符串都拒绝 unknown_event'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[contract §2] version：整数 1..999；0、1000、-1、1.5、NaN、Infinity、字符串、null、bigint 都拒绝 invalid_version'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[规划/02 §11 任务 ID = event_id; contract §2] eventId：小写规范 UUID；大写、带花括号、无短横线、少一位、多一位、空串、null、数字都拒绝 invalid_event_id'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[规划/02 §19 类型; contract §2] payload 不是小的 JSON 对象（非普通对象、undefined、小数、NaN、超安全整数、bigint、符号、函数、Date、Map、类实例、空洞数组、带额外属性的数组、U+0000、孤立代理、环、访问器、符号键、非蛇形键、65 字符键、129 码元字符串、第 4 层嵌套）都拒绝 invalid_payload'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[规划/02 §12.3; contract §2] payload 不带个人数据：SENSITIVE_KEYS 的每个名字（蛇形写法）与 email、name、nickname、address、ip、open_id、union_id，在顶层、嵌套对象、数组里的对象中，去掉下划线后同形的写法（phonenumber、idcard、openid）都拒绝 personal_data'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[contract §2] payload 大小：JSON.stringify 的 UTF-8 字节数 4097（多字节字符按字节计）拒绝 payload_too_large；检查顺序为事务、形状、appId、名字、版本、eventId、payload 合法、个人数据、大小'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[ADR-0001 §4.2 #10 时钟; contract §4] 检查都通过后只读一次时钟；时钟给出的不是合法时刻（NaN、2^48 毫秒、负数、字符串）拒绝 invalid_option，不执行语句（事务只被读过 isTransaction）、不发任务'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[规划/02 §11 消费幂等; contract §8] registerEventConsumer：合法时正好一次 register("evt.<consumer>", 函数) 并返回 undefined、不碰 db；选项不对抛 invalid_option，订阅表不对抛 invalid_subscriptions，消费者不在订阅表抛 unknown_consumer（按此顺序）；register 抛的 QueueError 原样传出'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/events/contract.test.ts
+    test: '[contract §8.1] 消费端任务检查：id 不是小写 UUID、任务名不是本消费者订阅的（含别的消费者的）、信封缺键或多键、app_id 不合法、v 越界或非整数、occurred_at 不是毫秒 Z 格式、data 不是普通对象，都拒绝 invalid_event，不碰 db、不调处理器、不写日志'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/queue-concurrency/limits.test.ts
+    test: '[B1-01zzk 其他入口不受影响] api / stream / admin / payout：有没有 limits 都只取自己的计划值（B2-07e：payout 为 payout 1 与 payout-attempt-append 1），没有共享预算（dbBudget null）'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
+  - file: test/spec/platform/queue-concurrency/limits.test.ts
+    test: '[B1-01zzk 配置覆盖] 合法的 limits 被接受；超过计划值、非整数、不在 worker 计划里的队列、预算不在 1..7、多键缺键、不是普通对象 → 同步抛 QueueError invalid_option（固定文案、无 cause），payout 入口同样检查'
+    reason: 未改动的既有用例；本任务只在同文件（或其引用的 kit）追加新队列 payout-overdue / 新事件 withdrawal.review_overdue 的清单与计数（D10-415 ①，规则测试作者单列 test(spec) 提交），红检因文件判整体把它们列为「green on the skeleton」（编排 10-31 07:3x、D10-475 ②(a)）
