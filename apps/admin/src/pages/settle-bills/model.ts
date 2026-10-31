@@ -171,3 +171,75 @@ export function itemsQuery(filters: ItemFilters, page: number): Record<string, s
 
 export const codeOf = (cause: unknown): number | undefined =>
   cause instanceof AdminApiError ? cause.code : undefined;
+
+// ---- writes (F1-08db, CT-24zd) -------------------------------------------------------------
+
+export const confirmUrl = (billId: string): string => `${billUrl(billId)}/confirm`;
+export const supplementUrl = (billId: string): string => `${billUrl(billId)}/supplement-batches`;
+export type BatchWrite = 'cancel-schedule' | 'reject' | 'resume';
+export const batchWriteUrl = (batchId: string, action: BatchWrite): string =>
+  `/admin/v1/settle-batches/${encodeURIComponent(batchId)}/${action}`;
+
+export type ConfirmRequest = Schema<'AdminSettleBillConfirmRequest'>;
+export type SupplementResult = Schema<'AdminSettleSupplement'>;
+export type PlatformCode = Schema<'AdminSettleSupplementRequest'>['platform'];
+
+/** The DRAFT batches of the bill, every round included (BR-FUND-04 ⑥, D10-444). */
+export const draftBatches = (bill: SettleBillDetail): SettleBatch[] =>
+  (bill.batches as SettleBatch[]).filter((batch) => batch.status === 'DRAFT');
+
+/** expected_batches of a confirmation: every DRAFT batch with its row_version. */
+export function expectedBatches(bill: SettleBillDetail): ConfirmRequest['expected_batches'] {
+  return draftBatches(bill).map((batch) => ({
+    batch_id: batch.batch_id,
+    expected_row_version: batch.row_version,
+  }));
+}
+
+/** Only a CONFIRMED batch set to SCHEDULED that has not started can be cancelled (SB3). */
+export const canCancelSchedule = (batch: SettleBatch): boolean =>
+  batch.status === 'CONFIRMED' && batch.settle_mode === 'SCHEDULED' && batch.started_at === null;
+
+/** The platforms a supplement launch may name: those of the bill-day result. */
+export const billPlatforms = (bill: SettleBillDetail): PlatformCode[] =>
+  Object.keys(bill.platform_order_counts ?? {}) as PlatformCode[];
+
+/** A supplement launch is offered once the bill is out and no batch waits (pending_draft). */
+export const canLaunchSupplement = (bill: SettleBillDetail): boolean =>
+  bill.status !== 'generating' &&
+  billPlatforms(bill).length > 0 &&
+  !bill.batches.some((batch) => batch.status === 'DRAFT');
+
+const LOCAL_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+/** A datetime-local value read as Beijing wall-clock time, as an ISO date-time with +08:00. */
+export function beijingIso(local: string): string | undefined {
+  const match = LOCAL_TIME.exec(local.trim());
+  if (match === null) return undefined;
+  const [, year, month, day, hour, minute, second] = match;
+  const iso = `${year}-${month}-${day}T${hour}:${minute}:${second ?? '00'}+08:00`;
+  return Number.isNaN(Date.parse(iso)) ? undefined : iso;
+}
+
+/** A new Idempotency-Key for one supplement dialog. */
+export function newRequestKey(): string {
+  return globalThis.crypto.randomUUID();
+}
+
+/** data.fields of a 20001. */
+export function fieldsOf(cause: unknown): readonly string[] {
+  if (!(cause instanceof AdminApiError)) return [];
+  const data = cause.data;
+  if (typeof data === 'object' && data !== null && 'fields' in data && Array.isArray(data.fields))
+    return data.fields.filter((field): field is string => typeof field === 'string');
+  return [];
+}
+
+/** data.reason of an error. */
+export function reasonOf(cause: unknown): string | undefined {
+  if (!(cause instanceof AdminApiError)) return undefined;
+  const data = cause.data;
+  if (typeof data === 'object' && data !== null && 'reason' in data)
+    return typeof data.reason === 'string' ? data.reason : undefined;
+  return undefined;
+}
