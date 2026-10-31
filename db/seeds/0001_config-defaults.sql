@@ -121,5 +121,7 @@ INSERT INTO app.config_items (app_id, key, value, updated_by) VALUES
   ('couli', 'tax.SERVICE_FEE.rate_table', '[]'::jsonb, 'seed'), -- BR-WDR-20
   -- 第 16 批：商品池价格有效期与刷新间隔（B1-05s，D10-480）；feed.fallback_pool_id 缺省不设（无种子行，未配置时信息流联盟故障答空列表）
   ('couli', 'pool.max_age_sec', '7200'::jsonb, 'seed'), -- BR-PRICE-11
-  ('couli', 'pool.refresh_interval_sec', '3600'::jsonb, 'seed') -- BR-PRICE-11
+  ('couli', 'pool.refresh_interval_sec', '3600'::jsonb, 'seed'), -- BR-PRICE-11
+  -- 第 17 批：旧号提现加验天数（B1-02zs，B1-02zp 前置）；0 = 关闭旧号加验，三端加验页上线后由负责人在后台改为 08 细则的 180
+  ('couli', 'withdraw.dormant_reverify_days', '0'::jsonb, 'seed') -- BR-WDR-01
 ON CONFLICT (app_id, key) DO NOTHING;

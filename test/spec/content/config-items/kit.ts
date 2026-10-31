@@ -312,6 +312,12 @@ export const POOL: readonly Expected[] = [
 ];
 /** B1-05s (D10-480): the fall-back pool is unset by default, hence no seed row. */
 export const POOL_UNSEEDED: readonly string[] = ['feed.fallback_pool_id'];
+// B1-02zs (B1-02zp prerequisite, BR-WDR-01 细则): the old-account re-verification days of a
+// withdrawal, registered right after POOL: editable config.business, options null. Not part of
+// expectedNow() either.
+export const REVERIFY: readonly Expected[] = [
+  row('withdraw.dormant_reverify_days', 'number', 'config.business'),
+];
 export const expectedOf = (key: string): Expected => {
   const found = [
     ...expectedNow(),
@@ -324,6 +330,7 @@ export const expectedOf = (key: string): Expected => {
     ...RETENTION,
     ...TAX,
     ...POOL,
+    ...REVERIFY,
   ].find((entry) => entry.key === key);
   expect(found, key).toBeDefined();
   return found!;

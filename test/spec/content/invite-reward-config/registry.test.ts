@@ -35,7 +35,8 @@ it.each(CONFIGS)('[AC-F1-02zn#1] $key：类型、权限、可编辑性与整数�
 // B1-28g (D10-419) rank.cache_ttl_seconds, then B1-05l (D10-419 (a)) search.hot_words and
 // search.keyword_routes in this order, then B1-15zd (D10-454) the seven retention.* keys in this
 // order, then B2-08cz (D10-456 ④) the three tax.SERVICE_FEE.* keys in this order, then B1-05s
-// (D10-480) feed.fallback_pool_id and the two pool.* keys in this order, and nothing else.
+// (D10-480) feed.fallback_pool_id and the two pool.* keys in this order, then B1-02zs
+// withdraw.dormant_reverify_days, and nothing else.
 it('[AC-F1-02zn#2] 五项按指定顺序追加在 SETTLE 之后', () => {
   const keys = configRegistry().map((entry) => entry.key);
   const i = keys.indexOf('settle.statement.grace_days');
@@ -97,6 +98,7 @@ it('[AC-F1-02zn#2] 五项按指定顺序追加在 SETTLE 之后', () => {
     'feed.fallback_pool_id',
     'pool.max_age_sec',
     'pool.refresh_interval_sec',
+    'withdraw.dormant_reverify_days',
   ]);
 });
 

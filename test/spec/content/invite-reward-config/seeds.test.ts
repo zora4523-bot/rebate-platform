@@ -27,7 +27,8 @@ const ELIGIBILITY = { key: `${PREFIX}eligibility_days`, value: 30 };
 // as BR-WDR-20 细则 reads before the rate table is in force: method none, rate 0 bp, empty table.
 // B1-05s (D10-480): the two pool.* rows follow tax.SERVICE_FEE.* in registration order, under the
 // same checks, seeded with the BR-PRICE-11 values; feed.fallback_pool_id is unset by default and
-// has no seed row.
+// has no seed row. B1-02zs: the withdraw.dormant_reverify_days row follows pool.*, under the same
+// checks, seeded 0 (old-account re-verification off until the re-verification pages ship).
 const PAYOUT_KEYS = [
   'payout.single_cap_fen',
   'payout.daily_cap_fen',
@@ -93,6 +94,8 @@ const POOL_SEEDS = [
   { key: 'pool.refresh_interval_sec', value: 3600 },
 ];
 const POOL_KEYS = POOL_SEEDS.map((row) => row.key);
+const REVERIFY_SEEDS = [{ key: 'withdraw.dormant_reverify_days', value: 0 }];
+const REVERIFY_KEYS = REVERIFY_SEEDS.map((row) => row.key);
 
 it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；重跑不覆盖', () => {
   const sql = readFileSync(
@@ -124,6 +127,7 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
     ...RETENTION_KEYS,
     ...TAX_KEYS,
     ...POOL_KEYS,
+    ...REVERIFY_KEYS,
   ]);
   for (const key of SEARCH_KEYS) {
     expect(
@@ -134,6 +138,7 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
   expect(rows.filter((row) => RETENTION_KEYS.includes(row.key))).toStrictEqual(RETENTION_SEEDS);
   expect(rows.filter((row) => TAX_KEYS.includes(row.key))).toStrictEqual(TAX_SEEDS);
   expect(rows.filter((row) => POOL_KEYS.includes(row.key))).toStrictEqual(POOL_SEEDS);
+  expect(rows.filter((row) => REVERIFY_KEYS.includes(row.key))).toStrictEqual(REVERIFY_SEEDS);
   expect(rows.some((row) => row.key === 'feed.fallback_pool_id')).toBe(false);
   for (const row of CONFIGS) {
     const spec = configItemSpecOf(row.key);
