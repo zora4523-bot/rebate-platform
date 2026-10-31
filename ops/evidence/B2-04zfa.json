@@ -1,0 +1,94 @@
+{
+  "task": "B2-04zfa",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "66ec6017558e3d5bfeec99feb51fa15e4e71ff0a",
+  "red_tests": [
+    "test/spec/settlement/settle-runs-schema/access.int.test.ts > [AC-B2-04zfa#4] couli_app 表级只有 SELECT、INSERT；UPDATE 只在 part、last_outcome、起点列、row_version、updated_at 上，身份列不可改；不可删、不可清表",
+    "test/spec/settlement/settle-runs-schema/access.int.test.ts > [AC-B2-04zfa#4] 其他角色（couli_readonly、couli_payout、couli_maint）表级与逐列都没有任何权限",
+    "test/spec/settlement/settle-runs-schema/access.int.test.ts > [AC-B2-04zfa#4] couli_app 能插入并按发布推进 part / last_outcome / 起点 / row_version / updated_at；改身份列、删行、清表被拒绝；其他角色读写删都被拒绝，行不变",
+    "test/spec/settlement/settle-runs-schema/access.int.test.ts > [AC-B2-04zfa#4] 授权写在建表的同一个迁移里，只授给 couli_app，不授其他角色或 PUBLIC",
+    "test/spec/settlement/settle-runs-schema/no-backfill.int.test.ts > [AC-B2-04zfa#5] 只加表、不回填：迁移后表为空；迁移里没有写数据的语句，也不改、不删别的表",
+    "test/spec/settlement/settle-runs-schema/shape.int.test.ts > [AC-B2-04zfa#1] app.settle_runs 存在，列为 settle_run_id、app_id、bill_id、part、last_outcome、row_version、updated_at 加恰好一列本次执行起点（created_at 可有可无）",
+    "test/spec/settlement/settle-runs-schema/shape.int.test.ts > [AC-B2-04zfa#2] 类型、可空与默认值：settle_run_id uuid 无默认（应用生成、与 settle_batches.settle_run_id 同值）；part int 非空默认 0；last_outcome 可空无默认；row_version int 非空；updated_at timestamptz 非空；起点列为时刻或序号且不用 SQL 时钟",
+    "test/spec/settlement/settle-runs-schema/shape.int.test.ts > [AC-B2-04zfa#2] 只给必填列插入时 part 为 0、last_outcome 为空；last_outcome 只收 done / partial / NULL；必填列为空被拒绝",
+    "test/spec/settlement/settle-runs-schema/shape.int.test.ts > [AC-B2-04zfa#3] 主键恰为 settle_run_id：同一 settle_run_id 不能有第二行（跨 app 也不行），约束在迁移里显式具名，外键（如有）不级联"
+  ],
+  "risk_note": "RV2 db (B2-04zfa; D10-492; BR-FUND-04, BR-TEXT-09). Additive migration: new empty table app.settle_runs (settle_run_id uuid PK, app_id / bill_id named FK to settle_bills without cascade, part int NOT NULL default 0, last_outcome done/partial/NULL, part_started_at from the injected Clock, row_version, created_at / updated_at), grants only to couli_app (SELECT, INSERT, column UPDATE of part / last_outcome / part_started_at / row_version / updated_at; no DELETE / TRUNCATE), no backfill, no other object changed. Generated db/schema.sql and db.gen.ts re-snapshotted on the test machine without drift. tools/ci/lint-migrations.test.ts funds-table expectation adds settle_runs (ledger #2026, same as B2-08a).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "66ec6017558e3d5bfeec99feb51fa15e4e71ff0a",
+      "tree": "c7f33f557b3c7edc1765fdd18711dcb7fd04536c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T15:27:22Z",
+      "finished_at": "2026-10-31T15:27:30Z",
+      "gate": {
+        "commit": "df3f5584c73c2bbee246c9d2f39f8141c52c443d",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/settlement/settle-runs-schema/access.int.test.ts > [AC-B2-04zfa#4] couli_app 表级只有 SELECT、INSERT；UPDATE 只在 part、last_outcome、起点列、row_version、updated_at 上，身份列不可改；不可删、不可清表",
+        "test/spec/settlement/settle-runs-schema/access.int.test.ts > [AC-B2-04zfa#4] 其他角色（couli_readonly、couli_payout、couli_maint）表级与逐列都没有任何权限",
+        "test/spec/settlement/settle-runs-schema/access.int.test.ts > [AC-B2-04zfa#4] couli_app 能插入并按发布推进 part / last_outcome / 起点 / row_version / updated_at；改身份列、删行、清表被拒绝；其他角色读写删都被拒绝，行不变",
+        "test/spec/settlement/settle-runs-schema/access.int.test.ts > [AC-B2-04zfa#4] 授权写在建表的同一个迁移里，只授给 couli_app，不授其他角色或 PUBLIC",
+        "test/spec/settlement/settle-runs-schema/no-backfill.int.test.ts > [AC-B2-04zfa#5] 只加表、不回填：迁移后表为空；迁移里没有写数据的语句，也不改、不删别的表",
+        "test/spec/settlement/settle-runs-schema/shape.int.test.ts > [AC-B2-04zfa#1] app.settle_runs 存在，列为 settle_run_id、app_id、bill_id、part、last_outcome、row_version、updated_at 加恰好一列本次执行起点（created_at 可有可无）",
+        "test/spec/settlement/settle-runs-schema/shape.int.test.ts > [AC-B2-04zfa#2] 类型、可空与默认值：settle_run_id uuid 无默认（应用生成、与 settle_batches.settle_run_id 同值）；part int 非空默认 0；last_outcome 可空无默认；row_version int 非空；updated_at timestamptz 非空；起点列为时刻或序号且不用 SQL 时钟",
+        "test/spec/settlement/settle-runs-schema/shape.int.test.ts > [AC-B2-04zfa#2] 只给必填列插入时 part 为 0、last_outcome 为空；last_outcome 只收 done / partial / NULL；必填列为空被拒绝",
+        "test/spec/settlement/settle-runs-schema/shape.int.test.ts > [AC-B2-04zfa#3] 主键恰为 settle_run_id：同一 settle_run_id 不能有第二行（跨 app 也不行），约束在迁移里显式具名，外键（如有）不级联"
+      ],
+      "expected": [
+        "test/spec/settlement/settle-runs-schema/access.int.test.ts",
+        "test/spec/settlement/settle-runs-schema/no-backfill.int.test.ts",
+        "test/spec/settlement/settle-runs-schema/shape.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "b39efccdb1889b8fb360b8b016bede0e536dd9e0031fd8fd90824bef617279bd"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; adversarial money review by a fresh independent Claude via claude-run.sh (approvals #36); round 1 pass with one open S2 (no CHECK pairing part = 0 with last_outcome IS NULL) recorded as FU-B204ZFA-PAIR-CHECK for the B2-04zf writer",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": false,
+    "note": "schema rule tests by an independent Claude via claude-run.sh in 1 run; spec-test review round 1 pass by a fresh independent Claude",
+    "engine": "claude-independent"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "7631b447d18a71e1e46e944a49b6b19814381d8c",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}

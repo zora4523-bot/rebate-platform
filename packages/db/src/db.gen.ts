@@ -1897,6 +1897,18 @@ export interface SettleJobs {
   status: string;
 }
 
+export interface SettleRuns {
+  app_id: string;
+  bill_id: string;
+  created_at: Generated<Timestamp>;
+  last_outcome: string | null;
+  part: Generated<number>;
+  part_started_at: Timestamp;
+  row_version: Generated<number>;
+  settle_run_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface ShareMaterials {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -2307,6 +2319,7 @@ export interface DB {
   settle_batches: SettleBatches;
   settle_bills: SettleBills;
   settle_jobs: SettleJobs;
+  settle_runs: SettleRuns;
   share_materials: ShareMaterials;
   sms_send_attempts: SmsSendAttempts;
   sync_cursors: SyncCursors;

@@ -5454,6 +5454,27 @@ CREATE TABLE app.settle_jobs (
 
 
 --
+-- Name: settle_runs; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.settle_runs (
+    settle_run_id uuid NOT NULL,
+    app_id text NOT NULL,
+    bill_id text NOT NULL,
+    part integer DEFAULT 0 NOT NULL,
+    last_outcome text,
+    part_started_at timestamp with time zone NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT settle_runs_app_id_check CHECK ((app_id <> ''::text)),
+    CONSTRAINT settle_runs_last_outcome_check CHECK ((last_outcome = ANY (ARRAY['done'::text, 'partial'::text]))),
+    CONSTRAINT settle_runs_part_check CHECK ((part >= 0)),
+    CONSTRAINT settle_runs_row_version_check CHECK ((row_version >= 0))
+);
+
+
+--
 -- Name: share_materials; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -7848,6 +7869,14 @@ ALTER TABLE ONLY app.settle_jobs
 
 
 --
+-- Name: settle_runs settle_runs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_runs
+    ADD CONSTRAINT settle_runs_pkey PRIMARY KEY (settle_run_id);
+
+
+--
 -- Name: share_materials share_materials_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -9314,6 +9343,13 @@ CREATE INDEX settle_batches_bill_idx ON app.settle_batches USING btree (app_id, 
 --
 
 CREATE INDEX settle_batches_status_idx ON app.settle_batches USING btree (app_id, status);
+
+
+--
+-- Name: settle_runs_bill_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX settle_runs_bill_idx ON app.settle_runs USING btree (app_id, bill_id);
 
 
 --
@@ -11252,6 +11288,14 @@ ALTER TABLE ONLY app.settle_batches
 
 ALTER TABLE ONLY app.settle_batches
     ADD CONSTRAINT settle_batches_confirmed_by_fkey FOREIGN KEY (app_id, confirmed_by) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: settle_runs settle_runs_bill_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_runs
+    ADD CONSTRAINT settle_runs_bill_fkey FOREIGN KEY (app_id, bill_id) REFERENCES app.settle_bills(app_id, bill_id);
 
 
 --
@@ -16135,6 +16179,48 @@ GRANT UPDATE(finished_at) ON TABLE app.settle_jobs TO couli_app;
 --
 
 GRANT UPDATE(row_version) ON TABLE app.settle_jobs TO couli_app;
+
+
+--
+-- Name: TABLE settle_runs; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.settle_runs TO couli_app;
+
+
+--
+-- Name: COLUMN settle_runs.part; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(part) ON TABLE app.settle_runs TO couli_app;
+
+
+--
+-- Name: COLUMN settle_runs.last_outcome; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(last_outcome) ON TABLE app.settle_runs TO couli_app;
+
+
+--
+-- Name: COLUMN settle_runs.part_started_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(part_started_at) ON TABLE app.settle_runs TO couli_app;
+
+
+--
+-- Name: COLUMN settle_runs.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.settle_runs TO couli_app;
+
+
+--
+-- Name: COLUMN settle_runs.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.settle_runs TO couli_app;
 
 
 --
