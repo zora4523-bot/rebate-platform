@@ -524,8 +524,79 @@ export const HINT = {
   user: /用户.{0,10}(?:不存在|找不到|未找到)|(?:不存在|找不到|未找到).{0,8}用户/,
   forbidden: /权限/,
   failed: /网络|失败|异常|稍后/,
-  reason: /原因|200|必填|不能为空|请填写|请输入/,
+  /** Says the reason is required or too long (a bare 「4 / 200」 counter or 「参数错误」 does not). */
+  reason:
+    /原因|必填|不能为空|不可为空|不得为空|请填写|请输入|\d+\s*个?字|不超过|不能超过|超过|超出|最多|至多|过长|太长/,
 } as const;
+
+/** The reason rule stated in a dialog whose submit is held disabled (a counter alone does not). */
+export const REASON_RULE =
+  /必填|不能为空|不可为空|不得为空|请填写|\d+\s*个?字|不超过|不能超过|最多|至多/;
+
+// ---- the reason hint (character counters do not count) -------------------------------------
+
+/** Character counters of an input (antd showCount); their 「n / 200」 is never a hint. */
+const COUNTERS = '.ant-input-data-count, .ant-input-show-count-suffix';
+/** Hint areas of a form field inside a dialog. */
+const FIELD_NOTICES = '[role="alert"], .ant-form-item-explain, .ant-form-item-extra';
+
+/** Text with spaces and any 「n / m」 counter removed. */
+function withoutCounts(text: string): string {
+  return squash(text).replace(/\d+[/／]\d+/g, '');
+}
+/** A visible text node outside the input itself, its label and its counter. */
+function hintNode(node: Text): boolean {
+  const element = node.parentElement;
+  return (
+    element !== null &&
+    visible(element) &&
+    element.closest(`textarea, label, .ant-form-item-label, ${COUNTERS}`) === null
+  );
+}
+/** The visible text of `root` without counters (labels and static help included). */
+export function ruleText(root: HTMLElement): string {
+  const walker = document.createTreeWalker(root, SHOW_TEXT);
+  const parts: string[] = [];
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    const element = node.parentElement;
+    if (element === null || !visible(element)) continue;
+    if (element.closest(`textarea, ${COUNTERS}`) !== null) continue;
+    parts.push((node as Text).data);
+  }
+  return withoutCounts(parts.join(''));
+}
+/** Areas beside the reason input of `layer`: its form item, its described-by / error targets, alerts. */
+function besideReason(layer: HTMLElement): HTMLElement[] {
+  const field = reasonField(layer);
+  const areas = Array.from(layer.querySelectorAll<HTMLElement>(FIELD_NOTICES));
+  const item = field.closest<HTMLElement>('.ant-form-item');
+  if (item !== null) areas.push(item);
+  for (const name of ['aria-describedby', 'aria-errormessage'])
+    for (const id of (field.getAttribute(name) ?? '').split(/\s+/).filter(Boolean)) {
+      const target = document.getElementById(id);
+      if (target !== null) areas.push(target);
+    }
+  return areas;
+}
+/**
+ * Hint text new since `prior` beside the reason input of `layer` (counters and labels left out).
+ * With `orNotice` (nothing was sent) a new alert, message or notification anywhere counts too.
+ */
+export function reasonHint(prior: Before, layer: HTMLElement, orNotice: boolean): string {
+  const areas = besideReason(layer);
+  if (orNotice) areas.push(...Array.from(document.querySelectorAll<HTMLElement>(NOTICES)));
+  return withoutCounts(
+    textNodes()
+      .filter(
+        (node) =>
+          prior.nodes.get(node) !== node.data &&
+          hintNode(node) &&
+          areas.some((area) => area.contains(node)),
+      )
+      .map((node) => node.data)
+      .join(''),
+  );
+}
 
 // ---- requests ------------------------------------------------------------------------------
 

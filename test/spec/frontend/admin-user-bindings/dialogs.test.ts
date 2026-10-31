@@ -18,20 +18,22 @@ import {
 import {
   FLOW_TIMEOUT,
   HINT,
+  REASON_RULE,
   before,
   click,
   closeConfirmations,
   dismissStepUp,
   entry,
   fill,
-  freshText,
   isDisabled,
   open,
   openUser,
   passOf,
   perform,
   reasonField,
+  reasonHint,
   rowShows,
+  ruleText,
   settle,
   settled,
   squash,
@@ -62,10 +64,9 @@ it(
     await openUser(server);
     const text = await dialogText('taobao', 'reset');
     expect(text).toContain(PLATFORM_LABEL.taobao);
-    expect(text).toMatch(/解除.{0,4}授权|授权.{0,4}解除|释放.{0,4}授权/);
-    expect(text).toMatch(/冷却/);
-    expect(text).toMatch(/重新授权/);
-    expect(text).toMatch(/购买|下单/);
+    // Task wording (解除授权) or the board's (当前绑定立即释放 / 释放).
+    expect(text, 'the binding is released').toMatch(/解除.{0,4}授权|授权.{0,4}解除|释放/);
+    expect(text, 'a cooldown or a new authorisation follows').toMatch(/冷却|重新授权/);
     await closedWithoutWrite(server);
   },
   FLOW_TIMEOUT,
@@ -78,8 +79,8 @@ it(
     await openUser(server);
     const text = await dialogText('pdd', 'disable');
     expect(text).toContain(PLATFORM_LABEL.pdd);
-    expect(text).toMatch(/(?:不再|停止|暂停|不).{0,4}返利/);
-    expect(text).toMatch(/购买|下单/);
+    // Task wording (不再返利 / 停止返利) or the board's (只能无返利购买).
+    expect(text, 'no rebate on this platform').toMatch(/(?:不再|停止|暂停|不).{0,4}返利|无返利/);
     await closedWithoutWrite(server);
   },
   FLOW_TIMEOUT,
@@ -98,7 +99,10 @@ it(
     await closedWithoutWrite(server);
     const pdd = await dialogText('pdd', 'enable');
     expect(pdd).toContain(PLATFORM_LABEL.pdd);
-    expect(pdd).toMatch(/(?:立即|即时|马上|立刻|直接).{0,6}恢复|恢复.{0,6}(?:立即|即时|马上|立刻)/);
+    // Task wording (立即恢复) or the board's (恢复即生效).
+    expect(pdd, 'pdd comes back at once').toMatch(
+      /(?:立即|即时|马上|立刻|直接).{0,6}恢复|恢复.{0,6}(?:立即|即时|马上|立刻|生效)/,
+    );
     await closedWithoutWrite(server);
   },
   FLOW_TIMEOUT,
@@ -114,6 +118,7 @@ it(
       const field = reasonField(layer);
       // Taken before typing: a hint shown while typing counts as well as one shown on submit.
       const prior = before();
+      const writtenBefore = server.writes().length;
       await fill(field, value);
       // An input that refuses the 201st character already keeps the reason within the limit.
       if (value.length > REASON_MAX && field.value.length <= REASON_MAX) {
@@ -122,25 +127,32 @@ it(
       }
       const submit = submitOf(layer);
       if (isDisabled(submit)) {
-        // A submit held disabled stops the write; the dialog then states the rule.
-        expect(squash(layer.textContent), 'the dialog states the reason rule').toMatch(/必填|200/);
+        // A submit held disabled stops the write; the dialog then states the rule in words (a
+        // 「0 / 200」 counter alone does not).
+        expect(ruleText(layer), 'the dialog states the reason rule').toMatch(REASON_RULE);
         await click(submit);
         await settle();
         expect(stepUpDialogs()).toEqual([]);
+        expect(server.writes(), 'a disabled submit sends nothing').toHaveLength(writtenBefore);
       } else {
         const sent = server.writes().length;
         await click(submit);
         await settle();
-        if (stepUpDialogs().length > 0) {
+        const written = stepUpDialogs().length > 0;
+        if (written) {
           await verify(server);
           await waitFor(() => expect(server.writes().length).toBe(sent + 1));
           await settled(server);
         }
+        // Stopped before sending: a hint beside the reason or a new notice; refused with 20001
+        // [reason]: a hint beside the reason. Either way it says required / too long.
         await waitFor(() =>
-          expect(freshText(prior), `a hint about the reason for 「${value.slice(0, 8)}」`).toMatch(
-            HINT.reason,
-          ),
+          expect(
+            reasonHint(prior, layer, !written),
+            `a hint about the reason for 「${value.slice(0, 8)}」`,
+          ).toMatch(HINT.reason),
         );
+        if (!written) expect(server.writes(), 'a refused reason sends nothing').toHaveLength(sent);
       }
       for (const write of server.writes())
         expect(server.answerOf(write), 'a write with a bad reason is refused').toBe(20001);

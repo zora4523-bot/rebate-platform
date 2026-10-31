@@ -127,7 +127,8 @@ it('[AC-F1-07jc-BROWSER#1] 1440 超管：联盟授权表有「操作」列，淘
   const dialog = page.getByRole('dialog');
   await expect.element(dialog, FIRST).toBeVisible();
   await expect.element(dialog).toMatchTextContent(/淘宝/);
-  await expect.element(dialog).toMatchTextContent(/(?:不再|停止|暂停|不).{0,4}返利/);
+  // Task wording (不再返利 / 停止返利) or the board's (只能无返利购买).
+  await expect.element(dialog).toMatchTextContent(/(?:不再|停止|暂停|不).{0,4}返利|无返利/);
   await dialog.getByRole('textbox', { name: /原因/ }).fill(REASON);
   expect(server.requests('POST'), 'nothing sent when the dialog opens').toEqual([]);
   await screenshot('admin-user-union-disable', marker);
