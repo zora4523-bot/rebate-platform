@@ -8,6 +8,7 @@ type: impl
 # ③ 错误：沿用 B1-04m 分类；data 缺 tpwd 与 shortUrl 同时缺失 → upstream_unavailable；商品不可推广类业务码（任务书按 gz-13 摘列，如 10031 / 10212）→ item_unavailable。
 # ④ 数据源开关：淘宝 convert 默认 baichuan 形态不变；只有装配注入大淘客订单源客户端（B1-04e orderSource）且配置项（如 taobao 转链源 = dataoke，任务书定最小改动）打开时才走本路径；官方 27939 / 28308 批下后切官方优先另开任务。推广位与 relation_id 是否进订单须真实测试单核对（编排按 09 README 第 5 条报备后做，各线不下单）。
 # 目录：union/infra/taobao/**、union/infra/dataoke/**、union/domain/types.ts、union/infra/registry.ts(+.test.ts)、union/union.module.ts。test_paths：test/spec/union/taobao-convert/**。整体 RV2（归属）。
+# 完成 2026-11-01（#2101）：relationId 为 null 时按 no_rebate 不带 channelId（台账 ①「缺 relationId → invalid_identity」只指空串 / 非字符串，编排 23:5x 报备）；requote 价格经 parseYuanToFen，JSON number 先转最短十进制串（D10-515 / D10-525）；convertSource 开关未接 union.module 部署配置（另开小单）；linking 尚不调用淘宝 convert。
 refs: []
 refs_hash: {}
 deps: [B1-04e]
@@ -25,4 +26,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/union/taobao-convert/**'
-status: todo
+status: done
+pr: 2101
