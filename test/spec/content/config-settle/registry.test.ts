@@ -33,8 +33,8 @@ it('[AC-F1-02zj#2] 16 项按裁定顺序追加；原 29 项及其无 range 行�
   // rank.cache_ttl_seconds; B1-05l (D10-419 (a)): then search.hot_words and
   // search.keyword_routes, in this order; B1-15zd (D10-454): then the seven retention.* keys, in
   // this order; B2-08cz (D10-456 ④): then the three tax.SERVICE_FEE.* keys, in this order; B1-05s
-  // (D10-480): then feed.fallback_pool_id and the two pool.* keys, in this order; nothing else may
-  // follow.
+  // (D10-480): then feed.fallback_pool_id and the two pool.* keys, in this order; B1-02zs: then
+  // withdraw.dormant_reverify_days; nothing else may follow.
   presentOf(INVITE_CFG, 'growth.invite_reward.*');
   const invite = inviteNow();
   expect(registry.map((entry) => entry.key)).toStrictEqual([
@@ -92,6 +92,7 @@ it('[AC-F1-02zj#2] 16 项按裁定顺序追加；原 29 项及其无 range 行�
     'feed.fallback_pool_id',
     'pool.max_age_sec',
     'pool.refresh_interval_sec',
+    'withdraw.dormant_reverify_days',
   ]);
   expect(registry.slice(0, 29)).toStrictEqual(
     EXPECTED.map((entry) => ({ ...entry, options: null })),
