@@ -7,6 +7,7 @@ type: contract
 # 只改契约形状与描述；实现另见 F1-02zzr（迁移）、F1-02zzs（实现）。排在 #1923 各项之后占契约槽。
 # 2026-10-31 补 paths（content-client）：契约枚举加两值后 tsc 在 content/http/admin/agreements.controller.ts:77/:88 报错（契约五值传给领域三值）。
 #   只在 controller 收窄：详情遇 sdk_list / collect_list 回 30701（库里本就没有），发布回 20001 data.fields=[type]（与今天一致），契约描述注明 F1-02zzs 合并前如此；领域类型与发布规则仍归 F1-02zzs。
+# 2026-10-31 补 paths（D10-484）：contracts-check 的 oasdiff 把响应枚举加 sdk_list / collect_list 判 ERR ×8；workflow 加 --err-ignore contracts/oasdiff-accepted.txt，新建该清单只收这 8 条（逐条 D 编号与老客户端收不到的理由）。.github 属保护路径，按 #24 由编排核加标签。
 refs: []
 refs_hash: {}
 deps: [CT-02z]
@@ -18,6 +19,8 @@ paths:
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
   - 'apps/api/src/modules/content/http/admin/agreements.controller.ts'
+  - '.github/workflows/contracts.yml'
+  - 'contracts/oasdiff-accepted.txt'
 impl: claude
 tester: none
 accept:
