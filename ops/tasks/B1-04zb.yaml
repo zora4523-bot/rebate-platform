@@ -9,12 +9,14 @@ type: impl
 # 已知偏差（CAP-JD-07 实测）：finishTime 可为空串、payMonth 可为整数 0、balanceExt 可为空串，都要接受；文档列的部分字段不出现。
 # modifyTime 防旧覆盖；validCode 原样带出，映射表 specs/order-status-map/jd.csv 与 order-sync 接入不在本单。订单接口不压测。
 # 订单都是共用联盟账号的别的推广位，测试推广位 0 单：过滤不在适配器做，归 order-sync 的推广位白名单（BR-ATTR）。
+# 2026-11-01 D10-520 定映射：settle 只在 validCode 17 / 18 取 actualFee，其余 null；paid_fen 未完成取 estimateCosPrice、17 / 18 取 actualCosPrice；24 → deposit_paid_at = orderTime、paid_at null；15 两者都 null；其余 paid_at = orderTime；service_fee_fen 不给；舍入按 BR-CALC-26 floor，上文「先报编排」作废。写进 specs/union/jd.md。
 # 报文样例自拟、值全合成。RV2（订单数据进佣金计算链）。
 refs: []
 refs_hash: {}
 deps: [B1-04za]
 paths:
   - 'apps/api/src/modules/union/infra/jd/**'
+  - 'specs/union/jd.md'
   - 'apps/api/src/modules/union/domain/types.ts'
   - 'apps/api/src/modules/union/domain/dto.ts'
   - 'apps/api/src/modules/union/application/governed-adapter.ts'
