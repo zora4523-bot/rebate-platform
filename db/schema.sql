@@ -5930,6 +5930,7 @@ CREATE TABLE app.withdrawals (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    review_overdue_at timestamp with time zone,
     CONSTRAINT withdrawals_amount_check CHECK ((amount_fen > 0)),
     CONSTRAINT withdrawals_auto_decision_check CHECK (((auto_decision IS NULL) OR (jsonb_typeof(auto_decision) = 'object'::text))),
     CONSTRAINT withdrawals_bank_name_check CHECK (((payout_method = 'bank_card'::text) = (bank_name IS NOT NULL))),
@@ -16713,6 +16714,13 @@ GRANT UPDATE(row_version) ON TABLE app.withdrawals TO couli_payout;
 
 GRANT UPDATE(updated_at) ON TABLE app.withdrawals TO couli_app;
 GRANT UPDATE(updated_at) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.review_overdue_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(review_overdue_at) ON TABLE app.withdrawals TO couli_app;
 
 
 --
