@@ -1,0 +1,24 @@
+id: B1-04f
+repo: rebate-platform
+title: 淘宝 listOrders 经大淘客 get-order-details（D10-486 ②）：queryType 1–4、跨度 ≤3 小时分窗、positionIndex 翻页、pageSize ≤100；字段按官方 publisher_order_dto 同名映射到 UnionOrder 与平台无关字段，不用大淘客自算字段；只留凑狸推广位的订单；listOrdersMetering 照拼多多
+type: impl
+# 草稿 2026-10-31（union 线，账号 4）。依据：编排 D10-486 ②、DEV-NOTES §3.1（请求参数、返回与官方 publisher_order_dto 同名同义、大淘客自算 income / price_by_one / income_by_one / day 不用、近 3 个月回溯）、规划/09 CAP-TB-07、08 BR-FUND-01 / 02（不改），由编排者摘入任务书。无实测录制：按文档字段写，外层 / 列表键与翻页结束条件标 TODO 待复录。
+# ① 请求：GET /api/tb-service/get-order-details v1.0.0；queryType 由 OrderQueryOpt 映射（创建 1 / 付款 2 / 结算 3 / 更新 4，默认按现有订单同步口径取更新时间 4，任务书定）；startTime / endTime 按北京时间「YYYY-MM-DD HH:MM:SS」，TimeWindow 超过 3 小时按 3 小时切窗顺序请求；positionIndex 续页直到无下一页；pageSize 100；orderScene 1。每个上游请求一个配额（listOrdersMetering = 'per_request'，同 B1-04w）。
+# ② 映射（同名官方字段）：order_id / sub_order_id = trade_id，parent_order_id = trade_parent_id，promotion_slot = adzone_id（与 site_id、member 组成的 PID 形式由任务书定），attr_params.relation_id = relation_id（special_id 另记或不记，任务书定），raw_status = tk_status 字符串，paid_fen = alipay_total_price 元转分（yuanStrToFen），est_commission_fen = pub_share_pre_fee，settle_commission_fen = pub_share_fee（未结算为 null），paid_at = tk_paid_time，settled_at = tk_earning_time，modified_at = modified_time（北京时间串 → Date），commission_fen 口径与拼多多 B1-08e 对齐（任务书定）；raw_payload_id 照 B1-04p。不映射 income、price_by_one、income_by_one、day。缺必需字段的条目跳过并告警（同拼多多做法），不整页失败。
+# ③ 推广位过滤：账号与优券汇共用，只保留 adzone_id（或 PID）属于凑狸 active 推广位的订单，别家订单不返回、不归档明细之外的落库（推广位清单经注入的读取端口，同 B1-04x pddQueryIdentity 做法读 union_pids；空清单 → 返回空并告警一次）。
+# ④ 订单源未注入（B1-04e）→ adapter_unimplemented；状态映射与入账不在本任务（orders / funds，B1-08f 的淘宝 tk_status 映射另行确认）。
+# 目录：union/infra/taobao/**、union/infra/dataoke/**（如需列表解析助手）。test_paths：test/spec/union/taobao-orders/**。整体 RV2（订单金额与归属）。
+refs: []
+refs_hash: {}
+deps: [B1-04e]
+paths:
+  - 'apps/api/src/modules/union/infra/taobao/**'
+  - 'apps/api/src/modules/union/infra/dataoke/**'
+test_paths:
+  - 'test/spec/union/taobao-orders/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/taobao-orders/**'
+status: todo

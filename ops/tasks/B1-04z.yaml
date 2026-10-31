@@ -1,0 +1,26 @@
+id: B1-04z
+repo: rebate-platform
+title: 淘宝维权 / 违规经大淘客（D10-486 ③）：listRefunds 走 POST get-order-refund（全量维权），listPunishments 走 GET get-foul-order-list（近 30 天）；映射到既有 UnionRefund / UnionPunish，只留凑狸推广位相关订单
+type: impl
+# 草稿 2026-10-31（union 线，账号 4）。依据：编排 D10-486 ③、DEV-NOTES §3.2 / §3.4，由编排者摘入任务书。无实测录制：按文档字段写，标 TODO 待复录（含「全量维权」是否真为全量）。
+# ① listRefunds：queryType 由窗口口径定（默认 5 订单更新，任务书定；startTime 早于 2022-12-20 只能 1–3 的约束照文档校验）；跨度 ≤3 小时切窗、positionIndex 翻页、pageSize 100；每条 → UnionRefund { order_id = tb_trade_id, refund_id = refund_suit_id, refund_fen = tk_commission_fee_refund + tk_subsidy_fee_refund 的口径或 show_return_fee（金额口径须与 funds 对齐，任务书写定，元转分只用 yuanStrToFen）}；refund_status 等其余字段若既有 UnionRefund 无位置，按最小改动在 domain/types.ts 增可选字段并与 funds / admin 对齐，不改 08。
+# ② listPunishments：startTime + span（≤30 天）分段、pageNo 翻页；每条 → UnionPunish { order_id = tb_trade_id, punishment_id（由 tb_trade_id + settle_month 等组成的稳定键，任务书定）, deduction_fen（文档无扣款金额字段 → 口径与 funds 对齐，或增可选 punish_status / violation_type 字段）}。按 tk_adzone_id 过滤凑狸推广位。
+# ③ 接入：两个可选端口已在 UnionAdapter 声明；本任务只做 union 侧，消费端（维权导入口）与 funds / admin 对齐后另行接线（不在本任务 paths）。订单源未注入 → 端口不出现或 adapter_unimplemented（与 B1-04f 一致）。
+# 目录：union/infra/taobao/**、union/infra/dataoke/**、union/domain/types.ts、union/application/governed-adapter.ts(+.test.ts)。test_paths：test/spec/union/taobao-refunds/**。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04f]
+paths:
+  - 'apps/api/src/modules/union/infra/taobao/**'
+  - 'apps/api/src/modules/union/infra/dataoke/**'
+  - 'apps/api/src/modules/union/domain/types.ts'
+  - 'apps/api/src/modules/union/application/governed-adapter.ts'
+  - 'apps/api/src/modules/union/application/governed-adapter.test.ts'
+test_paths:
+  - 'test/spec/union/taobao-refunds/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/taobao-refunds/**'
+status: todo
