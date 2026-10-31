@@ -8,7 +8,8 @@
 -- product_pools: one row per pool of one App; (app_id, pool_id) is the key, so one pool_id under two
 --   Apps is two independent pools. pool_id is a UUIDv7 from the application. status follows the
 --   enum product_pool_status. revision is the CAS value of adminUpdateProductPool. created_by is the
---   admin account (contract Id), without a foreign key to app.admin_users.
+--   admin account, a composite foreign key to app.admin_users (app_id, id), as the other uuid
+--   created_by columns.
 -- pool_items: one row per product of a pool; the primary key (app_id, pool_id, product_key) is the
 --   unique key of BR-PROD-08 ③. Adding a product again rewrites sort, start_at and end_at only;
 --   created_at and created_by stay. raw_item_id is the union's item id string, kept as is (BR-PROD-05).
@@ -26,9 +27,9 @@
 -- Grants: couli_app SELECT, INSERT, UPDATE, DELETE; couli_readonly SELECT. couli_payout and
 -- couli_maint get nothing.
 --
--- Timeouts: only new, empty tables are created; the foreign key and the index touch nothing but
--- them, so no lock is taken on an existing business table. 5s lock wait so a blocked deploy fails
--- fast, 30s overall as a ceiling.
+-- Timeouts: only new, empty tables are created; the foreign keys to app.admin_users take a short
+-- SHARE ROW EXCLUSIVE lock there and validate nothing (the new tables are empty). 5s lock wait so
+-- a blocked deploy fails fast, 30s overall as a ceiling.
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
 
@@ -42,6 +43,8 @@ CREATE TABLE app.product_pools (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT product_pools_pkey PRIMARY KEY (app_id, pool_id),
+  CONSTRAINT product_pools_created_by_fkey FOREIGN KEY (app_id, created_by)
+    REFERENCES app.admin_users (app_id, id),
   CONSTRAINT product_pools_app_id_check CHECK (app_id <> ''),
   CONSTRAINT product_pools_name_check CHECK (name <> ''),
   CONSTRAINT product_pools_status_check CHECK (status IN ('active', 'disabled')),
@@ -71,6 +74,8 @@ CREATE TABLE app.pool_items (
   CONSTRAINT pool_items_pkey PRIMARY KEY (app_id, pool_id, product_key),
   CONSTRAINT pool_items_pool_fkey FOREIGN KEY (app_id, pool_id)
     REFERENCES app.product_pools (app_id, pool_id),
+  CONSTRAINT pool_items_created_by_fkey FOREIGN KEY (app_id, created_by)
+    REFERENCES app.admin_users (app_id, id),
   CONSTRAINT pool_items_product_key_check CHECK (product_key <> ''),
   CONSTRAINT pool_items_platform_check CHECK (platform IN (
     'taobao', 'jd', 'pdd', 'meituan', 'vip', 'douyin', 'eleme', 'kuaishou', 'suning'

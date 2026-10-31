@@ -10991,11 +10991,27 @@ ALTER TABLE ONLY app.platform_icons
 
 
 --
+-- Name: pool_items pool_items_created_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.pool_items
+    ADD CONSTRAINT pool_items_created_by_fkey FOREIGN KEY (app_id, created_by) REFERENCES app.admin_users(app_id, id);
+
+
+--
 -- Name: pool_items pool_items_pool_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
 ALTER TABLE ONLY app.pool_items
     ADD CONSTRAINT pool_items_pool_fkey FOREIGN KEY (app_id, pool_id) REFERENCES app.product_pools(app_id, pool_id);
+
+
+--
+-- Name: product_pools product_pools_created_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.product_pools
+    ADD CONSTRAINT product_pools_created_by_fkey FOREIGN KEY (app_id, created_by) REFERENCES app.admin_users(app_id, id);
 
 
 --
