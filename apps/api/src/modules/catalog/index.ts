@@ -137,6 +137,16 @@ export {
 } from './ports.ts';
 export type { RebateQuote, RegisterLinkInput, Viewer } from './ports.ts';
 export { CATALOG, CatalogModule } from './catalog.module.ts';
+// Task B1-05q: /admin/v1/product-pools* (CT-07d, content.pool) on the admin entry, rule tests
+// test/spec/catalog/product-pool-admin/**.
+export { CatalogAdminModule } from './catalog-admin.module.ts';
+export type { CatalogAdminOptions } from './catalog-admin.module.ts';
+export type {
+  PoolLinkAdapters,
+  PoolLinkAnswer,
+  PoolLinkCandidate,
+  PoolLinkParser,
+} from './application/pool-source.ts';
 export { createPriceHistoryRecorder, type PriceHistoryWiring } from './catalog.module.ts';
 export * from './price-history/index.ts';
 export * from './price-trend/index.ts';
