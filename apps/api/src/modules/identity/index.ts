@@ -56,6 +56,12 @@ export type {
   RealnameStatusBatchReader,
   RealnameStatusBatchReaderOptions,
 } from './ports/realname-status-batch.ts';
+// B2-08b (D10-181 ①): the current verified real name's id_no_hmac, payout's tax_ytd identity key.
+export { createRealnameIdentityKeyReader } from './ports/realname-identity-key.ts';
+export type {
+  RealnameIdentityKeyInput,
+  RealnameIdentityKeyReader,
+} from './ports/realname-identity-key.ts';
 // B1-03zc: under-18 users at an instant (BR-ID-26), for settlement BeneficiaryGate's minors port.
 export { createMinorStatusBatchReader } from './ports/minor-status-batch.ts';
 export type {

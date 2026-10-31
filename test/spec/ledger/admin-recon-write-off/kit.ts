@@ -221,9 +221,31 @@ export function fixture(s: WriteOffSuite, instant = NOW): WriteOffFixture {
   };
 }
 
-/** A synthetic member of the fixture's app with a funded ledger account. */
-export function memberOf(f: WriteOffFixture, balance?: bigint): Promise<string> {
-  return newMember(f.db, f.ledger, f.appId, balance);
+/**
+ * B2-08b: a verified real name, as BR-WDR-03 requires of every withdrawal; W11 keeps tax_ytd per
+ * real-name identity (id_no_hmac) in the same transaction and refuses a member without one. One
+ * app.realname row, status verified, synthetic ciphers only (couli_app may INSERT it).
+ */
+async function seedVerifiedRealname(db: Kysely<DB>, appId: string, userId: string): Promise<void> {
+  const hmac = randomBytes(32).toString('hex');
+  await sql`INSERT INTO app.realname
+    (id, app_id, user_id, name_cipher, id_no_cipher, id_no_hmac, birth_date_cipher, status,
+     provider, verified_at, tax_retained)
+    VALUES (${randomUUID()}, ${appId}, ${userId}, ${Buffer.from('synthetic-name')},
+      ${Buffer.from('synthetic-id-no')}, ${hmac}, ${Buffer.from('synthetic-birth-date')},
+      ${'verified'}, ${'synthetic'}, ${new Date('2026-10-01T02:00:00.000Z')}, ${false})`.execute(
+    db,
+  );
+}
+
+/**
+ * A synthetic member of the fixture's app with a funded ledger account and a verified real name
+ * (the precondition of every withdrawal, BR-WDR-03; W11 needs it for tax_ytd, B2-08b).
+ */
+export async function memberOf(f: WriteOffFixture, balance?: bigint): Promise<string> {
+  const userId = await newMember(f.db, f.ledger, f.appId, balance);
+  await seedVerifiedRealname(f.db, f.appId, userId);
+  return userId;
 }
 
 /** A config row of the fixture's app (set before the first request of the app). */

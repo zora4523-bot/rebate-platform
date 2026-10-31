@@ -170,6 +170,7 @@ import {
   createOrderUserReader,
   createUserDeletionStatusReader,
   createRealnameStatusBatchReader,
+  createRealnameIdentityKeyReader,
   createMinorStatusBatchReader,
   createInviteRewardLoginIpsReader,
   createInviteRewardDeletedPhoneReader,
@@ -3874,6 +3875,9 @@ export class AppModule {
                     },
                     queue,
                     eventBus,
+                    // B2-08b: the same port for W11's tax_ytd row (ledger.module's write-off
+                    // context carries no logger; the missing-real-name throw still rolls back).
+                    identityKey: createRealnameIdentityKeyReader(),
                   }),
               }),
             ]
@@ -4058,6 +4062,9 @@ export class AppModule {
               // persisted pause (payout-landing `pause`) on couli_app.
               PayoutModule.forWorker({
                 lockUsersForUpdate,
+                // B2-08b (BR-WDR-20, D10-181 ①): identity's realname-identity-key port — the
+                // landing job keeps tax_ytd per verified real name (payout imports no identity).
+                identityKey: createRealnameIdentityKeyReader(),
                 attempts: createPayoutAttemptsStore(),
                 autoPayout: autoPayoutPorts,
                 config: (_db, clock) => ({

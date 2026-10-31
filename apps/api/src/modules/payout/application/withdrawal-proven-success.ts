@@ -26,6 +26,11 @@ import type { EventBus, JobQueue } from '../../platform/index.ts';
 import type { WithdrawApplyOptions } from './withdraw-apply.ts';
 import type { PayoutConfigPort } from './withdraw-rules.ts';
 import { instant } from './payout-landing.ts';
+import {
+  createTaxYtdAccumulator,
+  type TaxYtdIdentityKeyReader,
+  type TaxYtdLogger,
+} from './tax-ytd.ts';
 import { WithdrawalConflictError } from './withdrawal-commands.ts';
 
 /** The guard conditions of W11 a call may be refused on (contract data.reason). */
@@ -90,6 +95,15 @@ export interface WithdrawalProvenSuccessOptions {
   /** The job queue (same-transaction enqueue of the attempt-append job). */
   readonly queue: JobQueue;
   readonly eventBus: EventBus;
+  /**
+   * B2-08b (BR-WDR-20): identity's realname-identity-key port. A proven W11 adds the withdrawal
+   * to tax_ytd on the caller's transaction, after the voucher (application/tax-ytd.ts); a member
+   * without a verified real name throws, so the write-off rolls back. A refusal adds nothing.
+   * app.module's write-off factory always passes it (createRealnameIdentityKeyReader).
+   */
+  readonly identityKey?: TaxYtdIdentityKeyReader;
+  /** B2-08b: the warn line tax_ytd_identity_missing (ids only). */
+  readonly logger?: TaxYtdLogger;
 }
 
 /** content's switch of W11 (08 BR-WDR-08 细则, BR-WDR-17): default on. */
@@ -132,6 +146,8 @@ interface ProvenRow {
   readonly tax_fen: bigint;
   readonly payout_channel: string;
   readonly row_version: number;
+  readonly amount_fen: bigint;
+  readonly created_at: Date;
 }
 
 type BuiltEntry = {
@@ -187,6 +203,15 @@ export function createWithdrawalProvenSuccess(
   options: WithdrawalProvenSuccessOptions,
 ): WithdrawalProvenSuccess {
   const { ledger, config, queue, eventBus } = options;
+  // B2-08b: without identity's port (older kits) nothing is added; without a logger the warn line
+  // of a missing real name is not written (the throw still rolls the write-off back).
+  const taxYtd =
+    options.identityKey === undefined
+      ? undefined
+      : createTaxYtdAccumulator({
+          identity: options.identityKey,
+          logger: options.logger ?? { warn: () => undefined },
+        });
 
   async function readRow(
     trx: Transaction<DB>,
@@ -207,6 +232,8 @@ export function createWithdrawalProvenSuccess(
         'tax_fen',
         'payout_channel',
         'row_version',
+        'amount_fen',
+        'created_at',
       ])
       .where('app_id', '=', appId)
       .where('id', '=', withdrawalId)
@@ -308,6 +335,17 @@ export function createWithdrawalProvenSuccess(
         voucherKind: null,
         entries: postingEntries(voucher.entries, balance.account_id),
       });
+      if (taxYtd !== undefined) {
+        await taxYtd.accumulate(trx, {
+          appId,
+          userId: row.user_id,
+          withdrawalId: row.id,
+          createdAt: row.created_at,
+          amountFen: row.amount_fen,
+          taxFen: row.tax_fen,
+          now,
+        });
+      }
       const payload: AttemptAppendPayload = {
         app_id: appId,
         withdrawal_id: row.id,

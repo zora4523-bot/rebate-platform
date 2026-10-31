@@ -329,4 +329,16 @@ export type {
   WithdrawalProvenSuccessOptions,
 } from './application/withdrawal-proven-success.ts';
 export { PAYOUT_ATTEMPT_APPEND_ALERT, createAttemptAppendJob } from './jobs/attempt-append-job.ts';
+// B2-08b (BR-WDR-20): tax_ytd added on PAID_API / PAID_MANUAL, per real-name identity (W5 and W11
+// now; W8 / W10 with their own tasks).
+export { createTaxYtdAccumulator, taxYearOf } from './application/tax-ytd.ts';
+export type {
+  TaxYtdAccumulateInput,
+  TaxYtdAccumulator,
+  TaxYtdAccumulatorOptions,
+  TaxYtdIdentityKeyReader,
+  TaxYtdIdentityMissingAlert,
+  TaxYtdIncomeType,
+  TaxYtdLogger,
+} from './application/tax-ytd.ts';
 export type { AttemptAppendJobOptions, AttemptAppendLogger } from './jobs/attempt-append-job.ts';

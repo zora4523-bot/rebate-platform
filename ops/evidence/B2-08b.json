@@ -1,0 +1,158 @@
+{
+  "task": "B2-08b",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "e572edf7835d3750b8fd0dea450f57c23e7b6e4f",
+  "red_tests": [
+    "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 首笔：新建一行 (app, user, created_at 的 +08:00 年, SERVICE_FEE, 当前实名 hmac)，cum_income = amount、cum_withheld = tax（¥100 / 税 2000 分 → 10000 / 2000），continuous_months 0，id 为 UUIDv7，updated_at = 调用方时刻；身份在同一事务上按 (appId, userId) 读",
+    "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 同一身份同一年第二笔累加到同一行（AC-S2-44 ③：¥100 + ¥200 → 30000 分）；税 0（method=none）也照常累加收入；id 与 created_at 不变、updated_at 为后一次的时刻",
+    "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 年度按 created_at 的 +08:00 自然年分行：12-31 23:30 +08:00 归当年，次年 01-01 00:30 +08:00（UTC 仍是前一年）归次年",
+    "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 写在调用方的事务里：调用方回滚 → 台账没有行",
+    "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 未实名（realname absent）→ 抛错不吞、warn tax_ytd_identity_missing（带 withdrawal_id，不带 hmac），台账没有行",
+    "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 未实名（realname none）→ 抛错不吞、warn tax_ytd_identity_missing（带 withdrawal_id，不带 hmac），台账没有行",
+    "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 未实名（realname failed）→ 抛错不吞、warn tax_ytd_identity_missing（带 withdrawal_id，不带 hmac），台账没有行",
+    "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 金额为负（amountFen = -1）→ 拒绝，台账没有行（金额经 @couli/money 校验 ≥ 0）",
+    "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 金额为负（taxFen = -1）→ 拒绝，台账没有行（金额经 @couli/money 校验 ≥ 0）",
+    "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 实名更正后（新 hmac）另起一行，旧身份行不再累加；两行同 (user, year)",
+    "test/spec/payout/tax-ytd/identity-port.int.test.ts > [AC-B2-08b#port] 已实名（verified）→ 返回该行的 id_no_hmac；同一 app 两个会员各得各的，不改任何行",
+    "test/spec/payout/tax-ytd/identity-port.int.test.ts > [AC-B2-08b#port] 未实名 → null：没有 realname 行、status=none、status=failed，以及 none 但为个税留存了 hmac（tax_retained）",
+    "test/spec/payout/tax-ytd/identity-port.int.test.ts > [AC-B2-08b#port] 按 (app_id, user_id) 取：别的 app 的同一 user_id 查不到、不存在的会员 → null",
+    "test/spec/payout/tax-ytd/identity-port.int.test.ts > [AC-B2-08b#port] 在调用方给的事务上读：同一事务里尚未提交的实名更正（新 hmac）当场可见，回滚后仍是旧 hmac",
+    "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 到账（¥100，税 2000 分）→ PAID_API 的同一事务里 tax_ytd 恰一行：created_at 的 +08:00 年、SERVICE_FEE、当前实名 hmac，cum_income 10000、cum_withheld 2000；日志不含 hmac 与收款人",
+    "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 带手续费的到账（net 8000、fee 300、tax 2000，amount 10300）→ cum_income 加 amount_fen 10300（不是 net + tax 的 10000）、cum_withheld 加 tax_fen 2000；同年第二笔（net 900、fee 100、tax 0）再加 amount 1000",
+    "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 同一会员同一年两笔到账（¥100、¥200，method=none 税 0）→ 累加到同一行：cum_income 30000、cum_withheld 0（AC-S2-44 ③）；第二笔由查询成功落地也一样",
+    "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 年度取提现单 created_at 的 +08:00 年：12-31 23:30 +08:00 建单、次年 1 月审核、执行、到账（时钟也在次年）→ 记建单那一年；01-01 00:30 +08:00 建单（UTC 仍是前一年）→ 记次年",
+    "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] W6 失败、W3 驳回都不累加（先做二者：台账仍无行）；之后同一会员一笔到账只记这一笔",
+    "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 已到账的单：同一落地任务重投、再来一个查询成功的落地任务 → 都不再迁移，台账只加过一次",
+    "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 实名更正后（新 id_no_hmac）到账 → 新身份另起一行；旧身份行原样不动，不再累加",
+    "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 未实名就到账（夹具造出的非法状态，realname absent）→ 落地事务整体回滚：仍 PAYING、无 PAID 凭证、无事件、冻结不变、台账无行；处理器抛错（不吞）并 warn tax_ytd_identity_missing",
+    "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 未实名就到账（夹具造出的非法状态，realname none）→ 落地事务整体回滚：仍 PAYING、无 PAID 凭证、无事件、冻结不变、台账无行；处理器抛错（不吞）并 warn tax_ytd_identity_missing",
+    "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 未实名就到账（夹具造出的非法状态，realname failed）→ 落地事务整体回滚：仍 PAYING、无 PAID 凭证、无事件、冻结不变、台账无行；处理器抛错（不吞）并 warn tax_ytd_identity_missing",
+    "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 不变量：两个会员、跨两个年度、成功与失败混合落地后，每 (会员, 年) Σcum_income = Σ该年建单的 PAID_* amount_fen、Σcum_withheld = Σtax_fen；行数与各行和一致",
+    "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 凭账单核销成 PAID_API（¥100，税 2000 分）→ 同一事务里 tax_ytd 恰一行：created_at 的 +08:00 年、SERVICE_FEE、当前实名 hmac，cum_income 10000、cum_withheld 2000；日志不含 hmac",
+    "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 同一会员同一年两笔核销（¥100、¥200，税 0）→ 累加到同一行 30000 / 0",
+    "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 带手续费的核销（net 8000、fee 300、tax 2000，amount 10300）→ cum_income 加 amount_fen 10300（不是 net + tax 的 10000）、cum_withheld 加 tax_fen 2000",
+    "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 年度取提现单 created_at 的 +08:00 年：12-31 23:30 +08:00 建单、次年退回、账单入账与核销（时钟）都在次年 → 记建单那一年；01-01 00:30 +08:00 建单（UTC 仍是前一年）→ 记次年",
+    "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 拒绝核销不累加：账单金额 ≠ net_fen（amount_mismatch）、开关关闭（writeoff_disabled）→ 台账无行",
+    "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 未实名就核销（夹具造出的非法状态，realname absent）→ W11 抛错，核销事务整体回滚：仍 APPROVED 带 hold、无 PAID 凭证、无事件、冻结不变、台账无行",
+    "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 未实名就核销（夹具造出的非法状态，realname none）→ W11 抛错，核销事务整体回滚：仍 APPROVED 带 hold、无 PAID 凭证、无事件、冻结不变、台账无行",
+    "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 未实名就核销（夹具造出的非法状态，realname failed）→ W11 抛错，核销事务整体回滚：仍 APPROVED 带 hold、无 PAID 凭证、无事件、冻结不变、台账无行",
+    "test/spec/payout/tax-ytd/wiring.test.ts > [AC-B2-08b#wiring] worker：PayoutModule.forWorker 收到 identityKey，app.module 用 identity/index.ts 导出的 createRealnameIdentityKeyReader 构造；forWorker 里每个 createLandingJob 都带 identityKey",
+    "test/spec/payout/tax-ytd/wiring.test.ts > [AC-B2-08b#wiring] admin 核销：app.module 里每个 createWithdrawalProvenSuccess 都带 identityKey（createRealnameIdentityKeyReader）；端口经 identity/index.ts 导出；payout 的源码不导入 identity",
+    "test/spec/payout/tax-ytd/year.test.ts > [AC-B2-08b#year] 年度取 +08:00 自然年：12-31 23:30 +08:00 → 当年；次年 01-01 00:30 +08:00（UTC 仍是前一年）→ 次年；00:00 +08:00 前后一毫秒分属两年",
+    "test/spec/payout/tax-ytd/year.test.ts > [AC-B2-08b#year] 任意时刻（2026–2099）：年度 = 该时刻 +8 小时后的 UTC 年份；不改传入的 Date"
+  ],
+  "risk_note": "RV2 money change (withdraw lane, model Claude Fable 5.1; orchestrator rulings D10-181 ①, D10-456 ④ and D10-459): the paid withdrawal (W5 payout-landing, W11 withdrawal-proven-success) is added to app.tax_ytd on the same transaction, per the member's verified real-name identity (08 BR-WDR-20; BR-ID-25 细则「实名更正」). Money paths: amount_fen → cum_income_fen and tax_fen → cum_withheld_fen through @couli/money (bigint, ≥ 0), year = the +08:00 calendar year of created_at (@couli/domain accountingDate), one INSERT … ON CONFLICT ON CONSTRAINT tax_ytd_identity_key DO UPDATE (infra/tax-ytd-store.ts). A member without a verified real name makes the landing / write-off roll back (warn tax_ytd_identity_missing, ids only). Rejections, failures and redelivered landings add nothing (the CAS guards the single add). identity's port realname-identity-key.ts was written by this lane for identity's review (D10-459). No frozen test changed; no contract change. Orchestrator 10-31 12:4x: a paid withdrawal whose member has no verified real name makes the landing / write-off roll back. (1) Precondition: an application needs realname_verified at both passes (withdraw-rules 30304); a verified app.realname row is never overwritten by a failed verification (realname.ts WHERE status <> 'verified'), a customer-service correction keeps status verified and only changes id_no_hmac (the new tax_ytd row is the intended design), and account deletion clears the row only at processing, which cannot start with a withdrawal in flight (deletion request refused 30412; cooling / processing refuses every non-GET login / realname route incl. POST /v1/withdrawals with 10007). (2) If it ever triggers: the landing job throws → pg-boss retries 5 times (10s → 600s backoff) → payout-landing.dead, the dead letter scan logs an error every 5 minutes (B1-01zzg), every attempt warns tax_ytd_identity_missing (ids only); the withdrawal stays PAYING without voucher or event; the query chain's manualDue sets needs_manual and warns payout_needs_manual (BR-WDR-14) → W10 manual handling; the landing job never pays, so no duplicate payout. W11: the write-off request fails and rolls back, the withdrawal stays APPROVED on hold, retryable; W11 pays nothing.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "e572edf7835d3750b8fd0dea450f57c23e7b6e4f",
+      "tree": "0463c9c4752c97f571bc77fd75748faed997fbac",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T06:38:17Z",
+      "finished_at": "2026-10-31T06:38:33Z",
+      "gate": {
+        "commit": "c9369b5566dd0ec6022be27745a97fb97c0b7e83",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 首笔：新建一行 (app, user, created_at 的 +08:00 年, SERVICE_FEE, 当前实名 hmac)，cum_income = amount、cum_withheld = tax（¥100 / 税 2000 分 → 10000 / 2000），continuous_months 0，id 为 UUIDv7，updated_at = 调用方时刻；身份在同一事务上按 (appId, userId) 读",
+        "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 同一身份同一年第二笔累加到同一行（AC-S2-44 ③：¥100 + ¥200 → 30000 分）；税 0（method=none）也照常累加收入；id 与 created_at 不变、updated_at 为后一次的时刻",
+        "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 年度按 created_at 的 +08:00 自然年分行：12-31 23:30 +08:00 归当年，次年 01-01 00:30 +08:00（UTC 仍是前一年）归次年",
+        "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 写在调用方的事务里：调用方回滚 → 台账没有行",
+        "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 未实名（realname absent）→ 抛错不吞、warn tax_ytd_identity_missing（带 withdrawal_id，不带 hmac），台账没有行",
+        "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 未实名（realname none）→ 抛错不吞、warn tax_ytd_identity_missing（带 withdrawal_id，不带 hmac），台账没有行",
+        "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 未实名（realname failed）→ 抛错不吞、warn tax_ytd_identity_missing（带 withdrawal_id，不带 hmac），台账没有行",
+        "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 金额为负（amountFen = -1）→ 拒绝，台账没有行（金额经 @couli/money 校验 ≥ 0）",
+        "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 金额为负（taxFen = -1）→ 拒绝，台账没有行（金额经 @couli/money 校验 ≥ 0）",
+        "test/spec/payout/tax-ytd/accumulator.int.test.ts > [AC-B2-08b#acc] 实名更正后（新 hmac）另起一行，旧身份行不再累加；两行同 (user, year)",
+        "test/spec/payout/tax-ytd/identity-port.int.test.ts > [AC-B2-08b#port] 已实名（verified）→ 返回该行的 id_no_hmac；同一 app 两个会员各得各的，不改任何行",
+        "test/spec/payout/tax-ytd/identity-port.int.test.ts > [AC-B2-08b#port] 未实名 → null：没有 realname 行、status=none、status=failed，以及 none 但为个税留存了 hmac（tax_retained）",
+        "test/spec/payout/tax-ytd/identity-port.int.test.ts > [AC-B2-08b#port] 按 (app_id, user_id) 取：别的 app 的同一 user_id 查不到、不存在的会员 → null",
+        "test/spec/payout/tax-ytd/identity-port.int.test.ts > [AC-B2-08b#port] 在调用方给的事务上读：同一事务里尚未提交的实名更正（新 hmac）当场可见，回滚后仍是旧 hmac",
+        "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 到账（¥100，税 2000 分）→ PAID_API 的同一事务里 tax_ytd 恰一行：created_at 的 +08:00 年、SERVICE_FEE、当前实名 hmac，cum_income 10000、cum_withheld 2000；日志不含 hmac 与收款人",
+        "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 带手续费的到账（net 8000、fee 300、tax 2000，amount 10300）→ cum_income 加 amount_fen 10300（不是 net + tax 的 10000）、cum_withheld 加 tax_fen 2000；同年第二笔（net 900、fee 100、tax 0）再加 amount 1000",
+        "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 同一会员同一年两笔到账（¥100、¥200，method=none 税 0）→ 累加到同一行：cum_income 30000、cum_withheld 0（AC-S2-44 ③）；第二笔由查询成功落地也一样",
+        "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 年度取提现单 created_at 的 +08:00 年：12-31 23:30 +08:00 建单、次年 1 月审核、执行、到账（时钟也在次年）→ 记建单那一年；01-01 00:30 +08:00 建单（UTC 仍是前一年）→ 记次年",
+        "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] W6 失败、W3 驳回都不累加（先做二者：台账仍无行）；之后同一会员一笔到账只记这一笔",
+        "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 已到账的单：同一落地任务重投、再来一个查询成功的落地任务 → 都不再迁移，台账只加过一次",
+        "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 实名更正后（新 id_no_hmac）到账 → 新身份另起一行；旧身份行原样不动，不再累加",
+        "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 未实名就到账（夹具造出的非法状态，realname absent）→ 落地事务整体回滚：仍 PAYING、无 PAID 凭证、无事件、冻结不变、台账无行；处理器抛错（不吞）并 warn tax_ytd_identity_missing",
+        "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 未实名就到账（夹具造出的非法状态，realname none）→ 落地事务整体回滚：仍 PAYING、无 PAID 凭证、无事件、冻结不变、台账无行；处理器抛错（不吞）并 warn tax_ytd_identity_missing",
+        "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 未实名就到账（夹具造出的非法状态，realname failed）→ 落地事务整体回滚：仍 PAYING、无 PAID 凭证、无事件、冻结不变、台账无行；处理器抛错（不吞）并 warn tax_ytd_identity_missing",
+        "test/spec/payout/tax-ytd/landing.int.test.ts > [AC-B2-08b#W5] 不变量：两个会员、跨两个年度、成功与失败混合落地后，每 (会员, 年) Σcum_income = Σ该年建单的 PAID_* amount_fen、Σcum_withheld = Σtax_fen；行数与各行和一致",
+        "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 凭账单核销成 PAID_API（¥100，税 2000 分）→ 同一事务里 tax_ytd 恰一行：created_at 的 +08:00 年、SERVICE_FEE、当前实名 hmac，cum_income 10000、cum_withheld 2000；日志不含 hmac",
+        "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 同一会员同一年两笔核销（¥100、¥200，税 0）→ 累加到同一行 30000 / 0",
+        "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 带手续费的核销（net 8000、fee 300、tax 2000，amount 10300）→ cum_income 加 amount_fen 10300（不是 net + tax 的 10000）、cum_withheld 加 tax_fen 2000",
+        "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 年度取提现单 created_at 的 +08:00 年：12-31 23:30 +08:00 建单、次年退回、账单入账与核销（时钟）都在次年 → 记建单那一年；01-01 00:30 +08:00 建单（UTC 仍是前一年）→ 记次年",
+        "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 拒绝核销不累加：账单金额 ≠ net_fen（amount_mismatch）、开关关闭（writeoff_disabled）→ 台账无行",
+        "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 未实名就核销（夹具造出的非法状态，realname absent）→ W11 抛错，核销事务整体回滚：仍 APPROVED 带 hold、无 PAID 凭证、无事件、冻结不变、台账无行",
+        "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 未实名就核销（夹具造出的非法状态，realname none）→ W11 抛错，核销事务整体回滚：仍 APPROVED 带 hold、无 PAID 凭证、无事件、冻结不变、台账无行",
+        "test/spec/payout/tax-ytd/proven-success.int.test.ts > [AC-B2-08b#W11] 未实名就核销（夹具造出的非法状态，realname failed）→ W11 抛错，核销事务整体回滚：仍 APPROVED 带 hold、无 PAID 凭证、无事件、冻结不变、台账无行",
+        "test/spec/payout/tax-ytd/wiring.test.ts > [AC-B2-08b#wiring] worker：PayoutModule.forWorker 收到 identityKey，app.module 用 identity/index.ts 导出的 createRealnameIdentityKeyReader 构造；forWorker 里每个 createLandingJob 都带 identityKey",
+        "test/spec/payout/tax-ytd/wiring.test.ts > [AC-B2-08b#wiring] admin 核销：app.module 里每个 createWithdrawalProvenSuccess 都带 identityKey（createRealnameIdentityKeyReader）；端口经 identity/index.ts 导出；payout 的源码不导入 identity",
+        "test/spec/payout/tax-ytd/year.test.ts > [AC-B2-08b#year] 年度取 +08:00 自然年：12-31 23:30 +08:00 → 当年；次年 01-01 00:30 +08:00（UTC 仍是前一年）→ 次年；00:00 +08:00 前后一毫秒分属两年",
+        "test/spec/payout/tax-ytd/year.test.ts > [AC-B2-08b#year] 任意时刻（2026–2099）：年度 = 该时刻 +8 小时后的 UTC 年份；不改传入的 Date"
+      ],
+      "expected": [
+        "test/spec/payout/tax-ytd/accumulator.int.test.ts",
+        "test/spec/payout/tax-ytd/identity-port.int.test.ts",
+        "test/spec/payout/tax-ytd/landing.int.test.ts",
+        "test/spec/payout/tax-ytd/proven-success.int.test.ts",
+        "test/spec/payout/tax-ytd/wiring.test.ts",
+        "test/spec/payout/tax-ytd/year.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "3d70af14c5891bfb628004b123dd7504e5e441314d6b2a33c60a5c0669297241"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "00b2b4ebe5039e962b2413c3b51d9a8cc79fe18ea19927542732541a8247a922"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "Round 1 (full, base origin/main at the time; Codex unavailable until 2026-11-02, fresh independent Claude). Pass: W5 and W11 are the only paths to PAID_*, each adds once after its CAS and voucher on the same transaction (amount_fen → cum_income_fen, tax_fen → cum_withheld_fen, +08:00 year of created_at, SERVICE_FEE, the verified real name's hmac scoped by app_id); failures / refusals / rejections add nothing; a missing real name throws and rolls back. One S2 (not blocking): in production W11 gets no logger from ledger.module's writeOff context, so the tax_ytd_identity_missing warn line is not written there (the throw still rolls the write-off back) → followups FU-B208B-W11-LOGGER (ledger.module's context needs a logger; ledger lane's paths). Precondition and outcome of the missing-real-name rollback (orchestrator 10-31 12:4x) analysed by the implementer in risk_note and notices (code references: withdraw-rules 30304, realname.ts verified rows never overwritten, deletion-request 30412 / deletion-guard 10007, queue catalog retryLimit 5 + dead letter scan, query-recovery manualDue)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "test round 1 (fresh independent Claude): 7 files under test/spec/payout/tax-ytd → spec-test round 1 fail (S1 ×3: every seed had fee 0 so amount_fen vs net+tax was indistinguishable in W5 and W11, W11 had no cross-year created_at; S2 ×2: executed_at same year in the W5 boundary case, year property test without PROP_RUNS / PROP_SEED) → test round 2 fixed all five → spec-test round 2 pass (incremental, no findings). The author's NotImplemented skeleton was committed as a second test(spec) commit (lib/spec-base.ts author scope) after red/1 was judged red for the wrong reason (module not found) → red/2 PASS (37 red in 5 files, exempt 0). red_exempt (21 unchanged B2-07e tests in test/spec/ledger/admin-recon-write-off/{atomic,refusals,write-off}.int.test.ts, declared in the trusted ledger after the fixture test(spec) commit that gives memberOf a verified real name): 编排 D10-489：以独立复核记录确认，不另起 spec-test 轮次 — the fresh independent Claude's read-only review couli-runs/B2-08b/fixture-review-claude-independent.md (pass; it checked each of the 21 tests for any dependence on a member without a real name, the fixture change touching only kit.ts with no assertion changed, the app.realname constraints and couli_app's INSERT grant) stands as the CT-06r confirmation.",
+    "red_exempt_confirmed": true
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "85a8e125dfd2d8eb43f9887df351e8eebfa83367",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money or packages/domain.",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
