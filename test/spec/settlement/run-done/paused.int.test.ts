@@ -86,7 +86,7 @@ it.each([
     off: ['credit.enabled.taobao', 'credit.enabled.jd'],
   },
 ])(
-  '[AC-B2-04zf#19] 同一 run 的 taobao、jd 两批到执行时刻都因 $label 关闭没有开始、都带停住标记停在 CONFIRMED，一笔未入账 → 不发 settle.run_done',
+  '[AC-B2-04zf#19] 同一 run 的 taobao、jd 两批到执行时刻都因 $label 关闭没有开始、都带停住标记停在 CONFIRMED，一笔未入账 → 此时不发 settle.run_done；开关恢复、两批继续执行到全部 DONE → 最终恰好一条 part=1、outcome=done、batch_count=2（part=1 证明停住时没发过）',
   async ({ off }) => {
     const f = await fixture(p.db);
     const s = await taobaoAndJd(f, 'idle');
@@ -95,8 +95,19 @@ it.each([
     await pausedAtStart(f, s.first);
     await pausedAtStart(f, s.second);
 
-    expect(await f.runDone()).toEqual([]);
+    expect(await f.runDone()).toStrictEqual([]);
     for (const o of [...s.taobao, ...s.jd]) await untouched(f, o);
+
+    // Switches back on (and the clock past the 10-second bound), then the paused batches go on.
+    for (const key of off) f.switches.set(key, true);
+    f.clock.advanceMs(11_000);
+    await manualStart(f, s.first);
+    await manualStart(f, s.second);
+    await f.finish(s.first);
+    await f.finish(s.second);
+
+    expect(await f.runDone()).toStrictEqual([f.runEvent(s.runId, 1, 'done', 2)]);
+    for (const o of [...s.taobao, ...s.jd]) await creditedOnce(f, o);
   },
   TIMEOUT,
 );
