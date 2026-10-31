@@ -67,6 +67,15 @@ it('[AC-B1-04p-UNIT#1] 敏感键判定覆盖大小写、下划线、连字符与
   }
 });
 
+it('[AC-B1-04m-UNIT#1] 大淘客 signRan 各种写法都算敏感键，nonce / timer / version 不算', () => {
+  for (const name of ['signRan', 'sign_ran', 'SIGN-RAN']) {
+    expect(isSensitiveParameter(name)).toBe(true);
+  }
+  for (const name of ['nonce', 'timer', 'version']) {
+    expect(isSensitiveParameter(name)).toBe(false);
+  }
+});
+
 it('[AC-B1-04p-UNIT#2] 摘要去掉查询串与敏感键（含嵌套），不含请求头', () => {
   expect(requestSummary(base)).toEqual({
     method: 'POST',
