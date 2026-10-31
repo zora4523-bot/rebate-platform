@@ -224,6 +224,8 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'settle_bills',
     'settle_batches',
     'settle_batch_items',
+    // B2-04zfa: settlement's run-level state (settle_ prefix).
+    'settle_runs',
     'beneficiary_credits',
     'settle_adjust_batches',
     'settle_adjustments',
