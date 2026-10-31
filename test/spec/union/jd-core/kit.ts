@@ -51,6 +51,8 @@ export const ctx: CallCtx = {
 };
 /** The inner result of a success, as the JSON text the gateway nests. */
 export const innerOk = '{"code":200,"message":"success"}';
+/** A business value of the request; a failed call must not copy it into any error or warning. */
+export const requestMarker = 'request-content-marker';
 
 export function response(body: unknown, status = 200): UnionTransportResponse {
   return {
@@ -125,6 +127,11 @@ export function expectedSign(
 export function rawText(value: unknown): string {
   expect(value).toBeInstanceOf(JdRawNumber);
   return (value as JdRawNumber).text;
+}
+
+/** rawText for property bodies, which return a boolean instead of calling expect. */
+export function holdsRawText(value: unknown, text: string): boolean {
+  return value instanceof JdRawNumber && value.text === text;
 }
 
 export async function unionFailure(

@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { propParams } from '@couli/testing';
 import fc from 'fast-check';
 import { expect, it, vi } from 'vitest';
@@ -10,6 +11,7 @@ import { JdUnionAdapter } from '../../../../apps/api/src/modules/union/infra/jd/
 import {
   unwrapJdResponse,
   type JdInnerCodeMap,
+  type JdResponseKeys,
   type JdWarning,
 } from '../../../../apps/api/src/modules/union/infra/jd/response.ts';
 import type {
@@ -26,6 +28,7 @@ import {
   keys,
   method,
   rawText,
+  requestMarker,
   response,
   resultKey,
   secret,
@@ -37,7 +40,11 @@ import {
 // 合成、非录制：外层键、结果键与方法名都是合成值；外层 / 内层分层、code 2 / 28 / 403 / 429 的含义
 // 取自任务书（官方接入指南与实测），报文其余内容自拟。
 
-const markers = [secret, appKey, 'msg-marker', 'request-id-marker'];
+// Upstream text in malformed answers. Short on purpose: a JSON.parse error quotes a text of up to
+// 20 characters whole and a longer one only 10 characters around the failure, so a copied error
+// message shows this marker only when it and its row stay this small.
+const wireMarker = 'wire-mark';
+const markers = [secret, appKey, 'msg-marker', 'request-id-marker', requestMarker, wireMarker];
 const noise = {
   message: `${secret} ${appKey} msg-marker`,
   requestId: 'request-id-marker',
@@ -49,10 +56,11 @@ async function failsBothWays(
   code: UnionErrorCode,
   events: readonly JdWarning[] = [],
   innerCodes?: JdInnerCodeMap,
+  registered: JdResponseKeys = keys,
 ): Promise<readonly UnionError[]> {
   const warn = vi.fn<(event: JdWarning) => void>();
   const direct = await unionFailure(
-    () => unwrapJdResponse(method, keys, wire, warn, innerCodes),
+    () => unwrapJdResponse(method, registered, wire, warn, innerCodes),
     code,
   );
   expect(warn.mock.calls).toEqual(events.map((event) => [event]));
@@ -63,8 +71,8 @@ async function failsBothWays(
     () =>
       fixture.adapter.request(
         method,
-        {},
-        { ...keys, ...(innerCodes === undefined ? {} : { innerCodes }) },
+        { q: requestMarker },
+        { ...registered, ...(innerCodes === undefined ? {} : { innerCodes }) },
       ),
     code,
   );
@@ -141,19 +149,22 @@ it('[AC-B1-04za#26] the result key comes from the caller: only the registered ke
 
 it.each<[string, string]>([
   [envelope, '{}'],
-  [envelope, '{"other_synthetic_responce":{}}'],
+  [envelope, `{"other_synthetic_responce":{"m":"${wireMarker}"}}`],
   [envelope, `{"${envelope}":null}`],
   [envelope, `{"${envelope}":[]}`],
-  [envelope, `{"${envelope}":"text"}`],
+  [envelope, `{"${envelope}":["${wireMarker}"]}`],
+  [envelope, `{"${envelope}":"${wireMarker}"}`],
   [envelope, `{"${envelope}":42}`],
   [envelope, `{"${envelope}":true}`],
   [envelope, 'null'],
   [envelope, '[]'],
-  [envelope, '"text"'],
+  [envelope, `["${wireMarker}"]`],
+  [envelope, `"${wireMarker}"`],
   [envelope, '42'],
   [envelope, ''],
-  [envelope, '<html>upstream failed</html>'],
-  [envelope, '{invalid-json'],
+  [envelope, `<p>${wireMarker}</p>`],
+  [envelope, wireMarker],
+  [envelope, `{${wireMarker}`],
   ['toString', '{}'],
   ['constructor', '{}'],
   ['__proto__', '{}'],
@@ -162,16 +173,8 @@ it.each<[string, string]>([
   '[AC-B1-04za#27] envelope %s with body %s is upstream_unavailable (missing, not an object or not JSON)',
   async (key, body) => {
     const wire = { status: 200, headers: {}, body };
-    await unionFailure(
-      () => unwrapJdResponse(method, { envelope: key, resultKey }, wire),
-      'upstream_unavailable',
-    );
-    const { adapter, transport } = setup();
-    transport.mockResolvedValue(wire);
-    await unionFailure(
-      () => adapter.request(method, {}, { envelope: key, resultKey }),
-      'upstream_unavailable',
-    );
+    const registered = { envelope: key, resultKey };
+    await failsBothWays(wire, 'upstream_unavailable', [], undefined, registered);
   },
 );
 
@@ -233,8 +236,8 @@ it.each([500, 502, 503, 599])(
       response({ error_response: { code: 28 } }).body,
       '<html>private-upstream-page</html>',
     ]) {
-      const [error] = await failsBothWays({ status, headers: {}, body }, 'upstream_unavailable');
-      expectRedacted(error, ['private-upstream-page']);
+      const errors = await failsBothWays({ status, headers: {}, body }, 'upstream_unavailable');
+      expectRedacted(errors, ['private-upstream-page']);
     }
   },
 );
@@ -264,20 +267,38 @@ it.each<[Record<string, unknown>]>([
   },
 );
 
+/** A valid start with a success code: what follows decides, so the whole text must be JSON. */
+const validStart = `{"code":200,"m":"${wireMarker}"`;
+const malformedNumbers = ['1.2.3', '012', '1.', '.5', '+1', '1e', '-', '0x10', 'NaN'];
+
 it.each<[string, unknown]>([
   ['null', null],
   ['a number', 42],
   ['a boolean', true],
-  ['an already parsed object', { code: 200 }],
-  ['an array', []],
+  ['an already parsed object', { code: 200, m: wireMarker }],
+  ['an array', [wireMarker]],
   ['an empty string', ''],
-  ['broken JSON', '{invalid-json'],
-  ['HTML', '<html>upstream failed</html>'],
+  ['broken JSON', `{${wireMarker}`],
+  ['HTML', `<p>${wireMarker}</p>`],
+  ['a bare word', wireMarker],
+  ['an unquoted member value', `{"code":200,"m":${wireMarker}}`],
   ['JSON null', 'null'],
-  ['a JSON array', '[{"code":200}]'],
+  ['a JSON array', `[{"code":200,"m":"${wireMarker}"}]`],
   ['a JSON number', '200'],
-  ['a JSON string', '"text"'],
+  ['a JSON string', `"${wireMarker}"`],
   ['JSON true', 'true'],
+  ['an object cut off after a member', validStart],
+  ['an object cut off after a number', `${validStart},"actualFee":12.35`],
+  ['an object cut off inside an array', `${validStart},"rows":[1,2`],
+  ['an object cut off inside a string', `{"code":200,"m":"${wireMarker}`],
+  ['an object with text after the closing brace', `${validStart}} trailing`],
+  ['an object followed by a second object', `${validStart}}{"code":200}`],
+  ['an object with a stray closing brace', `${validStart}}}`],
+  ['an object with a trailing comma', `${validStart},}`],
+  ...malformedNumbers.map((text): [string, unknown] => [
+    `an object with the malformed number ${text}`,
+    `${validStart},"actualFee":${text}}`,
+  ]),
 ])('[AC-B1-04za#33] a result value that is %s is upstream_unavailable', async (_label, value) => {
   const wire = response({ [envelope]: { code: '0', [resultKey]: value } });
   await failsBothWays(wire, 'upstream_unavailable');
@@ -293,7 +314,12 @@ it.each(['toString', 'constructor', '__proto__', 'hasOwnProperty'])(
   },
 );
 
-it.each(['{}', '{"data":[]}', '{"message":"success"}', '{"code":null}'])(
+it.each([
+  '{}',
+  `{"data":["${wireMarker}"]}`,
+  `{"message":"${wireMarker}"}`,
+  `{"code":null,"message":"${wireMarker}"}`,
+])(
   '[AC-B1-04za#35] an inner object without a code (%s) is upstream_unavailable, never a success',
   async (text) => {
     await failsBothWays(wrapped(text), 'upstream_unavailable');
@@ -348,8 +374,12 @@ it('[AC-B1-04za#38] outer code "0" with inner 403 is a failure, warned once, and
 
   const { adapter, transport, warn: adapterWarn } = setup();
   transport.mockResolvedValue(wire);
-  await unionFailure(() => adapter.request(method, {}, keys), 'upstream_rejected');
+  const viaAdapter = await unionFailure(
+    () => adapter.request(method, { q: requestMarker }, keys),
+    'upstream_rejected',
+  );
   expect(adapterWarn.mock.calls).toEqual([[{ method, code: '403' }]]);
+  expectRedacted([viaAdapter, adapterWarn.mock.calls], [...markers, 'inner-data-marker']);
 });
 
 it('[AC-B1-04za#39] under outer code "0" no inner code but 200 ever returns', () => {
@@ -365,18 +395,19 @@ it('[AC-B1-04za#39] under outer code "0" no inner code but 200 ever returns', ()
         (value, asText) => {
           const events: JdWarning[] = [];
           const text = JSON.stringify({ code: asText ? String(value) : value, data: [] });
-          let caught: unknown;
           try {
             unwrapJdResponse(method, keys, wrapped(text), (event) => events.push(event));
+            return false;
           } catch (error) {
-            caught = error;
+            // Anything but a classified failure propagates: the skeleton's NotImplemented stays
+            // the visible cause, since a bare false is no valid red (tools/guard/lib/red-check.ts).
+            if (!(error instanceof UnionError)) throw error;
+            return (
+              error.code === (value === 429 ? 'rate_limited' : 'upstream_rejected') &&
+              error.platform === 'jd' &&
+              isDeepStrictEqual(events, value === 403 ? [{ method, code: '403' }] : [])
+            );
           }
-          expect(caught).toBeInstanceOf(UnionError);
-          expect(caught).toMatchObject({
-            code: value === 429 ? 'rate_limited' : 'upstream_rejected',
-            platform: 'jd',
-          });
-          expect(events).toEqual(value === 403 ? [{ method, code: '403' }] : []);
         },
       ),
       propParams(),

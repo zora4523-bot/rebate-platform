@@ -11,6 +11,7 @@ import {
   innerOk,
   keys,
   method,
+  requestMarker,
   resultKey,
   secret,
   setup,
@@ -67,11 +68,11 @@ it('[AC-B1-04za#55] a network failure under the real transport is upstream_unava
   try {
     const { adapter } = setup({ transport: createUnionHttpTransport() });
     const error = await unionFailure(
-      () => adapter.request(method, { q: 'x' }, keys),
+      () => adapter.request(method, { q: requestMarker }, keys),
       'upstream_unavailable',
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expectRedacted(error, [secret, appKey, 'network-marker']);
+    expectRedacted(error, [secret, appKey, 'network-marker', requestMarker]);
   } finally {
     vi.unstubAllGlobals();
   }

@@ -82,9 +82,11 @@ it('[AC-B1-04za#6] any set of parameters follows the rule regardless of key orde
         );
         const text = names.map((n) => `${n}${parameters[n]}`).join('');
         const expected = md5(`${secret}${text}${secret}`);
-        expect(signJdParameters(parameters, secret)).toBe(expected);
         const reversed = Object.fromEntries(Object.entries(parameters).reverse());
-        expect(signJdParameters(reversed, secret)).toBe(expected);
+        return (
+          signJdParameters(parameters, secret) === expected &&
+          signJdParameters(reversed, secret) === expected
+        );
       }),
       propParams(),
     ),
@@ -127,8 +129,7 @@ it('[AC-B1-04za#9] timestamp is the GMT+8 wall clock to the second for any insta
           const shifted = new Date(Math.floor(epochMs / 1000) * 1000 + 8 * hour).toISOString();
           const expected = `${shifted.slice(0, 10)} ${shifted.slice(11, 19)}`;
           const actual = jdTimestamp(new Date(epochMs));
-          expect(actual).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
-          expect(actual).toBe(expected);
+          return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(actual) && actual === expected;
         },
       ),
       propParams(),

@@ -2,7 +2,7 @@ import { propParams } from '@couli/testing';
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
 import { unwrapJdResponse } from '../../../../apps/api/src/modules/union/infra/jd/response.ts';
-import { keys, method, rawText, setup, wrapped } from './kit.ts';
+import { holdsRawText, keys, method, rawText, setup, wrapped } from './kit.ts';
 
 // The inner result is decoded without passing through a JS number: every JSON number stays its
 // exact source text. Conversion to fen is not part of this task.
@@ -97,8 +97,10 @@ it('[AC-B1-04za#50] any integer keeps its text exactly', () => {
           keys,
           wrapped(`{"code":200,"value":${value},"list":[${value}]}`),
         );
-        expect(rawText(inner.value)).toBe(value);
-        expect(rawText((inner.list as readonly unknown[])[0])).toBe(value);
+        return (
+          holdsRawText(inner.value, value) &&
+          holdsRawText((inner.list as readonly unknown[])[0], value)
+        );
       }),
       propParams(),
     ),
@@ -117,7 +119,7 @@ it('[AC-B1-04za#51] any decimal keeps its text exactly, trailing zeros included'
     fc.assert(
       fc.property(text, (value) => {
         const inner = unwrapJdResponse(method, keys, wrapped(`{"code":200,"value":${value}}`));
-        expect(rawText(inner.value)).toBe(value);
+        return holdsRawText(inner.value, value);
       }),
       propParams(),
     ),

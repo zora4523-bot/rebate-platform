@@ -22,6 +22,7 @@ import {
   md5,
   method,
   otherSecret,
+  requestMarker,
   secret,
   sent,
   setup,
@@ -271,12 +272,12 @@ it.each<[string, () => unknown]>([
     const { adapter, transport, warn } = setup();
     transport.mockRejectedValue(failure());
     const error = await unionFailure(
-      () => adapter.request(method, { q: 'x' }, keys),
+      () => adapter.request(method, { q: requestMarker }, keys),
       'upstream_unavailable',
     );
     expect(transport).toHaveBeenCalledTimes(1);
     expect(warn).not.toHaveBeenCalled();
-    expectRedacted(error, [secret, appKey, 'transport-marker']);
+    expectRedacted(error, [secret, appKey, 'transport-marker', requestMarker]);
   },
 );
 
