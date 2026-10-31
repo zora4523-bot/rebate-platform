@@ -15,6 +15,8 @@ export const WORKER_LANES: readonly (readonly [string, number, number])[] = Obje
   Object.freeze(['payout-recon', 1, 2] as const),
   // One worker runs the daily ledger check (B2-02q, BR-FUND-19), serially.
   Object.freeze(['ledger-check', 1, 2] as const),
+  // B2-05n (BR-WDR-26, D10-475 ②): the worker's review-overdue check, right after ledger-check.
+  Object.freeze(['payout-overdue', 1, 2] as const),
   Object.freeze(['notify', 5, 2] as const),
   Object.freeze(['union-auth', 1, 2] as const),
   Object.freeze(['evt.notification-risk-state', 5, 2] as const),

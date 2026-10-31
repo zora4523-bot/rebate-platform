@@ -378,3 +378,24 @@ export type {
   TaxExportReaderOptions,
   TaxExportRow,
 } from './application/tax-export-read.ts';
+// B2-05n (BR-WDR-26 超时判定, D10-475 ②): the worker's review overdue check (payout-overdue).
+export {
+  createReviewOverdueCheck,
+  nextReviewOverdueSlot,
+  reviewOverdueSlot,
+} from './application/review-overdue.ts';
+export type {
+  ReviewOverdueCheck,
+  ReviewOverdueCheckOptions,
+  ReviewOverdueLogger,
+  ReviewOverdueResult,
+  ReviewOverdueSlot,
+} from './application/review-overdue.ts';
+export { createReviewOverdueJob, seedReviewOverdue } from './jobs/review-overdue-job.ts';
+export type {
+  ReviewOverdueJobName,
+  ReviewOverdueJobOptions,
+  ReviewOverdueJobPayload,
+  ReviewOverdueQueue,
+  ReviewOverdueSeedOptions,
+} from './jobs/review-overdue-job.ts';
