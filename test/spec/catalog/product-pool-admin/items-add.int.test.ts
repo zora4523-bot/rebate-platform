@@ -5,6 +5,7 @@ import {
   audit,
   bounds,
   fields,
+  foreignItem,
   hoursFromNow,
   instant,
   itemRow,
@@ -20,6 +21,7 @@ import {
   seedPool,
   send,
   setConfig,
+  setKeyStability,
   setup,
   snapshot,
   stableId,
@@ -373,13 +375,14 @@ it.each([
     error: () => new DemoUnionError('demo_delisted', 'synthetic off shelf', 'taobao'),
   },
 ])(
-  '[AC-B1-05q#34] 新 key 且$name → 30141 不入库，但别的池里同 key 的条目下架并带原因',
+  '[AC-B1-05q#34] 新 key 且$name → 30141 不入库，但本 App 别的池里同 key 的条目下架并带原因，别的 App 的不动',
   async ({ error }) => {
     const f = await setup(h);
     const pool = await seedPool(h, f);
     const elsewhere = await seedPool(h, f);
     const row = await pick(f, product(f, stableId()));
     await seedItem(h, f, elsewhere, row.product_key);
+    const foreign = await foreignItem(h, f, row.product_key);
     union.getItem.mockRejectedValue(error());
     await rejected(await addRef(f, pool, row.item_ref), 30141);
     expect(await itemRow(h, f, pool, row.product_key)).toBeUndefined();
@@ -387,6 +390,7 @@ it.each([
       status: 'offline',
       invalid_reason: OFF_SHELF_REASON,
     });
+    expect(await itemRow(h, foreign.app, foreign.pool, row.product_key)).toEqual(foreign.row);
   },
 );
 
@@ -473,3 +477,31 @@ it('[AC-B1-05q#40] 派生出的旧键解析别名后命中池里的条目，同�
   const state = await snapshot(h, f.appId);
   expect(state.items.map((row) => row.product_key)).toEqual([newKey]);
 });
+
+it.each(['unverified', 'unstable', 'stable_24h', 'stable_7d'] as const)(
+  '[AC-B1-05q#111] key_stability=%s 的平台照常选品、入库和重复入库（BR-PROD-03 功能门槛）',
+  async (stability) => {
+    const f = await setup(h);
+    await setKeyStability(h, f.clock, stability);
+    const pool = await seedPool(h, f);
+    const linked = product(f, stableId());
+    stubProduct(linked);
+    expect(await success(await addLink(f, pool, linkOf(linked.item_id!)))).toMatchObject({
+      status: 'online',
+    });
+    const picked = product(f, stableId());
+    const row = await pick(f, picked);
+    union.getItem.mockResolvedValue(picked);
+    expect(await success(await addRef(f, pool, row.item_ref, bounds(1)))).toMatchObject({
+      product_key: row.product_key,
+      status: 'online',
+      sort: 1,
+    });
+    expect(await success(await addRef(f, pool, row.item_ref, bounds(2)))).toMatchObject({
+      product_key: row.product_key,
+      status: 'online',
+      sort: 2,
+    });
+    expect((await snapshot(h, f.appId)).items).toHaveLength(2);
+  },
+);

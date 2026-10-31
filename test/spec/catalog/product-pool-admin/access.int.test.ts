@@ -1,11 +1,14 @@
 import { expect, it, vi } from 'vitest';
 import {
+  addLink,
+  addRef,
   failAudit,
   linkOf,
   member,
   newPoolId,
   otherApp,
   PERMISSION,
+  pick,
   product,
   rejected,
   seedItem,
@@ -18,6 +21,7 @@ import {
   success,
   useHarness,
   type Operation,
+  type Pool,
   type Setup,
   type Target,
 } from './kit.ts';
@@ -112,15 +116,57 @@ it('[AC-B1-05q#103] 读操作不写审计', async () => {
   expect((await snapshot(h, f.appId)).audits).toEqual([]);
 });
 
-it('[AC-B1-05q#104] 别的 App 管理员碰不到这个池的条目：30701', async () => {
+it('[AC-B1-05q#104] 别的 App 管理员碰不到这个池：改池、入库、条目读写都是 30701，两边都不写入', async () => {
   const f = await setup(h);
   const pool = await poolWithItem(f);
   const other = await otherApp(h, f);
+  const item = product(f, stableId());
+  const { item_ref: ref } = await pick(other, item);
+  stubProduct(item);
   const before = await snapshot(h, f.appId);
+  const callerBefore = await snapshot(h, other.appId);
   await rejected(await send(other, 'listItems', { pool }), 30701);
+  await rejected(
+    await send(other, 'updatePool', { pool }, { name: '越权改名', expected_revision: 0 }),
+    30701,
+  );
+  await rejected(await addLink(other, pool, linkOf(item.item_id!)), 30701);
+  await rejected(await addRef(other, pool, ref), 30701);
   await rejected(await send(other, 'updateItem', { pool, key: KEY }, { sort: 1 }), 30701);
   await rejected(await send(other, 'removeItem', { pool, key: KEY }), 30701);
   expect(await snapshot(h, f.appId)).toEqual(before);
+  expect(await snapshot(h, other.appId)).toEqual(callerBefore);
+});
+
+it('[AC-B1-05q#106] 两个 App 持有同一个 pool_id 和 key：写操作只动调用方自己的', async () => {
+  const f = await setup(h);
+  const other = await otherApp(h, f);
+  const pool = await poolWithItem(f);
+  await seedPool(h, other, { pool_id: pool });
+  await seedItem(h, other, pool, KEY);
+  const stable = stableId();
+  const key = `tb:${stable}`;
+  await seedItem(h, f, pool, key);
+  const item = product(f, stable);
+  stubProduct(item);
+  f.clock.advanceMs(1000);
+  const before = await snapshot(h, f.appId);
+  const name = '乙 App 的新名字';
+  expect(
+    await success<Pool>(await send(other, 'updatePool', { pool }, { name, expected_revision: 0 })),
+  ).toMatchObject({ name, revision: 1 });
+  expect(await success(await addLink(other, pool, linkOf(item.item_id!)))).toMatchObject({
+    product_key: key,
+    status: 'online',
+    created_by: other.actor.id,
+  });
+  const moved = await success(await send(other, 'updateItem', { pool, key: KEY }, { sort: 7 }));
+  expect(moved).toMatchObject({ sort: 7 });
+  await success(await send(other, 'removeItem', { pool, key: KEY }));
+  expect(await snapshot(h, f.appId)).toEqual(before);
+  const state = await snapshot(h, other.appId);
+  expect(state.pools.map((row) => row.name)).toEqual([name]);
+  expect(state.items.map((row) => row.product_key)).toEqual([key]);
 });
 
 const WRITES = CASES.filter((one) => !READS.includes(one.op));
