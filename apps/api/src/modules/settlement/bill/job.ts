@@ -337,7 +337,7 @@ function diffInput(
     refId: orderKey,
     expectedFen,
     actualFen,
-    diffFen: subFen(actualFen, expectedFen),
+    diffFen: subFen(expectedFen, actualFen),
     dedupeKey: null,
     resolution: null,
   };
