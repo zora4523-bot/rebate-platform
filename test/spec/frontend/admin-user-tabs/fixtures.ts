@@ -335,10 +335,12 @@ export function uidWithdrawals(): WithdrawalRow[] {
       fee_fen: 1500,
       tax_fen: 2345,
       net_fen: 1230655,
-      reviewed_at: '2026-10-20T18:30:01Z',
+      // Beijing 2026-10-21 03:47:00: another minute than the application and the payout.
+      reviewed_at: '2026-10-20T19:47:00Z',
       // Beijing 2026-10-21 02:30:00 (the next calendar day).
       created_at: '2026-10-20T18:30:00Z',
-      paid_at: '2026-10-20T18:31:00Z',
+      // Beijing 2026-10-21 04:12:00.
+      paid_at: '2026-10-20T20:12:00Z',
     }),
     withdrawal({
       withdrawal_id: 'dddddddd-0000-4000-8000-000000000002',
@@ -481,8 +483,9 @@ export function createServer(snapshot: PermissionSnapshot = SUPER, initial: Serv
   let pending = 0;
   const has = (point: string): boolean => snapshot.isSuper || snapshot.permissions.includes(point);
 
+  // Without `page` the contract's default (page 1) applies; without `page_size`, 20.
   function page<T>(query: Record<string, string>, rows: readonly T[], extra: object = {}) {
-    const number = Number(query['page']);
+    const number = Number(query['page'] ?? 1);
     const size = Number(query['page_size'] ?? 20);
     return ok({
       items: rows.slice((number - 1) * size, number * size),
@@ -494,7 +497,7 @@ export function createServer(snapshot: PermissionSnapshot = SUPER, initial: Serv
   }
 
   function listProblem(path: string, query: Record<string, string>): Response | undefined {
-    const number = Number(query['page']);
+    const number = Number(query['page'] ?? 1);
     const size = Number(query['page_size'] ?? 20);
     if (!Number.isInteger(number) || number < 1) return failure(20001, { fields: ['page'] });
     if (!Number.isInteger(size) || size < 1 || size > 200)

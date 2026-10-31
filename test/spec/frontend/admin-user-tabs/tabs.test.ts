@@ -8,6 +8,7 @@ import {
   LIST_OF,
   TAB_NAMES,
   clean,
+  expectFirstPage,
   expectTabUnavailable,
   findTab,
   finish,
@@ -53,7 +54,7 @@ function expectReadForUid(server: Server, name: TabName): void {
   const reads = server.requests('GET', LIST_OF[name]);
   expect(reads.length, `${LIST_OF[name]} read`).toBeGreaterThan(0);
   for (const read of reads) expect(read.query['user_id']).toBe(UID);
-  expect(reads[0]!.query['page']).toBe('1');
+  expectFirstPage(reads[0]!);
 }
 
 it(

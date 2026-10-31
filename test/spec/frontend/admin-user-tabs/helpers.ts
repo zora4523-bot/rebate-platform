@@ -143,6 +143,11 @@ export function finish(): void {
   }
 }
 
+/** A first list read: page 1, sent as page=1 or left out (the contract's default is 1). */
+export function expectFirstPage(read: RequestLog): void {
+  expect([undefined, '1'], `page of ${read.path}`).toContain(read.query['page']);
+}
+
 export async function settled(): Promise<void> {
   const { server } = current();
   await waitFor(() => expect(server.pending).toBe(0));

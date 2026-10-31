@@ -15,8 +15,12 @@ import {
   manyUidClaims,
   manyUidOrders,
   manyUidWithdrawals,
+  parentClaims,
   parentOrders,
+  parentWithdrawals,
+  uidClaims,
   uidOrders,
+  uidWithdrawals,
   type ServerData,
 } from './fixtures.ts';
 import {
@@ -24,6 +28,7 @@ import {
   LIST_OF,
   click,
   detailLoaded,
+  expectFirstPage,
   finish,
   firstShown,
   mainElement,
@@ -43,7 +48,7 @@ import {
 afterEach(finish);
 
 it(
-  '[AC-F1-07jb-REQ#1] 打开详情只读详情；切到某页签才读该列表，每次一条、带当前用户 user_id 与第 1 页，其余列表不读',
+  '[AC-F1-07jb-REQ#1] 打开详情只读详情；切到某页签才读该列表，每次一条、带当前用户 user_id、读第 1 页（page=1 或不带 page），其余列表不读',
   async () => {
     const server = await mount(SUPER);
     await openUser(UID);
@@ -57,7 +62,7 @@ it(
     const orders = server.requests('GET', ORDERS);
     expect(orders).toHaveLength(1);
     expect(orders[0]!.query['user_id']).toBe(UID);
-    expect(orders[0]!.query['page']).toBe('1');
+    expectFirstPage(orders[0]!);
     expect(server.requests('GET', CLAIMS)).toEqual([]);
     expect(server.requests('GET', WITHDRAWALS)).toEqual([]);
 
@@ -67,7 +72,7 @@ it(
     const claims = server.requests('GET', CLAIMS);
     expect(claims).toHaveLength(1);
     expect(claims[0]!.query['user_id']).toBe(UID);
-    expect(claims[0]!.query['page']).toBe('1');
+    expectFirstPage(claims[0]!);
     expect(server.requests('GET', WITHDRAWALS)).toEqual([]);
 
     await openTab('提现');
@@ -76,7 +81,7 @@ it(
     const withdrawals = server.requests('GET', WITHDRAWALS);
     expect(withdrawals).toHaveLength(1);
     expect(withdrawals[0]!.query['user_id']).toBe(UID);
-    expect(withdrawals[0]!.query['page']).toBe('1');
+    expectFirstPage(withdrawals[0]!);
 
     expect(server.requests('GET', `${USERS}/${UID}`)).toHaveLength(1);
   },
@@ -147,39 +152,57 @@ it.each(['订单', '找回', '提现'] as const)(
   FLOW_TIMEOUT,
 );
 
-it(
-  '[AC-F1-07jb-REQ#4] 在详情里点上级换到另一个用户：页签请求的 user_id 跟着换，新列表到来前后都不显示上一个用户的订单',
-  async () => {
+/** The numbers the tab `name` shows for UID's rows and for PARENT's rows (no number shared). */
+function numbersOf(name: TabName): { old: string[]; fresh: string[] } {
+  if (name === '订单')
+    return {
+      old: uidOrders().map((row) => row.sub_order_id),
+      fresh: parentOrders().map((row) => row.sub_order_id),
+    };
+  if (name === '找回')
+    return {
+      old: uidClaims().map((row) => row.claim_id),
+      fresh: parentClaims().map((row) => row.claim_id),
+    };
+  return {
+    old: uidWithdrawals().map((row) => row.out_biz_no),
+    fresh: parentWithdrawals().map((row) => row.out_biz_no),
+  };
+}
+
+it.each(['订单', '找回', '提现'] as const)(
+  '[AC-F1-07jb-REQ#4] 「%s」页签：在详情里点上级换到另一个用户，页签请求的 user_id 跟着换，新列表到来前后都不显示上一个用户的行',
+  async (name) => {
+    const { old, fresh } = numbersOf(name);
+    const path = LIST_OF[name];
     const server = await mount(SUPER);
     await openUser(UID);
     await tabRow();
-    await openTab('订单');
-    await rowShown(firstShown('订单'));
+    await openTab(name);
+    await rowShown(old[0]!);
     await settled();
     await openOverview();
     const mark = server.log.length;
-    const release = server.hold('GET', ORDERS);
+    const release = server.hold('GET', path);
     try {
       await openLinkedUser(PARENT);
       await detailLoaded(PARENT);
       await tabRow();
-      await openTab('订单');
+      await openTab(name);
       await waitFor(() =>
         expect(
-          server.requests('GET', ORDERS).filter((read) => read.query['user_id'] === PARENT).length,
-          'orders read for the new user',
+          server.requests('GET', path).filter((read) => read.query['user_id'] === PARENT).length,
+          `${path} read for the new user`,
         ).toBeGreaterThan(0),
       );
-      for (const order of uidOrders())
-        expect(mainElement().textContent, 'old user order while loading').not.toContain(
-          order.sub_order_id,
-        );
+      for (const number of old)
+        expect(mainElement().textContent, 'old user row while loading').not.toContain(number);
     } finally {
       release();
     }
-    await rowShown(parentOrders()[0]!.sub_order_id);
+    await rowShown(fresh[0]!);
     await settled();
-    for (const order of uidOrders()) expect(rowsWith(order.sub_order_id)).toEqual([]);
+    for (const number of old) expect(rowsWith(number)).toEqual([]);
     const after = server.log
       .slice(mark)
       .filter((read) => (LISTS as readonly string[]).includes(read.path));

@@ -49,6 +49,23 @@ const WITHDRAWAL_CREATED_AT: Readonly<Record<string, string>> = {
   W20261021000001: '2026-10-21 02:30',
   W20261019000002: '2026-10-19 10:00',
 };
+/** Review time of the withdrawals reviewed so far (another minute than their application). */
+const WITHDRAWAL_REVIEWED_AT: Readonly<Record<string, string>> = {
+  W20261021000001: '2026-10-21 03:47',
+};
+
+/** The application time column (申请时间, or a bare 时间 column). */
+const appliedAtColumn = (title: string): boolean =>
+  (/申请|创建|提交/.test(title) && /时间|日期|于/.test(title)) || title === '时间';
+/** A review time column, when the tab has one (not 审核方式 and the like). */
+const reviewedAtColumn = (title: string): boolean =>
+  /审核/.test(title) && /时间|日期|于/.test(title);
+
+/** Column titles of the table `row` sits in. */
+function columnTitles(row: HTMLElement): string[] {
+  const header = (row.closest('.ant-table') ?? row.closest('table'))?.querySelector('thead tr');
+  return header ? Array.from(header.children, (cell) => clean(cell.textContent)) : [];
+}
 
 /** The pay amount column (not the union commission). */
 const payAmountColumn = (title: string): boolean => /金额/.test(title) && !/佣金/.test(title);
@@ -101,7 +118,7 @@ it(
 );
 
 it(
-  '[AC-F1-07jb-LIST#3] 提现页签每行显示提现单号（out_biz_no）、金额列里的申请金额（后台格式）、状态的字典名（admin_dict.withdrawal_status）与北京时间申请时间；别的用户的提现不出现',
+  '[AC-F1-07jb-LIST#3] 提现页签每行显示提现单号（out_biz_no）、金额列里的申请金额（后台格式）、状态的字典名（admin_dict.withdrawal_status）、申请时间列里北京时间的 created_at（不是 reviewed_at；若有审核时间列则显示 reviewed_at）；别的用户的提现不出现',
   async () => {
     await mount(SUPER);
     await openUser(UID);
@@ -116,7 +133,19 @@ it(
         yuan(item.amount_fen),
       );
       expect(text).toContain(dictName('withdrawal_status', item.status));
-      expect(squash(text)).toContain(squash(WITHDRAWAL_CREATED_AT[item.out_biz_no]));
+      const applied = squash(cellUnder(row, appliedAtColumn, '申请时间').textContent);
+      expect(applied, '申请时间 shows created_at').toContain(
+        squash(WITHDRAWAL_CREATED_AT[item.out_biz_no]),
+      );
+      const reviewed = WITHDRAWAL_REVIEWED_AT[item.out_biz_no];
+      if (reviewed !== undefined) {
+        expect(applied, '申请时间 is not the review time').not.toContain(squash(reviewed));
+        if (columnTitles(row).some(reviewedAtColumn))
+          expect(
+            squash(cellUnder(row, reviewedAtColumn, '审核时间').textContent),
+            '审核时间 shows reviewed_at',
+          ).toContain(squash(reviewed));
+      }
     }
     for (const item of parentWithdrawals()) expect(rowsWith(item.out_biz_no)).toEqual([]);
   },
