@@ -99,6 +99,16 @@ const brokenPages: readonly (readonly [string, Record<string, unknown>])[] = [
   ['hasMore 是字符串 false', { hasMore: 'false', data: [row()] }],
   ['hasMore 是数字 1', { hasMore: num('1'), data: [row()] }],
   ['hasMore 是数字 0', { hasMore: num('0'), data: [row()] }],
+  ['缺 data，hasMore 是 null', { hasMore: null }],
+  ['缺 data，hasMore 是字符串 false', { hasMore: 'false' }],
+  ['缺 data，hasMore 是数字 0', { hasMore: num('0') }],
+  ['缺 hasMore 时 data 是 null', { data: null }],
+  ['缺 hasMore 时 data 是字符串', { data: 'not-a-list' }],
+  ['缺 hasMore 时 data 是对象', { data: {} }],
+  ['hasMore 为 true 时 data 是字符串', { hasMore: true, data: 'not-a-list' }],
+  ['hasMore 为 true 时 data 是对象', { hasMore: true, data: {} }],
+  ['data 与 hasMore 都是 null', { hasMore: null, data: null }],
+  ['hasMore 为 true 时 data 是空数组', { hasMore: true, data: [] }],
 ];
 
 it.each(brokenPages)(
@@ -106,6 +116,24 @@ it.each(brokenPages)(
   async (_name, members) => {
     const { adapter } = wire(() => reply(success(members)));
     await expect(adapter.listOrders(win, {}, ctx)).rejects.toBeInstanceOf(UnionError);
+  },
+);
+
+// 实测（cap-tests/2026-11-01）：无单的时间窗 inner 200 只有 code / message / requestId。
+const emptyPages: readonly (readonly [string, Record<string, unknown>])[] = [
+  ['data 与 hasMore 都缺', { requestId: 'synthetic-request' }],
+  ['data 为 [] 且 hasMore 为 false', { hasMore: false, data: [] }],
+];
+
+it.each(emptyPages)(
+  '[AC-B1-04zb#68] %s 是空页：items 为 []、nextCursor 为 null，不翻下一页',
+  async (_name, members) => {
+    const { adapter, requests } = wire(() => reply(success(members)));
+    await expect(adapter.listOrders(win, {}, ctx)).resolves.toEqual({
+      items: [],
+      nextCursor: null,
+    });
+    expect(requests).toHaveLength(1);
   },
 );
 
