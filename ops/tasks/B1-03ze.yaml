@@ -3,15 +3,20 @@ repo: rebate-platform
 title: risk：后台申诉写接口实现（CT-24r）——POST /admin/v1/appeals/{appeal_id}/claim（认领）、POST /admin/v1/appeals/{appeal_id}/resolve（结案 upheld / revoked：撤销账户申诉经风控状态服务恢复申诉前状态，撤销封禁 / 冻结 / 黑名单拦截分别另需 risk.ban / risk.freeze / risk.blocklist 与动态码 step-up；row_version CAS；同一事务排领域事件 appeal.resolved {app_id, appeal_id, user_id, target_type, target_id, status}）、POST /admin/v1/appeals（客服代为登记）；写审计、平台幂等；去掉这三个接口的 x-implementation planned 并重生成生成物
 type: impl
 # 2026-10-31 入账（identity-lane，D10-453 ④ (a)）。appeal.resolved 至今无发布者：B1-12p 申诉结果站内信与 B1-03z 申诉恢复差错单的消费者已在，本单上线后生效。订单申诉撤销后的 appeal_restore 由 settlement 从同一事件生成（不在本单）。
-# 契约只去 planned 标记；落地前在 notices 报契约槽。涉及解封与资金恢复链路，money 级评审。
+# 契约只去 planned 标记；落地前在 notices 报契约槽。B1-03zd 实现发现 app.appeals 无 source / registered_by / claimed_at（与认领人）列：本单含新迁移加列（迁移槽，outside_needed 写 db:snapshot），并让 B1-03zd 详情改读这些列。涉及解封与资金恢复链路，money 级评审。
 # BR-ID-36 原文过长（任务书超 24KB），refs 留空、原文摘录放任务书第 9 节。
 refs: []
 refs_hash: {}
 deps: [B1-03zd]
 paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
   - 'apps/api/src/modules/risk/application/admin-appeals-write.ts'
   - 'apps/api/src/modules/risk/application/admin-appeals-write.test.ts'
   - 'apps/api/src/modules/risk/application/appeals.ts'
+  - 'apps/api/src/modules/risk/application/admin-appeals-read.ts'
+  - 'apps/api/src/modules/risk/application/admin-appeals-read.test.ts'
   - 'apps/api/src/modules/risk/http/admin/**'
   - 'apps/api/src/modules/risk/risk.module.ts'
   - 'apps/api/src/modules/risk/index.ts'
