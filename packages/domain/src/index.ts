@@ -106,6 +106,7 @@ export type {
   ProductKeyPlatform,
   UnionProductPayload,
 } from './product-key/product-key.ts';
+export { parseYuanToFen } from './price/parse-yuan-to-fen.ts';
 export {
   orderKey,
   uniqKey,
