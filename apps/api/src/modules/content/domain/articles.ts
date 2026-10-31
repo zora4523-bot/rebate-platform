@@ -1,7 +1,9 @@
 import type { Schema } from '@couli/contracts-ts';
+import { articleListSummary } from './article-summary.ts';
 
 export type ArticleCategory = Schema<'ArticleCategory'>;
 export type ArticleHelpSection = Schema<'ArticleHelpSection'>;
+export type ArticleFaqRank = Schema<'ArticleFaqRank'>;
 
 export interface ArticleCursor {
   readonly at: string;
@@ -20,6 +22,10 @@ export interface PublishedArticleSummary {
   readonly notice_end_at: string | null;
   /** Of this (current) version row; null when unset (articles_help_section_category_check). */
   readonly help_section: string | null;
+  /** Of this (current) version row; null when unset (articles_faq_rank_category_check). */
+  readonly faq_rank: number | null;
+  /** Stored body of this version; only its list summary is returned (01 §4.2 Help). */
+  readonly body: string;
 }
 
 export class ArticleCursorError extends Error {
@@ -29,11 +35,17 @@ export class ArticleCursorError extends Error {
   }
 }
 
-/** 04 §6.2 / L30: the help_section filter of GET /v1/articles goes with category=help only. */
-export class ArticleHelpSectionFilterError extends Error {
-  constructor() {
-    super('content: help_section filter needs category help');
-    this.name = 'ArticleHelpSectionFilterError';
+/**
+ * 04 §6.2: the help_section (L30) and faq (CT-26a) filters of GET /v1/articles go with
+ * category=help only; `fields` names the refused filters in contract order.
+ */
+export class ArticleListFilterError extends Error {
+  readonly fields: readonly string[];
+
+  constructor(fields: readonly string[]) {
+    super(`content: ${fields.join(', ')} filter needs category help`);
+    this.name = 'ArticleListFilterError';
+    this.fields = fields;
   }
 }
 
@@ -45,6 +57,25 @@ export function helpSectionFilterAllowed(
   return helpSection === undefined || category === 'help';
 }
 
+/**
+ * 04 §6.2 (§9.5 ②): `faq` in any form (true or false) needs category help; omitted is fine.
+ */
+export function faqFilterAllowed(category: ArticleCategory, faq: boolean | undefined): boolean {
+  return faq === undefined || category === 'help';
+}
+
+/** Refused list filters, help_section before faq (编排者裁定 9.2#2); empty when all allowed. */
+export function refusedListFilters(
+  category: ArticleCategory,
+  helpSection: ArticleHelpSection | undefined,
+  faq: boolean | undefined,
+): string[] {
+  const fields: string[] = [];
+  if (!helpSectionFilterAllowed(category, helpSection)) fields.push('help_section');
+  if (!faqFilterAllowed(category, faq)) fields.push('faq');
+  return fields;
+}
+
 /** L30: `help_section` only when set (never null); notices and agreements never carry one. */
 export function withHelpSection<T extends object>(
   category: ArticleCategory,
@@ -53,6 +84,26 @@ export function withHelpSection<T extends object>(
 ): T & { help_section?: ArticleHelpSection } {
   if (value === null || category !== 'help') return target;
   return { ...target, help_section: value as ArticleHelpSection }; // articles_help_section_check
+}
+
+/** CT-26a: `faq_rank` only when set (never null); only help articles carry one. */
+export function withFaqRank<T extends object>(
+  category: ArticleCategory,
+  value: number | null,
+  target: T,
+): T & { faq_rank?: ArticleFaqRank } {
+  if (value === null || category !== 'help') return target;
+  return { ...target, faq_rank: value }; // articles_faq_rank_check
+}
+
+/** help_section and faq_rank of a help version row, each only when set. */
+export function withHelpFields<T extends object>(
+  category: ArticleCategory,
+  helpSection: string | null,
+  faqRank: number | null,
+  target: T,
+): T & { help_section?: ArticleHelpSection; faq_rank?: ArticleFaqRank } {
+  return withFaqRank(category, faqRank, withHelpSection(category, helpSection, target));
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -106,17 +157,22 @@ export function decodeArticleCursor(cursor: string, category: ArticleCategory): 
   return { at: parsed[1], id: parsed[2] };
 }
 
-/** Notice eligibility is filtered in SQL, before the page limit. */
+/**
+ * Notice eligibility is filtered in SQL, before the page limit. Every category carries the list
+ * `summary` of its current body when it has one (01 §4.2 Help, CT-26a), never null.
+ */
 export function articleSummary(row: PublishedArticleSummary): Schema<'ArticleSummary'> {
   const category = row.category as ArticleCategory; // articles_category_check
+  const text = articleListSummary(row.body);
   const summary = {
     article_id: row.id,
     title: row.title,
     version: row.version,
     published_at: row.published_at,
+    ...(text === undefined ? {} : { summary: text }),
   };
   if (category !== 'notice')
-    return withHelpSection(category, row.help_section, { ...summary, category });
+    return withHelpFields(category, row.help_section, row.faq_rank, { ...summary, category });
   return {
     ...summary,
     category,
