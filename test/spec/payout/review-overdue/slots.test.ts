@@ -2,7 +2,11 @@
 // 一次，review_deadline 到达后 ≤5 分钟内判定; task brief §9.2 1: reviewOverdueSlot / nextReviewOverdueSlot,
 // key `review-overdue:YYYY-MM-DDTHH:mm`, minutes rounded down to a multiple of 5, pure functions as
 // risk/domain/risk-scan-slots: UTC keys, the current slot without a delay, the next one with the
-// seconds until it is due, at least 1). Unit tests: no database, no port. Top-level it() only.
+// seconds until it is due, at least 1). Unit tests: no database, no port. Top-level it() only
+// (规划/11 §4.3); the properties' runs and seed come from PROP_RUNS / PROP_SEED (@couli/testing),
+// each body returns a boolean and the one assertion is outside fc.check; each property test first
+// calls the functions under test on a fixed example.
+import { propParams } from '@couli/testing';
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
 import {
@@ -19,11 +23,56 @@ const INSTANTS = fc
   .tuple(fc.integer({ min: 0, max: 5_478 }), fc.integer({ min: 0, max: 86_399_999 }))
   .map(([day, ms]) => Date.parse('2026-01-01T00:00:00.000Z') + day * 86_400_000 + ms);
 
-/** The instant a key names (UTC minute). */
-function keyMs(key: string): number {
+/** The instant a key names (UTC minute); NaN when the key is not `review-overdue:<UTC minute>`. */
+function keyMs(key: unknown): number {
+  if (typeof key !== 'string') return Number.NaN;
   const match = /^review-overdue:(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})$/.exec(key);
-  expect(match, key).not.toBeNull();
-  return Date.parse(`${match?.[1] ?? ''}:00.000Z`);
+  if (match === null) return Number.NaN;
+  return Date.parse(`${match[1] ?? ''}:00.000Z`);
+}
+
+/** The first counterexample of `holds` over INSTANTS (null when every run holds). */
+function firstViolation(holds: (ms: number) => boolean): unknown {
+  const details = fc.check(
+    fc.property(INSTANTS, (ms) => holds(ms)),
+    propParams(),
+  );
+  if (!details.failed) return null;
+  const example = details.counterexample;
+  if (example === null) return { error: String(details.errorInstance) };
+  return { instant: new Date(example[0]).toISOString() };
+}
+
+/** The slot property at one instant `ms` (see the test title). */
+function slotsHold(ms: number): boolean {
+  const now = new Date(ms);
+  const current = reviewOverdueSlot(now);
+  const next = nextReviewOverdueSlot(now);
+  const start = keyMs(current.singletonKey);
+  const delay = next.delaySeconds;
+  return (
+    now.getTime() === ms &&
+    Number.isFinite(start) &&
+    start <= ms &&
+    ms < start + SLOT_MS &&
+    start % SLOT_MS === 0 &&
+    current.delaySeconds === undefined &&
+    keyMs(next.singletonKey) === start + SLOT_MS &&
+    typeof delay === 'number' &&
+    Number.isInteger(delay) &&
+    delay >= 1 &&
+    delay <= 300 &&
+    ms + delay * 1000 >= start + SLOT_MS &&
+    ms + (delay - 1) * 1000 < start + SLOT_MS &&
+    JSON.stringify(reviewOverdueSlot(new Date(ms))) === JSON.stringify(current) &&
+    JSON.stringify(nextReviewOverdueSlot(new Date(ms))) === JSON.stringify(next)
+  );
+}
+
+/** The ≤5-minute property at one review_deadline `deadline` (see the test title). */
+function judgedInTime(deadline: number): boolean {
+  const next = keyMs(nextReviewOverdueSlot(new Date(deadline)).singletonKey);
+  return Number.isFinite(next) && next > deadline && next - deadline <= SLOT_MS;
 }
 
 it('[B2-05n 槽] 当前槽：键 review-overdue:<UTC 年月日时分>，分钟向下取整到 5 的倍数，不带延迟；整 5 分钟边界属于新槽', () => {
@@ -59,38 +108,18 @@ it('[B2-05n 槽] 下一槽：紧接当前槽之后的 5 分钟槽，延迟为到
 });
 
 it('[B2-05n 槽] 性质：任一时刻 t，当前槽起点 ≤ t < 起点 + 5 分钟且分钟是 5 的倍数；下一槽起点 = 当前槽起点 + 5 分钟；1 ≤ 延迟 ≤ 300 且 t + 延迟秒 ≥ 下一槽起点 > t + 延迟秒 − 1 秒；入参不被改动、同一时刻结果相同', () => {
-  fc.assert(
-    fc.property(INSTANTS, (ms) => {
-      const now = new Date(ms);
-      const current = reviewOverdueSlot(now);
-      const next = nextReviewOverdueSlot(now);
-      expect(now.getTime()).toBe(ms);
-      const start = keyMs(current.singletonKey);
-      expect(start).toBeLessThanOrEqual(ms);
-      expect(ms).toBeLessThan(start + SLOT_MS);
-      expect(start % SLOT_MS).toBe(0);
-      expect(current.delaySeconds).toBeUndefined();
-      expect(keyMs(next.singletonKey)).toBe(start + SLOT_MS);
-      const delay = next.delaySeconds ?? 0;
-      expect(Number.isInteger(delay)).toBe(true);
-      expect(delay).toBeGreaterThanOrEqual(1);
-      expect(delay).toBeLessThanOrEqual(300);
-      expect(ms + delay * 1000).toBeGreaterThanOrEqual(start + SLOT_MS);
-      expect(ms + (delay - 1) * 1000).toBeLessThan(start + SLOT_MS);
-      expect(reviewOverdueSlot(new Date(ms))).toStrictEqual(current);
-      expect(nextReviewOverdueSlot(new Date(ms))).toStrictEqual(next);
-    }),
-    { numRuns: 300 },
-  );
+  // A fixed example first (the skeleton's NotImplemented surfaces here).
+  expect([reviewOverdueSlot(NOW), nextReviewOverdueSlot(NOW)]).toStrictEqual([
+    { singletonKey: SLOT },
+    { singletonKey: NEXT_SLOT, delaySeconds: NEXT_DELAY },
+  ]);
+  expect(firstViolation(slotsHold)).toBeNull();
 });
 
 it('[BR-WDR-26 ≤5 分钟内判定] 任一 review_deadline：它落入的槽的下一槽到期时刻在 deadline 之后、5 分钟之内（链按槽运行即在到达后 ≤5 分钟内判定）', () => {
-  fc.assert(
-    fc.property(INSTANTS, (deadline) => {
-      const next = keyMs(nextReviewOverdueSlot(new Date(deadline)).singletonKey);
-      expect(next).toBeGreaterThan(deadline);
-      expect(next - deadline).toBeLessThanOrEqual(SLOT_MS);
-    }),
-    { numRuns: 300 },
+  // DEADLINE 02:00:00Z falls in the 02:00 slot; the next one is due at 02:05 (5 minutes later).
+  expect(nextReviewOverdueSlot(at('2032-10-21T02:00:00.000Z')).singletonKey).toBe(
+    'review-overdue:2032-10-21T02:05',
   );
+  expect(firstViolation(judgedInTime)).toBeNull();
 });

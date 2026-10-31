@@ -51,7 +51,7 @@ async function judgement(h: Harness, w: Seeded) {
 }
 
 it(
-  '[BR-WDR-26 超时判定] deadline 已到（含恰好等于 now）且仍为 PENDING_REVIEW / APPROVED：review_overdue_at = now、updated_at = now、状态不变；每单一条 withdrawal.review_overdue（载荷只含 withdrawal_id、user_id、review_deadline、overdue_at，app_id 在信封）；提交后每单一条 warn withdrawal_review_overdue（只带 app_id、withdrawal_id 与两个时刻）；在 users 行锁下判定；返回 { scanned, judged }',
+  '[BR-WDR-26 超时判定] deadline 已到（含恰好等于 now）且仍为 PENDING_REVIEW / APPROVED——人工审核单与 review_mode auto 的单（系统 W2 已批、EXECUTE 被拒而停在 APPROVED 的，及尚未批的）一样判：review_overdue_at = now、updated_at = now、状态不变；每单一条 withdrawal.review_overdue（载荷只含 withdrawal_id、user_id、review_deadline、overdue_at，app_id 在信封）；提交后每单一条 warn withdrawal_review_overdue（只带 app_id、withdrawal_id 与两个时刻）；在 users 行锁下判定；返回 { scanned, judged }',
   async () => {
     await withHarness(createTestDatabase, async (h) => {
       const f = buildCheck(h);
@@ -62,21 +62,27 @@ it(
         reviewDeadline: at(DEADLINE.getTime() - HOUR),
       });
       const exact = await seed(h.db, app, { reviewDeadline: NOW });
-      const judged = [pending, approved, exact];
+      // 超时判定对所有仍处于 PENDING_REVIEW、APPROVED 的单照常适用 (BR-WDR-26, not only manual ones).
+      const autoApproved = await seed(h.db, app, { status: 'APPROVED', reviewMode: 'auto' });
+      const autoPending = await seed(h.db, app, {
+        reviewMode: 'auto',
+        reviewDeadline: at(DEADLINE.getTime() - 2 * HOUR),
+      });
+      const judged = [pending, approved, exact, autoApproved, autoPending];
 
       const result = await f.check.run(NOW);
 
-      expect(result).toStrictEqual({ scanned: 3, judged: 3 });
+      expect(result).toStrictEqual({ scanned: 5, judged: 5 });
       for (const w of judged) {
-        expect(await judgement(h, w), w.status).toStrictEqual({
+        expect(await judgement(h, w), `${w.status} ${w.reviewMode}`).toStrictEqual({
           status: w.status,
           overdueAt: NOW.toISOString(),
           updatedAt: NOW.toISOString(),
         });
         expect(await eventsOf(h.observer, w)).toStrictEqual([expectedEvent(w)]);
       }
-      expect(await overdueEvents(h.observer)).toHaveLength(3);
-      expect(overdueWarns(f.lines)).toHaveLength(3);
+      expect(await overdueEvents(h.observer)).toHaveLength(5);
+      expect(overdueWarns(f.lines)).toHaveLength(5);
       expect(overdueWarns(f.lines)).toEqual(
         expect.arrayContaining(judged.map((w) => expectedWarn(w))),
       );
@@ -199,6 +205,51 @@ it(
       expect(await eventsOf(h.observer, laterB)).toStrictEqual([expectedEvent(laterB, next)]);
       expect(overdueWarns(g.lines)).toStrictEqual([expectedWarn(laterB, next)]);
       expect(await overdueEvents(h.observer)).toHaveLength(5);
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[BR-WDR-26 ① 告警财务（BR-WDR-24，不受夜间限制）] deadline 与运行时刻落在夜间（23:00、03:00 +08:00，免打扰时段只顺延用户通知）：当场判定——review_overdue_at = 运行时刻（距 deadline ≤5 分钟，不顺延到早上）、事件一条、warn 一条在 run 返回时已打出',
+  async () => {
+    await withHarness(createTestDatabase, async (h) => {
+      const app = appId();
+      // 22:58 and 03:00 +08:00. The check takes no notify.quiet_hours (there is nothing to configure
+      // on it): the quiet hours defer only the user's WD_OVERDUE notice, which is not this task's.
+      const lateDeadline = new Date('2032-10-20T14:58:00.000Z');
+      const nightDeadline = new Date('2032-10-20T19:00:00.000Z');
+      const late = await seed(h.db, app, { reviewDeadline: lateDeadline });
+      const night = await seed(h.db, app, {
+        status: 'APPROVED',
+        reviewMode: 'auto',
+        reviewDeadline: nightDeadline,
+      });
+      // Each run is at most 5 minutes after its deadline (BR-WDR-26 ≤5 分钟内判定).
+      const runs: [Date, Seeded][] = [
+        // 23:00:00 +08:00, the slot right after the deadline's one (2 minutes late).
+        [new Date('2032-10-20T15:00:00.000Z'), late],
+        // 03:02:30 +08:00, inside the slot of the deadline (2.5 minutes late).
+        [new Date('2032-10-20T19:02:30.000Z'), night],
+      ];
+
+      for (const [runAt, w] of runs) {
+        const f = buildCheck(h);
+        f.clock.set(runAt);
+        expect(await f.check.run(runAt), runAt.toISOString()).toStrictEqual({
+          scanned: 1,
+          judged: 1,
+        });
+        // On the spot: the warn is out when run resolves, the column and the event are committed.
+        expect(overdueWarns(f.lines)).toStrictEqual([expectedWarn(w, runAt)]);
+        expect(await judgement(h, w)).toStrictEqual({
+          status: w.status,
+          overdueAt: runAt.toISOString(),
+          updatedAt: runAt.toISOString(),
+        });
+        expect(await eventsOf(h.observer, w)).toStrictEqual([expectedEvent(w, runAt)]);
+      }
+      expect(await overdueEvents(h.observer)).toHaveLength(2);
     });
   },
   TIMEOUT,
