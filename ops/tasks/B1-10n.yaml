@@ -1,0 +1,35 @@
+id: B1-10n
+repo: rebate-platform
+title: orders：维权 / 违规 / 渠道导入挂载（adminCreateRightsImport、adminListRightsImports、adminGetRightsImport）与 worker 装配——OrdersModule.forWorker 传 rightsImports，接真实 createRightsCommandPort（含 createClawbackOrder）与 risk blocklist；去掉三个接口的 planned
+type: impl
+# 2026-11-01 入账（admin-backend，编排 D10-528，从 B1-10m 拆出）。deps B2-04lb：B2-04l 台账 D10-470 要求装配维权端口必须在其后，否则部分维权单月结按旧额入账。接线不改用例；私有导入存储未配置时失败关闭。
+# 规则测试新写 test/spec/orders/rights-mounts/（B1-10m 的 [AC-B1-10m#22–#24] 与 imports、store-closed 用例在此重写），补 CREDITED 行的真实扣回用例。
+refs: [BR-ATTR-31]
+refs_hash:
+  BR-ATTR-31: 372b06f03b05
+deps: [B2-04lb]
+paths:
+  - 'apps/api/src/modules/orders/orders-admin.module.ts'
+  - 'apps/api/src/modules/orders/orders.module.ts'
+  - 'apps/api/src/modules/orders/http/admin/**'
+  - 'apps/api/src/modules/orders/application/rights-imports.ts'
+  - 'apps/api/src/modules/orders/worker-runtime.ts'
+  - 'apps/api/src/modules/orders/index.ts'
+  - 'apps/api/src/modules/settlement/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/orders/rights-mounts/**'
+  - 'test/spec/contracts/admin-order-actions/operations.test.ts'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/rights-mounts/**'
+status: todo
