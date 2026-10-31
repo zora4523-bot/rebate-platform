@@ -1,0 +1,22 @@
+id: F1-07jb
+repo: rebate-platform
+title: 后台「用户详情」页签第一段（只读）——订单 / 找回 / 提现 三个页签（?tab=orders|claims|withdrawals），各自按 user_id 读 adminListOrders（order.view 或 user.lookup）、adminListClaims（order.claim 或 user.lookup）、listAdminWithdrawals（fund.view 或 withdraw.review），页码分页、三态、无权限时页签不出现或显示无权限，行内点进订单 / 提现详情；资金与风控页签不做
+type: impl
+# 2026-10-31 入账（前端线 f1-frontend-7，编排 10-31 14:0x ①）。规格 couli design/specs/admin-user-detail.md（负责人 2026-10-18 第 1 批定稿）§1 页签表、§2、§4、§5；读权限以契约 description 为准。后端 B1-10i（#1437）、B1-10j（#1068）、B2-09c（#1791）已实现。
+# 不做：余额与流水页签（adminListLedgerEntries 契约未出）、风控命中页签（契约未出）、页签里任何写操作。只读，评审走 general 口径。前置 F1-07ja 须先合并。F1-07jb / jc / jd 都改 pages/users/**，串行做。
+# Codex 到 11-02 不可用：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude。
+refs: []
+refs_hash: {}
+deps: [B1-10i, B1-10j, B2-09c, F1-07j, F1-07ja]
+paths:
+  - 'apps/admin/src/pages/users/**'
+  - 'apps/admin/src/texts/users.ts'
+test_paths:
+  - 'test/spec/frontend/admin-user-tabs/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-user-tabs/**'
+status: todo
+pr: null
