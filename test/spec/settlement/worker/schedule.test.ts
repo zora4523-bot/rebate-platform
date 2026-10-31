@@ -191,15 +191,24 @@ it('[AC-B2-04ze#6] 处理器 bill：以负载的 (app, platform) 与 run_at = D 
 it('[AC-B2-04ze#7] 处理器 bill（D10-476 ② test-change）：账单任务 deferred（当日资产快照未完成）时本次投递正常完成（不耗队列重试）、不调用执行器；同 singletonKey 的延后重排再次投递同一负载，快照完成后答 generated 同样正常完成，两次 run_at 都是 D 00:00 +08:00；账单任务抛错时原样失败', async () => {
   const { handler, recorder } = handlerWith();
   const payload = { app_id: APP, platform: JD, accounting_date: BILL_DAY };
+  /** 'completed' when the delivery resolves, else 'failed: <message>' (asserted, not thrown). */
+  const outcomeOf = async (run: () => Promise<unknown>): Promise<string> => {
+    try {
+      await run();
+      return 'completed';
+    } catch (error) {
+      return `failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  };
   recorder.billOutcome = 'deferred';
-  await expect(handler(receivedJob(BILL, payload))).resolves.toBeUndefined();
+  expect(await outcomeOf(() => handler(receivedJob(BILL, payload)))).toBe('completed');
   expect(recorder.billRuns).toHaveLength(1);
   expect(recorder.executions).toStrictEqual([]);
 
   // The delayed re-send under the same key is a new job (first attempt) with the same payload; the
   // snapshot is complete by then.
   recorder.billOutcome = 'generated';
-  await expect(handler(receivedJob(BILL, payload, 1))).resolves.toBeUndefined();
+  expect(await outcomeOf(() => handler(receivedJob(BILL, payload, 1)))).toBe('completed');
   expect(
     recorder.billRuns.map((run) => ({
       appId: run.input.appId,

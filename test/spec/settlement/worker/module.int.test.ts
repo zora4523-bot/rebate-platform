@@ -5,7 +5,7 @@
 // rules: settle.auto.enabled unset = on, credit.enabled.<platform> unset = off (08 BR-FUND-04 ⑦ ⑨,
 // BR-CALC-03, BR-FUND-20), so by default nothing is credited.
 import { createTestDatabase } from '@couli/db/testing';
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/index.ts';
 import {
   APP,
@@ -14,7 +14,6 @@ import {
   BILL_DAY_NOW,
   BILL_DAY_START,
   BILL_MONTH,
-  DEAD_QUEUE,
   EXECUTE,
   FAKE_CRYPTO,
   PLAIN_DAY,
@@ -24,21 +23,18 @@ import {
   TAOBAO,
   TIMEOUT,
   batchRow,
-  billKey,
   fakeEventBus,
   fakePorts,
   fakeQueue,
-  liveJobsUnder,
   receivedJob,
+  refusal,
   seedBatch,
   seedOrder,
   settleHandler,
   settleJobsOf,
   settlementModule,
   silentRootLogger,
-  transition,
   withDatabase,
-  withRealQueue,
   workerContext,
   type FakeQueue,
   type PortCalls,
@@ -164,12 +160,24 @@ it(
 it(
   '[AC-B2-04ze#24] 装配的处理器（D10-476 ② test-change）：账单日而当日资产快照未完成时 bill 答 deferred——本次投递正常完成（任务 completed、retry_count 0、settle.dead 无副本，不耗队列重试），不写 settle_jobs、settle_bills；同 singletonKey 的延后重排随后已入队（新的任务）；快照完成后那一跳出账 2032-06，全部任务仍不耗重试',
   async () => {
+    // What only this test uses is loaded here; the file's shared imports stay as at the base.
+    const { vi } = await import('vitest');
+    const kit = await import('./kit.ts');
+    /** 'completed' when the delivery resolves, else 'failed: <message>' (asserted, not thrown). */
+    const outcomeOf = async (run: () => Promise<unknown>): Promise<string> => {
+      try {
+        await run();
+        return 'completed';
+      } catch (error) {
+        return `failed: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    };
     await withDatabase(createTestDatabase, async (db) => {
       await seedOrder(db, APP, TAOBAO);
       const state: PortState = { snapshot: 'pending', config: new Map() };
       const { ports, calls } = fakePorts(state);
       const SettlementModule = await settlementModule();
-      const key = billKey(APP, TAOBAO, BILL_DAY);
+      const key = kit.billKey(APP, TAOBAO, BILL_DAY);
       const payload = { app_id: APP, platform: TAOBAO, accounting_date: BILL_DAY };
       const jobsOn = async (queueName: string) => {
         const { rows } = await sql<{ id: string; state: string; retry_count: number }>`
@@ -185,7 +193,7 @@ it(
       // pg-boss of the test database (the api runtime only sends); the test is the worker: it takes
       // the one live job, runs the handler and completes the job once the delivery resolves. The
       // module's own timer runs (real timers).
-      await withRealQueue(db, async (queue) => {
+      await kit.withRealQueue(db, async (queue) => {
         const context = await workerContext(SettlementModule.forWorker(ports), {
           clock: new FixedClock(BILL_DAY_NOW),
           logger: silentRootLogger(),
@@ -197,15 +205,17 @@ it(
         try {
           const handler = settleHandler(queue);
           const deliverLive = async () => {
-            const live = await liveJobsUnder(db, key);
+            const live = await kit.liveJobsUnder(db, key);
             expect(live.map((job) => job.payload)).toStrictEqual([payload]);
             const job = live[0];
             if (job === undefined || job.payload === null) {
               throw new Error('unreachable: the expect above failed');
             }
-            await transition(db, job.id, 'active');
-            await expect(handler(receivedJob(BILL, job.payload))).resolves.toBeUndefined();
-            await transition(db, job.id, 'completed');
+            const received = receivedJob(BILL, job.payload);
+            await kit.transition(db, job.id, 'active');
+            // A handler error is caught and shown by the expectation (that delivery would fail).
+            expect(await outcomeOf(() => handler(received))).toBe('completed');
+            await kit.transition(db, job.id, 'completed');
             return job.id;
           };
 
@@ -217,14 +227,21 @@ it(
             state: 'completed',
             retryCount: 0,
           });
-          expect(await jobsOn(DEAD_QUEUE)).toStrictEqual([]);
+          expect(await jobsOn(kit.DEAD_QUEUE)).toStrictEqual([]);
           expect(await countRows(db, 'settle_jobs')).toBe(0);
           expect(await countRows(db, 'settle_bills')).toBe(0);
+          // Deferred is no refusal: the same handler still refuses a payload it cannot run (no
+          // accounting_date), and that refusal is not the snapshot wait.
+          const refused = await refusal(() =>
+            handler(receivedJob(BILL, { app_id: APP, platform: TAOBAO })),
+          );
+          expect(refused).not.toMatch(/deferred|snapshot/iu);
+          expect(await countRows(db, 'settle_jobs')).toBe(0);
 
           // The delayed re-send under the same key, arranged by the module (not by this test).
           await vi.waitFor(
             async () => {
-              const live = await liveJobsUnder(db, key);
+              const live = await kit.liveJobsUnder(db, key);
               expect(live.filter((job) => job.id !== first)).toHaveLength(1);
             },
             { timeout: 80_000, interval: 250 },
@@ -256,7 +273,7 @@ it(
             { id: first, state: 'completed', retryCount: 0 },
             { id: second, state: 'completed', retryCount: 0 },
           ]);
-          expect(await jobsOn(DEAD_QUEUE)).toStrictEqual([]);
+          expect(await jobsOn(kit.DEAD_QUEUE)).toStrictEqual([]);
         } finally {
           await context.close();
         }
