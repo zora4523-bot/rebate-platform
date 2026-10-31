@@ -12,14 +12,36 @@ paths:
   - 'contracts/openapi.yaml'
   - 'contracts/enums/admin.yaml'
   - 'contracts/error-codes.yaml'
+  - 'contracts/oasdiff-accepted.txt'
   - 'packages/contracts-ts/**'
   - 'packages/contracts-ts/src/planned-operations.gen.ts'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/ledger/admin-recon-diffs/list.int.test.ts'
+red_exempt:
+  - file: test/spec/ledger/admin-recon-diffs/list.int.test.ts
+    test: '[AC-B2-09a#1] 差错单列表（fund.recon 或 fund.view 任一即可，不要 step-up）：只列本应用 source R1–R3 的差错单，按 created_at 倒序，每行恰好是契约的 AdminReconDiff（来源、类型、期间、引用、三个金额、状态、创建与结案时刻）；R4 的收款差错与其他应用的差错单不出现；默认 page 1 / page_size 20；两点都有、超管也能读；读取不写审计'
+    reason: 冻结 B2-09a 用例，测试体未改；同文件只有 [AC-B2-09a#6] 按 D10-511 把 ref_id 边界 64 / 65 改为 128 / 129（同 D10-415 ①）
+  - file: test/spec/ledger/admin-recon-diffs/list.int.test.ts
+    test: '[AC-B2-09a#2] 差错单列表的排序与分页：created_at 倒序，同一时刻按 recon_diff_id 倒序；page / page_size 翻页，total 为全部条数；超过最后一页是空 items（不报错）'
+    reason: 冻结 B2-09a 用例，测试体未改；同文件只有 [AC-B2-09a#6] 按 D10-511 把 ref_id 边界 64 / 65 改为 128 / 129（同 D10-415 ①）
+  - file: test/spec/ledger/admin-recon-diffs/list.int.test.ts
+    test: '[AC-B2-09a#3] 差错单列表的筛选：type、source、status、ref_id（精确匹配，不是前缀、不忽略大小写）按 AND 组合，total 为过滤后的总数；同 ref_id 的 R4 差错不出现'
+    reason: 冻结 B2-09a 用例，测试体未改；同文件只有 [AC-B2-09a#6] 按 D10-511 把 ref_id 边界 64 / 65 改为 128 / 129（同 D10-415 ①）
+  - file: test/spec/ledger/admin-recon-diffs/list.int.test.ts
+    test: '[AC-B2-09a#4] 差错单列表的期间区间：period_from、period_to 两端都含，按字符串比较（YYYY-MM 排在该月各日之前）；可只给一端，可与 source 组合'
+    reason: 冻结 B2-09a 用例，测试体未改；同文件只有 [AC-B2-09a#6] 按 D10-511 把 ref_id 边界 64 / 65 改为 128 / 129（同 D10-415 ①）
+  - file: test/spec/ledger/admin-recon-diffs/list.int.test.ts
+    test: '[AC-B2-09a#5] 差错单列表的金额是整数分原样（不换算、不改符号）：负数、零与 2^53−1 照存储返回'
+    reason: 冻结 B2-09a 用例，测试体未改；同文件只有 [AC-B2-09a#6] 按 D10-511 把 ref_id 边界 64 / 65 改为 128 / 129（同 D10-415 ①）
+  - file: test/spec/ledger/admin-recon-diffs/list.int.test.ts
+    test: '[AC-B2-09a#7] 差错单列表的权限：没有 fund.recon 也没有 fund.view（无权限点，或只有 pay.view、fund.settle_adjust 等别的点）→ 10403；不带令牌 → 10001；空应用是空页；读取不写审计、不改差错单'
+    reason: 冻结 B2-09a 用例，测试体未改；同文件只有 [AC-B2-09a#6] 按 D10-511 把 ref_id 边界 64 / 65 改为 128 / 129（同 D10-415 ①）
 impl: claude
-tester: none
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'pnpm contracts:check'
