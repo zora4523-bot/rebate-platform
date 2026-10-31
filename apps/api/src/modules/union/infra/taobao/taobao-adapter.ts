@@ -3,8 +3,8 @@
 // 经注入的 UnionTransport 发表单 POST 到 endpoint.baseUrl（参数含 sign 全在请求体，URL 不带查询串，
 // Content-Type application/x-www-form-urlencoded;charset=utf-8）、按调用方给出的外层键解包。
 // 业务参数与公共参数同名 → invalid_dto，不发请求。传输抛错 → upstream_unavailable（不带原文）。
-// 调用方的 AbortSignal 与归档上下文原样挂在传输请求上。searchItems / resolveLink / convert /
-// listOrders 仍是 adapter_unimplemented，不取凭据、不发请求。不读 process.env、不读文件；
+// 调用方的 AbortSignal 与归档上下文原样挂在传输请求上。searchItems / resolveLink /
+// listOrders（与未打开大淘客转链时的 convert）仍是 adapter_unimplemented，不取凭据、不发请求。不读 process.env、不读文件；
 // app_secret 只在内存参与签名。
 //
 // B1-04l（② 段）：
@@ -64,6 +64,13 @@ import {
   TAOBAO_TPWD_CREATE_ENVELOPE,
   TAOBAO_TPWD_SUB_CODES,
 } from './links.ts';
+import {
+  DATAOKE_PRIVILEGE_LINK_CODES,
+  DATAOKE_PRIVILEGE_LINK_PATH,
+  DATAOKE_PRIVILEGE_LINK_VERSION,
+  mapPrivilegeLink,
+  privilegeLinkParameters,
+} from './privilege-link.ts';
 import { unwrapTaobaoResponse, type TaobaoSubCodeMap, type TaobaoWarning } from './response.ts';
 import {
   signTaobaoParameters,
@@ -156,6 +163,8 @@ export class TaobaoUnionAdapter implements UnionAdapter {
   readonly #endpoint: UnionEndpoint;
   readonly #warn: ((event: TaobaoWarning) => void) | undefined;
   readonly #priceSettings: TaobaoPriceSettingsReader | undefined;
+  readonly #orderSource: DataokeClient | undefined;
+  readonly #convertSource: TaobaoConvertSource;
 
   constructor(options: TaobaoAdapterOptions) {
     if (options.endpoint.platform !== 'taobao') {
@@ -171,6 +180,9 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     this.#endpoint = options.endpoint;
     this.#warn = options.warn;
     this.#priceSettings = options.priceSettings;
+    this.#orderSource = options.orderSource;
+    // 只有明确的 'dataoke' 打开大淘客转链；缺省与其他值一律是 baichuan（行为不变）。
+    this.#convertSource = options.convertSource === 'dataoke' ? 'dataoke' : 'baichuan';
   }
 
   /** Internal request foundation; returns the inner object of `options.envelope`. */
@@ -253,8 +265,8 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     }
   }
 
-  // 端口方法：searchItems / resolveLink / convert / listOrders 仍 adapter_unimplemented，
-  // 不取凭据、不发请求。
+  // 端口方法：searchItems / resolveLink / listOrders 仍 adapter_unimplemented，
+  // 不取凭据、不发请求（convert 见 B1-04d）。
   async searchItems(q: SearchQuery, ctx: CallCtx): Promise<Page<UnionItem>> {
     void q;
     void ctx;
@@ -321,11 +333,19 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     throw unimplemented('resolveLink');
   }
 
+  /** B1-04d: 大淘客 get-privilege-link when switched on (see the header); otherwise unimplemented. */
   async convert(req: ConvertReq, identity: UnionIdentity, ctx: CallCtx): Promise<ConvertResult> {
-    void req;
-    void identity;
-    void ctx;
-    throw unimplemented('convert');
+    const source = this.#orderSource;
+    if (this.#convertSource !== 'dataoke' || source === undefined) throw unimplemented('convert');
+    const parameters = privilegeLinkParameters(req, identity);
+    const data = await source.request('GET', DATAOKE_PRIVILEGE_LINK_PATH, parameters, {
+      version: DATAOKE_PRIVILEGE_LINK_VERSION,
+      archive: archiveOf(ctx, 'convert'),
+      outerCodes: DATAOKE_PRIVILEGE_LINK_CODES,
+      ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
+    });
+    // BR-PRICE-11：quoted_at 取收到响应后的注入时钟。
+    return mapPrivilegeLink(data, this.#clock.now(), this.#warn);
   }
 
   async listOrders(win: TimeWindow, opt: OrderQueryOpt, ctx: CallCtx): Promise<Page<UnionOrder>> {

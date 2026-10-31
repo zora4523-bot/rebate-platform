@@ -186,6 +186,8 @@ export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegist
             ? {}
             : { priceSettings: options.taobaoPriceSettings }),
           ...(orderSource === undefined ? {} : { orderSource }),
+          // B1-04d: the convert switch as is; the adapter only acts on it with an orderSource.
+          ...(live.convertSource === undefined ? {} : { convertSource: live.convertSource }),
         });
       }
     }
