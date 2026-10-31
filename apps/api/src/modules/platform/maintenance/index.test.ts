@@ -67,8 +67,9 @@ async function fixture(instant = '2026-11-20T03:04:05Z', dayPartitions = false) 
       if (query.sql.includes('current_user')) rows = [{ role: 'couli_maint' }];
       else if (/ensure_(month|day)_partition/.test(query.sql)) {
         rows = [{ partition: `${String(query.parameters[0])}:${String(query.parameters[1])}` }];
-      } else if (/drop_expired_(month|day)_partitions/.test(query.sql)) rows = [{ partitions: [] }];
-      else if (query.sql.includes('delete_expired_')) rows = [{ deleted: 0n }];
+      } else if (/drop_expired_(month|day|union_raw_payload)_partitions/.test(query.sql)) {
+        rows = [{ partitions: [] }];
+      } else if (query.sql.includes('delete_expired_')) rows = [{ deleted: 0n }];
       else if (query.sql.includes('read_retention_settings')) rows = [];
       else if (query.sql.includes('partition_default_rows')) rows = [];
       else if (query.sql.includes('set_config')) rows = [];
@@ -157,6 +158,7 @@ it.each([
       expect(drops.map((q) => q.parameters)).toEqual([
         ['event_log', f.now.mock.results[0]!.value],
         ['link_logs', f.now.mock.results[0]!.value],
+        [f.now.mock.results[0]!.value, 180],
       ]);
       expect(report.dropped).toEqual(['event_log_p202603', 'link_logs_p20260710']);
       expect(f.logger.info.mock.calls.slice(0, 2)).toEqual([
@@ -1066,4 +1068,187 @@ it('[AC-B1-15zb#16] 返回的行数超出批大小按失败处理，不记不可
   ]);
   expect(f.logger.info).toHaveBeenCalledTimes(1);
   expect(retentionCalls(f.queries).filter((q) => tableOf(q) === 'login_logs')).toHaveLength(1);
+});
+
+// Section L. The floor and the ceiling are contract values, written out by hand.
+const RAW_DROP = 'drop_expired_union_raw_payload_partitions';
+
+function rawDrops(queries: readonly CompiledQuery[]): CompiledQuery[] {
+  return queries.filter((q) => q.sql.includes(RAW_DROP));
+}
+
+it.each([
+  ['2026-10-08T19:59:59.999Z', true, 0],
+  ['2026-10-08T20:00:00.000Z', true, 1],
+  ['2026-10-08T20:00:00.000Z', false, 0],
+] as const)(
+  '[AC-B1-15zc#12] union_raw_payloads 遵守 04:00 门槛与 dayPartitions（%s，启用=%s，调用 %i 次）：无配置行按 180 天，配置只读一次，在配置之后、DEFAULT 检查之前，共用 now、不开显式事务',
+  async (instant, enabled, calls) => {
+    const f = await fixture(instant, enabled);
+    await f.maintenance.runOnce();
+    expect(rawDrops(f.queries)).toHaveLength(calls);
+    expect(f.queries.filter((q) => q.sql.includes(SETTINGS))).toHaveLength(calls);
+    expect(f.now).toHaveBeenCalledTimes(1);
+    expect(f.transactions.some((t) => t.queries.some((q) => q.sql.includes(RAW_DROP)))).toBe(false);
+    if (calls > 0) {
+      expect(rawDrops(f.queries)[0]?.parameters).toEqual([f.now.mock.results[0]!.value, 180]);
+      const order = f.queries.map((q) => q.sql);
+      const call = order.findIndex((sql) => sql.includes(RAW_DROP));
+      expect(order.findIndex((sql) => sql.includes(SETTINGS))).toBeLessThan(call);
+      expect(call).toBeLessThan(order.findIndex((sql) => sql.includes('partition_default_rows')));
+    }
+  },
+);
+
+it.each([
+  [220, 220],
+  [180, 180],
+  [36500, 36500],
+  [50000, 36500],
+  [179, 180],
+  [0, 180],
+  [-1, 180],
+  [220.5, 180],
+  ['220', 180],
+  [true, 180],
+  [null, 180],
+  [{ days: 220 }, 180],
+  [[220], 180],
+] as const)(
+  '[AC-B1-15zc#13] retention.union_raw_payloads_days 为 %j 时按 %i 天：不合法回落 180、过大压到 36500，都不记失败',
+  async (value, days) => {
+    const f = await fixture('2026-10-08T20:00:00.000Z', true);
+    f.control.respond = async (query) =>
+      query.sql.includes(SETTINGS)
+        ? [{ key: 'retention.union_raw_payloads_days', value }]
+        : undefined;
+    const report = await f.maintenance.runOnce();
+    expect(rawDrops(f.queries)[0]?.parameters[1]).toBe(days);
+    expect(report.failed).toBe(0);
+    expect(f.logger.error).not.toHaveBeenCalled();
+  },
+);
+
+it('[AC-B1-15zc#14] 配置每轮重读：改长后下一轮按新值', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  await f.maintenance.runOnce();
+  f.control.respond = async (query) =>
+    query.sql.includes(SETTINGS)
+      ? [{ key: 'retention.union_raw_payloads_days', value: 365 }]
+      : undefined;
+  await f.maintenance.runOnce();
+  expect(rawDrops(f.queries).map((q) => q.parameters[1])).toEqual([180, 365]);
+});
+
+it.each([
+  [false, 0],
+  [true, 1],
+  ['false', 1],
+  [null, 1],
+] as const)(
+  '[AC-B1-15zc#16] retention.purge.enabled 为 %j：本表调用 %i 次；只有 false 才关，event_log 与 link_logs 照丢',
+  async (value, calls) => {
+    const f = await fixture('2026-10-08T20:00:00.000Z', true);
+    f.control.respond = async (query) => {
+      if (query.sql.includes(SETTINGS)) return [{ key: 'retention.purge.enabled', value }];
+      if (query.sql.includes('drop_expired_month_partitions')) {
+        return [{ partitions: ['event_log_p202603'] }];
+      }
+      if (query.sql.includes('drop_expired_day_partitions')) {
+        return [{ partitions: ['link_logs_p20260710'] }];
+      }
+      return undefined;
+    };
+    const report = await f.maintenance.runOnce();
+    expect(rawDrops(f.queries)).toHaveLength(calls);
+    expect(report).toMatchObject({
+      dropped: ['event_log_p202603', 'link_logs_p20260710'],
+      failed: 0,
+    });
+  },
+);
+
+it('[AC-B1-15zc#18] 读不到配置时开关未知：本表不丢，只记 config_items 这一次失败', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  f.control.respond = async (query) => {
+    if (query.sql.includes(SETTINGS)) throw { code: '55P03', detail: 'private row data' };
+    return undefined;
+  };
+  const report = await f.maintenance.runOnce();
+  expect(rawDrops(f.queries)).toEqual([]);
+  expect(report.failed).toBe(1);
+  expect(f.logger.error.mock.calls).toEqual([
+    [{ table: 'config_items', sqlstate: '55P03' }, 'retention_purge_failed'],
+  ]);
+});
+
+it('[AC-B1-15zc#19] 丢本表失败：一行 partition_drop_failed、不立即重试，行清理与 DEFAULT 检查照做，日志不泄露错误内容，下一轮成功', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  let attempts = 0;
+  f.control.respond = async (query) => {
+    if (!query.sql.includes(RAW_DROP)) return undefined;
+    attempts += 1;
+    if (attempts === 1) throw { code: '55P03', message: 'private SQL', detail: 'private row' };
+    return [{ partitions: ['union_raw_payloads_p202604'] }];
+  };
+  const report = await f.maintenance.runOnce();
+  expect(attempts).toBe(1);
+  expect(report).toMatchObject({ dropped: [], failed: 1 });
+  expect(f.logger.error.mock.calls).toEqual([
+    [{ table: 'union_raw_payloads', sqlstate: '55P03' }, 'partition_drop_failed'],
+  ]);
+  expect(retentionCalls(f.queries).map(tableOf)).toEqual(RETENTION_ORDER);
+  expect(f.queries.at(-1)?.sql).toContain('partition_default_rows');
+  expect(await f.maintenance.runOnce()).toMatchObject({
+    dropped: ['union_raw_payloads_p202604'],
+    failed: 0,
+  });
+});
+
+it('[AC-B1-15zc#20] 第 K 节的表失败不挡本表：本表照丢，只记那一个失败', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  f.control.respond = async (query) => {
+    if (query.sql.includes(RAW_DROP)) return [{ partitions: ['union_raw_payloads_p202604'] }];
+    if (tableOf(query) === 'notify_logs') throw { code: '55P03' };
+    return undefined;
+  };
+  expect(await f.maintenance.runOnce()).toMatchObject({
+    dropped: ['union_raw_payloads_p202604'],
+    failed: 1,
+  });
+  expect(f.logger.error.mock.calls).toEqual([
+    [{ table: 'notify_logs', sqlstate: '55P03' }, 'retention_purge_failed'],
+  ]);
+});
+
+it('[AC-B1-15zc#21] 丢掉的分区排在 event_log、link_logs 之后：进报告、记 partition_dropped、计入 done，日志只有表名与分区名', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  const names = ['union_raw_payloads_p202604', 'union_raw_payloads_p202605'];
+  f.control.respond = async (query) => {
+    if (query.sql.includes('drop_expired_month_partitions')) {
+      return [{ partitions: ['event_log_p202603'] }];
+    }
+    if (query.sql.includes(RAW_DROP)) return [{ partitions: names }];
+    return undefined;
+  };
+  const report = await f.maintenance.runOnce();
+  expect(Object.keys(report).sort()).toEqual(['defaultRows', 'dropped', 'ensured', 'failed']);
+  expect(report.dropped).toEqual(['event_log_p202603', ...names]);
+  expect(f.logger.info.mock.calls).toEqual([
+    [{ table: 'event_log', partition: 'event_log_p202603' }, 'partition_dropped'],
+    ...names.map((partition) => [{ table: 'union_raw_payloads', partition }, 'partition_dropped']),
+    [{ ensured: ALL_ENSURED, dropped: 3, failed: 0 }, 'partition_maintenance_done'],
+  ]);
+});
+
+it('[AC-B1-15zc#23] worker 实例同样丢本表', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z');
+  const worker = createWorkerMaintenance({
+    db: f.db,
+    logger: f.logger as unknown as RootLogger,
+    clock: f.clock,
+  });
+  instances.push(worker);
+  await worker.runOnce();
+  expect(rawDrops(f.queries)).toHaveLength(1);
 });
