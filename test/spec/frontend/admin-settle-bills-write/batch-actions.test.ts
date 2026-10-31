@@ -21,8 +21,10 @@ import {
   fill,
   freshIn,
   isDisabled,
+  main,
   open,
   openDetail,
+  openReject,
   pageEntry,
   passOf,
   readAgain,
@@ -126,7 +128,7 @@ it(
   async () => {
     const server = createServer(undefined, { writes: ['reject'] });
     await openDetail(server, BILL.issued);
-    const layer = await open(await rowEntry(BATCH.issuedJd, ENTRY.reject));
+    const layer = await openReject(server, BILL.issued, BATCH.issuedJd);
     expect(server.requests('POST'), 'nothing sent when the dialog opens').toEqual([]);
     await blankReason(server, layer, '');
     await blankReason(server, layer, '   ');
@@ -170,7 +172,7 @@ it(
   async () => {
     const server = createServer(undefined, { writes: ['reject'] });
     await openDetail(server, BILL.issued);
-    const layer = await open(await rowEntry(BATCH.issuedTaobao, ENTRY.reject));
+    const layer = await openReject(server, BILL.issued, BATCH.issuedTaobao);
     await fill(textbox(layer, /原因/), REASON);
     for (const id of [BATCH.issuedTaobao, BATCH.issuedJd]) {
       const one = batchOf(server, id);
@@ -186,8 +188,7 @@ it(
     await readAgain(server, BILL.issued, server.writes('reject')[0]!);
     await rowShows(BATCH.issuedTaobao, 'batchStatus', 'CONFIRMED');
     await rowShows(BATCH.issuedJd, 'batchStatus', 'CONFIRMED');
-    for (const id of [BATCH.issuedTaobao, BATCH.issuedJd])
-      expect(usable(batchRow(id), ENTRY.reject), id.slice(0, 8)).toEqual([]);
+    expect(usable(main(), ENTRY.reject), 'no 【驳回】 once no batch waits').toEqual([]);
   },
   FLOW_TIMEOUT,
 );

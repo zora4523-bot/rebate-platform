@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { waitFor } from '@testing-library/react';
+import { act, fireEvent, waitFor } from '@testing-library/react';
 import { expect, it } from 'vitest';
 import {
   BATCH,
   BILL,
   billOf,
   createServer,
+  failure,
   rejected,
   stepUpRequired,
   supplementPath,
@@ -19,14 +20,18 @@ import {
   before,
   choosePlatform,
   closeConfirmations,
+  confirmation,
   open,
   openDetail,
   pageEntry,
   passOf,
   readAgain,
   rowShows,
+  settle,
   settled,
   stepUp,
+  stepUpDialogs,
+  submitOf,
   submitThroughStepUp,
   tell,
   verify,
@@ -34,12 +39,16 @@ import {
 
 const TAOBAO = /淘宝/;
 
-/** Opens 【发起补充批次】 of the shown bill, picks taobao and goes through the step-up. */
-async function launch(server: Server): Promise<void> {
+/** Opens 【发起补充批次】 of the shown bill and picks taobao; nothing is sent yet. */
+async function openLaunch(server: Server): Promise<HTMLElement> {
   const layer = await open(await pageEntry(ENTRY.supplement));
   await choosePlatform(layer, 'taobao', TAOBAO);
   expect(server.writes('supplement'), 'nothing sent when the dialog opens').toEqual([]);
-  await submitThroughStepUp(server, layer, 'supplement');
+  return layer;
+}
+/** Opens 【发起补充批次】 of the shown bill, picks taobao and goes through the step-up. */
+async function launch(server: Server): Promise<void> {
+  await submitThroughStepUp(server, await openLaunch(server), 'supplement');
 }
 function idempotencyOf(request: { headers: Headers }): string | null {
   return request.headers.get('Idempotency-Key');
@@ -68,12 +77,13 @@ it(
 );
 
 it(
-  '[AC-F1-08db-SUPPLEMENT#2] 补充校验无可纳入数据（outcome=generated、batch_ids 为空）：提示无可纳入数据，不出现新批次、不显示空批次',
+  '[AC-F1-08db-SUPPLEMENT#2] 补充校验无可纳入数据（outcome=generated、batch_ids 为空）：提交后新出现无可纳入数据的提示，不出现新批次、不显示空批次',
   async () => {
     const server = createServer(undefined, { writes: ['supplement'], supplement: 'none' });
     await openDetail(server, BILL.settled);
+    const layer = await openLaunch(server);
     const prior = before();
-    await launch(server);
+    await submitThroughStepUp(server, layer, 'supplement');
     await tell(prior, HINT.nothing);
     await settled(server);
     expect(batchRows(BATCH.created)).toEqual([]);
@@ -127,16 +137,68 @@ it.each([
   ['pending_draft', ['bill_id'], HINT.pendingDraft],
   ['credit_disabled', ['platform'], HINT.credit],
 ])(
-  '[AC-F1-08db-SUPPLEMENT#5] 发起收 20001 data.reason=%s：给出可识别的原因提示，不出现新批次',
+  '[AC-F1-08db-SUPPLEMENT#5] 发起收 20001 data.reason=%s：提交后新出现可识别的原因提示（对话框打开时已有的文字不算），不出现新批次',
   async (reason, fields, pattern) => {
     const server = createServer(undefined, { writes: ['supplement'] });
     await openDetail(server, BILL.settled);
     server.once('POST', supplementPath(BILL.settled), () => rejected(fields, reason));
+    const layer = await openLaunch(server);
     const prior = before();
-    await launch(server);
+    await submitThroughStepUp(server, layer, 'supplement');
     await tell(prior, pattern);
     await settled(server);
     expect(batchRows(BATCH.created)).toEqual([]);
+  },
+  FLOW_TIMEOUT,
+);
+
+it(
+  '[AC-F1-08db-SUPPLEMENT#6] 【发起补充批次】对话框里连点提交：只弹一次动态码，验证后只发一次 POST supplement-batches，只生成一个补充批次',
+  async () => {
+    const server = createServer(undefined, { writes: ['supplement'] });
+    await openDetail(server, BILL.settled);
+    await submitThroughStepUp(server, await openLaunch(server), 'supplement', true);
+    await waitFor(() => expect(batchRows(BATCH.created)).toHaveLength(1));
+    await settled(server);
+    expect(server.writes('supplement'), 'one write for the double click').toHaveLength(1);
+    expect(server.verifies(), 'one step-up for the double click').toHaveLength(1);
+  },
+  FLOW_TIMEOUT,
+);
+
+it(
+  '[AC-F1-08db-SUPPLEMENT#7] 发起收 50001 后不出现新批次、对话框仍在；在同一对话框再次提交时沿用同一个 Idempotency-Key 与同样的请求体，成功后新的补充批次出现',
+  async () => {
+    const server = createServer(undefined, { writes: ['supplement'] });
+    await openDetail(server, BILL.settled);
+    server.once('POST', supplementPath(BILL.settled), () => failure(50001));
+    await submitThroughStepUp(server, await openLaunch(server), 'supplement');
+    expect(batchRows(BATCH.created)).toEqual([]);
+
+    const layer = await confirmation();
+    await act(async () => {
+      fireEvent.click(submitOf(layer));
+    });
+    await settle();
+    // The page may ask for the step-up again or reuse the grant it has; both are accepted here.
+    await waitFor(() =>
+      expect(
+        stepUpDialogs().length > 0 || server.writes('supplement').length === 2,
+        'a step-up or the retried write',
+      ).toBe(true),
+    );
+    if (stepUpDialogs().length > 0) {
+      expect(server.writes('supplement'), 'no retry before the step-up').toHaveLength(1);
+      await verify(server);
+    }
+    await waitFor(() => expect(server.writes('supplement')).toHaveLength(2));
+    await settled(server);
+    const [first, second] = server.writes('supplement');
+    expect(idempotencyOf(first!), 'Idempotency-Key').toMatch(/\S/);
+    expect(idempotencyOf(second!), 'the retry keeps its key').toBe(idempotencyOf(first!));
+    expect(second!.body).toEqual(first!.body);
+    expect(server.issued, 'a verified step-up grant').toContain(passOf(second!));
+    await waitFor(() => expect(batchRows(BATCH.created)).toHaveLength(1));
   },
   FLOW_TIMEOUT,
 );

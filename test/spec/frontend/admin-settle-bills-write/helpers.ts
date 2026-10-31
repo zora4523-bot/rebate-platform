@@ -16,10 +16,12 @@ import {
   BASE_URL,
   MENU_ID,
   OTP,
+  batchOf,
   billOf,
   billPath,
   namePattern,
   snapshot as snapshotOf,
+  type Batch,
   type DictField,
   type RequestLog,
   type Server,
@@ -556,6 +558,111 @@ export async function choosePlatform(
     expect(target, `option ${code}`).toBeDefined();
   });
   await click(target!);
+}
+
+// ---- 【驳回】: in the batch row, or in the title area with the batch chosen -------------------
+
+/** How a choice of the reject dialog may name a batch when it does not show the id. */
+const PLATFORM_NAME: Readonly<Record<string, RegExp>> = {
+  taobao: /淘宝|taobao/i,
+  jd: /京东|(?<![A-Za-z])jd(?![A-Za-z])/i,
+};
+const KIND_NAME: Readonly<Record<string, RegExp>> = {
+  main: /主|main|首轮|正常/i,
+  supplement: /补充|supplement/i,
+};
+
+function inBatchRow(server: Server, billId: string, node: HTMLElement): boolean {
+  return billOf(server, billId).batches.some((one) =>
+    batchRows(one.batch_id).some((row) => row.contains(node)),
+  );
+}
+/** The 【驳回】 controls of the detail outside every batch row (the title area). */
+function titleRejects(server: Server, billId: string): HTMLElement[] {
+  return actions(main(), ENTRY.reject).filter((node) => !inBatchRow(server, billId, node));
+}
+/** Enabled checkboxes and radios of `root`. */
+function ticks(root: HTMLElement): HTMLInputElement[] {
+  return Array.from(
+    root.querySelectorAll<HTMLInputElement>('input[type="checkbox"], input[type="radio"]'),
+  ).filter((node) => !node.disabled);
+}
+function choiceText(node: HTMLElement): string {
+  return `${textOf(node.closest('label') ?? node)} ${node.getAttribute('aria-label') ?? ''}`;
+}
+/** The one option naming `target`: by its id, or else by its platform and kind. */
+function pickBatch<T>(options: readonly T[], text: (option: T) => string, target: Batch): T {
+  const byId = options.filter((option) => idToken(target.batch_id).test(text(option)));
+  const byName = options.filter((option) => {
+    const shown = text(option);
+    return (
+      (PLATFORM_NAME[target.platform]?.test(shown) ?? false) &&
+      (KIND_NAME[target.kind]?.test(shown) ?? false)
+    );
+  });
+  const found = byId.length > 0 ? byId : byName;
+  expect(found, `one choice for batch ${target.batch_id.slice(0, 8)}`).toHaveLength(1);
+  return found[0]!;
+}
+/** Chooses `target` in the reject dialog when the dialog offers a choice of batches. */
+async function chooseBatch(layer: HTMLElement, target: Batch): Promise<void> {
+  const choices = ticks(layer);
+  if (choices.length > 0) {
+    const wanted = pickBatch(choices, choiceText, target);
+    for (const node of choices)
+      if (node === wanted ? !node.checked : node.type === 'checkbox' && node.checked)
+        await click(node);
+    return;
+  }
+  const combos = within(layer).queryAllByRole('combobox');
+  if (combos.length === 0) return;
+  expect(combos, 'one batch select').toHaveLength(1);
+  await act(async () => {
+    fireEvent.mouseDown(combos[0]!);
+  });
+  let options: HTMLElement[] = [];
+  await waitFor(() => {
+    options = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content',
+      ),
+    );
+    expect(options.length, 'batch options').toBeGreaterThan(0);
+  });
+  await click(pickBatch(options, textOf, target));
+}
+/**
+ * Opens the reject dialog for `batchId` of the shown bill `billId`: the 【驳回】 of its row, or the
+ * 【驳回】 of the title area with that batch chosen (ticked in its row, or in the dialog).
+ */
+export async function openReject(
+  server: Server,
+  billId: string,
+  batchId: string,
+): Promise<HTMLElement> {
+  const target = structuredClone(batchOf(server, batchId));
+  await waitFor(() =>
+    expect(
+      usable(batchRow(batchId), ENTRY.reject).length + titleRejects(server, billId).length,
+      `a 【驳回】 for ${batchId.slice(0, 8)}`,
+    ).toBeGreaterThan(0),
+  );
+  const inRow = usable(batchRow(batchId), ENTRY.reject);
+  if (inRow.length > 0) {
+    expect(inRow, `one 【驳回】 in the row of ${batchId.slice(0, 8)}`).toHaveLength(1);
+    return open(inRow[0]!);
+  }
+  for (const one of billOf(server, billId).batches)
+    for (const tick of ticks(batchRow(one.batch_id))) {
+      const wanted = one.batch_id === batchId;
+      if (wanted ? !tick.checked : tick.type === 'checkbox' && tick.checked) await click(tick);
+    }
+  const enabled = (): HTMLElement[] =>
+    titleRejects(server, billId).filter((node) => !isDisabled(node));
+  await waitFor(() => expect(enabled(), 'one usable 【驳回】 in the title area').toHaveLength(1));
+  const layer = await open(enabled()[0]!);
+  await chooseBatch(layer, target);
+  return layer;
 }
 
 // ---- text that appeared after an action ----------------------------------------------------
