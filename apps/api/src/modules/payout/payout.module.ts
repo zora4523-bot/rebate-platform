@@ -45,6 +45,7 @@ import { createAttemptAppendJob } from './jobs/attempt-append-job.ts';
 import { PAYOUT_ATTEMPT_APPEND_QUEUE } from './application/withdrawal-proven-success.ts';
 import { PAYOUT_RECON_QUEUE, seedPayoutRecon } from './application/recon-schedule.ts';
 import { createWithdrawHolds } from './application/withdraw-holds.ts';
+import type { TaxYtdIdentityKeyReader } from './application/tax-ytd.ts';
 import { defaultPayoutChannelConfig } from './application/judgement.ts';
 import { FakeChannel } from './infra/channels/fake-channel.ts';
 import type { PayoutChannelName } from './infra/channels/payout-channel.ts';
@@ -149,6 +150,11 @@ export interface PayoutWorkerOptions {
   appeal: AppealPrevStateReader;
   /** B2-06f (D10-398 ②): content's system write of payout.queue_paused = true (worker). */
   pauseQueue: (clock: Clock) => PayoutQueuePausePort;
+  /**
+   * B2-08b (BR-WDR-20, D10-181 ①): identity's realname-identity-key port for the landing job's
+   * tax_ytd (app.module hands in createRealnameIdentityKeyReader()).
+   */
+  identityKey?: TaxYtdIdentityKeyReader;
 }
 
 /** What app.module supplies to the automatic payout decision (BR-WDR-30). */

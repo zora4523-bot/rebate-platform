@@ -44,6 +44,7 @@ import {
   type LandingJobPayload,
 } from '../application/landing-handoff.ts';
 import { createPayoutLanding, instant } from '../application/payout-landing.ts';
+import type { TaxYtdIdentityKeyReader } from '../application/tax-ytd.ts';
 import type { WithdrawApplyOptions } from '../application/withdraw-apply.ts';
 import type { ChannelRaw } from '../domain/channel-result.ts';
 
@@ -90,6 +91,13 @@ export interface LandingJobOptions {
   readonly eventBus: EventBus;
   readonly clock: Clock;
   readonly logger: LandingJobLogger;
+  /**
+   * B2-08b (BR-WDR-20): identity's realname-identity-key port. A W5 that moved the row adds the
+   * withdrawal to tax_ytd on the same transaction (application/tax-ytd.ts, warn lines on `logger`);
+   * a member without a verified real name rolls the landing back and the handler rejects. W6 adds
+   * nothing. PayoutModule.forWorker always passes it (app.module: createRealnameIdentityKeyReader).
+   */
+  readonly identityKey?: TaxYtdIdentityKeyReader;
 }
 
 const PAYING = 'PAYING';

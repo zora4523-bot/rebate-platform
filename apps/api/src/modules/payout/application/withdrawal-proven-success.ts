@@ -26,6 +26,7 @@ import type { EventBus, JobQueue } from '../../platform/index.ts';
 import type { WithdrawApplyOptions } from './withdraw-apply.ts';
 import type { PayoutConfigPort } from './withdraw-rules.ts';
 import { instant } from './payout-landing.ts';
+import type { TaxYtdIdentityKeyReader, TaxYtdLogger } from './tax-ytd.ts';
 import { WithdrawalConflictError } from './withdrawal-commands.ts';
 
 /** The guard conditions of W11 a call may be refused on (contract data.reason). */
@@ -90,6 +91,15 @@ export interface WithdrawalProvenSuccessOptions {
   /** The job queue (same-transaction enqueue of the attempt-append job). */
   readonly queue: JobQueue;
   readonly eventBus: EventBus;
+  /**
+   * B2-08b (BR-WDR-20): identity's realname-identity-key port. A proven W11 adds the withdrawal
+   * to tax_ytd on the caller's transaction, after the voucher (application/tax-ytd.ts); a member
+   * without a verified real name throws, so the write-off rolls back. A refusal adds nothing.
+   * app.module's write-off factory always passes it (createRealnameIdentityKeyReader).
+   */
+  readonly identityKey?: TaxYtdIdentityKeyReader;
+  /** B2-08b: the warn line tax_ytd_identity_missing (ids only). */
+  readonly logger?: TaxYtdLogger;
 }
 
 /** content's switch of W11 (08 BR-WDR-08 细则, BR-WDR-17): default on. */
