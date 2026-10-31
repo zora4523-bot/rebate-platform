@@ -9,6 +9,7 @@ type: impl
 # ④ taobao mode=live 而凭据缺 → 启动失败；mode=replay 仍为 adapter_unimplemented；demo 不变；jd / pdd 不变；不改 config/union-endpoints/taobao.json（切 live 只在 staging 部署配置做）。
 # 分层同 B1-04t：createUnionRegistry 只在调用方传入新的显式选项 taobaoLive: { credentials, transport, … } 时装配真实 taobao，不传保持现行为（受保护测试 AC-B1-04o-ASSEMBLY#4/#5 依赖）；三种拒绝放 union.module.ts 工厂；local / test 设了变量即拒绝放 loadConfig（startupViolations）。归档：传输外层按 B1-04p 对 pdd 的同一做法包 union 原始报文归档。真实 taobao 装配后 registrations() 的 implemented 取 true；registry.ts 顶部 jd / taobao 凭据 TODO 改为只剩 jd。既有 taobaoPriceSettings 选项原样传给真实适配器（② 段价格映射用）。
 # 切 live 前还须 ② 段（商品详情、淘口令、长链转短链）合并；本段只保证装配正确。.env.example 只加注释掉的变量名与说明，不放值；staging 节点上的文件由负责人 / 编排在部署侧放。风险：platform/config 与 union 装配 → RV2。
+# 完成 2026-10-31（#1975）：④ 按 D10-479 及补正——staging + taobao live 而两个变量都没设 → 不装配、保持 adapter_unimplemented、不写 warn（冻结 pdd-query-identity/wiring.test.ts 钉日志恰 1 条；部署检查 CHK-TB-STAGING-CRED 兜底）；taobaoPriceSettings 传真实适配器留到 ② 段（B1-04j 适配器无此选项）。
 refs: []
 refs_hash: {}
 deps: [B1-04j]
@@ -25,4 +26,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/union/taobao-live-wiring/**'
-status: todo
+status: done
+pr: 1975
