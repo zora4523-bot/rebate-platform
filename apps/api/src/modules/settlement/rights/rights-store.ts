@@ -4,6 +4,7 @@
 // BR-FUND-01). Always scoped by app_id, naming schema app.
 import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
+import { addFen } from '@couli/money';
 import type { Selectable, Transaction } from 'kysely';
 
 export type OrderRightsRow = Selectable<DB['order_rights']>;
@@ -209,4 +210,148 @@ export async function insertAdminRebateHistory(
       at,
     })
     .execute();
+}
+
+/**
+ * B2-04lb (D10-474 ①): created_at of the order's latest settlement record (greatest seq), or null
+ * when it has none. A rights result received before it is answered by it (the union's record
+ * already carries the deduction); one received at or after it is not.
+ */
+export async function readLatestSettlementAt(
+  trx: Transaction<DB>,
+  appId: string,
+  orderId: string,
+): Promise<Date | null> {
+  const row = await trx
+    .withSchema('app')
+    .selectFrom('order_settlements')
+    .select('created_at')
+    .where('app_id', '=', appId)
+    .where('order_id', '=', orderId)
+    .orderBy('seq', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+  return row?.created_at ?? null;
+}
+
+/**
+ * B2-04lb (D10-474 ①, D10-483): the deductions (deduction_commission_fen) of the order's successful
+ * RIGHTS records the union has not answered yet (answered_at empty). Returned one by one; the
+ * caller sums them through @couli/money.
+ */
+export async function readOpenRightsDeductions(
+  trx: Transaction<DB>,
+  appId: string,
+  orderId: string,
+): Promise<readonly bigint[]> {
+  const rows = await trx
+    .withSchema('app')
+    .selectFrom('order_rights')
+    .select('deduction_commission_fen')
+    .where('app_id', '=', appId)
+    .where('order_id', '=', orderId)
+    .where('type', '=', 'RIGHTS')
+    .where('status', '=', 'SUCCEEDED')
+    .where('deduction_commission_fen', 'is not', null)
+    .where('answered_at', 'is', null)
+    .orderBy('id')
+    .execute();
+  const out: bigint[] = [];
+  for (const row of rows) {
+    if (row.deduction_commission_fen !== null) out.push(row.deduction_commission_fen);
+  }
+  return out;
+}
+
+/**
+ * B2-04lb (D10-483): the union's updated commission (a new estimate on the order sync, or a new
+ * settlement record) absorbed the open deductions: answered_at set to `at` (the injected clock) on
+ * the sync transaction, so they are never subtracted again. With `receivedBefore`, only the rows
+ * received (updated_at) strictly before it (the new record's created_at); every open row when
+ * null. Returns the rows answered.
+ */
+export async function markRightsAnswered(
+  trx: Transaction<DB>,
+  appId: string,
+  orderId: string,
+  receivedBefore: Date | null,
+  at: Date,
+): Promise<bigint> {
+  let query = trx
+    .withSchema('app')
+    .updateTable('order_rights')
+    .set({ answered_at: at })
+    .where('app_id', '=', appId)
+    .where('order_id', '=', orderId)
+    .where('type', '=', 'RIGHTS')
+    .where('status', '=', 'SUCCEEDED')
+    .where('deduction_commission_fen', 'is not', null)
+    .where('answered_at', 'is', null);
+  if (receivedBefore !== null) query = query.where('updated_at', '<', receivedBefore);
+  const result = await query.executeTakeFirst();
+  return result.numUpdatedRows ?? 0n;
+}
+
+/**
+ * B2-04lb (D10-463 ③): WAIT_COMMISSION rows answered by the union's new commission closed as
+ * SUCCEEDED: those received (updated_at) strictly before `before`, every one when `before` is null.
+ * Returns the rows closed.
+ */
+export async function closeAnsweredWaitingRights(
+  trx: Transaction<DB>,
+  appId: string,
+  orderId: string,
+  before: Date | null,
+  at: Date,
+): Promise<bigint> {
+  let query = trx
+    .withSchema('app')
+    .updateTable('order_rights')
+    .set((eb) => ({
+      status: 'SUCCEEDED',
+      row_version: eb('row_version', '+', 1),
+      updated_at: at,
+    }))
+    .where('app_id', '=', appId)
+    .where('order_id', '=', orderId)
+    .where('status', '=', 'WAIT_COMMISSION');
+  if (before !== null) query = query.where('updated_at', '<', before);
+  const result = await query.executeTakeFirst();
+  return result.numUpdatedRows ?? 0n;
+}
+
+/** Whether some WAIT_COMMISSION row of the order was received strictly before `before`. */
+export async function hasWaitingRightsBefore(
+  trx: Transaction<DB>,
+  appId: string,
+  orderId: string,
+  before: Date,
+): Promise<boolean> {
+  const row = await trx
+    .withSchema('app')
+    .selectFrom('order_rights')
+    .select('id')
+    .where('app_id', '=', appId)
+    .where('order_id', '=', orderId)
+    .where('status', '=', 'WAIT_COMMISSION')
+    .where('updated_at', '<', before)
+    .limit(1)
+    .executeTakeFirst();
+  return row !== undefined;
+}
+
+/**
+ * B2-04lb (D10-474 ①, D10-483): the total deduction still open on the order (answered_at empty),
+ * through @couli/money. The union's latest commission replaces the deductions it answered (never
+ * subtracted again); the open ones add up (conservative, until the union sends its update).
+ */
+export async function readOpenDeductionTotal(
+  trx: Transaction<DB>,
+  appId: string,
+  orderId: string,
+): Promise<bigint> {
+  const deductions = await readOpenRightsDeductions(trx, appId, orderId);
+  let total = 0n;
+  for (const fen of deductions) total = addFen(total, fen);
+  return total;
 }
