@@ -166,6 +166,8 @@ export function governAdapter(
     getPddOrderDetail,
     queryPddAuthority,
     pddAuthorityUrl,
+    taobaoShareCode,
+    shortenTaobaoUrl,
   } = adapter;
 
   /** UnionIdentity is built only by linking on the server (BR-ATTR-05, BR-AI-03). */
@@ -267,6 +269,20 @@ export function governAdapter(
               pddAuthorityUrl.call(adapter, identity, c),
             );
           },
+        }),
+    // B1-04l: a share code / short link of one of our own Taobao links creates no state on our
+    // side and is equivalent on repeat, so both are governed as idempotent reads.
+    ...(taobaoShareCode === undefined
+      ? {}
+      : {
+          taobaoShareCode: (url: string, ctx: CallCtx) =>
+            run('idempotent_read', ctx, (c) => taobaoShareCode.call(adapter, url, c)),
+        }),
+    ...(shortenTaobaoUrl === undefined
+      ? {}
+      : {
+          shortenTaobaoUrl: (url: string, ctx: CallCtx) =>
+            run('idempotent_read', ctx, (c) => shortenTaobaoUrl.call(adapter, url, c)),
         }),
   };
   return { adapter: Object.freeze(governed), governors };

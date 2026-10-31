@@ -7,25 +7,19 @@
 // listOrders 仍是 adapter_unimplemented，不取凭据、不发请求。不读 process.env、不读文件；
 // app_secret 只在内存参与签名。
 //
-// B1-04l（② 段，骨架；实现见台账 ①～⑥）：
+// B1-04l（② 段）：
 // - getItem：taobao.tbk.item.info.upgrade.get，参数 item_id（ItemRef.item_id 原样，一次一个）、
 //   biz_scene_id=1；外层键 tbk_item_info_upgrade_get_response（TODO 待详情录制核对）；results 下按
-//   「单键包装取其数组」通用解包（不写死包装名），取第一条；空 → item_unavailable。映射 title、
-//   pict_url / small_images → normalizeItemImages、price_promotion_info → mapTaobaoPrice（元转分只用
-//   @couli/money yuanStrToFen；now = 注入时钟毫秒；options = priceSettings.read(ctx.appId)，每次读一次）、
-//   income_info.commission_rate（万分比整数串）→ commission_rate_bp、level_one_category_id / _name →
-//   category_l1_id（十进制串）/ category_l1_name；seller_id 不映射。错误：15 + 50001 → item_unavailable，
-//   15 + 1911 → upstream_rejected，其余按 B1-04j。归档 kind = query。
-// - taobaoShareCode：taobao.tbk.tpwd.create，只传 url；外层键 tbk_tpwd_create_response，取
-//   data.password_simple / data.model；缺失或非字符串 → upstream_unavailable；15 + 26 / 23 →
-//   link_unrecognized。只收 https 的 s.click.taobao.com / uland.taobao.com。归档 kind = convert。
-// - shortenTaobaoUrl：taobao.tbk.spread.get，requests = [{url}] 的 JSON 串；外层键
-//   tbk_spread_get_response，取 results 包装下第一项；err_msg 非 OK 或 content 空 → upstream_rejected；
-//   content 不以 https://s.click.taobao.com/ 开头 → upstream_unavailable。只收 https 的
-//   uland / s.click / ai / temai.taobao.com。归档 kind = convert。
-// 两个新端口的入参不合格一律 invalid_dto，不取凭据、不发请求。
+//   「单键包装取其数组」通用解包（不写死包装名），取第一条；空 → item_unavailable。映射见 goods.ts；
+//   价格配置 priceSettings.read(ctx.appId) 每次 getItem 读一次（不缓存）。错误：15 + 50001 →
+//   item_unavailable，15 + 1911 → upstream_rejected，其余按 B1-04j。归档 kind = query。
+// - taobaoShareCode：taobao.tbk.tpwd.create，只传 url；15 + 26 / 23 → link_unrecognized。
+//   归档 kind = convert。见 links.ts。
+// - shortenTaobaoUrl：taobao.tbk.spread.get，requests = [{url}] 的 JSON 串。归档 kind = convert。
+//   见 links.ts。
+// 入参不合格一律 invalid_dto，不取凭据、不发请求。
 import type { Clock } from '../../../platform/index.ts';
-import type { TaobaoPriceSettingsReader } from '../../domain/taobao-price.ts';
+import type { TaobaoPriceOptions, TaobaoPriceSettingsReader } from '../../domain/taobao-price.ts';
 import {
   UnionError,
   type CallCtx,
@@ -46,7 +40,26 @@ import {
   type UnionOrder,
 } from '../../domain/types.ts';
 import type { ArchiveContext, UnionTransport, UnionTransportResponse } from '../replay.ts';
-import { unwrapTaobaoResponse, type TaobaoWarning } from './response.ts';
+import {
+  detailItemId,
+  detailRows,
+  mapTaobaoDetail,
+  TAOBAO_ITEM_DETAIL,
+  TAOBAO_ITEM_DETAIL_ENVELOPE,
+  TAOBAO_ITEM_DETAIL_SCENE,
+} from './goods.ts';
+import {
+  checkShareLink,
+  checkSpreadLink,
+  parseShareCode,
+  parseShortLink,
+  TAOBAO_SPREAD_GET,
+  TAOBAO_SPREAD_GET_ENVELOPE,
+  TAOBAO_TPWD_CREATE,
+  TAOBAO_TPWD_CREATE_ENVELOPE,
+  TAOBAO_TPWD_SUB_CODES,
+} from './links.ts';
+import { unwrapTaobaoResponse, type TaobaoSubCodeMap, type TaobaoWarning } from './response.ts';
 import {
   signTaobaoParameters,
   taobaoSignedEntries,
@@ -82,6 +95,8 @@ export interface TaobaoRequestOptions {
   readonly signal?: AbortSignal;
   /** B1-04p: rides on the transport request for the archiving transport only. */
   readonly archive?: ArchiveContext;
+  /** B1-04l: per-method refinement of code 15 by sub_code (see response.ts). */
+  readonly businessSubCodes?: TaobaoSubCodeMap;
 }
 
 /** 公共参数名；业务参数不得占用（同名 → invalid_dto，不发请求）。 */
@@ -97,6 +112,16 @@ const PUBLIC_PARAMETERS: ReadonlySet<string> = new Set([
 
 const FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded;charset=utf-8';
 
+/** item.info.upgrade.get 的 15 细分：50001 无结果（不存在 / 不可推广）、1911 scene 不支持。 */
+const DETAIL_SUB_CODES: TaobaoSubCodeMap = Object.freeze({
+  '50001': 'item_unavailable',
+  '1911': 'upstream_rejected',
+});
+
+function archiveOf(ctx: CallCtx, kind: 'query' | 'convert'): ArchiveContext {
+  return { appId: ctx.appId, kind };
+}
+
 function unimplemented(name: string): UnionError {
   return new UnionError('adapter_unimplemented', `taobao ${name}: not implemented`, 'taobao');
 }
@@ -108,6 +133,7 @@ export class TaobaoUnionAdapter implements UnionAdapter {
   readonly #clock: Clock;
   readonly #endpoint: UnionEndpoint;
   readonly #warn: ((event: TaobaoWarning) => void) | undefined;
+  readonly #priceSettings: TaobaoPriceSettingsReader | undefined;
 
   constructor(options: TaobaoAdapterOptions) {
     if (options.endpoint.platform !== 'taobao') {
@@ -122,6 +148,7 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     this.#clock = options.clock;
     this.#endpoint = options.endpoint;
     this.#warn = options.warn;
+    this.#priceSettings = options.priceSettings;
   }
 
   /** Internal request foundation; returns the inner object of `options.envelope`. */
@@ -134,7 +161,7 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     // 先做不需要凭据的同步检查，再取凭据：没有外层键的调用不取凭据、不发请求。
     if (typeof envelope !== 'string' || envelope === '') throw unimplemented(method);
     const response = await this.#send(method, parameters, options);
-    return unwrapTaobaoResponse(method, envelope, response, this.#warn);
+    return unwrapTaobaoResponse(method, envelope, response, this.#warn, options.businessSubCodes);
   }
 
   async #send(
@@ -214,23 +241,56 @@ export class TaobaoUnionAdapter implements UnionAdapter {
 
   /** B1-04l: taobao.tbk.item.info.upgrade.get (see the header). */
   async getItem(ref: ItemRef, ctx: CallCtx): Promise<UnionItemDetail> {
-    void ref;
-    void ctx;
-    throw new Error('NotImplemented: TaobaoUnionAdapter.getItem');
+    const itemId = detailItemId(ref);
+    const inner = await this.request(
+      TAOBAO_ITEM_DETAIL,
+      { item_id: itemId, biz_scene_id: TAOBAO_ITEM_DETAIL_SCENE },
+      {
+        envelope: TAOBAO_ITEM_DETAIL_ENVELOPE,
+        archive: archiveOf(ctx, 'query'),
+        businessSubCodes: DETAIL_SUB_CODES,
+        ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
+      },
+    );
+    const rows = detailRows(inner);
+    const priceOptions = await this.#priceOptions(ctx);
+    return mapTaobaoDetail(rows[0], itemId, this.#clock.now(), priceOptions);
   }
 
   /** B1-04l: taobao.tbk.tpwd.create (see the header). */
   async taobaoShareCode(url: string, ctx: CallCtx): Promise<TaobaoShareCode> {
-    void url;
-    void ctx;
-    throw new Error('NotImplemented: TaobaoUnionAdapter.taobaoShareCode');
+    const link = checkShareLink(url);
+    const inner = await this.request(
+      TAOBAO_TPWD_CREATE,
+      { url: link },
+      {
+        envelope: TAOBAO_TPWD_CREATE_ENVELOPE,
+        archive: archiveOf(ctx, 'convert'),
+        businessSubCodes: TAOBAO_TPWD_SUB_CODES,
+        ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
+      },
+    );
+    return parseShareCode(inner);
   }
 
   /** B1-04l: taobao.tbk.spread.get (see the header). */
   async shortenTaobaoUrl(url: string, ctx: CallCtx): Promise<string> {
-    void url;
-    void ctx;
-    throw new Error('NotImplemented: TaobaoUnionAdapter.shortenTaobaoUrl');
+    const link = checkSpreadLink(url);
+    const inner = await this.request(
+      TAOBAO_SPREAD_GET,
+      { requests: JSON.stringify([{ url: link }]) },
+      {
+        envelope: TAOBAO_SPREAD_GET_ENVELOPE,
+        archive: archiveOf(ctx, 'convert'),
+        ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
+      },
+    );
+    return parseShortLink(inner);
+  }
+
+  /** The calling app's BR-PRICE-02 settings, read on every getItem; undefined → 08 defaults. */
+  async #priceOptions(ctx: CallCtx): Promise<TaobaoPriceOptions | undefined> {
+    return this.#priceSettings === undefined ? undefined : this.#priceSettings.read(ctx.appId);
   }
 
   async resolveLink(raw: string, ctx: CallCtx): Promise<ResolvedLink> {
