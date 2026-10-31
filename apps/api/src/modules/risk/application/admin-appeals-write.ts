@@ -24,14 +24,17 @@
 //   put the risk state back (upheld → prev_risk_state with the frozen_until kept; revoked →
 //   normal, a ban also restoreAfterUnban); a blocked_request appeal revoked with cause blocklist
 //   makes the blocklist entries that caused it inactive (each removal audited); audit
-//   appeal_resolve; appeal.resolved queued on the same transaction. Any failure rolls all of it
+//   appeal_resolve; appeal.resolved queued on the same transaction — the six fields of the contract
+//   plus need_reauth (D10-141, BR-TEXT-23, read by notification-appeal-result): true only when this
+//   revocation lifted a ban and linking's read (after restoreAfterUnban, same transaction) finds
+//   the user's Taobao binding invalid, else false. Any failure rolls all of it
 //   back.
 // - register: the reason (appealConsoleText), the target (account: banned / frozen / appealing in
 //   this app; order: voided by risk control, through the port; blocked_request: a 44001 request of
 //   this app with a request type) and user_id against the appellant the server derives (20001);
 //   then a processing appeal on the target (a register-type request: also on its related phone) is
-//   returned with nothing written; then the attempt cap (30418, account and order targets, the
-//   rule of appeals.ts); then the insert (source admin, registered_by caller, deadline by the
+//   returned with nothing written; then the attempt cap (30418, every target type —
+//   BR-ID-36: a registered blocked_request appeal counts too —, the rule of appeals.ts); then the insert (source admin, registered_by caller, deadline by the
 //   working-day calendar) and, for an account appeal, risk state appealing; audit appeal_register.
 //   A concurrent insert losing on a processing unique index answers the winner's appeal.
 //
@@ -147,6 +150,14 @@ export interface AdminAppealsWriteOptions {
     trx: Transaction<DB>,
     input: { readonly appId: string; readonly userId: string; readonly clock: Clock },
   ) => Promise<void>;
+  /**
+   * linking's read of whether the user's Taobao binding is now invalid (SELECT only, on the
+   * caller's transaction): the need_reauth of a revoked ban appeal's appeal.resolved.
+   */
+  readonly taobaoReauth: (
+    trx: Transaction<DB>,
+    scope: { readonly appId: string; readonly userId: string },
+  ) => Promise<boolean>;
   readonly ports: AdminAppealsWritePorts;
   /** The detail read every answer is. */
   readonly reads: AdminAppealsRead;
@@ -251,6 +262,7 @@ export class AdminAppealsWrite {
   readonly #logger: Pick<RootLogger, 'warn'>;
   readonly #auditOn: AdminAppealsWriteOptions['auditOn'];
   readonly #restoreAfterUnban: AdminAppealsWriteOptions['restoreAfterUnban'];
+  readonly #taobaoReauth: AdminAppealsWriteOptions['taobaoReauth'];
   readonly #ports: AdminAppealsWritePorts;
   readonly #reads: AdminAppealsRead;
 
@@ -264,6 +276,7 @@ export class AdminAppealsWrite {
     this.#logger = options.logger;
     this.#auditOn = options.auditOn;
     this.#restoreAfterUnban = options.restoreAfterUnban;
+    this.#taobaoReauth = options.taobaoReauth;
     this.#ports = options.ports;
     this.#reads = options.reads;
   }
@@ -417,11 +430,15 @@ export class AdminAppealsWrite {
       let riskBefore: string | null = null;
       let riskAfter: string | null = null;
       let stamp: { userId: string; version: number } | null = null;
+      let needReauth = false;
       if (row.target_type === 'account' && row.user_id !== null) {
         const changed = await this.#closeAccount(trx, actor, row, decision);
         riskBefore = changed.before;
         riskAfter = changed.after;
         stamp = changed.version === null ? null : { userId: row.user_id, version: changed.version };
+        needReauth = changed.unbanned
+          ? await this.#taobaoReauth(trx, { appId: actor.appId, userId: row.user_id })
+          : false;
       }
       const removed =
         row.target_type === 'blocked_request' && decision === 'revoked'
@@ -466,6 +483,7 @@ export class AdminAppealsWrite {
           target_type: row.target_type,
           target_id: row.target_id,
           status: decision,
+          need_reauth: needReauth,
         },
       });
       return stamp;
@@ -485,7 +503,13 @@ export class AdminAppealsWrite {
     actor: AdminAppealsWriteActor,
     row: AppealRow,
     decision: Decision,
-  ): Promise<{ before: string | null; after: string | null; version: number | null }> {
+  ): Promise<{
+    before: string | null;
+    after: string | null;
+    version: number | null;
+    /** A ban lifted by this revocation (restoreAfterUnban ran). */
+    unbanned: boolean;
+  }> {
     const userId = row.user_id!;
     const app = trx.withSchema('app');
     // The user lock first, as the console's risk state change and linking's binding writers take
@@ -506,7 +530,7 @@ export class AdminAppealsWrite {
       .executeTakeFirst();
     if (current === undefined || current.state !== 'appealing') {
       const state = current?.state ?? null;
-      return { before: state, after: state, version: null };
+      return { before: state, after: state, version: null, unbanned: false };
     }
     const prev = row.prev_risk_state;
     const version = Number(current.row_version);
@@ -521,7 +545,7 @@ export class AdminAppealsWrite {
         changed_by: actor.loginName,
         expected_row_version: version,
       });
-      return { before: 'appealing', after: prev, version: version + 1 };
+      return { before: 'appealing', after: prev, version: version + 1, unbanned: false };
     }
     if (decision === 'revoked') {
       await this.#riskState.setRiskState(trx, {
@@ -541,9 +565,14 @@ export class AdminAppealsWrite {
           clock: this.#clock,
         });
       }
-      return { before: 'appealing', after: 'normal', version: version + 1 };
+      return {
+        before: 'appealing',
+        after: 'normal',
+        version: version + 1,
+        unbanned: prev === 'banned',
+      };
     }
-    return { before: 'appealing', after: 'appealing', version: null };
+    return { before: 'appealing', after: 'appealing', version: null, unbanned: false };
   }
 
   /**
@@ -691,9 +720,9 @@ export class AdminAppealsWrite {
       // Appealing without a processing account appeal: nothing to return, nothing to appeal.
       throw new AdminAppealsWriteFieldsError(['target_id']);
     }
-    if (target.target_type !== 'blocked_request') {
-      const left = await this.#attemptsLeft(trx, actor.appId, target, account);
-      if (!left) throw new AdminAppealAttemptsUsedUpError();
+    // BR-ID-36 细则「维持后再申诉」: every target type, a registered blocked_request appeal too.
+    if (!(await this.#attemptsLeft(trx, actor.appId, target, account))) {
+      throw new AdminAppealAttemptsUsedUpError();
     }
 
     const deadline = await resolveAppealDeadline({

@@ -21391,8 +21391,10 @@ paths:
           The system never resubmits the blocked request: the person submits it again. Upheld →
           the block stays.
         Both decisions queue the domain event appeal.resolved {app_id, appeal_id, user_id,
-        target_type, target_id, status} in the same transaction (04 §3.2 appeals; 编排裁定
-        D10-141); the notification module then sends the in-app message APPEAL_RESULT for
+        target_type, target_id, status, need_reauth} in the same transaction (04 §3.2 appeals;
+        编排裁定 D10-141). need_reauth (boolean, BR-TEXT-23) is true only when an account appeal
+        revoked against a ban leaves the user's Taobao union binding invalid after the unban
+        (BR-ID-31), false for every other resolution; the notification module then sends the in-app message APPEAL_RESULT for
         account and order appeals (BR-TEXT-23). blocked_request appeals get no in-app message
         or SMS: customer service tells the person in the WeCom conversation (BR-ID-36). Writes
         an audit record (action appeal_resolve, with the decision, the note and the appeal's

@@ -3850,6 +3850,8 @@ export class AppModule {
                   auditWriter: (db, clock) =>
                     createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
                   restoreAfterUnban,
+                  // appeal.resolved need_reauth: linking's Taobao binding read (SELECT only).
+                  taobaoReauth: needsTaobaoReauth,
                   ports: adminAppealWritePorts,
                   config: (db, clock) => createContentReader({ db, clock }),
                 },
