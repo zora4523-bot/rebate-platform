@@ -170,9 +170,9 @@ it(
     const before = count(SUBMITTED);
     await entry.click();
     const confirm = page.getByRole('button', {
-      name: /^(?:确\s*定|确\s*认|提\s*交|同\s*步|继\s*续|确认同步|提交同步)$/,
+      name: /^(?:确\s*定|确\s*认|提\s*交|同\s*步|继\s*续|确认同步|提交同步|开始同步)$/,
     });
-    // A confirmation before sending is accepted: confirm it.
+    // A confirmation, or the manual sync dialog filled with this order, is accepted: confirm it.
     await expect
       .poll(() => server.posts().length + confirm.elements().length, FIRST)
       .toBeGreaterThan(0);

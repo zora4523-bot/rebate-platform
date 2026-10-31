@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
 import { waitFor } from '@testing-library/react';
 import { expect, it } from 'vitest';
-import { PLATFORM_NAME, RECORD, SYNCS, createServer, networkDown, statusName } from './fixtures.ts';
+import {
+  PLATFORM_NAME,
+  RECORD,
+  SYNCS,
+  WINDOW_END,
+  createServer,
+  networkDown,
+  statusName,
+} from './fixtures.ts';
 import {
   EMPTY,
   FAILED,
@@ -54,11 +62,14 @@ it(
     await checkRow('done');
     await checkRow('running');
     await checkRow('failed');
-    // The window rows show both ends in Beijing time.
+    // The window rows show both ends in Beijing time (each end is on a later day than its start,
+    // so its date shows either way).
     expect(squash(rowsWith(RECORD.running.marker)[0]!.textContent)).toContain(
-      squash('10-22 00:00'),
+      squash(WINDOW_END.running),
     );
-    expect(squash(rowsWith(RECORD.failed.marker)[0]!.textContent)).toContain(squash('10-20 00:00'));
+    expect(squash(rowsWith(RECORD.failed.marker)[0]!.textContent)).toContain(
+      squash(WINDOW_END.failed),
+    );
     expect(server.recordReads()).toHaveLength(1);
     expect(server.posts()).toEqual([]);
   },

@@ -58,7 +58,11 @@ export function limits(max = 50): SyncLimit[] {
 
 // ---- sync records ----------------------------------------------------------------------------
 
-/** What identifies each sample record on screen, and its Beijing creation time (MM-DD HH:mm). */
+/**
+ * What identifies each sample record on screen, and its Beijing creation time (MM-DD HH:mm). Both
+ * window samples span two Beijing days, so the end shows its date whether or not the page leaves
+ * the end date out for a same-day window (「10-12 14:00 ~ 15:00」).
+ */
 export const RECORD = {
   /** taobao, two order numbers, queued; created 09:00Z = 17:00 Beijing. */
   queued: {
@@ -71,9 +75,11 @@ export const RECORD = {
   done: { status: 'done', platform: 'pdd', marker: '231012-4440000001', created: '10-22 10:05' },
   /** pdd, window 10-21 00:00 – 10-22 00:00 Beijing, running. */
   running: { status: 'running', platform: 'pdd', marker: '10-21 00:00', created: '10-22 10:00' },
-  /** jd, window 10-20 00:00 – 10-20 12:00 Beijing (given in Z), failed. */
-  failed: { status: 'failed', platform: 'jd', marker: '10-20 12:00', created: '10-21 09:30' },
+  /** jd, window 10-19 00:30 – 10-20 12:00 Beijing (given in Z, from on 10-18 Z), failed. */
+  failed: { status: 'failed', platform: 'jd', marker: '10-19 00:30', created: '10-21 09:30' },
 } as const;
+/** The Beijing window ends of the two window samples (each on a later day than its start). */
+export const WINDOW_END = { running: '10-22 00:00', failed: '10-20 12:00' } as const;
 
 function record(fields: Pick<SyncItem, 'sync_id' | 'created_at'> & Partial<SyncItem>): SyncItem {
   const base: SyncItem = {
@@ -132,7 +138,7 @@ export function syncRecords(): SyncItem[] {
       sync_id: '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6b01',
       platform: 'jd',
       mode: 'window',
-      from: '2026-10-19T16:00:00Z',
+      from: '2026-10-18T16:30:00Z',
       to: '2026-10-20T04:00:00Z',
       status: 'failed',
       created_at: '2026-10-21T01:30:00Z',
@@ -181,11 +187,11 @@ export function denied(): Response {
 export function streamPaused(platform: Platform): Response {
   return failure(30156, { platform }, '该平台的站长授权已暂停，暂不能手动同步');
 }
-/** 429 TooManyRequests (42901) with its required Retry-After. */
-export function rateLimited(): Response {
+/** 429 TooManyRequests (42901) with its required Retry-After (`seconds`). */
+export function rateLimited(seconds = 30): Response {
   return Response.json(
     { code: 42901, msg: '请求过于频繁', trace_id: TRACE_ID },
-    { status: 429, headers: { 'Retry-After': '30' } },
+    { status: 429, headers: { 'Retry-After': String(seconds) } },
   );
 }
 /** A network failure (the request never got an answer). */

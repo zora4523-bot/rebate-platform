@@ -161,3 +161,51 @@ it(
   },
   FLOW_TIMEOUT,
 );
+
+/**
+ * Submits the order number form holding `typed` (nothing typed when undefined) and checks the
+ * refusal: stopped in the page, or sent and answered 20001 [order_nos]; either way a hint next to
+ * the order numbers, no sync created, no success shown.
+ */
+async function refusesNoNumbers(typed: string | undefined): Promise<void> {
+  const { server } = await mountList();
+  const dialog = await openSyncDialog();
+  await settled(server);
+  await chooseMode(dialog, 'order_nos');
+  await choosePlatform(dialog, PLATFORM_NAME.pdd);
+  if (typed !== undefined) await fill(textbox(syncDialog(), ORDER_NOS), typed);
+  await settle();
+  const before = snapshotText();
+  await submit(syncDialog());
+  await settled(server);
+  await waitFor(() =>
+    expect(
+      fieldError(textbox(syncDialog(), ORDER_NOS)),
+      'a hint next to the order numbers',
+    ).not.toBe(''),
+  );
+  await settled(server);
+  expect(server.created()).toEqual([]);
+  expect(freshText(before)).not.toMatch(SUBMITTED);
+  expect(freshText(before)).not.toMatch(REUSED);
+  for (const sent of server.posts()) {
+    expect(sent.body, 'the order number form only').not.toHaveProperty('from');
+    expect(sent.body, 'the order number form only').not.toHaveProperty('to');
+  }
+}
+
+it(
+  '[AC-F1-07eb-NOS#5] 没填单号就提交：前端拦下或收 20001 [order_nos]，都在单号旁提示、不建同步、不显示成功',
+  async () => {
+    await refusesNoNumbers(undefined);
+  },
+  FLOW_TIMEOUT,
+);
+
+it(
+  '[AC-F1-07eb-NOS#6] 单号只有空白与空行：前端拦下或收 20001 [order_nos]，都在单号旁提示、不建同步、不显示成功',
+  async () => {
+    await refusesNoNumbers('   \n\n  \n');
+  },
+  FLOW_TIMEOUT,
+);

@@ -32,6 +32,8 @@ import {
 } from './helpers.ts';
 
 const SAMPLE_NO = '231012-4440000009';
+/** A short Retry-After of the 429 sample, so the case can wait past it. */
+const RETRY_AFTER_SECONDS = 1;
 
 it(
   '[AC-F1-07eb-RESULT#1] 200 reused=false 提示已提交 / 排队；同一筛选再提交得 reused=true，提示已有相同同步在进行，与新建提示可区分、不当作新建',
@@ -99,10 +101,10 @@ it(
 );
 
 it(
-  '[AC-F1-07eb-RESULT#4] 429 提示稍后再试，不显示成功，也不自动重发',
+  '[AC-F1-07eb-RESULT#4] 429 提示稍后再试，不显示成功；过了 Retry-After 再多等一段也不自动重发，手动再提交才发且只发一次',
   async () => {
     const { server } = await mountList();
-    server.once('POST', SYNCS, () => rateLimited());
+    server.once('POST', SYNCS, () => rateLimited(RETRY_AFTER_SECONDS));
     const dialog = await prepareOrderNos(server, PLATFORM_NAME.pdd, [SAMPLE_NO]);
     const before = snapshotText();
     await submit(dialog);
@@ -110,10 +112,23 @@ it(
     await settled(server);
     await waitFor(() => expect(freshText(before)).toMatch(RATE_LIMITED));
     expect(freshText(before)).not.toMatch(SUBMITTED);
-    await wait(1_500);
+    // Past the Retry-After the fixture gave, and then some more.
+    await wait(RETRY_AFTER_SECONDS * 1_000 + 2_000);
     await settled(server);
-    expect(server.posts(), 'no automatic resend').toHaveLength(1);
+    expect(server.posts(), 'no automatic resend after Retry-After').toHaveLength(1);
     expect(server.created()).toEqual([]);
+
+    // Only a press of the operator sends again (in the dialog still open, or opened again).
+    const retry = await prepareOrderNos(server, PLATFORM_NAME.pdd, [SAMPLE_NO]);
+    expect(server.posts(), 'nothing is sent before the press').toHaveLength(1);
+    const again = snapshotText();
+    await submit(retry);
+    await waitFor(() => expect(server.posts()).toHaveLength(2));
+    await settled(server);
+    expect(server.posts()[1]!.body).toEqual({ platform: 'pdd', order_nos: [SAMPLE_NO] });
+    await waitFor(() => expect(freshText(again)).toMatch(SUBMITTED));
+    expect(server.posts()).toHaveLength(2);
+    expect(server.created()).toHaveLength(1);
   },
   FLOW_TIMEOUT,
 );
