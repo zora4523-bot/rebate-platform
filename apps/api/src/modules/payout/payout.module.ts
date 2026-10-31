@@ -464,6 +464,8 @@ export class PayoutModule {
               eventBus,
               clock,
               logger: payoutLogger,
+              // B2-08b (BR-WDR-20): identity's realname-identity-key port for the tax_ytd row.
+              ...(options.identityKey === undefined ? {} : { identityKey: options.identityKey }),
             });
             const pause = createPauseJob({
               db,

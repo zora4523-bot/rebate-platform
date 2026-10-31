@@ -44,7 +44,7 @@ import {
   type LandingJobPayload,
 } from '../application/landing-handoff.ts';
 import { createPayoutLanding, instant } from '../application/payout-landing.ts';
-import type { TaxYtdIdentityKeyReader } from '../application/tax-ytd.ts';
+import { createTaxYtdAccumulator, type TaxYtdIdentityKeyReader } from '../application/tax-ytd.ts';
 import type { WithdrawApplyOptions } from '../application/withdraw-apply.ts';
 import type { ChannelRaw } from '../domain/channel-result.ts';
 
@@ -116,6 +116,7 @@ interface LandingRow {
   readonly tax_fen: bigint;
   readonly out_biz_no: string;
   readonly payout_channel: string;
+  readonly created_at: Date;
 }
 
 /** The parts of an attempt's `response` JSON the landing reads (written by the payout process). */
@@ -217,6 +218,7 @@ function defaultAttemptsReader(): LandingAttemptsReader {
 export function createLandingJob(options: LandingJobOptions): JobHandler {
   const { db, ledger, lockUsersForUpdate, eventBus, clock, logger } = options;
   const attempts = options.attemptsReader ?? defaultAttemptsReader();
+  const identityKey = options.identityKey;
   const landing = createPayoutLanding({
     db,
     ledger,
@@ -224,6 +226,9 @@ export function createLandingJob(options: LandingJobOptions): JobHandler {
     eventBus,
     logger,
     conflictMessage: 'payout_landing_cas_conflict',
+    ...(identityKey === undefined
+      ? {}
+      : { taxYtd: createTaxYtdAccumulator({ identity: identityKey, logger }) }),
   });
 
   async function readRow(
@@ -249,6 +254,7 @@ export function createLandingJob(options: LandingJobOptions): JobHandler {
         'tax_fen',
         'out_biz_no',
         'payout_channel',
+        'created_at',
       ])
       .where('app_id', '=', appId)
       .where('id', '=', withdrawalId);
@@ -345,6 +351,7 @@ export function createLandingJob(options: LandingJobOptions): JobHandler {
         tax_fen: row.tax_fen,
         out_biz_no: row.out_biz_no,
         payout_channel: row.payout_channel,
+        created_at: row.created_at,
       };
       if (response.kind === 'success') {
         // paid_at: the channel's time, else the moment the payout process received the result

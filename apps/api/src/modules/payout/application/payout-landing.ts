@@ -18,6 +18,7 @@ import type { Kysely, Transaction } from 'kysely';
 import type { Ledger, PostingEntry } from '../../ledger/index.ts';
 import type { EventBus } from '../../platform/index.ts';
 import type { ChannelRaw } from '../domain/channel-result.ts';
+import type { TaxYtdAccumulator } from './tax-ytd.ts';
 import type { WithdrawApplyOptions } from './withdraw-apply.ts';
 import type { PayoutChannelName } from '../infra/channels/payout-channel.ts';
 
@@ -33,6 +34,8 @@ export interface LandingRow {
   readonly tax_fen: bigint;
   readonly out_biz_no: string;
   readonly payout_channel: string;
+  /** B2-08b: the +08:00 year of created_at is the tax year of the paid withdrawal (BR-WDR-20). */
+  readonly created_at: Date;
 }
 
 /** What a success or a definite failure carries (TransferResult and QueryResult both do). */
@@ -61,6 +64,13 @@ export interface PayoutLandingOptions {
   readonly logger: LandingLogger;
   /** The warn line of a CAS that moved no row (the caller's name, e.g. payout_transfer_cas_conflict). */
   readonly conflictMessage: string;
+  /**
+   * B2-08b (BR-WDR-20): tax_ytd's accumulator. A success that moved the row adds the withdrawal
+   * (amount_fen → cum_income_fen, tax_fen → cum_withheld_fen, the +08:00 year of created_at) on the
+   * same transaction, after the voucher and before the event; a member without a verified real
+   * name throws there, so the landing rolls back. A failure adds nothing.
+   */
+  readonly taxYtd?: TaxYtdAccumulator;
 }
 
 export interface PayoutLanding {
@@ -124,7 +134,7 @@ function userEntries(built: readonly BuiltEntry[], accountId: string): PostingEn
 }
 
 export function createPayoutLanding(options: PayoutLandingOptions): PayoutLanding {
-  const { db, ledger, lockUsersForUpdate, eventBus, logger, conflictMessage } = options;
+  const { db, ledger, lockUsersForUpdate, eventBus, logger, conflictMessage, taxYtd } = options;
 
   /**
    * The locks of a booking transition: users row → balance row (module lock order). On a caller's
@@ -239,6 +249,17 @@ export function createPayoutLanding(options: PayoutLandingOptions): PayoutLandin
           fee_fen: row.fee_fen,
           tax_fen: row.tax_fen,
         });
+        if (taxYtd !== undefined) {
+          await taxYtd.accumulate(trx, {
+            appId: row.app_id,
+            userId: row.user_id,
+            withdrawalId: row.id,
+            createdAt: row.created_at,
+            amountFen: row.amount_fen,
+            taxFen: row.tax_fen,
+            now,
+          });
+        }
         await publish(trx, row, transition.to);
         return true;
       });

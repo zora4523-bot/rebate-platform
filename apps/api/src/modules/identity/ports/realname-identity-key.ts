@@ -5,9 +5,8 @@
 // when its status is 'verified', else null (no row, 'none' — even with the hmac retained for tax —
 // or 'failed'). One SELECT on the executor the caller passes (its uncommitted writes are visible);
 // no locks, no writes, no logging; never the name or the id number, only the HMAC.
-//
-// Also compiled by the `test` project (through ../index.ts): erasable syntax only, `import type`
-// for type-only imports, relative imports with `.ts`.
+// Written by the withdraw lane, reviewed by identity (D10-459); payout takes it through
+// identity/index.ts → app.module (dependency inversion, 02 §4.1).
 import type { DB } from '@couli/db';
 import type { Kysely, Transaction } from 'kysely';
 
@@ -25,5 +24,19 @@ export interface RealnameIdentityKeyReader {
 }
 
 export function createRealnameIdentityKeyReader(): RealnameIdentityKeyReader {
-  throw new Error('NotImplemented: createRealnameIdentityKeyReader');
+  return {
+    async readIdentityKey(executor, input) {
+      const row = await executor
+        .withSchema('app')
+        .selectFrom('realname')
+        .select('id_no_hmac')
+        .where('app_id', '=', input.appId)
+        .where('user_id', '=', input.userId)
+        .where('status', '=', 'verified')
+        .orderBy('verified_at', 'desc')
+        .limit(1)
+        .executeTakeFirst();
+      return row?.id_no_hmac ?? null;
+    },
+  };
 }
