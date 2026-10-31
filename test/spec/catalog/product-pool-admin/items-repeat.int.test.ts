@@ -5,6 +5,7 @@ import { expect, it } from 'vitest';
 import {
   addLink,
   addRef,
+  age,
   audit,
   bounds,
   foreignItem,
@@ -17,10 +18,14 @@ import {
   PERMISSION,
   pick,
   product,
+  RAW_MAX_AGE_MS,
   rejected,
   rendezvous,
+  searchAnswers,
   seedItem,
   seedPool,
+  seedRef,
+  send,
   setup,
   snapshot,
   stableId,
@@ -28,7 +33,9 @@ import {
   success,
   union,
   useHarness,
+  type Sent,
   type Setup,
+  type Snapshot,
 } from './kit.ts';
 import {
   DemoUnionError,
@@ -40,6 +47,24 @@ const h = useHarness();
 
 const offShelf = () => new UnionError('item_unavailable', 'synthetic off shelf', 'taobao');
 const outage = () => new UnionError('upstream_unavailable', 'synthetic outage', 'taobao');
+const refused = () => new UnionError('upstream_rejected', 'synthetic refusal', 'taobao');
+
+const AGED = RAW_MAX_AGE_MS + 1000;
+/** 只钉非空，不钉文案。 */
+const SOME_REASON = expect.stringMatching(/\S/);
+
+/** 联盟答了，但标记价格异常；价格与池里不同，且 price - coupon = final。 */
+function anomalous(f: Pick<Setup, 'clock'>, item: UnionItemDetail): UnionItemDetail {
+  return {
+    ...item,
+    price_fen: 5000n,
+    coupon_fen: 500n,
+    final_price_fen: 4500n,
+    quoted_at: f.clock.now().toISOString(),
+    price_status: 'anomaly',
+    price_anomaly_reason: 'unknown_promo',
+  };
+}
 
 /** 链接和口令先认出商品、派生出 key，详情阶段才知道下架：key 已知，不能一律当拒绝。 */
 interface OffShelfInput {
@@ -347,6 +372,188 @@ it('[AC-B1-05q#110] 链接重复入库时复核答不了 → 50401，覆盖也�
   await rejected(await addLink(f, pool, linkOf(item.item_id!), bounds(7)), 50401);
   expect(await snapshot(h, f.appId)).toEqual(before);
 });
+
+/** 本 App 别的池里也有这个 key，返回改动前的行：这些情形不是联盟明确下架，不能牵连它。 */
+async function sibling(f: Setup, key: string) {
+  const pool = await seedPool(h, f);
+  await seedItem(h, f, pool, key, { sort: 5 });
+  return { pool, row: await itemRow(h, f, pool, key) };
+}
+
+/** 复核不通过的重复入库：三项覆盖生效，这一行 offline 带原因，价格与创建信息不动，别的池不动。 */
+async function expectHeldOffline(
+  f: Setup,
+  held: Awaited<ReturnType<typeof existing>>,
+  other: Awaited<ReturnType<typeof sibling>>,
+  before: Snapshot,
+  sent: Sent,
+  end: string,
+) {
+  const { pool, key, creator, seeded } = held;
+  const added = await success(sent);
+  expect(added).toMatchObject({
+    product_key: key,
+    status: 'offline',
+    invalid_reason: SOME_REASON,
+    sort: 7,
+    start_at: null,
+    price_fen: 8800,
+    coupon_fen: 800,
+    final_price_fen: 8000,
+    created_by: creator.account.id,
+  });
+  expect(instant(added.end_at)).toBe(end);
+  expect(instant(added.quoted_at)).toBe(instant(seeded.quoted_at));
+  expect(instant(added.created_at)).toBe(instant(seeded.created_at));
+  const row = await itemRow(h, f, pool, key);
+  expect(row).toMatchObject({
+    status: 'offline',
+    invalid_reason: SOME_REASON,
+    sort: 7,
+    start_at: null,
+    price_fen: seeded.price_fen,
+    coupon_fen: seeded.coupon_fen,
+    final_price_fen: seeded.final_price_fen,
+    quoted_at: seeded.quoted_at,
+    created_at: seeded.created_at,
+    created_by: creator.account.id,
+  });
+  expect(instant(row!.end_at)).toBe(end);
+  const entry = await audit(h, f, before, 'pool_item_add');
+  expect(entry.before).toMatchObject({ product_key: key, sort: 1, status: 'online' });
+  expect(entry.after).toMatchObject({ product_key: key, sort: 7, status: 'offline' });
+  expect(await itemRow(h, f, other.pool, key)).toEqual(other.row);
+}
+
+it.each([
+  { name: '标题搜索第 1 页为空', page: (): UnionItemDetail[] => [] },
+  {
+    name: '标题搜索第 1 页没有同键',
+    page: (f: Setup): UnionItemDetail[] => [product(f, stableId()), product(f, stableId())],
+  },
+])(
+  '[AC-B1-05q#112] 过期 item_ref 重复入库，product_refs 也过期，$name：200，覆盖生效，这一行 offline 带原因，价格、创建信息、别的池不动，不用过期原串',
+  async ({ page }) => {
+    const f = await setup(h);
+    const held = await existing(f);
+    const other = await sibling(f, held.key);
+    await age(f, AGED);
+    const old = new Date(f.clock.now().getTime() - AGED);
+    await seedRef(h, f, held.key, {
+      raw_item_id: held.item.item_id!,
+      raw_fetched_at: old,
+      refreshed_at: old,
+    });
+    searchAnswers([page(f)]);
+    union.searchItems.mockClear();
+    union.getItem.mockResolvedValue(held.item);
+    const end = hoursFromNow(f, 48);
+    const before = await snapshot(h, f.appId);
+    const sent = await addRef(f, held.pool, held.ref, bounds(7, null, end));
+    await expectHeldOffline(f, held, other, before, sent, end);
+    expect(union.searchItems).toHaveBeenCalled();
+    expect(union.getItem.mock.calls.map(([ref]) => ref.item_id)).not.toContain(held.item.item_id);
+  },
+);
+
+it('[AC-B1-05q#113] 新鲜 item_ref 重复入库而联盟拒绝原串（upstream_rejected）：200，覆盖生效，这一行 offline 带原因，价格、创建信息、别的池不动', async () => {
+  const f = await setup(h);
+  const held = await existing(f);
+  const other = await sibling(f, held.key);
+  f.clock.advanceMs(60_000);
+  union.getItem.mockRejectedValue(refused());
+  const end = hoursFromNow(f, 48);
+  const before = await snapshot(h, f.appId);
+  const sent = await addRef(f, held.pool, held.ref, bounds(7, null, end));
+  await expectHeldOffline(f, held, other, before, sent, end);
+});
+
+it('[AC-B1-05q#114] 链接重复入库，解析成功而联盟拒绝原串（upstream_rejected）：200，覆盖生效，这一行 offline 带原因，价格、创建信息、别的池不动', async () => {
+  const f = await setup(h);
+  const held = await existing(f);
+  const other = await sibling(f, held.key);
+  f.clock.advanceMs(60_000);
+  stubProduct(held.item);
+  union.getItem.mockRejectedValue(refused());
+  const end = hoursFromNow(f, 48);
+  const before = await snapshot(h, f.appId);
+  const sent = await addLink(f, held.pool, linkOf(held.item.item_id!), bounds(7, null, end));
+  await expectHeldOffline(f, held, other, before, sent, end);
+});
+
+it.each(['item_ref', 'link_text'] as const)(
+  '[AC-B1-05q#115] %s 重复入库时联盟标记价格异常：200，覆盖生效，这一行 offline 带原因，价格、创建信息、别的池不动',
+  async (source) => {
+    const f = await setup(h);
+    const held = await existing(f);
+    const other = await sibling(f, held.key);
+    f.clock.advanceMs(60_000);
+    stubProduct(anomalous(f, held.item));
+    const end = hoursFromNow(f, 48);
+    const before = await snapshot(h, f.appId);
+    const at = bounds(7, null, end);
+    const sent =
+      source === 'item_ref'
+        ? await addRef(f, held.pool, held.ref, at)
+        : await addLink(f, held.pool, linkOf(held.item.item_id!), at);
+    await expectHeldOffline(f, held, other, before, sent, end);
+  },
+);
+
+it('[AC-B1-05q#116] 重新上架时联盟标记价格异常：200，保持 offline 带原因，价格不动', async () => {
+  const f = await setup(h);
+  const pool = await seedPool(h, f);
+  const stable = stableId();
+  const key = `tb:${stable}`;
+  const item = product(f, stable);
+  // 手动下架的行没有原因：响应里的原因只能来自这一次复核。
+  await seedItem(h, f, pool, key, { status: 'offline', invalid_reason: null });
+  await seedRef(h, f, key, { raw_item_id: item.item_id! });
+  const seeded = (await itemRow(h, f, pool, key))!;
+  f.clock.advanceMs(1000);
+  union.getItem.mockResolvedValue(anomalous(f, item));
+  const before = await snapshot(h, f.appId);
+  const updated = await success(await send(f, 'updateItem', { pool, key }, { status: 'online' }));
+  expect(updated).toMatchObject({
+    product_key: key,
+    status: 'offline',
+    invalid_reason: SOME_REASON,
+    price_fen: 8800,
+    coupon_fen: 800,
+    final_price_fen: 8000,
+  });
+  expect(instant(updated.quoted_at)).toBe(instant(seeded.quoted_at));
+  expect(await itemRow(h, f, pool, key)).toMatchObject({
+    status: 'offline',
+    invalid_reason: SOME_REASON,
+    price_fen: seeded.price_fen,
+    coupon_fen: seeded.coupon_fen,
+    final_price_fen: seeded.final_price_fen,
+    quoted_at: seeded.quoted_at,
+  });
+  await audit(h, f, before, 'pool_item_update');
+});
+
+it.each(['item_ref', 'link_text'] as const)(
+  '[AC-B1-05q#117] %s 新 key 且联盟标记价格异常 → 50401，什么都不写',
+  async (source) => {
+    const f = await setup(h);
+    const pool = await seedPool(h, f);
+    const item = product(f, stableId());
+    const row = await pick(f, item);
+    const other = await sibling(f, row.product_key);
+    stubProduct(anomalous(f, item));
+    const before = await snapshot(h, f.appId);
+    const sent =
+      source === 'item_ref'
+        ? await addRef(f, pool, row.item_ref)
+        : await addLink(f, pool, linkOf(item.item_id!));
+    await rejected(sent, 50401);
+    expect(await itemRow(h, f, pool, row.product_key)).toBeUndefined();
+    expect(await itemRow(h, f, other.pool, row.product_key)).toEqual(other.row);
+    expect(await snapshot(h, f.appId)).toEqual(before);
+  },
+);
 
 it('[AC-B1-05q#47] 同一商品并发入库由唯一键裁决：都不报错，只留一行，新建和覆盖各一条审计', async () => {
   const f = await setup(h);
