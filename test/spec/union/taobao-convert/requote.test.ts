@@ -38,14 +38,12 @@ it('[AC-B1-04d#16] requote：originalPrice / actualPrice 元转分，券信息�
   for (const key of Object.keys(requote)) expect(key).not.toMatch(/commission|rebate|rate/i);
 });
 
+// D10-515 / BR-PRICE-01：元字符串转分只用 parseYuanToFen()，最多两位小数。
 it.each([
   ['12', 1200n],
   ['12.3', 1230n],
   ['0.05', 5n],
-  // yuanStrToFen 截到分（向下），不四舍五入。
-  ['19.999', 1999n],
-  ['7.005', 700n],
-])('[AC-B1-04d#17] 金额 %s 元按 yuanStrToFen 得 %s 分', async (yuan, fen) => {
+])('[AC-B1-04d#17] 金额 %s 元按 parseYuanToFen 得 %s 分', async (yuan, fen) => {
   const h = setup({
     reply: response(envelope(privilegeData({ originalPrice: yuan, actualPrice: yuan }))),
   });
@@ -112,3 +110,28 @@ it.each([
   expect(result.tpwd).toBeTypeOf('string');
   expect(result).not.toHaveProperty('requote');
 });
+
+// D10-515 / BR-PRICE-01：元字符串转分只用 parseYuanToFen()，超过两位小数视为字段缺失，
+// 不截断也不四舍五入（末尾 0 也算位数）；断言形状同 [AC-B1-04d#19]。
+const OVER_PRECISION_AMOUNTS = ['19.999', '7.005', '40.500'];
+const OVER_PRECISION_CASES = OVER_PRECISION_AMOUNTS.flatMap((bad): [string, string][] => [
+  ['originalPrice', bad],
+  ['actualPrice', bad],
+]);
+
+it.each(OVER_PRECISION_CASES)(
+  '[AC-B1-04d#17] %s 超过两位小数（%s）→ 视为缺失：省略 requote 并告警一次，转链结果不受影响',
+  async (field, bad) => {
+    const h = setup({ reply: response(envelope(privilegeData({ [field]: bad }))) });
+    const result = await converted(() => h.adapter.convert(req, identity, ctx));
+    expect(result.url).toBe(SHORT_URL);
+    expect(result.tpwd).toBeTypeOf('string');
+    expect(result).not.toHaveProperty('requote');
+    expect(result.requote).toBeUndefined();
+    expect(h.warn).toHaveBeenCalledTimes(1);
+    const event = h.warn.mock.calls[0]![0];
+    expect(event.method).toBe(PRIVILEGE_PATH);
+    expect(event.code).toBeTypeOf('string');
+    expect(visible(event)).not.toContain(bad);
+  },
+);
