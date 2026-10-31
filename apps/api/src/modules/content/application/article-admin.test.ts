@@ -10,7 +10,9 @@ import {
   articleFieldList,
   articleView,
   currentVersionOf,
+  faqRankRejected,
   helpSectionRejected,
+  withHelpOnlyFields,
   withHelpSectionField,
   isNewArticleId,
   type ArticleAdminStore,
@@ -71,6 +73,7 @@ function row(extra: Partial<ArticleRow> = {}): ArticleRow {
     notice_content_version: 1,
     notice_end_at: null,
     help_section: null,
+    faq_rank: null,
     row_version: 0,
     created_at: at,
     updated_at: at,
@@ -533,5 +536,80 @@ it('[AC-F1-02zs#11] views show help_section only when set; publish audit keeps i
     action: 'article_publish',
     before: { help_section: 'invite' },
     after: { help_section: 'invite' },
+  });
+});
+
+it('[AC-F1-02zzp#18] help-only fields go after the named fields, help_section before faq_rank', () => {
+  expect(withHelpOnlyFields([], ['faq_rank'])).toEqual(['faq_rank']);
+  expect(
+    withHelpOnlyFields(
+      ['title', 'body', 'notice_end_at', '全网最低'],
+      ['help_section', 'faq_rank'],
+    ),
+  ).toEqual(['title', 'body', 'notice_end_at', 'help_section', 'faq_rank', '全网最低']);
+  expect(withHelpOnlyFields(['title', '全网最低'], [])).toEqual(['title', '全网最低']);
+  expect(faqRankRejected('help', 3)).toBe(false);
+  expect(faqRankRejected('rule', null)).toBe(false);
+  expect(faqRankRejected('rule', 3)).toBe(true);
+  expect(faqRankRejected('notice', 999)).toBe(true);
+});
+
+it('[AC-F1-02zzp#15] create and save store faq_rank; omitted clears it; audits carry it', async () => {
+  const { store, state } = memory();
+  const a = admin(store);
+  const created = await a.create(ACTOR, {
+    article_id: ID,
+    category: 'help',
+    title: '帮助',
+    body: doc('x'),
+    faq_rank: 7,
+  });
+  expect(created.versions[0]).toHaveProperty('faq_rank', 7);
+  expect(state.rows[0]!.faq_rank).toBe(7);
+  expect(state.audits[0]).toMatchObject({ after: { faq_rank: 7 } });
+  const saved = await a.save(ACTOR, ID, { title: '帮助', body: doc('y'), expected_row_version: 0 });
+  expect(saved.versions[0]).not.toHaveProperty('faq_rank');
+  expect(saved.versions[1]).toHaveProperty('faq_rank', 7);
+  expect(state.rows.find((r) => r.version === 2)!.faq_rank).toBeNull();
+  expect(state.audits[1]).toMatchObject({ before: { faq_rank: 7 }, after: { faq_rank: null } });
+});
+
+it('[AC-F1-02zzp#17] faq_rank on another category is 20001 in contract order, nothing written', async () => {
+  const { store, state } = memory([row({ category: 'rule' })]);
+  const a = admin(store);
+  expect(
+    await fieldsOf(
+      a.create(ACTOR, {
+        article_id: '0199f102-aaaa-7000-8000-000000000002',
+        category: 'notice',
+        title: '全网最低',
+        body: doc('x'),
+        notice_closable: false,
+        help_section: 'invite',
+        faq_rank: 3,
+      }),
+    ),
+  ).toEqual(['title', 'notice_end_at', 'help_section', 'faq_rank', '全网最低']);
+  expect(
+    await fieldsOf(
+      a.save(ACTOR, ID, { title: '规则', body: doc('x'), faq_rank: 1, expected_row_version: 0 }),
+    ),
+  ).toEqual(['faq_rank']);
+  expect(state.rows).toHaveLength(1);
+  expect(state.audits).toEqual([]);
+});
+
+it('[AC-F1-02zzp#20] views show faq_rank only when set; publish keeps it in the audit', async () => {
+  const now = new Date(NOW);
+  const view = articleView([row({ version: 2, faq_rank: 9 }), row()], now);
+  expect(view.versions[0]).toHaveProperty('faq_rank', 9);
+  expect(view.versions[1]).not.toHaveProperty('faq_rank');
+  const { store, state } = memory([row({ faq_rank: 4 })]);
+  const published = await admin(store).publish(ACTOR, ID, { version: 1, expected_row_version: 0 });
+  expect(published.versions[0]).toHaveProperty('faq_rank', 4);
+  expect(state.audits[0]).toMatchObject({
+    action: 'article_publish',
+    before: { faq_rank: 4 },
+    after: { faq_rank: 4 },
   });
 });

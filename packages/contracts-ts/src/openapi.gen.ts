@@ -10359,8 +10359,7 @@ export interface components {
         /**
          * @description List summary (W-25, 编排者默认): derived by the server from the current version's body —
          *     the plain text of its first non-empty paragraph, cut to 80 characters; not entered in the
-         *     admin console. Absent when the body has no text paragraph (never null). Not returned
-         *     until its implementation is merged.
+         *     admin console. Absent when the body has no text paragraph (never null).
          */
         ArticleListSummaryText: string;
         /**
@@ -10368,8 +10367,7 @@ export interface components {
          * @description Manual order of a help article in the help home 「常见问题」 list (W-25, 编排者默认): the
          *     client sorts that list by faq_rank ascending (the server keeps the usual list order of
          *     04 §6.2); GET /v1/articles?category=help&faq=true lists only articles whose current
-         *     version has it set. Help articles only. Not returned until its
-         *     implementation is merged.
+         *     version has it set. Help articles only.
          */
         ArticleFaqRank: number;
         ArticleListData: {
@@ -19713,8 +19711,7 @@ export interface operations {
                  * @description Optional filter on the help_section of each article's current version (04 §6.2;
                  *     变更记录 20261020-内容线默认回写 §1.6). Only with category=help: with any other category →
                  *     20001 `data.fields=[help_section]`; an unknown code is refused by the route schema with
-                 *     20001. The cursor shape is unchanged and not bound to this filter (04 §6.2). Until
-                 *     F1-02zs is merged the server ignores this parameter.
+                 *     20001. The cursor shape is unchanged and not bound to this filter (04 §6.2).
                  */
                 help_section?: components["schemas"]["ArticleHelpSection"];
                 /**
@@ -19725,8 +19722,7 @@ export interface operations {
                  *     DESC, 04 §6.2), with no exception. The client reads every page (the largest `limit`,
                  *     following `next_cursor` until it is null; the list is normally a single page) and only
                  *     then shows the 「常见问题」 list sorted by faq_rank ascending, so the order never depends
-                 *     on which page an article falls on. faq=false or omitted = no filter. Until
-                 *     its implementation is merged the server ignores this parameter.
+                 *     on which page an article falls on. faq=false or omitted = no filter.
                  */
                 faq?: boolean;
                 /** @description Opaque cursor from `next_cursor`; absent for the first page. */

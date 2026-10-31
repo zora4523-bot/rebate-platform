@@ -4,9 +4,9 @@ import {
   articleSummary,
   decodeArticleCursor,
   encodeArticleCursor,
-  helpSectionFilterAllowed,
   isArticleId,
-  ArticleHelpSectionFilterError,
+  refusedListFilters,
+  ArticleListFilterError,
   type ArticleCategory,
   type ArticleHelpSection,
   type ArticleCursor,
@@ -17,20 +17,24 @@ export interface ArticleListQuery {
   readonly category: ArticleCategory;
   /** Contract route schema has checked the code; only valid with category help (L30). */
   readonly help_section?: ArticleHelpSection;
+  /** CT-26a: true keeps help articles whose current version has a faq_rank; help only. */
+  readonly faq?: boolean;
   readonly cursor?: string;
   readonly limit?: number;
 }
 
 export interface ArticleStore {
   /**
-   * Current published revisions only; category, help_section (of the current revision), notice
-   * eligibility and keyset precede limit.
+   * Current published revisions only; category, help_section and faq_rank presence (both of the
+   * current revision), notice eligibility and keyset precede limit. Rows carry the body.
    */
   list(input: {
     readonly appId: string;
     readonly now: Date;
     readonly category: ArticleCategory;
     readonly helpSection: ArticleHelpSection | undefined;
+    /** True: only rows whose faq_rank is set; order and keyset unchanged. */
+    readonly faqOnly: boolean;
     readonly after: ArticleCursor | undefined;
     readonly take: number;
   }): Promise<readonly PublishedArticleSummary[]>;
@@ -54,10 +58,9 @@ export class ArticleReader {
 
   async list(appId: string, query: ArticleListQuery): Promise<Schema<'ArticleListData'>> {
     const limit = query.limit ?? 20; // Limit is validated by the contract route schema.
-    // L30: refused before the cursor is looked at; the cursor itself is not bound to the filter.
-    if (!helpSectionFilterAllowed(query.category, query.help_section)) {
-      throw new ArticleHelpSectionFilterError();
-    }
+    // L30 / CT-26a: refused before the cursor is looked at; the cursor is not bound to filters.
+    const refused = refusedListFilters(query.category, query.help_section, query.faq);
+    if (refused.length > 0) throw new ArticleListFilterError(refused);
     const after =
       query.cursor === undefined ? undefined : decodeArticleCursor(query.cursor, query.category);
     const rows = await this.#available().list({
@@ -65,6 +68,7 @@ export class ArticleReader {
       now: this.#clock.now(),
       category: query.category,
       helpSection: query.help_section,
+      faqOnly: query.faq === true,
       after,
       take: limit + 1,
     });
