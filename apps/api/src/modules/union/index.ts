@@ -62,6 +62,7 @@ export type {
   RegisteredPlatform,
   ResolvedLink,
   SearchQuery,
+  TaobaoShareCode,
   TimeWindow,
   TljCreateReq,
   TljCreateResult,

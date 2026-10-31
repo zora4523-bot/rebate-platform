@@ -3,9 +3,29 @@
 // 经注入的 UnionTransport 发表单 POST 到 endpoint.baseUrl（参数含 sign 全在请求体，URL 不带查询串，
 // Content-Type application/x-www-form-urlencoded;charset=utf-8）、按调用方给出的外层键解包。
 // 业务参数与公共参数同名 → invalid_dto，不发请求。传输抛错 → upstream_unavailable（不带原文）。
-// 调用方的 AbortSignal 与归档上下文原样挂在传输请求上。端口方法一律 adapter_unimplemented，
-// 不取凭据、不发请求（字段映射在 ② 段）。不读 process.env、不读文件；app_secret 只在内存参与签名。
+// 调用方的 AbortSignal 与归档上下文原样挂在传输请求上。searchItems / resolveLink / convert /
+// listOrders 仍是 adapter_unimplemented，不取凭据、不发请求。不读 process.env、不读文件；
+// app_secret 只在内存参与签名。
+//
+// B1-04l（② 段，骨架；实现见台账 ①～⑥）：
+// - getItem：taobao.tbk.item.info.upgrade.get，参数 item_id（ItemRef.item_id 原样，一次一个）、
+//   biz_scene_id=1；外层键 tbk_item_info_upgrade_get_response（TODO 待详情录制核对）；results 下按
+//   「单键包装取其数组」通用解包（不写死包装名），取第一条；空 → item_unavailable。映射 title、
+//   pict_url / small_images → normalizeItemImages、price_promotion_info → mapTaobaoPrice（元转分只用
+//   @couli/money yuanStrToFen；now = 注入时钟毫秒；options = priceSettings.read(ctx.appId)，每次读一次）、
+//   income_info.commission_rate（万分比整数串）→ commission_rate_bp、level_one_category_id / _name →
+//   category_l1_id（十进制串）/ category_l1_name；seller_id 不映射。错误：15 + 50001 → item_unavailable，
+//   15 + 1911 → upstream_rejected，其余按 B1-04j。归档 kind = query。
+// - taobaoShareCode：taobao.tbk.tpwd.create，只传 url；外层键 tbk_tpwd_create_response，取
+//   data.password_simple / data.model；缺失或非字符串 → upstream_unavailable；15 + 26 / 23 →
+//   link_unrecognized。只收 https 的 s.click.taobao.com / uland.taobao.com。归档 kind = convert。
+// - shortenTaobaoUrl：taobao.tbk.spread.get，requests = [{url}] 的 JSON 串；外层键
+//   tbk_spread_get_response，取 results 包装下第一项；err_msg 非 OK 或 content 空 → upstream_rejected；
+//   content 不以 https://s.click.taobao.com/ 开头 → upstream_unavailable。只收 https 的
+//   uland / s.click / ai / temai.taobao.com。归档 kind = convert。
+// 两个新端口的入参不合格一律 invalid_dto，不取凭据、不发请求。
 import type { Clock } from '../../../platform/index.ts';
+import type { TaobaoPriceSettingsReader } from '../../domain/taobao-price.ts';
 import {
   UnionError,
   type CallCtx,
@@ -16,6 +36,7 @@ import {
   type Page,
   type ResolvedLink,
   type SearchQuery,
+  type TaobaoShareCode,
   type TimeWindow,
   type UnionAdapter,
   type UnionEndpoint,
@@ -48,6 +69,11 @@ export interface TaobaoAdapterOptions {
   readonly clock: Clock;
   readonly endpoint: UnionEndpoint;
   readonly warn?: (event: TaobaoWarning) => void;
+  /**
+   * B1-04l (D10-479): BR-PRICE-02 settings (price.taobao.*), read with ctx.appId once per getItem
+   * and passed to mapTaobaoPrice. Without it the BR-PRICE-02 defaults apply.
+   */
+  readonly priceSettings?: TaobaoPriceSettingsReader;
 }
 
 export interface TaobaoRequestOptions {
@@ -178,17 +204,33 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     }
   }
 
-  // 端口方法：字段映射在 ② 段，先一律 adapter_unimplemented，不取凭据、不发请求。
+  // 端口方法：searchItems / resolveLink / convert / listOrders 仍 adapter_unimplemented，
+  // 不取凭据、不发请求。
   async searchItems(q: SearchQuery, ctx: CallCtx): Promise<Page<UnionItem>> {
     void q;
     void ctx;
     throw unimplemented('searchItems');
   }
 
+  /** B1-04l: taobao.tbk.item.info.upgrade.get (see the header). */
   async getItem(ref: ItemRef, ctx: CallCtx): Promise<UnionItemDetail> {
     void ref;
     void ctx;
-    throw unimplemented('getItem');
+    throw new Error('NotImplemented: TaobaoUnionAdapter.getItem');
+  }
+
+  /** B1-04l: taobao.tbk.tpwd.create (see the header). */
+  async taobaoShareCode(url: string, ctx: CallCtx): Promise<TaobaoShareCode> {
+    void url;
+    void ctx;
+    throw new Error('NotImplemented: TaobaoUnionAdapter.taobaoShareCode');
+  }
+
+  /** B1-04l: taobao.tbk.spread.get (see the header). */
+  async shortenTaobaoUrl(url: string, ctx: CallCtx): Promise<string> {
+    void url;
+    void ctx;
+    throw new Error('NotImplemented: TaobaoUnionAdapter.shortenTaobaoUrl');
   }
 
   async resolveLink(raw: string, ctx: CallCtx): Promise<ResolvedLink> {

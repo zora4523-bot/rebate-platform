@@ -135,6 +135,14 @@ export interface UnionItem extends ItemRef {
   readonly coupon_ids?: string;
   readonly price_status?: 'ok' | 'anomaly';
   readonly price_anomaly_reason?: PriceAnomalyReason;
+  /**
+   * B1-04l (FU-CATEGORY-BLOCKLIST): the union's level-one category id, as a decimal string (Taobao
+   * level_one_category_id). Filled only by the live Taobao adapter; jd / pdd / demo leave it absent,
+   * and so does Taobao when the upstream gave none.
+   */
+  readonly category_l1_id?: string;
+  /** B1-04l: the union's level-one category name as given (Taobao level_one_category_name). */
+  readonly category_l1_name?: string;
 }
 
 export interface UnionItemDetail extends UnionItem {
@@ -349,6 +357,15 @@ export interface PddAuthorityUrl {
   /** Upstream `url`, kept separate from the mobile landing page. */
   readonly browser_url?: string;
 }
+/**
+ * B1-04l: a Taobao share code (淘口令) generated from one of our own promotion links
+ * (taobao.tbk.tpwd.create). `password_simple` is the bare code (￥…￥), `model` the full share
+ * text with code and link, both exactly as the union returned them.
+ */
+export interface TaobaoShareCode {
+  readonly password_simple: string;
+  readonly model: string;
+}
 export interface BindReq {
   readonly authorizationCode: string;
 }
@@ -447,6 +464,19 @@ export interface UnionAdapter {
    * uses; filing is per slot). Governed as an idempotent read; Pinduoduo only.
    */
   pddAuthorityUrl?(identity: UnionIdentity, ctx: CallCtx): Promise<PddAuthorityUrl>;
+  /**
+   * B1-04l: the share code (淘口令) of one of our own Taobao promotion links (https
+   * s.click.taobao.com / uland.taobao.com only; anything else is invalid_dto without a request).
+   * The caller passes our own link (BR-ATTR-10). Governed as an idempotent read; live Taobao only,
+   * absent on demo and other platforms.
+   */
+  taobaoShareCode?(url: string, ctx: CallCtx): Promise<TaobaoShareCode>;
+  /**
+   * B1-04l: the https://s.click.taobao.com/ short link of a Taobao promotion link (https
+   * uland / s.click / ai / temai.taobao.com only; anything else is invalid_dto without a request).
+   * Governed as an idempotent read; live Taobao only, absent on demo and other platforms.
+   */
+  shortenTaobaoUrl?(url: string, ctx: CallCtx): Promise<string>;
 }
 
 /** B1-06v: the answer of UnionAdapter.queryPddAuthority. */
