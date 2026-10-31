@@ -8,7 +8,8 @@
 // still register and every read fails closed (50001).
 // B1-03ze: the console writes (register, claim, resolve) on the same module. Their audit writer is
 // bound to each write's transaction (app.module: admin's createAuditWriter), the bindings blocked
-// for ban come back through linking's restoreAfterUnban and the voided order's owner through an
+// for ban come back through linking's restoreAfterUnban (and appeal.resolved's need_reauth reads
+// linking's needsTaobaoReauth after it) and the voided order's owner through an
 // orders read app.module builds; the calendar through content's configuration reader. The risk
 // state writer is its own createRiskStateService over the same REDIS (the version stamp reaches
 // the api entry's caches), as RiskAdminModule's. Without a database, event bus, field cipher or
@@ -54,6 +55,8 @@ export interface RiskAppealsAdminWriteOptions {
   readonly auditWriter: (db: Kysely<Database>, clock: Clock) => AuditPort;
   /** linking's restore of the user's bindings blocked for ban. */
   readonly restoreAfterUnban: AdminAppealsWriteOptions['restoreAfterUnban'];
+  /** linking's read of an invalid Taobao binding (appeal.resolved need_reauth). */
+  readonly taobaoReauth: AdminAppealsWriteOptions['taobaoReauth'];
   /** The orders read of the voided order's owner, over the entry's database. */
   readonly ports: (db: Kysely<Database>) => AdminAppealsWritePorts;
   /** The working-day calendar reader (content's configuration reader) over a handle. */
@@ -155,6 +158,7 @@ export class RiskAppealsAdminModule {
               config: writes.config(db, clock),
               auditOn: (trx: Transaction<Database>) => writes.auditWriter(trx, clock),
               restoreAfterUnban: writes.restoreAfterUnban,
+              taobaoReauth: writes.taobaoReauth,
               ports: writes.ports(db),
               reads,
             });

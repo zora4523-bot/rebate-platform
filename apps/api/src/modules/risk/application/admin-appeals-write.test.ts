@@ -6,6 +6,7 @@ import { expect, it } from 'vitest';
 import { FixedClock, type AuditInput, type EventBus } from '../../platform/index.ts';
 import type { AdminAppealsRead } from './admin-appeals-read.ts';
 import {
+  AdminAppealAttemptsUsedUpError,
   AdminAppealConflictError,
   AdminAppealsWrite,
   AdminAppealsWriteFieldsError,
@@ -23,7 +24,14 @@ const actor = { appId: APP, adminId: ADMIN, loginName: 'cs-lin', ip: null };
 
 type Rows = (text: string) => readonly Record<string, unknown>[];
 
-function harness(rows: Rows = () => []) {
+type Overrides = Partial<
+  Pick<
+    ConstructorParameters<typeof AdminAppealsWrite>[0],
+    'riskState' | 'restoreAfterUnban' | 'taobaoReauth'
+  >
+>;
+
+function harness(rows: Rows = () => [], overrides: Overrides = {}) {
   const sqls: { text: string; params: readonly unknown[] }[] = [];
   const client = {
     release() {},
@@ -57,8 +65,12 @@ function harness(rows: Rows = () => []) {
     logger: { warn: () => undefined },
     auditOn: () => ({ append: async (input) => void audits.push(input) }),
     restoreAfterUnban: async () => undefined,
+    taobaoReauth: async () => {
+      throw new Error('not expected');
+    },
     ports: { voidedOrderOwner: async () => null },
     reads,
+    ...overrides,
   });
   return { writes, sqls, audits, published };
 }
@@ -214,4 +226,140 @@ it('[AC-B1-03ze#67] register: an order the port does not know as voided is 20001
   );
   expect((error as AdminAppealsWriteFieldsError).fields).toEqual(['target_id']);
   expect(sqls).toEqual([]);
+});
+
+const accountRow = {
+  id: APPEAL,
+  user_id: USER,
+  target_type: 'account',
+  target_id: USER,
+  prev_risk_state: 'banned',
+  status: 'processing',
+  handler_id: null,
+  row_version: 2,
+};
+
+/** A scripted resolve of `appeal`: the CAS update hits one row, the account is appealing. */
+function resolveRows(appeal: Record<string, unknown>): Rows {
+  return (text) => {
+    if (text.includes('UPDATE app.appeals')) return [{ id: APPEAL }];
+    if (text.includes('from "app"."appeals"')) return [{ ...appeal }];
+    if (text.includes('from "app"."users"')) return [{ id: USER }];
+    if (text.includes('from "app"."user_risk_state"')) {
+      return [
+        {
+          state: 'appealing',
+          reason: 'r',
+          reason_category: 'fraud',
+          frozen_until: null,
+          row_version: 5,
+        },
+      ];
+    }
+    return [];
+  };
+}
+
+async function resolveWith(
+  appeal: Record<string, unknown>,
+  decision: 'upheld' | 'revoked',
+  reauth: boolean,
+) {
+  const log: string[] = [];
+  const h = harness(resolveRows(appeal), {
+    riskState: {
+      setRiskState: async (_trx: unknown, input: { state: string }) =>
+        void log.push(`setRiskState:${input.state}`),
+    } as unknown as RiskStateService,
+    restoreAfterUnban: async () => void log.push('restoreAfterUnban'),
+    taobaoReauth: async (_trx, scope) => {
+      log.push(`taobaoReauth:${scope.appId}:${scope.userId}`);
+      return reauth;
+    },
+  });
+  const prepared = await h.writes.prepareResolve(actor, APPEAL, {
+    decision,
+    note: '核实',
+    expected_row_version: 2,
+  });
+  await prepared.run();
+  return { ...h, log };
+}
+
+it('[AC-B1-03ze#75] resolve: a revoked ban reads the Taobao binding after the unban; need_reauth follows it', async () => {
+  for (const reauth of [true, false]) {
+    const { published, log } = await resolveWith(accountRow, 'revoked', reauth);
+    expect(log).toEqual([
+      'setRiskState:normal',
+      'restoreAfterUnban',
+      `taobaoReauth:${APP}:${USER}`,
+    ]);
+    expect(published).toEqual([
+      {
+        appId: APP,
+        name: 'appeal.resolved',
+        payload: {
+          app_id: APP,
+          appeal_id: APPEAL,
+          user_id: USER,
+          target_type: 'account',
+          target_id: USER,
+          status: 'revoked',
+          need_reauth: reauth,
+        },
+      },
+    ]);
+  }
+});
+
+it('[AC-B1-03ze#76] resolve: an upheld ban, a revoked freeze and an order appeal carry need_reauth=false without reading bindings', async () => {
+  const cases: [Record<string, unknown>, 'upheld' | 'revoked', string[]][] = [
+    [accountRow, 'upheld', ['setRiskState:banned']],
+    [{ ...accountRow, prev_risk_state: 'frozen' }, 'revoked', ['setRiskState:normal']],
+    [processingRow, 'revoked', []],
+  ];
+  for (const [appeal, decision, expectedLog] of cases) {
+    // taobaoReauth answers true: false in the payload proves it was not consulted.
+    const { published, log } = await resolveWith(appeal, decision, true);
+    expect(log).toEqual(expectedLog);
+    expect(published).toHaveLength(1);
+    expect((published[0] as { payload: Record<string, unknown> }).payload).toMatchObject({
+      status: decision,
+      need_reauth: false,
+    });
+  }
+});
+
+it('[AC-B1-03ze#78] register: a blocked request whose appeals were upheld 3 times is 30418, nothing inserted or audited', async () => {
+  const BLOCKED = '019a0000-0000-7000-8000-000000000b01';
+  const upheld = (n: number) => ({
+    id: `019a0000-0000-7000-8000-00000000c00${n}`,
+    target_type: 'blocked_request',
+    target_id: BLOCKED,
+    status: 'upheld',
+    prev_risk_state: null,
+    created_at: new Date(Date.parse(NOW) - (10 - n) * 86_400_000),
+    closed_at: new Date(Date.parse(NOW) - (9 - n) * 86_400_000),
+    penalty_started_at: null,
+  });
+  const { writes, sqls, audits } = harness((text) => {
+    if (text.includes('from "app"."risk_hits"')) {
+      return [{ request_type: 'withdraw', user_id: USER, related_phone_hmac: null, rows: '1' }];
+    }
+    if (text.includes('from "app"."appeals"') && text.includes('"prev_risk_state"')) {
+      return [upheld(1), upheld(2), upheld(3)];
+    }
+    return [];
+  });
+  const error = await failure(
+    writes.register(actor, {
+      target_type: 'blocked_request',
+      target_id: BLOCKED,
+      content: '请核查',
+      reason: '登记',
+    }),
+  );
+  expect(error).toBeInstanceOf(AdminAppealAttemptsUsedUpError);
+  expect(sqls.some((q) => /insert into/i.test(q.text))).toBe(false);
+  expect(audits).toEqual([]);
 });
