@@ -26760,7 +26760,7 @@ components:
       schema:
         type: string
         minLength: 1
-        maxLength: 64
+        maxLength: 128
     AdminReconDiffIdPath:
       name: recon_diff_id
       in: path

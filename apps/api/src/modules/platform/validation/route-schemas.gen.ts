@@ -14449,7 +14449,7 @@ export const CONTRACT_ROUTE_SCHEMAS = {
         "ref_id": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 64
+          "maxLength": 128
         }
       },
       "required": [],
