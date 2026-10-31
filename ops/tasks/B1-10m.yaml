@@ -1,0 +1,35 @@
+id: B1-10m
+repo: rebate-platform
+title: orders：已实现未挂载的后台写操作挂载——找回子项通过 / 驳回（adminApproveClaimItem / adminRejectClaimItem）、订单暂停 / 恢复结算与指定归属（adminHoldOrder / adminUnholdOrder / adminReassignOrder）、维权 / 违规 / 渠道导入（adminCreateRightsImport / adminListRightsImports / adminGetRightsImport）；接真实 settlement、risk 端口，去掉八个接口的 planned
+type: impl
+# 2026-11-01 入账（admin-backend，编排 D10-490 ①，D10-70 J-1 解除：settlement 找回端口 B2-04la、维权端口 B2-04l 已合并）。用例与 HTTP 处理已在 B1-10k、B1-09l、B1-10f、B1-09g / h / k 写好，本任务只装配：控制器挂 OrdersAdminModule.forAdmin，只挂 admin 入口，端口经 app.module 注入。
+# 挂载前逐个确认端口是真实现不是演示：onClaimApproved / onAdminAssigned（settlement/attribution，已实现）；rebate.adminHold / adminUnhold（createRebateAdminCommandPort）；维权（createRightsCommandPort）；渠道单 blocklist（risk）；私有导入存储（无配置时失败关闭）。去掉 CLAIM_SETTLEMENT_UNAVAILABLE、ASSIGN_SETTLEMENT_UNAVAILABLE 占位与 J-1 注释。
+# 动钱：找回通过、指定归属都写归属并改订单状态；不改用例逻辑，只接线。契约只去 planned，占契约槽。
+refs: [BR-ATTR-31]
+refs_hash:
+  BR-ATTR-31: 372b06f03b05
+deps: []
+paths:
+  - 'apps/api/src/modules/orders/orders-admin.module.ts'
+  - 'apps/api/src/modules/orders/http/admin/**'
+  - 'apps/api/src/modules/orders/application/claim-review.ts'
+  - 'apps/api/src/modules/orders/application/admin-assign.ts'
+  - 'apps/api/src/modules/orders/application/admin-hold.ts'
+  - 'apps/api/src/modules/orders/application/rights-imports.ts'
+  - 'apps/api/src/modules/orders/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/orders/admin-mounts/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/admin-mounts/**'
+status: todo
