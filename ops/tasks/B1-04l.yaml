@@ -1,0 +1,29 @@
+id: B1-04l
+repo: rebate-platform
+title: 淘宝 Adapter 第 ② 段：商品详情 item.info.upgrade.get（getItem：价格经既有 mapTaobaoPrice、图片经 normalizeItemImages、补一级类目字段）、淘口令生成 tpwd.create 与长链转短链 spread.get（两个新可选端口），详情 15/50001 映射为 item_unavailable
+type: impl
+# 草稿 2026-10-31（union 线，账号 4），编排 D10-455 第 ②段 / 09:2x 核定。依据：编排 10-31 08:5x 凑狸应用录制（rebate-private cap-tests/2026-10-31/taobao/couli-shapes.json，9 次：tpwd.create、spread.get 成功有形状，item.info.upgrade.get 两批均 15/50001、scene 2 → 15/1911，详情形状未录到）、10-06 测试应用物料搜索录制（cap-tests/2026-10-06/taobao-pid.md §2：item_basic_info / price_promotion_info / publish_info 结构与数组包装键）、私有库字段手册 server-api（item.info.upgrade.get 响应 results: TbkItemDetail[]，与物料搜索升级版同族字段），由编排者摘入任务书第 2 节，录制原值不进本仓库、测试只用合成值。
+# ① getItem：taobao.tbk.item.info.upgrade.get，参数 item_id（ItemRef 里的上游商品 ID 原样，一次一个）、biz_scene_id=1；外层键 tbk_item_info_upgrade_get_response（按同族已录外层键 tbk_*_response 登记，标 TODO 待详情录制核对）；results 下的数组包装键未录到 → 按「单键包装取其数组」通用解包（同已录 results.tbk_spread[] 做法），不写死包装名。每条按 10-06 形状映射：title、item_basic_info.pict_url / small_images / white_image → main_image_url / image_urls（经 domain/item-images.ts 的 normalizeItemImages，B1-22s）、price_promotion_info → 既有 domain/taobao-price.ts mapTaobaoPrice（BR-PRICE-02 已实现，含会员项加回与价格异常）、publish_info.income_info.commission_rate（万分比整数串）→ commission_rate_bp、level_one_category_id / level_one_category_name → UnionItem 新增可选字段（FU-CATEGORY-BLOCKLIST，jd / pdd / demo 不填）。seller_id 超 JS 安全整数，不得转 number（不映射或按字符串）。results 为空 → item_unavailable。
+# ② 错误细分（本段只对详情）：15 + sub_code 50001「无结果」→ item_unavailable（编排：商品不存在 / 不可推广）；15 + 1911（scene 不支持）→ upstream_rejected；其余沿用 B1-04j 分类。
+# ③ 淘口令：新可选端口 taobaoShareCode(url, ctx) → { password_simple, model }，调 taobao.tbk.tpwd.create 参数只传 url（text / logo / ext / user_id 手册标「无实际作用」不传）；外层键 tbk_tpwd_create_response、内层 data.model / data.password_simple（已录）；任一缺失或非字符串 → upstream_unavailable；15 + sub_code 26 / 23（链接不属联盟官方场景 / 物料为空）→ link_unrecognized。只接受 https 的 s.click.taobao.com / uland.taobao.com 链接，否则不调用、抛 invalid_dto。口令只能由我方推广链接生成（BR-ATTR-10 细则），调用方负责传我方链接。
+# ④ 短链：新可选端口 shortenTaobaoUrl(url, ctx) → string，调 taobao.tbk.spread.get，requests 为 [{url}] 的 JSON 串（B1-04j 数组按 JSON 参与签名）；外层键 tbk_spread_get_response，取 results.tbk_spread[0]（已录）；err_msg 非 OK 或 content 空 → upstream_rejected（已录一次失败形状：content 空、err_msg 非 OK）；content 必须是 https://s.click.taobao.com/ 开头，否则 upstream_unavailable。只接受手册列的四个域名（uland / s.click / ai / temai.taobao.com）且 https，否则不调用、抛 invalid_dto。
+# ⑤ 两个新端口照 B1-04h pddAuthorityUrl 的做法：domain/types.ts 声明为可选，governed-adapter.ts 透传治理（idempotent_read、purpose online），index.ts 导出；只在淘宝真实适配器上提供，demo 不提供（调用方按端口缺失处理）。不改 convert（淘宝仍是 baichuan 客户端转链，02 §5.1），不做 searchItems / resolveLink / listOrders（③ 段与权限到位后）。
+# 未知项：凑狸应用用旧格式数字 ID 取详情得 50001，疑需新格式商品 ID（《淘宝客新商品ID升级》）或不在推广池；详情真实形状待商品物料获取权限批下后再录，届时复核外层 / 包装键与字段映射。09 CAP-TB 登记由编排在规划仓库做。
+# 目录：union/infra/taobao/**、union/domain/types.ts、union/application/governed-adapter.ts(+.test.ts)、union/index.ts。test_paths：test/spec/union/taobao-goods/**。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04k]
+paths:
+  - 'apps/api/src/modules/union/infra/taobao/**'
+  - 'apps/api/src/modules/union/domain/types.ts'
+  - 'apps/api/src/modules/union/application/governed-adapter.ts'
+  - 'apps/api/src/modules/union/application/governed-adapter.test.ts'
+  - 'apps/api/src/modules/union/index.ts'
+test_paths:
+  - 'test/spec/union/taobao-goods/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/taobao-goods/**'
+status: todo
