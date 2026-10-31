@@ -304,9 +304,10 @@ export function createCreditOrder(deps: CreditOrderDependencies): CreditOrder {
       return { outcome: 'skipped', reason: 'settlement_changed' };
     }
     // B2-04lb (D10-463 / D10-474 ①; BR-FUND-06, BR-FUND-08 ②, BR-CALC-15): partial rights results
-    // before credit lower N. The union's latest settlement record answers the deductions received
-    // before it; the ones received at or after it are still open and are subtracted (floor 0).
-    const openDeduction = await readOpenDeductionTotal(trx, appId, orderId, true);
+    // before credit lower N. Deductions the union's updated commission answered (answered_at set on
+    // that sync, D10-483) are already in the settlement record; the open ones are subtracted
+    // (floor 0).
+    const openDeduction = await readOpenDeductionTotal(trx, appId, orderId);
     const reduced = subFen(settled, openDeduction);
     const n = openDeduction === 0n ? settled : reduced > 0n ? reduced : 0n;
     const step = transitionOrderRebate(FROM_STATUS, EVENT);
