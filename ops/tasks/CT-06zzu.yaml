@@ -1,0 +1,21 @@
+id: CT-06zzu
+repo: rebate-platform
+title: CT-06zzu：测试 Redis 按文件隔离（含 D10-502 改冻结 redis.int 两处断言）——acquireTestRedis 在共享 TEST_REDIS_URL 上为每次 acquire 租一个独占逻辑库（库 0 放带过期的租约、acquire / stop 都 FLUSHDB 该库、租满限时等待），修 [AC-B1-07c#8 #9] 测试机串桶失败
+type: guard-change
+# 2026-10-31 入账（union 线，编排 D10-497 改派；回 D10-494 ②，union 17:4x 定位）。起因：集成测试文件共用 TEST_REDIS_URL 的库 0，联盟配额键 = union_quota + endpoint.quotaKey 各文件相同；配额脚本按各进程注入时钟回填且桶时间只进不退（冻结规则 [D10-446]，B1-22v 实现正确、不改），先跑的文件用更晚的假时钟把桶时间写到「未来」并耗尽令牌，假时钟更早的 test/spec/parsing/viewer/app.int.test.ts 在键 TTL 内补不回 → 测试机稳定失败（CI 文件顺序不同未碰上）。
+# 做法（D10-497 ①～④）：只改 packages/db/src/testing/redis.ts（及同目录单元测试）。TEST_REDIS_URL 设了时：① 可用库数读 CONFIG GET databases，不写死；库 0 只放租约键（SET NX + PX 过期，持有期间定时续期，进程崩溃后过期自动回收），租约值为本次 acquire 的随机令牌，释放用 EVAL 比对令牌后删除；② **排除库 0 与库 13**（库 13 由冻结的 test/spec/risk/redis-generation/kit.ts DB_INDEX 自用并整库 FLUSHDB，不得租给别人）；③ 租到库 n 后先 SELECT n + FLUSHDB，返回的 url 只把路径换成 /n（保留主机、端口、凭据），stop 时 FLUSHDB 并释放租约（幂等）；④ 租满时按固定间隔重试，上限（如 120 秒）到了抛清楚的错误（不含 URL 与凭据）。Testcontainers 分支不变。文件头注释改为：库 0 不 FLUSHDB；租到的库归本文件独占、可 FLUSHDB。不改产品代码；冻结测试只按 D10-502 改 test/spec/platform/redis/redis.int.test.ts 一处（第 171、178 行断言改为：设了 TEST_REDIS_URL 时 source='env'、协议 / 主机 / 端口 / 凭据与 TEST_REDIS_URL 相同、库号 ∉ {0, 13}、stop 后 TEST_REDIS_URL 不变且服务仍 PONG；标题与 noeviction 断言不动，用例上方注释 D10-497 / D10-502），与租库实现同 PR 原子合并；其余冻结测试不改。
+# 单元测试：不连 Redis、不 listen；把 RESP 往返做成可注入的命令函数，测租约选择（跳过 0 与 13、读 databases）、续期 / 释放比对令牌、租满等待上限与报错不含 URL、url 只换库号。验收（D10-497 ⑤）：测试机 PROP_RUNS=2000 完整 verify，[AC-B1-07c#8 #9] 转绿、总时长不明显变长（对照 be B1-15zc 2492 秒）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'packages/db/src/testing/redis.ts'
+  - 'packages/db/src/testing/redis.test.ts'
+  - 'test/spec/platform/redis/redis.int.test.ts'
+  - 'ops/tasks/CT-06zzu.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 2059
