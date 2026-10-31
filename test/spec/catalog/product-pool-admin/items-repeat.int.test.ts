@@ -425,13 +425,16 @@ async function expectHeldOffline(
   expect(await itemRow(h, f, other.pool, key)).toEqual(other.row);
 }
 
-it.each([
+/** 标题搜索搜不到同键的两种答复。 */
+const SEARCH_MISSES = [
   { name: '标题搜索第 1 页为空', page: (): UnionItemDetail[] => [] },
   {
     name: '标题搜索第 1 页没有同键',
     page: (f: Setup): UnionItemDetail[] => [product(f, stableId()), product(f, stableId())],
   },
-])(
+];
+
+it.each(SEARCH_MISSES)(
   '[AC-B1-05q#112] 过期 item_ref 重复入库，product_refs 也过期，$name：200，覆盖生效，这一行 offline 带原因，价格、创建信息、别的池不动，不用过期原串',
   async ({ page }) => {
     const f = await setup(h);
@@ -510,6 +513,7 @@ it('[AC-B1-05q#116] 重新上架时联盟标记价格异常：200，保持 offli
   await seedItem(h, f, pool, key, { status: 'offline', invalid_reason: null });
   await seedRef(h, f, key, { raw_item_id: item.item_id! });
   const seeded = (await itemRow(h, f, pool, key))!;
+  const other = await sibling(f, key);
   f.clock.advanceMs(1000);
   union.getItem.mockResolvedValue(anomalous(f, item));
   const before = await snapshot(h, f.appId);
@@ -531,7 +535,14 @@ it('[AC-B1-05q#116] 重新上架时联盟标记价格异常：200，保持 offli
     final_price_fen: seeded.final_price_fen,
     quoted_at: seeded.quoted_at,
   });
-  await audit(h, f, before, 'pool_item_update');
+  const entry = await audit(h, f, before, 'pool_item_update');
+  expect(entry.before).toMatchObject({ product_key: key, status: 'offline', invalid_reason: null });
+  expect(entry.after).toMatchObject({
+    product_key: key,
+    status: 'offline',
+    invalid_reason: SOME_REASON,
+  });
+  expect(await itemRow(h, f, other.pool, key)).toEqual(other.row);
 });
 
 it.each(['item_ref', 'link_text'] as const)(
@@ -554,6 +565,158 @@ it.each(['item_ref', 'link_text'] as const)(
     expect(await snapshot(h, f.appId)).toEqual(before);
   },
 );
+
+it('[AC-B1-05q#118] 过期 item_ref 重复入库，product_refs 新鲜但联盟答成别的键：200，覆盖生效，这一行 offline 带原因，价格、创建信息、别的池不动，不另起一行', async () => {
+  const f = await setup(h);
+  const held = await existing(f);
+  const other = await sibling(f, held.key);
+  await age(f, AGED);
+  const raw = `freshA-${held.key.slice('tb:'.length)}`;
+  await seedRef(h, f, held.key, { raw_item_id: raw });
+  searchAnswers([[]]);
+  union.getItem.mockResolvedValue(product(f, stableId()));
+  const end = hoursFromNow(f, 48);
+  const before = await snapshot(h, f.appId);
+  const sent = await addRef(f, held.pool, held.ref, bounds(7, null, end));
+  await expectHeldOffline(f, held, other, before, sent, end);
+  const used = union.getItem.mock.calls.map(([ref]) => ref.item_id);
+  expect(used).toContain(raw);
+  expect(used).not.toContain(held.item.item_id);
+  expect((await snapshot(h, f.appId)).items).toHaveLength(2);
+});
+
+it('[AC-B1-05q#119] 链接重复入库，解析出这个键而联盟答成别的键：200，覆盖生效，这一行 offline 带原因，价格、创建信息、别的池不动，不另起一行', async () => {
+  const f = await setup(h);
+  const held = await existing(f);
+  const other = await sibling(f, held.key);
+  f.clock.advanceMs(60_000);
+  stubProduct(held.item);
+  union.getItem.mockResolvedValue(product(f, stableId()));
+  const end = hoursFromNow(f, 48);
+  const before = await snapshot(h, f.appId);
+  const sent = await addLink(f, held.pool, linkOf(held.item.item_id!), bounds(7, null, end));
+  await expectHeldOffline(f, held, other, before, sent, end);
+  expect(union.getItem).toHaveBeenCalled();
+  expect((await snapshot(h, f.appId)).items).toHaveLength(2);
+});
+
+/** 手动下架的行，原因为空，别的池也有这个 key：响应里的原因只能来自这一次复核。 */
+async function shelved(f: Setup, quoted: Date = f.clock.now()) {
+  const pool = await seedPool(h, f);
+  const stable = stableId();
+  const key = `tb:${stable}`;
+  const item = product(f, stable);
+  await seedItem(h, f, pool, key, { status: 'offline', invalid_reason: null, quoted_at: quoted });
+  const seeded = (await itemRow(h, f, pool, key))!;
+  const other = await sibling(f, key);
+  return { pool, key, item, seeded, other };
+}
+
+/** 复核不通过的重新上架：这一行仍 offline 带原因，价格不动，审计记下原因的变化，别的池不动。 */
+async function expectStillOffline(
+  f: Setup,
+  { pool, key, seeded, other }: Awaited<ReturnType<typeof shelved>>,
+  before: Snapshot,
+  sent: Sent,
+) {
+  const updated = await success(sent);
+  expect(updated).toMatchObject({
+    product_key: key,
+    status: 'offline',
+    invalid_reason: SOME_REASON,
+    price_fen: 8800,
+    coupon_fen: 800,
+    final_price_fen: 8000,
+  });
+  expect(instant(updated.quoted_at)).toBe(instant(seeded.quoted_at));
+  expect(await itemRow(h, f, pool, key)).toMatchObject({
+    status: 'offline',
+    invalid_reason: SOME_REASON,
+    price_fen: seeded.price_fen,
+    coupon_fen: seeded.coupon_fen,
+    final_price_fen: seeded.final_price_fen,
+    quoted_at: seeded.quoted_at,
+  });
+  const entry = await audit(h, f, before, 'pool_item_update');
+  expect(entry.before).toMatchObject({ product_key: key, status: 'offline', invalid_reason: null });
+  expect(entry.after).toMatchObject({
+    product_key: key,
+    status: 'offline',
+    invalid_reason: SOME_REASON,
+  });
+  expect(await itemRow(h, f, other.pool, key)).toEqual(other.row);
+}
+
+it('[AC-B1-05q#120] 重新上架时联盟拒绝原串（upstream_rejected）：200，保持 offline 带原因，价格、别的池不动', async () => {
+  const f = await setup(h);
+  const shelf = await shelved(f);
+  await seedRef(h, f, shelf.key, { raw_item_id: shelf.item.item_id! });
+  f.clock.advanceMs(1000);
+  searchAnswers([[]]);
+  union.getItem.mockRejectedValue(refused());
+  const before = await snapshot(h, f.appId);
+  const change = { status: 'online' };
+  const sent = await send(f, 'updateItem', { pool: shelf.pool, key: shelf.key }, change);
+  await expectStillOffline(f, shelf, before, sent);
+  expect(union.getItem).toHaveBeenCalled();
+});
+
+it('[AC-B1-05q#121] 重新上架时联盟答成别的键：200，保持 offline 带原因，价格、别的池不动，不另起一行', async () => {
+  const f = await setup(h);
+  const shelf = await shelved(f);
+  await seedRef(h, f, shelf.key, { raw_item_id: shelf.item.item_id! });
+  f.clock.advanceMs(1000);
+  searchAnswers([[]]);
+  union.getItem.mockResolvedValue(product(f, stableId()));
+  const before = await snapshot(h, f.appId);
+  const change = { status: 'online' };
+  const sent = await send(f, 'updateItem', { pool: shelf.pool, key: shelf.key }, change);
+  await expectStillOffline(f, shelf, before, sent);
+  expect(union.getItem).toHaveBeenCalled();
+  expect((await snapshot(h, f.appId)).items).toHaveLength(2);
+});
+
+it.each(SEARCH_MISSES)(
+  '[AC-B1-05q#122] 重新上架时两处原串都过期，$name：200，保持 offline 带原因，价格、别的池不动，不用过期原串',
+  async ({ page }) => {
+    const f = await setup(h);
+    const old = new Date(f.clock.now().getTime() - AGED);
+    const shelf = await shelved(f, old);
+    await seedRef(h, f, shelf.key, {
+      raw_item_id: shelf.item.item_id!,
+      raw_fetched_at: old,
+      refreshed_at: old,
+    });
+    f.clock.advanceMs(1000);
+    searchAnswers([page(f)]);
+    // 过期原串问得到这件商品：误用它就会回到 online。
+    union.getItem.mockResolvedValue(shelf.item);
+    const before = await snapshot(h, f.appId);
+    const change = { status: 'online' };
+    const sent = await send(f, 'updateItem', { pool: shelf.pool, key: shelf.key }, change);
+    await expectStillOffline(f, shelf, before, sent);
+    expect(union.searchItems).toHaveBeenCalled();
+    expect(union.getItem.mock.calls.map(([ref]) => ref.item_id)).not.toContain(shelf.item.item_id);
+  },
+);
+
+it('[AC-B1-05q#123] 新 key 且联盟拒绝 item_ref 的原串（upstream_rejected）→ 30143，什么都不写', async () => {
+  const f = await setup(h);
+  const pool = await seedPool(h, f);
+  const item = product(f, stableId());
+  const row = await pick(f, item);
+  const other = await sibling(f, row.product_key);
+  f.clock.advanceMs(60_000);
+  searchAnswers([[]]);
+  union.getItem.mockClear();
+  union.getItem.mockRejectedValue(refused());
+  const before = await snapshot(h, f.appId);
+  await rejected(await addRef(f, pool, row.item_ref), 30143);
+  expect(union.getItem).toHaveBeenCalled();
+  expect(await itemRow(h, f, pool, row.product_key)).toBeUndefined();
+  expect(await itemRow(h, f, other.pool, row.product_key)).toEqual(other.row);
+  expect(await snapshot(h, f.appId)).toEqual(before);
+});
 
 it('[AC-B1-05q#47] 同一商品并发入库由唯一键裁决：都不报错，只留一行，新建和覆盖各一条审计', async () => {
   const f = await setup(h);
