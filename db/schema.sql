@@ -4753,6 +4753,8 @@ CREATE TABLE app.pool_items (
     created_by uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    commission_rate_bp integer,
+    CONSTRAINT pool_items_commission_rate_bp_check CHECK ((commission_rate_bp >= 0)),
     CONSTRAINT pool_items_coupon_fen_check CHECK ((coupon_fen >= 0)),
     CONSTRAINT pool_items_final_price_fen_check CHECK ((final_price_fen >= 0)),
     CONSTRAINT pool_items_platform_check CHECK ((platform = ANY (ARRAY['taobao'::text, 'jd'::text, 'pdd'::text, 'meituan'::text, 'vip'::text, 'douyin'::text, 'eleme'::text, 'kuaishou'::text, 'suning'::text]))),

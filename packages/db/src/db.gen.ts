@@ -1520,6 +1520,7 @@ export interface Platforms {
 
 export interface PoolItems {
   app_id: string;
+  commission_rate_bp: number | null;
   coupon_fen: ColumnType<bigint, bigint, bigint>;
   created_at: Generated<Timestamp>;
   created_by: string;
