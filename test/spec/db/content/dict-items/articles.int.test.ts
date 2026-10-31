@@ -7,7 +7,7 @@ import {
   AT,
   article,
   articlesReady,
-  faqRankPresent,
+  faqRankReady,
   helpSectionReady,
   insert,
   rejects,
@@ -76,10 +76,10 @@ it('[AC-F1-02q#17] article UPDATE has no table grant and permits exactly the fiv
   // F1-02zzc: help_section joins the column list and, not being in `mutable`, must not be
   // updatable. F1-02zzf：过渡已收紧.
   await helpSectionReady(app);
-  // F1-02zzu: faq_rank joins the list when present (not mutable, not grantable) — two-state until F1-02zzo.
-  const faqRank = await faqRankPresent(app);
+  // F1-02zzu: faq_rank joins the list (not mutable, not grantable). F1-02zzz：收紧为单态（F1-02zzo 已合并）.
+  await faqRankReady(app);
   expect(grants.rows.map((c) => c.name)).toEqual(
-    [...Object.keys(article()), 'help_section', ...(faqRank ? ['faq_rank'] : [])].sort(),
+    [...Object.keys(article()), 'help_section', 'faq_rank'].sort(),
   );
   for (const column of grants.rows) {
     expect(column, column.name).toEqual({
@@ -93,7 +93,7 @@ it('[AC-F1-02q#17] article UPDATE has no table grant and permits exactly the fiv
 it('[AC-F1-02q#18] app can change each allowed article column and the values persist', async () => {
   await articlesReady(app);
   await helpSectionReady(app); // F1-02zzf：过渡已收紧
-  const faqRank = await faqRankPresent(app); // F1-02zzu: two-state until F1-02zzo
+  await faqRankReady(app); // F1-02zzz：收紧为单态（F1-02zzo 已合并）
   const row = article();
   await insert(app, row, 'articles');
   const changes: Row = {
@@ -111,12 +111,12 @@ it('[AC-F1-02q#18] app can change each allowed article column and the values per
   }
   const result = await sql<Row>`SELECT * FROM app.articles WHERE id = ${row.id}`.execute(app);
   // F1-02zzc: full row, help_section null (F1-02zzf：过渡已收紧).
-  expect(result.rows).toEqual([rowOf({ ...row, ...changes }, faqRank)]);
+  expect(result.rows).toEqual([rowOf({ ...row, ...changes })]);
 });
 
 it('[AC-F1-02q#19] app cannot update article content, identity or creation time and cannot delete', async () => {
   await helpSectionReady(app);
-  const faqRank = await faqRankPresent(app); // F1-02zzu: two-state until F1-02zzo
+  await faqRankReady(app); // F1-02zzz：收紧为单态（F1-02zzo 已合并）
   const row = article();
   await insert(app, row, 'articles');
   // F1-02zzc: help_section is immutable (F1-02zzf：过渡已收紧).
@@ -131,7 +131,7 @@ it('[AC-F1-02q#19] app cannot update article content, identity or creation time 
     'id',
     'created_at',
     'help_section',
-    ...(faqRank ? ['faq_rank'] : []), // F1-02zzu: immutable when present — two-state until F1-02zzo
+    'faq_rank', // F1-02zzu: immutable. F1-02zzz：收紧为单态（F1-02zzo 已合并）
   ]) {
     await expect(
       sql`UPDATE app.articles SET ${sql.ref(column)} = ${sql.ref(column)}
@@ -142,13 +142,13 @@ it('[AC-F1-02q#19] app cannot update article content, identity or creation time 
     sql`DELETE FROM app.articles WHERE id = ${row.id}`.execute(app),
   ).rejects.toMatchObject({ code: '42501' });
   const result = await sql<Row>`SELECT * FROM app.articles WHERE id = ${row.id}`.execute(app);
-  expect(result.rows).toEqual([rowOf(row, faqRank)]);
+  expect(result.rows).toEqual([rowOf(row)]);
 });
 
 it('[AC-F1-02q#20] article CHECK also rejects invalid status UPDATE without changing the stored row', async () => {
   await articlesReady(app);
   await helpSectionReady(app); // F1-02zzf：过渡已收紧
-  const faqRank = await faqRankPresent(app); // F1-02zzu: two-state until F1-02zzo
+  await faqRankReady(app); // F1-02zzz：收紧为单态（F1-02zzo 已合并）
   const row = article();
   await insert(app, row, 'articles');
   for (const status of ['Published', 'published ', 'archived', '']) {
@@ -159,23 +159,23 @@ it('[AC-F1-02q#20] article CHECK also rejects invalid status UPDATE without chan
   }
   const result = await sql<Row>`SELECT * FROM app.articles WHERE id = ${row.id}`.execute(app);
   // F1-02zzc: full row, help_section null (F1-02zzf：过渡已收紧).
-  expect(result.rows).toEqual([rowOf(row, faqRank)]);
+  expect(result.rows).toEqual([rowOf(row)]);
 });
 
 it('[AC-F1-02q#21] readonly retains SELECT and cannot insert, update any column, delete or truncate articles', async () => {
   await articlesReady(app);
   await helpSectionReady(app);
-  const faqRank = await faqRankPresent(app); // F1-02zzu: two-state until F1-02zzo
+  await faqRankReady(app); // F1-02zzz：收紧为单态（F1-02zzo 已合并）
   const row = article();
   await insert(app, row, 'articles');
   const result = await sql<Row>`SELECT * FROM app.articles WHERE id = ${row.id}`.execute(readonly);
   // F1-02zzc: full row, help_section null, and every stored column (including help_section) is
   // checked for UPDATE below. F1-02zzf：过渡已收紧.
-  expect(result.rows).toEqual([rowOf(row, faqRank)]);
+  expect(result.rows).toEqual([rowOf(row)]);
   await expect(insert(readonly, { ...row, version: 2 }, 'articles')).rejects.toMatchObject({
     code: '42501',
   });
-  for (const column of Object.keys(rowOf(row, faqRank))) {
+  for (const column of Object.keys(rowOf(row))) {
     await expect(
       sql`UPDATE app.articles SET ${sql.ref(column)} = ${sql.ref(column)}
       WHERE id = ${row.id}`.execute(readonly),

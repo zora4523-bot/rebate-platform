@@ -52,9 +52,9 @@ async function ready(): Promise<void> {
   expect(await helpColumn(), 'app.articles.help_section exists').toHaveLength(1);
 }
 
-// F1-02zzu: articles may gain faq_rank (F1-02zzo) — two-state until F1-02zzo. When present it must
-// be the only such column, int4, nullable and without default; returns whether it exists.
-async function faqRankPresent(): Promise<boolean> {
+// F1-02zzu: app.articles.faq_rank must exist as the only such column, int4, nullable and without
+// default. F1-02zzz：收紧为单态（F1-02zzo 已合并）; absence fails the assertion.
+async function faqRankReady(): Promise<void> {
   const rows = (
     await sql<{ type: string; nullable: string; defaultValue: string | null }>`SELECT
       udt_name AS type, is_nullable AS nullable, column_default AS "defaultValue"
@@ -62,17 +62,15 @@ async function faqRankPresent(): Promise<boolean> {
       WHERE table_schema = 'app' AND table_name = 'articles'
         AND column_name = 'faq_rank'`.execute(app)
   ).rows;
-  if (rows.length === 0) return false;
   expect(rows, 'app.articles.faq_rank shape').toEqual([
     { type: 'int4', nullable: 'YES', defaultValue: null },
   ]);
-  return true;
 }
 
-// F1-02zzu: the full stored row; fixtures never write faq_rank, so it is null when present —
-// two-state until F1-02zzo.
-function full(row: Row, faqRank: boolean): Row {
-  return faqRank ? { ...row, faq_rank: null } : row;
+// F1-02zzu: the full stored row; fixtures never write faq_rank, so it is null. F1-02zzz：收紧为单态
+// （F1-02zzo 已合并）.
+function full(row: Row): Row {
+  return { ...row, faq_rank: null };
 }
 
 // Every fixture gets its own app_id; content samples and time are fixed and synthetic.
@@ -136,11 +134,11 @@ it('[AC-F1-02zq#2] both named help CHECKs are validated and the category/status 
 
 it('[AC-F1-02zq#3] help accepts and preserves each of the six exact section codes', async () => {
   await ready();
-  const faqRank = await faqRankPresent(); // F1-02zzu: two-state until F1-02zzo
+  await faqRankReady(); // F1-02zzz：收紧为单态（F1-02zzo 已合并）
   for (const help_section of SECTIONS) {
     const row = { ...article(), help_section };
-    expect(await insert(app, row), help_section).toEqual(full(row, faqRank));
-    expect(await stored(row), help_section).toEqual([full(row, faqRank)]);
+    expect(await insert(app, row), help_section).toEqual(full(row));
+    expect(await stored(row), help_section).toEqual([full(row)]);
   }
 });
 
@@ -178,20 +176,20 @@ it('[AC-F1-02zq#5] rule, notice and agreement reject every non-null section via 
 
 it('[AC-F1-02zq#6] every category accepts explicit NULL and legacy inserts omitting help_section', async () => {
   await ready();
-  const faqRank = await faqRankPresent(); // F1-02zzu: two-state until F1-02zzo
+  await faqRankReady(); // F1-02zzz：收紧为单态（F1-02zzo 已合并）
   for (const category of ['help', 'rule', 'notice', 'agreement']) {
     const explicit = { ...article(), category, help_section: null };
-    expect(await insert(app, explicit)).toEqual(full(explicit, faqRank));
-    expect(await stored(explicit)).toEqual([full(explicit, faqRank)]);
+    expect(await insert(app, explicit)).toEqual(full(explicit));
+    expect(await stored(explicit)).toEqual([full(explicit)]);
     const omitted = { ...article(), category };
-    expect(await insert(app, omitted)).toEqual(full({ ...omitted, help_section: null }, faqRank));
-    expect(await stored(omitted)).toEqual([full({ ...omitted, help_section: null }, faqRank)]);
+    expect(await insert(app, omitted)).toEqual(full({ ...omitted, help_section: null }));
+    expect(await stored(omitted)).toEqual([full({ ...omitted, help_section: null })]);
   }
 });
 
 it('[AC-F1-02zq#7] app and readonly retain their table grants and app UPDATE is exactly the original five columns', async () => {
   await ready();
-  const faqRank = await faqRankPresent(); // F1-02zzu: two-state until F1-02zzo
+  await faqRankReady(); // F1-02zzz：收紧为单态（F1-02zzo 已合并）
   for (const role of ['couli_app', 'couli_readonly']) {
     const table = await sql`SELECT
       has_table_privilege(${role}, 'app.articles', 'SELECT') AS select,
@@ -215,12 +213,8 @@ it('[AC-F1-02zq#7] app and readonly retain their table grants and app UPDATE is 
       has_column_privilege(${role}, attrelid, attnum, 'UPDATE WITH GRANT OPTION') AS grantable
       FROM pg_attribute WHERE attrelid = to_regclass('app.articles')
         AND attnum > 0 AND NOT attisdropped ORDER BY attname`.execute(app);
-    // F1-02zzu: faq_rank listed when present (not updatable, not grantable) — two-state until F1-02zzo.
-    const names = [
-      ...Object.keys(article()),
-      'help_section',
-      ...(faqRank ? ['faq_rank'] : []),
-    ].sort();
+    // F1-02zzu: faq_rank listed (not updatable, not grantable). F1-02zzz：收紧为单态（F1-02zzo 已合并）.
+    const names = [...Object.keys(article()), 'help_section', 'faq_rank'].sort();
     expect(columns.rows, role).toEqual(
       names.map((name) => ({
         name,
@@ -235,7 +229,7 @@ it('[AC-F1-02zq#7] app and readonly retain their table grants and app UPDATE is 
 
 it('[AC-F1-02zq#8] app cannot UPDATE help_section; a new draft version can carry a different section', async () => {
   await ready();
-  const faqRank = await faqRankPresent(); // F1-02zzu: two-state until F1-02zzo
+  await faqRankReady(); // F1-02zzz：收紧为单态（F1-02zzo 已合并）
   for (const initial of [null, 'invite']) {
     const row = { ...article(), help_section: initial };
     await insert(app, row);
@@ -244,17 +238,17 @@ it('[AC-F1-02zq#8] app cannot UPDATE help_section; a new draft version can carry
         sql`UPDATE app.articles SET help_section = ${replacement}
           WHERE app_id = ${row.app_id} AND id = ${row.id} AND version = 1`.execute(app),
       ).rejects.toMatchObject({ code: '42501' });
-      expect(await stored(row)).toEqual([full(row, faqRank)]);
+      expect(await stored(row)).toEqual([full(row)]);
     }
     const next = { ...row, version: 2, help_section: 'account_privacy' };
-    expect(await insert(app, next)).toEqual(full(next, faqRank));
-    expect(await stored(row)).toEqual([full(row, faqRank), full(next, faqRank)]);
+    expect(await insert(app, next)).toEqual(full(next));
+    expect(await stored(row)).toEqual([full(row), full(next)]);
   }
 });
 
 it('[AC-F1-02zq#9] each original mutable column remains writable without changing help_section', async () => {
   await ready();
-  const faqRank = await faqRankPresent(); // F1-02zzu: two-state until F1-02zzo
+  await faqRankReady(); // F1-02zzz：收紧为单态（F1-02zzo 已合并）
   const row = { ...article(), help_section: 'orders_claims' };
   await insert(app, row);
   const changes: Row = {
@@ -264,7 +258,7 @@ it('[AC-F1-02zq#9] each original mutable column remains writable without changin
     row_version: 1,
     updated_at: new Date('2026-10-20T09:00:00.000Z'),
   };
-  const expected: Row = full({ ...row }, faqRank);
+  const expected: Row = full({ ...row });
   for (const [column, value] of Object.entries(changes)) {
     const result = await sql<Row>`UPDATE app.articles SET ${sql.ref(column)} = ${value}
       WHERE app_id = ${row.app_id} AND id = ${row.id} AND version = 1 RETURNING *`.execute(app);
@@ -276,13 +270,13 @@ it('[AC-F1-02zq#9] each original mutable column remains writable without changin
 
 it('[AC-F1-02zq#10] readonly selects help_section but cannot insert, update any column, delete or truncate', async () => {
   await ready();
-  const faqRank = await faqRankPresent(); // F1-02zzu: two-state until F1-02zzo
+  await faqRankReady(); // F1-02zzz：收紧为单态（F1-02zzo 已合并）
   const row = { ...article(), help_section: 'rebate_settlement' };
   await insert(app, row);
-  expect(await stored(row, readonly)).toEqual([full(row, faqRank)]);
+  expect(await stored(row, readonly)).toEqual([full(row)]);
   await expect(insert(readonly, { ...row, version: 2 })).rejects.toMatchObject({ code: '42501' });
-  // F1-02zzu: includes faq_rank when present — two-state until F1-02zzo.
-  for (const column of Object.keys(full(row, faqRank))) {
+  // F1-02zzu: includes faq_rank. F1-02zzz：收紧为单态（F1-02zzo 已合并）.
+  for (const column of Object.keys(full(row))) {
     await expect(
       sql`UPDATE app.articles SET ${sql.ref(column)} = ${sql.ref(column)}
         WHERE app_id = ${row.app_id} AND id = ${row.id} AND version = 1`.execute(readonly),
@@ -294,15 +288,15 @@ it('[AC-F1-02zq#10] readonly selects help_section but cannot insert, update any 
   await expect(sql`TRUNCATE TABLE app.articles`.execute(readonly)).rejects.toMatchObject({
     code: '42501',
   });
-  expect(await stored(row, readonly)).toEqual([full(row, faqRank)]);
+  expect(await stored(row, readonly)).toEqual([full(row)]);
 });
 
 it('[AC-F1-02zq#11] existing status and category CHECKs still enforce their values with a null section', async () => {
   await ready();
-  const faqRank = await faqRankPresent(); // F1-02zzu: two-state until F1-02zzo
+  await faqRankReady(); // F1-02zzz：收紧为单态（F1-02zzo 已合并）
   for (const status of ['draft', 'published', 'offline']) {
     const row = { ...article(), status, help_section: null };
-    expect(await insert(app, row)).toEqual(full(row, faqRank));
+    expect(await insert(app, row)).toEqual(full(row));
   }
   for (const status of ['', 'archived', 'Published', 'published ']) {
     await expect(insert(app, { ...article(), status, help_section: null })).rejects.toMatchObject({
