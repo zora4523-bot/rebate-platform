@@ -12,21 +12,30 @@ import {
 } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import type { ProductDetailData } from '../../../../apps/api/src/modules/catalog/detail.ts';
 import * as catalog from '../../../../apps/api/src/modules/catalog/index.ts';
 import type { PageSectionItemsData } from '../../../../apps/api/src/modules/catalog/section-items.ts';
 import * as platform from '../../../../apps/api/src/modules/platform/index.ts';
+import type { UnionItemDetail } from '../../../../apps/api/src/modules/union/index.ts';
 import { DemoUnionAdapter, UnionError } from '../../../../apps/api/src/modules/union/index.ts';
 import { channel, TB_CHANNEL } from '../hot-rank-upstream/kit.ts';
 import { assertSchema } from '../hot-rank/kit.ts';
 import { headers, type HttpApp, type Response } from '../search-route/http-kit.ts';
 import { title } from '../section-items/kit.ts';
 import {
+  ADDED_SEC,
   AD_LABEL,
   FALLBACK_KEY,
+  MAX_AGE_SEC,
+  OFF_SHELF_REASON,
   REFRESH_NOW,
   TIMEOUT,
+  expectExpiredRaw,
+  itemRow,
+  secondsAgo,
   seedItem,
   seedPool,
+  seedRef,
   tenant,
   uniqueApp,
   type Tenant,
@@ -306,6 +315,238 @@ it(
     expect(search.json()).toMatchObject({ code: 50304 });
     expect(JSON.stringify(search.json())).not.toContain(key);
     expect(searchItems).toHaveBeenCalled();
+  },
+  TIMEOUT,
+);
+
+// Round 2 of the money review: the same rulings through the real createUnionDetailUpstream, with no
+// fresh raw ID. The card comes from the pool section as a user taps it, its item_ref carrying the
+// row's old instant, and product_refs is as old (BR-PROD-05 ① and ②). With an eligible row the detail
+// takes step ③, the title re-parse, on the online purpose; without one it answers 30143 and asks the
+// union nothing. The online breaker is one per app under test and its window spans cases, so the
+// outages stay last: the good answers above them must not meet a breaker they opened.
+const resolveLink = vi.spyOn(DemoUnionAdapter.prototype, 'resolveLink');
+
+beforeEach(() => {
+  resolveLink.mockReset().mockRejectedValue(outage());
+});
+
+/** A price apart from the pool row's, under a raw ID neither the row nor product_refs holds. */
+function unionAnswer(stable: string): UnionItemDetail {
+  return {
+    platform: 'taobao',
+    item_id: `rawNew-${stable}`,
+    title: title(stable),
+    price_fen: 6000n,
+    coupon_fen: 1000n,
+    final_price_fen: 5000n,
+    commission_rate_bp: 1500n,
+    quoted_at: clock.now().toISOString(),
+  };
+}
+
+/** The union finds the product by its title under a new raw ID and answers its detail. */
+function unionFinds(stable: string): void {
+  searchItems.mockResolvedValue({ items: [unionAnswer(stable)], nextCursor: null });
+  getItem.mockResolvedValue(unionAnswer(stable));
+}
+
+/** A pool card the user taps, then finds both of its raw-ID sources expired. */
+async function tappedCard(stable: string, extra: Parameters<typeof seedItem>[5] = {}) {
+  const key = `tb:${stable}`;
+  const aged = secondsAgo(clock, ADDED_SEC);
+  const pool = await seedPool(db, owner, clock);
+  await seedItem(db, owner, clock, pool, key, { created_at: aged, ...extra });
+  await seedRef(db, owner, clock, stable, { raw_fetched_at: aged, refreshed_at: aged });
+  await publish({ kind: 'product_pool', pool_id: pool, limit: 10 });
+
+  const { items } = (await sectionItems()).json<{ data: PageSectionItemsData }>().data;
+  expect(items).toHaveLength(1);
+  const card = items[0]!;
+  expect(card.product_key).toBe(key);
+  const link = (await links()).find((row) => row.link_id === card.link_id);
+  expectExpiredRaw(clock, link!.raw_fetched_at!.toISOString());
+  return { key, pool, itemRef: card.item_ref! };
+}
+
+function detailOf(key: string, itemRef: string): Promise<Response> {
+  const query = new URLSearchParams({ item_ref: itemRef });
+  return get(`/v1/products/${encodeURIComponent(key)}?${query}`);
+}
+
+function storedRef(key: string) {
+  return db
+    .selectFrom('product_refs')
+    .selectAll()
+    .where('app_id', '=', appId)
+    .where('product_key', '=', key)
+    .executeTakeFirstOrThrow();
+}
+
+async function expectRefExpired(response: Response, linkCount: number): Promise<void> {
+  expect(response.statusCode).toBe(422);
+  expect(response.json()).toMatchObject({ code: 30143 });
+  await assertSchema(response.json(), 'ErrorEnvelope');
+  expect(await links()).toHaveLength(linkCount);
+}
+
+function expectUnionUnasked(): void {
+  expect(searchItems).not.toHaveBeenCalled();
+  expect(getItem).not.toHaveBeenCalled();
+  expect(resolveLink).not.toHaveBeenCalled();
+}
+
+function expectOnlineTitleSearch(stable: string): void {
+  expect(searchItems).toHaveBeenCalled();
+  expect(searchItems.mock.calls[0]?.[0]).toMatchObject({ keyword: title(stable) });
+  expect(searchItems.mock.calls[0]?.[1]).toMatchObject({ appId, purpose: 'online' });
+}
+
+it(
+  '[AC-B1-05r#1][BR-PROD-05][BR-PRICE-11] 真实详情链路：item_ref 和 product_refs 都过期、有合格池行 → online 用途按标题重解析成功，正常详情卡 stale=false，product_refs 和链接记新原串',
+  async () => {
+    const stable = 'Kreparse01';
+    const raw = `rawNew-${stable}`;
+    const tapped = await tappedCard(stable);
+    unionFinds(stable);
+
+    const response = await detailOf(tapped.key, tapped.itemRef);
+
+    expect(response.statusCode).toBe(200);
+    await assertSchema(response.json(), 'ProductResponse');
+    const card = response.json<{ data: ProductDetailData }>().data;
+    expect(card).toMatchObject({
+      product_key: tapped.key,
+      price_fen: 6000,
+      coupon_fen: 1000,
+      final_price_fen: 5000,
+      stale: false,
+      age_sec: 0,
+      availability: 'ok',
+    });
+    expect(Date.parse(card.quoted_at!)).toBe(clock.now().getTime());
+    expect(card.item_ref).not.toBe(tapped.itemRef);
+
+    expectOnlineTitleSearch(stable);
+    for (const [ref, ctx] of getItem.mock.calls) {
+      expect(ref).toMatchObject({ item_id: raw });
+      expect(ctx).toMatchObject({ appId, purpose: 'online' });
+    }
+    expect(await storedRef(tapped.key)).toMatchObject({
+      raw_item_id: raw,
+      refreshed_at: clock.now(),
+    });
+    const link = (await links()).find((row) => row.link_id === card.link_id);
+    expect(link).toMatchObject({ product_key: tapped.key, raw_item_id: raw });
+  },
+  TIMEOUT,
+);
+
+it.each([
+  { label: '第一页没有结果', items: [] },
+  { label: '第一页只有别的 key', items: [unionAnswer('Kelsewhere')] },
+])(
+  '[AC-B1-05r#2][BR-PROD-05] 真实详情链路：联盟已作答但$label、有合格池行 → 30143，不用池价，行不下架，不出卡',
+  async ({ items }) => {
+    const stable = 'Kreparse02';
+    const tapped = await tappedCard(stable);
+    const before = await links();
+    searchItems.mockResolvedValue({ items, nextCursor: null });
+
+    const response = await detailOf(tapped.key, tapped.itemRef);
+
+    await expectRefExpired(response, before.length);
+    expectOnlineTitleSearch(stable);
+    expect(await itemRow(db, appId, tapped.pool, tapped.key)).toMatchObject({
+      status: 'online',
+      invalid_reason: null,
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B1-05r#3][BR-PROD-05][BR-PRICE-11] 真实详情链路：这个 App 没有这个 key 的池行 → 30143，联盟一次都没被调用',
+  async () => {
+    const tapped = await tappedCard('Kreparse03');
+    await db
+      .deleteFrom('pool_items')
+      .where('app_id', '=', appId)
+      .where('product_key', '=', tapped.key)
+      .execute();
+    const before = await links();
+
+    const response = await detailOf(tapped.key, tapped.itemRef);
+
+    await expectRefExpired(response, before.length);
+    expectUnionUnasked();
+  },
+  TIMEOUT,
+);
+
+it.each([
+  { label: '下线', change: { status: 'offline', invalid_reason: OFF_SHELF_REASON } },
+  { label: '超龄', change: { quoted_at: secondsAgo(clock, MAX_AGE_SEC + 1) } },
+  { label: 'commission_rate_bp 为 NULL', change: { commission_rate_bp: null } },
+])(
+  '[AC-B1-05r#4][BR-PROD-05][BR-PRICE-11] 真实详情链路：池行不合格（$label）→ 30143，联盟一次都没被调用',
+  async ({ change }) => {
+    const tapped = await tappedCard('Kreparse04');
+    await db
+      .updateTable('pool_items')
+      .set(change)
+      .where('app_id', '=', appId)
+      .where('pool_id', '=', tapped.pool)
+      .where('product_key', '=', tapped.key)
+      .execute();
+    const before = await links();
+
+    const response = await detailOf(tapped.key, tapped.itemRef);
+
+    await expectRefExpired(response, before.length);
+    expectUnionUnasked();
+  },
+  TIMEOUT,
+);
+
+async function expectPoolFallback(response: Response, quotedAt: Date): Promise<void> {
+  expect(response.statusCode).toBe(200);
+  await assertSchema(response.json(), 'ProductResponse');
+  const card = response.json<{ data: ProductDetailData }>().data;
+  expect(card).toMatchObject({ final_price_fen: 8000, stale: true, age_sec: 600 });
+  expect(Date.parse(card.quoted_at!)).toBe(quotedAt.getTime());
+}
+
+it(
+  '[AC-B1-05r#5][BR-PRICE-11][TRADE-12] 真实详情链路：有合格池行、重解析时联盟依赖失败 → 商品池回退 stale=true，quoted_at 取池行，product_refs 不动',
+  async () => {
+    const stable = 'Kreparse05';
+    const quotedAt = secondsAgo(clock, 600);
+    const tapped = await tappedCard(stable, { quoted_at: quotedAt });
+    const stored = await storedRef(tapped.key);
+
+    const response = await detailOf(tapped.key, tapped.itemRef);
+
+    await expectPoolFallback(response, quotedAt);
+    expectOnlineTitleSearch(stable);
+    expect(await storedRef(tapped.key)).toEqual(stored);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B1-05r#6][BR-PRICE-11][TRADE-12] 真实详情链路：重解析找到新原串、问详情时联盟依赖失败 → 同样商品池回退，stale=true，quoted_at 取池行',
+  async () => {
+    const stable = 'Kreparse06';
+    const quotedAt = secondsAgo(clock, 600);
+    const tapped = await tappedCard(stable, { quoted_at: quotedAt });
+    searchItems.mockResolvedValue({ items: [unionAnswer(stable)], nextCursor: null });
+
+    const response = await detailOf(tapped.key, tapped.itemRef);
+
+    await expectPoolFallback(response, quotedAt);
+    expect(getItem).toHaveBeenCalled();
+    expect(getItem.mock.calls[0]?.[0]).toMatchObject({ item_id: `rawNew-${stable}` });
   },
   TIMEOUT,
 );
