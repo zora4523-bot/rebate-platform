@@ -16,6 +16,10 @@ export type ReconDiffStatus = Schema<'AdminReconDiffStatus'>;
 export const PAGE_SIZE = 20;
 /** Close reason: 1–200 characters after trimming (AdminReconDiffCloseRequest). */
 export const REASON_MAX = 200;
+/** Write-off note: optional, 1–200 characters after trimming (AdminReconDiffWriteOffRequest). */
+export const NOTE_MAX = 200;
+/** The step-up endpoint (totp tier for payout.execute). */
+export const STEP_UP_URL = '/admin/v1/auth/step-up';
 
 /** The nine R1–R3 types (AdminReconDiffType; the R4 types stay on the pay-order page). */
 export const TYPES: readonly ReconDiffType[] = [
@@ -70,6 +74,45 @@ export function statusColor(code: ReconDiffStatus): string {
 /** Only open / processing differences can be closed (closeAdminReconDiff). */
 export const closable = (status: ReconDiffStatus): boolean =>
   status === 'open' || status === 'processing';
+
+/**
+ * 【核销】 (writeOffAdminReconDiff, W11 by the bill line): R2 differences still open / processing.
+ * payout.execute is checked by the caller.
+ */
+export const writableOff = (item: { source: string; status: ReconDiffStatus }): boolean =>
+  item.source === 'R2' && closable(item.status);
+
+/** The five data.reason values of the W11 guard (20001, data.fields=[recon_diff_id]). */
+export const GUARD_REASONS = [
+  'not_payer_side_case',
+  'writeoff_disabled',
+  'withdrawal_not_returned',
+  'transfer_attempts_mismatch',
+  'amount_mismatch',
+] as const;
+export type GuardReason = (typeof GUARD_REASONS)[number];
+
+function dataOf(cause: unknown): Record<string, unknown> | undefined {
+  if (!(cause instanceof AdminApiError)) return undefined;
+  const data: unknown = cause.data;
+  return typeof data === 'object' && data !== null && !Array.isArray(data)
+    ? (data as Record<string, unknown>)
+    : undefined;
+}
+
+/** `data.reason` of a 20001 from the W11 guard, when it is one of the five known values. */
+export function guardReason(cause: unknown): GuardReason | undefined {
+  if (codeOf(cause) !== 20001) return undefined;
+  const reason = dataOf(cause)?.['reason'];
+  return GUARD_REASONS.find((item) => item === reason);
+}
+
+/** `data.resource` of a 20902 (recon_diff / withdrawal), else undefined. */
+export function conflictResource(cause: unknown): string | undefined {
+  if (codeOf(cause) !== 20902) return undefined;
+  const resource = dataOf(cause)?.['resource'];
+  return typeof resource === 'string' ? resource : undefined;
+}
 
 /** Admin amount (BR-TEXT-10: ¥, thousands, two decimals, minus sign kept). */
 export function money(fen: number): string {
@@ -208,7 +251,7 @@ export const codeOf = (cause: unknown): number | undefined =>
 export const isNetwork = (cause: unknown): boolean =>
   cause instanceof AdminApiError && cause.kind === 'network';
 
-/** A new Idempotency-Key for one close dialog. */
+/** A new Idempotency-Key for one close / write-off dialog. */
 export function newRequestKey(): string {
   return globalThis.crypto.randomUUID();
 }

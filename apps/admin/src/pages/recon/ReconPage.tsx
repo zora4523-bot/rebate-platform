@@ -3,6 +3,10 @@
 // 分页）、详情抽屉 GET …/{id}、【已关闭（不处理）】POST …/{id}/close（只给 fund.recon，必填原因，
 // Idempotency-Key：同一对话框内重试沿用、新开对话框换新键；不走动态码）。持 fund.recon 或
 // fund.view 可看；两者都没有时本页说明无权限、不发请求。
+// 【核销】POST …/{id}/write-off（F1-08eb，CT-24za；R2 迟到成功 → 提现 W11）：只给 payout.execute、
+// R2、待处理 / 处理中；确认对话框 → 动态码（totp，每次新取令牌，不缓存）→ 请求带 X-Step-Up-Token、
+// Idempotency-Key（打开对话框时生成，同框重试与 10003 重放沿用，新开换新）与
+// {expected_withdrawal_status: 'APPROVED', note?}，不传金额、渠道结果或凭证。
 // TODO(规划/11 §7): 「对账任务」页签（任务列表、手动触发 R1、月末三项、导出）与工作台计数 — blocked on 契约未出
 import { ReloadOutlined } from '@ant-design/icons';
 import { useDataProvider } from '@refinedev/core';
@@ -27,16 +31,22 @@ import { useEffect, useId, useRef, useState, type ReactElement } from 'react';
 import type { Schema } from '@couli/contracts-ts';
 import type { AccessControl } from '../../providers/access-control/index.ts';
 import { reconTexts as t } from '../../texts/recon.ts';
+import { StepUpModal, type StepUpResult } from '../../components/step-up/index.ts';
+import { AdminApiError } from '../../providers/data/index.ts';
 import { CloseModal } from './CloseModal.tsx';
 import { DetailDrawer, type DetailState } from './DetailDrawer.tsx';
+import { WriteOffModal } from './WriteOffModal.tsx';
 import {
   EMPTY_DRAFT,
   PAGE_SIZE,
   SOURCES,
   STATUSES,
   TYPES,
+  STEP_UP_URL,
   checkDraft,
   codeOf,
+  conflictResource,
+  guardReason,
   isNetwork,
   listQuery,
   money,
@@ -85,6 +95,25 @@ interface CloseFlow {
   readonly canSubmit: boolean;
 }
 
+/**
+ * One write-off dialog: its own Idempotency-Key, kept for every retry and 10003 replay inside it.
+ * `phase`: editing the note, passing the step-up (`note` is what will be sent), or sending.
+ */
+interface WriteOffFlow {
+  readonly id: string;
+  readonly ref: string;
+  readonly requestKey: string;
+  readonly phase: 'editing' | 'verifying' | 'sending';
+  readonly note?: string | undefined;
+  /** The step-up is asked again after a 10003. */
+  readonly again?: boolean;
+  /** A sent body whose outcome is unknown: the note stays as sent. */
+  readonly locked?: boolean;
+  readonly fieldError?: string;
+  readonly error?: string;
+  readonly canSubmit: boolean;
+}
+
 export interface ReconPageProps {
   readonly access: AccessControl;
 }
@@ -102,10 +131,18 @@ export function ReconPage({ access }: ReconPageProps): ReactElement {
       </Flex>
     );
   }
-  return <ReconContent canClose={access.can('fund.recon')} />;
+  return (
+    <ReconContent canClose={access.can('fund.recon')} canWriteOff={access.can('payout.execute')} />
+  );
 }
 
-function ReconContent({ canClose }: { readonly canClose: boolean }): ReactElement {
+function ReconContent({
+  canClose,
+  canWriteOff,
+}: {
+  readonly canClose: boolean;
+  readonly canWriteOff: boolean;
+}): ReactElement {
   const getProvider = useDataProvider();
   const { token } = theme.useToken();
   const ids = {
@@ -128,6 +165,8 @@ function ReconContent({ canClose }: { readonly canClose: boolean }): ReactElemen
   const [detail, setDetail] = useState<DetailState>({ status: 'loading' });
   const [flow, setFlowState] = useState<CloseFlow>();
   const flowRef = useRef<CloseFlow | undefined>(undefined);
+  const [writeOff, setWriteOffState] = useState<WriteOffFlow>();
+  const writeOffRef = useRef<WriteOffFlow | undefined>(undefined);
   const drawerRef = useRef<DrawerTarget | undefined>(undefined);
   const alive = useRef(true);
 
@@ -141,6 +180,10 @@ function ReconContent({ canClose }: { readonly canClose: boolean }): ReactElemen
   const setFlow = (next: CloseFlow | undefined) => {
     flowRef.current = next;
     setFlowState(next);
+  };
+  const setWriteOff = (next: WriteOffFlow | undefined) => {
+    writeOffRef.current = next;
+    setWriteOffState(next);
   };
   const openDrawer = (next: DrawerTarget | undefined) => {
     drawerRef.current = next;
@@ -259,7 +302,7 @@ function ReconContent({ canClose }: { readonly canClose: boolean }): ReactElemen
   };
 
   const startClose = (item: ReconDiffDetail) => {
-    if (!canClose || flowRef.current !== undefined) return;
+    if (!canClose || flowRef.current !== undefined || writeOffRef.current !== undefined) return;
     setNotice(undefined);
     // A new dialog is a new close: a new Idempotency-Key (kept for every retry inside it).
     setFlow({
@@ -329,6 +372,143 @@ function ReconContent({ canClose }: { readonly canClose: boolean }): ReactElemen
         keep({ error: t.close.network });
       } else {
         keep({ error: t.close.failed });
+      }
+    }
+  };
+
+  const startWriteOff = (item: ReconDiffDetail) => {
+    if (!canWriteOff || writeOffRef.current !== undefined || flowRef.current !== undefined) return;
+    if (item.source !== 'R2' || (item.status !== 'open' && item.status !== 'processing')) return;
+    setNotice(undefined);
+    // A new dialog is a new write-off: a new Idempotency-Key (kept for every retry inside it).
+    setWriteOff({
+      id: item.recon_diff_id,
+      ref: item.ref_id,
+      requestKey: newRequestKey(),
+      phase: 'editing',
+      canSubmit: true,
+    });
+  };
+
+  const cancelWriteOff = () => {
+    if (writeOffRef.current?.phase === 'sending') return;
+    setWriteOff(undefined);
+  };
+
+  /** The dialog's confirm: the step-up comes first (a new totp value for every write). */
+  const confirmWriteOff = (note: string | undefined) => {
+    const current = writeOffRef.current;
+    if (current === undefined || current.phase !== 'editing' || !current.canSubmit) return;
+    // After an unknown outcome the same body is resent (the note field is locked meanwhile).
+    const sent = current.locked === true ? current.note : note;
+    setWriteOff({
+      id: current.id,
+      ref: current.ref,
+      requestKey: current.requestKey,
+      phase: 'verifying',
+      note: sent,
+      ...(current.locked === true ? { locked: true } : {}),
+      canSubmit: true,
+    });
+  };
+
+  const verifyStepUp = async (code: string): Promise<StepUpResult> => {
+    const payload: Schema<'AdminStepUpRequest'> = { tier: 'totp', code };
+    try {
+      const response = await customOf()<Schema<'AdminStepUpResponse'>['data']>({
+        url: STEP_UP_URL,
+        method: 'post',
+        payload,
+      });
+      return { ok: true, stepUpToken: response.data.step_up_token };
+    } catch (cause) {
+      if (cause instanceof AdminApiError)
+        return cause.retryAfterSeconds === undefined
+          ? { ok: false, code: cause.code }
+          : { ok: false, code: cause.code, retryAfterSeconds: cause.retryAfterSeconds };
+      return { ok: false, code: 0 };
+    }
+  };
+
+  const cancelStepUp = () => {
+    const current = writeOffRef.current;
+    if (current === undefined || current.phase !== 'verifying') return;
+    setWriteOff({ ...current, phase: 'editing', again: false });
+  };
+
+  const submitWriteOff = async (stepUpToken: string) => {
+    const current = writeOffRef.current;
+    if (current === undefined || current.phase !== 'verifying') return;
+    const sending: WriteOffFlow = {
+      id: current.id,
+      ref: current.ref,
+      requestKey: current.requestKey,
+      phase: 'sending',
+      note: current.note,
+      ...(current.locked === true ? { locked: true } : {}),
+      canSubmit: true,
+    };
+    setWriteOff(sending);
+    const payload: Schema<'AdminReconDiffWriteOffRequest'> = {
+      expected_withdrawal_status: 'APPROVED',
+      ...(current.note === undefined ? {} : { note: current.note }),
+    };
+    try {
+      const response = await customOf()<Schema<'AdminReconDiffWriteOff'>>({
+        url: `${itemUrl(current.id)}/write-off`,
+        method: 'post',
+        payload,
+        meta: { idempotencyKey: current.requestKey, stepUpToken },
+      });
+      if (!alive.current) return;
+      setWriteOff(undefined);
+      applyItem(response.data.recon_diff);
+      setNotice({ type: 'success', text: t.writeOff.done(response.data.released_hold_count) });
+    } catch (cause) {
+      if (!alive.current) return;
+      const keep = (patch: Partial<WriteOffFlow>) =>
+        setWriteOff({ ...sending, phase: 'editing', ...patch });
+      const code = codeOf(cause);
+      const reason = guardReason(cause);
+      const fields = rejectedFields(cause);
+      if (code === 10003) {
+        // The step-up value was refused: verify again, then replay with the same key and body.
+        setWriteOff({ ...sending, phase: 'verifying', again: true });
+      } else if (reason !== undefined) {
+        // The W11 guard refused: nothing changed; this difference cannot be written off.
+        setWriteOff(undefined);
+        setNotice({ type: 'error', text: t.writeOff.guard[reason] });
+      } else if (code === 20001 && fields.includes('note')) {
+        keep({ fieldError: t.writeOff.rejected });
+      } else if (code === 20001) {
+        setWriteOff(undefined);
+        setNotice({ type: 'error', text: t.writeOff.missing });
+        reload();
+        readDetailAgain();
+      } else if (code === 20902) {
+        // The difference or its withdrawal changed meanwhile: nothing was written; read again.
+        setWriteOff(undefined);
+        setNotice({
+          type: 'warning',
+          text:
+            conflictResource(cause) === 'withdrawal'
+              ? t.writeOff.conflictWithdrawal
+              : t.writeOff.conflictDiff,
+        });
+        reload();
+        readDetailAgain();
+      } else if (code === 20901) {
+        // The same key with another body: never resent from this dialog.
+        keep({ error: t.writeOff.changed, canSubmit: false });
+      } else if (code === 40901) {
+        keep({ error: t.writeOff.running, locked: true });
+      } else if (code === 10403) {
+        keep({ error: t.writeOff.forbidden, canSubmit: false });
+      } else if (isNetwork(cause)) {
+        // Not known whether it was written off: a retry here resends the same key and body.
+        keep({ error: t.writeOff.network, locked: true });
+      } else {
+        keep({ error: t.writeOff.failed });
       }
     }
   };
@@ -601,10 +781,13 @@ function ReconContent({ canClose }: { readonly canClose: boolean }): ReactElemen
         open={drawer !== undefined}
         state={detail}
         canClose={canClose}
-        closing={flow !== undefined}
+        canWriteOff={canWriteOff}
+        closing={flow !== undefined || writeOff !== undefined}
+        covered={writeOff?.phase === 'verifying'}
         onClose={() => openDrawer(undefined)}
         onRetry={readDetailAgain}
         onCloseDiff={startClose}
+        onWriteOff={startWriteOff}
       />
       {flow === undefined ? null : (
         <CloseModal
@@ -618,6 +801,33 @@ function ReconContent({ canClose }: { readonly canClose: boolean }): ReactElemen
           onSubmit={(reason) => void submitClose(reason)}
         />
       )}
+      {writeOff === undefined ? null : (
+        <WriteOffModal
+          key={writeOff.requestKey}
+          reconDiffId={writeOff.id}
+          withdrawalRef={writeOff.ref}
+          busy={writeOff.phase !== 'editing'}
+          covered={writeOff.phase === 'verifying'}
+          locked={writeOff.locked === true}
+          fieldError={writeOff.fieldError}
+          error={writeOff.error}
+          canSubmit={writeOff.canSubmit}
+          onCancel={cancelWriteOff}
+          onSubmit={confirmWriteOff}
+        />
+      )}
+      <StepUpModal
+        open={writeOff?.phase === 'verifying'}
+        tier="totp"
+        operation={t.writeOff.stepUpOperation}
+        details={[
+          ...(writeOff === undefined ? [] : [t.writeOff.target(writeOff.id)]),
+          ...(writeOff?.again === true ? [t.writeOff.stepUpAgain] : []),
+        ]}
+        onSubmit={verifyStepUp}
+        onClose={cancelStepUp}
+        onVerified={(stepUpToken) => void submitWriteOff(stepUpToken)}
+      />
     </Flex>
   );
 }
