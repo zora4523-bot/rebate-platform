@@ -1,11 +1,12 @@
 import { expect, it } from 'vitest';
-import { endpoint, sent, unionFailure } from '../jd-core/kit.ts';
+import { endpoint, formFields, sent, unionFailure } from '../jd-core/kit.ts';
 import { num } from '../jd-orders/kit.ts';
 import {
   ctx,
   expectNoMarkers,
   failure,
   listing,
+  method,
   mode,
   otherItemId,
   otherSkuId,
@@ -41,6 +42,14 @@ const notRecognized: readonly (readonly [string, Answer])[] = [
 ];
 const mainSiteMisses = mainSiteLinks.flatMap((link) =>
   notRecognized.map(([name, answer]) => [link, name, answer] as const),
+);
+const other = row({ itemId: otherItemId, skuId: num(otherSkuId) });
+const skuLess: readonly (readonly [string, Answer])[] = [
+  ['第一条没有 skuId', () => listing([row({ skuId: undefined })])],
+  ['第一条没有 skuId、第二条有', () => listing([row({ skuId: undefined }), other])],
+];
+const skuLessCases = keywordLinks.flatMap((link) =>
+  skuLess.map(([name, answer]) => [link, name, answer] as const),
 );
 
 /** 看着像 jingfen 详情页、其实不是：必须走 keyword，不能把路径当 itemId。 */
@@ -89,6 +98,7 @@ it.each(keywordLinks)(
     expect(requests[0]).toMatchObject({ keyword: link, sceneId: 1, pageIndex: 1 });
     expect(sent(transport).url).toBe(endpoint.baseUrl);
     expect(sent(transport).method).toBe('POST');
+    expect(formFields(sent(transport)).method).toBe(method);
   },
 );
 
@@ -117,6 +127,17 @@ it('[AC-B1-04zc#58] sku 模式的 keyword 路径：item_id 取响应的 skuId', 
   const { item } = await adapter.resolveLink(unionLink, ctx);
   expect(item).toMatchObject({ platform: 'jd', item_id: skuId, skuId });
 });
+
+it.each(skuLessCases)(
+  '[AC-B1-04zc#91] sku 模式下 %s 遇%s → link_unrecognized，不把 itemId 当 skuId',
+  async (link, _name, answer) => {
+    const { adapter, requests } = wire(answer, mode('sku'));
+    const error = await unionFailure(() => adapter.resolveLink(link, ctx), 'link_unrecognized');
+    expect(error.message).not.toContain(wholeItemId);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ keyword: link, sceneId: 1 });
+  },
+);
 
 it('[AC-B1-04zc#59] 取第一条：第一条价格异常也不换成第二条（链接认的是商品，不是出卡）', async () => {
   const rows = [withPrice(num('39.905')), row({ itemId: otherItemId, skuId: num(otherSkuId) })];

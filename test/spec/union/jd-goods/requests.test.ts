@@ -55,6 +55,8 @@ const notArrays: readonly (readonly [string, unknown])[] = [
 const skuRefs: readonly (readonly [string, ItemRef])[] = [
   ['item_id', { platform: 'jd', item_id: skuId }],
   ['skuId', { platform: 'jd', skuId }],
+  // 链接复核的 itemRefOf（linking）在任何模式都把存下的原串放在 itemId。
+  ['itemId', { platform: 'jd', itemId: skuId }],
 ];
 
 const skuAnswers: readonly (readonly [string, () => UnionTransportResponse])[] = [
@@ -186,6 +188,17 @@ it('[AC-B1-04zc#10] 一页全是异常商品：items 为空，游标仍指下一
   expect(page.nextCursor).toEqual(expect.any(String));
 });
 
+it('[AC-B1-04zc#92] 总数恰为一页且含不出卡的异常商品：已取条数按上游行数算，第一页就结束', async () => {
+  const { adapter, requests } = wire((body) => {
+    const size = Number(body.pageSize);
+    return listing([withPrice(num('39.905')), ...listOf(size - 1)], size);
+  });
+  const page = await adapter.searchItems({ keyword: '合成分页' }, ctx);
+  expect(requests).toHaveLength(1);
+  expect(page.items).toHaveLength(Number(requests[0]!.pageSize) - 1);
+  expect(page.nextCursor).toBeNull();
+});
+
 it.each<[string, () => UnionTransportResponse]>([
   ['内层 200 而 data 缺失', () => reply(success())],
   ['data 为空数组', () => listing([])],
@@ -220,10 +233,11 @@ it.each(['not-a-cursor', '', 'jd-order:2', 'jd-goods:0', 'jd-goods:-1'])(
 );
 
 it('[AC-B1-04zc#14] getItem 用 itemIds 传 item_id，一次一个，sceneId=1，不带 keyword', async () => {
-  const { adapter, requests } = wire(() => listing([row()]));
+  const { adapter, requests, transport } = wire(() => listing([row()]));
   const item = await adapter.getItem(itemRef, ctx);
   expect(item).toMatchObject({ platform: 'jd', item_id: wholeItemId, title });
   expect(requests).toHaveLength(1);
+  expect(formFields(sent(transport)).method).toBe(method);
   expect(requests[0]).toMatchObject({ itemIds: [wholeItemId], sceneId: 1 });
   expect(requests[0]).not.toHaveProperty('keyword');
 });

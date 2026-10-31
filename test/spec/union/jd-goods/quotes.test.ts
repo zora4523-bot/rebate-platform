@@ -26,7 +26,11 @@ import {
 // D10-525：报价字段（priceInfo.price、券 discount、quota、lowestCouponPrice）的 JSON number
 // 先转 String(n) 再交 parseYuanToFen，字符串形式的金额原样解析；commissionShare 不在此列，
 // 仍按 BR-CALC-26 取原文、floor。
-const fen = fc.bigInt({ min: 1n, max: 99_999_999n });
+// 超过 2^31 的报价走同一口径；10^13 分以内补第三位小数也不到 16 位有效数字，经 String(n) 能准确往返。
+const fen = fc.oneof(
+  fc.bigInt({ min: 1n, max: 99_999_999n }),
+  fc.bigInt({ min: 2_147_483_648n, max: 10_000_000_000_000n }),
+);
 
 /** One good without coupons, priced by `price`. */
 function bare(price: unknown): Row {

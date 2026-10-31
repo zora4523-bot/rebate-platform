@@ -213,12 +213,12 @@ it.each(anomalies)(
       price_anomaly_reason: reason,
     });
     expect(warnings(warn, 'PRICE_ANOMALY')).toEqual([
-      expect.objectContaining({
+      {
         method,
         code: 'PRICE_ANOMALY',
         item_id: wholeItemId,
         reason,
-      }),
+      },
     ]);
   },
 );
@@ -276,17 +276,24 @@ interface Draft {
   readonly best: boolean;
 }
 
+/** 超过 2^31 的金额：10^13 分以内的两位小数经 String(n) 能准确往返。 */
+const wideFen = fc.bigInt({ min: 2_147_483_648n, max: 10_000_000_000_000n });
+
+function amount(min: bigint): fc.Arbitrary<bigint> {
+  return fc.oneof(fc.bigInt({ min, max: 6000n }), wideFen);
+}
+
 const offset = fc.constantFrom(-hourMs, -1, 0, 1, hourMs);
 const draft: fc.Arbitrary<Draft> = fc.record({
-  discount: fc.option(fc.bigInt({ min: 1n, max: 6000n }), { nil: undefined }),
-  quota: fc.option(fc.bigInt({ min: 0n, max: 6000n }), { nil: undefined }),
+  discount: fc.option(amount(1n), { nil: undefined }),
+  quota: fc.option(amount(0n), { nil: undefined }),
   start: offset,
   end: offset,
   status: fc.constantFrom(-1, 0, 1, undefined),
   best: fc.boolean(),
 });
 const drafts = fc.array(draft, { maxLength: 6 });
-const priceFen = fc.bigInt({ min: 1n, max: 6000n });
+const priceFen = amount(1n);
 
 function onWire(item: Draft): Row {
   return coupon({
@@ -355,6 +362,20 @@ it('[AC-B1-04zc#35] 任意券列表：选中的就是手算的那张，面额相
         const top = largest(list, price);
         if (top === undefined) return choice === null;
         return choice?.discount_fen === top.discount && choice?.quota_fen === top.quota;
+      }),
+      propParams(),
+    ),
+  ).not.toThrow();
+});
+
+it('[AC-B1-04zc#93] 价格 0 配任意券列表：一律 invalid_price，不当 0 元', () => {
+  expect(() =>
+    fc.assert(
+      fc.property(drafts, (list) => {
+        const item = mapped(
+          withCoupons(list.map(onWire), { priceInfo: basePrice({ price: num(yuan(0n)) }) }),
+        );
+        return item.price_status === 'anomaly' && item.price_anomaly_reason === 'invalid_price';
       }),
       propParams(),
     ),
