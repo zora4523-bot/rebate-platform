@@ -62,6 +62,18 @@ red_exempt:
   - file: test/spec/settlement/supplement/validation.int.test.ts
     test: '[AC-B2-04r#29] B_settle 按 BR-CALC-02 向下取整并扣淘礼金：联盟佣金 1001 不整除时仍与快照基数一致'
     reason: 冻结 B2-04r 用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
+  - file: test/spec/settlement/supplement/validation.int.test.ts
+    test: '[AC-B2-04r#26] 补充校验遇联盟后到结算而我方 ESTIMATED：登记 union_mismatch，不入批'
+    reason: 冻结 B2-04r it.each 展开用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
+  - file: test/spec/settlement/supplement/validation.int.test.ts
+    test: '[AC-B2-04r#26] 补充校验遇联盟后到结算而我方 VOID：登记 union_mismatch，不入批'
+    reason: 冻结 B2-04r it.each 展开用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
+  - file: test/spec/settlement/supplement/validation.int.test.ts
+    test: '[AC-B2-04r#26] 补充校验遇联盟后到结算而我方 CLAWED_BACK：登记 union_mismatch，不入批'
+    reason: 冻结 B2-04r it.each 展开用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
+  - file: test/spec/settlement/supplement/validation.int.test.ts
+    test: '[AC-B2-04r#26] 补充校验遇联盟后到结算而我方 我方无单：登记 union_mismatch，不入批'
+    reason: 冻结 B2-04r it.each 展开用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
 impl: claude
 tester: claude-independent
 accept:
