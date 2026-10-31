@@ -1,0 +1,27 @@
+id: B1-04m
+repo: rebate-platform
+title: 大淘客请求底座（淘宝订单源，D10-486 ①）：新验签 signRan = MD5("appKey=…&timer=…&nonce=…&key=<appSecret>") 大写（timer 取注入 Clock 毫秒、nonce 6 位由注入随机源给）、公共参数 appKey / version / timer / nonce / signRan、GET 与 POST 请求经既有 https UnionTransport、凭据构造注入、错误分类到 UnionError
+type: impl
+# 草稿 2026-10-31（union 线，账号 4）。依据：编排 D10-486（负责人决定淘宝订单经大淘客，规划仓库 docs/changes/20261031-淘宝订单经大淘客.md）、私有库 rebate-private/docs-mirror/dataoke/DEV-NOTES.md §2（网关、公共参数、新验签 gz-41、验签强制 gz-146、错误限流 gz-45、错误码全表 gz-13），由编排者摘入任务书第 2 节；不读本机凭据文件。尚无实测录制：按文档写，响应外形与错误码标 TODO 待编排实测复录（≤20 次，只记形状）。
+# 签名：signRan = MD5 文本「appKey=<appKey>&timer=<毫秒>&nonce=<6 位>&key=<appSecret>」的大写十六进制；只这四项参与，业务参数不参与（新验签）；与业务参数一起放查询串（GET）或表单（POST，维权查询用）。单元测试用合成 secret（低熵重复串）给固定向量，由测试作者按文本规则独立算出。nonce 由构造注入的随机源给（测试可固定）。
+# 公共参数：appKey、version（按接口传：订单 / 维权 / 违规 v1.0.0，由调用方给）、timer、nonce、signRan；业务参数不得与之同名（同名不发请求、invalid_dto）。网关取端点 baseUrl（部署配置 https://openapi.dataoke.com），路径由调用方给（如 /api/tb-service/get-order-details），只允许 https。
+# 响应：按文档为 JSON 外层 { code, msg, data }（code 0 成功，TODO 待复录核对外层键名与成功码）；底座只解外层，返回 data，不做订单字段映射。非 JSON / 缺外层 → upstream_unavailable。
+# 错误分类：10064（错误累计限流）→ rate_limited；签名 / 授权 / appKey 类错误码（文档 gz-13 中签名不合法、appKey 无效、授权过期等，具体码由任务书摘列）→ upstream_rejected 并调注入的 warn 一次（只带路径与 code，不带 msg 与参数）；HTTP 5xx、传输错、超时 → upstream_unavailable；表外 code → upstream_rejected。错误 message 只带路径与 code。
+# 凭据：appKey / appSecret 经构造参数注入的提供者取，适配器不读环境变量与文件；secret 只在内存参与签名，不进 URL、日志、错误、归档（URL 里只有 signRan）。归档去敏：archive.ts 的去敏名单按归一化名匹配，现有 appkey / *secret 命中，但 signRan 归一化为 signran 不命中 → 本任务在 SENSITIVE_NAMES 加 signran（nonce、timer 不需去敏），单元测试补一条。
+# 归档：archive 上下文挂在传输请求上（同 PDD / 淘宝），kind 由调用方给。
+# 目录：union/infra/dataoke/** 与 union/infra/archive.ts(+.test.ts)（只加 signran）。test_paths：test/spec/union/dataoke-core/**。整体 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04p]
+paths:
+  - 'apps/api/src/modules/union/infra/dataoke/**'
+  - 'apps/api/src/modules/union/infra/archive.ts'
+  - 'apps/api/src/modules/union/infra/archive.test.ts'
+test_paths:
+  - 'test/spec/union/dataoke-core/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/dataoke-core/**'
+status: todo

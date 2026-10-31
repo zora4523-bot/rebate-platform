@@ -1,0 +1,27 @@
+id: B1-04e
+repo: rebate-platform
+title: 大淘客装配：loadConfig 读 DATAOKE_APP_KEY 与 DATAOKE_APP_SECRET_FILE（只 staging 认文件来源；prod 只认 KMS、未实现前拒绝；local / test 设了即拒绝启动），union.module.ts 在淘宝真实适配器装配时注入大淘客客户端（https 传输 + 原始报文归档）作订单源
+type: impl
+# 草稿 2026-10-31（union 线，账号 4），编排 D10-486 ①后半；逐条照 B1-04t / B1-04k（approvals 第 28 条 ② 凭据存放口径）。
+# ① 两个变量登记进 platform/config/credential-env.ts 已声明名单；local / test 任一设置 → loadConfig 拒绝（只写变量名）；staging 只设一个 → ConfigError；prod 设了 DATAOKE_APP_SECRET_FILE → ConfigError。secret 文件经 B1-04k 的 startup-secret-file 共用读取，启动时读一次，读不了 / 为空 → 固定文本错误。
+# ② 订单源开关：淘宝真实适配器（registry taobaoLive）新增可选 orderSource（大淘客客户端，B1-04m）；staging 且两变量都设才注入；未注入时淘宝 listOrders / listRefunds / listPunishments 保持 adapter_unimplemented（同 D10-479：冻结测试钉启动日志条数，缺凭据不拒绝启动、不写 warn，由部署检查兜底）；prod 设了 DATAOKE_APP_KEY 而 taobao 为 live → 拒绝启动（KMS TODO）。不改 config/union-endpoints/taobao.json；端点 baseUrl 以部署配置为准（新端点项 dataoke 或 taobao 订单端点，形式由任务书定，取最小改动）。
+# ③ pdd / jd 不变；registry 不传 orderSource 时行为不变（受保护测试 AC-B1-04o-ASSEMBLY#4/#5、B1-04k 规则测试）。.env.example 只加注释掉的变量名与说明。
+# 依赖：B1-04m（客户端）、B1-04k（taobaoLive）。风险：platform/config 与 union 装配 → RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04m, B1-04k]
+paths:
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/union/infra/registry.ts'
+  - 'apps/api/src/modules/union/infra/registry.test.ts'
+  - 'apps/api/src/modules/union/infra/taobao/taobao-adapter.ts'
+  - 'apps/api/src/modules/union/union.module.ts'
+  - '.env.example'
+test_paths:
+  - 'test/spec/union/dataoke-wiring/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/dataoke-wiring/**'
+status: todo
