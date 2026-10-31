@@ -305,7 +305,7 @@ function isUnionOutage(error: unknown): boolean {
 }
 
 /** Errors the fallback feed may degrade on: the union side or a catalog refusal, nothing else. */
-function isFeedFailure(error: unknown): boolean {
+export function isFeedFailure(error: unknown): boolean {
   return (
     error instanceof GovernanceError ||
     error instanceof UnionError ||

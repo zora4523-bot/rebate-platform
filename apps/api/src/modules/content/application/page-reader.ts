@@ -9,6 +9,7 @@ import { CONTENT_CACHE_TTL_MS } from '../domain/cache-policy.ts';
 import { effectivePage, slotOf } from '../domain/pages/schedule.ts';
 import {
   neededAudienceFacts,
+  passesVersionGate,
   pickPageVersion,
   selectSections,
   type AudienceFacts,
@@ -32,6 +33,11 @@ export interface PageVersion {
 export interface PageStore {
   pointer(appId: string, pageKey: string): Promise<PagePointer | null>;
   version(appId: string, pageKey: string, version: number): Promise<PageVersion | null>;
+}
+
+interface ServedVersion {
+  readonly version: number;
+  readonly sections: PageVersion['sections'];
 }
 
 function cacheKey(...parts: readonly (string | number)[]): string {
@@ -68,6 +74,45 @@ export class PageReader {
     viewer: PageViewer,
     userId: string | null = null,
   ): Promise<Schema<'Page'> | null> {
+    const served = await this.#served(appId, pageKey, deviceId);
+    if (served === null) return null;
+    const audience = await this.#audienceOf(appId, userId, viewer, served.sections);
+    return {
+      page_key: pageKey,
+      version: served.version,
+      ttl_sec: PAGE_TTL_SEC,
+      sections: selectSections(
+        served.sections,
+        audience === undefined ? viewer : { ...viewer, audience },
+      ) as Record<string, unknown>[],
+    };
+  }
+
+  /**
+   * One section of the version `read` would serve this device (B1-05o, contract
+   * listPageSectionItems), or null when the page is not deliverable, the version has no such
+   * section, or its min_app_version filters it out. `condition` is not evaluated: the caller got
+   * the section from getPage, which has evaluated it.
+   */
+  async section(
+    appId: string,
+    pageKey: string,
+    sectionId: string,
+    deviceId: string | null,
+    viewer: Pick<PageViewer, 'platform' | 'appVersion'>,
+  ): Promise<Record<string, unknown> | null> {
+    const served = await this.#served(appId, pageKey, deviceId);
+    const section = served?.sections.find((entry) => entry['id'] === sectionId);
+    if (section === undefined) return null;
+    return passesVersionGate(section, { ...viewer, loggedIn: false }) ? section : null;
+  }
+
+  /** The version served to this device with its stored sections; null when not deliverable. */
+  async #served(
+    appId: string,
+    pageKey: string,
+    deviceId: string | null,
+  ): Promise<ServedVersion | null> {
     const store = this.#available();
     const pointer = await this.#pointers.get(cacheKey(appId, pageKey), () =>
       store.pointer(appId, pageKey),
@@ -118,16 +163,7 @@ export class PageReader {
     if (version === null || !Array.isArray(version.sections)) return null;
     const dueDraft = version.status === DRAFT && dueVersion === chosen;
     if (version.status !== PUBLISHED && !dueDraft) return null;
-    const audience = await this.#audienceOf(appId, userId, viewer, version.sections);
-    return {
-      page_key: pageKey,
-      version: chosen,
-      ttl_sec: PAGE_TTL_SEC,
-      sections: selectSections(
-        version.sections,
-        audience === undefined ? viewer : { ...viewer, audience },
-      ) as Record<string, unknown>[],
-    };
+    return { version: chosen, sections: version.sections };
   }
 
   async #audienceOf(

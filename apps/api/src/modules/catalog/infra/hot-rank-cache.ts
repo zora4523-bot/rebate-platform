@@ -1,6 +1,7 @@
 // B1-28h: cache of the hot-sales list union side (规划/01 F-PROD-13 ⑥): answers are cached per
 // (platform, channel, category, page) for rank.cache_ttl_seconds; on a union failure an existing
-// entry is read, without one the failure propagates (the use case answers 50304).
+// entry is read, a page marked stale (BR-PROD-07), without one the failure propagates (the use case
+// answers 50304).
 // Like the search cache (product-cache.ts) only the union's normalized public data is stored —
 // the item allow-list, the product ref, the sales field and the page's positions when it has
 // them — plus fetched_at; cards, quotes and links are assembled per request by the use case.
@@ -160,6 +161,7 @@ export function cacheHotRankUpstream(
     load: (value: unknown) => T,
     fetch: () => Promise<T>,
     store: (value: T) => unknown,
+    old: (value: T) => T = (value) => value,
   ): Promise<T> {
     const ttlSeconds = await ttlSecondsOf(config, appId);
     const entry = await read(key, load);
@@ -170,7 +172,7 @@ export function cacheHotRankUpstream(
     try {
       value = await fetch();
     } catch (error: unknown) {
-      if (entry !== null && isDependencyFailure(error)) return entry.value;
+      if (entry !== null && isDependencyFailure(error)) return old(entry.value);
       throw error;
     }
     await write(key, store(value), ttlSeconds);
@@ -210,6 +212,7 @@ export function cacheHotRankUpstream(
           })),
           ...(page.positions === undefined ? {} : { positions: page.positions }),
         }),
+        (page) => ({ ...page, stale: true }),
       );
     },
   };

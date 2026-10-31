@@ -108,6 +108,8 @@ export class ContentPublicModule {
   static forApi(ports: ContentPublicPorts): DynamicModule {
     return {
       module: ContentPublicModule,
+      // B1-05o: global so that app.module can inject PageReader into catalog's section port.
+      global: true,
       controllers: [
         ConfigController,
         ArticlesController,
@@ -247,6 +249,7 @@ export class ContentPublicModule {
         },
         { ...ports.viewerContext, provide: ConfigViewerContext },
       ],
+      exports: [PageReader],
     };
   }
 }

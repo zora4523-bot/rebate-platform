@@ -157,3 +157,25 @@ it('[AC-B1-28l] 存储里 positions 第一个元素就是负数：按读不出�
 
   expect(union.page).toHaveBeenCalledTimes(2);
 });
+
+it('[AC-B1-05o] 联盟故障读到旧副本时页面带 stale，存的内容不变；未过期命中与新取的页不带这个键', async () => {
+  const { rows, redis } = memoryRedis();
+  const union = upstream();
+  const clock = new FixedClock(NOW);
+  const cached = cacheHotRankUpstream(union, { redis, clock, config: noConfig });
+
+  await expect(cached.page(pageInput)).resolves.toStrictEqual({ items: [], hasMore: false });
+  await expect(cached.page(pageInput)).resolves.toStrictEqual({ items: [], hasMore: false });
+  const [text] = [...rows.values()];
+
+  clock.advanceMs(601_000);
+  vi.mocked(union.page).mockRejectedValueOnce(
+    new UnionError('upstream_unavailable', 'synthetic', 'taobao'),
+  );
+  await expect(cached.page(pageInput)).resolves.toStrictEqual({
+    items: [],
+    hasMore: false,
+    stale: true,
+  });
+  expect([...rows.values()]).toEqual([text]);
+});
