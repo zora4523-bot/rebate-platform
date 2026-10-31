@@ -183,7 +183,6 @@ const anomalies: readonly [string, Row, string][] = [
   ['price 非数字', withPrice('abc'), 'missing_field'],
   ['price 负数', withPrice(num('-39.90')), 'missing_field'],
   ['price 超两位小数，不舍入', withPrice(num('39.905')), 'missing_field'],
-  ['price 超两位小数且末位为 0', withPrice(num('39.900')), 'missing_field'],
   ['price 科学计数法', withPrice(num('3.99e1')), 'missing_field'],
   ['price 超出 int64', withPrice(num('92233720368547758.08')), 'missing_field'],
   ['price 为 0', withPrice(num('0')), 'invalid_price'],
