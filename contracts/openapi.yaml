@@ -10778,6 +10778,13 @@ paths:
         the reset / disable / enable operations take as `expected_row_version`. Orders, balance,
         ledger and withdrawals of the user come with the order and fund consoles and are not part
         of this schema yet.
+        CT-26k (D10-517) adds the 「基本信息」 fields of the console's user detail:
+        `realname_status`, `masked_name` and `masked_id_no` (BR-ID-33: name with only the last
+        character, ID number first 1 + last 1; both null unless realname_status is verified) and
+        `payout_account` (the current payout account masked as in GET /v1/me/payout-account, null
+        when none is bound). The full values stay with the audited reveal. This operation is
+        implemented; the four new fields are 实现另单 and stay optional until that
+        implementation is merged.
       x-auth: admin
       x-error-codes:
         - 10001
@@ -10811,6 +10818,16 @@ paths:
                   register_method: sms
                   registered_channel: null
                   created_at: '2026-10-10T20:30:00+08:00'
+                  realname_status: verified
+                  masked_name: '**三'
+                  masked_id_no: '1****************X'
+                  payout_account:
+                    payout_account_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01
+                    payout_method: bank_card
+                    masked_account: 尾号 1234
+                    bank_name: 招商银行
+                    masked_payee_name: '**三'
+                    change_remaining_this_month: 2
                   risk:
                     state: frozen
                     reason_category: abnormal_trade
@@ -11788,7 +11805,12 @@ paths:
         values, phone numbers masked 3 + 4; with no field changed the changed fields are empty).
         Retrying a save that already took effect therefore returns the same user and only adds
         an audit record. The response is the user as GET /admin/v1/users/{user_id} returns it
-        now, phone number masked. No compare-and-set value and no Idempotency-Key (04 §6.6).
+        now, phone number masked, plus `changed_fields` (CT-26k, D10-517): the fields this save
+        actually changed (`phone`, `nickname`; the same list as the audit record), an empty
+        array when nothing changed, so a retry tells the console that nothing was changed this
+        time. This operation is implemented; `changed_fields` is 实现另单 and stays optional
+        until that implementation is merged. No compare-and-set value and no Idempotency-Key
+        (04 §6.6).
         Pending re-verification (BR-WDR-01 细则「旧手机号被二次放号时的提现加验」, 清除标记只走人工;
         BR-ID-44; contract CT-26j, implemented by a later task): when the edited phone is saved
         for an account that carries the "pending re-verification" flag, the same transaction
@@ -11846,7 +11868,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AdminUserDetailResponse'
+                $ref: '#/components/schemas/AdminUserProfileEditResponse'
               example:
                 code: 0
                 msg: ''
@@ -11860,6 +11882,10 @@ paths:
                   register_method: sms
                   registered_channel: appstore
                   created_at: '2026-10-12T09:00:00+08:00'
+                  realname_status: none
+                  masked_name: null
+                  masked_id_no: null
+                  payout_account: null
                   risk:
                     state: normal
                     reason_category: null
@@ -11869,6 +11895,8 @@ paths:
                     changed_at: null
                     row_version: null
                   union_bindings: []
+                  changed_fields:
+                    - phone
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
           $ref: '#/components/responses/TooManyRequests'
@@ -44126,7 +44154,12 @@ components:
       type: object
       description: |
         A user as the console sees it (04 §11.1): non-sensitive fields, the masked phone number,
-        the risk state and the union bindings. No identity number, payout account or real name.
+        the risk state, the union bindings and (CT-26k, D10-517) the real-name status with the
+        masked name and ID number and the masked current payout account (BR-ID-33). No full
+        identity number, payout account, real name or phone number: those only through POST
+        /admin/v1/users/{user_id}/reveal. realname_status, masked_name, masked_id_no and
+        payout_account are optional until their implementation is merged (implementation in a
+        separate task); they then become required, with null as described on each.
       additionalProperties: false
       required:
         - user_id
@@ -44180,6 +44213,46 @@ components:
           description: One entry per platform the user has a binding row on.
           items:
             $ref: '#/components/schemas/AdminUserUnionBinding'
+        realname_status:
+          type: string
+          description: |
+            contracts/enums/identity.yaml realname_status (the user's realname row; none when the
+            user has none). Added by CT-26k (D10-517); not returned until its implementation is
+            merged.
+          enum:
+            - none
+            - verified
+            - failed
+        masked_name:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: |
+            Real name with only the last character kept (`**三`, BR-ID-33); null unless
+            realname_status is verified. The full name only through the audited reveal. Added by
+            CT-26k (D10-517); not returned until its implementation is merged.
+        masked_id_no:
+          type:
+            - string
+            - 'null'
+          maxLength: 32
+          description: |
+            ID number with only the first and the last character kept, the rest `*`
+            (`1****************X`, BR-ID-33); null unless realname_status is verified. The full
+            number only through the audited reveal. Added by CT-26k (D10-517); not returned until
+            its implementation is merged.
+        payout_account:
+          anyOf:
+            - $ref: '#/components/schemas/PayoutAccount'
+            - type: 'null'
+          description: |
+            The user's current payout account (payout_accounts.is_current), masked exactly as GET
+            /v1/me/payout-account returns it (BR-ID-33 细则「收款账号的脱敏格式」: masked_account,
+            masked_payee_name, bank_name for a bank card); null when none is bound. Only a
+            verified account is ever saved (BR-WDR-02), so there is no separate verification
+            state. The full account only through the audited reveal. Added by CT-26k (D10-517);
+            not returned until its implementation is merged.
     AdminUserDetailResponse:
       type: object
       additionalProperties: false
@@ -44195,6 +44268,137 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/AdminUserDetail'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminUserProfileEditResult:
+      type: object
+      description: |
+        The answer of PATCH /admin/v1/users/{user_id}/profile: the user exactly as AdminUserDetail
+        (GET /admin/v1/users/{user_id}) describes it now, every property the same, plus
+        `changed_fields` (CT-26k, D10-517). Keep the properties in step with AdminUserDetail.
+      additionalProperties: false
+      required:
+        - user_id
+        - nickname
+        - phone_masked
+        - invite_code
+        - inviter_user_id
+        - level
+        - register_method
+        - registered_channel
+        - created_at
+        - risk
+        - union_bindings
+      properties:
+        user_id:
+          $ref: '#/components/schemas/Id'
+        nickname:
+          type: string
+        phone_masked:
+          $ref: '#/components/schemas/AdminMaskedPhone'
+        invite_code:
+          type: string
+          minLength: 1
+          maxLength: 32
+        inviter_user_id:
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+          description: user_id of the current inviter (users.parent_id); null when none is bound.
+        level:
+          $ref: '#/components/schemas/AdminUserLevel'
+        register_method:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: How the account was created (users.register_method), as stored.
+        registered_channel:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: Install channel at registration (users.registered_channel), as stored.
+        created_at:
+          type: string
+          format: date-time
+          description: Registration time.
+        risk:
+          $ref: '#/components/schemas/AdminUserRiskState'
+        union_bindings:
+          type: array
+          description: One entry per platform the user has a binding row on.
+          items:
+            $ref: '#/components/schemas/AdminUserUnionBinding'
+        realname_status:
+          type: string
+          description: |
+            contracts/enums/identity.yaml realname_status (the user's realname row; none when the
+            user has none). Added by CT-26k (D10-517); not returned until its implementation is
+            merged.
+          enum:
+            - none
+            - verified
+            - failed
+        masked_name:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: |
+            Real name with only the last character kept (`**三`, BR-ID-33); null unless
+            realname_status is verified. The full name only through the audited reveal. Added by
+            CT-26k (D10-517); not returned until its implementation is merged.
+        masked_id_no:
+          type:
+            - string
+            - 'null'
+          maxLength: 32
+          description: |
+            ID number with only the first and the last character kept, the rest `*`
+            (`1****************X`, BR-ID-33); null unless realname_status is verified. The full
+            number only through the audited reveal. Added by CT-26k (D10-517); not returned until
+            its implementation is merged.
+        payout_account:
+          anyOf:
+            - $ref: '#/components/schemas/PayoutAccount'
+            - type: 'null'
+          description: |
+            The user's current payout account (payout_accounts.is_current), masked exactly as GET
+            /v1/me/payout-account returns it (BR-ID-33 细则「收款账号的脱敏格式」: masked_account,
+            masked_payee_name, bank_name for a bank card); null when none is bound. Only a
+            verified account is ever saved (BR-WDR-02), so there is no separate verification
+            state. The full account only through the audited reveal. Added by CT-26k (D10-517);
+            not returned until its implementation is merged.
+        changed_fields:
+          type: array
+          description: |
+            The fields this save actually changed, in the order phone, nickname: a field equal to
+            the current value (phone after normalisation, nickname after trimming) is not
+            listed; empty when nothing changed (a retry of a save that already took effect). The
+            same list as the changed fields of the user_profile_edit audit record. Added by
+            CT-26k (D10-517); not returned until its implementation is merged (then required).
+          uniqueItems: true
+          maxItems: 2
+          items:
+            type: string
+            enum:
+              - phone
+              - nickname
+    AdminUserProfileEditResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminUserProfileEditResult'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     AdminInviteeListItem:
