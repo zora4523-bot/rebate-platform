@@ -40,7 +40,7 @@
 //
 // TODO(规划/11 §4.5): 撤销 cause rule 的被拦请求申诉后的一次性放行 — blocked on 放行凭据的存放与校验位置未定（契约只说由服务端内部保存）
 //
-// What migration 0109 adds (appeals.source / registered_by, app.appeal_claims) is written with raw
+// What migration 0108 adds (appeals.source / registered_by, app.appeal_claims) is written with raw
 // SQL until db.gen.ts is regenerated (pnpm db:snapshot). Notes and reasons go to the audit log only;
 // nothing logged or audited carries a phone number or an HMAC.
 //

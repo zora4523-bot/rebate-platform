@@ -243,7 +243,7 @@ const APPEAL_COLUMNS = [
   'created_at',
 ] as const;
 
-/** What migration 0109 adds (B1-03ze); raw SQL until db.gen.ts is regenerated. */
+/** What migration 0108 adds (B1-03ze); raw SQL until db.gen.ts is regenerated. */
 interface ConsoleColumns {
   readonly source: string;
   readonly registered_by: string | null;
@@ -417,7 +417,7 @@ export class AdminAppealsRead {
       ...item,
       content: row.content,
       risk_state: riskState,
-      // Migration 0109 (B1-03ze): who filed it, the registrant and the current claim's time.
+      // Migration 0108 (B1-03ze): who filed it, the registrant and the current claim's time.
       source: row.source === 'admin' ? 'admin' : 'app',
       registered_by: row.registered_by,
       registered_by_name:
