@@ -9,6 +9,7 @@ export interface PendingBeneficiary {
   readonly role: PendingRole;
   readonly ratioBp: number;
   readonly initialStatus: 'active' | 'forfeited';
+  readonly forfeitLifted?: true;
 }
 
 export interface PendingForfeitedEvent {
@@ -41,23 +42,29 @@ export function pendingBaseFen(nFen: bigint, reserveBp: number, tljDeductFen: bi
   return base > 0n ? base : 0n;
 }
 
-function forfeitKey(userId: string, role: PendingRole): string {
-  return `${role}\u0000${userId}`;
+/**
+ * D10-481 ②：份额是否被剥夺，settlement 各资金路径只从这里取。判定本身在 commission 的
+ * isShareForfeited，这里只读它经快照读取给出的答案：forfeitedEvents 列出的份额被剥夺；
+ * 快照初始 forfeited 的份额除非读取标了 forfeitLifted（已恢复等，最新事件不是 forfeited）也被剥夺。
+ */
+export function isForfeitedShare(
+  share: Pick<PendingBeneficiary, 'userId' | 'role' | 'initialStatus' | 'forfeitLifted'>,
+  forfeitedEvents: readonly PendingForfeitedEvent[],
+): boolean {
+  if (forfeitedEvents.some((e) => e.userId === share.userId && e.role === share.role)) return true;
+  return share.initialStatus === 'forfeited' && share.forfeitLifted !== true;
 }
 
 /**
- * BR-CALC-08 / BR-CALC-13：每个受益角色各自按快照比例向下取整；快照初始 forfeited 或其后出现
- * forfeited 事件的受益角色份额为 0（归平台），其余角色份额不受影响。顺序与快照一致。
+ * BR-CALC-08 / BR-CALC-13：每个受益角色各自按快照比例向下取整；被剥夺的受益角色（isForfeitedShare）
+ * 份额为 0（归平台），其余角色份额不受影响。顺序与快照一致。
  */
 export function splitPendingShares(
   baseFen: bigint,
   beneficiaries: readonly PendingBeneficiary[],
   forfeitedEvents: readonly PendingForfeitedEvent[],
 ): PendingShare[] {
-  const forfeited = new Set(forfeitedEvents.map((e) => forfeitKey(e.userId, e.role)));
-  const active = beneficiaries.map(
-    (b) => b.initialStatus !== 'forfeited' && !forfeited.has(forfeitKey(b.userId, b.role)),
-  );
+  const active = beneficiaries.map((b) => !isForfeitedShare(b, forfeitedEvents));
   const { shares } = splitByBp(
     baseFen,
     beneficiaries.map((b, i) => (active[i] === true ? BigInt(b.ratioBp) : 0n)),

@@ -87,10 +87,10 @@ export interface StoredForfeitedEvent {
 }
 
 /**
- * The order's forfeited events still in force, oldest event_seq first (not created_at). An active
- * event (only an appeal restore appends one) ends every earlier forfeiture of the same (user_id,
- * role) on the order (BR-FUND-22 ③「补发后该受益人不再按被剥夺处理」, BR-CALC-09 申诉恢复例外); a forfeited
- * event after it lists the share again, with its own reason. Order is by event_seq only.
+ * The latest event of each share of the order whose latest event is forfeited, oldest event_seq
+ * first (not created_at). Same rule as isShareForfeited (D10-481 ②), answered in SQL: any later
+ * event of the same (user_id, role) on the order — active, held or forfeited — takes an event off
+ * the list, so a share is listed once, with the reason of its latest forfeiture.
  */
 export async function selectForfeitedEvents(
   trx: Transaction<DB>,
@@ -108,14 +108,13 @@ export async function selectForfeitedEvents(
       eb.not(
         eb.exists(
           eb
-            .selectFrom('commission_split_beneficiary_events as restored')
-            .select('restored.event_seq')
-            .where('restored.app_id', '=', appId)
-            .where('restored.order_id', '=', orderId)
-            .whereRef('restored.user_id', '=', 'e.user_id')
-            .whereRef('restored.role', '=', 'e.role')
-            .where('restored.status', '=', 'active')
-            .whereRef('restored.event_seq', '>', 'e.event_seq'),
+            .selectFrom('commission_split_beneficiary_events as later')
+            .select('later.event_seq')
+            .where('later.app_id', '=', appId)
+            .where('later.order_id', '=', orderId)
+            .whereRef('later.user_id', '=', 'e.user_id')
+            .whereRef('later.role', '=', 'e.role')
+            .whereRef('later.event_seq', '>', 'e.event_seq'),
         ),
       ),
     )
@@ -126,5 +125,33 @@ export async function selectForfeitedEvents(
     userId: r.user_id,
     role: r.role,
     reason: r.reason,
+  }));
+}
+
+export interface StoredShareEvent {
+  readonly eventSeq: bigint;
+  readonly userId: string;
+  readonly role: string;
+  readonly status: string;
+}
+
+/** Every beneficiary event of the order, for the judgement of isShareForfeited. */
+export async function selectShareEvents(
+  trx: Transaction<DB>,
+  appId: string,
+  orderId: string,
+): Promise<StoredShareEvent[]> {
+  const rows = await trx
+    .withSchema('app')
+    .selectFrom('commission_split_beneficiary_events')
+    .select(['event_seq', 'user_id', 'role', 'status'])
+    .where('app_id', '=', appId)
+    .where('order_id', '=', orderId)
+    .execute();
+  return rows.map((r) => ({
+    eventSeq: r.event_seq,
+    userId: r.user_id,
+    role: r.role,
+    status: r.status,
   }));
 }

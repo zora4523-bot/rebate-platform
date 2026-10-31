@@ -2,6 +2,8 @@
 // restoreAdminReconDiff, CT-24ze; 08 BR-FUND-22 ③, BR-CALC-09, BR-CALC-13; 编排裁定 D10-468 ①,
 // D10-469 ① ② ③). The controller (http/admin/) only authorises through the AdminOperationGuard
 // (order.restore, step-up tier totp), takes the parameters and calls restoreAdminReconDiff.
+// B2-09ga (编排裁定 D10-482, BR-ID-26): a member identified as under 18 at the restore gets no
+// promotion share back.
 //
 // restoreAdminReconDiff runs under platform idempotency in its transactional mode (subject
 // a:<admin_users.id>, the concrete path, the Idempotency-Key header); 2xxxx refusals are not stored.
@@ -12,13 +14,16 @@
 //   [recon_diff_id] reason restore_not_supported. That read takes no lock: it names the order key.
 // Locks (settlement AGENTS.md 硬规则 3): the order key's advisory lock, the difference's row (its
 // status judged again), the users row, ledger.lockBalances.
-//   The member's status is read after the users row's lock: deleting or deleted → 20001
-//   [recon_diff_id] reason restore_user_deleted (D10-469 ①, default filled in by the agent; 12 §4.8
-//   no write to that account). Every other state is paid, also a member banned again by a later
-//   round (D10-469 ②, default filled in by the agent).
-// Then for each role of resolution.shares, with the order, the snapshot and the nets read inside
-// the order key's lock: the active beneficiary event; floor(booked_base_fen × ratio_bp / 10000) less
-// the role's net (ledger getOrderNets, BR-FUND-08), never expected_fen, the FORFEIT voucher or the
+//   The member's state is read through the BeneficiaryGate after the users row's lock: deleting or
+//   deleted → 20001 [recon_diff_id] reason restore_user_deleted (D10-469 ①, default filled in by the
+//   agent; 12 §4.8 no write to that account). Every other state is paid, also a member banned again
+//   by a later round (D10-469 ②, default filled in by the agent), except that D10-482 goes first: a
+//   member identified as under 18 at this instant is not paid a promotion share (share / direct /
+//   indirect), whatever the risk state; that role gets a forfeited event with reason minor instead
+//   of the active one and reports restored_fen 0. The self share is paid as usual.
+// Then for each other role of resolution.shares, with the order, the snapshot and the nets read
+// inside the order key's lock: the active beneficiary event; floor(booked_base_fen × ratio_bp /
+// 10000) less the role's net (ledger getOrderNets, BR-FUND-08), never expected_fen, the FORFEIT voucher or the
 // current settled commission. A positive difference posts ADMIN_ADJUST:RESTORE:APPEAL; a difference
 // ≤ 0 posts nothing, pays 0 and is not netted against another role (D10-469 ③, default filled in by
 // the agent). A role that left the snapshot (R14) is owed nothing, as in the beneficiary credit.
@@ -46,11 +51,16 @@ import {
   type AuditPort,
   type Clock,
   type EventBus,
+  type FieldCrypto,
   type HandlerResult,
   type Idempotency,
   type IdempotentResponse,
 } from '../../platform/index.ts';
-import type { LockUsersInput, UserDeletionStatusReader } from '../credit/beneficiary-gate.ts';
+import type {
+  BeneficiaryGate,
+  BeneficiaryGateOptions,
+  MinorStatusReader,
+} from '../credit/beneficiary-gate.ts';
 import { readOrderLocator } from '../credit/credit-store.ts';
 import { readRebateOrder } from '../rebate/infra/rebate-store.ts';
 
@@ -80,25 +90,26 @@ type AppendRestoreEvent = (
     readonly orderId: string;
     readonly userId: string;
     readonly role: RestoreRole;
-    readonly status: 'active';
-    readonly reason: null;
+    readonly status: 'active' | 'forfeited';
+    readonly reason: 'minor' | null;
   },
   dependencies: { readonly clock: Clock },
 ) => Promise<void>;
-
-type LockRestoreUsers = (
-  trx: Transaction<DB>,
-  input: LockUsersInput,
-) => Promise<ReadonlySet<string>>;
 
 /** What app.module hands in: identity's and commission's ports (settlement imports neither). */
 export interface AdminReconRestorePorts {
   /** Binds the audit port to a transaction handle (app.module: admin's createAuditWriter). */
   readonly auditWriter: (db: Kysely<DB>, clock: Clock) => AuditPort;
   /** identity lockUsersForUpdate. */
-  readonly lockUsers: LockRestoreUsers;
+  readonly lockUsers: BeneficiaryGateOptions['lockUsers'];
   /** identity createUserDeletionStatusReader (users.status only, BR-CALC-13). */
-  readonly deletionStatus: (db: Kysely<DB>) => UserDeletionStatusReader;
+  readonly deletionStatus: (db: Kysely<DB>) => BeneficiaryGateOptions['deletionStatus'];
+  /** identity createRealnameStatusBatchReader: only a verified realname identifies a minor. */
+  readonly realnameStatus: (db: Kysely<DB>) => BeneficiaryGateOptions['realnameStatus'];
+  /** risk createRiskStateBatchReader. */
+  readonly riskState: (db: Kysely<DB>) => BeneficiaryGateOptions['riskState'];
+  /** identity createMinorStatusBatchReader (B1-03zc). */
+  readonly minors: (crypto: FieldCrypto) => MinorStatusReader;
   /**
    * commission readCommissionAttribution: only beneficiaries and ratios are read, so a
    * commission_version restated after the credit (BR-FUND-01 R9b) cannot fail the restore.
@@ -115,8 +126,7 @@ export interface RestoreAdminReconDiffDeps {
   readonly idempotency: Idempotency;
   /** admin's audit writer bound to the restore transaction (the single writer of audit_logs). */
   readonly auditOn: (trx: Transaction<DB>) => AuditPort;
-  readonly lockUsers: LockRestoreUsers;
-  readonly deletionStatus: UserDeletionStatusReader;
+  readonly gate: BeneficiaryGate;
   readonly readRestoreSnapshot: ReadRestoreSnapshot;
   readonly appendBeneficiaryEvent: AppendRestoreEvent;
   readonly ledger: Ledger;
@@ -306,13 +316,13 @@ export function restoreAdminReconDiff(
       if (row === undefined) return fieldsRefusal(['recon_diff_id'], traceId);
       if (!isOpen(row)) return conflictRefusal(traceId);
 
-      const locked = await deps.lockUsers(trx, { appId, userIds: [userId] });
-      const deletion = await deps.deletionStatus.read(trx, { app_id: appId, user_ids: [userId] });
-      const status = deletion.get(userId);
-      if (!locked.has(userId) || status === undefined) {
+      const locked = await deps.gate.lockUsers(trx, { appId, userIds: [userId] });
+      const states = await deps.gate.readStates(trx, { appId, userIds: [userId] });
+      const state = states.get(userId);
+      if (!locked.has(userId) || state === undefined) {
         throw new Error('settlement restore: the member of the difference is not in the app');
       }
-      if (status !== 'none') return guardRefusal('restore_user_deleted', traceId);
+      if (state.deletion_status !== null) return guardRefusal('restore_user_deleted', traceId);
 
       await deps.ledger.openUserAccount(trx, { appId, userId });
       const balances = await deps.ledger.lockBalances(trx, { appId, userIds: [userId] });
@@ -331,6 +341,16 @@ export function restoreAdminReconDiff(
       const shares: { role: RestoreRole; restored_fen: string }[] = [];
       let total = 0n;
       for (const role of target.roles) {
+        if (state.is_minor && role !== 'self') {
+          // D10-482: not paid, and it stays forfeited for the adjustments after this one.
+          await deps.appendBeneficiaryEvent(
+            trx,
+            { appId, orderId, userId, role, status: 'forfeited', reason: 'minor' },
+            { clock: deps.clock },
+          );
+          shares.push({ role, restored_fen: '0' });
+          continue;
+        }
         await deps.appendBeneficiaryEvent(
           trx,
           { appId, orderId, userId, role, status: 'active', reason: null },

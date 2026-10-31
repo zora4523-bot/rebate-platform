@@ -49,6 +49,7 @@ import type { Ledger, PostingEntry, PostingVoucher } from '../../ledger/index.ts
 import { lockOrderKey } from '../../orders/index.ts';
 import type { Clock, EventBus, RootLogger } from '../../platform/index.ts';
 import { insertRebateHistory, readRebateOrder } from '../rebate/infra/rebate-store.ts';
+import { isForfeitedShare } from '../reads/pending-earnings-rules.ts';
 import type { BeneficiaryGate } from './beneficiary-gate.ts';
 import {
   casCreditOrder,
@@ -71,13 +72,15 @@ export interface CreditSnapshotBeneficiary {
   readonly role: CreditRole;
   readonly ratioBp: number;
   readonly initialStatus: 'active' | 'forfeited';
+  /** D10-481 ②: commission's answer that an initially forfeited share is no longer forfeited. */
+  readonly forfeitLifted?: true;
 }
 
 /** Structurally compatible with commission's readCommissionSnapshot result (B2-04i). */
 export interface CreditSnapshot {
   readonly reserveBp: number;
   readonly beneficiaries: readonly CreditSnapshotBeneficiary[];
-  /** Every forfeited event of the order; a (user, role) listed here stays forfeited. */
+  /** The shares of the order still forfeited (D10-481 ②: their latest event is forfeited). */
   readonly forfeitedEvents: readonly { readonly userId: string; readonly role: CreditRole }[];
 }
 
@@ -273,10 +276,6 @@ function postingVoucher(
   };
 }
 
-function identity(userId: string, role: string): string {
-  return JSON.stringify([userId, role]);
-}
-
 export function createCreditOrder(deps: CreditOrderDependencies): CreditOrder {
   const { clock, logger, ledger, gate, events } = deps;
 
@@ -348,17 +347,12 @@ export function createCreditOrder(deps: CreditOrderDependencies): CreditOrder {
       present.length === 0
         ? new Map<string, CreditBeneficiaryState>()
         : await gate.readStates(trx, { appId, userIds: present });
-    const forfeitedBefore = new Set(
-      snapshot.forfeitedEvents.map((e) => identity(e.userId, e.role)),
-    );
     const beneficiaries: CreditBeneficiary[] = snapshot.beneficiaries.map((b) => ({
       user_id: b.userId,
       role: b.role,
       ratio_bp: BigInt(b.ratioBp),
-      snapshot_status:
-        b.initialStatus === 'forfeited' || forfeitedBefore.has(identity(b.userId, b.role))
-          ? 'forfeited'
-          : 'active',
+      // D10-481 ②: the one judgement of a forfeited share.
+      snapshot_status: isForfeitedShare(b, snapshot.forfeitedEvents) ? 'forfeited' : 'active',
       current: states.get(b.userId) ?? MISSING_USER,
     }));
     const { after_reserve_fen: bCredit, reserve_fen: reserveFen } = applyReserve(
