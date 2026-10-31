@@ -1,11 +1,14 @@
-// Shared harness of the B2-04zf rule tests: the settle run completion event (D10-467 ③; BR-FUND-04
-// ⑥ ⑦, BR-TEXT-09 「同一月结账单一次确认的批次全部执行完」).
+// Shared harness of the B2-04zf rule tests: the settle run event settle.run_done (D10-467 ③ as
+// corrected by D10-477; BR-FUND-04 ⑥ ⑦, BR-TEXT-09 「同一月结账单一次确认的批次全部执行完，或因开关停止
+// 置 PARTIAL 时对已入账部分」). One event per (settle_run_id, part): outcome 'done' when every batch of
+// the run is DONE, outcome 'partial' when the execution was stopped by a switch and a batch moved to
+// PARTIAL; after a manual continue (SB8) the next 'done' or 'partial' is part + 1.
 //
 // Builds on the B2-04p executor harness (test/spec/settlement/batch-executor/kit.ts, imported and
 // not changed): orders, the real B2-04m credit, the switch map and the event writer (event_log on
 // the caller's transaction) come from there. Batches are seeded with a settle_run_id, as one
 // confirmation of a bill leaves them. Every executor built here publishes through its own wrapper,
-// so a test can refuse one event, look inside the completing transaction, or hold one executor's
+// so a test can refuse one event, look inside the publishing transaction, or hold one executor's
 // completing transaction while the other one finishes.
 import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
@@ -34,18 +37,20 @@ export {
   databaseFixture,
   nth,
   p0Orders,
+  untouched,
   type SeededBatch,
 } from '../batch-executor/kit.ts';
 
-/** The run completion event of this task (02 §11 two-segment naming, next to settle.batch_done). */
+/** The run event of this task (02 §11 two-segment naming, next to settle.batch_done). */
 export const RUN_DONE = 'settle.run_done';
 export const BATCH_DONE = 'settle.batch_done';
 
 export type Publish = BatchExecutorDependencies['events']['publish'];
+export type RunOutcome = 'done' | 'partial';
 
-/** What one run completion event must carry: ids and a count, no person and no amount. */
-export function runPayload(runId: string, batchCount: number) {
-  return { settle_run_id: runId, bill_id: BILL, batch_count: batchCount };
+/** What one run event must carry: ids, the part, the outcome and a count; no person, no amount. */
+export function runPayload(runId: string, part: number, outcome: RunOutcome, batchCount: number) {
+  return { settle_run_id: runId, bill_id: BILL, part, outcome, batch_count: batchCount };
 }
 
 export interface ExecutorOptions {
@@ -147,11 +152,21 @@ export async function fixture(db: Kysely<DB>) {
     return groups;
   }
 
-  /** The run completion events of this app (event_log), in publish order. */
+  /** The run events of this app (event_log), in publish order. */
   async function runDone(): Promise<{ app_id: string; payload: unknown }[]> {
     return (await f.h.published())
       .filter((e) => e.name === RUN_DONE)
       .map((e) => ({ app_id: e.app_id, payload: e.payload }));
+  }
+
+  /** One expected run event of this app (app_id in the envelope). */
+  function runEvent(runId: string, part: number, outcome: RunOutcome, batchCount: number) {
+    return { app_id: f.appId, payload: runPayload(runId, part, outcome, batchCount) };
+  }
+
+  /** Labels of the publish calls of settle.run_done, in call order. */
+  function runDoneBy(): string[] {
+    return calls.filter((call) => call.name === RUN_DONE).map((call) => call.by);
   }
 
   /** settle.batch_done rows of this app whose payload names batch `b`. */
@@ -175,6 +190,29 @@ export async function fixture(db: Kysely<DB>) {
     expect(await status(b)).toBe('DONE');
   }
 
+  /**
+   * Inside the credit transaction of `o`, settle.auto.enabled goes off (and the clock moves past
+   * the 10-second bound): the executor credits `o`, then stops before the next item (SB7).
+   */
+  function stopAfter(o: SeededOrder): void {
+    onCredit(o, async () => {
+      f.switches.set('settle.auto.enabled', false);
+      f.clock.advanceMs(11_000);
+    });
+  }
+
+  /** settle.auto.enabled back on (and the clock past the 10-second bound). */
+  function switchBackOn(): void {
+    f.switches.set('settle.auto.enabled', true);
+    f.clock.advanceMs(11_000);
+  }
+
+  /** Runs `b` once and expects SB7 (PARTIAL, stopped by a switch) by this delivery. */
+  async function stop(b: SeededBatch, options: ExecutorOptions = {}): Promise<void> {
+    expect(await deliver(b, options)).toMatchObject({ outcome: 'partial' });
+    expect(await status(b)).toBe('PARTIAL');
+  }
+
   return {
     ...f,
     calls,
@@ -185,19 +223,24 @@ export async function fixture(db: Kysely<DB>) {
     seedRun,
     orderGroups,
     runDone,
+    runEvent,
+    runDoneBy,
     batchDone,
     status,
     finish,
+    stopAfter,
+    switchBackOn,
+    stop,
   };
 }
 
 export type Fixture = Awaited<ReturnType<typeof fixture>>;
 
-/** The i-th seeded batch (throws instead of an undefined under noUncheckedIndexedAccess). */
-export function batchAt(batches: readonly SeededBatch[], index: number): SeededBatch {
-  const b = batches[index];
-  if (b === undefined) throw new Error(`no batch #${String(index)}`);
-  return b;
+/** The i-th element (throws instead of an undefined under noUncheckedIndexedAccess). */
+export function at<T>(list: readonly T[], index: number): T {
+  const item = list[index];
+  if (item === undefined) throw new Error(`no element #${String(index)}`);
+  return item;
 }
 
 /** True while a backend of the named pool (this database) waits on a lock. */

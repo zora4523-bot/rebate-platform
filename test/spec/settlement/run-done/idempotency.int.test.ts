@@ -1,18 +1,19 @@
-// B2-04zf rule tests on a real PostgreSQL: one settle.run_done per run (D10-467 ③). Later
-// deliveries of finished batches publish nothing; a duplicate delivery of the last batch on another
-// connection does not publish twice; two batches of one run completed at the same time by two
-// executors on two connections publish exactly one event in total — never none (each completing
-// transaction blind to the other's uncommitted DONE) and never two.
+// B2-04zf rule tests on a real PostgreSQL: one settle.run_done per (settle_run_id, part)
+// (D10-467 ③ / D10-477). Later deliveries of finished or PARTIAL batches publish nothing; a
+// duplicate delivery of the last batch on another connection does not publish twice; two batches of
+// one run completed at the same time by two executors on two connections publish exactly one event
+// in total — never none (each completing transaction blind to the other's uncommitted DONE) and
+// never two.
 import { randomUUID } from 'node:crypto';
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   TIMEOUT,
-  batchAt,
+  at,
   databaseFixture,
   fixture,
   lockWaiting,
-  runPayload,
+  nth,
   waitUntil,
   type Publish,
   type SeededBatch,
@@ -21,11 +22,11 @@ import {
 const p = databaseFixture(createTestDatabase);
 
 it(
-  '[AC-B2-04zf#8] 重放不重发：run 已发过 settle.run_done 后，再投递其中每个批次都是 idle，不再发布任何事件；最后一个批次在两条连接上被重复投递时也只执行一次、只发一条',
+  '[AC-B2-04zf#11] 重放不重发：run 已发过 part=1 done 后，再投递其中每个批次都是 idle，不再发布任何事件；最后一个批次在两条连接上被重复投递时也只执行一次、只发一条',
   async () => {
     const f = await fixture(p.db);
     const { runId, batches } = await f.seedRun(await f.orderGroups('replay', [1, 2]));
-    const [first, last] = [batchAt(batches, 0), batchAt(batches, 1)];
+    const [first, last] = [at(batches, 0), at(batches, 1)];
     await f.finish(first);
 
     const token = randomUUID().slice(0, 8);
@@ -35,24 +36,66 @@ it(
     ]);
     expect(outcomes.filter((r) => r.outcome === 'done')).toHaveLength(1);
     expect(await f.status(last)).toBe('DONE');
-    expect(await f.runDone()).toStrictEqual([{ app_id: f.appId, payload: runPayload(runId, 2) }]);
+    const done = f.runEvent(runId, 1, 'done', 2);
+    expect(await f.runDone()).toStrictEqual([done]);
 
     const before = f.calls.length;
     for (const batch of [first, last, first, last]) {
       expect(await f.deliver(batch, { by: 'replay' })).toMatchObject({ outcome: 'idle' });
     }
     expect(f.calls).toHaveLength(before);
-    expect(await f.runDone()).toStrictEqual([{ app_id: f.appId, payload: runPayload(runId, 2) }]);
+    expect(await f.runDone()).toStrictEqual([done]);
   },
   TIMEOUT,
 );
 
 it(
-  '[AC-B2-04zf#9] 同一 run 的两个批次由两个执行者在两条连接上同时执行完（各自的完成事务都等到对方也到达完成事务、对方在锁上等待或对方已结束才继续）：两批都 DONE 后恰好一条 settle.run_done，batch_count=2；并发输家可以失败，补投递后仍只有一条',
+  '[AC-B2-04zf#12] 重放不重发（PARTIAL）：part=1 partial 发出后，再投递 PARTIAL 的批次都是 idle、不发布；继续执行后在两条连接上重复投递只执行一次，只多一条 part=2 done；之后再投递仍不发',
+  async () => {
+    const f = await fixture(p.db);
+    const groups = await f.orderGroups('replay-partial', [2]);
+    const { runId, batches } = await f.seedRun(groups);
+    const only = at(batches, 0);
+
+    f.stopAfter(nth(at(groups, 0), 0));
+    await f.stop(only);
+    const partial = f.runEvent(runId, 1, 'partial', 1);
+    expect(await f.runDone()).toStrictEqual([partial]);
+
+    const stopped = f.calls.length;
+    for (const by of ['replay-1', 'replay-2']) {
+      expect(await f.deliver(only, { by })).toMatchObject({ outcome: 'idle' });
+    }
+    expect(f.calls).toHaveLength(stopped);
+    expect(await f.status(only)).toBe('PARTIAL');
+    expect(await f.runDone()).toStrictEqual([partial]);
+
+    f.switchBackOn();
+    await f.resume(only);
+    const token = randomUUID().slice(0, 8);
+    const outcomes = await Promise.all([
+      f.deliver(only, { via: p.pool(`resume-x-${token}`), by: 'x' }),
+      f.deliver(only, { via: p.pool(`resume-y-${token}`), by: 'y' }),
+    ]);
+    expect(outcomes.filter((r) => r.outcome === 'done')).toHaveLength(1);
+    expect(await f.status(only)).toBe('DONE');
+    const done = f.runEvent(runId, 2, 'done', 1);
+    expect(await f.runDone()).toStrictEqual([partial, done]);
+
+    const finished = f.calls.length;
+    expect(await f.deliver(only, { by: 'replay-3' })).toMatchObject({ outcome: 'idle' });
+    expect(f.calls).toHaveLength(finished);
+    expect(await f.runDone()).toStrictEqual([partial, done]);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04zf#13] 同一 run 的两个批次由两个执行者在两条连接上同时执行完（各自的完成事务都等到对方也到达完成事务、对方在锁上等待或对方已结束才继续）：两批都 DONE 后恰好一条 settle.run_done（part=1、outcome=done、batch_count=2）；并发输家可以失败，补投递后仍只有一条',
   async () => {
     const f = await fixture(p.db);
     const { runId, batches } = await f.seedRun(await f.orderGroups('race', [1, 1]));
-    const [a, b] = [batchAt(batches, 0), batchAt(batches, 1)];
+    const [a, b] = [at(batches, 0), at(batches, 1)];
     const token = randomUUID().slice(0, 8);
     const names = { a: `run-done-a-${token}`, b: `run-done-b-${token}` };
 
@@ -96,7 +139,7 @@ it(
     expect(met.every(Boolean)).toBe(true);
     expect([await f.status(a), await f.status(b)]).toEqual(['DONE', 'DONE']);
     // 只数提交了的：回滚事务里的发布不算（event_log 随事务回滚）。
-    expect(await f.runDone()).toStrictEqual([{ app_id: f.appId, payload: runPayload(runId, 2) }]);
+    expect(await f.runDone()).toStrictEqual([f.runEvent(runId, 1, 'done', 2)]);
     expect([await f.batchDone(a), await f.batchDone(b)]).toEqual([1, 1]);
   },
   TIMEOUT,
