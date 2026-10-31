@@ -1,0 +1,18 @@
+id: F1-08da
+repo: rebate-platform
+title: F1-08da：冻结月结账单只读测试 [AC-F1-08d-READONLY#1] / [#2] 账号样例改为只持 fund.view、[AC-F1-08d-SOURCE#1] 去掉动态码导入禁令（F1-08db 前置；其余断言不变）
+type: test-change
+# 2026-10-31 入账（前端线 f1-frontend-7，先例 F1-13ba #1940 / F1-08eba #1955）。F1-08d 时月结账单页只读：READONLY#1 用持 settle.bill 的账号、READONLY#2 用超管，断言列表与详情没有可用的确认 / 定时 / 驳回 / 撤销定时 / 继续执行 / 补充批次等写入口；SOURCE#1 断言 pages/settle-bills 不引用 components/step-up。F1-08db 给 settle.bill 持有者（超管持全部）加上这些入口，且写操作按契约 CT-24zd 要动态码，三条与 F1-08db 同一入参不能同时满足。
+# 只改：READONLY#1 / #2 的权限样例改为只持 fund.view（读权限，契约 listAdminSettleBills / getAdminSettleBill 允许 settle.bill 或 fund.view），标题措辞同步，其余断言（无可用写入口、只发三个 GET、不弹动态码）零改动；SOURCE#1 只删动态码导入禁令（regex 与对应 expect）与标题里「不用动态码」字样，其余源码检查与 SOURCE#2 不变。settle.bill / 超管看得到入口由 F1-08db 新测试覆盖。现行主干改前改后都绿，可先于 F1-08db 合并。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件；新鲜独立 Claude 改、另一新鲜独立 Claude 只读复审 pass（写进 PR 正文）；标签由编排核对后加（#24）。
+refs: []
+refs_hash: {}
+deps: [F1-08d]
+paths:
+  - 'test/spec/frontend/admin-settle-bills/readonly.test.ts'
+  - 'test/spec/frontend/admin-settle-bills/source.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo

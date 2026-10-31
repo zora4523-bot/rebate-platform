@@ -1,0 +1,23 @@
+id: F1-08db
+repo: rebate-platform
+title: 后台「月结账单」页第二段（写操作）——账单详情【确认立即执行】【定时执行】（确认本轮全部待确认批次，SB2）、批次【撤销定时】（SB3）、【驳回】（必填原因，SB4）、【继续执行】（PARTIAL，SB8）、【发起补充批次】；均要 settle.bill 与动态码，按批次状态显示入口，冲突 / 校验错误分别提示并刷新；接口 CT-24zd confirmAdminSettleBill / cancelAdminSettleBatchSchedule / rejectAdminSettleBatch / resumeAdminSettleBatch / createAdminSettleSupplementBatches（B2-09f 已实现）
+type: impl
+# 2026-10-31 入账（前端线 f1-frontend-7，编排 10-31 08:1x：本线下一项月结账单写操作页，CT-24zd / B2-09f 已合并）。规格 couli design/specs/admin-settle-bills.md（负责人 2026-10-18 第 2 批定稿）§1–§7；画板 AdmSettleBillConfirm、AdmSettleBillRunning、AdmSettleSupplementLaunch / Created / Empty（布局参考，以契约为准；画板的「补充批次预校验」契约不含，按契约直接发起并按返回处理）。
+# 不做：手动开始（SB10，契约不含）、上传结算明细（P1，契约不含）、补充预校验接口（契约不含）。F1-08d（#1849）只读部分已上线。
+# 菜单不改；只有 settle.bill 才有写入口（fund.view 只读）。资金写操作（确认即批量入账）：评审走 money 口径（幂等 / 重复提交、动态码令牌不复用、row_version CAS 冲突刷新、入口按状态）。前置 F1-08da（冻结 READONLY#1 / #2 与 SOURCE#1）须先合并。
+# refs 留空：BR-FUND-04 原文 58 KB，任务书超 24 KB 上限（规划/11 §5.3）；照 B2-05j 先例，所需条款（月结账单状态、结算批次迁移 SB2 / SB3 / SB4 / SB8、补充批次）由编排者摘进任务书依据摘录。
+# Codex 到 11-02 不可用：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude；独立 Claude 每任务 10 次上限（D10-319 / D10-417）。
+refs: []
+refs_hash: {}
+deps: [CT-24zd, B2-09f, F1-08d, F1-08da]
+paths:
+  - 'apps/admin/src/pages/settle-bills/**'
+  - 'apps/admin/src/texts/settle-bills.ts'
+test_paths:
+  - 'test/spec/frontend/admin-settle-bills-write/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-settle-bills-write/**'
+status: todo
