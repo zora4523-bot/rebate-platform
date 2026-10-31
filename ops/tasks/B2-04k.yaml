@@ -8,7 +8,7 @@ refs: [BR-FUND-10, BR-FUND-19, BR-FUND-22, BR-WDR-05]
 refs_hash:
   BR-FUND-10: 5dbb4715dec2
   BR-FUND-19: e6205ee4fcc1
-  BR-FUND-22: 022deb8da97d
+  BR-FUND-22: 27d181deaeeb
   BR-WDR-05: 99e2e2654ce0
 deps: [B2-04b, B2-04h]
 paths:
