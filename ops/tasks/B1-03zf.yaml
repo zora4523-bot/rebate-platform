@@ -1,0 +1,24 @@
+id: B1-03zf
+repo: rebate-platform
+title: 申诉恢复定价修正（D10-495 FU-APPEAL-RESTORE-PRICING，上线门槛 GATE-APPEAL-RESTORE-PRICING）——risk appeal-restore 遇到查不到 FORFEIT 凭证的被没收份额（如 R5 冻结后 held、之后封禁且 R9 部分退款把义务关成 forfeited，未写 FORFEIT 凭证）不再整单抛错进死信，改为照常登记该订单的 appeal_restore 差错单、该份额金额按 0 计并标明无凭证交处理端服务端重算；commission listBannedForfeitedShares 按最新事件规则（D10-481 ②）只列最新事件为 forfeited(banned) 的份额；FORFEIT 金额端口未注入（装配错误）仍拒绝
+type: impl
+# 2026-10-31 入账（identity-lane，编排 D10-495：B2-09ga money 评审范围外 S1，appeal-restore.ts:347；同处 S2 forfeited-shares.ts:92）。B1-03z #1861 的生产者；处理端 ADMIN_RESTORE 归 admin（B2-09ga），无凭证份额的重算口径以处理端为准，本单只保证登记不丢、标明来源。
+# 冻结测试 test/spec/risk/appeal-restore/port.int.test.ts 的「两份被没收份额里一份查不到凭证 → 整个事件拒绝」钉死旧行为，本单按新口径改（第一类保护路径，合并按 #24 核标签）；「不传端口 → 拒绝」保留。资金代码：money 级评审，funds 线读改动。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/risk/application/appeal-restore.ts'
+  - 'apps/api/src/modules/risk/application/appeal-restore.test.ts'
+  - 'apps/api/src/modules/commission/application/forfeited-shares.ts'
+  - 'apps/api/src/modules/commission/application/forfeited-shares.test.ts'
+test_paths:
+  - 'test/spec/risk/appeal-restore-pricing/**'
+  - 'test/spec/risk/appeal-restore/port.int.test.ts'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/appeal-restore-pricing/**'
+  - 'test/spec/risk/appeal-restore/**'
+status: todo
