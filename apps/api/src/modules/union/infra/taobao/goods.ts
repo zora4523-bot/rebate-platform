@@ -4,9 +4,10 @@
 // level_one_category_id, level_one_category_name}、price_promotion_info.{zk_final_price,
 // final_promotion_price, final_promotion_path_list.final_promotion_path_map_data[]}、
 // publish_info.income_info.commission_rate。white_image、reserve_price、income_rate、seller_id
-// （超 JS 安全整数）都不读。元转分只用 @couli/money 的 yuanStrToFen，价格经 mapTaobaoPrice。
+// （超 JS 安全整数）都不读。元转分只用 @couli/domain 的 parseYuanToFen（BR-PRICE-01：超两位小数、
+// 非数字、空串、负数一律按缺失，不截断；有限 number 先 String 再解析），价格经 mapTaobaoPrice。
 // TODO(规划/09 CAP-TB-02): 外层键与 results 包装键待商品物料权限批下后复录核对 — blocked on 详情录制
-import { InvalidAmount, yuanStrToFen } from '@couli/money';
+import { parseYuanToFen } from '@couli/domain';
 import { normalizeItemImages } from '../../domain/item-images.ts';
 import {
   mapTaobaoPrice,
@@ -85,15 +86,17 @@ export function detailRows(inner: unknown): readonly unknown[] {
   return rows;
 }
 
-/** 元串 → 分；不合格返回 undefined（交给 mapTaobaoPrice 判 missing_field）。 */
+/**
+ * 元串 → 分（parseYuanToFen）。有限 JSON number 先转为最短十进制字符串（String）再走同一解析
+ * （BR-PRICE-01「金额解析」，D10-525；指数写法如 1e+21 自然判缺失）。不合格串、非有限数与
+ * 其他非字符串都返回 undefined，交给 mapTaobaoPrice 判 missing_field。
+ */
 function yuanFen(value: unknown): bigint | undefined {
-  if (typeof value !== 'string') return undefined;
-  try {
-    return yuanStrToFen(value);
-  } catch (error) {
-    if (error instanceof InvalidAmount) return undefined;
-    throw error;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return parseYuanToFen(String(value)) ?? undefined;
   }
+  if (typeof value !== 'string') return undefined;
+  return parseYuanToFen(value) ?? undefined;
 }
 
 /**
