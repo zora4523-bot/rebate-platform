@@ -39,11 +39,14 @@ import {
 
 const TAOBAO = /淘宝/;
 
-/** Opens 【发起补充批次】 of the shown bill and picks taobao; nothing is sent yet. */
+/** Opens 【发起补充批次】 of the shown bill and picks taobao; opening sends no new write. */
 async function openLaunch(server: Server): Promise<HTMLElement> {
+  const sentBefore = server.writes('supplement').length;
   const layer = await open(await pageEntry(ENTRY.supplement));
   await choosePlatform(layer, 'taobao', TAOBAO);
-  expect(server.writes('supplement'), 'nothing sent when the dialog opens').toEqual([]);
+  expect(server.writes('supplement'), 'no new write when the dialog opens').toHaveLength(
+    sentBefore,
+  );
   return layer;
 }
 /** Opens 【发起补充批次】 of the shown bill, picks taobao and goes through the step-up. */
