@@ -3,8 +3,8 @@ repo: rebate-platform
 title: 京东 Adapter 商品：goods.query（searchItems、getItem、resolveLink，SKU 链接换联盟 itemId，价格经 D33 映射），权限批下前只按文档与回放
 type: impl
 # 2026-10-31 be 入账（D10-498 ③）。goods.query 现为内层 403（【申请】，负责人申请中）：按文档与录制回放先做，权限批下后编排实测再校。
-# 依据：09 CAP-JD-01、02、03、04，api/jd.union.open.goods.query.md、goods.bigfield.query.md，BR-PRICE-01、BR-PRICE-02，D33 价格映射。
-# 取值：price_fen / coupon_fen / final_price_fen 只用 packages/money / domain 的函数；lowestCouponPrice 与 purchasePrice 哪个对得上下单页是 CAP-JD-02 未知项，未实测前不定，开工时按 08 与 D33 写明取值并报编排。
+# 依据：09 CAP-JD-01、02、03、04，api/jd.union.open.goods.query.md、goods.bigfield.query.md，BR-PRICE-01、BR-PRICE-02，BR-PROD-03、BR-PROD-05。
+# 取值（2026-11-01 更正，原写的 D33 只管淘宝）：BR-PRICE-02 已定京东 price_fen 取 priceInfo.price，lowestPrice、lowestCouponPrice 只存原始报文；券按 BR-PRICE-01 选券规则从 couponInfo.couponList 选；final_price_fen 自算，与 lowestCouponPrice 差 ≥1 分记 PRICE_CALC_DIFF；金额走 parseYuanToFen。
 # 链接识别：sceneId 只用 1（2 须申请，未获批）。SKU 链接要先换成联盟 itemId（2024-12-03 起官方只接受完整联盟商品 ID，2001707），换算走 goods.query，不得猜；goods.link.query 官方标内部测试，不用。
 # 图片字段不映射（registry.ts B1-22s）。报文样例自拟、值全合成。RV2。
 refs: []
@@ -12,6 +12,7 @@ refs_hash: {}
 deps: [B1-04za]
 paths:
   - 'apps/api/src/modules/union/infra/jd/**'
+  - 'specs/union/jd.md'
   - 'test/spec/union/jd-goods/**'
 test_paths:
   - 'test/spec/union/jd-goods/**'
