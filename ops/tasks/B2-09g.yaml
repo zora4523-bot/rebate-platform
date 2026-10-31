@@ -4,6 +4,7 @@ title: settlement：差错单恢复处理实现（CT-24ze restoreAdminReconDiff�
 type: impl
 # 2026-10-31 入账（admin-backend，编排 D10-468 ①）。单一写者：订单类凭证只由 settlement 编排，记账只经 ledger；beneficiary 事件经 commission 导出 appendBeneficiaryEvent（status 放开 active，reason 须为 null）；recon_diffs 状态只经 ledger 新命令（文件名含 recon-diff-restore）。
 # 加锁顺序沿用 B2-09b：差错单行 FOR UPDATE → users 行 → ledger.lockBalances（settlement AGENTS 的订单键 advisory 锁在其前）。uniq_key 按 BR-FUND-22：`{order_key}:{user_id}:{role}:RESTORE:{差错单 id}`。金额经 @couli/money，净额经 ledger getOrderNets，只读 commission 快照经公开导出。
+# 补发后该受益人不再按被剥夺处理（BR-FUND-22 ③、BR-CALC-09 申诉恢复例外）：selectForfeitedEvents 只返回之后没有 active 事件的 forfeited，clawback、credit、beneficiary-credit、预估读取都走这一处。
 # 不含 platform_restore 与订单申诉的 R12 / R13（改 rebate_status，下一段）；不含自动处理。
 refs: [BR-FUND-22]
 refs_hash:
@@ -16,6 +17,7 @@ paths:
   - 'apps/api/src/modules/settlement/index.ts'
   - 'apps/api/src/modules/commission/application/beneficiary-events.ts'
   - 'apps/api/src/modules/commission/index.ts'
+  - 'apps/api/src/modules/commission/infra/snapshot-reader.ts'
   - 'apps/api/src/modules/ledger/**/*recon-diff-restore*.ts'
   - 'apps/api/src/modules/ledger/infra/recon-diffs-store.ts'
   - 'apps/api/src/modules/ledger/index.ts'
