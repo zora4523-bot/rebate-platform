@@ -20,8 +20,10 @@
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for types.
 import type { DB } from '@couli/db';
+import { accountingDate } from '@couli/domain';
+import { formatYuan } from '@couli/money';
 import type { Transaction } from 'kysely';
-import type { Clock } from '../../platform/index.ts';
+import { newUuidV7, type Clock } from '../../platform/index.ts';
 
 export type DeletionProgressVariant = 'requested' | 'cancelled' | 'cancelled_negative';
 
@@ -71,6 +73,79 @@ export interface DeletionProgressWriteOptions {
   readonly clock: Clock;
 }
 
+const CODE = 'DELETION_PROGRESS';
+/** BR-TEXT-09 细则标题表 inbox.title.DELETION_PROGRESS. */
+const DEFAULT_TITLE = '注销进度';
+
+/** BR-TEXT-23 细则模板表, verbatim. */
+const DEFAULT_BODIES: Readonly<Record<DeletionProgressVariant, string>> = Object.freeze({
+  requested: '注销申请已提交，{cancel_deadline} 前可在「设置 → 账号与安全」撤回。',
+  cancelled: '已撤回注销申请，账号恢复正常使用。',
+  cancelled_negative:
+    '你的账户有待扣回金额 {amount}，注销申请已撤销。后续返利抵扣回正后可重新申请，如有疑问请联系客服。',
+});
+
+const SHANGHAI_OFFSET_MS = 8 * 3_600_000;
+const DAY_MS = 86_400_000;
+
+const pad2 = (value: number): string => String(value).padStart(2, '0');
+
+/**
+ * BR-TEXT-11 future time: 24-hour clock in Asia/Shanghai (+08:00); "MM-DD HH:mm" in the +08:00
+ * year of now, "YYYY-MM-DD HH:mm" otherwise; never a relative word.
+ */
+function formatDeadline(deadline: Date, now: Date): string {
+  const date = accountingDate(deadline);
+  const local = deadline.getTime() + SHANGHAI_OFFSET_MS;
+  const minuteOfDay = Math.floor((local - Math.floor(local / DAY_MS) * DAY_MS) / 60_000);
+  const time = `${date.slice(5)} ${pad2(Math.floor(minuteOfDay / 60))}:${pad2(minuteOfDay % 60)}`;
+  return date.slice(0, 4) === accountingDate(now).slice(0, 4)
+    ? time
+    : `${date.slice(0, 4)}-${time}`;
+}
+
+/** Every occurrence, the replacement taken literally (no `$` replacement patterns). */
+function fillAll(template: string, name: string, value: () => string): string {
+  const token = `{${name}}`;
+  return template.includes(token) ? template.split(token).join(value()) : template;
+}
+
+function fill(template: string, input: DeletionProgressInput, clock: Clock): string {
+  switch (input.variant) {
+    case 'requested':
+      return fillAll(template, 'cancel_deadline', () =>
+        formatDeadline(input.cancel_deadline, clock.now()),
+      );
+    case 'cancelled_negative':
+      return fillAll(template, 'amount', () => formatYuan(input.amount_fen));
+    case 'cancelled':
+      return template;
+  }
+}
+
+function assertInput(input: DeletionProgressInput): void {
+  switch (input.variant) {
+    case 'requested':
+      if (
+        !(input.cancel_deadline instanceof Date) ||
+        !Number.isFinite(input.cancel_deadline.getTime())
+      ) {
+        throw new Error('notification: invalid cancel_deadline of DELETION_PROGRESS requested');
+      }
+      return;
+    case 'cancelled_negative':
+      // The amount still to be recovered (−available_fen of a negative balance) is positive.
+      if (typeof input.amount_fen !== 'bigint' || input.amount_fen <= 0n) {
+        throw new Error('notification: invalid amount of DELETION_PROGRESS cancelled_negative');
+      }
+      return;
+    case 'cancelled':
+      return;
+    default:
+      throw new Error('notification: unknown DELETION_PROGRESS variant');
+  }
+}
+
 /**
  * BR-TEXT-23 default (or the override's title and body, applied independently) with the variables
  * filled; {cancel_deadline} is formatted against clock.now() in Asia/Shanghai.
@@ -80,10 +155,18 @@ export function renderDeletionProgressMessage(
   override: DeletionProgressOverride | null,
   clock: Clock,
 ): DeletionProgressMessage {
-  void input;
-  void override;
-  void clock;
-  throw new Error('NotImplemented: renderDeletionProgressMessage');
+  assertInput(input);
+  const title = override?.title_override ?? DEFAULT_TITLE;
+  const body = fill(override?.body_override ?? DEFAULT_BODIES[input.variant], input, clock);
+  return {
+    code: CODE,
+    variant: input.variant,
+    category: 'service',
+    channels: ['inbox'],
+    title,
+    body,
+    route: null,
+  };
 }
 
 /**
@@ -95,8 +178,52 @@ export async function writeDeletionProgressMessage(
   input: DeletionProgressInput,
   options: DeletionProgressWriteOptions,
 ): Promise<boolean> {
-  void trx;
-  void input;
-  void options;
-  throw new Error('NotImplemented: writeDeletionProgressMessage');
+  assertInput(input);
+  const { clock } = options;
+  const db = trx.withSchema('app');
+  const now = clock.now();
+  // The dedupe boundary first: ON CONFLICT DO NOTHING keeps the caller's transaction usable, and a
+  // concurrent write of the same key waits on the unique key until the first transaction ends.
+  const logged = await db
+    .insertInto('notify_logs')
+    .values({
+      id: newUuidV7(now),
+      app_id: input.app_id,
+      user_id: input.user_id,
+      code: CODE,
+      channel: 'inbox',
+      dedupe_key: `${input.deletion_request_id}:${CODE}:${input.variant}`,
+      planned_at: now,
+      sent_at: now,
+      status: 'success',
+      created_at: now,
+      updated_at: now,
+    })
+    .onConflict((oc) => oc.columns(['app_id', 'dedupe_key']).doNothing())
+    .returning('id')
+    .executeTakeFirst();
+  if (logged === undefined) return false;
+  const override = await db
+    .selectFrom('notify_templates')
+    .select(['title_override', 'body_override'])
+    .where('app_id', '=', input.app_id)
+    .where('code', '=', CODE)
+    .where('variant', '=', input.variant)
+    .executeTakeFirst();
+  const message = renderDeletionProgressMessage(input, override ?? null, clock);
+  await db
+    .insertInto('inbox_messages')
+    .values({
+      message_id: newUuidV7(now),
+      app_id: input.app_id,
+      user_id: input.user_id,
+      code: CODE,
+      title: message.title,
+      body: message.body,
+      route: null,
+      created_at: now,
+      updated_at: now,
+    })
+    .execute();
+  return true;
 }

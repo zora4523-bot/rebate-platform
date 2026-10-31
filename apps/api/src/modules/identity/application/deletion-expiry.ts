@@ -15,7 +15,8 @@
 //      ③ balance.availableFen on the transaction; ④ available_fen < 0 → transition('cooling',
 //      'CANCEL'): cancelled, cancel_reason negative_balance, cancelled_at = now, row_version + 1,
 //      updated_at = now (CAS on status and row_version), users untouched,
-//      TODO(规划/11 §2.3): 站内信 DELETION_PROGRESS cancelled_negative (BR-TEXT-23) — blocked on B1-15i;
+//      then, same transaction, the DELETION_PROGRESS cancelled_negative inbox message (B1-15i,
+//      BR-TEXT-23; amount = −available_fen as read in ③, never reread);
 //      ⑤ ≥ 0 and withdrawals.hasNonTerminal → nothing is written, one deferred warn
 //      `identity_deletion_deferred` {app_id, deletion_request_id, cooling_until};
 //      ⑥ ≥ 0 and every withdrawal terminal → users CAS normal → deleting (row_version + 1,
@@ -36,11 +37,13 @@
 // Also compiled by the `test` project: erasable syntax only, `import type` for types.
 import type { DB } from '@couli/db';
 import { transitionDeletionRequest } from '@couli/domain';
+import { subFen } from '@couli/money';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import type { Clock, RootLogger } from '../../platform/index.ts';
 import { resolveWorkingDayDeadline } from '../../risk/index.ts';
 import { lockUsersForUpdate } from '../ports/lock-users.ts';
 import type { DeletionBalanceReader } from '../ports/deletion-balance.ts';
+import type { DeletionProgressNotice } from '../ports/deletion-progress-notice.ts';
 import type { WithdrawalNonTerminalReader } from '../ports/withdrawal-in-flight.ts';
 import { instantPlus } from './config-seconds.ts';
 import { createDailyDedup } from './daily-dedup.ts';
@@ -57,6 +60,8 @@ export interface DeletionExpiryOptions {
   readonly withdrawals: WithdrawalNonTerminalReader;
   readonly balance: DeletionBalanceReader;
   readonly calendar: DeletionCalendarConfigReader;
+  /** B1-15i: written on the cancellation's transaction; absent or null → no message. */
+  readonly notice?: DeletionProgressNotice | null;
   readonly batchSize?: number;
 }
 
@@ -120,6 +125,7 @@ interface Due {
 export function createDeletionExpiry(options: DeletionExpiryOptions): DeletionExpiry {
   const { db, clock, logger, withdrawals, balance, calendar } = options;
   const batchSize = batchSizeOf(options.batchSize);
+  const notice = options.notice ?? null;
   const dedup = createDailyDedup();
 
   /** One request, one transaction; `now` read once and used for the decision and the writes. */
@@ -167,9 +173,15 @@ export function createDeletionExpiry(options: DeletionExpiryOptions): DeletionEx
         if (cancelled.numUpdatedRows !== 1n) {
           throw new Error('identity: deletion request changed concurrently');
         }
-        // TODO(规划/11 §2.3): 站内信 DELETION_PROGRESS cancelled_negative（BR-TEXT-23，amount=−available_fen）— blocked on B1-15i
-        // (the amount exists only in this transaction: B1-15i should write the notice here, in the
-        // same transaction, never reread it afterwards).
+        // B1-15i: the cancelled_negative inbox message on this transaction, its amount the
+        // −available_fen read in ③ (never reread); a failure rolls the cancellation back.
+        await notice?.write(trx, {
+          app_id: due.app_id,
+          user_id: due.user_id,
+          deletion_request_id: row.id,
+          variant: 'cancelled_negative',
+          amount_fen: subFen(0n, available),
+        });
         return { kind: 'cancelled' };
       }
       // ⑤ Any withdrawal not terminal, a ban-frozen one included → processing waits (no

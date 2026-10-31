@@ -188,6 +188,7 @@ import {
   type LaborAgreementConfigReader,
   type DeletionBalanceReader,
   type DeletionCalendarConfigReader,
+  type DeletionProgressNotice,
   type AdminDataCopyRegistrants,
   type WithdrawalInFlightReader,
   type WithdrawalNonTerminalReader,
@@ -317,6 +318,7 @@ import {
   createTemplateSmsSender,
   deletePushTokensForUser,
   unbindPushTokensForSession,
+  writeDeletionProgressMessage,
   type AliyunSmsFetch,
   type NotifySmsTestSender,
   type TemplateSmsSender,
@@ -675,6 +677,21 @@ const deletionBalance = {
       },
     };
   },
+};
+
+/**
+ * B1-15i: the DELETION_PROGRESS inbox message (BR-TEXT-23) identity writes on its deletion
+ * transactions (requested / cancelled on the api entry, cancelled_negative on the worker's expiry):
+ * notification's writeDeletionProgressMessage on the caller's transaction, timestamps from the
+ * Clock. Depends on CLOCK only (both entries' identity modules can inject it).
+ */
+const deletionProgressNotice = {
+  inject: [CLOCK],
+  useFactory: (clock: Clock): DeletionProgressNotice => ({
+    async write(trx, input) {
+      await writeDeletionProgressMessage(trx, input, { clock });
+    },
+  }),
 };
 
 /**
@@ -1291,6 +1308,7 @@ function identityModule(contentReader: SharedContentReader): DynamicModule {
     },
     withdrawalInFlight: deletionWithdrawals,
     deletionBalance,
+    deletionProgress: deletionProgressNotice,
     // Runs only on the login's own transaction (no handle of its own), so it needs no database.
     firstAppLoginReview: {
       inject: [CLOCK],
@@ -4138,6 +4156,7 @@ export class AppModule {
                 funds: deletionClosingAdjustment,
                 apple: deletionAppleRevoker,
                 afterRevoked: deletionAfterRevoked,
+                deletionProgress: deletionProgressNotice,
               }),
             ]
           : []),
