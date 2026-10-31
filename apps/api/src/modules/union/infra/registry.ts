@@ -130,6 +130,10 @@ export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegist
           clock: options.clock,
           endpoint,
           ...(live.warn === undefined ? {} : { warn: live.warn }),
+          // B1-04l (D10-479): the same BR-PRICE-02 settings port the demo adapter gets.
+          ...(options.taobaoPriceSettings === undefined
+            ? {}
+            : { priceSettings: options.taobaoPriceSettings }),
         });
       }
     }
