@@ -22,6 +22,8 @@ paths:
   - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/payout/tax-ytd/**'
+  # 编排 10-31 13:0x（D10-475 ① / D10-415 ①）：W11 落地要 verified 实名，B2-07e 冻结夹具的会员没有实名行 → 核销 500；规则测试作者单列 test(spec) 只改夹具 kit.ts（memberOf 补 verified 实名），不改断言；其余用例 red_exempt。
+  - 'test/spec/ledger/admin-recon-write-off/**'
 impl: claude
 tester: claude-independent
 accept:
@@ -29,3 +31,67 @@ accept:
   - 'test/spec/payout/tax-ytd/**'
 status: todo
 pr: null
+red_exempt:
+  - file: test/spec/ledger/admin-recon-write-off/atomic.int.test.ts
+    test: '[AC-B2-07e#32] 同一 Idempotency-Key 同一请求体重放：原样返回第一次的应答，不再记账、不再入队、不再发事件、不再写审计、不再解冻（第一次之后新加的同源冻结仍生效）；同 key 换请求体 → 20901；新 key → 20902 recon_diff；别的账号用同一 key 是它自己的作用域 → 20902 recon_diff'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/atomic.int.test.ts
+    test: '[AC-B2-07e#33] Idempotency-Key 必填：不带或格式不对 → 20001，什么都不变、不留幂等记录；同一 key 的第一次还在执行时再发（同体或换体）→ 40901，放行后第一次照常完成，之后重放得到它的应答'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/atomic.int.test.ts
+    test: '[AC-B2-07e#34] 一个事务：解冻、改差错单、写审计任一步失败 → 50001，整笔回滚——提现单仍 APPROVED、没有 wd:{id}:PAID、没有 attempt-append 任务（入队与核销原子提交，D10-428）、没有事件、差错单与冻结不变、不留幂等记录；同一 key 重发即成功'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/atomic.int.test.ts
+    test: '[AC-B2-07e#35] 锁序 BR-WDR-07：会员 users 行被别的事务锁着时核销等待，期间提现单与差错单都不变；放行后完成。同一差错单两个核销同时到（不同 key）→ 恰一个成功，另一个 20902 recon_diff；凭证、任务、事件、审计各一'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/atomic.int.test.ts
+    test: '[AC-B2-07e#37] CAS（双连接、确定性）：核销在会员 users 行锁上等待时，持锁事务把提现单 APPROVED → REJECTED（row_version + 1）后提交 → 20902 data.resource=withdrawal；没有 wd:{id}:PAID、没有钱包事件、没有 attempt-append 任务、没有审计，差错单仍 open、冻结不动，不存为幂等结果'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/refusals.int.test.ts
+    test: '[AC-B2-07e#22] 权限：只有 payout.execute（或超管）能核销；只有 fund.recon / fund.view、没有权限点、只有别的权限点 → 10403 data.reason=admin_permission_denied（note 全空白、不带二次验证也先判权限）；不带令牌 → 10001；被拒时什么都不变、不写审计'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/refusals.int.test.ts
+    test: '[AC-B2-07e#23] 二次验证（totp 档）：不带 X-Step-Up-Token、令牌是别的账号的 → 10003 data.tier=totp，先于请求体与差错单检查；什么都不变；拿到令牌后用同一 Idempotency-Key 重放即成功'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/refusals.int.test.ts
+    test: '[AC-B2-07e#24] 请求体：note 去空白后为空、超过 200 字 → 20001 data.fields=[note]；缺 expected_withdrawal_status 或不是 APPROVED → 20001 data.fields=[expected_withdrawal_status]；请求体不合格时先于差错单 id 报；什么都不变；恰好 200 字的 note 可以核销并原样记入 resolution.note'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/refusals.int.test.ts
+    test: '[AC-B2-07e#25] 差错单 id：不存在的 id、其他应用的差错单、source R4 的收款差错、不是 UUID 的 id → 20001 data.fields=[recon_diff_id]（不回 404，前三种应答一样，不带 reason）；什么都不变'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/refusals.int.test.ts
+    test: '[AC-B2-07e#26] 已 closed / adjusted / written_off 的差错单 → 20902 data.resource=recon_diff（先于 W11 守卫）：差错单、提现单、冻结都不动；20902 不存为幂等结果（同一 key 再发仍是 20902）'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/refusals.int.test.ts
+    test: '[AC-B2-07e#27] 不是 R2「支付宝成功、内部经 W9 退回」的差错单 → 20001 data.fields=[recon_diff_id] reason=not_payer_side_case：R1 / R3 差错单、R2 的别的情形（重复打款）、没有 withdrawal_id、账单行的 out_biz_no 是别的单；什么都不变'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/refusals.int.test.ts
+    test: '[AC-B2-07e#28] 开关 payout.proven_success_writeoff.enabled=false → 20001 reason=writeoff_disabled（按差错单加调账处理）；什么都不变'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/refusals.int.test.ts
+    test: '[AC-B2-07e#29] W11 守卫：单 APPROVED 但不是付款方侧退回 → withdrawal_not_returned；转账尝试没有、只有失败的查询记录没有转账、转账成功、转账结果未知（另有失败的查询）→ transfer_attempts_mismatch；账单金额 ≠ net_fen → amount_mismatch；什么都不变、冻结不变量成立'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/refusals.int.test.ts
+    test: '[AC-B2-07e#30] 守卫拒绝不存为幂等结果：没有转账尝试被拒后补上那条失败的转账尝试，同一 Idempotency-Key、同一请求体重发即核销成功'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/refusals.int.test.ts
+    test: '[AC-B2-07e#31] 提现单已不是 APPROVED（已到账 PAID_API、已驳回 REJECTED、又在打款 PAYING、FAILED）→ 20902 data.resource=withdrawal：终态单不改状态或金额，差错单、冻结都不动，不存为幂等结果'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/write-off.int.test.ts
+    test: '[AC-B2-07e#17] 核销（payout.execute + totp 二次验证）：提现单 APPROVED → PAID_API（paid_at 取账单行入账时间、channel_order_id 取账单行、付款方侧暂停清空、executor_id 为操作人）；同一事务记 wd:{id}:PAID 一张（operator admin:<id>，自 frozen 出）；差错单 written_off、resolution 保留原键并加 w11 与去空白的 note；应答为核销后的详情、提现单四个字段与 released_hold_count'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/write-off.int.test.ts
+    test: '[AC-B2-07e#18] 解冻、审计、事件与入队：来源为该差错单且未解除的冻结逐条解除（released_by admin:<id>、released_at 为服务端时间），早已解除的与别的来源的不动、不计数；审计 recon_diff_write_off 恰一条（前后状态、withdrawal_id、released_hold_count，无个人信息）；wallet.withdrawal_changed（PAID_API）恰一次；payout-attempt-append 任务恰一条（载荷含 app_id、withdrawal_id、recon_diff_id）'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/write-off.int.test.ts
+    test: '[AC-B2-07e#19] 依 D10-431：账单行以 bill_row 形式保存（无入账时间）→ paid_at 为账单日 00:00 +08:00（账单日 2026-10-28 → 2026-10-27T16:00:00Z），不再取服务端当前时间；channel_order_id 取 bill_row；不带 note → resolution 不加 note；处理中（processing）的差错单也能核销，原处理人被操作人替换；没有冻结时 released_hold_count 为 0；超管也能核销'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/write-off.int.test.ts
+    test: '[AC-B2-07e#20] 同一会员两张退回单各有差错单：只核销所指的那一张，另一张单、它的差错单与冻结不动；冻结不变量前后成立'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/write-off.int.test.ts
+    test: '[AC-B2-07e#21] 核销后 GET 详情与应答里的 recon_diff 一致；只有 fund.recon / fund.view 的账号能读不能核销（10403）'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
+  - file: test/spec/ledger/admin-recon-write-off/write-off.int.test.ts
+    test: '[AC-B2-07e#39] 转账失败之后还有查询记录（query unknown、query fail）：守卫只数 kind=transfer，照常核销——提现单 PAID_API、wd:{id}:PAID 一张（自 frozen 出）、差错单 written_off、解冻、attempt-append 任务一条；既有的转账与查询记录一字不改'
+    reason: 未改动的 B2-07e 用例；本任务只改同目录 kit.ts 的夹具（memberOf 补 verified 实名行，建单本就要求实名），红检因夹具文件改动把整文件判整体（编排 10-31 13:0x，D10-475 ①）
