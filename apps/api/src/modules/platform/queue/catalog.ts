@@ -29,6 +29,10 @@ const BUSINESS_QUEUES = [
   // The worker's daily ledger check (B2-02q, BR-FUND-19, D10-415 ①): job `daily`, singletonKey
   // `daily:${app_id}:${accounting_date}`; each run enqueues the next day.
   'ledger-check',
+  // The worker's review-overdue check of withdrawals (B2-05n, BR-WDR-26, D10-475 ②): job `check`
+  // every five minutes, singletonKey `review-overdue:<UTC minute of the slot>`; each run enqueues
+  // the next slot.
+  'payout-overdue',
   // The payout process's W11 attempt records (B2-07e, D10-428): job `append`, singletonKey
   // `${withdrawal_id}:${recon_diff_id}:attempt-append`, queued on the write-off transaction.
   'payout-attempt-append',
@@ -86,6 +90,7 @@ export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
         name === 'payout-review' ||
         name === 'payout-recon' ||
         name === 'ledger-check' ||
+        name === 'payout-overdue' ||
         name === 'payout-attempt-append' ||
         name === 'risk-scan' ||
         name === 'union-auth' ||

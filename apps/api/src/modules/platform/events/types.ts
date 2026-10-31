@@ -63,6 +63,9 @@ export const EVENT_NAMES: readonly string[] = Object.freeze([
   // Payment (B2-15e; 08 BR-PAY-06 ⑤ RF2): published by payment on the refund success transaction
   // (02 §11 lists it after pay_order.paid, D10-349, couli #208).
   'pay_refund.succeeded',
+  // 02 §11 提现审核超时（BR-WDR-26；D10-475 ②(a)，B2-05n）: the worker's review-overdue check, last in
+  // the list; notification's WD_OVERDUE consumer subscribes when identity's task lands.
+  'withdrawal.review_overdue',
 ]);
 
 export interface EventSubscription {
