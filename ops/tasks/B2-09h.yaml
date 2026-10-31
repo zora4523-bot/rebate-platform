@@ -16,6 +16,8 @@ paths:
   - 'apps/api/src/modules/ledger/http/admin/**'
   - 'apps/api/src/modules/ledger/index.ts'
   - 'apps/api/src/modules/settlement/bill/job.ts'
+  - 'apps/api/src/modules/settlement/bill/infra/bill-source.ts'
+  - 'apps/api/src/modules/ledger/application/recon-diffs.ts'
   - 'apps/api/src/modules/settlement/bill/supplement/command.ts'
   - 'packages/domain/src/settlement/bill/**'
   - 'contracts/openapi.yaml'
