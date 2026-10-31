@@ -6220,12 +6220,13 @@ export interface paths {
          *     back as BR-PROD-05 says. `cursor` is opaque and carries only the search
          *     session and page; the console sends `next_cursor` back unchanged with the same `platform` and
          *     `q`. A cursor that fails decoding → 20001 `data.fields=[cursor]`; an expired or other-session
-         *     cursor starts a new session without an error, as searchProducts (BR-PROD-08). A platform
+         *     cursor starts a new session without an error and returns the requested page (BR-PROD-08). A platform
          *     without search capability → 30131 (BR-PROD-10). Read-only, no audit record.
          *
          *     Paging differs from the other /admin/v1 lists (04 §5, page + page_size + total) by design:
-         *     the union reports no total, so this is the one cursor-paged console operation and the
-         *     console calls it directly, not through its shared list provider (编排者默认).
+         *     union search gives no total and a deduped one would not be exact, so this is the one cursor-paged console operation and the
+         *     console calls it directly, not through its shared list provider (registered exception,
+         *     D10-485; 04 §5).
          */
         get: operations["adminSearchPoolCandidates"];
         put?: never;
