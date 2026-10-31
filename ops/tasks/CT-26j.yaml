@@ -15,6 +15,7 @@ paths:
   - 'specs/fund-term-keys.yaml'
   - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
   - 'packages/contracts-ts/**'
+  - 'apps/h5/src/shared/api/signed.ts'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
