@@ -59,4 +59,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/settlement/worker-catchup/**'
-status: todo
+status: done
+pr: 1992
