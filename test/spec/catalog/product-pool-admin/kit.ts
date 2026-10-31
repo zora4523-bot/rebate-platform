@@ -173,6 +173,16 @@ async function seedUnionAccess(h: Harness, appId: string, now: Date) {
   }
 }
 
+export type KeyStability = 'unverified' | 'stable_24h' | 'stable_7d' | 'unstable';
+/** platforms 是全库字典，不分 App；迁移 0017 的种子一律 unverified。 */
+export async function setKeyStability(h: Harness, clock: { now(): Date }, stability: KeyStability) {
+  await h.db
+    .updateTable('platforms')
+    .set({ key_stability: stability, updated_at: clock.now() })
+    .where('code', 'in', ['taobao', 'jd', 'pdd'])
+    .execute();
+}
+
 export async function setup(h: Harness) {
   const f = await fixture(h);
   const server = f.app.getHttpAdapter().getInstance() as unknown as {
@@ -186,11 +196,8 @@ export async function setup(h: Harness) {
     ).toBe(true);
   }
   for (const spy of Object.values(union)) spy.mockReset();
-  await h.db
-    .updateTable('platforms')
-    .set({ key_stability: 'stable_24h', updated_at: f.clock.now() })
-    .where('code', 'in', ['taobao', 'jd', 'pdd'])
-    .execute();
+  // 全套用例跑在种子值上：S0 验证前商品池也要能用（BR-PROD-03 功能门槛）；改过值的用例在此复位。
+  await setKeyStability(h, f.clock, 'unverified');
   const appId = uniqueApp();
   const owner = await seed(h, appId, { isSuper: true });
   const actor = await seed(h, appId);
@@ -612,6 +619,14 @@ export async function itemRow(h: Harness, f: Setup, pool: string, key: string) {
     .where('pool_id', '=', pool)
     .where('product_key', '=', key)
     .executeTakeFirst();
+}
+
+/** 别的 App 的另一个池里也有这个 key，返回改动前的行：联盟下架不能越过 app_id。 */
+export async function foreignItem(h: Harness, f: Setup, key: string) {
+  const app = await otherApp(h, f);
+  const pool = await seedPool(h, app);
+  await seedItem(h, app, pool, key);
+  return { app, pool, row: await itemRow(h, app, pool, key) };
 }
 
 /**
