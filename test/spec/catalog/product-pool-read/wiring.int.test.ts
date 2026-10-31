@@ -390,6 +390,15 @@ async function expectRefExpired(response: Response, linkCount: number): Promise<
   expect(await links()).toHaveLength(linkCount);
 }
 
+/** Another app's row of the key: online, fresh and with a rate, so only app_id sets it apart. */
+async function seedForeignItem(
+  key: string,
+  extra: Parameters<typeof seedItem>[5] = {},
+): Promise<void> {
+  const foreign = await tenant(db);
+  await seedItem(db, foreign, clock, await seedPool(db, foreign, clock), key, extra);
+}
+
 function expectUnionUnasked(): void {
   expect(searchItems).not.toHaveBeenCalled();
   expect(getItem).not.toHaveBeenCalled();
@@ -466,7 +475,7 @@ it.each([
 );
 
 it(
-  '[AC-B1-05r#3][BR-PROD-05][BR-PRICE-11] 真实详情链路：这个 App 没有这个 key 的池行 → 30143，联盟一次都没被调用',
+  '[AC-B1-05r#3][BR-PROD-05][BR-PRICE-11] 真实详情链路：这个 App 没有这个 key 的池行、别的 App 有合格的同 key 行 → 30143，联盟一次都没被调用',
   async () => {
     const tapped = await tappedCard('Kreparse03');
     await db
@@ -474,6 +483,7 @@ it(
       .where('app_id', '=', appId)
       .where('product_key', '=', tapped.key)
       .execute();
+    await seedForeignItem(tapped.key);
     const before = await links();
 
     const response = await detailOf(tapped.key, tapped.itemRef);
@@ -509,20 +519,61 @@ it.each([
   TIMEOUT,
 );
 
+it(
+  '[AC-B1-05r#7][BR-PROD-05][BR-PRICE-11] 真实详情链路：池行 age 恰好等于 pool.max_age_sec 仍算合格 → online 用途按标题重解析成功，stale=false',
+  async () => {
+    const stable = 'Kreparse07';
+    const tapped = await tappedCard(stable);
+    await db
+      .updateTable('pool_items')
+      .set({ quoted_at: secondsAgo(clock, MAX_AGE_SEC) })
+      .where('app_id', '=', appId)
+      .where('pool_id', '=', tapped.pool)
+      .where('product_key', '=', tapped.key)
+      .execute();
+    unionFinds(stable);
+
+    const response = await detailOf(tapped.key, tapped.itemRef);
+
+    expect(response.statusCode).toBe(200);
+    await assertSchema(response.json(), 'ProductResponse');
+    expect(response.json<{ data: ProductDetailData }>().data).toMatchObject({
+      product_key: tapped.key,
+      final_price_fen: 5000,
+      stale: false,
+    });
+    expectOnlineTitleSearch(stable);
+    expect(await storedRef(tapped.key)).toMatchObject({ raw_item_id: `rawNew-${stable}` });
+  },
+  TIMEOUT,
+);
+
 async function expectPoolFallback(response: Response, quotedAt: Date): Promise<void> {
   expect(response.statusCode).toBe(200);
   await assertSchema(response.json(), 'ProductResponse');
   const card = response.json<{ data: ProductDetailData }>().data;
-  expect(card).toMatchObject({ final_price_fen: 8000, stale: true, age_sec: 600 });
+  expect(card).toMatchObject({
+    price_fen: 8800,
+    coupon_fen: 800,
+    final_price_fen: 8000,
+    stale: true,
+    age_sec: 600,
+  });
   expect(Date.parse(card.quoted_at!)).toBe(quotedAt.getTime());
 }
 
 it(
-  '[AC-B1-05r#5][BR-PRICE-11][TRADE-12] 真实详情链路：有合格池行、重解析时联盟依赖失败 → 商品池回退 stale=true，quoted_at 取池行，product_refs 不动',
+  '[AC-B1-05r#5][BR-PRICE-11][TRADE-12] 真实详情链路：有合格池行、重解析时联盟依赖失败 → 商品池回退 stale=true，价格和 quoted_at 取本 App 池行而非别的 App 更新的同 key 行，product_refs 不动',
   async () => {
     const stable = 'Kreparse05';
     const quotedAt = secondsAgo(clock, 600);
     const tapped = await tappedCard(stable, { quoted_at: quotedAt });
+    await seedForeignItem(tapped.key, {
+      price_fen: 4400n,
+      coupon_fen: 400n,
+      final_price_fen: 4000n,
+      quoted_at: secondsAgo(clock, 60),
+    });
     const stored = await storedRef(tapped.key);
 
     const response = await detailOf(tapped.key, tapped.itemRef);
