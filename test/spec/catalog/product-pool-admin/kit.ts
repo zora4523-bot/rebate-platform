@@ -45,6 +45,16 @@ vi.mock('../../../../apps/api/src/modules/platform/specs/link-patterns.ts', () =
   }),
 }));
 const faults = vi.hoisted(() => ({ auditApps: new Set<string>() }));
+// Test files run in parallel over one Redis and each fixture restarts its clock, so the real union
+// bucket can run dry between files; quota is not what this suite tests.
+vi.mock('../../../../apps/api/src/modules/union/application/shared-quota.ts', async (original) => ({
+  ...(await original<
+    typeof import('../../../../apps/api/src/modules/union/application/shared-quota.ts')
+  >()),
+  createUnionQuotaSource: () => ({
+    limiter: () => ({ bucketKey: 'synthetic:pool-admin', tryAcquire: () => true }),
+  }),
+}));
 vi.mock('../../../../apps/api/src/modules/admin/infra/audit-writer.ts', async (original) => {
   const actual =
     await original<typeof import('../../../../apps/api/src/modules/admin/infra/audit-writer.ts')>();
