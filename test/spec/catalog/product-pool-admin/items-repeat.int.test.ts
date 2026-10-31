@@ -351,6 +351,7 @@ it('[AC-B1-05q#110] 链接重复入库时复核答不了 → 50401，覆盖也�
 it('[AC-B1-05q#47] 同一商品并发入库由唯一键裁决：都不报错，只留一行，新建和覆盖各一条审计', async () => {
   const f = await setup(h);
   const pool = await seedPool(h, f);
+  const before = await snapshot(h, f.appId);
   const stable = stableId();
   const item = product(f, stable);
   const together = rendezvous(2);
@@ -366,8 +367,10 @@ it('[AC-B1-05q#47] 同一商品并发入库由唯一键裁决：都不报错，�
   const state = await snapshot(h, f.appId);
   expect(state.items).toHaveLength(1);
   expect([1, 2]).toContain(state.items[0]!.sort);
-  expect(state.audits.map((a) => a.action)).toEqual(['pool_item_add', 'pool_item_add']);
-  expect(state.audits.map((a) => a.before === null).sort()).toEqual([false, true]);
+  const seen = new Set(before.audits.map((a) => a.id));
+  const added = state.audits.filter((a) => !seen.has(a.id));
+  expect(added.map((a) => a.action)).toEqual(['pool_item_add', 'pool_item_add']);
+  expect(added.map((a) => a.before === null).sort()).toEqual([false, true]);
 });
 
 /** 一个提交序列；返回违反的不变量（空表示成立），断言留在属性外面。 */
