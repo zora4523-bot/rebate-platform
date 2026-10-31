@@ -206,7 +206,8 @@ it('[AC-F1-02zj#13] GET 配置列表包含全部 16 项，enum 选项按契约�
   // four payout.auto_enable_check.* keys in registration order, and B1-28g (D10-419) then
   // rank.cache_ttl_seconds, and B1-05l (D10-419 (a)) then search.hot_words and
   // search.keyword_routes, and B1-15zd (D10-454) then the seven retention.* keys in registration
-  // order, and B2-08cz (D10-456 ④) then the three tax.SERVICE_FEE.* keys in registration order.
+  // order, and B2-08cz (D10-456 ④) then the three tax.SERVICE_FEE.* keys in registration order,
+  // and B1-05s (D10-480) then feed.fallback_pool_id and the two pool.* keys in registration order.
   const keys = items.map((item) => item.key);
   const tail = [
     ...inviteNow().map((entry) => entry.key),
@@ -258,6 +259,9 @@ it('[AC-F1-02zj#13] GET 配置列表包含全部 16 项，enum 选项按契约�
     'tax.SERVICE_FEE.method',
     'tax.SERVICE_FEE.rate_bp',
     'tax.SERVICE_FEE.rate_table',
+    'feed.fallback_pool_id',
+    'pool.max_age_sec',
+    'pool.refresh_interval_sec',
   ];
   const settleEnd = keys.length - tail.length;
   const settleStart = settleEnd - 16;

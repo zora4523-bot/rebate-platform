@@ -34,7 +34,9 @@ it('[AC-F1-02zx#1] 资格天数是唯一的可改业务配置，整数范围 1�
 // B1-28g (D10-419): rank.cache_ttl_seconds follows payout.auto_enable_check.*. B1-05l (D10-419
 // (a)): search.hot_words and search.keyword_routes follow it in this order. B1-15zd (D10-454): the
 // seven retention.* keys follow search.* in this order. B2-08cz (D10-456 ④): the three
-// tax.SERVICE_FEE.* keys follow retention.* in this order, ending the tail.
+// tax.SERVICE_FEE.* keys follow retention.* in this order. B1-05s (D10-480):
+// feed.fallback_pool_id and the two pool.* keys follow tax.SERVICE_FEE.* in this order, ending the
+// tail.
 const PAYOUT_KEYS = [
   'payout.single_cap_fen',
   'payout.daily_cap_fen',
@@ -94,8 +96,9 @@ const TAX_KEYS = [
   'tax.SERVICE_FEE.rate_bp',
   'tax.SERVICE_FEE.rate_table',
 ];
+const POOL_KEYS = ['feed.fallback_pool_id', 'pool.max_age_sec', 'pool.refresh_interval_sec'];
 
-it('[AC-F1-02zx#2] 六项邀请奖励配置连续位于 growth 组，资格天数紧接 IP 窗口，其后紧接 payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds、search.* 两项、retention.* 七项与 tax.* 三项', () => {
+it('[AC-F1-02zx#2] 六项邀请奖励配置连续位于 growth 组，资格天数紧接 IP 窗口，其后紧接 payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds、search.* 两项、retention.* 七项、tax.* 三项、feed.fallback_pool_id 与 pool.* 两项', () => {
   const registry = configRegistry();
   expect(
     registry
@@ -111,6 +114,7 @@ it('[AC-F1-02zx#2] 六项邀请奖励配置连续位于 growth 组，资格天�
     ...SEARCH_KEYS,
     ...RETENTION_KEYS,
     ...TAX_KEYS,
+    ...POOL_KEYS,
   ];
   const end = registry.length - tail.length;
   expect(registry.slice(end).map((entry) => entry.key)).toStrictEqual(tail);

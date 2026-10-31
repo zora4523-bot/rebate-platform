@@ -25,6 +25,9 @@ const ELIGIBILITY = { key: `${PREFIX}eligibility_days`, value: 30 };
 // the master switch on and the BR-ID-30 days of 08. B2-08cz (D10-456 ④): the three
 // tax.SERVICE_FEE.* rows follow retention.* in registration order, under the same checks, seeded
 // as BR-WDR-20 细则 reads before the rate table is in force: method none, rate 0 bp, empty table.
+// B1-05s (D10-480): the two pool.* rows follow tax.SERVICE_FEE.* in registration order, under the
+// same checks, seeded with the BR-PRICE-11 values; feed.fallback_pool_id is unset by default and
+// has no seed row.
 const PAYOUT_KEYS = [
   'payout.single_cap_fen',
   'payout.daily_cap_fen',
@@ -85,6 +88,11 @@ const TAX_SEEDS = [
   { key: 'tax.SERVICE_FEE.rate_table', value: [] },
 ];
 const TAX_KEYS = TAX_SEEDS.map((row) => row.key);
+const POOL_SEEDS = [
+  { key: 'pool.max_age_sec', value: 7200 },
+  { key: 'pool.refresh_interval_sec', value: 3600 },
+];
+const POOL_KEYS = POOL_SEEDS.map((row) => row.key);
 
 it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；重跑不覆盖', () => {
   const sql = readFileSync(
@@ -115,6 +123,7 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
     ...SEARCH_KEYS,
     ...RETENTION_KEYS,
     ...TAX_KEYS,
+    ...POOL_KEYS,
   ]);
   for (const key of SEARCH_KEYS) {
     expect(
@@ -124,6 +133,8 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
   }
   expect(rows.filter((row) => RETENTION_KEYS.includes(row.key))).toStrictEqual(RETENTION_SEEDS);
   expect(rows.filter((row) => TAX_KEYS.includes(row.key))).toStrictEqual(TAX_SEEDS);
+  expect(rows.filter((row) => POOL_KEYS.includes(row.key))).toStrictEqual(POOL_SEEDS);
+  expect(rows.some((row) => row.key === 'feed.fallback_pool_id')).toBe(false);
   for (const row of CONFIGS) {
     const spec = configItemSpecOf(row.key);
     expect(spec, row.key).not.toBeNull();

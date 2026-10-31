@@ -232,6 +232,12 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   businessEnum('tax.SERVICE_FEE.method', ['none', 'flat_rate', 'cumulative']),
   businessInteger('tax.SERVICE_FEE.rate_bp', 0, 10000),
   spec('tax.SERVICE_FEE.rate_table', 'object', 'config.business'),
+  // B1-05s (D10-480): the pool the feed falls back to when the union fails (规划/02 §14), unset by
+  // default (no seed row; unset = the empty list), then the BR-PRICE-11 pool price age limit and
+  // refresh interval in seconds, at least 1, all config.business. Registration only.
+  spec('feed.fallback_pool_id', 'string', 'config.business'),
+  businessInteger('pool.max_age_sec', 1),
+  businessInteger('pool.refresh_interval_sec', 1),
 ]);
 
 const VISIBLE: readonly ConfigItemSpec[] = Object.freeze(
