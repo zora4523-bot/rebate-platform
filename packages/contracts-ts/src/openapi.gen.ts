@@ -912,12 +912,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * One page of a section's product data source (union_material)
+         * One page of a section's product data source (union_material, product_pool)
          * @description Paged items of a section whose cards are fetched by the card itself (04 §6 卡片数据源分页;
-         *     03 §6.2 item 3; BR-TEXT-17 细则「联盟物料频道」). This version covers only the
-         *     `union_material` data source; `product_pool` and the fall-back to the product pool on a
-         *     union failure (02 §14) are added by later contracts. The rules below are 编排者默认
-         *     (D10-452).
+         *     03 §6.2 item 3; BR-TEXT-17 细则「联盟物料频道」). This version covers the `union_material`
+         *     and `product_pool` data sources and the fall-back to the product pool on a union failure
+         *     (02 §14). The rules below are 编排者默认 (D10-452).
          *
          *     Which version is read: the same rule as getPage. With X-Device-Id the device is bucketed
          *     and gets the gray version when its bucket is in range; without it (basic mode) it gets the
@@ -929,13 +928,13 @@ export interface paths {
          *     04, as searchProducts).
          *
          *     30701: the page_key does not exist, it has no published version, that version has no such
-         *     section, or the section's data source kind is not `union_material`.
+         *     section, or the section's data source kind is neither `union_material` nor `product_pool`.
          *     20001: `cursor` is invalid or does not belong to this page and section, with
          *     data.fields=[cursor]; a page_key or section_id of the wrong shape gives data.fields=[page_key]
          *     or [section_id].
          *
-         *     Fetching: before every fetch the server checks every channel of the data source against
-         *     specs/material-channels.yaml. If any channel is missing or no longer selectable the data
+         *     Fetching `union_material`: before every fetch the server checks every channel of the data
+         *     source against specs/material-channels.yaml. If any channel is missing or no longer selectable the data
          *     source is not fetched at all, the block counts as having no data and an alert is raised
          *     (BR-TEXT-17 细则「取数时再查一次」). Several channels are always interleaved in the order of
          *     `channels`, with or without `mix`; the order inside a channel is kept and no commission or
@@ -954,6 +953,24 @@ export interface paths {
          *     when `next_cursor` is null and keeps the cards already shown; `items: []` with a cursor
          *     means fetch on. Page size is the server constant 20 (no limit parameter, as getHotRank).
          *     `cursor` is opaque: the client sends `next_cursor` back unchanged.
+         *
+         *     Union fall-back (02 §14): when every channel of a `union_material` first page (no
+         *     `cursor`) failed at the union, the server reads the pool named by config key
+         *     `feed.fallback_pool_id` (编排者默认) under the `product_pool` rules below, its `next_cursor`
+         *     pages on through that pool, and every card has `stale=true` and `ad_label`「推广」. With the
+         *     key unset, or that pool missing or disabled, the answer stays the empty list above. A later
+         *     `union_material` page, no data from any channel and a refused data source do not fall back.
+         *
+         *     Fetching `product_pool`: a `pool_id` that does not exist or is disabled answers 200 with the
+         *     empty list above, never 30701. The rows are the pool's items with status online and now
+         *     within `start_at`..`end_at`, `sort` ascending then product_key. Prices are the pool's
+         *     refreshed values, `quoted_at` is the last successful refresh and `stale` is false outside the
+         *     fall-back (BR-PRICE-11); an item last refreshed more than 7200 seconds ago
+         *     (`pool.max_age_sec`) is not sent, and neither is one with rebate_basis=no_rebate
+         *     (BR-PRICE-08). One page reads at most the smaller of the data source's `limit` and the page
+         *     size 20 rows, `cursor` records the row offset of that list, so a page shortened by the
+         *     no_rebate filter can be shorter than that or empty, and `has_more` is true while rows
+         *     remain. `ad_label` is「推广」on every card (BR-TEXT-17).
          */
         get: operations["listPageSectionItems"];
         put?: never;
@@ -6141,6 +6158,206 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/product-pools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Product pools of the console
+         * @description Permission point `content.pool` (04 §11.2; step-up 「–」); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. One row per pool, newest created_at first, page by page
+         *     (`page`, `page_size` ≤ 200). `status` filters by pool status.
+         */
+        get: operations["adminListProductPools"];
+        put?: never;
+        /**
+         * Create a product pool
+         * @description Permission point `content.pool`. Creates a pool with the client-generated `pool_id` (a UUIDv7 the
+         *     console generates once per new pool and reuses on every retry of that create; lowercase canonical
+         *     form). Admin writes carry no Idempotency-Key (04 §6.6), so the id is what makes a retry safe, as
+         *     adminCreateArticle: when a pool with that id already exists → 20902 with
+         *     `data.resource=product_pool` and nothing is written; the console reads it back with
+         *     GET /admin/v1/product-pools/{pool_id} (编排者默认). A `pool_id` that is not a lowercase canonical
+         *     UUIDv7 → 20001 `data.fields=[pool_id]`; `name` empty after trimming → 20001
+         *     `data.fields=[name]`. `status` defaults to active; `revision` starts at 0. Written to the audit
+         *     log in the same transaction (action product_pool_create, the new row).
+         */
+        post: operations["adminCreateProductPool"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/product-pools/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search one platform's union for products to add to a pool
+         * @description Permission point `content.pool`; lacking it is 10403 with `data.reason=admin_permission_denied`.
+         *     The console's source of `item_ref` for adminAddPoolItem (01 F-ADM-10 联盟接口选品入库; 编排者默认).
+         *     `platform` and `q` are required, `q` is 1–100 characters. The search runs as searchProducts runs
+         *     for that platform and keyword (BR-PROD-07 cache, BR-PROD-08 ①② dedupe with the admin as the
+         *     requester; a row whose key cannot be derived is dropped, BR-PROD-03), at the server page size 20
+         *     with no sort or filter. Union failure without a usable cache, or the switch
+         *     search.enabled.<platform> off, is 50304 as searchProducts (BR-PROD-07, BR-PROD-10); the product
+         *     pool is never served as candidates. No result answers 200 with `items: []`, `next_cursor: null`
+         *     and no fall-back items.
+         *
+         *     A row carries the server-signed `item_ref` (BR-PROD-11), the quoted prices and `quoted_at`.
+         *     No rebate is returned and no link is registered, so a no_rebate product can appear here;
+         *     listPageSectionItems filters it when reading the pool (BR-PRICE-08). A tie in BR-PROD-08 ①
+         *     (same key, same final price) is broken by a rebate computed only for that comparison, as
+         *     searchProducts breaks it, and never returned, so the row keeps the better plan's item_ref. Nothing is added to a
+         *     pool until adminAddPoolItem. The `item_ref` ages as on any card; adminAddPoolItem then falls
+         *     back as BR-PROD-05 says. `cursor` is opaque and carries only the search
+         *     session and page; the console sends `next_cursor` back unchanged with the same `platform` and
+         *     `q`. A cursor that fails decoding → 20001 `data.fields=[cursor]`; an expired or other-session
+         *     cursor starts a new session without an error and returns the requested page (BR-PROD-08). A platform
+         *     without search capability → 30131 (BR-PROD-10). Read-only, no audit record.
+         *
+         *     Paging differs from the other /admin/v1 lists (04 §5, page + page_size + total) by design:
+         *     union search gives no total and a deduped one would not be exact, so this is the one cursor-paged console operation and the
+         *     console calls it directly, not through its shared list provider (registered exception,
+         *     D10-485; 04 §5).
+         */
+        get: operations["adminSearchPoolCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/product-pools/{pool_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One product pool
+         * @description Permission point `content.pool`. The pool with its `revision`, the CAS value of
+         *     adminUpdateProductPool. A `pool_id` that is not a lowercase canonical UUID, or that does not
+         *     exist → 30701.
+         */
+        get: operations["adminGetProductPool"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Rename a product pool or switch it on or off
+         * @description Permission point `content.pool`. CAS: `expected_revision` is the pool's `revision` the console
+         *     showed; every write adds 1 to it, and a mismatch → 20902 with `data.resource=product_pool`. At
+         *     least one of `name` and `status` is required, a body with neither → 20001 `data.fields=[body]`;
+         *     `name` empty after trimming → 20001 `data.fields=[name]`. A disabled pool keeps its items and is
+         *     read as empty by listPageSectionItems. An unknown `pool_id` → 30701. Written to the audit log in
+         *     the same transaction (action product_pool_update, before and after).
+         */
+        patch: operations["adminUpdateProductPool"];
+        trace?: never;
+    };
+    "/admin/v1/product-pools/{pool_id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Items of a product pool
+         * @description Permission point `content.pool`. One row per item, `sort` ascending then `product_key`, page by
+         *     page (`page`, `page_size` ≤ 200), including items that are offline or outside their window. The
+         *     price fields are the pool's last successful refresh and `quoted_at` is that refresh time
+         *     (BR-PRICE-11); they are never edited by hand (BR-PRICE-16). `invalid_reason` is the reason shown to
+         *     the operator when the system took the item offline or a re-check failed (BR-PROD-05 结果分类 ①,
+         *     BR-PROD-08 ③), null otherwise. `status` filters by item status. An unknown `pool_id` → 30701.
+         */
+        get: operations["adminListPoolItems"];
+        put?: never;
+        /**
+         * Add a product to a pool from a link, a token or a union pick
+         * @description Permission point `content.pool`. The body carries exactly one of `link_text` (a link or token,
+         *     resolved as parseInput resolves it) and `item_ref` (a union pick, the `item_ref` of a row of
+         *     adminSearchPoolCandidates, passed through unchanged). The route schema checks this: both →
+         *     20001 `data.fields=[body]`; neither → 20001 `data.fields=[link_text, item_ref, body]`. A
+         *     `link_text` holding more than one product → 20001 `data.fields=[link_text]` (编排者默认). The
+         *     server derives product_key (BR-PROD-03); the console never sends it. Refused, nothing written,
+         *     the reason shown to the operator (BR-PROD-03 细则「派生失败的处理」, BR-PROD-08): nothing
+         *     recognisable → 30132; a recognised product whose key cannot be derived → 30131; an `item_ref`
+         *     that has aged out falls back through product_refs and re-resolution (BR-PROD-05), and only
+         *     when that finds no matching key or derives another key → 30143; the union cannot answer now → 50401, retry.
+         *
+         *     The pool item key is (app_id, pool_id, product_key) (BR-PROD-08 ③). `sort`, `start_at` and
+         *     `end_at` are required, null for no bound, so a repeat overwrites with exactly what was submitted;
+         *     `end_at` not later than `start_at` → 20001 `data.fields=[end_at]`.
+         *
+         *     A new key inserts an online item whose price fields and `quoted_at` come from the union answer of
+         *     this call. A new key the union explicitly reports as off shelf → 30141 and no item is inserted,
+         *     since an off-shelf answer has no price to store (编排者默认); pool items elsewhere that already
+         *     hold this key still go offline (BR-PROD-05 结果分类 ①). Adding a key already in the pool overwrites its `sort`, `start_at` and `end_at` with
+         *     this submission, leaves `created_at` and `created_by` unchanged, and runs one union re-check at
+         *     once (BR-PROD-05 结果分类 ①, BR-PROD-08 ③): passed → online, `invalid_reason` cleared and the price
+         *     fields refreshed; not passed → the overwrite stands, the item stays or goes offline and 200 carries
+         *     `invalid_reason`, the reason shown to the operator. The re-check not answering now → 50401, nothing
+         *     changed, retry (编排者默认). A repeat is therefore safe to retry, and the unique key decides between
+         *     two concurrent adds of the same product.
+         *
+         *     Items may be added to a disabled pool. An unknown `pool_id` → 30701. Written to the audit log in
+         *     the same transaction (action pool_item_add: the new row, or before and after on an overwrite).
+         */
+        post: operations["adminAddPoolItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/product-pools/{pool_id}/items/{product_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a product from a pool
+         * @description Permission point `content.pool`. Deletes the pool item; the shared product_refs row stays. No body.
+         *     An unknown `pool_id` or a `product_key` not in the pool → 30701, so a retry after a lost response
+         *     answers 30701 and changes nothing. Written to the audit log in the same transaction (action
+         *     pool_item_remove, the removed row). The response is the removed row.
+         */
+        delete: operations["adminRemovePoolItem"];
+        options?: never;
+        head?: never;
+        /**
+         * Change the order, window or shelf status of a pool item
+         * @description Permission point `content.pool`. At least one field is required, an empty body → 20001
+         *     `data.fields=[body]`. `start_at` and `end_at` take null for no bound; after the change `end_at`
+         *     not later than `start_at` → 20001 `data.fields=[end_at]`. `status=offline` takes the item off the
+         *     shelf at once. `status=online` on an offline item first runs one union re-check (BR-PROD-05 结果
+         *     分类 ①, BR-PROD-08 ③): passed → online, `invalid_reason` cleared and the price fields refreshed;
+         *     not passed → 200 with the item still offline and `invalid_reason` set; the union cannot answer now
+         *     → 50401, nothing changed, retry. An unknown `pool_id` or a `product_key` not in the pool → 30701.
+         *     Written to the audit log in the same transaction (action pool_item_update, before and after).
+         */
+        patch: operations["adminUpdatePoolItem"];
+        trace?: never;
+    };
     "/admin/v1/articles": {
         parameters: {
             query?: never;
@@ -10458,6 +10675,181 @@ export interface components {
             data: components["schemas"]["AdminArticleList"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /**
+         * @description Pool status; a disabled pool is read as empty (编排者默认).
+         * @enum {string}
+         */
+        AdminProductPoolStatus: "active" | "disabled";
+        /**
+         * @description Shelf status of a pool item (BR-PROD-08 ③).
+         * @enum {string}
+         */
+        AdminPoolItemStatus: "online" | "offline";
+        /**
+         * Format: int32
+         * @description Ascending; lower comes first.
+         */
+        AdminPoolSort: number;
+        /** @description Name shown in the console (编排者默认 1–64 characters). */
+        AdminProductPoolName: string;
+        /** @description One product pool (04 product_pools). */
+        AdminProductPool: {
+            pool_id: components["schemas"]["Id"];
+            name: components["schemas"]["AdminProductPoolName"];
+            status: components["schemas"]["AdminProductPoolStatus"];
+            /**
+             * Format: int64
+             * @description CAS value of adminUpdateProductPool.
+             */
+            revision: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        AdminProductPoolList: {
+            /** @description Newest created_at first. */
+            items: components["schemas"]["AdminProductPool"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int64 */
+            total: number;
+        };
+        AdminProductPoolListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminProductPoolList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminProductPoolResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminProductPool"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Body of POST /admin/v1/product-pools. */
+        AdminProductPoolCreateRequest: {
+            pool_id: components["schemas"]["Id"];
+            name: components["schemas"]["AdminProductPoolName"];
+            status?: components["schemas"]["AdminProductPoolStatus"];
+        };
+        /**
+         * @description Body of PATCH /admin/v1/product-pools/{pool_id}: `expected_revision` plus at least one
+         *     of `name` and `status`.
+         */
+        AdminProductPoolUpdateRequest: {
+            name?: components["schemas"]["AdminProductPoolName"];
+            status?: components["schemas"]["AdminProductPoolStatus"];
+            /** Format: int64 */
+            expected_revision: number;
+        };
+        /** @description One item of a product pool (04 pool_items) with its last refreshed price. */
+        AdminPoolItem: {
+            product_key: components["schemas"]["ProductKey"];
+            platform: components["schemas"]["PlatformCode"];
+            title: string;
+            image: string | null;
+            price_fen: components["schemas"]["Fen"];
+            coupon_fen: components["schemas"]["Fen"];
+            final_price_fen: components["schemas"]["Fen"];
+            /**
+             * Format: date-time
+             * @description Time of the last successful refresh (BR-PRICE-11).
+             */
+            quoted_at: string;
+            status: components["schemas"]["AdminPoolItemStatus"];
+            sort: components["schemas"]["AdminPoolSort"];
+            /** @description Null is no lower bound. */
+            start_at: string | null;
+            /** @description Null is no upper bound. */
+            end_at: string | null;
+            /** @description Why the system took it offline or a re-check failed; shown to the operator. */
+            invalid_reason: string | null;
+            created_by: components["schemas"]["Id"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        AdminPoolItemList: {
+            /** @description Sort ascending, then product_key. */
+            items: components["schemas"]["AdminPoolItem"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int64 */
+            total: number;
+        };
+        AdminPoolItemListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminPoolItemList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminPoolItemResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminPoolItem"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description Body of POST /admin/v1/product-pools/{pool_id}/items: exactly one of `link_text` and
+         *     `item_ref`, plus `sort`, `start_at` and `end_at`. The oneOf branches declare the property
+         *     they require (strict Ajv2020, ADR-0001 §4.2 #15).
+         */
+        AdminPoolItemAddRequest: {
+            /** @description A link or token, resolved as parseInput resolves it. */
+            link_text?: string;
+            item_ref?: components["schemas"]["ItemRef"];
+            sort: components["schemas"]["AdminPoolSort"];
+            start_at: string | null;
+            end_at: string | null;
+        } & ({
+            link_text: string;
+        } | {
+            item_ref: components["schemas"]["ItemRef"];
+        });
+        /** @description Body of PATCH /admin/v1/product-pools/{pool_id}/items/{product_key}. */
+        AdminPoolItemUpdateRequest: {
+            sort?: components["schemas"]["AdminPoolSort"];
+            start_at?: string | null;
+            end_at?: string | null;
+            status?: components["schemas"]["AdminPoolItemStatus"];
+        };
+        /**
+         * @description One union search row for adminAddPoolItem: prices without any rebate, and no link_id
+         *     (BR-PROD-11 item_ref is passed through unchanged).
+         */
+        AdminPoolCandidate: {
+            item_ref: components["schemas"]["ItemRef"];
+            product_key: components["schemas"]["ProductKey"];
+            platform: components["schemas"]["PlatformCode"];
+            title: string;
+            image: string | null;
+            price_fen: components["schemas"]["Fen"];
+            coupon_fen: components["schemas"]["Fen"];
+            final_price_fen: components["schemas"]["Fen"];
+            /**
+             * Format: date-time
+             * @description Time of the union answer (BR-PRICE-11).
+             */
+            quoted_at: string;
+        };
+        AdminPoolCandidateList: {
+            /** @description In the union's order. */
+            items: components["schemas"]["AdminPoolCandidate"][];
+            /** @description Pass back unchanged for the next page; null means no more. */
+            next_cursor: string | null;
+        };
+        AdminPoolCandidateListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminPoolCandidateList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
         /** @description One version row of an article. */
         AdminArticleVersion: {
             /** Format: int32 */
@@ -10670,7 +11062,10 @@ export interface components {
             /** @description In server order; the client does not reorder them. */
             items: components["schemas"]["ProductCard"][];
             next_cursor: string | null;
-            /** @description As upstream reports it (BR-PRICE-08), never rewritten by our own filters. */
+            /**
+             * @description `union_material`: as upstream reports it (BR-PRICE-08), never rewritten by our own
+             *     filters. `product_pool`: true while rows of the list remain.
+             */
             has_more: boolean;
         };
         PageSectionItemsResponse: {
@@ -17790,6 +18185,11 @@ export interface components {
          *     does not exist → 30701.
          */
         AdminArticleIdPath: string;
+        /**
+         * @description Product pool id, a lowercase canonical UUID; any other spelling, or an id that does not
+         *     exist → 30701.
+         */
+        AdminPoolIdPath: string;
         /**
          * @description A configuration or emergency-switch key as registered by the server (04 §10, §10.2), dotted
          *     and concrete (`convert.enabled.taobao`, not `convert.enabled.<platform>`); an unregistered
@@ -31274,6 +31674,622 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListProductPools: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["AdminProductPoolStatus"];
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of pools, newest created_at first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "pool_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01",
+                     *             "name": "首页爆款",
+                     *             "status": "active",
+                     *             "revision": 3,
+                     *             "created_at": "2026-10-20T10:00:00+08:00",
+                     *             "updated_at": "2026-10-22T10:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 1
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminProductPoolListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminCreateProductPool: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "pool_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01",
+                 *       "name": "首页爆款",
+                 *       "status": "active"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminProductPoolCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description The new pool. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "pool_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01",
+                     *         "name": "首页爆款",
+                     *         "status": "active",
+                     *         "revision": 0,
+                     *         "created_at": "2026-10-20T10:00:00+08:00",
+                     *         "updated_at": "2026-10-20T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminProductPoolResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not created (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminSearchPoolCandidates: {
+        parameters: {
+            query: {
+                /** @description Platform to search (enum platform). */
+                platform: components["schemas"]["PlatformCode"];
+                /** @description Keyword. */
+                q: string;
+                /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of candidates, in the union's order. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "item_ref": "v1.dGJfN0txOUxtTjNwUQ.c2ln",
+                     *             "product_key": "tb:7Kq9LmN3pQ",
+                     *             "platform": "taobao",
+                     *             "title": "降噪蓝牙耳机 5.3",
+                     *             "image": "https://img.example.test/p/7Kq9LmN3pQ.jpg",
+                     *             "price_fen": 3990,
+                     *             "coupon_fen": 1000,
+                     *             "final_price_fen": 2990,
+                     *             "quoted_at": "2026-10-22T10:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "next_cursor": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPoolCandidateListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetProductPool: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Product pool id, a lowercase canonical UUID; any other spelling, or an id that does not
+                 *     exist → 30701.
+                 */
+                pool_id: components["parameters"]["AdminPoolIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The pool. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "pool_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01",
+                     *         "name": "首页爆款",
+                     *         "status": "active",
+                     *         "revision": 3,
+                     *         "created_at": "2026-10-20T10:00:00+08:00",
+                     *         "updated_at": "2026-10-22T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminProductPoolResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminUpdateProductPool: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Product pool id, a lowercase canonical UUID; any other spelling, or an id that does not
+                 *     exist → 30701.
+                 */
+                pool_id: components["parameters"]["AdminPoolIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "首页爆款",
+                 *       "status": "disabled",
+                 *       "expected_revision": 3
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminProductPoolUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The pool as it is now. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "pool_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01",
+                     *         "name": "首页爆款",
+                     *         "status": "disabled",
+                     *         "revision": 4,
+                     *         "created_at": "2026-10-20T10:00:00+08:00",
+                     *         "updated_at": "2026-10-22T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminProductPoolResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListPoolItems: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["AdminPoolItemStatus"];
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Product pool id, a lowercase canonical UUID; any other spelling, or an id that does not
+                 *     exist → 30701.
+                 */
+                pool_id: components["parameters"]["AdminPoolIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of items, sort ascending. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "product_key": "tb:7Kq9LmN3pQ",
+                     *             "platform": "taobao",
+                     *             "title": "降噪蓝牙耳机 5.3",
+                     *             "image": "https://img.example.test/p/7Kq9LmN3pQ.jpg",
+                     *             "price_fen": 3990,
+                     *             "coupon_fen": 1000,
+                     *             "final_price_fen": 2990,
+                     *             "quoted_at": "2026-10-22T10:00:00+08:00",
+                     *             "status": "online",
+                     *             "sort": 10,
+                     *             "start_at": null,
+                     *             "end_at": "2026-11-11T00:00:00+08:00",
+                     *             "invalid_reason": null,
+                     *             "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b05",
+                     *             "created_at": "2026-10-20T10:00:00+08:00",
+                     *             "updated_at": "2026-10-22T10:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 1
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPoolItemListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminAddPoolItem: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Product pool id, a lowercase canonical UUID; any other spelling, or an id that does not
+                 *     exist → 30701.
+                 */
+                pool_id: components["parameters"]["AdminPoolIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPoolItemAddRequest"];
+            };
+        };
+        responses: {
+            /** @description The item as it is now; on a failed re-check it is offline with `invalid_reason`. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "product_key": "tb:7Kq9LmN3pQ",
+                     *         "platform": "taobao",
+                     *         "title": "降噪蓝牙耳机 5.3",
+                     *         "image": "https://img.example.test/p/7Kq9LmN3pQ.jpg",
+                     *         "price_fen": 3990,
+                     *         "coupon_fen": 1000,
+                     *         "final_price_fen": 2990,
+                     *         "quoted_at": "2026-10-22T10:00:00+08:00",
+                     *         "status": "online",
+                     *         "sort": 10,
+                     *         "start_at": null,
+                     *         "end_at": "2026-11-11T00:00:00+08:00",
+                     *         "invalid_reason": null,
+                     *         "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b05",
+                     *         "created_at": "2026-10-20T10:00:00+08:00",
+                     *         "updated_at": "2026-10-22T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPoolItemResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not added (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminRemovePoolItem: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Product pool id, a lowercase canonical UUID; any other spelling, or an id that does not
+                 *     exist → 30701.
+                 */
+                pool_id: components["parameters"]["AdminPoolIdPath"];
+                /** @description Opaque product key, URL-encoded by the client (BR-PROD-02). */
+                product_key: components["parameters"]["ProductKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The removed item. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "product_key": "tb:7Kq9LmN3pQ",
+                     *         "platform": "taobao",
+                     *         "title": "降噪蓝牙耳机 5.3",
+                     *         "image": "https://img.example.test/p/7Kq9LmN3pQ.jpg",
+                     *         "price_fen": 3990,
+                     *         "coupon_fen": 1000,
+                     *         "final_price_fen": 2990,
+                     *         "quoted_at": "2026-10-22T10:00:00+08:00",
+                     *         "status": "online",
+                     *         "sort": 10,
+                     *         "start_at": null,
+                     *         "end_at": "2026-11-11T00:00:00+08:00",
+                     *         "invalid_reason": null,
+                     *         "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b05",
+                     *         "created_at": "2026-10-20T10:00:00+08:00",
+                     *         "updated_at": "2026-10-22T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPoolItemResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not removed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminUpdatePoolItem: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Product pool id, a lowercase canonical UUID; any other spelling, or an id that does not
+                 *     exist → 30701.
+                 */
+                pool_id: components["parameters"]["AdminPoolIdPath"];
+                /** @description Opaque product key, URL-encoded by the client (BR-PROD-02). */
+                product_key: components["parameters"]["ProductKey"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "sort": 5,
+                 *       "status": "online"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminPoolItemUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The item as it is now. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "product_key": "tb:7Kq9LmN3pQ",
+                     *         "platform": "taobao",
+                     *         "title": "降噪蓝牙耳机 5.3",
+                     *         "image": "https://img.example.test/p/7Kq9LmN3pQ.jpg",
+                     *         "price_fen": 3990,
+                     *         "coupon_fen": 1000,
+                     *         "final_price_fen": 2990,
+                     *         "quoted_at": "2026-10-22T10:00:00+08:00",
+                     *         "status": "online",
+                     *         "sort": 5,
+                     *         "start_at": null,
+                     *         "end_at": "2026-11-11T00:00:00+08:00",
+                     *         "invalid_reason": null,
+                     *         "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b05",
+                     *         "created_at": "2026-10-20T10:00:00+08:00",
+                     *         "updated_at": "2026-10-22T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPoolItemResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

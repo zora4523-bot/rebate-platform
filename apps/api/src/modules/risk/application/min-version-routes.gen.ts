@@ -1935,6 +1935,96 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListProductPools",
+    "method": "GET",
+    "path": "/admin/v1/product-pools",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminCreateProductPool",
+    "method": "POST",
+    "path": "/admin/v1/product-pools",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminSearchPoolCandidates",
+    "method": "GET",
+    "path": "/admin/v1/product-pools/candidates",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetProductPool",
+    "method": "GET",
+    "path": "/admin/v1/product-pools/:pool_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminUpdateProductPool",
+    "method": "PATCH",
+    "path": "/admin/v1/product-pools/:pool_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListPoolItems",
+    "method": "GET",
+    "path": "/admin/v1/product-pools/:pool_id/items",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminAddPoolItem",
+    "method": "POST",
+    "path": "/admin/v1/product-pools/:pool_id/items",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminRemovePoolItem",
+    "method": "DELETE",
+    "path": "/admin/v1/product-pools/:pool_id/items/:product_key",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminUpdatePoolItem",
+    "method": "PATCH",
+    "path": "/admin/v1/product-pools/:pool_id/items/:product_key",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListArticles",
     "method": "GET",
     "path": "/admin/v1/articles",

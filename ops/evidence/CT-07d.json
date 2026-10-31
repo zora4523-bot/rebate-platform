@@ -1,0 +1,37 @@
+{
+  "task": "CT-07d",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "d10483722c236ca52508a1f20b2a3a544d518849",
+  "red_tests": [],
+  "risk_note": "Contract only, every new operation planned: the admin product pool (list, create, get, update pools; list, add, update, remove items; adminSearchPoolCandidates) under permission content.pool, and listPageSectionItems gains product_pool plus the union-failure fall-back to feed.fallback_pool_id (02 §14, D10-480). Re-adding an item overwrites sort and validity, keeps created_at and creator and triggers a union re-check (BR-PROD-08 ③). Pool and item status enums and the 20902 resource are registered. adminSearchPoolCandidates is cursor-paged with no total, the registered exception of D10-485 (04 §5, couli #233; SPEC_REF follows at the next mechanical bump). verify:fast exit 0 at 4305b427c; later commits only reword descriptions and regenerate openapi.gen.ts, contracts:check exit 0 at the head. Codex was unavailable until 11-02, so reviews ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 4,
+      "note": "contract r1 fail (oneOf not compilable under strict Ajv; no item_ref source), fixed; r2 fail (candidate tie-break; pagination), tie-break fixed; r3 and the exception round: the only S1 left is the pagination exception, closed by orchestrator ruling D10-485 (couli #233), not by a reviewer pass. Ruling recorded in the brief after the exception round, which could not read it. Remaining S2 fixed."
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "f008c8876a235194180aca441905236e89bb311d",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}

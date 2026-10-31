@@ -958,6 +958,51 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/product-pools",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/product-pools",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/product-pools/candidates",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/product-pools/:pool_id",
+    "signed": false
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/v1/product-pools/:pool_id",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/product-pools/:pool_id/items",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/product-pools/:pool_id/items",
+    "signed": false
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/v1/product-pools/:pool_id/items/:product_key",
+    "signed": false
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/v1/product-pools/:pool_id/items/:product_key",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/articles",
     "signed": false
   },

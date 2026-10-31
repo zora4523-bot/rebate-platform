@@ -106,6 +106,8 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminUnionAuthSessionStatus: 'admin_union_auth_session_status',
   AdminUnionPidStatus: 'union_pid_status',
   AdminUnionPidScene: 'pid_scene',
+  AdminProductPoolStatus: 'product_pool_status',
+  AdminPoolItemStatus: 'pool_item_status',
   AdminOrderSyncMode: 'order_sync_mode',
   AdminOrderSyncStatus: 'order_sync_status',
   AdminRightsImportKind: 'rights_import_kind',
