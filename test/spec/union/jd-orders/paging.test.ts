@@ -72,12 +72,11 @@ it('[AC-B1-04zb#10] 只看 hasMore：满 200 条但 false 就停，不满页但 
   expect(short.transport).toHaveBeenCalledTimes(2);
 });
 
-it('[AC-B1-04zb#11] 中途空页（data 为 []）只要 hasMore 为 true 仍继续', async () => {
+it('[AC-B1-04zb#11] 任意一页 hasMore 为 true 而 data 为空数组 → UnionError，不再翻页', async () => {
   const [a, b] = rows(1, 2);
   const { adapter, requests } = wire(pageAnswer([[a], [], [b]]));
-  const { orders } = await collect(adapter);
-  expect(orders.map((order) => order.sub_order_id)).toEqual([a!.id, b!.id]);
-  expect(requests.map((body) => body.pageIndex)).toEqual([1, 2, 3]);
+  await expect(collect(adapter)).rejects.toBeInstanceOf(UnionError);
+  expect(requests.map((body) => body.pageIndex)).toEqual([1, 2]);
 });
 
 it.each([
