@@ -264,6 +264,8 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     'appeal',
     // CT-24w: admin recon diff close CAS (04 §6.6, BR-FUND-19).
     'recon_diff',
+    // CT-07d: admin product pool CAS and retried create (F-ADM-10).
+    'product_pool',
   ]);
 });
 

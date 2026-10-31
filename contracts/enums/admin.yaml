@@ -1,6 +1,6 @@
 # 后台权限点（规划/04 §2.5 admin_permission、§11）。超管拥有全部权限点；其他后台账号按权限点逐项勾选。
 # 「后台账号与权限」只限超管、不可授予，不是权限点，不列入。specs/permissions.yaml（B1-18）另记 step-up 与守卫。
-# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）；风控规则清单的规则状态 risk_rule_status 与命中动作 risk_action（CT-24f）；站长联盟账号与推广位 union_auth_status、union_reauth_mode、admin_union_auth_session_status、union_pid_status（CT-24h）；后台通知渠道与短信登记的渠道 notify_channel、短信模板类型 sms_template_type、短信状态 notify_sms_state 与待测试登记的测试结果 notify_sms_test_status（CT-24t）；后台提现单的展示状态 admin_withdrawal_display_status（CT-24y）；后台月结账单的派生状态 admin_settle_bill_status（CT-24z）；后台发起补充批次的结果 admin_settle_supplement_outcome（CT-24zd）。
+# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）；风控规则清单的规则状态 risk_rule_status 与命中动作 risk_action（CT-24f）；站长联盟账号与推广位 union_auth_status、union_reauth_mode、admin_union_auth_session_status、union_pid_status（CT-24h）；后台通知渠道与短信登记的渠道 notify_channel、短信模板类型 sms_template_type、短信状态 notify_sms_state 与待测试登记的测试结果 notify_sms_test_status（CT-24t）；后台提现单的展示状态 admin_withdrawal_display_status（CT-24y）；后台月结账单的派生状态 admin_settle_bill_status（CT-24z）；后台发起补充批次的结果 admin_settle_supplement_outcome（CT-24zd）；商品池与条目的状态 product_pool_status、pool_item_status（CT-07d）。
 enums:
   admin_permission:
     source: 规划/04 §11（拍板第二批 §8 ADD-04、ADD-05）
@@ -195,6 +195,18 @@ enums:
       pending: 已登记、未启用（只有本状态可修改）
       active: 启用中，可用于转链；同一 app × platform × pid_scene 至多一条
       retired: 已停用，停止新转链，仍留在白名单
+  product_pool_status:
+    source: 规划/04 §3.2 product_pools；规划/01 F-ADM-10（CT-07d，取值是编排者默认）
+    description: 商品池状态
+    values:
+      active: 启用中
+      disabled: 已停用，读取时按空池处理
+  pool_item_status:
+    source: 规划/04 §3.2 pool_items.status；规划/08 BR-PROD-08 ③（CT-07d）
+    description: 商品池条目的上下架状态
+    values:
+      online: 上架，在有效期内可下发
+      offline: 下架（运营下架或联盟复核不通过，原因记在 invalid_reason）
   notify_channel:
     source: 规划/04 §3 notify_templates 渠道列、notify_logs.channel；规划/08 BR-TEXT-09 细则模板表渠道列、BR-TEXT-20 细则「短信渠道登记与后台渠道开关」（CT-24t）
     description: 通知的发送渠道；后台只能开关 push 与 sms，inbox 不能由后台增删

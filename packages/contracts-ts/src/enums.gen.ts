@@ -271,6 +271,26 @@ export const union_pid_status = [
 export type UnionPidStatus = (typeof union_pid_status)[number];
 
 /**
+ * 商品池状态
+ * Source: 规划/04 §3.2 product_pools；规划/01 F-ADM-10（CT-07d，取值是编排者默认） (contracts/enums/admin.yaml).
+ */
+export const product_pool_status = [
+  "active", // 启用中
+  "disabled", // 已停用，读取时按空池处理
+] as const;
+export type ProductPoolStatus = (typeof product_pool_status)[number];
+
+/**
+ * 商品池条目的上下架状态
+ * Source: 规划/04 §3.2 pool_items.status；规划/08 BR-PROD-08 ③（CT-07d） (contracts/enums/admin.yaml).
+ */
+export const pool_item_status = [
+  "online", // 上架，在有效期内可下发
+  "offline", // 下架（运营下架或联盟复核不通过，原因记在 invalid_reason）
+] as const;
+export type PoolItemStatus = (typeof pool_item_status)[number];
+
+/**
  * 通知的发送渠道；后台只能开关 push 与 sms，inbox 不能由后台增删
  * Source: 规划/04 §3 notify_templates 渠道列、notify_logs.channel；规划/08 BR-TEXT-09 细则模板表渠道列、BR-TEXT-20 细则「短信渠道登记与后台渠道开关」（CT-24t） (contracts/enums/admin.yaml).
  */
@@ -2051,6 +2071,8 @@ export const enums = {
   union_reauth_mode,
   admin_union_auth_session_status,
   union_pid_status,
+  product_pool_status,
+  pool_item_status,
   notify_channel,
   sms_template_type,
   notify_sms_state,

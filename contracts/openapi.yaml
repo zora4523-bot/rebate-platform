@@ -2478,13 +2478,12 @@ paths:
       operationId: listPageSectionItems
       tags:
         - content
-      summary: One page of a section's product data source (union_material)
+      summary: One page of a section's product data source (union_material, product_pool)
       description: |
         Paged items of a section whose cards are fetched by the card itself (04 §6 卡片数据源分页;
-        03 §6.2 item 3; BR-TEXT-17 细则「联盟物料频道」). This version covers only the
-        `union_material` data source; `product_pool` and the fall-back to the product pool on a
-        union failure (02 §14) are added by later contracts. The rules below are 编排者默认
-        (D10-452).
+        03 §6.2 item 3; BR-TEXT-17 细则「联盟物料频道」). This version covers the `union_material`
+        and `product_pool` data sources and the fall-back to the product pool on a union failure
+        (02 §14). The rules below are 编排者默认 (D10-452).
 
         Which version is read: the same rule as getPage. With X-Device-Id the device is bucketed
         and gets the gray version when its bucket is in range; without it (basic mode) it gets the
@@ -2496,13 +2495,13 @@ paths:
         04, as searchProducts).
 
         30701: the page_key does not exist, it has no published version, that version has no such
-        section, or the section's data source kind is not `union_material`.
+        section, or the section's data source kind is neither `union_material` nor `product_pool`.
         20001: `cursor` is invalid or does not belong to this page and section, with
         data.fields=[cursor]; a page_key or section_id of the wrong shape gives data.fields=[page_key]
         or [section_id].
 
-        Fetching: before every fetch the server checks every channel of the data source against
-        specs/material-channels.yaml. If any channel is missing or no longer selectable the data
+        Fetching `union_material`: before every fetch the server checks every channel of the data
+        source against specs/material-channels.yaml. If any channel is missing or no longer selectable the data
         source is not fetched at all, the block counts as having no data and an alert is raised
         (BR-TEXT-17 细则「取数时再查一次」). Several channels are always interleaved in the order of
         `channels`, with or without `mix`; the order inside a channel is kept and no commission or
@@ -2521,6 +2520,24 @@ paths:
         when `next_cursor` is null and keeps the cards already shown; `items: []` with a cursor
         means fetch on. Page size is the server constant 20 (no limit parameter, as getHotRank).
         `cursor` is opaque: the client sends `next_cursor` back unchanged.
+
+        Union fall-back (02 §14): when every channel of a `union_material` first page (no
+        `cursor`) failed at the union, the server reads the pool named by config key
+        `feed.fallback_pool_id` (编排者默认) under the `product_pool` rules below, its `next_cursor`
+        pages on through that pool, and every card has `stale=true` and `ad_label`「推广」. With the
+        key unset, or that pool missing or disabled, the answer stays the empty list above. A later
+        `union_material` page, no data from any channel and a refused data source do not fall back.
+
+        Fetching `product_pool`: a `pool_id` that does not exist or is disabled answers 200 with the
+        empty list above, never 30701. The rows are the pool's items with status online and now
+        within `start_at`..`end_at`, `sort` ascending then product_key. Prices are the pool's
+        refreshed values, `quoted_at` is the last successful refresh and `stale` is false outside the
+        fall-back (BR-PRICE-11); an item last refreshed more than 7200 seconds ago
+        (`pool.max_age_sec`) is not sent, and neither is one with rebate_basis=no_rebate
+        (BR-PRICE-08). One page reads at most the smaller of the data source's `limit` and the page
+        size 20 rows, `cursor` records the row offset of that list, so a page shortened by the
+        no_rebate filter can be shorter than that or empty, and `has_more` is true while rows
+        remain. `ad_label` is「推广」on every card (BR-TEXT-17).
       x-auth: optional
       x-signed: false
       x-idempotent: false
@@ -17489,6 +17506,672 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/product-pools:
+    get:
+      operationId: adminListProductPools
+      tags:
+        - admin-content
+      summary: Product pools of the console
+      description: |
+        Permission point `content.pool` (04 §11.2; step-up 「–」); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. One row per pool, newest created_at first, page by page
+        (`page`, `page_size` ≤ 200). `status` filters by pool status.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/AdminProductPoolStatus'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of pools, newest created_at first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductPoolListResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - pool_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01
+                      name: 首页爆款
+                      status: active
+                      revision: 3
+                      created_at: '2026-10-20T10:00:00+08:00'
+                      updated_at: '2026-10-22T10:00:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 1
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: adminCreateProductPool
+      tags:
+        - admin-content
+      summary: Create a product pool
+      description: |
+        Permission point `content.pool`. Creates a pool with the client-generated `pool_id` (a UUIDv7 the
+        console generates once per new pool and reuses on every retry of that create; lowercase canonical
+        form). Admin writes carry no Idempotency-Key (04 §6.6), so the id is what makes a retry safe, as
+        adminCreateArticle: when a pool with that id already exists → 20902 with
+        `data.resource=product_pool` and nothing is written; the console reads it back with
+        GET /admin/v1/product-pools/{pool_id} (编排者默认). A `pool_id` that is not a lowercase canonical
+        UUIDv7 → 20001 `data.fields=[pool_id]`; `name` empty after trimming → 20001
+        `data.fields=[name]`. `status` defaults to active; `revision` starts at 0. Written to the audit
+        log in the same transaction (action product_pool_create, the new row).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminProductPoolCreateRequest'
+            example:
+              pool_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01
+              name: 首页爆款
+              status: active
+      responses:
+        '200':
+          description: The new pool.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductPoolResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  pool_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01
+                  name: 首页爆款
+                  status: active
+                  revision: 0
+                  created_at: '2026-10-20T10:00:00+08:00'
+                  updated_at: '2026-10-20T10:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not created (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                fieldInvalid:
+                  $ref: '#/components/examples/AdminProductPoolFieldInvalid'
+                alreadyExists:
+                  $ref: '#/components/examples/AdminProductPoolAlreadyExists'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/product-pools/{pool_id}:
+    get:
+      operationId: adminGetProductPool
+      tags:
+        - admin-content
+      summary: One product pool
+      description: |
+        Permission point `content.pool`. The pool with its `revision`, the CAS value of
+        adminUpdateProductPool. A `pool_id` that is not a lowercase canonical UUID, or that does not
+        exist → 30701.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPoolIdPath'
+      responses:
+        '200':
+          description: The pool.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductPoolResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  pool_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01
+                  name: 首页爆款
+                  status: active
+                  revision: 3
+                  created_at: '2026-10-20T10:00:00+08:00'
+                  updated_at: '2026-10-22T10:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                notFound:
+                  $ref: '#/components/examples/AdminProductPoolNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    patch:
+      operationId: adminUpdateProductPool
+      tags:
+        - admin-content
+      summary: Rename a product pool or switch it on or off
+      description: |
+        Permission point `content.pool`. CAS: `expected_revision` is the pool's `revision` the console
+        showed; every write adds 1 to it, and a mismatch → 20902 with `data.resource=product_pool`. At
+        least one of `name` and `status` is required, a body with neither → 20001 `data.fields=[body]`;
+        `name` empty after trimming → 20001 `data.fields=[name]`. A disabled pool keeps its items and is
+        read as empty by listPageSectionItems. An unknown `pool_id` → 30701. Written to the audit log in
+        the same transaction (action product_pool_update, before and after).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPoolIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminProductPoolUpdateRequest'
+            example:
+              name: 首页爆款
+              status: disabled
+              expected_revision: 3
+      responses:
+        '200':
+          description: The pool as it is now.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductPoolResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  pool_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7a01
+                  name: 首页爆款
+                  status: disabled
+                  revision: 4
+                  created_at: '2026-10-20T10:00:00+08:00'
+                  updated_at: '2026-10-22T10:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                fieldInvalid:
+                  $ref: '#/components/examples/AdminProductPoolFieldInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminProductPoolConflict'
+                notFound:
+                  $ref: '#/components/examples/AdminProductPoolNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/product-pools/{pool_id}/items:
+    get:
+      operationId: adminListPoolItems
+      tags:
+        - admin-content
+      summary: Items of a product pool
+      description: |
+        Permission point `content.pool`. One row per item, `sort` ascending then `product_key`, page by
+        page (`page`, `page_size` ≤ 200), including items that are offline or outside their window. The
+        price fields are the pool's last successful refresh and `quoted_at` is that refresh time
+        (BR-PRICE-11); they are never edited by hand (BR-PRICE-16). `invalid_reason` is the reason shown to
+        the operator when the system took the item offline or a re-check failed (BR-PROD-05 结果分类 ①,
+        BR-PROD-08 ③), null otherwise. `status` filters by item status. An unknown `pool_id` → 30701.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPoolIdPath'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/AdminPoolItemStatus'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of items, sort ascending.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPoolItemListResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - product_key: tb:7Kq9LmN3pQ
+                      platform: taobao
+                      title: 降噪蓝牙耳机 5.3
+                      image: https://img.example.test/p/7Kq9LmN3pQ.jpg
+                      price_fen: 3990
+                      coupon_fen: 1000
+                      final_price_fen: 2990
+                      quoted_at: '2026-10-22T10:00:00+08:00'
+                      status: online
+                      sort: 10
+                      start_at: null
+                      end_at: '2026-11-11T00:00:00+08:00'
+                      invalid_reason: null
+                      created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b05
+                      created_at: '2026-10-20T10:00:00+08:00'
+                      updated_at: '2026-10-22T10:00:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 1
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                notFound:
+                  $ref: '#/components/examples/AdminProductPoolNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: adminAddPoolItem
+      tags:
+        - admin-content
+      summary: Add a product to a pool from a link, a token or a union pick
+      description: |
+        Permission point `content.pool`. The body carries exactly one of `link_text` (a link or token,
+        resolved as parseInput resolves it) and `item_ref` (a union pick, as signed on a card); both or
+        neither → 20001 `data.fields=[link_text, item_ref]`. A `link_text` holding more than one product →
+        20001 `data.fields=[link_text]` (编排者默认). The server derives product_key (BR-PROD-03); the
+        console never sends it. Refused, nothing written, the reason shown to the operator (BR-PROD-03
+        细则「派生失败的处理」, BR-PROD-08): nothing recognisable → 30132; a recognised product whose key
+        cannot be derived → 30131; an `item_ref` that is expired or derives another key → 30143; the
+        union cannot answer now → 50401, retry.
+
+        The pool item key is (app_id, pool_id, product_key) (BR-PROD-08 ③). `sort`, `start_at` and
+        `end_at` are required, null for no bound, so a repeat overwrites with exactly what was submitted;
+        `end_at` not later than `start_at` → 20001 `data.fields=[end_at]`.
+
+        A new key inserts an online item whose price fields and `quoted_at` come from the union answer of
+        this call. Adding a key already in the pool overwrites its `sort`, `start_at` and `end_at` with
+        this submission, leaves `created_at` and `created_by` unchanged, and runs one union re-check at
+        once (BR-PROD-05 结果分类 ①, BR-PROD-08 ③): passed → online, `invalid_reason` cleared and the price
+        fields refreshed; not passed → the overwrite stands, the item stays or goes offline and 200 carries
+        `invalid_reason`, the reason shown to the operator. The re-check not answering now → 50401, nothing
+        changed, retry (编排者默认). A repeat is therefore safe to retry, and the unique key decides between
+        two concurrent adds of the same product.
+
+        Items may be added to a disabled pool. An unknown `pool_id` → 30701. Written to the audit log in
+        the same transaction (action pool_item_add: the new row, or before and after on an overwrite).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 30131
+        - 30132
+        - 30143
+        - 30701
+        - 50401
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPoolIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPoolItemAddRequest'
+            examples:
+              linkText:
+                summary: From a link or token
+                value:
+                  link_text: https://item.example.test/7Kq9LmN3pQ
+                  sort: 10
+                  start_at: null
+                  end_at: '2026-11-11T00:00:00+08:00'
+              itemRef:
+                summary: From a union pick
+                value:
+                  item_ref: v1.dGJfN0txOUxtTjNwUQ.c2ln
+                  sort: 0
+                  start_at: null
+                  end_at: null
+      responses:
+        '200':
+          description: The item as it is now; on a failed re-check it is offline with `invalid_reason`.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPoolItemResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  product_key: tb:7Kq9LmN3pQ
+                  platform: taobao
+                  title: 降噪蓝牙耳机 5.3
+                  image: https://img.example.test/p/7Kq9LmN3pQ.jpg
+                  price_fen: 3990
+                  coupon_fen: 1000
+                  final_price_fen: 2990
+                  quoted_at: '2026-10-22T10:00:00+08:00'
+                  status: online
+                  sort: 10
+                  start_at: null
+                  end_at: '2026-11-11T00:00:00+08:00'
+                  invalid_reason: null
+                  created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b05
+                  created_at: '2026-10-20T10:00:00+08:00'
+                  updated_at: '2026-10-22T10:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not added (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                fieldInvalid:
+                  $ref: '#/components/examples/AdminPoolItemFieldInvalid'
+                notFound:
+                  $ref: '#/components/examples/AdminProductPoolNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/product-pools/{pool_id}/items/{product_key}:
+    patch:
+      operationId: adminUpdatePoolItem
+      tags:
+        - admin-content
+      summary: Change the order, window or shelf status of a pool item
+      description: |
+        Permission point `content.pool`. At least one field is required, an empty body → 20001
+        `data.fields=[body]`. `start_at` and `end_at` take null for no bound; after the change `end_at`
+        not later than `start_at` → 20001 `data.fields=[end_at]`. `status=offline` takes the item off the
+        shelf at once. `status=online` on an offline item first runs one union re-check (BR-PROD-05 结果
+        分类 ①, BR-PROD-08 ③): passed → online, `invalid_reason` cleared and the price fields refreshed;
+        not passed → 200 with the item still offline and `invalid_reason` set; the union cannot answer now
+        → 50401, nothing changed, retry. An unknown `pool_id` or a `product_key` not in the pool → 30701.
+        Written to the audit log in the same transaction (action pool_item_update, before and after).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 30701
+        - 50401
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPoolIdPath'
+        - $ref: '#/components/parameters/ProductKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPoolItemUpdateRequest'
+            example:
+              sort: 5
+              status: online
+      responses:
+        '200':
+          description: The item as it is now.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPoolItemResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  product_key: tb:7Kq9LmN3pQ
+                  platform: taobao
+                  title: 降噪蓝牙耳机 5.3
+                  image: https://img.example.test/p/7Kq9LmN3pQ.jpg
+                  price_fen: 3990
+                  coupon_fen: 1000
+                  final_price_fen: 2990
+                  quoted_at: '2026-10-22T10:00:00+08:00'
+                  status: online
+                  sort: 5
+                  start_at: null
+                  end_at: '2026-11-11T00:00:00+08:00'
+                  invalid_reason: null
+                  created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b05
+                  created_at: '2026-10-20T10:00:00+08:00'
+                  updated_at: '2026-10-22T10:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                fieldInvalid:
+                  $ref: '#/components/examples/AdminPoolItemFieldInvalid'
+                notFound:
+                  $ref: '#/components/examples/AdminPoolItemNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    delete:
+      operationId: adminRemovePoolItem
+      tags:
+        - admin-content
+      summary: Remove a product from a pool
+      description: |
+        Permission point `content.pool`. Deletes the pool item; the shared product_refs row stays. No body.
+        An unknown `pool_id` or a `product_key` not in the pool → 30701, so a retry after a lost response
+        answers 30701 and changes nothing. Written to the audit log in the same transaction (action
+        pool_item_remove, the removed row). The response is the removed row.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPoolIdPath'
+        - $ref: '#/components/parameters/ProductKey'
+      responses:
+        '200':
+          description: The removed item.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPoolItemResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  product_key: tb:7Kq9LmN3pQ
+                  platform: taobao
+                  title: 降噪蓝牙耳机 5.3
+                  image: https://img.example.test/p/7Kq9LmN3pQ.jpg
+                  price_fen: 3990
+                  coupon_fen: 1000
+                  final_price_fen: 2990
+                  quoted_at: '2026-10-22T10:00:00+08:00'
+                  status: online
+                  sort: 10
+                  start_at: null
+                  end_at: '2026-11-11T00:00:00+08:00'
+                  invalid_reason: null
+                  created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b05
+                  created_at: '2026-10-20T10:00:00+08:00'
+                  updated_at: '2026-10-22T10:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not removed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                notFound:
+                  $ref: '#/components/examples/AdminPoolItemNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/articles:
     get:
       operationId: adminListArticles
@@ -25584,6 +26267,17 @@ components:
         type: string
         minLength: 1
         maxLength: 64
+    AdminPoolIdPath:
+      name: pool_id
+      in: path
+      required: true
+      description: |
+        Product pool id, a lowercase canonical UUID; any other spelling, or an id that does not
+        exist → 30701.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
     ConfigKeyPath:
       name: key
       in: path
@@ -27580,6 +28274,52 @@ components:
         msg: 状态已变化，请刷新后重试
         data:
           resource: page
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminProductPoolNotFound:
+      summary: 30701 the pool does not exist (or its id is not a lowercase canonical UUID)
+      value:
+        code: 30701
+        msg: 商品池不存在
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPoolItemNotFound:
+      summary: 30701 the pool does not exist or the product is not in it
+      value:
+        code: 30701
+        msg: 商品池条目不存在
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminProductPoolFieldInvalid:
+      summary: 20001 a pool field is invalid
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - name
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminProductPoolConflict:
+      summary: 20902 the pool was changed by someone else (revision moved on)
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: product_pool
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminProductPoolAlreadyExists:
+      summary: 20902 a pool with this pool_id already exists (a retried create); read it back
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: product_pool
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPoolItemFieldInvalid:
+      summary: 20001 a pool item field is invalid
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - end_at
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminArticleNotFound:
       summary: 30701 the article does not exist (or its id is not a lowercase canonical UUID)
@@ -32527,6 +33267,337 @@ components:
           $ref: '#/components/schemas/AdminArticleList'
         trace_id:
           $ref: '#/components/schemas/TraceId'
+    AdminProductPoolStatus:
+      type: string
+      description: Pool status; a disabled pool is read as empty (编排者默认).
+      enum:
+        - active
+        - disabled
+    AdminPoolItemStatus:
+      type: string
+      description: Shelf status of a pool item (BR-PROD-08 ③).
+      enum:
+        - online
+        - offline
+    AdminPoolSort:
+      type: integer
+      format: int32
+      minimum: 0
+      description: Ascending; lower comes first.
+    AdminProductPoolName:
+      type: string
+      description: Name shown in the console (编排者默认 1–64 characters).
+      minLength: 1
+      maxLength: 64
+    AdminProductPool:
+      type: object
+      description: One product pool (04 product_pools).
+      additionalProperties: false
+      required:
+        - pool_id
+        - name
+        - status
+        - revision
+        - created_at
+        - updated_at
+      properties:
+        pool_id:
+          $ref: '#/components/schemas/Id'
+        name:
+          $ref: '#/components/schemas/AdminProductPoolName'
+        status:
+          $ref: '#/components/schemas/AdminProductPoolStatus'
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+          description: CAS value of adminUpdateProductPool.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminProductPoolList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          description: Newest created_at first.
+          items:
+            $ref: '#/components/schemas/AdminProductPool'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+    AdminProductPoolListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminProductPoolList'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminProductPoolResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminProductPool'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminProductPoolCreateRequest:
+      type: object
+      description: Body of POST /admin/v1/product-pools.
+      additionalProperties: false
+      required:
+        - pool_id
+        - name
+      properties:
+        pool_id:
+          $ref: '#/components/schemas/Id'
+        name:
+          $ref: '#/components/schemas/AdminProductPoolName'
+        status:
+          $ref: '#/components/schemas/AdminProductPoolStatus'
+    AdminProductPoolUpdateRequest:
+      type: object
+      description: |
+        Body of PATCH /admin/v1/product-pools/{pool_id}: `expected_revision` plus at least one
+        of `name` and `status`.
+      additionalProperties: false
+      required:
+        - expected_revision
+      minProperties: 2
+      properties:
+        name:
+          $ref: '#/components/schemas/AdminProductPoolName'
+        status:
+          $ref: '#/components/schemas/AdminProductPoolStatus'
+        expected_revision:
+          type: integer
+          format: int64
+          minimum: 0
+    AdminPoolItem:
+      type: object
+      description: One item of a product pool (04 pool_items) with its last refreshed price.
+      additionalProperties: false
+      required:
+        - product_key
+        - platform
+        - title
+        - image
+        - price_fen
+        - coupon_fen
+        - final_price_fen
+        - quoted_at
+        - status
+        - sort
+        - start_at
+        - end_at
+        - invalid_reason
+        - created_by
+        - created_at
+        - updated_at
+      properties:
+        product_key:
+          $ref: '#/components/schemas/ProductKey'
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        title:
+          type: string
+        image:
+          type:
+            - string
+            - 'null'
+        price_fen:
+          $ref: '#/components/schemas/Fen'
+        coupon_fen:
+          $ref: '#/components/schemas/Fen'
+        final_price_fen:
+          $ref: '#/components/schemas/Fen'
+        quoted_at:
+          type: string
+          format: date-time
+          description: Time of the last successful refresh (BR-PRICE-11).
+        status:
+          $ref: '#/components/schemas/AdminPoolItemStatus'
+        sort:
+          $ref: '#/components/schemas/AdminPoolSort'
+        start_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+          description: Null is no lower bound.
+        end_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+          description: Null is no upper bound.
+        invalid_reason:
+          type:
+            - string
+            - 'null'
+          description: Why the system took it offline or a re-check failed; shown to the operator.
+        created_by:
+          $ref: '#/components/schemas/Id'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminPoolItemList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          description: Sort ascending, then product_key.
+          items:
+            $ref: '#/components/schemas/AdminPoolItem'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+    AdminPoolItemListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPoolItemList'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPoolItemResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPoolItem'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPoolItemAddRequest:
+      type: object
+      description: |
+        Body of POST /admin/v1/product-pools/{pool_id}/items: exactly one of `link_text` and
+        `item_ref`, plus `sort`, `start_at` and `end_at`.
+      additionalProperties: false
+      required:
+        - sort
+        - start_at
+        - end_at
+      oneOf:
+        - required:
+            - link_text
+        - required:
+            - item_ref
+      properties:
+        link_text:
+          type: string
+          description: A link or token, resolved as parseInput resolves it.
+          minLength: 1
+          maxLength: 4000
+        item_ref:
+          $ref: '#/components/schemas/ItemRef'
+        sort:
+          $ref: '#/components/schemas/AdminPoolSort'
+        start_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        end_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+    AdminPoolItemUpdateRequest:
+      type: object
+      description: Body of PATCH /admin/v1/product-pools/{pool_id}/items/{product_key}.
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        sort:
+          $ref: '#/components/schemas/AdminPoolSort'
+        start_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        end_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        status:
+          $ref: '#/components/schemas/AdminPoolItemStatus'
     AdminArticleVersion:
       type: object
       description: One version row of an article.
@@ -32942,7 +34013,9 @@ components:
             - 'null'
         has_more:
           type: boolean
-          description: As upstream reports it (BR-PRICE-08), never rewritten by our own filters.
+          description: |
+            `union_material`: as upstream reports it (BR-PRICE-08), never rewritten by our own
+            filters. `product_pool`: true while rows of the list remain.
     PageSectionItemsResponse:
       type: object
       additionalProperties: false

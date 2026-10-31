@@ -958,6 +958,46 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/product-pools",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/product-pools",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/product-pools/:pool_id",
+    "auth": "admin"
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/v1/product-pools/:pool_id",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/product-pools/:pool_id/items",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/product-pools/:pool_id/items",
+    "auth": "admin"
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/v1/product-pools/:pool_id/items/:product_key",
+    "auth": "admin"
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/v1/product-pools/:pool_id/items/:product_key",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/articles",
     "auth": "admin"
   },
