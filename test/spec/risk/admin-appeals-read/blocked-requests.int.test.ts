@@ -281,7 +281,10 @@ it('[AC-B1-03zd#48] 按手机号查到结果写一条 blocked_request_lookup 审
     action: 'blocked_request_lookup',
   });
   expect(rows[0]!.at.toISOString()).toBe(s.f.clock.now().toISOString());
-  const text = JSON.stringify(rows[0]);
+  // audit_logs.id is bigint and comes back as BigInt; turn it into a string so it can be serialized.
+  const text = JSON.stringify(rows[0], (_key, value: unknown) =>
+    typeof value === 'bigint' ? value.toString() : value,
+  );
   expect(text).toContain(mask(p));
   expect(text.includes(p)).toBe(false);
   expect(text.includes(u.hmac!)).toBe(false);
