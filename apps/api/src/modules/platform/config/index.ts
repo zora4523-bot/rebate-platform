@@ -73,6 +73,11 @@ export {
   openTaobaoCredentials,
 } from './taobao-startup.ts';
 export type { TaobaoAppCredentials, TaobaoStartupErrorCode } from './taobao-startup.ts';
+// 大淘客 credentials of the Taobao order source (B1-04e): staging reads the secret file once at startup.
+export { readDataokeConfig } from './dataoke.ts';
+export type { DataokeAppConfig } from './dataoke.ts';
+export { openDataokeCredentials } from './dataoke-startup.ts';
+export type { DataokeAppCredentials, DataokeStartupErrorCode } from './dataoke-startup.ts';
 // Worker queue concurrency limits (B1-01zzk): per-queue overrides and the shared budget.
 export { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 export type { QueueConcurrencyConfigResult } from './queue-concurrency.ts';

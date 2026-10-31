@@ -24,6 +24,11 @@ import {
   type RegisteredPlatform,
   type UnionAdapter,
 } from '../domain/types.ts';
+import type {
+  DataokeCredentials,
+  DataokeRandom,
+  DataokeWarning,
+} from './dataoke/dataoke-client.ts';
 import { DemoUnionAdapter, type DemoUnionRegistryOptions } from './demo/demo-adapter.ts';
 import { parseUnionEndpoints } from './endpoints.ts';
 import { PddUnionAdapter, type PddCredentials, type PddQueryIdentity } from './pdd/pdd-adapter.ts';
@@ -51,6 +56,28 @@ export interface TaobaoLiveOptions {
   readonly credentials: () => Promise<TaobaoCredentials>;
   readonly transport: UnionTransport;
   readonly warn?: (event: TaobaoWarning) => void;
+  /**
+   * B1-04e (D10-486 ①): the 大淘客 order source. When given, the registry constructs one
+   * DataokeClient from it (plus the registry clock) and hands it to TaobaoUnionAdapter as
+   * `orderSource`; without it the adapter gets none. Never used for taobao replay / demo.
+   */
+  readonly orderSource?: TaobaoOrderSourceOptions;
+}
+
+/**
+ * The DataokeClient dependencies of the Taobao order source (B1-04e). union.module.ts passes the
+ * credentials read at startup (DATAOKE_APP_KEY / DATAOKE_APP_SECRET_FILE), its own archived HTTPS
+ * transport (separate from taobao's), node:crypto randomInt, the fixed gateway
+ * `https://openapi.dataoke.com` and a warn hook logging only path and code.
+ */
+export interface TaobaoOrderSourceOptions {
+  /** Hands out the credentials already read at startup; never reads a file or the environment. */
+  readonly credentials: () => Promise<DataokeCredentials>;
+  readonly transport: UnionTransport;
+  readonly random: DataokeRandom;
+  /** Gateway origin, https only (tests pass a synthetic https address). */
+  readonly baseUrl: string;
+  readonly warn?: (event: DataokeWarning) => void;
 }
 
 export interface UnionRegistryOptions extends DemoUnionRegistryOptions {

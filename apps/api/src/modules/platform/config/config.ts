@@ -7,6 +7,7 @@ import { readAdminAuthConfig, type AdminAuthConfig } from './admin-auth.ts';
 import { readAgentReviewConfig, type AgentReviewConfig } from './agent-review.ts';
 import { readAgentUserHashConfig } from './agent-user-hash.ts';
 import { findCredentialLikeEnvNames } from './credential-env.ts';
+import type { DataokeAppConfig } from './dataoke.ts';
 import {
   JWT_ENV_NAMES,
   readJwtKeyConfig,
@@ -190,6 +191,13 @@ export interface AppConfig {
    * and the path. Absent when not configured; a hand-built config without it counts as null.
    */
   readonly taobao?: TaobaoAppConfig | null;
+  /**
+   * DATAOKE_APP_KEY / DATAOKE_APP_SECRET_FILE (./dataoke.ts, B1-04e): staging only, both or neither;
+   * the 大淘客 order source of the live Taobao adapter. The secret file is read once by the union
+   * module's startup factory; this holds only the app key and the path. Absent when not
+   * configured; a hand-built config without it counts as null.
+   */
+  readonly dataoke?: DataokeAppConfig | null;
   /**
    * UNION_ENDPOINT_OVERRIDE_DIR (./union-endpoint-override.ts, B1-04y): staging only, an absolute
    * path of the mounted directory the UNION_ENDPOINTS factory reads <platform>.json from instead

@@ -39,6 +39,7 @@ import {
   type UnionItemDetail,
   type UnionOrder,
 } from '../../domain/types.ts';
+import type { DataokeClient } from '../dataoke/dataoke-client.ts';
 import type { ArchiveContext, UnionTransport, UnionTransportResponse } from '../replay.ts';
 import {
   detailItemId,
@@ -87,6 +88,13 @@ export interface TaobaoAdapterOptions {
    * and passed to mapTaobaoPrice. Without it the BR-PRICE-02 defaults apply.
    */
   readonly priceSettings?: TaobaoPriceSettingsReader;
+  /**
+   * B1-04e (D10-486 ①): the 大淘客 client the order / refund / punishment ports will read from
+   * (mapping is B1-04f / B1-04z). Assembled by the registry from `taobaoLive.orderSource` only in
+   * staging with taobao live and both DATAOKE_* variables set. Without it listOrders (and the
+   * absent listRefunds / listPunishments) behave as before.
+   */
+  readonly orderSource?: DataokeClient;
 }
 
 export interface TaobaoRequestOptions {
