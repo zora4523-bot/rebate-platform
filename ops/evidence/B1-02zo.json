@@ -1,0 +1,94 @@
+{
+  "red_tests": [
+    "test/spec/identity/reverify-storage/access.int.test.ts > [AC-B1-02zo#8] users 新列：couli_app 可读可写，couli_readonly 只读不写，couli_payout / couli_maint 无任何权限；users 原有表级授权不变",
+    "test/spec/identity/reverify-storage/access.int.test.ts > [AC-B1-02zo#9] reverified_devices：couli_app 可读、插入、删除，couli_readonly 只读，couli_payout / couli_maint 无任何权限；无人可 TRUNCATE / REFERENCES / TRIGGER / MAINTAIN",
+    "test/spec/identity/reverify-storage/devices.int.test.ts > [AC-B1-02zo#4] reverified_devices 列为 id / app_id / user_id / device_hash / source / created_at，全部 NOT NULL，主键 id，created_at 有默认值",
+    "test/spec/identity/reverify-storage/devices.int.test.ts > [AC-B1-02zo#5] 同 (app_id, user_id, device_hash) 第二次插入冲突（换 id、换 source 也冲突）；同用户别的设备、同 app 别的用户、别的 app 的用户各自独立",
+    "test/spec/identity/reverify-storage/devices.int.test.ts > [AC-B1-02zo#6] source 只接受 self 与 admin：大小写、空白、空串、其他值被 CHECK 拒绝，NULL 被 NOT NULL 拒绝",
+    "test/spec/identity/reverify-storage/devices.int.test.ts > [AC-B1-02zo#7] 外键 (app_id, user_id) → users (app_id, id) 不级联：不存在的用户、别的 app 的用户被拒，有已加验设备的用户不能被删",
+    "test/spec/identity/reverify-storage/users.int.test.ts > [AC-B1-02zo#1] users 新增六列的类型、可空性与默认值符合存储表；只写既有列的用户行取 fail_count 0、其余 NULL",
+    "test/spec/identity/reverify-storage/users.int.test.ts > [AC-B1-02zo#2] reverify_fail_count 由 CHECK 限定 ≥ 0、不可为 NULL；拒绝后行不变",
+    "test/spec/identity/reverify-storage/users.int.test.ts > [AC-B1-02zo#3] couli_app 可写入并读回打标、可信身份快照、失败计数与日切日期，也可清回 NULL / 0"
+  ],
+  "risk_note": "RV2 (db migration). BR-WDR-01 细则「旧手机号被二次放号时的提现加验」 storage only (D10-453 ⑥ (b)): migration 0109_reverify adds to app.users last_active_at, last_login_device_hash, reverify_flagged_at, reverify_trusted (jsonb), reverify_fail_count (NOT NULL DEFAULT 0, CHECK ≥ 0), reverify_fail_day (date); new table app.reverified_devices (UNIQUE (app_id, user_id, device_hash), source CHECK self / admin, FK to users of the same app); grants in the same migration; additive. Schema snapshot and db types regenerated on the AWS test machine. The seed key withdraw.dormant_reverify_days = 0 is written by B1-02zs (#2065, registry test-change), so this PR lands after it. Rule tests attempt 2 fixed the kit's depcruise violation and the seed assertion wording, reordered before the implementation; red at the new spec PASS 10. Seed key landed with B1-02zs (#2065, merged); rebased onto it. Full verification with PROP_RUNS=2000 (D10-496): the run before the rebase failed only [AC-B1-02zo#10] (seed not yet on main, now merged); the run after the rebase was cut by the test machine dropping the SSH connection (18.183.248.201, reported); required CI checks are the full verification on the PR head (approvals id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "money-level adversarial review round 1 pass, 0 findings (couli-runs/B1-02zo/review-money-r1.json); Codex unavailable until 11-02 (approvals #36)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude through claude-run.sh (attempt 1; attempt 2 kit depcruise + seed assertion); r1 pass, r2 pass (r2 output renamed .rejected only because the parallel remote snapshot touched the worktree; accepted on inspection, couli-runs/B1-02zo/review-spec-r2-discretion.md); final spec red PASS 10"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "4ff83783d17743ea9efacd016912563b35ae5dab"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "4ff83783d17743ea9efacd016912563b35ae5dab",
+    "test/spec": "59b56d3c6f2744eafe771d8e8c61d5adb0a217f6",
+    "specs": "06bfb4d5a9d52d5099b36fb48f5831b176cc40ec"
+  },
+  "task": "B1-02zo",
+  "spec_commit": "735634bd861a459a29a3b36f3c115351008cee8c",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "735634bd861a459a29a3b36f3c115351008cee8c",
+      "tree": "fbacab97d6eb85b318dca5d51a1766b34f8bfb8d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T22:08:18Z",
+      "finished_at": "2026-10-31T22:08:26Z",
+      "red_tests": [
+        "test/spec/identity/reverify-storage/access.int.test.ts > [AC-B1-02zo#8] users 新列：couli_app 可读可写，couli_readonly 只读不写，couli_payout / couli_maint 无任何权限；users 原有表级授权不变",
+        "test/spec/identity/reverify-storage/access.int.test.ts > [AC-B1-02zo#9] reverified_devices：couli_app 可读、插入、删除，couli_readonly 只读，couli_payout / couli_maint 无任何权限；无人可 TRUNCATE / REFERENCES / TRIGGER / MAINTAIN",
+        "test/spec/identity/reverify-storage/devices.int.test.ts > [AC-B1-02zo#4] reverified_devices 列为 id / app_id / user_id / device_hash / source / created_at，全部 NOT NULL，主键 id，created_at 有默认值",
+        "test/spec/identity/reverify-storage/devices.int.test.ts > [AC-B1-02zo#5] 同 (app_id, user_id, device_hash) 第二次插入冲突（换 id、换 source 也冲突）；同用户别的设备、同 app 别的用户、别的 app 的用户各自独立",
+        "test/spec/identity/reverify-storage/devices.int.test.ts > [AC-B1-02zo#6] source 只接受 self 与 admin：大小写、空白、空串、其他值被 CHECK 拒绝，NULL 被 NOT NULL 拒绝",
+        "test/spec/identity/reverify-storage/devices.int.test.ts > [AC-B1-02zo#7] 外键 (app_id, user_id) → users (app_id, id) 不级联：不存在的用户、别的 app 的用户被拒，有已加验设备的用户不能被删",
+        "test/spec/identity/reverify-storage/users.int.test.ts > [AC-B1-02zo#1] users 新增六列的类型、可空性与默认值符合存储表；只写既有列的用户行取 fail_count 0、其余 NULL",
+        "test/spec/identity/reverify-storage/users.int.test.ts > [AC-B1-02zo#2] reverify_fail_count 由 CHECK 限定 ≥ 0、不可为 NULL；拒绝后行不变",
+        "test/spec/identity/reverify-storage/users.int.test.ts > [AC-B1-02zo#3] couli_app 可写入并读回打标、可信身份快照、失败计数与日切日期，也可清回 NULL / 0"
+      ],
+      "expected": [
+        "test/spec/identity/reverify-storage/access.int.test.ts",
+        "test/spec/identity/reverify-storage/devices.int.test.ts",
+        "test/spec/identity/reverify-storage/users.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "e7f730c840de6d67d4e6d2112341cfb18e57beb7c65ca121f4cb5e3547452edb"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "3b4bf079477b732fe47c3ec4d953ae7e24762716",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      }
+    }
+  ]
+}
