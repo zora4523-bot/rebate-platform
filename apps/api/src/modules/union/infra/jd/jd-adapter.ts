@@ -5,7 +5,7 @@
 // （全部参数在请求体，URL 不带查询串，Content-Type application/x-www-form-urlencoded;charset=utf-8）、
 // 按调用方登记的外层键与结果键解包（见 response.ts）。业务对象无法序列化或含非有限数 → invalid_dto，
 // 不取凭据、不发请求。传输抛错 → upstream_unavailable（不带原文）。调用方的 AbortSignal 与归档上下文
-// 原样挂在传输请求上。searchItems / getItem / resolveLink / convert / listOrders 仍是
+// 原样挂在传输请求上。searchItems / getItem / resolveLink / convert 仍是
 // adapter_unimplemented，不取凭据、不发请求。不读 process.env、不读文件；app_secret 只在内存参与签名。
 import type { Clock } from '../../../platform/index.ts';
 import {
@@ -27,6 +27,7 @@ import {
   type UnionOrder,
 } from '../../domain/types.ts';
 import type { ArchiveContext, UnionTransport, UnionTransportResponse } from '../replay.ts';
+import type { JdProductKeyMode } from './orders.ts';
 import {
   unwrapJdResponse,
   type JdInner,
@@ -50,6 +51,8 @@ export interface JdAdapterOptions {
   readonly clock: Clock;
   readonly endpoint: UnionEndpoint;
   readonly warn?: (event: JdWarning) => void;
+  /** BR-PROD-03 / 05：每次 listOrders 按 ctx.appId 读一次；缺省 item。 */
+  readonly productKeyMode?: { read(appId: string): Promise<JdProductKeyMode> };
 }
 
 /** The business object; 360buy_param_json is its JSON text and its only carrier. */
@@ -196,6 +199,6 @@ export class JdUnionAdapter implements UnionAdapter {
     void win;
     void opt;
     void ctx;
-    throw unimplemented('listOrders');
+    throw new Error('NotImplemented: listOrders');
   }
 }
