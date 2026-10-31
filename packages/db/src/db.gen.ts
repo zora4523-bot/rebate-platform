@@ -1518,6 +1518,28 @@ export interface Platforms {
   updated_at: Generated<Timestamp>;
 }
 
+export interface PoolItems {
+  app_id: string;
+  coupon_fen: ColumnType<bigint, bigint, bigint>;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  end_at: Timestamp | null;
+  final_price_fen: ColumnType<bigint, bigint, bigint>;
+  image: string | null;
+  invalid_reason: string | null;
+  platform: string;
+  pool_id: string;
+  price_fen: ColumnType<bigint, bigint, bigint>;
+  product_key: string;
+  quoted_at: Timestamp;
+  raw_item_id: string;
+  sort: Generated<number>;
+  start_at: Timestamp | null;
+  status: string;
+  title: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface PriceSnapshot {
   app_id: string;
   coupon_fen: ColumnType<bigint, bigint, bigint>;
@@ -1548,6 +1570,17 @@ export interface ProductKeyAliases {
   new_key: string;
   old_key: string;
   reason: string;
+}
+
+export interface ProductPools {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  name: string;
+  pool_id: string;
+  revision: Generated<ColumnType<bigint, bigint, bigint>>;
+  status: string;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface ProductRefs {
@@ -2248,9 +2281,11 @@ export interface DB {
   platform_icon_versions: PlatformIconVersions;
   platform_icons: PlatformIcons;
   platforms: Platforms;
+  pool_items: PoolItems;
   price_snapshot: PriceSnapshot;
   processed_events: ProcessedEvents;
   product_key_aliases: ProductKeyAliases;
+  product_pools: ProductPools;
   product_refs: ProductRefs;
   push_tokens: PushTokens;
   realname: Realname;
