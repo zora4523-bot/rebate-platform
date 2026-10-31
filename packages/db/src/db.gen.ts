@@ -1719,6 +1719,15 @@ export interface RelationChangeLogs {
   user_id: string;
 }
 
+export interface ReverifiedDevices {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  device_hash: string;
+  id: string;
+  source: string;
+  user_id: string;
+}
+
 export interface RightsImportFailures {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -2103,6 +2112,8 @@ export interface Users {
   deleted_reason: string | null;
   id: string;
   invite_code: string;
+  last_active_at: Timestamp | null;
+  last_login_device_hash: string | null;
   level: string;
   nickname: string;
   nickname_change_count: Generated<number>;
@@ -2115,6 +2126,10 @@ export interface Users {
   phone_hmac: string | null;
   register_method: string;
   registered_channel: string | null;
+  reverify_fail_count: Generated<number>;
+  reverify_fail_day: Timestamp | null;
+  reverify_flagged_at: Timestamp | null;
+  reverify_trusted: Json | null;
   row_version: Generated<number>;
   self_bind_used: Generated<boolean>;
   status: Generated<string>;
@@ -2309,6 +2324,7 @@ export interface DB {
   recon_union: ReconUnion;
   refresh_tokens: RefreshTokens;
   relation_change_logs: RelationChangeLogs;
+  reverified_devices: ReverifiedDevices;
   rights_import_failures: RightsImportFailures;
   rights_imports: RightsImports;
   risk_hits: RiskHits;
