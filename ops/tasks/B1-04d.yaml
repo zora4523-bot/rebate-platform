@@ -1,0 +1,28 @@
+id: B1-04d
+repo: rebate-platform
+title: 淘宝转链经大淘客高效转链（D10-503 ①）：convert 走 GET /api/tb-service/get-privilege-link v1.3.1，pid = 凑狸淘宝推广位（身份里的 promotionSlot）、channelId = 用户 relation_id，产出淘口令 / 短链 / 领券链接与打开前重新取价字段；官方万能转链批下前的数据源可配置切换
+type: impl
+# 草稿 2026-10-31（union 线，账号 4）。依据：编排 D10-503（负责人 21:2x 决定，规划仓库 couli #238 docs/changes/20261031-淘宝搜索与转链经大淘客.md、07、09 §2.10）、私有库 rebate-private docs-mirror/dataoke（md/api-7.md 高效转链、DEV-NOTES 末节 10-31 18:13 实测：code 0，data 键 actualPrice / couponClickUrl / couponEndTime / couponInfo / couponRemainCount / couponStartTime / couponTotalCount / itemId / itemUrl / kuaiZhanUrl / longTpwd / maxCommissionRate / minCommissionRate / originalPrice / shortUrl / title / tpwd），由编排者摘入任务书；BR-ATTR-06 / 08、BR-PRICE-11 原文由编排摘入。
+# ① 请求：经 B1-04m 底座 GET，参数 goodsId = ConvertReq.item 的上游商品 ID 原样、pid = identity.promotionSlot（linking 按场景取 active 推广位，BR-ATTR-08，union 不另选）、channelId = identity.relationId（BR-ATTR-06：union 侧缺 relationId → invalid_identity，不得不带 relation_id 转链；无绑定 30101 + auth_url、失效 30102 与 no_rebate 例外仍由 linking 照旧判定，本任务不改 linking）；couponId 有则带；specialId / externalId 不带（任务书定）。
+# ② 结果：ConvertResult 新增淘宝 url 形态（domain/types.ts 增可选附加字段，与 PddPromotionUrlExtras 并列）：url = shortUrl（无则 itemUrl 之外的推广链接，任务书定优先级），附 tpwd / long_tpwd / short_url / coupon_click_url；不外露 kuaiZhanUrl、itemUrl（非我方推广链接）。价格与券（originalPrice / actualPrice / couponInfo 等）作为打开前重新取价（BR-PRICE-11）原样给出可选字段，元转分只用 yuanStrToFen，quoted_at = 收到大淘客响应时的 Clock 时刻；返利比例口径不在本任务计算。
+# ③ 错误：沿用 B1-04m 分类；data 缺 tpwd 与 shortUrl 同时缺失 → upstream_unavailable；商品不可推广类业务码（任务书按 gz-13 摘列，如 10031 / 10212）→ item_unavailable。
+# ④ 数据源开关：淘宝 convert 默认 baichuan 形态不变；只有装配注入大淘客订单源客户端（B1-04e orderSource）且配置项（如 taobao 转链源 = dataoke，任务书定最小改动）打开时才走本路径；官方 27939 / 28308 批下后切官方优先另开任务。推广位与 relation_id 是否进订单须真实测试单核对（编排按 09 README 第 5 条报备后做，各线不下单）。
+# 目录：union/infra/taobao/**、union/infra/dataoke/**、union/domain/types.ts、union/infra/registry.ts(+.test.ts)、union/union.module.ts。test_paths：test/spec/union/taobao-convert/**。整体 RV2（归属）。
+refs: []
+refs_hash: {}
+deps: [B1-04e]
+paths:
+  - 'apps/api/src/modules/union/infra/taobao/**'
+  - 'apps/api/src/modules/union/infra/dataoke/**'
+  - 'apps/api/src/modules/union/domain/types.ts'
+  - 'apps/api/src/modules/union/infra/registry.ts'
+  - 'apps/api/src/modules/union/infra/registry.test.ts'
+  - 'apps/api/src/modules/union/union.module.ts'
+test_paths:
+  - 'test/spec/union/taobao-convert/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/taobao-convert/**'
+status: todo
