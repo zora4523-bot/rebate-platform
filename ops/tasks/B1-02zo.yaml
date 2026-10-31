@@ -1,0 +1,21 @@
+id: B1-02zo
+repo: rebate-platform
+title: 旧号加验（reverify）存储——迁移给 app.users 加 last_active_at、last_login_device_hash、reverify_flagged_at（非空即待加验）、reverify_trusted（jsonb 可信身份快照：实名布尔 + 第三方 provider 列表）、reverify_fail_count、reverify_fail_day（date）；新表 reverified_devices（app_id, user_id, device_hash 唯一，source self / admin，created_at）；授权写在同条迁移；配置种子 withdraw.dormant_reverify_days = 0（三端加验页上线前保持关闭）
+type: impl
+# 2026-10-31 入账（identity-lane，D10-453 ⑥ (b)；依据 08 07_WDR BR-WDR-01 细则「旧手机号被二次放号时的提现加验」、10_ID 注销删除项、契约 CT-26c #1353）。只存储与种子，不含逻辑；占迁移槽。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'db/migrations/**'
+  - 'db/seeds/0001_config-defaults.sql'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/identity/reverify-storage/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/reverify-storage/**'
+status: todo
