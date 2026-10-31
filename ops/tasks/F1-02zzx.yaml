@@ -1,0 +1,19 @@
+id: F1-02zzx
+repo: rebate-platform
+title: 过渡测试改动（F1-02zzr 前置）：冻结 [AC-F1-02k#6] agreements.type 接受「恰三值、sdk_list 被拒」或「另含 sdk_list、collect_list 且两者可插入」二选一，其余非法值照旧被 agreements_type_check 拒绝
+type: test-change
+# 2026-10-31 入账（content-client；D10-465 / D10-478，先例 F1-02zzu 两态过渡）。F1-02zzr 迁移让 agreements_type_check 加 sdk_list、collect_list 后，
+#   test/spec/db/content/agreements/constraints.int.test.ts [AC-F1-02k#6] 把 sdk_list 列为非法值必红；其余库表 / 接口测试已核不受影响。
+# 做法：按 agreements_type_check 定义里有无 sdk_list 选分支；两支都严格；主干现在与 F1-02zzr 合并后都成立；F1-02zzr 合并后另开收紧为只认新支。
+# 改既有规则测试属第一类保护路径：走非 task 分支、台账同 PR；全新上下文 Claude 修改、另一全新上下文 Claude 只读复审，按 approvals #24 由编排加 owner-approved 标签。
+refs: []
+refs_hash: {}
+deps: [F1-02k]
+paths:
+  - 'test/spec/db/content/agreements/constraints.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
