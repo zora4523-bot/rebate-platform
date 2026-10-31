@@ -31,6 +31,7 @@ import {
   riskRow,
   setup,
   snapshot,
+  text,
   voidedOrder,
   type Scenario,
 } from './kit.ts';
@@ -58,8 +59,8 @@ async function registeredAudit(
   expect(audits).toHaveLength(1);
   expect(audits[0]).toMatchObject({ app_id: s.appId, admin_id: s.a.id });
   expect(String(audits[0]!.target)).toContain(appealId);
-  const text = JSON.stringify(audits[0]);
-  for (const part of [REASON, ...mentions]) expect(text).toContain(part);
+  const serialized = text(audits[0]);
+  for (const part of [REASON, ...mentions]) expect(serialized).toContain(part);
   noPersonalData(audits, secrets);
 }
 
@@ -226,17 +227,34 @@ it.each<[string, unknown]>([
   expect(await snapshot(s)).toEqual(before);
 });
 
+// The request schema's maxLength 200 is checked on the raw body (platform validation does not
+// trim), so the trimming boundary is shown with raw values of at most 200 characters.
 it.each([
   ['因', '因'],
-  [`  ${'因'.repeat(200)}  `, '因'.repeat(200)],
+  ['因'.repeat(200), '因'.repeat(200)],
+  [`  ${'因'.repeat(196)}  `, '因'.repeat(196)],
+  [`\t${'因'.repeat(198)}\n`, '因'.repeat(198)],
 ])('[AC-B1-03ze#65] 登记原因边界 %j 可登记，审计记去空白后的原因', async (reason, trimmed) => {
   const s = await setup(h);
   const b = await blocked(s, { request_type: 'register', blocked_at: at(-DAY) });
   await appealOf(await s.register(body('blocked_request', b.id, { reason })));
   const audits = await auditsOf(s, 'appeal_register');
   expect(audits).toHaveLength(1);
-  expect(JSON.stringify(audits[0])).toContain(JSON.stringify(trimmed));
+  expect(text(audits[0])).toContain(JSON.stringify(trimmed));
 });
+
+it.each([` ${'因'.repeat(200)}`, `${'因'.repeat(200)}\n`, `  ${'因'.repeat(199)}  `])(
+  '[AC-B1-03ze#73] 登记原因原始长度超过 200（去空白后不超）%j → 20001 [reason]，什么都不写',
+  async (reason) => {
+    const s = await setup(h);
+    const b = await blocked(s, { request_type: 'register', blocked_at: at(-DAY) });
+    const before = await snapshot(s);
+    await refused(await s.register(body('blocked_request', b.id, { reason })), 20001, {
+      fields: ['reason'],
+    });
+    expect(await snapshot(s)).toEqual(before);
+  },
+);
 
 it('[AC-B1-03ze#66] user_id 与服务端由对象推出的申诉人不符 → 20001 [user_id]；相符可登记', async () => {
   const s = await setup(h);

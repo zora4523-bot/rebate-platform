@@ -485,6 +485,14 @@ export const writeAudits = (s: Scenario) =>
 export const auditsOf = async (s: Scenario, action: (typeof WRITE_ACTIONS)[number]) =>
   (await writeAudits(s)).filter((row) => row.action === action);
 
+/** Every audit record of the app, whatever its action (sign-in and step-up included). */
+export const appAudits = (s: Scenario) =>
+  s.h.db.selectFrom('audit_logs').selectAll().where('app_id', '=', s.appId).orderBy('id').execute();
+
+/** JSON text of a value that may hold BigInt (audit_logs.id comes back as BigInt). */
+export const text = (value: unknown) =>
+  JSON.stringify(value, (_key, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
+
 export interface ResolvedEventRow {
   readonly app_id: string;
   readonly event_id: string;
@@ -569,8 +577,8 @@ export async function refused(response: Response, code: number, data?: object) {
 
 /** No full phone number, phone HMAC or hit value of `secrets` anywhere in `value`. */
 export function noPersonalData(value: unknown, secrets: readonly (string | null)[]) {
-  const text = JSON.stringify(value);
+  const serialized = text(value);
   for (const secret of secrets) {
-    if (secret !== null) expect(text.includes(secret), `leaked ${secret}`).toBe(false);
+    if (secret !== null) expect(serialized.includes(secret), `leaked ${secret}`).toBe(false);
   }
 }
