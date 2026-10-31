@@ -12,10 +12,12 @@ import { DemoUnionError, UnionError } from '../../../../apps/api/src/modules/uni
 import { PRODUCT_KEY, item } from '../detail/kit.ts';
 import { rejection } from '../hot-rank/kit.ts';
 import {
+  ADDED_SEC,
   MAX_AGE_KEY,
   MAX_AGE_SEC,
   TIMEOUT,
   detailCase,
+  expectExpiredRaw,
   newPoolId,
   secondsAgo,
   tenant,
@@ -30,6 +32,8 @@ const outage = (): UnionError =>
 /** Two prices apart from each other and from the detail kit's union item. */
 const OLDER_PRICE = { price_fen: 5000n, coupon_fen: 500n, final_price_fen: 4500n };
 const NEWER_PRICE = { price_fen: 6000n, coupon_fen: 600n, final_price_fen: 5400n };
+/** The tapped card's link; the detail kit's entrySource reads it, the id itself is opaque here. */
+const SOURCE_LINK = 'synthetic-source-link';
 
 it.each([
   { label: 'UnionError upstream_unavailable', error: outage() },
@@ -77,6 +81,75 @@ it.each([
   TIMEOUT,
 );
 
+// BR-PRICE-07 来源判定表, as the detail's own case [AC-B1-05e#8]: feed quotes normal and search on the
+// risk basis, so the amounts tell feed from `detail` and only the link's source tells search apart.
+it.each([
+  { source: 'feed', basis: 'normal', min: 269 },
+  { source: 'search', basis: 'price_compare_risk', min: 135 },
+])(
+  '[BR-PRICE-07][TRADE-12] 回退出卡沿用来源卡：from_link_id 的入口是 $source → rebate_basis=$basis，链接记 $source',
+  async ({ source, basis, min }) => {
+    const f = await detailCase(h);
+    await f.item(await f.pool());
+    f.detail.mockRejectedValue(outage());
+    f.entrySource.mockResolvedValue(source);
+
+    const card = await f.run({ from_link_id: SOURCE_LINK });
+
+    expect(card).toMatchObject({
+      stale: true,
+      rebate_basis: basis,
+      rebate_min_fen: min,
+      rebate_max_fen: 269,
+    });
+    expect(f.entrySource).toHaveBeenCalledWith(f.owner.appId, SOURCE_LINK);
+    expect(f.rows.map((row) => row.entrySource)).toEqual([source]);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[BR-PRICE-07][TRADE-12] 没有来源卡的回退按详情入口：rebate_basis=price_compare_risk，链接记 detail',
+  async () => {
+    const f = await detailCase(h);
+    await f.item(await f.pool());
+    f.detail.mockRejectedValue(outage());
+
+    const card = await f.run();
+
+    expect(card).toMatchObject({
+      stale: true,
+      rebate_basis: 'price_compare_risk',
+      rebate_min_fen: 135,
+      rebate_max_fen: 269,
+    });
+    expect(f.rows.map((row) => row.entrySource)).toEqual(['detail']);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[BR-PROD-05][BR-PROD-11] 刷新只动 quoted_at、不动原串：入池多日、10 分钟前刚刷新的行，卡片 quoted_at 是刷新时刻，item_ref 和链接带的取得时刻仍过期',
+  async () => {
+    const f = await detailCase(h);
+    const quotedAt = secondsAgo(f.clock, 600);
+    await f.item(await f.pool(), {
+      created_at: secondsAgo(f.clock, ADDED_SEC),
+      quoted_at: quotedAt,
+    });
+    f.detail.mockRejectedValue(outage());
+
+    const card = await f.run();
+
+    expect(Date.parse(card.quoted_at!)).toBe(quotedAt.getTime());
+    const token = f.itemRefs.read(card.item_ref!, f.owner.appId);
+    expect(token).toMatchObject({ productKey: PRODUCT_KEY });
+    expectExpiredRaw(f.clock, token!.fetchedAt);
+    expectExpiredRaw(f.clock, f.rows[0]!.ref.rawFetchedAt);
+  },
+  TIMEOUT,
+);
+
 it(
   '[BR-PRICE-11] 商品池也没有合格的行 → 50401，不出卡、不登记',
   async () => {
@@ -90,7 +163,7 @@ it(
 );
 
 it(
-  '[BR-PRICE-11] age 正好 pool.max_age_sec 还能用，多一秒 → 50401；未配置按 7200',
+  '[BR-PRICE-11] age 正好 pool.max_age_sec 还能用，多一毫秒、多一秒都 → 50401；未配置按 7200',
   async () => {
     const f = await detailCase(h);
     const pool = await f.pool();
@@ -99,7 +172,10 @@ it(
 
     expect(await f.run()).toMatchObject({ stale: true, age_sec: MAX_AGE_SEC });
 
-    f.clock.advanceMs(1000);
+    f.clock.advanceMs(1);
+    expect(await rejection(() => f.run())).toMatchObject({ code: 50401 });
+
+    f.clock.advanceMs(999);
     expect(await rejection(() => f.run())).toMatchObject({ code: 50401 });
   },
   TIMEOUT,

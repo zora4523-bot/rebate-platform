@@ -150,6 +150,33 @@ it(
 );
 
 it(
+  '[BR-PRICE-11] 任务正在跑时再 tick 不重复：不新发任务，同一轮每个 key 只问一次',
+  async () => {
+    await refreshCase(async (f) => {
+      await oneRow(f);
+      await oneRow(f);
+      const ask = f.getItem.getMockImplementation()!;
+      const added: number[] = [];
+      // The tick lands while the job asking the union is active, the state drainJobs alone never
+      // shows a tick: with one job per key the other job is then queued or already completed.
+      f.getItem.mockImplementation(async (ref, ctx) => {
+        const queued = (await queuedJobs(f.db)).length;
+        await seedPoolRefresh(f.options);
+        added.push((await queuedJobs(f.db)).length - queued);
+        return ask(ref, ctx);
+      });
+
+      await f.round();
+
+      expect(added).toEqual([0, 0]);
+      expect(f.asked).toHaveLength(2);
+      expect(new Set(f.asked).size).toBe(2);
+    });
+  },
+  TIMEOUT,
+);
+
+it(
   '[BR-PRICE-11] 每个有 online 行的 App 各问各的：同一个 key 两个 App 各问一次，用各自的原串',
   async () => {
     await refreshCase(async (f) => {

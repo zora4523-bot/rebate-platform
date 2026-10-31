@@ -1,18 +1,33 @@
 // B1-05r: queue pool-refresh on the worker entry (F-ADM-10, 02 §11). CatalogWorkerModule.forWorker
 // registers the handler and runs the seed on its own timer, as SettlementModule.forWorker; only the
-// worker entry imports it. Nothing here calls the seed: the module's timer (fake setTimeout and
-// setInterval) does, against real PostgreSQL and pg-boss. The module is loaded at run time, as the
-// settlement kit loads its own: Nest decorators stay out of the spec project's compile.
-import { createTestDatabase } from '@couli/db/testing';
+// worker entry imports it. The timer case calls no seed: the module's timer (fake setTimeout and
+// setInterval) does, against real PostgreSQL and pg-boss. The cache case stays on real timers for
+// the Redis client, so it seeds by hand and runs the jobs through the handler the module registered.
+// The module is loaded at run time, as the settlement kit loads its own: Nest decorators stay out of
+// the spec project's compile.
+import { acquireTestRedis, createTestDatabase } from '@couli/db/testing';
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
 import { expect, it, vi } from 'vitest';
+import type { ProductDetailUpstream } from '../../../../apps/api/src/modules/catalog/detail.ts';
+import {
+  PRODUCT_CACHE_NAMESPACE,
+  cacheDetailUpstream,
+} from '../../../../apps/api/src/modules/catalog/infra/product-cache.ts';
 import { GovernedUnion } from '../../../../apps/api/src/modules/catalog/ports.ts';
+import { seedPoolRefresh } from '../../../../apps/api/src/modules/catalog/worker/pool-refresh.ts';
 import {
   FixedClock,
+  REDIS,
   createRootLogger,
   loadConfig,
+  loadConnectionConfig,
 } from '../../../../apps/api/src/modules/platform/index.ts';
+import {
+  createRedisHandle,
+  type RedisHandle,
+} from '../../../../apps/api/src/modules/platform/redis/index.ts';
+import { UnionError, type UnionItemDetail } from '../../../../apps/api/src/modules/union/index.ts';
 import {
   ROOT,
   fakeQueue,
@@ -32,9 +47,11 @@ import {
   drainJobs,
   fakeUnion,
   itemRow,
+  refreshOptionsOf,
   secondsAgo,
   seedItem,
   seedPool,
+  seedRef,
   tenant,
 } from './kit.ts';
 
@@ -60,6 +77,60 @@ function unionPorts(union: GovernedUnion) {
     module: UnionPorts,
     providers: [{ provide: GovernedUnion, useValue: union }],
     exports: [GovernedUnion],
+  };
+}
+
+/** `module` beside a global REDIS, as PlatformModule provides it on the worker entry. */
+function withRedis(module: unknown, redis: RedisHandle) {
+  class RedisDependency {}
+  class Harness {}
+  return {
+    module: Harness,
+    imports: [
+      {
+        module: RedisDependency,
+        global: true,
+        providers: [{ provide: REDIS, useValue: redis }],
+        exports: [REDIS],
+      },
+      module,
+    ],
+  };
+}
+
+/** A handle on the run's test Redis; the keys carry a test's own app_id. */
+async function withTestRedis(run: (redis: RedisHandle) => Promise<void>): Promise<void> {
+  const server = await acquireTestRedis();
+  try {
+    const redis = await createRedisHandle(
+      loadConnectionConfig('api', {
+        DATABASE_URL: 'postgres://couli_app@127.0.0.1:1/rules',
+        REDIS_URL: server.url,
+      }),
+      { logger: silentRootLogger() },
+    );
+    expect(redis).not.toBeNull();
+    try {
+      await run(redis!);
+    } finally {
+      await redis!.close();
+    }
+  } finally {
+    await server.stop();
+  }
+}
+
+/** The union's answer for this product, received now. */
+function unionItem(stable: string, clock: FixedClock): UnionItemDetail {
+  return {
+    platform: 'taobao',
+    item_id: `rawRef-${stable}`,
+    title: title(stable),
+    price_fen: 6000n,
+    coupon_fen: 1000n,
+    final_price_fen: 5000n,
+    commission_rate_bp: 1500n,
+    quoted_at: clock.now().toISOString(),
   };
 }
 
@@ -113,16 +184,7 @@ it(
         quoted_at: secondsAgo(clock, 4000),
       });
       const fake = fakeUnion();
-      fake.answers.set(`rawRef-${stable}`, () => ({
-        platform: 'taobao',
-        item_id: `rawRef-${stable}`,
-        title: title(stable),
-        price_fen: 6000n,
-        coupon_fen: 1000n,
-        final_price_fen: 5000n,
-        commission_rate_bp: 1500n,
-        quoted_at: clock.now().toISOString(),
-      }));
+      fake.answers.set(`rawRef-${stable}`, () => unionItem(stable, clock));
       const CatalogWorkerModule = await catalogWorkerModule();
       const module = CatalogWorkerModule.forWorker({
         ports: unionPorts(fake.union),
@@ -172,6 +234,72 @@ it(
           await context?.close();
           vi.useRealTimers();
         }
+      });
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[BR-PROD-07] forWorker 注册的处理器遇到下架真的删 Redis 里的详情缓存：删之前命中，删之后回源',
+  async () => {
+    await withDatabase(createTestDatabase, async (db) => {
+      const CatalogWorkerModule = await catalogWorkerModule();
+      const fake = fakeUnion();
+      const module = CatalogWorkerModule.forWorker({
+        ports: unionPorts(fake.union),
+        config: () => configOf(new Map()),
+      });
+      const owner = await tenant(db);
+      const clock = new FixedClock(REFRESH_NOW);
+      const stable = 'Kworkerdrop01';
+      const key = `tb:${stable}`;
+      const pool = await seedPool(db, owner, clock);
+      await seedItem(db, owner, clock, pool, key, { quoted_at: secondsAgo(clock, 4000) });
+      await seedRef(db, owner, clock, stable);
+      fake.answers.set(
+        `rawRef-${stable}`,
+        () => new UnionError('item_unavailable', 'synthetic off shelf', 'taobao'),
+      );
+
+      await withTestRedis(async (redis) => {
+        const upstream = {
+          detail: vi.fn<ProductDetailUpstream['detail']>(async () => unionItem(stable, clock)),
+        };
+        const cached = cacheDetailUpstream(upstream, {
+          redis: redis.namespace(PRODUCT_CACHE_NAMESPACE),
+          clock,
+          config: configOf(new Map()),
+        });
+        const request = { appId: owner.appId, productKey: key, platform: 'taobao' as const };
+        await cached.detail(request);
+        await cached.detail(request);
+        expect(upstream.detail).toHaveBeenCalledTimes(1);
+
+        await withRealQueue(db, async (queue) => {
+          const context = await workerContext(withRedis(module, redis), {
+            clock,
+            logger: silentRootLogger(),
+            db,
+            queue,
+          });
+          // Inside the context: closing it closes the REDIS handle it was given.
+          try {
+            const [registered] = queue.registered;
+            expect(registered?.queue).toBe(QUEUE);
+            const seeding = refreshOptionsOf(db, queue, fake.union, clock, new Map(), () =>
+              Promise.resolve(),
+            );
+            await seedPoolRefresh(seeding);
+            await drainJobs(db, registered!.handler);
+
+            expect(await itemRow(db, owner.appId, pool, key)).toMatchObject({ status: 'offline' });
+            await cached.detail(request);
+            expect(upstream.detail).toHaveBeenCalledTimes(2);
+          } finally {
+            await context.close();
+          }
+        });
       });
     });
   },

@@ -8,14 +8,18 @@ import { expect, it } from 'vitest';
 import { assertSchema, dataOf, rejection } from '../hot-rank/kit.ts';
 import { EMPTY, SECTION_ID, pagesCursor, title, titlesOf } from '../section-items/kit.ts';
 import {
+  ADDED_SEC,
   AD_LABEL,
   MAX_AGE_KEY,
   MAX_AGE_SEC,
   TIMEOUT,
+  expectExpiredRaw,
+  millisAgo,
   newPoolId,
   ordered,
   sectionCase,
   secondsAgo,
+  seedItem,
   seedPool,
   tenant,
   usePoolDatabase,
@@ -90,6 +94,29 @@ it(
   TIMEOUT,
 );
 
+// The card entry issues item_ref from the same ref it registers, so ref.rawFetchedAt is both the
+// token's fetched_at and the link's raw_fetched_at (this fixture's item_ref is a fixed string).
+it(
+  '[BR-PROD-05][BR-PROD-11] 刷新只动 quoted_at、不动原串：入池多日、10 分钟前刚刷新的行，卡片 quoted_at 是刷新时刻，item_ref 和链接带的取得时刻仍过期',
+  async () => {
+    const f = await sectionCase(h);
+    const pool = await f.pool();
+    const quotedAt = secondsAgo(f.clock, 600);
+    await f.item(pool, 'refreshed', {
+      created_at: secondsAgo(f.clock, ADDED_SEC),
+      quoted_at: quotedAt,
+    });
+    f.show(pool);
+
+    const data = await f.run();
+
+    expect(Date.parse(data.items[0]!.quoted_at!)).toBe(quotedAt.getTime());
+    const [link] = f.register.mock.calls.map(([input]) => input);
+    expectExpiredRaw(f.clock, link!.ref.rawFetchedAt);
+  },
+  TIMEOUT,
+);
+
 it.each([
   { label: '不存在', poolId: () => newPoolId() },
   { label: '不是 UUID', poolId: () => 'not-a-pool-id' },
@@ -119,15 +146,51 @@ it(
 );
 
 it(
-  '[BR-PRICE-11] 别的 App 的池不算：同一个 pool_id 在本 App 不存在 → 200 空列表',
+  '[BR-PRICE-11] 别的 App 的池不算：pool_id 在本 App 不存在 → 200 空列表，那个池里合格的行不下发、不登记',
   async () => {
     const f = await sectionCase(h);
     const other = await tenant(h.db);
     const foreign = await seedPool(h.db, other, f.clock);
+    await seedItem(h.db, other, f.clock, foreign, 'tb:foreign');
     await f.item(await f.pool(), 'own');
     f.show(foreign);
 
     expect(await f.run()).toEqual(EMPTY);
+    expect(f.registered()).toEqual([]);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[BR-PRICE-11] 同一个 pool_id 两个 App 都有：只读本 App 的行，别的 App 的行排在前面也不下发',
+  async () => {
+    const f = await sectionCase(h);
+    const other = await tenant(h.db);
+    const pool = await f.pool();
+    await seedPool(h.db, other, f.clock, { pool_id: pool });
+    await seedItem(h.db, other, f.clock, pool, 'tb:a-foreign', { sort: 1 });
+    await f.item(pool, 'b-own', { sort: 2 });
+    f.show(pool);
+
+    expect(allTitles(await f.walk())).toEqual([title('b-own')]);
+    expect(f.registered()).toEqual([title('b-own')]);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[BR-PRICE-11] 同一个 pool_id 本 App 停用、别的 App 启用：看本 App 的状态 → 200 空列表',
+  async () => {
+    const f = await sectionCase(h);
+    const other = await tenant(h.db);
+    const pool = await f.pool({ status: 'disabled' });
+    await seedPool(h.db, other, f.clock, { pool_id: pool });
+    await seedItem(h.db, other, f.clock, pool, 'tb:foreign');
+    await f.item(pool, 'held');
+    f.show(pool);
+
+    expect(await f.run()).toEqual(EMPTY);
+    expect(f.registered()).toEqual([]);
   },
   TIMEOUT,
 );
@@ -156,12 +219,13 @@ it(
 );
 
 it(
-  '[BR-PRICE-11] quoted_at 距今正好 pool.max_age_sec 还下发，多一秒不下发；未配置按 7200',
+  '[BR-PRICE-11] quoted_at 距今正好 pool.max_age_sec 还下发，多一毫秒、多一秒都不下发；未配置按 7200',
   async () => {
     const f = await sectionCase(h);
     const pool = await f.pool();
     await f.item(pool, 'a-limit', { quoted_at: secondsAgo(f.clock, MAX_AGE_SEC) });
-    await f.item(pool, 'b-over', { quoted_at: secondsAgo(f.clock, MAX_AGE_SEC + 1) });
+    await f.item(pool, 'b-over-ms', { quoted_at: millisAgo(f.clock, MAX_AGE_SEC * 1000 + 1) });
+    await f.item(pool, 'c-over', { quoted_at: secondsAgo(f.clock, MAX_AGE_SEC + 1) });
     f.show(pool);
 
     expect(allTitles(await f.walk())).toEqual([title('a-limit')]);

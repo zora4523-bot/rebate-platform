@@ -6,7 +6,11 @@
 import type { UnionItem } from '../../union/index.ts';
 import type { ProductRef } from '../domain/types.ts';
 
-/** One pool row in the shape the single card entry takes (quoted_at: the row's last refresh). */
+/**
+ * One pool row in the shape the single card entry takes. item.quoted_at is the row's last refresh;
+ * ref.rawFetchedAt is when ref.rawItemId was obtained, which goes into the card's item_ref and link.
+ * A refresh moves the first and leaves the raw ID, so it never makes the second fresh (BR-PROD-05).
+ */
 export interface PoolCandidate {
   readonly item: UnionItem;
   readonly ref: ProductRef;

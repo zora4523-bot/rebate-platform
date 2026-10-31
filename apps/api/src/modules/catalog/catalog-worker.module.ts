@@ -1,6 +1,7 @@
 // B1-05r: queue pool-refresh on the worker entry (app.module imports this module there only). Like
 // SettlementModule.forWorker it registers the handler on JOB_QUEUE and runs the seed on its own
-// timer; without a database or a queue nothing is registered and no timer runs.
+// timer; without a database or a queue nothing is registered and no timer runs. dropDetailCache
+// works on the entry's optional REDIS, on the namespace and key cacheDetailUpstream writes.
 import type { DB as Database } from '@couli/db';
 import type { DynamicModule } from '@nestjs/common';
 import type { Kysely } from 'kysely';

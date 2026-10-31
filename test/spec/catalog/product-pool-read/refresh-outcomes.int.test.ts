@@ -1,9 +1,9 @@
 // B1-05r: what one refresh round does to the rows (BR-PRICE-11, BR-PROD-05 结果分类, BR-PROD-07 主动失效,
 // F-ADM-10). The union is asked once per (app_id, product_key) on the quota purpose pool_refresh; the
 // raw ID comes by the BR-PROD-05 order, where pool_items.raw_item_id counts for nothing. Success writes
-// the five price fields to every online row of the key; off shelf takes every row of the key offline;
-// a dead reference, a temporary failure and an anomalous price leave the rows as they are, and age
-// then takes them off the shelves by itself.
+// the five price fields to every online row of the key and leaves its raw ID; off shelf takes every
+// row of the key offline; a dead reference, a temporary failure and an anomalous price leave the rows
+// as they are, and age then takes them off the shelves by itself.
 import { expect, it } from 'vitest';
 import { GovernanceError } from '../../../../apps/api/src/modules/platform/index.ts';
 import {
@@ -133,6 +133,7 @@ it(
           quoted_at: received,
           status: 'online',
           invalid_reason: null,
+          raw_item_id: `rawPool-${stable}`,
         });
       }
       expect((await f.row(second, stable)).sort).toBe(7);

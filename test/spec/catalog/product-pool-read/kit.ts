@@ -78,9 +78,14 @@ export const OFF_SHELF_REASON = '联盟返回下架';
 export const QUEUE = 'pool-refresh';
 /** Whole hours from the epoch (also whole 100 s): a round cut at slot boundaries starts here. */
 export const REFRESH_NOW = '2026-10-06T10:00:00+08:00';
+/** BR-PROD-05: step ① of the raw-ID order takes an instant no older than this. */
+export const RAW_MAX_AGE_SEC = 1800;
+/** A row added this long ago: its raw ID is that old, whatever a later refresh did to quoted_at. */
+export const ADDED_SEC = 3 * 86_400;
 
 type PoolInsert = Insertable<DB['product_pools']>;
 type ItemInsert = Insertable<DB['pool_items']>;
+type RefInsert = Insertable<DB['product_refs']>;
 type Settings = Map<string, unknown>;
 
 export interface PoolDatabase {
@@ -114,8 +119,20 @@ export function newPoolId(): string {
   return `0199f105-bbbb-7000-8000-${randomUUID().replaceAll('-', '').slice(0, 12)}`;
 }
 
+export function millisAgo(clock: Pick<Clock, 'now'>, ms: number): Date {
+  return new Date(clock.now().getTime() - ms);
+}
+
 export function secondsAgo(clock: Pick<Clock, 'now'>, seconds: number): Date {
-  return new Date(clock.now().getTime() - seconds * 1000);
+  return millisAgo(clock, seconds * 1000);
+}
+
+/**
+ * The instant a pool card hands to its item_ref and link: step ① of BR-PROD-05 must refuse it. The
+ * tests pin no value, only that a refresh, which leaves the raw ID alone, does not make it fresh.
+ */
+export function expectExpiredRaw(clock: Pick<Clock, 'now'>, fetchedAt: string): void {
+  expect(clock.now().getTime() - Date.parse(fetchedAt)).toBeGreaterThan(RAW_MAX_AGE_SEC * 1000);
 }
 
 /** The app's config as a map: an absent key reads as unset, as content's reader answers. */
@@ -191,6 +208,30 @@ export async function seedItem(
       created_by: owner.adminId,
       created_at: clock.now(),
       updated_at: clock.now(),
+      ...extra,
+    })
+    .execute();
+}
+
+/** BR-PROD-05 order, second step: a product_refs row received now, raw ID rawRef-<stable>. */
+export async function seedRef(
+  db: Kysely<DB>,
+  owner: Tenant,
+  clock: Pick<Clock, 'now'>,
+  stable: string,
+  extra: Partial<RefInsert> = {},
+): Promise<void> {
+  await db
+    .insertInto('product_refs')
+    .values({
+      app_id: owner.appId,
+      product_key: `tb:${stable}`,
+      platform: 'taobao',
+      raw_item_id: `rawRef-${stable}`,
+      raw_fetched_at: clock.now(),
+      title: title(stable),
+      source: 'search',
+      refreshed_at: clock.now(),
       ...extra,
     })
     .execute();
@@ -446,23 +487,8 @@ async function buildRefresh(db: Kysely<DB>, queue: FakeQueue) {
     pool: (who: Tenant = owner, extra: Partial<PoolInsert> = {}) => seedPool(db, who, clock, extra),
     item: (poolId: string, stable: string, extra: Partial<ItemInsert> = {}, who: Tenant = owner) =>
       seedItem(db, who, clock, poolId, `tb:${stable}`, extra),
-    /** BR-PROD-05 order, second step: a product_refs row received now, raw ID rawRef-<stable>. */
-    async ref(stable: string, who: Tenant = owner, extra: Partial<RefInsert> = {}): Promise<void> {
-      await db
-        .insertInto('product_refs')
-        .values({
-          app_id: who.appId,
-          product_key: `tb:${stable}`,
-          platform: 'taobao',
-          raw_item_id: `rawRef-${stable}`,
-          raw_fetched_at: clock.now(),
-          title: title(stable),
-          source: 'search',
-          refreshed_at: clock.now(),
-          ...extra,
-        })
-        .execute();
-    },
+    ref: (stable: string, who: Tenant = owner, extra: Partial<RefInsert> = {}) =>
+      seedRef(db, who, clock, stable, extra),
     /** The union answers this product under its product_refs raw ID until told otherwise. */
     unionAnswers(stable: string, extra: Partial<UnionItemDetail> = {}): void {
       fake.answers.set(`rawRef-${stable}`, () => answer(stable, extra));
@@ -481,5 +507,4 @@ async function buildRefresh(db: Kysely<DB>, queue: FakeQueue) {
   };
 }
 
-type RefInsert = Insertable<DB['product_refs']>;
 export type RefreshCase = Awaited<ReturnType<typeof buildRefresh>>;

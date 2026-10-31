@@ -29,6 +29,7 @@ import {
   ordered,
   sectionCase,
   secondsAgo,
+  seedItem,
   seedPool,
   tenant,
   usePoolDatabase,
@@ -227,7 +228,7 @@ it.each([
 );
 
 it(
-  '[BR-PROD-07] 回退池已停用或属于别的 App → 原来的空列表',
+  '[BR-PROD-07] 回退池已停用 → 原来的空列表，行不下发、不登记',
   async () => {
     const f = await sectionCase(h);
     f.failChannel(TB, unavailable());
@@ -235,10 +236,43 @@ it(
     const disabled = await f.pool({ status: 'disabled' });
     await f.item(disabled, 'held');
     f.settings.set(FALLBACK_KEY, disabled);
-    expect(await f.run()).toEqual(EMPTY);
 
-    f.settings.set(FALLBACK_KEY, await seedPool(h.db, await tenant(h.db), f.clock));
     expect(await f.run()).toEqual(EMPTY);
+    expect(f.registered()).toEqual([]);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[BR-PROD-07] 回退池属于别的 App → 原来的空列表，那个池里合格的行不下发、不登记',
+  async () => {
+    const f = await sectionCase(h);
+    f.failChannel(TB, unavailable());
+    f.failChannel(JD, unavailable());
+    const other = await tenant(h.db);
+    const foreign = await seedPool(h.db, other, f.clock);
+    await seedItem(h.db, other, f.clock, foreign, 'tb:foreign');
+    f.settings.set(FALLBACK_KEY, foreign);
+
+    expect(await f.run()).toEqual(EMPTY);
+    expect(f.registered()).toEqual([]);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[BR-PROD-07] 回退池的 pool_id 两个 App 都有：只读本 App 的行，别的 App 的行排在前面也不下发',
+  async () => {
+    const { f, pool } = await outage();
+    const other = await tenant(h.db);
+    await seedPool(h.db, other, f.clock, { pool_id: pool });
+    await seedItem(h.db, other, f.clock, pool, 'tb:a-foreign', { sort: 1 });
+    await f.item(pool, 'b-own', { sort: 2 });
+
+    const pages = await f.walk();
+
+    expect(pages.flatMap(titlesOf)).toEqual([title('b-own')]);
+    expect(f.registered()).toEqual([title('b-own')]);
   },
   TIMEOUT,
 );

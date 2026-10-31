@@ -1,7 +1,8 @@
 // B1-05r (任务书第 9 节「入库时也写 commission_rate_bp」, B1-05u): pool-source's new key, a re-checked
 // repeat add and a re-listing all write the rate the union answered into pool_items, so the row can
-// be sent without waiting for a refresh. Through the real admin routes of B1-05q; the admin kit holds
-// the vi.mock calls and the union stubs, and only values are imported from it.
+// be sent without waiting for a refresh. A re-listing also stops reading quoted_at as the raw ID's
+// age, now that a refresh moves it. Through the real admin routes of B1-05q; the admin kit holds the
+// vi.mock calls and the union stubs, and only values are imported from it.
 import { expect, it } from 'vitest';
 import {
   addLink,
@@ -11,8 +12,10 @@ import {
   linkOf,
   pick,
   product,
+  searchAnswers,
   seedItem,
   seedPool,
+  seedRef,
   send,
   setup,
   stableId,
@@ -20,10 +23,31 @@ import {
   success,
   union,
   useHarness,
+  type Setup,
 } from '../product-pool-admin/kit.ts';
 import { UnionError } from '../../../../apps/api/src/modules/union/index.ts';
 
 const h = useHarness();
+
+const ADDED_MS = 3 * 86_400_000;
+const REFRESHED_MS = 600_000;
+
+/** A shelved row added days ago whose price a refresh rewrote 10 minutes ago, raw ID untouched. */
+async function refreshedOffline(f: Setup) {
+  const pool = await seedPool(h, f);
+  const stable = stableId();
+  const key = `tb:${stable}`;
+  const now = f.clock.now().getTime();
+  await seedItem(h, f, pool, key, {
+    status: 'offline',
+    invalid_reason: null,
+    created_at: new Date(now - ADDED_MS),
+    quoted_at: new Date(now - REFRESHED_MS),
+  });
+  return { pool, stable, key, raw: `rawA-${stable}` };
+}
+
+const usedRaws = () => union.getItem.mock.calls.map(([ref]) => ref.item_id);
 
 it('[BR-PRICE-11][B1-05u] 链接入库新 key：commission_rate_bp 写入联盟答复的佣金率', async () => {
   const f = await setup(h);
@@ -86,6 +110,7 @@ it('[BR-PRICE-11][BR-PROD-08] 重新上架：复核通过写入这次的佣金�
     invalid_reason: '联盟返回下架',
     commission_rate_bp: 100,
   });
+  await seedRef(h, f, key, { raw_item_id: `rawA-${stable}` });
   union.getItem.mockResolvedValue(product(f, stable, { commission_rate_bp: 1700n }));
 
   await success(await send(f, 'updateItem', { pool, key }, { status: 'online' }));
@@ -94,6 +119,32 @@ it('[BR-PRICE-11][BR-PROD-08] 重新上架：复核通过写入这次的佣金�
     status: 'online',
     commission_rate_bp: 1700,
   });
+});
+
+it('[BR-PROD-05] 刷新挪过 quoted_at 的行重新上架：原串不因 quoted_at 新鲜就用池里的，走 product_refs', async () => {
+  const f = await setup(h);
+  const { pool, stable, key, raw } = await refreshedOffline(f);
+  const fresh = `rawRef-${stable}`;
+  await seedRef(h, f, key);
+  union.getItem.mockResolvedValue(product(f, stable, { item_id: fresh }));
+
+  await success(await send(f, 'updateItem', { pool, key }, { status: 'online' }));
+
+  expect(usedRaws()).toEqual([fresh]);
+  expect(usedRaws()).not.toContain(raw);
+});
+
+it('[BR-PROD-05] 刷新挪过 quoted_at 的行重新上架，取不到新鲜原串也搜不到同键：保持 offline，不用池里的原串', async () => {
+  const f = await setup(h);
+  const { pool, stable, key, raw } = await refreshedOffline(f);
+  searchAnswers([[]]);
+  // The row's raw ID still reaches this product: misusing it would put the row back online.
+  union.getItem.mockResolvedValue(product(f, stable));
+
+  const item = await success(await send(f, 'updateItem', { pool, key }, { status: 'online' }));
+
+  expect(item.status).toBe('offline');
+  expect(usedRaws()).not.toContain(raw);
 });
 
 it('[BR-PROD-08] 复核没过的重复入库保留原佣金率：答复本身不可信时不写', async () => {
