@@ -152,10 +152,10 @@ it(
         actual_fen: 7650n,
       }),
     );
-    // 差额口径同 B2-04n：diff_fen = actual_fen − expected_fen，联盟多结为正。
+    // 差额口径以契约为准（D10-507 ②）：diff_fen = expected_fen − actual_fen，联盟多结为负。
     expect(
       s.diffs.find((d) => d.ref_id === fresh.key && d.type === 'settle_amount_mismatch')?.diff_fen,
-    ).toBe(6800n);
+    ).toBe(-6800n);
     expect(h.registerDiff).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ appId: h.appId, type: 'settle_amount_mismatch', refId: fresh.key }),
@@ -488,7 +488,7 @@ it(
         period: MONTH,
         expected_fen: 1700n,
         actual_fen: 850n,
-        diff_fen: -850n,
+        diff_fen: 850n,
       }),
     ]);
     expect(await validations(h)).toEqual([

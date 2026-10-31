@@ -202,7 +202,7 @@ function openedFor(
     resolution: null,
     expected_fen: expectedFen,
     actual_fen: actualFen,
-    diff_fen: subFen(actualFen, expectedFen),
+    diff_fen: subFen(expectedFen, actualFen),
   });
 }
 
@@ -293,7 +293,7 @@ it('[AC-B2-09h#17] BR-FUND-04 例 2 全链路：快照基数 1234、B_settle 110
       status: 'open',
       expected_fen: 1234n,
       actual_fen: 1100n,
-      diff_fen: -134n,
+      diff_fen: 134n,
     }),
   ]);
 
@@ -341,7 +341,7 @@ it('[AC-B2-09h#18] 账单日任务（真实 createBillJob 与来源读口）：�
       ref_id: o.key,
       expected_fen: 850n,
       actual_fen: 1700n,
-      diff_fen: 850n,
+      diff_fen: -850n,
     });
   const diffs = {
     union: await diffOf(union),
@@ -587,7 +587,7 @@ it('[AC-B2-09h#24] D10-506 ② 账单日任务同样绑金额：结论的基数�
       ref_id: o.key,
       expected_fen: expected,
       actual_fen: actual,
-      diff_fen: subFen(actual, expected),
+      diff_fen: subFen(expected, actual),
     });
   await conclude(current, MONTH, 850n, 1700n);
   await conclude(otherBase, MONTH, 851n, 1700n);
@@ -795,14 +795,14 @@ it('[AC-B2-09h#29] D10-506 ③ 账单日任务同样：账单日前已结案、�
       ref_id: stale.key,
       expected_fen: 850n,
       actual_fen: 1500n,
-      diff_fen: 650n,
+      diff_fen: -650n,
     }),
     await unionDiff(f, {
       period: MONTH,
       ref_id: same.key,
       expected_fen: 850n,
       actual_fen: 1700n,
-      diff_fen: 850n,
+      diff_fen: -850n,
     }),
   ];
 
@@ -867,7 +867,7 @@ it('[AC-B2-09h#35] 账单日任务：多张差错单都匹配当前金额时取�
       ref_id: refId,
       expected_fen: 850n,
       actual_fen: 1700n,
-      diff_fen: 850n,
+      diff_fen: -850n,
       closed_at: ago(f, minutes),
       resolution,
     });
@@ -929,7 +929,7 @@ it('[AC-B2-09h#36] 账单日任务的新开条件只看本账单本单：别的�
       ref_id: refId,
       expected_fen: 850n,
       actual_fen: actualFen,
-      diff_fen: subFen(actualFen, 850n),
+      diff_fen: subFen(850n, actualFen),
       resolution,
     });
   const elsewhere = await settled(h, 2000n);
@@ -972,7 +972,7 @@ it('[AC-B2-09h#37] 账单日任务的新开条件看本账单该单的任何差�
       ref_id: refId,
       expected_fen: 850n,
       actual_fen: actualFen,
-      diff_fen: subFen(actualFen, 850n),
+      diff_fen: subFen(850n, actualFen),
       ...patch,
     });
   const closedOurs = { status: 'closed', closed_at: ago(f, 5), resolution: OURS };
@@ -1069,6 +1069,63 @@ it('[AC-B2-09h#39] 补充发起的新开条件：裸行还开着也按当前金�
       openedFor(stale, 600n, 1100n),
       openedFor(cousin, 600n, 1100n),
       openedFor(elsewhere, 600n, 1100n),
+    ]),
+  );
+});
+
+it('[AC-B2-09h#40] D10-507 ② 差错单 diff_fen = expected_fen − actual_fen：账单日任务与补充发起登记的账单金额不一致，联盟少结（expected 1234、actual 1100）diff_fen 为 134，联盟多结（expected 850、actual 1700）为 -850', async () => {
+  const h = billingFixture(s.db());
+  productionSource(h);
+  /** `o` with a settlement that arrives after the bill: the supplement finds its mismatch. */
+  const late = async (o: Order, fen: bigint): Promise<Order> => {
+    await storeOrder(h, o);
+    await settlement(h, o, { settle_commission_fen: fen, created_at: new Date(LATER) });
+    return o;
+  };
+  const mismatches = async () =>
+    (await state(h)).diffs.filter((row) => row.type === 'settle_amount_mismatch');
+  const under = await example(h);
+  const over = await settled(h, 2000n);
+  const lateUnder = await late(await order(h, {}, 'taobao', EXAMPLE), 1295n);
+  const lateOver = await late(await order(h), 2000n);
+  const billDay = [
+    expect.objectContaining({
+      ref_id: under.key,
+      expected_fen: 1234n,
+      actual_fen: 1100n,
+      diff_fen: 134n,
+    }),
+    expect.objectContaining({
+      ref_id: over.key,
+      expected_fen: 850n,
+      actual_fen: 1700n,
+      diff_fen: -850n,
+    }),
+  ];
+
+  await main(h);
+  const billed = await mismatches();
+  expect(billed).toHaveLength(2);
+  expect(billed).toEqual(expect.arrayContaining(billDay));
+
+  expect((await h.launch()).batchIds).toEqual([]);
+  const launched = await mismatches();
+  expect(launched).toHaveLength(4);
+  expect(launched).toEqual(
+    expect.arrayContaining([
+      ...billDay,
+      expect.objectContaining({
+        ref_id: lateUnder.key,
+        expected_fen: 1234n,
+        actual_fen: 1100n,
+        diff_fen: 134n,
+      }),
+      expect.objectContaining({
+        ref_id: lateOver.key,
+        expected_fen: 850n,
+        actual_fen: 1700n,
+        diff_fen: -850n,
+      }),
     ]),
   );
 });
