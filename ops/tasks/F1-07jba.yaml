@@ -1,0 +1,18 @@
+id: F1-07jba
+repo: rebate-platform
+title: F1-07jba：冻结用户页源码检查 [AC-F1-07i-SOURCE#1] 的「用户契约以外字段」禁词去掉 withdraw（F1-07jb 提现页签前置；balance / payout / identity_number / real_name / relation_id / orders / ledger 等其余禁词与其余源码检查不变）
+type: test-change
+# 2026-11-01 入账（前端线 f1-frontend-7）。F1-07jb 规则测试过审 r1 的 S1：admin-users/source.test.ts 的 SOURCE#1 禁止 apps/admin/src/pages/users/** 出现任何含 withdraw 的标识符或字符串；F1-07jb 按契约 listAdminWithdrawals 做用户详情「提现」只读页签（请求 /admin/v1/withdrawals、行字段 withdrawal_id、类型名），与该禁令同一入参不能同时满足。F1-07ja（#2029）只改了页签与动作禁令，没涉及此文件。
+# 只改：SOURCE#1 两处正则（标识符、字符串）删去 withdraw 一词，其余词与断言零改动；标题措辞如提到「提现」同步。资金字段仍禁（balance、payout 等），提现页签不得显示打款通道 / 余额类字段由 F1-07jb 新测试与此禁词共同保证。现行主干改前改后都绿，可先于 F1-07jb 合并。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件；新鲜独立 Claude 改、另一新鲜独立 Claude 只读复审 pass（写进 PR 正文）；标签由编排核对后加（#24）。
+refs: []
+refs_hash: {}
+deps: [F1-07i]
+paths:
+  - 'test/spec/frontend/admin-users/source.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

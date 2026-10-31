@@ -7,7 +7,7 @@ type: impl
 # Codex 到 11-02 不可用：规则测试由新鲜独立 Claude 写（approvals #36），实现 Claude Opus，评审独立 Claude。
 refs: []
 refs_hash: {}
-deps: [B1-10i, B1-10j, B2-09c, F1-07j, F1-07ja]
+deps: [B1-10i, B1-10j, B2-09c, F1-07j, F1-07ja, F1-07jba]
 paths:
   - 'apps/admin/src/pages/users/**'
   - 'apps/admin/src/texts/users.ts'
