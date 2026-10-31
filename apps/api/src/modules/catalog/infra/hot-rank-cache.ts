@@ -1,7 +1,8 @@
 // B1-28h: cache of the hot-sales list union side (规划/01 F-PROD-13 ⑥): answers are cached per
 // (platform, channel, category, page) for rank.cache_ttl_seconds; on a union failure an existing
 // entry is read, a page marked stale (BR-PROD-07), without one the failure propagates (the use case
-// answers 50304).
+// answers 50304). An old page answers only while its age is within pool.max_age_sec (BR-PRICE-11,
+// D10-508); past that it counts as absent. Categories carry no price and have no such limit.
 // Like the search cache (product-cache.ts) only the union's normalized public data is stored —
 // the item allow-list, the product ref, the sales field and the page's positions when it has
 // them — plus fetched_at; cards, quotes and links are assembled per request by the use case.
@@ -37,6 +38,9 @@ export const HOT_RANK_CACHE_NAMESPACE = 'catalog-rank';
 /** 规划/01 F-PROD-13 ⑥: rank.cache_ttl_seconds, default 10 minutes (registered by B1-28g). */
 const TTL_KEY = 'rank.cache_ttl_seconds';
 const DEFAULT_TTL_SECONDS = 600;
+/** BR-PRICE-11: pool.max_age_sec, default 7200 seconds. */
+const MAX_AGE_KEY = 'pool.max_age_sec';
+const DEFAULT_MAX_AGE_SECONDS = 7200;
 /**
  * Physical Redis TTL beyond the hit window: how long an expired entry can still answer a union
  * failure (F-PROD-13 ⑥「联盟故障时有缓存读缓存」; 08 未定，技术取值, one day).
@@ -51,12 +55,15 @@ function isRecord(value: unknown): value is Json {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-async function ttlSecondsOf(config: CatalogConfigReader, appId: string): Promise<number> {
-  const entry = await config.configValue(appId, TTL_KEY);
+async function secondsOf(
+  config: CatalogConfigReader,
+  appId: string,
+  key: string,
+  fallback: number,
+): Promise<number> {
+  const entry = await config.configValue(appId, key);
   const value = entry?.value;
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1
-    ? value
-    : DEFAULT_TTL_SECONDS;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 ? value : fallback;
 }
 
 function keyOf(appId: string, kind: 'categories' | 'page', parts: readonly unknown[]): string {
@@ -154,7 +161,7 @@ export function cacheHotRankUpstream(
     }
   }
 
-  /** Hit inside the TTL; otherwise the union, and on its dependency failure the old entry. */
+  /** Hit inside the TTL; otherwise the union, and on its dependency failure a usable old entry. */
   async function cached<T>(
     appId: string,
     key: string,
@@ -162,8 +169,9 @@ export function cacheHotRankUpstream(
     fetch: () => Promise<T>,
     store: (value: T) => unknown,
     old: (value: T) => T = (value) => value,
+    usable: (ageMs: number) => Promise<boolean> = async () => true,
   ): Promise<T> {
-    const ttlSeconds = await ttlSecondsOf(config, appId);
+    const ttlSeconds = await secondsOf(config, appId, TTL_KEY, DEFAULT_TTL_SECONDS);
     const entry = await read(key, load);
     if (entry !== null && clock.now().getTime() - entry.fetchedAtMs <= ttlSeconds * 1000) {
       return entry.value;
@@ -172,7 +180,13 @@ export function cacheHotRankUpstream(
     try {
       value = await fetch();
     } catch (error: unknown) {
-      if (entry !== null && isDependencyFailure(error)) return old(entry.value);
+      if (
+        entry !== null &&
+        isDependencyFailure(error) &&
+        (await usable(clock.now().getTime() - entry.fetchedAtMs))
+      ) {
+        return old(entry.value);
+      }
       throw error;
     }
     await write(key, store(value), ttlSeconds);
@@ -213,6 +227,10 @@ export function cacheHotRankUpstream(
           ...(page.positions === undefined ? {} : { positions: page.positions }),
         }),
         (page) => ({ ...page, stale: true }),
+        async (ageMs) => {
+          const maxAge = await secondsOf(config, input.appId, MAX_AGE_KEY, DEFAULT_MAX_AGE_SECONDS);
+          return ageMs <= maxAge * 1000;
+        },
       );
     },
   };
