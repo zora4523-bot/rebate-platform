@@ -328,7 +328,8 @@ export function isServerIdentity(value: unknown): value is UnionIdentity {
 }
 
 export type ConvertResult =
-  | ({ readonly kind: 'url'; readonly url: string } & PddPromotionUrlExtras)
+  | ({ readonly kind: 'url'; readonly url: string } & PddPromotionUrlExtras &
+      TaobaoPromotionUrlExtras)
   | {
       readonly kind: 'baichuan';
       readonly item: ItemRef;
@@ -346,6 +347,48 @@ export interface PddPromotionUrlExtras {
   readonly browser_url?: string;
   readonly we_app_web_view_url?: string;
   readonly we_app_web_view_short_url?: string;
+}
+
+/**
+ * B1-04d (D10-503 ①): optional Taobao fields of a conversion through the 大淘客 privilege link
+ * (GET /api/tb-service/get-privilege-link v1.3.1); absent on other platforms and on the baichuan
+ * form. Picked one by one from the response `data`, never spread: tpwd / longTpwd as non-empty text,
+ * shortUrl / couponClickUrl only as absolute https URLs (anything else, `//…` included, is treated
+ * as absent). ConvertResult.url is short_url, else coupon_click_url, else upstream_unavailable.
+ * kuaiZhanUrl, itemUrl, itemId (D10-504), title and the commission rates are never exposed.
+ */
+export interface TaobaoPromotionUrlExtras {
+  /** Upstream `tpwd`: the share code (淘口令) as given. */
+  readonly tpwd?: string;
+  /** Upstream `longTpwd`: the long share text as given. */
+  readonly long_tpwd?: string;
+  /** Upstream `shortUrl` (https only). */
+  readonly short_url?: string;
+  /** Upstream `couponClickUrl` (https only). */
+  readonly coupon_click_url?: string;
+  /** Price re-fetched for the open (BR-PRICE-11); absent when either amount is invalid. */
+  readonly requote?: TaobaoRequote;
+}
+
+/**
+ * B1-04d: the price the 大淘客 privilege link answered with. Amounts go through yuanStrToFen only;
+ * an invalid originalPrice / actualPrice drops the whole `requote` and sends one warning
+ * ({ method: the request path, code: 'invalid_amount' }, no raw value) without failing the
+ * conversion. Coupon fields are the upstream values as given (absent stays absent). `quoted_at` is
+ * the injected Clock read once the 大淘客 response was received, as an ISO-8601 string.
+ * No commission ratio here.
+ */
+export interface TaobaoRequote {
+  /** Upstream `originalPrice` in fen. */
+  readonly price_fen: bigint;
+  /** Upstream `actualPrice` in fen. */
+  readonly final_price_fen: bigint;
+  readonly coupon_info?: string;
+  readonly coupon_start_time?: string;
+  readonly coupon_end_time?: string;
+  readonly coupon_total_count?: string | number;
+  readonly coupon_remain_count?: string | number;
+  readonly quoted_at: string;
 }
 
 /** Filing page generated for the same promotion slot used by convert. */

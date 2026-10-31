@@ -18,6 +18,10 @@
 // - shortenTaobaoUrl：taobao.tbk.spread.get，requests = [{url}] 的 JSON 串。归档 kind = convert。
 //   见 links.ts。
 // 入参不合格一律 invalid_dto，不取凭据、不发请求。
+//
+// B1-04d（D10-503 ①）：convertSource='dataoke' 且有 orderSource 时，convert 经大淘客
+// GET /api/tb-service/get-privilege-link（version v1.3.1）转链，参数与映射见 privilege-link.ts；
+// 归档 kind = convert。否则 convert 保持 adapter_unimplemented（不取凭据、不发请求）。
 import type { Clock } from '../../../platform/index.ts';
 import type { TaobaoPriceOptions, TaobaoPriceSettingsReader } from '../../domain/taobao-price.ts';
 import {
@@ -95,7 +99,17 @@ export interface TaobaoAdapterOptions {
    * absent listRefunds / listPunishments) behave as before.
    */
   readonly orderSource?: DataokeClient;
+  /**
+   * B1-04d (D10-503 ①): where convert gets its link until the official 万能转链 is approved.
+   * 'dataoke' with an `orderSource` converts through that client (privilege-link.ts); absent,
+   * 'baichuan', or no `orderSource` leaves convert exactly as before (adapter_unimplemented,
+   * nothing fetched or sent).
+   */
+  readonly convertSource?: TaobaoConvertSource;
 }
+
+/** B1-04d: the convert data-source switch; the default is 'baichuan' (behaviour unchanged). */
+export type TaobaoConvertSource = 'baichuan' | 'dataoke';
 
 export interface TaobaoRequestOptions {
   /** The response envelope key registered for this method by the caller (never derived). */

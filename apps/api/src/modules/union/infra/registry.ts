@@ -14,6 +14,7 @@
 // replay stay `adapter_unimplemented`; union.module.ts decides which environments may pass it.
 // B1-04e: `taobaoLive.orderSource` (大淘客 dependencies) becomes one DataokeClient over the registry
 // clock, handed to that adapter as `orderSource`; without it the adapter gets none.
+// B1-04d: `taobaoLive.convertSource` is handed to that adapter as is (default 'baichuan').
 // The real jd adapter replaces its entry in a later task.
 // TODO(规划/11 §4.5): jd 凭据读取 — blocked on 推广位 / siteId
 // B1-22s: real jd / taobao adapters must not map UnionItemDetail image fields until tested; when
@@ -39,6 +40,7 @@ import type { PddWarning } from './pdd/response.ts';
 import type { UnionTransport } from './replay.ts';
 import {
   TaobaoUnionAdapter,
+  type TaobaoConvertSource,
   type TaobaoCredentials,
   type TaobaoWarning,
 } from './taobao/taobao-adapter.ts';
@@ -65,6 +67,12 @@ export interface TaobaoLiveOptions {
    * `orderSource`; without it the adapter gets none. Never used for taobao replay / demo.
    */
   readonly orderSource?: TaobaoOrderSourceOptions;
+  /**
+   * B1-04d (D10-503 ①): handed to TaobaoUnionAdapter as `convertSource`; 'dataoke' converts
+   * through the client built from `orderSource`. Absent (the default 'baichuan') or without
+   * `orderSource`, taobao convert is unchanged.
+   */
+  readonly convertSource?: TaobaoConvertSource;
 }
 
 /**
