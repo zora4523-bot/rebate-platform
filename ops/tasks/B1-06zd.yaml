@@ -1,0 +1,39 @@
+id: B1-06zd
+repo: rebate-platform
+title: linking：淘宝推广链接接线（D10-510）——分享在 POST /v1/shares 同步经 union convert 生成 promo_url 与分享口令，取不到回滚；自购 / Agent 只对商品详情登记的 link 异步预取（convert.taobao_prefetch.enabled 默认关、每分钟上限）；打开流程不调联盟
+type: impl
+# 2026-10-31 W1 入账（编排 D10-510 23:52、设计核定 23:56，couli #241 回写 BR-ATTR-27）。设计：couli-runs/W1-search-linking/notes/d10-510-promo-url-design.md。
+# 要点：只用 links 快照身份并核当前 active relation_id；UPDATE WHERE promo_url IS NULL（库里写一次）；不动 row_version；失败保持 NULL 走现行兜底；大淘客价格不写 links 快照。
+# 数据源默认 baichuan 时全部不生效，冻结的淘宝分享 50301 not_launched 不变；开启前提：真实测试单核对 relation_id 回传（D10-503 §3）与 CAP-TB-11。
+refs: [BR-ATTR-27, BR-ATTR-10, BR-ATTR-13, BR-PRICE-12]
+refs_hash:
+  BR-ATTR-27: d18c4f9e61ef
+  BR-ATTR-10: 0ef7e9245dba
+  BR-ATTR-13: 7c8e2b83ee0b
+  BR-PRICE-12: 6aa98fc3ce46
+deps: [B1-05q, B1-04d]
+paths:
+  - 'apps/api/src/modules/linking/application/shares.ts'
+  - 'apps/api/src/modules/linking/application/shares.test.ts'
+  - 'apps/api/src/modules/linking/application/link-registration.ts'
+  - 'apps/api/src/modules/linking/application/promo-prefetch.ts'
+  - 'apps/api/src/modules/linking/application/promo-prefetch.test.ts'
+  - 'apps/api/src/modules/linking/infra/share-material-store.ts'
+  - 'apps/api/src/modules/linking/domain/rules.ts'
+  - 'apps/api/src/modules/linking/linking.module.ts'
+  - 'apps/api/src/modules/linking/index.ts'
+  - 'apps/api/src/modules/linking/ports.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.ts'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
+  - 'apps/api/src/modules/platform/queue/worker-plan.ts'
+  - 'apps/api/src/modules/platform/queue/worker-plan.test.ts'
+  - 'apps/api/src/modules/platform/config/queue-concurrency.ts'
+test_paths:
+  - 'test/spec/linking/promo-url/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/promo-url/**'
+status: todo
+pr: null
