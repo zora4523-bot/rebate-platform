@@ -6,8 +6,10 @@
 // - createReviewOverdueJob: runs check.run(clock.now()) — the instant of the injected Clock, never
 //   the slot in the payload (a late or redelivered old slot is checked now and chains on from now) —
 //   then sends the next slot outside a transaction (trx null, singletonKey and delaySeconds of
-//   nextReviewOverdueSlot). A failed run rejects with the check's error (the queue retries the job;
-//   a rerun is idempotent, the column is set once by the CAS).
+//   nextReviewOverdueSlot) — also when the check failed (finally; money r1 S2: the chain must not
+//   wait for the failed slot's retries to exhaust and the 30-minute heal). A failed run rejects with
+//   the check's error (the queue retries the job; a rerun is idempotent, the column is set once by
+//   the CAS).
 // - seedReviewOverdue: the chain's start and heal (payout.module's timer): sends the slot the clock
 //   is in, without a delay and outside a transaction, and runs no check; the exclusive queue merges
 //   a second seed of the same slot (a queued or active job of the key makes the send a no-op), so a
@@ -71,12 +73,18 @@ export function createReviewOverdueJob(options: ReviewOverdueJobOptions): JobHan
       logger.warn({ job_id: job.id, queue: job.queue, name: job.name }, 'payout_overdue_bad_job');
       return;
     }
-    const result = await check.run(clock.now());
-    logger.info(
-      { job_id: job.id, scanned: result.scanned, judged: result.judged },
-      'payout_overdue_checked',
-    );
-    await sendSlot(queue, nextReviewOverdueSlot(clock.now()));
+    try {
+      const result = await check.run(clock.now());
+      logger.info(
+        { job_id: job.id, scanned: result.scanned, judged: result.judged },
+        'payout_overdue_checked',
+      );
+    } finally {
+      // Whether the check succeeded or failed (money r1 S2): the chain must not depend on this
+      // slot's retries; the next slot is sent either way (the CAS makes an overlapping rerun of
+      // a failed slot safe), and the check's error still rejects the job afterwards.
+      await sendSlot(queue, nextReviewOverdueSlot(clock.now()));
+    }
   };
 }
 
