@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { SearchProductsQuery } from '../../../../apps/api/src/modules/catalog/search.ts';
-import { candidate, claims, fixture } from './kit.ts';
+import { candidate, claims, fixture, observed } from './kit.ts';
 
 it('[AC-B1-05d#16] 同页同键择券后价最低、返利上限最高、原次序最前，并保留中奖 goods_sign', async () => {
   const f = fixture();
@@ -221,7 +221,10 @@ it('[AC-B1-05d#43] 会话存储过期删除后，新建会话并按请求页返�
   f.clock.advanceMs(30 * 60 * 1000);
   f.sessions.rows.clear();
   f.search.mockClear();
-  const result = await f.run({ limit: 1, cursor: first.next_cursor! });
+  const outcome = await observed(() => f.run({ limit: 1, cursor: first.next_cursor! }));
+  expect(outcome.kind).toBe('returned');
+  if (outcome.kind !== 'returned') return;
+  const result = outcome.value;
   expect(result.items.map((card) => card.title)).toEqual(['synthetic-second']);
   expect(f.search.mock.calls.map(([input]) => input.pageNo)).toEqual([2]);
   const restarted = claims(f, result.next_cursor);
