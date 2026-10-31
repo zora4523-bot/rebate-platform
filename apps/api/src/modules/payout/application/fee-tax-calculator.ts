@@ -28,6 +28,14 @@
 // fee_fen stays 0 (BR-WDR-19 MVP); net_fen = amount − fee − tax; tax_rule_version =
 // taxRuleVersion(effective configuration): a deterministic, non-empty string that changes when the
 // method, the rate or any bracket changes and is stable for the same configuration.
+//
+// withdraw-apply.ts quotes once before the locks (the net for the first-pass validation) and once
+// more under the member's locks; the locked quote is what the row stores, so a concurrent
+// application that committed in between counts as in flight (BR-WDR-07 lock order).
+import type { DB } from '@couli/db';
+import { accountingDate } from '@couli/domain';
+import { parseFen } from '@couli/money';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import type { TaxYtdIdentityKeyReader } from './tax-ytd.ts';
 import type { FeeTaxCalculator, PayoutConfigPort } from './withdraw-rules.ts';
 
@@ -71,41 +79,224 @@ export interface FeeTaxCalculatorOptions {
   readonly logger: FeeTaxLogger;
 }
 
+export const TAX_METHOD_KEY = 'tax.SERVICE_FEE.method';
+export const TAX_RATE_BP_KEY = 'tax.SERVICE_FEE.rate_bp';
+export const TAX_RATE_TABLE_KEY = 'tax.SERVICE_FEE.rate_table';
+
+/** The warn line of a configuration value that is not of the registered shape (key only). */
+export const TAX_CONFIG_INVALID = 'tax_config_invalid';
+/** The warn line of a cumulative quote for a member without a verified real name (ids only). */
+export const TAX_IDENTITY_MISSING = 'tax_calc_identity_missing';
+
+const INCOME_TYPE = 'SERVICE_FEE';
+const IN_FLIGHT_STATUSES = ['PENDING_REVIEW', 'APPROVED', 'PAYING'] as const;
+const BP_DENOMINATOR = 10_000n;
+const MAX_BP = 10_000n;
+
 /** round_half_up(amountFen × ratioBp / denominator) for amountFen ≥ 0, in bigint. */
 export function mulDivRoundHalfUp(amountFen: bigint, ratioBp: bigint, denominator: bigint): bigint {
-  void amountFen;
-  void ratioBp;
-  void denominator;
-  throw new Error('NotImplemented: mulDivRoundHalfUp');
+  if (amountFen < 0n || ratioBp < 0n || denominator <= 0n) {
+    throw new RangeError('fee-tax: round_half_up needs a non-negative amount and ratio');
+  }
+  return (2n * amountFen * ratioBp + denominator) / (2n * denominator);
 }
 
-/** flat_rate: round_half_up(amountFen × rateBp / 10000). */
+/** flat_rate: round_half_up(amount × rate_bp / 10000). */
 export function flatRateTaxFen(amountFen: bigint, rateBp: bigint): bigint {
-  void amountFen;
-  void rateBp;
-  throw new Error('NotImplemented: flatRateTaxFen');
+  return mulDivRoundHalfUp(amountFen, rateBp, BP_DENOMINATOR);
 }
 
-/** 应扣(X): the bracket X falls in, round_half_up(X × rate_bp / 10000) − quick_deduction_fen. */
+/**
+ * due(X) of the progressive table: the last bracket whose from_fen ≤ X decides the rate and the
+ * quick deduction; an empty table (or X below the first bracket) is 0.
+ */
 export function dueTaxFen(incomeFen: bigint, table: readonly TaxBracket[]): bigint {
-  void incomeFen;
-  void table;
-  throw new Error('NotImplemented: dueTaxFen');
+  let bracket: TaxBracket | undefined;
+  for (const row of table) {
+    if (row.from_fen <= incomeFen) bracket = row;
+    else break;
+  }
+  if (bracket === undefined) return 0n;
+  const due =
+    mulDivRoundHalfUp(incomeFen, bracket.rate_bp, BP_DENOMINATOR) - bracket.quick_deduction_fen;
+  return due < 0n ? 0n : due;
 }
 
-/** cumulative: max(0, due(ytd + in-flight + amount) − ytd withheld − in-flight tax). */
+/** cumulative: max(0, due(ytd income + in-flight + amount) − ytd withheld − in-flight tax). */
 export function cumulativeTaxFen(input: CumulativeTaxInput): bigint {
-  void input;
-  throw new Error('NotImplemented: cumulativeTaxFen');
+  const total = input.ytdIncomeFen + input.inFlightAmountFen + input.amountFen;
+  const tax = dueTaxFen(total, input.table) - input.ytdWithheldFen - input.inFlightTaxFen;
+  return tax < 0n ? 0n : tax;
 }
 
-/** The tax_rule_version of an effective configuration. */
+/** A deterministic text of the effective configuration (field order fixed, key order irrelevant). */
 export function taxRuleVersion(config: TaxConfig): string {
-  void config;
-  throw new Error('NotImplemented: taxRuleVersion');
+  const table = config.rate_table
+    .map((row) => `${row.from_fen}:${row.rate_bp}:${row.quick_deduction_fen}`)
+    .join(',');
+  return `${config.method}|${config.rate_bp}|[${table}]`;
+}
+
+function isJsonInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value);
+}
+
+function parseMethod(value: unknown): TaxMethod | null {
+  return value === 'none' || value === 'flat_rate' || value === 'cumulative' ? value : null;
+}
+
+function parseRateBp(value: unknown): bigint | null {
+  if (!isJsonInteger(value) || value < 0 || value > Number(MAX_BP)) return null;
+  return BigInt(value);
+}
+
+function parseBracket(value: unknown): TaxBracket | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const from = row['from_fen'];
+  const rate = row['rate_bp'];
+  const deduction = row['quick_deduction_fen'];
+  if (!isJsonInteger(from) || !isJsonInteger(rate) || !isJsonInteger(deduction)) return null;
+  if (from < 0 || rate < 0 || rate > Number(MAX_BP) || deduction < 0) return null;
+  return { from_fen: BigInt(from), rate_bp: BigInt(rate), quick_deduction_fen: BigInt(deduction) };
+}
+
+function parseRateTable(value: unknown): readonly TaxBracket[] | null {
+  if (!Array.isArray(value)) return null;
+  const table: TaxBracket[] = [];
+  for (const item of value) {
+    const bracket = parseBracket(item);
+    if (bracket === null) return null;
+    table.push(bracket);
+  }
+  for (let i = 0; i < table.length; i += 1) {
+    const row = table[i]!;
+    if (i === 0 ? row.from_fen !== 0n : row.from_fen <= table[i - 1]!.from_fen) return null;
+  }
+  return table;
+}
+
+/** The +08:00 calendar year of `at` and the instants that bound it (left closed, right open). */
+function taxYearOf(at: Date): { year: number; start: string; end: string } {
+  const year = Number(accountingDate(at).slice(0, 4));
+  return {
+    year,
+    start: `${year}-01-01T00:00:00+08:00`,
+    end: `${year + 1}-01-01T00:00:00+08:00`,
+  };
 }
 
 export function createFeeTaxCalculator(options: FeeTaxCalculatorOptions): FeeTaxCalculator {
-  void options;
-  throw new Error('NotImplemented: createFeeTaxCalculator');
+  const { config, identityKey, logger } = options;
+
+  async function readConfig(appId: string, handle: Kysely<DB>): Promise<TaxConfig> {
+    const read = async <T>(
+      key: string,
+      parse: (value: unknown) => T | null,
+      fallback: T,
+    ): Promise<T> => {
+      const row = await config.configValue(appId, key, handle);
+      if (row === null) return fallback;
+      const parsed = parse(row.value);
+      if (parsed === null) {
+        logger.warn({ app_id: appId, key }, TAX_CONFIG_INVALID);
+        return fallback;
+      }
+      return parsed;
+    };
+    const method = await read(TAX_METHOD_KEY, parseMethod, 'none');
+    const rateBp = await read(TAX_RATE_BP_KEY, parseRateBp, 0n);
+    const rateTable = await read<readonly TaxBracket[]>(TAX_RATE_TABLE_KEY, parseRateTable, []);
+    return { method, rate_bp: rateBp, rate_table: rateTable };
+  }
+
+  async function ytdOf(
+    handle: Kysely<DB> | Transaction<DB>,
+    appId: string,
+    userId: string,
+    year: number,
+    withdrawalId: string | undefined,
+  ): Promise<{ income: bigint; withheld: bigint }> {
+    const hmac = await identityKey.readIdentityKey(handle, { appId, userId });
+    if (hmac === null) {
+      logger.warn(
+        {
+          app_id: appId,
+          user_id: userId,
+          year,
+          ...(withdrawalId === undefined ? {} : { withdrawal_id: withdrawalId }),
+        },
+        TAX_IDENTITY_MISSING,
+      );
+      return { income: 0n, withheld: 0n };
+    }
+    const row = await handle
+      .withSchema('app')
+      .selectFrom('tax_ytd')
+      .select(['cum_income_fen', 'cum_withheld_fen'])
+      .where('app_id', '=', appId)
+      .where('user_id', '=', userId)
+      .where('year', '=', year)
+      .where('income_type', '=', INCOME_TYPE)
+      .where('identity_hmac', '=', hmac)
+      .executeTakeFirst();
+    return row === undefined
+      ? { income: 0n, withheld: 0n }
+      : { income: parseFen(row.cum_income_fen), withheld: parseFen(row.cum_withheld_fen) };
+  }
+
+  async function inFlightOf(
+    handle: Kysely<DB> | Transaction<DB>,
+    appId: string,
+    userId: string,
+    bounds: { start: string; end: string },
+  ): Promise<{ amount: bigint; tax: bigint }> {
+    const row = await handle
+      .withSchema('app')
+      .selectFrom('withdrawals')
+      .select([
+        sql<string>`coalesce(sum(amount_fen), 0)::text`.as('amount'),
+        sql<string>`coalesce(sum(tax_fen), 0)::text`.as('tax'),
+      ])
+      .where('app_id', '=', appId)
+      .where('user_id', '=', userId)
+      .where('income_type', '=', INCOME_TYPE)
+      .where('status', 'in', [...IN_FLIGHT_STATUSES])
+      .where('created_at', '>=', sql<Date>`${bounds.start}::timestamptz`)
+      .where('created_at', '<', sql<Date>`${bounds.end}::timestamptz`)
+      .executeTakeFirstOrThrow();
+    return { amount: parseFen(row.amount), tax: parseFen(row.tax) };
+  }
+
+  return {
+    async calculate(handle, input) {
+      const amountFen = parseFen(input.amountFen);
+      if (amountFen < 0n) throw new RangeError('fee-tax: the amount must not be negative');
+      const effective = await readConfig(input.appId, handle);
+      let taxFen = 0n;
+      if (effective.method === 'flat_rate') {
+        taxFen = flatRateTaxFen(amountFen, effective.rate_bp);
+      } else if (effective.method === 'cumulative') {
+        const { year, start, end } = taxYearOf(input.now);
+        const ytd = await ytdOf(handle, input.appId, input.userId, year, undefined);
+        const inFlight = await inFlightOf(handle, input.appId, input.userId, { start, end });
+        taxFen = cumulativeTaxFen({
+          ytdIncomeFen: ytd.income,
+          ytdWithheldFen: ytd.withheld,
+          inFlightAmountFen: inFlight.amount,
+          inFlightTaxFen: inFlight.tax,
+          amountFen,
+          table: effective.rate_table,
+        });
+      }
+      const feeFen = 0n;
+      return {
+        fee_fen: feeFen,
+        tax_fen: taxFen,
+        net_fen: amountFen - feeFen - taxFen,
+        fee_rule_id: null,
+        tax_rule_version: taxRuleVersion(effective),
+      };
+    },
+  };
 }

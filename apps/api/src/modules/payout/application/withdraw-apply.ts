@@ -260,14 +260,16 @@ export function createWithdrawApply(options: WithdrawApplyOptions): WithdrawAppl
       const t = clock.now();
       // First pass: the whole chain, no locks (a refusal here never touches a row).
       const first = await readWithdrawInput(trx, actor, command.stepUpValid, rules);
-      const quote = await rules.feeTax.calculate(trx, {
+      // B2-08c: the first-pass quote only serves this validation; the row stores the quote taken
+      // again under the member's locks (a cumulative tax depends on the in-flight withdrawals).
+      let quote = await rules.feeTax.calculate(trx, {
         ...actor,
         amountFen: amount,
         now: t,
       });
-      const fee = quote.fee_fen;
-      const tax = quote.tax_fen;
-      const net = subFen(subFen(amount, fee), tax);
+      let fee = quote.fee_fen;
+      let tax = quote.tax_fen;
+      let net = subFen(subFen(amount, fee), tax);
       const refused = validateWithdrawal(first, amount, net);
       if (refused !== null) return refused;
       // BR-WDR-03 ⑭: the risk-flag snapshot, before the locks; ③ is judged under this id.
@@ -308,6 +310,13 @@ export function createWithdrawApply(options: WithdrawApplyOptions): WithdrawAppl
       const locked = await readWithdrawInput(trx, actor, command.stepUpValid, rules);
       const again = validateLockedWithdrawal(locked, amount);
       if (again !== null) return refuse(again);
+      // B2-08c (BR-WDR-20 累计方法, BR-WDR-07 lock order): the quote that the row stores is taken
+      // under the users row lock, so a concurrent application of the member that committed since
+      // the first pass counts as in flight.
+      quote = await rules.feeTax.calculate(trx, { ...actor, amountFen: amount, now: t });
+      fee = quote.fee_fen;
+      tax = quote.tax_fen;
+      net = subFen(subFen(amount, fee), tax);
       // Build the row.
       const now = clock.now();
       const review = await reviewFields(trx, actor.appId, now);
