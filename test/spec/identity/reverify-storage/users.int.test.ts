@@ -2,6 +2,7 @@
 // 07_WDR 123–135) reads and overwrites: last activity, last login device, the pending flag time,
 // the trusted-identity snapshot and the per-account failure counter with its +08:00 day.
 // Top-level it() only; each test preflights the column contract first.
+import { createTestDatabase } from '@couli/db/testing';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 
@@ -21,7 +22,7 @@ import {
 
 let h: Harness;
 beforeAll(async () => {
-  h = await open();
+  h = open(await createTestDatabase());
 }, 180_000);
 afterAll(async () => {
   await close(h);

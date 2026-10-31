@@ -4,6 +4,7 @@
 // Top-level it() only; each test preflights the table contract first.
 import { randomUUID } from 'node:crypto';
 
+import { createTestDatabase } from '@couli/db/testing';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 
@@ -26,7 +27,7 @@ import {
 
 let h: Harness;
 beforeAll(async () => {
-  h = await open();
+  h = open(await createTestDatabase());
 }, 180_000);
 afterAll(async () => {
   await close(h);

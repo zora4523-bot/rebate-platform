@@ -1,7 +1,8 @@
 // B1-02zo 编排 §9.2 #2 (BR-WDR-01 细则): withdraw.dormant_reverify_days is seeded as 0, i.e. old-number
 // reverify stays off until all three clients ship the reverify page. Exactly one seed row, and its
 // INSERT never overwrites an operator's later value. Test databases do not load seeds, so the seed
-// file is read directly (same parsing as the content seed tests).
+// file is read directly (same parsing as the content seed tests). The row itself is registered and
+// seeded by B1-02zs (编排 §10 #2); this test only requires that it is there with value 0.
 import { readFileSync } from 'node:fs';
 
 import { expect, it } from 'vitest';

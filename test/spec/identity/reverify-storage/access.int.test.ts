@@ -3,6 +3,7 @@
 // reads, inserts and deletes reverified_devices (deletion processing removes them, B1-02zr);
 // couli_readonly only reads; couli_payout and couli_maint get nothing. Whether couli_app may UPDATE
 // reverified_devices is not pinned here. Top-level it() only; each test preflights first.
+import { createTestDatabase } from '@couli/db/testing';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 
@@ -26,7 +27,7 @@ import {
 
 let h: Harness;
 beforeAll(async () => {
-  h = await open();
+  h = open(await createTestDatabase());
 }, 180_000);
 afterAll(async () => {
   await close(h);

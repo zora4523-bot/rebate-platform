@@ -3,12 +3,21 @@
 // types and no migration number. Every test runs a preflight assertion on the catalog before it
 // touches a new column or table, so the baseline red is an assertion failure, never PostgreSQL's
 // undefined_column / undefined_table error.
+// Nothing here imports @couli/db/testing (depcruise testcontainers-only-in-int-tests): each
+// *.int.test.ts calls createTestDatabase() itself and hands the handle to open().
 import { randomBytes, randomUUID } from 'node:crypto';
 
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase, type TestDatabase, type TestDbRole } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import { expect } from 'vitest';
+
+/** The business roles these tests connect as. */
+export type TestDbRole = 'couli_app' | 'couli_payout' | 'couli_readonly' | 'couli_maint';
+/** The part of @couli/db/testing's TestDatabase this kit uses, declared locally. */
+export interface TestDatabase {
+  urlFor(role: TestDbRole): string;
+  drop(): Promise<void>;
+}
 
 export type Row = Record<string, unknown>;
 export interface Harness {
@@ -64,8 +73,8 @@ export const FOREIGN_KEY_VIOLATION = '23503';
 export const PERMISSION_DENIED = '42501';
 export const NO_ERROR = 'no error';
 
-export async function open(): Promise<Harness> {
-  const database = await createTestDatabase();
+/** Wraps the test database the *.int.test.ts created (createTestDatabase). */
+export function open(database: TestDatabase): Harness {
   const dbs = {} as Record<TestDbRole, Kysely<DB>>;
   for (const role of ROLES) {
     dbs[role] = createDb({ connectionString: database.urlFor(role), max: 2 });
