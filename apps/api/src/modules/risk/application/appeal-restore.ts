@@ -46,10 +46,20 @@
 //      FORFEIT voucher `{order_key}:PLATFORM:FORFEIT:{uid}:{role}` (BR-CALC-13; R5 and R5a share the
 //      key), whose value was computed at B_credit, not the snapshot estimate. It comes from the
 //      injected port options.forfeitedAmount (a ledger read: risk never reads ledger tables).
-//      Without the port, or when it answers null (no such voucher), a revoked ban appeal with
-//      shares rejects and logs `appeal_restore_amount_unavailable` (error): nothing is registered
-//      and the snapshot value is never used instead.
+//      Without the port (an assembly error), a revoked ban appeal with shares rejects and logs
+//      `appeal_restore_amount_unavailable` (error): nothing is registered and the snapshot value
+//      is never used instead.
 //      Production: ledger's readForfeitAmount (D10-432), injected by app.module.
+//    - No FORFEIT voucher (B1-03zf, 编排 D10-495 FU-APPEAL-RESTORE-PRICING; contract of the rule
+//      tests in test/spec/risk/appeal-restore-pricing/**): when the injected port answers null for
+//      a share (e.g. R5 credited it held while frozen, then the ban and an R9 partial refund closed
+//      the obligation forfeited(banned) without a voucher), the event does not reject. The share
+//      stays in its sub-order's difference with amount 0 (counted 0 in expected_fen) and its
+//      resolution.shares item carries amount_fen '0' and amount_source 'no_forfeit_voucher' (role
+//      on the item, order_id on the resolution): the handler side (admin ADMIN_RESTORE, B2-09ga)
+//      recomputes it on the server. Shares with a voucher keep the voucher's amount and never
+//      carry that marker. A sub-order whose shares all lack a voucher is still registered once
+//      (expected 0, every share marked), never skipped. dedupeKey and the other fields unchanged.
 //    - One difference per (sub-order, member) of the appeal (r2, review S2): ref_type 'order',
 //      ref_id = the order key (ledger ReconDiffSelection.orderKey, so getReconDiffs({ orderKey })
 //      and the admin ref_id filter find it); expected_fen = Σ of the member's forfeited amounts on
@@ -67,7 +77,8 @@
 //      our books (a share kept as platform COMMISSION_REVENUE owed back to the member, BR-FUND-22
 //      ③) with no union or channel party, so R3.
 //    - period: chinaMonth(appeals.closed_at) (YYYY-MM, +08:00): from the appeal row, not the clock.
-//    - A forfeited amount of 0 is not registered; neither is a sub-order whose sum is 0.
+//    - A forfeited amount of 0 (a voucher that booked 0) is not registered; neither is a
+//      sub-order whose sum is 0 — except a share without a voucher (B1-03zf, above), which is.
 //    - Window without penalty_started_at (r2, review S1): from commission's findBannedRunStart
 //      (options.bannedRunStart): the earliest banned forfeiture of the member's last unbroken run
 //      of banned forfeitures at or before the appeal's created_at, the run broken by any active or

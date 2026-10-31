@@ -11,6 +11,12 @@
 //     with reason 'banned' whose created_at lies within [since, until] (both ends inclusive).
 //     Forfeited events with reason 'deleted' or 'minor' are never returned (BR-CALC-13: 注销、未成年
 //     导致的 forfeited 不恢复); neither are active / held events, other users or other apps.
+//   - Latest-event rule (B1-03zf, 编排 D10-495 / D10-481 ②; rule tests in
+//     test/spec/risk/appeal-restore-pricing/**): per share (order_id, user_id, role) only its
+//     latest event counts, latest by event_seq (never created_at). A share is returned only when
+//     that latest event is forfeited with reason 'banned' and lies within [since, until]; a banned
+//     forfeiture later covered by an active or held event, or by a forfeiture for another reason,
+//     is not returned. forfeitedAt is that latest event's created_at.
 //   - amountFen: the share's value (份额金额) from the split snapshot — commission_split_amounts
 //     amount_fen of (order_id, user_id, role). Which commission_version is used (suggested: the
 //     largest one of the order) is the implementation's choice, written down here with its source.
