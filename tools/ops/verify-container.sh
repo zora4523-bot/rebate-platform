@@ -55,8 +55,8 @@
 #
 # Output: <runs>/<id>/{verify,verify-fast,red,browser}/<n>/log.txt and result.json
 #   { mode: container, script: verify|verify:fast|red|browser, exit_code, commit, tree,
-#     prop_seed, started_at, finished_at }  — red adds red_tests, expected and reports (path +
-#     sha256); browser leaves its screenshots and report in out/.
+#     prop_seed, prop_runs, started_at, finished_at }  — red adds red_tests, expected and reports
+#     (path + sha256); browser leaves its screenshots and report in out/.
 # `tree` is the git tree of the work tree as verified (uncommitted changes included). The tree
 # is exported once into an immutable snapshot and that snapshot is what gets verified, so the
 # hash and the exit code always describe the same files; git-ignored paths never reach it.
@@ -71,7 +71,10 @@
 # Environment: COULI_RUNS, COULI_TRUSTED_ROOT, COULI_SPEC_REPO (conventions C7);
 #   COULI_VERIFY_TIMEOUT_SECS (default 3600, at most 3600; CT-06v, CT-06zxf); COULI_VERIFY_PREFIX (default couli-verify;
 #   prefix of every container, network and volume this script creates);
-#   PROP_SEED / PROP_RUNS are passed through.
+#   PROP_SEED (default 20261001) reaches every run. PROP_RUNS has no default here (D10-499): it is
+#   passed only when the caller sets it, and result.json records it as prop_runs (null when unset).
+#   Unset, the pure property tests keep the 10000 of @couli/testing (规划/11 §4.2) and the integration
+#   tests take the 2000 of their test:int scripts (D10-210, D10-499).
 #
 # Host services (owner 2026-10-08/09: no Docker on the orchestrating Mac; runs go to the AWS test
 # machine, and the test database does not run in Docker there — plan A of 2026-10-09). With
@@ -476,8 +479,8 @@ fi
 
 write_result() {
   local tmp="$RESULT.tmp.$$"
-  printf '{\n  "mode": "%s",\n  "script": "%s",\n  "exit_code": %s,\n  "commit": %s,\n  "tree": %s,\n  "prop_seed": %s,\n  "started_at": "%s",\n  "finished_at": "%s"%s\n}\n' \
-    "$MODE" "$SCRIPT" "$1" "$COMMIT" "$TREE" "$PROP_SEED_VALUE" "$STARTED_AT" "$(now_utc)" "$RESULT_EXTRA" >"$tmp"
+  printf '{\n  "mode": "%s",\n  "script": "%s",\n  "exit_code": %s,\n  "commit": %s,\n  "tree": %s,\n  "prop_seed": %s,\n  "prop_runs": %s,\n  "started_at": "%s",\n  "finished_at": "%s"%s\n}\n' \
+    "$MODE" "$SCRIPT" "$1" "$COMMIT" "$TREE" "$PROP_SEED_VALUE" "${PROP_RUNS:-null}" "$STARTED_AT" "$(now_utc)" "$RESULT_EXTRA" >"$tmp"
   if [ "$SCRIPT" = red ] && [ -f "$VDIR/red-check.json" ]; then
     # The red tests, the expected files and the exported reports with their sha256 (evidence).
     node -e '

@@ -54,10 +54,10 @@
 - 快照：先把 worktree 的 git 树（含未提交改动，不含被 `.gitignore` 忽略的任何东西：`node_modules`、`dist`、`.env*`、`*.key`、`coverage/`、`reports/` …）用 `git archive` 导出到 `couli-runs/<编号>/<verify|verify-fast|red|browser>/<n>/src/`，`result.json` 的 `tree` 就是这份快照的树哈希；之后容器只看这份快照，worktree 在镜像构建、填 store 期间被改动也影响不了结果。快照用完即删。不是 git 仓库顶层的目录按同一套排除规则用 tar 复制，`tree` 为 null。
 - 每次运行：新建 `--internal` 网；一次性 PG（`pgvector/pgvector:0.8.6-pg18-trixie`，随机密码）只接这个网；验证容器根文件系统只读、快照只读挂 `/src`、store 只读、`/work` 与 `/tmp` 是 tmpfs；容器里先把 `/src` 拷到 `/work/repo`，`pnpm install --offline --frozen-lockfile`，再限时跑 `pnpm verify`。结束后容器和网络一律清掉。
 - 规划原文：把规划仓库在 `SPEC_REF` 那一个提交做成只读快照（`couli-runs/spec-snapshots/<提交号>.git`）挂到 `/spec`，容器里 `COULI_SPEC_REPO=/spec`。容器看不到规划仓库的工作区和配置。快照没有历史，所以「`SPEC_REF` 在规划仓库 main 上」由本脚本在宿主对真实仓库核对，通过了才给快照写上 `origin/main`，容器里的 `spec-ref` 守卫据此通过。
-- `result.json`：`mode`（`container`）、`script`（`verify` / `verify:fast` / `red` / `browser`）、`exit_code`、`commit`、`tree`（含未提交改动的工作区树哈希）、`prop_seed`、起止时间。基础设施出错（Docker 起不来、镜像构建失败）退出码 2，不写 `result.json`。
+- `result.json`：`mode`（`container`）、`script`（`verify` / `verify:fast` / `red` / `browser`）、`exit_code`、`commit`、`tree`（含未提交改动的工作区树哈希）、`prop_seed`、`prop_runs`（调用方传了 `PROP_RUNS` 记数字，没传记 `null`）、起止时间。基础设施出错（Docker 起不来、镜像构建失败）退出码 2，不写 `result.json`。
 - 宿主回退已取消（Codex 评审 CR-01，2026-10-05）：原来的 `--host` 会在宿主上执行任务快照里的代码和测试（含 Codex 写的），清空环境变量挡不住。现在 `--host` 一律拒绝、退出 2；Docker 用不了就停下，把这次运行交给 CI。原 `timeout-group.pl` 随之删除。
 - worktree 在 `/tmp`、`/private/tmp`、`$TMPDIR` 下一律拒绝（那里是 Codex 沙箱的可写根，11 §0）。
-- 可调环境变量：`COULI_VERIFY_TIMEOUT_SECS`（默认 3600、上限 3600，可调小、不能超过上限；CT-06v，集成测试已 464 文件、1200 不够；CT-06zxf / D10-372 起默认由 2400 提到 3600，遇 exit 124 先变基再跑）、`COULI_VERIFY_PREFIX`（容器、网络、数据卷的名字前缀，默认 `couli-verify`）、`PROP_SEED`、`PROP_RUNS`。
+- 可调环境变量：`COULI_VERIFY_TIMEOUT_SECS`（默认 3600、上限 3600，可调小、不能超过上限；CT-06v，集成测试已 464 文件、1200 不够；CT-06zxf / D10-372 起默认由 2400 提到 3600，遇 exit 124 先变基再跑）、`COULI_VERIFY_PREFIX`（容器、网络、数据卷的名字前缀，默认 `couli-verify`）、`PROP_SEED`、`PROP_RUNS`（本脚本不设默认，传了才透传给容器。没传时纯函数段默认 1 万次（规划/11 §4.2），集成段由 `test:int` 脚本默认 2000（D10-210、D10-499）；调用方传的值优先）。
 - 宿主一次性服务模式（负责人 2026-10-08 / 09：本机不跑 Docker，容器验证放到 AWS 测试机；测试库不进 Docker；10-09 定方案 A）。设 `COULI_VERIFY_HOST_SERVICES=1` 开启（其他取值退出 2），只改要连库的那次运行（`pnpm verify`、`--red` 里需要库的组），其余（`--fast`、`--browser`、只有单元组的 `--red`）与原来一样：
 
   | 变量 | 默认 | 含义 |

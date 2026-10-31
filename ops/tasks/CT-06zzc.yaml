@@ -1,0 +1,26 @@
+id: CT-06zzc
+repo: rebate-platform
+title: CT-06zzc：test:int 在 PROP_RUNS 未设时默认 2000，result.json 记 prop_runs（D10-496、D10-499）
+type: guard-change
+# 2026-10-31 be 入账（编排 D10-496，D10-499 改法，先例 CT-06zxf）。D10-210 只在 ci.yml 的 verify-int 设了 PROP_RUNS=2000，
+# 测试机完整 verify 没传时集成属性落到 @couli/testing 默认 10000，被 60 分钟截断。规划/11 §4.2：verify:fast 纯函数属性每条 1 万次，不降；
+# 2000 只给连真实 PG 的集成属性。所以 verify-container.sh 不设全局默认，只把传入值记进 result.json（未传记 null）；三处 test:int 脚本自带默认 2000。
+# ci.yml 显式 2000 保留。不改时限（3600），不放宽任何断言。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ops/verify-container.sh'
+  - 'tools/ops/verify-container.test.ts'
+  - 'tools/ops/verify-container.services.test.ts'
+  - 'tools/ops/README.md'
+  - 'test/package.json'
+  - 'apps/api/package.json'
+  - 'packages/db/package.json'
+  - 'ops/tasks/CT-06zzc.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

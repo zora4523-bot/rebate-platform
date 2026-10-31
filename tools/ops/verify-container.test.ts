@@ -170,6 +170,41 @@ it(
 );
 
 it(
+  '[CT-06zzc] PROP_RUNS stays a positive integer with no default here; test:int holds the 2000 of the CI integration job (D10-499)',
+  () => {
+    const ok = fixture('prop-runs', 'true');
+    for (const value of ['0', '-1', '1.5', '007', 'many']) {
+      const res = run(['V1-06', '--worktree', ok, '--dry-run'], { PROP_RUNS: value });
+      expect(res.status).toBe(2);
+      expect(res.stderr).toContain('PROP_RUNS must be a positive integer');
+    }
+    // Empty counts as unset.
+    for (const value of ['', '7', '100000']) {
+      const res = run(['V1-06', '--worktree', ok, '--dry-run'], { PROP_RUNS: value });
+      expect(res.status, res.stderr).toBe(0);
+    }
+    // The pure property tests keep the 10000 of @couli/testing (规划/11 §4.2): no default here.
+    expect(readFileSync(SCRIPT, 'utf8')).not.toContain('DEFAULT_PROP_RUNS');
+    // Every test:int defaults to 2000 and yields to the caller, on the vitest command itself.
+    for (const dir of ['test', join('apps', 'api'), join('packages', 'db')]) {
+      const pkg = JSON.parse(readFileSync(join(repoRoot(), dir, 'package.json'), 'utf8')) as {
+        scripts: Record<string, string>;
+      };
+      expect(pkg.scripts['test:int']).toContain(
+        'PROP_RUNS=${PROP_RUNS:-2000} vitest run --config vitest.integration.config.ts',
+      );
+    }
+    // The same number as the verify-int job (D10-210).
+    const ci = readFileSync(join(repoRoot(), '.github', 'workflows', 'ci.yml'), 'utf8');
+    expect(ci).toContain(
+      "      - run: pnpm test:int\n        env:\n          TEST_REDIS_URL: redis://127.0.0.1:6379/0\n          PROP_RUNS: '2000'\n",
+    );
+    expect(existsSync(join(runs, 'V1-06'))).toBe(false);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
   '[CR-01] there is no host fallback: --host is refused for verify and verify:fast alike',
   () => {
     const dir = fixture('host', 'node -e "process.exit(0)"');
