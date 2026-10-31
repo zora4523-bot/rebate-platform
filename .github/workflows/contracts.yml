@@ -100,7 +100,13 @@ jobs:
           # contract has no external $ref, so the JSON copy resolves on its own).
           node tools/ci/oasdiff-base.ts "$RUNNER_TEMP/base-tree/contracts/openapi.yaml" \
             "$RUNNER_TEMP/base-openapi.json"
-          "$RUNNER_TEMP/oasdiff/oasdiff" breaking --fail-on ERR \
+          # Accepted changes, listed one by one with their ruling (D10-484): only response enum
+          # values added that old clients cannot receive. Without the file nothing is ignored.
+          ignore=()
+          if [ -f contracts/oasdiff-accepted.txt ]; then
+            ignore=(--err-ignore contracts/oasdiff-accepted.txt)
+          fi
+          "$RUNNER_TEMP/oasdiff/oasdiff" breaking --fail-on ERR "${ignore[@]}" \
             "$RUNNER_TEMP/base-openapi.json" contracts/openapi.yaml
         env:
           BASE: ${{ needs.contracts-detect.outputs.base }}
