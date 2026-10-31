@@ -17,7 +17,6 @@ import {
   DB,
   FIELD_CRYPTO,
   REDIS,
-  RedisUnavailableError,
   ROOT_LOGGER,
   type AppConfig,
   type AuditPort,
@@ -43,7 +42,11 @@ import type { SearchCursorCodec } from './search.ts';
 import { AdminProductPoolsController } from './http/admin/product-pools.controller.ts';
 import { createUnionDetailUpstream } from './infra/detail-wiring.ts';
 import { createKyselyPoolAdminStore } from './infra/kysely-pool-admin-store.ts';
-import { PRODUCT_CACHE_NAMESPACE, cacheSearchUpstream } from './infra/product-cache.ts';
+import {
+  PRODUCT_CACHE_NAMESPACE,
+  cacheSearchUpstream,
+  detailCacheDropper,
+} from './infra/product-cache.ts';
 import {
   SEARCH_REDIS_NAMESPACE,
   UNAVAILABLE_SEARCH_SESSIONS,
@@ -79,9 +82,6 @@ const NO_REGISTRAR: LinkRegistrar = {
 const NO_SOURCE_LINKS: SourceLinkReader = {
   entrySource: () => Promise.reject(new Error('catalog: pool candidates have no source link')),
 };
-
-/** RedisNamespace has no delete of its own; this script writes nothing, so ARGV[1] goes unused. */
-const DROP_KEY = "return redis.call('DEL', KEYS[1])";
 
 const refuse = (): Promise<never> =>
   Promise.reject(new Error('catalog: product pools need the database'));
@@ -184,23 +184,7 @@ function poolAdmin(
         newSessionId: randomUUID,
         logger,
       }),
-    dropDetailCache: async (appId, productKey) => {
-      if (cache === null) return;
-      try {
-        // BR-PROD-07 detail key, as cacheDetailUpstream writes it.
-        await cache.eval(DROP_KEY, {
-          keys: [`${appId}:product:${productKey}`],
-          args: [],
-          ttlSeconds: 1,
-        });
-      } catch (error: unknown) {
-        if (!(error instanceof RedisUnavailableError)) throw error;
-        logger.warn(
-          { event: 'pool_detail_cache_not_dropped', product_key: productKey },
-          'catalog: detail cache entry left to expire',
-        );
-      }
-    },
+    dropDetailCache: detailCacheDropper(cache, logger),
   });
 }
 

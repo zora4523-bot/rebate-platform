@@ -4,6 +4,7 @@ import { CatalogError } from '../domain/rules.ts';
 import {
   createPoolSource,
   PoolManyProductsError,
+  searchRawByTitle,
   type PoolLinkParser,
   type PoolSourceOptions,
 } from './pool-source.ts';
@@ -283,4 +284,36 @@ it('[AC-B1-05q-unit#26] 重新上架的复核先解析别名再比较', async ()
       title: 'K1',
     }),
   ).toMatchObject({ kind: 'live', productKey: 'tb:K1' });
+});
+
+it('[AC-B1-05r-unit#1] current 不带请求原串：按 BR-PROD-05 顺序取原串后问详情，下架答 off_shelf', async () => {
+  const asked: (string | undefined)[] = [];
+  const pool = source(parser({}), {
+    upstream: {
+      detail: (request) => {
+        asked.push(request.rawItemId);
+        return Promise.reject(new UnionError('item_unavailable', 'synthetic', 'taobao'));
+      },
+    },
+  });
+  expect(
+    await pool.current({ appId: 'app', platform: 'taobao', productKey: 'tb:K1', title: 'K1' }),
+  ).toEqual({ kind: 'off_shelf', productKey: 'tb:K1' });
+  expect(asked).toHaveLength(1);
+});
+
+it('[AC-B1-05r-unit#2] 平台不支持按标题搜：与找不到同键一样答 null；暂时失败仍抛', async () => {
+  const search = (error: UnionError) =>
+    searchRawByTitle({
+      adapter: { searchItems: () => Promise.reject(error) },
+      platform: 'taobao',
+      title: 'K1',
+      jdMode: 'item',
+      context: CONTEXT,
+      isTarget: () => true,
+    });
+  await expect(search(new UnionError('adapter_unimplemented', 'x', 'taobao'))).resolves.toBeNull();
+  await expect(search(new UnionError('rate_limited', 'x', 'taobao'))).rejects.toMatchObject({
+    code: 'rate_limited',
+  });
 });

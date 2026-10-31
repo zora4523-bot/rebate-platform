@@ -1,13 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { FixedClock } from '../platform/index.ts';
-import { UnionError, type UnionItem, type UnionItemDetail } from '../union/index.ts';
+import {
+  UnionError,
+  type UnionAdapter,
+  type UnionItem,
+  type UnionItemDetail,
+} from '../union/index.ts';
 import type { CardQuoteContext } from './application/card-assembler.ts';
 import { createCatalogCardEntry } from './application/card-entry.ts';
 import { createItemRefService } from './application/item-ref.ts';
+import type { PoolCandidate, PoolReader } from './application/pool-read.ts';
 import { getProduct, type ProductDetailOptions, type ProductDetailRequest } from './detail.ts';
 import { CatalogError, isPlatformServed } from './domain/rules.ts';
 import type { PlatformRecord, ProductCapabilities, ProductRef } from './domain/types.ts';
+import { createUnionDetailUpstream } from './infra/detail-wiring.ts';
 import { createProcessItemRefCipher } from './infra/search-wiring.ts';
 import type { Viewer } from './ports.ts';
 
@@ -101,7 +108,7 @@ function setup(detail: (request: ProductDetailRequest) => Promise<UnionItemDetai
       rawItemId,
       fetchedAt: NOW,
     });
-  return { options, upstream, registerProductRef, register, issue };
+  return { options, clock, upstream, registerProductRef, register, issue };
 }
 
 async function outcome(promise: Promise<unknown>): Promise<unknown> {
@@ -145,5 +152,130 @@ describe('getProduct (B1-05e, round 2)', () => {
     const card = await getProduct({ product_key: PRODUCT_KEY, item_ref: issued }, f.options);
     expect(f.upstream.mock.calls[0]?.[0].rawItemId).toBe('synthetic-old-raw');
     expect(card.item_ref).toBe(issued);
+  });
+});
+
+const POOL_QUOTED_AT = '2026-10-08T11:30:00+08:00';
+
+function poolCandidate(): PoolCandidate {
+  return {
+    item: item({
+      title: '合成池标题',
+      quoted_at: POOL_QUOTED_AT,
+      coupon_fen: 1490n,
+      final_price_fen: 2500n,
+    }),
+    ref: {
+      appId: APP_ID,
+      platform: 'taobao',
+      productKey: PRODUCT_KEY,
+      rawItemId: 'synthetic-pool-raw',
+      rawFetchedAt: '2026-10-05T12:00:00+08:00',
+      receivedAt: '2026-10-05T12:00:00+08:00',
+      canonicalUrl: null,
+      title: '合成池标题',
+      shopId: null,
+      shopType: null,
+      source: 'pool',
+    },
+  };
+}
+
+/** The real union upstream over a fake adapter; `pooled` is what the pool reader answers. */
+function reparseSetup(
+  pooled: PoolCandidate | null,
+  union: {
+    readonly search?: UnionAdapter['searchItems'];
+    readonly getItem?: UnionAdapter['getItem'];
+  },
+) {
+  const searchItems = vi.fn<UnionAdapter['searchItems']>(
+    union.search ?? (async () => ({ items: [item()], nextCursor: null })),
+  );
+  const getItem = vi.fn<UnionAdapter['getItem']>(union.getItem ?? (async () => item()));
+  const adapter = { searchItems, getItem } as unknown as UnionAdapter;
+  const poolDetail = vi.fn<PoolReader['detail']>(async () => pooled);
+  const poolReader: PoolReader = {
+    page: async () => null,
+    fallbackPoolId: async () => null,
+    detail: poolDetail,
+  };
+  const f = setup(async () => item());
+  const options: ProductDetailOptions = {
+    ...f.options,
+    poolReader,
+    upstream: createUnionDetailUpstream({ union: { adapter: () => adapter } }),
+  };
+  const run = () => getProduct({ product_key: PRODUCT_KEY }, options);
+  return { ...f, searchItems, getItem, poolDetail, run };
+}
+
+describe('getProduct: BR-PROD-05 ③ of a key with a pool row (B1-05r)', () => {
+  it('[BR-PROD-05] 无新鲜原串、有合格池行：online 用途按标题重解析，用新原串取详情，正常卡并写 product_refs', async () => {
+    const f = reparseSetup(poolCandidate(), {});
+    const card = await f.run();
+    expect(card).toMatchObject({ product_key: PRODUCT_KEY, stale: false, final_price_fen: 2990 });
+    expect(f.searchItems.mock.calls[0]?.[0]).toEqual({ keyword: '合成池标题' });
+    expect(f.searchItems.mock.calls[0]?.[1]).toMatchObject({ appId: APP_ID, purpose: 'online' });
+    expect(f.getItem.mock.calls[0]?.[0]).toEqual({ platform: 'taobao', item_id: RAW_ID });
+    expect(f.registerProductRef.mock.calls[0]?.[0]).toMatchObject({
+      rawItemId: RAW_ID,
+      source: 'detail',
+    });
+  });
+
+  it.each([
+    ['搜索', { search: () => Promise.reject(new UnionError('rate_limited', 'x', 'taobao')) }],
+    ['详情', { getItem: () => Promise.reject(new UnionError('rate_limited', 'x', 'taobao')) }],
+  ])(
+    '[BR-PRICE-11][TRADE-12] 重解析时%s答不了 → 池价，stale=true，不写 product_refs',
+    async (_n, union) => {
+      const f = reparseSetup(poolCandidate(), union);
+      const card = await f.run();
+      expect(card).toMatchObject({ stale: true, final_price_fen: 2500 });
+      expect(Date.parse(String(card.quoted_at))).toBe(Date.parse(POOL_QUOTED_AT));
+      expect(f.registerProductRef).not.toHaveBeenCalled();
+    },
+  );
+
+  it('[BR-PRICE-11] 重解析期间池行超龄：回退时按当时的时钟重读，不展示 → 50401', async () => {
+    const f = reparseSetup(poolCandidate(), {});
+    const startedAt = f.clock.now().getTime();
+    f.poolDetail.mockImplementation(async () =>
+      f.clock.now().getTime() > startedAt ? null : poolCandidate(),
+    );
+    f.searchItems.mockImplementation(async () => {
+      f.clock.advanceMs(9_600);
+      throw new UnionError('rate_limited', 'x', 'taobao');
+    });
+    expect(await outcome(f.run())).toEqual({ code: 50401 });
+    expect(f.poolDetail).toHaveBeenCalledTimes(2);
+    expect(f.register).not.toHaveBeenCalled();
+  });
+
+  it('[BR-PROD-05] 平台不支持按标题搜（adapter_unimplemented）→ 30143，不问详情、不写 product_refs', async () => {
+    const f = reparseSetup(poolCandidate(), {
+      search: () => Promise.reject(new UnionError('adapter_unimplemented', 'x', 'taobao')),
+    });
+    expect(await outcome(f.run())).toEqual({ code: 30143 });
+    expect(f.getItem).not.toHaveBeenCalled();
+    expect(f.registerProductRef).not.toHaveBeenCalled();
+  });
+
+  it('[BR-PROD-05] 联盟作答但第 1 页没有同键 → 30143，不问详情', async () => {
+    const other = item({ item_id: 'synthetic-card-prefix-other002' });
+    const f = reparseSetup(poolCandidate(), {
+      search: async () => ({ items: [other], nextCursor: null }),
+    });
+    expect(await outcome(f.run())).toEqual({ code: 30143 });
+    expect(f.getItem).not.toHaveBeenCalled();
+    expect(f.register).not.toHaveBeenCalled();
+  });
+
+  it('[BR-PROD-05] 没有合格池行 → 30143，一次联盟都不问', async () => {
+    const f = reparseSetup(null, {});
+    expect(await outcome(f.run())).toEqual({ code: 30143 });
+    expect(f.searchItems).not.toHaveBeenCalled();
+    expect(f.getItem).not.toHaveBeenCalled();
   });
 });

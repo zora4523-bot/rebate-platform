@@ -16,6 +16,18 @@ export interface PoolCandidate {
   readonly ref: ProductRef;
 }
 
+/**
+ * When a row's raw ID was obtained, at the latest: a refresh moves quoted_at and leaves the raw ID,
+ * so quoted_at alone would make an old ID look fresh; an add or re-check moves it with the raw ID, so
+ * created_at alone would hide an old one. The earlier of the two never reads younger than the ID.
+ */
+export function poolRawFetchedMs(row: {
+  readonly created_at: Date;
+  readonly quoted_at: Date;
+}): number {
+  return Math.min(row.created_at.getTime(), row.quoted_at.getTime());
+}
+
 export interface PoolPageRequest {
   readonly appId: string;
   readonly poolId: string;

@@ -1,6 +1,7 @@
 // B1-05o public section items use case, GET /v1/pages/{page_key}/sections/{section_id}/items
-// (contract listPageSectionItems, CT-07c; BR-TEXT-17 细则「联盟物料频道」): the union_material data
-// source of a published section. Rule tests: test/spec/catalog/section-items/**.
+// (contract listPageSectionItems, CT-07c; BR-TEXT-17 细则「联盟物料频道」): the union_material and
+// product_pool data sources of a published section. Rule tests: test/spec/catalog/section-items/**,
+// test/spec/catalog/product-pool-read/**.
 // TODO(规划/11 §4.5): 类目黑名单 — blocked on UnionItem 类目字段（CAP-*-03）
 import type { components } from '@couli/contracts-ts';
 import type { Logger } from 'pino';
@@ -8,7 +9,7 @@ import type { MaterialChannelsSpec } from '../platform/index.ts';
 import { isPlatform, type Platform } from '../union/index.ts';
 import type { PreparedCard } from './application/card-assembler.ts';
 import type { CatalogCardEntry } from './application/card-entry.ts';
-import type { PoolReader } from './application/pool-read.ts';
+import type { PoolPageRequest, PoolReader } from './application/pool-read.ts';
 import { CatalogError } from './domain/rules.ts';
 import {
   HOT_RANK_MAX_PAGE_NO,
@@ -61,6 +62,10 @@ const FEED_ENTRY_SOURCE = 'feed';
 /** Contract Cursor maxLength. */
 const CURSOR_WIRE = /^[A-Za-z0-9_-]{1,512}$/;
 const CURSOR_KEYS = ['page_key', 'pages', 'section_id'];
+const POOL_CURSOR_KEYS = ['page_key', 'pool_offset', 'section_id'];
+/** BR-TEXT-17 保守默认: a pool card is a position an operator picked. */
+const POOL_AD_LABEL = '推广';
+const EMPTY_PAGE: PageSectionItemsData = { items: [], next_cursor: null, has_more: false };
 
 /** One entry of the data source's `channels`. */
 interface ChannelRef {
@@ -76,6 +81,14 @@ interface ChannelState {
   /** The upstream reported more and the page cap allows it. */
   more: boolean;
   failed: boolean;
+  /** The failure was the union's: a refusal of the data source is none (contract fall-back). */
+  outage: boolean;
+}
+
+/** The fields of a `product_pool` data source (contracts/home-schema.json). */
+interface PoolDataSource {
+  readonly poolId: string;
+  readonly limit: number;
 }
 
 function invalidCursor(): never {
@@ -103,18 +116,24 @@ function channelsOf(dataSource: unknown): readonly ChannelRef[] {
   throw new CatalogError(30701, 'section: no union_material data source');
 }
 
-function encodeCursor(query: SectionItemsQuery, pages: readonly number[]): string {
+/** A well-formed product_pool source; anything else is left to channelsOf, so it stays 30701. */
+function poolSourceOf(dataSource: unknown): PoolDataSource | null {
+  if (!isRecord(dataSource) || dataSource['kind'] !== 'product_pool') return null;
+  const { pool_id: poolId, limit } = dataSource;
+  if (typeof poolId !== 'string' || poolId === '') return null;
+  if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1) return null;
+  return { poolId, limit };
+}
+
+function encodeCursor(query: SectionItemsQuery, position: Record<string, unknown>): string {
   return Buffer.from(
-    JSON.stringify({ page_key: query.pageKey, section_id: query.sectionId, pages }),
+    JSON.stringify({ page_key: query.pageKey, section_id: query.sectionId, ...position }),
     'utf8',
   ).toString('base64url');
 }
 
-/**
- * Each channel's next page. A cursor is exactly { page_key, section_id, pages } of this section,
- * with one page per current channel; anything else is 20001. A page beyond the cap is finished.
- */
-function decodeCursor(query: SectionItemsQuery, value: string, channels: number): number[] {
+/** The cursor's fields, when it is one of this section. */
+function cursorPayload(query: SectionItemsQuery, value: string): Readonly<Record<string, unknown>> {
   if (!CURSOR_WIRE.test(value)) invalidCursor();
   let payload: unknown;
   try {
@@ -123,17 +142,42 @@ function decodeCursor(query: SectionItemsQuery, value: string, channels: number)
     invalidCursor();
   }
   if (!isRecord(payload)) invalidCursor();
-  const keys = Object.keys(payload).sort();
-  if (keys.length !== CURSOR_KEYS.length || keys.some((key, index) => key !== CURSOR_KEYS[index])) {
+  if (payload['page_key'] !== query.pageKey || payload['section_id'] !== query.sectionId) {
     invalidCursor();
   }
-  const { page_key: pageKey, section_id: sectionId, pages } = payload;
-  if (pageKey !== query.pageKey || sectionId !== query.sectionId) invalidCursor();
+  return payload;
+}
+
+function assertCursorKeys(
+  payload: Readonly<Record<string, unknown>>,
+  expected: readonly string[],
+): void {
+  const keys = Object.keys(payload).sort();
+  if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
+    invalidCursor();
+  }
+}
+
+/**
+ * Each channel's next page. A cursor is exactly { page_key, section_id, pages } of this section,
+ * with one page per current channel; anything else is 20001. A page beyond the cap is finished.
+ */
+function channelPages(payload: Readonly<Record<string, unknown>>, channels: number): number[] {
+  assertCursorKeys(payload, CURSOR_KEYS);
+  const { pages } = payload;
   if (!Array.isArray(pages) || pages.length !== channels) invalidCursor();
   return (pages as unknown[]).map((page) => {
     if (typeof page !== 'number' || !Number.isSafeInteger(page) || page < 0) invalidCursor();
     return page > HOT_RANK_MAX_PAGE_NO ? 0 : page;
   });
+}
+
+/** The row offset of a pool cursor, exactly { page_key, section_id, pool_offset }; else 20001. */
+function poolOffset(payload: Readonly<Record<string, unknown>>): number {
+  assertCursorKeys(payload, POOL_CURSOR_KEYS);
+  const { pool_offset: offset } = payload;
+  if (typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0) invalidCursor();
+  return offset;
 }
 
 /** The first channel the whitelist as it is now does not offer as selectable. */
@@ -178,6 +222,59 @@ function errorFields(error: unknown): Record<string, string> {
 }
 
 /**
+ * One page of a pool (contract「Fetching product_pool」): the rows go through the single card entry
+ * like the channels' and only the delivered cards register a link. The cursor records the row
+ * offset, never a pool: the pool is read from the data source or the configuration on every page,
+ * so an edited cursor reaches no other pool.
+ */
+async function poolPage(
+  query: SectionItemsQuery,
+  reader: PoolReader,
+  options: SectionItemsOptions,
+  request: PoolPageRequest,
+  stale: boolean,
+): Promise<PageSectionItemsData> {
+  const page = await reader.page(request);
+  if (page === null) return EMPTY_PAGE;
+  const delivered: PreparedCard[] = [];
+  for (const { item, ref } of page.candidates) {
+    const result = await options.cards.assemble({
+      item,
+      ref,
+      entrySource: FEED_ENTRY_SOURCE,
+      stale,
+      scene: 'retrieval',
+      deferLink: true,
+    });
+    if (result.kind === 'prepared' && result.card.rebate_basis !== 'no_rebate') {
+      delivered.push(result);
+    }
+  }
+  const items: PageSectionItemsData['items'] = [];
+  for (const card of delivered) items.push({ ...(await card.commit()), ad_label: POOL_AD_LABEL });
+  const { nextOffset } = page;
+  return {
+    items,
+    next_cursor: nextOffset === null ? null : encodeCursor(query, { pool_offset: nextOffset }),
+    has_more: nextOffset !== null,
+  };
+}
+
+/** The feed's union fall-back from `offset`: the configured pool, or the empty list. */
+async function fallbackPage(
+  query: SectionItemsQuery,
+  reader: PoolReader,
+  options: SectionItemsOptions,
+  appId: string,
+  offset: number,
+): Promise<PageSectionItemsData> {
+  const poolId = await reader.fallbackPoolId(appId);
+  if (poolId === null) return EMPTY_PAGE;
+  const request = { appId, poolId, offset, limit: SECTION_PAGE_SIZE };
+  return poolPage(query, reader, options, request, true);
+}
+
+/**
  * One page of a union_material section (contract listPageSectionItems): section (30701) → cursor
  * (20001) → a round of upstream pages → at most one refill round when fewer than 20 cards survive
  * → link registration of the delivered cards only. Each round first checks every channel against
@@ -186,12 +283,14 @@ function errorFields(error: unknown): Record<string, string> {
  * programming error propagates. The cursor records upstream pages, so cards cut at 20 are never
  * shown (BR-PRICE-08). Merging reads no price, rebate or commission. Every card carries an explicit
  * ad_label: null, the field BR-TEXT-17 keeps; a page answered from an old copy is marked stale.
+ * B1-05r: a product_pool section is poolPage. So is a first page all of whose channels failed at
+ * the union, and every later page of that list, known by its pool cursor.
  */
 export async function getSectionItems(
   query: SectionItemsQuery,
   options: SectionItemsOptions,
 ): Promise<PageSectionItemsData> {
-  const { cards, logger, upstream } = options;
+  const { cards, logger, poolReader, upstream } = options;
   const { appId, deviceId } = await options.viewerContext.current();
   const section = await options.pages.section({
     appId,
@@ -199,15 +298,32 @@ export async function getSectionItems(
     sectionId: query.sectionId,
     deviceId,
   });
+  const cursor = (): Readonly<Record<string, unknown>> | null =>
+    query.cursor === undefined ? null : cursorPayload(query, query.cursor);
+  const source = poolReader === undefined ? null : poolSourceOf(section?.dataSource);
+  if (poolReader !== undefined && source !== null) {
+    const position = cursor();
+    const request = {
+      appId,
+      poolId: source.poolId,
+      offset: position === null ? 0 : poolOffset(position),
+      limit: Math.min(source.limit, SECTION_PAGE_SIZE),
+    };
+    return poolPage(query, poolReader, options, request, false);
+  }
   const refs = channelsOf(section?.dataSource);
-  const start =
-    query.cursor === undefined ? refs.map(() => 1) : decodeCursor(query, query.cursor, refs.length);
+  const position = cursor();
+  if (poolReader !== undefined && position !== null && 'pool_offset' in position) {
+    return fallbackPage(query, poolReader, options, appId, poolOffset(position));
+  }
+  const start = position === null ? refs.map(() => 1) : channelPages(position, refs.length);
   const pageSize = Math.max(1, Math.floor(SECTION_PAGE_SIZE / refs.length));
   const channels = refs.map((ref, index): ChannelState => ({
     ref,
     next: start[index]!,
     more: false,
     failed: false,
+    outage: false,
   }));
 
   const fetchPage = async (channel: ChannelState): Promise<HotRankUpstreamPage | null> => {
@@ -223,6 +339,7 @@ export async function getSectionItems(
       });
     } catch (error: unknown) {
       if (!isFeedFailure(error)) throw error;
+      channel.outage = !(error instanceof CatalogError);
       logger.warn(
         {
           event: 'section_channel_failed',
@@ -293,11 +410,17 @@ export async function getSectionItems(
     return true;
   };
 
-  const empty: PageSectionItemsData = { items: [], next_cursor: null, has_more: false };
-  if (!(await round(channels.filter((channel) => channel.next > 0)))) return empty;
+  if (!(await round(channels.filter((channel) => channel.next > 0)))) return EMPTY_PAGE;
+  if (
+    poolReader !== undefined &&
+    query.cursor === undefined &&
+    channels.every((channel) => channel.outage)
+  ) {
+    return fallbackPage(query, poolReader, options, appId, 0);
+  }
   const refill = channels.filter((channel) => channel.more);
   if (delivered.length < SECTION_PAGE_SIZE && refill.length > 0 && !(await round(refill))) {
-    return empty;
+    return EMPTY_PAGE;
   }
 
   const items: PageSectionItemsData['items'] = [];
@@ -308,10 +431,7 @@ export async function getSectionItems(
   return {
     items,
     next_cursor: hasMore
-      ? encodeCursor(
-          query,
-          channels.map((channel) => channel.next),
-        )
+      ? encodeCursor(query, { pages: channels.map((channel) => channel.next) })
       : null,
     has_more: hasMore,
   };

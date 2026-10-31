@@ -37,6 +37,7 @@ const ITEM: PoolItemRow = {
   price_fen: 8800n,
   coupon_fen: 800n,
   final_price_fen: 8000n,
+  commission_rate_bp: 1500,
   quoted_at: NOW,
   status: 'online',
   sort: 1,
@@ -109,6 +110,7 @@ function harness(item: PoolItemRow | null, product: PoolProduct = LIVE) {
     fromLink: () => Promise.resolve(product),
     fromItemRef: () => Promise.resolve(product),
     recheck: vi.fn(() => Promise.resolve(product)),
+    current: () => Promise.resolve(product),
   };
   const dropDetailCache = vi.fn(() => Promise.resolve());
   const admin = new PoolAdmin({

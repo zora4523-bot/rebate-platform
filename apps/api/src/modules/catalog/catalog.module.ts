@@ -23,6 +23,7 @@ import { createCatalog } from './application/catalog.ts';
 import { CatalogDetailService } from './application/detail-service.ts';
 import { CatalogHotRankService } from './application/hot-rank-service.ts';
 import { createItemRefService, type ItemRefService } from './application/item-ref.ts';
+import type { PoolReader } from './application/pool-read.ts';
 import { CatalogSearchService } from './application/search-service.ts';
 import { CatalogSectionItemsService } from './application/section-items-service.ts';
 import { markFreshDetail, type ProductDetailUpstream } from './detail.ts';
@@ -43,6 +44,7 @@ import { HotRankController } from './http/public/hot-rank.controller.ts';
 import { SectionItemsController } from './http/public/section-items.controller.ts';
 import { createFavoriteCardPort } from './favorites/card-port.ts';
 import { createFavoritesService } from './favorites/service.ts';
+import { createKyselyPoolReader } from './infra/kysely-pool-reader.ts';
 import { createDbCatalogProductReader } from './infra/product-reader-wiring.ts';
 import { SearchController } from './http/public/search.controller.ts';
 import { createUnionDetailUpstream } from './infra/detail-wiring.ts';
@@ -91,6 +93,7 @@ const SEARCH_CURSORS = Symbol('CATALOG_SEARCH_CURSORS');
 const PRICE_HISTORY = Symbol('CATALOG_PRICE_HISTORY');
 const SECTION_PAGES = Symbol('CATALOG_SECTION_PAGES');
 const FEED_LINK_REGISTRAR = Symbol('CATALOG_FEED_LINK_REGISTRAR');
+const POOL_READER = Symbol('CATALOG_POOL_READER');
 
 type PidReader = Pick<UnionPidService, 'getActivePid'>;
 
@@ -312,6 +315,9 @@ function freshDetailUpstream(upstream: ProductDetailUpstream): ProductDetailUpst
  * CatalogSectionItemsService → getSectionItems), request scoped on the same card ports and the hot
  * list's cached union side; the published section comes through the `sectionPages` port and the
  * cards register their links in the feed scene through the `feedLinkRegistrar` port.
+ * B1-05r: both use cases read the product pools through POOL_READER (the section's product_pool
+ * source and the union fall-backs of the feed and the detail); without a DB handle there is no
+ * reader and neither is served. Search has no such port: it never reads a pool (BR-PROD-07).
  */
 @Module({})
 export class CatalogModule {
@@ -377,6 +383,16 @@ export class CatalogModule {
                   config,
                   logger,
                 }),
+        },
+        {
+          provide: POOL_READER,
+          inject: [{ token: DB, optional: true }, CLOCK, CatalogConfigReader],
+          useFactory: (
+            db: Kysely<Database> | undefined,
+            clock: Clock,
+            config: CatalogConfigReader,
+          ): PoolReader | undefined =>
+            db === undefined ? undefined : createKyselyPoolReader({ db, clock, config }),
         },
         {
           provide: PRICE_TREND,
@@ -633,6 +649,7 @@ export class CatalogModule {
             GovernedUnion,
             ITEM_REFS,
             SECTION_PAGES,
+            POOL_READER,
             { token: REDIS, optional: true },
           ],
           useFactory: (
@@ -647,6 +664,7 @@ export class CatalogModule {
             union: GovernedUnion,
             itemRefs: ItemRefService,
             pages: SectionItemsPages,
+            poolReader: PoolReader | undefined,
             redis?: RedisHandle,
           ): CatalogSectionItemsService =>
             new CatalogSectionItemsService({
@@ -678,6 +696,7 @@ export class CatalogModule {
               ),
               pages,
               logger,
+              ...(poolReader === undefined ? {} : { poolReader }),
             }),
         },
         {
@@ -695,6 +714,7 @@ export class CatalogModule {
             GovernedUnion,
             ITEM_REFS,
             PRICE_HISTORY,
+            POOL_READER,
             { token: REDIS, optional: true },
           ],
           useFactory: (
@@ -709,6 +729,7 @@ export class CatalogModule {
             union: GovernedUnion,
             itemRefs: ItemRefService,
             priceHistory: PriceSnapshotRecorder | undefined,
+            poolReader: PoolReader | undefined,
             redis?: RedisHandle,
           ): CatalogDetailService =>
             new CatalogDetailService({
@@ -735,6 +756,7 @@ export class CatalogModule {
                 },
               ),
               ...(priceHistory === undefined ? {} : { priceHistory }),
+              ...(poolReader === undefined ? {} : { poolReader }),
             }),
         },
       ],
