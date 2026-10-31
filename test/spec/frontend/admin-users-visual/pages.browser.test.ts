@@ -187,6 +187,9 @@ it('[AC-F1-07j-BROWSER#4] 1440 定稿详情：标题 UID 和状态、竖排信�
   const bindings = main.getByRole('table', { name: '联盟授权', exact: true });
   await expect.element(bindings).toBeVisible();
   await expect.element(bindings.getByText('active', { exact: true })).toBeVisible();
-  await expect.element(bindings.getByRole('button')).not.toBeInTheDocument();
+  // F1-07ja: this super admin may get the F1-07jc row actions (重置授权 / 停用返利 / 恢复) and no
+  // other button; the read-only account without union.binding_* gets none ([AC-F1-07i-BROWSER#2]).
+  for (const action of bindings.getByRole('button').elements())
+    expect(action.textContent?.replace(/\s+/g, '') ?? '').toMatch(/^(?:重置授权|停用返利|恢复)/);
   await screenshot('admin-user-detail-final', marker);
 });

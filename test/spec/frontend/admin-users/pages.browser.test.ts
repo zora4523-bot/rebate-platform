@@ -3,12 +3,20 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, it } from 'vitest';
 import { commands, page } from 'vitest/browser';
 import { createAdminShell } from '../../../../apps/admin/src/App.tsx';
+import type { PermissionSnapshot } from '../../../../apps/admin/src/providers/access-control/index.ts';
 import { createDataProvider } from '../../../../apps/admin/src/providers/data/index.ts';
 import { BASE_URL, UID, createServer } from './fixtures.ts';
 
 const FIRST = { timeout: 10_000 };
 const MOTION =
   /(?:^|\s)ant-(?:zoom|fade|move|slide)\b|-(?:appear|enter|leave)(?:-|\s|$)|-motion\b|-motion-/;
+const SUPER: PermissionSnapshot = { isSuper: true, permissions: [] };
+// F1-07ja: every point this read-only page uses, without union.binding_* / risk.* / export /
+// order.view / order.claim / fund.view / withdraw.review (F1-07jb–je).
+const READ_ONLY: PermissionSnapshot = {
+  isSuper: false,
+  permissions: ['user.list', 'user.lookup', 'pii.reveal_phone', 'user.level', 'user.inviter'],
+};
 let root: Root | undefined;
 afterEach(() => {
   root?.unmount();
@@ -17,7 +25,7 @@ afterEach(() => {
   window.history.replaceState(null, '', '/');
 });
 
-function show(): HTMLElement {
+function show(snapshot = SUPER): HTMLElement {
   const server = createServer();
   const marker = document.createElement('span');
   marker.hidden = true;
@@ -41,7 +49,7 @@ function show(): HTMLElement {
     createAdminShell({
       router: 'memory',
       initialRoute: { menuId: 'users' },
-      permissionsProvider: async () => ({ isSuper: true, permissions: [] }),
+      permissionsProvider: async () => snapshot,
       account: { username: 'ops-yi', displayName: '超管' },
       environment: 'test',
       onLogout: () => {},
@@ -90,7 +98,7 @@ it('[AC-F1-07i-BROWSER#1] 1440 用户列表：筛选、查找、脱敏列及详�
 
 it('[AC-F1-07i-BROWSER#2] 1440 用户详情：基础信息、查看按钮与只读联盟授权可见', async () => {
   await page.viewport(1440, 1160);
-  const marker = show();
+  const marker = show(READ_ONLY);
   const main = page.getByRole('main');
   const open = main.getByRole('button', { name: /^详情(?:\s|$)/ }).first();
   await expect.element(open, FIRST).toBeVisible();
