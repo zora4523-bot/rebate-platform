@@ -15,6 +15,23 @@ export {
   readWithdrawEnabled,
   createDefaultFeeTaxCalculator,
 } from './application/withdraw-rules.ts';
+// B2-08c (BR-WDR-20): the configured tax calculator (app.module hands it to the withdrawal rules).
+export {
+  createFeeTaxCalculator,
+  cumulativeTaxFen,
+  dueTaxFen,
+  flatRateTaxFen,
+  mulDivRoundHalfUp,
+  taxRuleVersion,
+} from './application/fee-tax-calculator.ts';
+export type {
+  CumulativeTaxInput,
+  FeeTaxCalculatorOptions,
+  FeeTaxLogger,
+  TaxBracket,
+  TaxConfig,
+  TaxMethod,
+} from './application/fee-tax-calculator.ts';
 export type {
   WithdrawRulesOptions,
   WithdrawRulesService,

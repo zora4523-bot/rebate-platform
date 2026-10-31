@@ -242,7 +242,8 @@ import {
   autoPayoutWriteRefusals,
   createReconPassedDays,
   readAutoPayoutEnableCheck,
-  createDefaultFeeTaxCalculator,
+  createFeeTaxCalculator,
+  type PayoutConfigPort,
   createWithdrawApply,
   createWithdrawRiskFlags,
   createWithdrawRiskFactsReader,
@@ -3332,13 +3333,15 @@ function withdrawRuleOptions(
   // TODO(规划/11 §2.3): 待加验判定（BR-WDR-03 ③b）接 identity 的加验端口 — blocked on CT-26c
   const reverify: ReverifyGatePort = { check: () => Promise.resolve(null) };
   const realname = createRealnameReader(crypto);
+  const payoutLogger = logger.child({ module: 'payout' });
+  const config: PayoutConfigPort = {
+    configValue: (appId, key, handle) =>
+      createContentReader({ db: handle, clock }).configValue(appId, key),
+  };
   return {
     clock,
-    logger: logger.child({ module: 'payout' }),
-    config: {
-      configValue: (appId, key, handle) =>
-        createContentReader({ db: handle, clock }).configValue(appId, key),
-    },
+    logger: payoutLogger,
+    config,
     risk: createRiskStateBatchReader({ db }),
     appeal: createAppealPrevStateReader(),
     blocklist: createBlocklistMatchReader(),
@@ -3350,7 +3353,14 @@ function withdrawRuleOptions(
     holds: createWithdrawHoldsReader(),
     usage: createWithdrawUsageReader(),
     selfPurchase: selfPurchasePort(),
-    feeTax: createDefaultFeeTaxCalculator(),
+    // B2-08c (BR-WDR-20): the tax from content's tax.SERVICE_FEE.* keys (none / flat_rate /
+    // cumulative over tax_ytd and the in-flight withdrawals), the identity dimension through
+    // identity's realname-identity-key port; never a rate in code.
+    feeTax: createFeeTaxCalculator({
+      config,
+      identityKey: createRealnameIdentityKeyReader(),
+      logger: payoutLogger,
+    }),
   };
 }
 
