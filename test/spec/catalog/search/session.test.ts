@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { SearchProductsQuery } from '../../../../apps/api/src/modules/catalog/search.ts';
-import { candidate, claims, fixture, observed } from './kit.ts';
+import { candidate, claims, fixture } from './kit.ts';
 
 it('[AC-B1-05d#16] 同页同键择券后价最低、返利上限最高、原次序最前，并保留中奖 goods_sign', async () => {
   const f = fixture();
@@ -135,13 +135,13 @@ it('[AC-B1-05d#21] 同用户换设备仍沿用会话，身份以 ViewerContext �
 });
 
 it.each([{ userId: 'synthetic-other-user' }, { appId: 'synthetic-other-app' }])(
-  '[AC-B1-05d#22] 不同身份 %j 不继承他人已下发集合',
+  '[AC-B1-05d#22] 不同身份 %j 不继承他人已下发集合，按请求页返回',
   async (identity) => {
     const f = fixture();
-    f.pages.set(1, { items: [candidate('a')], hasMore: true });
-    f.pages.set(2, { items: [candidate('a')], hasMore: false });
-    const first = await f.run({ limit: 1 });
-    expect(first.items).toHaveLength(1);
+    f.pages.set(1, { items: [candidate('a'), candidate('page-1')], hasMore: true });
+    f.pages.set(2, { items: [candidate('a'), candidate('page-2')], hasMore: false });
+    const first = await f.run({ limit: 2 });
+    expect(first.items).toHaveLength(2);
     f.setViewer(identity);
     if (identity.appId) {
       for (const [pageNo, page] of f.pages)
@@ -153,26 +153,31 @@ it.each([{ userId: 'synthetic-other-user' }, { appId: 'synthetic-other-app' }])(
           })),
         });
     }
-    const result = await observed(() => f.run({ limit: 1, cursor: first.next_cursor! }));
-    // Wire policy may reject a foreign cursor or restart; silently using its seen set is forbidden.
-    if (result.kind === 'rejected') expect(result.error).toMatchObject({ code: 20001 });
-    else expect(result.value.items.map((card) => card.title)).toEqual(['synthetic-a']);
+    const result = await f.run({ limit: 2, cursor: first.next_cursor! });
+    expect(result.items.map((card) => card.title)).toEqual(['synthetic-a', 'synthetic-page-2']);
+    expect(f.search.mock.calls.map(([input]) => input.pageNo)).toEqual([1, 2]);
+    const written = f.sessions.write.mock.lastCall;
+    expect(written?.[2].seen).toEqual(['tb:synthetic-a', 'tb:synthetic-page-2']);
+    expect(written?.[1]).not.toBe(claims(f, first.next_cursor)?.search_session_id);
   },
 );
 
 it('[AC-B1-05d#23] 游客按 device_id 隔离，游客也能正常出卡', async () => {
   const f = fixture();
   f.setViewer({ userId: null });
-  f.pages.set(1, { items: [candidate('a')], hasMore: true });
+  f.pages.set(1, { items: [candidate('a'), candidate('page-1')], hasMore: true });
   f.pages.set(2, { items: [candidate('a'), candidate('b')], hasMore: false });
-  const first = await f.run({ limit: 1 });
-  const sameDevice = await f.run({ limit: 1, cursor: first.next_cursor! });
+  const first = await f.run({ limit: 2 });
+  const sameDevice = await f.run({ limit: 2, cursor: first.next_cursor! });
   expect(sameDevice.items.map((card) => card.title)).toEqual(['synthetic-b']);
   expect(f.register.mock.calls.every(([input]) => input.viewer.userId === null)).toBe(true);
   f.setViewer({ deviceId: 'synthetic-other-device' });
-  const other = await observed(() => f.run({ limit: 1, cursor: first.next_cursor! }));
-  if (other.kind === 'rejected') expect(other.error).toMatchObject({ code: 20001 });
-  else expect(other.value.items.map((card) => card.title)).toEqual(['synthetic-a']);
+  const other = await f.run({ limit: 2, cursor: first.next_cursor! });
+  expect(other.items.map((card) => card.title)).toEqual(['synthetic-a', 'synthetic-b']);
+  expect(f.search.mock.calls.map(([input]) => input.pageNo)).toEqual([1, 2, 2]);
+  const written = f.sessions.write.mock.lastCall;
+  expect(written?.[2].seen).toEqual(['tb:synthetic-a', 'tb:synthetic-b']);
+  expect(written?.[1]).not.toBe(claims(f, first.next_cursor)?.search_session_id);
 });
 
 it('[AC-B1-05d#24] 会话 30 分钟无请求过期，活跃翻页刷新空闲时间，过期后按请求页返回', async () => {
