@@ -4,7 +4,7 @@ title: ledger：差错单结案写 resolution.outcome（CT-24zf），readUnionAu
 type: impl
 # 2026-10-31 入账（admin-backend，编排 D10-468 ②、D10-447 ②）。D10-447 原写「落地后另开任务改读口」，写入与读口同一模块、同一口径，并成一单更省（代理自定，可拆）。
 # 资金影响：结论为以联盟为准的订单，月结校验算相符，会进批次按联盟结算额入账。只认结构化 outcome，closed 状态本身不算，自由文本 reason 不解析。
-# 跟改 B2-04zd 冻结测试（恒空集）用单独 test-change 提交，排在 test(spec) 之前。
+# D10-506：只认 type=settle_amount_mismatch；结论绑 expected / actual，job 与 supplement 只有当前 base 与 B_settle 都等于结论时算相符，否则照常比较；结案后又不一致新开差错单，dedupe 键 = 原键 + (base_fen, B_settle) 指纹，订单保持 WAITING。
 refs: [BR-FUND-04]
 refs_hash:
   BR-FUND-04: 2497ceea4515
@@ -14,6 +14,12 @@ paths:
   - 'apps/api/src/modules/ledger/application/recon-diff-conclusion.ts'
   - 'apps/api/src/modules/ledger/infra/recon-diffs-store.ts'
   - 'apps/api/src/modules/ledger/http/admin/**'
+  - 'apps/api/src/modules/ledger/index.ts'
+  - 'apps/api/src/modules/settlement/bill/job.ts'
+  - 'apps/api/src/modules/settlement/bill/infra/bill-source.ts'
+  - 'apps/api/src/modules/ledger/application/recon-diffs.ts'
+  - 'apps/api/src/modules/settlement/bill/supplement/command.ts'
+  - 'packages/domain/src/settlement/bill/**'
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/planned-operations.gen.ts'
   - 'packages/contracts-ts/src/openapi.gen.ts'
