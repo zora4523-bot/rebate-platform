@@ -1,11 +1,11 @@
 // B2-09h close rule tests (claude-independent, SPEC_REF 9ab94dc0): contracts/openapi.yaml
-// closeAdminReconDiff — `outcome`, optional, union or ours, meaningful for source R1 only; a value
-// outside the enum is 20001 [outcome]; order of checks fund.recon → body → recon_diff_id → status
-// (20902) → outcome on a source other than R1 (20001 [outcome], nothing changed); stored as
-// resolution.outcome next to resolution.reason; without it there is no structured conclusion; a
-// closed difference answers 20902 to any further close, so the conclusion cannot be changed; the
-// audit recon_diff_close carries outcome when given. Requests go through the real admin entry
-// (kit.ts). Top-level it() only (规划/11 §4.3).
+// closeAdminReconDiff — `outcome`, optional, union or ours, meaningful for type=settle_amount_mismatch
+// of source R1 only (D10-506 ①); a value outside the enum is 20001 [outcome]; order of checks
+// fund.recon → body → recon_diff_id → status (20902) → outcome on any other type or source (20001
+// [outcome], nothing changed); stored as resolution.outcome next to resolution.reason; without it
+// there is no structured conclusion; a closed difference answers 20902 to any further close, so the
+// conclusion cannot be changed; the audit recon_diff_close carries outcome when given. Requests go
+// through the real admin entry (kit.ts). Top-level it() only (规划/11 §4.3).
 import { randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
 import {
@@ -39,31 +39,19 @@ import {
 
 const s = suite();
 
-it('[AC-B2-09h#1] R1 差错单带 outcome 结案（open、processing；settle_amount_mismatch、union_mismatch、settle_missing）：resolution 恰好是原有键加 reason、outcome，其余列按结案规则变化；应答 recon_diff 与关闭后 GET 详情一致且带 resolution.outcome；关闭不记账；结案后读口只认其中 outcome=union 的单', async () => {
+it('[AC-B2-09h#1] R1 账单金额不一致差错单带 outcome 结案（open、processing）：resolution 恰好是原有键加 reason、outcome，其余列按结案规则变化；应答 recon_diff 与关闭后 GET 详情一致且带 resolution.outcome；关闭不记账；结案后读口只认其中 outcome=union 的单', async () => {
   const f = fixture(s);
   await withCloseAdmin(f, async (h) => {
     const cases = [
-      { outcome: 'union', status: 'open', type: 'settle_amount_mismatch', stored: null },
-      {
-        outcome: 'union',
-        status: 'processing',
-        type: 'union_mismatch',
-        stored: { note: '财务核实中' },
-      },
-      { outcome: 'union', status: 'open', type: 'settle_missing', stored: null },
-      { outcome: 'ours', status: 'open', type: 'settle_amount_mismatch', stored: null },
-      {
-        outcome: 'ours',
-        status: 'processing',
-        type: 'settle_amount_mismatch',
-        stored: { note: '财务核实中' },
-      },
+      { outcome: 'union', status: 'open', stored: null },
+      { outcome: 'union', status: 'processing', stored: { note: '财务核实中' } },
+      { outcome: 'ours', status: 'open', stored: null },
+      { outcome: 'ours', status: 'processing', stored: { note: '财务核实中' } },
     ];
     const keys: string[] = [];
     const concluded: string[] = [];
     for (const [i, one] of cases.entries()) {
       const diff = await r1Diff(f, {
-        type: one.type,
         status: one.status,
         handler_id: one.status === 'processing' ? h.viewer.id : null,
         resolution: one.stored,
@@ -87,10 +75,13 @@ it('[AC-B2-09h#1] R1 差错单带 outcome 结案（open、processing；settle_am
   });
 });
 
-it('[AC-B2-09h#2] source 不是 R1（R2、R3，含 ref_type order 的 R3）带 outcome（union、ours）→ 20001 data.fields=[outcome]：差错单、冻结都不变，不写审计；这个拒绝不存为幂等结果，同一 Idempotency-Key 去掉 outcome 重发照常关闭', async () => {
+it('[AC-B2-09h#2] 不是 R1 账单金额不一致单带 outcome（union、ours）→ 20001 data.fields=[outcome]：R1 的别的类型（settle_missing、union_mismatch、estimate_changed_after_credit）、R2、R3（含 ref_type order 与类型相同而来源不是 R1 的单）都一样，差错单、冻结都不变，不写审计；这个拒绝不存为幂等结果，同一 Idempotency-Key 去掉 outcome 重发照常关闭', async () => {
   const f = fixture(s);
   await withCloseAdmin(f, async (h) => {
     const rows = [
+      await r1Diff(f, { type: 'settle_missing', actual_fen: 0n, diff_fen: -1_234n }),
+      await r1Diff(f, { type: 'union_mismatch', expected_fen: 0n, diff_fen: 1_100n }),
+      await r1Diff(f, { type: 'estimate_changed_after_credit' }),
       await seedDiff(f, { source: 'R2', type: 'channel_mismatch', ref_type: 'withdrawal' }),
       await seedDiff(f, {
         source: 'R3',
@@ -100,6 +91,7 @@ it('[AC-B2-09h#2] source 不是 R1（R2、R3，含 ref_type order 的 R3）带 o
         handler_id: h.viewer.id,
       }),
       await seedDiff(f, { source: 'R3', type: 'appeal_restore', ref_type: 'order' }),
+      await r1Diff(f, { source: 'R3' }),
     ];
     for (const [i, row] of rows.entries()) {
       const hold = await seedHold(f, { user_id: await member(f), source_ref: sourceOf(row.id) });
@@ -119,12 +111,13 @@ it('[AC-B2-09h#2] source 不是 R1（R2、R3，含 ref_type order 的 R3）带 o
   });
 });
 
-it('[AC-B2-09h#3] 检查顺序：权限 → 请求体 → recon_diff_id → 状态 → outcome 的来源。持 fund.view → 10403；原因不合格 → [reason]；未知 id、别的应用、R4、不是 UUID → [recon_diff_id]；非 R1 已 closed / adjusted / written_off → 20902（不是 [outcome]），差错单不变；只有仍可关闭的非 R1 单才到 [outcome]', async () => {
+it('[AC-B2-09h#3] 检查顺序：权限 → 请求体 → recon_diff_id → 状态 → outcome 的适用范围。持 fund.view → 10403；原因不合格 → [reason]；未知 id、别的应用、R4、不是 UUID → [recon_diff_id]；不适用 outcome 的单（R2、R1 的别的类型）已 closed / adjusted / written_off → 20902（不是 [outcome]），差错单不变；只有仍可关闭的这类单才到 [outcome]', async () => {
   const f = fixture(s);
   const other = fixture(s);
   await withCloseAdmin(f, async (h) => {
     const body = { reason: '核对', outcome: 'union' };
     const open = await seedDiff(f, { source: 'R2', type: 'channel_mismatch' });
+    const missing = await r1Diff(f, { type: 'settle_missing' });
     const foreign = await seedDiff(other, { source: 'R2', type: 'channel_mismatch' });
     const pay = await seedDiff(f, {
       source: 'R4',
@@ -139,21 +132,26 @@ it('[AC-B2-09h#3] 检查顺序：权限 → 请求体 → recon_diff_id → 状�
       await answer(await h.close(id, body), 20001, { fields: ['recon_diff_id'] });
     }
     for (const status of ['closed', 'adjusted', 'written_off'] as const) {
-      const done = await seedDiff(f, {
-        source: 'R2',
-        type: 'channel_mismatch',
+      const finished = {
         status,
         handler_id: h.viewer.id,
         closed_at: ago(f, 20),
         resolution: { reason: `已${status}` },
-      });
-      await conflict(await h.close(done.id, body));
-      expect(await diffNow(f, done.id)).toEqual(done);
+      };
+      for (const done of [
+        await seedDiff(f, { source: 'R2', type: 'channel_mismatch', ...finished }),
+        await r1Diff(f, { type: 'settle_missing', ...finished }),
+      ]) {
+        await conflict(await h.close(done.id, body));
+        expect(await diffNow(f, done.id)).toEqual(done);
+      }
     }
     expect(await audits(f)).toEqual([]);
 
-    await answer(await h.close(open.id, body), 20001, { fields: ['outcome'] });
-    expect(await diffNow(f, open.id)).toEqual(open);
+    for (const row of [open, missing]) {
+      await answer(await h.close(row.id, body), 20001, { fields: ['outcome'] });
+      expect(await diffNow(f, row.id)).toEqual(row);
+    }
   });
 });
 

@@ -1,10 +1,12 @@
 // B2-09h read port rule tests (claude-independent, SPEC_REF 9ab94dc0): the task brief and 编排裁定
-// D10-447 ②, D10-468 ②: readUnionAuthoritativeOrderKeys reads recon_diffs — source R1, ref_type
-// order, ref_id in the given keys, status closed, resolution.outcome = 'union', of the given app.
-// `closed` by itself, outcome=ours, no outcome and a free-text reason do not count. The rows are
-// written directly (kit.ts), as closes and registrations would have left them; the port runs in a
-// read-only transaction, so a write or a row lock would be refused. Top-level it() only (规划/11
-// §4.3). bill-source passes every order key of the platform, so the list has no useful upper bound.
+// D10-447 ②, D10-468 ②, D10-506 ① ②: readUnionAuthoritativeOrderKeys reads recon_diffs — type
+// settle_amount_mismatch, source R1, ref_type order, ref_id in the given keys, status closed,
+// resolution.outcome = 'union', of the given app — and answers each conclusion with its expected_fen
+// and actual_fen. `closed` by itself, outcome=ours, no outcome and a free-text reason do not count.
+// The rows are written directly (kit.ts), as closes and registrations would have left them; the port
+// runs in a read-only transaction, so a write or a row lock would be refused. Top-level it() only
+// (规划/11 §4.3). bill-source passes every order key of the platform, so the list has no useful upper
+// bound.
 import { expect, it } from 'vitest';
 import {
   allDiffs,
@@ -12,6 +14,7 @@ import {
   ledger,
   orderKey,
   suite,
+  unionConclusions,
   unionDiff,
   unionKeys,
   type DiffRow,
@@ -19,15 +22,16 @@ import {
 
 const s = suite();
 
-it('[AC-B2-09h#8] 读口只认 outcome=union：source R1、ref_type order、status closed、本 app、在所给键内（类型不限）才返回；ours、无 outcome、resolution 为空、别的 app、R2 / R3 / R4、open / processing / adjusted / written_off、ref_type 不是 order、未询问的键都不算', async () => {
+it('[AC-B2-09h#8] 读口只认 outcome=union：type settle_amount_mismatch、source R1、ref_type order、status closed、本 app、在所给键内才返回；ours、无 outcome、resolution 为空、别的 app、别的类型（union_mismatch、settle_missing，带 union 的旧数据）、R2 / R3 / R4、open / processing / adjusted / written_off、ref_type 不是 order、未询问的键都不算', async () => {
   const f = fixture(s);
   const other = fixture(s);
   const yes = [
     await unionDiff(f),
-    await unionDiff(f, { type: 'union_mismatch' }),
-    await unionDiff(f, { type: 'settle_missing', ref_id: orderKey().replace('taobao:', 'jd:') }),
+    await unionDiff(f, { ref_id: orderKey().replace('taobao:', 'jd:') }),
   ];
   const no = [
+    await unionDiff(f, { type: 'union_mismatch' }),
+    await unionDiff(f, { type: 'settle_missing' }),
     await unionDiff(f, { resolution: { reason: '以我方为准', outcome: 'ours' } }),
     await unionDiff(f, { resolution: { reason: '以联盟为准' } }),
     await unionDiff(f, { resolution: null }),
@@ -80,8 +84,10 @@ it('[AC-B2-09h#10] 在所给句柄上读：同一事务里未提交的结论只�
   await f.db.transaction().execute(async (trx) => {
     await unionDiff({ ...f, db: trx }, { ref_id: key });
     const selection = { appId: f.appId, orderKeys: [key] };
-    expect([...(await ledger.readUnionAuthoritativeOrderKeys(trx, selection))]).toEqual([key]);
-    expect([...(await ledger.readUnionAuthoritativeOrderKeys(f.db, selection))]).toEqual([]);
+    const inside = await ledger.readUnionAuthoritativeOrderKeys(trx, selection);
+    const outside = await ledger.readUnionAuthoritativeOrderKeys(f.db, selection);
+    expect([...inside.keys()]).toEqual([key]);
+    expect([...outside.keys()]).toEqual([]);
   });
 
   const before = await allDiffs(f);
@@ -96,4 +102,44 @@ it('[AC-B2-09h#11] 键数超过 PostgreSQL 单条语句的参数上限（65535�
 
   const keys = [...crowd, real.ref_id, real.ref_id];
   expect(await unionKeys(f.db, f.appId, keys)).toEqual([real.ref_id]);
+});
+
+it('[AC-B2-09h#20] D10-506 ②：读口按单返回每张 union 结论结案时的 expected_fen / actual_fen（bigint 原值，含 0 与超出 JS 安全整数的金额）；同一单多张 union 结论（别的账单月）全部返回；同单的 ours 结论与未询问的单不混入，所给键重复时不重复', async () => {
+  const f = fixture(s);
+  const single = await unionDiff(f, { expected_fen: 0n, actual_fen: 1_100n, diff_fen: 1_100n });
+  const huge = 9_007_199_254_740_993n;
+  const large = await unionDiff(f, { expected_fen: huge, actual_fen: 1n, diff_fen: 1n - huge });
+  const twice = await unionDiff(f, { period: '2026-08' });
+  await unionDiff(f, {
+    ref_id: twice.ref_id,
+    period: '2026-09',
+    expected_fen: 600n,
+    actual_fen: 1_100n,
+    diff_fen: 500n,
+  });
+  await unionDiff(f, {
+    ref_id: twice.ref_id,
+    period: '2026-10',
+    expected_fen: 700n,
+    actual_fen: 1_100n,
+    diff_fen: 400n,
+    resolution: { reason: '以我方为准', outcome: 'ours' },
+  });
+  const unasked = await unionDiff(f);
+
+  const keys = [single.ref_id, large.ref_id, twice.ref_id, twice.ref_id];
+  const read = await unionConclusions(f.db, f.appId, keys);
+
+  expect(new Set(read.keys())).toEqual(new Set([single.ref_id, large.ref_id, twice.ref_id]));
+  expect(read.has(unasked.ref_id)).toBe(false);
+  expect(read.get(single.ref_id)).toEqual([{ expectedFen: 0n, actualFen: 1_100n }]);
+  expect(read.get(large.ref_id)).toEqual([{ expectedFen: huge, actualFen: 1n }]);
+  const both = read.get(twice.ref_id) ?? [];
+  expect(both).toHaveLength(2);
+  expect(both).toEqual(
+    expect.arrayContaining([
+      { expectedFen: 1_234n, actualFen: 1_100n },
+      { expectedFen: 600n, actualFen: 1_100n },
+    ]),
+  );
 });

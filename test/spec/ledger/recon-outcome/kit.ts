@@ -1,11 +1,16 @@
 // B2-09h rule-test kit (claude-independent, SPEC_REF 9ab94dc0): contracts/openapi.yaml
 // closeAdminReconDiff `outcome` and AdminReconDiffOutcome, contracts/enums/admin.yaml
-// admin_recon_diff_outcome (CT-24zf, 编排裁定 D10-447 ②, D10-468 ②), 08 BR-FUND-04 ④, 校验结果表与
-// 例 2. The conclusion is resolution.outcome of a closed R1 order difference; `closed` by itself and
-// the free-text reason are not conclusions.
+// admin_recon_diff_outcome (CT-24zf, 编排裁定 D10-447 ②, D10-468 ②, D10-506), 08 BR-FUND-04 ④, 校验结果表
+// 与例 2. The conclusion is resolution.outcome of a closed settle_amount_mismatch difference of source
+// R1 on an order, bound to that difference's amounts; `closed` by itself and the free-text reason are
+// not conclusions.
 // Real pieces: the admin entry of ../admin-recon-close/kit.ts, ledger's public read port, PostgreSQL
 // through @couli/db/testing as couli_app, Redis for the admin sessions. Synthetic: the recon_diffs,
 // users and withdraw_holds rows, the admin accounts. No real user or merchant data.
+// The shape of the read port (D10-506 ②, frozen here because the ruling names only its content):
+// order_key → every 「以联盟为准」 conclusion of that order, each with the amounts it was reached on.
+// An order can have several (D10-506 ③ re-opens a difference, and another bill month has its own), so
+// one pair per key would lose the ones the current amounts might equal.
 import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
@@ -103,8 +108,27 @@ export function unionKeys(
   orderKeys: readonly string[],
 ): Promise<string[]> {
   return readOnly(db, async (trx) =>
-    [...(await ledger.readUnionAuthoritativeOrderKeys(trx, { appId, orderKeys }))].sort(),
+    [...(await ledger.readUnionAuthoritativeOrderKeys(trx, { appId, orderKeys })).keys()].sort(),
   );
+}
+
+/** The amounts one conclusion was reached on: its difference's expected_fen and actual_fen. */
+export interface ConcludedAmounts {
+  readonly expectedFen: bigint;
+  readonly actualFen: bigint;
+}
+
+/** The read port's whole answer (see the header), in a read-only transaction. */
+export function unionConclusions(
+  db: Kysely<DB>,
+  appId: string,
+  orderKeys: readonly string[],
+): Promise<ReadonlyMap<string, readonly ConcludedAmounts[]>> {
+  return readOnly(db, async (trx) => {
+    const read: unknown = await ledger.readUnionAuthoritativeOrderKeys(trx, { appId, orderKeys });
+    expect(read).toBeInstanceOf(Map);
+    return read as ReadonlyMap<string, readonly ConcludedAmounts[]>;
+  });
 }
 
 /** The row closed by `adminId` at the fixture's clock with exactly this resolution. */
