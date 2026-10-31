@@ -8,6 +8,7 @@ import { readAgentReviewConfig, type AgentReviewConfig } from './agent-review.ts
 import { readAgentUserHashConfig } from './agent-user-hash.ts';
 import { findCredentialLikeEnvNames } from './credential-env.ts';
 import { readDataokeConfig, type DataokeAppConfig } from './dataoke.ts';
+import type { JdAppConfig } from './jd.ts';
 import {
   JWT_ENV_NAMES,
   readJwtKeyConfig,
@@ -198,6 +199,18 @@ export interface AppConfig {
    * configured; a hand-built config without it counts as null.
    */
   readonly dataoke?: DataokeAppConfig | null;
+  /**
+   * JD_APP_KEY / JD_APP_SECRET_FILE (./jd.ts, B1-04ze): staging only, both or neither. The secret
+   * file is read once by the union module's startup factory; this holds only the app key and the
+   * path. Absent when not configured; a hand-built config without it counts as null.
+   */
+  readonly jd?: JdAppConfig | null;
+  /**
+   * JD_SITE_ID (B1-04ze, D10-500 ①): the Jingdong site id as decimal text, a server setting (not a
+   * credential), used by link conversion (B1-04zd). Null when unset in any environment; a
+   * hand-built config without it counts as null.
+   */
+  readonly jdSiteId?: string | null;
   /**
    * UNION_ENDPOINT_OVERRIDE_DIR (./union-endpoint-override.ts, B1-04y): staging only, an absolute
    * path of the mounted directory the UNION_ENDPOINTS factory reads <platform>.json from instead
