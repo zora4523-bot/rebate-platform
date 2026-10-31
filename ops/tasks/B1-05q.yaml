@@ -25,5 +25,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/catalog/product-pool-admin/**'
-status: todo
-pr: null
+status: done
+pr: 2069
