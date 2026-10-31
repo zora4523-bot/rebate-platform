@@ -8,7 +8,7 @@ refs_hash:
   BR-PRICE-11: 193429dfd0bf
   BR-TEXT-17: 486f4508575e
   BR-PROD-07: 975e639e6dd5
-deps: [B1-05q]
+deps: [B1-05q, B1-05s]
 paths:
   - 'apps/api/src/modules/catalog/**'
   - 'apps/api/src/app.module.ts'
