@@ -35,6 +35,8 @@ const SENSITIVE_NAMES: ReadonlySet<string> = new Set([
   'clientsecret',
   'appsecret',
   'sign',
+  // B1-04m：大淘客新验签 signRan。
+  'signran',
   'session',
   'sessionkey',
   'accesstoken',
