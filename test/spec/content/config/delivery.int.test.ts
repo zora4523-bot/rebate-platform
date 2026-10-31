@@ -81,16 +81,15 @@ it('[AC-F1-02c#1] 最小有效配置下发所有约定键、规划缺省与完�
   expect(
     data.config_version === undefined || /^[0-9A-Za-z._:-]{1,64}$/.test(data.config_version),
   ).toBe(true);
-  // F1-02zzt: F1-02zzq 前的两态过渡，F1-02zzq 合并后收紧为单态 (04 l.973 nickname, BR-ID-39:
-  // 1–16 字符、每月 3 次). Either the key is absent, or it is exactly this object; any other value
-  // (null, missing / extra field, other numbers) fails. Masked below only for the exact comparison.
-  if (Object.hasOwn(data, 'nickname')) {
-    expect(data.nickname, 'nickname').toStrictEqual({ min_len: 1, max_len: 16, monthly_limit: 3 });
-  }
+  // F1-02zzw: 收紧为单态（F1-02zzq 已合并） (04 l.973 nickname, BR-ID-39: 1–16 字符、每月 3 次).
+  // The key must be present and exactly this object; absence or any other value (null, missing /
+  // extra field, other numbers) fails. Masked below only for the exact comparison.
+  expect(Object.hasOwn(data, 'nickname'), 'nickname present').toBe(true);
+  expect(data.nickname, 'nickname').toStrictEqual({ min_len: 1, max_len: 16, monthly_limit: 3 });
   expect({
     ...data,
     invite: inviteOf(data.invite), // F1-02zm
-    nickname: undefined, // F1-02zzt
+    nickname: undefined, // F1-02zzt, F1-02zzw: asserted above
     platform_icons: undefined,
     lkg_max_age_sec: undefined,
     config_version: undefined,

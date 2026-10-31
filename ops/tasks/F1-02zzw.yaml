@@ -1,0 +1,18 @@
+id: F1-02zzw
+repo: rebate-platform
+title: 收紧测试（FU-F102ZZT-TIGHTEN）：冻结 [AC-F1-02c#1] 对 /v1/config 只认「nickname 恰好为 {min_len:1, max_len:16, monthly_limit:3}」单态，去掉「无 nickname」分支
+type: test-change
+# 2026-10-31 入账（content-client；编排 07:0x 派 FU-F102ZZT-TIGHTEN，先例 F1-02zzf 收紧 F1-02zzc）。F1-02zzq（#1958）已合并，/v1/config 总是下发 nickname，过渡分支不再需要。
+# 改既有规则测试属第一类保护路径：走非 task 分支、台账同 PR；全新上下文 Claude 修改、另一全新上下文 Claude 只读复审，按 approvals #24 由编排加 owner-approved 标签。
+refs: []
+refs_hash: {}
+deps: [F1-02zzt, F1-02zzq]
+paths:
+  - 'test/spec/content/config/delivery.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/config/**'
+status: todo
+pr: null
