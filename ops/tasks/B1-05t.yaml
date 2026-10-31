@@ -12,6 +12,86 @@ paths:
   - 'apps/api/src/modules/catalog/infra/search-wiring.ts'
 test_paths:
   - 'test/spec/catalog/search-expired-page/**'
+  - 'test/spec/catalog/search/session.test.ts'
+red_exempt:
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#16] 同页同键择券后价最低、返利上限最高、原次序最前，并保留中奖 goods_sign'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#17] 去重比较 resolveProductKey 后的键，不以 raw ID 或标题代替'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#18] 已下发商品在后页剔除，包括别名；缓存原页不被去重改写'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#19] 我方游标只含会话 ID 和上游页码，不含商品键、身份、推广位或偏移'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#20] 参数变化 {"platform":"jd"} 新开会话并从第 1 页查'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#20] 参数变化 {"q":"另一组合成词"} 新开会话并从第 1 页查'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#20] 参数变化 {"price_max_fen":5000} 新开会话并从第 1 页查'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#20] 参数变化 {"sort":"rebate_desc"} 新开会话并从第 1 页查'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#20] 参数变化 {"has_coupon":true} 新开会话并从第 1 页查'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#20] 参数变化 {"sort":"final_price_asc"} 新开会话并从第 1 页查'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#20] 参数变化 {"price_min_fen":500} 新开会话并从第 1 页查'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#21] 同用户换设备仍沿用会话，身份以 ViewerContext 的 user_id 优先'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#22] 不同身份 {"userId":"synthetic-other-user"} 不继承他人已下发集合'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#22] 不同身份 {"appId":"synthetic-other-app"} 不继承他人已下发集合'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#23] 游客按 device_id 隔离，游客也能正常出卡'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#25] 已下发集合最多 500 个，超过后停止会话去重：overflow=false'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#25] 已下发集合最多 500 个，超过后停止会话去重：overflow=true'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#26] 已过滤未下发商品不进入 seen，返利恢复后下一页仍可出现'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#40] 非法游标载荷 {"page_no":2} 返回参数错误，不能带入联盟请求'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#40] 非法游标载荷 {"search_session_id":"synthetic-session","page_no":"2"} 返回参数错误，不能带入联盟请求'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#40] 非法游标载荷 {"search_session_id":"synthetic-session","page_no":0} 返回参数错误，不能带入联盟请求'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#40] 非法游标载荷 null 返回参数错误，不能带入联盟请求'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#40] 非法游标载荷 {"search_session_id":"synthetic-session","page_no":-1} 返回参数错误，不能带入联盟请求'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#40] 非法游标载荷 {"search_session_id":"synthetic-session","page_no":1.5} 返回参数错误，不能带入联盟请求'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#40] 非法游标载荷 {"search_session_id":"synthetic-session","page_no":2,"offset":1} 返回参数错误，不能带入联盟请求'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
+  - file: test/spec/catalog/search/session.test.ts
+    test: '[AC-B1-05d#41] 同查询不同查看者按当前报价过滤，不能复用上一查看者返利'
+    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
 impl: claude
 tester: claude-independent
 accept:
