@@ -1,0 +1,146 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-orders-sync/detail.test.ts > [AC-F1-07eb-DETAIL#1] 详情【同步此单】（可直接发或经确认）POST { platform, order_nos: [该子单号] }，平台与单号取自详情，无动态码、无 Idempotency-Key，提示已提交",
+    "test/spec/frontend/admin-orders-sync/detail.test.ts > [AC-F1-07eb-DETAIL#2] 同一单在排队中再点【同步此单】得 reused=true，提示已有相同同步；站长授权暂停（30156）提示该平台授权暂停；都不新建",
+    "test/spec/frontend/admin-orders-sync/detail.test.ts > [AC-F1-07eb-DETAIL#3] 请求在途时连点【同步此单】（或连点它打开的确认 / 提交）只发一次 POST",
+    "test/spec/frontend/admin-orders-sync/entries.test.ts > [AC-F1-07eb-ENTRY#1] 持 order.view 的订单列表标题行有可用的【手动同步】【同步记录】，列表初次加载不请求 order-syncs 与 limits",
+    "test/spec/frontend/admin-orders-sync/entries.test.ts > [AC-F1-07eb-ENTRY#2] 持 order.view 的订单详情有可用的【同步此单】，详情初次加载不请求 order-syncs 与 limits、不读列表",
+    "test/spec/frontend/admin-orders-sync/entries.test.ts > [AC-F1-07eb-ENTRY#3] 超管也有【手动同步】【同步记录】；进不了订单页的账号没有这些入口、也不发 order-syncs 请求",
+    "test/spec/frontend/admin-orders-sync/order-nos.test.ts > [AC-F1-07eb-NOS#1] 按订单号补拉：每行一个单号（去掉首尾空白与空行），body 恰为 platform + order_nos、不带 from / to，无动态码、无 Idempotency-Key，提示已提交",
+    "test/spec/frontend/admin-orders-sync/order-nos.test.ts > [AC-F1-07eb-NOS#2] 单号个数超出 limits 的 max_order_nos：前端拦下或收 20001 [order_nos]，都在单号旁提示、不建同步；改到上限内再提交才建同步",
+    "test/spec/frontend/admin-orders-sync/order-nos.test.ts > [AC-F1-07eb-NOS#3] 两种形态不混用：填过时间窗再切到按订单号只发 platform + order_nos；填过单号再切回按时间窗只发 platform + from / to",
+    "test/spec/frontend/admin-orders-sync/order-nos.test.ts > [AC-F1-07eb-NOS#4] 服务端回 20001 data.fields=[order_nos]：单号旁提示，对话框不关、不显示成功、不自动重发",
+    "test/spec/frontend/admin-orders-sync/order-nos.test.ts > [AC-F1-07eb-NOS#5] 没填单号：提交置灰不发请求，或点提交后在单号旁提示（不发或收 20001 [order_nos]）；都不建同步、不显示成功",
+    "test/spec/frontend/admin-orders-sync/order-nos.test.ts > [AC-F1-07eb-NOS#6] 单号只有空白与空行：提交置灰不发请求，或点提交后在单号旁提示（不发或收 20001 [order_nos]）；都不建同步、不显示成功",
+    "test/spec/frontend/admin-orders-sync/pages.browser.test.ts > [AC-F1-07eb-BROWSER#1] 1440 订单列表【手动同步】打开后才读 limits，对话框的两种方式、平台、提交可见，截图 admin-order-sync",
+    "test/spec/frontend/admin-orders-sync/pages.browser.test.ts > [AC-F1-07eb-BROWSER#2] 1440【同步记录】列出状态中文名、平台与北京时间，截图 admin-order-sync-records",
+    "test/spec/frontend/admin-orders-sync/pages.browser.test.ts > [AC-F1-07eb-BROWSER#3] 详情【同步此单】POST { platform, order_nos: [子单号] }（无动态码、无 Idempotency-Key）并提示已提交",
+    "test/spec/frontend/admin-orders-sync/records.test.ts > [AC-F1-07eb-RECORDS#1] 点【同步记录】后才请求 GET /admin/v1/order-syncs（只带 page / page_size），列出状态中文名（字典，缺键显示编码）、平台、单号或北京时间时间窗、北京创建时间",
+    "test/spec/frontend/admin-orders-sync/records.test.ts > [AC-F1-07eb-RECORDS#2] 没有同步记录时显示空态",
+    "test/spec/frontend/admin-orders-sync/records.test.ts > [AC-F1-07eb-RECORDS#3] 同步记录读取失败显示可重试的出错态，重试只多一个列表请求并列出记录",
+    "test/spec/frontend/admin-orders-sync/results.test.ts > [AC-F1-07eb-RESULT#1] 200 reused=false 提示已提交 / 排队；同一筛选再提交得 reused=true，提示已有相同同步在进行，与新建提示可区分、不当作新建",
+    "test/spec/frontend/admin-orders-sync/results.test.ts > [AC-F1-07eb-RESULT#2] 30156（站长授权暂停）提示该平台授权暂停，与成功、复用提示都不同，不建同步",
+    "test/spec/frontend/admin-orders-sync/results.test.ts > [AC-F1-07eb-RESULT#3] 10403 提示无权限，不显示成功",
+    "test/spec/frontend/admin-orders-sync/results.test.ts > [AC-F1-07eb-RESULT#4] 429 提示稍后再试，不显示成功；过了 Retry-After 再多等一段也不自动重发，手动再提交才发且只发一次",
+    "test/spec/frontend/admin-orders-sync/results.test.ts > [AC-F1-07eb-RESULT#5] 网络失败提示失败，不显示成功或复用",
+    "test/spec/frontend/admin-orders-sync/results.test.ts > [AC-F1-07eb-RESULT#6] 请求在途时连点【提交同步】只发一次 POST",
+    "test/spec/frontend/admin-orders-sync/window.test.ts > [AC-F1-07eb-WINDOW#1] 打开【手动同步】才读 limits；按时间窗提交的 body 恰为 platform 与带时区的北京时间 from / to（无 order_nos、无身份字段），无动态码、无 Idempotency-Key，提示已提交",
+    "test/spec/frontend/admin-orders-sync/window.test.ts > [AC-F1-07eb-WINDOW#2] 对话框的平台只取 limits 列出的平台",
+    "test/spec/frontend/admin-orders-sync/window.test.ts > [AC-F1-07eb-WINDOW#3] 开始时间早于 limits 的 earliest_from：前端拦下或收 20001 [from]，都在开始时间旁提示、不建同步、不显示成功",
+    "test/spec/frontend/admin-orders-sync/window.test.ts > [AC-F1-07eb-WINDOW#4] 开始时间不早于结束时间：前端拦下或收 20001 [from, to]，都在时间旁提示、不建同步、不显示成功",
+    "test/spec/frontend/admin-orders-sync/window.test.ts > [AC-F1-07eb-WINDOW#5] 输入合规而服务端回 20001 data.fields=[from]（earliest_from 已随时钟前移）：开始时间旁提示，对话框不关、不显示成功、不自动重发",
+    "test/spec/frontend/admin-orders-sync/window.test.ts > [AC-F1-07eb-WINDOW#6] 本段不做订单状态筛选：按时间窗提交（京东、跨天时间窗）的 body 恰为 platform 与 from / to，不带 status_filter（也无 order_nos、无身份字段）",
+    "test/spec/frontend/admin-orders-sync/window.test.ts > [AC-F1-07eb-WINDOW#7] 服务端回 20001 data.fields=[from, to] 后改结束时间再提交：时间旁提示、不自动重发；再次提交才建同步，两次 body 都恰为 platform 与 from / to、不带 status_filter"
+  ],
+  "risk_note": "Admin 订单查询 manual sync (apps/admin pages/orders/**, texts/orders.ts). Contract CT-24n adminCreateOrderSync, adminListOrderSyncs, adminGetOrderSyncLimits; backend B1-09i merged. order.view, no step-up and no Idempotency-Key; 【手动同步】 by time window (platform/from/to only) or by order numbers (platform/order_nos, 1-max_order_nos), limits read only when the dialog opens, 【同步记录】 read only on click, 【同步此单】 on the detail; reused / 30156 / 10403 / 429 / 20001 notices kept distinct, double click sends once. The status filter is left as a TODO (no values registered for any platform; orchestrator technical decision). Prerequisite test-change F1-07ea (#2028) merged; no frozen test changed here. Rule tests written by an independent Claude in three rounds; Claude spec-test review r1 fail (1 S1), r2 fail (1 S1), r3 pass; red on the test machine (red/1-2). Implementation by Opus 5.5 with a small round 2 for the two S2 of the money review (earliest time rounded up to the minute; platform-not-supported notice for 【同步此单】); test machine verify-fast and browser green after rebasing on main. Adversarial money review by fresh independent Claude: r1 pass (2 S2, fixed), r2 incremental pass. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 pass with two S2 (both fixed in implementation round 2), round 2 incremental pass with no findings; independent Claude because Codex is unavailable until 2026-11-02"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (1 S1 record time format), round 2 fail (1 S1 status_filter without registered values; orchestrator decided the status filter is out of this segment), round 3 pass; tests written by an independent Claude (claude-run.sh)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "F1-07eb",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "3ff415ceb0988b67d9cd3f69ba3162704285115c",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "3ff415ceb0988b67d9cd3f69ba3162704285115c",
+      "tree": "fb2121363270e96ce2d6b1efb3623a2c83731e11",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T15:42:22Z",
+      "finished_at": "2026-10-31T15:44:21Z",
+      "gate": {
+        "commit": "7539ed3498d75715d8e536399d06238f3da4dff0",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-orders-sync/detail.test.ts > [AC-F1-07eb-DETAIL#1] 详情【同步此单】（可直接发或经确认）POST { platform, order_nos: [该子单号] }，平台与单号取自详情，无动态码、无 Idempotency-Key，提示已提交",
+        "test/spec/frontend/admin-orders-sync/detail.test.ts > [AC-F1-07eb-DETAIL#2] 同一单在排队中再点【同步此单】得 reused=true，提示已有相同同步；站长授权暂停（30156）提示该平台授权暂停；都不新建",
+        "test/spec/frontend/admin-orders-sync/detail.test.ts > [AC-F1-07eb-DETAIL#3] 请求在途时连点【同步此单】（或连点它打开的确认 / 提交）只发一次 POST",
+        "test/spec/frontend/admin-orders-sync/entries.test.ts > [AC-F1-07eb-ENTRY#1] 持 order.view 的订单列表标题行有可用的【手动同步】【同步记录】，列表初次加载不请求 order-syncs 与 limits",
+        "test/spec/frontend/admin-orders-sync/entries.test.ts > [AC-F1-07eb-ENTRY#2] 持 order.view 的订单详情有可用的【同步此单】，详情初次加载不请求 order-syncs 与 limits、不读列表",
+        "test/spec/frontend/admin-orders-sync/entries.test.ts > [AC-F1-07eb-ENTRY#3] 超管也有【手动同步】【同步记录】；进不了订单页的账号没有这些入口、也不发 order-syncs 请求",
+        "test/spec/frontend/admin-orders-sync/order-nos.test.ts > [AC-F1-07eb-NOS#1] 按订单号补拉：每行一个单号（去掉首尾空白与空行），body 恰为 platform + order_nos、不带 from / to，无动态码、无 Idempotency-Key，提示已提交",
+        "test/spec/frontend/admin-orders-sync/order-nos.test.ts > [AC-F1-07eb-NOS#2] 单号个数超出 limits 的 max_order_nos：前端拦下或收 20001 [order_nos]，都在单号旁提示、不建同步；改到上限内再提交才建同步",
+        "test/spec/frontend/admin-orders-sync/order-nos.test.ts > [AC-F1-07eb-NOS#3] 两种形态不混用：填过时间窗再切到按订单号只发 platform + order_nos；填过单号再切回按时间窗只发 platform + from / to",
+        "test/spec/frontend/admin-orders-sync/order-nos.test.ts > [AC-F1-07eb-NOS#4] 服务端回 20001 data.fields=[order_nos]：单号旁提示，对话框不关、不显示成功、不自动重发",
+        "test/spec/frontend/admin-orders-sync/order-nos.test.ts > [AC-F1-07eb-NOS#5] 没填单号：提交置灰不发请求，或点提交后在单号旁提示（不发或收 20001 [order_nos]）；都不建同步、不显示成功",
+        "test/spec/frontend/admin-orders-sync/order-nos.test.ts > [AC-F1-07eb-NOS#6] 单号只有空白与空行：提交置灰不发请求，或点提交后在单号旁提示（不发或收 20001 [order_nos]）；都不建同步、不显示成功",
+        "test/spec/frontend/admin-orders-sync/pages.browser.test.ts > [AC-F1-07eb-BROWSER#1] 1440 订单列表【手动同步】打开后才读 limits，对话框的两种方式、平台、提交可见，截图 admin-order-sync",
+        "test/spec/frontend/admin-orders-sync/pages.browser.test.ts > [AC-F1-07eb-BROWSER#2] 1440【同步记录】列出状态中文名、平台与北京时间，截图 admin-order-sync-records",
+        "test/spec/frontend/admin-orders-sync/pages.browser.test.ts > [AC-F1-07eb-BROWSER#3] 详情【同步此单】POST { platform, order_nos: [子单号] }（无动态码、无 Idempotency-Key）并提示已提交",
+        "test/spec/frontend/admin-orders-sync/records.test.ts > [AC-F1-07eb-RECORDS#1] 点【同步记录】后才请求 GET /admin/v1/order-syncs（只带 page / page_size），列出状态中文名（字典，缺键显示编码）、平台、单号或北京时间时间窗、北京创建时间",
+        "test/spec/frontend/admin-orders-sync/records.test.ts > [AC-F1-07eb-RECORDS#2] 没有同步记录时显示空态",
+        "test/spec/frontend/admin-orders-sync/records.test.ts > [AC-F1-07eb-RECORDS#3] 同步记录读取失败显示可重试的出错态，重试只多一个列表请求并列出记录",
+        "test/spec/frontend/admin-orders-sync/results.test.ts > [AC-F1-07eb-RESULT#1] 200 reused=false 提示已提交 / 排队；同一筛选再提交得 reused=true，提示已有相同同步在进行，与新建提示可区分、不当作新建",
+        "test/spec/frontend/admin-orders-sync/results.test.ts > [AC-F1-07eb-RESULT#2] 30156（站长授权暂停）提示该平台授权暂停，与成功、复用提示都不同，不建同步",
+        "test/spec/frontend/admin-orders-sync/results.test.ts > [AC-F1-07eb-RESULT#3] 10403 提示无权限，不显示成功",
+        "test/spec/frontend/admin-orders-sync/results.test.ts > [AC-F1-07eb-RESULT#4] 429 提示稍后再试，不显示成功；过了 Retry-After 再多等一段也不自动重发，手动再提交才发且只发一次",
+        "test/spec/frontend/admin-orders-sync/results.test.ts > [AC-F1-07eb-RESULT#5] 网络失败提示失败，不显示成功或复用",
+        "test/spec/frontend/admin-orders-sync/results.test.ts > [AC-F1-07eb-RESULT#6] 请求在途时连点【提交同步】只发一次 POST",
+        "test/spec/frontend/admin-orders-sync/window.test.ts > [AC-F1-07eb-WINDOW#1] 打开【手动同步】才读 limits；按时间窗提交的 body 恰为 platform 与带时区的北京时间 from / to（无 order_nos、无身份字段），无动态码、无 Idempotency-Key，提示已提交",
+        "test/spec/frontend/admin-orders-sync/window.test.ts > [AC-F1-07eb-WINDOW#2] 对话框的平台只取 limits 列出的平台",
+        "test/spec/frontend/admin-orders-sync/window.test.ts > [AC-F1-07eb-WINDOW#3] 开始时间早于 limits 的 earliest_from：前端拦下或收 20001 [from]，都在开始时间旁提示、不建同步、不显示成功",
+        "test/spec/frontend/admin-orders-sync/window.test.ts > [AC-F1-07eb-WINDOW#4] 开始时间不早于结束时间：前端拦下或收 20001 [from, to]，都在时间旁提示、不建同步、不显示成功",
+        "test/spec/frontend/admin-orders-sync/window.test.ts > [AC-F1-07eb-WINDOW#5] 输入合规而服务端回 20001 data.fields=[from]（earliest_from 已随时钟前移）：开始时间旁提示，对话框不关、不显示成功、不自动重发",
+        "test/spec/frontend/admin-orders-sync/window.test.ts > [AC-F1-07eb-WINDOW#6] 本段不做订单状态筛选：按时间窗提交（京东、跨天时间窗）的 body 恰为 platform 与 from / to，不带 status_filter（也无 order_nos、无身份字段）",
+        "test/spec/frontend/admin-orders-sync/window.test.ts > [AC-F1-07eb-WINDOW#7] 服务端回 20001 data.fields=[from, to] 后改结束时间再提交：时间旁提示、不自动重发；再次提交才建同步，两次 body 都恰为 platform 与 from / to、不带 status_filter"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-orders-sync/detail.test.ts",
+        "test/spec/frontend/admin-orders-sync/entries.test.ts",
+        "test/spec/frontend/admin-orders-sync/order-nos.test.ts",
+        "test/spec/frontend/admin-orders-sync/pages.browser.test.ts",
+        "test/spec/frontend/admin-orders-sync/records.test.ts",
+        "test/spec/frontend/admin-orders-sync/results.test.ts",
+        "test/spec/frontend/admin-orders-sync/window.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "7358c74f641b34874d4d6d4dc1a90f4772b817e905be69403dde4ad3187502b5"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d2aff995d06b86a3676570781f96ac67d4e189d9c96c40daf1a88070490297af"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "6fb928376bd577b0d09cdba6f6d628fd6e6b15fd",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  }
+}
