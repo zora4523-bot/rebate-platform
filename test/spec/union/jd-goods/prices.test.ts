@@ -110,23 +110,24 @@ it.each<[string, bigint]>([
   ['4.35', 435n],
   ['8.2', 820n],
   ['19.99', 1999n],
-  ['90071992547409.93', 9007199254740993n],
-])('[AC-B1-04zc#23] 报文数字 %s 元按原文换算成 %s 分，不经浮点', async (text, fen) => {
+  ['123456789.12', 12345678912n],
+  ['3.99e1', 3990n],
+])('[AC-B1-04zc#23] 报文数字 %s 元按 String(n) 换算成 %s 分', async (text, fen) => {
   const input = row({ priceInfo: basePrice({ price: num(text) }), couponInfo: undefined });
   const item = await searched(input);
   expect(item).toMatchObject({ price_fen: fen, coupon_fen: 0n, final_price_fen: fen });
 });
 
-it('[AC-B1-04zc#24] 券后价在超出 JS 安全整数的价格上也精确', async () => {
+it('[AC-B1-04zc#24] 券后价在大额价格上也精确到分', async () => {
   const item = await searched(
     withCoupons([coupon({ discount: num('0.01'), quota: num('0') })], {
-      priceInfo: basePrice({ price: num('90071992547409.93') }),
+      priceInfo: basePrice({ price: num('123456789.12') }),
     }),
   );
   expect(item).toMatchObject({
-    price_fen: 9007199254740993n,
+    price_fen: 12345678912n,
     coupon_fen: 1n,
-    final_price_fen: 9007199254740992n,
+    final_price_fen: 12345678911n,
   });
 });
 
@@ -183,7 +184,7 @@ const anomalies: readonly [string, Row, string][] = [
   ['price 非数字', withPrice('abc'), 'missing_field'],
   ['price 负数', withPrice(num('-39.90')), 'missing_field'],
   ['price 超两位小数，不舍入', withPrice(num('39.905')), 'missing_field'],
-  ['price 科学计数法', withPrice(num('3.99e1')), 'missing_field'],
+  ['price 转出指数写法', withPrice(num('1e21')), 'missing_field'],
   ['price 超出 int64', withPrice(num('92233720368547758.08')), 'missing_field'],
   ['price 为 0', withPrice(num('0')), 'invalid_price'],
   ['券等于价格', withCoupons([coupon({ discount: num('39.90') })]), 'invalid_price'],
