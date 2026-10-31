@@ -3,10 +3,11 @@
 // claimed_at null, row_version + 1; account upheld → risk_state back to prev_risk_state, revoked →
 // normal (a ban revoked unbans as BR-ID-31: ban-blocked taobao bindings invalid, others active);
 // order and blocked_request appeals change no risk_state; blocked_request revoked with cause
-// blocklist → the blocklist entries that caused it stop being active; appeal.resolved {app_id,
-// appeal_id, user_id, target_type, target_id, status} queued on the same transaction; audit
-// appeal_resolve (decision, note, state before and after). The note is audit-only. CAS: stale
-// version or a closed appeal → 20902 resource=appeal, nothing changed.
+// blocklist → the blocklist entries that caused it stop being active (the removal audited);
+// appeal.resolved {app_id, appeal_id, user_id, target_type, target_id, status} queued on the same
+// transaction; audit appeal_resolve (decision, note, state before and after). The note is
+// audit-only. CAS: stale version, a closed appeal or the loser of two concurrent resolutions →
+// 20902 resource=appeal, nothing changed.
 import { randomUUID } from 'node:crypto';
 import { expect, it, vi } from 'vitest';
 import { EVENT_BUS, type EventBus } from '../../../../apps/api/src/modules/platform/index.ts';
@@ -16,6 +17,7 @@ import {
   EXTRA,
   NOTE,
   UNKNOWN,
+  appAudits,
   appealOf,
   appealRow,
   auditsOf,
@@ -36,6 +38,7 @@ import {
   seed,
   setup,
   snapshot,
+  text,
   type Decision,
   type Kind,
   type Scenario,
@@ -83,7 +86,12 @@ it.each(['banned', 'frozen'] as const)(
       closed_at: now,
       row_version: 2,
     });
-    expect(await riskRow(s, user!.id)).toMatchObject({ state: prev });
+    // The freeze comes back with its term from before the appeal (the seed's 2090-01-01), not a
+    // new one and not none; a ban has no term.
+    expect(await riskRow(s, user!.id)).toMatchObject({
+      state: prev,
+      frozen_until: prev === 'frozen' ? new Date('2090-01-01T00:00:00Z') : null,
+    });
     expect(instants(await appealOf(await s.detail(row.id)))).toEqual(instants(d));
   },
 );
@@ -172,6 +180,7 @@ it.each(['register', 'phone_change'] as const)(
     const unrelated = await phoneEntry(s, phoneNumber());
     const row = await blockedAppeal(s, b);
     const before = await snapshot(s);
+    const earlier = new Set((await appAudits(s)).map((a) => a.id));
     const d = await appealOf(await close(s, row.id, 'revoked', 0));
     expect(d).toMatchObject({ status: 'revoked', revoke_permission: 'risk.blocklist' });
     const after = await snapshot(s);
@@ -180,6 +189,13 @@ it.each(['register', 'phone_change'] as const)(
       before.blocklist.find((r) => r.id === unrelated),
     );
     expect(after.risk).toEqual(before.risk);
+    // The removal is audited (CT-24r; BR-ID-36 细则「被拦截请求申诉」撤销「BR-ID-31，写审计」):
+    // the records written by this resolution name the removed entry, not the untouched one, and
+    // carry neither the phone number nor its HMAC.
+    const written = (await appAudits(s)).filter((a) => !earlier.has(a.id));
+    expect(text(written)).toContain(entry);
+    expect(text(written)).not.toContain(unrelated);
+    noPersonalData(written, b.secrets);
   },
 );
 
@@ -263,9 +279,13 @@ it.each<[string, Record<string, unknown>, string]>([
   expect(await snapshot(s)).toEqual(before);
 });
 
+// The request schema's maxLength 200 is checked on the raw body (platform validation does not
+// trim), so the trimming boundary is shown with raw values of at most 200 characters.
 it.each([
   ['因', '因'],
-  [`  ${'因'.repeat(200)}  `, '因'.repeat(200)],
+  ['因'.repeat(200), '因'.repeat(200)],
+  [`  ${'因'.repeat(196)}  `, '因'.repeat(196)],
+  [`\t${'因'.repeat(198)}\n`, '因'.repeat(198)],
 ])('[AC-B1-03ze#50] 说明边界 %j 可结案，审计记去空白后的说明', async (note, trimmed) => {
   const s = await setup(h);
   const { row } = await seed(s, 'order');
@@ -273,8 +293,21 @@ it.each([
   const audits = await auditsOf(s, 'appeal_resolve');
   expect(audits).toHaveLength(1);
   // The note is one JSON string value, exactly the trimmed text.
-  expect(JSON.stringify(audits[0])).toContain(JSON.stringify(trimmed));
+  expect(text(audits[0])).toContain(JSON.stringify(trimmed));
 });
+
+it.each([` ${'因'.repeat(200)}`, `${'因'.repeat(200)}\n`, `  ${'因'.repeat(199)}  `])(
+  '[AC-B1-03ze#72] 说明原始长度超过 200（去空白后不超）%j → 20001 [note]，什么都不改',
+  async (note) => {
+    const s = await setup(h);
+    const { row } = await seed(s, 'order');
+    const before = await snapshot(s);
+    await refused(await s.resolve(row.id, resolution('upheld', 0, note)), 20001, {
+      fields: ['note'],
+    });
+    expect(await snapshot(s)).toEqual(before);
+  },
+);
 
 for (const kind of KINDS) {
   it.each(['upheld', 'revoked'] as const)(
@@ -388,9 +421,9 @@ it('[AC-B1-03ze#54] 审计 appeal_resolve：结案人、决定、说明、前后
   const audit = audits[0]!;
   expect(audit).toMatchObject({ app_id: s.appId, admin_id: s.a.id });
   expect(String(audit.target)).toContain(row.id);
-  const text = JSON.stringify(audit);
-  expect(text).toContain(NOTE);
-  expect(text).toContain('revoked');
+  const serialized = text(audit);
+  expect(serialized).toContain(NOTE);
+  expect(serialized).toContain('revoked');
   expect(JSON.stringify(audit.before)).toContain('processing');
   expect(JSON.stringify(audit.after)).toContain('revoked');
   noPersonalData(audit, b.secrets);
@@ -414,5 +447,52 @@ it.each(['banned', 'register'] as const satisfies readonly Kind[])(
     expect(await snapshot(s)).toEqual(after);
     expect(await resolvedEvents(s)).toHaveLength(1);
     expect(await auditsOf(s, 'appeal_resolve')).toHaveLength(1);
+  },
+);
+
+it.each<[Decision, Decision]>([
+  ['upheld', 'revoked'],
+  ['revoked', 'upheld'],
+  ['revoked', 'revoked'],
+  ['upheld', 'upheld'],
+])(
+  '[AC-B1-03ze#74] 两个账号以同一版本并发结案封禁申诉（%s / %s）：恰好一个成功，另一个 20902；终态、风控、绑定、事件与审计都只按胜者一次',
+  async (mine, theirs) => {
+    const s = await setup(h, { grants: ALL });
+    const other = await colleague(s, { grants: ALL });
+    const { row, user } = await seed(s, 'banned');
+    const banned = await binding(s, user!.id, { status: 'blocked', blocked_reason: 'ban' });
+    // Both step-up tokens are issued first, so the two resolutions race on the appeal alone.
+    const myToken = mine === 'revoked' ? await s.issue() : null;
+    const theirToken = theirs === 'revoked' ? await other.issue() : null;
+    const answers = await Promise.all([
+      s.resolve(row.id, resolution(mine, 0), myToken),
+      other.resolve(row.id, resolution(theirs, 0), theirToken),
+    ]);
+    const codes = answers.map((r) => r.json().code).sort((a, b) => a - b);
+    expect(codes).toEqual([0, 20902]);
+    const winner = answers.findIndex((r) => r.json().code === 0);
+    await refused(answers[1 - winner]!, 20902, CONFLICT);
+    const decision = winner === 0 ? mine : theirs;
+    const resolver = winner === 0 ? s.a.id : other.a.id;
+    const d = await appealOf(answers[winner]!);
+    expect(d).toMatchObject({ status: decision, handler_id: resolver, row_version: 1 });
+    expect(await appealRow(s, row.id)).toMatchObject({
+      status: decision,
+      handler_id: resolver,
+      row_version: 1,
+    });
+    expect(await riskRow(s, user!.id)).toMatchObject({
+      state: decision === 'revoked' ? 'normal' : 'banned',
+    });
+    expect(await bindingRow(s, banned.id)).toMatchObject(
+      decision === 'revoked' ? { status: 'invalid' } : { status: 'blocked', blocked_reason: 'ban' },
+    );
+    const events = await resolvedEvents(s);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).toMatchObject({ appeal_id: row.id, status: decision });
+    const audits = await auditsOf(s, 'appeal_resolve');
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ admin_id: resolver });
   },
 );
