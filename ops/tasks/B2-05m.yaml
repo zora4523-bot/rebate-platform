@@ -14,6 +14,8 @@ paths:
   - 'packages/db/src/**'
 test_paths:
   - 'test/spec/payout/review-overdue-schema/**'
+  # 编排 10-31 23:47 / 2026-11-01（照 B2-05n 台账列 events/kit.ts、B2-08b #2005 先例）：加列后冻结 db 夹具 test/spec/db/payout/kit.ts 的 SHAPES.withdrawals / APP_UPDATES 要补 review_overdue_at，由规则测试作者单列 test(spec) 提交；夹具进 test_paths 让 path-guard-author 认作者范围（#2046 guard-git 原话「changed in a rule-test commit outside the rule-test author's paths」）。该目录测试文件本体未改、不进红检应跑清单，不列 red_exempt。
+  - 'test/spec/db/payout/kit.ts'
 impl: claude
 tester: claude-independent
 accept:
