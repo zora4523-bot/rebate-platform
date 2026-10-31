@@ -1,0 +1,28 @@
+id: B1-15i
+repo: rebate-platform
+title: 注销进度站内信 DELETION_PROGRESS（BR-TEXT-23）——注销申请进入冷静期写 requested「注销申请已提交，{cancel_deadline} 前可在「设置 → 账号与安全」撤回。」、撤回注销写 cancelled「已撤回注销申请，账号恢复正常使用。」、冷静期满余额为负系统撤销写 cancelled_negative「你的账户有待扣回金额 {amount}，注销申请已撤销。…」；只站内信（不推送不短信），与业务写在同一事务，按申请编号 + 变体去重；替换 deletion-request.ts 两处与 deletion-expiry.ts 一处 TODO
+type: impl
+# 2026-10-31 入账（identity-lane，D10-453 ⑤ (d)）。依据 BR-TEXT-23 细则模板表（DELETION_PROGRESS 三变体）、BR-ID-27；inbox.title 与模板覆盖照 BR-TEXT-09 细则。cancelled_negative 的 amount = −available_fen 只在该事务内可得（deletion-expiry.ts 注释），故站内信在业务事务内直接写，不走事件。
+# 取舍（本线定）：notification 新增在调用方事务内写站内信与 notify_logs 的函数（从 notification/index.ts 导出），app.module 注入给 identity 的端口（identity 不导入 notification，照 push-tokens / session-bindings 写法）；{cancel_deadline} 按 BR-TEXT 时间格式，{amount} 用 formatYuan。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/notification/application/deletion-progress-message.ts'
+  - 'apps/api/src/modules/notification/application/deletion-progress-message.test.ts'
+  - 'apps/api/src/modules/notification/index.ts'
+  - 'apps/api/src/modules/identity/application/deletion-request.ts'
+  - 'apps/api/src/modules/identity/application/deletion-expiry.ts'
+  - 'apps/api/src/modules/identity/ports/deletion-progress-notice.ts'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/modules/identity/identity.module.ts'
+  - 'apps/api/src/modules/identity/deletion-expiry.module.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/identity/deletion-progress-message/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/deletion-progress-message/**'
+status: todo
