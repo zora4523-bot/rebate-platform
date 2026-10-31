@@ -1,0 +1,109 @@
+{
+  "red_tests": [
+    "test/spec/db/content/articles-faq-rank/access.int.test.ts > [AC-F1-02zzo#11] couli_app may SELECT and INSERT faq_rank but not UPDATE it, and cannot grant it on",
+    "test/spec/db/content/articles-faq-rank/access.int.test.ts > [AC-F1-02zzo#12] couli_readonly may only SELECT faq_rank; payout and maint get no UPDATE on it",
+    "test/spec/db/content/articles-faq-rank/access.int.test.ts > [AC-F1-02zzo#13] faq_rank carries no column-level grant and the app UPDATE list is still the original five",
+    "test/spec/db/content/articles-faq-rank/access.int.test.ts > [AC-F1-02zzo#14] couli_app UPDATE of faq_rank fails with 42501 and leaves the row unchanged",
+    "test/spec/db/content/articles-faq-rank/access.int.test.ts > [AC-F1-02zzo#15] each originally mutable column stays writable and leaves faq_rank untouched",
+    "test/spec/db/content/articles-faq-rank/access.int.test.ts > [AC-F1-02zzo#16] couli_readonly reads faq_rank but cannot insert it or update it",
+    "test/spec/db/content/articles-faq-rank/access.int.test.ts > [AC-F1-02zzo#17] a new version row of the same article can carry a different faq_rank; older rows keep theirs",
+    "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#1] faq_rank is a plain nullable int4 with no default, not generated, not a domain",
+    "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#2] both named faq_rank CHECKs are validated and every earlier CHECK remains",
+    "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#3] the value CHECK covers faq_rank alone; the category CHECK covers faq_rank and category",
+    "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#4] help accepts 1, 2, 500, 998, 999 and NULL and stores each unchanged",
+    "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#5] help rejects 0, -1, 1000 and the int4 extremes via articles_faq_rank_check",
+    "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#6] help with a section accepts in-range ranks and still rejects out-of-range ones",
+    "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#7] rule, notice and agreement reject every in-range rank via articles_faq_rank_category_check",
+    "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#8] non-help categories with an out-of-range rank are rejected by one of the two CHECKs",
+    "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#9] every category accepts an explicit NULL rank and inserts that omit faq_rank",
+    "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#10] earlier status, category and help_section CHECKs still fire alongside a valid rank"
+  ],
+  "risk_note": "RV2 (db). Migration adds app.articles.faq_rank integer, nullable, no default, no backfill, with two named validated CHECKs articles_faq_rank_check (1-999) and articles_faq_rank_category_check (only help may be non-null) (04 l.478 §3.2, 01 l.181; CT-26a contract). Follows 0061 (help_section): direct ADD CONSTRAINT with squawk-ignore (articles is not a funds or attribution table). Grants unchanged: faq_rank is not in couli_app's column-level UPDATE list. Frozen whole-row / column-list tests are made two-state first by test-change F1-02zzu (#1961). db/schema.sql and db.gen.ts regenerated outside the sandbox by db:snapshot. Rule tests by a fresh independent Claude. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "fresh independent Claude via claude-run.sh (Codex unavailable until 11-02); migration review, pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by a fresh independent Claude reviewed by another: r1 pass (one S2: no-backfill only checkable by reviewing the migration; the migration has no UPDATE); red-check PASS (17 red)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "F1-02zzo",
+  "spec_commit": "4f801ebcb90b2b59bb4823fcc35079d149a42037",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "4f801ebcb90b2b59bb4823fcc35079d149a42037",
+      "tree": "783d86d404a164ec42c8e099d2bae30e4a0c304e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T04:15:14Z",
+      "finished_at": "2026-10-31T04:15:21Z",
+      "red_tests": [
+        "test/spec/db/content/articles-faq-rank/access.int.test.ts > [AC-F1-02zzo#11] couli_app may SELECT and INSERT faq_rank but not UPDATE it, and cannot grant it on",
+        "test/spec/db/content/articles-faq-rank/access.int.test.ts > [AC-F1-02zzo#12] couli_readonly may only SELECT faq_rank; payout and maint get no UPDATE on it",
+        "test/spec/db/content/articles-faq-rank/access.int.test.ts > [AC-F1-02zzo#13] faq_rank carries no column-level grant and the app UPDATE list is still the original five",
+        "test/spec/db/content/articles-faq-rank/access.int.test.ts > [AC-F1-02zzo#14] couli_app UPDATE of faq_rank fails with 42501 and leaves the row unchanged",
+        "test/spec/db/content/articles-faq-rank/access.int.test.ts > [AC-F1-02zzo#15] each originally mutable column stays writable and leaves faq_rank untouched",
+        "test/spec/db/content/articles-faq-rank/access.int.test.ts > [AC-F1-02zzo#16] couli_readonly reads faq_rank but cannot insert it or update it",
+        "test/spec/db/content/articles-faq-rank/access.int.test.ts > [AC-F1-02zzo#17] a new version row of the same article can carry a different faq_rank; older rows keep theirs",
+        "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#1] faq_rank is a plain nullable int4 with no default, not generated, not a domain",
+        "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#2] both named faq_rank CHECKs are validated and every earlier CHECK remains",
+        "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#3] the value CHECK covers faq_rank alone; the category CHECK covers faq_rank and category",
+        "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#4] help accepts 1, 2, 500, 998, 999 and NULL and stores each unchanged",
+        "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#5] help rejects 0, -1, 1000 and the int4 extremes via articles_faq_rank_check",
+        "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#6] help with a section accepts in-range ranks and still rejects out-of-range ones",
+        "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#7] rule, notice and agreement reject every in-range rank via articles_faq_rank_category_check",
+        "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#8] non-help categories with an out-of-range rank are rejected by one of the two CHECKs",
+        "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#9] every category accepts an explicit NULL rank and inserts that omit faq_rank",
+        "test/spec/db/content/articles-faq-rank/constraints.int.test.ts > [AC-F1-02zzo#10] earlier status, category and help_section CHECKs still fire alongside a valid rank"
+      ],
+      "expected": [
+        "test/spec/db/content/articles-faq-rank/access.int.test.ts",
+        "test/spec/db/content/articles-faq-rank/constraints.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "219061ce25b09cba2917c2002bb7b9ea86d36b06c9ec2cccd26a1cc1e01efb07"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "c8551e9b72a8bc9e8a3ed44384d311a2670e820f",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "fd7904da3f67f1d5f7c458034376076e88371f4c",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  }
+}
