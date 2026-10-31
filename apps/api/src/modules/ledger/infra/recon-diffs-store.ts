@@ -189,26 +189,43 @@ export async function lockAdminReconDiff(
 }
 
 /**
- * B2-09h: the ref_id of the app's closed R1 order diffs with resolution.outcome = 'union', among
- * `orderKeys`. One array parameter: the bill source passes every order key of a platform, which
- * can exceed the 65535 parameters of a statement. One plain SELECT on the given handle.
+ * B2-09h, D10-506: per order and amount state, the closed settle_amount_mismatch R1 diff that speaks
+ * (the last closed with an outcome, closed_at then id descending), kept when it says 'union'.
+ * A row's order_key is its whole ref_id, or the part before an anchored #AMT#{base}:{b_settle}; the
+ * keys are compared as text (no LIKE, so _ % \ in a key are literal and no key matches by prefix).
+ * One array parameter: the bill source passes every order key of a platform, which can exceed the
+ * 65535 parameters of a statement. One plain SELECT on the given handle.
  */
-export async function selectUnionConcludedOrderKeys(
+export async function selectUnionConclusions(
   db: Kysely<DB>,
   selection: { readonly appId: string; readonly orderKeys: readonly string[] },
-): Promise<string[]> {
-  const rows = await db
-    .withSchema('app')
-    .selectFrom('recon_diffs')
-    .select('ref_id')
-    .where('app_id', '=', selection.appId)
-    .where('source', '=', 'R1')
-    .where('ref_type', '=', 'order')
-    .where('status', '=', 'closed')
-    .where(sql<string>`resolution->>'outcome'`, '=', 'union')
-    .where('ref_id', '=', sql<string>`any(${selection.orderKeys}::text[])`)
-    .execute();
-  return rows.map((row) => row.ref_id);
+): Promise<
+  { readonly order_key: string; readonly expected_fen: bigint; readonly actual_fen: bigint }[]
+> {
+  const { rows } = await sql<{ order_key: string; expected_fen: bigint; actual_fen: bigint }>`
+    SELECT latest.order_key, latest.expected_fen, latest.actual_fen
+    FROM (
+      SELECT DISTINCT ON (asked.order_key, d.expected_fen, d.actual_fen)
+        asked.order_key, d.expected_fen, d.actual_fen, d.resolution->>'outcome' AS outcome
+      FROM app.recon_diffs AS d
+      CROSS JOIN LATERAL (
+        VALUES (d.ref_id), (substring(d.ref_id FROM '^(.*)#AMT#-?[0-9]+:-?[0-9]+$'))
+      ) AS owner(order_key)
+      INNER JOIN (
+        SELECT DISTINCT given.order_key
+        FROM unnest(${selection.orderKeys}::text[]) AS given(order_key)
+      ) AS asked ON asked.order_key = owner.order_key
+      WHERE d.app_id = ${selection.appId}
+        AND d.source = 'R1'
+        AND d.type = 'settle_amount_mismatch'
+        AND d.ref_type = 'order'
+        AND d.status = 'closed'
+        AND d.resolution->>'outcome' IN ('union', 'ours')
+      ORDER BY asked.order_key, d.expected_fen, d.actual_fen, d.closed_at DESC NULLS LAST, d.id DESC
+    ) AS latest
+    WHERE latest.outcome = 'union'
+  `.execute(db);
+  return rows;
 }
 
 /** The statuses a console close starts from (contract closeAdminReconDiff). */

@@ -11,7 +11,8 @@
 //   the reason, trimmed, 1–200 characters, else 20001 [reason];
 //   the app's R1–R3 recon_diffs row locked FOR UPDATE (unknown / another app / R4 / not a uuid →
 //   20001 [recon_diff_id], no 404); a status other than open / processing → 20902 resource
-//   recon_diff; `outcome` on a source other than R1 → 20001 [outcome];
+//   recon_diff; `outcome` on anything but settle_amount_mismatch of source R1 → 20001 [outcome]
+//   (D10-506);
 //   the compare-and-set to closed (handler_id the caller, closed_at = updated_at = the injected
 //   Clock, resolution keeps its keys, records `reason` and `outcome` only when this close gave it);
 //   every unreleased hold whose source_ref is exactly `recon_diff:<id>` released through the
@@ -104,6 +105,11 @@ function conflictRefusal(traceId: string): HandlerResult {
   };
 }
 
+/** D10-506: a conclusion has a meaning for 账单金额不一致 of source R1 only. */
+function takesOutcome(row: { readonly source: string; readonly type: string }): boolean {
+  return row.source === 'R1' && row.type === 'settle_amount_mismatch';
+}
+
 /**
  * The resolution after closing: the stored keys kept, `reason` set. `outcome` is only ever this
  * close's own: a stored one is dropped, so a close without it never leaves a conclusion behind.
@@ -151,7 +157,7 @@ export function closeAdminReconDiff(
       const row = await lockAdminReconDiff(trx, appId, id);
       if (row === undefined) return fieldsRefusal(['recon_diff_id'], traceId);
       if (row.status !== 'open' && row.status !== 'processing') return conflictRefusal(traceId);
-      if (outcome !== undefined && row.source !== 'R1') return fieldsRefusal(['outcome'], traceId);
+      if (outcome !== undefined && !takesOutcome(row)) return fieldsRefusal(['outcome'], traceId);
       const closed = await closeAdminReconDiffRow(trx, {
         appId,
         id,
