@@ -8,7 +8,10 @@ import {
   ROOT_LOGGER,
   registerEventConsumer,
   type Clock,
+  type JobPayload,
   type QueueRuntime,
+  type ReceivedEvent,
+  type ReceivedJob,
   type RootLogger,
 } from '../platform/index.ts';
 import { createMessageReader, type MessageReader } from './application/message-read.ts';
@@ -45,6 +48,11 @@ import {
   CLAIM_RESULT_MESSAGE_CONSUMER,
   createClaimResultMessageHandler,
 } from './application/claim-result-message.ts';
+import {
+  WITHDRAWAL_RESULT_MESSAGE_CONSUMER,
+  createWithdrawalResultMessageConsumer,
+} from './application/withdrawal-result-message.ts';
+import type { PushSendCore } from './application/push-send.ts';
 
 /** Nest token of the worker's registration of the risk state message consumer (B1-12g). */
 export const RISK_STATE_MESSAGE_CONSUMER_TOKEN = Symbol('RISK_STATE_MESSAGE_CONSUMER');
@@ -54,6 +62,34 @@ export const APPEAL_RESULT_MESSAGE_CONSUMER_TOKEN = Symbol('APPEAL_RESULT_MESSAG
 
 /** Nest token of the worker's registration of the claim result message consumer (B1-12r). */
 export const CLAIM_RESULT_MESSAGE_CONSUMER_TOKEN = Symbol('CLAIM_RESULT_MESSAGE_CONSUMER');
+
+/** Nest token of the worker's registration of the withdrawal result message consumer (B1-12u). */
+export const WITHDRAWAL_RESULT_MESSAGE_CONSUMER_TOKEN = Symbol(
+  'WITHDRAWAL_RESULT_MESSAGE_CONSUMER',
+);
+
+/**
+ * B1-12u: the event job as registerEventConsumer received it (it has already checked the job and
+ * its envelope before this is read), for the push dispatch after the event transaction.
+ */
+function receivedEventOf(consumer: string, job: ReceivedJob): ReceivedEvent {
+  const envelope = job.payload as {
+    app_id: string;
+    v: number;
+    occurred_at: string;
+    data: JobPayload;
+  };
+  return Object.freeze({
+    eventId: job.id,
+    appId: envelope.app_id,
+    name: job.name,
+    version: envelope.v,
+    occurredAt: envelope.occurred_at,
+    payload: envelope.data,
+    consumer,
+    attempt: job.attempt,
+  });
+}
 
 /** Build on first read so module startup never touches the database handle. */
 function lazyMessageReader(db: Kysely<Database>): MessageReader {
@@ -161,10 +197,18 @@ export class NotificationModule {
    * (APPEAL_RESULT, BR-ID-36); disabled line `appeal_result_message_disabled`.
    * B1-12r: likewise the claim.resolved consumer on queue `evt.notification-claim-result`
    * (CLAIM_RESULT, BR-TEXT-09); disabled line `claim_result_message_disabled`.
+   * B1-12u: likewise the wallet.withdrawal_changed consumer on queue
+   * `evt.notification-withdrawal-result` (WD_SUCCESS / WD_REJECTED / WD_FAILED, BR-TEXT-09,
+   * BR-WDR-26); disabled line `withdrawal_result_message_disabled`. Its job handler runs the event
+   * transaction (processed_events + inbox + logs) and, once that resolved, the push dispatch on the
+   * root handle (B1-12o); a dispatch error fails the job, whose retry skips the processed event and
+   * dispatches again (the push core never resends an attempted push).
    */
   static forWorker(ports: {
     /** linking's read-only Taobao binding port, assembled by app.module (dependency inversion). */
     readonly taobaoReauthReader: TaobaoReauthReader;
+    /** B1-12u: the push sending core over identity's session validity, assembled by app.module. */
+    readonly pushSendCore: (clock: Clock) => PushSendCore;
   }): DynamicModule {
     return {
       module: NotificationModule,
@@ -256,6 +300,53 @@ export class NotificationModule {
               logger,
               handler: createClaimResultMessageHandler({ clock }),
             });
+            return true;
+          },
+        },
+        {
+          provide: WITHDRAWAL_RESULT_MESSAGE_CONSUMER_TOKEN,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB, optional: true },
+            { token: JOB_QUEUE, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<Database>,
+            queue?: QueueRuntime,
+          ): boolean => {
+            if (db === undefined || queue === undefined) {
+              logger.info(
+                { consumer: WITHDRAWAL_RESULT_MESSAGE_CONSUMER },
+                'withdrawal_result_message_disabled',
+              );
+              return false;
+            }
+            const consumer = createWithdrawalResultMessageConsumer({
+              clock,
+              logger,
+              push: ports.pushSendCore(clock),
+            });
+            registerEventConsumer(
+              {
+                register: (name, handler) =>
+                  queue.register(name, async (job) => {
+                    await handler(job);
+                    await consumer.dispatch(
+                      db,
+                      receivedEventOf(WITHDRAWAL_RESULT_MESSAGE_CONSUMER, job),
+                    );
+                  }),
+              },
+              {
+                consumer: WITHDRAWAL_RESULT_MESSAGE_CONSUMER,
+                db,
+                logger,
+                handler: consumer.handle,
+              },
+            );
             return true;
           },
         },

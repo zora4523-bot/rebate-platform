@@ -311,6 +311,7 @@ import {
   createLiveTemplateSmsSender,
   createNotifySmsTestSender,
   createPushSendCore,
+  type PushSendCore,
   createRegisteredTemplateResolver,
   createTemplateSmsSender,
   deletePushTokensForUser,
@@ -3022,6 +3023,23 @@ export function dataCopyPorts(config: AppConfig): IdentityDataCopyPorts {
 }
 
 /**
+ * B1-12u: notification's push sending core on the worker entry (withdrawal result messages), over
+ * identity's push session validity. The channel is the demonstration MobPush, as dataCopyPorts:
+ * accepting on local / test, rejecting elsewhere (the push log fails, the inbox message stays).
+ * TODO(规划/11 §2.3): 真实推送通道 — blocked on MobPush 适配器任务
+ */
+export function workerPushSendCore(config: AppConfig): (clock: Clock) => PushSendCore {
+  return (clock) =>
+    createPushSendCore({
+      clock,
+      channel: createDemoMobPush({
+        status: config.appEnv === 'local' || config.appEnv === 'test' ? 'accepted' : 'rejected',
+      }),
+      sessionValidity: createPushSessionValidity(clock),
+    });
+}
+
+/**
  * Root module, assembled per process entry. Every HTTP entry serves the health probe; the `api`
  * entry also serves the /v1 identity routes, the risk module's request signature check, whose
  * device port identity implements, identity's token check, and the risk module's stage ④a gate
@@ -3963,7 +3981,12 @@ export class AppModule {
               AgentModule.forWorker(),
               // risk.state_changed → RISK_STATE_CHANGED inbox message (B1-12g, BR-TEXT-23).
               // Its unbanned {need_reauth} reads linking's Taobao binding port (SELECT only).
-              NotificationModule.forWorker({ taobaoReauthReader: needsTaobaoReauth }),
+              // B1-12u: wallet.withdrawal_changed → WD_SUCCESS / WD_REJECTED / WD_FAILED (BR-TEXT-09,
+              // BR-WDR-26) over notification's push sending core (workerPushSendCore).
+              NotificationModule.forWorker({
+                taobaoReauthReader: needsTaobaoReauth,
+                pushSendCore: workerPushSendCore(options.config),
+              }),
               // account.went_negative → the member's withdrawals re-checked under the locks
               // (B2-05e, BR-WDR-05 (a)); payout_attempts read through payout's own store (B2-06c).
               // B2-11c (BR-WDR-30): withdrawal.created → the automatic payout decision; B2-06f

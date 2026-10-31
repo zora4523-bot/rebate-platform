@@ -14,8 +14,9 @@ export function w(queue: string, concurrency: number, pollingIntervalSeconds = 2
 }
 
 /**
- * ENTRY_PLAN.worker of the trunk (task brief, 现状), in order: 23 queues, 44 slots together (B2-06f
- * D10-398 ①: payout-review; B2-07c D10-408: payout-recon; B2-02q D10-415 ①: ledger-check; B1-03z: evt.risk-appeal-restore).
+ * ENTRY_PLAN.worker of the trunk (task brief, 现状), in order: 24 queues, 49 slots together (B2-06f
+ * D10-398 ①: payout-review; B2-07c D10-408: payout-recon; B2-02q D10-415 ①: ledger-check; B1-03z: evt.risk-appeal-restore;
+ * B1-12u: evt.notification-withdrawal-result).
  */
 export const TRUNK_WORKER_PLAN: readonly WorkSpec[] = [
   w('order-sync', 1),
@@ -34,6 +35,9 @@ export const TRUNK_WORKER_PLAN: readonly WorkSpec[] = [
   w('evt.notification-risk-state', 5),
   w('evt.notification-appeal-result', 5),
   w('evt.notification-claim-result', 5),
+  // B1-12u (BR-TEXT-09, BR-WDR-26): notification's wallet.withdrawal_changed consumer, five slots,
+  // right after evt.notification-claim-result.
+  w('evt.notification-withdrawal-result', 5),
   // B1-03z (BR-FUND-22, BR-CALC-13 细则「申诉恢复」): risk's appeal.resolved consumer, one slot,
   // right after evt.notification-claim-result.
   w('evt.risk-appeal-restore', 1),
@@ -80,6 +84,8 @@ const TRUNK_BUSINESS_QUEUES = [
   'evt.notification-risk-state',
   'evt.notification-appeal-result',
   'evt.notification-claim-result',
+  // B1-12u: notification's wallet.withdrawal_changed consumer, right after the claim result one.
+  'evt.notification-withdrawal-result',
   'evt.risk-appeal-restore',
   'evt.payout-auto-payout',
   'evt.payout-went-negative',
@@ -155,6 +161,7 @@ export const ENV_NAME_OF: Readonly<Record<string, string>> = {
   'evt.notification-risk-state': 'QUEUE_CONCURRENCY_EVT_NOTIFICATION_RISK_STATE',
   'evt.notification-appeal-result': 'QUEUE_CONCURRENCY_EVT_NOTIFICATION_APPEAL_RESULT',
   'evt.notification-claim-result': 'QUEUE_CONCURRENCY_EVT_NOTIFICATION_CLAIM_RESULT',
+  'evt.notification-withdrawal-result': 'QUEUE_CONCURRENCY_EVT_NOTIFICATION_WITHDRAWAL_RESULT',
   'evt.risk-appeal-restore': 'QUEUE_CONCURRENCY_EVT_RISK_APPEAL_RESTORE',
   'evt.payout-auto-payout': 'QUEUE_CONCURRENCY_EVT_PAYOUT_AUTO_PAYOUT',
   'evt.payout-went-negative': 'QUEUE_CONCURRENCY_EVT_PAYOUT_WENT_NEGATIVE',

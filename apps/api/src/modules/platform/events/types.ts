@@ -74,7 +74,8 @@ export interface EventSubscription {
  * Production routing table (section 6). notification-risk-state: the RISK_STATE_CHANGED inbox
  * message of notification (B1-12g, BR-TEXT-23). notification-appeal-result: the APPEAL_RESULT
  * inbox message of notification (B1-12p, BR-TEXT-23 / BR-ID-36). notification-claim-result: the
- * CLAIM_RESULT inbox message of notification (B1-12r, BR-TEXT-09).
+ * CLAIM_RESULT inbox message of notification (B1-12r, BR-TEXT-09). notification-withdrawal-result:
+ * the WD_SUCCESS / WD_REJECTED / WD_FAILED messages of notification (B1-12u, BR-TEXT-09, BR-WDR-26).
  * risk-appeal-restore: risk's appeal restore differences of revoked ban appeals (B1-03z,
  * BR-FUND-22 / BR-CALC-13 细则「申诉恢复」).
  * payout-went-negative: the negative balance handling of withdrawals (B2-05e, BR-WDR-05 (a)).
@@ -92,6 +93,11 @@ export const EVENT_SUBSCRIPTIONS: readonly EventSubscription[] = Object.freeze([
   Object.freeze({
     consumer: 'notification-claim-result',
     events: Object.freeze(['claim.resolved']),
+  }),
+  // notification-withdrawal-result: withdrawal result messages (B1-12u, BR-TEXT-09, BR-WDR-26).
+  Object.freeze({
+    consumer: 'notification-withdrawal-result',
+    events: Object.freeze(['wallet.withdrawal_changed']),
   }),
   // risk-appeal-restore: appeal_restore differences of revoked ban appeals (B1-03z, BR-FUND-22).
   Object.freeze({
