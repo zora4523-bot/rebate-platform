@@ -1,0 +1,32 @@
+id: B2-09h
+repo: rebate-platform
+title: ledger：差错单结案写 resolution.outcome（CT-24zf），readUnionAuthoritativeOrderKeys 按 outcome=union 判（只认 source R1、ref_type order、status closed），取代恒空集；月结校验随之生效
+type: impl
+# 2026-10-31 入账（admin-backend，编排 D10-468 ②、D10-447 ②）。D10-447 原写「落地后另开任务改读口」，写入与读口同一模块、同一口径，并成一单更省（代理自定，可拆）。
+# 资金影响：结论为以联盟为准的订单，月结校验算相符，会进批次按联盟结算额入账。只认结构化 outcome，closed 状态本身不算，自由文本 reason 不解析。
+# 跟改 B2-04zd 冻结测试（恒空集）用单独 test-change 提交，排在 test(spec) 之前。
+refs: [BR-FUND-04]
+refs_hash:
+  BR-FUND-04: 2497ceea4515
+deps: [CT-24zf]
+paths:
+  - 'apps/api/src/modules/ledger/application/admin-recon-diff-close*.ts'
+  - 'apps/api/src/modules/ledger/application/recon-diff-conclusion.ts'
+  - 'apps/api/src/modules/ledger/infra/recon-diffs-store.ts'
+  - 'apps/api/src/modules/ledger/http/admin/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/ledger/recon-outcome/**'
+  - 'test/spec/settlement/bill-ports/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/recon-outcome/**'
+status: todo

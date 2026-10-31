@@ -1,0 +1,26 @@
+id: CT-24zf
+repo: rebate-platform
+title: 契约：差错单结构化结论——closeAdminReconDiff 请求加可选 outcome（union 以联盟为准 / ours 以我方为准，只对 source R1 有意义），写入 resolution.outcome；新枚举 admin_recon_diff_outcome；顺带补 restoreAdminReconDiff 描述的 D10-482 例外
+type: contract
+# 2026-10-31 入账（admin-backend，编排 D10-468 ②、D10-447 ②，记 FU-RECON-OUTCOME）。依据 08 BR-FUND-04 ④「差错单结论以联盟为准的算相符」。
+# 取舍（代理自定，可改）：outcome 可选而不是必填，前端差错单关闭表单（F1-08e）现在不传，改必填会打断已上线页面；不传 = 无结构化结论，月结按需比金额（只多拦不多付，同 D10-447 ①）。非 R1 差错单带 outcome 20001 [outcome]。闭单后结论不可改。核销 write-off 只对 R2，不涉及。前端加单选另开 fe 任务。
+refs: []
+refs_hash: {}
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'packages/contracts-ts/**'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
