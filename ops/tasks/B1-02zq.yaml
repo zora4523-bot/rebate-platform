@@ -1,0 +1,22 @@
+id: B1-02zq
+repo: rebate-platform
+title: 旧号加验守卫接线——app.module 的 ReverifyGatePort 恒 null 桩换成 identity 真实判定（有待加验标记且当前设备不在已加验设备 → 10010，带契约要求的 method / providers / fail_limit），接到提现第 ③b 步（含 GET /v1/withdrawals/rules 的 block_code）、收款账号变更（step-up 之后）、首次实名、申请注销（二次验证之后；受限会话一律 manual）；修 payout withdraw-rules 只透传 method 丢 providers / fail_limit 的缺陷；替换 deletion-request.ts、admin-realname-correction.ts（30419 reverify_pending）、admin-profile-edit.ts 三处 blocked on 待加验标记的 TODO
+type: impl
+# 2026-10-31 入账（identity-lane，D10-453 ⑥ (b)）。开关默认 0 时守卫恒放行，行为不变；涉及提现阻断，money 级评审。依赖 B1-02zp。
+refs: []
+refs_hash: {}
+deps: [B1-02zp]
+paths:
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/modules/payout/application/withdraw-rules.ts'
+  - 'apps/api/src/modules/payout/domain/withdraw-rules.ts'
+  - 'apps/api/src/modules/payout/domain/withdraw-rules.test.ts'
+test_paths:
+  - 'test/spec/identity/reverify-gates/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/reverify-gates/**'
+status: todo
