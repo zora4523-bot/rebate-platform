@@ -84,14 +84,21 @@ function answers(events: unknown[], amounts: unknown[], keys: unknown[] = KEYS):
 
 const input = { appId: APP, userId: USER, since: SINCE, until: UNTIL };
 
-it('[B1-03z] 只查 reason=banned 的 forfeited 事件、窗口两端含；份额值取该份额最大 commission_version 的快照；按没收时刻、订单、角色排序', async () => {
+/** The latest event of a share (one DISTINCT ON row per (order_id, role)). */
+function latest(
+  orderId: string,
+  role: string,
+  at: Date,
+  status = 'forfeited',
+  reason: string | null = 'banned',
+) {
+  return { order_id: orderId, role, status, reason, created_at: at };
+}
+
+it('[B1-03z] 只列 reason=banned 的 forfeited 份额、窗口两端含；份额值取该份额最大 commission_version 的快照；按没收时刻、订单、角色排序', async () => {
   const { db, queries } = fakeDb(
     answers(
-      [
-        { order_id: O2, role: 'direct', forfeited_at: T2 },
-        { order_id: O1, role: 'self', forfeited_at: T1 },
-        { order_id: O1, role: 'direct', forfeited_at: T1 },
-      ],
+      [latest(O2, 'direct', T2), latest(O1, 'self', T1), latest(O1, 'direct', T1)],
       [
         { order_id: O1, role: 'self', commission_version: 1, amount_fen: 425n },
         { order_id: O1, role: 'self', commission_version: 3, amount_fen: 400n },
@@ -112,9 +119,55 @@ it('[B1-03z] 只查 reason=banned 的 forfeited 事件、窗口两端含；份�
   expect(events.sql).toContain('"app"."commission_split_beneficiary_events"');
   expect(events.sql).toContain('"created_at" >= $');
   expect(events.sql).toContain('"created_at" <= $');
-  expect(events.sql).toContain('max("created_at")');
-  expect(events.parameters).toEqual([APP, USER, 'forfeited', 'banned', SINCE, UNTIL]);
+  expect(events.parameters).toEqual([APP, USER, APP, USER, 'forfeited', 'banned', SINCE, UNTIL]);
   expect(queries.every((q) => /^select /i.test(q.sql))).toBe(true);
+});
+
+it('[B1-03zf 最新事件规则] 每份额先按 event_seq 取最新一条（DISTINCT ON order_id, role，event_seq 倒序），时间窗只在候选订单子查询里，不在外层先过滤', async () => {
+  const { db, queries } = fakeDb(answers([], []));
+  await listBannedForfeitedShares(db, input);
+  const sql = queries[0]!.sql;
+  expect(sql).toContain('distinct on ("order_id", "role")');
+  expect(sql).toMatch(/order by "order_id", "role", "event_seq" desc$/);
+  // The window lives only in the candidate subquery: the outer query keeps every event of the share.
+  const outer = sql.slice(0, sql.indexOf('(select'));
+  expect(outer).not.toContain('"created_at" >=');
+  expect(outer).not.toContain('"status" =');
+});
+
+it('[B1-03zf 最新事件规则] 最新事件为 active / held / forfeited(deleted / minor)，或最新的 banned 没收落在窗口外 → 不列；只列最新为窗口内 forfeited(banned) 的份额', async () => {
+  const before = new Date('2026-09-01T00:00:00.000Z');
+  const after = new Date('2026-09-26T00:00:00.000Z');
+  const { db, queries } = fakeDb(
+    answers(
+      [
+        latest(O1, 'self', T2, 'active', null),
+        latest(O1, 'direct', T2, 'held', null),
+        latest(O1, 'share', T2, 'forfeited', 'deleted'),
+        latest(O1, 'indirect', T2, 'forfeited', 'minor'),
+        latest(O2, 'self', after),
+        latest(O2, 'share', before),
+        latest(O2, 'direct', UNTIL),
+        latest(O2, 'indirect', SINCE),
+      ],
+      [
+        { order_id: O2, role: 'direct', commission_version: 1, amount_fen: 85n },
+        { order_id: O2, role: 'indirect', commission_version: 1, amount_fen: 42n },
+      ],
+    ),
+  );
+  const shares = await listBannedForfeitedShares(db, input);
+  expect(shares).toStrictEqual([
+    { orderId: O2, orderKey: 'pdd:7770002', role: 'indirect', amountFen: 42n, forfeitedAt: SINCE },
+    { orderId: O2, orderKey: 'pdd:7770002', role: 'direct', amountFen: 85n, forfeitedAt: UNTIL },
+  ]);
+  expect(queries[1]!.parameters).toEqual([APP, USER, O2, O2]);
+});
+
+it('[B1-03zf 最新事件规则] 全部份额的最新事件都已被覆盖 → 空数组，不再查快照', async () => {
+  const { db, queries } = fakeDb(answers([latest(O1, 'self', T2, 'active', null)], []));
+  expect(await listBannedForfeitedShares(db, input)).toEqual([]);
+  expect(queries).toHaveLength(1);
 });
 
 it('[B1-03z] 没有符合条件的事件 → 空数组，不再查快照', async () => {
@@ -124,7 +177,7 @@ it('[B1-03z] 没有符合条件的事件 → 空数组，不再查快照', async
 });
 
 it('[B1-03z] 被没收的份额找不到快照金额 → 抛错（不按 0 登记）', async () => {
-  const { db } = fakeDb(answers([{ order_id: O1, role: 'self', forfeited_at: T1 }], []));
+  const { db } = fakeDb(answers([latest(O1, 'self', T1)], []));
   await expect(listBannedForfeitedShares(db, input)).rejects.toThrow(
     'forfeited share without a split snapshot amount',
   );
@@ -133,7 +186,7 @@ it('[B1-03z] 被没收的份额找不到快照金额 → 抛错（不按 0 登�
 it('[B1-03z] 份额找不到订单键 → 抛错', async () => {
   const { db } = fakeDb(
     answers(
-      [{ order_id: O1, role: 'self', forfeited_at: T1 }],
+      [latest(O1, 'self', T1)],
       [{ order_id: O1, role: 'self', commission_version: 1, amount_fen: 425n }],
       [],
     ),

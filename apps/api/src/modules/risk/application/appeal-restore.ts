@@ -233,6 +233,8 @@ export function createAppealRestoreHandler(options: AppealRestoreOptions): Event
 
 const TARGET_TYPES: ReadonlySet<string> = new Set(['account', 'order', 'blocked_request']);
 const STATUSES: ReadonlySet<string> = new Set(['revoked', 'upheld']);
+/** resolution.shares[].amount_source of a share without a FORFEIT voucher (B1-03zf). */
+const NO_FORFEIT_VOUCHER = 'no_forfeit_voucher';
 /** contracts AdminReconDiff ref_id maxLength. */
 const REF_ID_MAX = 64;
 
@@ -313,6 +315,8 @@ interface PricedShare {
   readonly role: string;
   readonly amountFen: bigint;
   readonly forfeitedAt: Date;
+  /** No FORFEIT voucher (port answered null): amount 0, marked no_forfeit_voucher (B1-03zf). */
+  readonly noVoucher: boolean;
 }
 
 interface OrderGroup {
@@ -335,32 +339,49 @@ async function priced(
     if (orderKey === undefined || orderKey.length === 0) {
       throw new Error('risk: appeal restore needs the order key of every share');
     }
-    const amount =
-      options.forfeitedAmount === undefined
-        ? null
-        : await options.forfeitedAmount(trx, {
-            appId: scope.appId,
-            orderKey,
-            userId: scope.userId,
-            role: share.role,
-          });
-    if (amount === null) {
+    const readAmount = options.forfeitedAmount;
+    if (readAmount === undefined) {
+      // An assembly error (B1-03z): never guess, never the snapshot estimate.
       options.logger?.error(
         {
           app_id: scope.appId,
           appeal_id: scope.appealId,
           order_id: share.orderId,
           role: share.role,
-          port: options.forfeitedAmount !== undefined,
+          port: false,
         },
         'appeal_restore_amount_unavailable',
       );
       throw new Error('risk: the forfeited amount of a share is unavailable');
     }
-    if (amount < 0n) throw new Error('risk: a forfeited amount is negative');
-    if (amount === 0n) continue;
+    const amount = await readAmount(trx, {
+      appId: scope.appId,
+      orderKey,
+      userId: scope.userId,
+      role: share.role,
+    });
+    let item: PricedShare;
+    if (amount === null) {
+      // No FORFEIT voucher (B1-03zf, 编排 D10-495): counted 0, marked for the handler side to
+      // recompute on the server.
+      item = {
+        role: share.role,
+        amountFen: 0n,
+        forfeitedAt: share.forfeitedAt,
+        noVoucher: true,
+      };
+    } else {
+      if (amount < 0n) throw new Error('risk: a forfeited amount is negative');
+      if (amount === 0n) continue;
+      item = {
+        role: share.role,
+        amountFen: amount,
+        forfeitedAt: share.forfeitedAt,
+        noVoucher: false,
+      };
+    }
     const group = groups.get(share.orderId) ?? { orderKey, shares: [] };
-    group.shares.push({ role: share.role, amountFen: amount, forfeitedAt: share.forfeitedAt });
+    group.shares.push(item);
     groups.set(share.orderId, group);
   }
   return [...groups.entries()].map(([orderId, group]) => {
@@ -400,6 +421,7 @@ async function register(
       role: share.role,
       amount_fen: share.amountFen.toString(),
       forfeited_at: share.forfeitedAt.toISOString(),
+      ...(share.noVoucher ? { amount_source: NO_FORFEIT_VOUCHER } : {}),
     })),
   };
   const input = (refId: string): RegisterReconDiffInput => {

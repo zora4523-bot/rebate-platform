@@ -290,20 +290,99 @@ it('[B1-03z r2] 不同会员在同一子订单上的专属 ref_id 不同', async
   expect(refs[0]).not.toBe(refs[1]);
 });
 
-it('[B1-03z r2] 拿不到没收金额（未注入端口或无 FORFEIT 凭证）→ 拒绝并记 error，不回落到快照值、不写', async () => {
-  for (const forfeitedAmount of [undefined, amounts({})]) {
-    const h = harness(BANNED);
-    const errors: Array<[Record<string, unknown>, string]> = [];
-    const handler = createAppealRestoreHandler({
+it('[B1-03z r2] 未注入 FORFEIT 金额端口（装配错误）→ 拒绝并记 error，不回落到快照值、不写', async () => {
+  const h = harness(BANNED);
+  const errors: Array<[Record<string, unknown>, string]> = [];
+  const handler = createAppealRestoreHandler({
+    clock,
+    shares: port([share(O1, K1, 'self', T1)]),
+    logger: { error: (fields, message) => errors.push([fields, message]) },
+  });
+  await expect(h.run(handler, event(REVOKED))).rejects.toThrow('forfeited amount');
+  expect(h.queries.filter((q) => INSERT.test(q.sql))).toEqual([]);
+  expect(errors).toEqual([
+    [
+      { app_id: APP, appeal_id: APPEAL, order_id: O1, role: 'self', port: false },
+      'appeal_restore_amount_unavailable',
+    ],
+  ]);
+});
+
+it('[B1-03zf 无凭证份额 D10-495] 端口已注入、对某份额答 null → 不拒绝：该份额按 0 计入所在子订单的差错单并标明 amount_source = no_forfeit_voucher；有凭证的份额照凭证金额、不带标记；不记 error', async () => {
+  const h = harness(BANNED);
+  const errors: string[] = [];
+  await h.run(
+    createAppealRestoreHandler({
       clock,
-      shares: port([share(O1, K1, 'self', T1)]),
-      ...(forfeitedAmount === undefined ? {} : { forfeitedAmount }),
-      logger: { error: (fields, message) => errors.push([fields, message]) },
-    });
-    await expect(h.run(handler, event(REVOKED))).rejects.toThrow('forfeited amount');
-    expect(h.queries.filter((q) => INSERT.test(q.sql))).toEqual([]);
-    expect(errors.map(([, message]) => message)).toEqual(['appeal_restore_amount_unavailable']);
-  }
+      shares: port([
+        share(O1, K1, 'self', T1),
+        share(O1, K1, 'direct', T2),
+        share(O2, K2, 'direct', T2),
+      ]),
+      forfeitedAmount: amounts({ [`${K1}|self`]: 510n, [`${K2}|direct`]: null }),
+      logger: { error: (_fields, message) => errors.push(message) },
+    }),
+    event(REVOKED),
+  );
+  const rows = h.stored();
+  expect(rows).toHaveLength(2);
+  expect(rows[0]).toMatchObject({
+    ref_id: K1,
+    expected_fen: 510n,
+    actual_fen: 0n,
+    diff_fen: 510n,
+    dedupe_key: `appeal_restore:${APP}:${APPEAL}:${O1}:${USER}:direct+self`,
+  });
+  expect(resolutionOf(rows[0]).shares).toEqual([
+    {
+      role: 'direct',
+      amount_fen: '0',
+      forfeited_at: T2.toISOString(),
+      amount_source: 'no_forfeit_voucher',
+    },
+    { role: 'self', amount_fen: '510', forfeited_at: T1.toISOString() },
+  ]);
+  expect(rows[1]).toMatchObject({
+    ref_id: K2,
+    expected_fen: 0n,
+    actual_fen: 0n,
+    diff_fen: 0n,
+    dedupe_key: `appeal_restore:${APP}:${APPEAL}:${O2}:${USER}:direct`,
+  });
+  expect(resolutionOf(rows[1])).toMatchObject({
+    order_id: O2,
+    order_key: K2,
+    shares: [
+      {
+        role: 'direct',
+        amount_fen: '0',
+        forfeited_at: T2.toISOString(),
+        amount_source: 'no_forfeit_voucher',
+      },
+    ],
+  });
+  expect(errors).toEqual([]);
+});
+
+it('[B1-03zf 无凭证份额 D10-495] 凭证记了 0 的份额仍不登记，与无凭证（按 0 登记并标明）区分', async () => {
+  const h = harness(BANNED);
+  await h.run(
+    createAppealRestoreHandler({
+      clock,
+      shares: port([share(O1, K1, 'self', T1), share(O2, K2, 'direct', T2)]),
+      forfeitedAmount: amounts({ [`${K1}|self`]: 0n }),
+    }),
+    event(REVOKED),
+  );
+  const rows = h.stored();
+  expect(rows.map((row) => row.ref_id)).toEqual([K2]);
+  expect(resolutionOf(rows[0]).shares).toEqual([
+    expect.objectContaining({
+      role: 'direct',
+      amount_fen: '0',
+      amount_source: 'no_forfeit_voucher',
+    }),
+  ]);
 });
 
 it('[B1-03z r2] 没收金额为 0 的角色不登记', async () => {

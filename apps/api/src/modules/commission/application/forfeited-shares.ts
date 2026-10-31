@@ -95,18 +95,39 @@ export async function listBannedForfeitedShares(
   input: ListBannedForfeitedSharesInput,
 ): Promise<readonly BannedForfeitedShare[]> {
   const db = trx.withSchema('app');
-  const forfeited = await db
+  // Latest-event rule (D10-481 ②): the latest event of each share by event_seq first, the window
+  // and the banned forfeiture checked on that latest event only. Candidates are the orders with a
+  // banned forfeiture of the member in the window (a superset: a listed share's latest event is one).
+  const latestEvents = await db
     .selectFrom('commission_split_beneficiary_events')
-    .select(['order_id', 'role'])
-    .select((eb) => eb.fn.max<Date>('created_at').as('forfeited_at'))
+    .distinctOn(['order_id', 'role'])
+    .select(['order_id', 'role', 'status', 'reason', 'created_at'])
     .where('app_id', '=', input.appId)
     .where('user_id', '=', input.userId)
-    .where('status', '=', 'forfeited')
-    .where('reason', '=', 'banned')
-    .where('created_at', '>=', input.since)
-    .where('created_at', '<=', input.until)
-    .groupBy(['order_id', 'role'])
+    .where('order_id', 'in', (eb) =>
+      eb
+        .selectFrom('commission_split_beneficiary_events')
+        .select('order_id')
+        .where('app_id', '=', input.appId)
+        .where('user_id', '=', input.userId)
+        .where('status', '=', 'forfeited')
+        .where('reason', '=', 'banned')
+        .where('created_at', '>=', input.since)
+        .where('created_at', '<=', input.until),
+    )
+    .orderBy('order_id')
+    .orderBy('role')
+    .orderBy('event_seq', 'desc')
     .execute();
+  const forfeited = latestEvents
+    .filter(
+      (row) =>
+        row.status === 'forfeited' &&
+        row.reason === 'banned' &&
+        row.created_at.getTime() >= input.since.getTime() &&
+        row.created_at.getTime() <= input.until.getTime(),
+    )
+    .map((row) => ({ order_id: row.order_id, role: row.role, forfeited_at: row.created_at }));
   if (forfeited.length === 0) return [];
   const amounts = await db
     .selectFrom('commission_split_amounts')
