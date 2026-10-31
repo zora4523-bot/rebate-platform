@@ -13,7 +13,7 @@ refs_hash:
   BR-CALC-15: 84083d5f0e01
 deps: [B2-04l]
 paths:
-  - 'db/migrations/**'  # D10-483：order_rights.answered_at timestamptz NULL（联盟回传吸收该条扣减时同事务置位；入账前累计只算为空者；替代 updated_at 对比 order_settlements.created_at，S2）；只授 settlement 写入角色 UPDATE(answered_at)；只加列不回填；迁移号落地时取主干最大 +1（排在 0106 之后，报到即排）。
+  - 'db/migrations/**' # D10-483：order_rights.answered_at timestamptz NULL（联盟回传吸收该条扣减时同事务置位；入账前累计只算为空者；替代 updated_at 对比 order_settlements.created_at，S2）；只授 settlement 写入角色 UPDATE(answered_at)；只加列不回填；迁移号落地时取主干最大 +1（排在 0106 之后，报到即排）。
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
   - 'apps/api/src/modules/settlement/rebate/**'
@@ -23,7 +23,7 @@ paths:
   - 'apps/api/src/modules/settlement/rights/**'
   - 'apps/api/src/modules/settlement/index.ts'
   - 'packages/domain/src/settlement/credit/**'
-  - 'apps/api/src/modules/platform/events/types.ts'  # D10-467 ②：R9 部分退款扣回补发 order.clawed_back（进 EVENT_NAMES），供 identity B1-12s 消费。
+  - 'apps/api/src/modules/platform/events/types.ts' # D10-467 ②：R9 部分退款扣回补发 order.clawed_back（进 EVENT_NAMES），供 identity B1-12s 消费。
 test_paths:
   - 'test/spec/settlement/rights-answered-schema/**'
   - 'test/spec/settlement/rights-credit/**'
