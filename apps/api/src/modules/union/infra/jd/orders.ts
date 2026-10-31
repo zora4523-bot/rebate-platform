@@ -105,17 +105,17 @@ export function parseJdOrderCursor(cursor: string): number {
 }
 
 /**
- * 一页内层结果的行与 hasMore。空窗口实测只有 code / message / requestId，所以第 1 页 data 与
- * hasMore 都缺算空页；翻页途中两键都缺是没取到的页，报错（游标不能前进）。其余形状都报错：
- * data 必须是数组、hasMore 必须是布尔，hasMore 为 true 时 data 不能为空。
+ * 一页内层结果的行与 hasMore。实测（D10-524）：hasMore 的含义是「本页已满」，不是「后面还有」，
+ * 行数恰为页大小整数倍的窗口，末页满页时 hasMore 仍为 true，下一页只有 code / message / requestId。
+ * 所以任何一页 data 与 hasMore 都缺都是翻完了，返回空页（无单的时间窗也是这个形状）。其余形状都
+ * 报错：data 必须是数组、hasMore 必须是布尔，hasMore 为 true 时 data 不能为空。
  */
-export function jdOrderRows(
-  inner: JdInner,
-  pageIndex: number,
-): { readonly rows: readonly unknown[]; readonly hasMore: boolean } {
+export function jdOrderRows(inner: JdInner): {
+  readonly rows: readonly unknown[];
+  readonly hasMore: boolean;
+} {
   if (!Object.hasOwn(inner, 'data') && !Object.hasOwn(inner, 'hasMore')) {
-    if (pageIndex === 1) return { rows: [], hasMore: false };
-    throw invalid('page after the first has neither data nor hasMore');
+    return { rows: [], hasMore: false };
   }
   const { data, hasMore } = inner;
   if (!Array.isArray(data)) throw invalid('data is not an array');

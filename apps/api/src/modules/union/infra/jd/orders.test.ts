@@ -63,17 +63,34 @@ function single(row: Record<string, unknown>) {
   return setup(() => ({ code: 200, hasMore: false, data: [row] })).adapter.listOrders(win, {}, ctx);
 }
 
-it('[AC-B1-04zb#82] 上一页说还有、下一页 data 与 hasMore 都缺：报 UnionError，不算结束', async () => {
+it('[AC-B1-04zb#82] 末页满页 hasMore 仍为 true，下一页 data 与 hasMore 都缺：正常翻完（D10-524）', async () => {
   const { adapter, transport } = setup((orderReq) =>
     orderReq.pageIndex === 1
       ? { code: 200, hasMore: true, data: [orderRow()] }
-      : { code: 200, message: 'success' },
+      : { code: 200, message: 'success', requestId: 'synthetic-request' },
   );
   const first = await adapter.listOrders(win, {}, ctx);
+  expect(first.items).toHaveLength(1);
   expect(first.nextCursor).not.toBeNull();
   const next = { cursor: first.nextCursor! };
-  await expect(adapter.listOrders(win, next, ctx)).rejects.toBeInstanceOf(UnionError);
+  await expect(adapter.listOrders(win, next, ctx)).resolves.toEqual({
+    items: [],
+    nextCursor: null,
+  });
   expect(transport).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  ['data 不是数组', { hasMore: false, data: 'not-a-list' }],
+  ['data 为空而 hasMore 为 true', { hasMore: true, data: [] }],
+  ['缺 data 却有 hasMore', { hasMore: false }],
+  ['有 data 而缺 hasMore', { data: [orderRow()] }],
+  ['hasMore 非布尔', { hasMore: 'false', data: [orderRow()] }],
+] as const)('[AC-B1-04zb#89] 翻页途中 %s 仍报 UnionError', async (_name, members) => {
+  const { adapter } = setup(() => ({ code: 200, ...members }));
+  await expect(adapter.listOrders(win, { cursor: 'jd-order:2' }, ctx)).rejects.toBeInstanceOf(
+    UnionError,
+  );
 });
 
 it.each([

@@ -272,7 +272,7 @@ export class JdUnionAdapter implements UnionAdapter {
       },
       ctx,
     );
-    const { rows, hasMore } = jdOrderRows(inner, pageIndex);
+    const { rows, hasMore } = jdOrderRows(inner);
     const page = { rawPayloadId, like: this.#clock.now(), productKeyMode };
     return {
       items: rows.map((row) => mapJdOrder(row, page)),

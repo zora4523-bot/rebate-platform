@@ -60,10 +60,11 @@
 
 每次 `listOrders` 取一页，每页单独经配额治理（`listOrdersMetering = 'per_request'`）；`hasMore` 为 true 时 `nextCursor` 指下一页。
 
+`hasMore` 的实际含义是「本页已满」，不是「后面还有」（D10-524，实测：pageSize=1 取只有 1 行的窗口，第 1 页 1 行、`hasMore` 为 true，第 2 页 `data` 与 `hasMore` 两键都缺）。所以行数恰为页大小整数倍的窗口会多取一页，那一页两键都缺，算正常翻完。
+
 | 内层 200 的形状 | 结果 |
 | --- | --- |
-| 第 1 页 `data`、`hasMore` 都缺（实测无单时间窗就是这样） | 空页 |
-| 第 2 页起 `data`、`hasMore` 都缺 | `invalid_dto`：上一页说还有，这页没取到，游标不能前进 |
+| 任何一页 `data`、`hasMore` 都缺（无单时间窗与满页后的下一页都是这样） | 空页，翻完 |
 | `data` 为 `[]` 且 `hasMore` 为 false | 空页 |
 | `data` 为非空数组，`hasMore` 为布尔 | 正常页 |
 | 缺 `data` 但有 `hasMore`（任意值） | `invalid_dto` |
