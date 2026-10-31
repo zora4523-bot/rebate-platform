@@ -80,6 +80,40 @@ const QUARTER = /^(\d{4})-Q([1-4])$/;
 const MIN_YEAR = 2026;
 const MAX_YEAR = 2100;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.\d{3}Z$/;
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) {
+    const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    return leap ? 29 : 28;
+  }
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+/** Exactly what encodeCursor writes (an ISO instant with milliseconds, UTC) and a real calendar time. */
+function isIsoInstant(text: string): boolean {
+  const match = ISO_INSTANT.exec(text);
+  if (match === null) return false;
+  const [, y, mo, d, h, mi, s] = match.map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  return (
+    mo >= 1 &&
+    mo <= 12 &&
+    d >= 1 &&
+    d <= daysInMonth(y, mo) &&
+    h <= 23 &&
+    mi <= 59 &&
+    s <= 59 &&
+    Number.isFinite(Date.parse(text))
+  );
+}
 
 export class TaxExportBadQuarter extends Error {
   override readonly name = 'TaxExportBadQuarter';
@@ -142,7 +176,10 @@ function decodeCursor(cursor: string): CursorPosition | null {
   if (split <= 0) return null;
   const id = text.slice(split + 1);
   const paidAt = text.slice(0, split);
-  if (!UUID.test(id) || !Number.isFinite(Date.parse(paidAt))) return null;
+  // Only the exact shape encodeCursor writes (an ISO instant with milliseconds, UTC) is ours:
+  // Date.parse alone also accepts '2026' or '2026-10-01', which PostgreSQL's timestamptz would
+  // then reject with a raw database error instead of TaxExportBadCursor (money review r1 S2).
+  if (!UUID.test(id) || !isIsoInstant(paidAt)) return null;
   return { paidAt, id };
 }
 
