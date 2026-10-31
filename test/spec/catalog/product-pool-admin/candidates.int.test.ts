@@ -140,6 +140,7 @@ function plan(f: Setup, sign: string, finalFen: bigint, commissionBp: bigint) {
     item_id: null,
     goods_id: '123456789',
     goods_sign: sign,
+    price_fen: finalFen + 1000n,
     final_price_fen: finalFen,
     commission_rate_bp: commissionBp,
   });
