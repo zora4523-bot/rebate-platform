@@ -5,12 +5,13 @@ type: impl
 # 2026-10-31 编排 05:0x 补 D10-467 ③：B2-04ze 已在写测试不打断，单开本单，紧接 B2-04ze 之后；identity B1-12t 依赖本单。RV2，独立 Claude 写测试与 money 评审（Codex 至 11-02 不可用，approvals #36）。
 # **D10-477 定稿（更正标题与 D10-467 ③「PARTIAL 不发」；标题按 ledger-overwrite 守卫不得改，以本注释为准）**：settle.run_done 在 (a) 该 run 全部批次 DONE 发 outcome='done'；(b) 执行因开关停止、有批次置 PARTIAL 发 outcome='partial'；PARTIAL 后继续执行（SB8）再到 (a) / (b) 再发、part+1；载荷 {settle_run_id, bill_id, part, outcome, batch_count}；每个 (settle_run_id, part) 并发与重放只发一次。
 # D10-477：02 §11 已回写 settle.run_done（couli #228，计数 32）；冻结 test/spec/platform/events/kit.ts 的 PLAN_02_EVENTS 由新鲜独立 Claude 单列 test(spec) 只加该名（同 B2-15c 先例），与按 D10-477 改写本单规则测试同为编排例外轮、不计写测试次数（证据写 D10-477）。
+# D10-492：改用 settlement 自有 app.settle_runs（B2-04zfa）记 part / last_outcome（发布时同事务 CAS），「本次执行是否有入账」按本表起点查 settlement 自己的批次 / 明细，**不读 event_log**；规则测试按新方案由独立 Claude 补改（编排例外，不计次），评审额度重给（证据写 D10-492）。
 # 事件名与载荷照 02 §11 / EVENT_NAMES 既有命名口径（两段式 a.b）；若需新增事件名，进 EVENT_NAMES 并在 PR 说明标出；契约 / 事件清单未写清处报编排。
 refs: [BR-FUND-04, BR-TEXT-09]
 refs_hash:
   BR-FUND-04: 2497ceea4515
   BR-TEXT-09: f943366b1a3b
-deps: [B2-04ze]
+deps: [B2-04ze, B2-04zfa]
 paths:
   - 'apps/api/src/modules/settlement/batch/**'
   - 'apps/api/src/modules/settlement/index.ts'
