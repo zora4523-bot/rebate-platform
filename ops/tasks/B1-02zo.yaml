@@ -13,10 +13,6 @@ paths:
   - 'packages/db/src/db.gen.ts'
 test_paths:
   - 'test/spec/identity/reverify-storage/**'
-red_exempt:
-  - file: test/spec/identity/reverify-storage/seed.test.ts
-    test: '[AC-B1-02zo#10] 种子 withdraw.dormant_reverify_days 恰有一行、值为 0（关闭），由 seed 写入，重跑不覆盖'
-    reason: 种子键由 B1-02zs（#2065，编排 23:39 ④）登记并写入、已先合并；本条只断言种子里该键存在且为 0，故在骨架上即绿（交付在别单），不是无牙测试
 impl: claude
 tester: claude-independent
 accept:
