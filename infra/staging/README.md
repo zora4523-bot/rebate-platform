@@ -128,7 +128,7 @@ openssl pkey -pubin -in /etc/couli-jwt-pub/es256.pub.pem -noout -text
 
 本节只做接线准备，不切 live：**pdd 切 live 暂不可用 — blocked on 真实返利报价器（B2-03）**。api 入口只要有一个联盟端点是 live，就按 live 装配，而演示返利报价器在 live 下拒绝启动（资金安全设计），真实报价器由 B2-03 提供。所以下面三个端点文件现在都保持 demo，pdd.json 也不例外；本节不提供切换步骤。
 
-compose 给 api 与 worker（装配联盟模块的两个入口）只读挂载节点目录 `/etc/couli-pdd`（容器内 `/run/couli-pdd`）。这个挂载可缺：节点没有该目录时部署照常进行，`deploy.sh` 也不检查它。
+compose 给 admin、api、stream 与 worker（装配联盟模块的四个入口）只读挂载节点目录 `/etc/couli-pdd`（容器内 `/run/couli-pdd`）。这个挂载可缺：节点没有该目录时部署照常进行，`deploy.sh` 也不检查它。
 
 节点文件由负责人放入（容器以 uid 1000 运行）：
 
@@ -153,7 +153,7 @@ chmod 400 /etc/couli-pdd/client_secret /etc/couli-pdd/union-endpoints/*.json
 chmod 500 /etc/couli-pdd/union-endpoints /etc/couli-pdd
 ```
 
-先放好上面的文件，再在 `/etc/couli/staging.env` 设下面四个变量（顺序不能反：设了 UNION_ENDPOINT_OVERRIDE_DIR 而目录缺文件时，api 与 worker 启动即失败，不会退回镜像内的端点）：
+先放好上面的文件，再在 `/etc/couli/staging.env` 设下面四个变量（顺序不能反：设了 UNION_ENDPOINT_OVERRIDE_DIR 而目录缺文件时，admin、api、stream 与 worker 启动即失败，不会退回镜像内的端点）：
 
 | 变量 | 取值 |
 | --- | --- |
@@ -162,7 +162,7 @@ chmod 500 /etc/couli-pdd/union-endpoints /etc/couli-pdd
 | `PDD_QUERY_CUSTOM_PARAMETERS` | 商品查询带的 custom_parameters，JSON 对象文本，按 UTF-8 不超过 64 字节 |
 | `UNION_ENDPOINT_OVERRIDE_DIR` | `/run/couli-pdd/union-endpoints`（容器内路径；只有 staging 认，必须是绝对路径） |
 
-`staging.env` 由 api、stream、worker、admin 共用；stream 与 admin 没有这个挂载，但它们不读端点目录，配置校验也只检查路径是否绝对，不检查目录是否存在，所以照常启动。
+`staging.env` 由 api、stream、worker、admin 共用，这四个入口都有这个挂载。其余入口只有 payout：它没有这个挂载，也不装配联盟模块，不读端点目录，所以不受影响。
 
 拼多多开放平台应用的 IP 白名单只加不删：把 staging 节点的出口 IP 加进去，已有的地址一律保留。
 

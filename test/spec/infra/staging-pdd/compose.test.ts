@@ -11,7 +11,7 @@ import {
   sourceLines,
 } from '../staging/kit.ts';
 
-it.each(['api', 'worker'] as const)(
+it.each(['admin', 'api', 'stream', 'worker'] as const)(
   '[AC-B1-04y-COMPOSE#1] %s 只读挂载可缺的节点拼多多目录，bind 使用块状长语法',
   (entry) => {
     // Reuse the protected staging suite's YAML parser so flow-style bind cannot slip through.
@@ -36,7 +36,7 @@ it.each(['api', 'worker'] as const)(
   },
 );
 
-it('[AC-B1-04y-COMPOSE#2] 拼多多目录只给 api/worker，不在 compose 注入凭据或新增部署文件存在性门槛', () => {
+it('[AC-B1-04y-COMPOSE#2] 拼多多目录只给 admin/api/stream/worker，不在 compose 注入凭据或新增部署文件存在性门槛', () => {
   const all = services();
   const recipients: string[] = [];
   for (const name of ENTRIES) {
@@ -54,7 +54,7 @@ it('[AC-B1-04y-COMPOSE#2] 拼多多目录只给 api/worker，不在 compose 注�
       }
     }
   }
-  expect(recipients.sort()).toEqual(['api', 'worker']);
+  expect(recipients.sort()).toEqual(['admin', 'api', 'stream', 'worker']);
   noInlineCredentials(asset('infra/staging/compose.yaml'));
   // The optional mount must not add a ninth required node path to the deployment preflight.
   expect(sourceLines(asset('infra/staging/deploy.sh')).join('\n')).not.toMatch(
