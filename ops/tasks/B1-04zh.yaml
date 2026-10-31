@@ -1,24 +1,20 @@
 id: B1-04zh
 repo: rebate-platform
-title: 淘宝 searchItems 经大淘客搜索（D10-503 ②）：GET /api/goods/get-dtk-search-goods v2.1.2 映射到 UnionItem（商品 ID 新式不透明 ID 原样、价格按既有口径、不用大淘客自算 estimateAmount、couponLink / itemLink 不外露）
-type: impl
-# 草稿 2026-10-31（union 线，账号 4）。依据：编排 D10-503 ②、DEV-NOTES 10-31 18:10 实测（「抽纸」第 1 页 20 条、totalNum 165，87 个字段路径：标题 / 短标题、原价 / 券后价 actualPrice、佣金比例与类型、月销 / 两小时 / 日销、券信息、店铺与 DSR、品牌、主图、estimateAmount 等；是大淘客精选子集不是淘宝全量），形状文件由编排给路径摘入任务书。
-# ① 请求：经 B1-04m 底座 GET，参数 keyWords、pageId（游标承载页码）、pageSize 20、sort 默认 0；SearchQuery.cursor 编码 / 解码照拼多多 searchCursor 做法；结果空 → 空页。
-# ② 映射：item_id = goodsId 原样；**开工前核对**：packages/domain deriveProductKey 对淘宝取 item_id 按「-」切分的最后一段作 stable_id——须用录制形状确认 goodsId 是否为「前段-后段」新式 ID 且后段在多次请求间稳定，若不一致先报编排 / w1，不自行改 product_key 口径。title、主图（经 normalizeItemImages）、price_fen / coupon_fen / final_price_fen 按 BR-PRICE-01 既有口径（D33 映射，任务书摘原文；原价 originalPrice、券后价 actualPrice、券面额 couponPrice，元转分只用 yuanStrToFen，三者关系不自洽 → 价格异常照 isPriceAnomaly）、commission_rate_bp 由 commissionRate（百分数串）换算、一级类目可选字段（B1-04l 已加）按大淘客类目字段能对上则填、否则不填；estimateAmount、couponLink、itemLink、大淘客内部商品 id 不映射不外露。quoted_at = 收到响应时 Clock。缺必需字段的条目跳过并告警，不整页失败。
-# ③ 数据源开关同 B1-04d（装配注入大淘客客户端且配置打开时才走；否则 searchItems 保持 adapter_unimplemented）；官方 27939 批下后切官方优先另开任务。
-# 目录：union/infra/taobao/**、union/infra/dataoke/**、union/domain/types.ts。test_paths：test/spec/union/taobao-search/**。整体 RV2（价格）。
+title: B1-04zh：冻结京东底座端口测试 [AC-B1-04za#52] 删去 adapter_unimplemented 临时占位（B1-04zb 前置）
+type: test-change
+# 2026-11-01 be 入账（先例 cedbc9089 拼多多、d47ea0731 淘宝）。[AC-B1-04za#52] 钉 searchItems / getItem / resolveLink / convert / listOrders 五个端口是占位，
+# 文件注释写明「until the goods, link and order tasks land」。B1-04zb、zc、zd 实现后这些行必红，一次删完，三单不再各开一次。
+# 占位不是业务规则，五个端口由各单的规则测试接手；[AC-B1-04za#53] 保留。改既有规则测试属第一类保护路径：非 task 分支、不带证据文件；
+# 新鲜 Claude 改、另一新鲜独立 Claude 只读复审 pass（写进 PR）。
 refs: []
 refs_hash: {}
-deps: [B1-04e]
+deps: [B1-04za]
 paths:
-  - 'apps/api/src/modules/union/infra/taobao/**'
-  - 'apps/api/src/modules/union/infra/dataoke/**'
-  - 'apps/api/src/modules/union/domain/types.ts'
-test_paths:
-  - 'test/spec/union/taobao-search/**'
+  - 'test/spec/union/jd-core/ports.test.ts'
+  - 'ops/tasks/B1-04zh.yaml'
 impl: claude
-tester: claude-independent
+tester: none
 accept:
   - 'pnpm verify'
-  - 'test/spec/union/taobao-search/**'
 status: todo
+pr: null
