@@ -1,0 +1,87 @@
+{
+  "red_tests": [
+    "test/spec/db/content/agreements-sdk-collect/sdk-collect-access.int.test.ts > [F1-02zzr#6] app publishes both new types, readonly reads them, and table grants are unchanged",
+    "test/spec/db/content/agreements-sdk-collect/sdk-collect.int.test.ts > [F1-02zzr#1] agreements_type_check is one validated plain IN-list of exactly the five types; other constraints unchanged",
+    "test/spec/db/content/agreements-sdk-collect/sdk-collect.int.test.ts > [F1-02zzr#2] each of the five types inserts and is stored exactly as given",
+    "test/spec/db/content/agreements-sdk-collect/sdk-collect.int.test.ts > [F1-02zzr#3] near-miss spellings of the types fail agreements_type_check and leave no row",
+    "test/spec/db/content/agreements-sdk-collect/sdk-collect.int.test.ts > [F1-02zzr#4] sdk_list and collect_list never require resigning, at any version or minimum",
+    "test/spec/db/content/agreements-sdk-collect/sdk-collect.int.test.ts > [F1-02zzr#5] sdk_list and collect_list are each unique per app and version; other types, apps and versions do not collide"
+  ],
+  "risk_note": "RV2 (db). Migration rebuilds app.agreements.agreements_type_check under the same name to also allow sdk_list and collect_list (04 §3.2 / §6.2 written back by couli #229, D10-465 / D10-478; 01 §4.2). Only the allowed set widens; existing rows hold the original three values. No other constraint, column or grant changes; requires_resign_check already forces false for the new types. Plain validated ADD with squawk-ignore as in 0061 (agreements is not a funds or attribution table; single-transaction runner). The frozen [AC-F1-02k#6] is made two-state first by test-change F1-02zzx (#1979). db/schema.sql and db.gen.ts regenerated on the test machine (remote-snapshot.sh). Rule tests by a fresh independent Claude. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "fresh independent Claude via claude-run.sh (Codex unavailable until 11-02); migration review, pass (one S2: migration number gap on the branch, renumbered per the migration slot at landing)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by a fresh independent Claude reviewed by another: r1 pass with no findings; red-check PASS (6 red)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "F1-02zzr",
+  "spec_commit": "56c29f39752ec9e44af71577aea906299104c1d0",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "56c29f39752ec9e44af71577aea906299104c1d0",
+      "tree": "133018e8babf1a858c66ab02715a283de8cd3880",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T10:56:12Z",
+      "finished_at": "2026-10-31T10:56:25Z",
+      "red_tests": [
+        "test/spec/db/content/agreements-sdk-collect/sdk-collect-access.int.test.ts > [F1-02zzr#6] app publishes both new types, readonly reads them, and table grants are unchanged",
+        "test/spec/db/content/agreements-sdk-collect/sdk-collect.int.test.ts > [F1-02zzr#1] agreements_type_check is one validated plain IN-list of exactly the five types; other constraints unchanged",
+        "test/spec/db/content/agreements-sdk-collect/sdk-collect.int.test.ts > [F1-02zzr#2] each of the five types inserts and is stored exactly as given",
+        "test/spec/db/content/agreements-sdk-collect/sdk-collect.int.test.ts > [F1-02zzr#3] near-miss spellings of the types fail agreements_type_check and leave no row",
+        "test/spec/db/content/agreements-sdk-collect/sdk-collect.int.test.ts > [F1-02zzr#4] sdk_list and collect_list never require resigning, at any version or minimum",
+        "test/spec/db/content/agreements-sdk-collect/sdk-collect.int.test.ts > [F1-02zzr#5] sdk_list and collect_list are each unique per app and version; other types, apps and versions do not collide"
+      ],
+      "expected": [
+        "test/spec/db/content/agreements-sdk-collect/sdk-collect-access.int.test.ts",
+        "test/spec/db/content/agreements-sdk-collect/sdk-collect.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "aee43e79b99ef84465a97b21caeb006282037d8a850f1e214610d6aff13b5c3f"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "9cc6e0084859390dde312b200728386a6fe53d2f",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "f3fbfb3fb9afa4fd96f59c80c941620cdccf5b63",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  }
+}
