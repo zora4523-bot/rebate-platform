@@ -175,7 +175,7 @@ it('[AC-B1-05d#23] 游客按 device_id 隔离，游客也能正常出卡', async
   else expect(other.value.items.map((card) => card.title)).toEqual(['synthetic-a']);
 });
 
-it('[AC-B1-05d#24] 会话 30 分钟无请求过期，活跃翻页刷新空闲时间', async () => {
+it('[AC-B1-05d#24] 会话 30 分钟无请求过期，活跃翻页刷新空闲时间，过期后按请求页返回', async () => {
   const f = fixture();
   for (let pageNo = 1; pageNo <= 10; pageNo += 1)
     f.pages.set(pageNo, { items: [candidate('a'), candidate(`page-${pageNo}`)], hasMore: true });
@@ -188,20 +188,27 @@ it('[AC-B1-05d#24] 会话 30 分钟无请求过期，活跃翻页刷新空闲时
   expect(third.items.map((card) => card.title)).not.toContain('synthetic-a');
   expect(f.sessions.write.mock.calls.every(([, , , ttl]) => ttl === 1800)).toBe(true);
   f.clock.advanceMs(30 * 60 * 1000 + 1);
-  const expired = await observed(() => f.run({ limit: 2, cursor: third.next_cursor! }));
-  if (expired.kind === 'rejected') expect(expired.error).toMatchObject({ code: 20001 });
-  else {
-    expect(expired.value.items.map((card) => card.title)).toContain('synthetic-a');
-    expect(claims(f, expired.value.next_cursor)?.search_session_id).not.toBe(
-      claims(f, first.next_cursor)?.search_session_id,
-    );
-  }
+  // Page 2 refilled from page 3, so the page-4 cursor is the second response's, not the third's.
+  const pageFourCursor = second.next_cursor!;
+  const expiredClaims = claims(f, pageFourCursor);
+  expect(expiredClaims).toEqual({ search_session_id: expect.any(String), page_no: 4 });
+  f.search.mockClear();
+  const expired = await f.run({ limit: 2, cursor: pageFourCursor });
+  expect(expired.items.map((card) => card.title)).toEqual(['synthetic-a', 'synthetic-page-4']);
+  expect(f.search.mock.calls.map(([input]) => input.pageNo)).toEqual([4]);
+  expect(f.sessions.write.mock.lastCall?.[2].seen).toEqual([
+    'tb:synthetic-a',
+    'tb:synthetic-page-4',
+  ]);
+  const restarted = claims(f, expired.next_cursor);
+  expect(restarted).toEqual({ search_session_id: expect.any(String), page_no: 5 });
+  expect(restarted?.search_session_id).not.toBe(expiredClaims?.search_session_id);
 });
 
-it('[AC-B1-05d#43] 会话存储过期删除后，合法游标只能报 20001 或从首页新开会话', async () => {
+it('[AC-B1-05d#43] 会话存储过期删除后，新建会话并按请求页返回、不报错', async () => {
   const f = fixture();
   f.pages.set(1, { items: [candidate('first')], hasMore: true });
-  f.pages.set(2, { items: [candidate('second')], hasMore: false });
+  f.pages.set(2, { items: [candidate('second')], hasMore: true });
   const first = await f.run({ limit: 1 });
   expect(first.next_cursor).toEqual(expect.any(String));
   const firstClaims = claims(f, first.next_cursor);
@@ -209,17 +216,12 @@ it('[AC-B1-05d#43] 会话存储过期删除后，合法游标只能报 20001 或
   f.clock.advanceMs(30 * 60 * 1000);
   f.sessions.rows.clear();
   f.search.mockClear();
-  const result = await observed(() => f.run({ limit: 1, cursor: first.next_cursor! }));
-  if (result.kind === 'rejected') {
-    expect(result.error).toMatchObject({ code: 20001 });
-    expect(f.search).not.toHaveBeenCalled();
-  } else {
-    expect(result.value.items.map((card) => card.title)).toEqual(['synthetic-first']);
-    expect(f.search.mock.calls.map(([input]) => input.pageNo)).toEqual([1]);
-    const restarted = claims(f, result.value.next_cursor);
-    expect(restarted).toEqual({ search_session_id: expect.any(String), page_no: 2 });
-    expect(restarted?.search_session_id).not.toBe(firstClaims?.search_session_id);
-  }
+  const result = await f.run({ limit: 1, cursor: first.next_cursor! });
+  expect(result.items.map((card) => card.title)).toEqual(['synthetic-second']);
+  expect(f.search.mock.calls.map(([input]) => input.pageNo)).toEqual([2]);
+  const restarted = claims(f, result.next_cursor);
+  expect(restarted).toEqual({ search_session_id: expect.any(String), page_no: 3 });
+  expect(restarted?.search_session_id).not.toBe(firstClaims?.search_session_id);
 });
 
 it.each([false, true])(
