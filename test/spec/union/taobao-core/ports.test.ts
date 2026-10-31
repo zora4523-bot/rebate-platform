@@ -5,6 +5,10 @@ import { ctx, setup, TestIdentity, unionFailure } from './kit.ts';
 
 // The request base only: every UnionAdapter port is a placeholder until the field mappings of the
 // next segment (② 段) land under their own rule tests.
+//
+// test-change 2026-10-31 (union-lane): getItem in AC-B1-04j#30 was the request base's temporary
+// placeholder; B1-04l implements it (taobao.tbk.item.info.upgrade.get) under its own rule tests in
+// test/spec/union/taobao-goods/**. The remaining ports stay asserted adapter_unimplemented.
 type PortCall = [string, (adapter: TaobaoUnionAdapter) => Promise<unknown>];
 
 const item: ItemRef = { platform: 'taobao', itemId: 'synthetic-item' };
@@ -12,7 +16,6 @@ const window: TimeWindow = { from: '2026-10-01T00:00:00Z', to: '2026-10-02T00:00
 
 const ports: PortCall[] = [
   ['searchItems', (adapter) => adapter.searchItems({ keyword: 'synthetic keyword' }, ctx)],
-  ['getItem', (adapter) => adapter.getItem(item, ctx)],
   ['resolveLink', (adapter) => adapter.resolveLink('https://example.invalid/synthetic', ctx)],
   [
     'convert',
