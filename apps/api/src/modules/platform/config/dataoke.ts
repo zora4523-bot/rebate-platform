@@ -1,6 +1,6 @@
 // 大淘客 credentials of the Taobao order source (B1-04e, D10-486 ①; same rules as ./taobao.ts of
 // B1-04k; approvals #28 ②; 规划/11 §8「真实密钥被本地栈加载」). Pure: only looks at the given object,
-// reads no file, never echoes a value. Skeleton: readDataokeConfig throws NotImplemented.
+// reads no file, never echoes a value.
 //
 // - local / test: setting either variable is refused by startupViolations (./credential-env.ts
 //   lists DATAOKE_APP_KEY and DATAOKE_APP_SECRET_FILE), so nothing is read here.
@@ -21,11 +21,42 @@ export interface DataokeAppConfig {
   readonly secretFile: string;
 }
 
+const set = (env: Readonly<Record<string, string | undefined>>, name: string): boolean =>
+  (env[name] ?? '') !== '';
+
 export function readDataokeConfig(
   appEnv: AppEnv,
   env: Readonly<Record<string, string | undefined>>,
 ): { readonly dataoke: DataokeAppConfig | null; readonly problems: readonly string[] } {
-  void appEnv;
-  void env;
-  throw new Error('NotImplemented: readDataokeConfig');
+  const hasKey = set(env, 'DATAOKE_APP_KEY');
+  const hasFile = set(env, 'DATAOKE_APP_SECRET_FILE');
+  if (appEnv === 'local' || appEnv === 'test') return { dataoke: null, problems: [] };
+  if (appEnv === 'prod') {
+    return hasFile
+      ? {
+          dataoke: null,
+          problems: [
+            'DATAOKE_APP_SECRET_FILE: must not be set when APP_ENV=prod (prod reads the 大淘客 app secret from KMS only)',
+          ],
+        }
+      : { dataoke: null, problems: [] };
+  }
+  if (hasKey && hasFile) {
+    return {
+      dataoke: Object.freeze({
+        appKey: env['DATAOKE_APP_KEY']!,
+        secretFile: env['DATAOKE_APP_SECRET_FILE']!,
+      }),
+      problems: [],
+    };
+  }
+  if (hasKey || hasFile) {
+    return {
+      dataoke: null,
+      problems: [
+        'DATAOKE_APP_KEY, DATAOKE_APP_SECRET_FILE: must be set together when APP_ENV=staging',
+      ],
+    };
+  }
+  return { dataoke: null, problems: [] };
 }

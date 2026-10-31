@@ -7,7 +7,7 @@ import { readAdminAuthConfig, type AdminAuthConfig } from './admin-auth.ts';
 import { readAgentReviewConfig, type AgentReviewConfig } from './agent-review.ts';
 import { readAgentUserHashConfig } from './agent-user-hash.ts';
 import { findCredentialLikeEnvNames } from './credential-env.ts';
-import type { DataokeAppConfig } from './dataoke.ts';
+import { readDataokeConfig, type DataokeAppConfig } from './dataoke.ts';
 import {
   JWT_ENV_NAMES,
   readJwtKeyConfig,
@@ -350,6 +350,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     problems.push(...readExportStoreConfig(appEnv.success ? appEnv.data : undefined, env).problems);
     if (appEnv.success) problems.push(...readPddConfig(appEnv.data, env).problems);
     if (appEnv.success) problems.push(...readTaobaoConfig(appEnv.data, env).problems);
+    if (appEnv.success) problems.push(...readDataokeConfig(appEnv.data, env).problems);
     problems.push(...readPddQueryConfig(env).problems);
     if (appEnv.success)
       problems.push(...readUnionEndpointOverrideConfig(appEnv.data, env).problems);
@@ -385,6 +386,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   violations.push(...pddProblems);
   const { taobao, problems: taobaoProblems } = readTaobaoConfig(values.APP_ENV, env);
   violations.push(...taobaoProblems);
+  const { dataoke, problems: dataokeProblems } = readDataokeConfig(values.APP_ENV, env);
+  violations.push(...dataokeProblems);
   const { pddQueryCustomParameters, problems: pddQueryProblems } = readPddQueryConfig(env);
   violations.push(...pddQueryProblems);
   const { unionEndpointOverrideDir, problems: overrideProblems } = readUnionEndpointOverrideConfig(
@@ -431,6 +434,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     pddQueryCustomParameters,
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(taobao === null ? {} : { taobao }),
+    // Only present when configured, so the documented shape of an unconfigured result is unchanged.
+    ...(dataoke === null ? {} : { dataoke }),
     unionEndpointOverrideDir,
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(agentReview === null ? {} : { agentReview }),

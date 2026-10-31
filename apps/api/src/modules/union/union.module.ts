@@ -1,6 +1,7 @@
 import type { DB as Database } from '@couli/db';
 import { type DynamicModule, Module } from '@nestjs/common';
 import type { Kysely } from 'kysely';
+import { randomInt } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
   APP_CONFIG,
@@ -9,6 +10,7 @@ import {
   PDD_QUERY_CUSTOM_PARAMETERS_ENV,
   ROOT_LOGGER,
   UNION_ENDPOINT_OVERRIDE_DIR_ENV,
+  openDataokeCredentials,
   openPddCredentials,
   openTaobaoCredentials,
   type AppConfig,
@@ -22,6 +24,7 @@ import {
 import type { TaobaoPriceSettingsReader, TaobaoPriceWarning } from './domain/taobao-price.ts';
 import { UnionError, type CallCtx, type UnionEndpoint } from './domain/types.ts';
 import { createArchivingTransport } from './infra/archive.ts';
+import type { DataokeWarning } from './infra/dataoke/dataoke-client.ts';
 import { loadUnionEndpoints } from './infra/endpoints.ts';
 import { createUnionHttpTransport } from './infra/http-transport.ts';
 import type { PddQueryIdentity } from './infra/pdd/pdd-adapter.ts';
@@ -30,6 +33,7 @@ import {
   createUnionRegistry,
   type PddLiveOptions,
   type TaobaoLiveOptions,
+  type TaobaoOrderSourceOptions,
   type UnionRegistry,
 } from './infra/registry.ts';
 import type { UnionTransport } from './infra/replay.ts';
@@ -65,6 +69,12 @@ const UNION_TAOBAO_PRICE_CONFIG = Symbol('UNION_TAOBAO_PRICE_CONFIG');
 /** Fixed seed of the demo catalog: the same synthetic items on every start (规划/11 §4.5). */
 export const UNION_DEMO_SEED = 'couli-demo';
 
+/**
+ * B1-04e: the fixed 大淘客 gateway origin of the Taobao order source (DataokeClient appends the
+ * request path). Not part of config/union-endpoints/taobao.json.
+ */
+export const DATAOKE_GATEWAY = 'https://openapi.dataoke.com';
+
 /** config/union-endpoints/ at the repository root; same depth from src/ and dist/. */
 export const UNION_ENDPOINTS_DIR = fileURLToPath(
   new URL('../../../../../config/union-endpoints/', import.meta.url),
@@ -83,6 +93,11 @@ export const UNION_ENDPOINTS_DIR = fileURLToPath(
  * TAOBAO_APP_KEY and TAOBAO_APP_SECRET_FILE reads the secret file once here and assembles the real
  * TaobaoUnionAdapter over its own archived HTTPS transport (registry option `taobaoLive`); staging
  * with neither variable keeps taobao unimplemented. pdd and taobao are assembled independently.
+ * B1-04e: with taobao assembled live and AppConfig.dataoke set (staging, DATAOKE_APP_KEY and
+ * DATAOKE_APP_SECRET_FILE), the 大淘客 secret file is read once here too and the adapter gets a
+ * DataokeClient order source over its own archived HTTPS transport; staging with neither variable
+ * starts without one and logs nothing (D10-479; deployment checks cover it). prod never gets here
+ * with taobao live (kms_unavailable first).
  * TODO(规划/11 §4.5): 配额桶容量与 Redis 令牌桶 — blocked on CAP-TB-12、CAP-JD-12、CAP-PDD-12 配额口径
  * TODO(规划/11 §4.5): jd 凭据读取 — blocked on 推广位 / siteId
  */
@@ -126,6 +141,22 @@ function logTaobaoWarning(logger: RootLogger, warning: TaobaoWarning): void {
       ...(warning.sub_code === undefined ? {} : { sub_code: warning.sub_code }),
     },
     'taobao api permission denied',
+  );
+}
+
+/**
+ * The 大淘客 warn hook (B1-04e) as flat pino fields: only the request path and code / sub_code; no
+ * message text, query or credential.
+ */
+function logDataokeWarning(logger: RootLogger, warning: DataokeWarning): void {
+  logger.warn(
+    {
+      event: 'DATAOKE_UPSTREAM_WARNING',
+      path: warning.path,
+      code: warning.code,
+      ...(warning.sub_code === undefined ? {} : { sub_code: warning.sub_code }),
+    },
+    'dataoke upstream warning',
   );
 }
 
@@ -257,10 +288,24 @@ async function startUnionRegistry(
     // Checked after pdd, so pdd's own refusals come first. local / test, prod (no KMS yet) and a
     // staging secret file that is unreadable or empty throw TaobaoStartupError (fixed text).
     const credentials = await openTaobaoCredentials(config.appEnv, config.taobao);
+    // B1-04e: the 大淘客 order source only when configured (staging, both DATAOKE_* variables;
+    // loadConfig refuses them elsewhere); an unreadable or empty secret file throws
+    // DataokeStartupError (fixed text). Neither variable: no order source, nothing logged.
+    let orderSource: TaobaoOrderSourceOptions | undefined;
+    if (config.dataoke !== null && config.dataoke !== undefined) {
+      orderSource = {
+        credentials: await openDataokeCredentials(config.appEnv, config.dataoke),
+        transport: archivedTransport(createUnionHttpTransport(), source, clock, logger),
+        random: (bound) => randomInt(0, bound),
+        baseUrl: DATAOKE_GATEWAY,
+        warn: (warning: DataokeWarning) => logDataokeWarning(logger, warning),
+      };
+    }
     taobaoLive = {
       credentials,
       transport: archivedTransport(createUnionHttpTransport(), source, clock, logger),
       warn: (warning: TaobaoWarning) => logTaobaoWarning(logger, warning),
+      ...(orderSource === undefined ? {} : { orderSource }),
     };
   }
   return createUnionRegistry({
