@@ -21,4 +21,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/domain/price-yuan/**'
   - 'test/properties/domain/price-yuan/**'
-status: todo
+status: done
+pr: 2080

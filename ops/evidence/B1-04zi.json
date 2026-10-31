@@ -1,0 +1,112 @@
+{
+  "task": "B1-04zi",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "b64d6acacc65cc627761e4823367891550984e58",
+  "red_tests": [
+    "test/properties/domain/price-yuan/parse-yuan-to-fen.prop.test.ts > [AC-B1-04zi#15] [BR-PRICE-01] 属性：非负整数 a 与 0–99 的 b，整数 / 一位 / 两位小数（可带前导 0）精确换算",
+    "test/properties/domain/price-yuan/parse-yuan-to-fen.prop.test.ts > [AC-B1-04zi#16] [BR-PRICE-01] 属性：至少三位小数的数字串一律缺失（含末尾全为 0），不抛异常",
+    "test/properties/domain/price-yuan/parse-yuan-to-fen.prop.test.ts > [AC-B1-04zi#17] [BR-PRICE-01] 属性：int64 上界附近，两位小数串不超界时等于分值，超界即缺失",
+    "test/properties/domain/price-yuan/parse-yuan-to-fen.prop.test.ts > [AC-B1-04zi#18] [BR-PRICE-01] 属性：任意字符串只返回 null 或非负 bigint，与正则口径一致、不抛异常且结果确定",
+    "test/properties/domain/price-yuan/parse-yuan-to-fen.prop.test.ts > [AC-B1-04zi#19] [BR-PRICE-01] 属性：任意非字符串输入返回 null 且不抛异常",
+    "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#1] [BR-PRICE-01] 细则「金额解析」原例：39.9 与 39.90 为 3990 分，39.905、空串、-1、abc 为缺失",
+    "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#2] [BR-PRICE-01] 整数、一位小数补 0、两位小数按十进制精确换算成 bigint 分",
+    "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#3] [BR-PRICE-01] 0 合法：0、0.0、0.00、00 均为 0n；前导 0 合法",
+    "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#4] [BR-PRICE-01] 超过两位小数一律缺失：按字符串数位，不去末尾 0、不四舍五入、不截断",
+    "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#5] [BR-PRICE-01] 负号、正号一律缺失（含 -0 与 -0.00）",
+    "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#6] [BR-PRICE-01] 前后或中间带空白、换行、不可见字符一律缺失，不做 trim",
+    "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#7] [BR-PRICE-01] 空串、只有点或缺一侧、多个点、千分位与分隔符一律缺失",
+    "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#8] [BR-PRICE-01] 指数、十六进制 / 二进制 / 八进制、NaN、Infinity 及字母一律缺失",
+    "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#9] [BR-PRICE-01] 全角数字与其他书写系统的数字一律缺失（只收 ASCII 0-9）",
+    "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#10] [BR-PRICE-01] int64 边界：恰为 9223372036854775807 分合法，多 1 分即缺失",
+    "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#11] [BR-PRICE-01] 超长数字串不抛异常，按 int64 判缺失",
+    "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#12] [BR-PRICE-01] 非字符串输入（number、bigint、null、undefined、对象、数组）返回 null 且不抛异常",
+    "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#13] [BR-PRICE-01] 合法结果是 bigint 而不是 number，重复调用结果一致",
+    "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#14] [BR-PRICE-01] 不复用 yuanStrToFen 的 floor 口径：19.999、40.500 在 money 包可解析，这里是缺失"
+  ],
+  "risk_note": "RV2 (packages/domain: parseYuanToFen, the strict BR-PRICE-01 yuan string to fen parser — only ^[0-9]+(\\.[0-9]{1,2})?$, more decimals / sign / whitespace / exponent / non-string / beyond int64 give null, never rounds or truncates; pure, no @couli/money dependency; per D10-515). Independent Claude (approvals #36, Codex unavailable until 11-02) wrote test/spec/domain/price-yuan/** and test/properties/domain/price-yuan/** (attempt 2: attempt 1's properties swallowed NotImplemented and red-check could not recognise the reason; 19 tests). Five invisible characters in #6 string literals rewritten as \\u escapes for the hidden-unicode guard before the spec commit (same runtime values, mechanical per D10-206). Implementation model: Claude Opus 5.5 (1 round). verify:fast on the AWS runner exit 0.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "b64d6acacc65cc627761e4823367891550984e58",
+      "tree": "2071511f172c9c6064575fb36f773f8fbe0786f6",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T19:11:57Z",
+      "finished_at": "2026-10-31T19:12:03Z",
+      "red_tests": [
+        "test/properties/domain/price-yuan/parse-yuan-to-fen.prop.test.ts > [AC-B1-04zi#15] [BR-PRICE-01] 属性：非负整数 a 与 0–99 的 b，整数 / 一位 / 两位小数（可带前导 0）精确换算",
+        "test/properties/domain/price-yuan/parse-yuan-to-fen.prop.test.ts > [AC-B1-04zi#16] [BR-PRICE-01] 属性：至少三位小数的数字串一律缺失（含末尾全为 0），不抛异常",
+        "test/properties/domain/price-yuan/parse-yuan-to-fen.prop.test.ts > [AC-B1-04zi#17] [BR-PRICE-01] 属性：int64 上界附近，两位小数串不超界时等于分值，超界即缺失",
+        "test/properties/domain/price-yuan/parse-yuan-to-fen.prop.test.ts > [AC-B1-04zi#18] [BR-PRICE-01] 属性：任意字符串只返回 null 或非负 bigint，与正则口径一致、不抛异常且结果确定",
+        "test/properties/domain/price-yuan/parse-yuan-to-fen.prop.test.ts > [AC-B1-04zi#19] [BR-PRICE-01] 属性：任意非字符串输入返回 null 且不抛异常",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#1] [BR-PRICE-01] 细则「金额解析」原例：39.9 与 39.90 为 3990 分，39.905、空串、-1、abc 为缺失",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#2] [BR-PRICE-01] 整数、一位小数补 0、两位小数按十进制精确换算成 bigint 分",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#3] [BR-PRICE-01] 0 合法：0、0.0、0.00、00 均为 0n；前导 0 合法",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#4] [BR-PRICE-01] 超过两位小数一律缺失：按字符串数位，不去末尾 0、不四舍五入、不截断",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#5] [BR-PRICE-01] 负号、正号一律缺失（含 -0 与 -0.00）",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#6] [BR-PRICE-01] 前后或中间带空白、换行、不可见字符一律缺失，不做 trim",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#7] [BR-PRICE-01] 空串、只有点或缺一侧、多个点、千分位与分隔符一律缺失",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#8] [BR-PRICE-01] 指数、十六进制 / 二进制 / 八进制、NaN、Infinity 及字母一律缺失",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#9] [BR-PRICE-01] 全角数字与其他书写系统的数字一律缺失（只收 ASCII 0-9）",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#10] [BR-PRICE-01] int64 边界：恰为 9223372036854775807 分合法，多 1 分即缺失",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#11] [BR-PRICE-01] 超长数字串不抛异常，按 int64 判缺失",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#12] [BR-PRICE-01] 非字符串输入（number、bigint、null、undefined、对象、数组）返回 null 且不抛异常",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#13] [BR-PRICE-01] 合法结果是 bigint 而不是 number，重复调用结果一致",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts > [AC-B1-04zi#14] [BR-PRICE-01] 不复用 yuanStrToFen 的 floor 口径：19.999、40.500 在 money 包可解析，这里是缺失"
+      ],
+      "expected": [
+        "test/properties/domain/price-yuan/parse-yuan-to-fen.prop.test.ts",
+        "test/spec/domain/price-yuan/parse-yuan-to-fen.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "ea922a5894c24fa6fcc2ab97d47775031cbb7cc4e71686aa85ad3bc5b8f75441"
+        }
+      ],
+      "gate": {
+        "commit": "9713b59cf7eebe459f8f20f3c78f019580dd79fb",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "money r1 pass, one S2 (multi-megabyte digit strings are converted to BigInt before the int64 check; a length short-circuit is a followup) (couli-runs/B1-04zi/review-m1.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "r1 pass, no findings"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "4ff83783d17743ea9efacd016912563b35ae5dab",
+    "test/spec": "d799341effa207d3464d8da3b24c8709a5e85ee5",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "4ff83783d17743ea9efacd016912563b35ae5dab"
+  }
+}
