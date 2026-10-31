@@ -162,20 +162,35 @@ it('[ADR-0001 §4.2 #17][B1-01y §9.3] 真实 Redis 命令错误向上传递，�
   });
 });
 
+// D10-497：设了 TEST_REDIS_URL 时，测试 Redis 按文件租独占逻辑库（库号 ∉ {0, 13}）。
+// D10-502：原「db 0」口径由此取代；ADR-0001 §4.2 #17 管的 noeviction 不变。
 it('[ADR-0001 §4.2 #17][B1-01y §9.3] 一次性 Redis 使用 db 0 和 noeviction；stop 不销毁共享环境服务', async () => {
   const server = await acquire();
   const fromEnv = process.env['TEST_REDIS_URL'];
   const raw = new Redis(server.url, { maxRetriesPerRequest: 0, retryStrategy: () => null });
   try {
     const url = serviceUrl(server.url);
-    expect(url.pathname === '' || url.pathname === '/' || url.pathname === '/0').toBe(true);
+    if (fromEnv !== undefined && fromEnv !== '') {
+      const db = url.pathname.replace(/^\//, '');
+      expect(/^[1-9][0-9]*$/.test(db)).toBe(true);
+      const index = Number(db);
+      expect(Number.isSafeInteger(index) && index > 0).toBe(true);
+      expect(index !== 0 && index !== 13).toBe(true);
+    } else {
+      expect(url.pathname === '' || url.pathname === '/' || url.pathname === '/0').toBe(true);
+    }
     expect(await raw.call('CONFIG', 'GET', 'maxmemory-policy')).toEqual([
       'maxmemory-policy',
       'noeviction',
     ]);
     if (fromEnv !== undefined && fromEnv !== '') {
       expect(server.source).toBe('env');
-      expect(server.url === fromEnv).toBe(true);
+      const shared = serviceUrl(fromEnv);
+      expect(url.protocol === shared.protocol).toBe(true);
+      expect(url.hostname === shared.hostname).toBe(true);
+      expect(url.port === shared.port).toBe(true);
+      expect(url.username === shared.username).toBe(true);
+      expect(url.password === shared.password).toBe(true);
       await server.stop();
       expect(process.env['TEST_REDIS_URL'] === fromEnv).toBe(true);
       expect(await raw.call('PING')).toBe('PONG');
