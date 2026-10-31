@@ -1,0 +1,24 @@
+id: B1-04zi
+repo: rebate-platform
+title: packages/domain 补 parseYuanToFen(text) → bigint | null：只收「^[0-9]+(\.[0-9]{1,2})?$」十进制串，超两位小数（按字符串数位、不去末尾 0）、负号 / 正号 / 空白 / 空串 / 指数 / 非数字 / 超 int64 一律 null，不四舍五入、不截断（BR-PRICE-01，D10-515）
+type: impl
+# 草稿 2026-11-01（union 线，账号 4）。依据：08 BR-PRICE-01「元字符串转分只能用 packages/domain.parseYuanToFen()：按字符串做十进制解析，最多两位小数；超过两位小数、非数字、空串、负数一律视为字段缺失，不得四舍五入」；编排 D10-515 ①（取 A；签名 parseYuanToFen(text: string): bigint | null；「40.500」「19.999」→ null；0 合法；超出 int64 → null）。BR-PRICE-01 原文由编排摘入任务书。
+# 只做纯函数与导出：packages/domain/src/price/parse-yuan.ts（目录名任务书可定）+ packages/domain/src/index.ts 导出。非字符串输入（number / bigint / null / undefined / 对象）→ null（调用方对 JSON number 先用 JSON.parse reviver 的 context.source 取原文，D10-515 ②，照 union/infra/pdd/orders.ts parsePddOrderEnvelope 做法，不在本函数里接 number）。不 import @couli/money 的 yuanStrToFen（它对超两位 floor，只留 BR-CALC-26 订单金额与已用正则限两位的后台输入，D10-515 ③）。
+# 规则测试：test/spec/domain/price-yuan/**（逐例表 + 边界：「0」「0.0」「0.00」→ 0n，「1」→ 100n，「12.3」→ 1230n，「12.34」→ 1234n，「40.500」「19.999」「.5」「5.」「-1」「+1」「 1」「1 」「1e2」「0x10」「１２」（全角）「」→ null，int64 上界附近）+ test/properties/domain/price-yuan/**（属性：合法两位小数串往返 fenToYuan 一致；任意三位以上小数串恒 null）。整体 RV2（packages/domain）。
+refs: [BR-PRICE-01]
+refs_hash:
+  BR-PRICE-01: 9ff41b3629dd
+deps: []
+paths:
+  - 'packages/domain/src/price/**'
+  - 'packages/domain/src/index.ts'
+test_paths:
+  - 'test/spec/domain/price-yuan/**'
+  - 'test/properties/domain/price-yuan/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/price-yuan/**'
+  - 'test/properties/domain/price-yuan/**'
+status: todo
