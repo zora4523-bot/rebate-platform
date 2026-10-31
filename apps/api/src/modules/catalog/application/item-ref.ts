@@ -40,6 +40,11 @@ export interface ItemRefService {
    * that existing selector applies BR-PROD-05's 1800-second limit. This is not attribution.
    */
   verify(request: ItemRefRequest): RequestRawRef | null;
+  /**
+   * B1-05q: for a caller that learns the product from the token (a union pick added to a pool).
+   * Same token checks and app scope as `verify`, with no product key to compare against.
+   */
+  read(itemRef: string, appId: string): RequestRawRef | null;
 }
 
 /** FieldCrypto context: binds the ciphertext to this use, so other encrypted fields never pass. */
@@ -141,5 +146,12 @@ export function createItemRefService(options: ItemRefOptions): ItemRefService {
     };
   }
 
-  return { issue, verify };
+  function read(itemRef: string, appId: string): RequestRawRef | null {
+    if (!isNonEmptyString(itemRef)) return null;
+    const claims = open(itemRef);
+    if (claims === null || claims.appId !== appId) return null;
+    return { ...claims, source: 'item_ref' };
+  }
+
+  return { issue, verify, read };
 }
