@@ -231,6 +231,13 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
     { name: 'payout-recon', ...DEFAULT, policy: 'exclusive', deadLetter: 'payout-recon.dead' },
     // B2-02q（D10-415 ①）：worker 的 ledger 日终校验队列，exclusive（按 `daily:<app_id>:<D>` 去重），紧跟 payout-recon。
     { name: 'ledger-check', ...DEFAULT, policy: 'exclusive', deadLetter: 'ledger-check.dead' },
+    // B2-05n（BR-WDR-26 超时判定，D10-475 ②）：worker 的审核超时检查队列，exclusive（按 5 分钟时间槽键 `review-overdue:<槽>` 去重），紧跟 ledger-check。
+    {
+      name: 'payout-overdue',
+      ...DEFAULT,
+      policy: 'exclusive',
+      deadLetter: 'payout-overdue.dead',
+    },
     // B2-07e（D10-428 / D10-415 ①）：payout 进程追加 W11 尝试记录的队列，exclusive（按 (提现单, 差错单) 键去重），紧跟 payout-recon。
     {
       name: 'payout-attempt-append',
@@ -408,6 +415,8 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
       w('payout-recon', 1),
       // B2-02q（D10-415 ①）：ledger 日终校验只由 worker（couli_app）消费，并发 1，紧跟 payout-recon。
       w('ledger-check', 1),
+      // B2-05n（BR-WDR-26，D10-475 ②）：审核超时检查只由 worker（couli_app）消费，并发 1，紧跟 ledger-check。
+      w('payout-overdue', 1),
       w('notify', 5),
       w('evt.notification-risk-state', 5),
       w('evt.notification-appeal-result', 5),
@@ -442,6 +451,8 @@ it('[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只�
     'payout-recon',
     // B2-02q (D10-415 ①): the worker's daily ledger check, never another entry's.
     'ledger-check',
+    // B2-05n (D10-475 ②): the worker's review overdue check, never another entry's.
+    'payout-overdue',
     // B2-07e (D10-428): the payout process's W11 attempt records, never the worker's.
     'payout-attempt-append',
     'notify',
@@ -475,6 +486,7 @@ it('[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只�
       'payout-review',
       'payout-recon',
       'ledger-check',
+      'payout-overdue',
       'notify',
       'pool-refresh',
       'poster',

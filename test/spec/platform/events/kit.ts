@@ -30,7 +30,7 @@ export const EVENT_MESSAGES: Readonly<Record<EventErrorCode, string>> = {
   unknown_consumer: 'the consumer has no subscription',
 };
 
-/** The event list of 规划/02 §11 (30 names: 28 at SPEC_REF bafa96ce + pay_order.paid of couli #204, D10-338, + pay_refund.succeeded of couli #208, D10-349), in order, copied by hand. */
+/** The event list of 规划/02 §11 (31 names: 28 at SPEC_REF bafa96ce + pay_order.paid of couli #204, D10-338, + pay_refund.succeeded of couli #208, D10-349, + withdrawal.review_overdue of D10-475, last in 02 §11 at SPEC_REF 9ab94dc0), in order, copied by hand. */
 export const PLAN_02_EVENTS = [
   'order.created',
   'order.updated',
@@ -64,6 +64,8 @@ export const PLAN_02_EVENTS = [
   'pay_order.paid',
   // 02 §11 收款：退款成功（D10-349，couli #208）
   'pay_refund.succeeded',
+  // 02 §11 提现审核超时（BR-WDR-26；D10-475 ②(a)，代码仓库 B2-05n）：清单末尾
+  'withdrawal.review_overdue',
 ] as const;
 
 /**
