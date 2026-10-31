@@ -359,3 +359,22 @@ export type {
   TaxYtdLogger,
 } from './application/tax-ytd.ts';
 export type { AttemptAppendJobOptions, AttemptAppendLogger } from './jobs/attempt-append-job.ts';
+// B2-08d (BR-WDR-21): the quarterly tax detail of paid withdrawals (read only, payee account masked;
+// for the admin export worker, which adds names and id numbers through identity's port).
+export {
+  createTaxExportReader,
+  taxExportQuarterRange,
+  TaxExportBadCursor,
+  TaxExportBadLimit,
+  TaxExportBadQuarter,
+} from './application/tax-export-read.ts';
+export type {
+  TaxExportIncomeType,
+  TaxExportPage,
+  TaxExportPaidStatus,
+  TaxExportQuarterRange,
+  TaxExportQuery,
+  TaxExportRead,
+  TaxExportReaderOptions,
+  TaxExportRow,
+} from './application/tax-export-read.ts';
