@@ -310,6 +310,7 @@ export interface Articles {
   body: string;
   category: string;
   created_at: Generated<Timestamp>;
+  faq_rank: number | null;
   help_section: string | null;
   id: string;
   notice_closable: boolean;
