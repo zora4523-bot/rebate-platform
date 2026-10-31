@@ -1,0 +1,26 @@
+id: B1-02zs
+repo: rebate-platform
+title: 测试修改（B1-02zp 前置，照 B1-05s 先例，编排 23:39 ④）：content config-registry 登记 withdraw.dormant_reverify_days（整数、下限 0、默认 0；0 表示关闭旧号加验，规划默认 180 待三端加验页上线后由负责人在后台改），种子与冻结注册表测试同步只加这一键
+type: test-change
+# 2026-11-01 入账（identity-lane）。分类按 config-registry 现有业务配置分组；新鲜独立 Claude 改、另一位只读复审「不削弱」，报 #24。B1-02zo 的种子只在本单未合并时由它带；两单谁先落地谁写种子，另一单对齐。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/content/config-items/registry.test.ts'
+  - 'test/spec/content/config-settle/registry.test.ts'
+  - 'test/spec/content/invite-reward-config/registry.test.ts'
+  - 'test/spec/content/invite-reward-eligibility/registry.test.ts'
+  - 'test/spec/content/invite-reward-config/seeds.test.ts'
+  - 'test/spec/content/config-items/read.int.test.ts'
+  - 'test/spec/content/config-settle/writes.int.test.ts'
+  - 'test/spec/content/config-items/kit.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.test.ts'
+  - 'apps/api/src/modules/content/application/config-item-admin.test.ts'
+  - 'db/seeds/0001_config-defaults.sql'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo

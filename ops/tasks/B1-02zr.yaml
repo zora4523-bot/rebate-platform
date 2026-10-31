@@ -1,0 +1,19 @@
+id: B1-02zr
+repo: rebate-platform
+title: 注销进入 processing 时删除旧号加验数据——同一事务清 users 的 reverify_flagged_at、reverify_trusted、reverify_fail_count、reverify_fail_day、last_active_at、last_login_device_hash，删除该用户 reverified_devices 行；墓碑不留（08 10_ID 第 1173 行注销删除项）
+type: impl
+# 2026-11-01 入账（identity-lane，编排 23:39 ③：另开小单，不并进 money 级 B1-02zq）。依赖 B1-02zo 存储（台账 #2055 合并后补 deps；B1-02zo 未合并前不开工）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/identity/application/deletion-processing.ts'
+  - 'apps/api/src/modules/identity/application/deletion-processing.test.ts'
+test_paths:
+  - 'test/spec/identity/reverify-deletion/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/reverify-deletion/**'
+status: todo
