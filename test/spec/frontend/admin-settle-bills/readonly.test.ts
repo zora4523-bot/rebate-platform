@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { waitFor } from '@testing-library/react';
 import { expect, it } from 'vitest';
-import { BATCH, BILL, SETTLE_GRANTS, SUPER, createServer } from './fixtures.ts';
+import { BATCH, BILL, VIEW_GRANTS, createServer, snapshot } from './fixtures.ts';
 import {
   FLOW_TIMEOUT,
   WRITE_ACTIONS,
@@ -28,10 +28,10 @@ async function pressWrites(): Promise<void> {
 }
 
 it(
-  '[AC-F1-08d-READONLY#1] 持 settle.bill：列表与已出账账单详情（两个待确认批次）都没有可用的确认 / 定时 / 驳回 / 补充批次 / 上传等写入口；点了也只发三个 GET，不弹动态码',
+  '[AC-F1-08d-READONLY#1] 只持 fund.view：列表与已出账账单详情（两个待确认批次）都没有可用的确认 / 定时 / 驳回 / 补充批次 / 上传等写入口；点了也只发三个 GET，不弹动态码',
   async () => {
-    const server = createServer(undefined, { permissions: SETTLE_GRANTS });
-    await mount(server);
+    const server = createServer(undefined, { permissions: VIEW_GRANTS });
+    await mount(server, { snapshot: snapshot(VIEW_GRANTS) });
     await listed(BILL.issued);
     expect(usable(main(), WRITE_ACTIONS), 'no usable write on the list').toEqual([]);
     await openBill(server, BILL.issued, BATCH.issuedTaobao);
@@ -49,10 +49,13 @@ it(
 );
 
 it(
-  '[AC-F1-08d-READONLY#2] 超管看结算中的账单（PARTIAL 被开关停下、CONFIRMED 定时）：没有可用的【继续执行】【撤销定时】【发起补充批次】等写入口；点了也只发三个 GET',
+  '[AC-F1-08d-READONLY#2] 只持 fund.view 看结算中的账单（PARTIAL 被开关停下、CONFIRMED 定时）：没有可用的【继续执行】【撤销定时】【发起补充批次】等写入口；点了也只发三个 GET',
   async () => {
-    const server = createServer();
-    await mount(server, { snapshot: SUPER, route: `settle-bills/${BILL.settling}` });
+    const server = createServer(undefined, { permissions: VIEW_GRANTS });
+    await mount(server, {
+      snapshot: snapshot(VIEW_GRANTS),
+      route: `settle-bills/${BILL.settling}`,
+    });
     await waitFor(() => expect(server.billReads(BILL.settling).length).toBeGreaterThan(0));
     await settled(server);
     for (const id of [BATCH.partial, BATCH.scheduled])
