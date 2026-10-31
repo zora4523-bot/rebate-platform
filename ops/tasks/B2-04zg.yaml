@@ -3,6 +3,7 @@ repo: rebate-platform
 title: 月结补出账（D10-476）：每日补种与 worker 启动自愈回看「最近一个已到账单日、账单月 M 的月结账单尚未生成」的那一期并补投 bill（bill_id = M 幂等，只生成一次；快照前提按补跑当天判定）；快照未完成的 deferred 不当失败——延后重排、不消耗队列重试；补跑仍失败照现有 CouliSettleBillJobFailed 告警；更早期次不追溯
 type: impl
 # 2026-10-31 编排 D10-476（B2-04ze money r1 两条 S2）：排在 B2-04zf 之后、B2-16c 之前。**上线门槛：首个真实账单日（settle.bill_day，默认 11-24）之前须合并（记 HANDOFF）。** RV2，独立 Claude 写测试与 money 评审（Codex 至 11-02 不可用，approvals #36）。
+# test-change（同 D10-475 ① 先例）：B2-04ze 冻结 [AC-B2-04ze#7]（schedule.test.ts）与 [#24]（module.int.test.ts）钉「deferred 让投递失败」，与 D10-476 ② 相反；由新鲜独立 Claude 单列 test(spec) 只改这两条期望为「deferred 完成、延后重排、不耗重试」，另一位只读复核，不计写测试轮次；同文件其余 12 条测试体未改列 red_exempt。
 # 测试至少钉：账单日整日停机 → 次日补种补出 M 且只一次；账单日 bill 全失败 → 之后补出；deferred 不耗重试；M 已生成 → 补种不重复生成。判定依据库内实际状态（settle_bills / settle_jobs / 队列），不用进程内存；时间只读注入 Clock。
 refs: [BR-FUND-04]
 refs_hash:
@@ -14,6 +15,45 @@ paths:
   - 'apps/api/src/modules/settlement/index.ts'
 test_paths:
   - 'test/spec/settlement/worker-catchup/**'
+  - 'test/spec/settlement/worker/schedule.test.ts'
+  - 'test/spec/settlement/worker/module.int.test.ts'
+red_exempt:
+  - file: test/spec/settlement/worker/schedule.test.ts
+    test: '[AC-B2-04ze#1] bill 的 singletonKey = bill:<app_id>:<platform>:<D>，按 app、平台、D 各不相同，只用队列允许的字符'
+    reason: 冻结 B2-04ze 用例，测试体未改；同文件只有 [AC-B2-04ze#7] 按 D10-476 ②（deferred 不当失败、不耗重试）单列 test(spec) 改期望（同 D10-475 ① 先例）
+  - file: test/spec/settlement/worker/schedule.test.ts
+    test: '[AC-B2-04ze#2] batch_execute 的 singletonKey = batch_execute:<app_id>:<batch_id>，每批一个'
+    reason: 冻结 B2-04ze 用例，测试体未改；同文件只有 [AC-B2-04ze#7] 按 D10-476 ②（deferred 不当失败、不耗重试）单列 test(spec) 改期望（同 D10-475 ① 先例）
+  - file: test/spec/settlement/worker/schedule.test.ts
+    test: '[AC-B2-04ze#3] bill 的名义 run_at = D 当日 00:00 +08:00（月末、年初、闰日照样），同一 D 每次都相同；不存在或格式不对的 D 被拒绝'
+    reason: 冻结 B2-04ze 用例，测试体未改；同文件只有 [AC-B2-04ze#7] 按 D10-476 ②（deferred 不当失败、不耗重试）单列 test(spec) 改期望（同 D10-475 ① 先例）
+  - file: test/spec/settlement/worker/schedule.test.ts
+    test: '[AC-B2-04ze#4] scheduleSettleBill：送 settle / bill，负载 { app_id, platform, accounting_date }，singletonKey bill:<app>:<platform>:<D>，立即（无延迟）；事务原样交给队列，返回队列的结果'
+    reason: 冻结 B2-04ze 用例，测试体未改；同文件只有 [AC-B2-04ze#7] 按 D10-476 ②（deferred 不当失败、不耗重试）单列 test(spec) 改期望（同 D10-475 ① 先例）
+  - file: test/spec/settlement/worker/schedule.test.ts
+    test: '[AC-B2-04ze#5] scheduleBatchExecute：送 settle / batch_execute，负载 { app_id, batch_id }，singletonKey batch_execute:<app>:<batch>，立即；事务原样交给队列'
+    reason: 冻结 B2-04ze 用例，测试体未改；同文件只有 [AC-B2-04ze#7] 按 D10-476 ②（deferred 不当失败、不耗重试）单列 test(spec) 改期望（同 D10-475 ① 先例）
+  - file: test/spec/settlement/worker/schedule.test.ts
+    test: '[AC-B2-04ze#6] 处理器 bill：以负载的 (app, platform) 与 run_at = D 00:00 +08:00 调用账单任务一次（db 为装配的库句柄）；generated / duplicate / not_due 都正常完成'
+    reason: 冻结 B2-04ze 用例，测试体未改；同文件只有 [AC-B2-04ze#7] 按 D10-476 ②（deferred 不当失败、不耗重试）单列 test(spec) 改期望（同 D10-475 ① 先例）
+  - file: test/spec/settlement/worker/schedule.test.ts
+    test: '[AC-B2-04ze#8] 处理器 batch_execute：以负载的 (app, batch) 调用执行器一次；done / partial / day_rollover / not_due / snapshot_pending / switched_off / idle / busy 都正常完成（进度在批次表，扫描会再投）；执行器抛错时原样失败'
+    reason: 冻结 B2-04ze 用例，测试体未改；同文件只有 [AC-B2-04ze#7] 按 D10-476 ②（deferred 不当失败、不耗重试）单列 test(spec) 改期望（同 D10-475 ① 先例）
+  - file: test/spec/settlement/worker/schedule.test.ts
+    test: '[AC-B2-04ze#9] 处理器拒绝未知任务名与不合格负载，且不调用账单任务或执行器'
+    reason: 冻结 B2-04ze 用例，测试体未改；同文件只有 [AC-B2-04ze#7] 按 D10-476 ②（deferred 不当失败、不耗重试）单列 test(spec) 改期望（同 D10-475 ① 先例）
+  - file: test/spec/settlement/worker/module.int.test.ts
+    test: '[AC-B2-04ze#22] forWorker：有库、队列（与密钥、事件总线）时在 settle 队列上恰注册 1 个处理器、不注册别的队列；没有库或没有队列时什么都不注册'
+    reason: 冻结 B2-04ze 用例，测试体未改；同文件只有 [AC-B2-04ze#24] 按 D10-476 ②（deferred 不当失败、不耗重试）单列 test(spec) 改期望（同 D10-475 ① 先例）
+  - file: test/spec/settlement/worker/module.int.test.ts
+    test: '[AC-B2-04ze#23] 装配的处理器：非账单日的 bill 正常完成（not_due，不写 settle_jobs / settle_bills）；不存在的批次的 batch_execute 正常完成且什么都不写'
+    reason: 冻结 B2-04ze 用例，测试体未改；同文件只有 [AC-B2-04ze#24] 按 D10-476 ②（deferred 不当失败、不耗重试）单列 test(spec) 改期望（同 D10-475 ① 先例）
+  - file: test/spec/settlement/worker/module.int.test.ts
+    test: '[AC-B2-04ze#25] 装配的处理器：账单日快照已完成时 bill 经生产 readSource（联盟为准读口取本平台订单键）生成账单，应结未结登记差错单，settle_jobs 记 (bill, 平台, D 00:00 +08:00) done；credit.enabled 未设（缺省 off）不生成批次、不读归属'
+    reason: 冻结 B2-04ze 用例，测试体未改；同文件只有 [AC-B2-04ze#24] 按 D10-476 ②（deferred 不当失败、不耗重试）单列 test(spec) 改期望（同 D10-475 ① 先例）
+  - file: test/spec/settlement/worker/module.int.test.ts
+    test: '[AC-B2-04ze#26] 装配的处理器：CONFIRMED 立即批次在 credit.enabled 未设（缺省 off）时只记 paused_by_switch_at、保持 CONFIRMED、不入账；credit.enabled=on 而 settle.auto.enabled 未设（缺省 on）时执行到 DONE 并发 settle.batch_done'
+    reason: 冻结 B2-04ze 用例，测试体未改；同文件只有 [AC-B2-04ze#24] 按 D10-476 ②（deferred 不当失败、不耗重试）单列 test(spec) 改期望（同 D10-475 ① 先例）
 impl: claude
 tester: claude-independent
 accept:
