@@ -25,6 +25,7 @@ import {
   signedIn,
   type Harness,
   type Response,
+  useHarness,
 } from '../../admin/auth/kit.ts';
 
 // specs/link-patterns.yaml 当前为空：只替换只读的形态表数据，分类与解析保持真实。
@@ -84,7 +85,8 @@ export function failAudit(appId: string) {
   faults.auditApps.add(appId);
 }
 
-export { useHarness } from '../../admin/auth/kit.ts';
+// A plain import, not export-from: only import declarations stay after the vi.mock calls above.
+export { useHarness };
 export type { Harness };
 export type Pool = Schema<'AdminProductPool'>;
 export type PoolList = Schema<'AdminProductPoolList'>;
