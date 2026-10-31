@@ -7,6 +7,7 @@ import {
   deriveInviteReward,
   inviteRewardSwitchOn,
   h5Bucket,
+  NICKNAME_LIMITS,
   PLATFORM_CODES,
   purchaseStatus,
   searchStatus,
@@ -411,4 +412,29 @@ it('[AC-F1-02zp] buildClientConfig derives invite reward from the budget it is g
     reward_enabled: false,
     reward_amount_fen: 500,
   });
+});
+
+it('[AC-F1-02zzq] nickname is always sent as {1, 16, 3} without any config row', () => {
+  const { config, invalid } = build();
+  expect(config!.nickname).toStrictEqual({ min_len: 1, max_len: 16, monthly_limit: 3 });
+  expect(NICKNAME_LIMITS).toStrictEqual({ min_len: 1, max_len: 16, monthly_limit: 3 });
+  expect(invalid).toEqual([]);
+});
+
+it('[AC-F1-02zzq] nickname-like rows are never read nor reported and never override', () => {
+  const { config, invalid, missing } = build({
+    nickname: { min_len: 2, max_len: 20, monthly_limit: 5 },
+    'nickname.max_len': 20,
+    'identity.nickname.monthly_limit': 9,
+  });
+  expect(config!.nickname).toStrictEqual({ min_len: 1, max_len: 16, monthly_limit: 3 });
+  expect([...invalid, ...missing]).toEqual([]);
+  expect(CLIENT_CONFIG_KEYS.filter((key) => key.includes('nickname'))).toEqual([]);
+});
+
+it('[AC-F1-02zzq] each response gets its own nickname object; the constant stays frozen', () => {
+  const first = build().config!;
+  first.nickname!.max_len = 99;
+  expect(build().config!.nickname).toStrictEqual({ min_len: 1, max_len: 16, monthly_limit: 3 });
+  expect(Object.isFrozen(NICKNAME_LIMITS)).toBe(true);
 });

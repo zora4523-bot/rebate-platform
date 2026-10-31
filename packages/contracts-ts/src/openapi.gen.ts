@@ -11433,8 +11433,7 @@ export interface components {
         /**
          * @description Nickname limits for rendering settings.nickname.hint (BR-TEXT-14 表 C; values from
          *     BR-ID-39, sent by the server from that rule, not read from config_items). When absent the
-         *     client uses the wording without numbers (to be registered with BR-TEXT-14). Not returned
-         *     until its implementation is merged.
+         *     client uses the wording without numbers (to be registered with BR-TEXT-14).
          */
         ConfigNickname: {
             /**

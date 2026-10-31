@@ -258,6 +258,17 @@ const isBridgeMethods: Check<string[]> = (value): value is string[] =>
   value.every((v) => typeof v === 'string' && BRIDGE_METHOD.test(v)) &&
   new Set(value).size === value.length;
 
+/**
+ * F1-02zzq (04 §10.1 nickname): the nickname limits /v1/config always sends. Values only from
+ * 08 BR-ID-39 (nickname 1–16 characters) and 05 B1-20 (at most 3 successful changes per calendar
+ * month); a server constant, never read from config_items (no key, same-named or not, overrides it).
+ */
+export const NICKNAME_LIMITS: Readonly<Schema<'ConfigNickname'>> = Object.freeze({
+  min_len: 1,
+  max_len: 16,
+  monthly_limit: 3,
+});
+
 /** 04 §10.1: the proxy default of lkg_max_age_sec (7 days). */
 export const LKG_MAX_AGE_DEFAULT_SEC = 604_800;
 
@@ -459,6 +470,8 @@ export function buildClientConfig(input: ClientConfigInput): ClientConfig | unde
       LKG_MAX_AGE_DEFAULT_SEC,
     ),
     bridge_disabled_methods: [...optional('bridge.disabled_methods', isBridgeMethods, [])],
+    // F1-02zzq: always sent, a fresh copy of the constant (never from config_items).
+    nickname: { ...NICKNAME_LIMITS },
   };
   return failed ? undefined : config;
 }
