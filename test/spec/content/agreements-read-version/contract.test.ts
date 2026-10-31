@@ -44,7 +44,7 @@ it('[AC-F1-02ze#13] getAgreementVersion 启用并生成 schema，三类匿名不
         name: 'type',
         in: 'path',
         required: true,
-        schema: expect.objectContaining({ enum: ['privacy', 'agreement', 'labor_agreement'] }),
+        schema: expect.objectContaining({ enum: expect.any(Array) }),
       }),
       expect.objectContaining({
         name: 'version',
@@ -54,6 +54,17 @@ it('[AC-F1-02ze#13] getAgreementVersion 启用并生成 schema，三类匿名不
       }),
     ]),
   );
+  // F1-02zzv: two-state until CT-02zb (D10-465)
+  const typeParameters = parameters.filter(
+    (parameter) => parameter.name === 'type' && parameter.in === 'path',
+  );
+  expect(typeParameters).toHaveLength(1);
+  expect(typeParameters[0]!.required).toBe(true);
+  const typeEnum = (typeParameters[0]!.schema as { enum?: unknown } | undefined)?.enum;
+  expect([
+    ['privacy', 'agreement', 'labor_agreement'],
+    ['privacy', 'agreement', 'labor_agreement', 'sdk_list', 'collect_list'],
+  ]).toContainEqual(typeEnum);
   expect(parameters.some((parameter) => parameter.name.toLowerCase() === 'x-device-id')).toBe(
     false,
   );
