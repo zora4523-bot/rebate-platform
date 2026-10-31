@@ -1,0 +1,19 @@
+id: F1-02zzv
+repo: rebate-platform
+title: 过渡测试改动（CT-02zb 前置）：冻结 [AC-F1-02ze#13] getAgreementVersion 的 type 路径参数枚举接受「恰为 privacy / agreement / labor_agreement」或「恰为再加 sdk_list、collect_list 的五值（按此顺序）」二选一，其余断言不变
+type: test-change
+# 2026-10-31 入账（content-client；先例 F1-02zzt / F1-02zzu 两态过渡）。CT-02zb（D10-465）给契约 AgreementType 加 sdk_list、collect_list 后，
+#   test/spec/content/agreements-read-version/contract.test.ts [AC-F1-02ze#13] 断言 type 参数 enum 恰为三值必红（测试机 verify:fast 只此一条失败）。
+# 做法：两支都精确比较整个 enum 数组；主干现在与 CT-02zb 合并后都成立；CT-02zb 合并后另开收紧为只认五值。
+# 改既有规则测试属第一类保护路径：走非 task 分支、台账同 PR；全新上下文 Claude 修改、另一全新上下文 Claude 只读复审，按 approvals #24 由编排加 owner-approved 标签。
+refs: []
+refs_hash: {}
+deps: [F1-02ze]
+paths:
+  - 'test/spec/content/agreements-read-version/contract.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
