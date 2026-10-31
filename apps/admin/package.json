@@ -9,7 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ant-design/icons": "5.6.1",
+    "@ant-design/icons": "6.3.4",
     "@ant-design/v5-patch-for-react-19": "1.0.3",
     "@casl/ability": "7.0.1",
     "@casl/react": "7.0.1",
