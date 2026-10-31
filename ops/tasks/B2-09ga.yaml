@@ -1,0 +1,33 @@
+id: B2-09ga
+repo: rebate-platform
+title: 被剥夺判定收口与恢复时未成年——commission 导出唯一判定（以 beneficiaries[].initial_status 为起点、按 event_seq 取最新事件，最新为 forfeited 才算被剥夺），clawback-order、credit-order、beneficiary-credit、pending-earnings-rules 四处改用；恢复时已识别未成年的推广份额不补发、追加 forfeited（minor），自购照常（D10-482）
+type: impl
+# 2026-10-31 入账（admin-backend，编排 D10-481 ②、D10-482，紧接 B2-09g、排在 FU-RECON-OUTCOME 前）。上线门槛 GATE-RESTORE-FORFEIT：真实资金环境使用 ADMIN_RESTORE 前须合并。
+# 判定只放 commission，经公开导出给 settlement，不各写一份；未成年判定用 B2-04ze 接的 BeneficiaryGate（B1-03zc minors 端口），不另写。不改迁移、不改契约形状。
+# 风险：改动覆盖入账、扣回、补记、预估四条资金路径，既有规则测试须全绿；funds（commission / settlement 归属）读改动。
+refs: [BR-FUND-22]
+refs_hash:
+  BR-FUND-22: 27d181deaeeb
+deps: [B2-09g]
+paths:
+  - 'apps/api/src/modules/commission/application/forfeited-state*.ts'
+  - 'apps/api/src/modules/commission/application/read-snapshot.ts'
+  - 'apps/api/src/modules/commission/application/read-attribution.ts'
+  - 'apps/api/src/modules/commission/infra/snapshot-reader.ts'
+  - 'apps/api/src/modules/commission/index.ts'
+  - 'apps/api/src/modules/settlement/clawback/clawback-order.ts'
+  - 'apps/api/src/modules/settlement/credit/credit-order.ts'
+  - 'apps/api/src/modules/settlement/credit/beneficiary/beneficiary-credit.ts'
+  - 'apps/api/src/modules/settlement/reads/pending-earnings-rules.ts'
+  - 'apps/api/src/modules/settlement/reads/pending-earnings.ts'
+  - 'apps/api/src/modules/settlement/application/admin-recon-restore*.ts'
+  - 'apps/api/src/modules/settlement/settlement.module.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/settlement/forfeited-state/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/forfeited-state/**'
+status: todo
