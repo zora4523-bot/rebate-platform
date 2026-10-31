@@ -74,3 +74,15 @@ export type {
   SettlementConfigReader,
   SettlementWorkerPorts,
 } from './worker/index.ts';
+// B2-04zg (D10-476): the catch-up of the monthly bill.
+export {
+  createSettleCatchUpStore,
+  seedSettleBillCatchUp,
+  settleBillCatchUpPeriod,
+} from './worker/index.ts';
+export type {
+  SettleBillCatchUpOptions,
+  SettleBillCatchUpPeriod,
+  SettleBillCatchUpState,
+  SettleCatchUpStore,
+} from './worker/index.ts';

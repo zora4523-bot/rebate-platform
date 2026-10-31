@@ -4,9 +4,10 @@
 //   `bill:<app_id>:<platform>:<D>`; runs the bill job (bill/job.ts) for (app, platform) with the
 //   nominal run_at = D 00:00 +08:00 (settleBillRunAt), the same on every delivery and re-seed of
 //   that day. Seeded every day for every app × platform; on a day that is not settle.bill_day the
-//   bill job itself answers not_due. An outcome of deferred (the day's asset snapshot is not ready)
-//   fails the delivery, so the job is not completed and the queue / the next seed sends it again;
-//   generated, duplicate and not_due complete it.
+//   bill job itself answers not_due. Every outcome completes the delivery, deferred included (the
+//   asset snapshot of the run day is not ready, B2-04zg / D10-476): a deferred bill is not a
+//   failure and uses no queue retry; the catch-up (catch-up.ts) sends the same period again on a
+//   later tick of the module's timer until the bill month is generated.
 // - `batch_execute` (not in settle_jobs): payload { app_id, batch_id }, singletonKey
 //   `batch_execute:<app_id>:<batch_id>`; runs the batch executor (batch/executor) once. Sent by the
 //   scan for every batch that is CONFIRMED and due (IMMEDIATE, or SCHEDULED with scheduled_at ≤
@@ -184,10 +185,8 @@ export function createSettleJobHandler(dependencies: SettleJobHandlerDependencie
         },
         'settle_bill_run',
       );
-      if (result.outcome === 'deferred') {
-        // The day's asset snapshot is not ready: the delivery fails so the queue / the seed sends it again.
-        throw new Error('settle bill deferred: the asset snapshot of the day is not complete');
-      }
+      // deferred (the asset snapshot of the run day is not complete) completes the delivery as well:
+      // no queue retry is used; the catch-up sends the period again on a later tick.
       return;
     }
     if (job.name === EXECUTE_JOB) {

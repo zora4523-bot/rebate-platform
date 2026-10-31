@@ -1,0 +1,116 @@
+{
+  "task": "B2-04zg",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "c4a54cba61adc472fad3f586c61f5924dddc6c53",
+  "red_tests": [
+    "test/spec/settlement/worker-catchup/catch-up.int.test.ts > [AC-B2-04zg#3] 补出账回看最近一个已到账单日 D*：账单日整日停机后的次日、到下个账单日前一刻、账单日当天，都给每个有订单的 app × 每个平台送 D* 的 bill（负载与 singletonKey 同当日补种，事务外、立即或数分钟内）；账单日前一天回看上月账单日；跨过下个账单日零点即换成新一期",
+    "test/spec/settlement/worker-catchup/catch-up.int.test.ts > [AC-B2-04zg#4] 更早期次不追溯：账单月 2032-06（07-24）与 2032-05（06-24）都未生成时，次日与下月初的补出账只问、只送 07-24 这一期，06-24 不问不送",
+    "test/spec/settlement/worker-catchup/catch-up.int.test.ts > [AC-B2-04zg#5] 补出账按库内状态取舍：账单月已生成（generated）或已有排队 / 执行中任务（pending）不送，absent 才送；连续两轮（新的存储与调用，即重启后）判定相同，已生成的一期不会再送",
+    "test/spec/settlement/worker-catchup/catch-up.int.test.ts > [AC-B2-04zg#6] 回看用各 app 自己的 settle.bill_day（未设按 24）：设 26 的 app 在 07-25 回看 06-26；某 app 的 settle.bill_day 非法（30）只让该 app 失败，其余照送，失败在全部试完后抛出",
+    "test/spec/settlement/worker-catchup/catch-up.int.test.ts > [AC-B2-04zg#7] 一个 app 送失败不挡其他 app：其余照送，失败在全部试完后抛出；下一轮补出账再送",
+    "test/spec/settlement/worker-catchup/handler.test.ts > [AC-B2-04zg#2] 处理器 bill：账单任务 deferred（快照未完成）不当失败——本次投递正常完成（不耗队列重试），账单任务只调用一次、run_at 仍为 D 00:00 +08:00；账单任务抛错时投递照旧失败；非账单日 not_due 照旧完成",
+    "test/spec/settlement/worker-catchup/period.test.ts > [AC-B2-04zg#1] 回看期次：D* = 不晚于当天（+08:00）的最近一个账单日（账单日当天即当天），M = D* 的上一自然月；跨年、闰年 2 月、账单日 22 与 28 照样；非法日期或账单日不在 22–28 被拒绝",
+    "test/spec/settlement/worker-catchup/recover.int.test.ts > [AC-B2-04zg#9] 账单日整日停机：次日补出账补投 07-24 的 bill，快照前提按补跑当天（07-25 → 查 07-24 的快照）判定，生成账单月 2032-06 恰一次；同日再补、隔天补、新的存储都不再送，重放同一任务不重复生成；更早的 06-24 不补；到下个账单日才轮到 2032-07",
+    "test/spec/settlement/worker-catchup/recover.int.test.ts > [AC-B2-04zg#10] 账单日 bill 全失败（进死信、settle_jobs failed，CouliSettleBillJobFailed 计 1）→ 次日补出账再投同一期；补跑仍失败照旧是同一行 failed（告警计数仍 1）、不生成账单；之后补跑成功生成 2032-06，failed 清零，不再补送",
+    "test/spec/settlement/worker-catchup/store.int.test.ts > [AC-B2-04zg#8] 补出账状态存储：未送 absent；排队、执行中、等待重试 pending；只完成了投递（deferred / not_due）、失败进死信、被取消、settle_jobs failed 行仍 absent；settle_jobs 有 (bill, 平台, D* 00:00 +08:00) done 行或 settle_bills 账单月已记该平台即 generated（队列里有任务也一样）；别的平台 / 别的 run_at / 别的 app 不算；新实例判定相同",
+    "test/spec/settlement/worker-catchup/timer-deferred.int.test.ts > [AC-B2-04zg#13] 真实 worker 账单日启动、D−1 快照未完成：模块定时器投出的首个 bill 答 deferred 并完成（retry_count 0，无 retry / failed，settle.dead 无副本，不写 settle_jobs / settle_bills）；随后快照完成、注入 Clock 推进到当日 09:00，不手动补种也不手动投递，靠定时器后续跳生成 2032-06 恰一次，全部投递不耗队列重试",
+    "test/spec/settlement/worker-catchup/worker.int.test.ts > [AC-B2-04zg#11] 真实 worker：账单日快照未完成时 bill 答 deferred——投递完成、不耗队列重试（retry_count 0、无 retry / failed、settle.dead 无副本），不写 settle_jobs / settle_bills；补出账随后重排同一期（新的投递，仍不耗重试）；快照完成后补跑生成 2032-06 恰一次，之后不再重排",
+    "test/spec/settlement/worker-catchup/worker.int.test.ts > [AC-B2-04zg#12] worker 启动自愈：账单日整日停机、次日启动的 worker 由模块自己的定时器（无人调用补种）补投 07-24 的 bill，按 07-25 当天判定快照，生成 2032-06 恰一次，任务一个、不耗重试；更早的 06-24 不补",
+    "test/spec/settlement/worker/module.int.test.ts > [AC-B2-04ze#24] 装配的处理器（D10-476 ② test-change）：账单日而当日资产快照未完成时 bill 答 deferred——本次投递正常完成（任务 completed、retry_count 0、settle.dead 无副本，不耗队列重试），不写 settle_jobs、settle_bills；同 singletonKey 的延后重排随后已入队（新的任务）；快照完成后那一跳出账 2032-06，全部任务仍不耗重试",
+    "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#7] 处理器 bill（D10-476 ② test-change）：账单任务 deferred（当日资产快照未完成）时本次投递正常完成（不耗队列重试）、不调用执行器；同 singletonKey 的延后重排再次投递同一负载，快照完成后答 generated 同样正常完成，两次 run_at 都是 D 00:00 +08:00；账单任务抛错时原样失败"
+  ],
+  "risk_note": "RV2 settlement (B2-04zg; D10-476; BR-FUND-04). Monthly bill catch-up: the daily seed and the worker start-up heal look back to the latest reached bill day whose bill month M is not generated yet and re-send that bill (bill_id = M, generated once; snapshot precondition judged on the catch-up day; earlier periods not chased); a bill answered deferred (D−1 asset snapshot not complete) completes the delivery and is re-sent later under the same singletonKey without consuming queue retries; a failing catch-up still raises the existing CouliSettleBillJobFailed alert. Judged from settle_bills / settle_jobs / queue state, Clock only. Frozen B2-04ze [AC-B2-04ze#7] / [#24] changed by test-change (D10-476 ②, single test(spec) commit, other 12 cases red_exempt).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c4a54cba61adc472fad3f586c61f5924dddc6c53",
+      "tree": "1e4a799e0e2e9262f1c71b8dd19efb6d162c2543",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T04:10:46Z",
+      "finished_at": "2026-10-31T04:12:44Z",
+      "gate": {
+        "commit": "c8551e9b72a8bc9e8a3ed44384d311a2670e820f",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/settlement/worker-catchup/catch-up.int.test.ts > [AC-B2-04zg#3] 补出账回看最近一个已到账单日 D*：账单日整日停机后的次日、到下个账单日前一刻、账单日当天，都给每个有订单的 app × 每个平台送 D* 的 bill（负载与 singletonKey 同当日补种，事务外、立即或数分钟内）；账单日前一天回看上月账单日；跨过下个账单日零点即换成新一期",
+        "test/spec/settlement/worker-catchup/catch-up.int.test.ts > [AC-B2-04zg#4] 更早期次不追溯：账单月 2032-06（07-24）与 2032-05（06-24）都未生成时，次日与下月初的补出账只问、只送 07-24 这一期，06-24 不问不送",
+        "test/spec/settlement/worker-catchup/catch-up.int.test.ts > [AC-B2-04zg#5] 补出账按库内状态取舍：账单月已生成（generated）或已有排队 / 执行中任务（pending）不送，absent 才送；连续两轮（新的存储与调用，即重启后）判定相同，已生成的一期不会再送",
+        "test/spec/settlement/worker-catchup/catch-up.int.test.ts > [AC-B2-04zg#6] 回看用各 app 自己的 settle.bill_day（未设按 24）：设 26 的 app 在 07-25 回看 06-26；某 app 的 settle.bill_day 非法（30）只让该 app 失败，其余照送，失败在全部试完后抛出",
+        "test/spec/settlement/worker-catchup/catch-up.int.test.ts > [AC-B2-04zg#7] 一个 app 送失败不挡其他 app：其余照送，失败在全部试完后抛出；下一轮补出账再送",
+        "test/spec/settlement/worker-catchup/handler.test.ts > [AC-B2-04zg#2] 处理器 bill：账单任务 deferred（快照未完成）不当失败——本次投递正常完成（不耗队列重试），账单任务只调用一次、run_at 仍为 D 00:00 +08:00；账单任务抛错时投递照旧失败；非账单日 not_due 照旧完成",
+        "test/spec/settlement/worker-catchup/period.test.ts > [AC-B2-04zg#1] 回看期次：D* = 不晚于当天（+08:00）的最近一个账单日（账单日当天即当天），M = D* 的上一自然月；跨年、闰年 2 月、账单日 22 与 28 照样；非法日期或账单日不在 22–28 被拒绝",
+        "test/spec/settlement/worker-catchup/recover.int.test.ts > [AC-B2-04zg#9] 账单日整日停机：次日补出账补投 07-24 的 bill，快照前提按补跑当天（07-25 → 查 07-24 的快照）判定，生成账单月 2032-06 恰一次；同日再补、隔天补、新的存储都不再送，重放同一任务不重复生成；更早的 06-24 不补；到下个账单日才轮到 2032-07",
+        "test/spec/settlement/worker-catchup/recover.int.test.ts > [AC-B2-04zg#10] 账单日 bill 全失败（进死信、settle_jobs failed，CouliSettleBillJobFailed 计 1）→ 次日补出账再投同一期；补跑仍失败照旧是同一行 failed（告警计数仍 1）、不生成账单；之后补跑成功生成 2032-06，failed 清零，不再补送",
+        "test/spec/settlement/worker-catchup/store.int.test.ts > [AC-B2-04zg#8] 补出账状态存储：未送 absent；排队、执行中、等待重试 pending；只完成了投递（deferred / not_due）、失败进死信、被取消、settle_jobs failed 行仍 absent；settle_jobs 有 (bill, 平台, D* 00:00 +08:00) done 行或 settle_bills 账单月已记该平台即 generated（队列里有任务也一样）；别的平台 / 别的 run_at / 别的 app 不算；新实例判定相同",
+        "test/spec/settlement/worker-catchup/timer-deferred.int.test.ts > [AC-B2-04zg#13] 真实 worker 账单日启动、D−1 快照未完成：模块定时器投出的首个 bill 答 deferred 并完成（retry_count 0，无 retry / failed，settle.dead 无副本，不写 settle_jobs / settle_bills）；随后快照完成、注入 Clock 推进到当日 09:00，不手动补种也不手动投递，靠定时器后续跳生成 2032-06 恰一次，全部投递不耗队列重试",
+        "test/spec/settlement/worker-catchup/worker.int.test.ts > [AC-B2-04zg#11] 真实 worker：账单日快照未完成时 bill 答 deferred——投递完成、不耗队列重试（retry_count 0、无 retry / failed、settle.dead 无副本），不写 settle_jobs / settle_bills；补出账随后重排同一期（新的投递，仍不耗重试）；快照完成后补跑生成 2032-06 恰一次，之后不再重排",
+        "test/spec/settlement/worker-catchup/worker.int.test.ts > [AC-B2-04zg#12] worker 启动自愈：账单日整日停机、次日启动的 worker 由模块自己的定时器（无人调用补种）补投 07-24 的 bill，按 07-25 当天判定快照，生成 2032-06 恰一次，任务一个、不耗重试；更早的 06-24 不补",
+        "test/spec/settlement/worker/module.int.test.ts > [AC-B2-04ze#24] 装配的处理器（D10-476 ② test-change）：账单日而当日资产快照未完成时 bill 答 deferred——本次投递正常完成（任务 completed、retry_count 0、settle.dead 无副本，不耗队列重试），不写 settle_jobs、settle_bills；同 singletonKey 的延后重排随后已入队（新的任务）；快照完成后那一跳出账 2032-06，全部任务仍不耗重试",
+        "test/spec/settlement/worker/schedule.test.ts > [AC-B2-04ze#7] 处理器 bill（D10-476 ② test-change）：账单任务 deferred（当日资产快照未完成）时本次投递正常完成（不耗队列重试）、不调用执行器；同 singletonKey 的延后重排再次投递同一负载，快照完成后答 generated 同样正常完成，两次 run_at 都是 D 00:00 +08:00；账单任务抛错时原样失败"
+      ],
+      "expected": [
+        "test/spec/settlement/worker-catchup/catch-up.int.test.ts",
+        "test/spec/settlement/worker-catchup/handler.test.ts",
+        "test/spec/settlement/worker-catchup/period.test.ts",
+        "test/spec/settlement/worker-catchup/recover.int.test.ts",
+        "test/spec/settlement/worker-catchup/store.int.test.ts",
+        "test/spec/settlement/worker-catchup/timer-deferred.int.test.ts",
+        "test/spec/settlement/worker-catchup/worker.int.test.ts",
+        "test/spec/settlement/worker/module.int.test.ts",
+        "test/spec/settlement/worker/schedule.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "b1e2fde56fe474e42c5081e8a9aa667937400f87bc93de9b7fd8bd6b5d318579"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "858c0f7d45db212a83c66bf6add154baa341a2648d9ba049e6feab2ba4c229e7"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; adversarial money review by a fresh independent Claude via claude-run.sh (approvals #36); round 1 pass with one open S2 (a bill failing every time is re-sent each tick into dead) recorded as a followup",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "rule tests by an independent Claude via claude-run.sh in 2 runs; round 1 fail (S1 timer ticks not pinned), round 2 pass; test-change of frozen B2-04ze #7 / #24 (D10-476 ② following D10-475 ①, not counted) checked read-only by a fresh Claude (pass, S2 recorded), confirming the other 12 cases on red_exempt are byte-identical",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "741be169b087fb7a8c9fa5c005324fc9ae2ed585",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}

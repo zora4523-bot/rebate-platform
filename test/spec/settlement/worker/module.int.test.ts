@@ -158,24 +158,126 @@ it(
 );
 
 it(
-  '[AC-B2-04ze#24] 装配的处理器：账单日而当日资产快照未完成时 bill 本次投递失败（deferred），不写 settle_jobs、settle_bills',
+  '[AC-B2-04ze#24] 装配的处理器（D10-476 ② test-change）：账单日而当日资产快照未完成时 bill 答 deferred——本次投递正常完成（任务 completed、retry_count 0、settle.dead 无副本，不耗队列重试），不写 settle_jobs、settle_bills；同 singletonKey 的延后重排随后已入队（新的任务）；快照完成后那一跳出账 2032-06，全部任务仍不耗重试',
   async () => {
+    // What only this test uses is loaded here; the file's shared imports stay as at the base.
+    const { vi } = await import('vitest');
+    const kit = await import('./kit.ts');
+    /** 'completed' when the delivery resolves, else 'failed: <message>' (asserted, not thrown). */
+    const outcomeOf = async (run: () => Promise<unknown>): Promise<string> => {
+      try {
+        await run();
+        return 'completed';
+      } catch (error) {
+        return `failed: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    };
     await withDatabase(createTestDatabase, async (db) => {
       await seedOrder(db, APP, TAOBAO);
-      await withAssembled(
-        db,
-        BILL_DAY_NOW,
-        { snapshot: 'pending', config: new Map() },
-        async ({ handler }) => {
-          await refusal(() =>
-            handler(
-              receivedJob(BILL, { app_id: APP, platform: TAOBAO, accounting_date: BILL_DAY }),
-            ),
-          );
+      const state: PortState = { snapshot: 'pending', config: new Map() };
+      const { ports, calls } = fakePorts(state);
+      const SettlementModule = await settlementModule();
+      const key = kit.billKey(APP, TAOBAO, BILL_DAY);
+      const payload = { app_id: APP, platform: TAOBAO, accounting_date: BILL_DAY };
+      const jobsOn = async (queueName: string) => {
+        const { rows } = await sql<{ id: string; state: string; retry_count: number }>`
+          SELECT id::text AS id, state::text AS state, retry_count
+          FROM pgboss.job WHERE name = ${queueName} AND singleton_key = ${key}
+          ORDER BY created_on, id`.execute(db);
+        return rows.map((row) => ({
+          id: row.id,
+          state: row.state,
+          retryCount: Number(row.retry_count),
+        }));
+      };
+      // pg-boss of the test database (the api runtime only sends); the test is the worker: it takes
+      // the one live job, runs the handler and completes the job once the delivery resolves. The
+      // module's own timer runs (real timers).
+      await kit.withRealQueue(db, async (queue) => {
+        const context = await workerContext(SettlementModule.forWorker(ports), {
+          clock: new FixedClock(BILL_DAY_NOW),
+          logger: silentRootLogger(),
+          db,
+          queue,
+          crypto: FAKE_CRYPTO,
+          events: fakeEventBus(calls),
+        });
+        try {
+          const handler = settleHandler(queue);
+          const deliverLive = async () => {
+            const live = await kit.liveJobsUnder(db, key);
+            expect(live.map((job) => job.payload)).toStrictEqual([payload]);
+            const job = live[0];
+            if (job === undefined || job.payload === null) {
+              throw new Error('unreachable: the expect above failed');
+            }
+            const received = receivedJob(BILL, job.payload);
+            await kit.transition(db, job.id, 'active');
+            // A handler error is caught and shown by the expectation (that delivery would fail).
+            expect(await outcomeOf(() => handler(received))).toBe('completed');
+            await kit.transition(db, job.id, 'completed');
+            return job.id;
+          };
+
+          // The bill day's job (dropped when the module's first tick has sent it already).
+          await queue.send(QUEUE, BILL, payload, { trx: null, singletonKey: key });
+          const first = await deliverLive();
+          expect((await jobsOn(QUEUE)).find((job) => job.id === first)).toStrictEqual({
+            id: first,
+            state: 'completed',
+            retryCount: 0,
+          });
+          expect(await jobsOn(kit.DEAD_QUEUE)).toStrictEqual([]);
           expect(await countRows(db, 'settle_jobs')).toBe(0);
           expect(await countRows(db, 'settle_bills')).toBe(0);
-        },
-      );
+          // Deferred is no refusal: the same handler still refuses a payload it cannot run (no
+          // accounting_date), and that refusal is not the snapshot wait.
+          const refused = await refusal(() =>
+            handler(receivedJob(BILL, { app_id: APP, platform: TAOBAO })),
+          );
+          expect(refused).not.toMatch(/deferred|snapshot/iu);
+          expect(await countRows(db, 'settle_jobs')).toBe(0);
+
+          // The delayed re-send under the same key, arranged by the module (not by this test).
+          await vi.waitFor(
+            async () => {
+              const live = await kit.liveJobsUnder(db, key);
+              expect(live.filter((job) => job.id !== first)).toHaveLength(1);
+            },
+            { timeout: 80_000, interval: 250 },
+          );
+
+          // The snapshot completes: that delivery generates 2032-06.
+          state.snapshot = 'complete';
+          const second = await deliverLive();
+          expect(second).not.toBe(first);
+          expect(
+            (await settleJobsOf(db, APP)).map((row) => ({
+              job: row.job,
+              platform: row.platform,
+              run_at: row.run_at.toISOString(),
+              status: row.status,
+            })),
+          ).toStrictEqual([
+            { job: 'bill', platform: TAOBAO, run_at: BILL_DAY_START, status: 'done' },
+          ]);
+          const bills = await db
+            .withSchema('app')
+            .selectFrom('settle_bills')
+            .select(['bill_id', 'generated_at'])
+            .where('app_id', '=', APP)
+            .execute();
+          expect(bills.map((row) => row.bill_id)).toStrictEqual([BILL_MONTH]);
+          expect(bills[0]?.generated_at).not.toBeNull();
+          expect(await jobsOn(QUEUE)).toStrictEqual([
+            { id: first, state: 'completed', retryCount: 0 },
+            { id: second, state: 'completed', retryCount: 0 },
+          ]);
+          expect(await jobsOn(kit.DEAD_QUEUE)).toStrictEqual([]);
+        } finally {
+          await context.close();
+        }
+      });
     });
   },
   TIMEOUT,

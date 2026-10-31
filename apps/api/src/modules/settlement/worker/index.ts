@@ -25,3 +25,15 @@ export type {
 } from './schedule.ts';
 export { createSettleRunStore } from './run-store.ts';
 export type { SettlementConfigReader, SettlementWorkerPorts } from './ports.ts';
+// B2-04zg (D10-476): the catch-up of the monthly bill.
+export {
+  createSettleCatchUpStore,
+  seedSettleBillCatchUp,
+  settleBillCatchUpPeriod,
+} from './catch-up.ts';
+export type {
+  SettleBillCatchUpOptions,
+  SettleBillCatchUpPeriod,
+  SettleBillCatchUpState,
+  SettleCatchUpStore,
+} from './catch-up.ts';
