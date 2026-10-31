@@ -238,6 +238,11 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   spec('feed.fallback_pool_id', 'string', 'config.business'),
   businessInteger('pool.max_age_sec', 1),
   businessInteger('pool.refresh_interval_sec', 1),
+  // B1-02zs (B1-02zp prerequisite): BR-WDR-01 细则 old-account re-verification — the days without
+  // activity after which a withdrawal needs re-verification, a whole number of at least 0,
+  // config.business like the other withdrawal items; seeded 0 = off until the three re-verification
+  // pages ship (08 gives 180, set by the owner in the console then). Registration only.
+  businessInteger('withdraw.dormant_reverify_days', 0),
 ]);
 
 const VISIBLE: readonly ConfigItemSpec[] = Object.freeze(
