@@ -45,9 +45,10 @@ function errorResponse(error: unknown, traceId: string): HttpException | undefin
 }
 
 /**
- * Contract operation `getHotRank` (CT-22c; 规划/01 F-PROD-13; BR-TEXT-13, BR-TEXT-17): x-auth none;
- * the viewer is the request's guest (or identity's viewer on the `api` entry). The route schema
- * has validated the query; the use case owns every business check.
+ * Contract operation `getHotRank` (CT-22c; 规划/01 F-PROD-13; BR-TEXT-13, BR-TEXT-17, BR-PRICE-11):
+ * x-auth optional; the viewer comes from the request-scoped ViewerContext (identity's viewer on the
+ * `api` entry, a guest without a token). The route schema has validated the query; the use case
+ * owns every business check.
  * Nest metadata is applied below without decorator syntax: rule tests import CatalogModule, and
  * their TypeScript project accepts erasable syntax only.
  */

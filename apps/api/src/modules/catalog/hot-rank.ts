@@ -303,7 +303,7 @@ export async function getHotRank(
       item: entry.item,
       ref: entry.ref,
       entrySource: RANK_ENTRY_SOURCE,
-      stale: false,
+      stale: page.stale === true,
       scene: 'retrieval',
     });
     if (result.kind !== 'card') continue;

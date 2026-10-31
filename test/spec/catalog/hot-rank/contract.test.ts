@@ -5,7 +5,7 @@ import { CONTRACT_ROUTE_SCHEMAS } from '../../../../apps/api/src/modules/platfor
 import { plannedOperations } from '../../../../packages/contracts-ts/src/index.ts';
 import { contract } from './kit.ts';
 
-it('[AC-B1-28h#29] 契约 getHotRank 不再标 planned、生成请求 schema；游客可访问（x-auth none、security []）、只有 20001 / 50304，响应形状不变', async () => {
+it('[AC-B1-28h#29] 契约 getHotRank 不再标 planned、生成请求 schema；游客可访问（x-auth optional，security 同 searchProducts）、只有 20001 / 50304，响应形状不变', async () => {
   const doc = await contract();
   const op = doc.paths['/v1/rank/hot']?.get;
   expect(op).toBeDefined();
@@ -14,11 +14,11 @@ it('[AC-B1-28h#29] 契约 getHotRank 不再标 planned、生成请求 schema；�
   expect(CONTRACT_ROUTE_SCHEMAS).toHaveProperty('getHotRank');
   expect(op).toMatchObject({
     operationId: 'getHotRank',
-    'x-auth': 'none',
+    'x-auth': 'optional',
     'x-signed': false,
     'x-idempotent': false,
     'x-error-codes': [20001, 50304],
-    security: [],
+    security: [{}, { bearerAuth: [] }],
   });
   const names = ((op?.['parameters'] ?? []) as { name?: string; in?: string }[])
     .filter((parameter) => parameter.in === 'query')

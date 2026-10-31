@@ -1,0 +1,114 @@
+{
+  "task": "B1-28m",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "c7c5f94ab32f17f7492c6493ee9ddc2776cfccaa",
+  "red_tests": [
+    "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#4][BR-PRICE-11] 真实 AppModule：带登录 token，报价收到的查看者是该用户而不是 userId=null，卡面是本人报价，links 行归本人，响应 no-store",
+    "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#5] 真实 AppModule：登录与游客交替，每次请求只按自己的 token，不串身份",
+    "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#6] 不带 token 仍是游客：userId 与 deviceId 都为空（裸 X-Device-Id 不算验证过的设备），游客报价，响应不加 no-store；同一设备带上 token 才换成本人",
+    "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#7] 伪造 x-user-id 不提升身份：不带 token 仍是游客，带 token 仍是 token 的用户",
+    "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#8][BR-ID-01] 无效 Authorization（不是 JWT）→ 401/10002，同 searchProducts 的 optional 口径，不退回游客",
+    "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#8][BR-ID-01] 无效 Authorization（Bearer 后没有令牌）→ 401/10002，同 searchProducts 的 optional 口径，不退回游客",
+    "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#8][BR-ID-01] 无效 Authorization（不是 Bearer）→ 401/10002，同 searchProducts 的 optional 口径，不退回游客",
+    "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#8][BR-ID-01] 无效 Authorization（签名被改动）→ 401/10002，同 searchProducts 的 optional 口径，不退回游客",
+    "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#9][BR-ID-01] 过期 token（签名有效、会话未吊销）→ 401/10002，不退回游客",
+    "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#10][BR-ID-07] 会话吊销后同一 token → 401/10002，不退回游客",
+    "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#11][BR-ID-07] token 与 X-App-Id 不是同一 App → 403/10403",
+    "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#12][BR-ID-01] deletion_only 会话：x-session-scopes 只有 full，同 searchProducts → 403/10405",
+    "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#13][BR-PRICE-11] 榜单缓存不分人：同一页只向联盟取一次，卡片与 link_id 每次按当前查看者现算",
+    "test/spec/catalog/hot-rank-viewer/contract.test.ts > [AC-B1-28m#1] 契约 getHotRank：x-auth optional，security 与 searchProducts 相同（游客或 bearerAuth），不签名、不幂等、错误码不变",
+    "test/spec/catalog/hot-rank-viewer/contract.test.ts > [AC-B1-28m#2] 契约描述写明 optional 的依据：报价按当前用户（BR-PRICE-11），08 高于 04",
+    "test/spec/catalog/hot-rank-viewer/contract.test.ts > [AC-B1-28m#3] 生成的鉴权表：GET /v1/rank/hot 是 optional，HEAD 沿用 GET",
+    "test/spec/catalog/hot-rank/contract.test.ts > [AC-B1-28h#29] 契约 getHotRank 不再标 planned、生成请求 schema；游客可访问（x-auth optional，security 同 searchProducts）、只有 20001 / 50304，响应形状不变"
+  ],
+  "risk_note": "RV2 by path. getHotRank becomes x-auth optional with the security of searchProducts (BR-PRICE-11; 08 wins over 04, D10-462; 04 synced by couli #223), so a logged-in user's hot list cards are quoted for them; guests unchanged, identity never from headers or body. A page served from the old copy during a union failure now carries stale=true (BR-PROD-07). Frozen [AC-B1-28h#29] follows x-auth optional, changed by a fresh independent Claude and covered by the rule-test review. Open: BR-PRICE-11's 300 s limit on old copies against F-PROD-13 for the hot list, reported to the orchestrator. No money moves: display quotes only. Codex was unavailable until 11-02, so tests and reviews ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c7c5f94ab32f17f7492c6493ee9ddc2776cfccaa",
+      "tree": "49322cf09166b7f0f8f1d8daff593eb2a7fb8b1c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T14:36:28Z",
+      "finished_at": "2026-10-31T14:36:47Z",
+      "gate": {
+        "commit": "23b998fd7d6d82507d2dacb96020e2a119653b01",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#4][BR-PRICE-11] 真实 AppModule：带登录 token，报价收到的查看者是该用户而不是 userId=null，卡面是本人报价，links 行归本人，响应 no-store",
+        "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#5] 真实 AppModule：登录与游客交替，每次请求只按自己的 token，不串身份",
+        "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#6] 不带 token 仍是游客：userId 与 deviceId 都为空（裸 X-Device-Id 不算验证过的设备），游客报价，响应不加 no-store；同一设备带上 token 才换成本人",
+        "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#7] 伪造 x-user-id 不提升身份：不带 token 仍是游客，带 token 仍是 token 的用户",
+        "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#8][BR-ID-01] 无效 Authorization（不是 JWT）→ 401/10002，同 searchProducts 的 optional 口径，不退回游客",
+        "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#8][BR-ID-01] 无效 Authorization（Bearer 后没有令牌）→ 401/10002，同 searchProducts 的 optional 口径，不退回游客",
+        "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#8][BR-ID-01] 无效 Authorization（不是 Bearer）→ 401/10002，同 searchProducts 的 optional 口径，不退回游客",
+        "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#8][BR-ID-01] 无效 Authorization（签名被改动）→ 401/10002，同 searchProducts 的 optional 口径，不退回游客",
+        "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#9][BR-ID-01] 过期 token（签名有效、会话未吊销）→ 401/10002，不退回游客",
+        "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#10][BR-ID-07] 会话吊销后同一 token → 401/10002，不退回游客",
+        "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#11][BR-ID-07] token 与 X-App-Id 不是同一 App → 403/10403",
+        "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#12][BR-ID-01] deletion_only 会话：x-session-scopes 只有 full，同 searchProducts → 403/10405",
+        "test/spec/catalog/hot-rank-viewer/app.int.test.ts > [AC-B1-28m#13][BR-PRICE-11] 榜单缓存不分人：同一页只向联盟取一次，卡片与 link_id 每次按当前查看者现算",
+        "test/spec/catalog/hot-rank-viewer/contract.test.ts > [AC-B1-28m#1] 契约 getHotRank：x-auth optional，security 与 searchProducts 相同（游客或 bearerAuth），不签名、不幂等、错误码不变",
+        "test/spec/catalog/hot-rank-viewer/contract.test.ts > [AC-B1-28m#2] 契约描述写明 optional 的依据：报价按当前用户（BR-PRICE-11），08 高于 04",
+        "test/spec/catalog/hot-rank-viewer/contract.test.ts > [AC-B1-28m#3] 生成的鉴权表：GET /v1/rank/hot 是 optional，HEAD 沿用 GET",
+        "test/spec/catalog/hot-rank/contract.test.ts > [AC-B1-28h#29] 契约 getHotRank 不再标 planned、生成请求 schema；游客可访问（x-auth optional，security 同 searchProducts）、只有 20001 / 50304，响应形状不变"
+      ],
+      "expected": [
+        "test/spec/catalog/hot-rank-viewer/app.int.test.ts",
+        "test/spec/catalog/hot-rank-viewer/contract.test.ts",
+        "test/spec/catalog/hot-rank/contract.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "5bbc5fa90c00a7c82c89791237d4c60396d544a8b4ab18d68a304c65b89baa89"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "2e3806294493bce9e117a2128028461eb6313860db890125e6a157fa141bfce7"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings in scope; one out-of-scope S1 (age limit of the hot list cache during a union failure) reported to the orchestrator."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude, red 16 / 16 across 2 files; round 1 pass with one S2 (cache hit quoted_at). Frozen [AC-B1-28h#29] was changed by another fresh independent Claude to x-auth optional, reviewed in the same round."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "3189ae0bee7793d9c64c7bea8e546030fce69a6d",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
