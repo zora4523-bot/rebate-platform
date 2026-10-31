@@ -80,6 +80,16 @@ export type {
   ReconDiffWriteOffBillLine,
   ReconDiffWriteOffRefusal,
 } from './application/admin-recon-diff-write-off.ts';
+// B2-09g: the recon diff side of settlement's restore (BR-FUND-22 ③); ledger stays the single writer.
+export {
+  adjustRestoredReconDiff,
+  lockReconDiffForRestore,
+  readReconDiffForRestore,
+} from './application/admin-recon-diff-restore.ts';
+export type {
+  ReconDiffRestoreInput,
+  ReconDiffRestoreRow,
+} from './application/admin-recon-diff-restore.ts';
 export { createDailyCheck } from './application/daily-check.ts';
 export type {
   DailyCheckDependencies,

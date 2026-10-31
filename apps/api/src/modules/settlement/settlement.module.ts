@@ -16,12 +16,20 @@ import {
   type QueueRuntime,
   type RootLogger,
 } from '../platform/index.ts';
+import type {
+  AdminReconRestorePorts,
+  RestoreAdminReconDiffDeps,
+} from './application/admin-recon-restore.ts';
 import type { AdminSettleBillReadDeps } from './application/admin-settle-bills.ts';
 import {
   createAdminSettleCommandDeps,
   type AdminSettleCommandDeps,
   type AdminSettleCommandPorts,
 } from './application/admin-settle-commands.ts';
+import {
+  ADMIN_RECON_RESTORE,
+  AdminReconRestoreController,
+} from './http/admin/recon-restore.controller.ts';
 import {
   ADMIN_SETTLE_BILL_READS,
   AdminSettleBillsController,
@@ -150,13 +158,19 @@ export class SettlementModule {
  * B2-09d: the settlement console's monthly bill reads on the admin entry (settle.bill or
  * fund.view, read only, no audit). B2-09f: the five writes (settle.bill, step-up totp): the batch
  * commands and the supplement launch, each with its audit record on the same transaction. Without
- * a database (or, for the writes, idempotency) the routes register and fail closed.
+ * B2-09g: POST /admin/v1/recon-diffs/{recon_diff_id}/restore (order.restore, step-up totp): the
+ * account-appeal restore of BR-FUND-22 ③. Without a database (or, for the writes, idempotency) the
+ * routes register and fail closed.
  */
 export class SettlementAdminModule {
-  static forAdmin(ports: AdminSettleCommandPorts): DynamicModule {
+  static forAdmin(ports: AdminSettleCommandPorts & AdminReconRestorePorts): DynamicModule {
     return {
       module: SettlementAdminModule,
-      controllers: [AdminSettleBillsController, AdminSettleCommandsController],
+      controllers: [
+        AdminSettleBillsController,
+        AdminSettleCommandsController,
+        AdminReconRestoreController,
+      ],
       providers: [
         {
           provide: ADMIN_SETTLE_BILL_READS,
@@ -186,6 +200,33 @@ export class SettlementAdminModule {
                   idempotency,
                   logger: logger.child({ module: 'settlement' }),
                 }),
+        },
+        {
+          provide: ADMIN_RECON_RESTORE,
+          inject: [
+            CLOCK,
+            { token: DB_TOKEN, optional: true },
+            { token: IDEMPOTENCY, optional: true },
+            { token: EVENT_BUS, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            db?: Kysely<DB>,
+            idempotency?: Idempotency,
+            eventBus?: EventBus,
+          ): RestoreAdminReconDiffDeps | null =>
+            db === undefined || idempotency === undefined || eventBus === undefined
+              ? null
+              : {
+                  clock,
+                  idempotency,
+                  auditOn: (trx) => ports.auditWriter(trx, clock),
+                  lockUsers: ports.lockUsers,
+                  deletionStatus: ports.deletionStatus(db),
+                  readRestoreSnapshot: ports.readRestoreSnapshot,
+                  appendBeneficiaryEvent: ports.appendBeneficiaryEvent,
+                  ledger: ports.ledger({ clock, eventBus }),
+                },
         },
       ],
     };

@@ -15,8 +15,9 @@ export interface BeneficiaryEventInput {
   readonly orderId: string;
   readonly userId: string;
   readonly role: BeneficiaryEventRole;
-  readonly status: 'held' | 'forfeited';
-  /** forfeited: banned | deleted | minor; held: null. */
+  /** active: B2-09g, an appeal restore of the share (BR-FUND-22 ③, BR-CALC-09). */
+  readonly status: 'active' | 'held' | 'forfeited';
+  /** forfeited: banned | deleted | minor; held and active: null. */
   readonly reason: BeneficiaryEventForfeitReason | null;
 }
 
@@ -29,7 +30,7 @@ export async function appendBeneficiaryEvent(
   input: BeneficiaryEventInput,
   dependencies: BeneficiaryEventDependencies,
 ): Promise<void> {
-  if (input.status === 'held' ? input.reason !== null : input.reason === null) {
+  if (input.status === 'forfeited' ? input.reason === null : input.reason !== null) {
     throw new Error('commission beneficiary event: reason does not match status');
   }
   await trx
