@@ -1,0 +1,70 @@
+{
+  "task": "CT-24zf",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "fbe92caf061f6c0301e96850f667760c702069e2",
+  "red_tests": [
+    "test/spec/ledger/admin-recon-diffs/list.int.test.ts > [AC-B2-09a#6] 差错单列表的拒绝：type 不是 R1–R3 类型（pay_mismatch 或未知值）、source 是 R4 或未知、status 不在枚举、period_from / period_to 不是 YYYY-MM[-DD]、ref_id 超过 128 字符 → 20001 data.fields 指名该参数；period_from > period_to（含 2026-10-01 对 2026-10）→ 20001 data.fields=[period_from, period_to]；page_size 超过 200 → 20001 [page_size]"
+  ],
+  "risk_note": "RV1 (contract). closeAdminReconDiff gains an optional outcome (union / ours; type settle_amount_mismatch of source R1 only, otherwise 20001 data.fields=[outcome]), written to resolution.outcome from B2-09h on; a union conclusion counts as matching only while the current base and settled amount equal the conclusion's, otherwise a new difference opens under ref_id {order_key}#AMT#{base_fen}:{b_settle_fen} (D10-506). AdminReconDiff ref_id and its request filter widen from 64 to 128 (D10-511), the responses accepted in contracts/oasdiff-accepted.txt (D10-484). restoreAdminReconDiff text gains the D10-482 exception. The one test-change is [AC-B2-09a#6] boundaries and title only (D10-511, D10-509): written by a fresh independent Claude, passed by a second read-only one; the other six tests of the file are red_exempt. Test-machine full verification failed only on spec/parsing/viewer/app.int.test.ts [AC-B1-07c#8 #9] (known, D10-494 ②); required CI checks decide.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "fbe92caf061f6c0301e96850f667760c702069e2",
+      "tree": "82fa64c739a342b7f9723080d25dc185e2f203eb",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-10-31T18:02:21Z",
+      "finished_at": "2026-10-31T18:02:48Z",
+      "red_tests": [
+        "test/spec/ledger/admin-recon-diffs/list.int.test.ts > [AC-B2-09a#6] 差错单列表的拒绝：type 不是 R1–R3 类型（pay_mismatch 或未知值）、source 是 R4 或未知、status 不在枚举、period_from / period_to 不是 YYYY-MM[-DD]、ref_id 超过 128 字符 → 20001 data.fields 指名该参数；period_from > period_to（含 2026-10-01 对 2026-10）→ 20001 data.fields=[period_from, period_to]；page_size 超过 200 → 20001 [page_size]"
+      ],
+      "expected": ["test/spec/ledger/admin-recon-diffs/list.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "472af75a039da3b9b8163f1b6beac03ce8281515ab3a0814aea82eff14f4d49d"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 3,
+      "note": "fresh independent Claude via nohup claude-run.sh --review-type contract (Codex unavailable until 2026-11-02, approvals 36): round 1 pass, round 2 fail (S1 a new difference collided with the business key), round 3 pass after the #AMT# ref_id; the later widening is ruled by D10-511."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "test-change only: a second fresh independent Claude read the diff read-only and passed it (boundaries and title of [AC-B2-09a#6] only, nothing relaxed). red_exempt: a fresh independent Claude read the spec commit and confirmed the six other tests of the file are unchanged.",
+    "red_exempt_confirmed": true
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "48fe38018caf0cb18d4452d31a2ab2ad292b7a0a",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}

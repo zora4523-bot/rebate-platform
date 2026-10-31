@@ -14449,7 +14449,7 @@ export const CONTRACT_ROUTE_SCHEMAS = {
         "ref_id": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 64
+          "maxLength": 128
         }
       },
       "required": [],
@@ -14537,6 +14537,14 @@ export const CONTRACT_ROUTE_SCHEMAS = {
           "minLength": 1,
           "maxLength": 200,
           "description": "Why the difference is closed without further handling; 1–200 characters after trimming, else 20001 with data.fields=[reason]. Stored as resolution.reason."
+        },
+        "outcome": {
+          "description": "Optional structured conclusion, for type=settle_amount_mismatch (source R1) only; any other type or source → 20001 with data.fields=[outcome] from B2-09h on. Stored as resolution.outcome from B2-09h on; do not send it before then.",
+          "type": "string",
+          "enum": [
+            "union",
+            "ours"
+          ]
         }
       }
     }

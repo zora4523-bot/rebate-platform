@@ -7844,24 +7844,57 @@ export interface paths {
          *
          *     Request: `reason`, required: after trimming surrounding whitespace 1–200 characters, else
          *     20001 with `data.fields=[reason]`. Only a difference of source R1, R2 or R3 whose `status`
-         *     is `open` or `processing` can be closed.
+         *     is `open` or `processing` can be closed. `outcome`, optional (enum
+         *     admin_recon_diff_outcome, 编排裁定 D10-447 ②, D10-506): the structured conclusion of a
+         *     月结账单金额不一致 difference, `union` 以联盟为准 or `ours` 以我方为准; a value outside the
+         *     enum is 20001 with `data.fields=[outcome]`. It has a meaning for
+         *     `type=settle_amount_mismatch` (source R1) only: any other type or source is refused, see
+         *     the order of checks.
+         *
+         *     What the conclusion does (BR-FUND-04 ④, its 校验结果 table and 例 2; D10-506): the
+         *     conclusion is bound to the amounts of the difference. `outcome=union` counts as matched
+         *     in the monthly consistency check only when the current snapshot `base_fen` equals this
+         *     difference's `expected_fen` and B_settle equals its `actual_fen`; the order then goes on
+         *     to a supplement batch. Otherwise the conclusion does not apply and the check compares
+         *     the amounts as usual: when they do not match it opens a new settle_amount_mismatch
+         *     difference, the old one stays closed and the order stays WAITING. The new difference's
+         *     `ref_id` carries an amount fingerprint, `{order_key}#AMT#{base_fen}:{b_settle_fen}` (the
+         *     current snapshot `base_fen` and B_settle), because recon_diffs is unique on (app_id, type,
+         *     period, ref_id) and the bill's `{order_key}` row is taken: a bill has at most one
+         *     difference for the same amount state. It appears in the list and detail like any other
+         *     (the `ref_id` filter is an exact match, so it needs the full value) and can be closed
+         *     with its own `outcome`. The conclusion the check reads is that of the order's difference
+         *     whose `ref_id` is `{order_key}` or starts with `{order_key}#AMT#` and whose amounts equal
+         *     the current ones. Without `outcome` there is no structured conclusion: the check
+         *     compares the amounts as needed, which can only hold back more, never pay more
+         *     (D10-447 ①). `ours` does not count as matched either. The `closed` status by itself is
+         *     not a conclusion, and the free-text `reason` is never parsed for one. The conclusion
+         *     cannot be changed: a closed difference answers 20902 to any further close.
+         *
+         *     Until B2-09h lands the route accepts `outcome` but the server neither runs the 20001
+         *     check on it nor writes it: a close carrying `outcome` still closes the difference, with
+         *     no conclusion and for good. Clients must not send `outcome` before B2-09h.
          *
          *     Order of checks: `fund.recon` (10403 with `data.reason=admin_permission_denied`) → body
-         *     (20001 with `data.fields=[reason]`) → an unknown `recon_diff_id`, a difference of another
-         *     app, or one of source R4 (see GET /admin/v1/pay-recon-diffs) is 20001 with
-         *     `data.fields=[recon_diff_id]` (no 404) → a difference already `closed`, `adjusted` or
-         *     `written_off` is 20902 with `data.resource=recon_diff`, nothing changed (refresh the
-         *     detail).
+         *     (20001 with `data.fields=[reason]` or `data.fields=[outcome]`) → an unknown
+         *     `recon_diff_id`, a difference of another app, or one of source R4 (see
+         *     GET /admin/v1/pay-recon-diffs) is 20001 with `data.fields=[recon_diff_id]` (no 404) → a
+         *     difference already `closed`, `adjusted` or `written_off` is 20902 with
+         *     `data.resource=recon_diff`, nothing changed (refresh the detail) → from B2-09h on,
+         *     `outcome` sent for a difference that is not `type=settle_amount_mismatch` of source R1 is
+         *     20001 with `data.fields=[outcome]`, nothing changed (the same place as the guard of
+         *     write-off).
          *
          *     Effects, in one transaction: `status` becomes `closed`, `closed_at` and `updated_at` the
          *     server's current time, `handler_id` the caller, and `resolution` records the trimmed
-         *     reason under the key `reason`. Every withdrawal hold (withdraw_holds) whose source is this
+         *     reason under the key `reason` and, from B2-09h on, `outcome` when given under the key
+         *     `outcome`. Every withdrawal hold (withdraw_holds) whose source is this
          *     difference and that is not released yet is released in the same transaction (BR-FUND-19:
          *     差错单关闭时解除冻结记录); `released_hold_count` is the number of holds this call released
          *     (holds released earlier are not counted; 0 when there are none). Closing does not restore
          *     an order, post an adjustment, write anything off or recalculate a balance cache; those
-         *     are other operations. Writes an audit record (action recon_diff_close, with the reason
-         *     and, before and after, the `status` and `released_hold_count`; no personal data). The
+         *     are other operations. Writes an audit record (action recon_diff_close, with the reason,
+         *     from B2-09h on `outcome` when given, and, before and after, the `status` and `released_hold_count`; no personal data). The
          *     response is the difference as GET /admin/v1/recon-diffs/{recon_diff_id} returns it after
          *     closing, with `released_hold_count`.
          *
@@ -8002,7 +8035,13 @@ export interface paths {
          *     `{order_key}:{user_id}:{role}:RESTORE:{recon_diff_id}`. A difference ≤ 0 posts nothing and
          *     pays 0 for the role: a negative one is not taken back, and the difference is still
          *     handled (D10-469 ③, default filled in by the agent). A member banned again by a later
-         *     round is still paid (D10-469 ②, default filled in by the agent). The `status` of the
+         *     round is still paid (D10-469 ②, default filled in by the agent). The exception, which
+         *     takes precedence over D10-469 ②: for a member identified as under 18, a promotion role
+         *     (`share`, `direct` or `indirect`) is not paid: instead of an `active` event a `forfeited`
+         *     event with `forfeit_reason=minor` is appended, and the role counts 0; the role `self` is
+         *     paid as usual (D10-482). Whether a role is forfeited at all is decided by one reading:
+         *     start from `beneficiaries[].initial_status`, take the latest event by `event_seq`, and
+         *     only a latest `forfeited` counts (D10-481). The `status` of the
          *     difference becomes `adjusted`, `closed_at` and `updated_at` the server's current time,
          *     `handler_id` the caller, and `resolution` keeps its keys and adds `restore` (the amount
          *     paid for each role, the total, the operator and the time) and the trimmed `note` when
@@ -17001,7 +17040,23 @@ export interface components {
         AdminReconDiffCloseRequest: {
             /** @description Why the difference is closed without further handling; 1–200 characters after trimming, else 20001 with data.fields=[reason]. Stored as resolution.reason. */
             reason: string;
+            /** @description Optional structured conclusion, for type=settle_amount_mismatch (source R1) only; any other type or source → 20001 with data.fields=[outcome] from B2-09h on. Stored as resolution.outcome from B2-09h on; do not send it before then. */
+            outcome?: components["schemas"]["AdminReconDiffOutcome"];
         };
+        /**
+         * @description contracts/enums/admin.yaml admin_recon_diff_outcome: the structured conclusion of a
+         *     settle_amount_mismatch difference of source R1 (D10-447 ②, D10-506; BR-FUND-04 ④, 校验结果
+         *     table, 例 2), optional in the close request and stored as resolution.outcome (written from
+         *     B2-09h on). union = 以联盟为准: counts as matched in the monthly check, and the order goes
+         *     on to a supplement batch, only while the current base_fen and B_settle both equal the
+         *     difference's expected_fen and actual_fen; otherwise the amounts are compared as usual, a
+         *     mismatch opens a new settle_amount_mismatch difference with ref_id
+         *     {order_key}#AMT#{base_fen}:{b_settle_fen} and the order stays WAITING. ours =
+         *     以我方为准: does not count as matched. Sent for any other type or source → 20001 with
+         *     data.fields=[outcome] (from B2-09h on; see closeAdminReconDiff for the window before it).
+         * @enum {string}
+         */
+        AdminReconDiffOutcome: "union" | "ours";
         AdminReconDiffClose: {
             recon_diff: components["schemas"]["AdminReconDiffDetail"];
             /**
@@ -17069,7 +17124,7 @@ export interface components {
             recon_diff: components["schemas"]["AdminReconDiffDetail"];
             /**
              * Format: int64
-             * @description Total this call paid to the member over all roles; 0 when nothing was posted (D10-469 ③). Never `expected_fen` taken as is.
+             * @description Total this call paid to the member over all roles; 0 when nothing was posted (D10-469 ③, D10-482). Never `expected_fen` taken as is.
              */
             restored_fen: number;
         };
@@ -35830,7 +35885,8 @@ export interface operations {
             content: {
                 /**
                  * @example {
-                 *       "reason": "联盟结算明细已核对，差额由联盟侧调整"
+                 *       "reason": "联盟结算明细已核对，差额由联盟侧调整",
+                 *       "outcome": "union"
                  *     }
                  */
                 "application/json": components["schemas"]["AdminReconDiffCloseRequest"];
@@ -35852,7 +35908,7 @@ export interface operations {
                      *         "recon_diff": {
                      *           "recon_diff_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e01",
                      *           "source": "R1",
-                     *           "type": "union_mismatch",
+                     *           "type": "settle_amount_mismatch",
                      *           "period": "2026-09",
                      *           "ref_type": "order",
                      *           "ref_id": "taobao:5550001",
@@ -35865,7 +35921,8 @@ export interface operations {
                      *           "handler_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
                      *           "updated_at": "2026-10-20T16:30:00+08:00",
                      *           "resolution": {
-                     *             "reason": "联盟结算明细已核对，差额由联盟侧调整"
+                     *             "reason": "联盟结算明细已核对，差额由联盟侧调整",
+                     *             "outcome": "union"
                      *           }
                      *         },
                      *         "released_hold_count": 1

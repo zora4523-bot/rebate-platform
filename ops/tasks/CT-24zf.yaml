@@ -45,4 +45,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'pnpm contracts:check'
-status: todo
+status: done
+pr: 2037

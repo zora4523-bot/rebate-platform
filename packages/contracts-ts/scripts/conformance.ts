@@ -121,6 +121,7 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminPayRefundReason: 'pay_refund_reason',
   AdminPayQueryAttemptKind: 'pay_query_attempt_kind',
   AdminReconDiffStatus: 'recon_diff_status',
+  AdminReconDiffOutcome: 'admin_recon_diff_outcome',
   // CT-24r: admin appeal console (04 §6.6 appeals, BR-ID-36). AdminBlockedRequestType stays
   // unregistered on purpose: CT-02d keeps blocked_request_type out of both tables; the
   // admin-appeals test checks it against the enum instead.
