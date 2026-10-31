@@ -42,6 +42,7 @@ import { ReasonModal } from './ReasonModal.tsx';
 import { plannedButtonProps, usePlanned } from '../../components/planned/index.ts';
 import { LevelChangeDialog, UserRelationsCard } from './relations.ts';
 import { RiskTag } from './RiskTag.tsx';
+import { UserTabs } from './tabs/UserTabs.tsx';
 
 const t = usersTexts.detail;
 const STEP_UP_URL = '/admin/v1/auth/step-up';
@@ -255,18 +256,25 @@ export function UserDetailView({
       </Card>
     );
   } else {
+    // 「概览」 is the existing detail; the read-only list tabs follow by permission (F1-07jb).
     body = (
-      <DetailBody
-        user={user}
-        phone={phone}
-        canReveal={canReveal}
+      <UserTabs
+        userId={user.user_id}
         access={access}
-        revealBusy={reveal.phase !== 'idle'}
-        revealError={revealError}
-        onReveal={startReveal}
-        onCloseError={() => setRevealError(undefined)}
-        onOpenUser={onOpenUser}
-        onUserChange={setUser}
+        overview={
+          <DetailBody
+            user={user}
+            phone={phone}
+            canReveal={canReveal}
+            access={access}
+            revealBusy={reveal.phase !== 'idle'}
+            revealError={revealError}
+            onReveal={startReveal}
+            onCloseError={() => setRevealError(undefined)}
+            onOpenUser={onOpenUser}
+            onUserChange={setUser}
+          />
+        }
       />
     );
   }
