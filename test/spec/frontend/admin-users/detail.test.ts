@@ -55,6 +55,50 @@ function detailValue(label: string): Element {
   return value!;
 }
 
+const UNWIRED_WORDS = [
+  '余额',
+  '流水',
+  '提现',
+  '订单',
+  '风控命中',
+  '客服代办',
+  '加入黑名单',
+  '冻结账号',
+  '封禁账号',
+  '重置授权',
+  '停用返利',
+  '导出',
+];
+const UNWIRED = unwired();
+// F1-07ja: tabs F1-07jb may add (design/specs/admin-user-detail.md); funds and risk tabs stay out.
+const CONTRACT_TABS = ['概览', '订单', '找回', '提现'];
+
+/** The unwired words as one pattern, less the `allowed` follow-up names. */
+function unwired(...allowed: string[]): RegExp {
+  return new RegExp(UNWIRED_WORDS.filter((word) => !allowed.includes(word)).join('|'));
+}
+
+// Only the tab titles themselves may say 订单 / 提现: each tab is a contracted one, and the tab
+// bar says no other unwired word.
+function expectTabs(): void {
+  for (const tab of within(mainElement()).queryAllByRole('tab', { hidden: true }))
+    expect(CONTRACT_TABS, `contracted tab ${tab.textContent}`).toContain(tab.textContent?.trim());
+  for (const bar of Array.from(mainElement().querySelectorAll('[role="tablist"]')))
+    expect(bar.textContent).not.toMatch(unwired('订单', '提现'));
+}
+
+/** Text of the main area without its tab bars and the given parts (read from a copy). */
+function textOutside(...parts: Element[]): string {
+  const nodes = Array.from(mainElement().querySelectorAll('*'));
+  const skip = [...Array.from(mainElement().querySelectorAll('[role="tablist"]')), ...parts].map(
+    (node) => nodes.indexOf(node),
+  );
+  const copy = mainElement().cloneNode(true) as HTMLElement;
+  const copies = Array.from(copy.querySelectorAll('*'));
+  for (const index of skip) copies[index]?.remove();
+  return copy.textContent ?? '';
+}
+
 it(
   '[AC-F1-07i-DETAIL#1] 基础信息与联盟授权来自契约，时间为北京时间且不出现未接入功能',
   async () => {
@@ -84,12 +128,34 @@ it(
     expect(table!.textContent).toMatch(/淘宝|taobao/);
     expect(table!.textContent).toMatch(/active|有效|已授权|已绑定|正常/);
     expect(table!.textContent).toContain('2026-10-13 01:10');
-    expect(within(table!).queryAllByRole('button')).toEqual([]);
-    expect(mainElement().textContent).not.toMatch(
-      /余额|流水|提现|订单|风控命中|客服代办|加入黑名单|冻结账号|封禁账号|重置授权|停用返利|导出/,
-    );
+    // F1-07ja: a super admin may get the F1-07jc row actions inside the union table and the
+    // F1-07jb tab titles 订单 / 提现; everything else stays out of the page.
+    expectTabs();
+    for (const action of within(table!).queryAllByRole('button'))
+      expect(action.textContent?.replace(/\s+/g, '') ?? '').toMatch(/^(?:重置授权|停用返利|恢复)/);
+    expect(table!.textContent).not.toMatch(unwired('重置授权', '停用返利'));
+    expect(textOutside(table!)).not.toMatch(UNWIRED);
     expect(server.requests('GET', DETAIL)).toHaveLength(1);
     expect(server.requests('POST')).toEqual([]);
+    // An account with every point this read-only page uses but none of the follow-up write points
+    // keeps the whole original check: no button in the union table, no unwired word outside tabs.
+    cleanup();
+    const readOnly = createServer();
+    await mount(readOnly, {
+      isSuper: false,
+      permissions: ['user.list', 'user.lookup', 'pii.reveal_phone', 'user.level', 'user.inviter'],
+    });
+    await openDetail();
+    await detailLoaded();
+    const bindings = within(mainElement())
+      .getByRole('columnheader', { name: '平台' })
+      .closest('table');
+    expect(bindings, '联盟授权表').not.toBeNull();
+    expect(within(bindings!).queryAllByRole('button')).toEqual([]);
+    expectTabs();
+    expect(textOutside()).not.toMatch(UNWIRED);
+    expect(readOnly.requests('GET', DETAIL)).toHaveLength(1);
+    expect(readOnly.requests('POST')).toEqual([]);
   },
   FLOW_TIMEOUT,
 );

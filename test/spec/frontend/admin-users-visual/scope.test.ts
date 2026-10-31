@@ -20,9 +20,18 @@ afterEach(() => {
 });
 
 // 上级与直推 / 调等级 / 改上级 / 查看直推名单 are contract-backed since CT-24e (F1-07g) and left out.
-function expectContractScope(): void {
+// F1-07ja: the detail may get the contracted read-only tabs of F1-07jb (orders / claims /
+// withdrawals beside the overview, design/specs/admin-user-detail.md); funds and risk tabs stay out.
+// The list keeps no tabs. `granted` names only the follow-up entries a super admin may get in this
+// view (F1-07jc 重置授权 / 停用返利, F1-07jd 冻结 / 封禁 on the detail; F1-07je 导出 / 导出记录 on the
+// list); every other name stays forbidden.
+const CONTRACT_TABS = ['概览', '订单', '找回', '提现'];
+
+function expectContractScope(view: 'list' | 'detail', granted: readonly string[] = []): void {
   const main = within(mainElement());
-  expect(main.queryAllByRole('tab')).toEqual([]);
+  if (view === 'list') expect(main.queryAllByRole('tab', { hidden: true })).toEqual([]);
+  for (const tab of main.queryAllByRole('tab', { hidden: true }))
+    expect(CONTRACT_TABS, `contracted tab ${tab.textContent}`).toContain(tab.textContent?.trim());
   for (const name of [
     '余额与流水',
     '风控命中',
@@ -48,6 +57,7 @@ function expectContractScope(): void {
     '重置授权',
     '停用返利',
   ]) {
+    if (granted.includes(name)) continue;
     expect(main.queryByRole('button', { name }), `no action ${name}`).toBeNull();
     expect(main.queryByRole('link', { name }), `no link ${name}`).toBeNull();
   }
@@ -58,7 +68,7 @@ it(
   async () => {
     const { server } = await mount();
     await loaded();
-    expectContractScope();
+    expectContractScope('list', ['导出', '导出记录']);
     for (const name of ['邀请码', '淘宝授权', '可用余额']) {
       expect(within(mainElement()).queryByRole('columnheader', { name })).toBeNull();
       expect(within(mainElement()).queryByLabelText(name, { exact: true })).toBeNull();
@@ -68,7 +78,7 @@ it(
     expect(card('用户查询列表').textContent).toContain(UID);
     await openDetail();
     await detailLoaded();
-    expectContractScope();
+    expectContractScope('detail', ['冻结', '封禁', '重置授权', '停用返利']);
     expect(within(detailHeader()).queryByText(UID, { exact: true })).not.toBeNull();
     expect(server.requests('POST')).toEqual([]);
   },
@@ -82,7 +92,8 @@ it(
     await mount(server, { isSuper: false, permissions: ['user.lookup'] });
     await lookup(UID);
     await detailLoaded();
-    expectContractScope();
+    // user.lookup grants none of the follow-up write points: every action stays forbidden.
+    expectContractScope('detail');
     expect(
       within(mainElement()).queryByRole('button', { name: /^查看(?:完整手机号)?$/ }),
     ).toBeNull();

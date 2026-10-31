@@ -90,7 +90,12 @@ it('[AC-F1-07j-DETAIL#3] 联盟授权表具名、状态含 Tag 和原始编码�
     cooldown_until: '2026-11-15T04:00:00Z',
   });
   server.once('GET', DETAIL, () => ok(user));
-  await mount(server);
+  // F1-07ja: an account with every point this read-only page uses but no union.binding_reset /
+  // union.binding_disable (F1-07jc row actions): the table keeps no action column or button.
+  await mount(server, {
+    isSuper: false,
+    permissions: ['user.list', 'user.lookup', 'pii.reveal_phone', 'user.level', 'user.inviter'],
+  });
   await openDetail();
   await detailLoaded();
   const table = required(
