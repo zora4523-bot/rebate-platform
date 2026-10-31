@@ -1,0 +1,89 @@
+{
+  "task": "B1-05u",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "a53d6a181e30981b7699dafc711cafc7f9f89c31",
+  "red_tests": [
+    "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts > [BR-PRICE-11] pool_items.commission_rate_bp 是 integer，可空，没有默认值",
+    "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts > [BR-PRICE-11] commission_rate_bp 为负被拒：插入和更新都违反 CHECK，不留下也不改动行",
+    "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts > [BR-PRICE-11] commission_rate_bp 取 0 和正值都能写入，原样读回，没有上限",
+    "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts > [BR-PRICE-11] 不写 commission_rate_bp 的插入成功且该列为 NULL，显式写 NULL 同样成功",
+    "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts > [BR-PRICE-11] 空值行下一次刷新能补上 commission_rate_bp：0 和正值都能从 NULL 更新进去",
+    "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts > [BR-PRICE-11] 只加这一列：已有列的名字、类型、可空性和默认值都不变，没有多出别的列",
+    "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts > [BR-PRICE-11] 主键仍是 (app_id, pool_id, product_key)：只有佣金率不同的同键插入失败，原行不变"
+  ],
+  "risk_note": "RV2 by path. Migration adds the nullable app.pool_items.commission_rate_bp (integer, at least 0 when set, no default, no backfill), read and written by B1-05r: the card quote needs the commission rate and a union failure must still be able to read the pool (02 §14). Existing rows stay NULL until the next refresh and are not sent. Frozen product-pool-schema/kit.ts gains the column in ITEM_SHAPE only, changed by a fresh independent Claude, and it is in test_paths. No money moves. Codex was unavailable until 11-02, so tests and reviews ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "a53d6a181e30981b7699dafc711cafc7f9f89c31",
+      "tree": "d7798a931e11ca531d8470b89edb22a6b2fa9b9a",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-10-31T22:43:45Z",
+      "finished_at": "2026-10-31T22:43:58Z",
+      "gate": {
+        "commit": "b0cfcedf3865a0e32538ab4dc5129fc2fa72ed1e",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts > [BR-PRICE-11] pool_items.commission_rate_bp 是 integer，可空，没有默认值",
+        "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts > [BR-PRICE-11] commission_rate_bp 为负被拒：插入和更新都违反 CHECK，不留下也不改动行",
+        "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts > [BR-PRICE-11] commission_rate_bp 取 0 和正值都能写入，原样读回，没有上限",
+        "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts > [BR-PRICE-11] 不写 commission_rate_bp 的插入成功且该列为 NULL，显式写 NULL 同样成功",
+        "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts > [BR-PRICE-11] 空值行下一次刷新能补上 commission_rate_bp：0 和正值都能从 NULL 更新进去",
+        "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts > [BR-PRICE-11] 只加这一列：已有列的名字、类型、可空性和默认值都不变，没有多出别的列",
+        "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts > [BR-PRICE-11] 主键仍是 (app_id, pool_id, product_key)：只有佣金率不同的同键插入失败，原行不变"
+      ],
+      "expected": [
+        "test/spec/catalog/product-pool-commission-schema/commission-column.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "9b3ebd8edf6789e174cc373f8e4262e11ece2c01702ef1c83a5aae0ba02a4079"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass; one S2 (the frozen kit.ts sat outside test_paths), closed by the ledger change."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude, red 7 / 7 in 1 file; round 1 pass, no findings. The review ran before the one-line frozen kit.ts change, which is reported to the orchestrator for the final head."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "4ff83783d17743ea9efacd016912563b35ae5dab",
+    "test/spec": "8a11390b668fb7bf9a78941e7a3053cc4985dd6a",
+    "specs": "06bfb4d5a9d52d5099b36fb48f5831b176cc40ec"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "4ff83783d17743ea9efacd016912563b35ae5dab"
+  }
+}
