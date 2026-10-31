@@ -124,3 +124,143 @@ it('[AC-B1-04l-UNIT#6] item_id：非淘宝商品、缺失、空白、含逗号 �
     expect(code(() => detailItemId(ref))).toBe('invalid_dto');
   }
 });
+
+/** 合法基线：折扣价 10.00、商品券 1.00、预估到手价 9.00（券有效期覆盖 now）。 */
+function couponPrice(overrides: { zk?: unknown; final?: unknown; fee?: unknown } = {}) {
+  const nowMs = now.getTime();
+  return {
+    zk_final_price: 'zk' in overrides ? overrides.zk : '10.00',
+    final_promotion_price: 'final' in overrides ? overrides.final : '9.00',
+    final_promotion_path_list: {
+      final_promotion_path_map_data: [
+        {
+          promotion_title: '商品券',
+          promotion_fee: 'fee' in overrides ? overrides.fee : '1.00',
+          promotion_id: 'u1',
+          promotion_start_time: String(nowMs - 86_400_000),
+          promotion_end_time: String(nowMs + 86_400_000),
+        },
+      ],
+    },
+  };
+}
+
+it('[AC-B1-04zj-UNIT#1] 合法元串基线：折扣价 10.00、券 1.00 → 1000 / 100 / 900，价格正常', () => {
+  const detail = mapTaobaoDetail(
+    row({ price_promotion_info: couponPrice() }),
+    'unit-item',
+    now,
+    undefined,
+  );
+  expect(detail).toMatchObject({ price_fen: 1000n, coupon_fen: 100n, final_price_fen: 900n });
+  expect(detail.price_status).not.toBe('anomaly');
+  expect(detail).not.toHaveProperty('price_anomaly_reason');
+});
+
+it.each([
+  ['zk', ''],
+  ['zk', '-1'],
+  ['zk', '1e2'],
+  ['zk', ' 12.3'],
+  ['final', ''],
+  ['final', '-1'],
+  ['final', '1e2'],
+  ['final', ' 12.3'],
+  ['fee', ''],
+  ['fee', '-1'],
+  ['fee', '1e2'],
+  ['fee', ' 12.3'],
+] as const)(
+  '[AC-B1-04zj-UNIT#2] %s 为 %j（空串 / 负数 / 指数 / 带空白）→ missing_field 异常，不出 0 或截断值',
+  (key, value) => {
+    const detail = mapTaobaoDetail(
+      row({ price_promotion_info: couponPrice({ [key]: value }) }),
+      'unit-item',
+      now,
+      undefined,
+    );
+    expect(detail).toMatchObject({
+      price_fen: 0n,
+      coupon_fen: 0n,
+      final_price_fen: 0n,
+      price_status: 'anomaly',
+      price_anomaly_reason: 'missing_field',
+    });
+    expect(detail).not.toHaveProperty('coupon_ids');
+  },
+);
+
+it('[AC-B1-04zj-UNIT#3] 超过两位小数（含末尾 0）→ missing_field 异常，不截断', () => {
+  for (const overrides of [{ zk: '10.009' }, { final: '9.000' }, { fee: '1.005' }]) {
+    expect(
+      mapTaobaoDetail(
+        row({ price_promotion_info: couponPrice(overrides) }),
+        'unit-item',
+        now,
+        undefined,
+      ),
+    ).toMatchObject({ price_status: 'anomaly', price_anomaly_reason: 'missing_field' });
+  }
+});
+
+it.each([
+  [
+    'zk=99.9 → 9990n',
+    { zk: 99.9, final: '98.90' },
+    { price_fen: 9990n, coupon_fen: 100n, final_price_fen: 9890n },
+  ],
+  [
+    'final=12.3 → 1230n',
+    { zk: '13.30', final: 12.3 },
+    { price_fen: 1330n, coupon_fen: 100n, final_price_fen: 1230n },
+  ],
+  [
+    'fee=0 → 0n',
+    { zk: '10.00', final: '10.00', fee: 0 },
+    { price_fen: 1000n, coupon_fen: 0n, final_price_fen: 1000n },
+  ],
+] as const)(
+  '[AC-B1-04zj-UNIT#4] 有限 number 金额先转最短十进制串再解析：%s',
+  (_label, overrides, expected) => {
+    const detail = mapTaobaoDetail(
+      row({ price_promotion_info: couponPrice(overrides) }),
+      'unit-item',
+      now,
+      undefined,
+    );
+    expect(detail).toMatchObject(expected);
+    expect(detail.price_status).not.toBe('anomaly');
+  },
+);
+
+it.each([
+  ['zk', 99.999],
+  ['final', 99.999],
+  ['fee', 99.999],
+  ['zk', 1e21],
+  ['final', 1e21],
+  ['fee', 1e21],
+  ['zk', 1e-7],
+  ['zk', -1],
+  ['zk', Number.NaN],
+  ['final', Number.POSITIVE_INFINITY],
+  ['fee', Number.NEGATIVE_INFINITY],
+] as const)(
+  '[AC-B1-04zj-UNIT#5] number 金额 %s=%s（超两位小数 / 指数写法 / 负数 / 非有限数）→ missing_field 异常',
+  (key, value) => {
+    expect(
+      mapTaobaoDetail(
+        row({ price_promotion_info: couponPrice({ [key]: value }) }),
+        'unit-item',
+        now,
+        undefined,
+      ),
+    ).toMatchObject({
+      price_fen: 0n,
+      coupon_fen: 0n,
+      final_price_fen: 0n,
+      price_status: 'anomaly',
+      price_anomaly_reason: 'missing_field',
+    });
+  },
+);

@@ -1,0 +1,95 @@
+{
+  "task": "B1-04zj",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "9073cc0e9f6c30c54b7a4012592a7411f3fcb003",
+  "red_tests": [
+    "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#1][BR-PRICE-01] zk_final_price 超过两位小数（19.999）视为缺失 → missing_field 异常，不出截断价",
+    "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#1][BR-PRICE-01] zk_final_price 超过两位小数（59.900）视为缺失 → missing_field 异常，不出截断价",
+    "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#1][BR-PRICE-01] zk_final_price 超过两位小数（7.005）视为缺失 → missing_field 异常，不出截断价",
+    "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#2][BR-PRICE-01] zk_final_price 超过两位小数且没有优惠明细（12.3450）→ missing_field 异常",
+    "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#3][BR-PRICE-01] final_promotion_price 超过两位小数（7.005）视为缺失 → missing_field 异常，不出截断价",
+    "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#3][BR-PRICE-01] final_promotion_price 超过两位小数（16.669）视为缺失 → missing_field 异常，不出截断价",
+    "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#3][BR-PRICE-01] final_promotion_price 超过两位小数（40.500）视为缺失 → missing_field 异常，不出截断价",
+    "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#4][BR-PRICE-01] 券项 promotion_fee 超过两位小数（40.500）视为缺失 → missing_field 异常，不出截断价",
+    "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#4][BR-PRICE-01] 券项 promotion_fee 超过两位小数（0.001）视为缺失 → missing_field 异常，不出截断价",
+    "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#4][BR-PRICE-01] 券项 promotion_fee 超过两位小数（3.339）视为缺失 → missing_field 异常，不出截断价",
+    "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#5][BR-PRICE-01] 会员项 promotion_fee 超过两位小数（5.005）也视为缺失，不按截断值加回",
+    "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#6][BR-PRICE-01] 任一价格字段在合法两位小数后再追加任意数字（含 0）→ 一律 missing_field，不截断"
+  ],
+  "risk_note": "RV2 (union Taobao detail prices: goods.ts converts yuan strings with @couli/domain parseYuanToFen instead of @couli/money yuanStrToFen, so more than two decimals / negatives / blanks become a missing field for mapTaobaoPrice rather than a truncated value; JSON numbers go through their shortest decimal string per BR-PRICE-01 「金额解析」 (D10-515, D10-525)). Independent Claude (approvals #36) wrote test/spec/union/taobao-detail-yuan/** (1 attempt, 12 rule tests, red against the truncating implementation). Implementation model: Claude Opus 5.5 (1 round, with the D10-525 number-path correction). verify:fast on the AWS runner exit 0; frozen taobao-goods suites green.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "9073cc0e9f6c30c54b7a4012592a7411f3fcb003",
+      "tree": "ae3d2f5d21f0985ec51e1a680e3fab1258788518",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T22:09:54Z",
+      "finished_at": "2026-10-31T22:10:00Z",
+      "red_tests": [
+        "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#1][BR-PRICE-01] zk_final_price 超过两位小数（19.999）视为缺失 → missing_field 异常，不出截断价",
+        "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#1][BR-PRICE-01] zk_final_price 超过两位小数（59.900）视为缺失 → missing_field 异常，不出截断价",
+        "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#1][BR-PRICE-01] zk_final_price 超过两位小数（7.005）视为缺失 → missing_field 异常，不出截断价",
+        "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#2][BR-PRICE-01] zk_final_price 超过两位小数且没有优惠明细（12.3450）→ missing_field 异常",
+        "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#3][BR-PRICE-01] final_promotion_price 超过两位小数（7.005）视为缺失 → missing_field 异常，不出截断价",
+        "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#3][BR-PRICE-01] final_promotion_price 超过两位小数（16.669）视为缺失 → missing_field 异常，不出截断价",
+        "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#3][BR-PRICE-01] final_promotion_price 超过两位小数（40.500）视为缺失 → missing_field 异常，不出截断价",
+        "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#4][BR-PRICE-01] 券项 promotion_fee 超过两位小数（40.500）视为缺失 → missing_field 异常，不出截断价",
+        "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#4][BR-PRICE-01] 券项 promotion_fee 超过两位小数（0.001）视为缺失 → missing_field 异常，不出截断价",
+        "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#4][BR-PRICE-01] 券项 promotion_fee 超过两位小数（3.339）视为缺失 → missing_field 异常，不出截断价",
+        "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#5][BR-PRICE-01] 会员项 promotion_fee 超过两位小数（5.005）也视为缺失，不按截断值加回",
+        "test/spec/union/taobao-detail-yuan/detail-yuan.test.ts > [AC-B1-04zj#6][BR-PRICE-01] 任一价格字段在合法两位小数后再追加任意数字（含 0）→ 一律 missing_field，不截断"
+      ],
+      "expected": ["test/spec/union/taobao-detail-yuan/detail-yuan.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "48ff9e2c24a3387a0b4d883e39e8cbf9f44647a634be871ca14851be9824af7c"
+        }
+      ],
+      "gate": {
+        "commit": "3b4bf079477b732fe47c3ec4d953ae7e24762716",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "money r1 pass, one S2 (JSON numbers beyond double precision are rounded by JSON.parse before String(); recordings are strings, unreachable) (couli-runs/B1-04zj/review-m1.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "r1 pass, two S2 recorded in UNION-lane/followups.md (blank / negative detail amounts covered by unit tests; property runs not via propRuns / propSeed)"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "4ff83783d17743ea9efacd016912563b35ae5dab",
+    "test/spec": "dd2c3c300aa43bb1d300c9fa47efe6832a6748ef",
+    "specs": "06bfb4d5a9d52d5099b36fb48f5831b176cc40ec"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "4ff83783d17743ea9efacd016912563b35ae5dab"
+  }
+}
