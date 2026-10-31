@@ -86,7 +86,12 @@ export interface StoredForfeitedEvent {
   readonly reason: string | null;
 }
 
-/** Every forfeited event of the order, oldest event_seq first (not created_at). */
+/**
+ * The order's forfeited events still in force, oldest event_seq first (not created_at). An active
+ * event (only an appeal restore appends one) ends every earlier forfeiture of the same (user_id,
+ * role) on the order (BR-FUND-22 ③「补发后该受益人不再按被剥夺处理」, BR-CALC-09 申诉恢复例外); a forfeited
+ * event after it lists the share again, with its own reason. Order is by event_seq only.
+ */
 export async function selectForfeitedEvents(
   trx: Transaction<DB>,
   appId: string,
@@ -94,12 +99,27 @@ export async function selectForfeitedEvents(
 ): Promise<StoredForfeitedEvent[]> {
   const rows = await trx
     .withSchema('app')
-    .selectFrom('commission_split_beneficiary_events')
-    .select(['event_seq', 'user_id', 'role', 'reason'])
-    .where('app_id', '=', appId)
-    .where('order_id', '=', orderId)
-    .where('status', '=', 'forfeited')
-    .orderBy('event_seq')
+    .selectFrom('commission_split_beneficiary_events as e')
+    .select(['e.event_seq', 'e.user_id', 'e.role', 'e.reason'])
+    .where('e.app_id', '=', appId)
+    .where('e.order_id', '=', orderId)
+    .where('e.status', '=', 'forfeited')
+    .where((eb) =>
+      eb.not(
+        eb.exists(
+          eb
+            .selectFrom('commission_split_beneficiary_events as restored')
+            .select('restored.event_seq')
+            .where('restored.app_id', '=', appId)
+            .where('restored.order_id', '=', orderId)
+            .whereRef('restored.user_id', '=', 'e.user_id')
+            .whereRef('restored.role', '=', 'e.role')
+            .where('restored.status', '=', 'active')
+            .whereRef('restored.event_seq', '>', 'e.event_seq'),
+        ),
+      ),
+    )
+    .orderBy('e.event_seq')
     .execute();
   return rows.map((r) => ({
     eventSeq: r.event_seq,
