@@ -10,7 +10,11 @@ deps: [CT-02zb, F1-02zzr]
 paths:
   - 'apps/api/src/modules/content/**'
   - 'contracts/openapi.yaml'
-  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
 test_paths:
   - 'test/spec/content/agreements-sdk-collect/**'
 impl: claude
