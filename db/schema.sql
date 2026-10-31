@@ -720,6 +720,126 @@ $_$;
 
 
 --
+-- Name: drop_expired_union_raw_payload_partitions(timestamp with time zone, integer); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.drop_expired_union_raw_payload_partitions(p_now timestamp with time zone, p_days integer) RETURNS text[]
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    SET lock_timeout TO '5s'
+    SET "DateStyle" TO 'ISO, YMD'
+    SET "TimeZone" TO 'UTC'
+    AS $_$
+DECLARE
+  v_parent     oid;
+  v_cutoff     timestamptz;
+  v_partition  record;
+  v_bounds     text[];
+  v_candidates text[] := ARRAY[]::text[];
+  v_name       text;
+  v_dropped    text[] := ARRAY[]::text[];
+BEGIN
+  IF p_now IS NULL OR p_days IS NULL THEN
+    RAISE EXCEPTION 'drop_expired_union_raw_payload_partitions: p_now and p_days are required'
+      USING ERRCODE = 'null_value_not_allowed';
+  END IF;
+
+  IF NOT isfinite(p_now) THEN
+    RAISE EXCEPTION 'drop_expired_union_raw_payload_partitions: p_now must be finite'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- The floor is BR-ID-30 ⑦ itself: the second gate behind the configuration.
+  IF p_days < 180 OR p_days > 36500 THEN
+    RAISE EXCEPTION 'drop_expired_union_raw_payload_partitions: p_days must be between 180 and 36500'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- Serialise deletion calls before listing so each drop is reported once.
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('app.drop_expired_union_raw_payload_partitions', 0)
+  );
+
+  SELECT c.oid INTO v_parent
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'app' AND c.relname = 'union_raw_payloads' AND c.relkind = 'p';
+  IF v_parent IS NULL THEN
+    RAISE EXCEPTION 'drop_expired_union_raw_payload_partitions: app.union_raw_payloads is not a partitioned table'
+      USING ERRCODE = 'undefined_table';
+  END IF;
+
+  -- Fixed UTC+08:00, never the session TimeZone. Subtract calendar days before converting
+  -- local midnight back to an instant (BR-ID-30 正文).
+  v_cutoff := (((p_now AT TIME ZONE INTERVAL '8 hours')::date - p_days)::timestamp
+    AT TIME ZONE INTERVAL '8 hours');
+
+  FOR v_partition IN
+    SELECT c.relname::text AS name, pg_get_expr(c.relpartbound, c.oid) AS bound
+    FROM pg_inherits i
+    JOIN pg_class c ON c.oid = i.inhrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE i.inhparent = v_parent AND n.nspname = 'app' AND c.relkind = 'r'
+      AND c.relname::text ~ '^union_raw_payloads_p[0-9]{4}(0[1-9]|1[0-2])$'
+    ORDER BY c.relname COLLATE "C"
+  LOOP
+    -- Use actual catalogue bounds, never infer age from a partition's name.
+    -- DEFAULT, unbounded ranges and unfamiliar bound shapes are left untouched.
+    v_bounds := regexp_match(v_partition.bound,
+      $bound$^FOR VALUES FROM \('([^']+)'\) TO \('([^']+)'\)$bound$);
+    IF v_bounds IS NOT NULL AND isfinite(v_bounds[2]::timestamptz)
+      AND v_bounds[2]::timestamptz <= v_cutoff THEN
+      v_candidates := array_append(v_candidates, v_partition.name);
+    END IF;
+  END LOOP;
+
+  -- Empty runs request no table lock: the hourly runs after 04:00 must not queue ahead of writers.
+  IF cardinality(v_candidates) = 0 THEN
+    RETURN v_dropped;
+  END IF;
+
+  -- Take ALL candidate creation locks before the parent lock. Otherwise an ensure
+  -- caller could hold a later candidate lock while waiting for our parent.
+  FOREACH v_name IN ARRAY v_candidates LOOP
+    PERFORM pg_advisory_xact_lock(hashtextextended('app.ensure_month_partition:' || v_name, 0));
+  END LOOP;
+
+  -- Parent before children follows writer lock order; ONLY avoids the DEFAULT partition and
+  -- the partitions that stay. Every wait, including advisory locks, has a 5s bound.
+  -- Do not catch 55P03: the whole statement must roll back, including earlier drops.
+  LOCK TABLE ONLY app.union_raw_payloads IN ACCESS EXCLUSIVE MODE;
+
+  -- Membership and actual bounds are checked again after the wait under lock.
+  FOR v_partition IN
+    SELECT c.relname::text AS name, pg_get_expr(c.relpartbound, c.oid) AS bound
+    FROM pg_inherits i
+    JOIN pg_class c ON c.oid = i.inhrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE i.inhparent = v_parent AND n.nspname = 'app' AND c.relkind = 'r'
+      AND c.relname::text = ANY (v_candidates)
+    ORDER BY c.relname COLLATE "C"
+  LOOP
+    v_bounds := regexp_match(v_partition.bound,
+      $bound$^FOR VALUES FROM \('([^']+)'\) TO \('([^']+)'\)$bound$);
+    IF v_bounds IS NULL THEN
+      CONTINUE;
+    END IF;
+    IF NOT isfinite(v_bounds[2]::timestamptz) OR v_bounds[2]::timestamptz > v_cutoff THEN
+      CONTINUE;
+    END IF;
+
+    -- fetched_at is the partition key: an upper bound <= cutoff guarantees that
+    -- every row is strictly older than cutoff, without scanning or deleting rows.
+    EXECUTE format('DROP TABLE app.%I', v_partition.name);
+    v_dropped := array_append(v_dropped, v_partition.name);
+  END LOOP;
+
+  RETURN v_dropped;
+END
+$_$;
+
+
+--
 -- Name: ensure_day_partition(text, date); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -11327,6 +11447,14 @@ GRANT ALL ON FUNCTION app.drop_expired_day_partitions(p_table text, p_now timest
 
 REVOKE ALL ON FUNCTION app.drop_expired_month_partitions(p_table text, p_now timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION app.drop_expired_month_partitions(p_table text, p_now timestamp with time zone) TO couli_maint;
+
+
+--
+-- Name: FUNCTION drop_expired_union_raw_payload_partitions(p_now timestamp with time zone, p_days integer); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.drop_expired_union_raw_payload_partitions(p_now timestamp with time zone, p_days integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION app.drop_expired_union_raw_payload_partitions(p_now timestamp with time zone, p_days integer) TO couli_maint;
 
 
 --

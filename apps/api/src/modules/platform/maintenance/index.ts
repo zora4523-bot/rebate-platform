@@ -388,6 +388,19 @@
 //      RETENTION_MAX_BATCHES; a failing table does not stop the others.
 //    - Report and `partition_maintenance_done` unchanged. Log lines as in the kit header: nothing
 //      when nothing was deleted and nothing failed.
+//
+// L. union_raw_payloads retention (task B1-15zc). Basis: BR-ID-30 正文, ⑦; orchestrator rulings
+//    D10-451, D10-454, D10-458. The contract is the header of
+//    test/spec/platform/retention-partitions/kit.ts; the SQL function is in
+//    `0105_union-raw-payloads-retention.sql`. DROPPABLE_TABLES stays exactly ['event_log'].
+//    Module — only when `dayPartitions` is true, inside section K's one configuration read, so the
+//    switch, the days and a failing read work as there; first in that cleanup, because it is one
+//    statement while the row batches below it can run long:
+//    - `SELECT app.drop_expired_union_raw_payload_partitions(<now>, <days>)` once per run. Days as in
+//      section K, floor 180. It drops partitions rather than rows, so its results follow C.4 and not
+//      section K: each name goes into `dropped` and `partition_dropped` { table, partition }; a
+//      failure logs `partition_drop_failed` { table, sqlstate }, failed += 1, no immediate retry, and
+//      the rest of the run goes on.
 import {
   MONTH_PARTITIONED_TABLES,
   MONTHS_AHEAD,
@@ -436,6 +449,12 @@ const RETENTION_TABLES: readonly { readonly table: string; readonly floorDays: n
   { table: 'notify_logs', floorDays: 190 },
   { table: 'sms_send_attempts', floorDays: 190 },
 ];
+
+/**
+ * Dropped by month partition through its own SQL function, not through DROPPABLE_TABLES (section
+ * L); floorDays is BR-ID-30 ⑦.
+ */
+const RAW_PAYLOADS_RETENTION = { table: 'union_raw_payloads', floorDays: 180 } as const;
 
 /** The configured retention of one table, or its floor when unusable (section K). */
 function retentionDays(value: unknown, floorDays: number): number {
@@ -648,8 +667,32 @@ export function createPartitionMaintenance(
     return true;
   }
 
-  /** Section K: the whole retention cleanup of one run; resolves the number of failures. */
-  async function purgeExpiredRows(now: Date): Promise<number> {
+  /** Section L: one call; appends the names to `dropped`; resolves false when it failed. */
+  async function dropExpiredRawPayloads(
+    now: Date,
+    days: number,
+    dropped: string[],
+  ): Promise<boolean> {
+    const { table } = RAW_PAYLOADS_RETENTION;
+    try {
+      const result = await sql<{ partitions: string[] }>`
+        SELECT app.drop_expired_union_raw_payload_partitions(
+          ${now}::timestamptz, ${days}::integer
+        ) AS partitions
+      `.execute(db);
+      for (const partition of result.rows[0]!.partitions) {
+        dropped.push(partition);
+        logger.info({ table, partition }, 'partition_dropped');
+      }
+      return true;
+    } catch (error) {
+      logger.error({ table, sqlstate: sqlstate(error) }, 'partition_drop_failed');
+      return false;
+    }
+  }
+
+  /** Sections K and L: the retention cleanup of one run; resolves the number of failures. */
+  async function retentionCleanup(now: Date, dropped: string[]): Promise<number> {
     let settings: ReadonlyMap<string, unknown>;
     try {
       const result = await db.transaction().execute(async (trx) => {
@@ -667,6 +710,11 @@ export function createPartitionMaintenance(
     if (settings.get(RETENTION_ENABLED_KEY) === false) return 0;
 
     let failures = 0;
+    const rawDays = retentionDays(
+      settings.get(`retention.${RAW_PAYLOADS_RETENTION.table}_days`),
+      RAW_PAYLOADS_RETENTION.floorDays,
+    );
+    if (!(await dropExpiredRawPayloads(now, rawDays, dropped))) failures += 1;
     for (const { table, floorDays } of RETENTION_TABLES) {
       const days = retentionDays(settings.get(`retention.${table}_days`), floorDays);
       const purged = await purgeTable(table, () =>
@@ -772,7 +820,7 @@ export function createPartitionMaintenance(
           }
         }
         if (!(await deleteExpiredOpenAttempts(now))) failed += 1;
-        failed += await purgeExpiredRows(now);
+        failed += await retentionCleanup(now, dropped);
       }
     }
 
