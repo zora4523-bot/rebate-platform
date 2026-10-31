@@ -476,10 +476,13 @@ async function searchPages(
   const nowMs = clock.now().getTime();
   const requester = requesterOf(viewer);
 
-  // A continuation needs a live session of the same requester and the same query; anything else
-  // (expired, cleared, foreign, changed filters or sort) starts a new session from page 1.
+  // A continuation needs a live session of the same requester and the same query. An expired,
+  // cleared or foreign session starts a new one at the cursor's page, its issued set empty
+  // (BR-PROD-07 细则「会话异常」, D10-485); changed filters or sort start from page 1 only while the
+  // session row still exists: an evicted row cannot be compared, so clients drop the cursor then.
   let sessionId: string | null = null;
   let session: SearchSession | null = null;
+  let startPage = 1;
   if (claims !== null) {
     let stored: SearchSession | null;
     try {
@@ -494,19 +497,20 @@ async function searchPages(
       );
       unavailable(platform, 'search session store unavailable', error);
     }
+    const querySame = stored === null || sameQuery(stored.query, normalized);
+    if (querySame) startPage = claims.page_no;
     if (
       stored !== null &&
+      querySame &&
       stored.appId === appId &&
       stored.requester === requester &&
-      nowMs - stored.touchedAtMs <= SEARCH_SESSION_TTL_SECONDS * 1000 &&
-      sameQuery(stored.query, normalized)
+      nowMs - stored.touchedAtMs <= SEARCH_SESSION_TTL_SECONDS * 1000
     ) {
       sessionId = claims.search_session_id;
       session = stored;
     }
   }
-  const firstPage = session === null;
-  const startPage = session === null ? 1 : claims!.page_no;
+  const firstPage = session === null && startPage === 1;
   if (sessionId === null) sessionId = options.newSessionId();
   const seenList = [...(session?.seen ?? [])];
   // Sessions written before seenPages existed count every key as issued by an earlier page.
