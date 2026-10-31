@@ -28,5 +28,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/catalog/section-items/**'
-status: todo
-pr: null
+status: done
+pr: 1959
