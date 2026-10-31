@@ -5,8 +5,9 @@ import {
   type AppConfig,
   type RootLogger,
 } from '../../platform/index.ts';
-import type { CallCtx, UnionEndpoint, UnionMode } from '../domain/types.ts';
-import { UNION_REGISTRY, UnionModule } from '../union.module.ts';
+import { UnionError, type CallCtx, type UnionEndpoint, type UnionMode } from '../domain/types.ts';
+import { UNION_REGISTRY, UnionModule, jdProductKeyMode } from '../union.module.ts';
+import { JdUnionAdapter } from './jd/jd-adapter.ts';
 import { PddUnionAdapter } from './pdd/pdd-adapter.ts';
 import { createUnionRegistry, type UnionRegistry } from './registry.ts';
 import type { UnionTransport } from './replay.ts';
@@ -187,3 +188,50 @@ it('[AC-B1-04k-UNIT#6] 模块工厂：prod 的 taobao/live 自身即拒绝（不
   expect(bare).toBeInstanceOf(TaobaoStartupError);
   expect(bare).toMatchObject({ code: 'kms_unavailable' });
 });
+
+function failingModeReader(warn: ReturnType<typeof vi.fn>, text: string) {
+  const configValue = vi.fn(async () => Promise.reject(new Error(text)));
+  return jdProductKeyMode({ reader: { configValue } }, { warn } as unknown as RootLogger);
+}
+
+it('[AC-B1-04ze-UNIT#1] product_key.jd.mode 读取失败时报 upstream_unavailable，不回落 item，错误与日志不带读取内容', async () => {
+  const warn = vi.fn();
+  const text = 'FAKE_CONFIG_STORE_TEXT';
+  const error = await refusal(() => failingModeReader(warn, text).read('fake-app'));
+  expect(error).toBeInstanceOf(UnionError);
+  expect(error).toMatchObject({ code: 'upstream_unavailable', platform: 'jd' });
+  expect((error as Error).cause).toBeUndefined();
+  expect((error as Error).message).not.toContain(text);
+  expect(warn).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(warn.mock.calls)).not.toContain(text);
+});
+
+it('[AC-B1-04ze-UNIT#2] 商品键模式读取失败时 listOrders 失败，不取凭据、不发请求', async () => {
+  const credentials = vi.fn(async () => ({ appKey: 'FAKE_KEY', appSecret: 'FAKE_SECRET' }));
+  const transport = vi.fn<UnionTransport>();
+  const adapter = new JdUnionAdapter({
+    credentials,
+    transport,
+    clock,
+    endpoint: endpoints('replay')[0]!,
+    productKeyMode: failingModeReader(vi.fn(), 'FAKE_CONFIG_STORE_TEXT'),
+  });
+  const win = { from: '2026-10-14T07:00:00.000Z', to: '2026-10-14T07:30:00.000Z' };
+  await expect(adapter.listOrders(win, {}, ctx)).rejects.toMatchObject({
+    code: 'upstream_unavailable',
+  });
+  expect(credentials).not.toHaveBeenCalled();
+  expect(transport).not.toHaveBeenCalled();
+});
+
+it.each(['sku', 5, { version: 1 }])(
+  '[AC-B1-04ze-UNIT#3] 配置端口的回答不是 { value, version } 形状（%j）时报 invalid_dto，不回落 item',
+  async (answer) => {
+    const reader = { configValue: vi.fn(async () => answer) };
+    const modes = jdProductKeyMode({ reader }, { warn: vi.fn() } as unknown as RootLogger);
+    await expect(modes.read('fake-app')).rejects.toMatchObject({
+      code: 'invalid_dto',
+      platform: 'jd',
+    });
+  },
+);

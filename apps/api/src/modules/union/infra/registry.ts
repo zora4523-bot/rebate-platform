@@ -15,8 +15,10 @@
 // B1-04e: `taobaoLive.orderSource` (大淘客 dependencies) becomes one DataokeClient over the registry
 // clock, handed to that adapter as `orderSource`; without it the adapter gets none.
 // B1-04d: `taobaoLive.convertSource` is handed to that adapter as is (default 'baichuan').
-// The real jd adapter replaces its entry in a later task.
-// TODO(规划/11 §4.5): jd 凭据读取 — blocked on 推广位 / siteId
+// B1-04ze: likewise only `jdLive` (credentials provider + transport) turns a jd endpoint with
+// mode=live into the real JdUnionAdapter of B1-04za, returned as is; without it jd live / replay
+// stay `adapter_unimplemented`; union.module.ts decides which environments may pass it.
+// `jdLive.productKeyMode` (BR-PROD-03) is handed to the adapter as is.
 // B1-22s: real jd / taobao adapters must not map UnionItemDetail image fields until tested; when
 // wired they go through normalizeItemImages (domain/item-images.ts).
 // TODO(规划/09 CAP-TB-02、CAP-JD-02、CAP-PDD-02): 商品素材图字段 — blocked on 联盟接口实测记录
@@ -35,6 +37,8 @@ import {
 } from './dataoke/dataoke-client.ts';
 import { DemoUnionAdapter, type DemoUnionRegistryOptions } from './demo/demo-adapter.ts';
 import { parseUnionEndpoints } from './endpoints.ts';
+import { JdUnionAdapter, type JdCredentials, type JdWarning } from './jd/jd-adapter.ts';
+import type { JdProductKeyMode } from './jd/orders.ts';
 import { PddUnionAdapter, type PddCredentials, type PddQueryIdentity } from './pdd/pdd-adapter.ts';
 import type { PddWarning } from './pdd/response.ts';
 import type { UnionTransport } from './replay.ts';
@@ -91,16 +95,27 @@ export interface TaobaoOrderSourceOptions {
   readonly warn?: (event: DataokeWarning) => void;
 }
 
+/** The real Jingdong adapter's injected dependencies (B1-04ze); used only for mode=live. */
+export interface JdLiveOptions {
+  /** Hands out the credentials already read at startup; never reads a file or the environment. */
+  readonly credentials: () => Promise<JdCredentials>;
+  readonly transport: UnionTransport;
+  readonly warn?: (event: JdWarning) => void;
+  /** BR-PROD-03: read with ctx.appId on every listOrders; without it the adapter uses item. */
+  readonly productKeyMode?: { read(appId: string): Promise<JdProductKeyMode> };
+}
+
 export interface UnionRegistryOptions extends DemoUnionRegistryOptions {
   readonly pddLive?: PddLiveOptions;
   readonly taobaoLive?: TaobaoLiveOptions;
+  readonly jdLive?: JdLiveOptions;
 }
 
 export interface UnionRegistration {
   readonly platform: RegisteredPlatform;
   /**
-   * True for a demo adapter and for the real pdd / taobao adapter assembled through `pddLive` /
-   * `taobaoLive`.
+   * True for a demo adapter and for the real pdd / taobao / jd adapter assembled through `pddLive` /
+   * `taobaoLive` / `jdLive`.
    */
   readonly implemented: boolean;
 }
@@ -139,12 +154,14 @@ function unimplementedAdapter(platform: RegisteredPlatform): UnionAdapter {
  * Exactly jd, pdd and taobao registered. Without options every call rejects
  * `adapter_unimplemented`; with options, mode=demo endpoints get a demo adapter, and a pdd
  * endpoint with mode=live gets the real PddUnionAdapter when `pddLive` is given, a taobao endpoint
- * with mode=live the real TaobaoUnionAdapter when `taobaoLive` is given.
+ * with mode=live the real TaobaoUnionAdapter when `taobaoLive` is given, a jd endpoint with
+ * mode=live the real JdUnionAdapter when `jdLive` is given.
  */
 export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegistry {
   const demoPlatforms = new Set<RegisteredPlatform>();
   let pddLive: UnionAdapter | undefined;
   let taobaoLive: UnionAdapter | undefined;
+  let jdLive: UnionAdapter | undefined;
   if (options !== undefined) {
     // Same validation as startup: incomplete sets, and demo / replay in prod, are refused.
     for (const endpoint of parseUnionEndpoints(options.endpoints, options.environment)) {
@@ -190,11 +207,23 @@ export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegist
           ...(live.convertSource === undefined ? {} : { convertSource: live.convertSource }),
         });
       }
+      if (endpoint.platform === 'jd' && endpoint.mode === 'live' && options.jdLive) {
+        const live = options.jdLive;
+        jdLive = new JdUnionAdapter({
+          credentials: live.credentials,
+          transport: live.transport,
+          clock: options.clock,
+          endpoint,
+          ...(live.warn === undefined ? {} : { warn: live.warn }),
+          ...(live.productKeyMode === undefined ? {} : { productKeyMode: live.productKeyMode }),
+        });
+      }
     }
   }
   const adapterFor = (platform: RegisteredPlatform): UnionAdapter => {
     if (platform === 'pdd' && pddLive !== undefined) return pddLive;
     if (platform === 'taobao' && taobaoLive !== undefined) return taobaoLive;
+    if (platform === 'jd' && jdLive !== undefined) return jdLive;
     if (options !== undefined && demoPlatforms.has(platform)) {
       return new DemoUnionAdapter({
         platform,
@@ -219,7 +248,8 @@ export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegist
         implemented:
           demoPlatforms.has(platform) ||
           (platform === 'pdd' && pddLive !== undefined) ||
-          (platform === 'taobao' && taobaoLive !== undefined),
+          (platform === 'taobao' && taobaoLive !== undefined) ||
+          (platform === 'jd' && jdLive !== undefined),
       }),
     ),
   );

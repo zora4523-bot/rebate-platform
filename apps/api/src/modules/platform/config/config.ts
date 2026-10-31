@@ -8,7 +8,7 @@ import { readAgentReviewConfig, type AgentReviewConfig } from './agent-review.ts
 import { readAgentUserHashConfig } from './agent-user-hash.ts';
 import { findCredentialLikeEnvNames } from './credential-env.ts';
 import { readDataokeConfig, type DataokeAppConfig } from './dataoke.ts';
-import type { JdAppConfig } from './jd.ts';
+import { readJdConfig, readJdSiteConfig, type JdAppConfig } from './jd.ts';
 import {
   JWT_ENV_NAMES,
   readJwtKeyConfig,
@@ -207,7 +207,7 @@ export interface AppConfig {
   readonly jd?: JdAppConfig | null;
   /**
    * JD_SITE_ID (B1-04ze, D10-500 ①): the Jingdong site id as decimal text, a server setting (not a
-   * credential), used by link conversion (B1-04zd). Null when unset in any environment; a
+   * credential), used by link conversion (B1-04zd). Absent when unset in any environment; a
    * hand-built config without it counts as null.
    */
   readonly jdSiteId?: string | null;
@@ -364,6 +364,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     if (appEnv.success) problems.push(...readPddConfig(appEnv.data, env).problems);
     if (appEnv.success) problems.push(...readTaobaoConfig(appEnv.data, env).problems);
     if (appEnv.success) problems.push(...readDataokeConfig(appEnv.data, env).problems);
+    if (appEnv.success) problems.push(...readJdConfig(appEnv.data, env).problems);
+    problems.push(...readJdSiteConfig(env).problems);
     problems.push(...readPddQueryConfig(env).problems);
     if (appEnv.success)
       problems.push(...readUnionEndpointOverrideConfig(appEnv.data, env).problems);
@@ -401,6 +403,10 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   violations.push(...taobaoProblems);
   const { dataoke, problems: dataokeProblems } = readDataokeConfig(values.APP_ENV, env);
   violations.push(...dataokeProblems);
+  const { jd, problems: jdProblems } = readJdConfig(values.APP_ENV, env);
+  violations.push(...jdProblems);
+  const { jdSiteId, problems: jdSiteProblems } = readJdSiteConfig(env);
+  violations.push(...jdSiteProblems);
   const { pddQueryCustomParameters, problems: pddQueryProblems } = readPddQueryConfig(env);
   violations.push(...pddQueryProblems);
   const { unionEndpointOverrideDir, problems: overrideProblems } = readUnionEndpointOverrideConfig(
@@ -449,6 +455,10 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     ...(taobao === null ? {} : { taobao }),
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(dataoke === null ? {} : { dataoke }),
+    // Only present when configured, so the documented shape of an unconfigured result is unchanged.
+    ...(jd === null ? {} : { jd }),
+    // Only present when configured, so the documented shape of an unconfigured result is unchanged.
+    ...(jdSiteId === null ? {} : { jdSiteId }),
     unionEndpointOverrideDir,
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(agentReview === null ? {} : { agentReview }),

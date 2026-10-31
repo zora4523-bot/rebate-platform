@@ -14,6 +14,8 @@
 //
 // 大淘客: DATAOKE_APP_KEY and DATAOKE_APP_SECRET_FILE, the Taobao order source (B1-04e).
 //
+// Jingdong: JD_APP_KEY and JD_APP_SECRET_FILE, declared by the live adapter wiring (B1-04ze).
+//
 // Agent content safety review (B3-03m; owner D10-135 ②): the Aliyun AccessKey pair of the stream
 // entry's input / output review, read by the composition root in staging / prod only.
 //
@@ -61,6 +63,15 @@ export const DATAOKE_CREDENTIAL_ENV_NAMES: readonly string[] = Object.freeze([
   'DATAOKE_APP_SECRET_FILE',
 ]);
 
+/**
+ * Credential variables of the Jingdong live adapter (B1-04ze; approvals #28 ②): the app key and the
+ * path of the node file that holds app_secret. Only staging reads them (./jd.ts).
+ */
+export const JD_CREDENTIAL_ENV_NAMES: readonly string[] = Object.freeze([
+  'JD_APP_KEY',
+  'JD_APP_SECRET_FILE',
+]);
+
 /** Credential variables of the Agent content safety review (Aliyun AccessKey pair, B3-03m). */
 export const AGENT_REVIEW_CREDENTIAL_ENV_NAMES: readonly string[] = Object.freeze([
   'AGENT_REVIEW_ALIYUN_ACCESS_KEY_ID',
@@ -73,12 +84,13 @@ const DECLARED_NAMES = new Set(
     ...PDD_CREDENTIAL_ENV_NAMES,
     ...TAOBAO_CREDENTIAL_ENV_NAMES,
     ...DATAOKE_CREDENTIAL_ENV_NAMES,
+    ...JD_CREDENTIAL_ENV_NAMES,
     ...AGENT_REVIEW_CREDENTIAL_ENV_NAMES,
   ].map((name) => name.toUpperCase()),
 );
 
 /**
- * True for a declared SMS, Pinduoduo, Taobao, 大淘客 or Agent review credential name (compared without regard to case) and for a name with
+ * True for a declared SMS, Pinduoduo, Taobao, 大淘客, Jingdong or Agent review credential name (compared without regard to case) and for a name with
  * prefix UNION_/ALIPAY_/BANK_ and suffix _SECRET/_PRIVATE_KEY/_ACCESS_KEY.
  */
 export function looksLikeRealCredentialEnvName(name: string): boolean {
