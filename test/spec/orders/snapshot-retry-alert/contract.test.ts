@@ -11,6 +11,8 @@ const PLAN_02_AFTER_RETRY_EXHAUSTED = [
   'pay_order.paid',
   // 02 §11 收款：退款成功（D10-340 / D10-349，couli #208）
   'pay_refund.succeeded',
+  // 02 §11 提现审核超时（BR-WDR-26；D10-475 ②(a)，B2-05n）
+  'withdrawal.review_overdue',
 ];
 
 it('[AC-B1-08u#1] 耗尽告警登记一次并位于规划事件清单中的位置（其后只有 02 §11 排在它之后的事件）', () => {
