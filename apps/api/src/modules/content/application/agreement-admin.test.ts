@@ -302,6 +302,25 @@ it('[AC-F1-02p] legal keys per type (L24)', () => {
   expect(legalKeysOf('labor_agreement')).toEqual([]);
 });
 
+it('[AC-F1-02zzs] sdk_list and collect_list move no legal.* config key', () => {
+  expect(legalKeysOf('sdk_list')).toEqual([]);
+  expect(legalKeysOf('collect_list')).toEqual([]);
+});
+
+for (const type of ['sdk_list', 'collect_list'] as const) {
+  it(`[AC-F1-02zzs] ${type} publishes with no config write or history, min_version = version`, async () => {
+    const { store, m } = memory();
+    await expect(
+      admin(store).publish(actor, type, body({ min_version: 2, expected_version: 0 })),
+    ).rejects.toBeInstanceOf(AgreementFieldsError);
+    const row = await admin(store).publish(actor, type, body());
+    expect(row).toMatchObject({ type, version: 1, min_version: 1, requires_resign: false });
+    expect(m.writes).toEqual([]);
+    expect(m.history).toEqual([]);
+    expect(m.audits).toHaveLength(1);
+  });
+}
+
 it('[AC-F1-02p] next version reuses the article id at max revision + 1 and its row_version + 1', async () => {
   const { store, m } = memory({
     current: { version: 1, min_version: 1, requires_resign: true, article_id: 'art-1' },
