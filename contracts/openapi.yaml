@@ -21358,7 +21358,6 @@ paths:
         target. No Idempotency-Key (04 §6.6): a repeated request finds the processing appeal and
         returns it.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -21593,7 +21592,6 @@ paths:
         before and after). The response is the appeal as GET /admin/v1/appeals/{appeal_id}
         returns it. No Idempotency-Key (04 §6.6; the CAS keeps a retry from claiming twice).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -21741,7 +21739,6 @@ paths:
         /admin/v1/appeals/{appeal_id} returns it after closing. No Idempotency-Key (04 §6.6; the
         CAS keeps a retry from closing twice).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003

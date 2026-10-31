@@ -14719,6 +14719,65 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "adminRegisterAppeal": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_type",
+        "target_id",
+        "content",
+        "reason"
+      ],
+      "properties": {
+        "target_type": {
+          "type": "string",
+          "description": "contracts/enums/identity.yaml appeal_target_type, the full set (04 §3.2 appeals): the\nconsole lists and registers blocked_request appeals too, unlike the user-side\nAppealTargetType.\n",
+          "enum": [
+            "account",
+            "order",
+            "blocked_request"
+          ]
+        },
+        "target_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The person's own statement (用户陈述)."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "The registration note (登记原因说明); audit log only, 1–200 characters after trimming."
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    }
+  },
   "adminGetAppeal": {
     "headers": {
       "type": "object",
@@ -14747,6 +14806,117 @@ export const CONTRACT_ROUTE_SCHEMAS = {
         "appeal_id"
       ],
       "additionalProperties": false
+    }
+  },
+  "adminClaimAppeal": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "appeal_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "appeal_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected_row_version"
+      ],
+      "properties": {
+        "expected_row_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The appeal's row_version as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
+  "adminResolveAppeal": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "appeal_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "appeal_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision",
+        "note",
+        "expected_row_version"
+      ],
+      "properties": {
+        "decision": {
+          "type": "string",
+          "description": "How an appeal is closed (a subset of enum appeal_status; BR-ID-36).",
+          "enum": [
+            "upheld",
+            "revoked"
+          ]
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "The internal note (结案内部说明); audit log only, 1–200 characters after trimming."
+        },
+        "expected_row_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The appeal's row_version as the console showed it; a mismatch is 20902."
+        }
+      }
     }
   },
   "adminListBlockedRequests": {

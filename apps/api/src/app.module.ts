@@ -395,6 +395,7 @@ import {
   RiskAdminModule,
   RiskAppealsAdminModule,
   type AdminAppealsReadPorts,
+  type AdminAppealsWritePorts,
   RiskModule,
   RiskScanModule,
   SIGNATURE_CHECK,
@@ -1941,6 +1942,27 @@ function adminAppealReadPorts(db: Kysely<Database>, crypto: FieldCrypto): AdminA
     normalizePhone(input) {
       const normalized = normalize_phone(input);
       return normalized.code === 0 ? normalized.phone : null;
+    },
+  };
+}
+/**
+ * B1-03ze: risk's appeal console write port — the owner of a sub-order of this app whose rebate
+ * risk control voided (rebate_status VOID, reason BLACKLIST; BR-ATTR-26), the order target of a
+ * registered appeal. Building it reads nothing.
+ */
+function adminAppealWritePorts(db: Kysely<Database>): AdminAppealsWritePorts {
+  return {
+    async voidedOrderOwner(appId, orderId) {
+      const row = await db
+        .withSchema('app')
+        .selectFrom('orders')
+        .select('user_id')
+        .where('app_id', '=', appId)
+        .where('order_id', '=', orderId)
+        .where('rebate_status', '=', 'VOID')
+        .where('reason', '=', 'BLACKLIST')
+        .executeTakeFirst();
+      return row?.user_id ?? null;
     },
   };
 }
@@ -4027,8 +4049,23 @@ export class AppModule {
         // AdminOperationGuard (risk.appeal, read only); identity's masked phones, normaliser and
         // phone holders, admin's display names and orders' sub-order numbers through ports; only a
         // phone lookup that finds something writes an audit row (AUDIT_PORT).
+        // B1-03ze: the console writes (register, claim, resolve; risk.appeal, and risk.ban /
+        // risk.freeze / risk.blocklist with their totp step-up for a revocation): each write, its
+        // risk state change, linking's restoreAfterUnban and its audit rows (admin's writer bound
+        // to the write's transaction) commit together; the calendar is content's reader.
         ...(options.entry === 'admin'
-          ? [RiskAppealsAdminModule.forAdmin({ ports: adminAppealReadPorts })]
+          ? [
+              RiskAppealsAdminModule.forAdmin({
+                ports: adminAppealReadPorts,
+                writes: {
+                  auditWriter: (db, clock) =>
+                    createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                  restoreAfterUnban,
+                  ports: adminAppealWritePorts,
+                  config: (db, clock) => createContentReader({ db, clock }),
+                },
+              }),
+            ]
           : []),
         // orders' /admin/v1 claim review reads (B1-10j; BR-ATTR-30): guarded by AdminOperationGuard;
         // the applicant's masked phone through identity's port (decrypted and masked there), the
