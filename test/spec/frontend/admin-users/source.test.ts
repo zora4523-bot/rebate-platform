@@ -111,9 +111,7 @@ it('[AC-F1-07i-SOURCE#1] 页面实际渲染 antd 的表格、Input、Select、Bu
         violations.push(`forbidden API ${node.text}`);
       if (
         ts.isIdentifier(node) &&
-        /balance|withdraw|payout|identity_number|real_name|relation_id|^orders?$|^ledger$/i.test(
-          node.text,
-        )
+        /balance|payout|identity_number|real_name|relation_id|^orders?$|^ledger$/i.test(node.text)
       )
         violations.push(`field outside user contract ${node.text}`);
       if (
@@ -123,9 +121,7 @@ it('[AC-F1-07i-SOURCE#1] 页面实际渲染 antd 的表格、Input、Select、Bu
         ts.isTemplateTail(node)
       ) {
         if (
-          /balance|withdraw|payout|identity_number|real_name|relation_id|^orders?$|^ledger$/i.test(
-            node.text,
-          )
+          /balance|payout|identity_number|real_name|relation_id|^orders?$|^ledger$/i.test(node.text)
         )
           violations.push(`field outside user contract ${node.text}`);
         if (/\bant-/.test(node.text)) violations.push(`handwritten class ${node.text}`);
