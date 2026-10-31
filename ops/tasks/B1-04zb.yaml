@@ -1,0 +1,31 @@
+id: B1-04zb
+repo: rebate-platform
+title: 京东 Adapter 订单：order.row.query（listOrders，按更新时间，单窗 ≤1 小时、近 90 天、pageSize ≤200、hasMore 翻页，每次上游翻页都经配额治理，订单号与金额无损取值）
+type: impl
+# 2026-10-31 be 入账（D10-498 ④，实测可用，先做）。依据：09 CAP-JD-07、CAP-JD-08，api/jd.union.open.order.row.query.md，cap-tests/2026-10-31/jd/probe-shapes.json（61 个字段路径）。
+# 窗口：type 3 按更新时间；单窗 ≤1 小时、只查 90 天内下单、pageSize ≤200、hasMore 翻页；窗口越界报 invalid_dto，拆分是 order-sync 的事；2002452 / 2002453 分类。
+# 配额（B1-04w 教训，一开始就做）：每一次上游翻页都经配额治理；途中被拒以 quota_exceeded 结束，外层不重试、不从第 1 页重来。
+# 字段：id（订单 + sku，对应 sub_order_id）、orderId、parentId 按字符串无损取；金额为小数，取原文转整数分，用 packages/money，不用浮点，精度超分的舍入先报编排，不自定。
+# 已知偏差（CAP-JD-07 实测）：finishTime 可为空串、payMonth 可为整数 0、balanceExt 可为空串，都要接受；文档列的部分字段不出现。
+# modifyTime 防旧覆盖；validCode 原样带出，映射表 specs/order-status-map/jd.csv 与 order-sync 接入不在本单。订单接口不压测。
+# 订单都是共用联盟账号的别的推广位，测试推广位 0 单：过滤不在适配器做，归 order-sync 的推广位白名单（BR-ATTR）。
+# 报文样例自拟、值全合成。RV2（订单数据进佣金计算链）。
+refs: []
+refs_hash: {}
+deps: [B1-04za]
+paths:
+  - 'apps/api/src/modules/union/infra/jd/**'
+  - 'apps/api/src/modules/union/domain/types.ts'
+  - 'apps/api/src/modules/union/domain/dto.ts'
+  - 'apps/api/src/modules/union/application/governed-adapter.ts'
+  - 'apps/api/src/modules/union/application/governed-adapter.test.ts'
+  - 'apps/api/src/modules/union/index.ts'
+  - 'test/spec/union/jd-orders/**'
+test_paths:
+  - 'test/spec/union/jd-orders/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

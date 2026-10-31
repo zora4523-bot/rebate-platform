@@ -1,0 +1,25 @@
+id: B1-04zf
+repo: rebate-platform
+title: 京东 staging 接线（不切 live）：compose 给 api、worker 只读挂载节点 /etc/couli-jd，沿用端点覆盖目录
+type: impl
+# 2026-10-31 be 入账（D10-498 ⑤，照 B1-04y）。staging 接线，不切 live：compose 给 api、worker 只读挂载节点 /etc/couli-jd（create_host_path，可缺）；端点覆盖沿用 UNION_ENDPOINT_OVERRIDE_DIR。
+# 不在本单：节点放文件、切 live、推广位登记。开工前先核 pdd / taobao 现行挂载写法，照同样写法加。RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04ze]
+paths:
+  - 'infra/staging/compose.yaml'
+  - 'infra/staging/README.md'
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/union/union.module.ts'
+  - 'apps/api/src/modules/union/union.module.test.ts'
+  - '.env.example'
+  - 'test/spec/infra/staging-jd/**'
+test_paths:
+  - 'test/spec/infra/staging-jd/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

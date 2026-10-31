@@ -1,0 +1,27 @@
+id: B1-04zd
+repo: rebate-platform
+title: 京东 Adapter 转链：convert 产出推广链接并注入 subUnionId 与 positionId，错误码映射（接口待编排裁定）
+type: impl
+# 2026-10-31 be 入账（D10-498 ②）。**开工前提：编排裁定转链接口**，未裁定不开工：BR-ATTR-06、01 F-LINK-05、09 CAP-JD-05 写默认 common.get（TRADE-11），D10-498 写 bysubunionid.get。标题不写接口名即此故。
+# 事实：bysubunionid.get 现内层 403；common.get 不用申请，10-31 实测 materialId=jingfen.jd.com/detail/<itemId>.html + siteId + positionId + sceneId=1 成功，带 subUnionId 也成功（订单回传未验证），无短链只有 clickURL。
+# 归因：subUnionId = n_{attr_code}（BR-ATTR-06），≤80 字符；no_rebate 不带用户参数；pid 与 subUnionId 不能同用（2001214）；身份只由 linking 注入（BR-ATTR-05）。
+# positionId 必传；测试推广位只一个，登记为 self_buy，其他场景没有 active 推广位时按现行规则 50301（D10-498）。
+# 错误：2001104、2001706 / 2001707、429 映射 04 错误码（链接不支持 30121、单次失败 50303），不回退原链接（CAP-JD-06）。不自行拼 scheme。报文样例自拟、值全合成。RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04zc]
+paths:
+  - 'apps/api/src/modules/union/infra/jd/**'
+  - 'apps/api/src/modules/union/domain/types.ts'
+  - 'apps/api/src/modules/union/application/governed-adapter.ts'
+  - 'apps/api/src/modules/union/application/governed-adapter.test.ts'
+  - 'apps/api/src/modules/union/index.ts'
+  - 'test/spec/union/jd-convert/**'
+test_paths:
+  - 'test/spec/union/jd-convert/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

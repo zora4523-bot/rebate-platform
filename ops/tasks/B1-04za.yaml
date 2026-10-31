@@ -1,0 +1,27 @@
+id: B1-04za
+repo: rebate-platform
+title: 京东 Adapter 请求底座：网关与公共参数、MD5 签名、外层 *_responce 与内层 JSON 字符串解包（内层 code 判成败）、错误分类、无损取数
+type: impl
+# 2026-10-31 be 入账（编排 D10-498，照 B1-04g）。本段只做底座，不写商品 / 订单映射。依据：rebate-private docs-mirror/jd/guides/108188.md，
+# DEV-NOTES.md 2026-10-31 实测，09 CAP-JD-12。网关 POST https://api.jd.com/routerjson；公共参数 method、app_key、timestamp（GMT+8，取注入的 Clock）、
+# format=json、v=1.0、sign_method=md5、360buy_param_json；sign = MD5(secret + 键名升序 k+v + secret) 大写，以指南原文为准。
+# 解包：外层 *_responce.code="0"，业务结果在 queryResult / getResult 的 JSON 字符串里，内层 code 200 才算成功、403 无权限，错误分类看内层 code；
+# 2001701 同码两义，须按 message 区分（CAP-JD-06）。error_response 为网关级错误（如 28 接口停用）。外层键按接口登记，不由接口名推导。
+# 内层 JSON 要能无损取数：id 为 19 位字符串，orderId / parentId 为 16 位整数（到 2^53 边界），金额是小数，一律不经 JS number。
+# 凭据经构造参数注入，不读环境变量或文件；归档去敏已覆盖 app_key、sign（archive.ts），本段不改。复用 infra/http-transport.ts。
+# 占位：searchItems / getItem / resolveLink / convert / listOrders 抛 UnionError('adapter_unimplemented')。报文样例由规则测试作者自拟、值全合成，不抄私有录制（AGENTS §6）。
+# 整体 RV2。与 jd 各单同改 infra/jd/**，派工串行。
+refs: []
+refs_hash: {}
+deps: [B1-04c, B1-19b]
+paths:
+  - 'apps/api/src/modules/union/infra/jd/**'
+  - 'test/spec/union/jd-core/**'
+test_paths:
+  - 'test/spec/union/jd-core/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
