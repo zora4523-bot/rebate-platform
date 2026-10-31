@@ -1,5 +1,5 @@
 // B2-04zg (D10-476): the catch-up of the monthly bill on the worker entry (08 BR-FUND-04 ③,
-// BR-FUND-18). Skeleton: every function throws NotImplemented.
+// BR-FUND-18).
 // - settleBillCatchUpPeriod: the latest bill day D* on or before a +08:00 day (settle.bill_day,
 //   22–28) and its bill month M = the month before D*'s month.
 // - createSettleCatchUpStore: whether the bill of (app, platform, D*) is generated, still queued or
@@ -10,10 +10,16 @@
 //   keeps bill_id = M and judges the asset snapshot on the day it runs. Earlier periods are never
 //   looked at. Time only from the injected Clock.
 import type { DB } from '@couli/db';
-import type { Kysely } from 'kysely';
+import { accountingDate, settlementBillPeriod } from '@couli/domain';
+import { sql, type Kysely } from 'kysely';
 import type { Clock, JobQueue } from '../../platform/index.ts';
 import type { SettlementConfigReader } from './ports.ts';
-import type { SettleScheduleLogger } from './schedule.ts';
+import {
+  scheduleSettleBill,
+  settleBillJobKey,
+  settleBillRunAt,
+  type SettleScheduleLogger,
+} from './schedule.ts';
 
 /** The period the catch-up looks back at. */
 export interface SettleBillCatchUpPeriod {
@@ -23,14 +29,33 @@ export interface SettleBillCatchUpPeriod {
   readonly billId: string;
 }
 
+const QUEUE = 'settle';
+const JOB = 'bill';
+const BILL_DAY_KEY = 'settle.bill_day';
+const DEFAULT_BILL_DAY = 24;
+const MIN_BILL_DAY = 22;
+const MAX_BILL_DAY = 28;
+
+function assertBillDay(billDay: number): void {
+  if (!Number.isInteger(billDay) || billDay < MIN_BILL_DAY || billDay > MAX_BILL_DAY) {
+    throw new RangeError('settle.bill_day must be an integer within 22-28');
+  }
+}
+
 /**
  * D* and M for the +08:00 day `today` and settle.bill_day `billDay` (an integer 22–28). A malformed
  * or nonexistent day, or a bill day outside 22–28, throws.
  */
 export function settleBillCatchUpPeriod(today: string, billDay: number): SettleBillCatchUpPeriod {
-  void today;
-  void billDay;
-  throw new Error('NotImplemented: settleBillCatchUpPeriod');
+  assertBillDay(billDay);
+  // Refuses a malformed or nonexistent day (strict YYYY-MM-DD).
+  const start = settleBillRunAt(today);
+  const dayOfMonth = Number(today.slice(8, 10));
+  // On or after the bill day: this month's; before it: the previous month's (bill day ≤ 28 exists
+  // in every month).
+  const month = dayOfMonth >= billDay ? today.slice(0, 7) : settlementBillPeriod(start);
+  const day = `${month}-${String(billDay).padStart(2, '0')}`;
+  return { accountingDate: day, billId: settlementBillPeriod(settleBillRunAt(day)) };
 }
 
 /**
@@ -53,10 +78,46 @@ export interface SettleCatchUpStore {
   ): Promise<SettleBillCatchUpState>;
 }
 
+interface CatchUpRow {
+  readonly generated: boolean;
+  readonly pending: boolean;
+}
+
 /** SettleCatchUpStore over PostgreSQL (couli_app). */
 export function createSettleCatchUpStore(db: Kysely<DB>): SettleCatchUpStore {
-  void db;
-  throw new Error('NotImplemented: createSettleCatchUpStore');
+  return {
+    async billCatchUpStateOf(appId, platform, day) {
+      if (appId === '' || platform === '') {
+        throw new Error('settle catch-up store: app_id and platform must be nonempty');
+      }
+      // Refuses a malformed or nonexistent D* before a statement runs.
+      const runAt = settleBillRunAt(day);
+      const billId = settlementBillPeriod(runAt);
+      const key = settleBillJobKey(appId, platform, day);
+      const { rows } = await sql<CatchUpRow>`
+        SELECT
+          (EXISTS (
+            SELECT 1 FROM app.settle_jobs
+            WHERE app_id = ${appId} AND job = ${JOB} AND platform = ${platform}
+              AND run_at = ${runAt} AND status = 'done'
+          ) OR EXISTS (
+            SELECT 1 FROM app.settle_bills
+            WHERE app_id = ${appId} AND bill_id = ${billId} AND generated_at IS NOT NULL
+              AND jsonb_typeof(platform_order_counts) = 'object'
+              AND jsonb_exists(platform_order_counts, ${platform})
+          )) AS generated,
+          EXISTS (
+            SELECT 1 FROM pgboss.job
+            WHERE name = ${QUEUE} AND singleton_key = ${key}
+              AND state IN ('created', 'retry', 'active')
+          ) AS pending
+      `.execute(db);
+      const row = rows[0];
+      if (row?.generated === true) return 'generated';
+      if (row?.pending === true) return 'pending';
+      return 'absent';
+    },
+  };
 }
 
 export interface SettleBillCatchUpOptions {
@@ -72,6 +133,24 @@ export interface SettleBillCatchUpOptions {
   readonly config: SettlementConfigReader;
 }
 
+/** settle.bill_day of the app as the bill job reads it: unset → 24; else an integer 22–28. */
+async function billDayOf(config: SettlementConfigReader, appId: string): Promise<number> {
+  const value = await config.get(appId, BILL_DAY_KEY);
+  if (value === undefined || value === null) return DEFAULT_BILL_DAY;
+  const parsed =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^[0-9]+$/u.test(value)
+        ? Number(value)
+        : Number.NaN;
+  assertBillDay(parsed);
+  return parsed;
+}
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
+}
+
 /**
  * The catch-up: for every app, D* of the +08:00 day of clock.now() under the app's settle.bill_day;
  * every platform whose state is 'absent' gets D*'s `bill` job (outside a transaction). A failure of
@@ -79,6 +158,61 @@ export interface SettleBillCatchUpOptions {
  * after all of them.
  */
 export async function seedSettleBillCatchUp(options: SettleBillCatchUpOptions): Promise<void> {
-  void options;
-  throw new Error('NotImplemented: seedSettleBillCatchUp');
+  const { db, clock, queue, logger, runs, platforms, config } = options;
+  const today = accountingDate(clock.now());
+  const apps = await db
+    .withSchema('app')
+    .selectFrom('orders')
+    .select('app_id')
+    .distinct()
+    .orderBy('app_id')
+    .execute();
+  const failures: unknown[] = [];
+  for (const { app_id: appId } of apps) {
+    let period: SettleBillCatchUpPeriod;
+    try {
+      period = settleBillCatchUpPeriod(today, await billDayOf(config, appId));
+    } catch (error: unknown) {
+      failures.push(error);
+      logger.warn(
+        { job: JOB, app_id: appId, today, error_name: errorName(error) },
+        'settle_bill_catch_up_config_failed',
+      );
+      continue;
+    }
+    for (const platform of platforms) {
+      try {
+        const state = await runs.billCatchUpStateOf(appId, platform, period.accountingDate);
+        if (state !== 'absent') continue;
+        await scheduleSettleBill(queue, null, {
+          appId,
+          platform,
+          accountingDate: period.accountingDate,
+        });
+        logger.info(
+          {
+            job: JOB,
+            app_id: appId,
+            platform,
+            accounting_date: period.accountingDate,
+            bill_id: period.billId,
+          },
+          'settle_bill_catch_up_sent',
+        );
+      } catch (error: unknown) {
+        failures.push(error);
+        logger.warn(
+          {
+            job: JOB,
+            app_id: appId,
+            platform,
+            accounting_date: period.accountingDate,
+            error_name: errorName(error),
+          },
+          'settle_bill_catch_up_failed',
+        );
+      }
+    }
+  }
+  if (failures.length > 0) throw failures[0];
 }

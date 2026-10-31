@@ -78,8 +78,11 @@ export class SettlementModule {
    * and createBeneficiaryGate (ports' identity and risk readers, minors = ports.minors(FIELD_CRYPTO)),
    * plus the module's own timer of the daily bill seed and the due batch scan: after bootstrap the
    * first tick runs within 60 s, later ones at most 60 s apart (unref); each tick runs
-   * seedSettleBills (createSettleRunStore(db), ports.platforms) and scanDueBatches with the injected
-   * Clock, a failure logged and not thrown. On destroy the timer stops and a tick in flight is
+   * seedSettleBills (createSettleRunStore(db), ports.platforms), the bill catch-up
+   * seedSettleBillCatchUp (B2-04zg: createSettleCatchUpStore(db), ports.config; the first tick is
+   * the worker's self-heal) and scanDueBatches with the injected Clock, a failure logged and not
+   * thrown. A deferred bill (asset snapshot not complete) completes its delivery; the catch-up sends
+   * the period again on a later tick. On destroy the timer stops and a tick in flight is
    * awaited: nothing is sent once the module is closed. Without a database or queue nothing is
    * registered and no timer runs.
    */

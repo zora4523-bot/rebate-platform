@@ -3,8 +3,10 @@
 // - the handler of queue settle over the real bill job (production readSource and
 //   saveBillValidations), the batch executor, the single-order credit and the beneficiary credit;
 //   both credits read the attribution through ports.readAttribution (never readSnapshot);
-// - the timer of the daily bill seed and the due batch scan (first tick within 60 s, then every
-//   60 s, unref); stop() clears it and waits for a tick in flight, so nothing is sent afterwards.
+// - the timer of the daily bill seed, the bill catch-up (B2-04zg: the latest bill day whose bill
+//   month is not generated; the first tick is the worker's self-heal) and the due batch scan (first
+//   tick within 60 s, then every 60 s, unref); stop() clears it and waits for a tick in flight, so
+//   nothing is sent afterwards.
 import type { DB } from '@couli/db';
 import type { Kysely, Transaction } from 'kysely';
 import type { Clock, EventBus, FieldCrypto, JobHandler, JobQueue } from '../../platform/index.ts';
@@ -23,6 +25,7 @@ import {
   type BeneficiaryCredit,
 } from '../credit/beneficiary/beneficiary-credit.ts';
 import { createCreditOrder, type BeneficiaryEventInput } from '../credit/credit-order.ts';
+import { createSettleCatchUpStore, seedSettleBillCatchUp } from './catch-up.ts';
 import type { SettlementWorkerPorts } from './ports.ts';
 import { createSettleRunStore } from './run-store.ts';
 import {
@@ -159,13 +162,15 @@ function errorName(error: unknown): string {
   return error instanceof Error ? error.name : typeof error;
 }
 
-/** The daily bill seed and the due batch scan on the module's own timer. */
+/** The daily bill seed, the bill catch-up and the due batch scan on the module's own timer. */
 export function createSettleWorkerTimer(
-  ports: Pick<SettlementWorkerPorts, 'platforms'>,
+  ports: Pick<SettlementWorkerPorts, 'platforms' | 'config'>,
   runtime: Pick<SettleWorkerRuntime, 'db' | 'clock' | 'queue' | 'logger'>,
 ): SettleWorkerTimer {
   const { db, clock, queue, logger } = runtime;
   const runs = createSettleRunStore(db);
+  const catchUpRuns = createSettleCatchUpStore(db);
+  const config = ports.config(db, clock);
   let stopped = false;
   let started = false;
   let inFlight: Promise<void> | null = null;
@@ -177,6 +182,20 @@ export function createSettleWorkerTimer(
       await seedSettleBills({ db, clock, queue, logger, runs, platforms: ports.platforms });
     } catch (error: unknown) {
       logger.warn({ queue: 'settle', error_name: errorName(error) }, 'settle_bill_seed_failed');
+    }
+    if (stopped) return;
+    try {
+      await seedSettleBillCatchUp({
+        db,
+        clock,
+        queue,
+        logger,
+        runs: catchUpRuns,
+        platforms: ports.platforms,
+        config,
+      });
+    } catch (error: unknown) {
+      logger.warn({ queue: 'settle', error_name: errorName(error) }, 'settle_bill_catch_up_failed');
     }
     if (stopped) return;
     try {
