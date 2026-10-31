@@ -120,3 +120,19 @@ export type {
   NotifySmsTestSender,
 } from './admin-channels/sms-test-sender.ts';
 export type { NotifyVerifyPhones } from './admin-channels/service.ts';
+// B1-15i: the DELETION_PROGRESS inbox message (BR-TEXT-23), written on identity's business
+// transaction. identity never imports it: app.module hands it to identity's DeletionProgressNotice.
+export {
+  renderDeletionProgressMessage,
+  writeDeletionProgressMessage,
+} from './application/deletion-progress-message.ts';
+export type {
+  DeletionCancelledInput,
+  DeletionCancelledNegativeInput,
+  DeletionProgressInput,
+  DeletionProgressMessage,
+  DeletionProgressOverride,
+  DeletionProgressVariant,
+  DeletionProgressWriteOptions,
+  DeletionRequestedInput,
+} from './application/deletion-progress-message.ts';

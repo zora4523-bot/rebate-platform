@@ -149,6 +149,11 @@ export type {
 } from './ports/withdrawal-in-flight.ts';
 export type { DeletionBalanceInput, DeletionBalanceReader } from './ports/deletion-balance.ts';
 export type { DeletionRequestModuleOptions } from './application/deletion-request.ts';
+// B1-15i: the DELETION_PROGRESS notice port (BR-TEXT-23) app.module assembles over notification.
+export type {
+  DeletionProgressNotice,
+  DeletionProgressNoticeInput,
+} from './ports/deletion-progress-notice.ts';
 // B1-15f: the scheduled processing of deletion requests whose cooling period has ended (worker).
 export type { WithdrawalNonTerminalReader } from './ports/withdrawal-in-flight.ts';
 export {
