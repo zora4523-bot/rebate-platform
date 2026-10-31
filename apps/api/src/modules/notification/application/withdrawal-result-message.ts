@@ -11,9 +11,8 @@
 // recipient's service switch (B1-12o push sending core: record() in the event transaction,
 // dispatch() after the commit). notify_logs dedupe key `{withdrawal_id}:{status}` (BR-WDR-26).
 // TODO(规划/11 §7.1): WD_FAILED 短信渠道 — blocked on 负责人短信签名与模板审批
-//
-// Test phase skeleton: every function throws NotImplemented.
 import type { DB } from '@couli/db';
+import { formatYuan } from '@couli/money';
 import type { Kysely } from 'kysely';
 import type {
   Clock,
@@ -22,7 +21,7 @@ import type {
   ReceivedEvent,
   RootLogger,
 } from '../../platform/index.ts';
-import type { PushSendCore } from './push-send.ts';
+import type { PushEvent, PushSendCore } from './push-send.ts';
 
 /** D10-260: the wallet.withdrawal_changed payload, frozen. */
 export interface WithdrawalResultMessagePayload extends JobPayload {
@@ -62,6 +61,178 @@ export interface WithdrawalResultMessage {
   readonly body: string;
 }
 
+/** The consumer name of EVENT_SUBSCRIPTIONS; its queue is `evt.notification-withdrawal-result`. */
+export const WITHDRAWAL_RESULT_MESSAGE_CONSUMER = 'notification-withdrawal-result';
+
+const EVENT_NAME = 'wallet.withdrawal_changed';
+
+/** The statuses that send a result message (BR-TEXT-09); every other one is acknowledged only. */
+const RESULT_STATUSES: ReadonlySet<string> = new Set([
+  'PAID_API',
+  'PAID_MANUAL',
+  'REJECTED',
+  'FAILED',
+]);
+
+/** inbox.title.<code> (BR-TEXT-09 细则标题表; contracts/texts.default.json). */
+const DEFAULT_TITLES: Readonly<Record<WithdrawalResultCode, string>> = Object.freeze({
+  WD_SUCCESS: '提现到账',
+  WD_REJECTED: '提现未通过',
+  WD_FAILED: '提现打款未成功',
+});
+
+/** BR-TEXT-09 细则模板表, verbatim (WD_REJECTED negative_balance: D10-235). */
+const DEFAULT_BODIES: Readonly<Record<string, string>> = Object.freeze({
+  'WD_SUCCESS:default': '提现已到账：{net} 已转入{payout_channel_name}',
+  'WD_REJECTED:default': '提现未通过：{reason}，{amount} 已退回余额',
+  'WD_REJECTED:negative_balance': '提现未通过：{reason}；抵扣后的余额以钱包显示为准',
+  'WD_FAILED:default': '提现打款未成功：{reason}，{amount} 已退回余额',
+});
+
+/** {payout_channel_name}: BR-TEXT-06, the same names as the withdrawal detail. */
+const CHANNEL_NAMES: Readonly<Record<string, string>> = Object.freeze({
+  alipay: '支付宝',
+  bank_card: '银行卡',
+  wechat: '微信零钱',
+});
+
+/** BR-TEXT-08 驳回原因表 (dictionary withdraw_reject_reason), verbatim. */
+const REJECT_REASONS: Readonly<Record<string, string>> = Object.freeze({
+  RISK_SUSPECT: '账户存在异常，需要核实，请联系客服',
+  ORDER_ABNORMAL: '部分订单状态待核实，请稍后重新申请',
+  PAYEE_INFO_INVALID: '收款信息有误，请核对后重新申请',
+  USER_REQUEST: '已按你的要求取消本次提现',
+  OTHER: '其他原因，请联系客服',
+  NEGATIVE_BALANCE: '有订单被扣回，冻结金额已用于抵扣',
+});
+
+/** BR-TEXT-08 失败原因映射 (withdraw_fail_reason), and its WeChat items (BR-WDR-33 ⑥). */
+const FAIL_REASONS: Readonly<Record<string, string>> = Object.freeze({
+  PAYEE_NOT_EXIST: '收款支付宝账号不存在',
+  PAYEE_USER_INFO_ERROR: '收款账号姓名与实名信息不一致',
+  PAYEE_ACCOUNT_STATUS_ERROR: '收款支付宝账号状态异常',
+  USER_CONFIRM_TIMEOUT: '没有在规定时间内到微信确认收款',
+  USER_REQUEST_CANCEL: '已按你的要求取消',
+});
+
+/**
+ * BR-TEXT-08 细则「修改收款账号」= 显示, code by code (D10-229, not a PAYEE_ prefix); the same list
+ * as payout's isAccountFailure (domain/display.ts), which this synchronous renderer cannot import.
+ */
+const ACCOUNT_FAILURE_CODES: ReadonlySet<string> = new Set([
+  'PAYEE_NOT_EXIST',
+  'PAYEE_USER_INFO_ERROR',
+  'PAYEE_ACCOUNT_STATUS_ERROR',
+]);
+
+/** BR-TEXT-08 细则 (D10-228): the fallback used as {reason}, without an amount. */
+const FAIL_FALLBACK = '收款渠道未能完成这笔转账';
+/** Appended after the WD_FAILED sentence for an account-type failure code. */
+const CHANGE_ACCOUNT = '，可修改收款账号后重试';
+/** A REJECTED reason code outside the dictionary: OTHER's text (contact customer service). */
+const REJECT_FALLBACK = '其他原因，请联系客服';
+
+function isAccountFailure(code: string | null): boolean {
+  return code !== null && ACCOUNT_FAILURE_CODES.has(code);
+}
+
+function lookup(table: Readonly<Record<string, string>>, code: string | null): string | null {
+  return code !== null && Object.hasOwn(table, code) ? (table[code] as string) : null;
+}
+
+function reasonOf(code: WithdrawalResultCode, facts: WithdrawalResultFacts): string {
+  if (code === 'WD_REJECTED')
+    return lookup(REJECT_REASONS, facts.reject_reason_code) ?? REJECT_FALLBACK;
+  if (code === 'WD_FAILED') return lookup(FAIL_REASONS, facts.fail_code) ?? FAIL_FALLBACK;
+  return '';
+}
+
+/** The template of the event status; null for a status that sends nothing. */
+function pickTemplate(
+  facts: WithdrawalResultFacts,
+): { code: WithdrawalResultCode; variant: WithdrawalResultVariant } | null {
+  switch (facts.status) {
+    case 'PAID_API':
+    case 'PAID_MANUAL':
+      return { code: 'WD_SUCCESS', variant: 'default' };
+    case 'REJECTED':
+      return {
+        code: 'WD_REJECTED',
+        variant: facts.reject_reason_code === 'NEGATIVE_BALANCE' ? 'negative_balance' : 'default',
+      };
+    case 'FAILED':
+      return { code: 'WD_FAILED', variant: 'default' };
+    default:
+      return null;
+  }
+}
+
+/** BR-WDR-26: one message per withdrawal and status (PAID_API and PAID_MANUAL are distinct). */
+function dedupeKey(payload: WithdrawalResultMessagePayload): string {
+  return `${payload.withdrawal_id}:${payload.status}`;
+}
+
+/** Checks the event data shape (D10-260); a malformed event fails the job (retries, dead letter). */
+function readPayload(data: JobPayload): WithdrawalResultMessagePayload {
+  const value = data as Partial<Record<keyof WithdrawalResultMessagePayload, unknown>>;
+  if (
+    typeof value.withdrawal_id !== 'string' ||
+    !UUID.test(value.withdrawal_id) ||
+    typeof value.user_id !== 'string' ||
+    typeof value.status !== 'string'
+  ) {
+    throw new Error('notification: invalid wallet.withdrawal_changed payload');
+  }
+  return value as WithdrawalResultMessagePayload;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The part of payout's createWithdrawalNotificationReader (B2-05l) this consumer uses. */
+interface WithdrawalView {
+  readonly user_id: string;
+  readonly reject_reason_code: string | null;
+  readonly amount_fen: bigint;
+  readonly net_fen: bigint;
+  readonly fail_code: string | null;
+  readonly payout_channel: WithdrawalPayoutChannel;
+}
+
+interface WithdrawalReader {
+  read(
+    handle: Kysely<DB>,
+    subject: { appId: string; withdrawalId: string },
+  ): Promise<WithdrawalView | null>;
+}
+
+interface PayoutPorts {
+  createWithdrawalNotificationReader(): WithdrawalReader;
+}
+
+/**
+ * payout's index.ts beside this file's own extension (.ts from source, .js from dist), loaded on
+ * first use: a static import would pull payout's Nest graph into every importer of this file,
+ * including the erasable-only test project that imports the renderer directly (as B1-12r).
+ */
+async function withdrawalReader(): Promise<WithdrawalReader> {
+  const extension = import.meta.url.endsWith('.ts') ? '.ts' : '.js';
+  const href = new URL(`../../payout/index${extension}`, import.meta.url).href;
+  const payout = (await import(href)) as PayoutPorts;
+  return payout.createWithdrawalNotificationReader();
+}
+
+/** The event's status (the template follows it) with the withdrawal's current fields. */
+function factsOf(status: string, view: WithdrawalView): WithdrawalResultFacts {
+  return {
+    status,
+    reject_reason_code: view.reject_reason_code,
+    amount_fen: view.amount_fen,
+    net_fen: view.net_fen,
+    fail_code: view.fail_code,
+    payout_channel: view.payout_channel,
+  };
+}
+
 /**
  * BR-TEXT-09 template of the event status with BR-TEXT-08 reasons and BR-TEXT-10 amounts; the
  * override's title and body apply independently. null for a status that sends nothing.
@@ -70,9 +241,21 @@ export function renderWithdrawalResultMessage(
   facts: WithdrawalResultFacts,
   override: WithdrawalResultOverride | null,
 ): WithdrawalResultMessage | null {
-  void facts;
-  void override;
-  throw new Error('NotImplemented: renderWithdrawalResultMessage');
+  const pick = pickTemplate(facts);
+  if (pick === null) return null;
+  const { code, variant } = pick;
+  const title = override?.title_override ?? DEFAULT_TITLES[code];
+  const template = override?.body_override ?? DEFAULT_BODIES[`${code}:${variant}`] ?? '';
+  // Function replacers: the substituted text is taken literally (no `$` patterns).
+  let body = template
+    .replaceAll('{net}', () => formatYuan(facts.net_fen))
+    .replaceAll('{amount}', () => formatYuan(facts.amount_fen))
+    .replaceAll('{payout_channel_name}', () => CHANNEL_NAMES[facts.payout_channel] ?? '')
+    .replaceAll('{reason}', () => reasonOf(code, facts));
+  // BR-TEXT-09: an account-type failure code ends the sentence with the change-account hint,
+  // default or override alike (as the reauthorization sentence of APPEAL_RESULT).
+  if (code === 'WD_FAILED' && isAccountFailure(facts.fail_code)) body = `${body}${CHANGE_ACCOUNT}`;
+  return { code, variant, category: 'service', title, body };
 }
 
 export interface WithdrawalResultMessageOptions {
@@ -92,6 +275,85 @@ export interface WithdrawalResultMessageConsumer {
 export function createWithdrawalResultMessageConsumer(
   options: WithdrawalResultMessageOptions,
 ): WithdrawalResultMessageConsumer {
-  void options;
-  throw new Error('NotImplemented: createWithdrawalResultMessageConsumer');
+  // options.clock: the push core stamps its rows with its own Clock; nothing here reads time.
+  const { logger, push } = options;
+  const log = logger.child({ module: 'notification' });
+
+  async function handle(event: ReceivedEvent, trx: Parameters<EventHandler>[1]): Promise<void> {
+    if (event.name !== EVENT_NAME) {
+      throw new Error('notification: unexpected event for the withdrawal result message');
+    }
+    const payload = readPayload(event.payload);
+    if (!RESULT_STATUSES.has(payload.status)) return;
+    const reader = await withdrawalReader();
+    const view = await reader.read(trx, {
+      appId: event.appId,
+      withdrawalId: payload.withdrawal_id,
+    });
+    if (view === null) {
+      log.warn(
+        {
+          consumer: WITHDRAWAL_RESULT_MESSAGE_CONSUMER,
+          eventId: event.eventId,
+          withdrawalId: payload.withdrawal_id,
+          status: payload.status,
+        },
+        'withdrawal_result_message_unknown_withdrawal',
+      );
+      return;
+    }
+    // The recipient is the withdrawal's owner; a payload naming someone else is a producer fault:
+    // the job fails (retries, then dead letter) and nobody is notified by mistake.
+    if (view.user_id !== payload.user_id) {
+      throw new Error('notification: wallet.withdrawal_changed user is not the withdrawal owner');
+    }
+    const facts = factsOf(payload.status, view);
+    const pick = pickTemplate(facts);
+    if (pick === null) return;
+    const override = await trx
+      .withSchema('app')
+      .selectFrom('notify_templates')
+      .select(['title_override', 'body_override'])
+      .where('app_id', '=', event.appId)
+      .where('code', '=', pick.code)
+      .where('variant', '=', pick.variant)
+      .executeTakeFirst();
+    const message = renderWithdrawalResultMessage(facts, override ?? null);
+    if (message === null) return;
+    // inbox + inbox log (dedupe boundary, BR-WDR-26) + push log, all in this transaction.
+    await push.record(trx, {
+      app_id: event.appId,
+      user_id: view.user_id,
+      code: message.code,
+      variant: message.variant,
+      eventKey: dedupeKey(payload),
+      title: message.title,
+      body: message.body,
+      route: null,
+      category: message.category,
+    });
+    // TODO(规划/11 §7.1): WD_FAILED 短信渠道 — blocked on 负责人短信签名与模板审批
+  }
+
+  async function dispatch(db: Kysely<DB>, event: ReceivedEvent): Promise<void> {
+    if (event.name !== EVENT_NAME) return;
+    const payload = readPayload(event.payload);
+    if (!RESULT_STATUSES.has(payload.status)) return;
+    const reader = await withdrawalReader();
+    const view = await reader.read(db, { appId: event.appId, withdrawalId: payload.withdrawal_id });
+    if (view === null || view.user_id !== payload.user_id) return;
+    const pick = pickTemplate(factsOf(payload.status, view));
+    if (pick === null) return;
+    const target: PushEvent = {
+      app_id: event.appId,
+      user_id: view.user_id,
+      code: pick.code,
+      variant: pick.variant,
+      eventKey: dedupeKey(payload),
+      category: 'service',
+    };
+    await push.dispatch(db, target);
+  }
+
+  return { handle, dispatch };
 }
