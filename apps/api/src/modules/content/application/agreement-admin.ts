@@ -167,7 +167,8 @@ export class AgreementNotFoundError extends Error {
 const UNION_HOST_BLOCK = 'external_page.union_host_block';
 const H5_BASE_URL = 'h5_base_url';
 
-/** L24: the config keys a published version of the type moves (labor_agreement has none). */
+/** L24: the config keys a published version of the type moves (labor_agreement, sdk_list and
+ * collect_list have none: they never move legal.*, D10-465). */
 export function legalKeysOf(
   type: AgreementType,
 ): readonly { readonly key: string; readonly field: 'version' | 'min_version' }[] {
