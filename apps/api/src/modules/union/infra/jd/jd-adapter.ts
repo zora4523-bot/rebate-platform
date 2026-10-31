@@ -8,7 +8,8 @@
 // 原样挂在传输请求上。convert 仍是 adapter_unimplemented，不取凭据、不发请求。
 // 不读 process.env、不读文件；app_secret 只在内存参与签名。
 // listOrders（B1-04zb）的时间窗、游标与映射在 orders.ts；每次调用取一页，每页都单独经配额治理。
-// searchItems / getItem / resolveLink（B1-04zc）现在只是 NotImplemented 骨架，规则测试：test/spec/union/jd-goods/**。
+// searchItems / getItem / resolveLink（B1-04zc）的参数、游标、选券与映射在 goods.ts，经 request 走
+// goods.query；内层 code 按端口细分（201 空结果、202 分页上限，410、411 识别不了）。
 import type { Clock } from '../../../platform/index.ts';
 import {
   UnionError,
@@ -29,6 +30,24 @@ import {
   type UnionOrder,
 } from '../../domain/types.ts';
 import type { ArchiveContext, UnionTransport, UnionTransportResponse } from '../replay.ts';
+import {
+  JD_DETAIL_INNER_CODES,
+  JD_GOODS_KEYS,
+  JD_GOODS_QUERY,
+  JD_GOODS_SCENE,
+  JD_LINK_INNER_CODES,
+  JD_SEARCH_INNER_CODES,
+  jdDetailItemId,
+  jdGoodsCursor,
+  jdGoodsHasMore,
+  jdGoodsRef,
+  jdGoodsRows,
+  jdKeywordQuery,
+  jingfenItemId,
+  mapJdGoods,
+  parseJdGoodsCursor,
+  type JdGoodsPage,
+} from './goods.ts';
 import {
   checkJdProductKeyMode,
   JD_ORDER_KEYS,
@@ -65,7 +84,7 @@ export interface JdAdapterOptions {
   readonly clock: Clock;
   readonly endpoint: UnionEndpoint;
   readonly warn?: (event: JdWarning) => void;
-  /** BR-PROD-03 / 05：每次 listOrders 按 ctx.appId 读一次；缺省 item。 */
+  /** BR-PROD-03 / 05：listOrders 与商品三个端口每次按 ctx.appId 读一次；缺省 item。 */
   readonly productKeyMode?: { read(appId: string): Promise<JdProductKeyMode> };
 }
 
@@ -221,25 +240,112 @@ export class JdUnionAdapter implements UnionAdapter {
     return gate((signal) => this.#requestOrders(parameters, signal, archive));
   }
 
-  // 商品三个端口是 B1-04zc 的 NotImplemented 骨架；convert 等转链任务落地，不取凭据、不发请求。
+  /** 商品键模式：每次调用读一次，不缓存；缺省 item，其他值 invalid_dto。 */
+  async #keyMode(ctx: CallCtx): Promise<JdProductKeyMode> {
+    const modes = this.#productKeyMode;
+    return checkJdProductKeyMode(modes === undefined ? 'item' : await modes.read(ctx?.appId));
+  }
+
+  /** goods.query 的一次请求：带取消信号与归档上下文（kind=query）。 */
+  #queryGoods(
+    goodsReqDTO: JdBusinessParameters,
+    innerCodes: JdInnerCodeMap,
+    ctx: CallCtx,
+  ): Promise<JdInner> {
+    const appId = ctx?.appId;
+    const signal = ctx?.signal;
+    return this.request(
+      JD_GOODS_QUERY,
+      { goodsReqDTO },
+      {
+        ...JD_GOODS_KEYS,
+        innerCodes,
+        ...(signal === undefined ? {} : { signal }),
+        ...(typeof appId === 'string' ? { archive: { appId, kind: 'query' } } : {}),
+      },
+    );
+  }
+
+  #goodsPage(productKeyMode: JdProductKeyMode): JdGoodsPage {
+    return { now: this.#clock.now(), productKeyMode, warn: this.#warn };
+  }
+
+  /**
+   * goods.query 按 keyword 取一页，pageIndex 从 1、pageSize 固定 JD_GOODS_PAGE_SIZE，游标 `jd-goods:<页码>`。
+   * 游标与商品键模式都在取凭据、发请求之前校验。内层 201、202 是空页、翻页结束，不是错误。
+   * 价格或佣金异常的商品不出卡，但计入已取条数，不让翻页提前结束。
+   */
   async searchItems(q: SearchQuery, ctx: CallCtx): Promise<Page<UnionItem>> {
-    void q;
-    void ctx;
-    throw new Error('NotImplemented: searchItems');
+    if (typeof q?.keyword !== 'string' || q.keyword.trim() === '') {
+      throw new UnionError('invalid_dto', 'jd searchItems: keyword is blank', 'jd');
+    }
+    const pageIndex = q.cursor === undefined ? 1 : parseJdGoodsCursor(q.cursor);
+    const productKeyMode = await this.#keyMode(ctx);
+    let inner: JdInner;
+    try {
+      inner = await this.#queryGoods(
+        jdKeywordQuery(q.keyword, pageIndex),
+        JD_SEARCH_INNER_CODES,
+        ctx,
+      );
+    } catch (error) {
+      if (error instanceof UnionError && error.code === 'item_unavailable') {
+        return { items: [], nextCursor: null };
+      }
+      throw error;
+    }
+    const rows = jdGoodsRows(inner);
+    const page = this.#goodsPage(productKeyMode);
+    return {
+      items: rows.map((row) => mapJdGoods(row, page)).filter((i) => i.price_status === 'ok'),
+      nextCursor: jdGoodsHasMore(inner, rows.length, pageIndex)
+        ? jdGoodsCursor(pageIndex + 1)
+        : null,
+    };
   }
 
+  /**
+   * goods.query 按 itemIds 取一个商品，只用于 item 模式；sku 模式没有 sceneId=2 权限，不发请求，
+   * 报 item_unavailable。空结果 item_unavailable，不伪造 0 元商品；价格异常照样返回 price_status='anomaly'。
+   */
   async getItem(ref: ItemRef, ctx: CallCtx): Promise<UnionItemDetail> {
-    void ref;
-    void ctx;
-    throw new Error('NotImplemented: getItem');
+    const productKeyMode = await this.#keyMode(ctx);
+    const itemId = jdDetailItemId(ref, productKeyMode);
+    const inner = await this.#queryGoods(
+      { itemIds: [itemId], sceneId: JD_GOODS_SCENE },
+      JD_DETAIL_INNER_CODES,
+      ctx,
+    );
+    const rows = jdGoodsRows(inner);
+    if (rows.length === 0) {
+      throw new UnionError('item_unavailable', 'jd getItem: no goods returned', 'jd');
+    }
+    return mapJdGoods(rows[0], this.#goodsPage(productKeyMode));
   }
 
+  /**
+   * CAP-JD-01。item 模式的 jingfen 详情页直接得 itemId，不取凭据、不调上游。其余链接（含 sku 模式的
+   * jingfen 链接）原样作 keyword 走 goods.query，取第一条：身份只取响应，第一条价格异常也不换，
+   * 取不到当前模式的键 → link_unrecognized。不跟随跳转、不抓页面，不从链接里抽 skuId。
+   */
   async resolveLink(raw: string, ctx: CallCtx): Promise<ResolvedLink> {
-    void raw;
-    void ctx;
-    throw new Error('NotImplemented: resolveLink');
+    if (typeof raw !== 'string' || raw.trim() === '') {
+      throw new UnionError('link_unrecognized', 'jd resolveLink: empty link', 'jd');
+    }
+    const link = raw.trim();
+    const productKeyMode = await this.#keyMode(ctx);
+    const itemId = productKeyMode === 'item' ? jingfenItemId(link) : null;
+    if (itemId !== null) return { item: { platform: 'jd', item_id: itemId, itemId } };
+    const inner = await this.#queryGoods(jdKeywordQuery(link, 1), JD_LINK_INNER_CODES, ctx);
+    const rows = jdGoodsRows(inner);
+    const item = rows.length === 0 ? null : jdGoodsRef(rows[0], productKeyMode);
+    if (item === null) {
+      throw new UnionError('link_unrecognized', 'jd resolveLink: no goods recognized', 'jd');
+    }
+    return { item };
   }
 
+  // convert 等转链任务落地，不取凭据、不发请求。
   async convert(req: ConvertReq, identity: UnionIdentity, ctx: CallCtx): Promise<ConvertResult> {
     void req;
     void identity;
@@ -258,10 +364,7 @@ export class JdUnionAdapter implements UnionAdapter {
     }
     const window = jdOrderWindow(win, this.#clock.now());
     const pageIndex = opt?.cursor === undefined ? 1 : parseJdOrderCursor(opt.cursor);
-    const modes = this.#productKeyMode;
-    const productKeyMode = checkJdProductKeyMode(
-      modes === undefined ? 'item' : await modes.read(ctx?.appId),
-    );
+    const productKeyMode = await this.#keyMode(ctx);
     const { inner, rawPayloadId } = await this.#fetchOrders(
       {
         orderReq: {

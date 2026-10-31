@@ -1,6 +1,10 @@
+# 京东联盟映射
+
+本文件记京东适配器定下的映射，订单在前，商品在后。
+
 # 京东订单映射（B1-04zb）
 
-接口 `jd.union.open.order.row.query`，实现在 `apps/api/src/modules/union/infra/jd/orders.ts`。本文件记本单定下的映射；依据 D10-520、D10-522。
+接口 `jd.union.open.order.row.query`，实现在 `apps/api/src/modules/union/infra/jd/orders.ts`。依据 D10-520、D10-522。
 
 ## 请求
 
@@ -71,3 +75,133 @@
 | `data` 不是数组（含 null） | `invalid_dto` |
 | 有 `data` 但缺 `hasMore`，或 `hasMore` 非布尔 | `invalid_dto` |
 | `hasMore` 为 true 而 `data` 为空数组 | `invalid_dto` |
+
+# 京东商品映射（B1-04zc）
+
+接口 `jd.union.open.goods.query`，外层键 `jd_union_open_goods_query_responce`，结果键 `queryResult`，实现在 `apps/api/src/modules/union/infra/jd/goods.ts`。依据 BR-PRICE-01 / 02、BR-PROD-03 / 05、BR-CALC-26、CAP-JD-01、D10-525。
+
+**这一节没有实测依据**：接口现在内层 403，权限批下前只按文档，规则测试的报文都是合成的。标题字段 `skuName` 与空结果形状都待实测核对。
+
+## 请求
+
+业务参数只有 `goodsReqDTO`，`sceneId` 固定 1（2 须申请，本段不用）。`goods.link.query` 不用。
+
+| 端口 | 参数 |
+| --- | --- |
+| `searchItems` | `keyword`、`pageIndex`（从 1）、`pageSize` 20、`sceneId` |
+| `getItem` | `itemIds`（一次一个）、`sceneId` |
+| `resolveLink` 走上游时 | 同 `searchItems`，`keyword` 是链接原文，`pageIndex` 1 |
+
+`searchItems` 的游标是不透明的 `jd-goods:<页码>`，关键词不进游标，由调用方续传。游标在取凭据、发请求之前校验，损坏报 `invalid_dto`，不从首页重来。
+
+## 字段对照
+
+| DTO 字段 | 报文字段 | 说明 |
+| --- | --- | --- |
+| `item_id` | `itemId` / `skuId` | 按商品键模式：item 取 `itemId` 全串，sku 取 `skuId` 原文（16 位内外都无损） |
+| `itemId`、`skuId` | 同名 | 有值才给，下游派生商品键用 |
+| `title` | `skuName` | 必填 |
+| `price_fen` | `priceInfo.price` | 见下节 |
+| `coupon_fen` | `couponInfo.couponList` | 自选，见「选券」 |
+| `final_price_fen` | 无 | 一律自算 |
+| `commission_rate_bp` | `commissionInfo.commissionShare` | 百分比，见「佣金比例」 |
+| `quoted_at` | 无 | 注入 `Clock` 的取数时刻 |
+
+图片不映射（B1-22s），报文里的其他字段不读、不进 DTO。
+
+## 商品键模式
+
+`productKeyMode` 每次调用按 `ctx.appId` 读一次，不缓存，缺省 item，其他值 `invalid_dto`。
+
+- 当前模式的键缺失时不拿另一个顶替。
+- `skuId` 为 0 或不是十进制数字算缺失。
+- 搜索或详情的行缺键、缺标题：`invalid_dto`，搜索是整页失败，与拼多多一致。
+- sku 模式下若 `sceneId=1` 真不返回 `skuId`，搜索会一直 `invalid_dto`。要等实测确认，或者申请 `sceneId=2`。
+
+## 价格
+
+| 字段 | 用途 |
+| --- | --- |
+| `priceInfo.price` | `price_fen`，唯一来源 |
+| `priceInfo.lowestPrice` | 不读，只留在归档原始报文 |
+| `priceInfo.lowestCouponPrice` | 不参与计算，只用于比对告警，原值留在归档原始报文 |
+
+**金额解析（D10-525）**：`price`、券 `discount`、`quota`、`lowestCouponPrice` 用 `@couli/domain` 的 `parseYuanToFen`，不舍入、不走 floor（与订单不同）。
+
+- JSON 数字一律先转 `String(n)`，**不取报文原文**：`39.900` 得 `39.9`，3990 分；`3.99e1` 得 `39.9`，3990 分。
+- 转出来不是两位小数串的算缺失：`39.905`、`99.999`、`1e21`、`1e-7`。
+- 字符串形式的金额原样解析：`"39.90"` 收，`"39.900"`、`"3.99e1"` 算缺失。
+- 超出双精度的报价现实中不存在，不特别处理。
+
+**平台券后价白名单为空**：京东没有可直接采用的券后价，`final_price_fen` = `price_fen` − `coupon_fen` 恒成立，`lowestCouponPrice` 再怎么有值也不取。
+
+**比对告警**：`lowestCouponPrice` 有值且与自算券后价相差 ≥ 1 分时记 `PRICE_CALC_DIFF`，不改结果。商品异常时不比对。
+
+## 选券
+
+候选券要同时满足：
+
+- `useStartTime` ≤ 当前时刻 < `useEndTime`，毫秒时间戳，取注入 `Clock`；缺任一端不算候选。
+- `price_fen` ≥ `quota`，门槛按单件。
+- `discount`、`quota` 都解析得出；缺失或不合格的券跳过，不影响其他券。
+- `couponStatus` 不是 -1（不可领取）；缺失或其他值仍算候选。
+
+候选里取 `discount` 最大的一张，面额相同取门槛低的。`isBest` 不看。接口没有剩余量字段，视为有余量。一张都没有时 `coupon_fen` 为 0，不算异常。
+
+## 佣金比例
+
+`commissionShare` 取报文**原文**（不走 `String(n)`），用 `@couli/money` 的 `pctStrToBp` 按 BR-CALC-26 换算，超两位小数 floor，范围 0..100 %。缺失、非数字、负数、超过 100、科学计数法都按数据异常，不当 0。
+
+## 异常
+
+| 情形 | `price_anomaly_reason` |
+| --- | --- |
+| `price` 缺失或不合格 | `missing_field` |
+| `price` 为 0，或 `coupon_fen` ≥ `price_fen` | `invalid_price` |
+| 佣金比例不合格 | `missing_field` |
+
+先判价格，再判佣金，一个商品只告警一次。异常商品记 `PRICE_ANOMALY`，三价与比例置 0 占位并标 `price_status: 'anomaly'`，不当 0 元。
+
+- `searchItems`：该商品不出卡，同页其他商品照常，它仍计入已取条数。
+- `getItem`：照样返回带异常标记的商品。
+- `resolveLink`：只认身份，不看价格，不告警。
+
+## 翻页与内层 code
+
+`nextCursor`：空页结束；否则看 `(页码 − 1) × 20 + 本页上游行数 < totalCount`；`totalCount` 不可用时满页才继续。
+
+内层 200 而 `data` 缺失算空结果；`data` 存在但不是数组（含 null）报 `invalid_dto`。
+
+| 内层 code | `searchItems` | `getItem` | `resolveLink` |
+| --- | --- | --- | --- |
+| 201 未查询到满足条件的商品 | 空页，翻页结束 | `item_unavailable` | `link_unrecognized` |
+| 202 已达到分页上限 | 空页，翻页结束 | `upstream_rejected` | `upstream_rejected` |
+| 410、411 sceneId 无权限或格式不匹配 | `link_unrecognized` | `link_unrecognized` | `link_unrecognized` |
+| 429 | `rate_limited` | `rate_limited` | `rate_limited` |
+| 403 与其余 | 按底座，403 告警一次 | 同左 | 同左 |
+
+## getItem
+
+只用于 item 模式：`item_id` 优先，其次 `itemId`，空结果 `item_unavailable`。sku 模式没有 `sceneId=2` 权限，手里的 skuId 也不能当 `itemIds` 传，所以不发请求，直接 `item_unavailable`。
+
+## resolveLink 各形态（CAP-JD-01）
+
+| 链接 | item 模式 | sku 模式 |
+| --- | --- | --- |
+| `jingfen.jd.com/detail/<itemId>.html`（可带 http(s) 与查询串） | 直接得 itemId，不取凭据、不调上游 | 走 keyword，取第一条的 `skuId` |
+| `u.jd.com`、`union-click.jd.com`、其他 URL | 走 keyword，取第一条 | 同左 |
+| 主站 `item.jd.com`、`item.m.jd.com`、`3.cn` | 走 keyword，上游 410、411、201 或空结果 → `link_unrecognized` | 同左 |
+
+- 走 keyword 时身份只取响应。第一条价格异常也不换第二条：链接认的是商品，不是出卡。
+- 第一条缺当前模式的键 → `link_unrecognized`，不把 itemId 当 skuId，不从链接补。
+- jingfen 严格匹配域名与路径，仿冒的和 itemId 字符集（字母、数字、`_`、`-`）之外的都走 keyword。
+- 不跟随跳转，不抓页面，不从链接里抽 skuId。
+
+## 不泄密
+
+错误与告警只带固定文案、方法名、code、商品标识、原因和分值，不带报文内容、比例原文、关键词、链接、券链接。
+
+| 告警 | 字段 |
+| --- | --- |
+| `PRICE_ANOMALY` | `method`、`code`、`item_id`、`reason` |
+| `PRICE_CALC_DIFF` | `method`、`code`、`item_id`、`final_price_fen`、`lowest_coupon_price_fen` |
