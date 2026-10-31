@@ -3,6 +3,7 @@ repo: rebate-platform
 title: 迁移：settlement 自有 run 级状态表 app.settle_runs（settle_run_id 主键、app_id、bill_id、part int 非空默认 0、last_outcome、本次执行起点、row_version、updated_at），只授 settlement 写入角色；供 B2-04zf 记 part 与「本次执行是否有入账」的起点，不再读 event_log
 type: impl
 # 2026-10-31 编排 D10-492（B2-04zf money 三轮未过：改方案）。02 §11：event_log 只供审计、不是投递机制、消费者不读它。04 §3.2 已回写 settle_runs 形状（couli #236）。迁移号排在 0107（B2-04lb）之后、按报到先后（落地时取主干最大 +1）。RV2，独立 Claude 写测试与 money 评审（approvals #36）。
+# 2026-10-31 补 paths：settle_runs 按 settle 前缀被 lint-migrations 判为资金表（isFundsTable 为真），tools/ci/lint-migrations.test.ts 的资金表期望集合要加 settle_runs（同 B2-08a 先例；tools/** 门禁类改动，PR 由编排核标签）。
 # 本单只建表与授权（含 db/schema.sql、db.gen.ts 生成物，测试机重快照）；读写逻辑在 B2-04zf。只加表，不回填。
 refs: [BR-FUND-04, BR-TEXT-09]
 refs_hash:
@@ -13,6 +14,7 @@ paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
+  - 'tools/ci/lint-migrations.test.ts'
 test_paths:
   - 'test/spec/settlement/settle-runs-schema/**'
 impl: claude
