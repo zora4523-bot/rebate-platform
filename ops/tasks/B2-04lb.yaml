@@ -3,6 +3,7 @@ repo: rebate-platform
 title: 维权与入账口径收口（D10-463，会多付）：① 入账前部分维权——入账金额按扣减后的有效佣金（BR-CALC-15 联盟更新后佣金重算；未回传新佣金前按维权应扣数保守扣减），反例「结算佣金 1000、维权扣 400 不得按 1000 入账」；② 已有结算记录的入账订单——维权成功经新结算记录 / 调整路径关闭 WAIT_COMMISSION 维权记录；③ 入账前 WAIT_COMMISSION 后联盟回传新佣金——关闭维权记录，订单不长挂
 type: impl
 # 2026-10-31 编排 D10-463：排在 B2-04l 之后、B2-04la 之前（多付比找回处理更急）。来源：B2-04l 规则测试评审 r1 / r2 移出范围的三条（两条 S1 会多付、一条少付长挂）。RV2，独立 Claude 写测试与 money 评审（Codex 至 11-02 不可用，approvals #36）。
+# D10-474 / D10-475 ①：冻结 [AC-B2-04l#41] 改为发 order.clawed_back，由新鲜独立 Claude 单列 test(spec) 只改该条期望与标题（test-change），另一位新鲜 Claude 只读复核，不计写测试轮次；其余 17 条测试体未改列 red_exempt。
 # 口径以 08 为准；08 未写清处（例如「未回传新佣金前保守扣减」的具体取值、多次部分维权的累计口径）由实现方列出报编排，不臆造。状态只经生成的 transition()；金额只经 @couli/money；入账计划若在 packages/domain 内改，须保持纯函数并补属性测试。
 refs: [BR-FUND-06, BR-FUND-07, BR-FUND-08, BR-CALC-15]
 refs_hash:
@@ -24,6 +25,59 @@ paths:
 test_paths:
   - 'test/spec/settlement/rights-credit/**'
   - 'test/properties/settlement/rights-credit/**'
+  - 'test/spec/settlement/rights/record-credited.int.test.ts'
+red_exempt:
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#1] 入账后维权部分成功（应扣佣金 400）：applied；记一条 SUCCEEDED 记录，按 R9 部分扣回，键带 R{order_rights.id}，sub_type RIGHTS，booked 510 / 600，rights_pending=false'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#2] 入账后维权全额成功（应扣佣金 1200 ≥ booked_n 1000，N_new 按 0）：按 R8 全额扣回 425 / 85 / 42、平台 448，CLAWED_BACK，原因码 RIGHTS，同事务发 order.clawed_back'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#3] 入账后处罚（type PUNISH，SUCCEEDED）：按 R8 全额扣回，sub_type PUNISH，原因码 PUNISH，键带 R{id}'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#4] 入账后结算后退款（type REFUND_AFTER_SETTLE）：按 R8 全额扣回，sub_type FULL，原因码 REFUND，历史事件 REFUND_AFTER_SETTLE'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#5] 入账后维权成功而既无联盟新佣金也无应扣佣金（BR-FUND-08 ③）：不写扣回，记录置 WAIT_COMMISSION，rights_pending=true，订单进待处理表（CLAWBACK_NO_COMMISSION）并告警（warn 日志带 alert 与 app_id），booked 与余额不变'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#6] 入账后维权处理中（PROCESSING）：只记录，rights_pending=true（row_version+1、updated_at=now），不扣回、不迁移、不写历史'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#7] 入账后维权失败（新记录 FAILED）：只记录、关闭，金额不变；订单行（含 rights_pending=false、row_version）与账务都不变'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#8] 同一条维权结果重放（同键同状态 SUCCEEDED）：duplicate，不再扣回——凭证、余额、booked、记录都与第一次后相同'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#9] 另一条维权单号（新键）再扣 100：以当前 booked_n 600 为准，N_new 500 → 再扣 43 / 9 / 4、平台 44，键带第二条记录的 R{id}；booked 425 / 500'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#10] 先处理中、后成功（同一维权单号）：同一条记录原地改为 SUCCEEDED（id 不变），按其应扣佣金 400 部分扣回，键带该 R{id}，rights_pending 回到 false'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#11] 等待应扣佣金（WAIT_COMMISSION）后平台给出应扣佣金 400（同一维权单号）：同一条记录改为 SUCCEEDED，按 ② 部分扣回，rights_pending 回到 false'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#12] WAIT_COMMISSION 期间同一结果重放（仍无应扣佣金）：duplicate，不另开待处理记录、不写凭证、什么都不变'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#13] 加锁顺序照 B2-04m / s：调用方已持订单键锁，扣回时先锁 users 行（identity）再 ledger.lockBalances'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#14] 只用调用方的事务：record 部分扣回后调用方事务失败 → 维权记录、凭证、余额、booked、rights_pending 全部回滚'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#39] 入账后 WAIT_COMMISSION 之后联盟回传新佣金 600（扣回编排的维权成功入口，① 新佣金，ref 该维权记录）：按 R9 部分扣回 170 / 34 / 17、平台 179，键带 R{id}；同事务把该记录关闭为 SUCCEEDED（id 不变）、rights_pending 回到 false；之后平台用同一维权单号再给应扣佣金 400 → duplicate，凭证只有一套、什么都不变'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#40] 全额 / 部分分界（入账后，预留 0，booked_n 1000）：应扣佣金恰为 1000 → N_new 0 → 全额，按 R8 RIGHTS_FULL 扣回 500 / 100 / 50、平台 350，CLAWED_BACK（原因码 RIGHTS），booked 0 / 0，发 order.clawed_back'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/rights/record-credited.int.test.ts
+    test: '[AC-B2-04l#42] 入账后 WAIT_COMMISSION 期间联盟新佣金经订单同步回调进来（无结算佣金、预估改为 600，不带维权记录引用）：按 R9 部分扣回 170 / 34 / 17、平台 179，键带 C{commission_version}；同事务把该维权记录关闭为 SUCCEEDED（id 不变）、rights_pending 回到 false、待处理行关闭（resolved）；之后平台用同一维权单号再给应扣佣金 400 → duplicate，凭证只有一套、什么都不变'
+    reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
 impl: claude
 tester: claude-independent
 accept:
