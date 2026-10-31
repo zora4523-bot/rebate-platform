@@ -45,6 +45,7 @@ import {
 import type { AfterSessionsRevoked } from './application/revoke-sessions.ts';
 import type { AppleTokenRevoker } from './ports/apple-token-revoker.ts';
 import type { DeletionBalanceReader } from './ports/deletion-balance.ts';
+import type { DeletionProgressNotice } from './ports/deletion-progress-notice.ts';
 import type {
   DeletionCleanupPorts,
   DeletionClosingAdjustmentReader,
@@ -70,6 +71,11 @@ export interface IdentityDeletionExpiryModuleOptions {
   readonly apple: Omit<FactoryProvider<AppleTokenRevoker>, 'provide'>;
   /** B1-15g: the push token unbinding of the sessions the cleanup revokes. */
   readonly afterRevoked: Omit<FactoryProvider<AfterSessionsRevoked>, 'provide'>;
+  /**
+   * B1-15i: the DELETION_PROGRESS cancelled_negative inbox message (BR-TEXT-23) over notification.
+   * Missing → the expiry writes no message.
+   */
+  readonly deletionProgress?: Omit<FactoryProvider<DeletionProgressNotice | null>, 'provide'>;
 }
 
 /** One round: processing first, then the cooling-period expiry (brief B1-15g §9.2 #1). */
@@ -104,6 +110,7 @@ const CLEANUP = Symbol('IDENTITY_DELETION_PROCESSING_CLEANUP');
 const FUNDS = Symbol('IDENTITY_DELETION_PROCESSING_FUNDS');
 const APPLE = Symbol('IDENTITY_DELETION_PROCESSING_APPLE');
 const AFTER_REVOKED = Symbol('IDENTITY_DELETION_PROCESSING_AFTER_REVOKED');
+const DELETION_PROGRESS = Symbol('IDENTITY_DELETION_EXPIRY_PROGRESS_NOTICE');
 
 @Module({})
 export class IdentityDeletionExpiryModule {
@@ -118,6 +125,9 @@ export class IdentityDeletionExpiryModule {
         { ...options.funds, provide: FUNDS },
         { ...options.apple, provide: APPLE },
         { ...options.afterRevoked, provide: AFTER_REVOKED },
+        options.deletionProgress === undefined
+          ? { provide: DELETION_PROGRESS, useValue: null }
+          : { ...options.deletionProgress, provide: DELETION_PROGRESS },
         {
           provide: deletionExpiryToken(),
           inject: [
@@ -130,6 +140,7 @@ export class IdentityDeletionExpiryModule {
             FUNDS,
             APPLE,
             AFTER_REVOKED,
+            DELETION_PROGRESS,
             { token: DB, optional: true },
             { token: FIELD_CRYPTO, optional: true },
             { token: EXPORT_STORE, optional: true },
@@ -144,6 +155,7 @@ export class IdentityDeletionExpiryModule {
             funds: DeletionClosingAdjustmentReader,
             apple: AppleTokenRevoker,
             afterRevoked: AfterSessionsRevoked,
+            notice: DeletionProgressNotice | null,
             db?: Kysely<Database>,
             crypto?: FieldCrypto,
             store?: ExportStore,
@@ -159,6 +171,7 @@ export class IdentityDeletionExpiryModule {
               withdrawals,
               balance,
               calendar,
+              notice: notice ?? null,
             });
             const processing = createDeletionProcessing({
               db,

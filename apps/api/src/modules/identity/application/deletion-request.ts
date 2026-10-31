@@ -9,10 +9,13 @@
 //   ⑤ balance.availableFen < 0 → 30416, data.amount_fen = -available_fen (positive bigint);
 //   ⑥ insert: UUIDv7 id, status 'cooling' (an insert, not a transition), apply_at = clock.now(),
 //      cooling_until = apply_at + 604 800 000 ms, balance_snapshot_fen = available_fen, row_version
-//      0, created_at / updated_at = the Clock value; ⑦ return the request (can_cancel true).
+//      0, created_at / updated_at = the Clock value; then, on the same transaction, the
+//      DELETION_PROGRESS requested inbox message (B1-15i, BR-TEXT-23; {cancel_deadline} =
+//      cooling_until); ⑦ return the request (can_cancel true).
 // cancel(subject) — one transaction: lock the caller, read the latest request:
 //   cooling and now < cooling_until → transitionDeletionRequest('cooling', 'CANCEL'), conditional
-//   update (id + row_version): cancelled, cancelled_at = now, cancel_reason 'user';
+//   update (id + row_version): cancelled, cancelled_at = now, cancel_reason 'user', then the
+//   DELETION_PROGRESS cancelled inbox message on the same transaction (B1-15i, BR-TEXT-23);
 //   cooling and now ≥ cooling_until, processing (and done, defensively) → 10007 stage processing;
 //   cancelled → returned as it is; none → data null.
 // read(subject) — the latest request or null; can_cancel = cooling and clock.now() < cooling_until.
@@ -26,6 +29,7 @@ import { newUuidV7, type Clock } from '../../platform/index.ts';
 import { lockUsersForUpdate } from '../ports/lock-users.ts';
 import { instantPlus } from './config-seconds.ts';
 import type { DeletionBalanceReader } from '../ports/deletion-balance.ts';
+import type { DeletionProgressNotice } from '../ports/deletion-progress-notice.ts';
 import type { WithdrawalInFlightReader } from '../ports/withdrawal-in-flight.ts';
 
 /**
@@ -36,6 +40,11 @@ import type { WithdrawalInFlightReader } from '../ports/withdrawal-in-flight.ts'
 export interface DeletionRequestModuleOptions {
   readonly withdrawalInFlight?: Omit<FactoryProvider<WithdrawalInFlightReader | null>, 'provide'>;
   readonly deletionBalance?: Omit<FactoryProvider<DeletionBalanceReader | null>, 'provide'>;
+  /**
+   * B1-15i: the DELETION_PROGRESS inbox message (BR-TEXT-23), assembled by app.module over
+   * notification. Missing → no message is written (the flows themselves are unchanged).
+   */
+  readonly deletionProgress?: Omit<FactoryProvider<DeletionProgressNotice | null>, 'provide'>;
 }
 
 export type DeletionView = components['schemas']['Deletion'];
@@ -61,6 +70,8 @@ export interface DeletionRequestServiceOptions {
   readonly withdrawalInFlight: WithdrawalInFlightReader | null;
   /** Null when app.module assembled none: POST /v1/me/deletion fails closed (50001). */
   readonly balance: DeletionBalanceReader | null;
+  /** B1-15i: written on the business transaction; absent or null → no message. */
+  readonly notice?: DeletionProgressNotice | null;
 }
 
 export interface DeletionRequestService {
@@ -151,6 +162,7 @@ export function createDeletionRequestService(
   options: DeletionRequestServiceOptions,
 ): DeletionRequestService {
   const { db, clock, withdrawalInFlight, balance } = options;
+  const notice = options.notice ?? null;
   return Object.freeze({
     canRequest: withdrawalInFlight !== null && balance !== null,
 
@@ -200,7 +212,14 @@ export function createDeletionRequestService(
         })
         .returning(COLUMNS)
         .executeTakeFirstOrThrow();
-      // TODO(规划/11 §2.3): 站内信 DELETION_PROGRESS requested — blocked on B1-15i
+      // B1-15i: the requested inbox message on this transaction (a failure rolls the request back).
+      await notice?.write(trx, {
+        app_id: subject.appId,
+        user_id: subject.userId,
+        deletion_request_id: row.id,
+        variant: 'requested',
+        cancel_deadline: row.cooling_until,
+      });
       // ⑦
       return { code: 0, data: view(row, now) };
     },
@@ -239,7 +258,13 @@ export function createDeletionRequestService(
           .executeTakeFirst();
         if (updated === undefined)
           throw new Error('identity: deletion request changed concurrently');
-        // TODO(规划/11 §2.3): 站内信 DELETION_PROGRESS cancelled — blocked on B1-15i
+        // B1-15i: the cancelled inbox message on this transaction (a failure rolls the cancel back).
+        await notice?.write(trx, {
+          app_id: subject.appId,
+          user_id: subject.userId,
+          deletion_request_id: updated.id,
+          variant: 'cancelled',
+        });
         return { code: 0, data: view(updated, now) };
       });
     },

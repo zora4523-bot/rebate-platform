@@ -71,6 +71,7 @@ import {
   type DeletionRequestService,
 } from './application/deletion-request.ts';
 import type { DeletionBalanceReader } from './ports/deletion-balance.ts';
+import type { DeletionProgressNotice } from './ports/deletion-progress-notice.ts';
 import type { WithdrawalInFlightReader } from './ports/withdrawal-in-flight.ts';
 import type { RealnameVerifierPort } from './ports/realname-verifier.ts';
 import type { BankCardVerifierPort, CardBinPort } from './ports/bank-card-verifier.ts';
@@ -444,6 +445,8 @@ const PAYOUT_ACCOUNT_CONFIG = Symbol('IDENTITY_PAYOUT_ACCOUNT_CONFIG');
 const WITHDRAWAL_IN_FLIGHT = Symbol('IDENTITY_WITHDRAWAL_IN_FLIGHT');
 /** The deletion-time balance port (IdentityModuleOptions.deletionBalance), or null. */
 const DELETION_BALANCE = Symbol('IDENTITY_DELETION_BALANCE');
+/** The DELETION_PROGRESS inbox notice (IdentityModuleOptions.deletionProgress, B1-15i), or null. */
+const DELETION_PROGRESS = Symbol('IDENTITY_DELETION_PROGRESS');
 /** growth's landing channel (IdentityModuleOptions.landingInvite), or null. */
 const LANDING_INVITE = Symbol('IDENTITY_LANDING_INVITE');
 /** The landing configuration reader (IdentityModuleOptions.landingConfig), or null. */
@@ -526,14 +529,24 @@ export class IdentityModule {
         options.deletionBalance === undefined
           ? { provide: DELETION_BALANCE, useValue: null }
           : { ...options.deletionBalance, provide: DELETION_BALANCE },
+        options.deletionProgress === undefined
+          ? { provide: DELETION_PROGRESS, useValue: null }
+          : { ...options.deletionProgress, provide: DELETION_PROGRESS },
         {
           // GET / POST /v1/me/deletion, POST /v1/me/deletion/cancel (B1-15d, BR-ID-27).
           provide: DELETION_REQUESTS,
-          inject: [CLOCK, WITHDRAWAL_IN_FLIGHT, DELETION_BALANCE, { token: DB, optional: true }],
+          inject: [
+            CLOCK,
+            WITHDRAWAL_IN_FLIGHT,
+            DELETION_BALANCE,
+            DELETION_PROGRESS,
+            { token: DB, optional: true },
+          ],
           useFactory: (
             clock: Clock,
             withdrawalInFlight: WithdrawalInFlightReader | null,
             balance: DeletionBalanceReader | null,
+            notice: DeletionProgressNotice | null,
             db?: Kysely<Database>,
           ): DeletionRequestService | null =>
             db === undefined
@@ -543,6 +556,7 @@ export class IdentityModule {
                   clock,
                   withdrawalInFlight: withdrawalInFlight ?? null,
                   balance: balance ?? null,
+                  notice: notice ?? null,
                 }),
         },
         options.accountAssets === undefined
