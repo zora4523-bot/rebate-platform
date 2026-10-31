@@ -52,7 +52,10 @@ vi.mock('../../../../apps/api/src/modules/union/application/shared-quota.ts', as
     typeof import('../../../../apps/api/src/modules/union/application/shared-quota.ts')
   >()),
   createUnionQuotaSource: () => ({
-    limiter: () => ({ bucketKey: 'synthetic:pool-admin', tryAcquire: () => true }),
+    limiter: (config: { readonly bucketKey: string }) => ({
+      bucketKey: config.bucketKey,
+      tryAcquire: () => true,
+    }),
   }),
 }));
 vi.mock('../../../../apps/api/src/modules/admin/infra/audit-writer.ts', async (original) => {
