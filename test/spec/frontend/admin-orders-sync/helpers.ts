@@ -25,10 +25,11 @@ import { BASE_URL, NUMBER, createServer, type RequestLog, type Server } from './
 //   「按订单号…」 (tab, radio, segmented item or button), a platform select (combobox or radio
 //   group) named 「平台」, start and end time text fields labelled (or with a placeholder) 「开始…」 /
 //   「结束…」 that take typed Beijing time 「YYYY-MM-DD HH:mm」 (or native datetime-local), an order
-//   number text field (input or textarea) labelled 「订单号」 taking one number per line, an
-//   optional order status filter of the window form labelled 「订单状态」 (a select whose options
-//   show the value they send, or a text field), and a submit button 【提交同步】 (or 提交 / 确定 /
-//   确认).
+//   number text field (input or textarea) labelled 「订单号」 taking one number per line, and a
+//   submit button 【提交同步】 (or 提交 / 确定 / 确认). No order status filter in this part: no
+//   platform has registered status_filter values yet, so a window body never carries it (a status
+//   control is neither required nor forbidden).
+// - with nothing to sync (no order number) the submit may be greyed out instead of refusing.
 // - 【同步此单】 may send at once, ask a simple confirmation, or open the manual sync dialog with
 //   the detail's platform and order number filled in; only the final POST body is asserted.
 configure({ asyncUtilTimeout: 10_000 });
@@ -405,69 +406,6 @@ export async function fillTime(input: HTMLElement, value: string): Promise<void>
 export async function fillWindow(dialog: HTMLElement, from: string, to: string): Promise<void> {
   await fillTime(textbox(dialog, START), from);
   await fillTime(textbox(dialog, END), to);
-}
-
-/** The optional order status filter of the time window form (画板「订单状态」). */
-export const STATUS_FILTER = /状态/;
-/** The no-filter choice of a status select. */
-const ANY_STATUS = /全部|不限|所有|任意/;
-
-/** What the operator chose as the status filter: typed into a text field, or picked in a select. */
-export type StatusChoice =
-  | { readonly kind: 'typed'; readonly value: string }
-  | { readonly kind: 'picked'; readonly shown: string };
-
-/** The status filter control of the dialog (a select or a text field labelled 「…状态…」). */
-export function statusControl(dialog: HTMLElement): HTMLElement {
-  const combos = within(dialog).queryAllByRole('combobox', { name: STATUS_FILTER });
-  const found = [...combos, ...textFields(dialog, STATUS_FILTER)];
-  expect(found, 'one status filter in the window form').toHaveLength(1);
-  return found[0]!;
-}
-function optionText(node: HTMLElement): string {
-  return (node.textContent ?? '').trim();
-}
-
-/**
- * Sets the order status filter of the time window form: types `typed` into a text field, or picks
- * the first option of a select other than the no-filter one (全部 / 不限).
- */
-export async function chooseStatusFilter(
-  dialog: HTMLElement,
-  typed: string,
-): Promise<StatusChoice> {
-  const control = statusControl(dialog);
-  if (control.getAttribute('role') !== 'combobox') {
-    await fill(control, typed);
-    await settle();
-    return { kind: 'typed', value: typed };
-  }
-  await act(async () => {
-    fireEvent.mouseDown(control);
-  });
-  let target: HTMLElement | undefined;
-  await waitFor(() => {
-    target = optionNodes(control).find((node) => !ANY_STATUS.test(optionText(node)));
-    expect(target, 'a status option other than 全部').toBeDefined();
-  });
-  const shown = optionText(target!);
-  await click(target!);
-  await settle();
-  return { kind: 'picked', shown };
-}
-
-/** The body's status_filter is the chosen one (a picked option shows the value it sends). */
-export function assertStatusFilter(choice: StatusChoice, sent: unknown): void {
-  expect(typeof sent, 'status_filter is a string').toBe('string');
-  const value = sent as string;
-  expect(value.length).toBeGreaterThanOrEqual(1);
-  expect(value.length).toBeLessThanOrEqual(64);
-  if (choice.kind === 'typed') {
-    expect(value).toBe(choice.value);
-    return;
-  }
-  const shown = squash(choice.shown);
-  expect(shown, 'the picked option shows the value sent').toContain(squash(value));
 }
 
 const EXPLAIN = '[role="alert"], .ant-form-item-explain-error';

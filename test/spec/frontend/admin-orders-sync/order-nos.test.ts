@@ -6,15 +6,19 @@ import {
   FLOW_TIMEOUT,
   ORDER_NOS,
   REUSED,
+  SUBMIT,
   SUBMITTED,
+  action,
   assertPlainWrite,
   assertWindowBody,
   chooseMode,
   choosePlatform,
+  click,
   fieldError,
   fill,
   fillWindow,
   freshText,
+  isDisabled,
   mountList,
   openSyncDialog,
   prepareOrderNos,
@@ -164,8 +168,9 @@ it(
 
 /**
  * Submits the order number form holding `typed` (nothing typed when undefined) and checks the
- * refusal: stopped in the page, or sent and answered 20001 [order_nos]; either way a hint next to
- * the order numbers, no sync created, no success shown.
+ * refusal, one of: the submit is greyed out and pressing it sends nothing; pressing it shows a
+ * hint next to the order numbers without sending; or it is sent and answered 20001 [order_nos]
+ * with that hint. Either way no sync created, no success shown.
  */
 async function refusesNoNumbers(typed: string | undefined): Promise<void> {
   const { server } = await mountList();
@@ -176,14 +181,21 @@ async function refusesNoNumbers(typed: string | undefined): Promise<void> {
   if (typed !== undefined) await fill(textbox(syncDialog(), ORDER_NOS), typed);
   await settle();
   const before = snapshotText();
-  await submit(syncDialog());
+  const press = action(syncDialog(), SUBMIT);
+  const greyed = isDisabled(press);
+  await click(press);
+  await settle();
   await settled(server);
-  await waitFor(() =>
-    expect(
-      fieldError(textbox(syncDialog(), ORDER_NOS)),
-      'a hint next to the order numbers',
-    ).not.toBe(''),
-  );
+  if (greyed) {
+    expect(server.posts(), 'a greyed out submit sends nothing').toEqual([]);
+  } else {
+    await waitFor(() =>
+      expect(
+        fieldError(textbox(syncDialog(), ORDER_NOS)),
+        'a hint next to the order numbers',
+      ).not.toBe(''),
+    );
+  }
   await settled(server);
   expect(server.created()).toEqual([]);
   expect(freshText(before)).not.toMatch(SUBMITTED);
@@ -195,7 +207,7 @@ async function refusesNoNumbers(typed: string | undefined): Promise<void> {
 }
 
 it(
-  '[AC-F1-07eb-NOS#5] 没填单号就提交：前端拦下或收 20001 [order_nos]，都在单号旁提示、不建同步、不显示成功',
+  '[AC-F1-07eb-NOS#5] 没填单号：提交置灰不发请求，或点提交后在单号旁提示（不发或收 20001 [order_nos]）；都不建同步、不显示成功',
   async () => {
     await refusesNoNumbers(undefined);
   },
@@ -203,7 +215,7 @@ it(
 );
 
 it(
-  '[AC-F1-07eb-NOS#6] 单号只有空白与空行：前端拦下或收 20001 [order_nos]，都在单号旁提示、不建同步、不显示成功',
+  '[AC-F1-07eb-NOS#6] 单号只有空白与空行：提交置灰不发请求，或点提交后在单号旁提示（不发或收 20001 [order_nos]）；都不建同步、不显示成功',
   async () => {
     await refusesNoNumbers('   \n\n  \n');
   },
