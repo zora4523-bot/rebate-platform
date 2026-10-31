@@ -1,0 +1,140 @@
+{
+  "red_tests": [
+    "test/spec/content/agreements-sdk-collect/contract.test.ts > [AC-F1-02zzs#6] 发布操作删去「F1-02zzs 合并前回 20001 [type]」过渡句，两类规则句与五值类型保留",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#1] sdk_list 首发与后续版 min_version=version 通过、低于新版本拒绝；不映射任何 legal.* 键",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#1] collect_list 首发与后续版 min_version=version 通过、低于新版本拒绝；不映射任何 legal.* 键",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] sdk_list 当前最低 1 发布第 2 版、min_version=1 低于新版本 → [min_version]",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] sdk_list 当前最低 2 发布第 3 版、min_version=2 低于新版本 → [min_version]",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] sdk_list 当前最低 1 发布第 3 版、min_version=2 低于新版本 → [min_version]",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] sdk_list 当前最低 1 发布第 3 版、min_version=1 低于新版本 → [min_version]",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] sdk_list 当前最低 9 发布第 10 版、min_version=9 低于新版本 → [min_version]",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] collect_list 当前最低 1 发布第 2 版、min_version=1 低于新版本 → [min_version]",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] collect_list 当前最低 2 发布第 3 版、min_version=2 低于新版本 → [min_version]",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] collect_list 当前最低 1 发布第 3 版、min_version=2 低于新版本 → [min_version]",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] collect_list 当前最低 1 发布第 3 版、min_version=1 低于新版本 → [min_version]",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] collect_list 当前最低 9 发布第 10 版、min_version=9 低于新版本 → [min_version]",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#3] sdk_list requires_resign 恒为 false，与 min_version 违规同报且按规则顺序",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#3] collect_list requires_resign 恒为 false，与 min_version 违规同报且按规则顺序",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#4] sdk_list 法务确认三项照旧必填，与 min_version 违规同报",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#4] collect_list 法务确认三项照旧必填，与 min_version 违规同报",
+    "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#5] 任意当前版本与最低版本：两类合法当且仅当 min_version 等于新版本；同意类不受影响",
+    "test/spec/content/agreements-sdk-collect/effects.int.test.ts > [AC-F1-02zzs#13] 发布两类前后 config_items 与 config_item_versions 逐行不变，/v1/config 的 legal 与 ETag、/v1/agreements 不变",
+    "test/spec/content/agreements-sdk-collect/publish.int.test.ts > [AC-F1-02zzs#7] sdk_list 首发与第二版发布成功：min_version=version、不重签、agreement 类文章、H5 地址、每版一条审计",
+    "test/spec/content/agreements-sdk-collect/publish.int.test.ts > [AC-F1-02zzs#7] collect_list 首发与第二版发布成功：min_version=version、不重签、agreement 类文章、H5 地址、每版一条审计",
+    "test/spec/content/agreements-sdk-collect/publish.int.test.ts > [AC-F1-02zzs#8] sdk_list min_version 不等于新版本（首发 2、次版 1 或 3）→ 20001 [min_version]，不写任何行",
+    "test/spec/content/agreements-sdk-collect/publish.int.test.ts > [AC-F1-02zzs#8] collect_list min_version 不等于新版本（首发 2、次版 1 或 3）→ 20001 [min_version]，不写任何行",
+    "test/spec/content/agreements-sdk-collect/publish.int.test.ts > [AC-F1-02zzs#9] sdk_list 重签标记、法务确认与 CAS 照旧：requires_resign=true、空白确认人或说明 → 20001，版本不符 → 20902",
+    "test/spec/content/agreements-sdk-collect/publish.int.test.ts > [AC-F1-02zzs#9] collect_list 重签标记、法务确认与 CAS 照旧：requires_resign=true、空白确认人或说明 → 20001，版本不符 → 20902",
+    "test/spec/content/agreements-sdk-collect/publish.int.test.ts > [AC-F1-02zzs#10] 同 app 内隐私、用户协议、劳务协议的发布与 legal.* 写入不受两类影响（回归抽样）",
+    "test/spec/content/agreements-sdk-collect/read.int.test.ts > [AC-F1-02zzs#11] sdk_list 未发布 30701；发布后当前版与 ?version= 历史版按存储行返回，不存在版本 30701，另一类仍 30701",
+    "test/spec/content/agreements-sdk-collect/read.int.test.ts > [AC-F1-02zzs#11] collect_list 未发布 30701；发布后当前版与 ?version= 历史版按存储行返回，不存在版本 30701，另一类仍 30701",
+    "test/spec/content/agreements-sdk-collect/read.int.test.ts > [AC-F1-02zzs#12] 后台列表 ?type= 精确过滤两类、无 type 含全部五类"
+  ],
+  "risk_note": "RV2 (content). Agreements sdk_list / collect_list (04 §3.2 / §6.2 via couli #229, D10-465 / D10-478): domain AgreementType widened to five values; publish requires min_version = version for them (else 20001 [min_version]) and requires_resign false; they write no legal.* config key or config history and emit no event; GET /v1/agreements (no type) still lists privacy / agreement only; single-type and version reads are generic (30701 when unpublished). The CT-02zb transitional narrowing in the admin controller and the contract's transitional sentence are removed; openapi.gen.ts regenerated. DB CHECK from F1-02zzr (#1984). Rule tests by a fresh independent Claude (29 red). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "fresh independent Claude via claude-run.sh (Codex unavailable until 11-02); pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by a fresh independent Claude reviewed by another: r1 pass (first output rejected by the format validator, rerun); two out-of-scope notes recorded; red-check PASS (29 red)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "4ff83783d17743ea9efacd016912563b35ae5dab"
+  },
+  "task": "F1-02zzs",
+  "spec_commit": "3a336ff6fb36aaffe317158fc7903c2cb59c77d6",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "3a336ff6fb36aaffe317158fc7903c2cb59c77d6",
+      "tree": "9408eb95d620a36f5670667199ea42cabc635196",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T22:51:11Z",
+      "finished_at": "2026-10-31T22:51:38Z",
+      "red_tests": [
+        "test/spec/content/agreements-sdk-collect/contract.test.ts > [AC-F1-02zzs#6] 发布操作删去「F1-02zzs 合并前回 20001 [type]」过渡句，两类规则句与五值类型保留",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#1] sdk_list 首发与后续版 min_version=version 通过、低于新版本拒绝；不映射任何 legal.* 键",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#1] collect_list 首发与后续版 min_version=version 通过、低于新版本拒绝；不映射任何 legal.* 键",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] sdk_list 当前最低 1 发布第 2 版、min_version=1 低于新版本 → [min_version]",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] sdk_list 当前最低 2 发布第 3 版、min_version=2 低于新版本 → [min_version]",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] sdk_list 当前最低 1 发布第 3 版、min_version=2 低于新版本 → [min_version]",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] sdk_list 当前最低 1 发布第 3 版、min_version=1 低于新版本 → [min_version]",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] sdk_list 当前最低 9 发布第 10 版、min_version=9 低于新版本 → [min_version]",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] collect_list 当前最低 1 发布第 2 版、min_version=1 低于新版本 → [min_version]",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] collect_list 当前最低 2 发布第 3 版、min_version=2 低于新版本 → [min_version]",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] collect_list 当前最低 1 发布第 3 版、min_version=2 低于新版本 → [min_version]",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] collect_list 当前最低 1 发布第 3 版、min_version=1 低于新版本 → [min_version]",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#2] collect_list 当前最低 9 发布第 10 版、min_version=9 低于新版本 → [min_version]",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#3] sdk_list requires_resign 恒为 false，与 min_version 违规同报且按规则顺序",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#3] collect_list requires_resign 恒为 false，与 min_version 违规同报且按规则顺序",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#4] sdk_list 法务确认三项照旧必填，与 min_version 违规同报",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#4] collect_list 法务确认三项照旧必填，与 min_version 违规同报",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts > [AC-F1-02zzs#5] 任意当前版本与最低版本：两类合法当且仅当 min_version 等于新版本；同意类不受影响",
+        "test/spec/content/agreements-sdk-collect/effects.int.test.ts > [AC-F1-02zzs#13] 发布两类前后 config_items 与 config_item_versions 逐行不变，/v1/config 的 legal 与 ETag、/v1/agreements 不变",
+        "test/spec/content/agreements-sdk-collect/publish.int.test.ts > [AC-F1-02zzs#7] sdk_list 首发与第二版发布成功：min_version=version、不重签、agreement 类文章、H5 地址、每版一条审计",
+        "test/spec/content/agreements-sdk-collect/publish.int.test.ts > [AC-F1-02zzs#7] collect_list 首发与第二版发布成功：min_version=version、不重签、agreement 类文章、H5 地址、每版一条审计",
+        "test/spec/content/agreements-sdk-collect/publish.int.test.ts > [AC-F1-02zzs#8] sdk_list min_version 不等于新版本（首发 2、次版 1 或 3）→ 20001 [min_version]，不写任何行",
+        "test/spec/content/agreements-sdk-collect/publish.int.test.ts > [AC-F1-02zzs#8] collect_list min_version 不等于新版本（首发 2、次版 1 或 3）→ 20001 [min_version]，不写任何行",
+        "test/spec/content/agreements-sdk-collect/publish.int.test.ts > [AC-F1-02zzs#9] sdk_list 重签标记、法务确认与 CAS 照旧：requires_resign=true、空白确认人或说明 → 20001，版本不符 → 20902",
+        "test/spec/content/agreements-sdk-collect/publish.int.test.ts > [AC-F1-02zzs#9] collect_list 重签标记、法务确认与 CAS 照旧：requires_resign=true、空白确认人或说明 → 20001，版本不符 → 20902",
+        "test/spec/content/agreements-sdk-collect/publish.int.test.ts > [AC-F1-02zzs#10] 同 app 内隐私、用户协议、劳务协议的发布与 legal.* 写入不受两类影响（回归抽样）",
+        "test/spec/content/agreements-sdk-collect/read.int.test.ts > [AC-F1-02zzs#11] sdk_list 未发布 30701；发布后当前版与 ?version= 历史版按存储行返回，不存在版本 30701，另一类仍 30701",
+        "test/spec/content/agreements-sdk-collect/read.int.test.ts > [AC-F1-02zzs#11] collect_list 未发布 30701；发布后当前版与 ?version= 历史版按存储行返回，不存在版本 30701，另一类仍 30701",
+        "test/spec/content/agreements-sdk-collect/read.int.test.ts > [AC-F1-02zzs#12] 后台列表 ?type= 精确过滤两类、无 type 含全部五类"
+      ],
+      "expected": [
+        "test/spec/content/agreements-sdk-collect/contract.test.ts",
+        "test/spec/content/agreements-sdk-collect/domain.test.ts",
+        "test/spec/content/agreements-sdk-collect/effects.int.test.ts",
+        "test/spec/content/agreements-sdk-collect/publish.int.test.ts",
+        "test/spec/content/agreements-sdk-collect/read.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "580d7e843bd4d0931ac644978b77b0f0adad9f8e48940df0f418a04db7dcfb2b"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "579c26e2d8cb36256ee1ed8a7bf503bb107e6b9f198e5e619a38b21dc59868d9"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "289746c33964d488a71df1dde655c81b82cb9509",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "4ff83783d17743ea9efacd016912563b35ae5dab",
+    "test/spec": "d7325090a8cb4be139c077ec10cc7644723ef0fc",
+    "specs": "06bfb4d5a9d52d5099b36fb48f5831b176cc40ec"
+  }
+}
