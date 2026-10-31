@@ -57,7 +57,12 @@ import { computeRightsPending, casRightsPending } from '../clawback/clawback-sto
 import type { PrecreditEvent, RebatePort } from '../rebate/application/rebate.ts';
 import { isPrecredit } from '../rebate/domain/rules.ts';
 import { readRebateOrder } from '../rebate/infra/rebate-store.ts';
-import { findRights, insertRights, updateRightsResult } from './rights-store.ts';
+import {
+  findRights,
+  insertRights,
+  readOpenDeductionTotal,
+  updateRightsResult,
+} from './rights-store.ts';
 
 export interface RightsCommandDependencies {
   readonly clock: Clock;
@@ -92,8 +97,8 @@ function storedStatusOf(input: RightsRecordInput): StoredStatus {
     input.deduction_commission_fen === null &&
     !isTerminal(input.before.rebate_status)
   ) {
-    // TODO(规划/11 §4.2): 入账前部分维权 N_new 落库与 WAIT_COMMISSION 入账前关闭 — blocked on B2-04lb（D10-470）
-    // (before credit nothing closes this row when the union's new commission arrives.)
+    // Before credit the rebate port's sync hook closes it once the union's new commission arrives
+    // (B2-04lb); after credit the clawback does.
     return 'WAIT_COMMISSION';
   }
   return 'SUCCEEDED';
@@ -161,7 +166,16 @@ export function createRightsCommandPort(deps: RightsCommandDependencies): Rights
         );
         return;
       }
-      const nNew = subFen(effective, deduction);
+      // D10-474 ①: every deduction the union has not answered yet adds up (this record is already
+      // stored, so it is among them); with a settlement record only those received at or after
+      // the latest one count. N_new = effective − total, at or below 0 → the full side (R6).
+      const open = await readOpenDeductionTotal(
+        trx,
+        order.app_id,
+        order.order_id,
+        order.settle_commission_fen !== null,
+      );
+      const nNew = subFen(effective, open > deduction ? open : deduction);
       if (nNew <= 0n) {
         event = 'RIGHTS_FULL';
       } else {
@@ -171,9 +185,9 @@ export function createRightsCommandPort(deps: RightsCommandDependencies): Rights
           return;
         }
         event = 'RIGHTS_PARTIAL';
-        // TODO(规划/11 §4.2): 入账前部分维权 N_new 落库与 WAIT_COMMISSION 入账前关闭 — blocked on B2-04lb（D10-470）
-        // (N_new reaches only the read-only valuation here; it is not stored for the later credit.)
-        // The effective commission becomes N_new for commission's valuation (R7 重算预估).
+        // The effective commission becomes N_new for commission's valuation (R7 重算预估). N_new is
+        // not a column: the stored order_rights rows carry it, and the credit (R5) subtracts the
+        // open deductions again from the settlement record (B2-04lb).
         change =
           order.settle_commission_fen === null
             ? { ...unchanged, estAfter: nNew }

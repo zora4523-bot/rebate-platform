@@ -28,6 +28,8 @@
 //      (rebate_status, row_version); a CAS that matches no row throws (the caller's transaction then
 //      rolls back as a whole); write the rebate history row;
 //   9. publish order.credited on the same transaction.
+// B2-04lb: N is the settlement commission less the deductions of successful partial rights results
+// received at or after the latest settlement record (D10-474 ①; floor 0).
 // Amounts only through @couli/money; time only from the injected Clock.
 import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
@@ -43,13 +45,14 @@ import {
   type CreditVoucherRequest,
   type InitialCreditDecision,
 } from '@couli/domain';
-import { applyReserve } from '@couli/money';
+import { applyReserve, subFen } from '@couli/money';
 import type { Transaction } from 'kysely';
 import type { Ledger, PostingEntry, PostingVoucher } from '../../ledger/index.ts';
 import { lockOrderKey } from '../../orders/index.ts';
 import type { Clock, EventBus, RootLogger } from '../../platform/index.ts';
 import { insertRebateHistory, readRebateOrder } from '../rebate/infra/rebate-store.ts';
 import { isForfeitedShare } from '../reads/pending-earnings-rules.ts';
+import { readOpenDeductionTotal } from '../rights/rights-store.ts';
 import type { BeneficiaryGate } from './beneficiary-gate.ts';
 import {
   casCreditOrder,
@@ -296,10 +299,16 @@ export function createCreditOrder(deps: CreditOrderDependencies): CreditOrder {
     if (order.hold) return { outcome: 'skipped', reason: 'hold' };
     if (order.rights_pending) return { outcome: 'skipped', reason: 'rights_pending' };
     const seq = await readLatestSettleSeq(trx, appId, orderId);
-    const n = order.settle_commission_fen;
-    if (seq === null || seq !== input.expectedSettleSeq || n === null) {
+    const settled = order.settle_commission_fen;
+    if (seq === null || seq !== input.expectedSettleSeq || settled === null) {
       return { outcome: 'skipped', reason: 'settlement_changed' };
     }
+    // B2-04lb (D10-463 / D10-474 ①; BR-FUND-06, BR-FUND-08 ②, BR-CALC-15): partial rights results
+    // before credit lower N. The union's latest settlement record answers the deductions received
+    // before it; the ones received at or after it are still open and are subtracted (floor 0).
+    const openDeduction = await readOpenDeductionTotal(trx, appId, orderId, true);
+    const reduced = subFen(settled, openDeduction);
+    const n = openDeduction === 0n ? settled : reduced > 0n ? reduced : 0n;
     const step = transitionOrderRebate(FROM_STATUS, EVENT);
     if (!step.ok || step.noop || step.to !== 'CREDITED') {
       throw new Error('settlement credit: R5 is not a legal rebate transition');
