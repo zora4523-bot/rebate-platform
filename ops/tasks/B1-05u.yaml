@@ -14,6 +14,7 @@ paths:
   - 'packages/db/src/**'
 test_paths:
   - 'test/spec/catalog/product-pool-commission-schema/**'
+  - 'test/spec/catalog/product-pool-schema/kit.ts'
 impl: claude
 tester: claude-independent
 accept:
