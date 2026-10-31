@@ -1,14 +1,19 @@
-// 「异常收款」页签：GET /admin/v1/pay-anomalies（渠道筛选，页码分页）。只读；证据不返回、不显示。
-// TODO(规划/11 §7): 异常收款的【原路退款】 — blocked on 写接口未接入（本段只读）
-import { Button, Card, Flex, Form, Select, Tag, Typography, theme } from 'antd';
+// 「异常收款」页签：GET /admin/v1/pay-anomalies（渠道筛选，页码分页）；证据不返回、不显示。
+// F1-13b：持 pay.refund 时每行有【退款】（原路退回，CT-21e createAdminPayAnomalyRefund，不设二次验证，
+// 可退金额按收款金额减已退成功先查，成功后提示退款中并重新读取列表）。
+// TODO(规划/11 §7): 异常收款的退款记录与单笔退款详情 — blocked on pay-refunds 读接口未实现
+import { Alert, Button, Card, Flex, Form, Select, Tag, Typography, theme } from 'antd';
 import type { TableColumnsType } from 'antd';
-import { useId, useState, type ReactElement } from 'react';
+import { useId, useRef, useState, type ReactElement } from 'react';
+import type { AccessControl } from '../../providers/access-control/index.ts';
 import { payOrdersTexts } from '../../texts/pay-orders.ts';
 import { DictName } from './DictName.tsx';
 import {
   ANOMALIES_URL,
   CHANNELS,
   anomalyParams,
+  anomalyRefundUrl,
+  anomalyRefundable,
   anomalyStatusLabel,
   beijingTime,
   channelLabel,
@@ -19,15 +24,62 @@ import {
   type PayChannel,
 } from './model.ts';
 import { PagedTable, usePagedRead } from './PagedList.tsx';
+import { useRefund } from './useRefund.tsx';
 
 const t = payOrdersTexts.anomalies;
 
-export function AnomaliesTab(): ReactElement {
+interface Notice {
+  readonly id: number;
+  readonly type: 'success' | 'warning' | 'error';
+  readonly text: string;
+}
+
+export interface AnomaliesTabProps {
+  readonly access: AccessControl;
+}
+
+export function AnomaliesTab({ access }: AnomaliesTabProps): ReactElement {
   const { token } = theme.useToken();
   const channelId = useId();
   const [draft, setDraft] = useState<PayChannel>();
   const [filters, setFilters] = useState<AnomalyFilters>({});
   const read = usePagedRead<PayAnomaly>(ANOMALIES_URL, anomalyParams(filters));
+  const canRefund = access.can('pay.refund');
+
+  const notices = useRef(0);
+  const [notice, setNotice] = useState<Notice>();
+  const tell = (type: Notice['type'], text: string) => {
+    notices.current += 1;
+    setNotice({ id: notices.current, type, text });
+  };
+  const refund = useRefund({
+    onAccepted: (created) => {
+      tell('success', t.accepted(money(created.amount_fen)));
+      read.reload();
+    },
+    onConflict: () => {
+      tell('warning', t.conflict);
+      read.reload();
+    },
+    onMissing: () => {
+      tell('error', payOrdersTexts.refund.missingAnomaly);
+      read.reload();
+    },
+    onUncertainClose: () => {
+      read.reload();
+    },
+  });
+  const startRefund = (row: PayAnomaly) => {
+    const refundable = anomalyRefundable(row);
+    if (!canRefund || refundable <= 0n) return;
+    setNotice(undefined);
+    refund.start({
+      url: anomalyRefundUrl(row.pay_anomaly_id),
+      label: t.refundTarget(row.channel_trade_no),
+      refundable,
+      refundableNote: t.refundableNote,
+    });
+  };
 
   const runQuery = () => {
     setFilters(draft === undefined ? {} : { payChannel: draft });
@@ -89,11 +141,41 @@ export function AnomaliesTab(): ReactElement {
         </Tag>
       ),
     },
+    ...(canRefund
+      ? [
+          {
+            key: 'actions',
+            title: t.columns.actions,
+            render: (_: unknown, row: PayAnomaly) => (
+              <Button
+                size="small"
+                danger
+                autoInsertSpace={false}
+                disabled={anomalyRefundable(row) <= 0n}
+                onClick={() => startRefund(row)}
+              >
+                {t.refundEntry}
+              </Button>
+            ),
+          },
+        ]
+      : []),
   ];
 
   return (
     <Flex vertical gap={16}>
       <Typography.Text type="secondary">{t.note}</Typography.Text>
+      {notice === undefined ? null : (
+        <Alert
+          key={notice.id}
+          type={notice.type}
+          showIcon
+          closable
+          role={notice.type === 'success' ? 'status' : 'alert'}
+          message={notice.text}
+          onClose={() => setNotice(undefined)}
+        />
+      )}
       <Card>
         <Form layout="vertical" component="div">
           <Flex wrap gap={16} align="flex-end">
@@ -127,6 +209,7 @@ export function AnomaliesTab(): ReactElement {
         failedText={t.failed}
         emptyText={t.empty}
       />
+      {refund.modal}
     </Flex>
   );
 }

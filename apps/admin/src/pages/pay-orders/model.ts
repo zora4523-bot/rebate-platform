@@ -1,8 +1,22 @@
 // 支付单页的数据辅助：支付单状态、渠道、业务类型、退款状态与原因码、渠道请求类型与结果、异常收款
 // 状态、R4 差错类型与状态的后台字典名（BR-TEXT-25，缺键显示编码）、后台金额（BR-TEXT-10，经
-// @couli/money，只用整数分、不做客户端运算）、北京时间、筛选条件到查询参数、错误分类。这里不放文案。
-import { formatYuanAdmin, parseFen } from '@couli/money';
-import { pay_channel, pay_order_status, recon_diff_status, type Schema } from '@couli/contracts-ts';
+// @couli/money，只用整数分）、北京时间、筛选条件到查询参数、错误分类；F1-13b 加原路退款的可退金额
+// （BR-PAY-06 ③，bigint 分，经 @couli/money）、元输入到分、写接口地址与幂等键。这里不放文案。
+import {
+  addFen,
+  fenToJsonNumber,
+  formatYuanAdmin,
+  parseFen,
+  subFen,
+  yuanStrToFen,
+} from '@couli/money';
+import {
+  pay_channel,
+  pay_order_status,
+  pay_refund_reason,
+  recon_diff_status,
+  type Schema,
+} from '@couli/contracts-ts';
 import { AdminApiError } from '../../providers/data/index.ts';
 import { payOrdersTexts as t } from '../../texts/pay-orders.ts';
 
@@ -16,12 +30,35 @@ export type PayOrderStatus = Schema<'AdminPayOrderStatus'>;
 export type PayChannel = Schema<'AdminPayChannel'>;
 export type PayReconDiffType = Schema<'AdminPayReconDiffType'>;
 export type ReconDiffStatus = Schema<'AdminReconDiffStatus'>;
+export type PayRefundReason = Schema<'AdminPayRefundReason'>;
+export type PayRefundCreateRequest = Schema<'AdminPayRefundCreateRequest'>;
+export type PayOrderResolveRequest = Schema<'AdminPayOrderResolveRequest'>;
+export type PayOrderResolveResult = Schema<'AdminPayOrderResolveResult'>;
 
 export const ORDERS_URL = '/admin/v1/pay-orders';
 export const ANOMALIES_URL = '/admin/v1/pay-anomalies';
 export const DIFFS_URL = '/admin/v1/pay-recon-diffs';
 export const orderUrl = (payOrderId: string): string =>
   `${ORDERS_URL}/${encodeURIComponent(payOrderId)}`;
+
+/** POST createAdminPayRefund. */
+export const orderRefundUrl = (payOrderId: string): string => `${orderUrl(payOrderId)}/refunds`;
+/** POST resolveAdminPayOrder. */
+export const orderResolveUrl = (payOrderId: string): string => `${orderUrl(payOrderId)}/resolve`;
+/** POST createAdminPayAnomalyRefund. */
+export const anomalyRefundUrl = (payAnomalyId: string): string =>
+  `${ANOMALIES_URL}/${encodeURIComponent(payAnomalyId)}/refunds`;
+
+/** The fixed body of 【立即查询】 (contract: only these values). */
+export const RESOLVE_BODY: PayOrderResolveRequest = {
+  expected_status: 'PENDING',
+  action: 'query_and_settle',
+};
+
+/** pay_refund_reason, in its contract order. */
+export const REFUND_REASONS: readonly PayRefundReason[] = pay_refund_reason;
+/** note of AdminPayRefundCreateRequest: at most 200 characters. */
+export const REFUND_NOTE_MAX = 200;
 
 /** page_size of the three lists (contract ≤ 200). */
 export const PAGE_SIZE = 20;
@@ -195,3 +232,75 @@ export function diffParams(filters: DiffFilters): Record<string, string> {
 
 export const codeOf = (cause: unknown): number | undefined =>
   cause instanceof AdminApiError ? cause.code : undefined;
+
+/** data.fields of a 20001 answer (empty otherwise). */
+export function rejectedFields(cause: unknown): readonly string[] {
+  if (!(cause instanceof AdminApiError) || cause.code !== 20001) return [];
+  const data: unknown = cause.data;
+  if (typeof data !== 'object' || data === null) return [];
+  const fields: unknown = (data as Record<string, unknown>)['fields'];
+  return Array.isArray(fields)
+    ? fields.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+/** The request got no answer (the outcome is unknown). */
+export const isNetwork = (cause: unknown): boolean =>
+  cause instanceof AdminApiError && cause.kind === 'network';
+
+/** A new Idempotency-Key for one refund dialog (kept for every retry inside it). */
+export function newRequestKey(): string {
+  return globalThis.crypto.randomUUID();
+}
+
+// ---- refunds (BR-PAY-06) -------------------------------------------------------------------
+
+/** The JSON integer of a fen amount (amount_fen of a request). */
+export function fenToNumber(fen: bigint): number {
+  return fenToJsonNumber(fen);
+}
+
+/** Admin amount of a bigint fen value. */
+export function moneyOf(fen: bigint): string {
+  return formatYuanAdmin(fen);
+}
+
+/**
+ * Refundable fen of a pay order: amount − SUCCESS − PROCESSING refunds (FAILED ones hold
+ * nothing, BR-PAY-06 ③). Never below zero.
+ */
+export function orderRefundable(order: PayOrder, refunds: readonly PayRefund[]): bigint {
+  let used = 0n;
+  for (const refund of refunds)
+    if (refund.status === 'SUCCESS' || refund.status === 'PROCESSING')
+      used = addFen(used, parseFen(refund.amount_fen));
+  const left = subFen(parseFen(order.amount_fen), used);
+  return left > 0n ? left : 0n;
+}
+
+/**
+ * Refundable fen of an anomaly as its list row shows it: received − successfully refunded (the
+ * row does not carry processing refunds; the server checks those). Never below zero.
+ */
+export function anomalyRefundable(row: PayAnomaly): bigint {
+  const left = subFen(parseFen(row.amount_fen), parseFen(row.refunded_fen));
+  return left > 0n ? left : 0n;
+}
+
+const YUAN_INPUT = /^[0-9]+(?:\.[0-9]{1,2})?$/;
+
+/**
+ * The typed yuan amount in fen: a plain positive number with at most two decimals (no sign, no
+ * exponent, nothing below one fen); anything else is 'invalid', blank is 'empty'.
+ */
+export function parseRefundAmount(text: string): bigint | 'empty' | 'invalid' {
+  const trimmed = text.trim();
+  if (trimmed === '') return 'empty';
+  if (!YUAN_INPUT.test(trimmed)) return 'invalid';
+  try {
+    const fen = yuanStrToFen(trimmed);
+    return fen > 0n ? fen : 'invalid';
+  } catch {
+    return 'invalid';
+  }
+}
