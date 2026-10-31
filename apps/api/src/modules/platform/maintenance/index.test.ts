@@ -68,7 +68,8 @@ async function fixture(instant = '2026-11-20T03:04:05Z', dayPartitions = false) 
       else if (/ensure_(month|day)_partition/.test(query.sql)) {
         rows = [{ partition: `${String(query.parameters[0])}:${String(query.parameters[1])}` }];
       } else if (/drop_expired_(month|day)_partitions/.test(query.sql)) rows = [{ partitions: [] }];
-      else if (query.sql.includes('delete_expired_link_open_attempts')) rows = [{ deleted: 0n }];
+      else if (query.sql.includes('delete_expired_')) rows = [{ deleted: 0n }];
+      else if (query.sql.includes('read_retention_settings')) rows = [];
       else if (query.sql.includes('partition_default_rows')) rows = [];
       else if (query.sql.includes('set_config')) rows = [];
       else throw new Error('unexpected statement');
@@ -826,4 +827,243 @@ it('[AC-B1-01zk#5] worker 实例同样清理打开尝试', async () => {
   instances.push(worker);
   await worker.runOnce();
   expect(f.queries.filter((q) => q.sql.includes(OPEN_ATTEMPTS))).toHaveLength(1);
+});
+
+// Section K. Batch size and limit are contract values, written out by hand.
+const RETENTION_ORDER = [
+  'login_logs',
+  'device_registrations',
+  'inbox_messages',
+  'notify_logs',
+  'sms_send_attempts',
+  'deleted_identities',
+];
+const RETENTION_CALL = /delete_expired_(?!link_open_attempts)([a-z_]+)/;
+const SETTINGS = 'read_retention_settings';
+
+function retentionCalls(queries: readonly CompiledQuery[]): CompiledQuery[] {
+  return queries.filter((q) => RETENTION_CALL.test(q.sql));
+}
+
+function tableOf(query: CompiledQuery): string | undefined {
+  return RETENTION_CALL.exec(query.sql)?.[1];
+}
+
+/** The days a retention call of `table` was given. */
+function daysOf(queries: readonly CompiledQuery[], table: string): unknown {
+  return retentionCalls(queries).find((q) => tableOf(q) === table)?.parameters[1];
+}
+
+it.each([
+  ['2026-10-08T19:59:59.999Z', true, 0],
+  ['2026-10-08T20:00:00.000Z', true, 6],
+  ['2026-10-08T20:00:00.000Z', false, 0],
+] as const)(
+  '[AC-B1-15zb#8] 保留期清理遵守 04:00 门槛与开关（%s，启用=%s，调用 %i 次），无配置行按 08 现值，在打开尝试之后、DEFAULT 检查之前，共用 now、不开显式事务',
+  async (instant, enabled, calls) => {
+    const f = await fixture(instant, enabled);
+    const report = await f.maintenance.runOnce();
+    const batches = retentionCalls(f.queries);
+    expect(batches).toHaveLength(calls);
+    expect(f.queries.some((q) => q.sql.includes(SETTINGS))).toBe(calls > 0);
+    expect(f.now).toHaveBeenCalledTimes(1);
+    expect(report).toMatchObject({ dropped: [], failed: 0 });
+    expect(f.transactions.some((t) => t.queries.some((q) => RETENTION_CALL.test(q.sql)))).toBe(
+      false,
+    );
+    expect(f.logger.info.mock.calls).toEqual([
+      [
+        { ensured: enabled ? ALL_ENSURED : MONTH_ENSURED, dropped: 0, failed: 0 },
+        'partition_maintenance_done',
+      ],
+    ]);
+    if (calls > 0) {
+      const now = f.now.mock.results[0]!.value;
+      expect(batches.map((q) => [tableOf(q), q.parameters])).toEqual([
+        ['login_logs', [now, 180, 1000]],
+        ['device_registrations', [now, 180, 1000]],
+        ['inbox_messages', [now, 180, 1000]],
+        ['notify_logs', [now, 190, 1000]],
+        ['sms_send_attempts', [now, 190, 1000]],
+        ['deleted_identities', [now, 1000]],
+      ]);
+      expect(f.queries.find((q) => q.sql.includes(SETTINGS))?.parameters).toEqual(['couli']);
+      const order = f.queries.map((q) => q.sql);
+      expect(order.findIndex((sql) => sql.includes(OPEN_ATTEMPTS))).toBeLessThan(
+        order.findIndex((sql) => sql.includes(SETTINGS)),
+      );
+      expect(order.findIndex((sql) => sql.includes(SETTINGS))).toBeLessThan(
+        order.findIndex((sql) => RETENTION_CALL.test(sql)),
+      );
+      expect(order.findLastIndex((sql) => RETENTION_CALL.test(sql))).toBeLessThan(
+        order.findIndex((sql) => sql.includes('partition_default_rows')),
+      );
+    }
+  },
+);
+
+it('[AC-B1-15zb#8] worker 实例同样清理六张表', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z');
+  const worker = createWorkerMaintenance({
+    db: f.db,
+    logger: f.logger as unknown as RootLogger,
+    clock: f.clock,
+  });
+  instances.push(worker);
+  await worker.runOnce();
+  expect(retentionCalls(f.queries).map(tableOf)).toEqual(RETENTION_ORDER);
+});
+
+it.each([
+  [200, 200],
+  [180, 180],
+  [36500, 36500],
+  [50000, 36500],
+  [179, 180],
+  [0, 180],
+  [-1, 180],
+  [200.5, 180],
+  ['200', 180],
+  [true, 180],
+  [null, 180],
+  [{ days: 200 }, 180],
+  [[200], 180],
+] as const)(
+  '[AC-B1-15zb#9] 配置值 %j 用作 %i 天：不合法回落 08 现值、过大压到函数上限，都不记失败，其他表不受影响',
+  async (value, days) => {
+    const f = await fixture('2026-10-08T20:00:00.000Z', true);
+    f.control.respond = async (query) =>
+      query.sql.includes(SETTINGS) ? [{ key: 'retention.login_logs_days', value }] : undefined;
+    const report = await f.maintenance.runOnce();
+    expect(daysOf(f.queries, 'login_logs')).toBe(days);
+    expect(daysOf(f.queries, 'notify_logs')).toBe(190);
+    expect(report.failed).toBe(0);
+    expect(f.logger.error).not.toHaveBeenCalled();
+  },
+);
+
+it('[AC-B1-15zb#11] 配置每轮重读：改长后下一轮按新值', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  await f.maintenance.runOnce();
+  expect(daysOf(f.queries, 'notify_logs')).toBe(190);
+  f.queries.length = 0;
+  f.control.respond = async (query) =>
+    query.sql.includes(SETTINGS) ? [{ key: 'retention.notify_logs_days', value: 365 }] : undefined;
+  await f.maintenance.runOnce();
+  expect(daysOf(f.queries, 'notify_logs')).toBe(365);
+});
+
+it.each([
+  [false, 0],
+  [true, 6],
+  ['false', 6],
+  [null, 6],
+] as const)(
+  '[AC-B1-15zb#12] retention.purge.enabled 为 %j：调用 %i 次；只有 false 才关，打开尝试与其他维护照常',
+  async (value, calls) => {
+    const f = await fixture('2026-10-08T20:00:00.000Z', true);
+    f.control.respond = async (query) =>
+      query.sql.includes(SETTINGS) ? [{ key: 'retention.purge.enabled', value }] : undefined;
+    const report = await f.maintenance.runOnce();
+    expect(retentionCalls(f.queries)).toHaveLength(calls);
+    expect(f.queries.filter((q) => q.sql.includes(OPEN_ATTEMPTS))).toHaveLength(1);
+    expect(report.ensured).toHaveLength(ALL_ENSURED);
+    expect(report.failed).toBe(0);
+    expect(f.logger.error).not.toHaveBeenCalled();
+  },
+);
+
+it('[AC-B1-15zb#12] 读不到配置时开关未知：本轮一行都不删，只记一次失败，DEFAULT 检查照常', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  f.control.respond = async (query) => {
+    if (query.sql.includes(SETTINGS)) throw { code: '55P03', detail: 'private row data' };
+    return undefined;
+  };
+  const report = await f.maintenance.runOnce();
+  expect(retentionCalls(f.queries)).toEqual([]);
+  expect(report.failed).toBe(1);
+  expect(f.logger.error.mock.calls).toEqual([
+    [{ table: 'config_items', sqlstate: '55P03' }, 'retention_purge_failed'],
+  ]);
+  expect(f.transactions.at(-2)?.outcome).toBe('rolled back');
+  expect(f.queries.at(-1)?.sql).toContain('partition_default_rows');
+});
+
+it('[AC-B1-15zb#13] 分批删到 0 只写一行合计，没有删除的表不写日志', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  const deleted = [1000n, 1000n, 500n, 0n];
+  f.control.respond = async (query) =>
+    tableOf(query) === 'login_logs' ? [{ deleted: deleted.shift() }] : undefined;
+  expect((await f.maintenance.runOnce()).failed).toBe(0);
+  expect(retentionCalls(f.queries).filter((q) => tableOf(q) === 'login_logs')).toHaveLength(4);
+  expect(f.logger.info.mock.calls).toEqual([
+    [{ table: 'login_logs', rows: 2500 }, 'retention_purged'],
+    [{ ensured: ALL_ENSURED, dropped: 0, failed: 0 }, 'partition_maintenance_done'],
+  ]);
+  expect(f.logger.warn).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-15zb#14] 做满 100 批还有积压：本表停下记 backlog，不算失败，其他表照常', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  f.control.respond = async (query) =>
+    tableOf(query) === 'login_logs' ? [{ deleted: 1000n }] : undefined;
+  const report = await f.maintenance.runOnce();
+  expect(retentionCalls(f.queries).filter((q) => tableOf(q) === 'login_logs')).toHaveLength(100);
+  expect(report.failed).toBe(0);
+  expect(f.logger.warn.mock.calls).toEqual([
+    [{ table: 'login_logs', rows: 100_000 }, 'retention_purge_backlog'],
+  ]);
+  expect(retentionCalls(f.queries).at(-1)?.sql).toContain('delete_expired_deleted_identities');
+});
+
+it('[AC-B1-15zb#15] 一张表中途失败：已删行数先记、本表不再续批，其他表与维护继续，日志不泄露错误内容', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  let notifyCalls = 0;
+  f.control.respond = async (query) => {
+    if (tableOf(query) !== 'notify_logs') return undefined;
+    notifyCalls += 1;
+    if (notifyCalls === 2) throw { code: '55P03', message: 'private SQL', detail: 'private row' };
+    return [{ deleted: 1000n }];
+  };
+  const report = await f.maintenance.runOnce();
+  expect(notifyCalls).toBe(2);
+  expect(report.failed).toBe(1);
+  expect(f.logger.info.mock.calls).toEqual([
+    [{ table: 'notify_logs', rows: 1000 }, 'retention_purged'],
+    [{ ensured: ALL_ENSURED, dropped: 0, failed: 1 }, 'partition_maintenance_done'],
+  ]);
+  expect(f.logger.error.mock.calls).toEqual([
+    [{ table: 'notify_logs', sqlstate: '55P03' }, 'retention_purge_failed'],
+  ]);
+  expect(retentionCalls(f.queries).map(tableOf).slice(-2)).toEqual([
+    'sms_send_attempts',
+    'deleted_identities',
+  ]);
+  expect(f.queries.at(-1)?.sql).toContain('partition_default_rows');
+});
+
+it('[AC-B1-15zb#16] 每张表都失败时各记一次，MaintenanceReport 形状不变', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  f.control.respond = async (query) => {
+    if (tableOf(query) !== undefined) throw { code: 'secret' };
+    return undefined;
+  };
+  const report = await f.maintenance.runOnce();
+  expect(Object.keys(report).sort()).toEqual(['defaultRows', 'dropped', 'ensured', 'failed']);
+  expect(report.failed).toBe(RETENTION_ORDER.length);
+  expect(f.logger.error.mock.calls).toEqual(
+    RETENTION_ORDER.map((table) => [{ table, sqlstate: null }, 'retention_purge_failed']),
+  );
+});
+
+it('[AC-B1-15zb#16] 返回的行数超出批大小按失败处理，不记不可信的行数', async () => {
+  const f = await fixture('2026-10-08T20:00:00.000Z', true);
+  f.control.respond = async (query) =>
+    tableOf(query) === 'login_logs' ? [{ deleted: 1001n }] : undefined;
+  expect((await f.maintenance.runOnce()).failed).toBe(1);
+  expect(f.logger.error.mock.calls).toEqual([
+    [{ table: 'login_logs', sqlstate: null }, 'retention_purge_failed'],
+  ]);
+  expect(f.logger.info).toHaveBeenCalledTimes(1);
+  expect(retentionCalls(f.queries).filter((q) => tableOf(q) === 'login_logs')).toHaveLength(1);
 });

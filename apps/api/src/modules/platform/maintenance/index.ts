@@ -366,6 +366,28 @@
 //      - A failing call (55P03 included): the line above for the rows deleted before it (if any),
 //        then `open_attempts_delete_failed` (error) { table: 'link_open_attempts', sqlstate },
 //        failed += 1, no further batch in this run; the run goes on with C.5.
+//
+// K. Retention cleanup, first batch (task B1-15zb). Basis: BR-ID-30 正文, ⑥ ⑩ ⑮ ⑯ ⑱; orchestrator
+//    rulings D10-451, D10-454, D10-457, D10-458. The contract is the header of
+//    test/spec/platform/retention/kit.ts; the SQL functions are in `0102_retention-cleanup.sql`.
+//    Module — only when `dayPartitions` is true, inside the C.4 gate, right after section J, with
+//    the same single `now`:
+//    - Configuration is read once per run, never cached, in its own short transaction with the
+//      5 s lock timeout of C.3, through `app.read_retention_settings('couli')`: couli_maint has
+//      EXECUTE on that function (0102) and no privilege on app.config_items itself, and
+//      createWorkerMaintenance takes no reader while platform may not depend on the content module.
+//      A failing read skips the whole cleanup (the switch below is unknown, so nothing may be
+//      deleted): one `retention_purge_failed` { table: 'config_items', sqlstate }, failed += 1, and
+//      the run goes on with C.5.
+//    - retention.purge.enabled exactly false: nothing below runs. Any other value, or no row: on.
+//    - retention.<table>_days: an integer at or above the table's BR-ID-30 value is used; a missing
+//      or invalid value falls back to that BR-ID-30 value, without a failure. A value above the
+//      functions' ceiling of 36500 is capped there, not refused: whoever set it wants rows kept
+//      longer, so falling back to the shorter BR-ID-30 value would delete what they meant to keep.
+//    - Each table: batches of RETENTION_BATCH_SIZE, each its own statement, until 0 or
+//      RETENTION_MAX_BATCHES; a failing table does not stop the others.
+//    - Report and `partition_maintenance_done` unchanged. Log lines as in the kit header: nothing
+//      when nothing was deleted and nothing failed.
 import {
   MONTH_PARTITIONED_TABLES,
   MONTHS_AHEAD,
@@ -391,6 +413,35 @@ export const OPEN_ATTEMPTS_BATCH_SIZE = 1000;
 
 /** Most deletion batches of link_open_attempts in one run (section J). */
 export const OPEN_ATTEMPTS_MAX_BATCHES = 100;
+
+/** Rows per call of the retention functions (section K). */
+const RETENTION_BATCH_SIZE = 1000;
+
+/** Most batches per table in one run; a larger backlog continues in the next run (section K). */
+const RETENTION_MAX_BATCHES = 100;
+
+/** Upper limit of p_days in the retention functions (section K). */
+const RETENTION_MAX_DAYS = 36_500;
+
+/** The app whose config_items rows hold the retention settings (section K). */
+const RETENTION_APP_ID = 'couli';
+
+const RETENTION_ENABLED_KEY = 'retention.purge.enabled';
+
+/** Tables purged by created_at, with their BR-ID-30 values (⑥ ⑮ ⑯ ⑱), also the floors. */
+const RETENTION_TABLES: readonly { readonly table: string; readonly floorDays: number }[] = [
+  { table: 'login_logs', floorDays: 180 },
+  { table: 'device_registrations', floorDays: 180 },
+  { table: 'inbox_messages', floorDays: 180 },
+  { table: 'notify_logs', floorDays: 190 },
+  { table: 'sms_send_attempts', floorDays: 190 },
+];
+
+/** The configured retention of one table, or its floor when unusable (section K). */
+function retentionDays(value: unknown, floorDays: number): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < floorDays) return floorDays;
+  return Math.min(value, RETENTION_MAX_DAYS);
+}
 
 /** Days pre-created after the current +08:00 day (section I2; ADR-0001 §4.2 #4). */
 export const DAYS_AHEAD = 14;
@@ -565,6 +616,79 @@ export function createPartitionMaintenance(
     return true;
   }
 
+  /** Section K: one table's bounded batches; resolves false when a batch failed. */
+  async function purgeTable(
+    table: string,
+    deleteBatch: () => Promise<{ rows: { deleted: bigint | number | string }[] }>,
+  ): Promise<boolean> {
+    let rows = 0;
+    let batches = 0;
+    let last = 0;
+    try {
+      while (batches < RETENTION_MAX_BATCHES) {
+        // No explicit transaction: every batch commits on its own and needs one connection only.
+        const result = await deleteBatch();
+        batches += 1;
+        last = Number(result.rows[0]!.deleted);
+        if (!Number.isSafeInteger(last) || last < 0 || last > RETENTION_BATCH_SIZE) {
+          throw new RangeError('deleted row count out of range');
+        }
+        rows += last;
+        if (last === 0) break;
+      }
+    } catch (error) {
+      if (rows > 0) logger.info({ table, rows }, 'retention_purged');
+      logger.error({ table, sqlstate: sqlstate(error) }, 'retention_purge_failed');
+      return false;
+    }
+    if (rows > 0) {
+      if (last > 0) logger.warn({ table, rows }, 'retention_purge_backlog');
+      else logger.info({ table, rows }, 'retention_purged');
+    }
+    return true;
+  }
+
+  /** Section K: the whole retention cleanup of one run; resolves the number of failures. */
+  async function purgeExpiredRows(now: Date): Promise<number> {
+    let settings: ReadonlyMap<string, unknown>;
+    try {
+      const result = await db.transaction().execute(async (trx) => {
+        await sql`SELECT set_config('lock_timeout', '5s', true)`.execute(trx);
+        return sql<{ key: string; value: unknown }>`
+          SELECT key, value FROM app.read_retention_settings(${RETENTION_APP_ID}::text)
+        `.execute(trx);
+      });
+      settings = new Map(result.rows.map((row) => [row.key, row.value]));
+    } catch (error) {
+      // The switch is unknown, so nothing may be deleted in this run.
+      logger.error({ table: 'config_items', sqlstate: sqlstate(error) }, 'retention_purge_failed');
+      return 1;
+    }
+    if (settings.get(RETENTION_ENABLED_KEY) === false) return 0;
+
+    let failures = 0;
+    for (const { table, floorDays } of RETENTION_TABLES) {
+      const days = retentionDays(settings.get(`retention.${table}_days`), floorDays);
+      const purged = await purgeTable(table, () =>
+        sql<{ deleted: bigint }>`
+          SELECT ${sql.id('app', `delete_expired_${table}`)}(
+            ${now}::timestamptz, ${days}::integer, ${RETENTION_BATCH_SIZE}::integer
+          ) AS deleted
+        `.execute(db),
+      );
+      if (!purged) failures += 1;
+    }
+    const identities = await purgeTable('deleted_identities', () =>
+      sql<{ deleted: bigint }>`
+        SELECT app.delete_expired_deleted_identities(
+          ${now}::timestamptz, ${RETENTION_BATCH_SIZE}::integer
+        ) AS deleted
+      `.execute(db),
+    );
+    if (!identities) failures += 1;
+    return failures;
+  }
+
   async function runOnce(): Promise<MaintenanceReport> {
     const role = await sql<{ role: string }>`SELECT current_user AS role`.execute(db);
     if (role.rows[0]?.role !== 'couli_maint') throw new MaintenanceError('wrong_role');
@@ -648,6 +772,7 @@ export function createPartitionMaintenance(
           }
         }
         if (!(await deleteExpiredOpenAttempts(now))) failed += 1;
+        failed += await purgeExpiredRows(now);
       }
     }
 

@@ -60,6 +60,165 @@ CREATE TYPE pgboss.job_state AS ENUM (
 
 
 --
+-- Name: delete_expired_deleted_identities(timestamp with time zone, integer); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.delete_expired_deleted_identities(p_now timestamp with time zone, p_batch_size integer) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    SET lock_timeout TO '5s'
+    AS $$
+DECLARE
+  v_deleted bigint;
+BEGIN
+  IF p_now IS NULL OR p_batch_size IS NULL THEN
+    RAISE EXCEPTION 'delete_expired_deleted_identities: p_now and p_batch_size are required'
+      USING ERRCODE = 'null_value_not_allowed';
+  END IF;
+
+  IF NOT isfinite(p_now) THEN
+    RAISE EXCEPTION 'delete_expired_deleted_identities: p_now must be finite'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  IF p_batch_size < 1 OR p_batch_size > 10000 THEN
+    RAISE EXCEPTION 'delete_expired_deleted_identities: p_batch_size must be between 1 and 10000'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- BR-ID-30 ⑩: each row carries its own expiry, compared with the instant itself; no day
+  -- boundary, and created_at and deleted_at do not matter.
+  WITH victims AS (
+    SELECT i.id
+    FROM app.deleted_identities i
+    WHERE i.expire_at < p_now
+    ORDER BY i.expire_at
+    LIMIT p_batch_size
+    FOR UPDATE SKIP LOCKED
+  )
+  DELETE FROM app.deleted_identities t
+  USING victims v
+  WHERE t.id = v.id;
+
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END
+$$;
+
+
+--
+-- Name: delete_expired_device_registrations(timestamp with time zone, integer, integer); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.delete_expired_device_registrations(p_now timestamp with time zone, p_days integer, p_batch_size integer) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    SET lock_timeout TO '5s'
+    AS $$
+DECLARE
+  v_cutoff  timestamptz;
+  v_deleted bigint;
+BEGIN
+  IF p_now IS NULL OR p_days IS NULL OR p_batch_size IS NULL THEN
+    RAISE EXCEPTION 'delete_expired_device_registrations: p_now, p_days and p_batch_size are required'
+      USING ERRCODE = 'null_value_not_allowed';
+  END IF;
+
+  IF NOT isfinite(p_now) THEN
+    RAISE EXCEPTION 'delete_expired_device_registrations: p_now must be finite'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  IF p_batch_size < 1 OR p_batch_size > 10000 THEN
+    RAISE EXCEPTION 'delete_expired_device_registrations: p_batch_size must be between 1 and 10000'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- The floor is BR-ID-30 ⑱ itself: the second gate behind the configuration.
+  IF p_days < 180 OR p_days > 36500 THEN
+    RAISE EXCEPTION 'delete_expired_device_registrations: p_days must be between 180 and 36500'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- Fixed UTC+08:00, never the session TimeZone (see app.delete_expired_login_logs).
+  v_cutoff := (((p_now AT TIME ZONE INTERVAL '8 hours')::date - p_days)::timestamp
+    AT TIME ZONE INTERVAL '8 hours');
+
+  WITH victims AS (
+    SELECT d.app_id, d.user_id
+    FROM app.device_registrations d
+    WHERE d.created_at < v_cutoff
+    ORDER BY d.created_at
+    LIMIT p_batch_size
+    FOR UPDATE SKIP LOCKED
+  )
+  DELETE FROM app.device_registrations t
+  USING victims v
+  WHERE t.app_id = v.app_id AND t.user_id = v.user_id;
+
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END
+$$;
+
+
+--
+-- Name: delete_expired_inbox_messages(timestamp with time zone, integer, integer); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.delete_expired_inbox_messages(p_now timestamp with time zone, p_days integer, p_batch_size integer) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    SET lock_timeout TO '5s'
+    AS $$
+DECLARE
+  v_cutoff  timestamptz;
+  v_deleted bigint;
+BEGIN
+  IF p_now IS NULL OR p_days IS NULL OR p_batch_size IS NULL THEN
+    RAISE EXCEPTION 'delete_expired_inbox_messages: p_now, p_days and p_batch_size are required'
+      USING ERRCODE = 'null_value_not_allowed';
+  END IF;
+
+  IF NOT isfinite(p_now) THEN
+    RAISE EXCEPTION 'delete_expired_inbox_messages: p_now must be finite'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  IF p_batch_size < 1 OR p_batch_size > 10000 THEN
+    RAISE EXCEPTION 'delete_expired_inbox_messages: p_batch_size must be between 1 and 10000'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- The floor is BR-ID-30 ⑮ itself: the second gate behind the configuration.
+  IF p_days < 180 OR p_days > 36500 THEN
+    RAISE EXCEPTION 'delete_expired_inbox_messages: p_days must be between 180 and 36500'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- Fixed UTC+08:00, never the session TimeZone (see app.delete_expired_login_logs).
+  v_cutoff := (((p_now AT TIME ZONE INTERVAL '8 hours')::date - p_days)::timestamp
+    AT TIME ZONE INTERVAL '8 hours');
+
+  WITH victims AS (
+    SELECT m.message_id
+    FROM app.inbox_messages m
+    WHERE m.created_at < v_cutoff
+    ORDER BY m.created_at
+    LIMIT p_batch_size
+    FOR UPDATE SKIP LOCKED
+  )
+  DELETE FROM app.inbox_messages t
+  USING victims v
+  WHERE t.message_id = v.message_id;
+
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END
+$$;
+
+
+--
 -- Name: delete_expired_link_open_attempts(timestamp with time zone, integer); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -106,6 +265,178 @@ BEGIN
   DELETE FROM app.link_open_attempts t
   USING victims v
   WHERE t.attempt_id = v.attempt_id;
+
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END
+$$;
+
+
+--
+-- Name: delete_expired_login_logs(timestamp with time zone, integer, integer); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.delete_expired_login_logs(p_now timestamp with time zone, p_days integer, p_batch_size integer) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    SET lock_timeout TO '5s'
+    AS $$
+DECLARE
+  v_cutoff  timestamptz;
+  v_deleted bigint;
+BEGIN
+  IF p_now IS NULL OR p_days IS NULL OR p_batch_size IS NULL THEN
+    RAISE EXCEPTION 'delete_expired_login_logs: p_now, p_days and p_batch_size are required'
+      USING ERRCODE = 'null_value_not_allowed';
+  END IF;
+
+  IF NOT isfinite(p_now) THEN
+    RAISE EXCEPTION 'delete_expired_login_logs: p_now must be finite'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  IF p_batch_size < 1 OR p_batch_size > 10000 THEN
+    RAISE EXCEPTION 'delete_expired_login_logs: p_batch_size must be between 1 and 10000'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- The floor is BR-ID-30 ⑥ itself: the second gate behind the configuration.
+  IF p_days < 180 OR p_days > 36500 THEN
+    RAISE EXCEPTION 'delete_expired_login_logs: p_days must be between 180 and 36500'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- Fixed UTC+08:00, never the session TimeZone. Subtract calendar days before converting
+  -- local midnight back to an instant (BR-ID-30 正文).
+  v_cutoff := (((p_now AT TIME ZONE INTERVAL '8 hours')::date - p_days)::timestamp
+    AT TIME ZONE INTERVAL '8 hours');
+
+  -- One bounded batch over every app_id. SKIP LOCKED: a row a writer holds is left for a later
+  -- batch instead of making maintenance wait; table-level waits are capped by lock_timeout.
+  WITH victims AS (
+    SELECT l.id
+    FROM app.login_logs l
+    WHERE l.created_at < v_cutoff
+    ORDER BY l.created_at
+    LIMIT p_batch_size
+    FOR UPDATE SKIP LOCKED
+  )
+  DELETE FROM app.login_logs t
+  USING victims v
+  WHERE t.id = v.id;
+
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END
+$$;
+
+
+--
+-- Name: delete_expired_notify_logs(timestamp with time zone, integer, integer); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.delete_expired_notify_logs(p_now timestamp with time zone, p_days integer, p_batch_size integer) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    SET lock_timeout TO '5s'
+    AS $$
+DECLARE
+  v_cutoff  timestamptz;
+  v_deleted bigint;
+BEGIN
+  IF p_now IS NULL OR p_days IS NULL OR p_batch_size IS NULL THEN
+    RAISE EXCEPTION 'delete_expired_notify_logs: p_now, p_days and p_batch_size are required'
+      USING ERRCODE = 'null_value_not_allowed';
+  END IF;
+
+  IF NOT isfinite(p_now) THEN
+    RAISE EXCEPTION 'delete_expired_notify_logs: p_now must be finite'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  IF p_batch_size < 1 OR p_batch_size > 10000 THEN
+    RAISE EXCEPTION 'delete_expired_notify_logs: p_batch_size must be between 1 and 10000'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- The floor is BR-ID-30 ⑥ ⑯ itself: the second gate behind the configuration.
+  IF p_days < 190 OR p_days > 36500 THEN
+    RAISE EXCEPTION 'delete_expired_notify_logs: p_days must be between 190 and 36500'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- Fixed UTC+08:00, never the session TimeZone (see app.delete_expired_login_logs).
+  v_cutoff := (((p_now AT TIME ZONE INTERVAL '8 hours')::date - p_days)::timestamp
+    AT TIME ZONE INTERVAL '8 hours');
+
+  -- Every channel (inbox, push, sms) has the same period.
+  WITH victims AS (
+    SELECT n.id
+    FROM app.notify_logs n
+    WHERE n.created_at < v_cutoff
+    ORDER BY n.created_at
+    LIMIT p_batch_size
+    FOR UPDATE SKIP LOCKED
+  )
+  DELETE FROM app.notify_logs t
+  USING victims v
+  WHERE t.id = v.id;
+
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END
+$$;
+
+
+--
+-- Name: delete_expired_sms_send_attempts(timestamp with time zone, integer, integer); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.delete_expired_sms_send_attempts(p_now timestamp with time zone, p_days integer, p_batch_size integer) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    SET lock_timeout TO '5s'
+    AS $$
+DECLARE
+  v_cutoff  timestamptz;
+  v_deleted bigint;
+BEGIN
+  IF p_now IS NULL OR p_days IS NULL OR p_batch_size IS NULL THEN
+    RAISE EXCEPTION 'delete_expired_sms_send_attempts: p_now, p_days and p_batch_size are required'
+      USING ERRCODE = 'null_value_not_allowed';
+  END IF;
+
+  IF NOT isfinite(p_now) THEN
+    RAISE EXCEPTION 'delete_expired_sms_send_attempts: p_now must be finite'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  IF p_batch_size < 1 OR p_batch_size > 10000 THEN
+    RAISE EXCEPTION 'delete_expired_sms_send_attempts: p_batch_size must be between 1 and 10000'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- The floor is BR-ID-30 ⑥ (D10-458) itself: the second gate behind the configuration.
+  IF p_days < 190 OR p_days > 36500 THEN
+    RAISE EXCEPTION 'delete_expired_sms_send_attempts: p_days must be between 190 and 36500'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- Fixed UTC+08:00, never the session TimeZone (see app.delete_expired_login_logs).
+  v_cutoff := (((p_now AT TIME ZONE INTERVAL '8 hours')::date - p_days)::timestamp
+    AT TIME ZONE INTERVAL '8 hours');
+
+  WITH victims AS (
+    SELECT s.app_id, s.attempt_id
+    FROM app.sms_send_attempts s
+    WHERE s.created_at < v_cutoff
+    ORDER BY s.created_at
+    LIMIT p_batch_size
+    FOR UPDATE SKIP LOCKED
+  )
+  DELETE FROM app.sms_send_attempts t
+  USING victims v
+  WHERE t.app_id = v.app_id AND t.attempt_id = v.attempt_id;
 
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
   RETURN v_deleted;
@@ -687,6 +1018,20 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
+$$;
+
+
+--
+-- Name: read_retention_settings(text); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.read_retention_settings(p_app_id text) RETURNS TABLE(key text, value jsonb)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+  SELECT c.key, c.value
+  FROM app.config_items c
+  WHERE c.app_id = p_app_id AND starts_with(c.key, 'retention.')
 $$;
 
 
@@ -7972,6 +8317,13 @@ CREATE INDEX deletion_requests_user_apply_idx ON app.deletion_requests USING btr
 
 
 --
+-- Name: device_registrations_created_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX device_registrations_created_at_idx ON app.device_registrations USING btree (created_at);
+
+
+--
 -- Name: device_registrations_device_created_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -8046,6 +8398,13 @@ CREATE INDEX export_tasks_done_expires_idx ON app.export_tasks USING btree (app_
 --
 
 CREATE INDEX favorites_app_id_user_id_created_at_id_idx ON app.favorites USING btree (app_id, user_id, created_at DESC, id);
+
+
+--
+-- Name: inbox_messages_created_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX inbox_messages_created_at_idx ON app.inbox_messages USING btree (created_at);
 
 
 --
@@ -8182,10 +8541,24 @@ CREATE INDEX link_open_attempts_user_opened_idx ON app.link_open_attempts USING 
 
 
 --
+-- Name: login_logs_created_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX login_logs_created_at_idx ON app.login_logs USING btree (created_at);
+
+
+--
 -- Name: login_logs_device_created_idx; Type: INDEX; Schema: app; Owner: -
 --
 
 CREATE INDEX login_logs_device_created_idx ON app.login_logs USING btree (app_id, device_hash, created_at) WHERE (device_hash IS NOT NULL);
+
+
+--
+-- Name: notify_logs_created_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX notify_logs_created_at_idx ON app.notify_logs USING btree (created_at);
 
 
 --
@@ -8697,6 +9070,13 @@ CREATE INDEX settle_batches_bill_idx ON app.settle_batches USING btree (app_id, 
 --
 
 CREATE INDEX settle_batches_status_idx ON app.settle_batches USING btree (app_id, status);
+
+
+--
+-- Name: sms_send_attempts_created_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX sms_send_attempts_created_at_idx ON app.sms_send_attempts USING btree (created_at);
 
 
 --
@@ -10818,11 +11198,59 @@ GRANT USAGE ON SCHEMA pgboss TO couli_payout;
 
 
 --
+-- Name: FUNCTION delete_expired_deleted_identities(p_now timestamp with time zone, p_batch_size integer); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.delete_expired_deleted_identities(p_now timestamp with time zone, p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION app.delete_expired_deleted_identities(p_now timestamp with time zone, p_batch_size integer) TO couli_maint;
+
+
+--
+-- Name: FUNCTION delete_expired_device_registrations(p_now timestamp with time zone, p_days integer, p_batch_size integer); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.delete_expired_device_registrations(p_now timestamp with time zone, p_days integer, p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION app.delete_expired_device_registrations(p_now timestamp with time zone, p_days integer, p_batch_size integer) TO couli_maint;
+
+
+--
+-- Name: FUNCTION delete_expired_inbox_messages(p_now timestamp with time zone, p_days integer, p_batch_size integer); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.delete_expired_inbox_messages(p_now timestamp with time zone, p_days integer, p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION app.delete_expired_inbox_messages(p_now timestamp with time zone, p_days integer, p_batch_size integer) TO couli_maint;
+
+
+--
 -- Name: FUNCTION delete_expired_link_open_attempts(p_now timestamp with time zone, p_batch_size integer); Type: ACL; Schema: app; Owner: -
 --
 
 REVOKE ALL ON FUNCTION app.delete_expired_link_open_attempts(p_now timestamp with time zone, p_batch_size integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION app.delete_expired_link_open_attempts(p_now timestamp with time zone, p_batch_size integer) TO couli_maint;
+
+
+--
+-- Name: FUNCTION delete_expired_login_logs(p_now timestamp with time zone, p_days integer, p_batch_size integer); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.delete_expired_login_logs(p_now timestamp with time zone, p_days integer, p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION app.delete_expired_login_logs(p_now timestamp with time zone, p_days integer, p_batch_size integer) TO couli_maint;
+
+
+--
+-- Name: FUNCTION delete_expired_notify_logs(p_now timestamp with time zone, p_days integer, p_batch_size integer); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.delete_expired_notify_logs(p_now timestamp with time zone, p_days integer, p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION app.delete_expired_notify_logs(p_now timestamp with time zone, p_days integer, p_batch_size integer) TO couli_maint;
+
+
+--
+-- Name: FUNCTION delete_expired_sms_send_attempts(p_now timestamp with time zone, p_days integer, p_batch_size integer); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.delete_expired_sms_send_attempts(p_now timestamp with time zone, p_days integer, p_batch_size integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION app.delete_expired_sms_send_attempts(p_now timestamp with time zone, p_days integer, p_batch_size integer) TO couli_maint;
 
 
 --
@@ -10884,6 +11312,14 @@ REVOKE ALL ON FUNCTION app.pay_refunds_reject_immutable_update() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION app.payout_accounts_reject_identifier_update() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION read_retention_settings(p_app_id text); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.read_retention_settings(p_app_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION app.read_retention_settings(p_app_id text) TO couli_maint;
 
 
 --
