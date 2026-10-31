@@ -38,6 +38,7 @@ import {
   ADMIN_SETTLE_COMMANDS,
   AdminSettleCommandsController,
 } from './http/admin/settle-commands.controller.ts';
+import { createBeneficiaryGate } from './credit/beneficiary-gate.ts';
 import {
   createRebatePort,
   type RebateDependencies,
@@ -159,8 +160,9 @@ export class SettlementModule {
  * fund.view, read only, no audit). B2-09f: the five writes (settle.bill, step-up totp): the batch
  * commands and the supplement launch, each with its audit record on the same transaction. Without
  * B2-09g: POST /admin/v1/recon-diffs/{recon_diff_id}/restore (order.restore, step-up totp): the
- * account-appeal restore of BR-FUND-22 ③. Without a database (or, for the writes, idempotency) the
- * routes register and fail closed.
+ * account-appeal restore of BR-FUND-22 ③. Without a database (or, for the writes, idempotency; for
+ * the restore also the field cipher, which D10-482's minor check needs) the routes register and
+ * fail closed.
  */
 export class SettlementAdminModule {
   static forAdmin(ports: AdminSettleCommandPorts & AdminReconRestorePorts): DynamicModule {
@@ -208,21 +210,32 @@ export class SettlementAdminModule {
             { token: DB_TOKEN, optional: true },
             { token: IDEMPOTENCY, optional: true },
             { token: EVENT_BUS, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
           ],
           useFactory: (
             clock: Clock,
             db?: Kysely<DB>,
             idempotency?: Idempotency,
             eventBus?: EventBus,
+            crypto?: FieldCrypto,
           ): RestoreAdminReconDiffDeps | null =>
-            db === undefined || idempotency === undefined || eventBus === undefined
+            db === undefined ||
+            idempotency === undefined ||
+            eventBus === undefined ||
+            crypto === undefined
               ? null
               : {
                   clock,
                   idempotency,
                   auditOn: (trx) => ports.auditWriter(trx, clock),
-                  lockUsers: ports.lockUsers,
-                  deletionStatus: ports.deletionStatus(db),
+                  gate: createBeneficiaryGate({
+                    clock,
+                    lockUsers: ports.lockUsers,
+                    deletionStatus: ports.deletionStatus(db),
+                    realnameStatus: ports.realnameStatus(db),
+                    riskState: ports.riskState(db),
+                    minors: ports.minors(crypto),
+                  }),
                   readRestoreSnapshot: ports.readRestoreSnapshot,
                   appendBeneficiaryEvent: ports.appendBeneficiaryEvent,
                   ledger: ports.ledger({ clock, eventBus }),

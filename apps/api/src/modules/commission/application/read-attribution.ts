@@ -1,6 +1,6 @@
 // B2-04q r3 (D10-317): version-independent read of one sub-order's attribution — the reserve ratio
 // and the beneficiaries with their ratios from the immutable commission_splits row (BR-CALC-10),
-// plus every forfeited event (BR-CALC-13). Unlike readCommissionSnapshot it reads no amount
+// plus the state of each share (BR-CALC-13, D10-481 ②). Unlike readCommissionSnapshot it reads no amount
 // version: callers that take amounts elsewhere (R5a uses booked_base_fen / booked_n_fen) must not
 // fail because orders.commission_version moved ahead of the stored amount rows.
 // SELECT only, inside the caller's transaction; no SQL clock; a missing snapshot throws.
@@ -8,11 +8,10 @@ import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
 import {
   parseSnapshotBeneficiaries,
-  parseSnapshotRole,
-  type ReadSnapshotBeneficiary,
   type SnapshotForfeitedEvent,
 } from '../domain/snapshot-read.ts';
-import { selectForfeitedEvents, selectSplit } from '../infra/snapshot-reader.ts';
+import { selectSplit } from '../infra/snapshot-reader.ts';
+import { readShareStates, type ShareStateBeneficiary } from './forfeited-state-read.ts';
 
 export interface ReadCommissionAttributionInput {
   readonly appId: string;
@@ -24,8 +23,9 @@ export interface ReadCommissionAttributionResult {
   readonly orderId: string;
   readonly ruleVersionId: string;
   readonly reserveBp: number;
-  readonly beneficiaries: readonly ReadSnapshotBeneficiary[];
-  /** Every forfeited event of this app's sub-order, event_seq ascending. */
+  /** D10-481 ②: initialStatus stays the snapshot's; forfeitLifted marks one no longer forfeited. */
+  readonly beneficiaries: readonly ShareStateBeneficiary[];
+  /** The latest event of each share of this app's sub-order still forfeited, event_seq ascending. */
   readonly forfeitedEvents: readonly SnapshotForfeitedEvent[];
 }
 
@@ -48,18 +48,12 @@ export async function readCommissionAttribution(
     throw new Error('commission: the sub-order has no commission snapshot');
   }
   const beneficiaries = parseSnapshotBeneficiaries(split.beneficiaries);
-  const events = await selectForfeitedEvents(trx, appId, orderId);
+  const shares = await readShareStates(trx, appId, orderId, beneficiaries);
   return {
     appId,
     orderId,
     ruleVersionId: split.ruleVersionId,
     reserveBp: split.reserveBp,
-    beneficiaries,
-    forfeitedEvents: events.map((e): SnapshotForfeitedEvent => ({
-      eventSeq: e.eventSeq,
-      userId: e.userId,
-      role: parseSnapshotRole(e.role, `event ${String(e.eventSeq)}`),
-      reason: e.reason,
-    })),
+    ...shares,
   };
 }

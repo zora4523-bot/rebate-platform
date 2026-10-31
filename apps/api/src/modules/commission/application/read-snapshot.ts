@@ -6,16 +6,10 @@ import {
   assertCommissionVersion,
   assertCurrentVersion,
   parseSnapshotBeneficiaries,
-  parseSnapshotRole,
-  type ReadSnapshotBeneficiary,
   type SnapshotForfeitedEvent,
 } from '../domain/snapshot-read.ts';
-import {
-  selectForfeitedEvents,
-  selectMaxVersions,
-  selectSplit,
-  selectVersionBase,
-} from '../infra/snapshot-reader.ts';
+import { selectMaxVersions, selectSplit, selectVersionBase } from '../infra/snapshot-reader.ts';
+import { readShareStates, type ShareStateBeneficiary } from './forfeited-state-read.ts';
 
 export type { ReadSnapshotBeneficiary, SnapshotForfeitedEvent } from '../domain/snapshot-read.ts';
 
@@ -34,8 +28,9 @@ export interface ReadCommissionSnapshotResult {
   /** 本子订单最大版本的 B，来自 commission_split_totals，不是首次快照的 B。 */
   readonly baseFen: bigint;
   readonly reserveBp: number;
-  readonly beneficiaries: readonly ReadSnapshotBeneficiary[];
-  /** 本 app、本子订单的所有 forfeited 事件，按 event_seq 升序；不受金额版本过滤。 */
+  /** D10-481 ②：initialStatus 保持快照值；初始 forfeited 而已不算被剥夺的带 forfeitLifted。 */
+  readonly beneficiaries: readonly ShareStateBeneficiary[];
+  /** 本 app、本子订单仍被剥夺的份额各自的最新事件，按 event_seq 升序；不受金额版本过滤。 */
   readonly forfeitedEvents: readonly SnapshotForfeitedEvent[];
 }
 
@@ -65,7 +60,7 @@ export async function readCommissionSnapshot(
   if (base.amountBases.length === 0 || base.amountBases.some((b) => b !== baseFen)) {
     throw new Error(`commission: snapshot version ${String(version)} amount rows disagree on B`);
   }
-  const events = await selectForfeitedEvents(trx, appId, orderId);
+  const shares = await readShareStates(trx, appId, orderId, beneficiaries);
   return {
     appId,
     orderId,
@@ -73,12 +68,6 @@ export async function readCommissionSnapshot(
     commissionVersion: version,
     baseFen,
     reserveBp: split.reserveBp,
-    beneficiaries,
-    forfeitedEvents: events.map((e): SnapshotForfeitedEvent => ({
-      eventSeq: e.eventSeq,
-      userId: e.userId,
-      role: parseSnapshotRole(e.role, `event ${String(e.eventSeq)}`),
-      reason: e.reason,
-    })),
+    ...shares,
   };
 }

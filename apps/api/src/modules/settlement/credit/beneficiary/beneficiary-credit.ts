@@ -63,6 +63,7 @@ import type {
 import { lockOrderKey } from '../../../orders/index.ts';
 import type { Clock, RootLogger } from '../../../platform/index.ts';
 import { insertRebateHistory, readRebateOrder } from '../../rebate/infra/rebate-store.ts';
+import { isForfeitedShare } from '../../reads/pending-earnings-rules.ts';
 import type { BeneficiaryGate } from '../beneficiary-gate.ts';
 import { readLatestSettleSeq, readOrderLocator } from '../credit-store.ts';
 import {
@@ -430,9 +431,6 @@ export function createBeneficiaryCredit(deps: BeneficiaryCreditDependencies): Be
     const netOf = new Map(
       nets.beneficiaries.map((b) => [identity(b.beneficiary_user_id, b.role), b.net_fen]),
     );
-    const forfeitedBefore = new Set(
-      snapshot.forfeitedEvents.map((e) => identity(e.userId, e.role)),
-    );
     const positions: CreditNetPosition[] = [];
     const seen = new Set<string>();
     for (const b of snapshot.beneficiaries) {
@@ -443,8 +441,8 @@ export function createBeneficiaryCredit(deps: BeneficiaryCreditDependencies): Be
         user_id: b.userId,
         role: b.role,
         ratio_bp: BigInt(b.ratioBp),
-        snapshot_status:
-          b.initialStatus === 'forfeited' || forfeitedBefore.has(id) ? 'forfeited' : 'active',
+        // D10-481 ②: the one judgement of a forfeited share.
+        snapshot_status: isForfeitedShare(b, snapshot.forfeitedEvents) ? 'forfeited' : 'active',
         net_fen: netOf.get(id) ?? 0n,
         has_open_obligation: openKeys.has(id),
       });

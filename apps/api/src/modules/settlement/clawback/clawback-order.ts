@@ -132,6 +132,7 @@ import {
   readRebateOrder,
   type OrderRow,
 } from '../rebate/infra/rebate-store.ts';
+import { isForfeitedShare } from '../reads/pending-earnings-rules.ts';
 import { closeWaitingRights, hasWaitingRights } from '../rights/rights-store.ts';
 import {
   casClawbackOrder,
@@ -477,13 +478,13 @@ export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
     nets: ReadonlyMap<string, bigint>,
     obligations: ReadonlyMap<string, BeneficiaryCreditRow>,
   ): AdjustmentBeneficiary[] {
-    const forfeited = new Set(snapshot.forfeitedEvents.map((e) => identity(e.userId, e.role)));
     return snapshot.beneficiaries.map((b) => {
       const id = identity(b.userId, b.role);
       const obligation = obligations.get(id) ?? null;
       const current = states.get(b.userId) ?? MISSING_USER;
       let status: AdjustmentBeneficiary['status'] = 'active';
-      if (b.initialStatus === 'forfeited' || forfeited.has(id)) status = 'forfeited';
+      // D10-481 ②: the one judgement of a forfeited share.
+      if (isForfeitedShare(b, snapshot.forfeitedEvents)) status = 'forfeited';
       else if (obligation !== null && obligation.kind !== 'deferred') status = 'held';
       return {
         user_id: b.userId,

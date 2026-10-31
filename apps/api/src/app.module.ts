@@ -3918,9 +3918,13 @@ export class AppModule {
                 readUnionAuthoritative: readUnionAuthoritativeOrderKeys,
                 // B2-09g: the account-appeal restore (order.restore, step-up totp): identity's
                 // users row lock and deletion status, commission's attribution read and event
-                // writer, the ledger with the negative-balance recovery of payout.
+                // writer, the ledger with the negative-balance recovery of payout. B2-09ga
+                // (D10-482): the BeneficiaryGate's readers, for the member identified as a minor.
                 lockUsers: lockUsersForUpdate,
                 deletionStatus: (db) => createUserDeletionStatusReader({ db }),
+                realnameStatus: (db) => createRealnameStatusBatchReader({ db }),
+                riskState: (db) => createRiskStateBatchReader({ db }),
+                minors: (crypto) => createMinorStatusBatchReader({ crypto }),
                 readRestoreSnapshot: readCommissionAttribution,
                 appendBeneficiaryEvent,
                 ledger: ({ clock, eventBus }) =>

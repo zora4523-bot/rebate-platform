@@ -19,6 +19,14 @@ export { createRuleSetReader } from './infra/rule-set-reader.ts';
 export type { RuleSetReaderOptions } from './infra/rule-set-reader.ts';
 export { createCommissionSnapshot } from './application/snapshot.ts';
 export { readCommissionSnapshot } from './application/read-snapshot.ts';
+// B2-09ga (D10-481 ②): the one judgement of a forfeited share.
+export { isShareForfeited } from './application/forfeited-state.ts';
+export type {
+  ShareEvent,
+  ShareEventStatus,
+  ShareInitialStatus,
+} from './application/forfeited-state.ts';
+export type { ShareStateBeneficiary } from './application/forfeited-state-read.ts';
 export { readCommissionAttribution } from './application/read-attribution.ts';
 export type {
   ReadCommissionAttributionInput,

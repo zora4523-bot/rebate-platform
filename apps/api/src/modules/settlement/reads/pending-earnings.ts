@@ -27,6 +27,7 @@ export interface PendingSnapshot {
     readonly role: 'self' | 'share' | 'direct' | 'indirect';
     readonly ratioBp: number;
     readonly initialStatus: 'active' | 'forfeited';
+    readonly forfeitLifted?: true;
   }[];
   readonly forfeitedEvents: readonly {
     readonly userId: string;
