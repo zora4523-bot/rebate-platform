@@ -179,3 +179,29 @@ it('[AC-B1-05o] 联盟故障读到旧副本时页面带 stale，存的内容不�
   });
   expect([...rows.values()]).toEqual([text]);
 });
+
+it('[AC-B1-28n] 依赖失败才读 pool.max_age_sec：缓存时长内命中不读；旧页超限原错误抛出，分类不受限', async () => {
+  const { redis } = memoryRedis();
+  const union = upstream();
+  const clock = new FixedClock(NOW);
+  const configValue = vi.fn(async (_appId: string, key: string) =>
+    key === 'pool.max_age_sec' ? { value: 700, version: 1 } : null,
+  );
+  const cached = cacheHotRankUpstream(union, { redis, clock, config: { configValue } });
+  const outage = new UnionError('upstream_unavailable', 'synthetic', 'taobao');
+
+  await cached.page(pageInput);
+  await cached.categories(request);
+  await cached.page(pageInput);
+  expect(configValue).not.toHaveBeenCalledWith('synthetic', 'pool.max_age_sec');
+
+  vi.mocked(union.page).mockRejectedValue(outage);
+  union.categories.mockRejectedValue(outage);
+
+  clock.advanceMs(700_000);
+  await expect(cached.page(pageInput)).resolves.toMatchObject({ stale: true });
+
+  clock.advanceMs(1);
+  await expect(cached.page(pageInput)).rejects.toBe(outage);
+  await expect(cached.categories(request)).resolves.toHaveLength(1);
+});
