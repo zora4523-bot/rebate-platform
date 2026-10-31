@@ -3,8 +3,9 @@
 // adds the paid withdrawal to tax_ytd on the landing's own transaction —
 //   one row per (member, +08:00 year of created_at, SERVICE_FEE, verified real name's hmac):
 //   cum_income_fen += amount_fen, cum_withheld_fen += tax_fen (¥100 with 2000 fen tax → 10000 /
-//   2000; ¥100 then ¥200 → 30000, AC-S2-44 ③); a withdrawal created at 12-31 23:30 +08:00 and paid
-//   in January counts for the year it was created in;
+//   2000; with a fee, net 8000 / fee 300 / tax 2000 → 10300 / 2000: amount_fen, not net + tax;
+//   ¥100 then ¥200 → 30000, AC-S2-44 ③); a withdrawal created at 12-31 23:30 +08:00 and reviewed,
+//   executed and paid in January (the clock in January too) counts for the year it was created in;
 //   W6 (definite failure) and W3 (rejection) add nothing; a redelivered or second landing job of a
 //   paid withdrawal moves no row and adds nothing;
 //   a corrected real name (another hmac) starts a row of its own, the former row stays as it was;
@@ -105,6 +106,33 @@ it('[AC-B2-08b#W5] 到账（¥100，税 2000 分）→ PAID_API 的同一事务�
   expectNoPayeeInLogs(f);
 });
 
+it('[AC-B2-08b#W5] 带手续费的到账（net 8000、fee 300、tax 2000，amount 10300）→ cum_income 加 amount_fen 10300（不是 net + tax 的 10000）、cum_withheld 加 tax_fen 2000；同年第二笔（net 900、fee 100、tax 0）再加 amount 1000', async () => {
+  const { f, handler, owner, hmac } = await landingApp();
+  const w = await seedPaying(f, { userId: owner, net: 8_000n, fee: 300n, tax: 2_000n });
+  const second = await seedPaying(f, { userId: owner, net: 900n, fee: 100n });
+
+  await landSuccess(f, handler, w, { paidAt: CHANNEL_PAID_AT });
+
+  expect(await withdrawal(f, w.id)).toMatchObject({
+    status: 'PAID_API',
+    amount_fen: 10_300n,
+    fee_fen: 300n,
+    tax_fen: 2_000n,
+    net_fen: 8_000n,
+  });
+  expect((await taxRows(h.observer, f.appId)).map(totals)).toEqual([
+    expected(f.appId, owner, 2026, hmac, 10_300n, 2_000n),
+  ]);
+  expect(await invariantMismatches(h.observer, f.appId)).toEqual([]);
+
+  await landSuccess(f, handler, second);
+
+  expect((await taxRows(h.observer, f.appId)).map(totals)).toEqual([
+    expected(f.appId, owner, 2026, hmac, 11_300n, 2_000n),
+  ]);
+  expect(await invariantMismatches(h.observer, f.appId)).toEqual([]);
+});
+
 it('[AC-B2-08b#W5] 同一会员同一年两笔到账（¥100、¥200，method=none 税 0）→ 累加到同一行：cum_income 30000、cum_withheld 0（AC-S2-44 ③）；第二笔由查询成功落地也一样', async () => {
   const { f, handler, owner, hmac } = await landingApp();
   const first = await seedPaying(f, { userId: owner, net: 10_000n });
@@ -120,13 +148,18 @@ it('[AC-B2-08b#W5] 同一会员同一年两笔到账（¥100、¥200，method=no
   expect(await invariantMismatches(h.observer, f.appId)).toEqual([]);
 });
 
-it('[AC-B2-08b#W5] 年度取提现单 created_at 的 +08:00 年：12-31 23:30 +08:00 建单、次年 1 月到账 → 记建单那一年；01-01 00:30 +08:00 建单（UTC 仍是前一年）→ 记次年', async () => {
+it('[AC-B2-08b#W5] 年度取提现单 created_at 的 +08:00 年：12-31 23:30 +08:00 建单、次年 1 月审核、执行、到账（时钟也在次年）→ 记建单那一年；01-01 00:30 +08:00 建单（UTC 仍是前一年）→ 记次年', async () => {
   const { f, handler, owner, hmac } = await landingApp();
+  const createdLate = new Date('2026-12-31T23:30:00+08:00');
+  const reviewedJanuary = new Date('2027-01-01T08:40:00+08:00');
+  const executedJanuary = new Date('2027-01-01T08:50:00+08:00');
   const lateDecember = await seedPaying(f, {
     userId: owner,
     net: 4_900n,
     tax: 100n,
-    createdAt: new Date('2026-12-31T23:30:00+08:00'),
+    createdAt: createdLate,
+    reviewedAt: reviewedJanuary,
+    executedAt: executedJanuary,
   });
   const newYear = await seedPaying(f, {
     userId: owner,
@@ -135,12 +168,16 @@ it('[AC-B2-08b#W5] 年度取提现单 created_at 的 +08:00 年：12-31 23:30 +0
     createdAt: new Date('2027-01-01T00:30:00+08:00'),
   });
   const january = '2027-01-01T09:00:00+08:00';
+  f.clock.set(january);
 
   await landSuccess(f, handler, lateDecember, { paidAt: january, at: new Date(january) });
   await landSuccess(f, handler, newYear, { paidAt: january, at: new Date(january) });
 
   expect(await withdrawal(f, lateDecember.id)).toMatchObject({
     status: 'PAID_API',
+    created_at: createdLate,
+    reviewed_at: reviewedJanuary,
+    executed_at: executedJanuary,
     paid_at: new Date(january),
   });
   expect((await taxRows(h.observer, f.appId)).map(totals)).toEqual([

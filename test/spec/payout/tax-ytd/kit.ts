@@ -8,19 +8,21 @@
 // identity's users lock, B2-06fz's landing job (landing/kit.ts → process/kit.ts) and B2-07e's W11
 // port (proven-success/kit.ts). Synthetic: members, their app.realname rows (as identity's
 // verification leaves them; a correction is simulated by changing id_no_hmac), PAYING withdrawals
-// with a chosen created_at (INSERT plus their real WITHDRAW:FREEZE voucher; process/kit.ts seeds
-// one fixed created_at only), attempts. No real person, id number or channel data: every hmac is
-// random hex.
+// with a chosen created_at, reviewed_at and executed_at, and W9-returned (APPROVED) withdrawals
+// with a chosen created_at (INSERT plus their real WITHDRAW:FREEZE voucher; process/kit.ts and
+// proven-success/kit.ts seed fixed times only), attempts. No real person, id number or channel
+// data: every hmac is random hex.
 // Only *.int.test.ts files call the database parts; the factories under test
 // (createRealnameIdentityKeyReader, createTaxYtdAccumulator) are called inside each test before
 // anything is seeded: red is the skeleton's NotImplemented.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { buildVouchers } from '@couli/domain';
-import { sql, type Kysely } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import { lockUsersForUpdate } from '../../../../apps/api/src/modules/identity/ports/lock-users.ts';
-import type { PostingEntry } from '../../../../apps/api/src/modules/ledger/index.ts';
+import type { Ledger, PostingEntry } from '../../../../apps/api/src/modules/ledger/index.ts';
 import type { ProcessFixture, Seeded } from '../landing/kit.ts';
+import type { Fixture as ProvenFixture, Seeded as ProvenSeeded } from '../proven-success/kit.ts';
 
 export const TIMEOUT = 60_000;
 export const MINUTE = 60_000;
@@ -236,14 +238,63 @@ export interface PayingSeed {
   readonly tax?: bigint;
   /** Default 2026-10-19 09:58 +08:00 (as process/kit.ts seeds). */
   readonly createdAt?: Date;
+  /** Default createdAt (reviewed at once). */
+  readonly reviewedAt?: Date;
+  /** Default createdAt + 1 minute (also updated_at). */
+  readonly executedAt?: Date;
   readonly channel?: 'alipay' | 'bank_card';
 }
 
 /**
+ * The member's lock order (users row → ledger.lockBalances), then the real WITHDRAW:FREEZE voucher
+ * `wd:{withdrawalId}:FREEZE` moving `amount` from available to frozen, on `trx`.
+ */
+async function freeze(
+  trx: Transaction<DB>,
+  ledger: Ledger,
+  appId: string,
+  userId: string,
+  withdrawalId: string,
+  amount: bigint,
+): Promise<void> {
+  await lockUsersForUpdate(trx, { appId, userIds: [userId] });
+  const [balance] = await ledger.lockBalances(trx, { appId, userIds: [userId] });
+  const [built] = buildVouchers('WITHDRAW:FREEZE', {
+    withdrawal_id: withdrawalId,
+    user_id: userId,
+    withdraw_fen: amount,
+  });
+  if (balance === undefined || built === undefined) {
+    throw new Error('seed: the member has no balance row or FREEZE built no voucher');
+  }
+  const entries: PostingEntry[] = built.entries.map((entry) => ({
+    account: { ownerType: 'user', accountId: balance.account_id },
+    sub_account: entry.sub_account === 'frozen' ? 'frozen' : 'available',
+    amount_fen: entry.amount_fen,
+    ledger_type: entry.ledger_type,
+    sub_type: entry.sub_type,
+    income_type: null,
+  }));
+  await ledger.post(trx, {
+    appId,
+    uniqKey: built.uniq_key,
+    bizType: 'withdrawal',
+    bizId: withdrawalId,
+    operator: 'system',
+    memo: null,
+    orderKey: null,
+    beneficiaryUserId: null,
+    role: null,
+    voucherKind: null,
+    entries,
+  });
+}
+
+/**
  * A reviewed and executed withdrawal in PAYING (execute_seq 1, a manual batch), created at
- * `createdAt`, its amount frozen by the real WITHDRAW:FREEZE voucher `wd:{id}:FREEZE`. Same shape
- * as process/kit.ts's seedWithdrawal, whose created_at cannot be chosen (couli_app may not update
- * the column afterwards).
+ * `createdAt`, reviewed at `reviewedAt`, executed at `executedAt`, its amount frozen by the real
+ * WITHDRAW:FREEZE voucher `wd:{id}:FREEZE`. Same shape as process/kit.ts's seedWithdrawal, whose
+ * times cannot be chosen (couli_app may not update created_at afterwards).
  */
 export async function seedPaying(f: ProcessFixture, values: PayingSeed): Promise<Seeded> {
   const id = randomUUID();
@@ -255,7 +306,8 @@ export async function seedPaying(f: ProcessFixture, values: PayingSeed): Promise
   const amount = net + fee + tax;
   const channel = values.channel ?? 'alipay';
   const createdAt = values.createdAt ?? new Date('2026-10-19T01:58:00.000Z');
-  const executedAt = new Date(createdAt.getTime() + MINUTE);
+  const reviewedAt = values.reviewedAt ?? createdAt;
+  const executedAt = values.executedAt ?? new Date(createdAt.getTime() + MINUTE);
   const outBizNo = randomBytes(16).toString('hex');
   const batchId = await f.seedBatch();
   await f.h.db.transaction().execute(async (trx) => {
@@ -267,41 +319,73 @@ export async function seedPaying(f: ProcessFixture, values: PayingSeed): Promise
       VALUES (${id}, ${appId}, ${owner}, ${amount}, ${fee}, ${tax}, ${net}, ${SERVICE_FEE},
        ${channel}, '合成姓名', ${Buffer.from('synthetic-encrypted-account')},
        ${randomBytes(32).toString('hex')}, ${channel === 'bank_card' ? '合成银行' : null},
-       'PAYING', ${outBizNo}, ${channel}, 'manual', ${randomUUID()}, ${createdAt}, ${f.adminId},
+       'PAYING', ${outBizNo}, ${channel}, 'manual', ${randomUUID()}, ${reviewedAt}, ${f.adminId},
        ${executedAt}, ${batchId}, 1, 2, ${createdAt}, ${executedAt})`.execute(trx);
-    await lockUsersForUpdate(trx, { appId, userIds: [owner] });
-    const [balance] = await f.ledger.lockBalances(trx, { appId, userIds: [owner] });
-    const [built] = buildVouchers('WITHDRAW:FREEZE', {
-      withdrawal_id: id,
-      user_id: owner,
-      withdraw_fen: amount,
-    });
-    if (balance === undefined || built === undefined) {
-      throw new Error('seed: the member has no balance row or FREEZE built no voucher');
-    }
-    const entries: PostingEntry[] = built.entries.map((entry) => ({
-      account: { ownerType: 'user', accountId: balance.account_id },
-      sub_account: entry.sub_account === 'frozen' ? 'frozen' : 'available',
-      amount_fen: entry.amount_fen,
-      ledger_type: entry.ledger_type,
-      sub_type: entry.sub_type,
-      income_type: null,
-    }));
-    await f.ledger.post(trx, {
-      appId,
-      uniqKey: built.uniq_key,
-      bizType: 'withdrawal',
-      bizId: id,
-      operator: 'system',
-      memo: null,
-      orderKey: null,
-      beneficiaryUserId: null,
-      role: null,
-      voucherKind: null,
-      entries,
-    });
+    await freeze(trx, f.ledger, appId, owner, id, amount);
   });
   return { id, appId, userId: owner, outBizNo, channel, net, amount, executeSeq: 1, batchId };
+}
+
+// ---------------------------------------------------------------------------------------------
+// W9-returned withdrawals with a chosen created_at (the W11 tests).
+
+export interface ReturnedAtSeed {
+  readonly net: bigint;
+  readonly fee?: bigint;
+  readonly tax?: bigint;
+  /** Default the fixture's member. */
+  readonly userId?: string;
+  /** created_at of the withdrawal (W1). */
+  readonly createdAt: Date;
+  /**
+   * When W9 returned it: hold_at, updated_at and the failed transfer attempt's `at`; it was
+   * reviewed (and its batch made) 30 minutes before.
+   */
+  readonly returnedAt: Date;
+}
+
+/**
+ * A withdrawal as W9 leaves it (as proven-success/kit.ts's seedReturned, alipay): APPROVED,
+ * hold_reason payer_side_after_transfer, executor cleared, batch and execute_seq 1 kept, one
+ * failed transfer attempt (couli_payout), its amount frozen by the real WITHDRAW:FREEZE — but
+ * created at `createdAt` and returned at `returnedAt` (seedReturned's times are fixed).
+ */
+export async function seedReturnedAt(
+  f: ProvenFixture,
+  values: ReturnedAtSeed,
+): Promise<ProvenSeeded> {
+  const id = randomUUID();
+  const appId = f.appId;
+  const owner = values.userId ?? f.userId;
+  const net = values.net;
+  const fee = values.fee ?? 0n;
+  const tax = values.tax ?? 0n;
+  const amount = net + fee + tax;
+  const outBizNo = randomBytes(16).toString('hex');
+  const batchId = randomUUID();
+  const reviewedAt = new Date(values.returnedAt.getTime() - 30 * MINUTE);
+  await sql`INSERT INTO app.payout_batches (id, app_id, kind, created_by, created_at)
+    VALUES (${batchId}, ${appId}, 'manual', 'finance:synthetic', ${reviewedAt})`.execute(f.h.db);
+  await f.h.db.transaction().execute(async (trx) => {
+    await sql`INSERT INTO app.withdrawals
+      (id, app_id, user_id, amount_fen, fee_fen, tax_fen, net_fen, income_type, payout_method,
+       payee_name, payee_account_cipher, payee_hmac, status, out_biz_no, payout_channel,
+       review_mode, reviewer_id, reviewed_at, batch_id, execute_seq, hold_reason, hold_at,
+       row_version, created_at, updated_at)
+      VALUES (${id}, ${appId}, ${owner}, ${amount}, ${fee}, ${tax}, ${net}, ${SERVICE_FEE},
+       'alipay', '合成姓名', ${Buffer.from('synthetic-encrypted-account')},
+       ${randomBytes(32).toString('hex')}, 'APPROVED', ${outBizNo}, 'alipay', 'manual',
+       ${randomUUID()}, ${reviewedAt}, ${batchId}, 1, 'payer_side_after_transfer',
+       ${values.returnedAt}, 3, ${values.createdAt}, ${values.returnedAt})`.execute(trx);
+    await freeze(trx, f.ledger, appId, owner, id, amount);
+  });
+  await sql`INSERT INTO app.payout_attempts
+    (id, app_id, withdrawal_id, kind, request, response, resp_code, resp_sub_code, result, at)
+    VALUES (${randomUUID()}, ${appId}, ${id}, 'transfer',
+      ${JSON.stringify({ logon_id: 'log**********26' })}::jsonb,
+      ${JSON.stringify({ code: '40004' })}::jsonb, '40004', 'TEST_PAYER_SIDE', 'fail',
+      ${values.returnedAt})`.execute(f.h.payout);
+  return { id, appId, userId: owner, outBizNo, net, fee, tax, amount, status: 'APPROVED' };
 }
 
 /** Every log line of a fixture logger as one JSON text (bigint as text), for "never logged" checks. */
