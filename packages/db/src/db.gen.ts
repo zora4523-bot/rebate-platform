@@ -2168,6 +2168,7 @@ export interface Withdrawals {
   resolver_ids: Json | null;
   review_deadline: Timestamp | null;
   review_mode: string | null;
+  review_overdue_at: Timestamp | null;
   reviewed_at: Timestamp | null;
   reviewer_id: string | null;
   risk_flags: Json | null;
