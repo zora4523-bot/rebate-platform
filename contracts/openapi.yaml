@@ -22742,8 +22742,15 @@ paths:
         difference's `expected_fen` and B_settle equals its `actual_fen`; the order then goes on
         to a supplement batch. Otherwise the conclusion does not apply and the check compares
         the amounts as usual: when they do not match it opens a new settle_amount_mismatch
-        difference (at most one for the same amount state; the old one stays closed) and the
-        order stays WAITING. Without `outcome` there is no structured conclusion: the check
+        difference, the old one stays closed and the order stays WAITING. The new difference's
+        `ref_id` carries an amount fingerprint, `{order_key}#AMT#{base_fen}:{b_settle_fen}` (the
+        current snapshot `base_fen` and B_settle), because recon_diffs is unique on (app_id, type,
+        period, ref_id) and the bill's `{order_key}` row is taken: a bill has at most one
+        difference for the same amount state. It appears in the list and detail like any other
+        (the `ref_id` filter is an exact match, so it needs the full value) and can be closed
+        with its own `outcome`. The conclusion the check reads is that of the order's difference
+        whose `ref_id` is `{order_key}` or starts with `{order_key}#AMT#` and whose amounts equal
+        the current ones. Without `outcome` there is no structured conclusion: the check
         compares the amounts as needed, which can only hold back more, never pay more
         (D10-447 ①). `ours` does not count as matched either. The `closed` status by itself is
         not a conclusion, and the free-text `reason` is never parsed for one. The conclusion
@@ -46879,7 +46886,8 @@ components:
         B2-09h on). union = 以联盟为准: counts as matched in the monthly check, and the order goes
         on to a supplement batch, only while the current base_fen and B_settle both equal the
         difference's expected_fen and actual_fen; otherwise the amounts are compared as usual, a
-        mismatch opens a new settle_amount_mismatch difference and the order stays WAITING. ours =
+        mismatch opens a new settle_amount_mismatch difference with ref_id
+        {order_key}#AMT#{base_fen}:{b_settle_fen} and the order stays WAITING. ours =
         以我方为准: does not count as matched. Sent for any other type or source → 20001 with
         data.fields=[outcome] (from B2-09h on; see closeAdminReconDiff for the window before it).
       enum:

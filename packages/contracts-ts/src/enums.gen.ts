@@ -360,7 +360,7 @@ export const admin_settle_supplement_outcome = [
 export type AdminSettleSupplementOutcome = (typeof admin_settle_supplement_outcome)[number];
 
 /**
- * POST /admin/v1/recon-diffs/{recon_diff_id}/close 的可选 outcome，写入 recon_diffs.resolution.outcome；只对 type=settle_amount_mismatch（source R1）有意义，其他差错单带它是 20001 data.fields=[outcome]；不传 = 无结构化结论，月结按需比金额；closed 状态本身不算结论，自由文本 reason 不解析
+ * POST /admin/v1/recon-diffs/{recon_diff_id}/close 的可选 outcome，B2-09h 起写入 recon_diffs.resolution.outcome；只对 type=settle_amount_mismatch（source R1）有意义，B2-09h 起其他差错单带它是 20001 data.fields=[outcome]；不传 = 无结构化结论，月结按需比金额；closed 状态本身不算结论，自由文本 reason 不解析
  * Source: 规划/08 BR-FUND-04 ④、校验结果表与例 2；编排裁定 D10-447 ②、D10-506（CT-24zf） (contracts/enums/admin.yaml).
  */
 export const admin_recon_diff_outcome = [
