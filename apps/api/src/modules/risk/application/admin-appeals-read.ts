@@ -243,6 +243,22 @@ const APPEAL_COLUMNS = [
   'created_at',
 ] as const;
 
+/** What migration 0108 adds (B1-03ze); raw SQL until db.gen.ts is regenerated. */
+interface ConsoleColumns {
+  readonly source: string;
+  readonly registered_by: string | null;
+  readonly claimed_at: Date | null;
+}
+
+const CONSOLE_COLUMNS = [
+  sql<string>`source`.as('source'),
+  sql<string | null>`registered_by`.as('registered_by'),
+  // The claim of the appeal's current version (app.appeal_claims, insert-only): a later write of
+  // the appeal (another claim, the resolution) raises row_version, so it then reads null.
+  sql<Date | null>`(SELECT c.claimed_at FROM app.appeal_claims c
+    WHERE c.appeal_id = appeals.id AND c.row_version = appeals.row_version)`.as('claimed_at'),
+] as const;
+
 const iso = (value: Date): string => value.toISOString();
 const unique = (values: readonly (string | null)[]): string[] => [
   ...new Set(values.filter((v): v is string => v !== null)),
@@ -348,9 +364,10 @@ export class AdminAppealsRead {
   async get(actor: AdminAppealsActor, appealId: string): Promise<Schema<'AdminAppealDetail'>> {
     if (!UUID.test(appealId)) throw new AdminAppealsFieldsError(['appeal_id']);
     const app = this.#db.withSchema('app');
-    const row: AppealRow | undefined = await app
+    const row: (AppealRow & ConsoleColumns) | undefined = await app
       .selectFrom('appeals')
       .select(APPEAL_COLUMNS)
+      .select(CONSOLE_COLUMNS)
       .where('app_id', '=', actor.appId)
       .where('id', '=', appealId)
       .executeTakeFirst();
@@ -400,12 +417,16 @@ export class AdminAppealsRead {
       ...item,
       content: row.content,
       risk_state: riskState,
-      // app.appeals has no source / registrant / claim columns yet: every stored appeal is an
-      // app submission that was never claimed separately (the console writes come with B1-03ze).
-      source: 'app',
-      registered_by: null,
-      registered_by_name: null,
-      claimed_at: null,
+      // Migration 0108 (B1-03ze): who filed it, the registrant and the current claim's time.
+      source: row.source === 'admin' ? 'admin' : 'app',
+      registered_by: row.registered_by,
+      registered_by_name:
+        row.registered_by === null
+          ? null
+          : ((await this.#ports.adminNames(actor.appId, [row.registered_by])).get(
+              row.registered_by,
+            ) ?? null),
+      claimed_at: row.claimed_at === null ? null : iso(row.claimed_at),
       closed_at: row.closed_at === null ? null : iso(row.closed_at),
       row_version: Number(row.row_version),
       revoke_permission: appealRevokePermission({

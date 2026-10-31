@@ -267,6 +267,16 @@ export interface Agreements {
   version: number;
 }
 
+export interface AppealClaims {
+  app_id: string;
+  appeal_id: string;
+  claimed_at: Timestamp;
+  created_at: Generated<Timestamp>;
+  handler_id: string;
+  id: string;
+  row_version: number;
+}
+
 export interface Appeals {
   app_id: string;
   closed_at: Timestamp | null;
@@ -277,9 +287,11 @@ export interface Appeals {
   id: string;
   penalty_started_at: Timestamp | null;
   prev_risk_state: string | null;
+  registered_by: string | null;
   related_phone_hmac: string | null;
   request_type: string | null;
   row_version: Generated<number>;
+  source: Generated<string>;
   status: string;
   target_id: string;
   target_type: string;
@@ -2200,6 +2212,7 @@ export interface DB {
   agent_tool_calls: AgentToolCalls;
   agreements: Agreements;
   app_versions: AppVersions;
+  appeal_claims: AppealClaims;
   appeals: Appeals;
   articles: Articles;
   asset_snapshot_receivables: AssetSnapshotReceivables;
