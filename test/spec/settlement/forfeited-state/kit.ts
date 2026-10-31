@@ -237,6 +237,8 @@ export async function fixture(s: Suite): Promise<StateFixture> {
   ) => commission.readTljDeductFen(trx, input);
   const appendBeneficiaryEvent = (trx: Transaction<DB>, input: ShareEventInput) =>
     commission.appendBeneficiaryEvent(trx, input, { clock });
+  // R8 and R9 both publish order.clawed_back (D10-474 ③); any other event is still refused.
+  const clawedBack: unknown[] = [];
   return {
     ...base,
     master,
@@ -276,7 +278,15 @@ export async function fixture(s: Suite): Promise<StateFixture> {
       },
       config: { get: () => Promise.resolve(undefined) },
       events: {
-        publish: () => Promise.reject(new Error('a partial clawback publishes nothing')),
+        publish: (_trx, event) => {
+          if (event.name !== 'order.clawed_back') {
+            return Promise.reject(
+              new Error(`a clawback publishes only order.clawed_back, got ${event.name}`),
+            );
+          }
+          clawedBack.push(event);
+          return Promise.resolve({ eventId: randomUUID(), duplicate: false });
+        },
       },
     }),
     pending: createPendingEarningsSource({

@@ -159,6 +159,8 @@ async function forfeit(
 
 /** The clawback service on the fixture's database, with the real gate and commission reads. */
 function clawbackOf(f: RestoreFixture): ClawbackOrder {
+  // R8 and R9 both publish order.clawed_back (D10-474 ③); any other event is still refused.
+  const clawedBack: unknown[] = [];
   return createClawbackOrder({
     clock: f.clock,
     logger: createRootLogger(
@@ -182,7 +184,15 @@ function clawbackOf(f: RestoreFixture): ClawbackOrder {
     },
     config: { get: () => Promise.resolve(undefined) },
     events: {
-      publish: () => Promise.reject(new Error('a partial clawback publishes nothing')),
+      publish: (_trx, event) => {
+        if (event.name !== 'order.clawed_back') {
+          return Promise.reject(
+            new Error(`a clawback publishes only order.clawed_back, got ${event.name}`),
+          );
+        }
+        clawedBack.push(event);
+        return Promise.resolve({ eventId: randomUUID(), duplicate: false });
+      },
     },
   });
 }
