@@ -40,6 +40,7 @@ import {
   type StreamReviewOptions,
 } from './modules/agent/index.ts';
 import {
+  CatalogAdminModule,
   CatalogModule,
   GovernedUnion,
   PRODUCT_CACHE_NAMESPACE,
@@ -58,6 +59,7 @@ import {
   searchConfigSaveCheck,
   type Catalog,
   type CatalogCardEntry,
+  type PoolLinkParser,
   type CatalogConfigReader,
   type CatalogWarning,
   type ProductCapabilities,
@@ -344,9 +346,12 @@ import {
   type OrdersWorkerOptions,
 } from './modules/orders/index.ts';
 import {
+  ParsingError,
   ParsingLinkRegistrars,
   ParsingModule,
   createParsing,
+  extractCandidates,
+  parseToken,
   parseUrl,
   type ParseScene,
   type ParsingOptions,
@@ -2245,6 +2250,99 @@ function convertPorts(
   };
 }
 
+/**
+ * B1-05q: the product pool's add resolves a link or token as parseInput does: parsing's candidates,
+ * parseUrl and parseToken over content's configuration reader, with the union calls catalog passes
+ * (it keeps a key whose detail is refused). No card is assembled, no link registered.
+ */
+function poolLinkParser(db: Kysely<Database>, clock: Clock, logger: RootLogger): PoolLinkParser {
+  const config = createContentReader({ db, clock });
+  const catalog = createCatalog({
+    db,
+    clock,
+    warn: (event: CatalogWarning) => {
+      logger.warn(
+        { event: `catalog_${event.kind}`, product_key: event.key },
+        'product_key alias chain not resolved',
+      );
+    },
+  });
+  return {
+    candidates: extractCandidates,
+    parse: async (candidate, getGovernedAdapter, context) => {
+      const options = {
+        config,
+        catalog,
+        cards: NO_PARSE_CARDS,
+        clock,
+        getGovernedAdapter,
+        logger,
+      };
+      try {
+        const product =
+          candidate.kind === 'tpwd'
+            ? await parseToken(options, candidate.raw, context)
+            : await parseUrl(options, candidate.raw, context);
+        return { ok: true, ...product };
+      } catch (error: unknown) {
+        if (error instanceof ParsingError) return { ok: false, code: error.code };
+        throw error;
+      }
+    },
+  };
+}
+
+@Module({})
+class CatalogAdminPortsModule {}
+
+/**
+ * B1-05q: the admin entry's union ports for the product pool: the same governed adapters (shared
+ * quota source) and quoter assembly as catalogPorts, without linking: the console registers no link.
+ */
+function catalogAdminPorts(union: DynamicModule, source: UnionQuotaSource): DynamicModule {
+  return {
+    module: CatalogAdminPortsModule,
+    imports: [union],
+    providers: [
+      {
+        provide: GovernedUnion,
+        inject: [
+          UNION_REGISTRY,
+          UNION_ENDPOINTS,
+          CLOCK,
+          ROOT_LOGGER,
+          { token: REDIS, optional: true },
+        ],
+        useFactory: (
+          registry: UnionRegistry,
+          endpoints: readonly UnionEndpoint[],
+          clock: Clock,
+          logger: RootLogger,
+          redis?: RedisHandle,
+        ): GovernedUnion => governedUnion(registry, endpoints, { clock, logger, redis }, source),
+      },
+      {
+        provide: QUOTE_CONFIG,
+        inject: [CLOCK, { token: DB, optional: true }],
+        useFactory: (clock: Clock, db?: Kysely<Database>): CatalogConfigReader =>
+          db === undefined ? UNAVAILABLE_QUOTE_CONFIG : createContentReader({ db, clock }),
+      },
+      {
+        provide: RebateQuoter,
+        inject: [APP_CONFIG, UNION_ENDPOINTS, QUOTE_CONFIG, CLOCK, { token: DB, optional: true }],
+        useFactory: (
+          config: AppConfig,
+          endpoints: readonly UnionEndpoint[],
+          quoteConfig: CatalogConfigReader,
+          clock: Clock,
+          db?: Kysely<Database>,
+        ): RebateQuoter => assembleQuoter(config, endpoints, quoteConfig, clock, db).quoter,
+      },
+    ],
+    exports: [GovernedUnion, RebateQuoter],
+  };
+}
+
 @Module({})
 class CatalogPortsModule {}
 
@@ -3705,7 +3803,10 @@ export class AppModule {
     // One module object per import: Nest builds union and linking once. B1-22q: union reads
     // price.taobao.* (BR-PRICE-02) through content's configuration reader, per call.
     const union =
-      options.entry === 'api' || options.entry === 'worker' || options.entry === 'stream'
+      options.entry === 'api' ||
+      options.entry === 'worker' ||
+      options.entry === 'stream' ||
+      options.entry === 'admin'
         ? UnionModule.forRoot(undefined, { config: contentReader })
         : undefined;
     // B1-22v (D10-460): one union quota source per entry, so an entry without REDIS builds at most
@@ -3737,6 +3838,20 @@ export class AppModule {
                 auditWriter: (db, clock) =>
                   createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
                 ...contentAdminChecks(),
+              }),
+            ]
+          : []),
+        // catalog's /admin/v1 product pools (B1-05q, content.pool): guarded by AdminOperationGuard;
+        // each write and its audit row commit together. Adds and re-checks read the union through
+        // this entry's own governed adapters (shared quota bucket) and parsing's link resolution.
+        ...(options.entry === 'admin' && union !== undefined
+          ? [
+              CatalogAdminModule.forAdmin({
+                ports: catalogAdminPorts(union, unionQuotaSource),
+                auditWriter: (db, clock) =>
+                  createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                config: (db, clock) => createContentReader({ db, clock }),
+                links: poolLinkParser,
               }),
             ]
           : []),

@@ -12598,6 +12598,515 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "adminListProductPools": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "Pool status; a disabled pool is read as empty (编排者默认).",
+          "enum": [
+            "active",
+            "disabled"
+          ]
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "adminCreateProductPool": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/product-pools.",
+      "additionalProperties": false,
+      "required": [
+        "pool_id",
+        "name"
+      ],
+      "properties": {
+        "pool_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "description": "Name shown in the console (编排者默认 1–64 characters).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "status": {
+          "type": "string",
+          "description": "Pool status; a disabled pool is read as empty (编排者默认).",
+          "enum": [
+            "active",
+            "disabled"
+          ]
+        }
+      }
+    }
+  },
+  "adminSearchPoolCandidates": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "Platform (contracts/enums/platform.yaml platform).",
+          "enum": [
+            "taobao",
+            "jd",
+            "pdd",
+            "meituan",
+            "vip",
+            "douyin",
+            "eleme",
+            "kuaishou",
+            "suning"
+          ]
+        },
+        "q": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "platform",
+        "q"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "adminGetProductPool": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pool_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "pool_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "adminUpdateProductPool": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pool_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "pool_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of PATCH /admin/v1/product-pools/{pool_id}: `expected_revision` plus at least one\nof `name` and `status`.\n",
+      "additionalProperties": false,
+      "required": [
+        "expected_revision"
+      ],
+      "minProperties": 2,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name shown in the console (编排者默认 1–64 characters).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "status": {
+          "type": "string",
+          "description": "Pool status; a disabled pool is read as empty (编排者默认).",
+          "enum": [
+            "active",
+            "disabled"
+          ]
+        },
+        "expected_revision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "adminListPoolItems": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pool_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "pool_id"
+      ],
+      "additionalProperties": false
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "Shelf status of a pool item (BR-PROD-08 ③).",
+          "enum": [
+            "online",
+            "offline"
+          ]
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "adminAddPoolItem": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pool_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "pool_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/product-pools/{pool_id}/items: exactly one of `link_text` and\n`item_ref`, plus `sort`, `start_at` and `end_at`. The oneOf branches declare the property\nthey require (strict Ajv2020, ADR-0001 §4.2 #15).\n",
+      "additionalProperties": false,
+      "required": [
+        "sort",
+        "start_at",
+        "end_at"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "link_text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            }
+          },
+          "required": [
+            "link_text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "item_ref": {
+              "type": "string",
+              "description": "Server-signed opaque product reference; passed through unchanged (BR-PROD-11).",
+              "minLength": 1,
+              "maxLength": 1024
+            }
+          },
+          "required": [
+            "item_ref"
+          ]
+        }
+      ],
+      "properties": {
+        "link_text": {
+          "type": "string",
+          "description": "A link or token, resolved as parseInput resolves it.",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "item_ref": {
+          "type": "string",
+          "description": "Server-signed opaque product reference; passed through unchanged (BR-PROD-11).",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "sort": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "Ascending; lower comes first."
+        },
+        "start_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "adminRemovePoolItem": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pool_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "product_key": {
+          "type": "string",
+          "description": "`<key_prefix>:<stable_id>`, at most 128 characters, opaque to clients (BR-PROD-02).\n",
+          "minLength": 3,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "pool_id",
+        "product_key"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "adminUpdatePoolItem": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pool_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "product_key": {
+          "type": "string",
+          "description": "`<key_prefix>:<stable_id>`, at most 128 characters, opaque to clients (BR-PROD-02).\n",
+          "minLength": 3,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "pool_id",
+        "product_key"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of PATCH /admin/v1/product-pools/{pool_id}/items/{product_key}.",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "sort": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "Ascending; lower comes first."
+        },
+        "start_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string",
+          "description": "Shelf status of a pool item (BR-PROD-08 ③).",
+          "enum": [
+            "online",
+            "offline"
+          ]
+        }
+      }
+    }
+  },
   "adminListArticles": {
     "headers": {
       "type": "object",

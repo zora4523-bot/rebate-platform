@@ -85,7 +85,7 @@ function setup() {
       readProductRef: async () => stored,
       registerProductRef,
     },
-    itemRefs: { verify: () => null, issue },
+    itemRefs: { verify: () => null, read: () => null, issue },
     upstream: { detail },
     products: { read },
     registrar: { register },

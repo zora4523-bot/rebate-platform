@@ -6436,10 +6436,15 @@ export interface paths {
          *     20001 `data.fields=[body]`; neither → 20001 `data.fields=[link_text, item_ref, body]`. A
          *     `link_text` holding more than one product → 20001 `data.fields=[link_text]` (编排者默认). The
          *     server derives product_key (BR-PROD-03); the console never sends it. Refused, nothing written,
-         *     the reason shown to the operator (BR-PROD-03 细则「派生失败的处理」, BR-PROD-08): nothing
-         *     recognisable → 30132; a recognised product whose key cannot be derived → 30131; an `item_ref`
-         *     that has aged out falls back through product_refs and re-resolution (BR-PROD-05), and only
-         *     when that finds no matching key or derives another key → 30143; the union cannot answer now → 50401, retry.
+         *     the reason shown to the operator (BR-PROD-03 细则「派生失败的处理」, BR-PROD-08), only for a key
+         *     not yet in the pool, input that names no key counting as such: nothing recognisable → 30132; a
+         *     recognised product whose key cannot be derived → 30131; an `item_ref` that has aged out falls
+         *     back through product_refs and re-resolution (BR-PROD-05), and only when that finds no matching
+         *     key or derives another key → 30143; a union answer with `price_status=anomaly` → 50401. For a
+         *     key already in the pool, a union answer that does not pass (a dead reference or
+         *     `price_status=anomaly` included) is not refused: it takes the overwrite path below, "the
+         *     overwrite stands, offline, 200 with `invalid_reason`", touches this row only and takes no
+         *     pool-wide action. Whatever the key, the union cannot answer now → 50401, retry.
          *
          *     The pool item key is (app_id, pool_id, product_key) (BR-PROD-08 ③). `sort`, `start_at` and
          *     `end_at` are required, null for no bound, so a repeat overwrites with exactly what was submitted;
@@ -6493,8 +6498,9 @@ export interface paths {
          *     not later than `start_at` → 20001 `data.fields=[end_at]`. `status=offline` takes the item off the
          *     shelf at once. `status=online` on an offline item first runs one union re-check (BR-PROD-05 结果
          *     分类 ①, BR-PROD-08 ③): passed → online, `invalid_reason` cleared and the price fields refreshed;
-         *     not passed → 200 with the item still offline and `invalid_reason` set; the union cannot answer now
-         *     → 50401, nothing changed, retry. An unknown `pool_id` or a `product_key` not in the pool → 30701.
+         *     not passed → 200 with the item still offline and `invalid_reason` set, and a dead reference or
+         *     `price_status=anomaly` touches this row only and takes no pool-wide action; the union cannot answer
+         *     now → 50401, nothing changed, retry. An unknown `pool_id` or a `product_key` not in the pool → 30701.
          *     Written to the audit log in the same transaction (action pool_item_update, before and after).
          */
         patch: operations["adminUpdatePoolItem"];

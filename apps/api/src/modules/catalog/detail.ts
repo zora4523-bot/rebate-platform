@@ -13,6 +13,7 @@ import {
   DemoUnionError,
   UnionError,
   isRegisteredPlatform,
+  type ItemRef,
   type RegisteredPlatform,
   type UnionItemDetail,
 } from '../union/index.ts';
@@ -118,7 +119,7 @@ function nonEmpty(value: string | null | undefined): string | undefined {
  * BR-PROD-05 raw_item_id of a union response, taken as is: taobao item_id; jd skuId (sku mode)
  * or the whole itemId (item mode); pdd goods_sign. Never inferred from another field.
  */
-export function detailRawItemId(item: UnionItemDetail, jdMode: string): string | undefined {
+export function detailRawItemId(item: ItemRef, jdMode: string): string | undefined {
   switch (item.platform) {
     case 'taobao':
       return nonEmpty(item.item_id);
@@ -139,7 +140,7 @@ export function detailRawItemId(item: UnionItemDetail, jdMode: string): string |
  * (upstream_rejected / invalid_dto / link_unrecognized) is 30143 ref_expired (BR-PROD-05 结果分类
  * 「引用失效」). Anything else propagates unchanged.
  */
-function upstreamFailure(error: unknown): unknown {
+export function upstreamFailure(error: unknown): unknown {
   if (error instanceof CatalogError) return error;
   if (
     (error instanceof UnionError && error.code === 'item_unavailable') ||
