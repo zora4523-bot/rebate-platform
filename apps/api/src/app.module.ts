@@ -322,6 +322,7 @@ import {
   createSelfPurchaseOrderReader,
   OrdersAdminModule,
   OrdersModule,
+  orderSyncToken,
   type AdminClaimPorts,
   type AdminOrderPorts,
   createInviteRewardOrderFacts,
@@ -352,7 +353,6 @@ import {
   REDIS,
   ROOT_LOGGER,
   SENSITIVE_KEYS,
-  createMemoryQuotaLimiter,
   createResilienceRegistry,
   quotaShares,
   systemScheduler,
@@ -363,6 +363,7 @@ import {
   type EventBus,
   type IdempotencyPostMissCheck,
   type PlatformOptions,
+  type QuotaLimiter,
   type RedisHandle,
   type RootLogger,
   REQUEST_CHECKS,
@@ -413,11 +414,14 @@ import {
   UnionModule,
   createGovernedAdapter,
   createUnionPidService,
+  createUnionQuotaSource,
   isRegisteredPlatform,
   type RegisteredPlatform,
   type UnionAdapter,
   type UnionEndpoint,
   type UnionMode,
+  type UnionQuotaDeps,
+  type UnionQuotaSource,
   type UnionRegistry,
 } from './modules/union/index.ts';
 
@@ -1668,29 +1672,54 @@ function identityMePorts(risk: DynamicModule): DynamicModule {
 const DEMO_QUOTE_RULE_KEY = 'demo.rebate_quote_rule';
 
 /**
- * Per-platform quota of the governed union adapters.
- * TODO(规划/11 §4.5): 配额桶容量与 Redis 令牌桶 — blocked on CAP-TB-12、CAP-JD-12、CAP-PDD-12 配额口径
+ * The quota of every governed union adapter of every entry (规划/02 §6.2; D10-446 ①): one bucket
+ * per endpoint.quotaKey (app × platform), split by purpose with the MVP shares. The only place
+ * these numbers live; CAP-*-12 change the numbers only.
+ * TODO(规划/11 §4.5): 配额桶容量 — blocked on CAP-TB-12、CAP-JD-12、CAP-PDD-12 配额口径
  */
-const UNION_QUOTA = { capacity: 100, refillPerSecond: 10 } as const;
+const UNION_QUOTA = { capacity: 100, refillPerSecond: 10, stage: 'mvp' } as const;
+
+/**
+ * B1-22v: the union quota bucket of one endpoint from the entry's one union quota source
+ * (createUnionQuotaSource, built once in AppModule.forEntry): with REDIS the Redis token bucket
+ * shared by api, stream and worker (one namespace, endpoint.quotaKey = app × platform) on the
+ * entry's CLOCK, refused on a Redis failure (R-04); without REDIS the entry's single platform
+ * fallback (D10-460: in-process buckets in local / test, every token refused in staging / prod).
+ */
+function unionQuota(
+  endpoint: UnionEndpoint,
+  deps: UnionQuotaDeps,
+  source: UnionQuotaSource,
+): QuotaLimiter {
+  return source.limiter(
+    {
+      bucketKey: endpoint.quotaKey,
+      capacity: UNION_QUOTA.capacity,
+      refillPerSecond: UNION_QUOTA.refillPerSecond,
+      shares: quotaShares(UNION_QUOTA.stage),
+    },
+    deps,
+  );
+}
 
 /**
  * Every registered union adapter wrapped once by union's governance layer (规划/02 §6.2): one
- * breaker pair and one quota bucket per platform for the whole process, so an outage seen by one
- * request opens the breaker for the next (B1-05j).
+ * breaker pair per platform for the whole process, so an outage seen by one request opens the
+ * breaker for the next (B1-05j); the quota bucket of each platform is shared by every process
+ * (B1-22v, unionQuota).
  */
 function governedUnion(
   registry: UnionRegistry,
   endpoints: readonly UnionEndpoint[],
+  quotaDeps: UnionQuotaDeps,
+  source: UnionQuotaSource,
 ): GovernedUnion {
   const scheduler = systemScheduler();
   const adapters = new Map<RegisteredPlatform, UnionAdapter>();
   for (const platform of REGISTERED_PLATFORMS) {
     const endpoint = endpoints.find((entry) => entry.platform === platform);
     if (endpoint === undefined) continue;
-    const quota = createMemoryQuotaLimiter(
-      { bucketKey: endpoint.quotaKey, ...UNION_QUOTA, shares: quotaShares('mvp') },
-      scheduler,
-    );
+    const quota = unionQuota(endpoint, quotaDeps, source);
     adapters.set(
       platform,
       createGovernedAdapter(registry.get(platform), { endpoint, scheduler, quota }),
@@ -1707,26 +1736,69 @@ function governedUnion(
 
 /**
  * B1-08n: the worker's order-sync ports, assembled here so orders never imports identity or
- * linking: identity's attr_code → user reader, linking's relation_id binding reader, and one
- * memory quota bucket per platform for the worker's own governed adapters (the same capacity
- * and shares as the api's governedUnion; each process keeps its own bucket and breakers).
+ * linking: identity's attr_code → user reader, linking's relation_id binding reader, and the
+ * quota bucket per platform of the worker's own governed adapters (`quota`, B1-22v: the shared
+ * union bucket of unionQuota, the same bucket as the api's and the stream's; see orderSyncWorker).
  * B1-08q: the source backfill ports (orderSourcePorts).
  * B1-08w: commission's snapshot port (orderSnapshotPort) for step ⑥ and the compensation retry.
  * B1-08zc: ledger's recon diff registration as orders' platform-restore port (orderPlatformRestorePort).
  */
-function orderSyncPorts(union: DynamicModule): OrdersWorkerOptions {
+function orderSyncPorts(
+  union: DynamicModule,
+  quota: OrdersWorkerOptions['quota'],
+): OrdersWorkerOptions {
   return {
     union,
     users: (db) => createOrderUserReader(db),
     bindings: (db) => createOrderBindingReader(db),
-    quota: (endpoint, scheduler) =>
-      createMemoryQuotaLimiter(
-        { bucketKey: endpoint.quotaKey, ...UNION_QUOTA, shares: quotaShares('mvp') },
-        scheduler,
-      ),
+    quota,
     sources: (db, clock, logger) => orderSourcePorts(db, clock, logger),
     snapshots: (db, clock, logger) => orderSnapshotPort(db, clock, logger),
     platformRestore: (clock) => orderPlatformRestorePort(clock),
+  };
+}
+
+/**
+ * B1-22v: OrdersModule.forWorker over orderSyncPorts, whose runtime provider additionally receives
+ * the entry's CLOCK, ROOT_LOGGER and REDIS (orders' own module does not inject REDIS). They are
+ * handed to the quota port just before the runtime is built (the runtime calls `quota` once per
+ * endpoint while it is assembled), so the worker's buckets are the shared union buckets.
+ */
+function orderSyncWorker(union: DynamicModule, source: UnionQuotaSource): DynamicModule {
+  let entry: UnionQuotaDeps | undefined;
+  const module = OrdersModule.forWorker(
+    orderSyncPorts(union, (endpoint) => {
+      if (entry === undefined) throw new Error('orders: union quota needs the worker entry');
+      return unionQuota(endpoint, entry, source);
+    }),
+  );
+  const runtime = orderSyncToken();
+  return {
+    ...module,
+    providers: (module.providers ?? []).map((provider): Provider => {
+      if (
+        typeof provider !== 'object' ||
+        provider.provide !== runtime ||
+        !('useFactory' in provider)
+      ) {
+        return provider;
+      }
+      const inject = provider.inject ?? [];
+      const build = provider.useFactory;
+      return {
+        provide: runtime,
+        inject: [...inject, CLOCK, ROOT_LOGGER, { token: REDIS, optional: true }],
+        useFactory: (...args: unknown[]): unknown => {
+          const [clock, logger, redis] = args.slice(inject.length) as [
+            Clock,
+            RootLogger,
+            RedisHandle | undefined,
+          ];
+          entry = { clock, logger, redis: redis ?? undefined };
+          return build(...args.slice(0, inject.length));
+        },
+      };
+    }),
   };
 }
 
@@ -2124,7 +2196,11 @@ class CatalogPortsModule {}
  *   (product_refs, else one detail on the same governed adapters; never a write or conversion);
  * - the linking module itself is re-exported, so its SourceLinkReader is visible to catalog.
  */
-function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModule {
+function catalogPorts(
+  union: DynamicModule,
+  linking: DynamicModule,
+  source: UnionQuotaSource,
+): DynamicModule {
   return {
     module: CatalogPortsModule,
     global: true,
@@ -2132,8 +2208,20 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
     providers: [
       {
         provide: GovernedUnion,
-        inject: [UNION_REGISTRY, UNION_ENDPOINTS],
-        useFactory: governedUnion,
+        inject: [
+          UNION_REGISTRY,
+          UNION_ENDPOINTS,
+          CLOCK,
+          ROOT_LOGGER,
+          { token: REDIS, optional: true },
+        ],
+        useFactory: (
+          registry: UnionRegistry,
+          endpoints: readonly UnionEndpoint[],
+          clock: Clock,
+          logger: RootLogger,
+          redis?: RedisHandle,
+        ): GovernedUnion => governedUnion(registry, endpoints, { clock, logger, redis }, source),
       },
       {
         provide: LinkRegistrar,
@@ -2409,7 +2497,7 @@ function agentDailyCounter(clock: Clock, redis: RedisHandle | undefined): AgentD
   };
 }
 
-function agentStreamPorts(union: DynamicModule): DynamicModule {
+function agentStreamPorts(union: DynamicModule, source: UnionQuotaSource): DynamicModule {
   return {
     module: AgentStreamPortsModule,
     global: true,
@@ -2441,7 +2529,7 @@ function agentStreamPorts(union: DynamicModule): DynamicModule {
           if (crypto === undefined && appConfig.appEnv !== 'local' && appConfig.appEnv !== 'test') {
             throw new Error('agent: item_ref needs the field keyring outside local / test');
           }
-          const union = governedUnion(registry, endpoints);
+          const union = governedUnion(registry, endpoints, { clock, logger, redis }, source);
           const config = createContentReader({ db, clock });
           const catalog = createCatalog({
             db,
@@ -3488,6 +3576,9 @@ export class AppModule {
       options.entry === 'api' || options.entry === 'worker' || options.entry === 'stream'
         ? UnionModule.forRoot(undefined, { config: contentReader })
         : undefined;
+    // B1-22v (D10-460): one union quota source per entry, so an entry without REDIS builds at most
+    // one fallback whichever of its modules asks first.
+    const unionQuotaSource = createUnionQuotaSource(options.config.appEnv);
     const linking =
       options.entry === 'api'
         ? LinkingModule.forRoot((db, clock) => createContentReader({ db, clock }), {
@@ -3930,7 +4021,7 @@ export class AppModule {
         // the queue runs. B1-08w: with commission's snapshot port, so step ⑥ and the snapshot
         // compensation retry (its 15-minute scan, started with the scheduler) run here.
         ...(options.entry === 'worker' && union !== undefined
-          ? [OrdersModule.forWorker(orderSyncPorts(union))]
+          ? [orderSyncWorker(union, unionQuotaSource)]
           : []),
         // B3-03j: the Agent's business ports (union / catalog / linking / parsing) and its
         // production assembly; B3-03m: input check and sentence review over the Aliyun content
@@ -3938,7 +4029,7 @@ export class AppModule {
         // (B3-03k). B3-08k: the content, caller and consent readers agent reads through.
         ...(options.entry === 'stream' && union !== undefined
           ? [
-              agentStreamPorts(union),
+              agentStreamPorts(union, unionQuotaSource),
               agentReaders('stream', contentReader),
               AgentModule.forStream({
                 assembly: createProductionStreamAssembly,
@@ -3948,7 +4039,7 @@ export class AppModule {
           : []),
         ...(options.entry === 'api' && union !== undefined && linking !== undefined
           ? [
-              catalogPorts(union, linking),
+              catalogPorts(union, linking, unionQuotaSource),
               CatalogModule.forRoot((db, clock) => createContentReader({ db, clock }), {
                 viewerContext: identityViewer,
               }),

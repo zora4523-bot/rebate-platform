@@ -22,7 +22,9 @@
 //   1. breaker: when open, reject with `circuit_open`; the operation is not invoked, no token
 //      is taken, nothing is recorded;
 //   2. quota (only when a limiter and a purpose are given): take one token; when refused,
-//      reject with `quota_exceeded`; nothing is recorded in the breaker;
+//      reject with `quota_exceeded`; nothing is recorded in the breaker. B1-22v: an answer that
+//      is a promise (the shared Redis bucket) is awaited before the attempt; a rejected promise
+//      (or a limiter that throws) is a refusal: `quota_exceeded`, never the limiter's error;
 //   3. invoke `operation(signal)`. When it has not settled after `timeoutMs`, abort `signal`
 //      and fail the attempt with `timeout`;
 //   4. classify the failure: `options.classify(error)` returns `failure` (the default for every
@@ -127,8 +129,12 @@ export interface QuotaConfig {
 
 export interface QuotaLimiter {
   readonly bucketKey: string;
-  /** Takes one token for `purpose`; false when none is available. */
-  tryAcquire(purpose: QuotaPurpose): boolean;
+  /**
+   * Takes one token for `purpose`; false when none is available. B1-22v: may answer with a
+   * promise (the shared Redis bucket of ./redis-quota.ts); the governor awaits it, and a `false`
+   * or a rejection is `quota_exceeded`. The memory limiter answers synchronously.
+   */
+  tryAcquire(purpose: QuotaPurpose): boolean | Promise<boolean>;
 }
 
 export interface CallOptions {
@@ -218,8 +224,8 @@ function integerInRange(value: number, min: number, max: number = Number.MAX_VAL
 
 /**
  * In-process token buckets (one per purpose) for one bucket key. Throws `invalid_policy` when
- * the configuration breaks a constraint written on `QuotaConfig` / `QuotaShares`. A Redis-backed
- * limiter with the same interface arrives with a later task.
+ * the configuration breaks a constraint written on `QuotaConfig` / `QuotaShares`. The shared
+ * Redis-backed limiter with the same semantics is createRedisQuotaLimiter (./redis-quota.ts).
  */
 export function createMemoryQuotaLimiter(
   config: QuotaConfig,
@@ -327,6 +333,24 @@ function attempt<T>(
 }
 
 /**
+ * B1-22v: the limiter's answer. A synchronous answer is used as is (no extra microtask, so the
+ * memory limiter keeps its timing); a promise is awaited, and a rejection counts as a refusal.
+ */
+function granted(quota: QuotaLimiter, purpose: QuotaPurpose): boolean | Promise<boolean> {
+  let answer: boolean | Promise<boolean>;
+  try {
+    answer = quota.tryAcquire(purpose);
+  } catch {
+    return false;
+  }
+  if (typeof answer === 'boolean') return answer;
+  return Promise.resolve(answer).then(
+    (value) => value === true,
+    () => false,
+  );
+}
+
+/**
  * A governor for one dependency (one breaker). `dependency` is a non-empty name used in errors.
  * Throws `invalid_policy` when the policy breaks a constraint written on the policy types.
  */
@@ -401,8 +425,11 @@ export function createGovernor(
           if (breakerState() === 'open') {
             throw new GovernanceError('circuit_open', dependency, 'Dependency circuit is open');
           }
-          if (quota !== undefined && purpose !== undefined && !quota.tryAcquire(purpose)) {
-            throw new GovernanceError('quota_exceeded', dependency, 'Dependency quota exhausted');
+          if (quota !== undefined && purpose !== undefined) {
+            const answer = granted(quota, purpose);
+            if (!(typeof answer === 'boolean' ? answer : await answer)) {
+              throw new GovernanceError('quota_exceeded', dependency, 'Dependency quota exhausted');
+            }
           }
           const timeoutError = new GovernanceError('timeout', dependency, 'Dependency timed out');
           try {

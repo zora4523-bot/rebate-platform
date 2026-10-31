@@ -5,6 +5,9 @@
 // retry; writes (convert, bindPublisher, createTaolijin) never do — the client replays the
 // same idempotency key instead. The quota limiter is shared and takes one token per attempt
 // for the call's purpose; its bucket key comes from configuration (CAP-*-12 decide the unit).
+// B1-22v: the limiter may answer with a promise (app.module's shared Redis bucket); the governor
+// awaits it before each attempt, here and for every gated request of B1-04w, and a refusal or a
+// failed answer ends the call with quota_exceeded.
 // Business refusals from the adapter (UnionError with a business code) are classified
 // `rejected`: not retried and not counted by the breaker; only timeouts, upstream throttling,
 // network and 5xx failures are.
