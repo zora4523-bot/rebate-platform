@@ -313,7 +313,7 @@ it('[AC-B2-09a#5] 差错单列表的金额是整数分原样（不换算、不�
   });
 });
 
-it('[AC-B2-09a#6] 差错单列表的拒绝：type 不是 R1–R3 类型（pay_mismatch 或未知值）、source 是 R4 或未知、status 不在枚举、period_from / period_to 不是 YYYY-MM[-DD]、ref_id 超过 64 字符 → 20001 data.fields 指名该参数；period_from > period_to（含 2026-10-01 对 2026-10）→ 20001 data.fields=[period_from, period_to]；page_size 超过 200 → 20001 [page_size]', async () => {
+it('[AC-B2-09a#6] 差错单列表的拒绝：type 不是 R1–R3 类型（pay_mismatch 或未知值）、source 是 R4 或未知、status 不在枚举、period_from / period_to 不是 YYYY-MM[-DD]、ref_id 超过 128 字符 → 20001 data.fields 指名该参数；period_from > period_to（含 2026-10-01 对 2026-10）→ 20001 data.fields=[period_from, period_to]；page_size 超过 200 → 20001 [page_size]', async () => {
   const f = fixture(s);
   await seedDiff(f);
   const RANGE = ['period_from', 'period_to'];
@@ -331,13 +331,13 @@ it('[AC-B2-09a#6] 差错单列表的拒绝：type 不是 R1–R3 类型（pay_mi
     await refused({ period_from: '2026/10' }, ['period_from']);
     await refused({ period_to: '2026-10-32' }, ['period_to']);
     await refused({ period_to: '2026-1' }, ['period_to']);
-    await refused({ ref_id: 'x'.repeat(65) }, ['ref_id']);
+    await refused({ ref_id: 'x'.repeat(129) }, ['ref_id']);
     await refused({ period_from: '2026-10-02', period_to: '2026-10-01' }, RANGE);
     await refused({ period_from: '2026-10-01', period_to: '2026-10' }, RANGE);
     await refused({ period_from: '2026-11', period_to: '2026-10-31' }, RANGE);
     await refused({ page_size: '201' }, ['page_size']);
     // The boundary values are accepted.
-    const edge = await page(await h.list({ ref_id: 'x'.repeat(64), page_size: '200' }));
+    const edge = await page(await h.list({ ref_id: 'x'.repeat(128), page_size: '200' }));
     expect(edge.total).toBe(0);
   });
   expect(await allAudits(f)).toEqual([]);

@@ -1,7 +1,8 @@
 # oasdiff breaking --err-ignore list (D10-484). One line per accepted change: HTTP method, path,
 # then the change text exactly as oasdiff 1.32.1 prints it. Only response enum values added
 # (response-property-enum-value-added) may be listed here, and only when an old client cannot
-# receive the new value; never removed fields, type changes or required-ness changes. Each block
+# receive the new value, plus a widened response maxLength an orchestrator ruling names; never
+# removed fields, type changes or required-ness changes. Each block
 # names the ruling and why old clients cannot see the value. Other lanes append here and report it.
 #
 # D10-465 / D10-478 / D10-484 (CT-02zb): AgreementType adds sdk_list and collect_list. Old clients
@@ -16,3 +17,13 @@ GET /admin/v1/agreements/{type}/versions/{version} added the new `collect_list` 
 GET /admin/v1/agreements/{type}/versions/{version} added the new `sdk_list` enum value to the `data/type` response property for the response status `200`
 GET /v1/agreements/{type} added the new `collect_list` enum value to the `data/type` response property for the response status `200`
 GET /v1/agreements/{type} added the new `sdk_list` enum value to the `data/type` response property for the response status `200`
+#
+# D10-506 / D10-484 / D10-511 (CT-24zf): AdminReconDiff ref_id widens from 64 to 128. The
+# #AMT# fingerprint difference ref_id ({order_key}#AMT#{base_fen}:{b_settle_fen}) can exceed 64; the
+# only client is the admin console, which ships with the server and treats ref_id as display text.
+# The request filter AdminReconDiffRefIdFilter widens with it, so every listed ref_id can be filtered.
+GET /admin/v1/recon-diffs the `data/items/items/ref_id` response property's maxLength was increased from `64` to `128` for the response status `200`
+GET /admin/v1/recon-diffs/{recon_diff_id} the `data/ref_id` response property's maxLength was increased from `64` to `128` for the response status `200`
+POST /admin/v1/recon-diffs/{recon_diff_id}/close the `data/recon_diff/ref_id` response property's maxLength was increased from `64` to `128` for the response status `200`
+POST /admin/v1/recon-diffs/{recon_diff_id}/restore the `data/recon_diff/ref_id` response property's maxLength was increased from `64` to `128` for the response status `200`
+POST /admin/v1/recon-diffs/{recon_diff_id}/write-off the `data/recon_diff/ref_id` response property's maxLength was increased from `64` to `128` for the response status `200`
