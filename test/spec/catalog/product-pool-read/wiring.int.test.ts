@@ -601,3 +601,99 @@ it(
   },
   TIMEOUT,
 );
+
+// Round 3 of the money review. The online breaker counts attempts for 10 s and opens at 20 with over
+// half failed, and the outages above can reach that within one file run, more so on a fast host: an
+// open breaker answers before searchItems runs, and that alone gives the pool price. So these two
+// take an app of their own, a breaker of their own, and stay last: their attempts cannot reach the
+// shared breaker that #5 and #6 run on, and its state cannot reach them. The shared clock goes back
+// here too, since the first case moves it.
+async function onOwnBreaker(run: () => Promise<void>): Promise<void> {
+  const { createHttpApp } = (await import(new URL('apps/api/src/bootstrap.ts', root).href)) as {
+    createHttpApp: (
+      entry: 'api',
+      overrides: {
+        config: ReturnType<typeof platform.loadConfig>;
+        clock: platform.FixedClock;
+        logger: typeof logger;
+        dbHandles: platform.DbHandles;
+        redisUrl: platform.ConnectionConfig['redisUrl'];
+      },
+    ) => Promise<HttpApp>;
+  };
+  const own = await createHttpApp('api', {
+    config: platform.loadConfig({ APP_ENV: 'test' }),
+    clock,
+    logger,
+    dbHandles: { db, dbRead: null, close: async () => undefined },
+    redisUrl: platform.loadConnectionConfig('api', {
+      DATABASE_URL: database!.urlFor('couli_app'),
+      REDIS_URL: redis!.url,
+    }).redisUrl,
+  });
+  await own.init();
+  const shared = app;
+  app = own;
+  try {
+    await run();
+  } finally {
+    app = shared;
+    clock.set(REFRESH_NOW);
+    await own.close();
+  }
+}
+
+it(
+  '[AC-B1-05r#8][BR-PRICE-11][TRADE-12] 真实详情链路：请求开始时池行合格、标题搜索期间超过 pool.max_age_sec，然后联盟依赖失败 → 按回退那一刻的时钟不合格，不展示池价，50401',
+  async () => {
+    await onOwnBreaker(async () => {
+      const stable = 'Kreparse08';
+      const tapped = await tappedCard(stable, { quoted_at: secondsAgo(clock, MAX_AGE_SEC - 5) });
+      const stored = await storedRef(tapped.key);
+      const before = await links();
+      // set, not advance: each attempt of the governed retries lands on the same instant.
+      const pastLimit = new Date(clock.now().getTime() + 6000);
+      searchItems.mockImplementation(async () => {
+        clock.set(pastLimit);
+        throw outage();
+      });
+
+      const response = await detailOf(tapped.key, tapped.itemRef);
+
+      expect(response.statusCode).toBe(504);
+      expect(response.json()).toMatchObject({ code: 50401 });
+      await assertSchema(response.json(), 'ErrorEnvelope');
+      expectOnlineTitleSearch(stable);
+      expect(await links()).toHaveLength(before.length);
+      expect(await storedRef(tapped.key)).toEqual(stored);
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B1-05r#9][BR-PROD-05] 真实详情链路：searchItems 答 adapter_unimplemented、有合格池行 → 30143，不用池价，行不下架，product_refs 不动',
+  async () => {
+    await onOwnBreaker(async () => {
+      const stable = 'Kreparse09';
+      const tapped = await tappedCard(stable);
+      const stored = await storedRef(tapped.key);
+      const before = await links();
+      searchItems.mockRejectedValue(
+        new UnionError('adapter_unimplemented', 'synthetic: no title search', 'taobao'),
+      );
+
+      const response = await detailOf(tapped.key, tapped.itemRef);
+
+      await expectRefExpired(response, before.length);
+      expectOnlineTitleSearch(stable);
+      expect(getItem).not.toHaveBeenCalled();
+      expect(await itemRow(db, appId, tapped.pool, tapped.key)).toMatchObject({
+        status: 'online',
+        invalid_reason: null,
+      });
+      expect(await storedRef(tapped.key)).toEqual(stored);
+    });
+  },
+  TIMEOUT,
+);
