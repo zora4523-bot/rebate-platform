@@ -2,10 +2,11 @@
 // design/specs/admin-order-detail.md; 01 F-ADM-05, F1-07e): GET /admin/v1/orders/{order_id} only
 // (a direct address never reads the list) with the status card (both lock marks side by side),
 // basic and attribution information, the commission snapshot, the status history and the link
-// records. Read only: the write buttons (sync, hold / unhold, assign) come with a later contract
-// and the raw union payload has no permission point yet, so neither is rendered. An unknown or
+// records. 【同步此单】 (F1-07eb, CT-24n) asks a manual sync of this sub-order; the other write
+// buttons (hold / unhold, assign) come with a later contract and the raw union payload has no
+// permission point yet, so neither is rendered. An unknown or
 // not visible order (20001) shows nothing of it. 【返回】 goes to the list with its conditions.
-import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 import { useDataProvider } from '@refinedev/core';
 import {
   Alert,
@@ -29,6 +30,7 @@ import type { AccessControl } from '../../providers/access-control/index.ts';
 import { PlannedPage, usePlanned } from '../../components/planned/index.ts';
 import { ordersTexts } from '../../texts/orders.ts';
 import { FlagTags, StatusTag } from './parts.tsx';
+import { nextNoticeId, noticeOf, useSyncRequest, type SyncNotice } from './sync.ts';
 import {
   backQueryOf,
   beijingTime,
@@ -69,6 +71,8 @@ function OrderDetailContent({ access, orderId }: OrderDetailPageProps): ReactEle
   const [order, setOrder] = useState<OrderDetail>();
   const [status, setStatus] = useState<LoadStatus>(permitted ? 'loading' : 'forbidden');
   const [attempt, setAttempt] = useState(0);
+  const sync = useSyncRequest();
+  const [notice, setNotice] = useState<SyncNotice>();
 
   useEffect(() => {
     if (!permitted) return undefined;
@@ -105,6 +109,18 @@ function OrderDetailContent({ access, orderId }: OrderDetailPageProps): ReactEle
     void navigate('/orders', { state });
   };
 
+  // 【同步此单】 (F1-07eb, CT-24n): sends at once { platform, order_nos: [this sub-order] }.
+  const syncThisOrder = async (shown: OrderDetail) => {
+    if (sync.busy) return;
+    const outcome = await sync.send({ platform: shown.platform, order_nos: [shown.sub_order_id] });
+    if (outcome === undefined) return;
+    const text =
+      outcome.kind === 'fields'
+        ? { type: 'error' as const, text: ordersTexts.sync.orderNosRejected }
+        : noticeOf(outcome);
+    setNotice(text === undefined ? undefined : { id: nextNoticeId(), ...text });
+  };
+
   const code = { fontFamily: token.fontFamilyCode } as const;
 
   const header = (
@@ -124,9 +140,21 @@ function OrderDetailContent({ access, orderId }: OrderDetailPageProps): ReactEle
           </>
         )}
       </Flex>
-      <Button icon={<ArrowLeftOutlined aria-hidden />} onClick={back}>
-        {t.back}
-      </Button>
+      <Flex gap={8} wrap>
+        {order === undefined || status !== 'ready' ? null : (
+          <Button
+            icon={<SyncOutlined aria-hidden />}
+            disabled={sync.busy}
+            aria-busy={sync.busy || undefined}
+            onClick={() => void syncThisOrder(order)}
+          >
+            {ordersTexts.sync.thisOrderEntry}
+          </Button>
+        )}
+        <Button icon={<ArrowLeftOutlined aria-hidden />} onClick={back}>
+          {t.back}
+        </Button>
+      </Flex>
     </Flex>
   );
 
@@ -173,6 +201,16 @@ function OrderDetailContent({ access, orderId }: OrderDetailPageProps): ReactEle
   return (
     <Flex vertical gap={16} style={{ minWidth: 0 }}>
       {header}
+      {notice === undefined ? null : (
+        <Alert
+          key={notice.id}
+          type={notice.type}
+          showIcon
+          closable
+          message={notice.text}
+          onClose={() => setNotice(undefined)}
+        />
+      )}
       {body}
     </Flex>
   );

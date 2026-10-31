@@ -253,3 +253,125 @@ export function failureOf(cause: unknown): FailureKind {
 
 /** A detail address is only a UUID-shaped order_id (/orders/<uuid>). */
 export const ORDER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// ---- manual order sync (CT-24n adminCreateOrderSync / adminListOrderSyncs / limits) ---------
+
+export type SyncCreateRequest = Schema<'AdminOrderSyncCreateRequest'>;
+export type SyncCreated = Schema<'AdminOrderSyncCreated'>;
+export type SyncItem = Schema<'AdminOrderSyncListItem'>;
+export type SyncPage = Schema<'AdminOrderSyncPage'>;
+export type SyncLimit = Schema<'AdminOrderSyncPlatformLimit'>;
+export type SyncLimits = Schema<'AdminOrderSyncLimits'>;
+export type SyncStatus = Schema<'AdminOrderSyncStatus'>;
+
+export const SYNCS_URL = '/admin/v1/order-syncs';
+export const SYNC_LIMITS_URL = '/admin/v1/order-syncs/limits';
+/** page_size of the sync records. */
+export const SYNC_PAGE_SIZE = 20;
+/** The contract's ceiling of order numbers per request (AdminOrderSyncOrderNos). */
+export const SYNC_MAX_ORDER_NOS = 50;
+/** One order number: 1–64 characters. */
+export const ORDER_NO_MAX = 64;
+
+const TYPED_TIME = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+/**
+ * A typed Beijing time 「YYYY-MM-DD HH:mm」 (seconds optional) as ISO 8601 with the +08:00
+ * offset; undefined when it is not a real calendar time.
+ */
+export function beijingInput(value: string): string | undefined {
+  const found = TYPED_TIME.exec(value.trim());
+  if (found === null) return undefined;
+  const [year, month, day, hour, minute, second] = found
+    .slice(1)
+    .map((part) => (part === undefined ? 0 : Number(part)));
+  const ms = Date.UTC(year!, month! - 1, day!, hour!, minute!, second!);
+  const back = new Date(ms);
+  if (
+    back.getUTCFullYear() !== year ||
+    back.getUTCMonth() !== month! - 1 ||
+    back.getUTCDate() !== day ||
+    back.getUTCHours() !== hour ||
+    back.getUTCMinutes() !== minute ||
+    back.getUTCSeconds() !== second
+  )
+    return undefined;
+  return `${found[1]}-${found[2]}-${found[3]}T${found[4]}:${found[5]}:${two(second!)}+08:00`;
+}
+
+/** YYYY-MM-DD HH:mm in Beijing; null shows the dash. */
+export function beijingMinute(iso: string | null): string {
+  if (iso === null) return t.dash;
+  if (beijingParts(iso) === undefined) return iso;
+  return `${beijingDate(iso)} ${beijingClock(iso)}`;
+}
+
+/** Order numbers typed one per line (also split on spaces and commas), blanks and repeats dropped. */
+export function orderNosOf(text: string): string[] {
+  const seen: string[] = [];
+  for (const part of text.split(/[\s,，]+/)) {
+    if (part !== '' && !seen.includes(part)) seen.push(part);
+  }
+  return seen;
+}
+
+/** The dictionary name of a sync status (admin_dict.order_sync_requests.status.*), else the code. */
+export function syncStatusName(code: string): string {
+  const key = `admin_dict.order_sync_requests.status.${code}`;
+  return Object.hasOwn(dictionary, key) ? dictionary[key]! : code;
+}
+
+/** antd preset Tag colour of a sync status. */
+export function syncTone(code: string): 'success' | 'error' | 'processing' | 'default' {
+  if (code === 'done') return 'success';
+  if (code === 'failed') return 'error';
+  if (code === 'running') return 'processing';
+  return 'default';
+}
+
+/** What a manual sync submit came to. */
+export type SyncOutcome =
+  | { readonly kind: 'created' }
+  | { readonly kind: 'reused' }
+  | { readonly kind: 'paused'; readonly platform: string }
+  | { readonly kind: 'forbidden' }
+  | { readonly kind: 'rateLimited' }
+  | { readonly kind: 'fields'; readonly fields: readonly string[] }
+  | { readonly kind: 'network' }
+  | { readonly kind: 'failed' };
+
+/** The outcome of a failed POST /admin/v1/order-syncs. */
+export function syncFailureOf(cause: unknown, platform: string): SyncOutcome {
+  if (!(cause instanceof AdminApiError)) return { kind: 'failed' };
+  if (cause.kind === 'network') return { kind: 'network' };
+  if (cause.code === 10403) return { kind: 'forbidden' };
+  if (cause.code === 42901 || cause.httpStatus === 429) return { kind: 'rateLimited' };
+  if (cause.code === 30156) {
+    const data = cause.data;
+    const named =
+      typeof data === 'object' && data !== null && 'platform' in data
+        ? (data as { platform: unknown }).platform
+        : undefined;
+    return { kind: 'paused', platform: typeof named === 'string' ? named : platform };
+  }
+  if (cause.code === 20001) {
+    const data = cause.data;
+    const fields =
+      typeof data === 'object' && data !== null && 'fields' in data
+        ? (data as { fields: unknown }).fields
+        : undefined;
+    return {
+      kind: 'fields',
+      fields: Array.isArray(fields)
+        ? fields.filter((one): one is string => typeof one === 'string')
+        : [],
+    };
+  }
+  return { kind: 'failed' };
+}
+
+/** The dictionary name of a sync mode (admin_dict.order_sync_requests.mode.*), else the code. */
+export function syncModeName(code: string): string {
+  const key = `admin_dict.order_sync_requests.mode.${code}`;
+  return Object.hasOwn(dictionary, key) ? dictionary[key]! : code;
+}
