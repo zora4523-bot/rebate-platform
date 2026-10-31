@@ -1,0 +1,19 @@
+id: B1-05v
+repo: rebate-platform
+title: staging：admin 入口只读挂载 /etc/couli-pdd（B1-05q 让 admin 装配 UnionModule），冻结 [AC-B1-04y-COMPOSE#1/#2] 改为 admin、api、worker 三个入口
+type: test-change
+# 2026-11-01 W1 入账（B1-05q money 评审 S2）。staging.env 各入口共用，设了 UNION_ENDPOINT_OVERRIDE_DIR 后 admin 读不到目录就起不来；须先于 B1-05q 合并。
+# 冻结测试改动：断言随挂载范围扩到 admin，#2 标题「只给 api/worker」随之变假，按 D10-509 只改描述、AC 编号不变。不注入凭据、deploy.sh 不变。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/infra/staging-pdd/compose.test.ts'
+  - 'infra/staging/compose.yaml'
+  - 'infra/staging/README.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
