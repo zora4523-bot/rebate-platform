@@ -4,10 +4,16 @@ import type { Kysely } from 'kysely';
 import {
   CLOCK,
   DB as DB_TOKEN,
+  EVENT_BUS,
+  FIELD_CRYPTO,
   IDEMPOTENCY,
+  JOB_QUEUE,
   ROOT_LOGGER,
   type Clock,
+  type EventBus,
+  type FieldCrypto,
   type Idempotency,
+  type QueueRuntime,
   type RootLogger,
 } from '../platform/index.ts';
 import type { AdminSettleBillReadDeps } from './application/admin-settle-bills.ts';
@@ -29,6 +35,21 @@ import {
   type RebateDependencies,
   type RebatePort,
 } from './rebate/application/rebate.ts';
+import { createSettleWorkerHandler, createSettleWorkerTimer } from './worker/assemble.ts';
+import type { SettlementWorkerPorts } from './worker/ports.ts';
+
+/** The settle queue's registration and timer on the worker entry (lifecycle hooks). */
+const SETTLE_WORKER = Symbol('SETTLEMENT_SETTLE_WORKER');
+const SETTLE_QUEUE = 'settle';
+
+interface SettleWorkerLifecycle {
+  onApplicationBootstrap(): void;
+  onModuleDestroy(): Promise<void>;
+}
+
+function inertLifecycle(): SettleWorkerLifecycle {
+  return { onApplicationBootstrap: () => undefined, onModuleDestroy: () => Promise.resolve() };
+}
 
 /** Nest injection token for the pre-credit rebate port (orders' rebate.onImported / onUpdated). */
 export const REBATE_PORT = Symbol('REBATE_PORT');
@@ -45,6 +66,79 @@ export class SettlementModule {
         },
       ],
       exports: [REBATE_PORT],
+    };
+  }
+
+  /**
+   * B2-04ze (D10-443): the worker entry's settle queue. With DB, JOB_QUEUE, FIELD_CRYPTO and
+   * EVENT_BUS resolved (CLOCK, ROOT_LOGGER always), registers exactly one handler on queue settle
+   * (worker/schedule.ts createSettleJobHandler) over createBillJob (production readSource and
+   * saveBillValidations), createBatchExecutor, createCreditOrder and createBeneficiaryCredit (both
+   * with readAttribution = ports.readAttribution, so readSnapshot is never their attribution read)
+   * and createBeneficiaryGate (ports' identity and risk readers, minors = ports.minors(FIELD_CRYPTO)),
+   * plus the module's own timer of the daily bill seed and the due batch scan: after bootstrap the
+   * first tick runs within 60 s, later ones at most 60 s apart (unref); each tick runs
+   * seedSettleBills (createSettleRunStore(db), ports.platforms) and scanDueBatches with the injected
+   * Clock, a failure logged and not thrown. On destroy the timer stops and a tick in flight is
+   * awaited: nothing is sent once the module is closed. Without a database or queue nothing is
+   * registered and no timer runs.
+   */
+  static forWorker(ports: SettlementWorkerPorts): DynamicModule {
+    return {
+      module: SettlementModule,
+      providers: [
+        {
+          provide: SETTLE_WORKER,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB_TOKEN, optional: true },
+            { token: JOB_QUEUE, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+            { token: EVENT_BUS, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<DB>,
+            queue?: QueueRuntime,
+            crypto?: FieldCrypto,
+            events?: EventBus,
+          ): SettleWorkerLifecycle => {
+            if (
+              db === undefined ||
+              queue === undefined ||
+              crypto === undefined ||
+              events === undefined
+            ) {
+              logger.info({ queue: SETTLE_QUEUE }, 'settle_worker_disabled');
+              return inertLifecycle();
+            }
+            const workerLogger = logger.child({ module: 'settlement', queue: SETTLE_QUEUE });
+            queue.register(
+              SETTLE_QUEUE,
+              createSettleWorkerHandler(ports, {
+                db,
+                clock,
+                queue,
+                crypto,
+                events,
+                logger: workerLogger,
+              }),
+            );
+            const timer = createSettleWorkerTimer(ports, {
+              db,
+              clock,
+              queue,
+              logger: workerLogger,
+            });
+            return {
+              onApplicationBootstrap: () => timer.start(),
+              onModuleDestroy: () => timer.stop(),
+            };
+          },
+        },
+      ],
     };
   }
 }

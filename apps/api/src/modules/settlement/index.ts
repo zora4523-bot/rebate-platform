@@ -46,3 +46,31 @@ export type { SettlementFundMetrics } from './application/metrics-read.ts';
 // 生产装配维权端口的任务须 deps B2-04lb（TODO(规划/11 §4.2): 入账前部分维权 N_new 落库与 WAIT_COMMISSION 入账前关闭 — blocked on B2-04lb（D10-470））。
 export { createRebateAdminCommandPort, createRightsCommandPort } from './rights/index.ts';
 export type { RebateAdminDependencies, RightsCommandDependencies } from './rights/index.ts';
+// B2-04ze (D10-443): the worker entry's settle queue (bill seed, due batch scan, handler).
+export {
+  createSettleJobHandler,
+  createSettleRunStore,
+  scanDueBatches,
+  scheduleBatchExecute,
+  scheduleSettleBill,
+  seedSettleBills,
+  settleBatchExecuteJobKey,
+  settleBillJobKey,
+  settleBillRunAt,
+} from './worker/index.ts';
+export type {
+  SettleBatchExecuteJobInput,
+  SettleBatchExecuteJobPayload,
+  SettleBatchScanOptions,
+  SettleBillJobInput,
+  SettleBillJobPayload,
+  SettleBillRunState,
+  SettleBillSeedOptions,
+  SettleJobHandlerDependencies,
+  SettleJobName,
+  SettleQueueName,
+  SettleRunStore,
+  SettleScheduleLogger,
+  SettlementConfigReader,
+  SettlementWorkerPorts,
+} from './worker/index.ts';

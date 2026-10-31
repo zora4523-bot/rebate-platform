@@ -74,6 +74,8 @@ import {
   createSnapshotBeneficiaryResolver,
   findBannedRunStart,
   listBannedForfeitedShares,
+  appendBeneficiaryEvent,
+  readCommissionAttribution,
   readCommissionSnapshot,
   readTljDeductFen,
   type RuleSetReader,
@@ -164,6 +166,8 @@ import {
   createDeletionStageReader,
   createOrderUserReader,
   createUserDeletionStatusReader,
+  createRealnameStatusBatchReader,
+  createMinorStatusBatchReader,
   createInviteRewardLoginIpsReader,
   createInviteRewardDeletedPhoneReader,
   revokeSessionsByUser,
@@ -395,6 +399,7 @@ import {
 } from './modules/risk/index.ts';
 import {
   SettlementAdminModule,
+  SettlementModule,
   createEarningsOrdersSource,
   createPendingEarningsSource,
   readOrderIdsByKey,
@@ -2959,6 +2964,34 @@ export function dataCopyPorts(config: AppConfig): IdentityDataCopyPorts {
  * minimum-version gate (pooled) and ContentPublicModule (GET /v1/app-versions/check, GET
  * /v1/config), so an admin change to a minimum version reaches both at the same refresh.
  */
+/**
+ * B2-04ze (D10-443): SettlementModule.forWorker with the owners' exports (worker entry only).
+ * content's switches are read fresh on the worker's handle (the executor caches at most 10 s).
+ */
+function settlementWorkerModule(): DynamicModule {
+  return SettlementModule.forWorker({
+    platforms: REGISTERED_PLATFORMS,
+    readAttribution: readCommissionAttribution,
+    readSnapshot: readCommissionSnapshot,
+    readTljDeductFen,
+    appendBeneficiaryEvent,
+    readUnionAuthoritative: readUnionAuthoritativeOrderKeys,
+    snapshotStatus: getAssetSnapshotStatus,
+    registerDiff: registerReconDiff,
+    readOrderNets: getOrderNets,
+    ledger: (clock) => createLedger({ clock }),
+    lockUsers: lockUsersForUpdate,
+    deletionStatus: (db) => createUserDeletionStatusReader({ db }),
+    realnameStatus: (db) => createRealnameStatusBatchReader({ db }),
+    riskState: (db) => createRiskStateBatchReader({ db }),
+    minors: (crypto) => createMinorStatusBatchReader({ crypto }),
+    config: (db, clock) => ({
+      get: async (appId, key) =>
+        (await createContentReader({ db, clock }).configValue(appId, key))?.value,
+    }),
+  });
+}
+
 type SharedContentReader = (db: Kysely<Database>, clock: Clock) => ContentReader;
 /**
  * B2-07e: an audit port whose actor may be written as `admin:<admin_users.id>` (payout's hold
@@ -3822,6 +3855,12 @@ export class AppModule {
               // B2-02q (BR-FUND-19): the daily ledger check at 01:00 +08:00 for D−1 (queue
               // ledger-check), its seed / heal timer and the B2-02p ports assembled above.
               ledgerDailyCheckModule(),
+              // B2-04ze (D10-443): settlement's queue settle (bill / batch_execute), its daily bill
+              // seed and due batch scan, over the owners' exports. readAttribution must be
+              // commission's readCommissionAttribution (HANDOFF 10-27). Switches as they are:
+              // content's stored value, credit.enabled.<platform> unset = off, so nothing credits
+              // by default.
+              settlementWorkerModule(),
               // Admin data exports (B1-34e, BR-ID-42): the export queue's generate / expire
               // handler over identity's batch users projection (decrypted and masked there) and
               // content's configuration reader (admin.export.* overrides of the code defaults).
