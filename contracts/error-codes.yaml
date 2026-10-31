@@ -730,7 +730,7 @@ codes:
     sources: [BR-ID-36]
   - code: 30419
     http: 422
-    meaning: 该用户当前不受理这项客服代办（只出现在 /admin/v1：实名更正 POST /admin/v1/users/{user_id}/realname-correction 的 realname_not_verified、account_deleting、account_deleted、withdrawal_in_progress、reverify_pending、identity_blacklisted，BR-ID-25 细则「实名更正」；个人信息副本登记 POST /admin/v1/users/{user_id}/data-exports 的 account_deleting、account_deleted、delivery_undecided，BR-ID-40 细则；account_deleting（注销中）另带 data.stage，取值同 10007 的 data.stage（编排裁定 D10-248）；已注销的账号用 account_deleted，不带 data.stage（编排裁定 D10-250）。码值按 08 §13.11 304 段顺序取号，编排裁定 D10-246，CT-24q）
+    meaning: 该用户当前不受理这项客服代办（只出现在 /admin/v1：实名更正 POST /admin/v1/users/{user_id}/realname-correction 的 realname_not_verified、account_deleting、account_deleted、withdrawal_in_progress、reverify_pending、identity_blacklisted，BR-ID-25 细则「实名更正」；个人信息副本登记 POST /admin/v1/users/{user_id}/data-exports 的 account_deleting、account_deleted、delivery_undecided，BR-ID-40 细则；account_deleting（注销中）另带 data.stage，取值同 10007 的 data.stage（编排裁定 D10-248）；已注销的账号用 account_deleted，不带 data.stage（编排裁定 D10-250）。登记已加验设备 POST /admin/v1/users/{user_id}/reverified-devices 的 account_deleted、reverify_not_pending（账号没有待加验标记），BR-WDR-01 细则「旧手机号被二次放号时的提现加验」，CT-26j；码值按 08 §13.11 304 段顺序取号，编排裁定 D10-246，CT-24q）
     action: 后台：按 data.reason 提示不受理的原因，不提交
     retry: 否
     retry_kind: never
@@ -743,8 +743,9 @@ codes:
         - identity_blacklisted
         - delivery_undecided
         - account_deleted
+        - reverify_not_pending
       stage: [cooling, processing]
-    sources: [BR-ID-25, BR-ID-40]
+    sources: [BR-ID-25, BR-ID-40, BR-WDR-01]
   - code: 30501
     http: 422
     meaning: AI 助手未开放

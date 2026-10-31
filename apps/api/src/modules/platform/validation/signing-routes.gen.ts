@@ -287,6 +287,11 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": true
   },
   {
+    "method": "POST",
+    "path": "/v1/me/oauth-bindings",
+    "signed": true
+  },
+  {
     "method": "GET",
     "path": "/v1/me/payout-account",
     "signed": false
@@ -684,6 +689,16 @@ export const CONTRACT_SIGNING_ROUTES = [
   {
     "method": "PATCH",
     "path": "/admin/v1/users/:user_id/profile",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/users/:user_id/devices",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/reverified-devices",
     "signed": false
   },
   {

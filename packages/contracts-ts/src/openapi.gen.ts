@@ -1705,6 +1705,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/oauth-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bind a third-party login identity (WeChat, Apple, Huawei) to the logged-in account
+         * @description P1 (BR-ID-06 细则「已登录账号在设置里绑定或解绑第三方登录方式」, 01 F-ACC-14): the MVP binds a
+         *     third-party identity only when an account is created by a third-party login and moves it
+         *     on a merge; this interface is declared ahead (contract CT-26j) so that the re-verification
+         *     rule has its place, and is implemented when the item is started. Body: `provider`,
+         *     `attempt_id` and the credential fields of that provider's login (WeChat `code`, Apple
+         *     `identity_token` and `authorization_code`, Huawei `authorization_code`); any other field
+         *     is 20001. The attempt comes from POST /v1/auth/oauth-attempts; its purpose for binding
+         *     (`bind`, bound to the user, this device_id and the provider) is to be decided when the
+         *     P1 item is started (待 P1 立项定) and is added there then.
+         *     The identity is what the server obtains with the credential, as at login (BR-ID-04 细则);
+         *     an invalid, expired, used or mismatching credential or attempt → 20004; the provider
+         *     unavailable, or its answer lacking the required identifier → 50305 with `data.provider`.
+         *     Pending re-verification (BR-WDR-01 细则「旧手机号被二次放号时的提现加验」, 位置与返回码): the
+         *     account carries the flag and this device is not a re-verified device → 10010 with
+         *     `data.method` (only one, by priority: id_number, oauth, manual), judged before the
+         *     credential is exchanged; the client opens Reverify and, after passing, the user binds
+         *     again with a new Idempotency-Key (no replay). 10010 writes no idempotency result
+         *     (BR-WDR-07). An identity bound while the flag is set never becomes a trusted identity.
+         *     Conflicts (BR-ID-06 细则): an identity already bound to another account, or a provider
+         *     already bound to this account (unique (app_id, user_id, provider)), is refused without
+         *     merging; their error codes are not yet allocated in 08 §13.11 and are to be decided when
+         *     the P1 item is started (待 P1 立项定). On success one user_oauth row is written
+         *     (Apple also stores its refresh token, BR-ID-04) and the binding is returned.
+         *     Version gate: applied.
+         */
+        post: operations["bindOauthIdentity"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/payout-account": {
         parameters: {
             query?: never;
@@ -4274,8 +4317,105 @@ export interface paths {
          *     Retrying a save that already took effect therefore returns the same user and only adds
          *     an audit record. The response is the user as GET /admin/v1/users/{user_id} returns it
          *     now, phone number masked. No compare-and-set value and no Idempotency-Key (04 §6.6).
+         *     Pending re-verification (BR-WDR-01 细则「旧手机号被二次放号时的提现加验」, 清除标记只走人工;
+         *     BR-ID-44; contract CT-26j, implemented by a later task): when the edited phone is saved
+         *     for an account that carries the "pending re-verification" flag, the same transaction
+         *     (together with the session revocation above) also unbinds every third-party identity
+         *     (user_oauth row) of the user that is not among the trusted identities fixed when the
+         *     account was flagged, then clears the flag (flag time and trusted-identity snapshot
+         *     cleared, the failure count reset). Trusted third-party identities stay bound; the
+         *     re-verified devices stay recorded. An unbound Apple identity is revoked at Apple as in
+         *     BR-ID-28 (编排 D10-513), with the external call outside the transaction: inside the
+         *     phone-change transaction the binding row is deleted and a revocation job is written to
+         *     the outbox (with retries; the job carries the refresh token only as the stored cipher
+         *     copied before the row is deleted, never in plaintext, and decrypts it at call time as the
+         *     deletion flow does); after commit the job calls Apple's revocation. A failed
+         *     revocation is only retried and alerted on; it never rolls the phone change back. A nickname-only
+         *     edit, and a phone edit of an account without the flag, neither unbind nor clear anything.
+         *     The audit record of such a save also lists the providers unbound and that the flag was
+         *     cleared; the response shape is unchanged (no unbind count in it).
          */
         patch: operations["adminEditUserProfile"];
+        trace?: never;
+    };
+    "/admin/v1/users/{user_id}/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The devices of one user, with their re-verification record
+         * @description Permission point `user.phone_change` (04 §11.2, 编辑会员信息; the same point as recording a
+         *     re-verified device, POST /admin/v1/users/{user_id}/reverified-devices; 编排 D10-513); lacking
+         *     it is 10403 with `data.reason=admin_permission_denied`. Read only: no step-up, and listing
+         *     does not write an audit record. Lists the user's devices that are not revoked
+         *     (devices.user_id is this user, revoked_at null), `last_seen_at` descending (then the
+         *     server's internal order for the same time), page by page (`page`, `page_size` ≤ 200, above
+         *     that 20001). Each row: `device_id`, `platform`, `app_version`, `created_at`,
+         *     `last_seen_at` and `reverified` — the device's re-verified record (`source` self / admin
+         *     and `created_at`, BR-WDR-01 细则「已加验设备」) or null; never device_hash, the install
+         *     secret or last_login_sid. An unknown `user_id`, or one of another app, is 20001 with
+         *     `data.fields=[user_id]`. This is where the console picks the `device_id` it records as
+         *     re-verified.
+         */
+        get: operations["adminListUserDevices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{user_id}/reverified-devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a device of the user as re-verified without changing the phone (旧号加验)
+         * @description Permission point `user.phone_change` (04 §11.2, 编辑会员信息; the nearest existing point —
+         *     04 §11.2 has no point of its own for this operation; 编排 D10-513); lacking it is 10403 with `data.reason=admin_permission_denied`. Step-up:
+         *     totp tier, as that point (without a valid totp-tier `X-Step-Up-Token` → 10003 with
+         *     `data.tier=totp`). BR-WDR-01 细则「旧手机号被二次放号时的提现加验」, 清除标记只走人工: the
+         *     user contacts customer service, who checks the identity in the WeCom conversation by hand;
+         *     when the phone number is not changed, the console may only record the device the user
+         *     names as a re-verified device. The "pending re-verification" flag, its time and the trusted
+         *     identities stay as they are (nothing here clears the flag; clearing only happens with a
+         *     phone change through PATCH /admin/v1/users/{user_id}/profile, BR-ID-44).
+         *     Body: `device_id` (the X-Device-Id of the device, as registered by POST /v1/devices; the
+         *     console picks it from GET /admin/v1/users/{user_id}/devices) and `reason` (required; trimmed
+         *     of leading and trailing white space it must be 1–200 characters: what was checked in the
+         *     WeCom conversation).
+         *     Checks, in this order, first hit wins: permission (10403) → step-up (10003) → body (20001
+         *     with `data.fields` naming the field; an empty reason after trimming is
+         *     `data.fields=[reason]`) → an unknown `user_id`, or one of another app, is 20001 with
+         *     `data.fields=[user_id]` → a `device_id` that is unknown, of another app, revoked, or not a
+         *     device of this user (devices.user_id is not this user) is 20001 with
+         *     `data.fields=[device_id]` → the account's deletion is complete is 30419 with
+         *     `data.reason=account_deleted` → the account carries no pending re-verification flag is
+         *     30419 with `data.reason=reverify_not_pending` (a device recorded before a later flag would
+         *     bypass that flag; 代理补全的默认, as D10-246).
+         *     Effect: one reverified_devices row (app, user, the device's device_hash, source admin) is
+         *     written; a device already recorded (by the user's own re-verification or an earlier
+         *     console record) is not written again and the answer has `created: false`. The failure
+         *     count of BR-WDR-01 细则「加验依据」 is not touched. Every request that passes the permission,
+         *     step-up and body checks writes one audit record (action user_reverified_device_add: admin,
+         *     reason, user_id, device_id, result code; never the device_hash), refusals included. No
+         *     Idempotency-Key (04 §6.6): a retry is naturally idempotent (`created: false`, one more
+         *     audit record).
+         */
+        post: operations["adminAddUserReverifiedDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/admin/v1/users/{user_id}/realname-correction": {
@@ -9645,6 +9785,42 @@ export interface components {
          *     purpose=reverify; no `action`. Each branch is a closed object.
          */
         ReverifyByOauthRequest: components["schemas"]["ReverifyByOauthWechat"] | components["schemas"]["ReverifyByOauthApple"] | components["schemas"]["ReverifyByOauthHuawei"];
+        BindOauthIdentityWechat: {
+            /** @enum {string} */
+            provider: "wechat";
+            attempt_id: components["schemas"]["Id"];
+            code: components["schemas"]["OauthCredential"];
+        };
+        BindOauthIdentityApple: {
+            /** @enum {string} */
+            provider: "apple";
+            attempt_id: components["schemas"]["Id"];
+            identity_token: components["schemas"]["OauthCredential"];
+            authorization_code: components["schemas"]["OauthCredential"];
+        };
+        BindOauthIdentityHuawei: {
+            /** @enum {string} */
+            provider: "huawei";
+            attempt_id: components["schemas"]["Id"];
+            authorization_code: components["schemas"]["OauthCredential"];
+        };
+        /**
+         * @description One provider with that provider's login credential fields and an attempt for binding
+         *     (POST /v1/me/oauth-bindings, P1). Each branch is a closed object.
+         */
+        BindOauthIdentityRequest: components["schemas"]["BindOauthIdentityWechat"] | components["schemas"]["BindOauthIdentityApple"] | components["schemas"]["BindOauthIdentityHuawei"];
+        /** @description A third-party login identity bound to the account (no union_id or open_id). */
+        OauthBinding: {
+            provider: components["schemas"]["LoginProvider"];
+            /** Format: date-time */
+            bound_at: string;
+        };
+        OauthBindingResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["OauthBinding"];
+            trace_id: components["schemas"]["TraceId"];
+        };
         ReverifyPassedData: {
             /** @enum {boolean} */
             passed: true;
@@ -15187,6 +15363,71 @@ export interface components {
             /** @description user_id of the new inviter; null removes the inviter (BR-INV-10). */
             inviter_user_id: components["schemas"]["Id"] | null;
             reason: components["schemas"]["AdminUserReason"];
+        };
+        /** @description The device's re-verified record (BR-WDR-01 细则「已加验设备」). */
+        AdminUserDeviceReverified: {
+            /**
+             * @description `self` (the user's own re-verification) or `admin` (recorded by the console).
+             * @enum {string}
+             */
+            source: "self" | "admin";
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description A device of the user that is not revoked (no device_hash, install secret or last_login_sid). */
+        AdminUserDevice: {
+            device_id: components["schemas"]["Id"];
+            platform: components["schemas"]["ClientPlatformCode"];
+            app_version: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_seen_at: string;
+            reverified: components["schemas"]["AdminUserDeviceReverified"] | null;
+        };
+        AdminUserDevicePage: {
+            items: components["schemas"]["AdminUserDevice"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminUserDevicePageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUserDevicePage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Body of POST /admin/v1/users/{user_id}/reverified-devices (BR-WDR-01 细则, 清除标记只走人工). */
+        AdminReverifiedDeviceRequest: {
+            device_id: components["schemas"]["Id"];
+            reason: components["schemas"]["AdminUserReason"];
+        };
+        /** @description A device recorded as re-verified for the user (no device_hash). */
+        AdminReverifiedDevice: {
+            user_id: components["schemas"]["Id"];
+            device_id: components["schemas"]["Id"];
+            /**
+             * @description Who recorded the device: `self` (the user's own re-verification) or `admin` (this
+             *     console operation); a device already recorded keeps its first source.
+             * @enum {string}
+             */
+            source: "self" | "admin";
+            /** @description false when the device was already recorded and nothing was written. */
+            created: boolean;
+            /**
+             * Format: date-time
+             * @description When the device was first recorded as re-verified.
+             */
+            created_at: string;
+        };
+        AdminReverifiedDeviceResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminReverifiedDevice"];
+            trace_id: components["schemas"]["TraceId"];
         };
         /** @description Corrected real-name data submitted by customer service (BR-ID-25 细则「实名更正」). */
         AdminRealnameCorrectionRequest: {
@@ -22306,6 +22547,83 @@ export interface operations {
             "5XX": components["responses"]["ServerError"];
         };
     };
+    bindOauthIdentity: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "provider": "wechat",
+                 *       "attempt_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a71",
+                 *       "code": "example-wechat-auth-code"
+                 *     }
+                 */
+                "application/json": components["schemas"]["BindOauthIdentityRequest"];
+            };
+        };
+        responses: {
+            /** @description Bound. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "provider": "wechat",
+                     *         "bound_at": "2026-11-03T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["OauthBindingResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
     getPayoutAccount: {
         parameters: {
             query?: never;
@@ -27757,6 +28075,153 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not saved (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListUserDevices: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of the user's devices, most recently seen first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "device_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a60",
+                     *             "platform": "ios",
+                     *             "app_version": "1.2.0",
+                     *             "created_at": "2026-10-20T09:00:00+08:00",
+                     *             "last_seen_at": "2026-11-03T09:58:00+08:00",
+                     *             "reverified": null
+                     *           },
+                     *           {
+                     *             "device_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a61",
+                     *             "platform": "android",
+                     *             "app_version": "1.1.0",
+                     *             "created_at": "2026-03-02T20:00:00+08:00",
+                     *             "last_seen_at": "2026-04-01T21:10:00+08:00",
+                     *             "reverified": {
+                     *               "source": "self",
+                     *               "created_at": "2026-04-01T21:05:00+08:00"
+                     *             }
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserDevicePageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminAddUserReverifiedDevice: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "device_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a60",
+                 *       "reason": "企业微信核对注册时间、最近一笔订单号与实名信息，旧号未换，登记用户当前手机为已加验设备"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminReverifiedDeviceRequest"];
+            };
+        };
+        responses: {
+            /** @description The device is recorded as re-verified (or already was). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *         "device_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a60",
+                     *         "source": "admin",
+                     *         "created": true,
+                     *         "created_at": "2026-11-03T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminReverifiedDeviceResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not recorded (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

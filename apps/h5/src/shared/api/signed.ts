@@ -21,6 +21,7 @@ const SIGNED_OPERATIONS: readonly (readonly [method: string, path: string])[] = 
   ['POST', '/v1/me/inviter'],
   ['POST', '/v1/me/reverify/id-number'],
   ['POST', '/v1/me/reverify/oauth'],
+  ['POST', '/v1/me/oauth-bindings'],
   ['PUT', '/v1/me/payout-account'],
   ['POST', '/v1/me/deletion'],
   ['POST', '/v1/idempotency-keys/abandon'],
