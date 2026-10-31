@@ -19,6 +19,7 @@ paths:
   - 'packages/contracts-ts/src/planned-operations.gen.ts'
 test_paths:
   - 'test/spec/catalog/hot-rank-viewer/**'
+  - 'test/spec/catalog/hot-rank/contract.test.ts'
 impl: claude
 tester: claude-independent
 accept:
