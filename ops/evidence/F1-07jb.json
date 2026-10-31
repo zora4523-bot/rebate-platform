@@ -1,0 +1,154 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-user-tabs/content.test.ts > [AC-F1-07jb-LIST#1] 订单页签每行显示订单号、平台、付款金额列里的该单付款金额（后台格式、负数保留负号）、平台状态与返利状态的字典名（缺键显示编码）、北京时间付款时间；别的用户的订单不出现",
+    "test/spec/frontend/admin-user-tabs/content.test.ts > [AC-F1-07jb-LIST#2] 找回页签每行显示找回单号（claim_id）、状态的字典名（admin_dict.claim_status）与北京时间提交时间；别的用户的找回不出现",
+    "test/spec/frontend/admin-user-tabs/content.test.ts > [AC-F1-07jb-LIST#3] 提现页签每行显示提现单号（out_biz_no）、金额列里的申请金额（后台格式）、状态的字典名（admin_dict.withdrawal_status）、申请时间列里北京时间的 created_at（不是 reviewed_at；若有审核时间列则显示 reviewed_at）；别的用户的提现不出现",
+    "test/spec/frontend/admin-user-tabs/content.test.ts > [AC-F1-07jb-LIST#4] 订单页签第二行点进去打开该订单的详情（读 GET /admin/v1/orders/{order_id}）",
+    "test/spec/frontend/admin-user-tabs/content.test.ts > [AC-F1-07jb-LIST#5] 提现页签第二行点进去打开该提现单的详情（读 GET /admin/v1/withdrawals/{withdrawal_id}）",
+    "test/spec/frontend/admin-user-tabs/pages.browser.test.ts > [AC-F1-07jb-BROWSER#1] 1440 用户详情：页签行「概览 / 订单 / 找回 / 提现」可见，切到订单、提现页签显示该用户的行与后台格式金额",
+    "test/spec/frontend/admin-user-tabs/readonly.test.ts > [AC-F1-07jb-READONLY#1] 超管依次打开订单、找回、提现页签：页签里没有写操作入口，全程不发任何写请求，只有详情与这三个列表的 GET（带 user_id）",
+    "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#1] 打开详情只读详情；切到某页签才读该列表，每次一条、带当前用户 user_id、读第 1 页（page=1 或不带 page），其余列表不读",
+    "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#2] 切回已加载的页签：仍显示当前用户的列表，所有列表请求都只带当前用户的 user_id",
+    "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#3] 「订单」页签页码分页：下一页按同一 user_id 读第 2 页，显示第 2 页的行、不再显示第 1 页的行",
+    "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#3] 「找回」页签页码分页：下一页按同一 user_id 读第 2 页，显示第 2 页的行、不再显示第 1 页的行",
+    "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#3] 「提现」页签页码分页：下一页按同一 user_id 读第 2 页，显示第 2 页的行、不再显示第 1 页的行",
+    "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#4] 「订单」页签：在详情里点上级换到另一个用户，页签请求的 user_id 跟着换，新列表到来前后都不显示上一个用户的行",
+    "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#4] 「找回」页签：在详情里点上级换到另一个用户，页签请求的 user_id 跟着换，新列表到来前后都不显示上一个用户的行",
+    "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#4] 「提现」页签：在详情里点上级换到另一个用户，页签请求的 user_id 跟着换，新列表到来前后都不显示上一个用户的行",
+    "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#1] 「订单」页签加载中：只拦该列表请求，在途时出现加载中提示且没有行，返回后显示该用户的行",
+    "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#1] 「找回」页签加载中：只拦该列表请求，在途时出现加载中提示且没有行，返回后显示该用户的行",
+    "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#1] 「提现」页签加载中：只拦该列表请求，在途时出现加载中提示且没有行，返回后显示该用户的行",
+    "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#2] 「订单」页签出错：只拦该列表请求，显示加载失败与【重试】；重试只重发这一个列表（同一 user_id），不重读详情和别的列表",
+    "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#2] 「找回」页签出错：只拦该列表请求，显示加载失败与【重试】；重试只重发这一个列表（同一 user_id），不重读详情和别的列表",
+    "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#2] 「提现」页签出错：只拦该列表请求，显示加载失败与【重试】；重试只重发这一个列表（同一 user_id），不重读详情和别的列表",
+    "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#3] 「订单」页签空态：该用户没有记录时显示空态提示，不显示无权限或加载失败",
+    "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#3] 「找回」页签空态：该用户没有记录时显示空态提示，不显示无权限或加载失败",
+    "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#3] 「提现」页签空态：该用户没有记录时显示空态提示，不显示无权限或加载失败",
+    "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#4] 「订单」页签的列表返回 10403（admin_permission_denied）时显示无权限，不显示行、不自动重发",
+    "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#4] 「找回」页签的列表返回 10403（admin_permission_denied）时显示无权限，不显示行、不自动重发",
+    "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#4] 「提现」页签的列表返回 10403（admin_permission_denied）时显示无权限，不显示行、不自动重发",
+    "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#1] 超管打开用户详情：页签行依次为概览 / 订单 / 找回 / 提现，默认停在概览（现有详情内容）；没有余额与流水、风控命中页签，页签栏里没有别的订单 / 找回 / 提现按钮或链接；打开详情不读任何列表",
+    "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#2] 只持 user.lookup：订单、找回页签可读（带 user_id），提现页签不出现或显示无权限且不发请求",
+    "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#3] 只持 user.list：订单 / 找回 / 提现页签都不出现或显示无权限，三个列表都不读；概览照常",
+    "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#4] user.list 加 order.view：只有「订单」页签可读（带 user_id），另两个列表页签不出现或显示无权限且不发请求",
+    "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#4] user.list 加 order.claim：只有「找回」页签可读（带 user_id），另两个列表页签不出现或显示无权限且不发请求",
+    "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#4] user.list 加 withdraw.review：只有「提现」页签可读（带 user_id），另两个列表页签不出现或显示无权限且不发请求",
+    "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#4] user.list 加 fund.view：只有「提现」页签可读（带 user_id），另两个列表页签不出现或显示无权限且不发请求",
+    "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#5] user.lookup 加 fund.view：订单、找回、提现三个页签都可读，每个列表都带当前用户的 user_id"
+  ],
+  "risk_note": "Admin 用户详情 订单 / 找回 / 提现 read-only tabs (apps/admin pages/users/**, texts/users.ts). Contracts adminListOrders (B1-10i), adminListClaims (B1-10j), listAdminWithdrawals (B2-09c), all merged. Tabs by permission: orders need order.view or user.lookup, claims order.claim or user.lookup, withdrawals withdraw.review or fund.view; a tab the account cannot read is not shown and not requested. Each list is mounted and requested only on first switch to its tab, always with user_id and page; 10403 shows no permission, other failures a retry of that list only; amounts via @couli/money admin format, status names from the dictionary. No URL tab state, no write calls, no payout or balance fields. Prerequisite test-changes F1-07ja (#2029) and F1-07jba (#2085) merged; no frozen test changed here. Rule tests written by an independent Claude in two rounds; Claude spec-test review r1 fail (1 S1 handled by F1-07jba, 3 S2), r2 pass; red on the test machine (red/1-2). Implementation by Opus 5.5; test machine verify-fast and browser green after rebasing on main. Adversarial money review by a fresh independent Claude r1 pass with no findings. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings (read-only tabs; idempotency, partial refund and clock n/a); independent Claude because Codex is unavailable until 2026-11-02"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (1 S1: frozen SOURCE#1 banned withdraw, handled by prerequisite test-change F1-07jba; 3 S2 fixed), round 2 pass with one S2 (order / orders names still banned; avoided by the implementation); tests written by an independent Claude (claude-run.sh)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "F1-07jb",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "08fa770727b83f75a1cc32514d41e934778ec443",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "08fa770727b83f75a1cc32514d41e934778ec443",
+      "tree": "d24f621ed577c764f37f44221b8e0d1a1cca640e",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-10-31T21:12:16Z",
+      "finished_at": "2026-10-31T21:14:59Z",
+      "gate": {
+        "commit": "85828ef349d916e55cf62b123ce05951f367fe04",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-user-tabs/content.test.ts > [AC-F1-07jb-LIST#1] 订单页签每行显示订单号、平台、付款金额列里的该单付款金额（后台格式、负数保留负号）、平台状态与返利状态的字典名（缺键显示编码）、北京时间付款时间；别的用户的订单不出现",
+        "test/spec/frontend/admin-user-tabs/content.test.ts > [AC-F1-07jb-LIST#2] 找回页签每行显示找回单号（claim_id）、状态的字典名（admin_dict.claim_status）与北京时间提交时间；别的用户的找回不出现",
+        "test/spec/frontend/admin-user-tabs/content.test.ts > [AC-F1-07jb-LIST#3] 提现页签每行显示提现单号（out_biz_no）、金额列里的申请金额（后台格式）、状态的字典名（admin_dict.withdrawal_status）、申请时间列里北京时间的 created_at（不是 reviewed_at；若有审核时间列则显示 reviewed_at）；别的用户的提现不出现",
+        "test/spec/frontend/admin-user-tabs/content.test.ts > [AC-F1-07jb-LIST#4] 订单页签第二行点进去打开该订单的详情（读 GET /admin/v1/orders/{order_id}）",
+        "test/spec/frontend/admin-user-tabs/content.test.ts > [AC-F1-07jb-LIST#5] 提现页签第二行点进去打开该提现单的详情（读 GET /admin/v1/withdrawals/{withdrawal_id}）",
+        "test/spec/frontend/admin-user-tabs/pages.browser.test.ts > [AC-F1-07jb-BROWSER#1] 1440 用户详情：页签行「概览 / 订单 / 找回 / 提现」可见，切到订单、提现页签显示该用户的行与后台格式金额",
+        "test/spec/frontend/admin-user-tabs/readonly.test.ts > [AC-F1-07jb-READONLY#1] 超管依次打开订单、找回、提现页签：页签里没有写操作入口，全程不发任何写请求，只有详情与这三个列表的 GET（带 user_id）",
+        "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#1] 打开详情只读详情；切到某页签才读该列表，每次一条、带当前用户 user_id、读第 1 页（page=1 或不带 page），其余列表不读",
+        "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#2] 切回已加载的页签：仍显示当前用户的列表，所有列表请求都只带当前用户的 user_id",
+        "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#3] 「订单」页签页码分页：下一页按同一 user_id 读第 2 页，显示第 2 页的行、不再显示第 1 页的行",
+        "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#3] 「找回」页签页码分页：下一页按同一 user_id 读第 2 页，显示第 2 页的行、不再显示第 1 页的行",
+        "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#3] 「提现」页签页码分页：下一页按同一 user_id 读第 2 页，显示第 2 页的行、不再显示第 1 页的行",
+        "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#4] 「订单」页签：在详情里点上级换到另一个用户，页签请求的 user_id 跟着换，新列表到来前后都不显示上一个用户的行",
+        "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#4] 「找回」页签：在详情里点上级换到另一个用户，页签请求的 user_id 跟着换，新列表到来前后都不显示上一个用户的行",
+        "test/spec/frontend/admin-user-tabs/requests.test.ts > [AC-F1-07jb-REQ#4] 「提现」页签：在详情里点上级换到另一个用户，页签请求的 user_id 跟着换，新列表到来前后都不显示上一个用户的行",
+        "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#1] 「订单」页签加载中：只拦该列表请求，在途时出现加载中提示且没有行，返回后显示该用户的行",
+        "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#1] 「找回」页签加载中：只拦该列表请求，在途时出现加载中提示且没有行，返回后显示该用户的行",
+        "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#1] 「提现」页签加载中：只拦该列表请求，在途时出现加载中提示且没有行，返回后显示该用户的行",
+        "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#2] 「订单」页签出错：只拦该列表请求，显示加载失败与【重试】；重试只重发这一个列表（同一 user_id），不重读详情和别的列表",
+        "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#2] 「找回」页签出错：只拦该列表请求，显示加载失败与【重试】；重试只重发这一个列表（同一 user_id），不重读详情和别的列表",
+        "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#2] 「提现」页签出错：只拦该列表请求，显示加载失败与【重试】；重试只重发这一个列表（同一 user_id），不重读详情和别的列表",
+        "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#3] 「订单」页签空态：该用户没有记录时显示空态提示，不显示无权限或加载失败",
+        "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#3] 「找回」页签空态：该用户没有记录时显示空态提示，不显示无权限或加载失败",
+        "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#3] 「提现」页签空态：该用户没有记录时显示空态提示，不显示无权限或加载失败",
+        "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#4] 「订单」页签的列表返回 10403（admin_permission_denied）时显示无权限，不显示行、不自动重发",
+        "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#4] 「找回」页签的列表返回 10403（admin_permission_denied）时显示无权限，不显示行、不自动重发",
+        "test/spec/frontend/admin-user-tabs/states.test.ts > [AC-F1-07jb-STATES#4] 「提现」页签的列表返回 10403（admin_permission_denied）时显示无权限，不显示行、不自动重发",
+        "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#1] 超管打开用户详情：页签行依次为概览 / 订单 / 找回 / 提现，默认停在概览（现有详情内容）；没有余额与流水、风控命中页签，页签栏里没有别的订单 / 找回 / 提现按钮或链接；打开详情不读任何列表",
+        "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#2] 只持 user.lookup：订单、找回页签可读（带 user_id），提现页签不出现或显示无权限且不发请求",
+        "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#3] 只持 user.list：订单 / 找回 / 提现页签都不出现或显示无权限，三个列表都不读；概览照常",
+        "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#4] user.list 加 order.view：只有「订单」页签可读（带 user_id），另两个列表页签不出现或显示无权限且不发请求",
+        "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#4] user.list 加 order.claim：只有「找回」页签可读（带 user_id），另两个列表页签不出现或显示无权限且不发请求",
+        "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#4] user.list 加 withdraw.review：只有「提现」页签可读（带 user_id），另两个列表页签不出现或显示无权限且不发请求",
+        "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#4] user.list 加 fund.view：只有「提现」页签可读（带 user_id），另两个列表页签不出现或显示无权限且不发请求",
+        "test/spec/frontend/admin-user-tabs/tabs.test.ts > [AC-F1-07jb-TABS#5] user.lookup 加 fund.view：订单、找回、提现三个页签都可读，每个列表都带当前用户的 user_id"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-user-tabs/content.test.ts",
+        "test/spec/frontend/admin-user-tabs/pages.browser.test.ts",
+        "test/spec/frontend/admin-user-tabs/readonly.test.ts",
+        "test/spec/frontend/admin-user-tabs/requests.test.ts",
+        "test/spec/frontend/admin-user-tabs/states.test.ts",
+        "test/spec/frontend/admin-user-tabs/tabs.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "b6a2d8113c7652cb2baee555ef5c463df6e9fd3a533a397649d8b4a2eb1b463b"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "dd6048ddfeaf647335610a4b27faa21bee1dbf1fd3e968b5b6c6e1aaebb25533"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "39e48c91c41b011b524c0236fc087528bc02c697",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  }
+}
