@@ -968,6 +968,11 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/product-pools/candidates",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/product-pools/:pool_id",
     "signed": false
   },

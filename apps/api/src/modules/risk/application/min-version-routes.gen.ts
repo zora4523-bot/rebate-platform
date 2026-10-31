@@ -1955,6 +1955,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminSearchPoolCandidates",
+    "method": "GET",
+    "path": "/admin/v1/product-pools/candidates",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminGetProductPool",
     "method": "GET",
     "path": "/admin/v1/product-pools/:pool_id",

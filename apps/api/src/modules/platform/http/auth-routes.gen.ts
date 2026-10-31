@@ -968,6 +968,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/product-pools/candidates",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/product-pools/:pool_id",
     "auth": "admin"
   },
