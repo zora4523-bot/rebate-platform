@@ -5,6 +5,7 @@ type: impl
 # 2026-10-31 be 入账（D10-498 ⑤，照 B1-04t）。loadConfig 读 JD_APP_KEY 与 JD_APP_SECRET_FILE，两名登记进 credential-env.ts；local / test 设了即拒绝启动，local / test 下 jd 端点 live 也拒绝。
 # staging：两个都设才装配，secret 文件启动时读一次（去末尾换行），不存在、不可读、为空都启动失败，错误文本不含值与路径；只设一个 ConfigError，只写变量名。prod 一律拒绝文件来源，jd 为 live 时拒绝启动，TODO(规划/11 §4.5) KMS。
 # jd mode=live 而凭据缺启动失败；replay 仍 adapter_unimplemented；demo 与 pdd、taobao 不变；不改 config/union-endpoints/jd.json。createUnionRegistry 只在传 jdLive 时装配，不传保持现行为。
+# 非密钥 JD_SITE_ID：照 PDD_QUERY_CUSTOM_PARAMETERS 先例作 AppConfig 可选项，不登记 credential-env，缺失不拒绝启动（D10-500 ①，B1-04zd 转链时拒绝）。
 # 删 registry.ts、union.module.ts 里 jd 凭据的 TODO。.env.example 只加注释掉的变量名。RV2。
 refs: []
 refs_hash: {}

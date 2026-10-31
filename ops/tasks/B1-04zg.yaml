@@ -1,0 +1,23 @@
+id: B1-04zg
+repo: rebate-platform
+title: 京东订单状态映射与 order-sync 接入：specs/order-status-map/jd.csv、orders/domain 映射函数
+type: impl
+# 2026-10-31 be 入账（D10-500 ②，照 B1-08f）。**开工前提：validCode 映射表先出给编排核，核过再实现**：每个码列京东官方含义原文与出处、映射到的我方状态、依据的 08 条款；08 没写到的码列出来，不自行定。
+# 依据：09 CAP-JD-07、CAP-JD-08，api/jd.union.open.order.row.query.md。validCode 共 40 余个：15 待付款、16 已付款、17 已完成、24 已付定金、3 取消，13、25–28、36–43 违规，14、19、22、29 等无效。
+# 表外的码不得落成已知状态。id（订单 + sku）对应 sub_order_id；modifyTime 防旧覆盖；推广位白名单过滤沿用现行规则（BR-ATTR）；订单回传 subUnionId 未验证，归属按现行口径。
+# order-sync 接 jd 的具体落点开工时照拼多多现状核，paths 不够先报。RV2（订单状态进入账链）。
+refs: []
+refs_hash: {}
+deps: [B1-04zb]
+paths:
+  - 'specs/order-status-map/**'
+  - 'apps/api/src/modules/orders/**'
+  - 'test/spec/orders/jd-status-map/**'
+test_paths:
+  - 'test/spec/orders/jd-status-map/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
