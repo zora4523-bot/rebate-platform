@@ -19,6 +19,7 @@ import {
 } from '../union/index.ts';
 import type { CatalogCardEntry } from './application/card-entry.ts';
 import type { ItemRefService } from './application/item-ref.ts';
+import type { PoolReader } from './application/pool-read.ts';
 import { CatalogError, isFresh } from './domain/rules.ts';
 import type { Catalog, ProductCapabilities, ProductRef, RequestRawRef } from './domain/types.ts';
 import type { CatalogConfigReader, ViewerContext } from './ports.ts';
@@ -90,6 +91,8 @@ export interface ProductDetailOptions {
    * record() once (not awaited; a throw is swallowed; the response never changes).
    */
   readonly priceHistory?: PriceSnapshotRecorder;
+  /** B1-05r: the pool price of a union outage (BR-PRICE-11, TRADE-12); absent, it stays 50401. */
+  readonly poolReader?: PoolReader;
 }
 
 export type ProductDetailData = components['schemas']['ProductResponse']['data'];

@@ -8,6 +8,7 @@ import type { MaterialChannelsSpec } from '../platform/index.ts';
 import { isPlatform, type Platform } from '../union/index.ts';
 import type { PreparedCard } from './application/card-assembler.ts';
 import type { CatalogCardEntry } from './application/card-entry.ts';
+import type { PoolReader } from './application/pool-read.ts';
 import { CatalogError } from './domain/rules.ts';
 import {
   HOT_RANK_MAX_PAGE_NO,
@@ -49,6 +50,8 @@ export interface SectionItemsOptions {
   readonly upstream: HotRankUpstream;
   readonly pages: SectionItemsPages;
   readonly logger: Pick<Logger, 'warn'>;
+  /** B1-05r: the product_pool data source and the union fall-back; absent, neither is served. */
+  readonly poolReader?: PoolReader;
 }
 
 /** Server constant of the contract: no limit parameter. */
