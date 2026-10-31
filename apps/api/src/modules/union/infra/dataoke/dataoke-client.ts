@@ -12,13 +12,14 @@
 // - 经注入的 UnionTransport 发送（platform 'taobao'）；调用方 AbortSignal 与归档上下文原样挂在传输请求上，
 //   不上线路。传输抛错（非 UnionError）→ upstream_unavailable（不带原文、不挂 cause）。
 // - 响应解包与错误分类见 response.ts；返回 data 对象，不做订单字段映射（B1-04f / B1-04z）。
+// - B1-04d：调用方可按接口给出外层 code 细分表（outerCodes），只覆盖表内 code 的分类。
 import type { Clock } from '../../../platform/index.ts';
 import { UnionError } from '../../domain/types.ts';
 import type { ArchiveContext, UnionTransport, UnionTransportResponse } from '../replay.ts';
-import { unwrapDataokeResponse, type DataokeWarning } from './response.ts';
+import { unwrapDataokeResponse, type DataokeCodeMap, type DataokeWarning } from './response.ts';
 import { DATAOKE_NONCE_BOUND, dataokeNonce, dataokeSignRan, dataokeTimer } from './sign.ts';
 
-export type { DataokeWarning } from './response.ts';
+export type { DataokeCodeMap, DataokeWarning } from './response.ts';
 export type { DataokeSignInput } from './sign.ts';
 
 /** Application-level key pair; fetched once per request, never stored on the client. */
@@ -55,6 +56,11 @@ export interface DataokeRequestOptions {
   readonly signal?: AbortSignal;
   /** Rides on the transport request for the archiving transport only; never on the wire. */
   readonly archive?: ArchiveContext;
+  /**
+   * B1-04d: per-interface refinement of non-zero outer codes (string form), e.g. the privilege
+   * link's goods-not-promotable codes → item_unavailable. Codes not listed keep the gz-13 grouping.
+   */
+  readonly outerCodes?: DataokeCodeMap;
 }
 
 /** 公共参数名；业务参数不得占用（同名 → invalid_dto，不发请求）。 */
@@ -137,7 +143,9 @@ export class DataokeClient {
     options: DataokeRequestOptions,
   ): Promise<Readonly<Record<string, unknown>>> {
     const response = await this.#send(method, path, parameters, options);
-    return unwrapDataokeResponse(path, response, this.#warn);
+    return unwrapDataokeResponse(path, response, this.#warn, {
+      ...(options.outerCodes === undefined ? {} : { outerCodes: options.outerCodes }),
+    });
   }
 
   async #send(

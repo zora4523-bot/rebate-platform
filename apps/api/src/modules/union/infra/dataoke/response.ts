@@ -6,6 +6,8 @@
 // TOP 形式的 error_response 时按 B1-04j 同义分类（code 7 或 sub_code 以 isp.call-limited 开头 →
 // rate_limited；code 11 → upstream_rejected 并 warn；其余 → upstream_rejected）；否则返回 data。
 // 错误信息只带路径与 code（及 sub_code），不带 msg / sub_msg / request_id / 参数；不做字段映射。
+// B1-04d：调用方可按接口给出外层非 0 code 的细分表（如转链 10031 / 10212 / 10213 → item_unavailable），
+// 表内 code 用表里的分类，签名 / 凭据码照旧告警；表外 code 仍按上面分组。
 // TODO(规划/11 §4.5): 外层键名、成功码与错误码待大淘客实测录制核对 — blocked on 大淘客录制
 import { UnionError, type UnionErrorCode } from '../../domain/types.ts';
 import type { UnionTransportResponse } from '../replay.ts';
@@ -58,6 +60,14 @@ const OUTER_UNAVAILABLE: ReadonlySet<string> = new Set([
   '10054',
 ]);
 const OUTER_SUCCESS = '0';
+
+/** Per-interface refinement of non-zero outer codes (string form); absent keys keep the grouping. */
+export type DataokeCodeMap = Readonly<Record<string, UnionErrorCode>>;
+
+/** Per-interface decoding options of unwrapDataokeResponse. */
+export interface DataokeUnwrapOptions {
+  readonly outerCodes?: DataokeCodeMap;
+}
 
 // data 内淘宝 TOP error_response（与 B1-04j taobao/response.ts 同义）。
 const TOP_PERMISSION_CODE = '11';
@@ -114,7 +124,9 @@ export function unwrapDataokeResponse(
   path: string,
   response: UnionTransportResponse,
   warn?: (event: DataokeWarning) => void,
+  options: DataokeUnwrapOptions = {},
 ): Readonly<Record<string, unknown>> {
+  const { outerCodes } = options;
   if (response.status >= 500) {
     throw failure('upstream_unavailable', path, `HTTP ${response.status}`);
   }
@@ -129,7 +141,9 @@ export function unwrapDataokeResponse(
   if (code === undefined) throw failure('upstream_unavailable', path, 'missing response code');
   if (code !== OUTER_SUCCESS) {
     if (OUTER_CREDENTIAL.has(code)) warn?.({ path, code });
-    throw failure(classifyOuter(code), path, `code=${code}`);
+    const refined =
+      outerCodes !== undefined && Object.hasOwn(outerCodes, code) ? outerCodes[code] : undefined;
+    throw failure(refined ?? classifyOuter(code), path, `code=${code}`);
   }
   const data = Object.hasOwn(parsed, 'data') ? parsed.data : undefined;
   if (!isRecord(data))
