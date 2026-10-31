@@ -1,0 +1,17 @@
+id: F1-02zzy
+repo: rebate-platform
+title: 收紧测试（FU-F102ZZV-TIGHTEN）：冻结 [AC-F1-02ze#13] getAgreementVersion 的 type 路径参数枚举只认「privacy / agreement / labor_agreement / sdk_list / collect_list」五值单态
+type: test-change
+# 2026-10-31 入账（content-client；编排 08:2x 记 FU-F102ZZV-TIGHTEN，先例 F1-02zzw 收紧 F1-02zzt）。CT-02zb（#1991）已合并，契约 AgreementType 已为五值，三值分支不再需要。
+# 改既有规则测试属第一类保护路径：走非 task 分支、台账同 PR；全新上下文 Claude 修改、另一全新上下文 Claude 只读复审，按 approvals #24 由编排加 owner-approved 标签。
+refs: []
+refs_hash: {}
+deps: [F1-02zzv, CT-02zb]
+paths:
+  - 'test/spec/content/agreements-read-version/contract.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
