@@ -22,7 +22,9 @@ const ELIGIBILITY = { key: `${PREFIX}eligibility_days`, value: 30 };
 // the search.hot_words and search.keyword_routes rows follow it in registration order, under the
 // same checks, each seeded as an empty list (no invented hot words or routes). B1-15zd (D10-454):
 // the seven retention.* rows follow search.* in registration order, under the same checks, with
-// the master switch on and the BR-ID-30 days of 08.
+// the master switch on and the BR-ID-30 days of 08. B2-08cz (D10-456 ④): the three
+// tax.SERVICE_FEE.* rows follow retention.* in registration order, under the same checks, seeded
+// as BR-WDR-20 细则 reads before the rate table is in force: method none, rate 0 bp, empty table.
 const PAYOUT_KEYS = [
   'payout.single_cap_fen',
   'payout.daily_cap_fen',
@@ -77,6 +79,12 @@ const RETENTION_SEEDS = [
   { key: 'retention.union_raw_payloads_days', value: 180 },
 ];
 const RETENTION_KEYS = RETENTION_SEEDS.map((row) => row.key);
+const TAX_SEEDS = [
+  { key: 'tax.SERVICE_FEE.method', value: 'none' },
+  { key: 'tax.SERVICE_FEE.rate_bp', value: 0 },
+  { key: 'tax.SERVICE_FEE.rate_table', value: [] },
+];
+const TAX_KEYS = TAX_SEEDS.map((row) => row.key);
 
 it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；重跑不覆盖', () => {
   const sql = readFileSync(
@@ -106,6 +114,7 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
     ...RANK_KEYS,
     ...SEARCH_KEYS,
     ...RETENTION_KEYS,
+    ...TAX_KEYS,
   ]);
   for (const key of SEARCH_KEYS) {
     expect(
@@ -114,6 +123,7 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
     ).toStrictEqual([{ key, value: [] }]);
   }
   expect(rows.filter((row) => RETENTION_KEYS.includes(row.key))).toStrictEqual(RETENTION_SEEDS);
+  expect(rows.filter((row) => TAX_KEYS.includes(row.key))).toStrictEqual(TAX_SEEDS);
   for (const row of CONFIGS) {
     const spec = configItemSpecOf(row.key);
     expect(spec, row.key).not.toBeNull();

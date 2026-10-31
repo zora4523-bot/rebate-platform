@@ -114,5 +114,9 @@ INSERT INTO app.config_items (app_id, key, value, updated_by) VALUES
   ('couli', 'retention.sms_send_attempts_days', '190'::jsonb, 'seed'), -- BR-ID-30 ⑥
   ('couli', 'retention.inbox_messages_days', '180'::jsonb, 'seed'), -- BR-ID-30 ⑮
   ('couli', 'retention.notify_logs_days', '190'::jsonb, 'seed'), -- BR-ID-30 ⑯
-  ('couli', 'retention.union_raw_payloads_days', '180'::jsonb, 'seed') -- BR-ID-30 ⑦
+  ('couli', 'retention.union_raw_payloads_days', '180'::jsonb, 'seed'), -- BR-ID-30 ⑦
+  -- 第 15 批：BR-WDR-20 税配置（B2-08cz，D10-456 ④）；税率表到位前 method=none、tax_fen 记 0（拍板第二批 FUND-04），rate_bp 为 0、rate_table 为空档位
+  ('couli', 'tax.SERVICE_FEE.method', '"none"'::jsonb, 'seed'), -- BR-WDR-20
+  ('couli', 'tax.SERVICE_FEE.rate_bp', '0'::jsonb, 'seed'), -- BR-WDR-20
+  ('couli', 'tax.SERVICE_FEE.rate_table', '[]'::jsonb, 'seed') -- BR-WDR-20
 ON CONFLICT (app_id, key) DO NOTHING;

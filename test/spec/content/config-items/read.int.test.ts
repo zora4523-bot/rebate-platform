@@ -16,6 +16,7 @@ import {
   RISK_WITHDRAW,
   ROW_AT,
   SEARCH,
+  TAX,
   UNREGISTERED,
   call,
   expectedNow,
@@ -45,7 +46,8 @@ it('[AC-F1-10e#10] 列表按注册表顺序列出每个配置项，未写过的 
   // F1-02zt：过渡已收紧, EXPECTED + settle.* + invite; B2-06bz: + the eight payout.* keys;
   // B2-11z: + the six risk.withdraw.* keys; B2-11y: + the seventeen withdraw.auto_payout.* keys;
   // B2-11dz: + the four payout.auto_enable_check.* keys; B1-28g: + rank.cache_ttl_seconds;
-  // B1-05l: + search.hot_words and search.keyword_routes; B1-15zd: + the seven retention.* keys.
+  // B1-05l: + search.hot_words and search.keyword_routes; B1-15zd: + the seven retention.* keys;
+  // B2-08cz: + the three tax.SERVICE_FEE.* keys.
   const tail = [
     ...PAYOUT,
     ...RISK_WITHDRAW,
@@ -54,6 +56,7 @@ it('[AC-F1-10e#10] 列表按注册表顺序列出每个配置项，未写过的 
     ...RANK,
     ...SEARCH,
     ...RETENTION,
+    ...TAX,
   ];
   expect(items).toHaveLength(expectedNow().length + tail.length);
   expect(items.slice(-tail.length).map((item) => item.key)).toStrictEqual(

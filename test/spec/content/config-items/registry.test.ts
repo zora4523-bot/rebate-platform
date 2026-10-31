@@ -14,6 +14,7 @@
 // B1-28g (D10-419): rank.cache_ttl_seconds follows payout.auto_enable_check.* (kit RANK).
 // B1-05l (D10-419 (a)): search.hot_words and search.keyword_routes follow it (kit SEARCH).
 // B1-15zd (D10-454, BR-ID-30): the seven retention.* keys follow search.* (kit RETENTION).
+// B2-08cz (D10-456 ④, BR-WDR-20): the three tax.SERVICE_FEE.* keys follow retention.* (kit TAX).
 import { expect, it } from 'vitest';
 import {
   configItemSpecOf,
@@ -39,6 +40,7 @@ import {
   RISK_WITHDRAW,
   SEARCH,
   SETTLE,
+  TAX,
   UNREGISTERED,
   expectedNow,
   inviteNow,
@@ -70,7 +72,8 @@ it('[AC-F1-10e#1] 裁定 14：注册表恰好是种子里全部非开关键加 a
   // F1-02zt：过渡已收紧: EXPECTED + settle.* + growth.invite_reward.* + payout.* (B2-06bz)
   // + risk.withdraw.* (B2-11z) + withdraw.auto_payout.* (B2-11y)
   // + payout.auto_enable_check.* (B2-11dz) + rank.cache_ttl_seconds (B1-28g)
-  // + search.hot_words / search.keyword_routes (B1-05l) + retention.* (B1-15zd), all present.
+  // + search.hot_words / search.keyword_routes (B1-05l) + retention.* (B1-15zd)
+  // + tax.SERVICE_FEE.* (B2-08cz), all present.
   expect(sorted(keys)).toStrictEqual(
     sorted(
       [
@@ -82,6 +85,7 @@ it('[AC-F1-10e#1] 裁定 14：注册表恰好是种子里全部非开关键加 a
         ...RANK,
         ...SEARCH,
         ...RETENTION,
+        ...TAX,
       ].map((entry) => entry.key),
     ),
   );
@@ -226,7 +230,8 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
   // inviteNow() followed by the eight payout.* keys (B2-06bz), the six risk.withdraw.* keys
   // (B2-11z), the seventeen withdraw.auto_payout.* keys (B2-11y), the four
   // payout.auto_enable_check.* keys (B2-11dz), rank.cache_ttl_seconds (B1-28g), the two search.*
-  // keys (B1-05l) and the seven retention.* keys (B1-15zd; checked key by key in #57 and #58).
+  // keys (B1-05l), the seven retention.* keys (B1-15zd) and the three tax.SERVICE_FEE.* keys
+  // (B2-08cz; checked key by key in #57 and #58).
   presentOf(INVITE_CFG, 'growth.invite_reward.*');
   const inviteTail = [
     ...inviteNow(),
@@ -237,6 +242,7 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
     ...RANK,
     ...SEARCH,
     ...RETENTION,
+    ...TAX,
   ].map((e) => e.key);
   expect(keys.slice(EXPECTED.length, EXPECTED.length + SETTLE.length)).toStrictEqual(
     SETTLE.map((entry) => entry.key),
@@ -258,9 +264,9 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
 // F1-02zm: the BR-INV-24 细则 growth.invite_reward.* group of F1-02zn is registered whole right
 // after SETTLE, in its own order, followed by eligibility_days, then payout.*, risk.withdraw.*,
 // withdraw.auto_payout.*, payout.auto_enable_check.*, rank.cache_ttl_seconds, the two search.*
-// keys and the seven retention.* keys (#58).
+// keys, the seven retention.* keys and the three tax.SERVICE_FEE.* keys (#58).
 // F1-02zt：过渡已收紧, the absent branch is gone.
-it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登记（紧接 settle.* 之后、其后是 eligibility_days、payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds、search.* 两项与 retention.* 七项，逐键值类型、options、权限点、可改标记）', () => {
+it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登记（紧接 settle.* 之后、其后是 eligibility_days、payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds、search.* 两项、retention.* 七项与 tax.* 三项，逐键值类型、options、权限点、可改标记）', () => {
   expect(INVITE_CFG).toHaveLength(5);
   const keys = configRegistry().map((spec) => spec.key);
   const present = INVITE_CFG.filter((entry) => keys.includes(entry.key));
@@ -268,8 +274,8 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
   // F1-02zw: the tail is inviteNow(), the five keys followed by eligibility_days (checked in #58),
   // then the eight payout.* keys (B2-06bz), the six risk.withdraw.* keys (B2-11z), the
   // seventeen withdraw.auto_payout.* keys (B2-11y), the four payout.auto_enable_check.* keys
-  // (B2-11dz), rank.cache_ttl_seconds (B1-28g), the two search.* keys (B1-05l) and the seven
-  // retention.* keys (B1-15zd).
+  // (B2-11dz), rank.cache_ttl_seconds (B1-28g), the two search.* keys (B1-05l), the seven
+  // retention.* keys (B1-15zd) and the three tax.SERVICE_FEE.* keys (B2-08cz).
   const tail = [
     ...inviteNow(),
     ...PAYOUT,
@@ -279,6 +285,7 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
     ...RANK,
     ...SEARCH,
     ...RETENTION,
+    ...TAX,
   ];
   const head = keys.length - tail.length;
   expect(keys.slice(head)).toStrictEqual(tail.map((entry) => entry.key));
@@ -307,10 +314,11 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
 // withdraw.auto_payout.* keys in AUTO_PAYOUT order (enum options exactly as the kit), then
 // B2-11dz (D10-392 / D10-394) the four payout.auto_enable_check.* keys in AUTO_ENABLE_CHECK order,
 // then B1-28g (D10-419) rank.cache_ttl_seconds (RANK), then B1-05l (D10-419 (a)) the two search.*
-// keys in SEARCH order, then B1-15zd (D10-454) the seven retention.* keys in RETENTION order, and
-// nothing else.
+// keys in SEARCH order, then B1-15zd (D10-454) the seven retention.* keys in RETENTION order, then
+// B2-08cz (D10-456 ④) the three tax.SERVICE_FEE.* keys in TAX order (the method's enum options
+// exactly as the kit), and nothing else.
 // F1-02zt：过渡已收紧, the absent branch is gone.
-it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接 ip_window_hours 登记、其后紧接 payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds、search.* 两项与 retention.* 七项（按登记顺序，逐键值类型、options、权限点、可改标记；options 为 null、config.business、可改）', () => {
+it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接 ip_window_hours 登记、其后紧接 payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds、search.* 两项、retention.* 七项与 tax.* 三项（按登记顺序，逐键值类型、options、权限点、可改标记；options 为 null、config.business、可改）', () => {
   expect(INVITE_ELIG).toHaveLength(1);
   const key = 'growth.invite_reward.eligibility_days';
   expect(INVITE_ELIG[0]!.key).toBe(key);
@@ -329,6 +337,7 @@ it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接
       ...RANK,
       ...SEARCH,
       ...RETENTION,
+      ...TAX,
     ].map((entry) => entry.key),
   );
   for (const entry of [
@@ -360,6 +369,19 @@ it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接
       adminEditable: autoSpec.adminEditable,
     }).toStrictEqual({ ...entry, options: entry.options ?? null });
     expect(configItemSpecOf(entry.key), entry.key).toBe(autoSpec);
+    expect(switchSpecOf(entry.key), entry.key).toBeNull();
+  }
+  // B2-08cz (D10-456 ④): the three tax.SERVICE_FEE.* keys, the method with its enum options.
+  for (const entry of TAX) {
+    const taxSpec = registered(entry.key);
+    expect({
+      key: taxSpec.key,
+      valueType: taxSpec.valueType,
+      options: taxSpec.options,
+      permission: taxSpec.permission,
+      adminEditable: taxSpec.adminEditable,
+    }).toStrictEqual({ ...entry, options: entry.options ?? null });
+    expect(configItemSpecOf(entry.key), entry.key).toBe(taxSpec);
     expect(switchSpecOf(entry.key), entry.key).toBeNull();
   }
   const spec = registered(key);
@@ -477,4 +499,52 @@ it('[AC-F1-10e#63] retention.purge.enabled 是可改的 config.risk 布尔项，
   for (const value of ['true', 'on', 1, 0, null, [], {}]) {
     expect(configValueFits(spec, value), JSON.stringify(value)).toBe(false);
   }
+});
+
+// B2-08cz (D10-456 ④, BR-WDR-20): the type, options, permission and editable flag of each
+// tax.SERVICE_FEE.* key are checked in #58; here the values each one accepts: the method only
+// its three names, the rate only whole bp in 0..10000, the rate table only a JSON object / array.
+it('[AC-F1-10e#64] tax.SERVICE_FEE.method 只收 none / flat_rate / cumulative 三个字符串，rate_table 只收 JSON 对象或数组（B2-08cz，D10-456 ④）', () => {
+  const method = registered('tax.SERVICE_FEE.method');
+  expect(method.options).toStrictEqual(['none', 'flat_rate', 'cumulative']);
+  for (const value of ['none', 'flat_rate', 'cumulative']) {
+    expect(configValueFits(method, value), value).toBe(true);
+  }
+  for (const value of ['', 'NONE', 'progressive', 0, true, null, [], {}]) {
+    expect(configValueFits(method, value), JSON.stringify(value)).toBe(false);
+  }
+  const table = registered('tax.SERVICE_FEE.rate_table');
+  for (const value of [[], {}, [{}]]) {
+    expect(configValueFits(table, value), JSON.stringify(value)).toBe(true);
+  }
+  for (const value of ['[]', 0, true, null]) {
+    expect(configValueFits(table, value), JSON.stringify(value)).toBe(false);
+  }
+});
+
+it('[AC-F1-10e#65] tax.SERVICE_FEE.rate_bp 是可改的 config.business 整数，闭区间 0..10000 bp，拒绝浮点与隐式转换（B2-08cz，D10-456 ④）', () => {
+  const spec = registered('tax.SERVICE_FEE.rate_bp');
+  expect(spec).toMatchObject({
+    valueType: 'number',
+    options: null,
+    permission: 'config.business',
+    adminEditable: true,
+  });
+  expect(spec.range).toStrictEqual({ integer: true, min: 0, max: 10000 });
+  for (const value of [0, 1, 2000, 10000]) {
+    expect(configValueFits(spec, value), String(value)).toBe(true);
+  }
+  const refused = [
+    -1,
+    10001,
+    0.5,
+    2000.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    '0',
+    true,
+    null,
+    [],
+  ];
+  for (const value of refused) expect(configValueFits(spec, value), String(value)).toBe(false);
 });

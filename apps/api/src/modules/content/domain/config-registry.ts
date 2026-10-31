@@ -225,6 +225,13 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   riskInteger('retention.inbox_messages_days', 180),
   riskInteger('retention.notify_logs_days', 190),
   riskInteger('retention.union_raw_payloads_days', 180),
+  // B2-08cz (D10-456 ④): BR-WDR-20 tax.SERVICE_FEE.* — the withholding method of commission income
+  // (none until the rate table is in force, 拍板第二批 FUND-04; then flat_rate / cumulative), the
+  // flat rate in bp and the progressive rate table (shape checked on save by B2-08c), all
+  // config.business. Registration only; B2-08c computes tax_fen from them.
+  businessEnum('tax.SERVICE_FEE.method', ['none', 'flat_rate', 'cumulative']),
+  businessInteger('tax.SERVICE_FEE.rate_bp', 0, 10000),
+  spec('tax.SERVICE_FEE.rate_table', 'object', 'config.business'),
 ]);
 
 const VISIBLE: readonly ConfigItemSpec[] = Object.freeze(

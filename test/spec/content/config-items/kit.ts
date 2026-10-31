@@ -293,6 +293,15 @@ export const RETENTION: readonly Expected[] = [
   row('retention.notify_logs_days', 'number', 'config.risk'),
   row('retention.union_raw_payloads_days', 'number', 'config.risk'),
 ];
+// B2-08cz (D10-456 ④, BR-WDR-20): the tax configuration of commission income (SERVICE_FEE),
+// registered right after RETENTION in this order: the withholding method (enum none / flat_rate /
+// cumulative), the flat rate in bp and the progressive rate table, all editable config.business.
+// Not part of expectedNow() either.
+export const TAX: readonly Expected[] = [
+  enumRow('tax.SERVICE_FEE.method', ['none', 'flat_rate', 'cumulative']),
+  row('tax.SERVICE_FEE.rate_bp', 'number', 'config.business'),
+  row('tax.SERVICE_FEE.rate_table', 'object', 'config.business'),
+];
 export const expectedOf = (key: string): Expected => {
   const found = [
     ...expectedNow(),
@@ -303,6 +312,7 @@ export const expectedOf = (key: string): Expected => {
     ...RANK,
     ...SEARCH,
     ...RETENTION,
+    ...TAX,
   ].find((entry) => entry.key === key);
   expect(found, key).toBeDefined();
   return found!;
