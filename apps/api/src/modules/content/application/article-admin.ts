@@ -21,8 +21,8 @@
 import type { Schema } from '@couli/contracts-ts';
 import { transitionArticleVersion, type ArticleVersionEvent } from '@couli/domain';
 import type { AuditInput, Clock, LinkPatternsSpec } from '../../platform/index.ts';
-import type { ArticleCategory, ArticleHelpSection } from '../domain/articles.ts';
-import { isArticleId, withHelpSection } from '../domain/articles.ts';
+import type { ArticleCategory, ArticleFaqRank, ArticleHelpSection } from '../domain/articles.ts';
+import { isArticleId, withHelpFields } from '../domain/articles.ts';
 import {
   nextNoticeContentVersion,
   validateArticleSave,
@@ -60,6 +60,8 @@ export interface ArticleRow {
   readonly notice_end_at: Date | null;
   /** L30: help articles only (articles_help_section_category_check); null = none. */
   readonly help_section: ArticleHelpSection | null;
+  /** CT-26a: help articles only (articles_faq_rank_category_check); null = not in 常见问题. */
+  readonly faq_rank: ArticleFaqRank | null;
   readonly row_version: number;
   readonly created_at: Date;
   readonly updated_at: Date;
@@ -188,16 +190,30 @@ export function helpSectionRejected(
   return helpSection !== null && category !== 'help';
 }
 
+/** CT-26a: a faq_rank is only allowed on a help article (contract: 20001 with faq_rank). */
+export function faqRankRejected(category: ArticleCategory, faqRank: number | null): boolean {
+  return faqRank !== null && category !== 'help';
+}
+
 /**
- * Inserts `help_section` into validateArticleSave's field list after the named fields (title,
- * body, notice_end_at) and before the forbidden words (contract adminCreateArticle `data.fields`).
+ * Inserts the given help-only field names (help_section, then faq_rank) into validateArticleSave's
+ * field list after the named fields (title, body, notice_end_at) and before the forbidden words
+ * (contract adminCreateArticle `data.fields`).
  */
-export function withHelpSectionField(fields: readonly string[]): string[] {
+export function withHelpOnlyFields(
+  fields: readonly string[],
+  helpOnly: readonly string[],
+): string[] {
   let at = 0;
   for (const name of NAMED_FIELDS) {
     if (fields[at] === name) at += 1;
   }
-  return [...fields.slice(0, at), 'help_section', ...fields.slice(at)];
+  return [...fields.slice(0, at), ...helpOnly, ...fields.slice(at)];
+}
+
+/** L30: `help_section` alone into the field list (see withHelpOnlyFields). */
+export function withHelpSectionField(fields: readonly string[]): string[] {
+  return withHelpOnlyFields(fields, ['help_section']);
 }
 
 /** Largest published version already due at `now` (04 §6.2), null when none. */
@@ -253,7 +269,7 @@ export function articleView(rows: readonly ArticleRow[], now: Date): Schema<'Adm
     row_version: newest.row_version,
     current_version: currentVersionOf(rows, now)?.version ?? null,
     versions: rows.map((row) =>
-      withHelpSection(row.category, row.help_section, {
+      withHelpFields(row.category, row.help_section, row.faq_rank, {
         version: row.version,
         status: row.status,
         title: row.title,
@@ -279,6 +295,7 @@ function facts(row: ArticleRow): Facts {
     row_version: row.row_version,
     published_at: iso(row.published_at),
     help_section: row.help_section,
+    faq_rank: row.faq_rank,
   };
 }
 
@@ -295,11 +312,16 @@ interface DraftInput {
   readonly notice_closable?: boolean;
   readonly notice_end_at?: string | null;
   readonly help_section?: ArticleHelpSection;
+  readonly faq_rank?: ArticleFaqRank;
 }
 
-/** Save input plus the row's help_section (kept as sent so a wrong category is refused). */
+/**
+ * Save input plus the row's help_section and faq_rank (kept as sent so a wrong category is
+ * refused).
+ */
 export interface ArticleDraftFields extends ArticleSaveInput {
   readonly help_section: ArticleHelpSection | null;
+  readonly faq_rank: ArticleFaqRank | null;
 }
 
 /** A contract date-time as an instant, built from the Clock's value (no `new Date` here). */
@@ -310,8 +332,9 @@ export function instantOf(now: Date, text: string): Date {
 }
 
 /**
- * 9.2#8: notice fields kept for notices only; others store true / null. L30: help_section as sent
- * (omitted = null); a non-help category with one is refused by the save checks.
+ * 9.2#8: notice fields kept for notices only; others store true / null. L30 / CT-26a:
+ * help_section and faq_rank as sent (omitted = null); a non-help category with either is refused
+ * by the save checks.
  */
 function saveInput(category: ArticleCategory, input: DraftInput, now: Date): ArticleDraftFields {
   const notice = category === 'notice';
@@ -323,6 +346,7 @@ function saveInput(category: ArticleCategory, input: DraftInput, now: Date): Art
     notice_closable: notice ? (input.notice_closable ?? true) : true,
     notice_end_at: end === null ? null : instantOf(now, end),
     help_section: input.help_section ?? null,
+    faq_rank: input.faq_rank ?? null,
   };
 }
 
@@ -419,13 +443,13 @@ export class ArticleAdmin {
       bannedWords: words,
       articleConfigKeys: articleConfigKeysFor(articleId, words, helpLinks),
     });
-    const helpSection = helpSectionRejected(input.category, input.help_section);
-    if (result.ok && !helpSection) return;
+    const helpOnly: string[] = [];
+    if (helpSectionRejected(input.category, input.help_section)) helpOnly.push('help_section');
+    if (faqRankRejected(input.category, input.faq_rank)) helpOnly.push('faq_rank');
+    if (result.ok && helpOnly.length === 0) return;
     const fields = result.ok ? [] : result.fields;
     const paths = result.ok ? [] : result.paths;
-    throw new ArticleFieldsError(
-      articleFieldList(helpSection ? withHelpSectionField(fields) : fields, paths),
-    );
+    throw new ArticleFieldsError(articleFieldList(withHelpOnlyFields(fields, helpOnly), paths));
   }
 
   /** 30701 → lock → [category]; returns the app's rows of the id, newest first. */
@@ -558,6 +582,7 @@ export class ArticleAdmin {
         row_version: newest.row_version + 1,
         published_at: at.toISOString(),
         help_section: newest.help_section,
+        faq_rank: newest.faq_rank,
       },
       ip: actor.ip,
     });

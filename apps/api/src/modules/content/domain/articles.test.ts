@@ -4,8 +4,12 @@ import {
   articleSummary,
   decodeArticleCursor,
   encodeArticleCursor,
+  faqFilterAllowed,
   helpSectionFilterAllowed,
   isArticleId,
+  refusedListFilters,
+  withFaqRank,
+  withHelpFields,
   withHelpSection,
   type PublishedArticleSummary,
 } from './articles.ts';
@@ -62,6 +66,8 @@ it('[AC-F1-02f#5] summaries expose independent notice versions without leaking s
     notice_content_version: 7,
     notice_end_at: null,
     help_section: null,
+    faq_rank: null,
+    body: '',
   };
   expect(articleSummary(row)).toEqual({
     article_id: ID,
@@ -99,6 +105,8 @@ it('[AC-F1-02zs#1] help summaries carry help_section only when set; notices neve
     notice_content_version: 1,
     notice_end_at: null,
     help_section: 'invite',
+    faq_rank: null,
+    body: '',
   };
   expect(articleSummary(base)).toHaveProperty('help_section', 'invite');
   expect(articleSummary({ ...base, help_section: null })).not.toHaveProperty('help_section');
@@ -113,4 +121,42 @@ it('[AC-F1-02zs#4] the help_section filter goes with category help only', () => 
   for (const category of ['rule', 'notice', 'agreement'] as const) {
     expect(helpSectionFilterAllowed(category, 'invite')).toBe(false);
   }
+});
+
+it('[AC-F1-02zzp#10] help summaries carry faq_rank only when set; other categories never', () => {
+  const base: PublishedArticleSummary = {
+    id: ID,
+    category: 'help',
+    title: '帮助',
+    version: 1,
+    published_at: AT,
+    notice_closable: true,
+    notice_content_version: 1,
+    notice_end_at: null,
+    help_section: null,
+    faq_rank: 3,
+    body: JSON.stringify({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: '摘要' }] }],
+    }),
+  };
+  expect(articleSummary(base)).toMatchObject({ faq_rank: 3, summary: '摘要' });
+  expect(articleSummary({ ...base, faq_rank: null })).not.toHaveProperty('faq_rank');
+  for (const category of ['rule', 'agreement', 'notice']) {
+    const summary = articleSummary({ ...base, category });
+    expect(summary).not.toHaveProperty('faq_rank');
+    expect(summary).toHaveProperty('summary', '摘要');
+  }
+  expect(articleSummary({ ...base, body: '纯文本' })).not.toHaveProperty('summary');
+  expect(withFaqRank('rule', 5, { a: 1 })).toEqual({ a: 1 });
+  expect(withHelpFields('help', 'invite', 1, {})).toEqual({ help_section: 'invite', faq_rank: 1 });
+});
+
+it('[AC-F1-02zzp#14] list filters refused with any non-help category, help_section before faq', () => {
+  expect(refusedListFilters('help', 'invite', true)).toEqual([]);
+  expect(refusedListFilters('rule', undefined, undefined)).toEqual([]);
+  expect(refusedListFilters('rule', undefined, false)).toEqual(['faq']);
+  expect(refusedListFilters('agreement', 'invite', true)).toEqual(['help_section', 'faq']);
+  expect(faqFilterAllowed('help', true)).toBe(true);
+  expect(faqFilterAllowed('notice', undefined)).toBe(true);
 });
