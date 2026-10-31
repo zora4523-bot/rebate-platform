@@ -306,6 +306,27 @@ export function beijingMinute(iso: string | null): string {
   return `${beijingDate(iso)} ${beijingClock(iso)}`;
 }
 
+/**
+ * An instant rounded up to the next whole minute (unchanged when already whole), as ISO 8601;
+ * an unreadable value comes back as given. The dialog shows and checks the earliest window start
+ * with this one value, so the minute it offers is one it accepts.
+ */
+export function minuteUp(iso: string): string {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return iso;
+  return new Date(Math.ceil(ms / 60_000) * 60_000).toISOString();
+}
+
+/**
+ * The 【同步此单】 notice for a 20001: [platform], or [order_nos] for its one valid number, means
+ * the platform cannot be synced by order number (not a format or count problem); else failed.
+ */
+export function thisOrderRejectedText(fields: readonly string[]): string {
+  return fields.includes('platform') || fields.includes('order_nos')
+    ? t.sync.thisOrderUnsupported
+    : t.sync.failed;
+}
+
 /** Order numbers typed one per line (also split on spaces and commas), blanks and repeats dropped. */
 export function orderNosOf(text: string): string[] {
   const seen: string[] = [];

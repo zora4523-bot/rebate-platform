@@ -16,6 +16,7 @@ import {
   SYNC_MAX_ORDER_NOS,
   beijingInput,
   beijingMinute,
+  minuteUp,
   failureOf,
   orderNosOf,
   platformLabel,
@@ -112,8 +113,9 @@ export function SyncDialog({ onClose, onDone }: SyncDialogProps): ReactElement {
         },
       };
     if (Date.parse(start) >= Date.parse(end)) return { errors: { to: t.timeOrder } };
-    if (Date.parse(start) < Date.parse(limit.earliest_from))
-      return { errors: { from: t.tooEarly(beijingMinute(limit.earliest_from)) } };
+    const earliest = minuteUp(limit.earliest_from);
+    if (Date.parse(start) < Date.parse(earliest))
+      return { errors: { from: t.tooEarly(beijingMinute(earliest)) } };
     // TODO(规划/11 §7.1): 手动同步状态筛选 — blocked on 各平台 status_filter 取值登记（CAP-*-07）
     return { body: { platform: limit.platform, from: start, to: end } };
   };
@@ -224,7 +226,9 @@ export function SyncDialog({ onClose, onDone }: SyncDialogProps): ReactElement {
               style={{ flex: '1 1 200px' }}
               {...status(errors.from)}
               extra={
-                limit === undefined ? undefined : t.earliest(beijingMinute(limit.earliest_from))
+                limit === undefined
+                  ? undefined
+                  : t.earliest(beijingMinute(minuteUp(limit.earliest_from)))
               }
             >
               <Input

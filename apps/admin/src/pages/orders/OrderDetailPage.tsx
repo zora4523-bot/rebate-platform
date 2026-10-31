@@ -39,6 +39,7 @@ import {
   orderUrl,
   percent,
   platformLabel,
+  thisOrderRejectedText,
   type DictKind,
   type OrderDetail,
   type OrdersBackState,
@@ -116,7 +117,7 @@ function OrderDetailContent({ access, orderId }: OrderDetailPageProps): ReactEle
     if (outcome === undefined) return;
     const text =
       outcome.kind === 'fields'
-        ? { type: 'error' as const, text: ordersTexts.sync.orderNosRejected }
+        ? { type: 'error' as const, text: thisOrderRejectedText(outcome.fields) }
         : noticeOf(outcome);
     setNotice(text === undefined ? undefined : { id: nextNoticeId(), ...text });
   };

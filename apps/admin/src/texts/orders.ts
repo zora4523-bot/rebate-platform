@@ -132,6 +132,7 @@ export const ordersTexts = {
     orderNosTooLong: '单个订单号最长 64 个字符',
     orderNosRejected: '订单号不正确（个数超限或格式有误），请核对后再提交',
     platformRejected: '该平台暂不能手动同步，请换一个平台',
+    thisOrderUnsupported: '该平台暂不支持按订单号同步，请改用按时间窗同步',
     submit: '提交同步',
     cancel: '取消',
     limitsLoading: '正在读取可同步范围…',
