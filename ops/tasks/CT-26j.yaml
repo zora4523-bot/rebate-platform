@@ -1,0 +1,26 @@
+id: CT-26j
+repo: rebate-platform
+title: 契约：旧号加验的后台与绑定入口——① 后台用户详情「登记已加验设备」POST /admin/v1/users/{user_id}/reverified-devices（只核实身份不改号时，把用户指定设备记为已加验设备，不清标记；权限点、动态码 step-up 档、必填原因、写审计）；② 客服改号（BR-ID-44，adminEditUserProfile 的改手机号）同事务清待加验标记并解绑可信身份以外的第三方身份——在其描述与响应里写明；③ 新绑第三方身份接口（已登录用户绑定微信 / Apple / 华为，待加验时回 10010）的路径、请求、错误码；只定契约形状与 planned 标记，实现另单
+type: contract
+# 2026-11-01 入账（identity-lane，编排 23:39 回 identity 四条之 ① ②：由 identity 入 CT 单、先出契约草稿给编排核，admin 线不接）。依据 BR-WDR-01 细则（07_WDR 123–135 行）、BR-ID-44、CT-26c。权限点与 step-up 档位以 04 §11.2 为准，缺失处写编排待核。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/**'
+  - 'contracts/routes.json'
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
