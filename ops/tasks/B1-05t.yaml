@@ -51,15 +51,6 @@ red_exempt:
     test: '[AC-B1-05d#21] 同用户换设备仍沿用会话，身份以 ViewerContext 的 user_id 优先'
     reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
   - file: test/spec/catalog/search/session.test.ts
-    test: '[AC-B1-05d#22] 不同身份 {"userId":"synthetic-other-user"} 不继承他人已下发集合'
-    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
-  - file: test/spec/catalog/search/session.test.ts
-    test: '[AC-B1-05d#22] 不同身份 {"appId":"synthetic-other-app"} 不继承他人已下发集合'
-    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
-  - file: test/spec/catalog/search/session.test.ts
-    test: '[AC-B1-05d#23] 游客按 device_id 隔离，游客也能正常出卡'
-    reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
-  - file: test/spec/catalog/search/session.test.ts
     test: '[AC-B1-05d#25] 已下发集合最多 500 个，超过后停止会话去重：overflow=false'
     reason: 同文件只改 [AC-B1-05d#24]、[#43] 的期望，本用例体未改（编排 15:0x，同 D10-475 ①）
   - file: test/spec/catalog/search/session.test.ts
