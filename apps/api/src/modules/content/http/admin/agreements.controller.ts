@@ -38,6 +38,7 @@ import {
   type AgreementActor,
   type AgreementListQuery,
 } from '../../application/agreement-admin.ts';
+import type { AgreementType } from '../../domain/agreements/index.ts';
 
 export interface AgreementAdminRequest extends CheckedRequest {
   /** Trace id set by `genReqId`. */
@@ -73,9 +74,10 @@ export class AdminAgreementsController {
     type: Schema<'AgreementType'>,
     version: number,
   ): Promise<Schema<'AdminAgreementVersionDetailResponse'>> {
-    return this.#run(request, true, (actor) =>
-      this.#agreements.detail(actor.appId, type, Number(version)),
-    );
+    return this.#run(request, true, (actor) => {
+      if (!isConsentAgreementType(type)) throw new AgreementNotFoundError();
+      return this.#agreements.detail(actor.appId, type, Number(version));
+    });
   }
 
   /** adminPublishAgreementVersion. */
@@ -84,9 +86,10 @@ export class AdminAgreementsController {
     type: Schema<'AgreementType'>,
     body: Schema<'AdminAgreementPublishRequest'>,
   ): Promise<Schema<'AdminAgreementVersionResponse'>> {
-    return this.#run(request, false, (actor) =>
-      this.#agreements.publish(publisherOf(actor, request), type, body),
-    );
+    return this.#run(request, false, (actor) => {
+      if (!isConsentAgreementType(type)) throw new AgreementFieldsError(['type']);
+      return this.#agreements.publish(publisherOf(actor, request), type, body);
+    });
   }
 
   async #run<T>(
@@ -112,6 +115,13 @@ export class AdminAgreementsController {
     if (response === undefined) throw new Error('content: admin guard returned without the call');
     return response;
   }
+}
+
+// CT-02zb: the contract's AgreementType also has sdk_list and collect_list (D10-465), which the
+// domain and the agreements table do not take yet; until F1-02zzs (D10-465) a detail read of
+// either is 30701 and a publish of either is 20001 with data.fields=[type], as before the change.
+function isConsentAgreementType(type: Schema<'AgreementType'>): type is AgreementType {
+  return type === 'privacy' || type === 'agreement' || type === 'labor_agreement';
 }
 
 /** The guard's verified actor; the request contributes only its address for the audit row. */

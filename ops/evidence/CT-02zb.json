@@ -1,0 +1,38 @@
+{
+  "red_tests": [],
+  "risk_note": "RV1/RV2 (contract + content controller). contracts/openapi.yaml AgreementType adds sdk_list and collect_list (04 §3.2 / §6.2 written back by couli #229, SPEC_REF 9ab94dc0; D10-465 / D10-478): versioned public notices outside consent; GET /v1/agreements never lists them; GET /v1/agreements/{type} returns 30701 until published. Consent and signing fields keep their own inline enums (unchanged). Generated files regenerated (openapi.gen.ts, route-schemas.gen.ts). content admin agreements.controller.ts only narrows the type (detail 30701, publish 20001 fields=[type], as before) until F1-02zzs (#1969). Frozen [AC-F1-02ze#13] made two-state by F1-02zzv (#1973). No rule tests (tester none). Full verification by the required CI checks (ops/approvals.yaml id 21). D10-484: contracts.yml passes --err-ignore contracts/oasdiff-accepted.txt when the file exists; the list holds exactly the 8 response-property-enum-value-added lines of this change (verbatim oasdiff 1.32.1 text, checked locally: with the list no breaking change, without it the same 8 errors).",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "fresh independent Claude via claude-run.sh (Codex unavailable until 11-02): r1 fail (S1 04 not written back -> couli #229 + SPEC_REF bump #1977, D10-478; S2 controller path -> ledger #1969; S2 transitional sentence -> F1-02zzs paths #1978), r2 pass with no findings"
+    }
+  ],
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "legacy_no_red": true,
+  "task": "CT-02zb",
+  "spec_commit": "154b50bee6920387f43cd9afa7569a41d9f3aa2b",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "runs": [],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "2fb0da1c2a8d5eb031982834a557fcc5eb64880e",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  }
+}
