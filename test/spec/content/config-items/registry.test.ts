@@ -15,6 +15,8 @@
 // B1-05l (D10-419 (a)): search.hot_words and search.keyword_routes follow it (kit SEARCH).
 // B1-15zd (D10-454, BR-ID-30): the seven retention.* keys follow search.* (kit RETENTION).
 // B2-08cz (D10-456 ④, BR-WDR-20): the three tax.SERVICE_FEE.* keys follow retention.* (kit TAX).
+// B1-05s (D10-480): feed.fallback_pool_id and the two pool.* keys follow tax.SERVICE_FEE.* (kit
+// POOL); feed.fallback_pool_id is unset by default and has no seed row (POOL_UNSEEDED).
 import { expect, it } from 'vitest';
 import {
   configItemSpecOf,
@@ -35,6 +37,8 @@ import {
   INVITE_CFG,
   INVITE_ELIG,
   PAYOUT,
+  POOL,
+  POOL_UNSEEDED,
   RANK,
   RETENTION,
   RISK_WITHDRAW,
@@ -65,15 +69,18 @@ it('[AC-F1-10e#1] 裁定 14：注册表恰好是种子里全部非开关键加 a
   expect(seeds.length).toBeGreaterThan(0);
   const fromSeeds = seeds.filter((key) => switchSpecOf(key) === null);
   // B2-11dz: + the registered keys 08 leaves unset (no seed row), and only those.
+  // B1-05s: + the fall-back pool, unset by default (D10-480).
   expect(sorted(keys)).toStrictEqual(
-    sorted([...new Set([...fromSeeds, ...EXTRA, ...AUTO_ENABLE_UNSEEDED])]),
+    sorted([...new Set([...fromSeeds, ...EXTRA, ...AUTO_ENABLE_UNSEEDED, ...POOL_UNSEEDED])]),
   );
-  for (const key of AUTO_ENABLE_UNSEEDED) expect(seeds, key).not.toContain(key);
+  for (const key of [...AUTO_ENABLE_UNSEEDED, ...POOL_UNSEEDED]) {
+    expect(seeds, key).not.toContain(key);
+  }
   // F1-02zt：过渡已收紧: EXPECTED + settle.* + growth.invite_reward.* + payout.* (B2-06bz)
   // + risk.withdraw.* (B2-11z) + withdraw.auto_payout.* (B2-11y)
   // + payout.auto_enable_check.* (B2-11dz) + rank.cache_ttl_seconds (B1-28g)
   // + search.hot_words / search.keyword_routes (B1-05l) + retention.* (B1-15zd)
-  // + tax.SERVICE_FEE.* (B2-08cz), all present.
+  // + tax.SERVICE_FEE.* (B2-08cz) + feed.fallback_pool_id / pool.* (B1-05s), all present.
   expect(sorted(keys)).toStrictEqual(
     sorted(
       [
@@ -86,6 +93,7 @@ it('[AC-F1-10e#1] 裁定 14：注册表恰好是种子里全部非开关键加 a
         ...SEARCH,
         ...RETENTION,
         ...TAX,
+        ...POOL,
       ].map((entry) => entry.key),
     ),
   );
@@ -116,8 +124,11 @@ it('[AC-F1-10e#3] 裁定 14：值类型取种子值的 JSON 类型（数组记 o
     expect(seedType, spec.key).toBe(jsonTypeOf(seeds.get(spec.key)));
     checked += 1;
   }
-  // agent.page_guide.routes has no seed row; B2-11dz: neither have AUTO_ENABLE_UNSEEDED.
-  expect(checked).toBe(configRegistry().length - 1 - AUTO_ENABLE_UNSEEDED.length);
+  // agent.page_guide.routes has no seed row; B2-11dz: neither have AUTO_ENABLE_UNSEEDED;
+  // B1-05s: nor POOL_UNSEEDED.
+  expect(checked).toBe(
+    configRegistry().length - 1 - AUTO_ENABLE_UNSEEDED.length - POOL_UNSEEDED.length,
+  );
   expect(registered('agent.page_guide.routes').valueType).toBe('object');
 });
 
@@ -230,8 +241,9 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
   // inviteNow() followed by the eight payout.* keys (B2-06bz), the six risk.withdraw.* keys
   // (B2-11z), the seventeen withdraw.auto_payout.* keys (B2-11y), the four
   // payout.auto_enable_check.* keys (B2-11dz), rank.cache_ttl_seconds (B1-28g), the two search.*
-  // keys (B1-05l), the seven retention.* keys (B1-15zd) and the three tax.SERVICE_FEE.* keys
-  // (B2-08cz; checked key by key in #57 and #58).
+  // keys (B1-05l), the seven retention.* keys (B1-15zd), the three tax.SERVICE_FEE.* keys
+  // (B2-08cz) and feed.fallback_pool_id with the two pool.* keys (B1-05s; checked key by key in
+  // #57 and #58).
   presentOf(INVITE_CFG, 'growth.invite_reward.*');
   const inviteTail = [
     ...inviteNow(),
@@ -243,6 +255,7 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
     ...SEARCH,
     ...RETENTION,
     ...TAX,
+    ...POOL,
   ].map((e) => e.key);
   expect(keys.slice(EXPECTED.length, EXPECTED.length + SETTLE.length)).toStrictEqual(
     SETTLE.map((entry) => entry.key),
@@ -264,9 +277,10 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
 // F1-02zm: the BR-INV-24 细则 growth.invite_reward.* group of F1-02zn is registered whole right
 // after SETTLE, in its own order, followed by eligibility_days, then payout.*, risk.withdraw.*,
 // withdraw.auto_payout.*, payout.auto_enable_check.*, rank.cache_ttl_seconds, the two search.*
-// keys, the seven retention.* keys and the three tax.SERVICE_FEE.* keys (#58).
+// keys, the seven retention.* keys, the three tax.SERVICE_FEE.* keys, feed.fallback_pool_id and
+// the two pool.* keys (#58).
 // F1-02zt：过渡已收紧, the absent branch is gone.
-it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登记（紧接 settle.* 之后、其后是 eligibility_days、payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds、search.* 两项、retention.* 七项与 tax.* 三项，逐键值类型、options、权限点、可改标记）', () => {
+it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登记（紧接 settle.* 之后、其后是 eligibility_days、payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds、search.* 两项、retention.* 七项、tax.* 三项、feed.fallback_pool_id 与 pool.* 两项，逐键值类型、options、权限点、可改标记）', () => {
   expect(INVITE_CFG).toHaveLength(5);
   const keys = configRegistry().map((spec) => spec.key);
   const present = INVITE_CFG.filter((entry) => keys.includes(entry.key));
@@ -275,7 +289,8 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
   // then the eight payout.* keys (B2-06bz), the six risk.withdraw.* keys (B2-11z), the
   // seventeen withdraw.auto_payout.* keys (B2-11y), the four payout.auto_enable_check.* keys
   // (B2-11dz), rank.cache_ttl_seconds (B1-28g), the two search.* keys (B1-05l), the seven
-  // retention.* keys (B1-15zd) and the three tax.SERVICE_FEE.* keys (B2-08cz).
+  // retention.* keys (B1-15zd), the three tax.SERVICE_FEE.* keys (B2-08cz),
+  // feed.fallback_pool_id and the two pool.* keys (B1-05s).
   const tail = [
     ...inviteNow(),
     ...PAYOUT,
@@ -286,6 +301,7 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
     ...SEARCH,
     ...RETENTION,
     ...TAX,
+    ...POOL,
   ];
   const head = keys.length - tail.length;
   expect(keys.slice(head)).toStrictEqual(tail.map((entry) => entry.key));
@@ -316,9 +332,10 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
 // then B1-28g (D10-419) rank.cache_ttl_seconds (RANK), then B1-05l (D10-419 (a)) the two search.*
 // keys in SEARCH order, then B1-15zd (D10-454) the seven retention.* keys in RETENTION order, then
 // B2-08cz (D10-456 ④) the three tax.SERVICE_FEE.* keys in TAX order (the method's enum options
-// exactly as the kit), and nothing else.
+// exactly as the kit), then B1-05s (D10-480) feed.fallback_pool_id and the two pool.* keys in POOL
+// order, and nothing else.
 // F1-02zt：过渡已收紧, the absent branch is gone.
-it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接 ip_window_hours 登记、其后紧接 payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds、search.* 两项、retention.* 七项与 tax.* 三项（按登记顺序，逐键值类型、options、权限点、可改标记；options 为 null、config.business、可改）', () => {
+it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接 ip_window_hours 登记、其后紧接 payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds、search.* 两项、retention.* 七项、tax.* 三项、feed.fallback_pool_id 与 pool.* 两项（按登记顺序，逐键值类型、options、权限点、可改标记；options 为 null、config.business、可改）', () => {
   expect(INVITE_ELIG).toHaveLength(1);
   const key = 'growth.invite_reward.eligibility_days';
   expect(INVITE_ELIG[0]!.key).toBe(key);
@@ -338,6 +355,7 @@ it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接
       ...SEARCH,
       ...RETENTION,
       ...TAX,
+      ...POOL,
     ].map((entry) => entry.key),
   );
   for (const entry of [
@@ -347,6 +365,7 @@ it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接
     ...RANK,
     ...SEARCH,
     ...RETENTION,
+    ...POOL,
   ]) {
     const payoutSpec = registered(entry.key);
     expect({
@@ -548,3 +567,46 @@ it('[AC-F1-10e#65] tax.SERVICE_FEE.rate_bp 是可改的 config.business 整数�
   ];
   for (const value of refused) expect(configValueFits(spec, value), String(value)).toBe(false);
 });
+
+// B1-05s (D10-480): the type, permission and editable flag of each key are checked in #58; here
+// the values each one accepts: the fall-back pool id only a string, each pool.* key only a whole
+// number of seconds of at least 1 (int4 max, 08 gives no upper bound).
+it('[AC-F1-10e#66] feed.fallback_pool_id 只收字符串（B1-05s，D10-480）', () => {
+  const spec = registered('feed.fallback_pool_id');
+  expect(spec.range).toBeUndefined();
+  expect(configValueFits(spec, 'pool-1')).toBe(true);
+  for (const value of [0, 1, true, null, [], {}]) {
+    expect(configValueFits(spec, value), JSON.stringify(value)).toBe(false);
+  }
+});
+
+it.each(['pool.max_age_sec', 'pool.refresh_interval_sec'])(
+  '[AC-F1-10e#67] %s 是可改的 config.business 整数，下限 1，拒绝 0、浮点与隐式转换（B1-05s，D10-480，BR-PRICE-11）',
+  (key) => {
+    const spec = registered(key);
+    expect(spec).toMatchObject({
+      valueType: 'number',
+      options: null,
+      permission: 'config.business',
+      adminEditable: true,
+    });
+    expect(spec.range).toStrictEqual({ integer: true, min: 1, max: 2147483647 });
+    for (const value of [1, 3600, 7200, 2147483647]) {
+      expect(configValueFits(spec, value), String(value)).toBe(true);
+    }
+    const refused = [
+      0,
+      -1,
+      0.5,
+      3600.5,
+      2147483648,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      '3600',
+      true,
+      null,
+      [],
+    ];
+    for (const value of refused) expect(configValueFits(spec, value), String(value)).toBe(false);
+  },
+);

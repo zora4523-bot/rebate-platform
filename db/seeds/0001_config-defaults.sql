@@ -118,5 +118,8 @@ INSERT INTO app.config_items (app_id, key, value, updated_by) VALUES
   -- 第 15 批：BR-WDR-20 税配置（B2-08cz，D10-456 ④）；税率表到位前 method=none、tax_fen 记 0（拍板第二批 FUND-04），rate_bp 为 0、rate_table 为空档位
   ('couli', 'tax.SERVICE_FEE.method', '"none"'::jsonb, 'seed'), -- BR-WDR-20
   ('couli', 'tax.SERVICE_FEE.rate_bp', '0'::jsonb, 'seed'), -- BR-WDR-20
-  ('couli', 'tax.SERVICE_FEE.rate_table', '[]'::jsonb, 'seed') -- BR-WDR-20
+  ('couli', 'tax.SERVICE_FEE.rate_table', '[]'::jsonb, 'seed'), -- BR-WDR-20
+  -- 第 16 批：商品池价格有效期与刷新间隔（B1-05s，D10-480）；feed.fallback_pool_id 缺省不设（无种子行，未配置时信息流联盟故障答空列表）
+  ('couli', 'pool.max_age_sec', '7200'::jsonb, 'seed'), -- BR-PRICE-11
+  ('couli', 'pool.refresh_interval_sec', '3600'::jsonb, 'seed') -- BR-PRICE-11
 ON CONFLICT (app_id, key) DO NOTHING;

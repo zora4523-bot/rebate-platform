@@ -302,6 +302,16 @@ export const TAX: readonly Expected[] = [
   row('tax.SERVICE_FEE.rate_bp', 'number', 'config.business'),
   row('tax.SERVICE_FEE.rate_table', 'object', 'config.business'),
 ];
+// B1-05s (D10-480): the feed's union fall-back pool (规划/02 §14) and the BR-PRICE-11 pool price age
+// limit and refresh interval, registered right after TAX in this order: editable config.business,
+// options null. Not part of expectedNow() either.
+export const POOL: readonly Expected[] = [
+  row('feed.fallback_pool_id', 'string', 'config.business'),
+  row('pool.max_age_sec', 'number', 'config.business'),
+  row('pool.refresh_interval_sec', 'number', 'config.business'),
+];
+/** B1-05s (D10-480): the fall-back pool is unset by default, hence no seed row. */
+export const POOL_UNSEEDED: readonly string[] = ['feed.fallback_pool_id'];
 export const expectedOf = (key: string): Expected => {
   const found = [
     ...expectedNow(),
@@ -313,6 +323,7 @@ export const expectedOf = (key: string): Expected => {
     ...SEARCH,
     ...RETENTION,
     ...TAX,
+    ...POOL,
   ].find((entry) => entry.key === key);
   expect(found, key).toBeDefined();
   return found!;
