@@ -28,6 +28,14 @@ const h = useHarness();
 /** The ids of a list, in list order. */
 const ids = (items: readonly Option[]) => items.map((item) => item.union_account_id);
 
+/** Every leaf value of a read-back value, at any depth (object values and array elements). */
+const leaves = (value: unknown): unknown[] =>
+  Array.isArray(value)
+    ? value.flatMap(leaves)
+    : value !== null && typeof value === 'object'
+      ? Object.values(value).flatMap(leaves)
+      : [value];
+
 it('[B1-22o][D10-243] 每项只有 union_account_id、platform、account_name 三个字段，取值照存储', async () => {
   const s = await setup(h, { grants: [PID] });
   const row = await seedAccount(s, {
@@ -66,8 +74,14 @@ it('[B1-22o][D10-243] 每项只有 union_account_id、platform、account_name �
   ]) {
     expect(items[0], key).not.toHaveProperty(key);
   }
+  // 'd14' is a short hex string a random id may contain by chance, so it is checked field by
+  // field (exact match, any depth, any key) and left out of the text check.
+  const values = leaves(items);
+  for (const value of ['expiring', 'd14']) {
+    expect(values, value).not.toContain(value);
+  }
   const text = serialized(items);
-  for (const value of ['expiring', 'd14', 'synthetic-probe-timeout', s.a.id, s.appId]) {
+  for (const value of ['expiring', 'synthetic-probe-timeout', s.a.id, s.appId]) {
     expect(text).not.toContain(value);
   }
 });
