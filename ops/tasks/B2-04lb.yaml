@@ -3,7 +3,7 @@ repo: rebate-platform
 title: 维权与入账口径收口（D10-463，会多付）：① 入账前部分维权——入账金额按扣减后的有效佣金（BR-CALC-15 联盟更新后佣金重算；未回传新佣金前按维权应扣数保守扣减），反例「结算佣金 1000、维权扣 400 不得按 1000 入账」；② 已有结算记录的入账订单——维权成功经新结算记录 / 调整路径关闭 WAIT_COMMISSION 维权记录；③ 入账前 WAIT_COMMISSION 后联盟回传新佣金——关闭维权记录，订单不长挂
 type: impl
 # 2026-10-31 编排 D10-463：排在 B2-04l 之后、B2-04la 之前（多付比找回处理更急）。来源：B2-04l 规则测试评审 r1 / r2 移出范围的三条（两条 S1 会多付、一条少付长挂）。RV2，独立 Claude 写测试与 money 评审（Codex 至 11-02 不可用，approvals #36）。
-# D10-474 / D10-475 ①：冻结 [AC-B2-04l#41] 改为发 order.clawed_back，由新鲜独立 Claude 单列 test(spec) 只改该条期望与标题（test-change），另一位新鲜 Claude 只读复核，不计写测试轮次；其余 17 条测试体未改列 red_exempt。
+# D10-474 / D10-475 ①：冻结 [AC-B2-04l#41] 改为发 order.clawed_back，由新鲜独立 Claude 单列 test(spec) 只改该条期望与标题（test-change），另一位新鲜 Claude 只读复核，不计写测试轮次；其余 17 条测试体未改列 red_exempt。；2026-11-01 编排 D10-519：#2062 verify-int 红在两处冻结夹具写死「部分扣回不发事件」（after-restore.int.test.ts、forfeited-state/kit.ts 的 events.publish reject）；D10-474 ③ 已改为发 order.clawed_back，两文件加进 test_paths，由新鲜独立 Claude 单列 test(spec) 只改夹具（只接受 order.clawed_back，其他事件仍 reject），金额与凭证断言一字不动；after-restore 五条用例测试体未改列 red_exempt。
 # 口径以 08 为准；08 未写清处（例如「未回传新佣金前保守扣减」的具体取值、多次部分维权的累计口径）由实现方列出报编排，不臆造。状态只经生成的 transition()；金额只经 @couli/money；入账计划若在 packages/domain 内改，须保持纯函数并补属性测试。
 refs: [BR-FUND-06, BR-FUND-07, BR-FUND-08, BR-CALC-15]
 refs_hash:
@@ -13,8 +13,7 @@ refs_hash:
   BR-CALC-15: 84083d5f0e01
 deps: [B2-04l]
 paths:
-  # D10-483：order_rights.answered_at timestamptz NULL（联盟回传吸收该条扣减时同事务置位；入账前累计只算为空者；替代 updated_at 对比 order_settlements.created_at，S2）；只授 settlement 写入角色 UPDATE(answered_at)；只加列不回填；迁移号落地时取主干最大 +1（排在 0106 之后，报到即排）。
-  - 'db/migrations/**'
+  - 'db/migrations/**'  # D10-483：order_rights.answered_at timestamptz NULL（联盟回传吸收该条扣减时同事务置位；入账前累计只算为空者；替代 updated_at 对比 order_settlements.created_at，S2）；只授 settlement 写入角色 UPDATE(answered_at)；只加列不回填；迁移号落地时取主干最大 +1（排在 0106 之后，报到即排）。
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
   - 'apps/api/src/modules/settlement/rebate/**'
@@ -24,13 +23,14 @@ paths:
   - 'apps/api/src/modules/settlement/rights/**'
   - 'apps/api/src/modules/settlement/index.ts'
   - 'packages/domain/src/settlement/credit/**'
-  # D10-467 ②：R9 部分退款扣回补发 order.clawed_back（进 EVENT_NAMES），供 identity B1-12s 消费。
-  - 'apps/api/src/modules/platform/events/types.ts'
+  - 'apps/api/src/modules/platform/events/types.ts'  # D10-467 ②：R9 部分退款扣回补发 order.clawed_back（进 EVENT_NAMES），供 identity B1-12s 消费。
 test_paths:
   - 'test/spec/settlement/rights-answered-schema/**'
   - 'test/spec/settlement/rights-credit/**'
   - 'test/properties/settlement/rights-credit/**'
   - 'test/spec/settlement/rights/record-credited.int.test.ts'
+  - 'test/spec/settlement/admin-recon-restore/after-restore.int.test.ts'
+  - 'test/spec/settlement/forfeited-state/kit.ts'
 red_exempt:
   - file: test/spec/settlement/rights/record-credited.int.test.ts
     test: '[AC-B2-04l#1] 入账后维权部分成功（应扣佣金 400）：applied；记一条 SUCCEEDED 记录，按 R9 部分扣回，键带 R{order_rights.id}，sub_type RIGHTS，booked 510 / 600，rights_pending=false'
@@ -83,6 +83,21 @@ red_exempt:
   - file: test/spec/settlement/rights/record-credited.int.test.ts
     test: '[AC-B2-04l#42] 入账后 WAIT_COMMISSION 期间联盟新佣金经订单同步回调进来（无结算佣金、预估改为 600，不带维权记录引用）：按 R9 部分扣回 170 / 34 / 17、平台 179，键带 C{commission_version}；同事务把该维权记录关闭为 SUCCEEDED（id 不变）、rights_pending 回到 false、待处理行关闭（resolved）；之后平台用同一维权单号再给应扣佣金 400 → duplicate，凭证只有一套、什么都不变'
     reason: 冻结 B2-04l 用例，测试体未改；同文件只有 [AC-B2-04l#41] 按 D10-474 ③ 单列 test(spec) 改为发 order.clawed_back（D10-475 ①，同 D10-415 ① / B2-06f 先例）
+  - file: test/spec/settlement/admin-recon-restore/after-restore.int.test.ts
+    test: '[AC-B2-09g#34] BR-FUND-22 ③ 与 BR-CALC-09 例（申诉恢复后）：预留 0、本人 5000、B=1000，U1 入账时封禁 500 归平台，申诉撤销补发 500；之后佣金改 800（真实扣回入口 R9）→ U1 按重拆份额 400 算应得，只扣 100，不是不扣也不是全扣；平台应得 400、冲回 100；UNION_RECEIVABLE 净额 800；booked 800 / 800，不生成补差候选、待补记义务或新的受益人事件'
+    reason: 冻结 B2-09g 用例，测试体未改；同文件只改夹具 events.publish（旧规则「部分扣回不发事件」→ 只接受 order.clawed_back，D10-474 ③ / D10-519 ②），单列 test(spec)（同 D10-415 ①）
+  - file: test/spec/settlement/admin-recon-restore/after-restore.int.test.ts
+    test: '[AC-B2-09g#35] BR-CALC-13：恢复后 commission 两个公开读取（readCommissionSnapshot、readCommissionAttribution，两者一致）不再列出该受益人该角色；同单同一会员未列入差错单的角色、别的会员因封禁的没收、deleted / minor 原因的没收，以及该会员在别的订单上的没收都仍列出，eventSeq 与顺序不变'
+    reason: 冻结 B2-09g 用例，测试体未改；同文件只改夹具 events.publish（旧规则「部分扣回不发事件」→ 只接受 order.clawed_back，D10-474 ③ / D10-519 ②），单列 test(spec)（同 D10-415 ①）
+  - file: test/spec/settlement/admin-recon-restore/after-restore.int.test.ts
+    test: '[AC-B2-09g#36] 依 D10-469 ③：恢复时净额 ≥ 应得不补发，但 active 事件已追加，之后同样不按被剥夺：净额 500 / 应得 500、净额 600 / 应得 500 → restored_fen 0、无 RESTORE 凭证、读取不再列出；之后佣金改 800 → 分别扣 100、200，都回到重拆份额 400，平台净额 400，应收净额 800；PUNISH 全额扣回的订单实发 0 同样不再列出'
+    reason: 冻结 B2-09g 用例，测试体未改；同文件只改夹具 events.publish（旧规则「部分扣回不发事件」→ 只接受 order.clawed_back，D10-474 ③ / D10-519 ②），单列 test(spec)（同 D10-415 ①）
+  - file: test/spec/settlement/admin-recon-restore/after-restore.int.test.ts
+    test: '[AC-B2-09g#37] BR-CALC-13：active 之后又 forfeited（新一轮封禁或注销）时重新列出，原因为新事件的原因，与 active 同一时刻也按 event_seq 判定；再处理一张差错单后又不列出（实发 0）；created_at 晚于恢复时刻的旧 forfeited 排在 active 之前，不算重新没收'
+    reason: 冻结 B2-09g 用例，测试体未改；同文件只改夹具 events.publish（旧规则「部分扣回不发事件」→ 只接受 order.clawed_back，D10-474 ③ / D10-519 ②），单列 test(spec)（同 D10-415 ①）
+  - file: test/spec/settlement/admin-recon-restore/after-restore.int.test.ts
+    test: '[AC-B2-09g#38] 恢复只解除差错单列出的角色：预留 1500、基数 850，本人 425，直推 85 没收后恢复，间推 42 没收未恢复；之后佣金改 600（基数 510）→ 本人扣 170、直推按重拆份额 51 扣 34，间推仍按被剥夺不扣不补，平台从 490 到 294 冲回 196，应收净额 600'
+    reason: 冻结 B2-09g 用例，测试体未改；同文件只改夹具 events.publish（旧规则「部分扣回不发事件」→ 只接受 order.clawed_back，D10-474 ③ / D10-519 ②），单列 test(spec)（同 D10-415 ①）
 impl: claude
 tester: claude-independent
 accept:
