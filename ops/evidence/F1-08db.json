@@ -1,0 +1,159 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-settle-bills-write/access.test.ts > [AC-F1-08db-ACCESS#1] 只持 fund.view：已出账与结算中账单的详情、批次明细都没有可用的写入口，点写名按钮也不发 POST、不弹动态码；同一账单持 settle.bill 时出现【确认立即执行】【定时执行】",
+    "test/spec/frontend/admin-settle-bills-write/access.test.ts > [AC-F1-08db-ACCESS#2] 只持 settle.statement_upload：列表与详情地址都没有写入口、不发 POST、不弹动态码（无权限照旧）；持 settle.bill 时结算中账单的 PARTIAL 批次有【继续执行】、定时批次有【撤销定时】",
+    "test/spec/frontend/admin-settle-bills-write/access.test.ts > [AC-F1-08db-ACCESS#2] 只持 fund.settle_adjust：列表与详情地址都没有写入口、不发 POST、不弹动态码（无权限照旧）；持 settle.bill 时结算中账单的 PARTIAL 批次有【继续执行】、定时批次有【撤销定时】",
+    "test/spec/frontend/admin-settle-bills-write/access.test.ts > [AC-F1-08db-ACCESS#3] settle.bill 打开列表、结算中账单详情与批次明细都不弹动态码、不发 step-up 请求；点【撤销定时】并在确认框提交后才弹动态码，取消动态码不发写请求",
+    "test/spec/frontend/admin-settle-bills-write/access.test.ts > [AC-F1-08db-ACCESS#3] 超管 打开列表、结算中账单详情与批次明细都不弹动态码、不发 step-up 请求；点【撤销定时】并在确认框提交后才弹动态码，取消动态码不发写请求",
+    "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-CANCEL#1] 定时未开始的批次【撤销定时】：确认框 → 动态码 → POST cancel-schedule，请求体只有 expected_row_version=1；成功提示，该批次变回「待确认」，账单出现【确认立即执行】",
+    "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-CANCEL#2] 撤销定时前批次已到点开始执行：POST 收 20902，提示状态已变化并重新拉详情，该批次显示「执行中」且不再有【撤销定时】",
+    "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-REJECT#1] 待确认批次【驳回】：原因空或全空白时不驳回（不发请求，或收 20001 [reason]）并在原因旁提示；填原因后动态码 → POST reject，请求体为 expected_row_version=3 与去首尾空白后的原因；成功后该批次「已取消」并显示原因，另一批次仍待确认",
+    "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-REJECT#2] 驳回前另一位财务已确认全部批次：POST reject 收 20902，提示状态已变化并重新拉详情，两批次显示「已确认」，不再有【驳回】",
+    "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-RESUME#1] PARTIAL 批次【继续执行】：确认框 → 动态码 → POST resume，请求体只有 expected_row_version=4；成功提示，该批次显示「执行中」，不再有【继续执行】",
+    "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-RESUME#2] 继续执行收 20001 data.reason=switches_off：给出可识别的原因提示，不显示成功，批次仍为「部分完成」",
+    "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-RESUME#2] 继续执行收 20001 data.reason=snapshot_pending：给出可识别的原因提示，不显示成功，批次仍为「部分完成」",
+    "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-RESUME#3] 继续执行前批次已被他人恢复：POST resume 收 20902，提示状态已变化并重新拉详情，该批次显示「执行中」",
+    "test/spec/frontend/admin-settle-bills-write/confirm-errors.test.ts > [AC-F1-08db-CONFIRM#6] 打开详情后另一位财务驳回了京东批次：确认收 20902，提示状态已变化并重新拉详情，京东批次显示「已取消」，淘宝批次仍待确认",
+    "test/spec/frontend/admin-settle-bills-write/confirm-errors.test.ts > [AC-F1-08db-CONFIRM#7] 确认收 20001 data.reason=bill_not_ready：给出账单尚未出账完成一类的提示，不显示成功，批次仍待确认",
+    "test/spec/frontend/admin-settle-bills-write/confirm-errors.test.ts > [AC-F1-08db-CONFIRM#8] 确认收 10003（动态码令牌失效）：重新弹动态码，验证后用新令牌重发同样的请求体并成功",
+    "test/spec/frontend/admin-settle-bills-write/confirm.test.ts > [AC-F1-08db-CONFIRM#1] 【确认立即执行】：确认框说明一次确认该账单全部待确认批次；提交（连点两次）后先弹动态码，验证后只发一个 POST confirm，带动态码令牌，expected_batches 恰为两个待确认批次的 id 与 row_version，不带 scheduled_at；成功提示，两批次显示「已确认」",
+    "test/spec/frontend/admin-settle-bills-write/confirm.test.ts > [AC-F1-08db-CONFIRM#2] 账单里有上一轮之外的待确认批次（in_current_round=false）：确认的 expected_batches 恰为全部两个 DRAFT 批次（含它），不含已完成与已取消的批次",
+    "test/spec/frontend/admin-settle-bills-write/confirm.test.ts > [AC-F1-08db-CONFIRM#3] 【定时执行】：选定执行时间后弹动态码，POST confirm 带 settle_mode=SCHEDULED 与所选时刻的 scheduled_at、全部待确认批次；成功后两批次显示「已确认」与「定时执行」",
+    "test/spec/frontend/admin-settle-bills-write/confirm.test.ts > [AC-F1-08db-CONFIRM#4] 定时执行未选时间：提交不可用，或提交后不确认（不发请求，或请求收 20001 [scheduled_at]）并在确认框里时间旁提示；两批次仍待确认",
+    "test/spec/frontend/admin-settle-bills-write/confirm.test.ts > [AC-F1-08db-CONFIRM#5] 定时时刻在确认时被服务端拒绝（20001 [scheduled_at]）：确认框仍在、在时间旁提示，不显示成功；两批次仍待确认",
+    "test/spec/frontend/admin-settle-bills-write/entries.test.ts > [AC-F1-08db-ENTRY#1] 已出账账单（两个待确认批次）：标题区有【确认立即执行】【定时执行】，每个待确认批次都能发起【驳回】（批次行里，或标题区选定该批次），批次行没有【撤销定时】【继续执行】；有待确认批次时没有可用的【发起补充批次】；写按钮名不含「重试」；只打开驳回框不发 POST、不弹动态码",
+    "test/spec/frontend/admin-settle-bills-write/entries.test.ts > [AC-F1-08db-ENTRY#2] 结算中账单：PARTIAL 批次只有【继续执行】、定时未开始的 CONFIRMED 批次只有【撤销定时】，页面上没有可用的【驳回】；没有待确认批次时标题区没有可用的【确认立即执行】【定时执行】，有【发起补充批次】；点不可用的写入口不发 POST",
+    "test/spec/frontend/admin-settle-bills-write/entries.test.ts > [AC-F1-08db-ENTRY#3] 已结算账单（批次全部 DONE）：批次行没有任何写入口、标题区没有确认 / 定时 / 驳回，只有【发起补充批次】；出账中账单没有任何可用写入口，点写名按钮不发 POST",
+    "test/spec/frontend/admin-settle-bills-write/entries.test.ts > [AC-F1-08db-ENTRY#4] 超管看账单（含上一轮之外的待确认批次）：【确认立即执行】【定时执行】可用，两个待确认批次（含 in_current_round=false 的）都能发起【驳回】，已完成与已取消的批次没有写入口",
+    "test/spec/frontend/admin-settle-bills-write/entries.test.ts > [AC-F1-08db-ENTRY#5] 结算中账单里已确认、settle_mode=IMMEDIATE 且未开始的批次：没有可用的【撤销定时】（也没有【驳回】【继续执行】），点该名字的按钮不发 POST、不弹动态码；同一账单的 PARTIAL 批次仍有【继续执行】",
+    "test/spec/frontend/admin-settle-bills-write/pages.browser.test.ts > [AC-F1-08db-BROWSER#1] /settle-bills：【查看】2026-08，【确认立即执行】弹确认框（说明一次确认全部待确认批次），提交后弹动态码，验证后 POST confirm 带两批次的 expected_batches 与令牌，两批次显示「已确认」；只发三个读、动态码与 confirm",
+    "test/spec/frontend/admin-settle-bills-write/stepup.test.ts > [AC-F1-08db-STEPUP#1] 连续两次写操作（先【撤销定时】再【继续执行】）各弹一次动态码，第二次写在第二次验证之后才发，两次写带不同的令牌",
+    "test/spec/frontend/admin-settle-bills-write/stepup.test.ts > [AC-F1-08db-STEPUP#2] 取消动态码后不发写请求、批次不变；再次【继续执行】时重新弹动态码，验证后才发 POST resume",
+    "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#1] 已结算账单【发起补充批次】：确认 → 动态码 → POST supplement-batches，请求体只有 platform=taobao，带 Idempotency-Key 与动态码令牌；按返回刷新详情，新的补充批次以「待确认」出现，账单出现【确认立即执行】",
+    "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#2] 补充校验无可纳入数据（outcome=generated、batch_ids 为空）：提交后新出现无可纳入数据的提示，不出现新批次、不显示空批次",
+    "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#3] 补充批次同一次发起收 10003 后重弹动态码，重发沿用同一个 Idempotency-Key、换新令牌；之后重新打开对话框再发起时换新的 Idempotency-Key",
+    "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#4] 发起返回 outcome=duplicate（同一时刻已发起过）：不出现新批次，并重新拉详情",
+    "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#5] 发起收 20001 data.reason=pending_draft：提交后新出现可识别的原因提示（对话框打开时已有的文字不算），不出现新批次",
+    "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#5] 发起收 20001 data.reason=credit_disabled：提交后新出现可识别的原因提示（对话框打开时已有的文字不算），不出现新批次",
+    "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#6] 【发起补充批次】对话框里连点提交：只弹一次动态码，验证后只发一次 POST supplement-batches，只生成一个补充批次",
+    "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#7] 发起收 50001 后不出现新批次、对话框仍在；在同一对话框再次提交时沿用同一个 Idempotency-Key 与同样的请求体，成功后新的补充批次出现"
+  ],
+  "risk_note": "Admin 月结账单 page writes (apps/admin pages/settle-bills/**, texts/settle-bills.ts). Contract CT-24zd confirmAdminSettleBill, cancelAdminSettleBatchSchedule, rejectAdminSettleBatch, resumeAdminSettleBatch, createAdminSettleSupplementBatches; backend B2-09f merged; BR-FUND-04 ⑥ etc. quoted in the brief (refs empty: the rule text is too large for a brief). settle.bill only (fund.view and upload / adjust-only accounts see no write entry); a totp step-up for every write and none for reads; confirm sends expected_batches exactly the bill's DRAFT batches with row versions (including in_current_round=false), IMMEDIATE without scheduled_at; cancel schedule only for CONFIRMED + SCHEDULED, reject with a required reason, resume a PARTIAL batch, supplement batches with Idempotency-Key reused on retry; 20001 / 20902 / bill_not_ready handled with a refresh; double click sends once. Prerequisite test-change F1-08da (#1981) merged. No frozen test changed here. Rule tests written by an independent Claude in three rounds (round 3 fixed one self-contradictory helper assertion reported by the implementer, verified by the orchestrator and re-reviewed); Claude spec-test review r1 fail (2 S1) then r2 pass, r3 increment pass; red on the test machine (red/1–3). Implementation by Opus 5.5; test machine verify-fast and browser green. Adversarial money review by a fresh independent Claude r1 pass with one S2. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, one S2 (local clock pre-check of scheduled_at); independent Claude because Codex is unavailable until 2026-11-02"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (2 S1), round 2 pass, round 3 (one helper assertion fix) pass; tests written by an independent Claude (claude-run.sh)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "task": "F1-08db",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "7f35c5163c59219b1458853843cc6d96257a7731",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "7f35c5163c59219b1458853843cc6d96257a7731",
+      "tree": "f16518e50aec4f72dede23501998ece2be45dcde",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T04:23:23Z",
+      "finished_at": "2026-10-31T04:25:12Z",
+      "gate": {
+        "commit": "c8551e9b72a8bc9e8a3ed44384d311a2670e820f",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-settle-bills-write/access.test.ts > [AC-F1-08db-ACCESS#1] 只持 fund.view：已出账与结算中账单的详情、批次明细都没有可用的写入口，点写名按钮也不发 POST、不弹动态码；同一账单持 settle.bill 时出现【确认立即执行】【定时执行】",
+        "test/spec/frontend/admin-settle-bills-write/access.test.ts > [AC-F1-08db-ACCESS#2] 只持 settle.statement_upload：列表与详情地址都没有写入口、不发 POST、不弹动态码（无权限照旧）；持 settle.bill 时结算中账单的 PARTIAL 批次有【继续执行】、定时批次有【撤销定时】",
+        "test/spec/frontend/admin-settle-bills-write/access.test.ts > [AC-F1-08db-ACCESS#2] 只持 fund.settle_adjust：列表与详情地址都没有写入口、不发 POST、不弹动态码（无权限照旧）；持 settle.bill 时结算中账单的 PARTIAL 批次有【继续执行】、定时批次有【撤销定时】",
+        "test/spec/frontend/admin-settle-bills-write/access.test.ts > [AC-F1-08db-ACCESS#3] settle.bill 打开列表、结算中账单详情与批次明细都不弹动态码、不发 step-up 请求；点【撤销定时】并在确认框提交后才弹动态码，取消动态码不发写请求",
+        "test/spec/frontend/admin-settle-bills-write/access.test.ts > [AC-F1-08db-ACCESS#3] 超管 打开列表、结算中账单详情与批次明细都不弹动态码、不发 step-up 请求；点【撤销定时】并在确认框提交后才弹动态码，取消动态码不发写请求",
+        "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-CANCEL#1] 定时未开始的批次【撤销定时】：确认框 → 动态码 → POST cancel-schedule，请求体只有 expected_row_version=1；成功提示，该批次变回「待确认」，账单出现【确认立即执行】",
+        "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-CANCEL#2] 撤销定时前批次已到点开始执行：POST 收 20902，提示状态已变化并重新拉详情，该批次显示「执行中」且不再有【撤销定时】",
+        "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-REJECT#1] 待确认批次【驳回】：原因空或全空白时不驳回（不发请求，或收 20001 [reason]）并在原因旁提示；填原因后动态码 → POST reject，请求体为 expected_row_version=3 与去首尾空白后的原因；成功后该批次「已取消」并显示原因，另一批次仍待确认",
+        "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-REJECT#2] 驳回前另一位财务已确认全部批次：POST reject 收 20902，提示状态已变化并重新拉详情，两批次显示「已确认」，不再有【驳回】",
+        "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-RESUME#1] PARTIAL 批次【继续执行】：确认框 → 动态码 → POST resume，请求体只有 expected_row_version=4；成功提示，该批次显示「执行中」，不再有【继续执行】",
+        "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-RESUME#2] 继续执行收 20001 data.reason=switches_off：给出可识别的原因提示，不显示成功，批次仍为「部分完成」",
+        "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-RESUME#2] 继续执行收 20001 data.reason=snapshot_pending：给出可识别的原因提示，不显示成功，批次仍为「部分完成」",
+        "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts > [AC-F1-08db-RESUME#3] 继续执行前批次已被他人恢复：POST resume 收 20902，提示状态已变化并重新拉详情，该批次显示「执行中」",
+        "test/spec/frontend/admin-settle-bills-write/confirm-errors.test.ts > [AC-F1-08db-CONFIRM#6] 打开详情后另一位财务驳回了京东批次：确认收 20902，提示状态已变化并重新拉详情，京东批次显示「已取消」，淘宝批次仍待确认",
+        "test/spec/frontend/admin-settle-bills-write/confirm-errors.test.ts > [AC-F1-08db-CONFIRM#7] 确认收 20001 data.reason=bill_not_ready：给出账单尚未出账完成一类的提示，不显示成功，批次仍待确认",
+        "test/spec/frontend/admin-settle-bills-write/confirm-errors.test.ts > [AC-F1-08db-CONFIRM#8] 确认收 10003（动态码令牌失效）：重新弹动态码，验证后用新令牌重发同样的请求体并成功",
+        "test/spec/frontend/admin-settle-bills-write/confirm.test.ts > [AC-F1-08db-CONFIRM#1] 【确认立即执行】：确认框说明一次确认该账单全部待确认批次；提交（连点两次）后先弹动态码，验证后只发一个 POST confirm，带动态码令牌，expected_batches 恰为两个待确认批次的 id 与 row_version，不带 scheduled_at；成功提示，两批次显示「已确认」",
+        "test/spec/frontend/admin-settle-bills-write/confirm.test.ts > [AC-F1-08db-CONFIRM#2] 账单里有上一轮之外的待确认批次（in_current_round=false）：确认的 expected_batches 恰为全部两个 DRAFT 批次（含它），不含已完成与已取消的批次",
+        "test/spec/frontend/admin-settle-bills-write/confirm.test.ts > [AC-F1-08db-CONFIRM#3] 【定时执行】：选定执行时间后弹动态码，POST confirm 带 settle_mode=SCHEDULED 与所选时刻的 scheduled_at、全部待确认批次；成功后两批次显示「已确认」与「定时执行」",
+        "test/spec/frontend/admin-settle-bills-write/confirm.test.ts > [AC-F1-08db-CONFIRM#4] 定时执行未选时间：提交不可用，或提交后不确认（不发请求，或请求收 20001 [scheduled_at]）并在确认框里时间旁提示；两批次仍待确认",
+        "test/spec/frontend/admin-settle-bills-write/confirm.test.ts > [AC-F1-08db-CONFIRM#5] 定时时刻在确认时被服务端拒绝（20001 [scheduled_at]）：确认框仍在、在时间旁提示，不显示成功；两批次仍待确认",
+        "test/spec/frontend/admin-settle-bills-write/entries.test.ts > [AC-F1-08db-ENTRY#1] 已出账账单（两个待确认批次）：标题区有【确认立即执行】【定时执行】，每个待确认批次都能发起【驳回】（批次行里，或标题区选定该批次），批次行没有【撤销定时】【继续执行】；有待确认批次时没有可用的【发起补充批次】；写按钮名不含「重试」；只打开驳回框不发 POST、不弹动态码",
+        "test/spec/frontend/admin-settle-bills-write/entries.test.ts > [AC-F1-08db-ENTRY#2] 结算中账单：PARTIAL 批次只有【继续执行】、定时未开始的 CONFIRMED 批次只有【撤销定时】，页面上没有可用的【驳回】；没有待确认批次时标题区没有可用的【确认立即执行】【定时执行】，有【发起补充批次】；点不可用的写入口不发 POST",
+        "test/spec/frontend/admin-settle-bills-write/entries.test.ts > [AC-F1-08db-ENTRY#3] 已结算账单（批次全部 DONE）：批次行没有任何写入口、标题区没有确认 / 定时 / 驳回，只有【发起补充批次】；出账中账单没有任何可用写入口，点写名按钮不发 POST",
+        "test/spec/frontend/admin-settle-bills-write/entries.test.ts > [AC-F1-08db-ENTRY#4] 超管看账单（含上一轮之外的待确认批次）：【确认立即执行】【定时执行】可用，两个待确认批次（含 in_current_round=false 的）都能发起【驳回】，已完成与已取消的批次没有写入口",
+        "test/spec/frontend/admin-settle-bills-write/entries.test.ts > [AC-F1-08db-ENTRY#5] 结算中账单里已确认、settle_mode=IMMEDIATE 且未开始的批次：没有可用的【撤销定时】（也没有【驳回】【继续执行】），点该名字的按钮不发 POST、不弹动态码；同一账单的 PARTIAL 批次仍有【继续执行】",
+        "test/spec/frontend/admin-settle-bills-write/pages.browser.test.ts > [AC-F1-08db-BROWSER#1] /settle-bills：【查看】2026-08，【确认立即执行】弹确认框（说明一次确认全部待确认批次），提交后弹动态码，验证后 POST confirm 带两批次的 expected_batches 与令牌，两批次显示「已确认」；只发三个读、动态码与 confirm",
+        "test/spec/frontend/admin-settle-bills-write/stepup.test.ts > [AC-F1-08db-STEPUP#1] 连续两次写操作（先【撤销定时】再【继续执行】）各弹一次动态码，第二次写在第二次验证之后才发，两次写带不同的令牌",
+        "test/spec/frontend/admin-settle-bills-write/stepup.test.ts > [AC-F1-08db-STEPUP#2] 取消动态码后不发写请求、批次不变；再次【继续执行】时重新弹动态码，验证后才发 POST resume",
+        "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#1] 已结算账单【发起补充批次】：确认 → 动态码 → POST supplement-batches，请求体只有 platform=taobao，带 Idempotency-Key 与动态码令牌；按返回刷新详情，新的补充批次以「待确认」出现，账单出现【确认立即执行】",
+        "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#2] 补充校验无可纳入数据（outcome=generated、batch_ids 为空）：提交后新出现无可纳入数据的提示，不出现新批次、不显示空批次",
+        "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#3] 补充批次同一次发起收 10003 后重弹动态码，重发沿用同一个 Idempotency-Key、换新令牌；之后重新打开对话框再发起时换新的 Idempotency-Key",
+        "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#4] 发起返回 outcome=duplicate（同一时刻已发起过）：不出现新批次，并重新拉详情",
+        "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#5] 发起收 20001 data.reason=pending_draft：提交后新出现可识别的原因提示（对话框打开时已有的文字不算），不出现新批次",
+        "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#5] 发起收 20001 data.reason=credit_disabled：提交后新出现可识别的原因提示（对话框打开时已有的文字不算），不出现新批次",
+        "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#6] 【发起补充批次】对话框里连点提交：只弹一次动态码，验证后只发一次 POST supplement-batches，只生成一个补充批次",
+        "test/spec/frontend/admin-settle-bills-write/supplement.test.ts > [AC-F1-08db-SUPPLEMENT#7] 发起收 50001 后不出现新批次、对话框仍在；在同一对话框再次提交时沿用同一个 Idempotency-Key 与同样的请求体，成功后新的补充批次出现"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-settle-bills-write/access.test.ts",
+        "test/spec/frontend/admin-settle-bills-write/batch-actions.test.ts",
+        "test/spec/frontend/admin-settle-bills-write/confirm-errors.test.ts",
+        "test/spec/frontend/admin-settle-bills-write/confirm.test.ts",
+        "test/spec/frontend/admin-settle-bills-write/entries.test.ts",
+        "test/spec/frontend/admin-settle-bills-write/pages.browser.test.ts",
+        "test/spec/frontend/admin-settle-bills-write/stepup.test.ts",
+        "test/spec/frontend/admin-settle-bills-write/supplement.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "10e4f9ecf9c2a357334d192763bda9b5e142197bb8e9dfcb859bd22f4d447c37"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "35a75b8cd1b2c15b0d96f70c90c1d23ba581e00afaf87d1b427838a89200e66f"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "9f9181c78c0d12aed3740305aac863a81f8b1a97",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  }
+}
