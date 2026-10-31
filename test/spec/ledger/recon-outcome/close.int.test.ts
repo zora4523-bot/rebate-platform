@@ -13,6 +13,7 @@ import {
   OUTCOMES,
   ago,
   allDiffs,
+  amountDiff,
   answer,
   auditText,
   audits,
@@ -27,11 +28,13 @@ import {
   holdNow,
   member,
   newKey,
+  orderKey,
   r1Diff,
   seedDiff,
   seedHold,
   sourceOf,
   suite,
+  unionConclusions,
   unionKeys,
   voucherCount,
   withCloseAdmin,
@@ -277,5 +280,20 @@ it('[AC-B2-09h#7] 审计 recon_diff_close 带 outcome（union、ours 各一）�
     const records = (await audits(f, CLOSE_ACTION)).filter((row) => row.target === plain.id);
     expect(records).toHaveLength(1);
     expect(auditText(records[0]!)).not.toContain('"outcome"');
+  });
+});
+
+it('[AC-B2-09h#33] 新开的 #AMT# 差错单和别的单一样：详情原样显示 ref_id，可带自己的 outcome 结案，结论绑这张单的金额，读口归到 order_key', async () => {
+  const f = fixture(s);
+  await withCloseAdmin(f, async (h) => {
+    const key = orderKey();
+    const diff = await r1Diff(f, amountDiff(key, 600n, 1_100n));
+    const reason = '新金额已核对';
+    const data = await closed(await h.close(diff.id, { reason, outcome: 'union' }));
+    const now = await expectConcluded(f, diff, h.recon.id, { reason, outcome: 'union' });
+    expect(data.recon_diff).toEqual(detailView(now));
+    expect(await detailOf(await h.detail(diff.id))).toEqual(data.recon_diff);
+    const read = await unionConclusions(f.db, f.appId, [key]);
+    expect([...read.entries()]).toEqual([[key, [{ expectedFen: 600n, actualFen: 1_100n }]]]);
   });
 });

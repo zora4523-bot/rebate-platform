@@ -6,6 +6,11 @@
 // amounts of its difference: it counts only while the current base and B_settle both equal them,
 // otherwise the amounts are compared as usual; ③ a mismatch after a close opens a new 账单金额不一致
 // difference, at most one for the same amount state, the old one stays closed, the order stays WAITING.
+// CT-24zf contract r3: that difference has ref_id {order_key}#AMT#{base_fen}:{b_settle_fen}, and the
+// bill's first one stays the bare {order_key}. A new one opens only when no difference of this bill and
+// order, bare or #AMT#, has the current amounts (A→B→A does not re-open); order_keys that are prefixes
+// of each other are not mixed up. Several differences on the current amounts: the last one closed with
+// an outcome speaks (closed_at, id descending), across bills too.
 // Real pieces: the close over the admin entry (kit.ts), the bill job and the supplement command
 // (../../settlement/supplement/kit.ts) over the production source reader on the real orders and
 // order_settlements rows, the whole launch over the admin entry
@@ -36,6 +41,7 @@ import {
   BEFORE,
   LATER,
   MONTH,
+  NOW,
   fixture as billingFixture,
   itemsOf,
   main,
@@ -47,21 +53,32 @@ import {
   type Fixture as Billing,
 } from '../../settlement/supplement/kit.ts';
 import {
+  ago,
   allDiffs,
+  amountDiff,
+  amountRef,
   closed,
   ledger,
+  ofOrder,
   r1Diff,
   suite,
   unionConclusions,
   unionDiff,
   withCloseAdmin,
+  type DiffSeed,
   type Fixture,
+  type Resolution,
 } from './kit.ts';
 
 const s = suite();
 const TAOBAO = { platform: 'taobao' };
 const UNION = { reason: '财务核实以联盟为准', outcome: 'union' };
 const OURS = { reason: '财务核实以我方为准', outcome: 'ours' };
+const NO_OUTCOME = { reason: '不下结论' };
+/** After the closes of a supplement test (LAUNCH) and before its launch at 11:00. */
+const AFTER_CLOSE = new Date('2032-07-26T10:30:00+08:00');
+/** The bill month before MONTH, for the differences of another bill. */
+const OTHER_BILL = '2032-05';
 /** BR-FUND-04 例 2: snapshot base 1234 (the shares of 5000 / 1000 / 500 bp). */
 const EXAMPLE = { tlj: 0n, base: 1234n, amounts: [617n, 123n, 61n], userTotal: 801n, retain: 433n };
 
@@ -116,12 +133,19 @@ function launchAt(h: Billing, hour: number) {
   return h.launch({ requestedAt: at });
 }
 
+/** The recheck of the current bill at `hour`:00 of the launch day. */
+function recheckAt(h: Billing, hour: number) {
+  const at = launchMoment(hour);
+  h.clock.set(at);
+  return h.recheck({ requestedAt: at });
+}
+
 /** Closes the open difference of each order with `body`, through the admin entry. */
 async function closeOpen(h: Billing, orders: readonly Order[], body: object): Promise<void> {
   const { diffs } = await state(h);
   await withCloseAdmin(reconOf(h), async (a) => {
     for (const o of orders) {
-      const diff = diffs.find((row) => row.ref_id === o.key && row.status === 'open');
+      const diff = diffs.find((row) => ofOrder(row, o.key) && row.status === 'open');
       expect(diff, o.key).toBeDefined();
       await closed(await a.close(diff!.id, body));
     }
@@ -159,13 +183,18 @@ async function rebateStatus(h: Billing, o: Order): Promise<string> {
   return row.rebate_status;
 }
 
-/** The difference ③ opens on `o` for these amounts: 账单金额不一致 of the same bill, its own key. */
-function openedFor(o: Order, expectedFen: bigint, actualFen: bigint) {
+/** The difference ③ opens on `o` for these amounts: 账单金额不一致 of the same bill, its #AMT# ref_id. */
+function openedFor(
+  o: Order,
+  expectedFen: bigint,
+  actualFen: bigint,
+  refId = amountRef(o.key, expectedFen, actualFen),
+) {
   return expect.objectContaining({
     type: 'settle_amount_mismatch',
     source: 'R1',
     ref_type: 'order',
-    ref_id: o.key,
+    ref_id: refId,
     period: MONTH,
     status: 'open',
     handler_id: null,
@@ -174,8 +203,12 @@ function openedFor(o: Order, expectedFen: bigint, actualFen: bigint) {
     expected_fen: expectedFen,
     actual_fen: actualFen,
     diff_fen: subFen(actualFen, expectedFen),
-    dedupe_key: expect.any(String),
   });
+}
+
+/** The first difference of `o` in this bill: the bare {order_key} is still free. */
+function firstFor(o: Order, expectedFen: bigint, actualFen: bigint) {
+  return openedFor(o, expectedFen, actualFen, o.key);
 }
 
 /** The supplement command on the harness's app, over the production source reader. */
@@ -646,7 +679,7 @@ it('[AC-B2-09h#25] BR-FUND-04 例 2 入账（D10-506 ②）：基数与 B_settle
   expect(await c.voucherLines(platformKey(o))).toEqual(platformLines(o, 440n));
 });
 
-it('[AC-B2-09h#26] D10-506 ③ 结案后又不一致：部分退款或联盟再结算让金额变了，补充发起时新开一张账单金额不一致差错单（本账单、本单、open、当时的金额、带 dedupe 键；同一金额状态的两单各开各的），旧单保持已结案、一个字不变，订单保持 WAITING，不入批不记账；重跑同一金额状态不再开', async () => {
+it('[AC-B2-09h#26] D10-506 ③ 结案后又不一致：部分退款或联盟再结算让金额变了，补充发起时新开一张账单金额不一致差错单（本账单、open、当时的金额，ref_id 是 {order_key}#AMT#{base}:{b_settle}；同一金额状态的两单各开各的），旧单保持已结案、一个字不变，订单保持 WAITING，不入批不记账；同一金额状态重新发起、重新核对都不再开', async () => {
   const h = billingFixture(s.db());
   productionSource(h);
   const refunded = await example(h);
@@ -675,6 +708,7 @@ it('[AC-B2-09h#26] D10-506 ③ 结案后又不一致：部分退款或联盟再�
   expect(after.balances).toEqual([]);
 
   expect((await launchAt(h, 12)).batchIds).toEqual([]);
+  expect((await recheckAt(h, 13)).batchIds).toEqual([]);
   expect((await state(h)).diffs).toEqual(after.diffs);
 });
 
@@ -708,14 +742,14 @@ it('[AC-B2-09h#27] D10-506 ③ 新单照常可再结案：union 后结论绑新�
   expect(read.get(refused.key)).toEqual([{ expectedFen: 1234n, actualFen: 1100n }]);
 });
 
-it('[AC-B2-09h#28] D10-506 ③ 同一金额状态至多一张：以 ours 或不下结论结案后金额变了同样新开；新单结案后重跑不再开；金额回到开过单的状态（首单没有 dedupe 键）也不再开；到新状态才开第三张，各单 dedupe 键互不相同', async () => {
+it('[AC-B2-09h#28] D10-506 ③ 同一金额状态至多一张：以 ours 或不下结论结案后金额变了同样新开；新单结案后重跑不再开；金额回到裸 {order_key} 行的状态也不再开；到新状态才开第三张，各单 ref_id 互不相同', async () => {
   const h = billingFixture(s.db());
   productionSource(h);
   const ours = await example(h);
   const bare = await example(h);
   await main(h);
   await closeOpen(h, [ours], OURS);
-  await closeOpen(h, [bare], { reason: '不下结论' });
+  await closeOpen(h, [bare], NO_OUTCOME);
   await newVersion(h, ours, 2, REFUNDED);
   await newVersion(h, bare, 2, REFUNDED);
 
@@ -741,10 +775,12 @@ it('[AC-B2-09h#28] D10-506 ③ 同一金额状态至多一张：以 ours 或不�
     userTotal: 325n,
   });
   expect((await launchAt(h, 14)).batchIds).toEqual([]);
-  const third = (await state(h)).diffs.filter((row) => row.ref_id === ours.key);
+  const third = (await state(h)).diffs.filter((row) => ofOrder(row, ours.key));
   expect(third).toHaveLength(3);
   expect(third).toContainEqual(openedFor(ours, 500n, 1100n));
-  expect(new Set(third.map((row) => row.dedupe_key)).size).toBe(3);
+  expect(third.map((row) => row.ref_id).sort()).toEqual(
+    [ours.key, amountRef(ours.key, 600n, 1100n), amountRef(ours.key, 500n, 1100n)].sort(),
+  );
 });
 
 it('[AC-B2-09h#29] D10-506 ③ 账单日任务同样：账单日前已结案、金额已变的单新开一张差错单并计入差错、不入批，旧单不变；金额没变的已结案 union 单入批，不重复开', async () => {
@@ -777,4 +813,262 @@ it('[AC-B2-09h#29] D10-506 ③ 账单日任务同样：账单日前已结案、�
   expect(after.diffs).toEqual(expect.arrayContaining([...seeded, openedFor(stale, 850n, 1700n)]));
   expect(after.bills).toEqual([expect.objectContaining({ error_count: 1, held_count: 0 })]);
   expect(await rebateStatus(h, stale)).toBe('WAITING');
+
+  // Back on the bill day, for the job's asset snapshot of the day before.
+  h.clock.set(NOW);
+  expect((await h.run()).outcome).toBe('duplicate');
+  expect((await h.run('taobao', new Date('2032-07-24T02:00:00+08:00'))).outcome).toBe('duplicate');
+  expect((await state(h)).diffs).toEqual(after.diffs);
+});
+
+it('[AC-B2-09h#34] 金额 A→B→A 不重开：回到开过单的金额时差错单不再增加，该金额的 union 结论重新适用、按联盟结算额入批（中间状态的单以 ours 结案或还开着都一样，原样不动）；停在 B、B 上 ours 的单不入批', async () => {
+  const h = billingFixture(s.db());
+  productionSource(h);
+  const back = await example(h);
+  const pending = await example(h);
+  const stays = await example(h);
+  await billAndClose(h, [back, pending, stays], UNION);
+  for (const o of [back, pending, stays]) await newVersion(h, o, 2, REFUNDED);
+  await launchAt(h, 11);
+  await closeOpen(h, [back, stays], OURS);
+  const middle = (await state(h)).diffs;
+  expect(middle).toHaveLength(6);
+  expect(middle).toContainEqual(openedFor(pending, 600n, 1100n));
+  await newVersion(h, back, 3, RESTORED);
+  await newVersion(h, pending, 3, RESTORED);
+
+  expect((await launchAt(h, 12)).batchIds).toHaveLength(1);
+  const after = await state(h);
+  const items = itemsOf(after, supplements(after));
+  expect(items).toHaveLength(2);
+  expect(items).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ order_id: back.id, settle_seq: 1, b_settle_fen: 1100n }),
+      expect.objectContaining({ order_id: pending.id, settle_seq: 1, b_settle_fen: 1100n }),
+    ]),
+  );
+  expect(after.diffs).toEqual(middle);
+  expect(await rebateStatus(h, stays)).toBe('WAITING');
+});
+
+it('[AC-B2-09h#35] 账单日任务：多张差错单都匹配当前金额时取最近结案、有 outcome 的那张（closed_at 倒序，不看账单月先后；跨账单、#AMT# 行同理）：后结案的 ours 取消、后结案的 union 生效、后结案无 outcome 的不算数；取消后本账单开首张裸行', async () => {
+  const h = billingFixture(s.db());
+  productionSource(h);
+  const f = reconOf(h);
+  const conclude = (
+    o: Order,
+    period: string,
+    minutes: number,
+    resolution: Resolution,
+    refId = o.key,
+  ) =>
+    unionDiff(f, {
+      period,
+      ref_id: refId,
+      expected_fen: 850n,
+      actual_fen: 1700n,
+      diff_fen: 850n,
+      closed_at: ago(f, minutes),
+      resolution,
+    });
+  const overruled = await settled(h, 2000n);
+  await conclude(overruled, '2032-04', 30, UNION);
+  await conclude(overruled, OTHER_BILL, 20, OURS);
+  const upheld = await settled(h, 2000n);
+  await conclude(upheld, '2032-04', 30, OURS);
+  await conclude(upheld, OTHER_BILL, 20, UNION);
+  const silent = await settled(h, 2000n);
+  await conclude(silent, '2032-04', 30, UNION);
+  await conclude(silent, OTHER_BILL, 20, NO_OUTCOME);
+  const earlierBill = await settled(h, 2000n);
+  await conclude(earlierBill, OTHER_BILL, 30, OURS);
+  await conclude(earlierBill, '2032-04', 20, UNION);
+  const onAmountRow = await settled(h, 2000n);
+  await conclude(onAmountRow, '2032-04', 30, OURS);
+  await conclude(onAmountRow, OTHER_BILL, 20, UNION, amountRef(onAmountRow.key, 850n, 1700n));
+  const offAmountRow = await settled(h, 2000n);
+  await conclude(offAmountRow, '2032-04', 30, UNION);
+  await conclude(offAmountRow, OTHER_BILL, 20, OURS, amountRef(offAmountRow.key, 850n, 1700n));
+  const before = await allDiffs(f);
+
+  await main(h);
+  const after = await state(h);
+  expect(after.items.map((item) => item.order_id).sort()).toEqual(
+    [upheld.id, silent.id, earlierBill.id, onAmountRow.id].sort(),
+  );
+  for (const item of after.items) expect(item.b_settle_fen).toBe(1700n);
+  const results = (await billValidations(h)).map((v) => [v.orderKey, v.result]).sort();
+  expect(results).toEqual(
+    [
+      [upheld.key, 'candidate'],
+      [silent.key, 'candidate'],
+      [earlierBill.key, 'candidate'],
+      [onAmountRow.key, 'candidate'],
+      [overruled.key, 'amount_mismatch'],
+      [offAmountRow.key, 'amount_mismatch'],
+    ].sort(),
+  );
+  expect(after.bills).toEqual([expect.objectContaining({ error_count: 2, held_count: 0 })]);
+  expect(after.diffs).toHaveLength(before.length + 2);
+  expect(after.diffs).toEqual(
+    expect.arrayContaining([
+      ...before,
+      firstFor(overruled, 850n, 1700n),
+      firstFor(offAmountRow, 850n, 1700n),
+    ]),
+  );
+});
+
+it('[AC-B2-09h#36] 账单日任务的新开条件只看本账单本单：别的账单月金额相等的单不算已有，本账单首张是裸 {order_key} 行、裸行被占才带金额指纹；order_key 互为前缀的别单不算已有，它的 union 结论也不算本单的', async () => {
+  const h = billingFixture(s.db());
+  productionSource(h);
+  const f = reconOf(h);
+  const concluded = (refId: string, period: string, actualFen: bigint, resolution: Resolution) =>
+    unionDiff(f, {
+      period,
+      ref_id: refId,
+      expected_fen: 850n,
+      actual_fen: actualFen,
+      diff_fen: subFen(actualFen, 850n),
+      resolution,
+    });
+  const elsewhere = await settled(h, 2000n);
+  await concluded(elsewhere.key, OTHER_BILL, 1700n, OURS);
+  const taken = await settled(h, 2000n);
+  await concluded(taken.key, MONTH, 1500n, OURS);
+  await concluded(amountRef(taken.key, 850n, 1700n), OTHER_BILL, 1700n, OURS);
+  const cousin = await settled(h, 2000n);
+  const cousinKey = `${cousin.key}0`;
+  await concluded(cousinKey, MONTH, 1700n, UNION);
+  await concluded(amountRef(cousinKey, 850n, 1700n), OTHER_BILL, 1700n, UNION);
+  const crowded = await settled(h, 2000n);
+  await concluded(crowded.key, MONTH, 1500n, OURS);
+  await concluded(amountRef(`${crowded.key}0`, 850n, 1700n), MONTH, 1700n, OURS);
+  const before = await allDiffs(f);
+
+  await main(h);
+  const after = await state(h);
+  expect(after.batches).toEqual([]);
+  expect(after.bills).toEqual([expect.objectContaining({ error_count: 4, held_count: 0 })]);
+  expect(after.diffs).toHaveLength(before.length + 4);
+  expect(after.diffs).toEqual(
+    expect.arrayContaining([
+      ...before,
+      firstFor(elsewhere, 850n, 1700n),
+      openedFor(taken, 850n, 1700n),
+      firstFor(cousin, 850n, 1700n),
+      openedFor(crowded, 850n, 1700n),
+    ]),
+  );
+});
+
+it('[AC-B2-09h#37] 账单日任务的新开条件看本账单该单的任何差错单：open / processing / written_off 的单金额等于当前不开，裸行或 #AMT# 行任一张等于当前不开（A→B→A 同样）；全都不等才开，裸行还开着也一样，旧单不动', async () => {
+  const h = billingFixture(s.db());
+  productionSource(h);
+  const f = reconOf(h);
+  const diffOf = (refId: string, actualFen: bigint, patch: DiffSeed = {}) =>
+    r1Diff(f, {
+      period: MONTH,
+      ref_id: refId,
+      expected_fen: 850n,
+      actual_fen: actualFen,
+      diff_fen: subFen(actualFen, 850n),
+      ...patch,
+    });
+  const closedOurs = { status: 'closed', closed_at: ago(f, 5), resolution: OURS };
+  const stale = await settled(h, 2000n);
+  await diffOf(stale.key, 1500n);
+  const processing = await settled(h, 2000n);
+  await diffOf(processing.key, 1700n, { status: 'processing' });
+  const written = await settled(h, 2000n);
+  await diffOf(written.key, 1700n, { status: 'written_off', closed_at: ago(f, 5) });
+  const onAmountRow = await settled(h, 2000n);
+  await diffOf(onAmountRow.key, 1500n, closedOurs);
+  await diffOf(amountRef(onAmountRow.key, 850n, 1700n), 1700n, closedOurs);
+  const returned = await settled(h, 2000n);
+  await diffOf(returned.key, 1700n, closedOurs);
+  await diffOf(amountRef(returned.key, 850n, 1500n), 1500n, closedOurs);
+  const before = await allDiffs(f);
+
+  await main(h);
+  const after = await state(h);
+  expect(after.batches).toEqual([]);
+  expect(after.bills).toEqual([expect.objectContaining({ error_count: 5, held_count: 0 })]);
+  expect(after.diffs).toHaveLength(before.length + 1);
+  expect(after.diffs).toEqual(expect.arrayContaining([...before, openedFor(stale, 850n, 1700n)]));
+});
+
+it('[AC-B2-09h#38] 补充发起同样取最近结案、有 outcome 的那张：本账单结案后别的账单又结案同金额的单时听后者（ours 取消、union 生效），后结案无 outcome 的不算数；本账单已有该金额的单，差错单不增加', async () => {
+  const h = billingFixture(s.db());
+  productionSource(h);
+  const f = reconOf(h);
+  const overruled = await example(h);
+  const upheld = await example(h);
+  const silent = await example(h);
+  await main(h);
+  await closeOpen(h, [overruled, silent], UNION);
+  await closeOpen(h, [upheld], OURS);
+  const later = (o: Order, resolution: Resolution) =>
+    unionDiff(f, { period: OTHER_BILL, ref_id: o.key, closed_at: AFTER_CLOSE, resolution });
+  await later(overruled, OURS);
+  await later(upheld, UNION);
+  await later(silent, NO_OUTCOME);
+  const concluded = (await state(h)).diffs;
+
+  expect((await launchAt(h, 11)).batchIds).toHaveLength(1);
+  const after = await state(h);
+  const items = itemsOf(after, supplements(after));
+  expect(items).toHaveLength(2);
+  expect(items).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ order_id: upheld.id, settle_seq: 1, b_settle_fen: 1100n }),
+      expect.objectContaining({ order_id: silent.id, settle_seq: 1, b_settle_fen: 1100n }),
+    ]),
+  );
+  const results = (await validations(h)).map((v) => [v.orderKey, v.result]).sort();
+  expect(results).toEqual(
+    [
+      [upheld.key, 'candidate'],
+      [silent.key, 'candidate'],
+      [overruled.key, 'amount_mismatch'],
+    ].sort(),
+  );
+  expect(after.diffs).toEqual(concluded);
+});
+
+it('[AC-B2-09h#39] 补充发起的新开条件：裸行还开着也按当前金额新开，旧单不动；order_key 互为前缀的别单、别的账单月的同金额单都不算已有；本账单已有该金额的 #AMT# 行不开', async () => {
+  const h = billingFixture(s.db());
+  productionSource(h);
+  const f = reconOf(h);
+  const stale = await example(h);
+  const cousin = await example(h);
+  const elsewhere = await example(h);
+  const same = await example(h);
+  await main(h);
+  await closeOpen(h, [cousin, elsewhere, same], OURS);
+  await unionDiff(f, {
+    ...amountDiff(`${cousin.key}0`, 600n, 1100n),
+    period: MONTH,
+    resolution: OURS,
+  });
+  await unionDiff(f, {
+    ...amountDiff(elsewhere.key, 600n, 1100n),
+    period: OTHER_BILL,
+    resolution: OURS,
+  });
+  await unionDiff(f, { ...amountDiff(same.key, 600n, 1100n), period: MONTH, resolution: OURS });
+  for (const o of [stale, cousin, elsewhere, same]) await newVersion(h, o, 2, REFUNDED);
+  const before = (await state(h)).diffs;
+
+  expect((await launchAt(h, 11)).batchIds).toEqual([]);
+  const after = (await state(h)).diffs;
+  expect(after).toHaveLength(before.length + 3);
+  expect(after).toEqual(
+    expect.arrayContaining([
+      ...before,
+      openedFor(stale, 600n, 1100n),
+      openedFor(cousin, 600n, 1100n),
+      openedFor(elsewhere, 600n, 1100n),
+    ]),
+  );
 });

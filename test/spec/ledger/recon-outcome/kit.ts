@@ -7,12 +7,18 @@
 // Real pieces: the admin entry of ../admin-recon-close/kit.ts, ledger's public read port, PostgreSQL
 // through @couli/db/testing as couli_app, Redis for the admin sessions. Synthetic: the recon_diffs,
 // users and withdraw_holds rows, the admin accounts. No real user or merchant data.
+// A later difference of an order has ref_id {order_key}#AMT#{base_fen}:{b_settle_fen} (contract
+// closeAdminReconDiff r3), the bill's bare {order_key} row being taken.
 // The shape of the read port (D10-506 ②, frozen here because the ruling names only its content):
-// order_key → every 「以联盟为准」 conclusion of that order, each with the amounts it was reached on.
-// An order can have several (D10-506 ③ re-opens a difference, and another bill month has its own), so
-// one pair per key would lose the ones the current amounts might equal.
+// order_key, also for a #AMT# row → the amounts on which the order's conclusion stands at
+// 「以联盟为准」. An order can have several differences (D10-506 ③ re-opens one, and another bill month
+// has its own), so one pair per key would lose the amounts the current ones might equal. Differences
+// of the same amounts are one state and the last one closed with an outcome speaks for it (closed_at,
+// id descending, CT-24zf contract r3 S2): a later `ours` takes the state away, a later close without
+// outcome changes nothing, and the state is answered once.
 import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
+import { subFen } from '@couli/money';
 import type { Kysely } from 'kysely';
 import { expect } from 'vitest';
 import { readOnly } from '../../settlement/bill-ports/kit.ts';
@@ -26,6 +32,7 @@ import {
 } from '../admin-recon-close/kit.ts';
 import type { DiffSeed, Resolution } from '../admin-recon-diffs/kit.ts';
 
+export type { DiffSeed, Resolution };
 export {
   CLOSE_ACTION,
   FAULT_POINTS,
@@ -74,6 +81,26 @@ export const PERIOD = '2026-09';
 /** A synthetic order_key (`<platform>:<sub_order_id>`, recon_diffs.ref_id of an order). */
 export function orderKey(): string {
   return `taobao:synthetic-${randomUUID()}`;
+}
+
+/** The ref_id of a later difference of `key`, with the amount state it was opened on. */
+export function amountRef(key: string, baseFen: bigint, bSettleFen: bigint): string {
+  return `${key}#AMT#${String(baseFen)}:${String(bSettleFen)}`;
+}
+
+/** The ref_id and amounts of a later difference of `key`, a patch for r1Diff and unionDiff. */
+export function amountDiff(key: string, baseFen: bigint, bSettleFen: bigint): DiffSeed {
+  return {
+    ref_id: amountRef(key, baseFen, bSettleFen),
+    expected_fen: baseFen,
+    actual_fen: bSettleFen,
+    diff_fen: subFen(bSettleFen, baseFen),
+  };
+}
+
+/** Whether `row` is a difference of the order `key`: its bare row or one of its #AMT# rows. */
+export function ofOrder(row: Pick<DiffRow, 'ref_id'>, key: string): boolean {
+  return row.ref_id === key || row.ref_id.startsWith(`${key}#AMT#`);
 }
 
 /** An R1 order difference of the fixture's app, open unless patched (例 2's amounts). */
