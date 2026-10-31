@@ -59,7 +59,7 @@ export type ReconDiffRestoreRefusal = 'restore_not_supported' | 'restore_user_de
 
 type RestoreRole = 'self' | 'share' | 'direct' | 'indirect';
 
-/** commission's read of the snapshot (structural, as bill/job.ts). */
+/** commission's version-independent read of the snapshot's attribution (structural). */
 export interface RestoreSnapshot {
   readonly beneficiaries: readonly {
     readonly userId: string;
@@ -70,12 +70,8 @@ export interface RestoreSnapshot {
 
 type ReadRestoreSnapshot = (
   trx: Transaction<DB>,
-  selection: {
-    readonly appId: string;
-    readonly orderId: string;
-    readonly commissionVersion: number;
-  },
-) => Promise<RestoreSnapshot | null>;
+  selection: { readonly appId: string; readonly orderId: string },
+) => Promise<RestoreSnapshot>;
 
 type AppendRestoreEvent = (
   trx: Transaction<DB>,
@@ -103,7 +99,10 @@ export interface AdminReconRestorePorts {
   readonly lockUsers: LockRestoreUsers;
   /** identity createUserDeletionStatusReader (users.status only, BR-CALC-13). */
   readonly deletionStatus: (db: Kysely<DB>) => UserDeletionStatusReader;
-  /** commission readCommissionSnapshot. */
+  /**
+   * commission readCommissionAttribution: only beneficiaries and ratios are read, so a
+   * commission_version restated after the credit (BR-FUND-01 R9b) cannot fail the restore.
+   */
   readonly readRestoreSnapshot: ReadRestoreSnapshot;
   /** commission appendBeneficiaryEvent. */
   readonly appendBeneficiaryEvent: AppendRestoreEvent;
@@ -325,12 +324,7 @@ export function restoreAdminReconDiff(
       if (order.booked_base_fen === null) {
         throw new Error('settlement restore: order without a booked base');
       }
-      const snapshot = await deps.readRestoreSnapshot(trx, {
-        appId,
-        orderId,
-        commissionVersion: order.commission_version,
-      });
-      if (snapshot === null) throw new Error('settlement restore: order has no snapshot');
+      const snapshot = await deps.readRestoreSnapshot(trx, { appId, orderId });
       const key = orderKey(locator.platform, locator.sub_order_id);
       const { beneficiaries } = await getOrderNets(trx, { appId, orderKey: key });
 

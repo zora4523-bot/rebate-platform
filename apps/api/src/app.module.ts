@@ -3913,11 +3913,11 @@ export class AppModule {
                 registerDiff: registerReconDiff,
                 readUnionAuthoritative: readUnionAuthoritativeOrderKeys,
                 // B2-09g: the account-appeal restore (order.restore, step-up totp): identity's
-                // users row lock and deletion status, commission's snapshot read and event
+                // users row lock and deletion status, commission's attribution read and event
                 // writer, the ledger with the negative-balance recovery of payout.
                 lockUsers: lockUsersForUpdate,
                 deletionStatus: (db) => createUserDeletionStatusReader({ db }),
-                readRestoreSnapshot: readCommissionSnapshot,
+                readRestoreSnapshot: readCommissionAttribution,
                 appendBeneficiaryEvent,
                 ledger: ({ clock, eventBus }) =>
                   createLedger({
