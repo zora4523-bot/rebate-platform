@@ -94,6 +94,8 @@ it('knows the funds and attribution tables by name, with or without schema and q
     // F1-02zu: invite reward grants and budget counters (CT-25b).
     'invite_rewards',
     'invite_reward_budgets',
+    // B2-08a: the yearly withholding ledger of withdrawals (BR-WDR-20), registered by name.
+    'tax_ytd',
     // B2-04c: settlement tables no prefix matches.
     'beneficiary_credits',
     'recon_union',
@@ -211,6 +213,8 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'daily_balances',
     'invite_rewards',
     'invite_reward_budgets',
+    // B2-08a: the yearly withholding ledger of withdrawals (BR-WDR-20), registered by name.
+    'tax_ytd',
     // B2-04b: settlement-side ledger tables.
     'recon_diffs',
     'asset_snapshots',

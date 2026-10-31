@@ -1,0 +1,144 @@
+{
+  "task": "B2-08a",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "b284b32fc153082dbf1f1bdc9b7f753ba123eec2",
+  "red_tests": [
+    "test/spec/payout/tax-ytd-schema/access.int.test.ts > [BR-WDR-20] tax_ytd couli_app 可读、可插入，只可改三个累计与 updated_at（列级），不可删除或清表",
+    "test/spec/payout/tax-ytd-schema/access.int.test.ts > [BR-WDR-20] tax_ytd couli_payout 只读，couli_readonly 只读，couli_maint 无权限（表级与逐列）",
+    "test/spec/payout/tax-ytd-schema/access.int.test.ts > [BR-WDR-20] tax_ytd couli_app 写入后 couli_payout / couli_readonly 读到同一行，它们的写入与所有角色的删除、清表被拒绝",
+    "test/spec/payout/tax-ytd-schema/access.int.test.ts > [BR-WDR-20] tax_ytd couli_app 改不了一行的身份：user_id、year、income_type、identity_hmac、app_id、id、created_at 都是 42501",
+    "test/spec/payout/tax-ytd-schema/access.int.test.ts > [BR-WDR-20] tax_ytd couli_app 改写三个累计与 updated_at，couli_payout 读到新值；累计改成负数被拒绝",
+    "test/spec/payout/tax-ytd-schema/access.int.test.ts > [BR-WDR-20] couli_app 可按唯一键 upsert 累加：会员 10 月提 ¥100、¥200 均已到账 → cum_income 合计 30000 分，同一行",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 按整名登记在资金表清单里，带 schema 与引号等价，相似名字不纳入",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd DROP 表 不接受语句级 squawk-ignore，普通表同写法不受资金表限制",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd DROP 列 不接受语句级 squawk-ignore，普通表同写法不受资金表限制",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 改类型 不接受语句级 squawk-ignore，普通表同写法不受资金表限制",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd RENAME 列 不接受语句级 squawk-ignore，普通表同写法不受资金表限制",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd RENAME 表 不接受语句级 squawk-ignore，普通表同写法不受资金表限制",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 不得 SET SCHEMA，普通表同写法放行",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 未命名 index 拒绝（CT-06f），普通表同写法放行",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 未命名 constraint 拒绝（CT-06f），普通表同写法放行",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 未命名 constraint 拒绝（CT-06f），普通表同写法放行",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 的 index tax_ytd_user_year_idx 只删不重建拒绝，普通表同写法放行",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 的 constraint tax_ytd_identity_key 只删不重建拒绝，普通表同写法放行",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 的 constraint tax_ytd_cum_income_fen_check 只删不重建拒绝，普通表同写法放行",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 金额列改成非 bigint 拒绝，且该语句不能用 squawk-ignore 放行",
+    "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] 建 app.tax_ytd 的迁移只有一个，是门禁要查的新迁移，按 CLI 的上下文通过门禁",
+    "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd 列名、类型、可空性和默认值逐一匹配：累计金额 bigint 分、年度 integer、身份 text",
+    "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd 主键为 id，必填列拒绝 NULL，累计列缺省为 0，时间戳由库填写",
+    "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd 累计金额超出 2^53 原样往返，不丢精度",
+    "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd 三个累计（收入、已扣税、连续月数）不为负，0 可写入",
+    "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd.income_type 现在只接受 SERVICE_FEE（自购也属于推广，SELF_REBATE 不再使用）",
+    "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd.year 为计税年度，只接受 2026–2100",
+    "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-ID-25] tax_ytd.identity_hmac 与 realname_prior_identities.id_no_hmac 同形状：64 位小写十六进制，不存明文",
+    "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd 同一会员同一年度同类所得同一身份只有一行，次年另起一行",
+    "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-ID-25] tax_ytd 实名更正后新身份另起一行，更正前的累计留在旧身份行、不并入",
+    "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd 唯一键 tax_ytd_identity_key 为 (app_id, user_id, year, income_type, identity_hmac)，索引 tax_ytd_user_year_idx 为 (app_id, user_id, year)",
+    "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd (app_id, user_id) 外键指向 users (app_id, id)，不级联；不存在的会员与别的 App 的会员被拒绝"
+  ],
+  "risk_note": "RV2 money migration (withdraw lane, model Claude Fable 5.1; orchestrator rulings D10-456 ④ and D10-459): one new empty table app.tax_ytd, the yearly withholding ledger of withdrawals (08 BR-WDR-20; 规划/04 §3.2 tax_ytd plus the identity dimension of BR-ID-25 细则「实名更正」): id, app_id, user_id (FK users(app_id, id), NO ACTION), year (the +08:00 year of the withdrawal's created_at, CHECK 2026..2100), income_type (CHECK SERVICE_FEE only; INCIDENTAL is P1), identity_hmac (the member's real-name id_no_hmac at accumulation time, 64 hex, never plaintext), cum_income_fen / cum_withheld_fen (bigint ≥ 0, default 0), continuous_months, created_at / updated_at; unique tax_ytd_identity_key (app_id, user_id, year, income_type, identity_hmac); index (app_id, user_id, year). Grants: couli_app SELECT, INSERT, UPDATE of the three counters and updated_at only; couli_payout and couli_readonly SELECT; no DELETE / TRUNCATE for any role. tax_ytd joins tools/ci/lint-migrations.ts FUNDS_TABLE_NAMES (no prefix matches tax_), so the funds-table rules guard it from now on (a tools/** gate change the orchestrator labels). db/schema.sql and packages/db/src/db.gen.ts regenerated by pnpm db:snapshot on the test machine. No data, no code path and no money movement change in this task; the accumulation is B2-08b, the tax calculation B2-08c, the export port B2-08d. The migration file is 0103_tax-ytd.sql: it was drafted as 0102, and renumbered at landing per D10-116 after B1-15zb #1944 took 0102 (orchestrator 10-31 05:4x / 07:1x migration-slot order).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "b284b32fc153082dbf1f1bdc9b7f753ba123eec2",
+      "tree": "fb7f7fb276e95679546ebe472946988787062554",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T02:04:29Z",
+      "finished_at": "2026-10-31T02:04:45Z",
+      "gate": {
+        "commit": "3dee9d42c1556b24ab3edaf53ce8323a0b100e91",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/payout/tax-ytd-schema/access.int.test.ts > [BR-WDR-20] tax_ytd couli_app 可读、可插入，只可改三个累计与 updated_at（列级），不可删除或清表",
+        "test/spec/payout/tax-ytd-schema/access.int.test.ts > [BR-WDR-20] tax_ytd couli_payout 只读，couli_readonly 只读，couli_maint 无权限（表级与逐列）",
+        "test/spec/payout/tax-ytd-schema/access.int.test.ts > [BR-WDR-20] tax_ytd couli_app 写入后 couli_payout / couli_readonly 读到同一行，它们的写入与所有角色的删除、清表被拒绝",
+        "test/spec/payout/tax-ytd-schema/access.int.test.ts > [BR-WDR-20] tax_ytd couli_app 改不了一行的身份：user_id、year、income_type、identity_hmac、app_id、id、created_at 都是 42501",
+        "test/spec/payout/tax-ytd-schema/access.int.test.ts > [BR-WDR-20] tax_ytd couli_app 改写三个累计与 updated_at，couli_payout 读到新值；累计改成负数被拒绝",
+        "test/spec/payout/tax-ytd-schema/access.int.test.ts > [BR-WDR-20] couli_app 可按唯一键 upsert 累加：会员 10 月提 ¥100、¥200 均已到账 → cum_income 合计 30000 分，同一行",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 按整名登记在资金表清单里，带 schema 与引号等价，相似名字不纳入",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd DROP 表 不接受语句级 squawk-ignore，普通表同写法不受资金表限制",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd DROP 列 不接受语句级 squawk-ignore，普通表同写法不受资金表限制",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 改类型 不接受语句级 squawk-ignore，普通表同写法不受资金表限制",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd RENAME 列 不接受语句级 squawk-ignore，普通表同写法不受资金表限制",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd RENAME 表 不接受语句级 squawk-ignore，普通表同写法不受资金表限制",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 不得 SET SCHEMA，普通表同写法放行",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 未命名 index 拒绝（CT-06f），普通表同写法放行",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 未命名 constraint 拒绝（CT-06f），普通表同写法放行",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 未命名 constraint 拒绝（CT-06f），普通表同写法放行",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 的 index tax_ytd_user_year_idx 只删不重建拒绝，普通表同写法放行",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 的 constraint tax_ytd_identity_key 只删不重建拒绝，普通表同写法放行",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 的 constraint tax_ytd_cum_income_fen_check 只删不重建拒绝，普通表同写法放行",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] tax_ytd 金额列改成非 bigint 拒绝，且该语句不能用 squawk-ignore 放行",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts > [BR-WDR-20] 建 app.tax_ytd 的迁移只有一个，是门禁要查的新迁移，按 CLI 的上下文通过门禁",
+        "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd 列名、类型、可空性和默认值逐一匹配：累计金额 bigint 分、年度 integer、身份 text",
+        "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd 主键为 id，必填列拒绝 NULL，累计列缺省为 0，时间戳由库填写",
+        "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd 累计金额超出 2^53 原样往返，不丢精度",
+        "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd 三个累计（收入、已扣税、连续月数）不为负，0 可写入",
+        "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd.income_type 现在只接受 SERVICE_FEE（自购也属于推广，SELF_REBATE 不再使用）",
+        "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd.year 为计税年度，只接受 2026–2100",
+        "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-ID-25] tax_ytd.identity_hmac 与 realname_prior_identities.id_no_hmac 同形状：64 位小写十六进制，不存明文",
+        "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd 同一会员同一年度同类所得同一身份只有一行，次年另起一行",
+        "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-ID-25] tax_ytd 实名更正后新身份另起一行，更正前的累计留在旧身份行、不并入",
+        "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd 唯一键 tax_ytd_identity_key 为 (app_id, user_id, year, income_type, identity_hmac)，索引 tax_ytd_user_year_idx 为 (app_id, user_id, year)",
+        "test/spec/payout/tax-ytd-schema/shape.int.test.ts > [BR-WDR-20] tax_ytd (app_id, user_id) 外键指向 users (app_id, id)，不级联；不存在的会员与别的 App 的会员被拒绝"
+      ],
+      "expected": [
+        "test/spec/payout/tax-ytd-schema/access.int.test.ts",
+        "test/spec/payout/tax-ytd-schema/lint.test.ts",
+        "test/spec/payout/tax-ytd-schema/shape.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "84fa975d363e697234600906f24bf8c853caef903c4f15657edeb578e094cb06"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d4f70199e53cdbd0d989cefd062e191db3f9e6d70415a2e83bfbc971912aaa2f"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "Round 1 (full, base 0de6d8806). Codex unavailable until 2026-11-02; fresh independent Claude. Pass with no findings: the migration checked clause by clause against BR-WDR-20, BR-ID-25 and brief §9.1 (columns, named unique key, index, FK NO ACTION, column-level grants, lint registration). Round 2 (incremental from 76d510afb) pass with no findings: the test-machine verify had found the tools classification test's expected funds set without tax_ytd once the schema snapshot added the table; both by-name lists in tools/ci/lint-migrations.test.ts gained tax_ytd. One extra call is recorded as uncounted (no output): a round-2 run the lane started on an unchanged tree by mistake and stopped within a minute; the round was re-run at the same count per D10-225."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "test round 1 (fresh independent Claude): kit / shape / access / lint under test/spec/payout/tax-ytd-schema (the lint cases call checkMigration / isFundsTable directly, inside the task's test_paths) → red/1 PASS (32 red in 3 files, exempt 0) → spec-test round 1 pass with no findings."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "114578b02cf0ca3691ab5e70b0a300bce69a99a8",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money or packages/domain.",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}

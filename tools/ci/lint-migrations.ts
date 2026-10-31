@@ -186,6 +186,9 @@ export const FUNDS_TABLE_NAMES: readonly string[] = [
   // ruling D10-94 5): amounts in fen, no prefix above matches.
   'invite_rewards',
   'invite_reward_budgets',
+  // Yearly withholding ledger of withdrawals (B2-08a migration, 08 BR-WDR-20; 规划/04 §3.2 tax_ytd):
+  // amounts in fen, no prefix above matches tax_.
+  'tax_ytd',
   // Settlement tables whose names no prefix above matches (B2-04c, couli-runs settlement plan D10-93;
   // `reconcil` does not match recon_union): beneficiary credit obligations and union reconciliation.
   'beneficiary_credits',

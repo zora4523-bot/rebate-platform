@@ -5343,6 +5343,32 @@ ALTER TABLE app.sync_cursors ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: tax_ytd; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.tax_ytd (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    year integer NOT NULL,
+    income_type text NOT NULL,
+    identity_hmac text NOT NULL,
+    cum_income_fen bigint DEFAULT 0 NOT NULL,
+    cum_withheld_fen bigint DEFAULT 0 NOT NULL,
+    continuous_months integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tax_ytd_app_id_check CHECK ((app_id <> ''::text)),
+    CONSTRAINT tax_ytd_continuous_months_check CHECK ((continuous_months >= 0)),
+    CONSTRAINT tax_ytd_cum_income_fen_check CHECK ((cum_income_fen >= 0)),
+    CONSTRAINT tax_ytd_cum_withheld_fen_check CHECK ((cum_withheld_fen >= 0)),
+    CONSTRAINT tax_ytd_identity_hmac_check CHECK ((identity_hmac ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT tax_ytd_income_type_check CHECK ((income_type = 'SERVICE_FEE'::text)),
+    CONSTRAINT tax_ytd_year_check CHECK (((year >= 2026) AND (year <= 2100)))
+);
+
+
+--
 -- Name: union_accounts; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -7659,6 +7685,22 @@ ALTER TABLE ONLY app.sync_cursors
 
 
 --
+-- Name: tax_ytd tax_ytd_identity_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.tax_ytd
+    ADD CONSTRAINT tax_ytd_identity_key UNIQUE (app_id, user_id, year, income_type, identity_hmac);
+
+
+--
+-- Name: tax_ytd tax_ytd_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.tax_ytd
+    ADD CONSTRAINT tax_ytd_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: union_accounts union_accounts_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -9084,6 +9126,13 @@ CREATE INDEX sms_send_attempts_created_at_idx ON app.sms_send_attempts USING btr
 --
 
 CREATE INDEX sms_send_attempts_ip_created_idx ON app.sms_send_attempts USING btree (app_id, ip_hmac, created_at);
+
+
+--
+-- Name: tax_ytd_user_year_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX tax_ytd_user_year_idx ON app.tax_ytd USING btree (app_id, user_id, year);
 
 
 --
@@ -10993,6 +11042,14 @@ ALTER TABLE ONLY app.share_materials
 
 ALTER TABLE ONLY app.sync_cursors
     ADD CONSTRAINT sync_cursors_union_account_fkey FOREIGN KEY (app_id, platform, union_account_id) REFERENCES app.union_accounts(app_id, platform, id);
+
+
+--
+-- Name: tax_ytd tax_ytd_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.tax_ytd
+    ADD CONSTRAINT tax_ytd_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -15866,6 +15923,43 @@ GRANT UPDATE(updated_at) ON TABLE app.sms_send_attempts TO couli_app;
 
 GRANT SELECT,INSERT,UPDATE ON TABLE app.sync_cursors TO couli_app;
 GRANT SELECT ON TABLE app.sync_cursors TO couli_readonly;
+
+
+--
+-- Name: TABLE tax_ytd; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.tax_ytd TO couli_app;
+GRANT SELECT ON TABLE app.tax_ytd TO couli_payout;
+GRANT SELECT ON TABLE app.tax_ytd TO couli_readonly;
+
+
+--
+-- Name: COLUMN tax_ytd.cum_income_fen; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(cum_income_fen) ON TABLE app.tax_ytd TO couli_app;
+
+
+--
+-- Name: COLUMN tax_ytd.cum_withheld_fen; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(cum_withheld_fen) ON TABLE app.tax_ytd TO couli_app;
+
+
+--
+-- Name: COLUMN tax_ytd.continuous_months; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(continuous_months) ON TABLE app.tax_ytd TO couli_app;
+
+
+--
+-- Name: COLUMN tax_ytd.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.tax_ytd TO couli_app;
 
 
 --
