@@ -1,0 +1,25 @@
+id: CT-26k
+repo: rebate-platform
+title: 契约：后台用户详情补实名与收款账号脱敏字段（D10-517）——adminGetUser 响应补 masked_name（姓名只显示末字）、masked_id_no（身份证首 1 位 + 末 1 位，BR-ID-33）、realname_status、收款账号状态（脱敏，按现有收款账号字段口径）；adminEditUserProfile 200 响应补 changed_fields（本次实际改动的字段名列表）；全量明文仍只走 reveal；只定契约形状与 planned 标记（实现另单）
+type: contract
+# 2026-11-01 入账（identity-lane，编排 D10-517 ②：契约派 identity，排契约队列在 B1-03ze 之后；负责人 10-18 定稿 admin-user-detail.md「基本信息」本有实名、身份证脱敏、收款账号三格，只是契约没给字段）。草稿照 CT-26j 写法先报编排核。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/**'
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
