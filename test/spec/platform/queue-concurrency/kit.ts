@@ -14,9 +14,9 @@ export function w(queue: string, concurrency: number, pollingIntervalSeconds = 2
 }
 
 /**
- * ENTRY_PLAN.worker of the trunk (task brief, 现状), in order: 24 queues, 49 slots together (B2-06f
+ * ENTRY_PLAN.worker of the trunk (task brief, 现状), in order: 25 queues, 50 slots together (B2-06f
  * D10-398 ①: payout-review; B2-07c D10-408: payout-recon; B2-02q D10-415 ①: ledger-check; B1-03z: evt.risk-appeal-restore;
- * B1-12u: evt.notification-withdrawal-result).
+ * B1-12u: evt.notification-withdrawal-result; B2-05n D10-475 ②: payout-overdue).
  */
 export const TRUNK_WORKER_PLAN: readonly WorkSpec[] = [
   w('order-sync', 1),
@@ -30,6 +30,8 @@ export const TRUNK_WORKER_PLAN: readonly WorkSpec[] = [
   w('payout-recon', 1),
   // B2-02q (D10-415 ①): the worker's daily ledger check (BR-FUND-19), right after payout-recon.
   w('ledger-check', 1),
+  // B2-05n (BR-WDR-26, D10-475 ②): the worker's review overdue check, right after ledger-check.
+  w('payout-overdue', 1),
   w('notify', 5),
   w('union-auth', 1),
   w('evt.notification-risk-state', 5),
@@ -77,6 +79,8 @@ const TRUNK_BUSINESS_QUEUES = [
   'payout-review',
   'payout-recon',
   'ledger-check',
+  // B2-05n (D10-475 ②): the worker's review overdue check, right after ledger-check.
+  'payout-overdue',
   // B2-07e (D10-428): the payout process's W11 attempt records, right after payout-recon.
   'payout-attempt-append',
   'notify',
@@ -107,6 +111,8 @@ const TRUNK_EXCLUSIVE: ReadonlySet<string> = new Set([
   'payout-review',
   'payout-recon',
   'ledger-check',
+  // B2-05n: one queued or active job per 5-minute slot singletonKey.
+  'payout-overdue',
   // B2-07e: one queued or active job per (withdrawal, difference) singletonKey.
   'payout-attempt-append',
   'risk-scan',
@@ -156,6 +162,7 @@ export const ENV_NAME_OF: Readonly<Record<string, string>> = {
   'payout-review': 'QUEUE_CONCURRENCY_PAYOUT_REVIEW',
   'payout-recon': 'QUEUE_CONCURRENCY_PAYOUT_RECON',
   'ledger-check': 'QUEUE_CONCURRENCY_LEDGER_CHECK',
+  'payout-overdue': 'QUEUE_CONCURRENCY_PAYOUT_OVERDUE',
   notify: 'QUEUE_CONCURRENCY_NOTIFY',
   'union-auth': 'QUEUE_CONCURRENCY_UNION_AUTH',
   'evt.notification-risk-state': 'QUEUE_CONCURRENCY_EVT_NOTIFICATION_RISK_STATE',
