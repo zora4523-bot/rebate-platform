@@ -1,0 +1,21 @@
+id: B1-05t
+repo: rebate-platform
+title: catalog：搜索会话过期时按 BR-PROD-08 返回所请求的页（FU-SEARCH-EXPIRED-PAGE，D10-485）——search.ts 现在重开会话后回第 1 页，改为新会话从游标页码取数，不报错
+type: impl
+# 2026-10-31 W1 入账（编排 D10-485）。已有 test/spec/catalog/search/** 若钉着回第 1 页，开工时走测试修改。
+refs: [BR-PROD-08]
+refs_hash:
+  BR-PROD-08: 7c9abf38989c
+deps: [B1-05d]
+paths:
+  - 'apps/api/src/modules/catalog/search.ts'
+  - 'apps/api/src/modules/catalog/infra/search-wiring.ts'
+test_paths:
+  - 'test/spec/catalog/search-expired-page/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/search-expired-page/**'
+status: todo
+pr: null
