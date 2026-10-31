@@ -4,6 +4,7 @@ export type { AppConfig, AppEnv, LogLevel, MetricsConfig, TracingConfig } from '
 export { PRIOR_IDENTITY_FIELD_CRYPTO } from './keyring-prior-identity.ts';
 export type { PriorIdentityKeyringConfig } from './keyring-prior-identity.ts';
 export {
+  DATAOKE_CREDENTIAL_ENV_NAMES,
   PDD_CREDENTIAL_ENV_NAMES,
   SMS_CREDENTIAL_ENV_NAMES,
   TAOBAO_CREDENTIAL_ENV_NAMES,
@@ -73,6 +74,16 @@ export {
   openTaobaoCredentials,
 } from './taobao-startup.ts';
 export type { TaobaoAppCredentials, TaobaoStartupErrorCode } from './taobao-startup.ts';
+// 大淘客 credentials of the Taobao order source (B1-04e): staging reads the secret file once at startup.
+export { readDataokeConfig } from './dataoke.ts';
+export type { DataokeAppConfig } from './dataoke.ts';
+export {
+  DATAOKE_SECRET_FILE_MAX_BYTES,
+  DATAOKE_STARTUP_MESSAGES,
+  DataokeStartupError,
+  openDataokeCredentials,
+} from './dataoke-startup.ts';
+export type { DataokeAppCredentials, DataokeStartupErrorCode } from './dataoke-startup.ts';
 // Worker queue concurrency limits (B1-01zzk): per-queue overrides and the shared budget.
 export { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 export type { QueueConcurrencyConfigResult } from './queue-concurrency.ts';

@@ -12,6 +12,8 @@
 // B1-04k: likewise only `taobaoLive` (credentials provider + transport) turns a taobao endpoint with
 // mode=live into the real TaobaoUnionAdapter of B1-04j, returned as is; without it taobao live /
 // replay stay `adapter_unimplemented`; union.module.ts decides which environments may pass it.
+// B1-04e: `taobaoLive.orderSource` (大淘客 dependencies) becomes one DataokeClient over the registry
+// clock, handed to that adapter as `orderSource`; without it the adapter gets none.
 // The real jd adapter replaces its entry in a later task.
 // TODO(规划/11 §4.5): jd 凭据读取 — blocked on 推广位 / siteId
 // B1-22s: real jd / taobao adapters must not map UnionItemDetail image fields until tested; when
@@ -24,6 +26,12 @@ import {
   type RegisteredPlatform,
   type UnionAdapter,
 } from '../domain/types.ts';
+import {
+  DataokeClient,
+  type DataokeCredentials,
+  type DataokeRandom,
+  type DataokeWarning,
+} from './dataoke/dataoke-client.ts';
 import { DemoUnionAdapter, type DemoUnionRegistryOptions } from './demo/demo-adapter.ts';
 import { parseUnionEndpoints } from './endpoints.ts';
 import { PddUnionAdapter, type PddCredentials, type PddQueryIdentity } from './pdd/pdd-adapter.ts';
@@ -51,6 +59,28 @@ export interface TaobaoLiveOptions {
   readonly credentials: () => Promise<TaobaoCredentials>;
   readonly transport: UnionTransport;
   readonly warn?: (event: TaobaoWarning) => void;
+  /**
+   * B1-04e (D10-486 ①): the 大淘客 order source. When given, the registry constructs one
+   * DataokeClient from it (plus the registry clock) and hands it to TaobaoUnionAdapter as
+   * `orderSource`; without it the adapter gets none. Never used for taobao replay / demo.
+   */
+  readonly orderSource?: TaobaoOrderSourceOptions;
+}
+
+/**
+ * The DataokeClient dependencies of the Taobao order source (B1-04e). union.module.ts passes the
+ * credentials read at startup (DATAOKE_APP_KEY / DATAOKE_APP_SECRET_FILE), its own archived HTTPS
+ * transport (separate from taobao's), node:crypto randomInt, the fixed gateway
+ * `https://openapi.dataoke.com` and a warn hook logging only path and code.
+ */
+export interface TaobaoOrderSourceOptions {
+  /** Hands out the credentials already read at startup; never reads a file or the environment. */
+  readonly credentials: () => Promise<DataokeCredentials>;
+  readonly transport: UnionTransport;
+  readonly random: DataokeRandom;
+  /** Gateway origin, https only (tests pass a synthetic https address). */
+  readonly baseUrl: string;
+  readonly warn?: (event: DataokeWarning) => void;
 }
 
 export interface UnionRegistryOptions extends DemoUnionRegistryOptions {
@@ -124,6 +154,19 @@ export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegist
       }
       if (endpoint.platform === 'taobao' && endpoint.mode === 'live' && options.taobaoLive) {
         const live = options.taobaoLive;
+        // B1-04e: one 大淘客 client per taobao live adapter, over the registry clock.
+        const source = live.orderSource;
+        const orderSource =
+          source === undefined
+            ? undefined
+            : new DataokeClient({
+                credentials: source.credentials,
+                transport: source.transport,
+                clock: options.clock,
+                random: source.random,
+                baseUrl: source.baseUrl,
+                ...(source.warn === undefined ? {} : { warn: source.warn }),
+              });
         taobaoLive = new TaobaoUnionAdapter({
           credentials: live.credentials,
           transport: live.transport,
@@ -134,6 +177,7 @@ export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegist
           ...(options.taobaoPriceSettings === undefined
             ? {}
             : { priceSettings: options.taobaoPriceSettings }),
+          ...(orderSource === undefined ? {} : { orderSource }),
         });
       }
     }

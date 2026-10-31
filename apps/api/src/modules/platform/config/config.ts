@@ -7,6 +7,7 @@ import { readAdminAuthConfig, type AdminAuthConfig } from './admin-auth.ts';
 import { readAgentReviewConfig, type AgentReviewConfig } from './agent-review.ts';
 import { readAgentUserHashConfig } from './agent-user-hash.ts';
 import { findCredentialLikeEnvNames } from './credential-env.ts';
+import { readDataokeConfig, type DataokeAppConfig } from './dataoke.ts';
 import {
   JWT_ENV_NAMES,
   readJwtKeyConfig,
@@ -191,6 +192,13 @@ export interface AppConfig {
    */
   readonly taobao?: TaobaoAppConfig | null;
   /**
+   * DATAOKE_APP_KEY / DATAOKE_APP_SECRET_FILE (./dataoke.ts, B1-04e): staging only, both or neither;
+   * the 大淘客 order source of the live Taobao adapter. The secret file is read once by the union
+   * module's startup factory; this holds only the app key and the path. Absent when not
+   * configured; a hand-built config without it counts as null.
+   */
+  readonly dataoke?: DataokeAppConfig | null;
+  /**
    * UNION_ENDPOINT_OVERRIDE_DIR (./union-endpoint-override.ts, B1-04y): staging only, an absolute
    * path of the mounted directory the UNION_ENDPOINTS factory reads <platform>.json from instead
    * of the packaged config/union-endpoints/. Existence is not checked here. Null when unset; a
@@ -342,6 +350,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     problems.push(...readExportStoreConfig(appEnv.success ? appEnv.data : undefined, env).problems);
     if (appEnv.success) problems.push(...readPddConfig(appEnv.data, env).problems);
     if (appEnv.success) problems.push(...readTaobaoConfig(appEnv.data, env).problems);
+    if (appEnv.success) problems.push(...readDataokeConfig(appEnv.data, env).problems);
     problems.push(...readPddQueryConfig(env).problems);
     if (appEnv.success)
       problems.push(...readUnionEndpointOverrideConfig(appEnv.data, env).problems);
@@ -377,6 +386,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   violations.push(...pddProblems);
   const { taobao, problems: taobaoProblems } = readTaobaoConfig(values.APP_ENV, env);
   violations.push(...taobaoProblems);
+  const { dataoke, problems: dataokeProblems } = readDataokeConfig(values.APP_ENV, env);
+  violations.push(...dataokeProblems);
   const { pddQueryCustomParameters, problems: pddQueryProblems } = readPddQueryConfig(env);
   violations.push(...pddQueryProblems);
   const { unionEndpointOverrideDir, problems: overrideProblems } = readUnionEndpointOverrideConfig(
@@ -423,6 +434,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     pddQueryCustomParameters,
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(taobao === null ? {} : { taobao }),
+    // Only present when configured, so the documented shape of an unconfigured result is unchanged.
+    ...(dataoke === null ? {} : { dataoke }),
     unionEndpointOverrideDir,
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(agentReview === null ? {} : { agentReview }),

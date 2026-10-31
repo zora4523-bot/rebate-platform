@@ -24,4 +24,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/union/dataoke-wiring/**'
-status: todo
+status: done
+pr: 2049
