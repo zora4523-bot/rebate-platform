@@ -88,5 +88,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/catalog/search-expired-page/**'
-status: todo
-pr: null
+status: done
+pr: 2018
