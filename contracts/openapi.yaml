@@ -20079,7 +20079,6 @@ paths:
         null for a register-type blocked_request appeal (no account). Reading does not write an
         audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -20352,7 +20351,6 @@ paths:
         conditions (BR-ID-36). The phone number is masked as in the list (BR-ID-33). Reading
         does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -20751,7 +20749,6 @@ paths:
         phone number under `user.lookup` does (04 §6.6); lookups by `user_id` or
         `blocked_request_id`, and a phone lookup that finds nothing, write none.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

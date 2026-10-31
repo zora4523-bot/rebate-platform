@@ -141,6 +141,7 @@ import {
   IdentityDeletionExpiryModule,
   ME_READ_PORTS,
   createMaskedPhoneReader,
+  normalize_phone,
   CONSENT_SIGNATURE_CHECK,
   TOKEN_CHECK,
   STEP_UP_CHECK,
@@ -381,6 +382,8 @@ import {
   createAppealPrevStateReader,
   createRiskStateBatchReader,
   RiskAdminModule,
+  RiskAppealsAdminModule,
+  type AdminAppealsReadPorts,
   RiskModule,
   RiskScanModule,
   SIGNATURE_CHECK,
@@ -1871,6 +1874,47 @@ const claimEvidencePorts: ClaimEvidenceFactory = (trx, clock) => {
     },
   };
 };
+/**
+ * B1-03zd: risk's appeal console read ports — identity's masked phones (decrypted and masked inside
+ * identity, BR-ID-33), its BR-ID-05 normaliser and the accounts holding a phone blind index now
+ * (users.phone_hmac), admin's display names and orders' sub-order numbers. Every read is scoped by
+ * app_id; building them reads nothing.
+ */
+function adminAppealReadPorts(db: Kysely<Database>, crypto: FieldCrypto): AdminAppealsReadPorts {
+  const phones = createMaskedPhoneReader(db, crypto);
+  const names = createAdminDisplayNameReader(db);
+  return {
+    maskedPhones: (appId, userIds) => phones.maskedPhones(appId, userIds),
+    adminNames: (appId, adminIds) => names.displayNames(appId, adminIds),
+    async subOrderNos(appId, orderIds) {
+      const result = new Map<string, string>();
+      if (orderIds.length === 0) return result;
+      const rows = await db
+        .withSchema('app')
+        .selectFrom('orders')
+        .select(['order_id', 'sub_order_id'])
+        .where('app_id', '=', appId)
+        .where('order_id', '=', sql<string>`ANY(${[...new Set(orderIds)]}::uuid[])`)
+        .execute();
+      for (const row of rows) result.set(row.order_id, row.sub_order_id);
+      return result;
+    },
+    async usersByPhoneHmac(appId, phoneHmac) {
+      const rows = await db
+        .withSchema('app')
+        .selectFrom('users')
+        .select('id')
+        .where('app_id', '=', appId)
+        .where('phone_hmac', '=', phoneHmac)
+        .execute();
+      return rows.map((row) => row.id);
+    },
+    normalizePhone(input) {
+      const normalized = normalize_phone(input);
+      return normalized.code === 0 ? normalized.phone : null;
+    },
+  };
+}
 /**
  * B1-10j: orders' console claim review ports — identity's masked phones (BR-ID-33, decrypted and
  * masked inside identity; without the field cipher a phone read fails closed), admin's reviewer
@@ -3738,6 +3782,13 @@ export class AppModule {
                 restoreAfterUnban,
               }),
             ]
+          : []),
+        // risk's /admin/v1 appeal console reads (B1-03zd, CT-24r; BR-ID-36): guarded by
+        // AdminOperationGuard (risk.appeal, read only); identity's masked phones, normaliser and
+        // phone holders, admin's display names and orders' sub-order numbers through ports; only a
+        // phone lookup that finds something writes an audit row (AUDIT_PORT).
+        ...(options.entry === 'admin'
+          ? [RiskAppealsAdminModule.forAdmin({ ports: adminAppealReadPorts })]
           : []),
         // orders' /admin/v1 claim review reads (B1-10j; BR-ATTR-30): guarded by AdminOperationGuard;
         // the applicant's masked phone through identity's port (decrypted and masked there), the

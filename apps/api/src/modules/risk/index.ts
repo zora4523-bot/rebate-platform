@@ -31,6 +31,21 @@ export type {
 } from './application/admin-risk-state.ts';
 export { RiskAdminModule } from './risk-admin.module.ts';
 export type { RiskAdminOptions } from './risk-admin.module.ts';
+// Task B1-03zd: the appeal console reads (GET /admin/v1/appeals, /admin/v1/appeals/{appeal_id},
+// /admin/v1/blocked-requests; CT-24r, BR-ID-36; admin entry only). Rule tests:
+// test/spec/risk/admin-appeals-read/**.
+export {
+  AdminAppealsRead,
+  AdminAppealsFieldsError,
+  appealRevokePermission,
+  blockedRequestCause,
+} from './application/admin-appeals-read.ts';
+export type {
+  AdminAppealsReadPorts,
+  AdminAppealsReadOptions,
+} from './application/admin-appeals-read.ts';
+export { RiskAppealsAdminModule } from './http/admin/appeals-admin.module.ts';
+export type { RiskAppealsAdminOptions } from './http/admin/appeals-admin.module.ts';
 export { createInviteRelationHitWriter } from './application/invite-relation-hits.ts';
 export type {
   InviteRelationHitRuleId,
