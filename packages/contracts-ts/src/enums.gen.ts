@@ -360,6 +360,16 @@ export const admin_settle_supplement_outcome = [
 export type AdminSettleSupplementOutcome = (typeof admin_settle_supplement_outcome)[number];
 
 /**
+ * POST /admin/v1/recon-diffs/{recon_diff_id}/close 的可选 outcome，写入 recon_diffs.resolution.outcome；只对 source R1 有意义，其他来源带它是 20001 data.fields=[outcome]；不传 = 无结构化结论，月结按需比金额；closed 状态本身不算结论，自由文本 reason 不解析
+ * Source: 规划/08 BR-FUND-04 ④、校验结果表与例 2；编排裁定 D10-447 ②（CT-24zf） (contracts/enums/admin.yaml).
+ */
+export const admin_recon_diff_outcome = [
+  "union", // 以联盟为准（R1 订单差错单月结校验算相符，后续进补充批次）
+  "ours", // 以我方为准（月结校验不算相符）
+] as const;
+export type AdminReconDiffOutcome = (typeof admin_recon_diff_outcome)[number];
+
+/**
  * GET /admin/v1/settle-bills 列表项与详情的 status 及同名筛选；读时由账单最近一轮批次（首轮 = 该账单全部 kind=main 批次；每次补充发起一轮 = kind=supplement 且 (platform, created_at) 相同的批次；轮时刻取其批次 created_at 最大值，最近一轮 = 轮时刻最大者，并列取含最大 batch_id 的轮；驳回的 CANCELLED 不参与）派生、不另存状态（settle_bills 无状态列）；撤销定时回到 DRAFT 的批次可能不在最近一轮，不影响本状态，却仍由确认接口覆盖，此时账单状态可与待确认批次不一致，待确认以批次 status=DRAFT 为准（编排裁定 D10-444）；按下列顺序取第一条成立的；中文名取 BR-TEXT-25 admin_dict
  * Source: 规划/08 BR-FUND-04 细则「月结账单状态」；规划/04 §2.5（月结账单状态由批次派生、不入库）；规划/01 F-ADM-08；design/specs/admin-settle-bills.md §1、§4（CT-24z） (contracts/enums/admin.yaml).
  */
@@ -2079,6 +2089,7 @@ export const enums = {
   notify_sms_test_status,
   admin_withdrawal_display_status,
   admin_settle_supplement_outcome,
+  admin_recon_diff_outcome,
   admin_settle_bill_status,
   ledger_type,
   referral_credit_sub_type,

@@ -22729,24 +22729,40 @@ paths:
 
         Request: `reason`, required: after trimming surrounding whitespace 1–200 characters, else
         20001 with `data.fields=[reason]`. Only a difference of source R1, R2 or R3 whose `status`
-        is `open` or `processing` can be closed.
+        is `open` or `processing` can be closed. `outcome`, optional (enum
+        admin_recon_diff_outcome, 编排裁定 D10-447 ②): the structured conclusion of an R1
+        difference, `union` 以联盟为准 or `ours` 以我方为准; a value outside the enum is 20001 with
+        `data.fields=[outcome]`. It has a meaning for source R1 only.
+
+        What the conclusion does (BR-FUND-04 ④ and its 例 2): an R1 order difference closed with
+        `outcome=union` counts as matched in the monthly consistency check, so the order goes on
+        to a supplement batch. Without `outcome` there is no structured conclusion: the check
+        compares the amounts as needed, which can only hold back more, never pay more
+        (D10-447 ①). `ours` does not count as matched either. The `closed` status by itself is
+        not a conclusion, and the free-text `reason` is never parsed for one. The conclusion
+        cannot be changed: a closed difference answers 20902 to any further close. The route
+        accepts `outcome` from CT-24zf; it is written from B2-09h on, and until then it is
+        accepted without taking effect.
 
         Order of checks: `fund.recon` (10403 with `data.reason=admin_permission_denied`) → body
-        (20001 with `data.fields=[reason]`) → an unknown `recon_diff_id`, a difference of another
-        app, or one of source R4 (see GET /admin/v1/pay-recon-diffs) is 20001 with
-        `data.fields=[recon_diff_id]` (no 404) → a difference already `closed`, `adjusted` or
-        `written_off` is 20902 with `data.resource=recon_diff`, nothing changed (refresh the
-        detail).
+        (20001 with `data.fields=[reason]` or `data.fields=[outcome]`) → an unknown
+        `recon_diff_id`, a difference of another app, or one of source R4 (see
+        GET /admin/v1/pay-recon-diffs) is 20001 with `data.fields=[recon_diff_id]` (no 404) → a
+        difference already `closed`, `adjusted` or `written_off` is 20902 with
+        `data.resource=recon_diff`, nothing changed (refresh the detail) → `outcome` sent for a
+        difference whose source is not R1 is 20001 with `data.fields=[outcome]`, nothing changed
+        (the same place as the guard of write-off).
 
         Effects, in one transaction: `status` becomes `closed`, `closed_at` and `updated_at` the
         server's current time, `handler_id` the caller, and `resolution` records the trimmed
-        reason under the key `reason`. Every withdrawal hold (withdraw_holds) whose source is this
+        reason under the key `reason` and, from B2-09h on, `outcome` when given under the key
+        `outcome`. Every withdrawal hold (withdraw_holds) whose source is this
         difference and that is not released yet is released in the same transaction (BR-FUND-19:
         差错单关闭时解除冻结记录); `released_hold_count` is the number of holds this call released
         (holds released earlier are not counted; 0 when there are none). Closing does not restore
         an order, post an adjustment, write anything off or recalculate a balance cache; those
-        are other operations. Writes an audit record (action recon_diff_close, with the reason
-        and, before and after, the `status` and `released_hold_count`; no personal data). The
+        are other operations. Writes an audit record (action recon_diff_close, with the reason,
+        from B2-09h on `outcome` when given, and, before and after, the `status` and `released_hold_count`; no personal data). The
         response is the difference as GET /admin/v1/recon-diffs/{recon_diff_id} returns it after
         closing, with `released_hold_count`.
 
@@ -22776,6 +22792,7 @@ paths:
               $ref: '#/components/schemas/AdminReconDiffCloseRequest'
             example:
               reason: 联盟结算明细已核对，差额由联盟侧调整
+              outcome: union
       responses:
         '200':
           description: The difference after closing with the number of holds released, or the first result of the same key.
@@ -22807,6 +22824,7 @@ paths:
                     updated_at: '2026-10-20T16:30:00+08:00'
                     resolution:
                       reason: 联盟结算明细已核对，差额由联盟侧调整
+                      outcome: union
                   released_hold_count: 1
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
@@ -22825,6 +22843,8 @@ paths:
                   $ref: '#/components/examples/AdminReconDiffCloseReasonInvalid'
                 reconDiffInvalid:
                   $ref: '#/components/examples/AdminReconDiffIdInvalid'
+                outcomeNotApplicable:
+                  $ref: '#/components/examples/AdminReconDiffCloseOutcomeNotApplicable'
                 alreadyHandled:
                   $ref: '#/components/examples/AdminReconDiffConflict'
                 idempotencyConflict:
@@ -23048,7 +23068,13 @@ paths:
         `{order_key}:{user_id}:{role}:RESTORE:{recon_diff_id}`. A difference ≤ 0 posts nothing and
         pays 0 for the role: a negative one is not taken back, and the difference is still
         handled (D10-469 ③, default filled in by the agent). A member banned again by a later
-        round is still paid (D10-469 ②, default filled in by the agent). The `status` of the
+        round is still paid (D10-469 ②, default filled in by the agent). The exception, which
+        takes precedence over D10-469 ②: for a member identified as under 18, a promotion role
+        (`share`, `direct` or `indirect`) is not paid: instead of an `active` event a `forfeited`
+        event with `forfeit_reason=minor` is appended, and the role counts 0; the role `self` is
+        paid as usual (D10-482). Whether a role is forfeited at all is decided by one reading:
+        start from `beneficiaries[].initial_status`, take the latest event by `event_seq`, and
+        only a latest `forfeited` counts (D10-481). The `status` of the
         difference becomes `adjusted`, `closed_at` and `updated_at` the server's current time,
         `handler_id` the caller, and `resolution` keeps its keys and adds `restore` (the amount
         paid for each role, the total, the operator and the time) and the trimmed `note` when
@@ -29603,6 +29629,15 @@ components:
         data:
           fields:
             - reason
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminReconDiffCloseOutcomeNotApplicable:
+      summary: 20001 outcome sent for a difference whose source is not R1
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - outcome
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminReconDiffConflict:
       summary: 20902 the difference is already closed, adjusted or written off; refresh
@@ -46822,6 +46857,20 @@ components:
           minLength: 1
           maxLength: 200
           description: Why the difference is closed without further handling; 1–200 characters after trimming, else 20001 with data.fields=[reason]. Stored as resolution.reason.
+        outcome:
+          $ref: '#/components/schemas/AdminReconDiffOutcome'
+    AdminReconDiffOutcome:
+      type: string
+      description: |
+        contracts/enums/admin.yaml admin_recon_diff_outcome: the structured conclusion of a source
+        R1 difference (D10-447 ②; BR-FUND-04 ④, 例 2), optional in the close request and stored as
+        resolution.outcome (written from B2-09h on). union = 以联盟为准: the R1 order difference
+        counts as matched in the monthly check and the order goes on to a supplement batch. ours =
+        以我方为准: does not count as matched. Sent for a source other than R1 → 20001 with
+        data.fields=[outcome].
+      enum:
+        - union
+        - ours
     AdminReconDiffClose:
       type: object
       additionalProperties: false
@@ -46956,7 +47005,7 @@ components:
           type: integer
           format: int64
           minimum: 0
-          description: Total this call paid to the member over all roles; 0 when nothing was posted (D10-469 ③). Never `expected_fen` taken as is.
+          description: Total this call paid to the member over all roles; 0 when nothing was posted (D10-469 ③, D10-482). Never `expected_fen` taken as is.
     AdminReconDiffRestoreResponse:
       type: object
       additionalProperties: false
