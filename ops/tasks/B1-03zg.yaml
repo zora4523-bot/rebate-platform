@@ -1,0 +1,27 @@
+id: B1-03zg
+repo: rebate-platform
+title: risk：后台风控规则三接口实现（CT-24f）——GET /admin/v1/risk-rules（adminListRiskRules，config.risk、只读，本 app 全部规则按 scene、rule_id 排序，返回 rule_id / scene / name / risk_action / status / threshold_keys / version / updated_at，不返回条件 JSON）、POST …/{rule_id}/enable 与 /disable（config.risk + 动态码 step-up 每次；expected_version CAS 在 SQL 内，变更 version + 1，已是目标状态且版本匹配则原样成功不记变更不写审计；reason 可选 1–200；变更写审计）；去掉三接口 planned 并重生成
+type: impl
+# 2026-11-01 入账（identity-lane，D10-453 ⑦ (e)）。契约 CT-24f 与前端 F1-10fa 已做，staging 404。app.risk_rules 无 name / threshold_keys 列：由 risk 模块的规则目录（随规则种子登记的代码清单，B1-03）按 rule_id 映射，不加迁移；目录缺项时 name 回落 rule_id、threshold_keys 回落空数组并记 warn。契约只去 planned，排契约队列。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/risk/application/admin-risk-rules.ts'
+  - 'apps/api/src/modules/risk/application/admin-risk-rules.test.ts'
+  - 'apps/api/src/modules/risk/application/risk-rule-catalog.ts'
+  - 'apps/api/src/modules/risk/http/admin/**'
+  - 'apps/api/src/modules/risk/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/*.gen.ts'
+  - 'apps/api/src/modules/platform/**/*.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/risk/admin-risk-rules/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/admin-risk-rules/**'
+status: todo
