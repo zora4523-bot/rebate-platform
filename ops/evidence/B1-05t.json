@@ -1,0 +1,111 @@
+{
+  "task": "B1-05t",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "658243ad58df35d3ef4c0b171722b6eb0ec2d6eb",
+  "red_tests": [
+    "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#1] 会话 30 分钟无请求过期 后带第 3 页游标：返回上游第 3 页的条目，不回第 1 页、不报错",
+    "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#1] 会话行已从存储删除 后带第 3 页游标：返回上游第 3 页的条目，不回第 1 页、不报错",
+    "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#2] 游标属于别的登录用户：返回上游第 3 页，不串对方的已下发集合，对方会话不受影响",
+    "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#2] 游标属于别的游客设备：返回上游第 3 页，不串对方的已下发集合，对方会话不受影响",
+    "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#2] 游标属于同设备未登录的游客：返回上游第 3 页，不串对方的已下发集合，对方会话不受影响",
+    "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#3] 会话 30 分钟无请求过期 后已下发集合从空开始：过期前第 1 页下发过的 key 重新出现在第 3 页时照常下发",
+    "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#3] 会话行已从存储删除 后已下发集合从空开始：过期前第 1 页下发过的 key 重新出现在第 3 页时照常下发",
+    "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#4] 会话 30 分钟无请求过期 后下发的 next_cursor 带新的 search_session_id，page_no 是请求页 + 1",
+    "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#4] 会话行已从存储删除 后下发的 next_cursor 带新的 search_session_id，page_no 是请求页 + 1",
+    "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#5] 新会话接着翻第 4 页：只剔除新会话下发过的 key，过期前下发的不算",
+    "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#6] 解不开的游标（格式、签名错）仍是 20001，不走新会话；同一过期会话的真游标才取第 3 页",
+    "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#7] 新会话请求的页是空页：不报错、不回第 1 页，不算第一页无结果，不发 fallback_items",
+    "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#8] 真实上游装配：会话过期时联盟续页游标也已不在，仍取到联盟第 3 页并能续第 4 页",
+    "test/spec/catalog/search/session.test.ts > [AC-B1-05d#22] 不同身份 {\"userId\":\"synthetic-other-user\"} 不继承他人已下发集合，按请求页返回",
+    "test/spec/catalog/search/session.test.ts > [AC-B1-05d#22] 不同身份 {\"appId\":\"synthetic-other-app\"} 不继承他人已下发集合，按请求页返回",
+    "test/spec/catalog/search/session.test.ts > [AC-B1-05d#23] 游客按 device_id 隔离，游客也能正常出卡",
+    "test/spec/catalog/search/session.test.ts > [AC-B1-05d#24] 会话 30 分钟无请求过期，活跃翻页刷新空闲时间，过期后按请求页返回",
+    "test/spec/catalog/search/session.test.ts > [AC-B1-05d#43] 会话存储过期删除后，新建会话并按请求页返回、不报错"
+  ],
+  "risk_note": "RV1 by path (catalog). An expired, cleared or foreign search session starts a new one and returns the page the cursor asks for, with an empty issued set, no error (BR-PROD-07 细则「会话异常」, D10-485, FU-SEARCH-EXPIRED-PAGE); search.ts answered page 1 before. Changed filters or sort still start from page 1 while the session row exists: after eviction the change cannot be seen, because the cursor holds only session id and page, so clients drop the cursor when filters change (comment in search.ts). A deep page with no remembered union cursor walks from page 1, at most SEARCH_MAX_PAGE_NO union calls. No money moves. verify:fast exit 0. Codex was unavailable until 11-02, so tests and reviews ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "658243ad58df35d3ef4c0b171722b6eb0ec2d6eb",
+      "tree": "f56116661eefa3c8411ab242839a0370b63a1ed6",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T08:34:36Z",
+      "finished_at": "2026-10-31T08:34:43Z",
+      "gate": {
+        "commit": "48109ef4fab8e591c31eed1d5945d9f5af4d70d6",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "red_tests": [
+        "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#1] 会话 30 分钟无请求过期 后带第 3 页游标：返回上游第 3 页的条目，不回第 1 页、不报错",
+        "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#1] 会话行已从存储删除 后带第 3 页游标：返回上游第 3 页的条目，不回第 1 页、不报错",
+        "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#2] 游标属于别的登录用户：返回上游第 3 页，不串对方的已下发集合，对方会话不受影响",
+        "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#2] 游标属于别的游客设备：返回上游第 3 页，不串对方的已下发集合，对方会话不受影响",
+        "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#2] 游标属于同设备未登录的游客：返回上游第 3 页，不串对方的已下发集合，对方会话不受影响",
+        "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#3] 会话 30 分钟无请求过期 后已下发集合从空开始：过期前第 1 页下发过的 key 重新出现在第 3 页时照常下发",
+        "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#3] 会话行已从存储删除 后已下发集合从空开始：过期前第 1 页下发过的 key 重新出现在第 3 页时照常下发",
+        "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#4] 会话 30 分钟无请求过期 后下发的 next_cursor 带新的 search_session_id，page_no 是请求页 + 1",
+        "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#4] 会话行已从存储删除 后下发的 next_cursor 带新的 search_session_id，page_no 是请求页 + 1",
+        "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#5] 新会话接着翻第 4 页：只剔除新会话下发过的 key，过期前下发的不算",
+        "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#6] 解不开的游标（格式、签名错）仍是 20001，不走新会话；同一过期会话的真游标才取第 3 页",
+        "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#7] 新会话请求的页是空页：不报错、不回第 1 页，不算第一页无结果，不发 fallback_items",
+        "test/spec/catalog/search-expired-page/expired-page.test.ts > [AC-B1-05t#8] 真实上游装配：会话过期时联盟续页游标也已不在，仍取到联盟第 3 页并能续第 4 页",
+        "test/spec/catalog/search/session.test.ts > [AC-B1-05d#22] 不同身份 {\"userId\":\"synthetic-other-user\"} 不继承他人已下发集合，按请求页返回",
+        "test/spec/catalog/search/session.test.ts > [AC-B1-05d#22] 不同身份 {\"appId\":\"synthetic-other-app\"} 不继承他人已下发集合，按请求页返回",
+        "test/spec/catalog/search/session.test.ts > [AC-B1-05d#23] 游客按 device_id 隔离，游客也能正常出卡",
+        "test/spec/catalog/search/session.test.ts > [AC-B1-05d#24] 会话 30 分钟无请求过期，活跃翻页刷新空闲时间，过期后按请求页返回",
+        "test/spec/catalog/search/session.test.ts > [AC-B1-05d#43] 会话存储过期删除后，新建会话并按请求页返回、不报错"
+      ],
+      "expected": [
+        "test/spec/catalog/search-expired-page/expired-page.test.ts",
+        "test/spec/catalog/search/session.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "f7f56d1d38ee6e36bdf291429e37d68893ad43c6a9c9ff068ea8a13b0da9dceb"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 1,
+      "note": "round 1 pass with one S2 (comment on changed filters after eviction), fixed."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "new rule tests by independent Claude, red 13 / 13, round 1 pass. Frozen [AC-B1-05d#22], [#23], [#24], [#43] in test/spec/catalog/search/session.test.ts held the old wording (20001 or page 1); changed on orchestrator rulings 15:0x and 15:2x by fresh independent Claude runs, each verified PASS read-only (only these cases, agrees with 08, only tightened). The 23 other cases of that file are red_exempt in the ledger: their bodies did not change. After both verifications the orchestrator session restored the observed import (the red_exempt rule requires no change outside the tests) and wrapped the call in [AC-B1-05d#43] with observed plus an assertion that it returned: mechanical, no assertion loosened, not re-verified.",
+    "red_exempt_confirmed": true
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "f86bf81bb83f8ab928d090de115dee3a552878d8",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
