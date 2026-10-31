@@ -1,7 +1,19 @@
 {
   "red_tests": [],
   "risk_note": "Contract only (RV1 contracts), all new operations x-implementation planned. D10-513 / orchestrator 23:39 ①②: POST /admin/v1/users/{user_id}/reverified-devices (user.phone_change + totp step-up, device_id + reason 1–200, audit, does not clear the flag, 30419 reason=reverify_not_pending), GET /admin/v1/users/{user_id}/devices (same point, read only, no step-up; no device_hash / install_secret / last_login_sid; last_seen_at desc), adminEditUserProfile description (phone change on a flagged account clears the flag and unbinds non-trusted third-party identities in the same transaction; Apple revocation via outbox after commit per BR-ID-28), POST /v1/me/oauth-bindings (P1, signed / idempotent like reverifyByOauth; 20001 / 20004 / 10010 / 50305 / 10405; conflict codes and the bind attempt purpose left to P1). Generated files regenerated with pnpm codegen; h5 signed list updated. verify:fast green; required CI checks run on the PR head.",
-  "reviews": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "contract review round 1 pass with one S2 (Apple refresh token wording could invite plaintext in the outbox job), fixed in the description before landing (couli-runs/CT-26j/review-contract-r1.json); Codex unavailable until 11-02 (approvals #36)"
+    }
+  ],
   "spec_test_review": null,
   "longrun": {
     "runs": 1000000,
