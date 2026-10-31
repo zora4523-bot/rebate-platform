@@ -11799,8 +11799,9 @@ paths:
         re-verified devices stay recorded. An unbound Apple identity is revoked at Apple as in
         BR-ID-28 (编排 D10-513), with the external call outside the transaction: inside the
         phone-change transaction the binding row is deleted and a revocation job is written to
-        the outbox (with retries; the Apple refresh token is read out before the row is deleted
-        and carried in the job); after commit the job calls Apple's revocation. A failed
+        the outbox (with retries; the job carries the refresh token only as the stored cipher
+        copied before the row is deleted, never in plaintext, and decrypts it at call time as the
+        deletion flow does); after commit the job calls Apple's revocation. A failed
         revocation is only retried and alerted on; it never rolls the phone change back. A nickname-only
         edit, and a phone edit of an account without the flag, neither unbind nor clear anything.
         The audit record of such a save also lists the providers unbound and that the flag was
