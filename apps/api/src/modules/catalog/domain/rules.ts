@@ -9,7 +9,8 @@ import type {
 } from './types.ts';
 
 /** Contract error codes this module raises (contracts/error-codes.yaml). */
-export type CatalogErrorCode = 20001 | 30131 | 30141 | 30143 | 30701 | 50303 | 50304 | 50401;
+export type CatalogErrorCode =
+  20001 | 30131 | 30132 | 30141 | 30143 | 30701 | 50303 | 50304 | 50401;
 
 /** A business error carrying its contract code; HTTP mapping belongs to the controllers. */
 export class CatalogError extends Error {

@@ -118,7 +118,7 @@ function unavailable(): Promise<never> {
 }
 
 /** Entries built without database handles (isolated HTTP unit tests) fail at call time. */
-const UNAVAILABLE_CATALOG: Catalog = {
+export const UNAVAILABLE_CATALOG: Catalog = {
   listPlatforms: unavailable,
   requirePlatform: unavailable,
   resolveProductKey: unavailable,
@@ -134,6 +134,42 @@ const UNAVAILABLE_PIDS: PidReader = { getActivePid: unavailable };
 const UNAVAILABLE_PRICE_TREND: PriceTrendStore = { keyStability: unavailable, rows: unavailable };
 const UNAVAILABLE_SECTION_PAGES: SectionItemsPages = { section: unavailable };
 const UNAVAILABLE_FEED_REGISTRAR: LinkRegistrar = { register: unavailable };
+
+/** The query-PID reader of searchProducts over the entry's handle; absent, reads fail closed. */
+export function catalogPidReader(db: Kysely<Database> | undefined, clock: Clock): PidReader {
+  return db === undefined ? UNAVAILABLE_PIDS : pidReader(db, clock);
+}
+
+/** The item_ref service of a process: the field keyring, or the local / test per-process key. */
+export function catalogItemRefs(config: AppConfig, crypto?: FieldCrypto): ItemRefService {
+  if (crypto !== undefined) return createItemRefService({ crypto });
+  if (config.appEnv !== 'local' && config.appEnv !== 'test') {
+    throw new Error('catalog: item_ref needs the field keyring outside local / test');
+  }
+  return createItemRefService({ crypto: processItemRefCipher() });
+}
+
+/**
+ * B1-05g ②: one signing key per deployment, never per module instance or process in staging / prod:
+ * derived from the field keyring when there is one; local / test without a keyring use the
+ * process-wide key; staging / prod without a keyring refuse to start.
+ */
+export function catalogCursorCodec(config: AppConfig, crypto?: FieldCrypto): SearchCursorCodec {
+  if (crypto !== undefined) {
+    // Derived on first use, not at startup: only search touches the keyring for it.
+    let codec: SearchCursorCodec | undefined;
+    const signed = (): SearchCursorCodec =>
+      (codec ??= createSearchCursorCodec(keyringSearchCursorKey(crypto)));
+    return {
+      encode: (value) => signed().encode(value),
+      decode: (value) => signed().decode(value),
+    };
+  }
+  if (config.appEnv !== 'local' && config.appEnv !== 'test') {
+    throw new Error('catalog: search cursors need the field keyring outside local / test');
+  }
+  return createSearchCursorCodec(processSearchCursorKey());
+}
 
 /** Built on first read, not at startup: entries whose DB handle is a stand-in still start. */
 function lazyPriceTrendStore(db: Kysely<Database>): PriceTrendStore {
@@ -426,19 +462,12 @@ export class CatalogModule {
         {
           provide: ITEM_REFS,
           inject: [APP_CONFIG, { token: FIELD_CRYPTO, optional: true }],
-          useFactory: (config: AppConfig, crypto?: FieldCrypto): ItemRefService => {
-            if (crypto !== undefined) return createItemRefService({ crypto });
-            if (config.appEnv !== 'local' && config.appEnv !== 'test') {
-              throw new Error('catalog: item_ref needs the field keyring outside local / test');
-            }
-            return createItemRefService({ crypto: processItemRefCipher() });
-          },
+          useFactory: catalogItemRefs,
         },
         {
           provide: QUERY_PIDS,
           inject: [{ token: DB, optional: true }, CLOCK],
-          useFactory: (db: Kysely<Database> | undefined, clock: Clock): PidReader =>
-            db === undefined ? UNAVAILABLE_PIDS : pidReader(db, clock),
+          useFactory: catalogPidReader,
         },
         {
           provide: SEARCH_SESSIONS,
@@ -449,29 +478,9 @@ export class CatalogModule {
               : createRedisSearchSessionStore(redis.namespace(SEARCH_REDIS_NAMESPACE)),
         },
         {
-          // B1-05g ②: one signing key per deployment, never per module instance or process in
-          // staging / prod: derived from the field keyring when there is one; local / test without
-          // a keyring use the process-wide key; staging / prod without a keyring refuse to start.
           provide: SEARCH_CURSORS,
           inject: [APP_CONFIG, { token: FIELD_CRYPTO, optional: true }],
-          useFactory: (config: AppConfig, crypto?: FieldCrypto): SearchCursorCodec => {
-            if (crypto !== undefined) {
-              // Derived on first use, not at startup: only search touches the keyring for it.
-              let codec: SearchCursorCodec | undefined;
-              const signed = (): SearchCursorCodec =>
-                (codec ??= createSearchCursorCodec(keyringSearchCursorKey(crypto)));
-              return {
-                encode: (value) => signed().encode(value),
-                decode: (value) => signed().decode(value),
-              };
-            }
-            if (config.appEnv !== 'local' && config.appEnv !== 'test') {
-              throw new Error(
-                'catalog: search cursors need the field keyring outside local / test',
-              );
-            }
-            return createSearchCursorCodec(processSearchCursorKey());
-          },
+          useFactory: catalogCursorCodec,
         },
         {
           provide: CatalogSearchService,
