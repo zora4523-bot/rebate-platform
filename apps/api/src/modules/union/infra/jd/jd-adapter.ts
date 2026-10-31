@@ -5,9 +5,10 @@
 // （全部参数在请求体，URL 不带查询串，Content-Type application/x-www-form-urlencoded;charset=utf-8）、
 // 按调用方登记的外层键与结果键解包（见 response.ts）。业务对象无法序列化或含非有限数 → invalid_dto，
 // 不取凭据、不发请求。传输抛错 → upstream_unavailable（不带原文）。调用方的 AbortSignal 与归档上下文
-// 原样挂在传输请求上。searchItems / getItem / resolveLink / convert 仍是
-// adapter_unimplemented，不取凭据、不发请求。不读 process.env、不读文件；app_secret 只在内存参与签名。
+// 原样挂在传输请求上。convert 仍是 adapter_unimplemented，不取凭据、不发请求。
+// 不读 process.env、不读文件；app_secret 只在内存参与签名。
 // listOrders（B1-04zb）的时间窗、游标与映射在 orders.ts；每次调用取一页，每页都单独经配额治理。
+// searchItems / getItem / resolveLink（B1-04zc）现在只是 NotImplemented 骨架，规则测试：test/spec/union/jd-goods/**。
 import type { Clock } from '../../../platform/index.ts';
 import {
   UnionError,
@@ -220,23 +221,23 @@ export class JdUnionAdapter implements UnionAdapter {
     return gate((signal) => this.#requestOrders(parameters, signal, archive));
   }
 
-  // 其余端口方法都是占位：等商品、转链各自的任务落地，不取凭据、不发请求。
+  // 商品三个端口是 B1-04zc 的 NotImplemented 骨架；convert 等转链任务落地，不取凭据、不发请求。
   async searchItems(q: SearchQuery, ctx: CallCtx): Promise<Page<UnionItem>> {
     void q;
     void ctx;
-    throw unimplemented('searchItems');
+    throw new Error('NotImplemented: searchItems');
   }
 
   async getItem(ref: ItemRef, ctx: CallCtx): Promise<UnionItemDetail> {
     void ref;
     void ctx;
-    throw unimplemented('getItem');
+    throw new Error('NotImplemented: getItem');
   }
 
   async resolveLink(raw: string, ctx: CallCtx): Promise<ResolvedLink> {
     void raw;
     void ctx;
-    throw unimplemented('resolveLink');
+    throw new Error('NotImplemented: resolveLink');
   }
 
   async convert(req: ConvertReq, identity: UnionIdentity, ctx: CallCtx): Promise<ConvertResult> {
