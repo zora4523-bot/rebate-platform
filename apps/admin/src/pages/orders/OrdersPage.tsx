@@ -2,20 +2,24 @@
 // F1-07e): filters (platform, platform_status, rebate_status, flag, order number, user, paid
 // days in Beijing time) applied with 【查询】, the contract's columns in the server's order
 // (paid_at descending) and server-side pages. Everything is read through the data provider
-// (GET /admin/v1/orders). Read only: the write buttons of the board (manual sync, sync records,
-// rights import, export) come with a later contract and are not rendered. The applied conditions
+// (GET /admin/v1/orders). The title row has 【同步记录】 and 【手动同步】 (F1-07eb, CT-24n; their
+// reads start only when pressed); rights import and export come with a later contract and are not
+// rendered. The applied conditions
 // live in this component (not the address); they travel to the detail subpage in router state,
 // so 【返回】 restores them.
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
+  HistoryOutlined,
   InboxOutlined,
   ReloadOutlined,
   SearchOutlined,
+  SyncOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import { useDataProvider } from '@refinedev/core';
 import {
+  Alert,
   Button,
   Card,
   ConfigProvider,
@@ -42,6 +46,9 @@ import type { AccessControl } from '../../providers/access-control/index.ts';
 import { PlannedPage, usePlanned } from '../../components/planned/index.ts';
 import { ordersTexts as t } from '../../texts/orders.ts';
 import { FlagTags, StatusTag } from './parts.tsx';
+import { SyncDialog } from './SyncDialog.tsx';
+import { SyncRecords } from './SyncRecords.tsx';
+import { nextNoticeId, noticeOf, type SyncNotice } from './sync.ts';
 import {
   FIRST_PAGE,
   FLAGS,
@@ -65,6 +72,7 @@ import {
   type OrderQuery,
   type OrderRow,
   type OrdersBackState,
+  type SyncOutcome,
 } from './model.ts';
 
 export interface OrdersPageProps {
@@ -173,6 +181,10 @@ function OrdersList(): ReactElement {
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState<ListStatus>('loading');
   const [data, setData] = useState<OrderPage>();
+  // Manual sync (F1-07eb): nothing is read until a dialog opens.
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [recordsOpen, setRecordsOpen] = useState(false);
+  const [notice, setNotice] = useState<SyncNotice>();
 
   useEffect(() => {
     let current = true;
@@ -521,11 +533,46 @@ function OrdersList(): ReactElement {
   const pick = (value: string | undefined) => (value === ALL ? undefined : value);
   const cell = { marginBottom: 0, flex: '1 1 220px', minWidth: 200 } as const;
 
+  const syncDone = (outcome: SyncOutcome) => {
+    setSyncOpen(false);
+    const shown = noticeOf(outcome);
+    setNotice(shown === undefined ? undefined : { id: nextNoticeId(), ...shown });
+  };
+
   return (
     <Flex vertical gap={16}>
-      <Typography.Title level={4} style={{ margin: 0 }}>
-        {t.title}
-      </Typography.Title>
+      <Flex justify="space-between" align="center" wrap gap={8}>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          {t.title}
+        </Typography.Title>
+        <Flex gap={8} wrap>
+          <Button icon={<HistoryOutlined aria-hidden />} onClick={() => setRecordsOpen(true)}>
+            {t.sync.recordsEntry}
+          </Button>
+          <Button
+            type="primary"
+            icon={<SyncOutlined aria-hidden />}
+            onClick={() => {
+              setNotice(undefined);
+              setSyncOpen(true);
+            }}
+          >
+            {t.sync.manualEntry}
+          </Button>
+        </Flex>
+      </Flex>
+      {notice === undefined ? null : (
+        <Alert
+          key={notice.id}
+          type={notice.type}
+          showIcon
+          closable
+          message={notice.text}
+          onClose={() => setNotice(undefined)}
+        />
+      )}
+      {syncOpen ? <SyncDialog onClose={() => setSyncOpen(false)} onDone={syncDone} /> : null}
+      {recordsOpen ? <SyncRecords onClose={() => setRecordsOpen(false)} /> : null}
       <Card>
         <ConfigProvider theme={FILTER_THEME}>
           {/* Each Select also carries its label as aria-label: the browser would otherwise read the
