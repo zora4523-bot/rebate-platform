@@ -8,8 +8,9 @@ type: impl
 # ③ 淘口令：新可选端口 taobaoShareCode(url, ctx) → { password_simple, model }，调 taobao.tbk.tpwd.create 参数只传 url（text / logo / ext / user_id 手册标「无实际作用」不传）；外层键 tbk_tpwd_create_response、内层 data.model / data.password_simple（已录）；任一缺失或非字符串 → upstream_unavailable；15 + sub_code 26 / 23（链接不属联盟官方场景 / 物料为空）→ link_unrecognized。只接受 https 的 s.click.taobao.com / uland.taobao.com 链接，否则不调用、抛 invalid_dto。口令只能由我方推广链接生成（BR-ATTR-10 细则），调用方负责传我方链接。
 # ④ 短链：新可选端口 shortenTaobaoUrl(url, ctx) → string，调 taobao.tbk.spread.get，requests 为 [{url}] 的 JSON 串（B1-04j 数组按 JSON 参与签名）；外层键 tbk_spread_get_response，取 results.tbk_spread[0]（已录）；err_msg 非 OK 或 content 空 → upstream_rejected（已录一次失败形状：content 空、err_msg 非 OK）；content 必须是 https://s.click.taobao.com/ 开头，否则 upstream_unavailable。只接受手册列的四个域名（uland / s.click / ai / temai.taobao.com）且 https，否则不调用、抛 invalid_dto。
 # ⑤ 两个新端口照 B1-04h pddAuthorityUrl 的做法：domain/types.ts 声明为可选，governed-adapter.ts 透传治理（idempotent_read、purpose online），index.ts 导出；只在淘宝真实适配器上提供，demo 不提供（调用方按端口缺失处理）。不改 convert（淘宝仍是 baichuan 客户端转链，02 §5.1），不做 searchItems / resolveLink / listOrders（③ 段与权限到位后）。
+# ⑥ 价格配置（D10-479：B1-04k 留到本段）：TaobaoUnionAdapter 加可选 priceSettings（TaobaoPriceSettingsReader），getItem 每次按 ctx.appId 读一次再传 mapTaobaoPrice（同 demo 适配器 B1-22q / B1-22w 做法，读失败按其既有回落）；registry.ts 的 taobaoLive 装配把既有 options.taobaoPriceSettings 原样传给真实适配器。元转分只用 packages/money 的 yuanStrToFen，不用浮点。
 # 未知项：凑狸应用用旧格式数字 ID 取详情得 50001，疑需新格式商品 ID（《淘宝客新商品ID升级》）或不在推广池；详情真实形状待商品物料获取权限批下后再录，届时复核外层 / 包装键与字段映射。09 CAP-TB 登记由编排在规划仓库做。
-# 目录：union/infra/taobao/**、union/domain/types.ts、union/application/governed-adapter.ts(+.test.ts)、union/index.ts。test_paths：test/spec/union/taobao-goods/**。整体 RV2。
+# 目录：union/infra/taobao/**、union/infra/registry.ts(+.test.ts)、union/domain/types.ts、union/application/governed-adapter.ts(+.test.ts)、union/index.ts。test_paths：test/spec/union/taobao-goods/**。整体 RV2。
 refs: []
 refs_hash: {}
 deps: [B1-04k]
@@ -19,6 +20,8 @@ paths:
   - 'apps/api/src/modules/union/application/governed-adapter.ts'
   - 'apps/api/src/modules/union/application/governed-adapter.test.ts'
   - 'apps/api/src/modules/union/index.ts'
+  - 'apps/api/src/modules/union/infra/registry.ts'
+  - 'apps/api/src/modules/union/infra/registry.test.ts'
 test_paths:
   - 'test/spec/union/taobao-goods/**'
 impl: claude
