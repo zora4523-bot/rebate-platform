@@ -43,6 +43,14 @@ export interface BillSourceOrder {
   readonly commissionVersion: number;
   /** 由差错单结论读口提供，不以 closed 状态冒充「以联盟为准」。 */
   readonly unionAuthoritative: boolean;
+  /** 编排裁定 D10-506 ②：结论绑定的金额；读口给了金额才有，有就必须金额相等才算相符。 */
+  readonly unionConclusions?: readonly BillUnionConclusion[];
+}
+
+/** 一张「以联盟为准」差错单的 expected_fen / actual_fen。 */
+export interface BillUnionConclusion {
+  readonly expectedFen: bigint;
+  readonly actualFen: bigint;
 }
 
 export interface BillSourceSettlement {
@@ -329,10 +337,43 @@ function diffInput(
     refId: orderKey,
     expectedFen,
     actualFen,
-    diffFen: subFen(actualFen, expectedFen),
+    diffFen: subFen(expectedFen, actualFen),
     dedupeKey: null,
     resolution: null,
   };
+}
+
+/**
+ * 编排裁定 D10-506 ②：「以联盟为准」只在当前基数与 B_settle 都精确等于结论金额时成立（不走容差），
+ * 否则结论不适用，照常比较。
+ */
+export function unionConclusionApplies(
+  order: BillSourceOrder,
+  baseFen: bigint,
+  bSettleFen: bigint,
+): boolean {
+  if (!order.unionAuthoritative) return false;
+  if (order.unionConclusions === undefined) return true;
+  return order.unionConclusions.some(
+    (c) => c.expectedFen === baseFen && c.actualFen === bSettleFen,
+  );
+}
+
+/**
+ * 编排裁定 D10-506 ③：登记账单金额不一致。本账单首张是裸 {order_key} 行；裸行已被别的金额占着时，
+ * 登记 {order_key}#AMT#{base}:{b_settle}（CT-24zf，dedupe_key 留空，靠含 period 的业务键）。
+ * 两步都按业务键幂等、精确匹配，不用 LIKE：本账单已有这个金额的单（裸行或 #AMT# 行）就不增加。
+ */
+export async function registerAmountMismatch(
+  deps: Pick<BillJobDependencies, 'clock' | 'registerDiff'>,
+  trx: Transaction<DB>,
+  input: BillReconDiffInput,
+): Promise<void> {
+  const { expectedFen, actualFen } = input;
+  const first = await deps.registerDiff(trx, input, { clock: deps.clock });
+  if (first.expected_fen === expectedFen && first.actual_fen === actualFen) return;
+  const refId = `${input.refId}#AMT#${String(expectedFen)}:${String(actualFen)}`;
+  await deps.registerDiff(trx, { ...input, refId }, { clock: deps.clock });
 }
 
 export function createBillJob(dependencies: BillJobDependencies): BillJob {
@@ -454,9 +495,12 @@ export function createBillJob(dependencies: BillJobDependencies): BillJob {
         const final = classifySettlementBillOrder({
           bill_period: billId,
           generation_started_at: now,
-          order: facts([
-            { commission_version: order.commissionVersion, base_fen: snapshot.baseFen },
-          ]),
+          order: {
+            ...facts([
+              { commission_version: order.commissionVersion, base_fen: snapshot.baseFen },
+            ])!,
+            union_authoritative: unionConclusionApplies(order, snapshot.baseFen, bSettle),
+          },
           settlement: {
             source: chosen.source,
             created_at: chosen.createdAt,
@@ -484,7 +528,8 @@ export function createBillJob(dependencies: BillJobDependencies): BillJob {
           });
         } else {
           errorCount += 1;
-          await deps.registerDiff(
+          await registerAmountMismatch(
+            deps,
             trx,
             diffInput(
               appId,
@@ -494,7 +539,6 @@ export function createBillJob(dependencies: BillJobDependencies): BillJob {
               snapshot.baseFen,
               bSettle,
             ),
-            { clock: deps.clock },
           );
         }
       } else if (preliminary === 'missing_settlement' && order !== null) {

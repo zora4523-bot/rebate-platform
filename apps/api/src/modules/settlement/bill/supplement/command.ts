@@ -11,14 +11,16 @@ import { applyReserve, parseFen, subFen } from '@couli/money';
 import type { Kysely, Transaction } from 'kysely';
 import { pino, type Logger } from 'pino';
 import { newUuidV7 } from '../../../platform/index.ts';
-import type {
-  BillJobDependencies,
-  BillReconDiffInput,
-  BillSnapshot,
-  BillSnapshotSelection,
-  BillSourceSelection,
-  BillSourceSettlement,
-  BillValidation,
+import {
+  registerAmountMismatch,
+  unionConclusionApplies,
+  type BillJobDependencies,
+  type BillReconDiffInput,
+  type BillSnapshot,
+  type BillSnapshotSelection,
+  type BillSourceSelection,
+  type BillSourceSettlement,
+  type BillValidation,
 } from '../job.ts';
 import {
   claimSettleJob,
@@ -267,7 +269,7 @@ function diffInput(
     refId: orderKey,
     expectedFen,
     actualFen,
-    diffFen: subFen(actualFen, expectedFen),
+    diffFen: subFen(expectedFen, actualFen),
     dedupeKey: null,
     resolution: null,
   };
@@ -514,9 +516,12 @@ export function createSupplementCommand(dependencies: SupplementDependencies): S
         const final = classifySettlementBillOrder({
           bill_period: billId,
           generation_started_at: now,
-          order: facts([
-            { commission_version: order.commissionVersion, base_fen: snapshot.baseFen },
-          ]),
+          order: {
+            ...facts([
+              { commission_version: order.commissionVersion, base_fen: snapshot.baseFen },
+            ])!,
+            union_authoritative: unionConclusionApplies(order, snapshot.baseFen, bSettle),
+          },
           settlement: {
             source: chosen.source,
             created_at: chosen.createdAt,
@@ -534,8 +539,9 @@ export function createSupplementCommand(dependencies: SupplementDependencies): S
             bSettleFen: bSettle,
           });
         } else {
-          // 同账单同单同类型的差错由 registerReconDiff 的业务键去重，不重复登记。
-          await deps.registerDiff(
+          // 同账单同单同金额的差错由 registerReconDiff 的业务键去重，不重复登记（D10-506 ③）。
+          await registerAmountMismatch(
+            deps,
             trx,
             diffInput(
               appId,
@@ -545,7 +551,6 @@ export function createSupplementCommand(dependencies: SupplementDependencies): S
               snapshot.baseFen,
               bSettle,
             ),
-            { clock: deps.clock },
           );
         }
       } else if (preliminary === 'missing_settlement' && order !== null) {

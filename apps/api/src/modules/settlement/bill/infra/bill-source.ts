@@ -16,14 +16,18 @@ import type {
   BillSourceOrder,
   BillSourceRow,
   BillSourceSettlement,
+  BillUnionConclusion,
 } from '../job.ts';
 
-/** Structurally ledger's readUnionAuthoritativeOrderKeys. */
+/**
+ * Structurally ledger's readUnionAuthoritativeOrderKeys (a Map with the concluded amounts, D10-506).
+ * A plain Set of keys carries no amounts: the order is then flagged without unionConclusions.
+ */
 export interface BillSourceDependencies {
   readUnionAuthoritative(
     db: Kysely<DB>,
     selection: { readonly appId: string; readonly orderKeys: readonly string[] },
-  ): Promise<ReadonlySet<string>>;
+  ): Promise<ReadonlySet<string> | ReadonlyMap<string, readonly BillUnionConclusion[]>>;
 }
 
 type BillRebateStatus = BillSourceOrder['rebateStatus'];
@@ -195,6 +199,7 @@ export function createBillSourceReader(
     const rows: BillSourceRow[] = [];
     for (const [orderId, entry] of byOrder) {
       const fact = facts.get(orderId);
+      const conclusions = authoritative instanceof Map ? authoritative.get(entry.key) : undefined;
       rows.push({
         orderKey: entry.key,
         order:
@@ -208,6 +213,7 @@ export function createBillSourceReader(
                 rightsPending: fact.row.rights_pending,
                 commissionVersion: fact.row.commission_version,
                 unionAuthoritative: authoritative.has(entry.key),
+                ...(conclusions === undefined ? {} : { unionConclusions: conclusions }),
               },
         settlements: entry.settlements,
       });

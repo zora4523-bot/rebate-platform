@@ -1,6 +1,6 @@
 // B2-09b: POST /admin/v1/recon-diffs/{recon_diff_id}/close (contracts/openapi.yaml
 // closeAdminReconDiff; 08 BR-FUND-19 差错单关闭时解除冻结记录, BR-FUND-22 「已关闭（不处理）」,
-// BR-WDR-05 冻结记录逐条解除). The controller (http/admin/) only authorises through the
+// BR-WDR-05 冻结记录逐条解除; B2-09h: 编排裁定 D10-447 ②, BR-FUND-04 ④ 结构化结论). The controller (http/admin/) only authorises through the
 // AdminOperationGuard (fund.recon, no step-up), takes the parameters and calls closeAdminReconDiff.
 //
 // closeAdminReconDiff runs under platform idempotency in its transactional mode (subject
@@ -11,14 +11,16 @@
 //   the reason, trimmed, 1–200 characters, else 20001 [reason];
 //   the app's R1–R3 recon_diffs row locked FOR UPDATE (unknown / another app / R4 / not a uuid →
 //   20001 [recon_diff_id], no 404); a status other than open / processing → 20902 resource
-//   recon_diff; the compare-and-set to closed (handler_id the caller, closed_at = updated_at = the
-//   injected Clock, resolution keeps its keys and records `reason`);
+//   recon_diff; `outcome` on anything but settle_amount_mismatch of source R1 → 20001 [outcome]
+//   (D10-506);
+//   the compare-and-set to closed (handler_id the caller, closed_at = updated_at = the injected
+//   Clock, resolution keeps its keys, records `reason` and `outcome` only when this close gave it);
 //   every unreleased hold whose source_ref is exactly `recon_diff:<id>` released through the
 //   injected payout port (payout is the single writer of withdraw_holds; it locks the users rows
 //   first, BR-WDR-07 — after the diff row here, as payout's recon job registers the diff before it
 //   adds the holds);
-//   the audit recon_diff_close (admin's writer bound to the transaction): the reason and, before and
-//   after, status and released_hold_count; no personal data.
+//   the audit recon_diff_close (admin's writer bound to the transaction): the reason, the outcome
+//   when given and, before and after, status and released_hold_count; no personal data.
 // Any failure rolls the whole close back (5xx) and leaves no idempotency record. Nothing is posted.
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
@@ -65,6 +67,8 @@ export interface ReconDiffCloseRequest {
   readonly traceId: string;
 }
 
+type ReconDiffOutcome = Schema<'AdminReconDiffOutcome'>;
+
 /** The audit action of the contract (closeAdminReconDiff). */
 export const RECON_DIFF_CLOSE_AUDIT_ACTION = 'recon_diff_close';
 
@@ -101,13 +105,27 @@ function conflictRefusal(traceId: string): HandlerResult {
   };
 }
 
-/** The resolution after closing: the stored keys kept, `reason` set. */
-function closedResolution(stored: unknown, reason: string): object {
+/** D10-506: a conclusion has a meaning for 账单金额不一致 of source R1 only. */
+function takesOutcome(row: { readonly source: string; readonly type: string }): boolean {
+  return row.source === 'R1' && row.type === 'settle_amount_mismatch';
+}
+
+/**
+ * The resolution after closing: the stored keys kept, `reason` set. `outcome` is only ever this
+ * close's own: a stored one is dropped, so a close without it never leaves a conclusion behind.
+ */
+function closedResolution(
+  stored: unknown,
+  reason: string,
+  outcome: ReconDiffOutcome | undefined,
+): object {
   const base =
     typeof stored === 'object' && stored !== null && !Array.isArray(stored)
       ? (stored as Record<string, unknown>)
       : {};
-  return { ...base, reason };
+  const { outcome: storedOutcome, ...kept } = base;
+  void storedOutcome;
+  return outcome === undefined ? { ...kept, reason } : { ...kept, reason, outcome };
 }
 
 /** Closes one R1–R3 recon diff of the operator's app; the response bytes (first result on replay). */
@@ -131,6 +149,7 @@ export function closeAdminReconDiff(
     },
     async (trx): Promise<HandlerResult> => {
       const reason = request.body.reason.trim();
+      const { outcome } = request.body;
       const length = [...reason].length;
       if (length < 1 || length > REASON_MAX) return fieldsRefusal(['reason'], traceId);
       if (!UUID.test(reconDiffId)) return fieldsRefusal(['recon_diff_id'], traceId);
@@ -138,12 +157,13 @@ export function closeAdminReconDiff(
       const row = await lockAdminReconDiff(trx, appId, id);
       if (row === undefined) return fieldsRefusal(['recon_diff_id'], traceId);
       if (row.status !== 'open' && row.status !== 'processing') return conflictRefusal(traceId);
+      if (outcome !== undefined && !takesOutcome(row)) return fieldsRefusal(['outcome'], traceId);
       const closed = await closeAdminReconDiffRow(trx, {
         appId,
         id,
         handlerId: adminId,
         at: deps.clock.now(),
-        resolution: closedResolution(row.resolution, reason),
+        resolution: closedResolution(row.resolution, reason, outcome),
       });
       // The row is locked above, so the compare-and-set cannot miss; refuse rather than go on.
       if (closed === undefined) return conflictRefusal(traceId);
@@ -158,7 +178,12 @@ export function closeAdminReconDiff(
         action: RECON_DIFF_CLOSE_AUDIT_ACTION,
         target: id,
         before: { status: row.status, released_hold_count: 0 },
-        after: { status: closed.status, released_hold_count: released, reason },
+        after: {
+          status: closed.status,
+          released_hold_count: released,
+          reason,
+          ...(outcome === undefined ? {} : { outcome }),
+        },
         ip: operator.ip,
       });
       const data: Schema<'AdminReconDiffClose'> = {
