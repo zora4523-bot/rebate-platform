@@ -14539,8 +14539,8 @@ export const CONTRACT_ROUTE_SCHEMAS = {
           "description": "Why the difference is closed without further handling; 1–200 characters after trimming, else 20001 with data.fields=[reason]. Stored as resolution.reason."
         },
         "outcome": {
+          "description": "Optional structured conclusion, for type=settle_amount_mismatch (source R1) only; any other type or source → 20001 with data.fields=[outcome] from B2-09h on. Stored as resolution.outcome from B2-09h on; do not send it before then.",
           "type": "string",
-          "description": "contracts/enums/admin.yaml admin_recon_diff_outcome: the structured conclusion of a source\nR1 difference (D10-447 ②; BR-FUND-04 ④, 例 2), optional in the close request and stored as\nresolution.outcome (written from B2-09h on). union = 以联盟为准: the R1 order difference\ncounts as matched in the monthly check and the order goes on to a supplement batch. ours =\n以我方为准: does not count as matched. Sent for a source other than R1 → 20001 with\ndata.fields=[outcome].\n",
           "enum": [
             "union",
             "ours"

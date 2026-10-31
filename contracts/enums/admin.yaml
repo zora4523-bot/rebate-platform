@@ -253,10 +253,10 @@ enums:
       generated: 已执行补充校验（本次新生成的批次在 batch_ids，可为空）
       duplicate: 同一名义时刻已被认领（settle_jobs 唯一键），本次未生成，batch_ids 为空
   admin_recon_diff_outcome:
-    source: 规划/08 BR-FUND-04 ④、校验结果表与例 2；编排裁定 D10-447 ②（CT-24zf）
-    description: POST /admin/v1/recon-diffs/{recon_diff_id}/close 的可选 outcome，写入 recon_diffs.resolution.outcome；只对 source R1 有意义，其他来源带它是 20001 data.fields=[outcome]；不传 = 无结构化结论，月结按需比金额；closed 状态本身不算结论，自由文本 reason 不解析
+    source: 规划/08 BR-FUND-04 ④、校验结果表与例 2；编排裁定 D10-447 ②、D10-506（CT-24zf）
+    description: POST /admin/v1/recon-diffs/{recon_diff_id}/close 的可选 outcome，写入 recon_diffs.resolution.outcome；只对 type=settle_amount_mismatch（source R1）有意义，其他差错单带它是 20001 data.fields=[outcome]；不传 = 无结构化结论，月结按需比金额；closed 状态本身不算结论，自由文本 reason 不解析
     values:
-      union: 以联盟为准（R1 订单差错单月结校验算相符，后续进补充批次）
+      union: 以联盟为准（账单金额不一致差错单；当前基数与结算额都等于结案金额时月结校验算相符，后续进补充批次）
       ours: 以我方为准（月结校验不算相符）
   admin_settle_bill_status:
     source: 规划/08 BR-FUND-04 细则「月结账单状态」；规划/04 §2.5（月结账单状态由批次派生、不入库）；规划/01 F-ADM-08；design/specs/admin-settle-bills.md §1、§4（CT-24z）

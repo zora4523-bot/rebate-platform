@@ -360,11 +360,11 @@ export const admin_settle_supplement_outcome = [
 export type AdminSettleSupplementOutcome = (typeof admin_settle_supplement_outcome)[number];
 
 /**
- * POST /admin/v1/recon-diffs/{recon_diff_id}/close 的可选 outcome，写入 recon_diffs.resolution.outcome；只对 source R1 有意义，其他来源带它是 20001 data.fields=[outcome]；不传 = 无结构化结论，月结按需比金额；closed 状态本身不算结论，自由文本 reason 不解析
- * Source: 规划/08 BR-FUND-04 ④、校验结果表与例 2；编排裁定 D10-447 ②（CT-24zf） (contracts/enums/admin.yaml).
+ * POST /admin/v1/recon-diffs/{recon_diff_id}/close 的可选 outcome，写入 recon_diffs.resolution.outcome；只对 type=settle_amount_mismatch（source R1）有意义，其他差错单带它是 20001 data.fields=[outcome]；不传 = 无结构化结论，月结按需比金额；closed 状态本身不算结论，自由文本 reason 不解析
+ * Source: 规划/08 BR-FUND-04 ④、校验结果表与例 2；编排裁定 D10-447 ②、D10-506（CT-24zf） (contracts/enums/admin.yaml).
  */
 export const admin_recon_diff_outcome = [
-  "union", // 以联盟为准（R1 订单差错单月结校验算相符，后续进补充批次）
+  "union", // 以联盟为准（账单金额不一致差错单；当前基数与结算额都等于结案金额时月结校验算相符，后续进补充批次）
   "ours", // 以我方为准（月结校验不算相符）
 ] as const;
 export type AdminReconDiffOutcome = (typeof admin_recon_diff_outcome)[number];

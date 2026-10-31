@@ -7845,28 +7845,38 @@ export interface paths {
          *     Request: `reason`, required: after trimming surrounding whitespace 1–200 characters, else
          *     20001 with `data.fields=[reason]`. Only a difference of source R1, R2 or R3 whose `status`
          *     is `open` or `processing` can be closed. `outcome`, optional (enum
-         *     admin_recon_diff_outcome, 编排裁定 D10-447 ②): the structured conclusion of an R1
-         *     difference, `union` 以联盟为准 or `ours` 以我方为准; a value outside the enum is 20001 with
-         *     `data.fields=[outcome]`. It has a meaning for source R1 only.
+         *     admin_recon_diff_outcome, 编排裁定 D10-447 ②, D10-506): the structured conclusion of a
+         *     月结账单金额不一致 difference, `union` 以联盟为准 or `ours` 以我方为准; a value outside the
+         *     enum is 20001 with `data.fields=[outcome]`. It has a meaning for
+         *     `type=settle_amount_mismatch` (source R1) only: any other type or source is refused, see
+         *     the order of checks.
          *
-         *     What the conclusion does (BR-FUND-04 ④ and its 例 2): an R1 order difference closed with
-         *     `outcome=union` counts as matched in the monthly consistency check, so the order goes on
-         *     to a supplement batch. Without `outcome` there is no structured conclusion: the check
+         *     What the conclusion does (BR-FUND-04 ④, its 校验结果 table and 例 2; D10-506): the
+         *     conclusion is bound to the amounts of the difference. `outcome=union` counts as matched
+         *     in the monthly consistency check only when the current snapshot `base_fen` equals this
+         *     difference's `expected_fen` and B_settle equals its `actual_fen`; the order then goes on
+         *     to a supplement batch. Otherwise the conclusion does not apply and the check compares
+         *     the amounts as usual: when they do not match it opens a new settle_amount_mismatch
+         *     difference (at most one for the same amount state; the old one stays closed) and the
+         *     order stays WAITING. Without `outcome` there is no structured conclusion: the check
          *     compares the amounts as needed, which can only hold back more, never pay more
          *     (D10-447 ①). `ours` does not count as matched either. The `closed` status by itself is
          *     not a conclusion, and the free-text `reason` is never parsed for one. The conclusion
-         *     cannot be changed: a closed difference answers 20902 to any further close. The route
-         *     accepts `outcome` from CT-24zf; it is written from B2-09h on, and until then it is
-         *     accepted without taking effect.
+         *     cannot be changed: a closed difference answers 20902 to any further close.
+         *
+         *     Until B2-09h lands the route accepts `outcome` but the server neither runs the 20001
+         *     check on it nor writes it: a close carrying `outcome` still closes the difference, with
+         *     no conclusion and for good. Clients must not send `outcome` before B2-09h.
          *
          *     Order of checks: `fund.recon` (10403 with `data.reason=admin_permission_denied`) → body
          *     (20001 with `data.fields=[reason]` or `data.fields=[outcome]`) → an unknown
          *     `recon_diff_id`, a difference of another app, or one of source R4 (see
          *     GET /admin/v1/pay-recon-diffs) is 20001 with `data.fields=[recon_diff_id]` (no 404) → a
          *     difference already `closed`, `adjusted` or `written_off` is 20902 with
-         *     `data.resource=recon_diff`, nothing changed (refresh the detail) → `outcome` sent for a
-         *     difference whose source is not R1 is 20001 with `data.fields=[outcome]`, nothing changed
-         *     (the same place as the guard of write-off).
+         *     `data.resource=recon_diff`, nothing changed (refresh the detail) → from B2-09h on,
+         *     `outcome` sent for a difference that is not `type=settle_amount_mismatch` of source R1 is
+         *     20001 with `data.fields=[outcome]`, nothing changed (the same place as the guard of
+         *     write-off).
          *
          *     Effects, in one transaction: `status` becomes `closed`, `closed_at` and `updated_at` the
          *     server's current time, `handler_id` the caller, and `resolution` records the trimmed
@@ -17023,15 +17033,19 @@ export interface components {
         AdminReconDiffCloseRequest: {
             /** @description Why the difference is closed without further handling; 1–200 characters after trimming, else 20001 with data.fields=[reason]. Stored as resolution.reason. */
             reason: string;
+            /** @description Optional structured conclusion, for type=settle_amount_mismatch (source R1) only; any other type or source → 20001 with data.fields=[outcome] from B2-09h on. Stored as resolution.outcome from B2-09h on; do not send it before then. */
             outcome?: components["schemas"]["AdminReconDiffOutcome"];
         };
         /**
-         * @description contracts/enums/admin.yaml admin_recon_diff_outcome: the structured conclusion of a source
-         *     R1 difference (D10-447 ②; BR-FUND-04 ④, 例 2), optional in the close request and stored as
-         *     resolution.outcome (written from B2-09h on). union = 以联盟为准: the R1 order difference
-         *     counts as matched in the monthly check and the order goes on to a supplement batch. ours =
-         *     以我方为准: does not count as matched. Sent for a source other than R1 → 20001 with
-         *     data.fields=[outcome].
+         * @description contracts/enums/admin.yaml admin_recon_diff_outcome: the structured conclusion of a
+         *     settle_amount_mismatch difference of source R1 (D10-447 ②, D10-506; BR-FUND-04 ④, 校验结果
+         *     table, 例 2), optional in the close request and stored as resolution.outcome (written from
+         *     B2-09h on). union = 以联盟为准: counts as matched in the monthly check, and the order goes
+         *     on to a supplement batch, only while the current base_fen and B_settle both equal the
+         *     difference's expected_fen and actual_fen; otherwise the amounts are compared as usual, a
+         *     mismatch opens a new settle_amount_mismatch difference and the order stays WAITING. ours =
+         *     以我方为准: does not count as matched. Sent for any other type or source → 20001 with
+         *     data.fields=[outcome] (from B2-09h on; see closeAdminReconDiff for the window before it).
          * @enum {string}
          */
         AdminReconDiffOutcome: "union" | "ours";
@@ -35886,7 +35900,7 @@ export interface operations {
                      *         "recon_diff": {
                      *           "recon_diff_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e01",
                      *           "source": "R1",
-                     *           "type": "union_mismatch",
+                     *           "type": "settle_amount_mismatch",
                      *           "period": "2026-09",
                      *           "ref_type": "order",
                      *           "ref_id": "taobao:5550001",
