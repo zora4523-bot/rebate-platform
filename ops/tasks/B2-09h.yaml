@@ -30,6 +30,38 @@ paths:
 test_paths:
   - 'test/spec/ledger/recon-outcome/**'
   - 'test/spec/settlement/bill-ports/**'
+  - 'test/spec/settlement/supplement/validation.int.test.ts'
+red_exempt:
+  - file: test/spec/settlement/supplement/validation.int.test.ts
+    test: '[AC-B2-04r#1] hold 解除、维权关闭的暂缓单进入同一账单的补充批次，按快照基数换算入批'
+    reason: 冻结 B2-04r 用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
+  - file: test/spec/settlement/supplement/validation.int.test.ts
+    test: '[AC-B2-04r#2] 账单日应结未结、联盟结算数据后到的订单进入补充批次，原差错单不重复登记'
+    reason: 冻结 B2-04r 用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
+  - file: test/spec/settlement/supplement/validation.int.test.ts
+    test: '[AC-B2-04r#3] 金额不一致经差错结论「以联盟为准」后进入补充批次，B_settle 取联盟结算额换算'
+    reason: 冻结 B2-04r 用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
+  - file: test/spec/settlement/supplement/validation.int.test.ts
+    test: '[AC-B2-04r#5] 仍 hold 或维权中的订单记暂缓，不登记差错、不生成补充批次'
+    reason: 冻结 B2-04r 用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
+  - file: test/spec/settlement/supplement/validation.int.test.ts
+    test: '[AC-B2-04r#6] 校验截点取发起时的 Clock（含等号），不取名义请求时刻；更晚取得的结算数据不计'
+    reason: 冻结 B2-04r 用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
+  - file: test/spec/settlement/supplement/validation.int.test.ts
+    test: '[AC-B2-04r#7] 范围按目标账单月：次月发起时 settle_period 晚于账单月的订单不纳入，早于的有数据才纳入'
+    reason: 冻结 B2-04r 用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
+  - file: test/spec/settlement/supplement/validation.int.test.ts
+    test: '[AC-B2-04r#8] 已入账订单不再作为子订单行；其未完成义务生成补记项，沿用同一 beneficiary_credit_id'
+    reason: 冻结 B2-04r 用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
+  - file: test/spec/settlement/supplement/validation.int.test.ts
+    test: '[AC-B2-04r#9] 只校验发起的平台：另一平台的订单与义务不进本次补充批次，另一 app 不受影响'
+    reason: 冻结 B2-04r 用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
+  - file: test/spec/settlement/supplement/validation.int.test.ts
+    test: '[AC-B2-04r#27] 补充前已追加分佣快照 v2：按当前最大版本比对，联盟按 v2 结算的入批、不误报不一致'
+    reason: 冻结 B2-04r 用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
+  - file: test/spec/settlement/supplement/validation.int.test.ts
+    test: '[AC-B2-04r#29] B_settle 按 BR-CALC-02 向下取整并扣淘礼金：联盟佣金 1001 不整除时仍与快照基数一致'
+    reason: 冻结 B2-04r 用例，测试体未改；同文件只有 diff_fen 符号断言按 D10-507 ② 改（同 D10-415 ①）
 impl: claude
 tester: claude-independent
 accept:
