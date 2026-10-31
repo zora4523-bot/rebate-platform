@@ -1,7 +1,8 @@
 // B1-05r rule-test kit (BR-PRICE-11, BR-TEXT-17, BR-PROD-05, BR-PROD-07, TRADE-12; contract
-// listPageSectionItems「Union fall-back」「Fetching product_pool」). Real pieces: PostgreSQL as couli_app,
-// pg-boss on the test database, the single card entry and the reader over the real tables. The union
-// side is a fake of catalog's seams with synthetic data only, and no platform payload is imitated.
+// listPageSectionItems「Union fall-back」「Fetching product_pool」). Real pieces: PostgreSQL as couli_app
+// (the int tests hand in createTestDatabase), pg-boss on the test database, the single card entry and
+// the reader over the real tables. The union side is a fake of catalog's seams with synthetic data
+// only, and no platform payload is imitated.
 //
 // Every fixture builds the reader or the refresh handler first, so on the skeleton every case stops
 // at NotImplemented, the negative ones included. The cases never call the reader's methods and never
@@ -11,7 +12,6 @@
 // take an app of their own. Rows go in directly: catalog's write path is tested in pool-write.
 import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Insertable, type Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, vi } from 'vitest';
 import { createCatalog } from '../../../../apps/api/src/modules/catalog/application/catalog.ts';
@@ -92,12 +92,15 @@ export interface PoolDatabase {
   db: Kysely<DB>;
 }
 
+/** The int test's createTestDatabase: only *.int.test.ts may import it. */
+type CreateDatabase = Parameters<typeof withDatabase>[0];
+
 /** One test database per file; the connection belongs to the container runner. */
-export function usePoolDatabase(): PoolDatabase {
+export function usePoolDatabase(create: CreateDatabase): PoolDatabase {
   const h = {} as PoolDatabase;
-  let database: TestDatabase | undefined;
+  let database: Awaited<ReturnType<CreateDatabase>> | undefined;
   beforeAll(async () => {
-    database = await createTestDatabase();
+    database = await create();
     h.db = createDb({ connectionString: database.urlFor('couli_app'), max: 4 });
   }, TIMEOUT);
   afterAll(async () => {
@@ -437,9 +440,10 @@ export function refreshOptionsOf(
 
 /** One database per case: a round covers every app, so cases cannot share one. */
 export async function refreshCase(
+  create: CreateDatabase,
   run: (f: Awaited<ReturnType<typeof buildRefresh>>) => Promise<void>,
 ): Promise<void> {
-  await withDatabase(createTestDatabase, async (db) => {
+  await withDatabase(create, async (db) => {
     await withRealQueue(db, async (queue) => {
       await run(await buildRefresh(db, queue));
     });

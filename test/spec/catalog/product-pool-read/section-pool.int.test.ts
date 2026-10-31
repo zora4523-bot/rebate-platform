@@ -2,6 +2,7 @@
 // BR-TEXT-17, BR-PRICE-08, BR-PRICE-11). getSectionItems over the real pool tables. Rows that are
 // read and then not sent may or may not count against a page, except no_rebate, which only the
 // quote can tell, so those cases walk the whole list instead of pinning one page.
+import { createTestDatabase } from '@couli/db/testing';
 import { propRuns, propSeed } from '@couli/testing';
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
@@ -25,7 +26,7 @@ import {
   usePoolDatabase,
 } from './kit.ts';
 
-const h = usePoolDatabase();
+const h = usePoolDatabase(createTestDatabase);
 
 /** Every title the list sends, in order, over all its pages. */
 function allTitles(pages: readonly { items: readonly { title: string | null }[] }[]) {

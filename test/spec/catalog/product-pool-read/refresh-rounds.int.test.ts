@@ -2,6 +2,7 @@
 // every interval; within one a tick asks the union nothing, also for a key that failed, which waits
 // for the next round. The clock starts on a whole hour (kit REFRESH_NOW), so the cases hold for a
 // round cut at slot boundaries and for one counted from the last run alike.
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import { seedPoolRefresh } from '../../../../apps/api/src/modules/catalog/worker/pool-refresh.ts';
 import { UnionError } from '../../../../apps/api/src/modules/union/index.ts';
@@ -33,7 +34,7 @@ async function oneRow(f: RefreshCase) {
 it(
   '[BR-PRICE-11] 未配置按 3600 秒一轮：到点前的 tick 不问联盟，到点再问一次',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       await oneRow(f);
 
       await f.round();
@@ -56,7 +57,7 @@ it(
 it(
   '[BR-PRICE-11] pool.refresh_interval_sec 取配置：调成 100 秒后 99 秒不问，100 秒问',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       f.settings.set(REFRESH_KEY, 100);
       await oneRow(f);
 
@@ -78,7 +79,7 @@ it(
 it(
   '[BR-PROD-05] 暂时失败不在这一轮里重问，下一轮才再试，成功后写入',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const { stable, pool } = await oneRow(f);
       f.unionFails(stable, unavailable());
 
@@ -106,7 +107,7 @@ it(
 it(
   '[BR-PRICE-11] 价格异常、引用失效的行同样等下一轮：quoted_at 没动也不会每个 tick 都问',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const anomalous = await oneRow(f);
       const expired = await oneRow(f);
       f.unionAnswers(anomalous.stable, { price_status: 'anomaly' });
@@ -128,9 +129,9 @@ it(
 );
 
 it(
-  '[BR-PRICE-11] 任务排着还没跑时再 tick 不重复：同一轮每个 key 只问一次，任务都带 singletonKey',
+  '[BR-PRICE-11] 任务排着还没跑时再 tick 不重复：同一轮每个 key 只问一次，任务都带 id',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       await oneRow(f);
 
       await seedPoolRefresh(f.options);
@@ -143,7 +144,7 @@ it(
       expect(f.asked).toHaveLength(1);
       const sends = f.queue.sent.filter((job) => job.queue === QUEUE);
       expect(sends.length).toBeGreaterThan(0);
-      for (const job of sends) expect(job.options.singletonKey).toEqual(expect.any(String));
+      for (const job of sends) expect(job.options.id).toEqual(expect.any(String));
     });
   },
   TIMEOUT,
@@ -152,7 +153,7 @@ it(
 it(
   '[BR-PRICE-11] 任务正在跑时再 tick 不重复：不新发任务，同一轮每个 key 只问一次',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       await oneRow(f);
       await oneRow(f);
       const ask = f.getItem.getMockImplementation()!;
@@ -179,7 +180,7 @@ it(
 it(
   '[BR-PRICE-11] 每个有 online 行的 App 各问各的：同一个 key 两个 App 各问一次，用各自的原串',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const { stable, pool } = await oneRow(f);
       const other = await f.other();
       const foreign = await f.pool(other);
@@ -205,7 +206,7 @@ it(
 it(
   '[BR-PRICE-11] 只有下线行的 key 不问联盟；online 行不看窗口，未开始的也刷新',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const parked = f.stableOf();
       const upcoming = f.stableOf();
       const pool = await f.pool();
@@ -232,7 +233,7 @@ it(
 it(
   '[BR-PRICE-11] 库里没有 online 行时一轮什么都不发',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       await f.round();
 
       expect(f.asked).toEqual([]);

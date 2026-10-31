@@ -4,6 +4,7 @@
 // dependency failure falls back: off shelf (30141) and a refused raw ID (30143) keep their answers.
 // getProduct over the detail kit's fakes and the real pool tables; the raw-ID steps before the union
 // call are the detail's own and unchanged.
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it, vi } from 'vitest';
 import { markStaleDetail } from '../../../../apps/api/src/modules/catalog/detail.ts';
 import type { PriceSnapshotRecorder } from '../../../../apps/api/src/modules/catalog/price-history/types.ts';
@@ -24,7 +25,7 @@ import {
   usePoolDatabase,
 } from './kit.ts';
 
-const h = usePoolDatabase();
+const h = usePoolDatabase(createTestDatabase);
 
 const outage = (): UnionError =>
   new UnionError('upstream_unavailable', 'synthetic unavailable', 'taobao');

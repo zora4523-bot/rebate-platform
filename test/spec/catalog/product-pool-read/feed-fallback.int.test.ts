@@ -4,6 +4,7 @@
 // every card is stale=true with ad_label「推广」. Unset or unusable config, a later page, no data and
 // a refused data source all stay as they were. The stale-cache path of B1-28n is not in this tree
 // and is not tested here.
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import { GovernanceError } from '../../../../apps/api/src/modules/platform/index.ts';
 import { DemoUnionError, UnionError } from '../../../../apps/api/src/modules/union/index.ts';
@@ -35,7 +36,7 @@ import {
   usePoolDatabase,
 } from './kit.ts';
 
-const h = usePoolDatabase();
+const h = usePoolDatabase(createTestDatabase);
 
 const unavailable = (): UnionError =>
   new UnionError('upstream_unavailable', 'synthetic unavailable', 'taobao');

@@ -4,6 +4,7 @@
 // the five price fields to every online row of the key and leaves its raw ID; off shelf takes every
 // row of the key offline; a dead reference, a temporary failure and an anomalous price leave the rows
 // as they are, and age then takes them off the shelves by itself.
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import { GovernanceError } from '../../../../apps/api/src/modules/platform/index.ts';
 import {
@@ -105,7 +106,7 @@ const TEMPORARY = [
 it(
   '[BR-PRICE-11] 成功：同一个 key 在几个池里只问一次，全部 online 行写入新价、新佣金率和联盟给的 quoted_at，sort 不动，下线的行不动',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       const [first, second, parked] = [await f.pool(), await f.pool(), await f.pool()];
       const aged = secondsAgo(f.clock, DUE_SEC);
@@ -147,7 +148,7 @@ it(
 it(
   '[BR-PRICE-11][F-ADM-10] 配额走 pool_refresh：详情和重解析的联盟调用都带这个用途和本 App',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const withRef = f.stableOf();
       const withoutRef = f.stableOf();
       const pool = await f.pool();
@@ -173,7 +174,7 @@ it(
 it(
   '[BR-PROD-05] 原串走 product_refs：不用 pool_items.raw_item_id',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       await f.item(await f.pool(), stable, { quoted_at: secondsAgo(f.clock, DUE_SEC) });
       await f.ref(stable);
@@ -191,7 +192,7 @@ it(
 it(
   '[BR-PROD-05] product_refs 过期有 canonical_url → 按链接重解析，用解析出的原串问详情',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       const raw = `rawNew-${stable}`;
       const pool = await f.pool();
@@ -216,7 +217,7 @@ it(
 it(
   '[BR-PROD-05] 没有 product_refs → 按池里的标题重解析，不把 pool_items.raw_item_id 拿去问详情',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       const pool = await f.pool();
       await f.item(pool, stable, { quoted_at: secondsAgo(f.clock, DUE_SEC) });
@@ -236,7 +237,7 @@ it(
 it.each(OTHER_PLATFORMS)(
   '[BR-PROD-05] $platform：原串放进该平台的字段，答复派生回同一个 key 才写入',
   async ({ platform, key, raw, ids }) => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const pool = await f.pool();
       await seedItem(f.db, f.owner, f.clock, pool, key, {
         platform,
@@ -269,7 +270,7 @@ it.each([
 ])(
   '[BR-PROD-05] ① $label：本 App 这个 key 的全部行下线，原因「联盟返回下架」，价格不动，删详情缓存；别的 key、别的 App 不受影响',
   async ({ error }) => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       const healthy = f.stableOf();
       const other = await f.other();
@@ -311,7 +312,7 @@ it.each([
 it(
   '[BR-PROD-05] ① 重解析时联盟明确下架也算下架',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       const pool = await f.pool();
       await f.item(pool, stable, { quoted_at: secondsAgo(f.clock, DUE_SEC) });
@@ -334,7 +335,7 @@ it(
 it.each(REF_EXPIRED)(
   '[BR-PROD-05] ② 引用失效（$label）：不下架、不动价格，不删详情缓存',
   async ({ error }) => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       const pool = await f.pool();
       await f.item(pool, stable, { quoted_at: secondsAgo(f.clock, DUE_SEC) });
@@ -355,7 +356,7 @@ it.each(REF_EXPIRED)(
 it(
   '[BR-PROD-05] ② 重解析找不到同键商品：不下架、不动价格',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       const pool = await f.pool();
       await f.item(pool, stable, { quoted_at: secondsAgo(f.clock, DUE_SEC) });
@@ -375,7 +376,7 @@ it(
 it(
   '[BR-PROD-05] ② 联盟答复派生出别的 key：不下架、不动价格',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       const pool = await f.pool();
       await f.item(pool, stable, { quoted_at: secondsAgo(f.clock, DUE_SEC) });
@@ -395,7 +396,7 @@ it(
 it.each(TEMPORARY)(
   '[BR-PROD-05] ③ 暂时失败（$label）：什么都不动，任务不报错、不靠队列重试',
   async ({ error }) => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       const pool = await f.pool();
       await f.item(pool, stable, { quoted_at: secondsAgo(f.clock, DUE_SEC) });
@@ -415,7 +416,7 @@ it.each(TEMPORARY)(
 it(
   '[BR-PROD-05] ③ 重解析暂时失败同样什么都不动',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       const pool = await f.pool();
       await f.item(pool, stable, { quoted_at: secondsAgo(f.clock, DUE_SEC) });
@@ -435,7 +436,7 @@ it(
 it.each(ANOMALIES)(
   '[BR-PRICE-11] 价格异常（$label）：这一行保持旧值，仍是 online，age 超龄后自然不展示',
   async ({ extra }) => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       const pool = await f.pool();
       await f.item(pool, stable, { quoted_at: secondsAgo(f.clock, DUE_SEC) });
@@ -455,7 +456,7 @@ it.each(ANOMALIES)(
 it(
   '[BR-PRICE-11] 一个 key 失败不拦别的 key：同一轮里暂时失败、下架、引用失效和成功各走各的',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const [temporary, offShelf, expired, fine] = [
         f.stableOf(),
         f.stableOf(),
@@ -486,7 +487,7 @@ it(
 it.each(INVALIDATIONS)(
   '[BR-PROD-07] 主动失效：刷新发现$label 时写入新值并删详情缓存',
   async ({ extra, stored }) => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       const pool = await f.pool();
       await f.item(pool, stable, { quoted_at: secondsAgo(f.clock, DUE_SEC) });
@@ -509,7 +510,7 @@ it.each(INVALIDATIONS)(
 it(
   '[BR-PRICE-11] 问联盟期间运营把行下线：写回只碰当时 online 的行，这一行不被改回 online',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       const pool = await f.pool();
       await f.item(pool, stable, { quoted_at: secondsAgo(f.clock, DUE_SEC) });
@@ -539,7 +540,7 @@ it(
 it(
   '[BR-PRICE-11] 没有联盟适配的平台：跳过不报错，别的行照常刷新',
   async () => {
-    await refreshCase(async (f) => {
+    await refreshCase(createTestDatabase, async (f) => {
       const stable = f.stableOf();
       const pool = await f.pool();
       const aged = secondsAgo(f.clock, DUE_SEC);
