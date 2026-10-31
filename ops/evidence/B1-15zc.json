@@ -1,0 +1,152 @@
+{
+  "task": "B1-15zc",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "eb02fd19bd8feb9659b2c93464d0a3f51e8352bc",
+  "red_tests": [
+    "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#1] 会话时区 UTC：整个月都早于「运行当日 00:00（+08:00）− 180 天」才丢，跨月、跨年、跨闰年的日界前一毫秒留、恰到日界丢，后一个月不动",
+    "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#1] 会话时区 Pacific/Kiritimati：整个月都早于「运行当日 00:00（+08:00）− 180 天」才丢，跨月、跨年、跨闰年的日界前一毫秒留、恰到日界丢，后一个月不动",
+    "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#1] 会话时区 America/New_York：整个月都早于「运行当日 00:00（+08:00）− 180 天」才丢，跨月、跨年、跨闰年的日界前一毫秒留、恰到日界丢，后一个月不动",
+    "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#2] p_days 决定截断点：220 天只丢 p202604，180 天再丢 p202605；次日 181 天留 p202606，180 天才丢",
+    "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#3] 只丢整月都过期的分区：月末最后一刻的行随 p202605 丢；p202606 上界未到，全是更早的行也留，再有恰在截断点的行同样整月留；次日整月丢",
+    "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#4] DEFAULT 分区不丢：很远的 p_now 按升序丢掉本表全部月分区，重复调用与只剩 DEFAULT 时都返回空数组，DEFAULT 的旧行还在；其他月分区表一个分区不少",
+    "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#5] 按 fetched_at 判定，不看 created_at：created_at 很新的旧月分区照丢，created_at 很旧的未过期分区照留",
+    "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#6] SECURITY DEFINER 函数：一个重载、只授 couli_maint、PUBLIC 无权；直接删行与 DROP TABLE 仍被拒，只增触发器还在，正文不碰别的表",
+    "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#7] p_now、p_days 为空或越界报错且什么都不丢，p_days 低于 180 拒绝；180 与 36500 可用",
+    "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#8] 六个会话同时丢 24 个过期分区：全部成功，每个分区正好被丢、被报告一次，最后只剩 DEFAULT",
+    "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#9] 有要丢的分区时等不到锁：lock_timeout 到点 55P03，整条语句回滚，一个分区都没丢；锁放开后全部丢掉",
+    "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#10] 没有要丢的分区时不申请表锁：读事务持锁期间立刻返回空数组（04:00 后每小时一轮，不排在写入前面等锁）",
+    "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#11] 既有规则不变：event_log 仍按 190 天丢，DROPPABLE_TABLES 仍是 [event_log]；通用函数对 RETAINED 表 55000、对本表与其他未列表 22023，什么都不丢",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#12] module：只在 04:00（+08:00）门内丢，03:59:59.999 不动；无配置行时按 180 天，只丢整月过期的分区，时钟每轮只读一次；次日门内再丢下一个月",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#12] worker：只在 04:00（+08:00）门内丢，03:59:59.999 不动；无配置行时按 180 天，只丢整月过期的分区，时钟每轮只读一次；次日门内再丢下一个月",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 \"220\" 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 220.5 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 true 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 null 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 {\"days\":220} 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 [220] 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 0 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 -1 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 29 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 179 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#14] retention.union_raw_payloads_days 改长后保留更久：220 天只丢 p202604；每轮重读，改回 180 下一轮丢 p202605",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#15] 高于函数上限的配置值按 36500 天，不回落 180：什么都不丢也不记失败；改回 180 后才丢",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#16] retention.purge.enabled 为 false：不丢本表，event_log 的月分区照丢；改回 true 下一轮丢本表",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#17] retention.purge.enabled 为 true：不是 false 就算开，照常丢",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#17] retention.purge.enabled 为 \"false\"：不是 false 就算开，照常丢",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#17] retention.purge.enabled 为 0：不是 false 就算开，照常丢",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#17] retention.purge.enabled 为 null：不是 false 就算开，照常丢",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#18] 配置读失败：开关未知，本表不丢，只记一行 retention_purge_failed，event_log 照丢；下一轮补上",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#19] 丢本表拿不到锁：记 partition_drop_failed（55P03），什么都没丢，同轮 login_logs 照删、DEFAULT 检查照做；下一轮丢掉",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#20] 第 K 节的表失败不挡本表：notify_logs 拿不到锁时本表照丢，只记这一个失败",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#21] 报告形状不变，日志只有表名与分区名：每丢一个分区一行，计入 done；再跑一轮只有 done",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#22] DEFAULT 分区不丢：里面再旧的行也留着，DEFAULT 告警照旧",
+    "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#23] dayPartitions 未开的实例不动本表（第 K 节同一条件）；同一时刻 worker 实例丢掉"
+  ],
+  "risk_note": "RV2 by path (db, platform maintenance). BR-ID-30 item 7 (D10-451): union_raw_payloads is kept 180 days by dropping whole monthly partitions. New SECURITY DEFINER function app.drop_expired_union_raw_payload_partitions(p_now, p_days), EXECUTE for couli_maint only, drops only children named union_raw_payloads_pYYYYMM whose catalogue upper bound is at or before the fixed +08:00 calendar-day cutoff; the partition key is fetched_at and the range is half-open, so every row in such a partition is expired and no rows are read. DEFAULT is never dropped; the 180 floor is enforced inside the function as a second gate. Maintenance section L runs inside the existing 04:00 gate under retention.purge.enabled, with days from configuration and fallback to the 08 value; one failure does not stop the other cleanup and logs carry names and counts only. DROPPABLE_TABLES and the event_log rule are unchanged because a frozen contract test pins them, so this is a separate function rather than an entry in that list. db/schema.sql regenerated from a live database.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "eb02fd19bd8feb9659b2c93464d0a3f51e8352bc",
+      "tree": "98cf3dd56a38d227bc6e5ef03b53b9f76b7a9e50",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T07:26:43Z",
+      "finished_at": "2026-10-31T07:27:10Z",
+      "gate": {
+        "commit": "0f47e20eb1545e50f10838227a62ee600437f0c5",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#1] 会话时区 UTC：整个月都早于「运行当日 00:00（+08:00）− 180 天」才丢，跨月、跨年、跨闰年的日界前一毫秒留、恰到日界丢，后一个月不动",
+        "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#1] 会话时区 Pacific/Kiritimati：整个月都早于「运行当日 00:00（+08:00）− 180 天」才丢，跨月、跨年、跨闰年的日界前一毫秒留、恰到日界丢，后一个月不动",
+        "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#1] 会话时区 America/New_York：整个月都早于「运行当日 00:00（+08:00）− 180 天」才丢，跨月、跨年、跨闰年的日界前一毫秒留、恰到日界丢，后一个月不动",
+        "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#2] p_days 决定截断点：220 天只丢 p202604，180 天再丢 p202605；次日 181 天留 p202606，180 天才丢",
+        "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#3] 只丢整月都过期的分区：月末最后一刻的行随 p202605 丢；p202606 上界未到，全是更早的行也留，再有恰在截断点的行同样整月留；次日整月丢",
+        "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#4] DEFAULT 分区不丢：很远的 p_now 按升序丢掉本表全部月分区，重复调用与只剩 DEFAULT 时都返回空数组，DEFAULT 的旧行还在；其他月分区表一个分区不少",
+        "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#5] 按 fetched_at 判定，不看 created_at：created_at 很新的旧月分区照丢，created_at 很旧的未过期分区照留",
+        "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#6] SECURITY DEFINER 函数：一个重载、只授 couli_maint、PUBLIC 无权；直接删行与 DROP TABLE 仍被拒，只增触发器还在，正文不碰别的表",
+        "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#7] p_now、p_days 为空或越界报错且什么都不丢，p_days 低于 180 拒绝；180 与 36500 可用",
+        "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#8] 六个会话同时丢 24 个过期分区：全部成功，每个分区正好被丢、被报告一次，最后只剩 DEFAULT",
+        "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#9] 有要丢的分区时等不到锁：lock_timeout 到点 55P03，整条语句回滚，一个分区都没丢；锁放开后全部丢掉",
+        "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#10] 没有要丢的分区时不申请表锁：读事务持锁期间立刻返回空数组（04:00 后每小时一轮，不排在写入前面等锁）",
+        "test/spec/platform/retention-partitions/functions.int.test.ts > [AC-B1-15zc#11] 既有规则不变：event_log 仍按 190 天丢，DROPPABLE_TABLES 仍是 [event_log]；通用函数对 RETAINED 表 55000、对本表与其他未列表 22023，什么都不丢",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#12] module：只在 04:00（+08:00）门内丢，03:59:59.999 不动；无配置行时按 180 天，只丢整月过期的分区，时钟每轮只读一次；次日门内再丢下一个月",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#12] worker：只在 04:00（+08:00）门内丢，03:59:59.999 不动；无配置行时按 180 天，只丢整月过期的分区，时钟每轮只读一次；次日门内再丢下一个月",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 \"220\" 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 220.5 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 true 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 null 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 {\"days\":220} 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 [220] 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 0 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 -1 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 29 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#13] retention.union_raw_payloads_days 为 179 不可用：回落 180 天照常丢、不记失败，p202605 丢、p202606 留",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#14] retention.union_raw_payloads_days 改长后保留更久：220 天只丢 p202604；每轮重读，改回 180 下一轮丢 p202605",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#15] 高于函数上限的配置值按 36500 天，不回落 180：什么都不丢也不记失败；改回 180 后才丢",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#16] retention.purge.enabled 为 false：不丢本表，event_log 的月分区照丢；改回 true 下一轮丢本表",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#17] retention.purge.enabled 为 true：不是 false 就算开，照常丢",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#17] retention.purge.enabled 为 \"false\"：不是 false 就算开，照常丢",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#17] retention.purge.enabled 为 0：不是 false 就算开，照常丢",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#17] retention.purge.enabled 为 null：不是 false 就算开，照常丢",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#18] 配置读失败：开关未知，本表不丢，只记一行 retention_purge_failed，event_log 照丢；下一轮补上",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#19] 丢本表拿不到锁：记 partition_drop_failed（55P03），什么都没丢，同轮 login_logs 照删、DEFAULT 检查照做；下一轮丢掉",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#20] 第 K 节的表失败不挡本表：notify_logs 拿不到锁时本表照丢，只记这一个失败",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#21] 报告形状不变，日志只有表名与分区名：每丢一个分区一行，计入 done；再跑一轮只有 done",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#22] DEFAULT 分区不丢：里面再旧的行也留着，DEFAULT 告警照旧",
+        "test/spec/platform/retention-partitions/run.int.test.ts > [AC-B1-15zc#23] dayPartitions 未开的实例不动本表（第 K 节同一条件）；同一时刻 worker 实例丢掉"
+      ],
+      "expected": [
+        "test/spec/platform/retention-partitions/functions.int.test.ts",
+        "test/spec/platform/retention-partitions/run.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "b168e0e993e044bd386bab143b50e7728a1d5be3789c09e12f4e1c8337dc3bc8"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; independent Claude via tools/agent/claude-run.sh per approvals #36. Round 1 pass with no findings. The reviewer read the code and did not execute it; the owner DROP path was reasoned from provisioning and the event_log and link_logs precedent, and is exercised by CI verify-int."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "Rule tests by an independent Claude context, 38 tests red on the skeleton, checked by hand. Review round 1 pass with one S2 recorded: whether partition_default_rows still runs after a 55P03 on a drop is not pinned. All rule tests pass on the implementation (test machine red mode, not evidence). No red_exempt or expected_values entries."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "61dcd7e9db5c2e2f5fc9170584f9b911d4c30857",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  }
+}
