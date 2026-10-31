@@ -1,0 +1,92 @@
+{
+  "red_tests": [
+    "test/spec/risk/appeal-restore-pricing/latest-event.int.test.ts > [B1-03zf 最新事件规则 D10-481 ②] 份额只看最新一条事件：先 forfeited(banned) 后被 active / held / forfeited(deleted) 覆盖 → 不列；先 active（或 R5 held）后 forfeited(banned) → 列；没收、恢复、再没收 → 列且没收时刻取最新那条；forfeited(deleted / minor) → 不列",
+    "test/spec/risk/appeal-restore-pricing/latest-event.int.test.ts > [B1-03zf 最新事件规则 D10-481 ②] 「最新」只按 event_seq 定、不按 created_at：forfeited(banned) 之后写入、created_at 却更早的 active 事件 → 已覆盖、不列；active 之后写入、created_at 更早的 forfeited(banned) → 列",
+    "test/spec/risk/appeal-restore-pricing/latest-event.int.test.ts > [B1-03zf 最新事件规则] 撤销封禁申诉时，本次封禁内被没收、之后又被 active 覆盖的份额不登记差错单；最新事件仍为 forfeited(banned) 的份额照常登记（凭证金额）",
+    "test/spec/risk/appeal-restore-pricing/voucherless.int.test.ts > [B1-03zf 无凭证份额] R5 冻结 held → 封禁 → R9 部分退款关成 forfeited(banned)、未写 FORFEIT 凭证，另一订单的份额有凭证 → 撤销封禁申诉不拒绝、不进死信：两条差错单照常登记，无凭证那份 expected 0 并标明 amount_source = no_forfeit_voucher，有凭证那份按凭证金额；重放不重复登记，不入账",
+    "test/spec/risk/appeal-restore-pricing/voucherless.int.test.ts > [B1-03zf 无凭证份额] 同一子订单上会员两个角色：一份有凭证（310）、一份无凭证 → 仍合为一条，expected = 有凭证那份 310（无凭证那份按 0 计入），去重键含两个角色，resolution.shares 逐角色列明细、无凭证那份标明 no_forfeit_voucher",
+    "test/spec/risk/appeal-restore-pricing/voucherless.int.test.ts > [B1-03zf 无凭证份额] 一个子订单上会员的全部被没收份额都没有 FORFEIT 凭证 → 不跳过、不拒绝：仍登记一条，expected 0 / actual 0 / diff 0，每份都标明 no_forfeit_voucher 交处理端服务端重算",
+    "test/spec/risk/appeal-restore-pricing/voucherless.int.test.ts > [B1-03zf 装配错误仍拒绝] FORFEIT 金额端口未注入 → 仍拒绝、记 error appeal_restore_amount_unavailable、不登记；装配修好后（端口已注入、对该份额答 null）重投同一申诉 → 照常登记 expected 0 并标明 no_forfeit_voucher",
+    "test/spec/risk/appeal-restore/port.int.test.ts > [B1-03zf 没收金额端口 D10-495 改口径] 两份被没收份额里一份查不到 FORFEIT 凭证（端口已注入、答 null）→ 不再整个事件拒绝：照常登记两条，有凭证那份按凭证金额 425，无凭证那份 expected 0 并在 resolution.shares 标明 amount_source = no_forfeit_voucher；不入账"
+  ],
+  "risk_note": "RV2 (risk appeal_restore producer + commission read). D10-495 FU-APPEAL-RESTORE-PRICING (gate GATE-APPEAL-RESTORE-PRICING): a share whose FORFEIT voucher does not exist (port injected, answers null — e.g. R5 held while frozen, then ban and an R9 partial refund closed the obligation forfeited(banned) without a voucher) no longer rejects the whole revoked ban appeal into the dead letter; it stays in its sub-order's appeal_restore difference at amount 0 with resolution.shares item amount_source no_forfeit_voucher for the handler (admin ADMIN_RESTORE, B2-09ga) to recompute; a sub-order whose shares all lack a voucher is still registered once. Missing port (assembly error) still rejects. commission listBannedForfeitedShares now takes each share's latest event by event_seq first, then the window and forfeited(banned) (D10-481 ②). The frozen [B1-03z 没收金额端口] second case was changed to the new 口径 per D10-495 (first-class protected path; the other two frozen cases unchanged). Full verification on the AWS test machine with PROP_RUNS=2000 (D10-496): this task's rule tests and unit tests green; only spec/parsing/viewer/app.int.test.ts [AC-B1-07c#8 #9] failed, known D10-494 ② (CI decides); required CI checks run on the PR head.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "money-level adversarial review round 1 pass, 0 findings (couli-runs/B1-03zf/review-money-r1.json); Codex unavailable until 11-02 (approvals #36)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude through claude-run.sh (attempt 1: new appeal-restore-pricing dir + the frozen port case rewritten per D10-495); red PASS 8 tests in 3 files; review r1 pass with one S2 (take the latest event before the window, built into the implementation) (couli-runs/B1-03zf/review-spec-r1.json)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "f076a6937e05ecfca5a440a755f68a66c346d876"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "f076a6937e05ecfca5a440a755f68a66c346d876",
+    "test/spec": "bc661ab451819e3c3b696fb8984b1fca5ddeee11",
+    "specs": "0c2fbba12d3a6c883b9a2674b7f7659c275cc1d0"
+  },
+  "task": "B1-03zf",
+  "spec_commit": "ed0148e0242e069d1413204004d542c49ff8c2b5",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "ed0148e0242e069d1413204004d542c49ff8c2b5",
+      "tree": "95e6ec80ca98f13c70d5b5dddbeb32074ad6b2cd",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-31T15:33:41Z",
+      "finished_at": "2026-10-31T15:33:55Z",
+      "red_tests": [
+        "test/spec/risk/appeal-restore-pricing/latest-event.int.test.ts > [B1-03zf 最新事件规则 D10-481 ②] 份额只看最新一条事件：先 forfeited(banned) 后被 active / held / forfeited(deleted) 覆盖 → 不列；先 active（或 R5 held）后 forfeited(banned) → 列；没收、恢复、再没收 → 列且没收时刻取最新那条；forfeited(deleted / minor) → 不列",
+        "test/spec/risk/appeal-restore-pricing/latest-event.int.test.ts > [B1-03zf 最新事件规则 D10-481 ②] 「最新」只按 event_seq 定、不按 created_at：forfeited(banned) 之后写入、created_at 却更早的 active 事件 → 已覆盖、不列；active 之后写入、created_at 更早的 forfeited(banned) → 列",
+        "test/spec/risk/appeal-restore-pricing/latest-event.int.test.ts > [B1-03zf 最新事件规则] 撤销封禁申诉时，本次封禁内被没收、之后又被 active 覆盖的份额不登记差错单；最新事件仍为 forfeited(banned) 的份额照常登记（凭证金额）",
+        "test/spec/risk/appeal-restore-pricing/voucherless.int.test.ts > [B1-03zf 无凭证份额] R5 冻结 held → 封禁 → R9 部分退款关成 forfeited(banned)、未写 FORFEIT 凭证，另一订单的份额有凭证 → 撤销封禁申诉不拒绝、不进死信：两条差错单照常登记，无凭证那份 expected 0 并标明 amount_source = no_forfeit_voucher，有凭证那份按凭证金额；重放不重复登记，不入账",
+        "test/spec/risk/appeal-restore-pricing/voucherless.int.test.ts > [B1-03zf 无凭证份额] 同一子订单上会员两个角色：一份有凭证（310）、一份无凭证 → 仍合为一条，expected = 有凭证那份 310（无凭证那份按 0 计入），去重键含两个角色，resolution.shares 逐角色列明细、无凭证那份标明 no_forfeit_voucher",
+        "test/spec/risk/appeal-restore-pricing/voucherless.int.test.ts > [B1-03zf 无凭证份额] 一个子订单上会员的全部被没收份额都没有 FORFEIT 凭证 → 不跳过、不拒绝：仍登记一条，expected 0 / actual 0 / diff 0，每份都标明 no_forfeit_voucher 交处理端服务端重算",
+        "test/spec/risk/appeal-restore-pricing/voucherless.int.test.ts > [B1-03zf 装配错误仍拒绝] FORFEIT 金额端口未注入 → 仍拒绝、记 error appeal_restore_amount_unavailable、不登记；装配修好后（端口已注入、对该份额答 null）重投同一申诉 → 照常登记 expected 0 并标明 no_forfeit_voucher",
+        "test/spec/risk/appeal-restore/port.int.test.ts > [B1-03zf 没收金额端口 D10-495 改口径] 两份被没收份额里一份查不到 FORFEIT 凭证（端口已注入、答 null）→ 不再整个事件拒绝：照常登记两条，有凭证那份按凭证金额 425，无凭证那份 expected 0 并在 resolution.shares 标明 amount_source = no_forfeit_voucher；不入账"
+      ],
+      "expected": [
+        "test/spec/risk/appeal-restore-pricing/latest-event.int.test.ts",
+        "test/spec/risk/appeal-restore-pricing/voucherless.int.test.ts",
+        "test/spec/risk/appeal-restore/port.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "eec7e1039a5ffd0a7119264f12462949977a66ae7d776ff9e509e6cd36c15009"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "df3f5584c73c2bbee246c9d2f39f8141c52c443d",
+        "clean": true,
+        "script_sha256": "9ab59e4a9cf22be2d87a10c30d1901ae622733c8e32e21811b62d7f990030ef8"
+      }
+    }
+  ]
+}

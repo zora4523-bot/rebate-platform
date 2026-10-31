@@ -46,10 +46,20 @@
 //      FORFEIT voucher `{order_key}:PLATFORM:FORFEIT:{uid}:{role}` (BR-CALC-13; R5 and R5a share the
 //      key), whose value was computed at B_credit, not the snapshot estimate. It comes from the
 //      injected port options.forfeitedAmount (a ledger read: risk never reads ledger tables).
-//      Without the port, or when it answers null (no such voucher), a revoked ban appeal with
-//      shares rejects and logs `appeal_restore_amount_unavailable` (error): nothing is registered
-//      and the snapshot value is never used instead.
+//      Without the port (an assembly error), a revoked ban appeal with shares rejects and logs
+//      `appeal_restore_amount_unavailable` (error): nothing is registered and the snapshot value
+//      is never used instead.
 //      Production: ledger's readForfeitAmount (D10-432), injected by app.module.
+//    - No FORFEIT voucher (B1-03zf, 编排 D10-495 FU-APPEAL-RESTORE-PRICING; contract of the rule
+//      tests in test/spec/risk/appeal-restore-pricing/**): when the injected port answers null for
+//      a share (e.g. R5 credited it held while frozen, then the ban and an R9 partial refund closed
+//      the obligation forfeited(banned) without a voucher), the event does not reject. The share
+//      stays in its sub-order's difference with amount 0 (counted 0 in expected_fen) and its
+//      resolution.shares item carries amount_fen '0' and amount_source 'no_forfeit_voucher' (role
+//      on the item, order_id on the resolution): the handler side (admin ADMIN_RESTORE, B2-09ga)
+//      recomputes it on the server. Shares with a voucher keep the voucher's amount and never
+//      carry that marker. A sub-order whose shares all lack a voucher is still registered once
+//      (expected 0, every share marked), never skipped. dedupeKey and the other fields unchanged.
 //    - One difference per (sub-order, member) of the appeal (r2, review S2): ref_type 'order',
 //      ref_id = the order key (ledger ReconDiffSelection.orderKey, so getReconDiffs({ orderKey })
 //      and the admin ref_id filter find it); expected_fen = Σ of the member's forfeited amounts on
@@ -67,7 +77,8 @@
 //      our books (a share kept as platform COMMISSION_REVENUE owed back to the member, BR-FUND-22
 //      ③) with no union or channel party, so R3.
 //    - period: chinaMonth(appeals.closed_at) (YYYY-MM, +08:00): from the appeal row, not the clock.
-//    - A forfeited amount of 0 is not registered; neither is a sub-order whose sum is 0.
+//    - A forfeited amount of 0 (a voucher that booked 0) is not registered; neither is a
+//      sub-order whose sum is 0 — except a share without a voucher (B1-03zf, above), which is.
 //    - Window without penalty_started_at (r2, review S1): from commission's findBannedRunStart
 //      (options.bannedRunStart): the earliest banned forfeiture of the member's last unbroken run
 //      of banned forfeitures at or before the appeal's created_at, the run broken by any active or
@@ -222,6 +233,8 @@ export function createAppealRestoreHandler(options: AppealRestoreOptions): Event
 
 const TARGET_TYPES: ReadonlySet<string> = new Set(['account', 'order', 'blocked_request']);
 const STATUSES: ReadonlySet<string> = new Set(['revoked', 'upheld']);
+/** resolution.shares[].amount_source of a share without a FORFEIT voucher (B1-03zf). */
+const NO_FORFEIT_VOUCHER = 'no_forfeit_voucher';
 /** contracts AdminReconDiff ref_id maxLength. */
 const REF_ID_MAX = 64;
 
@@ -302,6 +315,8 @@ interface PricedShare {
   readonly role: string;
   readonly amountFen: bigint;
   readonly forfeitedAt: Date;
+  /** No FORFEIT voucher (port answered null): amount 0, marked no_forfeit_voucher (B1-03zf). */
+  readonly noVoucher: boolean;
 }
 
 interface OrderGroup {
@@ -324,32 +339,49 @@ async function priced(
     if (orderKey === undefined || orderKey.length === 0) {
       throw new Error('risk: appeal restore needs the order key of every share');
     }
-    const amount =
-      options.forfeitedAmount === undefined
-        ? null
-        : await options.forfeitedAmount(trx, {
-            appId: scope.appId,
-            orderKey,
-            userId: scope.userId,
-            role: share.role,
-          });
-    if (amount === null) {
+    const readAmount = options.forfeitedAmount;
+    if (readAmount === undefined) {
+      // An assembly error (B1-03z): never guess, never the snapshot estimate.
       options.logger?.error(
         {
           app_id: scope.appId,
           appeal_id: scope.appealId,
           order_id: share.orderId,
           role: share.role,
-          port: options.forfeitedAmount !== undefined,
+          port: false,
         },
         'appeal_restore_amount_unavailable',
       );
       throw new Error('risk: the forfeited amount of a share is unavailable');
     }
-    if (amount < 0n) throw new Error('risk: a forfeited amount is negative');
-    if (amount === 0n) continue;
+    const amount = await readAmount(trx, {
+      appId: scope.appId,
+      orderKey,
+      userId: scope.userId,
+      role: share.role,
+    });
+    let item: PricedShare;
+    if (amount === null) {
+      // No FORFEIT voucher (B1-03zf, 编排 D10-495): counted 0, marked for the handler side to
+      // recompute on the server.
+      item = {
+        role: share.role,
+        amountFen: 0n,
+        forfeitedAt: share.forfeitedAt,
+        noVoucher: true,
+      };
+    } else {
+      if (amount < 0n) throw new Error('risk: a forfeited amount is negative');
+      if (amount === 0n) continue;
+      item = {
+        role: share.role,
+        amountFen: amount,
+        forfeitedAt: share.forfeitedAt,
+        noVoucher: false,
+      };
+    }
     const group = groups.get(share.orderId) ?? { orderKey, shares: [] };
-    group.shares.push({ role: share.role, amountFen: amount, forfeitedAt: share.forfeitedAt });
+    group.shares.push(item);
     groups.set(share.orderId, group);
   }
   return [...groups.entries()].map(([orderId, group]) => {
@@ -389,6 +421,7 @@ async function register(
       role: share.role,
       amount_fen: share.amountFen.toString(),
       forfeited_at: share.forfeitedAt.toISOString(),
+      ...(share.noVoucher ? { amount_source: NO_FORFEIT_VOUCHER } : {}),
     })),
   };
   const input = (refId: string): RegisterReconDiffInput => {

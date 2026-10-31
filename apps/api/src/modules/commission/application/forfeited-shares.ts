@@ -11,6 +11,12 @@
 //     with reason 'banned' whose created_at lies within [since, until] (both ends inclusive).
 //     Forfeited events with reason 'deleted' or 'minor' are never returned (BR-CALC-13: 注销、未成年
 //     导致的 forfeited 不恢复); neither are active / held events, other users or other apps.
+//   - Latest-event rule (B1-03zf, 编排 D10-495 / D10-481 ②; rule tests in
+//     test/spec/risk/appeal-restore-pricing/**): per share (order_id, user_id, role) only its
+//     latest event counts, latest by event_seq (never created_at). A share is returned only when
+//     that latest event is forfeited with reason 'banned' and lies within [since, until]; a banned
+//     forfeiture later covered by an active or held event, or by a forfeiture for another reason,
+//     is not returned. forfeitedAt is that latest event's created_at.
 //   - amountFen: the share's value (份额金额) from the split snapshot — commission_split_amounts
 //     amount_fen of (order_id, user_id, role). Which commission_version is used (suggested: the
 //     largest one of the order) is the implementation's choice, written down here with its source.
@@ -89,18 +95,39 @@ export async function listBannedForfeitedShares(
   input: ListBannedForfeitedSharesInput,
 ): Promise<readonly BannedForfeitedShare[]> {
   const db = trx.withSchema('app');
-  const forfeited = await db
+  // Latest-event rule (D10-481 ②): the latest event of each share by event_seq first, the window
+  // and the banned forfeiture checked on that latest event only. Candidates are the orders with a
+  // banned forfeiture of the member in the window (a superset: a listed share's latest event is one).
+  const latestEvents = await db
     .selectFrom('commission_split_beneficiary_events')
-    .select(['order_id', 'role'])
-    .select((eb) => eb.fn.max<Date>('created_at').as('forfeited_at'))
+    .distinctOn(['order_id', 'role'])
+    .select(['order_id', 'role', 'status', 'reason', 'created_at'])
     .where('app_id', '=', input.appId)
     .where('user_id', '=', input.userId)
-    .where('status', '=', 'forfeited')
-    .where('reason', '=', 'banned')
-    .where('created_at', '>=', input.since)
-    .where('created_at', '<=', input.until)
-    .groupBy(['order_id', 'role'])
+    .where('order_id', 'in', (eb) =>
+      eb
+        .selectFrom('commission_split_beneficiary_events')
+        .select('order_id')
+        .where('app_id', '=', input.appId)
+        .where('user_id', '=', input.userId)
+        .where('status', '=', 'forfeited')
+        .where('reason', '=', 'banned')
+        .where('created_at', '>=', input.since)
+        .where('created_at', '<=', input.until),
+    )
+    .orderBy('order_id')
+    .orderBy('role')
+    .orderBy('event_seq', 'desc')
     .execute();
+  const forfeited = latestEvents
+    .filter(
+      (row) =>
+        row.status === 'forfeited' &&
+        row.reason === 'banned' &&
+        row.created_at.getTime() >= input.since.getTime() &&
+        row.created_at.getTime() <= input.until.getTime(),
+    )
+    .map((row) => ({ order_id: row.order_id, role: row.role, forfeited_at: row.created_at }));
   if (forfeited.length === 0) return [];
   const amounts = await db
     .selectFrom('commission_split_amounts')
