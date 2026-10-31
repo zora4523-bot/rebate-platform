@@ -188,6 +188,29 @@ export async function lockAdminReconDiff(
     .executeTakeFirst();
 }
 
+/**
+ * B2-09h: the ref_id of the app's closed R1 order diffs with resolution.outcome = 'union', among
+ * `orderKeys`. One array parameter: the bill source passes every order key of a platform, which
+ * can exceed the 65535 parameters of a statement. One plain SELECT on the given handle.
+ */
+export async function selectUnionConcludedOrderKeys(
+  db: Kysely<DB>,
+  selection: { readonly appId: string; readonly orderKeys: readonly string[] },
+): Promise<string[]> {
+  const rows = await db
+    .withSchema('app')
+    .selectFrom('recon_diffs')
+    .select('ref_id')
+    .where('app_id', '=', selection.appId)
+    .where('source', '=', 'R1')
+    .where('ref_type', '=', 'order')
+    .where('status', '=', 'closed')
+    .where(sql<string>`resolution->>'outcome'`, '=', 'union')
+    .where('ref_id', '=', sql<string>`any(${selection.orderKeys}::text[])`)
+    .execute();
+  return rows.map((row) => row.ref_id);
+}
+
 /** The statuses a console close starts from (contract closeAdminReconDiff). */
 const CLOSABLE = ['open', 'processing'];
 

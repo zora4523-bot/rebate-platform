@@ -1,13 +1,13 @@
 // B2-04zd (D10-443): the read-only port of recon diff conclusions for the monthly bill
 // (BR-FUND-04 ④: an order whose diff was concluded 「以联盟为准」 counts as matching).
 //
-// Only a conclusion recorded in recon_diffs.resolution counts; a closed status alone is not the
-// conclusion (job.ts: unionAuthoritative is not faked from the closed status). The current writers
-// of resolution (registration, the console close that only records `reason`) have no recognisable
-// 「以联盟为准」 conclusion, so no order key is returned until one is ruled (待编排裁定).
+// Only the structured conclusion counts (编排裁定 D10-447 ②, B2-09h): resolution.outcome = 'union',
+// written by the console close (closeAdminReconDiff) on an R1 diff. A closed status alone, `ours`,
+// no outcome and the free-text reason are not it (job.ts: unionAuthoritative is not faked).
 // Reads on the given handle only; never locks or writes.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
+import { selectUnionConcludedOrderKeys } from '../infra/recon-diffs-store.ts';
 
 export interface UnionAuthoritativeSelection {
   readonly appId: string;
@@ -16,14 +16,9 @@ export interface UnionAuthoritativeSelection {
 }
 
 /** The subset of `orderKeys` whose R1 diff is closed with the conclusion 「以联盟为准」. */
-export function readUnionAuthoritativeOrderKeys(
+export async function readUnionAuthoritativeOrderKeys(
   db: Kysely<DB>,
   selection: UnionAuthoritativeSelection,
 ): Promise<ReadonlySet<string>> {
-  // 待编排裁定 (B2-04zd): no resolution value of the current writers means 「以联盟为准」, so the
-  // port does not guess one and returns no key (the frozen rule tests pin this). Once the value is
-  // ruled, read recon_diffs (source R1, ref_type order, ref_id in orderKeys, closed with it) on `db`.
-  void db;
-  void selection;
-  return Promise.resolve(new Set<string>());
+  return new Set(await selectUnionConcludedOrderKeys(db, selection));
 }
