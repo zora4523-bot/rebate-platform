@@ -110,10 +110,11 @@ it.each(CASES)('[AC-B1-05q#102] $op 守卫用 content.pool，读操作 readOnly'
 it('[AC-B1-05q#103] 读操作不写审计', async () => {
   const f = await setup(h);
   const pool = await poolWithItem(f);
+  const before = await snapshot(h, f.appId);
   await success(await send(f, 'listPools'));
   await success(await send(f, 'getPool', { pool }));
   await success(await send(f, 'listItems', { pool }));
-  expect((await snapshot(h, f.appId)).audits).toEqual([]);
+  expect((await snapshot(h, f.appId)).audits).toEqual(before.audits);
 });
 
 it('[AC-B1-05q#104] 别的 App 管理员碰不到这个池：改池、入库、条目读写都是 30701，两边都不写入', async () => {
