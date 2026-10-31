@@ -1,7 +1,10 @@
-// 月结账单详情（settle-bills/{bill_id}；F1-08d 第一段只读）：GET /admin/v1/settle-bills/{bill_id}
-// 的账单状态、账单日统计（只作展示）与结算批次表；每个批次【明细】打开批次明细抽屉。不存在的
-// 账单（20001）显示未找到。持 settle.bill 或 fund.view 可看。
-// TODO(规划/11 §7): 【确认立即执行】【定时执行】【驳回】【继续执行】【撤销定时】【发起补充批次】与一致性校验结果表 — blocked on 契约未出
+// 月结账单详情（settle-bills/{bill_id}）：GET /admin/v1/settle-bills/{bill_id} 的账单状态、账单日
+// 统计（只作展示）与结算批次表；每个批次【明细】打开批次明细抽屉。不存在的账单（20001）显示未找到。
+// 持 settle.bill 或 fund.view 可看。F1-08db 写操作（契约 CT-24zd，只给 settle.bill，每次动态码）：
+// 有待确认批次时标题区【确认立即执行】【定时执行】，待确认批次行【驳回】，定时未开始的已确认批次行
+// 【撤销定时】，PARTIAL 批次行【继续执行】，无待确认批次时【发起补充批次】。写完（或状态已变化）
+// 重新读取账单。读不弹动态码。
+// TODO(规划/11 §7): 一致性校验结果表 — blocked on 契约未出
 import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useDataProvider } from '@refinedev/core';
 import {
@@ -13,6 +16,7 @@ import {
   Table,
   Tag,
   Typography,
+  message,
   theme,
   type TableColumnsType,
 } from 'antd';
@@ -29,16 +33,20 @@ import {
   beijingTime,
   billStatusLabel,
   billUrl,
+  canCancelSchedule,
+  canLaunchSupplement,
   codeOf,
   count,
   money,
   platformEntries,
   settleModeLabel,
+  type BatchWrite,
   type SettleBatch,
   type SettleBillDetail,
 } from './model.ts';
 import { PlatformValues } from './PlatformValues.tsx';
 import { SettleForbidden, canReadSettleBills } from './SettleBillsPage.tsx';
+import { BatchDialog, ConfirmDialog, SupplementDialog, type WriteNotice } from './WriteDialogs.tsx';
 
 const t = settleBillsTexts.detail;
 
@@ -55,6 +63,12 @@ interface ItemsTarget {
   readonly read: number;
 }
 
+/** The open write dialog. */
+type WriteTarget =
+  | { readonly kind: 'confirm'; readonly mode: 'IMMEDIATE' | 'SCHEDULED' }
+  | { readonly kind: 'batch'; readonly action: BatchWrite; readonly batch: SettleBatch }
+  | { readonly kind: 'supplement' };
+
 export interface SettleBillDetailPageProps {
   readonly access: AccessControl;
   readonly billId: string;
@@ -64,7 +78,7 @@ export function SettleBillDetailPage({ access, billId }: SettleBillDetailPagePro
   const planned = usePlanned('getAdminSettleBill');
   if (planned) return <PlannedPage title={settleBillsTexts.title} />;
   if (!canReadSettleBills(access)) return <SettleForbidden />;
-  return <DetailContent billId={billId} />;
+  return <DetailContent billId={billId} canWrite={access.can('settle.bill')} />;
 }
 
 function Stat({ label, children }: { readonly label: string; readonly children: ReactNode }) {
@@ -81,13 +95,23 @@ function Stat({ label, children }: { readonly label: string; readonly children: 
   );
 }
 
-function DetailContent({ billId }: { readonly billId: string }): ReactElement {
+function DetailContent({
+  billId,
+  canWrite,
+}: {
+  readonly billId: string;
+  readonly canWrite: boolean;
+}): ReactElement {
   const getProvider = useDataProvider();
   const navigate = useNavigate();
   const { token } = theme.useToken();
+  const [notice, noticeHolder] = message.useMessage();
   const [attempt, setAttempt] = useState(0);
+  // Bumped after a write: reads the bill again without going back to the loading state.
+  const [refresh, setRefresh] = useState(0);
   const [state, setState] = useState<DetailState>({ status: 'loading' });
   const [items, setItems] = useState<ItemsTarget>();
+  const [writing, setWriting] = useState<WriteTarget>();
 
   useEffect(() => {
     let current = true;
@@ -108,11 +132,39 @@ function DetailContent({ billId }: { readonly billId: string }): ReactElement {
     return () => {
       current = false;
     };
-  }, [getProvider, billId, attempt]);
+  }, [getProvider, billId, attempt, refresh]);
 
   const retry = () => {
     setState({ status: 'loading' });
     setAttempt((value) => value + 1);
+  };
+
+  const finished = (outcome: WriteNotice) => {
+    setWriting(undefined);
+    void notice.open({ type: outcome.type, content: outcome.text });
+    setRefresh((value) => value + 1);
+  };
+
+  /** The write entries of a batch row (settle.bill only, by the batch's status). */
+  const rowWrites = (row: SettleBatch): ReactElement[] => {
+    if (!canWrite) return [];
+    const entry = (action: BatchWrite, text: string, danger = false) => (
+      <Button
+        key={action}
+        size="small"
+        danger={danger}
+        autoInsertSpace={false}
+        onClick={() => setWriting({ kind: 'batch', action, batch: row })}
+      >
+        {text}
+      </Button>
+    );
+    if (row.status === 'DRAFT')
+      return [entry('reject', settleBillsTexts.writes.entries.reject, true)];
+    if (row.status === 'PARTIAL') return [entry('resume', settleBillsTexts.writes.entries.resume)];
+    if (canCancelSchedule(row))
+      return [entry('cancel-schedule', settleBillsTexts.writes.entries.cancelSchedule)];
+    return [];
   };
 
   const code = { fontFamily: token.fontFamilyCode, wordBreak: 'break-all' } as const;
@@ -192,14 +244,18 @@ function DetailContent({ billId }: { readonly billId: string }): ReactElement {
     {
       key: 'actions',
       title: t.batchColumns.actions,
-      width: 80,
       render: (_, row) => (
-        <Button
-          size="small"
-          onClick={() => setItems((previous) => ({ batch: row, read: (previous?.read ?? 0) + 1 }))}
-        >
-          {t.itemsEntry}
-        </Button>
+        <Flex gap={8} wrap={false}>
+          <Button
+            size="small"
+            onClick={() =>
+              setItems((previous) => ({ batch: row, read: (previous?.read ?? 0) + 1 }))
+            }
+          >
+            {t.itemsEntry}
+          </Button>
+          {rowWrites(row)}
+        </Flex>
       ),
     },
   ];
@@ -241,6 +297,7 @@ function DetailContent({ billId }: { readonly billId: string }): ReactElement {
     );
   } else {
     const bill = state.data;
+    const hasDraft = bill.batches.some((batch) => batch.status === 'DRAFT');
     body = (
       <Flex vertical gap={16}>
         <Flex wrap gap={16} align="center">
@@ -253,6 +310,23 @@ function DetailContent({ billId }: { readonly billId: string }): ReactElement {
           <Typography.Text type="secondary">
             {t.generated} {beijingTime(bill.generated_at)}
           </Typography.Text>
+          {canWrite && hasDraft ? (
+            <Flex gap={8} wrap style={{ marginInlineStart: 'auto' }}>
+              <Button
+                autoInsertSpace={false}
+                onClick={() => setWriting({ kind: 'confirm', mode: 'SCHEDULED' })}
+              >
+                {settleBillsTexts.writes.entries.schedule}
+              </Button>
+              <Button
+                type="primary"
+                autoInsertSpace={false}
+                onClick={() => setWriting({ kind: 'confirm', mode: 'IMMEDIATE' })}
+              >
+                {settleBillsTexts.writes.entries.confirmNow}
+              </Button>
+            </Flex>
+          ) : null}
         </Flex>
         <Alert type="info" role="note" message={settleBillsTexts.totalsNotice} />
         <Flex wrap gap={12}>
@@ -273,7 +347,17 @@ function DetailContent({ billId }: { readonly billId: string }): ReactElement {
           <Stat label={t.stats.errors}>{count(bill.error_count)}</Stat>
           <Stat label={t.stats.held}>{count(bill.held_count)}</Stat>
         </Flex>
-        <Card title={t.batchesTitle} styles={{ body: { padding: 0 } }}>
+        <Card
+          title={t.batchesTitle}
+          styles={{ body: { padding: 0 } }}
+          extra={
+            canWrite && canLaunchSupplement(bill) ? (
+              <Button autoInsertSpace={false} onClick={() => setWriting({ kind: 'supplement' })}>
+                {settleBillsTexts.writes.entries.supplement}
+              </Button>
+            ) : undefined
+          }
+        >
           <Table<SettleBatch>
             rowKey="batch_id"
             columns={columns}
@@ -300,13 +384,40 @@ function DetailContent({ billId }: { readonly billId: string }): ReactElement {
           {t.title(billId)}
         </Typography.Title>
       </Flex>
-      <Alert type="info" showIcon role="note" message={settleBillsTexts.readOnlyNotice} />
+      <Alert
+        type="info"
+        showIcon
+        role="note"
+        message={canWrite ? settleBillsTexts.writeNotice : settleBillsTexts.viewOnlyNotice}
+      />
       {body}
       {items === undefined ? null : (
         <BatchItemsDrawer
           key={`${items.batch.batch_id}:${items.read}`}
           batch={items.batch}
           onClose={() => setItems(undefined)}
+        />
+      )}
+      {noticeHolder}
+      {writing === undefined || state.status !== 'ready' ? null : writing.kind === 'confirm' ? (
+        <ConfirmDialog
+          bill={state.data}
+          mode={writing.mode}
+          onClose={() => setWriting(undefined)}
+          onFinished={finished}
+        />
+      ) : writing.kind === 'batch' ? (
+        <BatchDialog
+          batch={writing.batch}
+          action={writing.action}
+          onClose={() => setWriting(undefined)}
+          onFinished={finished}
+        />
+      ) : (
+        <SupplementDialog
+          bill={state.data}
+          onClose={() => setWriting(undefined)}
+          onFinished={finished}
         />
       )}
     </Flex>
