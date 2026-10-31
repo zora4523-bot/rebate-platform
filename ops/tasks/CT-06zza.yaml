@@ -1,0 +1,23 @@
+id: CT-06zza
+repo: rebate-platform
+title: CT-06zza：ci.yml verify-int 作业时限 60 → 90 分钟（test:int 增长到 56 分钟，撞 60 分钟被取消）
+type: guard-change
+# 2026-10-31 入账（编排自做，ops 线暂停；照 CT-06z / CT-06ze 先例）。起因：#2010 第 2 次 CI（run 41175931885）verify-int 在 60 分钟
+# 被取消，日志里 test:int 已全部通过（1283 个文件 13760 条，Duration 3379.72s）、test:browser 刚开始 25 秒；10-30 晚到 10-31 抽样的
+# 8 次绿 verify-int 用了 58 / 35 / 45 / 59 / 47 / 36 / 59 / 59 分钟，一半贴着上限。CT-06zxb（10-24）时 test:int 正常 17–30 分钟，
+# 10-22 #1190 为 707 个文件 8706 条，规模近一倍。做法：只改 verify-int 的 timeout-minutes 60 → 90（最大 59 分钟 × 1.5 取整）并在
+# 注释里记数据；测试命令、测试内容、其他作业都不改。后续 CT-06zzb：test:int 按 vitest --shard 拆成并行作业（同 CT-06zxa 的
+# verify-props 做法），verify-reuse、ci-gate 的作业清单随之改。
+# 改 .github/** 属第三类保护路径，按 approvals #24 由编排核对后加 owner-approved 标签；非 task 分支
+# chore/guard-change-CT-06zza，不带证据文件（先例 CT-06ze #1214）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/workflows/ci.yml'
+  - 'ops/tasks/CT-06zza.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
