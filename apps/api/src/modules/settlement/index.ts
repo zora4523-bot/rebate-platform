@@ -43,7 +43,6 @@ export type {
 export { readSettlementFundMetrics } from './application/metrics-read.ts';
 export type { SettlementFundMetrics } from './application/metrics-read.ts';
 // B2-04l: orders' rights ports (rights.record; rebate.adminHold / adminUnhold, R11).
-// 生产装配维权端口的任务须 deps B2-04lb（TODO(规划/11 §4.2): 入账前部分维权 N_new 落库与 WAIT_COMMISSION 入账前关闭 — blocked on B2-04lb（D10-470））。
 export { createRebateAdminCommandPort, createRightsCommandPort } from './rights/index.ts';
 export type { RebateAdminDependencies, RightsCommandDependencies } from './rights/index.ts';
 // B2-04ze (D10-443): the worker entry's settle queue (bill seed, due batch scan, handler).
