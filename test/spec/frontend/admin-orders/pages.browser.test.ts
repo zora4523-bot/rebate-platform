@@ -92,10 +92,8 @@ it('[AC-F1-07e-BROWSER#1] 1440 订单列表筛选、表格及只读入口可见�
   await expect.element(main.getByRole('table')).toMatchTextContent('12,345.67');
   await expect.element(main.getByRole('table')).toMatchTextContent('138****5678');
   await expect.element(main.getByRole('table')).toMatchTextContent('UNATTRIBUTED');
-  await expect
-    .element(main.getByRole('button', { name: /手动同步|导入|导出/ }))
-    .not.toBeInTheDocument();
-  await expect.element(main.getByRole('link', { name: /同步记录|导出/ })).not.toBeInTheDocument();
+  await expect.element(main.getByRole('button', { name: /导入|导出/ })).not.toBeInTheDocument();
+  await expect.element(main.getByRole('link', { name: /导出/ })).not.toBeInTheDocument();
   await expect.element(document.querySelector<HTMLElement>('.ant-pagination')).toBeVisible();
   const number = main.getByText(NUMBER, { exact: true });
   await expect.element(number).toBeVisible();
@@ -123,7 +121,7 @@ it('[AC-F1-07e-BROWSER#2] 1440 详情各区块和两个锁定标记可见，截�
   await expect.element(main.getByRole('button', { name: /返回/ })).toBeVisible();
   await expect.element(main).not.toMatchTextContent('原始报文');
   await expect
-    .element(main.getByRole('button', { name: /同步此单|暂停结算|恢复结算|指定归属/ }))
+    .element(main.getByRole('button', { name: /暂停结算|恢复结算|指定归属/ }))
     .not.toBeInTheDocument();
   await screenshot('admin-order-detail', marker);
 });

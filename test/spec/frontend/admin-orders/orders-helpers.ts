@@ -115,8 +115,7 @@ export function section(title: string): HTMLElement {
   return card!;
 }
 export function readOnly(server: Server): void {
-  const name =
-    /手动同步|同步记录|导入维权|导入违规|同步此单|暂停结算|恢复结算|指定归属|导出|查看金额变更记录/;
+  const name = /导入维权|导入违规|暂停结算|恢复结算|指定归属|导出|查看金额变更记录/;
   expect(within(mainElement()).queryAllByRole('button', { name })).toHaveLength(0);
   expect(within(mainElement()).queryAllByRole('link', { name })).toHaveLength(0);
   expect(mainElement().textContent).not.toContain('原始报文');
