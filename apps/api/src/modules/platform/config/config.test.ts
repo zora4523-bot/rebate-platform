@@ -38,6 +38,8 @@ describe('loadConfig', () => {
       pdd: null,
       pddQueryCustomParameters: null,
       unionEndpointOverrideDir: null,
+      taobaoConvertSource: 'baichuan',
+      taobaoSearchSource: 'official',
       agentUserHashKey: null,
     });
   });
@@ -83,6 +85,8 @@ describe('loadConfig', () => {
       pdd: null,
       pddQueryCustomParameters: null,
       unionEndpointOverrideDir: null,
+      taobaoConvertSource: 'baichuan',
+      taobaoSearchSource: 'official',
       agentUserHashKey: AGENT_KEY,
     });
   });

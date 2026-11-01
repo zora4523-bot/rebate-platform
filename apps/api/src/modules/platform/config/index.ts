@@ -77,6 +77,12 @@ export {
 export type { TaobaoAppCredentials, TaobaoStartupErrorCode } from './taobao-startup.ts';
 // 大淘客 credentials of the Taobao order source (B1-04e): staging reads the secret file once at startup.
 export { readDataokeConfig } from './dataoke.ts';
+// Taobao 大淘客 switches (B1-04zn): server settings, not credentials; any APP_ENV may set them.
+export {
+  TAOBAO_CONVERT_SOURCE_ENV,
+  TAOBAO_SEARCH_SOURCE_ENV,
+  readTaobaoSourceConfig,
+} from './taobao-sources.ts';
 export type { DataokeAppConfig } from './dataoke.ts';
 export {
   DATAOKE_SECRET_FILE_MAX_BYTES,

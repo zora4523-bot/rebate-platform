@@ -28,6 +28,7 @@ import { readPddQueryConfig } from './pdd-query.ts';
 import { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 import { readSmsConfig, type SmsConfig } from './sms.ts';
 import { readTaobaoConfig, type TaobaoAppConfig } from './taobao.ts';
+import { readTaobaoSourceConfig } from './taobao-sources.ts';
 import { readTrustedProxies } from './trusted-proxies.ts';
 import { readUnionEndpointOverrideConfig } from './union-endpoint-override.ts';
 
@@ -219,6 +220,18 @@ export interface AppConfig {
    */
   readonly unionEndpointOverrideDir?: string | null;
   /**
+   * TAOBAO_CONVERT_SOURCE (B1-04zn, D10-530): where the live Taobao adapter converts links,
+   * 'baichuan' (default) or 'dataoke'. A server setting, not a credential; any APP_ENV may set it.
+   * A hand-built config without it counts as 'baichuan'.
+   */
+  readonly taobaoConvertSource?: 'baichuan' | 'dataoke';
+  /**
+   * TAOBAO_SEARCH_SOURCE (B1-04zn, D10-530): where the live Taobao adapter searches, 'official'
+   * (default) or 'dataoke'. A server setting, not a credential; any APP_ENV may set it. A
+   * hand-built config without it counts as 'official'.
+   */
+  readonly taobaoSearchSource?: 'official' | 'dataoke';
+  /**
    * AGENT_REVIEW_ALIYUN_ACCESS_KEY_ID / _SECRET / AGENT_REVIEW_ALIYUN_ENDPOINT (./agent-review.ts,
    * B3-03m): staging / prod only, the stream entry's content safety review. Absent (the key is
    * left out of loadConfig's result) or null: the review fails closed. A hand-built config without
@@ -367,6 +380,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     if (appEnv.success) problems.push(...readJdConfig(appEnv.data, env).problems);
     problems.push(...readJdSiteConfig(env).problems);
     problems.push(...readPddQueryConfig(env).problems);
+    problems.push(...readTaobaoSourceConfig(env).problems);
     if (appEnv.success)
       problems.push(...readUnionEndpointOverrideConfig(appEnv.data, env).problems);
     if (appEnv.success) problems.push(...readAgentUserHashConfig(appEnv.data, env).problems);
@@ -409,6 +423,12 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   violations.push(...jdSiteProblems);
   const { pddQueryCustomParameters, problems: pddQueryProblems } = readPddQueryConfig(env);
   violations.push(...pddQueryProblems);
+  const {
+    taobaoConvertSource,
+    taobaoSearchSource,
+    problems: taobaoSourceProblems,
+  } = readTaobaoSourceConfig(env);
+  violations.push(...taobaoSourceProblems);
   const { unionEndpointOverrideDir, problems: overrideProblems } = readUnionEndpointOverrideConfig(
     values.APP_ENV,
     env,
@@ -460,6 +480,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(jdSiteId === null ? {} : { jdSiteId }),
     unionEndpointOverrideDir,
+    taobaoConvertSource,
+    taobaoSearchSource,
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(agentReview === null ? {} : { agentReview }),
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
