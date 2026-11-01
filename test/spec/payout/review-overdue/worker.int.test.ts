@@ -91,6 +91,8 @@ it(
       const clock = new FixedClock(NOW);
       const root = rootLogger();
       const options = await capturedWorkerOptions(clock, root.logger);
+      // One withdrawal waiting for review: the timer seeds only once some app has one.
+      await seed(h.db, appId());
       const queue = fakeQueue();
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
       let context: NestContext | undefined;
