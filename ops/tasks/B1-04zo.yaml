@@ -1,0 +1,18 @@
+id: B1-04zo
+repo: rebate-platform
+title: B1-04zo：冻结状态映射测试 [AC-B1-08f#11] 去掉 jd（B1-04zg 前置）
+type: test-change
+# 2026-11-01 be 入账（先例 B1-04zk）。[AC-B1-08f#11] 钉 jd 尚无资料、jd.csv 不存在；B1-04zg 按 D10-529 交付 specs/order-status-map/jd.csv 后必红。只把 it.each 的 jd 去掉，taobao 保留。
+# 这行不含金额或归属规则，jd.csv 的内容由 B1-04zg 的规则测试接手。改既有规则测试属第一类保护路径：非 task 分支、不带证据文件；新鲜 Claude 改、另一新鲜独立 Claude 只读复审 pass（写进 PR）。
+refs: []
+refs_hash: {}
+deps: [B1-04zb]
+paths:
+  - 'test/spec/orders/status-map/missing-platform.test.ts'
+  - 'ops/tasks/B1-04zo.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
