@@ -1,0 +1,156 @@
+{
+  "task": "B2-04zf",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "2d2f3f65b4abcaec18bd2874fb1d5c738c70504f",
+  "red_tests": [
+    "test/spec/settlement/run-done/atomicity.int.test.ts > [AC-B2-04zf#7] 最后一个批次完成事务里 settle.run_done 发布失败：执行拒绝，批次保持 EXECUTING（finished_at 为空），settle.batch_done 与 settle.run_done 都没有写入，已入账的订单不回滚；再次投递执行到 DONE，恰好一条 settle.run_done（part=1、outcome=done）",
+    "test/spec/settlement/run-done/atomicity.int.test.ts > [AC-B2-04zf#7] 最后一个批次完成事务里 settle.batch_done 发布失败：执行拒绝，批次保持 EXECUTING（finished_at 为空），settle.batch_done 与 settle.run_done 都没有写入，已入账的订单不回滚；再次投递执行到 DONE，恰好一条 settle.run_done（part=1、outcome=done）",
+    "test/spec/settlement/run-done/atomicity.int.test.ts > [AC-B2-04zf#8] 因开关停止转 PARTIAL 的事务里 settle.run_done 发布失败：执行拒绝，批次保持 EXECUTING，没有 settle.run_done，未处理的订单保持 WAITING；开关仍关时再次投递，接管后停在 PARTIAL 并恰好发一条 part=1 partial；继续执行完再发 part=2 done",
+    "test/spec/settlement/run-done/atomicity.int.test.ts > [AC-B2-04zf#9] outcome=done 的 settle.run_done 在最后一个批次转 DONE 的同一事务内发布：发布时该事务里 run 的全部批次已是 DONE，另一连接看到的最后一个批次仍是 EXECUTING；提交后两边一致",
+    "test/spec/settlement/run-done/atomicity.int.test.ts > [AC-B2-04zf#10] outcome=partial 的 settle.run_done 在批次因开关转 PARTIAL 的同一事务内发布：发布时该事务里停下的批次已是 PARTIAL、其余为 DONE，另一连接看到的仍是 EXECUTING；提交后为 PARTIAL",
+    "test/spec/settlement/run-done/completion.int.test.ts > [AC-B2-04zf#1] 同一 run 三个批次（含补充批次）逐个执行：前两个 DONE 时不发；第三个 DONE 时由它的执行发布恰好一条 settle.run_done，信封 app_id 为本 app，载荷恰为 settle_run_id、bill_id、part=1、outcome=done、batch_count=3；每批照旧各一条 settle.batch_done",
+    "test/spec/settlement/run-done/completion.int.test.ts > [AC-B2-04zf#2] 只有一个批次的 run：该批次 DONE 即发布一条 settle.run_done（part=1、outcome=done、batch_count=1）；这次执行恰好发布 settle.batch_done 与 settle.run_done 各一次",
+    "test/spec/settlement/run-done/completion.int.test.ts > [AC-B2-04zf#3] run 中另一批次仍为 CONFIRMED 时本批次 DONE 不发 settle.run_done；那一批次随后执行到 DONE 时才发恰好一条，part=1、outcome=done、batch_count=2",
+    "test/spec/settlement/run-done/completion.int.test.ts > [AC-B2-04zf#3] run 中另一批次仍为 EXECUTING 时本批次 DONE 不发 settle.run_done；那一批次随后执行到 DONE 时才发恰好一条，part=1、outcome=done、batch_count=2",
+    "test/spec/settlement/run-done/completion.int.test.ts > [AC-B2-04zf#4] run 的其余批次都已 DONE、最后一个批次执行中因开关停在 PARTIAL：由停下的这次执行发布一条 settle.run_done（part=1、outcome=partial、batch_count=2）；手动继续（SB8）执行到 DONE 后再发一条 part=2、outcome=done",
+    "test/spec/settlement/run-done/completion.int.test.ts > [AC-B2-04zf#5] 单批次 run 停在 PARTIAL、继续执行后再次因开关停止、再继续执行完：依次发布 part=1 partial、part=2 partial、part=3 done 各恰好一条，每次都由那次执行发布；batch_count 始终为 1",
+    "test/spec/settlement/run-done/completion.int.test.ts > [AC-B2-04zf#6] run 只按本 app 的同一 settle_run_id 计：同账单另一 run 的 CONFIRMED 批次、settle_run_id 为空的批次、别的 app 里同 settle_run_id 的批次都不计入也不挡；空 settle_run_id 的批次 DONE 不发；另一 run 执行完单独发一条，part 各自从 1 起",
+    "test/spec/settlement/run-done/events.test.ts > [AC-B2-04zf#14] EVENT_NAMES 登记 settle.run_done 恰好一次，与 02 §11 清单（PLAN_02_EVENTS）同序；名单仍冻结",
+    "test/spec/settlement/run-done/idempotency.int.test.ts > [AC-B2-04zf#11] 重放不重发：run 已发过 part=1 done 后，再投递其中每个批次都是 idle，不再发布任何事件；最后一个批次在两条连接上被重复投递时也只执行一次、只发一条",
+    "test/spec/settlement/run-done/idempotency.int.test.ts > [AC-B2-04zf#12] 重放不重发（PARTIAL）：part=1 partial 发出后，再投递 PARTIAL 的批次都是 idle、不发布；继续执行后在两条连接上重复投递只执行一次，只多一条 part=2 done；之后再投递仍不发",
+    "test/spec/settlement/run-done/idempotency.int.test.ts > [AC-B2-04zf#13] 同一 run 的两个批次由两个执行者在两条连接上同时执行完（各自的完成事务都等到对方也到达完成事务、对方在锁上等待或对方已结束才继续）：两批都 DONE 后恰好一条 settle.run_done（part=1、outcome=done、batch_count=2）；并发输家可以失败，补投递后仍只有一条",
+    "test/spec/settlement/run-done/mixed.int.test.ts > [AC-B2-04zf#15] 同一 run 的 taobao、jd 两批：taobao 批先因 credit.enabled.taobao 关闭停在 PARTIAL，jd 批随后执行到 DONE → 最终恰好一条 settle.run_done，part=1、outcome=partial、batch_count=2（不发 done，也不是一条都没有）",
+    "test/spec/settlement/run-done/mixed.int.test.ts > [AC-B2-04zf#16] 接 #15：开关恢复后手动继续（SB8）taobao 批执行到 DONE → 在 part=1 的 partial 之后恰好追加一条 part=2、outcome=done、batch_count=2",
+    "test/spec/settlement/run-done/mixed.int.test.ts > [AC-B2-04zf#17] 同一 run 的 taobao、jd 两批都因 settle.auto.enabled 关闭停在 PARTIAL（taobao 批执行中停住；jd 批已在 EXECUTING、被接管时第一单前即停）→ 最终恰好一条 settle.run_done，part=1、outcome=partial、batch_count=2",
+    "test/spec/settlement/run-done/paused.int.test.ts > [AC-B2-04zf#18] 同一 run 的 taobao、jd 两批：taobao 批到执行时刻因 credit.enabled.taobao 关闭没有开始、带停住标记停在 CONFIRMED，jd 批执行到 DONE（先后：paused-first）→ 最终恰好一条 settle.run_done，part=1、outcome=partial、batch_count=2",
+    "test/spec/settlement/run-done/paused.int.test.ts > [AC-B2-04zf#18] 同一 run 的 taobao、jd 两批：taobao 批到执行时刻因 credit.enabled.taobao 关闭没有开始、带停住标记停在 CONFIRMED，jd 批执行到 DONE（先后：done-first）→ 最终恰好一条 settle.run_done，part=1、outcome=partial、batch_count=2",
+    "test/spec/settlement/run-done/paused.int.test.ts > [AC-B2-04zf#19] 同一 run 的 taobao、jd 两批到执行时刻都因 settle.auto.enabled 关闭没有开始、都带停住标记停在 CONFIRMED，一笔未入账 → 此时不发 settle.run_done；开关恢复、两批继续执行到全部 DONE → 最终恰好一条 part=1、outcome=done、batch_count=2（part=1 证明停住时没发过）",
+    "test/spec/settlement/run-done/paused.int.test.ts > [AC-B2-04zf#19] 同一 run 的 taobao、jd 两批到执行时刻都因 credit.enabled.taobao 与 credit.enabled.… 关闭没有开始、都带停住标记停在 CONFIRMED，一笔未入账 → 此时不发 settle.run_done；开关恢复、两批继续执行到全部 DONE → 最终恰好一条 part=1、outcome=done、batch_count=2（part=1 证明停住时没发过）",
+    "test/spec/settlement/run-done/paused.int.test.ts > [AC-B2-04zf#20] 接 #19：settle.auto.enabled 恢复后再投递两批仍不自动开始；两批手动开始（SB10）并执行到全部 DONE → 最终恰好一条 settle.run_done，part=1、outcome=done、batch_count=2（停住时没发，part 不加）",
+    "test/spec/settlement/run-done/restop.int.test.ts > [AC-B2-04zf#21] 单批次 run（o0、o1、o2）：第 1 次执行入账 o0 后因 settle.auto.enabled 停在 PARTIAL → 恰一条 part=1 partial；开关恢复、继续执行（SB8），处理 o1 之前开关再次关闭、批次回到 PARTIAL（本次零入账）→ 不再发，列表仍只有 part=1 partial；之后继续执行到 DONE → 再发 part=2 done（不是 part=3）",
+    "test/spec/settlement/run-done/restop.int.test.ts > [AC-B2-04zf#22] 同一 run 的 taobao、jd 两批：taobao 批入账 o0 后因 settle.auto.enabled 停在 PARTIAL、jd 批因同一开关带停住标记停在 CONFIRMED → 恰一条 part=1 partial；taobao 批继续执行零入账又停、jd 批仍停在 CONFIRMED → 不再发；之后两批继续执行到全部 DONE → 再发 part=2 done（不是 part=3），batch_count 始终为 2",
+    "test/spec/settlement/run-done/runs.int.test.ts > [AC-B2-04zf#23] outcome=done 的发布与 settle_runs 同一事务：最后一个批次完成事务里 settle.run_done 被拒 → 行仍为 part 0、无 outcome；再次投递发布时另一连接看到的行仍未变，提交后行为 part=1、last_outcome=done，与载荷一致",
+    "test/spec/settlement/run-done/runs.int.test.ts > [AC-B2-04zf#24] outcome=partial 的发布与 settle_runs 同一事务：part=1 partial 后继续执行、因开关再停的事务里 settle.run_done 被拒 → 行仍为 part=1 partial；再次投递停在 PARTIAL 并发 part=2 partial，发布时另一连接仍看到 part=1，提交后行为 part=2 partial、row_version 增加",
+    "test/spec/settlement/run-done/runs.int.test.ts > [AC-B2-04zf#25] part 以 settle_runs 为准：第 1 次执行停在 PARTIAL 时发出的 part=1 partial 没有留在 event_log（审计副本已清理），继续执行到 DONE 仍发 part=2 done（不是 part=1）；settle_runs 行依次为 part=1 partial、part=2 done",
+    "test/spec/settlement/run-done/runs.int.test.ts > [AC-B2-04zf#26] 本次执行无入账不加 part：单批次 run 第 1 次执行入账 o0 后停在 PARTIAL（行 part=1 partial）；继续执行、处理 o1 之前开关再次关闭、零入账回到 PARTIAL → 不发，行仍为 part=1 partial；再继续执行到 DONE → 发 part=2 done，行为 part=2 done、row_version 增加",
+    "test/spec/settlement/run-done/runs.int.test.ts > [AC-B2-04zf#27] 同一 run 两批到执行时刻都因 settle.auto.enabled 关闭停在 CONFIRMED（带停住标记）、一笔未入账 → 不发，settle_runs 行无发布（无行，或 part 0、无 outcome）；开关恢复、两批手动开始（SB10）执行到全部 DONE → 发 part=1 done，行为 part=1 done",
+    "test/spec/settlement/run-done/runs.int.test.ts > [AC-B2-04zf#28] 本次执行的入账只看本次起点之后：同一 run 两批，第 1 批执行到 DONE、第 2 批到执行时刻因 settle.auto.enabled 关闭停在 CONFIRMED → part=1 partial；第 2 批手动开始（SB10）后开关又关、零入账停在 PARTIAL → 不发（上一次执行的 DONE 批次不算本次入账），行仍为 part=1 partial；继续执行到 DONE → 发 part=2 done",
+    "test/spec/settlement/run-done/runs.int.test.ts > [AC-B2-04zf#29] 并发同一 part：两批先都因开关停在 PARTIAL（part=1 partial），继续执行后由两个执行者在两条连接上同时执行完（各自的完成事务都等到对方也到达、对方在锁上等待或对方已结束才继续）→ 只多一条 part=2 done，settle_runs 行 part=2 done（part 只加一）；之后重放都是 idle，行不再变",
+    "test/spec/settlement/run-done/source.test.ts > [AC-B2-04zf#30] settlement batch 源码（batch/** 与模块 index.ts，不含 *.test.ts）去掉注释后不出现 event_log；part 与 outcome 经 settlement 自有的 settle_runs（batch/** 里有代码引用 settle_runs）"
+  ],
+  "risk_note": "RV2 settlement (B2-04zf; D10-467 ③ / D10-477 / D10-492; BR-FUND-04, BR-TEXT-09). settle.run_done: published when all batches of a settle run are DONE (outcome done) or the execution stops on the switch with a PARTIAL / paused batch (outcome partial); an execution with no credit publishes nothing and does not bump part. Per D10-492 part / last_outcome / part_started_at live in settlement's own app.settle_runs (B2-04zfa, migration 0108): first publish INSERT … ON CONFLICT DO NOTHING, later publishes a row_version CAS, all on the publishing transaction under a transaction advisory lock on (app, settle_run_id); a CAS / insert that misses publishes nothing; the code never reads event_log. The old event_log implementation (r1–r4) was dropped. Payload {settle_run_id, bill_id, part, outcome, batch_count}.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "2d2f3f65b4abcaec18bd2874fb1d5c738c70504f",
+      "tree": "7877b06125fff2e5d736cd99ace2221c698e1e8d",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-11-01T07:26:50Z",
+      "finished_at": "2026-11-01T07:27:29Z",
+      "gate": {
+        "commit": "1f309ac054d8ed45953cb57df174de56e162f820",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/settlement/run-done/atomicity.int.test.ts > [AC-B2-04zf#7] 最后一个批次完成事务里 settle.run_done 发布失败：执行拒绝，批次保持 EXECUTING（finished_at 为空），settle.batch_done 与 settle.run_done 都没有写入，已入账的订单不回滚；再次投递执行到 DONE，恰好一条 settle.run_done（part=1、outcome=done）",
+        "test/spec/settlement/run-done/atomicity.int.test.ts > [AC-B2-04zf#7] 最后一个批次完成事务里 settle.batch_done 发布失败：执行拒绝，批次保持 EXECUTING（finished_at 为空），settle.batch_done 与 settle.run_done 都没有写入，已入账的订单不回滚；再次投递执行到 DONE，恰好一条 settle.run_done（part=1、outcome=done）",
+        "test/spec/settlement/run-done/atomicity.int.test.ts > [AC-B2-04zf#8] 因开关停止转 PARTIAL 的事务里 settle.run_done 发布失败：执行拒绝，批次保持 EXECUTING，没有 settle.run_done，未处理的订单保持 WAITING；开关仍关时再次投递，接管后停在 PARTIAL 并恰好发一条 part=1 partial；继续执行完再发 part=2 done",
+        "test/spec/settlement/run-done/atomicity.int.test.ts > [AC-B2-04zf#9] outcome=done 的 settle.run_done 在最后一个批次转 DONE 的同一事务内发布：发布时该事务里 run 的全部批次已是 DONE，另一连接看到的最后一个批次仍是 EXECUTING；提交后两边一致",
+        "test/spec/settlement/run-done/atomicity.int.test.ts > [AC-B2-04zf#10] outcome=partial 的 settle.run_done 在批次因开关转 PARTIAL 的同一事务内发布：发布时该事务里停下的批次已是 PARTIAL、其余为 DONE，另一连接看到的仍是 EXECUTING；提交后为 PARTIAL",
+        "test/spec/settlement/run-done/completion.int.test.ts > [AC-B2-04zf#1] 同一 run 三个批次（含补充批次）逐个执行：前两个 DONE 时不发；第三个 DONE 时由它的执行发布恰好一条 settle.run_done，信封 app_id 为本 app，载荷恰为 settle_run_id、bill_id、part=1、outcome=done、batch_count=3；每批照旧各一条 settle.batch_done",
+        "test/spec/settlement/run-done/completion.int.test.ts > [AC-B2-04zf#2] 只有一个批次的 run：该批次 DONE 即发布一条 settle.run_done（part=1、outcome=done、batch_count=1）；这次执行恰好发布 settle.batch_done 与 settle.run_done 各一次",
+        "test/spec/settlement/run-done/completion.int.test.ts > [AC-B2-04zf#3] run 中另一批次仍为 CONFIRMED 时本批次 DONE 不发 settle.run_done；那一批次随后执行到 DONE 时才发恰好一条，part=1、outcome=done、batch_count=2",
+        "test/spec/settlement/run-done/completion.int.test.ts > [AC-B2-04zf#3] run 中另一批次仍为 EXECUTING 时本批次 DONE 不发 settle.run_done；那一批次随后执行到 DONE 时才发恰好一条，part=1、outcome=done、batch_count=2",
+        "test/spec/settlement/run-done/completion.int.test.ts > [AC-B2-04zf#4] run 的其余批次都已 DONE、最后一个批次执行中因开关停在 PARTIAL：由停下的这次执行发布一条 settle.run_done（part=1、outcome=partial、batch_count=2）；手动继续（SB8）执行到 DONE 后再发一条 part=2、outcome=done",
+        "test/spec/settlement/run-done/completion.int.test.ts > [AC-B2-04zf#5] 单批次 run 停在 PARTIAL、继续执行后再次因开关停止、再继续执行完：依次发布 part=1 partial、part=2 partial、part=3 done 各恰好一条，每次都由那次执行发布；batch_count 始终为 1",
+        "test/spec/settlement/run-done/completion.int.test.ts > [AC-B2-04zf#6] run 只按本 app 的同一 settle_run_id 计：同账单另一 run 的 CONFIRMED 批次、settle_run_id 为空的批次、别的 app 里同 settle_run_id 的批次都不计入也不挡；空 settle_run_id 的批次 DONE 不发；另一 run 执行完单独发一条，part 各自从 1 起",
+        "test/spec/settlement/run-done/events.test.ts > [AC-B2-04zf#14] EVENT_NAMES 登记 settle.run_done 恰好一次，与 02 §11 清单（PLAN_02_EVENTS）同序；名单仍冻结",
+        "test/spec/settlement/run-done/idempotency.int.test.ts > [AC-B2-04zf#11] 重放不重发：run 已发过 part=1 done 后，再投递其中每个批次都是 idle，不再发布任何事件；最后一个批次在两条连接上被重复投递时也只执行一次、只发一条",
+        "test/spec/settlement/run-done/idempotency.int.test.ts > [AC-B2-04zf#12] 重放不重发（PARTIAL）：part=1 partial 发出后，再投递 PARTIAL 的批次都是 idle、不发布；继续执行后在两条连接上重复投递只执行一次，只多一条 part=2 done；之后再投递仍不发",
+        "test/spec/settlement/run-done/idempotency.int.test.ts > [AC-B2-04zf#13] 同一 run 的两个批次由两个执行者在两条连接上同时执行完（各自的完成事务都等到对方也到达完成事务、对方在锁上等待或对方已结束才继续）：两批都 DONE 后恰好一条 settle.run_done（part=1、outcome=done、batch_count=2）；并发输家可以失败，补投递后仍只有一条",
+        "test/spec/settlement/run-done/mixed.int.test.ts > [AC-B2-04zf#15] 同一 run 的 taobao、jd 两批：taobao 批先因 credit.enabled.taobao 关闭停在 PARTIAL，jd 批随后执行到 DONE → 最终恰好一条 settle.run_done，part=1、outcome=partial、batch_count=2（不发 done，也不是一条都没有）",
+        "test/spec/settlement/run-done/mixed.int.test.ts > [AC-B2-04zf#16] 接 #15：开关恢复后手动继续（SB8）taobao 批执行到 DONE → 在 part=1 的 partial 之后恰好追加一条 part=2、outcome=done、batch_count=2",
+        "test/spec/settlement/run-done/mixed.int.test.ts > [AC-B2-04zf#17] 同一 run 的 taobao、jd 两批都因 settle.auto.enabled 关闭停在 PARTIAL（taobao 批执行中停住；jd 批已在 EXECUTING、被接管时第一单前即停）→ 最终恰好一条 settle.run_done，part=1、outcome=partial、batch_count=2",
+        "test/spec/settlement/run-done/paused.int.test.ts > [AC-B2-04zf#18] 同一 run 的 taobao、jd 两批：taobao 批到执行时刻因 credit.enabled.taobao 关闭没有开始、带停住标记停在 CONFIRMED，jd 批执行到 DONE（先后：paused-first）→ 最终恰好一条 settle.run_done，part=1、outcome=partial、batch_count=2",
+        "test/spec/settlement/run-done/paused.int.test.ts > [AC-B2-04zf#18] 同一 run 的 taobao、jd 两批：taobao 批到执行时刻因 credit.enabled.taobao 关闭没有开始、带停住标记停在 CONFIRMED，jd 批执行到 DONE（先后：done-first）→ 最终恰好一条 settle.run_done，part=1、outcome=partial、batch_count=2",
+        "test/spec/settlement/run-done/paused.int.test.ts > [AC-B2-04zf#19] 同一 run 的 taobao、jd 两批到执行时刻都因 settle.auto.enabled 关闭没有开始、都带停住标记停在 CONFIRMED，一笔未入账 → 此时不发 settle.run_done；开关恢复、两批继续执行到全部 DONE → 最终恰好一条 part=1、outcome=done、batch_count=2（part=1 证明停住时没发过）",
+        "test/spec/settlement/run-done/paused.int.test.ts > [AC-B2-04zf#19] 同一 run 的 taobao、jd 两批到执行时刻都因 credit.enabled.taobao 与 credit.enabled.… 关闭没有开始、都带停住标记停在 CONFIRMED，一笔未入账 → 此时不发 settle.run_done；开关恢复、两批继续执行到全部 DONE → 最终恰好一条 part=1、outcome=done、batch_count=2（part=1 证明停住时没发过）",
+        "test/spec/settlement/run-done/paused.int.test.ts > [AC-B2-04zf#20] 接 #19：settle.auto.enabled 恢复后再投递两批仍不自动开始；两批手动开始（SB10）并执行到全部 DONE → 最终恰好一条 settle.run_done，part=1、outcome=done、batch_count=2（停住时没发，part 不加）",
+        "test/spec/settlement/run-done/restop.int.test.ts > [AC-B2-04zf#21] 单批次 run（o0、o1、o2）：第 1 次执行入账 o0 后因 settle.auto.enabled 停在 PARTIAL → 恰一条 part=1 partial；开关恢复、继续执行（SB8），处理 o1 之前开关再次关闭、批次回到 PARTIAL（本次零入账）→ 不再发，列表仍只有 part=1 partial；之后继续执行到 DONE → 再发 part=2 done（不是 part=3）",
+        "test/spec/settlement/run-done/restop.int.test.ts > [AC-B2-04zf#22] 同一 run 的 taobao、jd 两批：taobao 批入账 o0 后因 settle.auto.enabled 停在 PARTIAL、jd 批因同一开关带停住标记停在 CONFIRMED → 恰一条 part=1 partial；taobao 批继续执行零入账又停、jd 批仍停在 CONFIRMED → 不再发；之后两批继续执行到全部 DONE → 再发 part=2 done（不是 part=3），batch_count 始终为 2",
+        "test/spec/settlement/run-done/runs.int.test.ts > [AC-B2-04zf#23] outcome=done 的发布与 settle_runs 同一事务：最后一个批次完成事务里 settle.run_done 被拒 → 行仍为 part 0、无 outcome；再次投递发布时另一连接看到的行仍未变，提交后行为 part=1、last_outcome=done，与载荷一致",
+        "test/spec/settlement/run-done/runs.int.test.ts > [AC-B2-04zf#24] outcome=partial 的发布与 settle_runs 同一事务：part=1 partial 后继续执行、因开关再停的事务里 settle.run_done 被拒 → 行仍为 part=1 partial；再次投递停在 PARTIAL 并发 part=2 partial，发布时另一连接仍看到 part=1，提交后行为 part=2 partial、row_version 增加",
+        "test/spec/settlement/run-done/runs.int.test.ts > [AC-B2-04zf#25] part 以 settle_runs 为准：第 1 次执行停在 PARTIAL 时发出的 part=1 partial 没有留在 event_log（审计副本已清理），继续执行到 DONE 仍发 part=2 done（不是 part=1）；settle_runs 行依次为 part=1 partial、part=2 done",
+        "test/spec/settlement/run-done/runs.int.test.ts > [AC-B2-04zf#26] 本次执行无入账不加 part：单批次 run 第 1 次执行入账 o0 后停在 PARTIAL（行 part=1 partial）；继续执行、处理 o1 之前开关再次关闭、零入账回到 PARTIAL → 不发，行仍为 part=1 partial；再继续执行到 DONE → 发 part=2 done，行为 part=2 done、row_version 增加",
+        "test/spec/settlement/run-done/runs.int.test.ts > [AC-B2-04zf#27] 同一 run 两批到执行时刻都因 settle.auto.enabled 关闭停在 CONFIRMED（带停住标记）、一笔未入账 → 不发，settle_runs 行无发布（无行，或 part 0、无 outcome）；开关恢复、两批手动开始（SB10）执行到全部 DONE → 发 part=1 done，行为 part=1 done",
+        "test/spec/settlement/run-done/runs.int.test.ts > [AC-B2-04zf#28] 本次执行的入账只看本次起点之后：同一 run 两批，第 1 批执行到 DONE、第 2 批到执行时刻因 settle.auto.enabled 关闭停在 CONFIRMED → part=1 partial；第 2 批手动开始（SB10）后开关又关、零入账停在 PARTIAL → 不发（上一次执行的 DONE 批次不算本次入账），行仍为 part=1 partial；继续执行到 DONE → 发 part=2 done",
+        "test/spec/settlement/run-done/runs.int.test.ts > [AC-B2-04zf#29] 并发同一 part：两批先都因开关停在 PARTIAL（part=1 partial），继续执行后由两个执行者在两条连接上同时执行完（各自的完成事务都等到对方也到达、对方在锁上等待或对方已结束才继续）→ 只多一条 part=2 done，settle_runs 行 part=2 done（part 只加一）；之后重放都是 idle，行不再变",
+        "test/spec/settlement/run-done/source.test.ts > [AC-B2-04zf#30] settlement batch 源码（batch/** 与模块 index.ts，不含 *.test.ts）去掉注释后不出现 event_log；part 与 outcome 经 settlement 自有的 settle_runs（batch/** 里有代码引用 settle_runs）"
+      ],
+      "expected": [
+        "test/spec/settlement/run-done/atomicity.int.test.ts",
+        "test/spec/settlement/run-done/completion.int.test.ts",
+        "test/spec/settlement/run-done/events.test.ts",
+        "test/spec/settlement/run-done/idempotency.int.test.ts",
+        "test/spec/settlement/run-done/mixed.int.test.ts",
+        "test/spec/settlement/run-done/paused.int.test.ts",
+        "test/spec/settlement/run-done/restop.int.test.ts",
+        "test/spec/settlement/run-done/runs.int.test.ts",
+        "test/spec/settlement/run-done/source.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "60cef8ea122e64dcd75729e9e44334de52b015f8ae394be0ff578956109bfb1b"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "78adab7677f915f3b6c9de24ff28e3c671f1ae73c74366e4ec94d9c5f4475076"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "编排例外 D10-521，单列，不计入原 10 次: after the D10-492 rewrite a fresh independent Claude (plain claude -p, read-only, trusted review-money.md and REVIEW.md) reviewed the new implementation, round 1 pass with two open S2 (cross-process clock comparison for 'credited in this execution', settle_runs key without app_id) recorded as FU-B204ZF-CLOCK-SKEW / FU-B204ZF-RUN-KEY; the earlier three money rounds were on the dropped event_log design",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": false,
+    "note": "编排例外 D10-521，单列，不计入原 10 次: rule tests rewritten for settle_runs by an independent Claude (D10-492 exception round, uncounted), reviewed round 1 by a fresh independent Claude (plain claude -p, read-only, trusted review-spec-test.md and REVIEW.md): pass with one S2 (same-transaction proof, FU-B204ZF-SAMETX-PROOF); earlier spec-test rounds were on the dropped design",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "c218cd041a8d553e20c410352eb21946a5fb75ad",
+    "specs": "d6da500dafeea96c5e7d7cc7d526535701917b8f"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  }
+}
