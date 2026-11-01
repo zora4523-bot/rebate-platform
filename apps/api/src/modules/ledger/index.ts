@@ -59,6 +59,12 @@ export type {
   BeneficiaryOrderNet,
   OrderNets,
 } from './application/order-nets.ts';
+// B1-09p: one viewer's own entries on a batch of sub-orders (read only; settlement's port).
+export { readOrderFiguresLedger } from './application/order-figures-read.ts';
+export type {
+  OrderFiguresLedgerEntry,
+  OrderFiguresLedgerSelection,
+} from './application/order-figures-read.ts';
 export type { Ledger, ReverseInput } from './application/reverse.ts';
 export type {
   LedgerAccountRef,
