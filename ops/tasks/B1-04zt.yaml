@@ -1,0 +1,37 @@
+id: B1-04zt
+repo: rebate-platform
+title: 京东切 live 前：2002452 窗口对半缩小重查、增量起点早于 90 天时收到可查范围（FU-JD-LIVE-PRECHECKS）
+type: impl
+# 2026-11-02 be 入账（编排 05:28）。① 02 §7.1 翻页与平台差异、CAP-JD-07：窗口内超接口上限（2002452「请缩小查询时间范围」）对半缩小重查。冻结 [AC-B1-04zb#24] 钉适配器抛 upstream_rejected、不自行缩窗，所以 code 不变，UnionError 加一个不带平台名的「窗口过大」标记，订单侧（增量、回扫、手动窗口共用）在一个任务内对半重查，到下限还不行才失败。水位只在整窗完成后推进。
+# ② jd.md：from ≥ 当前时刻 − 90 天，否则 invalid_dto。增量起点（sync_start_at 或水位）更旧时每轮发同一窗、进死信，水位永不动。改成收到 now − 90 天 + 1 小时（与回扫同余量），有水位行先 rewind 再发，并告警一条。更早的订单平台已查不到。查询上限是平台规则，新文件放 domain/platform-rules/，PlatformRules 键不动。
+# 不动金额与归属；jd 端点仍 demo。limits 那件拆到 B1-04zu。RV2。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/union/domain/types.ts'
+  - 'apps/api/src/modules/union/index.ts'
+  - 'apps/api/src/modules/union/infra/jd/**'
+  - 'apps/api/src/modules/orders/application/fetch-window.ts'
+  - 'apps/api/src/modules/orders/application/fetch-window.test.ts'
+  - 'apps/api/src/modules/orders/application/sync-ports.ts'
+  - 'apps/api/src/modules/orders/application/sync-scheduler.ts'
+  - 'apps/api/src/modules/orders/application/sync-scheduler.test.ts'
+  - 'apps/api/src/modules/orders/domain/platform-rules/**'
+  - 'apps/api/src/modules/orders/domain/sync-window.ts'
+  - 'apps/api/src/modules/orders/infra/sync-cursors.ts'
+  - 'apps/api/src/modules/orders/jobs/order-sync.ts'
+  - 'apps/api/src/modules/orders/jobs/order-rescan.ts'
+  - 'apps/api/src/modules/orders/jobs/manual-sync.ts'
+  - 'specs/union/jd.md'
+  - 'test/spec/orders/jd-live/**'
+  - 'test/spec/union/jd-narrow/**'
+test_paths:
+  - 'test/spec/orders/jd-live/**'
+  - 'test/spec/union/jd-narrow/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
