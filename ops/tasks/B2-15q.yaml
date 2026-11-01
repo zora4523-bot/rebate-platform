@@ -1,0 +1,24 @@
+id: B2-15q
+repo: rebate-platform
+title: worker 后台 tick 关停时等在途结束（payment、ledger、payout×2），union tick 补 catch（D10-553）
+type: impl
+# 2026-11-01 be 入账（编排 D10-553）。现象：spec/payment/recon-schedule/bootstrap.int.test.ts 的 afterAll 挂死，超时加到 180 秒仍红，#2153、#2163、#2166、#2162 都被打红。
+# 根因：kysely 0.29.6 destroy() 先置空 #pool 再 pool.end()；有连接握手中时，握手完成读 this.#pool.Client 抛错，client 永不 release，pool.end() 永远等。触发：这几个 tick 用 void tick() 起跑，onModuleDestroy 只清定时器不等在途，catalog、settlement 是等的。
+# 改：stop 等在途 tick 结束、停止后不再起新 tick，与 catalog-worker.module.ts 一致；union tick 补 catch（现为未处理 rejection）。先写确定性复现证实，不改冻结测试、不加超时。RV2，资金口径轻审，因涉 payout、ledger 停机路径。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/payment/payment.module.ts'
+  - 'apps/api/src/modules/ledger/daily-check.module.ts'
+  - 'apps/api/src/modules/payout/payout.module.ts'
+  - 'apps/api/src/modules/union/auth-expiry/union-auth.module.ts'
+  - 'test/spec/platform/worker-shutdown/**'
+test_paths:
+  - 'test/spec/platform/worker-shutdown/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
