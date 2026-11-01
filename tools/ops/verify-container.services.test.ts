@@ -444,12 +444,14 @@ it(
     const verify = entrypointRun(calls);
     expect(valueOf(verify?.args ?? [], '--network')).toBe('none');
     expect(noRedisUrl(verify)).toBe(true);
-    // Nothing else is handed over either.
+    // Nothing else is handed over either (CT-06zzw: plus the Node heap limit of every container).
     expect(Object.keys(verify?.env ?? {}).sort()).toEqual([
+      'NODE_OPTIONS',
       'PROP_SEED',
       'VERIFY_SCRIPT',
       'VERIFY_TIMEOUT_SECS',
     ]);
+    expect(verify?.env['NODE_OPTIONS']).toBe('--max-old-space-size=8192');
   },
   CLI_TIMEOUT,
 );
@@ -521,12 +523,14 @@ it(
     expect(red?.args.at(-1)).toBe('red');
     expect(valueOf(red?.args ?? [], '--network')).toBe('none');
     expect(noRedisUrl(red)).toBe(true);
-    // Nothing else is handed over either.
+    // Nothing else is handed over either (CT-06zzw: plus the Node heap limit of every container).
     expect(Object.keys(red?.env ?? {}).sort()).toEqual([
+      'NODE_OPTIONS',
       'PROP_SEED',
       'RED_PLAN',
       'VERIFY_TIMEOUT_SECS',
     ]);
+    expect(red?.env['NODE_OPTIONS']).toBe('--max-old-space-size=8192');
   },
   CLI_TIMEOUT,
 );
@@ -626,6 +630,7 @@ it(
     expect(valueOf(args, '--cap-drop')).toBe('ALL');
     // The projects come from the trusted table, in its order; nothing else is handed over.
     expect(browser?.env).toEqual({
+      NODE_OPTIONS: '--max-old-space-size=8192',
       PROP_SEED: '20261001',
       VERIFY_TIMEOUT_SECS: '3600',
       BROWSER_PROJECTS:
@@ -711,10 +716,12 @@ it(
     expect(noRedisUrl(offline)).toBe(true);
     expect(pgUrls(offline)).toEqual([]);
     expect(Object.keys(offline?.env ?? {}).sort()).toEqual([
+      'NODE_OPTIONS',
       'PROP_SEED',
       'RED_PLAN',
       'VERIFY_TIMEOUT_SECS',
     ]);
+    expect(offline?.env['NODE_OPTIONS']).toBe('--max-old-space-size=8192');
     // Two containers, two names; both are removed at the end.
     const names = reds.map((c) => valueOf(c.args, '--name') ?? '');
     expect(new Set(names).size).toBe(2);
