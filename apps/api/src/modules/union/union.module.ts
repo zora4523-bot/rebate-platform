@@ -41,8 +41,10 @@ import {
   type UnionRegistry,
 } from './infra/registry.ts';
 import type { UnionTransport } from './infra/replay.ts';
+import type { TaobaoOrderSlotReader, TaobaoOrderWarning } from './infra/taobao/taobao-adapter.ts';
 import type { TaobaoWarning } from './infra/taobao/response.ts';
 import { readActivePddQueryPid } from './pids/query-reader.ts';
+import { readTaobaoOrderSlots } from './pids/taobao-order-slots.ts';
 
 /**
  * B1-22q: the second argument of UnionModule.forRoot(directory, options). `config` builds union's
@@ -103,6 +105,9 @@ export const UNION_ENDPOINTS_DIR = fileURLToPath(
  * DataokeClient order source over its own archived HTTPS transport; staging with neither variable
  * starts without one and logs nothing (D10-479; deployment checks cover it). prod never gets here
  * with taobao live (kms_unavailable first).
+ * B1-04zn (D10-530): taobao live also gets TAOBAO_CONVERT_SOURCE / TAOBAO_SEARCH_SOURCE from the
+ * passed config, and with the 大淘客 order source an order slot reader over the optional database
+ * (union_pids, every Taobao PID of ctx.appId) plus a warn hook logging only event code and count.
  * jd with mode=live (B1-04ze): local / test and prod refuse like taobao, after taobao's own check;
  * staging with both JD_APP_KEY and JD_APP_SECRET_FILE reads the secret file once here and assembles
  * the real JdUnionAdapter over its own archived HTTPS transport (registry option `jdLive`); staging
@@ -167,6 +172,43 @@ function logDataokeWarning(logger: RootLogger, warning: DataokeWarning): void {
     },
     'dataoke upstream warning',
   );
+}
+
+/**
+ * The Taobao order warn hook (B1-04f, wired by B1-04zn) as flat pino fields: only the event code,
+ * and the upstream field name / count when the warning has them; never an order number, an amount
+ * or a PID (only those three known fields are copied).
+ */
+function logTaobaoOrderWarning(logger: RootLogger, warning: TaobaoOrderWarning): void {
+  logger.warn(
+    {
+      event: warning.event,
+      ...(typeof warning.field === 'string' ? { field: warning.field } : {}),
+      ...(typeof warning.count === 'number' ? { count: warning.count } : {}),
+    },
+    'taobao order warning',
+  );
+}
+
+/**
+ * B1-04zn (D10-530; D10-488 ③): the live Taobao adapter's order slot reader, every Taobao PID of
+ * ctx.appId in union_pids (retired included), read again on every listOrders. The database is read
+ * from the optional source per call, like the pdd query identity: without one listOrders stays
+ * `adapter_unimplemented` and nothing is read. A failed read is not caught: listOrders rejects with
+ * it (never an empty slot list), so the order sync retries that window.
+ */
+function taobaoOrderSlots(source: QueryPidSource): TaobaoOrderSlotReader {
+  return async (ctx) => {
+    const db = source.db;
+    if (db === undefined) {
+      throw new UnionError(
+        'adapter_unimplemented',
+        'Union adapter for taobao has no database to read the order slots from (listOrders)',
+        'taobao',
+      );
+    }
+    return readTaobaoOrderSlots(db, ctx.appId);
+  };
 }
 
 /** The Jingdong warn hook (B1-04za) as flat pino fields: only the method name and the code. */
@@ -369,7 +411,18 @@ async function startUnionRegistry(
       credentials,
       transport: archivedTransport(createUnionHttpTransport(), source, clock, logger),
       warn: (warning: TaobaoWarning) => logTaobaoWarning(logger, warning),
-      ...(orderSource === undefined ? {} : { orderSource }),
+      // B1-04zn (D10-530): the two switches from the passed config (a hand-built config without
+      // them counts as the defaults); the adapter only acts on 'dataoke' with an order source.
+      convertSource: config.taobaoConvertSource ?? 'baichuan',
+      searchSource: config.taobaoSearchSource ?? 'official',
+      ...(orderSource === undefined
+        ? {}
+        : {
+            orderSource,
+            // The slot reader only with the order source; it needs the optional database per call.
+            orderSlots: taobaoOrderSlots(source),
+            orderWarn: (warning: TaobaoOrderWarning) => logTaobaoOrderWarning(logger, warning),
+          }),
     };
   }
   let jdLive: JdLiveOptions | undefined;

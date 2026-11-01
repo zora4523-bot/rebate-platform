@@ -6,8 +6,16 @@ import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 
 /** Every Taobao PID registered for `appId` in union_pids, whatever its status or scene. */
-export function readTaobaoOrderSlots(db: Kysely<DB>, appId: string): Promise<readonly string[]> {
-  void db;
-  void appId;
-  throw new Error('NotImplemented: readTaobaoOrderSlots');
+export async function readTaobaoOrderSlots(
+  db: Kysely<DB>,
+  appId: string,
+): Promise<readonly string[]> {
+  const rows = await db
+    .withSchema('app')
+    .selectFrom('union_pids')
+    .select('pid')
+    .where('app_id', '=', appId)
+    .where('platform', '=', 'taobao')
+    .execute();
+  return rows.map((row) => row.pid);
 }

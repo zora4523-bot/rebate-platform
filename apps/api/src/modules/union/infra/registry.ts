@@ -15,6 +15,8 @@
 // B1-04e: `taobaoLive.orderSource` (大淘客 dependencies) becomes one DataokeClient over the registry
 // clock, handed to that adapter as `orderSource`; without it the adapter gets none.
 // B1-04d: `taobaoLive.convertSource` is handed to that adapter as is (default 'baichuan').
+// B1-04zn (D10-530): likewise `taobaoLive.searchSource` / `orderSlots` / `orderWarn`; absent, the
+// adapter options stay as before.
 // B1-04ze: likewise only `jdLive` (credentials provider + transport) turns a jd endpoint with
 // mode=live into the real JdUnionAdapter of B1-04za, returned as is; without it jd live / replay
 // stay `adapter_unimplemented`; union.module.ts decides which environments may pass it.
@@ -221,6 +223,10 @@ export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegist
           ...(orderSource === undefined ? {} : { orderSource }),
           // B1-04d: the convert switch as is; the adapter only acts on it with an orderSource.
           ...(live.convertSource === undefined ? {} : { convertSource: live.convertSource }),
+          // B1-04zn: the search switch, the order slot reader and the order warn hook as they are.
+          ...(live.searchSource === undefined ? {} : { searchSource: live.searchSource }),
+          ...(live.orderSlots === undefined ? {} : { orderSlots: live.orderSlots }),
+          ...(live.orderWarn === undefined ? {} : { orderWarn: live.orderWarn }),
         });
       }
       if (endpoint.platform === 'jd' && endpoint.mode === 'live' && options.jdLive) {

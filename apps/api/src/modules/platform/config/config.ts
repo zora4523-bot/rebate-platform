@@ -28,6 +28,7 @@ import { readPddQueryConfig } from './pdd-query.ts';
 import { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 import { readSmsConfig, type SmsConfig } from './sms.ts';
 import { readTaobaoConfig, type TaobaoAppConfig } from './taobao.ts';
+import { readTaobaoSourceConfig } from './taobao-sources.ts';
 import { readTrustedProxies } from './trusted-proxies.ts';
 import { readUnionEndpointOverrideConfig } from './union-endpoint-override.ts';
 
@@ -379,6 +380,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     if (appEnv.success) problems.push(...readJdConfig(appEnv.data, env).problems);
     problems.push(...readJdSiteConfig(env).problems);
     problems.push(...readPddQueryConfig(env).problems);
+    problems.push(...readTaobaoSourceConfig(env).problems);
     if (appEnv.success)
       problems.push(...readUnionEndpointOverrideConfig(appEnv.data, env).problems);
     if (appEnv.success) problems.push(...readAgentUserHashConfig(appEnv.data, env).problems);
@@ -421,6 +423,12 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   violations.push(...jdSiteProblems);
   const { pddQueryCustomParameters, problems: pddQueryProblems } = readPddQueryConfig(env);
   violations.push(...pddQueryProblems);
+  const {
+    taobaoConvertSource,
+    taobaoSearchSource,
+    problems: taobaoSourceProblems,
+  } = readTaobaoSourceConfig(env);
+  violations.push(...taobaoSourceProblems);
   const { unionEndpointOverrideDir, problems: overrideProblems } = readUnionEndpointOverrideConfig(
     values.APP_ENV,
     env,
@@ -472,6 +480,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(jdSiteId === null ? {} : { jdSiteId }),
     unionEndpointOverrideDir,
+    taobaoConvertSource,
+    taobaoSearchSource,
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(agentReview === null ? {} : { agentReview }),
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
