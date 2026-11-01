@@ -1,0 +1,30 @@
+id: B1-05w
+repo: rebate-platform
+title: catalog：详情无新鲜原串时任何 key 都走 BR-PROD-05 ②③（FU-DETAIL-REPARSE），不再直接 30143；契约 getProduct 补 50401，error-codes.yaml 50301 的 meaning / sources 按 08 §13.11 同步（编排 12:06）
+type: impl
+# 2026-11-01 W1 入账。B1-05r 只修了有合格池行的 key，非池商品仍在 detail-wiring.ts 直接 30143、不问联盟，偏离 BR-PROD-05（30143 只给检索不到同键 / 派生出不同键）。
+# 改 contracts/ 排契约队列。另把 convert.taobao_prefetch.rate_per_min 的 range（整数、最小 1）钉进 config-items registry.test.ts（B1-06zd 的 #47 移到这里）。
+refs: [BR-PROD-05, BR-PRICE-11]
+refs_hash:
+  BR-PROD-05: 692dcc678e1e
+  BR-PRICE-11: 94a46c6de587
+deps: [B1-06zd]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'packages/contracts-ts/src/**'
+  - 'apps/api/src/modules/catalog/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/catalog/detail-reparse/**'
+  - 'test/spec/content/config-items/registry.test.ts'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/detail-reparse/**'
+status: todo
+pr: null
