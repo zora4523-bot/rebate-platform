@@ -13,6 +13,8 @@
 //   不上线路。传输抛错（非 UnionError）→ upstream_unavailable（不带原文、不挂 cause）。
 // - 响应解包与错误分类见 response.ts；返回 data 对象，不做订单字段映射（B1-04f / B1-04z）。
 // - B1-04d：调用方可按接口给出外层 code 细分表（outerCodes），只覆盖表内 code 的分类。
+// - B1-04f：exchange 与 request 同样签名、发送、解包与分类，另把传输响应原样交回（订单映射要从原文
+//   二次解析 JSON 数字原文，并读归档传输挂在响应上的 raw_payload_id）。
 import type { Clock } from '../../../platform/index.ts';
 import { UnionError } from '../../domain/types.ts';
 import type { ArchiveContext, UnionTransport, UnionTransportResponse } from '../replay.ts';
@@ -48,6 +50,12 @@ export interface DataokeClientOptions {
   /** Gateway origin from deployment config (https://openapi.dataoke.com); https only. */
   readonly baseUrl: string;
   readonly warn?: (event: DataokeWarning) => void;
+}
+
+/** B1-04f: the unwrapped `data` object together with the transport response it came from. */
+export interface DataokeExchange {
+  readonly data: Readonly<Record<string, unknown>>;
+  readonly response: UnionTransportResponse;
 }
 
 export interface DataokeRequestOptions {
@@ -146,6 +154,25 @@ export class DataokeClient {
     return unwrapDataokeResponse(path, response, this.#warn, {
       ...(options.outerCodes === undefined ? {} : { outerCodes: options.outerCodes }),
     });
+  }
+
+  /**
+   * B1-04f: same as request (same checks, errors and warnings), but also returns the transport
+   * response, so a caller can re-read the body text (JSON number literals) and the archive row id.
+   */
+  async exchange(
+    method: DataokeHttpMethod,
+    path: string,
+    parameters: DataokeParameters,
+    options: DataokeRequestOptions,
+  ): Promise<DataokeExchange> {
+    const response = await this.#send(method, path, parameters, options);
+    return {
+      data: unwrapDataokeResponse(path, response, this.#warn, {
+        ...(options.outerCodes === undefined ? {} : { outerCodes: options.outerCodes }),
+      }),
+      response,
+    };
   }
 
   async #send(
