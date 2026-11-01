@@ -1,0 +1,97 @@
+{
+  "risk_note": "RV2 (apps/api/src/modules/payout/**, app.module.ts). Production wiring gaps 7 and 8 (orchestrator 11-02 03:49, moved from withdraw to pay). GET /v1/wallet/summary: withdrawn_fen now sums amount_fen of the user's PAID_API / PAID_MANUAL withdrawals through a new payout read port on the summary's read transaction (BR-FUND-18; not net_fen); risk_paused_reason also answers account_frozen for an effective withdraw_holds row, judged row by row on the injected Clock, any reason, source not disclosed (BR-FUND-18, BR-WDR-05). No new public text: account_frozen is already in the dictionary. No schema, contract or ledger change. appealing stays as it was: BR-FUND-18 names only frozen, noted, not ruled on.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 (couli-runs/B2-05p/review-codex.json), no findings. Static review, no tests run."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude-independent",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "fresh Claude each round. r1 fail: 2 S1 (frozen without a hold not pinned; several holds passable by a first-row read) and 1 S2 (banned not pinned). r2 fail: 1 S1 (passable by a last-row read). Each fixed by a new independent Claude; r3 pass with no findings."
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  },
+  "task": "B2-05p",
+  "spec_commit": "36d68f12962cf23ee22c07d3799d5b4d65ede9e7",
+  "spec_ref": "deb521c2bcb740571a01c2dc128f40abb40c37a2",
+  "red_tests": [
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#1] BR-FUND-18 withdrawn_fen = PAID_API + PAID_MANUAL 的 amount_fen 合计；PENDING_REVIEW、APPROVED、REJECTED、PAYING、FAILED 不计",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#2] BR-FUND-18 有手续费、代扣税时取 amount_fen，不取 net_fen（实到为 0 的单也按申请额计）",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#3] BR-FUND-18 withdrawn_fen 不串：同 app 别的用户、别的 app 的已打款单不计，本人的 user_id 放到别的 app 下查不到本人的单",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#4] BR-FUND-18 累加超过 int4 上限（2147483647 分）不溢出，按整数原样返回",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#5] BR-FUND-18 BR-WDR-05 生效的 withdraw_holds reason=manual 给 account_frozen，不透露来源",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#5] BR-FUND-18 BR-WDR-05 生效的 withdraw_holds reason=recon_diff 给 account_frozen，不透露来源",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#5] BR-FUND-18 BR-WDR-05 生效的 withdraw_holds reason=ledger_mismatch 给 account_frozen，不透露来源",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#5] BR-FUND-18 BR-WDR-05 生效的 withdraw_holds reason=manual_failed_watch 给 account_frozen，不透露来源",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#6] BR-WDR-05 hold_until 晚于注入时钟的 now（差 1 毫秒）→ 生效",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#7] BR-WDR-05 released_at 有值 → 不生效（hold_until 为空或还没到都一样）",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#8] BR-WDR-05 hold_until 按注入时钟已过（差 1 毫秒）→ 不生效；不看数据库或机器的当前时间",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#9] BR-WDR-05 hold_until 正好等于 now → 不生效（> now 才生效）",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#10] BR-WDR-05 多条叠加逐条判定：已解除、已过期的记录之外还有一条生效 → account_frozen",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#11] BR-FUND-18 hold 不串：同 app 别的用户、别的 app 的 hold 不算，有 hold 的 user_id 放到别的 app 下也不算",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#12] BR-FUND-18 只有 hold、只有 risk_state=frozen、两者都有 → 都只一个 account_frozen 键；risk_state=banned 且无 hold → null",
+    "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#13] BR-FUND-18 生效的 hold 不影响各金额：与同样数据、没有 hold 的用户逐字段相同，只差 risk_paused_reason"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "36d68f12962cf23ee22c07d3799d5b4d65ede9e7",
+      "tree": "440e851257fe858d1b9b2ec1e26e8b34d5e74dc7",
+      "prop_seed": 20261001,
+      "started_at": "2026-11-01T21:59:37Z",
+      "finished_at": "2026-11-01T21:59:50Z",
+      "red_tests": [
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#1] BR-FUND-18 withdrawn_fen = PAID_API + PAID_MANUAL 的 amount_fen 合计；PENDING_REVIEW、APPROVED、REJECTED、PAYING、FAILED 不计",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#2] BR-FUND-18 有手续费、代扣税时取 amount_fen，不取 net_fen（实到为 0 的单也按申请额计）",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#3] BR-FUND-18 withdrawn_fen 不串：同 app 别的用户、别的 app 的已打款单不计，本人的 user_id 放到别的 app 下查不到本人的单",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#4] BR-FUND-18 累加超过 int4 上限（2147483647 分）不溢出，按整数原样返回",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#5] BR-FUND-18 BR-WDR-05 生效的 withdraw_holds reason=manual 给 account_frozen，不透露来源",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#5] BR-FUND-18 BR-WDR-05 生效的 withdraw_holds reason=recon_diff 给 account_frozen，不透露来源",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#5] BR-FUND-18 BR-WDR-05 生效的 withdraw_holds reason=ledger_mismatch 给 account_frozen，不透露来源",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#5] BR-FUND-18 BR-WDR-05 生效的 withdraw_holds reason=manual_failed_watch 给 account_frozen，不透露来源",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#6] BR-WDR-05 hold_until 晚于注入时钟的 now（差 1 毫秒）→ 生效",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#7] BR-WDR-05 released_at 有值 → 不生效（hold_until 为空或还没到都一样）",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#8] BR-WDR-05 hold_until 按注入时钟已过（差 1 毫秒）→ 不生效；不看数据库或机器的当前时间",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#9] BR-WDR-05 hold_until 正好等于 now → 不生效（> now 才生效）",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#10] BR-WDR-05 多条叠加逐条判定：已解除、已过期的记录之外还有一条生效 → account_frozen",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#11] BR-FUND-18 hold 不串：同 app 别的用户、别的 app 的 hold 不算，有 hold 的 user_id 放到别的 app 下也不算",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#12] BR-FUND-18 只有 hold、只有 risk_state=frozen、两者都有 → 都只一个 account_frozen 键；risk_state=banned 且无 hold → null",
+        "test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts > [AC-B2-05p#13] BR-FUND-18 生效的 hold 不影响各金额：与同样数据、没有 hold 的用户逐字段相同，只差 risk_paused_reason"
+      ],
+      "expected": ["test/spec/ledger/wallet-summary-wiring/wiring.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "b49230361e440e47de2aed736640c0b093010be7933dfcaff6cec920ef7044c8"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "d07cf13b7a8cabfb4672e3b5ff97e588cb82a692",
+    "specs": "81162dd1f14b9998534e12edbd04c10478c7b260"
+  }
+}
