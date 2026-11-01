@@ -1,0 +1,85 @@
+{
+  "risk_note": "RV2 (apps/api/src/modules/payment/**). FU-PAY-FAKE-BILL-NOISE (orchestrator 2026-11-01 22:07): FakePayChannel's fake_not_supported bill answer is skipped by bill.recon like a channel without an adapter (debug; no throw, no catch-up, no pay_bill_recon_abandoned, not recorded as reconciled, never read as an empty bill). Only staging with PAY_CHANNEL_IMPL=fake is affected: real adapters never answer this reason and prod has no fake. Other unknown reasons unchanged. No ledger write, no amount touched. Rule tests by an independent Claude (claude-run.sh, claude-opus-5-5, approvals #36), 10 cases red on the local container (D10-555). Implementation by the lane (Claude Opus 5.5). Ledger #2187.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 (couli-runs/B2-15r/review-claude-independent.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagent, round 1 pass, 1 S2: the other fixed reasons are pinned by the implementer unit tests pay-recon.test.ts U#50-56, not by these rule tests"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  },
+  "task": "B2-15r",
+  "spec_commit": "1e60a27dcc9eb15e425bdefd848816a141b80fdb",
+  "spec_ref": "deb521c2bcb740571a01c2dc128f40abb40c37a2",
+  "red_tests": [
+    "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#1] 假通道 wechat_pay：runPayBillRecon 返回 skipped，只记一条 debug pay_bill_recon_no_adapter，没有 warn / error",
+    "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#1] 假通道 alipay：runPayBillRecon 返回 skipped，只记一条 debug pay_bill_recon_no_adapter，没有 warn / error",
+    "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#2] runBillReconJob 对假通道不发 catch-up，不记补跑日志，两个渠道各一条 debug",
+    "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#3] 账单日 + 30 天再跑假通道：没有 pay_bill_recon_abandoned，error 级一条都没有，日链仍往下走",
+    "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#4] 日链：假通道的账单日只发一条任务，就是下一账单日的日任务（D+1 10:00 +08:00 到期），不多不少",
+    "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#5] 不记为已对账、不当空账单读：不碰任何表，不产生差错单、异常、PAY_FEE，也没有 pay_bill_reconciled",
+    "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#6] 队列里还留着的 wechat_pay 补跑任务遇到假通道：到此为止，不再发任务；过了期限也不告警",
+    "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#6] 队列里还留着的 alipay 补跑任务遇到假通道：到此为止，不再发任务；过了期限也不告警",
+    "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#7] 其他 unknown 原因不变：仍抛 PayBillUnavailable、仍发 catch-up、到期仍 abandoned；假通道才 skipped",
+    "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#8] 按渠道判定：微信是假通道、支付宝账单暂时拿不到，只有支付宝补跑"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "1e60a27dcc9eb15e425bdefd848816a141b80fdb",
+      "tree": "106c1f4409a4cfb199b99e4bdf52a68647fff1bd",
+      "prop_seed": 20261001,
+      "started_at": "2026-11-01T19:47:37Z",
+      "finished_at": "2026-11-01T19:48:05Z",
+      "red_tests": [
+        "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#1] 假通道 wechat_pay：runPayBillRecon 返回 skipped，只记一条 debug pay_bill_recon_no_adapter，没有 warn / error",
+        "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#1] 假通道 alipay：runPayBillRecon 返回 skipped，只记一条 debug pay_bill_recon_no_adapter，没有 warn / error",
+        "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#2] runBillReconJob 对假通道不发 catch-up，不记补跑日志，两个渠道各一条 debug",
+        "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#3] 账单日 + 30 天再跑假通道：没有 pay_bill_recon_abandoned，error 级一条都没有，日链仍往下走",
+        "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#4] 日链：假通道的账单日只发一条任务，就是下一账单日的日任务（D+1 10:00 +08:00 到期），不多不少",
+        "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#5] 不记为已对账、不当空账单读：不碰任何表，不产生差错单、异常、PAY_FEE，也没有 pay_bill_reconciled",
+        "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#6] 队列里还留着的 wechat_pay 补跑任务遇到假通道：到此为止，不再发任务；过了期限也不告警",
+        "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#6] 队列里还留着的 alipay 补跑任务遇到假通道：到此为止，不再发任务；过了期限也不告警",
+        "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#7] 其他 unknown 原因不变：仍抛 PayBillUnavailable、仍发 catch-up、到期仍 abandoned；假通道才 skipped",
+        "test/spec/payment/recon-fake-bill/fake-bill.test.ts > [AC-B2-15r#8] 按渠道判定：微信是假通道、支付宝账单暂时拿不到，只有支付宝补跑"
+      ],
+      "expected": ["test/spec/payment/recon-fake-bill/fake-bill.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "a1fd3633385119c0d7ad57a8025ba699d173520c1db5cbb48e450769cc30a1c5"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "fb454e230be8038da9a3dbc25a90172c126a78d1",
+    "specs": "81162dd1f14b9998534e12edbd04c10478c7b260"
+  }
+}
