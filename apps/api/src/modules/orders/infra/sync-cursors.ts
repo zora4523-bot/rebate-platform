@@ -5,7 +5,12 @@ import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
 import { instantAt, parseInstantMs } from '../domain/sync-window.ts';
-import type { OrderSyncWindow, SyncCursorStore, SyncStream } from '../application/sync-ports.ts';
+import type {
+  OrderSyncWindow,
+  RescanCursorStore,
+  SyncCursorStore,
+  SyncStream,
+} from '../application/sync-ports.ts';
 
 export function createSyncCursorStore(db: Kysely<DB>, clock: Clock): SyncCursorStore {
   const app = db.withSchema('app');
@@ -63,4 +68,11 @@ export function createSyncCursorStore(db: Kysely<DB>, clock: Clock): SyncCursorS
       });
     },
   };
+}
+
+/** B1-04zm: createSyncCursorStore plus rewind(); see RescanCursorStore. */
+export function createRescanCursorStore(db: Kysely<DB>, clock: Clock): RescanCursorStore {
+  void db;
+  void clock;
+  throw new Error('NotImplemented: createRescanCursorStore');
 }

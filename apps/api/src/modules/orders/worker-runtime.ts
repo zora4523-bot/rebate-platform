@@ -148,6 +148,11 @@ export interface OrderSyncReadPorts {
    * registers no platform_restore diff (the P9 warning stays).
    */
   readonly platformRestore?: (clock: Clock) => PlatformRestoreDiffPort;
+  /**
+   * B1-04zm: reads order_sync.rescan.<platform>.enabled / .days, called once at assembly and
+   * reading nothing until used. Absent → no rescan timer; 'rescan-window' jobs are routed either way.
+   */
+  readonly rescanConfig?: (db: Kysely<DB>, clock: Clock) => SyncIntervalConfig;
 }
 
 export interface OrderSyncRuntimeDeps {

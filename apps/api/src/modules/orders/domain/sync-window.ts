@@ -79,3 +79,33 @@ export function intervalSeconds(configured: unknown): number {
     ? n
     : DEFAULT_SYNC_INTERVAL_SECONDS;
 }
+
+/** B1-04zm: what a rescan stream does next: one full window, or the end of this round. */
+export type RescanStep =
+  | { readonly kind: 'window'; readonly startMs: number; readonly endMs: number }
+  | { readonly kind: 'round_end'; readonly restartMs: number };
+
+/**
+ * B1-04zm: the next step from a rescan cursor (规划/02 §7.1). An absent cursor or one older than
+ * now − days starts at now − days; less than one full window left before now ends the round,
+ * restarting at now − days. Windows are always exactly capMs long.
+ */
+export function rescanStep(
+  cursorMs: number | null,
+  nowMs: number,
+  days: number,
+  capMs: number,
+): RescanStep {
+  void cursorMs;
+  void nowMs;
+  void days;
+  void capMs;
+  throw new Error('NotImplemented: rescanStep');
+}
+
+/** B1-04zm: seconds between rounds of one stream: 24 hours ÷ windows of a round, at least 60. */
+export function rescanIntervalSeconds(days: number, capMs: number): number {
+  void days;
+  void capMs;
+  throw new Error('NotImplemented: rescanIntervalSeconds');
+}

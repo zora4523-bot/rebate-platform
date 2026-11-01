@@ -16,6 +16,17 @@ export interface OrderSyncWindow extends SyncStream, JobPayload {
   readonly window_end: string;
 }
 
+/** B1-04zm: one account's rescan stream; its cursor is independent of the increment stream's. */
+export interface RescanStream extends SyncStream {
+  readonly query_kind: 'rescan';
+  readonly scene: '-';
+}
+
+export interface OrderRescanWindow extends RescanStream, JobPayload {
+  readonly window_start: string;
+  readonly window_end: string;
+}
+
 export interface SyncAccount {
   readonly app_id: string;
   readonly platform: RegisteredPlatform;
@@ -26,7 +37,20 @@ export interface SyncAccount {
 export interface SyncCursorStore {
   read(stream: SyncStream): Promise<string | null>;
   /** One transaction: insert if absent, otherwise CAS from window_start to window_end. */
-  advance(window: OrderSyncWindow): Promise<boolean>;
+  advance(window: OrderSyncWindow | OrderRescanWindow): Promise<boolean>;
+}
+
+/**
+ * B1-04zm: a cursor store that can also move a rescan stream back to the start of a round. Apart
+ * from SyncCursorStore so the increment path and its fakes keep the two methods they use.
+ */
+export interface RescanCursorStore extends SyncCursorStore {
+  /**
+   * One transaction: CAS of this stream's existing row from `expected` to `to`, in either direction
+   * (a new round moves it back, a cursor older than the rescan range moves it forward). A missing
+   * row or another cursor_at writes nothing and resolves false.
+   */
+  rewind(stream: RescanStream, expected: string, to: string): Promise<boolean>;
 }
 
 export interface SyncAccessPort {
