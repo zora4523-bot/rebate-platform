@@ -3599,7 +3599,9 @@ export interface paths {
         };
         /**
          * List export tasks (own tasks, or everyone's with audit.view_all)
-         * @description Permission point `export` (04 §11.1; no step-up); lacking it is 10403 with
+         * @description Once `tax_withdrawals` is open (BR-WDR-21), an account with `tax.export_full` and without
+         *     `export` passes this point too and sees only its own `tax_withdrawals` tasks.
+         *     Permission point `export` (04 §11.1; no step-up); lacking it is 10403 with
          *     `data.reason=admin_permission_denied`. Tasks of the console's app, newest first
          *     (`created_at` descending, then the server's internal order for the same time), page by page
          *     (`page`, `page_size` ≤ 200, above that 20001).
@@ -3620,7 +3622,8 @@ export interface paths {
          * Create an export task from a list's filters (asynchronous CSV, masked by default)
          * @description Permission point `export` (04 §11.1) and, in addition, the permission of the source list
          *     itself (enum export_resource: `users` needs `user.list`; `audit_logs` needs no more than
-         *     being signed in); lacking either is 10403 with `data.reason=admin_permission_denied`. The
+         *     being signed in; `tax_withdrawals` has its own rule, see below); lacking either is 10403
+         *     with `data.reason=admin_permission_denied`. The
          *     task is generated asynchronously as one CSV file in a private object-storage bucket
          *     (BR-ID-34 细则「后台导出任务」); the response is 202 with the new task in status pending.
          *     Each call creates a new task (no Idempotency-Key, 04 §6.6).
@@ -3634,7 +3637,8 @@ export interface paths {
          *     `audit.view_all` the server forces `actor_id` to the creator, and another account's
          *     `actor_id` gives an empty file (status done, `row_count=0`), not an error.
          *     Masking: by default every export is masked like its source list (the phone number 3 + 4,
-         *     BR-ID-33) and the task has `masked=true`. Only a `users` export may ask for the full values
+         *     BR-ID-33) and the task has `masked=true`. Apart from `tax_withdrawals` (see below), only a
+         *     `users` export may ask for the full values
          *     with `unmasked: true`; then the creator must hold `pii.reveal_phone` (the users list's only
          *     sensitive column; otherwise 10403), send a valid totp-tier `X-Step-Up-Token` (the tier of
          *     `pii.reveal_phone`; missing, expired or lower → 10003 with `data.tier=totp`) and give
@@ -3646,6 +3650,29 @@ export interface paths {
          *     filters, masked). An unmasked task writes its own audit record as well (action
          *     export_unmasked: task id, resource, reason and, once generated, the row count; never a
          *     value).
+         *     Quarterly tax export (`resource=tax_withdrawals`, BR-WDR-21; not open yet): until its
+         *     implementation is merged every such request is 20001 with `data.fields=[resource]`, before
+         *     any permission or step-up check; no task and no audit record. Once open, `filters.quarter`
+         *     selects the natural quarter by `paid_at` (+08:00).
+         *     Masked version: `export` and `fund.view`, no step-up, no `reason` (`reason` without
+         *     `unmasked: true` is 20001 with `data.fields=[reason]`).
+         *     Full version `unmasked: true`: `tax.export_full` alone (a super admin holds it; `export` is
+         *     not needed as well, and no `fund.*` point implies it), a valid totp-tier `X-Step-Up-Token`
+         *     (missing, expired or lower → 10003 with `data.tier=totp`) and `reason` (1–200 characters,
+         *     the purpose BR-WDR-21 asks for; missing → 20001 with `data.fields=[reason]`).
+         *     File: line one is a note (the creator's account name and the export time), the header
+         *     follows on line two (for this resource only). Columns: name, identity number, income type,
+         *     income, tax withheld, paid time, payee account (masked), out_biz_no, realname correction
+         *     after payment (empty if none, else the correction time). Amounts are integer fen. The
+         *     masked version shows the identity number as first 6 and last 4 and the name in full. The
+         *     identity is the user's current one (agent default, awaiting finance's confirmation).
+         *     A realname that cannot be read fails the whole task; so does exceeding
+         *     `admin.export.max_rows`, without truncating, and its failure_reason says to raise that
+         *     configuration key.
+         *     Audit: export_create; the full version also export_unmasked (with the row count and the
+         *     purpose); a masked `tax_withdrawals` task writes its own audit record when generated
+         *     (action export_generated: task id, resource, row count, the creator as actor, no purpose).
+         *     Other resources follow the rules above.
          *     Limits are configuration keys whose default values the implementation sets:
          *     `admin.export.max_rows` (rows per file; a task with more rows fails with a failure_reason
          *     saying so, narrow the filters) and `admin.export.max_running_per_admin` (tasks of one
@@ -3672,12 +3699,17 @@ export interface paths {
         };
         /**
          * Get a short-lived signed link to the file of one's own finished export (audited)
-         * @description Permission point `export` (04 §11.1; no step-up); lacking it is 10403 with
+         * @description Once `tax_withdrawals` is open (BR-WDR-21), `tax.export_full` also passes this point; any
+         *     task it cannot act on (an unknown id, another account's task, another resource) is 20001
+         *     with `data.fields=[id]`, like the rest. The source-list permission of that resource is
+         *     `fund.view`, or `tax.export_full` for a full file (`masked=false`).
+         *     Permission point `export` (04 §11.1; no step-up); lacking it is 10403 with
          *     `data.reason=admin_permission_denied`. Only the creator of the task can download it, even
          *     with `audit.view_all` (BR-ID-34 细则「后台导出任务」). Every call is authorized again and
          *     signs a new link; no long-lived link is issued. The server also checks that the creator
          *     still holds the permission of the source list (`users` → `user.list`) and, for an unmasked
-         *     file (`masked=false`), still holds the pii point it was made under (`pii.reveal_phone`).
+         *     file (`masked=false`), still holds the pii point it was made under (`pii.reveal_phone`, or
+         *     `tax.export_full` for a `tax_withdrawals` file).
          *     Another account's task, an unknown id, a task of another app, and a creator who no longer
          *     holds those points are all 20001 with `data.fields=[id]` (no probing).
          *     Only a task in status done whose `expires_at` has not passed can be downloaded; any other
@@ -3709,7 +3741,11 @@ export interface paths {
         put?: never;
         /**
          * Retry one's own failed export task
-         * @description Permission point `export` (04 §11.1); lacking it is 10403 with
+         * @description Once `tax_withdrawals` is open (BR-WDR-21), `tax.export_full` also passes this point; any
+         *     task it cannot act on (an unknown id, another account's task, another resource) is 20001
+         *     with `data.fields=[id]`, like the rest. The source-list permission of that resource is
+         *     `fund.view`, or `tax.export_full` for a full file (`masked=false`).
+         *     Permission point `export` (04 §11.1); lacking it is 10403 with
          *     `data.reason=admin_permission_denied`. Only the creator of the task can retry it, even with
          *     `audit.view_all`: another account's task, an unknown id or a task of another app is 20001
          *     with `data.fields=[id]` (no probing; BR-ID-34 细则「后台导出任务」).
@@ -3717,7 +3753,7 @@ export interface paths {
          *     running, done, expired, cancelled; the same code as a download in the wrong status).
          *     The checks of creating are made again on the caller's current points: the permission of
          *     the source list (`users` → `user.list`) and, for an unmasked task (`masked=false`),
-         *     `pii.reveal_phone`, both 10403 when lacking. An unmasked task also needs a new totp-tier
+         *     `pii.reveal_phone` (`tax.export_full` for a `tax_withdrawals` task), both 10403 when lacking. An unmasked task also needs a new totp-tier
          *     `X-Step-Up-Token` (missing, expired or lower → 10003 with `data.tier=totp`) and a new
          *     `reason` (1–200 characters; missing → 20001 with `data.fields=[reason]`): every
          *     generation of a file with full values is verified anew. A masked task takes an empty body;
@@ -15467,10 +15503,11 @@ export interface components {
         /**
          * @description Source list of an export task (enum export_resource): users = GET /admin/v1/users
          *     (needs user.list), audit_logs = GET /admin/v1/audit-logs (signed in is enough; own
-         *     records only without audit.view_all).
+         *     records only without audit.view_all), tax_withdrawals = the quarterly tax export of
+         *     BR-WDR-21, which has no source list (see POST /admin/v1/exports).
          * @enum {string}
          */
-        AdminExportResource: "users" | "audit_logs";
+        AdminExportResource: "users" | "audit_logs" | "tax_withdrawals";
         /** @description Filters of a users export, the query parameters of GET /admin/v1/users without paging. */
         AdminExportUserFilters: {
             risk_state?: components["schemas"]["AdminUserRiskStateCode"];
@@ -15495,6 +15532,14 @@ export interface components {
              */
             to?: string;
         };
+        /** @description Filters of a tax_withdrawals export (BR-WDR-21). */
+        AdminExportTaxWithdrawalFilters: {
+            /**
+             * @description Natural quarter by paid_at at +08:00, as YYYY-Qn. The year is 2026..2100; another year
+             *     is 20001.
+             */
+            quarter: string;
+        };
         /**
          * @description Export of the users list. unmasked true asks for the full phone numbers (pii.reveal_phone,
          *     totp step-up and reason required); reason is only accepted together with unmasked true.
@@ -15517,10 +15562,26 @@ export interface components {
             filters: components["schemas"]["AdminExportAuditLogFilters"];
         };
         /**
-         * @description One branch per source list (enum export_resource), told apart by `resource`; `filters`
-         *     follows that list's query parameters.
+         * @description Quarterly tax export (BR-WDR-21; not open yet, see POST /admin/v1/exports). unmasked true
+         *     asks for the full identity numbers (tax.export_full, totp step-up and reason required);
+         *     reason is only accepted together with unmasked true.
          */
-        AdminExportCreateRequest: components["schemas"]["AdminExportCreateUsersRequest"] | components["schemas"]["AdminExportCreateAuditLogsRequest"];
+        AdminExportCreateTaxWithdrawalsRequest: {
+            /** @enum {string} */
+            resource: "tax_withdrawals";
+            filters: components["schemas"]["AdminExportTaxWithdrawalFilters"];
+            /**
+             * @description true = full values instead of the masked ones; absent or false = masked.
+             * @default false
+             */
+            unmasked?: boolean;
+            reason?: components["schemas"]["AdminUserReason"];
+        };
+        /**
+         * @description One branch per source list (enum export_resource), told apart by `resource`; `filters`
+         *     follows that list's query parameters (`tax_withdrawals` has no list, only `quarter`).
+         */
+        AdminExportCreateRequest: components["schemas"]["AdminExportCreateUsersRequest"] | components["schemas"]["AdminExportCreateAuditLogsRequest"] | components["schemas"]["AdminExportCreateTaxWithdrawalsRequest"];
         /**
          * @description Empty for a masked task. For an unmasked task (masked false) reason is required, with a
          *     new totp-tier X-Step-Up-Token; for a masked task reason is 20001.
@@ -15537,7 +15598,7 @@ export interface components {
             resource: components["schemas"]["AdminExportResource"];
             /** @description Readable summary of the filters, written by the server (Chinese, for display only). */
             filters_summary: string;
-            /** @description true = the file holds masked values (the default); false = full values (pii step-up at creation). */
+            /** @description true = the file holds masked values (the default); false = full values (step-up at creation). */
             masked: boolean;
             created_by: components["schemas"]["Id"];
             /** @description Current name of the creator (admin_users.display_name, else the username); null when it cannot be read. */

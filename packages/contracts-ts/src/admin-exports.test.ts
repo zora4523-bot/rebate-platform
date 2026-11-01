@@ -107,7 +107,7 @@ it('[CT-24k] enums export_status and export_resource match the contract schemas'
     'expired',
     'cancelled',
   ]);
-  expect(enums.export_resource).toEqual(['users', 'audit_logs']);
+  expect(enums.export_resource).toEqual(['users', 'audit_logs', 'tax_withdrawals']);
   expect(contract.components.schemas['AdminExportStatus']!.enum).toEqual(enums.export_status);
   expect(contract.components.schemas['AdminExportResource']!.enum).toEqual(enums.export_resource);
 });
@@ -160,6 +160,28 @@ it('[CT-24k] create answers 202 with a pending task; its body is one branch per 
   expect(text).toContain('`admin.export.max_rows`');
   expect(text).toContain('`admin.export.max_running_per_admin`');
   expect(text).toContain('There is no cancel operation');
+});
+
+it('[CT-24zi] tax_withdrawals takes a required quarter; full values need tax.export_full', () => {
+  const o = create();
+  const validBody = ajv.compile(o.requestBody!.content['application/json']!.schema);
+  const tax = { resource: 'tax_withdrawals', filters: { quarter: '2026-Q4' } };
+  expect(validBody(tax)).toBe(true);
+  expect(validBody({ ...tax, unmasked: true, reason: '申报' })).toBe(true);
+  expect(validBody({ ...tax, filters: {} })).toBe(false);
+  expect(validBody({ ...tax, filters: { quarter: '2026-Q5' } })).toBe(false);
+  expect(validBody({ ...tax, filters: { quarter: '2026Q4' } })).toBe(false);
+  expect(validBody({ ...tax, filters: { quarter: '2026-Q4', from: '2026-10-01' } })).toBe(false);
+  expect(validBody({ ...tax, reason: '' })).toBe(false);
+  expect(validBody({ resource: 'users', filters: { quarter: '2026-Q4' } })).toBe(false);
+
+  expect(enums.admin_permission).toContain('tax.export_full');
+  const text = flat(o.description);
+  expect(text).toContain('BR-WDR-21');
+  expect(text).toContain('`tax.export_full` alone');
+  expect(text).toContain('`export` and `fund.view`');
+  expect(text).toContain('20001 with `data.fields=[resource]`');
+  expect(text).toContain('export_unmasked (with the row count and the purpose)');
 });
 
 it('[CT-24k] the list is own tasks only without audit.view_all; rows carry no link', () => {

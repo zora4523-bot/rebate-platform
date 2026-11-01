@@ -61,6 +61,7 @@ enums:
       fund.settle_adjust: 补差批次（step-up）
       fund.recon: 对账与差错单处理（含以「已关闭（不处理）」结案，必填原因）
       fund.cash_entry: 平台资金台账录入：联盟回款、企业支付宝余额 W（step-up）
+      tax.export_full: 涉税全量导出（step-up）
       agent.trace: Agent trace 查询（含 AI 举报列表的查看）
       agent.report: AI 举报处理：标记已处理、填写处理说明
   admin_step_up_tier:
@@ -124,6 +125,7 @@ enums:
     values:
       users: 用户列表 GET /admin/v1/users（user.list；filters 为 risk_state）
       audit_logs: 审计日志 GET /admin/v1/audit-logs（登录即可，未持 audit.view_all 时只导出本人记录；filters 为 actor_id、target_type、target_id、permission、from、to）
+      tax_withdrawals: 涉税季度导出 BR-WDR-21，没有对应列表（脱敏版 export + fund.view；全量版 unmasked 只要 tax.export_full 与 step-up，不被 fund.* 隐含；filters 为 quarter）
   admin_claim_match_field:
     source: 规划/01 F-ADM-06；规划/04 §6.6 claims；规划/08 BR-ATTR-17、BR-ATTR-18；design/specs/admin-claims.md 证据视图（CT-24d）
     description: GET /admin/v1/claims/{claim_id} 的 items[].matches[].field，证据视图逐项比对用户填写与联盟回传的字段；预售单的联盟侧付款日期取定金支付日

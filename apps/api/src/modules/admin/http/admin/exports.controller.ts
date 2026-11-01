@@ -5,6 +5,8 @@
 // create or retry then runs inside a second guard call on `pii.reveal_phone`, whose totp tier
 // claims X-Step-Up-Token and consumes it only after the 2xx answer (a refusal or a failure keeps
 // it usable). Refusals are thrown inside the guard. The download answers Cache-Control: no-store.
+// A tax_withdrawals create is refused before any guard call while it is not open (CT-24zi, D10-544):
+// the contract answers it alike for every holder, so a guard's 10403 or 10003 must not come first.
 // Served by the admin entry only.
 import {
   Body,
@@ -74,7 +76,12 @@ function ipOf(request: ExportsRequest): string | null {
   return typeof request.ip === 'string' && request.ip.length > 0 ? request.ip : null;
 }
 
-function commandOf(body: Schema<'AdminExportCreateRequest'>): ExportCreateCommand {
+function commandOf(
+  body: Exclude<
+    Schema<'AdminExportCreateRequest'>,
+    Schema<'AdminExportCreateTaxWithdrawalsRequest'>
+  >,
+): ExportCreateCommand {
   const filters: Record<string, string> = {};
   for (const [key, value] of Object.entries(body.filters ?? {})) {
     if (typeof value === 'string') filters[key] = value;
@@ -140,6 +147,10 @@ export class AdminExportsController {
     @Req() request: ExportsRequest,
     @Body() body: Schema<'AdminExportCreateRequest'>,
   ): Promise<ExportResponse> {
+    if (body.resource === 'tax_withdrawals') {
+      const refused = fieldsErrorEnvelope(['resource'], request.id);
+      throw new HttpException(refused.body, refused.statusCode);
+    }
     let response: ExportResponse | undefined;
     await this.guard.run({ request, permission: EXPORT_POINT }, async (actor) => {
       try {

@@ -9455,10 +9455,11 @@ export const CONTRACT_ROUTE_SCHEMAS = {
         },
         "resource": {
           "type": "string",
-          "description": "Source list of an export task (enum export_resource): users = GET /admin/v1/users\n(needs user.list), audit_logs = GET /admin/v1/audit-logs (signed in is enough; own\nrecords only without audit.view_all).\n",
+          "description": "Source list of an export task (enum export_resource): users = GET /admin/v1/users\n(needs user.list), audit_logs = GET /admin/v1/audit-logs (signed in is enough; own\nrecords only without audit.view_all), tax_withdrawals = the quarterly tax export of\nBR-WDR-21, which has no source list (see POST /admin/v1/exports).\n",
           "enum": [
             "users",
-            "audit_logs"
+            "audit_logs",
+            "tax_withdrawals"
           ]
         },
         "from": {
@@ -9494,7 +9495,7 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "required": []
     },
     "body": {
-      "description": "One branch per source list (enum export_resource), told apart by `resource`; `filters`\nfollows that list's query parameters.\n",
+      "description": "One branch per source list (enum export_resource), told apart by `resource`; `filters`\nfollows that list's query parameters (`tax_withdrawals` has no list, only `quarter`).\n",
       "oneOf": [
         {
           "type": "object",
@@ -9595,6 +9596,49 @@ export const CONTRACT_ROUTE_SCHEMAS = {
                   "description": "Latest record time, exclusive."
                 }
               }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "Quarterly tax export (BR-WDR-21; not open yet, see POST /admin/v1/exports). unmasked true\nasks for the full identity numbers (tax.export_full, totp step-up and reason required);\nreason is only accepted together with unmasked true.\n",
+          "additionalProperties": false,
+          "required": [
+            "resource",
+            "filters"
+          ],
+          "properties": {
+            "resource": {
+              "type": "string",
+              "enum": [
+                "tax_withdrawals"
+              ]
+            },
+            "filters": {
+              "type": "object",
+              "description": "Filters of a tax_withdrawals export (BR-WDR-21).",
+              "additionalProperties": false,
+              "required": [
+                "quarter"
+              ],
+              "properties": {
+                "quarter": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-Q[1-4]$",
+                  "description": "Natural quarter by paid_at at +08:00, as YYYY-Qn. The year is 2026..2100; another year\nis 20001.\n"
+                }
+              }
+            },
+            "unmasked": {
+              "type": "boolean",
+              "default": false,
+              "description": "true = full values instead of the masked ones; absent or false = masked."
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Required free-text reason, kept in the audit record."
             }
           }
         }
