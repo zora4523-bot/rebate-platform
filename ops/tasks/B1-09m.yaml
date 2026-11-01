@@ -1,0 +1,28 @@
+id: B1-09m
+repo: rebate-platform
+title: orders：归因流水线黑名单步按规则启停判定（D10-536，BR-ID-36）——规则停用时不判定、不写 risk_hits、不作废返利；状态经 risk 的规则状态读口，按缓存周期生效、不追溯
+type: impl
+# 2026-11-01 W1 入账（编排 D10-536 (b)）。规则码以 risk 规则目录为准（BLACKLIST_HIT，order-blocklist.ts）。读口随 B1-03zh 合入，本单排在它之后。GATE-RISK-RULE-TOGGLE 的一环。
+refs: [BR-ID-36, BR-ATTR-26]
+refs_hash:
+  BR-ID-36: 2758a53910fa
+  BR-ATTR-26: 7070dbe36696
+deps: [B1-09b]
+paths:
+  - 'apps/api/src/modules/orders/application/blacklist-step.ts'
+  - 'apps/api/src/modules/orders/application/blacklist-step.test.ts'
+  - 'apps/api/src/modules/orders/application/pipeline-port.ts'
+  - 'apps/api/src/modules/orders/application/pipeline-types.ts'
+  - 'apps/api/src/modules/orders/application/update-step.ts'
+  - 'apps/api/src/modules/orders/index.ts'
+  - 'apps/api/src/modules/orders/worker-runtime.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/orders/blacklist-rule-toggle/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/blacklist-rule-toggle/**'
+status: todo
+pr: null
