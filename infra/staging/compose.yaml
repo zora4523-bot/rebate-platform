@@ -11,7 +11,8 @@
 # signing key directory (/etc/couli-jwt -> /run/couli-jwt), loaded by infra/staging/boot.mjs;
 # stream mounts only the matching verification public key directory (/etc/couli-jwt-pub ->
 # /run/couli-jwt-pub), also loaded by boot.mjs, and never the signing key.
-# admin, api, stream and worker also mount the optional Pinduoduo directory (/etc/couli-pdd -> /run/couli-pdd).
+# admin, api, stream and worker also mount the optional Pinduoduo directory (/etc/couli-pdd -> /run/couli-pdd)
+# and the optional Jingdong directory (/etc/couli-jd -> /run/couli-jd).
 # Every process starts through boot.mjs (node --import), which also counts container starts.
 # All five health checks require 30s of uptime and a single start until deploy.sh marks the
 # deployment settled, so `up --wait` fails when any process crashed or restarted during it.
@@ -72,6 +73,16 @@ services:
       - type: bind
         source: /etc/couli-pdd
         target: /run/couli-pdd
+        read_only: true
+        bind:
+          create_host_path: true
+      # Jingdong preparation (B1-04zf): node /etc/couli-jd (app_secret file only; owned by
+      # uid 1000, directory 500, file 400). The variables come only from the node env file.
+      # Optional: create_host_path lets the deployment start when the node has no such
+      # directory yet. Mounted on admin, api, stream and worker only (the entries that assemble UnionModule).
+      - type: bind
+        source: /etc/couli-jd
+        target: /run/couli-jd
         read_only: true
         bind:
           create_host_path: true
@@ -163,6 +174,16 @@ services:
         read_only: true
         bind:
           create_host_path: true
+      # Jingdong preparation (B1-04zf): node /etc/couli-jd (app_secret file only; owned by
+      # uid 1000, directory 500, file 400). The variables come only from the node env file.
+      # Optional: create_host_path lets the deployment start when the node has no such
+      # directory yet. Mounted on admin, api, stream and worker only (the entries that assemble UnionModule).
+      - type: bind
+        source: /etc/couli-jd
+        target: /run/couli-jd
+        read_only: true
+        bind:
+          create_host_path: true
     healthcheck:
       # Healthy only when this process own /healthz on STREAM_PORT answers 2xx AND the
       # container has run for 30s AND (before its first healthy check) started only once:
@@ -231,6 +252,16 @@ services:
       - type: bind
         source: /etc/couli-pdd
         target: /run/couli-pdd
+        read_only: true
+        bind:
+          create_host_path: true
+      # Jingdong preparation (B1-04zf): node /etc/couli-jd (app_secret file only; owned by
+      # uid 1000, directory 500, file 400). The variables come only from the node env file.
+      # Optional: create_host_path lets the deployment start when the node has no such
+      # directory yet. Mounted on admin, api, stream and worker only (the entries that assemble UnionModule).
+      - type: bind
+        source: /etc/couli-jd
+        target: /run/couli-jd
         read_only: true
         bind:
           create_host_path: true
@@ -312,6 +343,16 @@ services:
       - type: bind
         source: /etc/couli-pdd
         target: /run/couli-pdd
+        read_only: true
+        bind:
+          create_host_path: true
+      # Jingdong preparation (B1-04zf): node /etc/couli-jd (app_secret file only; owned by
+      # uid 1000, directory 500, file 400). The variables come only from the node env file.
+      # Optional: create_host_path lets the deployment start when the node has no such
+      # directory yet. Mounted on admin, api, stream and worker only (the entries that assemble UnionModule).
+      - type: bind
+        source: /etc/couli-jd
+        target: /run/couli-jd
         read_only: true
         bind:
           create_host_path: true
