@@ -35,3 +35,11 @@ POST /admin/v1/recon-diffs/{recon_diff_id}/write-off the `data/recon_diff/ref_id
 POST /admin/v1/exports added the new `tax_withdrawals` enum value to the `data/resource` response property for the response status `202`
 GET /admin/v1/exports added the new `tax_withdrawals` enum value to the `data/items/items/resource` response property for the response status `200`
 POST /admin/v1/exports/{id}/retry added the new `tax_withdrawals` enum value to the `data/resource` response property for the response status `200`
+# D10-552 / D10-557 (CT-24zj): AdminAuditLog actor_id becomes nullable for system rows. Only /admin/v1/**
+# responses: the console ships with the server (后台同发), so no old client reads these rows.
+GET /admin/v1/audit-logs response property `data/items/items/actor_id` list-of-types was widened by adding types `null` to media type `application/json` of response `200`
+GET /admin/v1/audit-logs the `data/items/items/actor_id` response property's maxLength was unset from `64` for the response status `200`
+GET /admin/v1/audit-logs the `data/items/items/actor_id` response property's minLength was unset from `1` for the response status `200`
+GET /admin/v1/audit-logs/{id} response property `data/actor_id` list-of-types was widened by adding types `null` to media type `application/json` of response `200`
+GET /admin/v1/audit-logs/{id} the `data/actor_id` response property's maxLength was unset from `64` for the response status `200`
+GET /admin/v1/audit-logs/{id} the `data/actor_id` response property's minLength was unset from `1` for the response status `200`
