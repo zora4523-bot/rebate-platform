@@ -45,22 +45,22 @@
     "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
     "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
     "test/properties": "4ff83783d17743ea9efacd016912563b35ae5dab",
-    "test/spec": "59b56d3c6f2744eafe771d8e8c61d5adb0a217f6",
+    "test/spec": "58e9bb2013645be98dc7c26f31c99d5c8170a899",
     "specs": "06bfb4d5a9d52d5099b36fb48f5831b176cc40ec"
   },
   "task": "B1-02zo",
-  "spec_commit": "735634bd861a459a29a3b36f3c115351008cee8c",
+  "spec_commit": "d383bde93a593802a8bc72d84a3c816ba7abdb7e",
   "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
   "runs": [
     {
       "mode": "container",
       "script": "red",
       "exit_code": 0,
-      "commit": "735634bd861a459a29a3b36f3c115351008cee8c",
-      "tree": "fbacab97d6eb85b318dca5d51a1766b34f8bfb8d",
+      "commit": "d383bde93a593802a8bc72d84a3c816ba7abdb7e",
+      "tree": "7ed9b40344034d4744059c19765a577751f52cf0",
       "prop_seed": 20261001,
-      "started_at": "2026-10-31T22:08:18Z",
-      "finished_at": "2026-10-31T22:08:26Z",
+      "started_at": "2026-11-01T03:50:24Z",
+      "finished_at": "2026-11-01T03:50:32Z",
       "red_tests": [
         "test/spec/identity/reverify-storage/access.int.test.ts > [AC-B1-02zo#8] users 新列：couli_app 可读可写，couli_readonly 只读不写，couli_payout / couli_maint 无任何权限；users 原有表级授权不变",
         "test/spec/identity/reverify-storage/access.int.test.ts > [AC-B1-02zo#9] reverified_devices：couli_app 可读、插入、删除，couli_readonly 只读，couli_payout / couli_maint 无任何权限；无人可 TRUNCATE / REFERENCES / TRIGGER / MAINTAIN",
@@ -85,7 +85,7 @@
       ],
       "services": "host-ephemeral",
       "gate": {
-        "commit": "3b4bf079477b732fe47c3ec4d953ae7e24762716",
+        "commit": "0b9aab4ba40f1af7637f446b44afe3d2e48f3836",
         "clean": true,
         "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
       }
