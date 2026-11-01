@@ -3599,9 +3599,8 @@ export interface paths {
         };
         /**
          * List export tasks (own tasks, or everyone's with audit.view_all)
-         * @description For `tax_withdrawals` tasks, once that resource is open, `tax.export_full` also passes this
-         *     point (BR-WDR-21); its source-list permission is `fund.view`, or `tax.export_full` for a
-         *     full file (`masked=false`).
+         * @description Once `tax_withdrawals` is open (BR-WDR-21), an account with `tax.export_full` and without
+         *     `export` passes this point too and sees only its own `tax_withdrawals` tasks.
          *     Permission point `export` (04 §11.1; no step-up); lacking it is 10403 with
          *     `data.reason=admin_permission_denied`. Tasks of the console's app, newest first
          *     (`created_at` descending, then the server's internal order for the same time), page by page
@@ -3671,7 +3670,8 @@ export interface paths {
          *     `admin.export.max_rows`, without truncating, and its failure_reason says to raise that
          *     configuration key.
          *     Audit: export_create; the full version also export_unmasked (with the row count and the
-         *     purpose); the masked version records the creator and the row count, with an empty purpose.
+         *     purpose); a masked task writes its own audit record when generated
+         *     (action export_generated: task id, resource, row count, the creator as actor, no purpose).
          *     Limits are configuration keys whose default values the implementation sets:
          *     `admin.export.max_rows` (rows per file; a task with more rows fails with a failure_reason
          *     saying so, narrow the filters) and `admin.export.max_running_per_admin` (tasks of one
@@ -3706,7 +3706,8 @@ export interface paths {
          *     with `audit.view_all` (BR-ID-34 细则「后台导出任务」). Every call is authorized again and
          *     signs a new link; no long-lived link is issued. The server also checks that the creator
          *     still holds the permission of the source list (`users` → `user.list`) and, for an unmasked
-         *     file (`masked=false`), still holds the pii point it was made under (`pii.reveal_phone`).
+         *     file (`masked=false`), still holds the pii point it was made under (`pii.reveal_phone`, or
+         *     `tax.export_full` for a `tax_withdrawals` file).
          *     Another account's task, an unknown id, a task of another app, and a creator who no longer
          *     holds those points are all 20001 with `data.fields=[id]` (no probing).
          *     Only a task in status done whose `expires_at` has not passed can be downloaded; any other
@@ -3749,7 +3750,7 @@ export interface paths {
          *     running, done, expired, cancelled; the same code as a download in the wrong status).
          *     The checks of creating are made again on the caller's current points: the permission of
          *     the source list (`users` → `user.list`) and, for an unmasked task (`masked=false`),
-         *     `pii.reveal_phone`, both 10403 when lacking. An unmasked task also needs a new totp-tier
+         *     `pii.reveal_phone` (`tax.export_full` for a `tax_withdrawals` task), both 10403 when lacking. An unmasked task also needs a new totp-tier
          *     `X-Step-Up-Token` (missing, expired or lower → 10003 with `data.tier=totp`) and a new
          *     `reason` (1–200 characters; missing → 20001 with `data.fields=[reason]`): every
          *     generation of a file with full values is verified anew. A masked task takes an empty body;
