@@ -1,0 +1,125 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-users-export/entries.test.ts > [AC-F1-07je-ENTRY#1] 超管打开用户查询：标题行（用户查询标题旁，不在筛选卡或列表里）有【导出】与【导出记录】；打开列表只发列表 GET，不发 POST",
+    "test/spec/frontend/admin-users-export/entries.test.ts > [AC-F1-07je-ENTRY#2] 非超管同时持 export 与 user.list（有无 pii.reveal_phone 都一样）：标题行有【导出】与【导出记录】",
+    "test/spec/frontend/admin-users-export/entries.test.ts > [AC-F1-07je-ENTRY#3] 持 user.list 等用户权限但缺 export：没有可用的【导出】（不出现或置灰），点置灰的不发请求",
+    "test/spec/frontend/admin-users-export/entries.test.ts > [AC-F1-07je-ENTRY#4] 持 export 但缺 user.list（只有 user.lookup）：没有可用的【导出】，点置灰的不发请求",
+    "test/spec/frontend/admin-users-export/entries.test.ts > [AC-F1-07je-ENTRY#5] 只持 user.lookup 的账号：页面上没有【导出】，置灰的也没有",
+    "test/spec/frontend/admin-users-export/entries.test.ts > [AC-F1-07je-ENTRY#6] 超管打开用户详情：详情页不出现【导出】【导出记录】；【返回用户查询】回到列表后两个入口又在标题行",
+    "test/spec/frontend/admin-users-export/entries.test.ts > [AC-F1-07je-ENTRY#7] 持 export 与 user.list 的账号点标题行【导出记录】：进入已有的导出记录页（标题「导出记录」，读 GET /admin/v1/exports），不创建任务",
+    "test/spec/frontend/admin-users-export/errors.test.ts > [AC-F1-07je-ERROR#1] 创建导出回 10403：提示无权限，不显示已创建，不跳走，不自动重发",
+    "test/spec/frontend/admin-users-export/errors.test.ts > [AC-F1-07je-ERROR#2] 创建导出回 20001（filters）：在对话框内或提示里说明，不显示已创建，不自动重发",
+    "test/spec/frontend/admin-users-export/errors.test.ts > [AC-F1-07je-ERROR#3] 网络失败：提示失败，不显示已创建；之后再点一次导出会再发一次 POST（同样的脱敏 body），这次 202 提示已创建",
+    "test/spec/frontend/admin-users-export/errors.test.ts > [AC-F1-07je-ERROR#4] 连点只发一次：双击【导出】（及确认）只发一个 POST，请求在途时再点也不再发；应答 202 后提示已创建，再点一次导出会再建一个新任务",
+    "test/spec/frontend/admin-users-export/masked.test.ts > [AC-F1-07je-MASKED#1] 超管未设筛选点【导出】（可直接发或经简单确认）：一次 POST /admin/v1/exports，body 恰为 {resource: users, filters: {}}（filters 省略也可），不带 unmasked / reason / 身份字段，不带 X-Step-Up-Token 与 Idempotency-Key，不弹动态码；202 后提示已创建导出任务并指向导出记录，导出记录里能看到这条任务",
+    "test/spec/frontend/admin-users-export/masked.test.ts > [AC-F1-07je-MASKED#2] filters 取当前已应用的列表筛选：风控状态已冻结 → {risk_state: frozen}；已封禁且翻到第 2 页 → {risk_state: banned}（不带 page / page_size）；选回全部 → 空 filters",
+    "test/spec/frontend/admin-users-export/masked.test.ts > [AC-F1-07je-MASKED#3] 非超管（export + user.list，无 pii.*）按已冻结导出：同样只发脱敏 body，不弹动态码，202 后提示已创建导出任务并指向导出记录",
+    "test/spec/frontend/admin-users-export/pages.browser.test.ts > [AC-F1-07je-BROWSER#1] 1440 超管在用户查询标题行点【导出】（若先确认则确认）→ 一次脱敏 POST /admin/v1/exports（无令牌、无 Idempotency-Key、不弹动态码），提示已创建导出任务并指向导出记录；【导出记录】进入导出记录页并列出新任务；只发列表、这次导出与导出记录的请求",
+    "test/spec/frontend/admin-users-export/unmasked.test.ts > [AC-F1-07je-UNMASK#1] 不持 pii.reveal_phone（export + user.list）：页面与导出对话框里都没有「导出完整手机号」类选项，导出只发脱敏 body、不弹动态码",
+    "test/spec/frontend/admin-users-export/unmasked.test.ts > [AC-F1-07je-UNMASK#2] 持 pii.reveal_phone 且页面提供完整手机号选项：默认不勾选；勾选并填原因 → 确认 → 动态码（之前不发）→ 一次 POST，body 为 {resource, filters: {risk_state: banned}, unmasked: true, reason}，header 带新令牌、无 Idempotency-Key；202 后提示已创建并指向导出记录",
+    "test/spec/frontend/admin-users-export/unmasked.test.ts > [AC-F1-07je-UNMASK#3] 勾选完整手机号但原因为空：前端拦下并说明规则，或发出后收 20001 [reason] 在原因旁说明；不提示已创建",
+    "test/spec/frontend/admin-users-export/unmasked.test.ts > [AC-F1-07je-UNMASK#4] 勾选完整手机号但原因超过 200 字：前端拦下（或输入框不收第 201 个字）并说明规则，或发出后收 20001 [reason] 在原因旁说明；不提示已创建",
+    "test/spec/frontend/admin-users-export/unmasked.test.ts > [AC-F1-07je-UNMASK#5] 完整手机号导出回 10003：重新弹动态码，验证后用新令牌、同样的 body 再发一次，之后提示已创建",
+    "test/spec/frontend/admin-users-export/unmasked.test.ts > [AC-F1-07je-UNMASK#6] 勾选后又取消勾选：导出回到脱敏，body 不带 unmasked / reason，不带令牌，不弹动态码"
+  ],
+  "risk_note": "Admin 用户查询 【导出】【导出记录】 (apps/admin pages/users/**, texts/users.ts). Contract CT-24k adminCreateExport with resource=users; backend B1-34f merged. 【导出】 appears only with export and user.list (only on the list, never on the detail); 【导出记录】 links to the existing exports page. The default export is masked: body {resource:'users', filters:<applied risk filter>} without unmasked, reason, step-up token, Idempotency-Key or identity fields; one POST per click (each call creates a task). With pii.reveal_phone an optional 「导出完整手机号」 checkbox requires a reason (trimmed, 1-200, rule stated in the hint) and a totp step-up, then adds unmasked:true and reason. Success closes the dialog with a message pointing to 导出记录; 10403 / 20001 / network failures keep the dialog with a notice. No frozen test changed. Rule tests written by an independent Claude; Claude spec-test review r1 pass (three S2 carried into the implementation constraints); red on the test machine (red/1). Implementation by Opus 5.5; test machine browser green; the container verify-fast could not finish because tsc ran out of heap repository-wide (reported), so the orchestrator ran the jsdom user-page specs on the host (28 files, 176 tests green) before and after rebasing on main; full verification by the required CI checks. Adversarial money review by a fresh independent Claude r1 pass with one S2 (reason length counted in UTF-16 units, stricter than the server; follow-up). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, one S2 (reason length measured in UTF-16 units is stricter than the server; recorded as a follow-up); independent Claude because Codex is unavailable until 2026-11-02"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagent: round 1 pass with three S2 carried into the implementation constraints; tests written by an independent Claude (claude-run.sh)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  },
+  "task": "F1-07je",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "bae72df959a3b398160dd7493ad6930aad7db155",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "bae72df959a3b398160dd7493ad6930aad7db155",
+      "tree": "057d4bd3013676e553eaf1781806fbf87e1ce261",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-11-01T07:24:48Z",
+      "finished_at": "2026-11-01T07:26:27Z",
+      "gate": {
+        "commit": "1f309ac054d8ed45953cb57df174de56e162f820",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-users-export/entries.test.ts > [AC-F1-07je-ENTRY#1] 超管打开用户查询：标题行（用户查询标题旁，不在筛选卡或列表里）有【导出】与【导出记录】；打开列表只发列表 GET，不发 POST",
+        "test/spec/frontend/admin-users-export/entries.test.ts > [AC-F1-07je-ENTRY#2] 非超管同时持 export 与 user.list（有无 pii.reveal_phone 都一样）：标题行有【导出】与【导出记录】",
+        "test/spec/frontend/admin-users-export/entries.test.ts > [AC-F1-07je-ENTRY#3] 持 user.list 等用户权限但缺 export：没有可用的【导出】（不出现或置灰），点置灰的不发请求",
+        "test/spec/frontend/admin-users-export/entries.test.ts > [AC-F1-07je-ENTRY#4] 持 export 但缺 user.list（只有 user.lookup）：没有可用的【导出】，点置灰的不发请求",
+        "test/spec/frontend/admin-users-export/entries.test.ts > [AC-F1-07je-ENTRY#5] 只持 user.lookup 的账号：页面上没有【导出】，置灰的也没有",
+        "test/spec/frontend/admin-users-export/entries.test.ts > [AC-F1-07je-ENTRY#6] 超管打开用户详情：详情页不出现【导出】【导出记录】；【返回用户查询】回到列表后两个入口又在标题行",
+        "test/spec/frontend/admin-users-export/entries.test.ts > [AC-F1-07je-ENTRY#7] 持 export 与 user.list 的账号点标题行【导出记录】：进入已有的导出记录页（标题「导出记录」，读 GET /admin/v1/exports），不创建任务",
+        "test/spec/frontend/admin-users-export/errors.test.ts > [AC-F1-07je-ERROR#1] 创建导出回 10403：提示无权限，不显示已创建，不跳走，不自动重发",
+        "test/spec/frontend/admin-users-export/errors.test.ts > [AC-F1-07je-ERROR#2] 创建导出回 20001（filters）：在对话框内或提示里说明，不显示已创建，不自动重发",
+        "test/spec/frontend/admin-users-export/errors.test.ts > [AC-F1-07je-ERROR#3] 网络失败：提示失败，不显示已创建；之后再点一次导出会再发一次 POST（同样的脱敏 body），这次 202 提示已创建",
+        "test/spec/frontend/admin-users-export/errors.test.ts > [AC-F1-07je-ERROR#4] 连点只发一次：双击【导出】（及确认）只发一个 POST，请求在途时再点也不再发；应答 202 后提示已创建，再点一次导出会再建一个新任务",
+        "test/spec/frontend/admin-users-export/masked.test.ts > [AC-F1-07je-MASKED#1] 超管未设筛选点【导出】（可直接发或经简单确认）：一次 POST /admin/v1/exports，body 恰为 {resource: users, filters: {}}（filters 省略也可），不带 unmasked / reason / 身份字段，不带 X-Step-Up-Token 与 Idempotency-Key，不弹动态码；202 后提示已创建导出任务并指向导出记录，导出记录里能看到这条任务",
+        "test/spec/frontend/admin-users-export/masked.test.ts > [AC-F1-07je-MASKED#2] filters 取当前已应用的列表筛选：风控状态已冻结 → {risk_state: frozen}；已封禁且翻到第 2 页 → {risk_state: banned}（不带 page / page_size）；选回全部 → 空 filters",
+        "test/spec/frontend/admin-users-export/masked.test.ts > [AC-F1-07je-MASKED#3] 非超管（export + user.list，无 pii.*）按已冻结导出：同样只发脱敏 body，不弹动态码，202 后提示已创建导出任务并指向导出记录",
+        "test/spec/frontend/admin-users-export/pages.browser.test.ts > [AC-F1-07je-BROWSER#1] 1440 超管在用户查询标题行点【导出】（若先确认则确认）→ 一次脱敏 POST /admin/v1/exports（无令牌、无 Idempotency-Key、不弹动态码），提示已创建导出任务并指向导出记录；【导出记录】进入导出记录页并列出新任务；只发列表、这次导出与导出记录的请求",
+        "test/spec/frontend/admin-users-export/unmasked.test.ts > [AC-F1-07je-UNMASK#1] 不持 pii.reveal_phone（export + user.list）：页面与导出对话框里都没有「导出完整手机号」类选项，导出只发脱敏 body、不弹动态码",
+        "test/spec/frontend/admin-users-export/unmasked.test.ts > [AC-F1-07je-UNMASK#2] 持 pii.reveal_phone 且页面提供完整手机号选项：默认不勾选；勾选并填原因 → 确认 → 动态码（之前不发）→ 一次 POST，body 为 {resource, filters: {risk_state: banned}, unmasked: true, reason}，header 带新令牌、无 Idempotency-Key；202 后提示已创建并指向导出记录",
+        "test/spec/frontend/admin-users-export/unmasked.test.ts > [AC-F1-07je-UNMASK#3] 勾选完整手机号但原因为空：前端拦下并说明规则，或发出后收 20001 [reason] 在原因旁说明；不提示已创建",
+        "test/spec/frontend/admin-users-export/unmasked.test.ts > [AC-F1-07je-UNMASK#4] 勾选完整手机号但原因超过 200 字：前端拦下（或输入框不收第 201 个字）并说明规则，或发出后收 20001 [reason] 在原因旁说明；不提示已创建",
+        "test/spec/frontend/admin-users-export/unmasked.test.ts > [AC-F1-07je-UNMASK#5] 完整手机号导出回 10003：重新弹动态码，验证后用新令牌、同样的 body 再发一次，之后提示已创建",
+        "test/spec/frontend/admin-users-export/unmasked.test.ts > [AC-F1-07je-UNMASK#6] 勾选后又取消勾选：导出回到脱敏，body 不带 unmasked / reason，不带令牌，不弹动态码"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-users-export/entries.test.ts",
+        "test/spec/frontend/admin-users-export/errors.test.ts",
+        "test/spec/frontend/admin-users-export/masked.test.ts",
+        "test/spec/frontend/admin-users-export/pages.browser.test.ts",
+        "test/spec/frontend/admin-users-export/unmasked.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "55554f1a17a057b3bb25f5992dc2cb47f7b7ae8106189a1e1ecf7b0dd01c05b4"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "f84b85291308127b8faf9b5dfdfae9b46fe6a1698550cb7e341fd56fb8c47183"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "377955ff819edb226d015888b92968b15930b4ee",
+    "specs": "d6da500dafeea96c5e7d7cc7d526535701917b8f"
+  }
+}

@@ -4,6 +4,8 @@
 // parameter) and the detail view. Without user.list the page shows only the lookup and never
 // reads the list; without both it shows no permission and sends nothing. The list query and the
 // page read last stay in this component, so 【返回】 from a detail shows the same page and filter.
+// With `export` and user.list the list's title row offers 【导出记录】 and 【导出】 (the applied
+// filter, see ExportUsers.tsx); the detail view never shows them.
 import type { Schema } from '@couli/contracts-ts';
 import {
   CheckCircleOutlined,
@@ -48,6 +50,7 @@ import {
   type UserDetail,
   type UserRow,
 } from './model.ts';
+import { UsersExportEntries } from './ExportUsers.tsx';
 import { RiskTag } from './RiskTag.tsx';
 import { UserDetailView } from './UserDetailView.tsx';
 
@@ -247,6 +250,7 @@ function UsersContent({ access, canList, canLookup, canReveal }: UsersContentPro
     setQuery({ page: 1, risk: 'all' });
   };
 
+  const canExport = canList && access.can('export');
   const code = { fontFamily: token.fontFamilyCode } as const;
   const riskText = query.risk === 'all' ? t.riskFilterAll : riskLabel(query.risk);
 
@@ -520,9 +524,14 @@ function UsersContent({ access, canList, canLookup, canReveal }: UsersContentPro
 
   return (
     <Flex vertical gap={16}>
-      <Typography.Title level={4} style={{ margin: 0 }}>
-        {t.title}
-      </Typography.Title>
+      <Flex justify="space-between" align="center" wrap gap={8}>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          {t.title}
+        </Typography.Title>
+        {canExport ? (
+          <UsersExportEntries risk={query.risk} riskText={riskText} canReveal={canReveal} />
+        ) : null}
+      </Flex>
       <Card>
         <ConfigProvider theme={FILTER_THEME}>
           <Form layout="vertical" component="div">
