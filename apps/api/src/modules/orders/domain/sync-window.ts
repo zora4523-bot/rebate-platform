@@ -80,11 +80,22 @@ export function intervalSeconds(configured: unknown): number {
     : DEFAULT_SYNC_INTERVAL_SECONDS;
 }
 
-/**
- * B1-04zm: how long after now − days a round starts. Only declared in the skeleton (no top-level
- * code): the implementation gives it this value.
- */
-export declare const RESCAN_START_MARGIN_MS: 3_600_000;
+/** B1-04zm: how long after now − days a round starts. */
+export const RESCAN_START_MARGIN_MS = 3_600_000;
+
+const DAY_MS = 86_400_000;
+const RESCAN_MAX_DAYS = 90;
+const RESCAN_MIN_INTERVAL_SECONDS = 60;
+
+/** B1-04zm: a rescan days value: an integer in 1～90 (the adapters take only 90 days back). */
+export function isRescanDays(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isSafeInteger(value) &&
+    value >= 1 &&
+    value <= RESCAN_MAX_DAYS
+  );
+}
 
 /** B1-04zm: what a rescan stream does next: one full window, or the end of this round. */
 export type RescanStep =
@@ -107,12 +118,11 @@ export function rescanStep(
   capMs: number,
   ceilingMs?: number,
 ): RescanStep {
-  void cursorMs;
-  void nowMs;
-  void days;
-  void capMs;
-  void ceilingMs;
-  throw new Error('NotImplemented: rescanStep');
+  const roundStartMs = nowMs - days * DAY_MS + RESCAN_START_MARGIN_MS;
+  const roundEndMs = Math.min(nowMs, ceilingMs ?? nowMs);
+  const startMs = cursorMs === null || cursorMs < roundStartMs ? roundStartMs : cursorMs;
+  if (startMs + capMs > roundEndMs) return { kind: 'round_end', restartMs: roundStartMs };
+  return { kind: 'window', startMs, endMs: startMs + capMs };
 }
 
 /**
@@ -120,7 +130,7 @@ export function rescanStep(
  * start margin does not enter: 30 days of 60-minute windows stay 120 seconds.
  */
 export function rescanIntervalSeconds(days: number, capMs: number): number {
-  void days;
-  void capMs;
-  throw new Error('NotImplemented: rescanIntervalSeconds');
+  // 86400 s ÷ (days × 86400000 ms ÷ capMs) reduces to capMs ÷ (days × 1000). Floored, so a round
+  // never takes longer than a day because of rounding.
+  return Math.max(RESCAN_MIN_INTERVAL_SECONDS, Math.floor(capMs / (days * 1000)));
 }
