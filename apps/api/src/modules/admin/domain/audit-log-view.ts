@@ -22,11 +22,7 @@
 // System rows (D10-552): order_auto_hold has no account and no permission point; the Chinese name
 // of a system identity comes from SYSTEM_ACTOR_NAMES, which mirrors enum audit_system_actor (the
 // generated enum carries the values only).
-import {
-  admin_permission,
-  type AdminPermission,
-  type AuditSystemActor,
-} from '@couli/contracts-ts';
+import { admin_permission, type AdminPermission, type AuditSystemActor } from '@couli/contracts-ts';
 
 /** Contract bounds of the derived fields (AdminAuditLogListItem). */
 export const AUDIT_TARGET_TYPE_MAX = 64;
