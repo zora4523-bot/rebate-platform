@@ -36,7 +36,14 @@ it('[AC-B1-08n#1] worker 装配只注册一次 order-sync，零查询、零投�
     );
     expect([...r.statusMaps('pdd').entries]).toEqual([...loadStatusMap('pdd', csv).entries]);
     expect(r.statusMaps('pdd')).toBe(r.statusMaps('pdd'));
-    expect(() => r.statusMaps('jd')).toThrow(
+    // B1-04zr: jd is scheduled, so its map is read at assembly; only an unscheduled platform refuses.
+    expect(() => r.statusMaps('jd')).not.toThrow();
+    const jdCsv = readFileSync(
+      new URL('../../../../specs/order-status-map/jd.csv', import.meta.url),
+      'utf8',
+    );
+    expect([...r.statusMaps('jd').entries]).toEqual([...loadStatusMap('jd', jdCsv).entries]);
+    expect(() => r.statusMaps('taobao')).toThrow(
       expect.objectContaining({ code: 'MISSING_STATUS_MAP' }),
     );
     await f.queue.start();
@@ -44,20 +51,26 @@ it('[AC-B1-08n#1] worker 装配只注册一次 order-sync，零查询、零投�
     // count it by its period so the platform timers stay exactly one per platform (B1-08z
     // test-change, ruling D10-146).
     const queries = t.watch(f.queries);
+    // B1-04zr: a rescan loop reads order_sync.rescan.<platform>.days as it starts (config_items);
+    // nothing else runs before the first round.
+    const work = () => queries().filter((q) => !q.includes('config_items'));
     const armed = t.periods().length;
     const handle = t.run(() => r.start());
     try {
       await vi.advanceTimersByTimeAsync(0);
       expect(f.queue.send).not.toHaveBeenCalled();
-      expect(queries()).toEqual([]);
+      expect(work()).toEqual([]);
       const scans = t
         .periods()
         .slice(armed)
         .filter((ms) => ms === 15 * 60_000).length;
       expect(scans).toBeLessThanOrEqual(1);
-      expect(t.count()).toBe(scheduledPlatforms().length + scans);
+      // B1-04zr: one rescan loop each for jd and pdd. pdd's switch is off by default: its loop runs,
+      // reads the switch on time and sends nothing, so turning it on needs no restart.
+      const rescans = 2;
+      expect(t.count()).toBe(scheduledPlatforms().length + rescans + scans);
       await vi.advanceTimersByTimeAsync(59_999);
-      expect(queries()).toEqual([]);
+      expect(work()).toEqual([]);
       await vi.advanceTimersByTimeAsync(1);
       expect(queries().some((q) => q.includes('union_accounts'))).toBe(true);
     } finally {

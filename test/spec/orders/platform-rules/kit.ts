@@ -59,7 +59,7 @@ export const PINNED: Readonly<Record<RegisteredPlatform, PinnedRules>> = {
     orderNoStripHyphens: false,
     claimAuth: null,
     pushesProductKey: false,
-    syncWindowCapMs: null,
+    syncWindowCapMs: 60 * 60_000,
     itemIdField: 'itemId',
   },
   pdd: {

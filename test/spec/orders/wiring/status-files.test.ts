@@ -44,7 +44,12 @@ it.each(['ENOENT', 'EACCES'] as const)(
     });
     const result = await capture(() => contextOf('worker', true));
     if (result.ok) await result.value.context.close();
-    expect(mapReads()).toHaveLength(1);
+    // B1-04zr: jd is read first and pdd.csv stops the assembly, so taobao's file is never asked for.
+    expect(
+      mapReads()
+        .map(([path]) => String(path).split('/').at(-1))
+        .sort(),
+    ).toEqual(['jd.csv', 'pdd.csv']);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       if (code === 'ENOENT') expect(result.error).toMatchObject({ code: 'MISSING_STATUS_MAP' });
