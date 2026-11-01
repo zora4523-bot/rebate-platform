@@ -5121,6 +5121,23 @@ ALTER TABLE app.relation_change_logs ALTER COLUMN id ADD GENERATED ALWAYS AS IDE
 
 
 --
+-- Name: reverified_devices; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.reverified_devices (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    device_hash text NOT NULL,
+    source text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT reverified_devices_app_id_check CHECK ((app_id <> ''::text)),
+    CONSTRAINT reverified_devices_device_hash_check CHECK ((device_hash ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT reverified_devices_source_check CHECK ((source = ANY (ARRAY['self'::text, 'admin'::text])))
+);
+
+
+--
 -- Name: rights_import_failures; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -5873,7 +5890,16 @@ CREATE TABLE app.users (
     registered_channel text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT users_nickname_change_month_check CHECK ((nickname_change_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'::text))
+    last_active_at timestamp with time zone,
+    last_login_device_hash text,
+    reverify_flagged_at timestamp with time zone,
+    reverify_trusted jsonb,
+    reverify_fail_count integer DEFAULT 0 NOT NULL,
+    reverify_fail_day date,
+    CONSTRAINT users_last_login_device_hash_check CHECK ((last_login_device_hash ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT users_nickname_change_month_check CHECK ((nickname_change_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'::text)),
+    CONSTRAINT users_reverify_fail_count_check CHECK ((reverify_fail_count >= 0)),
+    CONSTRAINT users_reverify_trusted_check CHECK (((jsonb_typeof(reverify_trusted) = 'object'::text) AND (jsonb_typeof((reverify_trusted -> 'realname'::text)) = 'boolean'::text) AND (jsonb_typeof((reverify_trusted -> 'providers'::text)) = 'array'::text)))
 );
 
 
@@ -7709,6 +7735,22 @@ ALTER TABLE ONLY app.refresh_tokens
 
 ALTER TABLE ONLY app.relation_change_logs
     ADD CONSTRAINT relation_change_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: reverified_devices reverified_devices_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.reverified_devices
+    ADD CONSTRAINT reverified_devices_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: reverified_devices reverified_devices_user_device_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.reverified_devices
+    ADD CONSTRAINT reverified_devices_user_device_key UNIQUE (app_id, user_id, device_hash);
 
 
 --
@@ -11139,6 +11181,14 @@ ALTER TABLE ONLY app.relation_change_logs
 
 ALTER TABLE ONLY app.relation_change_logs
     ADD CONSTRAINT relation_change_logs_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: reverified_devices reverified_devices_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.reverified_devices
+    ADD CONSTRAINT reverified_devices_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -15582,6 +15632,14 @@ GRANT UPDATE(updated_at) ON TABLE app.refresh_tokens TO couli_app;
 
 GRANT SELECT,INSERT ON TABLE app.relation_change_logs TO couli_app;
 GRANT SELECT ON TABLE app.relation_change_logs TO couli_readonly;
+
+
+--
+-- Name: TABLE reverified_devices; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE ON TABLE app.reverified_devices TO couli_app;
+GRANT SELECT ON TABLE app.reverified_devices TO couli_readonly;
 
 
 --
