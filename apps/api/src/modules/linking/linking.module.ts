@@ -17,12 +17,14 @@ import {
   CLOCK,
   DB,
   IDEMPOTENCY,
+  JOB_QUEUE,
   REDIS,
   ROOT_LOGGER,
   type AppConfig,
   type Clock,
   type HandlerResult,
   type Idempotency,
+  type JobQueue,
   type RedisHandle,
   type RootLogger,
   type VerifiedDevice,
@@ -79,6 +81,11 @@ import {
 } from './infra/share-page-store.ts';
 import { createShareSharerBindings } from './infra/share-page-reads.ts';
 import { StoredSharePageMaterials } from './infra/share-material-store.ts';
+import {
+  createPromoPrefetch,
+  createPromoPrefetchLimiter,
+  isProductDetailRoute,
+} from './application/promo-prefetch.ts';
 import { SharesService, createShares, type CreateShareInput } from './application/shares.ts';
 import { SharesController } from './http/public/shares.controller.ts';
 import { LinkOpenController } from './http/public/open.controller.ts';
@@ -797,6 +804,9 @@ export class LinkingModule {
             LinkingConfigReader,
             LINKING_PIDS,
             ROOT_LOGGER,
+            REQUEST,
+            { token: JOB_QUEUE, optional: true },
+            { token: REDIS, optional: true },
           ],
           useFactory: (
             db: Kysely<Database> | undefined,
@@ -806,9 +816,25 @@ export class LinkingModule {
             config: LinkingConfigReader,
             pids: PidReader,
             logger: RootLogger,
+            request: unknown,
+            queue?: JobQueue,
+            redis?: RedisHandle,
           ): LinkRegistrations => ({
             forContext(context: RegistrationContext): LinkRegistration {
               if (db === undefined) return { register: unavailable, entrySource: unavailable };
+              // B1-06zd: only the detail route offers its link; favorites share its code path.
+              const prefetch =
+                queue !== undefined && isProductDetailRoute(request)
+                  ? createPromoPrefetch({
+                      db,
+                      clock,
+                      config,
+                      pids,
+                      queue,
+                      limiter: createPromoPrefetchLimiter(redis),
+                      logger,
+                    })
+                  : undefined;
               return createLinkRegistration({
                 db,
                 clock,
@@ -819,6 +845,7 @@ export class LinkingModule {
                 context,
                 // B1-08s: an exhausted lk issuance is alerted here (linking.link_code.exhausted).
                 logger,
+                ...(prefetch === undefined ? {} : { promoPrefetch: prefetch }),
               });
             },
           }),

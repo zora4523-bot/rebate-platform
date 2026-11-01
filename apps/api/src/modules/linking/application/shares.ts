@@ -10,19 +10,23 @@
 //   data.reason=self_minor → convert.enabled.<platform> (50301 maintenance) → the platform
 //   authorization of the sharer (Taobao active binding, else 30101 with auth_url / state /
 //   auth_methods; Pinduoduo filing, else 30111 with auth_jump — the states issued by the auth-url
-//   service, link_id empty; JD none) → Taobao: 50301 data.reason=not_launched (below) → the share
-//   identity from local reads (active share slot, attr_code, jd user key mode; none → 50301) →
+//   service, link_id empty; JD none) → Taobao: share.taobao_enabled off → 50301
+//   data.reason=not_launched, on → the sharer's relation_id (below) → the share identity from local reads (active share slot, attr_code, jd user key mode; none → 50301) →
 //   the product (item_ref / product_refs and one governed union detail: 20001 / 30131 / 30141 /
 //   30143 / 50303, as POST /v1/links/convert) → the buy_type=share quote of the sharer (catalog's
 //   quoter port; failing → 50303) → one transaction: the share link inserted (lk while
 //   attr.click_code.<platform> is on), the conversion with the link's identity, share_materials
-//   (share_url = the converted short link, tpwd null, app_id the link's own) and the convert log.
+//   (share_url = the converted short link, app_id the link's own) and the convert log.
 //   The platform refusing the conversion → 30121, a temporary failure → 50303, off shelf → 30141:
 //   the transaction rolls back, so no link and no material is left; the failure is logged after it.
-// Taobao (D10-426): the token generation permission is not granted, so neither our promotion link
-// nor the token can be obtained: nothing is generated (no link, no material, never the original
-// link instead) and the answer is 50301 data.reason=not_launched, data.platform=taobao.
-// TODO(规划/11 §4.5): 淘宝分享口令 — blocked on 规划/09 2_TB §2.5 口令生成权限
+// Taobao (B1-06zd, D10-510, default off; off is D10-426's 50301 data.reason=not_launched,
+// data.platform=taobao): the sharer's active binding gives the relation_id (none usable → 50301)
+// and the account whose active share slot converts (BR-ATTR-07); both are frozen on the link. The
+// share_url is short_url else coupon_click_url, links.promo_url coupon_click_url else short_url
+// (written once, at the injected clock), tpwd the conversion's, never null (promo-prefetch.ts). No
+// usable promotion link or no token → 50303, adapter_unimplemented → 50301 not_launched, the rest
+// as above: the transaction rolls back, never the original link instead (BR-ATTR-10). The
+// conversion's price is not read (BR-PRICE-12).
 // poster_url is always null.
 // TODO(规划/11 §4.5): 海报出图 — blocked on TECH-13 出图 worker 与 OSS 凭据
 // images (B1-15z, BR-ATTR-10 素材图): shareImages of this request's one union detail; the addresses
@@ -72,7 +76,7 @@ import {
   type UnionRegistry,
 } from '../../union/index.ts';
 import { renderShareCopy, type ShareCopy } from '../domain/share-copy.ts';
-import { isSwitchOn } from '../domain/rules.ts';
+import { SHARE_TAOBAO_SWITCH_KEY, isSwitchOn } from '../domain/rules.ts';
 import { storedLinkCode } from '../infra/link-code.ts';
 import { insertShareMaterial } from '../infra/share-material-store.ts';
 import type { AttrCodeReader, Caller, CallerContext, LinkingConfigReader } from '../ports.ts';
@@ -92,6 +96,13 @@ import {
   pddAuthorityIdentity,
   queryPddAuthority,
 } from './pdd-authority.ts';
+import {
+  TaobaoPromotionIdentity,
+  activeTaobaoRelation,
+  taobaoPromotionOf,
+  writePromoUrl,
+  type ActiveTaobaoRelation,
+} from './promo-prefetch.ts';
 import { createUnionAuthReads, type AuthClient } from './union-auth-reads.ts';
 import type { UnionAuthUrlService } from './union-auth-url.ts';
 
@@ -209,14 +220,18 @@ interface Refusal {
   readonly data?: Readonly<Record<string, unknown>>;
 }
 
+const NOT_LAUNCHED: Refusal = { code: 50301, data: { reason: 'not_launched', platform: 'taobao' } };
+
 /** A refusal raised inside the share transaction: it rolls the link and its material back. */
 class ShareAbort extends Error {
   readonly refusal: Refusal;
+  readonly msg: string | undefined;
 
-  constructor(refusal: Refusal) {
+  constructor(refusal: Refusal, msg?: string) {
     super(`linking: share not generated (${refusal.code})`);
     this.name = 'ShareAbort';
     this.refusal = refusal;
+    this.msg = msg;
   }
 }
 
@@ -230,10 +245,27 @@ interface ShareTarget {
 }
 
 /** The conversion identity's local parts (the lk comes from the inserted link). */
-interface ShareIdentityParts {
+interface JdPddShareParts {
   readonly platform: 'jd' | 'pdd';
   readonly promotionSlot: string;
   readonly attrCode: string;
+}
+
+/** Taobao's: the sharer's relation_id instead of an lk (the identity carries no click code). */
+interface TaobaoShareParts {
+  readonly platform: 'taobao';
+  readonly promotionSlot: string;
+  readonly attrCode: string;
+  readonly relationId: string;
+}
+
+type ShareIdentityParts = JdPddShareParts | TaobaoShareParts;
+
+/** What a share's conversion gives: the Taobao promotion link is only set for Taobao. */
+interface ShareConversion {
+  readonly shareUrl: string;
+  readonly tpwd: string | null;
+  readonly promoUrl: string | null;
 }
 
 function isWebUrl(value: unknown): value is string {
@@ -254,6 +286,11 @@ export function shareUrlOf(platform: 'jd' | 'pdd', result: ConvertResult): strin
   if (result.kind !== 'url') return null;
   const short = platform === 'pdd' ? [result.mobile_short_url, result.short_url] : [];
   return [...short, result.url].find(isWebUrl) ?? null;
+}
+
+/** union's item reference of a raw item ID. */
+function shareItemRef(platform: RegisteredPlatform, rawItemId: string): ItemRef {
+  return platform === 'taobao' ? { platform, item_id: rawItemId } : itemRefOf(platform, rawItemId);
 }
 
 /**
@@ -284,6 +321,27 @@ export function conversionRefusal(error: unknown): 30121 | 30141 | 50303 {
   return 50303;
 }
 
+/** The Taobao adapter on its default source: there is no conversion to retry. */
+function isUnimplemented(error: unknown): boolean {
+  return error instanceof UnionError && error.code === 'adapter_unimplemented';
+}
+
+/**
+ * What the transaction writes for a conversion; null when it carries no share link, or for Taobao
+ * no promotion link or no token (BR-ATTR-10: nothing is generated).
+ */
+export function shareConversion(
+  platform: RegisteredPlatform,
+  result: ConvertResult,
+): ShareConversion | null {
+  if (platform === 'taobao') {
+    const promotion = taobaoPromotionOf(result);
+    return promotion === null || promotion.tpwd === null ? null : promotion;
+  }
+  const shareUrl = shareUrlOf(platform, result);
+  return shareUrl === null ? null : { shareUrl, tpwd: null, promoUrl: null };
+}
+
 /** BR-INV-19 / BR-ID-26: verified and under 18 at the instant; unverified users count as adults. */
 export function isIdentifiedMinor(birthDate: string | null, at: Date): boolean {
   return birthDate !== null && !isAtLeastAge(birthDate, SHARER_MIN_AGE, at);
@@ -312,7 +370,7 @@ export interface LinkRawRow {
 export function linkRawRef(
   row: LinkRawRow | undefined,
   appId: string,
-  platform: 'jd' | 'pdd',
+  platform: RegisteredPlatform,
   nowMs: number,
 ): RequestRawRef | null {
   if (row === undefined || row.product_key === null || row.raw_item_id === null) return null;
@@ -407,14 +465,24 @@ class ComposedShares extends SharesService {
       return fail(refused(50301, { reason: 'maintenance', platform }));
     }
 
+    let accountId: string | undefined;
+    let relation: ActiveTaobaoRelation | null = null;
     if (platform === 'taobao') {
       const refusal = await this.#taobaoAuthorization(caller, userId, input);
       if (refusal !== null) return fail(refusal);
-      // D10-426: no promotion link and no token can be obtained → nothing is generated.
-      return fail(refused(50301, { reason: 'not_launched', platform: 'taobao' }), NOT_LAUNCHED_MSG);
+      const enabled = await this.#options.config.configValue(caller.appId, SHARE_TAOBAO_SWITCH_KEY);
+      if (!isSwitchOn(enabled?.value)) return fail(NOT_LAUNCHED, NOT_LAUNCHED_MSG);
+      relation = await activeTaobaoRelation(this.#options.db, caller.appId, userId);
+      if (relation === null) {
+        this.#options.logger.warn(
+          { event: 'linking.share.relation_unavailable', app_id: caller.appId, platform },
+          'linking: active taobao binding without a usable relation_id',
+        );
+        return fail(refused(50301));
+      }
+      accountId = relation.unionAccountId;
     }
 
-    let accountId: string | undefined;
     if (platform === PDD) {
       const decided = await this.#pddAuthorization(caller, userId, input);
       if ('code' in decided) return fail(decided);
@@ -422,7 +490,14 @@ class ComposedShares extends SharesService {
     }
 
     // ⑦ before ⑧: the share identity from local reads, before any union call.
-    const local = await this.#identityParts(caller, userId, platform, accountId, input.traceId);
+    const local = await this.#identityParts(
+      caller,
+      userId,
+      platform,
+      accountId,
+      relation,
+      input.traceId,
+    );
     if ('code' in local) return fail(local);
     const { snapshot, parts } = local;
 
@@ -450,11 +525,11 @@ class ComposedShares extends SharesService {
       return fail(refused(50303));
     }
 
-    let generated: { readonly linkId: string; readonly shareUrl: string };
+    let generated: { readonly linkId: string; readonly shareUrl: string; tpwd: string | null };
     try {
       generated = await this.#generate(caller, input, target, snapshot, parts, startMs);
     } catch (error) {
-      if (error instanceof ShareAbort) return fail(error.refusal);
+      if (error instanceof ShareAbort) return fail(error.refusal, error.msg);
       throw error;
     }
 
@@ -469,14 +544,14 @@ class ComposedShares extends SharesService {
         finalPriceFen: target.item.final_price_fen,
         quotedAt,
         shareUrl: generated.shareUrl,
-        tpwd: null,
+        tpwd: generated.tpwd,
       },
       SHARE_PRICE_BASIS,
     );
     const data: ShareMaterials = {
       link_id: generated.linkId,
       share_url: generated.shareUrl,
-      tpwd: null,
+      tpwd: generated.tpwd,
       // TODO(规划/11 §4.5): 海报出图 — blocked on TECH-13 出图 worker 与 OSS 凭据
       poster_url: null,
       images: shareImages(target.item),
@@ -584,12 +659,14 @@ class ComposedShares extends SharesService {
    * The new link's identity snapshot (BR-ATTR-05/06/08: the caller, scene share → pid_scene share)
    * and the conversion identity's local parts: the active share slot (Pinduoduo: of the account
    * in use), the attr_code and the jd user key mode. Any of them missing → 50301 with a warning.
+   * Taobao: the slot of the binding's account is the snapshot's too, with the relation_id.
    */
   async #identityParts(
     caller: Caller,
     userId: string,
-    platform: 'jd' | 'pdd',
+    platform: RegisteredPlatform,
     accountId: string | undefined,
+    relation: ActiveTaobaoRelation | null,
     traceId: string,
   ): Promise<Refusal | { snapshot: IdentitySnapshot; parts: ShareIdentityParts }> {
     const { pids, attrCodes, config, logger } = this.#options;
@@ -648,6 +725,14 @@ class ComposedShares extends SharesService {
         return refused(50301);
       }
     }
+    if (platform === 'taobao') {
+      if (relation === null) return refused(50301);
+      const { relationId } = relation;
+      return {
+        snapshot: { ...snapshot, pid: row.pid, relation_id: relationId },
+        parts: { platform, promotionSlot: row.pid, attrCode, relationId },
+      };
+    }
     return { snapshot, parts: { platform, promotionSlot: row.pid, attrCode } };
   }
 
@@ -664,7 +749,7 @@ class ComposedShares extends SharesService {
     appId: string,
     userId: string,
     body: Body,
-    platform: 'jd' | 'pdd',
+    platform: RegisteredPlatform,
     traceId: string,
   ): Promise<Refusal | ShareTarget> {
     const { products, itemRefs, registry } = this.#options;
@@ -726,7 +811,7 @@ class ComposedShares extends SharesService {
       return this.#detailRefusal(error, productKey);
     }
 
-    const ref: ItemRef = itemRefOf(platform, rawItemId);
+    const ref = shareItemRef(platform, rawItemId);
     const context: CallCtx = { appId, requestId: traceId, purpose: 'online' };
     let item: UnionItemDetail;
     try {
@@ -750,7 +835,7 @@ class ComposedShares extends SharesService {
   async #linkRawRef(
     appId: string,
     userId: string,
-    platform: 'jd' | 'pdd',
+    platform: RegisteredPlatform,
     productKey: string,
     sourceLinkId: string | undefined,
   ): Promise<RequestRawRef | null> {
@@ -784,8 +869,8 @@ class ComposedShares extends SharesService {
 
   /**
    * One transaction: the share link (the module's single links insert), its conversion with the
-   * link's identity, share_materials and the convert log. A conversion that fails, or answers no
-   * share link, throws ShareAbort: everything rolls back.
+   * link's identity, share_materials, Taobao's promo_url and the convert log. A conversion that
+   * fails, or answers no share link (Taobao: or no token), throws ShareAbort: everything rolls back.
    */
   async #generate(
     caller: Caller,
@@ -794,7 +879,7 @@ class ComposedShares extends SharesService {
     snapshot: IdentitySnapshot,
     parts: ShareIdentityParts,
     startMs: number,
-  ): Promise<{ readonly linkId: string; readonly shareUrl: string }> {
+  ): Promise<{ readonly linkId: string; readonly shareUrl: string; tpwd: string | null }> {
     const { db, clock, config, registry, logger } = this.#options;
     const appId = caller.appId;
     const { item } = target;
@@ -832,9 +917,12 @@ class ComposedShares extends SharesService {
     };
     return db.transaction().execute(async (trx) => {
       const row = await insertConvertLink(trx, pending, issue);
-      const identity = shareIdentity(appId, parts, storedLinkCode(row));
+      const identity =
+        parts.platform === 'taobao'
+          ? new TaobaoPromotionIdentity({ appId, ...parts })
+          : shareIdentity(appId, parts, storedLinkCode(row));
       const request = {
-        item: itemRefOf(parts.platform, target.rawItemId),
+        item: shareItemRef(parts.platform, target.rawItemId),
         idempotencyKey: input.idempotencyKey,
       };
       const context: CallCtx = { appId, requestId: input.traceId, purpose: 'online' };
@@ -842,7 +930,8 @@ class ComposedShares extends SharesService {
       try {
         result = await registry.get(parts.platform).convert(request, identity, context);
       } catch (error) {
-        const code = conversionRefusal(error);
+        const unlaunched = parts.platform === 'taobao' && isUnimplemented(error);
+        const code = unlaunched ? 50301 : conversionRefusal(error);
         logger.warn(
           {
             event: 'linking.share.convert_failed',
@@ -853,22 +942,31 @@ class ComposedShares extends SharesService {
           },
           'linking: share conversion failed; nothing generated',
         );
+        if (unlaunched) throw new ShareAbort(NOT_LAUNCHED, NOT_LAUNCHED_MSG);
         throw new ShareAbort(refused(code));
       }
-      const shareUrl = shareUrlOf(parts.platform, result);
-      if (shareUrl === null) {
+      const converted = shareConversion(parts.platform, result);
+      if (converted === null) {
         logger.warn(
           { event: 'linking.share.no_share_url', app_id: appId, platform: parts.platform },
-          'linking: share conversion answered no share link; nothing generated',
+          'linking: share conversion answered no share link or token; nothing generated',
         );
         throw new ShareAbort(refused(50303));
       }
       await insertShareMaterial(trx, {
         appId: row.app_id,
         linkId: row.link_id,
-        shareUrl,
-        tpwd: null,
+        shareUrl: converted.shareUrl,
+        tpwd: converted.tpwd,
       });
+      if (converted.promoUrl !== null) {
+        await writePromoUrl(trx, {
+          appId: row.app_id,
+          linkId: row.link_id,
+          promoUrl: converted.promoUrl,
+          at: clock.now(),
+        });
+      }
       await this.#writeLog(trx, caller, input, {
         linkId: row.link_id,
         code: 0,
@@ -878,7 +976,7 @@ class ComposedShares extends SharesService {
         quotedPriceFen: item.final_price_fen,
         startMs,
       });
-      return { linkId: row.link_id, shareUrl };
+      return { linkId: row.link_id, shareUrl: converted.shareUrl, tpwd: converted.tpwd };
     });
   }
 
@@ -942,11 +1040,12 @@ class ComposedShares extends SharesService {
 /**
  * The conversion identity of a share (BR-ATTR-05/06/08, as the open's): the share slot, the
  * sharer's attr_code — jd subUnionId n_{attr_code}[_{lk}], pdd custom_parameters {app, uid, sc,
- * lk?} — and the share link's lk when it has one (BR-ATTR-15). Never a user_id.
+ * lk?} — and the share link's lk when it has one (BR-ATTR-15). Never a user_id. Taobao: the
+ * sharer's relation_id instead (TaobaoPromotionIdentity).
  */
 export function shareIdentity(
   appId: string,
-  parts: ShareIdentityParts,
+  parts: JdPddShareParts,
   lk: string | null,
 ): LinkingUnionIdentity {
   const { platform, promotionSlot, attrCode } = parts;
