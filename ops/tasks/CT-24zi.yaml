@@ -2,7 +2,7 @@ id: CT-24zi
 repo: rebate-platform
 title: 契约：涉税季度导出——导出框架加 tax_withdrawals（filters.quarter，全量 / 脱敏两种），新增权限点 tax.export_full（totp）
 type: contract
-# 2026-11-01 入账（admin-backend，编排 D10-468 ⑤、D10-459 ②、D10-544）：挂现有导出框架，不新开接口，无迁移。脱敏版 export + fund.view；全量版 tax.export_full、totp、reason；首行说明只对本 resource；列含「到账后实名更正」（当前身份，代理默认、待财务确认）。权限清单新增一项，冻结 test/spec/admin/permissions/expected.ts 随之加一项（D10-544 ①）。04 §11 由编排回写。
+# 2026-11-01 入账（admin-backend，编排 D10-468 ⑤、D10-459 ②、D10-544）：挂现有导出框架，不新开接口，无迁移。脱敏版 export + fund.view；全量版 tax.export_full、totp、reason；首行说明只对本 resource；列含「到账后实名更正」（当前身份，代理默认、待财务确认）。权限清单新增一项，冻结 test/spec/admin/permissions/expected.ts 随之加一项（D10-544 ①）。04 §11 由编排回写。exports.controller.ts 现把非 users 的 resource 一律当 audit_logs，契约合并后 tax_withdrawals 会被错当审计日志导出，故本单在控制器加闸（20001 resource），B2-08e 再打开。
 refs: []
 refs_hash: {}
 contract_sections: ['11.1']
@@ -12,6 +12,8 @@ paths:
   - 'contracts/enums/**'
   - 'contracts/error-codes.yaml'
   - 'specs/permissions.yaml'
+  - 'apps/api/src/modules/admin/http/admin/exports.controller.ts'
+  - 'apps/api/src/modules/admin/http/admin/exports.controller.test.ts'
   - 'apps/api/src/modules/admin/domain/permissions.gen.ts'
   - 'packages/contracts-ts/**'
   - 'packages/contracts-ts/src/planned-operations.gen.ts'
