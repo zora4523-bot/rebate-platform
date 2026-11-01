@@ -18,10 +18,10 @@
 // Plain SQL always names the schema. Only the container runner executes the integration tests.
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import type { DB } from '@couli/db';
+import { createDb, destroyDb, pgUrl, type DB } from '@couli/db';
 import { addFen } from '@couli/money';
-import type { Kysely, KyselyPlugin } from 'kysely';
-import { expect, vi } from 'vitest';
+import { sql, type Kysely, type KyselyPlugin } from 'kysely';
+import { expect, inject, vi } from 'vitest';
 import { createLedger } from '../../../../apps/api/src/modules/ledger/index.ts';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
 import { loadConfig } from '../../../../apps/api/src/modules/platform/config/index.ts';
@@ -271,15 +271,33 @@ interface Context {
 }
 
 /**
+ * A couli_app handle on the harness's database, bound to the app schema once as the production
+ * entries' are: h.db is bound twice (admin/auth/kit.ts), and Kysely cannot compile the ledger's
+ * FOR UPDATE OF on such a handle. The harness keeps its URL to itself, so this one is built the way
+ * @couli/db/testing's urlFor builds it.
+ */
+async function singleBoundDb(h: Harness): Promise<Kysely<DB>> {
+  const { factoryUrl, rolePasswords } = inject('couliTestDb');
+  const { rows } = await sql<{ name: string }>`SELECT current_database() AS name`.execute(h.db);
+  const url = pgUrl(factoryUrl, {
+    user: 'couli_app',
+    password: rolePasswords.couli_app,
+    database: rows[0]!.name,
+  });
+  return createDb({ connectionString: url, max: 6 });
+}
+
+/**
  * The worker entry's AppModule on the harness's database and keyring, with an in-memory queue
  * runtime (never polled): `run` hands a recorded send to the handler the worker registered on
- * order-sync, `settle` hands a batch_execute job to the one it registered on settle. `db` replaces
- * the harness's handle (a faulty one); `now` is the worker's own clock (a job that runs after the
- * upload), NOW by default.
+ * order-sync, `settle` hands a batch_execute job to the one it registered on settle. The worker has
+ * its own single-bound handle, closed after the context when the test ends; `plugin` goes on that
+ * handle (a fault); `now` is the worker's own clock (a job that runs after the upload), NOW by
+ * default.
  */
 export async function worker(
   h: Harness,
-  options: { readonly db?: Kysely<DB>; readonly now?: string } = {},
+  options: { readonly plugin?: KyselyPlugin; readonly now?: string } = {},
 ) {
   // URL imports keep decorated HTTP controllers out of the spec project's TS compilation.
   const { AppModule } = (await import(
@@ -293,6 +311,7 @@ export async function worker(
   )) as {
     NestFactory: { createApplicationContext(module: unknown, options: object): Promise<Context> };
   };
+  const db = await singleBoundDb(h);
   const queue = {
     send: vi.fn(async () => 'fixture'),
     register: vi.fn<(name: string, handler: Handle) => void>(),
@@ -321,13 +340,19 @@ export async function worker(
         config: loadConfig(h.env),
         clock: new FixedClock(options.now ?? NOW),
         logger: memoryLogger().logger,
-        dbHandles: { db: options.db ?? h.db, dbRead: null, close: async () => undefined },
+        dbHandles: {
+          db: options.plugin === undefined ? db : db.withPlugin(options.plugin),
+          dbRead: null,
+          close: async () => undefined,
+        },
       }),
       { logger: false, abortOnError: false },
     );
     h.apps.push(context as unknown as HttpApp);
   } finally {
     spy.mockRestore();
+    const handle: Context = { close: () => destroyDb(db) };
+    h.apps.push(handle as unknown as HttpApp);
   }
   const handler = (name: string): Handle => {
     const handlers = queue.register.mock.calls.filter(([registered]) => registered === name);

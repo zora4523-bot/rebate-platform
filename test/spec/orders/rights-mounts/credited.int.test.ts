@@ -286,7 +286,7 @@ it('[AC-B1-10n#21] 行检查点提交前崩溃（扣回已在该行事务里写�
   shareImportStore();
   const s = await setup(h, { grants: GRANTS.rights });
   const fault = checkpointFault();
-  const w = await worker(h, { db: h.db.withPlugin(fault.plugin) });
+  const w = await worker(h, { plugin: fault.plugin });
   const c = await creditedOrder(s, w);
   const before = await moneyState(s, c);
   const importId = await queued(
