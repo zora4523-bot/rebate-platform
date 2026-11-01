@@ -28,19 +28,19 @@ export interface VerifiedWrite<TPayload> extends VerifiedWriteState {
   onVerified(stepUpToken: string): void;
 }
 
-export interface VerifiedWriteOptions {
+export interface VerifiedWriteOptions<TResult = UserDetail> {
   readonly url: string;
-  readonly onSaved: (user: UserDetail) => void;
+  readonly onSaved: (result: TResult) => void;
   readonly onFailed: (cause: unknown) => void;
 }
 
 const IDLE: VerifiedWriteState = { phase: 'idle', again: false };
 
-export function useVerifiedWrite<TPayload>({
+export function useVerifiedWrite<TPayload, TResult = UserDetail>({
   url,
   onSaved,
   onFailed,
-}: VerifiedWriteOptions): VerifiedWrite<TPayload> {
+}: VerifiedWriteOptions<TResult>): VerifiedWrite<TPayload> {
   const getProvider = useDataProvider();
   const [state, setStateValue] = useState<VerifiedWriteState>(IDLE);
   const stateRef = useRef<VerifiedWriteState>(IDLE);
@@ -96,7 +96,7 @@ export function useVerifiedWrite<TPayload>({
 
   const send = async (payload: TPayload, stepUpToken: string): Promise<void> => {
     try {
-      const response = await customOf()<UserDetail>({
+      const response = await customOf()({
         url,
         method: 'post',
         payload,
@@ -104,7 +104,7 @@ export function useVerifiedWrite<TPayload>({
       });
       if (!alive.current) return;
       setState(IDLE);
-      onSaved(response.data);
+      onSaved(response.data as TResult);
     } catch (cause) {
       if (!alive.current) return;
       if (cause instanceof AdminApiError && cause.code === STEP_UP_REFUSED) {
