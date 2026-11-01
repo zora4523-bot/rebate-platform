@@ -16,6 +16,7 @@ paths:
   - 'apps/api/src/modules/admin/infra/audit-writer.ts'
   - 'apps/api/src/modules/admin/domain/audit-log-view*.ts'
   - 'apps/api/src/modules/admin/application/audit-log*.ts'
+  - 'apps/api/src/modules/admin/application/order-hold-audits.ts'
   - 'apps/api/src/modules/admin/application/export-worker*.ts'
   - 'apps/api/src/modules/admin/http/admin/audit-logs.controller.ts'
   - 'apps/api/src/modules/admin/index.ts'
