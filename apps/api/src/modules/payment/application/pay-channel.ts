@@ -25,6 +25,11 @@ export const PAY_REASON_KMS_UNAVAILABLE = 'kms_unavailable';
  * the reconciliation of that day does not run (application/pay-recon.ts).
  */
 export const PAY_REASON_BILL_NOT_AVAILABLE = 'bill_not_available';
+/**
+ * B2-15r: every call FakePayChannel does not support. For a bill it means no bill now and no bill an
+ * hour later (staging, D10-549 ⑥), so the reconciliation skips that channel (application/pay-recon.ts).
+ */
+export const PAY_REASON_FAKE_NOT_SUPPORTED = 'fake_not_supported';
 /** B2-15k: an order of another App than the one this channel's merchant identity belongs to. */
 export const PAY_REASON_APP_NOT_CONFIGURED = 'app_not_configured';
 

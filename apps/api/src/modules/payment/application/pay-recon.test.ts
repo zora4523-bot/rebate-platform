@@ -7,6 +7,7 @@ import {
   PAY_REASON_BILL_FORMAT_UNVERIFIED,
   PAY_REASON_BILL_NOT_AVAILABLE,
   PAY_REASON_CHANNEL_UNCONFIGURED,
+  PAY_REASON_FAKE_NOT_SUPPORTED,
   PAY_REASON_KMS_UNAVAILABLE,
 } from './pay-channel.ts';
 import { runBillReconJob, runPayBillRecon, type PayReconDeps } from './pay-recon.ts';
@@ -70,6 +71,7 @@ describe('bill.recon and the fixed no-bill answers', () => {
     for (const reason of [
       PAY_REASON_CHANNEL_UNCONFIGURED,
       PAY_REASON_KMS_UNAVAILABLE,
+      PAY_REASON_FAKE_NOT_SUPPORTED,
       PAY_REASON_BILL_NOT_AVAILABLE,
       PAY_REASON_BILL_FORMAT_UNVERIFIED,
     ]) {
@@ -80,7 +82,11 @@ describe('bill.recon and the fixed no-bill answers', () => {
     }
   });
 
-  it.each([PAY_REASON_CHANNEL_UNCONFIGURED, PAY_REASON_KMS_UNAVAILABLE])(
+  it.each([
+    PAY_REASON_CHANNEL_UNCONFIGURED,
+    PAY_REASON_KMS_UNAVAILABLE,
+    PAY_REASON_FAKE_NOT_SUPPORTED,
+  ])(
     '[AC-B2-15k-U#51] %s: debug as without an adapter, only the next day is sent',
     async (reason) => {
       const h = harness(reason);

@@ -26,6 +26,7 @@ import type {
   PayTradeState,
   WechatLaunch,
 } from '../../application/pay-channel.ts';
+import { PAY_REASON_FAKE_NOT_SUPPORTED } from '../../application/pay-channel.ts';
 
 /** Answer of one scripted createOrder call. */
 export type FakeCreateAnswer = 'ok' | 'unknown';
@@ -158,18 +159,18 @@ export class FakePayChannel implements PayChannel {
   /** Refunds are B2-15f / B2-15k: the fake answers unknown, which the caller only queries. */
   refund(input: PayRefundInput): Promise<PayRefundResult> {
     void input;
-    return Promise.resolve({ kind: 'unknown', reason: 'fake_not_supported' });
+    return Promise.resolve({ kind: 'unknown', reason: PAY_REASON_FAKE_NOT_SUPPORTED });
   }
 
   refundQuery(outRefundNo: string): Promise<PayRefundQueryResult> {
     void outRefundNo;
-    return Promise.resolve({ kind: 'unknown', reason: 'fake_not_supported' });
+    return Promise.resolve({ kind: 'unknown', reason: PAY_REASON_FAKE_NOT_SUPPORTED });
   }
 
   /** The fake signs nothing, so it verifies nothing: every notification is rejected (B2-15c). */
   verifyNotification(raw: PayRawNotification): Promise<PayNotificationResult> {
     void raw;
-    return Promise.resolve({ kind: 'rejected', reason: 'fake_not_supported' });
+    return Promise.resolve({ kind: 'rejected', reason: PAY_REASON_FAKE_NOT_SUPPORTED });
   }
 
   /**
@@ -195,6 +196,6 @@ export class FakePayChannel implements PayChannel {
   // The fake has no bills: the app (the port's second argument) does not matter here.
   downloadBill(date: string): Promise<PayBillResult> {
     void date;
-    return Promise.resolve({ kind: 'unknown', reason: 'fake_not_supported' });
+    return Promise.resolve({ kind: 'unknown', reason: PAY_REASON_FAKE_NOT_SUPPORTED });
   }
 }
