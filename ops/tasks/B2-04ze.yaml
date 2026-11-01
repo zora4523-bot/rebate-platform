@@ -8,7 +8,7 @@ type: impl
 refs: [BR-FUND-04, BR-FUND-20]
 refs_hash:
   BR-FUND-04: 2497ceea4515
-  BR-FUND-20: 01dc2440638f
+  BR-FUND-20: 768e4fe2668e
 deps: [B2-04zd, B2-09f, B1-03zc]
 paths:
   - 'apps/api/src/modules/settlement/settlement.module.ts'

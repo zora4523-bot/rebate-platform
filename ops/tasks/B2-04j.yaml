@@ -11,7 +11,7 @@ refs_hash:
   BR-FUND-03: 4b5c1f1d901b
   BR-FUND-04: 2497ceea4515
   BR-FUND-06: 2076b932478c
-  BR-FUND-07: 146f9e5cc7c5
+  BR-FUND-07: 3d63741c52d9
 deps: [B2-04c]
 paths:
   - 'apps/api/src/modules/settlement/settlement.module.ts'
