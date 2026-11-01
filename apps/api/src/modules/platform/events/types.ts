@@ -35,6 +35,10 @@ export const EVENT_NAMES: readonly string[] = Object.freeze([
   'withdrawal.created',
   'account.went_negative',
   'settle.batch_done',
+  // Settle run event (B2-04zf; D10-467 ③ / D10-477; BR-TEXT-09): published by settlement on the batch
+  // transition that brings a settle run to rest, one per (settle_run_id, part); 02 §11 after
+  // settle.batch_done (couli #228).
+  'settle.run_done',
   'risk.state_changed',
   'appeal.resolved',
   'agent.run_finished',
