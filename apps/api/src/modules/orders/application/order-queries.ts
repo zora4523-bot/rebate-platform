@@ -168,7 +168,10 @@ const UNKNOWN_FIGURES: Readonly<OrderFigures> = Object.freeze({
   appeal_pending: false,
 });
 
-/** TODO(规划/11 §4.5): 未接线时金额与结算期未知 — blocked on settlement / ledger / commission 读端口 */
+/**
+ * Everything unknown: for direct callers without a reader. Every production entry wires settlement's
+ * createOrderFiguresReader (app.module).
+ */
 export function createUnknownOrderFigures(): OrderFiguresReader {
   return {
     forOrders: async (_subject, orderIds) =>
