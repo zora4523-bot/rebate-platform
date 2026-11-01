@@ -1,0 +1,96 @@
+{
+  "task": "B1-04zf",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "f4344669e365e3e161959b71fb856eaaa0eecc37",
+  "red_tests": [
+    "test/spec/infra/staging-jd/compose.test.ts > [AC-B1-04zf#1] admin 有且只有一个只读、可缺的节点京东目录挂载，bind 使用块状长语法",
+    "test/spec/infra/staging-jd/compose.test.ts > [AC-B1-04zf#1] api 有且只有一个只读、可缺的节点京东目录挂载，bind 使用块状长语法",
+    "test/spec/infra/staging-jd/compose.test.ts > [AC-B1-04zf#1] stream 有且只有一个只读、可缺的节点京东目录挂载，bind 使用块状长语法",
+    "test/spec/infra/staging-jd/compose.test.ts > [AC-B1-04zf#1] worker 有且只有一个只读、可缺的节点京东目录挂载，bind 使用块状长语法",
+    "test/spec/infra/staging-jd/compose.test.ts > [AC-B1-04zf#2] 京东目录只给装配联盟模块的四个入口，compose 不注入 JD_ 变量、env_file 不变，deploy.sh 不把它加进必备路径",
+    "test/spec/infra/staging-jd/readme.test.ts > [AC-B1-04zf#3] 京东小节写明节点目录与权限：属主 1000、目录 500，app_secret 文件 400 且只放这一个值",
+    "test/spec/infra/staging-jd/readme.test.ts > [AC-B1-04zf#4] 京东小节给出 staging.env 三项，密钥文件变量只写容器内路径",
+    "test/spec/infra/staging-jd/readme.test.ts > [AC-B1-04zf#5] 京东小节不含任何凭据或站点 id 的值",
+    "test/spec/infra/staging-jd/readme.test.ts > [AC-B1-04zf#6] 切 live 走 UNION_ENDPOINT_OVERRIDE_DIR 下的 jd.json，本单不切，打包的 jd.json 仍是 demo",
+    "test/spec/infra/staging-jd/readme.test.ts > [AC-B1-04zf#7] 部署检查 CHK-JD-STAGING-CRED：live 而两变量都没设时不报错、jd 保持未实现，切 live 前人工核对三项"
+  ],
+  "risk_note": "RV2 by path (infra). JD staging wiring without going live (D10-498), the same shape as B1-04y: admin, api, stream and worker get a read-only optional bind of /etc/couli-jd to /run/couli-jd, since all four assemble the union module and the ledger's api, worker alone would not be enough. No credential or JD variable in compose, env_file and deploy.sh unchanged, payout not mounted, config/union-endpoints/jd.json still demo. README 1.8 documents the node directory, the staging.env names without values, and check CHK-JD-STAGING-CRED, including UNION_ENDPOINT_OVERRIDE_DIR so jd cannot silently stay on demo.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "f4344669e365e3e161959b71fb856eaaa0eecc37",
+      "tree": "ea2566c80dcdea4a750de993edf77cd9d53f9a53",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-11-01T06:44:44Z",
+      "finished_at": "2026-11-01T06:44:49Z",
+      "gate": {
+        "commit": "a60ec419a493bd228895cbeeb6c0c7c3d50f3ad6",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      },
+      "red_tests": [
+        "test/spec/infra/staging-jd/compose.test.ts > [AC-B1-04zf#1] admin 有且只有一个只读、可缺的节点京东目录挂载，bind 使用块状长语法",
+        "test/spec/infra/staging-jd/compose.test.ts > [AC-B1-04zf#1] api 有且只有一个只读、可缺的节点京东目录挂载，bind 使用块状长语法",
+        "test/spec/infra/staging-jd/compose.test.ts > [AC-B1-04zf#1] stream 有且只有一个只读、可缺的节点京东目录挂载，bind 使用块状长语法",
+        "test/spec/infra/staging-jd/compose.test.ts > [AC-B1-04zf#1] worker 有且只有一个只读、可缺的节点京东目录挂载，bind 使用块状长语法",
+        "test/spec/infra/staging-jd/compose.test.ts > [AC-B1-04zf#2] 京东目录只给装配联盟模块的四个入口，compose 不注入 JD_ 变量、env_file 不变，deploy.sh 不把它加进必备路径",
+        "test/spec/infra/staging-jd/readme.test.ts > [AC-B1-04zf#3] 京东小节写明节点目录与权限：属主 1000、目录 500，app_secret 文件 400 且只放这一个值",
+        "test/spec/infra/staging-jd/readme.test.ts > [AC-B1-04zf#4] 京东小节给出 staging.env 三项，密钥文件变量只写容器内路径",
+        "test/spec/infra/staging-jd/readme.test.ts > [AC-B1-04zf#5] 京东小节不含任何凭据或站点 id 的值",
+        "test/spec/infra/staging-jd/readme.test.ts > [AC-B1-04zf#6] 切 live 走 UNION_ENDPOINT_OVERRIDE_DIR 下的 jd.json，本单不切，打包的 jd.json 仍是 demo",
+        "test/spec/infra/staging-jd/readme.test.ts > [AC-B1-04zf#7] 部署检查 CHK-JD-STAGING-CRED：live 而两变量都没设时不报错、jd 保持未实现，切 live 前人工核对三项"
+      ],
+      "expected": [
+        "test/spec/infra/staging-jd/compose.test.ts",
+        "test/spec/infra/staging-jd/readme.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "bd303f36020629cf966551f0727589ee91fae4ae99216a0337092fb8aad7e835"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; independent Claude via tools/agent/claude-run.sh per approvals #36. Round 1 pass, one S2 on the check list, fixed by one README sentence and not re-reviewed. Reviewer read the files and executed nothing. verify:fast could not finish on the test machine because of the tsc heap abort, so this head rests on required CI."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "Rule tests by an independent Claude context in one attempt, 10 red. Review round 1 pass with three S2 on compose and README wording, put to the implementer as requirements. All 10 pass on the implementation before the final one-sentence README fix (test machine red mode, not evidence)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "7aab04acccc287219c2da54232d7342408d4d8f7",
+    "specs": "d6da500dafeea96c5e7d7cc7d526535701917b8f"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  }
+}

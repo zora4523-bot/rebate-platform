@@ -185,6 +185,45 @@ chmod 500 /etc/couli-pdd/union-endpoints /etc/couli-pdd
 
 **B1-01zd 合并之前**，应用在 `APP_ENV=staging` 下仍拒绝 `FIELD_KEY_PROVIDER=local`，五个进程都会启动失败，部署会走失败分支。
 
+### 1.8 京东（准备，不切 live）
+
+本节只做接线准备，不切 live：镜像内和节点上的 `jd.json` 都保持 demo，本节不提供切换步骤。
+
+compose 给 admin、api、stream 与 worker（装配联盟模块的四个入口）只读挂载节点目录 `/etc/couli-jd`（容器内 `/run/couli-jd`）；payout 不挂。这个挂载可缺：节点没有该目录时部署照常进行，`deploy.sh` 也不检查它。
+
+节点文件由负责人放入（容器以 uid 1000 运行）：
+
+| 节点路径 | 内容 | 属主与权限 |
+| --- | --- | --- |
+| `/etc/couli-jd/` | 目录 | 属主 1000，目录 500 |
+| `/etc/couli-jd/app_secret` | 京东联盟应用的密钥原文，文件里只放这一个值 | 属主 1000，文件 400 |
+
+密钥内容不得出现在命令行里（会进 shell 历史和进程列表），也不得放进环境变量或 `staging.env`；用编辑器打开文件粘贴后保存，不要用 `echo` / `printf` 写入密钥。准备步骤（root 执行）：
+
+```sh
+install -d -m 700 /etc/couli-jd
+vi /etc/couli-jd/app_secret
+chown -R 1000:1000 /etc/couli-jd
+chmod 400 /etc/couli-jd/app_secret
+chmod 500 /etc/couli-jd
+```
+
+先放好上面的文件，再在 `/etc/couli/staging.env` 设下面三个变量（值只写在节点上，不进仓库，也不写进本文档）：
+
+| 变量 | 取值 |
+| --- | --- |
+| `JD_APP_KEY` | 京东联盟应用的 app key（不是密钥） |
+| `JD_APP_SECRET_FILE` | `/run/couli-jd/app_secret`（容器内路径；只写路径，不写密钥内容） |
+| `JD_SITE_ID` | 京东联盟的站点 id，十进制正整数 |
+
+- `JD_APP_KEY` 与 `JD_APP_SECRET_FILE` 要么都设、要么都不设：只设一个时 admin、api、stream 与 worker 启动即失败。`JD_SITE_ID` 设了但不是十进制正整数时同样启动失败。
+- 端点是 demo 时应用不打开密钥文件，所以文件读不到或内容为空要到切 live 后才暴露：那时这四个入口启动即失败。
+- `JD_SITE_ID` 现在只校验格式，转链由 B1-04zd 接入，在那之前京东转链不可用。
+
+切 live 走 `UNION_ENDPOINT_OVERRIDE_DIR` 下的 `jd.json`，本节不切。这个变量维持 1.5 的 `/run/couli-pdd/union-endpoints`：它是三平台共用的一个目录，里面的 `jd.json`、`pdd.json`、`taobao.json` 缺任何一个，这四个入口都启动失败，所以**不要把它改到 `/run/couli-jd`**。到切 live 的时候，改的是现有的节点文件 `/etc/couli-pdd/union-endpoints/jd.json`。
+
+**部署检查 CHK-JD-STAGING-CRED**：jd 端点为 live 而 `JD_APP_KEY`、`JD_APP_SECRET_FILE` 两个变量都没设时，应用不报错、也不打日志，jd 保持未实现（D10-479 同款）。部署成功不代表京东已接通，所以切 live 前要人工核对 `JD_APP_KEY`、`JD_APP_SECRET_FILE`、`JD_SITE_ID` 这三项已设，并核对 `UNION_ENDPOINT_OVERRIDE_DIR` 已设，值是现有的 `/run/couli-pdd/union-endpoints`：节点没做 1.5 时这个变量没设，应用读的是镜像内的端点，改了 `/etc/couli-pdd/union-endpoints/jd.json` 也不生效，jd 静默留在 demo。
+
 ## 2. 在开发机构建并传到节点
 
 在代码仓库根目录：
