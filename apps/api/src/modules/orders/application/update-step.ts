@@ -74,6 +74,7 @@ import {
   readFirstPaidAt,
   readOrder,
   upsertPending,
+  writePending,
 } from '../infra/pipeline-store.ts';
 import {
   isHandedOff,
@@ -239,7 +240,11 @@ export function createOrderUpdateStep(
           ...(log === undefined ? {} : { logger: log }),
         };
 
-  /** 整条报文不落 orders：只写待处理并告警；同键 open 记录只刷新 detected_at。 */
+  /**
+   * 整条报文不落 orders：只写待处理并告警；同键 open 记录只刷新 detected_at。被拒的行 content_hash 不变，回扫每轮
+   * 都会再拒一次：同键 open 的 raw_status、detail 都与本次相同才不打 P1 日志（B1-04zs），新开或任一列不同都打
+   * （BR-FUND-02）；事件照常发（同一 open 记录事件 ID 不变，总线去重）。
+   */
   async function reject(
     trx: Transaction<DB>,
     current: OrderRow,
@@ -248,7 +253,7 @@ export function createOrderUpdateStep(
     plan: OrderUpdatePlan,
   ): Promise<OrderPipelineResult> {
     const reason = plan.pending ?? 'ILLEGAL_TRANSITION';
-    const pendingId = await upsertPending(trx, {
+    const { id: pendingId, repeat } = await writePending(trx, {
       app_id: current.app_id,
       platform,
       sub_order_id: current.sub_order_id,
@@ -271,18 +276,20 @@ export function createOrderUpdateStep(
         outcome: 'rejected',
       });
     }
-    log?.error(
-      {
-        alert: ALERT_SYNC,
-        event: 'order_illegal_transition',
-        platform,
-        app_id: current.app_id,
-        reason,
-        rule: plan.rule,
-        outcome: 'rejected',
-      },
-      'order sync update rejected; order columns untouched',
-    );
+    if (!repeat) {
+      log?.error(
+        {
+          alert: ALERT_SYNC,
+          event: 'order_illegal_transition',
+          platform,
+          app_id: current.app_id,
+          reason,
+          rule: plan.rule,
+          outcome: 'rejected',
+        },
+        'order sync update rejected; order columns untouched',
+      );
+    }
     return { kind: 'pending', order_id: current.order_id, reason };
   }
 

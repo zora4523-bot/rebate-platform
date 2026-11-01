@@ -84,6 +84,13 @@ export function intervalSeconds(configured: unknown): number {
 /** B1-04zm: how long after now − days a round starts. */
 export const RESCAN_START_MARGIN_MS = 3_600_000;
 
+/**
+ * B1-04zs: how far before a round's start a cursor may sit and still be continued from. Fixed: it
+ * stays below RESCAN_START_MARGIN_MS whatever the days or cap, so at days = 90 a window starting
+ * here is still inside what the adapters accept.
+ */
+export const RESCAN_CURSOR_TOLERANCE_MS = 30 * 60_000;
+
 const DAY_MS = 86_400_000;
 const RESCAN_MAX_DAYS = 90;
 const RESCAN_MIN_INTERVAL_SECONDS = 60;
@@ -107,10 +114,14 @@ export type RescanStep =
  * B1-04zm: the next step from a rescan cursor (规划/02 §7.1). A round starts at
  * now − days + RESCAN_START_MARGIN_MS (one hour, every platform and days): the adapters judge
  * from ≥ now − 90 days in milliseconds when the job runs, which is always after it was sent. An
- * absent cursor or one older than that start begins there; less than one full window left before
- * the round's end ends the round, restarting there. Windows are always exactly capMs long.
- * ceilingMs is where the round ends when that is before now (min(now, increment cursor), D10-545);
- * absent → now. It moves only the end: the start always counts from nowMs.
+ * absent cursor, or one older than that start by more than RESCAN_CURSOR_TOLERANCE_MS, begins
+ * there; less than one full window left before the round's end ends the round, restarting there.
+ * Windows are always exactly capMs long. The start slides with now, so the cursor a rewind left
+ * there is older than it one tick later: the tolerance keeps that cursor, or the first window still
+ * queued would lose its compare-and-set to another rewind. It is under the one-hour margin, so the
+ * adapters do not reject the window. ceilingMs is where the round ends when that is before now
+ * (min(now, increment cursor), D10-545); absent → now. It moves only the end: the start always
+ * counts from nowMs.
  */
 export function rescanStep(
   cursorMs: number | null,
@@ -121,7 +132,10 @@ export function rescanStep(
 ): RescanStep {
   const roundStartMs = nowMs - days * DAY_MS + RESCAN_START_MARGIN_MS;
   const roundEndMs = Math.min(nowMs, ceilingMs ?? nowMs);
-  const startMs = cursorMs === null || cursorMs < roundStartMs ? roundStartMs : cursorMs;
+  const startMs =
+    cursorMs === null || cursorMs < roundStartMs - RESCAN_CURSOR_TOLERANCE_MS
+      ? roundStartMs
+      : cursorMs;
   if (startMs + capMs > roundEndMs) return { kind: 'round_end', restartMs: roundStartMs };
   return { kind: 'window', startMs, endMs: startMs + capMs };
 }
