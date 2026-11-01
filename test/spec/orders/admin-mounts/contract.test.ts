@@ -1,4 +1,4 @@
-// B1-10m contract and mounting rule test (claude-independent, SPEC_REF 9ab94dc0): the eight
+// B1-10m contract and mounting rule test (claude-independent, SPEC_REF 9ab94dc0): the five
 // operations no longer carry x-implementation: planned (contracts/openapi.yaml and the generated
 // lists follow), x-auth and x-error-codes stay as the contract tasks fixed them, the admin entry
 // serves each exactly once with the contract's request schema, the api and stream entries serve
@@ -18,11 +18,10 @@ const ROOT = new URL('../../../../', import.meta.url);
 
 const CLAIM_ITEM = '/admin/v1/claims/{claim_id}/items/{item_id}';
 const ORDER = '/admin/v1/orders/{order_id}';
-const IMPORTS = '/admin/v1/rights-imports';
 
 interface Spec {
   readonly operationId: string;
-  readonly method: 'get' | 'post';
+  readonly method: 'post';
   readonly path: string;
   readonly codes: readonly number[];
 }
@@ -57,24 +56,6 @@ const OPERATIONS: readonly Spec[] = [
     method: 'post',
     path: `${ORDER}/reassign`,
     codes: [10001, 10003, 10403, 20001, 20902],
-  },
-  {
-    operationId: 'adminCreateRightsImport',
-    method: 'post',
-    path: IMPORTS,
-    codes: [10001, 10003, 10403, 20001],
-  },
-  {
-    operationId: 'adminListRightsImports',
-    method: 'get',
-    path: IMPORTS,
-    codes: [10001, 10403, 20001],
-  },
-  {
-    operationId: 'adminGetRightsImport',
-    method: 'get',
-    path: `${IMPORTS}/{import_id}`,
-    codes: [10001, 10403, 20001],
   },
 ];
 

@@ -1,42 +1,28 @@
-// B1-10m rule-test kit (claude-independent, SPEC_REF 9ab94dc0): the eight operations mounted on the
+// B1-10m rule-test kit (claude-independent, SPEC_REF 9ab94dc0): the five operations mounted on the
 // admin entry — adminApproveClaimItem, adminRejectClaimItem, adminHoldOrder, adminUnholdOrder,
-// adminReassignOrder, adminCreateRightsImport, adminListRightsImports, adminGetRightsImport — over
-// the real settlement and risk ports. The use cases have their own rule tests (claims-review,
-// admin-assign, admin-hold, rights-import-task, rights-port); here only the mount and the wiring.
+// adminReassignOrder — over the real settlement and risk ports. The use cases have their own rule
+// tests (claims-review, admin-assign, admin-hold); here only the mount and the wiring.
 // Real pieces: createHttpApp('admin') (admin token, session and permission checks, the step-up gate
-// over Redis, contract validation, multipart, the started JOB_QUEUE with its sends recorded and
-// passed on), every port app.module injects, PostgreSQL as couli_app; for the import rows the
-// worker's real AppModule assembly and its registered order-sync handler.
-// Synthetic: orders, claims, members and union accounts seeded as the sync would have left them,
-// admin accounts with their sessions and totp step-up tokens issued the way the login and POST
-// /admin/v1/auth/step-up issue them, a one-shot fault in the entry's database handle (the audit
-// insert of one action) and, in imports.int.test.ts, the column templates (K-3: no real template
-// exists yet) and one memory store shared by the two entries of this process (production's is
-// one private bucket). No real user or merchant data.
+// over Redis, contract validation, the started JOB_QUEUE), every port app.module injects,
+// PostgreSQL as couli_app.
+// Synthetic: orders, claims, members, union accounts, promotion slots and clicks seeded as the sync
+// and the link flow would have left them, admin accounts with their sessions and totp step-up
+// tokens issued the way the login and POST /admin/v1/auth/step-up issue them, and a one-shot fault
+// in the entry's database handle (the audit insert of one action). No real user or merchant data.
 // Missing pieces fail as assertions: an unregistered admin route answers 404.
 // Plain SQL always names the schema. Only the container runner executes the integration tests.
 import { randomUUID } from 'node:crypto';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import type { DB } from '@couli/db';
 import { sql, type Insertable, type KyselyPlugin } from 'kysely';
-import { expect, vi } from 'vitest';
+import { expect } from 'vitest';
 import { createAdminTokens } from '../../../../apps/api/src/modules/admin/application/admin-tokens.ts';
 import {
   ADMIN_STEP_UP_NAMESPACE,
   createAdminStepUpTokens,
 } from '../../../../apps/api/src/modules/admin/application/permission-guard.ts';
 import { createAdminSessions } from '../../../../apps/api/src/modules/admin/infra/admin-sessions.ts';
-import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
-import { loadConfig } from '../../../../apps/api/src/modules/platform/config/index.ts';
-import { MemoryImportStore } from '../../../../apps/api/src/modules/platform/import-store/index.ts';
-import {
-  JOB_QUEUE,
-  REDIS,
-  type JobPayload,
-  type JobQueue,
-  type ReceivedJob,
-  type RedisHandle,
-} from '../../../../apps/api/src/modules/platform/index.ts';
+import { REDIS, type RedisHandle } from '../../../../apps/api/src/modules/platform/index.ts';
 import {
   createValidatorCompiler,
   type JsonSchema,
@@ -46,16 +32,12 @@ import {
   apiRequire,
   fixture,
   type Harness,
-  type HttpApp,
   type Request,
   type Response,
 } from '../../admin/auth/kit.ts';
 import { seedUser } from '../../identity/registration/kit.ts';
-import { memoryLogger } from '../../identity/sms-codes/kit.ts';
-import { MULTIPART, form, multipart, sheet, type Part } from '../rights-import-task/kit.ts';
 
 export { NOW };
-export const IMPORTS = '/admin/v1/rights-imports';
 export const IP = '127.0.0.1';
 export const DENIED = { reason: 'admin_permission_denied' };
 export const STEP_UP_REQUIRED = { tier: 'totp' };
@@ -65,6 +47,8 @@ export const ADMIN_NAME = '测试运营';
 export const PAID_AT = '2026-10-05T16:30:00.000Z';
 export const RECEIVED_AT = '2026-10-07T02:00:00.000Z';
 const CREATED = '2026-10-08T02:00:00.000Z';
+/** Inside BR-ATTR-13 ③'s window before PAID_AT (the orders' attr_at). */
+const CLICKED_AT = '2026-10-05T10:00:00.000Z';
 
 export const itemPath = (claimId: string, itemId: string, action: 'approve' | 'reject') =>
   `/admin/v1/claims/${claimId}/items/${itemId}/${action}`;
@@ -196,23 +180,12 @@ export interface Send {
   readonly stepUp?: string;
 }
 
-/** One send of the entry's JOB_QUEUE (recorded, then passed on to the real queue). */
-export interface Sent {
-  readonly queue: string;
-  readonly name: string;
-  readonly payload: JobPayload;
-}
-
-interface RawApp {
-  inject(request: Omit<Request, 'payload'> & { payload?: string | Buffer }): Promise<Response>;
-}
-
 /** Real admin entry on the harness's database through the fault plugin; its own app_id. */
 export async function setup(
   h: Harness,
   options: { grants?: readonly string[]; isSuper?: boolean } = {},
 ) {
-  // At most 32 characters: the import store's key takes contracts' AppId.
+  // At most 32 characters (contracts' AppId).
   const appId = `am_${randomUUID().replaceAll('-', '').slice(0, 24)}`;
   const fault: Fault = { action: null, tripped: 0 };
   const f = await fixture({ ...h, db: h.db.withPlugin(faultPlugin(fault)) });
@@ -282,42 +255,27 @@ export async function setup(
   const admin = await caller(options.grants ?? [], { isSuper: options.isSuper === true });
   const userId = await seedUser(h.db, appId);
 
-  const queue = f.app.get<JobQueue>(JOB_QUEUE);
-  const sent: Sent[] = [];
-  const send = queue.send.bind(queue);
-  vi.spyOn(queue, 'send').mockImplementation(async (name, job, payload, sendOptions) => {
-    const id = await send(name, job, payload, sendOptions);
-    sent.push({ queue: name, name: job, payload: structuredClone(payload) });
-    return id;
-  });
-
-  const raw = f.app as unknown as RawApp;
-  const call = (
-    method: 'GET' | 'POST',
-    url: string,
-    payload: string | Buffer | undefined,
-    headers: Record<string, string>,
-    options: Send,
-  ): Promise<Response> => {
+  const post = (url: string, body: unknown, options: Send = {}): Promise<Response> => {
     const who = options.caller === undefined ? admin : options.caller;
-    return raw.inject({
-      method,
+    return f.app.inject({
+      method: 'POST',
       url,
       remoteAddress: IP,
       headers: {
+        'content-type': 'application/json',
         ...(who === null ? {} : { authorization: `Bearer ${who.token}` }),
         ...(options.stepUp === undefined ? {} : { 'x-step-up-token': options.stepUp }),
-        ...headers,
       },
-      ...(payload === undefined ? {} : { payload }),
-    });
+      payload: JSON.stringify(body),
+    } satisfies Request);
   };
-  const post = (url: string, body: unknown, options: Send = {}) =>
-    call('POST', url, JSON.stringify(body), { 'content-type': 'application/json' }, options);
-  const get = (url: string, options: Send = {}) => call('GET', url, undefined, {}, options);
-  const upload = (parts: readonly Part[], options: Send = {}) =>
-    call('POST', IMPORTS, multipart(parts), { 'content-type': MULTIPART }, options);
 
+  /** The event names of the app's event_log, in insertion order. */
+  const events = async (): Promise<string[]> => {
+    const result = await sql<{ name: string }>`
+      SELECT name FROM app.event_log WHERE app_id = ${appId} ORDER BY id`.execute(h.db);
+    return result.rows.map((row) => row.name);
+  };
   const state = async () => ({
     orders: await h.db
       .selectFrom('orders')
@@ -355,55 +313,16 @@ export async function setup(
       .where('app_id', '=', appId)
       .orderBy('id')
       .execute(),
-    imports: await h.db
-      .selectFrom('rights_imports')
-      .selectAll()
-      .where('app_id', '=', appId)
-      .orderBy('id')
-      .execute(),
     pending: await h.db
       .selectFrom('order_sync_pending')
       .selectAll()
       .where('app_id', '=', appId)
       .orderBy('id')
       .execute(),
-    sends: sent.length,
+    events: await events(),
   });
-  /** The event names of the app's event_log, in insertion order. */
-  const events = async (): Promise<string[]> => {
-    const result = await sql<{ name: string }>`
-      SELECT name FROM app.event_log WHERE app_id = ${appId} ORDER BY id`.execute(h.db);
-    return result.rows.map((row) => row.name);
-  };
-  /** The one rights_import job of a task. */
-  const importJob = (importId: string): Sent => {
-    const jobs = sent.filter(
-      (job) =>
-        job.queue === 'order-sync' &&
-        job.name === 'rights_import' &&
-        job.payload['import_id'] === importId,
-    );
-    expect(jobs, `one rights_import job of ${importId}`).toHaveLength(1);
-    return jobs[0]!;
-  };
 
-  return {
-    h,
-    f,
-    appId,
-    fault,
-    admin,
-    userId,
-    sent,
-    caller,
-    stepUp,
-    post,
-    get,
-    upload,
-    state,
-    events,
-    importJob,
-  };
+  return { h, f, appId, fault, admin, userId, caller, stepUp, post, state, events };
 }
 export type Scenario = Awaited<ReturnType<typeof setup>>;
 
@@ -520,8 +439,24 @@ export async function seedRiskState(s: Scenario, userId: string, state: 'banned'
     .execute();
 }
 
+/** An open deletion request still in its cooling window; users.status stays as it is (BR-ID-27). */
+export async function seedCoolingDeletion(s: Scenario, userId: string) {
+  await s.h.db
+    .insertInto('deletion_requests')
+    .values({
+      id: randomUUID(),
+      app_id: s.appId,
+      user_id: userId,
+      status: 'cooling',
+      apply_at: CREATED,
+      cooling_until: '2026-10-23T02:00:00.000Z',
+      balance_snapshot_fen: 0n,
+    })
+    .execute();
+}
+
 /** A union account of the scenario's app. */
-export async function seedUnionAccount(s: Scenario, platform = 'taobao'): Promise<string> {
+async function seedUnionAccount(s: Scenario, platform: string): Promise<string> {
   const id = randomUUID();
   await s.h.db
     .insertInto('union_accounts')
@@ -537,53 +472,95 @@ export async function seedUnionAccount(s: Scenario, platform = 'taobao'): Promis
   return id;
 }
 
-/** A finished import task written directly (for the detail route). */
-export async function seedImport(s: Scenario): Promise<string> {
+/** An active promotion slot of the scene on its own union account; the slot's pid. */
+export async function seedPid(s: Scenario, platform: string, scene: string): Promise<string> {
   const id = randomUUID();
+  const pid = `synthetic-pid-${id}`;
   const now = s.f.clock.now();
   await s.h.db
-    .insertInto('rights_imports')
+    .insertInto('union_pids')
     .values({
       id,
       app_id: s.appId,
-      kind: 'rights',
-      platform: 'jd',
-      union_account_id: null,
-      time_basis: null,
-      from: null,
-      to: null,
-      file_path: `${s.appId}/${id}.xlsx`,
-      status: 'done',
-      total_rows: 0,
-      succeeded_rows: 0,
-      failed_rows: 0,
-      skipped_rows: 0,
-      duplicate_rows: 0,
-      created_by: s.admin.id,
+      platform,
+      union_account_id: await seedUnionAccount(s, platform),
+      site_id: platform === 'taobao' ? `synthetic-site-${id}` : null,
+      pid,
+      pid_scene: scene,
+      status: 'active',
+      hjy_ignore_confirmed_at: now,
+      hjy_ignore_evidence_path: 'synthetic/evidence',
       created_at: now,
-      finished_at: now,
+      updated_at: now,
     })
     .execute();
-  return id;
+  return pid;
+}
+
+/** A link of `order`'s product and the user's successful open of it (BR-ATTR-14); its link_id. */
+export async function seedClick(
+  s: Scenario,
+  order: Order,
+  userId: string,
+  scene: string,
+): Promise<string> {
+  const linkId = randomUUID();
+  await s.h.db
+    .insertInto('links')
+    .values({
+      link_id: linkId,
+      app_id: s.appId,
+      user_id: userId,
+      platform: order.platform,
+      product_key: order.product_key,
+      scene: 'search',
+      pid_scene: scene,
+      expire_at: CREATED,
+      created_at: CLICKED_AT,
+      updated_at: CLICKED_AT,
+    })
+    .execute();
+  await s.h.db
+    .insertInto('link_logs')
+    .values({
+      app_id: s.appId,
+      link_id: linkId,
+      event: 'open',
+      user_id: userId,
+      platform: order.platform,
+      product_key: order.product_key,
+      scene: 'search',
+      pid_scene: scene,
+      result_code: 0,
+      created_at: CLICKED_AT,
+    })
+    .execute();
+  return linkId;
+}
+
+/** The commission snapshot of one order: its commission_splits and commission_split_totals rows. */
+export async function snapshotOf(s: Scenario, orderId: string) {
+  const splits = await s.h.db
+    .selectFrom('commission_splits')
+    .selectAll()
+    .where('app_id', '=', s.appId)
+    .where('order_id', '=', orderId)
+    .execute();
+  const totals = await s.h.db
+    .selectFrom('commission_split_totals')
+    .selectAll()
+    .where('app_id', '=', s.appId)
+    .where('order_id', '=', orderId)
+    .execute();
+  return { splits, totals };
 }
 
 // ---------------------------------------------------------------------------------------------
-// One valid request of each operation (the channel import is a second case of the same route).
+// One valid request of each operation.
 
-export type Action =
-  'approve' | 'reject' | 'hold' | 'unhold' | 'reassign' | 'rights' | 'channel' | 'list' | 'detail';
+export type Action = 'approve' | 'reject' | 'hold' | 'unhold' | 'reassign';
 
-export const ACTIONS: readonly Action[] = [
-  'approve',
-  'reject',
-  'hold',
-  'unhold',
-  'reassign',
-  'rights',
-  'channel',
-  'list',
-  'detail',
-];
+export const ACTIONS: readonly Action[] = ['approve', 'reject', 'hold', 'unhold', 'reassign'];
 
 /** contracts/openapi.yaml, specs/permissions.yaml: what each action needs, and no more. */
 export const GRANTS: Readonly<Record<Action, readonly string[]>> = {
@@ -592,13 +569,9 @@ export const GRANTS: Readonly<Record<Action, readonly string[]>> = {
   hold: ['order.hold'],
   unhold: ['order.hold'],
   reassign: ['order.assign'],
-  rights: ['order.claim'],
-  channel: ['order.claim', 'risk.blocklist'],
-  list: ['order.claim'],
-  detail: ['order.claim'],
 };
 
-export const NEEDS_STEP_UP: ReadonlySet<Action> = new Set<Action>(['reassign', 'channel']);
+export const NEEDS_STEP_UP: ReadonlySet<Action> = new Set<Action>(['reassign']);
 
 /** The success envelope of each action. */
 export const ANSWER: Readonly<Record<Action, string>> = {
@@ -607,10 +580,6 @@ export const ANSWER: Readonly<Record<Action, string>> = {
   hold: 'AdminOrderDetailResponse',
   unhold: 'AdminOrderDetailResponse',
   reassign: 'AdminOrderDetailResponse',
-  rights: 'AdminRightsImportCreateResponse',
-  channel: 'AdminRightsImportCreateResponse',
-  list: 'AdminRightsImportPageResponse',
-  detail: 'AdminRightsImportDetailResponse',
 };
 
 /** The rows one action needs, and its request. */
@@ -646,119 +615,10 @@ export async function arrange(
       };
       return (options) => s.post(orderPath(order.order_id, 'reassign'), body, options);
     }
-    case 'rights': {
-      const parts = form({ kind: 'rights', platform: 'jd' }, sheet(['succeeded']));
-      return (options) => s.upload(parts, options);
-    }
-    case 'channel': {
-      const accountId = await seedUnionAccount(s);
-      const fields = { kind: 'channel', platform: 'taobao', union_account_id: accountId };
-      const parts = form(fields, sheet(['succeeded']));
-      return (options) => s.upload(parts, options);
-    }
-    case 'list':
-      return (options) => s.get(`${IMPORTS}?page=1&page_size=20`, options);
-    case 'detail': {
-      const importId = await seedImport(s);
-      return (options) => s.get(`${IMPORTS}/${importId}`, options);
-    }
   }
 }
 
 /** The options of a request the action accepts from the scenario's own account. */
 export async function allowed(s: Scenario, action: Action): Promise<Send> {
   return NEEDS_STEP_UP.has(action) ? { stepUp: await s.stepUp(s.admin) } : {};
-}
-
-// ---------------------------------------------------------------------------------------------
-// The worker's real assembly, for the rights_import job the admin entry sent.
-
-type Handle = (job: ReceivedJob) => Promise<void>;
-
-interface Context {
-  close(): Promise<void>;
-}
-
-/**
- * The worker entry's AppModule on the harness's database and keyring, with an in-memory queue
- * runtime (never polled; `run` hands a recorded send to the handler the worker registered).
- */
-export async function worker(h: Harness) {
-  // URL imports keep decorated HTTP controllers out of the spec project's TS compilation.
-  const { AppModule } = (await import(
-    new URL('../../../../apps/api/src/app.module.ts', import.meta.url).href
-  )) as { AppModule: { forEntry(options: object): unknown } };
-  const { PlatformModule } = (await import(
-    new URL('../../../../apps/api/src/modules/platform/index.ts', import.meta.url).href
-  )) as { PlatformModule: { forRoot(options: object): { providers?: unknown[] } } };
-  const { NestFactory } = (await import(
-    pathToFileURL(apiRequire.resolve('@nestjs/core')).href
-  )) as {
-    NestFactory: { createApplicationContext(module: unknown, options: object): Promise<Context> };
-  };
-  const queue = {
-    send: vi.fn(async () => 'fixture'),
-    register: vi.fn<(name: string, handler: Handle) => void>(),
-    start: vi.fn(async () => undefined),
-    stop: vi.fn(async () => undefined),
-  };
-  const original = PlatformModule.forRoot.bind(PlatformModule);
-  const spy = vi.spyOn(PlatformModule, 'forRoot').mockImplementation((options) => {
-    const module = original(options);
-    return {
-      ...module,
-      providers: (module.providers ?? []).map((provider) =>
-        typeof provider === 'object' &&
-        provider !== null &&
-        'provide' in provider &&
-        provider.provide === JOB_QUEUE
-          ? { provide: JOB_QUEUE, useValue: queue }
-          : provider,
-      ),
-    };
-  });
-  try {
-    const context = await NestFactory.createApplicationContext(
-      AppModule.forEntry({
-        entry: 'worker',
-        config: loadConfig(h.env),
-        clock: new FixedClock(NOW),
-        logger: memoryLogger().logger,
-        dbHandles: { db: h.db, dbRead: null, close: async () => undefined },
-      }),
-      { logger: false, abortOnError: false },
-    );
-    h.apps.push(context as unknown as HttpApp);
-  } finally {
-    spy.mockRestore();
-  }
-  const handle = queue.register.mock.calls.find(([name]) => name === 'order-sync')?.[1];
-  expect(typeof handle, 'order-sync handler registered by the worker').toBe('function');
-  return {
-    run: (send: Sent) =>
-      handle!(
-        Object.freeze({
-          id: randomUUID(),
-          queue: send.queue,
-          name: send.name,
-          payload: structuredClone(send.payload),
-          attempt: 1,
-        }),
-      ),
-  };
-}
-
-/**
- * Both entries' memory stores read and write one set of files: each entry of this process builds
- * its own stand-in (production's two processes share one private bucket).
- */
-export function shareImportStore(): void {
-  const files = new Map<string, Uint8Array>();
-  vi.spyOn(MemoryImportStore.prototype, 'put').mockImplementation(async (input) => {
-    files.set(input.key, new Uint8Array(input.bytes));
-  });
-  vi.spyOn(MemoryImportStore.prototype, 'get').mockImplementation(async (key) => {
-    const stored = files.get(key);
-    return stored === undefined ? null : new Uint8Array(stored);
-  });
 }

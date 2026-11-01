@@ -3,9 +3,12 @@
 // commission's snapshot port, the source backfill, risk's and identity's target readers and the
 // event bus; hold / unhold change the hold through settlement's rebate command (R11).
 // Expected values by hand from contracts/openapi.yaml, 08 BR-FUND-01 R3 / R3b / R4 / R11, BR-ATTR-20,
-// BR-ATTR-31. Top-level it() only (规划/11 §4.3).
+// BR-ATTR-31. The order's slot scene reaches the backfill and the snapshot from union_pids, and only
+// identity's deletion stage knows a cooling target (BR-CALC-19, BR-ATTR-15, BR-ATTR-31 细则).
+// Top-level it() only (规划/11 §4.3).
 import { expect, it } from 'vitest';
 import { useHarness } from '../../admin/auth/kit.ts';
+import { seedVersion, version } from '../../commission/snapshot/fixtures.ts';
 import { seedUser } from '../../identity/registration/kit.ts';
 import {
   ADMIN_NAME,
@@ -21,9 +24,14 @@ import {
   orderPath,
   refused,
   seedClaim,
+  seedClick,
+  seedCoolingDeletion,
   seedOrder,
+  seedPid,
   seedRiskState,
   setup,
+  snapshotOf,
+  type Order,
   type Scenario,
 } from './kit.ts';
 
@@ -192,6 +200,15 @@ it.each([
     (s: Scenario) => seedUser(s.h.db, s.appId, { status: 'deleted' }),
     'target_deleted',
   ],
+  [
+    '在注销冷静期（deletion_requests.status=cooling、users.status=normal，identity 的真实注销阶段读取）',
+    async (s: Scenario) => {
+      const userId = await seedUser(s.h.db, s.appId);
+      await seedCoolingDeletion(s, userId);
+      return userId;
+    },
+    'target_deleting',
+  ],
 ] as const)(
   '[AC-B1-10m#16] 指定归属的目标用户%s → 20001 [user_id] 与 data.reason，订单不动，审计记被拒',
   async (_label, target, reason) => {
@@ -297,3 +314,110 @@ it('[AC-B1-10m#21] hold 的起始状态不符（UNATTRIBUTED）→ 20902 order�
   );
   expect(await orderNow(s, order.order_id)).toEqual(order);
 }, 120_000);
+
+/** The order's attribution through the real entry: a claim approval or an assignment. */
+async function attribute(s: Scenario, action: 'approve' | 'reassign', order: Order) {
+  if (action === 'reassign') {
+    return accepted(await assign(s, order.order_id, s.userId), ANSWER.reassign);
+  }
+  const { claim, item } = await seedClaim(s, order);
+  const response = await s.post(itemPath(claim.id, item.id, 'approve'), {
+    expected_row_version: item.row_version,
+    reason: REASON,
+  });
+  return accepted(response, ANSWER.approve);
+}
+
+it.each(['approve', 'reassign'] as const)(
+  '[AC-B1-10m#27] %s 淘礼金推广位的订单：真实快照 rebate_mode=none、用户份额 0、红包面额与平台预估利润记空，写 TLJ_FACE_VALUE_UNMATCHED 待处理（BR-CALC-19，不按普通返利算）',
+  async (action) => {
+    const s = await setup(h, { grants: GRANTS[action] });
+    await seedVersion(s.h.db, s.appId, version());
+    const pid = await seedPid(s, 'taobao', 'taolijin');
+    const order = await seedOrder(s, { platform: 'taobao', pid });
+    await attribute(s, action, order);
+    expect(await orderNow(s, order.order_id)).toMatchObject({
+      user_id: s.userId,
+      locked: true,
+      rebate_status: 'ESTIMATED',
+    });
+    expect((await s.state()).pending).toEqual([
+      expect.objectContaining({ order_id: order.order_id, reason: 'TLJ_FACE_VALUE_UNMATCHED' }),
+    ]);
+    const { splits, totals } = await snapshotOf(s, order.order_id);
+    expect(splits).toEqual([expect.objectContaining({ rebate_mode: 'none', raw_n_fen: 1200n })]);
+    expect(totals).toEqual([
+      expect.objectContaining({
+        n_total_fen: 1200n,
+        user_share_total_fen: 0n,
+        tlj_redpacket_fen: null,
+        platform_est_profit_fen: null,
+      }),
+    ]);
+  },
+  120_000,
+);
+
+it.each(['approve', 'reassign'] as const)(
+  '[AC-B1-10m#28] %s 普通推广位的同样订单：快照 rebate_mode 为空、按规则分用户份额（1200 × 50%%），没有淘礼金待处理',
+  async (action) => {
+    const s = await setup(h, { grants: GRANTS[action] });
+    await seedVersion(s.h.db, s.appId, version());
+    const pid = await seedPid(s, 'taobao', 'self_buy');
+    const order = await seedOrder(s, { platform: 'taobao', pid });
+    await attribute(s, action, order);
+    expect((await s.state()).pending).toEqual([]);
+    const { splits, totals } = await snapshotOf(s, order.order_id);
+    expect(splits).toEqual([expect.objectContaining({ rebate_mode: null, raw_n_fen: 1200n })]);
+    expect(totals).toEqual([
+      expect.objectContaining({
+        n_total_fen: 1200n,
+        user_share_total_fen: 600n,
+        tlj_redpacket_fen: 0n,
+        platform_est_profit_fen: 600n,
+      }),
+    ]);
+  },
+  120_000,
+);
+
+it.each(['approve', 'reassign'] as const)(
+  '[AC-B1-10m#29] %s：link_logs 有同用户同商品同推广位场景的点击 → 来源回填命中 product，link_id 与 source_scene 取自点击，不是 none（BR-ATTR-15）',
+  async (action) => {
+    const s = await setup(h, { grants: GRANTS[action] });
+    const pid = await seedPid(s, 'jd', 'self_buy');
+    const order = await seedOrder(s, { pid });
+    const linkId = await seedClick(s, order, s.userId, 'self_buy');
+    await attribute(s, action, order);
+    expect(await orderNow(s, order.order_id)).toMatchObject({
+      user_id: s.userId,
+      source_match: 'product',
+      link_id: linkId,
+      source_scene: 'search',
+    });
+  },
+  120_000,
+);
+
+it.each([
+  ['expected_locked=true 打未锁单', (s: Scenario) => seedOrder(s), true],
+  [
+    '已归属他人的单',
+    async (s: Scenario) => attributedOrder(s, { user_id: await seedUser(s.h.db, s.appId) }),
+    false,
+  ],
+] as const)(
+  '[AC-B1-10m#30] 指定归属复查不过（%s）→ 20902 order_attribution，订单不变，不写指派记录与审计',
+  async (_label, seed, locked) => {
+    const s = await setup(h, { grants: GRANTS.reassign });
+    const order = await seed(s);
+    await refused(await assign(s, order.order_id, s.userId, locked), 20902, {
+      resource: 'order_attribution',
+    });
+    expect(await orderNow(s, order.order_id)).toEqual(order);
+    const after = await s.state();
+    expect(after.assignments).toEqual([]);
+    expect(after.audits).toEqual([]);
+  },
+  120_000,
+);

@@ -1,7 +1,6 @@
-// B1-10m: the permission points and step-up tiers of the eight operations through the real admin
-// entry (contracts/openapi.yaml, specs/permissions.yaml): adminApproveClaimItem / Reject and the
-// imports order.claim, hold / unhold order.hold without step-up, reassign order.assign with a totp
-// token; a channel import also needs risk.blocklist and a totp token, rights and punish do not.
+// B1-10m: the permission points and step-up tiers of the five operations through the real admin
+// entry (contracts/openapi.yaml, specs/permissions.yaml): adminApproveClaimItem / Reject
+// order.claim, hold / unhold order.hold without step-up, reassign order.assign with a totp token.
 // Top-level it() only (规划/11 §4.3).
 import { expect, it } from 'vitest';
 import { useHarness } from '../../admin/auth/kit.ts';
@@ -39,11 +38,6 @@ const WRONG_POINTS: readonly (readonly [Action, readonly string[]])[] = [
   ['hold', ['order.view', 'order.claim', 'order.assign']],
   ['unhold', ['order.view', 'order.claim', 'order.assign']],
   ['reassign', ['order.view', 'order.claim', 'order.hold']],
-  ['rights', ['order.view', 'order.hold', 'risk.blocklist']],
-  ['channel', ['order.view', 'order.hold', 'risk.blocklist']],
-  ['channel', ['order.view', 'order.claim']],
-  ['list', ['order.view', 'order.hold', 'user.lookup']],
-  ['detail', ['order.view', 'order.hold', 'user.lookup']],
 ];
 
 it.each(WRONG_POINTS)(
@@ -58,7 +52,7 @@ it.each(WRONG_POINTS)(
   120_000,
 );
 
-it.each(ACTIONS.filter((action) => action !== 'reassign' && action !== 'channel'))(
+it.each(ACTIONS.filter((action) => action !== 'reassign'))(
   '[AC-B1-10m#5] %s 只持所需权限点、不带动态码 → 放行（无 step-up）',
   async (action) => {
     const s = await setup(h, { grants: GRANTS[action] });
@@ -68,21 +62,15 @@ it.each(ACTIONS.filter((action) => action !== 'reassign' && action !== 'channel'
   120_000,
 );
 
-it.each(['reassign', 'channel'] as const)(
-  '[AC-B1-10m#6] %s 持所需权限点、动态码档 token 有效 → 放行',
-  async (action) => {
-    const s = await setup(h, { grants: GRANTS[action] });
-    const act = await arrange(s, action);
-    await accepted(await act(await allowed(s, action)), ANSWER[action]);
-  },
-  120_000,
-);
+it('[AC-B1-10m#6] reassign 持所需权限点、动态码档 token 有效 → 放行', async () => {
+  const s = await setup(h, { grants: GRANTS.reassign });
+  const act = await arrange(s, 'reassign');
+  await accepted(await act(await allowed(s, 'reassign')), ANSWER.reassign);
+}, 120_000);
 
 it.each([
   ['reassign', '没带 X-Step-Up-Token', undefined],
   ['reassign', 'X-Step-Up-Token 无效', 'not-an-issued-step-up-token'],
-  ['channel', '没带 X-Step-Up-Token', undefined],
-  ['channel', 'X-Step-Up-Token 无效', 'not-an-issued-step-up-token'],
 ] as const)(
   '[AC-B1-10m#7] %s %s → 10003 tier=totp，什么都不写',
   async (action, _label, token) => {

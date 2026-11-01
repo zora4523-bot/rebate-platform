@@ -24,7 +24,6 @@ const AUDITED: readonly (readonly [Action, string])[] = [
   ['hold', 'order_hold'],
   ['unhold', 'order_unhold'],
   ['reassign', 'order_assign'],
-  ['rights', 'rights_import_create'],
 ];
 
 it.each(AUDITED)(
