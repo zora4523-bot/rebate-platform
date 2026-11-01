@@ -15212,6 +15212,99 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "listAdminPayRefunds": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        },
+        "status": {
+          "type": "string",
+          "description": "Refund status (contracts/enums/pay.yaml pay_refund_status; BR-PAY-06 ①).",
+          "enum": [
+            "PROCESSING",
+            "SUCCESS",
+            "FAILED"
+          ]
+        },
+        "target_type": {
+          "type": "string",
+          "description": "What a refund pays back (contracts/enums/pay.yaml pay_refund_target_type; BR-PAY-06 ①).",
+          "enum": [
+            "pay_order",
+            "pay_anomaly"
+          ]
+        },
+        "reason_code": {
+          "type": "string",
+          "description": "Refund reason code (contracts/enums/pay.yaml pay_refund_reason; BR-PAY-06); names from admin_dict.pay_refund_reason.",
+          "enum": [
+            "USER_REQUEST",
+            "DUPLICATE_PAYMENT",
+            "ANOMALY_RECEIPT",
+            "RECON_DIFF",
+            "OTHER"
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "getAdminPayRefund": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pay_refund_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "pay_refund_id"
+      ],
+      "additionalProperties": false
+    }
+  },
   "listAdminPayAnomalies": {
     "headers": {
       "type": "object",

@@ -1,7 +1,8 @@
 // B2-15f: the console's pay reads (contract listAdminPayOrders, getAdminPayOrder,
 // listAdminPayAnomalies; 08 BR-PAY-05 ③④, BR-PAY-06 ③, BR-PAY-08 ④; 规划/04 §6.6, §11.2); B2-15j
 // adds listAdminPayReconDiffs (BR-PAY-07: the R4 recon diffs, read through ledger's index.ts
-// getReconDiffs, never from recon_diffs directly: ledger is that table's only owner). The
+// getReconDiffs, never from recon_diffs directly: ledger is that table's only owner); B2-15o adds
+// listAdminPayRefunds and getAdminPayRefund (BR-PAY-06 ①, payment's own pay_refunds). The
 // permission check (pay.view, read only, no step-up) is the controller's, through platform's
 // AdminOperationGuard; appId is always the guard's actor, never a header or query field. Nothing
 // is written or audited. Every answer is built field by field from the contract's schema: no
@@ -25,6 +26,7 @@ import {
   type PayOrderFilter,
 } from '../infra/pay-admin-store.ts';
 import { findOrderById, type PayOrderRow } from '../infra/pay-order-store.ts';
+import { findRefundById, type PayRefundsTable } from '../infra/pay-refund-store.ts';
 import { payRefundView } from './pay-refunds.ts';
 
 /** A 20001 with data.fields (the created range; pay_order_id for an unknown or foreign order). */
@@ -178,6 +180,22 @@ function createdRange(query: PayOrderListQuery): { from?: string; to?: string } 
   };
 }
 
+/** The app's refunds matching the list's filters, combined with AND (enums checked by the route). */
+function filteredRefunds(db: Kysely<DB>, appId: string, query: PayRefundListQuery) {
+  let refunds = db
+    .$extendTables<{ pay_refunds: PayRefundsTable }>()
+    .selectFrom('pay_refunds')
+    .where('app_id', '=', appId);
+  if (query.status !== undefined) refunds = refunds.where('status', '=', query.status);
+  if (query.target_type !== undefined) {
+    refunds = refunds.where('target_type', '=', query.target_type);
+  }
+  if (query.reason_code !== undefined) {
+    refunds = refunds.where('reason_code', '=', query.reason_code);
+  }
+  return refunds;
+}
+
 export class PayAdminReads {
   readonly #db: Kysely<DB> | null;
 
@@ -287,16 +305,36 @@ export class PayAdminReads {
   }
 
   /** B2-15o: GET /admin/v1/pay-refunds. */
-  listRefunds(appId: string, query: PayRefundListQuery): Promise<Schema<'AdminPayRefundPage'>> {
-    void appId;
-    void query;
-    throw new Error('NotImplemented: listRefunds');
+  async listRefunds(
+    appId: string,
+    query: PayRefundListQuery,
+  ): Promise<Schema<'AdminPayRefundPage'>> {
+    const page = query.page ?? DEFAULT_PAGE;
+    const pageSize = query.page_size ?? DEFAULT_PAGE_SIZE;
+    const filtered = filteredRefunds(this.#handle(), appId, query);
+    const count = await filtered
+      .select((eb) => eb.fn.countAll<bigint | string>().as('total'))
+      .executeTakeFirst();
+    const total = Number(count?.total ?? 0);
+    const offset = (page - 1) * pageSize;
+    const rows =
+      offset >= total
+        ? []
+        : await filtered
+            .selectAll()
+            .orderBy('created_at', 'desc')
+            .orderBy('id', 'desc')
+            .offset(offset)
+            .limit(pageSize)
+            .execute();
+    return { items: rows.map(payRefundView), page, page_size: pageSize, total };
   }
 
-  /** B2-15o: GET /admin/v1/pay-refunds/{pay_refund_id}. */
-  refundDetail(appId: string, payRefundId: string): Promise<Schema<'AdminPayRefund'>> {
-    void appId;
-    void payRefundId;
-    throw new Error('NotImplemented: refundDetail');
+  /** B2-15o: GET /admin/v1/pay-refunds/{pay_refund_id}. An unknown or foreign id is 20001. */
+  async refundDetail(appId: string, payRefundId: string): Promise<Schema<'AdminPayRefund'>> {
+    if (!isUuid(payRefundId)) throw new PayAdminFieldsError(['pay_refund_id']);
+    const refund = await findRefundById(this.#handle(), appId, payRefundId.toLowerCase());
+    if (refund === undefined) throw new PayAdminFieldsError(['pay_refund_id']);
+    return payRefundView(refund);
   }
 }

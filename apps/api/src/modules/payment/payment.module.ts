@@ -310,6 +310,8 @@ export class PaymentModule {
    * database, the queue or the event bus they fail closed (50001).
    * B2-15j: the R4 recon diff list (GET /admin/v1/pay-recon-diffs) on the same reads, through
    * ledger's getReconDiffs.
+   * B2-15o: the refund list and detail (GET /admin/v1/pay-refunds…) on the same reads, mounted on
+   * AdminPayRefundsController.
    */
   static forAdmin(options: PaymentAdminOptions): DynamicModule {
     return {
