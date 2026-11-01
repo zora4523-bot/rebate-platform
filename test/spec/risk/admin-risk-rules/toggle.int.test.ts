@@ -86,7 +86,10 @@ for (const change of CHANGES) {
       expect(data).toMatchObject({ rule_id: row.rule_id, status: targetOf(change), version: 7 });
       const audits = await ruleAudits(s);
       expect(audits).toHaveLength(1);
-      if (reason !== undefined) expect(JSON.stringify(audits[0])).toContain(reason);
+      // Only the text fields of the record: its id is a bigint, which JSON.stringify refuses.
+      const audit = audits[0]!;
+      const text = JSON.stringify([audit.target, audit.before, audit.after]);
+      if (reason !== undefined) expect(text).toContain(reason);
     },
   );
 

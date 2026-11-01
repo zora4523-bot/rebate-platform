@@ -63,21 +63,23 @@ async function held(appIds: readonly string[], ruleId: string) {
   return { pid: await ready.promise, release: () => release.resolve(), done };
 }
 
-/** Waits until `count` sessions wait on the holder's lock with a statement on risk_rules. */
-async function queued(pid: number, count: number) {
+/**
+ * Waits until `count` sessions of this database wait on a PG lock in a statement on risk_rules.
+ * Two calls on one row: only the first waits on the holder directly, the second queues behind the
+ * first, so the waiters are counted whoever blocks them (as test/spec/notification/settings does).
+ */
+async function queued(count: number) {
   const deadline = performance.now() + 2500;
   let waiting = 0;
   do {
-    const result = await sql<{
-      query: string;
-    }>`SELECT query FROM pg_stat_activity WHERE ${pid} = ANY(pg_blocking_pids(pid)) AND wait_event_type = 'Lock'`.execute(
-      h.db,
-    );
-    waiting = result.rows.filter((row) => /risk_rules/i.test(row.query)).length;
+    const result = await sql<{ n: number }>`SELECT count(*)::int AS n FROM pg_stat_activity
+      WHERE datname = current_database() AND pid <> pg_backend_pid()
+        AND wait_event_type = 'Lock' AND query ILIKE '%risk_rules%'`.execute(h.db);
+    waiting = result.rows[0]!.n;
     if (waiting >= count) break;
     await new Promise<void>((resolve) => setTimeout(resolve, 20));
   } while (performance.now() < deadline);
-  expect(waiting, 'both calls reach a rule row and wait on its lock').toBeGreaterThanOrEqual(count);
+  expect(waiting, 'both calls reach a rule row and wait on a lock').toBeGreaterThanOrEqual(count);
 }
 
 it('[AC-B1-03zg#35] 两个 app 登记同名规则时，列表各只看到自己的那几行', async () => {
@@ -210,7 +212,7 @@ it('[AC-B1-03zg#39] 本 app 两次 enable 同版本并发，恰一次生效；�
   try {
     calls.push(s.change('enable', PHONE, { expected_version: 4 }, { token: first }));
     calls.push(s.change('enable', PHONE, { expected_version: 4 }, { token: second }));
-    await queued(lock.pid, 2);
+    await queued(2);
   } finally {
     lock.release();
     await Promise.allSettled([lock.done, ...calls]);
@@ -248,7 +250,7 @@ it('[AC-B1-03zg#40] 两个 app 各自的管理员同时 enable 同名同版本�
   try {
     calls.push(s.change('enable', DEVICE, { expected_version: 4 }, { token: mine }));
     calls.push(other.change('enable', DEVICE, { expected_version: 4 }, { token: theirs }));
-    await queued(lock.pid, 2);
+    await queued(2);
   } finally {
     lock.release();
     await Promise.allSettled([lock.done, ...calls]);

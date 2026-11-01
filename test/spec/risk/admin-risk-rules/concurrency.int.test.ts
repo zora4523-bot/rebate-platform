@@ -47,23 +47,23 @@ async function held(s: Scenario, ruleId: string) {
   return { pid: await ready.promise, release: () => release.resolve(), done };
 }
 
-/** Waits until `count` sessions wait on the holder's lock with a statement on risk_rules. */
-async function queued(pid: number, count: number) {
+/**
+ * Waits until `count` sessions of this database wait on a PG lock in a statement on risk_rules.
+ * Under a row lock only the first call waits on the holder directly; the second queues behind the
+ * first, so the waiters are counted whoever blocks them (as test/spec/notification/settings does).
+ */
+async function queued(count: number) {
   const deadline = performance.now() + 2500;
   let waiting = 0;
   do {
-    const result = await sql<{
-      query: string;
-    }>`SELECT query FROM pg_stat_activity WHERE ${pid} = ANY(pg_blocking_pids(pid)) AND wait_event_type = 'Lock'`.execute(
-      h.db,
-    );
-    waiting = result.rows.filter((row) => /risk_rules/i.test(row.query)).length;
+    const result = await sql<{ n: number }>`SELECT count(*)::int AS n FROM pg_stat_activity
+      WHERE datname = current_database() AND pid <> pg_backend_pid()
+        AND wait_event_type = 'Lock' AND query ILIKE '%risk_rules%'`.execute(h.db);
+    waiting = result.rows[0]!.n;
     if (waiting >= count) break;
     await new Promise<void>((resolve) => setTimeout(resolve, 20));
   } while (performance.now() < deadline);
-  expect(waiting, 'both calls reach the rule row and wait on its lock').toBeGreaterThanOrEqual(
-    count,
-  );
+  expect(waiting, 'both calls reach the rule row and wait on a lock').toBeGreaterThanOrEqual(count);
 }
 
 it('[AC-B1-03zg#33] 两次 enable 同版本并发，恰一次生效：一个 200 一个 20902，version + 1，一条审计', async () => {
@@ -76,7 +76,7 @@ it('[AC-B1-03zg#33] 两次 enable 同版本并发，恰一次生效：一个 200
   try {
     calls.push(s.change('enable', row.rule_id, { expected_version: 4 }, { token: first }));
     calls.push(s.change('enable', row.rule_id, { expected_version: 4 }, { token: second }));
-    await queued(lock.pid, 2);
+    await queued(2);
   } finally {
     lock.release();
     await Promise.allSettled([lock.done, ...calls]);
