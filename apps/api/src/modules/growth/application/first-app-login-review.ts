@@ -22,7 +22,10 @@
 //   4. 1 row → appendRelationChange(from = old parent, to = null, source risk_same_device,
 //      operator system, at = the same instant) and risk's hit writer (rule inv_09_same_device,
 //      dimension device_id_hash, value = this login's device_id_hash), both in the same
-//      transaction. Any failure rejects and the caller rolls the whole login back.
+//      transaction. Any failure rejects and the caller rolls the whole login back. The hit writer
+//      is told decided_in_force: true — the judgement of 1a is the one status read of this login
+//      (money r1 S1), so a cache expiry after 1a can never unbind without the hit to appeal; growth
+//      keeps no status or memo of its own.
 // The login itself still succeeds on a hit. Nobody is notified and no job is enqueued (BR-INV-09).
 // Nothing is logged here: no device hash or phone ever leaves through a log line.
 //
@@ -74,6 +77,8 @@ export interface FirstAppLoginReviewDeps {
         readonly rule_id: 'inv_09_same_device';
         readonly dimension: 'device_id_hash';
         readonly value_hmac: string;
+        /** This judgement already found the rule in force (1a); the writer does not read again. */
+        readonly decided_in_force: true;
       },
     ): Promise<void>;
   };
@@ -165,6 +170,7 @@ export function createFirstAppLoginReview(deps: FirstAppLoginReviewDeps): Landin
         rule_id: RULE_ID,
         dimension: 'device_id_hash',
         value_hmac: deviceIdHash,
+        decided_in_force: true,
       });
     },
   };

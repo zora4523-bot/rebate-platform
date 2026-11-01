@@ -26,7 +26,9 @@
 //      rule status port deviceLimitInForce (B1-03zh, BR-ID-36 细则「规则清单的启停」, read through
 //      the caller's transaction) says whether DEVICE_REGISTER_LIMIT of the app takes part in
 //      judgements: false → no count and no limit (the registration goes on, nothing to record);
-//      no port → in force;
+//      no port → in force. That is the one status read of this judgement: a 44001
+//      device_register_limit is only ever answered on the rule in force, and its hit is recorded
+//      after the rollback without a second read (risk-ports recordDeviceLimit, money r1 S1);
 //   6. the users row: id UUIDv7 from the Clock, phone ciphertext and blind index, default nickname
 //      and avatar, level, register_method, registered_channel (X-Channel), an invite code (at most
 //      5 candidates, each filtered by the sensitive words, then inserted after a savepoint; a hit

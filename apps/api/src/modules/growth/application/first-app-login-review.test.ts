@@ -128,6 +128,7 @@ it('[AC-B1-11f#1] hit: lock, conditional update of the three columns, relation l
     rule_id: 'inv_09_same_device',
     dimension: 'device_id_hash',
     value_hmac: HASH,
+    decided_in_force: true,
   });
 });
 
@@ -200,6 +201,17 @@ it('[AC-B1-03zh#11][BR-ID-36][BR-INV-09] inv_09_same_device 生效：照旧解�
     'insert into "app"."r',
   ]);
   expect(f.record).toHaveBeenCalledTimes(1);
+});
+
+it('[AC-B1-03zh#21][BR-ID-36][BR-INV-09] 一次判定只读一次规则状态：解除归属后写命中带 decided_in_force，规则状态只问过一次', async () => {
+  const ruleInForce = vi.fn<NonNullable<FirstAppLoginReviewDeps['ruleInForce']>>(async () => true);
+  const f = await fixture({}, ruleInForce);
+  await f.run();
+  expect(ruleInForce).toHaveBeenCalledTimes(1);
+  expect(f.record).toHaveBeenCalledExactlyOnceWith(
+    expect.anything(),
+    expect.objectContaining({ rule_id: 'inv_09_same_device', decided_in_force: true }),
+  );
 });
 
 it('[AC-B1-03zh#11][BR-ID-36] 非落地页关系不问规则状态；规则状态读取失败照常抛给调用方', async () => {

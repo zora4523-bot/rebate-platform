@@ -15,7 +15,11 @@
 // before deciding — smsHooks.blockedPrefixInForce (SMS_BLOCKED_PREFIX) and
 // registration.deviceLimitInForce (DEVICE_REGISTER_LIMIT, read through the registration's
 // transaction). A disabled rule is not judged, so nothing is refused and no hit is due; a risk
-// port without ruleInForce leaves both hooks out (in force, as before).
+// port without ruleInForce leaves both hooks out (in force, as before). One read per judgement
+// (money r1 S1): blockedPrefix and recordDeviceLimit run only for a refusal identity has already
+// decided on a rule in force, so they go through risk's recordDecidedHit and risk does not read
+// the status again (a risk port without it: recordHit, as before); the registration blocklist's record hands back the rows matchRegistration decided
+// (risk writes those without a second read). identity keeps no status cache or memo of its own.
 // A login-purpose send is a register request (BR-ID-36 请求类型 register: no session, no user);
 // bind and step_up sends have no request type yet and no user. A step_up send for
 // account_deletion skips the blocklist (BR-ID-31 blocks registration, phone change, payout
@@ -29,7 +33,7 @@
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
 import type { FieldCrypto } from '../../platform/index.ts';
-import type { BlocklistService } from '../../risk/index.ts';
+import type { BlocklistService, RecordBlockedHit } from '../../risk/index.ts';
 import { PHONE_BLIND_INDEX_CONTEXT } from '../domain/registration.ts';
 import type { RegistrationOptions } from './registration.ts';
 import type { SmsHooks, SmsPurpose, SmsRequest } from './sms-codes.ts';
@@ -60,6 +64,10 @@ function requestTypeOf(purpose: SmsPurpose): 'register' | null {
 
 export function identityRiskPorts(risk: BlocklistService, crypto: FieldCrypto): IdentityRiskPorts {
   const ruleInForce = risk.ruleInForce?.bind(risk);
+  // The hit of a refusal identity decided on the rule in force (sms-codes step 2, registration
+  // step 5): no second status read when risk offers recordDecidedHit.
+  const recordDecided = (input: RecordBlockedHit) =>
+    risk.recordDecidedHit === undefined ? risk.recordHit(input) : risk.recordDecidedHit(input);
   return {
     oauthLogin: {
       async registrationBlocklist(trx, input) {
@@ -106,7 +114,7 @@ export function identityRiskPorts(risk: BlocklistService, crypto: FieldCrypto): 
             };
       },
       async blockedPrefix(request) {
-        await risk.recordHit({
+        await recordDecided({
           app_id: request.app_id,
           request_type: requestTypeOf(request.purpose),
           related_phone: request.phone,
@@ -138,7 +146,7 @@ export function identityRiskPorts(risk: BlocklistService, crypto: FieldCrypto): 
         };
       },
       async recordDeviceLimit(input) {
-        await risk.recordHit({
+        await recordDecided({
           app_id: input.app_id,
           request_type: 'register',
           related_phone: input.phone,

@@ -32,11 +32,18 @@
 //
 // Rule status (B1-03zh, BR-ID-36 细则「规则清单的启停」, D10-536; ./risk-rule-status.ts): a disabled
 // BLACKLIST_<DIMENSION> takes no part in judgements — check answers null for it and the
-// registration match skips that dimension (read through trx), so it refuses nothing; recordHit and
-// recordHits drop the rows of a disabled rule and, with none left, write nothing. ruleInForce
+// registration match skips that dimension (read through trx), so it refuses nothing. ruleInForce
 // exposes the same reader (one cache) to identity's decision points (SMS_BLOCKED_PREFIX,
 // DEVICE_REGISTER_LIMIT), which ask before deciding. Answers are cached for the configuration
 // items' period on the injected Clock; hits and appeals already written are never touched.
+// One read per judgement (money r1 S1): a writer behind a decision that already read the status
+// does not read it again, so a cache expiry between the two can never leave a refusal without its
+// hit. recordDecidedHit, or recordHit with decided_in_force: true (identity's prefix and
+// device-limit refusals), and
+// recordHits of rows matchRegistration of this service returned for that app (an unforgeable
+// in-memory token, not a status cache) write without a status read. Any other row — a caller with
+// no decision of its own — is checked here: rows of a disabled rule are dropped and, with none
+// left, nothing is written.
 //
 // Nothing logged identifies the person: no phone, value, HMAC or device hash.
 //
@@ -105,7 +112,14 @@ export interface BlockedHitTarget {
   readonly rule_id: string;
 }
 
-export interface RecordBlockedHit extends BlockedRequest, BlockedHitTarget {}
+export interface RecordBlockedHit extends BlockedRequest, BlockedHitTarget {
+  /**
+   * B1-03zh (BR-ID-36, one read per judgement): the caller's decision already found rule_id in
+   * force for this request (and refused on it), so the status is not read again. Absent → the
+   * writer reads the status itself and writes nothing for a disabled rule.
+   */
+  readonly decided_in_force?: true;
+}
 
 /** A registration refusal decided but not recorded yet (matchRegistration). */
 export interface RegistrationBlock {
@@ -148,9 +162,21 @@ export interface BlocklistService {
     trx: Transaction<DB>,
     input: RegistrationBlocklistInput,
   ): Promise<RegistrationBlock | null>;
-  /** For prefix/device-limit decisions already made by identity. */
+  /**
+   * For prefix/device-limit decisions already made by identity (pass decided_in_force: true so the
+   * rule status is not read a second time).
+   */
   recordHit(input: RecordBlockedHit): Promise<{ readonly ref_id: string }>;
-  /** All hit rows of one blocked request, one shared ref_id, in a short transaction of its own. */
+  /**
+   * B1-03zh (BR-ID-36, one read per judgement): recordHit of a refusal the caller already decided
+   * on the rule in force (decided_in_force: true). Optional so that hand-written fakes of this port
+   * stay valid; createBlocklistService has it.
+   */
+  recordDecidedHit?(input: RecordBlockedHit): Promise<{ readonly ref_id: string }>;
+  /**
+   * All hit rows of one blocked request, one shared ref_id, in a short transaction of its own.
+   * Rows matchRegistration returned are decided and written without a second status read.
+   */
   recordHits(
     request: BlockedRequest,
     hits: readonly BlockedHitTarget[],
@@ -187,6 +213,8 @@ function maskPhone(phone: string): string {
 export function createBlocklistService(options: BlocklistOptions): BlocklistService {
   const { db, clock, crypto, logger } = options;
   const rules = options.rules ?? createRiskRuleStatusReader({ db, clock });
+  /** Hit rows matchRegistration returned, with the app they were decided for (decision token). */
+  const decidedRows = new WeakMap<BlockedHitTarget, string>();
 
   function inForce(appId: string, ruleId: string, executor?: Kysely<DB>): Promise<boolean> {
     return rules.isEnabled({ app_id: appId, rule_id: ruleId }, executor);
@@ -198,7 +226,8 @@ export function createBlocklistService(options: BlocklistOptions): BlocklistServ
     rows: readonly BlockedHitTarget[],
   ): Promise<BlockedHitTarget[]> {
     const enabled = new Set<string>();
-    for (const ruleId of new Set(rows.map((row) => row.rule_id))) {
+    const unchecked = rows.filter((row) => decidedRows.get(row) !== request.app_id);
+    for (const ruleId of new Set(unchecked.map((row) => row.rule_id))) {
       if (await inForce(request.app_id, ruleId)) enabled.add(ruleId);
       else {
         logger.info(
@@ -207,7 +236,9 @@ export function createBlocklistService(options: BlocklistOptions): BlocklistServ
         );
       }
     }
-    return rows.filter((row) => enabled.has(row.rule_id));
+    return rows.filter(
+      (row) => decidedRows.get(row) === request.app_id || enabled.has(row.rule_id),
+    );
   }
 
   function digestOf(input: BlocklistInput): string {
@@ -242,7 +273,7 @@ export function createBlocklistService(options: BlocklistOptions): BlocklistServ
   /**
    * The hit rows of one blocked request, in one short transaction of their own. The callers have
    * already kept only rules in force (check / checkRegistration decided on them; recordHit and
-   * recordHits filter first).
+   * recordHits take decided rows as they are and filter the others first).
    */
   async function writeHits(
     request: BlockedRequest,
@@ -336,19 +367,25 @@ export function createBlocklistService(options: BlocklistOptions): BlocklistServ
       const matched = await matchOn(trx, input.app_id, candidate.dimension, candidate.value_hmac);
       if (matched === null) continue;
       violation ??= matched;
-      hits.push({ ...candidate, rule_id: ruleId });
+      const hit: BlockedHitTarget = { ...candidate, rule_id: ruleId };
+      decidedRows.set(hit, input.app_id);
+      hits.push(hit);
     }
     if (violation === null) return null;
     return { code: 44001, data: { risk_msg_code: `blocklist.${violation}` }, hits };
   }
 
-  /** recordHit / recordHits: rows of disabled rules are dropped; none left → nothing written. */
+  /**
+   * recordHit / recordHits: rows decided by the caller are written as they are; of the others,
+   * rows of disabled rules are dropped; none left → nothing written.
+   */
   async function recordInForce(
     request: BlockedRequest,
     rows: readonly BlockedHitTarget[],
+    decided = false,
   ): Promise<{ readonly ref_id: string }> {
     if (rows.length === 0) throw new Error('risk: a blocked request needs at least one hit row');
-    const kept = await rowsInForce(request, rows);
+    const kept = decided ? rows : await rowsInForce(request, rows);
     if (kept.length === 0) return { ref_id: request.ref_id ?? newUuidV7(clock.now()) };
     return writeHits(request, kept);
   }
@@ -388,12 +425,25 @@ export function createBlocklistService(options: BlocklistOptions): BlocklistServ
     matchRegistration: matchRegistrationIn,
 
     async recordHit(input: RecordBlockedHit): Promise<{ readonly ref_id: string }> {
-      return recordInForce(input, [
-        { dimension: input.dimension, value_hmac: input.value_hmac, rule_id: input.rule_id },
-      ]);
+      const { decided_in_force: decided, ...request } = input;
+      return recordInForce(
+        request,
+        [{ dimension: input.dimension, value_hmac: input.value_hmac, rule_id: input.rule_id }],
+        decided === true,
+      );
     },
 
-    recordHits: recordInForce,
+    recordDecidedHit(input: RecordBlockedHit): Promise<{ readonly ref_id: string }> {
+      return recordInForce(
+        input,
+        [{ dimension: input.dimension, value_hmac: input.value_hmac, rule_id: input.rule_id }],
+        true,
+      );
+    },
+
+    recordHits(request: BlockedRequest, hits: readonly BlockedHitTarget[]) {
+      return recordInForce(request, hits);
+    },
 
     ruleInForce(key: RiskRuleKey, executor?: Kysely<DB>): Promise<boolean> {
       return rules.isEnabled(key, executor);

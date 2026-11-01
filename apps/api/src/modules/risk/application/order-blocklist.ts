@@ -18,7 +18,9 @@
 //   the caller's transaction and cached for the configuration items' period on the injected
 //   Clock): while BLACKLIST_HIT of the app is disabled, match returns no entry (the order is
 //   neither sent to manual_review nor voided because of it) and recordHit writes nothing; hits
-//   already written stay.
+//   already written stay. One read per judgement (money r1 S1/S2): a caller that acts on entries
+//   match returned passes decided_in_force: true to recordHit, which then does not read the status
+//   again (a cache expiry between match and recordHit never leaves a void without its hit).
 // importChannels: per row, under a transaction-scoped advisory lock on (app_id, union_account_id,
 //   relation_id) taken in sorted order (no deadlock between batches), an existing effective entry
 //   (active, end_at NULL or later than imported_at; no start_at condition, K-5) is returned as
@@ -54,6 +56,11 @@ export interface OrderBlocklistHitInput {
   readonly value: string;
   /** 调用方依据订单状态和尾号开关决定；本端口不变更订单。 */
   readonly risk_action: 'manual_review' | 'void_commission';
+  /**
+   * B1-03zh (BR-ID-36, one read per judgement): the hit comes from match of this judgement, which
+   * already found BLACKLIST_HIT in force, so the status is not read again. Absent → read here.
+   */
+  readonly decided_in_force?: true;
 }
 
 export interface ChannelBlocklistImport {
@@ -203,8 +210,12 @@ export function createOrderBlocklistPorts(options: OrderBlocklistOptions): Order
       if (input.user_id !== null && typeof input.user_id !== 'string') {
         throw new TypeError('order blocklist: user_id must be a string or null');
       }
-      // A disabled BLACKLIST_HIT writes no hit row (BR-ID-36).
-      if (!(await rules.isEnabled({ app_id: appId, rule_id: RULE_ID }, trx))) return;
+      // A disabled BLACKLIST_HIT writes no hit row (BR-ID-36); a caller's decision is not re-read.
+      if (
+        input.decided_in_force !== true &&
+        !(await rules.isEnabled({ app_id: appId, rule_id: RULE_ID }, trx))
+      )
+        return;
       const now = clock.now();
       const app = trx.withSchema('app');
       await app

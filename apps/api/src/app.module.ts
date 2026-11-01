@@ -1325,8 +1325,9 @@ function identityModule(contentReader: SharedContentReader): DynamicModule {
     firstAppLoginReview: {
       inject: [CLOCK],
       useFactory: (clock: Clock): FirstAppLoginReview => {
-        // One rule status reader (B1-03zh, BR-ID-36) for the judgement and its hit writer, so both
-        // share one cached answer; it reads only through the login's transaction.
+        // risk's rule status reader (B1-03zh, BR-ID-36) for the judgement; the hit writer is told
+        // the judgement's answer (decided_in_force) and does not read again. It reads only through
+        // the login's transaction.
         const rules = createRiskRuleStatusReader({ clock });
         return createFirstAppLoginReview({
           clock,

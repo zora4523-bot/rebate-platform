@@ -180,3 +180,46 @@ it('[AC-B1-03zh#17][BR-ID-36] 规则停用：只读规则状态，不登记规�
     await db.destroy();
   }
 });
+
+it('[AC-B1-03zh#21][BR-ID-36] decided_in_force：调用方判定已按生效解除归属，写命中不再读规则状态，照写规则与命中', async () => {
+  const { db, queries } = recordingDb();
+  let statusReads = 0;
+  const writer = createInviteRelationHitWriter({
+    clock: new FixedClock(AT),
+    rules: {
+      isEnabled() {
+        statusReads += 1;
+        return Promise.resolve(false);
+      },
+    },
+  });
+  try {
+    await db.transaction().execute(async (trx) => {
+      await writer.record(trx, {
+        ...base,
+        rule_id: 'inv_09_same_device',
+        dimension: 'device_id_hash',
+        decided_in_force: true,
+      });
+    });
+    const statements = queries.filter((q) => !/^(begin|commit|rollback)/i.test(q.sql));
+    expect(statusReads).toBe(0);
+    expect(statements.map((q) => q.sql.split(' (')[0])).toEqual([
+      'insert into "app"."risk_rules"',
+      'insert into "app"."risk_hits"',
+    ]);
+    // Without the decision the same writer reads the status and writes nothing.
+    queries.length = 0;
+    await db.transaction().execute(async (trx) => {
+      await writer.record(trx, {
+        ...base,
+        rule_id: 'inv_09_same_device',
+        dimension: 'device_id_hash',
+      });
+    });
+    expect(statusReads).toBe(1);
+    expect(queries.filter((q) => q.sql.startsWith('insert'))).toEqual([]);
+  } finally {
+    await db.destroy();
+  }
+});

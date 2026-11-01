@@ -20,6 +20,7 @@ import {
 import { expect, it } from 'vitest';
 import { createRootLogger, type Clock, type FieldCrypto } from '../../platform/index.ts';
 import { createBlocklistService } from './blocklist.ts';
+import type { RiskRuleKey, RiskRuleStatusReader } from './risk-rule-status.ts';
 
 const START_MS = Date.parse('2026-10-08T03:59:59.400Z');
 const PHONE = '13812345678';
@@ -59,7 +60,11 @@ function insertedRows(statement: Statement): Record<string, unknown>[] {
   });
 }
 
-function setup(blocked: readonly string[] = [], disabled: readonly string[] = []) {
+function setup(
+  blocked: readonly string[] = [],
+  disabled: readonly string[] = [],
+  rules?: RiskRuleStatusReader,
+) {
   const statements: Statement[] = [];
   const events: string[] = [];
   const connection: DatabaseConnection = {
@@ -113,6 +118,7 @@ function setup(blocked: readonly string[] = [], disabled: readonly string[] = []
     clock: new SteppingClock(),
     crypto,
     logger: createRootLogger({ level: 'silent', entry: 'api', appEnv: 'test' }),
+    ...(rules === undefined ? {} : { rules }),
   });
   return { db, service, statements, events };
 }
@@ -305,4 +311,100 @@ it('[AC-B1-03zh#1][BR-ID-36] ruleInForce：与本服务共用同一读口与缓�
   expect(await service.ruleInForce!({ app_id: 'couli', rule_id: 'DEVICE_REGISTER_LIMIT' })).toBe(
     true,
   );
+});
+
+/**
+ * A reader whose answer for each (app_id, rule_id) is «enabled» on its first read and «disabled» on
+ * every later one: the cache running out right after the decision (money r1 S1 of B1-03zh).
+ */
+function expiringReader() {
+  const reads: RiskRuleKey[] = [];
+  const reader: RiskRuleStatusReader = {
+    isEnabled(key) {
+      const earlier = reads.some((r) => r.app_id === key.app_id && r.rule_id === key.rule_id);
+      reads.push({ app_id: key.app_id, rule_id: key.rule_id });
+      return Promise.resolve(!earlier);
+    },
+  };
+  return { reader, reads };
+}
+
+it.each(['SMS_BLOCKED_PREFIX', 'DEVICE_REGISTER_LIMIT'])(
+  '[AC-B1-03zh#19][AC-B1-03zh#20][BR-ID-36] recordDecidedHit（%s）：调用方已按生效判定拒绝，写命中不再读规则状态，状态随后变停用也照写',
+  async (ruleId) => {
+    const { reader, reads } = expiringReader();
+    const { db, service, statements } = setup([], [], reader);
+    // The decision: the one read of this judgement.
+    const key = { app_id: 'couli', rule_id: ruleId };
+    expect(await db.transaction().execute((trx) => service.ruleInForce!(key, trx))).toBe(true);
+    await service.recordDecidedHit!({
+      app_id: 'couli',
+      request_type: 'register',
+      related_phone: PHONE,
+      dimension: ruleId === 'SMS_BLOCKED_PREFIX' ? 'phone_prefix' : 'device',
+      value_hmac: 'v',
+      rule_id: ruleId,
+    });
+    expect(reads).toHaveLength(1);
+    expect(inserts(statements, 'risk_hits').map((row) => row.rule_id)).toEqual([ruleId]);
+    // A plain recordHit (no decision of its own) still reads, and now finds the rule disabled.
+    await service.recordHit({
+      app_id: 'couli',
+      request_type: 'register',
+      related_phone: PHONE,
+      dimension: 'device',
+      value_hmac: 'w',
+      rule_id: ruleId,
+    });
+    expect(reads).toHaveLength(2);
+    expect(inserts(statements, 'risk_hits')).toHaveLength(1);
+  },
+);
+
+it('[AC-B1-03zh#19][BR-ID-36] recordHit 带 decided_in_force：不读规则状态，照写命中', async () => {
+  const { service, statements } = setup([], ['SMS_BLOCKED_PREFIX']);
+  await service.recordHit({
+    app_id: 'couli',
+    request_type: 'register',
+    related_phone: PHONE,
+    dimension: 'phone_prefix',
+    value_hmac: 'p',
+    rule_id: 'SMS_BLOCKED_PREFIX',
+    decided_in_force: true,
+  });
+  expect(
+    statements.filter((s) => s.sql.includes('"risk_rules"') && s.sql.startsWith('select')),
+  ).toEqual([]);
+  expect(inserts(statements, 'risk_hits')).toEqual([
+    expect.objectContaining({ rule_id: 'SMS_BLOCKED_PREFIX', dimension: 'phone_prefix' }),
+  ]);
+});
+
+it('[AC-B1-03zh#15][BR-ID-36] matchRegistration 判定过的命中行交给 recordHits 不再读状态；别处来的行、别的 app 照旧自读', async () => {
+  const { reader, reads } = expiringReader();
+  const { db, service, statements } = setup(['p', DEVICE_HASH], [], reader);
+  const input = {
+    app_id: 'couli',
+    phone_hmac: 'p',
+    device_hash: DEVICE_HASH,
+    related_phone: PHONE,
+  };
+  const block = await db.transaction().execute((trx) => service.matchRegistration(trx, input));
+  expect(block?.hits.map((hit) => hit.rule_id)).toEqual(['BLACKLIST_PHONE', 'BLACKLIST_DEVICE']);
+  expect(reads).toHaveLength(2);
+  const request = { app_id: 'couli', request_type: 'register' as const, related_phone: PHONE };
+  // A caller that filters the rows keeps the decided objects.
+  await service.recordHits(request, block!.hits.filter(Boolean));
+  expect(reads).toHaveLength(2);
+  expect(inserts(statements, 'risk_hits').map((row) => row.rule_id)).toEqual([
+    'BLACKLIST_PHONE',
+    'BLACKLIST_DEVICE',
+  ]);
+  // A look-alike row is no token: read here, now disabled, nothing written.
+  await service.recordHits(request, [{ ...block!.hits[0]! }]);
+  // A decided row handed over for another app is no token there either.
+  await service.recordHits({ ...request, app_id: 'other' }, [block!.hits[1]!]);
+  expect(reads).toHaveLength(4);
+  expect(inserts(statements, 'risk_hits')).toHaveLength(3);
+  expect(inserts(statements, 'risk_hits')[2]).toMatchObject({ app_id: 'other' });
 });

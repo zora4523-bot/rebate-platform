@@ -156,7 +156,11 @@ export interface SmsHooks {
    * part in judgements now; asked before the prefix decision. Absent → in force.
    */
   readonly blockedPrefixInForce?: (request: SmsRequest) => Promise<boolean>;
-  /** B1-03d: records the risk hit of a prefix refusal already decided here (no new decision). */
+  /**
+   * B1-03d: records the risk hit of a prefix refusal already decided here (no new decision). The
+   * decision was taken on the rule in force (blockedPrefixInForce, the one status read of this
+   * request, B1-03zh), so the recorder writes the hit without reading the status again.
+   */
   readonly blockedPrefix?: (request: SmsRequest) => Promise<void>;
   readonly phoneBlocklist?: (
     request: SmsRequest,
