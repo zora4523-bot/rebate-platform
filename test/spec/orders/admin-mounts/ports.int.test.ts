@@ -3,8 +3,9 @@
 // commission's snapshot port, the source backfill, risk's and identity's target readers and the
 // event bus; hold / unhold change the hold through settlement's rebate command (R11).
 // Expected values by hand from contracts/openapi.yaml, 08 BR-FUND-01 R3 / R3b / R4 / R11, BR-ATTR-20,
-// BR-ATTR-31. The order's slot scene reaches the backfill and the snapshot from union_pids, and only
-// identity's deletion stage knows a cooling target (BR-CALC-19, BR-ATTR-15, BR-ATTR-31 细则).
+// BR-ATTR-31. The order's slot scene reaches the backfill and the snapshot from union_pids whatever
+// the slot's status (BR-ATTR-02), and only identity's deletion stage knows a cooling target
+// (BR-CALC-19, BR-ATTR-15, BR-ATTR-31 细则).
 // Top-level it() only (规划/11 §4.3).
 import { expect, it } from 'vitest';
 import { useHarness } from '../../admin/auth/kit.ts';
@@ -418,6 +419,43 @@ it.each([
     const after = await s.state();
     expect(after.assignments).toEqual([]);
     expect(after.audits).toEqual([]);
+  },
+  120_000,
+);
+
+it.each(['approve', 'reassign'] as const)(
+  '[AC-B1-10m#31] %s 退役（status=retired）淘礼金推广位的订单：推广位场景读取不按 active 过滤（pending / active / retired 三态都算），真实快照 rebate_mode=none、用户份额 0，写 TLJ_FACE_VALUE_UNMATCHED 待处理（BR-ATTR-02、BR-CALC-19）',
+  async (action) => {
+    const s = await setup(h, { grants: GRANTS[action] });
+    await seedVersion(s.h.db, s.appId, version());
+    const pid = await seedPid(s, 'taobao', 'taolijin');
+    await s.h.db
+      .updateTable('union_pids')
+      .set({ status: 'retired' })
+      .where('app_id', '=', s.appId)
+      .where('pid', '=', pid)
+      .returning('status')
+      .executeTakeFirstOrThrow();
+    const order = await seedOrder(s, { platform: 'taobao', pid });
+    await attribute(s, action, order);
+    expect(await orderNow(s, order.order_id)).toMatchObject({
+      user_id: s.userId,
+      locked: true,
+      rebate_status: 'ESTIMATED',
+    });
+    expect((await s.state()).pending).toEqual([
+      expect.objectContaining({ order_id: order.order_id, reason: 'TLJ_FACE_VALUE_UNMATCHED' }),
+    ]);
+    const { splits, totals } = await snapshotOf(s, order.order_id);
+    expect(splits).toEqual([expect.objectContaining({ rebate_mode: 'none', raw_n_fen: 1200n })]);
+    expect(totals).toEqual([
+      expect.objectContaining({
+        n_total_fen: 1200n,
+        user_share_total_fen: 0n,
+        tlj_redpacket_fen: null,
+        platform_est_profit_fen: null,
+      }),
+    ]);
   },
   120_000,
 );
