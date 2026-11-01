@@ -275,6 +275,8 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     // CT-24zg: admin adjustment approve / reject / reversal and write-off approve CAS.
     'admin_adjustment',
     'bad_debt_writeoff',
+    // CT-24zh: union collection whole-record reversal, a record is reversed once (D10-538, BR-FUND-16, BR-FUND-20).
+    'union_receipt',
   ]);
 });
 

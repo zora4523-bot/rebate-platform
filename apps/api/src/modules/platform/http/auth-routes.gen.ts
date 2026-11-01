@@ -1323,6 +1323,26 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/union-receipts",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-receipts",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-receipts/:receipt_id/reverse",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/fund-ledger",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "auth": "admin"
   },

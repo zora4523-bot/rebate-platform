@@ -319,3 +319,21 @@ enums:
       adjusted: 已调账
       written_off: 已核销
       closed: 已关闭（不处理）
+  union_receipt_method:
+    source: BR-FUND-20 及细则「联盟回款凭证」；design/specs/admin-fund-dashboard.md §2
+    description: 联盟回款记录的登记方式；同一笔回款只登记一条
+    values:
+      ADMIN_ENTRY: 后台录入
+      R1_RECON: R1 对账确认
+  union_receipt_cash_account:
+    source: BR-FUND-20 细则「联盟回款凭证」
+    description: 联盟回款借记的现金科目；银行卡通道未开通时不接受 CASH_BANK
+    values:
+      CASH_ALIPAY: 企业支付宝
+      CASH_BANK: 企业对公银行账户
+  admin_fund_water_level:
+    source: BR-WDR-18；design/specs/admin-fund-dashboard.md §2、§3
+    description: 资金台账概览的水位结论；W 或 P 没有、或 W 已过期时不下结论（字段为 null），未回款超告警线不在此枚举
+    values:
+      normal: 正常
+      low: 水位低

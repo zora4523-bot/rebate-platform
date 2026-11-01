@@ -130,6 +130,10 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminAdjustmentRefType: 'admin_adjustment_ref_type',
   AdminAdjustmentContraSubject: 'admin_adjustment_contra_subject',
   AdminBadDebtWriteoffStatus: 'bad_debt_writeoff_status',
+  // CT-24zh: union collections and the fund ledger overview (BR-FUND-20, BR-WDR-18).
+  AdminUnionReceiptMethod: 'union_receipt_method',
+  AdminUnionReceiptCashAccount: 'union_receipt_cash_account',
+  AdminFundWaterLevel: 'admin_fund_water_level',
   // CT-24r: admin appeal console (04 §6.6 appeals, BR-ID-36). AdminBlockedRequestType stays
   // unregistered on purpose: CT-02d keeps blocked_request_type out of both tables; the
   // admin-appeals test checks it against the enum instead.

@@ -1,0 +1,37 @@
+{
+  "task": "CT-24zh",
+  "spec_ref": "deb521c2bcb740571a01c2dc128f40abb40c37a2",
+  "spec_commit": "c0913ffb37606c4e5cd1b05c71db60ba73383481",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only). Four planned console operations (08 BR-FUND-20, BR-FUND-16, BR-WDR-18; 04 §3.2, §11.2; design/specs/admin-fund-dashboard.md; rulings D10-468 ④, D10-538, D10-539): adminCreateUnionReceipt, adminReverseUnionReceipt (whole record, once, repeat is 20902 data.resource=union_receipt), adminListUnionReceipts (with reversal columns and reversed_by_name), adminGetFundLedger (computed when read, limited to the console's app, W null without data). fund.cash_entry, fund.view; totp step-up on entry and reversal; Idempotency-Key; audited; no new error code. The table union_receipts and the ledger command belong to funds, W entry to withdraw; neither is here. Generated files from pnpm codegen. tester: none, so no red run. Full verification by the required CI checks (04:16 general rule).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "fresh independent Claude via nohup claude-run.sh --review-type contract (Codex unavailable until 2026-11-02, approvals 36): round 1 pass with two S2 (idempotency exception list, app scope of the ledger), both fixed; round 2 on the increment pass with one S2 (null wording of reversed_by_name), fixed in a follow-up commit."
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "5eb02fa32c2b5a1af4009a7191e8cf9fe1c5d7c0",
+    "specs": "66e68724062651ce28a4637192628948db2b649a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  }
+}

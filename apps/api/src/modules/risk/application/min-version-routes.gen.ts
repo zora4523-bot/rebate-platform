@@ -2665,6 +2665,46 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListUnionReceipts",
+    "method": "GET",
+    "path": "/admin/v1/union-receipts",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminCreateUnionReceipt",
+    "method": "POST",
+    "path": "/admin/v1/union-receipts",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
+    "operationId": "adminReverseUnionReceipt",
+    "method": "POST",
+    "path": "/admin/v1/union-receipts/:receipt_id/reverse",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
+    "operationId": "adminGetFundLedger",
+    "method": "GET",
+    "path": "/admin/v1/fund-ledger",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListKillSwitches",
     "method": "GET",
     "path": "/admin/v1/kill-switches",

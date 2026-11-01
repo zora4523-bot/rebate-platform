@@ -9089,6 +9089,180 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/union-receipts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Union collection records, page by page, latest collection day first
+         * @description The 联盟回款记录 table of the fund ledger page (01 F-ADM-08; BR-FUND-20 细则「联盟回款凭证」;
+         *     design/specs/admin-fund-dashboard.md §2). Read only, no step-up. Permission point:
+         *     `fund.view` (04 §11.1); a super admin holds every point. Each row is one collection
+         *     record of the console's app (04 §3.2 union_receipts): `receipt_date`, `platform`,
+         *     `amount_fen` (BR-FUND-20), `method` (ADMIN_ENTRY 后台录入 or R1_RECON R1 对账确认),
+         *     `cash_account`, `voucher_id` (凭证号, the link to the balance history) and who entered it,
+         *     `created_by` and `created_by_name`, both null for a record confirmed by R1 without an
+         *     operator. A reversed record stays in the list with its amount: `reversed_at`, `reversed_by`
+         *     and `reversal_voucher_id` are all set once it is reversed and all null until then.
+         *
+         *     Filters combine with AND: `platform`, `date_from` and `date_to` (collection days
+         *     YYYY-MM-DD, both inclusive). A platform outside the enum or a value not matching the
+         *     format is 20001 with `data.fields` naming the parameter; `date_from` later than `date_to`
+         *     is 20001 with `data.fields=[date_from, date_to]`. A filter set nothing matches is an empty
+         *     page (`items=[]`, `total=0`), not an error.
+         *
+         *     Order: `receipt_date` descending, then `created_at` descending, then `receipt_id`
+         *     descending. Pages with `page` (as AdminPage; a page past the last one is `items=[]`) and
+         *     `page_size` ≤ 200 (above 200 is 20001, as AdminPageSize); `total` is the count of the
+         *     filter set. Reading does not write an audit record.
+         */
+        get: operations["adminListUnionReceipts"];
+        put?: never;
+        /**
+         * Enter one union collection and post its voucher (录入联盟回款)
+         * @description The 【录入联盟回款】 dialog of the fund ledger page (01 F-ADM-08; 04 §11.2 `fund.cash_entry`;
+         *     BR-FUND-20 and its 细则「联盟回款凭证」; design/specs/admin-fund-dashboard.md §2, §6). Permission
+         *     point `fund.cash_entry`; a super admin holds every point. Step-up: totp tier (BR-ID-34):
+         *     without a valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`. The entry of
+         *     the enterprise Alipay balance W, under the same permission point, is not part of this
+         *     operation: it belongs to the payout console (BR-WDR-18).
+         *
+         *     Request (AdminUnionReceiptCreateRequest): `platform`; `receipt_date`, the day the money
+         *     arrived (YYYY-MM-DD); `amount_fen`, integer fen > 0, the amount of BR-FUND-20;
+         *     `cash_account`, the subject debited, CASH_ALIPAY or CASH_BANK (BR-FUND-20 细则); `note`,
+         *     optional, at most 500 characters and not blank after trimming; an outside serial number
+         *     goes here. Who entered the record comes from the session; `method` is always ADMIN_ENTRY
+         *     here, the request does not carry it.
+         *
+         *     Order of checks: `fund.cash_entry` (10403 with `data.reason=admin_permission_denied`) →
+         *     step-up (10003) → body (20001 with `data.fields` naming the field: the schema; a blank
+         *     `note`; a `receipt_date` later than the current accounting day of the injected Clock,
+         *     +08:00, with `data.fields=[receipt_date]`; CASH_BANK while 银行卡通道未开通, with
+         *     `data.fields=[cash_account]`). An earlier `receipt_date` has no lower bound. The amount is
+         *     not compared with the receivable (BR-FUND-20): a difference shows up in R1, this operation
+         *     opens none.
+         *
+         *     Effects, in one transaction: settlement (funds) writes the record to 04 §3.2 union_receipts
+         *     (`method=ADMIN_ENTRY`) with its UNION_RECEIPT voucher (BR-FUND-20 细则「联盟回款凭证」) through
+         *     the ledger command; the console calls the funds port. No user balance moves and W does not
+         *     change (BR-WDR-18). Writes an audit record (action union_receipt_create, with the
+         *     `receipt_id`, the platform, `receipt_date`, `amount_fen`, `cash_account` and `voucher_id`;
+         *     no personal data).
+         *
+         *     `Idempotency-Key` is required: same key and body → the first result; same key with
+         *     another body → 20901; same key while still running → 40901. The step-up token is a header
+         *     and not part of the body hash, so a replay after a 10003 keeps its key. There is no
+         *     business key: two records with the same platform, day and amount under different keys
+         *     are two collections. One collection is entered once (BR-FUND-20 细则) by reading the
+         *     platform's records of the last 30 days first (design/specs/admin-fund-dashboard.md §6); R1
+         *     shows a difference, and a record entered by mistake is reversed with POST
+         *     /admin/v1/union-receipts/{receipt_id}/reverse and entered again.
+         */
+        post: operations["adminCreateUnionReceipt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/union-receipts/{receipt_id}/reverse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reverse one union collection record as a whole (红冲)
+         * @description The 【红冲】 action of a row of the 联盟回款记录 table (01 F-ADM-08; BR-FUND-16, BR-FUND-20 细则
+         *     「联盟回款凭证」; design/specs/admin-fund-dashboard.md §4, §6). 代理补全的默认，待财务确认
+         *     (D10-538), as the voucher of the entry itself. Permission point `fund.cash_entry`; a super
+         *     admin holds every point. Step-up: totp tier (BR-ID-34): without a valid totp-tier
+         *     `X-Step-Up-Token` → 10003 with `data.tier=totp`.
+         *
+         *     Only the whole record is reversed and a record is reversed once; there is no partial
+         *     reversal and no amount in the request. To change an amount, reverse the record and enter
+         *     it again with POST /admin/v1/union-receipts. A record of either `method` can be reversed.
+         *     Request (AdminUnionReceiptReverseRequest): `reason`, required.
+         *
+         *     Order of checks: `fund.cash_entry` (10403 with `data.reason=admin_permission_denied`) →
+         *     step-up (10003) → body (20001 with `data.fields=[reason]`) → an unknown `receipt_id` or one
+         *     of another app is 20001 with `data.fields=[receipt_id]` → a record already reversed is
+         *     20902 with `data.resource=union_receipt` (a record can be reversed once, BR-FUND-16; the
+         *     console refreshes and shows 已红冲; the unique constraint on the reversal voucher answers
+         *     the same under a race). The reversal is not compared with the balance of the cash subject
+         *     or of the receivable.
+         *
+         *     Effects, in one transaction: settlement (funds) posts the reversal voucher (uniq_key per
+         *     BR-FUND-16, BR-FUND-20 细则) through the ledger command and sets `reversed_at`, `reversed_by`
+         *     and `reversal_voucher_id` on the record (04 §3.2 union_receipts); the original record and
+         *     voucher stay. No user balance moves and W does not change (BR-WDR-18). Writes an audit
+         *     record (action union_receipt_reverse, with the `receipt_id`, the platform, `amount_fen`,
+         *     `voucher_id`, `reversal_voucher_id` and `reason`; the table has no reason column, the audit
+         *     record holds it; no personal data).
+         *
+         *     `Idempotency-Key` is required: same key and body → the first result; same key with
+         *     another body → 20901; same key while still running → 40901. A new key for a record already
+         *     reversed is 20902. The step-up token is a header and not part of the body hash, so a
+         *     replay after a 10003 keeps its key.
+         */
+        post: operations["adminReverseUnionReceipt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/fund-ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fund ledger overview, computed when read
+         * @description The overview cards of the fund ledger page (01 F-ADM-08; BR-FUND-20, BR-WDR-18;
+         *     design/specs/admin-fund-dashboard.md §1, §2). Read only, no step-up. Permission point:
+         *     `fund.view` (04 §11.1); a super admin holds every point. Reading does not write an audit
+         *     record. Every figure is limited to the app of the console.
+         *
+         *     Computed when read, from all the entries posted so far, not from the last asset snapshot:
+         *     `as_of` is the moment of the reading. `receivables` is the 已入账未回款 per platform, the
+         *     balance of UNION_RECEIVABLE:{platform} (BR-FUND-20), ordered by platform code, only
+         *     platforms with at least one entry, and it can be below 0 after a collection above the
+         *     receivable; `union_receivable_total_fen` is their sum. `negative_total_fen` is the sum of
+         *     the magnitudes of the negative available balances (the negative_fen side of BR-FUND-18) and
+         *     `negative_user_count` the number of accounts behind it. With no entries yet these
+         *     are `receivables=[]` and zeros.
+         *
+         *     The water level fields are null when there is no data, never filled with a default.
+         *     `watermark` is the latest W of the enterprise Alipay channel; W is entered on the payout
+         *     console (BR-WDR-18) and is the owner's material, so it is null until a row exists.
+         *     `forecast_withdrawal_fen` is P of BR-WDR-18 for the same channel, null while the payout side
+         *     does not provide it; no recent withdrawals give 0, not null. `water_level` is the
+         *     conclusion from W and P: `low` when W is below the alert line of BR-WDR-18, else `normal`.
+         *     It is null when W or P is null or when W has passed the staleness limit of BR-WDR-18,
+         *     as a conclusion from an old W would mislead; `watermark.measured_at` still shows its age.
+         *
+         *     Not part of this operation: the daily ledger (the asset snapshots, GET
+         *     /admin/v1/asset-snapshots), the records (GET /admin/v1/union-receipts), the alert lines
+         *     and other cards of the water level, and the fund dashboard adminGetFundsReport.
+         */
+        get: operations["adminGetFundLedger"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/kill-switches": {
         parameters: {
             query?: never;
@@ -18882,6 +19056,168 @@ export interface components {
             data: components["schemas"]["AdminAssetSnapshotPage"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /**
+         * @description How a union collection was registered (contracts/enums/fund.yaml union_receipt_method; BR-FUND-20).
+         * @enum {string}
+         */
+        AdminUnionReceiptMethod: "ADMIN_ENTRY" | "R1_RECON";
+        /**
+         * @description The subject a union collection debits (contracts/enums/fund.yaml union_receipt_cash_account; BR-FUND-20 细则).
+         * @enum {string}
+         */
+        AdminUnionReceiptCashAccount: "CASH_ALIPAY" | "CASH_BANK";
+        /**
+         * @description The conclusion from W and P (contracts/enums/fund.yaml admin_fund_water_level; BR-WDR-18).
+         * @enum {string}
+         */
+        AdminFundWaterLevel: "normal" | "low";
+        /** @description One union collection to enter; see POST /admin/v1/union-receipts. */
+        AdminUnionReceiptCreateRequest: {
+            platform: components["schemas"]["PlatformCode"];
+            /**
+             * Format: date
+             * @description The day the money arrived (YYYY-MM-DD), not later than the current accounting day.
+             */
+            receipt_date: string;
+            /**
+             * Format: int64
+             * @description Integer fen above 0, the amount of BR-FUND-20.
+             */
+            amount_fen: number;
+            cash_account: components["schemas"]["AdminUnionReceiptCashAccount"];
+            /** @description Optional, at most 500 characters, not blank after trimming. */
+            note?: string;
+        };
+        /** @description Body of POST /admin/v1/union-receipts/{receipt_id}/reverse. */
+        AdminUnionReceiptReverseRequest: {
+            /** @description Why the record is reversed; 1–200 characters after trimming, else 20001 with data.fields=[reason]. Kept in the audit record. */
+            reason: string;
+        };
+        /** @description One union collection record (BR-FUND-20 细则「联盟回款凭证」; 04 §3.2 union_receipts, written by settlement). */
+        AdminUnionReceipt: {
+            receipt_id: components["schemas"]["Id"];
+            platform: components["schemas"]["PlatformCode"];
+            /**
+             * Format: date
+             * @description The day the money arrived (YYYY-MM-DD).
+             */
+            receipt_date: string;
+            /**
+             * Format: int64
+             * @description Integer fen, the amount of BR-FUND-20. It stays as entered after a reversal.
+             */
+            amount_fen: number;
+            method: components["schemas"]["AdminUnionReceiptMethod"];
+            cash_account: components["schemas"]["AdminUnionReceiptCashAccount"];
+            voucher_id: components["schemas"]["Id"];
+            note: string | null;
+            /** @description The admin who entered the record; null for a record confirmed by R1 without an operator. */
+            created_by: components["schemas"]["Id"] | null;
+            /** @description Current name of the creator (admin_users.display_name, else the username); null when there is none or it cannot be read. */
+            created_by_name: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description When the record was reversed; null until then.
+             */
+            reversed_at: string | null;
+            /** @description The admin who reversed the record; null until then. */
+            reversed_by: components["schemas"]["Id"] | null;
+            /** @description Current name of the reverser (admin_users.display_name, else the username), derived when read; null until the record is reversed, or when it cannot be read. */
+            reversed_by_name: string | null;
+            /** @description The reversal voucher (BR-FUND-16, BR-FUND-20 细则); null until the record is reversed. */
+            reversal_voucher_id: components["schemas"]["Id"] | null;
+        };
+        AdminUnionReceiptPage: {
+            items: components["schemas"]["AdminUnionReceipt"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminUnionReceiptPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUnionReceiptPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminUnionReceiptResult: {
+            receipt: components["schemas"]["AdminUnionReceipt"];
+        };
+        AdminUnionReceiptCreateResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUnionReceiptResult"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminUnionReceiptReverseResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUnionReceiptResult"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description The 已入账未回款 of one platform at the moment of reading (BR-FUND-20). */
+        AdminFundLedgerReceivable: {
+            platform: components["schemas"]["PlatformCode"];
+            /**
+             * Format: int64
+             * @description Balance in fen of UNION_RECEIVABLE:{platform} over all the entries posted so far; below 0 after a collection above the receivable.
+             */
+            union_receivable_fen: number;
+        };
+        /** @description The latest W of the enterprise Alipay channel (BR-WDR-18; 04 §3.2 payout_watermarks). Entered on the payout console, not here. */
+        AdminFundLedgerWatermark: {
+            available_fen: components["schemas"]["Fen"];
+            /**
+             * Format: date-time
+             * @description When W was read off the account (t_W).
+             */
+            measured_at: string;
+            /** @description The admin who entered W; null when no admin did. */
+            entered_by: components["schemas"]["Id"] | null;
+            /** @description Current name of that admin (admin_users.display_name, else the username); null when there is none or it cannot be read. */
+            entered_by_name: string | null;
+        };
+        /** @description The fund ledger overview, computed when read; see GET /admin/v1/fund-ledger. */
+        AdminFundLedger: {
+            /**
+             * Format: date-time
+             * @description The moment of the reading.
+             */
+            as_of: string;
+            /** @description The 已入账未回款 per platform, ordered by platform code; only platforms with at least one entry; empty when none. */
+            receivables: components["schemas"]["AdminFundLedgerReceivable"][];
+            /**
+             * Format: int64
+             * @description Sum of `receivables` in fen.
+             */
+            union_receivable_total_fen: number;
+            /**
+             * Format: int64
+             * @description Sum of the magnitudes of the negative available balances in fen (BR-FUND-18 negative_fen side).
+             */
+            negative_total_fen: number;
+            /**
+             * Format: int32
+             * @description Number of accounts with a negative available balance.
+             */
+            negative_user_count: number;
+            /** @description The latest W; null until one exists, never a default. */
+            watermark: components["schemas"]["AdminFundLedgerWatermark"] | null;
+            /** @description P of BR-WDR-18 in fen; null while it is not available, never a default. */
+            forecast_withdrawal_fen: components["schemas"]["NullableFen"];
+            /** @description The conclusion from W and P; null when W or P is null or W is stale. */
+            water_level: components["schemas"]["AdminFundWaterLevel"] | null;
+        };
+        AdminFundLedgerResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminFundLedger"];
+            trace_id: components["schemas"]["TraceId"];
+        };
     };
     responses: {
         /** @description Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则). */
@@ -19355,6 +19691,14 @@ export interface components {
         AdminAssetSnapshotDateFrom: string;
         /** @description Latest snapshot day (YYYY-MM-DD, the accounting day D), inclusive; not a date → 20001 with data.fields=[date_to]. */
         AdminAssetSnapshotDateTo: string;
+        /** @description The collection record (union_receipts.receipt_id) as a list row carries it; unknown or of another app → 20001 with data.fields=[receipt_id]. */
+        AdminUnionReceiptIdPath: components["schemas"]["Id"];
+        /** @description Only collections of this platform (enum platform); absent = all; outside the enum → 20001 with data.fields=[platform]. */
+        AdminUnionReceiptPlatform: components["schemas"]["PlatformCode"];
+        /** @description Earliest collection day (YYYY-MM-DD), inclusive; not a date → 20001 with data.fields=[date_from]; later than date_to → 20001 with data.fields=[date_from, date_to]. */
+        AdminUnionReceiptDateFrom: string;
+        /** @description Latest collection day (YYYY-MM-DD), inclusive; not a date → 20001 with data.fields=[date_to]. */
+        AdminUnionReceiptDateTo: string;
     };
     requestBodies: never;
     headers: {
@@ -38995,6 +39339,331 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["AdminAssetSnapshotPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListUnionReceipts: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+                /** @description Only collections of this platform (enum platform); absent = all; outside the enum → 20001 with data.fields=[platform]. */
+                platform?: components["parameters"]["AdminUnionReceiptPlatform"];
+                /** @description Earliest collection day (YYYY-MM-DD), inclusive; not a date → 20001 with data.fields=[date_from]; later than date_to → 20001 with data.fields=[date_from, date_to]. */
+                date_from?: components["parameters"]["AdminUnionReceiptDateFrom"];
+                /** @description Latest collection day (YYYY-MM-DD), inclusive; not a date → 20001 with data.fields=[date_to]. */
+                date_to?: components["parameters"]["AdminUnionReceiptDateTo"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of union collection records, latest collection day first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "receipt_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb001",
+                     *             "platform": "taobao",
+                     *             "receipt_date": "2026-10-20",
+                     *             "amount_fen": 1150000,
+                     *             "method": "ADMIN_ENTRY",
+                     *             "cash_account": "CASH_ALIPAY",
+                     *             "voucher_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb101",
+                     *             "note": "10 月账单回款",
+                     *             "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *             "created_by_name": "ops01",
+                     *             "created_at": "2026-10-20T15:12:00+08:00",
+                     *             "reversed_at": null,
+                     *             "reversed_by": null,
+                     *             "reversed_by_name": null,
+                     *             "reversal_voucher_id": null
+                     *           },
+                     *           {
+                     *             "receipt_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb002",
+                     *             "platform": "jd",
+                     *             "receipt_date": "2026-10-18",
+                     *             "amount_fen": 151000,
+                     *             "method": "R1_RECON",
+                     *             "cash_account": "CASH_ALIPAY",
+                     *             "voucher_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb102",
+                     *             "note": null,
+                     *             "created_by": null,
+                     *             "created_by_name": null,
+                     *             "created_at": "2026-10-18T02:30:00+08:00",
+                     *             "reversed_at": null,
+                     *             "reversed_by": null,
+                     *             "reversed_by_name": null,
+                     *             "reversal_voucher_id": null
+                     *           },
+                     *           {
+                     *             "receipt_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb003",
+                     *             "platform": "taobao",
+                     *             "receipt_date": "2026-10-16",
+                     *             "amount_fen": 115000,
+                     *             "method": "ADMIN_ENTRY",
+                     *             "cash_account": "CASH_ALIPAY",
+                     *             "voucher_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb103",
+                     *             "note": null,
+                     *             "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *             "created_by_name": "ops01",
+                     *             "created_at": "2026-10-16T11:05:00+08:00",
+                     *             "reversed_at": "2026-10-16T11:40:00+08:00",
+                     *             "reversed_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *             "reversed_by_name": "ops01",
+                     *             "reversal_voucher_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb203"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 3
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionReceiptPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminCreateUnionReceipt: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "platform": "taobao",
+                 *       "receipt_date": "2026-10-20",
+                 *       "amount_fen": 1150000,
+                 *       "cash_account": "CASH_ALIPAY",
+                 *       "note": "10 月账单回款"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminUnionReceiptCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description The collection record with its voucher, or the first result of the same key. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "receipt": {
+                     *           "receipt_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb001",
+                     *           "platform": "taobao",
+                     *           "receipt_date": "2026-10-20",
+                     *           "amount_fen": 1150000,
+                     *           "method": "ADMIN_ENTRY",
+                     *           "cash_account": "CASH_ALIPAY",
+                     *           "voucher_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb101",
+                     *           "note": "10 月账单回款",
+                     *           "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *           "created_by_name": "ops01",
+                     *           "created_at": "2026-10-20T15:12:00+08:00",
+                     *           "reversed_at": null,
+                     *           "reversed_by": null,
+                     *           "reversed_by_name": null,
+                     *           "reversal_voucher_id": null
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionReceiptCreateResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not entered (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminReverseUnionReceipt: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The collection record (union_receipts.receipt_id) as a list row carries it; unknown or of another app → 20001 with data.fields=[receipt_id]. */
+                receipt_id: components["parameters"]["AdminUnionReceiptIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "reason": "同一笔回款录了两次"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminUnionReceiptReverseRequest"];
+            };
+        };
+        responses: {
+            /** @description The reversed record, or the first result of the same key. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "receipt": {
+                     *           "receipt_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb003",
+                     *           "platform": "taobao",
+                     *           "receipt_date": "2026-10-16",
+                     *           "amount_fen": 115000,
+                     *           "method": "ADMIN_ENTRY",
+                     *           "cash_account": "CASH_ALIPAY",
+                     *           "voucher_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb103",
+                     *           "note": null,
+                     *           "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *           "created_by_name": "ops01",
+                     *           "created_at": "2026-10-16T11:05:00+08:00",
+                     *           "reversed_at": "2026-10-16T11:40:00+08:00",
+                     *           "reversed_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *           "reversed_by_name": "ops01",
+                     *           "reversal_voucher_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb203"
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionReceiptReverseResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not reversed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetFundLedger: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The fund ledger overview at the moment of reading. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFundLedgerResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];
