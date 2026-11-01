@@ -1,0 +1,27 @@
+id: B2-06i
+repo: rebate-platform
+title: payout 入口接上查询链崩溃恢复：启动时扫一次、之后每小时一次（生产装配缺口第 5 条）
+type: impl
+# 2026-11-02 pay（账号 5）入账（编排 11-02 03:49，couli-runs/B3-lane/prod-wiring-gaps-20261101.md 第 5 条，原排 withdraw 11-06 改归 pay）。createQueryRecovery 由 B2-06e 实现，注释写「由 B2-06f 接」，B2-06f 范围未含，现在无调用方。
+# 不接的后果：查询任务丢失的 PAYING 提现永不再查，也不标 needs_manual。只接线，不改 scan 判断。按 startInviteReward 的写法：可选解析，queue 启动之后开始；单轮失败只记日志、下一小时再来；一轮没跑完不开下一轮；停机先停定时器并等在途一轮。payout.enabled、queue_paused 不影响（B2-06e 注释）。
+refs: [BR-WDR-14]
+refs_hash:
+  BR-WDR-14: 6328f3cda2e6
+deps: [B2-06e, B2-06f]
+paths:
+  - 'apps/api/src/entry.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/payout/payout-runtime.ts'
+  - 'apps/api/src/modules/payout/payout.module.ts'
+  - 'apps/api/src/modules/payout/index.ts'
+  - 'apps/api/src/modules/payout/application/query-recovery-worker.ts'
+  - 'apps/api/src/modules/payout/application/query-recovery-worker.test.ts'
+test_paths:
+  - 'test/spec/payout/query-recovery-wiring/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/query-recovery-wiring/**'
+status: todo
+pr: null

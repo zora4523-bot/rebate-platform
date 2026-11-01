@@ -1,0 +1,26 @@
+id: B2-05p
+repo: rebate-platform
+title: 钱包汇总接上 payout：withdrawn_fen 取已打款合计，risk_paused_reason 看生效的 withdraw_holds（生产装配缺口第 7、8 条）
+type: impl
+# 2026-11-02 pay（账号 5）入账（编排 11-02 03:49，couli-runs/B3-lane/prod-wiring-gaps-20261101.md 第 7、8 条，原排 withdraw 11-06 改归 pay）。两条改同一处装配和同一组测试，并成一个任务。
+# withdrawn_fen = Σ 该用户 PAID_API / PAID_MANUAL 的 amount_fen（BR-FUND-18；不是 net_fen），payout 新增汇总读口，走调用方事务，用 packages/money 口径解析。
+# risk_paused_reason：risk_state=frozen 或存在生效 withdraw_holds 时都返回 account_frozen（BR-FUND-18；BR-WDR 细则：withdraw_holds 造成的冻结对外同样是 account_frozen，不透露冻结来源），否则 null；是否生效用 holdActive + 注入 Clock。key 已在字典（BR-TEXT-14 表 B），不新增对外文案，不改金额口径。
+refs: [BR-FUND-18, BR-WDR-05]
+refs_hash:
+  BR-FUND-18: c7ebd23ee75e
+  BR-WDR-05: 99e2e2654ce0
+deps: [B2-05c]
+paths:
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/payout/application/wallet-ledger.ts'
+  - 'apps/api/src/modules/payout/application/wallet-ledger.test.ts'
+  - 'apps/api/src/modules/payout/index.ts'
+test_paths:
+  - 'test/spec/ledger/wallet-summary-wiring/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/wallet-summary-wiring/**'
+status: todo
+pr: null
