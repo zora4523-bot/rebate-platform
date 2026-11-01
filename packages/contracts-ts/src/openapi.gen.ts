@@ -3924,8 +3924,9 @@ export interface paths {
          *     `realname_status`, `masked_name` and `masked_id_no` (BR-ID-33: name with only the last
          *     character, ID number first 1 + last 1; both null unless realname_status is verified) and
          *     `payout_account` (the current payout account masked as in GET /v1/me/payout-account, null
-         *     when none is bound). The full values stay with the audited reveal. This operation is
-         *     implemented; the four new fields are 实现另单 and stay optional until that
+         *     when none is bound), plus `deletion_status` (the user's latest deletion request, BR-ID-27 /
+         *     BR-ID-28; null when none). The full values stay with the audited reveal. This operation
+         *     is implemented; the five new fields are 实现另单 and stay optional until that
          *     implementation is merged.
          */
         get: operations["adminGetUser"];
@@ -15636,9 +15637,10 @@ export interface components {
          *     the risk state, the union bindings and (CT-26k, D10-517) the real-name status with the
          *     masked name and ID number and the masked current payout account (BR-ID-33). No full
          *     identity number, payout account, real name or phone number: those only through POST
-         *     /admin/v1/users/{user_id}/reveal. realname_status, masked_name, masked_id_no and
-         *     payout_account are optional until their implementation is merged (implementation in a
-         *     separate task); they then become required, with null as described on each.
+         *     /admin/v1/users/{user_id}/reveal. realname_status, masked_name, masked_id_no,
+         *     payout_account and deletion_status (the latest deletion request, BR-ID-27 / BR-ID-28) are
+         *     optional until their implementation is merged (implementation in a separate
+         *     task); they then become required, with null as described on each.
          */
         AdminUserDetail: {
             user_id: components["schemas"]["Id"];
@@ -15689,6 +15691,12 @@ export interface components {
              *     not returned until its implementation is merged.
              */
             payout_account?: components["schemas"]["PayoutAccount"] | null;
+            /**
+             * @description Status of the user's latest account-deletion request (BR-ID-27, BR-ID-28: cooling,
+             *     processing, done or cancelled); null when the user has never requested deletion.
+             *     Added by CT-26k (D10-517); not returned until its implementation is merged.
+             */
+            deletion_status?: components["schemas"]["DeletionStatus"] | null;
         };
         AdminUserDetailResponse: {
             code: components["schemas"]["SuccessCode"];
@@ -15750,6 +15758,12 @@ export interface components {
              *     not returned until its implementation is merged.
              */
             payout_account?: components["schemas"]["PayoutAccount"] | null;
+            /**
+             * @description Status of the user's latest account-deletion request (BR-ID-27, BR-ID-28: cooling,
+             *     processing, done or cancelled); null when the user has never requested deletion.
+             *     Added by CT-26k (D10-517); not returned until its implementation is merged.
+             */
+            deletion_status?: components["schemas"]["DeletionStatus"] | null;
             /**
              * @description The fields this save actually changed, in the order phone, nickname: a field equal to
              *     the current value (phone after normalisation, nickname after trimming) is not
@@ -28062,6 +28076,7 @@ export interface operations {
                      *           "masked_payee_name": "**三",
                      *           "change_remaining_this_month": 2
                      *         },
+                     *         "deletion_status": null,
                      *         "risk": {
                      *           "state": "frozen",
                      *           "reason_category": "abnormal_trade",
@@ -28756,6 +28771,7 @@ export interface operations {
                      *         "masked_name": null,
                      *         "masked_id_no": null,
                      *         "payout_account": null,
+                     *         "deletion_status": null,
                      *         "risk": {
                      *           "state": "normal",
                      *           "reason_category": null,
