@@ -7,6 +7,7 @@ type: impl
 # ② 映射：item_id = goodsId 原样；**开工前核对**：packages/domain deriveProductKey 对淘宝取 item_id 按「-」切分的最后一段作 stable_id——须用录制形状确认 goodsId 是否为「前段-后段」新式 ID 且后段在多次请求间稳定，若不一致先报编排 / w1，不自行改 product_key 口径。title、主图（经 normalizeItemImages）、price_fen / coupon_fen / final_price_fen 按 BR-PRICE-01 既有口径（D33 映射，任务书摘原文；原价 originalPrice、券后价 actualPrice、券面额 couponPrice，元转分只用 yuanStrToFen，三者关系不自洽 → 价格异常照 isPriceAnomaly）、commission_rate_bp 由 commissionRate（百分数串）换算、一级类目可选字段（B1-04l 已加）按大淘客类目字段能对上则填、否则不填；estimateAmount、couponLink、itemLink、大淘客内部商品 id 不映射不外露。quoted_at = 收到响应时 Clock。缺必需字段的条目跳过并告警，不整页失败。
 # ③ 数据源开关同 B1-04d（装配注入大淘客客户端且配置打开时才走；否则 searchItems 保持 adapter_unimplemented）；官方 27939 批下后切官方优先另开任务。
 # 目录：union/infra/taobao/**、union/infra/dataoke/**、union/domain/types.ts。test_paths：test/spec/union/taobao-search/**。整体 RV2（价格）。
+# 完成 2026-11-01（#2117）：价格口径按 D10-530（price_fen = actualPrice + couponPrice，originalPrice 只存），JSON number 按 D10-525 String→parseYuanToFen；goodsId 经凑狸 item.info.upgrade.get 换算（D10-504）；searchSource 开关装配另开小单。
 refs: []
 refs_hash: {}
 deps: [B1-04e]
@@ -21,4 +22,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/union/taobao-search/**'
-status: todo
+status: done
+pr: 2117
