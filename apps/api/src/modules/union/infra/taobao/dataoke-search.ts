@@ -23,7 +23,7 @@
 //   本批里的每个 goodsId 改为一次只请求一个再换（一个对一个）。15/50001、results 为空 → 本批（或这一个）
 //   换不到。换不到的条目不返回（相当于商品暂不可用），不用大淘客 ID 兜底，也不写缓存。
 //   含逗号、空白或缺失的 goodsId 不进请求（该条按 invalid_item 跳过）。
-// ④ 映射缓存：进程内、每个适配器实例一份，goodsId → 凑狸 item_id，带 TTL（实现轮定，必须远小于一年），
+// ④ 映射缓存：进程内、每个适配器实例一份，goodsId → 凑狸 item_id，带 TTL（TAOBAO_ITEM_ID_CACHE_TTL_MS = 30 分钟，最多 TAOBAO_ITEM_ID_CACHE_MAX_ENTRIES 条），
 //   时间只读注入的 Clock。命中不再调 TOP；只缓存换算成功的结果。
 // ⑤ 映射（mapDataokeSearchItem）：逐个挑字段，从不 spread。item_id = 换算后的凑狸 ID；title = title
 //   （非空白字符串），否则 dtitle；主图 / 多图经 normalizeItemImages（main_image_url = mainPic，
@@ -43,8 +43,12 @@
 //   跳过该条并告警 invalid_item。跳过不整页失败，结果保持搜索顺序。
 // 告警：经适配器 warn，形如 { method: '/api/goods/get-dtk-search-goods', code: DataokeSearchWarningCode }，
 //   只带路径与固定码，不带商品 ID、标题、金额、链接等原值。
+import { parseYuanToFen } from '@couli/domain';
+import { addFen, pctStrToBp } from '@couli/money';
 import type { Clock } from '../../../platform/index.ts';
-import type { UnionItemDetail } from '../../domain/types.ts';
+import { normalizeItemImages } from '../../domain/item-images.ts';
+import { isPriceAnomaly, type PriceAnomalyReason } from '../../domain/taobao-price.ts';
+import { UnionError, type UnionItemDetail } from '../../domain/types.ts';
 import type { DataokeParameters } from '../dataoke/dataoke-client.ts';
 import type { TaobaoWarning } from './response.ts';
 
@@ -62,10 +66,21 @@ export type TaobaoItemIdBatchSize = 20;
 
 /** The fixed codes a search warning may carry (see the header). */
 export type DataokeSearchWarningCode =
-  | 'PRICE_ANOMALY'
-  | 'PRICE_CALC_DIFF'
-  | 'invalid_item'
-  | 'invalid_commission';
+  'PRICE_ANOMALY' | 'PRICE_CALC_DIFF' | 'invalid_item' | 'invalid_commission';
+
+export const DATAOKE_SEARCH_PATH: DataokeSearchPath = '/api/goods/get-dtk-search-goods';
+export const DATAOKE_SEARCH_VERSION: DataokeSearchVersion = 'v2.1.2';
+export const DATAOKE_SEARCH_PAGE_SIZE: DataokeSearchPageSize = 20;
+export const TAOBAO_ITEM_ID_BATCH_SIZE: TaobaoItemIdBatchSize = 20;
+/** 映射缓存的存活时间：30 分钟（商品下架后最多这么久仍沿用旧的换算结果）。 */
+export const TAOBAO_ITEM_ID_CACHE_TTL_MS = 30 * 60 * 1000;
+/** 映射缓存最多条数；超出按写入先后淘汰最早的一条，防止进程内无界增长。 */
+export const TAOBAO_ITEM_ID_CACHE_MAX_ENTRIES = 10_000;
+
+/** 游标页码上限（大淘客精选子集远小于此；越界的游标按非法处理）。 */
+const MAX_SEARCH_PAGE = 9_999;
+const CURSOR_PREFIX = 'tb-dtk-search:';
+const CURSOR_PATTERN = /^tb-dtk-search:([1-9][0-9]{0,3})$/;
 
 /** The `data` of one search response, reduced to what paging needs. */
 export interface DataokeSearchPage {
@@ -89,29 +104,65 @@ export interface TaobaoItemIdCache {
   set(goodsId: string, itemId: string): void;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function nonBlank(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+function invalidCursor(): UnionError {
+  return new UnionError(
+    'invalid_dto',
+    'taobao searchItems: cursor does not belong to a goods search',
+    'taobao',
+  );
+}
+
+function warnOf(
+  warn: ((event: TaobaoWarning) => void) | undefined,
+  code: DataokeSearchWarningCode,
+): void {
+  // 只带路径与固定码，不带商品 ID、标题、金额、链接等原值。
+  warn?.({ method: DATAOKE_SEARCH_PATH, code });
+}
+
 /** The opaque cursor of search page `page` (≥ 2). */
 export function dataokeSearchCursor(page: number): string {
-  void page;
-  throw new Error('NotImplemented: dataokeSearchCursor');
+  return `${CURSOR_PREFIX}${page}`;
 }
 
 /** The page a cursor of this search carries; anything else → invalid_dto. */
 export function parseDataokeSearchCursor(cursor: string): number {
-  void cursor;
-  throw new Error('NotImplemented: parseDataokeSearchCursor');
+  const match = typeof cursor === 'string' ? CURSOR_PATTERN.exec(cursor) : null;
+  const page = match === null ? Number.NaN : Number(match[1]);
+  if (!Number.isSafeInteger(page) || page < 2 || page > MAX_SEARCH_PAGE) throw invalidCursor();
+  return page;
 }
 
 /** Business parameters keyWords / pageId / pageSize / sort of one search request. */
 export function dataokeSearchParameters(keyword: string, page: number): DataokeParameters {
-  void keyword;
-  void page;
-  throw new Error('NotImplemented: dataokeSearchParameters');
+  return { keyWords: keyword, pageId: page, pageSize: DATAOKE_SEARCH_PAGE_SIZE, sort: 0 };
 }
 
 /** data.list and data.totalNum of a search response. */
 export function dataokeSearchPage(data: Readonly<Record<string, unknown>>): DataokeSearchPage {
-  void data;
-  throw new Error('NotImplemented: dataokeSearchPage');
+  const list = data.list;
+  let rows: readonly unknown[];
+  if (list === undefined || list === null) rows = [];
+  else if (Array.isArray(list)) rows = list;
+  else {
+    throw new UnionError(
+      'upstream_unavailable',
+      `taobao ${DATAOKE_SEARCH_PATH}: list is not an array`,
+      'taobao',
+    );
+  }
+  const total = data.totalNum;
+  const totalNum =
+    typeof total === 'number' && Number.isSafeInteger(total) && total >= 0 ? total : null;
+  return { rows, totalNum };
 }
 
 /** nextCursor from the raw row count of this page (see the header ②). */
@@ -120,10 +171,37 @@ export function dataokeSearchNextCursor(
   rawCount: number,
   totalNum: number | null,
 ): string | null {
-  void page;
-  void rawCount;
-  void totalNum;
-  throw new Error('NotImplemented: dataokeSearchNextCursor');
+  const more =
+    rawCount >= DATAOKE_SEARCH_PAGE_SIZE &&
+    page < MAX_SEARCH_PAGE &&
+    (totalNum === null || page * DATAOKE_SEARCH_PAGE_SIZE < totalNum);
+  return more ? dataokeSearchCursor(page + 1) : null;
+}
+
+/** A goodsId that may go into the comma-joined item_id parameter. */
+function goodsIdOf(row: Record<string, unknown>): string | undefined {
+  const id = row.goodsId;
+  if (!nonBlank(id) || id.includes(',') || /\s/u.test(id)) return undefined;
+  return id;
+}
+
+function titleOf(row: Readonly<Record<string, unknown>>): string | undefined {
+  if (nonBlank(row.title)) return row.title;
+  if (nonBlank(row.dtitle)) return row.dtitle;
+  return undefined;
+}
+
+/** commissionRate（百分数）→ bp；有限 number 先 String()，按十进制截断；不合格 → undefined。 */
+function commissionBp(value: unknown): bigint | undefined {
+  let text: string;
+  if (typeof value === 'number' && Number.isFinite(value)) text = String(value);
+  else if (typeof value === 'string') text = value;
+  else return undefined;
+  try {
+    return pctStrToBp(text);
+  } catch {
+    return undefined;
+  }
 }
 
 /** Rows that may be returned, in search order; the others are skipped with one warning each. */
@@ -131,15 +209,31 @@ export function dataokeSearchCandidates(
   rows: readonly unknown[],
   warn: ((event: TaobaoWarning) => void) | undefined,
 ): readonly DataokeSearchCandidate[] {
-  void rows;
-  void warn;
-  throw new Error('NotImplemented: dataokeSearchCandidates');
+  const out: DataokeSearchCandidate[] = [];
+  for (const entry of rows) {
+    const row = isRecord(entry) ? entry : {};
+    const goodsId = goodsIdOf(row);
+    const image = normalizeItemImages({ main_image_url: row.mainPic });
+    if (goodsId === undefined || titleOf(row) === undefined || image.main_image_url === undefined) {
+      warnOf(warn, 'invalid_item');
+      continue;
+    }
+    if (commissionBp(row.commissionRate) === undefined) {
+      warnOf(warn, 'invalid_commission');
+      continue;
+    }
+    out.push({ goodsId, row });
+  }
+  return out;
 }
 
 /** goodsIds split into request batches of at most TaobaoItemIdBatchSize, order kept. */
 export function taobaoItemIdBatches(goodsIds: readonly string[]): readonly (readonly string[])[] {
-  void goodsIds;
-  throw new Error('NotImplemented: taobaoItemIdBatches');
+  const batches: string[][] = [];
+  for (let start = 0; start < goodsIds.length; start += TAOBAO_ITEM_ID_BATCH_SIZE) {
+    batches.push(goodsIds.slice(start, start + TAOBAO_ITEM_ID_BATCH_SIZE));
+  }
+  return batches;
 }
 
 /**
@@ -150,15 +244,70 @@ export function matchConvertedItemIds(
   goodsIds: readonly string[],
   rows: readonly unknown[],
 ): ReadonlyMap<string, string> | null {
-  void goodsIds;
-  void rows;
-  throw new Error('NotImplemented: matchConvertedItemIds');
+  if (rows.length !== goodsIds.length) return null;
+  const out = new Map<string, string>();
+  goodsIds.forEach((goodsId, i) => {
+    const row = rows[i];
+    const itemId = isRecord(row) ? row.item_id : undefined;
+    if (nonBlank(itemId)) out.set(goodsId, itemId);
+  });
+  return out;
 }
 
 /** A goodsId → item_id cache over the injected Clock. */
 export function createTaobaoItemIdCache(clock: Clock): TaobaoItemIdCache {
-  void clock;
-  throw new Error('NotImplemented: createTaobaoItemIdCache');
+  const entries = new Map<string, { readonly itemId: string; readonly at: number }>();
+  return {
+    get(goodsId: string): string | undefined {
+      const entry = entries.get(goodsId);
+      if (entry === undefined) return undefined;
+      const age = clock.now().getTime() - entry.at;
+      if (age >= 0 && age < TAOBAO_ITEM_ID_CACHE_TTL_MS) return entry.itemId;
+      entries.delete(goodsId);
+      return undefined;
+    },
+    set(goodsId: string, itemId: string): void {
+      entries.delete(goodsId);
+      entries.set(goodsId, { itemId, at: clock.now().getTime() });
+      if (entries.size > TAOBAO_ITEM_ID_CACHE_MAX_ENTRIES) {
+        const oldest = entries.keys().next();
+        if (oldest.done !== true) entries.delete(oldest.value);
+      }
+    },
+  };
+}
+
+/** Fen of an amount (BR-PRICE-01, D10-525); absent or invalid → undefined. */
+function amountFen(value: unknown): bigint | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return parseYuanToFen(String(value)) ?? undefined;
+  }
+  if (typeof value !== 'string') return undefined;
+  return parseYuanToFen(value) ?? undefined;
+}
+
+type SearchPrice =
+  | {
+      readonly status: 'ok';
+      readonly price: bigint;
+      readonly coupon: bigint;
+      readonly final: bigint;
+    }
+  | { readonly status: 'anomaly'; readonly reason: PriceAnomalyReason };
+
+/** D10-530：price = actualPrice + couponPrice，coupon = couponPrice，final = actualPrice。 */
+function searchPrice(row: Readonly<Record<string, unknown>>): SearchPrice {
+  const actual = amountFen(row.actualPrice);
+  const coupon = amountFen(row.couponPrice);
+  if (actual === undefined || coupon === undefined) {
+    return { status: 'anomaly', reason: 'missing_field' };
+  }
+  const price = addFen(actual, coupon);
+  const final = actual;
+  if (isPriceAnomaly({ price_fen: price, coupon_fen: coupon, final_price_fen: final })) {
+    return { status: 'anomaly', reason: 'invalid_price' };
+  }
+  return { status: 'ok', price, coupon, final };
 }
 
 /**
@@ -171,9 +320,32 @@ export function mapDataokeSearchItem(
   receivedAt: Date,
   warn: ((event: TaobaoWarning) => void) | undefined,
 ): UnionItemDetail {
-  void candidate;
-  void itemId;
-  void receivedAt;
-  void warn;
-  throw new Error('NotImplemented: mapDataokeSearchItem');
+  const { row } = candidate;
+  const title = titleOf(row);
+  const commission = commissionBp(row.commissionRate);
+  if (title === undefined || commission === undefined) {
+    // dataokeSearchCandidates 已筛过；到这里说明调用方绕过了筛选。
+    throw new UnionError(
+      'upstream_unavailable',
+      `taobao ${DATAOKE_SEARCH_PATH}: row is missing required fields`,
+      'taobao',
+    );
+  }
+  const images = normalizeItemImages({ main_image_url: row.mainPic, image_urls: row.smallImages });
+  const price = searchPrice(row);
+  if (price.status === 'anomaly') warnOf(warn, 'PRICE_ANOMALY');
+  return Object.freeze({
+    platform: 'taobao',
+    item_id: itemId,
+    title,
+    // 价格异常：三价 0n 占位（不出截断值、不出部分价格），出不出卡由 catalog 决定。
+    price_fen: price.status === 'ok' ? price.price : 0n,
+    coupon_fen: price.status === 'ok' ? price.coupon : 0n,
+    final_price_fen: price.status === 'ok' ? price.final : 0n,
+    commission_rate_bp: commission,
+    quoted_at: receivedAt.toISOString(),
+    price_status: price.status,
+    ...(price.status === 'anomaly' ? { price_anomaly_reason: price.reason } : {}),
+    ...images,
+  });
 }
