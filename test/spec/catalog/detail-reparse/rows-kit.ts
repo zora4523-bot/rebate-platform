@@ -2,6 +2,7 @@
 // usePoolDatabase of the pool kit): real Catalog, real pool reader, the fake union of ./kit.ts. The
 // fixture builds the reparser first, so on the skeleton every case stops at NotImplemented.
 import { createCatalog } from '../../../../apps/api/src/modules/catalog/application/catalog.ts';
+import type { ItemRefClaims } from '../../../../apps/api/src/modules/catalog/application/item-ref.ts';
 import { createRawReparser } from '../../../../apps/api/src/modules/catalog/application/raw-reparse.ts';
 import {
   getProduct,
@@ -82,6 +83,9 @@ export async function rowsCase(h: PoolDatabase) {
     poolRow,
     refRow,
     other: () => tenant(h.db),
+    /** A card's item_ref of the tenant's app, fetched now unless told otherwise. */
+    issue: (overrides: Partial<ItemRefClaims> = {}) =>
+      base.issue({ appId: owner.appId, ...overrides }),
     run(query: Partial<ProductDetailQuery> = {}) {
       return getProduct({ product_key: PRODUCT_KEY, ...query }, options);
     },

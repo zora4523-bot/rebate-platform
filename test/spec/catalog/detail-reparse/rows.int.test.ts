@@ -25,7 +25,7 @@ import {
   onePage,
   unionCalls,
 } from './kit.ts';
-import { rowsCase } from './rows-kit.ts';
+import { AGED_SEC, rowsCase } from './rows-kit.ts';
 
 const h = usePoolDatabase(createTestDatabase);
 const OTHER_RAW = 'synthetic-foreign-synthetic001';
@@ -161,8 +161,43 @@ it(
   TIMEOUT,
 );
 
+it.each([
+  { label: '第①步 item_ref', tapped: true },
+  { label: '第②步 product_refs', tapped: false },
+])(
+  '[B1-05w#68][BR-PROD-05] 步骤 1：详情走$label 成功、时钟前进也不抹掉 canonical_url，1801 秒后重解析还走链接',
+  async ({ tapped }) => {
+    const f = await rowsCase(h);
+    const received = secondsAgo(f.clock, tapped ? AGED_SEC : 60);
+    await f.staleRef(f.owner, {
+      canonical_url: CANONICAL_URL,
+      raw_fetched_at: received,
+      refreshed_at: received,
+    });
+    f.getItem.mockImplementation(async () => {
+      f.clock.advanceMs(2000);
+      return found({ quoted_at: f.clock.now().toISOString() });
+    });
+
+    await f.run(tapped ? { item_ref: f.issue() } : {});
+
+    expect(f.resolveLink).not.toHaveBeenCalled();
+    expect(await f.refRow()).toMatchObject({
+      canonical_url: CANONICAL_URL,
+      refreshed_at: f.clock.now(),
+    });
+
+    f.clock.advanceMs(AGED_SEC * 1000);
+    await f.run();
+
+    expect(f.resolveLink.mock.calls.map(([url]) => url)).toEqual([CANONICAL_URL]);
+    expect(f.searchItems).not.toHaveBeenCalled();
+  },
+  TIMEOUT,
+);
+
 it(
-  '[B1-05w#42][BR-PROD-05][BR-PRICE-11] 步骤 4：解析成功、getItem 超时 → 50401，新原串已落行，重试走第②步，不再重解析',
+  '[B1-05w#42][BR-PROD-05][BR-PRICE-11] 步骤 4：解析成功、getItem 超时 → 50401，新原串已落行且 source=detail，重试走第②步，不再重解析',
   async () => {
     const f = await rowsCase(h);
     await f.staleRef();
@@ -171,7 +206,7 @@ it(
     );
 
     expect(await rejection(() => f.run())).toMatchObject({ code: 50401 });
-    expect(await f.refRow()).toMatchObject({ raw_item_id: NEW_RAW });
+    expect(await f.refRow()).toMatchObject({ raw_item_id: NEW_RAW, source: 'detail' });
 
     expect(await f.run()).toMatchObject({ stale: false });
     expect(f.searchItems).toHaveBeenCalledTimes(1);

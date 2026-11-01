@@ -4,7 +4,7 @@
 // at NotImplemented, the negative ones included. The reparser is built and handed on, never called:
 // its members are the implementer's. Importing @couli/db/testing is the *.int.test.ts files' part.
 import { setTimeout as delay } from 'node:timers/promises';
-import { vi } from 'vitest';
+import { expect, vi } from 'vitest';
 import type {
   PoolCandidate,
   PoolReader,
@@ -40,8 +40,10 @@ export const POOL_TITLE = '合成池标题';
 export const CANONICAL_URL = 'https://item.example.test/synthetic?id=synthetic001';
 /** Apart from the union's 2990: tells the pool's card from a union answer and a cache entry. */
 export const POOL_FINAL_FEN = 2500;
-/** A hung call has this long to come back: well past the 3 s of 重新解析步骤 3. */
-export const HANG_LIMIT_MS = 5000;
+/** A hung call has this long to come back: a second past the 3 s of 重新解析步骤 3. */
+export const HANG_LIMIT_MS = 4000;
+/** A hung call does not come back before this: a real 3 s timer, with room for its rounding. */
+const TIMEOUT_FLOOR_MS = 2900;
 
 const JD_MODE_KEY = 'product_key.jd.mode';
 const HIT_WINDOW_KEY = 'search.cache_ttl_sec';
@@ -176,6 +178,18 @@ export function reparseFixture(setup: ReparseSetup = {}) {
   });
   base.readProductRef.mockResolvedValue(stored);
   const options: ProductDetailOptions = { ...base.options, config, upstream, poolReader };
+  /** An entry of this age under NEW_RAW, every mock back at zero calls. */
+  const warm = async (ageSec: number): Promise<void> => {
+    await getProduct(
+      { product_key: productKey, item_ref: base.issue({ rawItemId: NEW_RAW }) },
+      options,
+    );
+    base.clock.advanceMs(ageSec * 1000);
+    base.readProductRef.mockClear();
+    base.registerProductRef.mockClear();
+    fake.getItem.mockClear();
+    base.rows.length = 0;
+  };
   return {
     ...fake,
     fake,
@@ -192,18 +206,10 @@ export function reparseFixture(setup: ReparseSetup = {}) {
     run(query: Partial<ProductDetailQuery> = {}) {
       return getProduct({ product_key: productKey, ...query }, options);
     },
-    /** An entry past its hit window and inside the stale window, every mock back at zero calls. */
-    async warmCache(): Promise<void> {
-      await getProduct(
-        { product_key: productKey, item_ref: base.issue({ rawItemId: NEW_RAW }) },
-        options,
-      );
-      base.clock.advanceMs((HIT_WINDOW_SEC + 60) * 1000);
-      base.readProductRef.mockClear();
-      base.registerProductRef.mockClear();
-      fake.getItem.mockClear();
-      base.rows.length = 0;
-    },
+    /** Past its hit window and inside the stale window. */
+    warmCache: () => warm(HIT_WINDOW_SEC + 60),
+    /** Inside its hit window. */
+    warmHit: () => warm(HIT_WINDOW_SEC - 30),
   };
 }
 
@@ -261,10 +267,18 @@ export type Settled =
   | { readonly state: 'hung' };
 
 /** How `run` ended within `ms`: a call that hangs fails an assertion, it does not time out. */
-export async function within(ms: number, run: () => Promise<unknown>): Promise<Settled> {
+async function within(ms: number, run: () => Promise<unknown>): Promise<Settled> {
   const ended = run().then(
     (value): Settled => ({ state: 'resolved', value }),
     (error: unknown): Settled => ({ state: 'rejected', error }),
   );
   return Promise.race([ended, delay(ms).then((): Settled => ({ state: 'hung' }))]);
+}
+
+/** How `run` over a hung union ended: not before the 3 s of 重新解析步骤 3, not long after them. */
+export async function waitedOut(run: () => Promise<unknown>): Promise<Settled> {
+  const started = performance.now();
+  const ended = await within(HANG_LIMIT_MS, run);
+  expect(performance.now() - started).toBeGreaterThanOrEqual(TIMEOUT_FLOOR_MS);
+  return ended;
 }

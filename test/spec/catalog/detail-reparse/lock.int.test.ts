@@ -23,6 +23,7 @@ import {
   NEW_RAW,
   askedRaws,
   found,
+  hang,
   onePage,
   reparseFixture,
   unionFake,
@@ -31,6 +32,8 @@ import {
 } from './kit.ts';
 
 const HOLD_MS = 400;
+/** A slow union inside the 3 s of 步骤 3: a waiter that gives up early sends its own search. */
+const SLOW_MS = 2500;
 const TIMEOUT = 60_000;
 const OTHER_KEY = 'tb:synthetic002';
 const OTHER_RAW = 'synthetic-renewed-synthetic002';
@@ -73,10 +76,26 @@ function twoInstances(setup: ReparseSetup = {}) {
   return { fake, a: reparseFixture(shared), b: reparseFixture(shared) };
 }
 
-/** The title search answers only after HOLD_MS. */
-function holdSearch(fake: UnionFake, answer: () => ReturnType<typeof onePage>): void {
+/** The title search answers only after `ms`. */
+function holdSearch(
+  fake: UnionFake,
+  answer: () => ReturnType<typeof onePage>,
+  ms: number = HOLD_MS,
+): void {
   fake.searchItems.mockImplementation(async () => {
-    await delay(HOLD_MS);
+    await delay(ms);
+    return answer();
+  });
+}
+
+/** Answers once two searches have arrived: a search that waits for the other never does. */
+function meetInSearch(fake: UnionFake, answer: () => ReturnType<typeof onePage>): void {
+  const both = Promise.withResolvers<void>();
+  let arrived = 0;
+  fake.searchItems.mockImplementation(async () => {
+    arrived += 1;
+    if (arrived === 2) both.resolve();
+    await both.promise;
     return answer();
   });
 }
@@ -147,13 +166,50 @@ it(
 );
 
 it(
-  '[B1-05w#50][BR-PROD-05] 步骤 3：等到的结果是暂时失败 → 两边都 50401，只发一次',
+  '[B1-05w#50][BR-PROD-05] 步骤 3：等到的结果是暂时失败 → 两边都 50401，只发一次；联盟恢复后重试重新搜索，不读留下的失败',
   async () => {
     const { fake, a, b } = twoInstances();
     fake.searchItems.mockImplementation(async () => {
       await delay(HOLD_MS);
       throw new UnionError('upstream_unavailable', 'synthetic outage', 'taobao');
     });
+
+    const failures = await Promise.all([rejection(() => a.run()), rejection(() => b.run())]);
+
+    expect(failures).toMatchObject([{ code: 50401 }, { code: 50401 }]);
+    expect(fake.searchItems).toHaveBeenCalledTimes(1);
+
+    fake.searchItems.mockResolvedValue(onePage());
+
+    expect(await a.run()).toMatchObject({ stale: false, final_price_fen: 2990 });
+    expect(fake.searchItems).toHaveBeenCalledTimes(2);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[B1-05w#70][BR-PROD-05] 步骤 3：联盟答得慢、仍在 3 秒内 → 等的一方不提前放弃，只发一次，两边同一新原串',
+  async () => {
+    const { fake, a, b } = twoInstances();
+    holdSearch(fake, () => onePage(), SLOW_MS);
+
+    const cards = await Promise.all([a.run(), b.run()]);
+
+    expect(cards).toMatchObject([
+      { stale: false, final_price_fen: 2990 },
+      { stale: false, final_price_fen: 2990 },
+    ]);
+    expect(fake.searchItems).toHaveBeenCalledTimes(1);
+    expect(new Set(askedRaws(fake))).toEqual(new Set([NEW_RAW]));
+  },
+  TIMEOUT,
+);
+
+it(
+  '[B1-05w#71][BR-PROD-05] 步骤 3：联盟不返回 → 等的一方等到持锁方 3 秒超时的结果，只发一次，两边都 50401',
+  async () => {
+    const { fake, a, b } = twoInstances();
+    fake.searchItems.mockImplementation(hang);
 
     const failures = await Promise.all([rejection(() => a.run()), rejection(() => b.run())]);
 
@@ -186,7 +242,7 @@ it(
     const fake = unionFake();
     const appId = `synthetic_${randomUUID().replaceAll('-', '').slice(0, 16)}`;
     const answers = [found(), found({ item_id: OTHER_RAW })];
-    holdSearch(fake, () => onePage(answers));
+    meetInSearch(fake, () => onePage(answers));
     fake.getItem.mockImplementation(async (ref) => found({ item_id: ref.item_id ?? null }));
     const a = reparseFixture({ appId, fake, redis: namespace });
     const b = reparseFixture({ appId, fake, redis: namespace, productKey: OTHER_KEY });
@@ -200,9 +256,10 @@ it(
 );
 
 it(
-  '[B1-05w#53][BR-PROD-05] 步骤 3：锁 10 秒',
+  '[B1-05w#53][BR-PROD-05] 步骤 3：锁 10 秒：问联盟之前的第一次写入就是取锁，它的 TTL 是 10 秒',
   async () => {
     const ttls: number[] = [];
+    let beforeSearch: number[] = [];
     const recording: RedisNamespace = {
       get: (key) => namespace.get(key),
       set: (key, value, ttlSeconds) => {
@@ -214,11 +271,15 @@ it(
         return namespace.eval(script, options);
       },
     };
-    const { a } = twoInstances({ redis: recording });
+    const { fake, a } = twoInstances({ redis: recording });
+    fake.searchItems.mockImplementation(async () => {
+      beforeSearch = [...ttls];
+      return onePage();
+    });
 
     await a.run();
 
-    expect(ttls).toContain(LOCK_TTL_SEC);
+    expect(beforeSearch[0]).toBe(LOCK_TTL_SEC);
   },
   TIMEOUT,
 );

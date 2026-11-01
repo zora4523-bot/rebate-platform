@@ -243,7 +243,10 @@ it(
       expect(ref).toMatchObject({ item_id: `rawNew-${stable}` });
       expect(ctx).toMatchObject({ appId: owner.appId, purpose: 'online' });
     }
-    expect(await storedRef(owner, stable)).toMatchObject({ raw_item_id: `rawNew-${stable}` });
+    expect(await storedRef(owner, stable)).toMatchObject({
+      raw_item_id: `rawNew-${stable}`,
+      source: 'detail',
+    });
     expect((await linksOf(owner)).find((row) => row.link_id === card.link_id)).toMatchObject({
       raw_item_id: `rawNew-${stable}`,
     });

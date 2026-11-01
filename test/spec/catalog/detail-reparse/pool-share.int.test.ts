@@ -20,11 +20,11 @@ import {
 } from '../product-pool-read/kit.ts';
 import {
   CANONICAL_URL,
-  HANG_LIMIT_MS,
+  NEW_RAW,
   STORED_TITLE,
   hang,
   unionFake,
-  within,
+  waitedOut,
   type UnionFake,
 } from './kit.ts';
 import { AGED_SEC, STABLE } from './rows-kit.ts';
@@ -62,7 +62,14 @@ async function sourceCase(purpose: 'online' | 'pool_refresh', canonicalUrl: stri
       productKey: PRODUCT_KEY,
       title: STORED_TITLE,
     });
-  return { ...fake, owner, current };
+  const refRow = () =>
+    h.db
+      .selectFrom('product_refs')
+      .selectAll()
+      .where('app_id', '=', owner.appId)
+      .where('product_key', '=', PRODUCT_KEY)
+      .executeTakeFirstOrThrow();
+  return { ...fake, owner, current, refRow };
 }
 
 it.each(['online', 'pool_refresh'] as const)(
@@ -71,7 +78,7 @@ it.each(['online', 'pool_refresh'] as const)(
     const f = await sourceCase(purpose, null);
     f.searchItems.mockImplementation(hang);
 
-    const ended = await within(HANG_LIMIT_MS, f.current);
+    const ended = await waitedOut(f.current);
 
     expect(ended).toMatchObject({ state: 'rejected', error: { code: 50401 } });
     expect(f.searchItems.mock.calls[0]?.[1]).toMatchObject({ appId: f.owner.appId, purpose });
@@ -85,10 +92,29 @@ it.each(['online', 'pool_refresh'] as const)(
     const f = await sourceCase(purpose, CANONICAL_URL);
     f.resolveLink.mockImplementation(hang);
 
-    const ended = await within(HANG_LIMIT_MS, f.current);
+    const ended = await waitedOut(f.current);
 
     expect(ended).toMatchObject({ state: 'rejected', error: { code: 50401 } });
     expect(f.resolveLink.mock.calls[0]?.[1]).toMatchObject({ appId: f.owner.appId, purpose });
+  },
+  TIMEOUT,
+);
+
+it.each(['online', 'pool_refresh'] as const)(
+  '[B1-05w#69][BR-PROD-05] 编排第 7 条：%s 用途超时不动行，重试解析成功写 source=pool，共用代码不把来源写成 detail',
+  async (purpose) => {
+    const f = await sourceCase(purpose, null);
+    const before = await f.refRow();
+    f.searchItems.mockImplementationOnce(hang);
+
+    expect(await waitedOut(f.current)).toMatchObject({
+      state: 'rejected',
+      error: { code: 50401 },
+    });
+    expect(await f.refRow()).toEqual(before);
+
+    expect(await f.current()).toMatchObject({ kind: 'live', rawItemId: NEW_RAW });
+    expect(await f.refRow()).toMatchObject({ raw_item_id: NEW_RAW, source: 'pool' });
   },
   TIMEOUT,
 );

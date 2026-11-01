@@ -28,14 +28,13 @@ import {
   outages,
   reparseFixture,
   unionCalls,
-  within,
+  waitedOut,
   type ReparseFixture,
 } from './kit.ts';
 
 const ONLINE = { appId: APP_ID, purpose: 'online' };
 /** Long enough for a real 3 s timeout, a little of the fallback after it and the slack around. */
 const TIMEOUT_CASE_MS = HANG_LIMIT_MS + 5000;
-const THREE_SECONDS_FLOOR_MS = 2900;
 
 function expectNoCard(f: ReparseFixture): void {
   expect(f.rows).toEqual([]);
@@ -43,9 +42,15 @@ function expectNoCard(f: ReparseFixture): void {
   expect(f.quote).not.toHaveBeenCalled();
 }
 
+/** The re-parse's own write, source `detail`, there before any getItem answers. */
 function expectWritten(f: ReparseFixture, raw: string = NEW_RAW): void {
   expect(f.registerProductRef).toHaveBeenCalledWith(
-    expect.objectContaining({ appId: APP_ID, productKey: PRODUCT_KEY, rawItemId: raw }),
+    expect.objectContaining({
+      appId: APP_ID,
+      productKey: PRODUCT_KEY,
+      rawItemId: raw,
+      source: 'detail',
+    }),
     expect.anything(),
   );
 }
@@ -452,7 +457,7 @@ it.each(outages())(
 );
 
 it.each(outages())(
-  '[B1-05w#27][BR-PRICE-11][BR-PROD-07] 结果分类③：$label 时先用旧缓存：有合格池行也不用池价，stale=true，价格和 quoted_at 取缓存条目',
+  '[B1-05w#27][BR-PRICE-11][BR-PROD-07] 结果分类③：$label 时先用旧缓存：有合格池行也不用池价，stale=true，价格和 quoted_at 取缓存条目，没有联盟响应不写 product_refs',
   async ({ error }) => {
     const f = reparseFixture({ cached: true, pooled: true });
     await f.warmCache();
@@ -463,6 +468,29 @@ it.each(outages())(
     expect(f.searchItems).toHaveBeenCalled();
     expect(card).toMatchObject({ stale: true, final_price_fen: 2990 });
     expect(Date.parse(card.quoted_at!)).toBe(Date.parse(NOW));
+    expect(f.registerProductRef).not.toHaveBeenCalled();
+  },
+);
+
+it.each([
+  { label: '第①步 item_ref', tapped: true, freshRow: false },
+  { label: '第②步 product_refs', tapped: false, freshRow: true },
+  { label: '两处都过期', tapped: false, freshRow: false },
+])(
+  '[B1-05w#67][BR-PROD-05][BR-PRICE-11] 缓存命中（$label）没有联盟响应：沿用 quoted_at，不写 product_refs，refreshed_at 不前移',
+  async ({ tapped, freshRow }) => {
+    const f = reparseFixture({
+      cached: true,
+      stored: freshRow ? { rawItemId: NEW_RAW, receivedAt: NOW } : {},
+    });
+    await f.warmHit();
+
+    const card = await f.run(tapped ? { item_ref: f.issue({ rawItemId: NEW_RAW }) } : {});
+
+    expect(card).toMatchObject({ stale: false, final_price_fen: 2990 });
+    expect(Date.parse(card.quoted_at!)).toBe(Date.parse(NOW));
+    expect(unionCalls(f.fake)).toBe(0);
+    expect(f.registerProductRef).not.toHaveBeenCalled();
   },
 );
 
@@ -475,11 +503,9 @@ it(
     const f = reparseFixture();
     f.searchItems.mockImplementation(hang);
 
-    const started = performance.now();
-    const ended = await within(HANG_LIMIT_MS, () => f.run());
+    const ended = await waitedOut(() => f.run());
 
     expect(ended).toMatchObject({ state: 'rejected', error: { code: 50401 } });
-    expect(performance.now() - started).toBeGreaterThanOrEqual(THREE_SECONDS_FLOOR_MS);
     expect(f.getItem).not.toHaveBeenCalled();
     expectNoCard(f);
   },
@@ -492,11 +518,9 @@ it(
     const f = reparseFixture({ stored: { canonicalUrl: CANONICAL_URL } });
     f.resolveLink.mockImplementation(hang);
 
-    const started = performance.now();
-    const ended = await within(HANG_LIMIT_MS, () => f.run());
+    const ended = await waitedOut(() => f.run());
 
     expect(ended).toMatchObject({ state: 'rejected', error: { code: 50401 } });
-    expect(performance.now() - started).toBeGreaterThanOrEqual(THREE_SECONDS_FLOOR_MS);
     expect(f.searchItems).not.toHaveBeenCalled();
   },
   TIMEOUT_CASE_MS,
@@ -508,7 +532,7 @@ it(
     const f = reparseFixture({ pooled: true });
     f.searchItems.mockImplementation(hang);
 
-    const ended = await within(HANG_LIMIT_MS, () => f.run());
+    const ended = await waitedOut(() => f.run());
 
     expect(ended).toMatchObject({
       state: 'resolved',
@@ -519,18 +543,19 @@ it(
 );
 
 it(
-  '[B1-05w#31][BR-PROD-05][BR-PROD-07] 步骤 3：超时也是暂时失败：有旧缓存先用旧缓存',
+  '[B1-05w#31][BR-PROD-05][BR-PROD-07] 步骤 3：超时也是暂时失败：有旧缓存先用旧缓存，没有联盟响应不写 product_refs',
   async () => {
     const f = reparseFixture({ cached: true, pooled: true });
     await f.warmCache();
     f.searchItems.mockImplementation(hang);
 
-    const ended = await within(HANG_LIMIT_MS, () => f.run());
+    const ended = await waitedOut(() => f.run());
 
     expect(ended).toMatchObject({
       state: 'resolved',
       value: { stale: true, final_price_fen: 2990 },
     });
+    expect(f.registerProductRef).not.toHaveBeenCalled();
   },
   TIMEOUT_CASE_MS,
 );
