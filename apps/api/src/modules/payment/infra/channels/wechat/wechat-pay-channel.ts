@@ -11,21 +11,23 @@
 // a result is the query's 404 + ORDER_NOT_EXIST, matched on interface, status and code together.
 // Also compiled by the `test` project: erasable syntax only.
 import { createHash, randomBytes } from 'node:crypto';
-import type {
-  PayBillResult,
-  PayChannel,
-  PayChannelIdentity,
-  PayCloseResult,
-  PayCreateOrderInput,
-  PayCreateOrderResult,
-  PayNotificationResult,
-  PayQueryResult,
-  PayRawNotification,
-  PayRefundInput,
-  PayRefundOriginal,
-  PayRefundQueryResult,
-  PayRefundResult,
-  PayTradeState,
+import {
+  PAY_REASON_APP_NOT_CONFIGURED,
+  PAY_REASON_BILL_FORMAT_UNVERIFIED,
+  type PayBillResult,
+  type PayChannel,
+  type PayChannelIdentity,
+  type PayCloseResult,
+  type PayCreateOrderInput,
+  type PayCreateOrderResult,
+  type PayNotificationResult,
+  type PayQueryResult,
+  type PayRawNotification,
+  type PayRefundInput,
+  type PayRefundOriginal,
+  type PayRefundQueryResult,
+  type PayRefundResult,
+  type PayTradeState,
 } from '../../../application/pay-channel.ts';
 import { NOTIFY_ROUTES } from '../../../application/notify-routes.ts';
 import type { PayChannelCode } from '../../../domain/types.ts';
@@ -58,7 +60,10 @@ import {
 
 /** docs-mirror/wechat-pay/pages/4013070347.txt: the merchant API domain; a test merchant uses it too. */
 const API_BASE = 'https://api.mch.weixin.qq.com';
-/** ±299 seconds pass, ±300 do not (r3: the bound of the official Go SDK; 4013053249.txt: 5 minutes). */
+/**
+ * ±299 seconds pass, ±300 do not. The documents' snapshot does not state the window; the earlier code
+ * review (r3) took ±300 seconds from the official Go SDK's validator. Not yet tested (BR-PAY-09).
+ */
 const MAX_CLOCK_SKEW_SECONDS = 300;
 /** docs-mirror/wechat-pay/pages/4013070368.txt:23. */
 const PAY_EVENT = 'TRANSACTION.SUCCESS';
@@ -149,6 +154,9 @@ export class WechatPayChannel implements PayChannel {
   }
 
   async createOrder(input: PayCreateOrderInput): Promise<PayCreateOrderResult> {
+    if (input.appId !== undefined && input.appId !== this.#config.payAppId) {
+      return this.#unknown('create_order', PAY_REASON_APP_NOT_CONFIGURED);
+    }
     const notifyUrl = notifyAddress(input.notifyUrl, this.#config.notifyBaseUrl);
     const built = this.#orderFields(input);
     if (notifyUrl === null || built === null) return this.#unknown('create_order', 'invalid_input');
@@ -242,15 +250,19 @@ export class WechatPayChannel implements PayChannel {
     ) {
       return this.#unknown('query', 'bad_body');
     }
-    // 4013070356.txt:461,497,500: transaction_id and amount are optional; a paid trade has them.
+    // 4013070356.txt:461,497,500: transaction_id, amount and amount.total are all optional, so an
+    // unpaid trade without a total still answers (its close must not stay unknown); a total that is
+    // there is checked strictly, and a paid trade must have one (below).
     let amountFen: bigint | null = null;
     if ('amount' in trade) {
       const amount = trade['amount'];
       if (!isObject(amount) || !currencyOk(amount, false)) {
         return this.#unknown('query', 'bad_body');
       }
-      amountFen = fenFromJson(amount['total']);
-      if (amountFen === null) return this.#unknown('query', 'bad_body');
+      if ('total' in amount) {
+        amountFen = fenFromJson(amount['total']);
+        if (amountFen === null) return this.#unknown('query', 'bad_body');
+      }
     }
     if (state === 'SUCCESS' && (tradeNo === undefined || amountFen === null)) {
       return this.#unknown('query', 'bad_body');
@@ -563,7 +575,7 @@ export class WechatPayChannel implements PayChannel {
       .update(file.bytes ?? Buffer.from(file.body, 'utf8'))
       .digest('hex');
     if (digest !== hashValue.toLowerCase()) return this.#unknown('bill', 'bill_hash_mismatch');
-    return this.#unknown('bill', 'bill_format_unverified');
+    return this.#unknown('bill', PAY_REASON_BILL_FORMAT_UNVERIFIED);
   }
 
   /**

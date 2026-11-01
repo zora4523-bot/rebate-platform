@@ -40,6 +40,11 @@
 //   key, anomalies on (channel, channel trade number), vouchers on their uniq key. A bill the channel
 //   cannot give yet (unknown) is never read as an empty bill: nothing is written and
 //   PayBillUnavailable is thrown. A malformed bill is refused as a whole (fail closed).
+//   B2-15k: two unknown answers are no bill now and no bill an hour later, so a catch-up could only
+//   end in pay_bill_recon_abandoned: a channel without credentials (channel_unconfigured, debug as a
+//   channel without an adapter) and a bill whose format no document gives (bill_format_unverified,
+//   warn pay_bill_format_unverified: the day was not reconciled and that must show). The run skips
+//   that channel: nothing thrown, no catch-up, the day not recorded as reconciled.
 // runBillReconJob — the handler of job `bill.recon`: the bill day is the payload's bill_date (the
 //   daily run carries it) or else the +08:00 accounting day before clock.now() (@couli/domain).
 //   Every channel the process has an adapter for is reconciled, whatever pay.channel_enabled says
@@ -109,6 +114,8 @@ import {
   type PayBillReconPayload,
 } from '../jobs/names.ts';
 import {
+  PAY_REASON_BILL_FORMAT_UNVERIFIED,
+  PAY_REASON_CHANNEL_UNCONFIGURED,
   PayChannelUnavailable,
   type PayBillResult,
   type PayChannel,
@@ -522,7 +529,10 @@ export function feeVoucher(
  * Reconciles the bill of `input` (BR-PAY-07). Idempotent per (app, channel, bill date): a run
  * delivered again registers no second recon diff, anomaly or PAY_FEE voucher.
  */
-export async function runPayBillRecon(deps: PayReconDeps, input: PayReconInput): Promise<void> {
+export async function runPayBillRecon(
+  deps: PayReconDeps,
+  input: PayReconInput,
+): Promise<'reconciled' | 'skipped'> {
   const channel = input.pay_channel;
   const billDate = input.bill_date;
   // RangeError for anything but an existing YYYY-MM-DD (the bill day's [start, end) at +08:00).
@@ -537,6 +547,17 @@ export async function runPayBillRecon(deps: PayReconDeps, input: PayReconInput):
   const adapter = deps.channels.of(channel);
   const parsed = await loadBill(run, adapter, billDate);
   if (parsed.kind === 'unknown') {
+    if (parsed.reason === PAY_REASON_CHANNEL_UNCONFIGURED) {
+      deps.logger.debug(
+        { app_id: input.app_id, pay_channel: channel },
+        'pay_bill_recon_no_adapter',
+      );
+      return 'skipped';
+    }
+    if (parsed.reason === PAY_REASON_BILL_FORMAT_UNVERIFIED) {
+      deps.logger.warn(run.base, 'pay_bill_format_unverified');
+      return 'skipped';
+    }
     deps.logger.warn({ ...run.base, reason: parsed.reason }, 'pay_bill_unavailable');
     throw new PayBillUnavailable(channel, billDate);
   }
@@ -632,6 +653,7 @@ export async function runPayBillRecon(deps: PayReconDeps, input: PayReconInput):
     },
     'pay_bill_reconciled',
   );
+  return 'reconciled';
 }
 
 /** Every catch-up run of a bill not available yet comes one hour later (whole hours). */
@@ -768,8 +790,7 @@ export async function runBillReconJob(deps: PayReconDeps, payload: unknown): Pro
         deps.logger.debug({ app_id: appId, pay_channel: channel }, 'pay_bill_recon_no_adapter');
         continue;
       }
-      await runPayBillRecon(deps, base);
-      reconciled.push(channel);
+      if ((await runPayBillRecon(deps, base)) === 'reconciled') reconciled.push(channel);
     } catch (error: unknown) {
       if (error instanceof PayBillUnavailable) {
         try {

@@ -7,6 +7,16 @@
 // Also compiled by the `test` project: erasable syntax only (no parameter properties).
 import type { PayChannelCode } from '../domain/types.ts';
 
+/** B2-15k: every call of a channel without complete credentials (BR-PAY-08 ②; 下单 50306). */
+export const PAY_REASON_CHANNEL_UNCONFIGURED = 'channel_unconfigured';
+/**
+ * B2-15k: a bill downloaded whose file format no document gives (task §9.7): nothing parsed until a
+ * real sample arrives, so the reconciliation of that bill day does not run (application/pay-recon.ts).
+ */
+export const PAY_REASON_BILL_FORMAT_UNVERIFIED = 'bill_format_unverified';
+/** B2-15k: an order of another App than the one this channel's merchant identity belongs to. */
+export const PAY_REASON_APP_NOT_CONFIGURED = 'app_not_configured';
+
 /** WeChat Pay APP payment: the SDK's PayReq fields, signed by the server (contract PayLaunchWechatPay). */
 export interface WechatLaunch {
   readonly appid: string;
@@ -35,6 +45,12 @@ export interface PayCreateOrderInput {
   /** The pay deadline given to the channel: never later than the order's expire_at. */
   readonly expireAt: Date;
   readonly notifyUrl: string;
+  /**
+   * B2-15k: the order's app_id. A real adapter answers unknown / app_not_configured without calling
+   * the channel when it is not the app of its merchant identity: another App's money never lands
+   * in this merchant account. Optional, so that direct callers of a fake channel stand.
+   */
+  readonly appId?: string;
 }
 
 export type PayCreateOrderResult =

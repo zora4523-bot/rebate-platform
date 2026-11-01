@@ -281,6 +281,7 @@ export async function createPayOrder(
     description: price.title,
     expireAt: order.expire_at,
     notifyUrl: notifyPathOf(channel),
+    appId: order.app_id,
   };
   let result: PayCreateOrderResult;
   try {

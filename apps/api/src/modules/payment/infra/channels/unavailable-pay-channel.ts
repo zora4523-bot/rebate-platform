@@ -2,24 +2,23 @@
 // call answers unknown with reason channel_unconfigured, a notification is rejected, ownerAppOf is
 // null; it throws nothing and falls back to nothing. Creating an order therefore answers 50306.
 // Also compiled by the `test` project: erasable syntax only.
-import type {
-  PayBillResult,
-  PayChannel,
-  PayChannelIdentity,
-  PayCloseResult,
-  PayCreateOrderInput,
-  PayCreateOrderResult,
-  PayNotificationResult,
-  PayQueryResult,
-  PayRawNotification,
-  PayRefundInput,
-  PayRefundOriginal,
-  PayRefundQueryResult,
-  PayRefundResult,
+import {
+  PAY_REASON_CHANNEL_UNCONFIGURED as REASON,
+  type PayBillResult,
+  type PayChannel,
+  type PayChannelIdentity,
+  type PayCloseResult,
+  type PayCreateOrderInput,
+  type PayCreateOrderResult,
+  type PayNotificationResult,
+  type PayQueryResult,
+  type PayRawNotification,
+  type PayRefundInput,
+  type PayRefundOriginal,
+  type PayRefundQueryResult,
+  type PayRefundResult,
 } from '../../application/pay-channel.ts';
 import type { PayChannelCode } from '../../domain/types.ts';
-
-const REASON = 'channel_unconfigured';
 
 function unconfigured(): Promise<{ readonly kind: 'unknown'; readonly reason: string }> {
   return Promise.resolve({ kind: 'unknown', reason: REASON });

@@ -14,21 +14,23 @@
 // main code and sub code together.
 // Also compiled by the `test` project: erasable syntax only.
 import { formatFen, yuanStrToFen } from '@couli/money';
-import type {
-  PayBillResult,
-  PayChannel,
-  PayChannelIdentity,
-  PayCloseResult,
-  PayCreateOrderInput,
-  PayCreateOrderResult,
-  PayNotificationResult,
-  PayQueryResult,
-  PayRawNotification,
-  PayRefundInput,
-  PayRefundOriginal,
-  PayRefundQueryResult,
-  PayRefundResult,
-  PayTradeState,
+import {
+  PAY_REASON_APP_NOT_CONFIGURED,
+  PAY_REASON_BILL_FORMAT_UNVERIFIED,
+  type PayBillResult,
+  type PayChannel,
+  type PayChannelIdentity,
+  type PayCloseResult,
+  type PayCreateOrderInput,
+  type PayCreateOrderResult,
+  type PayNotificationResult,
+  type PayQueryResult,
+  type PayRawNotification,
+  type PayRefundInput,
+  type PayRefundOriginal,
+  type PayRefundQueryResult,
+  type PayRefundResult,
+  type PayTradeState,
 } from '../../../application/pay-channel.ts';
 import type { PayChannelCode } from '../../../domain/types.ts';
 import type { Clock, RootLogger } from '../../../../platform/index.ts';
@@ -162,6 +164,9 @@ export class AlipayPayChannel implements PayChannel {
   }
 
   #createOrder(input: PayCreateOrderInput): PayCreateOrderResult {
+    if (input.appId !== undefined && input.appId !== this.#config.payAppId) {
+      return this.#unknown('create_order', PAY_REASON_APP_NOT_CONFIGURED);
+    }
     const notifyUrl = notifyAddress(input.notifyUrl, this.#config.notifyBaseUrl);
     if (notifyUrl === null || input.amountFen <= 0n) {
       return this.#unknown('create_order', 'invalid_input');
@@ -489,7 +494,7 @@ export class AlipayPayChannel implements PayChannel {
     }
     return this.#unknown(
       'bill',
-      file.status === 200 ? 'bill_format_unverified' : 'bill_download_failed',
+      file.status === 200 ? PAY_REASON_BILL_FORMAT_UNVERIFIED : 'bill_download_failed',
     );
   }
 
@@ -530,8 +535,9 @@ export class AlipayPayChannel implements PayChannel {
   /**
    * One attempt (never resent: rule 7). Thrown errors become fixed categories; nothing is believed
    * unless the whole answer is valid JSON and the signature of its one `xxx_response` node verifies.
-   * The answer's interface comes from its outer key, which the signature does not cover (r3
-   * must-fix ③), so no call lets that key alone turn one answer into another's result.
+   * The outer interface key is not covered by the signature (r3 must-fix ③), so an answer's interface
+   * is not proven: a signed «not exist» error that carries no order number could be reused for
+   * another order or interface. A known residue, in specs/pay-channels-launch-checklist.md.
    */
   async #call(
     method: string,
