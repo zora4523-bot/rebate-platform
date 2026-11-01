@@ -2348,6 +2348,22 @@ CREATE TABLE app.app_versions (
 
 
 --
+-- Name: appeal_claims; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.appeal_claims (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    appeal_id uuid NOT NULL,
+    row_version integer NOT NULL,
+    handler_id text NOT NULL,
+    claimed_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT appeal_claims_row_version_check CHECK ((row_version >= 1))
+);
+
+
+--
 -- Name: appeals; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -2369,6 +2385,8 @@ CREATE TABLE app.appeals (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     penalty_started_at timestamp with time zone,
+    source text DEFAULT 'app'::text NOT NULL,
+    registered_by text,
     CONSTRAINT appeals_account_target_check CHECK (((target_type <> 'account'::text) OR (target_id = (user_id)::text))),
     CONSTRAINT appeals_closed_check CHECK (((status = 'processing'::text) = (closed_at IS NULL))),
     CONSTRAINT appeals_handler_check CHECK (((status = 'processing'::text) OR (handler_id IS NOT NULL))),
@@ -2379,6 +2397,7 @@ CASE
     WHEN (target_type = 'account'::text) THEN ((prev_risk_state IS NOT NULL) AND (prev_risk_state = ANY (ARRAY['banned'::text, 'frozen'::text])))
     ELSE (prev_risk_state IS NULL)
 END),
+    CONSTRAINT appeals_registered_by_check CHECK (((source = 'admin'::text) = (registered_by IS NOT NULL))),
     CONSTRAINT appeals_related_phone_check CHECK (
 CASE
     WHEN (request_type = ANY (ARRAY['register'::text, 'phone_change'::text])) THEN (related_phone_hmac IS NOT NULL)
@@ -2387,6 +2406,7 @@ CASE
 END),
     CONSTRAINT appeals_request_check CHECK (((target_type = 'blocked_request'::text) = (request_type IS NOT NULL))),
     CONSTRAINT appeals_request_type_check CHECK ((request_type = ANY (ARRAY['register'::text, 'withdraw'::text, 'phone_change'::text, 'payout_account'::text]))),
+    CONSTRAINT appeals_source_check CHECK ((source = ANY (ARRAY['app'::text, 'admin'::text]))),
     CONSTRAINT appeals_status_check CHECK ((status = ANY (ARRAY['processing'::text, 'upheld'::text, 'revoked'::text]))),
     CONSTRAINT appeals_target_type_check CHECK ((target_type = ANY (ARRAY['account'::text, 'order'::text, 'blocked_request'::text]))),
     CONSTRAINT appeals_user_check CHECK (
@@ -6571,6 +6591,22 @@ ALTER TABLE ONLY app.app_versions
 
 
 --
+-- Name: appeal_claims appeal_claims_appeal_version_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.appeal_claims
+    ADD CONSTRAINT appeal_claims_appeal_version_key UNIQUE (appeal_id, row_version);
+
+
+--
+-- Name: appeal_claims appeal_claims_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.appeal_claims
+    ADD CONSTRAINT appeal_claims_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: appeals appeals_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -10289,6 +10325,14 @@ ALTER TABLE ONLY app.agreements
 
 
 --
+-- Name: appeal_claims appeal_claims_appeal_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.appeal_claims
+    ADD CONSTRAINT appeal_claims_appeal_fkey FOREIGN KEY (appeal_id) REFERENCES app.appeals(id);
+
+
+--
 -- Name: appeals appeals_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -12937,6 +12981,14 @@ GRANT SELECT ON TABLE app.agreements TO couli_readonly;
 
 GRANT SELECT,INSERT,UPDATE ON TABLE app.app_versions TO couli_app;
 GRANT SELECT ON TABLE app.app_versions TO couli_readonly;
+
+
+--
+-- Name: TABLE appeal_claims; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.appeal_claims TO couli_app;
+GRANT SELECT ON TABLE app.appeal_claims TO couli_readonly;
 
 
 --
