@@ -1,0 +1,101 @@
+id: B2-15o
+repo: rebate-platform
+title: payment：后台退款单只读（listAdminPayRefunds、getAdminPayRefund，契约已有）——按 app 读 pay_refunds，pay.view，只读不审计；去掉两个接口的 planned
+type: impl
+# 2026-11-01 入账（admin-backend，编排 D10-490 ⑧：pay 线暂停，退款单查询由本线只读实现）。写者仍是 payment，本任务只读，放 payment/application/pay-admin-reads.ts 与 http/admin/pay-refunds.controller.ts，照 B2-15f 已有读接口。不含退款写操作。
+refs: [BR-PAY-06]
+refs_hash:
+  BR-PAY-06: 102e1fb8839f
+deps: []
+paths:
+  - 'apps/api/src/modules/payment/application/pay-admin-reads*.ts'
+  - 'apps/api/src/modules/payment/http/admin/**'
+  - 'apps/api/src/modules/payment/payment.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  # 2026-11-01 spec-test r1 S2：两个接口去 planned 触动冻结 CT-21e [AC-CT-21e#1] / [#17] 块 A。块 A 只剩这两行，不用先拆，规则测试作者在本任务直接改成已实现（先例 B2-15e、B2-15j）。
+  - 'test/spec/payment/admin-refund-reads/**'
+  - 'test/spec/contracts/pay-admin-http/operations.test.ts'
+  - 'test/spec/contracts/pay-admin-http/generated.test.ts'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payment/admin-refund-reads/**'
+red_exempt:
+  - file: test/spec/contracts/pay-admin-http/generated.test.ts
+    test: '[AC-CT-21e#17] get /admin/v1/pay-orders（支付单查询与处置）已生成类型、后台鉴权和无签名策略，已实现（不再 planned）并挂载校验路由'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/generated.test.ts
+    test: '[AC-CT-21e#17] get /admin/v1/pay-orders/{pay_order_id}（支付单查询与处置）已生成类型、后台鉴权和无签名策略，已实现（不再 planned）并挂载校验路由'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/generated.test.ts
+    test: '[AC-CT-21e#17] post /admin/v1/pay-orders/{pay_order_id}/resolve（支付单查询与处置）已生成类型、后台鉴权和无签名策略，已实现（不再 planned）并挂载校验路由'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/generated.test.ts
+    test: '[AC-CT-21e#17] get /admin/v1/pay-anomalies（支付单查询与处置）已生成类型、后台鉴权和无签名策略，已实现（不再 planned）并挂载校验路由'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/generated.test.ts
+    test: '[AC-CT-21e#17] post /admin/v1/pay-orders/{pay_order_id}/refunds（退款）已生成类型、后台鉴权和无签名策略，已实现（不再 planned）并挂载校验路由'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/generated.test.ts
+    test: '[AC-CT-21e#17] post /admin/v1/pay-anomalies/{pay_anomaly_id}/refunds（退款）已生成类型、后台鉴权和无签名策略，已实现（不再 planned）并挂载校验路由'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#1] get /admin/v1/pay-orders（支付单查询与处置）已实现（不再 planned）、后台鉴权与权限点'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#1] get /admin/v1/pay-orders/{pay_order_id}（支付单查询与处置）已实现（不再 planned）、后台鉴权与权限点'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#1] post /admin/v1/pay-orders/{pay_order_id}/resolve（支付单查询与处置）已实现（不再 planned）、后台鉴权与权限点'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#1] get /admin/v1/pay-anomalies（支付单查询与处置）已实现（不再 planned）、后台鉴权与权限点'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#1] post /admin/v1/pay-orders/{pay_order_id}/refunds（退款）已实现（不再 planned）、后台鉴权与权限点'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#1] post /admin/v1/pay-anomalies/{pay_anomaly_id}/refunds（退款）已实现（不再 planned）、后台鉴权与权限点'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#2] get /admin/v1/pay-orders 使用后台页码且 page_size 上限为 200'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#2] get /admin/v1/pay-refunds 使用后台页码且 page_size 上限为 200'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#2] get /admin/v1/pay-anomalies 使用后台页码且 page_size 上限为 200'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#2] get /admin/v1/pay-recon-diffs 使用后台页码且 page_size 上限为 200'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#3] 支付单列表包含规定筛选项和有界状态/渠道'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#4] 人工处置要求动态码并声明 needs_manual、查询凭证与审计'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#5] post /admin/v1/pay-orders/{pay_order_id}/refunds 必须幂等、不要二次验证并复用错误码'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#5] post /admin/v1/pay-anomalies/{pay_anomaly_id}/refunds 必须幂等、不要二次验证并复用错误码'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#6] README 登记后台支付契约'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/generated.test.ts
+    test: '[AC-CT-21e#17] get /admin/v1/pay-recon-diffs（对账差错）已实现（不再 planned）、已生成类型、后台鉴权和无签名策略，并挂载校验路由'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+  - file: test/spec/contracts/pay-admin-http/operations.test.ts
+    test: '[AC-CT-21e#1] get /admin/v1/pay-recon-diffs（对账差错）已实现（不再 planned）、后台鉴权与权限点'
+    reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
+status: todo
