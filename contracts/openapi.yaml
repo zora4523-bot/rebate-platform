@@ -51796,7 +51796,7 @@ components:
             - string
             - 'null'
           maxLength: 64
-          description: Current name of the reverser (admin_users.display_name, else the username), derived when read; null until the record is reversed.
+          description: Current name of the reverser (admin_users.display_name, else the username), derived when read; null until the record is reversed, or when it cannot be read.
         reversal_voucher_id:
           anyOf:
             - $ref: '#/components/schemas/Id'

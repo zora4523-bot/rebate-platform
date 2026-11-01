@@ -19124,7 +19124,7 @@ export interface components {
             reversed_at: string | null;
             /** @description The admin who reversed the record; null until then. */
             reversed_by: components["schemas"]["Id"] | null;
-            /** @description Current name of the reverser (admin_users.display_name, else the username), derived when read; null until the record is reversed. */
+            /** @description Current name of the reverser (admin_users.display_name, else the username), derived when read; null until the record is reversed, or when it cannot be read. */
             reversed_by_name: string | null;
             /** @description The reversal voucher (BR-FUND-16, BR-FUND-20 细则); null until the record is reversed. */
             reversal_voucher_id: components["schemas"]["Id"] | null;
