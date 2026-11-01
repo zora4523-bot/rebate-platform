@@ -98,3 +98,28 @@ it('[AC-B1-05k#5] 详情用例要求原始 ID 一致：同 product_key 换原始
   await upstream.detail({ ...base, rawItemId: 'synthetic-raw-a', requireRawMatch: true });
   expect(detail).toHaveBeenCalledTimes(3);
 });
+
+it('[BR-PROD-07] 重解析写入的条目记住原串：下一次带 product_refs 新原串的请求命中，联盟故障时仍可陈旧作答', async () => {
+  const clock = new FixedClock(NOW);
+  const detail = vi.fn<ProductDetailUpstream['detail']>(async () => item());
+  const upstream = cacheDetailUpstream(
+    { detail },
+    {
+      redis: memory(),
+      clock,
+      config: {
+        configValue: async (_app, key) =>
+          key === 'search.cache_ttl_sec' ? { value: 60, version: 1 } : null,
+      },
+    },
+  );
+  const base = { appId: 'synthetic_app', productKey: 'tb:synthetic', platform: 'taobao' as const };
+  await upstream.detail({ ...base, reparse: { title: 'synthetic', keyPrefix: 'tb' } });
+  const next = { ...base, rawItemId: 'synthetic-raw', requireRawMatch: true };
+  await upstream.detail(next);
+  expect(detail).toHaveBeenCalledTimes(1);
+  detail.mockRejectedValue(new GovernanceError('circuit_open', 'union.detail', 'synthetic'));
+  clock.advanceMs(60_001);
+  await expect(upstream.detail(next)).resolves.toMatchObject({ title: 'synthetic' });
+  expect(detail).toHaveBeenCalledTimes(2);
+});

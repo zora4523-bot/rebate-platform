@@ -42,6 +42,7 @@ import {
 import {
   CatalogAdminModule,
   CatalogModule,
+  CatalogWorkerModule,
   GovernedUnion,
   PRODUCT_CACHE_NAMESPACE,
   LinkRegistrar,
@@ -2344,6 +2345,37 @@ function catalogAdminPorts(union: DynamicModule, source: UnionQuotaSource): Dyna
 }
 
 @Module({})
+class CatalogWorkerPortsModule {}
+
+/** B1-05r: the worker entry's governed adapters for the pool refresh (shared quota source). */
+function catalogWorkerPorts(union: DynamicModule, source: UnionQuotaSource): DynamicModule {
+  return {
+    module: CatalogWorkerPortsModule,
+    imports: [union],
+    providers: [
+      {
+        provide: GovernedUnion,
+        inject: [
+          UNION_REGISTRY,
+          UNION_ENDPOINTS,
+          CLOCK,
+          ROOT_LOGGER,
+          { token: REDIS, optional: true },
+        ],
+        useFactory: (
+          registry: UnionRegistry,
+          endpoints: readonly UnionEndpoint[],
+          clock: Clock,
+          logger: RootLogger,
+          redis?: RedisHandle,
+        ): GovernedUnion => governedUnion(registry, endpoints, { clock, logger, redis }, source),
+      },
+    ],
+    exports: [GovernedUnion],
+  };
+}
+
+@Module({})
 class CatalogPortsModule {}
 
 /**
@@ -4305,6 +4337,16 @@ export class AppModule {
         // compensation retry (its 15-minute scan, started with the scheduler) run here.
         ...(options.entry === 'worker' && union !== undefined
           ? [orderSyncWorker(union, unionQuotaSource)]
+          : []),
+        // catalog's product pool refresh (B1-05r, BR-PRICE-11): queue pool-refresh and its seed
+        // timer, worker entry only, on this entry's own governed adapters (shared quota bucket).
+        ...(options.entry === 'worker' && union !== undefined
+          ? [
+              CatalogWorkerModule.forWorker({
+                ports: catalogWorkerPorts(union, unionQuotaSource),
+                config: (db, clock) => createContentReader({ db, clock }),
+              }),
+            ]
           : []),
         // B3-03j: the Agent's business ports (union / catalog / linking / parsing) and its
         // production assembly; B3-03m: input check and sentence review over the Aliyun content

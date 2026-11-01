@@ -17,8 +17,9 @@ import {
   type RegisteredPlatform,
   type UnionItemDetail,
 } from '../union/index.ts';
-import type { CatalogCardEntry } from './application/card-entry.ts';
+import type { CatalogCardEntry, CatalogCardResult } from './application/card-entry.ts';
 import type { ItemRefService } from './application/item-ref.ts';
+import type { PoolReader } from './application/pool-read.ts';
 import { CatalogError, isFresh } from './domain/rules.ts';
 import type { Catalog, ProductCapabilities, ProductRef, RequestRawRef } from './domain/types.ts';
 import type { CatalogConfigReader, ViewerContext } from './ports.ts';
@@ -40,6 +41,11 @@ export interface ProductDetailRequest {
   readonly jdMode?: string;
   /** Absent means re-resolve the product key, never fabricate an upstream raw ID. */
   readonly rawItemId?: string;
+  /**
+   * BR-PROD-05 ③ of a key with a qualifying pool row: without rawItemId the union is searched by
+   * this title. Absent too, the union is not asked: 30143.
+   */
+  readonly reparse?: { readonly title: string; readonly keyPrefix: string | null };
   /**
    * The detail use case's resolved raw ID (item_ref or product_refs) must be the one the union is
    * asked with: a detail cache entry fetched under another raw ID of the same product_key counts
@@ -90,6 +96,8 @@ export interface ProductDetailOptions {
    * record() once (not awaited; a throw is swallowed; the response never changes).
    */
   readonly priceHistory?: PriceSnapshotRecorder;
+  /** B1-05r: the pool price of a union outage (BR-PRICE-11, TRADE-12); absent, it stays 50401. */
+  readonly poolReader?: PoolReader;
 }
 
 export type ProductDetailData = components['schemas']['ProductResponse']['data'];
@@ -134,9 +142,8 @@ export function detailRawItemId(item: ItemRef, jdMode: string): string | undefin
 
 /**
  * Union failure → contract code. Off shelf is 30141 (BR-PRICE-14). A dependency failure
- * (network / 5xx, throttling, governor timeout, open breaker, exhausted quota) has no usable cache
- * in this batch (no product pool yet), so it is the 「暂时查不到」 branch of BR-PRICE-11: 50401,
- * never another source dressed up as a price. A union refusal of the raw ID itself
+ * (network / 5xx, throttling, governor timeout, open breaker, exhausted quota) with no usable cache
+ * is 50401, the 「暂时查不到」 branch of BR-PRICE-11; getProduct reads the product pool first. A union refusal of the raw ID itself
  * (upstream_rejected / invalid_dto / link_unrecognized) is 30143 ref_expired (BR-PROD-05 结果分类
  * 「引用失效」). Anything else propagates unchanged.
  */
@@ -176,13 +183,28 @@ export function upstreamFailure(error: unknown): unknown {
  * Order: request key → platform (20001 on a malformed or unregistered key) → item_ref (an
  * authenticated same-app token naming another product is 20001, before any union call) → raw ID
  * by BR-PROD-05 ① item_ref ≤ 1800 s, ② product_refs refreshed ≤ 1800 s, ③ re-resolve by key →
- * union detail (off shelf 30141, dependency failure 50401) → the single derivation
- * deriveProductKey; another key or none is 30143 → product_refs (source detail, receipt instant
+ * (only a key with a qualifying pool row; any other key is 30143 without a union call) → union
+ * detail (off shelf 30141, dependency failure: the pool's price, or 50401) → the single
+ * derivation deriveProductKey; another key or none is 30143 → product_refs (source detail, receipt instant
  * from the Clock after the response) → the card entry (active query; quote, item_ref, link
  * registration). Every call registers a new link; a failed registration rejects the call, so no
  * unregistered link_id goes out. A valid item_ref whose raw ID was used is returned unchanged;
  * otherwise the card carries a freshly issued one.
  */
+/** The card of the entry's answer; an anomalous price has no card (D33 active query). */
+function issuedCard(result: CatalogCardResult): ProductDetailData {
+  switch (result.kind) {
+    case 'card':
+      return result.card;
+    case 'price_unavailable':
+      // D33 active query: no amount and no link_id; 50303 until F-37 gives the card a shape.
+      // TODO(规划/11 §9.2): price_unavailable 卡的线上形状 — blocked on followups F-37 契约同步
+      throw new CatalogError(50303, 'detail: price temporarily unavailable');
+    default:
+      throw new TypeError(`detail: unexpected card result ${result.kind}`);
+  }
+}
+
 export async function getProduct(
   query: ProductDetailQuery,
   options: ProductDetailOptions,
@@ -226,12 +248,13 @@ export async function getProduct(
   const nowMs = clock.now().getTime();
   let rawItemId: string | undefined;
   let tokenRaw: string | undefined;
+  let stored: ProductRef | null = null;
   if (token !== null && token.platform === platform && isFresh(token.fetchedAt, nowMs)) {
     rawItemId = token.rawItemId;
     tokenRaw = token.rawItemId;
   } else {
     // ② product_refs of (app_id, product_key); refreshed_at is the stored receipt instant.
-    const stored = await catalog.readProductRef({ appId, platform, productKey });
+    stored = await catalog.readProductRef({ appId, platform, productKey });
     if (stored !== null && isFresh(stored.receivedAt, nowMs)) rawItemId = stored.rawItemId;
   }
 
@@ -239,17 +262,50 @@ export async function getProduct(
   // Absent means item (BR-PROD-03); any other value fails closed in deriveProductKey.
   const jdMode = jdEntry === null ? 'item' : String(jdEntry.value);
 
+  // ③ Only a key with a qualifying pool row is re-resolved, under the key that row stores.
+  const reparsing =
+    rawItemId === undefined
+      ? ((await options.poolReader?.detail(appId, productKey)) ?? null)
+      : null;
+  const targetKey = reparsing?.ref.productKey ?? productKey;
+
   let item: UnionItemDetail;
   try {
     item = await upstream.detail({
       appId,
-      productKey,
+      productKey: targetKey,
       platform,
       ...(platform === 'jd' ? { jdMode } : {}),
       ...(rawItemId === undefined ? {} : { rawItemId, requireRawMatch: true }),
+      ...(reparsing === null
+        ? {}
+        : {
+            reparse: {
+              title: stored?.title ?? reparsing.item.title,
+              keyPrefix: row?.key_prefix ?? null,
+            },
+          }),
     });
   } catch (error: unknown) {
-    throw upstreamFailure(error);
+    const failure = upstreamFailure(error);
+    if (failure instanceof CatalogError && failure.code === 50401) {
+      // BR-PRICE-11, TRADE-12. The pool's row is no union answer: no product_refs, no price history.
+      // Read now, not `reparsing`: the row may have aged out while the union timed out.
+      const pooled = await options.poolReader?.detail(appId, productKey);
+      if (pooled !== null && pooled !== undefined) {
+        return issuedCard(
+          await cards.assemble({
+            item: pooled.item,
+            ref: pooled.ref,
+            entrySource: DETAIL_ENTRY_SOURCE,
+            ...(query.from_link_id === undefined ? {} : { sourceLinkId: query.from_link_id }),
+            stale: true,
+            scene: 'active_query',
+          }),
+        );
+      }
+    }
+    throw failure;
   }
   // BR-PROD-05: refreshed_at is the receipt instant of this union response.
   const receivedAt = clock.now().toISOString();
@@ -269,7 +325,7 @@ export async function getProduct(
     if (error instanceof ProductKeyUnderivable) refExpired('product key not derivable');
     throw error;
   }
-  if (derived !== productKey) refExpired('response derives another product key');
+  if (derived !== targetKey) refExpired('response derives another product key');
   const responseRaw = detailRawItemId(item, jdMode);
   if (responseRaw === undefined) refExpired('response carries no raw item id');
 
@@ -301,7 +357,7 @@ export async function getProduct(
   const ref: ProductRef = {
     appId,
     platform,
-    productKey,
+    productKey: targetKey,
     rawItemId: responseRaw,
     rawFetchedAt: item.quoted_at,
     receivedAt,
@@ -321,20 +377,10 @@ export async function getProduct(
     stale: STALE_DETAILS.has(item),
     scene: 'active_query',
   });
-  switch (result.kind) {
-    case 'card':
-      break;
-    case 'price_unavailable':
-      // D33 active query: no amount and no link_id; 50303 until F-37 gives the card a shape.
-      // TODO(规划/11 §9.2): price_unavailable 卡的线上形状 — blocked on followups F-37 契约同步
-      throw new CatalogError(50303, 'detail: price temporarily unavailable');
-    default:
-      throw new TypeError(`detail: unexpected card result ${result.kind}`);
-  }
+  const card = issuedCard(result);
   // BR-PROD-11: a valid tapped token that supplied this call's raw ID goes back unchanged (原样
   // 透传), even if the union now reports another raw ID for the same key; otherwise the card's
   // freshly issued token stands.
-  const card = result.card;
   return tokenRaw !== undefined && query.item_ref !== undefined
     ? { ...card, item_ref: query.item_ref }
     : card;

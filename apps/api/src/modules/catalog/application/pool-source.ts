@@ -9,12 +9,14 @@ import { randomUUID } from 'node:crypto';
 import { deriveProductKey, ProductKeyUnderivable } from '@couli/domain';
 import type { Clock } from '../../platform/index.ts';
 import {
+  UnionError,
   isRegisteredPlatform,
   type CallCtx,
   type ItemRef,
   type Platform,
   type RegisteredPlatform,
   type UnionAdapter,
+  type UnionItem,
   type UnionItemDetail,
 } from '../../union/index.ts';
 import { detailRawItemId, upstreamFailure, type ProductDetailUpstream } from '../detail.ts';
@@ -82,7 +84,7 @@ export interface PoolStoredProduct {
   readonly platform: Platform;
   readonly productKey: string;
   readonly rawItemId: string;
-  /** quoted_at of the item: when its raw ID was last obtained. */
+  /** When its raw ID was obtained, at the latest (poolRawFetchedMs). */
   readonly fetchedAt: string;
   readonly title: string;
 }
@@ -91,6 +93,8 @@ export interface PoolSource {
   fromLink(appId: string, text: string): Promise<PoolProduct>;
   fromItemRef(appId: string, itemRef: string): Promise<PoolProduct>;
   recheck(stored: PoolStoredProduct): Promise<PoolProduct>;
+  /** B1-05r: the refresh's read; the row's raw ID is no source, so it starts at product_refs. */
+  current(stored: Omit<PoolStoredProduct, 'rawItemId' | 'fetchedAt'>): Promise<PoolProduct>;
 }
 
 export interface PoolSourceOptions {
@@ -105,6 +109,8 @@ export interface PoolSourceOptions {
   /** Uncached: a pool add and a re-check read the union itself (createUnionDetailUpstream). */
   readonly upstream: ProductDetailUpstream;
   readonly links: PoolLinkParser;
+  /** Quota purpose of every union call made here; `online` unless the caller names another. */
+  readonly purpose?: CallCtx['purpose'];
 }
 
 /** Thrown when one `link_text` holds more than one product (20001 data.fields=[link_text]). */
@@ -132,6 +138,37 @@ function unavailable(message: string): CatalogError {
   return new CatalogError(50401, `pool: ${message}`);
 }
 
+/** What the title search of BR-PROD-05 重新解析步骤 2 looks for, and on which call context. */
+export interface TitleSearch {
+  readonly adapter: Pick<UnionAdapter, 'searchItems'>;
+  readonly platform: Platform;
+  readonly title: string;
+  readonly jdMode: string;
+  readonly context: CallCtx;
+  readonly isTarget: (item: UnionItem) => boolean | Promise<boolean>;
+}
+
+/** BR-PROD-05 重新解析步骤 2; null when no item of the key can be found by title (引用失效). */
+export async function searchRawByTitle(
+  search: TitleSearch,
+): Promise<{ readonly raw: string; readonly item: UnionItem } | null> {
+  const { adapter, platform, title, jdMode, context, isTarget } = search;
+  let page: Awaited<ReturnType<UnionAdapter['searchItems']>>;
+  try {
+    page = await adapter.searchItems({ keyword: title }, context);
+  } catch (error: unknown) {
+    // A platform that has no title search answers like a page without the key; it is no outage.
+    if (error instanceof UnionError && error.code === 'adapter_unimplemented') return null;
+    throw error;
+  }
+  for (const item of page.items.slice(0, REPARSE_SEARCH_ROWS)) {
+    if (item.platform !== platform) continue;
+    const raw = detailRawItemId(item, jdMode);
+    if (raw !== undefined && (await isTarget(item))) return { raw, item };
+  }
+  return null;
+}
+
 function refExpired(productKey: string, refusal: CatalogError): PoolProduct {
   return { kind: 'not_passed', productKey, failure: 'ref_expired', refusal };
 }
@@ -145,10 +182,10 @@ function anotherProduct(productKey: string): PoolProduct {
 
 /** The union side of adminAddPoolItem and adminUpdatePoolItem. */
 export function createPoolSource(options: PoolSourceOptions): PoolSource {
-  const { clock, config, catalog, itemRefs, union, upstream, links } = options;
+  const { clock, config, catalog, itemRefs, union, upstream, links, purpose = 'online' } = options;
 
   function context(appId: string): CallCtx {
-    return { appId, requestId: randomUUID(), purpose: 'online' };
+    return { appId, requestId: randomUUID(), purpose };
   }
 
   async function jdModeOf(appId: string, platform: Platform): Promise<string> {
@@ -226,15 +263,16 @@ export function createPoolSource(options: PoolSourceOptions): PoolSource {
     title: string,
     jdMode: string,
   ): Promise<ReparseResult> {
-    const page = await adapter.searchItems({ keyword: title }, context(identity.appId));
-    for (const item of page.items.slice(0, REPARSE_SEARCH_ROWS)) {
-      if (item.platform !== identity.platform) continue;
-      const raw = detailRawItemId(item, jdMode);
-      if (raw !== undefined && (await keyOf(item, jdMode)) === identity.productKey) {
-        return foundRef(identity, stored, title, raw, item.quoted_at);
-      }
-    }
-    return { kind: 'ref_expired' };
+    const found = await searchRawByTitle({
+      adapter,
+      platform: identity.platform,
+      title,
+      jdMode,
+      context: context(identity.appId),
+      isTarget: async (item) => (await keyOf(item, jdMode)) === identity.productKey,
+    });
+    if (found === null) return { kind: 'ref_expired' };
+    return foundRef(identity, stored, title, found.raw, found.item.quoted_at);
   }
 
   async function reparse(
@@ -416,6 +454,11 @@ export function createPoolSource(options: PoolSourceOptions): PoolSource {
         source: 'link',
       };
       return byKey(appId, platform, productKey, held, title);
+    },
+
+    async current({ appId, platform, productKey, title }) {
+      const resolved = await catalog.resolveProductKey(productKey);
+      return byKey(appId, platform, resolved, null, title);
     },
   };
 }

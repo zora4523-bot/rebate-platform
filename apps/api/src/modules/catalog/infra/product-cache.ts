@@ -11,6 +11,7 @@
 // Without Redis (no provider, or RedisUnavailableError on a command) the decorators read the
 // union directly (02 §14).
 import { createHash } from 'node:crypto';
+import type { Logger } from 'pino';
 import {
   GovernanceError,
   RedisUnavailableError,
@@ -18,7 +19,7 @@ import {
   type RedisNamespace,
 } from '../../platform/index.ts';
 import { UnionError, type UnionItem, type UnionItemDetail } from '../../union/index.ts';
-import { markStaleDetail, type ProductDetailUpstream } from '../detail.ts';
+import { detailRawItemId, markStaleDetail, type ProductDetailUpstream } from '../detail.ts';
 import type { ProductRef } from '../domain/types.ts';
 import type { CatalogConfigReader } from '../ports.ts';
 import type {
@@ -314,6 +315,35 @@ async function filterVersionOf(config: CatalogConfigReader, appId: string): Prom
   return typeof entry.value === 'string' ? entry.value : JSON.stringify(entry.value);
 }
 
+/** RedisNamespace has no delete of its own; this script writes nothing, so ARGV[1] goes unused. */
+const DROP_KEY = "return redis.call('DEL', KEYS[1])";
+
+/**
+ * BR-PROD-07 主动失效 of one detail entry, on the key cacheDetailUpstream writes. Without Redis there
+ * is nothing to drop; a Redis outage only leaves the entry to expire.
+ */
+export function detailCacheDropper(
+  redis: RedisNamespace | null,
+  logger: Pick<Logger, 'warn'>,
+): (appId: string, productKey: string) => Promise<void> {
+  return async (appId, productKey) => {
+    if (redis === null) return;
+    try {
+      await redis.eval(DROP_KEY, {
+        keys: [`${appId}:product:${productKey}`],
+        args: [],
+        ttlSeconds: 1,
+      });
+    } catch (error: unknown) {
+      if (!(error instanceof RedisUnavailableError)) throw error;
+      logger.warn(
+        { event: 'pool_detail_cache_not_dropped', product_key: productKey },
+        'catalog: detail cache entry left to expire',
+      );
+    }
+  };
+}
+
 export function cacheSearchUpstream(
   upstream: SearchUpstream,
   options: ProductCacheOptions,
@@ -419,7 +449,9 @@ export function cacheDetailUpstream(
       if (item.platform === request.platform) {
         await cache.write(key, fetchedAtMs, {
           ...storeItem(item),
-          [DETAIL_RAW_FIELD]: request.rawItemId ?? null,
+          // A re-parse asks without one: the answer's raw ID is what product_refs now offers.
+          [DETAIL_RAW_FIELD]:
+            request.rawItemId ?? detailRawItemId(item, request.jdMode ?? 'item') ?? null,
         });
       }
       return item;

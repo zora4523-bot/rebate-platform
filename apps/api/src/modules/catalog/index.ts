@@ -141,6 +141,8 @@ export { CATALOG, CatalogModule } from './catalog.module.ts';
 // test/spec/catalog/product-pool-admin/**.
 export { CatalogAdminModule } from './catalog-admin.module.ts';
 export type { CatalogAdminOptions } from './catalog-admin.module.ts';
+export { CatalogWorkerModule } from './catalog-worker.module.ts';
+export type { CatalogWorkerOptions } from './catalog-worker.module.ts';
 export type {
   PoolLinkAdapters,
   PoolLinkAnswer,

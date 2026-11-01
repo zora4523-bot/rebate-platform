@@ -145,6 +145,7 @@ function writeTx(trx: Kysely<DB>, audit: AuditPort, products: Catalog): PoolAdmi
           price_fen: row.price_fen,
           coupon_fen: row.coupon_fen,
           final_price_fen: row.final_price_fen,
+          commission_rate_bp: row.commission_rate_bp,
           quoted_at: row.quoted_at,
           status: row.status,
           sort: row.sort,

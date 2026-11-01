@@ -19,6 +19,7 @@ import { toPlusEight } from '../domain/card.ts';
 import { CatalogError } from '../domain/rules.ts';
 import type { ProductCapabilities, ProductRef } from '../domain/types.ts';
 import type { PoolCandidateList, PoolCandidateQuery } from './pool-candidates.ts';
+import { poolRawFetchedMs } from './pool-read.ts';
 import type { PoolProduct, PoolSource } from './pool-source.ts';
 
 export type PoolStatus = Schema<'AdminProductPoolStatus'>;
@@ -64,6 +65,8 @@ export interface PoolItemRow {
   readonly price_fen: bigint;
   readonly coupon_fen: bigint;
   readonly final_price_fen: bigint;
+  /** BR-PRICE-07 needs it to quote a pool card; null until a refresh or re-check answers. */
+  readonly commission_rate_bp: number | null;
   readonly quoted_at: Date;
   readonly status: string;
   readonly sort: number;
@@ -249,6 +252,7 @@ function liveFields(product: Extract<PoolProduct, { kind: 'live' }>) {
     price_fen: item.price_fen,
     coupon_fen: item.coupon_fen,
     final_price_fen: item.final_price_fen,
+    commission_rate_bp: Number(item.commission_rate_bp),
     quoted_at: item.quoted_at,
     status: 'online',
     invalid_reason: null,
@@ -561,7 +565,7 @@ export class PoolAdmin {
       platform: stored.platform as Platform,
       productKey: stored.product_key,
       rawItemId: stored.raw_item_id,
-      fetchedAt: stored.quoted_at.toISOString(),
+      fetchedAt: toPlusEight(poolRawFetchedMs(stored)),
       title: stored.title,
     });
   }
