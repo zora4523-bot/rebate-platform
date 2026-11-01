@@ -116,8 +116,27 @@ import {
   type TaobaoOrderSlotReader,
   type TaobaoOrderWarning,
 } from './orders.ts';
-import type { TaobaoPunishWarning } from './punishments.ts';
-import type { TaobaoRefundWarning } from './refunds.ts';
+import {
+  mapTaobaoPunish,
+  nextTaobaoPunishCursor,
+  ourPunishRows,
+  parseTaobaoPunishBody,
+  planTaobaoPunishments,
+  taobaoPunishParameters,
+  TAOBAO_PUNISH_PATH,
+  TAOBAO_PUNISH_VERSION,
+  type TaobaoPunishWarning,
+} from './punishments.ts';
+import {
+  mapTaobaoRefund,
+  nextTaobaoRefundCursor,
+  parseTaobaoRefundBody,
+  planTaobaoRefunds,
+  taobaoRefundParameters,
+  TAOBAO_REFUND_PATH,
+  TAOBAO_REFUND_VERSION,
+  type TaobaoRefundWarning,
+} from './refunds.ts';
 import { unwrapTaobaoResponse, type TaobaoSubCodeMap, type TaobaoWarning } from './response.ts';
 import {
   signTaobaoParameters,
@@ -156,8 +175,8 @@ export interface TaobaoAdapterOptions {
   /**
    * B1-04e (D10-486 ①): the 大淘客 client the order / refund / punishment ports will read from
    * (mapping is B1-04f / B1-04z). Assembled by the registry from `taobaoLive.orderSource` only in
-   * staging with taobao live and both DATAOKE_* variables set. Without it listOrders (and the
-   * absent listRefunds / listPunishments) behave as before.
+   * staging with taobao live and both DATAOKE_* variables set. Without it listOrders,
+   * listRefunds and listPunishments are adapter_unimplemented (nothing fetched or sent).
    */
   readonly orderSource?: DataokeClient;
   /**
@@ -246,6 +265,8 @@ export class TaobaoUnionAdapter implements UnionAdapter {
   readonly #itemIdCache: TaobaoItemIdCache;
   readonly #orderSlots: TaobaoOrderSlotReader | undefined;
   readonly #orderWarn: ((event: TaobaoOrderWarning) => void) | undefined;
+  readonly #refundWarn: ((event: TaobaoRefundWarning) => void) | undefined;
+  readonly #punishWarn: ((event: TaobaoPunishWarning) => void) | undefined;
 
   /**
    * B1-04f: listOrders sends one upstream request per call, each through CallCtx.gateUpstream
@@ -253,8 +274,8 @@ export class TaobaoUnionAdapter implements UnionAdapter {
    */
   readonly listOrdersMetering = 'per_request' as const;
   /** B1-04z: one upstream request per listRefunds / listPunishments call, each gated. */
-  declare readonly listRefundsMetering: 'per_request';
-  declare readonly listPunishmentsMetering: 'per_request';
+  readonly listRefundsMetering = 'per_request' as const;
+  readonly listPunishmentsMetering = 'per_request' as const;
 
   constructor(options: TaobaoAdapterOptions) {
     if (options.endpoint.platform !== 'taobao') {
@@ -278,6 +299,8 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     this.#itemIdCache = createTaobaoItemIdCache(options.clock);
     this.#orderSlots = options.orderSlots;
     this.#orderWarn = options.orderWarn;
+    this.#refundWarn = options.refundWarn;
+    this.#punishWarn = options.punishWarn;
   }
 
   /** Internal request foundation; returns the inner object of `options.envelope`. */
@@ -554,16 +577,13 @@ export class TaobaoUnionAdapter implements UnionAdapter {
       this.#orderWarn?.({ event: 'taobao_order_no_slots' });
       return { items: [], nextCursor: null };
     }
-    const parameters = taobaoOrderParameters(plan);
-    const archive = archiveOf(ctx, 'order');
-    const send = (signal: AbortSignal | undefined) =>
-      source.exchange('GET', TAOBAO_ORDER_PATH, parameters, {
-        version: TAOBAO_ORDER_VERSION,
-        archive,
-        ...(signal === undefined ? {} : { signal }),
-      });
-    const gate: UpstreamGate | undefined = ctx?.gateUpstream;
-    const { response } = gate === undefined ? await send(ctx?.signal) : await gate(send);
+    const response = await this.#exchangeOrderData(
+      source,
+      TAOBAO_ORDER_PATH,
+      TAOBAO_ORDER_VERSION,
+      taobaoOrderParameters(plan),
+      ctx,
+    );
     const page = parseTaobaoOrderBody(response.body);
     // 归档行 id 只取归档传输挂在响应上的元数据（十进制字符串），不读报文里的同名值。
     const id: unknown = Reflect.get(response, 'raw_payload_id');
@@ -579,16 +599,54 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     return { items, nextCursor: nextTaobaoOrderCursor(plan, page) };
   }
 
+  /**
+   * One gated GET to the 大淘客 order source (B1-04f / B1-04z): through ctx.gateUpstream when the
+   * governed wrapper supplied it (one quota token per attempt), else with the caller's signal.
+   */
+  async #exchangeOrderData(
+    source: DataokeClient,
+    path: string,
+    version: string,
+    parameters: Readonly<Record<string, string | number>>,
+    ctx: CallCtx,
+  ): Promise<UnionTransportResponse> {
+    const archive = archiveOf(ctx, 'order');
+    const send = (signal: AbortSignal | undefined) =>
+      source.exchange('GET', path, parameters, {
+        version,
+        archive,
+        ...(signal === undefined ? {} : { signal }),
+      });
+    const gate: UpstreamGate | undefined = ctx?.gateUpstream;
+    const { response } = gate === undefined ? await send(ctx?.signal) : await gate(send);
+    return response;
+  }
+
   /** B1-04z: one page of 大淘客 get-order-refund (see the header and refunds.ts). */
   async listRefunds(
     win: TimeWindow,
     ctx: CallCtx,
     opt?: RefundQueryOpt,
   ): Promise<Page<UnionRefund>> {
-    void win;
-    void ctx;
-    void opt;
-    throw new Error('NotImplemented: listRefunds');
+    const source = this.#orderSource;
+    if (source === undefined) throw unimplemented('listRefunds');
+    // 口径、窗口、游标先校验：不合格的调用不取凭据、不发请求。维权不读推广位（见 refunds.ts）。
+    const plan = planTaobaoRefunds(win, opt);
+    const response = await this.#exchangeOrderData(
+      source,
+      TAOBAO_REFUND_PATH,
+      TAOBAO_REFUND_VERSION,
+      taobaoRefundParameters(plan),
+      ctx,
+    );
+    const page = parseTaobaoRefundBody(response.body);
+    const like = this.#clock.now();
+    const items: UnionRefund[] = [];
+    for (const row of page.rows) {
+      const refund = mapTaobaoRefund(row, like, this.#refundWarn);
+      if (refund !== null) items.push(refund);
+    }
+    return { items, nextCursor: nextTaobaoRefundCursor(plan, page) };
   }
 
   /** B1-04z: one page of 大淘客 get-foul-order-list (see the header and punishments.ts). */
@@ -597,9 +655,29 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     ctx: CallCtx,
     opt?: PunishmentQueryOpt,
   ): Promise<Page<UnionPunish>> {
-    void win;
-    void ctx;
-    void opt;
-    throw new Error('NotImplemented: listPunishments');
+    const source = this.#orderSource;
+    const readSlots = this.#orderSlots;
+    if (source === undefined || readSlots === undefined) throw unimplemented('listPunishments');
+    // 窗口、游标先校验：不合格的调用不读推广位、不取凭据、不发请求。
+    const plan = planTaobaoPunishments(win, opt);
+    const adzones = slotAdzones(await readSlots(ctx));
+    if (adzones.size === 0) {
+      this.#punishWarn?.({ event: 'taobao_punish_no_slots' });
+      return { items: [], nextCursor: null };
+    }
+    const response = await this.#exchangeOrderData(
+      source,
+      TAOBAO_PUNISH_PATH,
+      TAOBAO_PUNISH_VERSION,
+      taobaoPunishParameters(plan),
+      ctx,
+    );
+    const page = parseTaobaoPunishBody(response.body);
+    const items: UnionPunish[] = [];
+    for (const row of ourPunishRows(page.rows, adzones, this.#punishWarn)) {
+      const punish = mapTaobaoPunish(row, this.#punishWarn);
+      if (punish !== null) items.push(punish);
+    }
+    return { items, nextCursor: nextTaobaoPunishCursor(plan, page) };
   }
 }
