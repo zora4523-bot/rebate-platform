@@ -1,0 +1,76 @@
+code,state,meaning,our_handling,source,verified
+,SUCCESS,支付成功,摘要 paid；是否成功由 pay.wechat_pay.success_states 判定（BR-PAY-04）,docs-mirror/wechat-pay/pages/4013070356.txt:473,no
+,REFUND,转入退款,摘要 not_paid、channelState 原样；不算成功，关单结果 unknown,docs-mirror/wechat-pay/pages/4013070356.txt:474,no
+,NOTPAY,未支付,摘要 not_paid；关单后再查仍是它则 unknown,docs-mirror/wechat-pay/pages/4013070356.txt:475,no
+,CLOSED,已关闭,摘要 closed；关单后再查得到它才算已关闭（BR-PAY-05 ②）,docs-mirror/wechat-pay/pages/4013070356.txt:476,no
+,REVOKED,已撤销（仅付款码支付会返回）,摘要 not_paid、channelState 原样；不算成功,docs-mirror/wechat-pay/pages/4013070356.txt:477,no
+,USERPAYING,用户支付中（仅付款码支付会返回）,摘要 not_paid、channelState 原样；不算成功,docs-mirror/wechat-pay/pages/4013070356.txt:478,no
+,PAYERROR,支付失败（仅付款码支付会返回）,摘要 not_paid、channelState 原样；不算成功,docs-mirror/wechat-pay/pages/4013070356.txt:479,no
+,SUCCESS,退款成功,摘要 success；是否成功由 pay.wechat_pay.refund_success_states 判定（BR-PAY-06 ④）,docs-mirror/wechat-pay/pages/4013070374.txt:604,no
+,CLOSED,退款关闭,摘要 failed、channelState 原样；refund_fail_states 实测前为空，不释放额度,docs-mirror/wechat-pay/pages/4013070374.txt:605,no
+,PROCESSING,退款处理中,摘要 processing；继续查询,docs-mirror/wechat-pay/pages/4013070374.txt:606,no
+,ABNORMAL,退款异常,摘要 failed、channelState 原样；refund_fail_states 实测前为空，不释放额度,docs-mirror/wechat-pay/pages/4013070374.txt:607,no
+PARAM_ERROR,,HTTP 400：参数错误,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070347.txt:635,no
+INVALID_REQUEST,,HTTP 400：HTTP 请求不符合微信支付 APIv3 接口规则,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070347.txt:640,no
+SIGN_ERROR,,HTTP 401：验证不通过,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070347.txt:645,no
+SYSTEM_ERROR,,HTTP 500：系统异常，请稍后重试,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070347.txt:650,no
+APPID_MCHID_NOT_MATCH,,HTTP 400：AppID和mch_id不匹配,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070347.txt:661,no
+INVALID_REQUEST,,HTTP 400：无效请求,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070347.txt:666,no
+MCH_NOT_EXISTS,,HTTP 400：商户号不存在,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070347.txt:671,no
+PARAM_ERROR,,HTTP 400：参数错误,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070347.txt:676,no
+SIGN_ERROR,,HTTP 401：签名错误,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070347.txt:681,no
+NO_AUTH,,HTTP 403：商户无权限,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070347.txt:686,no
+OUT_TRADE_NO_USED,,HTTP 403：商户订单号重复,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070347.txt:691,no
+FREQUENCY_LIMITED,,HTTP 429：频率超限,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070347.txt:696,no
+SYSTEM_ERROR,,HTTP 500：系统错误,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070347.txt:701,no
+PARAM_ERROR,,HTTP 400：参数错误,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070356.txt:621,no
+INVALID_REQUEST,,HTTP 400：HTTP 请求不符合微信支付 APIv3 接口规则,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070356.txt:626,no
+SIGN_ERROR,,HTTP 401：验证不通过,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070356.txt:631,no
+SYSTEM_ERROR,,HTTP 500：系统异常，请稍后重试,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070356.txt:636,no
+INVALID_REQUEST,,HTTP 400：无效请求,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070356.txt:647,no
+MCH_NOT_EXISTS,,HTTP 400：商户号不存在,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070356.txt:652,no
+SIGN_ERROR,,HTTP 401：签名错误,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070356.txt:657,no
+RULE_LIMIT,,HTTP 403：业务规则限制,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070356.txt:662,no
+TRADE_ERROR,,HTTP 403：交易错误,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070356.txt:667,no
+ORDER_NOT_EXIST,,HTTP 404：订单不存在,查单 HTTP 404 + 此码且验签通过、单号不冲突才是 not_exist；不等于已关闭（BR-PAY-05 ②）,docs-mirror/wechat-pay/pages/4013070356.txt:672,no
+FREQUENCY_LIMITED,,HTTP 429：频率超限,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070356.txt:677,no
+SYSTEM_ERROR,,HTTP 500：系统错误,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070356.txt:682,no
+PARAM_ERROR,,HTTP 400：参数错误,验过签、单号不冲突：不凭错误码下结论，再查一次单定结果；查不到结果才 unknown（任务书第 13 节）,docs-mirror/wechat-pay/pages/4013070360.txt:286,no
+INVALID_REQUEST,,HTTP 400：HTTP 请求不符合微信支付 APIv3 接口规则,验过签、单号不冲突：不凭错误码下结论，再查一次单定结果；查不到结果才 unknown（任务书第 13 节）,docs-mirror/wechat-pay/pages/4013070360.txt:291,no
+SIGN_ERROR,,HTTP 401：验证不通过,验过签、单号不冲突：不凭错误码下结论，再查一次单定结果；查不到结果才 unknown（任务书第 13 节）,docs-mirror/wechat-pay/pages/4013070360.txt:296,no
+SYSTEM_ERROR,,HTTP 500：系统异常，请稍后重试,验过签、单号不冲突：不凭错误码下结论，再查一次单定结果；查不到结果才 unknown（任务书第 13 节）,docs-mirror/wechat-pay/pages/4013070360.txt:301,no
+INVALID_REQUEST,,HTTP 400：无效请求,验过签、单号不冲突：不凭错误码下结论，再查一次单定结果；查不到结果才 unknown（任务书第 13 节）,docs-mirror/wechat-pay/pages/4013070360.txt:312,no
+MCH_NOT_EXISTS,,HTTP 400：商户号不存在,验过签、单号不冲突：不凭错误码下结论，再查一次单定结果；查不到结果才 unknown（任务书第 13 节）,docs-mirror/wechat-pay/pages/4013070360.txt:317,no
+SIGN_ERROR,,HTTP 401：签名错误,验过签、单号不冲突：不凭错误码下结论，再查一次单定结果；查不到结果才 unknown（任务书第 13 节）,docs-mirror/wechat-pay/pages/4013070360.txt:322,no
+RULE_LIMIT,,HTTP 403：业务规则限制,验过签、单号不冲突：不凭错误码下结论，再查一次单定结果；查不到结果才 unknown（任务书第 13 节）,docs-mirror/wechat-pay/pages/4013070360.txt:327,no
+TRADE_ERROR,,HTTP 403：交易错误,验过签、单号不冲突：不凭错误码下结论，再查一次单定结果；查不到结果才 unknown（任务书第 13 节）,docs-mirror/wechat-pay/pages/4013070360.txt:332,no
+FREQUENCY_LIMITED,,HTTP 429：频率超限,验过签、单号不冲突：不凭错误码下结论，再查一次单定结果；查不到结果才 unknown（任务书第 13 节）,docs-mirror/wechat-pay/pages/4013070360.txt:337,no
+SYSTEM_ERROR,,HTTP 500：系统错误,验过签、单号不冲突：不凭错误码下结论，再查一次单定结果；查不到结果才 unknown（任务书第 13 节）,docs-mirror/wechat-pay/pages/4013070360.txt:342,no
+PARAM_ERROR,,HTTP 400：参数错误,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070371.txt:945,no
+INVALID_REQUEST,,HTTP 400：HTTP 请求不符合微信支付 APIv3 接口规则,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070371.txt:950,no
+SIGN_ERROR,,HTTP 401：验证不通过,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070371.txt:955,no
+SYSTEM_ERROR,,HTTP 500：系统异常，请稍后重试,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070371.txt:960,no
+INVALID_REQUEST,,HTTP 400：请求参数符合参数格式，但不符合业务规则,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070371.txt:971,no
+SIGN_ERROR,,HTTP 401：签名错误,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070371.txt:976,no
+NOT_ENOUGH,,HTTP 403：余额不足,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070371.txt:981,no
+USER_ACCOUNT_ABNORMAL,,HTTP 403：退款请求失败,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070371.txt:986,no
+MCH_NOT_EXISTS,,HTTP 404：MCHID不存在,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070371.txt:991,no
+RESOURCE_NOT_EXISTS,,HTTP 404：订单号不存在,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070371.txt:996,no
+FREQUENCY_LIMITED,,HTTP 429：频率限制,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070371.txt:1001,no
+SYSTEM_ERROR,,HTTP 500：系统超时,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070371.txt:1006,no
+PARAM_ERROR,,HTTP 400：参数错误,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070374.txt:744,no
+INVALID_REQUEST,,HTTP 400：HTTP 请求不符合微信支付 APIv3 接口规则,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070374.txt:749,no
+SIGN_ERROR,,HTTP 401：验证不通过,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070374.txt:754,no
+SYSTEM_ERROR,,HTTP 500：系统异常，请稍后重试,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070374.txt:759,no
+SIGN_ERROR,,HTTP 401：签名错误,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070374.txt:770,no
+MCH_NOT_EXISTS,,HTTP 404：MCHID不存在,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070374.txt:775,no
+RESOURCE_NOT_EXISTS,,HTTP 404：退款单不存在,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070374.txt:780,no
+SYSTEM_ERROR,,HTTP 500：系统超时,一律 unknown：验过签也只记录，只查询、不重提（rule 7）,docs-mirror/wechat-pay/pages/4013070374.txt:785,no
+PARAM_ERROR,,参数错误,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/wechat-pay/pages/4013071227.txt:502,no
+INVALID_REQUEST,,HTTP 请求不符合微信支付 APIv3 接口规则,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/wechat-pay/pages/4013071227.txt:506,no
+SIGN_ERROR,,验证不通过,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/wechat-pay/pages/4013071227.txt:510,no
+SYSTEM_ERROR,,系统异常，请稍后重试,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/wechat-pay/pages/4013071227.txt:514,no
+INVALID_REQUEST,,参数错误,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/wechat-pay/pages/4013071227.txt:523,no
+NO_STATEMENT_EXIST,,账单文件不存在,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/wechat-pay/pages/4013071227.txt:527,no
+STATEMENT_CREATING,,账单生成中,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/wechat-pay/pages/4013071227.txt:531,no
+FREQUENCY_LIMITED,,请求过于频繁,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/wechat-pay/pages/4013071227.txt:535,no

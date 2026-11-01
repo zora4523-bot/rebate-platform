@@ -6,9 +6,9 @@
 // adds the pay reads and the manual settlement of a needs_manual pay order there).
 // app.module hands in content's configuration reader as a factory, so this module imports no other
 // module's implementation but ledger's posting port (LedgerModule, index.ts); the business type
-// registry follows APP_ENV (prod registers nothing); the channel set is FakePayChannel outside
-// prod and empty in prod until the real adapters land (B2-15k: fail closed, payment/AGENTS.md
-// rule 6). Without a database or job queue the pay order use cases are not assembled and the
+// registry follows APP_ENV (prod registers nothing); the channel set comes from createPayChannelSet
+// (B2-15k: fake channels in local / test or with PAY_CHANNEL_IMPL=fake, a real adapter with complete
+// credentials, otherwise an unavailable channel that fails closed, payment/AGENTS.md rule 6). Without a database or job queue the pay order use cases are not assembled and the
 // routes fail closed (50001).
 // The notification entry exists only in a process with a database (`notifyEntry`): it is outside
 // the client contract and, without a database, the queue and the field cipher, nothing of a
@@ -74,7 +74,7 @@ import {
   type PayNotifyDeps,
 } from './http/public/pay-notify.controller.ts';
 import { PAY_ORDER_DEPS, PayOrdersController } from './http/public/pay-orders.controller.ts';
-import { FakePayChannel } from './infra/channels/fake-pay-channel.ts';
+import { createPayChannelSet } from './infra/channels/index.ts';
 import { createNotifyRateLimiter } from './infra/notify-rate-limit.ts';
 import { createPayJobHandler } from './jobs/pay-jobs.ts';
 import { PAY_QUEUE } from './jobs/names.ts';
@@ -169,12 +169,6 @@ function reconChainTimer(deps: PayReconSeedDeps | null): ReconChainTimer {
   };
 }
 
-/** The channels of an environment: synthetic outside prod; none in prod until B2-15k. */
-export function payChannelSetFor(appEnv: AppConfig['appEnv']): PayChannelSet {
-  if (appEnv === 'prod') return new PayChannelSet([]);
-  return new PayChannelSet([new FakePayChannel('wechat_pay'), new FakePayChannel('alipay')]);
-}
-
 /**
  * ledger's posting and recon diff registration as payment's port (BR-PAY-07); B2-15n: with the
  * registration that tells a new diff from a known one (pay_recon_mismatch alerted once).
@@ -189,8 +183,9 @@ function ledgerPort(ledger: Ledger, clock: Clock): PayLedgerPort {
 
 const channelSetProvider = {
   provide: PayChannelSet,
-  inject: [APP_CONFIG],
-  useFactory: (config: AppConfig): PayChannelSet => payChannelSetFor(config.appEnv),
+  inject: [APP_CONFIG, CLOCK, ROOT_LOGGER],
+  useFactory: (config: AppConfig, clock: Clock, logger: RootLogger): Promise<PayChannelSet> =>
+    createPayChannelSet(config, { clock, logger: logger.child({ module: 'payment' }) }),
 };
 
 @Module({})

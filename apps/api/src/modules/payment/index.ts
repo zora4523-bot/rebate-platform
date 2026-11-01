@@ -1,7 +1,7 @@
 // Public surface of the payment module (apps/api/AGENTS.md: the only import point for other
 // modules). The Nest module for the api and worker entries (B2-15b, B2-15c), the ports and their
 // types; no table of this module is reachable from here.
-export { PaymentModule, PAY_JOBS, payChannelSetFor } from './payment.module.ts';
+export { PaymentModule, PAY_JOBS } from './payment.module.ts';
 export type { PaymentAdminOptions, PaymentModuleOptions } from './payment.module.ts';
 export { createPayJobHandler } from './jobs/pay-jobs.ts';
 export type { PayJobDeps, PayLedgerPort } from './jobs/pay-jobs.ts';

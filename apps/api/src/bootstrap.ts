@@ -57,7 +57,7 @@ export const MAX_PARAM_LENGTH = 128 * 3;
 export interface BootstrapOverrides {
   /** Process-owned handles; omitted when building isolated HTTP unit tests. */
   readonly dbHandles?: DbHandles;
-  /** Defaults to `loadConfig(process.env)`. */
+  /** Defaults to `loadConfig(process.env, entry)`. */
   readonly config?: AppConfig;
   /** Defaults to `clockFromConfig(config)`. */
   readonly clock?: Clock;
@@ -114,7 +114,7 @@ function withQueueStart(root: DynamicModule): DynamicModule {
 }
 
 function platformOptions(entry: EntryName, overrides: BootstrapOverrides): PlatformOptions {
-  const config = overrides.config ?? loadConfig(process.env);
+  const config = overrides.config ?? loadConfig(process.env, entry);
   return {
     entry,
     config,

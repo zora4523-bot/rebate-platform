@@ -213,9 +213,8 @@ export class PayChannelUnavailable extends Error {
 /**
  * The channels of the process, and the Nest injection token of them (a class token, so that the
  * rule tests can override it: `overrideProvider(PayChannelSet).useValue({ of })`). The payment
- * module provides it (`provide: PayChannelSet`): FakePayChannel instances outside prod; in prod an
- * empty set until the real adapters land (B2-15k), so every channel call fails closed
- * (payment/AGENTS.md rule 6) — unreachable anyway while prod registers no business type.
+ * module provides it (`provide: PayChannelSet`) through infra/channels createPayChannelSet (B2-15k):
+ * fake channels, real adapters, or unavailable channels that fail closed (payment/AGENTS.md rule 6).
  */
 export class PayChannelSet {
   readonly #channels: ReadonlyMap<PayChannelCode, PayChannel>;

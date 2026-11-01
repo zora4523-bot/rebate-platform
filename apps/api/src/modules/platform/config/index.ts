@@ -6,6 +6,7 @@ export type { PriorIdentityKeyringConfig } from './keyring-prior-identity.ts';
 export {
   DATAOKE_CREDENTIAL_ENV_NAMES,
   JD_CREDENTIAL_ENV_NAMES,
+  PAY_CREDENTIAL_ENV_NAMES,
   PDD_CREDENTIAL_ENV_NAMES,
   SMS_CREDENTIAL_ENV_NAMES,
   TAOBAO_CREDENTIAL_ENV_NAMES,
@@ -104,6 +105,9 @@ export type { JdAppCredentials, JdStartupErrorCode } from './jd-startup.ts';
 // The real collection channels (B2-15k): names and paths, api / worker / admin entries only.
 export { readPayChannelsConfig } from './pay-channels.ts';
 export type { PayAlipayEnv, PayChannelsConfig, PayWechatEnv } from './pay-channels.ts';
+// One secret file at startup: the collection channels read their key files through it (B2-15k).
+export { readStartupSecretFile } from './startup-secret-file.ts';
+export type { StartupSecretFileFailure } from './startup-secret-file.ts';
 // Worker queue concurrency limits (B1-01zzk): per-queue overrides and the shared budget.
 export { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 export type { QueueConcurrencyConfigResult } from './queue-concurrency.ts';

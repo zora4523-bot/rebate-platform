@@ -1,6 +1,6 @@
-// B2-15k: the channel of a process without complete credentials (BR-PAY-08 ②, task §9.9;
-// NotImplemented skeleton). Every call answers unknown with reason channel_unconfigured, a
-// notification is rejected, ownerAppOf is null; it throws nothing and falls back to nothing.
+// B2-15k: the channel of a process without complete credentials (BR-PAY-08 ②, task §9.9). Every
+// call answers unknown with reason channel_unconfigured, a notification is rejected, ownerAppOf is
+// null; it throws nothing and falls back to nothing. Creating an order therefore answers 50306.
 // Also compiled by the `test` project: erasable syntax only.
 import type {
   PayBillResult,
@@ -19,53 +19,58 @@ import type {
 } from '../../application/pay-channel.ts';
 import type { PayChannelCode } from '../../domain/types.ts';
 
+const REASON = 'channel_unconfigured';
+
+function unconfigured(): Promise<{ readonly kind: 'unknown'; readonly reason: string }> {
+  return Promise.resolve({ kind: 'unknown', reason: REASON });
+}
+
 export class UnavailablePayChannel implements PayChannel {
   readonly channel: PayChannelCode;
 
   constructor(channel: PayChannelCode) {
-    void channel;
-    throw new Error('NotImplemented: UnavailablePayChannel.constructor');
+    this.channel = channel;
   }
 
   createOrder(input: PayCreateOrderInput): Promise<PayCreateOrderResult> {
     void input;
-    throw new Error('NotImplemented: UnavailablePayChannel.createOrder');
+    return unconfigured();
   }
 
   query(outTradeNo: string): Promise<PayQueryResult> {
     void outTradeNo;
-    throw new Error('NotImplemented: UnavailablePayChannel.query');
+    return unconfigured();
   }
 
   close(outTradeNo: string): Promise<PayCloseResult> {
     void outTradeNo;
-    throw new Error('NotImplemented: UnavailablePayChannel.close');
+    return unconfigured();
   }
 
   refund(input: PayRefundInput): Promise<PayRefundResult> {
     void input;
-    throw new Error('NotImplemented: UnavailablePayChannel.refund');
+    return unconfigured();
   }
 
   refundQuery(outRefundNo: string, original?: PayRefundOriginal): Promise<PayRefundQueryResult> {
     void outRefundNo;
     void original;
-    throw new Error('NotImplemented: UnavailablePayChannel.refundQuery');
+    return unconfigured();
   }
 
   verifyNotification(raw: PayRawNotification): Promise<PayNotificationResult> {
     void raw;
-    throw new Error('NotImplemented: UnavailablePayChannel.verifyNotification');
+    return Promise.resolve({ kind: 'rejected', reason: REASON });
   }
 
   ownerAppOf(identity: PayChannelIdentity): string | null {
     void identity;
-    throw new Error('NotImplemented: UnavailablePayChannel.ownerAppOf');
+    return null;
   }
 
   downloadBill(date: string, appId: string): Promise<PayBillResult> {
     void date;
     void appId;
-    throw new Error('NotImplemented: UnavailablePayChannel.downloadBill');
+    return unconfigured();
   }
 }

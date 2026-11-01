@@ -40,6 +40,9 @@ services:
       APP_ENV: staging
       # B1-01zzg (规划/02 §13): the deployed image tag, bound to every log line as deployVersion.
       COULI_DEPLOY_VERSION: '${COULI_API_TAG:?deploy.sh exports the image tag}'
+      # B2-15k (D10-549 ⑥): fake collection channels until a test merchant is prepared (README 1.9).
+      # Not a secret; stream and payout never read any PAY_* variable (BR-PAY-08 ①).
+      PAY_CHANNEL_IMPL: fake
       # Listen on the container interface so the 127.0.0.1-only host port reaches it.
       API_HOST: '0.0.0.0'
       # boot.mjs reads the access-token signing key (es256.pem, key-id) from this mounted
@@ -234,6 +237,9 @@ services:
       APP_ENV: staging
       # B1-01zzg (规划/02 §13): the deployed image tag, bound to every log line as deployVersion.
       COULI_DEPLOY_VERSION: '${COULI_API_TAG:?deploy.sh exports the image tag}'
+      # B2-15k (D10-549 ⑥): fake collection channels until a test merchant is prepared (README 1.9).
+      # Not a secret; stream and payout never read any PAY_* variable (BR-PAY-08 ①).
+      PAY_CHANNEL_IMPL: fake
     volumes:
       # CA of the self-signed database certificate (sslmode=verify-ca&sslrootcert=/etc/pki/ca.crt)
       - type: bind
@@ -319,6 +325,9 @@ services:
       APP_ENV: staging
       # B1-01zzg (规划/02 §13): the deployed image tag, bound to every log line as deployVersion.
       COULI_DEPLOY_VERSION: '${COULI_API_TAG:?deploy.sh exports the image tag}'
+      # B2-15k (D10-549 ⑥): fake collection channels until a test merchant is prepared (README 1.9).
+      # Not a secret; stream and payout never read any PAY_* variable (BR-PAY-08 ①).
+      PAY_CHANNEL_IMPL: fake
       # Listen on the container interface so the 127.0.0.1-only host port reaches it.
       API_HOST: '0.0.0.0'
     ports:

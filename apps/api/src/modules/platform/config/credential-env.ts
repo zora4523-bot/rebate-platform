@@ -19,6 +19,9 @@
 // Agent content safety review (B3-03m; owner D10-135 ②): the Aliyun AccessKey pair of the stream
 // entry's input / output review, read by the composition root in staging / prod only.
 //
+// Real collection channels (B2-15k, BR-PAY-08): the identities and key files of WeChat Pay and Alipay,
+// read by ./pay-channels.ts in staging / prod only.
+//
 // PROVISIONAL matcher for union, Alipay and bank channels until their adapters declare names.
 // TODO(规划/11 §8): replace it with the declared key names of each adapter as they land.
 const CREDENTIAL_ENV_NAME =
@@ -78,6 +81,24 @@ export const AGENT_REVIEW_CREDENTIAL_ENV_NAMES: readonly string[] = Object.freez
   'AGENT_REVIEW_ALIYUN_ACCESS_KEY_SECRET',
 ]);
 
+/** Credential variables of the real collection channels (B2-15k; 规划/11 §8; BR-PAY-08). */
+export const PAY_CREDENTIAL_ENV_NAMES: readonly string[] = Object.freeze([
+  'PAY_WECHAT_APPID',
+  'PAY_WECHAT_MCHID',
+  'PAY_WECHAT_MERCHANT_SERIAL',
+  'PAY_WECHAT_PRIVATE_KEY_FILE',
+  'PAY_WECHAT_APIV3_KEY_FILE',
+  'PAY_WECHAT_PUBLIC_KEY_FILE',
+  'PAY_WECHAT_PUBLIC_KEY_ID',
+  'PAY_ALIPAY_APPID',
+  'PAY_ALIPAY_SELLER_ID',
+  'PAY_ALIPAY_PRIVATE_KEY_FILE',
+  'PAY_ALIPAY_PUBLIC_KEY_FILE',
+  'PAY_ALIPAY_APP_CERT_FILE',
+  'PAY_ALIPAY_PUBLIC_CERT_FILE',
+  'PAY_ALIPAY_ROOT_CERT_FILE',
+]);
+
 const DECLARED_NAMES = new Set(
   [
     ...SMS_CREDENTIAL_ENV_NAMES,
@@ -86,11 +107,12 @@ const DECLARED_NAMES = new Set(
     ...DATAOKE_CREDENTIAL_ENV_NAMES,
     ...JD_CREDENTIAL_ENV_NAMES,
     ...AGENT_REVIEW_CREDENTIAL_ENV_NAMES,
+    ...PAY_CREDENTIAL_ENV_NAMES,
   ].map((name) => name.toUpperCase()),
 );
 
 /**
- * True for a declared SMS, Pinduoduo, Taobao, 大淘客, Jingdong or Agent review credential name (compared without regard to case) and for a name with
+ * True for a declared SMS, Pinduoduo, Taobao, 大淘客, Jingdong, Agent review or collection channel credential name (compared without regard to case) and for a name with
  * prefix UNION_/ALIPAY_/BANK_ and suffix _SECRET/_PRIVATE_KEY/_ACCESS_KEY.
  */
 export function looksLikeRealCredentialEnvName(name: string): boolean {

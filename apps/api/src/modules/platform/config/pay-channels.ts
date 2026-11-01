@@ -1,5 +1,5 @@
-// B2-15k: the environment of the real collection channels (task §9.8; BR-PAY-08; NotImplemented
-// skeleton; the rule tests are test/spec/payment/channels/config.test.ts). The contract is
+// B2-15k: the environment of the real collection channels (task §9.8; BR-PAY-08; rule tests:
+// test/spec/payment/channels/config.test.ts). The contract is
 // loadConfig(env, entry): it fills AppConfig.payChannels from readPayChannelsConfig and merges its
 // problems. Pure: looks only at the given object, reads no file, never echoes a value; the key
 // files are read once at startup through ./startup-secret-file.ts by the payment module's factory.
@@ -47,13 +47,70 @@ export interface PayChannelsConfig {
   readonly alipay: PayAlipayEnv;
 }
 
+const set = (env: Readonly<Record<string, string | undefined>>, name: string): string | null => {
+  const value = env[name];
+  return value === undefined || value === '' ? null : value;
+};
+
+function isHttpsUrl(value: string): boolean {
+  return URL.canParse(value) && new URL(value).protocol === 'https:';
+}
+
 export function readPayChannelsConfig(
   appEnv: AppEnv,
   env: Readonly<Record<string, string | undefined>>,
   entry: EntryName,
 ): { readonly payChannels: PayChannelsConfig | null; readonly problems: readonly string[] } {
-  void appEnv;
-  void env;
-  void entry;
-  throw new Error('NotImplemented: readPayChannelsConfig');
+  // BR-PAY-08 ①: stream and payout never read these, whatever they hold.
+  if (entry === 'stream' || entry === 'payout') return { payChannels: null, problems: [] };
+  const problems: string[] = [];
+  const impl = set(env, 'PAY_CHANNEL_IMPL');
+  if (impl !== null && impl !== 'fake') {
+    problems.push('PAY_CHANNEL_IMPL: only accepts fake');
+  } else if (impl !== null && appEnv === 'prod') {
+    problems.push(
+      'PAY_CHANNEL_IMPL: must not be set when APP_ENV=prod (prod has no fake channels)',
+    );
+  }
+  // local / test always run the fake channels and read nothing else; startupViolations refuses the
+  // credential names there.
+  if (appEnv === 'local' || appEnv === 'test') return { payChannels: null, problems };
+  const notifyBaseUrl = set(env, 'PAY_NOTIFY_BASE_URL');
+  if (notifyBaseUrl !== null && !isHttpsUrl(notifyBaseUrl)) {
+    problems.push('PAY_NOTIFY_BASE_URL: must be an https address');
+  }
+  const gateway = set(env, 'PAY_ALIPAY_GATEWAY');
+  if (gateway !== null && appEnv === 'prod') {
+    problems.push(
+      'PAY_ALIPAY_GATEWAY: must not be set when APP_ENV=prod (prod uses the official gateway)',
+    );
+  }
+  return {
+    payChannels: {
+      appId: set(env, 'PAY_APP_ID'),
+      impl: impl === 'fake' ? 'fake' : null,
+      notifyBaseUrl,
+      wechat: {
+        appId: set(env, 'PAY_WECHAT_APPID'),
+        mchId: set(env, 'PAY_WECHAT_MCHID'),
+        merchantSerial: set(env, 'PAY_WECHAT_MERCHANT_SERIAL'),
+        privateKeyFile: set(env, 'PAY_WECHAT_PRIVATE_KEY_FILE'),
+        apiV3KeyFile: set(env, 'PAY_WECHAT_APIV3_KEY_FILE'),
+        publicKeyFile: set(env, 'PAY_WECHAT_PUBLIC_KEY_FILE'),
+        publicKeyId: set(env, 'PAY_WECHAT_PUBLIC_KEY_ID'),
+        testMerchant: env['PAY_WECHAT_TEST_MERCHANT'] === '1',
+      },
+      alipay: {
+        appId: set(env, 'PAY_ALIPAY_APPID'),
+        sellerId: set(env, 'PAY_ALIPAY_SELLER_ID'),
+        privateKeyFile: set(env, 'PAY_ALIPAY_PRIVATE_KEY_FILE'),
+        publicKeyFile: set(env, 'PAY_ALIPAY_PUBLIC_KEY_FILE'),
+        appCertFile: set(env, 'PAY_ALIPAY_APP_CERT_FILE'),
+        publicCertFile: set(env, 'PAY_ALIPAY_PUBLIC_CERT_FILE'),
+        rootCertFile: set(env, 'PAY_ALIPAY_ROOT_CERT_FILE'),
+        gateway,
+      },
+    },
+    problems,
+  };
 }

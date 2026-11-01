@@ -693,7 +693,7 @@ export async function runEntry(entry: EntryName): Promise<void> {
   const problems: string[] = [];
   try {
     try {
-      config = loadConfig(process.env);
+      config = loadConfig(process.env, entry);
     } catch (error) {
       if (!(error instanceof ConfigError)) throw error;
       problems.push(...error.problems);
