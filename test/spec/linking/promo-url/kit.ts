@@ -150,6 +150,13 @@ interface JobRow {
   readonly data: { readonly payload: Readonly<Record<string, unknown>> };
 }
 
+/** One item of GET /v1/me/favorites. */
+export interface FavoriteItem {
+  readonly product_key: string;
+  readonly invalid: boolean;
+  readonly product_card: ProductCard;
+}
+
 export interface UserOptions {
   /** The Taobao binding; default active. */
   readonly taobao?: BindingStatus;
@@ -165,6 +172,8 @@ export interface Client {
   detail(card: ProductCard): Promise<InjectResponse>;
   /** POST /v1/links/{link_id}/open, signed. */
   open(linkId: string): Promise<InjectResponse>;
+  /** GET /v1/me/favorites: the items of the first page. */
+  favorites(): Promise<FavoriteItem[]>;
 }
 
 export interface Member extends Client {
@@ -232,6 +241,14 @@ function materialsOf(db: Kysely<DB>, appId: string) {
     .execute();
 }
 
+/** The App's prefetch jobs: rows of pgboss.job with this kit's job name. */
+export async function jobsOf(db: Kysely<DB>, appId: string): Promise<PrefetchJob[]> {
+  const query = sql<JobRow>`SELECT name AS queue, id::text AS id, data FROM pgboss.job
+    WHERE data->>'name' = ${JOB_NAME} AND data->'payload'->>'app_id' = ${appId}`;
+  const { rows } = await query.execute(db);
+  return rows.map(({ queue, id, data }) => ({ queue, id, payload: data.payload }));
+}
+
 let address = 0;
 /** A fresh client address: per-IP limits of one user never meet another's. */
 function nextAddress(): string {
@@ -240,7 +257,7 @@ function nextAddress(): string {
 }
 
 /** A promotion slot of the shape the Taobao open and contract accept. */
-function slot(): string {
+export function slot(): string {
   const digits = (): string => String(randomBytes(4).readUInt32BE(0));
   return `mm_${digits()}_${digits()}_${digits()}`;
 }
@@ -544,7 +561,18 @@ export function promoHarness({ createTestDatabase, acquireTestRedis }: Provision
         return signed(`/v1/links/${linkId}/open`, payload, randomUUID());
       }
 
-      return { search, detail, open, signed };
+      async function favorites(): Promise<FavoriteItem[]> {
+        const response = await server().inject({
+          method: 'GET',
+          url: '/v1/me/favorites',
+          headers: { ...dev.headers, ...auth, 'x-trace-id': randomUUID() },
+          remoteAddress: ip,
+        });
+        expect(response.statusCode, response.payload).toBe(200);
+        return (response.json() as { data: { items: FavoriteItem[] } }).data.items;
+      }
+
+      return { search, detail, open, favorites, signed };
     }
 
     async function user(options: UserOptions = {}): Promise<Member> {
@@ -662,12 +690,7 @@ export function promoHarness({ createTestDatabase, acquireTestRedis }: Provision
     failConversion: (error) => {
       failure = error;
     },
-    jobs: async (appId) => {
-      const query = sql<JobRow>`SELECT name AS queue, id::text AS id, data FROM pgboss.job
-        WHERE data->>'name' = ${JOB_NAME} AND data->'payload'->>'app_id' = ${appId}`;
-      const { rows } = await query.execute(handle());
-      return rows.map(({ queue, id, data }) => ({ queue, id, payload: data.payload }));
-    },
+    jobs: (appId) => jobsOf(handle(), appId),
     interceptSend: (run) => {
       sendSpy = vi.spyOn(server().get<QueueRuntime>(JOB_QUEUE), 'send').mockImplementation(run);
       return sendSpy;
@@ -707,7 +730,7 @@ export function detailCard(response: InjectResponse): ProductCard {
 
 /** The App's prefetch jobs turn out to be exactly these links. */
 export async function expectJobsFor(
-  h: PromoHarness,
+  h: Pick<PromoHarness, 'jobs'>,
   appId: string,
   linkIds: readonly string[],
 ): Promise<PrefetchJob[]> {

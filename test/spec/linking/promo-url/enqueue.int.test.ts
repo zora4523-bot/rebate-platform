@@ -1,12 +1,13 @@
 // B1-06zd rule tests: which registered links get a prefetch job (D10-510), through the real api
 // entry and its running JOB_QUEUE: a job is a row of pgboss.job. Only a link registered by the
-// product detail endpoint, never one a search page registered, for a logged-in user, of Taobao with
+// product detail endpoint, never one a search page or the favorites list registered, for a logged-in user, of Taobao with
 // a relation_id and a rebate, only while
 // convert.taobao_prefetch.enabled is on and under its per-minute limit; over the limit it is
 // skipped, never queued. The job goes out after the registration commits, without blocking the
 // detail response; a failed delivery is only logged. A job's absence proves nothing by itself, so
 // each case that expects none first or after shows a job of an eligible link in the same run.
 import { acquireTestRedis, createTestDatabase } from '@couli/db/testing';
+import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { expect, it, vi } from 'vitest';
 import { ENTRY_PLAN } from '../../../../apps/api/src/modules/platform/queue/catalog.ts';
@@ -87,6 +88,42 @@ it('[AC-B1-06zd#15] 按详情接口登记判定：用卡片的 item_ref 请求�
   expect(linkId).not.toBe(String(card.link_id));
   expect((await h.link(String(card.link_id))).entry_source).toBe('search');
   await expectJobsFor(h, t.appId, [linkId]);
+}, 120_000);
+
+it('[AC-B1-06zd#49] 收藏列表登记的卡不投：开关开、relation_id active，同一用户前后两次详情各投一个任务，中间列出的收藏卡没有任务', async () => {
+  const t = await h.tenant({ ...ON, [PREFETCH_RATE]: 10 });
+  const member = await t.user();
+  const card = cardOf(await member.search('taobao'));
+
+  // The detail also stores the product reference a favorites card is read by.
+  const before = String(detailCard(await member.detail(card)).link_id);
+  await expectJobsFor(h, t.appId, [before]);
+
+  await h
+    .db()
+    .insertInto('favorites')
+    .values({
+      id: randomUUID(),
+      app_id: t.appId,
+      user_id: member.uid,
+      platform: 'taobao',
+      product_key: String(card.product_key),
+      created_at: h.clock.now(),
+    })
+    .execute();
+  const items = await member.favorites();
+  expect(items).toHaveLength(1);
+  expect(items[0]).toMatchObject({ product_key: card.product_key, invalid: false });
+  const listed = items[0]!.product_card;
+  expect(listed.rebate_basis).not.toBe('no_rebate');
+  const favoriteLink = String(listed.link_id);
+  expect(await h.link(favoriteLink)).toMatchObject({ user_id: member.uid, platform: 'taobao' });
+
+  // Sent after the favorites request answered: a job of the favorites link would show beside it.
+  const after = String(detailCard(await member.detail(card)).link_id);
+
+  expect([before, after]).not.toContain(favoriteLink);
+  await expectJobsFor(h, t.appId, [before, after]);
 }, 120_000);
 
 it('[AC-B1-06zd#16] 只有淘宝：京东详情 link 不投', async () => {
