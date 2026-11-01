@@ -98,4 +98,5 @@ red_exempt:
   - file: test/spec/contracts/pay-admin-http/operations.test.ts
     test: '[AC-CT-21e#1] get /admin/v1/pay-recon-diffs（对账差错）已实现（不再 planned）、后台鉴权与权限点'
     reason: '冻结 CT-21e 契约用例，测试体未改；本任务只把 #1 / #17 块 A（只剩 listAdminPayRefunds、getAdminPayRefund 两行，无需先拆）改成已实现（去 planned）。同目录 kit.ts 使用 createRequire，可能读到本任务改动的文件，同文件因此被整体判定'
-status: todo
+status: done
+pr: 2145
