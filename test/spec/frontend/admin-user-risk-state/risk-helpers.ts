@@ -27,6 +27,7 @@ import {
   CATEGORIES,
   categoryShown,
   hasZone,
+  inModeChoice,
   sameMinute,
   type Category,
   type RequestLog,
@@ -383,11 +384,15 @@ export async function openDialog(action: RiskAction): Promise<HTMLElement> {
 /** Controls inside a field (choices, pickers, selects) are never the dialog's submit. */
 const FIELD_PARTS =
   '.ant-modal-close, .ant-select, .ant-radio-group, .ant-radio-wrapper, .ant-segmented, .ant-picker, .ant-picker-dropdown, [role="radiogroup"], label';
-/** The submit button of a confirmation dialog: its one button that does not dismiss it. */
+/**
+ * The submit button of a confirmation dialog: its one button that does not dismiss it (the
+ * 处理方式 冻结 / 封禁 choices of a dialog that does both are field controls too).
+ */
 export function submitOf(layer: HTMLElement): HTMLElement {
   const buttons = Array.from(layer.querySelectorAll<HTMLElement>('button, [role="button"]')).filter(
     (node) =>
       node.closest(FIELD_PARTS) === null &&
+      !inModeChoice(layer, node) &&
       squash(node.textContent) !== '' &&
       !DISMISS.test(squash(node.textContent)) &&
       !DISMISS.test(squash(node.getAttribute('aria-label'))),
@@ -582,9 +587,13 @@ export async function chooseCategory(code: Category): Promise<void> {
 export const PERIOD_NONE = /不设期限|不定期|无期限|不限期|永久|长期|人工解冻|手动解冻/;
 /** A choice of a freeze that ends by itself (the board: 「到期自动解冻」). */
 export const PERIOD_UNTIL = /到期|定期|设定期限|设置期限|指定|自动解冻|截止|限期/;
-/** The radios of `layer` that choose the freeze period. */
+/**
+ * The radios of `layer` that choose the freeze period. The 处理方式 choices of a dialog that does
+ * both are not among them (the board's 封禁 choice reads 「…不设期限」).
+ */
 export function periodRadios(layer: HTMLElement): HTMLElement[] {
   return radiosOf(layer).filter((node) => {
+    if (inModeChoice(layer, node)) return false;
     const label = labelOf(node);
     return PERIOD_NONE.test(label) || PERIOD_UNTIL.test(label);
   });
@@ -896,14 +905,18 @@ export const HINT = {
 export const REASON_RULE =
   /必填|不能为空|不可为空|不得为空|请填写|\d+\s*个?字|不超过|不能超过|最多|至多/;
 
-/** The visible text of `root` without counters (labels and static help included). */
-export function ruleText(root: HTMLElement): string {
+/**
+ * The visible text of `root` without counters (labels and static help included); with
+ * `withoutModes`, the 处理方式 冻结 / 封禁 choices of a dialog that does both are left out too.
+ */
+export function ruleText(root: HTMLElement, withoutModes = false): string {
   const walker = document.createTreeWalker(root, SHOW_TEXT);
   const parts: string[] = [];
   for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
     const element = node.parentElement;
     if (element === null || !visible(element)) continue;
     if (element.closest(`textarea, ${COUNTERS}`) !== null) continue;
+    if (withoutModes && inModeChoice(root, node)) continue;
     parts.push((node as Text).data);
   }
   return squash(parts.join('')).replace(/\d+[/／]\d+/g, '');

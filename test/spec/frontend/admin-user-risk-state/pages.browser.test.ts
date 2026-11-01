@@ -13,6 +13,7 @@ import {
   UID,
   categoryShown,
   createServer,
+  inModeChoice,
   userDetail,
   userIn,
   type Server,
@@ -95,18 +96,26 @@ function squash(text: string | null | undefined): string {
   return (text ?? '').replace(/\s+/g, '');
 }
 
-/** The one button of `dialog` that does not dismiss it (field controls left out). */
+/**
+ * The one button of `dialog` that does not dismiss it (field controls left out, the 处理方式
+ * 冻结 / 封禁 choices of a dialog that does both included).
+ */
 function submitIn(dialog: Element): HTMLElement {
   const buttons = Array.from(dialog.querySelectorAll<HTMLElement>('button')).filter((node) => {
     const text = squash(node.textContent);
-    return node.closest(FIELD_PARTS) === null && text !== '' && !DISMISS.test(text);
+    return (
+      node.closest(FIELD_PARTS) === null &&
+      !inModeChoice(dialog, node) &&
+      text !== '' &&
+      !DISMISS.test(text)
+    );
   });
   expect(buttons, 'one submit button in the dialog').toHaveLength(1);
   return buttons[0]!;
 }
 
-/** Text of the title row (around the 用户详情 heading, up to 【返回用户查询】) without its buttons. */
-function titleRowState(): string {
+/** The title row: the block around the 用户详情 heading that holds 【返回用户查询】. */
+function titleRow(): Element {
   const headings = Array.from(document.querySelectorAll('main h1, main h2, main h3, main h4'));
   const heading = headings.find((node) => squash(node.textContent) === '用户详情');
   const hasBack = (node: Element) =>
@@ -115,8 +124,13 @@ function titleRowState(): string {
     );
   let row: Element | null | undefined = heading?.parentElement;
   while (row !== null && row !== undefined && !hasBack(row)) row = row.parentElement;
-  if (row === null || row === undefined) return '';
-  const copy = row.cloneNode(true) as Element;
+  expect(row ?? null, 'the title row with 【返回用户查询】').not.toBeNull();
+  return row!;
+}
+
+/** Text of the title row without its buttons and links. */
+function titleRowState(): string {
+  const copy = titleRow().cloneNode(true) as Element;
   for (const node of Array.from(copy.querySelectorAll('button, a'))) node.remove();
   return squash(copy.textContent);
 }
@@ -161,10 +175,14 @@ it('[AC-F1-07jd-BROWSER#1] 1440 超管看已冻结用户：标题行【解冻】
 
   await verifyStep(server);
   await expect.element(main.getByRole('button', { name: /^冻\s*结$/ }), FIRST).toBeVisible();
+  await expect
+    .element(main.getByRole('button', { name: /^解\s*冻$/ }), FIRST)
+    .not.toBeInTheDocument();
   await expect.element(page.elementLocator(marker), FIRST).toHaveAttribute('data-pending', '0');
-  await expect.poll(titleRowState, FIRST).toMatch(/正常|normal/);
+  // The row's buttons hold 冻结 / 封禁 only, so 正常 can only come from its state tag.
+  await expect.element(page.elementLocator(titleRow()), FIRST).toMatchTextContent(/正常|normal/);
+  expect(titleRowState()).toMatch(/正常|normal/);
   expect(titleRowState()).not.toMatch(/已冻结/);
-  expect(main.getByRole('button', { name: /^解\s*冻$/ }).elements()).toEqual([]);
   expect(server.writes()).toHaveLength(1);
   const write = server.writes()[0]!;
   expect(write.method).toBe('PUT');
@@ -200,14 +218,15 @@ it('[AC-F1-07jd-BROWSER#2] 超管看无风控行的正常用户：【封禁】�
     await page.elementLocator(radioLabel).click();
   } else {
     await dialog.getByRole('combobox').click();
-    const option = () =>
-      Array.from(
-        document.querySelectorAll<HTMLElement>(
-          '.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content',
-        ),
-      ).find((node) => category.test(squash(node.textContent)));
-    await expect.poll(option, FIRST).toBeDefined();
-    await page.elementLocator(option()!).click();
+    // The open select's list (rc-select renders it with its visible options).
+    await expect.element(page.getByRole('listbox').first(), FIRST).toBeInTheDocument();
+    const option = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content',
+      ),
+    ).find((node) => category.test(squash(node.textContent)));
+    expect(option, 'the category among the options').toBeDefined();
+    await page.elementLocator(option!).click();
   }
   await dialog.getByRole('textbox', { name: /原因/ }).fill(REASON);
   expect(server.requests('PUT'), 'nothing sent before the submit').toEqual([]);
@@ -217,7 +236,9 @@ it('[AC-F1-07jd-BROWSER#2] 超管看无风控行的正常用户：【封禁】�
   await verifyStep(server);
   await expect.element(main.getByRole('button', { name: /^解\s*封$/ }), FIRST).toBeVisible();
   await expect.element(page.elementLocator(marker), FIRST).toHaveAttribute('data-pending', '0');
-  await expect.poll(titleRowState, FIRST).toMatch(/已封禁|banned/);
+  // The row's buttons hold 解封 only, so 已封禁 can only come from its state tag.
+  await expect.element(page.elementLocator(titleRow()), FIRST).toMatchTextContent(/已封禁|banned/);
+  expect(titleRowState()).toMatch(/已封禁|banned/);
   for (const name of [/^冻\s*结$/, /^解\s*冻$/, /^封\s*禁$/])
     expect(main.getByRole('button', { name }).elements(), String(name)).toEqual([]);
   expect(server.writes()).toHaveLength(1);

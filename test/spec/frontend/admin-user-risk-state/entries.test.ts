@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { waitFor } from '@testing-library/react';
+import { waitFor, within } from '@testing-library/react';
 import { expect, it } from 'vitest';
 import type { PermissionSnapshot } from '../../../../apps/admin/src/providers/access-control/index.ts';
 import {
@@ -180,10 +180,24 @@ it(
     await settled(server);
     expect(openLayers(), 'no dialog on reading').toEqual([]);
     expect(stepUpDialogs()).toEqual([]);
-    // Nothing of the dialogs is rendered ahead (hidden copies included).
-    expect(document.body.textContent ?? '').not.toMatch(
-      /冻结期限|冻结账号|封禁账号|解冻原因|解封原因|不设期限|到期自动解冻/,
-    );
+    // No dialog is rendered ahead, hidden copies included (the detail may show the freeze end).
+    expect(
+      Array.from(
+        document.querySelectorAll(
+          '[role="dialog"], [role="alertdialog"], .ant-modal, .ant-modal-root, .ant-popconfirm',
+        ),
+      ).map((node) => squash(node.textContent).slice(0, 40)),
+      'no dialog rendered, shown or hidden',
+    ).toEqual([]);
+    expect(
+      within(document.body)
+        .queryAllByLabelText(/原因/)
+        .filter((node) => node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement)
+        .map((node) => node.tagName),
+      'no reason input rendered',
+    ).toEqual([]);
+    // [AC-F1-07i-DETAIL#1]: the button names are 冻结 / 封禁, never these.
+    expect(document.body.textContent ?? '').not.toMatch(/冻结账号|封禁账号/);
     expect(server.verifies()).toEqual([]);
     expect(
       server.log

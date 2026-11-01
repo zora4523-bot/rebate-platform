@@ -73,15 +73,59 @@ export function hasZone(value: unknown): value is string {
     !Number.isNaN(Date.parse(value))
   );
 }
-/** `value` is the minute `wall` in Beijing time (or the machine's own zone), seconds 0–59 allowed. */
+/**
+ * `value` is the minute `wall` read as Beijing time (+08:00, or the same instant in UTC), seconds
+ * 0–59 allowed. A time read in the machine's own zone does not count.
+ */
 export function sameMinute(value: unknown, wall: WallTime): boolean {
   if (typeof value !== 'string') return false;
   const at = Date.parse(value);
   const [year, month, day] = wall.date.split('-').map(Number) as [number, number, number];
   const [hour, minute] = wall.time.split(':').map(Number) as [number, number];
   const beijing = Date.UTC(year, month - 1, day, hour - 8, minute);
-  const local = new Date(year, month - 1, day, hour, minute).getTime();
-  return [beijing, local].some((start) => at >= start && at < start + 60_000);
+  return at >= beijing && at < beijing + 60_000;
+}
+
+/** The name a control goes by: its aria-label, else its text (spaces removed). */
+function controlName(node: Element): string {
+  const label = node.getAttribute('aria-label');
+  const own = label !== null && label.trim() !== '' ? label : node.textContent;
+  return (own ?? '').replace(/\s+/g, '');
+}
+const FREEZE_FIRST = /^冻结/;
+const BAN_FIRST = /^封禁/;
+/** Of `named`, the ones naming 冻结 / 封禁 first, when both are there (a pair of choices). */
+function pairOf(named: readonly { node: HTMLElement; name: string }[]): HTMLElement[] {
+  const prefixed = named.filter(({ name }) => FREEZE_FIRST.test(name) || BAN_FIRST.test(name));
+  const both = (list: typeof prefixed) =>
+    list.some(({ name }) => FREEZE_FIRST.test(name)) &&
+    list.some(({ name }) => BAN_FIRST.test(name));
+  if (!both(prefixed)) return [];
+  // Choices that also describe themselves (the board: 「冻结 只暂停提现，可设期限」); a bare
+  // 「冻结」 button beside them is then the submit.
+  const described = prefixed.filter(({ name }) => name.length > 2);
+  return (both(described) ? described : prefixed).map(({ node }) => node);
+}
+/**
+ * The 处理方式 choices (冻结 / 封禁) of a dialog that does both, as the board AdmUserFreeze draws
+ * it (radios, segmented items or buttons); empty for a dialog of one action. Each choice is
+ * returned as its outermost part (the radio's label, or the button).
+ */
+export function modeChoices(dialog: Element): HTMLElement[] {
+  const radios = Array.from(
+    dialog.querySelectorAll<HTMLElement>('input[type="radio"], [role="radio"], [role="tab"]'),
+  ).map((node) => {
+    const holder = node.closest<HTMLElement>('label') ?? node;
+    return { node: holder, name: controlName(holder) };
+  });
+  const buttons = Array.from(dialog.querySelectorAll<HTMLElement>('button, [role="button"]'))
+    .filter((node) => node.closest('label, .ant-modal-close') === null)
+    .map((node) => ({ node, name: controlName(node) }));
+  return [...new Set([...pairOf(radios), ...pairOf(buttons)])];
+}
+/** `node` is (inside) one of the 处理方式 choices of `dialog`. */
+export function inModeChoice(dialog: Element, node: Node): boolean {
+  return modeChoices(dialog).some((choice) => choice.contains(node));
 }
 
 /** The risk part of a user without a risk-state row (contract: normal, nulls, row_version null). */
@@ -290,8 +334,9 @@ export function createServer(initial: UserDetail = userDetail(), options: Server
     const action = body['action'];
     if (action !== 'ban' && action !== 'unban' && action !== 'freeze' && action !== 'unfreeze')
       return failure(20001, { fields: ['action'] });
+    // The contract: 1–200 characters; it says nothing of trimming, so blanks count as characters.
     const sent = body['reason'];
-    if (typeof sent !== 'string' || sent.trim() === '' || sent.length > REASON_MAX)
+    if (typeof sent !== 'string' || sent.length < 1 || sent.length > REASON_MAX)
       return failure(20001, { fields: ['reason'] });
     const holds = action === 'ban' || action === 'freeze';
     const category = body['reason_category'];

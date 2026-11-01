@@ -82,8 +82,9 @@ it(
     const layer = await openDialog('freeze');
     reasonField(layer);
     expect(await offeredCategories(), 'every risk_reason_category').toEqual([...CATEGORIES]);
-    // A freeze without end is offered in words (the board: 「不设期限（人工解冻）」).
-    expect(ruleText(await confirmation()), 'a freeze without end').toMatch(PERIOD_NONE);
+    // A freeze without end is offered in words (the board: 「不设期限（人工解冻）」); the 封禁
+    // choice of a dialog that does both (「…不设期限」) does not count.
+    expect(ruleText(await confirmation(), true), 'a freeze without end').toMatch(PERIOD_NONE);
     const until = periodRadios(await confirmation()).filter((node) => {
       const label = node.closest('label')?.textContent ?? '';
       return PERIOD_UNTIL.test(label) && !PERIOD_NONE.test(label);
@@ -125,11 +126,13 @@ it(
 );
 
 it(
-  '[AC-F1-07jd-DIALOG#4] 原因为空、全空白或超过 200 字：前端拦下并说明规则，或发出后收 20001 [reason] 在原因旁说明规则；都不改风控状态；恰 200 字可提交，首尾空白去掉后发送',
+  '[AC-F1-07jd-DIALOG#4] 原因为空或超过 200 字：前端拦下并说明规则，或发出后收 20001 [reason] 在原因旁说明规则；全空白原因必须前端拦下、说明规则、不发 PUT；都不改风控状态；恰 200 字可提交，首尾空白去掉后发送',
   async () => {
     const server = createServer(userIn('frozen'), { writes: ['unfreeze', 'freeze'] });
     await openUser(server);
     for (const value of ['', '  \n ', '理'.repeat(REASON_MAX + 1)]) {
+      // The contract does not trim, so the server takes blanks: only the page can stop them.
+      const blank = value !== '' && value.trim() === '';
       await openDialog('unfreeze');
       // Taken before typing: a hint shown while typing counts as well as one shown on submit.
       const prior = before();
@@ -158,6 +161,8 @@ it(
         await click(submit);
         await settle();
         const written = stepUpDialogs().length > 0;
+        if (blank)
+          expect(written, 'a blank reason is stopped before the step-up and the PUT').toBe(false);
         if (written) {
           await verify(server);
           await waitFor(() => expect(server.writes().length).toBe(sent + 1));
@@ -173,6 +178,7 @@ it(
         );
         if (!written) expect(server.writes(), 'a refused reason sends nothing').toHaveLength(sent);
       }
+      if (blank) expect(server.writes(), 'a blank reason sends no PUT').toHaveLength(writtenBefore);
       for (const write of server.writes())
         expect(server.answerOf(write), 'a write with a bad reason is refused').toBe(20001);
       expect(server.risk()).toMatchObject({ state: 'frozen', row_version: ROW.frozen });
