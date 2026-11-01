@@ -170,13 +170,14 @@ it('[AC-B1-34b#3] required columns reject explicit NULL even when they have defa
   }
 });
 
-it('[AC-B1-34b#4] resource is limited to users and audit_logs by a database CHECK', async () => {
+it('[AC-B1-34b#4] resource is limited to users, audit_logs and tax_withdrawals by a database CHECK', async () => {
   await ready();
   expect([...new Set(await literals(app, TABLE, 'resource'))].sort()).toEqual([
     'audit_logs',
+    'tax_withdrawals',
     'users',
   ]);
-  for (const resource of ['users', 'audit_logs']) {
+  for (const resource of ['users', 'audit_logs', 'tax_withdrawals']) {
     expect(await insert({ ...(await fixture()), resource })).toMatchObject({ resource });
   }
   for (const resource of ['', 'orders', 'USERS', 'audit_log']) {

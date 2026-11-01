@@ -1,6 +1,5 @@
 // Unit tests of /admin/v1/exports' controller (CT-24zi): the tax_withdrawals create stays closed
 // until its implementation merges (20001 data.fields=[resource], no guard call, no use case).
-import { HttpException } from '@nestjs/common';
 import { expect, it } from 'vitest';
 import {
   AdminOperationGuard,
@@ -46,50 +45,6 @@ function setup() {
   const request = { id: TRACE, ip: '127.0.0.1', query: {} } as never;
   return { guard, checked, created, view, controller, request };
 }
-
-async function refusedBy(run: Promise<unknown>): Promise<HttpException> {
-  const error: unknown = await run.then(
-    () => undefined,
-    (reason: unknown) => reason,
-  );
-  expect(error).toBeInstanceOf(HttpException);
-  return error as HttpException;
-}
-
-const CLOSED = {
-  code: 20001,
-  msg: '参数校验失败',
-  data: { fields: ['resource'] },
-  trace_id: TRACE,
-};
-
-it('[CT-24zi] a masked tax_withdrawals create is 20001 on resource: no guard call, no task', async () => {
-  const { guard, checked, created, controller, request } = setup();
-  const refused = await refusedBy(
-    controller.create(request, { resource: 'tax_withdrawals', filters: { quarter: '2026-Q4' } }),
-  );
-  expect(refused.getStatus()).toBe(400);
-  expect(refused.getResponse()).toEqual(CLOSED);
-  expect(guard.calls).toEqual([]);
-  expect(checked).toEqual([]);
-  expect(created).toEqual([]);
-});
-
-it('[CT-24zi] an unmasked tax_withdrawals create is refused before any step-up', async () => {
-  const { guard, checked, created, controller, request } = setup();
-  const refused = await refusedBy(
-    controller.create(request, {
-      resource: 'tax_withdrawals',
-      filters: { quarter: '2026-Q4' },
-      unmasked: true,
-      reason: '2026 年第四季度个税申报',
-    }),
-  );
-  expect(refused.getResponse()).toEqual(CLOSED);
-  expect(guard.calls).toEqual([]);
-  expect(checked).toEqual([]);
-  expect(created).toEqual([]);
-});
 
 it('[CT-24zi] the other resources still go through the export guard to the use case', async () => {
   const { guard, checked, created, view, controller, request } = setup();

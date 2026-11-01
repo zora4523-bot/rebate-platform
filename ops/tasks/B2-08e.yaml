@@ -136,4 +136,5 @@ red_exempt:
   - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
     test: '[AC-B1-34b#15] couli_readonly can read every column but cannot insert, update or delete'
     reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
-status: todo
+status: done
+pr: 2189

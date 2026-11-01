@@ -8,6 +8,8 @@
 // the done transaction. Without the database, the queue or the field cipher nothing is registered,
 // EXPORT_WORKER provides null and one info line `export_worker_disabled` is logged.
 // EXPORT_WORKER also carries cancelByCreator for the later account-disable wiring.
+// B2-08e: the quarterly tax export's two ports (payout's B2-08d reader, identity's batch real names)
+// come from app.module the same way; the option is required, so the entry cannot leave them out.
 //
 // Also compiled by the `test` project: a class decorator only (dependencies through factories).
 import { type DynamicModule, Module } from '@nestjs/common';
@@ -30,6 +32,7 @@ import {
   type RootLogger,
 } from '../platform/index.ts';
 import { createAuditLogsReader } from './application/audit-logs-read.ts';
+import type { TaxExportPorts } from './application/tax-export-source.ts';
 import {
   EXPORT_QUEUE,
   createExportWorker,
@@ -50,6 +53,8 @@ export const EXPORT_WORKER = Symbol('EXPORT_WORKER');
 export interface ExportWorkerModuleOptions {
   /** identity's batch users projection (createExportUsersReader). */
   readonly users: (db: Kysely<Database>, crypto: FieldCrypto) => ExportUsersReader;
+  /** payout's tax reader and identity's batch real names (decrypting with the field cipher). */
+  readonly tax: (crypto: FieldCrypto) => TaxExportPorts;
   /** content's configuration reader (admin.export.* overrides; code defaults otherwise). */
   readonly config: (db: Kysely<Database>, clock: Clock) => Pick<ContentReader, 'configValue'>;
   /** Configuration key → its permission point, for the audit search's derived permission. */
@@ -101,6 +106,7 @@ export class ExportWorkerModule {
               queue,
               store,
               users: options.users(db, crypto),
+              tax: options.tax(crypto),
               auditLogs: createAuditLogsReader({
                 store: createAuditLogStore({ db }),
                 profiles,

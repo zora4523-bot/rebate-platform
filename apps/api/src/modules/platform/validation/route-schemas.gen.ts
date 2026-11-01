@@ -9601,7 +9601,7 @@ export const CONTRACT_ROUTE_SCHEMAS = {
         },
         {
           "type": "object",
-          "description": "Quarterly tax export (BR-WDR-21; not open yet, see POST /admin/v1/exports). unmasked true\nasks for the full identity numbers (tax.export_full, totp step-up and reason required);\nreason is only accepted together with unmasked true.\n",
+          "description": "Quarterly tax export (BR-WDR-21, see POST /admin/v1/exports). unmasked true\nasks for the full identity numbers (tax.export_full, totp step-up and reason required);\nreason is only accepted together with unmasked true.\n",
           "additionalProperties": false,
           "required": [
             "resource",

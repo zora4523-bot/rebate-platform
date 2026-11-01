@@ -136,7 +136,7 @@ const RULES: readonly ActionRule[] = Object.freeze([
     fixed('order.claim'),
   ),
   ...rules(
-    ['export_create', 'export_download', 'export_retry', 'export_cancel'],
+    ['export_create', 'export_download', 'export_retry', 'export_cancel', 'export_generated'],
     'export_task',
     'export_tasks:',
     fixed('export'),
@@ -144,7 +144,7 @@ const RULES: readonly ActionRule[] = Object.freeze([
   ...rules(['export_unmasked'], 'export_task', 'export_tasks:', {
     kind: 'after',
     field: 'resource',
-    values: { users: 'pii.reveal_phone' },
+    values: { users: 'pii.reveal_phone', tax_withdrawals: 'tax.export_full' },
   }),
 ]);
 

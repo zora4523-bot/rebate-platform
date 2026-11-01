@@ -3611,7 +3611,7 @@ export interface paths {
         };
         /**
          * List export tasks (own tasks, or everyone's with audit.view_all)
-         * @description Once `tax_withdrawals` is open (BR-WDR-21), an account with `tax.export_full` and without
+         * @description An account with `tax.export_full` and without
          *     `export` passes this point too and sees only its own `tax_withdrawals` tasks.
          *     Permission point `export` (04 §11.1; no step-up); lacking it is 10403 with
          *     `data.reason=admin_permission_denied`. Tasks of the console's app, newest first
@@ -3665,10 +3665,8 @@ export interface paths {
          *     filters, masked). An unmasked task writes its own audit record as well (action
          *     export_unmasked: task id, resource, reason and, once generated, the row count; never a
          *     value).
-         *     Quarterly tax export (`resource=tax_withdrawals`, BR-WDR-21; not open yet): until its
-         *     implementation is merged every such request is 20001 with `data.fields=[resource]`, before
-         *     any permission or step-up check; no task and no audit record. Once open, `filters.quarter`
-         *     selects the natural quarter by `paid_at` (+08:00).
+         *     Quarterly tax export (`resource=tax_withdrawals`, BR-WDR-21): `filters.quarter` selects the
+         *     natural quarter by `paid_at` (+08:00).
          *     Masked version: `export` and `fund.view`, no step-up, no `reason` (`reason` without
          *     `unmasked: true` is 20001 with `data.fields=[reason]`).
          *     Full version `unmasked: true`: `tax.export_full` alone (a super admin holds it; `export` is
@@ -3714,7 +3712,7 @@ export interface paths {
         };
         /**
          * Get a short-lived signed link to the file of one's own finished export (audited)
-         * @description Once `tax_withdrawals` is open (BR-WDR-21), `tax.export_full` also passes this point; any
+         * @description For `tax_withdrawals` tasks (BR-WDR-21) `tax.export_full` also passes this point; any
          *     task it cannot act on (an unknown id, another account's task, another resource) is 20001
          *     with `data.fields=[id]`, like the rest. The source-list permission of that resource is
          *     `fund.view`, or `tax.export_full` for a full file (`masked=false`).
@@ -3756,7 +3754,7 @@ export interface paths {
         put?: never;
         /**
          * Retry one's own failed export task
-         * @description Once `tax_withdrawals` is open (BR-WDR-21), `tax.export_full` also passes this point; any
+         * @description For `tax_withdrawals` tasks (BR-WDR-21) `tax.export_full` also passes this point; any
          *     task it cannot act on (an unknown id, another account's task, another resource) is 20001
          *     with `data.fields=[id]`, like the rest. The source-list permission of that resource is
          *     `fund.view`, or `tax.export_full` for a full file (`masked=false`).
@@ -15596,7 +15594,7 @@ export interface components {
             filters: components["schemas"]["AdminExportAuditLogFilters"];
         };
         /**
-         * @description Quarterly tax export (BR-WDR-21; not open yet, see POST /admin/v1/exports). unmasked true
+         * @description Quarterly tax export (BR-WDR-21, see POST /admin/v1/exports). unmasked true
          *     asks for the full identity numbers (tax.export_full, totp step-up and reason required);
          *     reason is only accepted together with unmasked true.
          */

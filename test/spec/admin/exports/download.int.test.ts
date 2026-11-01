@@ -67,7 +67,9 @@ it.each([3_600_000, 300_000, 299_999, 1])(
     ]);
     expect(text(audit)).not.toContain(data.url);
     expect(text(f.lines)).not.toContain(data.url);
-    expect(f.guarded.mock.calls.map(([input]) => input.permission)).toContain('export');
+    expect(f.guarded.mock.calls.map(([input]) => input.permission)).toEqual([
+      ['export', 'tax.export_full'],
+    ]);
   },
 );
 

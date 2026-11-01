@@ -56,6 +56,14 @@ export type {
   RealnameStatusBatchReader,
   RealnameStatusBatchReaderOptions,
 } from './ports/realname-status-batch.ts';
+// B2-08e (BR-WDR-21): the current names and ID numbers of a page of users, for the tax export only.
+export { createRealnameExportBatchReader } from './ports/realname-export-batch.ts';
+export type {
+  RealnameExportBatchInput,
+  RealnameExportBatchReader,
+  RealnameExportBatchReaderOptions,
+  RealnameExportIdentity,
+} from './ports/realname-export-batch.ts';
 // B2-08b (D10-181 ①): the current verified real name's id_no_hmac, payout's tax_ytd identity key.
 export { createRealnameIdentityKeyReader } from './ports/realname-identity-key.ts';
 export type {

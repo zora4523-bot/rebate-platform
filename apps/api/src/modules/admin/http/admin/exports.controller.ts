@@ -5,8 +5,11 @@
 // create or retry then runs inside a second guard call on `pii.reveal_phone`, whose totp tier
 // claims X-Step-Up-Token and consumes it only after the 2xx answer (a refusal or a failure keeps
 // it usable). Refusals are thrown inside the guard. The download answers Cache-Control: no-store.
-// A tax_withdrawals create is refused before any guard call while it is not open (CT-24zi, D10-544):
-// the contract answers it alike for every holder, so a guard's 10403 or 10003 must not come first.
+// tax_withdrawals (B2-08e; BR-WDR-21): the masked version is `export` plus fund.view (use case); the
+// full version enters on tax.export_full instead, then its request rules, then a second guard call
+// on that point for the totp step-up. List, download and retry enter on either point without a
+// token (readOnly); the use case decides per task what tax.export_full reaches. No branch here
+// skips the guard for a super admin.
 // Served by the admin entry only.
 import {
   Body,
@@ -29,11 +32,14 @@ import {
   type CheckedRequest,
 } from '../../../platform/index.ts';
 import {
-  EXPORT_PII_POINT,
+  EXPORT_ACCESS_POINTS,
+  EXPORT_POINT,
+  EXPORT_TAX_FULL_POINT,
   ExportCreatorInactiveError,
   ExportFieldsError,
   ExportPermissionError,
   ExportStatusError,
+  exportFullPoint,
   type AdminExports,
   type ExportCreateCommand,
   type ExportResource,
@@ -48,8 +54,6 @@ type ExportResponse = Schema<'AdminExportResponse'>;
 type PageResponse = Schema<'AdminExportPageResponse'>;
 type DownloadResponse = Schema<'AdminExportDownloadResponse'>;
 
-/** Permission point of every export operation (04 §11.1; no step-up). */
-const EXPORT_POINT = 'export';
 /** Fallback text of 30417 (clients show their dictionary text error.30417). */
 const STATUS_MESSAGE = '导出任务当前的状态不允许这项操作，请刷新后查看';
 
@@ -76,25 +80,18 @@ function ipOf(request: ExportsRequest): string | null {
   return typeof request.ip === 'string' && request.ip.length > 0 ? request.ip : null;
 }
 
-function commandOf(
-  body: Exclude<
-    Schema<'AdminExportCreateRequest'>,
-    Schema<'AdminExportCreateTaxWithdrawalsRequest'>
-  >,
-): ExportCreateCommand {
+function commandOf(body: Schema<'AdminExportCreateRequest'>): ExportCreateCommand {
   const filters: Record<string, string> = {};
   for (const [key, value] of Object.entries(body.filters ?? {})) {
     if (typeof value === 'string') filters[key] = value;
   }
-  if (body.resource === 'users') {
-    return {
-      resource: 'users',
-      filters,
-      ...(body.unmasked === undefined ? {} : { unmasked: body.unmasked }),
-      ...(body.reason === undefined ? {} : { reason: body.reason }),
-    };
-  }
-  return { resource: 'audit_logs', filters };
+  if (body.resource === 'audit_logs') return { resource: 'audit_logs', filters };
+  return {
+    resource: body.resource,
+    filters,
+    ...(body.unmasked === undefined ? {} : { unmasked: body.unmasked }),
+    ...(body.reason === undefined ? {} : { reason: body.reason }),
+  };
 }
 
 /** The use case's refusals as error envelopes; anything else is left to the global handling. */
@@ -147,14 +144,15 @@ export class AdminExportsController {
     @Req() request: ExportsRequest,
     @Body() body: Schema<'AdminExportCreateRequest'>,
   ): Promise<ExportResponse> {
-    if (body.resource === 'tax_withdrawals') {
-      const refused = fieldsErrorEnvelope(['resource'], request.id);
-      throw new HttpException(refused.body, refused.statusCode);
-    }
+    const command = commandOf(body);
+    // The full tax version does not need export; its token is checked by the second guard call.
+    const entry =
+      command.resource === 'tax_withdrawals' && command.unmasked === true
+        ? { request, permission: EXPORT_TAX_FULL_POINT, readOnly: true }
+        : { request, permission: EXPORT_POINT };
     let response: ExportResponse | undefined;
-    await this.guard.run({ request, permission: EXPORT_POINT }, async (actor) => {
+    await this.guard.run(entry, async (actor) => {
       try {
-        const command = commandOf(body);
         const { masked } = await this.exports.checkCreate(actor, command);
         const run = async () => {
           const data = await this.exports.create(actor, command, ipOf(request));
@@ -162,8 +160,11 @@ export class AdminExportsController {
           return { statusCode: 202, body: response };
         };
         if (masked) return await run();
-        // Full values: pii.reveal_phone and its totp step-up, consumed only by this success.
-        return await this.guard.run({ request, permission: EXPORT_PII_POINT }, run);
+        // Full values: the resource's point and its totp step-up, consumed only by this success.
+        return await this.guard.run(
+          { request, permission: exportFullPoint(command.resource) },
+          run,
+        );
       } catch (error) {
         throw refusal(error, request.id);
       }
@@ -177,7 +178,8 @@ export class AdminExportsController {
   async list(@Req() request: ExportsRequest): Promise<PageResponse> {
     let response: PageResponse | undefined;
     const query = request.query;
-    await this.guard.run({ request, permission: EXPORT_POINT, readOnly: true }, async (actor) => {
+    const access = { request, permission: EXPORT_ACCESS_POINTS, readOnly: true };
+    await this.guard.run(access, async (actor) => {
       try {
         const page = await this.exports.list(actor, {
           page: query.page ?? ADMIN_PAGE_DEFAULT,
@@ -216,7 +218,8 @@ export class AdminExportsController {
   ): Promise<DownloadResponse> {
     reply.header('Cache-Control', 'no-store');
     let response: DownloadResponse | undefined;
-    await this.guard.run({ request, permission: EXPORT_POINT, readOnly: true }, async (actor) => {
+    const access = { request, permission: EXPORT_ACCESS_POINTS, readOnly: true };
+    await this.guard.run(access, async (actor) => {
       try {
         const link = await this.exports.download(actor, id, ipOf(request));
         response = {
@@ -243,7 +246,9 @@ export class AdminExportsController {
     @Body() body: Schema<'AdminExportRetryRequest'>,
   ): Promise<ExportResponse> {
     let response: ExportResponse | undefined;
-    await this.guard.run({ request, permission: EXPORT_POINT }, async (actor) => {
+    // readOnly only because export has no tier of its own: the token is the second guard call's.
+    const access = { request, permission: EXPORT_ACCESS_POINTS, readOnly: true };
+    await this.guard.run(access, async (actor) => {
       try {
         const target = await this.exports.checkRetry(actor, id, {
           ...(body.reason === undefined ? {} : { reason: body.reason }),
@@ -255,7 +260,8 @@ export class AdminExportsController {
         };
         if (target.task.masked) return await run();
         // Every generation of a full-value file is verified anew (new token, new reason).
-        return await this.guard.run({ request, permission: EXPORT_PII_POINT }, run);
+        const point = exportFullPoint(target.task.resource as ExportResource);
+        return await this.guard.run({ request, permission: point }, run);
       } catch (error) {
         throw refusal(error, request.id);
       }
