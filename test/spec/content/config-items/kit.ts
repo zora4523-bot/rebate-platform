@@ -332,6 +332,22 @@ export const PROMO_LINK_UNSEEDED: readonly string[] = [
   'convert.taobao_prefetch.enabled',
   'convert.taobao_prefetch.rate_per_min',
 ];
+// B1-04zq (B1-04zm prerequisite, D10-543): the order rescan switches and days of JD and PDD,
+// registered right after PROMO_LINK in this order: editable config.business, options null. Not
+// part of expectedNow() either.
+export const ORDER_RESCAN: readonly Expected[] = [
+  row('order_sync.rescan.jd.enabled', 'boolean', 'config.business'),
+  row('order_sync.rescan.pdd.enabled', 'boolean', 'config.business'),
+  row('order_sync.rescan.jd.days', 'number', 'config.business'),
+  row('order_sync.rescan.pdd.days', 'number', 'config.business'),
+];
+/** B1-04zq (D10-543): all four are unset by default (on, off, 30, 90), hence no seed rows. */
+export const ORDER_RESCAN_UNSEEDED: readonly string[] = [
+  'order_sync.rescan.jd.enabled',
+  'order_sync.rescan.pdd.enabled',
+  'order_sync.rescan.jd.days',
+  'order_sync.rescan.pdd.days',
+];
 export const expectedOf = (key: string): Expected => {
   const found = [
     ...expectedNow(),
@@ -346,6 +362,7 @@ export const expectedOf = (key: string): Expected => {
     ...POOL,
     ...REVERIFY,
     ...PROMO_LINK,
+    ...ORDER_RESCAN,
   ].find((entry) => entry.key === key);
   expect(found, key).toBeDefined();
   return found!;

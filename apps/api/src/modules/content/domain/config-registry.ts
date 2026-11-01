@@ -250,6 +250,13 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   spec('share.taobao_enabled', 'boolean', 'config.business'),
   spec('convert.taobao_prefetch.enabled', 'boolean', 'config.business'),
   businessInteger('convert.taobao_prefetch.rate_per_min', 1),
+  // B1-04zq (B1-04zm prerequisite, D10-543): the order rescan items — the JD and PDD switches and
+  // the JD and PDD rescan days, a whole number of at least 1, all config.business. No seed rows;
+  // unset = JD on, PDD off, 30 and 90 days, the reader's defaults. Registration only.
+  spec('order_sync.rescan.jd.enabled', 'boolean', 'config.business'),
+  spec('order_sync.rescan.pdd.enabled', 'boolean', 'config.business'),
+  businessInteger('order_sync.rescan.jd.days', 1),
+  businessInteger('order_sync.rescan.pdd.days', 1),
 ]);
 
 const VISIBLE: readonly ConfigItemSpec[] = Object.freeze(
