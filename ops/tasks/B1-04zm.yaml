@@ -2,18 +2,25 @@ id: B1-04zm
 repo: rebate-platform
 title: 京东 order-sync 接入：增量窗口上限与调度、每日重扫上一日窗口并比对行数（FU-JD-ORDER-RESCAN，B1-04zg 之后）
 type: impl
-# 2026-11-01 be 入账（D10-498 ④、D10-500 ②、#2091 核定时记的 FU-JD-ORDER-RESCAN）。platform-rules/jd.ts 的 syncWindowCapMs 现为 null（不调度），接入要设 ≤60 分钟（CAP-JD-07：单窗 ≤1 小时）。
-# 冻结 test/spec/orders/platform-rules/values.test.ts 钉 jd 为 null，开工前核 test-change 先后。翻页途中无 data 的成功响应与真结束不可区分（D10-524），所以调度开启前必须有每日重扫上一日窗口与行数计数比对。
-# 京东订单商品键 pushesProductKey 仍 false（端口入参没有 App）。依赖 ze 的 jdLive，不切 live。具体 paths 开工时按现状补。RV2。
+# 2026-11-01 be 入账；D10-543 改范围（标题不得改故记于此）：本单只做**通用回扫**，jd 进调度拆到 B1-04zr。02 §7.1 规定每天回扫（jd 近 30 天、pdd 近 90 天），现状全仓无实现，调度器只发 increment。
+# 独立流 query_kind=rescan、独立任务名与处理器（冻结测试钉现有 window 任务的 query_kind 为 increment）；每平台开关与天数走 B1-04zq 登记的键，默认 jd 开、pdd 关（FU-PDD-RESCAN-QUOTA）、30 / 90 天；淘宝不在本单。
+# 低优先、限并发：一个流同一时刻一个窗口，一天匀完一轮；走现有配额与离线熔断；content_hash 相同短路、按现有幂等不重复入账。行数比对：回扫新入库的行说明增量漏过（D10-524 的不可区分情形），告警。RV2。
 refs: []
 refs_hash: {}
-deps: [B1-04zg, B1-04ze]
+deps: [B1-04zg, B1-04ze, B1-04zq]
 paths:
-  - 'apps/api/src/modules/orders/domain/platform-rules/jd.ts'
+  - 'apps/api/src/modules/orders/application/order-rescan.ts'
+  - 'apps/api/src/modules/orders/application/order-rescan.test.ts'
+  - 'apps/api/src/modules/orders/application/sync-ports.ts'
+  - 'apps/api/src/modules/orders/jobs/order-rescan.ts'
+  - 'apps/api/src/modules/orders/jobs/order-rescan.test.ts'
   - 'apps/api/src/modules/orders/domain/sync-window.ts'
-  - 'test/spec/orders/jd-sync/**'
+  - 'apps/api/src/modules/orders/domain/platform-rules/rescan.ts'
+  - 'apps/api/src/modules/orders/infra/sync-cursors.ts'
+  - 'apps/api/src/modules/orders/worker-runtime.ts'
+  - 'test/spec/orders/rescan/**'
 test_paths:
-  - 'test/spec/orders/jd-sync/**'
+  - 'test/spec/orders/rescan/**'
 impl: claude
 tester: claude-independent
 accept:
