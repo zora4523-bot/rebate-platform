@@ -695,3 +695,34 @@ it('[AC-F1-10e#68] withdraw.dormant_reverify_days 是可改的 config.business �
   ];
   for (const value of refused) expect(configValueFits(spec, value), String(value)).toBe(false);
 });
+
+// B1-05w (编排 12:06 ③; B1-06zd #47 moved here): the type, permission and editable flag are checked
+// in #58; here the values it accepts: a whole number per minute of at least 1 (int4 max, 08 gives
+// no upper bound).
+it('[AC-F1-10e#69] convert.taobao_prefetch.rate_per_min 是可改的 config.business 整数，下限 1，拒绝 0、浮点与隐式转换（B1-06ze，D10-510）', () => {
+  const spec = registered('convert.taobao_prefetch.rate_per_min');
+  expect(spec).toMatchObject({
+    valueType: 'number',
+    options: null,
+    permission: 'config.business',
+    adminEditable: true,
+  });
+  expect(spec.range).toStrictEqual({ integer: true, min: 1, max: 2147483647 });
+  for (const value of [1, 60, 600, 2147483647]) {
+    expect(configValueFits(spec, value), String(value)).toBe(true);
+  }
+  const refused = [
+    0,
+    -1,
+    0.5,
+    60.5,
+    2147483648,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    '60',
+    true,
+    null,
+    [],
+  ];
+  for (const value of refused) expect(configValueFits(spec, value), String(value)).toBe(false);
+});

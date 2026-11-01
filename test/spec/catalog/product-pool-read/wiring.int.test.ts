@@ -322,9 +322,10 @@ it(
 // Round 2 of the money review: the same rulings through the real createUnionDetailUpstream, with no
 // fresh raw ID. The card comes from the pool section as a user taps it, its item_ref carrying the
 // row's old instant, and product_refs is as old (BR-PROD-05 ① and ②). With an eligible row the detail
-// takes step ③, the title re-parse, on the online purpose; without one it answers 30143 and asks the
-// union nothing. The online breaker is one per app under test and its window spans cases, so the
-// outages stay last: the good answers above them must not meet a breaker they opened.
+// takes step ③, the title re-parse, on the online purpose; without one, on a key with no product_refs
+// row at all, it answers 30143 and asks the union nothing. The online breaker is one per app under
+// test and its window spans cases, so the outages stay last: the good answers above them must not
+// meet a breaker they opened.
 const resolveLink = vi.spyOn(DemoUnionAdapter.prototype, 'resolveLink');
 
 beforeEach(() => {
@@ -353,11 +354,32 @@ function unionFinds(stable: string): void {
 
 /** A pool card the user taps, then finds both of its raw-ID sources expired. */
 async function tappedCard(stable: string, extra: Parameters<typeof seedItem>[5] = {}) {
-  const key = `tb:${stable}`;
   const aged = secondsAgo(clock, ADDED_SEC);
-  const pool = await seedPool(db, owner, clock);
-  await seedItem(db, owner, clock, pool, key, { created_at: aged, ...extra });
   await seedRef(db, owner, clock, stable, { raw_fetched_at: aged, refreshed_at: aged });
+  return poolCard(stable, extra);
+}
+
+/** The same tap on a key with no product_refs row: the expired item_ref is its only raw ID. */
+async function tappedCardNoRef(stable: string, extra: Parameters<typeof seedItem>[5] = {}) {
+  const tapped = await poolCard(stable, extra);
+  const row = await db
+    .selectFrom('product_refs')
+    .select('product_key')
+    .where('app_id', '=', appId)
+    .where('product_key', '=', tapped.key)
+    .executeTakeFirst();
+  expect(row).toBeUndefined();
+  return tapped;
+}
+
+/** A pool card as a user taps it, its item_ref and link carrying the row's old instant. */
+async function poolCard(stable: string, extra: Parameters<typeof seedItem>[5] = {}) {
+  const key = `tb:${stable}`;
+  const pool = await seedPool(db, owner, clock);
+  await seedItem(db, owner, clock, pool, key, {
+    created_at: secondsAgo(clock, ADDED_SEC),
+    ...extra,
+  });
   await publish({ kind: 'product_pool', pool_id: pool, limit: 10 });
 
   const { items } = (await sectionItems()).json<{ data: PageSectionItemsData }>().data;
@@ -477,7 +499,7 @@ it.each([
 it(
   '[AC-B1-05r#3][BR-PROD-05][BR-PRICE-11] 真实详情链路：这个 App 没有这个 key 的池行、别的 App 有合格的同 key 行 → 30143，联盟一次都没被调用',
   async () => {
-    const tapped = await tappedCard('Kreparse03');
+    const tapped = await tappedCardNoRef('Kreparse03');
     await db
       .deleteFrom('pool_items')
       .where('app_id', '=', appId)
@@ -501,7 +523,7 @@ it.each([
 ])(
   '[AC-B1-05r#4][BR-PROD-05][BR-PRICE-11] 真实详情链路：池行不合格（$label）→ 30143，联盟一次都没被调用',
   async ({ change }) => {
-    const tapped = await tappedCard('Kreparse04');
+    const tapped = await tappedCardNoRef('Kreparse04');
     await db
       .updateTable('pool_items')
       .set(change)
