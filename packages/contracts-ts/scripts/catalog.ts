@@ -40,6 +40,10 @@ const ENUM_NAME = /^[a-z][a-z0-9_]*$/;
 // Enum codes are wire values: letters, digits and underscores (04 §5 snake_case / UPPER_CASE);
 // dotted keys such as the admin permission points of 04 §11 (`user.list`) are allowed.
 const ENUM_VALUE = /^[A-Za-z0-9][A-Za-z0-9_]*(\.[A-Za-z0-9][A-Za-z0-9_]*)*$/;
+// Audit system identities keep the `system:<name>` spelling of their records (D10-552); only the
+// enum audit_system_actor takes it.
+const AUDIT_SYSTEM_ACTOR_ENUM = 'audit_system_actor';
+const AUDIT_SYSTEM_ACTOR_VALUE = /^system:[a-z_]+$/;
 const DATA_FIELD = /^[a-z][a-z0-9_]*$/;
 const HTTP_STATUSES = new Set([400, 401, 403, 404, 409, 422, 429, 500, 503, 504]);
 // Extra statuses a code may also use (`http_also`): request-body errors keep Fastify's 413 / 415.
@@ -123,7 +127,11 @@ export function loadEnums(dir: string = enumsDir): EnumDef[] {
             ? null
             : text(`${where}.description`, def['description']),
         values: Object.entries(values).map(([value, note]) => {
-          if (!ENUM_VALUE.test(value)) fail(`${where}.${value}`, 'invalid enum value');
+          const valid =
+            name === AUDIT_SYSTEM_ACTOR_ENUM
+              ? AUDIT_SYSTEM_ACTOR_VALUE.test(value)
+              : ENUM_VALUE.test(value);
+          if (!valid) fail(`${where}.${value}`, 'invalid enum value');
           return { value, note: text(`${where}.${value}`, note) };
         }),
       });

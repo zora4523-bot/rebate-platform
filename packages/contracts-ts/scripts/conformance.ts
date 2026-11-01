@@ -171,6 +171,9 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminSettleBatchItemRole: 'beneficiary_role',
   // CT-24zd: the supplement launch of the monthly settlement console (BR-FUND-04 ⑧).
   AdminSettleSupplementOutcome: 'admin_settle_supplement_outcome',
+  // CT-24zj: the system identity on an audit row (D10-552).
+  AdminAuditActorKind: 'audit_actor_kind',
+  AdminAuditSystemActor: 'audit_system_actor',
 };
 
 /**

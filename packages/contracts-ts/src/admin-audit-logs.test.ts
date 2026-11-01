@@ -147,6 +147,72 @@ it('[CT-24c] rows keep nullable target / permission / ip; only the detail carrie
   ]);
 });
 
+it('[CT-24zj] actor_id may be null; actor_kind and system_actor are optional and bound to their enums', () => {
+  for (const name of ['AdminAuditLogListItem', 'AdminAuditLog']) {
+    const schema = contract.components.schemas[name]!;
+    expect(schema.required, name).toContain('actor_id');
+    expect(schema.required, name).not.toContain('actor_kind');
+    expect(schema.required, name).not.toContain('system_actor');
+    const actorId = ajv.compile(schema.properties!['actor_id']!);
+    expect(actorId(null), name).toBe(true);
+    expect(actorId('0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01'), name).toBe(true);
+    expect(actorId(1), name).toBe(false);
+    const kind = ajv.compile(schema.properties!['actor_kind']!);
+    for (const value of enums.audit_actor_kind) expect(kind(value), value).toBe(true);
+    expect(kind(null), name).toBe(false);
+    const system = ajv.compile(schema.properties!['system_actor']!);
+    for (const value of enums.audit_system_actor) {
+      expect(value).toMatch(/^system:[a-z_]+$/);
+      expect(system(value), value).toBe(true);
+    }
+    expect(system('system:Risk'), name).toBe(false);
+    expect(system('admin'), name).toBe(false);
+  }
+  expect(enums.audit_actor_kind).toEqual(['admin', 'system']);
+  expect(enums.audit_system_actor).toContain('system:risk');
+});
+
+it('[CT-24zj] a system row satisfies the list and the detail; an account row stays as it was', () => {
+  const listMedia = okMedia(list());
+  const rows = (listMedia.example as { data: { items: Record<string, unknown>[] } }).data.items;
+  const systemRow = rows.find((r) => r['actor_kind'] === 'system')!;
+  expect(systemRow).toMatchObject({
+    actor_id: null,
+    system_actor: 'system:risk',
+    actor_name: '系统（风控）',
+  });
+  for (const row of rows.filter((r) => r !== systemRow)) {
+    expect(Object.keys(row)).not.toContain('actor_kind');
+    expect(Object.keys(row)).not.toContain('system_actor');
+  }
+  const detailMedia = okMedia(detail());
+  const validateDetail = ajv.compile(detailMedia.schema);
+  const systemDetail = structuredClone(detailMedia.example) as { data: Record<string, unknown> };
+  Object.assign(systemDetail.data, {
+    actor_id: null,
+    actor_kind: 'system',
+    system_actor: 'system:risk',
+    actor_name: '系统（风控）',
+  });
+  expect(validateDetail(systemDetail)).toBe(true);
+  expect(validateDetail(detailMedia.example)).toBe(true);
+});
+
+it('[CT-24zj] the list, the detail and the export describe system rows the same way', () => {
+  const listText = flat(list().description);
+  expect(listText).toContain('it never matches an `actor_id` filter');
+  expect(listText).toContain('an account without `audit.view_all` never sees one');
+  expect(listText).toContain('BR-FUND-06');
+  expect(listText).toContain('BR-ID-34');
+  const detailText = flat(detail().description);
+  expect(detailText).toContain('without `audit.view_all` it is 20001');
+  const exportText = flat(
+    (contract.paths['/admin/v1/exports'] as { post: Operation }).post.description,
+  );
+  expect(exportText).toContain('an export without `audit.view_all` holds none');
+  expect(exportText).toContain('the operator column shows `actor_name`');
+});
+
 it('[CT-24c] the examples satisfy the schemas, nulls included; ids are opaque strings, not primary keys', () => {
   const listMedia = okMedia(list());
   const validateList = ajv.compile(listMedia.schema);

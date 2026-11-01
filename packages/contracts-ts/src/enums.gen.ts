@@ -162,6 +162,25 @@ export const export_resource = [
 export type ExportResource = (typeof export_resource)[number];
 
 /**
+ * GET /admin/v1/audit-logs 列表、详情的 actor_kind；只在系统行出现（值 system），后台账号的行不带本字段
+ * Source: 规划/04 §3.2 audit_logs；编排裁定 D10-552（CT-24zj） (contracts/enums/admin.yaml).
+ */
+export const audit_actor_kind = [
+  "admin", // 后台账号
+  "system", // 系统
+] as const;
+export type AuditActorKind = (typeof audit_actor_kind)[number];
+
+/**
+ * 审计日志系统行的 system_actor，值的格式是 ^system:[a-z_]+$，以后追加；中文名就是系统行的 actor_name 与导出的「操作者」列
+ * Source: 规划/04 §3.2 audit_logs；编排裁定 D10-552（CT-24zj） (contracts/enums/admin.yaml).
+ */
+export const audit_system_actor = [
+  "system:risk", // 系统（风控）
+] as const;
+export type AuditSystemActor = (typeof audit_system_actor)[number];
+
+/**
  * GET /admin/v1/claims/{claim_id} 的 items[].matches[].field，证据视图逐项比对用户填写与联盟回传的字段；预售单的联盟侧付款日期取定金支付日
  * Source: 规划/01 F-ADM-06；规划/04 §6.6 claims；规划/08 BR-ATTR-17、BR-ATTR-18；design/specs/admin-claims.md 证据视图（CT-24d） (contracts/enums/admin.yaml).
  */
@@ -2152,6 +2171,8 @@ export const enums = {
   admin_search_hit_type,
   export_status,
   export_resource,
+  audit_actor_kind,
+  audit_system_actor,
   admin_claim_match_field,
   admin_order_flag,
   admin_order_history_field,

@@ -1,6 +1,6 @@
 # 后台权限点（规划/04 §2.5 admin_permission、§11）。超管拥有全部权限点；其他后台账号按权限点逐项勾选。
 # 「后台账号与权限」只限超管、不可授予，不是权限点，不列入。specs/permissions.yaml（B1-18）另记 step-up 与守卫。
-# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）；风控规则清单的规则状态 risk_rule_status 与命中动作 risk_action（CT-24f）；站长联盟账号与推广位 union_auth_status、union_reauth_mode、admin_union_auth_session_status、union_pid_status（CT-24h）；后台通知渠道与短信登记的渠道 notify_channel、短信模板类型 sms_template_type、短信状态 notify_sms_state 与待测试登记的测试结果 notify_sms_test_status（CT-24t）；后台提现单的展示状态 admin_withdrawal_display_status（CT-24y）；后台月结账单的派生状态 admin_settle_bill_status（CT-24z）；后台发起补充批次的结果 admin_settle_supplement_outcome（CT-24zd）；差错单结构化结论 admin_recon_diff_outcome（CT-24zf）；商品池与条目的状态 product_pool_status、pool_item_status（CT-07d）。
+# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）；风控规则清单的规则状态 risk_rule_status 与命中动作 risk_action（CT-24f）；站长联盟账号与推广位 union_auth_status、union_reauth_mode、admin_union_auth_session_status、union_pid_status（CT-24h）；后台通知渠道与短信登记的渠道 notify_channel、短信模板类型 sms_template_type、短信状态 notify_sms_state 与待测试登记的测试结果 notify_sms_test_status（CT-24t）；后台提现单的展示状态 admin_withdrawal_display_status（CT-24y）；后台月结账单的派生状态 admin_settle_bill_status（CT-24z）；后台发起补充批次的结果 admin_settle_supplement_outcome（CT-24zd）；差错单结构化结论 admin_recon_diff_outcome（CT-24zf）；商品池与条目的状态 product_pool_status、pool_item_status（CT-07d）；审计日志的操作者类型与系统身份 audit_actor_kind、audit_system_actor（CT-24zj）。
 enums:
   admin_permission:
     source: 规划/04 §11（拍板第二批 §8 ADD-04、ADD-05）
@@ -126,6 +126,17 @@ enums:
       users: 用户列表 GET /admin/v1/users（user.list；filters 为 risk_state）
       audit_logs: 审计日志 GET /admin/v1/audit-logs（登录即可，未持 audit.view_all 时只导出本人记录；filters 为 actor_id、target_type、target_id、permission、from、to）
       tax_withdrawals: 涉税季度导出 BR-WDR-21，没有对应列表（脱敏版 export + fund.view；全量版 unmasked 只要 tax.export_full 与 step-up，不被 fund.* 隐含；filters 为 quarter）
+  audit_actor_kind:
+    source: 规划/04 §3.2 audit_logs；编排裁定 D10-552（CT-24zj）
+    description: GET /admin/v1/audit-logs 列表、详情的 actor_kind；只在系统行出现（值 system），后台账号的行不带本字段
+    values:
+      admin: 后台账号
+      system: 系统
+  audit_system_actor:
+    source: 规划/04 §3.2 audit_logs；编排裁定 D10-552（CT-24zj）
+    description: 审计日志系统行的 system_actor，值的格式是 ^system:[a-z_]+$，以后追加；中文名就是系统行的 actor_name 与导出的「操作者」列
+    values:
+      system:risk: 系统（风控）
   admin_claim_match_field:
     source: 规划/01 F-ADM-06；规划/04 §6.6 claims；规划/08 BR-ATTR-17、BR-ATTR-18；design/specs/admin-claims.md 证据视图（CT-24d）
     description: GET /admin/v1/claims/{claim_id} 的 items[].matches[].field，证据视图逐项比对用户填写与联盟回传的字段；预售单的联盟侧付款日期取定金支付日
