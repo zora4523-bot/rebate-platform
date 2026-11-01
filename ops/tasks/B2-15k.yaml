@@ -33,5 +33,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payment/channels/**'
-status: todo
-pr: null
+status: done
+pr: 2180
