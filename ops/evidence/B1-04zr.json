@@ -1,0 +1,112 @@
+{
+  "task": "B1-04zr",
+  "spec_ref": "deb521c2bcb740571a01c2dc128f40abb40c37a2",
+  "spec_commit": "89b09cbf313302ca3af46e2d739aa8daa37fde28",
+  "red_tests": [
+    "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#1] 规则表 jd 上限 60 分钟，jd 进增量上限、调度与手动同步；淘宝仍不调度",
+    "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#2] 落后 3 小时：切满 60 分钟，真实 jdOrderWindow 放行，上游时间窗不超 1 小时",
+    "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#2] 恰好落后 60 分钟：一窗追平，真实 jdOrderWindow 放行，上游时间窗不超 1 小时",
+    "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#2] 落后 60 分钟零 1 毫秒：仍只发 60 分钟，真实 jdOrderWindow 放行，上游时间窗不超 1 小时",
+    "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#2] 落后 59 分钟：窗口到 now 为止，真实 jdOrderWindow 放行，上游时间窗不超 1 小时",
+    "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#2] 游标带毫秒：取整后也不越 1 小时，真实 jdOrderWindow 放行，上游时间窗不超 1 小时",
+    "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#3] 调度发出的窗恰好压在适配器的校验线上：60 分钟放行，同一窗多 1 毫秒就拒",
+    "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#4] 落后 150 分钟逐轮追赶：窗口首尾相接，每窗都过适配器校验，追平后不再发",
+    "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#5] 手动同步：limits 列出 jd（30 天、50 单），时间窗按 60 分钟切，每窗都过适配器校验",
+    "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#6] order-sync 处理器收下 jd 增量窗：经真实 jdOrderWindow 取单后推进水位",
+    "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#7] 回扫不注入 capsMs：jd 窗长取规则表的 60 分钟，真实 jdOrderWindow 放行",
+    "test/spec/orders/jd-sync/wiring.test.ts > [AC-B1-04zr#8] 生产 orderSyncPorts 注入 rescanConfig：造端口不查库，读键才查 config_items，存的值原样返回",
+    "test/spec/orders/jd-sync/wiring.test.ts > [AC-B1-04zr#9] 带 snapshots 的生产装配：start() 后 jd 第 120 秒发一个 60 分钟回扫窗并过 jdOrderWindow，pdd 默认关，停止后不留定时器",
+    "test/spec/orders/jd-sync/wiring.test.ts > [AC-B1-04zr#10] 开关经生产端口读 config_items 生效：jd 关不发，pdd 开发 30 分钟窗",
+    "test/spec/orders/jd-sync/wiring.test.ts > [AC-B1-04zr#11] jd 没配凭据（queryableAccount 为空）：能启动，增量与回扫都不发窗、只记跳过，不报错",
+    "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#9] 同步窗口上限：京东 60 分钟、拼多多 30 分钟，淘宝没有固定上限；调度与手动同步只列有上限的平台",
+    "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#1] worker 装配只注册一次 order-sync，零查询、零投递、零定时器，映射取真实 CSV",
+    "test/spec/orders/wiring/status-files.test.ts > [AC-B1-08n#12] CSV 读取 ENOENT 必须中止启动；只翻译 ENOENT",
+    "test/spec/orders/wiring/status-files.test.ts > [AC-B1-08n#12] CSV 读取 EACCES 必须中止启动；只翻译 ENOENT"
+  ],
+  "risk_note": "RV2 by path (orders). Puts Jingdong on the schedule per D10-543 and 02 §7.1: syncWindowCapMs is 60 minutes (CAP-JD-07), so jd joins the increment schedule and manual sync and jd.csv loads at worker start. orderSyncPorts now injects rescanConfig, which arms the rescan timers: jd on and pdd off by the existing defaults (FU-PDD-RESCAN-QUOTA), no platform name in app.module. The config port takes no App, so it reads the fixed app couli, following RETENTION_APP_ID; building it reads nothing, every get reads again, and a failed read propagates so the rescan skips that round. The jd endpoint stays demo and queryableAccount is null without live credentials, so no window goes out and no external call is made. Taobao stays unscheduled.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "89b09cbf313302ca3af46e2d739aa8daa37fde28",
+      "tree": "03439a94fd2a05e0d159cd76561ea2a30ce14bd2",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-11-01T19:03:15Z",
+      "finished_at": "2026-11-01T19:03:27Z",
+      "red_tests": [
+        "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#1] 规则表 jd 上限 60 分钟，jd 进增量上限、调度与手动同步；淘宝仍不调度",
+        "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#2] 落后 3 小时：切满 60 分钟，真实 jdOrderWindow 放行，上游时间窗不超 1 小时",
+        "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#2] 恰好落后 60 分钟：一窗追平，真实 jdOrderWindow 放行，上游时间窗不超 1 小时",
+        "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#2] 落后 60 分钟零 1 毫秒：仍只发 60 分钟，真实 jdOrderWindow 放行，上游时间窗不超 1 小时",
+        "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#2] 落后 59 分钟：窗口到 now 为止，真实 jdOrderWindow 放行，上游时间窗不超 1 小时",
+        "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#2] 游标带毫秒：取整后也不越 1 小时，真实 jdOrderWindow 放行，上游时间窗不超 1 小时",
+        "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#3] 调度发出的窗恰好压在适配器的校验线上：60 分钟放行，同一窗多 1 毫秒就拒",
+        "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#4] 落后 150 分钟逐轮追赶：窗口首尾相接，每窗都过适配器校验，追平后不再发",
+        "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#5] 手动同步：limits 列出 jd（30 天、50 单），时间窗按 60 分钟切，每窗都过适配器校验",
+        "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#6] order-sync 处理器收下 jd 增量窗：经真实 jdOrderWindow 取单后推进水位",
+        "test/spec/orders/jd-sync/window.test.ts > [AC-B1-04zr#7] 回扫不注入 capsMs：jd 窗长取规则表的 60 分钟，真实 jdOrderWindow 放行",
+        "test/spec/orders/jd-sync/wiring.test.ts > [AC-B1-04zr#8] 生产 orderSyncPorts 注入 rescanConfig：造端口不查库，读键才查 config_items，存的值原样返回",
+        "test/spec/orders/jd-sync/wiring.test.ts > [AC-B1-04zr#9] 带 snapshots 的生产装配：start() 后 jd 第 120 秒发一个 60 分钟回扫窗并过 jdOrderWindow，pdd 默认关，停止后不留定时器",
+        "test/spec/orders/jd-sync/wiring.test.ts > [AC-B1-04zr#10] 开关经生产端口读 config_items 生效：jd 关不发，pdd 开发 30 分钟窗",
+        "test/spec/orders/jd-sync/wiring.test.ts > [AC-B1-04zr#11] jd 没配凭据（queryableAccount 为空）：能启动，增量与回扫都不发窗、只记跳过，不报错",
+        "test/spec/orders/platform-rules/values.test.ts > [AC-B1-08za#9] 同步窗口上限：京东 60 分钟、拼多多 30 分钟，淘宝没有固定上限；调度与手动同步只列有上限的平台",
+        "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#1] worker 装配只注册一次 order-sync，零查询、零投递、零定时器，映射取真实 CSV",
+        "test/spec/orders/wiring/status-files.test.ts > [AC-B1-08n#12] CSV 读取 ENOENT 必须中止启动；只翻译 ENOENT",
+        "test/spec/orders/wiring/status-files.test.ts > [AC-B1-08n#12] CSV 读取 EACCES 必须中止启动；只翻译 ENOENT"
+      ],
+      "expected": [
+        "test/spec/orders/jd-sync/window.test.ts",
+        "test/spec/orders/jd-sync/wiring.test.ts",
+        "test/spec/orders/platform-rules/values.test.ts",
+        "test/spec/orders/wiring/module.test.ts",
+        "test/spec/orders/wiring/status-files.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "7c576878921f65da129876938a90b76cea971d48635ef9a73819ffa1051f034e"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable; independent Claude via tools/agent/claude-run.sh per approvals #36. Round 1 pass, no S0/S1, on implementation commit 79f5746d6; the reviewer read the code and executed nothing. Three S2 out of scope: limits lists max_order_nos 50 for jd while order_nos stays pdd only, and two jd-live prerequisites (window halving on 2002452, start older than 90 days). The later commit only changes the unit test [AC-B1-08n#u11] timer count from 1 to 2 and was not reviewed."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "Rule tests by an independent Claude context, attempt 1. First red FAIL was 16 unchanged tests judged whole because kit.ts changed; the ledger now declares them red_exempt and no test changed. Round 1 pass, no S0/S1; the reviewer derived the same 16 tests independently and confirmed each unchanged and true on old and new code, without seeing the ledger list; the orchestrator-side comparison matched 7+8+1. Two S2 kept as test gaps, implemented correctly by hand: the fixture ignores app_id, and the work() filter passes any config_items statement. Static review, nothing executed; all 19 pass on the implementation (local container red mode, not evidence)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "2291c7cf462f241cacfc909504eb7c129cdafeef",
+    "specs": "81162dd1f14b9998534e12edbd04c10478c7b260"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  }
+}
