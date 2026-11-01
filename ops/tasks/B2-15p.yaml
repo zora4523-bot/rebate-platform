@@ -1,0 +1,18 @@
+id: B2-15p
+repo: rebate-platform
+title: B2-15p：冻结支付夹具 test/spec/payment/orders/kit.ts 的 afterAll 显式超时 30_000 → 180_000（与 beforeAll 一致）
+type: test-change
+# 2026-11-01 withdraw 入账（编排 16:23，照 B1-04zp #2158）。#2135、#2139 的 verify-int 红在 spec/payment/recon-schedule/bootstrap.int.test.ts「Hook timed out in 30000ms」，位置 kit.ts:83 的 afterAll（destroyDb ×2、drop、redis stop，现给 30_000；同文件 beforeAll 已给 180_000），CI 一忙就随机红、拖住无关 PR。
+# 只把 afterAll 的超时改为 180_000，钩子内容与任何断言一字不改，不削弱。改既有规则测试夹具属第一类保护路径：非 task 分支、不带证据文件；新鲜 Claude 改、另一新鲜独立 Claude 只读复审 pass（写进 PR）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/payment/orders/kit.ts'
+  - 'ops/tasks/B2-15p.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
