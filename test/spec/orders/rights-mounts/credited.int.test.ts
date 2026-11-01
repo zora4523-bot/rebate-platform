@@ -28,6 +28,7 @@ import {
   queued,
   rightsOf,
   runBatch,
+  seedProcessingDeletion,
   setup,
   shareImportStore,
   subjectNet,
@@ -80,18 +81,32 @@ function userLines(userId: string, amount: bigint): string[] {
   ].sort();
 }
 
-/** One set of CLAWBACK vouchers under `event`, and nothing else: self, direct, indirect, platform. */
+/** A bad-debt CLAWBACK voucher (BR-FUND-08): debit BAD_DEBT, credit UNION_RECEIVABLE. */
+function badDebtLines(amount: bigint): string[] {
+  return [
+    `BAD_DEBT|platform|${String(amount)}`,
+    `${RECEIVABLE}|platform|${String(-amount)}`,
+  ].sort();
+}
+
+/**
+ * One set of CLAWBACK vouchers under `event`, and nothing else: self, direct, indirect, platform.
+ * `deleting`: the direct beneficiary is in deletion processing, so that voucher is the bad debt.
+ */
 async function expectClawback(
   s: Scenario,
   c: CreditableOrder,
   event: string,
   [self, direct, indirect, platform]: readonly [bigint, bigint, bigint, bigint],
   type: string,
+  deleting = false,
 ): Promise<void> {
   const key = orderKey(c);
   const vouchers = {
     [`${key}:${c.self}:self:CLAWBACK:${event}`]: userLines(c.self, self),
-    [`${key}:${c.direct}:direct:CLAWBACK:${event}`]: userLines(c.direct, direct),
+    [`${key}:${c.direct}:direct:CLAWBACK:${event}`]: deleting
+      ? badDebtLines(direct)
+      : userLines(c.direct, direct),
     [`${key}:${c.indirect}:indirect:CLAWBACK:${event}`]: userLines(c.indirect, indirect),
     [`${key}:PLATFORM:CLAWBACK:${event}`]: [
       `COMMISSION_REVENUE|platform|${String(platform)}`,
@@ -384,4 +399,25 @@ it('[AC-B1-10n#24] 入账前维权成功而无应扣佣金：记录 WAIT_COMMISS
   });
   expect((await orderNow(s, c.order.order_id)).rebate_status).toBe('WAITING');
   expect(await voucherKeys(s, ':')).toEqual([]);
+}, 120_000);
+
+it('[AC-B1-10n#28] 直推入账后进入注销 processing（净额 85 > 0），违规单行全额扣回（R8）：直推这笔同键改借 BAD_DEBT 85 / 贷联盟应收，不扣 USER_BALANCE、余额仍 85，类型 CLAWBACK|PUNISH；本人 425、间推 42、平台 448 照常，订单 CLAWED_BACK，联盟应收净额 0', async () => {
+  shareImportStore();
+  const s = await setup(h, { grants: GRANTS.punish });
+  const w = await worker(h);
+  const c = await creditedOrder(s, w);
+  await seedProcessingDeletion(s, c.direct);
+
+  await imported(s, w, PUNISH_FIELDS, punishRows(c.order.sub_order_id));
+
+  await expectClawback(s, c, await eventOf(s), [425n, 85n, 42n, 448n], 'CLAWBACK|PUNISH', true);
+  expect(await orderNow(s, c.order.order_id)).toMatchObject({
+    rebate_status: 'CLAWED_BACK',
+    reason: 'PUNISH',
+    booked_base_fen: 0n,
+    booked_n_fen: 0n,
+  });
+  await expectBalances(s, c, [0n, 85n, 0n]);
+  expect(await subjectNet(s, 'BAD_DEBT')).toBe(85n);
+  expect(await subjectNet(s, RECEIVABLE)).toBe(0n);
 }, 120_000);

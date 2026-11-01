@@ -15,6 +15,7 @@ import {
   accepted,
   attributedOrder,
   detailOf,
+  estimatedOrder,
   imported,
   orderNow,
   rightsOf,
@@ -31,6 +32,9 @@ vi.mock('../../../../apps/api/src/modules/orders/jobs/rights-import.ts', async (
 );
 
 const h = useHarness();
+
+/** The worker's clock when the job runs: after the upload (kit NOW, the admin entry's clock). */
+const JOB_RUNS_AT = '2026-10-09T02:30:00.000Z';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -128,7 +132,7 @@ it('[AC-B1-10n#13] 入账前维权全额成功（应扣佣金 12.00 不低于有
 it('[AC-B1-10n#14] 渠道单行经 risk 的真实端口写 blocklist：渠道维度、任务的联盟账号、start_at 为受理时间、created_by 为导入人；任务 done', async () => {
   shareImportStore();
   const s = await setup(h, { grants: GRANTS.channel });
-  const w = await worker(h);
+  const w = await worker(h, { now: JOB_RUNS_AT });
   const accountId = await seedUnionAccount(s);
   const relationId = `REL-${s.appId}`;
   const importId = await imported(
@@ -161,4 +165,37 @@ it('[AC-B1-10n#14] 渠道单行经 risk 的真实端口写 blocklist：渠道维
     succeeded_rows: 1,
     failures: [],
   });
+}, 120_000);
+
+// BR-FUND-07: a partial rights result only updates est_commission_fen; status and ledger stay.
+// BR-CALC-02: without a settlement record the effective union commission is the estimate, and a
+// deduction is on the same N scale, so by hand N_new = 1200 − 400 = 800 (never the base: B 1020).
+it('[AC-B1-10n#27] ESTIMATED 且无结算记录的订单，维权单行部分成功（应扣佣金 4.00 元）：est_commission_fen 1200 → 800，状态不变（R7），不写分录', async () => {
+  shareImportStore();
+  const s = await setup(h, { grants: GRANTS.rights });
+  const w = await worker(h);
+  const { order } = await estimatedOrder(s);
+  await imported(s, w, { kind: 'rights', platform: 'taobao' }, [
+    Object.values(TEMPLATES.rights.columns),
+    [order.sub_order_id, 'RN-1', 'SUCCEEDED', '29.90', '4.00', OCCURRED],
+  ]);
+  expect((await rightsOf(s))[0]).toMatchObject({
+    status: 'SUCCEEDED',
+    deduction_commission_fen: 400n,
+  });
+  expect(await orderNow(s, order.order_id)).toMatchObject({
+    rebate_status: 'ESTIMATED',
+    est_commission_fen: 800n,
+    settle_commission_fen: null,
+    rights_pending: false,
+  });
+  expect((await s.state()).history).toEqual([
+    expect.objectContaining({
+      field: 'rebate',
+      from_status: 'ESTIMATED',
+      to_status: 'ESTIMATED',
+      event: 'RIGHTS_PARTIAL',
+    }),
+  ]);
+  expect(await voucherKeys(s, ':')).toEqual([]);
 }, 120_000);

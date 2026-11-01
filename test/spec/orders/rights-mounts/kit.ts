@@ -46,6 +46,7 @@ import {
   PAID_AT,
   RECEIVED_AT,
   accepted,
+  attributedOrder,
   orderNow,
   seedOrder,
   setup as adminSetup,
@@ -273,9 +274,13 @@ interface Context {
  * The worker entry's AppModule on the harness's database and keyring, with an in-memory queue
  * runtime (never polled): `run` hands a recorded send to the handler the worker registered on
  * order-sync, `settle` hands a batch_execute job to the one it registered on settle. `db` replaces
- * the harness's handle (a faulty one).
+ * the harness's handle (a faulty one); `now` is the worker's own clock (a job that runs after the
+ * upload), NOW by default.
  */
-export async function worker(h: Harness, options: { readonly db?: Kysely<DB> } = {}) {
+export async function worker(
+  h: Harness,
+  options: { readonly db?: Kysely<DB>; readonly now?: string } = {},
+) {
   // URL imports keep decorated HTTP controllers out of the spec project's TS compilation.
   const { AppModule } = (await import(
     new URL('../../../../apps/api/src/app.module.ts', import.meta.url).href
@@ -314,7 +319,7 @@ export async function worker(h: Harness, options: { readonly db?: Kysely<DB> } =
       AppModule.forEntry({
         entry: 'worker',
         config: loadConfig(h.env),
-        clock: new FixedClock(NOW),
+        clock: new FixedClock(options.now ?? NOW),
         logger: memoryLogger().logger,
         dbHandles: { db: options.db ?? h.db, dbRead: null, close: async () => undefined },
       }),
@@ -458,17 +463,36 @@ export interface CreditableOrder {
   readonly indirect: string;
 }
 
-/** A WAITING taobao order on its settlement record, with its commission snapshot. */
-export async function waitingOrder(s: Scenario): Promise<CreditableOrder> {
+/** What commission froze for an order, at reserve 1500; amounts are self, direct, indirect. */
+interface SnapshotTerms {
+  readonly raw_n_fen: bigint;
+  readonly subsidy_commission_fen: bigint;
+  readonly reserve_fen: bigint;
+  readonly n_total_fen: bigint;
+  readonly pre_base_deduct_fen: bigint;
+  readonly base_fen: bigint;
+  readonly platform_retain_fen: bigint;
+  readonly user_share_total_fen: bigint;
+  readonly platform_est_profit_fen: bigint;
+  readonly amounts: readonly [bigint, bigint, bigint];
+}
+
+/** The order's commission snapshot, version 1, over the scenario's user and two new uplines. */
+async function seedSnapshot(
+  s: Scenario,
+  order: Order,
+  terms: SnapshotTerms,
+): Promise<CreditableOrder> {
   const { db } = s.h;
   const attrAt = new Date(PAID_AT);
   const self = s.userId;
   const direct = await seedUser(db, s.appId);
   const indirect = await seedUser(db, s.appId);
+  const [selfFen, directFen, indirectFen] = terms.amounts;
   const people = [
-    { user: self, role: 'self', ratio: 5000, amount: 1841n },
-    { user: direct, role: 'direct', ratio: 1000, amount: 368n },
-    { user: indirect, role: 'indirect', ratio: 500, amount: 184n },
+    { user: self, role: 'self', ratio: 5000, amount: selfFen },
+    { user: direct, role: 'direct', ratio: 1000, amount: directFen },
+    { user: indirect, role: 'indirect', ratio: 500, amount: indirectFen },
   ] as const;
   const ruleVersionId = randomUUID();
   await db
@@ -482,28 +506,6 @@ export async function waitingOrder(s: Scenario): Promise<CreditableOrder> {
       created_at: attrAt,
     })
     .execute();
-  const order = await seedOrder(s, {
-    platform: 'taobao',
-    product_key: 'taobao:fixture',
-    user_id: self,
-    user_basis: 'param',
-    scene_basis: 'param',
-    platform_status: 'SETTLED',
-    rebate_status: 'WAITING',
-    commission_version: 1,
-    est_commission_fen: 3222n,
-    settle_commission_fen: 1000n,
-    subsidy_commission_fen: 111n,
-    initial_est_fen: 4333n,
-    n_total_fen: 4444n,
-    pre_base_deduct_fen: 761n,
-    base_fen: 3683n,
-    platform_est_profit_fen: 2051n,
-    received_at: RECEIVED_AT,
-    settle_period: BILL,
-    quantity: 1,
-    refunded_quantity: 0,
-  });
   await db
     .insertInto('commission_splits')
     .values({
@@ -515,13 +517,13 @@ export async function waitingOrder(s: Scenario): Promise<CreditableOrder> {
       rebate_mode: null,
       paid_at: attrAt,
       paid_at_source: 'platform',
-      raw_n_fen: 4333n,
-      subsidy_commission_fen: 111n,
+      raw_n_fen: terms.raw_n_fen,
+      subsidy_commission_fen: terms.subsidy_commission_fen,
       reserve_bp: 1500,
-      reserve_fen: 650n,
+      reserve_fen: terms.reserve_fen,
       tlj_deduct_fen: 0n,
-      base_fen: 3683n,
-      platform_retain_fen: 1290n,
+      base_fen: terms.base_fen,
+      platform_retain_fen: terms.platform_retain_fen,
       beneficiaries: JSON.stringify(
         people.map((p) => ({
           user_id: p.user,
@@ -541,12 +543,12 @@ export async function waitingOrder(s: Scenario): Promise<CreditableOrder> {
       app_id: s.appId,
       order_id: order.order_id,
       commission_version: 1,
-      n_total_fen: 4444n,
-      pre_base_deduct_fen: 761n,
-      base_fen: 3683n,
-      user_share_total_fen: 2393n,
+      n_total_fen: terms.n_total_fen,
+      pre_base_deduct_fen: terms.pre_base_deduct_fen,
+      base_fen: terms.base_fen,
+      user_share_total_fen: terms.user_share_total_fen,
       tlj_redpacket_fen: 0n,
-      platform_est_profit_fen: 2051n,
+      platform_est_profit_fen: terms.platform_est_profit_fen,
       created_at: attrAt,
     })
     .execute();
@@ -559,7 +561,7 @@ export async function waitingOrder(s: Scenario): Promise<CreditableOrder> {
         commission_version: 1,
         user_id: p.user,
         role: p.role,
-        base_fen: 3683n,
+        base_fen: terms.base_fen,
         amount_fen: p.amount,
         created_at: attrAt,
       })),
@@ -579,7 +581,46 @@ export async function waitingOrder(s: Scenario): Promise<CreditableOrder> {
       })
       .execute();
   }
-  await db
+  return { order, self, direct, indirect };
+}
+
+/** A WAITING taobao order on its settlement record, with its commission snapshot. */
+export async function waitingOrder(s: Scenario): Promise<CreditableOrder> {
+  const order = await seedOrder(s, {
+    platform: 'taobao',
+    product_key: 'taobao:fixture',
+    user_id: s.userId,
+    user_basis: 'param',
+    scene_basis: 'param',
+    platform_status: 'SETTLED',
+    rebate_status: 'WAITING',
+    commission_version: 1,
+    est_commission_fen: 3222n,
+    settle_commission_fen: 1000n,
+    subsidy_commission_fen: 111n,
+    initial_est_fen: 4333n,
+    n_total_fen: 4444n,
+    pre_base_deduct_fen: 761n,
+    base_fen: 3683n,
+    platform_est_profit_fen: 2051n,
+    received_at: RECEIVED_AT,
+    settle_period: BILL,
+    quantity: 1,
+    refunded_quantity: 0,
+  });
+  const seeded = await seedSnapshot(s, order, {
+    raw_n_fen: 4333n,
+    subsidy_commission_fen: 111n,
+    reserve_fen: 650n,
+    n_total_fen: 4444n,
+    pre_base_deduct_fen: 761n,
+    base_fen: 3683n,
+    platform_retain_fen: 1290n,
+    user_share_total_fen: 2393n,
+    platform_est_profit_fen: 2051n,
+    amounts: [1841n, 368n, 184n],
+  });
+  await s.h.db
     .insertInto('order_settlements')
     .values({
       app_id: s.appId,
@@ -587,12 +628,68 @@ export async function waitingOrder(s: Scenario): Promise<CreditableOrder> {
       seq: 1,
       source: 'STATEMENT',
       settle_commission_fen: 1000n,
-      settled_at: attrAt,
+      settled_at: new Date(PAID_AT),
       content_hash: randomUUID(),
-      created_at: attrAt,
+      created_at: new Date(PAID_AT),
     })
     .execute();
-  return { order, self, direct, indirect };
+  return seeded;
+}
+
+/**
+ * An ESTIMATED taobao order without a settlement record, valued on its estimate: N 1200, reserve
+ * 1500 → reserve 180, B 1020; 510 / 102 / 51, platform 357 + 180 = 537.
+ */
+export async function estimatedOrder(s: Scenario): Promise<CreditableOrder> {
+  const order = await attributedOrder(s, {
+    platform: 'taobao',
+    product_key: 'taobao:fixture',
+    platform_status: 'PAID',
+    commission_version: 1,
+    est_commission_fen: 1200n,
+    subsidy_commission_fen: 0n,
+    initial_est_fen: 1200n,
+    n_total_fen: 1200n,
+    pre_base_deduct_fen: 180n,
+    base_fen: 1020n,
+    platform_est_profit_fen: 537n,
+    quantity: 1,
+    refunded_quantity: 0,
+  });
+  return seedSnapshot(s, order, {
+    raw_n_fen: 1200n,
+    subsidy_commission_fen: 0n,
+    reserve_fen: 180n,
+    n_total_fen: 1200n,
+    pre_base_deduct_fen: 180n,
+    base_fen: 1020n,
+    platform_retain_fen: 357n,
+    user_share_total_fen: 663n,
+    platform_est_profit_fen: 537n,
+    amounts: [510n, 102n, 51n],
+  });
+}
+
+/** What the deletion expiry leaves (BR-ID-27, BR-ID-28): users deleting, the request processing. */
+export async function seedProcessingDeletion(s: Scenario, userId: string): Promise<void> {
+  await s.h.db
+    .updateTable('users')
+    .set({ status: 'deleting' })
+    .where('app_id', '=', s.appId)
+    .where('id', '=', userId)
+    .execute();
+  await s.h.db
+    .insertInto('deletion_requests')
+    .values({
+      id: randomUUID(),
+      app_id: s.appId,
+      user_id: userId,
+      status: 'processing',
+      apply_at: '2026-09-24T02:00:00.000Z',
+      cooling_until: NOW,
+      balance_snapshot_fen: 0n,
+    })
+    .execute();
 }
 
 /**
