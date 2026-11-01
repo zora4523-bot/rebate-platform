@@ -1,0 +1,25 @@
+id: B2-15r
+repo: rebate-platform
+title: 假通道的账单不触发对账补跑与告警（FU-PAY-FAKE-BILL-NOISE）
+type: impl
+# 2026-11-02 pay 入账（编排 11-01 22:07 ②）。现象：staging 配 PAY_CHANNEL_IMPL=fake（D10-549 ⑥），FakePayChannel.downloadBill 返回 unknown / fake_not_supported，
+# 有支付记录的 App 每小时补跑、3 天后记 error 级 pay_bill_recon_abandoned。B2-15j 起就有，B2-15k 未改。改：fake_not_supported 导出为固定常量，pay-recon 与 channel_unconfigured 一样跳过（debug，不抛、不补跑、不记 abandoned、不记已对账，绝不当空账单读）。
+# 不改真实通道判定；其他 unknown 行为不变。deps B2-15k：跳过逻辑在该单的 pay-recon.ts 里，它合并后再开工。RV2，资金口径。
+refs: [BR-PAY-07]
+refs_hash:
+  BR-PAY-07: a98350f4412a
+deps: [B2-15k]
+paths:
+  - 'apps/api/src/modules/payment/application/pay-recon.ts'
+  - 'apps/api/src/modules/payment/application/pay-recon.test.ts'
+  - 'apps/api/src/modules/payment/application/pay-channel.ts'
+  - 'apps/api/src/modules/payment/infra/channels/fake-pay-channel.ts'
+test_paths:
+  - 'test/spec/payment/recon-fake-bill/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payment/recon-fake-bill/**'
+status: todo
+pr: null
