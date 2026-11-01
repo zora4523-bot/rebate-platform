@@ -124,18 +124,25 @@ it.each([
   expect(rescanIntervalSeconds(days, capMs)).toBe(60);
 });
 
-it.each([
-  { label: '游标为空', cursorMs: null, startMs: ROUND_START },
-  { label: '游标早于一轮起点', cursorMs: ROUND_START - 1, startMs: ROUND_START },
-  { label: '游标等于一轮起点', cursorMs: ROUND_START, startMs: ROUND_START },
-  { label: '游标在范围内', cursorMs: ROUND_START + 5, startMs: ROUND_START + 5 },
-  { label: '正好还剩一整窗', cursorMs: NOW_MS - HOUR_MS, startMs: NOW_MS - HOUR_MS },
-])('[AC-B1-04zm#3] $label：发整窗', ({ cursorMs, startMs }) => {
-  expect(rescanStep(cursorMs, NOW_MS, 30, HOUR_MS)).toEqual({
-    kind: 'window',
-    startMs,
-    endMs: startMs + HOUR_MS,
-  });
+it('[AC-B1-04zm#3] 发整窗：游标早于一轮起点不超过 30 分钟时从游标起，更旧才回到一轮起点', () => {
+  // B1-04zs: one test over the old table, not it.each: a changed row holds every row of a table to
+  // the red check (tools/guard/lib/test-blocks.ts), and most rows hold before and after this task.
+  const oldest = ROUND_START - 30 * MINUTE_MS;
+  for (const { label, cursorMs, startMs } of [
+    { label: '游标为空', cursorMs: null, startMs: ROUND_START },
+    { label: '游标早 30 分钟 + 1 毫秒', cursorMs: oldest - 1, startMs: ROUND_START },
+    { label: '游标早 1 毫秒', cursorMs: ROUND_START - 1, startMs: ROUND_START - 1 },
+    { label: '游标恰早 30 分钟', cursorMs: oldest, startMs: oldest },
+    { label: '游标等于一轮起点', cursorMs: ROUND_START, startMs: ROUND_START },
+    { label: '游标在范围内', cursorMs: ROUND_START + 5, startMs: ROUND_START + 5 },
+    { label: '正好还剩一整窗', cursorMs: NOW_MS - HOUR_MS, startMs: NOW_MS - HOUR_MS },
+  ]) {
+    expect(rescanStep(cursorMs, NOW_MS, 30, HOUR_MS), label).toEqual({
+      kind: 'window',
+      startMs,
+      endMs: startMs + HOUR_MS,
+    });
+  }
 });
 
 it.each([

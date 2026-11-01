@@ -24,7 +24,23 @@ const at = (iso: string) => new FixedClock(iso).now();
 
 type Row = Selectable<DB['orders']>;
 
-function scriptedDb(updatedRows: () => bigint, reread: () => Row | undefined) {
+interface PendingRow {
+  id: bigint;
+  inserted: boolean;
+  raw_status: string | null;
+  detail: string | null;
+}
+
+/** writePending 的 returning 回行：默认是同键 open 已存在、存量两列为空的行。 */
+function pendingRow(patch: Partial<PendingRow> = {}): PendingRow {
+  return { id: PENDING_ID, inserted: false, raw_status: null, detail: null, ...patch };
+}
+
+function scriptedDb(
+  updatedRows: () => bigint,
+  reread: () => Row | undefined,
+  pendingRows: PendingRow[] = [pendingRow({ inserted: true })],
+) {
   const log: string[] = [];
   class ScriptedDriver extends DummyDriver {
     override acquireConnection(): Promise<DatabaseConnection> {
@@ -39,7 +55,7 @@ function scriptedDb(updatedRows: () => bigint, reread: () => Row | undefined) {
             return Promise.resolve({ rows: (row === undefined ? [] : [row]) as R[] });
           }
           if (compiled.sql.startsWith('insert into "app"."order_sync_pending"')) {
-            return Promise.resolve({ rows: [{ id: PENDING_ID }] as R[] });
+            return Promise.resolve({ rows: pendingRows as R[] });
           }
           return Promise.resolve({ rows: [] });
         },
@@ -520,5 +536,101 @@ it.each([
     // 失败的这次不打「已拒收 / 已照写」告警日志，也不打 updated。
     expect(vi.mocked(d.logger!.error)).not.toHaveBeenCalled();
     expect(vi.mocked(d.logger!.info)).not.toHaveBeenCalled();
+  },
+);
+
+const P10_DETAIL = 'order_illegal_transition P10 RECEIVED→PLATFORM_PAID';
+
+it.each([
+  {
+    label: 'P10 倒退新开待处理',
+    rebate: 'WAITING',
+    raw: 'paid',
+    reason: 'ILLEGAL_TRANSITION',
+    rows: [pendingRow({ inserted: true, raw_status: 'paid', detail: P10_DETAIL })],
+    logs: 1,
+    events: ['event:order.illegal_transition'],
+  },
+  {
+    label: 'P10 倒退真重复',
+    rebate: 'WAITING',
+    raw: 'paid',
+    reason: 'ILLEGAL_TRANSITION',
+    rows: [pendingRow({ raw_status: 'paid', detail: P10_DETAIL })],
+    logs: 0,
+    events: ['event:order.illegal_transition'],
+  },
+  {
+    label: 'P10 倒退存量 detail 为空（首次入库路径开的行）',
+    rebate: 'WAITING',
+    raw: 'paid',
+    reason: 'ILLEGAL_TRANSITION',
+    rows: [pendingRow({ raw_status: 'paid', detail: null })],
+    logs: 1,
+    events: ['event:order.illegal_transition'],
+  },
+  {
+    label: 'P10 倒退存量 detail 不同',
+    rebate: 'WAITING',
+    raw: 'paid',
+    reason: 'ILLEGAL_TRANSITION',
+    rows: [pendingRow({ raw_status: 'paid', detail: 'order_illegal_transition P10 other' })],
+    logs: 1,
+    events: ['event:order.illegal_transition'],
+  },
+  {
+    label: '表外码真重复（detail 都为空）',
+    rebate: 'CREDITED',
+    raw: 'unit-unknown',
+    reason: 'UNMAPPED_STATUS',
+    rows: [pendingRow({ raw_status: 'unit-unknown' })],
+    logs: 0,
+    events: [],
+  },
+  {
+    label: '表外码同键 open 已存在但 raw_status 不同',
+    rebate: 'CREDITED',
+    raw: 'unit-unknown',
+    reason: 'UNMAPPED_STATUS',
+    rows: [pendingRow({ raw_status: 'unit-other' })],
+    logs: 1,
+    events: [],
+  },
+  {
+    label: '表外码新开待处理',
+    rebate: 'CREDITED',
+    raw: 'unit-unknown',
+    reason: 'UNMAPPED_STATUS',
+    rows: [pendingRow({ inserted: true, raw_status: 'unit-unknown' })],
+    logs: 1,
+    events: [],
+  },
+  {
+    label: '表外码驱动未回行（无从判断，宁多不漏）',
+    rebate: 'CREDITED',
+    raw: 'unit-unknown',
+    reason: 'UNMAPPED_STATUS',
+    rows: [],
+    logs: 1,
+    events: [],
+  },
+])(
+  '[AC-B1-08i#U20] $label：整条拒收的 P1 日志只有真重复不打，事件、待处理写入与返回值不变',
+  async ({ rebate, raw, reason, rows, logs, events }) => {
+    const row = { ...current, rebate_status: rebate } as Row;
+    const { db, log } = scriptedDb(
+      () => 1n,
+      () => row,
+      rows,
+    );
+    const order: string[] = [];
+    const { d } = withBus(order);
+    const { outcome } = await run(db, d, row, incoming({ raw_status: raw }));
+    expect(outcome).toEqual({ kind: 'pending', order_id: current.order_id, reason });
+    expect(
+      log.filter((sql) => sql.startsWith('insert into "app"."order_sync_pending"')),
+    ).toHaveLength(1);
+    expect(order).toEqual(events);
+    expect(vi.mocked(d.logger!.error)).toHaveBeenCalledTimes(logs);
   },
 );

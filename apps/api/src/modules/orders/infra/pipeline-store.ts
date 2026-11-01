@@ -127,11 +127,23 @@ export interface PendingInput {
   readonly detail?: string | null;
 }
 
+export interface PendingWrite {
+  /** 该 open 记录的 id（新插入或已存在的那条；B1-08i 的告警事件据此派生事件 ID），驱动未回行时为 null。 */
+  readonly id: bigint | null;
+  /**
+   * B1-04zs：真重复，即同键 open 已存在，且存量行的 raw_status、detail 都与本次写入值相同。新开或任一列不同为
+   * false；驱动未回行时无从判断，也为 false，告警宁多不漏。
+   */
+  readonly repeat: boolean;
+}
+
 /**
- * 待处理记录：同键 open 记录已存在时只更新 detected_at（order_sync_pending_open_key）。返回该 open 记录的 id
- * （新插入或已存在的那条；B1-08i 的告警事件据此派生事件 ID），驱动未回行时为 null。
+ * 待处理记录：同键 open 记录已存在时只更新 detected_at（order_sync_pending_open_key）。「真重复」取自同一条语句
+ * 的返回值，不先查后写：xmax = 0 只出现在新插入的行上，走 DO UPDATE 的行带着冲突时加的行锁；DO UPDATE 不改
+ * raw_status、detail，返回的就是存量值。不用 RETURNING old：那是 PostgreSQL 18 才有的写法，而 ADR-0001 留着
+ * 退回 17 的路。
  */
-export async function upsertPending(trx: Trx, input: PendingInput): Promise<bigint | null> {
+export async function writePending(trx: Trx, input: PendingInput): Promise<PendingWrite> {
   const row = await trx
     .withSchema('app')
     .insertInto('order_sync_pending')
@@ -143,9 +155,19 @@ export async function upsertPending(trx: Trx, input: PendingInput): Promise<bigi
         .where('status', '=', sql.lit('open'))
         .doUpdateSet((eb) => ({ detected_at: eb.ref('excluded.detected_at') })),
     )
-    .returning('id')
+    .returning(['id', 'raw_status', 'detail', sql<boolean>`(xmax = 0)`.as('inserted')])
     .executeTakeFirst();
-  return row?.id ?? null;
+  const repeat =
+    row !== undefined &&
+    !row.inserted &&
+    row.raw_status === input.raw_status &&
+    row.detail === (input.detail ?? null);
+  return { id: row?.id ?? null, repeat };
+}
+
+/** 同 writePending，只要 open 记录的 id；驱动未回行时为 null。 */
+export async function upsertPending(trx: Trx, input: PendingInput): Promise<bigint | null> {
+  return (await writePending(trx, input)).id;
 }
 
 /**
