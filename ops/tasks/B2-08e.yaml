@@ -11,12 +11,9 @@ paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
-  - 'apps/api/src/modules/admin/application/export-worker*.ts'
-  - 'apps/api/src/modules/admin/application/admin-exports*.ts'
-  - 'apps/api/src/modules/admin/application/tax-export*.ts'
+  - 'apps/api/src/modules/admin/application/*export*.ts'
   - 'apps/api/src/modules/admin/domain/**'
-  - 'apps/api/src/modules/admin/http/admin/exports.controller.ts'
-  - 'apps/api/src/modules/admin/http/admin/exports.controller.test.ts'
+  - 'apps/api/src/modules/admin/http/admin/exports.controller*.ts'
   - 'apps/api/src/modules/admin/export-worker.module.ts'
   - 'apps/api/src/modules/admin/index.ts'
   - 'apps/api/src/modules/identity/ports/realname-export-batch*.ts'
@@ -32,6 +29,8 @@ paths:
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
 test_paths:
   - 'test/spec/admin/tax-export/**'
+  - 'test/spec/admin/exports/download.int.test.ts'
+  - 'test/spec/db/admin/export-tasks/export-tasks.int.test.ts'
 impl: claude
 tester: claude-independent
 accept:
