@@ -1,0 +1,33 @@
+id: B1-30a
+repo: rebate-platform
+title: KMS 读取适配器（FU-KMS-ADAPTER）：prod 从 KMS 取密钥，字段加密主密钥、收款、拼多多 / 淘宝 / 京东 / 大淘客统一接上，未配置或读不到时 fail-close
+type: impl
+# 2026-11-02 pay（账号 5）入账（编排 11-02 03:49；规划/02 §12.6；ADR-0001 §2 自有 KeyProvider；BR-PAY-08 ②；D10-554）。依赖 B1-30 的 @alicloud/kms20160120、@alicloud/credentials。
+# 平台行为只引私有库 docs-mirror/aliyun-kms/pages/（GetSecretValue、Encrypt、Decrypt、接入点、Node.js 凭据），未真连；真连 KMS 要负责人开通，到时编排提，本任务 SDK 打桩。
+# 不改冻结测试：KMS_* 全未配置时行为与现在完全相同（keyring、prior identity、四家联盟 kms_unavailable；收款两渠道不可用），所以没有 test/spec 旧文件进 test_paths。
+# 方案：SDK 只在配置了 KMS 时动态导入；凭据用 ECS RAM 角色（强制 IMDSv2），不落静态 AK；secret 名按 couli/<appEnv>/... 固定；错误不带 SDK 原文、路径和值；启动时读一次。
+# 失败口径：KMS 已配置但读不到 → 主密钥解不开、联盟密钥读不到都拒启动（沿用既有错误码）；收款按 staging 读不到文件的做法装成不可用通道，不回退假通道。
+refs: []
+refs_hash: {}
+deps: [B1-30]
+paths:
+  - 'apps/api/src/modules/platform/kms/**'
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/platform/platform.module.ts'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/modules/payment/infra/channels/**'
+  - 'apps/api/src/modules/payment/application/pay-channel.ts'
+  - 'apps/api/src/modules/union/union.module.ts'
+  - 'apps/api/scripts/keyring-init-kms.ts'
+  - '.env.example'
+  - 'infra/staging/README.md'
+  - 'specs/pay-channels-launch-checklist.md'
+test_paths:
+  - 'test/spec/platform/kms/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/kms/**'
+status: todo
+pr: null
