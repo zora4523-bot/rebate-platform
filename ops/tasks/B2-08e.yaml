@@ -23,6 +23,7 @@ paths:
   - 'apps/api/src/modules/identity/index.ts'
   - 'apps/api/src/app.module.ts'
   - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/admin-exports.test.ts'
   - 'packages/contracts-ts/src/openapi.gen.ts'
   - 'packages/contracts-ts/src/planned-operations.gen.ts'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
