@@ -12,6 +12,7 @@ paths:
   - 'apps/api/src/modules/orders/domain/platform-rules/jd.ts'
   - 'apps/api/src/modules/orders/domain/sync-window.ts'
   - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/orders/worker-runtime.test.ts'
   - 'test/spec/orders/jd-sync/**'
   - 'test/spec/orders/platform-rules/**'
   - 'test/spec/orders/wiring/**'
