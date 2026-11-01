@@ -1,14 +1,20 @@
 // B1-05w (FU-DETAIL-REPARSE, D10-514): BR-PROD-05 重新解析步骤 in one place, shared by the detail,
 // the pool add and the pool refresh. canonical_url first, else q=title on the platform's first
-// page (≤ 20 rows) for the item that derives the target key. UnionItem has no shop_id, so the
-// step's shop filter cannot run and the exact key comparison stands in for it. One call at most 3 s.
+// page (≤ 20 rows) for the item that derives the target key; a platform that has no link resolution
+// goes on to the title (B1-05y). UnionItem has no shop_id, so the step's shop filter cannot run and
+// the exact key comparison stands in for it. One re-parse at most 3 s, both steps together.
 // One re-parse per (app_id, product_key): a Redis lock of 10 s, concurrent callers wait for the same
 // result; without Redis nothing is locked. Rule tests build a reparser with createRawReparser and
 // hand it to createUnionDetailUpstream; they never call its members, so the shapes below are the
 // implementer's. Rule tests: test/spec/catalog/detail-reparse/**.
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { RedisUnavailableError, type Clock, type RedisNamespace } from '../../platform/index.ts';
+import {
+  GovernanceError,
+  RedisUnavailableError,
+  type Clock,
+  type RedisNamespace,
+} from '../../platform/index.ts';
 import {
   UnionError,
   type CallCtx,
@@ -18,7 +24,8 @@ import {
   type UnionAdapter,
   type UnionItem,
 } from '../../union/index.ts';
-import { detailRawItemId } from '../detail.ts';
+import { detailRawItemId, upstreamFailure } from '../detail.ts';
+import { CatalogError } from '../domain/rules.ts';
 import type { Catalog, ProductCapabilities, ProductRef, ReparseResult } from '../domain/types.ts';
 import type { GovernedUnion } from '../ports.ts';
 
@@ -68,11 +75,13 @@ export type RawParse =
 export const RAW_REPARSE_NAMESPACE = 'catalog-reparse';
 /** BR-PROD-05 重新解析步骤 2: the title search reads the platform's first page, ≤ 20 rows. */
 const SEARCH_ROWS = 20;
-/** BR-PROD-05 重新解析步骤 3. */
+/** BR-PROD-05 重新解析步骤 3: one limit for the re-parse, shared by steps 1 and 2. */
+const REPARSE_TIMEOUT_MS = 3000;
 const LOCK_TTL_SECONDS = 10;
-/** A waiter outlasts the holder's one call by a second; a holder that died is no reason to hang. */
+/** A waiter outlasts the holder's one re-parse by a second; a holder that died is no reason to hang. */
 const WAIT_POLLS = 80;
 const WAIT_POLL_MS = 50;
+const REF_EXPIRED = { kind: 'ref_expired' } as const;
 const TEMPORARY_FAILURE = { kind: 'temporary_failure' } as const;
 /** BR-PROD-10: a re-parse does not depend on the keyword search switch, as the detail route. */
 const REF_CAPABILITIES: ProductCapabilities = Object.freeze({
@@ -124,19 +133,88 @@ export async function searchRawByTitle(
   return null;
 }
 
+/** BR-PROD-05 重新解析步骤 1; null when the platform has no link resolution, which is no failure. */
+async function resolveByLink(
+  adapter: Pick<UnionAdapter, 'resolveLink'>,
+  url: string,
+  context: CallCtx,
+): Promise<Awaited<ReturnType<UnionAdapter['resolveLink']>> | null> {
+  try {
+    return await adapter.resolveLink(url, context);
+  } catch (error: unknown) {
+    if (error instanceof UnionError && error.code === 'adapter_unimplemented') return null;
+    throw error;
+  }
+}
+
 /**
- * BR-PROD-05 重新解析步骤 1、2, sorted into 结果分类. No lock and no write. B1-05y skeleton: the body
- * of 491308b8c stood here; test/spec/catalog/reparse-fallback/** holds what it must now do.
+ * The 3 s of one re-parse, running from here on across all its waits. Past them whatever is waited
+ * on counts as the governor's own timeout (结果分类 ③, whatever it ends in) and its late answer
+ * reaches nothing: the step that waited has gone, so no next step starts and nothing is written.
  */
+function reparseLimit(dependency: string) {
+  const passed = Promise.withResolvers<never>();
+  // The limit can pass while nothing is being waited on; the next wait still sees it.
+  passed.promise.catch(() => undefined);
+  const timer = setTimeout(() => {
+    passed.reject(new GovernanceError('timeout', dependency, 'catalog: re-parse past its limit'));
+  }, REPARSE_TIMEOUT_MS);
+  return {
+    within: <T>(wait: T | Promise<T>): Promise<T> => Promise.race([wait, passed.promise]),
+    stop: () => {
+      clearTimeout(timer);
+    },
+  };
+}
+
+/** BR-PROD-05 重新解析步骤 1、2, one 3 s limit, sorted into 结果分类. No lock and no write. */
 export async function parseRaw(
   union: GovernedUnion,
   target: RawReparseTarget,
   purpose: CallCtx['purpose'],
 ): Promise<RawParse> {
-  void union;
-  void target;
-  void purpose;
-  throw new Error('NotImplemented: parseRaw');
+  const { appId, platform, canonicalUrl, title, jdMode, isTarget } = target;
+  const adapter = union.adapter(platform);
+  const context: CallCtx = { appId, requestId: randomUUID(), purpose };
+  const limit = reparseLimit(`union:${platform}:${purpose}`);
+  try {
+    const linked =
+      canonicalUrl === null
+        ? null
+        : await resolveByLink(
+            { resolveLink: (url, ctx) => limit.within(adapter.resolveLink(url, ctx)) },
+            canonicalUrl,
+            context,
+          );
+    if (linked !== null) {
+      const { item } = linked;
+      const raw = item.platform === platform ? detailRawItemId(item, jdMode) : undefined;
+      if (raw === undefined || !(await limit.within(isTarget(item)))) return REF_EXPIRED;
+      return { kind: 'found', ref: { rawItemId: raw, title, rawFetchedAt: null } };
+    }
+    const found = await searchRawByTitle({
+      adapter: { searchItems: (query, ctx) => limit.within(adapter.searchItems(query, ctx)) },
+      platform,
+      title,
+      jdMode,
+      context,
+      isTarget: (item) => limit.within(isTarget(item)),
+    });
+    if (found === null) return REF_EXPIRED;
+    return {
+      kind: 'found',
+      ref: { rawItemId: found.raw, title, rawFetchedAt: found.item.quoted_at },
+    };
+  } catch (error: unknown) {
+    const mapped = upstreamFailure(error);
+    if (!(mapped instanceof CatalogError)) throw mapped;
+    if (mapped.code === 30141) return { kind: 'off_shelf' };
+    if (mapped.code === 30143) return REF_EXPIRED;
+    if (mapped.code === 50401) return TEMPORARY_FAILURE;
+    throw mapped;
+  } finally {
+    limit.stop();
+  }
 }
 
 export function createRawReparser(options: RawReparserOptions): RawReparser {
