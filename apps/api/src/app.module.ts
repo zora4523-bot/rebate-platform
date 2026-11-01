@@ -1785,6 +1785,9 @@ function governedUnion(
   };
 }
 
+/** The app whose config_items rows hold order_sync.rescan.*; the config port takes no App. */
+const ORDER_SYNC_APP_ID = 'couli';
+
 /**
  * B1-08n: the worker's order-sync ports, assembled here so orders never imports identity or
  * linking: identity's attr_code → user reader, linking's relation_id binding reader, and the
@@ -1793,6 +1796,10 @@ function governedUnion(
  * B1-08q: the source backfill ports (orderSourcePorts).
  * B1-08w: commission's snapshot port (orderSnapshotPort) for step ⑥ and the compensation retry.
  * B1-08zc: ledger's recon diff registration as orders' platform-restore port (orderPlatformRestorePort).
+ * B1-04zr: rescanConfig, content's config_items of ORDER_SYNC_APP_ID. Building it reads nothing;
+ * every get reads again (a fresh content reader per call, so a changed row is seen on the next
+ * round). An absent key is undefined, so orders' own defaults apply; a failed read propagates
+ * unchanged, so the rescan skips the platform for that round instead of taking the default.
  */
 function orderSyncPorts(
   union: DynamicModule,
@@ -1806,6 +1813,10 @@ function orderSyncPorts(
     sources: (db, clock, logger) => orderSourcePorts(db, clock, logger),
     snapshots: (db, clock, logger) => orderSnapshotPort(db, clock, logger),
     platformRestore: (clock) => orderPlatformRestorePort(clock),
+    rescanConfig: (db, clock) => ({
+      get: async (key) =>
+        (await createContentReader({ db, clock }).configValue(ORDER_SYNC_APP_ID, key))?.value,
+    }),
   };
 }
 

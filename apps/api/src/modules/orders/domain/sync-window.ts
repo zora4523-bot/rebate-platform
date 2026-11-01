@@ -13,9 +13,10 @@ function windowCaps(): Partial<Record<RegisteredPlatform, number>> {
 
 /**
  * Increment window cap per platform (02 §7.1 table), read from the rule table's syncWindowCapMs.
- * Only Pinduoduo is fixed today (30 minutes); a platform without an entry is not scheduled.
+ * Fixed today for Jingdong (60 minutes) and Pinduoduo (30 minutes); a platform without an entry
+ * is not scheduled.
  */
-// TODO(规划/11 §4.5): 淘宝 / 京东增量窗口上限与 scene 分路 — blocked on CAP-TB-07 / CAP-JD-07
+// TODO(规划/11 §4.5): 淘宝增量窗口上限与 scene 分路 — blocked on CAP-TB-07
 export const INCREMENT_WINDOW_CAP_MS: Readonly<Partial<Record<RegisteredPlatform, number>>> =
   Object.freeze(windowCaps());
 
