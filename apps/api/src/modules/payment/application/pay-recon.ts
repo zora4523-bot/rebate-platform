@@ -42,7 +42,8 @@
 //   PayBillUnavailable is thrown. A malformed bill is refused as a whole (fail closed).
 //   B2-15k: some unknown answers are no bill now and no bill an hour later, so a catch-up could only
 //   end in pay_bill_recon_abandoned: a channel without credentials (channel_unconfigured, in prod
-//   kms_unavailable: debug as a channel without an adapter), a day the channel's document says has
+//   kms_unavailable; B2-15r: the fake channel's fake_not_supported, staging, D10-549 ⑥: debug as a
+//   channel without an adapter), a day the channel's document says has
 //   no bill (bill_not_available: debug; never read as an empty bill) and a bill whose format no
 //   document gives (bill_format_unverified: warn pay_bill_format_unverified, the day was not
 //   reconciled and that must show). The run skips that channel: nothing thrown, no catch-up, the
@@ -119,6 +120,7 @@ import {
   PAY_REASON_BILL_FORMAT_UNVERIFIED,
   PAY_REASON_BILL_NOT_AVAILABLE,
   PAY_REASON_CHANNEL_UNCONFIGURED,
+  PAY_REASON_FAKE_NOT_SUPPORTED,
   PAY_REASON_KMS_UNAVAILABLE,
   PayChannelUnavailable,
   type PayBillResult,
@@ -553,7 +555,8 @@ export async function runPayBillRecon(
   if (parsed.kind === 'unknown') {
     if (
       parsed.reason === PAY_REASON_CHANNEL_UNCONFIGURED ||
-      parsed.reason === PAY_REASON_KMS_UNAVAILABLE
+      parsed.reason === PAY_REASON_KMS_UNAVAILABLE ||
+      parsed.reason === PAY_REASON_FAKE_NOT_SUPPORTED
     ) {
       deps.logger.debug(
         { app_id: input.app_id, pay_channel: channel },
