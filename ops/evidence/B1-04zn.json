@@ -1,0 +1,143 @@
+{
+  "task": "B1-04zn",
+  "spec_ref": "deb521c2bcb740571a01c2dc128f40abb40c37a2",
+  "spec_commit": "97fc4f8a4bf6c6500117b4169fd2a653d89a0909",
+  "red_tests": [
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#1] 两个开关缺省（不设或空串）时 AppConfig 带出 baichuan / official，任何 APP_ENV 都一样",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#2] 合法取值 convert=baichuan search=official 原样带出；任何 APP_ENV 都可设，不是凭据、不触发 local/test 启动限制",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#2] 合法取值 convert=baichuan search=dataoke 原样带出；任何 APP_ENV 都可设，不是凭据、不触发 local/test 启动限制",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#2] 合法取值 convert=dataoke search=official 原样带出；任何 APP_ENV 都可设，不是凭据、不触发 local/test 启动限制",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#2] 合法取值 convert=dataoke search=dataoke 原样带出；任何 APP_ENV 都可设，不是凭据、不触发 local/test 启动限制",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_CONVERT_SOURCE=\"FAKE_SWITCH_VALUE_MUST_NOT_ECHO\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_CONVERT_SOURCE=\"official\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_CONVERT_SOURCE=\"DATAOKE\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_CONVERT_SOURCE=\"Baichuan\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_CONVERT_SOURCE=\"1\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_SEARCH_SOURCE=\"FAKE_SWITCH_VALUE_MUST_NOT_ECHO\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_SEARCH_SOURCE=\"baichuan\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_SEARCH_SOURCE=\"Dataoke\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_SEARCH_SOURCE=\"OFFICIAL\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_SEARCH_SOURCE=\"true\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#4] 其他配置无效时仍汇总开关的问题，且不回显取值",
+    "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#5] 环境示例列出注释掉的两个开关变量名（不启用）",
+    "test/spec/union/taobao-dataoke-switches/reader.test.ts > [AC-B1-04zn#11] 读当前 app 的全部淘宝推广位（含 retired、pending，各场景），不含其他 app 或其他平台",
+    "test/spec/union/taobao-dataoke-switches/reader.test.ts > [AC-B1-04zn#12] 每次调用重查一次（不缓存）；没有淘宝推广位时返回空列表",
+    "test/spec/union/taobao-dataoke-switches/reader.test.ts > [AC-B1-04zn#13] 读库失败原样抛出，不当成空清单",
+    "test/spec/union/taobao-dataoke-switches/registry.test.ts > [AC-B1-04zn#6] taobaoLive 的 searchSource / orderSlots / orderWarn 原样交给淘宝适配器；不传时适配器选项里没有这三项",
+    "test/spec/union/taobao-dataoke-switches/registry.test.ts > [AC-B1-04zn#7] taobao=replay 不构造真实淘宝适配器、不调推广位读者；同样的选项切 live 才交给适配器",
+    "test/spec/union/taobao-dataoke-switches/registry.test.ts > [AC-B1-04zn#7] taobao=demo 不构造真实淘宝适配器、不调推广位读者；同样的选项切 live 才交给适配器",
+    "test/spec/union/taobao-dataoke-switches/registry.test.ts > [AC-B1-04zn#8] 端到端（内存假传输）：searchSource=dataoke 时经注册表拿到的适配器去大淘客搜索；official / 缺省仍 adapter_unimplemented 且不发请求",
+    "test/spec/union/taobao-dataoke-switches/registry.test.ts > [AC-B1-04zn#9] 端到端（内存假传输 + 假读者）：给了 orderSlots 后 listOrders 只留读者给出的推广位（含已停用）的订单，别家的只计数告警",
+    "test/spec/union/taobao-dataoke-switches/registry.test.ts > [AC-B1-04zn#10] 转链开关与新开关并存：convertSource=dataoke 且同时给了 searchSource / orderSlots 时，convert 仍经大淘客转链",
+    "test/spec/union/taobao-dataoke-switches/wiring-read-failure.test.ts > [AC-B1-04zn#20] 推广位读者读 union_pids 失败（连接重置）时，经注册表拿到的淘宝适配器 listOrders 必须 reject：不当成空页返回、不写 taobao_order_no_slots、不发大淘客订单请求",
+    "test/spec/union/taobao-dataoke-switches/wiring.test.ts > [AC-B1-04zn#14] 端到端：staging + 淘宝 / 大淘客凭据 + taobao live + TAOBAO_SEARCH_SOURCE=dataoke 时 searchItems 去大淘客搜索；缺省或 official 仍 adapter_unimplemented",
+    "test/spec/union/taobao-dataoke-switches/wiring.test.ts > [AC-B1-04zn#15] 端到端：TAOBAO_CONVERT_SOURCE=dataoke 时 convert 经大淘客转链；缺省或 baichuan 仍 adapter_unimplemented",
+    "test/spec/union/taobao-dataoke-switches/wiring.test.ts > [AC-B1-04zn#16] 开关值在 taobao live 时原样交给适配器；没有大淘客凭据时照常启动、不告警、两个端口仍 adapter_unimplemented；taobao replay / demo 不受影响",
+    "test/spec/union/taobao-dataoke-switches/wiring.test.ts > [AC-B1-04zn#17] 端到端：有数据库句柄与大淘客订单源时装配推广位读者，listOrders 按 ctx.appId 读 union_pids 的全部淘宝推广位（含 retired），只留这些推广位的订单",
+    "test/spec/union/taobao-dataoke-switches/wiring.test.ts > [AC-B1-04zn#18] 推广位读者只在有数据库句柄且有大淘客订单源时生效：缺一项照常启动、listOrders 仍 adapter_unimplemented 且不读库；两项齐全才可用",
+    "test/spec/union/taobao-dataoke-switches/wiring.test.ts > [AC-B1-04zn#19] 订单告警写一条 warn 日志：平铺字段，只带事件码与计数，不带订单号、金额或推广位"
+  ],
+  "risk_note": "RV2 (platform/config and union wiring: TAOBAO_CONVERT_SOURCE / TAOBAO_SEARCH_SOURCE switches, default off; registry passes convertSource / searchSource / orderSlots / orderWarn; union.module assembles the union_pids reader of every Taobao slot (pending / active / retired, BR-ATTR-02 whitelist) for orderSlots when the Dataoke order source is injected; a read failure rejects listOrders instead of yielding an empty slot list). Independent Claude (approvals #36) wrote test/spec/union/taobao-dataoke-switches/** (attempt 2 after spec-test r1 S1; 33 tests). Implementation model: Claude Opus 5.5 (1 round). The runner's verify:fast hits the known tsc heap limit (CT-06zzw #2143); locally tsc -b test apps/api 0 and the related rule / frozen / unit suites pass; full verification is the required CI checks.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "97fc4f8a4bf6c6500117b4169fd2a653d89a0909",
+      "tree": "1253eb6575754fe523068b55ec7c0230c2c853cf",
+      "prop_seed": 20261001,
+      "started_at": "2026-11-01T11:33:06Z",
+      "finished_at": "2026-11-01T11:33:35Z",
+      "red_tests": [
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#1] 两个开关缺省（不设或空串）时 AppConfig 带出 baichuan / official，任何 APP_ENV 都一样",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#2] 合法取值 convert=baichuan search=official 原样带出；任何 APP_ENV 都可设，不是凭据、不触发 local/test 启动限制",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#2] 合法取值 convert=baichuan search=dataoke 原样带出；任何 APP_ENV 都可设，不是凭据、不触发 local/test 启动限制",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#2] 合法取值 convert=dataoke search=official 原样带出；任何 APP_ENV 都可设，不是凭据、不触发 local/test 启动限制",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#2] 合法取值 convert=dataoke search=dataoke 原样带出；任何 APP_ENV 都可设，不是凭据、不触发 local/test 启动限制",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_CONVERT_SOURCE=\"FAKE_SWITCH_VALUE_MUST_NOT_ECHO\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_CONVERT_SOURCE=\"official\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_CONVERT_SOURCE=\"DATAOKE\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_CONVERT_SOURCE=\"Baichuan\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_CONVERT_SOURCE=\"1\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_SEARCH_SOURCE=\"FAKE_SWITCH_VALUE_MUST_NOT_ECHO\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_SEARCH_SOURCE=\"baichuan\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_SEARCH_SOURCE=\"Dataoke\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_SEARCH_SOURCE=\"OFFICIAL\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#3] TAOBAO_SEARCH_SOURCE=\"true\" 非法取值：任何 APP_ENV 都 ConfigError，问题文本只写变量名",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#4] 其他配置无效时仍汇总开关的问题，且不回显取值",
+        "test/spec/union/taobao-dataoke-switches/config.test.ts > [AC-B1-04zn#5] 环境示例列出注释掉的两个开关变量名（不启用）",
+        "test/spec/union/taobao-dataoke-switches/reader.test.ts > [AC-B1-04zn#11] 读当前 app 的全部淘宝推广位（含 retired、pending，各场景），不含其他 app 或其他平台",
+        "test/spec/union/taobao-dataoke-switches/reader.test.ts > [AC-B1-04zn#12] 每次调用重查一次（不缓存）；没有淘宝推广位时返回空列表",
+        "test/spec/union/taobao-dataoke-switches/reader.test.ts > [AC-B1-04zn#13] 读库失败原样抛出，不当成空清单",
+        "test/spec/union/taobao-dataoke-switches/registry.test.ts > [AC-B1-04zn#6] taobaoLive 的 searchSource / orderSlots / orderWarn 原样交给淘宝适配器；不传时适配器选项里没有这三项",
+        "test/spec/union/taobao-dataoke-switches/registry.test.ts > [AC-B1-04zn#7] taobao=replay 不构造真实淘宝适配器、不调推广位读者；同样的选项切 live 才交给适配器",
+        "test/spec/union/taobao-dataoke-switches/registry.test.ts > [AC-B1-04zn#7] taobao=demo 不构造真实淘宝适配器、不调推广位读者；同样的选项切 live 才交给适配器",
+        "test/spec/union/taobao-dataoke-switches/registry.test.ts > [AC-B1-04zn#8] 端到端（内存假传输）：searchSource=dataoke 时经注册表拿到的适配器去大淘客搜索；official / 缺省仍 adapter_unimplemented 且不发请求",
+        "test/spec/union/taobao-dataoke-switches/registry.test.ts > [AC-B1-04zn#9] 端到端（内存假传输 + 假读者）：给了 orderSlots 后 listOrders 只留读者给出的推广位（含已停用）的订单，别家的只计数告警",
+        "test/spec/union/taobao-dataoke-switches/registry.test.ts > [AC-B1-04zn#10] 转链开关与新开关并存：convertSource=dataoke 且同时给了 searchSource / orderSlots 时，convert 仍经大淘客转链",
+        "test/spec/union/taobao-dataoke-switches/wiring-read-failure.test.ts > [AC-B1-04zn#20] 推广位读者读 union_pids 失败（连接重置）时，经注册表拿到的淘宝适配器 listOrders 必须 reject：不当成空页返回、不写 taobao_order_no_slots、不发大淘客订单请求",
+        "test/spec/union/taobao-dataoke-switches/wiring.test.ts > [AC-B1-04zn#14] 端到端：staging + 淘宝 / 大淘客凭据 + taobao live + TAOBAO_SEARCH_SOURCE=dataoke 时 searchItems 去大淘客搜索；缺省或 official 仍 adapter_unimplemented",
+        "test/spec/union/taobao-dataoke-switches/wiring.test.ts > [AC-B1-04zn#15] 端到端：TAOBAO_CONVERT_SOURCE=dataoke 时 convert 经大淘客转链；缺省或 baichuan 仍 adapter_unimplemented",
+        "test/spec/union/taobao-dataoke-switches/wiring.test.ts > [AC-B1-04zn#16] 开关值在 taobao live 时原样交给适配器；没有大淘客凭据时照常启动、不告警、两个端口仍 adapter_unimplemented；taobao replay / demo 不受影响",
+        "test/spec/union/taobao-dataoke-switches/wiring.test.ts > [AC-B1-04zn#17] 端到端：有数据库句柄与大淘客订单源时装配推广位读者，listOrders 按 ctx.appId 读 union_pids 的全部淘宝推广位（含 retired），只留这些推广位的订单",
+        "test/spec/union/taobao-dataoke-switches/wiring.test.ts > [AC-B1-04zn#18] 推广位读者只在有数据库句柄且有大淘客订单源时生效：缺一项照常启动、listOrders 仍 adapter_unimplemented 且不读库；两项齐全才可用",
+        "test/spec/union/taobao-dataoke-switches/wiring.test.ts > [AC-B1-04zn#19] 订单告警写一条 warn 日志：平铺字段，只带事件码与计数，不带订单号、金额或推广位"
+      ],
+      "expected": [
+        "test/spec/union/taobao-dataoke-switches/config.test.ts",
+        "test/spec/union/taobao-dataoke-switches/reader.test.ts",
+        "test/spec/union/taobao-dataoke-switches/registry.test.ts",
+        "test/spec/union/taobao-dataoke-switches/wiring-read-failure.test.ts",
+        "test/spec/union/taobao-dataoke-switches/wiring.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "14313b5776453545cdd4b03a7ac29d25237479a67acccdeb72f7ec9895071a36"
+        }
+      ],
+      "gate": {
+        "commit": "f6c6f701ab5166b058b6ad438e9f966e21300be8",
+        "clean": true,
+        "script_sha256": "84ff6832019e89d674247c661091ad857216fa0f415283f282e233be9c681380"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "money r1 pass, no findings (couli-runs/B1-04zn/review-m1.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "r1 fail (S1: a union_pids read failure swallowed into an empty slot list was not caught) -> attempt 2 added the test; r2 pass"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "10950b97ee483bb368039bd0777f5689ad275e1e",
+    "specs": "66e68724062651ce28a4637192628948db2b649a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  }
+}
