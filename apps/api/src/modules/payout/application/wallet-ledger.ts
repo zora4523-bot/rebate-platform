@@ -90,6 +90,25 @@ export async function readPaidWithdrawalSummaries(
   });
 }
 
+/**
+ * B2-05p（BR-FUND-18）：钱包汇总的 withdrawn_fen——本人 PAID_API / PAID_MANUAL 提现单 amount_fen
+ * 的合计（申请金额，不是 net_fen）；没有则为 0。只读调用方句柄（钱包汇总的只读事务）。
+ */
+export async function readPaidWithdrawalTotal(
+  handle: Kysely<DB>,
+  subject: { readonly appId: string; readonly userId: string },
+): Promise<bigint> {
+  const row = await handle
+    .withSchema('app')
+    .selectFrom('withdrawals')
+    .select(sql<string>`COALESCE(SUM(amount_fen), 0)::text`.as('total'))
+    .where('app_id', '=', subject.appId)
+    .where('user_id', '=', subject.userId)
+    .where('status', 'in', [...PAID])
+    .executeTakeFirstOrThrow();
+  return parseFen(row.total);
+}
+
 export interface PaidWithdrawalAtInput {
   readonly appId: string;
   readonly userId: string;

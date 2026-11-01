@@ -262,6 +262,7 @@ import {
   createWithdrawHolds,
   createWithdrawHoldsReader,
   createWithdrawalProvenSuccess,
+  holdActive,
   releaseWithdrawHoldsBySource,
   createWithdrawRules,
   createWithdrawSwitchCheck,
@@ -270,6 +271,7 @@ import {
   generateOutBizNo,
   readPaidWithdrawalAt,
   readPaidWithdrawalSummaries,
+  readPaidWithdrawalTotal,
   type DecryptWithdrawalAccount,
   type PayoutProcessOptions,
   type PayoutQueuePausePort,
@@ -909,6 +911,7 @@ function walletSummaryDependencies(db: Kysely<Database>, clock: Clock): WalletSu
       readTljDeductFen,
     });
   const riskStates = createRiskStateBatchReader({ db });
+  const withdrawHolds = createWithdrawHoldsReader();
   const withdrawDefault = switchSpecOf('withdraw.enabled')?.defaultValue;
   return {
     clock,
@@ -931,8 +934,8 @@ function walletSummaryDependencies(db: Kysely<Database>, clock: Clock): WalletSu
         onReadTransaction(handle, (trx) => pendingSource(trx).forApp(trx, { appId: input.appId })),
     },
     withdrawals: {
-      // TODO(规划/11 §2.3): 已提现合计（PAID_API / PAID_MANUAL 的 amount_fen）读 payout 模块 — blocked on B2-05（提现单表尚不存在，现在确实没有已到账的提现）
-      readPaidTotal: () => Promise.resolve(0n),
+      // B2-05p (BR-FUND-18): Σ amount_fen of PAID_API / PAID_MANUAL, on the summary's read transaction.
+      readPaidTotal: readPaidWithdrawalTotal,
     },
     risk: {
       async readPauseReason(handle, subject) {
@@ -940,8 +943,13 @@ function walletSummaryDependencies(db: Kysely<Database>, clock: Clock): WalletSu
           appId: subject.appId,
           userIds: [subject.userId],
         });
-        // TODO(规划/11 §2.3): 生效的 withdraw_holds 也返回原因 key — blocked on B2-05（withdraw_holds 表尚不存在）
-        return states.get(subject.userId)?.state === 'frozen' ? 'account_frozen' : null;
+        if (states.get(subject.userId)?.state === 'frozen') return 'account_frozen';
+        // B2-05p (BR-FUND-18, BR-WDR-05): every effective hold is account_frozen to the user, whatever
+        // its reason (the source is not disclosed); judged row by row on the injected Clock.
+        // The reader's port is shared with the apply rules; it reads only appId and userId.
+        const holds = await withdrawHolds.read(handle, { ...subject, deviceId: '' });
+        const now = clock.now();
+        return holds.some((hold) => holdActive(hold, now)) ? 'account_frozen' : null;
       },
     },
     config: {
