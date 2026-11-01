@@ -1,0 +1,35 @@
+id: B1-03zh
+repo: rebate-platform
+title: 风控规则启停落到 identity / growth 判定点（BR-ID-36 细则「规则清单的启停」，D10-536）——risk 从 index.ts 导出规则状态读口（按 app_id + rule_id，disabled 不生效、enabled 与写入方登记的 active 生效、无行视为生效；与配置项同口径缓存周期、不追溯）；risk 各写命中处（blocklist、order-blocklist、same-device-accounts、invite-relation-hits）停用时不写 risk_hits；identity sms-codes 号段拦截（SMS_BLOCKED_PREFIX）与 registration 设备注册上限（DEVICE_REGISTER_LIMIT）、growth first-app-login-review 同设备解除邀请归属（inv_09_same_device）在判定前查读口，停用的规则不判定
+type: impl
+# 2026-11-01 入账（identity-lane，编排 D10-536 (a)(b)）。来源 B1-03zg money r1 / r2 的 S1（停用规则仍生效 / 只在写命中处跳过致用户被拒却无命中可申诉）。B1-03zg 分支第 2 轮「写命中处读状态」的实现挪入本单。orders blacklist-step（w1）、payout withdraw-risk-flags / auto-decision（withdraw）、settlement rebate 规则（funds）各线另单读同一端口。growth 归属判定属动钱路径，money 级评审，be 读改动。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/risk/application/risk-rule-status.ts'
+  - 'apps/api/src/modules/risk/application/risk-rule-status.test.ts'
+  - 'apps/api/src/modules/risk/application/blocklist.ts'
+  - 'apps/api/src/modules/risk/application/blocklist.test.ts'
+  - 'apps/api/src/modules/risk/application/order-blocklist.ts'
+  - 'apps/api/src/modules/risk/application/same-device-accounts.ts'
+  - 'apps/api/src/modules/risk/application/same-device-accounts.test.ts'
+  - 'apps/api/src/modules/risk/application/invite-relation-hits.ts'
+  - 'apps/api/src/modules/risk/application/invite-relation-hits.test.ts'
+  - 'apps/api/src/modules/risk/index.ts'
+  - 'apps/api/src/modules/identity/application/sms-codes.ts'
+  - 'apps/api/src/modules/identity/application/sms-codes.test.ts'
+  - 'apps/api/src/modules/identity/application/registration.ts'
+  - 'apps/api/src/modules/identity/application/registration.test.ts'
+  - 'apps/api/src/modules/identity/application/risk-ports.ts'
+  - 'apps/api/src/modules/growth/application/first-app-login-review.ts'
+  - 'apps/api/src/modules/growth/application/first-app-login-review.test.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/risk/rule-toggle-identity/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/rule-toggle-identity/**'
+status: todo
