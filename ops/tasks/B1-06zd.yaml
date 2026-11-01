@@ -11,7 +11,7 @@ refs_hash:
   BR-ATTR-10: 0ef7e9245dba
   BR-ATTR-13: 7c8e2b83ee0b
   BR-PRICE-12: 6aa98fc3ce46
-deps: [B1-05q, B1-04d]
+deps: [B1-05q, B1-04d, B1-06ze]
 paths:
   - 'apps/api/src/modules/linking/application/shares.ts'
   - 'apps/api/src/modules/linking/application/shares.test.ts'
@@ -23,7 +23,8 @@ paths:
   - 'apps/api/src/modules/linking/linking.module.ts'
   - 'apps/api/src/modules/linking/index.ts'
   - 'apps/api/src/modules/linking/ports.ts'
-  - 'apps/api/src/modules/content/domain/config-registry.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/catalog/**'
   - 'apps/api/src/modules/platform/queue/catalog.ts'
   - 'apps/api/src/modules/platform/queue/worker-plan.ts'
   - 'apps/api/src/modules/platform/queue/worker-plan.test.ts'
