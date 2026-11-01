@@ -107,15 +107,19 @@ const EXPECTED_FIELDS: ReadonlySet<string> = new Set([
   'modified_time',
 ]);
 
-function invalid(message: string): UnionError {
-  return new UnionError('invalid_dto', `taobao listOrders: ${message}`, 'taobao');
+function invalid(message: string, operation = 'listOrders'): UnionError {
+  return new UnionError('invalid_dto', `taobao ${operation}: ${message}`, 'taobao');
 }
 
-function unavailable(message: string): UnionError {
-  return new UnionError('upstream_unavailable', `taobao listOrders: ${message}`, 'taobao');
+function unavailable(message: string, operation = 'listOrders'): UnionError {
+  return new UnionError('upstream_unavailable', `taobao ${operation}: ${message}`, 'taobao');
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** B1-04z: invalid_dto / upstream_unavailable of another 大淘客 operation (same wording). */
+export const taobaoInvalid = invalid;
+export const taobaoUnavailable = unavailable;
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
@@ -143,13 +147,16 @@ function queryTypeOf(basis: unknown): number {
 }
 
 /** Seconds of the window: validated on the millisecond values, then rounded outward. */
-function windowSeconds(win: TimeWindow): { readonly start: number; readonly end: number } {
+export function windowSeconds(
+  win: TimeWindow,
+  operation = 'listOrders',
+): { readonly start: number; readonly end: number } {
   const fromMs = typeof win?.from === 'string' ? Date.parse(win.from) : Number.NaN;
   const toMs = typeof win?.to === 'string' ? Date.parse(win.to) : Number.NaN;
   if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) {
-    throw invalid('time window must be two ISO-8601 instants');
+    throw invalid('time window must be two ISO-8601 instants', operation);
   }
-  if (fromMs >= toMs) throw invalid('time window must have from < to');
+  if (fromMs >= toMs) throw invalid('time window must have from < to', operation);
   return { start: Math.floor(fromMs / 1000), end: Math.ceil(toMs / 1000) };
 }
 
@@ -322,7 +329,14 @@ export interface TaobaoOrderPageData {
   readonly position: string | null;
 }
 
-export function parseTaobaoOrderBody(body: string): TaobaoOrderPageData {
+/**
+ * The `data` object of a 大淘客 response body, every JSON number kept as its literal
+ * (TaobaoRawNumber). Not JSON / no data object → upstream_unavailable.
+ */
+export function parseTaobaoRawData(
+  body: string,
+  operation = 'listOrders',
+): Record<string, unknown> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body, (_name: string, value: unknown, context?: ReviverContext) =>
@@ -331,10 +345,15 @@ export function parseTaobaoOrderBody(body: string): TaobaoOrderPageData {
         : value,
     );
   } catch {
-    throw unavailable('response is not JSON');
+    throw unavailable('response is not JSON', operation);
   }
   const data = isRecord(parsed) ? parsed.data : undefined;
-  if (!isRecord(data)) throw unavailable('response data is not an object');
+  if (!isRecord(data)) throw unavailable('response data is not an object', operation);
+  return data;
+}
+
+export function parseTaobaoOrderBody(body: string): TaobaoOrderPageData {
+  const data = parseTaobaoRawData(body);
   return {
     rows: orderRows(data.results),
     hasNext: data.has_next === true,
@@ -355,13 +374,17 @@ function orderRows(results: unknown): readonly unknown[] {
   return list;
 }
 
-/** adzone_id as decimal text when it is a JSON integer (or a decimal string); otherwise null. */
-function adzoneOf(row: unknown): string | null {
-  if (!isRecord(row)) return null;
-  const value = row.adzone_id;
+/** Decimal id text of a JSON integer or a decimal string; otherwise null. */
+export function taobaoDecimalId(value: unknown): string | null {
   const text =
     value instanceof TaobaoRawNumber ? value.text : typeof value === 'string' ? value : null;
   return text !== null && ID_TEXT.test(text) ? text : null;
+}
+
+/** adzone_id as decimal text when it is a JSON integer (or a decimal string); otherwise null. */
+function adzoneOf(row: unknown): string | null {
+  if (!isRecord(row)) return null;
+  return taobaoDecimalId(row.adzone_id);
 }
 
 /**
@@ -519,6 +542,33 @@ class Reader {
     result.setTime(ms);
     return result;
   }
+}
+
+/** B1-04z: "no value" of the 大淘客 wire (missing, JSON null, "--"). */
+export function taobaoAbsent(value: unknown): boolean {
+  return Reader.absent(value);
+}
+
+/** B1-04z: text of a scalar (a string as is, a JSON number as its literal); otherwise null. */
+export function taobaoText(value: unknown): string | null {
+  return Reader.text(value);
+}
+
+/** B1-04z: BR-CALC-26 fen of a non-negative yuan text / JSON number literal; otherwise null. */
+export function taobaoFen(value: unknown): bigint | null {
+  return Reader.fen(value);
+}
+
+/**
+ * B1-04z: Beijing "YYYY-MM-DD HH:MM:SS" → Date copied from the clock template `like` (no system
+ * clock); not such a text → null.
+ */
+export function taobaoBeijingDate(value: unknown, like: Date): Date | null {
+  const ms = typeof value === 'string' ? beijingMs(value) : null;
+  if (ms === null) return null;
+  const result = structuredClone(like);
+  result.setTime(ms);
+  return result;
 }
 
 function daysInMonth(year: number, month: number): number {

@@ -20,6 +20,9 @@
 // limit here: its duration is bounded by the caller (order-sync), which may abort between
 // requests with its own `ctx.signal`. Every other operation, and listOrders of an adapter that
 // does not declare it, keeps one token per attempt of the whole call.
+// B1-04z: the same per-request metering for listRefunds / listPunishments of an adapter that
+// declares `listRefundsMetering` / `listPunishmentsMetering: 'per_request'` (the Taobao adapter
+// over 大淘客). Their third argument (cursor, Taobao timeBasis) is passed through as given.
 // B1-14d: the online governor takes its whole policy (timeout, retries, breaker) from the public
 // resilience registry row `union.search` (规划/02 §14; default `unionPolicy('online')`), read once
 // when the adapter is assembled. The registry has no offline row, so the offline governor keeps
@@ -134,14 +137,10 @@ export function governAdapter(
     });
 
   /**
-   * B1-04w: listOrders of an adapter metered per request. Each gated request is one governed
+   * B1-04w: the context of an operation metered per request. Each gated request is one governed
    * call (idempotent read); the caller's own signal only stops the traversal between requests.
    */
-  const listOrdersPerRequest = (
-    win: Parameters<UnionAdapter['listOrders']>[0],
-    opt: Parameters<UnionAdapter['listOrders']>[1],
-    ctx: CallCtx,
-  ) => {
+  const perRequestCtx = (ctx: CallCtx): CallCtx => {
     const governor = governorFor(ctx);
     const caller = ctx.signal;
     const gateUpstream: UpstreamGate = (request) => {
@@ -152,7 +151,7 @@ export function governAdapter(
         classify: classifyUnionError,
       });
     };
-    return adapter.listOrders(win, opt, { ...baseCtx(ctx), gateUpstream });
+    return { ...baseCtx(ctx), gateUpstream };
   };
 
   const {
@@ -191,7 +190,7 @@ export function governAdapter(
     resolveLink: (raw, ctx) => run('idempotent_read', ctx, (c) => adapter.resolveLink(raw, c)),
     listOrders: (win, opt, ctx) =>
       adapter.listOrdersMetering === 'per_request'
-        ? listOrdersPerRequest(win, opt, ctx)
+        ? adapter.listOrders(win, opt, perRequestCtx(ctx))
         : run('idempotent_read', ctx, (c) => adapter.listOrders(win, opt, c)),
     async convert(req, identity, ctx) {
       assertIdentity(identity, ctx, 'convert');
@@ -203,17 +202,22 @@ export function governAdapter(
           bindPublisher: (req, ctx) =>
             run('write', ctx, (c) => bindPublisher.call(adapter, req, c)),
         }),
+    // B1-04z: `opt` goes through as given (and is left out when the caller left it out).
     ...(listRefunds === undefined
       ? {}
       : {
-          listRefunds: (win, ctx) =>
-            run('idempotent_read', ctx, (c) => listRefunds.call(adapter, win, c)),
+          listRefunds: (win, ctx, ...opt) =>
+            adapter.listRefundsMetering === 'per_request'
+              ? listRefunds.call(adapter, win, perRequestCtx(ctx), ...opt)
+              : run('idempotent_read', ctx, (c) => listRefunds.call(adapter, win, c, ...opt)),
         }),
     ...(listPunishments === undefined
       ? {}
       : {
-          listPunishments: (win, ctx) =>
-            run('idempotent_read', ctx, (c) => listPunishments.call(adapter, win, c)),
+          listPunishments: (win, ctx, ...opt) =>
+            adapter.listPunishmentsMetering === 'per_request'
+              ? listPunishments.call(adapter, win, perRequestCtx(ctx), ...opt)
+              : run('idempotent_read', ctx, (c) => listPunishments.call(adapter, win, c, ...opt)),
         }),
     ...(materialFeed === undefined
       ? {}

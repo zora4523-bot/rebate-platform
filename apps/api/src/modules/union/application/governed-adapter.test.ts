@@ -213,3 +213,62 @@ it('[AC-B1-04w-UNIT#2] 逐请求计量：每次门控请求扣一个 token；调
   expect(sent).toBe(2);
   expect(take).toHaveBeenCalledTimes(2);
 });
+
+it('[AC-B1-04z-UNIT#1] 维权 / 违规逐请求计量：opt 原样透传，每次门控请求扣一个 token，伪造的 gateUpstream 被换掉', async () => {
+  const take = vi.fn(() => true);
+  const seen: unknown[] = [];
+  const { adapter } = failingAdapter('upstream_unavailable', () => 'ok');
+  const forged = vi.fn(async () => {
+    throw new Error('forged gate');
+  });
+  const port = createGovernedAdapter(
+    {
+      ...adapter,
+      listRefundsMetering: 'per_request',
+      listPunishmentsMetering: 'per_request',
+      listRefunds: async (_win, call, ...opt) => {
+        seen.push(opt);
+        expect(call.signal).toBeUndefined();
+        await call.gateUpstream!(async () => undefined);
+        await call.gateUpstream!(async () => undefined);
+        return { items: [], nextCursor: null };
+      },
+      listPunishments: async (_win, call, ...opt) => {
+        seen.push(opt);
+        await call.gateUpstream!(async () => undefined);
+        return { items: [], nextCursor: null };
+      },
+    },
+    { endpoint, scheduler, quota: { bucketKey: quota.bucketKey, tryAcquire: take } },
+  );
+  const window = { from: '2026-10-06T00:00:00Z', to: '2026-10-06T01:00:00Z' };
+  const caller = { ...sync, gateUpstream: forged };
+  await port.listRefunds!(window, caller, { cursor: 'c-1', timeBasis: 'settle' });
+  await port.listRefunds!(window, caller);
+  await port.listPunishments!(window, caller, { cursor: 'c-2' });
+  expect(seen).toEqual([[{ cursor: 'c-1', timeBasis: 'settle' }], [], [{ cursor: 'c-2' }]]);
+  expect(take).toHaveBeenCalledTimes(5);
+  expect(forged).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-04z-UNIT#2] 未声明逐请求计量的维权端口整体按幂等读治理，opt 照样透传', async () => {
+  const take = vi.fn(() => true);
+  const seen: unknown[] = [];
+  const { adapter } = failingAdapter('upstream_unavailable', () => 'ok');
+  const port = createGovernedAdapter(
+    {
+      ...adapter,
+      listRefunds: async (_win, call, ...opt) => {
+        seen.push(opt);
+        expect(call).not.toHaveProperty('gateUpstream');
+        expect(call.signal).toBeInstanceOf(AbortSignal);
+        return { items: [], nextCursor: null };
+      },
+    },
+    { endpoint, scheduler, quota: { bucketKey: quota.bucketKey, tryAcquire: take } },
+  );
+  const window = { from: '2026-10-06T00:00:00Z', to: '2026-10-06T01:00:00Z' };
+  await port.listRefunds!(window, sync, { cursor: 'c-3' });
+  expect(seen).toEqual([[{ cursor: 'c-3' }]]);
+  expect(take).toHaveBeenCalledTimes(1);
+});
