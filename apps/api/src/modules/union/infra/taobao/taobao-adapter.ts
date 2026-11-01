@@ -113,10 +113,20 @@ export interface TaobaoAdapterOptions {
    * nothing fetched or sent).
    */
   readonly convertSource?: TaobaoConvertSource;
+  /**
+   * B1-04zh (D10-503 ②): where searchItems gets its results until the official search is
+   * approved. 'dataoke' with an `orderSource` searches through that client (dataoke-search.ts);
+   * absent, 'official', or no `orderSource` leaves searchItems as before (adapter_unimplemented,
+   * nothing fetched or sent).
+   */
+  readonly searchSource?: TaobaoSearchSource;
 }
 
 /** B1-04d: the convert data-source switch; the default is 'baichuan' (behaviour unchanged). */
 export type TaobaoConvertSource = 'baichuan' | 'dataoke';
+
+/** B1-04zh: the search data-source switch; the default is 'official' (behaviour unchanged). */
+export type TaobaoSearchSource = 'official' | 'dataoke';
 
 export interface TaobaoRequestOptions {
   /** The response envelope key registered for this method by the caller (never derived). */
