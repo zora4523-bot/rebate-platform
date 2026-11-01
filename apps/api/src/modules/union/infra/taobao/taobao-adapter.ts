@@ -31,6 +31,10 @@
 // /api/tb-service/get-order-details（v1.0.0），只留 orderSlots 给出的推广位的订单；两者缺一即
 // adapter_unimplemented。每次调用取一个上游页（listOrdersMetering = per_request，经 ctx.gateUpstream）。
 // 口径、切窗、游标、映射与推广位过滤见 orders.ts。归档 kind = order。
+// B1-04z（D10-486 ③ / D10-488 ②③ / D10-491）：listRefunds 经 orderSource GET get-order-refund（见
+// refunds.ts，不过滤推广位；没有 orderSource → adapter_unimplemented），listPunishments 经 orderSource
+// GET get-foul-order-list（见 punishments.ts，只留 orderSlots 的推广位；缺一即 adapter_unimplemented）。
+// 两者都是每次调用取一个上游页（per_request，经 ctx.gateUpstream），归档 kind = order。
 import type { Clock } from '../../../platform/index.ts';
 import type { TaobaoPriceOptions, TaobaoPriceSettingsReader } from '../../domain/taobao-price.ts';
 import {
@@ -41,6 +45,8 @@ import {
   type ItemRef,
   type OrderQueryOpt,
   type Page,
+  type PunishmentQueryOpt,
+  type RefundQueryOpt,
   type ResolvedLink,
   type SearchQuery,
   type TaobaoShareCode,
@@ -51,6 +57,8 @@ import {
   type UnionItem,
   type UnionItemDetail,
   type UnionOrder,
+  type UnionPunish,
+  type UnionRefund,
   type UpstreamGate,
 } from '../../domain/types.ts';
 import type { DataokeClient } from '../dataoke/dataoke-client.ts';
@@ -108,6 +116,8 @@ import {
   type TaobaoOrderSlotReader,
   type TaobaoOrderWarning,
 } from './orders.ts';
+import type { TaobaoPunishWarning } from './punishments.ts';
+import type { TaobaoRefundWarning } from './refunds.ts';
 import { unwrapTaobaoResponse, type TaobaoSubCodeMap, type TaobaoWarning } from './response.ts';
 import {
   signTaobaoParameters,
@@ -123,6 +133,8 @@ export type {
   TaobaoOrderWarning,
   TaobaoOrderWarningEvent,
 } from './orders.ts';
+export type { TaobaoRefundWarning, TaobaoRefundWarningEvent } from './refunds.ts';
+export type { TaobaoPunishWarning, TaobaoPunishWarningEvent } from './punishments.ts';
 
 /** Application-level key pair; fetched once per request, never stored on the adapter. */
 export interface TaobaoCredentials {
@@ -170,6 +182,10 @@ export interface TaobaoAdapterOptions {
   readonly orderSlots?: TaobaoOrderSlotReader;
   /** B1-04f: order mapping and slot-filter warnings (see TaobaoOrderWarning in orders.ts). */
   readonly orderWarn?: (event: TaobaoOrderWarning) => void;
+  /** B1-04z: refund mapping warnings (see TaobaoRefundWarning in refunds.ts). */
+  readonly refundWarn?: (event: TaobaoRefundWarning) => void;
+  /** B1-04z: punishment mapping and slot-filter warnings (see punishments.ts). */
+  readonly punishWarn?: (event: TaobaoPunishWarning) => void;
 }
 
 /** B1-04d: the convert data-source switch; the default is 'baichuan' (behaviour unchanged). */
@@ -236,6 +252,9 @@ export class TaobaoUnionAdapter implements UnionAdapter {
    * (one quota token per request, like the Pinduoduo adapter of B1-04w).
    */
   readonly listOrdersMetering = 'per_request' as const;
+  /** B1-04z: one upstream request per listRefunds / listPunishments call, each gated. */
+  declare readonly listRefundsMetering: 'per_request';
+  declare readonly listPunishmentsMetering: 'per_request';
 
   constructor(options: TaobaoAdapterOptions) {
     if (options.endpoint.platform !== 'taobao') {
@@ -558,5 +577,29 @@ export class TaobaoUnionAdapter implements UnionAdapter {
       if (order !== null) items.push(order);
     }
     return { items, nextCursor: nextTaobaoOrderCursor(plan, page) };
+  }
+
+  /** B1-04z: one page of 大淘客 get-order-refund (see the header and refunds.ts). */
+  async listRefunds(
+    win: TimeWindow,
+    ctx: CallCtx,
+    opt?: RefundQueryOpt,
+  ): Promise<Page<UnionRefund>> {
+    void win;
+    void ctx;
+    void opt;
+    throw new Error('NotImplemented: listRefunds');
+  }
+
+  /** B1-04z: one page of 大淘客 get-foul-order-list (see the header and punishments.ts). */
+  async listPunishments(
+    win: TimeWindow,
+    ctx: CallCtx,
+    opt?: PunishmentQueryOpt,
+  ): Promise<Page<UnionPunish>> {
+    void win;
+    void ctx;
+    void opt;
+    throw new Error('NotImplemented: listPunishments');
   }
 }

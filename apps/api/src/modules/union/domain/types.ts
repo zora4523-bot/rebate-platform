@@ -300,16 +300,56 @@ export interface OrderInput extends ItemRef {
   readonly commission_fen: unknown;
 }
 
+/**
+ * A refund (维权) the union reports against one order. The optional fields are filled by the
+ * Taobao mapping (B1-04z, 大淘客 get-order-refund; D10-488 ② / D10-491) and absent elsewhere.
+ * Amounts are integer fen (BR-CALC-26 yuanStrToFen of the wire text, floored past two decimals);
+ * times are platform times (Beijing "YYYY-MM-DD HH:MM:SS"), null when "--" or missing.
+ */
 export interface UnionRefund {
   readonly order_id: string;
   readonly refund_id: string;
+  /** Commission to take back; Taobao: = base_refund_fen (the only amount a refund deducts). */
   readonly refund_fen: bigint;
+  /**
+   * Taobao: tk_commission_fee_refund − tk_commission_alimm_refund_fee −
+   * tk_commission_agent_refund_fee (never negative; a negative result skips the refund).
+   */
+  readonly base_refund_fen?: bigint;
+  /**
+   * Taobao: tk_subsidy_fee_refund − tk_subsidy_alimm_refund_fee − tk_subsidy_agent_refund_fee
+   * (never negative). Kept for reference; not part of refund_fen.
+   */
+  readonly subsidy_refund_fen?: bigint;
+  /** Taobao show_return_fee as is (no part in any amount); null when missing or invalid. */
+  readonly show_return_fen?: bigint | null;
+  /** Taobao refund_status as the union sent it (JSON number → its literal); null when missing. */
+  readonly refund_status?: string | null;
+  /** Taobao tk_refund_time. */
+  readonly refund_created_at?: Date | null;
+  /** Taobao tk_refund_suit_time. */
+  readonly refund_finished_at?: Date | null;
+  /** Taobao modified_time. */
+  readonly modified_at?: Date | null;
+  /** Taobao earning_time. */
+  readonly earning_at?: Date | null;
 }
 
+/**
+ * A punishment (违规) of one order. Taobao (B1-04z, 大淘客 get-foul-order-list) has no deduction
+ * amount: deduction_fen is null and the order is clawed back in full under BR-FUND (PUNISH,
+ * D10-488 ②). The optional strings are the union's values as sent (JSON number → its literal).
+ */
 export interface UnionPunish {
   readonly order_id: string;
+  /** Taobao: `<tb_trade_id>:<settle_month>`. */
   readonly punishment_id: string;
-  readonly deduction_fen: bigint;
+  readonly deduction_fen: bigint | null;
+  /** Taobao punish_status (0 frozen / 1 unfrozen). */
+  readonly punish_status?: string | null;
+  /** Taobao violation_type (1 / 2). */
+  readonly violation_type?: string | null;
+  readonly settle_month?: string | null;
 }
 
 export interface SearchQuery {
@@ -470,6 +510,24 @@ export interface OrderQueryOpt {
   /** B1-04f: Taobao only (see OrderTimeBasis); other platforms ignore it. */
   readonly timeBasis?: OrderTimeBasis;
 }
+
+/**
+ * B1-04z: which time a Taobao refund window filters on (大淘客 get-order-refund queryType:
+ * refund_created 1, settle 2, refund_finished 3, create 4, update 5). Omitted = update. create /
+ * update cannot start before Beijing 2022-12-20 00:00:00 (invalid_dto, nothing sent).
+ */
+export type RefundTimeBasis = 'refund_created' | 'settle' | 'refund_finished' | 'create' | 'update';
+
+/** B1-04z: listRefunds options; cursor is the opaque nextCursor of the previous page. */
+export interface RefundQueryOpt {
+  readonly cursor?: string;
+  readonly timeBasis?: RefundTimeBasis;
+}
+
+/** B1-04z: listPunishments options; cursor is the opaque nextCursor of the previous page. */
+export interface PunishmentQueryOpt {
+  readonly cursor?: string;
+}
 export interface MaterialReq {
   readonly cursor?: string;
 }
@@ -522,6 +580,13 @@ export interface UnionAdapter {
    * call. Declared on the adapter object or class, never on the method.
    */
   readonly listOrdersMetering?: 'per_request';
+  /**
+   * B1-04z: same as listOrdersMetering, for listRefunds / listPunishments: the governed wrapper
+   * takes no token of its own for that operation and hands the adapter CallCtx.gateUpstream (one
+   * token per upstream request); without the declaration the operation is governed as one call.
+   */
+  readonly listRefundsMetering?: 'per_request';
+  readonly listPunishmentsMetering?: 'per_request';
   searchItems(q: SearchQuery, ctx: CallCtx): Promise<Page<UnionItem>>;
   getItem(ref: ItemRef, ctx: CallCtx): Promise<UnionItemDetail>;
   resolveLink(raw: string, ctx: CallCtx): Promise<ResolvedLink>;
@@ -530,8 +595,14 @@ export interface UnionAdapter {
   listOrders(win: TimeWindow, opt: OrderQueryOpt, ctx: CallCtx): Promise<Page<UnionOrder>>;
   /** PDD detail, including optional after-sales status; an idempotent read. */
   getPddOrderDetail?(orderSn: string, ctx: CallCtx): Promise<UnionOrder>;
-  listRefunds?(win: TimeWindow, ctx: CallCtx): Promise<Page<UnionRefund>>;
-  listPunishments?(win: TimeWindow, ctx: CallCtx): Promise<Page<UnionPunish>>;
+  /** An idempotent read; B1-04z: `opt` (cursor, Taobao timeBasis) is passed through as is. */
+  listRefunds?(win: TimeWindow, ctx: CallCtx, opt?: RefundQueryOpt): Promise<Page<UnionRefund>>;
+  /** An idempotent read; B1-04z: `opt` (cursor) is passed through as is. */
+  listPunishments?(
+    win: TimeWindow,
+    ctx: CallCtx,
+    opt?: PunishmentQueryOpt,
+  ): Promise<Page<UnionPunish>>;
   materialFeed?(req: MaterialReq, ctx: CallCtx): Promise<Page<UnionItem>>;
   /** B1-22p: categories of a material channel (BR-TEXT-17 细则「联盟物料频道」); an idempotent read. */
   channelCategories?(
