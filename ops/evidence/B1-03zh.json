@@ -1,0 +1,123 @@
+{
+  "red_tests": [
+    "test/spec/risk/rule-toggle-identity/decision-hit-race.int.test.ts > [AC-B1-03zh#19][BR-ID-36][BR-ID-05] SMS_BLOCKED_PREFIX 缓存恰在判定之后、写命中之前到期：拒绝（44001）⇔ 有该规则命中，放行 ⇔ 无命中；不得拒绝而无命中",
+    "test/spec/risk/rule-toggle-identity/decision-hit-race.int.test.ts > [AC-B1-03zh#20][BR-ID-36][BR-ID-05] DEVICE_REGISTER_LIMIT 缓存恰在判定之后、写命中之前到期：拦截注册 ⇔ 有该规则命中，放行注册 ⇔ 无命中",
+    "test/spec/risk/rule-toggle-identity/decision-hit-race.int.test.ts > [AC-B1-03zh#21][BR-ID-36][BR-INV-09] inv_09_same_device 缓存恰在判定之后、写命中之前到期：解除归属并写 risk_same_device 变更 ⇔ 有该规则命中；放行则三者皆无",
+    "test/spec/risk/rule-toggle-identity/device-limit.int.test.ts > [AC-B1-03zh#9][BR-ID-36][BR-ID-05] DEVICE_REGISTER_LIMIT 停用：满额设备照常注册、不记命中；启用并过缓存周期后恢复拦截与记命中",
+    "test/spec/risk/rule-toggle-identity/device-limit.int.test.ts > [AC-B1-03zh#10][BR-ID-36] 停用前的设备上限命中保留不变；停用不追溯，之后的注册不再判定",
+    "test/spec/risk/rule-toggle-identity/same-device-login.int.test.ts > [AC-B1-03zh#11][BR-ID-36][BR-INV-09] inv_09_same_device 停用：用上级登录过的设备首次登录不解除归属、不写变更与命中；启用并过缓存周期后恢复",
+    "test/spec/risk/rule-toggle-identity/same-device-login.int.test.ts > [AC-B1-03zh#12][BR-ID-36][BR-INV-09] 停用不追溯：已解除的归属、变更记录与命中保持不变；停用后的首次登录不再判定",
+    "test/spec/risk/rule-toggle-identity/sms-prefix.int.test.ts > [AC-B1-03zh#5][BR-ID-36][BR-ID-05] SMS_BLOCKED_PREFIX 停用：号段内号码照常发码、不回 44001、不写命中；启用并过缓存周期后恢复拦截与记命中",
+    "test/spec/risk/rule-toggle-identity/sms-prefix.int.test.ts > [AC-B1-03zh#6][BR-ID-36] 停用前已写的命中与申诉不变，停用不追溯；停用后的请求不再判定",
+    "test/spec/risk/rule-toggle-identity/sms-prefix.int.test.ts > [AC-B1-03zh#7][BR-ID-36] A app 停用 SMS_BLOCKED_PREFIX 不影响 B app 同名规则",
+    "test/spec/risk/rule-toggle-identity/sms-prefix.int.test.ts > [AC-B1-03zh#8][BR-ID-36][04 §10.2] 缓存周期内停用不立即生效（照旧拦截且每次拒绝都有命中），满周期后才放行",
+    "test/spec/risk/rule-toggle-identity/status-reader.int.test.ts > [AC-B1-03zh#1][BR-ID-36] disabled 不生效；enabled、写入方登记的 active 与无行均生效；只读不登记",
+    "test/spec/risk/rule-toggle-identity/status-reader.int.test.ts > [AC-B1-03zh#2][BR-ID-36] 按 app 隔离：A app 停用不影响 B app 同名规则",
+    "test/spec/risk/rule-toggle-identity/status-reader.int.test.ts > [AC-B1-03zh#3][BR-ID-36][04 §10.2] 与配置项同口径缓存：周期内状态变更不生效，满一个周期后生效",
+    "test/spec/risk/rule-toggle-identity/status-reader.int.test.ts > [AC-B1-03zh#4][BR-ID-36] 无行时读到生效；之后登记为 disabled，周期内仍生效、周期后不生效",
+    "test/spec/risk/rule-toggle-identity/writers.int.test.ts > [AC-B1-03zh#13][BR-ID-36] blocklist.recordHit：SMS_BLOCKED_PREFIX 停用不写命中，启用并过缓存周期后照常写",
+    "test/spec/risk/rule-toggle-identity/writers.int.test.ts > [AC-B1-03zh#13][BR-ID-36] blocklist.recordHit：DEVICE_REGISTER_LIMIT 停用不写命中，启用并过缓存周期后照常写",
+    "test/spec/risk/rule-toggle-identity/writers.int.test.ts > [AC-B1-03zh#14][BR-ID-36][BR-ID-31] blocklist.check：BLACKLIST_PHONE 停用时不判定（无 44001）、不写命中；启用后恢复",
+    "test/spec/risk/rule-toggle-identity/writers.int.test.ts > [AC-B1-03zh#15][BR-ID-36][BR-ID-31] 建号前黑名单：停用的 BLACKLIST_PHONE 不进判定与命中，启用的 BLACKLIST_DEVICE 照常",
+    "test/spec/risk/rule-toggle-identity/writers.int.test.ts > [AC-B1-03zh#16][BR-ID-36][BR-ATTR-26] order-blocklist.recordHit：BLACKLIST_HIT 停用不写命中，启用并过缓存周期后照常写",
+    "test/spec/risk/rule-toggle-identity/writers.int.test.ts > [AC-B1-03zh#17][BR-ID-36][BR-INV-09] invite-relation-hits：inv_09_same_device 停用不写命中，启用并过缓存周期后照常写",
+    "test/spec/risk/rule-toggle-identity/writers.int.test.ts > [AC-B1-03zh#18][BR-ID-36][BR-ID-37] same-device-accounts：SAME_DEVICE_MULTI_ACCOUNT 停用时不标记、不写命中；启用并过缓存周期后照常判定"
+  ],
+  "risk_note": "RV2 (risk + identity + growth + app.module). BR-ID-36 细则「规则清单的启停」 / D10-536 (a)(b): risk exports the rule-status reader (disabled off; enabled and the writers' legacy active on; no row on; config cache cycle, injected Clock; per app). Decision points read it once before deciding and pass the judgement on: identity sms-codes blocked prefix (SMS_BLOCKED_PREFIX) and registration device limit (DEVICE_REGISTER_LIMIT) record through recordDecidedHit; registration blocklist matches carry an app-scoped decision token to recordHits; growth first-app-login-review (inv_09_same_device) does not unbind the inviter when the rule is off and writes its hit with decided_in_force. Hit writers no longer re-read on these paths, so a refusal or unbinding always has its risk_hits row (money r1 S1 ×2). order-blocklist accepts the same optional field for the orders line (not wired yet; S2 follow-up to w1). identity / growth keep no cache of their own. Round-2 code moved from B1-03zg per D10-536. Full verification on the AWS test machine with PROP_RUNS=2000 green (exit 0); required CI checks run on the PR head.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1 ×2: judgement and hit write read the rule status twice; a cache expiry between them refused / unbound with no hit), fixed in round 2; round 2 pass with one S2 (orders path, not wired) recorded for w1 (couli-runs/B1-03zh/review-money-r1.json, r2); Codex unavailable until 11-02 (approvals #36)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude through claude-run.sh (attempt 1; attempt 2 decision-hit-race for money r1); r1 pass, r2 pass with one S2 (no separate caches, built into the implementation) (couli-runs/B1-03zh/review-spec-r1.json, r2); final spec red PASS 22 tests in 6 files"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "d231235b50898d42343d84a1e1b92a14bc6a11bf",
+    "specs": "66e68724062651ce28a4637192628948db2b649a"
+  },
+  "task": "B1-03zh",
+  "spec_commit": "5b66f849bd2477a8243678d1169f82f85b72b6cd",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "5b66f849bd2477a8243678d1169f82f85b72b6cd",
+      "tree": "b64e9a1b99ebfca51ed93dbf36f6aa7f5d11413f",
+      "prop_seed": 20261001,
+      "started_at": "2026-11-01T08:01:10Z",
+      "finished_at": "2026-11-01T08:01:33Z",
+      "red_tests": [
+        "test/spec/risk/rule-toggle-identity/decision-hit-race.int.test.ts > [AC-B1-03zh#19][BR-ID-36][BR-ID-05] SMS_BLOCKED_PREFIX 缓存恰在判定之后、写命中之前到期：拒绝（44001）⇔ 有该规则命中，放行 ⇔ 无命中；不得拒绝而无命中",
+        "test/spec/risk/rule-toggle-identity/decision-hit-race.int.test.ts > [AC-B1-03zh#20][BR-ID-36][BR-ID-05] DEVICE_REGISTER_LIMIT 缓存恰在判定之后、写命中之前到期：拦截注册 ⇔ 有该规则命中，放行注册 ⇔ 无命中",
+        "test/spec/risk/rule-toggle-identity/decision-hit-race.int.test.ts > [AC-B1-03zh#21][BR-ID-36][BR-INV-09] inv_09_same_device 缓存恰在判定之后、写命中之前到期：解除归属并写 risk_same_device 变更 ⇔ 有该规则命中；放行则三者皆无",
+        "test/spec/risk/rule-toggle-identity/device-limit.int.test.ts > [AC-B1-03zh#9][BR-ID-36][BR-ID-05] DEVICE_REGISTER_LIMIT 停用：满额设备照常注册、不记命中；启用并过缓存周期后恢复拦截与记命中",
+        "test/spec/risk/rule-toggle-identity/device-limit.int.test.ts > [AC-B1-03zh#10][BR-ID-36] 停用前的设备上限命中保留不变；停用不追溯，之后的注册不再判定",
+        "test/spec/risk/rule-toggle-identity/same-device-login.int.test.ts > [AC-B1-03zh#11][BR-ID-36][BR-INV-09] inv_09_same_device 停用：用上级登录过的设备首次登录不解除归属、不写变更与命中；启用并过缓存周期后恢复",
+        "test/spec/risk/rule-toggle-identity/same-device-login.int.test.ts > [AC-B1-03zh#12][BR-ID-36][BR-INV-09] 停用不追溯：已解除的归属、变更记录与命中保持不变；停用后的首次登录不再判定",
+        "test/spec/risk/rule-toggle-identity/sms-prefix.int.test.ts > [AC-B1-03zh#5][BR-ID-36][BR-ID-05] SMS_BLOCKED_PREFIX 停用：号段内号码照常发码、不回 44001、不写命中；启用并过缓存周期后恢复拦截与记命中",
+        "test/spec/risk/rule-toggle-identity/sms-prefix.int.test.ts > [AC-B1-03zh#6][BR-ID-36] 停用前已写的命中与申诉不变，停用不追溯；停用后的请求不再判定",
+        "test/spec/risk/rule-toggle-identity/sms-prefix.int.test.ts > [AC-B1-03zh#7][BR-ID-36] A app 停用 SMS_BLOCKED_PREFIX 不影响 B app 同名规则",
+        "test/spec/risk/rule-toggle-identity/sms-prefix.int.test.ts > [AC-B1-03zh#8][BR-ID-36][04 §10.2] 缓存周期内停用不立即生效（照旧拦截且每次拒绝都有命中），满周期后才放行",
+        "test/spec/risk/rule-toggle-identity/status-reader.int.test.ts > [AC-B1-03zh#1][BR-ID-36] disabled 不生效；enabled、写入方登记的 active 与无行均生效；只读不登记",
+        "test/spec/risk/rule-toggle-identity/status-reader.int.test.ts > [AC-B1-03zh#2][BR-ID-36] 按 app 隔离：A app 停用不影响 B app 同名规则",
+        "test/spec/risk/rule-toggle-identity/status-reader.int.test.ts > [AC-B1-03zh#3][BR-ID-36][04 §10.2] 与配置项同口径缓存：周期内状态变更不生效，满一个周期后生效",
+        "test/spec/risk/rule-toggle-identity/status-reader.int.test.ts > [AC-B1-03zh#4][BR-ID-36] 无行时读到生效；之后登记为 disabled，周期内仍生效、周期后不生效",
+        "test/spec/risk/rule-toggle-identity/writers.int.test.ts > [AC-B1-03zh#13][BR-ID-36] blocklist.recordHit：SMS_BLOCKED_PREFIX 停用不写命中，启用并过缓存周期后照常写",
+        "test/spec/risk/rule-toggle-identity/writers.int.test.ts > [AC-B1-03zh#13][BR-ID-36] blocklist.recordHit：DEVICE_REGISTER_LIMIT 停用不写命中，启用并过缓存周期后照常写",
+        "test/spec/risk/rule-toggle-identity/writers.int.test.ts > [AC-B1-03zh#14][BR-ID-36][BR-ID-31] blocklist.check：BLACKLIST_PHONE 停用时不判定（无 44001）、不写命中；启用后恢复",
+        "test/spec/risk/rule-toggle-identity/writers.int.test.ts > [AC-B1-03zh#15][BR-ID-36][BR-ID-31] 建号前黑名单：停用的 BLACKLIST_PHONE 不进判定与命中，启用的 BLACKLIST_DEVICE 照常",
+        "test/spec/risk/rule-toggle-identity/writers.int.test.ts > [AC-B1-03zh#16][BR-ID-36][BR-ATTR-26] order-blocklist.recordHit：BLACKLIST_HIT 停用不写命中，启用并过缓存周期后照常写",
+        "test/spec/risk/rule-toggle-identity/writers.int.test.ts > [AC-B1-03zh#17][BR-ID-36][BR-INV-09] invite-relation-hits：inv_09_same_device 停用不写命中，启用并过缓存周期后照常写",
+        "test/spec/risk/rule-toggle-identity/writers.int.test.ts > [AC-B1-03zh#18][BR-ID-36][BR-ID-37] same-device-accounts：SAME_DEVICE_MULTI_ACCOUNT 停用时不标记、不写命中；启用并过缓存周期后照常判定"
+      ],
+      "expected": [
+        "test/spec/risk/rule-toggle-identity/decision-hit-race.int.test.ts",
+        "test/spec/risk/rule-toggle-identity/device-limit.int.test.ts",
+        "test/spec/risk/rule-toggle-identity/same-device-login.int.test.ts",
+        "test/spec/risk/rule-toggle-identity/sms-prefix.int.test.ts",
+        "test/spec/risk/rule-toggle-identity/status-reader.int.test.ts",
+        "test/spec/risk/rule-toggle-identity/writers.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "4895b20f32b3aa8e3e1c37b60d68c58c9c41e93eea03e6659ef702a04b8c2beb"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "99a2714329ef386d2256829a474cc14ea14295b4",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      }
+    }
+  ]
+}
