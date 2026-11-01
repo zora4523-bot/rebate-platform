@@ -1,0 +1,29 @@
+id: B1-34p
+repo: rebate-platform
+title: admin：事务内 system 审计——迁移 admin_id 可空、加 system_actor、CHECK 二者恰有其一，事务内 append 适配器随调用方事务提交或回滚，列表、导出、详情映射（D10-551 ②、D10-552）
+type: impl
+# 2026-11-01 入账（admin-backend，编排 D10-551 ②、D10-552，FU-PROD-WIRING 第 A 条）。审计照实记系统身份，不种假账号。admin_id 可空、system_actor 文本列、CHECK 二者恰有其一（外键对 NULL 不生效）。适配器只从 admin/index.ts 导出，生产装配归 w1 的 B1-09n。迁移排在 B2-08e 之后。
+refs: [BR-FUND-06]
+refs_hash:
+  BR-FUND-06: 2076b932478c
+deps: [CT-24zj]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'apps/api/src/modules/admin/infra/system-audit*.ts'
+  - 'apps/api/src/modules/admin/infra/audit-log-store.ts'
+  - 'apps/api/src/modules/admin/infra/audit-writer.ts'
+  - 'apps/api/src/modules/admin/domain/audit-log-view*.ts'
+  - 'apps/api/src/modules/admin/application/audit-log*.ts'
+  - 'apps/api/src/modules/admin/application/export-worker*.ts'
+  - 'apps/api/src/modules/admin/http/admin/audit-logs.controller.ts'
+  - 'apps/api/src/modules/admin/index.ts'
+test_paths:
+  - 'test/spec/admin/system-audit/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/system-audit/**'
+status: todo

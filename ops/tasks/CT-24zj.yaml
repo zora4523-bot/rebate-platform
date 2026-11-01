@@ -1,0 +1,27 @@
+id: CT-24zj
+repo: rebate-platform
+title: 契约：审计日志的操作者可为系统身份——actor_id 改可空，加 actor_kind（admin / system）与 system_actor（^system:[a-z_]+$），列表与导出对 system 行显示系统名称
+type: contract
+# 2026-11-01 入账（admin-backend，编排 D10-552 ①）。排契约队列：CT-24zi → w1 B1-05w → CT-24zj。实现与迁移在 B1-34p，fe 审计页 11-06 后由编排派。规划 04 audit_logs 行由编排回写。
+refs: []
+refs_hash: {}
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/**'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/oasdiff-accepted.txt'
+  - 'contracts/texts.admin.default.json'
+  - 'packages/contracts-ts/**'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
