@@ -1,0 +1,112 @@
+{
+  "task": "B2-15o",
+  "spec_ref": "deb521c2bcb740571a01c2dc128f40abb40c37a2",
+  "spec_commit": "23b8cc078b7e4ab908c2e583e46717c37820fd9a",
+  "red_tests": [
+    "test/spec/contracts/pay-admin-http/generated.test.ts > [AC-CT-21e#17] get /admin/v1/pay-refunds（退款单查询）已实现（不再 planned）、已生成类型、后台鉴权和无签名策略，并挂载校验路由",
+    "test/spec/contracts/pay-admin-http/generated.test.ts > [AC-CT-21e#17] get /admin/v1/pay-refunds/{pay_refund_id}（退款单查询）已实现（不再 planned）、已生成类型、后台鉴权和无签名策略，并挂载校验路由",
+    "test/spec/contracts/pay-admin-http/operations.test.ts > [AC-CT-21e#1] get /admin/v1/pay-refunds（退款单查询）已实现（不再 planned）、后台鉴权与权限点",
+    "test/spec/contracts/pay-admin-http/operations.test.ts > [AC-CT-21e#1] get /admin/v1/pay-refunds/{pay_refund_id}（退款单查询）已实现（不再 planned）、后台鉴权与权限点",
+    "test/spec/payment/admin-refund-reads/contract.test.ts > [AC-B2-15o#13] listAdminPayRefunds / getAdminPayRefund 去掉 x-implementation: planned（生成的 planned 清单同步），x-auth admin、x-error-codes [10001, 10403, 20001] 不变；admin 入口各挂一次 GET 并带契约请求 schema，api 入口不挂",
+    "test/spec/payment/admin-refund-reads/detail.int.test.ts > [AC-B2-15o#8] 退款单详情（pay.view，不要 step-up）：支付单的退款、CLOSED 单上异常收款的退款、没有我方支付单的异常收款的退款都按 id 读到，data 与列表行同形（字段、取值都相同），target_type / target_id 指向退款对象本身（异常收款的退款指向异常收款，不是它名下的支付单）；超管也能读；读取不写审计",
+    "test/spec/payment/admin-refund-reads/detail.int.test.ts > [AC-B2-15o#9] 后台发起退款后轮询详情：每次读到的都是退款单的当前状态，PROCESSING 时 channel_refund_no、succeeded_at 为 null；结果写回后立刻读到 SUCCESS（带渠道退款单号与成功时刻）或 FAILED（succeeded_at 仍为 null），不缓存旧状态",
+    "test/spec/payment/admin-refund-reads/detail.int.test.ts > [AC-B2-15o#10] 详情的未知 id：不存在的 id、其他应用的退款单、不是 UUID 的文本、超长文本、支付单或异常收款的 id、退款单号 → 20001 data.fields=[pay_refund_id]（不是 404，也不是 50001），不漏数据",
+    "test/spec/payment/admin-refund-reads/detail.int.test.ts > [AC-B2-15o#11] 详情的权限：要 pay.view；没有任何权限点、只有 pay.refund、pay.resolve → 10403，不带令牌 → 10001，都不漏数据；持 pay.view 的账号读到，不要 X-Step-Up-Token",
+    "test/spec/payment/admin-refund-reads/detail.int.test.ts > [AC-B2-15o#12] 两个读接口只读：列表、筛选、详情、被拒的请求都不写审计，不改退款单、支付单与异常收款（状态、已退金额不动），不发起渠道查询（不留请求记录），不留幂等记录",
+    "test/spec/payment/admin-refund-reads/list.int.test.ts > [AC-B2-15o#1] 退款单列表（pay.view，不要 step-up）：本应用的退款单按 created_at 倒序，每行就是契约的 AdminPayRefund（pay_refund_id、对象类型与对象 id、退款单号、金额、原因码、备注、状态、渠道退款单号、操作人、创建与成功时刻），支付单的退款与异常收款的退款同在一张表里，没有我方支付单的异常收款的退款也在；其他应用的退款单不出现；分页默认 1 / 20；超管也能读；读取不写审计",
+    "test/spec/payment/admin-refund-reads/list.int.test.ts > [AC-B2-15o#2] 退款单列表的筛选：status、target_type、reason_code 各自过滤，组合时按 AND；total 是过滤后的总数；筛选下翻页按过滤后的结果翻；没有匹配时是空页",
+    "test/spec/payment/admin-refund-reads/list.int.test.ts > [AC-B2-15o#3] 退款单列表的拒绝：status（含支付单的状态值、大小写不符）、target_type、reason_code 取值不在枚举 → 20001，data.fields 指名该参数；其余参数合法也一样；空应用是空页",
+    "test/spec/payment/admin-refund-reads/list.int.test.ts > [AC-B2-15o#4] 退款单列表的分页：默认每页 20 条，page / page_size 翻页且 total 不变，page_size 200 可用，翻过末页是空页；page_size 超过 200 或小于 1、page 小于 1 → 20001 data.fields 指名该参数",
+    "test/spec/payment/admin-refund-reads/list.int.test.ts > [AC-B2-15o#5] 退款单列表的顺序只看 created_at，与写入先后无关；created_at 相同的行翻页时不重不漏",
+    "test/spec/payment/admin-refund-reads/list.int.test.ts > [AC-B2-15o#6] 金额是退款单自己的整数分，JSON 里是整数原样返回（1 分、1999 分、2^53-1 分都不四舍五入、不换算成元、不变成字符串），不是对象的金额",
+    "test/spec/payment/admin-refund-reads/list.int.test.ts > [AC-B2-15o#7] 退款单列表的权限：要 pay.view；没有任何权限点、只有 pay.refund、pay.resolve 或别的模块的查看权限 → 10403，不带令牌 → 10001，都不漏数据；持 pay.view 的账号读到，不要 X-Step-Up-Token"
+  ],
+  "risk_note": "RV2 (payment, read only). Mounts listAdminPayRefunds and getAdminPayRefund on the existing AdminPayRefundsController (D10-490 ⑧): reads of payment's own pay_refunds, app from the guard's actor, pay.view, no step-up, no audit, no write, no enqueue, no channel call; refund writes untouched. x-implementation: planned removed for the two, generated files regenerated. The frozen CT-21e [#1] / [#17] block A held exactly these two operations, so it was changed in place (no split); the other 23 cases are red_exempt. Full verification by the required CI checks (04:16 general rule).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "23b8cc078b7e4ab908c2e583e46717c37820fd9a",
+      "tree": "e321321b83e7bca0fc077430c023189df39667b1",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-11-01T10:25:33Z",
+      "finished_at": "2026-11-01T10:26:10Z",
+      "red_tests": [
+        "test/spec/contracts/pay-admin-http/generated.test.ts > [AC-CT-21e#17] get /admin/v1/pay-refunds（退款单查询）已实现（不再 planned）、已生成类型、后台鉴权和无签名策略，并挂载校验路由",
+        "test/spec/contracts/pay-admin-http/generated.test.ts > [AC-CT-21e#17] get /admin/v1/pay-refunds/{pay_refund_id}（退款单查询）已实现（不再 planned）、已生成类型、后台鉴权和无签名策略，并挂载校验路由",
+        "test/spec/contracts/pay-admin-http/operations.test.ts > [AC-CT-21e#1] get /admin/v1/pay-refunds（退款单查询）已实现（不再 planned）、后台鉴权与权限点",
+        "test/spec/contracts/pay-admin-http/operations.test.ts > [AC-CT-21e#1] get /admin/v1/pay-refunds/{pay_refund_id}（退款单查询）已实现（不再 planned）、后台鉴权与权限点",
+        "test/spec/payment/admin-refund-reads/contract.test.ts > [AC-B2-15o#13] listAdminPayRefunds / getAdminPayRefund 去掉 x-implementation: planned（生成的 planned 清单同步），x-auth admin、x-error-codes [10001, 10403, 20001] 不变；admin 入口各挂一次 GET 并带契约请求 schema，api 入口不挂",
+        "test/spec/payment/admin-refund-reads/detail.int.test.ts > [AC-B2-15o#8] 退款单详情（pay.view，不要 step-up）：支付单的退款、CLOSED 单上异常收款的退款、没有我方支付单的异常收款的退款都按 id 读到，data 与列表行同形（字段、取值都相同），target_type / target_id 指向退款对象本身（异常收款的退款指向异常收款，不是它名下的支付单）；超管也能读；读取不写审计",
+        "test/spec/payment/admin-refund-reads/detail.int.test.ts > [AC-B2-15o#9] 后台发起退款后轮询详情：每次读到的都是退款单的当前状态，PROCESSING 时 channel_refund_no、succeeded_at 为 null；结果写回后立刻读到 SUCCESS（带渠道退款单号与成功时刻）或 FAILED（succeeded_at 仍为 null），不缓存旧状态",
+        "test/spec/payment/admin-refund-reads/detail.int.test.ts > [AC-B2-15o#10] 详情的未知 id：不存在的 id、其他应用的退款单、不是 UUID 的文本、超长文本、支付单或异常收款的 id、退款单号 → 20001 data.fields=[pay_refund_id]（不是 404，也不是 50001），不漏数据",
+        "test/spec/payment/admin-refund-reads/detail.int.test.ts > [AC-B2-15o#11] 详情的权限：要 pay.view；没有任何权限点、只有 pay.refund、pay.resolve → 10403，不带令牌 → 10001，都不漏数据；持 pay.view 的账号读到，不要 X-Step-Up-Token",
+        "test/spec/payment/admin-refund-reads/detail.int.test.ts > [AC-B2-15o#12] 两个读接口只读：列表、筛选、详情、被拒的请求都不写审计，不改退款单、支付单与异常收款（状态、已退金额不动），不发起渠道查询（不留请求记录），不留幂等记录",
+        "test/spec/payment/admin-refund-reads/list.int.test.ts > [AC-B2-15o#1] 退款单列表（pay.view，不要 step-up）：本应用的退款单按 created_at 倒序，每行就是契约的 AdminPayRefund（pay_refund_id、对象类型与对象 id、退款单号、金额、原因码、备注、状态、渠道退款单号、操作人、创建与成功时刻），支付单的退款与异常收款的退款同在一张表里，没有我方支付单的异常收款的退款也在；其他应用的退款单不出现；分页默认 1 / 20；超管也能读；读取不写审计",
+        "test/spec/payment/admin-refund-reads/list.int.test.ts > [AC-B2-15o#2] 退款单列表的筛选：status、target_type、reason_code 各自过滤，组合时按 AND；total 是过滤后的总数；筛选下翻页按过滤后的结果翻；没有匹配时是空页",
+        "test/spec/payment/admin-refund-reads/list.int.test.ts > [AC-B2-15o#3] 退款单列表的拒绝：status（含支付单的状态值、大小写不符）、target_type、reason_code 取值不在枚举 → 20001，data.fields 指名该参数；其余参数合法也一样；空应用是空页",
+        "test/spec/payment/admin-refund-reads/list.int.test.ts > [AC-B2-15o#4] 退款单列表的分页：默认每页 20 条，page / page_size 翻页且 total 不变，page_size 200 可用，翻过末页是空页；page_size 超过 200 或小于 1、page 小于 1 → 20001 data.fields 指名该参数",
+        "test/spec/payment/admin-refund-reads/list.int.test.ts > [AC-B2-15o#5] 退款单列表的顺序只看 created_at，与写入先后无关；created_at 相同的行翻页时不重不漏",
+        "test/spec/payment/admin-refund-reads/list.int.test.ts > [AC-B2-15o#6] 金额是退款单自己的整数分，JSON 里是整数原样返回（1 分、1999 分、2^53-1 分都不四舍五入、不换算成元、不变成字符串），不是对象的金额",
+        "test/spec/payment/admin-refund-reads/list.int.test.ts > [AC-B2-15o#7] 退款单列表的权限：要 pay.view；没有任何权限点、只有 pay.refund、pay.resolve 或别的模块的查看权限 → 10403，不带令牌 → 10001，都不漏数据；持 pay.view 的账号读到，不要 X-Step-Up-Token"
+      ],
+      "expected": [
+        "test/spec/contracts/pay-admin-http/generated.test.ts",
+        "test/spec/contracts/pay-admin-http/operations.test.ts",
+        "test/spec/payment/admin-refund-reads/contract.test.ts",
+        "test/spec/payment/admin-refund-reads/detail.int.test.ts",
+        "test/spec/payment/admin-refund-reads/list.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "acbef6755ab02d3cf182635957adf5887ac56eaf9df0a20b8eb40afdb127959d"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "e398c2a2b2a83ca8297ee0206eb68daf327bc098068c19e51b17c29ff60fd27d"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "nohup claude-run.sh review --review-type money (Codex unavailable until 2026-11-02, approvals 36): round 1 pass, no findings."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "nohup claude-run.sh review --review-type spec-test: round 1 pass with three S2, round 2 pass with all three closed. Round 3 confirmed all 23 red_exempt cases unchanged block by block (title, callback, helpers). In round 3 the reviewer reported section 12 of the brief as S1 prompt-injection: admin-backend wrote that section and it stated the expected verdict, which it should not have. The reviewer did not follow it and did the full incremental review; the validator moved that finding to out_of_scope (it is about the brief, not the tests) and recomputed pass. Disclosed to the orchestrator in notices."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "907f601b167296aed2743cb0b106a95aef32349e",
+    "specs": "66e68724062651ce28a4637192628948db2b649a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  }
+}
