@@ -9230,7 +9230,7 @@ export interface paths {
          * @description The overview cards of the fund ledger page (01 F-ADM-08; BR-FUND-20, BR-WDR-18;
          *     design/specs/admin-fund-dashboard.md §1, §2). Read only, no step-up. Permission point:
          *     `fund.view` (04 §11.1); a super admin holds every point. Reading does not write an audit
-         *     record.
+         *     record. Every figure is limited to the app of the console.
          *
          *     Computed when read, from all the entries posted so far, not from the last asset snapshot:
          *     `as_of` is the moment of the reading. `receivables` is the 已入账未回款 per platform, the
@@ -19124,6 +19124,8 @@ export interface components {
             reversed_at: string | null;
             /** @description The admin who reversed the record; null until then. */
             reversed_by: components["schemas"]["Id"] | null;
+            /** @description Current name of the reverser (admin_users.display_name, else the username), derived when read; null until the record is reversed. */
+            reversed_by_name: string | null;
             /** @description The reversal voucher (BR-FUND-16, BR-FUND-20 细则); null until the record is reversed. */
             reversal_voucher_id: components["schemas"]["Id"] | null;
         };
@@ -39403,6 +39405,7 @@ export interface operations {
                      *             "created_at": "2026-10-20T15:12:00+08:00",
                      *             "reversed_at": null,
                      *             "reversed_by": null,
+                     *             "reversed_by_name": null,
                      *             "reversal_voucher_id": null
                      *           },
                      *           {
@@ -39419,6 +39422,7 @@ export interface operations {
                      *             "created_at": "2026-10-18T02:30:00+08:00",
                      *             "reversed_at": null,
                      *             "reversed_by": null,
+                     *             "reversed_by_name": null,
                      *             "reversal_voucher_id": null
                      *           },
                      *           {
@@ -39435,6 +39439,7 @@ export interface operations {
                      *             "created_at": "2026-10-16T11:05:00+08:00",
                      *             "reversed_at": "2026-10-16T11:40:00+08:00",
                      *             "reversed_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *             "reversed_by_name": "ops01",
                      *             "reversal_voucher_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb203"
                      *           }
                      *         ],
@@ -39527,6 +39532,7 @@ export interface operations {
                      *           "created_at": "2026-10-20T15:12:00+08:00",
                      *           "reversed_at": null,
                      *           "reversed_by": null,
+                     *           "reversed_by_name": null,
                      *           "reversal_voucher_id": null
                      *         }
                      *       },
@@ -39614,6 +39620,7 @@ export interface operations {
                      *           "created_at": "2026-10-16T11:05:00+08:00",
                      *           "reversed_at": "2026-10-16T11:40:00+08:00",
                      *           "reversed_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *           "reversed_by_name": "ops01",
                      *           "reversal_voucher_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb203"
                      *         }
                      *       },

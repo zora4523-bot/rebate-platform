@@ -50,7 +50,8 @@ info:
     guarded by a permission point (enum admin_permission) names it in its description
     (「Permission point `<key>`」); console writes use CAS where state is replaced (20902 with
     data.resource) and, except the original-route refunds, the recon-diff close, write-off and
-    restore and the supplement batch launch, carry no Idempotency-Key (04 §6.6).
+    restore, the supplement batch launch and the union receipt entry and reversal, carry no
+    Idempotency-Key (04 §6.6).
 servers:
   - url: http://127.0.0.1:3100
     description: Local `api` entry (API_HOST / API_PORT defaults).
@@ -25847,6 +25848,7 @@ paths:
                       created_at: '2026-10-20T15:12:00+08:00'
                       reversed_at: null
                       reversed_by: null
+                      reversed_by_name: null
                       reversal_voucher_id: null
                     - receipt_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb002
                       platform: jd
@@ -25861,6 +25863,7 @@ paths:
                       created_at: '2026-10-18T02:30:00+08:00'
                       reversed_at: null
                       reversed_by: null
+                      reversed_by_name: null
                       reversal_voucher_id: null
                     - receipt_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb003
                       platform: taobao
@@ -25875,6 +25878,7 @@ paths:
                       created_at: '2026-10-16T11:05:00+08:00'
                       reversed_at: '2026-10-16T11:40:00+08:00'
                       reversed_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      reversed_by_name: ops01
                       reversal_voucher_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb203
                   page: 1
                   page_size: 20
@@ -26001,6 +26005,7 @@ paths:
                     created_at: '2026-10-20T15:12:00+08:00'
                     reversed_at: null
                     reversed_by: null
+                    reversed_by_name: null
                     reversal_voucher_id: null
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
@@ -26121,6 +26126,7 @@ paths:
                     created_at: '2026-10-16T11:05:00+08:00'
                     reversed_at: '2026-10-16T11:40:00+08:00'
                     reversed_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                    reversed_by_name: ops01
                     reversal_voucher_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb203
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
@@ -26161,7 +26167,7 @@ paths:
         The overview cards of the fund ledger page (01 F-ADM-08; BR-FUND-20, BR-WDR-18;
         design/specs/admin-fund-dashboard.md §1, §2). Read only, no step-up. Permission point:
         `fund.view` (04 §11.1); a super admin holds every point. Reading does not write an audit
-        record.
+        record. Every figure is limited to the app of the console.
 
         Computed when read, from all the entries posted so far, not from the last asset snapshot:
         `as_of` is the moment of the reading. `receivables` is the 已入账未回款 per platform, the
@@ -51733,6 +51739,7 @@ components:
         - created_at
         - reversed_at
         - reversed_by
+        - reversed_by_name
         - reversal_voucher_id
       properties:
         receipt_id:
@@ -51784,6 +51791,12 @@ components:
             - $ref: '#/components/schemas/Id'
             - type: 'null'
           description: The admin who reversed the record; null until then.
+        reversed_by_name:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: Current name of the reverser (admin_users.display_name, else the username), derived when read; null until the record is reversed.
         reversal_voucher_id:
           anyOf:
             - $ref: '#/components/schemas/Id'
