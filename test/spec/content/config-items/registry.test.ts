@@ -20,6 +20,8 @@
 // B1-02zs (BR-WDR-01 细则): withdraw.dormant_reverify_days follows pool.* (kit REVERIFY).
 // B1-06ze (D10-510): the three Taobao promotion link keys follow it (kit PROMO_LINK), unset by
 // default with no seed rows (PROMO_LINK_UNSEEDED).
+// B1-04zq (D10-543): the four order_sync.rescan.* keys follow them (kit ORDER_RESCAN), unset by
+// default with no seed rows (ORDER_RESCAN_UNSEEDED).
 import { expect, it } from 'vitest';
 import {
   configItemSpecOf,
@@ -39,6 +41,8 @@ import {
   FUND_FLAGS,
   INVITE_CFG,
   INVITE_ELIG,
+  ORDER_RESCAN,
+  ORDER_RESCAN_UNSEEDED,
   PAYOUT,
   POOL,
   POOL_UNSEEDED,
@@ -77,6 +81,7 @@ it('[AC-F1-10e#1] 裁定 14：注册表恰好是种子里全部非开关键加 a
   // B2-11dz: + the registered keys 08 leaves unset (no seed row), and only those.
   // B1-05s: + the fall-back pool, unset by default (D10-480).
   // B1-06ze: + the three Taobao promotion link keys, unset by default (D10-510).
+  // B1-04zq: + the four order_sync.rescan.* keys, unset by default (D10-543).
   expect(sorted(keys)).toStrictEqual(
     sorted([
       ...new Set([
@@ -85,10 +90,16 @@ it('[AC-F1-10e#1] 裁定 14：注册表恰好是种子里全部非开关键加 a
         ...AUTO_ENABLE_UNSEEDED,
         ...POOL_UNSEEDED,
         ...PROMO_LINK_UNSEEDED,
+        ...ORDER_RESCAN_UNSEEDED,
       ]),
     ]),
   );
-  for (const key of [...AUTO_ENABLE_UNSEEDED, ...POOL_UNSEEDED, ...PROMO_LINK_UNSEEDED]) {
+  for (const key of [
+    ...AUTO_ENABLE_UNSEEDED,
+    ...POOL_UNSEEDED,
+    ...PROMO_LINK_UNSEEDED,
+    ...ORDER_RESCAN_UNSEEDED,
+  ]) {
     expect(seeds, key).not.toContain(key);
   }
   // F1-02zt：过渡已收紧: EXPECTED + settle.* + growth.invite_reward.* + payout.* (B2-06bz)
@@ -96,8 +107,8 @@ it('[AC-F1-10e#1] 裁定 14：注册表恰好是种子里全部非开关键加 a
   // + payout.auto_enable_check.* (B2-11dz) + rank.cache_ttl_seconds (B1-28g)
   // + search.hot_words / search.keyword_routes (B1-05l) + retention.* (B1-15zd)
   // + tax.SERVICE_FEE.* (B2-08cz) + feed.fallback_pool_id / pool.* (B1-05s)
-  // + withdraw.dormant_reverify_days (B1-02zs) + the Taobao promotion link keys (B1-06ze), all
-  // present.
+  // + withdraw.dormant_reverify_days (B1-02zs) + the Taobao promotion link keys (B1-06ze)
+  // + the order_sync.rescan.* keys (B1-04zq), all present.
   expect(sorted(keys)).toStrictEqual(
     sorted(
       [
@@ -113,6 +124,7 @@ it('[AC-F1-10e#1] 裁定 14：注册表恰好是种子里全部非开关键加 a
         ...POOL,
         ...REVERIFY,
         ...PROMO_LINK,
+        ...ORDER_RESCAN,
       ].map((entry) => entry.key),
     ),
   );
@@ -144,13 +156,15 @@ it('[AC-F1-10e#3] 裁定 14：值类型取种子值的 JSON 类型（数组记 o
     checked += 1;
   }
   // agent.page_guide.routes has no seed row; B2-11dz: neither have AUTO_ENABLE_UNSEEDED;
-  // B1-05s: nor POOL_UNSEEDED; B1-06ze: nor PROMO_LINK_UNSEEDED.
+  // B1-05s: nor POOL_UNSEEDED; B1-06ze: nor PROMO_LINK_UNSEEDED; B1-04zq: nor
+  // ORDER_RESCAN_UNSEEDED.
   expect(checked).toBe(
     configRegistry().length -
       1 -
       AUTO_ENABLE_UNSEEDED.length -
       POOL_UNSEEDED.length -
-      PROMO_LINK_UNSEEDED.length,
+      PROMO_LINK_UNSEEDED.length -
+      ORDER_RESCAN_UNSEEDED.length,
   );
   expect(registered('agent.page_guide.routes').valueType).toBe('object');
 });
@@ -266,8 +280,8 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
   // payout.auto_enable_check.* keys (B2-11dz), rank.cache_ttl_seconds (B1-28g), the two search.*
   // keys (B1-05l), the seven retention.* keys (B1-15zd), the three tax.SERVICE_FEE.* keys
   // (B2-08cz), feed.fallback_pool_id with the two pool.* keys (B1-05s),
-  // withdraw.dormant_reverify_days (B1-02zs) and the three Taobao promotion link keys (B1-06ze;
-  // checked key by key in #57 and #58).
+  // withdraw.dormant_reverify_days (B1-02zs), the three Taobao promotion link keys (B1-06ze) and
+  // the four order_sync.rescan.* keys (B1-04zq; checked key by key in #57 and #58).
   presentOf(INVITE_CFG, 'growth.invite_reward.*');
   const inviteTail = [
     ...inviteNow(),
@@ -282,6 +296,7 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
     ...POOL,
     ...REVERIFY,
     ...PROMO_LINK,
+    ...ORDER_RESCAN,
   ].map((e) => e.key);
   expect(keys.slice(EXPECTED.length, EXPECTED.length + SETTLE.length)).toStrictEqual(
     SETTLE.map((entry) => entry.key),
@@ -304,8 +319,8 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
 // after SETTLE, in its own order, followed by eligibility_days, then payout.*, risk.withdraw.*,
 // withdraw.auto_payout.*, payout.auto_enable_check.*, rank.cache_ttl_seconds, the two search.*
 // keys, the seven retention.* keys, the three tax.SERVICE_FEE.* keys, feed.fallback_pool_id and
-// the two pool.* keys, withdraw.dormant_reverify_days, the three Taobao promotion link keys
-// (#58).
+// the two pool.* keys, withdraw.dormant_reverify_days, the three Taobao promotion link keys, the
+// four order_sync.rescan.* keys (#58).
 // F1-02zt：过渡已收紧, the absent branch is gone.
 it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登记（紧接 settle.* 之后、其后是 eligibility_days、payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds、search.* 两项、retention.* 七项、tax.* 三项、feed.fallback_pool_id 与 pool.* 两项，逐键值类型、options、权限点、可改标记）', () => {
   expect(INVITE_CFG).toHaveLength(5);
@@ -318,7 +333,8 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
   // (B2-11dz), rank.cache_ttl_seconds (B1-28g), the two search.* keys (B1-05l), the seven
   // retention.* keys (B1-15zd), the three tax.SERVICE_FEE.* keys (B2-08cz),
   // feed.fallback_pool_id and the two pool.* keys (B1-05s), withdraw.dormant_reverify_days
-  // (B1-02zs), the three Taobao promotion link keys (B1-06ze).
+  // (B1-02zs), the three Taobao promotion link keys (B1-06ze), the four order_sync.rescan.* keys
+  // (B1-04zq).
   const tail = [
     ...inviteNow(),
     ...PAYOUT,
@@ -332,6 +348,7 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
     ...POOL,
     ...REVERIFY,
     ...PROMO_LINK,
+    ...ORDER_RESCAN,
   ];
   const head = keys.length - tail.length;
   expect(keys.slice(head)).toStrictEqual(tail.map((entry) => entry.key));
@@ -364,7 +381,8 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
 // B2-08cz (D10-456 ④) the three tax.SERVICE_FEE.* keys in TAX order (the method's enum options
 // exactly as the kit), then B1-05s (D10-480) feed.fallback_pool_id and the two pool.* keys in POOL
 // order, then B1-02zs withdraw.dormant_reverify_days (REVERIFY), then B1-06ze (D10-510) the three
-// Taobao promotion link keys in PROMO_LINK order, and nothing else.
+// Taobao promotion link keys in PROMO_LINK order, then B1-04zq (D10-543) the four
+// order_sync.rescan.* keys in ORDER_RESCAN order, and nothing else.
 // F1-02zt：过渡已收紧, the absent branch is gone.
 it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接 ip_window_hours 登记、其后紧接 payout.* 八项、risk.withdraw.* 六项、withdraw.auto_payout.* 十七项、payout.auto_enable_check.* 四项、rank.cache_ttl_seconds、search.* 两项、retention.* 七项、tax.* 三项、feed.fallback_pool_id 与 pool.* 两项（按登记顺序，逐键值类型、options、权限点、可改标记；options 为 null、config.business、可改）', () => {
   expect(INVITE_ELIG).toHaveLength(1);
@@ -389,6 +407,7 @@ it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接
       ...POOL,
       ...REVERIFY,
       ...PROMO_LINK,
+      ...ORDER_RESCAN,
     ].map((entry) => entry.key),
   );
   for (const entry of [
@@ -401,6 +420,7 @@ it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 紧接
     ...POOL,
     ...REVERIFY,
     ...PROMO_LINK,
+    ...ORDER_RESCAN,
   ]) {
     const payoutSpec = registered(entry.key);
     expect({

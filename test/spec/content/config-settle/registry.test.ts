@@ -35,7 +35,8 @@ it('[AC-F1-02zj#2] 16 项按裁定顺序追加；原 29 项及其无 range 行�
   // this order; B2-08cz (D10-456 ④): then the three tax.SERVICE_FEE.* keys, in this order; B1-05s
   // (D10-480): then feed.fallback_pool_id and the two pool.* keys, in this order; B1-02zs: then
   // withdraw.dormant_reverify_days; B1-06ze (D10-510): then the three Taobao promotion link keys,
-  // in this order; nothing else may follow.
+  // in this order; B1-04zq (D10-543): then the four order_sync.rescan.* keys, in this order;
+  // nothing else may follow.
   presentOf(INVITE_CFG, 'growth.invite_reward.*');
   const invite = inviteNow();
   expect(registry.map((entry) => entry.key)).toStrictEqual([
@@ -97,6 +98,10 @@ it('[AC-F1-02zj#2] 16 项按裁定顺序追加；原 29 项及其无 range 行�
     'share.taobao_enabled',
     'convert.taobao_prefetch.enabled',
     'convert.taobao_prefetch.rate_per_min',
+    'order_sync.rescan.jd.enabled',
+    'order_sync.rescan.pdd.enabled',
+    'order_sync.rescan.jd.days',
+    'order_sync.rescan.pdd.days',
   ]);
   expect(registry.slice(0, 29)).toStrictEqual(
     EXPECTED.map((entry) => ({ ...entry, options: null })),
