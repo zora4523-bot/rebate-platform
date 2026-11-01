@@ -40,6 +40,8 @@ export interface OrderBlacklistHitRecord {
   readonly dimension: BlacklistDimension;
   readonly value: string;
   readonly risk_action: BlacklistRiskAction;
+  /** 命中来自本次判定的 match，规则状态已判过：risk 不再读（BR-ID-36，一次判定一次读）。 */
+  readonly decided_in_force?: true;
 }
 
 /** risk 订单侧名单端口（B1-09a）中本步用到的两项；都在调用方事务内执行。 */
@@ -126,6 +128,8 @@ export function blacklistVoids(
 /**
  * 写库阶段的处置（BR-ATTR-26「命中后的处理」），与本次写库同一事务；任何一步抛错整事务回滚。
  * 先经 risk 端口逐条写命中，再按处置调返利端口（void）或入队复核事件（after_credit）。
+ * 命中都来自本次 checkOrderBlacklist 的 match，带 decided_in_force：状态缓存在判定与写命中之间过期时，
+ * 命中仍写，不会作废了返利却没有命中记录（BR-ID-36，D10-536）。
  * 端口或总线缺失时不改订单：命中改记 manual_review，打一条 P1 告警（只带平铺字段）。
  */
 export async function applyOrderBlacklist(
@@ -151,6 +155,7 @@ export async function applyOrderBlacklist(
       dimension: hit.dimension,
       value: hit.value,
       risk_action: missing ? 'manual_review' : hit.risk_action,
+      decided_in_force: true,
     });
   }
   if (disposition === 'void' && deps.onBlacklistHit !== undefined) {

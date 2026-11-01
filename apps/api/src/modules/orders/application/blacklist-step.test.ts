@@ -107,3 +107,34 @@ it('[AC-B1-09b#u10] 返利端口未接线：不预判作废（第 ⑥ 步照常�
   expect(blacklistVoids(channel, 'ESTIMATED', d.step)).toBe(false);
   expect(blacklistVoids(null, 'ESTIMATED', deps().step)).toBe(false);
 });
+
+it('[AC-B1-09m#u1] 每条命中都标明来自本次判定（作废、复核事件、只记复核三种处置）', async () => {
+  const two: OrderBlacklistCheck = {
+    matches: [
+      { blocklist_id: 'b1', dimension: 'channel', value: 'R8' },
+      { blocklist_id: 'b2', dimension: 'order_no_suffix', value: '123456' },
+    ],
+    suffixVoidEnabled: true,
+  };
+  const voided = deps();
+  await applyOrderBlacklist(trx, voided.step, subject, two, 'WAITING');
+  const credited = deps();
+  await applyOrderBlacklist(trx, credited.step, subject, channel, 'CREDITED');
+  const reviewOnly = deps({ rebate: false });
+  await applyOrderBlacklist(trx, reviewOnly.step, subject, channel, 'ESTIMATED');
+  const inputs = [voided, credited, reviewOnly].flatMap((d) =>
+    d.recordHit.mock.calls.map(([, input]) => input),
+  );
+  expect(inputs).toHaveLength(4);
+  for (const input of inputs) expect(input.decided_in_force).toBe(true);
+});
+
+it('[AC-B1-09m#u2] 无命中或返利状态不处理时不写命中', async () => {
+  const none = deps();
+  const empty: OrderBlacklistCheck = { matches: [], suffixVoidEnabled: false };
+  await applyOrderBlacklist(trx, none.step, subject, empty, 'WAITING');
+  const settled = deps();
+  await applyOrderBlacklist(trx, settled.step, subject, channel, 'VOID');
+  expect(none.recordHit).not.toHaveBeenCalled();
+  expect(settled.recordHit).not.toHaveBeenCalled();
+});
