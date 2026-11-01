@@ -272,7 +272,8 @@ function systemHoldAudit(logger: RootLogger): AuditPort {
 
 interface ReconChainTimer {
   onApplicationBootstrap(): void;
-  onModuleDestroy(): void;
+  /** Waits for the tick in flight (B2-15q): the database closes only after that. */
+  onModuleDestroy(): Promise<void>;
 }
 
 /** B2-07c: the payout-recon seed after bootstrap and its heal every interval; null deps: inert. */
@@ -281,15 +282,15 @@ function reconChainTimer(
 ): ReconChainTimer {
   const started = new Map<string, string>();
   let running = false;
+  let stopped = false;
+  let inFlight: Promise<void> = Promise.resolve();
   let first: ReturnType<typeof setTimeout> | undefined;
   let interval: ReturnType<typeof setInterval> | undefined;
-  const tick = async (): Promise<void> => {
-    if (deps === null || running) return;
-    running = true;
+  const run = async (active: NonNullable<typeof deps>): Promise<void> => {
     try {
-      await seedPayoutRecon({ ...deps, started });
+      await seedPayoutRecon({ ...active, started });
     } catch (error: unknown) {
-      deps.logger.warn(
+      active.logger.warn(
         {
           queue: PAYOUT_RECON_QUEUE,
           error_name: error instanceof Error ? error.name : typeof error,
@@ -300,20 +301,28 @@ function reconChainTimer(
       running = false;
     }
   };
+  // Only a tick that starts replaces inFlight: a skipped one leaves it on the running tick.
+  const tick = (): void => {
+    if (deps === null || running || stopped) return;
+    running = true;
+    inFlight = run(deps);
+  };
   return {
     onApplicationBootstrap() {
-      if (deps === null || first !== undefined) return;
+      if (deps === null || first !== undefined || stopped) return;
       first = setTimeout(() => {
-        void tick();
-        interval = setInterval(() => void tick(), PAYOUT_RECON_HEAL_INTERVAL_MS);
+        tick();
+        interval = setInterval(tick, PAYOUT_RECON_HEAL_INTERVAL_MS);
         interval.unref();
       }, PAYOUT_RECON_SEED_DELAY_MS);
       first.unref();
     },
-    onModuleDestroy() {
+    async onModuleDestroy() {
+      stopped = true;
       if (first !== undefined) clearTimeout(first);
       if (interval !== undefined) clearInterval(interval);
       interval = undefined;
+      await inFlight;
     },
   };
 }
@@ -327,17 +336,17 @@ function overdueChainTimer(
   deps: { db: Kysely<DB>; clock: Clock; queue: JobQueue; logger: RootLogger } | null,
 ): ReconChainTimer {
   let running = false;
+  let stopped = false;
+  let inFlight: Promise<void> = Promise.resolve();
   let first: ReturnType<typeof setTimeout> | undefined;
   let interval: ReturnType<typeof setInterval> | undefined;
-  const tick = async (): Promise<void> => {
-    if (deps === null || running) return;
-    running = true;
+  const run = async (active: NonNullable<typeof deps>): Promise<void> => {
     try {
       // Only while a withdrawal waits for a review with a deadline (anyReviewWaiting): an empty
       // database runs no chain, as the recon and ledger daily-check seeds read their apps first.
-      if (await anyReviewWaiting(deps.db)) await seedReviewOverdue(deps);
+      if (await anyReviewWaiting(active.db)) await seedReviewOverdue(active);
     } catch (error: unknown) {
-      deps.logger.warn(
+      active.logger.warn(
         {
           queue: PAYOUT_OVERDUE_QUEUE,
           error_name: error instanceof Error ? error.name : typeof error,
@@ -348,20 +357,28 @@ function overdueChainTimer(
       running = false;
     }
   };
+  // Only a tick that starts replaces inFlight: a skipped one leaves it on the running tick.
+  const tick = (): void => {
+    if (deps === null || running || stopped) return;
+    running = true;
+    inFlight = run(deps);
+  };
   return {
     onApplicationBootstrap() {
-      if (deps === null || first !== undefined) return;
+      if (deps === null || first !== undefined || stopped) return;
       first = setTimeout(() => {
-        void tick();
-        interval = setInterval(() => void tick(), PAYOUT_OVERDUE_HEAL_INTERVAL_MS);
+        tick();
+        interval = setInterval(tick, PAYOUT_OVERDUE_HEAL_INTERVAL_MS);
         interval.unref();
       }, PAYOUT_OVERDUE_SEED_DELAY_MS);
       first.unref();
     },
-    onModuleDestroy() {
+    async onModuleDestroy() {
+      stopped = true;
       if (first !== undefined) clearTimeout(first);
       if (interval !== undefined) clearInterval(interval);
       interval = undefined;
+      await inFlight;
     },
   };
 }
