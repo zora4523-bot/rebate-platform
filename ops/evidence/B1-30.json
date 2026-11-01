@@ -1,0 +1,43 @@
+{
+  "risk_note": "RV2 by path (pnpm-lock.yaml and pnpm-workspace.yaml are class-2 protected, exempt for a deps task; owner label before merge per 规划/11 §4.4). Deps task, ledger tester: none. apps/api dependencies gain @alicloud/kms20160120 3.3.1, ali-oss 6.23.0 and @alicloud/credentials 2.4.7 (exact, all past the 7-day minimum release age). dysmsapi and green are left out (D10-560). credentials adds no package (already in the openapi-core tree); it is declared because the KMS client needs a credential object for the ECS RAM role. @alicloud/openapi-core's postinstall stays unbuilt (ignoredBuiltDependencies; loads without it under CJS and ESM). Lock: existing packages keep their versions; removed lines are antd peer suffixes only. Licenses verified with pnpm licenses over a scratch install of kms and ali-oss: MIT, ISC, Apache-2.0, BSD-3-Clause, BlueOak-1.0.0 (sax, accepted by D10-560); credentials is MIT. pnpm audit --prod across the repo reports the same 13 entries as main (FU-DEPS-AUDIT-HIGH). No code uses the packages yet: adapters are B1-30a and B1-30b.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 (couli-runs/B1-30/review-codex.json), no findings, money checklist n/a. Static only: Codex ran no tests, did not check publish dates online and did not verify every transitive license; those were checked by the implementer as written in risk_note."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "deps task, ledger tester: none"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  },
+  "task": "B1-30",
+  "spec_commit": "947ce7c4b1a49d13888d9c404d5ef859f3660e18",
+  "spec_ref": "deb521c2bcb740571a01c2dc128f40abb40c37a2",
+  "red_tests": [],
+  "runs": [],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "cc7f0befebbdf36ebe07418bd1d7abd45fa97f19",
+    "specs": "81162dd1f14b9998534e12edbd04c10478c7b260"
+  }
+}
