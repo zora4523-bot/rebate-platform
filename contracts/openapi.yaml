@@ -23659,16 +23659,26 @@ paths:
         - A new adjustment: `user_id`; `direction`; `amount_fen`, integer fen > 0, no upper limit
           (BR-FUND-24 ④); `reason_code`, one of RECON_FIX, PAYOUT_RECOVERY or OTHER. RESTORE comes
           only from a difference (BR-FUND-22) and ACCOUNT_CLOSED only from the system (BR-FUND-24
-          ⑧), so neither can be chosen: 20001 with `data.fields=[reason_code]`. `refs`, the linked
-          documents, at most 10, without duplicates (`data.fields=[refs]`); `note`, the internal
-          explanation, 1–500 characters after trimming (else `data.fields=[note]`), required for
-          OTHER; `contra_subject` with `contra_platform`, see below.
+          ⑧), so neither can be chosen: 20001 at the schema. `refs`, the linked documents, at
+          most 10, without duplicates (`data.fields=[refs]`); `note`, the internal explanation,
+          at most 500 characters and not blank after trimming (blank → `data.fields=[note]`),
+          required for OTHER (`data.fields=[note]`); `contra_subject` with `contra_platform`, see
+          below.
         - A reversal: `reverses_adjust_id` and `note`, the reason for the reversal, required, as
           above. The request carries no direction, amount, reason code, refs or subject: the
           server takes them from the original (opposite direction, the original `amount_fen`,
           whole form only, the same `reason_code`, `contra_subject` and `contra_platform`), and
-          any of those fields in the request is 20001 (BR-FUND-24 细则「红冲只按原单整笔」). To
-          correct +500 to +50: reverse the whole +500, then submit a new +50.
+          any of those fields in the request is 20001 at the schema (BR-FUND-24 细则「红冲只按原单整笔」).
+          To correct +500 to +50: reverse the whole +500, then submit a new +50.
+
+        What `data.fields` lists depends on where the body is refused. The schema comes first and
+        reports both shapes: a body that fits neither shape (a `reason_code` of RESTORE or
+        ACCOUNT_CLOSED, a `note` over 500 characters, more than 10 `refs`, an `amount_fen` of 0, a
+        value outside an enum, a missing required field, a field of the other shape) is 20001
+        with `data.fields` listing what fails in each of the two shapes, usually fields of the
+        other shape too, plus `body`; it does not single out the field at fault. Every
+        `data.fields` naming one field in this description is a check the service makes after the
+        body has fit one shape.
 
         Linked documents by reason code (BR-FUND-24 ②③), all refused as 20001 with
         `data.fields=[refs]`: RECON_FIX needs at least one `recon_diff`. PAYOUT_RECOVERY needs at
@@ -23679,19 +23689,21 @@ paths:
 
         Contra subject (BR-FUND-24 ⑥; specs/ledger-rules.md §6, whitelist pending the finance
         confirmation): for RECON_FIX and OTHER the operator chooses `contra_subject` from
-        COMMISSION_REVENUE, UNION_RECEIVABLE, BAD_DEBT or MKT_EXPENSE (else 20001 with
-        `data.fields=[contra_subject]`); `contra_platform` is required exactly for
-        UNION_RECEIVABLE (else `data.fields=[contra_platform]`). For PAYOUT_RECOVERY both are
-        refused (20001 on the field): the server takes the cash subject from the withdrawal's
-        channel (CASH_ALIPAY, CASH_WECHAT or CASH_BANK).
+        COMMISSION_REVENUE, UNION_RECEIVABLE, BAD_DEBT or MKT_EXPENSE (missing → 20001 with
+        `data.fields=[contra_subject]`, another value fails at the schema); `contra_platform` is
+        required exactly for UNION_RECEIVABLE (else `data.fields=[contra_platform]`). For
+        PAYOUT_RECOVERY both are refused (20001 on the field): the server takes the cash subject
+        from the withdrawal's channel (CASH_ALIPAY, CASH_WECHAT or CASH_BANK).
 
         Order of checks: `fund.adjust` (10403 with `data.reason=admin_permission_denied`; the
         refusal writes an audit record, action adjustment_denied, BR-FUND-24 例（无权限）) → step-up
-        (10003) → body (20001, the fields above) → an unknown `user_id` or one of another app is
-        20001 with `data.fields=[user_id]`; an unknown `reverses_adjust_id` or one of another app
-        is 20001 with `data.fields=[reverses_adjust_id]`; a `ref_id` that names nothing of the
-        app, or a `withdrawal` or `account_deletion` of another member, is 20001 with
-        `data.fields=[refs]` and `data.reason=adjust_ref_invalid` → an original already reversed
+        (10003) → body (20001: the schema, then the checks above) → an unknown `user_id` or one of
+        another app is 20001 with `data.fields=[user_id]`; an unknown `reverses_adjust_id` or one
+        of another app is 20001 with `data.fields=[reverses_adjust_id]`; a `ref_id` that names
+        nothing of the app, a `recon_diff` of source R4 (a 收款对账 difference never leads to a
+        balance adjustment, BR-PAY-07; see AdminReconDiffIdPath), or a `withdrawal` or
+        `account_deletion` of another member, is 20001 with `data.fields=[refs]` and
+        `data.reason=adjust_ref_invalid` → an original already reversed
         is 20902 with `data.resource=admin_adjustment` (a form can be reversed once, BR-FUND-16;
         the console refreshes and shows 已红冲; the unique constraint on `reverses_adjust_id`
         answers the same under a race) → the guards, each refusal 20001: an original that is not
@@ -23847,9 +23859,11 @@ paths:
         row, next to it `balance_preview`: what executing the form now would do to `available` (BR-FUND-24
         ④). Only two kinds of form have one: a PENDING form, whose amount is the current
         `available` (0 when `available` is not above 0, see POST .../approve), and an APPROVED
-        form that is not a reversal and has not been reversed, previewing its reversal. Every
-        other form has `balance_preview=null`: the available balance before and after an executed
-        form is read from its voucher, and is not kept on the form. The preview is a reading, not
+        form that is not a reversal, has not been reversed and whose member is not deleted,
+        previewing its reversal. Every other form has `balance_preview=null`, so also an APPROVED
+        form of a deleted member, whose reversal POST /admin/v1/adjustments refuses with
+        `adjust_user_deleted`: the available balance before and after an executed form is read
+        from its voucher, and is not kept on the form. The preview is a reading, not
         a promise: approving and reversing read the balance again in their own transaction. An
         unknown `adjust_id` or a form of another app is 20001 with `data.fields=[adjust_id]` (no
         404). Reading does not write an audit record.
@@ -30977,13 +30991,20 @@ components:
             - adjust_id
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminAdjustmentReasonCodeInvalid:
-      summary: 20001 reason_code RESTORE or ACCOUNT_CLOSED cannot be chosen by hand
+      summary: 20001 reason_code RESTORE or ACCOUNT_CLOSED cannot be chosen by hand; a schema failure lists the fields of both request shapes
       value:
         code: 20001
         msg: 参数错误
         data:
           fields:
             - reason_code
+            - reverses_adjust_id
+            - user_id
+            - direction
+            - amount_fen
+            - refs
+            - contra_subject
+            - body
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminAdjustmentRefsInvalid:
       summary: 20001 the linked documents the reason code needs are missing
@@ -30995,7 +31016,7 @@ components:
             - refs
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminAdjustmentRefInvalid:
-      summary: 20001 a linked document names nothing of the app, or belongs to another member
+      summary: 20001 a linked document names nothing of the app, is a difference of source R4, or belongs to another member
       value:
         code: 20001
         msg: 参数错误
@@ -48665,8 +48686,9 @@ components:
       type: string
       description: |
         Type of a linked document (contracts/enums/fund.yaml admin_adjustment_ref_type;
-        BR-FUND-24 ③): `recon_diff` (`ref_id` = recon_diffs.id), `withdrawal` (withdrawals.id),
-        `order` (the sub-order's order_key), `account_deletion` (deletion_requests.id).
+        BR-FUND-24 ③): `recon_diff` (`ref_id` = recon_diffs.id, not of source R4), `withdrawal`
+        (withdrawals.id), `order` (the sub-order's order_key), `account_deletion`
+        (deletion_requests.id).
       enum:
         - recon_diff
         - withdrawal
@@ -48860,7 +48882,7 @@ components:
           $ref: '#/components/schemas/Fen'
     AdminAdjustmentDetail:
       type: object
-      description: One adjustment form with `balance_preview` (null unless the form can still be executed or reversed).
+      description: One adjustment form with `balance_preview` (null unless the form can still be executed or reversed, so null on an APPROVED form once its member is deleted).
       additionalProperties: false
       required:
         - adjustment
@@ -48910,7 +48932,7 @@ components:
           description: Integer fen above 0, no upper limit (BR-FUND-24 ④).
         reason_code:
           type: string
-          description: Only these three can be chosen; RESTORE and ACCOUNT_CLOSED → 20001 with data.fields=[reason_code].
+          description: Only these three can be chosen; RESTORE and ACCOUNT_CLOSED → 20001 at the schema (see AdminAdjustmentCreateRequest).
           enum:
             - RECON_FIX
             - PAYOUT_RECOVERY
@@ -48924,7 +48946,7 @@ components:
           type: string
           minLength: 1
           maxLength: 500
-          description: Internal explanation, 1–500 characters after trimming; required for OTHER.
+          description: Internal explanation, at most 500 characters, not blank after trimming; required for OTHER.
         contra_subject:
           type: string
           description: RECON_FIX and OTHER only, required for them (BR-FUND-24 ⑥).
@@ -48949,10 +48971,10 @@ components:
           type: string
           minLength: 1
           maxLength: 500
-          description: The reason for the reversal, 1–500 characters after trimming.
+          description: The reason for the reversal, at most 500 characters, not blank after trimming.
     AdminAdjustmentCreateRequest:
       type: object
-      description: Body of POST /admin/v1/adjustments, a new adjustment or a reversal. Each branch is a closed object.
+      description: Body of POST /admin/v1/adjustments, a new adjustment or a reversal. Each branch is a closed object; a body that fits neither is 20001 with data.fields listing what fails in both branches plus `body`.
       unevaluatedProperties: false
       oneOf:
         - $ref: '#/components/schemas/AdminAdjustmentCreateNew'
