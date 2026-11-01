@@ -11,9 +11,13 @@ type: impl
 # 实测：common.get 能出链、带 subUnionId 也成功；订单回传 subUnionId 未验证，CAP-JD-05 记待真实订单。报文样例自拟、值全合成。RV2。
 refs: []
 refs_hash: {}
-deps: [B1-04zc]
+deps: [B1-04zc, B1-04ze]
 paths:
   - 'apps/api/src/modules/union/infra/jd/**'
+  - 'specs/union/jd.md'
+  - 'apps/api/src/modules/union/infra/registry.ts'
+  - 'apps/api/src/modules/union/infra/registry.test.ts'
+  - 'apps/api/src/modules/union/union.module.ts'
   - 'apps/api/src/modules/union/domain/types.ts'
   - 'apps/api/src/modules/union/application/governed-adapter.ts'
   - 'apps/api/src/modules/union/application/governed-adapter.test.ts'
