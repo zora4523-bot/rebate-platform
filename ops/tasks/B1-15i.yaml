@@ -25,4 +25,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/deletion-progress-message/**'
-status: todo
+status: done
+pr: 2014

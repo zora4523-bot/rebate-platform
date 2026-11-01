@@ -26,4 +26,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/risk/admin-appeals-read/**'
-status: todo
+status: done
+pr: 1987
