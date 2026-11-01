@@ -1,0 +1,24 @@
+id: B1-04zs
+repo: rebate-platform
+title: 回扫长期运行收口：轮首窗在途不被 rewind 作废（FU-RESCAN-FIRST-WINDOW）、已入待处理的行不每轮重复 P1 告警
+type: impl
+# 2026-11-02 be 入账（B1-04zm money r1 两条 S2）。① 轮首窗任务超过一拍时起点随 now 滑动，游标被判过旧而 rewind，在途窗口 CAS 落空，浪费一窗配额、不丢单。② 已被 update-step 拒绝进待处理的行，hash 不变，每轮回扫重复走到拒绝并写 P1 告警。
+# 冻结 test/spec/orders/rescan #3、#20 钉了 ① 的行为，开工前核。B1-04zr 之后。RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04zr]
+paths:
+  - 'apps/api/src/modules/orders/application/order-rescan.ts'
+  - 'apps/api/src/modules/orders/domain/sync-window.ts'
+  - 'apps/api/src/modules/orders/jobs/order-rescan.ts'
+  - 'test/spec/orders/rescan/**'
+  - 'test/spec/orders/rescan-longrun/**'
+test_paths:
+  - 'test/spec/orders/rescan/**'
+  - 'test/spec/orders/rescan-longrun/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
