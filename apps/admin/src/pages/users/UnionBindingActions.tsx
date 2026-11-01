@@ -85,6 +85,18 @@ function failureNotice(cause: unknown): string {
   return t.failed;
 }
 
+/**
+ * 重新拉一次详情：成功交给 apply；失败（网络或 5xx）调用 onFail，不吞掉，
+ * 免得页面停在旧 row_version 而管理员以为已刷新。不自动重试。
+ */
+export function refreshDetail(
+  load: () => Promise<UserDetail>,
+  apply: (user: UserDetail) => void,
+  onFail: () => void,
+): Promise<void> {
+  return load().then(apply, onFail);
+}
+
 export interface UnionBindingActions {
   /** 「操作」列；不持 union.binding_* 时为 undefined（不出现该列）。 */
   readonly render: ((binding: UnionBinding) => ReactNode) | undefined;
@@ -109,14 +121,16 @@ export function useUnionBindingActions({
   const canReset = access.can(RESET_PERMISSION);
   const canDisable = access.can(DISABLE_PERMISSION);
 
-  /** 静默重新拉详情（不切到加载态，页面与提示都留着）。 */
+  /** 静默重新拉详情（不切到加载态，页面与提示都留着）；拉取失败时提示手动刷新页面。 */
   const refresh = () => {
-    getProvider()
-      .getOne<UserDetail>({ resource: 'users', id: user.user_id })
-      .then(
-        (response) => onUserChange(response.data),
-        () => undefined,
-      );
+    void refreshDetail(
+      () =>
+        getProvider()
+          .getOne<UserDetail>({ resource: 'users', id: user.user_id })
+          .then((response) => response.data),
+      onUserChange,
+      () => void notice.error(t.refreshFailed),
+    );
   };
 
   const onSaved = (row: UnionBinding) => {
