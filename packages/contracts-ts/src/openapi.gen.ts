@@ -3670,8 +3670,9 @@ export interface paths {
          *     `admin.export.max_rows`, without truncating, and its failure_reason says to raise that
          *     configuration key.
          *     Audit: export_create; the full version also export_unmasked (with the row count and the
-         *     purpose); a masked task writes its own audit record when generated
+         *     purpose); a masked `tax_withdrawals` task writes its own audit record when generated
          *     (action export_generated: task id, resource, row count, the creator as actor, no purpose).
+         *     Other resources follow the rules above.
          *     Limits are configuration keys whose default values the implementation sets:
          *     `admin.export.max_rows` (rows per file; a task with more rows fails with a failure_reason
          *     saying so, narrow the filters) and `admin.export.max_running_per_admin` (tasks of one
@@ -3698,9 +3699,10 @@ export interface paths {
         };
         /**
          * Get a short-lived signed link to the file of one's own finished export (audited)
-         * @description For `tax_withdrawals` tasks, once that resource is open, `tax.export_full` also passes this
-         *     point (BR-WDR-21); its source-list permission is `fund.view`, or `tax.export_full` for a
-         *     full file (`masked=false`).
+         * @description Once `tax_withdrawals` is open (BR-WDR-21), `tax.export_full` also passes this point; any
+         *     task it cannot act on (an unknown id, another account's task, another resource) is 20001
+         *     with `data.fields=[id]`, like the rest. The source-list permission of that resource is
+         *     `fund.view`, or `tax.export_full` for a full file (`masked=false`).
          *     Permission point `export` (04 §11.1; no step-up); lacking it is 10403 with
          *     `data.reason=admin_permission_denied`. Only the creator of the task can download it, even
          *     with `audit.view_all` (BR-ID-34 细则「后台导出任务」). Every call is authorized again and
@@ -3739,9 +3741,10 @@ export interface paths {
         put?: never;
         /**
          * Retry one's own failed export task
-         * @description For `tax_withdrawals` tasks, once that resource is open, `tax.export_full` also passes this
-         *     point (BR-WDR-21); its source-list permission is `fund.view`, or `tax.export_full` for a
-         *     full file (`masked=false`).
+         * @description Once `tax_withdrawals` is open (BR-WDR-21), `tax.export_full` also passes this point; any
+         *     task it cannot act on (an unknown id, another account's task, another resource) is 20001
+         *     with `data.fields=[id]`, like the rest. The source-list permission of that resource is
+         *     `fund.view`, or `tax.export_full` for a full file (`masked=false`).
          *     Permission point `export` (04 §11.1); lacking it is 10403 with
          *     `data.reason=admin_permission_denied`. Only the creator of the task can retry it, even with
          *     `audit.view_all`: another account's task, an unknown id or a task of another app is 20001
