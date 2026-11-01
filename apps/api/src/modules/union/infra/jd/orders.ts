@@ -1,5 +1,6 @@
 // 京东订单接口（jd.union.open.order.row.query，B1-04zb）的时间窗、游标、翻页判定与 DTO 映射。
-// 规则测试：test/spec/union/jd-orders/**；映射口径见 specs/union/jd.md（D10-520、D10-522）。
+// 规则测试：test/spec/union/jd-orders/**、jd-orders-settle/**；映射口径见 specs/union/jd.md
+// （D10-520、D10-522、D10-529）。
 // 只读下面映射到的字段，从不 spread 整份报文；订单号与金额都取内层数字的原文（JdRawNumber），
 // 不经 JS number。错误信息只带字段名，不带报文内容。
 // 不做：按推广位过滤、拆时间窗（归 order-sync）；状态映射（归 B1-04zg）；图片。
@@ -28,8 +29,8 @@ export const JD_ORDER_QUERY_BY_UPDATE_TIME = 3;
 const MAX_SPAN_SECONDS = 3_600;
 const MAX_AGE_MS = 90 * 86_400_000;
 
-/** 只有这两个 validCode 有实际佣金与实际计佣金额（D10-520）。 */
-const FINISHED_CODES: ReadonlySet<string> = new Set(['17', '18']);
+/** 只有已完成单有实际佣金与实际计佣金额（D10-529）；它不是已结算，官方 validCode 没有已结算码。 */
+const FINISHED_CODE = '17';
 const AWAITING_PAYMENT_CODE = '15';
 const DEPOSIT_PAID_CODE = '24';
 
@@ -173,7 +174,7 @@ function yuanField(row: Record<string, unknown>, name: string): bigint {
   }
 }
 
-/** D10-522：commission_fen、paid_fen 必填非负，负值收到 0；真实负值留在 est / settle 与归档报文。 */
+/** D10-522：commission_fen、paid_fen 必填非负，负值收到 0；真实负值留在 est 与归档报文。 */
 function atLeastZero(fen: bigint): bigint {
   return fen < 0n ? 0n : fen;
 }
@@ -206,8 +207,8 @@ function paymentTimes(
 
 /**
  * 一条订单行（内层数字都是 JdRawNumber）→ UnionOrder。validCode 只用于选金额字段与付款时点，
- * 不判订单状态、不丢弃无效单。actualFee、actualCosPrice 只在 17 / 18 读，estimateCosPrice 只在
- * 其余状态读：没读的字段缺失或不合格都不影响该行。
+ * 不判订单状态、不丢弃无效单。actualFee、actualCosPrice 只在 17 读，estimateFee、estimateCosPrice
+ * 只在其余状态读：没读的字段缺失或不合格都不影响该行。
  */
 export function mapJdOrder(
   input: unknown,
@@ -215,8 +216,9 @@ export function mapJdOrder(
 ): UnionOrder & UnionOrderNeutralFields {
   if (!isRecord(input)) throw invalid('order row is not an object');
   const validCode = validCodeOf(input);
-  const finished = FINISHED_CODES.has(validCode);
-  const estimated = yuanField(input, 'estimateFee');
+  const finished = validCode === FINISHED_CODE;
+  // 未完成单的 actualFee 是 0.0，取它就把预估佣金冲成 0：只有 17 取实际值。
+  const estimated = yuanField(input, finished ? 'actualFee' : 'estimateFee');
   const base = makeUnionOrder({
     platform: 'jd',
     order_id: requiredId(input, 'orderId'),
@@ -244,8 +246,9 @@ export function mapJdOrder(
     settled_at: null,
     modified_at: wireTime(input.modifyTime, 'modifyTime', page.like),
     est_commission_fen: estimated,
-    // 未完成单的 actualFee 是 0.0，orders 取 coalesce(settle, est)：这里给 0n 就是错钱。
-    settle_commission_fen: finished ? yuanField(input, 'actualFee') : null,
+    // BR-FUND-02：只有平台明确已结算才写，京东官方 validCode 没有已结算码，所以恒不写；
+    // 结算额只由联盟结算明细导入写 order_settlements（source=STATEMENT）。
+    settle_commission_fen: null,
     raw_payload_id: page.rawPayloadId,
   });
 }
