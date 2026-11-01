@@ -2027,11 +2027,13 @@ function adminOrderPorts(
  * B1-10m: the real ports of the console's order and claim writes — admin's audit writer on the
  * write's transaction and its permission keys, settlement's attribution (R3 / R3b) and hold (R11)
  * commands, risk's state and identity's deletion stage of an assignment's target on the write's
- * transaction, and the snapshot and source ports the sync uses. pidScene reads union_pids by
+ * transaction, and the snapshot and source ports the sync uses. pidSceneOn reads union_pids by
  * (app_id, platform, pid), unique across the app (orders carry no union_account_id; union exports
  * no reader without it) and with every status counted, the pipeline's rule (BR-ATTR-02): a retired
  * taolijin slot still gives its scene, else the order would be priced as a plain rebate
- * (BR-CALC-19). Building them reads nothing.
+ * (BR-CALC-19). Building them reads nothing. Every read of an attribution runs on its transaction
+ * (settle.period_basis, the source ports, the slot's scene): holding the order's locks it never
+ * waits for a second connection, so concurrent writes cannot exhaust the admin pool and hang.
  */
 function adminOrderWritePorts(
   db: Kysely<Database>,
@@ -2039,15 +2041,20 @@ function adminOrderWritePorts(
   logger: RootLogger,
 ): AdminOrderWritePorts {
   const profiles = createAdminProfiles({ db });
-  return {
-    auditOn: (trx) => createAuditWriter({ db: trx, clock, sensitiveKeys: SENSITIVE_KEYS }),
-    attribution: createAttributionRebatePort({
+  const attributionOn = (trx: Transaction<Database>) =>
+    createAttributionRebatePort({
       logger,
       config: {
         get: async (appId, key) =>
-          (await createContentReader({ db, clock }).configValue(appId, key))?.value,
+          (await createContentReader({ db: trx, clock }).configValue(appId, key))?.value,
       },
-    }),
+    });
+  return {
+    auditOn: (trx) => createAuditWriter({ db: trx, clock, sensitiveKeys: SENSITIVE_KEYS }),
+    attribution: {
+      onClaimApproved: (trx, input) => attributionOn(trx).onClaimApproved(trx, input),
+      onAdminAssigned: (trx, input) => attributionOn(trx).onAdminAssigned(trx, input),
+    },
     hold: { rebate: createRebateAdminCommandPort({ clock, logger }) },
     targets: {
       risk: {
@@ -2061,10 +2068,10 @@ function adminOrderWritePorts(
     },
     permissions: (appId, adminId) => profiles.permissionKeys(appId, adminId),
     snapshots: orderSnapshotPort(db, clock, logger),
-    sources: orderSourcePorts(db, clock, logger),
-    async pidScene(order) {
+    sourcesOn: (trx) => orderSourcePorts(trx, clock, logger),
+    pidSceneOn: (trx) => async (order) => {
       if (order.pid === null || order.pid === '') return null;
-      const row = await db
+      const row = await trx
         .withSchema('app')
         .selectFrom('union_pids')
         .select('pid_scene')

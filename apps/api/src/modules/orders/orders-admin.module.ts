@@ -64,9 +64,15 @@ export interface AdminOrderWritePorts {
   /** admin: the permission keys the account holds in the app. */
   readonly permissions: (appId: string, adminId: string) => Promise<readonly string[]>;
   readonly snapshots: CommissionSnapshotPort;
-  readonly sources: OrderSourcePorts;
-  /** The scene of the order's promotion slot, whatever the slot's status (BR-ATTR-02). */
-  readonly pidScene: (order: Selectable<Database['orders']>) => Promise<string | null>;
+  /** The source ports on the attribution's transaction: it never waits for a second connection. */
+  readonly sourcesOn: (trx: Transaction<Database>) => OrderSourcePorts;
+  /**
+   * The scene of the order's promotion slot, whatever the slot's status (BR-ATTR-02), on the
+   * attribution's transaction.
+   */
+  readonly pidSceneOn: (
+    trx: Transaction<Database>,
+  ) => (order: Selectable<Database['orders']>) => Promise<string | null>;
 }
 
 export interface OrdersAdminOptions {
@@ -150,8 +156,8 @@ export class OrdersAdminModule {
               events,
               rebate: ports.attribution,
               snapshots: ports.snapshots,
-              sources: ports.sources,
-              pidScene: ports.pidScene,
+              sourcesOn: ports.sourcesOn,
+              pidSceneOn: ports.pidSceneOn,
             };
             const details = options.orderPorts(db, crypto ?? null, clock);
             return {

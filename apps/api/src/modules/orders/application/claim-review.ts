@@ -108,6 +108,10 @@ export interface ClaimReviewDeps {
   readonly snapshots?: CommissionSnapshotPort;
   readonly sources?: OrderSourcePorts;
   readonly pidScene?: (order: Selectable<DB['orders']>) => Promise<string | null>;
+  // 给了就在本事务句柄上读（优先于 sources / pidScene）：持锁的事务不再占一条连接等第二条，
+  // 连接池耗尽时不互相死等（B1-10m money r1）。
+  readonly sourcesOn?: (trx: Transaction<DB>) => OrderSourcePorts;
+  readonly pidSceneOn?: (trx: Transaction<DB>) => NonNullable<ClaimReviewDeps['pidScene']>;
 }
 
 export type ClaimReviewResult =
@@ -342,9 +346,11 @@ async function attribute(
   userId: string,
   now: Date,
 ): Promise<void> {
+  const readScene = deps.pidSceneOn?.(trx) ?? deps.pidScene;
+  const sources = deps.sourcesOn?.(trx) ?? deps.sources;
   let scene: { value: string | null } | undefined;
   const pidScene = async (): Promise<string | null> => {
-    scene ??= { value: deps.pidScene === undefined ? null : await deps.pidScene(before) };
+    scene ??= { value: readScene === undefined ? null : await readScene(before) };
     return scene.value;
   };
   const write: { -readonly [K in keyof OrderAttributionWrite]: OrderAttributionWrite[K] } = {
@@ -353,12 +359,8 @@ async function attribute(
 
   // 来源回填（BR-ATTR-15）：只在尚无 source_match（含 none）时；端口抛错原样抛出。
   const platform = before.platform;
-  if (
-    deps.sources !== undefined &&
-    before.source_match === null &&
-    isRegisteredPlatform(platform)
-  ) {
-    const source = await backfillOrderSource(storedSourcePorts(deps.sources, before), {
+  if (sources !== undefined && before.source_match === null && isRegisteredPlatform(platform)) {
+    const source = await backfillOrderSource(storedSourcePorts(sources, before), {
       appId: before.app_id,
       platform,
       userId,
