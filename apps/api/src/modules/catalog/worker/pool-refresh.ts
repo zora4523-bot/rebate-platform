@@ -25,7 +25,7 @@ import { POOL_OFF_SHELF_REASON } from '../application/pool-admin.ts';
 import { createPoolSource, type PoolProduct, type PoolSource } from '../application/pool-source.ts';
 import type { Catalog } from '../domain/types.ts';
 import { createUnionDetailUpstream } from '../infra/detail-wiring.ts';
-import type { CatalogConfigReader, GovernedUnion } from '../ports.ts';
+import type { CatalogConfigReader, GovernedUnion, PoolExtraJobs } from '../ports.ts';
 import { isFeedFailure } from '../search.ts';
 
 /** pino's two-argument shape. */
@@ -271,12 +271,23 @@ function refreshSource(options: PoolRefreshOptions): PoolSource {
   });
 }
 
-/** The handler of queue pool-refresh. */
-export function createPoolRefreshJobHandler(options: PoolRefreshOptions): JobHandler {
+/**
+ * The one handler of queue pool-refresh: its refresh job, and `extraJobs` by job name. The queue
+ * settles and retries each job on its own, so every job kind decides its retries alone.
+ */
+export function createPoolRefreshJobHandler(
+  options: PoolRefreshOptions,
+  extraJobs: PoolExtraJobs = new Map(),
+): JobHandler {
   const { db, logger, dropDetailCache } = options;
   const source = refreshSource(options);
   return async (job) => {
-    if (job.name !== JOB) throw new Error(`pool-refresh: unknown job ${job.name}`);
+    if (job.name !== JOB) {
+      const extra = extraJobs.get(job.name);
+      if (extra === undefined) throw new Error(`pool-refresh: unknown job ${job.name}`);
+      await extra(job);
+      return;
+    }
     const appId = nonEmptyText(job.payload, 'app_id');
     const productKey = nonEmptyText(job.payload, 'product_key');
     const platform = nonEmptyText(job.payload, 'platform');

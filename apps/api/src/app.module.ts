@@ -44,6 +44,8 @@ import {
   CatalogModule,
   CatalogWorkerModule,
   GovernedUnion,
+  POOL_EXTRA_JOBS,
+  type PoolExtraJobs,
   PRODUCT_CACHE_NAMESPACE,
   LinkRegistrar,
   RebateQuoter,
@@ -292,7 +294,7 @@ import {
   createUnionAuthReads,
   type UnionAuthReads,
   createUnavailableAttrCodeReader,
-  PROMO_PREFETCH_QUEUE,
+  PROMO_PREFETCH_JOB,
   createLinkRegistration,
   createPromoPrefetch,
   createPromoPrefetchHandler,
@@ -382,10 +384,8 @@ import {
   type FieldCrypto,
   type EventBus,
   type IdempotencyPostMissCheck,
-  type JobHandler,
   type JobQueue,
   type PlatformOptions,
-  type QueueRuntime,
   type QuotaLimiter,
   type RedisHandle,
   type RootLogger,
@@ -1853,54 +1853,40 @@ function orderSyncWorker(union: DynamicModule, source: UnionQuotaSource): Dynami
   };
 }
 
-@Module({})
-class PromoPrefetchWorkerModule {}
-
-/** Provider token of the registered handler (null without a database or queue). */
-const PROMO_PREFETCH_JOB_HANDLER = Symbol('PROMO_PREFETCH_JOB_HANDLER');
-
 /**
- * B1-06zd (D10-510): the promotion link prefetch jobs on queue pool-refresh, worked by the worker
- * entry only over its own governed union adapters (quota purpose pool_refresh).
+ * B1-06zd (D10-510): the promotion link prefetch job on queue pool-refresh, whose one handler is
+ * catalog's. Governed apart from the refresh's adapters: the quota bucket is shared, the breaker
+ * is not, so a failing convert does not open the circuit on the refresh's reads.
  */
-function promoPrefetchWorker(union: DynamicModule, source: UnionQuotaSource): DynamicModule {
+function promoPrefetchJobs(source: UnionQuotaSource): Provider {
   return {
-    module: PromoPrefetchWorkerModule,
-    imports: [union],
-    providers: [
-      {
-        provide: PROMO_PREFETCH_JOB_HANDLER,
-        inject: [
-          UNION_REGISTRY,
-          UNION_ENDPOINTS,
-          CLOCK,
-          ROOT_LOGGER,
-          { token: DB, optional: true },
-          { token: JOB_QUEUE, optional: true },
-          { token: REDIS, optional: true },
-        ],
-        useFactory: (
-          registry: UnionRegistry,
-          endpoints: readonly UnionEndpoint[],
-          clock: Clock,
-          logger: RootLogger,
-          db?: Kysely<Database>,
-          queue?: QueueRuntime,
-          redis?: RedisHandle,
-        ): JobHandler | null => {
-          if (db === undefined || queue === undefined) return null;
-          const governed = governedUnion(registry, endpoints, { clock, logger, redis }, source);
-          const handler = createPromoPrefetchHandler({
-            db,
-            clock,
-            logger,
-            registry: { get: (platform) => governed.adapter(platform) },
-          });
-          queue.register(PROMO_PREFETCH_QUEUE, handler);
-          return handler;
-        },
-      },
+    provide: POOL_EXTRA_JOBS,
+    inject: [
+      UNION_REGISTRY,
+      UNION_ENDPOINTS,
+      CLOCK,
+      ROOT_LOGGER,
+      { token: DB, optional: true },
+      { token: REDIS, optional: true },
     ],
+    useFactory: (
+      registry: UnionRegistry,
+      endpoints: readonly UnionEndpoint[],
+      clock: Clock,
+      logger: RootLogger,
+      db?: Kysely<Database>,
+      redis?: RedisHandle,
+    ): PoolExtraJobs => {
+      if (db === undefined) return new Map();
+      const governed = governedUnion(registry, endpoints, { clock, logger, redis }, source);
+      const handler = createPromoPrefetchHandler({
+        db,
+        clock,
+        logger,
+        registry: { get: (platform) => governed.adapter(platform) },
+      });
+      return new Map([[PROMO_PREFETCH_JOB, handler]]);
+    },
   };
 }
 
@@ -2522,8 +2508,9 @@ function catalogWorkerPorts(union: DynamicModule, source: UnionQuotaSource): Dyn
           redis?: RedisHandle,
         ): GovernedUnion => governedUnion(registry, endpoints, { clock, logger, redis }, source),
       },
+      promoPrefetchJobs(source),
     ],
-    exports: [GovernedUnion],
+    exports: [GovernedUnion, POOL_EXTRA_JOBS],
   };
 }
 
@@ -4534,6 +4521,7 @@ export class AppModule {
           : []),
         // catalog's product pool refresh (B1-05r, BR-PRICE-11): queue pool-refresh and its seed
         // timer, worker entry only, on this entry's own governed adapters (shared quota bucket).
+        // Its handler also works the promotion link prefetch jobs (B1-06zd).
         ...(options.entry === 'worker' && union !== undefined
           ? [
               CatalogWorkerModule.forWorker({
@@ -4541,10 +4529,6 @@ export class AppModule {
                 config: (db, clock) => createContentReader({ db, clock }),
               }),
             ]
-          : []),
-        // The promotion link prefetch jobs (B1-06zd), same worker-only rule.
-        ...(options.entry === 'worker' && union !== undefined
-          ? [promoPrefetchWorker(union, unionQuotaSource)]
           : []),
         // B3-03j: the Agent's business ports (union / catalog / linking / parsing) and its
         // production assembly; B3-03m: input check and sentence review over the Aliyun content

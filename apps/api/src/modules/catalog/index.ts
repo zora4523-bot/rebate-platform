@@ -130,12 +130,13 @@ export {
   CatalogConfigReader,
   GovernedUnion,
   LinkRegistrar,
+  POOL_EXTRA_JOBS,
   RebateQuoter,
   SourceLinkReader,
   ViewerContext,
   createGuestViewerContext,
 } from './ports.ts';
-export type { RebateQuote, RegisterLinkInput, Viewer } from './ports.ts';
+export type { PoolExtraJobs, RebateQuote, RegisterLinkInput, Viewer } from './ports.ts';
 export { CATALOG, CatalogModule } from './catalog.module.ts';
 // Task B1-05q: /admin/v1/product-pools* (CT-07d, content.pool) on the admin entry, rule tests
 // test/spec/catalog/product-pool-admin/**.
