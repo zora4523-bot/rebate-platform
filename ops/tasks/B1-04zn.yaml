@@ -1,0 +1,28 @@
+id: B1-04zn
+repo: rebate-platform
+title: 淘宝大淘客三开关装配（D10-530）：TAOBAO_CONVERT_SOURCE / TAOBAO_SEARCH_SOURCE（取值 baichuan|dataoke、official|dataoke，默认关）与订单推广位读取端口 orderSlots（读 union_pids 全部淘宝推广位含 retired）接进注册表 taobaoLive 与 union.module.ts
+type: impl
+# 草稿 2026-11-01（union 线，账号 4），编排 D10-530 认可「装配小单：searchSource、convertSource（B1-04d）、orderSlots（B1-04f）接注册表与 union.module，先占号再开台账，默认都关（只在部署配置打开时走大淘客）」。
+# ① 配置：platform/config 新增两个非密钥变量 TAOBAO_CONVERT_SOURCE（baichuan | dataoke，缺省 baichuan）、TAOBAO_SEARCH_SOURCE（official | dataoke，缺省 official；official 即保持现状 adapter_unimplemented 直到官方 27939 批下）；非法取值 → ConfigError（只写变量名）；local / test 可设（非凭据）；prod 设 dataoke 也允许（是否上线由部署配置决定）。
+# ② 注册表：taobaoLive 增 convertSource / searchSource / orderSlots 选项，原样交 TaobaoUnionAdapter（B1-04d / B1-04zh / B1-04f 已有对应构造参数）；不传保持现行为（冻结测试照绿）。
+# ③ orderSlots 读取端口：union 模块内新读者（union/pids/ 下，照 pids/query-reader.ts 的写法）按 app 读 union_pids 中 platform=taobao 的全部推广位（含 retired），返回 PID 列表；由 union.module.ts 在 taobao live 且注入了大淘客 orderSource 时装配；无可选数据库句柄时不装配（listOrders 保持 adapter_unimplemented，同 B1-04x 做法）。
+# ④ 只在 staging + taobao live + 大淘客凭据就位（B1-04e）时这些开关才有意义；开关打开但 orderSource 未注入 → 照适配器既有口径 adapter_unimplemented，不拒绝启动。.env.example 只加注释掉的变量名与说明。
+# 依赖：B1-04f、B1-04zh、B1-04d、B1-04e。风险：platform/config 与 union 装配 → RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04f, B1-04zh]
+paths:
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/union/infra/registry.ts'
+  - 'apps/api/src/modules/union/infra/registry.test.ts'
+  - 'apps/api/src/modules/union/union.module.ts'
+  - 'apps/api/src/modules/union/pids/**'
+  - '.env.example'
+test_paths:
+  - 'test/spec/union/taobao-dataoke-switches/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/taobao-dataoke-switches/**'
+status: todo
