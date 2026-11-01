@@ -1,0 +1,77 @@
+{
+  "task": "CT-24zi",
+  "spec_ref": "deb521c2bcb740571a01c2dc128f40abb40c37a2",
+  "spec_commit": "a2c29b3d0f4e9ba92dd6d052973f8716b87428d3",
+  "red_tests": [
+    "test/spec/contracts/admin-tax-export/operations.test.ts > [AC-CT-24zi#1] 枚举登记权限点 tax.export_full 与导出来源 tax_withdrawals",
+    "test/spec/contracts/admin-tax-export/operations.test.ts > [AC-CT-24zi#2] tax.export_full 的 step-up 档位是 totp，没有另定档位的操作",
+    "test/spec/contracts/admin-tax-export/operations.test.ts > [AC-CT-24zi#3] 创建请求含 tax_withdrawals 分支：filters 必填 quarter，可带 unmasked、reason",
+    "test/spec/contracts/admin-tax-export/operations.test.ts > [AC-CT-24zi#4] adminCreateExport 的描述写明 tax.export_full、fund.view 与 BR-WDR-21",
+    "test/spec/contracts/admin-tax-export/operations.test.ts > [AC-CT-24zi#5] 任务列表、下载、重试的描述都写明 tax.export_full"
+  ],
+  "risk_note": "RV1 (contract, plus one controller gate). The tax quarterly export hangs on the existing export framework (08 BR-WDR-21; rulings D10-468 ⑤, D10-459 ②, D10-544, D10-546): export_resource gains tax_withdrawals with filters.quarter; new permission point tax.export_full (totp, not implied by fund.*). The controller answers 20001 data.fields=[resource] for that resource until B2-08e opens it, because it used to treat every non-users resource as audit_logs. The frozen permission list gains one entry; red run on the test commit. No migration. Full verification by the required CI checks (04:16 general rule). A rule test directory test/spec/contracts/admin-tax-export was added so the red run shows real failures.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "a2c29b3d0f4e9ba92dd6d052973f8716b87428d3",
+      "tree": "d21936b929210fb034b56b46e9f5746dc673f857",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-11-01T15:30:59Z",
+      "finished_at": "2026-11-01T15:31:04Z",
+      "red_tests": [
+        "test/spec/contracts/admin-tax-export/operations.test.ts > [AC-CT-24zi#1] 枚举登记权限点 tax.export_full 与导出来源 tax_withdrawals",
+        "test/spec/contracts/admin-tax-export/operations.test.ts > [AC-CT-24zi#2] tax.export_full 的 step-up 档位是 totp，没有另定档位的操作",
+        "test/spec/contracts/admin-tax-export/operations.test.ts > [AC-CT-24zi#3] 创建请求含 tax_withdrawals 分支：filters 必填 quarter，可带 unmasked、reason",
+        "test/spec/contracts/admin-tax-export/operations.test.ts > [AC-CT-24zi#4] adminCreateExport 的描述写明 tax.export_full、fund.view 与 BR-WDR-21",
+        "test/spec/contracts/admin-tax-export/operations.test.ts > [AC-CT-24zi#5] 任务列表、下载、重试的描述都写明 tax.export_full"
+      ],
+      "expected": ["test/spec/contracts/admin-tax-export/operations.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "4fd2dfb5f4f120d76cc0dec569cae38c932a79265564d946beb45c6a02ba758c"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "fresh independent Claude via nohup claude-run.sh --review-type contract (Codex unavailable until 2026-11-02, approvals 36): round 1 fail with two S1 (download and retry named only pii.reveal_phone), fixed; round 2 on the increment pass, two S2 fixed in a follow-up commit."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "the frozen permission list gains one entry per D10-544 ①; test/spec/contracts/admin-tax-export pins the new permission and the request branch. Reviewed with the contract; the rule test passes on the head."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "588821fd839aae1e75b17b6db46f4749172d9202",
+    "specs": "f569ed473df5afd6b8eb594c689e1a4600d1700e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  }
+}
