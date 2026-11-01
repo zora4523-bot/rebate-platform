@@ -26,6 +26,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# 2026-11-01 (CT-06zzv): `tsc -b` (verify-static typecheck) and `pnpm build` (verify-unit / verify-int)
+# ran out of the default Node heap (about 4 GB): #2109 logged "FATAL ERROR: heap out of memory", and
+# #2108 / #2110 / #2111 failed the same way at once; the same trunk passes tsc with 8 GB locally.
+# ubuntu-latest for a public repository has 4 vCPUs and 16 GB, and the flag is only a ceiling.
+env:
+  NODE_OPTIONS: --max-old-space-size=8192
+
 jobs:
   verify-reuse:
     # D10-242 (CT-06zm): an owner-approval label added or removed changes no code, so on a

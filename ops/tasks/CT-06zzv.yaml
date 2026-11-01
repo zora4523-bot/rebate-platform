@@ -1,0 +1,22 @@
+id: CT-06zzv
+repo: rebate-platform
+title: CT-06zzv：ci.yml 全局 NODE_OPTIONS=--max-old-space-size=8192（tsc -b 与 pnpm build 在默认 4 GB 堆上溢出）
+type: guard-change
+# 2026-11-01 入账（编排自做，ops 线暂停；照 CT-06zza 先例）。起因：w1 报 #2109 的 verify-static typecheck（tsc -b）
+# 「FATAL ERROR: heap out of memory」，verify-unit / verify-int 的 pnpm build 同样溢出；#2108、#2110（只改台账）、#2111 同时红，
+# 主干规模已贴着 Node 默认堆上限，不是某一单的问题；本地同一主干加 --max-old-space-size=8192 后 tsc 退出 0、无类型错误。
+# 做法：ci.yml 顶层 env 加 NODE_OPTIONS（所有作业生效，只是上限、不预占）；仓库公开，ubuntu-latest 为 4 核 16 GB。测试内容不改。
+# 改 .github/** 属第三类保护路径，按 approvals #24 由编排核对后加 owner-approved 标签；非 task 分支
+# chore/guard-change-CT-06zzv，不带证据文件（先例 CT-06ze #1214、CT-06zza #2020）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/workflows/ci.yml'
+  - 'ops/tasks/CT-06zzv.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 2116
