@@ -9559,7 +9559,7 @@ export const CONTRACT_ROUTE_SCHEMAS = {
             },
             "filters": {
               "type": "object",
-              "description": "Filters of an audit_logs export, the query parameters of GET /admin/v1/audit-logs without\npaging, judged the same way (without audit.view_all actor_id is forced to the creator).\n",
+              "description": "Filters of an audit_logs export, the query parameters of GET /admin/v1/audit-logs without\npaging, judged the same way (without audit.view_all actor_id is forced to the creator;\nsystem rows match no actor_id filter).\n",
               "additionalProperties": false,
               "properties": {
                 "actor_id": {

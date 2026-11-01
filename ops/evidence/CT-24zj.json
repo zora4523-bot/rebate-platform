@@ -1,0 +1,37 @@
+{
+  "task": "CT-24zj",
+  "spec_ref": "deb521c2bcb740571a01c2dc128f40abb40c37a2",
+  "spec_commit": "2862e73f883c8bd2fc0d612be06e876a8a4019f7",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only). Audit log entries can carry a system actor (rulings D10-551 ②, D10-552, D10-557; 04 §3.2 audit_logs): actor_id nullable, actor_kind and system_actor present only on system rows, so rows of console accounts are field-for-field unchanged and frozen tests stay as they are. Enums audit_actor_kind and audit_system_actor. System holds use their own action order_auto_hold so that the manual hold reader never picks them up. Implementation and migration in B1-34p. tester: none, so no red run. Full verification by the required CI checks (04:16 general rule).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "fresh independent Claude via nohup claude-run.sh --review-type contract (Codex unavailable until 2026-11-02, approvals 36): round 1 pass; S2 action name and export columns fixed in a follow-up commit, S2 oasdiff handled per D10-557: six actor_id lines pasted from the CI output of the first push."
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "a2c9f29573bb83b4e7ee08758609748ea292259a",
+    "specs": "f569ed473df5afd6b8eb594c689e1a4600d1700e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  }
+}

@@ -3546,6 +3546,8 @@ export interface paths {
          *     the server forces `actor_id` to the caller, so without `actor_id` it gets its own records
          *     and with another account's `actor_id` it gets an empty page (`items=[]`, `total=0`), not an
          *     error. An `actor_id` that names no account is an empty page as well.
+         *     A system row (below) belongs to no account: it has no `actor_id`, so it never matches an
+         *     `actor_id` filter, and an account without `audit.view_all` never sees one.
          *     Filters combine with AND: `actor_id` (the admin who acted), `target_type` and `target_id`
          *     (exact match), `permission` (the permission point the action was done under), `from`
          *     (inclusive) and `to` (exclusive), ISO 8601 times with offset (04 §5); `from` later than
@@ -3557,6 +3559,11 @@ export interface paths {
          *     when that is empty, null when the account is gone),
          *     never the before / after values (GET /admin/v1/audit-logs/{id}). Searching does not write
          *     an audit record itself.
+         *     System rows (D10-552; actions the system took under its own identity, such as an automatic
+         *     order hold, BR-FUND-06, audited as BR-ID-34 asks): `actor_id` is null, `actor_kind` is
+         *     `system`, `system_actor` has the value (enum audit_system_actor) and `actor_name` is that
+         *     value's Chinese name from the enum. Rows of an admin account carry neither `actor_kind` nor
+         *     `system_actor`. The list, the detail and the export read the same way.
          */
         get: operations["adminListAuditLogs"];
         put?: never;
@@ -3581,8 +3588,10 @@ export interface paths {
          *     written by the action (any JSON, null when the action recorded none; sensitive fields are
          *     stored masked, so they are shown masked). Without `audit.view_all` (04 §11.1) only the
          *     caller's own records are found: another account's record is 20001 with `data.fields=[id]`,
-         *     the same as an unknown id or a record of another app (no probing). Reading a record does
-         *     not write an audit record itself.
+         *     the same as an unknown id or a record of another app (no probing). A system row (D10-552)
+         *     reads as on the list (`actor_id` null, `actor_kind=system`, `system_actor`, `actor_name`
+         *     from the enum) and is no account's own record, so without `audit.view_all` it is 20001 as
+         *     well. Reading a record does not write an audit record itself.
          */
         get: operations["adminGetAuditLog"];
         put?: never;
@@ -3638,7 +3647,10 @@ export interface paths {
          *     show for these filters to the creator, with the list's columns. An `audit_logs` export
          *     applies the same own-records rule as the list (04 §11.1 `audit.view_all`): without
          *     `audit.view_all` the server forces `actor_id` to the creator, and another account's
-         *     `actor_id` gives an empty file (status done, `row_count=0`), not an error.
+         *     `actor_id` gives an empty file (status done, `row_count=0`), not an error. System rows
+         *     (D10-552) follow the list as well: they match no `actor_id` filter, an export without
+         *     `audit.view_all` holds none. The file's columns stay the same: a system row has `actor_id`
+         *     empty and `actor_name` holding the system's Chinese name.
          *     Masking: by default every export is masked like its source list (the phone number 3 + 4,
          *     BR-ID-33) and the task has `masked=true`. Apart from `tax_withdrawals` (see below), only a
          *     `users` export may ask for the full values
@@ -15422,10 +15434,25 @@ export interface components {
          *     none. Sensitive fields are stored and shown masked.
          */
         AdminAuditValue: unknown;
+        /**
+         * @description Who acted (enum audit_actor_kind). Only system rows carry it, as `system`; rows of an admin account leave it out.
+         * @enum {string}
+         */
+        AdminAuditActorKind: "admin" | "system";
+        /**
+         * @description The system identity that acted (enum audit_system_actor, values of the form
+         *     system:<name>; more are appended later). Only system rows carry it; rows of an admin
+         *     account leave it out.
+         * @enum {string}
+         */
+        AdminAuditSystemActor: "system:risk";
         AdminAuditLogListItem: {
             id: components["schemas"]["AdminAuditLogId"];
-            actor_id: components["schemas"]["Id"];
-            /** @description Current name of the account that acted (admin_users.display_name, else the username); null when it cannot be read. */
+            /** @description The admin who acted; null on a system row (no account acted). */
+            actor_id: components["schemas"]["Id"] | null;
+            actor_kind?: components["schemas"]["AdminAuditActorKind"];
+            system_actor?: components["schemas"]["AdminAuditSystemActor"];
+            /** @description Current name of the account that acted (admin_users.display_name, else the username), null when it cannot be read; on a system row the Chinese name of `system_actor` from enum audit_system_actor. */
             actor_name?: string | null;
             /** @description Action key as the writing module recorded it (such as user_pii_reveal). */
             action: string;
@@ -15445,8 +15472,11 @@ export interface components {
         };
         AdminAuditLog: {
             id: components["schemas"]["AdminAuditLogId"];
-            actor_id: components["schemas"]["Id"];
-            /** @description Current name of the account that acted (admin_users.display_name, else the username); null when it cannot be read. */
+            /** @description The admin who acted; null on a system row (no account acted). */
+            actor_id: components["schemas"]["Id"] | null;
+            actor_kind?: components["schemas"]["AdminAuditActorKind"];
+            system_actor?: components["schemas"]["AdminAuditSystemActor"];
+            /** @description Current name of the account that acted (admin_users.display_name, else the username), null when it cannot be read; on a system row the Chinese name of `system_actor` from enum audit_system_actor. */
             actor_name?: string | null;
             /** @description Action key as the writing module recorded it. */
             action: string;
@@ -15517,7 +15547,8 @@ export interface components {
         };
         /**
          * @description Filters of an audit_logs export, the query parameters of GET /admin/v1/audit-logs without
-         *     paging, judged the same way (without audit.view_all actor_id is forced to the creator).
+         *     paging, judged the same way (without audit.view_all actor_id is forced to the creator;
+         *     system rows match no actor_id filter).
          */
         AdminExportAuditLogFilters: {
             actor_id?: components["schemas"]["Id"];
@@ -27581,7 +27612,7 @@ export interface operations {
                 page_size?: components["parameters"]["AdminPageSize"];
                 /**
                  * @description admin_id of the account that acted. Without audit.view_all the server forces it to the
-                 *     caller (another value → empty page).
+                 *     caller (another value → empty page). System rows have no actor_id and never match.
                  */
                 actor_id?: components["schemas"]["Id"];
                 /** @description Object type of the record (free text, exact match), such as user. */
@@ -27649,11 +27680,24 @@ export interface operations {
                      *             "permission": null,
                      *             "ip": "203.0.113.8",
                      *             "at": "2026-10-18T09:00:03+08:00"
+                     *           },
+                     *           {
+                     *             "id": "aud_2Tg7Kb5JvQ9mDs4XnC8hRf",
+                     *             "actor_id": null,
+                     *             "actor_kind": "system",
+                     *             "system_actor": "system:risk",
+                     *             "actor_name": "系统（风控）",
+                     *             "action": "order_auto_hold",
+                     *             "target_type": "order",
+                     *             "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01",
+                     *             "permission": null,
+                     *             "ip": null,
+                     *             "at": "2026-10-18T03:12:44+08:00"
                      *           }
                      *         ],
                      *         "page": 1,
                      *         "page_size": 20,
-                     *         "total": 3
+                     *         "total": 4
                      *       },
                      *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
                      *     }
