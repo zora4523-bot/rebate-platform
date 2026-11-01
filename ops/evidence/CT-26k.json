@@ -1,0 +1,38 @@
+{
+  "red_tests": [],
+  "risk_note": "Contract only (RV1 contracts). D10-517 / orchestrator 03:13: AdminUserDetail (adminGetUser and the operations sharing it) gains optional masked_name (last character only), masked_id_no (first + last character, BR-ID-33), realname_status payout_account (existing PayoutAccount, null when unbound) and deletion_status (latest deletion request, DeletionStatus, null when none; BR-ID-27 / 28, orchestrator 13:00); the masked fields are set only for a verified realname; they become required once the implementation task fills them. adminEditUserProfile 200 returns AdminUserProfileEditResponse = the detail fields + changed_fields (phone / nickname, empty when nothing changed, same as the audit record). No verification-status field (the payout table only keeps verified accounts); full plaintext stays behind reveal. The implementation task carries a test-change for nickname.int.test:37 and phone.int.test:68. Generated files regenerated; verify:fast green; required CI checks run on the PR head.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "contract review r1 pass 0 findings; r2 (deletion_status increment, orchestrator 13:00) pass (couli-runs/CT-26k/review-contract-r1.json, r2); Codex unavailable until 11-02 (approvals #36)"
+    }
+  ],
+  "spec_test_review": null,
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "9f6ce1cf5255d51df6cb0183f32c88360680a041",
+    "specs": "d6da500dafeea96c5e7d7cc7d526535701917b8f"
+  },
+  "task": "CT-26k",
+  "spec_commit": "1b27546068e2444e3403b746962e6153f20f6682",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "runs": []
+}

@@ -3920,6 +3920,14 @@ export interface paths {
          *     the reset / disable / enable operations take as `expected_row_version`. Orders, balance,
          *     ledger and withdrawals of the user come with the order and fund consoles and are not part
          *     of this schema yet.
+         *     CT-26k (D10-517) adds the 「基本信息」 fields of the console's user detail:
+         *     `realname_status`, `masked_name` and `masked_id_no` (BR-ID-33: name with only the last
+         *     character, ID number first 1 + last 1; both null unless realname_status is verified) and
+         *     `payout_account` (the current payout account masked as in GET /v1/me/payout-account, null
+         *     when none is bound), plus `deletion_status` (the user's latest deletion request, BR-ID-27 /
+         *     BR-ID-28; null when none). The full values stay with the audited reveal. This operation
+         *     is implemented; the five new fields are 实现另单 and stay optional until that
+         *     implementation is merged.
          */
         get: operations["adminGetUser"];
         put?: never;
@@ -4316,7 +4324,12 @@ export interface paths {
          *     values, phone numbers masked 3 + 4; with no field changed the changed fields are empty).
          *     Retrying a save that already took effect therefore returns the same user and only adds
          *     an audit record. The response is the user as GET /admin/v1/users/{user_id} returns it
-         *     now, phone number masked. No compare-and-set value and no Idempotency-Key (04 §6.6).
+         *     now, phone number masked, plus `changed_fields` (CT-26k, D10-517): the fields this save
+         *     actually changed (`phone`, `nickname`; the same list as the audit record), an empty
+         *     array when nothing changed, so a retry tells the console that nothing was changed this
+         *     time. This operation is implemented; `changed_fields` is 实现另单 and stays optional
+         *     until that implementation is merged. No compare-and-set value and no Idempotency-Key
+         *     (04 §6.6).
          *     Pending re-verification (BR-WDR-01 细则「旧手机号被二次放号时的提现加验」, 清除标记只走人工;
          *     BR-ID-44; contract CT-26j, implemented by a later task): when the edited phone is saved
          *     for an account that carries the "pending re-verification" flag, the same transaction
@@ -15621,7 +15634,13 @@ export interface components {
         };
         /**
          * @description A user as the console sees it (04 §11.1): non-sensitive fields, the masked phone number,
-         *     the risk state and the union bindings. No identity number, payout account or real name.
+         *     the risk state, the union bindings and (CT-26k, D10-517) the real-name status with the
+         *     masked name and ID number and the masked current payout account (BR-ID-33). No full
+         *     identity number, payout account, real name or phone number: those only through POST
+         *     /admin/v1/users/{user_id}/reveal. realname_status, masked_name, masked_id_no,
+         *     payout_account and deletion_status (the latest deletion request, BR-ID-27 / BR-ID-28) are
+         *     optional until their implementation is merged (implementation in a separate
+         *     task); they then become required, with null as described on each.
          */
         AdminUserDetail: {
             user_id: components["schemas"]["Id"];
@@ -15643,11 +15662,121 @@ export interface components {
             risk: components["schemas"]["AdminUserRiskState"];
             /** @description One entry per platform the user has a binding row on. */
             union_bindings: components["schemas"]["AdminUserUnionBinding"][];
+            /**
+             * @description contracts/enums/identity.yaml realname_status (the user's realname row; none when the
+             *     user has none). Added by CT-26k (D10-517); not returned until its implementation is
+             *     merged.
+             * @enum {string}
+             */
+            realname_status?: "none" | "verified" | "failed";
+            /**
+             * @description Real name with only the last character kept (`**三`, BR-ID-33); null unless
+             *     realname_status is verified. The full name only through the audited reveal. Added by
+             *     CT-26k (D10-517); not returned until its implementation is merged.
+             */
+            masked_name?: string | null;
+            /**
+             * @description ID number with only the first and the last character kept, the rest `*`
+             *     (`1****************X`, BR-ID-33); null unless realname_status is verified. The full
+             *     number only through the audited reveal. Added by CT-26k (D10-517); not returned until
+             *     its implementation is merged.
+             */
+            masked_id_no?: string | null;
+            /**
+             * @description The user's current payout account (payout_accounts.is_current), masked exactly as GET
+             *     /v1/me/payout-account returns it (BR-ID-33 细则「收款账号的脱敏格式」: masked_account,
+             *     masked_payee_name, bank_name for a bank card); null when none is bound. Only a
+             *     verified account is ever saved (BR-WDR-02), so there is no separate verification
+             *     state. The full account only through the audited reveal. Added by CT-26k (D10-517);
+             *     not returned until its implementation is merged.
+             */
+            payout_account?: components["schemas"]["PayoutAccount"] | null;
+            /**
+             * @description Status of the user's latest account-deletion request (BR-ID-27, BR-ID-28: cooling,
+             *     processing, done or cancelled); null when the user has never requested deletion.
+             *     Added by CT-26k (D10-517); not returned until its implementation is merged.
+             */
+            deletion_status?: components["schemas"]["DeletionStatus"] | null;
         };
         AdminUserDetailResponse: {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["AdminUserDetail"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description The answer of PATCH /admin/v1/users/{user_id}/profile: the user exactly as AdminUserDetail
+         *     (GET /admin/v1/users/{user_id}) describes it now, every property the same, plus
+         *     `changed_fields` (CT-26k, D10-517). Keep the properties in step with AdminUserDetail.
+         */
+        AdminUserProfileEditResult: {
+            user_id: components["schemas"]["Id"];
+            nickname: string;
+            phone_masked: components["schemas"]["AdminMaskedPhone"];
+            invite_code: string;
+            /** @description user_id of the current inviter (users.parent_id); null when none is bound. */
+            inviter_user_id: components["schemas"]["Id"] | null;
+            level: components["schemas"]["AdminUserLevel"];
+            /** @description How the account was created (users.register_method), as stored. */
+            register_method: string;
+            /** @description Install channel at registration (users.registered_channel), as stored. */
+            registered_channel: string | null;
+            /**
+             * Format: date-time
+             * @description Registration time.
+             */
+            created_at: string;
+            risk: components["schemas"]["AdminUserRiskState"];
+            /** @description One entry per platform the user has a binding row on. */
+            union_bindings: components["schemas"]["AdminUserUnionBinding"][];
+            /**
+             * @description contracts/enums/identity.yaml realname_status (the user's realname row; none when the
+             *     user has none). Added by CT-26k (D10-517); not returned until its implementation is
+             *     merged.
+             * @enum {string}
+             */
+            realname_status?: "none" | "verified" | "failed";
+            /**
+             * @description Real name with only the last character kept (`**三`, BR-ID-33); null unless
+             *     realname_status is verified. The full name only through the audited reveal. Added by
+             *     CT-26k (D10-517); not returned until its implementation is merged.
+             */
+            masked_name?: string | null;
+            /**
+             * @description ID number with only the first and the last character kept, the rest `*`
+             *     (`1****************X`, BR-ID-33); null unless realname_status is verified. The full
+             *     number only through the audited reveal. Added by CT-26k (D10-517); not returned until
+             *     its implementation is merged.
+             */
+            masked_id_no?: string | null;
+            /**
+             * @description The user's current payout account (payout_accounts.is_current), masked exactly as GET
+             *     /v1/me/payout-account returns it (BR-ID-33 细则「收款账号的脱敏格式」: masked_account,
+             *     masked_payee_name, bank_name for a bank card); null when none is bound. Only a
+             *     verified account is ever saved (BR-WDR-02), so there is no separate verification
+             *     state. The full account only through the audited reveal. Added by CT-26k (D10-517);
+             *     not returned until its implementation is merged.
+             */
+            payout_account?: components["schemas"]["PayoutAccount"] | null;
+            /**
+             * @description Status of the user's latest account-deletion request (BR-ID-27, BR-ID-28: cooling,
+             *     processing, done or cancelled); null when the user has never requested deletion.
+             *     Added by CT-26k (D10-517); not returned until its implementation is merged.
+             */
+            deletion_status?: components["schemas"]["DeletionStatus"] | null;
+            /**
+             * @description The fields this save actually changed, in the order phone, nickname: a field equal to
+             *     the current value (phone after normalisation, nickname after trimming) is not
+             *     listed; empty when nothing changed (a retry of a save that already took effect). The
+             *     same list as the changed fields of the user_profile_edit audit record. Added by
+             *     CT-26k (D10-517); not returned until its implementation is merged (then required).
+             */
+            changed_fields?: ("phone" | "nickname")[];
+        };
+        AdminUserProfileEditResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUserProfileEditResult"];
             trace_id: components["schemas"]["TraceId"];
         };
         /**
@@ -27936,6 +28065,18 @@ export interface operations {
                      *         "register_method": "sms",
                      *         "registered_channel": null,
                      *         "created_at": "2026-10-10T20:30:00+08:00",
+                     *         "realname_status": "verified",
+                     *         "masked_name": "**三",
+                     *         "masked_id_no": "1****************X",
+                     *         "payout_account": {
+                     *           "payout_account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01",
+                     *           "payout_method": "bank_card",
+                     *           "masked_account": "尾号 1234",
+                     *           "bank_name": "招商银行",
+                     *           "masked_payee_name": "**三",
+                     *           "change_remaining_this_month": 2
+                     *         },
+                     *         "deletion_status": null,
                      *         "risk": {
                      *           "state": "frozen",
                      *           "reason_category": "abnormal_trade",
@@ -28626,6 +28767,11 @@ export interface operations {
                      *         "register_method": "sms",
                      *         "registered_channel": "appstore",
                      *         "created_at": "2026-10-12T09:00:00+08:00",
+                     *         "realname_status": "none",
+                     *         "masked_name": null,
+                     *         "masked_id_no": null,
+                     *         "payout_account": null,
+                     *         "deletion_status": null,
                      *         "risk": {
                      *           "state": "normal",
                      *           "reason_category": null,
@@ -28635,12 +28781,15 @@ export interface operations {
                      *           "changed_at": null,
                      *           "row_version": null
                      *         },
-                     *         "union_bindings": []
+                     *         "union_bindings": [],
+                     *         "changed_fields": [
+                     *           "phone"
+                     *         ]
                      *       },
                      *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
                      *     }
                      */
-                    "application/json": components["schemas"]["AdminUserDetailResponse"];
+                    "application/json": components["schemas"]["AdminUserProfileEditResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];
