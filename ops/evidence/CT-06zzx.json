@@ -1,0 +1,43 @@
+{
+  "task": "CT-06zzx",
+  "spec_ref": "deb521c2bcb740571a01c2dc128f40abb40c37a2",
+  "spec_commit": "628f2644b4ae9ea42c211e268e0b115855e2b169",
+  "red_tests": [],
+  "risk_note": "RV2 by path (pnpm-lock.yaml and pnpm-workspace.yaml). Patch and minor upgrades for all 13 pnpm audit --prod advisories (2 high: zod GHSA-mrhx-c7xc-m3w5, path-to-regexp GHSA-j3q9-mxjg-w52f), per 00 §9. zod 4.6.5 to 4.6.7 (direct, apps/api), fastify 5.12.5 to 5.12.7, path-to-regexp 8.2.0 to 8.4.2, fast-uri 3.1.8 to 3.1.9 and 4.2.1 to 4.2.3, qs 6.16.0 to 6.16.1. Every version is at least 7 days old; qs stops at 6.16.1 because 6.16.2 is not. @ant-design/pro-layout 7.22.7 (latest) pins path-to-regexp and @nestjs/platform-fastify 12.1.0 pins fastify, so pnpm-workspace.yaml overrides target those dependency paths; fast-uri and qs overrides target the affected version ranges only. No major version moves and no new package. Resolution checked with --lockfile-only --ignore-scripts: pnpm audit --prod goes from 13 to 0. Overrides should be dropped when upstream moves.",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex via tools/agent/codex-run.sh, round 1 pass, no findings. Static only: it read repository usage, not upstream changelogs or the advisories, and ran nothing, so it does not itself confirm compatibility; that rests on verify:fast here and full CI. The audit result is the implementer's check."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "deps task, ledger tester: none"
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "d6bb937ae8b51f5e16351703d29a58c258f0418f",
+    "specs": "81162dd1f14b9998534e12edbd04c10478c7b260"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  }
+}
