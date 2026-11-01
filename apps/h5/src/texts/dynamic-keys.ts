@@ -11,6 +11,8 @@ export const H5_TEXT_KEY_PATTERNS = [
   'claim.records.desc.*',
   // 找回驳回原因（pages/find-order/records-model.ts）。
   'claim_reject_reason.*.title',
+  // 收益看板期间名（pages/earnings/earnings-page.tsx）：earnings.period.<today|yesterday|this_month|last_month>。
+  'earnings.period.*',
   // 错误码文案 error.<code> 与 error.30202.<reason>（pages/find-order/submit.ts）。
   'error.*',
 ] as const;
