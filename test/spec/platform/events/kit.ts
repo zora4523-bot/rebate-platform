@@ -48,6 +48,8 @@ export const PLAN_02_EVENTS = [
   'withdrawal.created',
   'account.went_negative',
   'settle.batch_done',
+  // 02 §11 结算：一次确认（settle_run）全部批次 DONE 或因开关停止置 PARTIAL（D10-467 ③ / D10-477，couli #228）
+  'settle.run_done',
   'risk.state_changed',
   'appeal.resolved',
   'agent.run_finished',

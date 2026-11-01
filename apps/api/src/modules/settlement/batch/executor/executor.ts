@@ -18,7 +18,9 @@
 //        b. not yet at the execution instant (SCHEDULED and clock < scheduled_at): 'not_due';
 //        c. settle.auto.enabled or credit.enabled.<platform> not on: write paused_by_switch_at =
 //           clock.now() (row_version CAS, status stays CONFIRMED), 'switched_off' — before the
-//           snapshot check, so also while the snapshot is pending;
+//           snapshot check, so also while the snapshot is pending; on the same transaction, under
+//           the run lock, settle.run_done as in step 6 (a paused batch counts as stopped by a
+//           switch, so this pause may be the run's last move);
 //        d. today's asset snapshot (deps.snapshotStatus for D = the day before the +08:00
 //           accounting date of clock.now()) neither complete nor timed out: 'snapshot_pending',
 //           nothing written;
@@ -53,6 +55,30 @@
 //      finished_at = clock.now() and publishes settle.batch_done (payload with batch_id) through
 //      deps.events on that same transaction; 'done'. A failing publish rolls the transaction back
 //      (the batch stays EXECUTING) and run() rejects.
+//   6. settle.run_done (B2-04zf; D10-467 ③ as corrected by D10-477 and D10-492; BR-TEXT-09): the DONE
+//      transaction of step 5, the SB7 transaction of step 4 (the PARTIAL move runs in its own
+//      transaction) and the SB5 c pause transaction first take a transaction-level advisory lock
+//      on (app, settle_run_id), so the completing transactions of one run run one after another
+//      and each sees the others' committed batches. After the batch's own move, when no batch of
+//      that run (same app_id and settle_run_id) is EXECUTING, or CONFIRMED without
+//      paused_by_switch_at, any more, the run rests: outcome 'partial' when a batch of it was
+//      stopped by a switch (PARTIAL, or CONFIRMED with paused_by_switch_at), else 'done'; DRAFT
+//      and CANCELLED batches neither count nor block. A batch without settle_run_id has no run.
+//      Part and the start of the current execution live in settlement's own app.settle_runs
+//      (migration 0108), read on the same transaction: a run without a row has published nothing
+//      (part 0) and its current execution has no lower bound. The run publishes only when this
+//      execution credited something (D10-477 补正, D10-492 ④): a batch with finished_at after
+//      part_started_at, or a PARTIAL batch with a credited item whose credit is after
+//      part_started_at (order items: the order's credited_at, written by the B2-04m credit on the
+//      item transaction; beneficiary items: the obligation's closed_at, B2-04q). Otherwise
+//      nothing is published and no part is used up. Publishing: part = row part + 1; the row
+//      moves to that part and outcome, part_started_at = clock.now() (the next execution starts
+//      after this rest), row_version + 1 — a CAS on row_version, or the INSERT of the row at the
+//      run's first publish (ON CONFLICT DO NOTHING) — then settle.run_done with payload
+//      { settle_run_id, bill_id, part, outcome, batch_count } and an event id derived from
+//      (app, run, part), all on that same transaction. A lost CAS or INSERT publishes nothing
+//      (the batch move still commits); a failing publish rolls the transaction back (the batch
+//      keeps its state, the row stays as it was). event_log is never read.
 // Batch status only through the generated settle-batch transition(), every write a row_version CAS.
 // Time only from deps.clock; logs only through deps.logger.
 import type { DB } from '@couli/db';
@@ -67,7 +93,14 @@ import { sql, type Kysely, type Transaction, type Updateable } from 'kysely';
 import { switchSpecOf } from '../../../content/index.ts';
 import type { Clock, EventBus, RootLogger } from '../../../platform/index.ts';
 import type { CreditOrder, CreditRole } from '../../credit/index.ts';
-import { compareItems, previousDay, switchOn } from './rules.ts';
+import {
+  compareItems,
+  previousDay,
+  runCredited,
+  runDoneEventId,
+  runRest,
+  switchOn,
+} from './rules.ts';
 
 export interface BatchExecuteInput {
   readonly appId: string;
@@ -153,6 +186,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LOCK_NAMESPACE = 'settlement.batch_execute';
 const AUTO_SWITCH = 'settle.auto.enabled';
 const DONE_EVENT = 'settle.batch_done';
+const RUN_DONE_EVENT = 'settle.run_done';
+/** First key of the transaction-level run lock (B2-04zf), apart from the batch liveness lock. */
+const RUN_LOCK_NAMESPACE = 'settlement.settle_run';
 const ROLES: readonly string[] = ['self', 'share', 'direct', 'indirect'];
 
 interface BatchRow {
@@ -165,6 +201,14 @@ interface BatchRow {
   readonly settle_mode: string;
   readonly scheduled_at: Date | null;
   readonly paused_by_switch_at: Date | null;
+  readonly settle_run_id: string | null;
+  readonly row_version: number;
+}
+
+/** The run's app.settle_runs row as step 6 reads it. */
+interface RunRow {
+  readonly part: number;
+  readonly part_started_at: Date;
   readonly row_version: number;
 }
 
@@ -194,7 +238,7 @@ class DayRollover extends Error {
   }
 }
 
-/** The DONE CAS matched no row (someone else moved the batch): roll back, end 'busy'. */
+/** A batch CAS inside a transaction matched no row (someone else moved it): roll back, 'busy'. */
 class LostCas extends Error {
   constructor() {
     super('settle batch row_version CAS lost');
@@ -245,6 +289,7 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
         'settle_mode',
         'scheduled_at',
         'paused_by_switch_at',
+        'settle_run_id',
         'row_version',
       ])
       .where('app_id', '=', input.appId)
@@ -409,6 +454,206 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
     }
   }
 
+  /** Step 6, first statement of a completing transaction: serialise the run's completions. */
+  async function lockRun(trx: Transaction<DB>, batch: BatchRow): Promise<void> {
+    if (batch.settle_run_id === null) return;
+    const key = `${batch.app_id}:${batch.settle_run_id}`;
+    await sql`
+      select pg_advisory_xact_lock(hashtext(${RUN_LOCK_NAMESPACE}), hashtext(${key}))
+    `.execute(trx);
+  }
+
+  function readRunRow(
+    trx: Transaction<DB>,
+    appId: string,
+    runId: string,
+  ): Promise<RunRow | undefined> {
+    return trx
+      .withSchema('app')
+      .selectFrom('settle_runs')
+      .select(['part', 'part_started_at', 'row_version'])
+      .where('app_id', '=', appId)
+      .where('settle_run_id', '=', runId)
+      .executeTakeFirst();
+  }
+
+  /**
+   * Credited items of each PARTIAL batch whose credit happened in this execution (after `since`;
+   * all of them when `since` is null): an order item by its order's credited_at, a beneficiary
+   * item by its obligation's closed_at.
+   */
+  async function creditedCounts(
+    trx: Transaction<DB>,
+    appId: string,
+    partial: readonly string[],
+    since: Date | null,
+  ): Promise<Map<string, number>> {
+    const credited = new Map<string, number>();
+    if (partial.length === 0) return credited;
+    let query = trx
+      .withSchema('app')
+      .selectFrom('settle_batch_items as i')
+      .select(['i.batch_id', (eb) => eb.fn.countAll<string>().as('n')])
+      .where('i.app_id', '=', appId)
+      .where('i.batch_id', 'in', partial)
+      .where('i.result', '=', 'credited');
+    if (since !== null) {
+      query = query.where((eb) =>
+        eb.or([
+          eb.and([
+            eb('i.item_type', '=', 'order'),
+            eb.exists(
+              eb
+                .selectFrom('orders as o')
+                .select(sql<number>`1`.as('one'))
+                .whereRef('o.app_id', '=', 'i.app_id')
+                .whereRef('o.order_id', '=', 'i.order_id')
+                .where('o.credited_at', '>', since),
+            ),
+          ]),
+          eb.and([
+            eb('i.item_type', '=', 'beneficiary'),
+            eb.exists(
+              eb
+                .selectFrom('beneficiary_credits as b')
+                .select(sql<number>`1`.as('one'))
+                .whereRef('b.app_id', '=', 'i.app_id')
+                .whereRef('b.beneficiary_credit_id', '=', 'i.beneficiary_credit_id')
+                .where('b.closed_at', '>', since),
+            ),
+          ]),
+        ]),
+      );
+    }
+    for (const c of await query.groupBy('i.batch_id').execute()) {
+      credited.set(c.batch_id, Number(c.n));
+    }
+    return credited;
+  }
+
+  /** D10-477 补正 / D10-492 ④: whether this execution of the run credited anything. */
+  async function executionCredited(
+    trx: Transaction<DB>,
+    appId: string,
+    rows: readonly { batch_id: string; status: string; finished_at: Date | null }[],
+    since: Date | null,
+  ): Promise<boolean> {
+    const partial = rows.filter((r) => r.status === 'PARTIAL').map((r) => r.batch_id);
+    const credited = await creditedCounts(trx, appId, partial, since);
+    return runCredited(
+      rows.map((r) => ({
+        status: r.status,
+        creditedItems: credited.get(r.batch_id) ?? 0,
+        doneSinceStart:
+          r.finished_at !== null && (since === null || r.finished_at.getTime() > since.getTime()),
+      })),
+    );
+  }
+
+  /**
+   * The publish's row move on `trx`: INSERT at the run's first publish, else a row_version CAS.
+   * false when another writer got there first (nothing is published then).
+   */
+  async function saveRunPart(
+    trx: Transaction<DB>,
+    batch: BatchRow,
+    runId: string,
+    row: RunRow | undefined,
+    part: number,
+    outcome: 'done' | 'partial',
+  ): Promise<boolean> {
+    const now = clock.now();
+    if (row === undefined) {
+      const inserted = await trx
+        .withSchema('app')
+        .insertInto('settle_runs')
+        .values({
+          settle_run_id: runId,
+          app_id: batch.app_id,
+          bill_id: batch.bill_id,
+          part,
+          last_outcome: outcome,
+          part_started_at: now,
+          row_version: 0,
+          created_at: now,
+          updated_at: now,
+        })
+        .onConflict((oc) => oc.column('settle_run_id').doNothing())
+        .executeTakeFirst();
+      if ((inserted.numInsertedOrUpdatedRows ?? 0n) === 1n) return true;
+      // The id is taken: by a row of this app written outside the run lock (lost), or by another
+      // app's run (settle_run_id is generated per confirmation and must not repeat).
+      const owner = await trx
+        .withSchema('app')
+        .selectFrom('settle_runs')
+        .select('app_id')
+        .where('settle_run_id', '=', runId)
+        .executeTakeFirst();
+      if (owner !== undefined && owner.app_id !== batch.app_id) {
+        throw new Error(`settle run ${runId} belongs to another app`);
+      }
+      return false;
+    }
+    const updated = await trx
+      .withSchema('app')
+      .updateTable('settle_runs')
+      .set({
+        part,
+        last_outcome: outcome,
+        part_started_at: now,
+        row_version: row.row_version + 1,
+        updated_at: now,
+      })
+      .where('app_id', '=', batch.app_id)
+      .where('settle_run_id', '=', runId)
+      .where('row_version', '=', row.row_version)
+      .executeTakeFirst();
+    return updated.numUpdatedRows === 1n;
+  }
+
+  /** Step 6, after the batch's own move on `trx` (the run lock is held). */
+  async function publishRunRest(trx: Transaction<DB>, batch: BatchRow): Promise<void> {
+    const runId = batch.settle_run_id;
+    if (runId === null) return;
+    const rows = await trx
+      .withSchema('app')
+      .selectFrom('settle_batches')
+      .select(['batch_id', 'status', 'paused_by_switch_at', 'finished_at'])
+      .where('app_id', '=', batch.app_id)
+      .where('settle_run_id', '=', runId)
+      .execute();
+    const rest = runRest(
+      rows.map((r) => ({ status: r.status, pausedBySwitch: r.paused_by_switch_at !== null })),
+    );
+    if (!rest.settled) return;
+    const row = await readRunRow(trx, batch.app_id, runId);
+    const since = row?.part_started_at ?? null;
+    // D10-477 补正: nothing credited in this execution → no event, no part used up.
+    if (!(await executionCredited(trx, batch.app_id, rows, since))) return;
+    const part = (row?.part ?? 0) + 1;
+    const fields = { app_id: batch.app_id, settle_run_id: runId, part };
+    if (!(await saveRunPart(trx, batch, runId, row, part, rest.outcome))) {
+      logger.warn({ ...fields, event: 'settle_run_cas_lost' }, 'settle run part already taken');
+      return;
+    }
+    await deps.events.publish(trx, {
+      appId: batch.app_id,
+      name: RUN_DONE_EVENT,
+      eventId: runDoneEventId(batch.app_id, runId, part),
+      payload: {
+        settle_run_id: runId,
+        bill_id: batch.bill_id,
+        part,
+        outcome: rest.outcome,
+        batch_count: rest.batchCount,
+      },
+    });
+    logger.info(
+      { ...fields, outcome: rest.outcome, event: 'settle_run_rest' },
+      'settle run event published',
+    );
+  }
+
   /**
    * Steps 3–5, with the liveness lock held by `conn`. Every statement of the run (batch CAS, item
    * transactions, snapshot reads) goes over that one connection: losing it loses the lock and
@@ -434,10 +679,21 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
       }
       // SB5 c: the switches, before the snapshot check.
       if (!(await switchesOn(batch.app_id, batch.platform))) {
-        const marked = await casBatch(conn, batch, 'CONFIRMED', version, {
-          paused_by_switch_at: clock.now(),
-        });
-        if (!marked) return result('busy');
+        // The pause and settle.run_done (step 6) on one transaction: a paused batch no longer
+        // blocks its run, so this pause may be the run's last move.
+        try {
+          await conn.transaction().execute(async (trx) => {
+            await lockRun(trx, batch);
+            const marked = await casBatch(trx, batch, 'CONFIRMED', version, {
+              paused_by_switch_at: clock.now(),
+            });
+            if (!marked) throw new LostCas();
+            await publishRunRest(trx, batch);
+          });
+        } catch (error) {
+          if (error instanceof LostCas) return result('busy');
+          throw error;
+        }
         logger.warn({ ...fields, event: 'settle_batch_switched_off' }, 'settle batch not started');
         return result('switched_off');
       }
@@ -477,8 +733,18 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
       // BR-FUND-04 ⑦: both switches before every item; either off → SB7.
       if (!(await switchesOn(batch.app_id, batch.platform))) {
         const to = nextState('EXECUTING', 'SWITCH_OFF');
-        if (!(await casBatch(conn, batch, 'EXECUTING', version, { status: to }))) {
-          return result('busy');
+        // SB7 and settle.run_done (step 6) on one transaction.
+        try {
+          await conn.transaction().execute(async (trx) => {
+            await lockRun(trx, batch);
+            if (!(await casBatch(trx, batch, 'EXECUTING', version, { status: to }))) {
+              throw new LostCas();
+            }
+            await publishRunRest(trx, batch);
+          });
+        } catch (error) {
+          if (error instanceof LostCas) return result('busy');
+          throw error;
         }
         logger.warn(
           { ...fields, event: 'settle_batch_partial' },
@@ -517,6 +783,7 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
     // SB6 and settle.batch_done on one transaction.
     try {
       await conn.transaction().execute(async (trx) => {
+        await lockRun(trx, batch);
         if ((await unprocessedCount(trx, batch)) > 0) {
           throw new Error(`settle batch ${batch.batch_id} still has unprocessed items`);
         }
@@ -536,6 +803,7 @@ export function createBatchExecutor(deps: BatchExecutorDependencies): BatchExecu
             kind: batch.kind,
           },
         });
+        await publishRunRest(trx, batch);
       });
     } catch (error) {
       if (error instanceof LostCas) return result('busy');
