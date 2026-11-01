@@ -19,6 +19,7 @@ import type {
   SyncAccessPort,
   SyncAccount,
 } from '../../../../apps/api/src/modules/orders/application/sync-ports.ts';
+import { RESCAN_START_MARGIN_MS } from '../../../../apps/api/src/modules/orders/domain/sync-window.ts';
 import type { OrderRescanHandlerDeps } from '../../../../apps/api/src/modules/orders/jobs/order-rescan.ts';
 
 export const NOW = '2026-10-17T02:00:00.000Z';
@@ -37,6 +38,9 @@ export const PDD_ENABLED = 'order_sync.rescan.pdd.enabled';
 
 export const iso = (ms: number): string => new Date(ms).toISOString();
 export const daysAgo = (days: number, nowMs = NOW_MS): string => iso(nowMs - days * DAY_MS);
+/** A round starts the margin after now − days; call it only after the code under test ran. */
+export const roundStart = (days: number, nowMs = NOW_MS): string =>
+  iso(nowMs - days * DAY_MS + RESCAN_START_MARGIN_MS);
 
 export const account: SyncAccount = {
   app_id: 'rescan-spec',

@@ -4,35 +4,26 @@ import { scheduleOrderRescan } from '../../../../apps/api/src/modules/orders/app
 import { PLATFORM_RULES } from '../../../../apps/api/src/modules/orders/domain/platform-rules/index.ts';
 import type { RegisteredPlatform } from '../../../../apps/api/src/modules/union/index.ts';
 import {
-  DAY_MS,
-  HOUR_MS,
   JD_DAYS,
   JD_ENABLED,
-  NOW_MS,
   PDD_ACCOUNT,
   PDD_ENABLED,
   TAOBAO_ACCOUNT,
   account,
-  daysAgo,
   fixture,
-  iso,
   mentioning,
   pddAccount,
   pddStream,
   rescanWindow,
+  roundStart,
 } from './kit.ts';
-
-const RESCAN_START_MARGIN_MS = HOUR_MS;
-
-/** A round starts the margin after now − days. */
-const roundStart = (days: number): string => iso(NOW_MS - days * DAY_MS + RESCAN_START_MARGIN_MS);
 
 it('[AC-B1-04zm#7] 键未设时 jd 开、回扫 30 天，开关与天数都按平台的键读', async () => {
   const f = fixture();
   await scheduleOrderRescan(f.scheduler, ['jd']);
   expect(f.config.get).toHaveBeenCalledWith(JD_ENABLED);
   expect(f.config.get).toHaveBeenCalledWith(JD_DAYS);
-  expect(f.sent()).toEqual([rescanWindow(daysAgo(30))]);
+  expect(f.sent()).toEqual([rescanWindow(roundStart(30))]);
   expect(f.logger.warn).not.toHaveBeenCalled();
 });
 
@@ -70,7 +61,7 @@ it.each([0, -1, 1.5, 91, '45', 'abc'])(
   async (days) => {
     const f = fixture({ config: { [JD_DAYS]: days } });
     await scheduleOrderRescan(f.scheduler, ['jd']);
-    expect(f.sent()).toEqual([rescanWindow(daysAgo(30))]);
+    expect(f.sent()).toEqual([rescanWindow(roundStart(30))]);
     expect(f.logger.warn.mock.calls).toHaveLength(1);
     expect(f.logger.warn.mock.calls[0]?.[0]).toEqual({ key: JD_DAYS });
   },

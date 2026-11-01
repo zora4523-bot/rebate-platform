@@ -4,6 +4,7 @@
 import { expect, it } from 'vitest';
 import { scheduleOrderRescan } from '../../../../apps/api/src/modules/orders/application/order-rescan.ts';
 import type { OrderRescanWindow } from '../../../../apps/api/src/modules/orders/application/sync-ports.ts';
+import { RESCAN_START_MARGIN_MS } from '../../../../apps/api/src/modules/orders/domain/sync-window.ts';
 import { jdOrderWindow } from '../../../../apps/api/src/modules/union/infra/jd/orders.ts';
 import { incrementWindow } from '../../../../apps/api/src/modules/union/infra/pdd/orders.ts';
 import { DAY_MS, HOUR_MS, JD_DAYS, MINUTE_MS, NOW_MS, fixture } from './kit.ts';
@@ -19,4 +20,8 @@ it('[AC-B1-04zm#67] days=90：首窗起点距 now 严格小于 90 天且相差 1
   const lateMs = NOW_MS + 59 * MINUTE_MS;
   expect(() => jdOrderWindow(win, new Date(lateMs))).not.toThrow();
   expect(() => incrementWindow(win, lateMs)).not.toThrow();
+});
+
+it('[AC-B1-04zm#68] RESCAN_START_MARGIN_MS 导出值是 1 小时', () => {
+  expect(RESCAN_START_MARGIN_MS).toBe(3_600_000);
 });

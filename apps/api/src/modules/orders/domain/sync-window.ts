@@ -80,6 +80,12 @@ export function intervalSeconds(configured: unknown): number {
     : DEFAULT_SYNC_INTERVAL_SECONDS;
 }
 
+/**
+ * B1-04zm: how long after now − days a round starts. Only declared in the skeleton (no top-level
+ * code): the implementation gives it this value.
+ */
+export declare const RESCAN_START_MARGIN_MS: 3_600_000;
+
 /** B1-04zm: what a rescan stream does next: one full window, or the end of this round. */
 export type RescanStep =
   | { readonly kind: 'window'; readonly startMs: number; readonly endMs: number }

@@ -3,13 +3,13 @@ import { propParams } from '@couli/testing';
 import fc from 'fast-check';
 import { expect, it } from 'vitest';
 import {
+  RESCAN_START_MARGIN_MS,
   rescanIntervalSeconds,
   rescanStep,
 } from '../../../../apps/api/src/modules/orders/domain/sync-window.ts';
 import { DAY_MS, HOUR_MS, MINUTE_MS, NOW_MS } from './kit.ts';
 
-const FROM_30_DAYS = NOW_MS - 30 * DAY_MS;
-const RESCAN_START_MARGIN_MS = HOUR_MS;
+const ROUND_START = NOW_MS - 30 * DAY_MS + RESCAN_START_MARGIN_MS;
 
 /** The range one round covers: it starts the margin after now − days. */
 const rangeMs = (days: number): number => days * DAY_MS - RESCAN_START_MARGIN_MS;
@@ -24,13 +24,15 @@ function walk(nowMs: number, days: number, capMs: number): Round | null {
   const limit = Math.floor((days * DAY_MS) / capMs) + 1;
   const windows: { startMs: number; endMs: number }[] = [];
   let cursor: number | null = null;
-  for (let step = 0; step <= limit; step += 1) {
+  // rescanStep comes before the limit: the margin is undefined on the skeleton, so capMs and limit
+  // are NaN, and the property must still end in NotImplemented rather than return false.
+  for (let step = 0; ; step += 1) {
     const next = rescanStep(cursor, nowMs, days, capMs);
     if (next.kind === 'round_end') return { windows, restartMs: next.restartMs };
+    if (step > limit) return null;
     windows.push({ startMs: next.startMs, endMs: next.endMs });
     cursor = next.endMs;
   }
-  return null;
 }
 
 /** Full windows, each starting where the last ended, from `fromMs`. */
@@ -66,7 +68,7 @@ function coversRange(nowMs: number, days: number, capMs: number): boolean {
 }
 
 // A round of at most about 32 windows keeps the default 10000 runs well inside the test timeout;
-// the jd case of 720 windows has its own test below.
+// the jd case of 719 windows has its own test below.
 const cases = fc
   .record({
     minutes: fc.integer({ min: 0, max: 5_000_000 }),
@@ -105,10 +107,10 @@ it.each([
 });
 
 it.each([
-  { label: '游标为空', cursorMs: null, startMs: FROM_30_DAYS },
-  { label: '游标早于 now − days', cursorMs: FROM_30_DAYS - 1, startMs: FROM_30_DAYS },
-  { label: '游标等于 now − days', cursorMs: FROM_30_DAYS, startMs: FROM_30_DAYS },
-  { label: '游标在范围内', cursorMs: FROM_30_DAYS + 5, startMs: FROM_30_DAYS + 5 },
+  { label: '游标为空', cursorMs: null, startMs: ROUND_START },
+  { label: '游标早于一轮起点', cursorMs: ROUND_START - 1, startMs: ROUND_START },
+  { label: '游标等于一轮起点', cursorMs: ROUND_START, startMs: ROUND_START },
+  { label: '游标在范围内', cursorMs: ROUND_START + 5, startMs: ROUND_START + 5 },
   { label: '正好还剩一整窗', cursorMs: NOW_MS - HOUR_MS, startMs: NOW_MS - HOUR_MS },
 ])('[AC-B1-04zm#3] $label：发整窗', ({ cursorMs, startMs }) => {
   expect(rescanStep(cursorMs, NOW_MS, 30, HOUR_MS)).toEqual({
@@ -122,18 +124,18 @@ it.each([
   { label: '差 1 毫秒不足一窗', cursorMs: NOW_MS - HOUR_MS + 1 },
   { label: '游标等于 now', cursorMs: NOW_MS },
   { label: '游标晚于 now', cursorMs: NOW_MS + 1 },
-])('[AC-B1-04zm#4] $label：本轮结束，回到 now − days', ({ cursorMs }) => {
+])('[AC-B1-04zm#4] $label：本轮结束，回到 now − days + 1 小时', ({ cursorMs }) => {
   expect(rescanStep(cursorMs, NOW_MS, 30, HOUR_MS)).toEqual({
     kind: 'round_end',
-    restartMs: FROM_30_DAYS,
+    restartMs: ROUND_START,
   });
 });
 
-it('[AC-B1-04zm#5] 京东 30 天 60 分钟窗一轮正好 720 窗，首尾相接到 now', () => {
+it('[AC-B1-04zm#5] 京东 30 天 60 分钟窗一轮正好 719 窗，首尾相接到 now', () => {
   const round = walk(NOW_MS, 30, HOUR_MS);
-  expect(round?.windows).toHaveLength(720);
+  expect(round?.windows).toHaveLength(719);
   expect(round?.windows.at(-1)?.endMs).toBe(NOW_MS);
-  expect(round === null ? false : joined(round, FROM_30_DAYS, HOUR_MS)).toBe(true);
+  expect(round === null ? false : joined(round, ROUND_START, HOUR_MS)).toBe(true);
 });
 
 it('[AC-B1-04zm#6] 任意 days 与 cap：窗口不重不漏，尾段不足一窗时由下一轮补上，两轮覆盖 [now − days + 1 小时, now]', () => {

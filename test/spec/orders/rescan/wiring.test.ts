@@ -18,7 +18,8 @@ import {
   createOrderSyncRuntime,
   type OrderSyncRuntimeDeps,
 } from '../../../../apps/api/src/modules/orders/worker-runtime.ts';
-import { NOW, daysAgo, pddStream, rescanWindow } from './kit.ts';
+import { REGISTERED_PLATFORMS } from '../../../../apps/api/src/modules/union/index.ts';
+import { JD_ENABLED, NOW, daysAgo, pddStream, rescanWindow } from './kit.ts';
 
 afterEach(() => {
   vi.clearAllTimers();
@@ -107,4 +108,32 @@ it('[AC-B1-04zm#55] 注入 rescanConfig 才多出回扫定时器，到点读回�
     await running.stop();
   }
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it('[AC-B1-04zm#70] worker 只回扫 scheduledPlatforms()：jd 开关开，未进调度的平台的回扫键一个都不读', async () => {
+  vi.useFakeTimers();
+  const { deps } = harness();
+  const get = vi.fn<(key: string) => Promise<unknown>>(async (key) =>
+    key === JD_ENABLED ? true : undefined,
+  );
+  const runtime = createOrderSyncRuntime({
+    ...deps,
+    ports: { ...deps.ports, rescanConfig: () => ({ get }) },
+  });
+  const running = runtime.start();
+  try {
+    await vi.advanceTimersByTimeAsync(3_600_000);
+  } finally {
+    await running.stop();
+  }
+  const asked = get.mock.calls.map(([key]) => key);
+  const unscheduled = REGISTERED_PLATFORMS.filter(
+    (platform) => !scheduledPlatforms().includes(platform),
+  );
+  expect(asked).toContain('order_sync.rescan.pdd.enabled');
+  expect(
+    asked.filter((key) =>
+      unscheduled.some((platform) => key.startsWith(`order_sync.rescan.${platform}.`)),
+    ),
+  ).toEqual([]);
 });
