@@ -1,0 +1,29 @@
+id: B1-09n
+repo: rebate-platform
+title: orders：返利端口与黑名单第 ③ 步生产接线（D10-548、D10-550，FU-REBATE-PORT-WIRING）——用 settlement 的 createRebatePort 替换 worker-runtime 的 PENDING_SETTLEMENT（onImported / onUpdated / onUnmappedStatus / onBlacklistHit）+ orderSyncPorts 传 createOrderBlocklistPorts，规则测试钉生产装配；上线前必做
+type: impl
+# 2026-11-01 W1 入账（编排 D10-548、D10-550）。B1-08n 留的空桩，B2-04j 实现后没人回填装配，生产 worker 的订单返利状态停在 UNATTRIBUTED，黑名单步整步跳过；测试都自注入端口所以全绿。只动装配，只经 settlement 公开入口；要改 settlement 内部就停下报编排（funds 11-06 回来）。已入账订单命中只发复核事件、不改已入账金额（BR-ATTR-26）。money 口径评审。
+refs: [BR-ATTR-26, BR-FUND-01, BR-FUND-02, BR-FUND-03, BR-FUND-04, BR-FUND-06, BR-FUND-07]
+refs_hash:
+  BR-ATTR-26: 7070dbe36696
+  BR-FUND-01: b541996f8582
+  BR-FUND-02: bffd22853853
+  BR-FUND-03: 4b5c1f1d901b
+  BR-FUND-04: 2497ceea4515
+  BR-FUND-06: 2076b932478c
+  BR-FUND-07: 3d63741c52d9
+deps: [B1-09m, B1-03zh]
+paths:
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/orders/worker-runtime.ts'
+  - 'apps/api/src/modules/orders/orders.module.ts'
+  - 'apps/api/src/modules/orders/index.ts'
+test_paths:
+  - 'test/spec/orders/rebate-wiring/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/rebate-wiring/**'
+status: todo
+pr: null
