@@ -30,6 +30,8 @@ export interface VerifiedWrite<TPayload> extends VerifiedWriteState {
 
 export interface VerifiedWriteOptions<TResult = UserDetail> {
   readonly url: string;
+  /** 写请求的方法；默认 post（风控状态是 PUT）。 */
+  readonly method?: 'post' | 'put';
   readonly onSaved: (result: TResult) => void;
   readonly onFailed: (cause: unknown) => void;
 }
@@ -38,6 +40,7 @@ const IDLE: VerifiedWriteState = { phase: 'idle', again: false };
 
 export function useVerifiedWrite<TPayload, TResult = UserDetail>({
   url,
+  method = 'post',
   onSaved,
   onFailed,
 }: VerifiedWriteOptions<TResult>): VerifiedWrite<TPayload> {
@@ -98,7 +101,7 @@ export function useVerifiedWrite<TPayload, TResult = UserDetail>({
     try {
       const response = await customOf()({
         url,
-        method: 'post',
+        method,
         payload,
         meta: { stepUpToken },
       });

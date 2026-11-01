@@ -42,6 +42,7 @@ import { ReasonModal } from './ReasonModal.tsx';
 import { plannedButtonProps, usePlanned } from '../../components/planned/index.ts';
 import { LevelChangeDialog, UserRelationsCard } from './relations.ts';
 import { RiskTag } from './RiskTag.tsx';
+import { useRiskStateActions } from './RiskStateActions.tsx';
 import { UserTabs } from './tabs/UserTabs.tsx';
 import { useUnionBindingActions } from './UnionBindingActions.tsx';
 
@@ -207,6 +208,8 @@ export function UserDetailView({
   };
 
   const shownUser = status === 'ready' ? user : undefined;
+  // 标题行【冻结】【解冻】【封禁】【解封】：按 risk.freeze / risk.ban 与当前风控状态出现。
+  const riskActions = useRiskStateActions({ user: shownUser, access, onUserChange: setUser });
   const header = (
     <Flex justify="space-between" align="center" wrap gap={8}>
       <Flex align="center" gap={12} wrap>
@@ -218,9 +221,12 @@ export function UserDetailView({
         </Typography.Text>
         {shownUser === undefined ? null : <RiskTag state={shownUser.risk.state} />}
       </Flex>
-      <Button icon={<ArrowLeftOutlined aria-hidden />} onClick={onBack}>
-        {t.back}
-      </Button>
+      <Flex align="center" gap={8} wrap>
+        {riskActions.buttons}
+        <Button icon={<ArrowLeftOutlined aria-hidden />} onClick={onBack}>
+          {t.back}
+        </Button>
+      </Flex>
     </Flex>
   );
 
@@ -284,6 +290,7 @@ export function UserDetailView({
     <Flex vertical gap={16}>
       {header}
       {body}
+      {riskActions.element}
       {reveal.phase === 'reason' ? (
         <ReasonModal
           initialReason={reveal.reason}

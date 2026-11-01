@@ -346,4 +346,76 @@ export const usersTexts = {
     network: '网络异常，操作失败，请稍后手动重试。',
     failed: '操作失败，请稍后手动重试。',
   },
+  /**
+   * 标题行【冻结】【解冻】（risk.freeze）与【封禁】【解封】（risk.ban）（design-hifi AdmUserFreeze /
+   * AdmUserUnfreeze；封禁 / 解封照同款去掉期限，D10-490；契约 adminUpdateUserRiskState，F1-07jd）。
+   * 哪些按钮出现由详情返回的风控状态决定，服务端仍会再校验。
+   */
+  riskState: {
+    actions: {
+      freeze: '冻结',
+      unfreeze: '解冻',
+      ban: '封禁',
+      unban: '解封',
+    },
+    title: (action: string, uid: string): string => `${action} · ${uid}`,
+    /** 二次验证对话框里的「本次操作」。 */
+    operations: {
+      freeze: '冻结用户',
+      unfreeze: '解冻用户',
+      ban: '封禁用户',
+      unban: '解封用户',
+    },
+    stepUpTarget: (uid: string): string => `用户 ${uid}`,
+    stepUpAgain: '上一次验证已失效，请重新输入动态码。',
+    summary: {
+      uid: 'UID',
+      nickname: '昵称',
+      state: '当前风控状态',
+    },
+    consequences: {
+      freeze: '冻结只暂停该用户提现，不影响登录与返利；可设到期时间，到期后自动恢复。',
+      unfreeze: '解冻后立即恢复该用户的提现。',
+      ban: '封禁后立即吊销该用户的登录，停用其联盟授权，新的提现申请被拒；封禁没有期限，只能人工解封。',
+      unban:
+        '解封后用户可重新登录；因封禁停用的联盟授权随之恢复：淘宝需用户重新授权，其他平台立即恢复返利。',
+    },
+    categoryLabel: '原因类别',
+    categoryExtra: '用户可见；必选一项',
+    /** 契约 contracts/enums/identity.yaml risk_reason_category 的中文名。 */
+    categories: {
+      malicious_rights: '异常售后维权',
+      fraud_invite: '异常邀请行为',
+      abnormal_trade: '异常交易',
+      account_security: '账户安全核验',
+      other: '违反用户协议',
+    } as Readonly<Record<string, string>>,
+    categoryEmpty: '请选择原因类别',
+    categoryRefused: '原因类别不符合要求，请重新选择',
+    periodLabel: '期限',
+    periodNone: '不设期限（人工解冻）',
+    periodUntil: '到期自动解冻',
+    untilLabel: '到期时间（北京时间）',
+    untilEmpty: '请选择到期时间（须晚于当前时间）',
+    untilPast: '到期时间须晚于当前时间，请重新选择',
+    untilRefused: '到期时间不符合要求：须晚于当前时间，请重新选择',
+    reasonExtra: '必填，不超过 200 字（去掉首尾空白后计）；仅后台可见，记入操作日志',
+    reasonEmpty: '请填写原因：必填，不超过 200 字',
+    reasonTooLong: '原因不能超过 200 字，请删减后再提交',
+    reasonRefused: '原因不符合要求：必填，不超过 200 字',
+    success: {
+      freeze: '冻结成功',
+      unfreeze: '解冻成功',
+      ban: '封禁成功',
+      unban: '解封成功',
+    },
+    changed: '该用户的风控状态已变化，正在刷新详情，请核对后再操作。',
+    notAllowed: '该用户当前的风控状态不允许这项操作，正在刷新详情。',
+    refreshFailed: '详情未能刷新，请刷新页面后再操作。',
+    userMissing: '用户不存在或不属于本应用，操作未生效。',
+    forbidden: '当前账号没有这项操作的权限，操作未生效。',
+    invalid: '填写内容有误，操作未生效。',
+    network: '网络异常，操作失败，请稍后手动重试。',
+    failed: '操作失败，请稍后手动重试。',
+  },
 } as const;
