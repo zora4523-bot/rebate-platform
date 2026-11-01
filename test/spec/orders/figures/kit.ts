@@ -179,8 +179,10 @@ function minutesAfter(instant: string, minutes: number): Date {
 }
 
 /** A new app (or the given one) with its user, a published rule version and config_items. */
-export async function fixture(db: Kysely<DB>, options: FixtureOptions = {}) {
-  const handle = db.withSchema('app');
+export async function fixture(given: Kysely<DB>, options: FixtureOptions = {}) {
+  // Bound to the schema exactly once whatever the caller holds: createDb binds it and the admin
+  // harness binds it again, and the ledger's `for update of` cannot compile on two bindings.
+  const db = given.withoutPlugins().withSchema('app');
   const subject: OrderSubject = options.subject ?? {
     app_id: `figures-${randomUUID()}`,
     user_id: randomUUID(),
@@ -192,7 +194,7 @@ export async function fixture(db: Kysely<DB>, options: FixtureOptions = {}) {
   const ledger = createLedger({ clock: ledgerClock });
   const accounts = new Map<string, string>();
   const ruleVersionId = randomUUID();
-  await handle
+  await db
     .insertInto('commission_rule_versions')
     .values({
       app_id: appId,
@@ -210,7 +212,7 @@ export async function fixture(db: Kysely<DB>, options: FixtureOptions = {}) {
     ...options.config,
   };
   for (const [key, value] of Object.entries(config)) {
-    await handle
+    await db
       .insertInto('config_items')
       .values({
         app_id: appId,
@@ -227,7 +229,7 @@ export async function fixture(db: Kysely<DB>, options: FixtureOptions = {}) {
 
   /** A users row of the app (kept when the id already exists). */
   async function user(userId: string = randomUUID()): Promise<string> {
-    await handle
+    await db
       .insertInto('users')
       .values({
         id: userId,
@@ -301,7 +303,7 @@ export async function fixture(db: Kysely<DB>, options: FixtureOptions = {}) {
       ...row,
       ...patch,
     } satisfies Insertable<DB['orders']>;
-    await handle
+    await db
       .insertInto('order_keys')
       .values({
         app_id: values.app_id,
@@ -311,7 +313,7 @@ export async function fixture(db: Kysely<DB>, options: FixtureOptions = {}) {
         attr_at: values.attr_at,
       })
       .execute();
-    await handle.insertInto('orders').values(values).execute();
+    await db.insertInto('orders').values(values).execute();
     return seeded(values.order_id, platform, subOrderId);
   }
 
@@ -475,7 +477,7 @@ export async function fixture(db: Kysely<DB>, options: FixtureOptions = {}) {
   async function obligation(o: SeededOrder, input: ObligationInput): Promise<string> {
     const id = randomUUID();
     const deferred = input.kind === 'deferred';
-    await handle
+    await db
       .insertInto('beneficiary_credits')
       .values({
         beneficiary_credit_id: id,
@@ -500,12 +502,15 @@ export async function fixture(db: Kysely<DB>, options: FixtureOptions = {}) {
     return id;
   }
 
-  /** The R5a execution of an obligation: the row moves to done with its voucher. */
-  async function closeObligation(id: string, voucherId: string): Promise<void> {
-    await handle
+  async function closeAs(
+    id: string,
+    status: 'done' | 'forfeited',
+    voucherId: string | null,
+  ): Promise<void> {
+    await db
       .updateTable('beneficiary_credits')
       .set({
-        status: 'done',
+        status,
         closed_by: 'R5a',
         closed_ref: `closed-${id}`,
         closed_at: CREDITED_AT,
@@ -516,12 +521,22 @@ export async function fixture(db: Kysely<DB>, options: FixtureOptions = {}) {
       .execute();
   }
 
+  /** The R5a execution of an obligation: the row moves to done with its voucher. */
+  function closeObligation(id: string, voucherId: string): Promise<void> {
+    return closeAs(id, 'done', voucherId);
+  }
+
+  /** R5a closes the obligation as forfeited (BR-FUND-04 ⑫): nothing reaches the user's account. */
+  function forfeitObligation(id: string): Promise<void> {
+    return closeAs(id, 'forfeited', null);
+  }
+
   /** An appeals row of the subject; an account appeal names the user, an order appeal the order. */
   async function appeal(o: SeededOrder, input: AppealInput = {}): Promise<void> {
     const status = input.status ?? 'processing';
     const targetType = input.targetType ?? 'order';
     const open = status === 'processing';
-    await handle
+    await db
       .insertInto('appeals')
       .values({
         id: randomUUID(),
@@ -572,6 +587,7 @@ export async function fixture(db: Kysely<DB>, options: FixtureOptions = {}) {
     platformClawback,
     obligation,
     closeObligation,
+    forfeitObligation,
     appeal,
     queries,
     detail,

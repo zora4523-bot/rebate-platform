@@ -24,6 +24,13 @@ it('[AC-B1-09p#9][BR-CALC-02] 两次向下取整：N=333、预留 15%、比例 5
   expect(await f.detail(o)).toMatchObject({ est_rebate_fen: 141 });
 }, 60_000);
 
+it('[AC-B1-09p#65][BR-CALC-02] 余数过半也向下取整：N=341、预留 15%、比例 50% → 144', async () => {
+  const f = await fixture(pg.db);
+  // 289.85 floors to B = 289 and 144.5 to 144; rounding either division gives 145.
+  const o = await f.order({ patch: { est_commission_fen: 341n } });
+  expect(await f.detail(o)).toMatchObject({ est_rebate_fen: 144 });
+}, 60_000);
+
 it('[AC-B1-09p#10][BR-CALC-02] 金额按订单当前佣金重算，不用快照建立时的份额', async () => {
   const f = await fixture(pg.db);
   // The snapshot was taken on N=1000; the order's estimate has moved since.

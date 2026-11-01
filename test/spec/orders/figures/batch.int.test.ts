@@ -138,21 +138,26 @@ it('[AC-B1-09p#52][BR-TEXT-02] 同一子单号在两个平台：分录按平台�
   expect(await f.detail(pdd)).toMatchObject({ actual_fen: 300, clawback_fen: 0 });
 }, 60_000);
 
-it('[AC-B1-09p#53][BR-TEXT-02] 别的 App 里同平台同子单号的分录与义务不串', async () => {
+it('[AC-B1-09p#53][BR-TEXT-02] 别的 App 里同用户、同 order_key 的分录不串', async () => {
   const f = await fixture(pg.db);
-  const foreign = await fixture(pg.db);
-  const sub = `same-${randomUUID()}`;
-  const o = await f.order({ patch: credited({ sub_order_id: sub }) });
-  const other = await foreign.order({ patch: credited({ sub_order_id: sub }) });
+  // order_keys is keyed on (platform, sub_order_id) across apps, so the other app cannot hold this
+  // order, but ledger_vouchers.order_key is a plain column of each app's ledger. With the same user
+  // id and the same key, app_id is all that tells these entries apart. beneficiary_credits cannot
+  // repeat this way: its order reference is (app_id, order_id) and order_id is unique across apps.
+  const foreign = await fixture(pg.db, {
+    subject: { app_id: `figures-${randomUUID()}`, user_id: f.subject.user_id },
+  });
+  const o = await f.order({ patch: credited() });
   await f.credit(o, { amount: 425n });
-  await foreign.credit(other, { amount: 200n });
-  await foreign.clawback(other, { amount: 50n });
-  await foreign.obligation(other, { kind: 'first_credit' });
+  await foreign.credit(o, { amount: 200n });
+  await foreign.adjust(o, { amount: 30n });
+  await foreign.clawback(o, { amount: 50n });
   expect(await f.detail(o)).toMatchObject({
     display_status: 'CREDITED',
     actual_fen: 425,
     clawback_fen: 0,
   });
+  expect(await f.row(o)).toMatchObject({ display_status: 'CREDITED' });
 }, 60_000);
 
 it('[AC-B1-09p#54][BR-TEXT-02] 翻页读到的每一页都带真实金额', async () => {

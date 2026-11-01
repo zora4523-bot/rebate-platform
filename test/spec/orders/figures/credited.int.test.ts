@@ -1,6 +1,5 @@
 // B1-09p · actual_fen、clawback_fen、has_clawback、part_clawed_at（BR-TEXT-02 金额字段，D10-558
 // ①②③）：只读查看者本账户的真实分录。恢复、改派的口径待判，本文件不铺这类凭证。
-// CLAWED_BACK 的 clawback_fen 不钉：见任务输出的 blocked_reason。
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
@@ -20,14 +19,17 @@ const withoutAmounts: readonly {
   readonly label: string;
   readonly patch: OrderPatch;
   readonly display_status: string;
+  readonly extra: Readonly<Record<string, unknown>>;
 }[] = [
-  { label: 'ESTIMATED', patch: {}, display_status: 'PAID' },
-  { label: 'WAITING', patch: waiting(), display_status: 'WAITING' },
-  { label: 'VOID', patch: { rebate_status: 'VOID' }, display_status: 'INVALID' },
+  { label: 'ESTIMATED', patch: {}, display_status: 'PAID', extra: {} },
+  { label: 'WAITING', patch: waiting(), display_status: 'WAITING', extra: {} },
+  { label: 'VOID', patch: { rebate_status: 'VOID' }, display_status: 'INVALID', extra: {} },
   {
     label: 'booked_base_fen=0',
     patch: credited({ booked_base_fen: 0n, booked_n_fen: 0n }),
     display_status: 'NO_REBATE',
+    // Row 3 shows no amount, whatever the settled commission (1000) would give.
+    extra: { est_rebate_fen: null },
   },
 ];
 
@@ -128,7 +130,7 @@ it('[AC-B1-09p#33][BR-FUND-17][D10-558] 别的受益人与平台的 CLAWBACK、S
   expect(await partClawedAt(f, o)).toBeNull();
 }, 60_000);
 
-it('[AC-B1-09p#34][BR-FUND-17][D10-558] 本人与直推都被扣回：金额和最近一次时间只算本人的', async () => {
+it('[AC-B1-09p#34][BR-TEXT-02][D10-558] 本人早、直推晚被扣回：金额和最近一次时间只算本人的', async () => {
   const f = await fixture(pg.db);
   const parent = await f.user();
   const o = await f.order({
@@ -140,14 +142,14 @@ it('[AC-B1-09p#34][BR-FUND-17][D10-558] 本人与直推都被扣回：金额和�
   });
   await f.credit(o, { amount: 425n });
   await f.credit(o, { amount: 85n, userId: parent, role: 'direct' });
-  await f.clawback(o, { amount: 100n, at: LATE });
-  await f.clawback(o, { amount: 20n, userId: parent, role: 'direct', at: EARLY });
+  await f.clawback(o, { amount: 100n, at: EARLY });
+  await f.clawback(o, { amount: 20n, userId: parent, role: 'direct', at: LATE });
   expect(await f.detail(o)).toMatchObject({
     display_status: 'CREDITED_PART_CLAWED',
     actual_fen: 325,
     clawback_fen: 100,
   });
-  expect(await partClawedAt(f, o)).toBe(Date.parse(LATE));
+  expect(await partClawedAt(f, o)).toBe(Date.parse(EARLY));
 }, 60_000);
 
 it('[AC-B1-09p#35][BR-TEXT-02] 分享单：SHARE_CREDIT 入账与本人扣回同样计入', async () => {
@@ -167,7 +169,7 @@ it('[AC-B1-09p#35][BR-TEXT-02] 分享单：SHARE_CREDIT 入账与本人扣回同
 
 it.each(withoutAmounts)(
   '[AC-B1-09p#36][BR-TEXT-02][D10-558] $label 单有本人分录也不给实返与扣回',
-  async ({ patch, display_status }) => {
+  async ({ patch, display_status, extra }) => {
     const f = await fixture(pg.db);
     const o = await f.order({ patch });
     await f.credit(o, { amount: 425n });
@@ -176,15 +178,71 @@ it.each(withoutAmounts)(
       display_status,
       actual_fen: null,
       clawback_fen: null,
+      ...extra,
     });
   },
   60_000,
 );
 
-it('[AC-B1-09p#37][BR-TEXT-02] CLAWED_BACK 单：不给实返，不走第 4 行', async () => {
+it('[AC-B1-09p#37][BR-TEXT-02] CLAWED_BACK 单：扣回额照给，不给实返，不走第 4 行', async () => {
   const f = await fixture(pg.db);
   const o = await f.order({ patch: credited({ rebate_status: 'CLAWED_BACK' }) });
   await f.credit(o, { amount: 425n });
   await f.clawback(o, { amount: 425n, sub: 'FULL', at: EARLY });
-  expect(await f.detail(o)).toMatchObject({ display_status: 'CLAWED_BACK', actual_fen: null });
+  expect(await f.detail(o)).toMatchObject({
+    display_status: 'CLAWED_BACK',
+    actual_fen: null,
+    clawback_fen: 425,
+  });
+}, 60_000);
+
+it('[AC-B1-09p#66][BR-TEXT-02][D10-558] CLAWED_BACK 单只有别的受益人被扣回：本人扣回 0', async () => {
+  const f = await fixture(pg.db);
+  const parent = await f.user();
+  const o = await f.order({
+    patch: credited({ rebate_status: 'CLAWED_BACK' }),
+    people: [
+      { userId: f.subject.user_id, role: 'self', ratioBp: 5000 },
+      { userId: parent, role: 'direct', ratioBp: 1000 },
+    ],
+  });
+  await f.credit(o, { amount: 425n });
+  await f.credit(o, { amount: 85n, userId: parent, role: 'direct' });
+  await f.clawback(o, { amount: 85n, userId: parent, role: 'direct', sub: 'FULL', at: EARLY });
+  expect(await f.detail(o)).toMatchObject({
+    display_status: 'CLAWED_BACK',
+    actual_fen: null,
+    clawback_fen: 0,
+  });
+}, 60_000);
+
+it.each([
+  { label: '快照里份额初始被剥夺', initialStatus: 'forfeited' },
+  { label: '快照里份额正常', initialStatus: 'active' },
+] as const)(
+  '[AC-B1-09p#67][BR-TEXT-02] 已结算而本人无分录、无 open 义务（$label）：实返 0、扣回 0，不是 null',
+  async ({ initialStatus }) => {
+    const f = await fixture(pg.db);
+    const o = await f.order({
+      patch: credited(),
+      people: [{ userId: f.subject.user_id, role: 'self', ratioBp: 5000, initialStatus }],
+    });
+    expect(await f.detail(o)).toMatchObject({
+      display_status: 'CREDITED',
+      actual_fen: 0,
+      clawback_fen: 0,
+    });
+  },
+  60_000,
+);
+
+it('[AC-B1-09p#69][BR-TEXT-02] VOID 单 est_rebate_fen 不得为正：0 或 null 都接受', async () => {
+  const f = await fixture(pg.db);
+  const o = await f.order({ patch: { rebate_status: 'VOID' } });
+  const detail = await f.detail(o);
+  const row = await f.row(o);
+  expect(detail).toMatchObject({ display_status: 'INVALID' });
+  expect(row).toMatchObject({ display_status: 'INVALID' });
+  expect(detail?.est_rebate_fen ?? 0).toBe(0);
+  expect(row?.est_rebate_fen ?? 0).toBe(0);
 }, 60_000);

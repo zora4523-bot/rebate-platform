@@ -2,9 +2,20 @@
 // display_status 与 est_rebate_fen 读出。默认 N=1000、预留 15%：B=850，self 50% → 425。
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
-import { fixture, useDatabase, waiting, type OrderInput, type OrderPatch } from './kit.ts';
+import {
+  EXPECTED,
+  fixture,
+  useDatabase,
+  waiting,
+  type Fixture,
+  type OrderInput,
+  type OrderPatch,
+  type SeededOrder,
+} from './kit.ts';
 
 const pg = useDatabase(createTestDatabase);
+/** The day after the default expected month's deadline (2028-01-03 +08:00). */
+const AFTER_DEADLINE = '2028-01-03T16:00:00.000Z';
 const presale: OrderPatch = {
   platform_status: 'DEPOSIT_PAID',
   is_presale: true,
@@ -18,33 +29,70 @@ const noBase: readonly { readonly label: string; readonly input: OrderInput }[] 
   { label: '预留 100%', input: { reserveBp: 10000 } },
   { label: 'WAITING 且预估佣金为 0', input: { patch: waiting({ est_commission_fen: 0n }) } },
 ];
+const unknownBase: readonly {
+  readonly label: string;
+  readonly seed: (f: Fixture, patch: OrderPatch) => Promise<SeededOrder>;
+}[] = [
+  { label: '无分佣快照', seed: (f, patch) => f.bareOrder(patch) },
+  {
+    label: '有快照但佣金全空',
+    seed: (f, patch) =>
+      f.order({ patch: { ...patch, est_commission_fen: null, settle_commission_fen: null } }),
+  },
+];
 
 it.each([
-  { label: 'ESTIMATED', patch: {}, display_status: 'PAID' },
-  { label: 'WAITING', patch: waiting(), display_status: 'WAITING' },
+  { label: 'ESTIMATED', patch: {}, display_status: 'PAID', period: null },
+  { label: 'WAITING', patch: waiting(), display_status: 'WAITING', period: EXPECTED },
 ])(
-  '[AC-B1-09p#1][BR-FUND-17] 无分佣快照的 $label 单：b_est 未知，不算本单无返利，不显示金额',
-  async ({ patch, display_status }) => {
+  '[AC-B1-09p#1][BR-FUND-17][BR-FUND-04] 无分佣快照的 $label 单：b_est 未知，不算本单无返利，不显示金额，月份照算',
+  async ({ patch, display_status, period }) => {
     const f = await fixture(pg.db);
     const o = await f.bareOrder(patch);
-    expect(await f.detail(o)).toMatchObject({ display_status, est_rebate_fen: null });
+    expect(await f.detail(o)).toMatchObject({
+      display_status,
+      est_rebate_fen: null,
+      expected_credit_period: period,
+      credit_overdue: false,
+    });
     expect(await f.row(o)).toMatchObject({ display_status, est_rebate_fen: null });
   },
   60_000,
 );
 
 it.each([
-  { label: 'ESTIMATED', patch: {}, display_status: 'PAID' },
-  { label: 'WAITING', patch: waiting(), display_status: 'WAITING' },
-  { label: '付定金', patch: presale, display_status: 'DEPOSIT_PAID' },
+  { label: 'ESTIMATED', patch: {}, display_status: 'PAID', period: null },
+  { label: 'WAITING', patch: waiting(), display_status: 'WAITING', period: EXPECTED },
+  { label: '付定金', patch: presale, display_status: 'DEPOSIT_PAID', period: null },
 ])(
-  '[AC-B1-09p#2][BR-FUND-17] 有快照但预估与结算佣金全空的 $label 单：b_est 为 null，不匹配第 7 行',
-  async ({ patch, display_status }) => {
+  '[AC-B1-09p#2][BR-FUND-17][BR-FUND-04] 有快照但预估与结算佣金全空的 $label 单：b_est 为 null，不匹配第 7 行，月份照算',
+  async ({ patch, display_status, period }) => {
     const f = await fixture(pg.db);
     const o = await f.order({
       patch: { ...patch, est_commission_fen: null, settle_commission_fen: null },
     });
-    expect(await f.detail(o)).toMatchObject({ display_status, est_rebate_fen: null });
+    expect(await f.detail(o)).toMatchObject({
+      display_status,
+      est_rebate_fen: null,
+      expected_credit_period: period,
+      credit_overdue: false,
+    });
+  },
+  60_000,
+);
+
+it.each(unknownBase)(
+  '[AC-B1-09p#64][BR-FUND-17][BR-FUND-04] $label 的 WAITING 单过了宽限：照样逾期转 CREDITING，不显示金额',
+  async ({ seed }) => {
+    const f = await fixture(pg.db, { now: AFTER_DEADLINE });
+    const o = await seed(f, waiting());
+    expect(await f.detail(o)).toMatchObject({
+      display_status: 'CREDITING',
+      est_rebate_fen: null,
+      expected_credit_period: EXPECTED,
+      credit_overdue: true,
+    });
+    expect(await f.row(o)).toMatchObject({ display_status: 'CREDITING', est_rebate_fen: null });
   },
   60_000,
 );
