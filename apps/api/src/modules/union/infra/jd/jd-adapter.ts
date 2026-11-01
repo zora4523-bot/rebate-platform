@@ -5,7 +5,7 @@
 // （全部参数在请求体，URL 不带查询串，Content-Type application/x-www-form-urlencoded;charset=utf-8）、
 // 按调用方登记的外层键与结果键解包（见 response.ts）。业务对象无法序列化或含非有限数 → invalid_dto，
 // 不取凭据、不发请求。传输抛错 → upstream_unavailable（不带原文）。调用方的 AbortSignal 与归档上下文
-// 原样挂在传输请求上。convert 仍是 adapter_unimplemented，不取凭据、不发请求。
+// 原样挂在传输请求上。convert（B1-04zd）目前是骨架，规则测试：test/spec/union/jd-convert/**。
 // 不读 process.env、不读文件；app_secret 只在内存参与签名。
 // listOrders（B1-04zb）的时间窗、游标与映射在 orders.ts；每次调用取一页，每页都单独经配额治理。
 // searchItems / getItem / resolveLink（B1-04zc）的参数、游标、选券与映射在 goods.ts，经 request 走
@@ -86,6 +86,8 @@ export interface JdAdapterOptions {
   readonly warn?: (event: JdWarning) => void;
   /** BR-PROD-03 / 05：listOrders 与商品三个端口每次按 ctx.appId 读一次；缺省 item。 */
   readonly productKeyMode?: { read(appId: string): Promise<JdProductKeyMode> };
+  /** D10-500 ①：promotion.common.get 的 siteId，十进制文本；缺失时 convert 报 adapter_unimplemented。 */
+  readonly siteId?: string | null;
 }
 
 /** The business object; 360buy_param_json is its JSON text and its only carrier. */
@@ -345,12 +347,11 @@ export class JdUnionAdapter implements UnionAdapter {
     return { item };
   }
 
-  // convert 等转链任务落地，不取凭据、不发请求。
   async convert(req: ConvertReq, identity: UnionIdentity, ctx: CallCtx): Promise<ConvertResult> {
     void req;
     void identity;
     void ctx;
-    throw unimplemented('convert');
+    throw new Error('NotImplemented: convert');
   }
 
   /**
