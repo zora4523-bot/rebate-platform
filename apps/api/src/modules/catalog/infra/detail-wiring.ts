@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { ProductKeyUnderivable, deriveProductKey } from '@couli/domain';
 import type { CallCtx, ItemRef, RegisteredPlatform, UnionItemDetail } from '../../union/index.ts';
 import { searchRawByTitle } from '../application/pool-source.ts';
+import type { RawReparser } from '../application/raw-reparse.ts';
 import { CatalogError } from '../domain/rules.ts';
 import type { ProductDetailRequest, ProductDetailUpstream } from '../detail.ts';
 import type { GovernedUnion } from '../ports.ts';
@@ -60,6 +61,8 @@ export function createUnionDetailUpstream(options: {
   readonly union: GovernedUnion;
   /** B1-05r: the product pool's refresh reads on its own quota purpose. */
   readonly purpose?: CallCtx['purpose'];
+  /** B1-05w: BR-PROD-05 ③ with its write and lock (application/raw-reparse.ts). */
+  readonly reparser?: RawReparser;
 }): ProductDetailUpstream {
   const { union, purpose = 'online' } = options;
 
