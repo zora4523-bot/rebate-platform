@@ -1,0 +1,30 @@
+id: B2-11f
+repo: rebate-platform
+title: payout：提现风险标签与自动到账判定按风控规则启停（D10-536，BR-ID-36 细则「规则清单的启停」）——withdraw-risk-flags ③ same_device_multi_account（SAME_DEVICE_MULTI_ACCOUNT）与 ⑨ blacklist_hit（黑名单各维度规则码以 risk 规则目录 blocklistRule(dimension) 为准）、withdraw-rules 的 44001 黑名单检查，在判定前经 risk 的规则状态读口查状态；停用的规则不判定、不写 risk_hits、不出标签；auto-decision 对未判定的标签按未命中；状态按配置项缓存周期生效、不追溯
+type: impl
+# 2026-11-01 入账（withdraw 线，编排 D10-536 (b)）。规则码以 risk 规则目录为准；读口随 B1-03zh 合入（risk/index.ts：按 app_id + rule_id，disabled 不生效、enabled 与写入方登记的 active 生效、无行视为生效），本单排在它之后（#2125 合入后 deps 补 B1-03zh），GATE-RISK-RULE-TOGGLE 的一环。动钱路径（提现建单与自动到账），money 评审。配置阈值仍经配置项，不在规则上另存。
+refs: [BR-ID-36, BR-WDR-29, BR-WDR-30]
+refs_hash:
+  BR-ID-36: 2758a53910fa
+  BR-WDR-29: 6d588cc80722
+  BR-WDR-30: ec74379ec48c
+deps: [B2-11a, B2-11b]
+paths:
+  - 'apps/api/src/modules/payout/application/withdraw-risk-flags.ts'
+  - 'apps/api/src/modules/payout/application/withdraw-risk-flags.test.ts'
+  - 'apps/api/src/modules/payout/application/withdraw-risk-port.ts'
+  - 'apps/api/src/modules/payout/application/withdraw-rules.ts'
+  - 'apps/api/src/modules/payout/application/withdraw-rules.test.ts'
+  - 'apps/api/src/modules/payout/application/auto-payout.ts'
+  - 'apps/api/src/modules/payout/application/auto-payout.test.ts'
+  - 'apps/api/src/modules/payout/index.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/payout/risk-rule-toggle/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/risk-rule-toggle/**'
+status: todo
+pr: null
