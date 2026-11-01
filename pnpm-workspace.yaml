@@ -7,6 +7,14 @@ packages:
 # ADR-0001 §2: only install versions published at least 7 days ago (minutes).
 minimumReleaseAge: 10080
 
+# CT-06zzx (FU-DEPS-AUDIT-HIGH): patched versions the upstream package pins exactly and has no release for.
+overrides:
+  '@ant-design/pro-layout>path-to-regexp': 8.4.2
+  '@nestjs/platform-fastify>fastify': 5.12.7
+  'fast-uri@>=3.0.0 <3.1.9': 3.1.9
+  'fast-uri@>=4.0.0 <4.2.3': 4.2.3
+  'qs@>=6.7.0 <6.16.1': 6.16.1
+
 # Fail the install when a dependency wants to run a build script that is not listed below.
 strictDepBuilds: true
 
