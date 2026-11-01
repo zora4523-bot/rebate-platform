@@ -27,6 +27,10 @@
 // GET /api/goods/get-dtk-search-goods（version v2.1.2）搜索，goodsId 经 item.info.upgrade.get 换成
 // 凑狸口径 item_id（换不到不返回），映射与缓存见 dataoke-search.ts；两种请求归档 kind 都是 query。
 // 否则 searchItems 保持 adapter_unimplemented（不取凭据、不发请求）。
+// B1-04f（D10-486 ② / D10-488）：listOrders 经注入的大淘客订单源（orderSource）GET
+// /api/tb-service/get-order-details（v1.0.0），只留 orderSlots 给出的推广位的订单；两者缺一即
+// adapter_unimplemented。每次调用取一个上游页（listOrdersMetering = per_request，经 ctx.gateUpstream）。
+// 口径、切窗、游标、映射与推广位过滤见 orders.ts。归档 kind = order。
 import type { Clock } from '../../../platform/index.ts';
 import type { TaobaoPriceOptions, TaobaoPriceSettingsReader } from '../../domain/taobao-price.ts';
 import {
@@ -47,6 +51,7 @@ import {
   type UnionItem,
   type UnionItemDetail,
   type UnionOrder,
+  type UpstreamGate,
 } from '../../domain/types.ts';
 import type { DataokeClient } from '../dataoke/dataoke-client.ts';
 import type { ArchiveContext, UnionTransport, UnionTransportResponse } from '../replay.ts';
@@ -90,6 +95,19 @@ import {
   mapPrivilegeLink,
   privilegeLinkParameters,
 } from './privilege-link.ts';
+import {
+  mapTaobaoOrder,
+  nextTaobaoOrderCursor,
+  ourRows,
+  parseTaobaoOrderBody,
+  planTaobaoOrders,
+  slotAdzones,
+  taobaoOrderParameters,
+  TAOBAO_ORDER_PATH,
+  TAOBAO_ORDER_VERSION,
+  type TaobaoOrderSlotReader,
+  type TaobaoOrderWarning,
+} from './orders.ts';
 import { unwrapTaobaoResponse, type TaobaoSubCodeMap, type TaobaoWarning } from './response.ts';
 import {
   signTaobaoParameters,
@@ -100,6 +118,11 @@ import {
 
 export type { TaobaoParameter, TaobaoParameters } from './sign.ts';
 export type { TaobaoWarning } from './response.ts';
+export type {
+  TaobaoOrderSlotReader,
+  TaobaoOrderWarning,
+  TaobaoOrderWarningEvent,
+} from './orders.ts';
 
 /** Application-level key pair; fetched once per request, never stored on the adapter. */
 export interface TaobaoCredentials {
@@ -139,6 +162,14 @@ export interface TaobaoAdapterOptions {
    * nothing fetched or sent).
    */
   readonly searchSource?: TaobaoSearchSource;
+  /**
+   * B1-04f (D10-488 ③): every Taobao PID registered in union_pids, retired ones included; listOrders
+   * keeps only the orders of these promotion slots (see orders.ts). Without it listOrders is
+   * adapter_unimplemented, like without orderSource.
+   */
+  readonly orderSlots?: TaobaoOrderSlotReader;
+  /** B1-04f: order mapping and slot-filter warnings (see TaobaoOrderWarning in orders.ts). */
+  readonly orderWarn?: (event: TaobaoOrderWarning) => void;
 }
 
 /** B1-04d: the convert data-source switch; the default is 'baichuan' (behaviour unchanged). */
@@ -176,7 +207,7 @@ const DETAIL_SUB_CODES: TaobaoSubCodeMap = Object.freeze({
   '1911': 'upstream_rejected',
 });
 
-function archiveOf(ctx: CallCtx, kind: 'query' | 'convert'): ArchiveContext {
+function archiveOf(ctx: CallCtx, kind: 'query' | 'convert' | 'order'): ArchiveContext {
   return { appId: ctx.appId, kind };
 }
 
@@ -197,6 +228,14 @@ export class TaobaoUnionAdapter implements UnionAdapter {
   readonly #searchSource: TaobaoSearchSource;
   /** B1-04zh: goodsId → 凑狸 item_id, one per adapter instance (see dataoke-search.ts ④). */
   readonly #itemIdCache: TaobaoItemIdCache;
+  readonly #orderSlots: TaobaoOrderSlotReader | undefined;
+  readonly #orderWarn: ((event: TaobaoOrderWarning) => void) | undefined;
+
+  /**
+   * B1-04f: listOrders sends one upstream request per call, each through CallCtx.gateUpstream
+   * (one quota token per request, like the Pinduoduo adapter of B1-04w).
+   */
+  readonly listOrdersMetering = 'per_request' as const;
 
   constructor(options: TaobaoAdapterOptions) {
     if (options.endpoint.platform !== 'taobao') {
@@ -218,6 +257,8 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     // 只有明确的 'dataoke' 打开大淘客搜索；缺省与其他值一律是 official（行为不变）。
     this.#searchSource = options.searchSource === 'dataoke' ? 'dataoke' : 'official';
     this.#itemIdCache = createTaobaoItemIdCache(options.clock);
+    this.#orderSlots = options.orderSlots;
+    this.#orderWarn = options.orderWarn;
   }
 
   /** Internal request foundation; returns the inner object of `options.envelope`. */
@@ -300,8 +341,8 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     }
   }
 
-  // 端口方法：resolveLink / listOrders 仍 adapter_unimplemented，不取凭据、不发请求
-  // （convert 见 B1-04d，searchItems 见 B1-04zh）。
+  // 端口方法：resolveLink 仍 adapter_unimplemented，不取凭据、不发请求
+  // （convert 见 B1-04d，searchItems 见 B1-04zh，listOrders 见 B1-04f）。
 
   /** B1-04zh: 大淘客 search when switched on (see dataoke-search.ts); otherwise unimplemented. */
   async searchItems(q: SearchQuery, ctx: CallCtx): Promise<Page<UnionItem>> {
@@ -482,10 +523,40 @@ export class TaobaoUnionAdapter implements UnionAdapter {
     return mapPrivilegeLink(data, this.#clock.now(), this.#warn);
   }
 
+  /** B1-04f: one page of 大淘客 get-order-details (see the header and orders.ts). */
   async listOrders(win: TimeWindow, opt: OrderQueryOpt, ctx: CallCtx): Promise<Page<UnionOrder>> {
-    void win;
-    void opt;
-    void ctx;
-    throw unimplemented('listOrders');
+    const source = this.#orderSource;
+    const readSlots = this.#orderSlots;
+    if (source === undefined || readSlots === undefined) throw unimplemented('listOrders');
+    // 口径、窗口、游标先校验：不合格的调用不读推广位、不取凭据、不发请求。
+    const plan = planTaobaoOrders(win, opt);
+    const adzones = slotAdzones(await readSlots(ctx));
+    if (adzones.size === 0) {
+      this.#orderWarn?.({ event: 'taobao_order_no_slots' });
+      return { items: [], nextCursor: null };
+    }
+    const parameters = taobaoOrderParameters(plan);
+    const archive = archiveOf(ctx, 'order');
+    const send = (signal: AbortSignal | undefined) =>
+      source.exchange('GET', TAOBAO_ORDER_PATH, parameters, {
+        version: TAOBAO_ORDER_VERSION,
+        archive,
+        ...(signal === undefined ? {} : { signal }),
+      });
+    const gate: UpstreamGate | undefined = ctx?.gateUpstream;
+    const { response } = gate === undefined ? await send(ctx?.signal) : await gate(send);
+    const page = parseTaobaoOrderBody(response.body);
+    // 归档行 id 只取归档传输挂在响应上的元数据（十进制字符串），不读报文里的同名值。
+    const id: unknown = Reflect.get(response, 'raw_payload_id');
+    const meta = {
+      rawPayloadId: typeof id === 'string' && /^[0-9]+$/.test(id) ? id : null,
+      like: this.#clock.now(),
+    };
+    const items: UnionOrder[] = [];
+    for (const row of ourRows(page.rows, adzones, this.#orderWarn)) {
+      const order = mapTaobaoOrder(row, meta, this.#orderWarn);
+      if (order !== null) items.push(order);
+    }
+    return { items, nextCursor: nextTaobaoOrderCursor(plan, page) };
   }
 }

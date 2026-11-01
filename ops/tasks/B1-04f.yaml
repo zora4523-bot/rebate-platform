@@ -8,6 +8,7 @@ type: impl
 # ③ 推广位过滤（D10-488 ③）：账号与优券汇共用，只保留 adzone_id（或 PID）属于凑狸在 union_pids 登记过的**全部**推广位（含已停用 retired：停用前产生的订单仍属凑狸）；别家推广位的订单不返回、只计数打一条日志（不带订单号与金额）。推广位清单经注入的读取端口（同 B1-04x 读 union_pids 的做法）；空清单 → 返回空并告警一次。
 # ④ 订单源未注入（B1-04e）→ adapter_unimplemented；状态映射（tk_status → PLATFORM_*）与淘宝 N 映射由 w1 另行入账（D10-488，deps 本任务），不在本任务。
 # 目录：union/infra/taobao/**、union/infra/dataoke/**（如需列表解析助手）、union/domain/types.ts（OrderQueryOpt 可选时间口径，其他平台忽略）。test_paths：test/spec/union/taobao-orders/**。整体 RV2（订单金额与归属）。
+# 完成 2026-11-01（#2115）：settle_commission_fen 只在 tk_earning_time 有值时给（未结算即使 pub_share_fee 为 0.00 也为 null）；orderSlots 推广位读取端口的注册表 / union.module 装配未接（编排认可装配小单）；DataokeClient 新增 exchange 交回传输响应供原文解析。
 refs: []
 refs_hash: {}
 deps: [B1-04e]
@@ -22,4 +23,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/union/taobao-orders/**'
-status: todo
+status: done
+pr: 2115

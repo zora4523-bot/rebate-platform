@@ -205,6 +205,43 @@ export interface PddOrderFields {
 }
 
 /**
+ * B1-04f: Taobao-only internal order data (大淘客 get-order-details, the official
+ * publisher_order_dto field of the same name); absent on other platforms. Missing or invalid
+ * upstream values are null. Amounts are integer fen (BR-CALC-26 yuanStrToFen, from the wire text),
+ * rates are bp (pctStrToBp). Ids that are JSON integers upstream are kept as decimal strings.
+ * None of these is the attribution N: the Taobao N mapping lives in orders (D10-488).
+ */
+export interface TaobaoOrderFields {
+  /** tk_status as the integer the union sent (e.g. 12 / 13 / 14 / 3); mapping is in orders. */
+  readonly tk_status?: number | null;
+  readonly refund_tag?: number | null;
+  readonly tk_order_role?: number | null;
+  readonly item_num?: number | null;
+  /** site_id as a decimal string. */
+  readonly site_id?: string | null;
+  /** special_id as a decimal string; present only on channel orders. */
+  readonly special_id?: string | null;
+  /** item_price. */
+  readonly item_price_fen?: bigint | null;
+  /** alimama_share_fee. */
+  readonly alimama_share_fen?: bigint | null;
+  /** subsidy_fee. */
+  readonly subsidy_fen?: bigint | null;
+  /** total_commission_fee. */
+  readonly total_commission_fen?: bigint | null;
+  /** alimm_share_info_dto.alimm_tech_service_fee. */
+  readonly tech_service_fee_fen?: bigint | null;
+  /** alimm_share_info_dto.alimm_tech_service_pre_fee. */
+  readonly tech_service_pre_fee_fen?: bigint | null;
+  /** income_rate. */
+  readonly income_rate_bp?: bigint | null;
+  /** pub_share_rate. */
+  readonly pub_share_rate_bp?: bigint | null;
+  /** total_commission_rate. */
+  readonly total_commission_rate_bp?: bigint | null;
+}
+
+/**
  * B1-08e（D10-20）：跨平台归因参数，原样字符串；union 不解析（用户归属在 orders，BR-ATTR-06）。
  * 拼多多只填 custom_parameters。
  */
@@ -242,7 +279,8 @@ export interface UnionOrderNeutralFields {
   readonly raw_payload_id: string | null;
 }
 
-export interface UnionOrder extends ItemRef, PddOrderFields, Partial<UnionOrderNeutralFields> {
+export interface UnionOrder
+  extends ItemRef, PddOrderFields, TaobaoOrderFields, Partial<UnionOrderNeutralFields> {
   /** B1-08p：undefined = 平台无店铺字段；null = 本条缺失 / 非法；字符串 = 店铺标识。
    * 拼多多来源：pdd.ddk.order.list.increment.get / list.range.get / detail.get 的 mall_id。
    * 字段资料：docs-mirror/pdd/api/<接口名>.md；不以 mall_name / seller_nick 替代 ID。
@@ -419,10 +457,18 @@ export interface TimeWindow {
   readonly from: string;
   readonly to: string;
 }
+/**
+ * B1-04f: which order time a Taobao window filters on (大淘客 queryType: update 4, pay 2,
+ * settle 3, create 1). Omitted = update (D10-488 ①).
+ */
+export type OrderTimeBasis = 'update' | 'pay' | 'settle' | 'create';
+
 export interface OrderQueryOpt {
   readonly cursor?: string;
   /** PDD: omitted = increment (update time); pay_time uses the payment-time range API. */
   readonly queryMode?: 'increment' | 'pay_time';
+  /** B1-04f: Taobao only (see OrderTimeBasis); other platforms ignore it. */
+  readonly timeBasis?: OrderTimeBasis;
 }
 export interface MaterialReq {
   readonly cursor?: string;
