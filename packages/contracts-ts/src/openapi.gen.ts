@@ -2341,6 +2341,9 @@ export interface paths {
          *     A response whose derived key differs from the requested one, or cannot be derived, is
          *     30143 ref_expired (BR-PROD-03, BR-PROD-05). `item_ref` of the card the user tapped is
          *     passed through unchanged (BR-PROD-11). x-auth optional for the same reason as search.
+         *     A union timeout, throttle or open breaker answers from the stale cache, then the product
+         *     pool; 50401 when neither the stale cache nor the product-pool fallback is available
+         *     (BR-PROD-05 结果分类 ③, BR-PRICE-11).
          */
         get: operations["getProduct"];
         put?: never;

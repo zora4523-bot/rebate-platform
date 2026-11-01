@@ -18,6 +18,7 @@ import {
 } from '../platform/index.ts';
 import { createCatalog } from './application/catalog.ts';
 import type { CatalogWarning } from './domain/types.ts';
+import { RAW_REPARSE_NAMESPACE } from './application/raw-reparse.ts';
 import { PRODUCT_CACHE_NAMESPACE, detailCacheDropper } from './infra/product-cache.ts';
 import {
   GovernedUnion,
@@ -149,6 +150,7 @@ export class CatalogWorkerModule {
               }),
               union,
               dropDetailCache: detailCacheDropper(cache, workerLogger),
+              redis: redis === undefined ? null : redis.namespace(RAW_REPARSE_NAMESPACE),
             };
             queue.register(POOL_REFRESH_QUEUE, createPoolRefreshJobHandler(refresh, extraJobs));
             return poolRefreshTimer(refresh);

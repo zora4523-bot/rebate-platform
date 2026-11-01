@@ -19,7 +19,12 @@ import {
   type RedisNamespace,
 } from '../../platform/index.ts';
 import { UnionError, type UnionItem, type UnionItemDetail } from '../../union/index.ts';
-import { detailRawItemId, markStaleDetail, type ProductDetailUpstream } from '../detail.ts';
+import {
+  detailRawItemId,
+  markCachedDetail,
+  markStaleDetail,
+  type ProductDetailUpstream,
+} from '../detail.ts';
 import type { ProductRef } from '../domain/types.ts';
 import type { CatalogConfigReader } from '../ports.ts';
 import type {
@@ -429,7 +434,7 @@ export function cacheDetailUpstream(
           ? { fetchedAtMs: entry.fetchedAtMs, value: entry.value.item }
           : null;
       if (usable !== null && clock.now().getTime() - usable.fetchedAtMs <= windows.hitMs) {
-        return usable.value;
+        return markCachedDetail(usable.value);
       }
       let item: UnionItemDetail;
       try {

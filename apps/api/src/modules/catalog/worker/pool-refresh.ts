@@ -19,7 +19,13 @@
 import { createHash } from 'node:crypto';
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
-import type { Clock, JobHandler, JobPayload, JobQueue } from '../../platform/index.ts';
+import type {
+  Clock,
+  JobHandler,
+  JobPayload,
+  JobQueue,
+  RedisNamespace,
+} from '../../platform/index.ts';
 import { isPriceAnomaly, isRegisteredPlatform, type UnionItemDetail } from '../../union/index.ts';
 import { POOL_OFF_SHELF_REASON } from '../application/pool-admin.ts';
 import { createPoolSource, type PoolProduct, type PoolSource } from '../application/pool-source.ts';
@@ -48,6 +54,8 @@ export interface PoolRefreshOptions {
   readonly union: GovernedUnion;
   /** BR-PROD-07 主动失效 of the detail cache. */
   readonly dropDetailCache: (appId: string, productKey: string) => Promise<void>;
+  /** The re-parse lock's store (RAW_REPARSE_NAMESPACE); absent, nothing is locked. */
+  readonly redis?: RedisNamespace | null;
 }
 
 const QUEUE = 'pool-refresh';
@@ -255,7 +263,7 @@ async function onlineTitle(
 
 /** The pool's union side on the refresh's own quota purpose; no link or item_ref comes in here. */
 function refreshSource(options: PoolRefreshOptions): PoolSource {
-  const { clock, config, catalog, union } = options;
+  const { clock, config, catalog, union, redis } = options;
   return createPoolSource({
     clock,
     config,
@@ -268,6 +276,7 @@ function refreshSource(options: PoolRefreshOptions): PoolSource {
       parse: () => Promise.reject(new Error('pool-refresh: no link is parsed here')),
     },
     purpose: PURPOSE,
+    redis: redis ?? null,
   });
 }
 
