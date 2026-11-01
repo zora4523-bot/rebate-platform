@@ -22,5 +22,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/platform/metrics/review-overdue/**'
-status: todo
-pr: null
+status: done
+pr: 2105
