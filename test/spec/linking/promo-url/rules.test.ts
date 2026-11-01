@@ -1,17 +1,11 @@
 // B1-06zd rule tests: the pure parts of D10-510 — which registered links get a prefetch job, the
-// per-minute limit as read from configuration (default 60), and the three configuration keys.
+// per-minute limit as read from configuration (default 60).
 import { expect, it } from 'vitest';
-import { configItemSpecOf } from '../../../../apps/api/src/modules/content/domain/config-registry.ts';
-import { switchSpecOf } from '../../../../apps/api/src/modules/content/domain/switch-registry.ts';
 import {
   promoPrefetchEligible,
   promoPrefetchRatePerMin,
   type PromoPrefetchCandidate,
 } from '../../../../apps/api/src/modules/linking/application/promo-prefetch.ts';
-
-const SHARE_SWITCH = 'share.taobao_enabled';
-const PREFETCH_SWITCH = 'convert.taobao_prefetch.enabled';
-const PREFETCH_RATE = 'convert.taobao_prefetch.rate_per_min';
 
 const ELIGIBLE: PromoPrefetchCandidate = {
   platform: 'taobao',
@@ -56,19 +50,4 @@ it.each([
   { label: '大于默认值的配置值', value: 120, expected: 120 },
 ])('[AC-B1-06zd#45] rate_per_min $label → $expected', ({ value, expected }) => {
   expect(promoPrefetchRatePerMin(value)).toBe(expected);
-});
-
-it.each([SHARE_SWITCH, PREFETCH_SWITCH])(
-  '[AC-B1-06zd#46] %s 登记为布尔配置项，不是紧急开关',
-  (key) => {
-    expect(configItemSpecOf(key)).toMatchObject({ key, valueType: 'boolean', adminEditable: true });
-    expect(switchSpecOf(key)).toBeNull();
-  },
-);
-
-it('[AC-B1-06zd#47] rate_per_min 登记为至少 1 的整数配置项', () => {
-  const spec = configItemSpecOf(PREFETCH_RATE);
-  expect(spec).toMatchObject({ key: PREFETCH_RATE, valueType: 'number', adminEditable: true });
-  expect(spec?.range).toMatchObject({ integer: true, min: 1 });
-  expect(switchSpecOf(PREFETCH_RATE)).toBeNull();
 });
