@@ -18,6 +18,8 @@
 //   之后按重读的返利状态处置（application/blacklist-step.ts）：写命中 → 未入账经 rebate.onBlacklistHit（R6）、
 //   已入账入队 order.blacklist_hit_after_credit、VOID / CLAWED_BACK 不处理。将经 R6 作废的订单不生成快照。
 //   不改 user_id、buy_type；未注入时整步跳过。
+// - B1-04zg（D10-529）：京东 14、40 在进事务、走任何分支之前写一条 order_source_mismatch，不改后续流程；
+//   京东 15 待付款的 NO_PAY_TIME 丢弃照记，不写 warn（domain/jd-status.ts）。
 // 日志只打平铺字段（platform、app_id、reason、outcome），不打子订单号与买家参数。
 import { accountingDate } from '@couli/domain';
 import type { DB } from '@couli/db';
@@ -34,6 +36,7 @@ import {
 } from '../domain/commission-snapshot.ts';
 import { orderContentHash } from '../domain/content-hash.ts';
 import { planImportState } from '../domain/import-state.ts';
+import { isAwaitingPaymentDrop, isOrderSourceMismatch } from '../domain/jd-status.ts';
 import { rawItemId, rawPayloadId } from '../domain/order-fields.ts';
 import { incomingShopId, shouldDeferOrderSource } from '../domain/source-shop.ts';
 import { mapPlatformStatus } from '../domain/status-map.ts';
@@ -183,12 +186,14 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
           });
     const pidRow = pidRows[0];
     if (pidRow === undefined) return drop(trx, order, ctx, 'PID_NOT_OURS', attrAt);
-    // 归因时点（BR-ATTR-25）：COALESCE(deposit_paid_at, paid_at)；都空不入库。
+    // 归因时点（BR-ATTR-25）：COALESCE(deposit_paid_at, paid_at)；都空不入库。京东 15 待付款是常态，只记丢弃。
     if (attrAt === null) {
-      log?.warn(
-        { platform, app_id: ctx.app_id, reason: 'NO_PAY_TIME', outcome: 'dropped' },
-        'order without pay time dropped',
-      );
+      if (!isAwaitingPaymentDrop(platform, order.raw_status ?? null)) {
+        log?.warn(
+          { platform, app_id: ctx.app_id, reason: 'NO_PAY_TIME', outcome: 'dropped' },
+          'order without pay time dropped',
+        );
+      }
       return drop(trx, order, ctx, 'NO_PAY_TIME', null);
     }
     const syncStartAt = await deps.accounts.syncStartAt({
@@ -510,6 +515,14 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
       }
       const platform = ctx.platform;
       const withSub = order as UnionOrder & { sub_order_id: string };
+      // D10-529：放在所有分支之前，丢弃、冲突、乱序、已有单的行也恰好写一条；字段只有这四个。
+      const rawStatus = order.raw_status ?? null;
+      if (isOrderSourceMismatch(platform, rawStatus)) {
+        log?.warn(
+          { platform, app_id: ctx.app_id, raw_status: rawStatus, event: 'order_source_mismatch' },
+          'jd order source mismatch',
+        );
+      }
       return deps.db.transaction().execute(async (trx) => {
         await lockOrderKey(trx, platform, subOrderId);
         const key = await readOrderKey(trx, platform, subOrderId);
