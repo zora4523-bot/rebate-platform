@@ -1,10 +1,5 @@
 import { call, has } from '@couli/bridge-sdk';
-import {
-  useInfiniteQuery,
-  useQuery,
-  useQueryClient,
-  type InfiniteData,
-} from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import {
   useEffect,
   useEffectEvent,
@@ -39,7 +34,6 @@ const PAGE_LIMIT = 20;
 /** 下拉超过这个距离（px）松手才刷新。 */
 const PULL_THRESHOLD = 64;
 const LIST_KEY = ['messages', 'list'] as const;
-const DELETION_KEY = ['me', 'deletion'] as const;
 
 const CARD = 'rounded-couli-card bg-couli-background-surface px-couli-4 shadow-couli-card';
 const FOCUS =
@@ -47,14 +41,14 @@ const FOCUS =
 const CAPTION = 'text-couli-caption leading-couli-caption text-couli-text-secondary';
 const TEXT_BUTTON = `${FOCUS} min-h-11 flex-none cursor-pointer px-couli-2 text-couli-footnote leading-couli-footnote font-couli-medium text-couli-text-link`;
 
-/** 注销冷静期判断：取到之前为 unknown（不显示「全部已读」、不标已读）；读取失败按非冷静期。 */
-type Cooling = 'unknown' | 'cooling' | 'no';
+/** 注销冷静期内标已读的回包错误码（编排裁定 D10-542）。 */
+const COOLING_OFF = 10007;
 
 /**
  * 消息中心（F1-04c，路由 Messages）：经应用级 API 客户端（内部经桥取 H5 令牌）读 listMessages，
- * 游标翻页、下拉刷新；读 GET /v1/me/deletion 判断注销冷静期。有 route 的行经 nav.open 跳转并对
- * 该条标已读，「全部已读」以 {all:true} 标已读；冷静期内两者都不调（契约 markMessagesRead、
- * BR-ID-27 细则 W-20）。没有 API 客户端（App 外或未配置）时显示共用占位页，不发请求。
+ * 游标翻页、下拉刷新。有 route 的行经 nav.open 跳转并对该条标已读，「全部已读」以 {all:true}
+ * 标已读。H5 令牌读不了注销状态（BR-ID-32），不预判冷静期：标已读回 10007 后本页隐藏「全部已读」、
+ * 不再标已读、不提示（编排裁定 D10-542，BR-ID-27 细则 W-20）。没有 API 客户端（App 外或未配置）时显示共用占位页，不发请求。
  */
 export function MessagesPage(props: MessagesPageProps): ReactElement {
   void props;
@@ -157,22 +151,23 @@ function MessagesList({ api }: { api: H5ApiClient }): ReactElement {
   });
   const { data, hasNextPage, isFetching, isFetchingNextPage, isFetchNextPageError } = list;
 
-  // 注销状态只在进页读一次；失败不重试、不显示错误，按非冷静期处理。
-  const deletion = useQuery({
-    queryKey: DELETION_KEY,
-    queryFn: () => api.request('GET', '/v1/me/deletion', {}),
-    retry: false,
-    staleTime: Number.POSITIVE_INFINITY,
-    refetchOnMount: false,
-    refetchOnReconnect: false,
-    refetchOnWindowFocus: false,
-    refetchInterval: false,
-  });
-  const cooling: Cooling = deletion.isPending
-    ? 'unknown'
-    : deletion.data?.status === 'cooling'
-      ? 'cooling'
-      : 'no';
+  // 标已读回过 10007（注销冷静期）：本页此后不再标已读、不显示「全部已读」。ref 供同步判断，
+  // state 驱动重渲染。其他失败不影响之后的标已读。
+  const coolingRef = useRef(false);
+  const [cooling, setCooling] = useState(false);
+  function markReadRequest(body: { message_ids: string[] } | { all: true }): Promise<boolean> {
+    if (coolingRef.current) return Promise.resolve(false);
+    return api.request('POST', '/v1/messages/read', { body }).then(
+      () => !coolingRef.current,
+      (error: unknown) => {
+        if (error instanceof ApiError && error.code === COOLING_OFF) {
+          coolingRef.current = true;
+          setCooling(true);
+        }
+        return false;
+      },
+    );
+  }
 
   // 标已读成功后把已加载的消息记为已读（ids 为 null 时全部）；不重取列表。
   function markRead(ids: ReadonlySet<string> | null): void {
@@ -190,30 +185,29 @@ function MessagesList({ api }: { api: H5ApiClient }): ReactElement {
     });
   }
 
-  // 点开：先经 nav.open 跳转（不等标已读），再对这一条标已读；冷静期或注销状态未知时不标，
-  // 之后也不补发。标已读失败（含 10403 只读令牌、20001、10405）不提示，未读状态保留。
+  // 点开：先经 nav.open 跳转（不等标已读），再对这一条标已读；回过 10007 后不再标。
+  // 标已读失败（含 10007、10403 只读令牌、20001、10405、50001）不提示，未读状态保留。
   const navOpen = useMemo(() => has('nav.open'), []);
   const open =
     navOpen === null
       ? null
       : (message: InboxMessage, target: MessageTarget): void => {
           call(navOpen, target).catch(() => undefined);
-          if (cooling !== 'no' || !isUnread(message)) return;
-          api
-            .request('POST', '/v1/messages/read', { body: { message_ids: [message.message_id] } })
-            .then(() => markRead(new Set([message.message_id])))
-            .catch(() => undefined);
+          if (!isUnread(message)) return;
+          void markReadRequest({ message_ids: [message.message_id] }).then((ok) => {
+            if (ok) markRead(new Set([message.message_id]));
+          });
         };
 
   // 「全部已读」：{all:true} 一次标完（含未加载的消息）；失败不提示，可再点。
   const [readingAll, setReadingAll] = useState(false);
   function readAll(): void {
-    if (readingAll || cooling !== 'no') return;
+    if (readingAll || coolingRef.current) return;
     setReadingAll(true);
-    api
-      .request('POST', '/v1/messages/read', { body: { all: true } })
-      .then(() => markRead(null))
-      .catch(() => undefined)
+    void markReadRequest({ all: true })
+      .then((ok) => {
+        if (ok) markRead(null);
+      })
       .finally(() => setReadingAll(false));
   }
 
@@ -246,10 +240,11 @@ function MessagesList({ api }: { api: H5ApiClient }): ReactElement {
   }
   const onReachBottom = useEffectEvent(loadMore);
 
-  // 已有数据时刷新失败：保留已显示的消息，顶部显示错误提示与手动重试；不自动重放。
-  const refreshFailed = list.isRefetchError && !isFetching;
+  // 已有数据时刷新失败：保留已加载的全部消息，顶部显示错误提示与手动重试；不自动重放。
+  const [refreshFailure, setRefreshFailure] = useState<unknown>(null);
+  const refreshFailed = refreshFailure !== null;
   const refreshError = refreshFailed
-    ? list.error instanceof ApiError && list.error.code === 10405
+    ? refreshFailure instanceof ApiError && refreshFailure.code === 10405
       ? messagesText('error.10405')
       : messagesTexts.refreshFailed
     : null;
@@ -267,7 +262,8 @@ function MessagesList({ api }: { api: H5ApiClient }): ReactElement {
     return () => observer.disconnect();
   }, [showSentinel, pageCount]);
 
-  // 下拉刷新：丢掉第一页以后的页，只重取第一页一次；刷新在途时不再发起，翻页在途时排到其后。
+  // 下拉刷新：只重取第一页一次，成功后才以它替换已加载的全部页（丢掉旧的后续页与游标）；
+  // 失败时缓存不动，已加载的消息全部保留。刷新在途时不再发起，翻页在途时排到其后。
   const [isRefreshing, setRefreshing] = useState(false);
   function refresh(): void {
     if (busy.current === 'more') {
@@ -277,14 +273,18 @@ function MessagesList({ api }: { api: H5ApiClient }): ReactElement {
     if (inFlight()) return;
     busy.current = 'refresh';
     setRefreshing(true);
-    queryClient.setQueryData<InfiniteData<MessagesListData, string | null>>(LIST_KEY, (old) =>
-      old === undefined || old.pages.length <= 1
-        ? old
-        : { pages: old.pages.slice(0, 1), pageParams: old.pageParams.slice(0, 1) },
-    );
-    list
-      .refetch()
-      .catch(() => undefined)
+    api
+      .request('GET', '/v1/messages', { params: { query: { limit: PAGE_LIMIT } } })
+      .then(
+        (first) => {
+          queryClient.setQueryData<InfiniteData<MessagesListData, string | null>>(LIST_KEY, {
+            pages: [first],
+            pageParams: [null],
+          });
+          setRefreshFailure(null);
+        },
+        (error: unknown) => setRefreshFailure(error ?? new Error('refresh failed')),
+      )
       .finally(() => {
         busy.current = null;
         setRefreshing(false);
@@ -357,18 +357,17 @@ function MessagesList({ api }: { api: H5ApiClient }): ReactElement {
     );
   }
 
-  // 冷静期或注销状态未取到时不显示「全部已读」（BR-ID-27 细则 W-20）。
-  const readAllButton =
-    cooling === 'no' ? (
-      <button
-        type="button"
-        className={`${TEXT_BUTTON} disabled:cursor-default disabled:text-couli-text-secondary`}
-        disabled={readingAll}
-        onClick={readAll}
-      >
-        {messagesText('messages.read_all')}
-      </button>
-    ) : null;
+  // 标已读回过 10007（注销冷静期）后不显示「全部已读」（D10-542，BR-ID-27 细则 W-20）。
+  const readAllButton = !cooling ? (
+    <button
+      type="button"
+      className={`${TEXT_BUTTON} disabled:cursor-default disabled:text-couli-text-secondary`}
+      disabled={readingAll}
+      onClick={readAll}
+    >
+      {messagesText('messages.read_all')}
+    </button>
+  ) : null;
 
   let footer: ReactElement | null = null;
   if (isFetchingNextPage) {
