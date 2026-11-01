@@ -57,6 +57,7 @@ export type {
 } from './application/withdraw-apply.ts';
 export { createWithdrawUsageReader } from './infra/withdraw-usage.ts';
 export { createWithdrawHoldsReader } from './infra/withdraw-holds.ts';
+export { holdActive } from './application/withdraw-rules.ts';
 export { PayoutAdminModule, PayoutModule } from './payout.module.ts';
 export type {
   PayoutAdminOptions,
@@ -324,7 +325,11 @@ export { createReconPassedDays } from './application/recon-passed-days.ts';
 export type { ReconPassedDaysOptions } from './application/recon-passed-days.ts';
 // B2-04zc: the wallet ledger's WITHDRAW_PAID summary entries (PAID_API / PAID_MANUAL; read only,
 // for ledger's port).
-export { readPaidWithdrawalAt, readPaidWithdrawalSummaries } from './application/wallet-ledger.ts';
+export {
+  readPaidWithdrawalAt,
+  readPaidWithdrawalSummaries,
+  readPaidWithdrawalTotal,
+} from './application/wallet-ledger.ts';
 export type {
   PaidWithdrawalAtInput,
   PaidWithdrawalSummariesInput,
