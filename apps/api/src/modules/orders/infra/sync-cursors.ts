@@ -5,7 +5,13 @@ import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
 import { instantAt, parseInstantMs } from '../domain/sync-window.ts';
-import type { OrderSyncWindow, SyncCursorStore, SyncStream } from '../application/sync-ports.ts';
+import type {
+  OrderSyncWindow,
+  RescanCursorStore,
+  RescanStream,
+  SyncCursorStore,
+  SyncStream,
+} from '../application/sync-ports.ts';
 
 export function createSyncCursorStore(db: Kysely<DB>, clock: Clock): SyncCursorStore {
   const app = db.withSchema('app');
@@ -61,6 +67,29 @@ export function createSyncCursorStore(db: Kysely<DB>, clock: Clock): SyncCursorS
           .executeTakeFirst();
         return (inserted.numInsertedOrUpdatedRows ?? 0n) > 0n;
       });
+    },
+  };
+}
+
+/** B1-04zm: createSyncCursorStore plus rewind(); see RescanCursorStore. */
+export function createRescanCursorStore(db: Kysely<DB>, clock: Clock): RescanCursorStore {
+  return {
+    ...createSyncCursorStore(db, clock),
+    async rewind(stream: RescanStream, expected: string, to: string) {
+      const now = clock.now();
+      // One statement, one transaction; a concurrent advance's commit makes this re-check and miss.
+      const updated = await db
+        .withSchema('app')
+        .updateTable('sync_cursors')
+        .set({ cursor_at: instantAt(now, parseInstantMs(to, 'to')), updated_at: now })
+        .where('app_id', '=', stream.app_id)
+        .where('platform', '=', stream.platform)
+        .where('union_account_id', '=', stream.union_account_id)
+        .where('query_kind', '=', stream.query_kind)
+        .where('scene', '=', stream.scene)
+        .where('cursor_at', '=', instantAt(now, parseInstantMs(expected, 'expected')))
+        .executeTakeFirst();
+      return updated.numUpdatedRows > 0n;
     },
   };
 }

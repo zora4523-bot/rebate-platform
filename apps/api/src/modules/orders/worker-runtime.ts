@@ -38,6 +38,9 @@
 //   logger plus `rightsImports` (the import store, the column template registry and the per-kind row
 //   processors). Without `rightsImports` such a job throws, so the queue retries and dead-letters it
 //   (nothing of a task is touched); the other job names are routed as before.
+// - B1-04zm: job name 'rescan.window' is routed to jobs/order-rescan.ts on both branches, and
+//   scheduledPlatforms() are the platforms it accepts. With ports.rescanConfig given, start() also
+//   arms the rescan loops of those platforms and stop() stops them; absent → no rescan timer.
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
 import { readFileSync } from 'node:fs';
 import type { DB } from '@couli/db';
@@ -63,6 +66,7 @@ import {
   type UnionEndpoint,
   type UnionRegistry,
 } from '../union/index.ts';
+import { ORDER_RESCAN_JOB, createOrderRescanScheduler } from './application/order-rescan.ts';
 import { createOrderPipeline } from './application/pipeline-port.ts';
 import type { OrderPipelineDeps, OrderPipelinePort } from './application/pipeline-types.ts';
 import type { OrderSourcePorts } from './application/source-backfill.ts';
@@ -90,7 +94,8 @@ import {
 } from './jobs/snapshot-retry.ts';
 import { loadStatusMap, type StatusMap } from './domain/status-map.ts';
 import { scheduledPlatforms } from './domain/sync-window.ts';
-import { createSyncCursorStore } from './infra/sync-cursors.ts';
+import { createRescanCursorStore, createSyncCursorStore } from './infra/sync-cursors.ts';
+import { handleOrderRescanWindow } from './jobs/order-rescan.ts';
 import { handleOrderSyncWindow } from './jobs/order-sync.ts';
 import type {
   RightsImportProcessors,
@@ -148,6 +153,11 @@ export interface OrderSyncReadPorts {
    * registers no platform_restore diff (the P9 warning stays).
    */
   readonly platformRestore?: (clock: Clock) => PlatformRestoreDiffPort;
+  /**
+   * B1-04zm: reads order_sync.rescan.<platform>.enabled / .days, called once at assembly and
+   * reading nothing until used. Absent → no rescan timer; 'rescan.window' jobs are routed either way.
+   */
+  readonly rescanConfig?: (db: Kysely<DB>, clock: Clock) => SyncIntervalConfig;
 }
 
 export interface OrderSyncRuntimeDeps {
@@ -317,13 +327,49 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
     { clock, queue, cursors, access, logger },
     DEFAULT_INTERVAL,
   );
+  const rescanHandler = {
+    access,
+    cursors,
+    registry,
+    pipeline,
+    platforms: scheduledPlatforms(),
+    logger,
+  };
+  const windowJob = (job: ReceivedJob): Promise<void> =>
+    job.name === ORDER_RESCAN_JOB
+      ? handleOrderRescanWindow(job, rescanHandler)
+      : handleOrderSyncWindow(job, handler);
+  const rescanConfig = deps.ports.rescanConfig?.(db, clock);
+  const rescan =
+    rescanConfig === undefined
+      ? undefined
+      : createOrderRescanScheduler(
+          {
+            clock,
+            queue,
+            cursors: createRescanCursorStore(db, clock),
+            access,
+            logger,
+            config: rescanConfig,
+          },
+          scheduledPlatforms(),
+        );
+  const startSync = (): { stop(): Promise<void> } => {
+    const syncRunning = sync.start();
+    const rescanRunning = rescan?.start();
+    return {
+      async stop() {
+        await Promise.all([syncRunning.stop(), rescanRunning?.stop()]);
+      },
+    };
+  };
   if (snapshots === undefined) {
     queue.register(ORDER_SYNC_QUEUE, (job) =>
       job.name === RIGHTS_IMPORT_JOB
         ? importJob(job)
         : isManualSyncJob(job)
           ? handleManualSyncJob(job, manual)
-          : handleOrderSyncWindow(job, handler),
+          : windowJob(job),
     );
     return {
       access,
@@ -332,7 +378,7 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
       pipeline,
       statusMaps,
       logger,
-      start: () => sync.start(),
+      start: startSync,
     };
   }
   // B1-08u: the scan publishes order.snapshot_retry_exhausted on the runtime's EVENT_BUS, in the
@@ -345,7 +391,7 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
         ? importJob(job)
         : isManualSyncJob(job)
           ? handleManualSyncJob(job, manual)
-          : handleOrderSyncWindow(job, handler),
+          : windowJob(job),
   );
   const retryScheduler = createSnapshotRetryScheduler({
     queue,
@@ -361,7 +407,7 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
     statusMaps,
     logger,
     start: () => {
-      const syncRunning = sync.start();
+      const syncRunning = startSync();
       const retryRunning = retryScheduler.start();
       return {
         async stop() {
