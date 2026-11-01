@@ -29,6 +29,7 @@ export function createFavoriteCardPort(options: FavoriteCardPortOptions): Favori
             config: options.config,
             itemRefs: options.itemRefs,
             upstream: options.upstream,
+            reparse: false,
             viewerContext,
             catalog: {
               // A favorite also names its platform: a mismatched key must fail before upstream.

@@ -42,10 +42,14 @@ export interface ProductDetailRequest {
   /** Absent means re-resolve the product key, never fabricate an upstream raw ID. */
   readonly rawItemId?: string;
   /**
-   * BR-PROD-05 ③ of a key with a qualifying pool row: without rawItemId the union is searched by
-   * this title. Absent too, the union is not asked: 30143.
+   * BR-PROD-05 ③ of a key with a product_refs row or a qualifying pool row: without rawItemId the
+   * union is asked by this canonical_url, else by this title. Absent too, it is not asked: 30143.
    */
-  readonly reparse?: { readonly title: string; readonly keyPrefix: string | null };
+  readonly reparse?: {
+    readonly title: string;
+    readonly keyPrefix: string | null;
+    readonly canonicalUrl?: string | null;
+  };
   /**
    * The detail use case's resolved raw ID (item_ref or product_refs) must be the one the union is
    * asked with: a detail cache entry fetched under another raw ID of the same product_key counts
@@ -61,10 +65,18 @@ export interface ProductDetailRequest {
  */
 const STALE_DETAILS = new WeakSet<object>();
 const FRESH_DETAILS = new WeakSet<object>();
+/** An entry inside its hit window: no union response, so no product_refs write (BR-PROD-05). */
+const CACHED_DETAILS = new WeakSet<object>();
 
 /** Marks a detail answer as a stale cache entry (infra/product-cache.ts). */
 export function markStaleDetail<T extends UnionItemDetail>(item: T): T {
   STALE_DETAILS.add(item);
+  return item;
+}
+
+/** Marks a detail answer as a cache hit (infra/product-cache.ts). */
+export function markCachedDetail<T extends UnionItemDetail>(item: T): T {
+  CACHED_DETAILS.add(item);
   return item;
 }
 
@@ -98,6 +110,11 @@ export interface ProductDetailOptions {
   readonly priceHistory?: PriceSnapshotRecorder;
   /** B1-05r: the pool price of a union outage (BR-PRICE-11, TRADE-12); absent, it stays 50401. */
   readonly poolReader?: PoolReader;
+  /**
+   * B1-05w: false keeps a caller out of BR-PROD-05 ③, so a key without a fresh raw ID is 30143 with
+   * no union call: a favorites page reads many cards and must not spend one title search on each.
+   */
+  readonly reparse?: boolean;
 }
 
 export type ProductDetailData = components['schemas']['ProductResponse']['data'];
@@ -182,11 +199,12 @@ export function upstreamFailure(error: unknown): unknown {
  * GET /v1/products/{product_key} (04 §6.3; BR-PROD-03 / 05 / 11, BR-PRICE-05 / 07 / 11 / 12 / 14).
  * Order: request key → platform (20001 on a malformed or unregistered key) → item_ref (an
  * authenticated same-app token naming another product is 20001, before any union call) → raw ID
- * by BR-PROD-05 ① item_ref ≤ 1800 s, ② product_refs refreshed ≤ 1800 s, ③ re-resolve by key →
- * (only a key with a qualifying pool row; any other key is 30143 without a union call) → union
- * detail (off shelf 30141, dependency failure: the pool's price, or 50401) → the single
- * derivation deriveProductKey; another key or none is 30143 → product_refs (source detail, receipt instant
- * from the Clock after the response) → the card entry (active query; quote, item_ref, link
+ * by BR-PROD-05 ① item_ref ≤ 1800 s, ② product_refs refreshed ≤ 1800 s, ③ re-parse (a key with a
+ * product_refs row of any age or a qualifying pool row; with neither there is no title to search:
+ * 30143 without a union call) → union detail (off shelf 30141, 结果分类 ② 30143, dependency failure:
+ * the stale cache, the pool's price, or 50401) → the single derivation deriveProductKey; another key
+ * or none is 30143 → product_refs (source detail, receipt instant from the Clock after the response;
+ * a cache answer holds no union response and writes nothing) → the card entry (active query; quote, item_ref, link
  * registration). Every call registers a new link; a failed registration rejects the call, so no
  * unregistered link_id goes out. A valid item_ref whose raw ID was used is returned unchanged;
  * otherwise the card carries a freshly issued one.
@@ -262,12 +280,16 @@ export async function getProduct(
   // Absent means item (BR-PROD-03); any other value fails closed in deriveProductKey.
   const jdMode = jdEntry === null ? 'item' : String(jdEntry.value);
 
-  // ③ Only a key with a qualifying pool row is re-resolved, under the key that row stores.
+  // ③ A key with a product_refs row or a qualifying pool row, under the key that pool row stores.
   const reparsing =
     rawItemId === undefined
       ? ((await options.poolReader?.detail(appId, productKey)) ?? null)
       : null;
   const targetKey = reparsing?.ref.productKey ?? productKey;
+  const reparseTitle =
+    rawItemId === undefined && options.reparse !== false
+      ? (stored?.title ?? reparsing?.item.title)
+      : null;
 
   let item: UnionItemDetail;
   try {
@@ -277,12 +299,13 @@ export async function getProduct(
       platform,
       ...(platform === 'jd' ? { jdMode } : {}),
       ...(rawItemId === undefined ? {} : { rawItemId, requireRawMatch: true }),
-      ...(reparsing === null
+      ...(reparseTitle === undefined || reparseTitle === null
         ? {}
         : {
             reparse: {
-              title: stored?.title ?? reparsing.item.title,
+              title: reparseTitle,
               keyPrefix: row?.key_prefix ?? null,
+              canonicalUrl: stored?.canonicalUrl ?? null,
             },
           }),
     });
@@ -367,7 +390,10 @@ export async function getProduct(
     shopType: null,
     source: 'detail',
   };
-  await catalog.registerProductRef(ref, DETAIL_CAPABILITIES);
+  // BR-PROD-05: refreshed_at only ever moves with a union response, which a cache answer is not.
+  if (!CACHED_DETAILS.has(item) && !STALE_DETAILS.has(item)) {
+    await catalog.registerProductRef(ref, DETAIL_CAPABILITIES);
+  }
 
   const result = await cards.assemble({
     item,

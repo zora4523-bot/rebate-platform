@@ -48,6 +48,11 @@ import { createKyselyPoolReader } from './infra/kysely-pool-reader.ts';
 import { createDbCatalogProductReader } from './infra/product-reader-wiring.ts';
 import { SearchController } from './http/public/search.controller.ts';
 import { createUnionDetailUpstream } from './infra/detail-wiring.ts';
+import {
+  RAW_REPARSE_NAMESPACE,
+  createRawReparser,
+  type RawReparser,
+} from './application/raw-reparse.ts';
 import { HOT_RANK_CACHE_NAMESPACE, cacheHotRankUpstream } from './infra/hot-rank-cache.ts';
 import { createUnionHotRankUpstream } from './infra/hot-rank-wiring.ts';
 import { processItemRefCipher } from './infra/process-item-ref-cipher.ts';
@@ -277,6 +282,21 @@ function freshSearchUpstream(upstream: SearchUpstream): SearchUpstream {
 
 function freshDetailUpstream(upstream: ProductDetailUpstream): ProductDetailUpstream {
   return { detail: async (input) => markFreshDetail(await upstream.detail(input)) };
+}
+
+/** B1-05w: the detail's BR-PROD-05 ③, its lock on Redis when the entry has it. */
+function detailReparser(
+  union: GovernedUnion,
+  clock: Clock,
+  catalog: Catalog,
+  redis: RedisHandle | undefined,
+): RawReparser {
+  return createRawReparser({
+    union,
+    clock,
+    catalog,
+    redis: redis === undefined ? null : redis.namespace(RAW_REPARSE_NAMESPACE),
+  });
 }
 
 /**
@@ -748,7 +768,12 @@ export class CatalogModule {
                 logger,
               }),
               upstream: cacheDetailUpstream(
-                freshDetailUpstream(createUnionDetailUpstream({ union })),
+                freshDetailUpstream(
+                  createUnionDetailUpstream({
+                    union,
+                    reparser: detailReparser(union, clock, catalog, redis),
+                  }),
+                ),
                 {
                   redis: redis === undefined ? null : redis.namespace(PRODUCT_CACHE_NAMESPACE),
                   clock,

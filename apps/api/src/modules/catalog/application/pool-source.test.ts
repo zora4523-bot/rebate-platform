@@ -4,10 +4,10 @@ import { CatalogError } from '../domain/rules.ts';
 import {
   createPoolSource,
   PoolManyProductsError,
-  searchRawByTitle,
   type PoolLinkParser,
   type PoolSourceOptions,
 } from './pool-source.ts';
+import { searchRawByTitle } from './raw-reparse.ts';
 
 const NOW = '2026-10-31T02:00:00.000Z';
 const CONTEXT = { appId: 'app', requestId: 'r', purpose: 'online' } as const;

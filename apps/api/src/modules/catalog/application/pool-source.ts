@@ -7,16 +7,14 @@
 // names no product stay CatalogError.
 import { randomUUID } from 'node:crypto';
 import { deriveProductKey, ProductKeyUnderivable } from '@couli/domain';
-import type { Clock } from '../../platform/index.ts';
+import type { Clock, RedisNamespace } from '../../platform/index.ts';
 import {
-  UnionError,
   isRegisteredPlatform,
   type CallCtx,
   type ItemRef,
   type Platform,
   type RegisteredPlatform,
   type UnionAdapter,
-  type UnionItem,
   type UnionItemDetail,
 } from '../../union/index.ts';
 import { detailRawItemId, upstreamFailure, type ProductDetailUpstream } from '../detail.ts';
@@ -31,6 +29,7 @@ import type {
 } from '../domain/types.ts';
 import type { CatalogConfigReader, GovernedUnion } from '../ports.ts';
 import type { ItemRefService } from './item-ref.ts';
+import { createRawReparser } from './raw-reparse.ts';
 
 /** One link or token of the operator's text, in parsing's own extraction. */
 export interface PoolLinkCandidate {
@@ -111,6 +110,8 @@ export interface PoolSourceOptions {
   readonly links: PoolLinkParser;
   /** Quota purpose of every union call made here; `online` unless the caller names another. */
   readonly purpose?: CallCtx['purpose'];
+  /** The re-parse lock's store (RAW_REPARSE_NAMESPACE); absent, nothing is locked. */
+  readonly redis?: RedisNamespace | null;
 }
 
 /** Thrown when one `link_text` holds more than one product (20001 data.fields=[link_text]). */
@@ -127,8 +128,6 @@ const POOL_CAPABILITIES: ProductCapabilities = Object.freeze({
   parseEnabled: true,
   searchEnabled: false,
 });
-/** BR-PROD-05 重新解析步骤 2: the title search reads the platform's first page, ≤ 20 rows. */
-const REPARSE_SEARCH_ROWS = 20;
 const PARSE_UNDERIVABLE = 30131;
 const PARSE_UNRECOGNIZED = 30132;
 const PARSE_OFF_SHELF = 30141;
@@ -136,37 +135,6 @@ const PARSE_DEPENDENCY_DOWN = 50301;
 
 function unavailable(message: string): CatalogError {
   return new CatalogError(50401, `pool: ${message}`);
-}
-
-/** What the title search of BR-PROD-05 重新解析步骤 2 looks for, and on which call context. */
-export interface TitleSearch {
-  readonly adapter: Pick<UnionAdapter, 'searchItems'>;
-  readonly platform: Platform;
-  readonly title: string;
-  readonly jdMode: string;
-  readonly context: CallCtx;
-  readonly isTarget: (item: UnionItem) => boolean | Promise<boolean>;
-}
-
-/** BR-PROD-05 重新解析步骤 2; null when no item of the key can be found by title (引用失效). */
-export async function searchRawByTitle(
-  search: TitleSearch,
-): Promise<{ readonly raw: string; readonly item: UnionItem } | null> {
-  const { adapter, platform, title, jdMode, context, isTarget } = search;
-  let page: Awaited<ReturnType<UnionAdapter['searchItems']>>;
-  try {
-    page = await adapter.searchItems({ keyword: title }, context);
-  } catch (error: unknown) {
-    // A platform that has no title search answers like a page without the key; it is no outage.
-    if (error instanceof UnionError && error.code === 'adapter_unimplemented') return null;
-    throw error;
-  }
-  for (const item of page.items.slice(0, REPARSE_SEARCH_ROWS)) {
-    if (item.platform !== platform) continue;
-    const raw = detailRawItemId(item, jdMode);
-    if (raw !== undefined && (await isTarget(item))) return { raw, item };
-  }
-  return null;
 }
 
 function refExpired(productKey: string, refusal: CatalogError): PoolProduct {
@@ -183,6 +151,8 @@ function anotherProduct(productKey: string): PoolProduct {
 /** The union side of adminAddPoolItem and adminUpdatePoolItem. */
 export function createPoolSource(options: PoolSourceOptions): PoolSource {
   const { clock, config, catalog, itemRefs, union, upstream, links, purpose = 'online' } = options;
+  // The caller of takeRawItemId writes what is found, so no catalog here.
+  const reparser = createRawReparser({ union, clock, redis: options.redis ?? null, purpose });
 
   function context(appId: string): CallCtx {
     return { appId, requestId: randomUUID(), purpose };
@@ -214,67 +184,7 @@ export function createPoolSource(options: PoolSourceOptions): PoolSource {
     }
   }
 
-  function foundRef(
-    identity: ProductIdentity,
-    stored: ProductRef | null,
-    title: string,
-    rawItemId: string,
-    rawFetchedAt: string,
-  ): ReparseResult {
-    return {
-      kind: 'found',
-      ref: {
-        appId: identity.appId,
-        platform: identity.platform,
-        productKey: identity.productKey!,
-        rawItemId,
-        rawFetchedAt,
-        receivedAt: clock.now().toISOString(),
-        canonicalUrl: stored?.canonicalUrl ?? null,
-        title,
-        shopId: stored?.shopId ?? null,
-        shopType: stored?.shopType ?? null,
-        source: 'pool',
-      },
-    };
-  }
-
-  /** BR-PROD-05 重新解析步骤 1. The URL is product_refs' own canonical one, never user text. */
-  async function reparseByUrl(
-    identity: ProductIdentity,
-    adapter: UnionAdapter,
-    stored: ProductRef,
-    url: string,
-    jdMode: string,
-  ): Promise<ReparseResult> {
-    const { item } = await adapter.resolveLink(url, context(identity.appId));
-    const raw = detailRawItemId(item, jdMode);
-    if (raw === undefined || (await keyOf(item, jdMode)) !== identity.productKey) {
-      return { kind: 'ref_expired' };
-    }
-    return foundRef(identity, stored, stored.title, raw, clock.now().toISOString());
-  }
-
-  /** BR-PROD-05 重新解析步骤 2. */
-  async function reparseByTitle(
-    identity: ProductIdentity,
-    adapter: UnionAdapter,
-    stored: ProductRef | null,
-    title: string,
-    jdMode: string,
-  ): Promise<ReparseResult> {
-    const found = await searchRawByTitle({
-      adapter,
-      platform: identity.platform,
-      title,
-      jdMode,
-      context: context(identity.appId),
-      isTarget: async (item) => (await keyOf(item, jdMode)) === identity.productKey,
-    });
-    if (found === null) return { kind: 'ref_expired' };
-    return foundRef(identity, stored, title, found.raw, found.item.quoted_at);
-  }
-
+  /** BR-PROD-05 ③ under the key the pool stores, on this source's quota purpose. */
   async function reparse(
     identity: ProductIdentity,
     platform: RegisteredPlatform,
@@ -283,21 +193,19 @@ export function createPoolSource(options: PoolSourceOptions): PoolSource {
   ): Promise<ReparseResult> {
     const stored = await catalog.readProductRef(identity);
     const title = stored?.title ?? titleHint;
-    const adapter = union.adapter(platform);
-    try {
-      if (stored !== null && stored.canonicalUrl !== null) {
-        return await reparseByUrl(identity, adapter, stored, stored.canonicalUrl, jdMode);
-      }
-      if (title === null) return { kind: 'ref_expired' };
-      return await reparseByTitle(identity, adapter, stored, title, jdMode);
-    } catch (error: unknown) {
-      const mapped = upstreamFailure(error);
-      if (!(mapped instanceof CatalogError)) throw mapped;
-      if (mapped.code === 30141) return { kind: 'off_shelf' };
-      if (mapped.code === 30143) return { kind: 'ref_expired' };
-      if (mapped.code === 50401) return { kind: 'temporary_failure' };
-      throw mapped;
-    }
+    if (title === null) return { kind: 'ref_expired' };
+    return reparser.reparse({
+      appId: identity.appId,
+      platform,
+      productKey: identity.productKey!,
+      jdMode,
+      canonicalUrl: stored?.canonicalUrl ?? null,
+      title,
+      shopId: stored?.shopId ?? null,
+      shopType: stored?.shopType ?? null,
+      source: 'pool',
+      isTarget: async (item) => (await keyOf(item, jdMode)) === identity.productKey,
+    });
   }
 
   /** BR-PROD-05 order for a known key, then one uncached union detail; only a fresh raw ID asks. */

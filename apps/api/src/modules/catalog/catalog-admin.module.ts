@@ -40,6 +40,7 @@ import {
 import type { Catalog, CatalogWarning } from './domain/types.ts';
 import type { SearchCursorCodec } from './search.ts';
 import { AdminProductPoolsController } from './http/admin/product-pools.controller.ts';
+import { RAW_REPARSE_NAMESPACE } from './application/raw-reparse.ts';
 import { createUnionDetailUpstream } from './infra/detail-wiring.ts';
 import { createKyselyPoolAdminStore } from './infra/kysely-pool-admin-store.ts';
 import {
@@ -162,6 +163,7 @@ function poolAdmin(
       union,
       upstream: createUnionDetailUpstream({ union }),
       links: db === undefined ? NO_DATABASE_LINKS : options.links(db, clock, logger),
+      redis: redis === undefined ? null : redis.namespace(RAW_REPARSE_NAMESPACE),
     }),
     candidates: (query, actor) =>
       searchPoolCandidates(query, adminRequester(actor), {
