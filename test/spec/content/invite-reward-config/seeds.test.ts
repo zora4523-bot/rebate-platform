@@ -29,6 +29,8 @@ const ELIGIBILITY = { key: `${PREFIX}eligibility_days`, value: 30 };
 // same checks, seeded with the BR-PRICE-11 values; feed.fallback_pool_id is unset by default and
 // has no seed row. B1-02zs: the withdraw.dormant_reverify_days row follows pool.*, under the same
 // checks, seeded 0 (old-account re-verification off until the re-verification pages ship).
+// B1-06ze (D10-510): the three Taobao promotion link keys are unset by default and have no seed
+// rows.
 const PAYOUT_KEYS = [
   'payout.single_cap_fen',
   'payout.daily_cap_fen',
@@ -96,6 +98,11 @@ const POOL_SEEDS = [
 const POOL_KEYS = POOL_SEEDS.map((row) => row.key);
 const REVERIFY_SEEDS = [{ key: 'withdraw.dormant_reverify_days', value: 0 }];
 const REVERIFY_KEYS = REVERIFY_SEEDS.map((row) => row.key);
+const PROMO_LINK_KEYS = [
+  'share.taobao_enabled',
+  'convert.taobao_prefetch.enabled',
+  'convert.taobao_prefetch.rate_per_min',
+];
 
 it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；重跑不覆盖', () => {
   const sql = readFileSync(
@@ -140,6 +147,12 @@ it('[AC-F1-02zn#6] BR-INV-24 种子为 1000/0/0/0/24，开关缺行默认 off；
   expect(rows.filter((row) => POOL_KEYS.includes(row.key))).toStrictEqual(POOL_SEEDS);
   expect(rows.filter((row) => REVERIFY_KEYS.includes(row.key))).toStrictEqual(REVERIFY_SEEDS);
   expect(rows.some((row) => row.key === 'feed.fallback_pool_id')).toBe(false);
+  for (const key of PROMO_LINK_KEYS) {
+    expect(
+      rows.some((row) => row.key === key),
+      key,
+    ).toBe(false);
+  }
   for (const row of CONFIGS) {
     const spec = configItemSpecOf(row.key);
     expect(spec, row.key).not.toBeNull();

@@ -208,7 +208,8 @@ it('[AC-F1-02zj#13] GET 配置列表包含全部 16 项，enum 选项按契约�
   // search.keyword_routes, and B1-15zd (D10-454) then the seven retention.* keys in registration
   // order, and B2-08cz (D10-456 ④) then the three tax.SERVICE_FEE.* keys in registration order,
   // and B1-05s (D10-480) then feed.fallback_pool_id and the two pool.* keys in registration order,
-  // and B1-02zs then withdraw.dormant_reverify_days.
+  // and B1-02zs then withdraw.dormant_reverify_days, and B1-06ze (D10-510) then the three Taobao
+  // promotion link keys in registration order.
   const keys = items.map((item) => item.key);
   const tail = [
     ...inviteNow().map((entry) => entry.key),
@@ -264,6 +265,9 @@ it('[AC-F1-02zj#13] GET 配置列表包含全部 16 项，enum 选项按契约�
     'pool.max_age_sec',
     'pool.refresh_interval_sec',
     'withdraw.dormant_reverify_days',
+    'share.taobao_enabled',
+    'convert.taobao_prefetch.enabled',
+    'convert.taobao_prefetch.rate_per_min',
   ];
   const settleEnd = keys.length - tail.length;
   const settleStart = settleEnd - 16;

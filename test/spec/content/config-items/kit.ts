@@ -318,6 +318,20 @@ export const POOL_UNSEEDED: readonly string[] = ['feed.fallback_pool_id'];
 export const REVERIFY: readonly Expected[] = [
   row('withdraw.dormant_reverify_days', 'number', 'config.business'),
 ];
+// B1-06ze (B1-06zd prerequisite, D10-510): the Taobao promotion link share switch, prefetch switch
+// and prefetch cap per minute, registered right after REVERIFY in this order: editable
+// config.business, options null. Not part of expectedNow() either.
+export const PROMO_LINK: readonly Expected[] = [
+  row('share.taobao_enabled', 'boolean', 'config.business'),
+  row('convert.taobao_prefetch.enabled', 'boolean', 'config.business'),
+  row('convert.taobao_prefetch.rate_per_min', 'number', 'config.business'),
+];
+/** B1-06ze (D10-510): all three are unset by default (off, off, 60), hence no seed rows. */
+export const PROMO_LINK_UNSEEDED: readonly string[] = [
+  'share.taobao_enabled',
+  'convert.taobao_prefetch.enabled',
+  'convert.taobao_prefetch.rate_per_min',
+];
 export const expectedOf = (key: string): Expected => {
   const found = [
     ...expectedNow(),
@@ -331,6 +345,7 @@ export const expectedOf = (key: string): Expected => {
     ...TAX,
     ...POOL,
     ...REVERIFY,
+    ...PROMO_LINK,
   ].find((entry) => entry.key === key);
   expect(found, key).toBeDefined();
   return found!;
