@@ -24,6 +24,7 @@ paths:
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
 test_paths:
   - 'test/spec/admin/permissions/expected.ts'
+  - 'test/spec/contracts/admin-tax-export/**'
 impl: claude
 tester: claude-independent
 accept:
