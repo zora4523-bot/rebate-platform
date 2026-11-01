@@ -1,0 +1,21 @@
+id: B1-05y
+repo: rebate-platform
+title: catalog：重解析第 ① 步适配器未实现 resolveLink 时回落标题搜索，不答 50001（BR-PROD-05）
+type: impl
+# 2026-11-02 W1 入账（B1-05w money S2）。淘宝 resolveLink 仍是 adapter_unimplemented，parseRaw 只在标题搜索那步接住同一错误，带 canonical_url 的旧引用落到 upstreamFailure 未归类，答 50001，走不到第 ② 步。淘宝开放后才碰到。只改 raw-reparse，不改 union，不改 upstreamFailure 的现有归类。
+refs: [BR-PROD-05]
+refs_hash:
+  BR-PROD-05: 692dcc678e1e
+deps: [B1-05w]
+paths:
+  - 'apps/api/src/modules/catalog/application/raw-reparse.ts'
+  - 'apps/api/src/modules/catalog/application/raw-reparse.test.ts'
+test_paths:
+  - 'test/spec/catalog/reparse-fallback/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/reparse-fallback/**'
+status: todo
+pr: null
