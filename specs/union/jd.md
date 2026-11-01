@@ -4,7 +4,7 @@
 
 # 京东订单映射（B1-04zb）
 
-接口 `jd.union.open.order.row.query`，实现在 `apps/api/src/modules/union/infra/jd/orders.ts`。依据 D10-520、D10-522。
+接口 `jd.union.open.order.row.query`，实现在 `apps/api/src/modules/union/infra/jd/orders.ts`。本文件记本单定下的映射；依据 D10-520、D10-522，结算与 `validCode` 的口径以 D10-529 为准（撤回 D10-520 ①）。
 
 ## 请求
 
@@ -26,9 +26,9 @@
 | `modified_at` | `modifyTime` | 必填 |
 | `received_at` | `finishTime` | 空串或缺键为 null |
 | `settled_at` | 无 | 恒为 null；`payMonth` 只是预估，不读 |
-| `est_commission_fen` | `estimateFee` | 保留原值，可为负 |
-| `commission_fen` | `estimateFee` | 负值取 0 |
-| `settle_commission_fen` | `actualFee` | 见下节 |
+| `est_commission_fen` | `actualFee` / `estimateFee` | 见下节；保留原值，可为负 |
+| `commission_fen` | 同 `est_commission_fen` | 负值取 0 |
+| `settle_commission_fen` | 无 | 恒为 null，见下节 |
 | `paid_fen` | `actualCosPrice` / `estimateCosPrice` | 见下节 |
 | `service_fee_fen` | 无 | 不给 |
 | `raw_payload_id` | 无 | 该页归档行 id，取传输回传的元数据，不读报文 |
@@ -39,10 +39,13 @@
 
 元转分用 `@couli/money` 的 `yuanStrToFen`，只认报文数字的原文（BR-CALC-26），两位小数以外数学 floor。要读的金额字段缺失或非数字时整页 `invalid_dto`，不按 0 处理。
 
-- **`settle_commission_fen`**：只有 `validCode` 为 17 或 18 时取 `actualFee`，其余一律 null。原因：未完成单的 `actualFee` 是 0.0，而 orders 取 `coalesce(settle, est)`，给 0n 就把预估佣金冲成 0。17 / 18 下退款后真为 0 时才是 0n。
-- **`paid_fen`**：17 或 18 取 `actualCosPrice`，其余取 `estimateCosPrice`。两个原值都留在归档的原始报文里。
-- **只读用得上的字段**：17 / 18 不读 `estimateCosPrice`，其余状态不读 `actualFee`、`actualCosPrice`；没读的字段缺失、为负、非数字都不影响该行。
-- **负数（D10-522）**：`est_commission_fen`、`settle_commission_fen` 保留原值，`'-3.20'` → -320，`'-3.205'` → -321。`commission_fen`、`paid_fen` 必填非负，取 0；原值留在归档报文。
+- **`settle_commission_fen`**：京东 Adapter 不写，任何 `validCode` 都是 null，不看 `actualFee`，也不看 `payMonth`。结算额只由联盟结算明细导入写 `order_settlements`（`source=STATEMENT`）。原因：BR-FUND-02 规定 Adapter 只在平台明确已结算时才写这一列，而京东官方的 `validCode` 没有已结算码，17 只是已完成，18 这个码不存在。
+- **`est_commission_fen`**：17 取 `actualFee`，其余取 `estimateFee`。未完成单的 `actualFee` 是 0.0，取它就把预估佣金冲成 0；17 下 `actualFee` 真为 0（如退款后）时才是 0n。
+- **`commission_fen`**：`max(0, est_commission_fen)`。
+- **`paid_fen`**：17 取 `actualCosPrice`，其余取 `estimateCosPrice`。两个原值都留在归档的原始报文里。
+- **18 不特殊**：与其他非 17 的码同样处理。
+- **只读用得上的字段**：17 不读 `estimateFee`、`estimateCosPrice`，其余状态不读 `actualFee`、`actualCosPrice`；没读的字段缺失、为负、非数字都不影响该行。
+- **负数（D10-522）**：`est_commission_fen` 保留原值，`'-3.20'` → -320，`'-3.205'` → -321。`commission_fen`、`paid_fen` 必填非负，取 0；原值留在归档报文。
 
 ## 付款时点
 
@@ -50,7 +53,7 @@
 | --- | --- | --- |
 | 24（已付定金） | null | `orderTime` |
 | 15（待付款） | null | null |
-| 其余（16、17、18 与各类无效码） | `orderTime` | null |
+| 其余（16、17 与各类无效码） | `orderTime` | null |
 
 这是**下单时刻近似付款时刻**：文档列的 `orderPayTime` 实际不出现，只能用 `orderTime`。15 不读 `orderTime`。
 

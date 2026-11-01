@@ -24,7 +24,8 @@ import {
   wire,
 } from './kit.ts';
 
-// 评审 r1 补的用例与负数口径（D10-522）。负数替代 amounts.test.ts #33–#36 里去掉的两行。
+// 评审 r1 补的用例与负数口径（D10-522）。负数替代 #33–#36 里去掉的两行。
+/** 18 不存在、不再特殊（D10-529）：这个表只留给 #78，钉这两个旧码的 actualFee 都不进 settle。 */
 const FINISHED_CODES = ['17', '18'] as const;
 const UNFINISHED_CODES = ['-1', '2', '3', '13', '15', '16', '19', '22', '24', '25', '43', '99'];
 
@@ -179,13 +180,19 @@ it.each(withUnread(UNFINISHED_CODES))(
   },
 );
 
-it.each(withUnread(FINISHED_CODES))(
-  '[AC-B1-04zb#72] validCode %s：不读的 estimateCosPrice 是%s时照常映射',
+it.each(withUnread(['17']))(
+  '[AC-B1-04zb#72] validCode %s：不读的 estimateFee、estimateCosPrice 是%s时照常映射',
   async (code, _name, value) => {
-    const dto = await one(
-      row({ validCode: num(code), estimateCosPrice: value, actualCosPrice: num('44.10') }),
-    );
-    expect(dto.paid_fen).toBe(4410n);
+    const input = row({
+      validCode: num(code),
+      estimateFee: value,
+      estimateCosPrice: value,
+      actualFee: num('7.89'),
+      actualCosPrice: num('44.10'),
+    });
+    const dto = await one(input).catch(() => null);
+    expect(dto?.paid_fen).toBe(4410n);
+    expect(dto?.est_commission_fen).toBe(789n);
   },
 );
 
@@ -255,12 +262,12 @@ it.each(
     NEGATIVE.map(([text, fen]): [string, string, bigint] => [code, text, fen]),
   ),
 )(
-  '[AC-B1-04zb#78] validCode %s：actualFee %s 保留为 settle %s 分，est 与 commission 不受影响',
+  '[AC-B1-04zb#78] validCode %s：actualFee %s 不进 settle；17 的 est 保留 %s 分、commission 取 0，18 仍取 estimateFee',
   async (code, text, fen) => {
     const dto = await one(row({ validCode: num(code), actualFee: num(text) }));
-    expect(dto.settle_commission_fen).toBe(fen);
-    expect(dto.est_commission_fen).toBe(123n);
-    expect(dto.commission_fen).toBe(123n);
+    expect(dto.settle_commission_fen).toBeNull();
+    expect(dto.est_commission_fen).toBe(code === '17' ? fen : 123n);
+    expect(dto.commission_fen).toBe(code === '17' ? 0n : 123n);
   },
 );
 
@@ -268,11 +275,12 @@ it.each(NEGATIVE)('[AC-B1-04zb#79] 未完成单 estimateCosPrice %s：paid_fen �
   expect((await one(row({ estimateCosPrice: num(text) }))).paid_fen).toBe(0n);
 });
 
-it.each(FINISHED_CODES.flatMap((code) => NEGATIVE.map(([text]): [string, string] => [code, text])))(
-  '[AC-B1-04zb#80] validCode %s：actualCosPrice %s 时 paid_fen 取 0n',
-  async (code, text) => {
-    const dto = await one(row({ validCode: num(code), actualCosPrice: num(text) }));
-    expect(dto.paid_fen).toBe(0n);
+it.each(NEGATIVE)(
+  '[AC-B1-04zb#80] actualCosPrice %s：validCode 17 的 paid_fen 取 0n，18 是普通码不读它',
+  async (text) => {
+    const value = num(text);
+    expect((await one(row({ validCode: num('17'), actualCosPrice: value }))).paid_fen).toBe(0n);
+    expect((await one(row({ validCode: num('18'), actualCosPrice: value }))).paid_fen).toBe(4560n);
   },
 );
 
@@ -288,7 +296,7 @@ const negativeYuan = fc
     };
   });
 
-it('[AC-B1-04zb#81] 任意负的元字符串：est、settle 按数学 floor 保留，commission、paid 收到 0', () => {
+it('[AC-B1-04zb#81] 任意负的元字符串：est 按数学 floor 保留，settle 恒 null，commission、paid 收到 0', () => {
   expect(() =>
     fc.assert(
       fc.property(negativeYuan, ({ text, fen }) => {
@@ -301,7 +309,7 @@ it('[AC-B1-04zb#81] 任意负的元字符串：est、settle 按数学 floor 保�
         });
         return (
           dto.est_commission_fen === fen &&
-          dto.settle_commission_fen === fen &&
+          dto.settle_commission_fen === null &&
           dto.commission_fen === 0n &&
           dto.paid_fen === 0n
         );

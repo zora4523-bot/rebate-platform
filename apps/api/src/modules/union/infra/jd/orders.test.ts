@@ -102,6 +102,19 @@ it.each([
   expect(page.items[0]).toMatchObject({ settle_commission_fen: null, paid_fen: 4560n });
 });
 
+it('[AC-B1-04zl-UNIT#1] validCode 17 且 payMonth 非 0：settle、settled_at 仍是 null，est 取 actualFee', async () => {
+  const page = await single(
+    orderRow({ validCode: 17, payMonth: 20261120, actualFee: 7.89, actualCosPrice: 44.1 }),
+  );
+  expect(page.items[0]).toMatchObject({
+    settle_commission_fen: null,
+    settled_at: null,
+    est_commission_fen: 789n,
+    commission_fen: 789n,
+    paid_fen: 4410n,
+  });
+});
+
 it('[AC-B1-04zb#84] 请求不带 positionId，别的推广位与无效单照常返回', async () => {
   const seen: Record<string, unknown>[] = [];
   const { adapter } = setup((orderReq) => {
