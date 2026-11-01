@@ -1,0 +1,149 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-user-risk-state/dialogs.test.ts > [AC-F1-07jd-DIALOG#1] 【冻结】对话框：必选原因类别（五类，显示字典中文名或编码）、期限（不定期，或选一个时间）、必填原因；点开不发请求",
+    "test/spec/frontend/admin-user-risk-state/dialogs.test.ts > [AC-F1-07jd-DIALOG#2] 【封禁】对话框：同冻结去掉期限——必选原因类别（五类）与必填原因，没有期限选择或时间输入；点开不发请求",
+    "test/spec/frontend/admin-user-risk-state/dialogs.test.ts > [AC-F1-07jd-DIALOG#3] 【解冻】【解封】对话框只填原因：不显示原因类别的选择，也没有期限",
+    "test/spec/frontend/admin-user-risk-state/dialogs.test.ts > [AC-F1-07jd-DIALOG#4] 原因为空或超过 200 字：前端拦下并说明规则，或发出后收 20001 [reason] 在原因旁说明规则；全空白原因必须前端拦下、说明规则、不发 PUT；都不改风控状态；恰 200 字可提交，首尾空白去掉后发送",
+    "test/spec/frontend/admin-user-risk-state/dialogs.test.ts > [AC-F1-07jd-DIALOG#5] 【冻结】【封禁】不选原因类别：前端拦下并提示选择类别，或发出后收 20001 [reason_category] 并提示；风控状态不变",
+    "test/spec/frontend/admin-user-risk-state/dialogs.test.ts > [AC-F1-07jd-DIALOG#6] 冻结期限早于现在：前端拦下并提示，或带上该时间发出、收 20001 [frozen_until] 后在期限旁提示；不会改成不定期冻结，风控状态不变",
+    "test/spec/frontend/admin-user-risk-state/dialogs.test.ts > [AC-F1-07jd-DIALOG#7] 取消对话框或取消动态码都不发写请求、状态不变；再次操作确认并验证后才发",
+    "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#1] 超管看正常用户（无风控行或有风控行）：标题行有【冻结】【封禁】，没有【解冻】【解封】",
+    "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#2] 超管看已冻结用户：标题行有【解冻】【封禁】（【冻结】改期限可有可无），没有【解封】",
+    "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#3] 超管看已封禁用户：标题行只有【解封】，不出现【冻结】【解冻】【封禁】",
+    "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#4] 申诉中的用户：四个按钮都不可用（不出现，或置灰并说明在申诉中），点置灰的不发请求",
+    "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#5] 只持 risk.freeze：正常有【冻结】、已冻结有【解冻】、已封禁什么都没有，且从不出现【封禁】【解封】",
+    "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#6] 只持 risk.ban：正常与已冻结有【封禁】、已封禁有【解封】，且从不出现【冻结】【解冻】",
+    "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#7] 不持任何 risk.* 的账号（有 user.lookup、联盟授权等其他权限）：正常、已冻结、已封禁用户都看不到四个按钮中的任何一个，置灰的也没有",
+    "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#8] 打开详情只读：按钮在标题行，不弹对话框或动态码，对话框标题与正文都不渲染，只发列表与本用户详情的 GET",
+    "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#1] 20902（data.resource=user_risk_state）：提示状态已变化并重拉详情；不自动重发，再操作时带重拉后的 row_version 并成功",
+    "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#2] 详情无风控行时带 null，期间别人已建行（被冻结）→ 20902：重拉后标题行显示已冻结、按钮随之变化，再封禁带 row_version 0 成功",
+    "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#3] 20902 之后重拉详情失败：提示未能刷新，不显示成功、不自动重发",
+    "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#4] 44004：提示当前状态不能做此操作并重拉详情；用户已转申诉中时标题行显示申诉中、不再有可用按钮",
+    "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#5] 20001 [reason]：在原因旁说明规则（对话框仍在、已填内容保留），不显示成功、状态不变",
+    "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#6] 20001 [frozen_until]：在期限旁提示（对话框仍在），不显示成功、状态不变",
+    "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#7] 10403：提示没有权限，不显示成功、状态不变",
+    "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#8] 网络失败：提示失败、不显示成功、不自动重发，状态不变",
+    "test/spec/frontend/admin-user-risk-state/pages.browser.test.ts > [AC-F1-07jd-BROWSER#1] 1440 超管看已冻结用户：标题行【解冻】→ 对话框（只填原因）→ 动态码 → 一次 PUT risk-state（unfreeze），标题行变正常并出现【冻结】；只发读、动态码与这一个写",
+    "test/spec/frontend/admin-user-risk-state/pages.browser.test.ts > [AC-F1-07jd-BROWSER#2] 超管看无风控行的正常用户：【封禁】→ 选原因类别、填原因 → 动态码 → 一次 PUT（ban，expected_row_version null），标题行变已封禁、只剩【解封】",
+    "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#1] 无风控行的正常用户【冻结】不定期：确认 → 动态码 → 一次 PUT risk-state，带令牌、无 Idempotency-Key，body 为 freeze + 类别 + 原因 + expected_row_version null（frozen_until 为 null 或不带）；提示冻结成功，标题行变已冻结、按钮换成【解冻】【封禁】",
+    "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#2] 有风控行的正常用户【冻结】到期：frozen_until 为所选时刻（ISO 带时区），expected_row_version 取详情 risk.row_version；只持 risk.freeze 也能做",
+    "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#3] 已冻结用户【解冻】：body 恰为 {action: unfreeze, reason, expected_row_version}（不带原因类别与期限）；提示解冻成功，标题行变正常、按钮回到【冻结】【封禁】",
+    "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#4] 正常用户【封禁】：body 恰为 {action: ban, reason_category, reason, expected_row_version}（不带 frozen_until）；提示封禁成功，标题行变已封禁、只剩【解封】",
+    "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#5] 已封禁用户【解封】（只持 risk.ban）：body 恰为 {action: unban, reason, expected_row_version}；提示解封成功，标题行变正常、按钮回到【封禁】",
+    "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#6] 连续两次操作（先冻结再解冻）各弹一次动态码、令牌不同；第二次带第一次之后的 row_version（无风控行时从 null 到 0）",
+    "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#7] 连点确认与【验证并继续】、请求在途时再点：只弹一次动态码、只验证一次、只发一次 PUT",
+    "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#8] PUT 回 10003：重新弹动态码，验证后用新令牌、原请求体再发一次，之后成功"
+  ],
+  "risk_note": "Admin 用户详情 冻结 / 解冻 / 封禁 / 解封 (apps/admin pages/users/**, texts/users.ts). Contract CT-02j adminUpdateUserRiskState; backend F1-07d merged. Entries by permission point and risk state: risk.freeze gives 【冻结】 on normal users and 【解冻】 on frozen ones, risk.ban gives 【封禁】 on normal / frozen users and 【解封】 on banned ones; banned users get no 【冻结】, appealing users get no entry, accounts without risk.* see none. Freeze takes a reason category (not preselected), a reason and an optional end time read as Beijing time; ban is the same without an end time (orchestrator D10-490, no board); unfreeze / unban take a reason only. A totp step-up for every write; PUT body per action exactly as the contract with expected_row_version from the detail (null without a risk row), no Idempotency-Key, no identity fields; 20902 / 44004 refresh the detail and a failed refresh shows a notice. Hiding the buttons for deleting / deleted users is left as a TODO: AdminUserDetail carries no deletion status (contract gap reported). Prerequisite test-change F1-07ja (#2029) merged; no frozen test changed here. Rule tests written by an independent Claude in two rounds; red/1 failed on an unrecognised red reason (expect.poll), round 2 fixed it and red/2 passed; Claude spec-test review r1 pass (4 S2 fixed in round 2), r2 pass (one S2 carried into the implementation constraints). Implementation by Opus 5.5 (test machine fast and browser green on its tree); after rebasing onto main the container verify-fast hit a tsc heap out-of-memory twice (repository-wide, reported; CI carries an 8 GB heap) while browser stayed green. Adversarial money review by a fresh independent Claude r1 pass with one S2 (the deletion-status contract gap). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, one S2: deleting / deleted users still see the entries because AdminUserDetail has no deletion status (contract gap, TODO in code, reported to the orchestrator); independent Claude because Codex is unavailable until 2026-11-02"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 pass with four S2 (fixed in round 2 together with the expect.poll red-reason problem), round 2 pass with one S2 carried into the implementation constraints; tests written by an independent Claude (claude-run.sh)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  },
+  "task": "F1-07jd",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "05b8e882b0147e5294466e7a27d84d7a0904d641",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "05b8e882b0147e5294466e7a27d84d7a0904d641",
+      "tree": "92a12934bc588f77e3f50db50564ba53d2aaf5b6",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-11-01T06:03:19Z",
+      "finished_at": "2026-11-01T06:05:22Z",
+      "gate": {
+        "commit": "8820cb59d5ecad2d01020793ff849b1630666c5a",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-user-risk-state/dialogs.test.ts > [AC-F1-07jd-DIALOG#1] 【冻结】对话框：必选原因类别（五类，显示字典中文名或编码）、期限（不定期，或选一个时间）、必填原因；点开不发请求",
+        "test/spec/frontend/admin-user-risk-state/dialogs.test.ts > [AC-F1-07jd-DIALOG#2] 【封禁】对话框：同冻结去掉期限——必选原因类别（五类）与必填原因，没有期限选择或时间输入；点开不发请求",
+        "test/spec/frontend/admin-user-risk-state/dialogs.test.ts > [AC-F1-07jd-DIALOG#3] 【解冻】【解封】对话框只填原因：不显示原因类别的选择，也没有期限",
+        "test/spec/frontend/admin-user-risk-state/dialogs.test.ts > [AC-F1-07jd-DIALOG#4] 原因为空或超过 200 字：前端拦下并说明规则，或发出后收 20001 [reason] 在原因旁说明规则；全空白原因必须前端拦下、说明规则、不发 PUT；都不改风控状态；恰 200 字可提交，首尾空白去掉后发送",
+        "test/spec/frontend/admin-user-risk-state/dialogs.test.ts > [AC-F1-07jd-DIALOG#5] 【冻结】【封禁】不选原因类别：前端拦下并提示选择类别，或发出后收 20001 [reason_category] 并提示；风控状态不变",
+        "test/spec/frontend/admin-user-risk-state/dialogs.test.ts > [AC-F1-07jd-DIALOG#6] 冻结期限早于现在：前端拦下并提示，或带上该时间发出、收 20001 [frozen_until] 后在期限旁提示；不会改成不定期冻结，风控状态不变",
+        "test/spec/frontend/admin-user-risk-state/dialogs.test.ts > [AC-F1-07jd-DIALOG#7] 取消对话框或取消动态码都不发写请求、状态不变；再次操作确认并验证后才发",
+        "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#1] 超管看正常用户（无风控行或有风控行）：标题行有【冻结】【封禁】，没有【解冻】【解封】",
+        "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#2] 超管看已冻结用户：标题行有【解冻】【封禁】（【冻结】改期限可有可无），没有【解封】",
+        "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#3] 超管看已封禁用户：标题行只有【解封】，不出现【冻结】【解冻】【封禁】",
+        "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#4] 申诉中的用户：四个按钮都不可用（不出现，或置灰并说明在申诉中），点置灰的不发请求",
+        "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#5] 只持 risk.freeze：正常有【冻结】、已冻结有【解冻】、已封禁什么都没有，且从不出现【封禁】【解封】",
+        "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#6] 只持 risk.ban：正常与已冻结有【封禁】、已封禁有【解封】，且从不出现【冻结】【解冻】",
+        "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#7] 不持任何 risk.* 的账号（有 user.lookup、联盟授权等其他权限）：正常、已冻结、已封禁用户都看不到四个按钮中的任何一个，置灰的也没有",
+        "test/spec/frontend/admin-user-risk-state/entries.test.ts > [AC-F1-07jd-ENTRY#8] 打开详情只读：按钮在标题行，不弹对话框或动态码，对话框标题与正文都不渲染，只发列表与本用户详情的 GET",
+        "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#1] 20902（data.resource=user_risk_state）：提示状态已变化并重拉详情；不自动重发，再操作时带重拉后的 row_version 并成功",
+        "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#2] 详情无风控行时带 null，期间别人已建行（被冻结）→ 20902：重拉后标题行显示已冻结、按钮随之变化，再封禁带 row_version 0 成功",
+        "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#3] 20902 之后重拉详情失败：提示未能刷新，不显示成功、不自动重发",
+        "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#4] 44004：提示当前状态不能做此操作并重拉详情；用户已转申诉中时标题行显示申诉中、不再有可用按钮",
+        "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#5] 20001 [reason]：在原因旁说明规则（对话框仍在、已填内容保留），不显示成功、状态不变",
+        "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#6] 20001 [frozen_until]：在期限旁提示（对话框仍在），不显示成功、状态不变",
+        "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#7] 10403：提示没有权限，不显示成功、状态不变",
+        "test/spec/frontend/admin-user-risk-state/errors.test.ts > [AC-F1-07jd-ERROR#8] 网络失败：提示失败、不显示成功、不自动重发，状态不变",
+        "test/spec/frontend/admin-user-risk-state/pages.browser.test.ts > [AC-F1-07jd-BROWSER#1] 1440 超管看已冻结用户：标题行【解冻】→ 对话框（只填原因）→ 动态码 → 一次 PUT risk-state（unfreeze），标题行变正常并出现【冻结】；只发读、动态码与这一个写",
+        "test/spec/frontend/admin-user-risk-state/pages.browser.test.ts > [AC-F1-07jd-BROWSER#2] 超管看无风控行的正常用户：【封禁】→ 选原因类别、填原因 → 动态码 → 一次 PUT（ban，expected_row_version null），标题行变已封禁、只剩【解封】",
+        "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#1] 无风控行的正常用户【冻结】不定期：确认 → 动态码 → 一次 PUT risk-state，带令牌、无 Idempotency-Key，body 为 freeze + 类别 + 原因 + expected_row_version null（frozen_until 为 null 或不带）；提示冻结成功，标题行变已冻结、按钮换成【解冻】【封禁】",
+        "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#2] 有风控行的正常用户【冻结】到期：frozen_until 为所选时刻（ISO 带时区），expected_row_version 取详情 risk.row_version；只持 risk.freeze 也能做",
+        "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#3] 已冻结用户【解冻】：body 恰为 {action: unfreeze, reason, expected_row_version}（不带原因类别与期限）；提示解冻成功，标题行变正常、按钮回到【冻结】【封禁】",
+        "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#4] 正常用户【封禁】：body 恰为 {action: ban, reason_category, reason, expected_row_version}（不带 frozen_until）；提示封禁成功，标题行变已封禁、只剩【解封】",
+        "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#5] 已封禁用户【解封】（只持 risk.ban）：body 恰为 {action: unban, reason, expected_row_version}；提示解封成功，标题行变正常、按钮回到【封禁】",
+        "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#6] 连续两次操作（先冻结再解冻）各弹一次动态码、令牌不同；第二次带第一次之后的 row_version（无风控行时从 null 到 0）",
+        "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#7] 连点确认与【验证并继续】、请求在途时再点：只弹一次动态码、只验证一次、只发一次 PUT",
+        "test/spec/frontend/admin-user-risk-state/writes.test.ts > [AC-F1-07jd-WRITE#8] PUT 回 10003：重新弹动态码，验证后用新令牌、原请求体再发一次，之后成功"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-user-risk-state/dialogs.test.ts",
+        "test/spec/frontend/admin-user-risk-state/entries.test.ts",
+        "test/spec/frontend/admin-user-risk-state/errors.test.ts",
+        "test/spec/frontend/admin-user-risk-state/pages.browser.test.ts",
+        "test/spec/frontend/admin-user-risk-state/writes.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "c2649447c243ff0fdba5c2e7589ed91891e77186a5e98475f94fb8acf5dbdd69"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "84ddf033a8e62cbdd208d4cf09e1a913dfc77f6d75ead195af753fc10d021682"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "aca4657311b291fd48a84bb0daddb418c2d64ede",
+    "specs": "d6da500dafeea96c5e7d7cc7d526535701917b8f"
+  }
+}
