@@ -5,9 +5,11 @@ import { expectRedacted, unionFailure } from '../jd-core/kit.ts';
 import { mapped, num, one, row } from './kit.ts';
 
 // D10-520 / BR-CALC-26：元转分取报文数字原文按十进制解析，≤2 位小数精确，>2 位 floor 到分。
-// 最要紧的一条：未完成单的 actualFee 是 0.0，绝不能变成 0n（orders 取 coalesce(settle, est)）。
+// 最要紧的一条（D10-529）：未完成单的 actualFee 是 0.0，est 不能取它，只有 17 取 actualFee；
+// settle 恒 null，结算额由联盟结算明细导入写 order_settlements（source=STATEMENT），不归本单。
+/** 18 不存在、不再特殊（D10-529）：这个表只留给 #37，钉这两个旧码的 settle 也是 null。 */
 const FINISHED_CODES = ['17', '18'] as const;
-/** 没有结算的码：待付款、已付款、已付定金与各类无效码，含文档外的 -1 与未知码。 */
+/** 17、18 以外的码：待付款、已付款、已付定金与各类无效码，含文档外的 -1 与未知码。 */
 const UNFINISHED_CODES = ['-1', '2', '3', '13', '15', '16', '19', '22', '24', '25', '43', '99'];
 
 const yuanCases = [
@@ -32,7 +34,7 @@ const yuanCases = [
 ] as const;
 
 it.each(yuanCases)(
-  '[AC-B1-04zb#32] 报文数字 %s 元 → %s 分，四个金额字段同一换算',
+  '[AC-B1-04zb#32] 报文数字 %s 元 → %s 分，三个金额字段同一换算，settle 恒 null',
   async (text, fen) => {
     const value = num(text);
     const finished = await one(
@@ -40,14 +42,14 @@ it.each(yuanCases)(
     );
     expect(finished.est_commission_fen).toBe(fen);
     expect(finished.commission_fen).toBe(fen);
-    expect(finished.settle_commission_fen).toBe(fen);
+    expect(finished.settle_commission_fen).toBeNull();
     expect(finished.paid_fen).toBe(fen);
     const open = await one(row({ estimateCosPrice: value }));
     expect(open.paid_fen).toBe(fen);
   },
 );
 
-// 负数不在此列：D10-522 定为保留或收到 0，见 review-r1.test.ts。
+// 负数不在此列：D10-522 定为保留或收到 0，见评审 r1 补的 #77–#81。
 const notAmounts = [
   ['科学计数法', num('1.5e3')],
   ['超出 int64 的分值', num('92233720368547758.08')],
@@ -85,22 +87,24 @@ it.each(notAmounts)(
 );
 
 it.each(notAmounts)(
-  '[AC-B1-04zb#36] 已完成单的 actualCosPrice 是%s → invalid_dto',
+  '[AC-B1-04zb#36] 已完成单的 actualCosPrice 是%s → invalid_dto；18 是普通码，不读它',
   async (_name, value) => {
-    await expect(one(row({ validCode: num('18'), actualCosPrice: value }))).rejects.toMatchObject({
+    await expect(one(row({ validCode: num('17'), actualCosPrice: value }))).rejects.toMatchObject({
       code: 'invalid_dto',
     });
+    const other = await one(row({ validCode: num('18'), actualCosPrice: value })).catch(() => null);
+    expect(other?.paid_fen).toBe(4560n);
   },
 );
 
 it.each(FINISHED_CODES)(
-  '[AC-B1-04zb#37] validCode %s：settle = actualFee，退款后真为 0 时是 0n',
+  '[AC-B1-04zb#37] validCode %s：settle 恒 null，actualFee 不进 settle，退款后的 0.0 也一样',
   async (code) => {
     const validCode = num(code);
     const settled = await one(row({ validCode, actualFee: num('7.89') }));
-    expect(settled.settle_commission_fen).toBe(789n);
+    expect(settled.settle_commission_fen).toBeNull();
     const refunded = await one(row({ validCode, actualFee: num('0.0') }));
-    expect(refunded.settle_commission_fen).toBe(0n);
+    expect(refunded.settle_commission_fen).toBeNull();
   },
 );
 
@@ -115,26 +119,19 @@ it.each(UNFINISHED_CODES)(
   },
 );
 
-it.each(FINISHED_CODES)(
-  '[AC-B1-04zb#39] validCode %s：commission 与 est 仍是 estimateFee，不被 actualFee 顶替',
-  async (code) => {
-    const dto = await one(
-      row({ validCode: num(code), estimateFee: num('1.23'), actualFee: num('7.89') }),
-    );
-    expect(dto.commission_fen).toBe(123n);
-    expect(dto.est_commission_fen).toBe(123n);
-  },
-);
+it('[AC-B1-04zb#39] validCode 17：commission 与 est 取 actualFee，不取 estimateFee', async () => {
+  const dto = await one(
+    row({ validCode: num('17'), estimateFee: num('1.23'), actualFee: num('7.89') }),
+  );
+  expect(dto.commission_fen).toBe(789n);
+  expect(dto.est_commission_fen).toBe(789n);
+});
 
-it.each(FINISHED_CODES)(
-  '[AC-B1-04zb#40] validCode %s：paid_fen 取 actualCosPrice',
-  async (code) => {
-    const dto = await one(
-      row({ validCode: num(code), estimateCosPrice: num('45.60'), actualCosPrice: num('44.10') }),
-    );
-    expect(dto.paid_fen).toBe(4410n);
-  },
-);
+it('[AC-B1-04zb#40] paid_fen：validCode 17 取 actualCosPrice，18 是普通码取 estimateCosPrice', async () => {
+  const prices = { estimateCosPrice: num('45.60'), actualCosPrice: num('44.10') };
+  expect((await one(row({ validCode: num('17'), ...prices }))).paid_fen).toBe(4410n);
+  expect((await one(row({ validCode: num('18'), ...prices }))).paid_fen).toBe(4560n);
+});
 
 it.each(UNFINISHED_CODES)(
   '[AC-B1-04zb#41] validCode %s：paid_fen 取 estimateCosPrice',
@@ -180,12 +177,14 @@ it('[AC-B1-04zb#44] 任意元字符串转分与 bigint 手算一致', () => {
   ).not.toThrow();
 });
 
-it('[AC-B1-04zb#45] 任意 validCode：settle 只在 17 / 18 取 actualFee，paid 按同一分界取价', () => {
-  const code = fc.integer({ min: -1, max: 99 });
+it('[AC-B1-04zb#45] 任意 validCode：settle 恒 null，est、commission、paid 只在 17 取实际值', () => {
+  // 只有 17、18 的新旧行为不同，单独加权，不靠整数区间碰运气。
+  const code = fc.oneof(fc.constantFrom(17, 18), fc.integer({ min: -1, max: 99 }));
   expect(() =>
     fc.assert(
       fc.property(code, yuan, yuan, yuan, yuan, (validCode, estimate, actual, estCos, actCos) => {
-        const finished = validCode === 17 || validCode === 18;
+        const finished = validCode === 17;
+        const est = finished ? actual.fen : estimate.fen;
         const dto = mapped({
           validCode: num(String(validCode)),
           estimateFee: num(estimate.text),
@@ -195,9 +194,9 @@ it('[AC-B1-04zb#45] 任意 validCode：settle 只在 17 / 18 取 actualFee，pai
         });
         return (
           dto.raw_status === String(validCode) &&
-          dto.est_commission_fen === estimate.fen &&
-          dto.commission_fen === estimate.fen &&
-          dto.settle_commission_fen === (finished ? actual.fen : null) &&
+          dto.est_commission_fen === est &&
+          dto.commission_fen === est &&
+          dto.settle_commission_fen === null &&
           dto.paid_fen === (finished ? actCos.fen : estCos.fen)
         );
       }),
