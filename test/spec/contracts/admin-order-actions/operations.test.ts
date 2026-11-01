@@ -18,12 +18,12 @@ import {
   yaml,
 } from './kit.ts';
 
-it.each(
-  routes.filter(
-    (r): boolean =>
-      !['adminCreateOrderSync', 'adminListOrderSyncs', 'adminGetOrderSyncLimits'].includes(r[2]),
-  ),
-)('[AC-CT-24n#1] %s %s 登记 %s、后台权限和 planned', (method, path, operationId, permission) => {
+function assertPlannedRegistration(
+  method: string,
+  path: string,
+  operationId: string,
+  permission: string,
+): void {
   const doc = contract();
   const operation = op(doc, path, method);
   expect(operation).toMatchObject({
@@ -72,7 +72,27 @@ it.each(
     const header = resolve(doc, at(resolve(doc, raw), 'headers', 'X-Trace-Id'));
     expect(resolve(doc, at(header, 'schema'))['type']).toBe('string');
   }
-});
+}
+
+it.each(
+  routes.filter(
+    (r): boolean =>
+      ![
+        'adminCreateOrderSync',
+        'adminListOrderSyncs',
+        'adminGetOrderSyncLimits',
+        'adminHoldOrder',
+        'adminUnholdOrder',
+        'adminReassignOrder',
+      ].includes(r[2]),
+  ),
+)('[AC-CT-24n#1] %s %s 登记 %s、后台权限和 planned', assertPlannedRegistration);
+
+it.each(
+  routes.filter((r): boolean =>
+    ['adminHoldOrder', 'adminUnholdOrder', 'adminReassignOrder'].includes(r[2]),
+  ),
+)('[AC-CT-24n#1] %s %s（订单写操作）登记 %s、后台权限和 planned', assertPlannedRegistration);
 
 it.each(
   routes.filter((r): boolean =>
