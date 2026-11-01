@@ -171,6 +171,12 @@ it('identity codes of 08 §13.11 (功能对照补缺 1–3 批) carry their data
     // CT-24ze: admin-only appeal restore refusals (BR-FUND-22 ③, D10-468 ①, D10-469 ①).
     'restore_not_supported',
     'restore_user_deleted',
+    // CT-24zg: admin-only adjustment and write-off refusals (BR-FUND-24, BR-FUND-12).
+    'adjust_ref_invalid',
+    'reverse_not_allowed',
+    'adjust_user_deleted',
+    'adjust_no_balance',
+    'writeoff_frozen_pending',
   ]);
   expect(errorCodes[30701].sources).toEqual(['规划/04 §7', 'BR-ID-10', 'BR-ID-40']);
 });
@@ -266,6 +272,9 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     'recon_diff',
     // CT-07d: admin product pool CAS and retried create (F-ADM-10).
     'product_pool',
+    // CT-24zg: admin adjustment approve / reject / reversal and write-off approve CAS.
+    'admin_adjustment',
+    'bad_debt_writeoff',
   ]);
 });
 

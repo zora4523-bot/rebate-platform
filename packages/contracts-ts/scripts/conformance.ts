@@ -122,6 +122,14 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminPayQueryAttemptKind: 'pay_query_attempt_kind',
   AdminReconDiffStatus: 'recon_diff_status',
   AdminReconDiffOutcome: 'admin_recon_diff_outcome',
+  // CT-24zg: adjustments and bad-debt write-offs (BR-FUND-24, BR-FUND-12). The request's
+  // reason_code and contra_subject are the choosable subsets, so they stay unregistered.
+  AdminAdjustmentStatus: 'admin_adjustment_status',
+  AdminAdjustmentDirection: 'admin_adjustment_direction',
+  AdminAdjustmentReasonCode: 'admin_adjust_sub_type',
+  AdminAdjustmentRefType: 'admin_adjustment_ref_type',
+  AdminAdjustmentContraSubject: 'admin_adjustment_contra_subject',
+  AdminBadDebtWriteoffStatus: 'bad_debt_writeoff_status',
   // CT-24r: admin appeal console (04 §6.6 appeals, BR-ID-36). AdminBlockedRequestType stays
   // unregistered on purpose: CT-02d keeps blocked_request_type out of both tables; the
   // admin-appeals test checks it against the enum instead.

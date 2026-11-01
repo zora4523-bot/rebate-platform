@@ -109,6 +109,8 @@ tags:
     description: Admin pay console — pay orders with their refunds and channel request summaries, the manual settlement of a needs_manual pay order (step-up), original-route refunds of a pay order or a pay anomaly (Idempotency-Key, no step-up), the refund list, pay anomalies and the R4 reconciliation differences (permission points pay.view, pay.resolve, pay.refund; 04 §6.6 pay-orders, §11.2; BR-PAY-05, BR-PAY-06, BR-PAY-07).
   - name: admin-recon
     description: Admin reconciliation console — the R1–R3 reconciliation differences (差错单) page by page with filters and one difference with its handling summary, read only (permission point fund.recon or fund.view; 01 F-ADM-08, 04 §3.2 recon_diffs, §11). Handling a difference follows in CT-24w; source R4 stays under admin-pay.
+  - name: admin-adjustments
+    description: Admin adjustments and bad-debt write-offs — manual adjustment forms page by page and one form with its balance preview, read with permission point fund.adjust or fund.view; submitting an adjustment or a whole-form reversal in one step, approving a system-prefilled ACCOUNT_CLOSED form (sms step-up) and rejecting it (no step-up); write-off candidates, read with fund.writeoff or fund.view, and approving one with fund.writeoff (sms step-up; 01 F-ADM-08, 04 §3.2 admin_adjustments, bad_debt_writeoffs, §11; BR-FUND-24, BR-FUND-12).
   - name: admin-withdrawals
     description: Admin withdrawal console — the withdrawal list with filters and one withdrawal with its amounts, batch, transfer attempt summaries, holds in effect, automatic payout decision and risk flags, read only, payee data masked (permission point withdraw.review or fund.view; 01 F-ADM-07, 04 §3.2 withdrawals, §11). Review, rejection, batch and manual payouts, automatic payout settings and cancelling a WeChat transfer follow in later tasks.
   - name: admin-settle-bills
@@ -23520,6 +23522,883 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/adjustments:
+    get:
+      operationId: adminListAdjustments
+      tags:
+        - admin-adjustments
+      summary: Manual adjustments of the app, page by page, newest first
+      description: |
+        The 调账单 tab of the 调账与核销 console (01 F-ADM-08; 04 §3.2 admin_adjustments;
+        design/specs/admin-adjustments.md §2, §4). Read only, no step-up. Permission point: any of
+        `fund.adjust` or `fund.view` (04 §11.1, §11.2). Each row is AdminAdjustment. `amount_fen`
+        is null on a system-prefilled ACCOUNT_CLOSED form that has no amount yet (it is taken when
+        the form is approved, BR-FUND-24 ⑧). 「已红冲」 is not a status: it is shown from
+        `reversed_by_adjust_id` (BR-TEXT-25). `note` is internal and never reaches the member
+        (BR-FUND-24 ⑦). Filters combine with AND: `reason_code`, `status`, `user_id` (the user_id
+        only; UID and phone number lookups go through GET /admin/v1/search). A value outside an
+        enum or pattern is 20001 with `data.fields` naming the parameter; a `user_id` that names
+        nothing of the app is an empty page. The tab's 待批准 count is the `total` of
+        `status=PENDING`. Order: `created_at` descending (then `adjust_id` descending). Pages with
+        `page` (as AdminPage; a page past the last one is `items=[]`) and `page_size` ≤ 200 (above
+        200 is 20001, as AdminPageSize); `total` is the count of the filter set. Reading does not
+        write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - $ref: '#/components/parameters/AdminAdjustmentReasonCodeFilter'
+        - $ref: '#/components/parameters/AdminAdjustmentStatusFilter'
+        - $ref: '#/components/parameters/AdminAdjustmentUserFilter'
+      responses:
+        '200':
+          description: One page of adjustments, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAdjustmentPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - adjust_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa002
+                      user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c03
+                      direction: decrease
+                      amount_fen: null
+                      reason_code: ACCOUNT_CLOSED
+                      refs:
+                        - ref_type: account_deletion
+                          ref_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa301
+                      contra_subject: COMMISSION_REVENUE
+                      contra_platform: null
+                      note: null
+                      status: PENDING
+                      reverses_adjust_id: null
+                      reversed_by_adjust_id: null
+                      created_by: null
+                      created_at: '2026-12-01T02:00:00+08:00'
+                      reviewed_by: null
+                      reviewed_at: null
+                      reject_note: null
+                      voucher_id: null
+                    - adjust_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa001
+                      user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02
+                      direction: decrease
+                      amount_fen: 10000
+                      reason_code: PAYOUT_RECOVERY
+                      refs:
+                        - ref_type: withdrawal
+                          ref_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7d01
+                        - ref_type: recon_diff
+                          ref_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e02
+                      contra_subject: CASH_ALIPAY
+                      contra_platform: null
+                      note: 迟到成功重复出款，追回
+                      status: APPROVED
+                      reverses_adjust_id: null
+                      reversed_by_adjust_id: null
+                      created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      created_at: '2026-11-30T10:30:00+08:00'
+                      reviewed_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      reviewed_at: '2026-11-30T10:30:00+08:00'
+                      reject_note: null
+                      voucher_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa101
+                  page: 1
+                  page_size: 20
+                  total: 2
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: adminCreateAdjustment
+      tags:
+        - admin-adjustments
+      summary: Submit a manual adjustment or a whole-form reversal, effective in one step (提交并生效)
+      description: |
+        The only way a person adjusts a member's balance (BR-FUND-24; 04 §3.2 admin_adjustments;
+        design/specs/admin-adjustments.md 新建抽屉, 红冲对话框, and the 【调整余额】 of the user detail).
+        One submission saves and approves at once: there is no 保存待批 and no 撤回, and the form
+        is born APPROVED with `reviewed_by` equal to `created_by` (BR-FUND-24 细则「后台入口」, owner
+        2026-10-18 ②; ADD-05). Permission point `fund.adjust` (04 §11.2). Step-up: sms tier
+        (BR-ID-34): without a valid sms-tier `X-Step-Up-Token`, a totp-tier token included → 10003
+        with `data.tier=sms`; an account without a registered verify phone also gets
+        `data.reason=verify_phone_missing`.
+
+        Request, one of two closed shapes (AdminAdjustmentCreateRequest):
+
+        - A new adjustment: `user_id`; `direction`; `amount_fen`, integer fen > 0, no upper limit
+          (BR-FUND-24 ④); `reason_code`, one of RECON_FIX, PAYOUT_RECOVERY or OTHER. RESTORE comes
+          only from a difference (BR-FUND-22) and ACCOUNT_CLOSED only from the system (BR-FUND-24
+          ⑧), so neither can be chosen: 20001 at the schema. `refs`, the linked documents, at
+          most 10, without duplicates (`data.fields=[refs]`); `note`, the internal explanation,
+          at most 500 characters and not blank after trimming (blank → `data.fields=[note]`),
+          required for OTHER (`data.fields=[note]`); `contra_subject` with `contra_platform`, see
+          below.
+        - A reversal: `reverses_adjust_id` and `note`, the reason for the reversal, required, as
+          above. The request carries no direction, amount, reason code, refs or subject: the
+          server takes them from the original (opposite direction, the original `amount_fen`,
+          whole form only, the same `reason_code`, `contra_subject` and `contra_platform`), and
+          any of those fields in the request is 20001 at the schema (BR-FUND-24 细则「红冲只按原单整笔」).
+          To correct +500 to +50: reverse the whole +500, then submit a new +50.
+
+        What `data.fields` lists depends on where the body is refused. The schema comes first and
+        reports both shapes: a body that fits neither shape (a `reason_code` of RESTORE or
+        ACCOUNT_CLOSED, a `note` over 500 characters, more than 10 `refs`, an `amount_fen` of 0, a
+        value outside an enum, a missing required field, a field of the other shape) is 20001
+        with `data.fields` listing what fails in each of the two shapes, usually fields of the
+        other shape too, plus `body`; it does not single out the field at fault. Every
+        `data.fields` naming one field in this description is a check the service makes after the
+        body has fit one shape.
+
+        Linked documents by reason code (BR-FUND-24 ②③), all refused as 20001 with
+        `data.fields=[refs]`: RECON_FIX needs at least one `recon_diff`. PAYOUT_RECOVERY needs at
+        least one `recon_diff` and exactly one `withdrawal`. OTHER needs at least one document of
+        any type, or none at all when `note` is the 客服处理说明 that stands in for it (③; `note`
+        is required for OTHER either way). `ref_id` is `recon_diffs.id`, `withdrawals.id`, the
+        `order_key` of a sub-order, or `deletion_requests.id`.
+
+        Contra subject (BR-FUND-24 ⑥; specs/ledger-rules.md §6, whitelist pending the finance
+        confirmation): for RECON_FIX and OTHER the operator chooses `contra_subject` from
+        COMMISSION_REVENUE, UNION_RECEIVABLE, BAD_DEBT or MKT_EXPENSE (missing → 20001 with
+        `data.fields=[contra_subject]`, another value fails at the schema); `contra_platform` is
+        required exactly for UNION_RECEIVABLE (else `data.fields=[contra_platform]`). For
+        PAYOUT_RECOVERY both are refused (20001 on the field): the server takes the cash subject
+        from the withdrawal's channel (CASH_ALIPAY, CASH_WECHAT or CASH_BANK).
+
+        Order of checks: `fund.adjust` (10403 with `data.reason=admin_permission_denied`; the
+        refusal writes an audit record, action adjustment_denied, BR-FUND-24 例（无权限）) → step-up
+        (10003) → body (20001: the schema, then the checks above) → an unknown `user_id` or one of
+        another app is 20001 with `data.fields=[user_id]`; an unknown `reverses_adjust_id` or one
+        of another app is 20001 with `data.fields=[reverses_adjust_id]`; a `ref_id` that names
+        nothing of the app, a `recon_diff` of source R4 (a 收款对账 difference never leads to a
+        balance adjustment, BR-PAY-07; see AdminReconDiffIdPath), or a `withdrawal` or
+        `account_deletion` of another member, is 20001 with `data.fields=[refs]` and
+        `data.reason=adjust_ref_invalid` → an original already reversed
+        is 20902 with `data.resource=admin_adjustment` (a form can be reversed once, BR-FUND-16;
+        the console refreshes and shows 已红冲; the unique constraint on `reverses_adjust_id`
+        answers the same under a race) → the guards, each refusal 20001: an original that is not
+        APPROVED, or that is itself a reversal, with `data.fields=[reverses_adjust_id]` and
+        `data.reason=reverse_not_allowed`; a member already deleted with the field of the request
+        (`user_id` or `reverses_adjust_id`) and `data.reason=adjust_user_deleted`.
+
+        Effects, in one transaction under the member's balance lock: the balance is read again
+        and the form (`status=APPROVED`) and its ADMIN_ADJUST voucher (sub_type = `reason_code`)
+        are written, an increase debiting the contra subject and crediting
+        USER_BALANCE.available, a decrease the other way round. The voucher uniq_key is
+        `ADJ:{adjust_id}`, and `ADJ:{original adjust_id}:REVERSE` for a reversal, posted with the
+        reversal templates of specs/ledger-rules.md §5. A decrease, a reversal included, may take
+        `available` below 0 (BR-FUND-24 ⑤, BR-FUND-10); `frozen` is never written. Linking a
+        difference does not change its status: it is closed through its own operations. Writes an
+        audit record (action adjustment_create or adjustment_reverse, with the `adjust_id`, the
+        `user_id`, the direction, amount and reason code, `available` before and after and, for
+        a reversal, the original; no personal data). What the member sees (one ADMIN_ADJUST line
+        in the balance history, the in-app message on a decrease; BR-FUND-24 ⑦, BR-TEXT-19) is not
+        part of this response.
+
+        `Idempotency-Key` is required: same key and body → the first result; same key with
+        another body → 20901; same key while still running → 40901. The step-up token is a header
+        and not part of the body hash, so a replay after a 10003 keeps its key.
+      x-auth: admin
+      x-idempotent: true
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20901
+        - 20902
+        - 40901
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAdjustmentCreateRequest'
+            examples:
+              adjustment:
+                summary: A new decrease recovering a duplicate payout
+                value:
+                  user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02
+                  direction: decrease
+                  amount_fen: 10000
+                  reason_code: PAYOUT_RECOVERY
+                  refs:
+                    - ref_type: withdrawal
+                      ref_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7d01
+                    - ref_type: recon_diff
+                      ref_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e02
+                  note: 迟到成功重复出款，追回
+              reversal:
+                summary: A whole-form reversal; direction and amount come from the original
+                value:
+                  reverses_adjust_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa001
+                  note: 差错单核对有误，整笔冲回
+      responses:
+        '200':
+          description: The adjustment in effect with the available balance before and after, or the first result of the same key.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAdjustmentExecutedResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  adjustment:
+                    adjust_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa001
+                    user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02
+                    direction: decrease
+                    amount_fen: 10000
+                    reason_code: PAYOUT_RECOVERY
+                    refs:
+                      - ref_type: withdrawal
+                        ref_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7d01
+                      - ref_type: recon_diff
+                        ref_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e02
+                    contra_subject: CASH_ALIPAY
+                    contra_platform: null
+                    note: 迟到成功重复出款，追回
+                    status: APPROVED
+                    reverses_adjust_id: null
+                    reversed_by_adjust_id: null
+                    created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                    created_at: '2026-11-30T10:30:00+08:00'
+                    reviewed_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                    reviewed_at: '2026-11-30T10:30:00+08:00'
+                    reject_note: null
+                    voucher_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa101
+                  available_before_fen: 3000
+                  available_after_fen: -7000
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not submitted (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredSms'
+                verifyPhoneMissing:
+                  $ref: '#/components/examples/AdminVerifyPhoneMissing'
+                reasonCodeNotChoosable:
+                  $ref: '#/components/examples/AdminAdjustmentReasonCodeInvalid'
+                refsMissing:
+                  $ref: '#/components/examples/AdminAdjustmentRefsInvalid'
+                refUnknown:
+                  $ref: '#/components/examples/AdminAdjustmentRefInvalid'
+                alreadyReversed:
+                  $ref: '#/components/examples/AdminAdjustmentConflict'
+                reverseNotAllowed:
+                  $ref: '#/components/examples/AdminAdjustmentReverseNotAllowed'
+                userDeleted:
+                  $ref: '#/components/examples/AdminAdjustmentUserDeleted'
+                idempotencyConflict:
+                  $ref: '#/components/examples/AdminAdjustmentIdempotencyConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/adjustments/{adjust_id}:
+    get:
+      operationId: adminGetAdjustment
+      tags:
+        - admin-adjustments
+      summary: One manual adjustment, with a balance preview while it can still be executed
+      description: |
+        One form of the 调账单 tab (01 F-ADM-08; 04 §3.2 admin_adjustments;
+        design/specs/admin-adjustments.md 批准对话框, 红冲对话框). Read only, no step-up. Permission
+        point: any of `fund.adjust` or `fund.view` (04 §11.1, §11.2). `adjustment` is the list
+        row, next to it `balance_preview`: what executing the form now would do to `available` (BR-FUND-24
+        ④). Only two kinds of form have one: a PENDING form, whose amount is the current
+        `available` (0 when `available` is not above 0, see POST .../approve), and an APPROVED
+        form that is not a reversal, has not been reversed and whose member is not deleted,
+        previewing its reversal. Every other form has `balance_preview=null`, so also an APPROVED
+        form of a deleted member, whose reversal POST /admin/v1/adjustments refuses with
+        `adjust_user_deleted`: the available balance before and after an executed form is read
+        from its voucher, and is not kept on the form. The preview is a reading, not
+        a promise: approving and reversing read the balance again in their own transaction. An
+        unknown `adjust_id` or a form of another app is 20001 with `data.fields=[adjust_id]` (no
+        404). Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminAdjustmentIdPath'
+      responses:
+        '200':
+          description: The adjustment with its balance preview.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAdjustmentDetailResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  adjustment:
+                    adjust_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa002
+                    user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c03
+                    direction: decrease
+                    amount_fen: null
+                    reason_code: ACCOUNT_CLOSED
+                    refs:
+                      - ref_type: account_deletion
+                        ref_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa301
+                    contra_subject: COMMISSION_REVENUE
+                    contra_platform: null
+                    note: null
+                    status: PENDING
+                    reverses_adjust_id: null
+                    reversed_by_adjust_id: null
+                    created_by: null
+                    created_at: '2026-12-01T02:00:00+08:00'
+                    reviewed_by: null
+                    reviewed_at: null
+                    reject_note: null
+                    voucher_id: null
+                  balance_preview:
+                    direction: decrease
+                    amount_fen: 2000
+                    available_before_fen: 2000
+                    available_after_fen: 0
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                adjustmentInvalid:
+                  $ref: '#/components/examples/AdminAdjustmentIdInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/adjustments/{adjust_id}/approve:
+    post:
+      operationId: adminApproveAdjustment
+      tags:
+        - admin-adjustments
+      summary: Approve a system-prefilled ACCOUNT_CLOSED form; the amount is taken at approval
+      description: |
+        The 【批准并短信验证】 of the 批准对话框 (BR-FUND-24 ①⑧, BR-ID-28;
+        design/specs/admin-adjustments.md). Only a PENDING form can be approved, and the only
+        PENDING forms are the ACCOUNT_CLOSED decreases the system prefills when a deletion reaches
+        processing: a form a person submits is APPROVED from the start. Permission point
+        `fund.adjust` (04 §11.2). Step-up: sms tier (BR-ID-34): without a valid sms-tier
+        `X-Step-Up-Token`, a totp-tier token included → 10003 with `data.tier=sms`; an account
+        without a registered verify phone also gets `data.reason=verify_phone_missing`.
+
+        Request: an empty object. The console sends no amount: `amount_fen` is the member's
+        `available` when this operation runs, which may differ from the preview.
+
+        Order of checks: `fund.adjust` (10403 with `data.reason=admin_permission_denied`) → step-up
+        (10003) → body (20001) → an unknown `adjust_id` or a form of another app is 20001 with
+        `data.fields=[adjust_id]` (no 404) → a form that is no longer PENDING is 20902 with
+        `data.resource=admin_adjustment` (refresh) → the balance is read again: `available` not
+        above 0 is 20001 with `data.fields=[adjust_id]` and `data.reason=adjust_no_balance`,
+        nothing is written and the form stays PENDING (the amount of a form must be above 0; the
+        operator rejects it instead).
+
+        Effects, in one transaction under the member's balance lock: `amount_fen` becomes the
+        current `available`, the voucher ADMIN_ADJUST / ACCOUNT_CLOSED with uniq_key
+        `ADJ:{adjust_id}` debits USER_BALANCE.available and credits COMMISSION_REVENUE (BR-FUND-24
+        ⑥), the form becomes APPROVED with `reviewed_by` the caller and `reviewed_at`,
+        `voucher_id` set. No in-app message is sent to a deleted member (BR-FUND-24 ⑧). Writes an
+        audit record (action adjustment_approve, with the `adjust_id`, the `user_id`, the amount
+        and `available` before and after; no personal data).
+
+        `Idempotency-Key` is required: same key and body → the first result; same key with
+        another body → 20901; same key while still running → 40901. The step-up token is a header
+        and not part of the body hash, so a replay after a 10003 keeps its key.
+      x-auth: admin
+      x-idempotent: true
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20901
+        - 20902
+        - 40901
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminAdjustmentIdPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminEmptyActionRequest'
+            example: {}
+      responses:
+        '200':
+          description: The approved form with the available balance before and after, or the first result of the same key.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAdjustmentExecutedResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  adjustment:
+                    adjust_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa002
+                    user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c03
+                    direction: decrease
+                    amount_fen: 2000
+                    reason_code: ACCOUNT_CLOSED
+                    refs:
+                      - ref_type: account_deletion
+                        ref_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa301
+                    contra_subject: COMMISSION_REVENUE
+                    contra_platform: null
+                    note: null
+                    status: APPROVED
+                    reverses_adjust_id: null
+                    reversed_by_adjust_id: null
+                    created_by: null
+                    created_at: '2026-12-01T02:00:00+08:00'
+                    reviewed_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                    reviewed_at: '2026-12-02T09:30:00+08:00'
+                    reject_note: null
+                    voucher_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa102
+                  available_before_fen: 2000
+                  available_after_fen: 0
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not approved (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredSms'
+                verifyPhoneMissing:
+                  $ref: '#/components/examples/AdminVerifyPhoneMissing'
+                adjustmentInvalid:
+                  $ref: '#/components/examples/AdminAdjustmentIdInvalid'
+                noBalance:
+                  $ref: '#/components/examples/AdminAdjustmentNoBalance'
+                stateChanged:
+                  $ref: '#/components/examples/AdminAdjustmentConflict'
+                idempotencyConflict:
+                  $ref: '#/components/examples/AdminAdjustmentIdempotencyConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/adjustments/{adjust_id}/reject:
+    post:
+      operationId: adminRejectAdjustment
+      tags:
+        - admin-adjustments
+      summary: Reject a system-prefilled ACCOUNT_CLOSED form with a required reason
+      description: |
+        The 【驳回】 of the 批准对话框 (BR-FUND-24 ① and 细则「驳回与撤回不需二次验证」;
+        design/specs/admin-adjustments.md). Only a PENDING form can be rejected, which means a
+        system-prefilled ACCOUNT_CLOSED form (see POST .../approve). Permission point `fund.adjust`
+        (04 §11.2). No step-up of either tier: only approval needs one.
+
+        Request: `reason`, required: after trimming surrounding whitespace 1–200 characters, else
+        20001 with `data.fields=[reason]`.
+
+        Order of checks: `fund.adjust` (10403 with `data.reason=admin_permission_denied`) → body
+        (20001) → an unknown `adjust_id` or a form of another app is 20001 with
+        `data.fields=[adjust_id]` (no 404) → a form that is no longer PENDING is 20902 with
+        `data.resource=admin_adjustment` (refresh).
+
+        Effects, in one transaction: the form becomes REJECTED, `reject_note` the trimmed reason,
+        `reviewed_by` the caller and `reviewed_at`; `amount_fen` stays null. No voucher, and no
+        balance moves. Writes an audit record (action adjustment_reject, with the `adjust_id`,
+        the `user_id` and the reason; no personal data).
+
+        `Idempotency-Key` is required: same key and body → the first result; same key with
+        another body → 20901; same key while still running → 40901.
+      x-auth: admin
+      x-idempotent: true
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20901
+        - 20902
+        - 40901
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminAdjustmentIdPath'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAdjustmentRejectRequest'
+            example:
+              reason: 用户已撤回注销申请，无需处理
+      responses:
+        '200':
+          description: The rejected form, or the first result of the same key.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAdjustmentRejectResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  adjustment:
+                    adjust_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa002
+                    user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c03
+                    direction: decrease
+                    amount_fen: null
+                    reason_code: ACCOUNT_CLOSED
+                    refs:
+                      - ref_type: account_deletion
+                        ref_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa301
+                    contra_subject: COMMISSION_REVENUE
+                    contra_platform: null
+                    note: null
+                    status: REJECTED
+                    reverses_adjust_id: null
+                    reversed_by_adjust_id: null
+                    created_by: null
+                    created_at: '2026-12-01T02:00:00+08:00'
+                    reviewed_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                    reviewed_at: '2026-12-02T09:30:00+08:00'
+                    reject_note: 用户已撤回注销申请，无需处理
+                    voucher_id: null
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not rejected (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                bodyInvalid:
+                  $ref: '#/components/examples/AdminAdjustmentRejectReasonInvalid'
+                adjustmentInvalid:
+                  $ref: '#/components/examples/AdminAdjustmentIdInvalid'
+                stateChanged:
+                  $ref: '#/components/examples/AdminAdjustmentConflict'
+                idempotencyConflict:
+                  $ref: '#/components/examples/AdminAdjustmentIdempotencyConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/bad-debt-writeoffs:
+    get:
+      operationId: adminListBadDebtWriteoffs
+      tags:
+        - admin-adjustments
+      summary: Bad-debt write-off candidates of the app, page by page, newest first
+      description: |
+        The 坏账核销 tab of the 调账与核销 console (01 F-ADM-08; 04 §3.2 bad_debt_writeoffs;
+        BR-FUND-12; design/specs/admin-adjustments.md §2). Read only, no step-up. Permission point:
+        any of `fund.writeoff` or `fund.view` (04 §11.1, §11.2). Each row is
+        AdminBadDebtWriteoff: `candidate_fen` is the amount when the candidate was generated, for
+        reference only; `available_fen` and `frozen_fen` are the member's balance now;
+        `negative_days` is the current accounting day minus `negative_since`, derived and not
+        stored; `approve_blocked` is true when approving a PENDING candidate would be refused now
+        (the balance has frozen money and the switch `ledger.bad_debt_require_no_frozen.enabled`
+        is on, BR-FUND-12), so the console needs neither the switch nor its key. Filters combine
+        with AND: `status`, `user_id`. A value outside an enum or pattern is 20001 with
+        `data.fields` naming the parameter; a `user_id` that names nothing of the app is an empty
+        page. Order: `created_at` descending (then `id` descending). Pages with `page` (as
+        AdminPage; a page past the last one is `items=[]`) and `page_size` ≤ 200 (above 200 is
+        20001, as AdminPageSize); `total` is the count of the filter set. Reading does not write
+        an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - $ref: '#/components/parameters/AdminBadDebtWriteoffStatusFilter'
+        - $ref: '#/components/parameters/AdminBadDebtWriteoffUserFilter'
+      responses:
+        '200':
+          description: One page of write-off candidates, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBadDebtWriteoffPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa201
+                      account_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa401
+                      user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c04
+                      negative_since: '2026-11-20'
+                      negative_days: 90
+                      candidate_fen: 800
+                      available_fen: -300
+                      frozen_fen: 0
+                      status: PENDING
+                      approve_blocked: false
+                      initiator_id: null
+                      approver_id: null
+                      approved_at: null
+                      voucher_id: null
+                      created_at: '2027-02-18T02:00:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 1
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/bad-debt-writeoffs/{id}/approve:
+    post:
+      operationId: adminApproveBadDebtWriteoff
+      tags:
+        - admin-adjustments
+      summary: Approve a write-off candidate; the amount is the balance read at approval
+      description: |
+        The 【批准核销】 of the 坏账核销 tab (BR-FUND-12; 04 §3.2 bad_debt_writeoffs;
+        design/specs/admin-adjustments.md 批准核销对话框). A write-off is never automatic. Permission
+        point `fund.writeoff` (04 §11.2; one person can complete it, ADD-05). Step-up: sms tier
+        (BR-ID-34): without a valid sms-tier `X-Step-Up-Token`, a totp-tier token included → 10003
+        with `data.tier=sms`; an account without a registered verify phone also gets
+        `data.reason=verify_phone_missing`.
+
+        Request: an empty object. The console sends no amount: `candidate_fen` is not used.
+
+        Order of checks: `fund.writeoff` (10403 with `data.reason=admin_permission_denied`) →
+        step-up (10003) → body (20001) → an unknown `id` or a candidate of another app is 20001
+        with `data.fields=[id]` (no 404) → a candidate that is no longer PENDING is 20902 with
+        `data.resource=bad_debt_writeoff` (refresh) → `available` and `frozen` are read again:
+        while the switch `ledger.bad_debt_require_no_frozen.enabled` is on (default on), `frozen`
+        above 0 is 20001 with `data.fields=[id]` and `data.reason=writeoff_frozen_pending`:
+        nothing is written and the candidate stays PENDING until the withdrawal reaches a
+        terminal state (BR-FUND-12, 决-11 A). With the switch off, `frozen` is not looked at.
+
+        Effects, in one transaction under the member's balance lock. `available` below 0: the
+        voucher BAD_DEBT_WRITEOFF with uniq_key `BADDEBT:{account_id}:{id}` debits BAD_DEBT and
+        credits USER_BALANCE.available by −`available` (the current amount), which brings
+        `available` to 0; the candidate becomes APPROVED with `approver_id` the caller,
+        `approved_at` and `voucher_id` set; the linked accounts (same real name, device or payee
+        account) get their risk mark. `available` at 0 or above: the candidate becomes CANCELLED,
+        with no voucher, no risk mark, `approver_id` and `approved_at` staying null, and the
+        answer is still 200 with `written_off_fen=0`. Writes an audit record (action
+        bad_debt_writeoff_approve, with the `id`, the `account_id`, the resulting status,
+        `written_off_fen` and `available` before and after; no personal data). Later credits
+        count towards the balance as usual; nothing is pursued afterwards.
+
+        `Idempotency-Key` is required: same key and body → the first result; same key with
+        another body → 20901; same key while still running → 40901. The step-up token is a header
+        and not part of the body hash, so a replay after a 10003 keeps its key.
+      x-auth: admin
+      x-idempotent: true
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20901
+        - 20902
+        - 40901
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminBadDebtWriteoffIdPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminEmptyActionRequest'
+            example: {}
+      responses:
+        '200':
+          description: The candidate after approval with the amount written off (0 when it was cancelled), or the first result of the same key.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBadDebtWriteoffApproveResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  writeoff:
+                    id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa201
+                    account_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa401
+                    user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c04
+                    negative_since: '2026-11-20'
+                    negative_days: 91
+                    candidate_fen: 800
+                    available_fen: 0
+                    frozen_fen: 0
+                    status: APPROVED
+                    approve_blocked: false
+                    initiator_id: null
+                    approver_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                    approved_at: '2027-02-19T10:30:00+08:00'
+                    voucher_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa103
+                    created_at: '2027-02-18T02:00:00+08:00'
+                  written_off_fen: 300
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not approved (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredSms'
+                verifyPhoneMissing:
+                  $ref: '#/components/examples/AdminVerifyPhoneMissing'
+                writeoffInvalid:
+                  $ref: '#/components/examples/AdminBadDebtWriteoffIdInvalid'
+                frozenPending:
+                  $ref: '#/components/examples/AdminBadDebtWriteoffFrozenPending'
+                stateChanged:
+                  $ref: '#/components/examples/AdminBadDebtWriteoffConflict'
+                idempotencyConflict:
+                  $ref: '#/components/examples/AdminBadDebtWriteoffIdempotencyConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/withdrawals:
     get:
       operationId: listAdminWithdrawals
@@ -27075,6 +27954,55 @@ components:
       description: The reconciliation difference (recon_diffs.id) as a list row carries it; unknown, of another app or of source R4 → 20001 with data.fields=[recon_diff_id].
       schema:
         $ref: '#/components/schemas/Id'
+    AdminAdjustmentIdPath:
+      name: adjust_id
+      in: path
+      required: true
+      description: The adjustment form (admin_adjustments.adjust_id) as a list row carries it; unknown or of another app → 20001 with data.fields=[adjust_id].
+      schema:
+        $ref: '#/components/schemas/Id'
+    AdminAdjustmentReasonCodeFilter:
+      name: reason_code
+      in: query
+      required: false
+      description: Only forms with this reason code.
+      schema:
+        $ref: '#/components/schemas/AdminAdjustmentReasonCode'
+    AdminAdjustmentStatusFilter:
+      name: status
+      in: query
+      required: false
+      description: Only forms in this status.
+      schema:
+        $ref: '#/components/schemas/AdminAdjustmentStatus'
+    AdminAdjustmentUserFilter:
+      name: user_id
+      in: query
+      required: false
+      description: Only forms of this member (the user_id; UID and phone lookups go through the top-bar search).
+      schema:
+        $ref: '#/components/schemas/Id'
+    AdminBadDebtWriteoffIdPath:
+      name: id
+      in: path
+      required: true
+      description: The write-off candidate (bad_debt_writeoffs.id, the candidate_id of the BR-FUND-12 uniq_key) as a list row carries it; unknown or of another app → 20001 with data.fields=[id].
+      schema:
+        $ref: '#/components/schemas/Id'
+    AdminBadDebtWriteoffStatusFilter:
+      name: status
+      in: query
+      required: false
+      description: Only candidates in this status.
+      schema:
+        $ref: '#/components/schemas/AdminBadDebtWriteoffStatus'
+    AdminBadDebtWriteoffUserFilter:
+      name: user_id
+      in: query
+      required: false
+      description: Only candidates of this member (the user_id; UID and phone lookups go through the top-bar search).
+      schema:
+        $ref: '#/components/schemas/Id'
     AdminWithdrawalStatusFilter:
       name: status
       in: query
@@ -30040,6 +30968,144 @@ components:
           reason: restore_user_deleted
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminReconDiffRestoreIdempotencyConflict:
+      summary: 20901 the same Idempotency-Key with another body
+      value:
+        code: 20901
+        msg: 请求内容有变化，请重新提交
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminStepUpRequiredSms:
+      summary: 10003 the operation needs an sms-tier step-up token (a totp-tier token gets the same answer)
+      value:
+        code: 10003
+        msg: 这项操作需要短信验证
+        data:
+          tier: sms
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAdjustmentIdInvalid:
+      summary: 20001 unknown adjust_id (or a form of another app)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - adjust_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAdjustmentReasonCodeInvalid:
+      summary: 20001 reason_code RESTORE or ACCOUNT_CLOSED cannot be chosen by hand; a schema failure lists the fields of both request shapes
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - reason_code
+            - reverses_adjust_id
+            - user_id
+            - direction
+            - amount_fen
+            - refs
+            - contra_subject
+            - body
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAdjustmentRefsInvalid:
+      summary: 20001 the linked documents the reason code needs are missing
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - refs
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAdjustmentRefInvalid:
+      summary: 20001 a linked document names nothing of the app, is a difference of source R4, or belongs to another member
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - refs
+          reason: adjust_ref_invalid
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAdjustmentConflict:
+      summary: 20902 the form is no longer PENDING, or the original is already reversed; refresh
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: admin_adjustment
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAdjustmentReverseNotAllowed:
+      summary: 20001 the original is not APPROVED, or is itself a reversal
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - reverses_adjust_id
+          reason: reverse_not_allowed
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAdjustmentUserDeleted:
+      summary: 20001 the member has been deleted
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - user_id
+          reason: adjust_user_deleted
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAdjustmentNoBalance:
+      summary: 20001 nothing to take at approval (available is not above 0); the form stays PENDING
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - adjust_id
+          reason: adjust_no_balance
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAdjustmentRejectReasonInvalid:
+      summary: 20001 reason empty after trimming, or too long
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - reason
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAdjustmentIdempotencyConflict:
+      summary: 20901 the same Idempotency-Key with another body
+      value:
+        code: 20901
+        msg: 请求内容有变化，请重新提交
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminBadDebtWriteoffIdInvalid:
+      summary: 20001 unknown id (or a candidate of another app)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminBadDebtWriteoffFrozenPending:
+      summary: 20001 the member has frozen money; the candidate stays PENDING
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - id
+          reason: writeoff_frozen_pending
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminBadDebtWriteoffConflict:
+      summary: 20902 the candidate is no longer PENDING; refresh
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: bad_debt_writeoff
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminBadDebtWriteoffIdempotencyConflict:
       summary: 20901 the same Idempotency-Key with another body
       value:
         code: 20901
@@ -47588,6 +48654,549 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/AdminReconDiffRestore'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminAdjustmentStatus:
+      type: string
+      description: |
+        Status of a manual adjustment form (contracts/enums/fund.yaml admin_adjustment_status).
+        Forms a person submits are born APPROVED; only system-prefilled forms are PENDING. 已红冲
+        is not a status (BR-TEXT-25).
+      enum:
+        - PENDING
+        - APPROVED
+        - REJECTED
+        - CANCELLED
+    AdminAdjustmentDirection:
+      type: string
+      description: Direction on the member's available balance (contracts/enums/fund.yaml admin_adjustment_direction).
+      enum:
+        - increase
+        - decrease
+    AdminAdjustmentReasonCode:
+      type: string
+      description: The reason code, equal to the ADMIN_ADJUST sub_type (contracts/enums/fund.yaml admin_adjust_sub_type; BR-FUND-24 ②).
+      enum:
+        - RESTORE
+        - RECON_FIX
+        - PAYOUT_RECOVERY
+        - ACCOUNT_CLOSED
+        - OTHER
+    AdminAdjustmentRefType:
+      type: string
+      description: |
+        Type of a linked document (contracts/enums/fund.yaml admin_adjustment_ref_type;
+        BR-FUND-24 ③): `recon_diff` (`ref_id` = recon_diffs.id, not of source R4), `withdrawal`
+        (withdrawals.id), `order` (the sub-order's order_key), `account_deletion`
+        (deletion_requests.id).
+      enum:
+        - recon_diff
+        - withdrawal
+        - order
+        - account_deletion
+    AdminAdjustmentRef:
+      type: object
+      description: One linked document of an adjustment form (BR-FUND-24 ③).
+      additionalProperties: false
+      required:
+        - ref_type
+        - ref_id
+      properties:
+        ref_type:
+          $ref: '#/components/schemas/AdminAdjustmentRefType'
+        ref_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The document's id, or the order_key for ref_type `order`.
+    AdminAdjustmentContraSubject:
+      type: string
+      description: |
+        The ledger subject opposite USER_BALANCE.available (contracts/enums/fund.yaml
+        admin_adjustment_contra_subject; BR-FUND-24 ⑥, specs/ledger-rules.md §6, pending the
+        finance confirmation).
+      enum:
+        - COMMISSION_REVENUE
+        - UNION_RECEIVABLE
+        - BAD_DEBT
+        - MKT_EXPENSE
+        - CASH_ALIPAY
+        - CASH_WECHAT
+        - CASH_BANK
+    AdminAdjustment:
+      type: object
+      description: |
+        One manual adjustment form (04 §3.2 admin_adjustments). `amount_fen` is null on an
+        ACCOUNT_CLOSED form until it is approved (BR-FUND-24 ⑧), so also on a rejected one.
+        `created_by` is null on a form the system prefilled. `refs` is empty on a reversal, whose
+        link is `reverses_adjust_id`, and on an OTHER form whose `note` stands in for a document.
+        `reversed_by_adjust_id` is the reversal of this form, null when it has none: the console
+        shows 已红冲 from it and links to that form. `contra_platform` is set only for
+        UNION_RECEIVABLE. `voucher_id` (the voucher, also the link to the balance history) is
+        null until the form is executed.
+      additionalProperties: false
+      required:
+        - adjust_id
+        - user_id
+        - direction
+        - amount_fen
+        - reason_code
+        - refs
+        - contra_subject
+        - contra_platform
+        - note
+        - status
+        - reverses_adjust_id
+        - reversed_by_adjust_id
+        - created_by
+        - created_at
+        - reviewed_by
+        - reviewed_at
+        - reject_note
+        - voucher_id
+      properties:
+        adjust_id:
+          $ref: '#/components/schemas/Id'
+        user_id:
+          $ref: '#/components/schemas/Id'
+        direction:
+          $ref: '#/components/schemas/AdminAdjustmentDirection'
+        amount_fen:
+          $ref: '#/components/schemas/NullableFen'
+        reason_code:
+          $ref: '#/components/schemas/AdminAdjustmentReasonCode'
+        refs:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/AdminAdjustmentRef'
+        contra_subject:
+          $ref: '#/components/schemas/AdminAdjustmentContraSubject'
+        contra_platform:
+          anyOf:
+            - $ref: '#/components/schemas/PlatformCode'
+            - type: 'null'
+        note:
+          type:
+            - string
+            - 'null'
+          maxLength: 500
+          description: Internal explanation, shown in the console only (BR-FUND-24 ⑦).
+        status:
+          $ref: '#/components/schemas/AdminAdjustmentStatus'
+        reverses_adjust_id:
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        reversed_by_adjust_id:
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        created_by:
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        reviewed_by:
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        reviewed_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        reject_note:
+          type:
+            - string
+            - 'null'
+          maxLength: 200
+        voucher_id:
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+    AdminAdjustmentPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAdjustment'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminAdjustmentPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminAdjustmentPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminAdjustmentBalancePreview:
+      type: object
+      description: |
+        What executing the form now would do to `available` (BR-FUND-24 ④), read when the detail
+        is read: the form itself for a PENDING form, its reversal for an APPROVED one.
+      additionalProperties: false
+      required:
+        - direction
+        - amount_fen
+        - available_before_fen
+        - available_after_fen
+      properties:
+        direction:
+          $ref: '#/components/schemas/AdminAdjustmentDirection'
+        amount_fen:
+          $ref: '#/components/schemas/Fen'
+        available_before_fen:
+          $ref: '#/components/schemas/Fen'
+        available_after_fen:
+          $ref: '#/components/schemas/Fen'
+    AdminAdjustmentDetail:
+      type: object
+      description: One adjustment form with `balance_preview` (null unless the form can still be executed or reversed, so null on an APPROVED form once its member is deleted).
+      additionalProperties: false
+      required:
+        - adjustment
+        - balance_preview
+      properties:
+        adjustment:
+          $ref: '#/components/schemas/AdminAdjustment'
+        balance_preview:
+          anyOf:
+            - $ref: '#/components/schemas/AdminAdjustmentBalancePreview'
+            - type: 'null'
+    AdminAdjustmentDetailResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminAdjustmentDetail'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminAdjustmentCreateNew:
+      type: object
+      description: A new adjustment. Which `refs`, `note`, `contra_subject` and `contra_platform` a reason code needs is in POST /admin/v1/adjustments.
+      additionalProperties: false
+      required:
+        - user_id
+        - direction
+        - amount_fen
+        - reason_code
+      properties:
+        user_id:
+          $ref: '#/components/schemas/Id'
+        direction:
+          $ref: '#/components/schemas/AdminAdjustmentDirection'
+        amount_fen:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Integer fen above 0, no upper limit (BR-FUND-24 ④).
+        reason_code:
+          type: string
+          description: Only these three can be chosen; RESTORE and ACCOUNT_CLOSED → 20001 at the schema (see AdminAdjustmentCreateRequest).
+          enum:
+            - RECON_FIX
+            - PAYOUT_RECOVERY
+            - OTHER
+        refs:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/AdminAdjustmentRef'
+        note:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Internal explanation, at most 500 characters, not blank after trimming; required for OTHER.
+        contra_subject:
+          type: string
+          description: RECON_FIX and OTHER only, required for them (BR-FUND-24 ⑥).
+          enum:
+            - COMMISSION_REVENUE
+            - UNION_RECEIVABLE
+            - BAD_DEBT
+            - MKT_EXPENSE
+        contra_platform:
+          $ref: '#/components/schemas/PlatformCode'
+    AdminAdjustmentCreateReversal:
+      type: object
+      description: A whole-form reversal; everything else comes from the original (BR-FUND-24 细则「红冲只按原单整笔」).
+      additionalProperties: false
+      required:
+        - reverses_adjust_id
+        - note
+      properties:
+        reverses_adjust_id:
+          $ref: '#/components/schemas/Id'
+        note:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: The reason for the reversal, at most 500 characters, not blank after trimming.
+    AdminAdjustmentCreateRequest:
+      type: object
+      description: Body of POST /admin/v1/adjustments, a new adjustment or a reversal. Each branch is a closed object; a body that fits neither is 20001 with data.fields listing what fails in both branches plus `body`.
+      unevaluatedProperties: false
+      oneOf:
+        - $ref: '#/components/schemas/AdminAdjustmentCreateNew'
+        - $ref: '#/components/schemas/AdminAdjustmentCreateReversal'
+    AdminAdjustmentExecuted:
+      type: object
+      description: The form in effect, with `available` before and after, as read in the transaction that wrote the voucher.
+      additionalProperties: false
+      required:
+        - adjustment
+        - available_before_fen
+        - available_after_fen
+      properties:
+        adjustment:
+          $ref: '#/components/schemas/AdminAdjustment'
+        available_before_fen:
+          $ref: '#/components/schemas/Fen'
+        available_after_fen:
+          $ref: '#/components/schemas/Fen'
+    AdminAdjustmentExecutedResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminAdjustmentExecuted'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminEmptyActionRequest:
+      type: object
+      description: The body of an action that takes no input; the amount is read by the server, never sent by the console.
+      additionalProperties: false
+      properties: {}
+    AdminAdjustmentRejectRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - reason
+      properties:
+        reason:
+          $ref: '#/components/schemas/AdminUserReason'
+    AdminAdjustmentReject:
+      type: object
+      additionalProperties: false
+      required:
+        - adjustment
+      properties:
+        adjustment:
+          $ref: '#/components/schemas/AdminAdjustment'
+    AdminAdjustmentRejectResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminAdjustmentReject'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminBadDebtWriteoffStatus:
+      type: string
+      description: Status of a write-off candidate (contracts/enums/fund.yaml bad_debt_writeoff_status).
+      enum:
+        - PENDING
+        - APPROVED
+        - CANCELLED
+    AdminBadDebtWriteoff:
+      type: object
+      description: |
+        One write-off candidate (04 §3.2 bad_debt_writeoffs; BR-FUND-12). `candidate_fen` is the
+        amount when it was generated, for reference only. `available_fen`, `frozen_fen` and
+        `negative_days` are read with the row. `initiator_id` is null on a candidate the daily
+        job generated. `approver_id` and `approved_at` stay null on a CANCELLED candidate.
+      additionalProperties: false
+      required:
+        - id
+        - account_id
+        - user_id
+        - negative_since
+        - negative_days
+        - candidate_fen
+        - available_fen
+        - frozen_fen
+        - status
+        - approve_blocked
+        - initiator_id
+        - approver_id
+        - approved_at
+        - voucher_id
+        - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        account_id:
+          $ref: '#/components/schemas/Id'
+        user_id:
+          $ref: '#/components/schemas/Id'
+        negative_since:
+          type: string
+          format: date
+          description: The accounting day `available` went below 0.
+        negative_days:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Current accounting day minus `negative_since`.
+        candidate_fen:
+          $ref: '#/components/schemas/Fen'
+        available_fen:
+          $ref: '#/components/schemas/Fen'
+        frozen_fen:
+          $ref: '#/components/schemas/Fen'
+        status:
+          $ref: '#/components/schemas/AdminBadDebtWriteoffStatus'
+        approve_blocked:
+          type: boolean
+          description: True when approving now would be refused with writeoff_frozen_pending; always false unless `status=PENDING`.
+        initiator_id:
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        approver_id:
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        approved_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        voucher_id:
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+    AdminBadDebtWriteoffPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminBadDebtWriteoff'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminBadDebtWriteoffPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminBadDebtWriteoffPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminBadDebtWriteoffApprove:
+      type: object
+      description: The candidate after approval; `written_off_fen` is the amount of the voucher, 0 when the candidate was cancelled.
+      additionalProperties: false
+      required:
+        - writeoff
+        - written_off_fen
+      properties:
+        writeoff:
+          $ref: '#/components/schemas/AdminBadDebtWriteoff'
+        written_off_fen:
+          $ref: '#/components/schemas/Fen'
+    AdminBadDebtWriteoffApproveResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminBadDebtWriteoffApprove'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     AdminReconDiffDetailResponse:

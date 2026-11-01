@@ -461,6 +461,55 @@ export const admin_adjust_sub_type = [
 export type AdminAdjustSubType = (typeof admin_adjust_sub_type)[number];
 
 /**
+ * admin_adjustments.status；人工单一步生效为 APPROVED，PENDING 只剩系统预填单；已红冲是标记不是状态
+ * Source: 规划/04 §3.2 admin_adjustments；BR-FUND-24 ①；BR-TEXT-25 (contracts/enums/fund.yaml).
+ */
+export const admin_adjustment_status = [
+  "PENDING", // 待批准
+  "APPROVED", // 已生效
+  "REJECTED", // 已驳回
+  "CANCELLED", // 已撤回
+] as const;
+export type AdminAdjustmentStatus = (typeof admin_adjustment_status)[number];
+
+/**
+ * admin_adjustments.direction，对 available 的方向
+ * Source: 规划/04 §3.2 admin_adjustments；BR-FUND-24 ① (contracts/enums/fund.yaml).
+ */
+export const admin_adjustment_direction = [
+  "increase", // 调增
+  "decrease", // 调减
+] as const;
+export type AdminAdjustmentDirection = (typeof admin_adjustment_direction)[number];
+
+/**
+ * 调账单关联单据类型；order 的 ref_id 是子订单 order_key
+ * Source: BR-FUND-24 ③（值名代理补全） (contracts/enums/fund.yaml).
+ */
+export const admin_adjustment_ref_type = [
+  "recon_diff", // 差错单
+  "withdrawal", // 提现单
+  "order", // 子订单
+  "account_deletion", // 注销单
+] as const;
+export type AdminAdjustmentRefType = (typeof admin_adjustment_ref_type)[number];
+
+/**
+ * 调账对方科目；RECON_FIX、OTHER 由发起人从前四个选，PAYOUT_RECOVERY 按提现通道取现金科目，ACCOUNT_CLOSED 固定 COMMISSION_REVENUE
+ * Source: BR-FUND-24 ⑥；specs/ledger-rules.md §2、§6（白名单待财务确认） (contracts/enums/fund.yaml).
+ */
+export const admin_adjustment_contra_subject = [
+  "COMMISSION_REVENUE", // 佣金收入
+  "UNION_RECEIVABLE", // 联盟应收
+  "BAD_DEBT", // 坏账
+  "MKT_EXPENSE", // 营销费用
+  "CASH_ALIPAY", // 支付宝现金
+  "CASH_WECHAT", // 微信现金
+  "CASH_BANK", // 银行现金
+] as const;
+export type AdminAdjustmentContraSubject = (typeof admin_adjustment_contra_subject)[number];
+
+/**
  * 受益角色；indirect 只在所选规则版本 indirect_enabled=true 时出现；客户端遇未知值按通用收入显示
  * Source: 规划/04 §2.5；BR-CALC-04、BR-CALC-05 (contracts/enums/fund.yaml).
  */
@@ -2097,6 +2146,10 @@ export const enums = {
   settle_adjust_sub_type,
   reward_sub_type,
   admin_adjust_sub_type,
+  admin_adjustment_status,
+  admin_adjustment_direction,
+  admin_adjustment_ref_type,
+  admin_adjustment_contra_subject,
   beneficiary_role,
   forfeit_reason,
   commission_rule_status,

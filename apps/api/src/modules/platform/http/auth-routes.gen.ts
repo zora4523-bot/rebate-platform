@@ -1233,6 +1233,41 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/adjustments",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/adjustments",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/adjustments/:adjust_id",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/adjustments/:adjust_id/approve",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/adjustments/:adjust_id/reject",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/bad-debt-writeoffs",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/bad-debt-writeoffs/:id/approve",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/withdrawals",
     "auth": "admin"
   },

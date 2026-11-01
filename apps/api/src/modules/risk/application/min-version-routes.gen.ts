@@ -2485,6 +2485,76 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": true
   },
   {
+    "operationId": "adminListAdjustments",
+    "method": "GET",
+    "path": "/admin/v1/adjustments",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminCreateAdjustment",
+    "method": "POST",
+    "path": "/admin/v1/adjustments",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
+    "operationId": "adminGetAdjustment",
+    "method": "GET",
+    "path": "/admin/v1/adjustments/:adjust_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminApproveAdjustment",
+    "method": "POST",
+    "path": "/admin/v1/adjustments/:adjust_id/approve",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
+    "operationId": "adminRejectAdjustment",
+    "method": "POST",
+    "path": "/admin/v1/adjustments/:adjust_id/reject",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
+    "operationId": "adminListBadDebtWriteoffs",
+    "method": "GET",
+    "path": "/admin/v1/bad-debt-writeoffs",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminApproveBadDebtWriteoff",
+    "method": "POST",
+    "path": "/admin/v1/bad-debt-writeoffs/:id/approve",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
     "operationId": "listAdminWithdrawals",
     "method": "GET",
     "path": "/admin/v1/withdrawals",

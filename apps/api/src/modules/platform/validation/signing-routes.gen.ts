@@ -1233,6 +1233,41 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/adjustments",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/adjustments",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/adjustments/:adjust_id",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/adjustments/:adjust_id/approve",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/adjustments/:adjust_id/reject",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/bad-debt-writeoffs",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/bad-debt-writeoffs/:id/approve",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/withdrawals",
     "signed": false
   },
