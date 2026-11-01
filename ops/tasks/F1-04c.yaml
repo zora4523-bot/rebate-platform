@@ -1,0 +1,24 @@
+id: F1-04c
+repo: rebate-platform
+title: H5 消息中心 /messages：取 H5 令牌后 listMessages 游标分页（加载更多、下拉刷新）、未读点、标题 / 正文 / 时间（今天 / 昨天时刻、同年月日），有 route 的行经 nav.open 跳转并标已读（markMessagesRead message_ids），「全部已读」（all）；注销冷静期（GET /v1/me/deletion status=cooling）隐藏「全部已读」且打开不标已读；空 / 加载 / 出错三态；视觉按 design/specs/app-messages.md
+type: impl
+# 2026-11-01 入账（content-client；编排 11-01 11:4x 派工）。05 F1-04 剩余一项（F1-04a 余额流水、F1-04b 订单找回已做）；01 l.178 / l.537–538（F-MSG-02 / 03）、l.200；10 AC-S1-81、AC-S1-185 / 157。
+# 契约 listMessages、getMessage、markMessagesRead、getUnreadMessageCount 均已实现（B1-12d / B1-12k）；冷静期不调 markMessagesRead 照契约 l.2769；read_only 令牌下标已读失败不阻塞浏览。
+# 规格有而契约无（title_short、列表未读数等）不造：标题按字素截断在前端做，未读数取 markMessagesRead 回包或 getUnreadMessageCount；缺键按规格原文登记在 texts/messages.ts 并报编排。
+refs: []
+refs_hash: {}
+deps: [B1-12d, B1-12k, F1-04a]
+paths:
+  - 'apps/h5/src/entries/app/pages/messages/**'
+  - 'apps/h5/src/entries/app/routes.ts'
+  - 'apps/h5/src/texts/messages.ts'
+  - 'apps/h5/src/texts/dynamic-keys.ts'
+test_paths:
+  - 'test/spec/frontend/h5-messages/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-messages/**'
+status: todo
+pr: null

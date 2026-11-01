@@ -1,0 +1,24 @@
+id: F1-12a
+repo: rebate-platform
+title: H5 收益看板 /earnings：取 H5 令牌后读 getEarningsSummary（进入、平台切换、下拉刷新），自购 / 分享 / 邀请三栏 × 四期间切换（只换显示不重请求）、平台筛选（只筛自购与分享，邀请栏注明不分平台）、指标说明弹层、统计截至行与无收益提示；邀请栏为 null 整块隐藏；30701 / 10405 / 加载 / 出错三态；视觉按 design/specs/app-earnings.md
+type: impl
+# 2026-11-01 入账（content-client；编排 11-01 11:4x 派工）。05 F1-12，01 l.163 / l.494（F-WDR-14），10 AC-S2-61、AC-S1-185 / 157。契约 getEarningsSummary 已实现（B2-13a #1764）。
+# 文案只取字典 earnings.*（BR-TEXT-01；金额 BR-TEXT-10、时间 BR-TEXT-11）；平台药丸按 /v1/config features.platform_status（not_launched 不显示，照 find-order/config.ts）；入口开关 features.earnings.dashboard.visible 只管原生入口，页面只处理 30701。
+# 规格有而契约 / 字典无的不造，缺键按规格原文登记在 texts/earnings.ts 并报编排。approvals 第 34 / 36 条：Opus 实现，独立 Claude 写测试与评审。
+refs: []
+refs_hash: {}
+deps: [B2-13a, F1-04a]
+paths:
+  - 'apps/h5/src/entries/app/pages/earnings/**'
+  - 'apps/h5/src/entries/app/routes.ts'
+  - 'apps/h5/src/texts/earnings.ts'
+  - 'apps/h5/src/texts/dynamic-keys.ts'
+test_paths:
+  - 'test/spec/frontend/h5-earnings/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-earnings/**'
+status: todo
+pr: null
