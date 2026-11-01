@@ -40,11 +40,13 @@
 //   key, anomalies on (channel, channel trade number), vouchers on their uniq key. A bill the channel
 //   cannot give yet (unknown) is never read as an empty bill: nothing is written and
 //   PayBillUnavailable is thrown. A malformed bill is refused as a whole (fail closed).
-//   B2-15k: two unknown answers are no bill now and no bill an hour later, so a catch-up could only
-//   end in pay_bill_recon_abandoned: a channel without credentials (channel_unconfigured, debug as a
-//   channel without an adapter) and a bill whose format no document gives (bill_format_unverified,
-//   warn pay_bill_format_unverified: the day was not reconciled and that must show). The run skips
-//   that channel: nothing thrown, no catch-up, the day not recorded as reconciled.
+//   B2-15k: some unknown answers are no bill now and no bill an hour later, so a catch-up could only
+//   end in pay_bill_recon_abandoned: a channel without credentials (channel_unconfigured, in prod
+//   kms_unavailable: debug as a channel without an adapter), a day the channel's document says has
+//   no bill (bill_not_available: debug; never read as an empty bill) and a bill whose format no
+//   document gives (bill_format_unverified: warn pay_bill_format_unverified, the day was not
+//   reconciled and that must show). The run skips that channel: nothing thrown, no catch-up, the
+//   day not recorded as reconciled.
 // runBillReconJob — the handler of job `bill.recon`: the bill day is the payload's bill_date (the
 //   daily run carries it) or else the +08:00 accounting day before clock.now() (@couli/domain).
 //   Every channel the process has an adapter for is reconciled, whatever pay.channel_enabled says
@@ -115,7 +117,9 @@ import {
 } from '../jobs/names.ts';
 import {
   PAY_REASON_BILL_FORMAT_UNVERIFIED,
+  PAY_REASON_BILL_NOT_AVAILABLE,
   PAY_REASON_CHANNEL_UNCONFIGURED,
+  PAY_REASON_KMS_UNAVAILABLE,
   PayChannelUnavailable,
   type PayBillResult,
   type PayChannel,
@@ -547,11 +551,18 @@ export async function runPayBillRecon(
   const adapter = deps.channels.of(channel);
   const parsed = await loadBill(run, adapter, billDate);
   if (parsed.kind === 'unknown') {
-    if (parsed.reason === PAY_REASON_CHANNEL_UNCONFIGURED) {
+    if (
+      parsed.reason === PAY_REASON_CHANNEL_UNCONFIGURED ||
+      parsed.reason === PAY_REASON_KMS_UNAVAILABLE
+    ) {
       deps.logger.debug(
         { app_id: input.app_id, pay_channel: channel },
         'pay_bill_recon_no_adapter',
       );
+      return 'skipped';
+    }
+    if (parsed.reason === PAY_REASON_BILL_NOT_AVAILABLE) {
+      deps.logger.debug(run.base, 'pay_bill_not_available');
       return 'skipped';
     }
     if (parsed.reason === PAY_REASON_BILL_FORMAT_UNVERIFIED) {

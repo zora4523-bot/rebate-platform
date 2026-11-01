@@ -11,6 +11,8 @@
 //   never do (BR-PAY-08 ①).
 // - PAY_CHANNEL_IMPL accepts only `fake`, and prod refuses it. PAY_NOTIFY_BASE_URL must be https.
 // - prod: the gateway is the documented official one; PAY_ALIPAY_GATEWAY set there refuses to start.
+//   Ruling D10-554: the checks stand, but the payment module's factory opens no key file in prod
+//   (keys only in KMS, BR-PAY-08 ②): both channels stay unavailable until FU-KMS-ADAPTER.
 // - not prod: WeChat Pay needs PAY_WECHAT_TEST_MERCHANT=1, Alipay needs PAY_ALIPAY_GATEWAY other
 //   than the production gateway; otherwise that channel is unavailable (BR-PAY-08 ②).
 import type { EntryName } from '../entries.ts';

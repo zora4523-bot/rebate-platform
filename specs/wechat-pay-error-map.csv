@@ -71,6 +71,6 @@ INVALID_REQUEST,,HTTP 请求不符合微信支付 APIv3 接口规则,账单 unk
 SIGN_ERROR,,验证不通过,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/wechat-pay/pages/4013071227.txt:510,no
 SYSTEM_ERROR,,系统异常，请稍后重试,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/wechat-pay/pages/4013071227.txt:514,no
 INVALID_REQUEST,,参数错误,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/wechat-pay/pages/4013071227.txt:523,no
-NO_STATEMENT_EXIST,,账单文件不存在,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/wechat-pay/pages/4013071227.txt:527,no
+NO_STATEMENT_EXIST,,账单文件不存在,无账单：验过签的 HTTP 400 + 此码才是 bill_not_available；对账跳过该日、不补跑、不当空账单读（实测前待核）,docs-mirror/wechat-pay/pages/4013071227.txt:527,no
 STATEMENT_CREATING,,账单生成中,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/wechat-pay/pages/4013071227.txt:531,no
 FREQUENCY_LIMITED,,请求过于频繁,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/wechat-pay/pages/4013071227.txt:535,no

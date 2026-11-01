@@ -37,7 +37,7 @@ describe('alipay primitives', () => {
   });
 
   it('[AC-B2-15k-U#23] ASN.1 strings decode by type and fail closed on the rest', () => {
-    expect(decodeDerString(0x0c, Buffer.from('﻿中', 'utf8'))).toBe('﻿中');
+    expect(decodeDerString(0x0c, Buffer.from('\uFEFF中', 'utf8'))).toBe('\uFEFF中');
     expect(decodeDerString(0x13, Buffer.from('Ab'))).toBe('Ab');
     expect(decodeDerString(0x16, Buffer.from('a@b'))).toBe('a@b');
     expect(decodeDerString(0x14, Buffer.from([0xe9]))).toBe('é');

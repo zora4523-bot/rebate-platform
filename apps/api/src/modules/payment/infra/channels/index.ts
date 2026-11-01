@@ -2,11 +2,18 @@
 // createPayChannelSet: fake channels where the configuration says so, a real adapter per channel
 // with complete credentials, UnavailablePayChannel otherwise. It never throws for a missing
 // credential and never falls back to a fake channel; prod never has a fake one. The key files are
-// read here once, at startup, and the adapters keep them in memory (BR-PAY-08 ②); the warn of an
-// unavailable channel names the channel and the variables, never a path or a content.
+// read here once, at startup, and the adapters keep them in memory; the warn of an unavailable
+// channel names the channel and the variables, never a path or a content.
+// Ruling D10-554 (BR-PAY-08 ②: prod keys only in KMS): prod opens no key file. Until the repository's
+// KMS adapter exists (FU-KMS-ADAPTER) both channels there are unavailable with kms_unavailable; the
+// process starts all the same.
 // Also compiled by the `test` project: erasable syntax only.
 import { createPrivateKey, createPublicKey } from 'node:crypto';
-import { PayChannelSet, type PayChannel } from '../../application/pay-channel.ts';
+import {
+  PAY_REASON_KMS_UNAVAILABLE,
+  PayChannelSet,
+  type PayChannel,
+} from '../../application/pay-channel.ts';
 import type { PayChannelCode } from '../../domain/types.ts';
 import {
   readStartupSecretFile,
@@ -118,7 +125,6 @@ function isSandboxGateway(gateway: string): boolean {
 }
 
 interface BuildContext {
-  readonly appEnv: AppConfig['appEnv'];
   readonly pay: PayChannelsConfig;
   readonly transport: PayTransport;
   readonly clock: Clock;
@@ -146,7 +152,7 @@ function unavailable(
 }
 
 async function wechatChannel(context: BuildContext): Promise<PayChannel> {
-  const { pay, appEnv } = context;
+  const { pay } = context;
   const { wechat } = pay;
   const names = [
     ...commonMissing(pay),
@@ -159,7 +165,7 @@ async function wechatChannel(context: BuildContext): Promise<PayChannel> {
       ['PAY_WECHAT_PUBLIC_KEY_FILE', wechat.publicKeyFile],
       ['PAY_WECHAT_PUBLIC_KEY_ID', wechat.publicKeyId],
       // BR-PAY-08 ②: outside prod only a test merchant.
-      ...(appEnv === 'prod' ? [] : [['PAY_WECHAT_TEST_MERCHANT', wechat.testMerchant] as const]),
+      ['PAY_WECHAT_TEST_MERCHANT', wechat.testMerchant],
     ]),
   ];
   if (
@@ -231,11 +237,11 @@ async function alipayCertMode(
 }
 
 async function alipayChannel(context: BuildContext): Promise<PayChannel> {
-  const { pay, appEnv } = context;
+  const { pay } = context;
   const { alipay } = pay;
   const certMode =
     alipay.appCertFile !== null || alipay.publicCertFile !== null || alipay.rootCertFile !== null;
-  const gateway = appEnv === 'prod' ? ALIPAY_PRODUCTION_GATEWAY : alipay.gateway;
+  const { gateway } = alipay;
   const names = [
     ...commonMissing(pay),
     ...missing([
@@ -250,14 +256,7 @@ async function alipayChannel(context: BuildContext): Promise<PayChannel> {
           ] as const)
         : ([['PAY_ALIPAY_PUBLIC_KEY_FILE', alipay.publicKeyFile]] as const)),
       // BR-PAY-08 ②: outside prod only a sandbox gateway.
-      ...(appEnv === 'prod'
-        ? []
-        : [
-            [
-              'PAY_ALIPAY_GATEWAY',
-              gateway !== null && isSandboxGateway(gateway) ? gateway : null,
-            ] as const,
-          ]),
+      ['PAY_ALIPAY_GATEWAY', gateway !== null && isSandboxGateway(gateway) ? gateway : null],
     ]),
   ];
   if (
@@ -309,8 +308,18 @@ export async function createPayChannelSet(
   if (appEnv === 'local' || appEnv === 'test' || (appEnv !== 'prod' && pay.impl === 'fake')) {
     return new PayChannelSet([new FakePayChannel('wechat_pay'), new FakePayChannel('alipay')]);
   }
+  if (appEnv === 'prod') {
+    return new PayChannelSet(
+      (['wechat_pay', 'alipay'] as const).map((channel) => {
+        deps.logger.warn(
+          { channel, reason: PAY_REASON_KMS_UNAVAILABLE },
+          'pay_channel_unavailable',
+        );
+        return new UnavailablePayChannel(channel, PAY_REASON_KMS_UNAVAILABLE);
+      }),
+    );
+  }
   const context: BuildContext = {
-    appEnv,
     pay,
     transport: deps.transport ?? fetchPayTransport,
     clock: deps.clock,

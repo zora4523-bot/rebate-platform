@@ -17,6 +17,7 @@ import { formatFen, yuanStrToFen } from '@couli/money';
 import {
   PAY_REASON_APP_NOT_CONFIGURED,
   PAY_REASON_BILL_FORMAT_UNVERIFIED,
+  PAY_REASON_BILL_NOT_AVAILABLE,
   type PayBillResult,
   type PayChannel,
   type PayChannelIdentity,
@@ -65,7 +66,7 @@ export const ALIPAY_PRODUCTION_GATEWAY = 'https://openapi.alipay.com/gateway.do'
 
 /** Yuan text with at most two places, never signed or in scientific notation. */
 const YUAN = /^\d{1,12}(?:\.\d{1,2})?$/;
-const NOT_EXIST_MAIN_CODE = '40004';
+const BUSINESS_FAILURE_CODE = '40004';
 const NOT_EXIST_SUB_CODE = 'ACQ.TRADE_NOT_EXIST';
 const SUCCESS_CODE = '10000';
 
@@ -204,7 +205,7 @@ export class AlipayPayChannel implements PayChannel {
     );
     if (answer.kind === 'failed') return this.#unknown('query', answer.reason);
     if (answer.kind === 'business_error') {
-      if (answer.code === NOT_EXIST_MAIN_CODE && answer.subCode === NOT_EXIST_SUB_CODE) {
+      if (answer.code === BUSINESS_FAILURE_CODE && answer.subCode === NOT_EXIST_SUB_CODE) {
         return { kind: 'ok', state: 'not_exist', channelTradeNo: null, amountFen: null };
       }
       return this.#unknown('query', channelErrorReason(answer.subCode, answer.code));
@@ -442,9 +443,11 @@ export class AlipayPayChannel implements PayChannel {
     } as const;
     const outRefundNo = fields['out_biz_no'];
     if (outRefundNo === undefined) return { ...base, outRefundNo: null };
-    // A refund notification. refund_fee is the trade's total refunded so far (00dn78.md:43), carried
-    // as it is, no difference worked out: a later partial refund then fails the amount check, only
-    // keeps the text and alerts, and the result is the query's (task §13; launch checklist).
+    // A refund notification, carried as it is: refund_fee is the trade's total refunded so far
+    // (00dn78.md:43), no difference worked out, and state is the trade_status (00dn78.md has no refund
+    // state), which is not in refund_success_states. So the handler answers every Alipay refund's
+    // notification with a mismatch: the text kept, an alert, nothing moved. The result is the query's
+    // (task §13). That alert is expected on each refund; launch checklist §3.
     const refundFen = yuanToFen(fields['refund_fee']);
     if (!isNonEmptyString(outRefundNo) || refundFen === null || refundFen <= 0n) return null;
     return { ...base, outRefundNo, refundFen };
@@ -471,6 +474,12 @@ export class AlipayPayChannel implements PayChannel {
     );
     if (answer.kind === 'failed') return this.#unknown('bill', answer.reason);
     if (answer.kind === 'business_error') {
+      // 02e7gr.md:271: NO_BILL_DATA, no business of this bill type in the period, under the business
+      // failure code (common-02km9f.md:60). BILL_NOT_EXIST says less, so it stays a bill not
+      // available yet. No warn: an ordinary day.
+      if (answer.code === BUSINESS_FAILURE_CODE && answer.subCode === 'NO_BILL_DATA') {
+        return { kind: 'unknown', reason: PAY_REASON_BILL_NOT_AVAILABLE };
+      }
       return this.#unknown('bill', channelErrorReason(answer.subCode, answer.code));
     }
     const address = answer.node['bill_download_url'];

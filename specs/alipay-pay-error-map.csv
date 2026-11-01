@@ -63,7 +63,7 @@ TRADE_NOT_EXIST,,查询退款的交易不存在,一律 unknown：验过签也只
 BILL_DATE_BEFORE_REGISTRATION,,请求的账单时间早于注册时间,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/alipay/app-pay/02e7gr.md:268,no
 BILL_NOT_EXIST,,账单不存在,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/alipay/app-pay/02e7gr.md:269,no
 INVAILID_ARGUMENTS,,入参不合法,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/alipay/app-pay/02e7gr.md:270,no
-NO_BILL_DATA,,商户在请求的账单时间内没有发生当前账单类型的业务,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/alipay/app-pay/02e7gr.md:271,no
+NO_BILL_DATA,,商户在请求的账单时间内没有发生当前账单类型的业务,无账单：验过签的主码 40004 + 此子码才是 bill_not_available；对账跳过该日、不补跑、不当空账单读（实测前待核）,docs-mirror/alipay/app-pay/02e7gr.md:271,no
 SYSTEM_RATE_LIMIT,,系统当前负载较高，请求被限流，请稍后重试,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/alipay/app-pay/02e7gr.md:272,no
 TYPE_NOT_SUPPORTED,,此账单类型不支持下载,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/alipay/app-pay/02e7gr.md:273,no
 UNKNOWN_ERROR,,未知错误,账单 unknown，reason 不是 bill_format_unverified；对账不跑,docs-mirror/alipay/app-pay/02e7gr.md:274,no

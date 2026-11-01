@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 import { FixedClock, createRootLogger } from '../../platform/index.ts';
 import {
   PAY_REASON_BILL_FORMAT_UNVERIFIED,
+  PAY_REASON_BILL_NOT_AVAILABLE,
   PAY_REASON_CHANNEL_UNCONFIGURED,
+  PAY_REASON_KMS_UNAVAILABLE,
 } from './pay-channel.ts';
 import { runBillReconJob, runPayBillRecon, type PayReconDeps } from './pay-recon.ts';
 
@@ -65,7 +67,12 @@ const DAILY = { app_id: APP, bill_date: BILL_DATE };
 
 describe('bill.recon and the fixed no-bill answers', () => {
   it('[AC-B2-15k-U#50] runPayBillRecon reports the skip and does not throw', async () => {
-    for (const reason of [PAY_REASON_CHANNEL_UNCONFIGURED, PAY_REASON_BILL_FORMAT_UNVERIFIED]) {
+    for (const reason of [
+      PAY_REASON_CHANNEL_UNCONFIGURED,
+      PAY_REASON_KMS_UNAVAILABLE,
+      PAY_REASON_BILL_NOT_AVAILABLE,
+      PAY_REASON_BILL_FORMAT_UNVERIFIED,
+    ]) {
       const h = harness(reason);
       await expect(runPayBillRecon(h.deps, { ...DAILY, pay_channel: 'wechat_pay' })).resolves.toBe(
         'skipped',
@@ -73,14 +80,19 @@ describe('bill.recon and the fixed no-bill answers', () => {
     }
   });
 
-  it('[AC-B2-15k-U#51] channel_unconfigured: debug as without an adapter, only the next day is sent', async () => {
-    const h = harness(PAY_REASON_CHANNEL_UNCONFIGURED);
-    await runBillReconJob(h.deps, DAILY);
-    expect(h.atLevel(20)).toEqual(['pay_bill_recon_no_adapter', 'pay_bill_recon_no_adapter']);
-    expect(h.atLevel(40)).toEqual([]);
-    expect(h.atLevel(50)).toEqual([]);
-    expect(h.sent.map((item) => item.payload)).toEqual([{ app_id: APP, bill_date: '2026-11-01' }]);
-  });
+  it.each([PAY_REASON_CHANNEL_UNCONFIGURED, PAY_REASON_KMS_UNAVAILABLE])(
+    '[AC-B2-15k-U#51] %s: debug as without an adapter, only the next day is sent',
+    async (reason) => {
+      const h = harness(reason);
+      await runBillReconJob(h.deps, DAILY);
+      expect(h.atLevel(20)).toEqual(['pay_bill_recon_no_adapter', 'pay_bill_recon_no_adapter']);
+      expect(h.atLevel(40)).toEqual([]);
+      expect(h.atLevel(50)).toEqual([]);
+      expect(h.sent.map((item) => item.payload)).toEqual([
+        { app_id: APP, bill_date: '2026-11-01' },
+      ]);
+    },
+  );
 
   it('[AC-B2-15k-U#52] bill_format_unverified: one warn per channel of the bill day, no catch-up', async () => {
     const h = harness(PAY_REASON_BILL_FORMAT_UNVERIFIED);
@@ -93,7 +105,12 @@ describe('bill.recon and the fixed no-bill answers', () => {
     expect(h.downloads).toHaveLength(2);
   });
 
-  it.each([PAY_REASON_CHANNEL_UNCONFIGURED, PAY_REASON_BILL_FORMAT_UNVERIFIED])(
+  it.each([
+    PAY_REASON_CHANNEL_UNCONFIGURED,
+    PAY_REASON_KMS_UNAVAILABLE,
+    PAY_REASON_BILL_NOT_AVAILABLE,
+    PAY_REASON_BILL_FORMAT_UNVERIFIED,
+  ])(
     '[AC-B2-15k-U#53] %s long past the catch-up limit: never abandoned, nothing at error level',
     async (reason) => {
       const h = harness(reason, LATER);
@@ -102,6 +119,15 @@ describe('bill.recon and the fixed no-bill answers', () => {
       expect(h.messages()).not.toContain('pay_bill_recon_abandoned');
     },
   );
+
+  it('[AC-B2-15k-U#56] bill_not_available: debug, no warn, no catch-up, not an empty bill (nothing reconciled)', async () => {
+    const h = harness(PAY_REASON_BILL_NOT_AVAILABLE);
+    await runBillReconJob(h.deps, DAILY);
+    expect(h.atLevel(20)).toEqual(['pay_bill_not_available', 'pay_bill_not_available']);
+    expect(h.atLevel(40)).toEqual([]);
+    expect(h.messages()).not.toContain('pay_bill_reconciled');
+    expect(h.sent.map((item) => item.payload)).toEqual([{ app_id: APP, bill_date: '2026-11-01' }]);
+  });
 
   it('[AC-B2-15k-U#54] a catch-up run that meets them sends nothing further', async () => {
     const h = harness(PAY_REASON_BILL_FORMAT_UNVERIFIED);

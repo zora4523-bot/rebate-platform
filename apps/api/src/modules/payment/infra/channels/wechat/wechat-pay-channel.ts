@@ -14,6 +14,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import {
   PAY_REASON_APP_NOT_CONFIGURED,
   PAY_REASON_BILL_FORMAT_UNVERIFIED,
+  PAY_REASON_BILL_NOT_AVAILABLE,
   type PayBillResult,
   type PayChannel,
   type PayChannelIdentity,
@@ -550,6 +551,15 @@ export class WechatPayChannel implements PayChannel {
       undefined,
       {},
     );
+    // 4013071227.txt:526-529: 400 NO_STATEMENT_EXIST, «check whether the merchant had a trade or a
+    // refund that day». STATEMENT_CREATING stays a bill not available yet. No warn: an ordinary day.
+    if (
+      answer.kind === 'verified' &&
+      answer.status === 400 &&
+      answer.json?.['code'] === 'NO_STATEMENT_EXIST'
+    ) {
+      return { kind: 'unknown', reason: PAY_REASON_BILL_NOT_AVAILABLE };
+    }
     const json = this.#successJson('bill', answer);
     if ('kind' in json) return json;
     const { hash_type: hashType, hash_value: hashValue, download_url: downloadUrl } = json.body;

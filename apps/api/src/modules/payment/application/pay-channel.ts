@@ -14,6 +14,17 @@ export const PAY_REASON_CHANNEL_UNCONFIGURED = 'channel_unconfigured';
  * real sample arrives, so the reconciliation of that bill day does not run (application/pay-recon.ts).
  */
 export const PAY_REASON_BILL_FORMAT_UNVERIFIED = 'bill_format_unverified';
+/**
+ * B2-15k, ruling D10-554: prod reads no key file (BR-PAY-08 ②: KMS only) and no KMS adapter exists
+ * yet (FU-KMS-ADAPTER), so every call of both channels in prod answers this. 下单 50306.
+ */
+export const PAY_REASON_KMS_UNAVAILABLE = 'kms_unavailable';
+/**
+ * B2-15k: the channel's verified answer that the day has no bill, only as its document writes it:
+ * WeChat Pay HTTP 400 NO_STATEMENT_EXIST, Alipay 40004 NO_BILL_DATA. No bill, never an empty bill:
+ * the reconciliation of that day does not run (application/pay-recon.ts).
+ */
+export const PAY_REASON_BILL_NOT_AVAILABLE = 'bill_not_available';
 /** B2-15k: an order of another App than the one this channel's merchant identity belongs to. */
 export const PAY_REASON_APP_NOT_CONFIGURED = 'app_not_configured';
 

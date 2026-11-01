@@ -1,9 +1,12 @@
 // B2-15k: implementer's unit tests: an order of another App never reaches a channel; WeChat Pay's
-// query of an unpaid trade without amount.total still answers (4013070356.txt:500, total optional).
+// query of an unpaid trade without amount.total still answers (4013070356.txt:500, total optional);
+// a day the documents say has no bill is bill_not_available, and only those codes; prod opens no key
+// file (ruling D10-554).
 import { createSign, generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { FixedClock, createRootLogger } from '../../../platform/index.ts';
+import { FixedClock, createRootLogger, type AppConfig } from '../../../platform/index.ts';
 import { AlipayPayChannel } from './alipay/alipay-pay-channel.ts';
+import { UnavailablePayChannel, createPayChannelSet } from './index.ts';
 import type { PayHttpResponse, PayTransport } from './transport.ts';
 import { WechatPayChannel } from './wechat/wechat-pay-channel.ts';
 
@@ -69,7 +72,9 @@ function wechat(answer: () => PayHttpResponse) {
   return { channel, calls: () => calls };
 }
 
-function alipay() {
+function alipay(
+  transport: PayTransport = () => Promise.reject(new Error('unexpected channel call')),
+) {
   return new AlipayPayChannel({
     config: {
       payAppId: PAY_APP_ID,
@@ -80,7 +85,7 @@ function alipay() {
       certSerials: null,
     },
     keys: { privateKeyPem: merchant.privateKey, alipayPublicKeyPem: platform.publicKey },
-    transport: () => Promise.reject(new Error('unexpected channel call')),
+    transport,
     clock: new FixedClock(NOW),
     logger,
   });
@@ -156,6 +161,108 @@ describe('WeChat Pay query and amount.total', () => {
     const paid = { ...UNPAID, trade_state: 'SUCCESS', transaction_id: 'T1', amount: {} };
     const h = wechat(() => signed(200, paid));
     expect((await h.channel.query(OUT)).kind).toBe('unknown');
+  });
+});
+
+const BILL_NODE = 'alipay_data_dataservice_bill_downloadurl_query_response';
+
+function alipayBillAnswer(node: object): PayTransport {
+  const raw = JSON.stringify(node);
+  const sign = createSign('RSA-SHA256').update(raw, 'utf8').sign(platform.privateKey, 'base64');
+  const body = `{"${BILL_NODE}":${raw},"sign":${JSON.stringify(sign)}}`;
+  return () => Promise.resolve({ status: 200, headers: {}, body });
+}
+
+describe('a day without a bill', () => {
+  const NOT_AVAILABLE = { kind: 'unknown', reason: 'bill_not_available' };
+
+  it('[AC-B2-15k-U#67] WeChat Pay: verified 400 NO_STATEMENT_EXIST, and only that', async () => {
+    const bill = (status: number, code: string) =>
+      wechat(() => signed(status, { code })).channel.downloadBill('2026-10-31', PAY_APP_ID);
+    expect(await bill(400, 'NO_STATEMENT_EXIST')).toEqual(NOT_AVAILABLE);
+    expect(await bill(400, 'STATEMENT_CREATING')).not.toEqual(NOT_AVAILABLE);
+    expect(await bill(403, 'NO_STATEMENT_EXIST')).not.toEqual(NOT_AVAILABLE);
+    const unsigned = wechat(() => ({
+      status: 400,
+      headers: {},
+      body: '{"code":"NO_STATEMENT_EXIST"}',
+    }));
+    expect(await unsigned.channel.downloadBill('2026-10-31', PAY_APP_ID)).not.toEqual(
+      NOT_AVAILABLE,
+    );
+  });
+
+  it('[AC-B2-15k-U#68] Alipay: verified 40004 NO_BILL_DATA, and only that', async () => {
+    const bill = (code: string, subCode: string) =>
+      alipay(alipayBillAnswer({ code, msg: 'm', sub_code: subCode, sub_msg: 'm' })).downloadBill(
+        '2026-10-31',
+        PAY_APP_ID,
+      );
+    expect(await bill('40004', 'NO_BILL_DATA')).toEqual(NOT_AVAILABLE);
+    expect(await bill('40004', 'BILL_NOT_EXIST')).not.toEqual(NOT_AVAILABLE);
+    expect(await bill('20000', 'NO_BILL_DATA')).not.toEqual(NOT_AVAILABLE);
+  });
+});
+
+describe('prod (ruling D10-554)', () => {
+  it('[AC-B2-15k-U#69] both channels unavailable with kms_unavailable, no key file opened, one warn each', async () => {
+    const lines: string[] = [];
+    const secret = '/nonexistent/couli-unit-secret-path';
+    const set = await createPayChannelSet(
+      {
+        appEnv: 'prod',
+        payChannels: {
+          appId: PAY_APP_ID,
+          impl: null,
+          notifyBaseUrl: 'https://pay.example.test',
+          wechat: {
+            appId: APPID,
+            mchId: MCHID,
+            merchantSerial: 'S',
+            privateKeyFile: secret,
+            apiV3KeyFile: secret,
+            publicKeyFile: secret,
+            publicKeyId: 'KEY',
+            testMerchant: false,
+          },
+          alipay: {
+            appId: 'A2',
+            sellerId: 'S2',
+            privateKeyFile: secret,
+            publicKeyFile: secret,
+            appCertFile: null,
+            publicCertFile: null,
+            rootCertFile: null,
+            gateway: null,
+          },
+        },
+      } as unknown as AppConfig,
+      {
+        clock: new FixedClock(NOW),
+        logger: createRootLogger(
+          { entry: 'api', appEnv: 'test', level: 'trace' },
+          { write: (line) => void lines.push(line) },
+        ),
+      },
+    );
+    const expected = { kind: 'unknown', reason: 'kms_unavailable' };
+    for (const code of ['wechat_pay', 'alipay'] as const) {
+      const channel = set.of(code);
+      expect(channel).toBeInstanceOf(UnavailablePayChannel);
+      expect(await channel.createOrder(ORDER)).toEqual(expected);
+      expect(await channel.query(OUT)).toEqual(expected);
+      expect(await channel.downloadBill('2026-10-31', PAY_APP_ID)).toEqual(expected);
+      expect(await channel.verifyNotification({ headers: {}, body: '' })).toEqual({
+        kind: 'rejected',
+        reason: 'kms_unavailable',
+      });
+      expect(channel.ownerAppOf({ merchantRef: MCHID, appRef: APPID })).toBeNull();
+    }
+    expect(lines).toHaveLength(2);
+    const text = lines.join('\n');
+    expect(text).toContain('kms_unavailable');
+    expect(text).not.toContain(secret);
+    expect(text).not.toContain('PAY_');
   });
 });
 
