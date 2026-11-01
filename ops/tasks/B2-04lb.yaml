@@ -104,4 +104,4 @@ accept:
   - 'pnpm verify'
   - 'test/spec/settlement/rights-credit/**'
   - 'test/properties/settlement/rights-credit/**'
-status: todo
+status: done
