@@ -46,6 +46,9 @@ import {
   TaobaoUnionAdapter,
   type TaobaoConvertSource,
   type TaobaoCredentials,
+  type TaobaoOrderSlotReader,
+  type TaobaoOrderWarning,
+  type TaobaoSearchSource,
   type TaobaoWarning,
 } from './taobao/taobao-adapter.ts';
 
@@ -77,6 +80,19 @@ export interface TaobaoLiveOptions {
    * `orderSource`, taobao convert is unchanged.
    */
   readonly convertSource?: TaobaoConvertSource;
+  /**
+   * B1-04zn (D10-530): handed to TaobaoUnionAdapter as `searchSource` (B1-04zh); 'dataoke' searches
+   * through the client built from `orderSource`. Absent (the default 'official') or without
+   * `orderSource`, taobao searchItems is unchanged.
+   */
+  readonly searchSource?: TaobaoSearchSource;
+  /**
+   * B1-04zn (D10-530): handed to TaobaoUnionAdapter as `orderSlots` (B1-04f): every Taobao PID of
+   * ctx.appId in union_pids, retired ones included. Without it listOrders stays unimplemented.
+   */
+  readonly orderSlots?: TaobaoOrderSlotReader;
+  /** B1-04zn: handed to TaobaoUnionAdapter as `orderWarn` (order mapping / slot-filter warnings). */
+  readonly orderWarn?: (event: TaobaoOrderWarning) => void;
 }
 
 /**

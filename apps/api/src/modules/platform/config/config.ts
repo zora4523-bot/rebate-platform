@@ -219,6 +219,18 @@ export interface AppConfig {
    */
   readonly unionEndpointOverrideDir?: string | null;
   /**
+   * TAOBAO_CONVERT_SOURCE (B1-04zn, D10-530): where the live Taobao adapter converts links,
+   * 'baichuan' (default) or 'dataoke'. A server setting, not a credential; any APP_ENV may set it.
+   * A hand-built config without it counts as 'baichuan'.
+   */
+  readonly taobaoConvertSource?: 'baichuan' | 'dataoke';
+  /**
+   * TAOBAO_SEARCH_SOURCE (B1-04zn, D10-530): where the live Taobao adapter searches, 'official'
+   * (default) or 'dataoke'. A server setting, not a credential; any APP_ENV may set it. A
+   * hand-built config without it counts as 'official'.
+   */
+  readonly taobaoSearchSource?: 'official' | 'dataoke';
+  /**
    * AGENT_REVIEW_ALIYUN_ACCESS_KEY_ID / _SECRET / AGENT_REVIEW_ALIYUN_ENDPOINT (./agent-review.ts,
    * B3-03m): staging / prod only, the stream entry's content safety review. Absent (the key is
    * left out of loadConfig's result) or null: the review fails closed. A hand-built config without
