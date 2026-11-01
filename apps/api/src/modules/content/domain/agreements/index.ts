@@ -1,6 +1,14 @@
 // F1-02m §9.2: agreement publish invariants (BR-ID-12, BR-WDR-31, 04 agreements). Pure: no clock,
 // no storage; callers turn a failed result into 20001 with data.fields.
-export type AgreementType = 'privacy' | 'agreement' | 'labor_agreement';
+// sdk_list and collect_list (D10-465, F1-02zzs) take no part in consent: their min_version is
+// always the new version and they never ask for a re-sign.
+export type AgreementType =
+  'privacy' | 'agreement' | 'labor_agreement' | 'sdk_list' | 'collect_list';
+
+/** Types outside consent and re-sign (D10-465): min_version must equal the published version. */
+export function isNoticeAgreementType(type: AgreementType): boolean {
+  return type === 'sdk_list' || type === 'collect_list';
+}
 
 export interface AgreementVersion {
   readonly version: number;
@@ -57,7 +65,8 @@ export function validateAgreementPublish(
     Number.isInteger(min_version) &&
     min_version >= 1 &&
     min_version <= version &&
-    min_version >= (current?.min_version ?? 1);
+    min_version >= (current?.min_version ?? 1) &&
+    (!isNoticeAgreementType(input.type) || min_version === version);
   if (!minOk) fields.push('min_version');
 
   const expectedResign = input.type === 'labor_agreement' ? min_version === version : false;

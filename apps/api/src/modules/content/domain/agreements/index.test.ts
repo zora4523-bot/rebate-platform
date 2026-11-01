@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { AgreementPublishInput } from './index.ts';
-import { needsSign, resignFromVersion, validateAgreementPublish } from './index.ts';
+import {
+  isNoticeAgreementType,
+  needsSign,
+  resignFromVersion,
+  validateAgreementPublish,
+} from './index.ts';
 
 const labor: AgreementPublishInput = {
   type: 'labor_agreement',
@@ -88,4 +93,33 @@ describe('validateAgreementPublish date (F1-02p §9.12)', () => {
       ok: true,
     });
   });
+});
+
+describe('sdk_list / collect_list (D10-465)', () => {
+  it('[AC-F1-02zzs] only sdk_list and collect_list are outside consent', () => {
+    expect(isNoticeAgreementType('sdk_list')).toBe(true);
+    expect(isNoticeAgreementType('collect_list')).toBe(true);
+    expect(isNoticeAgreementType('privacy')).toBe(false);
+    expect(isNoticeAgreementType('agreement')).toBe(false);
+    expect(isNoticeAgreementType('labor_agreement')).toBe(false);
+  });
+
+  for (const type of ['sdk_list', 'collect_list'] as const) {
+    it(`[AC-F1-02zzs] ${type}: min_version must equal the new version, requires_resign false`, () => {
+      const current = { version: 2, min_version: 2 };
+      const next = { ...labor, type, version: 3, min_version: 3 };
+      expect(validateAgreementPublish(next, current)).toEqual({ ok: true });
+      expect(validateAgreementPublish({ ...next, min_version: 2 }, current)).toEqual({
+        ok: false,
+        fields: ['min_version'],
+      });
+      expect(validateAgreementPublish({ ...next, requires_resign: true }, current)).toEqual({
+        ok: false,
+        fields: ['requires_resign'],
+      });
+      expect(validateAgreementPublish({ ...next, version: 1, min_version: 1 }, null)).toEqual({
+        ok: true,
+      });
+    });
+  }
 });
