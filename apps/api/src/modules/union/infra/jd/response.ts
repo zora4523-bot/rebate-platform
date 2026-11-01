@@ -7,7 +7,7 @@
 // 结果键的值必须是 JSON 字符串，否则 upstream_unavailable。内层 code：200 成功，返回内层对象；
 // 403 → upstream_rejected 并告警一次（无权限）；429 → rate_limited；其他 → upstream_rejected；
 // 缺失或不是短的普通标量 → upstream_unavailable。成败只看 code，绝不看 message。
-// 可按接口给内层 code 细分表，只对内层生效，限流判断在先。
+// 可按接口给内层 code 细分表，只对内层生效，限流判断在先；也可再登记要告警一次的内层 code（B1-04zd）。
 // 错误与告警只带方法名和 code，不带 message、requestId、请求内容与凭据；这里不做字段映射。
 //
 // 无损取数：内层用 JSON.parse 的 reviver 第三参数 context.source 取每个数字的原文，包成 JdRawNumber，
@@ -107,8 +107,9 @@ function innerFailure(
   code: string,
   warn: ((event: JdWarning) => void) | undefined,
   innerCodes: JdInnerCodeMap | undefined,
+  warnCodes: ReadonlySet<string> | undefined,
 ): UnionError {
-  if (code === INNER_PERMISSION_CODE) warn?.({ method, code });
+  if (code === INNER_PERMISSION_CODE || warnCodes?.has(code) === true) warn?.({ method, code });
   return new UnionError(classifyInner(code, innerCodes), `jd ${method}: code=${code}`, 'jd');
 }
 
@@ -141,6 +142,7 @@ export function unwrapJdResponse(
   response: UnionTransportResponse,
   warn?: (event: JdWarning) => void,
   innerCodes?: JdInnerCodeMap,
+  warnCodes?: ReadonlySet<string>,
 ): JdInner {
   if (response.status >= 500) throw unavailable(method, `HTTP ${response.status}`);
   let parsed: unknown;
@@ -169,6 +171,6 @@ export function unwrapJdResponse(
   // 外层成功不算数：内层 code 才决定成败，message 一律不看。
   const code = codeText(inner.code);
   if (code === undefined) throw unavailable(method, 'missing inner code');
-  if (code !== INNER_SUCCESS_CODE) throw innerFailure(method, code, warn, innerCodes);
+  if (code !== INNER_SUCCESS_CODE) throw innerFailure(method, code, warn, innerCodes, warnCodes);
   return inner;
 }

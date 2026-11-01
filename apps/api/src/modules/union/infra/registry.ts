@@ -218,6 +218,8 @@ export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegist
           endpoint,
           ...(live.warn === undefined ? {} : { warn: live.warn }),
           ...(live.productKeyMode === undefined ? {} : { productKeyMode: live.productKeyMode }),
+          // B1-04zd (D10-500 ①): as is; without it the adapter refuses convert.
+          ...(live.siteId === undefined ? {} : { siteId: live.siteId }),
         });
       }
     }

@@ -5,7 +5,8 @@
 // （全部参数在请求体，URL 不带查询串，Content-Type application/x-www-form-urlencoded;charset=utf-8）、
 // 按调用方登记的外层键与结果键解包（见 response.ts）。业务对象无法序列化或含非有限数 → invalid_dto，
 // 不取凭据、不发请求。传输抛错 → upstream_unavailable（不带原文）。调用方的 AbortSignal 与归档上下文
-// 原样挂在传输请求上。convert（B1-04zd）目前是骨架，规则测试：test/spec/union/jd-convert/**。
+// 原样挂在传输请求上。convert（B1-04zd）走 promotion.common.get，参数与映射在 promotion.ts，
+// 规则测试：test/spec/union/jd-convert/**。
 // 不读 process.env、不读文件；app_secret 只在内存参与签名。
 // listOrders（B1-04zb）的时间窗、游标与映射在 orders.ts；每次调用取一页，每页都单独经配额治理。
 // searchItems / getItem / resolveLink（B1-04zc）的参数、游标、选券与映射在 goods.ts，经 request 走
@@ -62,6 +63,15 @@ import {
   type JdProductKeyMode,
 } from './orders.ts';
 import {
+  JD_PROMOTION_COMMON_GET,
+  JD_PROMOTION_INNER_CODES,
+  JD_PROMOTION_KEYS,
+  JD_PROMOTION_WARN_CODES,
+  jdIdentityParameters,
+  jdPromotionCodeReq,
+  mapJdConvertResult,
+} from './promotion.ts';
+import {
   unwrapJdResponse,
   type JdInner,
   type JdInnerCodeMap,
@@ -84,7 +94,7 @@ export interface JdAdapterOptions {
   readonly clock: Clock;
   readonly endpoint: UnionEndpoint;
   readonly warn?: (event: JdWarning) => void;
-  /** BR-PROD-03 / 05：listOrders 与商品三个端口每次按 ctx.appId 读一次；缺省 item。 */
+  /** BR-PROD-03 / 05：listOrders、convert 与商品三个端口每次按 ctx.appId 读一次；缺省 item。 */
   readonly productKeyMode?: { read(appId: string): Promise<JdProductKeyMode> };
   /** D10-500 ①：promotion.common.get 的 siteId，十进制文本；缺失时 convert 报 adapter_unimplemented。 */
   readonly siteId?: string | null;
@@ -99,6 +109,8 @@ export interface JdRequestOptions extends JdResponseKeys {
   readonly archive?: ArchiveContext;
   /** Per-method refinement of the inner code (see response.ts). */
   readonly innerCodes?: JdInnerCodeMap;
+  /** Inner codes warned once on top of 403, by the same rule (method and code only). */
+  readonly warnCodes?: ReadonlySet<string>;
 }
 
 /** 订单接口一次响应的内层对象，与这页报文的归档行 id（没有为 null）。 */
@@ -145,6 +157,7 @@ export class JdUnionAdapter implements UnionAdapter {
   readonly #endpoint: UnionEndpoint;
   readonly #warn: ((event: JdWarning) => void) | undefined;
   readonly #productKeyMode: JdAdapterOptions['productKeyMode'];
+  readonly #siteId: string | null | undefined;
 
   constructor(options: JdAdapterOptions) {
     if (options.endpoint.platform !== 'jd') {
@@ -156,6 +169,7 @@ export class JdUnionAdapter implements UnionAdapter {
     this.#endpoint = options.endpoint;
     this.#warn = options.warn;
     this.#productKeyMode = options.productKeyMode;
+    this.#siteId = options.siteId;
   }
 
   /** Internal request foundation; returns the inner object of the registered result key. */
@@ -164,12 +178,19 @@ export class JdUnionAdapter implements UnionAdapter {
     parameters: JdBusinessParameters,
     options: JdRequestOptions,
   ): Promise<JdInner> {
-    const { envelope, resultKey, innerCodes } = options;
+    const { envelope, resultKey, innerCodes, warnCodes } = options;
     // 先做不需要凭据的同步检查，再取凭据：没有登记键的调用不取凭据、不发请求。
     if (typeof envelope !== 'string' || envelope === '') throw unimplemented(method);
     if (typeof resultKey !== 'string' || resultKey === '') throw unimplemented(method);
     const response = await this.#send(method, parameters, options);
-    return unwrapJdResponse(method, { envelope, resultKey }, response, this.#warn, innerCodes);
+    return unwrapJdResponse(
+      method,
+      { envelope, resultKey },
+      response,
+      this.#warn,
+      innerCodes,
+      warnCodes,
+    );
   }
 
   async #send(
@@ -347,11 +368,35 @@ export class JdUnionAdapter implements UnionAdapter {
     return { item };
   }
 
+  /**
+   * promotion.common.get，一次一个 materialId。顺序：siteId → 身份 → 商品键模式 → 商品，都在取凭据、
+   * 发请求之前。没配 siteId 报 adapter_unimplemented（下游出 50303）。sku 模式存的是 skuId，官方只接受
+   * 完整联盟商品 ID（2001707），换不了，报 link_unrecognized，不猜。写操作，治理层与适配器都不重试。
+   */
   async convert(req: ConvertReq, identity: UnionIdentity, ctx: CallCtx): Promise<ConvertResult> {
-    void req;
-    void identity;
-    void ctx;
-    throw new Error('NotImplemented: convert');
+    const siteId = this.#siteId;
+    if (typeof siteId !== 'string' || siteId.trim() === '') {
+      throw new UnionError('adapter_unimplemented', 'jd convert: no site id configured', 'jd');
+    }
+    jdIdentityParameters(identity);
+    if ((await this.#keyMode(ctx)) === 'sku') {
+      throw new UnionError('link_unrecognized', 'jd convert: sku mode has no union item id', 'jd');
+    }
+    const promotionCodeReq = jdPromotionCodeReq(req, identity, siteId);
+    const appId = ctx?.appId;
+    const signal = ctx?.signal;
+    const inner = await this.request(
+      JD_PROMOTION_COMMON_GET,
+      { promotionCodeReq },
+      {
+        ...JD_PROMOTION_KEYS,
+        innerCodes: JD_PROMOTION_INNER_CODES,
+        warnCodes: JD_PROMOTION_WARN_CODES,
+        ...(signal === undefined ? {} : { signal }),
+        ...(typeof appId === 'string' ? { archive: { appId, kind: 'convert' } } : {}),
+      },
+    );
+    return mapJdConvertResult(inner);
   }
 
   /**
