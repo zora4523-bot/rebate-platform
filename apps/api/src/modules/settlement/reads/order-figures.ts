@@ -87,6 +87,11 @@ export interface OrderFiguresDependencies {
   readonly appeals: OrderFiguresAppealRead;
 }
 
+export type OrderFiguresPricingPorts = Pick<
+  OrderFiguresDependencies,
+  'readSnapshot' | 'readTljDeductFen'
+>;
+
 /** The orders columns the figures need. */
 export interface OrderFiguresRow {
   readonly order_id: string;
@@ -246,15 +251,33 @@ function viewerRole(row: OrderFiguresRow): 'self' | 'share' | null {
   return null;
 }
 
-async function priceOrder(
-  deps: OrderFiguresDependencies,
+/**
+ * The base a priced order's shares split. A held CREDITED order takes booked_base_fen as it stands
+ * (BR-CALC-13, BR-FUND-04 ⑫): R5a credits floor(booked_base_fen × ratio), and that column is the
+ * entry base (BR-FUND-05), so it follows R9 / R10 while settle_commission_fen stays, and 淘礼金 is
+ * not deducted from it again. Every other order converts the effective commission (BR-CALC-02).
+ */
+async function pricedBaseFen(
+  deps: OrderFiguresPricingPorts,
+  trx: Transaction<DB>,
+  row: OrderFiguresRow,
+  input: PendingSnapshotInput,
+  reserveBp: number,
+): Promise<bigint | null> {
+  if (row.rebate_status === 'CREDITED') return row.booked_base_fen;
+  const nFen = effectiveCommissionFen(row.est_commission_fen, row.settle_commission_fen);
+  if (nFen === null) return null;
+  return pendingBaseFen(nFen, reserveBp, await deps.readTljDeductFen(trx, input));
+}
+
+export async function priceOrder(
+  deps: OrderFiguresPricingPorts,
   trx: Transaction<DB>,
   subject: OrderFiguresSubject,
   row: OrderFiguresRow,
 ): Promise<OrderFiguresPricing | null> {
   // No snapshot yet (version 0) or no commission: B_est is unknown, never 0 (BR-FUND-17).
-  const nFen = effectiveCommissionFen(row.est_commission_fen, row.settle_commission_fen);
-  if (row.commission_version < 1 || nFen === null) return null;
+  if (row.commission_version < 1) return null;
   const input: PendingSnapshotInput = {
     appId: subject.app_id,
     orderId: row.order_id,
@@ -262,7 +285,8 @@ async function priceOrder(
   };
   const snapshot = await deps.readSnapshot(trx, input);
   if (snapshot === null) return null;
-  const baseFen = pendingBaseFen(nFen, snapshot.reserveBp, await deps.readTljDeductFen(trx, input));
+  const baseFen = await pricedBaseFen(deps, trx, row, input, snapshot.reserveBp);
+  if (baseFen === null) return null;
   const role = viewerRole(row);
   if (role === null) return { baseFen, viewerShareFen: null };
   const viewerShareFen = splitPendingShares(

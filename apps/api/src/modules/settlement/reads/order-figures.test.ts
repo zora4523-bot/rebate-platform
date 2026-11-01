@@ -1,9 +1,13 @@
-import { expect, it } from 'vitest';
+import type { DB } from '@couli/db';
+import type { Transaction } from 'kysely';
+import { expect, it, vi } from 'vitest';
 import {
   needsPricing,
   orderFiguresOf,
+  priceOrder,
   type OrderCreditTerms,
   type OrderFiguresFacts,
+  type OrderFiguresPricingPorts,
   type OrderFiguresRow,
 } from './order-figures.ts';
 
@@ -138,4 +142,65 @@ it('[AC-B1-09p#U8] 需要算金额的只有已付款、待入账与暂缓中的�
   expect(needsPricing(CREDITED, true)).toBe(true);
   expect(needsPricing({ ...CREDITED, booked_base_fen: 0n }, true)).toBe(false);
   expect(needsPricing({ ...ROW, rebate_status: 'VOID' }, false)).toBe(false);
+});
+
+const VIEWER = { app_id: 'app_unit', user_id: 'viewer' };
+const NO_TRX = {} as Transaction<DB>;
+
+function pricingPorts(tljDeductFen = 0n) {
+  return {
+    readSnapshot: () =>
+      Promise.resolve({
+        reserveBp: 1500,
+        beneficiaries: [{ userId: 'viewer', role: 'self', ratioBp: 5000, initialStatus: 'active' }],
+        forfeitedEvents: [],
+      }),
+    readTljDeductFen: vi.fn(() => Promise.resolve(tljDeductFen)),
+  } satisfies OrderFiguresPricingPorts;
+}
+
+const HELD_CREDITED: OrderFiguresRow = {
+  ...CREDITED,
+  commission_version: 1,
+  settle_commission_fen: 1000n,
+  booked_base_fen: 510n,
+};
+
+it('[AC-B1-09p#U9] 暂缓的已结算单按 booked_base_fen：维权扣减后结算佣金不变、基数变小，预估返 R5a 的金额', async () => {
+  const pricing = await priceOrder(pricingPorts(), NO_TRX, VIEWER, HELD_CREDITED);
+  expect(pricing).toEqual({ baseFen: 510n, viewerShareFen: 255n });
+  expect(orderFiguresOf(facts({ row: HELD_CREDITED, held: true, pricing })).est_rebate_fen).toBe(
+    255n,
+  );
+});
+
+it('[AC-B1-09p#U10] 暂缓的已结算单不再扣淘礼金；佣金字段缺失也按入账基数，入账基数缺失不臆造', async () => {
+  const ports = pricingPorts(100n);
+  expect(await priceOrder(ports, NO_TRX, VIEWER, HELD_CREDITED)).toEqual({
+    baseFen: 510n,
+    viewerShareFen: 255n,
+  });
+  expect(ports.readTljDeductFen).not.toHaveBeenCalled();
+  const noCommission = { ...HELD_CREDITED, est_commission_fen: null, settle_commission_fen: null };
+  expect(await priceOrder(ports, NO_TRX, VIEWER, noCommission)).toEqual({
+    baseFen: 510n,
+    viewerShareFen: 255n,
+  });
+  const noBooked = { ...HELD_CREDITED, booked_base_fen: null };
+  expect(await priceOrder(ports, NO_TRX, VIEWER, noBooked)).toBeNull();
+});
+
+it('[AC-B1-09p#U11] 待入账单仍按有效佣金换算并扣淘礼金，不看 booked_base_fen', async () => {
+  const row: OrderFiguresRow = {
+    ...ROW,
+    commission_version: 1,
+    settle_commission_fen: 1000n,
+    booked_base_fen: 510n,
+  };
+  expect(await priceOrder(pricingPorts(50n), NO_TRX, VIEWER, row)).toEqual({
+    baseFen: 800n,
+    viewerShareFen: 400n,
+  });
+  const none = { ...row, est_commission_fen: null, settle_commission_fen: null };
+  expect(await priceOrder(pricingPorts(), NO_TRX, VIEWER, none)).toBeNull();
 });

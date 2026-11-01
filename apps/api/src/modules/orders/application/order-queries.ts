@@ -179,6 +179,16 @@ export function createUnknownOrderFigures(): OrderFiguresReader {
   };
 }
 
+/**
+ * The month on the timeline's credit_expected node. BR-FUND-17 row 12 shows no expired month, while
+ * the top-level expected_credit_period keeps it; the timeline hides a month only when given null.
+ */
+export function timelineCreditPeriod(
+  figures: Pick<OrderFigures, 'expected_credit_period' | 'credit_overdue'>,
+): string | null {
+  return figures.credit_overdue ? null : figures.expected_credit_period;
+}
+
 const ORDER_COLUMNS = [
   'order_id',
   'platform',
@@ -598,7 +608,7 @@ class DbOrderQueries extends OrderQueries {
       paid_at: iso(row.paid_at),
       received_at: iso(row.received_at),
       credited_at: iso(row.credited_at),
-      expected_credit_period: figures.expected_credit_period,
+      expected_credit_period: timelineCreditPeriod(figures),
       invalid_at: display_status === 'INVALID' ? await historyAt('VOID') : null,
       clawed_at: display_status === 'CLAWED_BACK' ? await historyAt('CLAWED_BACK') : null,
       part_clawed_at: figures.part_clawed_at,

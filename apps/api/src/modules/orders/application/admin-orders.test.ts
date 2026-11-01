@@ -7,7 +7,11 @@ import {
   type AdminOrderPorts,
   type AdminOrderSplitRecord,
 } from './admin-orders.ts';
-import { createUnknownOrderFigures, type OrderFigures } from './order-queries.ts';
+import {
+  createUnknownOrderFigures,
+  timelineCreditPeriod,
+  type OrderFigures,
+} from './order-queries.ts';
 
 const APP = 'app_unit';
 const ORDER = '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01';
@@ -238,4 +242,14 @@ it('[AC-B1-09p#U3] 详情的 display_status 用所有者的数据；无所有者
   const ownerless = row({ user_id: null, rebate_status: 'UNATTRIBUTED' });
   await service(ownerless, { figures }).detail(APP, ORDER, undefined);
   expect(seen).toEqual([]);
+});
+
+it('[AC-B1-09p#U12] 时间线的预计结算节点：逾期不带月份（BR-FUND-17 第 12 行），未逾期照带', () => {
+  expect(
+    timelineCreditPeriod({ expected_credit_period: '2027-12', credit_overdue: true }),
+  ).toBeNull();
+  expect(timelineCreditPeriod({ expected_credit_period: '2027-12', credit_overdue: false })).toBe(
+    '2027-12',
+  );
+  expect(timelineCreditPeriod({ expected_credit_period: null, credit_overdue: false })).toBeNull();
 });
