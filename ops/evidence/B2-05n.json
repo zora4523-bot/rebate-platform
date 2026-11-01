@@ -1,0 +1,150 @@
+{
+  "task": "B2-05n",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "fee1cafdc7bba038f7deb2273b60825067519d53",
+  "red_tests": [
+    "test/spec/payout/review-overdue/check.int.test.ts > [BR-WDR-26 超时判定] deadline 已到（含恰好等于 now）且仍为 PENDING_REVIEW / APPROVED——人工审核单与 review_mode auto 的单（系统 W2 已批、EXECUTE 被拒而停在 APPROVED 的，及尚未批的）一样判：review_overdue_at = now、updated_at = now、状态不变；每单一条 withdrawal.review_overdue（载荷只含 withdrawal_id、user_id、review_deadline、overdue_at，app_id 在信封）；提交后每单一条 warn withdrawal_review_overdue（只带 app_id、withdrawal_id 与两个时刻）；在 users 行锁下判定；返回 { scanned, judged }",
+    "test/spec/payout/review-overdue/check.int.test.ts > [BR-WDR-26 超时判定] 不判的单：deadline 未到（晚 1 毫秒）、deadline 为空（PENDING_REVIEW / APPROVED）、PAYING、PAID_API、PAID_MANUAL、REJECTED、FAILED（deadline 已过）——列仍 NULL、updated_at 不变，无事件、无告警、不加锁，返回 { scanned: 0, judged: 0 }",
+    "test/spec/payout/review-overdue/check.int.test.ts > [BR-WDR-26 每单只判定一次] 已判过（review_overdue_at 非空）的单不再判、不再发事件与告警、原判定时刻不变；本次判定的单在下一槽、再下一槽的检查里也不再判",
+    "test/spec/payout/review-overdue/check.int.test.ts > [BR-WDR-26 超时判定] 多 app 各判各的：一次运行判定所有 app 的到期单，事件信封与告警各带自己的 app_id，行锁按各自 app 加；未到期的单留到到期后的那次运行",
+    "test/spec/payout/review-overdue/check.int.test.ts > [BR-WDR-26 ① 告警财务（BR-WDR-24，不受夜间限制）] deadline 与运行时刻落在夜间（23:00、03:00 +08:00，免打扰时段只顺延用户通知）：当场判定——review_overdue_at = 运行时刻（距 deadline ≤5 分钟，不顺延到早上）、事件一条、warn 一条在 run 返回时已打出",
+    "test/spec/payout/review-overdue/check.int.test.ts > [D10-475 ②(b) 提交后告警] 一单的事务提交失败（回滚）：该单列仍 NULL、无事件、无 withdrawal_review_overdue 告警，只有一条 withdrawal_review_overdue_failed（error_name）；其他单照常判定并告警；运行在全部单试完后以首个错误拒绝；下次运行补判该单",
+    "test/spec/payout/review-overdue/check.int.test.ts > [D10-475 ②(b) 提交后告警] 事件发布失败（该单事务回滚）：该单列仍 NULL、无事件、无告警，一条 withdrawal_review_overdue_failed；同批其他单不受影响；运行以该错误拒绝",
+    "test/spec/payout/review-overdue/concurrency.int.test.ts > [payout AGENTS.md 加锁顺序; §9.3 并发] 判定在 users 行锁下：该会员的 users 行被另一事务锁住时，检查在请求锁后等待、不写列不发事件；锁释放后才判定",
+    "test/spec/payout/review-overdue/concurrency.int.test.ts > [BR-WDR-26 判定时状态仍 ∈ {PENDING_REVIEW, APPROVED}] 选出候选之后、拿到 users 行锁之前单子被驳回或进入 PAYING：锁内重读后跳过（CAS 0 行），列仍 NULL、无事件、无告警，judged 为 0",
+    "test/spec/payout/review-overdue/concurrency.int.test.ts > [§9.3 并发：两个 worker 同槽同单只一个判定] 两次检查同时运行、都在对方提交前选出同一批候选：每单只被判定一次（一条事件、一条告警、判定时刻不变），两次的 judged 合计等于单数",
+    "test/spec/payout/review-overdue/job.test.ts > [B2-05n 链] check 任务：按 clock.now() 运行一次检查，之后（不在事务里）入队下一槽：payout-overdue / check / { slot }，singletonKey 为下一槽键，延迟到下一槽到期",
+    "test/spec/payout/review-overdue/job.test.ts > [B2-05n 链] check 任务的时刻取注入时钟而不是负载里的槽：晚到或重投的旧槽按当前时刻检查并接上当前时刻的下一槽；整 5 分钟边界延迟 300 秒",
+    "test/spec/payout/review-overdue/job.test.ts > [B2-05n 链] 检查失败时任务失败（拒绝，交队列重试），错误原样抛出",
+    "test/spec/payout/review-overdue/job.test.ts > [B2-05n 种子] seedReviewOverdue：入队时钟所在的当前槽（不带延迟、不在事务里），不运行检查；同一槽再种（修复）用同一 singletonKey（exclusive 合并，不重复），进入下一槽后种新槽",
+    "test/spec/payout/review-overdue/job.test.ts > [B2-05n 链] 种子与任务接得上：种子送的当前槽任务被执行后，入队的正是下一槽；下一槽执行后再入队其后一槽（每槽一个键，键各不相同）",
+    "test/spec/payout/review-overdue/registry.test.ts > [B2-05n 队列目录] payout-overdue 恰一条，exclusive、目录默认值、死信 payout-overdue.dead，紧跟 ledger-check；死信队列设置同其他 <q>.dead",
+    "test/spec/payout/review-overdue/registry.test.ts > [B2-05n 入口计划] 只有 worker 消费 payout-overdue，并发 1、轮询 2 秒，紧跟 ledger-check；api / stream / admin / payout 都不消费",
+    "test/spec/payout/review-overdue/registry.test.ts > [02 §11 事件清单; D10-475 ②(a)] withdrawal.review_overdue 恰登记一次、在清单末尾；平台路由表里没有它的订阅（通知由 identity 线接 WD_OVERDUE 时订阅）",
+    "test/spec/payout/review-overdue/registry.test.ts > [B2-05n 装配（源码）] worker 侧装配调用 createReviewOverdueCheck / createReviewOverdueJob 注册 payout-overdue 并调用 seedReviewOverdue 起链；payout 进程的运行时与 forPayout 不碰它；检查的源码不读墙钟、不读 process.env、不用 console",
+    "test/spec/payout/review-overdue/slots.test.ts > [B2-05n 槽] 当前槽：键 review-overdue:<UTC 年月日时分>，分钟向下取整到 5 的倍数，不带延迟；整 5 分钟边界属于新槽",
+    "test/spec/payout/review-overdue/slots.test.ts > [B2-05n 槽] 下一槽：紧接当前槽之后的 5 分钟槽，延迟为到期前的秒数（不足 1 秒按 1 秒、向上取整，从不提前）；跨日、跨年",
+    "test/spec/payout/review-overdue/slots.test.ts > [B2-05n 槽] 性质：任一时刻 t，当前槽起点 ≤ t < 起点 + 5 分钟且分钟是 5 的倍数；下一槽起点 = 当前槽起点 + 5 分钟；1 ≤ 延迟 ≤ 300 且 t + 延迟秒 ≥ 下一槽起点 > t + 延迟秒 − 1 秒；入参不被改动、同一时刻结果相同",
+    "test/spec/payout/review-overdue/slots.test.ts > [BR-WDR-26 ≤5 分钟内判定] 任一 review_deadline：它落入的槽的下一槽到期时刻在 deadline 之后、5 分钟之内（链按槽运行即在到达后 ≤5 分钟内判定）",
+    "test/spec/payout/review-overdue/worker.int.test.ts > [B2-05n 装配] worker 入口：PayoutModule.forWorker 为 payout-overdue 恰注册一个处理器；处理一个 check 任务即用入口的 couli_app 句柄、事件总线与 identity 的行锁判定到期单（列、事件、pino warn withdrawal_review_overdue），并入队下一槽",
+    "test/spec/payout/review-overdue/worker.int.test.ts > [B2-05n 种子 / 修复] worker 模块的定时器：启动后 1 分钟内种下当前槽（不带延迟、不在事务里），30 分钟内的修复再种修复时刻所在的槽（同槽同键，exclusive 合并）；模块销毁后不再发送",
+    "test/spec/platform/events/contract.test.ts > [规划/02 §11 事件清单] EVENT_NAMES 正好是 02 §11 的 18 个事件名（同序、冻结）；EVENT_SUBSCRIPTIONS 是冻结的空数组；上下界常量正好是 4096 字节、128 个码元、3 层、版本 999",
+    "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 冻结结构不变] ENTRY_PLAN 与 QUEUE_CATALOG 与主干逐字一致且仍冻结；不给 limits 时 worker 22 个队列取计划值（合计 43；B2-06f D10-398 ① 加 payout-review，B2-07c D10-408 / D10-415 ① 加 payout-recon，B2-02q D10-415 ① 加 ledger-check），共享预算缺省 7 = floor(POOL_SIZES.worker.db × 0.7)，至少留 3 个连接",
+    "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 配置覆盖] 覆盖只往下调：列出的队列取覆盖值（等于计划值也接受），没列出的仍取计划值，dbBudget 取给定值（1 与 7 都接受）；计划与 limits 本身都不被改动",
+    "test/spec/platform/queue/contract.test.ts > [规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项确切（待编排会话确认的默认值）：payout、settle 为 exclusive（risk-scan 若有亦然），其余 standard，死信队列 dead-letter",
+    "test/spec/platform/queue/contract.test.ts > [规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 秒] 生产入口计划逐项确切：api / stream / admin 不执行任务，worker 六个队列，payout 为 payout 并发 1 与 payout-attempt-append 并发 1（B2-07e D10-428 / D10-415 ①）",
+    "test/spec/platform/queue/contract.test.ts > [规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只能为自己计划里的队列注册处理器：其余目录队列一律 not_in_entry"
+  ],
+  "risk_note": "RV2 worker job (withdraw lane, model Claude Fable 5.1; orchestrator rulings D10-467 ④ and D10-475 ②): the review-overdue check of withdrawals (08 BR-WDR-26 超时判定; BR-WDR-24 告警) on queue payout-overdue, one five-minute slot at a time (singletonKey review-overdue:<UTC minute>, each run enqueues the next slot; seed and heal from PayoutModule.forWorker's timer, which seeds only while a withdrawal waits for a review with a deadline — anyReviewWaiting — so an empty database runs no chain, as the frozen worker wiring test [AC-B1-08w#4] requires). Candidates (review_deadline <= now, review_overdue_at IS NULL, status PENDING_REVIEW / APPROVED, every app) are judged one by one under identity's users row lock with a CAS on review_overdue_at (0 rows → skipped: rejected, paid or judged meanwhile), the event withdrawal.review_overdue {withdrawal_id, user_id, review_deadline, overdue_at} published on the same transaction, and the finance warn line withdrawal_review_overdue written only after the commit (ids and instants only; a rollback writes none). No money moves and no status changes; review_mode auto rows are judged like manual ones; quiet hours do not defer the judgement or the warn (only notification's user message, identity lane). Time only from the injected Clock. The queue catalog, worker plan and EVENT_NAMES registrations were pinned by the rule-test author's separate test(spec) commit (D10-415 ①); the 20 unchanged tests of those frozen files are red_exempt in the trusted ledger (#2054). No contract change; no migration (B2-05m's column). Test-machine full verify not run (CI verify-int, D10-319); PROP_RUNS=2000（D10-496）.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "fee1cafdc7bba038f7deb2273b60825067519d53",
+      "tree": "1007a47090ad22ef270ef1e346349ce6cceb00d4",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-11-01T03:46:00Z",
+      "finished_at": "2026-11-01T03:46:35Z",
+      "gate": {
+        "commit": "0b9aab4ba40f1af7637f446b44afe3d2e48f3836",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/payout/review-overdue/check.int.test.ts > [BR-WDR-26 超时判定] deadline 已到（含恰好等于 now）且仍为 PENDING_REVIEW / APPROVED——人工审核单与 review_mode auto 的单（系统 W2 已批、EXECUTE 被拒而停在 APPROVED 的，及尚未批的）一样判：review_overdue_at = now、updated_at = now、状态不变；每单一条 withdrawal.review_overdue（载荷只含 withdrawal_id、user_id、review_deadline、overdue_at，app_id 在信封）；提交后每单一条 warn withdrawal_review_overdue（只带 app_id、withdrawal_id 与两个时刻）；在 users 行锁下判定；返回 { scanned, judged }",
+        "test/spec/payout/review-overdue/check.int.test.ts > [BR-WDR-26 超时判定] 不判的单：deadline 未到（晚 1 毫秒）、deadline 为空（PENDING_REVIEW / APPROVED）、PAYING、PAID_API、PAID_MANUAL、REJECTED、FAILED（deadline 已过）——列仍 NULL、updated_at 不变，无事件、无告警、不加锁，返回 { scanned: 0, judged: 0 }",
+        "test/spec/payout/review-overdue/check.int.test.ts > [BR-WDR-26 每单只判定一次] 已判过（review_overdue_at 非空）的单不再判、不再发事件与告警、原判定时刻不变；本次判定的单在下一槽、再下一槽的检查里也不再判",
+        "test/spec/payout/review-overdue/check.int.test.ts > [BR-WDR-26 超时判定] 多 app 各判各的：一次运行判定所有 app 的到期单，事件信封与告警各带自己的 app_id，行锁按各自 app 加；未到期的单留到到期后的那次运行",
+        "test/spec/payout/review-overdue/check.int.test.ts > [BR-WDR-26 ① 告警财务（BR-WDR-24，不受夜间限制）] deadline 与运行时刻落在夜间（23:00、03:00 +08:00，免打扰时段只顺延用户通知）：当场判定——review_overdue_at = 运行时刻（距 deadline ≤5 分钟，不顺延到早上）、事件一条、warn 一条在 run 返回时已打出",
+        "test/spec/payout/review-overdue/check.int.test.ts > [D10-475 ②(b) 提交后告警] 一单的事务提交失败（回滚）：该单列仍 NULL、无事件、无 withdrawal_review_overdue 告警，只有一条 withdrawal_review_overdue_failed（error_name）；其他单照常判定并告警；运行在全部单试完后以首个错误拒绝；下次运行补判该单",
+        "test/spec/payout/review-overdue/check.int.test.ts > [D10-475 ②(b) 提交后告警] 事件发布失败（该单事务回滚）：该单列仍 NULL、无事件、无告警，一条 withdrawal_review_overdue_failed；同批其他单不受影响；运行以该错误拒绝",
+        "test/spec/payout/review-overdue/concurrency.int.test.ts > [payout AGENTS.md 加锁顺序; §9.3 并发] 判定在 users 行锁下：该会员的 users 行被另一事务锁住时，检查在请求锁后等待、不写列不发事件；锁释放后才判定",
+        "test/spec/payout/review-overdue/concurrency.int.test.ts > [BR-WDR-26 判定时状态仍 ∈ {PENDING_REVIEW, APPROVED}] 选出候选之后、拿到 users 行锁之前单子被驳回或进入 PAYING：锁内重读后跳过（CAS 0 行），列仍 NULL、无事件、无告警，judged 为 0",
+        "test/spec/payout/review-overdue/concurrency.int.test.ts > [§9.3 并发：两个 worker 同槽同单只一个判定] 两次检查同时运行、都在对方提交前选出同一批候选：每单只被判定一次（一条事件、一条告警、判定时刻不变），两次的 judged 合计等于单数",
+        "test/spec/payout/review-overdue/job.test.ts > [B2-05n 链] check 任务：按 clock.now() 运行一次检查，之后（不在事务里）入队下一槽：payout-overdue / check / { slot }，singletonKey 为下一槽键，延迟到下一槽到期",
+        "test/spec/payout/review-overdue/job.test.ts > [B2-05n 链] check 任务的时刻取注入时钟而不是负载里的槽：晚到或重投的旧槽按当前时刻检查并接上当前时刻的下一槽；整 5 分钟边界延迟 300 秒",
+        "test/spec/payout/review-overdue/job.test.ts > [B2-05n 链] 检查失败时任务失败（拒绝，交队列重试），错误原样抛出",
+        "test/spec/payout/review-overdue/job.test.ts > [B2-05n 种子] seedReviewOverdue：入队时钟所在的当前槽（不带延迟、不在事务里），不运行检查；同一槽再种（修复）用同一 singletonKey（exclusive 合并，不重复），进入下一槽后种新槽",
+        "test/spec/payout/review-overdue/job.test.ts > [B2-05n 链] 种子与任务接得上：种子送的当前槽任务被执行后，入队的正是下一槽；下一槽执行后再入队其后一槽（每槽一个键，键各不相同）",
+        "test/spec/payout/review-overdue/registry.test.ts > [B2-05n 队列目录] payout-overdue 恰一条，exclusive、目录默认值、死信 payout-overdue.dead，紧跟 ledger-check；死信队列设置同其他 <q>.dead",
+        "test/spec/payout/review-overdue/registry.test.ts > [B2-05n 入口计划] 只有 worker 消费 payout-overdue，并发 1、轮询 2 秒，紧跟 ledger-check；api / stream / admin / payout 都不消费",
+        "test/spec/payout/review-overdue/registry.test.ts > [02 §11 事件清单; D10-475 ②(a)] withdrawal.review_overdue 恰登记一次、在清单末尾；平台路由表里没有它的订阅（通知由 identity 线接 WD_OVERDUE 时订阅）",
+        "test/spec/payout/review-overdue/registry.test.ts > [B2-05n 装配（源码）] worker 侧装配调用 createReviewOverdueCheck / createReviewOverdueJob 注册 payout-overdue 并调用 seedReviewOverdue 起链；payout 进程的运行时与 forPayout 不碰它；检查的源码不读墙钟、不读 process.env、不用 console",
+        "test/spec/payout/review-overdue/slots.test.ts > [B2-05n 槽] 当前槽：键 review-overdue:<UTC 年月日时分>，分钟向下取整到 5 的倍数，不带延迟；整 5 分钟边界属于新槽",
+        "test/spec/payout/review-overdue/slots.test.ts > [B2-05n 槽] 下一槽：紧接当前槽之后的 5 分钟槽，延迟为到期前的秒数（不足 1 秒按 1 秒、向上取整，从不提前）；跨日、跨年",
+        "test/spec/payout/review-overdue/slots.test.ts > [B2-05n 槽] 性质：任一时刻 t，当前槽起点 ≤ t < 起点 + 5 分钟且分钟是 5 的倍数；下一槽起点 = 当前槽起点 + 5 分钟；1 ≤ 延迟 ≤ 300 且 t + 延迟秒 ≥ 下一槽起点 > t + 延迟秒 − 1 秒；入参不被改动、同一时刻结果相同",
+        "test/spec/payout/review-overdue/slots.test.ts > [BR-WDR-26 ≤5 分钟内判定] 任一 review_deadline：它落入的槽的下一槽到期时刻在 deadline 之后、5 分钟之内（链按槽运行即在到达后 ≤5 分钟内判定）",
+        "test/spec/payout/review-overdue/worker.int.test.ts > [B2-05n 装配] worker 入口：PayoutModule.forWorker 为 payout-overdue 恰注册一个处理器；处理一个 check 任务即用入口的 couli_app 句柄、事件总线与 identity 的行锁判定到期单（列、事件、pino warn withdrawal_review_overdue），并入队下一槽",
+        "test/spec/payout/review-overdue/worker.int.test.ts > [B2-05n 种子 / 修复] worker 模块的定时器：启动后 1 分钟内种下当前槽（不带延迟、不在事务里），30 分钟内的修复再种修复时刻所在的槽（同槽同键，exclusive 合并）；模块销毁后不再发送",
+        "test/spec/platform/events/contract.test.ts > [规划/02 §11 事件清单] EVENT_NAMES 正好是 02 §11 的 18 个事件名（同序、冻结）；EVENT_SUBSCRIPTIONS 是冻结的空数组；上下界常量正好是 4096 字节、128 个码元、3 层、版本 999",
+        "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 冻结结构不变] ENTRY_PLAN 与 QUEUE_CATALOG 与主干逐字一致且仍冻结；不给 limits 时 worker 22 个队列取计划值（合计 43；B2-06f D10-398 ① 加 payout-review，B2-07c D10-408 / D10-415 ① 加 payout-recon，B2-02q D10-415 ① 加 ledger-check），共享预算缺省 7 = floor(POOL_SIZES.worker.db × 0.7)，至少留 3 个连接",
+        "test/spec/platform/queue-concurrency/limits.test.ts > [B1-01zzk 配置覆盖] 覆盖只往下调：列出的队列取覆盖值（等于计划值也接受），没列出的仍取计划值，dbBudget 取给定值（1 与 7 都接受）；计划与 limits 本身都不被改动",
+        "test/spec/platform/queue/contract.test.ts > [规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项确切（待编排会话确认的默认值）：payout、settle 为 exclusive（risk-scan 若有亦然），其余 standard，死信队列 dead-letter",
+        "test/spec/platform/queue/contract.test.ts > [规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 秒] 生产入口计划逐项确切：api / stream / admin 不执行任务，worker 六个队列，payout 为 payout 并发 1 与 payout-attempt-append 并发 1（B2-07e D10-428 / D10-415 ①）",
+        "test/spec/platform/queue/contract.test.ts > [规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只能为自己计划里的队列注册处理器：其余目录队列一律 not_in_entry"
+      ],
+      "expected": [
+        "test/spec/payout/review-overdue/check.int.test.ts",
+        "test/spec/payout/review-overdue/concurrency.int.test.ts",
+        "test/spec/payout/review-overdue/job.test.ts",
+        "test/spec/payout/review-overdue/registry.test.ts",
+        "test/spec/payout/review-overdue/slots.test.ts",
+        "test/spec/payout/review-overdue/worker.int.test.ts",
+        "test/spec/platform/events/contract.test.ts",
+        "test/spec/platform/queue-concurrency/limits.test.ts",
+        "test/spec/platform/queue/contract.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "6cba76cb43acd5dec5c752aeb7963b01a791ab6223204b7c357ae72ddad77c72"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "4b2ba243da5b463bea47e92a51bfbf0789b3c6e116a06ec6d372e2913ef3e2c4"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "Round 1 (full, base origin/main; Codex unavailable until 2026-11-02, fresh independent Claude): pass with one S2 — review-overdue-job.ts sent the next slot only after a successful check, so a failing check let the retries exhaust and the chain restart only on the 30-minute heal → fixed (the next slot is sent in a finally, the check's error still rejects the job). Round 2 (incremental, base 553809413 → the head after the CI fix): pass; the round-1 S2 confirmed closed; the fix for the frozen [AC-B1-08w#4] (the worker's timer seeds the chain only while a withdrawal waits for a review with a deadline, anyReviewWaiting, as the recon and ledger daily-check seeds read their apps first) is a read-only existence query, no money, status or ledger touched, seeds still de-duplicated by the slot key. One new S2 accepted as is: while the chain is not running, a withdrawal that starts waiting with an already-passed deadline can be judged up to the 30-minute heal later (a rare combination: a never-started or dead chain plus an auto-payout backlog after a long outage); the heal bounds it and no money is involved."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "test round 1 (fresh independent Claude): 7 files under test/spec/payout/review-overdue with NotImplemented skeletons (application/review-overdue.ts, jobs/review-overdue-job.ts) and, as a separate test(spec) commit, the frozen count files (queue contract, queue-concurrency kit / limits, events contract / kit, snapshot-retry-alert) → red/1: every task test red, 20 unchanged tests of the frozen files reported as green on the skeleton (red_exempt, #2054) → spec-test round 1 fail (S1 ×2: review_mode auto rows not covered, no night-time judgement case; S2: property test parameters) → test round 2 (kit reviewMode option, auto APPROVED / PENDING_REVIEW judged, 23:00 / 03:02:30 +08:00 cases, propParams) → red/2 same shape (31 red, the same 20 exempt-class) → spec-test round 2 pass (incremental, all three closed). red_exempt_confirmed: 来源 red/2 红检输出 + 编排核定 #2054（D10-489 / 编排 2026-10-31 23:58 回复，取 B，不另开 spec-test r3）。 test round 3 (orchestrator ruling D10-532 A, after the CI red of the frozen [AC-B1-08w#4] vs the seed case): the author only seeds one PENDING_REVIEW withdrawal before booting the worker in '[B2-05n 种子 / 修复]' (the timer seeds the chain only while a withdrawal waits for a review, anyReviewWaiting); the suggested negative case '空库启动不种槽' was left out of the spec commit (green on the skeleton by nature, kept at couli-runs/B2-05n/gate-test.snippet.ts for the orchestrator) → spec-test round 3 pass (incremental, 9e2bb3ddb → the r3 spec commit; one S2: the gate's status set is pinned only by the PENDING_REVIEW fixture).",
+    "red_exempt_confirmed": true
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "4ff83783d17743ea9efacd016912563b35ae5dab",
+    "test/spec": "c3fa597c8102cc0815e9ca96d1b3082314a37f04",
+    "specs": "06bfb4d5a9d52d5099b36fb48f5831b176cc40ec"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money or packages/domain.",
+    "tree": "4ff83783d17743ea9efacd016912563b35ae5dab"
+  }
+}

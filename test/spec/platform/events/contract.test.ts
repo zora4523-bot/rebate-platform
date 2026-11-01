@@ -143,6 +143,7 @@ it('[规划/02 §11 事件清单] EVENT_NAMES 正好是 02 §11 的 18 个事件
     ],
     pattern: EVENT_NAMES.every((name) => /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/.test(name)),
   }).toStrictEqual({
+    // B2-05n (D10-475 ②(a)): withdrawal.review_overdue is not pending: required, last.
     names: PLAN_02_EVENTS.filter(
       (name) => !PLAN_02_PENDING.has(name) || EVENT_NAMES.includes(name),
     ),

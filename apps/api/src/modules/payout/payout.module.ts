@@ -38,6 +38,12 @@ import {
 } from './application/auto-payout.ts';
 import { createPayoutExecute } from './application/payout-execute.ts';
 import { PAYOUT_LANDING_QUEUE, createLandingJob } from './jobs/landing-job.ts';
+import { anyReviewWaiting, createReviewOverdueCheck } from './application/review-overdue.ts';
+import {
+  PAYOUT_OVERDUE_QUEUE,
+  createReviewOverdueJob,
+  seedReviewOverdue,
+} from './jobs/review-overdue-job.ts';
 import { PAYOUT_PAUSE_JOB, createPauseJob } from './jobs/pause-job.ts';
 import { PAYOUT_REVIEW_QUEUE, createReviewJob } from './jobs/review-job.ts';
 import { createPayoutReconJob, type PayoutBillPort } from './jobs/recon-job.ts';
@@ -214,6 +220,14 @@ const PAYOUT_RECON_TIMER = Symbol('PAYOUT_RECON_TIMER');
 export const PAYOUT_RECON_SEED_DELAY_MS = 15_000;
 /** B2-07c: interval between two heals of the payout-recon chain. */
 export const PAYOUT_RECON_HEAL_INTERVAL_MS = 30 * 60_000;
+/** B2-05n: the worker's payout-overdue handler registration (true when registered). */
+export const PAYOUT_OVERDUE_JOBS_TOKEN = Symbol('PAYOUT_OVERDUE_JOBS');
+/** The worker's timer of the payout-overdue chain (B2-05n; lifecycle hooks). */
+const PAYOUT_OVERDUE_TIMER = Symbol('PAYOUT_OVERDUE_TIMER');
+/** B2-05n: delay of the first seed after bootstrap (the queue runtime starts meanwhile). */
+export const PAYOUT_OVERDUE_SEED_DELAY_MS = 15_000;
+/** B2-05n: interval between two heals of the payout-overdue chain (a seed of the current slot). */
+export const PAYOUT_OVERDUE_HEAL_INTERVAL_MS = 30 * 60_000;
 
 /**
  * B2-07c: the bill ports of the worker. Only the payout process reads channel secrets (payout
@@ -294,6 +308,54 @@ function reconChainTimer(
         interval = setInterval(() => void tick(), PAYOUT_RECON_HEAL_INTERVAL_MS);
         interval.unref();
       }, PAYOUT_RECON_SEED_DELAY_MS);
+      first.unref();
+    },
+    onModuleDestroy() {
+      if (first !== undefined) clearTimeout(first);
+      if (interval !== undefined) clearInterval(interval);
+      interval = undefined;
+    },
+  };
+}
+
+/**
+ * B2-05n (BR-WDR-26 「每 5 分钟运行一次」): the payout-overdue seed after bootstrap and its heal
+ * every interval (seedReviewOverdue sends the current slot; the exclusive key merges a repeat);
+ * null deps: inert. Same shape as the payout-recon timer above.
+ */
+function overdueChainTimer(
+  deps: { db: Kysely<DB>; clock: Clock; queue: JobQueue; logger: RootLogger } | null,
+): ReconChainTimer {
+  let running = false;
+  let first: ReturnType<typeof setTimeout> | undefined;
+  let interval: ReturnType<typeof setInterval> | undefined;
+  const tick = async (): Promise<void> => {
+    if (deps === null || running) return;
+    running = true;
+    try {
+      // Only while a withdrawal waits for a review with a deadline (anyReviewWaiting): an empty
+      // database runs no chain, as the recon and ledger daily-check seeds read their apps first.
+      if (await anyReviewWaiting(deps.db)) await seedReviewOverdue(deps);
+    } catch (error: unknown) {
+      deps.logger.warn(
+        {
+          queue: PAYOUT_OVERDUE_QUEUE,
+          error_name: error instanceof Error ? error.name : typeof error,
+        },
+        'payout_overdue_heal_failed',
+      );
+    } finally {
+      running = false;
+    }
+  };
+  return {
+    onApplicationBootstrap() {
+      if (deps === null || first !== undefined) return;
+      first = setTimeout(() => {
+        void tick();
+        interval = setInterval(() => void tick(), PAYOUT_OVERDUE_HEAL_INTERVAL_MS);
+        interval.unref();
+      }, PAYOUT_OVERDUE_SEED_DELAY_MS);
       first.unref();
     },
     onModuleDestroy() {
@@ -537,6 +599,73 @@ export class PayoutModule {
             );
             return true;
           },
+        },
+        // B2-05n (BR-WDR-26 超时判定, D10-475 ②): queue payout-overdue — every five minutes the
+        // worker judges withdrawals past their review_deadline still in PENDING_REVIEW / APPROVED
+        // (users row lock → CAS review_overdue_at → event withdrawal.review_overdue on the same
+        // transaction → warn after the commit), then enqueues the next slot.
+        {
+          provide: PAYOUT_OVERDUE_JOBS_TOKEN,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB_TOKEN, optional: true },
+            { token: JOB_QUEUE, optional: true },
+            { token: EVENT_BUS, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<DB>,
+            queue?: QueueRuntime,
+            eventBus?: EventBus,
+          ): boolean => {
+            if (db === undefined || queue === undefined || eventBus === undefined) {
+              logger.info({ queue: PAYOUT_OVERDUE_QUEUE }, 'payout_overdue_disabled');
+              return false;
+            }
+            const overdueLogger = logger.child({ module: 'payout', queue: PAYOUT_OVERDUE_QUEUE });
+            const check = createReviewOverdueCheck({
+              db,
+              lockUsersForUpdate: options.lockUsersForUpdate,
+              eventBus,
+              clock,
+              logger: overdueLogger,
+            });
+            queue.register(
+              PAYOUT_OVERDUE_QUEUE,
+              createReviewOverdueJob({ check, queue, clock, logger: overdueLogger }),
+            );
+            return true;
+          },
+        },
+        {
+          // B2-05n: the payout-overdue chain's seed and heal, only beside a registered handler.
+          provide: PAYOUT_OVERDUE_TIMER,
+          inject: [
+            PAYOUT_OVERDUE_JOBS_TOKEN,
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB_TOKEN, optional: true },
+            { token: JOB_QUEUE, optional: true },
+          ],
+          useFactory: (
+            registered: boolean,
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<DB>,
+            queue?: JobQueue,
+          ): ReconChainTimer =>
+            overdueChainTimer(
+              !registered || db === undefined || queue === undefined
+                ? null
+                : {
+                    db,
+                    clock,
+                    queue,
+                    logger: logger.child({ module: 'payout', queue: PAYOUT_OVERDUE_QUEUE }),
+                  },
+            ),
         },
         {
           // B2-07c: the payout-recon chain's seed and heal, only beside a registered handler.
