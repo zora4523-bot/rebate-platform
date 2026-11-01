@@ -1,0 +1,136 @@
+{
+  "task": "B1-09m",
+  "spec_ref": "deb521c2bcb740571a01c2dc128f40abb40c37a2",
+  "spec_commit": "02f2a551d2579792d1cb22b242b490b271f31003",
+  "red_tests": [
+    "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#10][BR-ID-36][BR-ATTR-26] 首次入库：缓存恰在判定之后、写命中之前到期且规则已停用 → 本次作废与命中同时成立，规则行不被改写；下一条子订单才按停用",
+    "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#11][BR-ID-36][BR-ATTR-26] 没有规则行时也一样：判定时生效，之后才写入停用行 → 命中照写，停用行不被惰性登记覆盖",
+    "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#12][BR-ID-36][BR-ATTR-26] 存量未入账订单：缓存在判定与写命中之间到期 → 作废与命中同时成立，下一次同步按停用，命中不变：UNATTRIBUTED（已归属）",
+    "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#12][BR-ID-36][BR-ATTR-26] 存量未入账订单：缓存在判定与写命中之间到期 → 作废与命中同时成立，下一次同步按停用，命中不变：UNATTRIBUTED（未归因，user_id 为空）",
+    "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#12][BR-ID-36][BR-ATTR-26] 存量未入账订单：缓存在判定与写命中之间到期 → 作废与命中同时成立，下一次同步按停用，命中不变：ESTIMATED",
+    "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#12][BR-ID-36][BR-ATTR-26] 存量未入账订单：缓存在判定与写命中之间到期 → 作废与命中同时成立，下一次同步按停用，命中不变：WAITING",
+    "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#13][BR-ID-36][BR-ATTR-26] 已入账订单：缓存在判定与写命中之间到期 → 不扣回，manual_review 命中与 order.blacklist_hit_after_credit 同时成立",
+    "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#14][BR-ID-36][BR-ATTR-26] 尾号维度未启用：缓存在判定与写命中之间到期 → 本次判定的 manual_review 命中照写，返利状态不变",
+    "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#15][BR-ID-36][BR-ATTR-26] 渠道与尾号同时命中：缓存在两条命中之前到期 → 两条都写，作废照常，不会只写一条或一条不写",
+    "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#16][BR-ID-36][BR-ATTR-26] 返利端口未接线：缓存在判定与写命中之间到期 → 降级的 manual_review 命中照写，订单不变并告警",
+    "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#17][BR-ID-36][BR-ATTR-26] 作废与命中同一事务：缓存到期且返利端口失败时整条回滚，既无订单也无命中",
+    "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#18][BR-ID-36][BR-ATTR-26] 反方向：判定读到停用、随后规则启用且缓存到期 → 本次不判定、不补写，下一次同步才判定",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#1][BR-ID-36][BR-ATTR-26] 首次入库，规则停用：渠道名单命中不判定，不写 risk_hits、不作废、不进人工复核；启用并过缓存周期后下一条子订单才判定，已入库的不追溯",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#1][BR-ID-36][BR-ATTR-26] 首次入库，规则停用：尾号名单（作废开关开）命中不判定，不写 risk_hits、不作废、不进人工复核；启用并过缓存周期后下一条子订单才判定，已入库的不追溯",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#1][BR-ID-36][BR-ATTR-26] 首次入库，规则停用：尾号名单（作废开关关，本应进人工复核）命中不判定，不写 risk_hits、不作废、不进人工复核；启用并过缓存周期后下一条子订单才判定，已入库的不追溯",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#2][BR-ID-36][BR-ATTR-26] 存量订单，规则停用：下一次同步更新不判定，不作废、不发 order.blacklist_hit_after_credit，状态迁移照常；启用并过缓存周期后再次同步才判定（已入账同样）：UNATTRIBUTED",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#2][BR-ID-36][BR-ATTR-26] 存量订单，规则停用：下一次同步更新不判定，不作废、不发 order.blacklist_hit_after_credit，状态迁移照常；启用并过缓存周期后再次同步才判定（已入账同样）：ESTIMATED",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#2][BR-ID-36][BR-ATTR-26] 存量订单，规则停用：下一次同步更新不判定，不作废、不发 order.blacklist_hit_after_credit，状态迁移照常；启用并过缓存周期后再次同步才判定（已入账同样）：WAITING",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#2][BR-ID-36][BR-ATTR-26] 存量订单，规则停用：下一次同步更新不判定，不作废、不发 order.blacklist_hit_after_credit，状态迁移照常；启用并过缓存周期后再次同步才判定（已入账同样）：CREDITED",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#3][BR-ID-36][BR-ATTR-26] 规则生效时行为不变：作废并写 void_commission 命中，已有规则行不被改写，没有规则行时惰性登记 active：状态 enabled",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#3][BR-ID-36][BR-ATTR-26] 规则生效时行为不变：作废并写 void_commission 命中，已有规则行不被改写，没有规则行时惰性登记 active：状态 active（写者惰性登记）",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#3][BR-ID-36][BR-ATTR-26] 规则生效时行为不变：作废并写 void_commission 命中，已有规则行不被改写，没有规则行时惰性登记 active：没有规则行",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#4][BR-ID-36][BR-ATTR-26] 渠道与尾号同时命中：一次判定只读一次规则状态，两条命中都写",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#5][BR-ID-36][BR-ATTR-26] 停用按缓存周期生效：周期内的判定仍按启用，满周期后不判定，已写的命中不动",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#6][BR-ID-36][BR-ATTR-26] 启用按缓存周期生效：周期内仍不判定，满周期后的下一次同步才判定",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#7][BR-ID-36][BR-ATTR-26] 已写的命中在停用后不变，不撤销处置、不追溯（被作废的用户仍有命中可申诉）：未入账作废的命中",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#7][BR-ID-36][BR-ATTR-26] 已写的命中在停用后不变，不撤销处置、不追溯（被作废的用户仍有命中可申诉）：已入账待复核的命中",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#8][BR-ID-36] 跨 App：同一读口与缓存下，一个 App 停用不影响另一个，两边都有真实规则行与名单行：停用的 App 先判定",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#8][BR-ID-36] 跨 App：同一读口与缓存下，一个 App 停用不影响另一个，两边都有真实规则行与名单行：启用的 App 先判定",
+    "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#9][BR-ID-36] 启停按规则：同 App 别的规则停用（BLACKLIST_PHONE）不影响订单黑名单判定"
+  ],
+  "risk_note": "RV2 by path; BR-ID-36 rule switch at the order blacklist step (D10-536). B1-03zh already makes risk's match answer nothing and recordHit write nothing while BLACKLIST_HIT is disabled. This task passes decided_in_force: true on every hit of a judgement, so a status cache expiring between match and recordHit cannot void a rebate without its hit. orders reads no rule status and names no rule code. Open and reported to the orchestrator: the production worker does not wire the blacklist step yet (orderSyncPorts passes no blocklist, no onBlacklistHit), so this has no production effect until that wiring lands. Codex was unavailable until 11-02, so tests and reviews ran on fresh independent Claude contexts (approvals id 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "02f2a551d2579792d1cb22b242b490b271f31003",
+      "tree": "0d2af9a22d6626fe3fc0160674acf9c943dbeec9",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-11-01T13:02:44Z",
+      "finished_at": "2026-11-01T13:02:55Z",
+      "gate": {
+        "commit": "57bf9fd86b62607da9fb29ef32fe367ea9ff66d1",
+        "clean": true,
+        "script_sha256": "84ff6832019e89d674247c661091ad857216fa0f415283f282e233be9c681380"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#10][BR-ID-36][BR-ATTR-26] 首次入库：缓存恰在判定之后、写命中之前到期且规则已停用 → 本次作废与命中同时成立，规则行不被改写；下一条子订单才按停用",
+        "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#11][BR-ID-36][BR-ATTR-26] 没有规则行时也一样：判定时生效，之后才写入停用行 → 命中照写，停用行不被惰性登记覆盖",
+        "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#12][BR-ID-36][BR-ATTR-26] 存量未入账订单：缓存在判定与写命中之间到期 → 作废与命中同时成立，下一次同步按停用，命中不变：UNATTRIBUTED（已归属）",
+        "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#12][BR-ID-36][BR-ATTR-26] 存量未入账订单：缓存在判定与写命中之间到期 → 作废与命中同时成立，下一次同步按停用，命中不变：UNATTRIBUTED（未归因，user_id 为空）",
+        "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#12][BR-ID-36][BR-ATTR-26] 存量未入账订单：缓存在判定与写命中之间到期 → 作废与命中同时成立，下一次同步按停用，命中不变：ESTIMATED",
+        "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#12][BR-ID-36][BR-ATTR-26] 存量未入账订单：缓存在判定与写命中之间到期 → 作废与命中同时成立，下一次同步按停用，命中不变：WAITING",
+        "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#13][BR-ID-36][BR-ATTR-26] 已入账订单：缓存在判定与写命中之间到期 → 不扣回，manual_review 命中与 order.blacklist_hit_after_credit 同时成立",
+        "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#14][BR-ID-36][BR-ATTR-26] 尾号维度未启用：缓存在判定与写命中之间到期 → 本次判定的 manual_review 命中照写，返利状态不变",
+        "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#15][BR-ID-36][BR-ATTR-26] 渠道与尾号同时命中：缓存在两条命中之前到期 → 两条都写，作废照常，不会只写一条或一条不写",
+        "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#16][BR-ID-36][BR-ATTR-26] 返利端口未接线：缓存在判定与写命中之间到期 → 降级的 manual_review 命中照写，订单不变并告警",
+        "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#17][BR-ID-36][BR-ATTR-26] 作废与命中同一事务：缓存到期且返利端口失败时整条回滚，既无订单也无命中",
+        "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts > [AC-B1-09m#18][BR-ID-36][BR-ATTR-26] 反方向：判定读到停用、随后规则启用且缓存到期 → 本次不判定、不补写，下一次同步才判定",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#1][BR-ID-36][BR-ATTR-26] 首次入库，规则停用：渠道名单命中不判定，不写 risk_hits、不作废、不进人工复核；启用并过缓存周期后下一条子订单才判定，已入库的不追溯",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#1][BR-ID-36][BR-ATTR-26] 首次入库，规则停用：尾号名单（作废开关开）命中不判定，不写 risk_hits、不作废、不进人工复核；启用并过缓存周期后下一条子订单才判定，已入库的不追溯",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#1][BR-ID-36][BR-ATTR-26] 首次入库，规则停用：尾号名单（作废开关关，本应进人工复核）命中不判定，不写 risk_hits、不作废、不进人工复核；启用并过缓存周期后下一条子订单才判定，已入库的不追溯",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#2][BR-ID-36][BR-ATTR-26] 存量订单，规则停用：下一次同步更新不判定，不作废、不发 order.blacklist_hit_after_credit，状态迁移照常；启用并过缓存周期后再次同步才判定（已入账同样）：UNATTRIBUTED",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#2][BR-ID-36][BR-ATTR-26] 存量订单，规则停用：下一次同步更新不判定，不作废、不发 order.blacklist_hit_after_credit，状态迁移照常；启用并过缓存周期后再次同步才判定（已入账同样）：ESTIMATED",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#2][BR-ID-36][BR-ATTR-26] 存量订单，规则停用：下一次同步更新不判定，不作废、不发 order.blacklist_hit_after_credit，状态迁移照常；启用并过缓存周期后再次同步才判定（已入账同样）：WAITING",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#2][BR-ID-36][BR-ATTR-26] 存量订单，规则停用：下一次同步更新不判定，不作废、不发 order.blacklist_hit_after_credit，状态迁移照常；启用并过缓存周期后再次同步才判定（已入账同样）：CREDITED",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#3][BR-ID-36][BR-ATTR-26] 规则生效时行为不变：作废并写 void_commission 命中，已有规则行不被改写，没有规则行时惰性登记 active：状态 enabled",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#3][BR-ID-36][BR-ATTR-26] 规则生效时行为不变：作废并写 void_commission 命中，已有规则行不被改写，没有规则行时惰性登记 active：状态 active（写者惰性登记）",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#3][BR-ID-36][BR-ATTR-26] 规则生效时行为不变：作废并写 void_commission 命中，已有规则行不被改写，没有规则行时惰性登记 active：没有规则行",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#4][BR-ID-36][BR-ATTR-26] 渠道与尾号同时命中：一次判定只读一次规则状态，两条命中都写",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#5][BR-ID-36][BR-ATTR-26] 停用按缓存周期生效：周期内的判定仍按启用，满周期后不判定，已写的命中不动",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#6][BR-ID-36][BR-ATTR-26] 启用按缓存周期生效：周期内仍不判定，满周期后的下一次同步才判定",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#7][BR-ID-36][BR-ATTR-26] 已写的命中在停用后不变，不撤销处置、不追溯（被作废的用户仍有命中可申诉）：未入账作废的命中",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#7][BR-ID-36][BR-ATTR-26] 已写的命中在停用后不变，不撤销处置、不追溯（被作废的用户仍有命中可申诉）：已入账待复核的命中",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#8][BR-ID-36] 跨 App：同一读口与缓存下，一个 App 停用不影响另一个，两边都有真实规则行与名单行：停用的 App 先判定",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#8][BR-ID-36] 跨 App：同一读口与缓存下，一个 App 停用不影响另一个，两边都有真实规则行与名单行：启用的 App 先判定",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts > [AC-B1-09m#9][BR-ID-36] 启停按规则：同 App 别的规则停用（BLACKLIST_PHONE）不影响订单黑名单判定"
+      ],
+      "expected": [
+        "test/spec/orders/blacklist-rule-toggle/decision-hit-race.int.test.ts",
+        "test/spec/orders/blacklist-rule-toggle/toggle.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "9056b9ed48605d92ac61ec903ba943b04f73716a12a98de50b34c9a4b25fb713"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude, red 30 / 30 in 2 files; round 1 pass, no findings. The disabled branch merged with B1-03zh, so the author ends each case on a hit-writing judgement to be red; the reviewer judged the disabled assertions on their own."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "8ad1b46f987f0e5dec3a0d62e14f78d9b067975e",
+    "specs": "72c44c9f70394287a63f8398d4ce6ef071bef7fb"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  }
+}
