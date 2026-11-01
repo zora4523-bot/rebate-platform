@@ -21,4 +21,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/risk/appeal-restore-pricing/**'
   - 'test/spec/risk/appeal-restore/**'
-status: todo
+status: done
+pr: 2052
