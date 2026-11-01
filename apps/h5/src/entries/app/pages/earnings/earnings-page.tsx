@@ -160,22 +160,26 @@ function Dashboard({ api }: { api: H5ApiClient }): ReactElement {
   }
 
   const data = summary.data;
-  if (data === undefined && summary.isError && !summary.isFetching) {
-    const error = summary.error;
-    if (error instanceof ApiError && (error.code === 30701 || error.code === 10405)) {
-      // 30701（看板关闭）与 10405（版本过低）：只显示错误文案，不显示看板，不重试。
-      return (
-        <Page>
-          <div className="flex flex-1 items-center justify-center py-couli-16">
-            <ErrorState
-              title={error.code === 30701 ? t('error.30701') : t('error.10405')}
-              description=""
-              icon={<ChartIcon />}
-            />
-          </div>
-        </Page>
-      );
-    }
+  const settledError = summary.isError && !summary.isFetching ? summary.error : null;
+  const errorCode = settledError instanceof ApiError ? settledError.code : null;
+  // 30701（看板关闭）：无论有没有旧数据（下拉刷新、切回取过的平台）都整页换成关闭提示，不显示旧数字。
+  // 10405（版本过低）：没有可显示的数据时整页提示；有旧数据时走下方的刷新失败横条。两者都不重试。
+  if (errorCode === 30701 || (data === undefined && errorCode === 10405)) {
+    return (
+      <Page>
+        <div className="flex flex-1 items-center justify-center py-couli-16">
+          <ErrorState
+            title={errorCode === 30701 ? t('error.30701') : t('error.10405')}
+            description=""
+            icon={<ChartIcon />}
+          />
+        </div>
+      </Page>
+    );
+  }
+  // 「全部」首次加载失败：整页重试。选了具体平台时失败只在内容区显示重试，保留胶囊与期间切换以便切回。
+  const loadFailed = data === undefined && settledError !== null;
+  if (loadFailed && platform === null) {
     return <RetryPage onRetry={() => void summary.refetch()} />;
   }
 
@@ -223,7 +227,16 @@ function Dashboard({ api }: { api: H5ApiClient }): ReactElement {
         disabled={platform === undefined}
       />
       <PeriodSwitch selected={period} onSelect={setPeriod} />
-      {data === undefined ? (
+      {loadFailed ? (
+        <div className="flex flex-1 items-center justify-center py-couli-16">
+          <ErrorState
+            title={t('h5.load_failed')}
+            description=""
+            icon={<ChartIcon />}
+            action={{ label: t('h5.retry'), onClick: () => void summary.refetch() }}
+          />
+        </div>
+      ) : data === undefined ? (
         <LoadingCards />
       ) : (
         <Figures
