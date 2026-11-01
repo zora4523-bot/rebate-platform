@@ -1,0 +1,25 @@
+id: CT-24zh
+repo: rebate-platform
+title: 契约：联盟回款录入与资金台账读——POST 录入联盟回款（平台、回款日期、金额、凭证号或备注，fund.cash_entry，动态码，幂等，写审计）、回款记录列表、资金台账概览（fund.view）；全部 planned；企业支付宝余额 W 的录入归 withdraw 的 admin-payouts，不在本任务
+type: contract
+# 2026-11-01 入账（admin-backend，编排 D10-468 ④、D10-456 ②、D10-490：联盟回款入账 UNION_RECEIPT 的 ledger 命令归 funds，契约与入口归 admin；W 值等负责人，不臆造；余额录入 admin-payouts 归 withdraw）。依据 08 BR-FUND-20、BR-WDR-18、04 §11.2 fund.cash_entry、design/specs/admin-fund-dashboard.md。草稿写 couli-runs/B2-12/draft-cash-entry.md。
+refs: []
+refs_hash: {}
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/**'
+  - 'contracts/error-codes.yaml'
+  - 'packages/contracts-ts/**'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
