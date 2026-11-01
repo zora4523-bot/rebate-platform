@@ -23,7 +23,8 @@ export interface AuditLogRow {
   /** The account that acted; null on a system row. */
   readonly adminId: string | null;
   /** The system identity that acted (system:<name>); null on an account's row. */
-  readonly systemActor: string | null;
+  /** Absent or null on an account's row. */
+  readonly systemActor?: string | null;
   readonly displayName: string | null;
   readonly loginName: string | null;
   readonly action: string;

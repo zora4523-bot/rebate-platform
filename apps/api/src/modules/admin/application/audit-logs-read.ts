@@ -143,7 +143,7 @@ export function createAuditLogsReader(deps: {
     return {
       id: deps.ids().encode(row.id),
       actorId: row.adminId,
-      ...(row.systemActor === null
+      ...(row.systemActor === null || row.systemActor === undefined
         ? { actorName: name }
         : {
             actorKind: 'system' as const,
