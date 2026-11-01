@@ -30,6 +30,14 @@
 // phone_change, payout_account; blocked_request when the request has no type), risk_action
 // block, status active, version 1, conditions {}.
 //
+// Rule status (B1-03zh, BR-ID-36 细则「规则清单的启停」, D10-536; ./risk-rule-status.ts): a disabled
+// BLACKLIST_<DIMENSION> takes no part in judgements — check answers null for it and the
+// registration match skips that dimension (read through trx), so it refuses nothing; recordHit and
+// recordHits drop the rows of a disabled rule and, with none left, write nothing. ruleInForce
+// exposes the same reader (one cache) to identity's decision points (SMS_BLOCKED_PREFIX,
+// DEVICE_REGISTER_LIMIT), which ask before deciding. Answers are cached for the configuration
+// items' period on the injected Clock; hits and appeals already written are never touched.
+//
 // Nothing logged identifies the person: no phone, value, HMAC or device hash.
 //
 // Also compiled by the `test` project (through ../index.ts): erasable syntax only, `import type`
@@ -37,6 +45,11 @@
 import type { DB } from '@couli/db';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { newUuidV7, type Clock, type FieldCrypto, type RootLogger } from '../../platform/index.ts';
+import {
+  createRiskRuleStatusReader,
+  type RiskRuleKey,
+  type RiskRuleStatusReader,
+} from './risk-rule-status.ts';
 
 export type BlocklistDimension =
   'phone' | 'id_no' | 'alipay' | 'bank_card' | 'wechat_openid' | 'device' | 'relation_id';
@@ -144,6 +157,12 @@ export interface BlocklistService {
   ): Promise<{ readonly ref_id: string }>;
   /** No backend-issued release record means false; this port does not create release records. */
   allowBlockedRegistration(trx: Transaction<DB>, input: BlockedRegistrationInput): Promise<boolean>;
+  /**
+   * B1-03zh (BR-ID-36): whether the rule of the app takes part in judgements now (the status read
+   * port, same cache as this service's own checks). `executor`: the caller's transaction, if any.
+   * Optional so that hand-written fakes of this port stay valid; createBlocklistService has it.
+   */
+  ruleInForce?(key: RiskRuleKey, executor?: Kysely<DB>): Promise<boolean>;
 }
 
 export interface BlocklistOptions {
@@ -151,6 +170,8 @@ export interface BlocklistOptions {
   readonly clock: Clock;
   readonly crypto: FieldCrypto;
   readonly logger: RootLogger;
+  /** Rule status reader (B1-03zh); defaults to one of its own on `db` and `clock`. */
+  readonly rules?: RiskRuleStatusReader;
 }
 
 /** Rule code of a blocklist hit on one dimension (BLACKLIST_PHONE, BLACKLIST_DEVICE, …). */
@@ -165,6 +186,29 @@ function maskPhone(phone: string): string {
 
 export function createBlocklistService(options: BlocklistOptions): BlocklistService {
   const { db, clock, crypto, logger } = options;
+  const rules = options.rules ?? createRiskRuleStatusReader({ db, clock });
+
+  function inForce(appId: string, ruleId: string, executor?: Kysely<DB>): Promise<boolean> {
+    return rules.isEnabled({ app_id: appId, rule_id: ruleId }, executor);
+  }
+
+  /** The rows whose rule is in force (BR-ID-36: a disabled rule writes no hit). */
+  async function rowsInForce(
+    request: BlockedRequest,
+    rows: readonly BlockedHitTarget[],
+  ): Promise<BlockedHitTarget[]> {
+    const enabled = new Set<string>();
+    for (const ruleId of new Set(rows.map((row) => row.rule_id))) {
+      if (await inForce(request.app_id, ruleId)) enabled.add(ruleId);
+      else {
+        logger.info(
+          { app_id: request.app_id, rule_id: ruleId, request_type: request.request_type },
+          'risk_rule_disabled_hit_skipped',
+        );
+      }
+    }
+    return rows.filter((row) => enabled.has(row.rule_id));
+  }
 
   function digestOf(input: BlocklistInput): string {
     if (input.value_hmac !== undefined) return input.value_hmac;
@@ -195,7 +239,11 @@ export function createBlocklistService(options: BlocklistOptions): BlocklistServ
     return row?.violation_type ?? null;
   }
 
-  /** The hit rows of one blocked request, in one short transaction of their own. */
+  /**
+   * The hit rows of one blocked request, in one short transaction of their own. The callers have
+   * already kept only rules in force (check / checkRegistration decided on them; recordHit and
+   * recordHits filter first).
+   */
   async function writeHits(
     request: BlockedRequest,
     rows: readonly BlockedHitTarget[],
@@ -282,13 +330,27 @@ export function createBlocklistService(options: BlocklistOptions): BlocklistServ
     const hits: BlockedHitTarget[] = [];
     let violation: string | null = null;
     for (const candidate of candidates) {
+      const ruleId = blocklistRule(candidate.dimension);
+      // A disabled dimension rule decides nothing (BR-ID-36); read through trx.
+      if (!(await inForce(input.app_id, ruleId, trx))) continue;
       const matched = await matchOn(trx, input.app_id, candidate.dimension, candidate.value_hmac);
       if (matched === null) continue;
       violation ??= matched;
-      hits.push({ ...candidate, rule_id: blocklistRule(candidate.dimension) });
+      hits.push({ ...candidate, rule_id: ruleId });
     }
     if (violation === null) return null;
     return { code: 44001, data: { risk_msg_code: `blocklist.${violation}` }, hits };
+  }
+
+  /** recordHit / recordHits: rows of disabled rules are dropped; none left → nothing written. */
+  async function recordInForce(
+    request: BlockedRequest,
+    rows: readonly BlockedHitTarget[],
+  ): Promise<{ readonly ref_id: string }> {
+    if (rows.length === 0) throw new Error('risk: a blocked request needs at least one hit row');
+    const kept = await rowsInForce(request, rows);
+    if (kept.length === 0) return { ref_id: request.ref_id ?? newUuidV7(clock.now()) };
+    return writeHits(request, kept);
   }
 
   function registerRequest(input: RegistrationBlocklistInput): BlockedRequest {
@@ -298,6 +360,8 @@ export function createBlocklistService(options: BlocklistOptions): BlocklistServ
   return Object.freeze({
     async check(input: BlocklistInput): Promise<BlocklistHit | null> {
       const valueHmac = digestOf(input);
+      // A disabled dimension rule decides nothing (BR-ID-36).
+      if (!(await inForce(input.app_id, blocklistRule(input.dimension)))) return null;
       const violation = await matchOn(db, input.app_id, input.dimension, valueHmac);
       if (violation === null) return null;
       const { ref_id: refId } = await writeHits(input, [
@@ -324,12 +388,16 @@ export function createBlocklistService(options: BlocklistOptions): BlocklistServ
     matchRegistration: matchRegistrationIn,
 
     async recordHit(input: RecordBlockedHit): Promise<{ readonly ref_id: string }> {
-      return writeHits(input, [
+      return recordInForce(input, [
         { dimension: input.dimension, value_hmac: input.value_hmac, rule_id: input.rule_id },
       ]);
     },
 
-    recordHits: writeHits,
+    recordHits: recordInForce,
+
+    ruleInForce(key: RiskRuleKey, executor?: Kysely<DB>): Promise<boolean> {
+      return rules.isEnabled(key, executor);
+    },
 
     async allowBlockedRegistration(
       trx: Transaction<DB>,

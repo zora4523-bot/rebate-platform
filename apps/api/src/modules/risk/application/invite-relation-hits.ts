@@ -15,11 +15,16 @@
 // record; the writer never reads the wall clock. value_hmac is computed by the caller and stored as
 // given. Insert-only: nothing is updated or deleted.
 //
+// Rule status (B1-03zh, BR-ID-36 细则「规则清单的启停」, D10-536; ./risk-rule-status.ts): while the
+// rule of the app is disabled, record writes nothing (read through the caller's transaction,
+// cached for the configuration items' period on the injected Clock).
+//
 // Rule ↔ dimension: the same-device rules record dimension device_id_hash, the self and descendant
 // rules user_id (E23 §9.2 3; review S2 of the rule tests). Any other pairing is refused.
 import type { DB } from '@couli/db';
 import { sql, type Transaction } from 'kysely';
 import { newUuidV7, type Clock } from '../../platform/index.ts';
+import { createRiskRuleStatusReader, type RiskRuleStatusReader } from './risk-rule-status.ts';
 
 export type InviteRelationHitRuleId =
   'inv_08_self' | 'inv_08_descendant' | 'inv_08_same_device' | 'inv_09_same_device';
@@ -41,6 +46,8 @@ export interface InviteRelationHitWriter {
 
 export interface InviteRelationHitWriterOptions {
   readonly clock: Clock;
+  /** Rule status reader (B1-03zh); defaults to one of its own on `clock`, read through trx. */
+  readonly rules?: RiskRuleStatusReader;
 }
 
 /** The dimension each rule records (E23 §9.2 3). */
@@ -90,9 +97,12 @@ export function createInviteRelationHitWriter(
   options: InviteRelationHitWriterOptions,
 ): InviteRelationHitWriter {
   const { clock } = options;
+  const rules = options.rules ?? createRiskRuleStatusReader({ clock });
   return {
     async record(trx, rawInput) {
       const input = validate(rawInput);
+      // A disabled rule writes no hit row (BR-ID-36).
+      if (!(await rules.isEnabled({ app_id: input.app_id, rule_id: input.rule_id }, trx))) return;
       const now = clock.now();
       const app = trx.withSchema('app');
       await app

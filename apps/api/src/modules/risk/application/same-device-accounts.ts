@@ -34,6 +34,13 @@
 // concurrent writer that bypassed the lock committed the judgement first, nothing is inserted, no
 // hit row is written and the stored result is re-read and returned.
 //
+// Rule status (B1-03zh, BR-ID-36 细则「规则清单的启停」, D10-536; ./risk-rule-status.ts): an object
+// judged earlier replays its stored conclusion as before; otherwise, while SAME_DEVICE_MULTI_ACCOUNT
+// of the app is disabled, the judgement answers unmarked with no devices and writes nothing (no
+// rule row, no judgement row, no hit), so an object judged while the rule is off is judged afresh
+// once it is on again. The status is read through the judging transaction and cached for the
+// configuration items' period on the injected Clock.
+//
 // Configuration: risk.device_login_accounts_limit is a safe positive integer, else 3;
 // risk.merge_tombstone_dedupe is a JSON boolean, else on. A malformed value or a failed read logs
 // one warn line (key only, no value) and uses the default (BR: unconfigured means the default; the
@@ -53,6 +60,7 @@ import {
   rankSameDeviceAccounts,
 } from '../domain/same-device-ranking.ts';
 import type { RateLimitConfigReader } from './rate-limit.ts';
+import { createRiskRuleStatusReader, type RiskRuleStatusReader } from './risk-rule-status.ts';
 
 /** identity returns first successful logins per account/device in the closed window.
  * Include merged tombstones and their target IDs from user_oauth; risk owns dedupe/ranking.
@@ -117,6 +125,8 @@ export interface SameDeviceAccountsOptions {
   readonly logins: SameDeviceLoginReader;
   /** Bind the existing configuration port to the judging transaction; no pooled reads. */
   readonly config: (handle: Kysely<DB>) => RateLimitConfigReader;
+  /** Rule status reader (B1-03zh); defaults to one of its own on `clock`, read through trx. */
+  readonly rules?: RiskRuleStatusReader;
 }
 
 /** BR-ID-37: the sliding window, 720 hours. */
@@ -213,6 +223,7 @@ export function createSameDeviceAccountsCheck(
   options: SameDeviceAccountsOptions,
 ): SameDeviceAccountsCheck {
   const { clock, logger, logins } = options;
+  const rules = options.rules ?? createRiskRuleStatusReader({ clock });
 
   /**
    * The stored value of one key; undefined when missing. A failed read logs and is undefined,
@@ -327,6 +338,10 @@ export function createSameDeviceAccountsCheck(
     await lockRef(trx, input);
     const prior = await stored(trx, input);
     if (prior !== null) return prior;
+    // A disabled rule judges nothing and writes nothing (BR-ID-36).
+    if (!(await rules.isEnabled({ app_id: input.app_id, rule_id: RULE_ID }, trx))) {
+      return { marked: false, devices: [] };
+    }
     const now = clock.now();
     const { devices, hit } = await rank(trx, input, now);
     const result: SameDeviceAccountsResult = { marked: hit.length > 0, devices };

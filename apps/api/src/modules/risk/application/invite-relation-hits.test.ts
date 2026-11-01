@@ -107,7 +107,7 @@ it('[AC-B1-03x#2][AC-B1-03x#3] 先登记规则（ON CONFLICT (app_id, rule_id) D
     clock,
   );
   expect(error).toBeUndefined();
-  const writes = queries.filter((q) => !/^(begin|commit|rollback)/i.test(q.sql));
+  const writes = queries.filter((q) => !/^(begin|commit|rollback|select)/i.test(q.sql));
   expect(writes).toHaveLength(2);
   const [rule, hit] = writes as [CompiledQuery, CompiledQuery];
   expect(rule.sql).toMatch(/^insert into "app"\."risk_rules"/);
@@ -139,4 +139,44 @@ it('[AC-B1-03x#2][AC-B1-03x#3] 先登记规则（ON CONFLICT (app_id, rule_id) D
     USER,
     now,
   ]);
+});
+
+it('[AC-B1-03zh#17][BR-ID-36] 规则停用：只读规则状态，不登记规则、不写命中', async () => {
+  const queries: CompiledQuery[] = [];
+  const compiler = new PostgresQueryCompiler();
+  const db = new Kysely<DB>({
+    dialect: {
+      createDriver: () => new DummyDriver(),
+      createAdapter: () => new PostgresAdapter(),
+      createIntrospector: (handle) => new PostgresIntrospector(handle),
+      createQueryCompiler: () => new PostgresQueryCompiler(),
+    },
+    plugins: [
+      {
+        transformQuery(args) {
+          queries.push(compiler.compileQuery(args.node, args.queryId));
+          return args.node;
+        },
+        async transformResult(args) {
+          // The rule status read answers disabled; nothing else is read.
+          return queries.at(-1)?.sql.startsWith('select "status" from "app"."risk_rules"')
+            ? { ...args.result, rows: [{ status: 'disabled' }] }
+            : args.result;
+        },
+      },
+    ],
+  });
+  try {
+    const writer = createInviteRelationHitWriter({ clock: new FixedClock(AT) });
+    await db.transaction().execute(async (trx) => {
+      await writer.record(trx, { ...base, rule_id: 'inv_08_self', dimension: 'user_id' });
+    });
+    const statements = queries.filter((q) => !/^(begin|commit|rollback)/i.test(q.sql));
+    expect(statements.map((q) => q.sql)).toEqual([
+      'select "status" from "app"."risk_rules" where "app_id" = $1 and "rule_id" = $2',
+    ]);
+    expect(statements[0]!.parameters).toEqual(['app_a', 'inv_08_self']);
+  } finally {
+    await db.destroy();
+  }
 });

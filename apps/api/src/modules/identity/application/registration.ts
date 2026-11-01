@@ -22,7 +22,11 @@
 //      with created_at > Clock − 30×24 h (countDeviceRegistrations);
 //   5. count ≥ limit: the release port of B1-03d (one-time pass after a granted appeal, BR-ID-36
 //      结案; default: no) — true goes on as usual, anything else answers 44001
-//      device_register_limit with what B1-03d needs to record the hit;
+//      device_register_limit with what B1-03d needs to record the hit. Before counting, the
+//      rule status port deviceLimitInForce (B1-03zh, BR-ID-36 细则「规则清单的启停」, read through
+//      the caller's transaction) says whether DEVICE_REGISTER_LIMIT of the app takes part in
+//      judgements: false → no count and no limit (the registration goes on, nothing to record);
+//      no port → in force;
 //   6. the users row: id UUIDv7 from the Clock, phone ciphertext and blind index, default nickname
 //      and avatar, level, register_method, registered_channel (X-Channel), an invite code (at most
 //      5 candidates, each filtered by the sensitive words, then inserted after a savepoint; a hit
@@ -186,6 +190,13 @@ export interface RegistrationOptions {
       readonly phone_hmac: string | null;
       readonly third_party_digest: string | null;
     },
+  ) => Promise<boolean>;
+  // B1-03zh (BR-ID-36): whether DEVICE_REGISTER_LIMIT of the app takes part in judgements now,
+  // read through trx (no second pooled connection); asked before the device count. Absent → in
+  // force.
+  readonly deviceLimitInForce?: (
+    trx: Transaction<DB>,
+    input: { readonly app_id: string },
   ) => Promise<boolean>;
   readonly recordInitialLevel?: (
     trx: Transaction<DB>,
@@ -546,46 +557,53 @@ export function createRegistrationService(options: RegistrationOptions): Registr
         logger.info({ app_id: appId, register_method: registerMethod }, 'registration_phone_taken');
         return { outcome: 'phone_taken' };
       }
-      const records = await deviceRegistrationsSince(
-        trx,
-        appId,
-        deviceHash,
-        now,
-        DEVICE_REGISTER_WINDOW_MS,
-      );
-      const count = countDeviceRegistrations(
-        records,
-        { app_id: appId, device_hash: deviceHash },
-        now,
-        dedupe,
-      );
-      if (count >= limit) {
-        const context: DeviceLimitContext = {
-          app_id: appId,
-          device_hash: deviceHash,
-          count,
-          limit,
-        };
-        const allow = options.allowBlockedRegistration;
-        const allowed =
-          allow === undefined
-            ? false
-            : await allow(trx, {
-                ...context,
-                phone_hmac: phoneHmac,
-                third_party_digest: command.third_party_digest ?? null,
-              });
-        if (allowed !== true) {
+      // A disabled DEVICE_REGISTER_LIMIT decides nothing (BR-ID-36): asked before counting.
+      const limitInForce =
+        options.deviceLimitInForce === undefined
+          ? true
+          : await options.deviceLimitInForce(trx, { app_id: appId });
+      if (limitInForce) {
+        const records = await deviceRegistrationsSince(
+          trx,
+          appId,
+          deviceHash,
+          now,
+          DEVICE_REGISTER_WINDOW_MS,
+        );
+        const count = countDeviceRegistrations(
+          records,
+          { app_id: appId, device_hash: deviceHash },
+          now,
+          dedupe,
+        );
+        if (count >= limit) {
+          const context: DeviceLimitContext = {
+            app_id: appId,
+            device_hash: deviceHash,
+            count,
+            limit,
+          };
+          const allow = options.allowBlockedRegistration;
+          const allowed =
+            allow === undefined
+              ? false
+              : await allow(trx, {
+                  ...context,
+                  phone_hmac: phoneHmac,
+                  third_party_digest: command.third_party_digest ?? null,
+                });
+          if (allowed !== true) {
+            logger.info(
+              { app_id: appId, register_method: registerMethod, count, limit },
+              'registration_device_limited',
+            );
+            return { code: 44001, kind: 'device_register_limit', ...context };
+          }
           logger.info(
             { app_id: appId, register_method: registerMethod, count, limit },
-            'registration_device_limited',
+            'registration_device_limit_released',
           );
-          return { code: 44001, kind: 'device_register_limit', ...context };
         }
-        logger.info(
-          { app_id: appId, register_method: registerMethod, count, limit },
-          'registration_device_limit_released',
-        );
       }
     }
 

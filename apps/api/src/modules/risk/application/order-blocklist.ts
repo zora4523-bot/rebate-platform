@@ -14,6 +14,11 @@
 //   retry of the same (order, value, risk_action) ends on risk_hits_blacklist_once_key and adds
 //   nothing. Escalating an order from manual_review to void_commission (D10-293) appends a second
 //   row; the first row is never rewritten (risk_hits is append only, no UPDATE grant).
+// Rule status (B1-03zh, BR-ID-36 细则「规则清单的启停」, D10-536; ./risk-rule-status.ts, read through
+//   the caller's transaction and cached for the configuration items' period on the injected
+//   Clock): while BLACKLIST_HIT of the app is disabled, match returns no entry (the order is
+//   neither sent to manual_review nor voided because of it) and recordHit writes nothing; hits
+//   already written stay.
 // importChannels: per row, under a transaction-scoped advisory lock on (app_id, union_account_id,
 //   relation_id) taken in sorted order (no deadlock between batches), an existing effective entry
 //   (active, end_at NULL or later than imported_at; no start_at condition, K-5) is returned as
@@ -22,6 +27,7 @@
 import type { DB } from '@couli/db';
 import { sql, type Transaction } from 'kysely';
 import { newUuidV7, type Clock, type FieldCrypto } from '../../platform/index.ts';
+import { createRiskRuleStatusReader, type RiskRuleStatusReader } from './risk-rule-status.ts';
 
 export type OrderBlocklistDimension = 'order_no_suffix' | 'channel';
 
@@ -84,6 +90,8 @@ export interface OrderBlocklistOptions {
   readonly clock: Clock;
   /** HMAC 上下文为 blocklist.order_no_suffix / blocklist.channel，沿用名单命名惯例。 */
   readonly crypto: Pick<FieldCrypto, 'blindIndex'>;
+  /** Rule status reader (B1-03zh); defaults to one of its own on `clock`, read through trx. */
+  readonly rules?: RiskRuleStatusReader;
 }
 
 const RULE_ID = 'BLACKLIST_HIT';
@@ -124,10 +132,13 @@ function lockKey(appId: string, unionAccountId: string, relationId: string): str
 
 export function createOrderBlocklistPorts(options: OrderBlocklistOptions): OrderBlocklistPorts {
   const { clock, crypto } = options;
+  const rules = options.rules ?? createRiskRuleStatusReader({ clock });
   return {
     async match(trx, input) {
       const appId = requireText(input.app_id, 'app_id');
       const attrAt = requireInstant(input.attr_at, 'attr_at');
+      // A disabled BLACKLIST_HIT decides nothing (BR-ID-36).
+      if (!(await rules.isEnabled({ app_id: appId, rule_id: RULE_ID }, trx))) return [];
       const app = trx.withSchema('app');
       const result: OrderBlocklistMatch[] = [];
       const relationId = input.relation_id;
@@ -192,6 +203,8 @@ export function createOrderBlocklistPorts(options: OrderBlocklistOptions): Order
       if (input.user_id !== null && typeof input.user_id !== 'string') {
         throw new TypeError('order blocklist: user_id must be a string or null');
       }
+      // A disabled BLACKLIST_HIT writes no hit row (BR-ID-36).
+      if (!(await rules.isEnabled({ app_id: appId, rule_id: RULE_ID }, trx))) return;
       const now = clock.now();
       const app = trx.withSchema('app');
       await app

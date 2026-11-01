@@ -535,3 +535,35 @@ it('[AC-B1-35b#1] 运行时：缺 party、未知 party 或未知类型的 ref �
     expect(recorder.begun).toEqual([]);
   }
 });
+
+/** The default answers, with SAME_DEVICE_MULTI_ACCOUNT disabled in risk_rules (B1-03zh). */
+const RULE_STATUS = 'select "status" from "app"."risk_rules" where ';
+const disabledRespond: Respond = (sql, index) =>
+  sql.startsWith(RULE_STATUS) ? [{ status: 'disabled' }] : defaultRespond(sql, index);
+
+it('[AC-B1-03zh#18][BR-ID-36] 规则停用：不读配置与登录、不判定，回未标记，不登记规则、不写判定行与命中行', async () => {
+  const { windows, configHandles, writes, statements, judge } = setup(
+    {},
+    { respond: disabledRespond },
+  );
+  expect(await judge('c')).toEqual({ marked: false, devices: [] });
+  expect(windows).toEqual([]);
+  expect(configHandles).toEqual([]);
+  expect(writes()).toEqual([]);
+  expect(statements.at(-1)!.startsWith(RULE_STATUS)).toBe(true);
+});
+
+it('[AC-B1-03zh#18][BR-ID-36] 规则停用前已判定的对象照常回放存储结论（停用不追溯）', async () => {
+  const stored = { marked: true, devices: [{ device_hash: H, rank: 4 }] };
+  const respond = storedRespond(stored);
+  const { writes, statements, judge } = setup(
+    {},
+    {
+      respond: (sql, index) =>
+        sql.startsWith(RULE_STATUS) ? [{ status: 'disabled' }] : respond(sql, index),
+    },
+  );
+  expect(await judge('c')).toEqual(stored);
+  expect(writes()).toEqual([]);
+  expect(statements.some((sql) => sql.startsWith(RULE_STATUS))).toBe(false);
+});

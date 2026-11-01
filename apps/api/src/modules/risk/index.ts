@@ -252,7 +252,10 @@ export type {
 export type { RiskScanWorkerPorts } from './risk-scan.module.ts';
 // B1-03zh: the rule status read port (BR-ID-36 细则「规则清单的启停」, D10-536), read only; identity
 // and growth get it through app.module. Rule tests: test/spec/risk/rule-toggle-identity/**.
-export { createRiskRuleStatusReader } from './application/risk-rule-status.ts';
+export {
+  RISK_RULE_STATUS_TTL_MS,
+  createRiskRuleStatusReader,
+} from './application/risk-rule-status.ts';
 export type {
   RiskRuleKey,
   RiskRuleStatusReader,

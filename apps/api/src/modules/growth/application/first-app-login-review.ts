@@ -7,6 +7,10 @@
 // review(trx, { app_id, user_id, device_id_hash }), all on the caller's transaction:
 //   1. reads the invitee's parent_id / parent_bind_source (a plain read, no row lock): not landing
 //      or no parent → nothing (defence in depth; identity already filters);
+//   1a. asks risk's rule status port (B1-03zh, BR-ID-36 细则「规则清单的启停」, D10-536; read
+//      through the caller's transaction) whether inv_09_same_device of the app takes part in
+//      judgements: disabled → no judgement at all (the binding stays, no relation change, no hit);
+//      no port → in force;
 //   2. reads the inviter's retained login device hashes (identity's port); the invitee's set is
 //      this login's device_id_hash alone (BR-INV-09) → no shared device → nothing is written;
 //   3. hit: takes the app's relation write lock (lockRelationWrites, held to the end of the
@@ -41,9 +45,20 @@ export interface LandingLoginReview {
   review(trx: Transaction<DB>, input: LandingLoginReviewInput): Promise<void>;
 }
 
-/** The app assembler supplies identity's reader and risk's transactional hit writer. */
+/**
+ * The app assembler supplies identity's reader, risk's transactional hit writer and risk's rule
+ * status read port.
+ */
 export interface FirstAppLoginReviewDeps {
   readonly clock: Clock;
+  /**
+   * B1-03zh (BR-ID-36): whether the rule of the app takes part in judgements now, read through
+   * trx; asked before the same-device judgement. Absent → in force.
+   */
+  readonly ruleInForce?: (
+    trx: Transaction<DB>,
+    key: { readonly app_id: string; readonly rule_id: 'inv_09_same_device' },
+  ) => Promise<boolean>;
   readonly loginDevices: {
     read(
       trx: Transaction<DB>,
@@ -85,7 +100,7 @@ function checkInput(input: LandingLoginReviewInput): void {
 }
 
 export function createFirstAppLoginReview(deps: FirstAppLoginReviewDeps): LandingLoginReview {
-  const { clock, loginDevices, hitWriter } = deps;
+  const { clock, loginDevices, hitWriter, ruleInForce } = deps;
   return {
     async review(trx, input) {
       checkInput(input);
@@ -101,6 +116,12 @@ export function createFirstAppLoginReview(deps: FirstAppLoginReviewDeps): Landin
         throw new Error('growth: first App login review subject not found');
       const parentId = invitee.parent_id;
       if (parentId === null || invitee.parent_bind_source !== LANDING) return;
+      // A disabled rule judges nothing (BR-ID-36): asked before the judgement.
+      if (
+        ruleInForce !== undefined &&
+        !(await ruleInForce(trx, { app_id: appId, rule_id: RULE_ID }))
+      )
+        return;
 
       // BR-INV-08 ③ with the invitee's set = this login's device only (BR-INV-09).
       const inviterHashes = await loginDevices.read(trx, { app_id: appId, user_id: parentId });

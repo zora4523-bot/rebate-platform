@@ -764,3 +764,43 @@ it('[AC-B1-11g#13] a phone-limited app send never commits its attempt', async ()
   expect(await f.send()).toEqual({ code: 42901, retryAfterSec: 60 });
   expect(commit).not.toHaveBeenCalled();
 });
+
+it('[AC-B1-03zh#5][BR-ID-36][BR-ID-05] SMS_BLOCKED_PREFIX 停用：先问规则状态，号段内号码不判定、不记命中，照常往下发码', async () => {
+  const blockedPrefixInForce = vi.fn(async () => false);
+  const blockedPrefix = vi.fn(async () => undefined);
+  const phoneBlocklist = vi.fn(async () => null);
+  const f = setup({ hooks: { blockedPrefixInForce, blockedPrefix, phoneBlocklist } });
+  expect(await f.send('17012345678')).toMatchObject({ code: 0 });
+  expect(blockedPrefixInForce).toHaveBeenCalledWith(
+    expect.objectContaining({ app_id: 'couli', phone: '17012345678', purpose: 'login' }),
+  );
+  expect(blockedPrefix).not.toHaveBeenCalled();
+  // No prefix decision at all: the prefix list is not even read.
+  expect(f.configValue).not.toHaveBeenCalledWith('couli', 'sms.blocked_prefixes');
+  expect(phoneBlocklist).toHaveBeenCalledTimes(1);
+  expect(f.messages.map((m) => m.phone)).toEqual(['17012345678']);
+});
+
+it('[AC-B1-03zh#5][BR-ID-36][BR-ID-05] SMS_BLOCKED_PREFIX 生效（或无此端口）：照旧 44001 并记命中', async () => {
+  const blockedPrefix = vi.fn(async () => undefined);
+  const enabled = setup({ hooks: { blockedPrefixInForce: async () => true, blockedPrefix } });
+  expect(await enabled.send('17012345678')).toEqual({ code: 44001, kind: 'blocked_prefix' });
+  expect(blockedPrefix).toHaveBeenCalledTimes(1);
+  expect(enabled.messages).toEqual([]);
+  const absent = setup({ hooks: { blockedPrefix } });
+  expect(await absent.send('17012345678')).toEqual({ code: 44001, kind: 'blocked_prefix' });
+  expect(blockedPrefix).toHaveBeenCalledTimes(2);
+});
+
+it('[AC-B1-03zh#5][BR-ID-36] 规则状态读取失败：照常抛出，不发码也不放行', async () => {
+  const f = setup({
+    hooks: {
+      blockedPrefixInForce: async () => {
+        throw new Error('down');
+      },
+    },
+  });
+  await expect(f.send('17012345678')).rejects.toThrow('down');
+  expect(f.messages).toEqual([]);
+  expect(f.calls).toEqual([]);
+});

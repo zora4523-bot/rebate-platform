@@ -10,6 +10,12 @@
 //   3. the same-device registration limit (registration.ts allowBlockedRegistration: the
 //      one-time release read, default deny; sms-login.ts recordDeviceLimit: the hit of the
 //      refusal, rule DEVICE_REGISTER_LIMIT, dimension device, value the device hash).
+// Rule status (B1-03zh, BR-ID-36 细则「规则清单的启停」, D10-536): identity's own two decisions ask
+// risk's rule status read port (BlocklistService.ruleInForce, the blocklist's own reader and cache)
+// before deciding — smsHooks.blockedPrefixInForce (SMS_BLOCKED_PREFIX) and
+// registration.deviceLimitInForce (DEVICE_REGISTER_LIMIT, read through the registration's
+// transaction). A disabled rule is not judged, so nothing is refused and no hit is due; a risk
+// port without ruleInForce leaves both hooks out (in force, as before).
 // A login-purpose send is a register request (BR-ID-36 请求类型 register: no session, no user);
 // bind and step_up sends have no request type yet and no user. A step_up send for
 // account_deletion skips the blocklist (BR-ID-31 blocks registration, phone change, payout
@@ -20,11 +26,13 @@
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for types, `.ts`
 // relative imports, no decorators, no Nest.
+import type { DB } from '@couli/db';
+import type { Transaction } from 'kysely';
 import type { FieldCrypto } from '../../platform/index.ts';
 import type { BlocklistService } from '../../risk/index.ts';
 import { PHONE_BLIND_INDEX_CONTEXT } from '../domain/registration.ts';
 import type { RegistrationOptions } from './registration.ts';
-import type { SmsHooks, SmsPurpose } from './sms-codes.ts';
+import type { SmsHooks, SmsPurpose, SmsRequest } from './sms-codes.ts';
 import type { SmsLoginOptions } from './sms-login.ts';
 import type { OauthLoginOptions } from './oauth-login.ts';
 
@@ -37,10 +45,13 @@ export const PHONE_PREFIX_DIMENSION = 'phone_prefix';
 const ACCOUNT_DELETION_ACTION = 'account_deletion';
 
 export interface IdentityRiskPorts {
-  readonly smsHooks: Pick<SmsHooks, 'phoneBlocklist' | 'blockedPrefix'>;
+  readonly smsHooks: Pick<SmsHooks, 'phoneBlocklist' | 'blockedPrefix' | 'blockedPrefixInForce'>;
   readonly login: Pick<SmsLoginOptions, 'registrationBlocklist' | 'recordDeviceLimit'>;
   readonly oauthLogin: Pick<OauthLoginOptions, 'registrationBlocklist'>;
-  readonly registration: Pick<RegistrationOptions, 'allowBlockedRegistration'>;
+  readonly registration: Pick<
+    RegistrationOptions,
+    'allowBlockedRegistration' | 'deviceLimitInForce'
+  >;
 }
 
 function requestTypeOf(purpose: SmsPurpose): 'register' | null {
@@ -48,6 +59,7 @@ function requestTypeOf(purpose: SmsPurpose): 'register' | null {
 }
 
 export function identityRiskPorts(risk: BlocklistService, crypto: FieldCrypto): IdentityRiskPorts {
+  const ruleInForce = risk.ruleInForce?.bind(risk);
   return {
     oauthLogin: {
       async registrationBlocklist(trx, input) {
@@ -68,6 +80,12 @@ export function identityRiskPorts(risk: BlocklistService, crypto: FieldCrypto): 
       },
     },
     smsHooks: {
+      ...(ruleInForce === undefined
+        ? {}
+        : {
+            blockedPrefixInForce: (request: SmsRequest) =>
+              ruleInForce({ app_id: request.app_id, rule_id: SMS_BLOCKED_PREFIX_RULE }),
+          }),
       async phoneBlocklist(request) {
         if (request.purpose === 'step_up' && request.action === ACCOUNT_DELETION_ACTION) {
           return null;
@@ -132,6 +150,12 @@ export function identityRiskPorts(risk: BlocklistService, crypto: FieldCrypto): 
     },
     registration: {
       allowBlockedRegistration: (trx, input) => risk.allowBlockedRegistration(trx, input),
+      ...(ruleInForce === undefined
+        ? {}
+        : {
+            deviceLimitInForce: (trx: Transaction<DB>, input: { readonly app_id: string }) =>
+              ruleInForce({ app_id: input.app_id, rule_id: DEVICE_REGISTER_LIMIT_RULE }, trx),
+          }),
     },
   };
 }

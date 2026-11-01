@@ -400,6 +400,7 @@ import {
   SIGNATURE_CHECK,
   createBlocklistService,
   createInviteRelationHitWriter,
+  createRiskRuleStatusReader,
   createSameDeviceAccountsCheck,
   createRiskStateService,
   createDeviceRegistrationRisk,
@@ -1323,12 +1324,17 @@ function identityModule(contentReader: SharedContentReader): DynamicModule {
     // Runs only on the login's own transaction (no handle of its own), so it needs no database.
     firstAppLoginReview: {
       inject: [CLOCK],
-      useFactory: (clock: Clock): FirstAppLoginReview =>
-        createFirstAppLoginReview({
+      useFactory: (clock: Clock): FirstAppLoginReview => {
+        // One rule status reader (B1-03zh, BR-ID-36) for the judgement and its hit writer, so both
+        // share one cached answer; it reads only through the login's transaction.
+        const rules = createRiskRuleStatusReader({ clock });
+        return createFirstAppLoginReview({
           clock,
           loginDevices: createInviteLoginDevicesReader(),
-          hitWriter: createInviteRelationHitWriter({ clock }),
-        }),
+          hitWriter: createInviteRelationHitWriter({ clock, rules }),
+          ruleInForce: (trx, key) => rules.isEnabled(key, trx),
+        });
+      },
     },
   });
 }
