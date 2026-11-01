@@ -23,6 +23,55 @@ test_paths:
   - 'test/spec/orders/wiring/**'
   - 'test/spec/orders/manual-sync/**'
   - 'test/spec/orders/snapshot-retry/wiring.test.ts'
+red_exempt:
+  - file: test/spec/orders/platform-rules/values.test.ts
+    test: '[AC-B1-08za#3] 归因参数解析：京东只读 subUnionId 整串第 1 组，拼多多只读 custom_parameters（app=n、8 位字符串 uid），互不借用'
+    reason: '冻结用例测试体未改；只因本任务改了 platform-rules/kit.ts 的 PINNED 里京东 syncWindowCapMs 而被整文件连带判定，本条不读该字段，新旧数据下都成立，无法因正当理由变红'
+  - file: test/spec/orders/platform-rules/values.test.ts
+    test: '[AC-B1-08za#4] 归因方式：淘宝走 relation_id 绑定、不解析 attr_code；京东 / 拼多多按 attr_code 查用户、不查绑定'
+    reason: '冻结用例测试体未改；只因本任务改了 platform-rules/kit.ts 的 PINNED 里京东 syncWindowCapMs 而被整文件连带判定，本条不读该字段，新旧数据下都成立，无法因正当理由变红'
+  - file: test/spec/orders/platform-rules/values.test.ts
+    test: '[AC-B1-08za#5] 来源短码：京东取 subUnionId 第 2 组，拼多多取 custom_parameters.lk（1–16 位 [0-9a-z]），淘宝恒为 null'
+    reason: '冻结用例测试体未改；只因本任务改了 platform-rules/kit.ts 的 PINNED 里京东 syncWindowCapMs 而被整文件连带判定，本条不读该字段，新旧数据下都成立，无法因正当理由变红'
+  - file: test/spec/orders/platform-rules/values.test.ts
+    test: '[AC-B1-08za#6] 购买场景回退：只有拼多多在推广位 fallback 时读 custom_parameters.sc；推广位场景已知时各平台都按推广位'
+    reason: '冻结用例测试体未改；只因本任务改了 platform-rules/kit.ts 的 PINNED 里京东 syncWindowCapMs 而被整文件连带判定，本条不读该字段，新旧数据下都成立，无法因正当理由变红'
+  - file: test/spec/orders/platform-rules/values.test.ts
+    test: '[AC-B1-08za#7] 单号规范化：拼多多两侧去掉全部连字符（保留前导零与空格），其他平台与未登记平台原样'
+    reason: '冻结用例测试体未改；只因本任务改了 platform-rules/kit.ts 的 PINNED 里京东 syncWindowCapMs 而被整文件连带判定，本条不读该字段，新旧数据下都成立，无法因正当理由变红'
+  - file: test/spec/orders/platform-rules/values.test.ts
+    test: '[AC-B1-08za#8] 商品键推送：京东不推（不读 key_prefix、返回 null），拼多多与淘宝按平台读 key_prefix 推导'
+    reason: '冻结用例测试体未改；只因本任务改了 platform-rules/kit.ts 的 PINNED 里京东 syncWindowCapMs 而被整文件连带判定，本条不读该字段，新旧数据下都成立，无法因正当理由变红'
+  - file: test/spec/orders/platform-rules/values.test.ts
+    test: '[AC-B1-08za#10] 商品 ID 字段名：淘宝 item_id、京东 itemId、拼多多 goods_sign；库内订单还原只填该平台那一个字段'
+    reason: '冻结用例测试体未改；只因本任务改了 platform-rules/kit.ts 的 PINNED 里京东 syncWindowCapMs 而被整文件连带判定，本条不读该字段，新旧数据下都成立，无法因正当理由变红'
+  - file: test/spec/orders/wiring/module.test.ts
+    test: '[AC-B1-08n#2] 缺 DB 或队列（onlyQueueMissing=false）提供 null 并恰一条 info'
+    reason: '冻结用例测试体未改；只因同名支撑文件 kit.ts 改动或新增（platform-rules、jd-sync）被按文件名整文件连带判定，本条不读这些文件，也不涉及京东调度，新旧代码下都成立'
+  - file: test/spec/orders/wiring/module.test.ts
+    test: '[AC-B1-08n#2] 缺 DB 或队列（onlyQueueMissing=true）提供 null 并恰一条 info'
+    reason: '冻结用例测试体未改；只因同名支撑文件 kit.ts 改动或新增（platform-rules、jd-sync）被按文件名整文件连带判定，本条不读这些文件，也不涉及京东调度，新旧代码下都成立'
+  - file: test/spec/orders/wiring/module.test.ts
+    test: '[AC-B1-08n#3] api 不装配订单同步'
+    reason: '冻结用例测试体未改；只因同名支撑文件 kit.ts 改动或新增（platform-rules、jd-sync）被按文件名整文件连带判定，本条不读这些文件，也不涉及京东调度，新旧代码下都成立'
+  - file: test/spec/orders/wiring/module.test.ts
+    test: '[AC-B1-08n#3] stream 不装配订单同步'
+    reason: '冻结用例测试体未改；只因同名支撑文件 kit.ts 改动或新增（platform-rules、jd-sync）被按文件名整文件连带判定，本条不读这些文件，也不涉及京东调度，新旧代码下都成立'
+  - file: test/spec/orders/wiring/module.test.ts
+    test: '[AC-B1-08n#3] admin 不装配订单同步'
+    reason: '冻结用例测试体未改；只因同名支撑文件 kit.ts 改动或新增（platform-rules、jd-sync）被按文件名整文件连带判定，本条不读这些文件，也不涉及京东调度，新旧代码下都成立'
+  - file: test/spec/orders/wiring/module.test.ts
+    test: '[AC-B1-08n#3] payout 不装配订单同步'
+    reason: '冻结用例测试体未改；只因同名支撑文件 kit.ts 改动或新增（platform-rules、jd-sync）被按文件名整文件连带判定，本条不读这些文件，也不涉及京东调度，新旧代码下都成立'
+  - file: test/spec/orders/wiring/module.test.ts
+    test: '[AC-B1-08n#4] 归因与更新装配共享真实 EVENT_BUS，updateStep 必须注入，mtimeOrdering 默认关闭'
+    reason: '冻结用例测试体未改；只因同名支撑文件 kit.ts 改动或新增（platform-rules、jd-sync）被按文件名整文件连带判定，本条不读这些文件，也不涉及京东调度，新旧代码下都成立'
+  - file: test/spec/orders/wiring/module.test.ts
+    test: '[AC-B1-08n#21] worker 的处理器 registry 与 access 熔断读取使用同一套治理包装'
+    reason: '冻结用例测试体未改；只因同名支撑文件 kit.ts 改动或新增（platform-rules、jd-sync）被按文件名整文件连带判定，本条不读这些文件，也不涉及京东调度，新旧代码下都成立'
+  - file: test/spec/orders/wiring/status-files.test.ts
+    test: '[AC-B1-08n#11] 装配时每个调度平台只读一次 CSV，随后 statusMaps 只取缓存'
+    reason: '冻结用例测试体未改；只因同名支撑文件 kit.ts 改动或新增（platform-rules、jd-sync）被按文件名整文件连带判定，本条钉只读一次 CSV，与调度平台名单无关，新旧代码下都成立'
 impl: claude
 tester: claude-independent
 accept:
