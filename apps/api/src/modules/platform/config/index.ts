@@ -101,6 +101,9 @@ export {
   openJdCredentials,
 } from './jd-startup.ts';
 export type { JdAppCredentials, JdStartupErrorCode } from './jd-startup.ts';
+// The real collection channels (B2-15k): names and paths, api / worker / admin entries only.
+export { readPayChannelsConfig } from './pay-channels.ts';
+export type { PayAlipayEnv, PayChannelsConfig, PayWechatEnv } from './pay-channels.ts';
 // Worker queue concurrency limits (B1-01zzk): per-queue overrides and the shared budget.
 export { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 export type { QueueConcurrencyConfigResult } from './queue-concurrency.ts';

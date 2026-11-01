@@ -97,6 +97,16 @@ export interface PayRefundInput {
   readonly reason: string;
 }
 
+/**
+ * B2-15k: the original of a refund, as the refund row knows it. Alipay's refund query needs it
+ * (docs-mirror/alipay/app-pay/01dcc0.md: trade_no, out_trade_no and out_request_no must agree with
+ * the refund); WeChat Pay's does not. Optional, so that the fake channel and earlier tests stand.
+ */
+export interface PayRefundOriginal {
+  readonly outTradeNo: string | null;
+  readonly channelTradeNo: string | null;
+}
+
 /** ok: the channel accepted the request (the result comes later); never «failed» (rule 7). */
 export type PayRefundResult =
   { readonly kind: 'ok' } | { readonly kind: 'unknown'; readonly reason: string };
@@ -172,7 +182,7 @@ export interface PayChannel {
   query(outTradeNo: string): Promise<PayQueryResult>;
   close(outTradeNo: string): Promise<PayCloseResult>;
   refund(input: PayRefundInput): Promise<PayRefundResult>;
-  refundQuery(outRefundNo: string): Promise<PayRefundQueryResult>;
+  refundQuery(outRefundNo: string, original?: PayRefundOriginal): Promise<PayRefundQueryResult>;
   verifyNotification(raw: PayRawNotification): Promise<PayNotificationResult>;
   /**
    * B2-15c: our app_id of a merchant / application identity, from this channel's configuration;

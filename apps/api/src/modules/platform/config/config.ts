@@ -25,6 +25,7 @@ import { readExportStoreConfig } from './export-store.ts';
 import { readMediaConfig } from './media.ts';
 import { readPddConfig, type PddClientConfig } from './pdd.ts';
 import { readPddQueryConfig } from './pdd-query.ts';
+import type { PayChannelsConfig } from './pay-channels.ts';
 import { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 import { readSmsConfig, type SmsConfig } from './sms.ts';
 import { readTaobaoConfig, type TaobaoAppConfig } from './taobao.ts';
@@ -270,6 +271,12 @@ export interface AppConfig {
    * runs the plan's concurrency with the default budget.
    */
   readonly queueLimits?: QueueLimits | undefined;
+  /**
+   * PAY_* (./pay-channels.ts, B2-15k): names and paths of the real collection channels, read by the
+   * api, worker and admin entries only (loadConfig's entry argument). Absent or null: no real
+   * channel, the payment module's factory fails closed. Never holds a key.
+   */
+  readonly payChannels?: PayChannelsConfig | null | undefined;
 }
 
 /** Where the internal /metrics listener binds (B1-01zzh). */
