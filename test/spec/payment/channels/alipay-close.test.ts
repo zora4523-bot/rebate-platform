@@ -1,5 +1,6 @@
 // B2-15k 支付宝关单（claude-independent，SPEC_REF deb521c2）：08 BR-PAY-05 ②（先查后关）、BR-PAY-04 细则
-// （TRADE_FINISHED）；任务书 9.3：10000 不算关闭成功，必须再查一次单；r3 必须改 ③（已签名的查询应答换外层键冒充关单）。
+// （TRADE_FINISHED）；任务书 9.3 与第 13 节裁定：10000 和验过签的业务错误都不算关闭成功，必须再查一次单；
+// r3 必须改 ③（已签名的查询应答换外层键冒充关单）。
 // 出处：docs-mirror/alipay/app-pay/02e7gn.md（业务响应 253、错误码 287-294）、02e7gm.md。未实测（BR-PAY-09）。
 import { expect, it } from 'vitest';
 import type { PayHttpResponse } from '../../../../apps/api/src/modules/payment/infra/channels/transport.ts';
@@ -20,6 +21,7 @@ import {
   expectUnknown,
   okOf,
   rawAnswer,
+  warnLines,
   type Route,
 } from './kit.ts';
 
@@ -118,24 +120,105 @@ it('[AC-B2-15k#807] 关单应答回显的单号与请求不符：unknown，不�
   expectUnknown(await h.channel.close(OUT));
 });
 
-it.each([
-  ['ACQ.TRADE_STATUS_ERROR', aliError('40004', 'ACQ.TRADE_STATUS_ERROR')],
-  ['ACQ.REASON_ILLEGAL_STATUS', aliError('40004', 'ACQ.REASON_ILLEGAL_STATUS')],
-  ['ACQ.SYSTEM_ERROR', aliError('40004', 'ACQ.SYSTEM_ERROR')],
-  ['ACQ.TRADE_NOT_EXIST', aliError('40004', 'ACQ.TRADE_NOT_EXIST')],
-  ['isp.unknow-error', aliError('20000', 'isp.unknow-error')],
-])(
-  '[AC-B2-15k#808] 验过签的关单错误 %s，而单仍是待支付：不凭错误码下结论，unknown',
-  async (_name, node) => {
+// 任务书第 13 节裁定：验过签的关单业务错误也要再查一次单，以查询结果定 closed / paid / not_exist；查询也拿不到结果才 unknown。
+// 02e7gn.md:276（isp.unknow-error）、289-294 写明的错误码。比如用户没付款、渠道按 time_expire 自动关单后，关单接口回
+// ACQ.TRADE_STATUS_ERROR：不再查就会每 5 分钟重试，一小时后才转人工（BR-PAY-05 ②③）。
+const CLOSE_ERRORS: [string, string][] = [
+  ['40004', 'ACQ.INVALID_PARAMETER'],
+  ['40004', 'ACQ.REASON_ILLEGAL_STATUS'],
+  ['40004', 'ACQ.REASON_TRADE_STATUS_INVALID'],
+  ['40004', 'ACQ.SYSTEM_ERROR'],
+  ['40004', 'ACQ.TRADE_NOT_EXIST'],
+  ['40004', 'ACQ.TRADE_STATUS_ERROR'],
+  ['20000', 'isp.unknow-error'],
+];
+
+it.each(CLOSE_ERRORS)(
+  '[AC-B2-15k#808] 验过签的关单错误 %s %s，而单仍是待支付：再查一次，不凭错误码下结论，unknown',
+  async (code, subCode) => {
     const h = alipayChannel(
       routes(
-        aliAnswer(CLOSE_NODE, node),
+        aliAnswer(CLOSE_NODE, aliError(code, subCode)),
         aliAnswer(QUERY_NODE, aliTrade({ trade_status: 'WAIT_BUYER_PAY' })),
       ),
     );
     expectUnknown(await h.channel.close(OUT));
+    expect(h.calls.map(aliMethod)).toEqual(['alipay.trade.close', 'alipay.trade.query']);
   },
 );
+
+const QUERY_DECIDES: [string, PayHttpResponse, string][] = [
+  ['TRADE_CLOSED', QUERY_CLOSED, 'closed'],
+  ['TRADE_SUCCESS', aliAnswer(QUERY_NODE, aliTrade()), 'paid'],
+  [
+    '40004 ACQ.TRADE_NOT_EXIST',
+    aliAnswer(QUERY_NODE, aliError('40004', 'ACQ.TRADE_NOT_EXIST')),
+    'not_exist',
+  ],
+];
+
+const ERROR_THEN_QUERY = CLOSE_ERRORS.flatMap(([code, subCode]) =>
+  QUERY_DECIDES.map(([name, query, state]) => [code, subCode, name, state, query] as const),
+);
+
+it.each(ERROR_THEN_QUERY)(
+  '[AC-B2-15k#810] 验过签的关单错误 %s %s 之后再查一次单：查到 %s → %s',
+  async (code, subCode, _name, state, query) => {
+    const h = alipayChannel(routes(aliAnswer(CLOSE_NODE, aliError(code, subCode)), query));
+    expect(okOf(await h.channel.close(OUT)).state).toBe(state);
+    expect(h.calls.map(aliMethod)).toEqual(['alipay.trade.close', 'alipay.trade.query']);
+  },
+);
+
+const STATUS_ERROR = aliAnswer(CLOSE_NODE, aliError('40004', 'ACQ.TRADE_STATUS_ERROR'));
+
+it.each([
+  ['查单 HTTP 500', rawAnswer('', 500)],
+  ['查单是系统错误', aliAnswer(QUERY_NODE, aliError('20000', 'isp.unknow-error'))],
+  ['查单单号不符', aliAnswer(QUERY_NODE, aliTrade({ out_trade_no: 'P-OTHER' }))],
+  ['查单验签不过', rawAnswer(`{"${QUERY_NODE}":{"code":"10000"},"sign":"bm90"}`)],
+])('[AC-B2-15k#811] 验过签的关单错误之后查单也拿不到结果（%s）：unknown', async (_name, query) => {
+  const h = alipayChannel(routes(STATUS_ERROR, query));
+  expectUnknown(await h.channel.close(OUT));
+  expect(h.calls.map(aliMethod)).toEqual(['alipay.trade.close', 'alipay.trade.query']);
+});
+
+it('[AC-B2-15k#812] 验过签的关单错误之后查单 transport 抛异常：unknown，不抛', async () => {
+  const h = alipayChannel((request) => {
+    if (aliMethod(request) === 'alipay.trade.close') return STATUS_ERROR;
+    throw new Error('boom');
+  });
+  expectUnknown(await h.channel.close(OUT));
+});
+
+it.each([
+  ['别的单号', { out_trade_no: 'P-OTHER' }],
+  ['别的 app_id', { app_id: '2021000000000002' }],
+  ['别的 seller_id', { seller_id: '2088000000000002' }],
+])(
+  '[AC-B2-15k#813] 任务书 9.2 串单：关单错误应答带了%s：unknown，不因为接着查到已关闭就算关闭',
+  async (_name, echo) => {
+    const answer = aliAnswer(CLOSE_NODE, aliError('40004', 'ACQ.TRADE_STATUS_ERROR', echo));
+    const h = alipayChannel(routes(answer, QUERY_CLOSED));
+    expectUnknown(await h.channel.close(OUT));
+  },
+);
+
+it.each(aliEnvelopeFaults(CLOSE_NODE, aliError('40004', 'ACQ.TRADE_STATUS_ERROR')))(
+  '[AC-B2-15k#814] 关单错误应答没有验过签（%s）：不是「验过签的业务错误」，unknown，不因为接着查到已关闭就算关闭',
+  async (_name, answer) => {
+    const h = alipayChannel(routes(answer, QUERY_CLOSED));
+    expectUnknown(await h.channel.close(OUT));
+  },
+);
+
+it('[AC-B2-15k#815] 任务书第 13 节：关单后再查遇到 TRADE_FINISHED：unknown，并记固定常量 warn pay_trade_finished（BR-PAY-04 细则）', async () => {
+  const h = alipayChannel(
+    routes(CLOSE_OK, aliAnswer(QUERY_NODE, aliTrade({ trade_status: 'TRADE_FINISHED' }))),
+  );
+  expectUnknown(await h.channel.close(OUT));
+  expect(warnLines(h.logs).join('\n')).toContain('pay_trade_finished');
+});
 
 it('[AC-B2-15k#809] 关单 transport 抛异常：unknown，不抛', async () => {
   const h = alipayChannel(() => {

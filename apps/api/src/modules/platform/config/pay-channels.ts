@@ -3,6 +3,8 @@
 // loadConfig(env, entry): it fills AppConfig.payChannels from readPayChannelsConfig and merges its
 // problems. Pure: looks only at the given object, reads no file, never echoes a value; the key
 // files are read once at startup through ./startup-secret-file.ts by the payment module's factory.
+// - loadConfig(env), without an entry, reads none of these (payChannels is null, a PAY_* written
+//   wrong does not throw): tracing/boot.ts calls it so. bootstrap.ts and entry.ts pass the entry.
 // - local / test: fake channels; the credential names go into PAY_CREDENTIAL_ENV_NAMES
 //   (./credential-env.ts), so setting one refuses to start.
 // - staging / prod: only the api, worker and admin entries read these variables; stream and payout

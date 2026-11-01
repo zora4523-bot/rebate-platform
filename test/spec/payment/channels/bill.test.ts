@@ -224,7 +224,8 @@ const ALI_BAD_NODES: [string, Json][] = [
     { code: '10000', msg: 'Success', bill_download_url: { value: ALI_URL } },
   ],
   ['bill_download_url 不是地址', { code: '10000', msg: 'Success', bill_download_url: 'not a url' }],
-  ['业务错误', aliError('40004', 'isp.bill_not_exist')],
+  ['业务错误 BILL_NOT_EXIST', aliError('40004', 'BILL_NOT_EXIST')],
+  ['业务错误 TYPE_NOT_SUPPORTED', aliError('40004', 'TYPE_NOT_SUPPORTED')],
 ];
 
 it.each(ALI_BAD_NODES)(

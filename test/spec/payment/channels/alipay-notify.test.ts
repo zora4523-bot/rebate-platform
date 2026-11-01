@@ -56,6 +56,18 @@ it('[AC-B2-15k#1002] 退款通知（有 out_biz_no）：outRefundNo=out_biz_no�
   expect(result.state).toBe('TRADE_SUCCESS');
 });
 
+// 任务书第 13 节裁定：refund_fee 是总退款金额（00dn78.md:43），累计值如实带回，适配器不做差额推算。支付宝退款的结果以查询
+// 为准：judgeRefundResult 按金额或状态清单判不符时不迁移、继续占额、告警，通知只留存（BR-PAY-06 ④）。
+it('[AC-B2-15k#1016] 同一单第二笔部分退款：refundFen 如实等于累计的 refund_fee=0.30（30 分），不推算成这笔的 0.20', async () => {
+  const { channel } = alipayChannel();
+  const raw = aliNotification(aliRefundFields({ out_biz_no: 'R-SECOND', refund_fee: '0.30' }));
+  const result = okOf(await channel.verifyNotification(raw));
+  expect(result.outRefundNo).toBe('R-SECOND');
+  expect(result.refundFen).toBe(30n);
+  expect(result.amountFen).toBe(100n);
+  expect(result.state).toBe('TRADE_SUCCESS');
+});
+
 it.each(['TRADE_FINISHED', 'TRADE_CLOSED', 'WAIT_BUYER_PAY'])(
   '[AC-B2-15k#1003] 验过签但状态是 %s：照常带回原状态（是否成功由 success_states 判定，适配器不改写）',
   async (status) => {
@@ -118,13 +130,36 @@ it('[AC-B2-15k#1013] sign_type=RSA 的 SHA1 签名：我方只接受 RSA2，reje
   expectRejected(await channel.verifyNotification(raw));
 });
 
-it.each(['notify_id', 'trade_no', 'app_id', 'out_trade_no', 'trade_status', 'total_amount'])(
-  '[AC-B2-15k#1007] 验签通过但缺必填字段 %s：rejected',
-  async (name) => {
-    const { channel } = alipayChannel();
-    expectRejected(await channel.verifyNotification(aliNotification(fieldsWithout(name))));
-  },
-);
+it.each([
+  'notify_id',
+  'trade_no',
+  'app_id',
+  'seller_id',
+  'out_trade_no',
+  'trade_status',
+  'total_amount',
+])('[AC-B2-15k#1007] 验签通过但缺必填字段 %s：rejected', async (name) => {
+  const { channel } = alipayChannel();
+  expectRejected(await channel.verifyNotification(aliNotification(fieldsWithout(name))));
+});
+
+// 任务书第 13 节裁定、BR-PAY-04：seller_id 文档选填（00dn78.md:35）但要求校验（00dn78.md:118）；不用配置值填，否则商户标识
+// 一项都没核对过就算我方的。拒绝是安全的：应答不成功，由查询定结果。
+it('[AC-B2-15k#1014] 支付通知缺 seller_id 或为空串：rejected，不用配置的 PAY_ALIPAY_SELLER_ID 填', async () => {
+  const { channel } = alipayChannel();
+  expectRejected(await channel.verifyNotification(aliNotification(fieldsWithout('seller_id'))));
+  const empty = aliNotification(aliPayFields({ seller_id: '' }));
+  expectRejected(await channel.verifyNotification(empty));
+});
+
+it('[AC-B2-15k#1015] 退款通知缺 seller_id 或为空串：同样 rejected', async () => {
+  const { channel } = alipayChannel();
+  const fields = aliRefundFields();
+  delete fields['seller_id'];
+  expectRejected(await channel.verifyNotification(aliNotification(fields)));
+  const empty = aliNotification(aliRefundFields({ seller_id: '' }));
+  expectRejected(await channel.verifyNotification(empty));
+});
 
 const BAD_PAY_FIELDS: [string, Record<string, string>][] = [
   ['金额为负', { total_amount: '-1.00' }],

@@ -99,6 +99,12 @@ it.each([
   expect(okOf(await h.channel.query(OUT)).amountFen).toBe(fen);
 });
 
+it('[AC-B2-15k#213] 用代金券的单 total=100、payer_total=90：amountFen 取订单总金额，不取用户实付（BR-PAY-04 细则）', async () => {
+  const amount = { total: 100, payer_total: 90, currency: 'CNY', payer_currency: 'CNY' };
+  const h = wechatChannel(() => wxAnswer(200, wxTrade({ amount })));
+  expect(okOf(await h.channel.query(OUT)).amountFen).toBe(100n);
+});
+
 it.each(wxEnvelopeFaults(JSON.stringify(wxTrade())))(
   '[AC-B2-15k#206] 查单应答不可信（%s）：unknown',
   async (_name, answer) => {
@@ -148,6 +154,7 @@ it('[AC-B2-15k#209] 验签通过的 404 + ORDER_NOT_EXIST：not_exist，没有�
   expect(result.channelTradeNo).toBeNull();
 });
 
+// NOT_FOUND、RESOURCE_NOT_EXISTS 不在 4013070356.txt 的错误码表里，是这里选的任意错误码，只用来钉「别的码不算查无此单」。
 const NOT_EXIST_COUNTEREXAMPLES: [string, number, Json][] = [
   ['主码对、HTTP 400', 400, { code: 'ORDER_NOT_EXIST' }],
   ['主码对、HTTP 403', 403, { code: 'ORDER_NOT_EXIST' }],

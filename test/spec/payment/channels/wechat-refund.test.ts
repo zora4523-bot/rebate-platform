@@ -207,6 +207,14 @@ it.each(['CLOSED', 'ABNORMAL'])(
   },
 );
 
+it('[AC-B2-15k#427] 用代金券的单 refund=10、payer_refund=8：退款应答照常受理，查询的 refundFen 取退款金额，不取用户侧金额', async () => {
+  const amount = { ...AMOUNT, payer_total: 90, payer_refund: 8 };
+  const accepted = wechatChannel(() => wxAnswer(200, wxRefund({ amount })));
+  expect(await accepted.channel.refund(REFUND)).toEqual({ kind: 'ok' });
+  const queried = wechatChannel(() => wxAnswer(200, wxRefund({ status: 'SUCCESS', amount })));
+  expect(okOf(await queried.channel.refundQuery(OUT_REFUND, ORIGINAL)).refundFen).toBe(10n);
+});
+
 it.each(wxEnvelopeFaults(JSON.stringify(wxRefund({ status: 'SUCCESS' }))))(
   '[AC-B2-15k#424] 退款查询应答不可信（%s）：unknown',
   async (_name, answer) => {

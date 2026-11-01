@@ -103,6 +103,25 @@ it.each([
   expect(okOf(await channel.verifyNotification(raw)).amountFen).toBe(fen);
 });
 
+// BR-PAY-04 细则「金额核对用渠道返回的订单总金额」。用代金券时用户实付小于总金额（4013070368.txt 的 amount.total、
+// amount.payer_total）：取错字段，已付款的单会判金额不符、不迁移。
+it('[AC-B2-15k#512] 用代金券的支付通知 total=100、payer_total=90：amountFen 取订单总金额 100，不取用户实付', async () => {
+  const { channel } = wechatChannel();
+  const raw = wxPayNotification(
+    wxTrade({ amount: { total: 100, payer_total: 90, currency: 'CNY', payer_currency: 'CNY' } }),
+  );
+  expect(okOf(await channel.verifyNotification(raw)).amountFen).toBe(100n);
+});
+
+it('[AC-B2-15k#513] 用代金券的退款通知 refund=10、payer_refund=8：refundFen 取退款金额 10，amountFen 取 total，不取用户侧金额', async () => {
+  const { channel } = wechatChannel();
+  const amount = { total: 100, refund: 10, payer_total: 90, payer_refund: 8 };
+  const raw = wxRefundNotification(wxRefundPlain({ amount }));
+  const result = okOf(await channel.verifyNotification(raw));
+  expect(result.refundFen).toBe(10n);
+  expect(result.amountFen).toBe(100n);
+});
+
 it.each([
   ['早 299 秒', NOW_S - 299],
   ['晚 299 秒', NOW_S + 299],
@@ -204,10 +223,15 @@ const BAD_TRANSACTIONS: [string, Json][] = [
   ['缺 appid', without(wxTrade(), 'appid')],
   ['缺 mchid', without(wxTrade(), 'mchid')],
   ['缺 amount', without(wxTrade(), 'amount')],
-  ['total 为负', wxTrade({ amount: { total: -1, currency: 'CNY' } })],
-  ['total 是字符串', wxTrade({ amount: { total: '100', currency: 'CNY' } })],
-  ['total 是小数', wxTrade({ amount: { total: 1.5, currency: 'CNY' } })],
-  ['total 是对象', wxTrade({ amount: { total: { value: 100 }, currency: 'CNY' } })],
+  // 这几条都带合法的 payer_total：把 amountFen 取成 payer_total 的实现也要被拒绝。
+  ['缺 total、只有 payer_total', wxTrade({ amount: { payer_total: 100, currency: 'CNY' } })],
+  ['total 为负', wxTrade({ amount: { total: -1, payer_total: 100, currency: 'CNY' } })],
+  ['total 是字符串', wxTrade({ amount: { total: '100', payer_total: 100, currency: 'CNY' } })],
+  ['total 是小数', wxTrade({ amount: { total: 1.5, payer_total: 100, currency: 'CNY' } })],
+  [
+    'total 是对象',
+    wxTrade({ amount: { total: { value: 100 }, payer_total: 100, currency: 'CNY' } }),
+  ],
   ['状态是对象', wxTrade({ trade_state: { value: 'SUCCESS' } })],
 ];
 
@@ -227,10 +251,23 @@ const BAD_REFUNDS: [string, Json][] = [
   ['缺 refund_status', without(wxRefundPlain(), 'refund_status')],
   ['缺 mchid', without(wxRefundPlain(), 'mchid')],
   ['缺 amount', without(wxRefundPlain(), 'amount')],
-  ['缺 amount.refund', wxRefundPlain({ amount: { total: 100 } })],
-  ['缺 amount.total', wxRefundPlain({ amount: { refund: 10 } })],
-  ['amount.refund 为负', wxRefundPlain({ amount: { total: 100, refund: -1 } })],
-  ['amount.refund 是字符串', wxRefundPlain({ amount: { total: 100, refund: '10' } })],
+  // 这几条都带合法的 payer_total、payer_refund：取错字段的实现也要被拒绝。
+  [
+    '缺 amount.refund',
+    wxRefundPlain({ amount: { total: 100, payer_total: 100, payer_refund: 10 } }),
+  ],
+  [
+    '缺 amount.total',
+    wxRefundPlain({ amount: { refund: 10, payer_total: 100, payer_refund: 10 } }),
+  ],
+  [
+    'amount.refund 为负',
+    wxRefundPlain({ amount: { total: 100, refund: -1, payer_total: 100, payer_refund: 10 } }),
+  ],
+  [
+    'amount.refund 是字符串',
+    wxRefundPlain({ amount: { total: 100, refund: '10', payer_total: 100, payer_refund: 10 } }),
+  ],
 ];
 
 it.each(BAD_REFUNDS)('[AC-B2-15k#509] 退款通知明文不合格（%s）：rejected', async (_name, plain) => {

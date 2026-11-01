@@ -1,6 +1,7 @@
 // B2-15k 默认 transport（claude-independent，SPEC_REF deb521c2）：任务书 9.10：用 fetch，不跟随重定向，有超时和响应大小
 // 上限。假服务端只听 127.0.0.1（kit.ts withServer；任务书 9.12 允许）。每个测试先走一次正常调用，防止「抛异常就算过」
 // 把骨架的 NotImplemented 也当成合格。
+import type { ServerResponse } from 'node:http';
 import { expect, it } from 'vitest';
 import { fetchPayTransport } from '../../../../apps/api/src/modules/payment/infra/channels/transport.ts';
 import { withServer } from './kit.ts';
@@ -107,3 +108,52 @@ it('[AC-B2-15k#1704] 响应大小上限：声明长度超限或分块超限都 r
     },
   );
 });
+
+const MEBIBYTE = 1024 * 1024;
+const HUGE_MEBIBYTES = 64;
+
+/** 按背压写出 64 MiB；客户端中途断开后 drain 不再触发，写循环随之结束。 */
+function writeHuge(response: ServerResponse): void {
+  const chunk = Buffer.alloc(MEBIBYTE, 0x78);
+  let sent = 0;
+  const pump = (): void => {
+    while (sent < HUGE_MEBIBYTES) {
+      sent += 1;
+      if (!response.write(chunk)) {
+        response.once('drain', pump);
+        return;
+      }
+    }
+    response.end();
+  };
+  pump();
+}
+
+it('[AC-B2-15k#1705] 不传 maxResponseBytes 也有默认上限：64 MiB 的应答（声明长度或分块）reject；64 KiB 的照常返回', async () => {
+  const small = 'x'.repeat(64 * 1024);
+  await withServer(
+    (request, response) => {
+      if (request.url === '/small') {
+        response.end(small);
+      } else if (request.url === '/declared') {
+        response.writeHead(200, { 'Content-Length': String(HUGE_MEBIBYTES * MEBIBYTE) });
+        writeHuge(response);
+      } else {
+        response.writeHead(200);
+        writeHuge(response);
+      }
+    },
+    async (base) => {
+      // 超时留足：reject 只能来自大小上限，不能来自超时。
+      const unlimited = { ...REQUEST, timeoutMs: 20_000 };
+      const plain = await fetchPayTransport({ ...unlimited, url: `${base}/small` });
+      expect(plain.body).toBe(small);
+      await expect(
+        fetchPayTransport({ ...unlimited, url: `${base}/declared` }),
+      ).rejects.toBeDefined();
+      await expect(
+        fetchPayTransport({ ...unlimited, url: `${base}/chunked` }),
+      ).rejects.toBeDefined();
+    },
+  );
+}, 60_000);

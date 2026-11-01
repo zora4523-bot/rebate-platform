@@ -27,6 +27,7 @@ import {
   okOf,
   rawAnswer,
   textOf,
+  warnLines,
   without,
   type Json,
 } from './kit.ts';
@@ -63,6 +64,20 @@ it('[AC-B2-15k#703] TRADE_FINISHED：channelState 原样带回，但摘要不算
   const result = okOf(await h.channel.query(OUT));
   expect(result.channelState).toBe('TRADE_FINISHED');
   expect(result.state).not.toBe('paid');
+});
+
+it('[AC-B2-15k#716] 任务书第 13 节：查单遇到 TRADE_FINISHED 记一条固定常量 warn pay_trade_finished，不带买家信息；TRADE_SUCCESS 没有这条', async () => {
+  const h = alipayChannel(() =>
+    aliAnswer(QUERY_NODE, aliTrade({ trade_status: 'TRADE_FINISHED' })),
+  );
+  okOf(await h.channel.query(OUT));
+  const warns = warnLines(h.logs).filter((line) => line.includes('pay_trade_finished'));
+  expect(warns).toHaveLength(1);
+  expect(warns[0]).not.toContain(BUYER_LOGON);
+  expect(warns[0]).not.toContain(OPENID);
+  const plain = alipayChannel(() => aliAnswer(QUERY_NODE, aliTrade()));
+  okOf(await plain.channel.query(OUT));
+  expect(plain.logs.join('\n')).not.toContain('pay_trade_finished');
 });
 
 it.each([

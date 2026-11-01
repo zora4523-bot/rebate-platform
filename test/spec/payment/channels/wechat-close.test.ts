@@ -1,5 +1,5 @@
 // B2-15k 微信关单（claude-independent，SPEC_REF deb521c2）：08 BR-PAY-05 ②（先查后关，只有渠道明确「已关闭」才算；
-// 「单据不存在」不等于已关闭）；任务书 9.3；r3 必须改 ③。204 不算关闭成功，必须再查一次单。
+// 「单据不存在」不等于已关闭）；任务书 9.3 与第 13 节裁定；r3 必须改 ③。204 和验过签的业务错误都不算关闭成功，必须再查一次单。
 // 出处：docs-mirror/wechat-pay/pages/4013070360.txt（204 无应答包体）、4013053249.txt:41（空正文的验签串末行
 // 只有一个 \n）、4013070356.txt。未实测（BR-PAY-09）。
 import { createSign } from 'node:crypto';
@@ -11,6 +11,7 @@ import type {
 import {
   MCHID,
   NOW_S,
+  OTHER,
   OUT,
   WECHAT_PLATFORM,
   expectUnknown,
@@ -107,8 +108,18 @@ const CLOSE_FAULTS: [string, PayHttpResponse][] = [
   ['超时间窗', wxAnswer(204, '', { at: NOW_S - 300 })],
   ['HTTP 200 而不是 204', wxAnswer(200, '{}')],
   ['204 却有正文', wxAnswer(204, '{"status":"CLOSED"}')],
-  ['HTTP 500', wxAnswer(500, { code: 'SYSTEM_ERROR' })],
   ['HTTP 302', wxAnswer(302, '')],
+  // 没有验过签的错误应答、串单的错误应答：不是「验过签的业务错误」，不再查。
+  ['错误应答缺签名', { status: 400, headers: {}, body: '{"code":"INVALID_REQUEST"}' }],
+  ['错误应答别的私钥签的', wxAnswer(400, { code: 'INVALID_REQUEST' }, { key: OTHER.privateKey })],
+  ['错误应答序列号不符', wxAnswer(403, { code: 'TRADE_ERROR' }, { serial: 'PUB_KEY_ID_OTHER' })],
+  ['错误应答超时间窗', wxAnswer(500, { code: 'SYSTEM_ERROR' }, { at: NOW_S - 300 })],
+  ['错误应答不是 JSON', wxAnswer(400, 'not json')],
+  ['错误应答没有错误码', wxAnswer(400, { message: 'message' })],
+  ['错误应答的错误码是数字', wxAnswer(400, { code: 400 })],
+  ['串单：错误应答带别的单号', wxAnswer(403, { code: 'TRADE_ERROR', out_trade_no: 'P-OTHER' })],
+  ['串单：错误应答带别的商户号', wxAnswer(403, { code: 'TRADE_ERROR', mchid: '1900000000' })],
+  ['串单：错误应答带别的应用', wxAnswer(403, { code: 'TRADE_ERROR', appid: 'wx-other' })],
 ];
 
 it.each(CLOSE_FAULTS)(
@@ -126,18 +137,71 @@ it('[AC-B2-15k#307] 关单 transport 抛异常：unknown，不抛', async () => 
   expectUnknown(await h.channel.close(OUT));
 });
 
-it.each([
-  [400, 'ORDER_CLOSED'],
+// 任务书第 13 节裁定：验过签的关单业务错误也要再查一次单，以查询结果定 closed / paid / not_exist；查询也拿不到结果才 unknown。
+// 4013070360.txt:285-344 写明的错误码。
+const CLOSE_ERRORS: [number, string][] = [
+  [400, 'PARAM_ERROR'],
   [400, 'INVALID_REQUEST'],
-  [403, 'ORDERPAID'],
-  [404, 'ORDER_NOT_EXIST'],
+  [400, 'MCH_NOT_EXISTS'],
+  [401, 'SIGN_ERROR'],
+  [403, 'RULE_LIMIT'],
+  [403, 'TRADE_ERROR'],
   [429, 'FREQUENCY_LIMITED'],
-])(
-  '[AC-B2-15k#308] 验过签的关单错误 %s %s：不凭错误码下结论；此时单还未关，只能 unknown',
+  [500, 'SYSTEM_ERROR'],
+];
+
+it.each(CLOSE_ERRORS)(
+  '[AC-B2-15k#308] 验过签的关单错误 %s %s，而单仍是 NOTPAY：再查一次，不凭错误码下结论，unknown',
   async (status, code) => {
     const h = wechatChannel(
       routes(wxAnswer(status, { code }), wxAnswer(200, wxTrade({ trade_state: 'NOTPAY' }))),
     );
     expectUnknown(await h.channel.close(OUT));
+    expect(h.calls).toHaveLength(2);
+    expect(h.calls[1]!.method).toBe('GET');
   },
 );
+
+const QUERY_DECIDES: [string, PayHttpResponse, string][] = [
+  ['CLOSED', wxAnswer(200, wxTrade({ trade_state: 'CLOSED' })), 'closed'],
+  ['SUCCESS', wxAnswer(200, wxTrade()), 'paid'],
+  ['404 ORDER_NOT_EXIST', wxAnswer(404, { code: 'ORDER_NOT_EXIST' }), 'not_exist'],
+];
+
+const ERROR_THEN_QUERY = CLOSE_ERRORS.flatMap(([status, code]) =>
+  QUERY_DECIDES.map(([name, query, state]) => [status, code, name, state, query] as const),
+);
+
+it.each(ERROR_THEN_QUERY)(
+  '[AC-B2-15k#309] 验过签的关单错误 %s %s 之后再查一次单：查到 %s → %s',
+  async (status, code, _name, state, query) => {
+    const h = wechatChannel(routes(wxAnswer(status, { code }), query));
+    expect(okOf(await h.channel.close(OUT)).state).toBe(state);
+    expect(h.calls).toHaveLength(2);
+    expect(isClose(h.calls[0]!)).toBe(true);
+    expect(h.calls[1]!.method).toBe('GET');
+  },
+);
+
+const TRADE_ERROR = wxAnswer(403, { code: 'TRADE_ERROR' });
+
+it.each([
+  ['查单 HTTP 500', wxAnswer(500, { code: 'SYSTEM_ERROR' })],
+  ['查单单号不符', wxAnswer(200, wxTrade({ out_trade_no: 'P-OTHER', trade_state: 'CLOSED' }))],
+  [
+    '查单验签不过',
+    wxAnswer(200, wxTrade({ trade_state: 'CLOSED' }), { serial: 'PUB_KEY_ID_OTHER' }),
+  ],
+])('[AC-B2-15k#310] 验过签的关单错误之后查单也拿不到结果（%s）：unknown', async (_name, query) => {
+  const h = wechatChannel(routes(TRADE_ERROR, query));
+  expectUnknown(await h.channel.close(OUT));
+  expect(h.calls).toHaveLength(2);
+});
+
+it('[AC-B2-15k#311] 验过签的关单错误之后查单 transport 抛异常：unknown，不抛', async () => {
+  const h = wechatChannel((request) => {
+    if (isClose(request)) return TRADE_ERROR;
+    throw new Error('boom');
+  });
+  expectUnknown(await h.channel.close(OUT));
+});

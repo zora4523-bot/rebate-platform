@@ -4,6 +4,10 @@
 // 02e7gm.md, close 02e7gn.md, refund 02e7go.md, refund query 02e7gp.md, bill 02e7gr.md and
 // 00dn7a.md, notification 00dn78.md, synchronous answer 00iki4.md, integration 01dcc0.md, error
 // codes docs-mirror/alipay/guides/common-02km9f.md, verification browser-02mse7.md.
+// Task §13: a notification without seller_id is rejected, never filled from the configuration; a
+// refund notification carries the cumulative refund_fee as it is, and the refund result is the
+// query's (a notification alone only keeps the text and alerts); a query that meets TRADE_FINISHED
+// logs the fixed warn `pay_trade_finished`; close queries again after a verified business error.
 // Also compiled by the `test` project: erasable syntax only.
 import type {
   PayBillResult,

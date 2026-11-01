@@ -6,6 +6,7 @@ import { inspect } from 'node:util';
 import { expect, it } from 'vitest';
 import {
   ConfigError,
+  loadConfig,
   startupViolations,
 } from '../../../../apps/api/src/modules/platform/config/config.ts';
 import { looksLikeRealCredentialEnvName } from '../../../../apps/api/src/modules/platform/config/credential-env.ts';
@@ -163,3 +164,30 @@ it('[AC-B2-15k#1410] 配置经 config/index.ts 导出 readPayChannelsConfig，�
     expect(readPayChannelsConfig('staging', env, 'stream').payChannels).toBeNull();
   });
 });
+
+// 任务书第 13 节裁定：loadConfig(env) 不读收款配置；tracing/boot.ts 就是一参调用（wiring.test.ts #1904）。
+it('[AC-B2-15k#1411] 一参 loadConfig(env) 不读收款配置：配置齐全 payChannels 也是 null，带入口名才读', async () => {
+  await withKeyDir(async (dir) => {
+    const env = stagingEnv(dir);
+    expect(loadFor(env, 'api').payChannels).toBeTruthy();
+    expect(loadConfig(env).payChannels ?? null).toBeNull();
+  });
+});
+
+const WRITTEN_WRONG: ['staging' | 'prod', string, Record<string, string>][] = [
+  ['staging', 'PAY_CHANNEL_IMPL 写坏', { PAY_CHANNEL_IMPL: 'not-a-choice' }],
+  ['staging', 'PAY_NOTIFY_BASE_URL 不是 https', { PAY_NOTIFY_BASE_URL: 'http://pay.example.test' }],
+  ['prod', 'PAY_ALIPAY_GATEWAY 设了', { PAY_ALIPAY_GATEWAY: SANDBOX_GATEWAY }],
+  ['prod', 'PAY_CHANNEL_IMPL 设了', { PAY_CHANNEL_IMPL: 'fake' }],
+];
+
+it.each(WRITTEN_WRONG)(
+  '[AC-B2-15k#1412] %s 的一参 loadConfig(env) 不校验收款配置（%s）：不抛，payChannels 是 null',
+  async (appEnv, _name, overrides) => {
+    await withKeyDir(async (dir) => {
+      const env = appEnv === 'prod' ? prodEnv(dir) : stagingEnv(dir);
+      expect(loadFor(env, 'api').payChannels).toBeTruthy();
+      expect(loadConfig({ ...env, ...overrides }).payChannels ?? null).toBeNull();
+    });
+  },
+);

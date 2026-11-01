@@ -31,6 +31,7 @@ import {
   aliSign,
   aliTrade,
   channelSetOf,
+  expectAliSigned,
   expectUnknown,
   expectedSn,
   loadFor,
@@ -144,10 +145,12 @@ it('[AC-B2-15k#1105] 证书模式：orderStr 与接口请求带 app_cert_sn、al
       const order = new URLSearchParams(launch.order_str);
       expect(order.get('app_cert_sn')).toBe(APP_SN);
       expect(order.get('alipay_root_cert_sn')).toBe(ROOT_SN);
+      expectAliSigned(new Map(order));
       okOf(await channel.query(OUT));
       const params = aliParams(calls[0]!);
       expect(params.get('app_cert_sn')).toBe(APP_SN);
       expect(params.get('alipay_root_cert_sn')).toBe(ROOT_SN);
+      expectAliSigned(params);
     },
   );
 });
