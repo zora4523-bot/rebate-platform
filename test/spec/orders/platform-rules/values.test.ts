@@ -232,7 +232,7 @@ it('[AC-B1-08za#8] 商品键推送：京东不推（不读 key_prefix、返回 n
   }
 });
 
-it('[AC-B1-08za#9] 同步窗口上限：拼多多 30 分钟，淘宝 / 京东没有固定上限；调度与手动同步只列有上限的平台', () => {
+it('[AC-B1-08za#9] 同步窗口上限：京东 60 分钟、拼多多 30 分钟，淘宝没有固定上限；调度与手动同步只列有上限的平台', () => {
   for (const platform of REGISTERED_PLATFORMS) {
     const rules = rulesOf(platform);
     const cap = PINNED[platform].syncWindowCapMs;
@@ -241,7 +241,7 @@ it('[AC-B1-08za#9] 同步窗口上限：拼多多 30 分钟，淘宝 / 京东没
     expect(Object.hasOwn(INCREMENT_WINDOW_CAP_MS, platform), platform).toBe(cap !== null);
   }
   const capped = platformsWhere('syncWindowCapMs', (cap) => cap !== null);
-  expect(capped).toEqual(['pdd']);
+  expect(capped).toEqual(['jd', 'pdd']);
   expect([...scheduledPlatforms()].sort()).toEqual(capped);
   expect([...manualSyncPlatforms()].sort()).toEqual(capped);
 });
