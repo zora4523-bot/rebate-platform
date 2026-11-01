@@ -1,0 +1,120 @@
+{
+  "task": "B1-05y",
+  "spec_ref": "deb521c2bcb740571a01c2dc128f40abb40c37a2",
+  "spec_commit": "954bb2bf12589ecbb77f6894ca28cf97295cda1c",
+  "red_tests": [
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#1][BR-PROD-05] resolveLink 未实现、标题搜到目标 → found：第①步只问一次，回落第②步，用新原串出卡，product_refs 和链接记新原串",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#2][BR-PROD-05] 未实现不算一次失败：有合格池行时回落搜到目标，出联盟新价，不走池价",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#3][BR-PROD-05] 未实现不算一次失败：有旧缓存时回落搜到目标，不答旧缓存，stale=false",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#4][BR-PROD-05] 回落不分平台：拼多多 resolveLink 未实现，按平台字段取新原串，product_key 不变",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#5][BR-PROD-05] 商品池的重解析同样回落：标题搜索沿用调用方的配额用途，结果 found，来源 pool",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#6][BR-PROD-05] 商品池的重解析：resolveLink 未实现、标题搜不到 → ref_expired，不抛错",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#7][BR-PROD-05] resolveLink 未实现、标题搜不到（第一页没有结果）→ 30143 引用失效，不是 50001，第①步不重试",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#7][BR-PROD-05] resolveLink 未实现、标题搜不到（第一页只有别的键）→ 30143 引用失效，不是 50001，第①步不重试",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#8][BR-PROD-05] resolveLink 未实现、标题搜不到：有合格池行也是 30143，引用失效不用池价",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#9][BR-PROD-05] resolveLink 未实现、标题搜不到：不删详情缓存",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#10][BR-PROD-05] resolveLink 与 searchItems 都未实现 → 30143 引用失效，不是 50001，也不是暂时失败",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#11][BR-PROD-05] 结果分类③：resolveLink 未实现、回落的标题搜索 upstream_unavailable → 50401，不写 product_refs",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#11][BR-PROD-05] 结果分类③：resolveLink 未实现、回落的标题搜索 rate_limited → 50401，不写 product_refs",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#11][BR-PROD-05] 结果分类③：resolveLink 未实现、回落的标题搜索 治理超时 → 50401，不写 product_refs",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#11][BR-PROD-05] 结果分类③：resolveLink 未实现、回落的标题搜索 熔断 → 50401，不写 product_refs",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#11][BR-PROD-05] 结果分类③：resolveLink 未实现、回落的标题搜索 配额耗尽 → 50401，不写 product_refs",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#12][BR-PROD-05] resolveLink 的其他错误照旧归类、不回落：upstream_unavailable → 暂时失败 50401",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#12][BR-PROD-05] resolveLink 的其他错误照旧归类、不回落：item_unavailable → 下架 30141",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#12][BR-PROD-05] resolveLink 的其他错误照旧归类、不回落：link_unrecognized → 引用失效 30143",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#13][BR-PROD-05] 回落只认 adapter_unimplemented：没有归类的联盟错误 原样抛出，不搜标题",
+    "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#13][BR-PROD-05] 回落只认 adapter_unimplemented：不是联盟错误 原样抛出，不搜标题",
+    "test/spec/catalog/reparse-fallback/time-limit.test.ts > [B1-05y#20][BR-PROD-05] 步骤 3：resolveLink 未实现、回落的标题搜索不返回 → 3 秒超时，按暂时失败 50401",
+    "test/spec/catalog/reparse-fallback/time-limit.test.ts > [B1-05y#21][BR-PROD-05] 步骤 3：两步共用 3 秒：第①步用掉 2 秒才答未实现、标题搜索不返回 → 从重解析开始算满 3 秒就结束，不再给第②步 3 秒",
+    "test/spec/catalog/reparse-fallback/time-limit.test.ts > [B1-05y#22][BR-PROD-05] 步骤 3：两步合计超 3 秒：第①步 2 秒、第②步到 3 秒还没答，单看都没超 → 仍按暂时失败 50401，迟到的答复到了也不写 product_refs、不出卡",
+    "test/spec/catalog/reparse-fallback/time-limit.test.ts > [B1-05y#23][BR-PROD-05] 步骤 3：两步合计没超 3 秒：回落照常出卡，第①步没有吃掉第②步剩下的时间"
+  ],
+  "risk_note": "RV1 by path. parseRaw falls back to the title search when resolveLink answers adapter_unimplemented (BR-PROD-05), so an old Taobao ref with canonical_url no longer answers 50001 once Taobao opens. Both steps now share one 3 s limit, a late answer writes no product_refs. Other error classes unchanged, upstreamFailure untouched. No contract, no migration, no money movement.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "954bb2bf12589ecbb77f6894ca28cf97295cda1c",
+      "tree": "17d4d7797a3ce234b129e0ac289023e1ef60ab1e",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-11-01T19:13:34Z",
+      "finished_at": "2026-11-01T19:13:41Z",
+      "red_tests": [
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#1][BR-PROD-05] resolveLink 未实现、标题搜到目标 → found：第①步只问一次，回落第②步，用新原串出卡，product_refs 和链接记新原串",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#2][BR-PROD-05] 未实现不算一次失败：有合格池行时回落搜到目标，出联盟新价，不走池价",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#3][BR-PROD-05] 未实现不算一次失败：有旧缓存时回落搜到目标，不答旧缓存，stale=false",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#4][BR-PROD-05] 回落不分平台：拼多多 resolveLink 未实现，按平台字段取新原串，product_key 不变",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#5][BR-PROD-05] 商品池的重解析同样回落：标题搜索沿用调用方的配额用途，结果 found，来源 pool",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#6][BR-PROD-05] 商品池的重解析：resolveLink 未实现、标题搜不到 → ref_expired，不抛错",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#7][BR-PROD-05] resolveLink 未实现、标题搜不到（第一页没有结果）→ 30143 引用失效，不是 50001，第①步不重试",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#7][BR-PROD-05] resolveLink 未实现、标题搜不到（第一页只有别的键）→ 30143 引用失效，不是 50001，第①步不重试",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#8][BR-PROD-05] resolveLink 未实现、标题搜不到：有合格池行也是 30143，引用失效不用池价",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#9][BR-PROD-05] resolveLink 未实现、标题搜不到：不删详情缓存",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#10][BR-PROD-05] resolveLink 与 searchItems 都未实现 → 30143 引用失效，不是 50001，也不是暂时失败",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#11][BR-PROD-05] 结果分类③：resolveLink 未实现、回落的标题搜索 upstream_unavailable → 50401，不写 product_refs",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#11][BR-PROD-05] 结果分类③：resolveLink 未实现、回落的标题搜索 rate_limited → 50401，不写 product_refs",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#11][BR-PROD-05] 结果分类③：resolveLink 未实现、回落的标题搜索 治理超时 → 50401，不写 product_refs",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#11][BR-PROD-05] 结果分类③：resolveLink 未实现、回落的标题搜索 熔断 → 50401，不写 product_refs",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#11][BR-PROD-05] 结果分类③：resolveLink 未实现、回落的标题搜索 配额耗尽 → 50401，不写 product_refs",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#12][BR-PROD-05] resolveLink 的其他错误照旧归类、不回落：upstream_unavailable → 暂时失败 50401",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#12][BR-PROD-05] resolveLink 的其他错误照旧归类、不回落：item_unavailable → 下架 30141",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#12][BR-PROD-05] resolveLink 的其他错误照旧归类、不回落：link_unrecognized → 引用失效 30143",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#13][BR-PROD-05] 回落只认 adapter_unimplemented：没有归类的联盟错误 原样抛出，不搜标题",
+        "test/spec/catalog/reparse-fallback/fallback.test.ts > [B1-05y#13][BR-PROD-05] 回落只认 adapter_unimplemented：不是联盟错误 原样抛出，不搜标题",
+        "test/spec/catalog/reparse-fallback/time-limit.test.ts > [B1-05y#20][BR-PROD-05] 步骤 3：resolveLink 未实现、回落的标题搜索不返回 → 3 秒超时，按暂时失败 50401",
+        "test/spec/catalog/reparse-fallback/time-limit.test.ts > [B1-05y#21][BR-PROD-05] 步骤 3：两步共用 3 秒：第①步用掉 2 秒才答未实现、标题搜索不返回 → 从重解析开始算满 3 秒就结束，不再给第②步 3 秒",
+        "test/spec/catalog/reparse-fallback/time-limit.test.ts > [B1-05y#22][BR-PROD-05] 步骤 3：两步合计超 3 秒：第①步 2 秒、第②步到 3 秒还没答，单看都没超 → 仍按暂时失败 50401，迟到的答复到了也不写 product_refs、不出卡",
+        "test/spec/catalog/reparse-fallback/time-limit.test.ts > [B1-05y#23][BR-PROD-05] 步骤 3：两步合计没超 3 秒：回落照常出卡，第①步没有吃掉第②步剩下的时间"
+      ],
+      "expected": [
+        "test/spec/catalog/reparse-fallback/fallback.test.ts",
+        "test/spec/catalog/reparse-fallback/time-limit.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "24abb603f7036f1680b7c0203387977180bf134290458cb452ece8fa07c68a5a"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 1,
+      "note": "pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by independent Claude, 25 tests under test/spec/catalog/reparse-fallback; round 1 fail with one S1 (#22 asserted before the late answer existed), fixed by a fresh author context with a controllable promise; round 2 pass, no findings."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "d42ffba8e6d110d7875543f22e0fffc1c83bb32b",
+    "specs": "81162dd1f14b9998534e12edbd04c10478c7b260"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  }
+}
