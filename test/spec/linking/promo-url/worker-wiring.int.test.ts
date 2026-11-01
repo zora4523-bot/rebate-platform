@@ -43,14 +43,18 @@ it('[AC-B1-06zd#42] worker 入口在任务的队列上注册处理器：跑一�
     const handlers = handlersOf(app, QUEUE_NAME);
     expect(handlers).toHaveLength(1);
 
-    await handlers[0]!({
+    const outcome = await handlers[0]!({
       id: randomUUID(),
       queue: QUEUE_NAME,
       name: JOB_NAME,
       payload: jobOf(f.appId, linkId),
       attempt: 1,
-    });
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
 
+    expect(outcome).toBeUndefined();
     expect(convert).toHaveBeenCalledOnce();
     expect((await f.row(linkId)).promo_url).toBe(COUPON_CLICK_URL);
   } finally {
