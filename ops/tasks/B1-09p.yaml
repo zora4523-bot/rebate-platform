@@ -1,0 +1,40 @@
+id: B1-09p
+repo: rebate-platform
+title: orders：OrderFiguresReader 生产接线（D10-551 第 9 条、D10-558）——用户订单、Agent 订单工具、后台订单的预估 / 实际 / 扣回金额与结算周期不再回落 createUnknownOrderFigures；settlement 新读取器复用 pending-earnings-rules，ledger、risk 各加一个只读读口
+type: impl
+# 2026-11-02 W1 入账（编排 D10-558），方案 couli-runs/B3-lane/order-figures-plan-20261102.md。不用 createPendingEarningsSource.forUser（扫全 app、无逐单输出），只复用纯函数，金额与钱包同算法。只新增读口，不改现有资金路径。无契约、无迁移。money 口径评审。
+# 裁定：① actual_fen 照 BR-TEXT-02 原文公式实现，与恢复 / 改派的差异由编排登记待判，本单不自定口径；② part_clawed_at 取最近一次；③ BR-FUND-17 第 4 行「存在 CLAWBACK」按查看者本账户；④ 查看者份额被剥夺时 est_rebate_fen 给 0。
+# 可先于 B1-09n 落地；app.module 相邻处后落地者两边都留。生产验收（同步订单走到用户接口金额非 null）放 B1-09n 的 rebate-wiring 规则测试。
+refs: [BR-FUND-04, BR-FUND-08, BR-FUND-17, BR-FUND-18, BR-CALC-02, BR-CALC-13, BR-TEXT-02, BR-ID-36]
+refs_hash:
+  BR-FUND-04: 2497ceea4515
+  BR-FUND-08: 4fad67b21a32
+  BR-FUND-17: 02ee5b1ae349
+  BR-FUND-18: c7ebd23ee75e
+  BR-CALC-02: 0ffe8a4d0b65
+  BR-CALC-13: 54c06125032c
+  BR-TEXT-02: 312331179dcf
+  BR-ID-36: 2758a53910fa
+deps: []
+paths:
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/orders/orders.module.ts'
+  - 'apps/api/src/modules/orders/index.ts'
+  - 'apps/api/src/modules/orders/application/order-queries.ts'
+  - 'apps/api/src/modules/orders/application/admin-orders.ts'
+  - 'apps/api/src/modules/orders/application/admin-orders.test.ts'
+  - 'apps/api/src/modules/settlement/index.ts'
+  - 'apps/api/src/modules/settlement/reads/order-figures*.ts'
+  - 'apps/api/src/modules/ledger/index.ts'
+  - 'apps/api/src/modules/ledger/application/order-figures-read*.ts'
+  - 'apps/api/src/modules/risk/index.ts'
+  - 'apps/api/src/modules/risk/application/order-appeal-read*.ts'
+test_paths:
+  - 'test/spec/orders/figures/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/figures/**'
+status: todo
+pr: null
