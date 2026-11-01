@@ -1,0 +1,133 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-user-bindings/dialogs.test.ts > [AC-F1-07jc-DIALOG#1] 【重置授权】确认框说明解除授权、冷却期内不能重新授权、下次购买需重新授权，有必填原因，点开不发请求",
+    "test/spec/frontend/admin-user-bindings/dialogs.test.ts > [AC-F1-07jc-DIALOG#2] 【停用返利】确认框说明该平台不再返利、用户购买入口受限，带平台名与必填原因，点开不发请求",
+    "test/spec/frontend/admin-user-bindings/dialogs.test.ts > [AC-F1-07jc-DIALOG#3] 【恢复】确认框：淘宝说明需用户重新授权，拼多多说明立即恢复返利；都有必填原因",
+    "test/spec/frontend/admin-user-bindings/dialogs.test.ts > [AC-F1-07jc-DIALOG#4] 原因为空、全空白或超过 200 字：前端拦下并提示，或发出后收 20001 [reason] 在原因旁提示；都不改动授权",
+    "test/spec/frontend/admin-user-bindings/dialogs.test.ts > [AC-F1-07jc-DIALOG#5] 取消确认框或取消动态码都不发写请求、授权不变；再次操作重新确认并验证后才发",
+    "test/spec/frontend/admin-user-bindings/entries.test.ts > [AC-F1-07jc-ENTRY#1] 超管：淘宝已授权 / 已失效有【重置授权】【停用返利】，拼多多已授权 / 已失效只有【停用返利】；都没有【恢复】",
+    "test/spec/frontend/admin-user-bindings/entries.test.ts > [AC-F1-07jc-ENTRY#2] 超管：后台停用（blocked / admin_disable）的行只有【恢复】，两个平台都是",
+    "test/spec/frontend/admin-user-bindings/entries.test.ts > [AC-F1-07jc-ENTRY#3] 超管：因封禁 / 因注销停用、已解除、授权中、未授权的行没有可用入口，置灰的点了也不发请求",
+    "test/spec/frontend/admin-user-bindings/entries.test.ts > [AC-F1-07jc-ENTRY#4] 用户已封禁：后台停用的行不给可用的【恢复】，置灰的点了也不发请求",
+    "test/spec/frontend/admin-user-bindings/entries.test.ts > [AC-F1-07jc-ENTRY#5] 只持 union.binding_reset：只有淘宝【重置授权】；只持 union.binding_disable：只有【停用返利】【恢复】",
+    "test/spec/frontend/admin-user-bindings/entries.test.ts > [AC-F1-07jc-ENTRY#6] 有写权限才有「操作」列：超管有；不持 union.binding_* 的账号无「操作」列、表内无按钮与链接",
+    "test/spec/frontend/admin-user-bindings/entries.test.ts > [AC-F1-07jc-ENTRY#7] 打开详情只读：有行操作入口，但不弹动态码，只发列表与本用户详情的 GET",
+    "test/spec/frontend/admin-user-bindings/errors.test.ts > [AC-F1-07jc-ERROR#1] 20902（data.resource=union_binding）：提示状态已变化并刷新详情；不自动重发，再操作时带刷新后的 row_version 并成功",
+    "test/spec/frontend/admin-user-bindings/errors.test.ts > [AC-F1-07jc-ERROR#2] 30154：提示当前状态不能做此操作并刷新详情，该行显示最新状态（已解除）、入口随之消失",
+    "test/spec/frontend/admin-user-bindings/errors.test.ts > [AC-F1-07jc-ERROR#3] 20001 [platform]：给出该平台不支持此操作的提示，不显示成功、授权不变",
+    "test/spec/frontend/admin-user-bindings/errors.test.ts > [AC-F1-07jc-ERROR#4] 20001 [user_id]：提示用户不存在，不显示成功",
+    "test/spec/frontend/admin-user-bindings/errors.test.ts > [AC-F1-07jc-ERROR#5] 10403：提示没有权限，不显示成功、授权不变",
+    "test/spec/frontend/admin-user-bindings/errors.test.ts > [AC-F1-07jc-ERROR#6] 网络失败：提示失败、不显示成功、不自动重发，授权不变",
+    "test/spec/frontend/admin-user-bindings/pages.browser.test.ts > [AC-F1-07jc-BROWSER#1] 1440 超管：联盟授权表有「操作」列，淘宝行【停用返利】→ 确认框（原因）→ 动态码 → 一次 POST …/taobao/disable，该行变已停用并出现【恢复】；只发读、动态码与这一个写",
+    "test/spec/frontend/admin-user-bindings/writes.test.ts > [AC-F1-07jc-WRITE#1] 淘宝【重置授权】：确认 → 动态码 → 一次 POST …/taobao/reset，带令牌、无 Idempotency-Key、body 恰为原因与该行 row_version；成功提示，该行变已解除且无入口",
+    "test/spec/frontend/admin-user-bindings/writes.test.ts > [AC-F1-07jc-WRITE#2] 拼多多【停用返利】：POST …/pdd/disable 取该行 row_version；成功提示，该行变已停用，入口换成【恢复】",
+    "test/spec/frontend/admin-user-bindings/writes.test.ts > [AC-F1-07jc-WRITE#3] 【恢复】：拼多多恢复后为已授权、只剩【停用返利】；淘宝恢复后为已失效（待用户重新授权）、有【重置授权】【停用返利】",
+    "test/spec/frontend/admin-user-bindings/writes.test.ts > [AC-F1-07jc-WRITE#4] 连续两次操作（先停用再恢复同一行）各弹一次动态码、令牌不同；第二次带上一次之后的新 row_version",
+    "test/spec/frontend/admin-user-bindings/writes.test.ts > [AC-F1-07jc-WRITE#5] 连点确认与【验证并继续】、请求在途时再点：只弹一次动态码、只验证一次、只发一次写",
+    "test/spec/frontend/admin-user-bindings/writes.test.ts > [AC-F1-07jc-WRITE#6] 写请求回 10003：重新弹动态码，验证后用新令牌、原请求体再发一次，之后成功"
+  ],
+  "risk_note": "Admin 用户详情 union binding row actions (apps/admin pages/users/**, texts/users.ts). Contract CT-02j adminResetUserUnionBinding, adminDisableUserUnionBinding, adminEnableUserUnionBinding; backend F1-07c merged. The 操作 column appears only with union.binding_reset or union.binding_disable; 【重置授权】 only on taobao rows that are active / invalid (binding_reset), 【停用返利】 on active / invalid rows and 【恢复】 only on blocked rows with blocked_reason admin_disable (binding_disable; greyed out with a note while the user is banned). Reason required (trimmed, 1-200) with a rule-stating hint; a totp step-up for every write through the shared verified-write hook; body only reason and expected_row_version, no Idempotency-Key, no identity fields; 20902 / 30154 refresh the detail and a failed refresh shows a could-not-refresh notice; double click sends once. Prerequisite test-change F1-07ja (#2029) merged; no frozen test changed here. Rule tests written by an independent Claude in two rounds; Claude spec-test review r1 fail (1 S1, 1 S2), r2 pass (3 S2 carried into the implementation constraints); red on the test machine (red/1-2). Implementation by Opus 5.5 with a small round 2 for the money review S2; the rebase conflict with F1-07jb (UserDetailView imports, texts blocks) was merged by the orchestrator keeping both sides; test machine verify-fast and browser green after rebasing on main. Adversarial money review by fresh independent Claude: r1 pass (one S2, fixed), r2 incremental pass with no findings. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 pass with one S2 (a failed refresh after 20902 / 30154 was swallowed; fixed in implementation round 2), round 2 incremental pass with no findings including the rebase conflict merge; independent Claude because Codex is unavailable until 2026-11-02"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (1 S1 reason hint counted the character counter; 1 S2 confirm phrases rejected the board wording), round 2 pass with three S2 carried into the implementation constraints; tests written by an independent Claude (claude-run.sh)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "4ff83783d17743ea9efacd016912563b35ae5dab"
+  },
+  "task": "F1-07jc",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "e4b1c45de3800196ea1b67064fff3e13d3233f96",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "e4b1c45de3800196ea1b67064fff3e13d3233f96",
+      "tree": "6aaa65fc3b91f1a355bed37af8fe1b75e965d11d",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-11-01T03:37:00Z",
+      "finished_at": "2026-11-01T03:38:41Z",
+      "gate": {
+        "commit": "cea2f9b076298d71cb9bb8d959f68d5b80b1b33f",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-user-bindings/dialogs.test.ts > [AC-F1-07jc-DIALOG#1] 【重置授权】确认框说明解除授权、冷却期内不能重新授权、下次购买需重新授权，有必填原因，点开不发请求",
+        "test/spec/frontend/admin-user-bindings/dialogs.test.ts > [AC-F1-07jc-DIALOG#2] 【停用返利】确认框说明该平台不再返利、用户购买入口受限，带平台名与必填原因，点开不发请求",
+        "test/spec/frontend/admin-user-bindings/dialogs.test.ts > [AC-F1-07jc-DIALOG#3] 【恢复】确认框：淘宝说明需用户重新授权，拼多多说明立即恢复返利；都有必填原因",
+        "test/spec/frontend/admin-user-bindings/dialogs.test.ts > [AC-F1-07jc-DIALOG#4] 原因为空、全空白或超过 200 字：前端拦下并提示，或发出后收 20001 [reason] 在原因旁提示；都不改动授权",
+        "test/spec/frontend/admin-user-bindings/dialogs.test.ts > [AC-F1-07jc-DIALOG#5] 取消确认框或取消动态码都不发写请求、授权不变；再次操作重新确认并验证后才发",
+        "test/spec/frontend/admin-user-bindings/entries.test.ts > [AC-F1-07jc-ENTRY#1] 超管：淘宝已授权 / 已失效有【重置授权】【停用返利】，拼多多已授权 / 已失效只有【停用返利】；都没有【恢复】",
+        "test/spec/frontend/admin-user-bindings/entries.test.ts > [AC-F1-07jc-ENTRY#2] 超管：后台停用（blocked / admin_disable）的行只有【恢复】，两个平台都是",
+        "test/spec/frontend/admin-user-bindings/entries.test.ts > [AC-F1-07jc-ENTRY#3] 超管：因封禁 / 因注销停用、已解除、授权中、未授权的行没有可用入口，置灰的点了也不发请求",
+        "test/spec/frontend/admin-user-bindings/entries.test.ts > [AC-F1-07jc-ENTRY#4] 用户已封禁：后台停用的行不给可用的【恢复】，置灰的点了也不发请求",
+        "test/spec/frontend/admin-user-bindings/entries.test.ts > [AC-F1-07jc-ENTRY#5] 只持 union.binding_reset：只有淘宝【重置授权】；只持 union.binding_disable：只有【停用返利】【恢复】",
+        "test/spec/frontend/admin-user-bindings/entries.test.ts > [AC-F1-07jc-ENTRY#6] 有写权限才有「操作」列：超管有；不持 union.binding_* 的账号无「操作」列、表内无按钮与链接",
+        "test/spec/frontend/admin-user-bindings/entries.test.ts > [AC-F1-07jc-ENTRY#7] 打开详情只读：有行操作入口，但不弹动态码，只发列表与本用户详情的 GET",
+        "test/spec/frontend/admin-user-bindings/errors.test.ts > [AC-F1-07jc-ERROR#1] 20902（data.resource=union_binding）：提示状态已变化并刷新详情；不自动重发，再操作时带刷新后的 row_version 并成功",
+        "test/spec/frontend/admin-user-bindings/errors.test.ts > [AC-F1-07jc-ERROR#2] 30154：提示当前状态不能做此操作并刷新详情，该行显示最新状态（已解除）、入口随之消失",
+        "test/spec/frontend/admin-user-bindings/errors.test.ts > [AC-F1-07jc-ERROR#3] 20001 [platform]：给出该平台不支持此操作的提示，不显示成功、授权不变",
+        "test/spec/frontend/admin-user-bindings/errors.test.ts > [AC-F1-07jc-ERROR#4] 20001 [user_id]：提示用户不存在，不显示成功",
+        "test/spec/frontend/admin-user-bindings/errors.test.ts > [AC-F1-07jc-ERROR#5] 10403：提示没有权限，不显示成功、授权不变",
+        "test/spec/frontend/admin-user-bindings/errors.test.ts > [AC-F1-07jc-ERROR#6] 网络失败：提示失败、不显示成功、不自动重发，授权不变",
+        "test/spec/frontend/admin-user-bindings/pages.browser.test.ts > [AC-F1-07jc-BROWSER#1] 1440 超管：联盟授权表有「操作」列，淘宝行【停用返利】→ 确认框（原因）→ 动态码 → 一次 POST …/taobao/disable，该行变已停用并出现【恢复】；只发读、动态码与这一个写",
+        "test/spec/frontend/admin-user-bindings/writes.test.ts > [AC-F1-07jc-WRITE#1] 淘宝【重置授权】：确认 → 动态码 → 一次 POST …/taobao/reset，带令牌、无 Idempotency-Key、body 恰为原因与该行 row_version；成功提示，该行变已解除且无入口",
+        "test/spec/frontend/admin-user-bindings/writes.test.ts > [AC-F1-07jc-WRITE#2] 拼多多【停用返利】：POST …/pdd/disable 取该行 row_version；成功提示，该行变已停用，入口换成【恢复】",
+        "test/spec/frontend/admin-user-bindings/writes.test.ts > [AC-F1-07jc-WRITE#3] 【恢复】：拼多多恢复后为已授权、只剩【停用返利】；淘宝恢复后为已失效（待用户重新授权）、有【重置授权】【停用返利】",
+        "test/spec/frontend/admin-user-bindings/writes.test.ts > [AC-F1-07jc-WRITE#4] 连续两次操作（先停用再恢复同一行）各弹一次动态码、令牌不同；第二次带上一次之后的新 row_version",
+        "test/spec/frontend/admin-user-bindings/writes.test.ts > [AC-F1-07jc-WRITE#5] 连点确认与【验证并继续】、请求在途时再点：只弹一次动态码、只验证一次、只发一次写",
+        "test/spec/frontend/admin-user-bindings/writes.test.ts > [AC-F1-07jc-WRITE#6] 写请求回 10003：重新弹动态码，验证后用新令牌、原请求体再发一次，之后成功"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-user-bindings/dialogs.test.ts",
+        "test/spec/frontend/admin-user-bindings/entries.test.ts",
+        "test/spec/frontend/admin-user-bindings/errors.test.ts",
+        "test/spec/frontend/admin-user-bindings/pages.browser.test.ts",
+        "test/spec/frontend/admin-user-bindings/writes.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "b6584434cf8716dc8c2640c94e2a326e1ffbc35b5dc8f0d6fb8cc2e56d2d1935"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "72727b32525712b1b8b8243ad40dec82c986a7a2781ec290b1c851160bf06025"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "4ff83783d17743ea9efacd016912563b35ae5dab",
+    "test/spec": "6784a2e33253ffa5d7f811e0e0cb51135d4c1139",
+    "specs": "06bfb4d5a9d52d5099b36fb48f5831b176cc40ec"
+  }
+}

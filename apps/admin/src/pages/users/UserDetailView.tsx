@@ -43,6 +43,7 @@ import { plannedButtonProps, usePlanned } from '../../components/planned/index.t
 import { LevelChangeDialog, UserRelationsCard } from './relations.ts';
 import { RiskTag } from './RiskTag.tsx';
 import { UserTabs } from './tabs/UserTabs.tsx';
+import { useUnionBindingActions } from './UnionBindingActions.tsx';
 
 const t = usersTexts.detail;
 const STEP_UP_URL = '/admin/v1/auth/step-up';
@@ -342,6 +343,7 @@ function DetailBody({
   const [levelOpen, setLevelOpen] = useState(false);
   const levelTrigger = useRef<HTMLButtonElement>(null);
   const code = { fontFamily: token.fontFamilyCode } as const;
+  const bindingActions = useUnionBindingActions({ user, access, onUserChange });
   const inviter = user.inviter_user_id;
   const phoneValue =
     phone !== undefined ? (
@@ -496,6 +498,15 @@ function DetailBody({
       render: (_, binding) => beijingTime(binding.cooldown_until),
     },
   ];
+  // 「操作」列只给持 union.binding_reset / union.binding_disable 的账号（含超管）。
+  const renderActions = bindingActions.render;
+  if (renderActions !== undefined)
+    columns.push({
+      key: 'actions',
+      title: t.bindingColumns.actions,
+      width: 200,
+      render: (_, binding) => renderActions(binding),
+    });
 
   return (
     <Flex vertical gap={16}>
@@ -519,6 +530,7 @@ function DetailBody({
           }}
         />
       </Card>
+      {bindingActions.element}
       <UserRelationsCard
         user={user}
         access={access}

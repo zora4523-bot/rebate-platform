@@ -88,6 +88,7 @@ export const usersTexts = {
       boundAt: '授权时间',
       releasedAt: '解除时间',
       cooldownUntil: '冷却到期',
+      actions: '操作',
     },
     bindingStatus: {
       unbound: '未授权',
@@ -293,5 +294,56 @@ export const usersTexts = {
         actions: '操作',
       },
     },
+  },
+  /**
+   * 联盟授权表的行操作（design-hifi AdmUserUnionReset / AdmUserUnionDisable；F1-07jc）：
+   * 【重置授权】（只淘宝，union.binding_reset）、【停用返利】【恢复】（union.binding_disable）。
+   * 哪一行能做什么由详情返回的状态决定，服务端仍会再校验。
+   */
+  unionBindings: {
+    actions: {
+      reset: '重置授权',
+      disable: '停用返利',
+      enable: '恢复',
+    },
+    /** 行按钮的读屏名：动作在前、平台在后（规格 §6「行操作名带平台」）。 */
+    actionName: (action: string, platform: string): string => `${action} ${platform}`,
+    title: (action: string, platform: string): string => `${action} · ${platform}`,
+    /** 二次验证对话框里的「本次操作」。 */
+    operations: {
+      reset: '重置授权',
+      disable: '停用返利',
+      enable: '恢复返利',
+    },
+    stepUpTarget: (uid: string, platform: string): string => `用户 ${uid} · ${platform}`,
+    stepUpAgain: '上一次验证已失效，请重新输入动态码。',
+    consequences: {
+      reset: (platform: string): string =>
+        `重置后立即解除${platform}授权，当前绑定释放；冷却期内用户不能重新授权，冷却期满后用户下次购买需重新授权。`,
+      disable: (platform: string): string =>
+        `停用后该用户在${platform}不再返利：用户购买入口受限，只能无返利购买；之后可在本表点【恢复】。`,
+      enableTaobao: (platform: string): string =>
+        `恢复后${platform}授权为已失效，需用户重新授权后才恢复返利。`,
+      enableOther: (platform: string): string => `恢复后立即生效：${platform}立即恢复返利。`,
+    },
+    reasonExtra: '必填，不超过 200 字（去掉首尾空白后计）；记入操作日志',
+    reasonEmpty: '请填写原因：必填，不超过 200 字',
+    reasonTooLong: '原因不能超过 200 字，请删减后再提交',
+    reasonRefused: '原因不符合要求：必填，不超过 200 字',
+    enableBanned: '用户已封禁，不能恢复',
+    success: {
+      reset: (platform: string): string => `${platform}重置授权成功`,
+      disable: (platform: string): string => `${platform}停用返利成功`,
+      enable: (platform: string): string => `${platform}恢复返利成功`,
+    },
+    changed: '该授权的状态已变化，正在刷新详情，请核对后再操作。',
+    notAllowed: '该授权当前的状态不能做此操作，正在刷新详情。',
+    refreshFailed: '详情未能刷新，请刷新页面后再操作。',
+    platformUnsupported: '该平台不支持此操作（重置授权只适用于淘宝）。',
+    userMissing: '用户不存在或不属于本应用，操作未生效。',
+    forbidden: '当前账号没有这项操作的权限，操作未生效。',
+    invalid: '填写内容有误，操作未生效。',
+    network: '网络异常，操作失败，请稍后手动重试。',
+    failed: '操作失败，请稍后手动重试。',
   },
 } as const;
