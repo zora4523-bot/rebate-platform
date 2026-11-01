@@ -8,12 +8,7 @@
 // implementer's. Rule tests: test/spec/catalog/detail-reparse/**.
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import {
-  GovernanceError,
-  RedisUnavailableError,
-  type Clock,
-  type RedisNamespace,
-} from '../../platform/index.ts';
+import { RedisUnavailableError, type Clock, type RedisNamespace } from '../../platform/index.ts';
 import {
   UnionError,
   type CallCtx,
@@ -23,8 +18,7 @@ import {
   type UnionAdapter,
   type UnionItem,
 } from '../../union/index.ts';
-import { detailRawItemId, upstreamFailure } from '../detail.ts';
-import { CatalogError } from '../domain/rules.ts';
+import { detailRawItemId } from '../detail.ts';
 import type { Catalog, ProductCapabilities, ProductRef, ReparseResult } from '../domain/types.ts';
 import type { GovernedUnion } from '../ports.ts';
 
@@ -75,12 +69,10 @@ export const RAW_REPARSE_NAMESPACE = 'catalog-reparse';
 /** BR-PROD-05 重新解析步骤 2: the title search reads the platform's first page, ≤ 20 rows. */
 const SEARCH_ROWS = 20;
 /** BR-PROD-05 重新解析步骤 3. */
-const CALL_TIMEOUT_MS = 3000;
 const LOCK_TTL_SECONDS = 10;
 /** A waiter outlasts the holder's one call by a second; a holder that died is no reason to hang. */
 const WAIT_POLLS = 80;
 const WAIT_POLL_MS = 50;
-const REF_EXPIRED = { kind: 'ref_expired' } as const;
 const TEMPORARY_FAILURE = { kind: 'temporary_failure' } as const;
 /** BR-PROD-10: a re-parse does not depend on the keyword search switch, as the detail route. */
 const REF_CAPABILITIES: ProductCapabilities = Object.freeze({
@@ -132,65 +124,19 @@ export async function searchRawByTitle(
   return null;
 }
 
-/** Past the limit the call counts as the governor's own timeout: 结果分类 ③, whatever it ends in. */
-function withinLimit<T>(call: Promise<T>, dependency: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new GovernanceError('timeout', dependency, 'catalog: re-parse call past its limit'));
-    }, CALL_TIMEOUT_MS);
-    call.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error: unknown) => {
-        clearTimeout(timer);
-        reject(error as Error);
-      },
-    );
-  });
-}
-
-/** BR-PROD-05 重新解析步骤 1、2, one union call, sorted into 结果分类. No lock and no write. */
+/**
+ * BR-PROD-05 重新解析步骤 1、2, sorted into 结果分类. No lock and no write. B1-05y skeleton: the body
+ * of 491308b8c stood here; test/spec/catalog/reparse-fallback/** holds what it must now do.
+ */
 export async function parseRaw(
   union: GovernedUnion,
   target: RawReparseTarget,
   purpose: CallCtx['purpose'],
 ): Promise<RawParse> {
-  const { appId, platform, canonicalUrl, title, jdMode, isTarget } = target;
-  const adapter = union.adapter(platform);
-  const context: CallCtx = { appId, requestId: randomUUID(), purpose };
-  const dependency = `union:${platform}:${purpose}`;
-  try {
-    if (canonicalUrl !== null) {
-      const { item } = await withinLimit(adapter.resolveLink(canonicalUrl, context), dependency);
-      const raw = item.platform === platform ? detailRawItemId(item, jdMode) : undefined;
-      if (raw === undefined || !(await isTarget(item))) return REF_EXPIRED;
-      return { kind: 'found', ref: { rawItemId: raw, title, rawFetchedAt: null } };
-    }
-    const found = await searchRawByTitle({
-      adapter: {
-        searchItems: (query, ctx) => withinLimit(adapter.searchItems(query, ctx), dependency),
-      },
-      platform,
-      title,
-      jdMode,
-      context,
-      isTarget,
-    });
-    if (found === null) return REF_EXPIRED;
-    return {
-      kind: 'found',
-      ref: { rawItemId: found.raw, title, rawFetchedAt: found.item.quoted_at },
-    };
-  } catch (error: unknown) {
-    const mapped = upstreamFailure(error);
-    if (!(mapped instanceof CatalogError)) throw mapped;
-    if (mapped.code === 30141) return { kind: 'off_shelf' };
-    if (mapped.code === 30143) return REF_EXPIRED;
-    if (mapped.code === 50401) return TEMPORARY_FAILURE;
-    throw mapped;
-  }
+  void union;
+  void target;
+  void purpose;
+  throw new Error('NotImplemented: parseRaw');
 }
 
 export function createRawReparser(options: RawReparserOptions): RawReparser {
