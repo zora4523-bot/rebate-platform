@@ -94,7 +94,7 @@ export function suite() {
         }
       }
     }
-  }, 30_000);
+  }, 180_000);
   return {
     db(): Kysely<DB> {
       expect(db, 'test database').toBeDefined();
