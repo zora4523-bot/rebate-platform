@@ -4,19 +4,28 @@ import { scheduleOrderRescan } from '../../../../apps/api/src/modules/orders/app
 import { PLATFORM_RULES } from '../../../../apps/api/src/modules/orders/domain/platform-rules/index.ts';
 import type { RegisteredPlatform } from '../../../../apps/api/src/modules/union/index.ts';
 import {
+  DAY_MS,
+  HOUR_MS,
   JD_DAYS,
   JD_ENABLED,
+  NOW_MS,
   PDD_ACCOUNT,
   PDD_ENABLED,
   TAOBAO_ACCOUNT,
   account,
   daysAgo,
   fixture,
+  iso,
   mentioning,
   pddAccount,
   pddStream,
   rescanWindow,
 } from './kit.ts';
+
+const RESCAN_START_MARGIN_MS = HOUR_MS;
+
+/** A round starts the margin after now − days. */
+const roundStart = (days: number): string => iso(NOW_MS - days * DAY_MS + RESCAN_START_MARGIN_MS);
 
 it('[AC-B1-04zm#7] 键未设时 jd 开、回扫 30 天，开关与天数都按平台的键读', async () => {
   const f = fixture();
@@ -39,7 +48,7 @@ it('[AC-B1-04zm#9] pdd 打开后默认回扫 90 天，窗口长度取规则表�
   const f = fixture({ accounts: [pddAccount], config: { [PDD_ENABLED]: true } });
   await scheduleOrderRescan(f.ruleTableCaps, ['pdd']);
   const cap = PLATFORM_RULES.pdd.syncWindowCapMs!;
-  expect(f.sent()).toEqual([rescanWindow(daysAgo(90), cap, pddStream)]);
+  expect(f.sent()).toEqual([rescanWindow(roundStart(90), cap, pddStream)]);
 });
 
 it('[AC-B1-04zm#10] jd 开关显式关闭后不回扫', async () => {
@@ -52,7 +61,7 @@ it('[AC-B1-04zm#10] jd 开关显式关闭后不回扫', async () => {
 it.each([1, 45, 90])('[AC-B1-04zm#11] days=%d 在 1～90 内：按配置起算，不告警', async (days) => {
   const f = fixture({ config: { [JD_DAYS]: days } });
   await scheduleOrderRescan(f.scheduler, ['jd']);
-  expect(f.sent()).toEqual([rescanWindow(daysAgo(days))]);
+  expect(f.sent()).toEqual([rescanWindow(roundStart(days))]);
   expect(f.logger.warn).not.toHaveBeenCalled();
 });
 

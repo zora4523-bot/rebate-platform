@@ -9,6 +9,10 @@ import {
 import { DAY_MS, HOUR_MS, MINUTE_MS, NOW_MS } from './kit.ts';
 
 const FROM_30_DAYS = NOW_MS - 30 * DAY_MS;
+const RESCAN_START_MARGIN_MS = HOUR_MS;
+
+/** The range one round covers: it starts the margin after now − days. */
+const rangeMs = (days: number): number => days * DAY_MS - RESCAN_START_MARGIN_MS;
 
 interface Round {
   readonly windows: readonly { readonly startMs: number; readonly endMs: number }[];
@@ -48,12 +52,12 @@ function coversRange(nowMs: number, days: number, capMs: number): boolean {
   const nextNowMs = nowMs + capMs;
   const next = walk(nextNowMs, days, capMs);
   if (first === null || next === null) return false;
-  const fromMs = nowMs - days * DAY_MS;
+  const fromMs = nowMs - rangeMs(days);
   const tailMs = first.windows.at(-1)?.endMs ?? fromMs;
   const nextEndMs = next.windows.at(-1)?.endMs ?? nowMs - 1;
   return (
     joined(first, fromMs, capMs) &&
-    joined(next, nextNowMs - days * DAY_MS, capMs) &&
+    joined(next, nextNowMs - rangeMs(days), capMs) &&
     nowMs - tailMs >= 0 &&
     nowMs - tailMs < capMs &&
     (next.windows[0]?.startMs ?? Number.POSITIVE_INFINITY) <= tailMs &&
@@ -71,7 +75,7 @@ const cases = fc
     shrink: fc.integer({ min: 0, max: 999 }),
   })
   .map(({ minutes, days, pieces, shrink }) => {
-    const even = Math.ceil((days * DAY_MS) / pieces);
+    const even = Math.ceil(rangeMs(days) / pieces);
     return {
       nowMs: NOW_MS + minutes * MINUTE_MS,
       days,
@@ -132,7 +136,7 @@ it('[AC-B1-04zm#5] 京东 30 天 60 分钟窗一轮正好 720 窗，首尾相接
   expect(round === null ? false : joined(round, FROM_30_DAYS, HOUR_MS)).toBe(true);
 });
 
-it('[AC-B1-04zm#6] 任意 days 与 cap：窗口不重不漏，尾段不足一窗时由下一轮补上，两轮覆盖 [now − days, now]', () => {
+it('[AC-B1-04zm#6] 任意 days 与 cap：窗口不重不漏，尾段不足一窗时由下一轮补上，两轮覆盖 [now − days + 1 小时, now]', () => {
   expect(() =>
     fc.assert(
       fc.property(cases, ({ nowMs, days, capMs }) => coversRange(nowMs, days, capMs)),

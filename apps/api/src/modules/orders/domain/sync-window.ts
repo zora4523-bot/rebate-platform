@@ -86,9 +86,11 @@ export type RescanStep =
   | { readonly kind: 'round_end'; readonly restartMs: number };
 
 /**
- * B1-04zm: the next step from a rescan cursor (规划/02 §7.1). An absent cursor or one older than
- * now − days starts at now − days; less than one full window left before now ends the round,
- * restarting at now − days. Windows are always exactly capMs long.
+ * B1-04zm: the next step from a rescan cursor (规划/02 §7.1). A round starts at
+ * now − days + RESCAN_START_MARGIN_MS (one hour, every platform and days): the adapters judge
+ * from ≥ now − 90 days in milliseconds when the job runs, which is always after it was sent. An
+ * absent cursor or one older than that start begins there; less than one full window left before
+ * now ends the round, restarting there. Windows are always exactly capMs long.
  */
 export function rescanStep(
   cursorMs: number | null,
@@ -103,7 +105,10 @@ export function rescanStep(
   throw new Error('NotImplemented: rescanStep');
 }
 
-/** B1-04zm: seconds between rounds of one stream: 24 hours ÷ windows of a round, at least 60. */
+/**
+ * B1-04zm: seconds between rounds of one stream: 24 hours ÷ (days ÷ cap) windows, at least 60. The
+ * start margin does not enter: 30 days of 60-minute windows stay 120 seconds.
+ */
 export function rescanIntervalSeconds(days: number, capMs: number): number {
   void days;
   void capMs;
