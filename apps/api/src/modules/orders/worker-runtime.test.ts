@@ -197,7 +197,7 @@ it('[AC-B1-08n#u11] start 只起定时器、不投递；stop 后无残留定时�
   expect(vi.getTimerCount()).toBe(0);
   const handle = s.runtime.start();
   await vi.advanceTimersByTimeAsync(0);
-  expect(vi.getTimerCount()).toBe(1);
+  expect(vi.getTimerCount()).toBe(2); // one schedule timer per scheduled platform: jd, pdd
   expect(s.send).not.toHaveBeenCalled();
   expect(s.queries).toEqual([]);
   await handle.stop();
