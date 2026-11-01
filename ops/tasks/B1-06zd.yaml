@@ -36,5 +36,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/linking/promo-url/**'
-status: todo
-pr: null
+status: done
+pr: 2146
