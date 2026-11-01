@@ -1,0 +1,24 @@
+id: B1-04zl
+repo: rebate-platform
+title: 京东订单映射小修：Adapter 不写 settle_commission_fen，est 在 17 后取 actualFee，去掉不存在的 validCode 18（D10-529）
+type: impl
+# 2026-11-01 be 入账（编排 D10-529，更正 D10-520 ①；couli #244 回写 08 / 09）。BR-FUND-02：Adapter 只在平台明确已结算时写 settle_commission_fen；京东官方 40 个 validCode 没有已结算码，18 不存在。
+# 改：settle_commission_fen 恒 null，结算额只由联盟结算明细导入写 order_settlements（source=STATEMENT）；est_commission_fen 未完成取 estimateFee、17 取 actualFee，负数原样（D10-522）；commission_fen 取 max(0, est 值)；paid_fen 17 取 actualCosPrice、其余 estimateCosPrice（D10-520 ② 不变，18 去掉）。
+# 冻结规则测试 test/spec/union/jd-orders/** 里钉「17 / 18 写 settle」的断言要改：由新鲜独立 Claude 改，属第一类保护路径，编排按 #24 核标签（先例 B1-12u）。specs/union/jd.md 同改。RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04zb]
+paths:
+  - 'apps/api/src/modules/union/infra/jd/**'
+  - 'specs/union/jd.md'
+  - 'test/spec/union/jd-orders/**'
+  - 'test/spec/union/jd-orders-settle/**'
+test_paths:
+  - 'test/spec/union/jd-orders/**'
+  - 'test/spec/union/jd-orders-settle/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
