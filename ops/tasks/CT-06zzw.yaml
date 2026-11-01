@@ -4,7 +4,8 @@ title: CT-06zzw：verify-container.sh 的容器环境加 NODE_OPTIONS=--max-old-
 type: guard-change
 # 2026-11-01 入账（编排自做，ops 线暂停；照 CT-06zzv 先例）。起因：fe 14:01 报测试机 verify-container.sh --fast 连续两次 exit 134，
 # 容器里 tsc -b「JavaScript heap out of memory」（F1-07jd 等），admin 的 CT-24zh 同样风险；与 CI 在 CT-06zzv（#2116）之前同因。
-# 做法：红测、浏览器、fast、完整四处容器环境统一加 NODE_HEAP（只是上限、不预占，容器本就不设内存上限）。测试内容不改。
+# 做法：红测、浏览器、fast、完整四处容器环境统一加 NODE_HEAP（只是上限、不预占，容器本就不设内存上限）。规则测试不改；工具自测
+# verify-container.services.test.ts 钉着传给容器的环境变量清单，四处期望加 NODE_OPTIONS 并钉住其值（只增不减）。
 # 改 tools/** 属保护路径，按 approvals #24 由编排核对后加 owner-approved 标签；非 task 分支 chore/guard-change-CT-06zzw，不带证据文件
 # （先例 CT-06zzv #2116、CT-06zza #2020）。
 refs: []
@@ -12,6 +13,7 @@ refs_hash: {}
 deps: []
 paths:
   - 'tools/ops/verify-container.sh'
+  - 'tools/ops/verify-container.services.test.ts'
   - 'ops/tasks/CT-06zzw.yaml'
 impl: claude
 tester: none
