@@ -71,7 +71,7 @@ async function armedTimers(deps: OrderSyncRuntimeDeps): Promise<number> {
 }
 
 it.each(BRANCHES)(
-  '[AC-B1-04zm#54] $label：rescan-window 路由到回扫处理器，增量和手动任务走原路',
+  '[AC-B1-04zm#54] $label：rescan.window 路由到回扫处理器，增量和手动任务走原路',
   async ({ withSnapshots }) => {
     const { deps, register } = harness();
     const built = await capture(() =>
@@ -83,10 +83,10 @@ it.each(BRANCHES)(
     const handler = registrations[0]![1];
 
     const increment = { ...RESCAN, query_kind: 'increment' };
-    expect(await capture(() => handler(named('rescan-window', RESCAN)))).toMatchObject({
+    expect(await capture(() => handler(named('rescan.window', RESCAN)))).toMatchObject({
       ok: true,
     });
-    const wrongKind = await capture(() => handler(named('rescan-window', increment)));
+    const wrongKind = await capture(() => handler(named('rescan.window', increment)));
     expect(wrongKind.ok ? null : wrongKind.error).toBeInstanceOf(OrderSyncPayloadError);
 
     expect(await capture(() => handler(named('window', increment)))).toMatchObject({ ok: true });

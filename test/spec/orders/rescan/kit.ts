@@ -87,7 +87,7 @@ export function job(payload: JobPayload = window, attempt = 1): ReceivedJob {
   return {
     id: 'synthetic-rescan-job',
     queue: 'order-sync',
-    name: 'rescan-window',
+    name: 'rescan.window',
     payload,
     attempt,
   };

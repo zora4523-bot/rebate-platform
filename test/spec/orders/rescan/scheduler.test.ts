@@ -47,7 +47,7 @@ it('[AC-B1-04zm#17] 游标空：流是 (app, 平台, 账号, rescan, -)，从 no
   await scheduleOrderRescan(f.scheduler, ['jd']);
   const win = rescanWindow(roundStart(30));
   expectReadBothCursors(f);
-  expect(f.send).toHaveBeenCalledExactlyOnceWith('order-sync', 'rescan-window', win, {
+  expect(f.send).toHaveBeenCalledExactlyOnceWith('order-sync', 'rescan.window', win, {
     trx: null,
     singletonKey: `jd:${ACCOUNT}:rescan:-:${win.window_start}`,
   });

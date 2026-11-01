@@ -1,4 +1,4 @@
-// B1-04zm: the 'rescan-window' job. Shape follows test/spec/orders/sync/handler.test.ts.
+// B1-04zm: the 'rescan.window' job. Shape follows test/spec/orders/sync/handler.test.ts.
 import { expect, it } from 'vitest';
 import type { JobPayload } from '../../../../apps/api/src/modules/platform/index.ts';
 import { handleOrderRescanWindow } from '../../../../apps/api/src/modules/orders/jobs/order-rescan.ts';
