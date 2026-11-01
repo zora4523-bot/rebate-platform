@@ -143,6 +143,7 @@ import {
   IdentityAdminModule,
   IdentityModule,
   createExportUsersReader,
+  createRealnameExportBatchReader,
   IdentityWorkerModule,
   IdentityDeletionExpiryModule,
   ME_READ_PORTS,
@@ -268,6 +269,7 @@ import {
   isWithdrawalApplication,
   createWithdrawUsageReader,
   generateOutBizNo,
+  createTaxExportReader,
   readPaidWithdrawalAt,
   readPaidWithdrawalSummaries,
   type DecryptWithdrawalAccount,
@@ -4506,6 +4508,13 @@ export class AppModule {
               // Nothing is seeded: jobs come from the creating and the done transactions.
               ExportWorkerModule.forWorker({
                 users: (db, crypto) => createExportUsersReader({ db, crypto }),
+                // B2-08e (BR-WDR-21): the quarterly tax detail, both ports on the field cipher.
+                tax: (crypto) => ({
+                  withdrawals: createTaxExportReader({
+                    decrypt: payeeDecrypt.useFactory(crypto)!,
+                  }),
+                  realnames: createRealnameExportBatchReader({ crypto }),
+                }),
                 config: (db, clock) => createContentReader({ db, clock }),
                 configPermissions: new Map(
                   configRegistry().map((item) => [item.key, item.permission]),

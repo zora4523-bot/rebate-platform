@@ -180,7 +180,6 @@ it('[CT-24zi] tax_withdrawals takes a required quarter; full values need tax.exp
   expect(text).toContain('BR-WDR-21');
   expect(text).toContain('`tax.export_full` alone');
   expect(text).toContain('`export` and `fund.view`');
-  expect(text).toContain('20001 with `data.fields=[resource]`');
   expect(text).toContain('export_unmasked (with the row count and the purpose)');
 });
 

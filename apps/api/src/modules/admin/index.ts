@@ -6,6 +6,7 @@ export type { ExportWorker, ExportWorkerOptions } from './application/export-wor
 // readers); EXPORT_WORKER also carries the account-disable cancel port.
 export { EXPORT_WORKER, ExportWorkerModule } from './export-worker.module.ts';
 export type { ExportWorkerModuleOptions } from './export-worker.module.ts';
+export type { TaxExportPorts } from './application/tax-export-source.ts';
 export { AdminModule, TOTP_REPLAY_STORE } from './admin.module.ts';
 export { createAuditWriter } from './infra/audit-writer.ts';
 export {

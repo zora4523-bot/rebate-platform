@@ -6,11 +6,15 @@
 //     sent in the same transaction), read the source list page by page (users through identity's
 //     batch projection, masked unless the persisted task says otherwise; audit_logs through
 //     B1-34a's reader with its own-records rule; both are keyset walks over the set fixed at the
-//     claim's Clock instant, count and rows under the same bound), write progress, enforce
+//     claim's Clock instant, count and rows under the same bound; tax_withdrawals, B2-08e, through
+//     ./tax-export-source.ts, cursor pages of payout's port with identity's batch real names, a
+//     note line above the header, an unreadable real name failing the whole task), write progress,
+//     enforce
 //     admin.export.max_rows on the rows actually read, build one CSV (UTF-8 BOM, RFC 4180,
 //     formula guard), put it into the private export store, then running → done in one
 //     transaction with expires_at = generated + 24 h, the export_unmasked row-count audit of an
-//     unmasked task and the delayed expire job (no singletonKey: export is a standard queue).
+//     unmasked task (export_generated for a masked tax_withdrawals task, BR-WDR-21) and the delayed
+//     expire job (no singletonKey: export is a standard queue).
 //     A source / storage failure or the row limit is running → failed with a short safe reason;
 //     an object whose task did not reach done (cancelled meanwhile, or the done transaction
 //     rolled back) is deleted again — only under the task's row lock (below).
@@ -52,6 +56,7 @@ import { transitionExportTask, type ExportTaskState } from '@couli/domain';
 import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import type { ContentReader } from '../../content/index.ts';
 import type { ExportUsersReader } from '../../identity/index.ts';
+import { taxExportQuarterRange } from '../../payout/index.ts';
 import type {
   Clock,
   ExportStore,
@@ -62,7 +67,13 @@ import type {
 } from '../../platform/index.ts';
 import type { AdminProfiles } from '../infra/admin-profiles.ts';
 import { createAuditWriter } from '../infra/audit-writer.ts';
+import { taxExportNote, TAX_EXPORT_HEADER } from '../domain/tax-export.ts';
 import type { AuditLogsReader, AuditQuery } from './audit-logs-read.ts';
+import {
+  readTaxExportPage,
+  TaxRealnameUnreadableError,
+  type TaxExportPorts,
+} from './tax-export-source.ts';
 
 export interface ExportWorkerOptions {
   readonly db: Kysely<DB>;
@@ -71,6 +82,8 @@ export interface ExportWorkerOptions {
   readonly store: ExportStore;
   readonly users: ExportUsersReader;
   readonly auditLogs: AuditLogsReader;
+  /** Quarterly tax export (B2-08e); without it a tax_withdrawals task fails, nothing is guessed. */
+  readonly tax?: TaxExportPorts;
   readonly profiles: AdminProfiles;
   readonly config: Pick<ContentReader, 'configValue'>;
   readonly logger: RootLogger;
@@ -96,12 +109,15 @@ export const EXPORT_LEASE_SECONDS_KEY = 'admin.export.running_lease_seconds';
 export const EXPORT_DEFAULT_MAX_ROWS = 50_000;
 export const EXPORT_DEFAULT_MAX_RUNNING = 2;
 export const EXPORT_DEFAULT_LEASE_SECONDS = 600;
+/** The masked tax file's own audit record (contract adminCreateExport, Audit; BR-WDR-21). */
+export const EXPORT_GENERATED_ACTION = 'export_generated';
 /** BR-ID-42 / BR-ID-30 ⑨: downloadable for 24 hours after generation. */
 export const EXPORT_DOWNLOAD_WINDOW_MS = 86_400_000;
 /** A task left pending at the creator's capacity is offered again after this delay. */
 export const EXPORT_CAPACITY_RETRY_SECONDS = 15;
 
 const USERS_PAGE_SIZE = 500;
+const TAX_PAGE_SIZE = 500;
 /** The audit search's contract page_size maximum. */
 const AUDIT_PAGE_SIZE = 200;
 const FAILURE_REASON_MAX = 200;
@@ -111,6 +127,9 @@ const RISK_STATES: ReadonlySet<string> = new Set(['normal', 'frozen', 'appealing
 const BOM = Uint8Array.of(0xef, 0xbb, 0xbf);
 
 const REASON_ROW_LIMIT = (max: number) => `导出行数超过上限 ${max} 行，请缩小筛选范围后重试`;
+const REASON_TAX_ROW_LIMIT = (max: number) =>
+  `导出行数超过上限 ${max} 行，涉税明细不能截断，请调大配置项 ${EXPORT_MAX_ROWS_KEY} 后重试`;
+const REASON_REALNAME = '有到账记录读不到实名，未生成文件，请核实后重试';
 const REASON_FILTERS = '导出筛选条件无效';
 const REASON_SOURCE = '读取导出数据失败，请稍后重试';
 const REASON_STORAGE = '导出文件写入失败，请稍后重试';
@@ -135,6 +154,10 @@ interface SourcePage {
 }
 
 interface Source {
+  /** Line one above the header, written at generation (tax_withdrawals only). */
+  note?(at: Date): string;
+  /** The failure reason past admin.export.max_rows; the general one when absent. */
+  rowLimitReason?(max: number): string;
   readonly header: readonly string[];
   readonly pageSize: number;
   page(page: number, pageSize: number): Promise<SourcePage>;
@@ -159,6 +182,16 @@ function shiftMs(instant: Date, ms: number): Date {
   const result = structuredClone(instant);
   result.setTime(instant.getTime() + ms);
   return result;
+}
+
+/** Year 2026..2100 and the shape, by payout's own function. */
+function taxQuarterAllowed(quarter: string): boolean {
+  try {
+    taxExportQuarterRange(quarter);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -291,7 +324,7 @@ export function createExportCanceller(options: {
 }
 
 export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
-  const { clock, queue, store, users, auditLogs, profiles, config, logger } = options;
+  const { clock, queue, store, users, auditLogs, tax, profiles, config, logger } = options;
   const db = options.db.withSchema('app');
   const canceller = createExportCanceller({
     clock,
@@ -725,6 +758,36 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
         },
       };
     }
+    if (task.resource === 'tax_withdrawals') {
+      const quarter = filters['quarter'];
+      if (typeof quarter !== 'string' || !taxQuarterAllowed(quarter)) {
+        throw new SourceFiltersError();
+      }
+      if (tax === undefined) throw new Error('export: the tax ports are not assembled');
+      const profile = await profiles.byId(task.app_id, task.created_by);
+      if (profile === undefined) throw new Error('export: the creator account is unknown');
+      const { loginName } = profile;
+      // Cursor walk of payout's port; the quarter is the only bound (paid_at decides, BR-WDR-21).
+      let cursor: string | undefined;
+      return {
+        note: (at) => taxExportNote(loginName, at),
+        rowLimitReason: REASON_TAX_ROW_LIMIT,
+        header: TAX_EXPORT_HEADER,
+        pageSize: TAX_PAGE_SIZE,
+        async page(_page, pageSize) {
+          const result = await readTaxExportPage(tax, options.db, {
+            appId: task.app_id,
+            quarter,
+            masked: task.masked,
+            cursor,
+            limit: pageSize,
+          });
+          if (result.nextCursor !== null) cursor = result.nextCursor;
+          // No count from the port: the rows actually read decide the limit.
+          return { rows: result.rows, total: 0 };
+        },
+      };
+    }
     throw new SourceFiltersError();
   }
 
@@ -791,6 +854,16 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
             reason: await unmaskedReason(trx, row),
             row_count: rowCount,
           },
+          ip: null,
+        });
+      } else if (row.resource === 'tax_withdrawals') {
+        await auditOn(trx).append({
+          appId: row.app_id,
+          actor: row.created_by,
+          action: EXPORT_GENERATED_ACTION,
+          target: `export_tasks:${row.public_id}`,
+          before: null,
+          after: { task_id: row.public_id, resource: row.resource, row_count: rowCount },
           ip: null,
         });
       }
@@ -860,12 +933,15 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
           { event: 'export_source_failed', task_id: task.id, error: errorName(error) },
           'export source read failed',
         );
-        await fail(lease, REASON_SOURCE);
+        await fail(
+          lease,
+          error instanceof TaxRealnameUnreadableError ? REASON_REALNAME : REASON_SOURCE,
+        );
         return;
       }
       rowCount += result.rows.length;
       if (rowCount > maxRows || result.total > maxRows) {
-        await fail(lease, REASON_ROW_LIMIT(maxRows));
+        await fail(lease, (source.rowLimitReason ?? REASON_ROW_LIMIT)(maxRows));
         return;
       }
       for (const cells of result.rows) chunks.push(csvRecord(cells));
@@ -878,6 +954,7 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
     // Still this execution's right before the upload (fresh lease for the put).
     if (!(await heartbeat(lease, percent))) return;
 
+    if (source.note !== undefined) chunks.unshift(csvRecord([source.note(clock.now())]));
     const key = objectKey(task);
     try {
       await putWithin(lease, leaseSeconds * 1000, {

@@ -24,6 +24,11 @@
 // request then sees `disabled` and answers 10001 without writing — or waits for this transaction,
 // and its cancel then sees the new pending task. Row lock first, as the disable takes it, so the
 // two never wait on each other in opposite order.
+// Quarterly tax export (B2-08e; BR-WDR-21, CT-24zi): the masked version needs export and fund.view,
+// the full one tax.export_full alone (with its totp step-up and a reason, run by the controller for
+// a super admin too). tax.export_full opens nothing but the full tax file: an account passing the
+// guard by that point alone lists only its own tax tasks, and any other task is 20001 [id], which
+// the source point cannot decide for audit_logs (it has none), so it is refused by the task itself.
 // Time only from the injected Clock. Logs nothing (no value, link or token reaches a log line).
 //
 // Pure module (no decorators, erasable syntax).
@@ -35,19 +40,27 @@ import type { AdminActor, Clock, ExportStore, JobQueue } from '../../platform/in
 import type { AdminDisplayNameReader } from '../infra/admin-display-names.ts';
 import type { AdminProfiles } from '../infra/admin-profiles.ts';
 import { createAuditWriter } from '../infra/audit-writer.ts';
+import { taxExportQuarterRange } from '../../payout/index.ts';
 import { auditRangeInvalid } from './audit-logs-read.ts';
 import { EXPORT_GENERATE_JOB, EXPORT_QUEUE } from './export-worker.ts';
 
-export type ExportResource = 'users' | 'audit_logs';
+export type ExportResource = 'users' | 'audit_logs' | 'tax_withdrawals';
 export type ExportStatus = ExportTaskState;
 
 /** Source list → the point the list itself needs (audit_logs: signed in is enough). */
 const SOURCE_POINT: Readonly<Record<ExportResource, string | null>> = {
   users: 'user.list',
   audit_logs: null,
+  tax_withdrawals: 'fund.view',
 };
+/** The permission point of every export operation (04 §11.1; no step-up). */
+export const EXPORT_POINT = 'export';
 /** The pii point a full-value file is made under (the users list's only sensitive column). */
 export const EXPORT_PII_POINT = 'pii.reveal_phone';
+/** The full quarterly tax file's own point (totp); no fund.* implies it, export is not needed. */
+export const EXPORT_TAX_FULL_POINT = 'tax.export_full';
+/** Who may list, download and retry; what the second one reaches is decided per task below. */
+export const EXPORT_ACCESS_POINTS: readonly string[] = [EXPORT_POINT, EXPORT_TAX_FULL_POINT];
 export const EXPORT_VIEW_ALL_POINT = 'audit.view_all';
 /** BR-ID-42: each download link lives at most 5 minutes (and never past the task's expiry). */
 export const EXPORT_LINK_TTL_MS = 300_000;
@@ -67,7 +80,27 @@ const SUMMARY_MAX = 500;
 /** admin_users.status of an account that may create or retry (same value as the login's). */
 const ADMIN_ACTIVE_CREATOR = 'active';
 
+const TAX_RESOURCE = 'tax_withdrawals';
+
 type TaskRow = Selectable<DB['export_tasks']>;
+
+/** The point a file with full values is made under (step-up included). */
+export function exportFullPoint(resource: ExportResource): string {
+  return resource === TAX_RESOURCE ? EXPORT_TAX_FULL_POINT : EXPORT_PII_POINT;
+}
+
+/** The point standing for the source list of a task: a full tax file has tax.export_full only. */
+function sourcePointOf(resource: ExportResource, masked: boolean): string | null {
+  return resource === TAX_RESOURCE && !masked ? EXPORT_TAX_FULL_POINT : SOURCE_POINT[resource];
+}
+
+/** Only a full tax task is reachable without export. */
+const needsExport = (resource: ExportResource, masked: boolean): boolean =>
+  resource !== TAX_RESOURCE || masked;
+
+/** The create command's version: audit logs are always masked, whatever the request says. */
+const maskedOf = (command: ExportCreateCommand): boolean =>
+  command.resource === 'audit_logs' || command.unmasked !== true;
 
 /** The creator was disabled (or vanished) after its admin_token was checked: 10001, nothing written. */
 export class ExportCreatorInactiveError extends Error {
@@ -208,7 +241,7 @@ function statusOf(row: TaskRow): ExportStatus {
 }
 
 function resourceOf(row: TaskRow): ExportResource {
-  if (row.resource !== 'users' && row.resource !== 'audit_logs') {
+  if (row.resource !== 'users' && row.resource !== 'audit_logs' && row.resource !== TAX_RESOURCE) {
     throw new Error('admin export: unknown task resource');
   }
   return row.resource;
@@ -240,7 +273,9 @@ export function filtersSummary(
   const text = (key: string): string | undefined =>
     typeof filters[key] === 'string' ? filters[key] : undefined;
   let summary: string;
-  if (resource === 'users') {
+  if (resource === TAX_RESOURCE) {
+    summary = `季度：${text('quarter') ?? ''}`;
+  } else if (resource === 'users') {
     const risk = text('risk_state');
     summary = `风控状态：${risk === undefined ? '全部' : (RISK_STATE_NAMES[risk] ?? risk)}`;
   } else {
@@ -340,21 +375,31 @@ export function createAdminExports(deps: AdminExportsDeps): AdminExports {
   return Object.freeze({
     async checkCreate(actor: AdminActor, command: ExportCreateCommand) {
       const points = await pointsOf(actor);
-      if (!holds(actor, points, SOURCE_POINT[command.resource])) throw new ExportPermissionError();
-      const unmasked = command.unmasked === true;
-      if (command.resource === 'users') {
-        // reason goes with unmasked: true only, and is required there (length by the schema).
-        if (unmasked !== (command.reason !== undefined)) throw new ExportFieldsError(['reason']);
-      } else {
+      const masked = maskedOf(command);
+      if (!holds(actor, points, sourcePointOf(command.resource, masked))) {
+        throw new ExportPermissionError();
+      }
+      if (command.resource === 'audit_logs') {
         if (auditRangeInvalid(command.filters['from'], command.filters['to'])) {
           throw new ExportFieldsError(['from', 'to']);
         }
+      } else if (masked === (command.reason !== undefined)) {
+        // reason goes with unmasked: true only, and is required there (length by the schema).
+        throw new ExportFieldsError(['reason']);
       }
-      return { masked: !(command.resource === 'users' && unmasked) };
+      if (command.resource === TAX_RESOURCE) {
+        // The shape is the schema's; the year range is payout's port's own rule.
+        try {
+          taxExportQuarterRange(command.filters['quarter'] ?? '');
+        } catch {
+          throw new ExportFieldsError(['filters.quarter']);
+        }
+      }
+      return { masked };
     },
 
     async create(actor: AdminActor, command: ExportCreateCommand, ip: string | null) {
-      const masked = !(command.resource === 'users' && command.unmasked === true);
+      const masked = maskedOf(command);
       const now = clock.now();
       const row = await db.transaction().execute(async (trx) => {
         await lockActiveCreator(trx, actor);
@@ -421,9 +466,12 @@ export function createAdminExports(deps: AdminExportsDeps): AdminExports {
     async list(actor: AdminActor, query: ExportListQuery) {
       if (auditRangeInvalid(query.from, query.to)) throw new ExportFieldsError(['from', 'to']);
       const points = await pointsOf(actor);
-      const all = actor.isSuper || points.has(EXPORT_VIEW_ALL_POINT);
+      // Here by tax.export_full alone: own tax tasks only, audit.view_all widens nothing.
+      const exporter = holds(actor, points, EXPORT_POINT);
+      const all = exporter && (actor.isSuper || points.has(EXPORT_VIEW_ALL_POINT));
       let base = db.selectFrom('export_tasks').where('app_id', '=', actor.appId);
       if (!all) base = base.where('created_by', '=', actor.adminId);
+      if (!exporter) base = base.where('resource', '=', TAX_RESOURCE);
       if (query.status !== undefined) base = base.where('status', '=', query.status);
       if (query.resource !== undefined) base = base.where('resource', '=', query.resource);
       if (query.from !== undefined) {
@@ -460,8 +508,9 @@ export function createAdminExports(deps: AdminExportsDeps): AdminExports {
       const resource = resourceOf(row);
       // A creator who lost the source point or the pii point of a full-value file: no probing.
       if (
-        !holds(actor, points, SOURCE_POINT[resource]) ||
-        (!row.masked && !holds(actor, points, EXPORT_PII_POINT))
+        (needsExport(resource, row.masked) && !holds(actor, points, EXPORT_POINT)) ||
+        !holds(actor, points, sourcePointOf(resource, row.masked)) ||
+        (!row.masked && !holds(actor, points, exportFullPoint(resource)))
       ) {
         throw new ExportFieldsError(['id']);
       }
@@ -493,10 +542,17 @@ export function createAdminExports(deps: AdminExportsDeps): AdminExports {
 
     async checkRetry(actor: AdminActor, publicId: string, body: { readonly reason?: string }) {
       const row = await ownTask(actor, publicId);
+      const resource = resourceOf(row);
+      const points = await pointsOf(actor);
+      // Here by tax.export_full alone: any task but a full tax one does not exist for this account.
+      if (needsExport(resource, row.masked) && !holds(actor, points, EXPORT_POINT)) {
+        throw new ExportFieldsError(['id']);
+      }
       const status = statusOf(row);
       if (status !== 'failed') throw new ExportStatusError(status);
-      const points = await pointsOf(actor);
-      if (!holds(actor, points, SOURCE_POINT[resourceOf(row)])) throw new ExportPermissionError();
+      if (!holds(actor, points, sourcePointOf(resource, row.masked))) {
+        throw new ExportPermissionError();
+      }
       // A full-value task needs a new reason; a masked one takes none.
       if (row.masked === (body.reason !== undefined)) throw new ExportFieldsError(['reason']);
       return { task: row, reason: body.reason ?? null };
