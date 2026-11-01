@@ -3755,6 +3755,7 @@ CREATE TABLE app.order_rights (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    answered_at timestamp with time zone,
     CONSTRAINT order_rights_status_check CHECK ((status = ANY (ARRAY['PROCESSING'::text, 'WAIT_COMMISSION'::text, 'SUCCEEDED'::text, 'FAILED'::text]))),
     CONSTRAINT order_rights_type_check CHECK ((type = ANY (ARRAY['RIGHTS'::text, 'PUNISH'::text, 'INVALID_AFTER_SETTLE'::text, 'REFUND_AFTER_SETTLE'::text])))
 );
@@ -14177,6 +14178,13 @@ GRANT SELECT ON TABLE app.order_keys TO couli_readonly;
 
 GRANT SELECT,INSERT,UPDATE ON TABLE app.order_rights TO couli_app;
 GRANT SELECT ON TABLE app.order_rights TO couli_readonly;
+
+
+--
+-- Name: COLUMN order_rights.answered_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(answered_at) ON TABLE app.order_rights TO couli_app;
 
 
 --

@@ -528,13 +528,25 @@ it(
 );
 
 it(
-  '[AC-B2-04l#41] 全额 / 部分分界的另一侧（入账后，预留 0，booked_n 1000）：应扣佣金 999 → N_new 1、B_new 1 > 0 → 部分，按 R9 RIGHTS_PARTIAL 扣回 500 / 100 / 50、平台 349，保持 CREDITED，booked 1 / 1，差额原因 PART_REFUND，不发 order.clawed_back',
+  '[AC-B2-04l#41] 全额 / 部分分界的另一侧（入账后，预留 0，booked_n 1000）：应扣佣金 999 → N_new 1、B_new 1 > 0 → 部分，按 R9 RIGHTS_PARTIAL 扣回 500 / 100 / 50、平台 349，保持 CREDITED，booked 1 / 1，差额原因 PART_REFUND，发 order.clawed_back（D10-474 ③）',
   async () => {
     const h = await harness(p.db);
     const o = await h.credited({ reserveBp: 0 });
     const published = h.publish.mock.calls.length;
+    let recordTrx: unknown;
 
-    expect(await h.record(o, { deductionFen: 999n })).toEqual({ kind: 'applied' });
+    expect(
+      await h.record(
+        o,
+        { deductionFen: 999n },
+        {
+          after: (t) => {
+            recordTrx = t;
+            return Promise.resolve();
+          },
+        },
+      ),
+    ).toEqual({ kind: 'applied' });
     const id = `R${(await h.onlyRights(o)).id}`;
     expect(await h.clawbackKeys(o)).toEqual(keysOf(o, id));
     expect(await h.voucherLines(clawbackKey(o, 'self', id))).toEqual(
@@ -569,7 +581,26 @@ it(
         event: 'RIGHTS_PARTIAL',
       }),
     ]);
-    expect(h.publishedSince(published)).not.toContain('order.clawed_back');
+    const calls = h.publish.mock.calls.slice(published);
+    const clawedBack = calls.filter(([, e]) => e.name === 'order.clawed_back');
+    expect(clawedBack).toHaveLength(1);
+    const [trx, event] = clawedBack[0]!;
+    expect(recordTrx).toBeDefined();
+    expect(trx).toBe(recordTrx);
+    expect(event).toMatchObject({ appId: h.appId, name: 'order.clawed_back' });
+    expect(event.payload).toMatchObject({
+      order_key: o.orderKey,
+      beneficiaries: expect.arrayContaining([
+        expect.objectContaining({ user_id: o.user('self'), role: 'self', clawback_fen: '500' }),
+        expect.objectContaining({ user_id: o.user('direct'), role: 'direct', clawback_fen: '100' }),
+        expect.objectContaining({
+          user_id: o.user('indirect'),
+          role: 'indirect',
+          clawback_fen: '50',
+        }),
+      ]),
+    });
+    expect(event.payload).toHaveProperty(['beneficiaries', 'length'], 3);
     expect(await h.balance(o.user('self'))).toBe(0n);
   },
   TIMEOUT,

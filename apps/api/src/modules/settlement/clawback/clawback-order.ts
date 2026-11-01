@@ -39,7 +39,9 @@
 //      through the generated order-rebate transition() with a CAS on (rebate_status, row_version);
 //      a rebate history row; R8 also writes orders.reason, R9 writes diff_reason_code PART_REFUND
 //      and leaves orders.reason unchanged.
-//  10. R8 publishes order.clawed_back on the same transaction.
+//  10. R8 and R9 publish order.clawed_back on the same transaction (B2-04lb, D10-474 ③): order_id,
+//      order_key, rights_event_id, transition, R8 reason, beneficiaries [{ user_id, role,
+//      clawback_fen (decimal string) }] for the beneficiaries clawed back from their balance.
 //  11. (B2-04l, BR-FUND-06「等联盟回传新佣金后按 R7/R9 处理并关闭」) after an R8 / R9: the WAIT_COMMISSION
 //      order_rights rows this event answers are closed as SUCCEEDED (a rights ref: that row; a
 //      platform / commission ref: every WAIT_COMMISSION row of the order), orders.rights_pending is
@@ -126,14 +128,19 @@ import type {
   CreditSnapshot,
   CreditSnapshotSelection,
 } from '../credit/index.ts';
-import { readOrderLocator } from '../credit/credit-store.ts';
+import { readLatestSettleSeq, readOrderLocator } from '../credit/credit-store.ts';
 import {
   insertRebateHistory,
   readRebateOrder,
   type OrderRow,
 } from '../rebate/infra/rebate-store.ts';
 import { isForfeitedShare } from '../reads/pending-earnings-rules.ts';
-import { closeWaitingRights, hasWaitingRights } from '../rights/rights-store.ts';
+import {
+  closeWaitingRights,
+  hasWaitingRights,
+  hasWaitingRightsBefore,
+  readLatestSettlementAt,
+} from '../rights/rights-store.ts';
 import {
   casClawbackOrder,
   casRightsPending,
@@ -223,6 +230,15 @@ export type ClawbackResult =
       readonly bookedNFen: bigint;
     }
   | {
+      /** B2-04lb: R10 SETTLE_ADJUST answering a WAIT_COMMISSION rights record. */
+      readonly outcome: 'settle_adjusted';
+      readonly transition: 'R10';
+      readonly orderKey: string;
+      readonly rightsEventId: string;
+      readonly bookedBaseFen: bigint;
+      readonly bookedNFen: bigint;
+    }
+  | {
       /** Recalculated with nothing to write (e.g. a replayed R9 event). */
       readonly outcome: 'no_change';
       readonly orderKey: string;
@@ -252,6 +268,8 @@ export interface ClawbackOrder {
 
 const FROM_STATUS = 'CREDITED';
 const BIZ_TYPE = 'ORDER_CLAWBACK';
+const ADJUST_BIZ_TYPE = 'ORDER_SETTLE_ADJUST';
+const ALERT_ADJUST_HELD = 'rights_settle_adjust_unsupported';
 const OPERATOR = 'system';
 const DIFF_SWITCH = 'settle.estimate_change_diff.enabled';
 const FULL_CAUSES: readonly ClawbackCause[] = [
@@ -512,6 +530,7 @@ export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
     built: BuiltVoucher,
     beneficiary: { readonly userId: string; readonly role: CreditRole } | null,
     accounts: ReadonlyMap<string, string>,
+    kind: 'CLAWBACK' | 'SETTLE_ADJUST' = 'CLAWBACK',
   ): PostingVoucher {
     const entries: PostingEntry[] = built.entries.map((entry) => {
       if (entry.account.owner_type === 'user') {
@@ -540,14 +559,14 @@ export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
     return {
       appId,
       uniqKey: built.uniq_key,
-      bizType: BIZ_TYPE,
+      bizType: kind === 'CLAWBACK' ? BIZ_TYPE : ADJUST_BIZ_TYPE,
       bizId: key,
       operator: OPERATOR,
       memo: null,
       orderKey: key,
       beneficiaryUserId: beneficiary?.userId ?? null,
       role: beneficiary?.role ?? null,
-      voucherKind: 'CLAWBACK',
+      voucherKind: kind,
       entries,
     };
   }
@@ -867,18 +886,27 @@ export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
     // 11. close the WAIT_COMMISSION rights rows this event answers (BR-FUND-06), same transaction.
     await closeAnsweredRights(trx, command.ref, order, now);
 
-    // 10. order.clawed_back on the same transaction (R8 only).
-    if (transition === 'R8') {
-      await events.publish(trx, {
-        appId,
-        name: 'order.clawed_back',
-        payload: {
-          order_id: orderId,
-          rights_event_id: rightsEventId,
-          reason: rules.r8Reason,
-        },
-      });
-    }
+    // 10. order.clawed_back on the same transaction, R8 and R9 (D10-467 ② / D10-474 ③): the order
+    // key and each beneficiary's clawback in integer fen as a decimal string (payload 暂定, identity
+    // B1-12s to confirm). A beneficiary whose clawback went to BAD_DEBT is not listed.
+    await events.publish(trx, {
+      appId,
+      name: 'order.clawed_back',
+      payload: {
+        order_id: orderId,
+        order_key: key,
+        rights_event_id: rightsEventId,
+        transition,
+        ...(transition === 'R8' ? { reason: rules.r8Reason } : {}),
+        beneficiaries: plan.beneficiaries
+          .filter((b) => b.delta_fen < 0n && b.posting === 'user_available')
+          .map((b) => ({
+            user_id: b.user_id,
+            role: b.role,
+            clawback_fen: String(subFen(0n, b.delta_fen)),
+          })),
+      },
+    });
     logger.info(
       {
         app_id: appId,
@@ -949,6 +977,171 @@ export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
     return { outcome: 'estimate_archived', orderKey: key, reconDiff: 'registered' };
   }
 
+  /**
+   * B2-04lb (D10-474 ②; BR-FUND-06「等联盟回传新佣金后按 R7/R9 处理并关闭」, BR-FUND-08「联盟新的结算记录
+   * 带来的变化按 BR-FUND-09 与迁移 R10 处理」, BR-CALC-23 (a)): on a CREDITED order whose rights success
+   * waits for the union (WAIT_COMMISSION), the union's new settlement record moves the money as R10
+   * SETTLE_ADJUST (sub_type SETTLE_DIFF, keys `…:ADJ:{seq}`) and, on the same transaction, closes the
+   * WAIT_COMMISSION rows, recomputes rights_pending and resolves the CLAWBACK_NO_COMMISSION pending
+   * rows. R8 (new commission's positive part 0, or base > 0 → 0) goes through apply (cause
+   * COMMISSION). Only the immediate route is written here: a positive difference (BR-FUND-09 ②
+   * candidate) or an obligation to open / close leaves the rows waiting with an alert.
+   */
+  async function settleAnswer(
+    trx: Transaction<DB>,
+    order: OrderRow,
+    key: string,
+    settleFen: bigint,
+  ): Promise<ClawbackResult> {
+    const { app_id: appId, order_id: orderId } = order;
+    const booked = bookedOf(order);
+    const snapshot = await readSnapshotOf(trx, order);
+    const reserveBp = BigInt(snapshot.reserveBp);
+    const nPositive = positive(settleFen);
+    const { after_reserve_fen: baseNew } = applyReserve(settleFen, reserveBp);
+    if (nPositive === 0n || (booked.base > 0n && baseNew === 0n)) {
+      return apply(trx, {
+        appId,
+        orderId,
+        cause: 'COMMISSION',
+        ref: { kind: 'commission' },
+        newCommissionFen: settleFen,
+        rightsDeductFen: null,
+      });
+    }
+    const seq = await readLatestSettleSeq(trx, appId, orderId);
+    if (seq === null) throw new Error('settlement clawback: settlement record vanished');
+    const rightsEventId = `S${String(seq)}`;
+
+    const userIds = [...new Set(snapshot.beneficiaries.map((b) => b.userId))].sort();
+    const locked =
+      userIds.length === 0 ? new Set<string>() : await gate.lockUsers(trx, { appId, userIds });
+    const present = userIds.filter((id) => locked.has(id));
+    for (const userId of present) {
+      await ledger.openUserAccount(trx, { appId, userId });
+    }
+    const balances =
+      present.length === 0 ? [] : await ledger.lockBalances(trx, { appId, userIds: present });
+    const accounts = new Map(balances.map((row) => [row.user_id, row.account_id]));
+    const states =
+      present.length === 0
+        ? new Map<string, CreditBeneficiaryState>()
+        : await gate.readStates(trx, { appId, userIds: present });
+    const stored = await getOrderNets(trx, { appId, orderKey: key });
+    const nets = new Map(
+      stored.beneficiaries.map((b) => [identity(b.beneficiary_user_id, b.role), b.net_fen]),
+    );
+    const obligations = new Map(
+      (await readOpenObligations(trx, appId, orderId)).map((r) => [identity(r.user_id, r.role), r]),
+    );
+    const plan = planCommissionAdjustment({
+      event: 'settlement',
+      n_new_fen: settleFen,
+      reserve_bp: reserveBp,
+      booked_base_fen: booked.base,
+      booked_n_fen: booked.n,
+      platform_net_fen: stored.platform_net_fen,
+      beneficiaries: beneficiariesOf(snapshot, states, nets, obligations),
+    });
+    const now = clock.now();
+    const unsupported =
+      plan.route === 'approval' ||
+      (plan.transition !== null && plan.transition !== 'R10') ||
+      plan.beneficiaries.some(
+        (b) =>
+          b.delta_fen > 0n ||
+          b.forfeit_fen !== 0n ||
+          b.pending_after_fen !== b.pending_before_fen ||
+          (b.obligation_action !== null && b.obligation_action !== 'keep'),
+      );
+    if (unsupported) {
+      // TODO(规划/11 §4.2): 入账后维权等待中的正差候选与义务处置 — blocked on BR-FUND-09 ② 候选写入（D10-474 ② 只裁定负差 R10）
+      logger.warn(
+        {
+          alert: ALERT_ADJUST_HELD,
+          app_id: appId,
+          order_id: orderId,
+          order_key: key,
+          rights_event_id: rightsEventId,
+        },
+        'settlement record answering a waiting rights record needs a candidate; left waiting',
+      );
+      return { outcome: 'wait_commission', orderKey: key, rightsEventId };
+    }
+    if (plan.transition === null) {
+      await closeAnsweredRights(trx, { kind: 'commission' }, order, now);
+      return { outcome: 'no_change', orderKey: key, rightsEventId };
+    }
+    const step = transitionOrderRebate(FROM_STATUS, 'SETTLE_NEGATIVE_DIFF');
+    if (!step.ok || step.id !== 'R10' || step.to !== FROM_STATUS) {
+      throw new Error('settlement clawback: SETTLE_NEGATIVE_DIFF is not a legal R10');
+    }
+
+    const base = { order_key: key, platform: order.platform, seq: String(seq) };
+    for (const b of plan.beneficiaries) {
+      if (b.delta_fen === 0n) continue;
+      const template = `SETTLE_ADJUST:SETTLE_DIFF:${b.posting === 'bad_debt' ? 'BAD_DEBT' : 'USER:DECREASE'}`;
+      const params: BuildVoucherParams = {
+        ...base,
+        user_id: b.user_id,
+        role: b.role,
+        adjust_fen: subFen(0n, b.delta_fen),
+      };
+      const beneficiary = { userId: b.user_id, role: b.role as CreditRole };
+      for (const built of buildVouchers(template, params)) {
+        await ledger.post(
+          trx,
+          postingOf(appId, key, built, beneficiary, accounts, 'SETTLE_ADJUST'),
+        );
+      }
+    }
+    const delta = plan.platform_delta_fen;
+    if (delta !== 0n) {
+      const template = `SETTLE_ADJUST:SETTLE_DIFF:PLATFORM:${delta < 0n ? 'DECREASE' : 'INCREASE'}`;
+      const params: BuildVoucherParams = {
+        ...base,
+        adjust_fen: delta < 0n ? subFen(0n, delta) : delta,
+      };
+      for (const built of buildVouchers(template, params)) {
+        await ledger.post(trx, postingOf(appId, key, built, null, accounts, 'SETTLE_ADJUST'));
+      }
+    }
+
+    const written = await casClawbackOrder(trx, order, {
+      to: step.to,
+      booked_base_fen: plan.booked_after.booked_base_fen,
+      booked_n_fen: plan.booked_after.booked_n_fen,
+      at: now,
+    });
+    if (!written) throw new Error('settlement clawback: order CAS matched no row');
+    await insertRebateHistory(
+      trx,
+      { app_id: appId, order_id: orderId },
+      [{ from: FROM_STATUS, event: 'SETTLE_NEGATIVE_DIFF', to: step.to }],
+      'system',
+      now,
+    );
+    await closeAnsweredRights(trx, { kind: 'commission' }, order, now);
+    logger.info(
+      {
+        app_id: appId,
+        order_id: orderId,
+        transition: 'R10',
+        rights_event_id: rightsEventId,
+        booked_base_fen: String(plan.booked_after.booked_base_fen),
+      },
+      'waiting rights answered by a new settlement record (R10)',
+    );
+    return {
+      outcome: 'settle_adjusted',
+      transition: 'R10',
+      orderKey: key,
+      rightsEventId,
+      bookedBaseFen: plan.booked_after.booked_base_fen,
+      bookedNFen: plan.booked_after.booked_n_fen,
+    };
+  }
+
   async function onUpdated(
     trx: Transaction<DB>,
     change: OrderUpdateChange,
@@ -973,6 +1166,14 @@ export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
     if (source.event === 'PLATFORM_RIGHTS') {
       // The rights success entry is rights.record (B2-04l): this status signal has no record.
       return { outcome: 'skipped', reason: 'not_reverse' };
+    }
+
+    // B2-04lb (D10-474 ②): a new settlement record answering a WAIT_COMMISSION rights record.
+    if (change.settle_commission_fen !== null && order.settle_commission_fen !== null) {
+      const recordAt = await readLatestSettlementAt(trx, appId, orderId);
+      if (recordAt !== null && (await hasWaitingRightsBefore(trx, appId, orderId, recordAt))) {
+        return settleAnswer(trx, order, key, order.settle_commission_fen);
+      }
     }
 
     const estChanged = change.est_after !== change.est_before;
