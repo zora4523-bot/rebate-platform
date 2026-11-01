@@ -1,0 +1,23 @@
+id: B1-30
+repo: rebate-platform
+title: 依赖：阿里云官方 SDK 入账（@alicloud/kms20160120、ali-oss；@alicloud/credentials 随 kms 显式声明）
+type: deps
+# 2026-11-02 pay（账号 5）入账（编排 11-02 03:49、D10-560；规划/05 §B1-30；docs/changes/20261007-基础设施开源接入规划.md §2）。精确版本，均发布满 7 天：kms 3.3.1（2026-10-19）、ali-oss 6.23.0（2025-05-15）。
+# 只入两包（D10-560）：短信 B1-12w、内容安全 B3-03m 已用 platform/aliyun 自写 ACS3 跑通，dysmsapi、green 入账就是闲置依赖，不入；以后真要换 SDK 再单独入账。
+# @alicloud/credentials 2.4.7 已在 openapi-core 依赖树内，不新增包：KMS 客户端不给凭据对象就报 InvalidCredentials（实测），用 ECS RAM 角色（不落静态 AK）必须传它，pnpm 下传递依赖不能直接导入，所以显式声明。
+# 试装（--ignore-scripts）：125 个包，两包单装 pnpm audit 0 告警；全仓 pnpm audit --prod 的条目与主干相同，新包未增加。@alicloud/openapi-core 有 postinstall（select-version），不跑也能加载（CJS / ESM 实测），列入 ignoredBuiltDependencies。
+# 许可证：MIT 101、ISC 16、Apache-2.0 5、BSD-3-Clause 2、BlueOak-1.0.0 1（sax，ali-oss 带入）。仓库无白名单实体文件，ISC 照 docs/changes/20261007-基础设施开源接入规划.md「补 ISC」；BlueOak-1.0.0 经 D10-560 认可（宽松许可、OSI 认证，与 MIT / ISC 同类）。
+# 只装依赖不写适配器：适配器自写（KMS 在 B1-30a，OSS 在 B1-30b 归 ops）。规划/11 §7.3 第 3 项：另一家评审通过。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/package.json'
+  - 'pnpm-lock.yaml'
+  - 'pnpm-workspace.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
