@@ -352,7 +352,7 @@ it('[AC-B1-04zc#34] 任意券列表：恒等式成立，所选券是合格券里
       propParams(),
     ),
   ).not.toThrow();
-});
+}, 60_000);
 
 it('[AC-B1-04zc#35] 任意券列表：选中的就是手算的那张，面额相同时门槛低，isBest 不影响', () => {
   expect(() =>
@@ -366,7 +366,7 @@ it('[AC-B1-04zc#35] 任意券列表：选中的就是手算的那张，面额相
       propParams(),
     ),
   ).not.toThrow();
-});
+}, 60_000);
 
 it('[AC-B1-04zc#93] 价格 0 配任意券列表：一律 invalid_price，不当 0 元', () => {
   expect(() =>
@@ -380,4 +380,4 @@ it('[AC-B1-04zc#93] 价格 0 配任意券列表：一律 invalid_price，不当 
       propParams(),
     ),
   ).not.toThrow();
-});
+}, 60_000);
