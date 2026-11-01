@@ -33,21 +33,15 @@ function generated(path: string, name: string): unknown {
 }
 
 it.each(
-  endpoints.filter(
-    (e): boolean =>
-      e[2] !== 'listAdminPayOrders' &&
-      e[2] !== 'getAdminPayOrder' &&
-      e[2] !== 'resolveAdminPayOrder' &&
-      e[2] !== 'listAdminPayAnomalies' &&
-      e[2] !== 'createAdminPayRefund' &&
-      e[2] !== 'createAdminPayAnomalyRefund' &&
-      e[2] !== 'listAdminPayReconDiffs',
-  ),
+  endpoints.filter((e): boolean => e[2] === 'listAdminPayRefunds' || e[2] === 'getAdminPayRefund'),
 )(
-  '[AC-CT-21e#17] %s %s 已生成类型、后台鉴权和无签名策略，planned 不挂载校验路由',
+  '[AC-CT-21e#17] %s %s（退款单查询）已实现（不再 planned）、已生成类型、后台鉴权和无签名策略，并挂载校验路由',
   (method, path, id, permission) => {
+    // B2-15o：两条退款单查询已实现，x-implementation 随路由上线移除；必须挂载校验路由。
     const endpoint = endpoints.find((entry) => entry[2] === id)!;
-    expect(operation(contract(), endpoint)['x-implementation']).toBe('planned');
+    const op = operation(contract(), endpoint);
+    expect(op).not.toHaveProperty('x-implementation');
+    expect(op['x-implementation']).not.toBe('planned');
     const route = { method: method.toUpperCase(), path: path.replace(/\{([^}]+)\}/g, ':$1') };
     const auth = list(
       generated('apps/api/src/modules/platform/http/auth-routes.gen.ts', 'CONTRACT_AUTH_ROUTES'),
@@ -79,7 +73,7 @@ it.each(
         'CONTRACT_ROUTE_SCHEMAS',
       ),
     );
-    expect(schemas).not.toHaveProperty(id);
+    expect(schemas, `route-schemas.gen.ts: ${id}`).toHaveProperty(id);
     const source = ts.createSourceFile(
       'openapi.gen.ts',
       read('packages/contracts-ts/src/openapi.gen.ts'),

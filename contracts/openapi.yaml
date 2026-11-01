@@ -22438,7 +22438,6 @@ paths:
         `created_at` descending. Pages with `page` and `page_size` ≤ 200. Amounts are integer
         fen. Reading does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -22529,7 +22528,6 @@ paths:
         An unknown `pay_refund_id`, or a refund of another app, is 20001 with
         `data.fields=[pay_refund_id]` (no 404). Reading does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
