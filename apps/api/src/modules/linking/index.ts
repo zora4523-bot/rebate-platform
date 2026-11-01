@@ -192,3 +192,12 @@ export type {
 } from './infra/order-source-reader.ts';
 export { needsTaobaoReauth } from './application/taobao-reauth-read.ts';
 export type { TaobaoReauthReader, TaobaoReauthScope } from './application/taobao-reauth-read.ts';
+// Task B1-06zd: the worker's Taobao promotion link prefetch (D10-510). Rule tests:
+// test/spec/linking/promo-url/**.
+export { createPromoPrefetchHandler } from './application/promo-prefetch.ts';
+export type {
+  PromoPrefetchHandlerOptions,
+  PromoPrefetchJobName,
+  PromoPrefetchPayload,
+  PromoPrefetchQueueName,
+} from './application/promo-prefetch.ts';
