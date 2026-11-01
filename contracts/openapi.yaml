@@ -12966,7 +12966,6 @@ paths:
         `last_hold_note` and `last_hold_at`. The response is the order detail as it is now (same
         shape as GET /admin/v1/orders/{order_id}).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -13052,7 +13051,6 @@ paths:
         reason_code, note). The response is the order detail as it is now (same shape as GET
         /admin/v1/orders/{order_id}).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -13145,7 +13143,6 @@ paths:
         `data.fields=[reason]`) and goes into the audit record. The response is the order detail
         as it is now (same shape as GET /admin/v1/orders/{order_id}).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -14167,7 +14164,6 @@ paths:
         in-app message and push (BR-ATTR-18). The response is the whole claim after the review,
         the same shape as GET /admin/v1/claims/{claim_id}.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -14389,7 +14385,6 @@ paths:
         by in-app message and push (BR-ATTR-18). The response is the whole claim after the
         review, the same shape as GET /admin/v1/claims/{claim_id}.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

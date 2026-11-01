@@ -336,6 +336,7 @@ import {
   orderSyncToken,
   type AdminClaimPorts,
   type AdminOrderPorts,
+  type AdminOrderWritePorts,
   createInviteRewardOrderFacts,
   type ClaimEvidenceFactory,
   createOrderQueries,
@@ -417,8 +418,10 @@ import {
 import {
   SettlementAdminModule,
   SettlementModule,
+  createAttributionRebatePort,
   createEarningsOrdersSource,
   createPendingEarningsSource,
+  createRebateAdminCommandPort,
   readOrderIdsByKey,
 } from './modules/settlement/index.ts';
 import {
@@ -2020,6 +2023,60 @@ function adminOrderPorts(
     },
   };
 }
+/**
+ * B1-10m: the real ports of the console's order and claim writes — admin's audit writer on the
+ * write's transaction and its permission keys, settlement's attribution (R3 / R3b) and hold (R11)
+ * commands, risk's state and identity's deletion stage of an assignment's target on the write's
+ * transaction, and the snapshot and source ports the sync uses. pidScene reads union_pids by
+ * (app_id, platform, pid), unique across the app (orders carry no union_account_id; union exports
+ * no reader without it) and with every status counted, the pipeline's rule (BR-ATTR-02): a retired
+ * taolijin slot still gives its scene, else the order would be priced as a plain rebate
+ * (BR-CALC-19). Building them reads nothing.
+ */
+function adminOrderWritePorts(
+  db: Kysely<Database>,
+  clock: Clock,
+  logger: RootLogger,
+): AdminOrderWritePorts {
+  const profiles = createAdminProfiles({ db });
+  return {
+    auditOn: (trx) => createAuditWriter({ db: trx, clock, sensitiveKeys: SENSITIVE_KEYS }),
+    attribution: createAttributionRebatePort({
+      logger,
+      config: {
+        get: async (appId, key) =>
+          (await createContentReader({ db, clock }).configValue(appId, key))?.value,
+      },
+    }),
+    hold: { rebate: createRebateAdminCommandPort({ clock, logger }) },
+    targets: {
+      risk: {
+        read: (executor, input) =>
+          createRiskStateBatchReader({ db: executor }).read(executor, input),
+      },
+      deletion: {
+        read: (executor, input) =>
+          createDeletionStageReader({ db: executor }).read(executor, input),
+      },
+    },
+    permissions: (appId, adminId) => profiles.permissionKeys(appId, adminId),
+    snapshots: orderSnapshotPort(db, clock, logger),
+    sources: orderSourcePorts(db, clock, logger),
+    async pidScene(order) {
+      if (order.pid === null || order.pid === '') return null;
+      const row = await db
+        .withSchema('app')
+        .selectFrom('union_pids')
+        .select('pid_scene')
+        .where('app_id', '=', order.app_id)
+        .where('platform', '=', order.platform)
+        .where('pid', '=', order.pid)
+        .executeTakeFirst();
+      return row?.pid_scene ?? null;
+    },
+  };
+}
+
 /**
  * B1-08q: orders' source backfill ports (BR-ATTR-15) over linking's link_logs reader, catalog's
  * platforms (key_prefix) and content's config_items. Building them reads nothing; every call
@@ -3970,9 +4027,16 @@ export class AppModule {
         // the applicant's masked phone through identity's port (decrypted and masked there), the
         // reviewer's display name through admin's, the evidence records' time and scene through
         // linking's. Reads only, no audit row. B1-10i: the order list and detail on the same
-        // module (order.view, or user.lookup with user_id), over adminOrderPorts.
+        // module (order.view, or user.lookup with user_id), over adminOrderPorts. B1-10m: the
+        // claim item and order writes on the same module, over adminOrderWritePorts.
         ...(options.entry === 'admin'
-          ? [OrdersAdminModule.forAdmin({ ports: adminClaimPorts, orderPorts: adminOrderPorts })]
+          ? [
+              OrdersAdminModule.forAdmin({
+                ports: adminClaimPorts,
+                orderPorts: adminOrderPorts,
+                writePorts: adminOrderWritePorts,
+              }),
+            ]
           : []),
         // notification's /admin/v1/notify-channels (B1-12z, CT-24t; BR-TEXT-20 细则「短信渠道登记与
         // 后台渠道开关」): guarded by AdminOperationGuard; each write and its audit row (admin's

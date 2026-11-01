@@ -1,7 +1,8 @@
 // B1-10j: orders' /admin/v1 routes, the read side of the console's claim review (GET
 // /admin/v1/claims, GET /admin/v1/claims/{claim_id}) and, B1-10i, the console's order list and
 // detail (GET /admin/v1/orders, GET /admin/v1/orders/{order_id}) and, B1-09i, the manual order
-// sync (POST / GET /admin/v1/order-syncs, GET /admin/v1/order-syncs/limits). app.module imports this module on the admin
+// sync (POST / GET /admin/v1/order-syncs, GET /admin/v1/order-syncs/limits) and, B1-10m, the write
+// side: claim item approve / reject and order hold / unhold / reassign. app.module imports this module on the admin
 // entry only; the api and stream entries do not serve /admin/v1. Permission checks go through
 // platform's AdminOperationGuard, which the admin module provides on the admin entry (orders never
 // imports admin). Other modules' reads (identity's masked phones, admin's reviewer names,
@@ -10,14 +11,17 @@
 // every read fails closed (50001); module startup never touches the database handle.
 import { Module, type DynamicModule } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
-import type { Kysely } from 'kysely';
+import type { Kysely, Selectable, Transaction } from 'kysely';
 import {
   CLOCK,
   DB,
+  EVENT_BUS,
   FIELD_CRYPTO,
   JOB_QUEUE,
   ROOT_LOGGER,
+  type AuditPort,
   type Clock,
+  type EventBus,
   type FieldCrypto,
   type JobQueue,
   type RootLogger,
@@ -29,12 +33,41 @@ import {
   AdminOrderSyncsController,
   MANUAL_ORDER_SYNCS,
 } from './http/admin/order-syncs.controller.ts';
+import type {
+  AdminAssignRebatePort,
+  AdminAssignTargetReaders,
+} from './application/admin-assign.ts';
 import { AdminClaims, type AdminClaimPorts } from './application/admin-claims.ts';
 import { AdminOrders, type AdminOrderPorts } from './application/admin-orders.ts';
+import type { ClaimReviewDeps } from './application/claim-review.ts';
+import type { CommissionSnapshotPort } from './application/commission-snapshot-step.ts';
+import type { OrderRightsPorts } from './application/rights-ports.ts';
+import type { OrderSourcePorts } from './application/source-backfill.ts';
+import { AdminClaimReviewController } from './http/admin/claim-review.controller.ts';
 import { AdminClaimsController } from './http/admin/claims.controller.ts';
+import { AdminOrderActionsController } from './http/admin/order-actions.controller.ts';
 import { AdminOrdersController } from './http/admin/orders.controller.ts';
+import { ADMIN_WRITE_DEPS, type AdminWriteDeps } from './http/admin/write-deps.ts';
 import { createAdminClaimReads } from './infra/admin-claim-reads.ts';
 import { createAdminOrderReads } from './infra/admin-order-reads.ts';
+
+/** B1-10m: the other modules' real ports of the console's order and claim writes. */
+export interface AdminOrderWritePorts {
+  /** admin's audit writer bound to the write's transaction. */
+  readonly auditOn: (trx: Transaction<Database>) => AuditPort;
+  /** settlement's attribution port: R3 / R3b write locked and rebate_status. */
+  readonly attribution: ClaimReviewDeps['rebate'] & AdminAssignRebatePort;
+  /** settlement's rebate.adminHold / adminUnhold. */
+  readonly hold: OrderRightsPorts;
+  /** risk's state and identity's deletion stage of an assignment's target. */
+  readonly targets: AdminAssignTargetReaders;
+  /** admin: the permission keys the account holds in the app. */
+  readonly permissions: (appId: string, adminId: string) => Promise<readonly string[]>;
+  readonly snapshots: CommissionSnapshotPort;
+  readonly sources: OrderSourcePorts;
+  /** The scene of the order's promotion slot, whatever the slot's status (BR-ATTR-02). */
+  readonly pidScene: (order: Selectable<Database['orders']>) => Promise<string | null>;
+}
 
 export interface OrdersAdminOptions {
   /** identity's masked phones, admin's reviewer names and linking's link_logs moments. */
@@ -48,13 +81,25 @@ export interface OrdersAdminOptions {
     crypto: FieldCrypto | null,
     clock: Clock,
   ) => AdminOrderPorts;
+  /** B1-10m: building them reads nothing. */
+  readonly writePorts: (
+    db: Kysely<Database>,
+    clock: Clock,
+    logger: RootLogger,
+  ) => AdminOrderWritePorts;
 }
 
 export class OrdersAdminModule {
   static forAdmin(options: OrdersAdminOptions): DynamicModule {
     return {
       module: OrdersAdminModule,
-      controllers: [AdminClaimsController, AdminOrdersController, AdminOrderSyncsController],
+      controllers: [
+        AdminClaimsController,
+        AdminClaimReviewController,
+        AdminOrdersController,
+        AdminOrderActionsController,
+        AdminOrderSyncsController,
+      ],
       providers: [
         {
           provide: AdminClaims,
@@ -80,6 +125,41 @@ export class OrdersAdminModule {
                   reads: createAdminOrderReads(db),
                   ...options.orderPorts(db, crypto ?? null, clock),
                 }),
+        },
+        {
+          provide: ADMIN_WRITE_DEPS,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+            { token: EVENT_BUS, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<Database>,
+            crypto?: FieldCrypto,
+            events?: EventBus,
+          ): AdminWriteDeps | null => {
+            if (db === undefined || events === undefined) return null;
+            const ports = options.writePorts(db, clock, logger);
+            const write = { db, clock, auditOn: ports.auditOn };
+            const attribution = {
+              ...write,
+              events,
+              rebate: ports.attribution,
+              snapshots: ports.snapshots,
+              sources: ports.sources,
+              pidScene: ports.pidScene,
+            };
+            const details = options.orderPorts(db, crypto ?? null, clock);
+            return {
+              claims: { ...attribution, details: options.ports(db, crypto ?? null) },
+              hold: { ...write, permissions: ports.permissions, ports: ports.hold, details },
+              assign: { ...attribution, targets: ports.targets, details },
+            };
+          },
         },
         {
           // B1-09i: the console's manual sync. union's sync access on the admin entry has no

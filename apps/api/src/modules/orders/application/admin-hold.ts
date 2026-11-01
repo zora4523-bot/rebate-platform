@@ -1,8 +1,8 @@
 // B1-09l: the console's hold / unhold use cases (POST /admin/v1/orders/{order_id}/hold and
 // /unhold; contract adminHoldOrder / adminUnholdOrder, permission order.hold, no step-up;
-// BR-FUND-06 细则「后台 hold / unhold」, BR-FUND-01 R11). Both routes stay planned and unmounted
-// (J-1): settlement's rebate.adminHold / adminUnhold has no real implementation yet; mounting is
-// B1-09n. This file gives the application service only.
+// BR-FUND-06 细则「后台 hold / unhold」, BR-FUND-01 R11). This file gives the application service
+// only; B1-10m mounts both routes on the admin entry (http/admin/order-actions.controller.ts) over
+// settlement's real rebate.adminHold / adminUnhold, which app.module injects.
 // One transaction per request:
 //   ① first statement the sub-order advisory lock (order-lock.ts), then SELECT … FOR UPDATE reread;
 //   ② judgement over the reread (domain/admin-hold.ts): R11 start state, same state, UNMAPPED_STATUS
