@@ -19,6 +19,9 @@ const AUTO_PAYOUT_METRIC_NAMES: readonly string[] = [
   'couli_auto_payout_daily_cap_fen',
 ];
 
+/** The review overdue gauge, also worker-exported (B2-05o, D10-475 ②(b)). */
+const REVIEW_OVERDUE_METRIC_NAMES: readonly string[] = ['couli_withdrawals_review_overdue'];
+
 interface Rule {
   readonly alert: string;
   readonly expr: string;
@@ -138,7 +141,11 @@ it('[AC-B1-01zzi#6] couli-fund.yaml 只读 worker 导出的五个资金指标：
   const all = rules(FUND_RULES);
   const named = all.flatMap((rule) => rule.expr.match(/\bcouli_[a-z0-9_]+/g) ?? []);
   expect(named.length).toBeGreaterThanOrEqual(5);
-  const allowed = [...FUND_METRIC_NAMES, ...AUTO_PAYOUT_METRIC_NAMES];
+  const allowed = [
+    ...FUND_METRIC_NAMES,
+    ...AUTO_PAYOUT_METRIC_NAMES,
+    ...REVIEW_OVERDUE_METRIC_NAMES,
+  ];
   expect(named.filter((name) => !allowed.includes(name))).toEqual([]);
   for (const metric of FUND_METRIC_NAMES) {
     expect(named, `some rule reads ${metric}`).toContain(metric);
