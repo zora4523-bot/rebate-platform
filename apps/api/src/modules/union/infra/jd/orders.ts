@@ -130,7 +130,7 @@ export function checkJdProductKeyMode(value: unknown): JdProductKeyMode {
 }
 
 /** 数字的原文或字符串本身；其余类型 undefined。 */
-function scalarText(value: unknown): string | undefined {
+export function scalarText(value: unknown): string | undefined {
   if (value instanceof JdRawNumber) return value.text;
   return typeof value === 'string' ? value : undefined;
 }
