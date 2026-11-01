@@ -25,6 +25,8 @@ import { readExportStoreConfig } from './export-store.ts';
 import { readMediaConfig } from './media.ts';
 import { readPddConfig, type PddClientConfig } from './pdd.ts';
 import { readPddQueryConfig } from './pdd-query.ts';
+import type { EntryName } from '../entries.ts';
+import { readPayChannelsConfig, type PayChannelsConfig } from './pay-channels.ts';
 import { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 import { readSmsConfig, type SmsConfig } from './sms.ts';
 import { readTaobaoConfig, type TaobaoAppConfig } from './taobao.ts';
@@ -270,6 +272,12 @@ export interface AppConfig {
    * runs the plan's concurrency with the default budget.
    */
   readonly queueLimits?: QueueLimits | undefined;
+  /**
+   * PAY_* (./pay-channels.ts, B2-15k): names and paths of the real collection channels, read by the
+   * api, worker and admin entries only (loadConfig's entry argument). Absent or null: no real
+   * channel, the payment module's factory fails closed. Never holds a key.
+   */
+  readonly payChannels?: PayChannelsConfig | null | undefined;
 }
 
 /** Where the internal /metrics listener binds (B1-01zzh). */
@@ -349,8 +357,13 @@ function readJwt(
 /**
  * Validates the environment and returns the typed configuration. Variables set to an empty
  * string count as unset. Throws one `ConfigError` listing every problem.
+ * `entry` (B2-15k, BR-PAY-08 ①): the collection channel variables are read only with it, and only on
+ * the api, worker and admin entries; bootstrap.ts and entry.ts pass it, tracing/boot.ts does not.
  */
-export function loadConfig(env: Readonly<Record<string, string | undefined>>): AppConfig {
+export function loadConfig(
+  env: Readonly<Record<string, string | undefined>>,
+  entry?: EntryName,
+): AppConfig {
   const input: Record<string, string> = {};
   for (const key of ENV_KEYS) {
     const value = env[key];
@@ -385,6 +398,9 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
       problems.push(...readUnionEndpointOverrideConfig(appEnv.data, env).problems);
     if (appEnv.success) problems.push(...readAgentUserHashConfig(appEnv.data, env).problems);
     problems.push(...readQueueConcurrencyConfig(env).problems);
+    if (appEnv.success && entry !== undefined) {
+      problems.push(...readPayChannelsConfig(appEnv.data, env, entry).problems);
+    }
     throw new ConfigError(problems);
   }
 
@@ -419,6 +435,11 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   violations.push(...dataokeProblems);
   const { jd, problems: jdProblems } = readJdConfig(values.APP_ENV, env);
   violations.push(...jdProblems);
+  const { payChannels, problems: payChannelProblems } =
+    entry === undefined
+      ? { payChannels: null, problems: [] }
+      : readPayChannelsConfig(values.APP_ENV, env, entry);
+  violations.push(...payChannelProblems);
   const { jdSiteId, problems: jdSiteProblems } = readJdSiteConfig(env);
   violations.push(...jdSiteProblems);
   const { pddQueryCustomParameters, problems: pddQueryProblems } = readPddQueryConfig(env);
@@ -505,5 +526,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
         }),
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(queueLimits === null ? {} : { queueLimits }),
+    // Only on the entries that read it (B2-15k), same reason.
+    ...(payChannels === null ? {} : { payChannels }),
   };
 }

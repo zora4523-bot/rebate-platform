@@ -33,7 +33,12 @@ import {
   refundQueryKey,
   type RefundQueryPayload,
 } from '../jobs/names.ts';
-import type { PayChannel, PayChannelSet, PayRefundQueryResult } from './pay-channel.ts';
+import type {
+  PayChannel,
+  PayChannelSet,
+  PayRefundOriginal,
+  PayRefundQueryResult,
+} from './pay-channel.ts';
 import {
   PayRefundConflict,
   handleRefundReport,
@@ -52,25 +57,32 @@ function isPayload(value: unknown): value is RefundQueryPayload {
   return typeof p['app_id'] === 'string' && typeof p['pay_refund_id'] === 'string';
 }
 
-/** The channel of a refund: its target's pay_channel (the refund row carries none). */
-async function channelOf(
-  db: Kysely<DB>,
-  refund: PayRefundRow,
-): Promise<PayChannelCode | undefined> {
-  if (refund.target_type === 'pay_order') {
-    const order = await findOrderById(db, refund.app_id, refund.target_id);
-    return order === undefined ? undefined : (order.pay_channel as PayChannelCode);
-  }
-  const anomaly = await findAnomalyById(db, refund.app_id, refund.target_id);
-  return anomaly === undefined ? undefined : (anomaly.pay_channel as PayChannelCode);
+interface RefundTarget {
+  readonly channel: PayChannelCode;
+  /** B2-15k: Alipay's refund query names the original (docs-mirror/alipay/app-pay/01dcc0.md). */
+  readonly original: PayRefundOriginal;
+}
+
+/** A refund's target as the channel knows it: pay_channel and numbers (the refund row has neither). */
+async function targetOf(db: Kysely<DB>, refund: PayRefundRow): Promise<RefundTarget | undefined> {
+  const target =
+    refund.target_type === 'pay_order'
+      ? await findOrderById(db, refund.app_id, refund.target_id)
+      : await findAnomalyById(db, refund.app_id, refund.target_id);
+  if (target === undefined) return undefined;
+  return {
+    channel: target.pay_channel as PayChannelCode,
+    original: { outTradeNo: target.out_trade_no, channelTradeNo: target.channel_trade_no },
+  };
 }
 
 async function queryChannel(
   adapter: PayChannel,
   outRefundNo: string,
+  original: PayRefundOriginal,
 ): Promise<PayRefundQueryResult> {
   try {
-    return await adapter.refundQuery(outRefundNo);
+    return await adapter.refundQuery(outRefundNo, original);
   } catch (error: unknown) {
     // A throwing adapter is an unknown answer (payment/AGENTS.md rule 7).
     return {
@@ -126,10 +138,11 @@ export async function runRefundQuery(deps: PayRefundQueryDeps, payload: unknown)
     deps.logger.info({ ...base, status: refund.status }, 'pay_refund_query_skipped_final');
     return;
   }
-  const channel = await channelOf(deps.db, refund);
-  if (channel === undefined) throw new Error('payment: the refund target vanished');
+  const target = await targetOf(deps.db, refund);
+  if (target === undefined) throw new Error('payment: the refund target vanished');
+  const { channel, original } = target;
   const adapter = deps.channels.of(channel);
-  const result = await queryChannel(adapter, refund.out_refund_no);
+  const result = await queryChannel(adapter, refund.out_refund_no, original);
   const now = deps.clock.now();
   // The attempt row commits on its own, before the judgement (it must survive a rolled-back
   // result; the channel was asked whatever happens next).

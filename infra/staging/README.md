@@ -224,6 +224,35 @@ chmod 500 /etc/couli-jd
 
 **部署检查 CHK-JD-STAGING-CRED**：jd 端点为 live 而 `JD_APP_KEY`、`JD_APP_SECRET_FILE` 两个变量都没设时，应用不报错、也不打日志，jd 保持未实现（D10-479 同款）。部署成功不代表京东已接通，所以切 live 前要人工核对 `JD_APP_KEY`、`JD_APP_SECRET_FILE`、`JD_SITE_ID` 这三项已设，并核对 `UNION_ENDPOINT_OVERRIDE_DIR` 已设，值是现有的 `/run/couli-pdd/union-endpoints`：节点没做 1.5 时这个变量没设，应用读的是镜像内的端点，改了 `/etc/couli-pdd/union-endpoints/jd.json` 也不生效，jd 静默留在 demo。
 
+### 1.9 收款通道（B2-15k，默认假通道）
+
+compose 给 api、worker、admin 写了 `PAY_CHANNEL_IMPL: fake`（不是口令）：这三个入口用假通道，不碰渠道。stream、payout 永远不读任何 `PAY_*`（BR-PAY-08 ①）。
+
+切换到真实通道（测试商户 / 沙箱）的步骤，实测清单见 `specs/pay-channels-launch-checklist.md`：
+
+1. 负责人把密钥文件放到节点目录 `/etc/couli-pay`（属主 1000，目录 500，文件 400；放的方式同 1.8，内容不进命令行、环境变量或 `staging.env`）；微信：商户 API 证书私钥、APIv3 密钥（文件里只有 32 字节密钥原文）、微信支付公钥；支付宝：应用私钥（PKCS#8 PEM），再加支付宝公钥，或应用公钥证书、支付宝公钥证书、支付宝根证书三件。
+2. 在 compose 的 api、worker、admin 三个服务上只读挂载 `/etc/couli-pay` 到 `/run/couli-pay`（目前没有这个挂载：本任务不改挂载，切换时另开任务，stream、payout 不得挂载）。
+3. 在 `/etc/couli/staging.env` 设下表变量（值只写在节点上，不进仓库）。这个文件 api、stream、worker、admin 共用：stream 的环境里会有这些路径和商户号（都不是密钥），但它不读，也没有挂载、打不开密钥文件。
+4. 从 compose 删掉这三个服务的 `PAY_CHANNEL_IMPL: fake`，重新部署。启动日志出现 `pay_channel_unavailable` 表示该渠道没配齐：`variables` 字段只列变量名；该渠道下单 50306、通知不处理，进程照常启动，不回退假通道。
+
+| 变量 | 取值 |
+| --- | --- |
+| `PAY_APP_ID` | 这个商户身份归属的我方 app_id |
+| `PAY_NOTIFY_BASE_URL` | 通知入口的 https 基址（只取源，路径由代码决定：`/notify/pay/wechat`、`/notify/pay/alipay`） |
+| `PAY_WECHAT_APPID`、`PAY_WECHAT_MCHID` | 测试商户绑定的 AppID、商户号 |
+| `PAY_WECHAT_MERCHANT_SERIAL` | 商户 API 证书序列号 |
+| `PAY_WECHAT_PUBLIC_KEY_ID` | 微信支付公钥 ID（应答与通知只认它） |
+| `PAY_WECHAT_PRIVATE_KEY_FILE`、`PAY_WECHAT_APIV3_KEY_FILE`、`PAY_WECHAT_PUBLIC_KEY_FILE` | `/run/couli-pay/` 下的文件路径 |
+| `PAY_WECHAT_TEST_MERCHANT` | 必须是 `1`：声明这是测试商户（BR-PAY-08 ②），否则微信不可用 |
+| `PAY_ALIPAY_APPID`、`PAY_ALIPAY_SELLER_ID` | 沙箱应用的 app_id、卖家 id |
+| `PAY_ALIPAY_PRIVATE_KEY_FILE` | `/run/couli-pay/` 下的文件路径 |
+| `PAY_ALIPAY_PUBLIC_KEY_FILE`，或 `PAY_ALIPAY_APP_CERT_FILE`、`PAY_ALIPAY_PUBLIC_CERT_FILE`、`PAY_ALIPAY_ROOT_CERT_FILE` | `/run/couli-pay/` 下的文件路径（设了任何一个证书变量就按证书模式，三件都要） |
+| `PAY_ALIPAY_GATEWAY` | 沙箱网关的 https 地址，不得是生产网关，否则支付宝不可用；地址未实测 |
+
+- 密钥文件只在入口启动时读一次；换文件要重启。
+- 这一节只适用于 staging。prod 不读任何 `PAY_*_FILE`（裁定 D10-554）：FU-KMS-ADAPTER 落地前两个渠道都不可用（`kms_unavailable`），不要照这里的做法把密钥文件放到 prod 节点。
+- `pay.enabled` 与渠道开关仍是关（BR-PAY-09）：切到真实通道也不等于开放收款。
+
 ## 2. 在开发机构建并传到节点
 
 在代码仓库根目录：

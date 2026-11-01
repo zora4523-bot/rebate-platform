@@ -7,6 +7,27 @@
 // Also compiled by the `test` project: erasable syntax only (no parameter properties).
 import type { PayChannelCode } from '../domain/types.ts';
 
+/** B2-15k: every call of a channel without complete credentials (BR-PAY-08 ②; 下单 50306). */
+export const PAY_REASON_CHANNEL_UNCONFIGURED = 'channel_unconfigured';
+/**
+ * B2-15k: a bill downloaded whose file format no document gives (task §9.7): nothing parsed until a
+ * real sample arrives, so the reconciliation of that bill day does not run (application/pay-recon.ts).
+ */
+export const PAY_REASON_BILL_FORMAT_UNVERIFIED = 'bill_format_unverified';
+/**
+ * B2-15k, ruling D10-554: prod reads no key file (BR-PAY-08 ②: KMS only) and no KMS adapter exists
+ * yet (FU-KMS-ADAPTER), so every call of both channels in prod answers this. 下单 50306.
+ */
+export const PAY_REASON_KMS_UNAVAILABLE = 'kms_unavailable';
+/**
+ * B2-15k: the channel's verified answer that the day has no bill, only as its document writes it:
+ * WeChat Pay HTTP 400 NO_STATEMENT_EXIST, Alipay 40004 NO_BILL_DATA. No bill, never an empty bill:
+ * the reconciliation of that day does not run (application/pay-recon.ts).
+ */
+export const PAY_REASON_BILL_NOT_AVAILABLE = 'bill_not_available';
+/** B2-15k: an order of another App than the one this channel's merchant identity belongs to. */
+export const PAY_REASON_APP_NOT_CONFIGURED = 'app_not_configured';
+
 /** WeChat Pay APP payment: the SDK's PayReq fields, signed by the server (contract PayLaunchWechatPay). */
 export interface WechatLaunch {
   readonly appid: string;
@@ -35,6 +56,12 @@ export interface PayCreateOrderInput {
   /** The pay deadline given to the channel: never later than the order's expire_at. */
   readonly expireAt: Date;
   readonly notifyUrl: string;
+  /**
+   * B2-15k: the order's app_id. A real adapter answers unknown / app_not_configured without calling
+   * the channel when it is not the app of its merchant identity: another App's money never lands
+   * in this merchant account. Optional, so that direct callers of a fake channel stand.
+   */
+  readonly appId?: string;
 }
 
 export type PayCreateOrderResult =
@@ -95,6 +122,16 @@ export interface PayRefundInput {
   readonly totalFen: bigint;
   /** pay_refunds.reason_code. */
   readonly reason: string;
+}
+
+/**
+ * B2-15k: the original of a refund, as the refund row knows it. Alipay's refund query needs it
+ * (docs-mirror/alipay/app-pay/01dcc0.md: trade_no, out_trade_no and out_request_no must agree with
+ * the refund); WeChat Pay's does not. Optional, so that the fake channel and earlier tests stand.
+ */
+export interface PayRefundOriginal {
+  readonly outTradeNo: string | null;
+  readonly channelTradeNo: string | null;
 }
 
 /** ok: the channel accepted the request (the result comes later); never «failed» (rule 7). */
@@ -172,7 +209,7 @@ export interface PayChannel {
   query(outTradeNo: string): Promise<PayQueryResult>;
   close(outTradeNo: string): Promise<PayCloseResult>;
   refund(input: PayRefundInput): Promise<PayRefundResult>;
-  refundQuery(outRefundNo: string): Promise<PayRefundQueryResult>;
+  refundQuery(outRefundNo: string, original?: PayRefundOriginal): Promise<PayRefundQueryResult>;
   verifyNotification(raw: PayRawNotification): Promise<PayNotificationResult>;
   /**
    * B2-15c: our app_id of a merchant / application identity, from this channel's configuration;
@@ -203,9 +240,8 @@ export class PayChannelUnavailable extends Error {
 /**
  * The channels of the process, and the Nest injection token of them (a class token, so that the
  * rule tests can override it: `overrideProvider(PayChannelSet).useValue({ of })`). The payment
- * module provides it (`provide: PayChannelSet`): FakePayChannel instances outside prod; in prod an
- * empty set until the real adapters land (B2-15k), so every channel call fails closed
- * (payment/AGENTS.md rule 6) — unreachable anyway while prod registers no business type.
+ * module provides it (`provide: PayChannelSet`) through infra/channels createPayChannelSet (B2-15k):
+ * fake channels, real adapters, or unavailable channels that fail closed (payment/AGENTS.md rule 6).
  */
 export class PayChannelSet {
   readonly #channels: ReadonlyMap<PayChannelCode, PayChannel>;
