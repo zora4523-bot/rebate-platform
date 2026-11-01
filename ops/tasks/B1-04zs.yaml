@@ -3,6 +3,7 @@ repo: rebate-platform
 title: 回扫长期运行收口：轮首窗在途不被 rewind 作废（FU-RESCAN-FIRST-WINDOW）、已入待处理的行不每轮重复 P1 告警
 type: impl
 # 2026-11-02 be 入账（B1-04zm money r1 两条 S2）。① 轮首窗任务超过一拍时起点随 now 滑动，游标被判过旧而 rewind，在途窗口 CAS 落空，浪费一窗配额、不丢单。② 已被 update-step 拒绝进待处理的行，hash 不变，每轮回扫重复走到拒绝并写 P1 告警。
+# 开工前核（11-02）：① 游标比一轮起点早不超过容差（小于 1 小时余量）时不 rewind，只动冻结 #3 的「早 1 毫秒」一行，#20（早 15 天）不变。② 事件 ID 由 pending id 派生本就不重复，重复的只有 update-step 的 log.error P1，改成只在新开 pending 时打；同键 open 仍刷新 detected_at（[AC-B1-08i#24] 不变）。
 # 冻结 test/spec/orders/rescan #3、#20 钉了 ① 的行为，开工前核。B1-04zr 之后。RV2。
 refs: []
 refs_hash: {}
@@ -11,11 +12,16 @@ paths:
   - 'apps/api/src/modules/orders/application/order-rescan.ts'
   - 'apps/api/src/modules/orders/domain/sync-window.ts'
   - 'apps/api/src/modules/orders/jobs/order-rescan.ts'
+  - 'apps/api/src/modules/orders/application/update-step.ts'
+  - 'apps/api/src/modules/orders/application/update-step.test.ts'
+  - 'apps/api/src/modules/orders/infra/pipeline-store.ts'
+  - 'test/spec/orders/platform-status/**'
   - 'test/spec/orders/rescan/**'
   - 'test/spec/orders/rescan-longrun/**'
 test_paths:
   - 'test/spec/orders/rescan/**'
   - 'test/spec/orders/rescan-longrun/**'
+  - 'test/spec/orders/platform-status/**'
 impl: claude
 tester: claude-independent
 accept:
