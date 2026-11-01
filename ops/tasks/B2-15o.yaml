@@ -1,0 +1,28 @@
+id: B2-15o
+repo: rebate-platform
+title: payment：后台退款单只读（listAdminPayRefunds、getAdminPayRefund，契约已有）——按 app 读 pay_refunds，pay.view，只读不审计；去掉两个接口的 planned
+type: impl
+# 2026-11-01 入账（admin-backend，编排 D10-490 ⑧：pay 线暂停，退款单查询由本线只读实现）。写者仍是 payment，本任务只读，放 payment/application/pay-admin-reads.ts 与 http/admin/pay-refunds.controller.ts，照 B2-15f 已有读接口。不含退款写操作。
+refs: [BR-PAY-06]
+refs_hash:
+  BR-PAY-06: 102e1fb8839f
+deps: []
+paths:
+  - 'apps/api/src/modules/payment/application/pay-admin-reads*.ts'
+  - 'apps/api/src/modules/payment/http/admin/**'
+  - 'apps/api/src/modules/payment/payment.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/payment/admin-refund-reads/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payment/admin-refund-reads/**'
+status: todo
