@@ -117,6 +117,8 @@ tags:
     description: Admin monthly settlement console — the monthly settlement bills with their derived status, bill-day totals (display only) and batch summaries, and the items of one batch, read with permission point settle.bill or fund.view, and the batch writes with settle.bill and a totp step-up (confirm now or at a set time, cancel a schedule, reject, continue, launch supplement batches; 01 F-ADM-08, 04 §3.2 settle_bills, settle_batches, settle_batch_items, §11; BR-FUND-04). The manual start (SB10), the statement upload and a supplement pre-check follow in later tasks.
   - name: admin-asset-snapshots
     description: Admin asset snapshots — the daily asset snapshots (one row per accounting day, with the per-platform union receivables) page by page, read only (permission point fund.view; 01 F-ADM-08, 04 §3.2 asset_snapshots, asset_snapshot_receivables, §11; BR-FUND-18). The daily ledger with W / P and the water-level state, the union collection entry (fund.cash_entry), the fund dashboard and the export follow in later tasks.
+  - name: admin-fund-ledger
+    description: Admin platform fund ledger — the union collection entry and its whole-record reversal (permission point fund.cash_entry, totp step-up), the list of union collection records and the fund ledger overview, the last two read only (permission point fund.view; 01 F-ADM-08, 04 §3.2 union_receipts, §11; BR-FUND-20, BR-WDR-18). The entry of the enterprise Alipay balance W belongs to the payout console (design/specs/admin-payouts.md).
   - name: agent
     description: Agent sessions, history, the reply stream, stop, feedback and report (04 §6.5, §8).
 paths:
@@ -25775,6 +25777,491 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/union-receipts:
+    get:
+      operationId: adminListUnionReceipts
+      tags:
+        - admin-fund-ledger
+      summary: Union collection records, page by page, latest collection day first
+      description: |
+        The 联盟回款记录 table of the fund ledger page (01 F-ADM-08; BR-FUND-20 细则「联盟回款凭证」;
+        design/specs/admin-fund-dashboard.md §2). Read only, no step-up. Permission point:
+        `fund.view` (04 §11.1); a super admin holds every point. Each row is one collection
+        record of the console's app (04 §3.2 union_receipts): `receipt_date`, `platform`,
+        `amount_fen` (BR-FUND-20), `method` (ADMIN_ENTRY 后台录入 or R1_RECON R1 对账确认),
+        `cash_account`, `voucher_id` (凭证号, the link to the balance history) and who entered it,
+        `created_by` and `created_by_name`, both null for a record confirmed by R1 without an
+        operator. A reversed record stays in the list with its amount: `reversed_at`, `reversed_by`
+        and `reversal_voucher_id` are all set once it is reversed and all null until then.
+
+        Filters combine with AND: `platform`, `date_from` and `date_to` (collection days
+        YYYY-MM-DD, both inclusive). A platform outside the enum or a value not matching the
+        format is 20001 with `data.fields` naming the parameter; `date_from` later than `date_to`
+        is 20001 with `data.fields=[date_from, date_to]`. A filter set nothing matches is an empty
+        page (`items=[]`, `total=0`), not an error.
+
+        Order: `receipt_date` descending, then `created_at` descending, then `receipt_id`
+        descending. Pages with `page` (as AdminPage; a page past the last one is `items=[]`) and
+        `page_size` ≤ 200 (above 200 is 20001, as AdminPageSize); `total` is the count of the
+        filter set. Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - $ref: '#/components/parameters/AdminUnionReceiptPlatform'
+        - $ref: '#/components/parameters/AdminUnionReceiptDateFrom'
+        - $ref: '#/components/parameters/AdminUnionReceiptDateTo'
+      responses:
+        '200':
+          description: One page of union collection records, latest collection day first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUnionReceiptPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - receipt_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb001
+                      platform: taobao
+                      receipt_date: '2026-10-20'
+                      amount_fen: 1150000
+                      method: ADMIN_ENTRY
+                      cash_account: CASH_ALIPAY
+                      voucher_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb101
+                      note: 10 月账单回款
+                      created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      created_by_name: ops01
+                      created_at: '2026-10-20T15:12:00+08:00'
+                      reversed_at: null
+                      reversed_by: null
+                      reversal_voucher_id: null
+                    - receipt_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb002
+                      platform: jd
+                      receipt_date: '2026-10-18'
+                      amount_fen: 151000
+                      method: R1_RECON
+                      cash_account: CASH_ALIPAY
+                      voucher_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb102
+                      note: null
+                      created_by: null
+                      created_by_name: null
+                      created_at: '2026-10-18T02:30:00+08:00'
+                      reversed_at: null
+                      reversed_by: null
+                      reversal_voucher_id: null
+                    - receipt_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb003
+                      platform: taobao
+                      receipt_date: '2026-10-16'
+                      amount_fen: 115000
+                      method: ADMIN_ENTRY
+                      cash_account: CASH_ALIPAY
+                      voucher_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb103
+                      note: null
+                      created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      created_by_name: ops01
+                      created_at: '2026-10-16T11:05:00+08:00'
+                      reversed_at: '2026-10-16T11:40:00+08:00'
+                      reversed_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      reversal_voucher_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb203
+                  page: 1
+                  page_size: 20
+                  total: 3
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                dateRangeInvalid:
+                  $ref: '#/components/examples/AdminUnionReceiptRangeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: adminCreateUnionReceipt
+      tags:
+        - admin-fund-ledger
+      summary: Enter one union collection and post its voucher (录入联盟回款)
+      description: |
+        The 【录入联盟回款】 dialog of the fund ledger page (01 F-ADM-08; 04 §11.2 `fund.cash_entry`;
+        BR-FUND-20 and its 细则「联盟回款凭证」; design/specs/admin-fund-dashboard.md §2, §6). Permission
+        point `fund.cash_entry`; a super admin holds every point. Step-up: totp tier (BR-ID-34):
+        without a valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`. The entry of
+        the enterprise Alipay balance W, under the same permission point, is not part of this
+        operation: it belongs to the payout console (BR-WDR-18).
+
+        Request (AdminUnionReceiptCreateRequest): `platform`; `receipt_date`, the day the money
+        arrived (YYYY-MM-DD); `amount_fen`, integer fen > 0, the amount of BR-FUND-20;
+        `cash_account`, the subject debited, CASH_ALIPAY or CASH_BANK (BR-FUND-20 细则); `note`,
+        optional, at most 500 characters and not blank after trimming; an outside serial number
+        goes here. Who entered the record comes from the session; `method` is always ADMIN_ENTRY
+        here, the request does not carry it.
+
+        Order of checks: `fund.cash_entry` (10403 with `data.reason=admin_permission_denied`) →
+        step-up (10003) → body (20001 with `data.fields` naming the field: the schema; a blank
+        `note`; a `receipt_date` later than the current accounting day of the injected Clock,
+        +08:00, with `data.fields=[receipt_date]`; CASH_BANK while 银行卡通道未开通, with
+        `data.fields=[cash_account]`). An earlier `receipt_date` has no lower bound. The amount is
+        not compared with the receivable (BR-FUND-20): a difference shows up in R1, this operation
+        opens none.
+
+        Effects, in one transaction: settlement (funds) writes the record to 04 §3.2 union_receipts
+        (`method=ADMIN_ENTRY`) with its UNION_RECEIPT voucher (BR-FUND-20 细则「联盟回款凭证」) through
+        the ledger command; the console calls the funds port. No user balance moves and W does not
+        change (BR-WDR-18). Writes an audit record (action union_receipt_create, with the
+        `receipt_id`, the platform, `receipt_date`, `amount_fen`, `cash_account` and `voucher_id`;
+        no personal data).
+
+        `Idempotency-Key` is required: same key and body → the first result; same key with
+        another body → 20901; same key while still running → 40901. The step-up token is a header
+        and not part of the body hash, so a replay after a 10003 keeps its key. There is no
+        business key: two records with the same platform, day and amount under different keys
+        are two collections. One collection is entered once (BR-FUND-20 细则) by reading the
+        platform's records of the last 30 days first (design/specs/admin-fund-dashboard.md §6); R1
+        shows a difference, and a record entered by mistake is reversed with POST
+        /admin/v1/union-receipts/{receipt_id}/reverse and entered again.
+      x-auth: admin
+      x-idempotent: true
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20901
+        - 40901
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUnionReceiptCreateRequest'
+            example:
+              platform: taobao
+              receipt_date: '2026-10-20'
+              amount_fen: 1150000
+              cash_account: CASH_ALIPAY
+              note: 10 月账单回款
+      responses:
+        '200':
+          description: The collection record with its voucher, or the first result of the same key.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUnionReceiptCreateResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  receipt:
+                    receipt_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb001
+                    platform: taobao
+                    receipt_date: '2026-10-20'
+                    amount_fen: 1150000
+                    method: ADMIN_ENTRY
+                    cash_account: CASH_ALIPAY
+                    voucher_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb101
+                    note: 10 月账单回款
+                    created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                    created_by_name: ops01
+                    created_at: '2026-10-20T15:12:00+08:00'
+                    reversed_at: null
+                    reversed_by: null
+                    reversal_voucher_id: null
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not entered (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                receiptDateInvalid:
+                  $ref: '#/components/examples/AdminUnionReceiptDateInvalid'
+                cashAccountNotInUse:
+                  $ref: '#/components/examples/AdminUnionReceiptCashAccountInvalid'
+                idempotencyConflict:
+                  $ref: '#/components/examples/AdminUnionReceiptIdempotencyConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/union-receipts/{receipt_id}/reverse:
+    post:
+      operationId: adminReverseUnionReceipt
+      tags:
+        - admin-fund-ledger
+      summary: Reverse one union collection record as a whole (红冲)
+      description: |
+        The 【红冲】 action of a row of the 联盟回款记录 table (01 F-ADM-08; BR-FUND-16, BR-FUND-20 细则
+        「联盟回款凭证」; design/specs/admin-fund-dashboard.md §4, §6). 代理补全的默认，待财务确认
+        (D10-538), as the voucher of the entry itself. Permission point `fund.cash_entry`; a super
+        admin holds every point. Step-up: totp tier (BR-ID-34): without a valid totp-tier
+        `X-Step-Up-Token` → 10003 with `data.tier=totp`.
+
+        Only the whole record is reversed and a record is reversed once; there is no partial
+        reversal and no amount in the request. To change an amount, reverse the record and enter
+        it again with POST /admin/v1/union-receipts. A record of either `method` can be reversed.
+        Request (AdminUnionReceiptReverseRequest): `reason`, required.
+
+        Order of checks: `fund.cash_entry` (10403 with `data.reason=admin_permission_denied`) →
+        step-up (10003) → body (20001 with `data.fields=[reason]`) → an unknown `receipt_id` or one
+        of another app is 20001 with `data.fields=[receipt_id]` → a record already reversed is
+        20902 with `data.resource=union_receipt` (a record can be reversed once, BR-FUND-16; the
+        console refreshes and shows 已红冲; the unique constraint on the reversal voucher answers
+        the same under a race). The reversal is not compared with the balance of the cash subject
+        or of the receivable.
+
+        Effects, in one transaction: settlement (funds) posts the reversal voucher (uniq_key per
+        BR-FUND-16, BR-FUND-20 细则) through the ledger command and sets `reversed_at`, `reversed_by`
+        and `reversal_voucher_id` on the record (04 §3.2 union_receipts); the original record and
+        voucher stay. No user balance moves and W does not change (BR-WDR-18). Writes an audit
+        record (action union_receipt_reverse, with the `receipt_id`, the platform, `amount_fen`,
+        `voucher_id`, `reversal_voucher_id` and `reason`; the table has no reason column, the audit
+        record holds it; no personal data).
+
+        `Idempotency-Key` is required: same key and body → the first result; same key with
+        another body → 20901; same key while still running → 40901. A new key for a record already
+        reversed is 20902. The step-up token is a header and not part of the body hash, so a
+        replay after a 10003 keeps its key.
+      x-auth: admin
+      x-idempotent: true
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20901
+        - 20902
+        - 40901
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AdminUnionReceiptIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUnionReceiptReverseRequest'
+            example:
+              reason: 同一笔回款录了两次
+      responses:
+        '200':
+          description: The reversed record, or the first result of the same key.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUnionReceiptReverseResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  receipt:
+                    receipt_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb003
+                    platform: taobao
+                    receipt_date: '2026-10-16'
+                    amount_fen: 115000
+                    method: ADMIN_ENTRY
+                    cash_account: CASH_ALIPAY
+                    voucher_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb103
+                    note: null
+                    created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                    created_by_name: ops01
+                    created_at: '2026-10-16T11:05:00+08:00'
+                    reversed_at: '2026-10-16T11:40:00+08:00'
+                    reversed_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                    reversal_voucher_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fb203
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not reversed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                reasonInvalid:
+                  $ref: '#/components/examples/AdminUnionReceiptReasonInvalid'
+                receiptUnknown:
+                  $ref: '#/components/examples/AdminUnionReceiptUnknown'
+                alreadyReversed:
+                  $ref: '#/components/examples/AdminUnionReceiptConflict'
+                idempotencyConflict:
+                  $ref: '#/components/examples/AdminUnionReceiptIdempotencyConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/fund-ledger:
+    get:
+      operationId: adminGetFundLedger
+      tags:
+        - admin-fund-ledger
+      summary: Fund ledger overview, computed when read
+      description: |
+        The overview cards of the fund ledger page (01 F-ADM-08; BR-FUND-20, BR-WDR-18;
+        design/specs/admin-fund-dashboard.md §1, §2). Read only, no step-up. Permission point:
+        `fund.view` (04 §11.1); a super admin holds every point. Reading does not write an audit
+        record.
+
+        Computed when read, from all the entries posted so far, not from the last asset snapshot:
+        `as_of` is the moment of the reading. `receivables` is the 已入账未回款 per platform, the
+        balance of UNION_RECEIVABLE:{platform} (BR-FUND-20), ordered by platform code, only
+        platforms with at least one entry, and it can be below 0 after a collection above the
+        receivable; `union_receivable_total_fen` is their sum. `negative_total_fen` is the sum of
+        the magnitudes of the negative available balances (the negative_fen side of BR-FUND-18) and
+        `negative_user_count` the number of accounts behind it. With no entries yet these
+        are `receivables=[]` and zeros.
+
+        The water level fields are null when there is no data, never filled with a default.
+        `watermark` is the latest W of the enterprise Alipay channel; W is entered on the payout
+        console (BR-WDR-18) and is the owner's material, so it is null until a row exists.
+        `forecast_withdrawal_fen` is P of BR-WDR-18 for the same channel, null while the payout side
+        does not provide it; no recent withdrawals give 0, not null. `water_level` is the
+        conclusion from W and P: `low` when W is below the alert line of BR-WDR-18, else `normal`.
+        It is null when W or P is null or when W has passed the staleness limit of BR-WDR-18,
+        as a conclusion from an old W would mislead; `watermark.measured_at` still shows its age.
+
+        Not part of this operation: the daily ledger (the asset snapshots, GET
+        /admin/v1/asset-snapshots), the records (GET /admin/v1/union-receipts), the alert lines
+        and other cards of the water level, and the fund dashboard adminGetFundsReport.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: The fund ledger overview at the moment of reading.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminFundLedgerResponse'
+              examples:
+                noWatermark:
+                  summary: W not entered yet, so W, P and the conclusion are null
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      as_of: '2026-10-30T10:00:00+08:00'
+                      receivables:
+                        - platform: jd
+                          union_receivable_fen: 151000
+                        - platform: taobao
+                          union_receivable_fen: 864000
+                      union_receivable_total_fen: 1015000
+                      negative_total_fen: 3200
+                      negative_user_count: 2
+                      watermark: null
+                      forecast_withdrawal_fen: null
+                      water_level: null
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                withWatermark:
+                  summary: W, P and the conclusion available
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      as_of: '2026-10-30T10:00:00+08:00'
+                      receivables:
+                        - platform: taobao
+                          union_receivable_fen: 864000
+                      union_receivable_total_fen: 864000
+                      negative_total_fen: 0
+                      negative_user_count: 0
+                      watermark:
+                        available_fen: 3000000
+                        measured_at: '2026-10-30T09:30:00+08:00'
+                        entered_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                        entered_by_name: ops01
+                      forecast_withdrawal_fen: 2100000
+                      water_level: low
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/kill-switches:
     get:
       operationId: adminListKillSwitches
@@ -28192,6 +28679,36 @@ components:
       in: query
       required: false
       description: Latest snapshot day (YYYY-MM-DD, the accounting day D), inclusive; not a date → 20001 with data.fields=[date_to].
+      schema:
+        type: string
+        format: date
+    AdminUnionReceiptIdPath:
+      name: receipt_id
+      in: path
+      required: true
+      description: The collection record (union_receipts.receipt_id) as a list row carries it; unknown or of another app → 20001 with data.fields=[receipt_id].
+      schema:
+        $ref: '#/components/schemas/Id'
+    AdminUnionReceiptPlatform:
+      name: platform
+      in: query
+      required: false
+      description: Only collections of this platform (enum platform); absent = all; outside the enum → 20001 with data.fields=[platform].
+      schema:
+        $ref: '#/components/schemas/PlatformCode'
+    AdminUnionReceiptDateFrom:
+      name: date_from
+      in: query
+      required: false
+      description: Earliest collection day (YYYY-MM-DD), inclusive; not a date → 20001 with data.fields=[date_from]; later than date_to → 20001 with data.fields=[date_from, date_to].
+      schema:
+        type: string
+        format: date
+    AdminUnionReceiptDateTo:
+      name: date_to
+      in: query
+      required: false
+      description: Latest collection day (YYYY-MM-DD), inclusive; not a date → 20001 with data.fields=[date_to].
       schema:
         type: string
         format: date
@@ -30895,6 +31412,66 @@ components:
           fields:
             - date_from
             - date_to
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUnionReceiptRangeInvalid:
+      summary: 20001 collection list with date_from later than date_to
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - date_from
+            - date_to
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUnionReceiptDateInvalid:
+      summary: 20001 receipt_date later than the current accounting day
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - receipt_date
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUnionReceiptCashAccountInvalid:
+      summary: 20001 CASH_BANK while 银行卡通道未开通
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - cash_account
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUnionReceiptReasonInvalid:
+      summary: 20001 reason missing, empty after trimming or longer than 200 characters
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - reason
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUnionReceiptUnknown:
+      summary: 20001 receipt_id unknown or of another app
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - receipt_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUnionReceiptConflict:
+      summary: 20902 the record is already reversed; refresh
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: union_receipt
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUnionReceiptIdempotencyConflict:
+      summary: 20901 the same Idempotency-Key with another body
+      value:
+        code: 20901
+        msg: 请求内容有变化，请重新提交
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminReconDiffCloseReasonInvalid:
       summary: 20001 reason empty after trimming, or longer than 200 characters
@@ -51078,5 +51655,330 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/AdminAssetSnapshotPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminUnionReceiptMethod:
+      type: string
+      description: How a union collection was registered (contracts/enums/fund.yaml union_receipt_method; BR-FUND-20).
+      enum:
+        - ADMIN_ENTRY
+        - R1_RECON
+    AdminUnionReceiptCashAccount:
+      type: string
+      description: The subject a union collection debits (contracts/enums/fund.yaml union_receipt_cash_account; BR-FUND-20 细则).
+      enum:
+        - CASH_ALIPAY
+        - CASH_BANK
+    AdminFundWaterLevel:
+      type: string
+      description: The conclusion from W and P (contracts/enums/fund.yaml admin_fund_water_level; BR-WDR-18).
+      enum:
+        - normal
+        - low
+    AdminUnionReceiptCreateRequest:
+      type: object
+      description: One union collection to enter; see POST /admin/v1/union-receipts.
+      additionalProperties: false
+      required:
+        - platform
+        - receipt_date
+        - amount_fen
+        - cash_account
+      properties:
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        receipt_date:
+          type: string
+          format: date
+          description: The day the money arrived (YYYY-MM-DD), not later than the current accounting day.
+        amount_fen:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Integer fen above 0, the amount of BR-FUND-20.
+        cash_account:
+          $ref: '#/components/schemas/AdminUnionReceiptCashAccount'
+        note:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Optional, at most 500 characters, not blank after trimming.
+    AdminUnionReceiptReverseRequest:
+      type: object
+      description: Body of POST /admin/v1/union-receipts/{receipt_id}/reverse.
+      additionalProperties: false
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Why the record is reversed; 1–200 characters after trimming, else 20001 with data.fields=[reason]. Kept in the audit record.
+    AdminUnionReceipt:
+      type: object
+      description: One union collection record (BR-FUND-20 细则「联盟回款凭证」; 04 §3.2 union_receipts, written by settlement).
+      additionalProperties: false
+      required:
+        - receipt_id
+        - platform
+        - receipt_date
+        - amount_fen
+        - method
+        - cash_account
+        - voucher_id
+        - note
+        - created_by
+        - created_by_name
+        - created_at
+        - reversed_at
+        - reversed_by
+        - reversal_voucher_id
+      properties:
+        receipt_id:
+          $ref: '#/components/schemas/Id'
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        receipt_date:
+          type: string
+          format: date
+          description: The day the money arrived (YYYY-MM-DD).
+        amount_fen:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Integer fen, the amount of BR-FUND-20. It stays as entered after a reversal.
+        method:
+          $ref: '#/components/schemas/AdminUnionReceiptMethod'
+        cash_account:
+          $ref: '#/components/schemas/AdminUnionReceiptCashAccount'
+        voucher_id:
+          $ref: '#/components/schemas/Id'
+        note:
+          type:
+            - string
+            - 'null'
+          maxLength: 500
+        created_by:
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+          description: The admin who entered the record; null for a record confirmed by R1 without an operator.
+        created_by_name:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: Current name of the creator (admin_users.display_name, else the username); null when there is none or it cannot be read.
+        created_at:
+          type: string
+          format: date-time
+        reversed_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the record was reversed; null until then.
+        reversed_by:
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+          description: The admin who reversed the record; null until then.
+        reversal_voucher_id:
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+          description: The reversal voucher (BR-FUND-16, BR-FUND-20 细则); null until the record is reversed.
+    AdminUnionReceiptPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUnionReceipt'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminUnionReceiptPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminUnionReceiptPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminUnionReceiptResult:
+      type: object
+      additionalProperties: false
+      required:
+        - receipt
+      properties:
+        receipt:
+          $ref: '#/components/schemas/AdminUnionReceipt'
+    AdminUnionReceiptCreateResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminUnionReceiptResult'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminUnionReceiptReverseResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminUnionReceiptResult'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminFundLedgerReceivable:
+      type: object
+      description: The 已入账未回款 of one platform at the moment of reading (BR-FUND-20).
+      additionalProperties: false
+      required:
+        - platform
+        - union_receivable_fen
+      properties:
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        union_receivable_fen:
+          type: integer
+          format: int64
+          description: Balance in fen of UNION_RECEIVABLE:{platform} over all the entries posted so far; below 0 after a collection above the receivable.
+    AdminFundLedgerWatermark:
+      type: object
+      description: The latest W of the enterprise Alipay channel (BR-WDR-18; 04 §3.2 payout_watermarks). Entered on the payout console, not here.
+      additionalProperties: false
+      required:
+        - available_fen
+        - measured_at
+        - entered_by
+        - entered_by_name
+      properties:
+        available_fen:
+          $ref: '#/components/schemas/Fen'
+        measured_at:
+          type: string
+          format: date-time
+          description: When W was read off the account (t_W).
+        entered_by:
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+          description: The admin who entered W; null when no admin did.
+        entered_by_name:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: Current name of that admin (admin_users.display_name, else the username); null when there is none or it cannot be read.
+    AdminFundLedger:
+      type: object
+      description: The fund ledger overview, computed when read; see GET /admin/v1/fund-ledger.
+      additionalProperties: false
+      required:
+        - as_of
+        - receivables
+        - union_receivable_total_fen
+        - negative_total_fen
+        - negative_user_count
+        - watermark
+        - forecast_withdrawal_fen
+        - water_level
+      properties:
+        as_of:
+          type: string
+          format: date-time
+          description: The moment of the reading.
+        receivables:
+          type: array
+          description: The 已入账未回款 per platform, ordered by platform code; only platforms with at least one entry; empty when none.
+          items:
+            $ref: '#/components/schemas/AdminFundLedgerReceivable'
+        union_receivable_total_fen:
+          type: integer
+          format: int64
+          description: Sum of `receivables` in fen.
+        negative_total_fen:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Sum of the magnitudes of the negative available balances in fen (BR-FUND-18 negative_fen side).
+        negative_user_count:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Number of accounts with a negative available balance.
+        watermark:
+          anyOf:
+            - $ref: '#/components/schemas/AdminFundLedgerWatermark'
+            - type: 'null'
+          description: The latest W; null until one exists, never a default.
+        forecast_withdrawal_fen:
+          $ref: '#/components/schemas/NullableFen'
+          description: P of BR-WDR-18 in fen; null while it is not available, never a default.
+        water_level:
+          anyOf:
+            - $ref: '#/components/schemas/AdminFundWaterLevel'
+            - type: 'null'
+          description: The conclusion from W and P; null when W or P is null or W is stale.
+    AdminFundLedgerResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminFundLedger'
         trace_id:
           $ref: '#/components/schemas/TraceId'

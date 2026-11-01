@@ -1323,6 +1323,26 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/union-receipts",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-receipts",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-receipts/:receipt_id/reverse",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/fund-ledger",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "signed": false
   },

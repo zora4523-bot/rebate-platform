@@ -864,6 +864,36 @@ export const recon_diff_status = [
 export type ReconDiffStatus = (typeof recon_diff_status)[number];
 
 /**
+ * 联盟回款记录的登记方式；同一笔回款只登记一条
+ * Source: BR-FUND-20 及细则「联盟回款凭证」；design/specs/admin-fund-dashboard.md §2 (contracts/enums/fund.yaml).
+ */
+export const union_receipt_method = [
+  "ADMIN_ENTRY", // 后台录入
+  "R1_RECON", // R1 对账确认
+] as const;
+export type UnionReceiptMethod = (typeof union_receipt_method)[number];
+
+/**
+ * 联盟回款借记的现金科目；银行卡通道未开通时不接受 CASH_BANK
+ * Source: BR-FUND-20 细则「联盟回款凭证」 (contracts/enums/fund.yaml).
+ */
+export const union_receipt_cash_account = [
+  "CASH_ALIPAY", // 企业支付宝
+  "CASH_BANK", // 企业对公银行账户
+] as const;
+export type UnionReceiptCashAccount = (typeof union_receipt_cash_account)[number];
+
+/**
+ * 资金台账概览的水位结论；W 或 P 没有、或 W 已过期时不下结论（字段为 null），未回款超告警线不在此枚举
+ * Source: BR-WDR-18；design/specs/admin-fund-dashboard.md §2、§3 (contracts/enums/fund.yaml).
+ */
+export const admin_fund_water_level = [
+  "normal", // 正常
+  "low", // 水位低
+] as const;
+export type AdminFundWaterLevel = (typeof admin_fund_water_level)[number];
+
+/**
  * GET /v1/me 返回的身份等级
  * Source: 规划/04 §2.5；BR-ID-01 (contracts/enums/identity.yaml).
  */
@@ -2178,6 +2208,9 @@ export const enums = {
   recon_diff_type,
   payout_batch_item_result,
   recon_diff_status,
+  union_receipt_method,
+  union_receipt_cash_account,
+  admin_fund_water_level,
   identity_level,
   login_provider,
   device_id_source,
