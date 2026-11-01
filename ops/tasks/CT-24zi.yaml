@@ -11,6 +11,7 @@ paths:
   - 'contracts/openapi.yaml'
   - 'contracts/enums/**'
   - 'contracts/error-codes.yaml'
+  - 'contracts/oasdiff-accepted.txt'
   - 'specs/permissions.yaml'
   - 'apps/api/src/modules/admin/http/admin/exports.controller.ts'
   - 'apps/api/src/modules/admin/http/admin/exports.controller.test.ts'
