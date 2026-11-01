@@ -1,0 +1,24 @@
+id: B1-09q
+repo: rebate-platform
+title: orders、agent：逾期单的 order_status 卡片不带过期月份（FU-AGENT-CARD-OVERDUE，BR-FUND-17 第 12 行）
+type: impl
+# 2026-11-02 W1 入账（B1-09p money r2 S2，编排 04:28）。按 credit_overdue 判定：orders 的 toAgentItem 与 agent 的 byCard 两条路都在逾期时给 null，详情接口字段不变（冻结 #24）。不能在 cardFields 按 display_status 判：冻结的 tools-orders 用例夹具里 CREDITING 带月份。
+refs: [BR-FUND-17, BR-TEXT-02]
+refs_hash:
+  BR-FUND-17: 02ee5b1ae349
+  BR-TEXT-02: 312331179dcf
+deps: [B1-09r]
+paths:
+  - 'apps/api/src/modules/orders/application/order-queries.ts'
+  - 'apps/api/src/modules/orders/application/admin-orders.test.ts'
+  - 'apps/api/src/modules/agent/tools/orders/index.ts'
+  - 'apps/api/src/modules/agent/tools/orders/index.test.ts'
+test_paths:
+  - 'test/spec/agent/order-card-overdue/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/order-card-overdue/**'
+status: todo
+pr: null

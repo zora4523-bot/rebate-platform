@@ -1,0 +1,16 @@
+id: B1-09r
+repo: rebate-platform
+title: 测试修改（B1-09q 前置）：冻结 [AC-B1-09p#50] 第 8 条不再钉逾期单 searchForAgent 的 expected_credit_period
+type: test-change
+# 2026-11-02 W1 入账（编排 04:28，#24 test-change）。B1-09q 起逾期单的 Agent 卡片不带过期月份（BR-FUND-17 第 12 行），#50 第 8 条钉的 2027-11 是写测试时的疏漏。只放宽这一处，新旧实现下都绿；断言与 AC 编号其余不变，逾期卡片为 null 由 B1-09q 新规则测试钉。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/orders/figures/batch.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
