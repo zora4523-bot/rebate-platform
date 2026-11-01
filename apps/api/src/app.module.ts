@@ -424,6 +424,7 @@ import {
   createRiskStateBatchReader,
   RiskAdminModule,
   RiskAppealsAdminModule,
+  RiskRulesAdminModule,
   type AdminAppealsReadPorts,
   type AdminAppealsWritePorts,
   RiskModule,
@@ -4473,6 +4474,18 @@ export class AppModule {
                   ports: adminAppealWritePorts,
                   config: (db, clock) => createContentReader({ db, clock }),
                 },
+              }),
+            ]
+          : []),
+        // risk's /admin/v1 rule list and enable / disable (B1-03zg, CT-24f; BR-ID-36): guarded by
+        // AdminOperationGuard (config.risk; the list read only, each enable / disable with its totp
+        // step-up); the compare-and-set change and its audit row (admin's writer bound to the
+        // change's transaction) commit together.
+        ...(options.entry === 'admin'
+          ? [
+              RiskRulesAdminModule.forAdmin({
+                auditWriter: (db, clock) =>
+                  createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
               }),
             ]
           : []),
