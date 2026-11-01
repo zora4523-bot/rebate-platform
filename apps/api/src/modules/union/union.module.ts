@@ -387,6 +387,9 @@ async function startUnionRegistry(
       transport: archivedTransport(createUnionHttpTransport(), source, clock, logger),
       warn: (warning: JdWarning) => logJdWarning(logger, warning),
       productKeyMode: jdProductKeyMode(priceConfig, logger),
+      // B1-04zd (D10-500 ①): JD_SITE_ID is optional; without it the entry starts and convert is
+      // refused `adapter_unimplemented`.
+      ...(config.jdSiteId == null ? {} : { siteId: config.jdSiteId }),
     };
   }
   return createUnionRegistry({

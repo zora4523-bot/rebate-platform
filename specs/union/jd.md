@@ -1,6 +1,6 @@
 # 京东联盟映射
 
-本文件记京东适配器定下的映射，订单在前，商品在后。
+本文件记京东适配器定下的映射，依次是订单、商品、转链。
 
 # 京东订单映射（B1-04zb）
 
@@ -208,3 +208,72 @@
 | --- | --- |
 | `PRICE_ANOMALY` | `method`、`code`、`item_id`、`reason` |
 | `PRICE_CALC_DIFF` | `method`、`code`、`item_id`、`final_price_fen`、`lowest_coupon_price_fen` |
+
+# 京东转链（B1-04zd）
+
+接口 `jd.union.open.promotion.common.get`，外层键 `jd_union_open_promotion_common_get_responce`，结果键 `getResult`，实现在 `apps/api/src/modules/union/infra/jd/promotion.ts`。依据 D10-500 ①、BR-ATTR-05、CAP-JD-06。`promotion.bysubunionid.get` 不用。
+
+## 请求
+
+业务参数只有 `promotionCodeReq`：
+
+| 参数 | 取值 |
+| --- | --- |
+| `materialId` | `https://jingfen.jd.com/detail/<itemId>.html` |
+| `siteId` | 配置 `JD_SITE_ID`，字符串原文上行，不过 number |
+| `positionId` | 身份的 `promotionSlot`，转成 Number |
+| `sceneId` | 固定 1 |
+| `subUnionId` | 身份有这个属性才带 |
+
+不发 `pid`、`ext1`、`couponUrl`、`command`、`protocol`；`idempotencyKey` 与 `userId` 不上行。归档用途 `kind=convert`。写操作，治理层与适配器都不重试。
+
+检查顺序：`siteId` → 身份 → 商品键模式 → 商品，都在取凭据、发请求之前。
+
+## materialId
+
+用联盟 itemId 形式。`item_id` 优先，其次 `itemId`（linking 实际传这个）。
+
+- 两个键走同一套校验：只收字母、数字、`_`、`-`，与 `resolveLink` 认的 jingfen 字符集一致。空串、含 `/`、`?`、空白或其他字符都 `invalid_dto`。
+- `item_id` 给了值就只看它，不合格不退到 `itemId`；`item_id` 缺失或 null 才看 `itemId`。
+- `productKeyMode` 每次调用按 `ctx.appId` 读一次，不缓存。读到 sku → `link_unrecognized`：sku 模式存的是 skuId，官方只接受完整联盟商品 ID（2001707），换不了，不发请求，不猜。
+
+## siteId
+
+`JD_SITE_ID` 可不配，启动不拒绝。缺失（未给、null、空白）时 `convert` 报 `adapter_unimplemented`，不取凭据、不发请求，下游出 50303。其他京东端口不受影响。
+
+## 身份、subUnionId 与 no_rebate
+
+只认 `isServerIdentity` 为真且 `platform=jd` 的身份，否则 `invalid_identity`，不取凭据、不发请求。
+
+- `promotionSlot` 须是十进制正整数（无前导零）且不超过安全整数，否则 `invalid_identity`。
+- `subUnionId` 读身份的同名属性（`n_{attr_code}` 或 `n_{attr_code}_{lk}`，linking 已构造好），原样上行，适配器不拼不改。格式是字母、数字、`_`、`-`，1～80 字符，不合 `invalid_identity`。
+- **no_rebate**：身份没有这个属性时请求里就没有这个键，不发空串。属性存在但为 null 算格式不合，不当 no_rebate。
+
+## 结果
+
+`{ kind: 'url', url: clickURL }`，`clickURL` 取内层 `data.clickURL`。
+
+- 须是 `http://` 或 `https://` 开头、不含空白、能解析出主机的字符串，否则 `upstream_unavailable`。
+- `jCommand` 不进结果，不用它顶替，不自行拼 scheme，不回退原链接。
+- **没有短链**：这个接口的结果只取 `clickURL`，不再调别的接口换短链，`short_url` 不给。
+
+## 错误码映射
+
+内层 code 走底座细分表，限流在先。
+
+| 内层 code | 结果 | 告警 |
+| --- | --- | --- |
+| 429 | `rate_limited` | 否 |
+| 2001104 商品不在推广中 | `item_unavailable` | 否 |
+| 2001101、2001102、2001703、2001706、2001707 链接或场景不支持 | `link_unrecognized` | 否 |
+| 2001701 本单不用 `couponUrl`，只可能是 `siteId` 类型不符（CAP-JD-06） | `upstream_rejected` | 一次 |
+| 403、2001403、2001602、2001603 无权限 | `upstream_rejected` | 一次 |
+| 2001208 `subUnionId` 格式 | `upstream_rejected` | 否 |
+| 2001609 服务降级 | `upstream_unavailable` | 否 |
+| 其余 | `upstream_rejected`（底座） | 否 |
+
+网关层错误、HTTP 5xx、传输抛错沿用底座分类。
+
+## 不泄密
+
+错误与告警不带 `subUnionId`、`clickURL`、`itemId`、推广位与上游 `message`。告警只含 `method` 与 `code`。

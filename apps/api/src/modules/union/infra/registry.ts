@@ -103,6 +103,8 @@ export interface JdLiveOptions {
   readonly warn?: (event: JdWarning) => void;
   /** BR-PROD-03: read with ctx.appId on every listOrders; without it the adapter uses item. */
   readonly productKeyMode?: { read(appId: string): Promise<JdProductKeyMode> };
+  /** D10-500 ①: handed to the adapter as is; without it convert is `adapter_unimplemented`. */
+  readonly siteId?: string | null;
 }
 
 export interface UnionRegistryOptions extends DemoUnionRegistryOptions {
@@ -216,6 +218,8 @@ export function createUnionRegistry(options?: UnionRegistryOptions): UnionRegist
           endpoint,
           ...(live.warn === undefined ? {} : { warn: live.warn }),
           ...(live.productKeyMode === undefined ? {} : { productKeyMode: live.productKeyMode }),
+          // B1-04zd (D10-500 ①): as is; without it the adapter refuses convert.
+          ...(live.siteId === undefined ? {} : { siteId: live.siteId }),
         });
       }
     }
