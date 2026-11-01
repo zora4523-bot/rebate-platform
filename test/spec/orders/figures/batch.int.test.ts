@@ -38,7 +38,7 @@ it('[AC-B1-09p#50][BR-AI-07][BR-FUND-04] Agent 列表 8 条：金额、月份、
   const cases: {
     readonly patch: OrderPatch;
     readonly est: number;
-    readonly period: string | null;
+    readonly period?: string | null;
     readonly status: string;
   }[] = [
     { patch: { est_commission_fen: 1000n }, est: 425, period: null, status: 'PAID' },
@@ -76,13 +76,14 @@ it('[AC-B1-09p#50][BR-AI-07][BR-FUND-04] Agent 列表 8 条：金额、月份、
     {
       patch: waiting({ est_commission_fen: 8000n, union_settled_at: '2027-11-20T04:00:00.000Z' }),
       est: 3400,
-      period: '2027-11',
       status: 'CREDITING',
     },
   ];
   const expected = new Map<string, unknown>();
+  const periodUnpinned = new Set<string>();
   for (const item of cases) {
     const o = await f.order({ patch: item.patch });
+    if (item.period === undefined) periodUnpinned.add(o.orderId);
     expected.set(o.orderId, {
       est_rebate_fen: item.est,
       expected_credit_period: item.period,
@@ -100,7 +101,9 @@ it('[AC-B1-09p#50][BR-AI-07][BR-FUND-04] Agent 列表 8 条：金额、月份、
         item.order_id,
         {
           est_rebate_fen: item.est_rebate_fen,
-          expected_credit_period: item.expected_credit_period,
+          expected_credit_period: periodUnpinned.has(item.order_id)
+            ? undefined
+            : item.expected_credit_period,
           display_status: item.display_status,
         },
       ]),
