@@ -13,6 +13,7 @@
 // and after the migration, and on any handle whether or not it is bound to the schema.
 //
 // Pure module (no decorators, erasable syntax, type-only imports from the platform barrel).
+import type { AuditSystemActor } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import { sql, type Transaction } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
@@ -30,7 +31,7 @@ export interface SystemHoldAudit {
   readonly appId: string;
   readonly orderId: string;
   /** system:<name>; the table's CHECK refuses any other form. */
-  readonly actor: string;
+  readonly actor: AuditSystemActor;
   readonly before: SystemHoldState;
   readonly after: SystemHoldState;
 }
