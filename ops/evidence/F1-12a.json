@@ -1,0 +1,156 @@
+{
+  "red_tests": [
+    "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#1] 进页默认本月：自购、分享两栏的付款笔数、预估、已结算取 this_month，已结算为负带负号",
+    "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#2] 切到今日、昨日、上月再回本月，两栏各取对应期间的三项",
+    "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#3] 邀请栏本月、上月只显示金额合计（上月已结算为负带负号），没有笔数与日期",
+    "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#4] referral 为 null 时整个邀请栏不显示，不渲染成 0",
+    "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#5] 选中平台后自购与分享换成该平台的数，邀请栏照常并注「不分平台」",
+    "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#6] AC-S2-61 ①：本月、昨日、上月、今日的取值与邀请栏合计",
+    "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#7] AC-S2-61 ⑦：本月只有红冲时已结算显示带负号的金额",
+    "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#8] 统计截至行用 earnings.as_of，时间按 BR-TEXT-11 列表写法",
+    "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#9] 各项全为 0：不出整页空态，三栏照常显示 0 与 ¥0，统计截至行后接 empty_hint 且随期间变化",
+    "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#10] 有收益的期间不显示 empty_hint；只在所选期间各栏全为 0 时才显示",
+    "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#11] 页面文案取字典，不出现「团队」「下线」「佣金」等禁用词与占位符",
+    "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-NOTE#1] 指标旁问号打开说明弹层，读出指标名与字典说明；Esc 关闭后焦点回到问号，不发请求",
+    "test/spec/frontend/h5-earnings/earnings-request.test.ts > [AC-F1-12a-REQ#1] Earnings 路由 /earnings 懒加载收益看板页面",
+    "test/spec/frontend/h5-earnings/earnings-request.test.ts > [AC-F1-12a-REQ#2] 进页经桥取一次 H5 令牌，只发一次不带参数的 GET /v1/earnings/summary，不签名",
+    "test/spec/frontend/h5-earnings/earnings-request.test.ts > [AC-F1-12a-REQ#3] 四个期间来回切换只换显示，不重新请求也不重取令牌",
+    "test/spec/frontend/h5-earnings/earnings-request.test.ts > [AC-F1-12a-REQ#4] 选中平台胶囊带 platform 重新请求一次，之后切期间仍不请求",
+    "test/spec/frontend/h5-earnings/earnings-request.test.ts > [AC-F1-12a-REQ#5] 下拉刷新按当前平台重请求一次，在途不重复，期间选择保留",
+    "test/spec/frontend/h5-earnings/earnings-request.test.ts > [AC-F1-12a-REQ#6] 平台胶囊为「全部」加 platform_status 中不是 not_launched 的平台，默认选中「全部」",
+    "test/spec/frontend/h5-earnings/earnings-request.test.ts > [AC-F1-12a-REQ#7] 三个平台都开放时显示三个平台胶囊",
+    "test/spec/frontend/h5-earnings/earnings-source.test.ts > [AC-F1-12a-SOURCE#1] 经 useApi 读 /v1/earnings/summary、@couli/money 格式化、基础弹层组件；不签名、不绕过客户端",
+    "test/spec/frontend/h5-earnings/earnings-source.test.ts > [AC-F1-12a-SOURCE#2] 页面源码无中文与字面颜色，文案经 texts/earnings.ts",
+    "test/spec/frontend/h5-earnings/earnings-source.test.ts > [AC-F1-12a-SOURCE#3] texts/earnings.ts 不重复登记字典已有的 earnings.* 中文，也没有禁用词",
+    "test/spec/frontend/h5-earnings/earnings-states.test.ts > [AC-F1-12a-STATE#1] 请求在途显示加载态，返回后才显示三栏",
+    "test/spec/frontend/h5-earnings/earnings-states.test.ts > [AC-F1-12a-STATE#2] 30701（看板关闭）显示字典 error.30701 的整页提示，不出三栏、不重试",
+    "test/spec/frontend/h5-earnings/earnings-states.test.ts > [AC-F1-12a-STATE#3] 看板接口返回 10405 显示 error.10405，只请求一次、不自动重放",
+    "test/spec/frontend/h5-earnings/earnings-states.test.ts > [AC-F1-12a-STATE#4] 原生取 H5 令牌因 10405 失败：显示错误态，不发看板请求、不泄露原生错误",
+    "test/spec/frontend/h5-earnings/earnings-states.test.ts > [AC-F1-12a-STATE#5] 其他错误显示 h5.load_failed，点重试只再请求一次同一地址",
+    "test/spec/frontend/h5-earnings/earnings-states.test.ts > [AC-F1-12a-STATE#6] 断网显示错误态与重试，不显示错误细节，恢复后重试成功",
+    "test/spec/frontend/h5-earnings/earnings-states.test.ts > [AC-F1-12a-STATE#7] 切平台后请求失败显示 h5.load_failed，重试仍带该平台",
+    "test/spec/frontend/h5-earnings/earnings-texts.test.ts > [AC-F1-12a-TEXTS#1] 构建期文案收集覆盖本页的全部 earnings.* 键与三态错误文案（动态键须登记）",
+    "test/spec/frontend/h5-earnings/earnings.browser.test.ts > [AC-F1-12a-BROWSER#1] h5-earnings",
+    "test/spec/frontend/h5-earnings/earnings.browser.test.ts > [AC-F1-12a-BROWSER#2] h5-earnings-platform",
+    "test/spec/frontend/h5-earnings/earnings.browser.test.ts > [AC-F1-12a-BROWSER#3] h5-earnings-empty",
+    "test/spec/frontend/h5-earnings/earnings.browser.test.ts > [AC-F1-12a-BROWSER#4] h5-earnings-note",
+    "test/spec/frontend/h5-earnings/earnings.browser.test.ts > [AC-F1-12a-BROWSER#5] h5-earnings-dark",
+    "test/spec/frontend/h5-earnings/earnings.browser.test.ts > [AC-F1-12a-BROWSER#6] 320 窄屏与两倍字号仍显示三栏金额且不横向溢出",
+    "test/spec/frontend/h5-earnings/earnings.browser.test.ts > [AC-F1-12a-BROWSER#7] 平台胶囊命中区不小于 44（视觉 32 高也可，靠外扩命中区）"
+  ],
+  "risk_note": "RV1 (apps/h5). New H5 page /earnings (05 F1-12; 01 l.163 / l.494; 10 AC-S2-61): reads getEarningsSummary through useApi and the bridge h5 token; self / share / referral columns x four periods (period switch is display-only), platform pills from features.platform_status (not_launched hidden), referral null hides the block, negative credited_fen keeps its sign, as-of line and empty hint, 30701 / 10405 / three-state, route param platform. Texts from the earnings.* dictionary with local fallbacks only for missing keys; no contract change. Container verify:fast hit the global tsc heap OOM (CT-06zzw pending); full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 2,
+      "note": "fresh independent Claude via claude-run.sh (Codex unavailable): r1 pass with 2 S2 (30701 on refetch, platform failure replacing the page) fixed, r2 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by a fresh independent Claude reviewed by another: r1 pass (one S2: route param platform, implemented); skeleton moved from a .tsx file into index.ts because the path guard accepts only .ts skeletons; red-check PASS (37 red)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  },
+  "task": "F1-12a",
+  "spec_commit": "07717d98a8ad53566a8c2777355eddf8e96522ba",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "07717d98a8ad53566a8c2777355eddf8e96522ba",
+      "tree": "ed30e063c4b2183feb3b7786a97bfb9989af04e1",
+      "prop_seed": 20261001,
+      "started_at": "2026-11-01T07:04:25Z",
+      "finished_at": "2026-11-01T07:04:36Z",
+      "red_tests": [
+        "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#1] 进页默认本月：自购、分享两栏的付款笔数、预估、已结算取 this_month，已结算为负带负号",
+        "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#2] 切到今日、昨日、上月再回本月，两栏各取对应期间的三项",
+        "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#3] 邀请栏本月、上月只显示金额合计（上月已结算为负带负号），没有笔数与日期",
+        "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#4] referral 为 null 时整个邀请栏不显示，不渲染成 0",
+        "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#5] 选中平台后自购与分享换成该平台的数，邀请栏照常并注「不分平台」",
+        "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#6] AC-S2-61 ①：本月、昨日、上月、今日的取值与邀请栏合计",
+        "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#7] AC-S2-61 ⑦：本月只有红冲时已结算显示带负号的金额",
+        "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#8] 统计截至行用 earnings.as_of，时间按 BR-TEXT-11 列表写法",
+        "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#9] 各项全为 0：不出整页空态，三栏照常显示 0 与 ¥0，统计截至行后接 empty_hint 且随期间变化",
+        "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#10] 有收益的期间不显示 empty_hint；只在所选期间各栏全为 0 时才显示",
+        "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-VIEW#11] 页面文案取字典，不出现「团队」「下线」「佣金」等禁用词与占位符",
+        "test/spec/frontend/h5-earnings/earnings-render.test.ts > [AC-F1-12a-NOTE#1] 指标旁问号打开说明弹层，读出指标名与字典说明；Esc 关闭后焦点回到问号，不发请求",
+        "test/spec/frontend/h5-earnings/earnings-request.test.ts > [AC-F1-12a-REQ#1] Earnings 路由 /earnings 懒加载收益看板页面",
+        "test/spec/frontend/h5-earnings/earnings-request.test.ts > [AC-F1-12a-REQ#2] 进页经桥取一次 H5 令牌，只发一次不带参数的 GET /v1/earnings/summary，不签名",
+        "test/spec/frontend/h5-earnings/earnings-request.test.ts > [AC-F1-12a-REQ#3] 四个期间来回切换只换显示，不重新请求也不重取令牌",
+        "test/spec/frontend/h5-earnings/earnings-request.test.ts > [AC-F1-12a-REQ#4] 选中平台胶囊带 platform 重新请求一次，之后切期间仍不请求",
+        "test/spec/frontend/h5-earnings/earnings-request.test.ts > [AC-F1-12a-REQ#5] 下拉刷新按当前平台重请求一次，在途不重复，期间选择保留",
+        "test/spec/frontend/h5-earnings/earnings-request.test.ts > [AC-F1-12a-REQ#6] 平台胶囊为「全部」加 platform_status 中不是 not_launched 的平台，默认选中「全部」",
+        "test/spec/frontend/h5-earnings/earnings-request.test.ts > [AC-F1-12a-REQ#7] 三个平台都开放时显示三个平台胶囊",
+        "test/spec/frontend/h5-earnings/earnings-source.test.ts > [AC-F1-12a-SOURCE#1] 经 useApi 读 /v1/earnings/summary、@couli/money 格式化、基础弹层组件；不签名、不绕过客户端",
+        "test/spec/frontend/h5-earnings/earnings-source.test.ts > [AC-F1-12a-SOURCE#2] 页面源码无中文与字面颜色，文案经 texts/earnings.ts",
+        "test/spec/frontend/h5-earnings/earnings-source.test.ts > [AC-F1-12a-SOURCE#3] texts/earnings.ts 不重复登记字典已有的 earnings.* 中文，也没有禁用词",
+        "test/spec/frontend/h5-earnings/earnings-states.test.ts > [AC-F1-12a-STATE#1] 请求在途显示加载态，返回后才显示三栏",
+        "test/spec/frontend/h5-earnings/earnings-states.test.ts > [AC-F1-12a-STATE#2] 30701（看板关闭）显示字典 error.30701 的整页提示，不出三栏、不重试",
+        "test/spec/frontend/h5-earnings/earnings-states.test.ts > [AC-F1-12a-STATE#3] 看板接口返回 10405 显示 error.10405，只请求一次、不自动重放",
+        "test/spec/frontend/h5-earnings/earnings-states.test.ts > [AC-F1-12a-STATE#4] 原生取 H5 令牌因 10405 失败：显示错误态，不发看板请求、不泄露原生错误",
+        "test/spec/frontend/h5-earnings/earnings-states.test.ts > [AC-F1-12a-STATE#5] 其他错误显示 h5.load_failed，点重试只再请求一次同一地址",
+        "test/spec/frontend/h5-earnings/earnings-states.test.ts > [AC-F1-12a-STATE#6] 断网显示错误态与重试，不显示错误细节，恢复后重试成功",
+        "test/spec/frontend/h5-earnings/earnings-states.test.ts > [AC-F1-12a-STATE#7] 切平台后请求失败显示 h5.load_failed，重试仍带该平台",
+        "test/spec/frontend/h5-earnings/earnings-texts.test.ts > [AC-F1-12a-TEXTS#1] 构建期文案收集覆盖本页的全部 earnings.* 键与三态错误文案（动态键须登记）",
+        "test/spec/frontend/h5-earnings/earnings.browser.test.ts > [AC-F1-12a-BROWSER#1] h5-earnings",
+        "test/spec/frontend/h5-earnings/earnings.browser.test.ts > [AC-F1-12a-BROWSER#2] h5-earnings-platform",
+        "test/spec/frontend/h5-earnings/earnings.browser.test.ts > [AC-F1-12a-BROWSER#3] h5-earnings-empty",
+        "test/spec/frontend/h5-earnings/earnings.browser.test.ts > [AC-F1-12a-BROWSER#4] h5-earnings-note",
+        "test/spec/frontend/h5-earnings/earnings.browser.test.ts > [AC-F1-12a-BROWSER#5] h5-earnings-dark",
+        "test/spec/frontend/h5-earnings/earnings.browser.test.ts > [AC-F1-12a-BROWSER#6] 320 窄屏与两倍字号仍显示三栏金额且不横向溢出",
+        "test/spec/frontend/h5-earnings/earnings.browser.test.ts > [AC-F1-12a-BROWSER#7] 平台胶囊命中区不小于 44（视觉 32 高也可，靠外扩命中区）"
+      ],
+      "expected": [
+        "test/spec/frontend/h5-earnings/earnings-render.test.ts",
+        "test/spec/frontend/h5-earnings/earnings-request.test.ts",
+        "test/spec/frontend/h5-earnings/earnings-source.test.ts",
+        "test/spec/frontend/h5-earnings/earnings-states.test.ts",
+        "test/spec/frontend/h5-earnings/earnings-texts.test.ts",
+        "test/spec/frontend/h5-earnings/earnings.browser.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "e58865f2bb178599dca0d5b5c55747f9803515938f13cbccc3ba352b843b2dba"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "1b5fa70944b01854967d4fc9016400ba12ffb36a0579c10c224ec1a6a242c9ba"
+        }
+      ],
+      "gate": {
+        "commit": "e686e9e2b9202ce1dfae70fe58e571e2ca0dd045",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "e1f005c5a9d44cbf78810d7f272e538e611288ba",
+    "specs": "d6da500dafeea96c5e7d7cc7d526535701917b8f"
+  }
+}
