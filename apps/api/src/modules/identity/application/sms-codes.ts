@@ -6,7 +6,10 @@
 //   1. normalize_phone → 20001 phone_invalid (no SMS, nothing counted);
 //   2. prefix blocklist sms.blocked_prefixes of the request's app (08 default when the key is
 //      missing or malformed) on the E.164 form → 44001, kind blocked_prefix (B1-03d records the
-//      risk hit through hooks.blockedPrefix);
+//      risk hit through hooks.blockedPrefix). Before deciding, hooks.blockedPrefixInForce asks
+//      whether rule SMS_BLOCKED_PREFIX of the app takes part in judgements (B1-03zh, BR-ID-36
+//      细则「规则清单的启停」): false → no prefix decision at all (no 44001, no hit), the request
+//      goes on to step 3; no hook → in force;
 //   3. insertion points, in order, each short-circuits: phoneBlocklist (44001, B1-03d) → captcha
 //      (44003, B1-03g) → deviceQuota (42901, B1-03g). They get the request with the normalised
 //      number, the device id and the client IP. A landing page send (channel=landing, B1-11g,
@@ -148,7 +151,16 @@ export interface SmsConfigReader {
 }
 /** Ordered seams for B1-03d/g, after normalisation/prefix checks and before phone quota. */
 export interface SmsHooks {
-  /** B1-03d: records the risk hit of a prefix refusal already decided here (no new decision). */
+  /**
+   * B1-03zh (BR-ID-36): whether the prefix rule (SMS_BLOCKED_PREFIX) of the request's app takes
+   * part in judgements now; asked before the prefix decision. Absent → in force.
+   */
+  readonly blockedPrefixInForce?: (request: SmsRequest) => Promise<boolean>;
+  /**
+   * B1-03d: records the risk hit of a prefix refusal already decided here (no new decision). The
+   * decision was taken on the rule in force (blockedPrefixInForce, the one status read of this
+   * request, B1-03zh), so the recorder writes the hit without reading the status again.
+   */
   readonly blockedPrefix?: (request: SmsRequest) => Promise<void>;
   readonly phoneBlocklist?: (
     request: SmsRequest,
@@ -319,7 +331,9 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
       const { app_id: appId, purpose } = request;
       const checked: SmsRequest = { ...request, phone };
 
-      if (isBlockedPrefix(phone, await blockedPrefixes(appId))) {
+      // A disabled prefix rule decides nothing (BR-ID-36): asked before the decision.
+      const prefixInForce = (await hooks.blockedPrefixInForce?.(checked)) ?? true;
+      if (prefixInForce && isBlockedPrefix(phone, await blockedPrefixes(appId))) {
         logger.info({ app_id: appId, purpose, kind: 'blocked_prefix' }, 'sms_code_blocked');
         // B1-03d: the risk hit of this decision (its own short transaction; a failure rejects,
         // since every hit must be recorded, BR-ID-36).

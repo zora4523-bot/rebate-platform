@@ -511,3 +511,55 @@ it('[S1] 按调用传入的 config 不转给绑定端口与 B1-03g 端口', asyn
   expect(afterRegistered).toHaveBeenCalledTimes(1);
   expect(afterRegistered.mock.calls[0]![1]).not.toHaveProperty('config');
 });
+
+function fillDevice(ctx: ReturnType<typeof setup>, count = 3): void {
+  for (let i = 0; i < count; i++) {
+    ctx.records.push({
+      app_id: 'couli',
+      device_hash: ctx.command.device_hash!,
+      user_id: `seed-${i}`,
+      created_at: ctx.clock.now(),
+      merged_into_user_id: null,
+    });
+  }
+}
+
+it('[AC-B1-03zh#9][BR-ID-36][BR-ID-05] DEVICE_REGISTER_LIMIT 停用：计数前问规则状态（经调用方事务），满额设备照常建号，不计数、不调放行端口', async () => {
+  const allow = vi.fn(async () => false);
+  const deviceLimitInForce = vi.fn<NonNullable<RegistrationOptions['deviceLimitInForce']>>(
+    async () => false,
+  );
+  const ctx = setup({ ports: { allowBlockedRegistration: allow, deviceLimitInForce } });
+  fillDevice(ctx);
+  expect(await ctx.register()).toMatchObject({ code: 0 });
+  expect(deviceLimitInForce).toHaveBeenCalledTimes(1);
+  expect(deviceLimitInForce.mock.calls[0]![1]).toEqual({ app_id: 'couli' });
+  expect(allow).not.toHaveBeenCalled();
+  expect(
+    ctx.statements.some(
+      (s) => s.sql.startsWith('select') && s.sql.includes('device_registrations'),
+    ),
+  ).toBe(false);
+  // The registration source record is still written (it counts once the rule is on again).
+  expect(ctx.records).toHaveLength(4);
+});
+
+it('[AC-B1-03zh#9][BR-ID-36][BR-ID-05] DEVICE_REGISTER_LIMIT 生效（或无此端口）：满额照旧 44001 device_register_limit', async () => {
+  const enabled = setup({ ports: { deviceLimitInForce: async () => true } });
+  fillDevice(enabled);
+  expect(await enabled.register()).toMatchObject({ code: 44001, kind: 'device_register_limit' });
+  const absent = setup();
+  fillDevice(absent);
+  expect(await absent.register()).toMatchObject({ code: 44001, kind: 'device_register_limit' });
+});
+
+it('[AC-B1-03zh#9][BR-ID-36] 已有账号的手机号先回 phone_taken，不问规则状态；落地页无设备也不问', async () => {
+  const deviceLimitInForce = vi.fn(async () => false);
+  const held = setup({ phoneHeld: true, ports: { deviceLimitInForce } });
+  expect(await held.register()).toEqual({ outcome: 'phone_taken' });
+  const landing = setup({ ports: { deviceLimitInForce } });
+  expect(await landing.register({ register_method: 'h5_landing' }, true)).toMatchObject({
+    code: 0,
+  });
+  expect(deviceLimitInForce).not.toHaveBeenCalled();
+});

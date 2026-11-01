@@ -20,6 +20,7 @@ import {
 import { expect, it } from 'vitest';
 import { createRootLogger, type Clock, type FieldCrypto } from '../../platform/index.ts';
 import { createBlocklistService } from './blocklist.ts';
+import type { RiskRuleKey, RiskRuleStatusReader } from './risk-rule-status.ts';
 
 const START_MS = Date.parse('2026-10-08T03:59:59.400Z');
 const PHONE = '13812345678';
@@ -59,7 +60,11 @@ function insertedRows(statement: Statement): Record<string, unknown>[] {
   });
 }
 
-function setup(blocked: readonly string[] = []) {
+function setup(
+  blocked: readonly string[] = [],
+  disabled: readonly string[] = [],
+  rules?: RiskRuleStatusReader,
+) {
   const statements: Statement[] = [];
   const events: string[] = [];
   const connection: DatabaseConnection = {
@@ -67,6 +72,12 @@ function setup(blocked: readonly string[] = []) {
       const statement = { sql: compiled.sql, parameters: compiled.parameters };
       statements.push(statement);
       events.push(compiled.sql.split(' ')[0] ?? '');
+      if (compiled.sql.startsWith('select') && compiled.sql.includes('"risk_rules"')) {
+        const off = compiled.parameters.some((parameter) => disabled.includes(String(parameter)));
+        return Promise.resolve({
+          rows: off ? [{ status: 'disabled' }] : [{ status: 'enabled' }],
+        } as QueryResult<R>);
+      }
       const hit =
         compiled.sql.startsWith('select') &&
         compiled.sql.includes('"blocklist"') &&
@@ -107,6 +118,7 @@ function setup(blocked: readonly string[] = []) {
     clock: new SteppingClock(),
     crypto,
     logger: createRootLogger({ level: 'silent', entry: 'api', appEnv: 'test' }),
+    ...(rules === undefined ? {} : { rules }),
   });
   return { db, service, statements, events };
 }
@@ -161,7 +173,17 @@ it('[AC-B1-03d#21][BR-ID-31/36] matchRegistration 只经调用方事务读：事
       { dimension: 'device', value_hmac: DEVICE_HASH, rule_id: 'BLACKLIST_DEVICE' },
     ],
   });
-  expect(events).toEqual(['acquire', 'begin', 'select', 'select', 'commit', 'release']);
+  // Per dimension: the rule status (B1-03zh), then the entry; all through the caller's transaction.
+  expect(events).toEqual([
+    'acquire',
+    'begin',
+    'select',
+    'select',
+    'select',
+    'select',
+    'commit',
+    'release',
+  ]);
   expect(statements.filter((s) => !s.sql.startsWith('select'))).toEqual([]);
 
   const { ref_id: refId } = await service.recordHits(
@@ -192,4 +214,197 @@ it('[AC-B1-03d#21] matchRegistration 未命中回 null；recordHits 不接受空
     service.recordHits({ app_id: 'couli', request_type: 'register', related_phone: PHONE }, []),
   ).rejects.toThrow();
   expect(statements.filter((s) => !s.sql.startsWith('select'))).toEqual([]);
+});
+
+it('[AC-B1-03zh#14][BR-ID-36] 停用 BLACKLIST_PHONE：check 不匹配名单、回 null，不写命中', async () => {
+  const { service, statements } = setup(['hmac(users.phone:13812345678)'], ['BLACKLIST_PHONE']);
+  const result = await service.check({
+    app_id: 'couli',
+    dimension: 'phone',
+    value: PHONE,
+    related_phone: PHONE,
+    request_type: 'register',
+  });
+  expect(result).toBeNull();
+  expect(statements.some((s) => s.sql.includes('"blocklist"'))).toBe(false);
+  expect(statements.filter((s) => !s.sql.startsWith('select'))).toEqual([]);
+});
+
+it('[AC-B1-03zh#15][BR-ID-36] 停用 BLACKLIST_PHONE：matchRegistration 只按仍生效的设备维度拦', async () => {
+  const { db, service } = setup(
+    ['hmac(users.phone:13812345678)', DEVICE_HASH],
+    ['BLACKLIST_PHONE'],
+  );
+  const block = await db.transaction().execute((trx) =>
+    service.matchRegistration(trx, {
+      app_id: 'couli',
+      phone_hmac: 'hmac(users.phone:13812345678)',
+      device_hash: DEVICE_HASH,
+      related_phone: PHONE,
+    }),
+  );
+  expect(block?.hits).toEqual([
+    { dimension: 'device', value_hmac: DEVICE_HASH, rule_id: 'BLACKLIST_DEVICE' },
+  ]);
+});
+
+it('[AC-B1-03zh#13][BR-ID-36] 停用 DEVICE_REGISTER_LIMIT：recordHit 不开事务、不登记规则、不写命中', async () => {
+  const { service, statements, events } = setup([], ['DEVICE_REGISTER_LIMIT']);
+  await service.recordHit({
+    app_id: 'couli',
+    request_type: 'register',
+    related_phone: PHONE,
+    dimension: 'device',
+    value_hmac: DEVICE_HASH,
+    rule_id: 'DEVICE_REGISTER_LIMIT',
+  });
+  expect(statements.filter((s) => !s.sql.startsWith('select'))).toEqual([]);
+  expect(events).not.toContain('begin');
+});
+
+it('[AC-B1-03zh#15][BR-ID-36] recordHits 只写仍生效规则的行；同一请求的生效行照常共用编号', async () => {
+  const { service, statements } = setup([], ['BLACKLIST_PHONE']);
+  const { ref_id: refId } = await service.recordHits(
+    { app_id: 'couli', request_type: 'register', related_phone: PHONE },
+    [
+      { dimension: 'phone', value_hmac: 'p', rule_id: 'BLACKLIST_PHONE' },
+      { dimension: 'device', value_hmac: DEVICE_HASH, rule_id: 'BLACKLIST_DEVICE' },
+    ],
+  );
+  expect(inserts(statements, 'risk_hits').map((row) => [row.rule_id, row.ref_id])).toEqual([
+    ['BLACKLIST_DEVICE', refId],
+  ]);
+  expect(inserts(statements, 'risk_rules').map((row) => row.rule_id)).toEqual(['BLACKLIST_DEVICE']);
+});
+
+it('[AC-B1-03zh#13][BR-ID-36] allowBlockedRegistration 不看规则状态（停用的上限由 identity 在计数前跳过），照旧默认拒绝', async () => {
+  const { db, service, events } = setup([], ['DEVICE_REGISTER_LIMIT']);
+  const allowed = await db.transaction().execute((trx) =>
+    service.allowBlockedRegistration(trx, {
+      app_id: 'couli',
+      device_hash: DEVICE_HASH,
+      count: 3,
+      limit: 3,
+      phone_hmac: null,
+      third_party_digest: null,
+    }),
+  );
+  expect(allowed).toBe(false);
+  expect(events).toEqual(['acquire', 'begin', 'commit', 'release']);
+});
+
+it('[AC-B1-03zh#1][BR-ID-36] ruleInForce：与本服务共用同一读口与缓存，经给定事务读', async () => {
+  const { db, service, statements } = setup([], ['SMS_BLOCKED_PREFIX']);
+  const key = { app_id: 'couli', rule_id: 'SMS_BLOCKED_PREFIX' };
+  expect(await db.transaction().execute((trx) => service.ruleInForce!(key, trx))).toBe(false);
+  // Cached: the prefix hit writer asks again without a second read.
+  await service.recordHit({
+    app_id: 'couli',
+    request_type: 'register',
+    related_phone: PHONE,
+    dimension: 'phone_prefix',
+    value_hmac: 'p',
+    rule_id: 'SMS_BLOCKED_PREFIX',
+  });
+  expect(statements.filter((s) => s.sql.includes('"risk_rules"'))).toHaveLength(1);
+  expect(statements.filter((s) => !s.sql.startsWith('select'))).toEqual([]);
+  expect(await service.ruleInForce!({ app_id: 'couli', rule_id: 'DEVICE_REGISTER_LIMIT' })).toBe(
+    true,
+  );
+});
+
+/**
+ * A reader whose answer for each (app_id, rule_id) is «enabled» on its first read and «disabled» on
+ * every later one: the cache running out right after the decision (money r1 S1 of B1-03zh).
+ */
+function expiringReader() {
+  const reads: RiskRuleKey[] = [];
+  const reader: RiskRuleStatusReader = {
+    isEnabled(key) {
+      const earlier = reads.some((r) => r.app_id === key.app_id && r.rule_id === key.rule_id);
+      reads.push({ app_id: key.app_id, rule_id: key.rule_id });
+      return Promise.resolve(!earlier);
+    },
+  };
+  return { reader, reads };
+}
+
+it.each(['SMS_BLOCKED_PREFIX', 'DEVICE_REGISTER_LIMIT'])(
+  '[AC-B1-03zh#19][AC-B1-03zh#20][BR-ID-36] recordDecidedHit（%s）：调用方已按生效判定拒绝，写命中不再读规则状态，状态随后变停用也照写',
+  async (ruleId) => {
+    const { reader, reads } = expiringReader();
+    const { db, service, statements } = setup([], [], reader);
+    // The decision: the one read of this judgement.
+    const key = { app_id: 'couli', rule_id: ruleId };
+    expect(await db.transaction().execute((trx) => service.ruleInForce!(key, trx))).toBe(true);
+    await service.recordDecidedHit!({
+      app_id: 'couli',
+      request_type: 'register',
+      related_phone: PHONE,
+      dimension: ruleId === 'SMS_BLOCKED_PREFIX' ? 'phone_prefix' : 'device',
+      value_hmac: 'v',
+      rule_id: ruleId,
+    });
+    expect(reads).toHaveLength(1);
+    expect(inserts(statements, 'risk_hits').map((row) => row.rule_id)).toEqual([ruleId]);
+    // A plain recordHit (no decision of its own) still reads, and now finds the rule disabled.
+    await service.recordHit({
+      app_id: 'couli',
+      request_type: 'register',
+      related_phone: PHONE,
+      dimension: 'device',
+      value_hmac: 'w',
+      rule_id: ruleId,
+    });
+    expect(reads).toHaveLength(2);
+    expect(inserts(statements, 'risk_hits')).toHaveLength(1);
+  },
+);
+
+it('[AC-B1-03zh#19][BR-ID-36] recordHit 带 decided_in_force：不读规则状态，照写命中', async () => {
+  const { service, statements } = setup([], ['SMS_BLOCKED_PREFIX']);
+  await service.recordHit({
+    app_id: 'couli',
+    request_type: 'register',
+    related_phone: PHONE,
+    dimension: 'phone_prefix',
+    value_hmac: 'p',
+    rule_id: 'SMS_BLOCKED_PREFIX',
+    decided_in_force: true,
+  });
+  expect(
+    statements.filter((s) => s.sql.includes('"risk_rules"') && s.sql.startsWith('select')),
+  ).toEqual([]);
+  expect(inserts(statements, 'risk_hits')).toEqual([
+    expect.objectContaining({ rule_id: 'SMS_BLOCKED_PREFIX', dimension: 'phone_prefix' }),
+  ]);
+});
+
+it('[AC-B1-03zh#15][BR-ID-36] matchRegistration 判定过的命中行交给 recordHits 不再读状态；别处来的行、别的 app 照旧自读', async () => {
+  const { reader, reads } = expiringReader();
+  const { db, service, statements } = setup(['p', DEVICE_HASH], [], reader);
+  const input = {
+    app_id: 'couli',
+    phone_hmac: 'p',
+    device_hash: DEVICE_HASH,
+    related_phone: PHONE,
+  };
+  const block = await db.transaction().execute((trx) => service.matchRegistration(trx, input));
+  expect(block?.hits.map((hit) => hit.rule_id)).toEqual(['BLACKLIST_PHONE', 'BLACKLIST_DEVICE']);
+  expect(reads).toHaveLength(2);
+  const request = { app_id: 'couli', request_type: 'register' as const, related_phone: PHONE };
+  // A caller that filters the rows keeps the decided objects.
+  await service.recordHits(request, block!.hits.filter(Boolean));
+  expect(reads).toHaveLength(2);
+  expect(inserts(statements, 'risk_hits').map((row) => row.rule_id)).toEqual([
+    'BLACKLIST_PHONE',
+    'BLACKLIST_DEVICE',
+  ]);
+  // A look-alike row is no token: read here, now disabled, nothing written.
+  await service.recordHits(request, [{ ...block!.hits[0]! }]);
+  // A decided row handed over for another app is no token there either.
+  await service.recordHits({ ...request, app_id: 'other' }, [block!.hits[1]!]);
+  expect(reads).toHaveLength(4);
+  expect(inserts(statements, 'risk_hits')).toHaveLength(3);
+  expect(inserts(statements, 'risk_hits')[2]).toMatchObject({ app_id: 'other' });
 });

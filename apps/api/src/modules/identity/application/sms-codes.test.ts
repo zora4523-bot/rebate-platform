@@ -9,9 +9,12 @@ import {
   FixedClock,
   RedisUnavailableError,
   createRootLogger,
+  type FieldCrypto,
   type RedisHandle,
   type RedisScriptOptions,
 } from '../../platform/index.ts';
+import type { BlocklistService } from '../../risk/index.ts';
+import { identityRiskPorts } from './risk-ports.ts';
 import {
   createSmsCodeService,
   type SmsHooks,
@@ -763,4 +766,101 @@ it('[AC-B1-11g#13] a phone-limited app send never commits its attempt', async ()
   });
   expect(await f.send()).toEqual({ code: 42901, retryAfterSec: 60 });
   expect(commit).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-03zh#5][BR-ID-36][BR-ID-05] SMS_BLOCKED_PREFIX 停用：先问规则状态，号段内号码不判定、不记命中，照常往下发码', async () => {
+  const blockedPrefixInForce = vi.fn(async () => false);
+  const blockedPrefix = vi.fn(async () => undefined);
+  const phoneBlocklist = vi.fn(async () => null);
+  const f = setup({ hooks: { blockedPrefixInForce, blockedPrefix, phoneBlocklist } });
+  expect(await f.send('17012345678')).toMatchObject({ code: 0 });
+  expect(blockedPrefixInForce).toHaveBeenCalledWith(
+    expect.objectContaining({ app_id: 'couli', phone: '17012345678', purpose: 'login' }),
+  );
+  expect(blockedPrefix).not.toHaveBeenCalled();
+  // No prefix decision at all: the prefix list is not even read.
+  expect(f.configValue).not.toHaveBeenCalledWith('couli', 'sms.blocked_prefixes');
+  expect(phoneBlocklist).toHaveBeenCalledTimes(1);
+  expect(f.messages.map((m) => m.phone)).toEqual(['17012345678']);
+});
+
+it('[AC-B1-03zh#5][BR-ID-36][BR-ID-05] SMS_BLOCKED_PREFIX 生效（或无此端口）：照旧 44001 并记命中', async () => {
+  const blockedPrefix = vi.fn(async () => undefined);
+  const enabled = setup({ hooks: { blockedPrefixInForce: async () => true, blockedPrefix } });
+  expect(await enabled.send('17012345678')).toEqual({ code: 44001, kind: 'blocked_prefix' });
+  expect(blockedPrefix).toHaveBeenCalledTimes(1);
+  expect(enabled.messages).toEqual([]);
+  const absent = setup({ hooks: { blockedPrefix } });
+  expect(await absent.send('17012345678')).toEqual({ code: 44001, kind: 'blocked_prefix' });
+  expect(blockedPrefix).toHaveBeenCalledTimes(2);
+});
+
+it('[AC-B1-03zh#5][BR-ID-36] 规则状态读取失败：照常抛出，不发码也不放行', async () => {
+  const f = setup({
+    hooks: {
+      blockedPrefixInForce: async () => {
+        throw new Error('down');
+      },
+    },
+  });
+  await expect(f.send('17012345678')).rejects.toThrow('down');
+  expect(f.messages).toEqual([]);
+  expect(f.calls).toEqual([]);
+});
+
+/** risk's port fake: the rule is in force on its first read and disabled on every later one. */
+function expiringRisk() {
+  let reads = 0;
+  const risk = {
+    check: vi.fn<BlocklistService['check']>(async () => null),
+    checkRegistration: vi.fn<BlocklistService['checkRegistration']>(async () => null),
+    matchRegistration: vi.fn<BlocklistService['matchRegistration']>(async () => null),
+    recordHit: vi.fn<BlocklistService['recordHit']>(async () => ({ ref_id: 'r' })),
+    recordDecidedHit: vi.fn<NonNullable<BlocklistService['recordDecidedHit']>>(async () => ({
+      ref_id: 'r',
+    })),
+    recordHits: vi.fn<BlocklistService['recordHits']>(async () => ({ ref_id: 'r' })),
+    allowBlockedRegistration: vi.fn<BlocklistService['allowBlockedRegistration']>(
+      async () => false,
+    ),
+    ruleInForce: vi.fn<NonNullable<BlocklistService['ruleInForce']>>(async () => {
+      reads += 1;
+      return reads === 1;
+    }),
+  };
+  const crypto = { blindIndex: (value: string, context: string) => `${context}:${value}` };
+  return { risk, ports: identityRiskPorts(risk, crypto as unknown as FieldCrypto) };
+}
+
+it('[AC-B1-03zh#19][BR-ID-36][BR-ID-05] 号段拦截一次判定只读一次规则状态：拒绝（44001）后经 recordDecidedHit 记命中，不再读状态', async () => {
+  const { risk, ports } = expiringRisk();
+  const f = setup({ hooks: ports.smsHooks });
+  expect(await f.send('17012345678')).toEqual({ code: 44001, kind: 'blocked_prefix' });
+  expect(risk.ruleInForce).toHaveBeenCalledTimes(1);
+  expect(risk.recordHit).not.toHaveBeenCalled();
+  expect(risk.recordDecidedHit).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ rule_id: 'SMS_BLOCKED_PREFIX', dimension: 'phone_prefix' }),
+  );
+  expect(f.messages).toEqual([]);
+});
+
+it('[AC-B1-03zh#20][BR-ID-36] 设备注册上限的拒绝命中经 recordDecidedHit 写（判定已在注册事务里读过状态），不再读状态', async () => {
+  const { risk, ports } = expiringRisk();
+  await ports.login.recordDeviceLimit!({
+    app_id: 'a',
+    device_hash: 'h',
+    count: 3,
+    limit: 3,
+    phone: NUMBER,
+  });
+  expect(risk.ruleInForce).not.toHaveBeenCalled();
+  expect(risk.recordHit).not.toHaveBeenCalled();
+  expect(risk.recordDecidedHit).toHaveBeenCalledExactlyOnceWith({
+    app_id: 'a',
+    request_type: 'register',
+    related_phone: NUMBER,
+    dimension: 'device',
+    value_hmac: 'h',
+    rule_id: 'DEVICE_REGISTER_LIMIT',
+  });
 });

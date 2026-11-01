@@ -107,7 +107,7 @@ it('[AC-B1-03x#2][AC-B1-03x#3] 先登记规则（ON CONFLICT (app_id, rule_id) D
     clock,
   );
   expect(error).toBeUndefined();
-  const writes = queries.filter((q) => !/^(begin|commit|rollback)/i.test(q.sql));
+  const writes = queries.filter((q) => !/^(begin|commit|rollback|select)/i.test(q.sql));
   expect(writes).toHaveLength(2);
   const [rule, hit] = writes as [CompiledQuery, CompiledQuery];
   expect(rule.sql).toMatch(/^insert into "app"\."risk_rules"/);
@@ -139,4 +139,87 @@ it('[AC-B1-03x#2][AC-B1-03x#3] 先登记规则（ON CONFLICT (app_id, rule_id) D
     USER,
     now,
   ]);
+});
+
+it('[AC-B1-03zh#17][BR-ID-36] 规则停用：只读规则状态，不登记规则、不写命中', async () => {
+  const queries: CompiledQuery[] = [];
+  const compiler = new PostgresQueryCompiler();
+  const db = new Kysely<DB>({
+    dialect: {
+      createDriver: () => new DummyDriver(),
+      createAdapter: () => new PostgresAdapter(),
+      createIntrospector: (handle) => new PostgresIntrospector(handle),
+      createQueryCompiler: () => new PostgresQueryCompiler(),
+    },
+    plugins: [
+      {
+        transformQuery(args) {
+          queries.push(compiler.compileQuery(args.node, args.queryId));
+          return args.node;
+        },
+        async transformResult(args) {
+          // The rule status read answers disabled; nothing else is read.
+          return queries.at(-1)?.sql.startsWith('select "status" from "app"."risk_rules"')
+            ? { ...args.result, rows: [{ status: 'disabled' }] }
+            : args.result;
+        },
+      },
+    ],
+  });
+  try {
+    const writer = createInviteRelationHitWriter({ clock: new FixedClock(AT) });
+    await db.transaction().execute(async (trx) => {
+      await writer.record(trx, { ...base, rule_id: 'inv_08_self', dimension: 'user_id' });
+    });
+    const statements = queries.filter((q) => !/^(begin|commit|rollback)/i.test(q.sql));
+    expect(statements.map((q) => q.sql)).toEqual([
+      'select "status" from "app"."risk_rules" where "app_id" = $1 and "rule_id" = $2',
+    ]);
+    expect(statements[0]!.parameters).toEqual(['app_a', 'inv_08_self']);
+  } finally {
+    await db.destroy();
+  }
+});
+
+it('[AC-B1-03zh#21][BR-ID-36] decided_in_force：调用方判定已按生效解除归属，写命中不再读规则状态，照写规则与命中', async () => {
+  const { db, queries } = recordingDb();
+  let statusReads = 0;
+  const writer = createInviteRelationHitWriter({
+    clock: new FixedClock(AT),
+    rules: {
+      isEnabled() {
+        statusReads += 1;
+        return Promise.resolve(false);
+      },
+    },
+  });
+  try {
+    await db.transaction().execute(async (trx) => {
+      await writer.record(trx, {
+        ...base,
+        rule_id: 'inv_09_same_device',
+        dimension: 'device_id_hash',
+        decided_in_force: true,
+      });
+    });
+    const statements = queries.filter((q) => !/^(begin|commit|rollback)/i.test(q.sql));
+    expect(statusReads).toBe(0);
+    expect(statements.map((q) => q.sql.split(' (')[0])).toEqual([
+      'insert into "app"."risk_rules"',
+      'insert into "app"."risk_hits"',
+    ]);
+    // Without the decision the same writer reads the status and writes nothing.
+    queries.length = 0;
+    await db.transaction().execute(async (trx) => {
+      await writer.record(trx, {
+        ...base,
+        rule_id: 'inv_09_same_device',
+        dimension: 'device_id_hash',
+      });
+    });
+    expect(statusReads).toBe(1);
+    expect(queries.filter((q) => q.sql.startsWith('insert'))).toEqual([]);
+  } finally {
+    await db.destroy();
+  }
 });

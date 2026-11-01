@@ -7,6 +7,10 @@
 // review(trx, { app_id, user_id, device_id_hash }), all on the caller's transaction:
 //   1. reads the invitee's parent_id / parent_bind_source (a plain read, no row lock): not landing
 //      or no parent → nothing (defence in depth; identity already filters);
+//   1a. asks risk's rule status port (B1-03zh, BR-ID-36 细则「规则清单的启停」, D10-536; read
+//      through the caller's transaction) whether inv_09_same_device of the app takes part in
+//      judgements: disabled → no judgement at all (the binding stays, no relation change, no hit);
+//      no port → in force;
 //   2. reads the inviter's retained login device hashes (identity's port); the invitee's set is
 //      this login's device_id_hash alone (BR-INV-09) → no shared device → nothing is written;
 //   3. hit: takes the app's relation write lock (lockRelationWrites, held to the end of the
@@ -18,7 +22,10 @@
 //   4. 1 row → appendRelationChange(from = old parent, to = null, source risk_same_device,
 //      operator system, at = the same instant) and risk's hit writer (rule inv_09_same_device,
 //      dimension device_id_hash, value = this login's device_id_hash), both in the same
-//      transaction. Any failure rejects and the caller rolls the whole login back.
+//      transaction. Any failure rejects and the caller rolls the whole login back. The hit writer
+//      is told decided_in_force: true — the judgement of 1a is the one status read of this login
+//      (money r1 S1), so a cache expiry after 1a can never unbind without the hit to appeal; growth
+//      keeps no status or memo of its own.
 // The login itself still succeeds on a hit. Nobody is notified and no job is enqueued (BR-INV-09).
 // Nothing is logged here: no device hash or phone ever leaves through a log line.
 //
@@ -41,9 +48,20 @@ export interface LandingLoginReview {
   review(trx: Transaction<DB>, input: LandingLoginReviewInput): Promise<void>;
 }
 
-/** The app assembler supplies identity's reader and risk's transactional hit writer. */
+/**
+ * The app assembler supplies identity's reader, risk's transactional hit writer and risk's rule
+ * status read port.
+ */
 export interface FirstAppLoginReviewDeps {
   readonly clock: Clock;
+  /**
+   * B1-03zh (BR-ID-36): whether the rule of the app takes part in judgements now, read through
+   * trx; asked before the same-device judgement. Absent → in force.
+   */
+  readonly ruleInForce?: (
+    trx: Transaction<DB>,
+    key: { readonly app_id: string; readonly rule_id: 'inv_09_same_device' },
+  ) => Promise<boolean>;
   readonly loginDevices: {
     read(
       trx: Transaction<DB>,
@@ -59,6 +77,8 @@ export interface FirstAppLoginReviewDeps {
         readonly rule_id: 'inv_09_same_device';
         readonly dimension: 'device_id_hash';
         readonly value_hmac: string;
+        /** This judgement already found the rule in force (1a); the writer does not read again. */
+        readonly decided_in_force: true;
       },
     ): Promise<void>;
   };
@@ -85,7 +105,7 @@ function checkInput(input: LandingLoginReviewInput): void {
 }
 
 export function createFirstAppLoginReview(deps: FirstAppLoginReviewDeps): LandingLoginReview {
-  const { clock, loginDevices, hitWriter } = deps;
+  const { clock, loginDevices, hitWriter, ruleInForce } = deps;
   return {
     async review(trx, input) {
       checkInput(input);
@@ -101,6 +121,12 @@ export function createFirstAppLoginReview(deps: FirstAppLoginReviewDeps): Landin
         throw new Error('growth: first App login review subject not found');
       const parentId = invitee.parent_id;
       if (parentId === null || invitee.parent_bind_source !== LANDING) return;
+      // A disabled rule judges nothing (BR-ID-36): asked before the judgement.
+      if (
+        ruleInForce !== undefined &&
+        !(await ruleInForce(trx, { app_id: appId, rule_id: RULE_ID }))
+      )
+        return;
 
       // BR-INV-08 ③ with the invitee's set = this login's device only (BR-INV-09).
       const inviterHashes = await loginDevices.read(trx, { app_id: appId, user_id: parentId });
@@ -144,6 +170,7 @@ export function createFirstAppLoginReview(deps: FirstAppLoginReviewDeps): Landin
         rule_id: RULE_ID,
         dimension: 'device_id_hash',
         value_hmac: deviceIdHash,
+        decided_in_force: true,
       });
     },
   };

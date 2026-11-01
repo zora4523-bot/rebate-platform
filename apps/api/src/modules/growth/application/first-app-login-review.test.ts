@@ -30,7 +30,10 @@ afterEach(async () => {
 });
 
 // Compile real Kysely queries against an in-memory driver: no socket or database.
-async function fixture(overrides: Partial<World> = {}) {
+async function fixture(
+  overrides: Partial<World> = {},
+  ruleInForce?: FirstAppLoginReviewDeps['ruleInForce'],
+) {
   const world: World = {
     user: { parent_id: PARENT, parent_bind_source: 'landing' },
     inviterHashes: ['cd'.repeat(32), HASH],
@@ -74,6 +77,7 @@ async function fixture(overrides: Partial<World> = {}) {
     clock,
     loginDevices: { read },
     hitWriter: { record },
+    ...(ruleInForce === undefined ? {} : { ruleInForce }),
   });
   const run = (input: Partial<{ app_id: string; user_id: string; device_id_hash: string }> = {}) =>
     db
@@ -124,6 +128,7 @@ it('[AC-B1-11f#1] hit: lock, conditional update of the three columns, relation l
     rule_id: 'inv_09_same_device',
     dimension: 'device_id_hash',
     value_hmac: HASH,
+    decided_in_force: true,
   });
 });
 
@@ -172,4 +177,54 @@ it('[AC-B1-11f#5] malformed input or a missing subject throws before any write',
   await expect(f.run()).rejects.toThrow('subject not found');
   expect(f.writes()).toEqual([]);
   expect(f.read).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-03zh#11][BR-ID-36][BR-INV-09] inv_09_same_device 停用：判定前问规则状态（经登录事务），不读上级设备、不加锁、不解除、不写变更与命中', async () => {
+  const ruleInForce = vi.fn<NonNullable<FirstAppLoginReviewDeps['ruleInForce']>>(async () => false);
+  const f = await fixture({}, ruleInForce);
+  await f.run();
+  expect(ruleInForce).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+    app_id: APP,
+    rule_id: 'inv_09_same_device',
+  });
+  expect(f.read).not.toHaveBeenCalled();
+  expect(f.queries.some((q) => q.sql.includes('pg_advisory_xact_lock'))).toBe(false);
+  expect(f.writes()).toEqual([]);
+  expect(f.record).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-03zh#11][BR-ID-36][BR-INV-09] inv_09_same_device 生效：照旧解除归属、写变更与命中', async () => {
+  const f = await fixture({}, async () => true);
+  await f.run();
+  expect(f.writes().map((q) => q.sql.slice(0, 20))).toEqual([
+    'update "app"."users"',
+    'insert into "app"."r',
+  ]);
+  expect(f.record).toHaveBeenCalledTimes(1);
+});
+
+it('[AC-B1-03zh#21][BR-ID-36][BR-INV-09] 一次判定只读一次规则状态：解除归属后写命中带 decided_in_force，规则状态只问过一次', async () => {
+  const ruleInForce = vi.fn<NonNullable<FirstAppLoginReviewDeps['ruleInForce']>>(async () => true);
+  const f = await fixture({}, ruleInForce);
+  await f.run();
+  expect(ruleInForce).toHaveBeenCalledTimes(1);
+  expect(f.record).toHaveBeenCalledExactlyOnceWith(
+    expect.anything(),
+    expect.objectContaining({ rule_id: 'inv_09_same_device', decided_in_force: true }),
+  );
+});
+
+it('[AC-B1-03zh#11][BR-ID-36] 非落地页关系不问规则状态；规则状态读取失败照常抛给调用方', async () => {
+  const ruleInForce = vi.fn<NonNullable<FirstAppLoginReviewDeps['ruleInForce']>>(async () => false);
+  const other = await fixture(
+    { user: { parent_id: PARENT, parent_bind_source: 'register' } },
+    ruleInForce,
+  );
+  await other.run();
+  expect(ruleInForce).not.toHaveBeenCalled();
+  const failing = await fixture({}, async () => {
+    throw new Error('down');
+  });
+  await expect(failing.run()).rejects.toThrow('down');
+  expect(failing.writes()).toEqual([]);
 });

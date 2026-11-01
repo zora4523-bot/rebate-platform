@@ -15,11 +15,19 @@
 // record; the writer never reads the wall clock. value_hmac is computed by the caller and stored as
 // given. Insert-only: nothing is updated or deleted.
 //
+// Rule status (B1-03zh, BR-ID-36 细则「规则清单的启停」, D10-536; ./risk-rule-status.ts): while the
+// rule of the app is disabled, record writes nothing (read through the caller's transaction,
+// cached for the configuration items' period on the injected Clock). One read per judgement (money
+// r1 S1): a caller whose own decision already found the rule in force and acted on it (growth's
+// same-device unbinding) passes decided_in_force: true and the status is not read again, so a
+// cache expiry between the decision and the write never leaves the action without its hit.
+//
 // Rule ↔ dimension: the same-device rules record dimension device_id_hash, the self and descendant
 // rules user_id (E23 §9.2 3; review S2 of the rule tests). Any other pairing is refused.
 import type { DB } from '@couli/db';
 import { sql, type Transaction } from 'kysely';
 import { newUuidV7, type Clock } from '../../platform/index.ts';
+import { createRiskRuleStatusReader, type RiskRuleStatusReader } from './risk-rule-status.ts';
 
 export type InviteRelationHitRuleId =
   'inv_08_self' | 'inv_08_descendant' | 'inv_08_same_device' | 'inv_09_same_device';
@@ -32,6 +40,11 @@ export interface InviteRelationHitInput {
   readonly dimension: 'user_id' | 'device_id_hash';
   /** 调用方已计算的 HMAC，原样保存。 */
   readonly value_hmac: string;
+  /**
+   * B1-03zh (BR-ID-36, one read per judgement): the caller's decision already found rule_id in
+   * force and acted on it, so the status is not read again. Absent → the writer reads it itself.
+   */
+  readonly decided_in_force?: true;
 }
 
 export interface InviteRelationHitWriter {
@@ -41,6 +54,8 @@ export interface InviteRelationHitWriter {
 
 export interface InviteRelationHitWriterOptions {
   readonly clock: Clock;
+  /** Rule status reader (B1-03zh); defaults to one of its own on `clock`, read through trx. */
+  readonly rules?: RiskRuleStatusReader;
 }
 
 /** The dimension each rule records (E23 §9.2 3). */
@@ -63,7 +78,7 @@ function requireText(value: unknown, field: string): string {
 }
 
 /** Checks the whole input; throws TypeError before any statement is built. */
-function validate(input: InviteRelationHitInput): InviteRelationHitInput {
+function validate(input: InviteRelationHitInput): InviteRelationHitInput & { decided: boolean } {
   if (typeof input !== 'object' || input === null) {
     throw new TypeError('invite relation hit: input must be an object');
   }
@@ -83,6 +98,7 @@ function validate(input: InviteRelationHitInput): InviteRelationHitInput {
     rule_id: ruleId as InviteRelationHitRuleId,
     dimension: expected,
     value_hmac: requireText(input.value_hmac, 'value_hmac'),
+    decided: input.decided_in_force === true,
   };
 }
 
@@ -90,9 +106,16 @@ export function createInviteRelationHitWriter(
   options: InviteRelationHitWriterOptions,
 ): InviteRelationHitWriter {
   const { clock } = options;
+  const rules = options.rules ?? createRiskRuleStatusReader({ clock });
   return {
     async record(trx, rawInput) {
       const input = validate(rawInput);
+      // A disabled rule writes no hit row (BR-ID-36); a caller's decision is not read again.
+      if (
+        !input.decided &&
+        !(await rules.isEnabled({ app_id: input.app_id, rule_id: input.rule_id }, trx))
+      )
+        return;
       const now = clock.now();
       const app = trx.withSchema('app');
       await app
