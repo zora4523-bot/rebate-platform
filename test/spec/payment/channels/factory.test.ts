@@ -1,10 +1,12 @@
 // B2-15k 工厂（claude-independent，SPEC_REF deb521c2）：08 BR-PAY-08 ②（非 prod 只能沙箱或测试商户）；payment/AGENTS.md
 // 第 6 条；任务书 9.1、9.8 ④⑤、9.9：任一必需项缺失或密钥读取失败，该渠道装不可用通道，不抛异常、不回退假通道、进程
 // 照常启动，启动时一条 warn，只写渠道名和缺的变量名；密钥文件启动时读入内存一次。
+// 编排裁定 D10-554：prod 没有 KMS 读取适配器，不读 PAY_*_FILE；配置完整也是不可用通道，reason 固定 kms_unavailable。
 import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import type { PayChannelCode } from '../../../../apps/api/src/modules/payment/domain/types.ts';
+import { ALIPAY_PRODUCTION_GATEWAY } from '../../../../apps/api/src/modules/payment/infra/channels/alipay/alipay-pay-channel.ts';
 import { FakePayChannel } from '../../../../apps/api/src/modules/payment/infra/channels/fake-pay-channel.ts';
 import {
   AlipayPayChannel,
@@ -13,20 +15,30 @@ import {
 } from '../../../../apps/api/src/modules/payment/infra/channels/index.ts';
 import type { AppConfig } from '../../../../apps/api/src/modules/platform/config/config.ts';
 import {
+  ALIPAY_APPID,
   ALIPAY_ORDER,
   ALIPAY_PLATFORM,
   APIV3_KEY,
+  MCHID,
   MERCHANT,
+  MERCHANT_SERIAL,
   OFFICIAL_GATEWAY,
   ORDER,
   OUT,
+  OUT_REFUND,
+  PAY_APP_ID,
+  PUBLIC_KEY_ID,
   QUERY_NODE,
+  REFUND,
   SANDBOX_GATEWAY,
+  SELLER_ID,
   WECHAT_API,
+  WX_APPID,
   aliAnswer,
   aliTrade,
   baseEnv,
   channelSetOf,
+  expectRejected,
   expectUnknown,
   loadFor,
   okOf,
@@ -35,6 +47,7 @@ import {
   warnLines,
   withKeyDir,
   wxAnswer,
+  wxPayNotification,
   wxTrade,
 } from './kit.ts';
 
@@ -98,17 +111,70 @@ it('[AC-B2-15k#1503] staging 配置完整：真实适配器，微信走文档域
   });
 });
 
-it('[AC-B2-15k#1504] prod 配置完整：支付宝走文档官方网关，不要求测试商户开关', async () => {
+const KMS_UNAVAILABLE = { kind: 'unknown', reason: 'kms_unavailable' };
+
+// 文件都在：不许因为读得到就装真实适配器。指向不存在的路径：读了就会有带变量名的 warn，这里两种情况的结果必须一样。
+const PROD_KEY_DIRS: [string, (dir: string) => string][] = [
+  ['密钥文件都在', (dir) => dir],
+  ['*_FILE 指向不存在的路径', (dir) => join(dir, 'missing')],
+];
+
+it.each(PROD_KEY_DIRS)(
+  '[AC-B2-15k#1504] prod 配置完整（%s）：两渠道都不可用，reason 是 kms_unavailable，不打开密钥文件，warn 只写渠道名和原因',
+  async (_name, keyDir) => {
+    await withKeyDir(async (dir) => {
+      const { set, calls, logs } = await channelSetOf(loadFor(prodEnv(keyDir(dir)), 'api'));
+      const channels = [
+        ['wechat_pay', ORDER],
+        ['alipay', ALIPAY_ORDER],
+      ] as const;
+      for (const [code, order] of channels) {
+        const channel = set.of(code);
+        expect(channel).toBeInstanceOf(UnavailablePayChannel);
+        expect(await channel.createOrder(order)).toEqual(KMS_UNAVAILABLE);
+        expect(await channel.query(OUT)).toEqual(KMS_UNAVAILABLE);
+        expect(await channel.close(OUT)).toEqual(KMS_UNAVAILABLE);
+        expect(await channel.refund(REFUND)).toEqual(KMS_UNAVAILABLE);
+        expect(await channel.refundQuery(OUT_REFUND)).toEqual(KMS_UNAVAILABLE);
+        expect(await channel.downloadBill('2026-10-31', PAY_APP_ID)).toEqual(KMS_UNAVAILABLE);
+        expectRejected(await channel.verifyNotification(wxPayNotification()));
+        expect(channel.ownerAppOf({ merchantRef: MCHID, appRef: WX_APPID })).toBeNull();
+      }
+      expect(calls).toEqual([]);
+
+      // 每个渠道一条 warn，或者一条写两个渠道，都只算一条；不许再有别的 warn。
+      const warns = warnLines(logs);
+      expect(warns.filter((line) => line.includes('wechat'))).toHaveLength(1);
+      expect(warns.filter((line) => line.includes('alipay'))).toHaveLength(1);
+      for (const line of warns) {
+        expect(line).toContain('kms_unavailable');
+        expect(line).toMatch(/wechat|alipay/);
+        expect(line).not.toMatch(/PAY_[A-Z0-9_]+/);
+        for (const value of [
+          PAY_APP_ID,
+          WX_APPID,
+          MCHID,
+          MERCHANT_SERIAL,
+          PUBLIC_KEY_ID,
+          ALIPAY_APPID,
+          SELLER_ID,
+        ]) {
+          expect(line).not.toContain(value);
+        }
+      }
+      expect(logs.join('\n')).not.toContain(dir);
+    });
+  },
+);
+
+// pay-channels.ts 没有放官方网关的字段：prod 的解析结果 gateway 是 null（设了就拒绝启动，见 config.test.ts #1405），
+// 官方网关是适配器的常量，这里钉住它。
+it('[AC-B2-15k#1504] prod 的支付宝网关：配置解析不带外部网关，生产网关常量是文档官方网关', async () => {
   await withKeyDir(async (dir) => {
-    const { set, calls } = await channelSetOf(loadFor(prodEnv(dir), 'api'), (request) =>
-      request.url.startsWith(WECHAT_API)
-        ? wxAnswer(200, wxTrade())
-        : aliAnswer(QUERY_NODE, aliTrade()),
-    );
-    expect(set.of('wechat_pay')).toBeInstanceOf(WechatPayChannel);
-    expect(set.of('alipay')).toBeInstanceOf(AlipayPayChannel);
-    okOf(await set.of('alipay').query(OUT));
-    expect(calls[0]!.url.startsWith(OFFICIAL_GATEWAY)).toBe(true);
+    const pay = loadFor(prodEnv(dir), 'api').payChannels;
+    expect(pay).toBeTruthy();
+    expect(pay?.alipay.gateway).toBeNull();
+    expect(ALIPAY_PRODUCTION_GATEWAY).toBe(OFFICIAL_GATEWAY);
   });
 });
 
