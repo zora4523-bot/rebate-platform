@@ -1,9 +1,9 @@
 // B2-02q: the worker entry's daily ledger check (BR-FUND-19): queue ledger-check's handler
 // (application/daily-check-schedule.ts createDailyCheckJob) and the chain's seed / heal timer
-// (unref, after bootstrap; stopped on destroy). B2-02r: every tick is healDailyCheck over the run
-// store (the actual state of the queue and the results, no process memory), so a run that failed
-// into ledger-check.dead is sent again and an overdue (app, D) is alerted once. Without a database
-// or queue nothing is registered.
+// (unref, after bootstrap; stopped on destroy, which waits for the tick in flight, B2-15q).
+// B2-02r: every tick is healDailyCheck over the run store (the actual state of the queue and the
+// results, no process memory), so a run that failed into ledger-check.dead is sent again and an
+// overdue (app, D) is alerted once. Without a database or queue nothing is registered.
 // The two ports of the B2-02p execution step come from app.module (ledger imports neither payout
 // nor content): payout's createWithdrawHolds and content's createSystemSwitchWriter.
 import type { DynamicModule } from '@nestjs/common';
@@ -57,22 +57,21 @@ interface SeedDependencies {
 
 interface DailyCheckTimer {
   onApplicationBootstrap(): void;
-  onModuleDestroy(): void;
+  onModuleDestroy(): Promise<void>;
 }
 
 /** The seed after bootstrap and the heal every interval; null deps: inert. */
 function dailyCheckTimer(deps: SeedDependencies | null): DailyCheckTimer {
   let running = false;
   let stopped = false;
+  let inFlight: Promise<void> = Promise.resolve();
   let first: ReturnType<typeof setTimeout> | undefined;
   let interval: ReturnType<typeof setInterval> | undefined;
-  const tick = async (): Promise<void> => {
-    if (deps === null || running || stopped) return;
-    running = true;
+  const run = async (active: SeedDependencies): Promise<void> => {
     try {
-      await healDailyCheck(deps);
+      await healDailyCheck(active);
     } catch (error: unknown) {
-      deps.logger.warn(
+      active.logger.warn(
         { queue: QUEUE, error_name: error instanceof Error ? error.name : typeof error },
         'ledger_daily_check_heal_failed',
       );
@@ -80,22 +79,29 @@ function dailyCheckTimer(deps: SeedDependencies | null): DailyCheckTimer {
       running = false;
     }
   };
+  // Only a tick that starts replaces inFlight: a skipped one leaves it on the running tick.
+  const tick = (): void => {
+    if (deps === null || running || stopped) return;
+    running = true;
+    inFlight = run(deps);
+  };
   return {
     onApplicationBootstrap() {
       if (deps === null || first !== undefined || stopped) return;
       first = setTimeout(() => {
-        void tick();
+        tick();
         if (stopped) return;
-        interval = setInterval(() => void tick(), LEDGER_DAILY_CHECK_HEAL_INTERVAL_MS);
+        interval = setInterval(tick, LEDGER_DAILY_CHECK_HEAL_INTERVAL_MS);
         interval.unref();
       }, LEDGER_DAILY_CHECK_SEED_DELAY_MS);
       first.unref();
     },
-    onModuleDestroy() {
+    async onModuleDestroy() {
       stopped = true;
       if (first !== undefined) clearTimeout(first);
       if (interval !== undefined) clearInterval(interval);
       interval = undefined;
+      await inFlight;
     },
   };
 }

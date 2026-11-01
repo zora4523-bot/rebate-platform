@@ -1,0 +1,153 @@
+{
+  "task": "B2-15q",
+  "spec_ref": "deb521c2bcb740571a01c2dc128f40abb40c37a2",
+  "spec_commit": "bc7c04c8548e8b8356849147e74f085b88c27cf7",
+  "red_tests": [
+    "test/spec/platform/worker-shutdown/handshake.int.test.ts > [AC-B2-15q#5] payment-recon：tick 的语句正等新连接时调模块 stop 再 destroyDb，必须在 10 秒内返回，连接池不留连接",
+    "test/spec/platform/worker-shutdown/handshake.int.test.ts > [AC-B2-15q#5] ledger-daily-check：tick 的语句正等新连接时调模块 stop 再 destroyDb，必须在 10 秒内返回，连接池不留连接",
+    "test/spec/platform/worker-shutdown/handshake.int.test.ts > [AC-B2-15q#5] payout-recon：tick 的语句正等新连接时调模块 stop 再 destroyDb，必须在 10 秒内返回，连接池不留连接",
+    "test/spec/platform/worker-shutdown/handshake.int.test.ts > [AC-B2-15q#5] payout-overdue：tick 的语句正等新连接时调模块 stop 再 destroyDb，必须在 10 秒内返回，连接池不留连接",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#8] payment-recon：首个 tick 已结束，interval 起的 tick 在途时 onModuleDestroy 不返回，tick 结束后才返回，之后不再起新 tick",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#8] ledger-daily-check：首个 tick 已结束，interval 起的 tick 在途时 onModuleDestroy 不返回，tick 结束后才返回，之后不再起新 tick",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#8] payout-recon：首个 tick 已结束，interval 起的 tick 在途时 onModuleDestroy 不返回，tick 结束后才返回，之后不再起新 tick",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#8] payout-overdue：首个 tick 已结束，interval 起的 tick 在途时 onModuleDestroy 不返回，tick 结束后才返回，之后不再起新 tick",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#9] payment-recon：首个 tick 在途时 interval 到点，不叠加新 tick；之后 stop 仍等这个首个 tick 结束",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#9] ledger-daily-check：首个 tick 在途时 interval 到点，不叠加新 tick；之后 stop 仍等这个首个 tick 结束",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#9] payout-recon：首个 tick 在途时 interval 到点，不叠加新 tick；之后 stop 仍等这个首个 tick 结束",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#9] payout-overdue：首个 tick 在途时 interval 到点，不叠加新 tick；之后 stop 仍等这个首个 tick 结束",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#10] payment-recon：后续 interval tick 在途时下一次 interval 到点，不叠加新 tick；之后 stop 仍等这个在途 tick 结束",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#10] ledger-daily-check：后续 interval tick 在途时下一次 interval 到点，不叠加新 tick；之后 stop 仍等这个在途 tick 结束",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#10] payout-recon：后续 interval tick 在途时下一次 interval 到点，不叠加新 tick；之后 stop 仍等这个在途 tick 结束",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#10] payout-overdue：后续 interval tick 在途时下一次 interval 到点，不叠加新 tick；之后 stop 仍等这个在途 tick 结束",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#11] payment-recon：interval tick 失败只记 warn，下一次 tick 照常运行；它在途失败时 stop 同样等它结束后正常返回",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#11] ledger-daily-check：interval tick 失败只记 warn，下一次 tick 照常运行；它在途失败时 stop 同样等它结束后正常返回",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#11] payout-recon：interval tick 失败只记 warn，下一次 tick 照常运行；它在途失败时 stop 同样等它结束后正常返回",
+    "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#11] payout-overdue：interval tick 失败只记 warn，下一次 tick 照常运行；它在途失败时 stop 同样等它结束后正常返回",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#1] payment-recon：tick 在途时 onModuleDestroy 不返回，tick 结束后才返回",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#1] ledger-daily-check：tick 在途时 onModuleDestroy 不返回，tick 结束后才返回",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#1] payout-recon：tick 在途时 onModuleDestroy 不返回，tick 结束后才返回",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#1] payout-overdue：tick 在途时 onModuleDestroy 不返回，tick 结束后才返回",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#2] payment-recon：在途 tick 失败时 onModuleDestroy 同样等它结束后正常返回，错误只记 warn，不抛给关停",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#2] ledger-daily-check：在途 tick 失败时 onModuleDestroy 同样等它结束后正常返回，错误只记 warn，不抛给关停",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#2] payout-recon：在途 tick 失败时 onModuleDestroy 同样等它结束后正常返回，错误只记 warn，不抛给关停",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#2] payout-overdue：在途 tick 失败时 onModuleDestroy 同样等它结束后正常返回，错误只记 warn，不抛给关停",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#3] payment-recon：首个定时器未到点就 stop，tick 永不运行；tick 在途时 stop，tick 结束后才返回，之后到点的定时器不再起新 tick",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#3] ledger-daily-check：首个定时器未到点就 stop，tick 永不运行；tick 在途时 stop，tick 结束后才返回，之后到点的定时器不再起新 tick",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#3] payout-recon：首个定时器未到点就 stop，tick 永不运行；tick 在途时 stop，tick 结束后才返回，之后到点的定时器不再起新 tick",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#3] payout-overdue：首个定时器未到点就 stop，tick 永不运行；tick 在途时 stop，tick 结束后才返回，之后到点的定时器不再起新 tick",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#4] payment-recon：起跑前已 stop：bootstrap 后立刻 stop、stop 之后才 bootstrap，tick 都不运行；定时器到点的同一轮 stop，返回时不留在途",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#4] ledger-daily-check：起跑前已 stop：bootstrap 后立刻 stop、stop 之后才 bootstrap，tick 都不运行；定时器到点的同一轮 stop，返回时不留在途",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#4] payout-recon：起跑前已 stop：bootstrap 后立刻 stop、stop 之后才 bootstrap，tick 都不运行；定时器到点的同一轮 stop，返回时不留在途",
+    "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#4] payout-overdue：起跑前已 stop：bootstrap 后立刻 stop、stop 之后才 bootstrap，tick 都不运行；定时器到点的同一轮 stop，返回时不留在途",
+    "test/spec/platform/worker-shutdown/union-tick.test.ts > [AC-B2-15q#6] union：tick 里 heal 失败时记 warn，不产生未处理 rejection，下一次 tick 照常运行",
+    "test/spec/platform/worker-shutdown/union-tick.test.ts > [AC-B2-15q#7] union：seed 与 heal 同一 tick 都失败时各记一条 warn，不产生未处理 rejection"
+  ],
+  "risk_note": "RV2 by path (payment, ledger, payout, union modules). Fixes the suite hang behind spec/payment/recon-schedule/bootstrap.int.test.ts: kysely 0.29.6 destroy() clears #pool before pool.end(), so a connection mid-handshake reads this.#pool.Client, throws and is never released, and pool.end() waits forever. The trigger was five worker ticks started with void tick() whose stop only cleared timers. Each stop now waits for the in-flight tick and no new tick starts afterwards, matching catalog and settlement; union's tick gets the missing catch. Production close bypasses Kysely.destroy, so this was a shutdown gap there, not a hang. Ticks only read and send singleton jobs, and ledger inserts a unique-keyed claim, so finishing one during shutdown writes no entry or balance. No frozen test changed and no timeout added.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "bc7c04c8548e8b8356849147e74f085b88c27cf7",
+      "tree": "448ffef87b6f2b3a7c70ff8d15af4350fdc08610",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-11-01T15:55:30Z",
+      "finished_at": "2026-11-01T15:56:28Z",
+      "red_tests": [
+        "test/spec/platform/worker-shutdown/handshake.int.test.ts > [AC-B2-15q#5] payment-recon：tick 的语句正等新连接时调模块 stop 再 destroyDb，必须在 10 秒内返回，连接池不留连接",
+        "test/spec/platform/worker-shutdown/handshake.int.test.ts > [AC-B2-15q#5] ledger-daily-check：tick 的语句正等新连接时调模块 stop 再 destroyDb，必须在 10 秒内返回，连接池不留连接",
+        "test/spec/platform/worker-shutdown/handshake.int.test.ts > [AC-B2-15q#5] payout-recon：tick 的语句正等新连接时调模块 stop 再 destroyDb，必须在 10 秒内返回，连接池不留连接",
+        "test/spec/platform/worker-shutdown/handshake.int.test.ts > [AC-B2-15q#5] payout-overdue：tick 的语句正等新连接时调模块 stop 再 destroyDb，必须在 10 秒内返回，连接池不留连接",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#8] payment-recon：首个 tick 已结束，interval 起的 tick 在途时 onModuleDestroy 不返回，tick 结束后才返回，之后不再起新 tick",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#8] ledger-daily-check：首个 tick 已结束，interval 起的 tick 在途时 onModuleDestroy 不返回，tick 结束后才返回，之后不再起新 tick",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#8] payout-recon：首个 tick 已结束，interval 起的 tick 在途时 onModuleDestroy 不返回，tick 结束后才返回，之后不再起新 tick",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#8] payout-overdue：首个 tick 已结束，interval 起的 tick 在途时 onModuleDestroy 不返回，tick 结束后才返回，之后不再起新 tick",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#9] payment-recon：首个 tick 在途时 interval 到点，不叠加新 tick；之后 stop 仍等这个首个 tick 结束",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#9] ledger-daily-check：首个 tick 在途时 interval 到点，不叠加新 tick；之后 stop 仍等这个首个 tick 结束",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#9] payout-recon：首个 tick 在途时 interval 到点，不叠加新 tick；之后 stop 仍等这个首个 tick 结束",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#9] payout-overdue：首个 tick 在途时 interval 到点，不叠加新 tick；之后 stop 仍等这个首个 tick 结束",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#10] payment-recon：后续 interval tick 在途时下一次 interval 到点，不叠加新 tick；之后 stop 仍等这个在途 tick 结束",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#10] ledger-daily-check：后续 interval tick 在途时下一次 interval 到点，不叠加新 tick；之后 stop 仍等这个在途 tick 结束",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#10] payout-recon：后续 interval tick 在途时下一次 interval 到点，不叠加新 tick；之后 stop 仍等这个在途 tick 结束",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#10] payout-overdue：后续 interval tick 在途时下一次 interval 到点，不叠加新 tick；之后 stop 仍等这个在途 tick 结束",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#11] payment-recon：interval tick 失败只记 warn，下一次 tick 照常运行；它在途失败时 stop 同样等它结束后正常返回",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#11] ledger-daily-check：interval tick 失败只记 warn，下一次 tick 照常运行；它在途失败时 stop 同样等它结束后正常返回",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#11] payout-recon：interval tick 失败只记 warn，下一次 tick 照常运行；它在途失败时 stop 同样等它结束后正常返回",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts > [AC-B2-15q#11] payout-overdue：interval tick 失败只记 warn，下一次 tick 照常运行；它在途失败时 stop 同样等它结束后正常返回",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#1] payment-recon：tick 在途时 onModuleDestroy 不返回，tick 结束后才返回",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#1] ledger-daily-check：tick 在途时 onModuleDestroy 不返回，tick 结束后才返回",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#1] payout-recon：tick 在途时 onModuleDestroy 不返回，tick 结束后才返回",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#1] payout-overdue：tick 在途时 onModuleDestroy 不返回，tick 结束后才返回",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#2] payment-recon：在途 tick 失败时 onModuleDestroy 同样等它结束后正常返回，错误只记 warn，不抛给关停",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#2] ledger-daily-check：在途 tick 失败时 onModuleDestroy 同样等它结束后正常返回，错误只记 warn，不抛给关停",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#2] payout-recon：在途 tick 失败时 onModuleDestroy 同样等它结束后正常返回，错误只记 warn，不抛给关停",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#2] payout-overdue：在途 tick 失败时 onModuleDestroy 同样等它结束后正常返回，错误只记 warn，不抛给关停",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#3] payment-recon：首个定时器未到点就 stop，tick 永不运行；tick 在途时 stop，tick 结束后才返回，之后到点的定时器不再起新 tick",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#3] ledger-daily-check：首个定时器未到点就 stop，tick 永不运行；tick 在途时 stop，tick 结束后才返回，之后到点的定时器不再起新 tick",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#3] payout-recon：首个定时器未到点就 stop，tick 永不运行；tick 在途时 stop，tick 结束后才返回，之后到点的定时器不再起新 tick",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#3] payout-overdue：首个定时器未到点就 stop，tick 永不运行；tick 在途时 stop，tick 结束后才返回，之后到点的定时器不再起新 tick",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#4] payment-recon：起跑前已 stop：bootstrap 后立刻 stop、stop 之后才 bootstrap，tick 都不运行；定时器到点的同一轮 stop，返回时不留在途",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#4] ledger-daily-check：起跑前已 stop：bootstrap 后立刻 stop、stop 之后才 bootstrap，tick 都不运行；定时器到点的同一轮 stop，返回时不留在途",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#4] payout-recon：起跑前已 stop：bootstrap 后立刻 stop、stop 之后才 bootstrap，tick 都不运行；定时器到点的同一轮 stop，返回时不留在途",
+        "test/spec/platform/worker-shutdown/ticks.test.ts > [AC-B2-15q#4] payout-overdue：起跑前已 stop：bootstrap 后立刻 stop、stop 之后才 bootstrap，tick 都不运行；定时器到点的同一轮 stop，返回时不留在途",
+        "test/spec/platform/worker-shutdown/union-tick.test.ts > [AC-B2-15q#6] union：tick 里 heal 失败时记 warn，不产生未处理 rejection，下一次 tick 照常运行",
+        "test/spec/platform/worker-shutdown/union-tick.test.ts > [AC-B2-15q#7] union：seed 与 heal 同一 tick 都失败时各记一条 warn，不产生未处理 rejection"
+      ],
+      "expected": [
+        "test/spec/platform/worker-shutdown/handshake.int.test.ts",
+        "test/spec/platform/worker-shutdown/interval-ticks.test.ts",
+        "test/spec/platform/worker-shutdown/ticks.test.ts",
+        "test/spec/platform/worker-shutdown/union-tick.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "9267d995ccfb69fa6b67eb5a5e064c39551124a3b5cbccf7f3593ffc2b12d04b"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8f5b8f0368e4c2f11dd898f4f117bd988216e98ec8d90d4ed97a26e470e28ddc"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex unavailable until 11-02; independent Claude via tools/agent/claude-run.sh per approvals #36. Round 1 pass, no S0/S1. One S2 reported as FU-TICK-STOP-BOUND: with PostgreSQL blackholed, stop waits on the tick and relies on the entry's forced exit; D10-553 asked for no timeouts here. Reviewer read the code and executed nothing."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "Rule tests by an independent Claude context in 2 attempts, doubling as the deterministic reproduction: #5 on real PostgreSQL failed with stop and destroyDb not returning within 10 seconds on all four timers, and #6 reproduced the unhandled rejection. Round 1 fail with 1 S1 (only the first tick pinned), round 2 pass. All 38 pass on the implementation (local container red mode, not evidence)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "e208df4062ec8e4f8062729efbd9a5bb79776695",
+    "specs": "72c44c9f70394287a63f8398d4ce6ef071bef7fb"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  }
+}

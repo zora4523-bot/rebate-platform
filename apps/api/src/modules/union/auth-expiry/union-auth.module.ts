@@ -11,7 +11,8 @@
 // Chain start and self-heal live here (entry.ts is not this task's path): a timer, unref'd and
 // started on application bootstrap, seeds every App's next check slot SEED_DELAY_MS later (the
 // queue runtime has started by then; a failed seed is a warn line and is retried on the next
-// tick), then heals the chain every HEAL_INTERVAL_MS. The timer stops on module destroy.
+// tick; so is a failed heal, B2-15q), then heals the chain every HEAL_INTERVAL_MS. The timer stops
+// on module destroy, which waits for the tick in flight (B2-15q).
 //
 // A class decorator only (no parameter decorators or parameter properties), as in
 // risk/risk-scan.module.ts.
@@ -77,21 +78,21 @@ function errorName(error: unknown): string {
 
 interface ChainTimer {
   onApplicationBootstrap(): void;
-  onModuleDestroy(): void;
+  onModuleDestroy(): Promise<void>;
 }
 
 function chainTimer(monitor: SiteAuthMonitor | null, logger: RootLogger): ChainTimer {
   let seeded = false;
   let running = false;
+  let stopped = false;
+  let inFlight: Promise<void> = Promise.resolve();
   let first: ReturnType<typeof setTimeout> | undefined;
   let interval: ReturnType<typeof setInterval> | undefined;
-  const tick = async (): Promise<void> => {
-    if (monitor === null || running) return;
-    running = true;
+  const run = async (active: SiteAuthMonitor): Promise<void> => {
     try {
       if (!seeded) {
         try {
-          await monitor.seed();
+          await active.seed();
           seeded = true;
         } catch (error) {
           logger.warn(
@@ -100,25 +101,38 @@ function chainTimer(monitor: SiteAuthMonitor | null, logger: RootLogger): ChainT
           );
         }
       }
-      await monitor.heal();
+      await active.heal();
+    } catch (error) {
+      logger.warn(
+        { queue: UNION_AUTH_QUEUE, error_name: errorName(error) },
+        'union_auth_heal_failed',
+      );
     } finally {
       running = false;
     }
   };
+  // Only a tick that starts replaces inFlight: a skipped one leaves it on the running tick.
+  const tick = (): void => {
+    if (monitor === null || running || stopped) return;
+    running = true;
+    inFlight = run(monitor);
+  };
   return {
     onApplicationBootstrap() {
-      if (monitor === null || first !== undefined) return;
+      if (monitor === null || first !== undefined || stopped) return;
       first = setTimeout(() => {
-        void tick();
-        interval = setInterval(() => void tick(), HEAL_INTERVAL_MS);
+        tick();
+        interval = setInterval(tick, HEAL_INTERVAL_MS);
         interval.unref();
       }, SEED_DELAY_MS);
       first.unref();
     },
-    onModuleDestroy() {
+    async onModuleDestroy() {
+      stopped = true;
       if (first !== undefined) clearTimeout(first);
       if (interval !== undefined) clearInterval(interval);
       interval = undefined;
+      await inFlight;
     },
   };
 }

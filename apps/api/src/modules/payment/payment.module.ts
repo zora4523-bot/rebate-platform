@@ -21,7 +21,8 @@
 // bootstrap, seeds the chain RECON_SEED_DELAY_MS later (the queue runtime has started by then) and
 // again every RECON_HEAL_INTERVAL_MS (application/pay-recon-schedule.ts seedBillRecon with the
 // process's memory of the Apps already started; a failure is a warn line and is retried on the next
-// tick). Only where the pay queue handler is registered; the timer stops on module destroy.
+// tick). Only where the pay queue handler is registered; the timer stops on module destroy, which
+// waits for the tick in flight (B2-15q: the database closes only after that).
 import { Module, type DynamicModule } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import type { DB as Database } from '@couli/db';
@@ -115,7 +116,7 @@ export const RECON_HEAL_INTERVAL_MS = 5 * 60_000;
 
 interface ReconChainTimer {
   onApplicationBootstrap(): void;
-  onModuleDestroy(): void;
+  onModuleDestroy(): Promise<void>;
 }
 
 function errorName(error: unknown): string {
@@ -126,15 +127,15 @@ function errorName(error: unknown): string {
 function reconChainTimer(deps: PayReconSeedDeps | null): ReconChainTimer {
   const started = new Map<string, string>();
   let running = false;
+  let stopped = false;
+  let inFlight: Promise<void> = Promise.resolve();
   let first: ReturnType<typeof setTimeout> | undefined;
   let interval: ReturnType<typeof setInterval> | undefined;
-  const tick = async (): Promise<void> => {
-    if (deps === null || running) return;
-    running = true;
+  const run = async (active: PayReconSeedDeps): Promise<void> => {
     try {
-      await seedBillRecon(deps, { started });
+      await seedBillRecon(active, { started });
     } catch (error: unknown) {
-      deps.logger.warn(
+      active.logger.warn(
         { queue: PAY_QUEUE, error_name: errorName(error) },
         'pay_bill_recon_heal_failed',
       );
@@ -142,20 +143,28 @@ function reconChainTimer(deps: PayReconSeedDeps | null): ReconChainTimer {
       running = false;
     }
   };
+  // Only a tick that starts replaces inFlight: a skipped one leaves it on the running tick.
+  const tick = (): void => {
+    if (deps === null || running || stopped) return;
+    running = true;
+    inFlight = run(deps);
+  };
   return {
     onApplicationBootstrap() {
-      if (deps === null || first !== undefined) return;
+      if (deps === null || first !== undefined || stopped) return;
       first = setTimeout(() => {
-        void tick();
-        interval = setInterval(() => void tick(), RECON_HEAL_INTERVAL_MS);
+        tick();
+        interval = setInterval(tick, RECON_HEAL_INTERVAL_MS);
         interval.unref();
       }, RECON_SEED_DELAY_MS);
       first.unref();
     },
-    onModuleDestroy() {
+    async onModuleDestroy() {
+      stopped = true;
       if (first !== undefined) clearTimeout(first);
       if (interval !== undefined) clearInterval(interval);
       interval = undefined;
+      await inFlight;
     },
   };
 }
