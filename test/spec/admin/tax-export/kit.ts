@@ -47,7 +47,16 @@ import { CORRECTION } from '../../identity/admin-realname/schema.ts';
 import { decode } from '../../identity/token/kit.ts';
 import { ALIPAY_PHONE, BANK_CARD, seedWithdrawal } from '../../payout/tax-export/kit.ts';
 import { grant, seed } from '../accounts/kit.ts';
-import { ORIGIN, signedIn, totp, type Harness, type HttpApp, type Response } from '../auth/kit.ts';
+import {
+  ORIGIN,
+  READ,
+  signedIn,
+  totp,
+  type Fixture,
+  type Harness,
+  type HttpApp,
+  type Response,
+} from '../auth/kit.ts';
 import { parseCsv } from '../export-worker/kit.ts';
 import { ROOT, setup, validate, type Setup } from '../exports/kit.ts';
 import { adminSurface } from '../permissions/expected.ts';
@@ -272,11 +281,26 @@ export async function started(
   return f;
 }
 
+/**
+ * The auth Fixture behind a Setup: exports' setup spreads it and replaces only `read` with its task
+ * reader, so the app and the clock are the same ones; `read` gets auth's shape back here.
+ */
+export function authFixture(f: Setup): Fixture {
+  const read: Fixture['read'] = (token, url = READ, headers = {}, ip = '127.0.0.1') =>
+    f.app.inject({
+      method: 'GET',
+      url,
+      headers: { authorization: `Bearer ${token}`, ...headers },
+      remoteAddress: ip,
+    });
+  return { ...f, read };
+}
+
 /** Another admin of the app, signed in. */
 export async function colleague(h: Harness, f: Setup, permissions: readonly string[]) {
   const who = await seed(h, f.appId);
   if (permissions.length > 0) await grant(h, who, who, permissions);
-  const session = await signedIn(f, who);
+  const session = await signedIn(authFixture(f), who);
   return { who, token: session.admin_token };
 }
 
@@ -314,7 +338,7 @@ export function bank(h: Harness): WithdrawalPatch {
 /** The real correction through the admin entry; the instant it happened at. */
 export async function correct(h: Harness, f: Setup, target: User, who: Identity): Promise<Date> {
   const admin = await seed(h, f.appId, { isSuper: true });
-  const session = await signedIn(f, admin);
+  const session = await signedIn(authFixture(f), admin);
   const headers = { authorization: `Bearer ${session.admin_token}` };
   f.clock.advanceMs(30_000);
   const step = await stepOk<Grant>(

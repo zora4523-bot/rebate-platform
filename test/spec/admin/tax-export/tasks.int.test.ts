@@ -5,7 +5,7 @@
 import { acquireTestRedis, createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import { OLD, user, verified } from '../../identity/admin-realname/kit.ts';
-import { seed } from '../accounts/kit.ts';
+import { grant, seed } from '../accounts/kit.ts';
 import { signedIn } from '../auth/kit.ts';
 import {
   DOWNLOAD,
@@ -19,6 +19,7 @@ import {
   type View,
 } from '../exports/kit.ts';
 import {
+  authFixture,
   colleague,
   COLUMN,
   DAY_MS,
@@ -179,6 +180,22 @@ it.each(['download', 'retry'] as const)(
   },
 );
 
+// audit_logs has no source point to lose: when tax.export_full is all that opens the door, only the
+// task's resource can refuse. The first download shows the task itself is downloadable.
+it('[AC-B2-08e#34] 下载：本人 done 的 audit_logs 任务，失去 export、获得 tax.export_full 后 20001 [id]，不签链接', async () => {
+  const f = await started(h, ['export']);
+  const view = await ok<View>(await f.create({ resource: 'audit_logs', filters: {} }));
+  expect(await f.generate(view.id)).toMatchObject({ status: 'done' });
+  await ok<Download>(await f.download(view.id), DOWNLOAD, 'get');
+  expect(f.sign).toHaveBeenCalledTimes(1);
+  await f.revoke('export');
+  await grant(h, f.actor, f.actor, [FULL_POINT]);
+  const audits = await f.audits();
+  await error(await f.download(view.id), 20001, { fields: ['id'] }, DOWNLOAD, 'get');
+  expect(f.sign).toHaveBeenCalledTimes(1);
+  expect(await f.audits()).toEqual(audits);
+});
+
 it('[AC-B2-08e#35] audit.view_all 只放宽列表：能看见别人的 tax 任务，下载仍 20001 [id]', async () => {
   const f = await open(h, [...MASKED_POINTS, 'audit.view_all']);
   const other = await colleague(h, f, MASKED_POINTS);
@@ -282,7 +299,7 @@ it('[AC-B2-08e#42] 文件保留 24 小时：临近到期链接截到 expires_at�
   ]);
   f.clock.set(new Date(row.expires_at!.getTime() - 60_000));
   // A day on, the first session is past its idle limit and lifetime: sign in again.
-  const { admin_token: token } = await signedIn(f, f.actor);
+  const { admin_token: token } = await signedIn(authFixture(f), f.actor);
   const download = () =>
     f.request('GET', `${LIST}/${view.id}/download`, undefined, undefined, token);
   const last = await ok<Download>(await download(), DOWNLOAD, 'get');
