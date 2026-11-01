@@ -243,6 +243,13 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   // config.business like the other withdrawal items; seeded 0 = off until the three re-verification
   // pages ship (08 gives 180, set by the owner in the console then). Registration only.
   businessInteger('withdraw.dormant_reverify_days', 0),
+  // B1-06ze (B1-06zd prerequisite, D10-510): the Taobao promotion link items — the share switch,
+  // the prefetch switch and the prefetch cap per minute, a whole number of at least 1, all
+  // config.business. No seed rows; unset = off, off and 60, the readers' defaults. Registration
+  // only.
+  spec('share.taobao_enabled', 'boolean', 'config.business'),
+  spec('convert.taobao_prefetch.enabled', 'boolean', 'config.business'),
+  businessInteger('convert.taobao_prefetch.rate_per_min', 1),
 ]);
 
 const VISIBLE: readonly ConfigItemSpec[] = Object.freeze(
