@@ -161,8 +161,8 @@ export interface UserOptions {
 export interface Client {
   /** One search page (q=演示商品, limit 10) of cards with their registered links. */
   search(platform: SharePlatform): Promise<ProductCard[]>;
-  /** GET /v1/products/{product_key} of a card; `fromCard` sends its link as from_link_id. */
-  detail(card: ProductCard, options?: { readonly fromCard?: boolean }): Promise<InjectResponse>;
+  /** GET /v1/products/{product_key} of a card, with the card's item_ref. */
+  detail(card: ProductCard): Promise<InjectResponse>;
   /** POST /v1/links/{link_id}/open, signed. */
   open(linkId: string): Promise<InjectResponse>;
 }
@@ -504,13 +504,9 @@ export function promoHarness({ createTestDatabase, acquireTestRedis }: Provision
         return body.data.items;
       }
 
-      function detail(
-        card: ProductCard,
-        options: { readonly fromCard?: boolean } = {},
-      ): Promise<InjectResponse> {
+      function detail(card: ProductCard): Promise<InjectResponse> {
         const query = new URLSearchParams();
         if (card.item_ref !== null) query.set('item_ref', card.item_ref);
-        if (options.fromCard === true) query.set('from_link_id', String(card.link_id));
         return server().inject({
           method: 'GET',
           url: `/v1/products/${encodeURIComponent(String(card.product_key))}?${query}`,

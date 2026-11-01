@@ -1,7 +1,7 @@
 // B1-06zd rule tests: which registered links get a prefetch job (D10-510), through the real api
 // entry and its running JOB_QUEUE: a job is a row of pgboss.job. Only a link registered by the
-// product detail endpoint, whatever entry_source it inherits, for a logged-in user, of Taobao with a
-// relation_id and a rebate, only while
+// product detail endpoint, never one a search page registered, for a logged-in user, of Taobao with
+// a relation_id and a rebate, only while
 // convert.taobao_prefetch.enabled is on and under its per-minute limit; over the limit it is
 // skipped, never queued. The job goes out after the registration commits, without blocking the
 // detail response; a failed delivery is only logged. A job's absence proves nothing by itself, so
@@ -75,16 +75,18 @@ it('[AC-B1-06zd#14] 详情登记的淘宝 link 投一个任务：payload 只有 
   });
 }, 120_000);
 
-it('[AC-B1-06zd#15] 按详情接口登记判定：带 from_link_id 的详情（entry_source 继承 search）登记的淘宝 link 投一个任务，搜索列表登记的卡不投', async () => {
+it('[AC-B1-06zd#15] 按详情接口登记判定：用卡片的 item_ref 请求详情，详情登记的淘宝 link 投一个任务，搜索列表登记的卡不投', async () => {
   const t = await h.tenant(ON);
   const member = await t.user();
   const card = cardOf(await member.search('taobao'));
 
-  const inherited = String(detailCard(await member.detail(card, { fromCard: true })).link_id);
+  expect(card.item_ref).toBeTypeOf('string');
 
-  expect(inherited).not.toBe(String(card.link_id));
-  expect((await h.link(inherited)).entry_source).toBe('search');
-  await expectJobsFor(h, t.appId, [inherited]);
+  const linkId = String(detailCard(await member.detail(card)).link_id);
+
+  expect(linkId).not.toBe(String(card.link_id));
+  expect((await h.link(String(card.link_id))).entry_source).toBe('search');
+  await expectJobsFor(h, t.appId, [linkId]);
 }, 120_000);
 
 it('[AC-B1-06zd#16] 只有淘宝：京东详情 link 不投', async () => {
