@@ -231,7 +231,6 @@ it('[AC-B2-08e#20] 实名更正：所有行都是当前身份；到账后更正�
   const other = await person(h, f.appId, OTHER);
   const before = await paid(h, corrected, { paid_at: new Date('2026-10-05T04:00:00.000Z') });
   const correctedAt = await correct(h, f, corrected, NEW);
-  f.clock.advanceMs(7_200_000);
   const later = new Date(correctedAt.getTime() + 3_600_000);
   const after = await paid(h, corrected, { paid_at: later });
   const plain = await paid(h, other, { paid_at: later });

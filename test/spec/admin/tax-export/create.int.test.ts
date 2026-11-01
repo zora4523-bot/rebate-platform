@@ -131,6 +131,22 @@ it('[AC-B2-08e#7] 全量版只要 tax.export_full：不需 export、fund.view，
   expect(await f.tasks()).toHaveLength(1);
 });
 
+// Only a tax task's create opens to tax.export_full; the other resources keep export. These refusals
+// already hold before this task, so each case ends in a create that is red until the branch is open.
+it.each([
+  [[FULL_POINT], { resource: 'audit_logs', filters: {} }],
+  [[FULL_POINT], { resource: 'users', filters: {} }],
+  [[FULL_POINT, 'user.list'], { resource: 'users', filters: {} }],
+] as const)(
+  '[AC-B2-08e#45] tax.export_full 不替代 export：持 %j 建 %j → 10403 且不建任务，全量版照常可建',
+  async (points, body) => {
+    const f = await open(h, points);
+    await error(await f.create(body), 10403, DENIED);
+    await untouched(f);
+    expect((await ok<View>(await f.create(FULL, await f.token()))).masked).toBe(false);
+  },
+);
+
 it('[AC-B2-08e#8] 超管自带两种版本的权限', async () => {
   const f = await open(h, [], true);
   expect((await ok<View>(await f.create(MASKED))).masked).toBe(true);

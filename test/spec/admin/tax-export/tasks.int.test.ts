@@ -6,6 +6,7 @@ import { acquireTestRedis, createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import { OLD, user, verified } from '../../identity/admin-realname/kit.ts';
 import { seed } from '../accounts/kit.ts';
+import { signedIn } from '../auth/kit.ts';
 import {
   DOWNLOAD,
   error,
@@ -73,6 +74,19 @@ it('[AC-B2-08e#30] 只持 tax.export_full：列表只见本人 tax_withdrawals�
   const tax = await ok<Page>(await f.list('?resource=tax_withdrawals'), LIST, 'get');
   expect(tax.items.map((item) => item.id)).toEqual([own.id]);
   expect(text(page)).not.toMatch(/object_key|signature/);
+});
+
+it('[AC-B2-08e#44] tax.export_full 加 audit.view_all 但无 export：列表仍只见本人 tax_withdrawals', async () => {
+  const f = await open(h, [FULL_POINT, 'audit.view_all']);
+  const other = await colleague(h, f, MASKED_POINTS);
+  await ok<View>(await f.request('POST', LIST, MASKED, undefined, other.token));
+  const own = await ok<View>(await f.create(FULL, await f.token()));
+  expect(await f.tasks()).toHaveLength(2);
+  for (const query of ['', '?resource=tax_withdrawals']) {
+    const page = await ok<Page>(await f.list(query), LIST, 'get');
+    expect(page.total).toBe(1);
+    expect(page.items.map((item) => item.id)).toEqual([own.id]);
+  }
 });
 
 it('[AC-B2-08e#31] 持 export 的账号照常看见本人全部 resource 的任务', async () => {
@@ -185,19 +199,23 @@ it('[AC-B2-08e#36] 只持 tax.export_full 的账号失去该点：全量文件�
   expect(f.sign).toHaveBeenCalledTimes(1);
 });
 
-it('[AC-B2-08e#37] 持 export 的创建人失去 tax.export_full：全量文件 20001 [id]，重试 10403', async () => {
-  const f = await started(h, ['export', FULL_POINT]);
-  const done = await doneTask(f);
-  const failed = await failedTask(f);
-  const reason = '失去权限后再试';
-  const token = await f.token();
-  await f.revoke(FULL_POINT);
-  const audits = await f.audits();
-  await error(await f.download(done.view.id), 20001, { fields: ['id'] }, DOWNLOAD, 'get');
-  await error(await f.retry(failed.view.id, { reason }, token), 10403, DENIED, RETRY);
-  expect(f.sign).not.toHaveBeenCalled();
-  expect(await f.audits()).toEqual(audits);
-});
+// With fund.view kept, only the full file's own point can refuse: fund.view alone must not pass it.
+it.each([[['export', FULL_POINT]], [[...MASKED_POINTS, FULL_POINT]]] as const)(
+  '[AC-B2-08e#37] 持 %j 的创建人失去 tax.export_full：全量文件 20001 [id]，重试 10403',
+  async (points) => {
+    const f = await started(h, points);
+    const done = await doneTask(f);
+    const failed = await failedTask(f);
+    const reason = '失去权限后再试';
+    const token = await f.token();
+    await f.revoke(FULL_POINT);
+    const audits = await f.audits();
+    await error(await f.download(done.view.id), 20001, { fields: ['id'] }, DOWNLOAD, 'get');
+    await error(await f.retry(failed.view.id, { reason }, token), 10403, DENIED, RETRY);
+    expect(f.sign).not.toHaveBeenCalled();
+    expect(await f.audits()).toEqual(audits);
+  },
+);
 
 it('[AC-B2-08e#38] 脱敏文件按 fund.view 复查：失去后下载 20001 [id]，重试 10403', async () => {
   const f = await started(h);
@@ -263,10 +281,14 @@ it('[AC-B2-08e#42] 文件保留 24 小时：临近到期链接截到 expires_at�
     ],
   ]);
   f.clock.set(new Date(row.expires_at!.getTime() - 60_000));
-  const last = await ok<Download>(await f.download(view.id), DOWNLOAD, 'get');
+  // A day on, the first session is past its idle limit and lifetime: sign in again.
+  const { admin_token: token } = await signedIn(f, f.actor);
+  const download = () =>
+    f.request('GET', `${LIST}/${view.id}/download`, undefined, undefined, token);
+  const last = await ok<Download>(await download(), DOWNLOAD, 'get');
   expect(new Date(last.url_expires_at).getTime()).toBe(row.expires_at!.getTime());
   f.clock.set(row.expires_at!);
-  await error(await f.download(view.id), 30417, { status: 'expired' }, DOWNLOAD, 'get');
+  await error(await download(), 30417, { status: 'expired' }, DOWNLOAD, 'get');
   expect(await f.expire(view.id)).toMatchObject({ status: 'expired' });
   expect(store.get(row.object_key!)).toBeUndefined();
 });
