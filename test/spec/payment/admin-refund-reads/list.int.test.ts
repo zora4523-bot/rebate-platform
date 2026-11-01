@@ -130,6 +130,14 @@ it('[AC-B2-15o#1] 退款单列表（pay.view，不要 step-up）：本应用的�
     // A super admin reads it too, without ticking pay.view.
     const root = await h.caller([], { superAdmin: true });
     expect((await page(await h.list({}, root))).total).toBe(3);
+    // A forged X-App-Id does not change the app: the account's own refunds, nobody else's.
+    const forged = await h.list({}, undefined, { 'x-app-id': g.subject.app_id });
+    const own = await page(forged);
+    expect(own.total).toBe(3);
+    expect(idsOf(own)).toEqual([failed.id, processing.id, succeeded.id]);
+    for (const secret of [foreign.id, foreign.out_refund_no]) {
+      expect(forged.body).not.toContain(secret);
+    }
   });
   expect(await allAudits(f)).toEqual([]);
 });

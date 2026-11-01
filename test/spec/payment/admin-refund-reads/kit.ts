@@ -141,9 +141,17 @@ export interface RefundReads {
     options?: { readonly superAdmin?: boolean },
   ): Promise<AdminCaller>;
   /** GET /admin/v1/pay-refunds with the query parameters, as the viewer unless given. */
-  list(query?: Record<string, string>, caller?: AdminCaller | null): Promise<AdminSent>;
+  list(
+    query?: Record<string, string>,
+    caller?: AdminCaller | null,
+    headers?: Record<string, string>,
+  ): Promise<AdminSent>;
   /** GET /admin/v1/pay-refunds/{pay_refund_id}, as the viewer unless given. */
-  detail(payRefundId: string, caller?: AdminCaller | null): Promise<AdminSent>;
+  detail(
+    payRefundId: string,
+    caller?: AdminCaller | null,
+    headers?: Record<string, string>,
+  ): Promise<AdminSent>;
   /** An account with pay.view only. */
   readonly viewer: AdminCaller;
 }
@@ -270,8 +278,9 @@ export async function withRefundReads(
       op: Operation,
       url: string,
       who: AdminCaller | null,
+      extra: Record<string, string> = {},
     ): Promise<AdminSent> => {
-      const headers: Record<string, string> = { 'x-trace-id': randomUUID() };
+      const headers: Record<string, string> = { ...extra, 'x-trace-id': randomUUID() };
       if (who !== null) headers['authorization'] = `Bearer ${who.token}`;
       const response = await server.inject({
         method: 'GET',
@@ -292,8 +301,9 @@ export async function withRefundReads(
     await run({
       caller,
       viewer,
-      list: (query, who) => send('list', withQuery(LIST_PATH, query), pick(who)),
-      detail: (id, who) => send('detail', `${LIST_PATH}/${encodeURIComponent(id)}`, pick(who)),
+      list: (query, who, headers) => send('list', withQuery(LIST_PATH, query), pick(who), headers),
+      detail: (id, who, headers) =>
+        send('detail', `${LIST_PATH}/${encodeURIComponent(id)}`, pick(who), headers),
     });
   } finally {
     try {

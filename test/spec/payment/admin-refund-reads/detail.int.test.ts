@@ -12,6 +12,7 @@ import {
   anomalyRow,
   channelRefundNo,
   idempotencyRows,
+  refundQueryJobs,
   refundRow,
   seedRefund,
 } from '../refund/kit.ts';
@@ -171,6 +172,10 @@ it('[AC-B2-15o#10] 详情的未知 id：不存在的 id、其他应用的退款�
       await answer(sent, 20001, { fields: ['pay_refund_id'] });
       expect(sent.body).not.toContain(foreign.out_refund_no);
     }
+    // A forged X-App-Id does not open the other app's refund.
+    const forged = await h.detail(foreign.id, undefined, { 'x-app-id': g.subject.app_id });
+    await answer(forged, 20001, { fields: ['pay_refund_id'] });
+    expect(forged.body).not.toContain(foreign.out_refund_no);
   });
   expect(await allAudits(f)).toEqual([]);
 });
@@ -235,5 +240,6 @@ it('[AC-B2-15o#12] 两个读接口只读：列表、筛选、详情、被拒的�
   expect(await payOrder(f, order.id)).toEqual(before.order);
   expect(await anomalyRow(f, anomaly.id)).toEqual(before.anomaly);
   expect(await attempts(f)).toEqual([]);
+  expect(await refundQueryJobs(f, f.subject.app_id)).toEqual([]);
   expect(await idempotencyRows(f)).toEqual([]);
 });

@@ -19,58 +19,54 @@ import {
 } from './kit.ts';
 
 it.each(
-  endpoints.filter(
-    (e): boolean =>
-      e[2] !== 'listAdminPayOrders' &&
-      e[2] !== 'getAdminPayOrder' &&
-      e[2] !== 'resolveAdminPayOrder' &&
-      e[2] !== 'listAdminPayAnomalies' &&
-      e[2] !== 'createAdminPayRefund' &&
-      e[2] !== 'createAdminPayAnomalyRefund' &&
-      e[2] !== 'listAdminPayReconDiffs',
-  ),
-)('[AC-CT-21e#1] %s %s 声明 planned、后台鉴权与权限点', (method, path, id, permission) => {
-  const doc = contract();
-  const endpoint = endpoints.find((e) => e[2] === id)!;
-  const op = operation(doc, endpoint);
-  expect(op['operationId']).toBe(id);
-  expect(op['x-implementation']).toBe('planned');
-  expect(op['x-auth']).toBe('admin');
-  expect(op['security']).toEqual([{ adminBearerAuth: [] }]);
-  expect(op['description']).toMatch(
-    new RegExp('Permission point:?\\s+`' + permission.replace('.', '\\.') + '`'),
-  );
-  expect([undefined, false]).toContain(op['x-signed']);
-  expect(op).not.toHaveProperty('x-min-version-gate');
-  expect(op).not.toHaveProperty('x-session-scopes');
-  const params = parameters(doc, endpoint);
-  for (const forbidden of [
-    'X-App-Id',
-    'X-Platform',
-    'X-Device-Id',
-    'X-Sign',
-    'X-Timestamp',
-    'X-Nonce',
-  ]) {
-    expect(params.map((p) => String(p['name']).toLowerCase())).not.toContain(
-      forbidden.toLowerCase(),
+  endpoints.filter((e): boolean => e[2] === 'listAdminPayRefunds' || e[2] === 'getAdminPayRefund'),
+)(
+  '[AC-CT-21e#1] %s %s（退款单查询）已实现（不再 planned）、后台鉴权与权限点',
+  (method, path, id, permission) => {
+    // B2-15o：两条退款单查询已实现，x-implementation 随路由上线移除。
+    const doc = contract();
+    const endpoint = endpoints.find((e) => e[2] === id)!;
+    const op = operation(doc, endpoint);
+    expect(op['operationId']).toBe(id);
+    expect(op).not.toHaveProperty('x-implementation');
+    expect(op['x-implementation']).not.toBe('planned');
+    expect(op['x-auth']).toBe('admin');
+    expect(op['security']).toEqual([{ adminBearerAuth: [] }]);
+    expect(op['description']).toMatch(
+      new RegExp('Permission point:?\\s+`' + permission.replace('.', '\\.') + '`'),
     );
-  }
-  for (const match of path.matchAll(/\{([^}]+)\}/g)) {
-    expect(params).toContainEqual(
-      expect.objectContaining({ in: 'path', name: match[1], required: true }),
-    );
-  }
-  for (const entry of Object.values(at(op, 'responses'))) {
-    expect(resolve(doc, entry)).toHaveProperty('headers.X-Trace-Id');
-  }
-  if (method === 'get') {
-    expect(op).not.toHaveProperty('requestBody');
-    expect(op).not.toHaveProperty('x-step-up');
-    expect(params.map((p) => p['name'])).not.toContain('X-Step-Up-Token');
-    expect(params.map((p) => p['name'])).not.toContain('Idempotency-Key');
-  }
-});
+    expect([undefined, false]).toContain(op['x-signed']);
+    expect(op).not.toHaveProperty('x-min-version-gate');
+    expect(op).not.toHaveProperty('x-session-scopes');
+    const params = parameters(doc, endpoint);
+    for (const forbidden of [
+      'X-App-Id',
+      'X-Platform',
+      'X-Device-Id',
+      'X-Sign',
+      'X-Timestamp',
+      'X-Nonce',
+    ]) {
+      expect(params.map((p) => String(p['name']).toLowerCase())).not.toContain(
+        forbidden.toLowerCase(),
+      );
+    }
+    for (const match of path.matchAll(/\{([^}]+)\}/g)) {
+      expect(params).toContainEqual(
+        expect.objectContaining({ in: 'path', name: match[1], required: true }),
+      );
+    }
+    for (const entry of Object.values(at(op, 'responses'))) {
+      expect(resolve(doc, entry)).toHaveProperty('headers.X-Trace-Id');
+    }
+    if (method === 'get') {
+      expect(op).not.toHaveProperty('requestBody');
+      expect(op).not.toHaveProperty('x-step-up');
+      expect(params.map((p) => p['name'])).not.toContain('X-Step-Up-Token');
+      expect(params.map((p) => p['name'])).not.toContain('Idempotency-Key');
+    }
+  },
+);
 
 it.each(endpoints.filter((e): boolean => e[2] === 'listAdminPayReconDiffs'))(
   '[AC-CT-21e#1] %s %s（对账差错）已实现（不再 planned）、后台鉴权与权限点',
