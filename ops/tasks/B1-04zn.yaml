@@ -8,6 +8,7 @@ type: impl
 # ③ orderSlots 读取端口：union 模块内新读者（union/pids/ 下，照 pids/query-reader.ts 的写法）按 app 读 union_pids 中 platform=taobao 的全部推广位（含 retired），返回 PID 列表；由 union.module.ts 在 taobao live 且注入了大淘客 orderSource 时装配；无可选数据库句柄时不装配（listOrders 保持 adapter_unimplemented，同 B1-04x 做法）。
 # ④ 只在 staging + taobao live + 大淘客凭据就位（B1-04e）时这些开关才有意义；开关打开但 orderSource 未注入 → 照适配器既有口径 adapter_unimplemented，不拒绝启动。.env.example 只加注释掉的变量名与说明。
 # 依赖：B1-04f、B1-04zh、B1-04d、B1-04e。风险：platform/config 与 union 装配 → RV2。
+# 完成 2026-11-01（#2163）：orderSlots 读者返回该 app 全部淘宝推广位（含 pending / active / retired，BR-ATTR-02 白名单，比 D10-488 ③ 写的「含 retired」更宽，报编排）；读库失败抛原始错误使 listOrders reject；AppConfig 总带两个开关值。
 refs: []
 refs_hash: {}
 deps: [B1-04f, B1-04zh]
@@ -25,4 +26,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/union/taobao-dataoke-switches/**'
-status: todo
+status: done
+pr: 2163
