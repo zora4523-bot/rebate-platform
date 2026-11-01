@@ -80,6 +80,15 @@ export interface PayReconDiffListQuery {
   readonly status?: string;
 }
 
+/** B2-15o: the query of GET /admin/v1/pay-refunds after the route schema (enums checked). */
+export interface PayRefundListQuery {
+  readonly page?: number;
+  readonly page_size?: number;
+  readonly status?: string;
+  readonly target_type?: string;
+  readonly reason_code?: string;
+}
+
 /** The collection recon diffs (contract AdminPayReconDiffType; BR-PAY-07 source R4). */
 const PAY_DIFF_TYPES: readonly string[] = Object.freeze(['pay_mismatch', 'pay_anomaly']);
 
@@ -275,5 +284,19 @@ export class PayAdminReads {
     const offset = (page - 1) * pageSize;
     const items = matching.slice(offset, offset + pageSize).map(adminPayReconDiffView);
     return { items, page, page_size: pageSize, total: matching.length };
+  }
+
+  /** B2-15o: GET /admin/v1/pay-refunds. */
+  listRefunds(appId: string, query: PayRefundListQuery): Promise<Schema<'AdminPayRefundPage'>> {
+    void appId;
+    void query;
+    throw new Error('NotImplemented: listRefunds');
+  }
+
+  /** B2-15o: GET /admin/v1/pay-refunds/{pay_refund_id}. */
+  refundDetail(appId: string, payRefundId: string): Promise<Schema<'AdminPayRefund'>> {
+    void appId;
+    void payRefundId;
+    throw new Error('NotImplemented: refundDetail');
   }
 }
