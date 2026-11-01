@@ -31,16 +31,6 @@ paths:
   - 'apps/api/src/modules/platform/config/queue-concurrency.ts'
 test_paths:
   - 'test/spec/linking/promo-url/**'
-red_exempt:
-  - file: test/spec/linking/promo-url/rules.test.ts
-    test: '[AC-B1-06zd#46] share.taobao_enabled 登记为布尔配置项，不是紧急开关'
-    reason: 键由前置 B1-06ze（#2130）登记并已合并，骨架上已绿
-  - file: test/spec/linking/promo-url/rules.test.ts
-    test: '[AC-B1-06zd#46] convert.taobao_prefetch.enabled 登记为布尔配置项，不是紧急开关'
-    reason: 键由前置 B1-06ze（#2130）登记并已合并，骨架上已绿
-  - file: test/spec/linking/promo-url/rules.test.ts
-    test: '[AC-B1-06zd#47] rate_per_min 登记为至少 1 的整数配置项'
-    reason: 键由前置 B1-06ze（#2130）登记并已合并，骨架上已绿；保留以钉住最小值 1
 impl: claude
 tester: claude-independent
 accept:
