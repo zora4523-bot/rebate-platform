@@ -10,7 +10,7 @@
 #
 # 运行时不解析本文件：apps/api/src/modules/admin/scripts/generate-permissions.ts 生成
 # apps/api/src/modules/admin/domain/permissions.gen.ts，单元测试核对两者一致；改动本文件后重新生成。
-version: '3'
+version: '4'
 permissions:
   - key: dashboard.view
     step_up_tier: null
@@ -176,6 +176,9 @@ permissions:
       - operation: fund.recon.balance_recalc
         tier: sms
   - key: fund.cash_entry
+    step_up_tier: totp
+    operations: []
+  - key: tax.export_full
     step_up_tier: totp
     operations: []
   - key: agent.trace

@@ -27,3 +27,8 @@ GET /admin/v1/recon-diffs/{recon_diff_id} the `data/ref_id` response property's 
 POST /admin/v1/recon-diffs/{recon_diff_id}/close the `data/recon_diff/ref_id` response property's maxLength was increased from `64` to `128` for the response status `200`
 POST /admin/v1/recon-diffs/{recon_diff_id}/restore the `data/recon_diff/ref_id` response property's maxLength was increased from `64` to `128` for the response status `200`
 POST /admin/v1/recon-diffs/{recon_diff_id}/write-off the `data/recon_diff/ref_id` response property's maxLength was increased from `64` to `128` for the response status `200`
+# D10-544 (CT-24zi): export_resource gains tax_withdrawals, a response enum value of the three export
+# operations. The only client is the admin console, which ships with the server.
+POST /admin/v1/exports added the new `tax_withdrawals` enum value to the `data/resource` response property for the response status `202`
+GET /admin/v1/exports added the new `tax_withdrawals` enum value to the `data/items/items/resource` response property for the response status `200`
+POST /admin/v1/exports/{id}/retry added the new `tax_withdrawals` enum value to the `data/resource` response property for the response status `200`

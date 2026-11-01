@@ -61,6 +61,7 @@ export const admin_permission = [
   "fund.settle_adjust", // 补差批次（step-up）
   "fund.recon", // 对账与差错单处理（含以「已关闭（不处理）」结案，必填原因）
   "fund.cash_entry", // 平台资金台账录入：联盟回款、企业支付宝余额 W（step-up）
+  "tax.export_full", // 涉税全量导出（step-up）
   "agent.trace", // Agent trace 查询（含 AI 举报列表的查看）
   "agent.report", // AI 举报处理：标记已处理、填写处理说明
 ] as const;
@@ -156,6 +157,7 @@ export type ExportStatus = (typeof export_status)[number];
 export const export_resource = [
   "users", // 用户列表 GET /admin/v1/users（user.list；filters 为 risk_state）
   "audit_logs", // 审计日志 GET /admin/v1/audit-logs（登录即可，未持 audit.view_all 时只导出本人记录；filters 为 actor_id、target_type、target_id、permission、from、to）
+  "tax_withdrawals", // 涉税季度导出 BR-WDR-21，没有对应列表（脱敏版 export + fund.view；全量版 unmasked 只要 tax.export_full 与 step-up，不被 fund.* 隐含；filters 为 quarter）
 ] as const;
 export type ExportResource = (typeof export_resource)[number];
 
