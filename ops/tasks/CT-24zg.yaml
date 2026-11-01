@@ -1,0 +1,26 @@
+id: CT-24zg
+repo: rebate-platform
+title: 契约：人工调账与坏账核销——adminListAdjustments、adminGetAdjustment、adminCreateAdjustment（一步提交生效，含红冲）、adminApproveAdjustment、adminRejectAdjustment（系统预填单）、adminListBadDebtWriteoffs、adminApproveBadDebtWriteoff；权限 fund.adjust、fund.writeoff、fund.view，短信档 step-up，写审计，planned
+type: contract
+# 2026-11-01 入账（admin-backend，编排 D10-468 ③、D10-456 ①、09:5x 续跑：funds 资金半未入账，先对接口，草稿写 couli-runs/B2-12/，照 CT-26j）。依据 08 BR-FUND-24、BR-FUND-12、BR-FUND-16、04 §3.2 admin_adjustments / bad_debt_writeoffs、§11.2、design/specs/admin-adjustments.md §4 / §5。
+# 取舍待核：操作全部 planned，实现半归 funds（迁移 + ledger 写凭证）与本线后台入口；重复红冲的拒绝码契约线定（规格 §7 待定）。不新增 RESTORE 入口（只由 ADMIN_RESTORE）。
+refs: []
+refs_hash: {}
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/**'
+  - 'contracts/error-codes.yaml'
+  - 'packages/contracts-ts/**'
+  - 'packages/contracts-ts/src/planned-operations.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
