@@ -1,7 +1,7 @@
 // B1-10f: the handler of POST /admin/v1/orders/{order_id}/reassign (contract adminReassignOrder).
-// Not mounted (J-1): no Nest decorator here and no route on any entry; the mounting task wraps this
-// in the admin controller. The admin request check has verified the admin token (and, once mounted,
-// the route schema the body) before this runs.
+// No Nest decorator here: order-actions.controller.ts (B1-10m) wraps this in the admin controller.
+// The admin request check has verified the admin token and the route schema the body before this
+// runs.
 //
 // The operation guard checks the account, permission point order.assign and its totp step-up tier
 // (X-Step-Up-Token) first; only inside its callback does the use case (application/admin-assign.ts)
@@ -17,6 +17,7 @@ import {
   type AdminAssignDeps,
   type AdminAssignOutcome,
 } from '../../application/admin-assign.ts';
+import { conflictRefusal } from './write-deps.ts';
 
 /** Any admin request: its id is the trace id; headers carry X-Step-Up-Token for the guard. */
 export interface AdminAssignRequest {
@@ -42,17 +43,7 @@ type Detail = Schema<'AdminOrderDetailResponse'>;
 
 /** The error envelope of a refusal of the use case (thrown inside the guard callback). */
 function refusal(outcome: Exclude<AdminAssignOutcome, { code: 0 }>, traceId: string) {
-  if (outcome.code === 20902) {
-    return new HttpException(
-      {
-        code: 20902,
-        msg: '状态已变化，请刷新后重试',
-        data: { resource: outcome.data.resource },
-        trace_id: traceId,
-      },
-      409,
-    );
-  }
+  if (outcome.code === 20902) return conflictRefusal(outcome.data.resource, traceId);
   const refused = fieldsErrorEnvelope(outcome.data.fields, traceId);
   const body =
     outcome.data.reason === undefined

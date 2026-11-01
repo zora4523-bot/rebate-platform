@@ -1,6 +1,6 @@
 // B1-10k：后台找回审核的写入用例——子项通过 / 驳回（BR-ATTR-30、BR-ATTR-20、BR-ATTR-32；契约
-// adminApproveClaimItem / adminRejectClaimItem）。两条 HTTP 路由仍为 planned、不挂载（编排裁定 J-1：settlement
-// 端口有真实实现前通过不上线，驳回与通过成对上线）；本文件只给应用服务，控制器与挂载随挂载任务。
+// adminApproveClaimItem / adminRejectClaimItem）。本文件只给应用服务；路由由 B1-10m 的
+// http/admin/claim-review.controller.ts 挂在 admin 入口，settlement 端口由 app.module 注入真实现。
 // 事务（一次审核一个事务）：
 //   ① 首句取子订单 advisory 锁（与同步、管理员指派同一把，order-lock.ts），再 SELECT … FOR UPDATE 重读订单；
 //   ② 按重读结果判定（domain/claim-review.ts）；通过且成立时找出同子订单他人待审子项；
@@ -101,30 +101,23 @@ export interface ClaimReviewDeps {
   readonly details: AdminClaimPorts;
   readonly events: Pick<EventBus, 'publish'>;
   readonly auditOn: (trx: Transaction<DB>) => AuditPort;
-  // Settlement alone writes locked and rebate_status. No real implementation in this task.
+  // Settlement alone writes locked and rebate_status (B2-04la's attribution port).
   readonly rebate: {
     onClaimApproved(trx: Transaction<DB>, input: ClaimApprovedInput): Promise<void>;
   };
   readonly snapshots?: CommissionSnapshotPort;
   readonly sources?: OrderSourcePorts;
   readonly pidScene?: (order: Selectable<DB['orders']>) => Promise<string | null>;
+  // 给了就在本事务句柄上读（优先于 sources / pidScene）：持锁的事务不再占一条连接等第二条，
+  // 连接池耗尽时不互相死等（B1-10m money r1）。
+  readonly sourcesOn?: (trx: Transaction<DB>) => OrderSourcePorts;
+  readonly pidSceneOn?: (trx: Transaction<DB>) => NonNullable<ClaimReviewDeps['pidScene']>;
 }
 
 export type ClaimReviewResult =
   | { readonly code: 0; readonly data: Schema<'AdminClaimDetail'> }
   | { readonly code: 20001; readonly data: { readonly fields: readonly string[] } }
   | { readonly code: 20902; readonly data: { readonly resource: 'claim_item' } };
-
-/**
- * settlement 端口的占位实现：调用即抛错（整事务回滚）。settlement 的 R3（UNATTRIBUTED → ESTIMATED / WAITING、
- * locked=true）有真实实现前，生产装配只能用它，找回通过因此不可挂载（J-1）。
- */
-// TODO(规划/11 §4.5): settlement 的 onClaimApproved 真实实现 — blocked on settlement R3 端口任务
-export const CLAIM_SETTLEMENT_UNAVAILABLE: ClaimReviewDeps['rebate'] = {
-  async onClaimApproved() {
-    throw new Error('ORDERS_CLAIM_SETTLEMENT_UNAVAILABLE: settlement 的找回通过端口尚未实现');
-  },
-};
 
 const STALE: ClaimReviewResult = { code: 20902, data: { resource: 'claim_item' } };
 
@@ -353,9 +346,11 @@ async function attribute(
   userId: string,
   now: Date,
 ): Promise<void> {
+  const readScene = deps.pidSceneOn?.(trx) ?? deps.pidScene;
+  const sources = deps.sourcesOn?.(trx) ?? deps.sources;
   let scene: { value: string | null } | undefined;
   const pidScene = async (): Promise<string | null> => {
-    scene ??= { value: deps.pidScene === undefined ? null : await deps.pidScene(before) };
+    scene ??= { value: readScene === undefined ? null : await readScene(before) };
     return scene.value;
   };
   const write: { -readonly [K in keyof OrderAttributionWrite]: OrderAttributionWrite[K] } = {
@@ -364,12 +359,8 @@ async function attribute(
 
   // 来源回填（BR-ATTR-15）：只在尚无 source_match（含 none）时；端口抛错原样抛出。
   const platform = before.platform;
-  if (
-    deps.sources !== undefined &&
-    before.source_match === null &&
-    isRegisteredPlatform(platform)
-  ) {
-    const source = await backfillOrderSource(storedSourcePorts(deps.sources, before), {
+  if (sources !== undefined && before.source_match === null && isRegisteredPlatform(platform)) {
+    const source = await backfillOrderSource(storedSourcePorts(sources, before), {
       appId: before.app_id,
       platform,
       userId,

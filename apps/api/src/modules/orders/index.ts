@@ -162,7 +162,7 @@ export type {
 export { OrdersModule } from './orders.module.ts';
 // B1-10j: the admin entry's claim review reads (GET /admin/v1/claims, /admin/v1/claims/{claim_id}).
 export { OrdersAdminModule } from './orders-admin.module.ts';
-export type { OrdersAdminOptions } from './orders-admin.module.ts';
+export type { AdminOrderWritePorts, OrdersAdminOptions } from './orders-admin.module.ts';
 export type { AdminClaimPorts } from './application/admin-claims.ts';
 // B1-10i: the admin entry's order reads (GET /admin/v1/orders, /admin/v1/orders/{order_id}).
 export type {

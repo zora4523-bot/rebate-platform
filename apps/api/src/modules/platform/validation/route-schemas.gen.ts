@@ -10618,6 +10618,197 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "adminHoldOrder": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "order_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "order_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/orders/{order_id}/hold. `reason_code` may be left out when it can be\nderived from the operator's permission points (BR-FUND-06 细则「后台 hold / unhold」).\n",
+      "additionalProperties": false,
+      "required": [
+        "note",
+        "expected_row_version"
+      ],
+      "properties": {
+        "reason_code": {
+          "type": "string",
+          "description": "The hold reason an operator may send to hold / unhold (subset of enum order_hold_reason):\nRISK or CS. UNMAPPED_STATUS is set by the system alone (BR-FUND-02, BR-FUND-06 细则「后台\nhold / unhold」).\n",
+          "enum": [
+            "RISK",
+            "CS"
+          ]
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "The operator's note (说明), required, 1–200 characters; written into the audit record."
+        },
+        "expected_row_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The order's row_version from GET /admin/v1/orders/{order_id}."
+        }
+      }
+    }
+  },
+  "adminUnholdOrder": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "order_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "order_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/orders/{order_id}/unhold; `reason_code` is required.",
+      "additionalProperties": false,
+      "required": [
+        "reason_code",
+        "note",
+        "expected_row_version"
+      ],
+      "properties": {
+        "reason_code": {
+          "type": "string",
+          "description": "The hold reason an operator may send to hold / unhold (subset of enum order_hold_reason):\nRISK or CS. UNMAPPED_STATUS is set by the system alone (BR-FUND-02, BR-FUND-06 细则「后台\nhold / unhold」).\n",
+          "enum": [
+            "RISK",
+            "CS"
+          ]
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "The operator's note (说明), required, 1–200 characters; written into the audit record."
+        },
+        "expected_row_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The order's row_version from GET /admin/v1/orders/{order_id}."
+        }
+      }
+    }
+  },
+  "adminReassignOrder": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "order_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "order_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of POST /admin/v1/orders/{order_id}/reassign (BR-ATTR-31).",
+      "additionalProperties": false,
+      "required": [
+        "user_id",
+        "expected_user_id",
+        "expected_locked",
+        "reason"
+      ],
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_user_id": {
+          "type": "null",
+          "description": "The order's user_id as the operator saw it; only null (an unattributed order)."
+        },
+        "expected_locked": {
+          "type": "boolean",
+          "description": "The order's flags.locked as the operator saw it."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 200,
+          "description": "Why the order is assigned (5–200 characters, BR-ATTR-20 ③); written into the audit record."
+        }
+      }
+    }
+  },
   "adminListOrderSyncs": {
     "headers": {
       "type": "object",
@@ -10890,6 +11081,147 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       },
       "required": [],
       "additionalProperties": false
+    }
+  },
+  "adminApproveClaimItem": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "claim_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "item_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "claim_id",
+        "item_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected_row_version",
+        "reason"
+      ],
+      "properties": {
+        "expected_row_version": {
+          "allOf": [
+            {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "description": "row_version of the row as read (users' risk state, a union binding, an admin account);\nplus 1 on every change. The CAS value `expected_row_version` of the writes.\n"
+            }
+          ],
+          "description": "The child order's row_version as the console showed it; a mismatch is 20902 (claim_item)."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 200,
+          "description": "The review note, required for approval and rejection (BR-ATTR-20: at least 5\ncharacters); at least 5 characters also after trimming surrounding whitespace, stored\ntrimmed in claims.reason and the audit log.\n"
+        }
+      }
+    }
+  },
+  "adminRejectClaimItem": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "claim_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "item_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "claim_id",
+        "item_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected_row_version",
+        "reason",
+        "reject_reason"
+      ],
+      "properties": {
+        "expected_row_version": {
+          "allOf": [
+            {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "description": "row_version of the row as read (users' risk state, a union binding, an admin account);\nplus 1 on every change. The CAS value `expected_row_version` of the writes.\n"
+            }
+          ],
+          "description": "The child order's row_version as the console showed it; a mismatch is 20902 (claim_item)."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 200,
+          "description": "The review note, required for approval and rejection (BR-ATTR-20: at least 5\ncharacters); at least 5 characters also after trimming surrounding whitespace, stored\ntrimmed in claims.reason and the audit log.\n"
+        },
+        "reject_reason": {
+          "type": "string",
+          "description": "The reject reasons a reviewer may choose (enum claim_reject_reason, its first six codes;\nBR-ATTR-18). NOT_IN_POOL and ORDER_INVALID are set by the system only.\n",
+          "enum": [
+            "NO_EVIDENCE",
+            "EXPIRED_CLICK",
+            "NOT_TRACKED",
+            "OTHER_TLJ",
+            "FRAUD",
+            "OTHER"
+          ]
+        }
+      }
     }
   },
   "adminListUnionAccounts": {

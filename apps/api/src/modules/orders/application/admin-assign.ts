@@ -1,7 +1,6 @@
 // B1-10f：后台未归因订单指派的用例（POST /admin/v1/orders/{order_id}/reassign；契约 adminReassignOrder，
-// 权限点 order.assign、动态码档；BR-ATTR-31、BR-ATTR-20 ①③、BR-FUND-01 R3 / R3b）。路由仍为 planned、
-// 不挂载（J-1：settlement 的 rebate.onAdminAssigned 有真实实现前不上线，挂载并入找回通过的挂载任务）；
-// 本文件只给应用服务。
+// 权限点 order.assign、动态码档；BR-ATTR-31、BR-ATTR-20 ①③、BR-FUND-01 R3 / R3b）。本文件只给应用服务；
+// 路由由 B1-10m 的 http/admin/order-actions.controller.ts 挂在 admin 入口，settlement 端口由 app.module 注入真实现。
 // 事务（一次指派一个事务）：
 //   ① 首句取子订单 advisory 锁（与同步、找回同一把，order-lock.ts），再 SELECT … FOR UPDATE 重读订单；
 //   ② 复查：user_id 非空、或 locked 与 expected_locked 不符 → 20902（resource=order_attribution），不做
@@ -134,6 +133,10 @@ export interface AdminAssignDeps {
   readonly snapshots?: CommissionSnapshotPort;
   readonly sources?: OrderSourcePorts;
   readonly pidScene?: (order: Selectable<DB['orders']>) => Promise<string | null>;
+  // 给了就在本事务句柄上读（优先于 sources / pidScene）：持锁的事务不再占一条连接等第二条，
+  // 连接池耗尽时不互相死等（B1-10m money r1）。
+  readonly sourcesOn?: (trx: Transaction<DB>) => OrderSourcePorts;
+  readonly pidSceneOn?: (trx: Transaction<DB>) => NonNullable<AdminAssignDeps['pidScene']>;
   /** B1-10i 的详情端口，供响应。 */
   readonly details: AdminOrderPorts;
 }
@@ -148,17 +151,6 @@ export type AdminAssignOutcome =
       };
     }
   | { readonly code: 20902; readonly data: { readonly resource: 'order_attribution' } };
-
-/**
- * settlement 端口的占位实现：调用即抛错（整事务回滚）。settlement 的 R3 / R3b 有真实实现前，生产装配只能
- * 用它，指派因此不可挂载（J-1）。
- */
-// TODO(规划/11 §4.5): settlement 的 onAdminAssigned 真实实现 — blocked on settlement R3 端口任务
-export const ASSIGN_SETTLEMENT_UNAVAILABLE: AdminAssignRebatePort = {
-  async onAdminAssigned() {
-    throw new Error('ORDERS_ASSIGN_SETTLEMENT_UNAVAILABLE: settlement 的指派端口尚未实现');
-  },
-};
 
 const CONFLICT = { code: 20902, data: { resource: 'order_attribution' } } as const;
 const AUDIT_ACTION: AdminAssignAuditAction = 'order_assign';
@@ -307,9 +299,11 @@ async function attribute(
   same: boolean,
   now: Date,
 ): Promise<{ readonly rebate_status: string; readonly locked: boolean }> {
+  const readScene = deps.pidSceneOn?.(trx) ?? deps.pidScene;
+  const sources = deps.sourcesOn?.(trx) ?? deps.sources;
   let scene: { value: string | null } | undefined;
   const pidScene = async (): Promise<string | null> => {
-    scene ??= { value: deps.pidScene === undefined ? null : await deps.pidScene(before) };
+    scene ??= { value: readScene === undefined ? null : await readScene(before) };
     return scene.value;
   };
   const write: { -readonly [K in keyof OrderAttributionWrite]: OrderAttributionWrite[K] } = {
@@ -318,12 +312,8 @@ async function attribute(
 
   // 来源回填（BR-ATTR-15）：只在尚无 source_match（含 none）时；端口抛错原样抛出。
   const platform = before.platform;
-  if (
-    deps.sources !== undefined &&
-    before.source_match === null &&
-    isRegisteredPlatform(platform)
-  ) {
-    const source = await backfillOrderSource(storedSourcePorts(deps.sources, before), {
+  if (sources !== undefined && before.source_match === null && isRegisteredPlatform(platform)) {
+    const source = await backfillOrderSource(storedSourcePorts(sources, before), {
       appId: before.app_id,
       platform,
       userId,
