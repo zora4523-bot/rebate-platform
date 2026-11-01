@@ -18,6 +18,7 @@ import type {
   RescanStream,
   SyncAccessPort,
   SyncAccount,
+  SyncStream,
 } from '../../../../apps/api/src/modules/orders/application/sync-ports.ts';
 import { RESCAN_START_MARGIN_MS } from '../../../../apps/api/src/modules/orders/domain/sync-window.ts';
 import type { OrderRescanHandlerDeps } from '../../../../apps/api/src/modules/orders/jobs/order-rescan.ts';
@@ -65,6 +66,11 @@ export const pddStream: RescanStream = {
   platform: 'pdd',
   union_account_id: PDD_ACCOUNT,
 };
+/** The same account's increment stream, whose cursor bounds a round. */
+export const incrementOf = (base: RescanStream): SyncStream => ({
+  ...base,
+  query_kind: 'increment',
+});
 
 export function rescanWindow(
   start: string,
@@ -115,6 +121,8 @@ export function mentioning(fn: MockLike, text: string): (readonly unknown[])[] {
 
 interface FixtureOptions {
   readonly cursor?: string | null;
+  /** The increment cursor; left out, the increment has caught up with the clock. */
+  readonly increment?: string | null;
   readonly accounts?: readonly SyncAccount[];
   readonly config?: Readonly<Record<string, unknown>>;
 }
@@ -125,8 +133,12 @@ const sameInstant = (a: string, b: string): boolean => Date.parse(a) === Date.pa
 export function fixture(options: FixtureOptions = {}) {
   const clock = new FixedClock(NOW);
   let cursor = options.cursor ?? null;
+  let increment = options.increment;
   const send = vi.fn<JobQueue['send']>().mockResolvedValue('queued-rescan');
-  const read = vi.fn<RescanCursorStore['read']>(async () => cursor);
+  const read = vi.fn<RescanCursorStore['read']>(async (asked) => {
+    if (asked.query_kind !== 'increment') return cursor;
+    return increment === undefined ? clock.now().toISOString() : increment;
+  });
   const advance = vi.fn<RescanCursorStore['advance']>(async (win) => {
     if (cursor !== null && !sameInstant(cursor, win.window_start)) return false;
     cursor = win.window_end;
@@ -197,6 +209,9 @@ export function fixture(options: FixtureOptions = {}) {
     scheduler,
     handler,
     cursor: () => cursor,
+    setIncrement: (value: string | null) => {
+      increment = value;
+    },
     sent: () => send.mock.calls.map(([, , payload]) => payload),
   };
 }

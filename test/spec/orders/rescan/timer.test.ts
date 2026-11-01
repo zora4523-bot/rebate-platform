@@ -8,6 +8,7 @@ import {
   PDD_ENABLED,
   account,
   fixture,
+  mentioning,
   pddAccount,
 } from './kit.ts';
 
@@ -105,3 +106,26 @@ it('[AC-B1-04zm#53] 启动时读配置失败不影响起循环，恢复后照常
     await loop.stop();
   }
 });
+
+it.each([0, -1, 1.5, 91, '45', 'abc'])(
+  '[AC-B1-04zm#84] days=%j 不合法：按默认 120 秒一轮，不会空转，每轮只 warn 一次',
+  async (days) => {
+    vi.useFakeTimers();
+    const f = fixture({ config: { [JD_DAYS]: days } });
+    const warned = () => mentioning(f.logger.warn, JD_DAYS).length;
+    const loop = createOrderRescanScheduler(f.scheduler, ['jd']).start();
+    try {
+      await vi.advanceTimersByTimeAsync(119_999);
+      expect(f.send).not.toHaveBeenCalled();
+      expect(warned()).toBe(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(f.send).toHaveBeenCalledTimes(1);
+      expect(warned()).toBe(1);
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(f.send).toHaveBeenCalledTimes(2);
+      expect(warned()).toBe(2);
+    } finally {
+      await loop.stop();
+    }
+  },
+);

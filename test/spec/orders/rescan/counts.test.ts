@@ -1,5 +1,5 @@
-// B1-04zm: the row comparison of a finished window (D10-524: an order first inserted by a rescan
-// is one the increment missed).
+// B1-04zm: the row comparison of a window (D10-524: an order first inserted by a rescan is one the
+// increment missed; D10-545: a retry sees those rows as unchanged, so a failed window reports too).
 import { expect, it } from 'vitest';
 import type { OrderPipelineResult } from '../../../../apps/api/src/modules/orders/application/pipeline-types.ts';
 import { handleOrderRescanWindow } from '../../../../apps/api/src/modules/orders/jobs/order-rescan.ts';
@@ -7,6 +7,11 @@ import { ACCOUNT, fixture, job, logged, order, window } from './kit.ts';
 
 const DONE = 'order_sync_rescan_window_done';
 const MISSING = 'order_sync_rescan_found_missing';
+const FAILURE = new Error('synthetic window failure');
+const INSERTED: OrderPipelineResult = { kind: 'inserted', order_id: 'synthetic-internal' };
+const UNCHANGED: OrderPipelineResult = { kind: 'unchanged' };
+
+type Fixture = ReturnType<typeof fixture>;
 
 function fields(pages: number, count: number, inserted: number) {
   return {
@@ -111,4 +116,107 @@ it('[AC-B1-04zm#48] 日志不含订单号与用户参数', async () => {
     f.logger.error.mock.calls,
   ]);
   expect(written).not.toContain('secret');
+});
+
+it.each([
+  {
+    label: '后页取页失败',
+    message: FAILURE.message,
+    counts: fields(1, 2, 2),
+    arrange(f: Fixture) {
+      f.listOrders
+        .mockResolvedValueOnce({ items: [order('a'), order('b')], nextCursor: 'next' })
+        .mockRejectedValueOnce(FAILURE);
+      f.process.mockResolvedValue(INSERTED);
+    },
+  },
+  {
+    label: '流水线失败，失败那行不计数',
+    message: FAILURE.message,
+    counts: fields(1, 2, 1),
+    arrange(f: Fixture) {
+      f.listOrders.mockResolvedValue({
+        items: [order('a'), order('b'), order('c')],
+        nextCursor: null,
+      });
+      f.process
+        .mockResolvedValueOnce(INSERTED)
+        .mockResolvedValueOnce(UNCHANGED)
+        .mockRejectedValueOnce(FAILURE);
+    },
+  },
+  {
+    label: '翻页游标重复',
+    message: 'order_sync_cursor_repeated',
+    counts: fields(2, 1, 1),
+    arrange(f: Fixture) {
+      f.listOrders
+        .mockResolvedValueOnce({ items: [order('a')], nextCursor: 'same-page' })
+        .mockResolvedValueOnce({ items: [], nextCursor: 'same-page' });
+      f.process.mockResolvedValue(INSERTED);
+    },
+  },
+  {
+    label: '行都处理完后游标存储失败',
+    message: FAILURE.message,
+    counts: fields(1, 2, 1),
+    arrange(f: Fixture) {
+      f.listOrders.mockResolvedValue({ items: [order('a'), order('b')], nextCursor: null });
+      f.process.mockResolvedValueOnce(INSERTED).mockResolvedValueOnce(UNCHANGED);
+      f.advance.mockRejectedValue(FAILURE);
+    },
+  },
+])(
+  '[AC-B1-04zm#81] $label：已有首次入库就带截至失败的计数告警一次，再抛出，不记完成',
+  async ({ message, counts, arrange }) => {
+    const f = fixture();
+    arrange(f);
+    await expect(handleOrderRescanWindow(job(), f.handler)).rejects.toThrow(message);
+    expect(logged(f.logger.warn, MISSING)).toEqual([counts]);
+    expect(logged(f.logger.info, DONE)).toEqual([]);
+    expect(f.cursor()).toBeNull();
+  },
+);
+
+it('[AC-B1-04zm#82] 中途失败但没有首次入库：不写漏单告警，照样抛出', async () => {
+  const f = fixture();
+  f.listOrders
+    .mockResolvedValueOnce({ items: [order('a')], nextCursor: 'next' })
+    .mockRejectedValueOnce(FAILURE);
+  f.process.mockResolvedValue(UNCHANGED);
+  await expect(handleOrderRescanWindow(job(), f.handler)).rejects.toBe(FAILURE);
+  expect(logged(f.logger.warn, MISSING)).toEqual([]);
+});
+
+it.each([
+  {
+    label: '重试时行都已入库：完成记 0 入库，不再告警',
+    last: UNCHANGED,
+    done: fields(2, 3, 0),
+    warned: [fields(1, 2, 2)],
+  },
+  {
+    label: '重试时又有首次入库：按这次的计数再告警',
+    last: INSERTED,
+    done: fields(2, 3, 1),
+    warned: [fields(1, 2, 2), fields(2, 3, 1)],
+  },
+])('[AC-B1-04zm#83] $label，失败那次的信号留着', async ({ last, done, warned }) => {
+  const f = fixture();
+  const first = { items: [order('a'), order('b')], nextCursor: 'next' };
+  f.listOrders
+    .mockResolvedValueOnce(first)
+    .mockRejectedValueOnce(FAILURE)
+    .mockResolvedValueOnce(first)
+    .mockResolvedValueOnce({ items: [order('c', '102')], nextCursor: null });
+  f.process
+    .mockResolvedValueOnce(INSERTED)
+    .mockResolvedValueOnce(INSERTED)
+    .mockResolvedValueOnce(UNCHANGED)
+    .mockResolvedValueOnce(UNCHANGED)
+    .mockResolvedValueOnce(last);
+  await expect(handleOrderRescanWindow(job(window, 1), f.handler)).rejects.toBe(FAILURE);
+  await handleOrderRescanWindow(job(window, 2), f.handler);
+  expect(logged(f.logger.info, DONE)).toEqual([expect.objectContaining(done)]);
+  expect(logged(f.logger.warn, MISSING)).toEqual(warned);
 });

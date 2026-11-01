@@ -20,14 +20,14 @@ interface Round {
 }
 
 /** One whole round with the clock held at `nowMs`; null when it never ends. */
-function walk(nowMs: number, days: number, capMs: number): Round | null {
+function walk(nowMs: number, days: number, capMs: number, ceilingMs?: number): Round | null {
   const limit = Math.floor((days * DAY_MS) / capMs) + 1;
   const windows: { startMs: number; endMs: number }[] = [];
   let cursor: number | null = null;
   // rescanStep comes before the limit: the margin is undefined on the skeleton, so capMs and limit
   // are NaN, and the property must still end in NotImplemented rather than return false.
   for (let step = 0; ; step += 1) {
-    const next = rescanStep(cursor, nowMs, days, capMs);
+    const next = rescanStep(cursor, nowMs, days, capMs, ceilingMs);
     if (next.kind === 'round_end') return { windows, restartMs: next.restartMs };
     if (step > limit) return null;
     windows.push({ startMs: next.startMs, endMs: next.endMs });
@@ -64,6 +64,24 @@ function coversRange(nowMs: number, days: number, capMs: number): boolean {
     nowMs - tailMs < capMs &&
     (next.windows[0]?.startMs ?? Number.POSITIVE_INFINITY) <= tailMs &&
     nextEndMs >= nowMs
+  );
+}
+
+/** A round with an earlier end: the same windows from the same start, none past the ceiling. */
+function stopsAtCeiling(nowMs: number, days: number, capMs: number, ceilingMs: number): boolean {
+  const round = walk(nowMs, days, capMs, ceilingMs);
+  if (round === null) return false;
+  const fromMs = nowMs - rangeMs(days);
+  const tailMs = round.windows.at(-1)?.endMs ?? fromMs;
+  return (
+    round.restartMs === fromMs &&
+    round.windows.every(
+      (win, index) =>
+        win.endMs - win.startMs === capMs &&
+        win.startMs === (round.windows[index - 1]?.endMs ?? fromMs) &&
+        win.endMs <= ceilingMs,
+    ) &&
+    ceilingMs - tailMs < capMs
   );
 }
 
@@ -142,6 +160,40 @@ it('[AC-B1-04zm#6] 任意 days 与 cap：窗口不重不漏，尾段不足一窗
   expect(() =>
     fc.assert(
       fc.property(cases, ({ nowMs, days, capMs }) => coversRange(nowMs, days, capMs)),
+      propParams(),
+    ),
+  ).not.toThrow();
+});
+
+const CEILING = NOW_MS - 3 * HOUR_MS;
+
+it('[AC-B1-04zm#71] 终点早于 now：最后一窗正好到终点', () => {
+  expect(rescanStep(CEILING - HOUR_MS, NOW_MS, 30, HOUR_MS, CEILING)).toEqual({
+    kind: 'window',
+    startMs: CEILING - HOUR_MS,
+    endMs: CEILING,
+  });
+});
+
+it.each([
+  { label: '差 1 毫秒不足一窗', cursorMs: CEILING - HOUR_MS + 1 },
+  { label: '游标等于终点', cursorMs: CEILING },
+  { label: '游标晚于终点', cursorMs: CEILING + 1 },
+])('[AC-B1-04zm#72] $label：离 now 还够一窗也结束本轮，起点仍按 now 算', ({ cursorMs }) => {
+  expect(rescanStep(cursorMs, NOW_MS, 30, HOUR_MS, CEILING)).toEqual({
+    kind: 'round_end',
+    restartMs: ROUND_START,
+  });
+});
+
+it('[AC-B1-04zm#73] 任意终点：窗口首尾相接、不越过终点，尾段不足一窗，起点不随终点变', () => {
+  const ceilings = fc.record({ round: cases, back: fc.integer({ min: 0, max: 1200 }) });
+  expect(() =>
+    fc.assert(
+      fc.property(ceilings, ({ round: { nowMs, days, capMs }, back }) =>
+        // back above 1000 puts the ceiling before the round's start: no window fits.
+        stopsAtCeiling(nowMs, days, capMs, nowMs - Math.floor((rangeMs(days) * back) / 1000)),
+      ),
       propParams(),
     ),
   ).not.toThrow();

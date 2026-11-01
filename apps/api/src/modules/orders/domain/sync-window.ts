@@ -96,18 +96,22 @@ export type RescanStep =
  * now − days + RESCAN_START_MARGIN_MS (one hour, every platform and days): the adapters judge
  * from ≥ now − 90 days in milliseconds when the job runs, which is always after it was sent. An
  * absent cursor or one older than that start begins there; less than one full window left before
- * now ends the round, restarting there. Windows are always exactly capMs long.
+ * the round's end ends the round, restarting there. Windows are always exactly capMs long.
+ * ceilingMs is where the round ends when that is before now (min(now, increment cursor), D10-545);
+ * absent → now. It moves only the end: the start always counts from nowMs.
  */
 export function rescanStep(
   cursorMs: number | null,
   nowMs: number,
   days: number,
   capMs: number,
+  ceilingMs?: number,
 ): RescanStep {
   void cursorMs;
   void nowMs;
   void days;
   void capMs;
+  void ceilingMs;
   throw new Error('NotImplemented: rescanStep');
 }
 

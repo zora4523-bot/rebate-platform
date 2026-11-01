@@ -1,5 +1,6 @@
 // B1-04zm: scheduling rounds of a rescan stream, with injected platforms and caps: jd has no
-// syncWindowCapMs and is not in scheduledPlatforms() until B1-04zr.
+// syncWindowCapMs and is not in scheduledPlatforms() until B1-04zr. The fixture's increment has
+// caught up with the clock unless a test says otherwise, so a round's end is now by default.
 import { expect, it } from 'vitest';
 import { scheduleOrderRescan } from '../../../../apps/api/src/modules/orders/application/order-rescan.ts';
 import type { OrderRescanWindow } from '../../../../apps/api/src/modules/orders/application/sync-ports.ts';
@@ -8,6 +9,7 @@ import { handleOrderRescanWindow } from '../../../../apps/api/src/modules/orders
 import {
   ACCOUNT,
   DAY_MS,
+  HOUR_MS,
   JD_CAP_MS,
   JD_ENABLED,
   NOW,
@@ -18,6 +20,7 @@ import {
   account,
   daysAgo,
   fixture,
+  incrementOf,
   iso,
   job,
   pddAccount,
@@ -28,12 +31,22 @@ import {
 
 const INSIDE = iso(NOW_MS - 5 * DAY_MS);
 const TICK_MS = 120_000;
+// Far enough behind now that a window past it would still fit before now.
+const BEHIND_MS = NOW_MS - 3 * HOUR_MS;
+// Spelled out: a table is built at collection, where iso() of the skeleton's margin would throw.
+const ROUND_START_MS = NOW_MS - 30 * DAY_MS + HOUR_MS;
+
+function expectReadBothCursors(f: ReturnType<typeof fixture>) {
+  expect(f.read).toHaveBeenCalledTimes(2);
+  expect(f.read).toHaveBeenCalledWith(stream);
+  expect(f.read).toHaveBeenCalledWith(incrementOf(stream));
+}
 
 it('[AC-B1-04zm#17] 游标空：流是 (app, 平台, 账号, rescan, -)，从 now − days + 1 小时发整窗', async () => {
   const f = fixture();
   await scheduleOrderRescan(f.scheduler, ['jd']);
   const win = rescanWindow(roundStart(30));
-  expect(f.read).toHaveBeenCalledExactlyOnceWith(stream);
+  expectReadBothCursors(f);
   expect(f.send).toHaveBeenCalledExactlyOnceWith('order-sync', 'rescan-window', win, {
     trx: null,
     singletonKey: `jd:${ACCOUNT}:rescan:-:${win.window_start}`,
@@ -113,11 +126,12 @@ it('[AC-B1-04zm#24] 只调度传入的平台', async () => {
   expect(f.sent().map((win) => win['platform'])).toEqual(['jd']);
 });
 
-it('[AC-B1-04zm#25] 只读写 rescan 流：调度不碰 increment 游标，也不推进任何游标', async () => {
+it('[AC-B1-04zm#25] 只写 rescan 流：increment 游标只读不动，调度也不推进任何游标', async () => {
   const f = fixture({ cursor: INSIDE });
   await scheduleOrderRescan(f.scheduler, ['jd']);
-  expect(f.read.mock.calls.map(([asked]) => asked)).toEqual([stream]);
+  expectReadBothCursors(f);
   expect(f.advance).not.toHaveBeenCalled();
+  expect(f.rewind).not.toHaveBeenCalled();
 });
 
 it.each([
@@ -201,4 +215,95 @@ it('[AC-B1-04zm#69] 平台未进调度、开关开：账号和窗口上限都在
   );
   expect(f.read).not.toHaveBeenCalled();
   expect(f.send).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-04zm#74] increment 游标落后于 now：一轮的终点是 increment 游标，最后一窗正好到它', async () => {
+  const start = iso(BEHIND_MS - JD_CAP_MS);
+  const f = fixture({ cursor: start, increment: iso(BEHIND_MS) });
+  await scheduleOrderRescan(f.scheduler, ['jd']);
+  expect(f.sent()).toEqual([rescanWindow(start)]);
+  expect(f.rewind).not.toHaveBeenCalled();
+});
+
+it.each([
+  { label: '差 1 毫秒不足一窗', cursorMs: BEHIND_MS - JD_CAP_MS + 1 },
+  { label: '游标等于 increment 游标', cursorMs: BEHIND_MS },
+  { label: '游标晚于 increment 游标', cursorMs: BEHIND_MS + 1 },
+])(
+  '[AC-B1-04zm#75] $label：离 now 还够一窗也结束本轮，不发增量没拉到的尾段',
+  async ({ cursorMs }) => {
+    const cursor = iso(cursorMs);
+    const f = fixture({ cursor, increment: iso(BEHIND_MS) });
+    await scheduleOrderRescan(f.scheduler, ['jd']);
+    expect(f.rewind).toHaveBeenCalledExactlyOnceWith(stream, cursor, roundStart(30));
+    expect(f.sent().length).toBeLessThanOrEqual(1);
+    expect(f.sent().every((win) => win['window_start'] === roundStart(30))).toBe(true);
+  },
+);
+
+it.each([
+  { label: '游标为空', cursor: null },
+  { label: '游标在范围内', cursor: INSIDE },
+  { label: '游标早于一轮起点', cursor: daysAgo(45) },
+])(
+  '[AC-B1-04zm#76] increment 游标为空、$label：本轮不发、不动游标，有了增量游标后接着发',
+  async ({ cursor }) => {
+    const f = fixture({ cursor, increment: null });
+    await scheduleOrderRescan(f.scheduler, ['jd']);
+    expect(f.send).not.toHaveBeenCalled();
+    expect(f.rewind).not.toHaveBeenCalled();
+    expect(f.cursor()).toBe(cursor);
+    f.setIncrement(NOW);
+    await scheduleOrderRescan(f.scheduler, ['jd']);
+    expect(f.send).toHaveBeenCalledTimes(1);
+  },
+);
+
+it('[AC-B1-04zm#77] increment 游标晚于 now：终点仍是 now', async () => {
+  const increment = iso(NOW_MS + 5 * JD_CAP_MS);
+  const full = iso(NOW_MS - JD_CAP_MS);
+  const f = fixture({ cursor: full, increment });
+  await scheduleOrderRescan(f.scheduler, ['jd']);
+  expect(f.sent()).toEqual([rescanWindow(full)]);
+  const short = iso(NOW_MS - JD_CAP_MS + 1);
+  const g = fixture({ cursor: short, increment });
+  await scheduleOrderRescan(g.scheduler, ['jd']);
+  expect(g.rewind).toHaveBeenCalledExactlyOnceWith(stream, short, roundStart(30));
+});
+
+it.each([
+  { label: '早于一轮起点', increment: daysAgo(45) },
+  { label: '差 1 毫秒放不下首窗', increment: iso(ROUND_START_MS + JD_CAP_MS - 1) },
+])('[AC-B1-04zm#78] increment 游标$label：本轮一窗都不发', async ({ increment }) => {
+  const f = fixture({ increment });
+  await scheduleOrderRescan(f.scheduler, ['jd']);
+  expect(f.send).not.toHaveBeenCalled();
+  expect(f.advance).not.toHaveBeenCalled();
+  expect(f.cursor()).toBeNull();
+});
+
+it('[AC-B1-04zm#79] 每个流看自己的 increment 游标', async () => {
+  const f = fixture({ accounts: [account, pddAccount], config: { [PDD_ENABLED]: true } });
+  f.read.mockImplementation(async (asked) =>
+    asked.query_kind === 'increment' && asked.platform === 'pdd' ? NOW : null,
+  );
+  await scheduleOrderRescan({ ...f.scheduler, capsMs: { jd: JD_CAP_MS, pdd: 1_800_000 } }, [
+    'jd',
+    'pdd',
+  ]);
+  expect(f.sent().map((win) => win['platform'])).toEqual(['pdd']);
+});
+
+it('[AC-B1-04zm#80] sync_start_at 为空的账号不回扫：不读不动游标、不发窗口，别的账号照常', async () => {
+  const stale = daysAgo(45);
+  const noStart = { ...account, sync_start_at: null };
+  const f = fixture({ cursor: stale, accounts: [noStart] });
+  await scheduleOrderRescan(f.scheduler, ['jd']);
+  expect(f.read).not.toHaveBeenCalled();
+  expect(f.send).not.toHaveBeenCalled();
+  expect(f.rewind).not.toHaveBeenCalled();
+  expect(f.cursor()).toBe(stale);
+  f.listEnabledAccounts.mockResolvedValue([noStart, { ...account, app_id: 'other-app' }]);
+  await scheduleOrderRescan(f.scheduler, ['jd']);
+  expect(f.sent().map((win) => win['app_id'])).toEqual(['other-app']);
 });

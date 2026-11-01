@@ -27,6 +27,11 @@ afterEach(() => {
 });
 
 const RESCAN = rescanWindow(daysAgo(5), 1_800_000, pddStream);
+// The two return branches of createOrderSyncRuntime; production always takes the second.
+const BRANCHES = [
+  { label: '未注入 snapshots', withSnapshots: false },
+  { label: '注入 snapshots', withSnapshots: true },
+];
 
 function named(name: string, payload: JobPayload): ReceivedJob {
   return { id: 'synthetic-wiring-job', queue: 'order-sync', name, payload, attempt: 1 };
@@ -56,10 +61,16 @@ function harness() {
   return { deps, register };
 }
 
-it.each([
-  { label: '未注入 snapshots', withSnapshots: false },
-  { label: '注入 snapshots', withSnapshots: true },
-])(
+/** The timers of a started runtime; the snapshot retry timer differs between the branches. */
+async function armedTimers(deps: OrderSyncRuntimeDeps): Promise<number> {
+  const running = createOrderSyncRuntime(deps).start();
+  await vi.advanceTimersByTimeAsync(0);
+  const armed = vi.getTimerCount();
+  await running.stop();
+  return armed;
+}
+
+it.each(BRANCHES)(
   '[AC-B1-04zm#54] $label：rescan-window 路由到回扫处理器，增量和手动任务走原路',
   async ({ withSnapshots }) => {
     const { deps, register } = harness();
@@ -90,50 +101,59 @@ it.each([
   },
 );
 
-it('[AC-B1-04zm#55] 注入 rescanConfig 才多出回扫定时器，到点读回扫键，停止后不留定时器', async () => {
-  vi.useFakeTimers();
-  const { deps } = harness();
-  const get = vi.fn<(key: string) => Promise<unknown>>(async () => undefined);
-  const runtime = createOrderSyncRuntime({
-    ...deps,
-    ports: { ...deps.ports, rescanConfig: () => ({ get }) },
-  });
-  const running = runtime.start();
-  try {
-    await vi.advanceTimersByTimeAsync(0);
-    expect(vi.getTimerCount()).toBeGreaterThan(scheduledPlatforms().length);
-    await vi.advanceTimersByTimeAsync(3_600_000);
-    expect(get).toHaveBeenCalledWith('order_sync.rescan.pdd.enabled');
-  } finally {
-    await running.stop();
-  }
-  expect(vi.getTimerCount()).toBe(0);
-});
+it.each(BRANCHES)(
+  '[AC-B1-04zm#55] $label：注入 rescanConfig 才多出回扫定时器，到点读回扫键，停止后不留定时器',
+  async ({ withSnapshots }) => {
+    vi.useFakeTimers();
+    const { deps } = harness();
+    const plain: OrderSyncRuntimeDeps = withSnapshots ? { ...deps, snapshots: fakePort() } : deps;
+    const without = await armedTimers(plain);
+    const get = vi.fn<(key: string) => Promise<unknown>>(async () => undefined);
+    const runtime = createOrderSyncRuntime({
+      ...plain,
+      ports: { ...plain.ports, rescanConfig: () => ({ get }) },
+    });
+    const running = runtime.start();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBeGreaterThan(without);
+      await vi.advanceTimersByTimeAsync(3_600_000);
+      expect(get).toHaveBeenCalledWith('order_sync.rescan.pdd.enabled');
+    } finally {
+      await running.stop();
+    }
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
 
-it('[AC-B1-04zm#70] worker 只回扫 scheduledPlatforms()：jd 开关开，未进调度的平台的回扫键一个都不读', async () => {
-  vi.useFakeTimers();
-  const { deps } = harness();
-  const get = vi.fn<(key: string) => Promise<unknown>>(async (key) =>
-    key === JD_ENABLED ? true : undefined,
-  );
-  const runtime = createOrderSyncRuntime({
-    ...deps,
-    ports: { ...deps.ports, rescanConfig: () => ({ get }) },
-  });
-  const running = runtime.start();
-  try {
-    await vi.advanceTimersByTimeAsync(3_600_000);
-  } finally {
-    await running.stop();
-  }
-  const asked = get.mock.calls.map(([key]) => key);
-  const unscheduled = REGISTERED_PLATFORMS.filter(
-    (platform) => !scheduledPlatforms().includes(platform),
-  );
-  expect(asked).toContain('order_sync.rescan.pdd.enabled');
-  expect(
-    asked.filter((key) =>
-      unscheduled.some((platform) => key.startsWith(`order_sync.rescan.${platform}.`)),
-    ),
-  ).toEqual([]);
-});
+it.each(BRANCHES)(
+  '[AC-B1-04zm#70] $label：worker 只回扫 scheduledPlatforms()，jd 开关开，未进调度的平台的回扫键一个都不读',
+  async ({ withSnapshots }) => {
+    vi.useFakeTimers();
+    const { deps } = harness();
+    const plain: OrderSyncRuntimeDeps = withSnapshots ? { ...deps, snapshots: fakePort() } : deps;
+    const get = vi.fn<(key: string) => Promise<unknown>>(async (key) =>
+      key === JD_ENABLED ? true : undefined,
+    );
+    const runtime = createOrderSyncRuntime({
+      ...plain,
+      ports: { ...plain.ports, rescanConfig: () => ({ get }) },
+    });
+    const running = runtime.start();
+    try {
+      await vi.advanceTimersByTimeAsync(3_600_000);
+    } finally {
+      await running.stop();
+    }
+    const asked = get.mock.calls.map(([key]) => key);
+    const unscheduled = REGISTERED_PLATFORMS.filter(
+      (platform) => !scheduledPlatforms().includes(platform),
+    );
+    expect(asked).toContain('order_sync.rescan.pdd.enabled');
+    expect(
+      asked.filter((key) =>
+        unscheduled.some((platform) => key.startsWith(`order_sync.rescan.${platform}.`)),
+      ),
+    ).toEqual([]);
+  },
+);

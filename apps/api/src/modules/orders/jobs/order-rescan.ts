@@ -3,6 +3,8 @@
 // A window fetches every page and sends each order through the existing pipeline, then advances the
 // rescan cursor once. An order the pipeline first inserts here is one the increment missed, so the
 // window also logs order_sync_rescan_found_missing; logs carry the counters, never order data.
+// D10-545: a retry finds those rows unchanged, so a window that fails after a first insert still
+// logs found_missing with the counts so far (finished pages and rows), then rethrows.
 import type { ReceivedJob } from '../../platform/index.ts';
 import type { RegisteredPlatform } from '../../union/index.ts';
 import type { OrderPipelinePort } from '../application/pipeline-port.ts';
