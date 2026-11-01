@@ -39,13 +39,13 @@ red_exempt:
     test: '[AC-CT-24n#1] get /admin/v1/rights-imports/{import_id} 登记 adminGetRightsImport、后台权限和 planned'
     reason: 冻结 CT-24n 用例，测试体未改；同文件只有 hold、unhold、reassign 三行按 D10-528 改成已实现（同 D10-415 ①）
   - file: test/spec/contracts/admin-order-actions/operations.test.ts
-    test: '[AC-CT-24n#1] post /admin/v1/order-syncs 登记 adminCreateOrderSync、后台权限和已实现（不再 planned）'
+    test: '[AC-CT-24n#1] post /admin/v1/order-syncs（手动同步）登记 adminCreateOrderSync、后台权限和已实现（不再 planned）'
     reason: 冻结 CT-24n 用例，测试体未改；同文件只有 hold、unhold、reassign 三行按 D10-528 改成已实现（同 D10-415 ①）
   - file: test/spec/contracts/admin-order-actions/operations.test.ts
-    test: '[AC-CT-24n#1] get /admin/v1/order-syncs 登记 adminListOrderSyncs、后台权限和已实现（不再 planned）'
+    test: '[AC-CT-24n#1] get /admin/v1/order-syncs（手动同步）登记 adminListOrderSyncs、后台权限和已实现（不再 planned）'
     reason: 冻结 CT-24n 用例，测试体未改；同文件只有 hold、unhold、reassign 三行按 D10-528 改成已实现（同 D10-415 ①）
   - file: test/spec/contracts/admin-order-actions/operations.test.ts
-    test: '[AC-CT-24n#1] get /admin/v1/order-syncs/limits 登记 adminGetOrderSyncLimits、后台权限和已实现（不再 planned）'
+    test: '[AC-CT-24n#1] get /admin/v1/order-syncs/limits（手动同步）登记 adminGetOrderSyncLimits、后台权限和已实现（不再 planned）'
     reason: 冻结 CT-24n 用例，测试体未改；同文件只有 hold、unhold、reassign 三行按 D10-528 改成已实现（同 D10-415 ①）
   - file: test/spec/contracts/admin-order-actions/operations.test.ts
     test: '[AC-CT-24n#2] /admin/v1/order-syncs 使用后台页码分页'
