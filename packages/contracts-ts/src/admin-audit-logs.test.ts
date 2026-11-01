@@ -210,7 +210,7 @@ it('[CT-24zj] the list, the detail and the export describe system rows the same 
     (contract.paths['/admin/v1/exports'] as { post: Operation }).post.description,
   );
   expect(exportText).toContain('an export without `audit.view_all` holds none');
-  expect(exportText).toContain('the operator column shows `actor_name`');
+  expect(exportText).toContain('a system row has `actor_id`');
 });
 
 it('[CT-24c] the examples satisfy the schemas, nulls included; ids are opaque strings, not primary keys', () => {

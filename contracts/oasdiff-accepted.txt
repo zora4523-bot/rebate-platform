@@ -2,7 +2,10 @@
 # then the change text exactly as oasdiff 1.32.1 prints it. Only response enum values added
 # (response-property-enum-value-added) may be listed here, and only when an old client cannot
 # receive the new value, plus a widened response maxLength an orchestrator ruling names; never
-# removed fields, type changes or required-ness changes. Each block
+# removed fields, type changes or required-ness changes. D10-557: on /admin/v1/** only, a response
+# widening (a field becoming nullable, an enum value added, maxLength widened) may also be listed,
+# because the console ships with the server and has no old client; never removed fields, required
+# changes, request tightening, or any /v1/** type change. Each block
 # names the ruling and why old clients cannot see the value. Other lanes append here and report it.
 #
 # D10-465 / D10-478 / D10-484 (CT-02zb): AgreementType adds sdk_list and collect_list. Old clients

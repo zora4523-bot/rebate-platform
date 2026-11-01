@@ -9704,7 +9704,7 @@ paths:
                       actor_kind: system
                       system_actor: system:risk
                       actor_name: 系统（风控）
-                      action: order_hold
+                      action: order_auto_hold
                       target_type: order
                       target_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01
                       permission: null
@@ -9851,8 +9851,8 @@ paths:
         `audit.view_all` the server forces `actor_id` to the creator, and another account's
         `actor_id` gives an empty file (status done, `row_count=0`), not an error. System rows
         (D10-552) follow the list as well: they match no `actor_id` filter, an export without
-        `audit.view_all` holds none, and the operator column shows `actor_name`, the system's
-        Chinese name.
+        `audit.view_all` holds none. The file's columns stay the same: a system row has `actor_id`
+        empty and `actor_name` holding the system's Chinese name.
         Masking: by default every export is masked like its source list (the phone number 3 + 4,
         BR-ID-33) and the task has `masked=true`. Apart from `tax_withdrawals` (see below), only a
         `users` export may ask for the full values
