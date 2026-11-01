@@ -116,25 +116,16 @@ it.each([
     result: promotion({ short: null }),
     shareUrl: COUPON_CLICK_URL,
     promoUrl: COUPON_CLICK_URL,
-    tpwd: TPWD,
   },
   {
     label: '没有 coupon_click_url',
     result: promotion({ coupon: null }),
     shareUrl: SHORT_URL,
     promoUrl: SHORT_URL,
-    tpwd: TPWD,
-  },
-  {
-    label: '没有 tpwd',
-    result: promotion({ tpwd: null }),
-    shareUrl: SHORT_URL,
-    promoUrl: COUPON_CLICK_URL,
-    tpwd: null,
   },
 ])(
-  '[AC-B1-06zd#4] $label：share_url 取 short_url 否则 coupon_click_url，promo_url 取 coupon_click_url 否则 short_url，tpwd 没有就 null',
-  async ({ result, shareUrl, promoUrl, tpwd }) => {
+  '[AC-B1-06zd#4] $label：share_url 取 short_url 否则 coupon_click_url，promo_url 取 coupon_click_url 否则 short_url（没有 tpwd 不生成，见 share-failures）',
+  async ({ result, shareUrl, promoUrl }) => {
     const t = await h.tenant(ON);
     const sharer = await t.user();
     const card = cardOf(await sharer.search('taobao'));
@@ -142,11 +133,10 @@ it.each([
 
     const data = await expectShared(await sharer.share(bodyOf(card)));
 
-    expect(data).toMatchObject({ share_url: shareUrl, tpwd });
+    expect(data).toMatchObject({ share_url: shareUrl, tpwd: TPWD });
     expect((await h.link(data.link_id)).promo_url).toBe(promoUrl);
     const { materials } = await h.persisted(t.appId);
-    expect(materials).toEqual([expect.objectContaining({ share_url: shareUrl, tpwd })]);
-    if (tpwd === null) expect(data.copy.parts.tpwd_line).toBeNull();
+    expect(materials).toEqual([expect.objectContaining({ share_url: shareUrl, tpwd: TPWD })]);
   },
   120_000,
 );

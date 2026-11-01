@@ -1,5 +1,6 @@
-// B1-06zd rule tests: a Taobao share that cannot get our promotion link generates nothing (D10-510,
-// BR-ATTR-10): the transaction rolls back, no link, no material, never the original link instead.
+// B1-06zd rule tests: a Taobao share that cannot get our promotion link or tpwd generates nothing
+// (D10-510, BR-ATTR-10): the transaction rolls back, no link, no material, never the original link
+// instead.
 // The refusal codes are the existing conversionRefusal's; adapter_unimplemented (the Taobao adapter
 // on its default baichuan source) is 50301 not_launched. Each case makes the conversion really
 // happen, so its refusal is the conversion's answer and not a check before it.
@@ -7,7 +8,15 @@ import { acquireTestRedis, createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import { UnionError, type UnionErrorCode } from '../../../../apps/api/src/modules/union/index.ts';
 import { bodyOf, expectRefused, expectShared } from '../shares/kit.ts';
-import { SHARE_SWITCH, cardOf, promoHarness, promotion, type PromoTenant } from './kit.ts';
+import {
+  COUPON_CLICK_URL,
+  SHARE_SWITCH,
+  SHORT_URL,
+  cardOf,
+  promoHarness,
+  promotion,
+  type PromoTenant,
+} from './kit.ts';
 
 const h = promoHarness({ createTestDatabase, acquireTestRedis });
 const ON = { [SHARE_SWITCH]: true };
@@ -99,6 +108,23 @@ it.each([
   },
   120_000,
 );
+
+it('[AC-B1-06zd#4] BR-ATTR-10：转链成功但没有 tpwd → 50303，不生成淘宝分享：link、share_materials 都不留，什么都不写', async () => {
+  const t = await h.tenant(ON);
+  const sharer = await t.user();
+  const card = cardOf(await sharer.search('taobao'));
+  const before = await h.persisted(t.appId);
+  h.answer(() => promotion({ tpwd: null }));
+
+  const response = await sharer.share(bodyOf(card));
+  const body = await expectRefused(response, 503, 50303);
+
+  expect(h.conversions()).toHaveLength(1);
+  expectNoMaterial(body);
+  expect(response.payload).not.toContain(SHORT_URL);
+  expect(response.payload).not.toContain(COUPON_CLICK_URL);
+  expect(await h.persisted(t.appId)).toEqual(before);
+}, 120_000);
 
 it('[AC-B1-06zd#11] 分享者没有 active 绑定 → 30101，不调转链', async () => {
   const t = await h.tenant(ON);
