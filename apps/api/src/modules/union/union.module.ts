@@ -11,6 +11,7 @@ import {
   ROOT_LOGGER,
   UNION_ENDPOINT_OVERRIDE_DIR_ENV,
   openDataokeCredentials,
+  openJdCredentials,
   openPddCredentials,
   openTaobaoCredentials,
   type AppConfig,
@@ -27,10 +28,13 @@ import { createArchivingTransport } from './infra/archive.ts';
 import type { DataokeWarning } from './infra/dataoke/dataoke-client.ts';
 import { loadUnionEndpoints } from './infra/endpoints.ts';
 import { createUnionHttpTransport } from './infra/http-transport.ts';
+import { checkJdProductKeyMode, type JdProductKeyMode } from './infra/jd/orders.ts';
+import type { JdWarning } from './infra/jd/response.ts';
 import type { PddQueryIdentity } from './infra/pdd/pdd-adapter.ts';
 import type { PddWarning } from './infra/pdd/response.ts';
 import {
   createUnionRegistry,
+  type JdLiveOptions,
   type PddLiveOptions,
   type TaobaoLiveOptions,
   type TaobaoOrderSourceOptions,
@@ -45,7 +49,8 @@ import { readActivePddQueryPid } from './pids/query-reader.ts';
  * Taobao price configuration port over the entry's database handle and clock (app.module:
  * content's createContentReader, as UnionAdminModule's `config`). The demo adapters map Taobao
  * prices with createTaobaoPriceSettings over it, read with ctx.appId on every mapping. The
- * UNION_REGISTRY factory keeps its four dependencies.
+ * UNION_REGISTRY factory keeps its four dependencies. B1-04ze: the live jd adapter reads
+ * product_key.jd.mode through the same port.
  */
 export interface UnionModuleOptions {
   readonly config?: (db: Kysely<Database>, clock: Clock) => TaobaoPriceConfigReader;
@@ -98,8 +103,12 @@ export const UNION_ENDPOINTS_DIR = fileURLToPath(
  * DataokeClient order source over its own archived HTTPS transport; staging with neither variable
  * starts without one and logs nothing (D10-479; deployment checks cover it). prod never gets here
  * with taobao live (kms_unavailable first).
+ * jd with mode=live (B1-04ze): local / test and prod refuse like taobao, after taobao's own check;
+ * staging with both JD_APP_KEY and JD_APP_SECRET_FILE reads the secret file once here and assembles
+ * the real JdUnionAdapter over its own archived HTTPS transport (registry option `jdLive`); staging
+ * with neither variable keeps jd unimplemented and logs nothing (D10-479). The adapter reads
+ * product_key.jd.mode per call over the configuration port (BR-PROD-03).
  * TODO(规划/11 §4.5): 配额桶容量与 Redis 令牌桶 — blocked on CAP-TB-12、CAP-JD-12、CAP-PDD-12 配额口径
- * TODO(规划/11 §4.5): jd 凭据读取 — blocked on 推广位 / siteId
  */
 /** BR-PRICE-01 / BR-PRICE-02 alarms as flat pino fields: the code, and for an unknown name only
  * the name (no item data).
@@ -160,14 +169,68 @@ function logDataokeWarning(logger: RootLogger, warning: DataokeWarning): void {
   );
 }
 
+/** The Jingdong warn hook (B1-04za) as flat pino fields: only the method name and the code. */
+function logJdWarning(logger: RootLogger, warning: JdWarning): void {
+  logger.warn(
+    { event: 'JD_API_WARNING', method: warning.method, code: warning.code },
+    'jd api warning',
+  );
+}
+
 /** Filled by the UNION_QUERY_PID_SOURCE provider; `db` stays undefined without a database. */
 interface QueryPidSource {
   db: Kysely<Database> | undefined;
 }
 
 /** Filled by the UNION_TAOBAO_PRICE_CONFIG provider; `reader` stays undefined without a database. */
-interface PriceConfigSource {
+export interface PriceConfigSource {
   reader: TaobaoPriceConfigReader | undefined;
+}
+
+/** BR-PROD-03 / 05: the per-app configuration key of the Jingdong product key mode. */
+const JD_PRODUCT_KEY_MODE_KEY = 'product_key.jd.mode';
+/** The fixed warn event of a failed read of that key; the fields are this and the key. */
+const JD_PRODUCT_KEY_MODE_READ_FAILED = 'JD_PRODUCT_KEY_MODE_READ_FAILED';
+
+/**
+ * B1-04ze: the live jd adapter's product key mode, read with ctx.appId on every listOrders. item
+ * only when there is no configuration source (no `config` option, no database) or the key is not
+ * set. A read that fails never falls back to item (unlike the price settings): in sku mode a whole
+ * window of orders would get wrong product keys, so it fails like a transport failure, the order
+ * sync retries, and neither the error nor the log carries anything of what was read. A present
+ * value other than sku / item is `invalid_dto` (checkJdProductKeyMode, no value in the error).
+ */
+export function jdProductKeyMode(
+  source: PriceConfigSource | undefined,
+  logger: Pick<RootLogger, 'warn'>,
+): { read(appId: string): Promise<JdProductKeyMode> } {
+  return {
+    async read(appId) {
+      const reader = source?.reader;
+      if (reader === undefined) return 'item';
+      let answer: unknown;
+      try {
+        answer = await reader.configValue(appId, JD_PRODUCT_KEY_MODE_KEY);
+      } catch {
+        logger.warn(
+          { event: JD_PRODUCT_KEY_MODE_READ_FAILED, key: JD_PRODUCT_KEY_MODE_KEY },
+          'jd product key mode cannot be read',
+        );
+        throw new UnionError(
+          'upstream_unavailable',
+          'jd listOrders: product key mode cannot be read',
+          'jd',
+        );
+      }
+      if (answer === null || answer === undefined) return 'item';
+      // Not the port's `{ value, version }` shape: refused like any other bad value.
+      if (typeof answer !== 'object' || !Object.hasOwn(answer, 'value')) {
+        return checkJdProductKeyMode(undefined);
+      }
+      const value: unknown = (answer as { readonly value: unknown }).value;
+      return value === null || value === undefined ? 'item' : checkJdProductKeyMode(value);
+    },
+  };
 }
 
 /**
@@ -190,10 +253,10 @@ function taobaoPriceSettings(
 }
 
 /**
- * B1-04p: a live HTTPS transport (pdd; taobao since B1-04k, one per platform) wrapped in the raw
- * payload archive. The database is read from the same optional source per request: without one
- * the request goes straight through, no row and no log (startup and calls stay as before B1-04p);
- * with one every request is archived.
+ * B1-04p: a live HTTPS transport (pdd; taobao since B1-04k, jd since B1-04ze, one per platform)
+ * wrapped in the raw payload archive. The database is read from the same optional source per
+ * request: without one the request goes straight through, no row and no log (startup and calls
+ * stay as before B1-04p); with one every request is archived.
  */
 function archivedTransport(
   inner: UnionTransport,
@@ -263,6 +326,7 @@ async function startUnionRegistry(
   };
   const pdd = endpoints.find((endpoint) => endpoint.platform === 'pdd');
   const taobao = endpoints.find((endpoint) => endpoint.platform === 'taobao');
+  const jd = endpoints.find((endpoint) => endpoint.platform === 'jd');
   let pddLive: PddLiveOptions | undefined;
   if (pdd?.mode === 'live') {
     // Refusals (environment, missing or unreadable credentials) throw PddStartupError: fixed text.
@@ -280,8 +344,8 @@ async function startUnionRegistry(
   }
   let taobaoLive: TaobaoLiveOptions | undefined;
   // staging without either taobao variable (config.taobao null; only one set is a ConfigError of
-  // loadConfig) keeps taobao `adapter_unimplemented` like jd, and logs nothing: the frozen pdd
-  // wiring tests run staging with taobao live, no taobao variable and an exact warn count.
+  // loadConfig) keeps taobao `adapter_unimplemented`, and logs nothing: the frozen pdd wiring tests
+  // run staging with taobao live, no taobao variable and an exact warn count.
   const taobaoUnconfigured =
     config.appEnv === 'staging' && (config.taobao === null || config.taobao === undefined);
   if (taobao?.mode === 'live' && !taobaoUnconfigured) {
@@ -308,10 +372,28 @@ async function startUnionRegistry(
       ...(orderSource === undefined ? {} : { orderSource }),
     };
   }
+  let jdLive: JdLiveOptions | undefined;
+  // staging without either jd variable (config.jd null; only one set is a ConfigError of
+  // loadConfig) keeps jd `adapter_unimplemented` like taobao, and logs nothing: the frozen pdd and
+  // taobao wiring tests run staging with jd live, no jd variable and an exact warn count.
+  const jdUnconfigured =
+    config.appEnv === 'staging' && (config.jd === null || config.jd === undefined);
+  if (jd?.mode === 'live' && !jdUnconfigured) {
+    // Checked after taobao, so taobao's own refusals come first. local / test, prod (no KMS yet) and
+    // a staging secret file that is unreadable or empty throw JdStartupError (fixed text).
+    const credentials = await openJdCredentials(config.appEnv, config.jd);
+    jdLive = {
+      credentials,
+      transport: archivedTransport(createUnionHttpTransport(), source, clock, logger),
+      warn: (warning: JdWarning) => logJdWarning(logger, warning),
+      productKeyMode: jdProductKeyMode(priceConfig, logger),
+    };
+  }
   return createUnionRegistry({
     ...options,
     ...(pddLive === undefined ? {} : { pddLive }),
     ...(taobaoLive === undefined ? {} : { taobaoLive }),
+    ...(jdLive === undefined ? {} : { jdLive }),
   });
 }
 

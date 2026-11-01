@@ -5,6 +5,7 @@ export { PRIOR_IDENTITY_FIELD_CRYPTO } from './keyring-prior-identity.ts';
 export type { PriorIdentityKeyringConfig } from './keyring-prior-identity.ts';
 export {
   DATAOKE_CREDENTIAL_ENV_NAMES,
+  JD_CREDENTIAL_ENV_NAMES,
   PDD_CREDENTIAL_ENV_NAMES,
   SMS_CREDENTIAL_ENV_NAMES,
   TAOBAO_CREDENTIAL_ENV_NAMES,
@@ -84,6 +85,16 @@ export {
   openDataokeCredentials,
 } from './dataoke-startup.ts';
 export type { DataokeAppCredentials, DataokeStartupErrorCode } from './dataoke-startup.ts';
+// Jingdong live adapter credentials and site id (B1-04ze): staging reads the secret file once at startup.
+export { JD_SITE_ID_ENV, readJdConfig, readJdSiteConfig } from './jd.ts';
+export type { JdAppConfig } from './jd.ts';
+export {
+  JD_SECRET_FILE_MAX_BYTES,
+  JD_STARTUP_MESSAGES,
+  JdStartupError,
+  openJdCredentials,
+} from './jd-startup.ts';
+export type { JdAppCredentials, JdStartupErrorCode } from './jd-startup.ts';
 // Worker queue concurrency limits (B1-01zzk): per-queue overrides and the shared budget.
 export { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 export type { QueueConcurrencyConfigResult } from './queue-concurrency.ts';
