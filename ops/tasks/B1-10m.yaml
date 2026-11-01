@@ -61,4 +61,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/orders/admin-mounts/**'
-status: todo
+status: done
+pr: 2132
