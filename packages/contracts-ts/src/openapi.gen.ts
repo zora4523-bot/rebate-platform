@@ -8208,6 +8208,318 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/adjustments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Manual adjustments of the app, page by page, newest first
+         * @description The 调账单 tab of the 调账与核销 console (01 F-ADM-08; 04 §3.2 admin_adjustments;
+         *     design/specs/admin-adjustments.md §2, §4). Read only, no step-up. Permission point: any of
+         *     `fund.adjust` or `fund.view` (04 §11.1, §11.2). Each row is AdminAdjustment. `amount_fen`
+         *     is null on a system-prefilled ACCOUNT_CLOSED form that has no amount yet (it is taken when
+         *     the form is approved, BR-FUND-24 ⑧). 「已红冲」 is not a status: it is shown from
+         *     `reversed_by_adjust_id` (BR-TEXT-25). `note` is internal and never reaches the member
+         *     (BR-FUND-24 ⑦). Filters combine with AND: `reason_code`, `status`, `user_id` (the user_id
+         *     only; UID and phone number lookups go through GET /admin/v1/search). A value outside an
+         *     enum or pattern is 20001 with `data.fields` naming the parameter; a `user_id` that names
+         *     nothing of the app is an empty page. The tab's 待批准 count is the `total` of
+         *     `status=PENDING`. Order: `created_at` descending (then `adjust_id` descending). Pages with
+         *     `page` (as AdminPage; a page past the last one is `items=[]`) and `page_size` ≤ 200 (above
+         *     200 is 20001, as AdminPageSize); `total` is the count of the filter set. Reading does not
+         *     write an audit record.
+         */
+        get: operations["adminListAdjustments"];
+        put?: never;
+        /**
+         * Submit a manual adjustment or a whole-form reversal, effective in one step (提交并生效)
+         * @description The only way a person adjusts a member's balance (BR-FUND-24; 04 §3.2 admin_adjustments;
+         *     design/specs/admin-adjustments.md 新建抽屉, 红冲对话框, and the 【调整余额】 of the user detail).
+         *     One submission saves and approves at once: there is no 保存待批 and no 撤回, and the form
+         *     is born APPROVED with `reviewed_by` equal to `created_by` (BR-FUND-24 细则「后台入口」, owner
+         *     2026-10-18 ②; ADD-05). Permission point `fund.adjust` (04 §11.2). Step-up: sms tier
+         *     (BR-ID-34): without a valid sms-tier `X-Step-Up-Token`, a totp-tier token included → 10003
+         *     with `data.tier=sms`; an account without a registered verify phone also gets
+         *     `data.reason=verify_phone_missing`.
+         *
+         *     Request, one of two closed shapes (AdminAdjustmentCreateRequest):
+         *
+         *     - A new adjustment: `user_id`; `direction`; `amount_fen`, integer fen > 0, no upper limit
+         *       (BR-FUND-24 ④); `reason_code`, one of RECON_FIX, PAYOUT_RECOVERY or OTHER. RESTORE comes
+         *       only from a difference (BR-FUND-22) and ACCOUNT_CLOSED only from the system (BR-FUND-24
+         *       ⑧), so neither can be chosen: 20001 with `data.fields=[reason_code]`. `refs`, the linked
+         *       documents, at most 10, without duplicates (`data.fields=[refs]`); `note`, the internal
+         *       explanation, 1–500 characters after trimming (else `data.fields=[note]`), required for
+         *       OTHER; `contra_subject` with `contra_platform`, see below.
+         *     - A reversal: `reverses_adjust_id` and `note`, the reason for the reversal, required, as
+         *       above. The request carries no direction, amount, reason code, refs or subject: the
+         *       server takes them from the original (opposite direction, the original `amount_fen`,
+         *       whole form only, the same `reason_code`, `contra_subject` and `contra_platform`), and
+         *       any of those fields in the request is 20001 (BR-FUND-24 细则「红冲只按原单整笔」). To
+         *       correct +500 to +50: reverse the whole +500, then submit a new +50.
+         *
+         *     Linked documents by reason code (BR-FUND-24 ②③), all refused as 20001 with
+         *     `data.fields=[refs]`: RECON_FIX needs at least one `recon_diff`. PAYOUT_RECOVERY needs at
+         *     least one `recon_diff` and exactly one `withdrawal`. OTHER needs at least one document of
+         *     any type, or none at all when `note` is the 客服处理说明 that stands in for it (③; `note`
+         *     is required for OTHER either way). `ref_id` is `recon_diffs.id`, `withdrawals.id`, the
+         *     `order_key` of a sub-order, or `deletion_requests.id`.
+         *
+         *     Contra subject (BR-FUND-24 ⑥; specs/ledger-rules.md §6, whitelist pending the finance
+         *     confirmation): for RECON_FIX and OTHER the operator chooses `contra_subject` from
+         *     COMMISSION_REVENUE, UNION_RECEIVABLE, BAD_DEBT or MKT_EXPENSE (else 20001 with
+         *     `data.fields=[contra_subject]`); `contra_platform` is required exactly for
+         *     UNION_RECEIVABLE (else `data.fields=[contra_platform]`). For PAYOUT_RECOVERY both are
+         *     refused (20001 on the field): the server takes the cash subject from the withdrawal's
+         *     channel (CASH_ALIPAY, CASH_WECHAT or CASH_BANK).
+         *
+         *     Order of checks: `fund.adjust` (10403 with `data.reason=admin_permission_denied`; the
+         *     refusal writes an audit record, action adjustment_denied, BR-FUND-24 例（无权限）) → step-up
+         *     (10003) → body (20001, the fields above) → an unknown `user_id` or one of another app is
+         *     20001 with `data.fields=[user_id]`; an unknown `reverses_adjust_id` or one of another app
+         *     is 20001 with `data.fields=[reverses_adjust_id]`; a `ref_id` that names nothing of the
+         *     app, or a `withdrawal` or `account_deletion` of another member, is 20001 with
+         *     `data.fields=[refs]` and `data.reason=adjust_ref_invalid` → an original already reversed
+         *     is 20902 with `data.resource=admin_adjustment` (a form can be reversed once, BR-FUND-16;
+         *     the console refreshes and shows 已红冲; the unique constraint on `reverses_adjust_id`
+         *     answers the same under a race) → the guards, each refusal 20001: an original that is not
+         *     APPROVED, or that is itself a reversal, with `data.fields=[reverses_adjust_id]` and
+         *     `data.reason=reverse_not_allowed`; a member already deleted with the field of the request
+         *     (`user_id` or `reverses_adjust_id`) and `data.reason=adjust_user_deleted`.
+         *
+         *     Effects, in one transaction under the member's balance lock: the balance is read again
+         *     and the form (`status=APPROVED`) and its ADMIN_ADJUST voucher (sub_type = `reason_code`)
+         *     are written, an increase debiting the contra subject and crediting
+         *     USER_BALANCE.available, a decrease the other way round. The voucher uniq_key is
+         *     `ADJ:{adjust_id}`, and `ADJ:{original adjust_id}:REVERSE` for a reversal, posted with the
+         *     reversal templates of specs/ledger-rules.md §5. A decrease, a reversal included, may take
+         *     `available` below 0 (BR-FUND-24 ⑤, BR-FUND-10); `frozen` is never written. Linking a
+         *     difference does not change its status: it is closed through its own operations. Writes an
+         *     audit record (action adjustment_create or adjustment_reverse, with the `adjust_id`, the
+         *     `user_id`, the direction, amount and reason code, `available` before and after and, for
+         *     a reversal, the original; no personal data). What the member sees (one ADMIN_ADJUST line
+         *     in the balance history, the in-app message on a decrease; BR-FUND-24 ⑦, BR-TEXT-19) is not
+         *     part of this response.
+         *
+         *     `Idempotency-Key` is required: same key and body → the first result; same key with
+         *     another body → 20901; same key while still running → 40901. The step-up token is a header
+         *     and not part of the body hash, so a replay after a 10003 keeps its key.
+         */
+        post: operations["adminCreateAdjustment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/adjustments/{adjust_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One manual adjustment, with a balance preview while it can still be executed
+         * @description One form of the 调账单 tab (01 F-ADM-08; 04 §3.2 admin_adjustments;
+         *     design/specs/admin-adjustments.md 批准对话框, 红冲对话框). Read only, no step-up. Permission
+         *     point: any of `fund.adjust` or `fund.view` (04 §11.1, §11.2). `adjustment` is the list
+         *     row, next to it `balance_preview`: what executing the form now would do to `available` (BR-FUND-24
+         *     ④). Only two kinds of form have one: a PENDING form, whose amount is the current
+         *     `available` (0 when `available` is not above 0, see POST .../approve), and an APPROVED
+         *     form that is not a reversal and has not been reversed, previewing its reversal. Every
+         *     other form has `balance_preview=null`: the available balance before and after an executed
+         *     form is read from its voucher, and is not kept on the form. The preview is a reading, not
+         *     a promise: approving and reversing read the balance again in their own transaction. An
+         *     unknown `adjust_id` or a form of another app is 20001 with `data.fields=[adjust_id]` (no
+         *     404). Reading does not write an audit record.
+         */
+        get: operations["adminGetAdjustment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/adjustments/{adjust_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a system-prefilled ACCOUNT_CLOSED form; the amount is taken at approval
+         * @description The 【批准并短信验证】 of the 批准对话框 (BR-FUND-24 ①⑧, BR-ID-28;
+         *     design/specs/admin-adjustments.md). Only a PENDING form can be approved, and the only
+         *     PENDING forms are the ACCOUNT_CLOSED decreases the system prefills when a deletion reaches
+         *     processing: a form a person submits is APPROVED from the start. Permission point
+         *     `fund.adjust` (04 §11.2). Step-up: sms tier (BR-ID-34): without a valid sms-tier
+         *     `X-Step-Up-Token`, a totp-tier token included → 10003 with `data.tier=sms`; an account
+         *     without a registered verify phone also gets `data.reason=verify_phone_missing`.
+         *
+         *     Request: an empty object. The console sends no amount: `amount_fen` is the member's
+         *     `available` when this operation runs, which may differ from the preview.
+         *
+         *     Order of checks: `fund.adjust` (10403 with `data.reason=admin_permission_denied`) → step-up
+         *     (10003) → body (20001) → an unknown `adjust_id` or a form of another app is 20001 with
+         *     `data.fields=[adjust_id]` (no 404) → a form that is no longer PENDING is 20902 with
+         *     `data.resource=admin_adjustment` (refresh) → the balance is read again: `available` not
+         *     above 0 is 20001 with `data.fields=[adjust_id]` and `data.reason=adjust_no_balance`,
+         *     nothing is written and the form stays PENDING (the amount of a form must be above 0; the
+         *     operator rejects it instead).
+         *
+         *     Effects, in one transaction under the member's balance lock: `amount_fen` becomes the
+         *     current `available`, the voucher ADMIN_ADJUST / ACCOUNT_CLOSED with uniq_key
+         *     `ADJ:{adjust_id}` debits USER_BALANCE.available and credits COMMISSION_REVENUE (BR-FUND-24
+         *     ⑥), the form becomes APPROVED with `reviewed_by` the caller and `reviewed_at`,
+         *     `voucher_id` set. No in-app message is sent to a deleted member (BR-FUND-24 ⑧). Writes an
+         *     audit record (action adjustment_approve, with the `adjust_id`, the `user_id`, the amount
+         *     and `available` before and after; no personal data).
+         *
+         *     `Idempotency-Key` is required: same key and body → the first result; same key with
+         *     another body → 20901; same key while still running → 40901. The step-up token is a header
+         *     and not part of the body hash, so a replay after a 10003 keeps its key.
+         */
+        post: operations["adminApproveAdjustment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/adjustments/{adjust_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject a system-prefilled ACCOUNT_CLOSED form with a required reason
+         * @description The 【驳回】 of the 批准对话框 (BR-FUND-24 ① and 细则「驳回与撤回不需二次验证」;
+         *     design/specs/admin-adjustments.md). Only a PENDING form can be rejected, which means a
+         *     system-prefilled ACCOUNT_CLOSED form (see POST .../approve). Permission point `fund.adjust`
+         *     (04 §11.2). No step-up of either tier: only approval needs one.
+         *
+         *     Request: `reason`, required: after trimming surrounding whitespace 1–200 characters, else
+         *     20001 with `data.fields=[reason]`.
+         *
+         *     Order of checks: `fund.adjust` (10403 with `data.reason=admin_permission_denied`) → body
+         *     (20001) → an unknown `adjust_id` or a form of another app is 20001 with
+         *     `data.fields=[adjust_id]` (no 404) → a form that is no longer PENDING is 20902 with
+         *     `data.resource=admin_adjustment` (refresh).
+         *
+         *     Effects, in one transaction: the form becomes REJECTED, `reject_note` the trimmed reason,
+         *     `reviewed_by` the caller and `reviewed_at`; `amount_fen` stays null. No voucher, and no
+         *     balance moves. Writes an audit record (action adjustment_reject, with the `adjust_id`,
+         *     the `user_id` and the reason; no personal data).
+         *
+         *     `Idempotency-Key` is required: same key and body → the first result; same key with
+         *     another body → 20901; same key while still running → 40901.
+         */
+        post: operations["adminRejectAdjustment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/bad-debt-writeoffs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bad-debt write-off candidates of the app, page by page, newest first
+         * @description The 坏账核销 tab of the 调账与核销 console (01 F-ADM-08; 04 §3.2 bad_debt_writeoffs;
+         *     BR-FUND-12; design/specs/admin-adjustments.md §2). Read only, no step-up. Permission point:
+         *     any of `fund.writeoff` or `fund.view` (04 §11.1, §11.2). Each row is
+         *     AdminBadDebtWriteoff: `candidate_fen` is the amount when the candidate was generated, for
+         *     reference only; `available_fen` and `frozen_fen` are the member's balance now;
+         *     `negative_days` is the current accounting day minus `negative_since`, derived and not
+         *     stored; `approve_blocked` is true when approving a PENDING candidate would be refused now
+         *     (the balance has frozen money and the switch `ledger.bad_debt_require_no_frozen.enabled`
+         *     is on, BR-FUND-12), so the console needs neither the switch nor its key. Filters combine
+         *     with AND: `status`, `user_id`. A value outside an enum or pattern is 20001 with
+         *     `data.fields` naming the parameter; a `user_id` that names nothing of the app is an empty
+         *     page. Order: `created_at` descending (then `id` descending). Pages with `page` (as
+         *     AdminPage; a page past the last one is `items=[]`) and `page_size` ≤ 200 (above 200 is
+         *     20001, as AdminPageSize); `total` is the count of the filter set. Reading does not write
+         *     an audit record.
+         */
+        get: operations["adminListBadDebtWriteoffs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/bad-debt-writeoffs/{id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a write-off candidate; the amount is the balance read at approval
+         * @description The 【批准核销】 of the 坏账核销 tab (BR-FUND-12; 04 §3.2 bad_debt_writeoffs;
+         *     design/specs/admin-adjustments.md 批准核销对话框). A write-off is never automatic. Permission
+         *     point `fund.writeoff` (04 §11.2; one person can complete it, ADD-05). Step-up: sms tier
+         *     (BR-ID-34): without a valid sms-tier `X-Step-Up-Token`, a totp-tier token included → 10003
+         *     with `data.tier=sms`; an account without a registered verify phone also gets
+         *     `data.reason=verify_phone_missing`.
+         *
+         *     Request: an empty object. The console sends no amount: `candidate_fen` is not used.
+         *
+         *     Order of checks: `fund.writeoff` (10403 with `data.reason=admin_permission_denied`) →
+         *     step-up (10003) → body (20001) → an unknown `id` or a candidate of another app is 20001
+         *     with `data.fields=[id]` (no 404) → a candidate that is no longer PENDING is 20902 with
+         *     `data.resource=bad_debt_writeoff` (refresh) → `available` and `frozen` are read again:
+         *     while the switch `ledger.bad_debt_require_no_frozen.enabled` is on (default on), `frozen`
+         *     above 0 is 20001 with `data.fields=[id]` and `data.reason=writeoff_frozen_pending`:
+         *     nothing is written and the candidate stays PENDING until the withdrawal reaches a
+         *     terminal state (BR-FUND-12, 决-11 A). With the switch off, `frozen` is not looked at.
+         *
+         *     Effects, in one transaction under the member's balance lock. `available` below 0: the
+         *     voucher BAD_DEBT_WRITEOFF with uniq_key `BADDEBT:{account_id}:{id}` debits BAD_DEBT and
+         *     credits USER_BALANCE.available by −`available` (the current amount), which brings
+         *     `available` to 0; the candidate becomes APPROVED with `approver_id` the caller,
+         *     `approved_at` and `voucher_id` set; the linked accounts (same real name, device or payee
+         *     account) get their risk mark. `available` at 0 or above: the candidate becomes CANCELLED,
+         *     with no voucher, no risk mark, `approver_id` and `approved_at` staying null, and the
+         *     answer is still 200 with `written_off_fen=0`. Writes an audit record (action
+         *     bad_debt_writeoff_approve, with the `id`, the `account_id`, the resulting status,
+         *     `written_off_fen` and `available` before and after; no personal data). Later credits
+         *     count towards the balance as usual; nothing is pursued afterwards.
+         *
+         *     `Idempotency-Key` is required: same key and body → the first result; same key with
+         *     another body → 20901; same key while still running → 40901. The step-up token is a header
+         *     and not part of the body hash, so a replay after a 10003 keeps its key.
+         */
+        post: operations["adminApproveBadDebtWriteoff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/withdrawals": {
         parameters: {
             query?: never;
@@ -17377,6 +17689,235 @@ export interface components {
             data: components["schemas"]["AdminReconDiffRestore"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /**
+         * @description Status of a manual adjustment form (contracts/enums/fund.yaml admin_adjustment_status).
+         *     Forms a person submits are born APPROVED; only system-prefilled forms are PENDING. 已红冲
+         *     is not a status (BR-TEXT-25).
+         * @enum {string}
+         */
+        AdminAdjustmentStatus: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+        /**
+         * @description Direction on the member's available balance (contracts/enums/fund.yaml admin_adjustment_direction).
+         * @enum {string}
+         */
+        AdminAdjustmentDirection: "increase" | "decrease";
+        /**
+         * @description The reason code, equal to the ADMIN_ADJUST sub_type (contracts/enums/fund.yaml admin_adjust_sub_type; BR-FUND-24 ②).
+         * @enum {string}
+         */
+        AdminAdjustmentReasonCode: "RESTORE" | "RECON_FIX" | "PAYOUT_RECOVERY" | "ACCOUNT_CLOSED" | "OTHER";
+        /**
+         * @description Type of a linked document (contracts/enums/fund.yaml admin_adjustment_ref_type;
+         *     BR-FUND-24 ③): `recon_diff` (`ref_id` = recon_diffs.id), `withdrawal` (withdrawals.id),
+         *     `order` (the sub-order's order_key), `account_deletion` (deletion_requests.id).
+         * @enum {string}
+         */
+        AdminAdjustmentRefType: "recon_diff" | "withdrawal" | "order" | "account_deletion";
+        /** @description One linked document of an adjustment form (BR-FUND-24 ③). */
+        AdminAdjustmentRef: {
+            ref_type: components["schemas"]["AdminAdjustmentRefType"];
+            /** @description The document's id, or the order_key for ref_type `order`. */
+            ref_id: string;
+        };
+        /**
+         * @description The ledger subject opposite USER_BALANCE.available (contracts/enums/fund.yaml
+         *     admin_adjustment_contra_subject; BR-FUND-24 ⑥, specs/ledger-rules.md §6, pending the
+         *     finance confirmation).
+         * @enum {string}
+         */
+        AdminAdjustmentContraSubject: "COMMISSION_REVENUE" | "UNION_RECEIVABLE" | "BAD_DEBT" | "MKT_EXPENSE" | "CASH_ALIPAY" | "CASH_WECHAT" | "CASH_BANK";
+        /**
+         * @description One manual adjustment form (04 §3.2 admin_adjustments). `amount_fen` is null on an
+         *     ACCOUNT_CLOSED form until it is approved (BR-FUND-24 ⑧), so also on a rejected one.
+         *     `created_by` is null on a form the system prefilled. `refs` is empty on a reversal, whose
+         *     link is `reverses_adjust_id`, and on an OTHER form whose `note` stands in for a document.
+         *     `reversed_by_adjust_id` is the reversal of this form, null when it has none: the console
+         *     shows 已红冲 from it and links to that form. `contra_platform` is set only for
+         *     UNION_RECEIVABLE. `voucher_id` (the voucher, also the link to the balance history) is
+         *     null until the form is executed.
+         */
+        AdminAdjustment: {
+            adjust_id: components["schemas"]["Id"];
+            user_id: components["schemas"]["Id"];
+            direction: components["schemas"]["AdminAdjustmentDirection"];
+            amount_fen: components["schemas"]["NullableFen"];
+            reason_code: components["schemas"]["AdminAdjustmentReasonCode"];
+            refs: components["schemas"]["AdminAdjustmentRef"][];
+            contra_subject: components["schemas"]["AdminAdjustmentContraSubject"];
+            contra_platform: components["schemas"]["PlatformCode"] | null;
+            /** @description Internal explanation, shown in the console only (BR-FUND-24 ⑦). */
+            note: string | null;
+            status: components["schemas"]["AdminAdjustmentStatus"];
+            reverses_adjust_id: components["schemas"]["Id"] | null;
+            reversed_by_adjust_id: components["schemas"]["Id"] | null;
+            created_by: components["schemas"]["Id"] | null;
+            /** Format: date-time */
+            created_at: string;
+            reviewed_by: components["schemas"]["Id"] | null;
+            /** Format: date-time */
+            reviewed_at: string | null;
+            reject_note: string | null;
+            voucher_id: components["schemas"]["Id"] | null;
+        };
+        AdminAdjustmentPage: {
+            items: components["schemas"]["AdminAdjustment"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminAdjustmentPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminAdjustmentPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description What executing the form now would do to `available` (BR-FUND-24 ④), read when the detail
+         *     is read: the form itself for a PENDING form, its reversal for an APPROVED one.
+         */
+        AdminAdjustmentBalancePreview: {
+            direction: components["schemas"]["AdminAdjustmentDirection"];
+            amount_fen: components["schemas"]["Fen"];
+            available_before_fen: components["schemas"]["Fen"];
+            available_after_fen: components["schemas"]["Fen"];
+        };
+        /** @description One adjustment form with `balance_preview` (null unless the form can still be executed or reversed). */
+        AdminAdjustmentDetail: {
+            adjustment: components["schemas"]["AdminAdjustment"];
+            balance_preview: components["schemas"]["AdminAdjustmentBalancePreview"] | null;
+        };
+        AdminAdjustmentDetailResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminAdjustmentDetail"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description A new adjustment. Which `refs`, `note`, `contra_subject` and `contra_platform` a reason code needs is in POST /admin/v1/adjustments. */
+        AdminAdjustmentCreateNew: {
+            user_id: components["schemas"]["Id"];
+            direction: components["schemas"]["AdminAdjustmentDirection"];
+            /**
+             * Format: int64
+             * @description Integer fen above 0, no upper limit (BR-FUND-24 ④).
+             */
+            amount_fen: number;
+            /**
+             * @description Only these three can be chosen; RESTORE and ACCOUNT_CLOSED → 20001 with data.fields=[reason_code].
+             * @enum {string}
+             */
+            reason_code: "RECON_FIX" | "PAYOUT_RECOVERY" | "OTHER";
+            refs?: components["schemas"]["AdminAdjustmentRef"][];
+            /** @description Internal explanation, 1–500 characters after trimming; required for OTHER. */
+            note?: string;
+            /**
+             * @description RECON_FIX and OTHER only, required for them (BR-FUND-24 ⑥).
+             * @enum {string}
+             */
+            contra_subject?: "COMMISSION_REVENUE" | "UNION_RECEIVABLE" | "BAD_DEBT" | "MKT_EXPENSE";
+            contra_platform?: components["schemas"]["PlatformCode"];
+        };
+        /** @description A whole-form reversal; everything else comes from the original (BR-FUND-24 细则「红冲只按原单整笔」). */
+        AdminAdjustmentCreateReversal: {
+            reverses_adjust_id: components["schemas"]["Id"];
+            /** @description The reason for the reversal, 1–500 characters after trimming. */
+            note: string;
+        };
+        /** @description Body of POST /admin/v1/adjustments, a new adjustment or a reversal. Each branch is a closed object. */
+        AdminAdjustmentCreateRequest: components["schemas"]["AdminAdjustmentCreateNew"] | components["schemas"]["AdminAdjustmentCreateReversal"];
+        /** @description The form in effect, with `available` before and after, as read in the transaction that wrote the voucher. */
+        AdminAdjustmentExecuted: {
+            adjustment: components["schemas"]["AdminAdjustment"];
+            available_before_fen: components["schemas"]["Fen"];
+            available_after_fen: components["schemas"]["Fen"];
+        };
+        AdminAdjustmentExecutedResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminAdjustmentExecuted"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description The body of an action that takes no input; the amount is read by the server, never sent by the console. */
+        AdminEmptyActionRequest: Record<string, never>;
+        AdminAdjustmentRejectRequest: {
+            reason: components["schemas"]["AdminUserReason"];
+        };
+        AdminAdjustmentReject: {
+            adjustment: components["schemas"]["AdminAdjustment"];
+        };
+        AdminAdjustmentRejectResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminAdjustmentReject"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description Status of a write-off candidate (contracts/enums/fund.yaml bad_debt_writeoff_status).
+         * @enum {string}
+         */
+        AdminBadDebtWriteoffStatus: "PENDING" | "APPROVED" | "CANCELLED";
+        /**
+         * @description One write-off candidate (04 §3.2 bad_debt_writeoffs; BR-FUND-12). `candidate_fen` is the
+         *     amount when it was generated, for reference only. `available_fen`, `frozen_fen` and
+         *     `negative_days` are read with the row. `initiator_id` is null on a candidate the daily
+         *     job generated. `approver_id` and `approved_at` stay null on a CANCELLED candidate.
+         */
+        AdminBadDebtWriteoff: {
+            id: components["schemas"]["Id"];
+            account_id: components["schemas"]["Id"];
+            user_id: components["schemas"]["Id"];
+            /**
+             * Format: date
+             * @description The accounting day `available` went below 0.
+             */
+            negative_since: string;
+            /**
+             * Format: int32
+             * @description Current accounting day minus `negative_since`.
+             */
+            negative_days: number;
+            candidate_fen: components["schemas"]["Fen"];
+            available_fen: components["schemas"]["Fen"];
+            frozen_fen: components["schemas"]["Fen"];
+            status: components["schemas"]["AdminBadDebtWriteoffStatus"];
+            /** @description True when approving now would be refused with writeoff_frozen_pending; always false unless `status=PENDING`. */
+            approve_blocked: boolean;
+            initiator_id: components["schemas"]["Id"] | null;
+            approver_id: components["schemas"]["Id"] | null;
+            /** Format: date-time */
+            approved_at: string | null;
+            voucher_id: components["schemas"]["Id"] | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminBadDebtWriteoffPage: {
+            items: components["schemas"]["AdminBadDebtWriteoff"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminBadDebtWriteoffPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminBadDebtWriteoffPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description The candidate after approval; `written_off_fen` is the amount of the voucher, 0 when the candidate was cancelled. */
+        AdminBadDebtWriteoffApprove: {
+            writeoff: components["schemas"]["AdminBadDebtWriteoff"];
+            written_off_fen: components["schemas"]["Fen"];
+        };
+        AdminBadDebtWriteoffApproveResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminBadDebtWriteoffApprove"];
+            trace_id: components["schemas"]["TraceId"];
+        };
         AdminReconDiffDetailResponse: {
             code: components["schemas"]["SuccessCode"];
             msg: string;
@@ -18608,6 +19149,20 @@ export interface components {
         AdminReconDiffRefIdFilter: string;
         /** @description The reconciliation difference (recon_diffs.id) as a list row carries it; unknown, of another app or of source R4 → 20001 with data.fields=[recon_diff_id]. */
         AdminReconDiffIdPath: components["schemas"]["Id"];
+        /** @description The adjustment form (admin_adjustments.adjust_id) as a list row carries it; unknown or of another app → 20001 with data.fields=[adjust_id]. */
+        AdminAdjustmentIdPath: components["schemas"]["Id"];
+        /** @description Only forms with this reason code. */
+        AdminAdjustmentReasonCodeFilter: components["schemas"]["AdminAdjustmentReasonCode"];
+        /** @description Only forms in this status. */
+        AdminAdjustmentStatusFilter: components["schemas"]["AdminAdjustmentStatus"];
+        /** @description Only forms of this member (the user_id; UID and phone lookups go through the top-bar search). */
+        AdminAdjustmentUserFilter: components["schemas"]["Id"];
+        /** @description The write-off candidate (bad_debt_writeoffs.id, the candidate_id of the BR-FUND-12 uniq_key) as a list row carries it; unknown or of another app → 20001 with data.fields=[id]. */
+        AdminBadDebtWriteoffIdPath: components["schemas"]["Id"];
+        /** @description Only candidates in this status. */
+        AdminBadDebtWriteoffStatusFilter: components["schemas"]["AdminBadDebtWriteoffStatus"];
+        /** @description Only candidates of this member (the user_id; UID and phone lookups go through the top-bar search). */
+        AdminBadDebtWriteoffUserFilter: components["schemas"]["Id"];
         /** @description Only withdrawals in this status (enum withdrawal_status); absent = all. */
         AdminWithdrawalStatusFilter: components["schemas"]["WithdrawalStatus"];
         /** @description Only withdrawals whose derived display status is this one (enum admin_withdrawal_display_status, BR-WDR-08 细则); absent = all. */
@@ -36621,6 +37176,638 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not restored (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListAdjustments: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+                /** @description Only forms with this reason code. */
+                reason_code?: components["parameters"]["AdminAdjustmentReasonCodeFilter"];
+                /** @description Only forms in this status. */
+                status?: components["parameters"]["AdminAdjustmentStatusFilter"];
+                /** @description Only forms of this member (the user_id; UID and phone lookups go through the top-bar search). */
+                user_id?: components["parameters"]["AdminAdjustmentUserFilter"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of adjustments, newest first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "adjust_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa002",
+                     *             "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c03",
+                     *             "direction": "decrease",
+                     *             "amount_fen": null,
+                     *             "reason_code": "ACCOUNT_CLOSED",
+                     *             "refs": [
+                     *               {
+                     *                 "ref_type": "account_deletion",
+                     *                 "ref_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa301"
+                     *               }
+                     *             ],
+                     *             "contra_subject": "COMMISSION_REVENUE",
+                     *             "contra_platform": null,
+                     *             "note": null,
+                     *             "status": "PENDING",
+                     *             "reverses_adjust_id": null,
+                     *             "reversed_by_adjust_id": null,
+                     *             "created_by": null,
+                     *             "created_at": "2026-12-01T02:00:00+08:00",
+                     *             "reviewed_by": null,
+                     *             "reviewed_at": null,
+                     *             "reject_note": null,
+                     *             "voucher_id": null
+                     *           },
+                     *           {
+                     *             "adjust_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa001",
+                     *             "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
+                     *             "direction": "decrease",
+                     *             "amount_fen": 10000,
+                     *             "reason_code": "PAYOUT_RECOVERY",
+                     *             "refs": [
+                     *               {
+                     *                 "ref_type": "withdrawal",
+                     *                 "ref_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7d01"
+                     *               },
+                     *               {
+                     *                 "ref_type": "recon_diff",
+                     *                 "ref_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e02"
+                     *               }
+                     *             ],
+                     *             "contra_subject": "CASH_ALIPAY",
+                     *             "contra_platform": null,
+                     *             "note": "迟到成功重复出款，追回",
+                     *             "status": "APPROVED",
+                     *             "reverses_adjust_id": null,
+                     *             "reversed_by_adjust_id": null,
+                     *             "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *             "created_at": "2026-11-30T10:30:00+08:00",
+                     *             "reviewed_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *             "reviewed_at": "2026-11-30T10:30:00+08:00",
+                     *             "reject_note": null,
+                     *             "voucher_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa101"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAdjustmentPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminCreateAdjustment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminAdjustmentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description The adjustment in effect with the available balance before and after, or the first result of the same key. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "adjustment": {
+                     *           "adjust_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa001",
+                     *           "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
+                     *           "direction": "decrease",
+                     *           "amount_fen": 10000,
+                     *           "reason_code": "PAYOUT_RECOVERY",
+                     *           "refs": [
+                     *             {
+                     *               "ref_type": "withdrawal",
+                     *               "ref_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f7d01"
+                     *             },
+                     *             {
+                     *               "ref_type": "recon_diff",
+                     *               "ref_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f8e02"
+                     *             }
+                     *           ],
+                     *           "contra_subject": "CASH_ALIPAY",
+                     *           "contra_platform": null,
+                     *           "note": "迟到成功重复出款，追回",
+                     *           "status": "APPROVED",
+                     *           "reverses_adjust_id": null,
+                     *           "reversed_by_adjust_id": null,
+                     *           "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *           "created_at": "2026-11-30T10:30:00+08:00",
+                     *           "reviewed_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *           "reviewed_at": "2026-11-30T10:30:00+08:00",
+                     *           "reject_note": null,
+                     *           "voucher_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa101"
+                     *         },
+                     *         "available_before_fen": 3000,
+                     *         "available_after_fen": -7000
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAdjustmentExecutedResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not submitted (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetAdjustment: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description The adjustment form (admin_adjustments.adjust_id) as a list row carries it; unknown or of another app → 20001 with data.fields=[adjust_id]. */
+                adjust_id: components["parameters"]["AdminAdjustmentIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The adjustment with its balance preview. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "adjustment": {
+                     *           "adjust_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa002",
+                     *           "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c03",
+                     *           "direction": "decrease",
+                     *           "amount_fen": null,
+                     *           "reason_code": "ACCOUNT_CLOSED",
+                     *           "refs": [
+                     *             {
+                     *               "ref_type": "account_deletion",
+                     *               "ref_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa301"
+                     *             }
+                     *           ],
+                     *           "contra_subject": "COMMISSION_REVENUE",
+                     *           "contra_platform": null,
+                     *           "note": null,
+                     *           "status": "PENDING",
+                     *           "reverses_adjust_id": null,
+                     *           "reversed_by_adjust_id": null,
+                     *           "created_by": null,
+                     *           "created_at": "2026-12-01T02:00:00+08:00",
+                     *           "reviewed_by": null,
+                     *           "reviewed_at": null,
+                     *           "reject_note": null,
+                     *           "voucher_id": null
+                     *         },
+                     *         "balance_preview": {
+                     *           "direction": "decrease",
+                     *           "amount_fen": 2000,
+                     *           "available_before_fen": 2000,
+                     *           "available_after_fen": 0
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAdjustmentDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminApproveAdjustment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The adjustment form (admin_adjustments.adjust_id) as a list row carries it; unknown or of another app → 20001 with data.fields=[adjust_id]. */
+                adjust_id: components["parameters"]["AdminAdjustmentIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /** @example {} */
+                "application/json": components["schemas"]["AdminEmptyActionRequest"];
+            };
+        };
+        responses: {
+            /** @description The approved form with the available balance before and after, or the first result of the same key. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "adjustment": {
+                     *           "adjust_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa002",
+                     *           "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c03",
+                     *           "direction": "decrease",
+                     *           "amount_fen": 2000,
+                     *           "reason_code": "ACCOUNT_CLOSED",
+                     *           "refs": [
+                     *             {
+                     *               "ref_type": "account_deletion",
+                     *               "ref_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa301"
+                     *             }
+                     *           ],
+                     *           "contra_subject": "COMMISSION_REVENUE",
+                     *           "contra_platform": null,
+                     *           "note": null,
+                     *           "status": "APPROVED",
+                     *           "reverses_adjust_id": null,
+                     *           "reversed_by_adjust_id": null,
+                     *           "created_by": null,
+                     *           "created_at": "2026-12-01T02:00:00+08:00",
+                     *           "reviewed_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *           "reviewed_at": "2026-12-02T09:30:00+08:00",
+                     *           "reject_note": null,
+                     *           "voucher_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa102"
+                     *         },
+                     *         "available_before_fen": 2000,
+                     *         "available_after_fen": 0
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAdjustmentExecutedResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not approved (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminRejectAdjustment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The adjustment form (admin_adjustments.adjust_id) as a list row carries it; unknown or of another app → 20001 with data.fields=[adjust_id]. */
+                adjust_id: components["parameters"]["AdminAdjustmentIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "reason": "用户已撤回注销申请，无需处理"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminAdjustmentRejectRequest"];
+            };
+        };
+        responses: {
+            /** @description The rejected form, or the first result of the same key. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "adjustment": {
+                     *           "adjust_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa002",
+                     *           "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c03",
+                     *           "direction": "decrease",
+                     *           "amount_fen": null,
+                     *           "reason_code": "ACCOUNT_CLOSED",
+                     *           "refs": [
+                     *             {
+                     *               "ref_type": "account_deletion",
+                     *               "ref_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa301"
+                     *             }
+                     *           ],
+                     *           "contra_subject": "COMMISSION_REVENUE",
+                     *           "contra_platform": null,
+                     *           "note": null,
+                     *           "status": "REJECTED",
+                     *           "reverses_adjust_id": null,
+                     *           "reversed_by_adjust_id": null,
+                     *           "created_by": null,
+                     *           "created_at": "2026-12-01T02:00:00+08:00",
+                     *           "reviewed_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *           "reviewed_at": "2026-12-02T09:30:00+08:00",
+                     *           "reject_note": "用户已撤回注销申请，无需处理",
+                     *           "voucher_id": null
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAdjustmentRejectResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not rejected (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListBadDebtWriteoffs: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+                /** @description Only candidates in this status. */
+                status?: components["parameters"]["AdminBadDebtWriteoffStatusFilter"];
+                /** @description Only candidates of this member (the user_id; UID and phone lookups go through the top-bar search). */
+                user_id?: components["parameters"]["AdminBadDebtWriteoffUserFilter"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of write-off candidates, newest first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa201",
+                     *             "account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa401",
+                     *             "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c04",
+                     *             "negative_since": "2026-11-20",
+                     *             "negative_days": 90,
+                     *             "candidate_fen": 800,
+                     *             "available_fen": -300,
+                     *             "frozen_fen": 0,
+                     *             "status": "PENDING",
+                     *             "approve_blocked": false,
+                     *             "initiator_id": null,
+                     *             "approver_id": null,
+                     *             "approved_at": null,
+                     *             "voucher_id": null,
+                     *             "created_at": "2027-02-18T02:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 1
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminBadDebtWriteoffPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminApproveBadDebtWriteoff: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The write-off candidate (bad_debt_writeoffs.id, the candidate_id of the BR-FUND-12 uniq_key) as a list row carries it; unknown or of another app → 20001 with data.fields=[id]. */
+                id: components["parameters"]["AdminBadDebtWriteoffIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /** @example {} */
+                "application/json": components["schemas"]["AdminEmptyActionRequest"];
+            };
+        };
+        responses: {
+            /** @description The candidate after approval with the amount written off (0 when it was cancelled), or the first result of the same key. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "writeoff": {
+                     *           "id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa201",
+                     *           "account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa401",
+                     *           "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c04",
+                     *           "negative_since": "2026-11-20",
+                     *           "negative_days": 91,
+                     *           "candidate_fen": 800,
+                     *           "available_fen": 0,
+                     *           "frozen_fen": 0,
+                     *           "status": "APPROVED",
+                     *           "approve_blocked": false,
+                     *           "initiator_id": null,
+                     *           "approver_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *           "approved_at": "2027-02-19T10:30:00+08:00",
+                     *           "voucher_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4fa103",
+                     *           "created_at": "2027-02-18T02:00:00+08:00"
+                     *         },
+                     *         "written_off_fen": 300
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminBadDebtWriteoffApproveResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not approved (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
