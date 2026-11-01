@@ -10,6 +10,8 @@
     "smoke:entries": "node scripts/smoke-entries.ts"
   },
   "dependencies": {
+    "@alicloud/credentials": "2.4.7",
+    "@alicloud/kms20160120": "3.3.1",
     "@couli/db": "workspace:*",
     "@couli/domain": "workspace:*",
     "@couli/money": "workspace:*",
@@ -30,6 +32,7 @@
     "@xmldom/xmldom": "0.9.12",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
+    "ali-oss": "6.23.0",
     "ioredis": "5.11.1",
     "jose": "6.2.12",
     "kysely": "0.29.6",

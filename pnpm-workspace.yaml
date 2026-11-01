@@ -13,6 +13,7 @@ strictDepBuilds: true
 # Optional native builds pulled in by testcontainers; deliberately NOT built.
 # New entries go here (never into an allow list) and need a `deps` task (规划/11 §3.4).
 ignoredBuiltDependencies:
+  - '@alicloud/openapi-core'
   - cpu-features
   - protobufjs
   - ssh2
