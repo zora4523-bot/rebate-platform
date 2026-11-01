@@ -67,6 +67,9 @@ export type {
   RiskAppealsAdminOptions,
   RiskAppealsAdminWriteOptions,
 } from './http/admin/appeals-admin.module.ts';
+// B1-09p: processing order appeals of a user (BR-ID-36; read only, settlement's port).
+export { createOrderAppealReader } from './application/order-appeal-read.ts';
+export type { OrderAppealReader } from './application/order-appeal-read.ts';
 export { createInviteRelationHitWriter } from './application/invite-relation-hits.ts';
 export type {
   InviteRelationHitRuleId,

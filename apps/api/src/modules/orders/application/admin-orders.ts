@@ -5,11 +5,11 @@
 // query field. Reads only: nothing is written or audited, and the raw union payload is never
 // returned. Other modules' data come in as ports assembled by app.module: identity's masked
 // phones, admin's latest manual hold audit and display names, commission's snapshot, linking's
-// link_logs of the order's link, content's credit.enabled.<platform>.
+// link_logs of the order's link, content's credit.enabled.<platform>, settlement's order figures.
 //
 // display_status is BR-FUND-17 through the user-side deriveDisplayStatus over the order's own
-// columns; the settlement figures (b_est, clawback, held share, overdue) are unknown here exactly
-// as on the user side today (createUnknownOrderFigures), and the viewer is the order's owner.
+// columns and the same figures reader as the user side (B1-09p), with the order's owner as viewer.
+// Only the detail carries display_status, and it carries none of the amounts (contract).
 import { enums, type Schema } from '@couli/contracts-ts';
 import { fenToJsonNumber } from '@couli/money';
 import {
@@ -21,6 +21,7 @@ import {
 } from '../domain/admin-order-view.ts';
 import { isUuid } from '../domain/admin-claim-view.ts';
 import { deriveDisplayStatus, type DisplayStatusInput } from '../domain/query-rules.ts';
+import type { OrderFigures, OrderFiguresReader } from './order-queries.ts';
 import type {
   AdminOrderDetailRow,
   AdminOrderFilter,
@@ -91,6 +92,11 @@ export interface AdminOrderPorts {
   ) => Promise<readonly AdminOrderLinkRecord[]>;
   /** content: whether config credit.enabled.<platform> is true for the app. */
   readonly creditEnabled: (appId: string, platform: string) => Promise<boolean>;
+  /**
+   * settlement: the user side's order figures, read with the order's owner as viewer. app.module
+   * always gives it; without it the figures stay unknown, for module tests only.
+   */
+  readonly figures?: OrderFiguresReader;
 }
 
 export interface AdminOrdersDeps extends AdminOrderPorts {
@@ -200,19 +206,23 @@ export class AdminOrders {
       throw new AdminOrdersFieldsError(['order_id']);
     }
     const holdReason = holdReasonOf(row);
-    const [phones, history, pending, audit, split, links, creditEnabled] = await Promise.all([
-      this.phonesOf(deps, appId, [row]),
-      deps.reads.history(appId, row.order_id),
-      holdReason === 'UNMAPPED_STATUS'
-        ? deps.reads.pending(appId, row.platform, row.sub_order_id)
-        : Promise.resolve([]),
-      deps.latestHold(appId, row.order_id),
-      deps.commissionSplit(appId, row.order_id),
-      row.link_id === null
-        ? Promise.resolve([])
-        : deps.linkLogs(appId, row.link_id, LINK_LOG_LIMIT),
-      deps.creditEnabled(appId, row.platform),
-    ]);
+    const [phones, history, pending, audit, split, links, creditEnabled, figures] =
+      await Promise.all([
+        this.phonesOf(deps, appId, [row]),
+        deps.reads.history(appId, row.order_id),
+        holdReason === 'UNMAPPED_STATUS'
+          ? deps.reads.pending(appId, row.platform, row.sub_order_id)
+          : Promise.resolve([]),
+        deps.latestHold(appId, row.order_id),
+        deps.commissionSplit(appId, row.order_id),
+        row.link_id === null
+          ? Promise.resolve([])
+          : deps.linkLogs(appId, row.link_id, LINK_LOG_LIMIT),
+        deps.creditEnabled(appId, row.platform),
+        row.user_id === null || deps.figures === undefined
+          ? Promise.resolve(new Map<string, OrderFigures>())
+          : deps.figures.forOrders({ app_id: appId, user_id: row.user_id }, [row.order_id]),
+      ]);
     // 方案 K-7: a current system hold shows no manual hold, so its operator is not looked up.
     const shownAudit = holdReason === 'UNMAPPED_STATUS' ? null : audit;
     const names =
@@ -225,7 +235,7 @@ export class AdminOrders {
       product_key: row.product_key,
       quantity: row.quantity,
       refunded_quantity: row.refunded_quantity,
-      display_status: displayStatus(row, creditEnabled),
+      display_status: displayStatus(row, creditEnabled, figures.get(row.order_id)),
       reason: row.reason as Detail['reason'],
       buy_type: row.buy_type as Detail['buy_type'],
       scene_basis: row.scene_basis as Detail['scene_basis'],
@@ -307,19 +317,23 @@ function listItem(row: AdminOrderRow, phones: ReadonlyMap<string, string | null>
   };
 }
 
-/** BR-FUND-17 over the order's columns; settlement figures unknown (see the header). */
-function displayStatus(row: AdminOrderDetailRow, creditEnabled: boolean): Detail['display_status'] {
+/** BR-FUND-17 over the order's columns and its owner's figures (none on an ownerless order). */
+function displayStatus(
+  row: AdminOrderDetailRow,
+  creditEnabled: boolean,
+  figures: OrderFigures | undefined,
+): Detail['display_status'] {
   return deriveDisplayStatus({
     rebate_status: row.rebate_status as DisplayStatusInput['rebate_status'],
     platform_status: row.platform_status as DisplayStatusInput['platform_status'],
     hold: row.hold,
     rights_pending: row.rights_pending,
     booked_base_fen: row.booked_base_fen,
-    b_est: null,
-    has_clawback: false,
-    viewer_share_held: false,
+    b_est: figures?.b_est ?? null,
+    has_clawback: figures?.has_clawback ?? false,
+    viewer_share_held: figures?.viewer_share_held ?? false,
     credit_enabled: creditEnabled,
-    credit_overdue: false,
+    credit_overdue: figures?.credit_overdue ?? false,
   });
 }
 

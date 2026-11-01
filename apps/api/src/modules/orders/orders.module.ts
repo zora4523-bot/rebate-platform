@@ -3,6 +3,8 @@
 // factories from app.module (content's configuration reader, linking's order-link reader), so
 // this module imports no other module's implementation. Without a database the queries fail
 // closed on first use; module startup never touches the database handle.
+// B1-09p: settlement's figures reader (options.figures, a factory from app.module) joins the shared
+// OrderQueries, so the order amounts, credit period and derived status are real on this entry.
 // B1-08n: forWorker — the worker entry's order-sync runtime (worker-runtime.ts) under
 // orderSyncToken(); identity's and linking's readers come in as factories from app.module.
 // B1-08m: the shared PendingTracks provider (class token) and the /v1/orders/pending-tracks
@@ -44,6 +46,7 @@ import {
 import {
   OrderQueries,
   createOrderQueries,
+  type OrderFiguresReader,
   type OrderLinkReader,
 } from './application/order-queries.ts';
 import type { OrderClaimDeps } from './application/order-claims.ts';
@@ -73,6 +76,11 @@ export interface OrdersModuleOptions {
    * so that a module built without it keeps B1-10b's submitted claims.
    */
   readonly evidence?: ClaimEvidenceFactory;
+  /**
+   * B1-09p: settlement's order figures over ledger, commission, risk and content. app.module always
+   * gives it; without it the amounts stay unknown, for module tests only.
+   */
+  readonly figures?: (db: Kysely<Database>, clock: Clock) => OrderFiguresReader;
   /** content's ContentReader over the primary handle (order.user_query_months, credit.enabled.*). */
   readonly config: (db: Kysely<Database>, clock: Clock) => ContentReader;
   /** linking's order-link reader (links.product_key by app_id and link_id). */
@@ -142,8 +150,8 @@ export class OrdersModule {
                   db,
                   clock,
                   config: options.config(db, clock),
-                  // TODO(规划/11 §4.5): figures 端口接 settlement / ledger / commission 读端口 — blocked on 这些模块尚无可用导出
                   links: options.links(db),
+                  ...(options.figures === undefined ? {} : { figures: options.figures(db, clock) }),
                   ...(options.claimEntry === undefined
                     ? {}
                     : { claimEntry: options.claimEntry(db) }),

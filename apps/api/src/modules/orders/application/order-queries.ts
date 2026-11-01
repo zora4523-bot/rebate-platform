@@ -168,12 +168,25 @@ const UNKNOWN_FIGURES: Readonly<OrderFigures> = Object.freeze({
   appeal_pending: false,
 });
 
-/** TODO(规划/11 §4.5): 未接线时金额与结算期未知 — blocked on settlement / ledger / commission 读端口 */
+/**
+ * Everything unknown: for direct callers without a reader. Every production entry wires settlement's
+ * createOrderFiguresReader (app.module).
+ */
 export function createUnknownOrderFigures(): OrderFiguresReader {
   return {
     forOrders: async (_subject, orderIds) =>
       new Map(orderIds.map((id): [string, OrderFigures] => [id, { ...UNKNOWN_FIGURES }])),
   };
+}
+
+/**
+ * The month on the timeline's credit_expected node. BR-FUND-17 row 12 shows no expired month, while
+ * the top-level expected_credit_period keeps it; the timeline hides a month only when given null.
+ */
+export function timelineCreditPeriod(
+  figures: Pick<OrderFigures, 'expected_credit_period' | 'credit_overdue'>,
+): string | null {
+  return figures.credit_overdue ? null : figures.expected_credit_period;
 }
 
 const ORDER_COLUMNS = [
@@ -595,7 +608,7 @@ class DbOrderQueries extends OrderQueries {
       paid_at: iso(row.paid_at),
       received_at: iso(row.received_at),
       credited_at: iso(row.credited_at),
-      expected_credit_period: figures.expected_credit_period,
+      expected_credit_period: timelineCreditPeriod(figures),
       invalid_at: display_status === 'INVALID' ? await historyAt('VOID') : null,
       clawed_at: display_status === 'CLAWED_BACK' ? await historyAt('CLAWED_BACK') : null,
       part_clawed_at: figures.part_clawed_at,

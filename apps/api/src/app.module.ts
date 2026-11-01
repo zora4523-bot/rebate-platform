@@ -84,6 +84,7 @@ import {
   readCommissionAttribution,
   readCommissionSnapshot,
   readTljDeductFen,
+  TljDeductionMissing,
   type RuleSetReader,
 } from './modules/commission/index.ts';
 import {
@@ -236,6 +237,7 @@ import {
   type EarningsSummaryDependencies,
   type WalletLedgerDependencies,
   type WalletSummaryDependencies,
+  readOrderFiguresLedger,
 } from './modules/ledger/index.ts';
 // B1-02zn: GET /v1/me's balance reads the wallet summary query through ledger's read-only entry.
 import { getWalletSummary } from './modules/ledger/read.ts';
@@ -343,6 +345,7 @@ import {
   type AdminClaimPorts,
   type AdminOrderPorts,
   type AdminOrderWritePorts,
+  type OrderFiguresReader,
   createInviteRewardOrderFacts,
   type ClaimEvidenceFactory,
   createOrderQueries,
@@ -424,12 +427,14 @@ import {
   type RateLimitThresholdReaders,
   type BlocklistService,
   type RiskStateService,
+  createOrderAppealReader,
 } from './modules/risk/index.ts';
 import {
   SettlementAdminModule,
   SettlementModule,
   createAttributionRebatePort,
   createEarningsOrdersSource,
+  createOrderFiguresReader,
   createPendingEarningsSource,
   createRebateAdminCommandPort,
   readOrderIdsByKey,
@@ -846,6 +851,41 @@ function onReadTransaction<T>(
 ): Promise<T> {
   if (db.isTransaction) return run(db as Transaction<Database>);
   return db.transaction().setAccessMode('read only').execute(run);
+}
+
+/**
+ * The order figures' snapshot port (B1-09p): reserve ratio, ratios and forfeited shares, which are
+ * immutable, from the version-independent read. A changed estimate moves orders.commission_version
+ * ahead of the stored amount rows (D10-317), and readCommissionSnapshot refuses that; the figures
+ * take no amount from those rows, so such an order keeps its figures. No snapshot yet is null.
+ */
+async function orderFiguresSnapshot(
+  trx: Transaction<Database>,
+  input: { readonly appId: string; readonly orderId: string },
+) {
+  try {
+    await readTljDeductFen(trx, input);
+  } catch (error) {
+    if (error instanceof TljDeductionMissing) return null;
+    throw error;
+  }
+  return readCommissionAttribution(trx, input);
+}
+
+/** settlement's order figures over the owners' read ports (B1-09p, D10-551 item 9, D10-558). */
+function orderFiguresReader(db: Kysely<Database>, clock: Clock): OrderFiguresReader {
+  return createOrderFiguresReader({
+    db,
+    clock,
+    config: {
+      get: async (appId, key) =>
+        (await createContentReader({ db, clock }).configValue(appId, key))?.value,
+    },
+    readSnapshot: orderFiguresSnapshot,
+    readTljDeductFen,
+    ledger: readOrderFiguresLedger,
+    appeals: createOrderAppealReader(db),
+  });
 }
 
 /**
@@ -2106,6 +2146,7 @@ function adminOrderPorts(
       );
       return entry?.value === true;
     },
+    figures: orderFiguresReader(db, clock),
   };
 }
 /**
@@ -2941,7 +2982,7 @@ function agentStreamPorts(union: DynamicModule, source: UnionQuotaSource): Dynam
             db,
             clock,
             config,
-            // TODO(规划/11 §4.5): figures 端口接 settlement / ledger / commission 读端口 — blocked on 这些模块尚无可用导出
+            figures: orderFiguresReader(db, clock),
             links: createOrderLinkReader(db),
             claimEntry: claimEntries,
           });
@@ -4348,6 +4389,7 @@ export class AppModule {
               // claim-entry reader (link_logs jump-outs, union_bindings).
               OrdersModule.forRoot({
                 config: (db, clock) => createContentReader({ db, clock }),
+                figures: orderFiguresReader,
                 links: (db) => createOrderLinkReader(db),
                 claimEntry: (db) => createClaimEntryReader(db),
                 attempts: (db) => createPendingAttemptStore(db),

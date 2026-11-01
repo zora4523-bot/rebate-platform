@@ -19,6 +19,18 @@ export type {
   UserPendingEarnings,
   AppPendingEarnings,
 } from './reads/pending-earnings.ts';
+// B1-09p: the per-order figures behind orders' OrderFiguresReader (read only; app.module).
+export { createOrderFiguresReader } from './reads/order-figures.ts';
+export type {
+  OrderFiguresAppealRead,
+  OrderFiguresDependencies,
+  OrderFiguresLedgerEntry,
+  OrderFiguresLedgerRead,
+  OrderFiguresLedgerSelection,
+  OrderFiguresSource,
+  OrderFiguresSubject,
+  OrderFiguresValue,
+} from './reads/order-figures.ts';
 // B2-13a: the earnings dashboard's order facts (BR-FUND-25; read only, for ledger's port).
 export { createEarningsOrdersSource } from './reads/earnings.ts';
 export type {

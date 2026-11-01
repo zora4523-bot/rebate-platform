@@ -7,6 +7,11 @@ import {
   type AdminOrderPorts,
   type AdminOrderSplitRecord,
 } from './admin-orders.ts';
+import {
+  createUnknownOrderFigures,
+  timelineCreditPeriod,
+  type OrderFigures,
+} from './order-queries.ts';
 
 const APP = 'app_unit';
 const ORDER = '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01';
@@ -88,6 +93,7 @@ function service(
     commissionSplit: () => Promise.resolve(null),
     linkLogs: () => Promise.resolve([]),
     creditEnabled: () => Promise.resolve(true),
+    figures: createUnknownOrderFigures(),
     ...ports,
   });
 }
@@ -206,4 +212,44 @@ it('[AC-B1-10i#U7] 链接记录只下发时间、事件、场景，无场景的�
       ]),
   }).detail(APP, ORDER, undefined);
   expect(d.link_logs).toEqual([{ at: '2026-10-05T02:00:00.000Z', event: 'open', scene: 'detail' }]);
+});
+
+it('[AC-B1-09p#U3] 详情的 display_status 用所有者的数据；无所有者的单不读', async () => {
+  const seen: string[] = [];
+  const figures = {
+    forOrders: (subject: { user_id: string }, ids: readonly string[]) => {
+      seen.push(subject.user_id);
+      const value: OrderFigures = {
+        b_est: 850n,
+        est_rebate_fen: 425n,
+        actual_fen: 325n,
+        clawback_fen: 100n,
+        has_clawback: true,
+        part_clawed_at: null,
+        viewer_share_held: false,
+        expected_credit_period: null,
+        credit_overdue: false,
+        appeal_pending: false,
+      };
+      return Promise.resolve(new Map(ids.map((id) => [id, value])));
+    },
+  };
+  const credited = row({ rebate_status: 'CREDITED', booked_base_fen: 850n });
+  const detail = await service(credited, { figures }).detail(APP, ORDER, undefined);
+  expect(detail.display_status).toBe('CREDITED_PART_CLAWED');
+  expect(seen).toEqual([USER]);
+  seen.length = 0;
+  const ownerless = row({ user_id: null, rebate_status: 'UNATTRIBUTED' });
+  await service(ownerless, { figures }).detail(APP, ORDER, undefined);
+  expect(seen).toEqual([]);
+});
+
+it('[AC-B1-09p#U12] 时间线的预计结算节点：逾期不带月份（BR-FUND-17 第 12 行），未逾期照带', () => {
+  expect(
+    timelineCreditPeriod({ expected_credit_period: '2027-12', credit_overdue: true }),
+  ).toBeNull();
+  expect(timelineCreditPeriod({ expected_credit_period: '2027-12', credit_overdue: false })).toBe(
+    '2027-12',
+  );
+  expect(timelineCreditPeriod({ expected_credit_period: null, credit_overdue: false })).toBeNull();
 });
