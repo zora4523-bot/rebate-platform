@@ -53,8 +53,11 @@ export const BLACKLIST_RULE = 'BLACKLIST_HIT';
 export const REFRESH_MS = CONTENT_CACHE_TTL_MS + 1000;
 export const REASON = '规则启停对判定的影响';
 
-/** A fresh app id (the deciders accept any well-formed X-App-Id). */
-export const newApp = () => `rules_${randomUUID().replaceAll('-', '')}`;
+/**
+ * A fresh app id (the deciders accept any well-formed X-App-Id): `rules_` plus 26 hex digits of a
+ * UUID, exactly 32 characters, the X-App-Id maxLength.
+ */
+export const newApp = () => `rules_${randomUUID().replaceAll('-', '').slice(-26)}`;
 
 export function ruleRowOf(h: Harness, appId: string, ruleId: string): Promise<RuleRow> {
   return h.db
