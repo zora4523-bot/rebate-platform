@@ -51,3 +51,25 @@ export function slowPage(ms: number): UnionAdapter['searchItems'] {
     return onePage();
   };
 }
+
+/** A short real wait: nothing a late answer sets off here waits on a timer of its own. */
+const LATE_SETTLE_MS = 50;
+
+/**
+ * The title search finds the target only when the case calls `answer`, so a late answer is really
+ * there, after the 3 s, with no long wait. `answer` returns once what the answer sets off has run.
+ */
+export function heldPage() {
+  const held = Promise.withResolvers<void>();
+  const search: UnionAdapter['searchItems'] = async () => {
+    await held.promise;
+    return onePage();
+  };
+  return {
+    search,
+    async answer(): Promise<void> {
+      held.resolve();
+      await delay(LATE_SETTLE_MS);
+    },
+  };
+}

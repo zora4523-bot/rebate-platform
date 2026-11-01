@@ -5,7 +5,7 @@
 // cases do not depend on how the implementation measures the time.
 import { expect, it } from 'vitest';
 import { HANG_LIMIT_MS, NEW_RAW, askedRaws, hang, waitedOut } from '../detail-reparse/kit.ts';
-import { slowPage, slowlyUnimplemented, unimplementedLinkFixture } from './kit.ts';
+import { heldPage, slowPage, slowlyUnimplemented, unimplementedLinkFixture } from './kit.ts';
 
 /** Long enough for the real 3 s, a little of the fallback after it and the slack around. */
 const TIMEOUT_CASE_MS = HANG_LIMIT_MS + 5000;
@@ -45,15 +45,18 @@ it(
 );
 
 it(
-  '[B1-05y#22][BR-PROD-05] 步骤 3：两步合计超 3 秒：各 2 秒、单看都没超 → 仍按暂时失败 50401，迟到的答复不写 product_refs、不出卡',
+  '[B1-05y#22][BR-PROD-05] 步骤 3：两步合计超 3 秒：第①步 2 秒、第②步到 3 秒还没答，单看都没超 → 仍按暂时失败 50401，迟到的答复到了也不写 product_refs、不出卡',
   async () => {
     const f = unimplementedLinkFixture();
+    const late = heldPage();
     f.resolveLink.mockImplementation(slowlyUnimplemented(SLOW_STEP_MS));
-    f.searchItems.mockImplementation(slowPage(SLOW_STEP_MS));
+    f.searchItems.mockImplementation(late.search);
 
     const ended = await waitedOut(() => f.run());
 
     expect(ended).toMatchObject({ state: 'rejected', error: { code: 50401 } });
+    expect(f.searchItems).toHaveBeenCalledTimes(1);
+    await late.answer();
     expect(f.getItem).not.toHaveBeenCalled();
     expect(f.registerProductRef).not.toHaveBeenCalled();
     expect(f.rows).toEqual([]);
