@@ -1,0 +1,20 @@
+id: CT-06zzx
+repo: rebate-platform
+title: 依赖：pnpm audit --prod 13 条告警的补丁升级（zod 4.6.7、fastify 5.12.7、path-to-regexp 8.4.2、fast-uri、qs）
+type: deps
+# 2026-11-02 be 入账（编排 05:28 FU-DEPS-AUDIT-HIGH；00 §9 依赖补丁升级）。2 high：zod 4.6.5（GHSA-mrhx-c7xc-m3w5，apps/api 直接依赖）、path-to-regexp 8.2.0（GHSA-j3q9-mxjg-w52f，后台 @ant-design/pro-layout 带入，7.22.7 已是最新版且写死 8.2.0）。
+# 版本都发布满 7 天：zod 4.6.7（10-12）、fastify 5.12.7（10-13，@nestjs/platform-fastify 12.1.0 写死 5.12.5）、fast-uri 3.1.9 / 4.2.3（10-19）、qs 6.16.1（10-14，6.16.2 未满 7 天）、path-to-regexp 8.4.2（04-01，锁文件里已有）。
+# 上游写死的用 pnpm-workspace.yaml 的 overrides，只对准具体依赖路径或受影响版本段。试解析（--lockfile-only --ignore-scripts）：不新增包，pnpm audit --prod 由 13 条变 0。overrides 在上游放开后要摘掉。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/package.json'
+  - 'pnpm-lock.yaml'
+  - 'pnpm-workspace.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
