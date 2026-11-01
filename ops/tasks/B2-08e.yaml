@@ -36,4 +36,104 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/admin/tax-export/**'
+red_exempt:
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#39] 脱敏 users 下载不要求 pii 权限，审计来源不要求 user.list'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#39] 脱敏 audit_logs 下载不要求 pii 权限，审计来源不要求 user.list'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#35] 下载审计写入失败必须阻止链接响应'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#17] 每次下载重新签名、重新鉴权及独立审计，无需新的动态码'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#18] 下载防探测 other，audit.view_all 仍不能越权'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#18] 下载防探测 unknown，audit.view_all 仍不能越权'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#18] 下载防探测 cross_app，audit.view_all 仍不能越权'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#18] 下载防探测 user.list，audit.view_all 仍不能越权'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#18] 下载防探测 pii.reveal_phone，audit.view_all 仍不能越权'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#19] 超管也不能下载他人任务；身份检查先于状态错误'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#20] 本人任务 pending 不能下载，30417 带实际 status'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#20] 本人任务 running 不能下载，30417 带实际 status'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#20] 本人任务 failed 不能下载，30417 带实际 status'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#20] 本人任务 expired 不能下载，30417 带实际 status'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#20] 本人任务 cancelled 不能下载，30417 带实际 status'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#21] done 到期边界 0 ms 即按 expired 返回'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#21] done 到期边界 -1 ms 即按 expired 返回'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#22] 下载缺 export 为 10403，停用账号无法继续下载'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/admin/exports/download.int.test.ts
+    test: '[AC-B1-34f#23] 签名失败不得返回链接或记成功下载审计'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
+    test: '[AC-B1-34b#1] all export columns have the specified SQL types and nullability'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
+    test: '[AC-B1-34b#2] INSERT round-trips filters and separate public id, defaults row_version to 1 and leaves optional fields null'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
+    test: '[AC-B1-34b#3] required columns reject explicit NULL even when they have defaults'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
+    test: '[AC-B1-34b#5] status CHECK accepts exactly the six contract values on INSERT and UPDATE'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
+    test: '[AC-B1-34b#6] audit exports must be masked while user exports allow either masking choice'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
+    test: '[AC-B1-34b#7] progress accepts NULL and 0 through 100, rejecting either out-of-range boundary'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
+    test: '[AC-B1-34b#8] row_count accepts NULL, zero and positive int32 values but rejects negatives'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
+    test: '[AC-B1-34b#9] public_id is unique within an app, reusable across apps, and the internal id stays globally unique'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
+    test: '[AC-B1-34b#10] created_by references an existing admin in the same app without cascading'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
+    test: '[AC-B1-34b#11] valid indexes support listing, creator lookup, active cancellation and done expiry cleanup'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
+    test: '[AC-B1-34b#12] couli_app has SELECT/INSERT and exactly the worker column UPDATE grants, without DELETE or TRUNCATE'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
+    test: '[AC-B1-34b#13] couli_app can write worker results, preserve supplied timestamps and clear nullable fields'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
+    test: '[AC-B1-34b#14] couli_app cannot UPDATE identity, creator, request parameters or creation time'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
+  - file: test/spec/db/admin/export-tasks/export-tasks.int.test.ts
+    test: '[AC-B1-34b#15] couli_readonly can read every column but cannot insert, update or delete'
+    reason: '冻结用例，测试体未改；本任务只改同文件 [AC-B1-34f#16] / [AC-B1-34b#4] 的期望（D10-544，#24），同文件被整体判定'
 status: todo
