@@ -1,0 +1,111 @@
+{
+  "task": "B2-05o",
+  "spec_ref": "9ab94dc012ce1275b8306d941198baf92963a5ad",
+  "spec_commit": "768cdb29f7830694b04671495dd1cb11bc9cc611",
+  "red_tests": [
+    "test/spec/platform/metrics/review-overdue/entry.test.ts > [AC-B2-05o#10] worker 的 /metrics 在 scrape 时经本入口库读 withdrawals（review_overdue_at）、导出 couli_withdrawals_review_overdue（gauge、无标签、值为端口读数）、不写、不读数据库时钟；其余四个入口没有该指标、不做该读",
+    "test/spec/platform/metrics/review-overdue/entry.test.ts > [AC-B2-05o#11] worker 的审核超时读失败时整次 scrape 失败（render 拒绝），不以 0 代替；读恢复后下一次 scrape 导出端口读数",
+    "test/spec/platform/metrics/review-overdue/port.int.test.ts > [AC-B2-05o#3] 端口只计 review_overdue_at 非空且 status ∈ {PENDING_REVIEW, APPROVED} 的提现单（跨 app_id、不分审核方式）；已判定后转 PAYING / 终态 / 驳回的、过了截止时间但未判定的都不计；只读事务可跑、前后行不变",
+    "test/spec/platform/metrics/review-overdue/port.int.test.ts > [AC-B2-05o#4] 每次读取跟随当前行：计入的单被审核走（REJECTED / PAYING）即减一，新判定的单即加一（端口不缓存）；空库为 0",
+    "test/spec/platform/metrics/review-overdue/port.int.test.ts > [AC-B2-05o#5] worker registry 以该端口为采集渲染：couli_withdrawals_review_overdue 无标签一条、值与夹具一致",
+    "test/spec/platform/metrics/review-overdue/port.test.ts > [AC-B2-05o#1] payout 端口经 payout/index.ts 导出：只读 withdrawals，按 review_overdue_at 与 PENDING_REVIEW / APPROVED 取数；不读别的模块的资金表、不写、不读数据库时钟",
+    "test/spec/platform/metrics/review-overdue/port.test.ts > [AC-B2-05o#2] 端口的库读失败时端口拒绝（原错误），不以 0 代替",
+    "test/spec/platform/metrics/review-overdue/registry.test.ts > [AC-B2-05o#6] worker 的 registry 在 scrape 时调 collectReviewOverdue：有 # HELP 与 # TYPE couli_withdrawals_review_overdue gauge、无标签一条、值与快照一致；其余指标照旧",
+    "test/spec/platform/metrics/review-overdue/registry.test.ts > [AC-B2-05o#7] 0 也照样输出（规则读 > 0）；每次 scrape 取最新值、不常驻轮询",
+    "test/spec/platform/metrics/review-overdue/registry.test.ts > [AC-B2-05o#8] 只在 worker 且给了 collectReviewOverdue 时出现：api / stream / admin / payout 给了也不调用、不出指标名；worker 不给也没有",
+    "test/spec/platform/metrics/review-overdue/registry.test.ts > [AC-B2-05o#9] collectReviewOverdue 拒绝或同步抛出时 render() 拒绝（抓取失败可见）：不把计数编造成 0，也不沿用上一次的值；恢复后下一次 scrape 取新值",
+    "test/spec/platform/metrics/review-overdue/rules.test.ts > [AC-B2-05o#12] couli-fund.yaml 有且只有一条读 couli_withdrawals_review_overdue 的规则：expr 就是「> 0」（无夜间 / 时段条件）、for 5m、labels.fund 为字符串 \"true\"、severity critical、有 summary；alert 名在两个文件里唯一",
+    "test/spec/platform/metrics/review-overdue/rules.test.ts > [AC-B2-05o#13] 阈值边界：0 张超时单不触发，1 张即触发（严格大于 0，不是 >= 0、不是 > 1）",
+    "test/spec/platform/metrics/review-overdue/rules.test.ts > [AC-B2-05o#14] 规则读的 couli_withdrawals_review_* 只有 worker 导出的这一个名字；couli.yaml 不读它（夜间只推资金类）"
+  ],
+  "risk_note": "RV2 metrics change (withdraw lane, model Claude Fable 5.1; orchestrator ruling D10-475 ②(b)): the review overdue count joins the fund metrics and alerts (08 BR-WDR-26 超时判定, BR-WDR-24 告警). payout's read-only port readPayoutReviewOverdue counts, across every app_id, the withdrawals with review_overdue_at set (judged by B2-05n's check) whose status is still PENDING_REVIEW or APPROVED (one count(*)::integer, no clock, no write; a failed read rejects, never 0); the worker's /metrics exports the unlabelled gauge couli_withdrawals_review_overdue (0 included), read through payout's index.ts and cached for 5 minutes like the other fund gauges (the frozen [AC-B1-01zzo#8] requires it; money r1 S2 noted the added delay, accepted); couli-fund.yaml gains CouliWithdrawalReviewOverdue (> 0, for 5m, severity critical, fund 'true': pushed at night too). No money moves, no status changes, no contract, no migration. The frozen whitelist of fund-metrics/rules.test.ts [AC-B1-01zzi#6] is extended by the test-change #2104 (rule-test author's hunk, D10-399 ① precedent), merged before this PR; this branch does not touch that file. Test-machine full verify not run (CI verify-int, D10-319); PROP_RUNS=2000（D10-496）.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "768cdb29f7830694b04671495dd1cb11bc9cc611",
+      "tree": "fcea742921de4c4a24728d983111a904d4e69cb5",
+      "prop_seed": 20261001,
+      "prop_runs": null,
+      "started_at": "2026-11-01T03:51:36Z",
+      "finished_at": "2026-11-01T03:52:16Z",
+      "gate": {
+        "commit": "0b9aab4ba40f1af7637f446b44afe3d2e48f3836",
+        "clean": true,
+        "script_sha256": "8e205dbe89d6fe6b057e389e6c76533e5f0a86bcba5059a52923fbae3c1aafbf"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/platform/metrics/review-overdue/entry.test.ts > [AC-B2-05o#10] worker 的 /metrics 在 scrape 时经本入口库读 withdrawals（review_overdue_at）、导出 couli_withdrawals_review_overdue（gauge、无标签、值为端口读数）、不写、不读数据库时钟；其余四个入口没有该指标、不做该读",
+        "test/spec/platform/metrics/review-overdue/entry.test.ts > [AC-B2-05o#11] worker 的审核超时读失败时整次 scrape 失败（render 拒绝），不以 0 代替；读恢复后下一次 scrape 导出端口读数",
+        "test/spec/platform/metrics/review-overdue/port.int.test.ts > [AC-B2-05o#3] 端口只计 review_overdue_at 非空且 status ∈ {PENDING_REVIEW, APPROVED} 的提现单（跨 app_id、不分审核方式）；已判定后转 PAYING / 终态 / 驳回的、过了截止时间但未判定的都不计；只读事务可跑、前后行不变",
+        "test/spec/platform/metrics/review-overdue/port.int.test.ts > [AC-B2-05o#4] 每次读取跟随当前行：计入的单被审核走（REJECTED / PAYING）即减一，新判定的单即加一（端口不缓存）；空库为 0",
+        "test/spec/platform/metrics/review-overdue/port.int.test.ts > [AC-B2-05o#5] worker registry 以该端口为采集渲染：couli_withdrawals_review_overdue 无标签一条、值与夹具一致",
+        "test/spec/platform/metrics/review-overdue/port.test.ts > [AC-B2-05o#1] payout 端口经 payout/index.ts 导出：只读 withdrawals，按 review_overdue_at 与 PENDING_REVIEW / APPROVED 取数；不读别的模块的资金表、不写、不读数据库时钟",
+        "test/spec/platform/metrics/review-overdue/port.test.ts > [AC-B2-05o#2] 端口的库读失败时端口拒绝（原错误），不以 0 代替",
+        "test/spec/platform/metrics/review-overdue/registry.test.ts > [AC-B2-05o#6] worker 的 registry 在 scrape 时调 collectReviewOverdue：有 # HELP 与 # TYPE couli_withdrawals_review_overdue gauge、无标签一条、值与快照一致；其余指标照旧",
+        "test/spec/platform/metrics/review-overdue/registry.test.ts > [AC-B2-05o#7] 0 也照样输出（规则读 > 0）；每次 scrape 取最新值、不常驻轮询",
+        "test/spec/platform/metrics/review-overdue/registry.test.ts > [AC-B2-05o#8] 只在 worker 且给了 collectReviewOverdue 时出现：api / stream / admin / payout 给了也不调用、不出指标名；worker 不给也没有",
+        "test/spec/platform/metrics/review-overdue/registry.test.ts > [AC-B2-05o#9] collectReviewOverdue 拒绝或同步抛出时 render() 拒绝（抓取失败可见）：不把计数编造成 0，也不沿用上一次的值；恢复后下一次 scrape 取新值",
+        "test/spec/platform/metrics/review-overdue/rules.test.ts > [AC-B2-05o#12] couli-fund.yaml 有且只有一条读 couli_withdrawals_review_overdue 的规则：expr 就是「> 0」（无夜间 / 时段条件）、for 5m、labels.fund 为字符串 \"true\"、severity critical、有 summary；alert 名在两个文件里唯一",
+        "test/spec/platform/metrics/review-overdue/rules.test.ts > [AC-B2-05o#13] 阈值边界：0 张超时单不触发，1 张即触发（严格大于 0，不是 >= 0、不是 > 1）",
+        "test/spec/platform/metrics/review-overdue/rules.test.ts > [AC-B2-05o#14] 规则读的 couli_withdrawals_review_* 只有 worker 导出的这一个名字；couli.yaml 不读它（夜间只推资金类）"
+      ],
+      "expected": [
+        "test/spec/platform/metrics/review-overdue/entry.test.ts",
+        "test/spec/platform/metrics/review-overdue/port.int.test.ts",
+        "test/spec/platform/metrics/review-overdue/port.test.ts",
+        "test/spec/platform/metrics/review-overdue/registry.test.ts",
+        "test/spec/platform/metrics/review-overdue/rules.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "c9c87b5253c29d227e9072f721b7499db0bbd31d1d9ad037a5ee63f937d164da"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "2e3f3282afadddf9fd392cc5e2a46a140667cc4690fa0e1a35b184862a40b6ba"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "Round 1 (full, base 8da0d4e7954e = the B2-05n head the branch forked from; Codex unavailable until 2026-11-02, fresh independent Claude). Pass: the count follows BR-WDR-26 (review_overdue_at set and status still PENDING_REVIEW / APPROVED; PAYING, terminal states and REJECTED leave the count), across every app_id, read only, no clock, a failed read fails the scrape; the rule is the strict > 0 with fund 'true' (BR-WDR-24, no quiet hours). Two S2: (1) the frozen whitelist [AC-B1-01zzi#6] must land first → test-change #2104 (merged before this PR); (2) entry.ts caches the count for 5 minutes (cacheReviewOverdueCollector, as the fund gauges), delaying the alert to about 10 minutes after a judgement → not applied: the frozen [AC-B1-01zzo#8] (test/spec/platform/metrics-followups/entry.test.ts) requires every fund-table read of the worker's scrape to be served from the 5-minute cache (a second scrape at the same instant and one at TTL−1 read nothing), so the cached version the round reviewed is what lands; an uncached attempt (commit ddf920466) failed that frozen test in CI and was dropped. S2 does not block."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "test round 1 (fresh independent Claude): 6 files under test/spec/platform/metrics/review-overdue (kit, port.test, port.int.test, registry.test, entry.test, rules.test; 14 tests) with NotImplemented skeletons (payout/application/review-overdue-count.ts, platform/metrics/review-overdue.ts, type-only exports in payout/index.ts, metrics/index.ts, metrics/registry.ts). The author's hunk on the frozen fund-metrics/rules.test.ts (whitelist only) was split into the test-change #2104 (D10-399 ① / B1-01zzpz precedent) and is not in the spec commit → red/1 PASS (14 red in 5 files, right reasons) → spec-test round 1 pass (S2 ×2: the whitelist prerequisite = #2104; a suggested entry-level freshness case, not required)."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "4b0851bf64012ac4e0d1efb6cffcb5e889b11cfc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "4ff83783d17743ea9efacd016912563b35ae5dab",
+    "test/spec": "a41678d4d56c069e9d7c6f204d3d517cd9e158fc",
+    "specs": "06bfb4d5a9d52d5099b36fb48f5831b176cc40ec"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money or packages/domain.",
+    "tree": "4ff83783d17743ea9efacd016912563b35ae5dab"
+  }
+}

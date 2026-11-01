@@ -56,6 +56,7 @@ import {
   autoPayoutConfigOf,
   payoutRuntimeToken,
   readPayoutFundMetrics,
+  readPayoutReviewOverdue,
   resolvePayoutMode,
   type PayoutModeDecision,
   type PayoutRuntime,
@@ -63,10 +64,12 @@ import {
 import {
   cacheAutoPayoutCollector,
   cacheFundCollector,
+  cacheReviewOverdueCollector,
   collectAutoPayoutDaily,
   type AutoPayoutCapFenOf,
   type AutoPayoutDailySnapshot,
   type FundMetricsSnapshot,
+  type ReviewOverdueSnapshot,
 } from './modules/platform/metrics/index.ts';
 import { readSettlementFundMetrics } from './modules/settlement/index.ts';
 import {
@@ -275,7 +278,9 @@ function startGenerationRenewal(
  * gauges read through its own handle at scrape time) and, since B1-01zzi, `collectFund` (the fund
  * gauges from the orders, settlement and payout read ports; the worker hands it in wrapped by
  * `cacheFundCollector`, B1-01zzo) and, since B1-01zzp, `collectAutoPayout` (today's automatic
- * total against the cap, cached per +08:00 day). Not on the Nest application, not in the OAS.
+ * total against the cap, cached per +08:00 day) and, since B2-05o, `collectReviewOverdue` (the
+ * withdrawals judged review-overdue still waiting, payout's read-only port). Not on the Nest
+ * application, not in the OAS.
  */
 async function openMetrics(
   entry: EntryName,
@@ -285,6 +290,7 @@ async function openMetrics(
     readonly collect: () => Promise<WorkerMetricsSnapshot>;
     readonly collectFund: () => Promise<FundMetricsSnapshot>;
     readonly collectAutoPayout: () => Promise<AutoPayoutDailySnapshot>;
+    readonly collectReviewOverdue: () => Promise<ReviewOverdueSnapshot>;
   },
 ): Promise<MetricsServer | undefined> {
   if (config.metrics === undefined) return undefined;
@@ -471,6 +477,12 @@ async function start(
           // The auto-payout daily gauges (B1-01zzp), cached the same way and per +08:00 day.
           collectAutoPayout: cacheAutoPayoutCollector(
             () => collectAutoPayoutDaily(dbHandles.db, clock, payoutCapFenOf),
+            clock,
+          ),
+          // The review overdue gauge (B2-05o; BR-WDR-24): payout's read-only port, cached the same
+          // way; a failed read fails the scrape (no 0 in its place) and is read again next time.
+          collectReviewOverdue: cacheReviewOverdueCollector(
+            () => readPayoutReviewOverdue(dbHandles.db),
             clock,
           ),
         });

@@ -2,7 +2,8 @@
 // gauges only on the worker, filled by `collect` at scrape time (no polling loop). The five fund
 // gauges (B1-01zzi) likewise only on the worker, filled by `collectFund` at scrape time; a rejected
 // collection rejects render() (the scrape fails visibly, no value is made up). The two auto-payout
-// daily gauges (B1-01zzp) likewise only on the worker, filled by `collectAutoPayout`.
+// daily gauges (B1-01zzp) likewise only on the worker, filled by `collectAutoPayout`; the review
+// overdue gauge (B2-05o) likewise, filled by `collectReviewOverdue`.
 // The text exposition format 0.0.4 is written here from Node built-ins only: the client library
 // cannot be loaded in the test environment (its @opentelemetry/api dependency resolves to an ESM
 // build Node cannot import), so no third-party metrics library is used at runtime.
@@ -11,6 +12,7 @@ import type { EntryName } from '../entries.ts';
 import type { AutoPayoutDailySnapshot } from './auto-payout.ts';
 import type { WorkerMetricsSnapshot } from './collect.ts';
 import type { FundMetricsSnapshot } from './fund.ts';
+import { REVIEW_OVERDUE_GAUGE, type ReviewOverdueSnapshot } from './review-overdue.ts';
 
 export interface MetricsRegistryOptions {
   readonly entry: EntryName;
@@ -20,6 +22,8 @@ export interface MetricsRegistryOptions {
   readonly collectFund?: () => Promise<FundMetricsSnapshot>;
   /** The auto-payout daily gauges (B1-01zzp). Used only on 'worker'; called once per render(). */
   readonly collectAutoPayout?: () => Promise<AutoPayoutDailySnapshot>;
+  /** The review overdue gauge (B2-05o). Used only on 'worker'; called once per render(). */
+  readonly collectReviewOverdue?: () => Promise<ReviewOverdueSnapshot>;
 }
 
 export interface MetricsRegistry {
@@ -247,24 +251,43 @@ function autoPayoutFamilies(snapshot: AutoPayoutDailySnapshot): Family[] {
   }));
 }
 
+/** The review overdue gauge (B2-05o): always exported, 0 included (the rule compares with > 0). */
+function reviewOverdueFamilies(snapshot: ReviewOverdueSnapshot): Family[] {
+  return [
+    {
+      name: REVIEW_OVERDUE_GAUGE.name,
+      help: REVIEW_OVERDUE_GAUGE.help,
+      type: 'gauge',
+      samples: [{ value: snapshot.reviewOverdue }],
+    },
+  ];
+}
+
 export function createMetricsRegistry(options: MetricsRegistryOptions): MetricsRegistry {
   const worker = options.entry === 'worker';
   const collect = worker ? options.collect : undefined;
   const collectFund = worker ? options.collectFund : undefined;
   const collectAutoPayout = worker ? options.collectAutoPayout : undefined;
+  const collectReviewOverdue = worker ? options.collectReviewOverdue : undefined;
   return {
     contentType: CONTENT_TYPE,
     async render() {
-      // Business, fund and auto-payout values first, then the process values of the same scrape.
-      // Any collection rejecting (or throwing synchronously) rejects the whole render.
-      const [business, fund, autoPayout] = await Promise.all([
+      // Business, fund, auto-payout and review overdue values first, then the process values of
+      // the same scrape. Any collection rejecting (or throwing synchronously) rejects the whole
+      // render.
+      const [business, fund, autoPayout, reviewOverdue] = await Promise.all([
         collect === undefined ? [] : collect().then(businessFamilies),
         collectFund === undefined ? [] : collectFund().then(fundFamilies),
         collectAutoPayout === undefined
           ? []
           : Promise.resolve().then(collectAutoPayout).then(autoPayoutFamilies),
+        collectReviewOverdue === undefined
+          ? []
+          : Promise.resolve().then(collectReviewOverdue).then(reviewOverdueFamilies),
       ]);
-      return [...business, ...fund, ...autoPayout, ...processFamilies()].map(renderFamily).join('');
+      return [...business, ...fund, ...autoPayout, ...reviewOverdue, ...processFamilies()]
+        .map(renderFamily)
+        .join('');
     },
   };
 }
