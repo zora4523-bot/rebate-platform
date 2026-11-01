@@ -67,6 +67,17 @@ export function logsRegistration(scene: Scene, pidScene: PidScene): boolean {
   return pidScene === 'agent' || scene === 'watch_alert';
 }
 
+/** B1-06zd (D10-510): Taobao share generation; off (the default) keeps 50301 not_launched. */
+export const SHARE_TAOBAO_SWITCH_KEY = 'share.taobao_enabled';
+/**
+ * B1-06zd (D10-510): the promotion link prefetch of detail links; off (the default) sends none.
+ * Stays off: turning it on needs the owner to change TRADE-03 first (BR-PRICE-12 forbids background
+ * conversion; orchestrator D10-533).
+ */
+export const PREFETCH_SWITCH_KEY = 'convert.taobao_prefetch.enabled';
+/** B1-06zd (D10-510): prefetch jobs of one App per minute; over it a link is skipped. */
+export const PREFETCH_RATE_KEY = 'convert.taobao_prefetch.rate_per_min';
+
 /** A boolean switch is on for JSON true or the string 'on'; anything else (absent too) is off. */
 export function isSwitchOn(value: unknown): boolean {
   return value === true || value === 'on';

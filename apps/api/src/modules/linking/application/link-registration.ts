@@ -31,6 +31,7 @@ import {
   pidSceneOf,
   urlLifetimeMs,
 } from '../domain/rules.ts';
+import type { PromoPrefetch } from './promo-prefetch.ts';
 
 export interface RegistrationContext {
   /** Validated against the contract scene enum; invalid/missing values fail with code 20001. */
@@ -53,6 +54,8 @@ export interface LinkingOptions {
   readonly linkCode?: () => string;
   /** B1-08s: where an exhausted lk issuance is alerted (linking.link_code.exhausted). */
   readonly logger?: { error(fields: Readonly<Record<string, unknown>>, message?: string): void };
+  /** B1-06zd: given to the registrations of a product detail only (promo-prefetch.ts). */
+  readonly promoPrefetch?: PromoPrefetch;
 }
 
 /** The alert sink of lk issuance; flat fields only (no lk, user_id, link_id or attr_code). */
@@ -128,6 +131,8 @@ export interface IdentitySnapshot {
   readonly pid_scene: string;
   readonly attr_code: string | null;
   readonly agent_session_id: string | null;
+  /** B1-06zd: the user's relation_id, on the Taobao links our promotion link is converted for. */
+  readonly relation_id?: string;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -162,7 +167,7 @@ export function createSourceLinkReader(db: Kysely<DB>): SourceLinkReader {
 }
 
 export function createLinkRegistration(options: LinkingOptions): LinkRegistration {
-  const { db, clock, callerContext, attrCodes, config, pids, context } = options;
+  const { db, clock, callerContext, attrCodes, config, pids, context, promoPrefetch } = options;
   const sourceLinks = createSourceLinkReader(db);
 
   async function register(input: RegisterLinkInput): Promise<{ readonly linkId: string }> {
@@ -194,7 +199,7 @@ export function createLinkRegistration(options: LinkingOptions): LinkRegistratio
     const quotedAt = instant(item.quoted_at, 'quoted_at');
     const rawFetchedAt = instant(ref.rawFetchedAt, 'raw_fetched_at');
 
-    const snapshot = await resolveSnapshot({
+    const resolved = await resolveSnapshot({
       caller,
       attrCodes,
       pids,
@@ -202,6 +207,20 @@ export function createLinkRegistration(options: LinkingOptions): LinkRegistratio
       scene,
       agentSessionId: context.agentSessionId ?? null,
     });
+    const relationId =
+      promoPrefetch === undefined
+        ? null
+        : await promoPrefetch.relationOf(
+            appId,
+            {
+              platform,
+              entrySource: ref.source,
+              userId: caller.userId,
+              rebateBasis: input.quote.rebateBasis,
+            },
+            { pid: resolved.pid, pidScene },
+          );
+    const snapshot = relationId === null ? resolved : { ...resolved, relation_id: relationId };
     const issue = await linkCodeIssue(config, { appId, platform, userId: caller.userId }, options);
     const now = clock.now();
     const linkId = newUuidV7(now);
@@ -254,6 +273,7 @@ export function createLinkRegistration(options: LinkingOptions): LinkRegistratio
           .execute();
       }
     });
+    if (relationId !== null) promoPrefetch?.enqueue(appId, linkId);
     return { linkId };
   }
 

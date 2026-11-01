@@ -19,7 +19,12 @@ import {
 import { createCatalog } from './application/catalog.ts';
 import type { CatalogWarning } from './domain/types.ts';
 import { PRODUCT_CACHE_NAMESPACE, detailCacheDropper } from './infra/product-cache.ts';
-import { GovernedUnion, type CatalogConfigReader } from './ports.ts';
+import {
+  GovernedUnion,
+  POOL_EXTRA_JOBS,
+  type CatalogConfigReader,
+  type PoolExtraJobs,
+} from './ports.ts';
 import {
   createPoolRefreshJobHandler,
   seedPoolRefresh,
@@ -27,7 +32,10 @@ import {
 } from './worker/pool-refresh.ts';
 
 export interface CatalogWorkerOptions {
-  /** Provides and exports GovernedUnion, assembled by app.module as for CatalogAdminModule. */
+  /**
+   * Provides and exports GovernedUnion, assembled by app.module as for CatalogAdminModule, and
+   * optionally POOL_EXTRA_JOBS.
+   */
   readonly ports: DynamicModule;
   /** content's configuration reader on the worker's handle. */
   readonly config: (db: Kysely<Database>, clock: Clock) => CatalogConfigReader;
@@ -103,6 +111,7 @@ export class CatalogWorkerModule {
             { token: DB, optional: true },
             { token: JOB_QUEUE, optional: true },
             { token: REDIS, optional: true },
+            { token: POOL_EXTRA_JOBS, optional: true },
           ],
           useFactory: (
             clock: Clock,
@@ -111,6 +120,7 @@ export class CatalogWorkerModule {
             db?: Kysely<Database>,
             queue?: QueueRuntime,
             redis?: RedisHandle,
+            extraJobs?: PoolExtraJobs,
           ): PoolRefreshLifecycle => {
             if (db === undefined || queue === undefined) {
               logger.info({ queue: POOL_REFRESH_QUEUE }, 'pool_refresh_worker_disabled');
@@ -140,7 +150,7 @@ export class CatalogWorkerModule {
               union,
               dropDetailCache: detailCacheDropper(cache, workerLogger),
             };
-            queue.register(POOL_REFRESH_QUEUE, createPoolRefreshJobHandler(refresh));
+            queue.register(POOL_REFRESH_QUEUE, createPoolRefreshJobHandler(refresh, extraJobs));
             return poolRefreshTimer(refresh);
           },
         },

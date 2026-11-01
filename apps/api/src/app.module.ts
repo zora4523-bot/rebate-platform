@@ -44,6 +44,8 @@ import {
   CatalogModule,
   CatalogWorkerModule,
   GovernedUnion,
+  POOL_EXTRA_JOBS,
+  type PoolExtraJobs,
   PRODUCT_CACHE_NAMESPACE,
   LinkRegistrar,
   RebateQuoter,
@@ -292,7 +294,11 @@ import {
   createUnionAuthReads,
   type UnionAuthReads,
   createUnavailableAttrCodeReader,
+  PROMO_PREFETCH_JOB,
   createLinkRegistration,
+  createPromoPrefetch,
+  createPromoPrefetchHandler,
+  createPromoPrefetchLimiter,
   createSourceLinkReader,
   inOpenReads,
   loadLinkOpenApps,
@@ -365,6 +371,7 @@ import {
   FIELD_CRYPTO,
   EVENT_BUS,
   PlatformModule,
+  JOB_QUEUE,
   REDIS,
   ROOT_LOGGER,
   SENSITIVE_KEYS,
@@ -377,6 +384,7 @@ import {
   type FieldCrypto,
   type EventBus,
   type IdempotencyPostMissCheck,
+  type JobQueue,
   type PlatformOptions,
   type QuotaLimiter,
   type RedisHandle,
@@ -1846,6 +1854,43 @@ function orderSyncWorker(union: DynamicModule, source: UnionQuotaSource): Dynami
 }
 
 /**
+ * B1-06zd (D10-510): the promotion link prefetch job on queue pool-refresh, whose one handler is
+ * catalog's. Governed apart from the refresh's adapters: the quota bucket is shared, the breaker
+ * is not, so a failing convert does not open the circuit on the refresh's reads.
+ */
+function promoPrefetchJobs(source: UnionQuotaSource): Provider {
+  return {
+    provide: POOL_EXTRA_JOBS,
+    inject: [
+      UNION_REGISTRY,
+      UNION_ENDPOINTS,
+      CLOCK,
+      ROOT_LOGGER,
+      { token: DB, optional: true },
+      { token: REDIS, optional: true },
+    ],
+    useFactory: (
+      registry: UnionRegistry,
+      endpoints: readonly UnionEndpoint[],
+      clock: Clock,
+      logger: RootLogger,
+      db?: Kysely<Database>,
+      redis?: RedisHandle,
+    ): PoolExtraJobs => {
+      if (db === undefined) return new Map();
+      const governed = governedUnion(registry, endpoints, { clock, logger, redis }, source);
+      const handler = createPromoPrefetchHandler({
+        db,
+        clock,
+        logger,
+        registry: { get: (platform) => governed.adapter(platform) },
+      });
+      return new Map([[PROMO_PREFETCH_JOB, handler]]);
+    },
+  };
+}
+
+/**
  * B1-08zc: orders' platform-restore port (BR-FUND-22) — ledger's registerReconDiffOnce on the
  * caller's transaction (the order's lock transaction) with the worker's CLOCK; recon_diffs stays
  * ledger's table (04: registered through ledger's command). The input (type platform_restore,
@@ -2463,8 +2508,9 @@ function catalogWorkerPorts(union: DynamicModule, source: UnionQuotaSource): Dyn
           redis?: RedisHandle,
         ): GovernedUnion => governedUnion(registry, endpoints, { clock, logger, redis }, source),
       },
+      promoPrefetchJobs(source),
     ],
-    exports: [GovernedUnion],
+    exports: [GovernedUnion, POOL_EXTRA_JOBS],
   };
 }
 
@@ -2804,6 +2850,7 @@ function agentStreamPorts(union: DynamicModule, source: UnionQuotaSource): Dynam
           { token: FIELD_CRYPTO, optional: true },
           { token: DB, optional: true },
           { token: REDIS, optional: true },
+          { token: JOB_QUEUE, optional: true },
         ],
         useFactory: (
           appConfig: AppConfig,
@@ -2814,6 +2861,7 @@ function agentStreamPorts(union: DynamicModule, source: UnionQuotaSource): Dynam
           crypto?: FieldCrypto,
           db?: Kysely<Database>,
           redis?: RedisHandle,
+          queue?: JobQueue,
         ): AgentStreamProvidedPorts | null => {
           if (db === undefined) return null;
           if (crypto === undefined && appConfig.appEnv !== 'local' && appConfig.appEnv !== 'test') {
@@ -2844,6 +2892,19 @@ function agentStreamPorts(union: DynamicModule, source: UnionQuotaSource): Dynam
             }),
           });
           const pids = { getActivePid: pidService.getActivePid.bind(pidService) };
+          // B1-06zd: get_rebate_quote's detail links (ref.source detail) offer their prefetch.
+          const promoPrefetch =
+            queue === undefined
+              ? undefined
+              : createPromoPrefetch({
+                  db,
+                  clock,
+                  config,
+                  pids,
+                  queue,
+                  limiter: createPromoPrefetchLimiter(redis),
+                  logger,
+                });
           const sourceLinks = createSourceLinkReader(db);
           const search = createUnionSearchUpstream({
             union,
@@ -2928,6 +2989,8 @@ function agentStreamPorts(union: DynamicModule, source: UnionQuotaSource): Dynam
                 item,
                 ref: {
                   ...ref,
+                  // B1-06zd: the Agent's product detail, whatever card first stored the reference.
+                  source: 'detail',
                   rawFetchedAt: item.quoted_at,
                   receivedAt: clock.now().toISOString(),
                 },
@@ -2950,6 +3013,7 @@ function agentStreamPorts(union: DynamicModule, source: UnionQuotaSource): Dynam
                 pids,
                 context: registration,
                 logger,
+                ...(promoPrefetch === undefined ? {} : { promoPrefetch }),
               });
               const entry = createCatalogCardEntry({
                 clock,
@@ -4457,6 +4521,7 @@ export class AppModule {
           : []),
         // catalog's product pool refresh (B1-05r, BR-PRICE-11): queue pool-refresh and its seed
         // timer, worker entry only, on this entry's own governed adapters (shared quota bucket).
+        // Its handler also works the promotion link prefetch jobs (B1-06zd).
         ...(options.entry === 'worker' && union !== undefined
           ? [
               CatalogWorkerModule.forWorker({

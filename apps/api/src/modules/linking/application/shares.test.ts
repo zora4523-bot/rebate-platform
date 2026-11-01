@@ -14,6 +14,7 @@ import {
   isIdentifiedMinor,
   linkRawRef,
   shareIdentity,
+  shareConversion,
   shareImages,
   shareUrlOf,
   type SharesOptions,
@@ -112,6 +113,43 @@ describe('shares helpers (B1-15w)', () => {
     const pdd = shareIdentity(APP, { platform: 'pdd', ...parts }, null);
     expect(pdd.custom_parameters).toEqual({ app: 'n', uid: 'abcd1234', sc: 'share' });
     expect(Object.hasOwn(pdd, 'subUnionId')).toBe(false);
+  });
+});
+
+describe('shareConversion (B1-06zd)', () => {
+  const short = 'https://s.example.test/t';
+  const coupon = 'https://u.example.test/c';
+  const url = (parts: object) => ({
+    kind: 'url' as const,
+    url: 'https://item.example.test',
+    ...parts,
+  });
+
+  it('[AC-B1-06zd] Taobao: the promotion link and the token go together', () => {
+    expect(
+      shareConversion('taobao', url({ short_url: short, coupon_click_url: coupon, tpwd: 'x' })),
+    ).toEqual({ shareUrl: short, promoUrl: coupon, tpwd: 'x' });
+  });
+
+  it('[AC-B1-06zd] BR-ATTR-10: Taobao without a token, or a blank one, generates nothing', () => {
+    expect(
+      shareConversion('taobao', url({ short_url: short, coupon_click_url: coupon })),
+    ).toBeNull();
+    expect(shareConversion('taobao', url({ short_url: short, tpwd: '  ' }))).toBeNull();
+    expect(shareConversion('taobao', url({ tpwd: 'x' }))).toBeNull();
+  });
+
+  it('[AC-B1-06zd] jd and pdd keep the link alone, no token and no promotion link', () => {
+    expect(shareConversion('pdd', url({ short_url: short }))).toEqual({
+      shareUrl: short,
+      tpwd: null,
+      promoUrl: null,
+    });
+    expect(shareConversion('jd', url({ short_url: short }))).toEqual({
+      shareUrl: 'https://item.example.test',
+      tpwd: null,
+      promoUrl: null,
+    });
   });
 });
 

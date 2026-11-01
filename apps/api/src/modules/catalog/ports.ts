@@ -14,6 +14,7 @@
 // process by the governance layer) as global providers; catalog never imports linking.
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
+import type { JobHandler } from '../platform/index.ts';
 import type { RegisteredPlatform, UnionAdapter, UnionItem } from '../union/index.ts';
 import type { ProductRef } from './domain/types.ts';
 
@@ -96,3 +97,11 @@ export abstract class CatalogConfigReader {
 export abstract class GovernedUnion {
   abstract adapter(platform: RegisteredPlatform): UnionAdapter;
 }
+
+/**
+ * Other modules' jobs on queue pool-refresh, job name → handler. A queue has one handler in a
+ * process, so catalog's dispatches these beside its own refresh job. Optional: forWorker's ports
+ * module provides and exports it (B1-06zd, assembled by app.module; catalog never imports linking).
+ */
+export type PoolExtraJobs = ReadonlyMap<string, JobHandler>;
+export const POOL_EXTRA_JOBS = Symbol('CATALOG_POOL_EXTRA_JOBS');
