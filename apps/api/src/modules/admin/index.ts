@@ -18,7 +18,12 @@ export type { AdminAuditInput, AuditWriterDeps } from './infra/audit-writer.ts';
 // B1-34p: the system's audit on the caller's transaction (settlement's rebate audit port; B1-09n
 // assembles it).
 export { createSystemAuditWriter } from './infra/system-audit.ts';
-export type { SystemAuditWriter, SystemAuditWriterDeps } from './infra/system-audit.ts';
+export type {
+  SystemAuditWriter,
+  SystemAuditWriterDeps,
+  SystemHoldAudit,
+  SystemHoldState,
+} from './infra/system-audit.ts';
 export {
   createTotpVerifier,
   totpSecretContext,
