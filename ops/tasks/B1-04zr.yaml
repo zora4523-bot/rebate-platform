@@ -1,0 +1,31 @@
+id: B1-04zr
+repo: rebate-platform
+title: 京东 order-sync 上线调度：syncWindowCapMs 60 分钟、worker 注入 rescanConfig，回扫开始生效（D10-543）
+type: impl
+# 2026-11-02 be 入账（编排 D10-543，B1-04zm 之后）。platform-rules/jd.ts 的 syncWindowCapMs 由 null 改 60 分钟（02 §7.1、CAP-JD-07 单窗 ≤1 小时），jd 进 scheduledPlatforms，手动同步随 INCREMENT_WINDOW_CAP_MS 一起打开（manualSyncPlatforms）。
+# app.module 给 orderSyncPorts 注入 rescanConfig，回扫定时器才启动：jd 开、pdd 关（FU-PDD-RESCAN-QUOTA）。jd 端点仍 demo，不切 live；凭据未配时 queryableAccount 无账号，不发窗口。
+# 冻结测试 [AC-B1-08za#9]、wiring/module.test.ts、status-files.test.ts、manual-sync 等钉 jd 不调度，由新鲜独立 Claude 改，属第一类保护路径，编排按 #24 核（先例 B1-12u、B1-04zl）。RV2。
+refs: []
+refs_hash: {}
+deps: [B1-04zm, B1-04zg, B1-04ze]
+paths:
+  - 'apps/api/src/modules/orders/domain/platform-rules/jd.ts'
+  - 'apps/api/src/modules/orders/domain/sync-window.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'test/spec/orders/jd-sync/**'
+  - 'test/spec/orders/platform-rules/**'
+  - 'test/spec/orders/wiring/**'
+  - 'test/spec/orders/manual-sync/**'
+  - 'test/spec/orders/snapshot-retry/wiring.test.ts'
+test_paths:
+  - 'test/spec/orders/jd-sync/**'
+  - 'test/spec/orders/platform-rules/**'
+  - 'test/spec/orders/wiring/**'
+  - 'test/spec/orders/manual-sync/**'
+  - 'test/spec/orders/snapshot-retry/wiring.test.ts'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
