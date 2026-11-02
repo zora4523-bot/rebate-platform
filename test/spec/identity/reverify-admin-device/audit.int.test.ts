@@ -1,9 +1,10 @@
 // B1-02zx §9 #5 · the audit record (contract adminAddUserReverifiedDevice): every request that passes
 // the permission, step-up and body checks writes one user_reverified_device_add record with the
 // admin, the reason, user_id, device_id and the result code, refusals included; never the
-// device_hash. Requests stopped by those three checks are in access.int.test.ts and
-// order.int.test.ts. The record's layout is the implementation's: these cases read the whole row as
-// text, and the result code through resultCodes(). admin's audit writer does not redact a key
+// device_hash. The reason is kept trimmed (D10-585). Requests stopped by those three checks are in
+// access.int.test.ts and order.int.test.ts, a user_id or device_id that is not a UUID in
+// targets.int.test.ts. The record's layout is the implementation's: these cases read the whole row
+// as text, and the result code through resultCodes(). admin's audit writer does not redact a key
 // named device_hash (audit-redaction.ts has no such fragment), so nothing but the operation keeps
 // it out.
 import { randomUUID } from 'node:crypto';
@@ -11,14 +12,17 @@ import { expect, it } from 'vitest';
 import { useHarness, type Response } from '../../admin/auth/kit.ts';
 import {
   ACTION,
+  DELETING,
   PERMISSION,
   REASON,
+  REVOKED,
   account,
   added,
   auditText,
   audits,
   body,
   deleted,
+  deleting,
   deviceOf,
   member,
   noHash,
@@ -148,8 +152,14 @@ const REFUSALS: readonly {
     data: { reason: 'account_deleted' },
     arrange: async (s) => {
       const target = await deleted(s);
-      return { target, device: await deviceOf(s, target) };
+      return { target, device: await deviceOf(s, target, REVOKED) };
     },
+  },
+  {
+    case: '账号注销中',
+    code: 30419,
+    data: DELETING,
+    arrange: (s) => deleting(s),
   },
   {
     case: '账号无标记',
@@ -189,6 +199,26 @@ it.each(REFUSALS)(
     }
   },
 );
+
+it('[AC-B1-02zx#47] 审计存去首尾空白后的原因：登记成功和过了三关后被拒都是', async () => {
+  const s = await setup(h);
+  const { target, device } = await account(s);
+  const padded = ` ${REASON}　\n`;
+  const before = await audits(h, s.appId);
+  await rejected(await record(s, target.id, body({ id: randomUUID() }, padded)), 20001, {
+    fields: ['device_id'],
+  });
+  await ok(await record(s, target.id, body(device, padded)));
+  const rows = added(before, await audits(h, s.appId));
+  expect(rows).toHaveLength(2);
+  for (const entry of rows) {
+    const text = auditText(entry);
+    expect(text).toContain(REASON);
+    expect(text).not.toContain(` ${REASON}`);
+    expect(text).not.toContain(`${REASON}　`);
+    expect(text).not.toContain(`${REASON}\\n`);
+  }
+});
 
 it('[AC-B1-02zx#37] 不带 Idempotency-Key：重试自然幂等，每次都多一条审计，各带自己的原因，不写幂等记录', async () => {
   const s = await setup(h);

@@ -98,6 +98,11 @@ const INVALID: readonly { case: string; patch: Body; fields: string[] }[] = [
   { case: 'reason 全是半角空白', patch: { reason: ' \t\n ' }, fields: ['reason'] },
   { case: 'reason 全是全角空格', patch: { reason: '　　' }, fields: ['reason'] },
   { case: 'reason 超过 200 字', patch: { reason: '核'.repeat(201) }, fields: ['reason'] },
+  {
+    case: 'reason 连首尾空白 201 字、去空白后 199 字',
+    patch: { reason: ` ${'核'.repeat(199)} ` },
+    fields: ['reason'],
+  },
   { case: 'reason 为 null', patch: { reason: null }, fields: ['reason'] },
   { case: 'reason 是数字', patch: { reason: 123 }, fields: ['reason'] },
   { case: '多带 source', patch: { source: 'self' }, fields: ['source'] },
@@ -119,6 +124,7 @@ it.each(INVALID)(
 it.each([
   { case: '1 字', reason: '核' },
   { case: '恰好 200 字', reason: '核'.repeat(200) },
+  { case: '连首尾空白恰好 200 字', reason: ` ${'核'.repeat(198)} ` },
   { case: '去首尾空白后 1 字', reason: `  核　\n` },
   { case: '首尾空白之内的原文', reason: ` ${REASON} ` },
 ])('[AC-B1-02zx#11] reason 合法边界（$case）→ 登记成功', async ({ reason }) => {

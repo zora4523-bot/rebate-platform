@@ -2,7 +2,9 @@
 // the api entry and the admin entry over one database. The record frees that one device of that one
 // account; the flag stays, so every other device still answers 10010 with the method the account
 // had. The gate and the page are the real ones of B1-02zp / B1-02zq, reached through HTTP; the
-// member and the withdrawal are the fixtures of reverify-gates/kit.ts.
+// member and the withdrawal are the fixtures of reverify-gates/kit.ts. What makes a device the
+// member's is a session (D10-585): the fixtures' f.on() and f.client() bind one when they first
+// call, #46 gets it from a real SMS login.
 import { afterAll, afterEach, beforeAll, expect, it } from 'vitest';
 import type { Harness } from '../../admin/auth/kit.ts';
 import {
@@ -25,7 +27,7 @@ import {
   type Kit,
   type Trusted,
 } from '../reverify/kit.ts';
-import { REASON, adminHarness, ok, own, record, setup } from './kit.ts';
+import { REASON, adminHarness, ok, record, setup } from './kit.ts';
 
 let kit: Kit;
 let h: Harness;
@@ -53,8 +55,6 @@ it.each(REQUIREMENTS)(
     const s = await setup(h, f.appId);
     const m = await f.member();
     const other = await f.device();
-    await own(h, f.appId, m.device.id, m.uid);
-    await own(h, f.appId, other.id, m.uid);
     await f.flag(m.uid, trusted);
     const flagged = await f.state(m.uid);
     refused(kit, WITHDRAW, 'post', await f.on(m).withdraw(), data);
@@ -83,9 +83,11 @@ it('[AC-B1-02zx#39] GET /v1/me/reverify 同一结论：该设备不再要求加�
   const { uid } = await f.user();
   const device = await f.device();
   const other = await f.device();
-  await own(h, f.appId, device.id, uid);
   await f.flag(uid, { realname: true, providers: [] });
   await f.failures(uid, 3);
+  expect(statusOf(kit, await f.client(uid, device).status())).toEqual(
+    idNumberRequired(FAIL_LIMIT - 3),
+  );
   const before = await f.state(uid);
 
   await ok(await record(s, uid, { device_id: device.id, reason: REASON }));
@@ -104,12 +106,27 @@ it('[AC-B1-02zx#40] 只放行这个账号：同一台设备上另一个带标记
   const s = await setup(h, f.appId);
   const m = await f.member();
   const someone = await f.member();
-  await own(h, f.appId, m.device.id, m.uid);
   await f.flag(m.uid, { realname: true, providers: [] });
   await f.flag(someone.uid, { realname: true, providers: [] });
+  refused(kit, WITHDRAW, 'post', await f.on(m).withdraw(), ID_NUMBER);
 
   await ok(await record(s, m.uid, { device_id: m.device.id, reason: REASON }));
 
   refused(kit, WITHDRAW, 'post', await f.on(someone, m.device).withdraw(), ID_NUMBER);
   expect(await f.withdrawals(someone.uid)).toEqual([]);
+});
+
+it('[AC-B1-02zx#46] 走真实短信登录的设备可以登记：POST /v1/devices 注册、登录建的会话就是归属依据', async () => {
+  const f = await gates(kit);
+  const s = await setup(h, f.appId);
+  const { uid, number } = await f.user();
+  const device = await f.device();
+  expect((await f.smsLogin(number, device)).user_id).toBe(uid);
+  await f.flag(uid, { realname: true, providers: [] });
+
+  const data = await ok(await record(s, uid, { device_id: device.id, reason: REASON }));
+
+  expect(data).toMatchObject({ user_id: uid, device_id: device.id, created: true });
+  expect(await f.devices(uid)).toEqual([{ device_hash: device.hash, source: 'admin' }]);
+  expect(statusOf(kit, await f.client(uid, device).status())).toEqual(NOT_REQUIRED);
 });

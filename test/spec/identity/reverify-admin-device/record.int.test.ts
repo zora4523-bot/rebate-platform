@@ -9,11 +9,13 @@
 import { expect, it } from 'vitest';
 import { useHarness } from '../../admin/auth/kit.ts';
 import {
+  DELETING,
   REASON,
+  REVOKED,
   account,
   body,
-  cleanupOvertakes,
   deletion,
+  deletionOvertakes,
   deviceOf,
   flag,
   livedIn,
@@ -22,6 +24,7 @@ import {
   recorded,
   records,
   rejected,
+  sessionOn,
   setup,
   snapshot,
   stateOf,
@@ -109,7 +112,36 @@ it('[AC-B1-02zx#28] 「已记录」按设备：同账号另一台设备再登记
   expect(hashes.sort()).toEqual([device.hash, second.hash].sort());
 });
 
-it('[AC-B1-02zx#29] 注销冷静期不拦：只有注销完成才是 30419，冷静期账号带标记照常登记', async () => {
+it('[AC-B1-02zx#41] 同一台设备两个账号都用过：两个账号都算自己的设备，各写一行、都 created:true', async () => {
+  const s = await setup(h);
+  const { target: first, device } = await account(s);
+  const second = await user(h, s.appId);
+  await flag(s, second);
+  await sessionOn(s, second, device);
+  for (const owner of [first, second]) {
+    const data = await ok(await record(s, owner.id, body(device)));
+    expect(data).toMatchObject({ user_id: owner.id, device_id: device.id, created: true });
+    expect((await records(h, owner)).map((row) => row.device_hash)).toEqual([device.hash]);
+  }
+});
+
+it.each([
+  { case: '只有已吊销的会话', laterUser: false },
+  { case: '只有已吊销的会话、设备之后由别的账号在用', laterUser: true },
+])('[AC-B1-02zx#42] 本用户在设备上$case也算本人设备：写一行，会话不动', async ({ laterUser }) => {
+  const s = await setup(h);
+  const target = await user(h, s.appId);
+  await flag(s, target);
+  const device = await deviceOf(s, target, REVOKED);
+  if (laterUser) await sessionOn(s, await user(h, s.appId), device);
+  const before = await snapshot(h, s.appId);
+  const data = await ok(await record(s, target.id, body(device)));
+  expect(data).toMatchObject({ user_id: target.id, device_id: device.id, created: true });
+  expect((await records(h, target)).map((row) => row.device_hash)).toEqual([device.hash]);
+  expect((await snapshot(h, s.appId)).sessions).toEqual(before.sessions);
+});
+
+it('[AC-B1-02zx#29] 注销冷静期不拦：冷静期 users.status 还是 normal，账号带标记照常登记', async () => {
   const s = await setup(h);
   const { target, device } = await account(s);
   await deletion(h, target, 'cooling');
@@ -158,13 +190,19 @@ it('[AC-B1-02zx#32] 同一设备并发登记两次：都成功，恰好一行，
   expect(await records(h, target)).toHaveLength(1);
 });
 
-it('[AC-B1-02zx#33] 注销清理抢在写入前提交：请求在途时标记被清掉，不写回，回 reverify_not_pending', async () => {
-  const s = await setup(h);
-  const { target, device } = await account(s);
-  const step = await stepUp(s);
-  const response = await cleanupOvertakes(h, target, () =>
-    record(s, target.id, body(device), { stepUp: step }),
-  );
-  await rejected(response, 30419, { reason: 'reverify_not_pending' });
-  expect(await records(h, target)).toEqual([]);
-});
+it.each([
+  { case: '转入处理中、标记还在', cleaned: false },
+  { case: '转入处理中、清理也清掉了标记', cleaned: true },
+])(
+  '[AC-B1-02zx#33] 注销抢在写入前提交（$case）：不写回，回 account_deleting，不是 reverify_not_pending',
+  async ({ cleaned }) => {
+    const s = await setup(h);
+    const { target, device } = await account(s);
+    const step = await stepUp(s);
+    const response = await deletionOvertakes(h, target, cleaned, () =>
+      record(s, target.id, body(device), { stepUp: step }),
+    );
+    await rejected(response, 30419, DELETING);
+    expect(await records(h, target)).toEqual([]);
+  },
+);

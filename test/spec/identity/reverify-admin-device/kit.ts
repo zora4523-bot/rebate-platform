@@ -9,16 +9,14 @@
 // fixture() a Harness over the kit's database and Redis, with an admin keyring of its own. The two
 // entries have separate FixedClocks; nothing here compares across them.
 //
-// Who owns a device. The contract says devices.user_id is this user, so deviceOf() seeds that column
-// directly: it is the one place that decides it. NOTE: no production code writes that column
-// (devices.repository.ts inserts null, nothing updates it; risk/ports/blocklist-match.ts says so),
-// see the task's output. These cases prove the rule as the contract words it, not that a device
-// registered and logged in for real can be recorded.
+// Who owns a device (D10-571 ⑨, D10-585): a device of a user is one a session of that user was bound
+// to, revoked sessions included, and the device itself is not revoked. Devices are shared per
+// install: no production code writes devices.user_id, and no seed here does either. sessionOn() is
+// the one place that decides it, with a real sessions row; effect.int.test.ts #46 gets the same row
+// from a real SMS login.
 //
-// Not pinned on purpose (listed in the task's output): a flagged account with users.status deleting
-// whose cleanup has not run; a reason of 200 characters plus padding (over the schema's maxLength,
-// within the description's trimmed length); whether the audit keeps the reason trimmed; the audit
-// of a user_id or device_id that is not a UUID at all.
+// Not pinned on purpose (listed in the task's output): which field answers when a user_id that is
+// not a UUID comes with an invalid body (both are 20001 without an audit record).
 import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -61,6 +59,10 @@ export const TRACE = '0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b';
 export const REASON = '企业微信核对注册时间、最近一笔订单号与实名信息，旧号未换，登记用户当前手机';
 export const ACTION = 'user_reverified_device_add';
 export const PERMISSION = 'user.phone_change';
+/** users.status deleting reads processing (BR-ID-28; the values of 10007's data.stage). */
+export const DELETING = { reason: 'account_deleting', stage: 'processing' };
+/** Each fits the Id schema (1–64 characters), so only the UUID check can answer. */
+export const NOT_UUIDS = ['not-a-uuid', 'a'.repeat(64), 'zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz'];
 const ROUTE = PATH.replace('{user_id}', ':user_id');
 
 export type Body = Record<string, unknown>;
@@ -203,7 +205,7 @@ export async function rejected(response: Response, code: number, data?: object) 
 
 // ---------------------------------------------------------------- seeds
 
-async function insertDevice(s: Setup, appId: string, owner: string | null): Promise<Device> {
+async function insertDevice(s: Setup, appId: string): Promise<Device> {
   const id = randomUUID();
   const hash = randomBytes(32).toString('hex');
   await s.h.db
@@ -211,7 +213,6 @@ async function insertDevice(s: Setup, appId: string, owner: string | null): Prom
     .values({
       id,
       app_id: appId,
-      user_id: owner,
       device_hash: hash,
       id_source: 'idfv',
       install_secret_cipher: Buffer.from('fixture'),
@@ -223,16 +224,47 @@ async function insertDevice(s: Setup, appId: string, owner: string | null): Prom
   return { id, appId, hash };
 }
 
-/** A live device of `target`: devices.user_id is that user (see the header). */
-export const deviceOf = (s: Setup, target: Target) => insertDevice(s, target.appId, target.id);
+export interface SessionOptions {
+  /** The session was revoked before the request (default: live). */
+  revoked?: boolean;
+}
+export const REVOKED: SessionOptions = { revoked: true };
 
-/** A live device nobody owns: devices.user_id null, no session of anyone. */
-export const unowned = (s: Setup, appId = s.appId) => insertDevice(s, appId, null);
+/** One sessions row of `target` bound to `device`: what makes it a device of that user. */
+export async function sessionOn(
+  s: Setup,
+  target: Target,
+  device: Pick<Device, 'id'>,
+  options: SessionOptions = {},
+) {
+  const now = s.clock.now();
+  const revoked = options.revoked === true;
+  await s.h.db
+    .insertInto('sessions')
+    .values({
+      id: randomUUID(),
+      app_id: target.appId,
+      sid: randomBytes(16).toString('base64url'),
+      login_method: null,
+      user_id: target.id,
+      device_id: device.id,
+      revoked_at: revoked ? now : null,
+      revoke_reason: revoked ? 'logout' : null,
+      created_at: now,
+      updated_at: now,
+    })
+    .execute();
+}
 
-/** The same ownership on a device registered through POST /v1/devices. */
-export const own = (h: Harness, appId: string, deviceId: string, userId: string) =>
-  sql`UPDATE app.devices SET user_id = ${userId}
-    WHERE app_id = ${appId} AND id = ${deviceId}`.execute(h.db);
+/** A device of `target`: registered, one session of that user bound to it. */
+export async function deviceOf(s: Setup, target: Target, options: SessionOptions = {}) {
+  const device = await insertDevice(s, target.appId);
+  await sessionOn(s, target, device, options);
+  return device;
+}
+
+/** A live device nobody has signed in on: no session of anyone. */
+export const unowned = (s: Setup, appId = s.appId) => insertDevice(s, appId);
 
 export const revoke = (s: Setup, device: Device) =>
   sql`UPDATE app.devices SET revoked_at = ${s.clock.now()}
@@ -256,11 +288,27 @@ export async function account(s: Setup, appId = s.appId) {
   return { target, device: await deviceOf(s, target) };
 }
 
-/** A tombstone: deletion complete, nothing left of the re-verification data (BR-ID-28). */
+/**
+ * A tombstone: deletion complete, nothing left of the re-verification data (BR-ID-28). Its session
+ * rows stay, revoked, so its devices are created with REVOKED.
+ */
 export async function deleted(s: Setup) {
   const target = await user(s.h, s.appId, { phone: null, status: 'deleted' });
   await deletion(s.h, target, 'done');
   return target;
+}
+
+/**
+ * An account in deletion. As the expiry job leaves it (deletion-expiry.ts ⑥): users.status deleting,
+ * the request processing, the flag and the live session still there. With `flagged: false`, as the
+ * cleanup of deletion-processing.ts leaves it: the flag gone, the session revoked.
+ */
+export async function deleting(s: Setup, options: { flagged?: boolean } = {}) {
+  const flagged = options.flagged !== false;
+  const target = await user(s.h, s.appId, { status: 'deleting' });
+  await deletion(s.h, target, 'processing');
+  if (flagged) await flag(s, target);
+  return { target, device: await deviceOf(s, target, flagged ? {} : REVOKED) };
 }
 
 /** One row of reverified_devices, written before the request under test. */
@@ -285,9 +333,9 @@ export async function recorded(
 }
 
 /**
- * Everything the record must leave alone on a lived-in flagged account: a run of failures, three
- * bound identities (one outside the trusted snapshot, what a phone change would unbind) and a live
- * session (what a phone change would revoke).
+ * Everything the record must leave alone on a lived-in flagged account: a run of failures and three
+ * bound identities (one outside the trusted snapshot, what a phone change would unbind). The live
+ * session a phone change would revoke is the one deviceOf() seeded.
  */
 export async function livedIn(s: Setup, target: Target, device: Device) {
   const now = s.clock.now();
@@ -306,21 +354,6 @@ export async function livedIn(s: Setup, target: Target, device: Device) {
       })
       .execute();
   }
-  await s.h.db
-    .insertInto('sessions')
-    .values({
-      id: randomUUID(),
-      app_id: target.appId,
-      sid: randomBytes(16).toString('base64url'),
-      login_method: null,
-      user_id: target.id,
-      device_id: device.id,
-      revoked_at: null,
-      revoke_reason: null,
-      created_at: now,
-      updated_at: now,
-    })
-    .execute();
 }
 
 // ---------------------------------------------------------------- reads
@@ -454,17 +487,21 @@ async function parkedOrEnded(h: Harness, request: Promise<unknown>, ms = 5000): 
 }
 
 /**
- * The cleanup of a deletion overtaking the request (08 BR-ID-28 细则「待加验记录」; the mode of
- * identity/ports/lock-users.ts). Another connection holds the users row with the flag still set, so
- * a plain read of the request still sees it; `start` runs until it waits on that row or ends; then
- * the flag goes, the status moves to deleting and that commits. Only a request that judges the flag
- * while it holds the row, or on the write itself, sees it.
+ * A deletion overtaking the request (08 BR-ID-28 细则「待加验记录」; the mode of
+ * identity/ports/lock-users.ts). The flagged account starts in the cooling period, which does not
+ * refuse (#29). Another connection holds the users row, so a plain read of the request still sees a
+ * normal account; `start` runs until it waits on that row or ends; then what the expiry job writes
+ * commits (users.status deleting, the request processing) and, with `cleaned`, what the cleanup
+ * writes as well (the flag gone). Only a request that judges the account while it holds the row, or
+ * on the write itself, sees it.
  */
-export async function cleanupOvertakes(
+export async function deletionOvertakes(
   h: Harness,
   target: Target,
+  cleaned: boolean,
   start: () => Promise<Response>,
 ): Promise<Response> {
+  await deletion(h, target, 'cooling');
   let locked!: () => void;
   const isLocked = new Promise<void>((resolve) => {
     locked = resolve;
@@ -479,9 +516,14 @@ export async function cleanupOvertakes(
     expect(rows).toHaveLength(1);
     locked();
     await released;
-    await sql`UPDATE app.users SET status = 'deleting', reverify_flagged_at = NULL,
-        reverify_trusted = NULL
+    await sql`UPDATE app.users SET status = 'deleting'
       WHERE app_id = ${target.appId} AND id = ${target.id}`.execute(trx);
+    await sql`UPDATE app.deletion_requests SET status = 'processing'
+      WHERE app_id = ${target.appId} AND user_id = ${target.id}`.execute(trx);
+    if (cleaned) {
+      await sql`UPDATE app.users SET reverify_flagged_at = NULL, reverify_trusted = NULL
+        WHERE app_id = ${target.appId} AND id = ${target.id}`.execute(trx);
+    }
   });
   await Promise.race([isLocked, holder]);
   const request = start();
