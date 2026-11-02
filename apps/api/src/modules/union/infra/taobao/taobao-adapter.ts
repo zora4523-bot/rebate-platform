@@ -79,6 +79,7 @@ import {
   taobaoItemIdBatches,
   type TaobaoItemIdCache,
 } from './dataoke-search.ts';
+import type { TaobaoSearchSlotReader, TaobaoSearchWarning } from './official-search.ts';
 import {
   detailItemId,
   detailRows,
@@ -150,6 +151,11 @@ import {
 } from './sign.ts';
 
 export type { TaobaoParameter, TaobaoParameters } from './sign.ts';
+export type {
+  TaobaoSearchSkipReason,
+  TaobaoSearchSlotReader,
+  TaobaoSearchWarning,
+} from './official-search.ts';
 export type { TaobaoWarning } from './response.ts';
 export type {
   TaobaoOrderSlotReader,
@@ -197,6 +203,13 @@ export interface TaobaoAdapterOptions {
    * nothing fetched or sent).
    */
   readonly searchSource?: TaobaoSearchSource;
+  /**
+   * B1-04zx (D10-582): the calling app's active query PID, for the official search's adzone_id
+   * (see official-search.ts). Without it searchItems stays adapter_unimplemented under 'official'.
+   */
+  readonly searchSlot?: TaobaoSearchSlotReader;
+  /** B1-04zx: skipped official search rows (see TaobaoSearchWarning); never through `warn`. */
+  readonly searchWarn?: (event: TaobaoSearchWarning) => void;
   /**
    * B1-04f (D10-488 ③): every Taobao PID registered in union_pids, retired ones included; listOrders
    * keeps only the orders of these promotion slots (see orders.ts). Without it listOrders is

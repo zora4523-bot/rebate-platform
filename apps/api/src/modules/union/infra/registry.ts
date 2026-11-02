@@ -50,7 +50,9 @@ import {
   type TaobaoCredentials,
   type TaobaoOrderSlotReader,
   type TaobaoOrderWarning,
+  type TaobaoSearchSlotReader,
   type TaobaoSearchSource,
+  type TaobaoSearchWarning,
   type TaobaoWarning,
 } from './taobao/taobao-adapter.ts';
 
@@ -88,6 +90,10 @@ export interface TaobaoLiveOptions {
    * `orderSource`, taobao searchItems is unchanged.
    */
   readonly searchSource?: TaobaoSearchSource;
+  /** B1-04zx (D10-582): handed to TaobaoUnionAdapter as `searchSlot` (official search adzone). */
+  readonly searchSlot?: TaobaoSearchSlotReader;
+  /** B1-04zx: handed to TaobaoUnionAdapter as `searchWarn` (skipped official search rows). */
+  readonly searchWarn?: (event: TaobaoSearchWarning) => void;
   /**
    * B1-04zn (D10-530): handed to TaobaoUnionAdapter as `orderSlots` (B1-04f): every Taobao PID of
    * ctx.appId in union_pids, retired ones included. Without it listOrders stays unimplemented.
