@@ -1,6 +1,7 @@
 // B2-03q · refresh，ESTIMATED / WAITING（D10-565）：在调用方事务里对 orders 当前 commission_version 追加金额行
 // 与 totals；比例、预留、淘礼金扣除、补贴取快照冻结值，N 取有效佣金（结算优先），forfeited 行 0、held 照算
 // （BR-CALC-13、BR-CALC-27）；该版本已有行就不写；不补中间版本；不改余额、不写分录、不加版本号。
+// 拼多多 N = 佣金 − 服务费，服务费缺失不写不抛错（同快照 pending），不按 0（BR-CALC-02、BR-CALC-03）。
 // 默认单：预留 1500，self 5000 / direct 1000 / indirect 500。N=2000 → B=1700，850 / 170 / 85，合计 1105。
 import { randomUUID } from 'node:crypto';
 import { createTestDatabase } from '@couli/db/testing';
@@ -422,4 +423,110 @@ it('[AC-B2-03q#30] 跨 App、跨订单不串：只写传入的这一单，同一
     ['self', 1700n, 850n],
     ['direct', 1700n, 170n],
   ]);
+});
+
+it('[AC-B2-03q#56][BR-CALC-02][BR-CALC-03][BR-CALC-27] 拼多多：N 按佣金减服务费，四段金额都用这个 N', async () => {
+  const f = await fixture(p.db);
+  const o = await f.order({
+    platform: 'pdd',
+    estFen: 1200n,
+    patch: { service_fee_fen: 200n },
+  });
+  await f.move(o, { estAfter: 2000n });
+
+  await f.refresh(o);
+
+  // N = 2000 − 200 = 1800；B = 1530；765 / 153 / 76，合计 994。
+  expect(await amountsAt(p.db, o, 2)).toEqual([
+    ['self', 1530n, 765n],
+    ['direct', 1530n, 153n],
+    ['indirect', 1530n, 76n],
+  ]);
+  expect(await totalsAt(p.db, o, 2)).toEqual({
+    n_total_fen: 1800n,
+    pre_base_deduct_fen: 270n,
+    base_fen: 1530n,
+    user_share_total_fen: 994n,
+    tlj_redpacket_fen: 0n,
+    platform_est_profit_fen: 806n,
+  });
+});
+
+it('[AC-B2-03q#57][BR-CALC-02][BR-CALC-03] 拼多多结算优先：结算额同样减服务费，预估不参与', async () => {
+  const f = await fixture(p.db);
+  const o = await f.order({
+    platform: 'pdd',
+    rebateStatus: 'WAITING',
+    platformStatus: 'SETTLED',
+    estFen: 1200n,
+    settleFen: 2000n,
+    patch: { service_fee_fen: 200n },
+  });
+  await f.move(o, { estAfter: 9999n });
+
+  await f.refresh(o);
+
+  expect(await amountsAt(p.db, o, 2)).toEqual([
+    ['self', 1530n, 765n],
+    ['direct', 1530n, 153n],
+    ['indirect', 1530n, 76n],
+  ]);
+  expect(await totalsAt(p.db, o, 2)).toMatchObject({ n_total_fen: 1800n, base_fen: 1530n });
+});
+
+it('[AC-B2-03q#58][BR-CALC-03] 拼多多服务费缺失：什么也不写、不抛错，不按服务费 0 算', async () => {
+  const f = await fixture(p.db);
+  const o = await f.order({
+    platform: 'pdd',
+    estFen: 1200n,
+    patch: { service_fee_fen: null },
+  });
+  await f.move(o, { estAfter: 2000n });
+
+  await f.refresh(o);
+
+  expect(await storedVersions(p.db, o)).toEqual({ amounts: [1], totals: [1] });
+});
+
+it('[AC-B2-03q#59][BR-CALC-03] 拼多多服务费 0 是已知值：照常写，N 等于佣金', async () => {
+  const f = await fixture(p.db);
+  const o = await f.order({ platform: 'pdd', estFen: 1200n, patch: { service_fee_fen: 0n } });
+  await f.move(o, { estAfter: 2000n });
+
+  await f.refresh(o);
+
+  expect(await totalsAt(p.db, o, 2)).toMatchObject({ n_total_fen: 2000n, base_fen: 1700n });
+});
+
+it('[AC-B2-03q#60][BR-CALC-03] 不扣服务费的平台：列里有值也不减', async () => {
+  const f = await fixture(p.db);
+  const o = await f.order({ platform: 'jd', patch: { service_fee_fen: 200n } });
+  await f.move(o, { estAfter: 2000n });
+
+  await f.refresh(o);
+
+  expect(await totalsAt(p.db, o, 2)).toMatchObject({ n_total_fen: 2000n, base_fen: 1700n });
+});
+
+it('[AC-B2-03q#61][BR-CALC-27] 金额超过 2^31：逐分准确，不被窄化', async () => {
+  const f = await fixture(p.db);
+  const o = await f.order();
+  await f.move(o, { estAfter: 3_000_000_000n });
+
+  await f.refresh(o);
+
+  // 3,000,000,000 × 85% = 2,550,000,000；份额 50% / 10% / 5%。
+  expect(await amountsAt(p.db, o, 2)).toEqual([
+    ['self', 2_550_000_000n, 1_275_000_000n],
+    ['direct', 2_550_000_000n, 255_000_000n],
+    ['indirect', 2_550_000_000n, 127_500_000n],
+  ]);
+  expect(await totalsAt(p.db, o, 2)).toEqual({
+    n_total_fen: 3_000_000_000n,
+    pre_base_deduct_fen: 450_000_000n,
+    base_fen: 2_550_000_000n,
+    user_share_total_fen: 1_657_500_000n,
+    tlj_redpacket_fen: 0n,
+    platform_est_profit_fen: 1_342_500_000n,
+  });
 });

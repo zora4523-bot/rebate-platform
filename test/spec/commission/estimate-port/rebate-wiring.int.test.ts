@@ -274,3 +274,68 @@ it('[AC-B2-03q#46][BR-FUND-01] CREDITED 分支：版本没前进时没有新版�
 
   expect(await storedVersions(p.db, o)).toEqual({ amounts: [1, 2], totals: [1, 2] });
 });
+
+it('[AC-B2-03q#62][BR-FUND-01][BR-CALC-03] R7 拼多多：真实 bases 与 refresh 都按减服务费后的 N', async () => {
+  const f = await fixture(p.db);
+  const o = await f.order({
+    platform: 'pdd',
+    estFen: 1200n,
+    patch: { service_fee_fen: 200n },
+  });
+  const rebate = rebateOf(f.clock, f.estimates);
+
+  await p.db.transaction().execute(async (trx) => {
+    const { change, source } = await syncColumns(trx, o, { estAfter: 2000n });
+    await rebate.onUpdated(trx, change, source);
+  });
+
+  expect(await amountsAt(p.db, o, 2)).toEqual([
+    ['self', 1530n, 765n],
+    ['direct', 1530n, 153n],
+    ['indirect', 1530n, 76n],
+  ]);
+});
+
+it('[AC-B2-03q#63][BR-FUND-07][BR-CALC-03] R6 拼多多：佣金等于服务费时新基数是 0，订单 VOID，不走 R7', async () => {
+  const f = await fixture(p.db);
+  const o = await f.order({
+    platform: 'pdd',
+    estFen: 1200n,
+    patch: { service_fee_fen: 200n },
+  });
+  const rebate = rebateOf(f.clock, f.estimates);
+
+  await p.db.transaction().execute(async (trx) => {
+    const { change, source } = await syncColumns(trx, o, { estAfter: 200n });
+    await rebate.onUpdated(trx, change, source);
+  });
+
+  const order = await p.db
+    .selectFrom('orders')
+    .select(['rebate_status', 'reason'])
+    .where('app_id', '=', o.appId)
+    .where('order_id', '=', o.orderId)
+    .executeTakeFirstOrThrow();
+  expect(order).toEqual({ rebate_status: 'VOID', reason: 'COMMISSION_ZERO' });
+  expect(await storedVersions(p.db, o)).toEqual({ amounts: [1], totals: [1] });
+});
+
+it('[AC-B2-03q#64][BR-FUND-07][BR-CALC-02] R6 有补贴的单：佣金变 0 时新基数是 0，补贴不把订单留在 R7', async () => {
+  const f = await fixture(p.db);
+  const o = await f.order({ subsidyFen: 111n });
+  const rebate = rebateOf(f.clock, f.estimates);
+
+  await p.db.transaction().execute(async (trx) => {
+    const { change, source } = await syncColumns(trx, o, { estAfter: 0n });
+    await rebate.onUpdated(trx, change, source);
+  });
+
+  const order = await p.db
+    .selectFrom('orders')
+    .select(['rebate_status', 'reason'])
+    .where('app_id', '=', o.appId)
+    .where('order_id', '=', o.orderId)
+    .executeTakeFirstOrThrow();
+  expect(order).toEqual({ rebate_status: 'VOID', reason: 'COMMISSION_ZERO' });
+  expect(await storedVersions(p.db, o)).toEqual({ amounts: [1], totals: [1] });
+});

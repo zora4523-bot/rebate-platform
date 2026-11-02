@@ -1,5 +1,6 @@
 // B2-03q · bases（D10-565）：after = 用入参的 estAfter、settleCommissionFen 按冻结条款算 B，结算优先；
 // before = 最大版本 totals.base_fen。无快照两者都 null；有效佣金全空 after 为 null，不当 0。
+// 拼多多 N = 佣金 − 服务费（BR-CALC-02、BR-CALC-03，与快照同口径）；N 不含补贴（BR-CALC-02）。
 // 默认单：预留 1500、N=1000 → B=850（425 / 85 / 42）。
 import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
@@ -206,4 +207,81 @@ it('[AC-B2-03q#12] 跨 App 不串：别的 App 的订单在本 App 下读不到�
   expect(
     await f.bases({ ...theirs, appId: mine.appId }, { estAfter: 2000n, settleCommissionFen: null }),
   ).toEqual({ before: null, after: null });
+});
+
+it('[AC-B2-03q#52][BR-CALC-02][BR-CALC-03] 拼多多：after 按佣金减服务费换算，结算额同样减；佣金不高于服务费时 N 为 0', async () => {
+  const f = await fixture(db);
+  const o = await f.order({
+    platform: 'pdd',
+    estFen: 1200n,
+    patch: { service_fee_fen: 200n },
+  });
+  // (2000 − 200) × 85% = 1530。
+  expect(await f.bases(o, { estAfter: 2000n, settleCommissionFen: null })).toEqual({
+    before: 850n,
+    after: 1530n,
+  });
+  // 结算优先：(3000 − 200) × 85% = 2380，预估不参与。
+  expect(await f.bases(o, { estAfter: 2000n, settleCommissionFen: 3000n })).toEqual({
+    before: 850n,
+    after: 2380n,
+  });
+  // 等于服务费与低于服务费都是 0：R6 看的就是这个 0。
+  expect(await f.bases(o, { estAfter: 200n, settleCommissionFen: null })).toEqual({
+    before: 850n,
+    after: 0n,
+  });
+  expect(await f.bases(o, { estAfter: 150n, settleCommissionFen: null })).toEqual({
+    before: 850n,
+    after: 0n,
+  });
+});
+
+it('[AC-B2-03q#53][BR-CALC-03] 拼多多服务费缺失：after 是 null，不按服务费 0 换算；服务费 0 是已知值，照常换算', async () => {
+  const f = await fixture(db);
+  const unknown = await f.order({
+    platform: 'pdd',
+    estFen: 1200n,
+    patch: { service_fee_fen: null },
+  });
+  expect(await f.bases(unknown, { estAfter: 2000n, settleCommissionFen: null })).toEqual({
+    before: 850n,
+    after: null,
+  });
+  const free = await f.order({ platform: 'pdd', estFen: 1200n, patch: { service_fee_fen: 0n } });
+  expect(await f.bases(free, { estAfter: 2000n, settleCommissionFen: null })).toEqual({
+    before: 850n,
+    after: 1700n,
+  });
+});
+
+it('[AC-B2-03q#54][BR-CALC-03] 不扣服务费的平台：列里有值也不减，空值也不是未知', async () => {
+  const f = await fixture(db);
+  const filled = await f.order({ platform: 'jd', patch: { service_fee_fen: 200n } });
+  expect(await f.bases(filled, { estAfter: 2000n, settleCommissionFen: null })).toEqual({
+    before: 850n,
+    after: 1700n,
+  });
+  const empty = await f.order({ platform: 'taobao', patch: { service_fee_fen: null } });
+  expect(await f.bases(empty, { estAfter: 2000n, settleCommissionFen: null })).toEqual({
+    before: 850n,
+    after: 1700n,
+  });
+});
+
+it('[AC-B2-03q#55][BR-CALC-02] 补贴不进 N：有补贴时 after 不变，佣金 0 或负数时 after 仍是 0', async () => {
+  const f = await fixture(db);
+  const o = await f.order({ subsidyFen: 111n });
+  expect(await f.bases(o, { estAfter: 2000n, settleCommissionFen: null })).toEqual({
+    before: 850n,
+    after: 1700n,
+  });
+  expect(await f.bases(o, { estAfter: 0n, settleCommissionFen: null })).toEqual({
+    before: 850n,
+    after: 0n,
+  });
+  expect(await f.bases(o, { estAfter: -50n, settleCommissionFen: null })).toEqual({
+    before: 850n,
+    after: 0n,
+  });
 });

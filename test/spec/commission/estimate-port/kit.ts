@@ -1,5 +1,5 @@
-// B2-03q rule-test kit (D10-540, D10-565). Real rows and the real rebate, clawback and ledger code;
-// the estimates under test always come from commission's public entry, never from a double.
+// B2-03q rule-test kit (D10-540, D10-565, D10-568). Real rows and the real rebate, clawback and
+// ledger code; the estimates under test always come from commission's public entry, never a double.
 // Expected amounts are written by hand in the tests; the seeds only derive the v1 rows of a snapshot
 // from the BR-CALC-02 / BR-CALC-04 formulas (baseOf, shareOf). Integration tests pass the database
 // in: this file never imports @couli/db/testing.
@@ -9,6 +9,7 @@ import { addFen, subFen } from '@couli/money';
 import type { Insertable, Kysely, Transaction } from 'kysely';
 import { vi } from 'vitest';
 import type { CommissionEstimatesDependencies } from '../../../../apps/api/src/modules/commission/ports/estimates.ts';
+import { findPlatformRules } from '../../../../apps/api/src/modules/orders/domain/platform-rules/index.ts';
 import {
   lockOrderKey,
   type OrderStatusSource,
@@ -22,6 +23,7 @@ import {
 } from '../../../../apps/api/src/modules/settlement/index.ts';
 import { readRebateOrder } from '../../../../apps/api/src/modules/settlement/rebate/infra/rebate-store.ts';
 import { baseOf, harness as clawbackHarness, shareOf } from '../../settlement/clawback/kit.ts';
+import { seedVersion, version as ruleVersion } from '../snapshot/fixtures.ts';
 
 // Through commission's public entry, loaded at run time like the other rule tests: the test
 // project's tsc stays out of the Nest decorator graph. The type queries are erased.
@@ -29,6 +31,8 @@ export const commission = (await import(
   new URL('../../../../apps/api/src/modules/commission/index.ts', import.meta.url).href
 )) as {
   createCommissionEstimates: typeof import('../../../../apps/api/src/modules/commission/ports/estimates.ts').createCommissionEstimates;
+  createCommissionSnapshotPort: typeof import('../../../../apps/api/src/modules/commission/ports/estimates.ts').createCommissionSnapshotPort;
+  createInMemoryBeneficiaryResolver: typeof import('../../../../apps/api/src/modules/commission/infra/in-memory-beneficiary-resolver.ts').createInMemoryBeneficiaryResolver;
   readCommissionSnapshot: typeof import('../../../../apps/api/src/modules/commission/application/read-snapshot.ts').readCommissionSnapshot;
 };
 
@@ -57,6 +61,8 @@ export interface PersonInput {
 }
 
 export interface OrderInput {
+  /** taobao by default; a pdd order takes service_fee_fen through patch. */
+  readonly platform?: 'taobao' | 'jd' | 'pdd';
   readonly rebateStatus?: string;
   readonly platformStatus?: string;
   readonly estFen?: bigint | null;
@@ -105,8 +111,6 @@ export interface SeededPortOrder extends PortOrder {
 export interface SyncSpec {
   /** New est_commission_fen; a different value moves commission_version like orders' sync. */
   readonly estAfter?: bigint;
-  /** New settle_commission_fen (default: unchanged). */
-  readonly settleAfter?: bigint;
   readonly refundedQuantityAfter?: number;
   readonly event?: OrderStatusSource['event'];
   readonly attributedNow?: boolean;
@@ -131,10 +135,82 @@ function bySnapshotOrder<T extends { commission_version: number; role: string }>
   );
 }
 
+/** The columns come through settlement's read of the row, the fee rule from orders' rule table. */
+function estimatesDependencies(clock: FixedClock): CommissionEstimatesDependencies {
+  return {
+    clock,
+    readOrder: readRebateOrder,
+    serviceFeeDeducted: (platform) => findPlatformRules(platform)?.serviceFeeDeducted === true,
+  };
+}
+
 /** The port as settlement takes it: assigning it here checks the shape against rebate.ts. */
 export function estimatesOf(clock: FixedClock): RebateDependencies['estimates'] {
-  const deps: CommissionEstimatesDependencies = { clock, readOrder: readRebateOrder };
-  return commission.createCommissionEstimates(deps);
+  return commission.createCommissionEstimates(estimatesDependencies(clock));
+}
+
+/** Commission's port for orders' snapshot step, over one owner at level L1 with no inviter. */
+export function snapshotPortOf(clock: FixedClock, appId: string, ownerUserId: string) {
+  const owner = {
+    userId: ownerUserId,
+    level: 'L1',
+    status: 'active',
+    forfeitReason: null,
+  } as const;
+  return commission.createCommissionSnapshotPort({
+    ...estimatesDependencies(clock),
+    logger: { warn: vi.fn() },
+    beneficiaries: commission.createInMemoryBeneficiaryResolver([
+      { appId, beneficiaries: { owner, direct: null, indirect: null, warnings: [] } },
+    ]),
+  });
+}
+
+/** A published rule version for real snapshots: reserve 1500, own 5000 on all three platforms. */
+export async function snapshotRules(
+  db: Kysely<DB>,
+  appId: string,
+  options: { readonly effectiveFrom?: Date; readonly reserves?: boolean } = {},
+): Promise<void> {
+  const platforms = ['taobao', 'jd', 'pdd'] as const;
+  await seedVersion(
+    db,
+    appId,
+    ruleVersion({
+      ...(options.effectiveFrom === undefined ? {} : { effective_from: options.effectiveFrom }),
+      reserves:
+        options.reserves === false
+          ? []
+          : platforms.map((platform) => ({ platform, reserve_bp: 1500 })),
+    }),
+  );
+}
+
+/** The columns of the orders row: the version the snapshot step moved. */
+export async function orderRow(db: Kysely<DB>, order: Pick<PortOrder, 'appId' | 'orderId'>) {
+  return db
+    .selectFrom('orders')
+    .selectAll()
+    .where('app_id', '=', order.appId)
+    .where('order_id', '=', order.orderId)
+    .executeTakeFirstOrThrow();
+}
+
+/** The port's reference of a row read back from the orders table. */
+export function portOrderOf(row: {
+  app_id: string;
+  order_id: string;
+  platform: string;
+  sub_order_id: string;
+  attr_at: Date;
+}): PortOrder {
+  return {
+    appId: row.app_id,
+    orderId: row.order_id,
+    platform: row.platform,
+    subOrderId: row.sub_order_id,
+    attrAt: row.attr_at,
+  };
 }
 
 /** Transactional event marker, like the platform outbox: rolls back with the caller. */
@@ -201,12 +277,10 @@ export async function syncColumns(
     .executeTakeFirstOrThrow();
   const estAfter = spec.estAfter ?? before.est_commission_fen;
   const moved = estAfter !== before.est_commission_fen;
-  const settleAfter = spec.settleAfter ?? before.settle_commission_fen;
   await trx
     .updateTable('orders')
     .set({
       est_commission_fen: estAfter,
-      settle_commission_fen: settleAfter,
       commission_version: moved ? before.commission_version + 1 : before.commission_version,
       refunded_quantity: spec.refundedQuantityAfter ?? before.refunded_quantity,
       row_version: before.row_version + 1,
@@ -225,7 +299,7 @@ export async function syncColumns(
       received_at: before.received_at,
       est_before: before.est_commission_fen,
       est_after: estAfter,
-      settle_commission_fen: settleAfter,
+      settle_commission_fen: before.settle_commission_fen,
       attributed_now: spec.attributedNow ?? false,
     },
     source: { event: spec.event ?? 'PLATFORM_PAID', raw_status: 'synthetic' },
@@ -355,7 +429,7 @@ export async function fixture(db: Kysely<DB>, appId: string = `estimate-${random
 
   async function order(input: OrderInput = {}): Promise<SeededPortOrder> {
     const orderId = randomUUID();
-    const platform = 'taobao';
+    const platform = input.platform ?? 'taobao';
     const subOrderId = `sub-${randomUUID()}`;
     const attrAt = SNAPSHOT_AT;
     const reserveBp = input.reserveBp ?? 1500;
