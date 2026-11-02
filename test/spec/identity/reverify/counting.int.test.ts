@@ -380,3 +380,40 @@ it.each([
     });
   },
 );
+
+it('[AC-B1-02zp#110] 同一设备两个第三方加验都已预占：A 通过清零、另一设备又失败 1 次后，慢的 B 比对通过而设备行已在，B 回 passed 且照样清零（§2b「加验通过时也清零」）', async () => {
+  const f = await fixture(kit);
+  const { uid, device, unionId, c } = await flagged(f);
+  const other = f.client(uid, await f.device());
+  const [a, b] = [
+    attemptOf(kit, await c.attempt('wechat')),
+    attemptOf(kit, await c.attempt('wechat')),
+  ];
+  // One hold per request: a parked exchange keeps its own answer, so A can end while B waits.
+  const heldB = holdExchange(kit);
+  const slow = c.byOauth(oauthBody('wechat', b.attempt_id));
+  await firstOf([heldB.reached, slow]);
+  const heldA = holdExchange(kit);
+  const fast = c.byOauth(oauthBody('wechat', a.attempt_id));
+  try {
+    await firstOf([heldA.reached, fast]);
+    expect(kit.exchange).toHaveBeenCalledTimes(2);
+    expect(await f.state(uid)).toMatchObject({ reverify_fail_count: 2, reverify_fail_day: TODAY });
+
+    kit.clock.advanceMs(SECOND);
+    heldA.release({ union_id: unionId });
+    passed(kit, BY_OAUTH, await fast);
+    expect(await f.state(uid)).toMatchObject({ reverify_fail_count: 0, reverify_fail_day: null });
+
+    kit.clock.advanceMs(SECOND);
+    mismatch(kit, BY_ID, await other.byId(OTHER_ID), FAIL_LIMIT - 1);
+    expect(await f.state(uid)).toMatchObject({ reverify_fail_count: 1, reverify_fail_day: TODAY });
+  } finally {
+    heldA.release({ unavailable: true });
+    heldB.release({ union_id: unionId });
+  }
+
+  passed(kit, BY_OAUTH, await slow);
+  expect(await f.devices(uid)).toEqual([{ device_hash: device.hash, source: 'self' }]);
+  expect(await f.state(uid)).toMatchObject({ reverify_fail_count: 0, reverify_fail_day: null });
+});
