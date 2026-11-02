@@ -5,11 +5,27 @@
 // read on the same transaction.
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
-import type {
-  CommissionSnapshotDependencies,
-  CreateCommissionSnapshotInput,
-  CreateCommissionSnapshotResult,
+import {
+  frozenBase,
+  netCommission,
+  planVersion,
+  type FrozenTerms,
+} from '../application/estimate-plan.ts';
+import { readShareStates } from '../application/forfeited-state-read.ts';
+import {
+  createCommissionSnapshot,
+  type CommissionSnapshotDependencies,
+  type CreateCommissionSnapshotInput,
+  type CreateCommissionSnapshotResult,
 } from '../application/snapshot.ts';
+import { parseSnapshotBeneficiaries } from '../domain/snapshot-read.ts';
+import {
+  insertVersion,
+  selectLatestTotals,
+  selectVersionAmounts,
+  type TotalsRow,
+} from '../infra/estimate-store.ts';
+import { findSplit, type SplitRow } from '../infra/snapshot-store.ts';
 import type { Clock } from '../../platform/index.ts';
 
 export interface EstimateOrderRef {
@@ -54,11 +70,141 @@ export interface CommissionEstimates {
   refresh(trx: Transaction<DB>, input: EstimateOrderRef): Promise<void>;
 }
 
+function frozenTerms(split: SplitRow): FrozenTerms {
+  if (split.order_type !== 'self' && split.order_type !== 'share') {
+    throw new TypeError('commission: stored snapshot order_type is not self/share');
+  }
+  return {
+    orderType: split.order_type,
+    reserveBp: split.reserve_bp,
+    tljDeductFen: split.tlj_deduct_fen,
+    subsidyCommissionFen: split.subsidy_commission_fen,
+    beneficiaries: parseSnapshotBeneficiaries(split.beneficiaries),
+  };
+}
+
+/** The effective commission net of the fee: settlement wins, 0 and negatives are known values. */
+function effectiveN(
+  order: EstimateOrder,
+  estFen: bigint | null,
+  settleFen: bigint | null,
+  deps: CommissionEstimatesDependencies,
+): bigint | null {
+  return netCommission(
+    settleFen ?? estFen,
+    deps.serviceFeeDeducted(order.platform),
+    order.service_fee_fen,
+  );
+}
+
 export function createCommissionEstimates(
   deps: CommissionEstimatesDependencies,
 ): CommissionEstimates {
-  void deps;
-  throw new Error('NotImplemented: createCommissionEstimates');
+  async function orderOf(trx: Transaction<DB>, ref: EstimateOrderRef): Promise<EstimateOrder> {
+    const order = await deps.readOrder(trx, ref);
+    if (order === undefined) throw new Error('commission: snapshot order row is not readable');
+    return order;
+  }
+
+  /** BR-FUND-01 R9b: the latest version as it stands, whatever the commission columns say now. */
+  async function copyLatest(
+    trx: Transaction<DB>,
+    ref: EstimateOrderRef,
+    version: number,
+    latest: TotalsRow,
+  ): Promise<void> {
+    const amounts = await selectVersionAmounts(
+      trx,
+      ref.appId,
+      ref.orderId,
+      latest.commission_version,
+    );
+    await insertVersion(
+      trx,
+      { appId: ref.appId, orderId: ref.orderId, version, createdAt: deps.clock.now() },
+      {
+        amounts,
+        totals: {
+          n_total_fen: latest.n_total_fen,
+          pre_base_deduct_fen: latest.pre_base_deduct_fen,
+          base_fen: latest.base_fen,
+          user_share_total_fen: latest.user_share_total_fen,
+          tlj_redpacket_fen: latest.tlj_redpacket_fen,
+          platform_est_profit_fen: latest.platform_est_profit_fen,
+        },
+      },
+    );
+  }
+
+  /** A new N over the frozen terms; an unknown N writes nothing, like a pending snapshot. */
+  async function revalue(
+    trx: Transaction<DB>,
+    ref: EstimateOrderRef,
+    order: EstimateOrder,
+    split: SplitRow,
+    latest: TotalsRow,
+  ): Promise<void> {
+    const n = effectiveN(order, order.est_commission_fen, order.settle_commission_fen, deps);
+    if (n === null) return;
+    const terms = frozenTerms(split);
+    const shares = await readShareStates(trx, ref.appId, ref.orderId, terms.beneficiaries);
+    const plan = planVersion(
+      terms,
+      n,
+      latest.tlj_redpacket_fen,
+      (b) =>
+        shares.forfeitedEvents.some((e) => e.userId === b.userId && e.role === b.role) ||
+        shares.beneficiaries.some(
+          (s) =>
+            s.userId === b.userId &&
+            s.role === b.role &&
+            s.initialStatus === 'forfeited' &&
+            s.forfeitLifted !== true,
+        ),
+    );
+    await insertVersion(
+      trx,
+      {
+        appId: ref.appId,
+        orderId: ref.orderId,
+        version: order.commission_version,
+        createdAt: deps.clock.now(),
+      },
+      plan,
+    );
+  }
+
+  return {
+    async bases(trx, input) {
+      const split = await findSplit(trx, input.appId, input.orderId);
+      if (split === undefined) return { before: null, after: null };
+      const latest = await selectLatestTotals(trx, input.appId, input.orderId);
+      const order = await orderOf(trx, input);
+      const n = effectiveN(order, input.estAfter, input.settleCommissionFen, deps);
+      return {
+        before: latest?.base_fen ?? null,
+        after: n === null ? null : frozenBase(frozenTerms(split), n),
+      };
+    },
+
+    async refresh(trx, input) {
+      const order = await orderOf(trx, input);
+      const version = order.commission_version;
+      if (version < 1) return;
+      const split = await findSplit(trx, input.appId, input.orderId);
+      if (split === undefined) return;
+      const latest = await selectLatestTotals(trx, input.appId, input.orderId);
+      if (latest === undefined) throw new Error('commission: snapshot has no amount version');
+      // At-least-once delivery: this version is written once, by whichever call came first.
+      if (latest.commission_version >= version) return;
+      // CREDITED first: a copy needs neither the fee nor any commission column.
+      if (order.rebate_status === 'CREDITED') {
+        await copyLatest(trx, input, version, latest);
+        return;
+      }
+      await revalue(trx, input, order, split, latest);
+    },
+  };
 }
 
 export type CommissionSnapshotPortDependencies = CommissionEstimatesDependencies &
@@ -79,6 +225,10 @@ export interface CommissionOrderSnapshotPort {
 export function createCommissionSnapshotPort(
   deps: CommissionSnapshotPortDependencies,
 ): CommissionOrderSnapshotPort {
-  void deps;
-  throw new Error('NotImplemented: createCommissionSnapshotPort');
+  const { clock, logger, beneficiaries } = deps;
+  const estimates = createCommissionEstimates(deps);
+  return {
+    create: (trx, input) => createCommissionSnapshot(trx, input, { clock, logger, beneficiaries }),
+    refresh: (trx, input) => estimates.refresh(trx, input),
+  };
 }
