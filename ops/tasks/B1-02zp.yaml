@@ -6,7 +6,7 @@ type: impl
 # 2026-11-02 admin 接手（编排 09:2x）。D10-567：标题里「并号先判手机号账号、迁入身份不算可信」挪到 B1-20c，本单不实现、不写测试（FU-MERGE-REVERIFY）。
 refs: []
 refs_hash: {}
-deps: [B1-02zo]
+deps: [B1-02zo, B1-02zt]
 paths:
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/app.module.ts'
@@ -20,7 +20,6 @@ test_paths:
   - 'test/spec/identity/sms-login/http.int.test.ts'
   - 'test/spec/identity/oauth-login/branches.int.test.ts'
   - 'test/spec/growth/landing-review/login.int.test.ts'
-  - 'test/spec/risk/rule-toggle-identity/same-device-login.int.test.ts'
 impl: claude
 tester: claude-independent
 accept:
@@ -176,8 +175,5 @@ red_exempt:
     reason: '冻结用例，测试体未改；本任务只改同文件的 users 比较（D10-569，#24），同文件被整体判定'
   - file: test/spec/identity/sms-login/http.int.test.ts
     test: '[AC-B1-02j#32][04 §6.1] 已注册登录路由执行签名与设备来源检查，客户端不能替换 app 身份'
-    reason: '冻结用例，测试体未改；本任务只改同文件的 users 比较（D10-569，#24），同文件被整体判定'
-  - file: test/spec/risk/rule-toggle-identity/same-device-login.int.test.ts
-    test: '[AC-B1-03zh#12][BR-ID-36][BR-INV-09] 停用不追溯：已解除的归属、变更记录与命中保持不变；停用后的首次登录不再判定'
     reason: '冻结用例，测试体未改；本任务只改同文件的 users 比较（D10-569，#24），同文件被整体判定'
 status: todo
