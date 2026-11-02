@@ -27,6 +27,34 @@ import {
   user,
 } from './kit.ts';
 
+// BR-WDR-01 细则「判定」: every login overwrites the account's activity columns (updated_at moves
+// with them). The rest of the row stays equal field by field. The stored hash is the device row's
+// device_hash, not the login log's blind index. An account that did not log in is compared whole.
+const ACTIVITY_COLUMNS = new Set([
+  'last_active_at',
+  'last_login_device_hash',
+  'reverify_flagged_at',
+  'reverify_trusted',
+  'updated_at',
+]);
+type UserRow = Awaited<ReturnType<typeof user>>;
+function withoutActivity(row: UserRow) {
+  return Object.fromEntries(Object.entries(row).filter(([name]) => !ACTIVITY_COLUMNS.has(name)));
+}
+function expectOnlyLoginActivity(
+  before: UserRow,
+  after: UserRow,
+  login: { at: Date; hash: string },
+) {
+  expect(withoutActivity(after)).toEqual(withoutActivity(before));
+  expect(after).toMatchObject({
+    last_active_at: login.at,
+    last_login_device_hash: login.hash,
+    reverify_flagged_at: before.reverify_flagged_at,
+    reverify_trusted: before.reverify_trusted,
+  });
+}
+
 async function boundAccount(f: Fixture, provider?: Provider) {
   const number = phone();
   const uid =
@@ -202,7 +230,10 @@ it.each(['wechat', 'apple'] as const)(
       const after = await user(f.db, f.appId, a.uid);
       kit.clock.advanceMs(61_000);
       await oauth(f, a.uid, provider);
-      expect(await user(f.db, f.appId, a.uid)).toEqual(after);
+      expectOnlyLoginActivity(after, await user(f.db, f.appId, a.uid), {
+        at: kit.clock.now(),
+        hash: f.device.deviceHash,
+      });
       await assertHit(f.db, f.appId, a.uid, a.parentId, a.hash, at);
       await successfulLog(f, a.uid, provider, a.hash, 2);
       await assertSilent(f.db, f.appId);
@@ -223,13 +254,17 @@ it.each(['sms', 'wechat'] as const)(
       const before = await user(f.db, f.appId, a.uid);
       if (method === 'sms') await sms(f, a.uid, a.number, other);
       else await oauth(f, a.uid, method, other);
-      expect(await user(f.db, f.appId, a.uid)).toEqual(before);
+      expectOnlyLoginActivity(before, await user(f.db, f.appId, a.uid), {
+        at: kit.clock.now(),
+        hash: other.deviceHash,
+      });
       expect(await relationLogs(f.db, f.appId)).toEqual([]);
       expect(await hits(f.db, f.appId)).toEqual([]);
       kit.clock.advanceMs(61_000);
       if (method === 'sms') await sms(f, a.uid, a.number);
       else await oauth(f, a.uid, method);
-      expect(await user(f.db, f.appId, a.uid)).toEqual(before);
+      const settled = await user(f.db, f.appId, a.uid);
+      expectOnlyLoginActivity(before, settled, { at: kit.clock.now(), hash: f.device.deviceHash });
       expect(await relationLogs(f.db, f.appId)).toEqual([]);
       expect(await hits(f.db, f.appId)).toEqual([]);
       await successfulLog(f, a.uid, method, a.hash, 2);
@@ -239,7 +274,7 @@ it.each(['sms', 'wechat'] as const)(
       if (method === 'sms') await sms(f, b.uid, b.number);
       else await oauth(f, b.uid, method);
       await assertHit(f.db, f.appId, b.uid, b.parentId, b.hash, kit.clock.now());
-      expect(await user(f.db, f.appId, a.uid)).toEqual(before);
+      expect(await user(f.db, f.appId, a.uid)).toEqual(settled);
       await assertSilent(f.db, f.appId);
     } finally {
       await closeOauthKit(kit);
@@ -260,13 +295,14 @@ it('[AC-B1-11f#13] 首次登录的 register 关系不复核；同一装配的 la
       .execute();
     const before = await user(f.db, f.appId, a.uid);
     await sms(f, a.uid, a.number);
-    expect(await user(f.db, f.appId, a.uid)).toEqual(before);
+    const settled = await user(f.db, f.appId, a.uid);
+    expectOnlyLoginActivity(before, settled, { at: kit.clock.now(), hash: f.device.deviceHash });
     expect(await relationLogs(f.db, f.appId)).toEqual([]);
     expect(await hits(f.db, f.appId)).toEqual([]);
     const b = await boundAccount(f);
     await sms(f, b.uid, b.number);
     await assertHit(f.db, f.appId, b.uid, b.parentId, b.hash, kit.clock.now());
-    expect(await user(f.db, f.appId, a.uid)).toEqual(before);
+    expect(await user(f.db, f.appId, a.uid)).toEqual(settled);
   } finally {
     await closeOauthKit(kit);
   }
@@ -279,7 +315,10 @@ it('[AC-B1-11f#14] H5 登录不触发 App 复核，同一装配的首次 App 登
     const a = await boundAccount(f, 'wechat');
     const before = await user(f.db, f.appId, a.uid);
     await oauth(f, a.uid, 'wechat', f.device, { 'x-platform': 'h5' });
-    expect(await user(f.db, f.appId, a.uid)).toEqual(before);
+    expectOnlyLoginActivity(before, await user(f.db, f.appId, a.uid), {
+      at: kit.clock.now(),
+      hash: f.device.deviceHash,
+    });
     expect(await relationLogs(f.db, f.appId)).toEqual([]);
     expect(await hits(f.db, f.appId)).toEqual([]);
     const b = await boundAccount(f, 'wechat');
@@ -311,7 +350,10 @@ it('[AC-B1-11f#15] 首次短信未命中后改用微信同设备登录，也不�
     await sms(f, a.uid, a.number, other);
     kit.clock.advanceMs(61_000);
     await oauth(f, a.uid, 'wechat');
-    expect(await user(f.db, f.appId, a.uid)).toEqual(before);
+    expectOnlyLoginActivity(before, await user(f.db, f.appId, a.uid), {
+      at: kit.clock.now(),
+      hash: f.device.deviceHash,
+    });
     expect(await relationLogs(f.db, f.appId)).toEqual([]);
     expect(await hits(f.db, f.appId)).toEqual([]);
     await successfulLog(f, a.uid, 'wechat', a.hash, 2);
