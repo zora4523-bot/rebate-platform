@@ -2142,7 +2142,12 @@ function orderClawback(assembly: OrderRebateAssembly, crypto: FieldCrypto): Claw
     clock,
     logger,
     events,
-    ledger: createLedger({ clock }),
+    // D10-587: the bus publishes account.went_negative, the hook lifts NEGATIVE_BALANCE.
+    ledger: createLedger({
+      clock,
+      eventBus: events,
+      balanceRecoveredHook: createBalanceRecoveredHook({ clock }),
+    }),
     gate: createBeneficiaryGate({
       clock,
       lockUsers: lockUsersForUpdate,
@@ -3723,7 +3728,13 @@ function settlementWorkerModule(): DynamicModule {
     snapshotStatus: getAssetSnapshotStatus,
     registerDiff: registerReconDiff,
     readOrderNets: getOrderNets,
-    ledger: (clock) => createLedger({ clock }),
+    // D10-587: the bus publishes account.went_negative, the hook lifts NEGATIVE_BALANCE.
+    ledger: (clock, eventBus) =>
+      createLedger({
+        clock,
+        ...(eventBus === undefined ? {} : { eventBus }),
+        balanceRecoveredHook: createBalanceRecoveredHook({ clock }),
+      }),
     lockUsers: lockUsersForUpdate,
     deletionStatus: (db) => createUserDeletionStatusReader({ db }),
     realnameStatus: (db) => createRealnameStatusBatchReader({ db }),
