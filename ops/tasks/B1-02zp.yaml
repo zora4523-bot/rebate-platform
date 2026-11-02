@@ -16,6 +16,9 @@ paths:
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
 test_paths:
   - 'test/spec/identity/reverify/**'
+  - 'test/spec/identity/sms-login/branches.int.test.ts'
+  - 'test/spec/identity/sms-login/http.int.test.ts'
+  - 'test/spec/identity/oauth-login/branches.int.test.ts'
 impl: claude
 tester: claude-independent
 accept:
