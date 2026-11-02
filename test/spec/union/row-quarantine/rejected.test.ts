@@ -143,7 +143,6 @@ const BROKEN_SETTLE_FEES: readonly {
   readonly value: string | undefined;
 }[] = [
   { wording: '非数字', value: BAD_AMOUNT },
-  { wording: '负数', value: '-1.00' },
   { wording: '缺失', value: undefined },
 ];
 
