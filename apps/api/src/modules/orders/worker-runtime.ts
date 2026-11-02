@@ -70,7 +70,11 @@ import { ORDER_RESCAN_JOB, createOrderRescanScheduler } from './application/orde
 import { createOrderPipeline } from './application/pipeline-port.ts';
 import type { OrderPipelineDeps, OrderPipelinePort } from './application/pipeline-types.ts';
 import type { OrderSourcePorts } from './application/source-backfill.ts';
-import type { OrderBlacklistDeps, OrderBlacklistPorts } from './application/blacklist-step.ts';
+import type {
+  OrderBlacklistDeps,
+  OrderBlacklistPorts,
+  OrderBlacklistRebatePort,
+} from './application/blacklist-step.ts';
 import type {
   SyncAccessPort,
   SyncCursorStore,
@@ -116,6 +120,25 @@ export interface OrderSyncRuntime {
   start(): { stop(): Promise<void> };
 }
 
+/**
+ * B1-09n: every rebate hook of the sync, one object: the attribution pipeline and the update step
+ * get this same instance (settlement's createRebatePort plus onBlacklistHit over its BLACKLIST_HIT).
+ */
+export type OrderSyncRebatePort = OrderPipelineDeps['rebate'] &
+  OrderUpdateDeps['rebate'] &
+  OrderBlacklistRebatePort;
+
+/** B1-09n: what the production rebate port is built over; building it reads nothing. */
+export interface OrderRebateAssembly {
+  readonly db: Kysely<DB>;
+  readonly clock: Clock;
+  readonly logger: RootLogger;
+  readonly events: Pick<EventBus, 'publish'>;
+}
+
+/** B1-09n: app.module's factory: built on the first call, the same instance on every later one. */
+export type OrderRebatePortFactory = (assembly: OrderRebateAssembly) => OrderSyncRebatePort;
+
 /** Readers and limits owned by other modules, assembled in app.module (orders imports neither). */
 export interface OrderSyncReadPorts {
   /** identity: users.attr_code → user_id in one App, any status. */
@@ -153,6 +176,11 @@ export interface OrderSyncReadPorts {
    * registers no platform_restore diff (the P9 warning stays).
    */
   readonly platformRestore?: (clock: Clock) => PlatformRestoreDiffPort;
+  /**
+   * B1-09n: app.module's rebate port factory (FU-REBATE-PORT-WIRING). A runtime built directly
+   * without it keeps a no-op port; the production worker always gives it.
+   */
+  readonly rebate?: OrderRebatePortFactory;
   /**
    * B1-04zm: reads order_sync.rescan.<platform>.enabled / .days, called once at assembly and
    * reading nothing until used. Absent → no rescan timer; 'rescan.window' jobs are routed either way.
