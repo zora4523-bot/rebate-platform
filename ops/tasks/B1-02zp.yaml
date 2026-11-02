@@ -4,10 +4,14 @@ title: 旧号加验打标与三接口——建立会话 / 刷新时覆盖 last_a
 type: impl
 # 2026-10-31 入账（identity-lane，D10-453 ⑥ (b)）。依据 BR-WDR-01 细则（07_WDR 123–135 行）、契约 CT-26c（20005 带 fail_limit / fail_remaining，20004 / 50305 不计失败）。依赖 B1-02zo 存储；契约只去 planned 标记，落地报契约槽。
 # 2026-11-02 admin 接手（编排 09:2x）。D10-567：标题里「并号先判手机号账号、迁入身份不算可信」挪到 B1-20c，本单不实现、不写测试（FU-MERGE-REVERIFY）。
+# 2026-11-02 money r2：失败计数退回要独立代次（reverify_fail_epoch），加一列，占迁移队列（编排 12:11）。
 refs: []
 refs_hash: {}
 deps: [B1-02zo, B1-02zt]
 paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/app.module.ts'
   - 'contracts/openapi.yaml'
