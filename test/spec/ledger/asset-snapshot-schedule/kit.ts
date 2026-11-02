@@ -5,6 +5,10 @@
 // only; first tick about 15 s after bootstrap, then every 60 s; each tick lists the apps that have a
 // ledger account and writes, per app, the due days after its newest snapshot, at most 7, oldest
 // first; an older gap is one error line; an app without any snapshot gets only the newest due day.
+// Rulings of review round 1 (编排会话): a failed day stops that app's newer days for the tick and the
+// next tick restarts from the oldest missing day; a hole before the newest row, inside the 7-day
+// window, is missing too; an unconfirmed row in the window is replayed before its 00:30, and after
+// it only while event_log has no asset_snapshot.timed_out of (app, D).
 // Real pieces: PostgreSQL as couli_app, a real AppModule.forEntry (no port injected by these tests),
 // the platform EVENT_BUS (it writes event_log), settlement's real pending source and batch executor.
 // Synthetic: the job queue (a recorder, as in ../../orders/rebate-wiring/kit.ts: nothing is worked
@@ -453,6 +457,14 @@ export function snapshotLogs(
   });
 }
 
+/** Log lines of one alert event (the runner logs each alert it raised, once). */
+export function eventLines(
+  lines: readonly Record<string, unknown>[],
+  event: string,
+): Record<string, unknown>[] {
+  return lines.filter((line) => line['event'] === event);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Kysely plugins on a handle of the same database.
 
@@ -513,6 +525,107 @@ export function failSnapshotWrite(failing: ReadonlySet<string>, message: string)
     },
     transformResult({ result }) {
       return Promise.resolve(result);
+    },
+  };
+}
+
+/** A query node as text; bigint parameters become decimal strings. */
+function nodeText(node: QueryNode): string {
+  return JSON.stringify(node, (_key, value: unknown) =>
+    typeof value === 'bigint' ? value.toString() : value,
+  );
+}
+
+/**
+ * Until cleared, the INSERT into asset_snapshots of (appId, day) throws; other days and apps go
+ * through. `attempts` lists the days of every INSERT of `appId` in order, failed ones included.
+ * The day is the quoted parameter: created_at has more after the date, so it cannot match.
+ */
+export function failSnapshotDay(appId: string, day: string) {
+  const attempts: string[] = [];
+  let armed = true;
+  let tripped = 0;
+  const plugin: KyselyPlugin = {
+    transformQuery({ node }) {
+      if (insertsSnapshot(node)) {
+        const text = nodeText(node);
+        const written = /"(\d{4}-\d{2}-\d{2})"/u.exec(text)?.[1];
+        if (written !== undefined && text.includes(`"${appId}"`)) {
+          attempts.push(written);
+          if (armed && written === day) {
+            tripped += 1;
+            throw new Error('synthetic failure of one day of the snapshot');
+          }
+        }
+      }
+      return node;
+    },
+    transformResult({ result }) {
+      return Promise.resolve(result);
+    },
+  };
+  return {
+    plugin,
+    attempts: () => [...attempts],
+    tripped: () => tripped,
+    clear: () => {
+      armed = false;
+    },
+  };
+}
+
+/** The first UPDATE of asset_snapshots (the only one is the confirmation) throws, once. */
+export function failConfirmOnce() {
+  let armed = true;
+  let tripped = 0;
+  const plugin: KyselyPlugin = {
+    transformQuery({ node }) {
+      if (
+        armed &&
+        node.kind === 'UpdateQueryNode' &&
+        JSON.stringify(node.table ?? null).includes('"name":"asset_snapshots"')
+      ) {
+        armed = false;
+        tripped += 1;
+        throw new Error('synthetic failure of the confirmation');
+      }
+      return node;
+    },
+    transformResult({ result }) {
+      return Promise.resolve(result);
+    },
+  };
+  return { plugin, tripped: () => tripped };
+}
+
+/**
+ * Until cleared, a read of ledger_accounts that does not touch ledger_entries throws: the app list
+ * of a tick (Kysely or raw), not the balance sums of a day. The daily check's list fails with it
+ * and survives on its own guard, so `tripped` alone does not prove the snapshot tick was hit.
+ */
+export function failAppListing() {
+  let armed = true;
+  let tripped = 0;
+  const plugin: KyselyPlugin = {
+    transformQuery({ node }) {
+      if (armed && (node.kind === 'SelectQueryNode' || node.kind === 'RawNode')) {
+        const text = nodeText(node);
+        if (text.includes('ledger_accounts') && !text.includes('ledger_entries')) {
+          tripped += 1;
+          throw new Error('synthetic failure of the app list');
+        }
+      }
+      return node;
+    },
+    transformResult({ result }) {
+      return Promise.resolve(result);
+    },
+  };
+  return {
+    plugin,
+    tripped: () => tripped,
+    clear: () => {
+      armed = false;
     },
   };
 }
