@@ -3,7 +3,8 @@
 // gauges (B1-01zzi) likewise only on the worker, filled by `collectFund` at scrape time; a rejected
 // collection rejects render() (the scrape fails visibly, no value is made up). The two auto-payout
 // daily gauges (B1-01zzp) likewise only on the worker, filled by `collectAutoPayout`; the review
-// overdue gauge (B2-05o) likewise, filled by `collectReviewOverdue`.
+// overdue gauge (B2-05o) likewise, filled by `collectReviewOverdue`. The Taobao search counter
+// (B1-04zy) only on the api, filled by `collectTaobaoSearch` from union's in-process counter.
 // The text exposition format 0.0.4 is written here from Node built-ins only: the client library
 // cannot be loaded in the test environment (its @opentelemetry/api dependency resolves to an ESM
 // build Node cannot import), so no third-party metrics library is used at runtime.
@@ -136,6 +137,12 @@ const AUTO_PAYOUT_GAUGES: Readonly<
 const AUTO_PAYOUT_KEYS = Object.keys(AUTO_PAYOUT_GAUGES) as (keyof AutoPayoutDailySnapshot)[];
 
 const AUTO_PAYOUT_LABEL = 'app_id';
+
+/** The Taobao search counter (B1-04zy): reasons stay out of the labels (warn log only). */
+const TAOBAO_SEARCH_COUNTER = {
+  name: 'couli_taobao_search_total',
+  help: 'Taobao search attempts per source and outcome (fallback: the official attempt handed over to dataoke).',
+} as const;
 
 function escapeHelp(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/\n/g, '\\n');
@@ -275,12 +282,27 @@ function reviewOverdueFamilies(snapshot: ReviewOverdueSnapshot): Family[] {
   ];
 }
 
+function taobaoSearchFamilies(snapshot: TaobaoSearchMetricsSnapshot): Family[] {
+  return [
+    {
+      name: TAOBAO_SEARCH_COUNTER.name,
+      help: TAOBAO_SEARCH_COUNTER.help,
+      type: 'counter',
+      samples: snapshot.map(({ source, outcome, value }) => ({
+        labels: { source, outcome },
+        value,
+      })),
+    },
+  ];
+}
+
 export function createMetricsRegistry(options: MetricsRegistryOptions): MetricsRegistry {
   const worker = options.entry === 'worker';
   const collect = worker ? options.collect : undefined;
   const collectFund = worker ? options.collectFund : undefined;
   const collectAutoPayout = worker ? options.collectAutoPayout : undefined;
   const collectReviewOverdue = worker ? options.collectReviewOverdue : undefined;
+  const collectTaobaoSearch = options.entry === 'api' ? options.collectTaobaoSearch : undefined;
   return {
     contentType: CONTENT_TYPE,
     async render() {
@@ -297,7 +319,16 @@ export function createMetricsRegistry(options: MetricsRegistryOptions): MetricsR
           ? []
           : Promise.resolve().then(collectReviewOverdue).then(reviewOverdueFamilies),
       ]);
-      return [...business, ...fund, ...autoPayout, ...reviewOverdue, ...processFamilies()]
+      const taobaoSearch =
+        collectTaobaoSearch === undefined ? [] : taobaoSearchFamilies(collectTaobaoSearch());
+      return [
+        ...business,
+        ...fund,
+        ...autoPayout,
+        ...reviewOverdue,
+        ...taobaoSearch,
+        ...processFamilies(),
+      ]
         .map(renderFamily)
         .join('');
     },
