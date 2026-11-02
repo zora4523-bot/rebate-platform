@@ -1,13 +1,15 @@
 // B2-03r · 只有预估的单（无结算记录）入账前部分维权（R7，FU-R7-RIGHTS-ESTIMATE；BR-FUND-01 R7、BR-FUND-03、BR-CALC-15、
 // BR-CALC-27、BR-FUND-18；编排方案 C）：N_new = 有效佣金 − 未关闭应扣，下限 0；钱包与订单页同数，
 // commission_version + 1 与状态写同一条 CAS，新版本金额行按 N_new，订单佣金列不动，不写分录。
-// 累计口径 D10-474 ①，联盟回传后不重复扣 D10-483。金额全部手写，见 kit.ts 头部。
+// 累计口径 D10-474 ①，联盟回传后不重复扣 D10-483。新 N 与已存值相同不推版本（BR-CALC-15），比的是 N，不是基数；
+// 基数为 0 的单照推（R7 守卫「原 B 已为 0」）。金额全部手写，见 kit.ts 头部。
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   T1,
   T2,
   T3,
+  T4,
   TIMEOUT,
   amountsAt,
   databaseFixture,
@@ -294,7 +296,7 @@ it(
 );
 
 it(
-  '[AC-B2-03r#10] 淘礼金单（tlj 100）：N_new 600 → 510 − 100 = 410，v2 金额行 205 / 41 / 20，钱包与订单页同数；淘礼金不被算两次',
+  '[AC-B2-03r#10] 淘礼金单（tlj 100）：N_new 600 → 510 − 100 = 410，v2 金额行 205 / 41 / 20，四段金额 600 / 190 / 410，钱包与订单页同数；淘礼金不被算两次',
   async () => {
     const h = await harness(p.db);
     const o = await h.estimated({ tljDeductFen: 100n, rebateMode: 'normal' });
@@ -306,11 +308,191 @@ it(
       ['direct', 410n, 41n],
       ['indirect', 410n, 20n],
     ]);
+    expect(await totalsAt(p.db, o, 2)).toEqual({
+      n_total_fen: 600n,
+      pre_base_deduct_fen: 190n,
+      base_fen: 410n,
+      user_share_total_fen: 266n,
+      tlj_redpacket_fen: 0n,
+      platform_est_profit_fen: 334n,
+    });
     expect((await h.walletOf(o.user('self'))).estimated_fen).toBe(205n);
     expect(await h.figureOf(o.user('self'), o)).toMatchObject({
       b_est: 410n,
       est_rebate_fen: 205n,
     });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-03r#23] BR-CALC-15 新 N 与已存值相同不推版本：应扣 0 的 R7，N_new 1000 等于当前 N，版本停在 1、没有新金额行，R7 历史照写、维权记录照存，钱包与订单页仍 425；之后真扣 400 才到 v2，钱包 255',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.estimated();
+
+    await h.deduct(o, 0n, 'rights-1', T1);
+
+    expect((await h.read(o)).commission_version).toBe(1);
+    expect(await storedVersions(p.db, o)).toEqual({ amounts: [1], totals: [1] });
+    expect(await h.rebateHistory(o)).toEqual([
+      { event: 'RIGHTS_PARTIAL', from_status: 'ESTIMATED', to_status: 'ESTIMATED' },
+    ]);
+    expect(await h.rightsRows(o)).toHaveLength(1);
+    expect((await h.walletOf(o.user('self'))).estimated_fen).toBe(425n);
+    expect(await h.figureOf(o.user('self'), o)).toMatchObject({
+      b_est: 850n,
+      est_rebate_fen: 425n,
+    });
+
+    await h.deduct(o, 400n, 'rights-2', T2);
+
+    expect((await h.read(o)).commission_version).toBe(2);
+    expect(await storedVersions(p.db, o)).toEqual({ amounts: [1, 2], totals: [1, 2] });
+    expect(await totalsAt(p.db, o, 2)).toMatchObject({ n_total_fen: 600n, base_fen: 510n });
+    expect((await h.walletOf(o.user('self'))).estimated_fen).toBe(255n);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-03r#24] 比的是最新版本的 N，不是订单列：应扣 400（v2，N 600）后再来应扣 0，N_new 仍 600，停在 v2；联盟回传 600（v3，记录回应）后再来应扣 0，N_new 600 等于 v3，停在 v3；钱包与订单页一直 255',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.estimated();
+
+    await h.deduct(o, 400n, 'rights-1', T1);
+    expect((await h.read(o)).commission_version).toBe(2);
+
+    await h.deduct(o, 0n, 'rights-2', T2);
+
+    expect((await h.read(o)).commission_version).toBe(2);
+    expect(await storedVersions(p.db, o)).toEqual({ amounts: [1, 2], totals: [1, 2] });
+    expect((await h.walletOf(o.user('self'))).estimated_fen).toBe(255n);
+
+    await h.unionSync(o, { estAfter: 600n, at: T3 });
+    expect((await h.read(o)).commission_version).toBe(3);
+
+    await h.deduct(o, 0n, 'rights-3', T4);
+
+    expect((await h.read(o)).commission_version).toBe(3);
+    expect(await storedVersions(p.db, o)).toEqual({ amounts: [1, 2, 3], totals: [1, 2, 3] });
+    expect((await h.walletOf(o.user('self'))).estimated_fen).toBe(255n);
+    expect(await h.figureOf(o.user('self'), o)).toMatchObject({
+      b_est: 510n,
+      est_rebate_fen: 255n,
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-03r#25] BR-CALC-15 比的是 N 不是基数：est 1001（B 850）应扣 1，N_new 1000 的基数还是 850，N 变了就推版本：v2 n_total 1000，金额行 425 / 85 / 42',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.estimated({ estFen: 1001n, snapshotNFen: 1001n });
+
+    await h.deduct(o, 1n);
+
+    expect(await h.read(o)).toMatchObject({ commission_version: 2, est_commission_fen: 1001n });
+    expect(await storedVersions(p.db, o)).toEqual({ amounts: [1, 2], totals: [1, 2] });
+    expect(await totalsAt(p.db, o, 2)).toMatchObject({ n_total_fen: 1000n, base_fen: 850n });
+    expect(await amountsAt(p.db, o, 2)).toEqual([
+      ['self', 850n, 425n],
+      ['direct', 850n, 85n],
+      ['indirect', 850n, 42n],
+    ]);
+    expect((await h.walletOf(o.user('self'))).estimated_fen).toBe(425n);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-03r#26] BR-CALC-27 ①④：补贴 111、淘礼金红包未匹配（null）的单，应扣 0 时 N 没变（比的不是含补贴的 n_total），不推版本；再扣 400，N_new 600：v2 n_total 711、基数前扣除 201、基数 510，tlj_redpacket_fen 与利润都是 null，不按 0',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.estimated({ subsidyFen: 111n, redpacketFen: null });
+
+    await h.deduct(o, 0n, 'rights-1', T1);
+
+    expect((await h.read(o)).commission_version).toBe(1);
+    expect(await storedVersions(p.db, o)).toEqual({ amounts: [1], totals: [1] });
+
+    await h.deduct(o, 400n, 'rights-2', T2);
+
+    expect((await h.read(o)).commission_version).toBe(2);
+    expect(await amountsAt(p.db, o, 2)).toEqual([
+      ['self', 510n, 255n],
+      ['direct', 510n, 51n],
+      ['indirect', 510n, 25n],
+    ]);
+    expect(await totalsAt(p.db, o, 2)).toEqual({
+      n_total_fen: 711n,
+      pre_base_deduct_fen: 201n,
+      base_fen: 510n,
+      user_share_total_fen: 331n,
+      tlj_redpacket_fen: null,
+      platform_est_profit_fen: null,
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-03r#27] BR-CALC-15 乐观锁：R7 只发一条更新订单的语句，SET 同时写 commission_version 与 row_version，WHERE 带 commission_version = 旧版本与 row_version',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.estimated();
+
+    const updates = await h.tracedDeduct(o, 400n);
+
+    expect(updates).toHaveLength(1);
+    const cas = updates[0];
+    const [written = '', guarded = ''] = (cas?.sql ?? '').split(/\swhere\s/i);
+    expect(written).toMatch(/"commission_version" = /);
+    expect(written).toMatch(/"row_version" = /);
+    expect(guarded).toMatch(/"row_version" = \$\d+/);
+    const expected = /"commission_version" = \$(\d+)/.exec(guarded);
+    expect(expected).not.toBeNull();
+    expect(cas?.parameters[Number(expected?.[1]) - 1]).toBe(1);
+    expect((await h.read(o)).commission_version).toBe(2);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-03r#28] 基数为 0 的单 R7（BR-FUND-01 原 B 已为 0）：tlj 900，v1 基数 0，应扣 100，N_new 900 的基数还是 0（after 0 非 null）：状态不变、版本到 2，v2 基数 0、n_total 900，钱包 0，订单页不显示金额',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.estimated({ tljDeductFen: 900n, rebateMode: 'normal' });
+
+    await h.deduct(o, 100n);
+
+    expect(await h.read(o)).toMatchObject({
+      rebate_status: 'ESTIMATED',
+      reason: null,
+      est_commission_fen: 1000n,
+      commission_version: 2,
+    });
+    expect(await h.rebateHistory(o)).toEqual([
+      { event: 'RIGHTS_PARTIAL', from_status: 'ESTIMATED', to_status: 'ESTIMATED' },
+    ]);
+    expect(await amountsAt(p.db, o, 2)).toEqual([
+      ['self', 0n, 0n],
+      ['direct', 0n, 0n],
+      ['indirect', 0n, 0n],
+    ]);
+    expect(await totalsAt(p.db, o, 2)).toEqual({
+      n_total_fen: 900n,
+      pre_base_deduct_fen: 900n,
+      base_fen: 0n,
+      user_share_total_fen: 0n,
+      tlj_redpacket_fen: 0n,
+      platform_est_profit_fen: 900n,
+    });
+    expect(h.refreshValues()).toEqual([{ commissionFen: 900n }]);
+    expect((await h.walletOf(o.user('self'))).estimated_fen).toBe(0n);
+    expect(await h.figureOf(o.user('self'), o)).toMatchObject({ b_est: 0n, est_rebate_fen: null });
   },
   TIMEOUT,
 );

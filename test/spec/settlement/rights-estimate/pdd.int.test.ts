@@ -3,7 +3,16 @@
 // 拼多多钱包口径不断言金额（FU-PDD-NET-N），这里只断言不抛错。
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
-import { TIMEOUT, amountsAt, databaseFixture, harness, storedVersions, totalsAt } from './kit.ts';
+import {
+  T1,
+  T2,
+  TIMEOUT,
+  amountsAt,
+  databaseFixture,
+  harness,
+  storedVersions,
+  totalsAt,
+} from './kit.ts';
 
 const p = databaseFixture(createTestDatabase);
 
@@ -43,6 +52,29 @@ it(
       ['indirect', 510n, 25n],
     ]);
     expect(await totalsAt(p.db, known, 2)).toMatchObject({ n_total_fen: 600n, base_fen: 510n });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-03r#30] 拼多多有服务费的单比的是减服务费后的 N：佣金 1200、服务费 200，应扣 0，净 N 1000 等于当前 N，不推版本；再扣 400 才到 v2，n_total 600',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.estimated({
+      platform: 'pdd',
+      estFen: 1200n,
+      patch: { service_fee_fen: 200n },
+    });
+
+    await h.deduct(o, 0n, 'rights-1', T1);
+
+    expect((await h.read(o)).commission_version).toBe(1);
+    expect(await storedVersions(p.db, o)).toEqual({ amounts: [1], totals: [1] });
+
+    await h.deduct(o, 400n, 'rights-2', T2);
+
+    expect((await h.read(o)).commission_version).toBe(2);
+    expect(await totalsAt(p.db, o, 2)).toMatchObject({ n_total_fen: 600n, base_fen: 510n });
   },
   TIMEOUT,
 );

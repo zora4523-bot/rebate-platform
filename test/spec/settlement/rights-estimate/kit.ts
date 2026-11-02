@@ -1,11 +1,12 @@
 // B2-03r rule-test kit (FU-R7-RIGHTS-ESTIMATE, claude-independent): a partial rights success before
 // credit, end to end on real rows. Real pieces: the rights command, createRebatePort,
 // createCommissionEstimates, the wallet (createPendingEarningsSource), the order figures
-// (createOrderFiguresReader), the bill job with its source reader, the credit service and the
-// ledger. Nothing here stands in for commission's valuation. The simulated order sync writes what
-// planOrderSyncColumns writes (commission_version + 1 only when the estimate changed) and calls
-// rebate.onUpdated on the same transaction. Expected amounts are written by hand in the tests.
-// Integration tests pass the database in: this file never imports @couli/db/testing.
+// (createOrderFiguresReader), the earnings board (createEarningsOrdersSource), the bill job with
+// its source reader, the credit service and the ledger. Nothing here stands in for commission's
+// valuation. The simulated order sync writes what planOrderSyncColumns writes (commission_version
+// + 1 only when the estimate changed) and calls rebate.onUpdated on the same transaction. Expected
+// amounts are written by hand in the tests. Integration tests pass the database in: this file
+// never imports @couli/db/testing.
 //
 // Default order: est 1000, snapshot N 1000, reserve 1500, self 5000 / direct 1000 / indirect 500.
 //   N 1000 → B 850 → 425 / 85 / 42; N 600 → B 510 → 255 / 51 / 25;
@@ -30,6 +31,7 @@ import {
   type BillValidation,
 } from '../../../../apps/api/src/modules/settlement/bill/job.ts';
 import {
+  createEarningsOrdersSource,
   createOrderFiguresReader,
   createPendingEarningsSource,
   createRightsCommandPort,
@@ -37,6 +39,7 @@ import {
   type RebateDependencies,
 } from '../../../../apps/api/src/modules/settlement/index.ts';
 import {
+  SNAPSHOT_AT,
   estimatesOf,
   fixture,
   orderRow,
@@ -59,10 +62,18 @@ const SETTLED_AT = '2032-07-01T10:00:00+08:00';
 export const T1 = '2032-07-20T10:00:00+08:00';
 export const T2 = '2032-07-21T10:00:00+08:00';
 export const T3 = '2032-07-22T10:00:00+08:00';
+export const T4 = '2032-07-23T10:00:00+08:00';
 const BILL_NOW = '2032-07-24T00:10:00+08:00';
 const BILL_RUN = '2032-07-24T00:01:00+08:00';
 const RECEIVED_AT = '2032-06-10T10:00:00+08:00';
 const PERIOD = '2032-06';
+
+/** The patch that puts an order inside the earnings window below: paid_at has no default. */
+export const PAID = { paid_at: SNAPSHOT_AT };
+const EARNINGS_WINDOW = {
+  paidFrom: '2026-10-01T00:00:00+08:00',
+  paidTo: '2026-11-01T00:00:00+08:00',
+};
 
 // Through the modules' public entries, loaded at run time like the other settlement rule tests:
 // the test project's tsc stays out of the Nest decorator graph.
@@ -118,6 +129,11 @@ function rightsReads<T extends { readonly sql: string }>(queries: readonly T[]):
   return queries.filter((query) => /\border_rights\b/.test(query.sql));
 }
 
+/** The statements of a write that update app.orders. */
+function orderUpdates<T extends { readonly sql: string }>(queries: readonly T[]): T[] {
+  return queries.filter((query) => /^update\s+(?:"app"\.)?"orders"/i.test(query.sql));
+}
+
 export async function harness(db: Kysely<DB>) {
   const h = await clawbackHarness(db);
   const appId = h.appId;
@@ -151,6 +167,10 @@ export async function harness(db: Kysely<DB>) {
   const pending = createPendingEarningsSource({
     clock,
     config,
+    readSnapshot: commission.readCommissionSnapshot,
+    readTljDeductFen: commission.readTljDeductFen,
+  });
+  const earnings = createEarningsOrdersSource({
     readSnapshot: commission.readCommissionSnapshot,
     readTljDeductFen: commission.readTljDeductFen,
   });
@@ -280,10 +300,10 @@ export async function harness(db: Kysely<DB>) {
 
   // ---- the writes under test -------------------------------------------------------------------
   /** One rights.record as orders runs it: lockOrderKey, the row FOR UPDATE, on one transaction. */
-  async function record(o: PortOrder, spec: RecordSpec) {
+  async function record(o: PortOrder, spec: RecordSpec, via: Kysely<DB> = db) {
     const at = spec.at ?? T1;
     clock.set(at);
-    return db.transaction().execute(async (trx) => {
+    return via.transaction().execute(async (trx) => {
       await lockOrderKey(trx, o.platform, o.subOrderId);
       const before = await trx
         .selectFrom('orders')
@@ -316,6 +336,13 @@ export async function harness(db: Kysely<DB>) {
     at = T1,
   ): Promise<void> {
     expect(await record(o, { deductionFen, rightsNo, at })).toEqual({ kind: 'applied' });
+  }
+
+  /** One deduction on a traced transaction; returns every statement that updated app.orders. */
+  async function tracedDeduct(o: PortOrder, deductionFen: bigint) {
+    const traced = tracing(db);
+    expect(await record(o, { deductionFen }, traced.db)).toEqual({ kind: 'applied' });
+    return orderUpdates(traced.queries);
   }
 
   /** One order sync: what orders writes, the settlement record, then rebate.onUpdated. */
@@ -467,6 +494,38 @@ export async function harness(db: Kysely<DB>) {
     return (await figuresOf(userId, [o])).get(o.orderId);
   }
 
+  /** The earnings board's order facts of a user, all platforms, the window of PAID. */
+  function earningsOf(
+    userId: string,
+    options: { readonly referral?: boolean; readonly via?: Kysely<DB> } = {},
+  ) {
+    return (options.via ?? db)
+      .transaction()
+      .setAccessMode('read only')
+      .execute((trx) =>
+        earnings.read(trx, {
+          appId,
+          userId,
+          platform: null,
+          ...EARNINGS_WINDOW,
+          referral: options.referral ?? true,
+        }),
+      );
+  }
+
+  /** The board with and without the referral column, and what each spent on app.order_rights. */
+  async function tracedEarnings(userId: string) {
+    const ownOnly = tracing(db);
+    const { own } = await earningsOf(userId, { referral: false, via: ownOnly.db });
+    const both = tracing(db);
+    await earningsOf(userId, { via: both.db });
+    return {
+      own,
+      ownReads: rightsReads(ownOnly.queries),
+      bothReads: rightsReads(both.queries),
+    };
+  }
+
   /** The owner's wallet and order page, with the statements each spent on app.order_rights. */
   async function tracedReads(userId: string, orders: readonly PortOrder[]) {
     const forUser = tracing(db);
@@ -535,6 +594,7 @@ export async function harness(db: Kysely<DB>) {
     heldShare,
     record,
     deduct,
+    tracedDeduct,
     unionSync,
     runBill,
     credit,
@@ -542,6 +602,8 @@ export async function harness(db: Kysely<DB>) {
     appTotals,
     figureOf,
     figuresOf,
+    earningsOf,
+    tracedEarnings,
     tracedReads,
     read,
     rightsRows,

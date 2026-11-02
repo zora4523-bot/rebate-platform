@@ -1,8 +1,9 @@
 // B2-03r · 有结算记录的单与结算到达（BR-FUND-04 ④、BR-FUND-05、BR-FUND-18；编排方案 C）：
 // 账单比的是 b_settle 与当前版本的 base，所以有结算记录的单 R7 不推版本；账单不减未关闭应扣，入账金额由
 // R5 减 open（已有）。只有预估的单先 R7 推到 v2，联盟结算记录带着扣减到达时，账单比到的正是 v2。
-// 「有结算记录」看 order_settlements：京东的结算额只由账单导入写这张表，orders.settle_commission_fen 恒空
-// （changes/20261101-京东结算佣金只由账单导入）。金额全部手写，见 kit.ts 头部。
+// 「有结算记录」的判据（编排认可）：orders.settle_commission_fen 非空，或 order_settlements 有行，任一成立就不推版本：
+// 京东的结算额只由账单导入写这张表，列恒空（changes/20261101-京东结算佣金只由账单导入）；planOrderSyncColumns 在
+// SETTLED 时写列，可以没有结算行。金额全部手写，见 kit.ts 头部。
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import { T1, T2, TIMEOUT, amountsAt, databaseFixture, harness, storedVersions } from './kit.ts';
@@ -107,6 +108,33 @@ it(
       expect.objectContaining({ orderId: o.orderId, result: 'candidate', settleSeq: 1 }),
     ]);
     expect(bill.diffs).toEqual([]);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-03r#29] 结算列有值、没有结算行（预估 3000，结算列 1000）：R7 也不推版本、不写新行，refresh 调用与现在相同；钱包与订单页按结算优先 1000 − 400 = 600 → 255 / 51 / 25，不是 3000 − 400',
+  async () => {
+    const h = await harness(p.db);
+    const o = await h.waiting({ estFen: 3000n, settleFen: 1000n, platformStatus: 'SETTLED' });
+
+    await h.deduct(o, 400n);
+
+    expect((await h.walletOf(o.user('self'))).pending_credit_fen).toBe(255n);
+    expect((await h.walletOf(o.user('direct'))).pending_credit_fen).toBe(51n);
+    expect((await h.walletOf(o.user('indirect'))).pending_credit_fen).toBe(25n);
+    expect(await h.figureOf(o.user('self'), o)).toMatchObject({
+      b_est: 510n,
+      est_rebate_fen: 255n,
+    });
+    expect(await storedVersions(p.db, o)).toEqual({ amounts: [1], totals: [1] });
+    expect(await h.read(o)).toMatchObject({
+      rebate_status: 'WAITING',
+      commission_version: 1,
+      est_commission_fen: 3000n,
+      settle_commission_fen: 1000n,
+    });
+    expect(h.refreshValues()).toEqual([undefined]);
   },
   TIMEOUT,
 );
