@@ -42,6 +42,7 @@ it(
   '[AC-B2-04zo#25] 补写中较旧的一天写失败：本 tick 不写该 app 更新的天，别的 app 照写；故障解除后从缺的最旧一天起由旧到新补齐',
   async () => {
     await inWorkerTime(createTestDatabase, async ({ db, withWorker }) => {
+      await ledgerApp(db, APP);
       await existingSnapshot(db, APP, BEFORE);
       await ledgerApp(db, OTHER);
       const fault = failSnapshotDay(APP, DAY);
@@ -248,6 +249,63 @@ it(
           ['2032-06-09', true],
           ['2032-06-10', true],
           ['2032-06-11', true],
+        ]);
+      });
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04zo#35] 超时事件按 (app, D) 判：同 app 别的天、别的 app 同一天已有事件都挡不住；(APP, D+1) 与 (OTHER, D) 的事件与日志各新增一条',
+  async () => {
+    await inWorkerTime(createTestDatabase, async ({ db, withWorker }) => {
+      // (APP, D) 的既有事件走真实路径：迟到写入，事件随写事务落库，此时 OTHER 还没有账本账户。
+      await ledgerApp(db, APP);
+      await withWorker({ now: afterMidnight(DAY, '40:00') }, async (worker) => {
+        expect(
+          await worker.tickUntil(async () => (await alertEvents(db, APP)).length > 0),
+          'the late day and its timeout event were not written',
+        ).toBe(true);
+      });
+      expect(await alertEvents(db, APP)).toEqual([timedOut(APP, DAY)]);
+
+      await existingSnapshot(db, APP, NEXT_DAY, false);
+      await ledgerApp(db, OTHER);
+      await existingSnapshot(db, OTHER, DAY, false);
+      await existingSnapshot(db, OTHER, NEXT_DAY);
+
+      await withWorker({ now: afterMidnight(NEXT_DAY, '31:00') }, async (worker) => {
+        expect(
+          await worker.tickUntil(
+            async () =>
+              (await alertEvents(db, APP)).length > 1 && (await alertEvents(db, OTHER)).length > 0,
+          ),
+          'an event of another day or another app hid an unconfirmed day',
+        ).toBe(true);
+        await worker.quiet();
+        expect(await alertEvents(db, APP)).toEqual([timedOut(APP, DAY), timedOut(APP, NEXT_DAY)]);
+        expect(await alertEvents(db, OTHER)).toEqual([timedOut(OTHER, DAY)]);
+        const lines = eventLines(worker.logs(), TIMEOUT_LOG).map((line) => [
+          line['app_id'],
+          line['accounting_date'],
+        ]);
+        expect(lines).toHaveLength(2);
+        expect(lines).toEqual(
+          expect.arrayContaining([
+            [APP, NEXT_DAY],
+            [OTHER, DAY],
+          ]),
+        );
+        const dayRows = async (appId: string) =>
+          (await snapshotRows(db, appId)).map((row) => [row.day, row.waiting_comparable]);
+        expect(await dayRows(APP)).toEqual([
+          [DAY, false],
+          [NEXT_DAY, false],
+        ]);
+        expect(await dayRows(OTHER)).toEqual([
+          [DAY, false],
+          [NEXT_DAY, true],
         ]);
       });
     });
