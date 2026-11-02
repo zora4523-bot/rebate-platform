@@ -769,8 +769,11 @@ function mapRow(
   const settleGross = settled ? f.signedFen(SETTLE_COMMISSION_FIELD) : null;
   const estFen = f.net(estGross, preFee, EST_COMMISSION_FIELD);
   const settleFen = f.net(settleGross, settleFee, SETTLE_COMMISSION_FIELD);
+  const settledAt = f.time('tk_earning_time');
   if (strict) {
     if (estGross === null) throw new Skip(EST_COMMISSION_FIELD);
+    // 已结算行缺结算时间：下游收不下结算额，会按预估生成快照（BR-CALC-03，D10-590 后 06:3x）。
+    if (settled && settledAt === null) throw new Skip('tk_earning_time');
     if (settled && settleGross === null) throw new Skip(SETTLE_COMMISSION_FIELD);
     if (settled && settleFen === null) throw new Skip(SETTLE_FEE_FIELD);
   }
@@ -797,7 +800,7 @@ function mapRow(
     paid_at: f.time('tk_paid_time'),
     // 淘宝订单报文没有确认收货时间字段。
     received_at: null,
-    settled_at: f.time('tk_earning_time'),
+    settled_at: settledAt,
     modified_at: f.time('modified_time'),
     est_commission_fen: estFen,
     settle_commission_fen: settleFen,
