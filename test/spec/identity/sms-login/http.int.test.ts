@@ -63,38 +63,6 @@ afterAll(async () => {
   }
 });
 
-// BR-WDR-01 细则「判定」: every login overwrites the account's activity columns (updated_at moves
-// with them). The rest of users stays equal field by field; other accounts stay equal entirely.
-const ACTIVITY_COLUMNS = new Set([
-  'last_active_at',
-  'last_login_device_hash',
-  'reverify_flagged_at',
-  'reverify_trusted',
-  'updated_at',
-]);
-type UserRows = Awaited<ReturnType<typeof rows>>['users'];
-function withoutActivity(users: UserRows) {
-  return users.map((row) =>
-    Object.fromEntries(Object.entries(row).filter(([name]) => !ACTIVITY_COLUMNS.has(name))),
-  );
-}
-function expectOnlyLoginActivity(
-  before: UserRows,
-  after: UserRows,
-  login: { uid: string; at: Date; hash: string },
-) {
-  expect(withoutActivity(after)).toEqual(withoutActivity(before));
-  const others = (row: UserRows[number]) => row.id !== login.uid;
-  expect(after.filter(others)).toEqual(before.filter(others));
-  const prior = before.find((row) => row.id === login.uid)!;
-  expect(after.find((row) => row.id === login.uid)).toMatchObject({
-    last_active_at: login.at,
-    last_login_device_hash: login.hash,
-    reverify_flagged_at: prior.reverify_flagged_at,
-    reverify_trusted: prior.reverify_trusted,
-  });
-}
-
 async function prepared() {
   expect(redis).toBeDefined();
   expect(app).toBeDefined();
@@ -178,6 +146,7 @@ it.each([
       scp: scope,
     });
     const after = await rows(kit, 'couli');
+    const { expectOnlyLoginActivity } = await import('../reverify/login-activity.ts');
     expectOnlyLoginActivity(before.users, after.users, {
       uid,
       at: clock.now(),
