@@ -9,14 +9,16 @@
 //            the same transaction, under the row lock the UPDATE took.
 //   release  under the row lock: −1, never below 0, only if the count still belongs to the day of
 //            the reservation and the device count is the reservation's. A pass is the only clear
-//            within a day and always adds a device row (settlePassed), so an unchanged device
-//            count means "not cleared meanwhile". The check is two statements under a lock, not
+//            within a day, and nearly always adds a device row, so an unchanged device count
+//            means "not cleared meanwhile". A pass on a device a concurrent pass just recorded
+//            clears without a new row: only then, with a later reservation on the same day, can a
+//            release take one place too many (one extra attempt that day; flag and devices
+//            untouched; accepted, D10 12:11). The check is two statements under a lock, not
 //            one UPDATE with a subquery: a statement that waited for the row would judge the
 //            subquery on its old snapshot. An admin-added device (B1-02zq) also keeps the place;
 //            that errs on the strict side.
-//   pass     under the row lock: a new device row and the clear, together. A concurrent pass of
-//            the same device added the row and cleared already: this one only gives its own
-//            reservation back, so a clear without a new row never happens.
+//   pass     under the row lock: the device row (if new) and the clear, together. Every actual
+//            pass clears, also when a concurrent pass already recorded this device.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for types, `.ts`
 // relative imports, no decorators.
@@ -193,18 +195,17 @@ export async function settlePassed(
   subject: ReverifySubject,
   input: {
     readonly deviceHash: string;
-    readonly reservation: FailureReservation;
     readonly now: Date;
     readonly alongside?: (trx: Transaction<DB>) => Promise<void>;
   },
 ): Promise<void> {
-  const { deviceHash, reservation, now, alongside } = input;
+  const { deviceHash, now, alongside } = input;
   await db
     .transaction()
     .setIsolationLevel('read committed')
     .execute(async (trx) => {
       await lockUser(trx, subject);
-      const added = await trx
+      await trx
         .insertInto('reverified_devices')
         .values({
           id: newUuidV7(now),
@@ -215,18 +216,14 @@ export async function settlePassed(
           created_at: now,
         })
         .onConflict((oc) => oc.columns(['app_id', 'user_id', 'device_hash']).doNothing())
-        .returning('id')
-        .executeTakeFirst();
-      if (added === undefined) {
-        await giveBack(trx, subject, reservation, now);
-      } else {
-        await trx
-          .updateTable('users')
-          .set({ reverify_fail_count: 0, reverify_fail_day: null, updated_at: now })
-          .where('app_id', '=', subject.app_id)
-          .where('id', '=', subject.user_id)
-          .execute();
-      }
+        .execute();
+      // A pass clears the count even when a concurrent pass already recorded this device.
+      await trx
+        .updateTable('users')
+        .set({ reverify_fail_count: 0, reverify_fail_day: null, updated_at: now })
+        .where('app_id', '=', subject.app_id)
+        .where('id', '=', subject.user_id)
+        .execute();
       await alongside?.(trx);
     });
 }

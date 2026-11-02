@@ -233,7 +233,6 @@ export function createReverifyService(options: ReverifyOptions): ReverifyService
       if (stored !== submitted) return mismatch(reservation);
       await settlePassed(db, subject, {
         deviceHash: current.deviceHash,
-        reservation,
         now: clock.now(),
       });
       logPassed(subject, 'id_number');
@@ -272,7 +271,6 @@ export function createReverifyService(options: ReverifyOptions): ReverifyService
         const now = clock.now();
         await settlePassed(db, subject, {
           deviceHash: current.deviceHash,
-          reservation,
           now,
           ...(refreshToken === undefined
             ? {}
