@@ -8,8 +8,17 @@
 // error reaches a log line.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for types.
-import type { FieldCrypto, JobHandler, RootLogger } from '../../platform/index.ts';
+import type { DB } from '@couli/db';
+import type { Transaction } from 'kysely';
+import type { FieldCrypto, JobHandler, JobQueue, RootLogger } from '../../platform/index.ts';
+import { APPLE_REFRESH_TOKEN_CONTEXT } from '../infra/oauth-accounts.ts';
 import type { AppleTokenRevoker } from '../ports/apple-token-revoker.ts';
+import { DATA_COPY_QUEUE } from './data-copy-worker.ts';
+
+/** The job's name on identity's data-copy queue (worker entry; identity-worker.module routes it). */
+export const APPLE_UNBIND_REVOKE_JOB = 'apple-unbind-revoke';
+/** BR-ID-27 as deletion-processing.ts counts it: the third failed attempt is final. */
+const APPLE_MAX_ATTEMPTS = 3;
 
 export interface AppleUnbindRevocationOptions {
   readonly crypto: FieldCrypto;
@@ -21,9 +30,41 @@ export interface AppleUnbindRevocation {
   readonly handle: JobHandler;
 }
 
+/** One job on the caller's transaction, so a rolled-back save leaves none. */
+export async function enqueueAppleUnbindRevocation(
+  queue: Pick<JobQueue, 'send'>,
+  trx: Transaction<DB>,
+  input: { readonly appId: string; readonly cipher: Uint8Array },
+): Promise<void> {
+  await queue.send(
+    DATA_COPY_QUEUE,
+    APPLE_UNBIND_REVOKE_JOB,
+    { appId: input.appId, cipher: Buffer.from(input.cipher).toString('utf8') },
+    { trx },
+  );
+}
+
 export function createAppleUnbindRevocation(
   options: AppleUnbindRevocationOptions,
 ): AppleUnbindRevocation {
-  void options;
-  throw new Error('NotImplemented: createAppleUnbindRevocation');
+  const { crypto, apple, logger } = options;
+  const handle: JobHandler = async (job) => {
+    const appId = job.payload['appId'];
+    const cipher = job.payload['cipher'];
+    if (typeof appId !== 'string' || appId === '' || typeof cipher !== 'string' || cipher === '') {
+      logger.warn({ job_id: job.id }, 'identity_apple_unbind_job_invalid');
+      return;
+    }
+    try {
+      const refreshToken = crypto.decrypt(cipher, APPLE_REFRESH_TOKEN_CONTEXT);
+      await apple.revoke({ appId, refreshToken });
+    } catch {
+      // The error may carry the token or Apple's answer: nothing of it leaves this block.
+      if (job.attempt < APPLE_MAX_ATTEMPTS) {
+        throw new Error('identity: Apple unbind revocation attempt failed');
+      }
+      logger.warn({ app_id: appId, job_id: job.id }, 'identity_apple_unbind_revoke_failed');
+    }
+  };
+  return Object.freeze({ handle });
 }
