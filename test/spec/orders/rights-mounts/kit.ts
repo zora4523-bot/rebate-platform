@@ -11,8 +11,9 @@
 // Synthetic: orders, snapshots, members, union accounts, the confirmed settle batch and its item
 // seeded as the sync, the bill and the confirmation would have left them; in the files that inject
 // them, the column templates (./templates.ts); one memory store shared by the two entries of this
-// process (production's is one private bucket); a one-shot fault at the row checkpoint. No real user
-// or merchant data.
+// process (production's is one private bucket); a one-shot fault at the row checkpoint; for a sync
+// window, the union adapter and the credential lookup only (demo credentials are never queryable).
+// No real user or merchant data.
 // A seed that cannot be built throws a plain Error, never an assertion: only the mount may be what
 // is missing. Missing pieces fail as assertions: an unregistered admin route answers 404.
 // Plain SQL always names the schema. Only the container runner executes the integration tests.
@@ -23,6 +24,7 @@ import { addFen } from '@couli/money';
 import { sql, type Kysely, type KyselyPlugin } from 'kysely';
 import { expect, inject, vi } from 'vitest';
 import { createLedger } from '../../../../apps/api/src/modules/ledger/index.ts';
+import type { OrderSyncRuntime } from '../../../../apps/api/src/modules/orders/worker-runtime.ts';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
 import { loadConfig } from '../../../../apps/api/src/modules/platform/config/index.ts';
 import { MemoryImportStore } from '../../../../apps/api/src/modules/platform/import-store/index.ts';
@@ -32,6 +34,7 @@ import {
   type JobQueue,
   type ReceivedJob,
 } from '../../../../apps/api/src/modules/platform/index.ts';
+import type { UnionAdapter, UnionOrder } from '../../../../apps/api/src/modules/union/index.ts';
 import {
   NOW,
   apiRequire,
@@ -68,10 +71,13 @@ export { NOW, TEMPLATES };
 
 export const IMPORTS = '/admin/v1/rights-imports';
 export const OCCURRED = '2026-10-07T10:00:00+08:00';
-const IP = '127.0.0.1';
+export const IP = '127.0.0.1';
 /** The month of the seeded settle batch (the orders' received month). */
 const BILL = '2026-10';
 const CONFIRMED_AT = '2026-10-09T01:00:00.000Z';
+/** The increment window a sync report arrives in. */
+const WINDOW_START = '2026-10-09T01:00:00.000Z';
+const WINDOW_END = '2026-10-09T01:30:00.000Z';
 
 // ---------------------------------------------------------------------------------------------
 // The admin entry.
@@ -267,6 +273,7 @@ export async function allowed(s: Scenario, action: Action): Promise<Send> {
 type Handle = (job: ReceivedJob) => Promise<void>;
 
 interface Context {
+  get(token: unknown, options: { strict: boolean }): unknown;
   close(): Promise<void>;
 }
 
@@ -290,9 +297,10 @@ async function singleBoundDb(h: Harness): Promise<Kysely<DB>> {
 /**
  * The worker entry's AppModule on the harness's database and keyring, with an in-memory queue
  * runtime (never polled): `run` hands a recorded send to the handler the worker registered on
- * order-sync, `settle` hands a batch_execute job to the one it registered on settle. The worker has
- * its own single-bound handle, closed after the context when the test ends; `plugin` goes on that
- * handle (a fault); `now` is the worker's own clock (a job that runs after the upload), NOW by
+ * order-sync, `settle` hands a batch_execute job to the one it registered on settle, `sync` hands
+ * that order-sync handler a window job whose one page is `report`. The worker has its own
+ * single-bound handle, closed after the context when the test ends; `plugin` goes on that handle (a
+ * fault, a recorder); `now` is the worker's own clock (a job that runs after the upload), NOW by
  * default.
  */
 export async function worker(
@@ -306,6 +314,9 @@ export async function worker(
   const { PlatformModule } = (await import(
     new URL('../../../../apps/api/src/modules/platform/index.ts', import.meta.url).href
   )) as { PlatformModule: { forRoot(options: object): { providers?: unknown[] } } };
+  const { orderSyncToken } = (await import(
+    new URL('../../../../apps/api/src/modules/orders/index.ts', import.meta.url).href
+  )) as { orderSyncToken(): symbol };
   const { NestFactory } = (await import(
     pathToFileURL(apiRequire.resolve('@nestjs/core')).href
   )) as {
@@ -333,8 +344,9 @@ export async function worker(
       ),
     };
   });
+  let context: Context | undefined;
   try {
-    const context = await NestFactory.createApplicationContext(
+    context = await NestFactory.createApplicationContext(
       AppModule.forEntry({
         entry: 'worker',
         config: loadConfig(h.env),
@@ -351,7 +363,7 @@ export async function worker(
     h.apps.push(context as unknown as HttpApp);
   } finally {
     spy.mockRestore();
-    const handle: Context = { close: () => destroyDb(db) };
+    const handle: Pick<Context, 'close'> = { close: () => destroyDb(db) };
     h.apps.push(handle as unknown as HttpApp);
   }
   const handler = (name: string): Handle => {
@@ -380,6 +392,32 @@ export async function worker(
           attempt: 1,
         }),
       ),
+    sync: async (appId: string, unionAccountId: string, report: UnionOrder) => {
+      const runtime = context?.get(orderSyncToken(), { strict: false }) as OrderSyncRuntime;
+      vi.spyOn(runtime.access, 'queryableAccount').mockResolvedValue(unionAccountId);
+      vi.spyOn(runtime.registry, 'get').mockReturnValue({
+        listOrders: vi
+          .fn<UnionAdapter['listOrders']>()
+          .mockResolvedValue({ items: [report], nextCursor: null }),
+      });
+      await handler('order-sync')(
+        Object.freeze({
+          id: randomUUID(),
+          queue: 'order-sync',
+          name: 'window',
+          payload: {
+            app_id: appId,
+            platform: report.platform,
+            union_account_id: unionAccountId,
+            query_kind: 'increment',
+            scene: '-',
+            window_start: WINDOW_START,
+            window_end: WINDOW_END,
+          },
+          attempt: 1,
+        }),
+      );
+    },
   };
 }
 export type Worker = Awaited<ReturnType<typeof worker>>;
@@ -473,6 +511,36 @@ export function checkpointFault(): CheckpointFault {
     },
   };
   return fault;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The order of a job's writes: what its transactions insert into the named tables, as they run.
+
+export interface InsertRecorder {
+  armed: boolean;
+  readonly inserts: string[];
+  readonly plugin: KyselyPlugin;
+}
+
+export function insertRecorder(tables: readonly string[]): InsertRecorder {
+  const recorder: InsertRecorder = {
+    armed: false,
+    inserts: [],
+    plugin: {
+      transformQuery({ node }) {
+        if (recorder.armed && node.kind === 'InsertQueryNode') {
+          const into = JSON.stringify(node.into);
+          const table = tables.find((name) => into.includes(`"${name}"`));
+          if (table !== undefined) recorder.inserts.push(table);
+        }
+        return node;
+      },
+      async transformResult({ result }) {
+        return result;
+      },
+    },
+  };
+  return recorder;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -609,15 +677,22 @@ async function seedSnapshot(
   return { order, self, direct, indirect };
 }
 
-/** A WAITING taobao order on its settlement record, with its commission snapshot. */
-export async function waitingOrder(s: Scenario): Promise<CreditableOrder> {
+/**
+ * A WAITING order on its settlement record, with its commission snapshot; taobao unless told. A jd
+ * order stays RECEIVED: jd.csv has no settled code, its record comes from the statement alone
+ * (docs/changes/20261101-京东结算佣金只由账单导入.md).
+ */
+export async function waitingOrder(
+  s: Scenario,
+  platform: 'taobao' | 'jd' = 'taobao',
+): Promise<CreditableOrder> {
   const order = await seedOrder(s, {
-    platform: 'taobao',
-    product_key: 'taobao:fixture',
+    platform,
+    product_key: `${platform}:fixture`,
     user_id: s.userId,
     user_basis: 'param',
     scene_basis: 'param',
-    platform_status: 'SETTLED',
+    platform_status: platform === 'jd' ? 'RECEIVED' : 'SETTLED',
     rebate_status: 'WAITING',
     commission_version: 1,
     est_commission_fen: 3222n,
@@ -720,7 +795,7 @@ export async function seedProcessingDeletion(s: Scenario, userId: string): Promi
 /**
  * The confirmed settle batch of the order, as the bill and the confirmation leave it, run by the
  * worker's own settle handler. The D-1 asset snapshot of NOW has timed out (BR-FUND-18), so the
- * batch runs; credit.enabled.taobao is on. Returns the batch item.
+ * batch runs; credit.enabled.<platform> is on. Returns the batch item.
  */
 export async function runBatch(s: Scenario, w: Worker, order: Order) {
   const { db } = s.h;
@@ -729,7 +804,7 @@ export async function runBatch(s: Scenario, w: Worker, order: Order) {
     .insertInto('config_items')
     .values({
       app_id: s.appId,
-      key: 'credit.enabled.taobao',
+      key: `credit.enabled.${order.platform}`,
       value: JSON.stringify(true),
       updated_by: 'synthetic',
     })
@@ -751,7 +826,7 @@ export async function runBatch(s: Scenario, w: Worker, order: Order) {
       batch_id: batchId,
       app_id: s.appId,
       bill_id: BILL,
-      platform: 'taobao',
+      platform: order.platform,
       kind: 'main',
       status: 'CONFIRMED',
       settle_mode: 'IMMEDIATE',
@@ -798,8 +873,12 @@ export async function runBatch(s: Scenario, w: Worker, order: Order) {
 }
 
 /** A waitingOrder credited by the worker's settle handler; a seed failure is a plain Error. */
-export async function creditedOrder(s: Scenario, w: Worker): Promise<CreditableOrder> {
-  const seeded = await waitingOrder(s);
+export async function creditedOrder(
+  s: Scenario,
+  w: Worker,
+  platform: 'taobao' | 'jd' = 'taobao',
+): Promise<CreditableOrder> {
+  const seeded = await waitingOrder(s, platform);
   const item = await runBatch(s, w, seeded.order);
   const now = await orderNow(s, seeded.order.order_id);
   if (item.result !== 'credited' || now.rebate_status !== 'CREDITED') {
@@ -808,6 +887,50 @@ export async function creditedOrder(s: Scenario, w: Worker): Promise<CreditableO
     );
   }
   return seeded;
+}
+
+/** The union's report of an order on the normalized DTO: a raw status code and a new estimate. */
+export function reported(order: Order, rawStatus: string, estFen: bigint): UnionOrder {
+  return {
+    platform: order.platform as UnionOrder['platform'],
+    order_id: order.sub_order_id,
+    sub_order_id: order.sub_order_id,
+    parent_order_id: order.parent_order_id,
+    raw_status: rawStatus,
+    paid_fen: 2990n,
+    commission_fen: estFen,
+    est_commission_fen: estFen,
+    paid_at: new Date(PAID_AT),
+    raw_payload_id: '301',
+  };
+}
+
+/** One commission version of an order: its amount rows and totals, without the write time. */
+export async function versionRows(s: Scenario, orderId: string, version: number) {
+  const { db } = s.h;
+  const amounts = await db
+    .selectFrom('commission_split_amounts')
+    .select(['user_id', 'role', 'base_fen', 'amount_fen'])
+    .where('app_id', '=', s.appId)
+    .where('order_id', '=', orderId)
+    .where('commission_version', '=', version)
+    .orderBy('role')
+    .execute();
+  const totals = await db
+    .selectFrom('commission_split_totals')
+    .select([
+      'n_total_fen',
+      'pre_base_deduct_fen',
+      'base_fen',
+      'user_share_total_fen',
+      'tlj_redpacket_fen',
+      'platform_est_profit_fen',
+    ])
+    .where('app_id', '=', s.appId)
+    .where('order_id', '=', orderId)
+    .where('commission_version', '=', version)
+    .execute();
+  return { amounts, totals };
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -199,3 +199,49 @@ it('[AC-B1-10n#27] ESTIMATED 且无结算记录的订单，维权单行部分成
   ]);
   expect(await voucherKeys(s, ':')).toEqual([]);
 }, 120_000);
+
+// D10-474 ①: the deductions the union has not answered add up, over the estimate they all came off:
+// 1200 − (400 + 100) = 700, never 800 − 500 = 300 (the first row taken twice). Two rows of 4.00:
+// 1200 − 800 = 400, while 800 − 800 = 0 would void the order (R6). Each row is one R7.
+it.each([
+  ['1.00', 100n, 700n],
+  ['4.00', 400n, 400n],
+] as const)(
+  '[AC-B1-10n#29] ESTIMATED 且无结算记录的订单，先后两条部分成功的维权行（应扣 4.00 元、%s 元）：est_commission_fen 是 1200 减两条之和，不在上一条的结果上再减一次；状态不变（R7），订单不作废，不写分录',
+  async (second, secondFen, estFen) => {
+    shareImportStore();
+    const s = await setup(h, { grants: GRANTS.rights });
+    const w = await worker(h);
+    const { order } = await estimatedOrder(s);
+    const importId = await imported(s, w, { kind: 'rights', platform: 'taobao' }, [
+      Object.values(TEMPLATES.rights.columns),
+      [order.sub_order_id, 'RN-1', 'SUCCEEDED', '29.90', '4.00', OCCURRED],
+      [order.sub_order_id, 'RN-2', 'SUCCEEDED', '29.90', second, OCCURRED],
+    ]);
+    expect(await detailOf(s, importId)).toMatchObject({
+      status: 'done',
+      succeeded_rows: 2,
+      failed_rows: 0,
+    });
+    expect(await rightsOf(s)).toEqual([
+      expect.objectContaining({ status: 'SUCCEEDED', deduction_commission_fen: 400n }),
+      expect.objectContaining({ status: 'SUCCEEDED', deduction_commission_fen: secondFen }),
+    ]);
+    expect(await orderNow(s, order.order_id)).toMatchObject({
+      rebate_status: 'ESTIMATED',
+      est_commission_fen: estFen,
+      settle_commission_fen: null,
+      rights_pending: false,
+      reason: null,
+    });
+    const partial = expect.objectContaining({
+      field: 'rebate',
+      from_status: 'ESTIMATED',
+      to_status: 'ESTIMATED',
+      event: 'RIGHTS_PARTIAL',
+    });
+    expect((await s.state()).history).toEqual([partial, partial]);
+    expect(await voucherKeys(s, ':')).toEqual([]);
+  },
+  120_000,
+);

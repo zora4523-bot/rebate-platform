@@ -3,7 +3,7 @@
 // (规划/11 §4.3).
 import { expect, it } from 'vitest';
 import { useHarness } from '../../admin/auth/kit.ts';
-import { ANSWER, GRANTS, accepted, allowed, arrange, setup } from './kit.ts';
+import { ANSWER, GRANTS, IP, accepted, allowed, arrange, setup } from './kit.ts';
 
 const h = useHarness();
 
@@ -21,6 +21,7 @@ it.each(['rights', 'channel'] as const)(
         action: 'rights_import_create',
         target: `rights_imports:${created.import_id}`,
         admin_id: s.admin.id,
+        ip: IP,
       }),
     ]);
   },

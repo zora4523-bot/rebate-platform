@@ -9,7 +9,8 @@
 //     back 170 / 34 / 17, platform 179.
 // The same N_new before credit (#23) must be what the credit books: 255 / 51 / 25, platform 269,
 // never the old 1000 (B2-04lb, D10-463 / D10-470). The templates are synthetic (./templates.ts),
-// injected over the real job. Top-level it() only (规划/11 §4.3).
+// injected over the real job. #30 is the sync's way to the same clawback, on a jd order: taobao has
+// neither a status map nor a sync window yet. Top-level it() only (规划/11 §4.3).
 import { afterEach, expect, it, vi } from 'vitest';
 import { useHarness } from '../../admin/auth/kit.ts';
 import {
@@ -22,16 +23,20 @@ import {
   creditedOrder,
   detailOf,
   imported,
+  insertRecorder,
   lines,
   moneyState,
   orderNow,
   queued,
+  reported,
   rightsOf,
   runBatch,
   seedProcessingDeletion,
+  seedUnionAccount,
   setup,
   shareImportStore,
   subjectNet,
+  versionRows,
   voucherKeys,
   voucherLines,
   waitingOrder,
@@ -74,18 +79,18 @@ async function eventOf(s: Scenario): Promise<string> {
 }
 
 /** A user CLAWBACK voucher: debit USER_BALANCE.available, credit UNION_RECEIVABLE. */
-function userLines(userId: string, amount: bigint): string[] {
+function userLines(receivable: string, userId: string, amount: bigint): string[] {
   return [
     `USER_BALANCE|${userId}|${String(amount)}`,
-    `${RECEIVABLE}|platform|${String(-amount)}`,
+    `${receivable}|platform|${String(-amount)}`,
   ].sort();
 }
 
 /** A bad-debt CLAWBACK voucher (BR-FUND-08): debit BAD_DEBT, credit UNION_RECEIVABLE. */
-function badDebtLines(amount: bigint): string[] {
+function badDebtLines(receivable: string, amount: bigint): string[] {
   return [
     `BAD_DEBT|platform|${String(amount)}`,
-    `${RECEIVABLE}|platform|${String(-amount)}`,
+    `${receivable}|platform|${String(-amount)}`,
   ].sort();
 }
 
@@ -102,15 +107,20 @@ async function expectClawback(
   deleting = false,
 ): Promise<void> {
   const key = orderKey(c);
+  const receivable = `UNION_RECEIVABLE:${c.order.platform}`;
   const vouchers = {
-    [`${key}:${c.self}:self:CLAWBACK:${event}`]: userLines(c.self, self),
+    [`${key}:${c.self}:self:CLAWBACK:${event}`]: userLines(receivable, c.self, self),
     [`${key}:${c.direct}:direct:CLAWBACK:${event}`]: deleting
-      ? badDebtLines(direct)
-      : userLines(c.direct, direct),
-    [`${key}:${c.indirect}:indirect:CLAWBACK:${event}`]: userLines(c.indirect, indirect),
+      ? badDebtLines(receivable, direct)
+      : userLines(receivable, c.direct, direct),
+    [`${key}:${c.indirect}:indirect:CLAWBACK:${event}`]: userLines(
+      receivable,
+      c.indirect,
+      indirect,
+    ),
     [`${key}:PLATFORM:CLAWBACK:${event}`]: [
       `COMMISSION_REVENUE|platform|${String(platform)}`,
-      `${RECEIVABLE}|platform|${String(-platform)}`,
+      `${receivable}|platform|${String(-platform)}`,
     ].sort(),
   };
   expect(await voucherKeys(s, ':CLAWBACK:')).toEqual(Object.keys(vouchers).sort());
@@ -420,4 +430,53 @@ it('[AC-B1-10n#28] 直推入账后进入注销 processing（净额 85 > 0），�
   await expectBalances(s, c, [0n, 85n, 0n]);
   expect(await subjectNet(s, 'BAD_DEBT')).toBe(85n);
   expect(await subjectNet(s, RECEIVABLE)).toBe(0n);
+}, 120_000);
+
+// D10-565: this report's estimate moves commission_version (BR-FUND-03) and the clawback reads the
+// snapshot of the current version, so orders' onUpdated must run rebate (R9b's copy of the amount
+// rows and totals) before the clawback. jd 3 is PLATFORM_INVALID: P6 from RECEIVED, R8 with ref
+// platform, sub_type FULL, reason REFUND (BR-FUND-08 细则), the same 425 / 85 / 42, platform 448.
+// The copy keeps the snapshot's own figures whatever the new estimate says. Goes green once the
+// update step's rebate port is the real one (B1-09n's wiring); the order must not be weakened.
+it('[AC-B1-10n#30] 已入账订单的同步更新（预估变化，平台失效）经真实 worker 的 order-sync 作业：commission 新版本行先于扣回凭证写入（rebate 在前，扣回在后），v2 逐行等于 v1；全额扣回 425 / 85 / 42、平台 448，sub_type FULL，订单 CLAWED_BACK、原因码 REFUND、booked 0 / 0，余额归零，联盟应收净额 0', async () => {
+  const s = await setup(h);
+  const writes = insertRecorder([
+    'commission_split_amounts',
+    'commission_split_totals',
+    'ledger_vouchers',
+  ]);
+  const w = await worker(h, { plugin: writes.plugin });
+  const c = await creditedOrder(s, w, 'jd');
+  const accountId = await seedUnionAccount(s, 'jd');
+
+  writes.armed = true;
+  await w.sync(s.appId, accountId, reported(c.order, '3', 2000n));
+  writes.armed = false;
+
+  const phases = writes.inserts
+    .map((table) => (table === 'ledger_vouchers' ? 'voucher' : 'version'))
+    .filter((phase, at, all) => phase !== all[at - 1]);
+  expect(phases).toEqual(['version', 'voucher']);
+
+  const copied = await versionRows(s, c.order.order_id, 2);
+  expect(copied.amounts).toHaveLength(3);
+  expect(copied.totals).toHaveLength(1);
+  expect(copied).toEqual(await versionRows(s, c.order.order_id, 1));
+
+  const keys = await voucherKeys(s, ':PLATFORM:CLAWBACK:');
+  expect(keys).toHaveLength(1);
+  const event = keys[0]!.split(':').pop()!;
+  expect(event).toMatch(/^P\d+$/);
+  await expectClawback(s, c, event, [425n, 85n, 42n, 448n], 'CLAWBACK|FULL');
+  expect(await orderNow(s, c.order.order_id)).toMatchObject({
+    platform_status: 'INVALID',
+    rebate_status: 'CLAWED_BACK',
+    reason: 'REFUND',
+    booked_base_fen: 0n,
+    booked_n_fen: 0n,
+    commission_version: 2,
+    est_commission_fen: 2000n,
+  });
+  await expectBalances(s, c, [0n, 0n, 0n]);
+  expect(await subjectNet(s, 'UNION_RECEIVABLE:jd')).toBe(0n);
 }, 120_000);
