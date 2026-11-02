@@ -49,7 +49,7 @@
   "devDependencies": {
     "@couli/contracts-ts": "workspace:*",
     "@nestjs/testing": "12.1.0",
-    "@readme/openapi-parser": "9.0.0",
+    "@readme/openapi-parser": "10.0.0",
     "@types/pg": "8.23.1",
     "@types/pngjs": "6.0.5",
     "@types/qrcode": "1.5.6",
