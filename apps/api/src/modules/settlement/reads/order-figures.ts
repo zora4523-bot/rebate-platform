@@ -1,7 +1,9 @@
 // B1-09p (D10-551 item 9, D10-558): the per-order figures behind orders' OrderFiguresReader, one
-// viewer at a time. Read only: the orders, snapshots, ledger and beneficiary_credits of one call are
-// read on one read-only transaction; configuration and appeals come in over their own handles, so
-// they run after it and the transaction never waits for a second connection. Amounts reuse
+// viewer at a time. Read only: the orders, open deductions, snapshots, ledger and beneficiary_credits
+// of one call are read on one read-only REPEATABLE READ transaction, so an amount never mixes a
+// commission column and an open deduction from either side of a union sync (B2-03r); configuration
+// and appeals come in over their own handles, so they run after it and the transaction never waits
+// for a second connection. Amounts reuse
 // pending-earnings-rules, so they are the wallet's; forUser is not used (it has no per-order output).
 // Every order read is in the result. actual_fen is the BR-TEXT-02 formula as written (D10-558 ①).
 import type { DB } from '@couli/db';
@@ -194,12 +196,17 @@ export function orderFiguresOf(facts: OrderFiguresFacts): OrderFiguresValue {
   };
 }
 
+/** Runs on the caller's transaction, or on its own read-only REPEATABLE READ one. */
 function onReadTransaction<T>(
   db: Kysely<DB>,
   run: (trx: Transaction<DB>) => Promise<T>,
 ): Promise<T> {
   if (db.isTransaction) return run(db as Transaction<DB>);
-  return db.transaction().setAccessMode('read only').execute(run);
+  return db
+    .transaction()
+    .setIsolationLevel('repeatable read')
+    .setAccessMode('read only')
+    .execute(run);
 }
 
 function selectOrders(
