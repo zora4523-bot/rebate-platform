@@ -39,7 +39,7 @@
 // refunds.ts，不过滤推广位；没有 orderSource → adapter_unimplemented），listPunishments 经 orderSource
 // GET get-foul-order-list（见 punishments.ts，只留 orderSlots 的推广位；缺一即 adapter_unimplemented）。
 // 两者都是每次调用取一个上游页（per_request，经 ctx.gateUpstream），归档 kind = order。
-import type { Clock } from '../../../platform/index.ts';
+import type { Clock, Scheduler } from '../../../platform/index.ts';
 import type { TaobaoPriceOptions, TaobaoPriceSettingsReader } from '../../domain/taobao-price.ts';
 import {
   UnionError,
@@ -161,6 +161,7 @@ import {
   type TaobaoRefundWarning,
 } from './refunds.ts';
 import { unwrapTaobaoResponse, type TaobaoSubCodeMap, type TaobaoWarning } from './response.ts';
+import type { TaobaoSearchCounter } from './search-counter.ts';
 import {
   signTaobaoParameters,
   taobaoSignedEntries,
@@ -222,6 +223,16 @@ export interface TaobaoAdapterOptions {
    */
   readonly searchSource?: TaobaoSearchSource;
   /**
+   * B1-04zy (D10-582): the waits of 'official_first' (the official step's own time limit, half the
+   * call's budget). Without it the system scheduler; the cooldown reads `clock`, not this.
+   */
+  readonly scheduler?: Scheduler;
+  /**
+   * B1-04zy (D10-582): couli_taobao_search_total, under every searchSource (see search-counter.ts);
+   * UnionModule passes the one it provides. Without it nothing is counted.
+   */
+  readonly searchCounter?: TaobaoSearchCounter;
+  /**
    * B1-04zx (D10-582): the calling app's active query PID, for the official search's adzone_id
    * (see official-search.ts). Without it searchItems stays adapter_unimplemented under 'official'.
    */
@@ -245,8 +256,11 @@ export interface TaobaoAdapterOptions {
 /** B1-04d: the convert data-source switch; the default is 'baichuan' (behaviour unchanged). */
 export type TaobaoConvertSource = 'baichuan' | 'dataoke';
 
-/** B1-04zh: the search data-source switch; the default is 'official'. */
-export type TaobaoSearchSource = 'official' | 'dataoke';
+/**
+ * B1-04zh: the search data-source switch; the default is 'official'. B1-04zy: 'official_first' asks
+ * the official search first and falls back to 大淘客 (skeleton: the type only, see the rule tests).
+ */
+export type TaobaoSearchSource = 'official' | 'dataoke' | 'official_first';
 
 export interface TaobaoRequestOptions {
   /** The response envelope key registered for this method by the caller (never derived). */

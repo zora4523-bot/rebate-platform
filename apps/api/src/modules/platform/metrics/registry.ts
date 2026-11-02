@@ -24,7 +24,19 @@ export interface MetricsRegistryOptions {
   readonly collectAutoPayout?: () => Promise<AutoPayoutDailySnapshot>;
   /** The review overdue gauge (B2-05o). Used only on 'worker'; called once per render(). */
   readonly collectReviewOverdue?: () => Promise<ReviewOverdueSnapshot>;
+  /** couli_taobao_search_total (B1-04zy). Used only on 'api', never 'worker'; once per render(). */
+  readonly collectTaobaoSearch?: () => TaobaoSearchMetricsSnapshot;
 }
+
+/** One series of couli_taobao_search_total; union's counter hands these over (no import of union). */
+export interface TaobaoSearchMetricSample {
+  readonly source: string;
+  readonly outcome: string;
+  readonly value: number;
+}
+
+/** Every series of couli_taobao_search_total counted so far in this process. */
+export type TaobaoSearchMetricsSnapshot = readonly TaobaoSearchMetricSample[];
 
 export interface MetricsRegistry {
   /** Content-Type of render()'s text (Prometheus text exposition format). */
