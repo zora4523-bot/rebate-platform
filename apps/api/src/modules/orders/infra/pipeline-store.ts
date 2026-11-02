@@ -185,6 +185,20 @@ export async function resolveOpenPending(
   },
   resolution: { readonly resolved_at: Date; readonly resolution_note: string },
 ): Promise<void> {
+  // 不直接 UPDATE：绝大多数好行没有 open 记录，无事不写，unchanged 路径才是零写入。调用方已持订单 xact 锁，隔离
+  // 写入也持同一把锁，同单上先查后写是串行的。
+  const open = await trx
+    .withSchema('app')
+    .selectFrom('order_sync_pending')
+    .select('id')
+    .where('app_id', '=', key.app_id)
+    .where('platform', '=', key.platform)
+    .where('sub_order_id', '=', key.sub_order_id)
+    .where('reason', '=', key.reason)
+    .where('status', '=', 'open')
+    .limit(1)
+    .executeTakeFirst();
+  if (open === undefined) return;
   await trx
     .withSchema('app')
     .updateTable('order_sync_pending')
