@@ -9,9 +9,9 @@
 // The two entries have a clock each: s.clock is the save's, kit.clock the login's; a login test moves
 // kit.clock to the clearing instant plus the time it wants to pass.
 //
-// The audit's key names are the implementation's, so nothing here names one. `extra` is what `after`
-// says beyond the keys of B1-27b; the providers are looked for in its JSON text, keys included; the
-// clearing is what a flagged account's audit says that an unflagged account's does not.
+// `extra` is what `after` says beyond the keys of B1-27b. #36 and #37 judge its two clearing keys,
+// reverify_cleared and unbound_providers (task §13), against expectations written by hand, never
+// against another audit under test; #35 to #37 also look for the providers in its JSON text.
 //
 // Every case ends on a step only this round's implementation passes: a case that says "nothing
 // changes" goes on to a real clearing of the same account or of a flagged peer.
@@ -343,15 +343,13 @@ it.each(UNBOUND)(
   '[AC-B1-02zw#36] 带标记账号改号解绑（$name）：审计 after 含实际解绑的 provider 和标记已清除，没绑过或留下的身份不算，不含令牌',
   async ({ spec, gone }) => {
     const s = await scene(h);
-    const nothingToUnbind = await account(s, { bound: ['wechat'], trusted: ['wechat'] });
-    const cleared = extra(await saved(s, nothingToUnbind, { phone: testPhone() }));
     const target = await account(s, spec);
     const stored = await bindings(s, target);
     const entry = await saved(s, target, { phone: testPhone() });
     const told = extra(entry);
+    expect(told['reverify_cleared']).toBe(true);
+    expect(told['unbound_providers']).toEqual(gone);
     expect(named(told)).toEqual(gone);
-    // The clearing is said the same way with or without an unbinding.
-    expect(Object.keys(told)).toEqual(expect.arrayContaining(Object.keys(cleared)));
     const text = auditText(entry);
     const ciphers = stored.flatMap((binding) =>
       binding.apple_refresh_token_cipher === null
@@ -374,10 +372,13 @@ it.each(NOTHING_UNBOUND)(
   async ({ spec }) => {
     const s = await scene(h);
     const plain = await ordinary(s);
+    expect(plain).not.toHaveProperty('reverify_cleared');
+    expect(plain).not.toHaveProperty('unbound_providers');
     const target = await account(s, spec);
     const told = extra(await saved(s, target, { phone: testPhone() }));
     await expectCleared(s, target);
+    expect(told['reverify_cleared']).toBe(true);
+    expect(told).not.toHaveProperty('unbound_providers');
     expect(named(told)).toEqual([]);
-    expect(told, '审计没有记下标记已清除').not.toEqual(plain);
   },
 );
