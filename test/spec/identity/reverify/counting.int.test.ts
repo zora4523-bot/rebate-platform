@@ -417,3 +417,72 @@ it('[AC-B1-02zp#110] 同一设备两个第三方加验都已预占：A 通过清
   expect(await f.devices(uid)).toEqual([{ device_hash: device.hash, source: 'self' }]);
   expect(await f.state(uid)).toMatchObject({ reverify_fail_count: 0, reverify_fail_day: null });
 });
+
+it('[AC-B1-02zp#111] 设备行冲突的通过也算清零：C 预占后 B 通过清零（不新增设备行）、另一设备又失败 1 次，C 的 50305 退回不吃掉这次新失败，再失败 4 次转 10010（共 5 次，不多一次，§2c）', async () => {
+  const f = await fixture(kit);
+  const { uid, device, unionId, c } = await flagged(f);
+  const other = f.client(uid, await f.device());
+  const third = f.client(uid, await f.device());
+  const [a, b, onOther] = [
+    attemptOf(kit, await c.attempt('wechat')),
+    attemptOf(kit, await c.attempt('wechat')),
+    attemptOf(kit, await other.attempt('wechat')),
+  ];
+  // One hold per request: a parked exchange keeps its own answer, so each can end on its own.
+  const heldB = holdExchange(kit);
+  const requestB = c.byOauth(oauthBody('wechat', b.attempt_id));
+  await firstOf([heldB.reached, requestB]);
+  const heldA = holdExchange(kit);
+  const requestA = c.byOauth(oauthBody('wechat', a.attempt_id));
+  await firstOf([heldA.reached, requestA]);
+  const heldC = holdExchange(kit);
+  try {
+    expect(kit.exchange).toHaveBeenCalledTimes(2);
+    expect(await f.state(uid)).toMatchObject({ reverify_fail_count: 2, reverify_fail_day: TODAY });
+
+    // A passes: a new device row and a clear.
+    kit.clock.advanceMs(SECOND);
+    heldA.release({ union_id: unionId });
+    passed(kit, BY_OAUTH, await requestA);
+    expect(await f.state(uid)).toMatchObject({ reverify_fail_count: 0, reverify_fail_day: null });
+
+    // C reserves on a device not re-verified, after that device row exists.
+    kit.clock.advanceMs(SECOND);
+    const requestC = other.byOauth(oauthBody('wechat', onOther.attempt_id));
+    await firstOf([heldC.reached, requestC]);
+    expect(kit.exchange).toHaveBeenCalledTimes(3);
+    expect(await f.state(uid)).toMatchObject({ reverify_fail_count: 1, reverify_fail_day: TODAY });
+
+    // B passes: its device row is already there, so only the count shows the clear.
+    kit.clock.advanceMs(SECOND);
+    heldB.release({ union_id: unionId });
+    passed(kit, BY_OAUTH, await requestB);
+    expect(await f.devices(uid)).toEqual([{ device_hash: device.hash, source: 'self' }]);
+    expect(await f.state(uid)).toMatchObject({ reverify_fail_count: 0, reverify_fail_day: null });
+
+    // A new failure, after the clear that wiped C's reservation.
+    kit.clock.advanceMs(SECOND);
+    mismatch(kit, BY_ID, await third.byId(OTHER_ID), FAIL_LIMIT - 1);
+    expect(await f.state(uid)).toMatchObject({ reverify_fail_count: 1, reverify_fail_day: TODAY });
+
+    heldC.release({ unavailable: true });
+    envelope(kit, BY_OAUTH, await requestC, 50305);
+    expect(await f.state(uid)).toMatchObject({ reverify_fail_count: 1, reverify_fail_day: TODAY });
+  } finally {
+    heldA.release({ unavailable: true });
+    heldB.release({ unavailable: true });
+    heldC.release({ unavailable: true });
+  }
+
+  for (const remaining of [3, 2, 1, 0]) {
+    mismatch(kit, BY_ID, await third.byId(OTHER_ID), remaining);
+  }
+  expect(await f.state(uid)).toMatchObject({
+    reverify_fail_count: FAIL_LIMIT,
+    reverify_fail_day: TODAY,
+  });
+  pending(kit, BY_ID, await third.byId(ID), PENDING_MANUAL);
+  expect(statusOf(kit, await third.status())).toEqual(MANUAL_REQUIRED);
+  expect(await f.devices(uid)).toEqual([{ device_hash: device.hash, source: 'self' }]);
+  expect(await f.state(uid)).toMatchObject({ reverify_fail_count: FAIL_LIMIT });
+});
