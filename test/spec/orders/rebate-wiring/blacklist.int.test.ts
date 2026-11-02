@@ -3,10 +3,19 @@
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import type { Kysely } from 'kysely';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import * as pipeline from '../../../../apps/api/src/modules/orders/application/pipeline-port.ts';
 import { setRule } from '../blacklist-rule-toggle/kit.ts';
 import { at } from '../wiring/db-kit.ts';
-import { AFTER_CREDIT, TIMEOUT, withFixture } from './kit.ts';
+import {
+  AFTER_CREDIT,
+  JD_RECEIVED,
+  RECEIVED_AT,
+  RELATION,
+  TIMEOUT,
+  UNKNOWN_CODE,
+  withFixture,
+} from './kit.ts';
 
 let database: TestDatabase | undefined;
 let db: Kysely<DB>;
@@ -21,6 +30,18 @@ afterAll(async () => {
     await database?.drop();
   }
 }, 30_000);
+
+/** The one hit a voided order ends with: BLACKLIST_HIT on the channel, void_commission. */
+function voidHit(orderId: string, userId: string | null) {
+  return expect.objectContaining({
+    user_id: userId,
+    rule_id: 'BLACKLIST_HIT',
+    risk_action: 'void_commission',
+    dimension: 'channel',
+    ref_type: 'order',
+    ref_id: orderId,
+  });
+}
 
 it(
   '[AC-B1-09n#12] 规则启用，新订单命中：同事务作废，reason=BLACKLIST，记 void_commission，不生成快照',
@@ -129,6 +150,77 @@ it(
       });
       expect(await f.hits()).toEqual([]);
       expect(await f.eventNames()).not.toContain('order.invalidated');
+    });
+  },
+  TIMEOUT,
+);
+
+// BR-ATTR-26 作废的三种来源里 ESTIMATED 由 #12 #13 覆盖，下面两条是 WAITING 与 UNATTRIBUTED。
+it(
+  '[AC-B1-09n#25] WAITING 订单更新时命中：作废，reason=BLACKLIST，记 void_commission，发 order.invalidated',
+  async () => {
+    await withFixture(db, async (f) => {
+      await f.sync();
+      // 第二次报文同样是已收货：回到付款码会被当成 P10 倒退，整条拒收，走不到命中。
+      const received = { raw_status: JD_RECEIVED, received_at: RECEIVED_AT };
+      await f.sync(f.touch(1, received));
+      const row = await f.row();
+      expect(row).toMatchObject({ rebate_status: 'WAITING' });
+      await f.blockChannel();
+      await f.sync(f.touch(2, received));
+      expect(await f.row()).toMatchObject({ rebate_status: 'VOID', reason: 'BLACKLIST' });
+      expect(await f.hits()).toEqual([voidHit(row.order_id, f.userId)]);
+      expect(await f.eventNames()).toContain('order.invalidated');
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B1-09n#26] 未归因订单入库时命中：同事务作废，reason=BLACKLIST，记 void_commission，发 order.invalidated',
+  async () => {
+    await withFixture(
+      db,
+      async (f) => {
+        await f.blockChannel();
+        await f.sync();
+        const row = await f.row();
+        expect(row).toMatchObject({
+          user_id: null,
+          rebate_status: 'VOID',
+          reason: 'BLACKLIST',
+          commission_version: 0,
+        });
+        expect(await f.splits()).toEqual([]);
+        expect(await f.hits()).toEqual([voidHit(row.order_id, null)]);
+        expect(await f.eventNames()).toContain('order.invalidated');
+      },
+      {
+        patch: {
+          attr_params: {
+            relation_id: RELATION,
+            sub_union_id: `n_${UNKNOWN_CODE}`,
+            custom_parameters: null,
+          },
+        },
+      },
+    );
+  },
+  TIMEOUT,
+);
+
+// 尾号维度只有淘宝，淘宝没有状态映射文件，走不通流水线，所以直接问生产装配给流水线的端口。
+it(
+  '[AC-B1-09n#27] 尾号开关：有 config_items 行开启为 true，没有行为 false（BR-ATTR-26 ①）',
+  async () => {
+    const makePipeline = vi.spyOn(pipeline, 'createOrderPipeline');
+    await withFixture(db, async (f) => {
+      expect(makePipeline).toHaveBeenCalledTimes(1);
+      const { blacklist } = makePipeline.mock.calls[0]![0];
+      expect(blacklist, 'orderSyncPorts gives the blocklist').toBeDefined();
+      await f.setConfig('attr.blacklist.order_suffix_void_enabled', true);
+      expect(await blacklist!.suffixVoidEnabled(f.appId)).toBe(true);
+      expect(await blacklist!.suffixVoidEnabled(`${f.appId}-no-row`)).toBe(false);
     });
   },
   TIMEOUT,

@@ -4,7 +4,8 @@
 // order blocklist needs FIELD_CRYPTO, which a plain test config does not provide). Only the job
 // queue is a stub, as in ../wiring/context-kit.ts: the bus still writes event_log.
 // Expected amounts are written by hand in the tests. The rule version is the commission fixture's:
-// reserve 0, own share 50 %, and jd deducts no service fee, so N = 1000 gives 500.
+// reserve 0, own share 50 %, and jd deducts no service fee, so N = 1000 gives 500. pdd's commission
+// includes the service fee (BR-CALC-03): commission 1000 with fee 100 is N = 900, which gives 450.
 // Integration tests pass the database in: this file never imports @couli/db/testing.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -31,6 +32,7 @@ import { account, at, pid, user } from '../wiring/db-kit.ts';
 
 export { AFTER_CREDIT } from '../blacklist/plan-kit.ts';
 export { capture } from '../attribution/kit.ts';
+export { PAID } from '../../commission/resolver/kit.ts';
 
 const ROOT = new URL('../../../../', import.meta.url);
 
@@ -44,7 +46,15 @@ export const RELATION = 'channel-synthetic';
 export const JD_PAID = '16';
 export const JD_RECEIVED = '17';
 export const JD_INVALID = '3';
+export const JD_DEPOSIT = '24';
 export const JD_UNMAPPED = 'synthetic-unmapped';
+/** specs/order-status-map/pdd.csv. */
+export const PDD_PAID = '0';
+/** A receipt after PAID: settle_period 2026-10. */
+export const RECEIVED_AT = at('2026-10-21T02:00:00.000Z');
+
+/** The platforms with a status map file today. */
+type FixturePlatform = 'jd' | 'pdd';
 
 interface Context {
   get(token: unknown, options?: { strict: boolean }): unknown;
@@ -146,12 +156,12 @@ export interface Owner {
 }
 
 /**
- * The app's jd account, its promotion slot, the published rule version and the owner's level at
- * paid_at. The owner is a new user with ATTR_CODE unless the caller already has one.
+ * The app's union account, its promotion slot, the published rule version and the owner's level
+ * at paid_at. The owner is a new user with ATTR_CODE unless the caller already has one.
  */
-async function seedApp(db: Kysely<DB>, given?: Owner) {
+async function seedApp(db: Kysely<DB>, platform: FixturePlatform, given?: Owner) {
   const a = await account(db, {
-    platform: 'jd',
+    platform,
     ...(given === undefined ? {} : { app_id: given.appId }),
   });
   const userId = given?.userId ?? (await user(db, a.app_id, { attr_code: ATTR_CODE })).id;
@@ -180,7 +190,34 @@ function jdOrder(patch: Partial<UnionOrder> = {}): UnionOrder {
   });
 }
 
+/** One sub-order of the owner as pdd reports it: paid, commission 1000 including a fee of 100. */
+function pddOrder(patch: Partial<UnionOrder> = {}): UnionOrder {
+  return order({
+    platform: 'pdd',
+    sub_order_id: randomUUID(),
+    raw_status: PDD_PAID,
+    attr_params: {
+      relation_id: null,
+      sub_union_id: null,
+      custom_parameters: JSON.stringify({ app: 'n', uid: ATTR_CODE }),
+    },
+    commission_fen: 1000n,
+    est_commission_fen: 1000n,
+    service_fee_fen: 100n,
+    paid_at: PAID,
+    modified_at: at('2026-10-20T03:00:00.000Z'),
+    ...patch,
+  });
+}
+
+const ORDER_OF: Record<FixturePlatform, (patch?: Partial<UnionOrder>) => UnionOrder> = {
+  jd: jdOrder,
+  pdd: pddOrder,
+};
+
 interface FixtureOptions {
+  /** The order's platform; jd unless the case is about another platform's rules. */
+  readonly platform?: FixturePlatform;
   /** An existing app and user (the api entry's member) instead of a new one. */
   readonly owner?: Owner;
   /** The worker's Clock; the sync moment by default. */
@@ -190,7 +227,8 @@ interface FixtureOptions {
 
 /** A seeded app and a production worker over `db`; the caller closes it. */
 export async function syncFixture(db: Kysely<DB>, options: FixtureOptions = {}) {
-  const seeded = await seedApp(db, options.owner);
+  const platform = options.platform ?? 'jd';
+  const seeded = await seedApp(db, platform, options.owner);
   const { appId, userId } = seeded;
   const worker = await keyedWorker(db);
   try {
@@ -198,7 +236,7 @@ export async function syncFixture(db: Kysely<DB>, options: FixtureOptions = {}) 
     const clock = worker.clock;
     clock.set(options.now ?? SYNCED);
     const events = worker.context.get(worker.platform.EVENT_BUS, { strict: false }) as EventBus;
-    const incoming = jdOrder(options.patch);
+    const incoming = ORDER_OF[platform](options.patch);
     let sequence = 0;
 
     /** One report of the order through the production pipeline, one minute after the last. */
@@ -209,7 +247,7 @@ export async function syncFixture(db: Kysely<DB>, options: FixtureOptions = {}) 
         { ...incoming, ...patch, raw_payload_id: `${100 + sequence}` },
         {
           app_id: appId,
-          platform: 'jd',
+          platform,
           union_account_id: seeded.account.id,
           query_kind: 'increment',
           scene: '-',
@@ -264,6 +302,8 @@ export async function syncFixture(db: Kysely<DB>, options: FixtureOptions = {}) 
           .orderBy('commission_version')
           .execute(),
       hits: () => db.selectFrom('risk_hits').selectAll().where('app_id', '=', appId).execute(),
+      pending: () =>
+        db.selectFrom('order_sync_pending').selectAll().where('app_id', '=', appId).execute(),
       async eventNames() {
         const rows = await db
           .selectFrom('event_log')
@@ -295,7 +335,7 @@ export async function syncFixture(db: Kysely<DB>, options: FixtureOptions = {}) 
             dimension: 'channel',
             value: RELATION,
             value_hmac: null,
-            platform: 'jd',
+            platform,
             union_account_id: seeded.account.id,
             start_at: since,
             end_at: null,

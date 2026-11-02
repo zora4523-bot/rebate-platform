@@ -7,8 +7,12 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import { at } from '../wiring/db-kit.ts';
 import {
   ATTR_CODE,
+  JD_DEPOSIT,
   JD_INVALID,
+  JD_PAID,
   JD_RECEIVED,
+  PAID,
+  RECEIVED_AT,
   RELATION,
   TIMEOUT,
   UNKNOWN_CODE,
@@ -29,7 +33,8 @@ afterAll(async () => {
   }
 }, 30_000);
 
-const RECEIVED_AT = at('2026-10-21T02:00:00.000Z');
+/** A deposit before PAID, inside the union account's sync window. */
+const DEPOSIT_AT = at('2026-10-19T02:00:00.000Z');
 
 it(
   '[AC-B1-09n#5] 同步进来的已归因订单：ESTIMATED，快照 v1，orders.commission_version=1',
@@ -192,6 +197,123 @@ it(
         settle_period: null,
       });
     });
+  },
+  TIMEOUT,
+);
+
+// estimates.bases 只在这里决定走向：null 基数走 R7 留在 ESTIMATED，真实基数 1000→0 才走 R6。
+it(
+  '[AC-B1-09n#21] 有效基数由 >0 变 0：R6 作废，reason=COMMISSION_ZERO，同事务发 order.invalidated（BR-FUND-07）',
+  async () => {
+    await withFixture(db, async (f) => {
+      await f.sync();
+      expect(await f.row()).toMatchObject({ rebate_status: 'ESTIMATED', commission_version: 1 });
+      await f.sync(f.touch(1, { est_commission_fen: 0n, commission_fen: 0n }));
+      expect(await f.row()).toMatchObject({
+        platform_status: 'PAID',
+        rebate_status: 'VOID',
+        reason: 'COMMISSION_ZERO',
+        est_commission_fen: 0n,
+      });
+      expect(await f.eventNames()).toContain('order.invalidated');
+    });
+  },
+  TIMEOUT,
+);
+
+// 只断言金额行：钱包不扣服务费，归 FU-PDD-NET-N。v1 由快照端口写，v2 由 estimates.refresh 写。
+it(
+  '[AC-B1-09n#22] 拼多多佣金变化：v2 金额行按 N = 佣金 − service_fee_fen 重算（BR-CALC-03，BR-FUND-03）',
+  async () => {
+    await withFixture(
+      db,
+      async (f) => {
+        await f.sync();
+        expect(await f.row()).toMatchObject({
+          platform: 'pdd',
+          rebate_status: 'ESTIMATED',
+          service_fee_fen: 100n,
+          commission_version: 1,
+        });
+        await f.sync(f.touch(1, { est_commission_fen: 800n, commission_fen: 800n }));
+        expect(await f.row()).toMatchObject({
+          rebate_status: 'ESTIMATED',
+          est_commission_fen: 800n,
+          service_fee_fen: 100n,
+          commission_version: 2,
+        });
+        const amounts = await f.amounts();
+        expect(
+          amounts.map((row) => [row.commission_version, row.base_fen, row.amount_fen]),
+        ).toEqual([
+          [1, 900n, 450n],
+          [2, 700n, 350n],
+        ]);
+        const totals = await f.totals();
+        expect(
+          totals.map((row) => [row.commission_version, row.n_total_fen, row.base_fen]),
+        ).toEqual([
+          [1, 900n, 900n],
+          [2, 700n, 700n],
+        ]);
+      },
+      { platform: 'pdd' },
+    );
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B1-09n#23] 首见定金：ESTIMATED，不生成快照；付款（P2）同事务生成快照 v1（R2，BR-FUND-03，BR-CALC-10）',
+  async () => {
+    await withFixture(
+      db,
+      async (f) => {
+        await f.sync();
+        expect(await f.row()).toMatchObject({
+          user_id: f.userId,
+          platform_status: 'DEPOSIT_PAID',
+          rebate_status: 'ESTIMATED',
+          commission_version: 0,
+        });
+        expect(await f.splits()).toEqual([]);
+        expect(await f.amounts()).toEqual([]);
+        await f.sync(f.touch(1, { raw_status: JD_PAID, paid_at: PAID }));
+        expect(await f.row()).toMatchObject({
+          platform_status: 'PAID',
+          rebate_status: 'ESTIMATED',
+          commission_version: 1,
+        });
+        expect(await f.splits()).toHaveLength(1);
+        const amounts = await f.amounts();
+        expect(amounts.map((row) => [row.commission_version, row.amount_fen])).toEqual([[1, 500n]]);
+      },
+      { patch: { raw_status: JD_DEPOSIT, deposit_paid_at: DEPOSIT_AT, paid_at: null } },
+    );
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B1-09n#24] 首见即失效：同事务 VOID，reason=REFUND，不生成快照，发 order.invalidated（R2 / P13）',
+  async () => {
+    await withFixture(
+      db,
+      async (f) => {
+        await f.sync();
+        expect(await f.row()).toMatchObject({
+          user_id: f.userId,
+          platform_status: 'INVALID',
+          rebate_status: 'VOID',
+          reason: 'REFUND',
+          commission_version: 0,
+        });
+        expect(await f.splits()).toEqual([]);
+        expect(await f.amounts()).toEqual([]);
+        expect(await f.eventNames()).toContain('order.invalidated');
+      },
+      { patch: { raw_status: JD_INVALID } },
+    );
   },
   TIMEOUT,
 );

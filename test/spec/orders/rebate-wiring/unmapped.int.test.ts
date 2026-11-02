@@ -11,7 +11,7 @@ import {
   SYSTEM_RISK,
   UNMAPPED,
 } from '../../admin/system-audit/kit.ts';
-import { capture, JD_UNMAPPED, TIMEOUT, withFixture } from './kit.ts';
+import { capture, JD_RECEIVED, JD_UNMAPPED, RECEIVED_AT, TIMEOUT, withFixture } from './kit.ts';
 
 let database: TestDatabase | undefined;
 let db: Kysely<DB>;
@@ -26,6 +26,18 @@ afterAll(async () => {
     await database?.drop();
   }
 }, 30_000);
+
+/** The hold's other half: one open pending row of this order with the reported code (BR-FUND-02). */
+function expectOnePending(rows: readonly unknown[], orderId: string) {
+  expect(rows).toEqual([
+    expect.objectContaining({
+      order_id: orderId,
+      reason: UNMAPPED,
+      raw_status: JD_UNMAPPED,
+      status: 'open',
+    }),
+  ]);
+}
 
 it(
   '[AC-B1-09n#16] 未映射状态：hold=true、hold_reason=UNMAPPED_STATUS，写一行 system:risk 审计',
@@ -53,6 +65,7 @@ it(
       });
       expectHoldSnapshot(audits[0]!.before, false, null);
       expectHoldSnapshot(audits[0]!.after, true, UNMAPPED);
+      expectOnePending(await f.pending(), row.order_id);
     });
   },
   TIMEOUT,
@@ -93,6 +106,37 @@ it(
       await f.sync(f.touch(1, { raw_status: JD_UNMAPPED }));
       expect(await f.row()).toMatchObject({ hold: false, hold_reason: null });
       expect(await stored(db, f.appId)).toEqual([]);
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B1-09n#28] WAITING 订单遇未映射状态：同样 hold，写一行 system:risk 审计，留一条待处理',
+  async () => {
+    await withFixture(db, async (f) => {
+      await f.sync();
+      await f.sync(f.touch(1, { raw_status: JD_RECEIVED, received_at: RECEIVED_AT }));
+      expect(await f.row()).toMatchObject({ rebate_status: 'WAITING', hold: false });
+      await f.sync(f.touch(2, { raw_status: JD_UNMAPPED, received_at: RECEIVED_AT }));
+      const row = await f.row();
+      expect(row).toMatchObject({
+        platform_status: 'RECEIVED',
+        rebate_status: 'WAITING',
+        hold: true,
+        hold_reason: UNMAPPED,
+      });
+      const audits = await stored(db, f.appId);
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toMatchObject({
+        admin_id: null,
+        system_actor: SYSTEM_RISK,
+        action: AUTO_HOLD,
+        target: `orders:${row.order_id}`,
+      });
+      expectHoldSnapshot(audits[0]!.before, false, null);
+      expectHoldSnapshot(audits[0]!.after, true, UNMAPPED);
+      expectOnePending(await f.pending(), row.order_id);
     });
   },
   TIMEOUT,
