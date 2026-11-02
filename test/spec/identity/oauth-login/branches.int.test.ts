@@ -30,6 +30,38 @@ afterAll(async () => {
 
 const PROVIDERS = ['wechat', 'apple'] as const;
 
+// BR-WDR-01 细则「判定」: every login overwrites the account's activity columns (updated_at moves
+// with them). The rest of users stays equal field by field; other accounts stay equal entirely.
+const ACTIVITY_COLUMNS = new Set([
+  'last_active_at',
+  'last_login_device_hash',
+  'reverify_flagged_at',
+  'reverify_trusted',
+  'updated_at',
+]);
+type UserRows = Awaited<ReturnType<typeof rows>>['users'];
+function withoutActivity(users: UserRows) {
+  return users.map((row) =>
+    Object.fromEntries(Object.entries(row).filter(([name]) => !ACTIVITY_COLUMNS.has(name))),
+  );
+}
+function expectOnlyLoginActivity(
+  before: UserRows,
+  after: UserRows,
+  login: { uid: string; at: Date; hash: string },
+) {
+  expect(withoutActivity(after)).toEqual(withoutActivity(before));
+  const others = (row: UserRows[number]) => row.id !== login.uid;
+  expect(after.filter(others)).toEqual(before.filter(others));
+  const prior = before.find((row) => row.id === login.uid)!;
+  expect(after.find((row) => row.id === login.uid)).toMatchObject({
+    last_active_at: login.at,
+    last_login_device_hash: login.hash,
+    reverify_flagged_at: prior.reverify_flagged_at,
+    reverify_trusted: prior.reverify_trusted,
+  });
+}
+
 it.each(PROVIDERS)(
   '[AC-B1-02d#15][BR-ID-01] %s 受限登录查不到绑定 → 403/10405 no_account：不建号、不写同意与日志、尝试已消费',
   async (provider) => {
@@ -77,7 +109,11 @@ it.each(PROVIDERS)(
       scp: 'deletion_only',
     });
     const after = await rows(f);
-    expect(after.users).toEqual(before.users);
+    expectOnlyLoginActivity(before.users, after.users, {
+      uid: bound.uid,
+      at: kit.clock.now(),
+      hash: f.device.deviceHash,
+    });
     expect(after.registrations).toEqual(before.registrations);
     expect(after.sessions.filter((row) => row.user_id === bound.uid)).toHaveLength(1);
     expect(

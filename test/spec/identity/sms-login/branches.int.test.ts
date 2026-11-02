@@ -14,6 +14,38 @@ afterAll(async () => {
   await closeKit(kit);
 });
 
+// BR-WDR-01 细则「判定」: every login overwrites the account's activity columns (updated_at moves
+// with them). The rest of users stays equal field by field; other accounts stay equal entirely.
+const ACTIVITY_COLUMNS = new Set([
+  'last_active_at',
+  'last_login_device_hash',
+  'reverify_flagged_at',
+  'reverify_trusted',
+  'updated_at',
+]);
+type UserRows = Awaited<ReturnType<typeof rows>>['users'];
+function withoutActivity(users: UserRows) {
+  return users.map((row) =>
+    Object.fromEntries(Object.entries(row).filter(([name]) => !ACTIVITY_COLUMNS.has(name))),
+  );
+}
+function expectOnlyLoginActivity(
+  before: UserRows,
+  after: UserRows,
+  login: { uid: string; at: Date; hash: string },
+) {
+  expect(withoutActivity(after)).toEqual(withoutActivity(before));
+  const others = (row: UserRows[number]) => row.id !== login.uid;
+  expect(after.filter(others)).toEqual(before.filter(others));
+  const prior = before.find((row) => row.id === login.uid)!;
+  expect(after.find((row) => row.id === login.uid)).toMatchObject({
+    last_active_at: login.at,
+    last_login_device_hash: login.hash,
+    reverify_flagged_at: prior.reverify_flagged_at,
+    reverify_trusted: prior.reverify_trusted,
+  });
+}
+
 it('[AC-B1-02j#1][BR-ID-01] 受限判定失败时，非法手机号也不能抢先返回，验证码与建号均不执行', async () => {
   const f = await fixture(kit);
   const unavailable = new Error('version-reader-unavailable');
@@ -226,7 +258,7 @@ it.each(
     expect(bind).not.toHaveBeenCalled();
     expect(f.register).not.toHaveBeenCalled();
     const after = await rows(kit, f.appId);
-    expect(after.users).toEqual(before.users);
+    expectOnlyLoginActivity(before.users, after.users, { uid, at: f.clock.now(), hash: f.hash });
     expect(after.registrations).toEqual(before.registrations);
   },
 );
