@@ -449,6 +449,10 @@ it('[AC-B1-10n#30] 已入账订单的同步更新（预估变化，平台失效�
   const c = await creditedOrder(s, w, 'jd');
   const accountId = await seedUnionAccount(s, 'jd');
 
+  const before = await versionRows(s, c.order.order_id, 1);
+  expect(before.amounts).toHaveLength(3);
+  expect(before.totals).toHaveLength(1);
+
   writes.armed = true;
   await w.sync(s.appId, accountId, reported(c.order, '3', 2000n));
   writes.armed = false;
@@ -458,10 +462,8 @@ it('[AC-B1-10n#30] 已入账订单的同步更新（预估变化，平台失效�
     .filter((phase, at, all) => phase !== all[at - 1]);
   expect(phases).toEqual(['version', 'voucher']);
 
-  const copied = await versionRows(s, c.order.order_id, 2);
-  expect(copied.amounts).toHaveLength(3);
-  expect(copied.totals).toHaveLength(1);
-  expect(copied).toEqual(await versionRows(s, c.order.order_id, 1));
+  expect(await versionRows(s, c.order.order_id, 1)).toEqual(before);
+  expect(await versionRows(s, c.order.order_id, 2)).toEqual(before);
 
   const keys = await voucherKeys(s, ':PLATFORM:CLAWBACK:');
   expect(keys).toHaveLength(1);
