@@ -204,3 +204,18 @@ it('[AC-B1-09p#U11] 待入账单仍按有效佣金换算并扣淘礼金，不看
   const none = { ...row, est_commission_fen: null, settle_commission_fen: null };
   expect(await priceOrder(pricingPorts(), NO_TRX, VIEWER, none)).toBeNull();
 });
+
+it('[AC-B2-03r-UNIT#1] 预估中的单按有效佣金减未关闭应扣定价，下限 0；CREDITED 不减', async () => {
+  const row: OrderFiguresRow = { ...ROW, commission_version: 1 };
+  expect(await priceOrder(pricingPorts(), NO_TRX, VIEWER, row, 400n)).toEqual({
+    baseFen: 510n,
+    viewerShareFen: 255n,
+  });
+  expect(await priceOrder(pricingPorts(), NO_TRX, VIEWER, row, 1500n)).toEqual({
+    baseFen: 0n,
+    viewerShareFen: 0n,
+  });
+  expect(await priceOrder(pricingPorts(), NO_TRX, VIEWER, HELD_CREDITED, 400n)).toEqual(
+    await priceOrder(pricingPorts(), NO_TRX, VIEWER, HELD_CREDITED),
+  );
+});

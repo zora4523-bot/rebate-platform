@@ -9,6 +9,7 @@ import { expectedSettlementCredit, orderKey } from '@couli/domain';
 import { addFen, subFen } from '@couli/money';
 import type { Kysely, Transaction } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
+import { readOpenDeductionTotals } from '../rights/rights-store.ts';
 import {
   creditEnabledValue,
   effectiveCommissionFen,
@@ -16,7 +17,11 @@ import {
   pendingBaseFen,
   splitPendingShares,
 } from './pending-earnings-rules.ts';
-import type { PendingEarningsDependencies, PendingSnapshotInput } from './pending-earnings.ts';
+import {
+  netOfOpenDeduction,
+  type PendingEarningsDependencies,
+  type PendingSnapshotInput,
+} from './pending-earnings.ts';
 
 export interface OrderFiguresSubject {
   readonly app_id: string;
@@ -255,7 +260,8 @@ function viewerRole(row: OrderFiguresRow): 'self' | 'share' | null {
  * The base a priced order's shares split. A held CREDITED order takes booked_base_fen as it stands
  * (BR-CALC-13, BR-FUND-04 ⑫): R5a credits floor(booked_base_fen × ratio), and that column is the
  * entry base (BR-FUND-05), so it follows R9 / R10 while settle_commission_fen stays, and 淘礼金 is
- * not deducted from it again. Every other order converts the effective commission (BR-CALC-02).
+ * not deducted from it again. Every other order converts the effective commission (BR-CALC-02)
+ * net of its open deductions (B2-03r, the wallet's figure).
  */
 async function pricedBaseFen(
   deps: OrderFiguresPricingPorts,
@@ -263,9 +269,13 @@ async function pricedBaseFen(
   row: OrderFiguresRow,
   input: PendingSnapshotInput,
   reserveBp: number,
+  openFen: bigint,
 ): Promise<bigint | null> {
   if (row.rebate_status === 'CREDITED') return row.booked_base_fen;
-  const nFen = effectiveCommissionFen(row.est_commission_fen, row.settle_commission_fen);
+  const nFen = netOfOpenDeduction(
+    effectiveCommissionFen(row.est_commission_fen, row.settle_commission_fen),
+    openFen,
+  );
   if (nFen === null) return null;
   return pendingBaseFen(nFen, reserveBp, await deps.readTljDeductFen(trx, input));
 }
@@ -275,6 +285,7 @@ export async function priceOrder(
   trx: Transaction<DB>,
   subject: OrderFiguresSubject,
   row: OrderFiguresRow,
+  openFen = 0n,
 ): Promise<OrderFiguresPricing | null> {
   // No snapshot yet (version 0) or no commission: B_est is unknown, never 0 (BR-FUND-17).
   if (row.commission_version < 1) return null;
@@ -285,7 +296,7 @@ export async function priceOrder(
   };
   const snapshot = await deps.readSnapshot(trx, input);
   if (snapshot === null) return null;
-  const baseFen = await pricedBaseFen(deps, trx, row, input, snapshot.reserveBp);
+  const baseFen = await pricedBaseFen(deps, trx, row, input, snapshot.reserveBp, openFen);
   if (baseFen === null) return null;
   const role = viewerRole(row);
   if (role === null) return { baseFen, viewerShareFen: null };
@@ -343,13 +354,20 @@ export function createOrderFiguresReader(deps: OrderFiguresDependencies): OrderF
         const keyOf = (row: OrderFiguresRow) => orderKey(row.platform, row.sub_order_id);
         const ledger = await deps.ledger(trx, { appId, userId, orderKeys: rows.map(keyOf) });
         const held = await selectHeld(trx, subject, orderIds);
+        const open = await readOpenDeductionTotals(
+          trx,
+          appId,
+          rows.filter((row) => needsPricing(row, false)).map((row) => row.order_id),
+        );
         const orders = [];
         for (const row of rows) {
           const isHeld = held.has(row.order_id);
           orders.push({
             row,
             held: isHeld,
-            pricing: needsPricing(row, isHeld) ? await priceOrder(deps, trx, subject, row) : null,
+            pricing: needsPricing(row, isHeld)
+              ? await priceOrder(deps, trx, subject, row, open.get(row.order_id) ?? 0n)
+              : null,
             entry: ledger.get(keyOf(row)),
           });
         }
