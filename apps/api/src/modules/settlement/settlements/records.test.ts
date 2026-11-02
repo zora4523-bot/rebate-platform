@@ -162,9 +162,7 @@ it('[AC-B2-04zj#U15] latestDecidingRecordAt 有 STATEMENT 取最新 STATEMENT，
   const at = (minute: number) => new Date(Date.UTC(2026, 9, 21, 8, minute));
   const read = async (rows: readonly { source: string; created_at: Date }[]) => {
     const { db, selects } = scripted(rows);
-    const value = await db
-      .transaction()
-      .execute((trx) => records.latestDecidingRecordAt(trx, ref));
+    const value = await db.transaction().execute((trx) => records.latestDecidingRecordAt(trx, ref));
     return { value, selects };
   };
 
