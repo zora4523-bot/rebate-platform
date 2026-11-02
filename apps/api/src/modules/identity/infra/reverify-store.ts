@@ -2,23 +2,18 @@
 // 细则「旧手机号被二次放号时的提现加验」). identity is the only writer.
 //
 // The failure count (D10-149, D10-161; couli #174 r5). Nothing here reads and then writes without
-// holding the users row:
+// holding the users row. reverify_fail_epoch names one run of the count: every reset moves it on.
 //   reserve  one conditional UPDATE: below the limit, or on another day, takes a place (the day
 //            change is inside the same statement, so two requests of a new day cannot both write
-//            1). No row back → no place left. The account's reverified_devices count is read in
-//            the same transaction, under the row lock the UPDATE took.
-//   release  under the row lock: −1, never below 0, only if the count still belongs to the day of
-//            the reservation and the device count is the reservation's. A pass is the only clear
-//            within a day, and nearly always adds a device row, so an unchanged device count
-//            means "not cleared meanwhile". A pass on a device a concurrent pass just recorded
-//            clears without a new row: only then, with a later reservation on the same day, can a
-//            release take one place too many (one extra attempt that day; flag and devices
-//            untouched; accepted, D10 12:11). The check is two statements under a lock, not
-//            one UPDATE with a subquery: a statement that waited for the row would judge the
-//            subquery on its old snapshot. An admin-added device (B1-02zq) also keeps the place;
-//            that errs on the strict side.
-//   pass     under the row lock: the device row (if new) and the clear, together. Every actual
-//            pass clears, also when a concurrent pass already recorded this device.
+//            1, and a reset of the count moves the epoch). No row back → no place left. It returns
+//            the epoch the place belongs to.
+//   release  one conditional UPDATE: −1, never below 0, only if the day and the epoch are still
+//            the reservation's, so it cannot take a failure counted after a clear. The conditions
+//            are on the row itself: a statement that waited for the row judges them again on the
+//            row's latest version.
+//   pass     one UPDATE clears the count and moves the epoch; every actual pass does, also when a
+//            concurrent pass already recorded this device. It takes the row lock, the device row
+//            (if new) follows in the same transaction.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for types, `.ts`
 // relative imports, no decorators.
@@ -42,10 +37,10 @@ export interface ReverifyAccount {
 /** One reservation of a failure place, as its release needs it. */
 export interface FailureReservation {
   readonly day: string;
+  /** The reverify_fail_epoch this place belongs to. */
+  readonly epoch: number;
   /** The account's count after this reservation. */
   readonly count: number;
-  /** The account's reverified_devices rows when the place was reserved. */
-  readonly devices: number;
 }
 
 export async function readReverifyAccount(
@@ -112,22 +107,6 @@ export async function boundUnionId(
   return row?.union_id ?? null;
 }
 
-async function deviceCount(trx: Transaction<DB>, subject: ReverifySubject): Promise<number> {
-  const result = await sql<{ n: number }>`SELECT count(*)::int AS n FROM app.reverified_devices
-    WHERE app_id = ${subject.app_id} AND user_id = ${subject.user_id}`.execute(trx);
-  return result.rows[0]?.n ?? 0;
-}
-
-function lockUser(trx: Transaction<DB>, subject: ReverifySubject) {
-  return trx
-    .selectFrom('users')
-    .select(sql<string | null>`reverify_fail_day::text`.as('fail_day'))
-    .where('app_id', '=', subject.app_id)
-    .where('id', '=', subject.user_id)
-    .forNoKeyUpdate()
-    .executeTakeFirst();
-}
-
 /** Takes one failure place of `today` (+08:00), or null when none is left. */
 export async function reserveFailure(
   db: Kysely<DB>,
@@ -139,41 +118,27 @@ export async function reserveFailure(
     .transaction()
     .setIsolationLevel('read committed')
     .execute(async (trx) => {
-      const reserved = await sql<{ reverify_fail_count: number }>`UPDATE app.users SET
+      const reserved = await sql<{
+        reverify_fail_count: number;
+        reverify_fail_epoch: number;
+      }>`UPDATE app.users SET
           reverify_fail_count = CASE WHEN reverify_fail_day = ${today}::date
             THEN reverify_fail_count + 1 ELSE 1 END,
+          reverify_fail_epoch = CASE WHEN reverify_fail_day = ${today}::date
+            THEN reverify_fail_epoch ELSE reverify_fail_epoch + 1 END,
           reverify_fail_day = ${today}::date,
           updated_at = ${now}
         WHERE app_id = ${subject.app_id} AND id = ${subject.user_id}
           AND (reverify_fail_day IS DISTINCT FROM ${today}::date
             OR reverify_fail_count < ${REVERIFY_FAIL_LIMIT})
-        RETURNING reverify_fail_count`.execute(trx);
+        RETURNING reverify_fail_count, reverify_fail_epoch`.execute(trx);
       const row = reserved.rows[0];
       if (row === undefined) return null;
-      return {
-        day: today,
-        count: row.reverify_fail_count,
-        devices: await deviceCount(trx, subject),
-      };
+      return { day: today, epoch: row.reverify_fail_epoch, count: row.reverify_fail_count };
     });
 }
 
-/** Under the users row lock: undoes this reservation only (see the header). */
-async function giveBack(
-  trx: Transaction<DB>,
-  subject: ReverifySubject,
-  reservation: FailureReservation,
-  now: Date,
-): Promise<void> {
-  const user = await lockUser(trx, subject);
-  if (user?.fail_day !== reservation.day) return;
-  if ((await deviceCount(trx, subject)) !== reservation.devices) return;
-  await sql`UPDATE app.users SET
-      reverify_fail_count = GREATEST(reverify_fail_count - 1, 0),
-      updated_at = ${now}
-    WHERE app_id = ${subject.app_id} AND id = ${subject.user_id}`.execute(trx);
-}
-
+/** Undoes this reservation only (see the header). */
 export async function releaseFailure(
   db: Kysely<DB>,
   subject: ReverifySubject,
@@ -183,7 +148,14 @@ export async function releaseFailure(
   await db
     .transaction()
     .setIsolationLevel('read committed')
-    .execute((trx) => giveBack(trx, subject, reservation, now));
+    .execute(async (trx) => {
+      await sql`UPDATE app.users SET
+          reverify_fail_count = GREATEST(reverify_fail_count - 1, 0),
+          updated_at = ${now}
+        WHERE app_id = ${subject.app_id} AND id = ${subject.user_id}
+          AND reverify_fail_day = ${reservation.day}::date
+          AND reverify_fail_epoch = ${reservation.epoch}`.execute(trx);
+    });
 }
 
 /**
@@ -204,7 +176,13 @@ export async function settlePassed(
     .transaction()
     .setIsolationLevel('read committed')
     .execute(async (trx) => {
-      await lockUser(trx, subject);
+      // A pass clears the count even when a concurrent pass already recorded this device.
+      await sql`UPDATE app.users SET
+          reverify_fail_count = 0,
+          reverify_fail_day = NULL,
+          reverify_fail_epoch = reverify_fail_epoch + 1,
+          updated_at = ${now}
+        WHERE app_id = ${subject.app_id} AND id = ${subject.user_id}`.execute(trx);
       await trx
         .insertInto('reverified_devices')
         .values({
@@ -216,13 +194,6 @@ export async function settlePassed(
           created_at: now,
         })
         .onConflict((oc) => oc.columns(['app_id', 'user_id', 'device_hash']).doNothing())
-        .execute();
-      // A pass clears the count even when a concurrent pass already recorded this device.
-      await trx
-        .updateTable('users')
-        .set({ reverify_fail_count: 0, reverify_fail_day: null, updated_at: now })
-        .where('app_id', '=', subject.app_id)
-        .where('id', '=', subject.user_id)
         .execute();
       await alongside?.(trx);
     });
