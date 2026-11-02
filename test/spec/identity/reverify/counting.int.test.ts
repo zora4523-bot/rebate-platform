@@ -2,6 +2,12 @@
 // count of one account, shared by both ways, per +08:00 natural day, reserved atomically before
 // the comparison. kit.holdExchange parks a request between its reservation and its end, so the
 // reservation, its release and what happened meanwhile can be observed from the outside.
+//
+// #96 and #97 only start requests together, so a read-then-write passes them whenever the first
+// write lands before the second read. #104 and #105 leave that to no timing: another connection
+// holds the users row (kit.holdUser) until both requests are seen waiting on it (pg_stat_activity),
+// so both have read the count before either write lands, and only a conditional write or a lock
+// taken before the read lets a single request through.
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
@@ -55,6 +61,43 @@ async function flagged(f: Fixture) {
 
 function codes(responses: readonly { json<T>(): T }[]): number[] {
   return responses.map((response) => response.json<{ code: number }>().code).sort((a, b) => a - b);
+}
+
+type Client = ReturnType<Fixture['client']>;
+type Sent = ReturnType<Client['byId']>;
+type Way = 'id_number' | 'oauth';
+
+/** A submission that will fail its comparison; an attempt is taken now, before any row is held. */
+async function failing(c: Client, way: Way): Promise<() => Sent> {
+  if (way === 'id_number') return () => c.byId(OTHER_ID);
+  const attempt = attemptOf(kit, await c.attempt('wechat'));
+  return () => c.byOauth(oauthBody('wechat', attempt.attempt_id));
+}
+
+/**
+ * Two failing submissions for the last try of the day, in this order: each is seen waiting on the
+ * held users row before the next is sent, and the row is released once both wait.
+ */
+async function lastTryBehindBarrier(first: Way, second: Way) {
+  const f = await fixture(kit);
+  const { uid, c } = await flagged(f);
+  await f.failures(uid, FAIL_LIMIT - 1);
+  kit.exchange.mockResolvedValue({ union_id: `union-${randomUUID()}` });
+  const sends = [await failing(c, first), await failing(c, second)];
+  const held = await f.holdUser(uid);
+  const requests: Sent[] = [];
+  const waiting: number[] = [];
+  let exchangedWhileHeld = 0;
+  try {
+    for (const send of sends) {
+      requests.push(send());
+      waiting.push(await f.lockWaiters(requests.length, requests));
+    }
+    exchangedWhileHeld = kit.exchange.mock.calls.length;
+  } finally {
+    await held.release();
+  }
+  return { f, uid, waiting, exchangedWhileHeld, responses: await Promise.all(requests) };
 }
 
 it('[AC-B1-02zp#90] 身份证与第三方合计连续 5 次，按账号不按设备：换设备不重置，第 5 次 fail_remaining=0', async () => {
@@ -297,3 +340,43 @@ it('[AC-B1-02zp#103] 预占期间清零后又有新失败：退回不吃掉这�
   envelope(kit, BY_OAUTH, await parked, 50305);
   expect(await f.state(uid)).toMatchObject({ reverify_fail_count: 1 });
 });
+
+it.each([
+  { way: 'oauth', comparisons: 1 },
+  { way: 'id_number', comparisons: 0 },
+] as const)(
+  '[AC-B1-02zp#104] 屏障：只剩 1 次时两个 $way 请求都等在 users 行上，放行后只有一个进入比对，一个 20005 一个 10010，计数正好到 5（不靠时序，D10-161）',
+  async ({ way, comparisons }) => {
+    const { f, uid, waiting, exchangedWhileHeld, responses } = await lastTryBehindBarrier(way, way);
+    expect(waiting).toEqual([1, 2]);
+    expect(exchangedWhileHeld).toBe(0);
+    expect(kit.exchange).toHaveBeenCalledTimes(comparisons);
+    expect(codes(responses)).toEqual([10010, 20005]);
+    expect(await f.state(uid)).toMatchObject({
+      reverify_fail_count: FAIL_LIMIT,
+      reverify_fail_day: TODAY,
+    });
+  },
+);
+
+it.each([
+  { first: 'oauth', second: 'id_number' },
+  { first: 'id_number', second: 'oauth' },
+] as const)(
+  '[AC-B1-02zp#105] 屏障：身份证与第三方共用最后一次名额（先 $first 后 $second），放行后只有一个进入比对，计数正好到 5',
+  async ({ first, second }) => {
+    const { f, uid, waiting, exchangedWhileHeld, responses } = await lastTryBehindBarrier(
+      first,
+      second,
+    );
+    expect(waiting).toEqual([1, 2]);
+    expect(exchangedWhileHeld).toBe(0);
+    // Which of the two takes the try is the lock queue's; that only one compares is the rule.
+    expect(kit.exchange.mock.calls.length).toBeLessThanOrEqual(1);
+    expect(codes(responses)).toEqual([10010, 20005]);
+    expect(await f.state(uid)).toMatchObject({
+      reverify_fail_count: FAIL_LIMIT,
+      reverify_fail_day: TODAY,
+    });
+  },
+);

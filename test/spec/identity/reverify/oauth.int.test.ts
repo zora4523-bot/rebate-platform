@@ -269,4 +269,23 @@ it('[AC-B1-02zp#81] 幂等：20005 不写结果，同键换新尝试每次都计
   passed(kit, BY_OAUTH, await c.byOauth(body, { key }));
   expect(kit.exchange).toHaveBeenCalledTimes(1);
   expect(await f.devices(uid)).toEqual([{ device_hash: device.hash, source: 'self' }]);
+  // Without an idempotency result the replay would also answer passed (device already
+  // re-verified); the completed row and the 20901 tell the two apart.
+  const records = await f.idempotencyRows(BY_OAUTH);
+  expect(records).toHaveLength(1);
+  expect(records[0]!.status).toBe('completed');
+  envelope(kit, BY_OAUTH, await c.byOauth(oauthBody('wechat', attempt.attempt_id), { key }), 20901);
+  expect(kit.exchange).toHaveBeenCalledTimes(1);
+});
+
+it('[AC-B1-02zp#106] 缺 Idempotency-Key → 20001，不换取身份、不计失败、不记设备', async () => {
+  const f = await fixture(kit);
+  const { uid, unionId, c } = await flagged(f);
+  const attempt = attemptOf(kit, await c.attempt('wechat'));
+  kit.exchange.mockResolvedValue({ union_id: unionId });
+  const body = oauthBody('wechat', attempt.attempt_id);
+  envelope(kit, BY_OAUTH, await c.byOauth(body, { noKey: true }), 20001);
+  expect(kit.exchange).not.toHaveBeenCalled();
+  expect(await f.devices(uid)).toEqual([]);
+  expect(await f.state(uid)).toMatchObject({ reverify_fail_count: 0 });
 });

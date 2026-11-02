@@ -68,10 +68,14 @@ it('[AC-B1-02zp#51] 只比对：不调二要素接口、不发短信，实名记
   const f = await fixture(kit);
   const { uid, c } = await flagged(f);
   const texts = outbox(kit.app).length;
+  const stored = await f.realnameRow(uid);
+  // The row was written at this instant: a rewrite of verified_at must show.
+  kit.clock.advanceMs(HOUR);
   passed(kit, BY_ID, await c.byId(ID));
   mismatch(kit, BY_ID, await f.client(uid, await f.device()).byId(OTHER_ID), 4);
   expect(kit.vendor).not.toHaveBeenCalled();
   expect(outbox(kit.app)).toHaveLength(texts);
+  expect(await f.realnameRow(uid)).toBe(stored);
 });
 
 it('[AC-B1-02zp#52] 比对不一致 → 20005 带 fail_limit、fail_remaining，计一次失败，不记设备', async () => {
@@ -252,4 +256,12 @@ it('[AC-B1-02zp#64] 可信身份只有第三方的账号提交证件号 → 1001
     fail_limit: FAIL_LIMIT,
   });
   expect(statusOf(kit, await c.status())).toEqual(oauthRequired(['apple'], FAIL_LIMIT));
+});
+
+it('[AC-B1-02zp#107] 末位小写 x 是同一个证件号（先规范化再比对，同实名提交的 parseResidentIdNo）：→ passed，记本设备，不计失败', async () => {
+  const f = await fixture(kit);
+  const { uid, device, c } = await flagged(f);
+  passed(kit, BY_ID, await c.byId(ID.toLowerCase()));
+  expect(await f.devices(uid)).toEqual([{ device_hash: device.hash, source: 'self' }]);
+  expect(await f.state(uid)).toMatchObject({ reverify_fail_count: 0 });
 });

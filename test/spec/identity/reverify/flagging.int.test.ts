@@ -64,6 +64,7 @@ it('[AC-B1-02zp#12] 刷新只覆盖、不判定：久未活动且设备不同也
   const f = await fixture(kit);
   const [earlier, current] = [await f.device(), await f.device()];
   const { uid, number } = await f.user();
+  await f.active(uid, ago(kit, DAY), current.hash);
   const login = await f.smsLogin(number, current);
   kit.clock.advanceMs(HOUR);
   await f.active(uid, ago(kit, 2 * DORMANT), earlier.hash);
@@ -293,3 +294,42 @@ it('[AC-B1-02zp#25] 登录失败不是建立会话：验证码错误时不覆盖
   expect(response.json()).toMatchObject({ code: 20002 });
   expect(await f.state(uid)).toEqual(before);
 });
+
+it('[AC-B1-02zp#108] 配置行缺失取注册表缺省 0（关闭，D10-567 ②）：久未活动且设备不同也不打标，照常覆盖', async () => {
+  const f = await fixture(kit, { days: null });
+  const [earlier, current] = [await f.device(), await f.device()];
+  const { uid, number } = await f.user();
+  await f.active(uid, ago(kit, 10 * DORMANT), earlier.hash);
+  await f.smsLogin(number, current);
+  expect(await f.state(uid)).toMatchObject({
+    last_active_at: kit.clock.now(),
+    last_login_device_hash: current.hash,
+    reverify_flagged_at: null,
+    reverify_trusted: null,
+  });
+});
+
+it.each([
+  { gap: '最近活动与上次登录设备都为空', hasActivity: false, hasDevice: false },
+  { gap: '最近活动为空', hasActivity: false, hasDevice: true },
+  { gap: '上次登录设备为空', hasActivity: true, hasDevice: false },
+])(
+  '[AC-B1-02zp#109] $gap：不打标，只写入本次的值（D10-567 ③）',
+  async ({ hasActivity, hasDevice }) => {
+    const f = await fixture(kit);
+    const [earlier, current] = [await f.device(), await f.device()];
+    const { uid, number } = await f.user();
+    await f.active(
+      uid,
+      hasActivity ? ago(kit, 2 * DORMANT) : null,
+      hasDevice ? earlier.hash : null,
+    );
+    await f.smsLogin(number, current);
+    expect(await f.state(uid)).toMatchObject({
+      last_active_at: kit.clock.now(),
+      last_login_device_hash: current.hash,
+      reverify_flagged_at: null,
+      reverify_trusted: null,
+    });
+  },
+);

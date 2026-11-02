@@ -16,6 +16,8 @@
 //
 // The switch is seeded before the app's first request of every fixture (a fresh app_id per test),
 // so the content reader cannot cache a missing row; the value is read through the real config.
+// fixture(kit, { days: null }) leaves the row out on purpose: the registry default then applies
+// (D10-567 ②).
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -308,7 +310,7 @@ export function ago(kit: Kit, ms: number): Date {
   return new Date(kit.clock.now().getTime() - ms);
 }
 
-export async function fixture(kit: Kit, options: { days?: number } = {}) {
+export async function fixture(kit: Kit, options: { days?: number | null } = {}) {
   kit.clock.set(INSTANT);
   kit.exchange.mockReset().mockResolvedValue({ unavailable: true });
   kit.vendor.mockClear();
@@ -322,10 +324,12 @@ export async function fixture(kit: Kit, options: { days?: number } = {}) {
     'x-channel': 'appstore',
     'x-app-version': '2.0.0',
   };
+  const days = options.days === undefined ? DAYS : options.days;
   // Seeded before this app's first request, so no reader caches a missing row.
-  await sql`INSERT INTO app.config_items (app_id, key, value, updated_by)
-    VALUES (${appId}, ${SWITCH}, ${JSON.stringify(options.days ?? DAYS)}::jsonb,
-      'b1-02zp-fixture')`.execute(db);
+  if (days !== null) {
+    await sql`INSERT INTO app.config_items (app_id, key, value, updated_by)
+      VALUES (${appId}, ${SWITCH}, ${JSON.stringify(days)}::jsonb, 'b1-02zp-fixture')`.execute(db);
+  }
   await db
     .insertInto('app_versions')
     .values({
@@ -414,7 +418,7 @@ export async function fixture(kit: Kit, options: { days?: number } = {}) {
       VALUES (${randomUUID()}, ${appId}, ${uid}, 'failed', 'test-two-elements')`.execute(db);
   };
 
-  const active = async (uid: string, at: Date, deviceHash: string) => {
+  const active = async (uid: string, at: Date | null, deviceHash: string | null) => {
     await sql`UPDATE app.users SET last_active_at = ${at}, last_login_device_hash = ${deviceHash}
       WHERE app_id = ${appId} AND id = ${uid}`.execute(db);
   };
@@ -457,6 +461,71 @@ export async function fixture(kit: Kit, options: { days?: number } = {}) {
         FROM app.reverified_devices WHERE app_id = ${appId} AND user_id = ${uid}
         ORDER BY device_hash, source`.execute(db)
     ).rows;
+
+  /** The account's realname row, every column, as text (to_jsonb: ciphers and timestamps). */
+  const realnameRow = async (uid: string) => {
+    const result = await sql<{ row: string }>`SELECT to_jsonb(r)::text AS row FROM app.realname r
+      WHERE r.app_id = ${appId} AND r.user_id = ${uid}`.execute(db);
+    expect(result.rows).toHaveLength(1);
+    return result.rows[0]!.row;
+  };
+
+  /**
+   * The barrier of D10-161 「不得先读后写」: another connection holds the account's users row until
+   * release(), so a request stops at its first write to that row, after all it read before it.
+   * FOR NO KEY UPDATE, not FOR UPDATE: it conflicts with an UPDATE of the row's non-key columns and
+   * with FOR UPDATE, but not with the FOR KEY SHARE of a foreign-key check. Under FOR UPDATE the
+   * sessions row of client() would wait here, seen as a waiting request that has not even started.
+   */
+  const holdUser = async (uid: string) => {
+    let open!: () => void;
+    const released = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    let locked!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const holder = db.transaction().execute(async (trx) => {
+      const rows = await sql`SELECT 1 FROM app.users WHERE app_id = ${appId} AND id = ${uid}
+        FOR NO KEY UPDATE`.execute(trx);
+      expect(rows.rows).toHaveLength(1);
+      locked();
+      await released;
+    });
+    await Promise.race([ready, holder]);
+    return {
+      release: async () => {
+        open();
+        await holder;
+      },
+    };
+  };
+
+  /**
+   * Polls until `count` sessions of the test database wait on a heavyweight lock (row locks
+   * included) or every one of `requests` has ended, at most `ms`; the number last seen. Each kit
+   * has its own database and the tests of a file run one at a time, so these are its requests.
+   */
+  const lockWaiters = async (
+    count: number,
+    requests: readonly Promise<unknown>[],
+    ms = 5000,
+  ): Promise<number> => {
+    let running = requests.length;
+    const ended = () => {
+      running -= 1;
+    };
+    for (const request of requests) void request.then(ended, ended);
+    const deadline = Date.now() + ms;
+    for (;;) {
+      const result = await sql<{ n: number }>`SELECT count(*)::int AS n FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'`.execute(db);
+      const seen = result.rows[0]!.n;
+      if (seen >= count || running === 0 || Date.now() >= deadline) return seen;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
 
   /** Audit rows of the app as text (to_jsonb: audit_logs.id is a bigint). */
   const auditText = async () =>
@@ -625,6 +694,9 @@ export async function fixture(kit: Kit, options: { days?: number } = {}) {
     reverified,
     state,
     devices,
+    realnameRow,
+    holdUser,
+    lockWaiters,
     auditText,
     idempotencyRows,
     ban,
