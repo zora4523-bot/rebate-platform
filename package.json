@@ -43,7 +43,7 @@
     "verify": "pnpm run verify:fast && pnpm run test:int && pnpm --filter @couli/spec-tests run test:browser && pnpm --filter @couli/spec-tests run test:smoke && pnpm run db:check"
   },
   "devDependencies": {
-    "@types/node": "24.13.6",
+    "@types/node": "26.6.5",
     "dependency-cruiser": "18.4.0",
     "eslint": "10.11.0",
     "eslint-plugin-react-hooks": "7.1.1",
