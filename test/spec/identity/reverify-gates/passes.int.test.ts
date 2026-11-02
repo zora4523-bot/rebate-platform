@@ -13,16 +13,19 @@ afterAll(async () => {
   await closeKit(kit);
 }, 120_000);
 
-it.each(SURFACES)('[AC-B1-02zq#38] $name：无标记放行，行为同今天；有标记的账号才 10010', async (s) => {
-  const f = await gates(kit);
-  const flagged = await f.member(s.member);
-  await f.flag(flagged.uid, { realname: false, providers: [] });
-  refused(kit, s.path, s.verb, await s.submit(f.on(flagged)), MANUAL);
+it.each(SURFACES)(
+  '[AC-B1-02zq#38] $name：无标记放行，行为同今天；有标记的账号才 10010',
+  async (s) => {
+    const f = await gates(kit);
+    const flagged = await f.member(s.member);
+    await f.flag(flagged.uid, { realname: false, providers: [] });
+    refused(kit, s.path, s.verb, await s.submit(f.on(flagged)), MANUAL);
 
-  const free = await f.member(s.member);
-  s.ready(kit);
-  s.accepted(kit, await s.submit(f.on(free)));
-});
+    const free = await f.member(s.member);
+    s.ready(kit);
+    s.accepted(kit, await s.submit(f.on(free)));
+  },
+);
 
 it.each(SURFACES)(
   '[AC-B1-02zq#39] $name：加验通过只放行那一台设备，另一台仍 10010，标记保留',

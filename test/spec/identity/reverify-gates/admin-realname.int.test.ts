@@ -3,9 +3,9 @@
 // nothing changed, one audit record (08 BR-ID-25 细则「实名更正」; contract adminCorrectUserRealname).
 // The flag is the account's: a re-verified device does not lift it, nothing here has a device.
 //
-// reverify_pending against identity_blacklisted is not pinned: the rule and the contract put the
-// flag first ("first hit wins"), the TODO the task points at stands after the blacklist check (the
-// task's output). Every other neighbour agrees and is pinned.
+// reverify_pending answers before identity_blacklisted, as the rule and the contract list them
+// ("first hit wins"; D10-580; #46), although the TODO the task points at stands after the blacklist
+// check.
 import { randomUUID } from 'node:crypto';
 import { sql } from 'kysely';
 import { expect, it } from 'vitest';
@@ -147,4 +147,18 @@ it('[AC-B1-02zq#37] 看标记不看设备：账号有已加验设备也不受理
   const corrected = await ok(await correct(s, target.id, body()));
   expect(corrected).toMatchObject({ user_id: target.id, realname_status: 'verified' });
   expect(s.vendor).toHaveBeenCalledTimes(1);
+});
+
+it('[AC-B1-02zq#46] 带标记且原实名在黑名单 → reverify_pending 在先，标记清除后才是 identity_blacklisted', async () => {
+  const s = await setup(h);
+  const target = await user(h, s.appId);
+  await verified(h, target);
+  await flag(s, target);
+  await blacklisted(h, s.appId, OLD.idNo);
+  await rejected(await correct(s, target.id, body()), 30419, PENDING);
+
+  await sql`UPDATE app.users SET reverify_flagged_at = NULL, reverify_trusted = NULL
+    WHERE app_id = ${target.appId} AND id = ${target.id}`.execute(h.db);
+  await rejected(await correct(s, target.id, body()), 30419, { reason: 'identity_blacklisted' });
+  expect(s.vendor).not.toHaveBeenCalled();
 });

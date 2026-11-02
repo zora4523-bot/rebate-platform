@@ -1,11 +1,11 @@
-// B1-02zq §9 #1: POST /v1/withdrawals at BR-WDR-03 ③b. A member with everything in order, so the
-// only thing that can stop the application is the step under test. Whether 30304 or 10010 answers a
-// flagged member without a real name on this entry is not pinned here: 08 BR-WDR-03 细则「提交接口的
-// 检查顺序」and the contract disagree (the task's output); the order ③a → ③b → ④ is pinned on the rules
-// entry, which runs the chain as written (rules.int.test.ts).
+// B1-02zq §9 #1, §10: POST /v1/withdrawals at BR-WDR-03 ③b. A member with everything in order, so
+// the only thing that can stop the application is the step under test. This entry judges the real
+// name in the platform stage, so 30304 answers before ③a and ③b (08 BR-WDR-03 细则「提交接口的检查顺序」,
+// D10-233 ①; #44). The order ③a → ③b → ④ is pinned on the rules entry, which runs the chain as written
+// (rules.int.test.ts).
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { closeKit, openKit, type Kit } from '../reverify/kit.ts';
-import { ID_NUMBER, WITHDRAW, answer, gates, refused } from './kit.ts';
+import { ID_NUMBER, MANUAL, WITHDRAW, answer, gates, refused } from './kit.ts';
 
 let kit: Kit;
 beforeAll(async () => {
@@ -78,5 +78,21 @@ it('[AC-B1-02zq#6] 同一令牌连续被 10010 拦下多次，每次都不占用
   const step = await c.stepUp('withdraw');
   refused(kit, WITHDRAW, 'post', await c.withdraw({ step }), ID_NUMBER);
   refused(kit, WITHDRAW, 'post', await c.withdraw({ step }), ID_NUMBER);
+  expect(await f.withdrawals(m.uid)).toEqual([]);
+});
+
+it('[AC-B1-02zq#44] 带标记且未实名 → 30304，不是 10010；同账号实名补齐后才是 10010', async () => {
+  const f = await gates(kit);
+  const m = await f.member({ realname: false });
+  await f.flag(m.uid, { realname: false, providers: [] });
+  const c = f.on(m);
+  answer(kit, WITHDRAW, 'post', await c.withdraw(), 30304);
+  expect(await f.withdrawals(m.uid)).toEqual([]);
+
+  // Only the real name changed. The method is still that of the identities frozen at flagging.
+  await f.realname(m.uid, m.idNo);
+  const pending = answer(kit, WITHDRAW, 'post', await c.withdraw(), 10010);
+  expect(pending.msg).toBe('需要先核实是你本人');
+  expect(pending.data).toEqual(MANUAL);
   expect(await f.withdrawals(m.uid)).toEqual([]);
 });
