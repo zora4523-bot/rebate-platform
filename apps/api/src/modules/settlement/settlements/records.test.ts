@@ -155,3 +155,33 @@ it('[AC-B2-04zj#U14] latestStatementFen 只看本订单 STATEMENT 取 seq 最大
     none.db.transaction().execute((trx) => records.latestStatementFen(trx, ref)),
   ).resolves.toBeNull();
 });
+
+it('[AC-B2-04zj#U15] latestDecidingRecordAt 有 STATEMENT 取最新 STATEMENT，没有才取最新 API，没有行是 null', async () => {
+  const ref = { appId: 'unit-app', orderId: input().orderId };
+  const records = createSettlementRecords({ clock });
+  const at = (minute: number) => new Date(Date.UTC(2026, 9, 21, 8, minute));
+  const read = async (rows: readonly { source: string; created_at: Date }[]) => {
+    const { db, selects } = scripted(rows);
+    const value = await db
+      .transaction()
+      .execute((trx) => records.latestDecidingRecordAt(trx, ref));
+    return { value, selects };
+  };
+
+  const beside = await read([
+    { source: 'API', created_at: at(4) },
+    { source: 'STATEMENT', created_at: at(3) },
+    { source: 'STATEMENT', created_at: at(2) },
+    { source: 'API', created_at: at(1) },
+  ]);
+  expect(beside.value).toEqual(at(3));
+  expect(beside.selects[0]?.parameters).toEqual([ref.appId, ref.orderId]);
+  expect(beside.selects[0]?.sql).toContain('order by "seq" desc');
+
+  const apiOnly = await read([
+    { source: 'API', created_at: at(2) },
+    { source: 'API', created_at: at(1) },
+  ]);
+  expect(apiOnly.value).toEqual(at(2));
+  expect((await read([])).value).toBeNull();
+});

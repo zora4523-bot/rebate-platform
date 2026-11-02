@@ -40,6 +40,12 @@ export interface SettlementRecords {
   recordApi(trx: Transaction<DB>, input: ApiSettlementInput): Promise<ApiSettlementResult>;
   /** The amount of the order's STATEMENT record with the greatest seq; null when it has none. */
   latestStatementFen(trx: Transaction<DB>, ref: SettlementOrderRef): Promise<bigint | null>;
+  /**
+   * created_at of the record that decides orders.settle_commission_fen (BR-FUND-09): the greatest-seq
+   * STATEMENT when the order has one, otherwise the greatest-seq API; null when it has no record.
+   * A later API record beside a STATEMENT decides nothing, so its time answers no rights record.
+   */
+  latestDecidingRecordAt(trx: Transaction<DB>, ref: SettlementOrderRef): Promise<Date | null>;
 }
 
 export interface SettlementRecordsDependencies {
@@ -105,6 +111,19 @@ export function createSettlementRecords(deps: SettlementRecordsDependencies): Se
         .limit(1)
         .executeTakeFirst();
       return row?.settle_commission_fen ?? null;
+    },
+
+    async latestDecidingRecordAt(trx, ref) {
+      const rows = await trx
+        .withSchema('app')
+        .selectFrom('order_settlements')
+        .select(['source', 'created_at'])
+        .where('app_id', '=', ref.appId)
+        .where('order_id', '=', ref.orderId)
+        .orderBy('seq', 'desc')
+        .execute();
+      const deciding = rows.find((row) => row.source === 'STATEMENT') ?? rows[0];
+      return deciding?.created_at ?? null;
     },
   };
 }
