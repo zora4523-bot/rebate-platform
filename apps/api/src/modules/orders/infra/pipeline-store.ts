@@ -112,7 +112,8 @@ export type PendingReason =
   | 'SERVICE_FEE_RATE_MISSING'
   | 'RULE_VERSION_PLATFORM_MISSING'
   | 'TLJ_FACE_VALUE_UNMATCHED'
-  | 'AMOUNT_PARSE_FAILED';
+  | 'AMOUNT_PARSE_FAILED'
+  | 'ORDER_ROW_INVALID';
 
 export interface PendingInput {
   readonly app_id: string;
@@ -168,6 +169,32 @@ export async function writePending(trx: Trx, input: PendingInput): Promise<Pendi
 /** 同 writePending，只要 open 记录的 id；驱动未回行时为 null。 */
 export async function upsertPending(trx: Trx, input: PendingInput): Promise<bigint | null> {
   return (await writePending(trx, input)).id;
+}
+
+/**
+ * B1-04zv：把同键 open 记录置 resolved（系统解决，resolved_by 为空）。只改 status='open' 的行：已 resolved、
+ * dismissed 的不动。没有 open 记录时什么也不写。
+ */
+export async function resolveOpenPending(
+  trx: Trx,
+  key: {
+    readonly app_id: string;
+    readonly platform: string;
+    readonly sub_order_id: string;
+    readonly reason: PendingReason;
+  },
+  resolution: { readonly resolved_at: Date; readonly resolution_note: string },
+): Promise<void> {
+  await trx
+    .withSchema('app')
+    .updateTable('order_sync_pending')
+    .set({ ...resolution, status: 'resolved', resolved_by: null })
+    .where('app_id', '=', key.app_id)
+    .where('platform', '=', key.platform)
+    .where('sub_order_id', '=', key.sub_order_id)
+    .where('reason', '=', key.reason)
+    .where('status', '=', 'open')
+    .execute();
 }
 
 /**
