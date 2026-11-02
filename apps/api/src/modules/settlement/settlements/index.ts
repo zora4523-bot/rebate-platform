@@ -1,4 +1,4 @@
-export { decidingSettlement } from './deciding.ts';
+export { decidingSettlement, latestSeqWithin } from './deciding.ts';
 export type { DecidingSettlementRow } from './deciding.ts';
 export { createSettlementRecords } from './records.ts';
 export type {
