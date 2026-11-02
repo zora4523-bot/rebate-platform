@@ -66,6 +66,30 @@ it(
   TIMEOUT,
 );
 
+// 内容只与最新的 API 记录比，STATEMENT 行不参与。和 seq 最大的任意来源行比，这里就会多出 [3 API 1000]：
+// 内容没变，新的 created_at 却把结算之后才收到的应扣记成已答，R5 少扣；按 seq 2 校验过的批次也被跳过。
+it(
+  '[AC-B2-04zj#32] 已有 STATEMENT 时同内容 API 重放：与最新 API 记录比，不加行；列 = STATEMENT 金额；未被回传的应扣保持未答',
+  async () => {
+    await withWorker(db, async (w) => {
+      const o = w.order(await w.app());
+      await o.sync();
+      await o.sync(received());
+      await o.sync(settled(1000n));
+      expect(brief(await o.records())).toEqual([[1, 'API', 1000n]]);
+      await o.statement(2, 900n);
+      const open = await o.rights('SUCCEEDED', 100n);
+      const before = await o.records();
+
+      expect(await o.report(settled(1000n, touched(1)))).toMatchObject({ kind: 'updated' });
+      expect(await o.records()).toEqual(before);
+      expect(await o.row()).toMatchObject({ settle_commission_fen: 900n });
+      expect(await o.rightsRow(open)).toEqual({ status: 'SUCCEEDED', answered_at: null });
+    });
+  },
+  TIMEOUT,
+);
+
 // 三行的金额与时间都错开：取最大金额、最小金额、最新 created_at 都得不到 700，只有 seq 最大能得到。
 it(
   '[AC-B2-04zj#21] 最新 STATEMENT 取 seq 最大，不看金额大小与 created_at 先后',

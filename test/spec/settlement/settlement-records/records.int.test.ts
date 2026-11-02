@@ -6,6 +6,7 @@ import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import type { Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
+  PDD_UNMAPPED,
   SETTLED_AT,
   SETTLED_LATER,
   RECEIVED_AT,
@@ -88,7 +89,7 @@ it(
 );
 
 // order_settlements.settled_at 是 NOT NULL：报文与订单都没有时不能让整单同步回滚，也不能列有值而无记录。
-// 取什么值 08 没写，这里不钉。
+// 08 没写取什么值，取值按编排口径由 #34 钉（报文 → 订单 → Clock）。
 it(
   '[AC-B2-04zj#5] P4 报文与订单都没有结算时间：订单照常到 SETTLED、列 = 报文金额，记录照写一条且 settled_at 非空',
   async () => {
@@ -425,6 +426,156 @@ it(
       await negative.sync(settled(-50n));
       expect(brief(await negative.records())).toEqual([[1, 'API', -50n]]);
       expect(await negative.row()).toMatchObject({ settle_commission_fen: -50n });
+    });
+  },
+  TIMEOUT,
+);
+
+// 编排口径：content_hash 只取报文给的金额和 settled_at 原值（可为空），settled_at 列取报文，再取订单，再取 Clock。
+// 回退值进了内容，缺结算时间的单每次只动 mtime 的同步都会 seq+1。
+it(
+  '[AC-B2-04zj#34] 报文与订单都没有结算时间：记录的 settled_at 取 Clock；同内容重放不加行',
+  async () => {
+    await withWorker(db, async (w) => {
+      const o = w.order(await w.app());
+      await o.sync();
+      await o.sync(received());
+      await o.sync(settled(1000n, { settled_at: null }));
+      const stamped = w.clock.now();
+      const first = await o.records();
+      expect(first).toMatchObject([
+        { seq: 1, source: 'API', settle_commission_fen: 1000n, settled_at: stamped },
+      ]);
+
+      expect(await o.report(settled(1000n, { settled_at: null, ...touched(1) }))).toMatchObject({
+        kind: 'updated',
+      });
+      expect(await o.records()).toEqual(first);
+      expect(await o.row()).toMatchObject({ settle_commission_fen: 1000n });
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04zj#35] 报文缺 settled_at 而订单有：记录沿用订单的结算时间，同内容重放不加行',
+  async () => {
+    await withWorker(db, async (w) => {
+      const o = w.order(await w.app());
+      await o.sync();
+      await o.sync(received());
+      await o.sync(settled(1000n));
+      await o.sync(settled(800n, { settled_at: null, ...touched(1) }));
+      const first = await o.records();
+      expect(first).toMatchObject([
+        { seq: 1, settle_commission_fen: 1000n, settled_at: SETTLED_AT },
+        { seq: 2, settle_commission_fen: 800n, settled_at: SETTLED_AT },
+      ]);
+
+      expect(await o.report(settled(800n, { settled_at: null, ...touched(2) }))).toMatchObject({
+        kind: 'updated',
+      });
+      expect(await o.records()).toEqual(first);
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04zj#36] P12 有收货时间、报文与订单都没有结算时间：不因 NOT NULL 回滚，记录的 settled_at 取 Clock；同内容重放不加行',
+  async () => {
+    await withWorker(db, async (w) => {
+      const o = w.order(await w.app());
+      await o.sync(settled(1000n, { settled_at: null }));
+      const stamped = w.clock.now();
+      expect(await o.row()).toMatchObject({
+        platform_status: 'SETTLED',
+        received_at: RECEIVED_AT,
+        settle_commission_fen: 1000n,
+      });
+      const first = await o.records();
+      expect(first).toMatchObject([
+        {
+          seq: 1,
+          source: 'API',
+          settle_commission_fen: 1000n,
+          settled_at: stamped,
+          created_at: stamped,
+        },
+      ]);
+
+      expect(await o.report(settled(1000n, { settled_at: null, ...touched(1) }))).toMatchObject({
+        kind: 'updated',
+      });
+      expect(await o.records()).toEqual(first);
+    });
+  },
+  TIMEOUT,
+);
+
+// 回退到订单的单也能过 #35 的重放，所以这里直接比 hash：a 回退 Clock，b 回退订单，内容都是（1000，空）。
+it(
+  '[AC-B2-04zj#37] content_hash 不含回退值：报文缺 settled_at 的同金额记录 hash 相同，与带结算时间的记录不同',
+  async () => {
+    await withWorker(db, async (w) => {
+      const app = await w.app();
+      const fromClock = w.order(app);
+      await fromClock.sync();
+      await fromClock.sync(received());
+      await fromClock.sync(settled(1000n, { settled_at: null }));
+
+      const fromOrder = w.order(app);
+      await fromOrder.sync();
+      await fromOrder.sync(received());
+      await fromOrder.sync(settled(900n));
+      await fromOrder.sync(settled(1000n, { settled_at: null, ...touched(1) }));
+
+      const stated = w.order(app);
+      await stated.sync();
+      await stated.sync(received());
+      await stated.sync(settled(1000n));
+
+      const [clockRecords, orderRecords, statedRecords] = [
+        await fromClock.records(),
+        await fromOrder.records(),
+        await stated.records(),
+      ];
+      expect(brief(clockRecords)).toEqual([[1, 'API', 1000n]]);
+      expect(brief(orderRecords)).toEqual([
+        [1, 'API', 900n],
+        [2, 'API', 1000n],
+      ]);
+      expect(brief(statedRecords)).toEqual([[1, 'API', 1000n]]);
+      expect(orderRecords[1]?.content_hash).toBe(clockRecords[0]?.content_hash);
+      expect(statedRecords[0]?.content_hash).not.toBe(clockRecords[0]?.content_hash);
+    });
+  },
+  TIMEOUT,
+);
+
+// 编排口径：记录写入条件看 planOrderSyncColumns 写了列没有，不看事件名。只看 PLATFORM_SETTLED 事件，
+// 这里列是 800、最新 API 记录还是 1000，与 BR-FUND-09 不符。整条拒收的情形见 #17。
+it(
+  '[AC-B2-04zj#38] SETTLED 单收到表外码且带结算额：列照写，记录也写，列 = 最新 API 记录',
+  async () => {
+    await withWorker(db, async (w) => {
+      const o = w.order(await w.app());
+      await o.sync();
+      await o.sync(received());
+      await o.sync(settled(1000n));
+      expect(brief(await o.records())).toEqual([[1, 'API', 1000n]]);
+
+      expect(
+        await o.report(settled(800n, { raw_status: PDD_UNMAPPED, ...touched(1) })),
+      ).toMatchObject({ kind: 'updated' });
+      expect(await o.row()).toMatchObject({
+        platform_status: 'SETTLED',
+        settle_commission_fen: 800n,
+      });
+      expect(brief(await o.records())).toEqual([
+        [1, 'API', 1000n],
+        [2, 'API', 800n],
+      ]);
     });
   },
   TIMEOUT,

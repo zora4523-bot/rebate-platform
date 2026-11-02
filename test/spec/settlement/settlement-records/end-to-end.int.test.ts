@@ -81,6 +81,36 @@ it(
   TIMEOUT,
 );
 
+// 不写就是列为 800 而最新 API 记录仍是 1000（BR-FUND-09），维权回传读不到新记录，B2-04zi 也没有 ADJ:{seq} 的 seq。
+// 金额怎么调是 B2-04zi 的，这里不断言凭证与余额。
+it(
+  '[AC-B2-04zj#33] 已入账（CREDITED）的单联盟再回传内容不同的结算额：照写记录 seq+1，列随之更新',
+  async () => {
+    await withWorker(db, async (w) => {
+      const app = await w.app();
+      await w.setConfig(app, 'credit.enabled.pdd', true);
+      const o = w.order(app);
+      await o.sync();
+      await o.sync(received());
+      await o.sync(settled(1000n));
+
+      w.clock.set(BILL_AT);
+      await w.bill(app);
+      expect(await w.items(app)).toMatchObject([{ settle_seq: 1 }]);
+      await w.confirmAndExecute(app);
+      expect(await o.row()).toMatchObject({ rebate_status: 'CREDITED' });
+
+      await o.sync(settled(800n, touched(1)));
+      expect(brief(await o.records())).toEqual([
+        [1, 'API', 1000n],
+        [2, 'API', 800n],
+      ]);
+      expect(await o.row()).toMatchObject({ settle_commission_fen: 800n });
+    });
+  },
+  TIMEOUT,
+);
+
 // BR-FUND-04 ⑦：批次按校验时的 seq 入账。记录写对了 R5 才拦得住账单之后到的新结算额。
 it(
   '[AC-B2-04zj#31] 账单之后联盟结算额又变（seq 2）：批次明细 settlement_changed 跳过，订单留在 WAITING，不入账',

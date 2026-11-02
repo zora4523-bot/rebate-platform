@@ -13,17 +13,29 @@
 // reserve 0, own share 50 %, so N = 1000 gives 500.
 // STATEMENT and order_rights rows are fixtures of what other tasks write. Integration tests pass the
 // database in: this file never imports @couli/db/testing.
+// creditPeriod() reads the figures the way app.module assembles them for the api entry: the worker
+// entry has no such reader, and that read is B1-09p's, not under test here. What it reads was
+// written by the pipeline above.
 import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import { expect } from 'vitest';
-import { createLedger } from '../../../../apps/api/src/modules/ledger/index.ts';
+import { createContentReader } from '../../../../apps/api/src/modules/content/index.ts';
+import {
+  createLedger,
+  readOrderFiguresLedger,
+} from '../../../../apps/api/src/modules/ledger/index.ts';
 import type { OrderSyncRuntime } from '../../../../apps/api/src/modules/orders/index.ts';
 import type {
   EventBus,
   JobHandler,
   JobPayload,
 } from '../../../../apps/api/src/modules/platform/index.ts';
+import { createOrderAppealReader } from '../../../../apps/api/src/modules/risk/index.ts';
+import {
+  createOrderFiguresReader,
+  type OrderFiguresDependencies,
+} from '../../../../apps/api/src/modules/settlement/index.ts';
 import type { UnionOrder } from '../../../../apps/api/src/modules/union/index.ts';
 import { BEFORE, PAID, level } from '../../commission/resolver/kit.ts';
 import { seedVersion, version } from '../../commission/snapshot/fixtures.ts';
@@ -52,6 +64,8 @@ const UNKNOWN_CODE = 'zzzz9999';
 export const PDD_PAID = '0';
 export const PDD_RECEIVED = '2';
 export const PDD_SETTLED = '5';
+/** A code outside specs/order-status-map/pdd.csv. */
+export const PDD_UNMAPPED = 'synthetic-unmapped';
 
 type Patch = Partial<UnionOrder>;
 
@@ -120,6 +134,25 @@ async function startWorker(db: Kysely<DB>) {
     const events = worker.context.get(worker.platform.EVENT_BUS, { strict: false }) as EventBus;
     const queue = worker.context.get(worker.platform.JOB_QUEUE, { strict: false }) as QueueStub;
     let sequence = 0;
+    // URL import: commission's public entry, as ../../orders/figures/kit.ts loads it.
+    const commission = (await import(
+      new URL('../../../../apps/api/src/modules/commission/index.ts', import.meta.url).href
+    )) as {
+      readCommissionAttribution: OrderFiguresDependencies['readSnapshot'];
+      readTljDeductFen: OrderFiguresDependencies['readTljDeductFen'];
+    };
+    const figures = createOrderFiguresReader({
+      db,
+      clock,
+      config: {
+        get: async (appId, key) =>
+          (await createContentReader({ db, clock }).configValue(appId, key))?.value,
+      },
+      readSnapshot: commission.readCommissionAttribution,
+      readTljDeductFen: commission.readTljDeductFen,
+      ledger: readOrderFiguresLedger,
+      appeals: createOrderAppealReader(db),
+    });
 
     /** A new app with its union account, promotion slot, published rule version and one member. */
     async function app(): Promise<App> {
@@ -296,6 +329,17 @@ async function startWorker(db: Kysely<DB>) {
           .execute();
       }
 
+      /** expected_credit_period as the member reads it (BR-FUND-04 ⑪). */
+      async function creditPeriod() {
+        const current = await row();
+        const found = await figures.forOrders({ app_id: target.appId, user_id: target.userId }, [
+          current.order_id,
+        ]);
+        const value = found.get(current.order_id);
+        expect(value, 'the order figures').toBeDefined();
+        return value?.expected_credit_period;
+      }
+
       return {
         subOrderId,
         report,
@@ -308,6 +352,7 @@ async function startWorker(db: Kysely<DB>) {
         markRightsPending,
         rightsRow,
         totals,
+        creditPeriod,
       };
     }
 
