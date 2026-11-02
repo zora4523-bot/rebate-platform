@@ -16,7 +16,7 @@ import type { AppleTokenRevoker } from '../ports/apple-token-revoker.ts';
 import { DATA_COPY_QUEUE } from './data-copy-worker.ts';
 
 /** The job's name on identity's data-copy queue (worker entry; identity-worker.module routes it). */
-export const APPLE_UNBIND_REVOKE_JOB = 'apple-unbind-revoke';
+export const APPLE_UNBIND_REVOKE_JOB = 'apple_unbind_revoke';
 /** BR-ID-27 as deletion-processing.ts counts it: the third failed attempt is final. */
 const APPLE_MAX_ATTEMPTS = 3;
 

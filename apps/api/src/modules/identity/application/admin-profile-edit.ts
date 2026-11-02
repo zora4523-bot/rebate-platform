@@ -23,7 +23,10 @@
 //      under its row lock: the flag, its instant, the snapshot and the failure count cleared
 //      (reverified_devices stay), every user_oauth row outside the snapshot deleted, and for a
 //      deleted Apple row with a stored token one revocation job carrying only the cipher
-//      (./apple-unbind-revocation.ts, 编排 D10-513 ④).
+//      (./apple-unbind-revocation.ts, 编排 D10-513 ④). The clearing restarts the dormancy clock:
+//      last_active_at is the save's instant, last_login_device_hash stays (编排 D10-584). The
+//      audit row's `after` says the flag was cleared and, when any row went, which providers were
+//      really unbound; `fields` stays the edited fields only.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
 import type { DB } from '@couli/db';
@@ -103,6 +106,14 @@ export interface AdminProfileEditOptions {
 const PHONE_CHANGED_RETENTION_MS = 180 * 86_400_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NICKNAME_MAX = 16;
+
+/** What `after` adds for a clearing (no token, only the providers whose rows were deleted). */
+function clearingAudit(unbound: readonly string[]) {
+  return {
+    reverify_cleared: true,
+    ...(unbound.length === 0 ? {} : { unbound_providers: [...unbound] }),
+  };
+}
 
 /** The phone took a partial unique index slot another account won after the checks. */
 class PhoneOccupied extends Error {
@@ -330,6 +341,7 @@ export class AdminProfileEdit {
     const before: Record<string, string | null> = {};
     const after: Record<string, string | null> = {};
     const fields: string[] = [];
+    let unbound: readonly string[] | null = null;
     if (phone !== null || name !== null) {
       const now = clock.now();
       if (phone !== null) {
@@ -360,7 +372,7 @@ export class AdminProfileEdit {
                   phone_hmac: phone.hmac,
                 }),
             ...(name === null ? {} : { nickname: name }),
-            ...(flagged ? REVERIFY_CLEARED : {}),
+            ...(flagged ? { ...REVERIFY_CLEARED, last_active_at: now } : {}),
             updated_at: now,
             row_version: user.row_version + 1,
           })
@@ -391,7 +403,7 @@ export class AdminProfileEdit {
           user_id: command.userId,
           reason: 'phone_changed',
         });
-        if (flagged) await this.#unbind(trx, command.appId, command.userId, reverify);
+        if (flagged) unbound = await this.#unbind(trx, command.appId, command.userId, reverify);
       }
     }
     await this.#options.auditOn(trx).append({
@@ -400,19 +412,28 @@ export class AdminProfileEdit {
       action: ADMIN_PROFILE_EDIT_ACTION,
       target: command.userId,
       before,
-      after: { user_id: command.userId, reason: command.body.reason, fields, ...after },
+      after: {
+        user_id: command.userId,
+        reason: command.body.reason,
+        fields,
+        ...after,
+        ...(unbound === null ? {} : clearingAudit(unbound)),
+      },
       ip: command.ip,
     });
     return fields;
   }
 
-  /** Step 6: the bindings outside the snapshot; an unreadable snapshot trusts none of them. */
+  /**
+   * Step 6: the bindings outside the snapshot; an unreadable snapshot trusts none of them. Returns
+   * the providers of the rows really deleted, sorted.
+   */
   async #unbind(
     trx: Transaction<DB>,
     appId: string,
     userId: string,
     reverify: ReverifyAccount,
-  ): Promise<void> {
+  ): Promise<readonly string[]> {
     const { providers } = trustedIdentitiesOf(reverify.trusted);
     const unbound = await unbindUntrusted(
       trx.withSchema('app'),
@@ -420,9 +441,11 @@ export class AdminProfileEdit {
       providers,
     );
     const cipher = unbound.find((row) => row.provider === 'apple')?.apple_refresh_token_cipher;
-    if (cipher === null || cipher === undefined) return;
-    const { queue } = this.#options;
-    if (queue === undefined) throw new Error('identity: no queue for the Apple revocation job');
-    await enqueueAppleUnbindRevocation(queue, trx, { appId, cipher });
+    if (cipher !== null && cipher !== undefined) {
+      const { queue } = this.#options;
+      if (queue === undefined) throw new Error('identity: no queue for the Apple revocation job');
+      await enqueueAppleUnbindRevocation(queue, trx, { appId, cipher });
+    }
+    return unbound.map((row) => row.provider).sort();
   }
 }

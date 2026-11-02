@@ -16,7 +16,8 @@
 //            (if new) follows in the same transaction.
 //   clear    REVERIFY_CLEARED, joined to the console phone change's write under its row lock: the
 //            flag, its instant, the snapshot and the count go and the epoch moves on, so a place
-//            reserved before it cannot be released against a failure counted after it.
+//            reserved before it cannot be released against a failure counted after it. The save
+//            sets last_active_at beside it (编排 D10-584): that value is its clock's instant.
 //
 // An account in deletion (BR-ID-28 细则「待加验记录」; B1-02zy). The cleanup of the deletion round runs
 // once, so a request still in flight must not write the data back: reserve and pass write nothing
