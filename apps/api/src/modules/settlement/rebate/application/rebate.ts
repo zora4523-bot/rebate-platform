@@ -109,7 +109,11 @@ export interface RebateDependencies {
       trx: Transaction<DB>,
       input: RebateChangeInput,
     ): Promise<{ readonly before: bigint | null; readonly after: bigint | null }>;
-    refresh(trx: Transaction<DB>, input: RebateOrderRef): Promise<void>;
+    refresh(
+      trx: Transaction<DB>,
+      input: RebateOrderRef,
+      value?: { readonly commissionFen: bigint },
+    ): Promise<void>;
   };
   /**
    * System-actor audit must commit/roll back with hold. Existing AuditPort accepts admin UUIDs

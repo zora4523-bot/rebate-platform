@@ -65,9 +65,18 @@ export interface CommissionEstimatesDependencies {
   serviceFeeDeducted(platform: string): boolean;
 }
 
+/** B2-03r: the commission a new version is valued on when it is not the orders columns' (R7). */
+export interface EstimateRefreshValue {
+  readonly commissionFen: bigint;
+}
+
 export interface CommissionEstimates {
   bases(trx: Transaction<DB>, input: EstimateChangeInput): Promise<EstimateBases>;
-  refresh(trx: Transaction<DB>, input: EstimateOrderRef): Promise<void>;
+  refresh(
+    trx: Transaction<DB>,
+    input: EstimateOrderRef,
+    value?: EstimateRefreshValue,
+  ): Promise<void>;
 }
 
 function frozenTerms(split: SplitRow): FrozenTerms {
