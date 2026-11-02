@@ -720,6 +720,12 @@ export async function waitingOrder(
     platform_est_profit_fen: 2051n,
     amounts: [1841n, 368n, 184n],
   });
+  await seedSettlement(s, order, 1000n);
+  return seeded;
+}
+
+/** The order's first settlement record, from before anything the test imports. */
+async function seedSettlement(s: Scenario, order: Order, commissionFen: bigint): Promise<void> {
   await s.h.db
     .insertInto('order_settlements')
     .values({
@@ -727,47 +733,63 @@ export async function waitingOrder(
       order_id: order.order_id,
       seq: 1,
       source: 'STATEMENT',
-      settle_commission_fen: 1000n,
+      settle_commission_fen: commissionFen,
       settled_at: new Date(PAID_AT),
       content_hash: randomUUID(),
       created_at: new Date(PAID_AT),
     })
     .execute();
-  return seeded;
 }
 
-/**
- * An ESTIMATED taobao order without a settlement record, valued on its estimate: N 1200, reserve
- * 1500 → reserve 180, B 1020; 510 / 102 / 51, platform 357 + 180 = 537.
- */
+/** The order columns of a taobao order valued at 1200. */
+const ORDER_ON_1200 = {
+  platform: 'taobao',
+  product_key: 'taobao:fixture',
+  commission_version: 1,
+  est_commission_fen: 1200n,
+  subsidy_commission_fen: 0n,
+  initial_est_fen: 1200n,
+  n_total_fen: 1200n,
+  pre_base_deduct_fen: 180n,
+  base_fen: 1020n,
+  platform_est_profit_fen: 537n,
+  quantity: 1,
+  refunded_quantity: 0,
+} as const;
+
+/** N 1200, reserve 1500 → reserve 180, B 1020; 510 / 102 / 51, platform 357 + 180 = 537. */
+const SNAPSHOT_ON_1200: SnapshotTerms = {
+  raw_n_fen: 1200n,
+  subsidy_commission_fen: 0n,
+  reserve_fen: 180n,
+  n_total_fen: 1200n,
+  pre_base_deduct_fen: 180n,
+  base_fen: 1020n,
+  platform_retain_fen: 357n,
+  user_share_total_fen: 663n,
+  platform_est_profit_fen: 537n,
+  amounts: [510n, 102n, 51n],
+};
+
+/** An ESTIMATED taobao order without a settlement record, valued on its estimate. */
 export async function estimatedOrder(s: Scenario): Promise<CreditableOrder> {
+  const order = await attributedOrder(s, { ...ORDER_ON_1200, platform_status: 'PAID' });
+  return seedSnapshot(s, order, SNAPSHOT_ON_1200);
+}
+
+/** A WAITING taobao order whose settlement record says what its estimate said: 1200. */
+export async function settledAtEstimate(s: Scenario): Promise<CreditableOrder> {
   const order = await attributedOrder(s, {
-    platform: 'taobao',
-    product_key: 'taobao:fixture',
-    platform_status: 'PAID',
-    commission_version: 1,
-    est_commission_fen: 1200n,
-    subsidy_commission_fen: 0n,
-    initial_est_fen: 1200n,
-    n_total_fen: 1200n,
-    pre_base_deduct_fen: 180n,
-    base_fen: 1020n,
-    platform_est_profit_fen: 537n,
-    quantity: 1,
-    refunded_quantity: 0,
+    ...ORDER_ON_1200,
+    platform_status: 'SETTLED',
+    rebate_status: 'WAITING',
+    settle_commission_fen: 1200n,
+    received_at: RECEIVED_AT,
+    settle_period: BILL,
   });
-  return seedSnapshot(s, order, {
-    raw_n_fen: 1200n,
-    subsidy_commission_fen: 0n,
-    reserve_fen: 180n,
-    n_total_fen: 1200n,
-    pre_base_deduct_fen: 180n,
-    base_fen: 1020n,
-    platform_retain_fen: 357n,
-    user_share_total_fen: 663n,
-    platform_est_profit_fen: 537n,
-    amounts: [510n, 102n, 51n],
-  });
+  const seeded = await seedSnapshot(s, order, SNAPSHOT_ON_1200);
+  await seedSettlement(s, order, 1200n);
+  return seeded;
 }
 
 /** What the deletion expiry leaves (BR-ID-27, BR-ID-28): users deleting, the request processing. */
