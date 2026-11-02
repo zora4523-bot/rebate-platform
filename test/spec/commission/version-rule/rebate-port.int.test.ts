@@ -125,6 +125,39 @@ it(
 );
 
 it(
+  '[AC-B2-03s#34][BR-CALC-02][BR-CALC-27][BR-CALC-23] CREDITED 单基数相同而 N 不同：commission_moved 为 true，受益人份额不变，n_total、基数前扣除与利润按新 N，不是复制；入账与账本不动',
+  async () => {
+    const h = await portHarness(p.db);
+    const o = await h.order(CREDITED);
+    const money = await moneyRows(p.db, o.appId);
+
+    await h.sync(o, { settleAfter: 1001n, moved: true });
+
+    expect(await amountsAt(p.db, o, 2)).toEqual([
+      ['self', 850n, 425n],
+      ['direct', 850n, 85n],
+      ['indirect', 850n, 42n],
+    ]);
+    expect(await totalsAt(p.db, o, 2)).toEqual({
+      n_total_fen: 1001n,
+      pre_base_deduct_fen: 151n,
+      base_fen: 850n,
+      user_share_total_fen: 552n,
+      tlj_redpacket_fen: 0n,
+      platform_est_profit_fen: 449n,
+    });
+    expect(await orderRow(p.db, o)).toMatchObject({
+      rebate_status: 'CREDITED',
+      booked_base_fen: 850n,
+      booked_n_fen: 1000n,
+      commission_version: 2,
+    });
+    expect(await moneyRows(p.db, o.appId)).toEqual(money);
+  },
+  TIMEOUT,
+);
+
+it(
   '[AC-B2-03s#30][BR-CALC-23][BR-CALC-15] CREDITED 单预估变了、commission_moved 为 false：只 credited_noop，不调 refresh，没有新行',
   async () => {
     const h = await portHarness(p.db);

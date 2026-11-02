@@ -143,7 +143,8 @@ it('[AC-B2-03s#2][BR-CALC-15][BR-CALC-02] 属性：版本前进当且仅当 sett
 
 it('[AC-B2-03s#3][BR-CALC-15] 纯函数：同样的入参两次结果相同，入参不被改动，版本 +1 只在返回值里', () => {
   const current: OrderSyncColumns = { ...BASE };
-  const incoming = order({ settle_commission_fen: 800n });
+  // 结算首次到达、settle ≠ est，预估不变：只有比有效 N 才 +1，比预估得 7。
+  const incoming = order({ est_commission_fen: 1000n, settle_commission_fen: 800n });
   const plan: OrderUpdatePlan = { ...PLAN, platform_status: 'SETTLED' };
   const before = structuredClone({ current, incoming, plan });
 
