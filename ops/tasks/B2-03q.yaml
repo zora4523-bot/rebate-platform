@@ -20,6 +20,10 @@ paths:
   - 'apps/api/src/modules/settlement/rebate/application/rebate.ts'
   - 'apps/api/src/modules/orders/application/commission-snapshot-step.ts'
   - 'apps/api/src/modules/orders/application/commission-snapshot-step.test.ts'
+  - 'apps/api/src/modules/orders/application/admin-assign.ts'
+  - 'apps/api/src/modules/orders/application/claim-review.ts'
+  - 'apps/api/src/modules/orders/application/pipeline-port.ts'
+  - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/commission/estimate-port/**'
 impl: claude
