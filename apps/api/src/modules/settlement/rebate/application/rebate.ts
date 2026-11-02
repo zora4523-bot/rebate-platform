@@ -46,6 +46,7 @@ import {
   markRightsAnswered,
   readLatestSettlementAt,
 } from '../../rights/rights-store.ts';
+import { createSettlementRecords } from '../../settlements/index.ts';
 import { IllegalTransition, RebateError } from './errors.ts';
 
 export interface RebateOrderRef {
@@ -609,6 +610,9 @@ export function createRebatePort(deps: RebateDependencies): RebatePort {
   }
 
   return {
+    // B2-04zj: the sync reaches the settlement records through this one port (BR-FUND-09).
+    settlements: createSettlementRecords({ clock: deps.clock }),
+
     async onImported(trx: Transaction<DB>, order: ImportedOrder): Promise<void> {
       await execute(trx, refOf(order), 'sync', (row, now) => decideImport(row, now));
     },

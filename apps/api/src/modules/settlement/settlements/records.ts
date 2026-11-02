@@ -2,7 +2,8 @@
 // has this one writer; orders.settle_commission_fen stays with orders, which reads the latest
 // STATEMENT amount here before it plans its columns. Both run on the caller's transaction, under the
 // order lock orders already holds.
-// Skeleton of the rule-test round: the implementation comes with the implement round.
+// Insert only: order_settlements' append-only trigger rejects anything else.
+import { createHash } from 'node:crypto';
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
@@ -45,7 +46,65 @@ export interface SettlementRecordsDependencies {
   readonly clock: Clock;
 }
 
+/**
+ * Stable over what the report gave: the amount and the settlement time as reported, null included.
+ * The settled_at fallback stays out, or a report without a time would hash anew on every sync.
+ */
+function contentHash(commissionFen: bigint, reportedSettledAt: Date | null): string {
+  const content = JSON.stringify([
+    commissionFen.toString(10),
+    reportedSettledAt === null ? null : reportedSettledAt.toISOString(),
+  ]);
+  return createHash('sha256').update(content).digest('hex');
+}
+
 export function createSettlementRecords(deps: SettlementRecordsDependencies): SettlementRecords {
-  void deps;
-  throw new Error('NotImplemented: createSettlementRecords');
+  return {
+    async recordApi(trx, input) {
+      const rows = await trx
+        .withSchema('app')
+        .selectFrom('order_settlements')
+        .select(['seq', 'source', 'content_hash'])
+        .where('app_id', '=', input.appId)
+        .where('order_id', '=', input.orderId)
+        .orderBy('seq', 'desc')
+        .execute();
+      const greatest = rows[0]?.seq ?? 0;
+      const hash = contentHash(input.commissionFen, input.reportedSettledAt);
+      if (rows.find((row) => row.source === 'API')?.content_hash === hash) {
+        return { seq: greatest, inserted: false };
+      }
+      const seq = greatest + 1;
+      const now = deps.clock.now();
+      await trx
+        .withSchema('app')
+        .insertInto('order_settlements')
+        .values({
+          app_id: input.appId,
+          order_id: input.orderId,
+          seq,
+          source: 'API',
+          settle_commission_fen: input.commissionFen,
+          settled_at: input.reportedSettledAt ?? input.orderSettledAt ?? now,
+          content_hash: hash,
+          created_at: now,
+        })
+        .execute();
+      return { seq, inserted: true };
+    },
+
+    async latestStatementFen(trx, ref) {
+      const row = await trx
+        .withSchema('app')
+        .selectFrom('order_settlements')
+        .select('settle_commission_fen')
+        .where('app_id', '=', ref.appId)
+        .where('order_id', '=', ref.orderId)
+        .where('source', '=', 'STATEMENT')
+        .orderBy('seq', 'desc')
+        .limit(1)
+        .executeTakeFirst();
+      return row?.settle_commission_fen ?? null;
+    },
+  };
 }
