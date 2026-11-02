@@ -19,6 +19,8 @@ test_paths:
   - 'test/spec/identity/sms-login/branches.int.test.ts'
   - 'test/spec/identity/sms-login/http.int.test.ts'
   - 'test/spec/identity/oauth-login/branches.int.test.ts'
+  - 'test/spec/growth/landing-review/login.int.test.ts'
+  - 'test/spec/risk/rule-toggle-identity/same-device-login.int.test.ts'
 impl: claude
 tester: claude-independent
 accept:
