@@ -15,6 +15,7 @@ import type { WorkerMetricsSnapshot } from './collect.ts';
 import type { FundMetricsSnapshot } from './fund.ts';
 import { pddServiceFeeMissingTotal } from './pdd-service-fee.ts';
 import { REVIEW_OVERDUE_GAUGE, type ReviewOverdueSnapshot } from './review-overdue.ts';
+import type { WaterLowSnapshot } from './water-low.ts';
 
 export interface MetricsRegistryOptions {
   readonly entry: EntryName;
@@ -26,6 +27,8 @@ export interface MetricsRegistryOptions {
   readonly collectAutoPayout?: () => Promise<AutoPayoutDailySnapshot>;
   /** The review overdue gauge (B2-05o). Used only on 'worker'; called once per render(). */
   readonly collectReviewOverdue?: () => Promise<ReviewOverdueSnapshot>;
+  /** The water level gauge (B2-09j). Used only on 'worker'; called once per render(). */
+  readonly collectWaterLow?: () => Promise<WaterLowSnapshot>;
   /** couli_taobao_search_total (B1-04zy). Used only on 'api', never 'worker'; once per render(). */
   readonly collectTaobaoSearch?: () => TaobaoSearchMetricsSnapshot;
 }
