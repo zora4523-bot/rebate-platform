@@ -26,6 +26,7 @@ import {
   insertApplication,
   insertWatermark,
   seedExample,
+  seedWindowTotal,
   shift,
   tableSnapshot,
   waterLowGauge,
@@ -301,6 +302,80 @@ it('[AC-B2-09j#12] 只读、只用注入时钟：只读事务可跑、两张表�
       collectWaterLow: () => readPayoutWaterLow(t.readOnly, clock),
     });
     expect(waterLowGauge(await registry.render())).toEqual({ water_low: 1, water_high: 0 });
+  } finally {
+    await t.close();
+  }
+}, 60_000);
+
+it('[AC-B2-09j#25] P 的舍入是 round_half_up(合计 / 7) × 3：Σ=4,900,004 日均 700,000.57 入为 700,001、P=2,100,003、1.5P=3,150,004.5，W=3,150,004 值 1、W=3,150,005 值 0；Σ=4,900,003 日均 700,000.43 舍为 700,000、P=2,100,000、1.5P=3,150,000，W=3,149,999 值 1、W=3,150,000 值 0', async () => {
+  const t = await open();
+  try {
+    // Rounds up: flooring the average gives P = 2,100,000 and misses the first of these.
+    await seedWindowTotal(t.db, 'water_round_up_below', 4_900_004n, 3_150_004n);
+    await seedWindowTotal(t.db, 'water_round_up_above', 4_900_004n, 3_150_005n);
+    // Rounds down: taking the ceiling gives P = 2,100,003 and alerts on the second of these.
+    await seedWindowTotal(t.db, 'water_round_down_below', 4_900_003n, 3_149_999n);
+    await seedWindowTotal(t.db, 'water_round_down_exact', 4_900_003n, 3_150_000n);
+
+    expect(await readPayoutWaterLow(t.readOnly, clockAt(NOW))).toEqual({
+      waterLow: {
+        water_round_up_below: 1,
+        water_round_up_above: 0,
+        water_round_down_below: 1,
+        water_round_down_exact: 0,
+      },
+    });
+  } finally {
+    await t.close();
+  }
+}, 60_000);
+
+it('[AC-B2-09j#26] 1.5P 不是整数时不截断：七日合计 7 分，P=3、1.5P=4.5；W=4 值 1（4 < 4.5）、W=5 值 0', async () => {
+  const t = await open();
+  try {
+    await seedWindowTotal(t.db, 'water_half_below', 7n, 4n);
+    await seedWindowTotal(t.db, 'water_half_above', 7n, 5n);
+
+    expect(await readPayoutWaterLow(t.readOnly, clockAt(NOW))).toEqual({
+      waterLow: { water_half_below: 1, water_half_above: 0 },
+    });
+  } finally {
+    await t.close();
+  }
+}, 60_000);
+
+it('[AC-B2-09j#28] 取数时间相同时按 created_at 较晚的一行（录错更正）：W=¥30,000 更正为 W=¥31,500 值 0，写入先后颠倒也一样；W=¥31,500 更正为 W=¥30,000 值 1', async () => {
+  const t = await open();
+  try {
+    const entered = shift(FRESH, MINUTE_MS);
+    const corrected = shift(FRESH, 2 * MINUTE_MS);
+    const seed = async (
+      appId: string,
+      rows: readonly (readonly [fen: bigint, createdAt: string])[],
+    ): Promise<void> => {
+      await insertApplication(t.db, { appId, amountFen: EXAMPLE_TOTAL_FEN });
+      for (const [fen, createdAt] of rows) {
+        await insertWatermark(t.db, { appId, fen, measuredAt: FRESH, createdAt });
+      }
+    };
+    await seed('water_fix_up', [
+      [W_30000, entered],
+      [W_31500, corrected],
+    ]);
+    // Written in the opposite order: created_at decides, not the insert.
+    await seed('water_fix_up_reversed', [
+      [W_31500, corrected],
+      [W_30000, entered],
+    ]);
+    // The other direction: neither the larger nor the smaller W wins as such.
+    await seed('water_fix_down', [
+      [W_31500, entered],
+      [W_30000, corrected],
+    ]);
+
+    expect(await readPayoutWaterLow(t.readOnly, clockAt(NOW))).toEqual({
+      waterLow: { water_fix_up: 0, water_fix_up_reversed: 0, water_fix_down: 1 },
+    });
   } finally {
     await t.close();
   }

@@ -18,6 +18,7 @@ import {
   NOW,
   W_30000,
   clockAt,
+  isAppWatermarkRead,
   isForecastRead,
   isWaterLowRead,
   isWatermarkRead,
@@ -106,4 +107,27 @@ it('[AC-B2-09j#3] 整数比较，不用浮点：超过 2^53 的金额仍分得�
     );
   expect(await read(oneFenBelow)).toEqual({ waterLow: { [APP_A]: 1 } });
   expect(await read(exactly)).toEqual({ waterLow: { [APP_A]: 0 } });
+});
+
+it('[AC-B2-09j#27] app 列表读成功、某个 app 的 W 读失败时端口也拒绝（原错误）：第一个、第二个 app 都一样，不留没有 key 的结果', async () => {
+  const twoApps = [
+    waterRow(APP_A, W_30000, EXAMPLE_TOTAL_FEN),
+    waterRow(APP_B, W_30000, EXAMPLE_TOTAL_FEN),
+  ];
+  for (const failing of [1, 2]) {
+    const message = `stand-in: W read ${failing} unavailable`;
+    let appWatermarkReads = 0;
+    const db = recordingDb([], (query) => {
+      if (isAppWatermarkRead(query)) {
+        appWatermarkReads += 1;
+        if (appWatermarkReads === failing) throw new Error(message);
+      }
+      return isWaterLowRead(query) ? twoApps : [];
+    });
+    // Only the per-app read throws this message, so the rejection also shows the list went through.
+    await expect(
+      Promise.resolve().then(() => payoutIndex.readPayoutWaterLow(db, clockAt(NOW))),
+      `app W read ${failing}`,
+    ).rejects.toThrow(message);
+  }
 });

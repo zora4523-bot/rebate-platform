@@ -58,6 +58,13 @@ export function isForecastRead(query: string): boolean {
   return mentions(query, 'withdrawals') && /\bpayout_channel\b/.test(query);
 }
 
+/** One app's W: selects the balance for a given app_id. A list of the apps is not this read. */
+export function isAppWatermarkRead(query: string): boolean {
+  return (
+    isWatermarkRead(query) && /\bavailable_fen\b/.test(query) && /\bapp_id"?\s*=\s*\$\d/.test(query)
+  );
+}
+
 // ---- time --------------------------------------------------------------------------------------
 
 /**
@@ -138,12 +145,15 @@ export async function insertWatermark(
     readonly fen: bigint;
     readonly measuredAt?: string;
     readonly channel?: Channel;
+    /** When the row was entered; the column's default when not given. */
+    readonly createdAt?: string;
   },
 ): Promise<void> {
   await sql`INSERT INTO app.payout_watermarks
-      (id, app_id, channel, available_fen, measured_at, entered_by)
+      (id, app_id, channel, available_fen, measured_at, entered_by, created_at)
     VALUES (${randomUUID()}, ${row.appId}, ${row.channel ?? 'alipay'}, ${row.fen},
-      ${row.measuredAt ?? FRESH}::timestamptz, 'finance:synthetic')`.execute(db);
+      ${row.measuredAt ?? FRESH}::timestamptz, 'finance:synthetic',
+      COALESCE(${row.createdAt ?? null}::timestamptz, now()))`.execute(db);
 }
 
 export async function insertApplication(
@@ -180,6 +190,17 @@ export async function insertApplication(
 /** One app of the worked example: ¥49,000 applied for in the window, W as given, fresh. */
 export async function seedExample(db: Kysely<DB>, appId: string, fen: bigint): Promise<void> {
   await insertApplication(db, { appId, amountFen: EXAMPLE_TOTAL_FEN });
+  await insertWatermark(db, { appId, fen });
+}
+
+/** One app with `totalFen` applied for in the window, W as given, fresh. */
+export async function seedWindowTotal(
+  db: Kysely<DB>,
+  appId: string,
+  totalFen: bigint,
+  fen: bigint,
+): Promise<void> {
+  await insertApplication(db, { appId, amountFen: totalFen });
   await insertWatermark(db, { appId, fen });
 }
 
