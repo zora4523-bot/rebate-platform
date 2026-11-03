@@ -15,7 +15,7 @@ import type { WorkerMetricsSnapshot } from './collect.ts';
 import type { FundMetricsSnapshot } from './fund.ts';
 import { pddServiceFeeMissingTotal } from './pdd-service-fee.ts';
 import { REVIEW_OVERDUE_GAUGE, type ReviewOverdueSnapshot } from './review-overdue.ts';
-import type { WaterLowSnapshot } from './water-low.ts';
+import { WATER_LOW_GAUGE, type WaterLowSnapshot } from './water-low.ts';
 
 export interface MetricsRegistryOptions {
   readonly entry: EntryName;
@@ -284,6 +284,21 @@ function autoPayoutFamilies(snapshot: AutoPayoutDailySnapshot): Family[] {
   }));
 }
 
+/** The water level gauge (B2-09j): only this snapshot's app_ids, an app without a conclusion has none. */
+function waterLowFamilies(snapshot: WaterLowSnapshot): Family[] {
+  return [
+    {
+      name: WATER_LOW_GAUGE.name,
+      help: WATER_LOW_GAUGE.help,
+      type: 'gauge',
+      samples: Object.entries(snapshot.waterLow).map(([appId, value]) => ({
+        labels: { [WATER_LOW_GAUGE.label]: appId },
+        value,
+      })),
+    },
+  ];
+}
+
 /** The review overdue gauge (B2-05o): always exported, 0 included (the rule compares with > 0). */
 function reviewOverdueFamilies(snapshot: ReviewOverdueSnapshot): Family[] {
   return [
@@ -316,6 +331,7 @@ export function createMetricsRegistry(options: MetricsRegistryOptions): MetricsR
   const collectFund = worker ? options.collectFund : undefined;
   const collectAutoPayout = worker ? options.collectAutoPayout : undefined;
   const collectReviewOverdue = worker ? options.collectReviewOverdue : undefined;
+  const collectWaterLow = worker ? options.collectWaterLow : undefined;
   const collectTaobaoSearch = options.entry === 'api' ? options.collectTaobaoSearch : undefined;
   return {
     contentType: CONTENT_TYPE,
@@ -323,7 +339,7 @@ export function createMetricsRegistry(options: MetricsRegistryOptions): MetricsR
       // Business, fund, auto-payout and review overdue values first, then the process values of
       // the same scrape. Any collection rejecting (or throwing synchronously) rejects the whole
       // render.
-      const [business, fund, autoPayout, reviewOverdue] = await Promise.all([
+      const [business, fund, autoPayout, reviewOverdue, waterLow] = await Promise.all([
         collect === undefined ? [] : collect().then(businessFamilies),
         collectFund === undefined ? [] : collectFund().then(fundFamilies),
         collectAutoPayout === undefined
@@ -332,6 +348,9 @@ export function createMetricsRegistry(options: MetricsRegistryOptions): MetricsR
         collectReviewOverdue === undefined
           ? []
           : Promise.resolve().then(collectReviewOverdue).then(reviewOverdueFamilies),
+        collectWaterLow === undefined
+          ? []
+          : Promise.resolve().then(collectWaterLow).then(waterLowFamilies),
       ]);
       const taobaoSearch =
         collectTaobaoSearch === undefined ? [] : taobaoSearchFamilies(collectTaobaoSearch());
@@ -340,6 +359,7 @@ export function createMetricsRegistry(options: MetricsRegistryOptions): MetricsR
         ...fund,
         ...autoPayout,
         ...reviewOverdue,
+        ...waterLow,
         ...taobaoSearch,
         pddServiceFeeFamily(),
         ...processFamilies(),
