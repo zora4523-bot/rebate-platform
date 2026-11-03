@@ -175,6 +175,8 @@ export async function member(f: WatermarkFixture, app: string = f.appId): Promis
 export interface WithdrawalSeed {
   readonly userId: string;
   readonly net?: bigint;
+  /** fee_fen, 0 by default; amount_fen is net + fee (withdrawals_net_check, tax 0). */
+  readonly fee?: bigint;
   readonly channel?: Channel;
   /** APPROVED by default, reviewed by the automatic path (review_mode auto, no reviewer). */
   readonly status?: 'APPROVED' | 'PAYING' | 'PAID_API';
@@ -187,6 +189,7 @@ export interface WithdrawalSeed {
 export async function seedWithdrawal(f: Fixture, values: WithdrawalSeed): Promise<string> {
   const id = randomUUID();
   const net = values.net ?? 100n;
+  const fee = values.fee ?? 0n;
   const channel = values.channel ?? 'alipay';
   const status = values.status ?? 'APPROVED';
   const createdAt = values.createdAt ?? f.clock.now();
@@ -194,7 +197,7 @@ export async function seedWithdrawal(f: Fixture, values: WithdrawalSeed): Promis
     (id, app_id, user_id, amount_fen, fee_fen, tax_fen, net_fen, income_type, payout_method,
      payee_name, payee_account_cipher, payee_hmac, wechat_app_id, status, out_biz_no, payout_channel,
      review_mode, reviewed_at, paid_at, created_at, updated_at)
-    VALUES (${id}, ${values.appId ?? f.appId}, ${values.userId}, ${net}, ${0n}, ${0n}, ${net},
+    VALUES (${id}, ${values.appId ?? f.appId}, ${values.userId}, ${net + fee}, ${fee}, ${0n}, ${net},
      'SERVICE_FEE', ${channel}, '合成姓名', ${Buffer.from('synthetic-encrypted-account')},
      ${randomBytes(32).toString('hex')}, ${channel === 'wechat' ? 'wx_synthetic' : null}, ${status},
      ${randomBytes(16).toString('hex')}, ${channel}, 'auto', ${createdAt},
@@ -205,15 +208,21 @@ export async function seedWithdrawal(f: Fixture, values: WithdrawalSeed): Promis
 
 /**
  * BR-WDR-18 例: 近 7 日申请合计 ¥49,000, ¥7,000 on each of the seven complete natural days before
- * 2026-11-03 (+08:00), all paid long before any reading of these tests. P = ¥21,000.
+ * 2026-11-03 (+08:00), all paid long before any reading of these tests. P = ¥21,000. `feeFen` comes
+ * out of each ¥7,000: amount_fen stays 700,000 and net_fen drops by it (no fee by default).
  */
-export async function seedSevenDays(f: WatermarkFixture): Promise<void> {
+export async function seedSevenDays(
+  f: WatermarkFixture,
+  options: { readonly feeFen?: bigint } = {},
+): Promise<void> {
+  const fee = options.feeFen ?? 0n;
   const userId = await member(f);
   for (let day = 0; day < 7; day += 1) {
     const createdAt = new Date(Date.parse('2026-10-27T02:00:00.000Z') + day * 24 * HOUR);
     await seedWithdrawal(f, {
       userId,
-      net: 700_000n,
+      net: 700_000n - fee,
+      fee,
       status: 'PAID_API',
       createdAt,
       paidAt: new Date(createdAt.getTime() + MINUTE),
@@ -224,6 +233,8 @@ export async function seedSevenDays(f: WatermarkFixture): Promise<void> {
 export interface WatermarkSeed {
   readonly availableFen: bigint;
   readonly measuredAt: string;
+  /** created_at of the row, the fixture's clock by default. */
+  readonly createdAt?: string;
   readonly channel?: Channel;
   readonly appId?: string;
 }
@@ -234,7 +245,7 @@ export async function seedWatermark(f: Fixture, seed: WatermarkSeed): Promise<vo
       (id, app_id, channel, available_fen, measured_at, entered_by, created_at)
     VALUES (${randomUUID()}, ${seed.appId ?? f.appId}, ${seed.channel ?? 'alipay'},
       ${seed.availableFen}, ${new Date(seed.measuredAt)}, ${randomUUID()},
-      ${f.clock.now()})`.execute(f.db);
+      ${seed.createdAt === undefined ? f.clock.now() : new Date(seed.createdAt)})`.execute(f.db);
 }
 
 // ---------------------------------------------------------------------------------------------

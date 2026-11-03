@@ -2,12 +2,14 @@
 // entered through POST /admin/v1/payout-watermarks is the W that B2-06c's real createPayoutExecute
 // judges. 08 BR-WDR-18 ①②③ and its examples: no row or a reading older than 2 hours → stale (exactly
 // 2 hours still passes), W < P → below forecast, Σ > 90% of W → usable exceeded; the latest row by
-// measured_at decides. W never comes from a seeded row here except the older rows of #5. Amounts are
-// fen, written by hand. Top-level it() only (规划/11 §4.3).
+// measured_at decides, and of two rows with one measured_at the one entered later (#41, #42); P is
+// over amount_fen, not net_fen (#43). W never comes from a seeded row here except the older rows of
+// #5. Amounts are fen, written by hand. Top-level it() only (规划/11 §4.3).
 import { expect, it } from 'vitest';
 import {
   HOUR,
   MINUTE,
+  TEN_AM,
   books,
   enterBody,
   entered,
@@ -22,11 +24,20 @@ import {
   seedWithdrawal,
   sorted,
   suite,
+  watermarkRows,
   withWatermarkAdmin,
   withdrawalRow,
 } from './kit.ts';
 
 const s = suite();
+
+/** The app's watermark rows in entry order: created_at (epoch ms) and W. */
+async function enteredInOrder(f: Parameters<typeof watermarkRows>[0]) {
+  const rows = await watermarkRows(f);
+  return rows
+    .map((row) => ({ createdAt: row.created_at.getTime(), availableFen: row.available_fen }))
+    .sort((a, b) => a.createdAt - b.createdAt);
+}
 
 it('[AC-B2-09i#2] 贯通：同一批 APPROVED 的自动单，① 没有 W 时执行被拒 watermark_stale、单子留在 APPROVED、什么都没写；② 经接口录入足额 W 后同一批能执行；③ 恰好 2 小时仍能执行，再过 1 毫秒又被 watermark_stale 拒绝；④ 重新录入后同一批真正进入 PAYING', async () => {
   const f = fixture(s);
@@ -168,5 +179,113 @@ it('[AC-B2-09i#5] 判定取 measured_at 最新的一行：旧行 W 不够、新�
     );
     expect(await executeAuto(f, [b])).toEqual(refusedFor('watermark_usable_exceeded'));
     expect((await withdrawalRow(f, b)).status).toBe('APPROVED');
+  });
+});
+
+it('[AC-B2-09i#41] 同一取数时间重录（录错改小）：10:00 录 W=3,000,000、取数 09:30，一分钟后用相同 measured_at 重录 W=300,000，契约接受；净额 2,000,000、P=0 的批次按后录的判 watermark_usable_exceeded（2,000,000 > 270,000），单子留在 APPROVED', async () => {
+  const f = fixture(s);
+  const id = await seedWithdrawal(f, { userId: await member(f), net: 2_000_000n });
+  await withWatermarkAdmin(f, async (h) => {
+    await entered(
+      await h.enter(
+        enterBody({ available_fen: 3_000_000, measured_at: '2026-11-03T09:30:00+08:00' }),
+      ),
+    );
+    // 录错的那条本身会放行（2,000,000 ≤ 2,700,000）：下面的拒绝只能来自后录的那条。
+    expect(executedOf((await probeAuto(f, [id])).result).paying).toEqual([id]);
+
+    f.clock.advanceMs(MINUTE);
+    const caller = await h.relogin(h.operator);
+    await entered(
+      await h.enter(
+        enterBody({ available_fen: 300_000, measured_at: '2026-11-03T09:30:00+08:00' }),
+        { caller },
+      ),
+    );
+    const tenAm = Date.parse(TEN_AM);
+    expect(await enteredInOrder(f)).toEqual([
+      { createdAt: tenAm, availableFen: 3_000_000n },
+      { createdAt: tenAm + MINUTE, availableFen: 300_000n },
+    ]);
+
+    expect(await executeAuto(f, [id])).toEqual(refusedFor('watermark_usable_exceeded'));
+    expect((await withdrawalRow(f, id)).status).toBe('APPROVED');
+    expect(f.send).not.toHaveBeenCalled();
+  });
+});
+
+it('[AC-B2-09i#42] 同一取数时间重录（录错改大）：先录 W=300,000 被拒，一分钟后用相同 measured_at 重录 W=3,000,000，同一批按后录的通过并进入 PAYING（不是取较小值，也不是取先录的）', async () => {
+  const f = fixture(s);
+  const id = await seedWithdrawal(f, { userId: await member(f), net: 2_000_000n });
+  await withWatermarkAdmin(f, async (h) => {
+    await entered(
+      await h.enter(
+        enterBody({ available_fen: 300_000, measured_at: '2026-11-03T09:30:00+08:00' }),
+      ),
+    );
+    expect(await executeAuto(f, [id])).toEqual(refusedFor('watermark_usable_exceeded'));
+
+    f.clock.advanceMs(MINUTE);
+    const caller = await h.relogin(h.operator);
+    await entered(
+      await h.enter(
+        enterBody({ available_fen: 3_000_000, measured_at: '2026-11-03T09:30:00+08:00' }),
+        { caller },
+      ),
+    );
+    const tenAm = Date.parse(TEN_AM);
+    expect(await enteredInOrder(f)).toEqual([
+      { createdAt: tenAm, availableFen: 300_000n },
+      { createdAt: tenAm + MINUTE, availableFen: 3_000_000n },
+    ]);
+
+    expect(executedOf(await executeAuto(f, [id])).paying).toEqual([id]);
+    expect((await withdrawalRow(f, id)).status).toBe('PAYING');
+  });
+});
+
+it('[AC-B2-09i#43] P 按申请额 amount_fen 算、不按净额：七天每天一单 amount_fen 700,000、fee_fen 20,000、net_fen 680,000，P=2,100,000（按净额会是 2,040,000）。W=2,050,000 与 W=2,099,999 → watermark_below_forecast，单子不动；恰好 W=2,100,000 能执行', async () => {
+  const f = fixture(s);
+  await seedSevenDays(f, { feeFen: 20_000n });
+  const history = await f.db
+    .selectFrom('withdrawals')
+    .select(['amount_fen', 'fee_fen', 'net_fen'])
+    .where('app_id', '=', f.appId)
+    .where('status', '=', 'PAID_API')
+    .execute();
+  expect(history).toEqual(
+    Array.from({ length: 7 }, () => ({
+      amount_fen: 700_000n,
+      fee_fen: 20_000n,
+      net_fen: 680_000n,
+    })),
+  );
+  const id = await seedWithdrawal(f, { userId: await member(f), net: 10_000n });
+  await withWatermarkAdmin(f, async (h) => {
+    // 2,050,000 ≥ 按净额算的 2,040,000：按净额算 P 的实现会在这里放行。
+    await entered(
+      await h.enter(
+        enterBody({ available_fen: 2_050_000, measured_at: '2026-11-03T09:30:00+08:00' }),
+      ),
+    );
+    expect(await executeAuto(f, [id])).toEqual(refusedFor('watermark_below_forecast'));
+    expect((await withdrawalRow(f, id)).status).toBe('APPROVED');
+
+    await entered(
+      await h.enter(
+        enterBody({ available_fen: 2_099_999, measured_at: '2026-11-03T09:35:00+08:00' }),
+      ),
+    );
+    expect(await executeAuto(f, [id])).toEqual(refusedFor('watermark_below_forecast'));
+    expect((await withdrawalRow(f, id)).status).toBe('APPROVED');
+    expect(f.send).not.toHaveBeenCalled();
+
+    await entered(
+      await h.enter(
+        enterBody({ available_fen: 2_100_000, measured_at: '2026-11-03T09:40:00+08:00' }),
+      ),
+    );
+    expect(executedOf(await executeAuto(f, [id])).paying).toEqual([id]);
+    expect((await withdrawalRow(f, id)).status).toBe('PAYING');
   });
 });

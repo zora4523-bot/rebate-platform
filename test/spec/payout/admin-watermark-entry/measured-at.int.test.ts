@@ -81,9 +81,17 @@ it('[AC-B2-09i#8] 倒退：早于该通道最新一条 → 20001 data.fields=[me
 
 it('[AC-B2-09i#9] 倒退只和最新一条比：表里已有的（不经接口的）最新行同样算数；比最新行新但比旧行旧不存在；最新一条按 measured_at 而不是写入先后', async () => {
   const f = fixture(s);
-  // 写入在后、取数在前的一行不是最新：最新仍是 09:50。
-  await seedWatermark(f, { availableFen: 100n, measuredAt: '2026-11-03T09:50:00+08:00' });
-  await seedWatermark(f, { availableFen: 100n, measuredAt: '2026-11-03T09:10:00+08:00' });
+  // 写入在后（created_at 更晚）、取数在前的一行不是最新：最新仍是 09:50。
+  await seedWatermark(f, {
+    availableFen: 100n,
+    measuredAt: '2026-11-03T09:50:00+08:00',
+    createdAt: '2026-11-03T09:51:00+08:00',
+  });
+  await seedWatermark(f, {
+    availableFen: 100n,
+    measuredAt: '2026-11-03T09:10:00+08:00',
+    createdAt: '2026-11-03T09:52:00+08:00',
+  });
   await withWatermarkAdmin(f, async (h) => {
     const before = await everything(f);
     await fieldsError(await h.enter(at('09:49:59.999')), ['measured_at']);
