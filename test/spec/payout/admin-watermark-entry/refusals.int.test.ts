@@ -95,14 +95,12 @@ it('[AC-B2-09i#14] 有权限且带令牌时才走到请求体检查：去空白�
     for (const note of ['   ', ' \t\n ']) {
       await fieldsError(await h.enter(enterBody({ note })), ['note']);
     }
-    await fieldsError(
-      await h.enter(enterBody({ measured_at: '2026-11-03T10:05:00.001+08:00' })),
-      ['measured_at'],
-    );
-    await fieldsError(
-      await h.enter(enterBody({ measured_at: '2026-11-03T07:59:59.999+08:00' })),
-      ['measured_at'],
-    );
+    await fieldsError(await h.enter(enterBody({ measured_at: '2026-11-03T10:05:00.001+08:00' })), [
+      'measured_at',
+    ]);
+    await fieldsError(await h.enter(enterBody({ measured_at: '2026-11-03T07:59:59.999+08:00' })), [
+      'measured_at',
+    ]);
     expect(await everything(f)).toEqual(before);
   });
 });
