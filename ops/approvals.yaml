@@ -291,3 +291,9 @@ approvals:
     granted: true
     date: '2026-11-04'
     note: '负责人 2026-11-04 00:3x 在编排会话选「ops 脚本从本机 ~/.couli 读取后写到服务器 (Recommended)」（选项说明由编排会话拟写：进程里读取、经 ssh 写到 staging 节点只有服务账号能读的文件、不显示不记日志）'
+  - id: 46
+    row: 4
+    title: '第 44 条的 staging 运营管理员另给 union.pid（推广位）权限：ops 脚本可用它经后台接口在 staging 代办推广位登记、花卷云忽略确认（BR-ATTR-28，截图由负责人在本机备好、只填路径）与启用；联盟账号登记（register-account）仍由负责人用超管跑；只在 staging，生产推广位不在本条范围'
+    granted: true
+    date: '2026-11-04'
+    note: '负责人 2026-11-04 01:1x 在编排会话选「给运营管理员加推广位权限，ops 代跑 (Recommended)」（选项说明由编排会话拟写：只管推广位、不碰资金，负责人只跑 3 条登记联盟账号命令、其余 15 条由 ops 代跑，只在 staging 生效）'
