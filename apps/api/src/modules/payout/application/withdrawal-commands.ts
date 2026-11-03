@@ -20,6 +20,7 @@ import type { Transaction } from 'kysely';
 import type { Ledger, PostingEntry } from '../../ledger/index.ts';
 import type { Clock, EventBus } from '../../platform/index.ts';
 import type { WithdrawApplyOptions } from './withdraw-apply.ts';
+import type { PayoutConfigPort } from './withdraw-rules.ts';
 
 export type WithdrawalAttemptResult = 'pending' | 'success' | 'unknown' | 'fail';
 export interface WithdrawalAttemptsPort {
@@ -37,6 +38,11 @@ export interface WithdrawalCommandsOptions {
   lockUsersForUpdate: WithdrawApplyOptions['lockUsersForUpdate'];
   attempts: WithdrawalAttemptsPort;
   eventBus: EventBus;
+  /**
+   * B2-09k: content's reader of payout.proven_success_writeoff.enabled for the manual W3's query
+   * guard (BR-WDR-08 W3, BR-WDR-17). Omitted, or no row: the switch's default, on.
+   */
+  config?: PayoutConfigPort;
 }
 export interface WithdrawalCommand {
   appId: string;
@@ -61,7 +67,14 @@ export type WithdrawalCommandResult =
   | {
       kind: 'refused';
       reason:
-        'negative_balance' | 'blocked' | 'reason_required' | 'attempt_exists' | 'invalid_state';
+        | 'negative_balance'
+        | 'blocked'
+        | 'reason_required'
+        | 'attempt_exists'
+        | 'invalid_state'
+        // B2-09k: the manual W3 of hold_reason=payer_side_after_transfer against its latest query.
+        | 'query_required'
+        | 'query_success';
     };
 export interface WithdrawalCommands {
   approve(trx: Transaction<DB>, input: WithdrawalCommand): Promise<WithdrawalCommandResult>;
