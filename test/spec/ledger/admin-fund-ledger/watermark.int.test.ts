@@ -229,3 +229,57 @@ it('[AC-B2-04zs#29] 只有别的通道有 W 和提现：watermark=null、water_l
     expect(stale.water_level).toBeNull();
   });
 });
+
+it('[AC-B2-04zs#37] P 也算 PAID_MANUAL：窗口内 PAID_API 4,900,000 + PAID_MANUAL 2,100,000 = 7,000,000 → P=3,000,000；W=4,000,000 新鲜时 low（40,000,000 < 45,000,000），漏掉 PAID_MANUAL 会得到 P=2,100,000、normal', async () => {
+  const f = fixture(s);
+  await seedWithdrawal(f, { amountFen: 4_900_000n, createdAt: IN_WINDOW, status: 'PAID_API' });
+  await seedWithdrawal(f, { amountFen: 2_100_000n, createdAt: IN_WINDOW, status: 'PAID_MANUAL' });
+  await seedWatermark(f, { fen: 4_000_000n });
+  await withFundAdmin(f, async (h) => {
+    expect(levelOf(await overview(await h.read()))).toEqual({
+      available_fen: 4_000_000,
+      forecast_withdrawal_fen: 3_000_000,
+      water_level: 'low',
+    });
+  });
+});
+
+it('[AC-B2-04zs#38] P 的窗口按申请时间 created_at：10-20 申请、窗口内才打款（updated_at 在窗口内）的 7,000,000 不算，只算窗口内申请的 4,900,000 → P=2,100,000（按 updated_at 会得到 5,100,000）', async () => {
+  const f = fixture(s);
+  await seedWithdrawal(f, { amountFen: 4_900_000n, createdAt: IN_WINDOW });
+  await seedWithdrawal(f, {
+    amountFen: 7_000_000n,
+    createdAt: '2026-10-20T04:00:00.000Z',
+    updatedAt: IN_WINDOW,
+    status: 'PAID_API',
+  });
+  await withFundAdmin(f, async (h) => {
+    expect((await overview(await h.read())).forecast_withdrawal_fen).toBe(2_100_000);
+  });
+});
+
+it('[AC-B2-04zs#39] P 的窗口按申请时间 created_at：窗口内申请、今天才打款（updated_at 在窗口外）的 4,900,000 要算 → P=2,100,000（按 updated_at 会得到 0）', async () => {
+  const f = fixture(s);
+  await seedWithdrawal(f, {
+    amountFen: 4_900_000n,
+    createdAt: IN_WINDOW,
+    updatedAt: '2026-10-29T02:00:00.000Z',
+    status: 'PAID_API',
+  });
+  await withFundAdmin(f, async (h) => {
+    expect((await overview(await h.read())).forecast_withdrawal_fen).toBe(2_100_000);
+  });
+});
+
+it('[AC-B2-04zs#40] 日均四舍五入、不向上取整：合计 8 → 8/7 取 1 → P=3；W=5 时 normal（50 ≥ 45），向上取整会得到 P=6、low', async () => {
+  const f = fixture(s);
+  await seedWithdrawal(f, { amountFen: 8n, createdAt: IN_WINDOW });
+  await seedWatermark(f, { fen: 5n });
+  await withFundAdmin(f, async (h) => {
+    expect(levelOf(await overview(await h.read()))).toEqual({
+      available_fen: 5,
+      forecast_withdrawal_fen: 3,
+      water_level: 'normal',
+    });
+  });
+});

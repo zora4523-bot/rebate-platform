@@ -151,10 +151,7 @@ export function credit(f: ReceiptFixture, who: Member, fen: bigint): Promise<voi
 
 /** Lowers the member's available by `fen`; CLAWBACK may end below zero (BR-FUND-10). */
 export function clawback(f: ReceiptFixture, who: Member, fen: bigint): Promise<void> {
-  return post(f, who, [
-    userLine(who, 'available', fen, 'CLAWBACK'),
-    revenueLine(-fen, 'CLAWBACK'),
-  ]);
+  return post(f, who, [userLine(who, 'available', fen, 'CLAWBACK'), revenueLine(-fen, 'CLAWBACK')]);
 }
 
 /** Moves `fen` from the member's available to their frozen sub-account. */
@@ -231,8 +228,11 @@ export interface WithdrawalSeed {
   readonly amountFen: bigint;
   /** created_at: when the withdrawal was applied for. */
   readonly createdAt: string;
+  /** updated_at, and paid_at of a paid row: when it last moved (default createdAt). */
+  readonly updatedAt?: string;
   readonly channel?: Channel;
-  readonly status?: 'PENDING_REVIEW' | 'APPROVED' | 'PAYING' | 'PAID_API' | 'FAILED' | 'REJECTED';
+  readonly status?:
+    'PENDING_REVIEW' | 'APPROVED' | 'PAYING' | 'PAID_API' | 'PAID_MANUAL' | 'FAILED' | 'REJECTED';
   /** net_fen = amount_fen − fee_fen. */
   readonly feeFen?: bigint;
 }
@@ -244,17 +244,22 @@ export async function seedWithdrawal(f: ReceiptFixture, seed: WithdrawalSeed): P
   const status = seed.status ?? 'APPROVED';
   const fee = seed.feeFen ?? 0n;
   const createdAt = new Date(seed.createdAt);
+  const updatedAt = seed.updatedAt === undefined ? createdAt : new Date(seed.updatedAt);
+  const paid = status === 'PAID_API' || status === 'PAID_MANUAL';
+  const manual = status === 'PAID_MANUAL';
   await sql`INSERT INTO app.withdrawals
       (id, app_id, user_id, amount_fen, fee_fen, tax_fen, net_fen, income_type, payout_method,
        payee_name, payee_account_cipher, payee_hmac, bank_name, wechat_app_id, status, out_biz_no,
-       payout_channel, reject_reason_code, paid_at, created_at, updated_at)
+       payout_channel, reject_reason_code, paid_at, manual_entry_by, manual_confirm_by,
+       created_at, updated_at)
     VALUES (${randomUUID()}, ${f.appId}, ${owner}, ${seed.amountFen}, ${fee}, ${0n},
       ${seed.amountFen - fee}, 'SERVICE_FEE', ${channel}, '合成姓名',
       ${Buffer.from('synthetic-encrypted-account')}, ${randomBytes(32).toString('hex')},
       ${channel === 'bank_card' ? '合成银行' : null}, ${channel === 'wechat' ? 'wx_synthetic' : null},
       ${status}, ${randomBytes(16).toString('hex')}, ${channel},
-      ${status === 'REJECTED' ? 'OTHER' : null}, ${status === 'PAID_API' ? createdAt : null},
-      ${createdAt}, ${createdAt})`.execute(f.db);
+      ${status === 'REJECTED' ? 'OTHER' : null}, ${paid ? updatedAt : null},
+      ${manual ? randomUUID() : null}, ${manual ? randomUUID() : null},
+      ${createdAt}, ${updatedAt})`.execute(f.db);
 }
 
 /**
