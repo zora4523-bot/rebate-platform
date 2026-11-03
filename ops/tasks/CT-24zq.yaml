@@ -8,6 +8,7 @@ refs_hash: {}
 deps: []
 paths:
   - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
   - 'packages/contracts-ts/**'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
