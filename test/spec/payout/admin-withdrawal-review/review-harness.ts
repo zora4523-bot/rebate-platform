@@ -135,12 +135,18 @@ const ROOT = new URL('../../../../', import.meta.url);
 // ---------------------------------------------------------------------------------------------
 // One app on the suite's database, at the fixed review time.
 
-export function fixture(s: WriteOffSuite): WriteOffFixture {
-  return writeOffFixture(s, REVIEW_AT);
+/**
+ * The write-off fixture with its suite typed in full: the seeds of ../admin-withdrawals/kit.ts need
+ * the suite's payout() handle, which the write-off kit's own Fixture type does not promise.
+ */
+export type ReviewFixture = WriteOffFixture & { readonly s: WriteOffSuite };
+
+export function fixture(s: WriteOffSuite): ReviewFixture {
+  return { ...writeOffFixture(s, REVIEW_AT), s };
 }
 
 /** The same database and clock under another app id, for the isolation cases. */
-export function otherApp(f: WriteOffFixture): WriteOffFixture {
+export function otherApp(f: ReviewFixture): ReviewFixture {
   return { ...f, appId: `other_${f.appId}` };
 }
 
@@ -149,7 +155,7 @@ export function otherApp(f: WriteOffFixture): WriteOffFixture {
 
 /** A member with a phone and a funded ledger account. */
 export async function member(
-  f: WriteOffFixture,
+  f: ReviewFixture,
   h: Sealer,
   balance: bigint = BALANCE,
 ): Promise<Member> {
@@ -159,7 +165,7 @@ export async function member(
 }
 
 /** The real WITHDRAW:FREEZE of a row: frozen +amount, available −amount (`wd:{id}:FREEZE`). */
-async function freeze(f: WriteOffFixture, row: WithdrawalRow): Promise<void> {
+async function freeze(f: ReviewFixture, row: WithdrawalRow): Promise<void> {
   await f.db.transaction().execute(async (trx) => {
     const appId = row.app_id;
     await lockUsersForUpdate(trx, { appId, userIds: [row.user_id] });
@@ -200,7 +206,7 @@ const OPEN: readonly string[] = ['PENDING_REVIEW', 'APPROVED', 'PAYING'];
 
 /** A withdrawal created 30 minutes ago (PENDING_REVIEW by default), frozen while it is open. */
 export async function seedReview(
-  f: WriteOffFixture,
+  f: ReviewFixture,
   h: Sealer,
   who: Member,
   seed: WithdrawalSeed = {},
@@ -221,7 +227,7 @@ export async function seedReview(
 
 /** An APPROVED withdrawal reviewed 20 minutes ago by somebody else; nothing has been executed. */
 export function seedApproved(
-  f: WriteOffFixture,
+  f: ReviewFixture,
   h: Sealer,
   who: Member,
   seed: WithdrawalSeed = {},
@@ -240,7 +246,7 @@ export function seedApproved(
  * payer_side_after_transfer, batch and execute_seq kept, one failed transfer attempt, no query.
  */
 export async function seedReturned(
-  f: WriteOffFixture,
+  f: ReviewFixture,
   h: Sealer,
   who: Member,
   seed: WithdrawalSeed = {},
@@ -267,7 +273,7 @@ export type AttemptResult = 'pending' | 'success' | 'fail' | 'unknown';
 
 /** Query attempts of `row`, in the order given: [result, minutes before the fixture's clock]. */
 export async function seedQueries(
-  f: WriteOffFixture,
+  f: ReviewFixture,
   row: WithdrawalRow,
   queries: readonly (readonly [AttemptResult, number])[],
 ): Promise<void> {
@@ -277,7 +283,7 @@ export async function seedQueries(
 }
 
 /** Moves the member's available by `delta` (an adjustment voucher, as ../state/kit.ts). */
-export async function adjust(f: WriteOffFixture, who: Member, delta: bigint): Promise<void> {
+export async function adjust(f: ReviewFixture, who: Member, delta: bigint): Promise<void> {
   await f.db.transaction().execute(async (trx) => {
     const appId = who.appId;
     await lockUsersForUpdate(trx, { appId, userIds: [who.userId] });
@@ -293,7 +299,7 @@ export async function adjust(f: WriteOffFixture, who: Member, delta: bigint): Pr
 
 /** The member's risk state as risk would have left it (BR-WDR-05 (b)). */
 export async function seedRiskState(
-  f: WriteOffFixture,
+  f: ReviewFixture,
   who: Member,
   state: 'frozen' | 'banned',
 ): Promise<void> {
@@ -318,12 +324,12 @@ export async function moveBehind(
 // What the tests read.
 
 /** One withdrawal as it is now. */
-export function rowOf(f: WriteOffFixture, row: WithdrawalRow): Promise<WithdrawalRow> {
+export function rowOf(f: ReviewFixture, row: WithdrawalRow): Promise<WithdrawalRow> {
   return withdrawalRow(f.db, row.app_id, row.id);
 }
 
 /** Everything of the app the two operations could write, for before / after comparisons. */
-export async function everything(f: WriteOffFixture, app: string = f.appId) {
+export async function everything(f: ReviewFixture, app: string = f.appId) {
   const jobs = await sql<{ name: string; data: unknown }>`
     SELECT name, data FROM pgboss.job WHERE data->'payload'->>'app_id' = ${app}
     ORDER BY name, created_on, id`.execute(f.db);
@@ -371,7 +377,7 @@ export async function everything(f: WriteOffFixture, app: string = f.appId) {
 }
 
 /** The queue of every job of the app, sorted. */
-export async function jobQueues(f: WriteOffFixture): Promise<string[]> {
+export async function jobQueues(f: ReviewFixture): Promise<string[]> {
   const result = await sql<{ name: string }>`
     SELECT name FROM pgboss.job WHERE data->'payload'->>'app_id' = ${f.appId}
     ORDER BY name`.execute(f.db);
@@ -379,7 +385,7 @@ export async function jobQueues(f: WriteOffFixture): Promise<string[]> {
 }
 
 /** The event data of the app's jobs on notification's queue, in order. */
-export async function messageJobs(f: WriteOffFixture): Promise<unknown[]> {
+export async function messageJobs(f: ReviewFixture): Promise<unknown[]> {
   const result = await sql<{ data: unknown }>`
     SELECT data->'payload'->'data' AS data FROM pgboss.job
     WHERE name = ${MESSAGE_QUEUE} AND data->'payload'->>'app_id' = ${f.appId}
@@ -388,7 +394,7 @@ export async function messageJobs(f: WriteOffFixture): Promise<unknown[]> {
 }
 
 /** The uniq keys of the app's WITHDRAW:RETURN vouchers. */
-export async function returnVouchers(f: WriteOffFixture): Promise<string[]> {
+export async function returnVouchers(f: ReviewFixture): Promise<string[]> {
   const keys = await withdrawalVouchers(f.db, f.appId);
   return keys.filter((key) => key.endsWith(':RETURN'));
 }
@@ -411,7 +417,7 @@ export function auditText(record: {
 
 /** What notification's worker does with the event: the real consumer, then the push after it. */
 export async function deliverMessage(
-  f: WriteOffFixture,
+  f: ReviewFixture,
   data: { readonly withdrawal_id: string; readonly user_id: string; readonly status: string },
 ): Promise<void> {
   const event = eventOf(f.appId, data);
@@ -562,7 +568,7 @@ export function rejectBody(patch: Record<string, unknown> = {}): Record<string, 
  * and Redis.
  */
 export async function withReviewAdmin(
-  f: WriteOffFixture,
+  f: ReviewFixture,
   run: (h: ReviewAdmin) => Promise<void>,
 ): Promise<void> {
   const { createHttpApp } = (await import(new URL('apps/api/src/bootstrap.ts', ROOT).href)) as {
@@ -795,7 +801,7 @@ export function skippedItem(id: string, reason: SkipReason): Record<string, unkn
 
 /** A successful rejection: exactly the contract's fields, reviewed_at the fixture's clock. */
 export async function rejectedBy(
-  f: WriteOffFixture,
+  f: ReviewFixture,
   sent: AdminSent,
   row: WithdrawalRow,
   adminId: string,

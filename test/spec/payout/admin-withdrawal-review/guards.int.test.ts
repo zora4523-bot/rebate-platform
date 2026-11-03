@@ -47,14 +47,14 @@ import {
   type AttemptResult,
   type ReviewAdmin,
   type WithdrawalRow,
-  type WriteOffFixture,
+  type ReviewFixture,
 } from './review-harness.ts';
 
 const s = suite();
 
 /** A payer-side withdrawal with these queries, refused for `reason`, nothing written. */
 async function queryRefusal(
-  f: WriteOffFixture,
+  f: ReviewFixture,
   h: ReviewAdmin,
   queries: readonly (readonly [AttemptResult, number])[],
   reason: 'reject_query_required' | 'reject_query_success',
@@ -77,7 +77,7 @@ async function queryRefusal(
 
 /** A payer-side withdrawal with these queries is rejected and its money returned. */
 async function queryPass(
-  f: WriteOffFixture,
+  f: ReviewFixture,
   h: ReviewAdmin,
   queries: readonly (readonly [AttemptResult, number])[],
 ): Promise<WithdrawalRow> {

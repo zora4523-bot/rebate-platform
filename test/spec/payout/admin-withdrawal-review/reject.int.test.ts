@@ -47,14 +47,14 @@ import {
   voucherOf,
   withReviewAdmin,
   type WithdrawalRow,
-  type WriteOffFixture,
+  type ReviewFixture,
 } from './review-harness.ts';
 
 const s = suite();
 
 /** The two lines of WITHDRAW:RETURN for `amount` (user subaccounts: signs opposite to the deltas). */
 async function expectReturnVoucher(
-  f: WriteOffFixture,
+  f: ReviewFixture,
   w: WithdrawalRow,
   amount: bigint,
 ): Promise<void> {

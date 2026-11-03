@@ -53,7 +53,7 @@ import {
   type Member,
   type ReviewAdmin,
   type WithdrawalRow,
-  type WriteOffFixture,
+  type ReviewFixture,
 } from './review-harness.ts';
 
 const s = suite();
@@ -61,7 +61,7 @@ const s = suite();
 /** The adjustment of the harness's adjust() on a transaction already holding the users row. */
 async function adjustOn(
   trx: Transaction<DB>,
-  f: WriteOffFixture,
+  f: ReviewFixture,
   who: Member,
   delta: bigint,
 ): Promise<void> {
@@ -76,7 +76,7 @@ async function adjustOn(
 
 /** The two lines of WITHDRAW:RETURN for `amount` (user subaccounts: signs opposite to the deltas). */
 async function expectReturnVoucher(
-  f: WriteOffFixture,
+  f: ReviewFixture,
   w: WithdrawalRow,
   amount: bigint,
 ): Promise<void> {
@@ -104,7 +104,7 @@ async function expectReturnVoucher(
  * guard alone would let the failed query through.
  */
 async function refusedWithNewerFailure(
-  f: WriteOffFixture,
+  f: ReviewFixture,
   h: ReviewAdmin,
   result: 'pending' | 'success' | 'unknown',
 ): Promise<void> {
