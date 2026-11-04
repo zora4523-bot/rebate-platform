@@ -11,10 +11,15 @@
 // - version is the config item's version (0 without a row), so it grows with every save; the
 //   default list of a stored but unusable value keeps that row's version.
 // - Signatures are cached per signer (one kid) by the exact payload, i.e. per (app_id, env, version,
-//   origins): the same version is signed once, so the JWS and the /v1/config ETag stay stable.
+//   origins): the same version is signed once.
+// - The signature is deterministic ES256 (RFC 6979, @noble/curves p256, D10-621): sha256 of the
+//   ASCII signing input, no extra entropy, raw r‖s. The same key and payload give byte-identical
+//   JWS across restarts and instances, so the /v1/config ETag stays stable. The private scalar is
+//   derived in process from the KeyObject and never logged or written anywhere.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
-import { sign, type KeyObject } from 'node:crypto';
+import type { KeyObject } from 'node:crypto';
+import { p256 } from '@noble/curves/nist.js';
 
 export interface BridgeOriginsInput {
   readonly appId: string;
@@ -125,9 +130,28 @@ function base64url(text: string): string {
   return Buffer.from(text, 'utf8').toString('base64url');
 }
 
+/** The 32-byte private scalar of a P-256 private KeyObject (in process only). */
+function p256Scalar(privateKey: KeyObject): Uint8Array {
+  const d = privateKey.export({ format: 'jwk' }).d;
+  const scalar = typeof d === 'string' ? Buffer.from(d, 'base64url') : null;
+  if (scalar?.length !== 32) {
+    throw new Error('bridge origins: the signing key must be a P-256 private key');
+  }
+  return new Uint8Array(scalar);
+}
+
+/**
+ * Deterministic ES256 (RFC 6979 nonce, HMAC-DRBG over sha256): sha256(`signingInput`) signed with
+ * `scalar`, returned as the 64-byte r‖s of JWS. No extra entropy and no low-S normalization, so the
+ * output equals the RFC 6979 A.2.5 vectors and verifies as ES256 everywhere.
+ */
+export function deterministicEs256(signingInput: Uint8Array, scalar: Uint8Array): Uint8Array {
+  return p256.sign(signingInput, scalar, { prehash: true, lowS: false, format: 'compact' });
+}
+
 export class BridgeOriginsSigner {
   readonly #kid: string;
-  readonly #privateKey: KeyObject;
+  readonly #scalar: Uint8Array;
   readonly #header: string;
   readonly #cache = new Map<string, string>();
 
@@ -142,7 +166,7 @@ export class BridgeOriginsSigner {
     }
     if (key.kid === '') throw new Error('bridge origins: the signing key needs a kid');
     this.#kid = key.kid;
-    this.#privateKey = key.privateKey;
+    this.#scalar = p256Scalar(key.privateKey);
     this.#header = base64url(
       JSON.stringify({ alg: 'ES256', kid: key.kid, typ: BRIDGE_ORIGINS_JWS_TYPE }),
     );
@@ -179,10 +203,9 @@ export class BridgeOriginsSigner {
     const cached = this.#cache.get(payload);
     if (cached !== undefined) return { jws: cached };
     const signingInput = `${this.#header}.${base64url(payload)}`;
-    const signature = sign('sha256', Buffer.from(signingInput, 'ascii'), {
-      key: this.#privateKey,
-      dsaEncoding: 'ieee-p1363',
-    }).toString('base64url');
+    const signature = Buffer.from(
+      deterministicEs256(Buffer.from(signingInput, 'ascii'), this.#scalar),
+    ).toString('base64url');
     const jws = `${signingInput}.${signature}`;
     if (this.#cache.size >= CACHE_LIMIT) {
       const oldest = this.#cache.keys().next().value;
