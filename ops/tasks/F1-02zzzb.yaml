@@ -305,13 +305,13 @@ red_exempt:
     test: '[AC-F1-02c#20] 可选键 dict_version=12 形状非法整键回缺省并 warn'
     reason: 同文件只改 [AC-F1-02c#1] / [#2]（有效非缺省配置那条）的 bridge_origins 期望并从 #20 表移出 bridge_origins 行；本用例 / 本行的标题与用例体与主干逐字相同（D10-620，CT-06zzzb）
   - file: test/spec/content/config/delivery.int.test.ts
-    test: '[AC-F1-02c#20] 可选键 share_domains=[ ''valid.example.test'', 7 ] 形状非法整键回缺省并 warn'
+    test: "[AC-F1-02c#20] 可选键 share_domains=[ 'valid.example.test', 7 ] 形状非法整键回缺省并 warn"
     reason: 同文件只改 [AC-F1-02c#1] / [#2]（有效非缺省配置那条）的 bridge_origins 期望并从 #20 表移出 bridge_origins 行；本用例 / 本行的标题与用例体与主干逐字相同（D10-620，CT-06zzzb）
   - file: test/spec/content/config/delivery.int.test.ts
-    test: '[AC-F1-02c#20] 可选键 texts={ valid: ''keep?'', invalid: 7 } 形状非法整键回缺省并 warn'
+    test: "[AC-F1-02c#20] 可选键 texts={ valid: 'keep?', invalid: 7 } 形状非法整键回缺省并 warn"
     reason: 同文件只改 [AC-F1-02c#1] / [#2]（有效非缺省配置那条）的 bridge_origins 期望并从 #20 表移出 bridge_origins 行；本用例 / 本行的标题与用例体与主干逐字相同（D10-620，CT-06zzzb）
   - file: test/spec/content/config/delivery.int.test.ts
-    test: '[AC-F1-02c#20] 可选键 features.flags={ custom: true, bad: ''true'' } 形状非法整键回缺省并 warn'
+    test: "[AC-F1-02c#20] 可选键 features.flags={ custom: true, bad: 'true' } 形状非法整键回缺省并 warn"
     reason: 同文件只改 [AC-F1-02c#1] / [#2]（有效非缺省配置那条）的 bridge_origins 期望并从 #20 表移出 bridge_origins 行；本用例 / 本行的标题与用例体与主干逐字相同（D10-620，CT-06zzzb）
   - file: test/spec/content/config/delivery.int.test.ts
     test: '[AC-F1-02c#20] 可选键 help_links={ valid: [Object], bad: [Object] } 形状非法整键回缺省并 warn'
@@ -320,10 +320,10 @@ red_exempt:
     test: '[AC-F1-02c#20] 可选键 help_links={ bad: [Object] } 形状非法整键回缺省并 warn'
     reason: 同文件只改 [AC-F1-02c#1] / [#2]（有效非缺省配置那条）的 bridge_origins 期望并从 #20 表移出 bridge_origins 行；本用例 / 本行的标题与用例体与主干逐字相同（D10-620，CT-06zzzb）
   - file: test/spec/content/config/delivery.int.test.ts
-    test: '[AC-F1-02c#20] 可选键 external_hosts=[ ''valid.example.test'', '''' ] 形状非法整键回缺省并 warn'
+    test: "[AC-F1-02c#20] 可选键 external_hosts=[ 'valid.example.test', '' ] 形状非法整键回缺省并 warn"
     reason: 同文件只改 [AC-F1-02c#1] / [#2]（有效非缺省配置那条）的 bridge_origins 期望并从 #20 表移出 bridge_origins 行；本用例 / 本行的标题与用例体与主干逐字相同（D10-620，CT-06zzzb）
   - file: test/spec/content/config/delivery.int.test.ts
-    test: '[AC-F1-02c#20] 可选键 agent.examples=[ ''valid'', false ] 形状非法整键回缺省并 warn'
+    test: "[AC-F1-02c#20] 可选键 agent.examples=[ 'valid', false ] 形状非法整键回缺省并 warn"
     reason: 同文件只改 [AC-F1-02c#1] / [#2]（有效非缺省配置那条）的 bridge_origins 期望并从 #20 表移出 bridge_origins 行；本用例 / 本行的标题与用例体与主干逐字相同（D10-620，CT-06zzzb）
   - file: test/spec/content/config/delivery.int.test.ts
     test: '[AC-F1-02c#20] 可选键 agent.filing_text=1 形状非法整键回缺省并 warn'
@@ -524,25 +524,25 @@ red_exempt:
     test: '[AC-F1-02h#14] bridge 方法按配置原序下发，不依赖 bridge.schema 的方法清单'
     reason: 同文件只改 [AC-F1-02h#2] 跨 app 一步为三条断言（D10-624 甲）；本用例 / 本行的标题与用例体与主干逐字相同（CT-06zzzc）
   - file: test/spec/content/config-etag/delivery.int.test.ts
-    test: '[AC-F1-02h#15] 非法 bridge=[ ''login'' ] 整键回 [] 并记录键名 warn'
+    test: "[AC-F1-02h#15] 非法 bridge=[ 'login' ] 整键回 [] 并记录键名 warn"
     reason: 同文件只改 [AC-F1-02h#2] 跨 app 一步为三条断言（D10-624 甲）；本用例 / 本行的标题与用例体与主干逐字相同（CT-06zzzc）
   - file: test/spec/content/config-etag/delivery.int.test.ts
-    test: '[AC-F1-02h#15] 非法 bridge=[ ''clipboard.read'', 7 ] 整键回 [] 并记录键名 warn'
+    test: "[AC-F1-02h#15] 非法 bridge=[ 'clipboard.read', 7 ] 整键回 [] 并记录键名 warn"
     reason: 同文件只改 [AC-F1-02h#2] 跨 app 一步为三条断言（D10-624 甲）；本用例 / 本行的标题与用例体与主干逐字相同（CT-06zzzc）
   - file: test/spec/content/config-etag/delivery.int.test.ts
-    test: '[AC-F1-02h#15] 非法 bridge=[ ''a.b'', ''a.b'' ] 整键回 [] 并记录键名 warn'
+    test: "[AC-F1-02h#15] 非法 bridge=[ 'a.b', 'a.b' ] 整键回 [] 并记录键名 warn"
     reason: 同文件只改 [AC-F1-02h#2] 跨 app 一步为三条断言（D10-624 甲）；本用例 / 本行的标题与用例体与主干逐字相同（CT-06zzzc）
   - file: test/spec/content/config-etag/delivery.int.test.ts
     test: '[AC-F1-02h#15] 非法 bridge=clipboard.read 整键回 [] 并记录键名 warn'
     reason: 同文件只改 [AC-F1-02h#2] 跨 app 一步为三条断言（D10-624 甲）；本用例 / 本行的标题与用例体与主干逐字相同（CT-06zzzc）
   - file: test/spec/content/config-etag/delivery.int.test.ts
-    test: '[AC-F1-02h#15] 非法 bridge=[ ''Clipboard.read'' ] 整键回 [] 并记录键名 warn'
+    test: "[AC-F1-02h#15] 非法 bridge=[ 'Clipboard.read' ] 整键回 [] 并记录键名 warn"
     reason: 同文件只改 [AC-F1-02h#2] 跨 app 一步为三条断言（D10-624 甲）；本用例 / 本行的标题与用例体与主干逐字相同（CT-06zzzc）
   - file: test/spec/content/config-etag/delivery.int.test.ts
-    test: '[AC-F1-02h#15] 非法 bridge=[ ''clipboard.Read'' ] 整键回 [] 并记录键名 warn'
+    test: "[AC-F1-02h#15] 非法 bridge=[ 'clipboard.Read' ] 整键回 [] 并记录键名 warn"
     reason: 同文件只改 [AC-F1-02h#2] 跨 app 一步为三条断言（D10-624 甲）；本用例 / 本行的标题与用例体与主干逐字相同（CT-06zzzc）
   - file: test/spec/content/config-etag/delivery.int.test.ts
-    test: '[AC-F1-02h#15] 非法 bridge=[ ''clipboard.read.extra'' ] 整键回 [] 并记录键名 warn'
+    test: "[AC-F1-02h#15] 非法 bridge=[ 'clipboard.read.extra' ] 整键回 [] 并记录键名 warn"
     reason: 同文件只改 [AC-F1-02h#2] 跨 app 一步为三条断言（D10-624 甲）；本用例 / 本行的标题与用例体与主干逐字相同（CT-06zzzc）
   - file: test/spec/content/config-etag/delivery.int.test.ts
     test: '[AC-F1-02h#15] 非法 bridge=null 整键回 [] 并记录键名 warn'
