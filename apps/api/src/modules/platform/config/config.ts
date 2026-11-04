@@ -30,7 +30,7 @@ import type { EntryName } from '../entries.ts';
 import { readPayChannelsConfig, type PayChannelsConfig } from './pay-channels.ts';
 import { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 import { readSmsConfig, type SmsConfig } from './sms.ts';
-import type { StagingTestPhoneConfig } from './staging-test-phones.ts';
+import { readStagingTestPhoneConfig, type StagingTestPhoneConfig } from './staging-test-phones.ts';
 import { readTaobaoConfig, type TaobaoAppConfig } from './taobao.ts';
 import { readTaobaoSourceConfig } from './taobao-sources.ts';
 import { readTrustedProxies } from './trusted-proxies.ts';
@@ -409,6 +409,7 @@ export function loadConfig(
     if (appEnv.success)
       problems.push(...readUnionEndpointOverrideConfig(appEnv.data, env).problems);
     if (appEnv.success) problems.push(...readAgentUserHashConfig(appEnv.data, env).problems);
+    if (appEnv.success) problems.push(...readStagingTestPhoneConfig(appEnv.data, env).problems);
     problems.push(...readQueueConcurrencyConfig(env).problems);
     if (appEnv.success && entry !== undefined) {
       problems.push(...readPayChannelsConfig(appEnv.data, env, entry).problems);
@@ -476,6 +477,11 @@ export function loadConfig(
     env,
   );
   violations.push(...agentUserHashProblems);
+  const { stagingTestPhones, problems: stagingTestPhoneProblems } = readStagingTestPhoneConfig(
+    values.APP_ENV,
+    env,
+  );
+  violations.push(...stagingTestPhoneProblems);
   const { queueLimits, problems: queueProblems } = readQueueConcurrencyConfig(env);
   violations.push(...queueProblems);
   if (violations.length > 0) throw new ConfigError(violations);
@@ -522,6 +528,9 @@ export function loadConfig(
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(sms === undefined ? {} : { sms }),
     agentUserHashKey,
+    // Only present when configured (staging only, B1-02zza), so the documented shape of an
+    // unconfigured result is unchanged.
+    ...(stagingTestPhones === null ? {} : { stagingTestPhones }),
     // Only present when configured, so the documented shape of an unconfigured result is unchanged.
     ...(values.METRICS_PORT === undefined
       ? {}
