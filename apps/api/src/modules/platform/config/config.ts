@@ -30,6 +30,7 @@ import type { EntryName } from '../entries.ts';
 import { readPayChannelsConfig, type PayChannelsConfig } from './pay-channels.ts';
 import { readQueueConcurrencyConfig } from './queue-concurrency.ts';
 import { readSmsConfig, type SmsConfig } from './sms.ts';
+import type { StagingTestPhoneConfig } from './staging-test-phones.ts';
 import { readTaobaoConfig, type TaobaoAppConfig } from './taobao.ts';
 import { readTaobaoSourceConfig } from './taobao-sources.ts';
 import { readTrustedProxies } from './trusted-proxies.ts';
@@ -251,6 +252,12 @@ export interface AppConfig {
    * every message. A hand-built config without it counts as null.
    */
   readonly sms?: SmsConfig | null;
+  /**
+   * STAGING_TEST_PHONES / STAGING_TEST_SMS_CODE_FILE (./staging-test-phones.ts, B1-02zza, D10-611):
+   * staging only, both or neither; the numbers and the path of the fixed-code file (never the
+   * code). Absent or null: no test phone. A hand-built config without it counts as null.
+   */
+  readonly stagingTestPhones?: StagingTestPhoneConfig | null;
   /**
    * AGENT_USER_HASH_KEY (./agent-user-hash.ts, B3-09j; BR-AI-22): HMAC key of agent's deletion
    * purge. loadConfig fills it (null when unset outside prod; prod refuses to start without it).

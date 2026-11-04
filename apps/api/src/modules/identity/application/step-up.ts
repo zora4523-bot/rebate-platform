@@ -26,7 +26,7 @@ import { randomUUID } from 'node:crypto';
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
-import type { Clock, FieldCrypto, TokenPrincipal } from '../../platform/index.ts';
+import type { Clock, FieldCrypto, RootLogger, TokenPrincipal } from '../../platform/index.ts';
 import { PHONE_CIPHER_CONTEXT } from '../domain/registration.ts';
 import { STEP_UP_AUDIENCE, signScopedToken, type TokenKeyProvider } from './access-tokens.ts';
 import { configuredSeconds, instantPlus } from './config-seconds.ts';
@@ -83,6 +83,11 @@ export interface StepUpOptions {
   readonly sms: SmsCodeService;
   readonly attempts: OauthAttemptService;
   readonly thirdPartyIdentity?: ThirdPartyIdentityPort;
+  /**
+   * B1-02zza (D10-611): where the pino audit line of a staging test phone's step-up goes
+   * (event staging_test_phone_login, purpose step_up). identity.module passes the root logger.
+   */
+  readonly logger?: RootLogger;
 }
 
 /** Configuration key of the step_up_token lifetime (BR-ID-08). */

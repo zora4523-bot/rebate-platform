@@ -59,9 +59,11 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import {
   RedisUnavailableError,
+  type AppEnv,
   type Clock,
   type RedisHandle,
   type RootLogger,
+  type StagingTestPhones,
 } from '../../platform/index.ts';
 import { normalize_phone } from '../domain/normalize-phone.ts';
 import {
@@ -195,12 +197,32 @@ export interface SmsCodeOptions {
    * 60-second window, so a slow provider cannot let a second request for the phone through.
    */
   readonly sendTimeoutMs?: number;
+  /**
+   * B1-02zza (D10-611): APP_ENV of the entry. The staging test phones are honoured only when it is
+   * 'staging'; absent counts as not staging.
+   */
+  readonly appEnv?: AppEnv;
+  /**
+   * B1-02zza (FU-STAGING-TEST-PHONE, approvals #48): numbers whose app login / step_up codes are
+   * not handed to the sender (the random code is still drawn, stored and counted, every check and
+   * limit still runs) and whose check also takes the fixed code. Given with an appEnv other than
+   * 'staging', the service refuses to be built. Absent or null: none.
+   */
+  readonly stagingTestPhones?: StagingTestPhones | null;
+}
+/**
+ * The answer of verifyAndConsume. `staging_test_phone: true` only on 0 for a staging test phone
+ * (B1-02zza): the login / step-up service writes its pino audit line (staging_test_phone_login).
+ */
+export interface SmsVerifyResult {
+  readonly code: 0 | 20002 | 20003;
+  readonly staging_test_phone?: true;
 }
 export interface SmsCodeService {
   send(request: SmsRequest): Promise<SmsResult>;
   verifyAndConsume(
     request: Pick<SmsMessage, 'app_id' | 'phone' | 'purpose' | 'code'>,
-  ): Promise<{ readonly code: 0 | 20002 | 20003 }>;
+  ): Promise<SmsVerifyResult>;
 }
 
 /** Default bound of one send (review round 1 S3-2). */
