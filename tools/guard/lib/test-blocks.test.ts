@@ -2551,3 +2551,46 @@ it('[CT-06zzzc] compareOutsideChanged: a block wrapped, led by new code, moved p
     whole: true,
   });
 });
+
+it('[CT-06zzzc] compareOutsideChanged: the code ending an enclosing statement counts (do-while condition, IIFE arguments; Codex review r1 S2)', () => {
+  const body = "    it('[AC-9] loop', () => {\n      expect(a(n)).toBe(n);\n    });";
+  const doWhile = (cond: string, tail = ''): string =>
+    OUT_BASE.replace(
+      "  it('[AC-3] three'",
+      `  let n = 0;\n  do {\n${body}\n    n += 1;\n  } while (${cond})${tail};\n\n  it('[AC-3] three'`,
+    );
+  const base = doWhile('n < 2');
+  // The condition changed: the block inside the loop is changed (it must be red).
+  expect(outside(base, doWhile('n < 3')).changed).toMatchObject({
+    'cfg > [AC-1] one': false,
+    'cfg > [AC-9] loop': true,
+    'cfg > [AC-3] three': false,
+  });
+  // Unchanged condition, a change elsewhere outside the tests: the block stays unchanged.
+  const elsewhere = doWhile('n < 2').replace("  ['gamma', 3],\n", '');
+  expect(outside(base, elsewhere).changed['cfg > [AC-9] loop']).toBe(false);
+  // A body-less do-while around the block itself: its condition counts as well.
+  const bare = (cond: string): string =>
+    OUT_BASE.replace(
+      "  it('[AC-3] three', () => {\n    expect(a(3)).toBe(3);\n  });",
+      `  do it('[AC-3] three', () => {\n    expect(a(3)).toBe(3);\n  })\n  while (${cond});`,
+    );
+  expect(outside(bare('a(0)'), bare('a(1)')).changed['cfg > [AC-3] three']).toBe(true);
+  expect(outside(bare('a(0)'), bare('a(0)')).changed['cfg > [AC-3] three']).toBe(false);
+  // IIFE tails: the arguments of `}).call(…)` and `})(…)`.
+  const iife = (args: string, call = '.call'): string =>
+    OUT_BASE.replace(
+      "  it('[AC-3] three', () => {\n    expect(a(3)).toBe(3);\n  });",
+      `  (function (k) {\n  it('[AC-3] three', () => {\n    expect(a(k)).toBe(3);\n  });\n  })${call}(${args});`,
+    );
+  expect(outside(iife('this, 3'), iife('this, 4')).changed['cfg > [AC-3] three']).toBe(true);
+  expect(outside(iife('this, 3'), iife('this, 3')).changed['cfg > [AC-3] three']).toBe(false);
+  expect(outside(iife('3', ''), iife('4', '')).changed['cfg > [AC-3] three']).toBe(true);
+  expect(outside(iife('3', ''), iife('3', '')).changed['cfg > [AC-3] three']).toBe(false);
+  // A block statement ends at its line break: a statement after the loop is not its tail.
+  const after = (stmt: string): string =>
+    OUT_BASE.replace('    });\n  }\n', `    });\n  }\n  ${stmt}\n`);
+  expect(outside(after('const z = 1'), after('const z = 2')).changed).toMatchObject({
+    'cfg > [AC-2] group *': false,
+  });
+});

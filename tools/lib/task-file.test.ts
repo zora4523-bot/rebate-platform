@@ -172,9 +172,9 @@ describe('parseTaskFile', () => {
             `\n  - file: test/spec/a.test.ts\n    test: '[AC-${i + 1}] a'\n    reason: a reason of enough length`,
         ).join(''),
       );
-    expect(parseTaskFile(many(150), 'B2-02a.yaml').red_exempt).toHaveLength(150);
-    expect(messageOf(many(151), 'B2-02a.yaml')).toContain(
-      'red_exempt: 151 entries, the limit is 150',
+    expect(parseTaskFile(many(300), 'B2-02a.yaml').red_exempt).toHaveLength(300);
+    expect(messageOf(many(301), 'B2-02a.yaml')).toContain(
+      'red_exempt: 301 entries, the limit is 300',
     );
     // Not a list, not mappings, the same test twice.
     expect(messageOf(declared(' abc'), 'B2-02a.yaml')).toContain(
@@ -246,9 +246,9 @@ describe('parseTaskFile', () => {
           (_, i) => `\n  - file: test/spec/a${i}.test.ts\n    reason: a reason of enough length`,
         ).join(''),
       );
-    expect(parseTaskFile(many(150), 'B2-02a.yaml').red_exempt_outside).toHaveLength(150);
-    expect(messageOf(many(151), 'B2-02a.yaml')).toContain(
-      'red_exempt_outside: 151 entries, the limit is 150',
+    expect(parseTaskFile(many(300), 'B2-02a.yaml').red_exempt_outside).toHaveLength(300);
+    expect(messageOf(many(301), 'B2-02a.yaml')).toContain(
+      'red_exempt_outside: 301 entries, the limit is 300',
     );
   });
 

@@ -2414,3 +2414,28 @@ it('[CT-06zzzc] with renames and registered expected values: they apply first; a
   );
   expect(green.problems.map((p) => p.test)).toEqual([NOTIFY_CALLERS[0]]);
 });
+
+it('[CT-06zzzc] listed: a declared test inside do { … } while (cond) whose condition changed must be red; unchanged it may pass (Codex review r1 S2)', () => {
+  const loop = (cond: string, head: string): string =>
+    head.replace(
+      "  it('[AC-3] three', () => {\n    expect(a(3)).toBe(3);\n  });",
+      `  let n = 0;\n  do {\n  it('[AC-3] three', () => {\n    expect(a(3)).toBe(3);\n  });\n    n += 1;\n  } while (${cond});`,
+    );
+  const base = loop('n < 2', CFG_BASE);
+  const run = (cond: string) =>
+    checkRedReports(
+      [redReport(CFG, cfgTests())],
+      [CFG],
+      ROOT,
+      cfgBaselines(loop(cond, CFG_HEAD), CFG_OUTSIDE, base),
+      cfgDeclared(),
+    );
+  const changed = run('n < 3');
+  expect(changed.problems.map((p) => `${p.test}: ${p.reason}`)).toEqual([
+    'cfg > [AC-3] three: green on the skeleton: the test has no teeth (the file may read a test-support file the task changed and the ledger does not declare this test exempt)',
+  ]);
+  expect(changed.notes).toContain(
+    `${CFG} > cfg > [AC-3] three: declared exempt, but the declaration does not apply: the test is new or changed since the base (only an unchanged test may be declared exempt); the test must be red`,
+  );
+  expect(run('n < 2').ok).toBe(true);
+});

@@ -849,7 +849,8 @@ export function compareTestFile(base: string, head: string): FileComparison {
 //   changed lines outside the tests (`lines`, e.g. "L10-12, L33") the notes show the reviewer.
 // - A test block is unchanged only when the same block — same text, same describes (position and
 //   header), same enclosing brackets (each with the code that opens it back to the statement
-//   start: a loop's head, a describe call), same code leading to it in its statement (`if (x)`) —
+//   start: a loop's head, a describe call, and the code that ends that statement after it closes:
+//   a do-while condition, the arguments of `}).call(…)` / `})()`), same code leading to it in its statement (`if (x)`) —
 //   occurs exactly once at the base and once at the head, sits between the same aligned shared
 //   tokens (an edit elsewhere does not move it; moving it past an unchanged statement does), and
 //   the unchanged blocks keep their relative order. Everything else counts as changed.
@@ -921,6 +922,41 @@ function outsideView(source: string): OutsideView {
     }
     return k + 1 <= to - 1 ? joinTokens(tokens, k + 1, to - 1, sep) : '';
   };
+  // The code after the closing bracket `close` up to the end of its statement (CT-06zzzc, Codex
+  // review r1 S2): over bracketed groups (their content, test blocks included), up to and with a
+  // `;`, or up to an enclosing closing bracket, a test block or the end of the file. The body of
+  // a block statement (`{` after `)`, `do`, `else`, `try`, `finally`) ends its statement at a line
+  // break, unless `while`, `else`, `catch` or `finally` follows. Otherwise, without a `;` (ASI),
+  // it runs on into the next statements: more blocks count as changed, never fewer.
+  const BLOCK_HEAD = new Set([')', 'do', 'else', 'try', 'finally']);
+  const CONTINUES = new Set(['while', 'else', 'catch', 'finally']);
+  const trail = (close: number): string => {
+    const t0 = tokens[close] as Token;
+    const blockBody =
+      t0.text === '}' && BLOCK_HEAD.has(tokens[(match[close] as number) - 1]?.text ?? '');
+    let k = close + 1;
+    let end = close; // last token of the trail
+    while (k < tokens.length) {
+      const t = tokens[k] as Token;
+      if (inBlock[k]) break;
+      if (k === close + 1 && blockBody && t.nl && !CONTINUES.has(t.text)) break;
+      if (t.kind === 'punct') {
+        if (t.text === '(' || t.text === '[' || t.text === '{') {
+          end = match[k] as number;
+          k = end + 1;
+          continue;
+        }
+        if (t.text === ')' || t.text === ']' || t.text === '}') break;
+        if (t.text === ';') {
+          end = k;
+          break;
+        }
+      }
+      end = k;
+      k += 1;
+    }
+    return end > close ? joinTokens(tokens, close + 1, end, sep) : '';
+  };
   const stack: number[] = [];
   const enclosing = new Map<number, number[]>();
   const starts = new Set(tests.map((c) => c.start));
@@ -934,8 +970,13 @@ function outsideView(source: string): OutsideView {
     const around = suites.filter((s) => s.open < c.start && c.start < s.close);
     const show = (segments: readonly Segment[]): string =>
       segments.map((x) => (x === null ? '*' : x)).join('');
+    // Each enclosing bracket with the code that opens it and the code that ends its statement
+    // after it closes (Codex review r1 S2: the condition of `do { … } while (n < 2)`, the
+    // arguments of `}).call(…)` or `})()`).
     const enclosure = (enclosing.get(c.start) ?? [])
-      .map((o) => `${lead(o)}${sep(o)}${(tokens[o] as Token).text}`)
+      .map(
+        (o) => `${lead(o)}${sep(o)}${(tokens[o] as Token).text}\u0002${trail(match[o] as number)}`,
+      )
       .join('\u0001');
     return {
       pattern: patternOf(
@@ -948,6 +989,8 @@ function outsideView(source: string): OutsideView {
         enclosure,
         lead(c.start),
         joinTokens(tokens, c.start, c.end, sep),
+        // A block that does not end its statement (`do it(…) while (c)`): the rest of it.
+        (tokens[c.end] as Token).text === ';' ? '' : trail(c.end),
       ].join('\u0000'),
       anchor: anchor[c.start] as number,
     };

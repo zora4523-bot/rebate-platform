@@ -203,7 +203,9 @@ export const RED_EXEMPT_REASON_MIN = 10;
 // CT-06zzzb (D10-620): raised from 50 to 150. The cap only bounds the task file's length (the section is
 // not counted in the 40-line limit); every exemption is still checked one by one by the orchestrator and
 // red-check still judges every test that is not exempt, so a higher cap does not weaken the red run.
-export const RED_EXEMPT_MAX = 150;
+// CT-06zzzc (D10-624): raised from 150 to 300, for the same reason as D10-620 (red_exempt_outside
+// shares the cap).
+export const RED_EXEMPT_MAX = 300;
 
 export const TASK_REPOS = ['rebate-platform', 'ios', 'android', 'harmony'] as const;
 export const TASK_TYPES = [
