@@ -1,3 +1,4 @@
+import type { ConfigSignKeyConfig } from './config-sign-key.ts';
 // Environment configuration (ADR-0001 §2 配置校验): validated once at startup with zod.
 // `loadConfig` is pure: it only looks at the object it is given.
 import { z } from 'zod';
@@ -113,6 +114,8 @@ type EnvKey = keyof z.input<typeof envSchema>;
 const ENV_KEYS = Object.keys(envSchema.shape) as EnvKey[];
 
 export interface AppConfig {
+  /** F1-02zzzb: api-only configuration signing file, separate from JWT. */
+  readonly configSignKey?: ConfigSignKeyConfig | null;
   /**
    * MEDIA_PUBLIC_BASE_URL (./media.ts, F1-06z): https base of stored media files. loadConfig gives
    * the local / test default when unset there; undefined in staging / prod when unset (media writes
