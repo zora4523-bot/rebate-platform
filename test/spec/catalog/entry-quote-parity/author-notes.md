@@ -131,8 +131,23 @@ red_exempt 更新（取代上文「需要编排用 red_exempt 声明的」第一
 
 两个文件的 `COMPARE`、`PLATFORMS` 导入仍被别的用例使用，所以保留。failures 里搬进来的 `await expect(…).rejects.toThrow()` 去掉三元后不到 100 列，按 prettier 合成一行，只是换行不同，内容一样。
 
+## 第 6 次（D10-673：catalog/search 两条漏网冻结用例）
+
+台账头 `ae9b994d8`。搜索 kit（`catalog/search/kit.ts`）的报价替身按请求口径作答：normal → min = max = 上限；风险口径 → min = 下限、max = 上限。D10-641 后搜索按 normal 请求，所以这两条的期望要跟着改成单值。kit.ts 与其他用例没动。下文「对账」原先把 availability.test.ts 列为不涉及口径，那句写错了，已从对账清单里删掉。
+
+1. `catalog/search/availability.test.ts` [AC-B1-05d#29]「搜索开启但转链关闭时仍出卡；只登记链接和报价，不转链」：标题与其他断言不动。
+   - 改前：`quote: expect.objectContaining({ rebateMinFen: 10n, rebateMaxFen: 20n })`
+   - 改后：`quote: expect.objectContaining({ rebateMinFen: 20n, rebateMaxFen: 20n, rebateBasis: 'normal' })`
+   - 为什么：下单前一律单值、口径 normal（D10-641）；旧实现请求风险口径，替身回 10–20、price_compare_risk，红在 `register` 的 `toHaveBeenCalledExactlyOnceWith` 断言。
+2. `catalog/search/filter-sort.test.ts` [AC-B1-05d#7]：
+   - 标题改前：「[AC-B1-05d#7] 返利排序用下限而非上限或佣金率，不请求联盟按返利排序」；改后：「[AC-B1-05d#7] BR-PRICE-15：返利排序按单值返利降序，不请求联盟按返利排序」。
+   - `f.quotes.set` 三行不变（max-only 20–900、min-winner 30–40、zero-min 0–950）；按 normal 请求时替身回 900、40、950。
+   - 期望顺序改前：`min-winner → max-only → zero-min`（按下限 30 > 20 > 0）；改后：`zero-min（950）→ max-only（900）→ min-winner（40）`。
+   - `f.search` 只请求 `relevance` 的断言保留。
+   - 为什么：min = max 以后没有上下限之分，排序就按单值返利（D10-641、BR-PRICE-15）；旧实现按风险口径取下限，排出 min-winner 打头，红在顺序的 `toEqual` 断言。
+
 ## 对账：test_paths 内没改的
 
-`catalog/search/availability.test.ts`（不涉及口径）、`catalog/price-state/anomalies.test.ts` 与 `kit.ts`（kit 的替身按 context 回 433–433 / 211–433，已兼容）、`catalog/hot-rank-upstream/*.test.ts`、`commission/quoter/versions.test.ts`、`live-only/**`、`reader.int.test.ts`（都只用 NORMAL）。
+`catalog/price-state/anomalies.test.ts` 与 `kit.ts`（kit 的替身按 context 回 433–433 / 211–433，已兼容）、`catalog/hot-rank-upstream/*.test.ts`、`commission/quoter/versions.test.ts`、`live-only/**`、`reader.int.test.ts`（都只用 NORMAL）。
 
 test_paths 外仍出现旧口径字样的，都只在夹具里（配置行带比价 5000，或替身注入的 Agent 卡 / 登记入参带 price_compare_risk），没动：search-route/wiring、agent/tools-search/search、linking/promo-url/rules（Agent 工具侧放行代码不动）、各 int 夹具的配置行。
