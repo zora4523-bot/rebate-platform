@@ -169,6 +169,15 @@
 // lines around it) with the declared reason, for the rule-test reviewer, who confirms them with
 // the exemptions (spec_test_review.red_exempt_confirmed, also required when the ledger has
 // red_exempt_outside), and for the orchestrator. A file not listed is judged exactly as before.
+// A listed file whose every test is unchanged and declared (CT-06zzzd; orchestrator rulings
+// D10-629 / D10-630, after F1-02zzzb's config-etag/domain.int.test.ts, whose 22 tests are all
+// declared) is left out of the expected list, as a renamed-only file (outsideOnlyFiles): not run,
+// not judged, neither here nor in tools/ci/evidence-check.ts, whose coverage rule is unchanged.
+// Only when every test block is unchanged, certainly produces a known number of tests (a plain
+// test, or an inline `.each([…])` array, directly in plain describes) and the ledger declares
+// that many full names for it; the notes say which file, why, its changed lines and that the
+// reviewer and the orchestrator confirm it. Otherwise the file stays expected: a file whose every
+// test is declared still fails, listed or not.
 import { matchesAny } from '../../lib/glob.ts';
 import type { Change } from '../../lib/git.ts';
 import { RED_EXEMPT_REASON_MIN } from '../../lib/task-file.ts';
@@ -518,6 +527,78 @@ export function renamesHit(
     });
   }
   return renames.filter((_, index) => hit.has(index));
+}
+
+/**
+ * A rule-test file left out of the expected list because the ledger lists it in red_exempt_outside
+ * and declares every one of its tests, all unchanged (CT-06zzzd, D10-629 / D10-630): `lines` the
+ * head lines of its changes outside the tests, `reason` the listing's, `tests` how many.
+ */
+export type OutsideOnly = { file: string; lines: string; reason: string; tests: number };
+
+/**
+ * The files among `files` that existed at the base and are left out of the expected list
+ * (CT-06zzzd, D10-630; see the header), as renamedOnlyFiles: red-check.ts --print-expected, the
+ * check itself and tools/ci/evidence-check.ts all call it. A file qualifies only when all hold:
+ * - it is listed in red_exempt_outside and, after the renames and the registered expected values,
+ *   compareOutsideChanged applied to it (ruleTestBaselines: kind `support` with `outside.lines`);
+ * - no registered expected value of it is void, and no test block is new or changed (a block
+ *   calling a registered changed helper counts as changed);
+ * - every block certainly produces a known number of tests (ComparedBlock.cases) and the ledger's
+ *   red_exempt declares that many distinct full names for it, each declaration of the file
+ *   matching exactly one block, each with a reason of RED_EXEMPT_REASON_MIN characters.
+ * Anything else stays expected and is judged as before (CT-06zzzc). Test-support files are not
+ * consulted: whether the file may read one does not change the outcome (its tests are declared).
+ */
+export function outsideOnlyFiles(
+  files: readonly string[],
+  read: Pick<BaselineReader, 'base' | 'head'>,
+  renames: readonly RenameDeclaration[],
+  expectedValues: readonly ExpectedValueDeclaration[],
+  outside: readonly RedExemptOutsideDeclaration[],
+  declared: readonly RedExemptDeclaration[],
+): OutsideOnly[] {
+  if (outside.length === 0) return [];
+  const listed = new Set(outside.map((o) => o.file));
+  const candidates = [...new Set(files)].filter((f) => listed.has(f)).sort();
+  const baselines = ruleTestBaselines(
+    candidates,
+    [],
+    [],
+    { base: read.base, head: read.head },
+    renames,
+    expectedValues,
+    outside,
+  );
+  const out: OutsideOnly[] = [];
+  for (const file of candidates) {
+    const b = baselines.get(file);
+    if (b?.kind !== 'support' || b.outside?.lines === undefined) continue;
+    if ((b.expectedValues?.void.length ?? 0) > 0) continue;
+    if (b.blocks.length === 0) continue;
+    if (b.blocks.some((x) => x.changed || typeof x.cases !== 'number' || x.cases < 1)) continue;
+    const mine = declared.filter((d) => d.file === file);
+    const names = b.blocks.map(() => new Set<string>());
+    let ok = true;
+    for (const d of mine) {
+      const hits = b.blocks.flatMap((x, i) => (x.pattern.test(d.test) ? [i] : []));
+      if (hits.length !== 1 || d.reason.trim().length < RED_EXEMPT_REASON_MIN) {
+        ok = false;
+        break;
+      }
+      names[hits[0] as number]?.add(d.test);
+    }
+    if (!ok) continue;
+    if (b.blocks.some((x, i) => (names[i]?.size ?? 0) < (x.cases as number))) continue;
+    const tests = b.blocks.reduce((n, x) => n + (x.cases as number), 0);
+    out.push({ file, lines: b.outside.lines, reason: b.outside.reason, tests });
+  }
+  return out;
+}
+
+/** The note that says a file was left out by red_exempt_outside (CT-06zzzd, D10-630). */
+export function outsideOnlyNote(r: OutsideOnly): string {
+  return `${r.file}: all ${r.tests} tests unchanged and declared exempt; allowed because the file is declared in red_exempt_outside (D10-629 / D10-630; reason: ${r.reason}), left out of the expected list (not run, not judged): nothing in it is shown red; code outside the tests changed at ${r.lines} (head lines; a removal is shown at the lines around it); the rule-test reviewer confirms these changes with the exemptions (evidence spec_test_review.red_exempt_confirmed) and the orchestrator checks them one by one (#24)`;
 }
 
 /** The note that says a file was left out of the expected list (CT-06zxc). */

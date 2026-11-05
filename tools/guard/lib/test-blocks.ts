@@ -756,6 +756,14 @@ export type ComparedBlock = {
   title: string;
   /** False only when the block is the same as at the base (see the header). */
   changed: boolean;
+  /**
+   * CT-06zzzd (D10-630; compareOutsideChanged only): how many tests the block certainly
+   * produces, each run once — 1 for a plain test, the elements of an inline `.each([…])` /
+   * `.for([…])` array — or null when that cannot be told for certain (a table by name or as a
+   * template, a spread, a modifier such as `.skip` / `.only` / `.skipIf`, a loop, a branch, a
+   * function or a parameterised describe around it). Absent from compareTestFile's blocks.
+   */
+  cases?: number | null;
 };
 
 export type FileComparison =
@@ -868,7 +876,13 @@ type OutsideView = {
   units: string[];
   /** The 1-based first and last source line of each shared token. */
   span: [number, number][];
-  blocks: { pattern: RegExp; title: string; key: string; anchor: number }[];
+  blocks: {
+    pattern: RegExp;
+    title: string;
+    key: string;
+    anchor: number;
+    cases: number | null;
+  }[];
 };
 
 function outsideView(source: string): OutsideView {
@@ -966,6 +980,68 @@ function outsideView(source: string): OutsideView {
     if (t.text === '(' || t.text === '[' || t.text === '{') stack.push(k);
     else if (t.text === ')' || t.text === ']' || t.text === '}') stack.pop();
   });
+  // CT-06zzzd (D10-630): how many tests a call certainly produces (ComparedBlock.cases).
+  const UNSURE = new Set(['skip', 'todo', 'only', 'fails', 'skipIf', 'runIf']);
+  const plainChain = (from: number, open: number): boolean => {
+    for (let k = from; k < open; k += 1) {
+      const t = tokens[k] as Token;
+      if (t.kind === 'id' && UNSURE.has(t.text)) return false;
+    }
+    return true;
+  };
+  const casesOf = (c: Call): number | null => {
+    if (!plainChain(c.start, c.open)) return null;
+    for (let k = c.start; k < c.open; k += 1) {
+      const t = tokens[k] as Token;
+      if (t.kind !== 'id' || (t.text !== 'each' && t.text !== 'for')) continue;
+      if (tokens[k - 1]?.text !== '.') continue;
+      const p = k + 1;
+      if (tokens[p]?.text !== '(' || tokens[p + 1]?.text !== '[') return null;
+      const close = match[p + 1] as number;
+      if (close + 1 !== match[p]) return null; // more than the one array argument
+      let count = 0;
+      let item = false;
+      for (let j = p + 2; j < close; j += 1) {
+        const u = tokens[j] as Token;
+        if (u.text === '...') return null;
+        if (u.text === ',') {
+          if (!item) return null; // a hole
+          count += 1;
+          item = false;
+          continue;
+        }
+        item = true;
+        if (u.text === '(' || u.text === '[' || u.text === '{') j = match[j] as number;
+      }
+      return count + (item ? 1 : 0);
+    }
+    return 1;
+  };
+  // Only describes (without `.each` / `.for` / modifiers) and their callback bodies around it.
+  const plainSuite = (s: Call): boolean => {
+    if (!plainChain(s.start, s.open)) return false;
+    for (let k = s.start; k < s.open; k += 1) {
+      const t = tokens[k] as Token;
+      if (t.kind === 'id' && (t.text === 'each' || t.text === 'for')) return false;
+    }
+    return true;
+  };
+  const surely = (c: Call): boolean => {
+    if (lead(c.start) !== '') return false;
+    const chain = enclosing.get(c.start) ?? [];
+    return chain.every((o, i) => {
+      const suite = suites.find((s) => s.open === o);
+      if (suite !== undefined) return plainSuite(suite);
+      const outer = chain[i - 1];
+      const t = tokens[o] as Token;
+      return (
+        t.text === '{' &&
+        outer !== undefined &&
+        suites.some((s) => s.open === outer) &&
+        ['=>', ')'].includes(tokens[o - 1]?.text ?? '')
+      );
+    });
+  };
   const blocks = tests.map((c) => {
     const around = suites.filter((s) => s.open < c.start && c.start < s.close);
     const show = (segments: readonly Segment[]): string =>
@@ -993,6 +1069,7 @@ function outsideView(source: string): OutsideView {
         (tokens[c.end] as Token).text === ';' ? '' : trail(c.end),
       ].join('\u0000'),
       anchor: anchor[c.start] as number,
+      cases: surely(c) ? casesOf(c) : null,
     };
   });
   return { units, span, blocks };
@@ -1156,6 +1233,7 @@ export function compareOutsideChanged(base: string, head: string): OutsideCompar
       pattern: b.pattern,
       title: b.title,
       changed: !unchanged.has(j),
+      cases: b.cases,
     })),
     lines: lineRanges(changedLines),
   };

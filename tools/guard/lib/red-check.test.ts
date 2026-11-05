@@ -21,6 +21,8 @@ import {
   scriptFaultConsoleError,
   unusedExpectedValueNotes,
   unusedOutsideNotes,
+  outsideOnlyFiles,
+  outsideOnlyNote,
   smokeCauseVerdict,
   smokeDiagnosticsOf,
   smokeDiagnosticsVerdict,
@@ -2438,4 +2440,188 @@ it('[CT-06zzzc] listed: a declared test inside do { … } while (cond) whose con
     `${CFG} > cfg > [AC-3] three: declared exempt, but the declaration does not apply: the test is new or changed since the base (only an unchanged test may be declared exempt); the test must be red`,
   );
   expect(run('n < 2').ok).toBe(true);
+});
+
+// CT-06zzzd (D10-629 / D10-630, after F1-02zzzb's config-etag/domain.int.test.ts): a listed file
+// whose every test is unchanged and declared is left out of the expected list.
+const ETAG = 'test/spec/content/config-etag/domain.int.test.ts';
+const ETAG_BASE = [
+  "import { describe, expect, it } from 'vitest';",
+  "import { configEtag } from './etag.ts';",
+  '',
+  "const data = () => ({ bridge_origins: ['a'] });",
+  '',
+  "it('[AC-30] normalises keys', () => {",
+  '  expect(configEtag(data())).toBe(configEtag(data()));',
+  '});',
+  '',
+  "describe('order', () => {",
+  "  it('[AC-31] keeps arrays', () => {",
+  '    expect(configEtag([1, 2])).not.toBe(configEtag([2, 1]));',
+  '  });',
+  '',
+  '  it.each([',
+  "    ['x', 1],",
+  "    ['y', 2],",
+  "  ])('[AC-32] case %s', (k, n) => {",
+  "    expect(configEtag({ [k]: n })).toBeTypeOf('string');",
+  '  });',
+  '});',
+  '',
+].join('\n');
+/** The F1-02zzzb shape: an import for a contract type and a signed fixture value; no test touched. */
+const ETAG_HEAD = ETAG_BASE.replace(
+  "import { configEtag } from './etag.ts';",
+  "import { configEtag } from './etag.ts';\nimport { signedFixture } from './sign.ts';",
+).replace("bridge_origins: ['a']", 'bridge_origins: signedFixture()');
+const ETAG_TESTS = [
+  '[AC-30] normalises keys',
+  'order > [AC-31] keeps arrays',
+  'order > [AC-32] case x',
+  'order > [AC-32] case y',
+];
+const ETAG_REASON = 'the contract type needs the import and a signed fixture value';
+const ETAG_OUTSIDE = [{ file: ETAG, reason: ETAG_REASON }];
+const etagDeclared = (tests: string[] = ETAG_TESTS) =>
+  tests.map((test) => ({ file: ETAG, test, reason: REASON }));
+const etagRead = (head = ETAG_HEAD) => reader({ [ETAG]: ETAG_BASE }, { [ETAG]: head });
+const etagBaselines = (head = ETAG_HEAD, outside = ETAG_OUTSIDE) =>
+  ruleTestBaselines(
+    [ETAG],
+    [{ path: ETAG, status: 'M' }],
+    ['test/spec/content/**'],
+    etagRead(head),
+    [],
+    [],
+    outside,
+  );
+const etagReport = (green: string[] = ETAG_TESTS) =>
+  redReport(
+    ETAG,
+    ETAG_TESTS.map((n) => (green.includes(n) ? [n, 'passed'] : [n, 'failed', 'AssertionError: x'])),
+  );
+
+it('[CT-06zzzd] listed, every test unchanged and declared: left out of the expected list (not run, not judged), the note says why', () => {
+  const left = outsideOnlyFiles([ETAG], etagRead(), [], [], ETAG_OUTSIDE, etagDeclared());
+  expect(left).toEqual([{ file: ETAG, lines: 'L3, L5', reason: ETAG_REASON, tests: 4 }]);
+  expect(outsideOnlyNote(left[0] as (typeof left)[number])).toBe(
+    `${ETAG}: all 4 tests unchanged and declared exempt; allowed because the file is declared in red_exempt_outside (D10-629 / D10-630; reason: ${ETAG_REASON}), left out of the expected list (not run, not judged): nothing in it is shown red; code outside the tests changed at L3, L5 (head lines; a removal is shown at the lines around it); the rule-test reviewer confirms these changes with the exemptions (evidence spec_test_review.red_exempt_confirmed) and the orchestrator checks them one by one (#24)`,
+  );
+  // Without the listing nothing is left out.
+  expect(outsideOnlyFiles([ETAG], etagRead(), [], [], [], etagDeclared())).toEqual([]);
+});
+
+it('[CT-06zzzd] not listed: unchanged; every test declared still fails with the same problem', () => {
+  expect(outsideOnlyFiles([ETAG], etagRead(), [], [], [], etagDeclared())).toEqual([]);
+  const notListed = checkRedReports(
+    [etagReport()],
+    [ETAG],
+    ROOT,
+    etagBaselines(ETAG_HEAD, []),
+    etagDeclared(),
+  );
+  expect(notListed.problems.map((p) => p.test)).toEqual(ETAG_TESTS);
+  expect(notListed.notes).toContain(
+    `${ETAG}: 4 declared exemption(s) do not apply: code outside the tests changed (imports, helpers, hooks, top-level tables or describe titles) (a declaration applies only to a file judged as a whole because it may read a changed test-support file)`,
+  );
+  // Not listed, every test declared, only a support file changed (CT-06r): the same failure.
+  const support = ruleTestBaselines(
+    [ETAG],
+    [
+      { path: ETAG, status: 'M' },
+      { path: 'test/spec/content/config-etag/etag.ts', status: 'M' },
+    ],
+    ['test/spec/content/**'],
+    reader(
+      { [ETAG]: ETAG_BASE },
+      { [ETAG]: ETAG_BASE, 'test/spec/content/config-etag/etag.ts': 'export {};\n' },
+    ),
+  );
+  const every = checkRedReports([etagReport()], [ETAG], ROOT, support, etagDeclared());
+  expect(every.problems).toEqual([
+    {
+      file: ETAG,
+      test: null,
+      reason:
+        'existed at the base and every test is declared exempt: nothing is shown red (4 test(s); evidence-check wants a red test of every expected file)',
+    },
+  ]);
+});
+
+it('[CT-06zzzd] listed with a new or a changed test, or a declared test that changed: not left out; those tests must be red', () => {
+  const added = ETAG_HEAD.replace(
+    '\n});\n',
+    "\n\n  it('[AC-33] new', () => {\n    expect(1).toBe(1);\n  });\n});\n",
+  );
+  expect(added).not.toBe(ETAG_HEAD);
+  expect(outsideOnlyFiles([ETAG], etagRead(added), [], [], ETAG_OUTSIDE, etagDeclared())).toEqual(
+    [],
+  );
+  // A declared test whose own block changed: not left out, it must be red (green is a problem).
+  const changed = ETAG_HEAD.replace('not.toBe(configEtag([2, 1]))', 'toBe(configEtag([2, 1]))');
+  expect(outsideOnlyFiles([ETAG], etagRead(changed), [], [], ETAG_OUTSIDE, etagDeclared())).toEqual(
+    [],
+  );
+  const result = checkRedReports(
+    [etagReport()],
+    [ETAG],
+    ROOT,
+    etagBaselines(changed),
+    etagDeclared(),
+  );
+  expect(result.problems.map((p) => p.test)).toEqual(['order > [AC-31] keeps arrays']);
+  expect(result.notes).toContain(
+    `${ETAG} > order > [AC-31] keeps arrays: declared exempt, but the declaration does not apply: the test is new or changed since the base (only an unchanged test may be declared exempt); the test must be red`,
+  );
+  // Red for a valid reason, it passes (the file stays expected and is judged).
+  expect(
+    checkRedReports(
+      [etagReport(ETAG_TESTS.filter((t) => t !== 'order > [AC-31] keeps arrays'))],
+      [ETAG],
+      ROOT,
+      etagBaselines(changed),
+      etagDeclared(),
+    ).ok,
+  ).toBe(true);
+});
+
+it('[CT-06zzzd] listed but not every test certainly declared: a missing case, a table by name, a loop, a modifier, a declaration matching two blocks', () => {
+  const left = (head: string, declared = etagDeclared()) =>
+    outsideOnlyFiles([ETAG], etagRead(head), [], [], ETAG_OUTSIDE, declared);
+  // One case of the .each table not declared.
+  expect(left(ETAG_HEAD, etagDeclared(ETAG_TESTS.slice(0, 3)))).toEqual([]);
+  // A declaration with a short reason.
+  expect(
+    left(ETAG_HEAD, [
+      ...etagDeclared(ETAG_TESTS.slice(1)),
+      declare(ETAG_TESTS[0] as string, 'short', ETAG),
+    ]),
+  ).toEqual([]);
+  // The same edit on bases where the number of tests cannot be told for certain.
+  const variant = (from: string, to: string) => {
+    const base = ETAG_BASE.replace(from, to);
+    const head = ETAG_HEAD.replace(from, to);
+    expect(head).not.toBe(ETAG_HEAD);
+    return outsideOnlyFiles(
+      [ETAG],
+      reader({ [ETAG]: base }, { [ETAG]: head }),
+      [],
+      [],
+      ETAG_OUTSIDE,
+      etagDeclared(),
+    );
+  };
+  expect(variant("  it.each([\n    ['x', 1],\n    ['y', 2],\n  ])", '  it.each(ROWS)')).toEqual([]);
+  expect(variant("    ['y', 2],\n", '    ...MORE,\n')).toEqual([]);
+  expect(variant("it('[AC-30]", "it.skipIf(a)('[AC-30]")).toEqual([]);
+  expect(variant("describe('order', () => {", "describe.each([1])('order', () => {")).toEqual([]);
+  expect(
+    variant(
+      "it('[AC-30] normalises keys', () => {\n  expect(configEtag(data())).toBe(configEtag(data()));\n});",
+      "for (const k of [1]) {\n  it('[AC-30] normalises keys', () => {\n    expect(k).toBe(1);\n  });\n}",
+    ),
+  ).toEqual([]);
+  expect(variant("it('[AC-30]", "if (a) it('[AC-30]")).toEqual([]);
+  // The control: the plain shape is left out.
+  expect(left(ETAG_HEAD)).toHaveLength(1);
 });
