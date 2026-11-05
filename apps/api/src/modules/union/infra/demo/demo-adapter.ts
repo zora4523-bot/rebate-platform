@@ -548,9 +548,11 @@ export class DemoUnionAdapter implements UnionAdapter {
       claims.promotionSlot,
     ]).slice(0, 20);
     const base = `https://${DEMO_HOST}/${this.platform}/authority`;
+    // D10-662: schema_url is an obvious demo App scheme (never a platform scheme); the two web
+    // fields stay https on the demo host, all three distinct.
     return Object.freeze({
       url: `${base}/page/${tag}`,
-      schema_url: `${base}/app/${tag}`,
+      schema_url: `couli-demo://${this.platform}/authority/${tag}`,
       mobile_short_url: `${base}/m/${tag}`,
     });
   }

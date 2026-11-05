@@ -18,9 +18,10 @@
 // B1-06zf (FU-PDD-AUTH-LINK, D10-647): the Pinduoduo auth_url / auth_jump is the filing link
 // UnionAdapter.pddAuthorityUrl generates at this request for the identity the conversion uses
 // (pdd-authority.ts pddAuthorityIdentity: this App, the self_buy slot of the account this
-// authorization uses, custom_parameters {app, uid=attr_code, sc}, never a user_id), picked
-// schema_url → mobile_short_url → url; the state is only in union_auth_sessions, never in the
-// link. No slot or attr_code → 50301 maintenance; the port missing or failing → 50303; neither
+// authorization uses, custom_parameters {app, uid=attr_code, sc}, never a user_id). D10-662:
+// auth_url and the h5 / universal-link steps carry the web address (mobile_short_url → url); the
+// scheme step is the upstream schema_url as is (built from the web address only when there is
+// none); the state is only in union_auth_sessions, never in the link. No slot or attr_code → 50301 maintenance; the port missing or failing → 50303; neither
 // leaves a state. Taobao keeps its synthetic address (syntheticAuthUrl).
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
@@ -34,7 +35,12 @@ import {
   pathsOf,
   type LinkConversionOptions,
 } from './link-open-conversion.ts';
-import { PDD, generatePddAuthorityLink, pddAuthorityIdentity } from './pdd-authority.ts';
+import {
+  PDD,
+  generatePddAuthorityLink,
+  pddAuthorityIdentity,
+  type PddAuthorityLink,
+} from './pdd-authority.ts';
 import { createJumpAdmission, type LinkOpenEnvironment } from './link-open-wiring.ts';
 import { createLinkingPidReader } from '../infra/pid-reader.ts';
 import { AuthConfigError, createUnionAuthReads, type AuthClient } from './union-auth-reads.ts';
@@ -147,10 +153,12 @@ function authStep(step: { readonly type: string; readonly value: string }): Auth
  * the device record's client and installed (missing → unknown), over the authorization page's
  * paths; in prod only the paths the open admits (none admitted → AuthConfigError, no state).
  * Shared by auth-url and the Pinduoduo open's 30111 (B1-06v, link-open-pdd-auth.ts).
+ * D10-662: the h5 / universal-link steps carry link.webUrl; the scheme step is link.scheme as the
+ * union answered it (never wrapped again), else the apps.json scheme wrapping the web address.
  */
 export function pddAuthJump(
   environment: { readonly appEnv: AppEnv; readonly jumpEnvironment?: LinkOpenEnvironment },
-  authUrl: string,
+  link: PddAuthorityLink,
   client: AuthClient,
   installed: UnionAuthUrlInput['installed'],
   expireAt: Date,
@@ -163,7 +171,7 @@ export function pddAuthJump(
     platform: 'pdd',
     client,
     installed: installed ?? 'unknown',
-    paths: pathsOf('pdd', authUrl, appSchemeOf(jumpEnvironment?.apps, 'pdd')),
+    paths: pddAuthPaths(link, appSchemeOf(jumpEnvironment?.apps, 'pdd')),
     expireAt: expireAt.toISOString(),
   });
   const admitted =
@@ -178,6 +186,12 @@ export function pddAuthJump(
     fallbacks: admitted.fallbacks.map(authStep),
     expire_at: admitted.expire_at,
   };
+}
+
+/** The authorization page's launch paths (D10-662): the upstream scheme as is, else derived. */
+function pddAuthPaths(link: PddAuthorityLink, appScheme: string | null) {
+  const paths = pathsOf('pdd', link.webUrl, appScheme);
+  return link.scheme === null ? paths : { ...paths, scheme: link.scheme };
 }
 
 export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlService {
@@ -229,7 +243,7 @@ export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlSe
     }
 
     const methods = platform === 'taobao' ? await reads.configuredMethods(appId, client) : null;
-    let pddLink: string | null = null;
+    let pddLink: PddAuthorityLink | null = null;
     if (platform === 'pdd') {
       // The identity the conversion and the filing query use (no state exists yet).
       const identity = await pddAuthorityIdentity(
@@ -272,12 +286,12 @@ export function createUnionAuthUrl(options: UnionAuthUrlOptions): UnionAuthUrlSe
     const expireAt = clock.now();
     expireAt.setTime(now.getTime() + AUTH_STATE_TTL_MS);
     const state = newAuthState();
-    const authUrl = pddLink ?? syntheticAuthUrl('taobao', state);
+    const authUrl = pddLink?.webUrl ?? syntheticAuthUrl('taobao', state);
     const authJump =
-      methods === null
+      methods === null && pddLink !== null
         ? pddAuthJump(
             { appEnv, ...(jumpEnvironment === undefined ? {} : { jumpEnvironment }) },
-            authUrl,
+            pddLink,
             client,
             input.installed,
             expireAt,

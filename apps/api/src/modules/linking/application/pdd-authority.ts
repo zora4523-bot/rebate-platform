@@ -180,20 +180,31 @@ export async function queryPddAuthority(
 }
 
 /**
- * B1-06zf (FU-PDD-AUTH-LINK): the one link of a UnionAdapter.pddAuthorityUrl answer the
- * authorization jump is built over — schema_url, else mobile_short_url, else url.
+ * B1-06zf (FU-PDD-AUTH-LINK, D10-662): the two things of a UnionAdapter.pddAuthorityUrl answer the
+ * authorization jump is built over — the web address (mobile_short_url, else url; an https page the
+ * h5 / universal-link steps and auth_url carry) and the upstream App scheme (schema_url as is, else
+ * null; never wrapped again). short_url / browser_url are not used; no web address → an error.
  */
-export function pddAuthorityLink(result: PddAuthorityUrl): string {
-  for (const value of [result.schema_url, result.mobile_short_url, result.url]) {
-    if (typeof value === 'string' && value.trim() !== '') return value;
-  }
-  throw new Error('linking: the pdd authority answer carries no link');
+export interface PddAuthorityLink {
+  readonly webUrl: string;
+  readonly scheme: string | null;
+}
+
+function present(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+export function pddAuthorityLink(result: PddAuthorityUrl): PddAuthorityLink {
+  const webUrl = [result.mobile_short_url, result.url].find(present);
+  if (webUrl === undefined)
+    throw new Error('linking: the pdd authority answer carries no web link');
+  return { webUrl, scheme: present(result.schema_url) ? result.schema_url : null };
 }
 
 /**
  * B1-06zf (FU-PDD-AUTH-LINK, D10-647): the filing link of this identity, generated now (only when
  * the user asked: an open's 30111 or auth-url; never cached) through
- * UnionAdapter.pddAuthorityUrl, then picked by pddAuthorityLink. The port missing, failing or a
+ * UnionAdapter.pddAuthorityUrl, then picked by pddAuthorityLink ({ webUrl, scheme }). The port missing, failing or a
  * link-less answer → null (logged by error code only; the caller answers 50303, writes nothing).
  */
 export async function generatePddAuthorityLink(
@@ -204,7 +215,7 @@ export async function generatePddAuthorityLink(
     readonly traceId: string;
     readonly events: string;
   },
-): Promise<string | null> {
+): Promise<PddAuthorityLink | null> {
   const { appId, identity, traceId } = input;
   try {
     const adapter = deps.registry.get(PDD);

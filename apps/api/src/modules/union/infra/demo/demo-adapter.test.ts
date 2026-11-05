@@ -68,8 +68,12 @@ it('[AC-B1-06zf-UNIT#1] 演示拼多多授权链接：同一身份稳定、换�
   expect(await port.pddAuthorityUrl(new UnitIdentity(), ctx)).toEqual(first);
   const other = await port.pddAuthorityUrl(new UnitIdentity({ promotionSlot: 'unit-slot-b' }), ctx);
   expect(other.schema_url).not.toBe(first.schema_url);
-  for (const link of [first.url, first.schema_url, first.mobile_short_url]) {
+  expect(String(first.schema_url)).toMatch(/^couli-demo:\/\/pdd\/authority\/\S+$/);
+  for (const link of [first.url, first.mobile_short_url]) {
+    expect(new URL(String(link)).protocol).toBe('https:');
     expect(new URL(String(link)).hostname).toBe('demo.invalid');
+  }
+  for (const link of [first.url, first.schema_url, first.mobile_short_url]) {
     expect(String(link)).not.toContain('unit-slot-a');
     expect(String(link)).not.toContain('a1b2c3d4');
   }

@@ -57,7 +57,8 @@
 //   goes straight to ⑦ (no slot → 50301).
 // B1-06zf (FU-PDD-AUTH-LINK, D10-647): the 30111 auth_jump is built over the filing link
 // UnionAdapter.pddAuthorityUrl generates at that moment for the identity just queried
-// (pdd-authority.ts generatePddAuthorityLink: schema_url, else mobile_short_url, else url); the
+// (pdd-authority.ts generatePddAuthorityLink, D10-662: the h5 step the web address
+// mobile_short_url → url, the scheme step the upstream schema_url as is); the
 // state lives only in union_auth_sessions. Generation missing or failing → 50303, nothing written.
 import type { UnionPidRow } from '../../union/index.ts';
 import {
@@ -286,17 +287,17 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
     // A second reading of the injected clock, moved by the TTL (no `new Date` outside the clock).
     const expireAt = clock.now();
     expireAt.setTime(now.getTime() + AUTH_STATE_TTL_MS);
-    const authUrl = await generatePddAuthorityLink(
+    const authLink = await generatePddAuthorityLink(
       { registry, logger },
       { appId, identity, traceId: input.traceId, events: 'linking.open' },
     );
-    if (authUrl === null) return QUERY_FAILED;
+    if (authLink === null) return QUERY_FAILED;
     const state = newAuthState();
     let authJump;
     try {
       authJump = pddAuthJump(
         { appEnv, jumpEnvironment: environment },
-        authUrl,
+        authLink,
         client,
         input.installed,
         expireAt,
