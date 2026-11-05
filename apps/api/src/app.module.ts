@@ -246,6 +246,7 @@ import {
   type EarningsSummaryDependencies,
   type WalletLedgerDependencies,
   type WalletSummaryDependencies,
+  type ClosingAdjustmentAuditPort,
   readOrderFiguresLedger,
 } from './modules/ledger/index.ts';
 // B1-02zn: GET /v1/me's balance reads the wallet summary query through ledger's read-only entry.
@@ -821,13 +822,19 @@ const deletionClosingAdjustment = {
  * B2-12d (BR-FUND-24 ⑧, D10-590 ③): ledger's prefill of the PENDING ACCOUNT_CLOSED decrease, on
  * identity's transaction (users row locked): by the cooling-period expiry as the request enters
  * processing, and by the processing round while the closing gate is pending (at most one new form
- * per accounting day).
+ * per accounting day). BR-FUND-24 ①「全程写 audit_logs」: a landed insert writes one system audit
+ * record (system:ledger, adjustment_prefill) on the same transaction through admin's system
+ * audit writer, as payout's went-negative rejection does.
  */
 const deletionClosingPrefill = {
-  inject: [],
-  useFactory: (): DeletionClosingAdjustmentPrefill => ({
-    prefill: (trx, input) => prefillClosingAdjustment(trx, input),
-  }),
+  inject: [CLOCK],
+  useFactory: (clock: Clock): DeletionClosingAdjustmentPrefill => {
+    const writer = createSystemAuditWriter({ clock, sensitiveKeys: SENSITIVE_KEYS });
+    const audit: ClosingAdjustmentAuditPort = {
+      appendAction: (trx, input) => writer.appendAction(trx, input),
+    };
+    return { prefill: (trx, input) => prefillClosingAdjustment(trx, input, { audit }) };
+  },
 };
 
 /**

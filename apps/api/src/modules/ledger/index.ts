@@ -204,7 +204,13 @@ export {
   closingAdjustmentGate,
   prefillClosingAdjustment,
 } from './application/admin-adjustment-closing.ts';
+export {
+  ADJUSTMENT_PREFILL_ACTION,
+  ADJUSTMENT_PREFILL_ACTOR,
+} from './application/admin-adjustment-closing.ts';
 export type {
+  ClosingAdjustmentAuditPort,
+  ClosingAdjustmentPrefillDeps,
   ClosingAdjustmentGateState,
   ClosingAdjustmentPrefillRequest,
   ClosingAdjustmentSubject,

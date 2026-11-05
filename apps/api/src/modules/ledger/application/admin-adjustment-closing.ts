@@ -9,21 +9,37 @@
 //   (partial unique key admin_adjustments_account_closed_pending_key as the last word) and no
 //   ACCOUNT_CLOSED form of the member was created or reviewed on the accounting day of `at` (at most
 //   one new form per accounting day; a form rejected, approved or reversed today is rebuilt the
-//   next day, D10-590 ③).
+//   next day, D10-590 ③). The row's status comes from the generated transition (PREFILL from no
+//   row); only when the insert actually lands, one system audit record (system:ledger,
+//   adjustment_prefill: brand, member, form, deletion request) on the same transaction — a skip on
+//   the partial unique key writes none. The rebuild after a rejection goes the same way.
 // - gate (identity's DeletionClosingAdjustmentReader, in the completion transaction, users row
 //   locked): the balance row is locked too (users → balances, the funds order); a PENDING
 //   ACCOUNT_CLOSED form or available ≠ 0 → pending; otherwise done when an APPROVED ACCOUNT_CLOSED
 //   decrease exists, none_needed when not. Never only "an APPROVED form exists": a reversal brings
 //   the balance back.
-// - approve: under platform idempotency (transactional), users row then balance row locked
-//   (lockUsers → ledger.lockBalances), the form re-read under the lock; the amount is the available
+// - approve: under platform idempotency (transactional), users row then balance row then the form
+//   row locked (lockUsers → ledger.lockBalances → SELECT … FOR UPDATE on admin_adjustments), the
+//   form re-read under its own lock so a rejection (which locks the same row) runs strictly before
+//   or after; the status comes from the generated transition (APPROVE); a form no longer PENDING →
+//   20902, which the idempotency module does not store, so the whole transaction (voucher and
+//   balance included) rolls back; the amount is the available
 //   read under the balance lock; voucher ADJ:{adjust_id} (ADMIN_ADJUST:ACCOUNT_CLOSED), the form
 //   APPROVED, the adjustment_approve audit record, one transaction. No in-app message (⑧).
 // - reject: no step-up (the controller runs the guard read-only), reason trimmed 1–200 characters,
-//   a conditional update PENDING → REJECTED, the adjustment_reject audit record; no voucher.
+//   the form row locked (SELECT … FOR UPDATE, the same lock the approval takes) and re-read, the
+//   generated transition (REJECT) decides, a conditional update PENDING → REJECTED, the
+//   adjustment_reject audit record; no voucher. Lost race → 20902, nothing kept.
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
-import { accountingDate, buildVouchers, chinaDayRange } from '@couli/domain';
+import {
+  accountingDate,
+  buildVouchers,
+  chinaDayRange,
+  transitionAdminAdjustment,
+  type AdminAdjustmentEvent,
+  type AdminAdjustmentState,
+} from '@couli/domain';
 import { fenToJsonNumber, subFen } from '@couli/money';
 import { sql, type Transaction } from 'kysely';
 import {
@@ -78,6 +94,37 @@ export interface AdminAdjustmentRejectRequest extends AdminAdjustmentApproveRequ
 /** The audit actions of the contract (adminApproveAdjustment, adminRejectAdjustment). */
 export const ADJUSTMENT_APPROVE_ACTION = 'adjustment_approve';
 export const ADJUSTMENT_REJECT_ACTION = 'adjustment_reject';
+/** The system audit of the prefill (BR-FUND-24 ①「全程写 audit_logs」, ⑧). */
+export const ADJUSTMENT_PREFILL_ACTION = 'adjustment_prefill';
+export const ADJUSTMENT_PREFILL_ACTOR = 'system:ledger';
+
+/** admin's system audit, by shape: ledger imports nothing from admin (as payout's went-negative). */
+export interface ClosingAdjustmentAuditPort {
+  appendAction(
+    trx: Transaction<DB>,
+    input: {
+      readonly appId: string;
+      readonly actor: typeof ADJUSTMENT_PREFILL_ACTOR;
+      readonly action: typeof ADJUSTMENT_PREFILL_ACTION;
+      readonly target: string;
+      readonly before: { readonly status: null };
+      readonly after: {
+        readonly app_id: string;
+        readonly adjust_id: string;
+        readonly user_id: string;
+        readonly deletion_request_id: string;
+        readonly reason_code: string;
+        readonly direction: 'decrease';
+        readonly status: string;
+      };
+    },
+  ): Promise<void>;
+}
+
+export interface ClosingAdjustmentPrefillDeps {
+  /** The system audit, bound to the caller's transaction (written only for a landed insert). */
+  readonly audit: ClosingAdjustmentAuditPort;
+}
 
 const CLOSING = 'ACCOUNT_CLOSED';
 const CLOSING_TEMPLATE = 'ADMIN_ADJUST:ACCOUNT_CLOSED';
@@ -87,6 +134,15 @@ const BIZ_TYPE = 'admin_adjustment';
 const REASON_MAX = 200;
 /** BR-TEXT-14 fallback text of 20902 (contracts/texts.default.json error.20902). */
 const CONFLICT_MESSAGE = '状态已变化，请刷新后重试';
+/**
+ * The generated transition of admin_adjustments.status (AGENTS.md §4.2): the target state, or
+ * null when the event is not legal from `from`.
+ */
+function nextStatus(from: string | null, event: AdminAdjustmentEvent): AdminAdjustmentState | null {
+  const result = transitionAdminAdjustment(from as AdminAdjustmentState | null, event);
+  return result.ok && !result.noop ? result.to : null;
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ---------------------------------------------------------------------------------------------
@@ -160,6 +216,7 @@ async function closingActivityWithin(
 export async function prefillClosingAdjustment(
   trx: Transaction<DB>,
   input: ClosingAdjustmentPrefillRequest,
+  deps: ClosingAdjustmentPrefillDeps,
 ): Promise<{ readonly created: boolean }> {
   const subject = { appId: input.appId, userId: input.userId };
   if (await hasPendingClosing(trx, subject)) return { created: false };
@@ -168,11 +225,14 @@ export async function prefillClosingAdjustment(
   if (await closingActivityWithin(trx, subject, day)) {
     return { created: false };
   }
+  const status = nextStatus(null, 'PREFILL');
+  if (status === null) throw new Error('ledger: PREFILL must be legal from no row');
+  const adjustId = newUuidV7(input.at);
   const inserted = await trx
     .withSchema('app')
     .insertInto('admin_adjustments')
     .values({
-      adjust_id: newUuidV7(input.at),
+      adjust_id: adjustId,
       app_id: input.appId,
       user_id: input.userId,
       direction: 'decrease',
@@ -182,7 +242,7 @@ export async function prefillClosingAdjustment(
       contra_subject: CLOSING_CONTRA,
       contra_platform: null,
       note: null,
-      status: 'PENDING',
+      status,
       reverses_adjust_id: null,
       created_by: null,
       created_at: input.at,
@@ -198,9 +258,26 @@ export async function prefillClosingAdjustment(
         .where('status', '=', 'PENDING')
         .doNothing(),
     )
-    .returning('adjust_id')
+    .returning(['adjust_id', 'status'])
     .executeTakeFirst();
-  return { created: inserted !== undefined };
+  if (inserted === undefined) return { created: false };
+  await deps.audit.appendAction(trx, {
+    appId: input.appId,
+    actor: ADJUSTMENT_PREFILL_ACTOR,
+    action: ADJUSTMENT_PREFILL_ACTION,
+    target: inserted.adjust_id,
+    before: { status: null },
+    after: {
+      app_id: input.appId,
+      adjust_id: inserted.adjust_id,
+      user_id: input.userId,
+      deletion_request_id: input.deletionRequestId,
+      reason_code: CLOSING,
+      direction: 'decrease',
+      status: inserted.status,
+    },
+  });
+  return { created: true };
 }
 
 /**
@@ -254,6 +331,23 @@ function conflictRefusal(traceId: string): HandlerResult {
   };
 }
 
+/**
+ * Locks the form row (SELECT … FOR UPDATE) and re-reads it: approval and rejection both take
+ * this lock, so one of them runs entirely after the other and sees its committed status.
+ */
+async function lockForm(trx: Transaction<DB>, appId: string, adjustId: string) {
+  const locked = await trx
+    .withSchema('app')
+    .selectFrom('admin_adjustments')
+    .select('adjust_id')
+    .where('app_id', '=', appId)
+    .where('adjust_id', '=', adjustId)
+    .forUpdate()
+    .executeTakeFirst();
+  if (locked === undefined) return undefined;
+  return findAdminAdjustment(trx, appId, adjustId);
+}
+
 function actionPathOf(adjustId: string, action: 'approve' | 'reject'): string {
   return `${ADJUSTMENTS_PATH}/${adjustId}/${action}`;
 }
@@ -288,13 +382,16 @@ async function approve(
   if (first === undefined) return fieldsRefusal(['adjust_id'], traceId);
   if (!isPendingClosing(first)) return conflictRefusal(traceId);
 
-  // Users row, then the balance row (the funds order); the form again under the lock.
+  // Users row, then the balance row (the funds order), then the form row itself (the lock a
+  // rejection takes too), re-read under that lock.
   const locked = await deps.ports.lockUsers(trx, { appId, userIds: [first.user_id] });
   if (!locked.has(first.user_id)) return fieldsRefusal(['adjust_id'], traceId);
   const [balance] = await deps.ledger.lockBalances(trx, { appId, userIds: [first.user_id] });
-  const form = await findAdminAdjustment(trx, appId, adjustId);
+  const form = await lockForm(trx, appId, adjustId);
   if (form === undefined) return fieldsRefusal(['adjust_id'], traceId);
   if (!isPendingClosing(form)) return conflictRefusal(traceId);
+  const approved = nextStatus(form.status, 'APPROVE');
+  if (approved === null) return conflictRefusal(traceId);
 
   // ⑧: the amount is the available read under the balance lock; not above 0 → refused, nothing
   // written, the form stays PENDING.
@@ -347,7 +444,7 @@ async function approve(
     .updateTable('admin_adjustments')
     .set((eb) => ({
       amount_fen: amount,
-      status: 'APPROVED',
+      status: approved,
       reviewed_by: adminId,
       reviewed_at: now,
       voucher_id: posted.voucherId,
@@ -358,7 +455,9 @@ async function approve(
     .where('status', '=', 'PENDING')
     .returningAll()
     .executeTakeFirst();
-  if (row === undefined) throw new Error('ledger: the closing form changed under its lock');
+  // Unreachable under the form lock; should it happen, 20902 is not stored by the idempotency
+  // module, so the voucher and the balance written above roll back with the transaction.
+  if (row === undefined) return conflictRefusal(traceId);
 
   await deps.auditOn(trx).append({
     appId,
@@ -419,17 +518,20 @@ async function reject(
   if (length < 1 || length > REASON_MAX) return fieldsRefusal(['reason'], traceId);
   if (!UUID.test(request.adjustId)) return fieldsRefusal(['adjust_id'], traceId);
   const adjustId = request.adjustId.toLowerCase();
-  const form = await findAdminAdjustment(trx, appId, adjustId);
+  // The form row locked (the approval takes the same lock), then re-read.
+  const form = await lockForm(trx, appId, adjustId);
   if (form === undefined) return fieldsRefusal(['adjust_id'], traceId);
   if (!isPendingClosing(form)) return conflictRefusal(traceId);
+  const rejected = nextStatus(form.status, 'REJECT');
+  if (rejected === null) return conflictRefusal(traceId);
 
   const now = deps.clock.now();
-  // Conditional on PENDING: an approval or rejection that committed meanwhile wins (20902).
+  // Still conditional on PENDING (belt and braces under the lock): a lost race answers 20902.
   const row = await trx
     .withSchema('app')
     .updateTable('admin_adjustments')
     .set((eb) => ({
-      status: 'REJECTED',
+      status: rejected,
       reject_note: reason,
       reviewed_by: adminId,
       reviewed_at: now,
@@ -452,7 +554,7 @@ async function reject(
       adjust_id: adjustId,
       user_id: row.user_id,
       reason_code: CLOSING,
-      status: 'REJECTED',
+      status: row.status,
       reason,
     },
     ip: request.ip,
