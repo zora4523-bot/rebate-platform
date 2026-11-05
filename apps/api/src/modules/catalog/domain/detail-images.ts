@@ -10,9 +10,13 @@ export interface DetailImage {
   readonly url: string;
 }
 
+/** Contract ProductCard.images: at most 9 (same cap as the share page images). */
+export const DETAIL_IMAGES_MAX = 9;
+
 export function detailImages(
   item: Pick<UnionItemDetail, 'main_image_url' | 'image_urls'>,
 ): DetailImage[] {
-  void item;
-  throw new Error('NotImplemented: detailImages');
+  const { main_image_url: main, image_urls: gallery = [] } = item;
+  const urls = new Set(main === undefined ? gallery : [main, ...gallery]);
+  return [...urls].slice(0, DETAIL_IMAGES_MAX).map((url) => ({ url }));
 }
