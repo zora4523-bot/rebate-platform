@@ -21,7 +21,7 @@ paths:
   - 'test/spec/catalog/{product-pool-read/detail-fallback,hot-rank-viewer/app}.int.test.ts'
   - 'test/spec/catalog/search/{refill,availability}.test.ts'
   - 'test/spec/commission/quoter/**'
-  - 'test/spec/commission/wiring/assembly.test.ts'
+  - 'test/spec/commission/wiring/{assembly,open-quotes}.test.ts'
   - 'test/spec/agent/tools-quote/snapshots.test.ts'
   - 'test/spec/linking/open-requote/prices.int.test.ts'
 test_paths:
@@ -30,7 +30,7 @@ test_paths:
   - 'test/spec/catalog/{product-pool-read/detail-fallback,hot-rank-viewer/app}.int.test.ts'
   - 'test/spec/catalog/search/{refill,availability}.test.ts'
   - 'test/spec/commission/quoter/**'
-  - 'test/spec/commission/wiring/assembly.test.ts'
+  - 'test/spec/commission/wiring/{assembly,open-quotes}.test.ts'
   - 'test/spec/agent/tools-quote/snapshots.test.ts'
   - 'test/spec/linking/open-requote/prices.int.test.ts'
 impl: claude
