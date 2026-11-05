@@ -25,6 +25,11 @@ it('[AC-B1-06zf#1] 拼多多 auth-url：auth_url 与 auth_jump 就是 pddAuthori
   const calls = h.authorityUrlCalls(t.appId);
   expect(calls).toHaveLength(1);
   const link = expectedLink(calls[0]!.result);
+  // The demo answers schema_url, mobile_short_url and url, all distinct: schema_url is taken.
+  const answer = calls[0]!.result!;
+  expect(link).toBe(answer.schema_url);
+  expect(link).not.toBe(answer.mobile_short_url);
+  expect(link).not.toBe(answer.url);
   const data = await issued(response);
   expect(data.auth_url).toBe(link);
   expect(data.auth_jump).toEqual(planOver(link));
@@ -134,3 +139,26 @@ it('[AC-B1-06zf#6] 淘宝 auth-url 仍是现有行为（占位地址只给淘宝
   expect(pdd.auth_url).toBe(expectedLink(calls[0]!.result));
   expect(pdd.auth_url).not.toContain('example.test');
 }, 60_000);
+
+it('[AC-B1-06zf#24] 绑定（pending_auth / invalid）在第二个拼多多账户：auth-url 调 pddAuthorityUrl 用第二个账户（本次授权所用）的 self_buy 推广位，从不用第一个账户的；下发的就是这次返回的链接', async () => {
+  const t = await h.tenant({ secondAccount: true });
+  expect(t.pid('self_buy', 'second')).not.toBe(t.pid('self_buy'));
+  for (const status of ['pending_auth', 'invalid'] as const) {
+    const u = await t.user();
+    await t.bind(u.uid, status, 'second');
+    const before = h.authorityUrlCalls(t.appId).length;
+    const data = await issued(await u.authUrl('pdd'));
+    const calls = h.authorityUrlCalls(t.appId).slice(before);
+    expect(calls).toHaveLength(1);
+    expectAuthorityIdentity(calls[0]!, {
+      appId: t.appId,
+      pid: t.pid('self_buy', 'second'),
+      attrCode: u.attrCode,
+      scene: 'self_buy',
+      privateValues: [u.uid, u.deviceId],
+    });
+    expect(calls[0]!.identity.claims.promotionSlot).not.toBe(t.pid('self_buy'));
+    expect(data.auth_url).toBe(expectedLink(calls[0]!.result));
+    expect(data.auth_jump).toEqual(planOver(data.auth_url));
+  }
+}, 120_000);

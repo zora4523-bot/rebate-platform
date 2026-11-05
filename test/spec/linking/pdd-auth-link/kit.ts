@@ -12,8 +12,10 @@
 // - queryPddAuthority: called through with the demo's own `pdd_unauthorized` scenario until a case
 //   files its users (fileUsers), so an open is "not filed" unless the case says otherwise;
 // - convert: called through, its identity recorded.
-// Every case seeds its own App (tenant): union accounts, active Pinduoduo promotion slots of three
+// Every case seeds its own App (tenant): union accounts, active Pinduoduo promotion slots of four
 // scenes (distinct pids), configuration and users, so caches, links and states never cross cases.
+// A tenant may also get a second Pinduoduo account, registered after the first, with its own slots
+// of every scene (secondAccount), and may have listed slots seeded retired instead of active.
 // Only *.int.test.ts import @couli/db/testing and hand its factories in.
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -57,8 +59,21 @@ export const NOW = '2026-11-05T02:00:00.000Z';
 export const STATE_TTL_MS = 600_000;
 /** Opens of one case are this far apart: past the open's single-flight window. */
 export const OPEN_GAP_MS = 3_001;
-export const PDD_SCENES = ['self_buy', 'query', 'share'] as const;
+export const PDD_SCENES = ['self_buy', 'query', 'share', 'agent'] as const;
 export type PddScene = (typeof PDD_SCENES)[number];
+/** The tenant's first Pinduoduo account, or the second one registered a minute after it. */
+export type PddAccount = 'first' | 'second';
+/** A promotion slot of one account (the first when account is omitted). */
+export interface SlotRef {
+  readonly scene: PddScene;
+  readonly account?: PddAccount;
+}
+export interface TenantOptions {
+  /** A second Pinduoduo account with its own slots of every scene, all registered later. */
+  readonly secondAccount?: boolean;
+  /** These slots are seeded retired instead of active (their pid values still exist). */
+  readonly retired?: readonly SlotRef[];
+}
 export type AuthData = components['schemas']['UnionAuthUrlData'];
 export type AuthJumpPlan = components['schemas']['AuthJumpPlan'];
 export type BindingStatus = 'pending_auth' | 'invalid' | 'active' | 'blocked';
@@ -123,6 +138,11 @@ export interface AppUser {
   readonly deviceId: string;
   /** GET /v1/products/search?platform=pdd as this user: the first card's registered link_id. */
   searchLink(): Promise<string>;
+  /**
+   * The user's own link of the agent scene: a copy of a fresh search link of theirs registered
+   * under the first account's agent slot (scene agent, pid_scene agent, the snapshot to match).
+   */
+  agentLink(): Promise<string>;
   /** GET /v1/unions/{platform}/auth-url?installed=false as this user. */
   authUrl(platform: 'pdd' | 'taobao'): Promise<InjectResponse>;
   /** POST /v1/links/{link_id}/open (installed=false), signed, a fresh Idempotency-Key. */
@@ -134,11 +154,13 @@ export interface AppUser {
 export interface Tenant {
   readonly appId: string;
   readonly pddAccountId: string;
-  /** The active Pinduoduo promotion slot (pid) of the scene. */
-  pid(scene: PddScene): string;
+  /** The second Pinduoduo account (null unless the tenant was seeded with one). */
+  readonly secondPddAccountId: string | null;
+  /** The Pinduoduo promotion slot (pid) of the scene on the account (first by default). */
+  pid(scene: PddScene, account?: PddAccount): string;
   user(): Promise<AppUser>;
-  /** Writes a Pinduoduo binding of the user on the tenant's account. */
-  bind(uid: string, status: BindingStatus): Promise<void>;
+  /** Writes a Pinduoduo binding of the user on the account (first by default). */
+  bind(uid: string, status: BindingStatus, account?: PddAccount): Promise<void>;
   /** union_auth_sessions of the App, whole rows, oldest first. */
   sessions(): ReturnType<typeof sessionsOf>;
   /** union_bindings of the App (pdd), whole rows. */
@@ -148,7 +170,7 @@ export interface Tenant {
 export interface AuthorityHarness {
   readonly clock: FixedClock;
   db(): Kysely<DB>;
-  tenant(): Promise<Tenant>;
+  tenant(options?: TenantOptions): Promise<Tenant>;
   /** Recorded pddAuthorityUrl calls (of one App when appId is given), in call order. */
   authorityUrlCalls(appId?: string): readonly AuthorityUrlCall[];
   /** Recorded queryPddAuthority calls of one App. */
@@ -357,49 +379,63 @@ export function authorityHarness(
       .execute();
   }
 
-  async function tenant(): Promise<Tenant> {
+  async function tenant(options: TenantOptions = {}): Promise<Tenant> {
     const appId = `pdd_link_${hex(20)}`;
     const pddAccountId = randomUUID();
     const taobaoAccountId = randomUUID();
-    for (const [id, platform] of [
-      [pddAccountId, 'pdd'],
-      [taobaoAccountId, 'taobao'],
-    ] as const) {
+    const secondPddAccountId = options.secondAccount === true ? randomUUID() : null;
+    // The second account and its slots come a minute later: the app-wide self_buy slot and the
+    // earliest account stay the first account's, so only a per-account read reaches the second.
+    const later = new Date(clock.now().getTime() + 60_000);
+    const accounts: [string, 'pdd' | 'taobao', Date][] = [
+      [pddAccountId, 'pdd', clock.now()],
+      [taobaoAccountId, 'taobao', clock.now()],
+    ];
+    if (secondPddAccountId !== null) accounts.push([secondPddAccountId, 'pdd', later]);
+    for (const [id, platform, at] of accounts) {
       await handle()
         .insertInto('union_accounts')
         .values({
           id,
           app_id: appId,
           platform,
-          account_name: `synthetic-b1-06zf-${platform}`,
+          account_name: `synthetic-b1-06zf-${platform}-${id.slice(0, 8)}`,
           status: 'active',
           auth_status: 'active',
-          created_at: clock.now(),
-          updated_at: clock.now(),
+          created_at: at,
+          updated_at: at,
         })
         .execute();
     }
-    const pids = new Map<PddScene, string>();
-    for (const scene of PDD_SCENES) {
-      const pid = `synthetic-pdd-${scene}-${hex(10)}`;
-      pids.set(scene, pid);
-      await handle()
-        .insertInto('union_pids')
-        .values({
-          id: randomUUID(),
-          app_id: appId,
-          platform: 'pdd',
-          union_account_id: pddAccountId,
-          site_id: null,
-          pid,
-          pid_scene: scene,
-          status: 'active',
-          hjy_ignore_confirmed_at: clock.now(),
-          hjy_ignore_evidence_path: 'https://example.test/synthetic-evidence',
-          created_at: clock.now(),
-          updated_at: clock.now(),
-        })
-        .execute();
+    const retired = (scene: PddScene, account: PddAccount): boolean =>
+      (options.retired ?? []).some(
+        (slot) => slot.scene === scene && (slot.account ?? 'first') === account,
+      );
+    const pids = new Map<string, string>();
+    const slotAccounts: [PddAccount, string, Date][] = [['first', pddAccountId, clock.now()]];
+    if (secondPddAccountId !== null) slotAccounts.push(['second', secondPddAccountId, later]);
+    for (const [account, accountId, at] of slotAccounts) {
+      for (const scene of PDD_SCENES) {
+        const pid = `synthetic-pdd-${account}-${scene}-${hex(10)}`;
+        pids.set(`${account}:${scene}`, pid);
+        await handle()
+          .insertInto('union_pids')
+          .values({
+            id: randomUUID(),
+            app_id: appId,
+            platform: 'pdd',
+            union_account_id: accountId,
+            site_id: null,
+            pid,
+            pid_scene: scene,
+            status: retired(scene, account) ? 'retired' : 'active',
+            hjy_ignore_confirmed_at: at,
+            hjy_ignore_evidence_path: 'https://example.test/synthetic-evidence',
+            created_at: at,
+            updated_at: at,
+          })
+          .execute();
+      }
     }
     const settings: [string, unknown][] = [
       ['tech_fee_bp', { taobao: 0, jd: 0, pdd: 0 }],
@@ -413,11 +449,23 @@ export function authorityHarness(
     ];
     for (const [key, value] of settings) await setConfig(appId, key, value);
 
-    function pid(scene: PddScene): string {
-      return String(pids.get(scene));
+    function pid(scene: PddScene, account: PddAccount = 'first'): string {
+      const value = pids.get(`${account}:${scene}`);
+      if (value === undefined) throw new Error(`synthetic tenant: no ${account} account slot`);
+      return value;
     }
 
-    async function bind(uid: string, status: BindingStatus): Promise<void> {
+    function accountIdOf(account: PddAccount): string {
+      if (account === 'first') return pddAccountId;
+      if (secondPddAccountId === null) throw new Error('synthetic tenant: no second account');
+      return secondPddAccountId;
+    }
+
+    async function bind(
+      uid: string,
+      status: BindingStatus,
+      account: PddAccount = 'first',
+    ): Promise<void> {
       await handle()
         .insertInto('union_bindings')
         .values({
@@ -425,7 +473,7 @@ export function authorityHarness(
           app_id: appId,
           user_id: uid,
           platform: 'pdd',
-          union_account_id: pddAccountId,
+          union_account_id: accountIdOf(account),
           relation_id: null,
           pdd_custom: JSON.stringify({ synthetic: 'stored' }),
           status,
@@ -530,6 +578,48 @@ export function authorityHarness(
         return String(linkId);
       }
 
+      async function agentLink(): Promise<string> {
+        const source = await handle()
+          .selectFrom('links')
+          .selectAll()
+          .where('app_id', '=', appId)
+          .where('link_id', '=', await searchLink())
+          .executeTakeFirstOrThrow();
+        expect(source.user_id).toBe(uid);
+        const linkId = randomUUID();
+        const agentPid = pid('agent');
+        // The search registration's attr_code stays; only the scene and its slot change.
+        const stored = source.identity_snapshot as unknown as { readonly attr_code?: unknown };
+        await handle()
+          .insertInto('links')
+          .values({
+            ...source,
+            link_id: linkId,
+            lk: null,
+            scene: 'agent',
+            sub_scene: null,
+            pid_scene: 'agent',
+            pid: agentPid,
+            identity_snapshot: {
+              user_id: uid,
+              platform: 'pdd',
+              pid: agentPid,
+              pid_scene: 'agent',
+              attr_code: typeof stored.attr_code === 'string' ? stored.attr_code : attrCode,
+              agent_session_id: null,
+            },
+            convert_result: null,
+            cache_hit: false,
+            agent_session_id: null,
+            agent_card_id: null,
+            row_version: 0,
+            created_at: clock.now(),
+            updated_at: clock.now(),
+          })
+          .execute();
+        return linkId;
+      }
+
       function authUrl(platform: 'pdd' | 'taobao'): Promise<InjectResponse> {
         return server().inject({
           method: 'GET',
@@ -574,12 +664,22 @@ export function authorityHarness(
         });
       }
 
-      return { uid, attrCode, deviceId: device.device_id, searchLink, authUrl, open, bindings };
+      return {
+        uid,
+        attrCode,
+        deviceId: device.device_id,
+        searchLink,
+        agentLink,
+        authUrl,
+        open,
+        bindings,
+      };
     }
 
     return {
       appId,
       pddAccountId,
+      secondPddAccountId,
       pid,
       user,
       bind,

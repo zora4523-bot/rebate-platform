@@ -47,7 +47,7 @@ function links(answer: PddAuthorityUrl): string[] {
   ].filter((value): value is string => value !== undefined);
 }
 
-it('[AC-B1-06zf#21] 演示拼多多 pddAuthorityUrl 返回演示域名下的 https 地址', async () => {
+it('[AC-B1-06zf#21] 演示拼多多 pddAuthorityUrl 返回演示域名下的 https 地址，同时带非空且互不相同的 schema_url、mobile_short_url、url', async () => {
   const answer = await demo().pddAuthorityUrl(identity(), ctx);
   const url = new URL(answer.url);
   expect(url.protocol).toBe('https:');
@@ -56,6 +56,14 @@ it('[AC-B1-06zf#21] 演示拼多多 pddAuthorityUrl 返回演示域名下的 htt
     expect(link).toMatch(/\S/);
     if (/^https?:/i.test(link)) expect(new URL(link).hostname).toBe('demo.invalid');
   }
+  // All three picked fields are present and distinct, so an exit taking the wrong one is visible
+  // end to end ([AC-B1-06zf#1] / [#7] pin schema_url).
+  const picked = [answer.schema_url, answer.mobile_short_url, answer.url];
+  for (const value of picked) {
+    expect(value).toEqual(expect.any(String));
+    expect(String(value)).toMatch(/\S/);
+  }
+  expect(new Set(picked).size).toBe(3);
 });
 
 it('[AC-B1-06zf#22] 演示 pddAuthorityUrl 不仿拼多多：链接里没有拼多多域名或 App scheme，也不带内部 user_id', async () => {
