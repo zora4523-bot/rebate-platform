@@ -233,7 +233,8 @@ it('[AC-B2-05q#24][BR-ID-36] ⑨ 判定后规则停用仍留本次命中，不�
   await rule({ db: h.db, clock: f.clock }, f.appId, 'phone', 'enabled');
   const w = await worker(f);
   try {
-    const original = w.options.blacklist.hit.bind(w.options.blacklist);
+    expect(w.options.blacklist.match).toBeTypeOf('function');
+    const original = w.options.blacklist.match!.bind(w.options.blacklist);
     const read = vi.fn(async (...args: Parameters<typeof original>) => {
       const matched = await original(...args);
       await rule({ db: h.db, clock: f.clock }, f.appId, 'phone', 'disabled');
@@ -244,7 +245,10 @@ it('[AC-B2-05q#24][BR-ID-36] ⑨ 判定后规则停用仍留本次命中，不�
       ...w.options,
       adult: f.options.adult,
       execute: f.options.execute,
-      blacklist: { hit: read },
+      blacklist: {
+        hit: w.options.blacklist.hit.bind(w.options.blacklist),
+        match: read,
+      },
     });
     await consumer.consume(await f.event(id));
     expect(read).toHaveBeenCalledTimes(1);

@@ -18,6 +18,7 @@
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import { blocklistRule } from '../application/blocklist.ts';
+import type { BlockedHitTarget } from '../application/blocklist.ts';
 import type { RiskRuleStatusReader } from '../application/risk-rule-status.ts';
 
 /** Risk resolves identity-owned HMACs via its existing identity ports. */
@@ -33,6 +34,11 @@ export interface BlocklistMatchReader {
       now: Date;
     },
   ): Promise<{ risk_msg_code: string } | null>;
+  /** The decided target for hit recording; legacy readers may omit this member. */
+  match?(
+    handle: Kysely<DB>,
+    subject: Parameters<BlocklistMatchReader['read']>[1],
+  ): Promise<{ risk_msg_code: string; hit: BlockedHitTarget } | null>;
 }
 
 type Dimension = 'phone' | 'id_no' | 'device' | 'alipay' | 'bank_card' | 'wechat_openid';

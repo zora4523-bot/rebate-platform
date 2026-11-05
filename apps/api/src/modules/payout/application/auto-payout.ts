@@ -43,7 +43,11 @@ import { accountingDate, chinaDayRange, chinaMonth, chinaMonthRange } from '@cou
 import { addFen, fenToJsonNumber, mulDivCeil, parseFen } from '@couli/money';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import type { ReceivedEvent } from '../../platform/index.ts';
-import type { AppealPrevStateReader, RiskStateBatchReader } from '../../risk/index.ts';
+import type {
+  AppealPrevStateReader,
+  BlockedHitTarget,
+  RiskStateBatchReader,
+} from '../../risk/index.ts';
 import {
   computeAutoPayoutWarnValues,
   decideAutoPayout,
@@ -88,6 +92,11 @@ export interface AutoPayoutBlacklistReader {
       payoutMethod: string;
     },
   ): Promise<boolean>;
+  /** A decided target from the same live check; legacy readers keep their boolean hit(). */
+  match?(
+    handle: Kysely<DB>,
+    input: Parameters<AutoPayoutBlacklistReader['hit']>[1],
+  ): Promise<{ risk_msg_code: string; hit: BlockedHitTarget } | null>;
 }
 
 /** Why an automatic withdrawal stayed APPROVED: the batch refusal or the member's left reason. */

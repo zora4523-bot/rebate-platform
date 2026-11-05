@@ -39,11 +39,21 @@ it.each(['phone', 'id_no', 'device', 'alipay', 'bank_card', 'wechat_openid'] as 
       .transaction()
       .setAccessMode('read only')
       .execute(async (trx) => {
+        // read() is frozen: callers still receive only the message code, never the target.
         expect(await reader.read(trx, subject)).toBeNull();
         enabled = true;
         expect(await reader.read(trx, { ...subject, appId: 'another-app' })).toBeNull();
-        checks.mockClear();
         expect(await reader.read(trx, subject)).toEqual({
+          risk_msg_code: 'blocklist.fraud_invite',
+        });
+        // Missing optional capability must fail an assertion, never a TypeError.
+        expect(reader.match).toBeTypeOf('function');
+        enabled = false;
+        expect(await reader.match!(trx, subject)).toBeNull();
+        enabled = true;
+        expect(await reader.match!(trx, { ...subject, appId: 'another-app' })).toBeNull();
+        checks.mockClear();
+        expect(await reader.match!(trx, subject)).toEqual({
           risk_msg_code: 'blocklist.fraud_invite',
           hit: {
             dimension,
@@ -76,13 +86,14 @@ it('[AC-B2-05q#11][BR-WDR-03] 多维命中只选首个生效维度：phone → i
   const disabled = new Set<string>();
   const checks = vi.fn(async (input: { rule_id: string }) => !disabled.has(input.rule_id));
   const reader = createBlocklistMatchReader({ rules: { isEnabled: checks } });
+  expect(reader.match).toBeTypeOf('function');
   const dimensions = ['phone', 'id_no', 'device', 'alipay'] as const;
   for (const dimension of dimensions)
     await seedBlock(h.db, f.actor.appId, dimension, values[dimension], f.clock);
   for (const dimension of dimensions) {
     checks.mockClear();
     expect(
-      await reader.read(h.db, {
+      await reader.match!(h.db, {
         ...f.actor,
         payeeHmac: f.hmac,
         payoutMethod: 'alipay',
@@ -104,7 +115,7 @@ it('[AC-B2-05q#11][BR-WDR-03] 多维命中只选首个生效维度：phone → i
     disabled.add(`BLACKLIST_${dimension.toUpperCase()}`);
   }
   expect(
-    await reader.read(h.db, {
+    await reader.match!(h.db, {
       ...f.actor,
       payeeHmac: f.hmac,
       payoutMethod: 'alipay',
