@@ -182,25 +182,6 @@ it.each([
   }
 });
 
-it.each([
-  [
-    'subsidy_refund_fen',
-    {
-      tk_subsidy_fee_refund: '0.10',
-      tk_subsidy_alimm_refund_fee: '0.08',
-      tk_subsidy_agent_refund_fee: '0.03',
-    },
-  ],
-])('[AC-B1-04z#33] %s 算出负数 → 跳过该条并告警，不出负数', async (field, overrides) => {
-  const s = setup(refundPage([refundRow(overrides), refundOf(2)]));
-  const { items } = await refunds(s.adapter);
-  expect(items.map((refund) => refund.refund_id)).toEqual([refundOf(2).refund_suit_id]);
-  expect(items.every((refund) => refund.refund_fen >= 0n)).toBe(true);
-  expect(s.refundWarn).toHaveBeenCalledWith(
-    expect.objectContaining({ event: 'taobao_refund_negative', field }),
-  );
-});
-
 it('[AC-B1-04zza#44] 佣金取原值、不跳过：tk_commission_fee_refund 0.50（alimm 0.40、agent 0.20）照常返回，base_refund_fen = refund_fen = 50n，不告警跳过', async () => {
   // D10-645 ①：tk_commission_fee_refund 已不含技术服务费和渠道专项服务费，取原值，不再减
   // tk_commission_alimm_refund_fee / tk_commission_agent_refund_fee。旧口径 0.50 − 0.40 − 0.20 为负会跳过并
@@ -224,6 +205,26 @@ it('[AC-B1-04zza#44] 佣金取原值、不跳过：tk_commission_fee_refund 0.50
   });
   for (const event of ['taobao_refund_negative', 'taobao_refund_row_skipped']) {
     expect(s.refundWarn).not.toHaveBeenCalledWith(expect.objectContaining({ event }));
+  }
+  {
+    // 第二段（D10-689 照 D10-669，由原 [AC-B1-04z#33] 保留块并入，输入与断言逐字搬来）：
+    // subsidy_refund_fen 算出负数 → 跳过该条并告警，不出负数。
+    const s = setup(
+      refundPage([
+        refundRow({
+          tk_subsidy_fee_refund: '0.10',
+          tk_subsidy_alimm_refund_fee: '0.08',
+          tk_subsidy_agent_refund_fee: '0.03',
+        }),
+        refundOf(2),
+      ]),
+    );
+    const { items } = await refunds(s.adapter);
+    expect(items.map((refund) => refund.refund_id)).toEqual([refundOf(2).refund_suit_id]);
+    expect(items.every((refund) => refund.refund_fen >= 0n)).toBe(true);
+    expect(s.refundWarn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'taobao_refund_negative', field: 'subsidy_refund_fen' }),
+    );
   }
 });
 
