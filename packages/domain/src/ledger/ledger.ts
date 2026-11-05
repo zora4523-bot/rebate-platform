@@ -282,8 +282,12 @@ export interface NegativeBalanceInput {
   readonly resulting_available_fen: bigint;
   /** New available minus old available: necessary to distinguish negative adjustments. */
   readonly available_delta_fen: bigint;
-  /** Trusted R14 context, NOT a ledger_type/sub_type or a new uniq_key format. */
-  readonly reversal_kind?: 'REASSIGN_REV';
+  /**
+   * Trusted caller context, NOT a ledger_type/sub_type or a new uniq_key format: REASSIGN_REV for
+   * R14 reversals; ADMIN_ADJUST_REV for the whole reversal `ADJ:{adjust_id}:REVERSE` of an
+   * executed ADMIN_ADJUST (BR-FUND-24 细则「红冲只按原单整笔」, B2-12b).
+   */
+  readonly reversal_kind?: 'REASSIGN_REV' | 'ADMIN_ADJUST_REV';
 }
 
 /**
