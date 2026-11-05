@@ -208,6 +208,14 @@ export interface OrderSyncReadPorts {
    * reading nothing until used. Absent → no rescan timer; 'rescan.window' jobs are routed either way.
    */
   readonly rescanConfig?: (db: Kysely<DB>, clock: Clock) => SyncIntervalConfig;
+  /**
+   * B1-04zza: settlement's rights.record for the refund / punishment sync (application/
+   * rights-sync.ts), called once at assembly and reading nothing until used. Absent or undefined →
+   * no rights / punish timer. Given: start() also arms the rights loops of every platform whose
+   * adapter has listRefunds / listPunishments, and the handler routes 'rights.window' /
+   * 'punish.window' to jobs/rights-sync.ts.
+   */
+  readonly rightsSync?: (assembly: OrderRebateAssembly) => RightsCommandPort | undefined;
 }
 
 export interface OrderSyncRuntimeDeps {

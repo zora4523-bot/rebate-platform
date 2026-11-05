@@ -352,6 +352,13 @@ export interface OrderInput extends ItemRef {
 }
 
 /**
+ * B1-04zza (D10-645 ②): a refund's state, normalized by the union adapter so orders never reads a
+ * platform code. CLOSED_NO_CHARGE: the refund ended without charging us (Taobao refund_status 14 /
+ * 15, taken back from the seller); orders records it as FAILED.
+ */
+export type UnionRightsStatus = 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'CLOSED_NO_CHARGE';
+
+/**
  * A refund (维权) the union reports against one order. The optional fields are filled by the
  * Taobao mapping (B1-04z, 大淘客 get-order-refund; D10-488 ② / D10-491) and absent elsewhere.
  * Amounts are integer fen (BR-CALC-26 yuanStrToFen of the wire text, floored past two decimals);
@@ -363,8 +370,9 @@ export interface UnionRefund {
   /** Commission to take back; Taobao: = base_refund_fen (the only amount a refund deducts). */
   readonly refund_fen: bigint;
   /**
-   * Taobao: tk_commission_fee_refund − tk_commission_alimm_refund_fee −
-   * tk_commission_agent_refund_fee (never negative; a negative result skips the refund).
+   * Taobao (B1-04zza, D10-645 ①): tk_commission_fee_refund as is — that field already excludes
+   * the tech service fee and the channel fee, so tk_commission_alimm_refund_fee /
+   * tk_commission_agent_refund_fee are not subtracted; tk_subsidy_fee_refund never enters it.
    */
   readonly base_refund_fen?: bigint;
   /**
@@ -376,6 +384,12 @@ export interface UnionRefund {
   readonly show_return_fen?: bigint | null;
   /** Taobao refund_status as the union sent it (JSON number → its literal); null when missing. */
   readonly refund_status?: string | null;
+  /**
+   * B1-04zza (D10-645 ②): refund_status normalized. Taobao: 4 / 11 → PROCESSING; 2 / 12 / 13 →
+   * SUCCEEDED; 3 → FAILED; 14 / 15 → CLOSED_NO_CHARGE; missing or any other code → null (never
+   * taken as a success).
+   */
+  readonly rights_status?: UnionRightsStatus | null;
   /** Taobao tk_refund_time. */
   readonly refund_created_at?: Date | null;
   /** Taobao tk_refund_suit_time. */
