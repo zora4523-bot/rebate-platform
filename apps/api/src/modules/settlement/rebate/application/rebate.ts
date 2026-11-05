@@ -425,6 +425,9 @@ export function createRebatePort(deps: RebateDependencies): RebatePort {
       }
       if (outcome === 'void') {
         advance(d, 'BASE_ZERO');
+        // BR-CALC-15: the version moved to the zero / negative N, so its rows must exist for a later
+        // ADMIN_RESTORE to read; R6 still books nothing.
+        if (change.commission_moved === true) d.refresh = true;
         return finish(d, row.rebate_status);
       }
       if (outcome === 'recalc' && (d.state === 'ESTIMATED' || d.state === 'WAITING')) {
