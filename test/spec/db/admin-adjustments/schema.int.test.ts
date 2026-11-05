@@ -7,8 +7,8 @@ import { TABLES, columns, foreignKeys, harness, ready, repoFile, type Table } fr
 
 const h = harness(createTestDatabase);
 
-// 列以契约 AdminAdjustment / AdminBadDebtWriteoff 与 04 §3.2（D10-534）为准；
-// reversed_by_adjust_id、user_id（核销）、available_fen、frozen_fen、negative_days、approve_blocked 读时派生，不入库。
+// 必需列以契约 AdminAdjustment / AdminBadDebtWriteoff 与 04 §3.2（D10-534）为准；只核对这些列的类型与可空性，
+// 不钉死列集合（契约 additionalProperties:false 管的是响应形状，不是库表）。
 const SHAPE: Record<Table, Record<string, { types: string[]; nullable: boolean }>> = {
   admin_adjustments: {
     adjust_id: { types: ['uuid'], nullable: false },
@@ -46,8 +46,12 @@ const SHAPE: Record<Table, Record<string, { types: string[]; nullable: boolean }
     row_version: { types: ['int4', 'int8'], nullable: false },
   },
 };
-// 允许另加 updated_at（db/AGENTS.md 第 6 条），其余列不得自行增加。
-const OPTIONAL = ['updated_at'];
+// 契约明写「读时派生、不入库」的字段（contracts/openapi.yaml AdminBadDebtWriteoff：
+// `negative_days` … derived and not stored），不得落成列。
+const DERIVED: Record<Table, string[]> = {
+  admin_adjustments: [],
+  bad_debt_writeoffs: ['negative_days'],
+};
 
 const FOREIGN: Record<Table, { target: string; pairs: string[] }[]> = {
   admin_adjustments: [
@@ -70,18 +74,15 @@ function stripComments(source: string): string {
 }
 
 it.each(TABLES)(
-  '[AC-B2-12a#1] %s 的列名、类型与可空性与契约一致，金额 bigint 分，默认值只有 created_at 的时钟',
+  '[AC-B2-12a#1] %s 的必需列类型与可空性与契约一致，派生字段不入库，金额 bigint 分，默认值只有 created_at 的时钟',
   async (table) => {
     await ready(h.app);
     const actual = await columns(h.app, table);
     const expected = SHAPE[table];
     const names = actual.map((c) => c.name);
     for (const name of Object.keys(expected)) expect(names, `${table}.${name}`).toContain(name);
-    for (const name of names) {
-      expect(
-        Object.keys(expected).includes(name) || OPTIONAL.includes(name),
-        `${table}.${name} 不在契约形状内`,
-      ).toBe(true);
+    for (const name of DERIVED[table]) {
+      expect(names, `${table}.${name} 读时派生，不得落库`).not.toContain(name);
     }
     for (const column of actual) {
       const spec = expected[column.name];

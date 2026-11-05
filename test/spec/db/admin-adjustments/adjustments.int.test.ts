@@ -155,11 +155,24 @@ it('[AC-B2-12a#11] contra_platform 非空当且仅当对方科目为 UNION_RECEI
   }
 });
 
-it('[AC-B2-12a#12] refs 必须是数组且最多 10 张关联单据，超 10 张拒绝', async () => {
+it('[AC-B2-12a#12] refs 必须是数组且最多 10 张关联单据，超 10 张拒绝；空数组只出现在 OTHER 说明单与红冲单', async () => {
   await ready(h.app);
   const p = await parents(h.app);
+  // 空数组：OTHER 以客服处理说明代替关联单据，红冲单以原单为关联、不另填（BR-FUND-24 ②③；契约 AdminAdjustment）。
+  const other = await approved(p, {
+    reason_code: 'OTHER',
+    refs: refs(0),
+    note: '客服处理说明：企业微信沟通确认重复入账，核实依据为联盟后台订单截图',
+  });
+  expect(await attempt(other), 'OTHER 说明单 refs=[]').toBe('ok');
+  const original = await approved(p);
+  await insert(h.app, 'admin_adjustments', original);
+  const key = `ADJ:${String(original['adjust_id'])}:REVERSE`;
+  const reverse = reversal(p, original, await voucher(h.app, p, key), { refs: refs(0) });
+  expect(await attempt(reverse), '红冲单 refs=[]').toBe('ok');
+  // 普通 RECON_FIX 单至少带一张关联单据（BR-FUND-24 ③），这里只测上界与形状。
   const cases: [string, string][] = [
-    [refs(0), 'ok'],
+    [refs(1), 'ok'],
     [refs(10), 'ok'],
     [refs(11), '23514'],
     [JSON.stringify({ ref_type: 'recon_diff', ref_id: randomUUID() }), '23514'],
