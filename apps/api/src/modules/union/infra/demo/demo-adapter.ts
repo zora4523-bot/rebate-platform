@@ -529,9 +529,30 @@ export class DemoUnionAdapter implements UnionAdapter {
    * Synthetic; never a capability claim (CAP-PDD-05).
    */
   async pddAuthorityUrl(identity: UnionIdentity, ctx: CallCtx): Promise<PddAuthorityUrl> {
-    void identity;
-    void ctx;
-    throw new Error('NotImplemented: pddAuthorityUrl');
+    const claims = this.#claims(identity, ctx);
+    this.#scenario(ctx);
+    if (this.platform !== 'pdd') {
+      throw new UnionError(
+        'adapter_unimplemented',
+        `Demo union adapter for ${this.platform} has no authority link`,
+        this.platform,
+      );
+    }
+    // Varies with the identity (app, user key, slot) without exposing any of it.
+    const tag = digest([
+      'demo-authority',
+      this.platform,
+      this.#seed,
+      claims.appId,
+      claims.userId,
+      claims.promotionSlot,
+    ]).slice(0, 20);
+    const base = `https://${DEMO_HOST}/${this.platform}/authority`;
+    return Object.freeze({
+      url: `${base}/page/${tag}`,
+      schema_url: `${base}/app/${tag}`,
+      mobile_short_url: `${base}/m/${tag}`,
+    });
   }
 
   async listOrders(win: TimeWindow, opt: OrderQueryOpt, ctx: CallCtx): Promise<Page<UnionOrder>> {

@@ -184,8 +184,53 @@ export async function queryPddAuthority(
  * authorization jump is built over — schema_url, else mobile_short_url, else url.
  */
 export function pddAuthorityLink(result: PddAuthorityUrl): string {
-  void result;
-  throw new Error('NotImplemented: pddAuthorityLink');
+  for (const value of [result.schema_url, result.mobile_short_url, result.url]) {
+    if (typeof value === 'string' && value.trim() !== '') return value;
+  }
+  throw new Error('linking: the pdd authority answer carries no link');
+}
+
+/**
+ * B1-06zf (FU-PDD-AUTH-LINK, D10-647): the filing link of this identity, generated now (only when
+ * the user asked: an open's 30111 or auth-url; never cached) through
+ * UnionAdapter.pddAuthorityUrl, then picked by pddAuthorityLink. The port missing, failing or a
+ * link-less answer → null (logged by error code only; the caller answers 50303, writes nothing).
+ */
+export async function generatePddAuthorityLink(
+  deps: PddQueryDeps,
+  input: {
+    readonly appId: string;
+    readonly identity: LinkingUnionIdentity;
+    readonly traceId: string;
+    readonly events: string;
+  },
+): Promise<string | null> {
+  const { appId, identity, traceId } = input;
+  try {
+    const adapter = deps.registry.get(PDD);
+    const generate = adapter.pddAuthorityUrl;
+    if (typeof generate !== 'function') throw new Error('linking: no pdd authority url port');
+    const answer = await generate.call(adapter, identity, {
+      appId,
+      requestId: traceId,
+      purpose: 'online',
+    });
+    if (typeof answer !== 'object' || answer === null) throw new Error('linking: malformed answer');
+    return pddAuthorityLink(answer);
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code;
+    deps.logger.warn(
+      {
+        event: `${input.events}.pdd_authority_url_failed`,
+        app_id: appId,
+        platform: PDD,
+        trace_id: traceId,
+        error_code: typeof code === 'string' || typeof code === 'number' ? String(code) : 'unknown',
+      },
+      'linking: pdd authority link generation failed; no state issued',
+    );
+    return null;
+  }
 }
 
 export async function pddBindingRows(executor: Kysely<DB>, appId: string, userId: string) {
