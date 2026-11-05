@@ -606,18 +606,6 @@ red_exempt_rows:
   - file: test/spec/catalog/product-pool-read/detail-fallback.int.test.ts
     test: '[BR-PRICE-07][TRADE-12] 回退出卡沿用来源卡：from_link_id 的入口是 feed → rebate_basis=normal，链接记 feed'
     reason: 'it.each 表拆分（D10-657）：所在块的标题模板与回调体与基线逐字相同，本行字面量同基线、只删了须随 D10-641 改期望的行（已拆成新用例并在旧实现上红）；本行行为不变，新旧实现下都成立'
-  - file: test/spec/commission/quoter/failures.test.ts
-    test: '[AC-B2-03c#19] 缺少 union.pdd.self_buy_factor_bp 时拒绝报价，不填默认值'
-    reason: 'it.each 表拆分（D10-657）：所在块的标题模板与回调体与基线逐字相同，本行字面量同基线、只删了须随 D10-641 改期望的行（已拆成新用例并在旧实现上红）；本行行为不变，新旧实现下都成立'
-  - file: test/spec/commission/quoter/failures.test.ts
-    test: '[AC-B2-03c#19] 缺少 union.pdd.account_level_factor_bp 时拒绝报价，不填默认值'
-    reason: 'it.each 表拆分（D10-657）：所在块的标题模板与回调体与基线逐字相同，本行字面量同基线、只删了须随 D10-641 改期望的行（已拆成新用例并在旧实现上红）；本行行为不变，新旧实现下都成立'
-  - file: test/spec/commission/quoter/quotation.test.ts
-    test: '[AC-B2-03c#10] 省略 context 时 jd 按游客自购和无来源语义报价'
-    reason: 'it.each 表拆分（D10-657）：所在块的标题模板与回调体与基线逐字相同，本行字面量同基线、只删了须随 D10-641 改期望的行（已拆成新用例并在旧实现上红）；本行行为不变，新旧实现下都成立'
-  - file: test/spec/commission/quoter/quotation.test.ts
-    test: '[AC-B2-03c#10] 省略 context 时 pdd 按游客自购和无来源语义报价'
-    reason: 'it.each 表拆分（D10-657）：所在块的标题模板与回调体与基线逐字相同，本行字面量同基线、只删了须随 D10-641 改期望的行（已拆成新用例并在旧实现上红）；本行行为不变，新旧实现下都成立'
 impl: claude
 tester: claude-independent
 accept:
