@@ -248,7 +248,6 @@ it('[AC-B2-12c#17] 请求体：原因码 RESTORE / ACCOUNT_CLOSED、金额 0 或
       { ...good, operator: 'admin' },
       { ...good, user_id: undefined },
       { ...good, amount_fen: undefined },
-      { ...good, user_id: 'not-a-uuid' },
       {},
     ]) {
       await schemaRefused(await h.create(body));
@@ -266,6 +265,9 @@ it('[AC-B2-12c#17] 请求体：原因码 RESTORE / ACCOUNT_CLOSED、金额 0 或
     await invalid(await h.create({ ...good, note: '  ' }), ['note']);
     await invalid(await h.create({ ...good, user_id: randomUUID() }), ['user_id']);
     await invalid(await h.create({ ...good, user_id: stranger }), ['user_id']);
+    // the shared Id schema is a string of 1–64 characters, not a UUID: a malformed user_id fits
+    // the shape and is named by the service as an unknown member
+    await invalid(await h.create({ ...good, user_id: 'not-a-uuid' }), ['user_id']);
     // body before member: a missing subject is reported before an unknown member
     await invalid(await h.create({ ...good, user_id: randomUUID(), contra_subject: undefined }), [
       'contra_subject',
