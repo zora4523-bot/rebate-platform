@@ -27,6 +27,7 @@ import {
   type ConnectionConfig,
   type DbHandles,
 } from '../../../../apps/api/src/modules/platform/index.ts';
+import { DemoUnionAdapter } from '../../../../apps/api/src/modules/union/index.ts';
 import {
   NOW,
   ROOT,
@@ -370,6 +371,24 @@ it.each(['ios', 'android', 'harmony'] as const)(
   '[AC-B1-06g#4] 拼多多 %s 的 installed 缺省等同 unknown；只有 auth_jump，快照授权方式两列为空',
   async (client) => {
     const f = await seed();
+    // B1-06zf (D10-658 ②): the authorization link is generated for the account's self_buy slot.
+    await db
+      .insertInto('union_pids')
+      .values({
+        id: randomUUID(),
+        app_id: f.appId,
+        platform: 'pdd',
+        union_account_id: f.accounts.pdd,
+        site_id: null,
+        pid: `synthetic-auth-pdd-self_buy-${randomUUID().slice(0, 8)}`,
+        pid_scene: 'self_buy',
+        status: 'active',
+        hjy_ignore_confirmed_at: clock.now(),
+        hjy_ignore_evidence_path: 'synthetic/evidence',
+        created_at: clock.now(),
+        updated_at: clock.now(),
+      })
+      .execute();
     const get = await start(f);
     const implicitResponse = await get('pdd', client);
     const implicit = success(implicitResponse);
@@ -536,6 +555,28 @@ function options(f: Fixture, client: AuthClient, appEnv: 'test' | 'prod') {
       app_secret: canary,
     }),
   );
+  // B1-06zf (D10-659): the Pinduoduo authorization link comes through the union port (the demo
+  // adapter here) with the user's attr_code read from users.
+  const demo = new DemoUnionAdapter({
+    platform: 'pdd',
+    seed: 'b1-06g-auth-url',
+    clock,
+    environment: 'test',
+  });
+  const unionPorts = {
+    registry: { get: () => demo },
+    attrCodes: {
+      attrCode: async (tenant: string, uid: string) => {
+        const row = await db
+          .selectFrom('users')
+          .select('attr_code')
+          .where('app_id', '=', tenant)
+          .where('id', '=', uid)
+          .executeTakeFirst();
+        return row?.attr_code ?? null;
+      },
+    },
+  };
   const config: UnionAuthUrlOptions = {
     db,
     clock,
@@ -545,6 +586,7 @@ function options(f: Fixture, client: AuthClient, appEnv: 'test' | 'prod') {
     },
     config: createContentReader({ db, clock }),
     authApps: { resolve },
+    ...unionPorts,
   };
   return { config, resolve, canary };
 }

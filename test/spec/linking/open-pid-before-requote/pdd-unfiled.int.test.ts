@@ -69,7 +69,9 @@ for (const binding of ['absent', 'pending_auth', 'invalid'] as const) {
           unchanged,
         );
         expect(g.query).toHaveBeenCalledTimes(1);
-        expect(kept.external.filter((name) => name !== 'queryPddAuthority')).toEqual([]);
+        // B1-06zf (D10-659 ④): the 30111 authorization link comes from the union's pddAuthorityUrl.
+        const filing = new Set(['queryPddAuthority', 'pddAuthorityUrl']);
+        expect(kept.external.filter((name) => !filing.has(name))).toEqual([]);
       },
       TIMEOUT,
     );

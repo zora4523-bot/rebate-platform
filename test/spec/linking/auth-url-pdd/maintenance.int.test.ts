@@ -249,6 +249,27 @@ async function bind(f: Fixture, platform: Platform, status: BindingStatus, accou
   return id;
 }
 
+/** B1-06zf (D10-658 ②): an active self_buy slot of the account, for the authorization link. */
+async function selfBuySlot(f: Fixture, accountId: string) {
+  await db
+    .insertInto('union_pids')
+    .values({
+      id: randomUUID(),
+      app_id: f.appId,
+      platform: 'pdd',
+      union_account_id: accountId,
+      site_id: null,
+      pid: `synthetic-maintenance-pdd-self_buy-${randomUUID().slice(0, 8)}`,
+      pid_scene: 'self_buy',
+      status: 'active',
+      hjy_ignore_confirmed_at: clock.now(),
+      hjy_ignore_evidence_path: 'synthetic/evidence',
+      created_at: clock.now(),
+      updated_at: clock.now(),
+    })
+    .execute();
+}
+
 async function expire(f: Fixture, platform: Platform) {
   await db
     .updateTable('union_accounts')
@@ -357,6 +378,7 @@ it('[AC-B1-06t#4] 两个拼多多账号一有效一过期：只按未释放绑�
     })
     .execute();
   const bindingId = await bind(f, 'pdd', 'active', activeAccountId);
+  await selfBuySlot(f, activeAccountId);
   const get = await start(f);
   await issuedPdd(f, await get('pdd'));
   const before = await f.rows();
@@ -374,6 +396,7 @@ it('[AC-B1-06t#4] 两个拼多多账号一有效一过期：只按未释放绑�
 
 it('[AC-B1-06t#5] 拼多多站长授权 active 正常签发，随后 expired 拒绝签发且不改动原会话', async () => {
   const f = await seed();
+  await selfBuySlot(f, f.accounts.pdd);
   const get = await start(f);
   await issuedPdd(f, await get('pdd'));
   const before = await f.rows();
