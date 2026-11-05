@@ -100,11 +100,13 @@ it('[AC-B1-04z#27] 超过两位小数：每个金额先各自向下取整到分�
 });
 
 it('[AC-B1-04z#28] 应扣为 0 的维权照常返回（不是负数）', async () => {
+  // D10-645 ①：佣金取 tk_commission_fee_refund 原值 0.00，服务费 0.80 / 0.39 不参与相减（旧口径
+  // 0 − 80 − 39 为负会跳过）；D10-206 让本用例在旧实现上因断言失败而红。
   const refund = await oneRefund(
     refundRow({
       tk_commission_fee_refund: '0.00',
-      tk_commission_alimm_refund_fee: '0.00',
-      tk_commission_agent_refund_fee: '0.00',
+      tk_commission_alimm_refund_fee: '0.80',
+      tk_commission_agent_refund_fee: '0.39',
       tk_subsidy_fee_refund: '0.00',
       tk_subsidy_alimm_refund_fee: '0.00',
       tk_subsidy_agent_refund_fee: '0.00',
@@ -315,10 +317,14 @@ it('[AC-B1-04z#40] 告警不带订单号、维权号、金额与凭据', async (
   const s = setup(
     refundPage([
       refundRow({ tk_commission_fee_refund: 'abc' }),
-      // 补贴差为负而跳过（佣金按 D10-645 ①取原值，不再因服务费减成负数）。
+      // 补贴差为负而跳过（佣金按 D10-645 ①取原值，不再因服务费减成负数；旧实现会在佣金这步
+      // 就以 base_refund_fen 跳过，下面的 subsidy_refund_fen 告警断言因此在旧实现上为红，D10-206）。
       refundRow({
         tb_trade_id: '2900000000000000901',
         refund_suit_id: '3300000000000000901',
+        tk_commission_fee_refund: '0.50',
+        tk_commission_alimm_refund_fee: '0.40',
+        tk_commission_agent_refund_fee: '0.20',
         tk_subsidy_fee_refund: '0.50',
         tk_subsidy_alimm_refund_fee: '0.40',
         tk_subsidy_agent_refund_fee: '0.20',
@@ -329,6 +335,9 @@ it('[AC-B1-04z#40] 告警不带订单号、维权号、金额与凭据', async (
   const { items } = await refunds(s.adapter);
   expect(items).toEqual([]);
   expect(s.refundWarn).toHaveBeenCalled();
+  expect(s.refundWarn).toHaveBeenCalledWith(
+    expect.objectContaining({ event: 'taobao_refund_negative', field: 'subsidy_refund_fen' }),
+  );
   const printed = visible(s.refundWarn.mock.calls);
   for (const marker of [
     TRADE_ID,
