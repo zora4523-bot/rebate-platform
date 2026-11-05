@@ -164,6 +164,8 @@ export interface ItemRef {
 /** BR-PRICE-01 three price fields in integer fen, commission rate in bp, fetch time. */
 export interface UnionItem extends ItemRef {
   readonly title: string;
+  /** B1-04zzg：只取上游官方店铺名，去首尾空白；缺失或空白时不填，不从其他字段补。 */
+  readonly shop_name?: string;
   readonly price_fen: bigint;
   readonly coupon_fen: bigint;
   readonly final_price_fen: bigint;
