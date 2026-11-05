@@ -3954,6 +3954,9 @@ function withdrawRuleOptions(
  * the rule in force, so the decided write is used and the status is not read again. The related
  * phone is the account's current one as identity stores it: users.phone_hmac and the masked number
  * of identity's port (nothing is decrypted here); an account without a phone leaves both empty.
+ * The digest and the masked number are read on one snapshot (a REPEATABLE READ, read-only
+ * transaction that ends before the hit is written): a phone change committed between the two
+ * reads can never pair the old digest with the new masked number (money r1 S1).
  */
 function withdrawBlockedHits(deps: {
   db: Kysely<Database>;
@@ -3961,32 +3964,39 @@ function withdrawBlockedHits(deps: {
   crypto: FieldCrypto;
   logger: RootLogger;
 }): WithdrawBlockedHits {
-  const { db } = deps;
+  const { db, crypto } = deps;
   const blocklist = createBlocklistService(deps);
-  const phones = createMaskedPhoneReader(db, deps.crypto);
   return {
     async record(input) {
       if (blocklist.recordDecidedHit === undefined) {
         throw new Error('payout: the blocklist service cannot record a decided hit');
       }
-      const user = await db
-        .withSchema('app')
-        .selectFrom('users')
-        .select('phone_hmac')
-        .where('app_id', '=', input.appId)
-        .where('id', '=', input.userId)
-        .executeTakeFirst();
-      const hmac = user?.phone_hmac ?? null;
-      const masked =
-        hmac === null
-          ? null
-          : ((await phones.maskedPhones(input.appId, [input.userId])).get(input.userId) ?? null);
+      const related = await db
+        .transaction()
+        .setIsolationLevel('repeatable read')
+        .setAccessMode('read only')
+        .execute(async (snapshot) => {
+          const user = await snapshot
+            .withSchema('app')
+            .selectFrom('users')
+            .select('phone_hmac')
+            .where('app_id', '=', input.appId)
+            .where('id', '=', input.userId)
+            .executeTakeFirst();
+          const hmac = user?.phone_hmac ?? null;
+          if (hmac === null) return null;
+          const phones = await createMaskedPhoneReader(snapshot, crypto).maskedPhones(input.appId, [
+            input.userId,
+          ]);
+          const masked = phones.get(input.userId) ?? null;
+          return masked === null ? null : { hmac, masked };
+        });
       await blocklist.recordDecidedHit({
         app_id: input.appId,
         request_type: 'withdraw',
         user_id: input.userId,
         amount_fen: input.amountFen,
-        related_phone_digest: hmac === null || masked === null ? null : { hmac, masked },
+        related_phone_digest: related,
         dimension: input.hit.dimension,
         value_hmac: input.hit.value_hmac,
         rule_id: input.hit.rule_id,
