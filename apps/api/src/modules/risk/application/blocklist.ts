@@ -92,6 +92,17 @@ export interface BlockedRequest {
   readonly ref_id?: string;
 }
 
+export interface RelatedPhoneDigest {
+  readonly hmac: string;
+  readonly masked: string;
+}
+
+export interface DigestBlockedRequest extends Omit<BlockedRequest, 'related_phone'> {
+  readonly related_phone_digest: RelatedPhoneDigest | null;
+}
+
+export interface RecordDigestBlockedHit extends DigestBlockedRequest, BlockedHitTarget {}
+
 export type BlocklistInput = BlockedRequest & {
   readonly dimension: BlocklistDimension;
 } & (
@@ -172,7 +183,9 @@ export interface BlocklistService {
    * on the rule in force (decided_in_force: true). Optional so that hand-written fakes of this port
    * stay valid; createBlocklistService has it.
    */
-  recordDecidedHit?(input: RecordBlockedHit): Promise<{ readonly ref_id: string }>;
+  recordDecidedHit?(
+    input: RecordBlockedHit | RecordDigestBlockedHit,
+  ): Promise<{ readonly ref_id: string }>;
   /**
    * All hit rows of one blocked request, one shared ref_id, in a short transaction of its own.
    * Rows matchRegistration returned are decided and written without a second status read.

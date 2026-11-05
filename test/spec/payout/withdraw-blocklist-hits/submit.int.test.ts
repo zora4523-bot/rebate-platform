@@ -203,23 +203,45 @@ it('[AC-B2-05q#2][BR-ID-36] 同键两次被拦各有不同 ref_id，44001 不存
 });
 
 it.each(['device', 'alipay'] as const)(
-  '[AC-B2-05q#3][BR-ID-36] 无手机号账号被 %s 拦下：关联手机号两列同空，仍记会员及申请金额',
+  '[AC-B2-05q#3][BR-ID-36] 无手机号账号在身份等级 ⑧ 被 10005 拦下、不到 ③a 不留痕；绑回手机号同键重试才被 %s 拦截并留痕',
   async (dimension) => {
     const c = await client(kit);
+    const originalPhone = await kit.db
+      .withSchema('app')
+      .selectFrom('users')
+      .select(['phone_cipher', 'phone_hmac'])
+      .where('app_id', '=', c.f.appId)
+      .where('id', '=', c.f.uid)
+      .executeTakeFirstOrThrow();
     await sql`UPDATE app.users SET phone_cipher=NULL, phone_hmac=NULL WHERE id=${c.f.uid}`.execute(
       kit.db,
     );
     await seedBlock(kit.db, c.f.appId, dimension, c.values[dimension], kit.clock);
     const before = await c.state();
-    await refused(await c.post());
+    const requestId = randomUUID();
+    const response = await c.post(requestId);
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ code: 10005, msg: '需要绑定手机号' });
+    await assertContract(response, 'ErrorEnvelope');
+    expect(await hits(kit, c.f.appId)).toEqual([]);
+    expect(await c.state()).toEqual(before);
+
+    await kit.db
+      .withSchema('app')
+      .updateTable('users')
+      .set(originalPhone)
+      .where('app_id', '=', c.f.appId)
+      .where('id', '=', c.f.uid)
+      .execute();
+    await refused(await c.post(requestId));
     expect(await hits(kit, c.f.appId)).toEqual([
       expect.objectContaining({
         user_id: c.f.uid,
         amount_fen: 1300n,
         dimension,
         value_hmac: c.values[dimension],
-        related_phone_hmac: null,
-        related_phone_masked: null,
+        related_phone_hmac: c.phoneHmac,
+        related_phone_masked: '138****8000',
         ref_type: 'blocked_request',
       }),
     ]);
