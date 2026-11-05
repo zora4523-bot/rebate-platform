@@ -4,7 +4,7 @@
 // - 维权：type RIGHTS，platform_rights_no = 维权单号，应扣佣金 deduction_commission_fen = refund_fen，
 //   amount_fen 不取（null），occurred_at = 维权创建时间（缺失取注入时钟）；状态 PROCESSING / SUCCEEDED /
 //   FAILED 原样，CLOSED_NO_CHARGE（14 / 15，结束且不扣我方）记 FAILED 并计数进日志；未知状态不写、计数进
-//   日志，不当成功。
+//   warn 级日志，不当成功。
 // - 违规：type PUNISH，status SUCCEEDED，platform_rights_no = 违规单号，occurred_at = 同步时刻（D10-645 ③）。
 // - 对不上订单（别家推广位）只计数：不抛错、不进死信，日志不带单号；重放由去重键兜底，duplicate 不是失败。
 // - 维权窗做完全部页才推一次水位（窗口自己的流）；违规不推水位。门控：可查账号、站点授权。
@@ -165,7 +165,8 @@ it('[AC-B1-04zza#24] 状态缺失或未知的维权不当成功：不写，个�
       .writes()
       .some((w) => w.item.status === 'SUCCEEDED' && w.target.sub_order_id !== known.order_id),
   ).toBe(false);
-  expect(counted(f, 'unknown_status')).toContain(2);
+  // 未知状态是要人看的异常：计数只认 warn 级（评审 r1 S2，不接受 info）。
+  expect(loggedValues(f.logger.warn, 'unknown_status')).toContain(2);
   expect(f.advance).toHaveBeenCalledTimes(1);
 });
 

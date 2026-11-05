@@ -14,14 +14,12 @@ import {
 } from './kit.ts';
 
 // 维权映射（任务书「目标口径 · UnionRefund 映射」，D10-488 ② / D10-491）：order_id = tb_trade_id，
-// refund_id = refund_suit_id；base_refund_fen = tk_commission_fee_refund 原值（B1-04zza 按 D10-645 ①改：
-// 该字段已不含技术服务费和渠道专项服务费，不再减 tk_commission_alimm_refund_fee /
-// tk_commission_agent_refund_fee；D10-327 只改钉旧减法的用例），subsidy_refund_fen = tk_subsidy_fee_refund −
+// refund_id = refund_suit_id；base_refund_fen = tk_commission_fee_refund − tk_commission_alimm_refund_fee
+// − tk_commission_agent_refund_fee，subsidy_refund_fen = tk_subsidy_fee_refund −
 // tk_subsidy_alimm_refund_fee − tk_subsidy_agent_refund_fee，refund_fen = base_refund_fen；各金额先按
-// BR-CALC-26 用 yuanStrToFen 单独取分（超两位 floor；JSON 数字取原文），再计算。show_return_fen 原样留存、
-// 不参与金额；refund_status 原样字符串（归一状态 rights_status 见 test/spec/orders/taobao-rights-sync/）；
-// 平台时间（北京时间）→ Date，「--」或缺失 → null。必需金额缺失 / 非法 → 跳过该条并告警；差为负 → 跳过并告警
-// （不出负数）。告警不带订单号、维权号与金额。
+// BR-CALC-26 用 yuanStrToFen 单独取分（超两位 floor；JSON 数字取原文），再相减。show_return_fen 原样留存、
+// 不参与金额；refund_status 原样字符串；平台时间（北京时间）→ Date，「--」或缺失 → null。必需金额缺失 /
+// 非法 → 跳过该条并告警；差为负 → 跳过并告警（不出负数）。告警不带订单号、维权号与金额。
 
 const REQUIRED_AMOUNTS = [
   'tk_commission_fee_refund',
@@ -84,7 +82,7 @@ it('[AC-B1-04z#26] JSON 数字金额取报文原文（BR-CALC-26），不经 JS 
   expect(refund.show_return_fen).toBe(666n);
 });
 
-it('[AC-B1-04z#27] 超过两位小数：每个金额先各自向下取整到分，再计算', async () => {
+it('[AC-B1-04z#27] 超过两位小数：每个金额先各自向下取整到分，再相减', async () => {
   const refund = await oneRefund(
     refundRow({
       tk_commission_fee_refund: '1.239',
@@ -182,7 +180,6 @@ it.each([
   }
 });
 
-// base_refund_fen 取原值后不会为负（D10-645 ①），本用例只剩补贴一项。
 it.each([
   [
     'subsidy_refund_fen',
@@ -200,6 +197,32 @@ it.each([
   expect(s.refundWarn).toHaveBeenCalledWith(
     expect.objectContaining({ event: 'taobao_refund_negative', field }),
   );
+});
+
+it('[AC-B1-04zza#44] 佣金取原值、不跳过：tk_commission_fee_refund 0.50（alimm 0.40、agent 0.20）照常返回，base_refund_fen = refund_fen = 50n，不告警跳过', async () => {
+  // D10-645 ①：tk_commission_fee_refund 已不含技术服务费和渠道专项服务费，取原值，不再减
+  // tk_commission_alimm_refund_fee / tk_commission_agent_refund_fee。旧口径 0.50 − 0.40 − 0.20 为负会跳过并
+  // 告警（即 [AC-B1-04z#33] 表里删去的 base_refund_fen 那一行，D10-682 取 B），这里钉它照常返回。
+  const s = setup(
+    refundPage([
+      refundRow({
+        tk_commission_fee_refund: '0.50',
+        tk_commission_alimm_refund_fee: '0.40',
+        tk_commission_agent_refund_fee: '0.20',
+      }),
+      refundOf(2),
+    ]),
+  );
+  const { items } = await refunds(s.adapter);
+  expect(items.map((refund) => refund.refund_id)).toEqual([REFUND_ID, refundOf(2).refund_suit_id]);
+  expect(items[0]).toMatchObject({
+    base_refund_fen: 50n,
+    refund_fen: 50n,
+    subsidy_refund_fen: 100n,
+  });
+  for (const event of ['taobao_refund_negative', 'taobao_refund_row_skipped']) {
+    expect(s.refundWarn).not.toHaveBeenCalledWith(expect.objectContaining({ event }));
+  }
 });
 
 it.each([

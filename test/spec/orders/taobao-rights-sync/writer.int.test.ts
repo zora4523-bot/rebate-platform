@@ -19,6 +19,7 @@ import {
   rightsOf,
   seedOrder,
   type Harness,
+  type Order,
 } from '../rights-import-rows/db-kit.ts';
 
 let database: TestDatabase | undefined;
@@ -47,6 +48,26 @@ function rightsItem(patch: Partial<RightsSyncItem> = {}): RightsSyncItem {
     platform_rights_no: '3300000000000005001',
     ...patch,
   };
+}
+
+/**
+ * 写入之后重读种入的订单行：假 settlement 不碰 orders，本单也不得自己改订单状态（评审 r1 S1），
+ * 所以状态列与 row_version 必须都等于种入值。
+ */
+async function expectOrderUntouched(seeded: Order) {
+  const after = await h.db
+    .selectFrom('orders')
+    .select(['platform_status', 'rebate_status', 'rights_pending', 'hold', 'row_version'])
+    .where('app_id', '=', seeded.app_id)
+    .where('order_id', '=', seeded.order_id)
+    .executeTakeFirstOrThrow();
+  expect(after).toEqual({
+    platform_status: seeded.platform_status,
+    rebate_status: seeded.rebate_status,
+    rights_pending: seeded.rights_pending,
+    hold: seeded.hold,
+    row_version: seeded.row_version,
+  });
 }
 
 function setup() {
@@ -88,6 +109,7 @@ it('[AC-B1-04zza#35] 找到本 App 本平台的子订单：持子订单 advisory
   expect((await rightsOf(h.db, f.appId)).map((row) => [row.source, row.type, row.status])).toEqual([
     ['API', 'RIGHTS', 'SUCCEEDED'],
   ]);
+  await expectOrderUntouched(order);
 });
 
 it('[AC-B1-04zza#36] 违规：PUNISH / SUCCEEDED、违规单号与同步时刻原样交给 rights.record', async () => {
@@ -114,6 +136,7 @@ it('[AC-B1-04zza#36] 违规：PUNISH / SUCCEEDED、违规单号与同步时刻�
     occurred_at: f.clock.now(),
     platform_rights_no: `${order.sub_order_id}:202610`,
   });
+  await expectOrderUntouched(order);
 });
 
 it('[AC-B1-04zza#37] 同一条重放：第二次 duplicate，order_rights 只有一条', async () => {
