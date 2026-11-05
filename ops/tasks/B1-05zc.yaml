@@ -1,0 +1,40 @@
+id: B1-05zc
+repo: rebate-platform
+title: 下单前返利一律单值（D10-641）——quoteRebate 与出卡不再产出 price_compare_risk 与区间，不读 compare_rate_ratio_bp，小字统一 rebate_estimate
+type: impl
+# 2026-11-05 be 入账（D10-641，SPEC_REF 0949b0ac）。判口径的只有 catalog/domain/card.ts quoteBasisFor（淘宝非 feed/pool/tlj_pool/share 判风险），各入口（搜索、粘贴、首页池、详情、热销榜、Agent、open 复核、分享）都经 card-assembler → 报价器。改法：quoteBasisFor 恒 normal；disclaimer 有返利时只 rebate_estimate；rebate-quoter 与演示报价器删比价折算与配置读取，context 为 price_compare_risk 时拒绝；COMMISSION_QUOTE_CONFIG_KEYS、DEMO_QUOTE_KEYS 去掉 compare 键。
+# 配置项 rebate.taobao.compare_rate_ratio_bp 在 content 注册表保留不删（D10-641），只是不再读。契约枚举 price_compare_risk 保留兼容，Agent 工具侧放行代码不动。no_rebate / amount_unknown / login_required、entry_source 写入照旧；settleQuote「normal 必须 min = max」保留。规则测试钉：同一淘宝商品（配置故意带 compare 5000）经搜索 / 粘贴 / 首页池 / 详情（另加热销榜、Agent、带来源详情、open 复核）报价相同且 min = max、basis normal、小字 rebate_estimate。冻结用例断言旧区间的照 D10-327 进 test_paths，由新鲜独立 Claude 改，PR 正文逐条列改前改后，按 #24 报核。RV2（commission）。
+refs: [BR-PRICE-07, BR-CALC-16, BR-TEXT-03]
+refs_hash:
+  BR-PRICE-07: 945b25cfcca0
+  BR-CALC-16: 608d5607c3fb
+  BR-TEXT-03: e5d9ad000f4c
+deps: []
+paths:
+  - 'apps/api/src/modules/catalog/domain/card{.ts,.test.ts}'
+  - 'apps/api/src/modules/catalog/application/{card-assembler,share-quote}{.ts,.test.ts}'
+  - 'apps/api/src/modules/catalog/application/detail.ts'
+  - 'apps/api/src/modules/commission/application/{rebate-quoter,types}{.ts,.test.ts}'
+  - 'apps/api/src/app.module.ts'
+  - 'test/spec/catalog/{entry-quote-parity,card,price-state,hot-rank-upstream}/**'
+  - 'test/spec/catalog/detail/{detail.test,route.int.test}.ts'
+  - 'test/spec/catalog/{product-pool-read/detail-fallback,hot-rank-viewer/app}.int.test.ts'
+  - 'test/spec/catalog/search/{refill,availability}.test.ts'
+  - 'test/spec/commission/quoter/**'
+  - 'test/spec/commission/wiring/assembly.test.ts'
+  - 'test/spec/agent/tools-quote/snapshots.test.ts'
+  - 'test/spec/linking/open-requote/prices.int.test.ts'
+test_paths:
+  - 'test/spec/catalog/{entry-quote-parity,card,price-state,hot-rank-upstream}/**'
+  - 'test/spec/catalog/detail/{detail.test,route.int.test}.ts'
+  - 'test/spec/catalog/{product-pool-read/detail-fallback,hot-rank-viewer/app}.int.test.ts'
+  - 'test/spec/catalog/search/{refill,availability}.test.ts'
+  - 'test/spec/commission/quoter/**'
+  - 'test/spec/commission/wiring/assembly.test.ts'
+  - 'test/spec/agent/tools-quote/snapshots.test.ts'
+  - 'test/spec/linking/open-requote/prices.int.test.ts'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
