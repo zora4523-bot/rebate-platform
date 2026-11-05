@@ -184,6 +184,18 @@ export interface UnionItem extends ItemRef {
   readonly category_l1_name?: string;
 }
 
+/**
+ * B1-04zzg (FU-DETAIL-SHOP-NAME): the one rule every adapter uses for its official shop-name field.
+ * A string trimmed of leading / trailing whitespace when non-empty → `{ shop_name }`; empty, blank,
+ * non-string or missing → `{}` (the key stays absent). Callers pass only the platform's official
+ * field — never a nick, seller nick, title or shop id as a fallback.
+ */
+export function shopNameField(value: unknown): { readonly shop_name?: string } {
+  if (typeof value !== 'string') return {};
+  const name = value.trim();
+  return name === '' ? {} : { shop_name: name };
+}
+
 export interface UnionItemDetail extends UnionItem {
   readonly description?: string;
   /**
