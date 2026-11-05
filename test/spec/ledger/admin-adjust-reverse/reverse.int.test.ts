@@ -4,10 +4,12 @@
 // frozen AC-B2-02i#10 behaviour for ADMIN_ADJUST.
 import { randomUUID } from 'node:crypto';
 import { createTestDatabase } from '@couli/db/testing';
+import { accountingDate } from '@couli/domain';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { Ledger } from '../../../../apps/api/src/modules/ledger/index.ts';
+import { INSTANT } from '../posting/kit.ts';
 import {
   DAY,
   KIND,
@@ -53,6 +55,32 @@ function genericReverse(
       return ledger.reverse(trx, { appId, originalUniqKey: key });
     }),
   );
+}
+
+/**
+ * A stored voucher's accounting date (PostgreSQL date rendered as text, independent of the runner
+ * timezone) and the booked_at of every one of its entries, as ISO instants.
+ */
+async function dating(db: Kysely<DB>, appId: string, voucherId: string) {
+  const [vouchers, entries] = await Promise.all([
+    db
+      .selectFrom('ledger_vouchers')
+      .select((eb) => eb.cast<string>('accounting_date', 'text').as('day'))
+      .where('app_id', '=', appId)
+      .where('id', '=', voucherId)
+      .execute(),
+    db
+      .selectFrom('ledger_entries')
+      .select('booked_at')
+      .where('app_id', '=', appId)
+      .where('voucher_id', '=', voucherId)
+      .orderBy('id')
+      .execute(),
+  ]);
+  return {
+    days: vouchers.map((v) => v.day),
+    bookedAt: entries.map((e) => e.booked_at.toISOString()),
+  };
 }
 
 it.each([
@@ -131,6 +159,23 @@ it(
     expect(await ledger.getBalances(h.db, { appId, userIds: [a.user_id] })).toEqual([balance]);
     const posted = await snapshot(h.db, appId);
     const voucherId = 'voucherId' in first ? first.voucherId : null;
+
+    // Cross-month (BR-FUND-16: accounting date = the injected Clock's +08:00 day at write time):
+    // the reversal is dated 2032-07-01 and booked at the Clock's instant; the original keeps its own.
+    const reversalAt = clock.now();
+    expect(reversalAt.toISOString()).toBe('2032-06-30T16:00:00.000Z');
+    expect(accountingDate(reversalAt)).toBe('2032-07-01');
+    expect(voucherId).toEqual(expect.any(String));
+    expect(await dating(h.db, appId, String(voucherId))).toEqual({
+      days: [accountingDate(reversalAt)],
+      bookedAt: [reversalAt.toISOString(), reversalAt.toISOString()],
+    });
+    const originalId = posted.vouchers.find((v) => v.uniq_key === original.uniqKey)?.id;
+    expect(originalId).toEqual(expect.any(String));
+    expect(await dating(h.db, appId, String(originalId))).toEqual({
+      days: [DAY],
+      bookedAt: [INSTANT, INSTANT],
+    });
 
     // One reversal per original (BR-FUND-24 细则): a replay is the same voucher, no second write.
     expect(await outcome(post(h.db, ledger, [a.user_id], reversal))).toEqual({
