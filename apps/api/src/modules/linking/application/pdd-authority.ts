@@ -32,6 +32,7 @@
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
 import { newUuidV7, type Clock } from '../../platform/index.ts';
+import type { PddAuthorityUrl } from '../../union/index.ts';
 import { canTransitionBinding } from '../domain/binding-status-transitions.ts';
 import { resolveBindingConflictsOnActive } from '../infra/binding-conflicts.ts';
 import type { AttrCodeReader } from '../ports.ts';
@@ -176,6 +177,15 @@ export async function queryPddAuthority(
   } finally {
     pddQueriesInFlight -= 1;
   }
+}
+
+/**
+ * B1-06zf (FU-PDD-AUTH-LINK): the one link of a UnionAdapter.pddAuthorityUrl answer the
+ * authorization jump is built over — schema_url, else mobile_short_url, else url.
+ */
+export function pddAuthorityLink(result: PddAuthorityUrl): string {
+  void result;
+  throw new Error('NotImplemented: pddAuthorityLink');
 }
 
 export async function pddBindingRows(executor: Kysely<DB>, appId: string, userId: string) {

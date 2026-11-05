@@ -25,6 +25,7 @@ import {
   type OrderQueryOpt,
   type Page,
   type PddAuthority,
+  type PddAuthorityUrl,
   type RegisteredPlatform,
   type ResolvedLink,
   type SearchQuery,
@@ -520,6 +521,17 @@ export class DemoUnionAdapter implements UnionAdapter {
       );
     }
     return Object.freeze({ authorized: scenario !== 'pdd_unauthorized' });
+  }
+
+  /**
+   * B1-06zf (FU-PDD-AUTH-LINK): the demo Pinduoduo filing link of a server-built identity — an
+   * obvious demo address (https://demo.invalid/…), never an imitation of a Pinduoduo payload.
+   * Synthetic; never a capability claim (CAP-PDD-05).
+   */
+  async pddAuthorityUrl(identity: UnionIdentity, ctx: CallCtx): Promise<PddAuthorityUrl> {
+    void identity;
+    void ctx;
+    throw new Error('NotImplemented: pddAuthorityUrl');
   }
 
   async listOrders(win: TimeWindow, opt: OrderQueryOpt, ctx: CallCtx): Promise<Page<UnionOrder>> {
