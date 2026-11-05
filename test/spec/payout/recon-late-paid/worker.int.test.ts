@@ -1,12 +1,14 @@
 // BR-WDR-23 / BR-WDR-16, D10-632: late_paid_check reads stored bills, never reruns R2.
 import { randomUUID } from 'node:crypto';
-import { sql } from 'kysely';
+import { PostgresQueryCompiler, sql, type KyselyPlugin } from 'kysely';
 import { expect, it } from 'vitest';
 import {
   BILL_DATE,
   IN_DAY,
   LINE_FAIL,
+  LINE_SUCCESS,
   LINE_UNKNOWN,
+  NEAR_DAY_END,
   NEXT_BILL_DATE,
   NEXT_RUN,
   alertsAbout,
@@ -528,4 +530,96 @@ it('[AC-B2-09t#30] 日界窗口内 D 为 partial 或 failed，即使 D+1 succeed
     await runLate(f, w.id);
     await expectRetry(f, w, 0);
   }
+}, 60_000);
+
+it('[AC-B2-09t#34] R2 在复核的两次读取之间提交成功行，不得用旧空行和新 succeeded 误报漏单', async () => {
+  const f = await s.setup();
+  const w = await f.seedManual(IN_DAY, { net: 12_347n });
+  f.setBill(BILL_DATE, [lineOf(w, { outBizNo: null })]);
+  expect(await runs(f)).toEqual([]);
+  expect(await reconRows(f)).toEqual([]);
+  expect(await diffs(f)).toEqual([]);
+  await expectClean(f, w);
+
+  const compiler = new PostgresQueryCompiler();
+  let firstQuery: object | undefined;
+  let triggered = 0;
+  const plugin: KyselyPlugin = {
+    transformQuery({ node, queryId }) {
+      const compiled = compiler.compileQuery(node, queryId);
+      if (firstQuery === undefined && /\b(recon_channel|payout_recon_runs)\b/.test(compiled.sql)) {
+        firstQuery = queryId;
+      }
+      return node;
+    },
+    async transformResult({ result, queryId }) {
+      if (queryId === firstQuery && triggered === 0) {
+        triggered += 1;
+        // The first read has executed, but its result has not reached the worker yet.
+        // Commit real R2 through the original h.db, without this plugin, before resuming.
+        await f.runDay();
+      }
+      return result;
+    },
+  };
+  await expect(
+    f.reconJob({ db: f.h.db.withPlugin(plugin) })(lateJob(f, w.id)),
+  ).resolves.toBeUndefined();
+  expect(triggered).toBe(1);
+  expect(await runs(f)).toEqual([
+    expect.objectContaining({ bill_date: BILL_DATE, status: 'succeeded', matched: 1, diffs: 0 }),
+  ]);
+  expect(await reconRows(f)).toEqual([
+    expect.objectContaining({
+      bill_date: BILL_DATE,
+      channel_order_id: w.channelOrderId,
+      channel_status: LINE_SUCCESS,
+      channel_amount_fen: w.net,
+      result: 'matched',
+    }),
+  ]);
+  expect(await diffs(f)).toEqual([]);
+  await expectClean(f, w);
+}, 60_000);
+
+it('[AC-B2-09t#35] 日界已有 paid_line_not_success 时优先结束，D+1 未跑也不再入队或增加差错冻结', async () => {
+  const f = await s.setup();
+  const w = await f.seedManual(NEAR_DAY_END, { net: 12_347n });
+  f.setBill(BILL_DATE, [lineOf(w, { outBizNo: null, amountFen: 12_346n, status: LINE_FAIL })]);
+  await f.runDay();
+  expect(await runs(f)).toEqual([
+    expect.objectContaining({ bill_date: BILL_DATE, status: 'succeeded' }),
+  ]);
+  expect(await reconRows(f)).toEqual([
+    expect.objectContaining({
+      bill_date: BILL_DATE,
+      channel_order_id: w.channelOrderId,
+      channel_status: LINE_FAIL,
+      channel_amount_fen: 12_346n,
+      our_amount_fen: w.net,
+      result: 'diff',
+    }),
+  ]);
+  const before = await diffs(f);
+  expect(before).toHaveLength(1);
+  expectDiff(f, before[0], {
+    refType: 'withdrawal',
+    refIds: [w.id],
+    expectedFen: w.net,
+    actualFen: 0n,
+    periods: [BILL_DATE],
+  });
+  expect(before[0]?.resolution).toMatchObject({ case: 'paid_line_not_success' });
+  await expectReconHold(f, w.userId, before[0]);
+  const holds = await holdsOf(f, w.userId);
+  const queued = await jobs(f);
+  f.send.mockClear();
+  f.clock.set(new Date(f.clock.now().getTime() + 3_600_000));
+  await runLate(f, w.id);
+  expect(f.send).not.toHaveBeenCalled();
+  expect(await lateJobs(f)).toEqual([]);
+  expect(await jobs(f)).toEqual(queued);
+  expect(await diffs(f)).toEqual(before);
+  expect(await holdsOf(f, w.userId)).toEqual(holds);
+  await expectReconHold(f, w.userId, before[0]);
 }, 60_000);
