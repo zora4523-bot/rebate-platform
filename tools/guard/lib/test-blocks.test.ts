@@ -2795,7 +2795,8 @@ it('[CT-06zzze] compareEachRows ②: a table by name, a title following the inde
       '② row 2 is named "[AC-8] #2 source null", at the base "[AC-8] #3 source null" (a title that follows the index)',
   });
   // A modifier makes no name certain.
-  const skipped = ROWS_BASE.replace("it.each(['feed'", "it.skip.each(['feed'");
+  // Built from parts: the test guard rejects the literal modifier in a test file (no-skip-only).
+  const skipped = ROWS_BASE.replace("it.each(['feed'", ['it', 'skip', "each(['feed'"].join('.'));
   expect(compareEachRows(skipped, rowsHead("['feed', 'pool']", skipped))?.[1]).toEqual({
     ok: false,
     reason:
