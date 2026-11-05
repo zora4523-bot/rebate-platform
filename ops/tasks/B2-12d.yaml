@@ -21,6 +21,8 @@ paths:
   - 'apps/api/src/modules/identity/ports/closing-adjustment-prefill.ts'
   - 'apps/api/src/modules/identity/index.ts'
   - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/ledger/infra/admin-adjustments-store.ts' # money r1：B2-12c 的一步提交直接写 status，改走 transition()
+  - 'apps/api/src/modules/admin/domain/audit-log-view.ts' # 预填审计 adjustment_prefill、system:ledger 登记显示名
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/planned-operations.gen.ts'
   - 'packages/contracts-ts/src/openapi.gen.ts'
