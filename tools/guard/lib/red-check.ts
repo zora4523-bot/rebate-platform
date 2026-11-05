@@ -173,9 +173,10 @@
 // D10-629 / D10-630, after F1-02zzzb's config-etag/domain.int.test.ts, whose 22 tests are all
 // declared) is left out of the expected list, as a renamed-only file (outsideOnlyFiles): not run,
 // not judged, neither here nor in tools/ci/evidence-check.ts, whose coverage rule is unchanged.
-// Only when every test block is unchanged, certainly produces a known number of tests (a plain
-// test, or an inline `.each([…])` array, directly in plain describes) and the ledger declares
-// that many full names for it; the notes say which file, why, its changed lines and that the
+// Only when every test block is unchanged, the exact full names of its tests are certain (a
+// plain test with a static title, or an inline `.each([…])` array of literals whose titles are
+// formatted as Vitest does, directly in plain describes; Codex review r1 S1: never by a wildcard)
+// and the ledger declares exactly those names; the notes say which file, why, its changed lines and that the
 // reviewer and the orchestrator confirm it. Otherwise the file stays expected: a file whose every
 // test is declared still fails, listed or not.
 import { matchesAny } from '../../lib/glob.ts';
@@ -544,9 +545,10 @@ export type OutsideOnly = { file: string; lines: string; reason: string; tests: 
  *   compareOutsideChanged applied to it (ruleTestBaselines: kind `support` with `outside.lines`);
  * - no registered expected value of it is void, and no test block is new or changed (a block
  *   calling a registered changed helper counts as changed);
- * - every block certainly produces a known number of tests (ComparedBlock.cases) and the ledger's
- *   red_exempt declares that many distinct full names for it, each declaration of the file
- *   matching exactly one block, each with a reason of RED_EXEMPT_REASON_MIN characters.
+ * - the exact full names of every block's tests are certain (ComparedBlock.names: static titles,
+ *   inline `.each([…])` / `.for([…])` arrays of literals formatted as Vitest does; Codex review r1
+ *   S1), distinct, and the file's red_exempt declarations are exactly those names (none missing,
+ *   none extra), each with a reason of RED_EXEMPT_REASON_MIN characters.
  * Anything else stays expected and is judged as before (CT-06zzzc). Test-support files are not
  * consulted: whether the file may read one does not change the outcome (its tests are declared).
  */
@@ -576,21 +578,20 @@ export function outsideOnlyFiles(
     if (b?.kind !== 'support' || b.outside?.lines === undefined) continue;
     if ((b.expectedValues?.void.length ?? 0) > 0) continue;
     if (b.blocks.length === 0) continue;
-    if (b.blocks.some((x) => x.changed || typeof x.cases !== 'number' || x.cases < 1)) continue;
-    const mine = declared.filter((d) => d.file === file);
-    const names = b.blocks.map(() => new Set<string>());
-    let ok = true;
-    for (const d of mine) {
-      const hits = b.blocks.flatMap((x, i) => (x.pattern.test(d.test) ? [i] : []));
-      if (hits.length !== 1 || d.reason.trim().length < RED_EXEMPT_REASON_MIN) {
-        ok = false;
-        break;
-      }
-      names[hits[0] as number]?.add(d.test);
+    if (b.blocks.some((x) => x.changed || !Array.isArray(x.names) || x.names.length === 0)) {
+      continue;
     }
-    if (!ok) continue;
-    if (b.blocks.some((x, i) => (names[i]?.size ?? 0) < (x.cases as number))) continue;
-    const tests = b.blocks.reduce((n, x) => n + (x.cases as number), 0);
+    // Codex review r1 S1: the exact full names, never the blocks' wildcard patterns. They must be
+    // distinct, and the file's declarations exactly these names, each with a reason.
+    const names = b.blocks.flatMap((x) => x.names as string[]);
+    const want = new Set(names);
+    if (want.size !== names.length) continue;
+    const mine = declared.filter((d) => d.file === file);
+    const have = new Set(mine.map((d) => d.test));
+    if (have.size !== mine.length || have.size !== want.size) continue;
+    if (![...want].every((n) => have.has(n))) continue;
+    if (mine.some((d) => d.reason.trim().length < RED_EXEMPT_REASON_MIN)) continue;
+    const tests = names.length;
     out.push({ file, lines: b.outside.lines, reason: b.outside.reason, tests });
   }
   return out;
