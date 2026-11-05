@@ -88,9 +88,9 @@ export interface UnionAuthUrlOptions {
    * B1-06zf: the governed union adapters the Pinduoduo filing link is generated through. Absent →
    * every Pinduoduo auth-url answers 50303 (no placeholder address, no state).
    */
-  readonly registry?: LinkConversionOptions['registry'];
+  readonly registry?: LinkConversionOptions['registry'] | undefined;
   /** B1-06zf: identity's attr_code reader (the Pinduoduo identity's uid); absent → 50301. */
-  readonly attrCodes?: AttrCodeReader;
+  readonly attrCodes?: AttrCodeReader | undefined;
 }
 
 export interface UnionAuthUrlService {
