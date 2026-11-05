@@ -44,7 +44,27 @@ red_exempt_outside:
     reason: '用例外只把 GUEST_REBATE 常量由区间 299–598 改为 normal 598–598（D10-641）；本条不用该常量或与金额无关，新旧实现下都成立'
   - file: test/spec/commission/quoter/failures.test.ts
     reason: '用例外加 settled 助手与注释（#19/#20 用它把拒绝变成可断言的值）；本条用例体未改、不调用 settled，新旧实现下都成立'
+  - file: test/spec/catalog/price-state/cards.test.ts
+    reason: '用例外只去掉了 kit 的 PLATFORMS 导入（[AC-B1-05i#5] 改为新用例后不再用它）；其余用例体未改，与比价口径无关，新旧实现下都成立'
 red_exempt:
+  - file: test/spec/catalog/price-state/cards.test.ts
+    test: '[AC-B1-05i#7] BR-PRICE-01：一分券后价和一分无券售价都有效，不能过度过滤'
+    reason: '冻结用例测试体未改；用例外只去掉了 PLATFORMS 导入；本条与小字口径无关，新旧实现下都成立'
+  - file: test/spec/catalog/price-state/cards.test.ts
+    test: '[AC-B1-05i#8] BR-PRICE-01/12：同一商品先有效、再异常、后恢复时不复用旧卡掩盖异常'
+    reason: '冻结用例测试体未改；用例外只去掉了 PLATFORMS 导入；本条与小字口径无关，新旧实现下都成立'
+  - file: test/spec/catalog/price-state/cards.test.ts
+    test: '[AC-B1-05i#9] BR-PRICE-12：retrieval 的 link 登记失败仍失败即关，不伪装价格异常或编造卡'
+    reason: '冻结用例测试体未改；用例外只去掉了 PLATFORMS 导入；本条与小字口径无关，新旧实现下都成立'
+  - file: test/spec/catalog/price-state/cards.test.ts
+    test: '[AC-B1-05i#9] BR-PRICE-12：active_query 的 link 登记失败仍失败即关，不伪装价格异常或编造卡'
+    reason: '冻结用例测试体未改；用例外只去掉了 PLATFORMS 导入；本条与小字口径无关，新旧实现下都成立'
+  - file: test/spec/commission/quoter/failures.test.ts
+    test: '[AC-B2-03c#23] BR-PRICE-07 jd 不允许比价区间'
+    reason: '冻结用例测试体未改：[AC-B2-03c#23] 块恢复成与基线逐字相同（表 jd、pdd），淘宝另起新用例；用例外加 settled 助手与注释，本条不调用它，新旧实现下都成立'
+  - file: test/spec/commission/quoter/failures.test.ts
+    test: '[AC-B2-03c#23] BR-PRICE-07 pdd 不允许比价区间'
+    reason: '冻结用例测试体未改：[AC-B2-03c#23] 块恢复成与基线逐字相同（表 jd、pdd），淘宝另起新用例；用例外加 settled 助手与注释，本条不调用它，新旧实现下都成立'
   - file: test/spec/agent/tools-quote/snapshots.test.ts
     test: '[AC-B3-04c#12][BR-AI-04] 同卡只取一次数据，下一次报价独立取数，不拼接前后快照'
     reason: '冻结用例测试体未改；用例外只加了 RebateQuote 的类型导入（供 #21 替身的类型断言）与 #21 前的注释；其余用例体未改，与比价口径无关，新旧实现下都成立'
