@@ -18,6 +18,7 @@ paths:
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  - 'apps/h5/src/shared/api/signed.ts'
   - 'apps/h5/src/shared/api/anonymous.ts'
 impl: claude
 tester: none
