@@ -20,7 +20,9 @@ import {
   type ConnectionConfig,
   type DbHandles,
 } from '../../../../apps/api/src/modules/platform/index.ts';
+import { DemoUnionAdapter } from '../../../../apps/api/src/modules/union/index.ts';
 import { NOW, ROOT, TRACE, success, validate, type Response } from '../auth-url/kit.ts';
+import { expectNoState, planValues } from '../pdd-auth-link/kit.ts';
 
 interface HttpApp {
   init(): Promise<unknown>;
@@ -379,8 +381,41 @@ it('[AC-B1-06t#4] 两个拼多多账号一有效一过期：只按未释放绑�
     .execute();
   const bindingId = await bind(f, 'pdd', 'active', activeAccountId);
   await selfBuySlot(f, activeAccountId);
+  // D10-661 甲: record what the union port answers (the governed wrapper takes the method at
+  // entry build, so the call-through spy goes in before start).
+  const portAnswers: Array<Awaited<ReturnType<DemoUnionAdapter['pddAuthorityUrl']>>> = [];
+  const portAuthorityUrl = DemoUnionAdapter.prototype.pddAuthorityUrl;
+  vi.spyOn(DemoUnionAdapter.prototype, 'pddAuthorityUrl').mockImplementation(async function (
+    this: DemoUnionAdapter,
+    identity,
+    context,
+  ) {
+    const answer = await portAuthorityUrl.call(this, identity, context);
+    portAnswers.push(answer);
+    return answer;
+  });
   const get = await start(f);
-  await issuedPdd(f, await get('pdd'));
+  const first = await get('pdd');
+  await issuedPdd(f, first);
+  // D10-661 甲: every auth_jump step is a link the port answered, never the example.test
+  // placeholder and never carrying this state (raw or decoded).
+  const issued = success(first);
+  const decoded = (value: string): string => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  };
+  expect(portAnswers).toHaveLength(1);
+  const answered = [
+    portAnswers[0]!.schema_url,
+    portAnswers[0]!.mobile_short_url,
+    portAnswers[0]!.url,
+  ].filter((value): value is string => typeof value === 'string' && value !== '');
+  const steps = planValues(issued.auth_jump);
+  for (const step of steps) expect(answered).toContain(step);
+  expectNoState([...steps, ...steps.map(decoded)], issued.state);
   const before = await f.rows();
   // 账号集合不变，仅切换绑定所用账号；不依赖随机 UUID 排序或调度时序。
   await db
@@ -397,8 +432,41 @@ it('[AC-B1-06t#4] 两个拼多多账号一有效一过期：只按未释放绑�
 it('[AC-B1-06t#5] 拼多多站长授权 active 正常签发，随后 expired 拒绝签发且不改动原会话', async () => {
   const f = await seed();
   await selfBuySlot(f, f.accounts.pdd);
+  // D10-661 甲: record what the union port answers (the governed wrapper takes the method at
+  // entry build, so the call-through spy goes in before start).
+  const portAnswers: Array<Awaited<ReturnType<DemoUnionAdapter['pddAuthorityUrl']>>> = [];
+  const portAuthorityUrl = DemoUnionAdapter.prototype.pddAuthorityUrl;
+  vi.spyOn(DemoUnionAdapter.prototype, 'pddAuthorityUrl').mockImplementation(async function (
+    this: DemoUnionAdapter,
+    identity,
+    context,
+  ) {
+    const answer = await portAuthorityUrl.call(this, identity, context);
+    portAnswers.push(answer);
+    return answer;
+  });
   const get = await start(f);
-  await issuedPdd(f, await get('pdd'));
+  const first = await get('pdd');
+  await issuedPdd(f, first);
+  // D10-661 甲: every auth_jump step is a link the port answered, never the example.test
+  // placeholder and never carrying this state (raw or decoded).
+  const issued = success(first);
+  const decoded = (value: string): string => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  };
+  expect(portAnswers).toHaveLength(1);
+  const answered = [
+    portAnswers[0]!.schema_url,
+    portAnswers[0]!.mobile_short_url,
+    portAnswers[0]!.url,
+  ].filter((value): value is string => typeof value === 'string' && value !== '');
+  const steps = planValues(issued.auth_jump);
+  for (const step of steps) expect(answered).toContain(step);
+  expectNoState([...steps, ...steps.map(decoded)], issued.state);
   const before = await f.rows();
   await expire(f, 'pdd');
   const response = await get('pdd');

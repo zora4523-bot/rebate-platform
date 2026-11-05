@@ -38,6 +38,7 @@ import {
   validate,
   type Response,
 } from './kit.ts';
+import { expectNoState, planValues } from '../pdd-auth-link/kit.ts';
 
 interface HttpApp {
   init(): Promise<unknown>;
@@ -389,6 +390,19 @@ it.each(['ios', 'android', 'harmony'] as const)(
         updated_at: clock.now(),
       })
       .execute();
+    // D10-661 甲: record what the union port answers (the governed wrapper takes the method at
+    // entry build, so the call-through spy goes in before start).
+    const portAnswers: Array<Awaited<ReturnType<DemoUnionAdapter['pddAuthorityUrl']>>> = [];
+    const portAuthorityUrl = DemoUnionAdapter.prototype.pddAuthorityUrl;
+    vi.spyOn(DemoUnionAdapter.prototype, 'pddAuthorityUrl').mockImplementation(async function (
+      this: DemoUnionAdapter,
+      identity,
+      context,
+    ) {
+      const answer = await portAuthorityUrl.call(this, identity, context);
+      portAnswers.push(answer);
+      return answer;
+    });
     const get = await start(f);
     const implicitResponse = await get('pdd', client);
     const implicit = success(implicitResponse);
@@ -424,6 +438,25 @@ it.each(['ios', 'android', 'harmony'] as const)(
         used_at: null,
         expire_at: new Date(clock.now().getTime() + 600_000),
       });
+    }
+    // D10-661 甲: every auth_jump step is a link the port answered for that issuance, never the
+    // example.test placeholder and never carrying this state (raw or decoded).
+    const decoded = (value: string): string => {
+      try {
+        return decodeURIComponent(value);
+      } catch {
+        return value;
+      }
+    };
+    expect(portAnswers).toHaveLength(2);
+    for (const [index, data] of [implicit, explicit].entries()) {
+      const answer = portAnswers[index]!;
+      const answered = [answer.schema_url, answer.mobile_short_url, answer.url].filter(
+        (value): value is string => typeof value === 'string' && value !== '',
+      );
+      const steps = planValues(data.auth_jump);
+      for (const step of steps) expect(answered).toContain(step);
+      expectNoState([...steps, ...steps.map(decoded)], data.state);
     }
   },
   60_000,
