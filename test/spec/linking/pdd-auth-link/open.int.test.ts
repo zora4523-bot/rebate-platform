@@ -5,6 +5,7 @@ import {
   STATE_TTL_MS,
   authorityHarness,
   customOf,
+  expectAuthSteps,
   expectAuthorityIdentity,
   expectNoState,
   expectedLink,
@@ -24,7 +25,7 @@ import {
 // before any union call and writes no state.
 const h = authorityHarness({ createTestDatabase, acquireTestRedis });
 
-it('[AC-B1-06zf#7] 拼多多 open 未备案 30111：data.auth_jump 就是 pddAuthorityUrl 返回的链接（schema_url → mobile_short_url → url），不是 example.test 占位', async () => {
+it('[AC-B1-06zf#7] 拼多多 open 未备案 30111：data.auth_jump 的 h5 步是 pddAuthorityUrl 返回的网页地址（mobile_short_url → url，https），scheme 步若有就是上游 schema_url 原样；不是 example.test 占位', async () => {
   const t = await h.tenant();
   const u = await t.user();
   const linkId = await u.searchLink();
@@ -32,13 +33,15 @@ it('[AC-B1-06zf#7] 拼多多 open 未备案 30111：data.auth_jump 就是 pddAut
   const calls = h.authorityUrlCalls(t.appId);
   expect(calls).toHaveLength(1);
   const link = expectedLink(calls[0]!.result);
-  // The demo answers schema_url, mobile_short_url and url, all distinct: schema_url is taken.
+  // The demo answers schema_url, mobile_short_url and url, all distinct: the web address is
+  // mobile_short_url, and schema_url (the demo scheme) never stands in for it.
   const answer = calls[0]!.result!;
-  expect(link).toBe(answer.schema_url);
-  expect(link).not.toBe(answer.mobile_short_url);
+  expect(link).toBe(answer.mobile_short_url);
   expect(link).not.toBe(answer.url);
+  expect(link).not.toBe(answer.schema_url);
   const body = await refused(response, 422, 30111);
   expect(body.data).toEqual({ auth_jump: planOver(link) });
+  expectAuthSteps(body.data?.['auth_jump'], answer);
   expect(h.convertCalls(t.appId)).toEqual([]);
 }, 60_000);
 
@@ -257,4 +260,36 @@ it('[AC-B1-06zf#27] D10-654：绑定（pending_auth）在第二个账户、该�
   const linkId = await u.searchLink();
   const before = await t.bindings();
   await expectMaintenance(t, await u.open(linkId), before);
+}, 60_000);
+
+it('[AC-B1-06zf#29] D10-662：上游给了 scheme、installed=false 的未备案 open：30111 auth_jump 的 primary 是 HTTPS 网页地址（mobile_short_url），scheme 不被二次包装、不进任何一步', async () => {
+  const t = await h.tenant();
+  const u = await t.user();
+  const linkId = await u.searchLink();
+  const answer = {
+    url: 'https://demo.invalid/authority/b1-06zf-29',
+    mobile_short_url: 'https://demo.invalid/m/b1-06zf-29',
+    schema_url: 'couli-demo://pdd/authority/b1-06zf-29',
+  };
+  h.answerAuthorityUrl(answer);
+  const response = await u.open(linkId);
+  const calls = h.authorityUrlCalls(t.appId);
+  expect(calls).toHaveLength(1);
+  expect(calls[0]!.result).toEqual(answer);
+  const body = await refused(response, 422, 30111);
+  expect(body.data).toEqual({ auth_jump: planOver(answer.mobile_short_url) });
+  const plan = body.data?.['auth_jump'] as { primary: { type: string; value: string } };
+  expect(plan.primary.type).toBe('h5');
+  expect(new URL(plan.primary.value).protocol).toBe('https:');
+  expectAuthSteps(plan, answer);
+  // installed=false has no scheme step; the scheme is neither handed out nor wrapped anywhere.
+  for (const value of planValues(plan)) {
+    expect(value).not.toContain('couli-demo');
+    expect(value).not.toContain(encodeURIComponent(answer.schema_url));
+  }
+  expect(response.payload).not.toContain('couli-demo');
+  const rows = await t.sessions();
+  expect(rows).toHaveLength(1);
+  expectNoState(planValues(plan), rows[0]!.state);
+  expect(h.convertCalls(t.appId)).toEqual([]);
 }, 60_000);

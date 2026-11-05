@@ -8,7 +8,8 @@ import {
 } from '../../../../apps/api/src/modules/union/index.ts';
 
 // B1-06zf (FU-PDD-AUTH-LINK, D10-647 ⑤): the demo adapter has pddAuthorityUrl. It answers obvious
-// demo addresses (the demo host, https://demo.invalid/…), never a Pinduoduo address or payload.
+// demo addresses (the demo host, https://demo.invalid/…, and from D10-662 the demo scheme
+// couli-demo://pdd/authority/… as schema_url), never a Pinduoduo address, scheme or payload.
 const APP = 'synthetic_b1_06zf_demo';
 const ATTR = 'b106zf0a';
 const ctx: CallCtx = {
@@ -47,17 +48,21 @@ function links(answer: PddAuthorityUrl): string[] {
   ].filter((value): value is string => value !== undefined);
 }
 
-it('[AC-B1-06zf#21] 演示拼多多 pddAuthorityUrl 返回演示域名下的 https 地址，同时带非空且互不相同的 schema_url、mobile_short_url、url', async () => {
+it('[AC-B1-06zf#21] 演示拼多多 pddAuthorityUrl：url 与 mobile_short_url 是演示域名下的 https 地址，schema_url 是 couli-demo:// 演示 scheme，三者非空且互不相同', async () => {
   const answer = await demo().pddAuthorityUrl(identity(), ctx);
-  const url = new URL(answer.url);
-  expect(url.protocol).toBe('https:');
-  expect(url.hostname).toBe('demo.invalid');
+  // D10-662: the two web fields are https on the demo host; schema_url is the demo App scheme.
+  for (const web of [answer.url, answer.mobile_short_url]) {
+    const parsed = new URL(String(web));
+    expect(parsed.protocol).toBe('https:');
+    expect(parsed.hostname).toBe('demo.invalid');
+  }
+  expect(String(answer.schema_url)).toMatch(/^couli-demo:\/\/pdd\/authority\/\S+$/);
   for (const link of links(answer)) {
     expect(link).toMatch(/\S/);
     if (/^https?:/i.test(link)) expect(new URL(link).hostname).toBe('demo.invalid');
   }
   // All three picked fields are present and distinct, so an exit taking the wrong one is visible
-  // end to end ([AC-B1-06zf#1] / [#7] pin schema_url).
+  // end to end ([AC-B1-06zf#1] / [#7] pin the web address = mobile_short_url, scheme = schema_url).
   const picked = [answer.schema_url, answer.mobile_short_url, answer.url];
   for (const value of picked) {
     expect(value).toEqual(expect.any(String));

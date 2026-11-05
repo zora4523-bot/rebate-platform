@@ -7,7 +7,8 @@
 // registered through POST /v1/devices and carry a session token of identity's own token service.
 // Observed on DemoUnionAdapter (called through and recorded):
 // - pddAuthorityUrl: every call with its identity, context and answer. A case may make it reject
-//   with a union error (failAuthorityUrl), or build the entry without the port at all
+//   with a union error (failAuthorityUrl), answer obvious demo values it sets (answerAuthorityUrl),
+//   or build the entry without the port at all
 //   (authorityUrl: 'missing': the method is taken off the demo prototype before the entry starts);
 // - queryPddAuthority: called through with the demo's own `pdd_unauthorized` scenario until a case
 //   files its users (fileUsers), so an open is "not filed" unless the case says otherwise;
@@ -181,6 +182,11 @@ export interface AuthorityHarness {
   fileUsers(): void;
   /** Every pddAuthorityUrl of the rest of the case rejects with this error. */
   failAuthorityUrl(error: Error): void;
+  /**
+   * Every pddAuthorityUrl of the rest of the case answers this (obvious demo values only, never a
+   * Pinduoduo payload); the call is still recorded with it as the result.
+   */
+  answerAuthorityUrl(answer: PddAuthorityUrl): void;
 }
 
 export function hex(length: number): string {
@@ -232,6 +238,7 @@ export function authorityHarness(
   const converts: IdentityCall[] = [];
   let filed = false;
   let urlFailure: Error | null = null;
+  let urlAnswer: PddAuthorityUrl | null = null;
   let ruleKey: string | undefined;
   let removed: PropertyDescriptor | undefined;
   let database: TestDatabase | undefined;
@@ -264,6 +271,11 @@ export function authorityHarness(
         if (urlFailure !== null) {
           urlCalls.push({ identity, ctx: context, result: null });
           throw urlFailure;
+        }
+        if (urlAnswer !== null) {
+          const answer = { ...urlAnswer };
+          urlCalls.push({ identity, ctx: context, result: answer });
+          return answer;
         }
         const result = await originalAuthorityUrl.call(this, identity, context);
         urlCalls.push({ identity, ctx: context, result });
@@ -343,6 +355,7 @@ export function authorityHarness(
   afterEach(() => {
     filed = false;
     urlFailure = null;
+    urlAnswer = null;
   });
 
   afterAll(async () => {
@@ -702,6 +715,9 @@ export function authorityHarness(
     failAuthorityUrl: (error) => {
       urlFailure = error;
     },
+    answerAuthorityUrl: (answer) => {
+      urlAnswer = answer;
+    },
   };
 }
 
@@ -751,17 +767,44 @@ export async function refused(
 }
 
 /**
- * The link the plan must carry for one recorded answer (D10-647 ②): schema_url, else
- * mobile_short_url, else url. Independent of the implementation's own picker.
+ * The web address the h5 step (and auth_url) must carry for one recorded answer (D10-662):
+ * mobile_short_url, else url — never schema_url. Independent of the implementation's own picker.
  */
 export function expectedLink(result: PddAuthorityUrl | null): string {
   expect(result, 'pddAuthorityUrl answered').not.toBeNull();
   const answer = result!;
-  const link = [answer.schema_url, answer.mobile_short_url, answer.url].find(
+  const link = [answer.mobile_short_url, answer.url].find(
     (value): value is string => typeof value === 'string' && value !== '',
   );
-  expect(link, 'the answer carries a link').toEqual(expect.any(String));
+  expect(link, 'the answer carries a web address').toEqual(expect.any(String));
+  expect(new URL(String(link)).protocol, 'the web address is https').toBe('https:');
   return String(link);
+}
+
+/** The upstream App scheme of one recorded answer (D10-662): schema_url as is, else null. */
+export function expectedScheme(result: PddAuthorityUrl | null): string | null {
+  expect(result, 'pddAuthorityUrl answered').not.toBeNull();
+  const scheme = result!.schema_url;
+  return typeof scheme === 'string' && scheme !== '' ? scheme : null;
+}
+
+/**
+ * D10-662 over every step of a plan: an h5 step carries the web address; a scheme step carries the
+ * upstream schema_url exactly (never wrapped), and only when there is one; no other step carries
+ * the upstream scheme, raw or encoded.
+ */
+export function expectAuthSteps(plan: unknown, result: PddAuthorityUrl | null): void {
+  const web = expectedLink(result);
+  const scheme = expectedScheme(result);
+  const typed = plan as AuthJumpPlan;
+  for (const step of [typed.primary, ...typed.fallbacks]) {
+    if (step.type === 'h5') expect(step.value).toBe(web);
+    if (step.type === 'scheme' && scheme !== null) expect(step.value).toBe(scheme);
+    if (scheme !== null && step.type !== 'scheme') {
+      expect(step.value).not.toContain(scheme);
+      expect(step.value).not.toContain(encodeURIComponent(scheme));
+    }
+  }
 }
 
 /** The installed=false plan over one link: the h5 step alone (BR-ATTR-27, launch plan unchanged). */

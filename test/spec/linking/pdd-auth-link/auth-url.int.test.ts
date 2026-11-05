@@ -4,6 +4,7 @@ import { UnionError } from '../../../../apps/api/src/modules/union/index.ts';
 import {
   STATE_TTL_MS,
   authorityHarness,
+  expectAuthSteps,
   expectAuthorityIdentity,
   expectNoState,
   expectedLink,
@@ -18,21 +19,23 @@ import {
 // when asked; the state stays in union_auth_sessions. Taobao keeps its current address.
 const h = authorityHarness({ createTestDatabase, acquireTestRedis });
 
-it('[AC-B1-06zf#1] 拼多多 auth-url：auth_url 与 auth_jump 就是 pddAuthorityUrl 返回的链接（schema_url → mobile_short_url → url），不是 example.test 占位', async () => {
+it('[AC-B1-06zf#1] 拼多多 auth-url：auth_url 与 h5 步是 pddAuthorityUrl 返回的网页地址（mobile_short_url → url，https），scheme 步若有就是上游 schema_url 原样；不是 example.test 占位', async () => {
   const t = await h.tenant();
   const u = await t.user();
   const response = await u.authUrl('pdd');
   const calls = h.authorityUrlCalls(t.appId);
   expect(calls).toHaveLength(1);
   const link = expectedLink(calls[0]!.result);
-  // The demo answers schema_url, mobile_short_url and url, all distinct: schema_url is taken.
+  // The demo answers schema_url, mobile_short_url and url, all distinct: the web address is
+  // mobile_short_url, and schema_url (the demo scheme) never stands in for it.
   const answer = calls[0]!.result!;
-  expect(link).toBe(answer.schema_url);
-  expect(link).not.toBe(answer.mobile_short_url);
+  expect(link).toBe(answer.mobile_short_url);
   expect(link).not.toBe(answer.url);
+  expect(link).not.toBe(answer.schema_url);
   const data = await issued(response);
   expect(data.auth_url).toBe(link);
   expect(data.auth_jump).toEqual(planOver(link));
+  expectAuthSteps(data.auth_jump, answer);
   expect(data).not.toHaveProperty('auth_methods');
   expectNoState([data.auth_url, ...planValues(data.auth_jump)], data.state);
 }, 60_000);
@@ -162,3 +165,32 @@ it('[AC-B1-06zf#24] 绑定（pending_auth / invalid）在第二个拼多多账�
     expect(data.auth_jump).toEqual(planOver(data.auth_url));
   }
 }, 120_000);
+
+it('[AC-B1-06zf#28] D10-662：上游给了 scheme、installed=false：auth_url 与 primary 是 HTTPS 网页地址（mobile_short_url），scheme 不被二次包装、不进任何一步', async () => {
+  const t = await h.tenant();
+  const u = await t.user();
+  const answer = {
+    url: 'https://demo.invalid/authority/b1-06zf-28',
+    mobile_short_url: 'https://demo.invalid/m/b1-06zf-28',
+    schema_url: 'couli-demo://pdd/authority/b1-06zf-28',
+  };
+  h.answerAuthorityUrl(answer);
+  const response = await u.authUrl('pdd');
+  const calls = h.authorityUrlCalls(t.appId);
+  expect(calls).toHaveLength(1);
+  expect(calls[0]!.result).toEqual(answer);
+  const data = await issued(response);
+  expect(data.auth_url).toBe(answer.mobile_short_url);
+  expect(data.auth_jump).toEqual(planOver(answer.mobile_short_url));
+  const plan = data.auth_jump!;
+  expect(plan.primary.type).toBe('h5');
+  expect(new URL(plan.primary.value).protocol).toBe('https:');
+  expectAuthSteps(plan, answer);
+  // installed=false has no scheme step; the scheme is neither handed out nor wrapped anywhere.
+  for (const value of [data.auth_url, ...planValues(plan)]) {
+    expect(value).not.toContain('couli-demo');
+    expect(value).not.toContain(encodeURIComponent(answer.schema_url));
+  }
+  expect(response.payload).not.toContain('couli-demo');
+  expectNoState([data.auth_url, ...planValues(plan)], data.state);
+}, 60_000);
