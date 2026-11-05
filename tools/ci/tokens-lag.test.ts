@@ -246,8 +246,12 @@ function newRepo(kind: string): string {
   return dir;
 }
 
-function commit(dir: string, files: Record<string, string>, at: number): string {
-  for (const [rel, text] of Object.entries(files)) write(dir, rel, text);
+/** Writes (or, for null, deletes) the files and commits at the given time. */
+function commit(dir: string, files: Record<string, string | null>, at: number): string {
+  for (const [rel, text] of Object.entries(files)) {
+    if (text === null) rmSync(join(dir, rel));
+    else write(dir, rel, text);
+  }
   git(dir, ['add', '-A']);
   git(dir, ['commit', '-q', '-m', `at ${iso(at)}`], at);
   return git(dir, ['rev-parse', 'HEAD']);
@@ -258,14 +262,21 @@ const tokens = (version: string): string =>
   `${JSON.stringify({ metadata: { version, edit: ++tokenEdit } }, null, 2)}\n`;
 
 /** A planning repository; each step is a token revision (`version`) or another file. */
-function planning(steps: { at: number; version?: string }[]): { dir: string; commits: string[] } {
+/** A planning repository; each step is a token revision (`version`), raw token-file text (`raw`,
+ * null deletes the file) or a change to another file. */
+function planning(steps: { at: number; version?: string; raw?: string | null }[]): {
+  dir: string;
+  commits: string[];
+} {
   const dir = newRepo('planning');
   const commits = steps.map((s, i) =>
     commit(
       dir,
-      s.version === undefined
-        ? { [`notes/${String(i)}.md`]: 'x\n' }
-        : { [TOKENS]: tokens(s.version) },
+      s.raw !== undefined
+        ? { [TOKENS]: s.raw }
+        : s.version === undefined
+          ? { [`notes/${String(i)}.md`]: 'x\n' }
+          : { [TOKENS]: tokens(s.version) },
       s.at,
     ),
   );
@@ -464,12 +475,12 @@ it('a contract commit this repository does not have -> warning 找不到该提�
   expect(r.report?.locks[0]?.contract).toMatchObject({ found: false, days_behind: null });
 });
 
-function h5Platform(version: string, source: string): string {
+function h5Platform(version: string, source: string, snapshot = tokens(version)): string {
   const dir = newRepo('h5');
   commit(
     dir,
     {
-      'contracts/design-tokens.json': tokens(version),
+      'contracts/design-tokens.json': snapshot,
       'contracts/README.md': `| 文件 | 说明 |\n| \`design-tokens.json\` | 令牌版本 ${version}，来源提交 ${source}。 |\n`,
     },
     T0,
@@ -517,7 +528,99 @@ it('--h5 reads the snapshot version and the README source commit', () => {
     h5Platform('0.4.0', p.commits[1] ?? ''),
     '--h5',
   ]);
-  expect(kinds(mismatch)).toContain('h5:snapshot-mismatch');
+  // The verdict follows the source commit (0.5.0, current); the snapshot only warns.
+  expect(mismatch.code).toBe(1);
+  expect(kinds(mismatch)).toEqual(['h5:snapshot-mismatch']);
+  expect(mismatch.report?.locks[0]?.tokens.version).toBe('0.5.0');
+});
+
+it('--h5: a snapshot version missing from the source history, or unreadable, only warns (exit 1)', () => {
+  const p = planning([
+    { at: T0, version: '0.4.0' },
+    { at: T0 + DAY_MS, version: '0.4.1' },
+  ]);
+  for (const snapshot of [tokens('0.5.0'), '{"metadata": ', '{"metadata": {}}\n']) {
+    const r = run([
+      '--planning',
+      p.dir,
+      '--platform',
+      h5Platform('0.4.1', p.commits[1] ?? '', snapshot),
+      '--h5',
+    ]);
+    expect({ snapshot, code: r.code, kinds: kinds(r) }).toEqual({
+      snapshot,
+      code: 1,
+      kinds: ['h5:snapshot-mismatch'],
+    });
+    expect(r.report?.locks[0]?.tokens).toMatchObject({ version: '0.4.1', versions_behind: 0 });
+  }
+});
+
+it('--h5: a README source commit missing from the planning ref, or no source commit, is exit 2', () => {
+  const p = planning([{ at: T0, version: '0.4.0' }]);
+  const other = planning([{ at: T0, version: '0.4.0' }]);
+  const notOnRef = run([
+    '--planning',
+    p.dir,
+    '--platform',
+    h5Platform('0.4.0', other.commits[0] ?? ''),
+    '--h5',
+  ]);
+  expect(notOnRef.code).toBe(2);
+  expect(notOnRef.stderr).toContain('不在规划仓库');
+  const dir = newRepo('h5');
+  commit(
+    dir,
+    {
+      'contracts/design-tokens.json': tokens('0.4.0'),
+      'contracts/README.md': '| `design-tokens.json` | 没有来源提交 |\n',
+    },
+    T0,
+  );
+  const noSource = run(['--planning', p.dir, '--platform', dir, '--h5']);
+  expect(noSource.code).toBe(2);
+  expect(noSource.stderr).toContain('来源提交');
+});
+
+it('the newest token revision deleted, broken or without metadata.version is exit 2', () => {
+  for (const raw of [null, '{"metadata": ', '{"metadata": {}}\n']) {
+    const p = planning([
+      { at: T0, version: '0.1.0' },
+      { at: T0 + DAY_MS, raw },
+    ]);
+    const r = run([
+      '--planning',
+      p.dir,
+      '--platform',
+      h5Platform('0.1.0', p.commits[0] ?? ''),
+      '--h5',
+    ]);
+    expect({ raw, code: r.code, out: r.report }).toEqual({ raw, code: 2, out: null });
+    expect(r.stderr).toContain('最新的令牌提交');
+  }
+});
+
+it('an older unreadable token revision is a source-invalid warning and not counted as a version', () => {
+  const p = planning([
+    { at: T0, version: '0.1.0' },
+    { at: T0 + HOUR_MS, raw: '{"metadata": ' },
+    { at: T0 + 2 * HOUR_MS, raw: null },
+    { at: T0 + 3 * HOUR_MS, version: '0.1.0' },
+  ]);
+  const r = run([
+    '--planning',
+    p.dir,
+    '--platform',
+    h5Platform('0.1.0', p.commits[3] ?? ''),
+    '--h5',
+  ]);
+  expect(r.code).toBe(1);
+  expect(kinds(r)).toEqual(['*:source-invalid', '*:source-invalid']);
+  expect(r.report?.planning.versions.map((v) => v.version)).toEqual(['0.1.0']);
+  expect(r.report?.locks[0]?.tokens.versions_behind).toBe(0);
+  const messages = (r.report?.warnings ?? []).map((w) => w.message).join('\n');
+  expect(messages).toContain(p.commits[1]?.slice(0, 12));
+  expect(messages).toContain(p.commits[2]?.slice(0, 12));
 });
 
 it('input errors exit 2: missing field, broken JSON, missing file, unknown commit, bad arguments', () => {

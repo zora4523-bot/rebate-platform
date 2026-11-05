@@ -28,7 +28,16 @@
 //              "version" is a distinct metadata.version seen in the token file's history (no
 //              semver arithmetic); or the locked planning commit is >= 7 days older than the newest
 //              token commit and does not contain it. The locked commit must exist on the planning
-//              ref and hold the token file, else input error.
+//              ref and hold a readable token file, else input error.
+//   source   - the newest commit touching the token file on the planning ref must leave a readable
+//              file with a metadata.version (not deleted, valid JSON), else input error. An older
+//              revision that is deleted, broken or lacks metadata.version is not counted as a
+//              version and is reported as a `source-invalid` warning (exit 1): history cannot be
+//              rewritten, so an input error there would fail CI for good.
+//   h5       - the token verdict uses the version of the file at the README source commit; a
+//              snapshot whose metadata.version differs (or cannot be read) is a `snapshot-mismatch`
+//              warning only. A README without exactly one source commit, a source commit not on the
+//              planning ref, or a missing snapshot / README file is an input error.
 //   contract - rebate_platform.commit is >= 7 days older than the contract trunk commit and does
 //              not contain it; a commit this repository does not have is a warning ("找不到该提交"),
 //              not an input error (a client may lock an unpushed commit).
@@ -242,26 +251,42 @@ function isAncestor(repo: string, ancestor: string, descendant: string): boolean
   return tryGit(['merge-base', '--is-ancestor', ancestor, descendant], { cwd: repo }).status === 0;
 }
 
-function tokenHistory(planning: string, head: string): TokenRevision[] {
+export type InvalidRevision = { commit: string; reason: string };
+
+function tokenHistory(
+  planning: string,
+  head: string,
+): { history: TokenRevision[]; invalid: InvalidRevision[] } {
   const out = gitOut(planning, ['log', '--format=%H %ct', '--reverse', head, '--', TOKENS_PATH]);
   if (out === null || out === '')
     throw new InputError(`规划仓库 ${head} 上没有 ${TOKENS_PATH} 的提交历史`);
   const history: TokenRevision[] = [];
-  for (const line of out.split('\n')) {
+  const invalid: InvalidRevision[] = [];
+  const lines = out.split('\n');
+  lines.forEach((line, i) => {
     const [commit = '', ct = ''] = line.split(' ');
     const text = gitOut(planning, ['show', `${commit}:${TOKENS_PATH}`]);
-    if (text === null) continue; // the commit deleted the file
-    let version: string;
-    try {
-      version = tokenVersion(text, `${commit.slice(0, 12)}:${TOKENS_PATH}`);
-    } catch {
-      continue; // a historical revision without a readable version does not count as a version
+    let version: string | null = null;
+    let reason = '该提交删除了令牌文件';
+    if (text !== null) {
+      try {
+        version = tokenVersion(text, `${commit.slice(0, 12)}:${TOKENS_PATH}`);
+      } catch (err) {
+        reason = err instanceof Error ? err.message : String(err);
+      }
+    }
+    if (version === null) {
+      if (i === lines.length - 1) {
+        throw new InputError(
+          `规划仓库 ${head.slice(0, 12)} 上最新的令牌提交 ${commit.slice(0, 12)} 不可用：${reason}`,
+        );
+      }
+      invalid.push({ commit, reason });
+      return;
     }
     history.push({ commit, time: Number(ct) * 1000, version });
-  }
-  if (history.length === 0)
-    throw new InputError(`${TOKENS_PATH} 的历史里读不出任何 metadata.version`);
-  return history;
+  });
+  return { history, invalid };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -274,7 +299,8 @@ export type WarningKind =
   | 'contract-days'
   | 'contract-missing'
   | 'contract-mismatch'
-  | 'snapshot-mismatch';
+  | 'snapshot-mismatch'
+  | 'source-invalid';
 
 export type Warning = { lock: string | null; kind: WarningKind; message: string };
 
@@ -330,10 +356,14 @@ export function buildReport(opts: Options, wallClock: number): Report {
   requireRepo(opts.planning, '规划仓库');
   const planningRef = resolveRef(opts.planning, opts.planningRef, '规划仓库');
   const planningHead = planningRef.sha;
-  const history = tokenHistory(opts.planning, planningHead);
+  const { history, invalid } = tokenHistory(opts.planning, planningHead);
   const latest = history[history.length - 1] as TokenRevision;
   const now = opts.now ?? Math.max(latest.time, wallClock);
-  const warnings: Warning[] = [];
+  const warnings: Warning[] = invalid.map((r) => ({
+    lock: null,
+    kind: 'source-invalid',
+    message: `令牌源历史里的提交 ${short(r.commit)} 读不出 metadata.version（不计为版本）：${r.reason}`,
+  }));
   const locks: LockReport[] = [];
 
   const versions = distinctVersions(history).map((v) => {
@@ -377,7 +407,7 @@ export function buildReport(opts: Options, wallClock: number): Report {
   const tokensFor = (
     name: string,
     commit: string,
-    lockedVersion: string | null,
+    snapshot: { version: string | null; problem: string | null } | null,
   ): LockReport['tokens'] => {
     if (!hasCommit(opts.planning, commit) || !isAncestor(opts.planning, commit, planningHead)) {
       throw new InputError(
@@ -387,14 +417,17 @@ export function buildReport(opts: Options, wallClock: number): Report {
     const text = gitOut(opts.planning, ['show', `${commit}:${TOKENS_PATH}`]);
     if (text === null) throw new InputError(`${name}: 提交 ${short(commit)} 里没有 ${TOKENS_PATH}`);
     const atCommit = tokenVersion(text, `${name} ${short(commit)}`);
-    if (lockedVersion !== null && lockedVersion !== atCommit) {
+    if (snapshot !== null && snapshot.version !== atCommit) {
       warnings.push({
         lock: name,
         kind: 'snapshot-mismatch',
-        message: `${name}: 快照版本 ${lockedVersion} 与来源提交 ${short(commit)} 的版本 ${atCommit} 不符`,
+        message:
+          snapshot.version === null
+            ? `${name}: 快照读不出版本（${snapshot.problem ?? ''}），按来源提交 ${short(commit)} 的版本 ${atCommit} 判定`
+            : `${name}: 快照版本 ${snapshot.version} 与来源提交 ${short(commit)} 的版本 ${atCommit} 不符，按来源提交判定`,
       });
     }
-    const version = lockedVersion ?? atCommit;
+    const version = atCommit;
     const lockedTime = commitTime(opts.planning, commit) ?? 0;
     const verdict = judgeTokens({
       history,
@@ -496,13 +529,19 @@ export function buildReport(opts: Options, wallClock: number): Report {
         `h5: 读不了 ${H5_SNAPSHOT} 或 ${H5_README}（--platform ${opts.platform}）`,
       );
     }
-    const version = tokenVersion(snapshot, `h5 ${H5_SNAPSHOT}`);
+    let snapshotVersion: string | null = null;
+    let problem: string | null = null;
+    try {
+      snapshotVersion = tokenVersion(snapshot, `h5 ${H5_SNAPSHOT}`);
+    } catch (err) {
+      problem = err instanceof Error ? err.message : String(err);
+    }
     const commit = readmeSourceCommit(readme);
     locks.push({
       name: 'h5',
       source: 'h5-snapshot',
       path: snapshotPath,
-      tokens: tokensFor('h5', commit, version),
+      tokens: tokensFor('h5', commit, { version: snapshotVersion, problem }),
       contract: null,
     });
   }
