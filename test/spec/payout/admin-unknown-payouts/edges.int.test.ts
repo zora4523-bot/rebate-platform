@@ -9,6 +9,7 @@ import type { QueryResult } from '../../../../apps/api/src/modules/payout/domain
 import type { PayoutChannel } from '../../../../apps/api/src/modules/payout/infra/channels/payout-channel.ts';
 import { createQueryJob } from '../../../../apps/api/src/modules/payout/jobs/query-job.ts';
 import { configPort } from '../proven-success/kit.ts';
+import { holdRow } from './lock-harness.ts';
 import {
   AFTER_FREEZE,
   DAY,
@@ -568,6 +569,126 @@ it('[AC-B2-09s#40] 同一手动任务两个处理器确定性交错：首个通�
     }
     expect((await attemptsOf(f, w)).filter((a) => a.kind === 'query')).toHaveLength(1);
     expect((await attemptsOf(f, w)).filter((a) => a.kind === 'transfer')).toHaveLength(1);
+    const after = await state(f);
+    expect({ ...after, attempts: [] }).toEqual({ ...before, attempts: [] });
+  });
+});
+
+it('[AC-B2-09s#41] 最新查询fail时，账单状态虽在map内但映射fail或unknown均不能解除resolve_query_failed，状态凭证余额不变', async () => {
+  const f = fixture(s);
+  await withUnknownAdmin(f, async (h) => {
+    await setSwitch(f, 'payout.query_status_map', {
+      SUCCESS: 'success',
+      TEST_CLOSED: 'fail',
+      TEST_WAIT: 'unknown',
+    });
+    for (const status of ['TEST_CLOSED', 'TEST_WAIT']) {
+      const who = await payee(f, h);
+      const w = await unknownWithdrawal(f, h, who);
+      await seedQueries(f, w, [['fail', 1]]);
+      await bill(f, w, status);
+      const before = await state(f);
+      const balance = await balanceOf(f.db, f.ledger, f.appId, who.userId);
+      await refused(await h.resolve(w.id, paidBody(f, w)), 'resolve_query_failed');
+      expect(await rowOf(f, w)).toEqual(w);
+      expect(await voucherOf(f.db, f.appId, `wd:${w.id}:PAID`)).toEqual([]);
+      expect(await balanceOf(f.db, f.ledger, f.appId, who.userId)).toEqual(balance);
+      expect(await state(f)).toEqual(before);
+    }
+  });
+});
+
+it('[AC-B2-09s#42] 同一手动查询两处理器各过通道闸门后同时写入：外部提现行锁证明两者阻塞，提交后恰一条query且不迁移不重转账', async () => {
+  const f = fixture(s);
+  await withUnknownAdmin(f, async (h) => {
+    const w = await unknownWithdrawal(f, h, await payee(f, h));
+    const job = await submit(f, h, w);
+    manualRequestId(job);
+    const before = await state(f);
+    const one = channelWorker(f, h);
+    const two = channelWorker(f, h);
+    const enteredOne = Promise.withResolvers<void>();
+    const enteredTwo = Promise.withResolvers<void>();
+    const releaseOne = Promise.withResolvers<void>();
+    const releaseTwo = Promise.withResolvers<void>();
+    one.channels.alipay.query.mockImplementation(async () => {
+      enteredOne.resolve();
+      await releaseOne.promise;
+      return { kind: 'unknown', raw: { code: 'SYNTHETIC_UNKNOWN' } };
+    });
+    two.channels.alipay.query.mockImplementation(async () => {
+      enteredTwo.resolve();
+      await releaseTwo.promise;
+      return { kind: 'unknown', raw: { code: 'SYNTHETIC_UNKNOWN' } };
+    });
+    const first = track(one.handler(job));
+    const second = track(two.handler({ ...job, attempt: job.attempt + 1 }));
+    let hold: Awaited<ReturnType<typeof holdRow>> | undefined;
+
+    // Observe across roles via pg_blocking_pids: couli_app cannot see couli_payout's
+    // wait_event_type/query. Use f.db, not the two payout connections occupied by the writers.
+    async function waitingOn(holder: number, count: number): Promise<number[]> {
+      for (let poll = 0; poll < 2000; poll += 1) {
+        const result = await sql<{ pid: number }>`WITH RECURSIVE waiting_on(pid) AS (
+          SELECT pid FROM pg_stat_activity WHERE datname = current_database()
+            AND ${holder}::integer = ANY(pg_blocking_pids(pid))
+          UNION
+          SELECT a.pid FROM pg_stat_activity a
+            JOIN waiting_on w ON w.pid = ANY(pg_blocking_pids(a.pid))
+            WHERE a.datname = current_database()
+        ) SELECT DISTINCT pid FROM waiting_on`.execute(f.db);
+        if (result.rows.length >= count) return result.rows.map((row) => row.pid);
+        if (first.settled || second.settled) return [];
+      }
+      return [];
+    }
+
+    try {
+      expect(
+        await Promise.race([enteredOne.promise.then(() => true), first.promise.then(() => false)]),
+        'first delivery reached its channel gate before writing',
+      ).toBe(true);
+      expect(
+        await Promise.race([enteredTwo.promise.then(() => true), second.promise.then(() => false)]),
+        'second delivery reached its own channel gate before either answer was recorded',
+      ).toBe(true);
+      // Acquire only after both read phases: the row lock then blocks the attempts' FK check
+      // (or an explicit write-phase row lock), never the initial read before the channel call.
+      hold = await holdRow(f, 'withdrawals', w.id);
+      releaseOne.resolve();
+      const firstWaiters = await waitingOn(hold.pid, 1);
+      expect(firstWaiters, 'first writer waits on the external withdrawal lock').toHaveLength(1);
+      expect(first.settled).toBe(false);
+      releaseTwo.resolve();
+      const bothWaiters = await waitingOn(hold.pid, 2);
+      // A deduplicating writer may wait indirectly on the first writer; an unprotected one
+      // waits directly on the same withdrawal. Both must have reached the write phase.
+      expect(bothWaiters, 'both writers are in the holder-rooted blocking chain').toHaveLength(2);
+      expect(bothWaiters).toContain(firstWaiters[0]);
+      expect(first.settled).toBe(false);
+      expect(second.settled).toBe(false);
+    } finally {
+      releaseOne.resolve();
+      releaseTwo.resolve();
+      try {
+        await hold?.release();
+      } finally {
+        await Promise.allSettled([first.promise, second.promise]);
+      }
+    }
+    await expect(first.promise).resolves.toBeUndefined();
+    await expect(second.promise).resolves.toBeUndefined();
+    for (const worker of [one, two]) {
+      expect(worker.channels.alipay.query).toHaveBeenCalledTimes(1);
+      expect(worker.channels.alipay.query.mock.calls[0]?.[0]).toBe(w.out_biz_no);
+      expect(worker.channels.bank_card.query).not.toHaveBeenCalled();
+      expect(worker.channels.wechat.query).not.toHaveBeenCalled();
+      noTransfer(worker);
+    }
+    const attempts = await attemptsOf(f, w);
+    expect(attempts.filter((a) => a.kind === 'query')).toHaveLength(1);
+    expect(attempts.filter((a) => a.kind === 'transfer')).toHaveLength(1);
+    expect(await rowOf(f, w)).toEqual(w);
     const after = await state(f);
     expect({ ...after, attempts: [] }).toEqual({ ...before, attempts: [] });
   });
