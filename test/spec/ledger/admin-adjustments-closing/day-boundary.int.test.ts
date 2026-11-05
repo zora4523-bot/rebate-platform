@@ -14,6 +14,7 @@
 //   midnight): the voucher's accounting_date is the Beijing day.
 import { expect, it } from 'vitest';
 import {
+  ADJUST,
   ADJUSTMENT_PENDING,
   TIMEOUT,
   expectApproved,
@@ -105,8 +106,11 @@ it(
         expect(await formsOf(f, userId)).toHaveLength(2);
         expect(w.warnings(ADJUSTMENT_PENDING, request.id), '12-02 warn').toHaveLength(3);
 
-        await expectApproved(f, await h.approve(fresh.adjust_id), {
-          caller: h.maker,
+        // h.maker's token was issued at 2026-11-30T15:59:59Z, beyond the admin token lifetime by
+        // now: a fresh fund.adjust session at the current clock approves (real auth, real step-up).
+        const approver = await h.caller([ADJUST]);
+        await expectApproved(f, await h.approve(fresh.adjust_id, { caller: approver }), {
+          caller: approver,
           form: fresh,
           amount: 1200n,
         });
