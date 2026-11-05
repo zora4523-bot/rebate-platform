@@ -12,9 +12,14 @@
 // admin module provides on the admin entry (union never imports admin). Each change and its audit
 // row share one transaction: app.module passes `auditWriter` (admin's writer bound to a handle).
 // The screenshot store is HjyIgnoreEvidenceStore (memory in local / test, fail-closed elsewhere
-// until the private OSS adapter exists). The site OAuth providers are the local / test fake
-// (infra/fake-site-oauth.ts); staging and prod get none (one warn) and an OAuth start fails closed
-// until a union's site OAuth adapter exists. Without a database (isolated HTTP unit tests) or the
+// until the private OSS adapter exists). The site OAuth providers come from
+// createSiteOAuthProviders (infra/fake-site-oauth.ts): the local / test fake; in staging / prod
+// (B1-04zzi, D10-680) the real Taobao provider when the Taobao app credentials (B1-04k, opened from
+// APP_CONFIG), TAOBAO_OAUTH_REDIRECT_URI and the HTTPS token transport are all present, otherwise
+// none (one warn) and an OAuth start fails closed. The rule test
+// test/spec/union/taobao-site-oauth/admin-entry.int.test.ts runs the AdminUnionAccounts factory
+// with only APP_CONFIG, CLOCK, ROOT_LOGGER, DB and FIELD_CRYPTO supplied: any further dependency of
+// it must be a provider of this module. Without a database (isolated HTTP unit tests) or the
 // field cipher the routes still register and every call fails closed (50001).
 //
 // Also compiled by the `test` project: a class decorator only (no parameter decorators or

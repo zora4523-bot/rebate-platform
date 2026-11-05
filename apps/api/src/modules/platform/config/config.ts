@@ -208,6 +208,13 @@ export interface AppConfig {
    */
   readonly taobao?: TaobaoAppConfig | null;
   /**
+   * TAOBAO_OAUTH_REDIRECT_URI (B1-04zzi, D10-680): the redirect_uri of the Taobao station-owner
+   * OAuth, the console's /unions/oauth-callback page. Not a credential; any APP_ENV may set it; an
+   * absolute https: URL or loadConfig refuses (the problem names the variable only). Absent or
+   * null when unset; a hand-built config without it counts as unset.
+   */
+  readonly taobaoOAuthRedirectUri?: string | null;
+  /**
    * DATAOKE_APP_KEY / DATAOKE_APP_SECRET_FILE (./dataoke.ts, B1-04e): staging only, both or neither;
    * the 大淘客 order source of the live Taobao adapter. The secret file is read once by the union
    * module's startup factory; this holds only the app key and the path. Absent when not
