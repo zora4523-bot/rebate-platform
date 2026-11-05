@@ -83,6 +83,7 @@ it('[AC-B2-09t#7] 先落 unknown_line 后补同流水号：核上，不新增或
     jobs: await jobs(f),
     calls: f.billCalls(),
   };
+  f.clock.set(new Date(f.clock.now().getTime() + 3_600_000));
   await runLate(f, w.id);
   await expectClean(f, w);
   expect(await diffs(f)).toEqual(prior);
@@ -123,20 +124,40 @@ it('[AC-B2-09t#8] paid_at 倒填 D，D−3 的成功行仍能核上；多个成�
 it('[AC-B2-09t#9] PAID_API 仅 out_biz_no 命中与仅 channel_order_id 命中均核上；无下载、查询或次日入队 [AC-B2-09t#10]', async () => {
   for (const key of ['out_biz_no', 'channel_order_id']) {
     const f = await s.setup();
+    const order = channelOrderId();
+    if (key === 'channel_order_id') {
+      // Persist the unknown line before the withdrawal exists: R2 must not fill out_biz_no.
+      f.setBill(BILL_DATE, [
+        lineOf({ outBizNo: 'unused', net: 1000n }, { outBizNo: null, channelOrderId: order }),
+      ]);
+      await f.runDay();
+    }
     const w = await f.seedPaid(IN_DAY);
-    f.setBill(BILL_DATE, [
-      lineOf(w, key === 'out_biz_no' ? { channelOrderId: channelOrderId() } : { outBizNo: null }),
-    ]);
-    await f.runDay();
-    expect(await reconRows(f)).toHaveLength(1);
+    if (key === 'channel_order_id') {
+      await sql`UPDATE app.withdrawals SET channel_order_id = ${order}
+        WHERE app_id = ${f.appId} AND id = ${w.id}`.execute(f.h.db);
+    } else {
+      f.setBill(BILL_DATE, [lineOf(w, { channelOrderId: order })]);
+      await f.runDay();
+      expect(order).not.toBe(w.channelOrderId);
+    }
+    const rows = await reconRows(f);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      out_biz_no: key === 'channel_order_id' ? null : w.outBizNo,
+      channel_order_id: order,
+    });
+    const priorDiffs = await diffs(f);
     const before = {
       stored: await stored(f),
       jobs: await jobs(f),
       calls: f.billCalls(),
       books: await books(f),
     };
+    f.clock.set(new Date(f.clock.now().getTime() + 3_600_000));
     await runLate(f, w.id);
     await expectClean(f, w);
+    expect(await diffs(f)).toEqual(priorDiffs);
     expect(await stored(f)).toEqual(before.stored);
     expect(await jobs(f)).toEqual(before.jobs);
     expect(f.billCalls()).toEqual(before.calls);
@@ -161,7 +182,8 @@ it('[AC-B2-09t#12] 金额多一分与少一分：按 net_fen，差错 period 是
       f.h.db,
     );
     const before = await books(f);
-    await runLate(f, w.id);
+    const job = lateJob(f, w.id);
+    await runLate(f, w.id, 0, job);
     const found = await diffsOf(f, [w.id]);
     expect(found).toHaveLength(1);
     expectDiff(f, found[0], {
@@ -175,10 +197,15 @@ it('[AC-B2-09t#12] 金额多一分与少一分：按 net_fen，差错 period 是
     await expectReconHold(f, w.userId, found[0]);
     expect(alertsAbout(f, [w.id]).length).toBeGreaterThan(0);
     expect(await books(f)).toEqual(before);
+    const holds = await holdsOf(f, w.userId);
+    await runLate(f, w.id, 0, { ...job, attempt: 2 });
+    expect(await diffsOf(f, [w.id])).toEqual(found);
+    expect(await holdsOf(f, w.userId)).toEqual(holds);
+    await expectReconHold(f, w.userId, found[0]);
   }
 }, 60_000);
 
-it('[AC-B2-09t#13] LINE_FAIL、LINE_UNKNOWN 都不是成功；已跑完时同流水号也报 missing', async () => {
+it('[AC-B2-09t#13] 单不存在时 LINE_FAIL、LINE_UNKNOWN 不落行；补录后已跑完且无行报 missing', async () => {
   for (const status of [LINE_FAIL, LINE_UNKNOWN]) {
     const f = await s.setup();
     const order = channelOrderId();
@@ -189,6 +216,7 @@ it('[AC-B2-09t#13] LINE_FAIL、LINE_UNKNOWN 都不是成功；已跑完时同流
       ),
     ]);
     await f.runDay();
+    expect(await reconRows(f)).toEqual([]);
     const w = await f.seedManual(IN_DAY);
     await sql`UPDATE app.withdrawals SET channel_order_id = ${order} WHERE id = ${w.id} AND app_id = ${f.appId}`.execute(
       f.h.db,
@@ -215,7 +243,8 @@ it('[AC-B2-09t#14] 手动单的业务单号命中另一成功流水：duplicate_
       f.h.db,
     );
     expect(await diffs(f)).toEqual([]);
-    await runLate(f, w.id);
+    const job = lateJob(f, w.id);
+    await runLate(f, w.id, 0, job);
     const found = await diffs(f);
     expect(found).toHaveLength(1);
     expectDiff(f, found[0], {
@@ -225,6 +254,11 @@ it('[AC-B2-09t#14] 手动单的业务单号命中另一成功流水：duplicate_
       actualFen: 12_347n,
     });
     expect(found[0]?.resolution).toMatchObject({ case: 'duplicate_line', withdrawal_id: w.id });
+    await expectReconHold(f, w.userId, found[0]);
+    const holds = await holdsOf(f, w.userId);
+    await runLate(f, w.id, 0, { ...job, attempt: 2 });
+    expect(await diffs(f)).toEqual(found);
+    expect(await holdsOf(f, w.userId)).toEqual(holds);
     await expectReconHold(f, w.userId, found[0]);
   }
 }, 60_000);
@@ -381,4 +415,117 @@ it('[AC-B2-09t#25] 重读后不存在、非 PAID_*、银行卡都结束，不动
   expect(await jobs(f)).toEqual(before.jobs);
   expect(await diffs(f)).toEqual([]);
   expect(await holdsOf(f, unpaid.userId)).toEqual([]);
+}, 60_000);
+
+it('[AC-B2-09t#27] paid_at 按 +08:00 取账单日：UTC 10-18 的付款须等 10-19，跑成后 period 为 10-19', async () => {
+  const f = await s.setup();
+  await emptyDay(f);
+  const paidAt = new Date('2026-10-18T16:30:00Z');
+  const w = await f.seedManual(paidAt);
+  expect((await runs(f)).map((r) => r.bill_date)).toEqual([BILL_DATE]);
+  await runLate(f, w.id);
+  await expectRetry(f, w, 0);
+  // Keep daily R2 from deciding first: only the late task should create this diff.
+  await sql`UPDATE app.withdrawals SET paid_at = ${new Date('2026-10-20T02:00:00Z')}
+    WHERE app_id = ${f.appId} AND id = ${w.id}`.execute(f.h.db);
+  f.clock.set(NEXT_RUN);
+  await emptyDay(f, NEXT_BILL_DATE);
+  await sql`UPDATE app.withdrawals SET paid_at = ${paidAt}
+    WHERE app_id = ${f.appId} AND id = ${w.id}`.execute(f.h.db);
+  await expectClean(f, w);
+  const next = (await lateJobs(f))[0]!;
+  await runLate(f, w.id, 1, {
+    id: next.id,
+    queue: next.name,
+    name: next.data.name,
+    payload: next.data.payload,
+    attempt: 1,
+  });
+  const found = await diffsOf(f, [w.id]);
+  expect(found).toHaveLength(1);
+  expectDiff(f, found[0], {
+    refType: 'withdrawal',
+    refIds: [w.id],
+    expectedFen: w.net,
+    actualFen: 0n,
+    periods: ['2026-10-19'],
+  });
+  expect(found[0]).toMatchObject({
+    dedupe_key: `R2:alipay:missing:wd:${w.id}`,
+    resolution: { case: 'paid_not_in_bill' },
+  });
+  await expectReconHold(f, w.userId, found[0]);
+}, 60_000);
+
+it('[AC-B2-09t#28] 已存非成功 diff 行沿用 paid_line_not_success，不再产生金额或漏单差错及冻结', async () => {
+  for (const status of [LINE_FAIL, LINE_UNKNOWN]) {
+    const f = await s.setup();
+    const w = await f.seedManual(IN_DAY, { net: 12_347n });
+    f.setBill(BILL_DATE, [lineOf(w, { outBizNo: null, amountFen: 12_346n, status })]);
+    await f.runDay();
+    const rows = await reconRows(f);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      channel_order_id: w.channelOrderId,
+      channel_status: status,
+      channel_amount_fen: 12_346n,
+      our_amount_fen: w.net,
+      result: 'diff',
+    });
+    const before = await diffs(f);
+    expect(before).toHaveLength(1);
+    expectDiff(f, before[0], {
+      refType: 'withdrawal',
+      refIds: [w.id],
+      expectedFen: w.net,
+      actualFen: 0n,
+    });
+    expect(before[0]?.resolution).toMatchObject({ case: 'paid_line_not_success' });
+    await expectReconHold(f, w.userId, before[0]);
+    const holds = await holdsOf(f, w.userId);
+    f.clock.set(new Date(f.clock.now().getTime() + 3_600_000));
+    await runLate(f, w.id);
+    expect(await diffs(f)).toEqual(before);
+    expect(await holdsOf(f, w.userId)).toEqual(holds);
+    expect(await lateJobs(f)).toEqual([]);
+  }
+}, 60_000);
+
+it('[AC-B2-09t#29] R2 先判 amount_mismatch，迟到复核复用同一张差错和同一条冻结', async () => {
+  const f = await s.setup();
+  const w = await f.seedManual(IN_DAY, { net: 12_347n });
+  f.setBill(BILL_DATE, [lineOf(w, { outBizNo: null, amountFen: 12_348n })]);
+  await f.runDay();
+  const before = await diffs(f);
+  expect(before).toHaveLength(1);
+  expectDiff(f, before[0], {
+    refType: 'withdrawal',
+    refIds: [w.id],
+    expectedFen: w.net,
+    actualFen: 12_348n,
+  });
+  expect(before[0]?.resolution).toMatchObject({ case: 'amount_mismatch' });
+  await expectReconHold(f, w.userId, before[0]);
+  const holds = await holdsOf(f, w.userId);
+  await runLate(f, w.id);
+  expect(await diffs(f)).toEqual(before);
+  expect(await holdsOf(f, w.userId)).toEqual(holds);
+}, 60_000);
+
+it('[AC-B2-09t#30] 日界窗口内 D 为 partial 或 failed，即使 D+1 succeeded 仍须等待', async () => {
+  for (const status of ['partial', 'failed'] as const) {
+    const f = await s.setup();
+    await incomplete(f, status);
+    f.clock.set(NEXT_RUN);
+    await emptyDay(f, NEXT_BILL_DATE);
+    const w = await f.seedManual(new Date('2026-10-18T15:50:00.000Z'));
+    expect(await runs(f)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ bill_date: BILL_DATE, status }),
+        expect.objectContaining({ bill_date: NEXT_BILL_DATE, status: 'succeeded' }),
+      ]),
+    );
+    await runLate(f, w.id);
+    await expectRetry(f, w, 0);
+  }
 }, 60_000);

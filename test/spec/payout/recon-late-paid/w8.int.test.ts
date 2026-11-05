@@ -1,4 +1,5 @@
 // BR-WDR-16 + BR-WDR-23: actual admin HTTP W8, real pg-boss transaction and real recon handler.
+import { sql } from 'kysely';
 import { expect, it } from 'vitest';
 import {
   answer,
@@ -31,7 +32,7 @@ import { expectQueued, jobs, lateJobs, runLate, stored, suite } from './late-pai
 
 const s = suite(true);
 
-it('[AC-B2-09t#1] alipay W8 成功恰一个 late_paid_check，payload 三字段精确且无延迟；同 key 重放仍一个 [AC-B2-09t#5]', async () => {
+it('[AC-B2-09t#1] alipay W8 恰一个无延迟任务，同事务 xmin 相等 [AC-B2-09t#31]；同 key 重放仍一个 [AC-B2-09t#5]', async () => {
   const f = await s.setup();
   const a = s.admin(f);
   await withManualAdmin(a, async (h) => {
@@ -40,9 +41,80 @@ it('[AC-B2-09t#1] alipay W8 成功恰一个 late_paid_check，payload 三字段�
     const key = newKey();
     await expectItems(await h.manualPaid([entry], { key }), [paid(w.id)]);
     const job = await expectQueued(f, w.id);
+    // Read before replay or any other write: a send after COMMIT has a different xmin.
+    const versions = await sql<{ job_xmin: string; withdrawal_xmin: string }>`
+      SELECT j.xmin::text AS job_xmin, w.xmin::text AS withdrawal_xmin
+      FROM pgboss.job j CROSS JOIN app.withdrawals w
+      WHERE j.name = 'payout-recon' AND j.id = ${job.id}::uuid
+        AND w.app_id = ${f.appId} AND w.id = ${w.id}::uuid`.execute(f.h.observer);
+    expect(versions.rows).toHaveLength(1);
+    expect(versions.rows[0]!.job_xmin).toBe(versions.rows[0]!.withdrawal_xmin);
     expect(await lateJobs(f)).toHaveLength(1);
     await expectItems(await h.manualPaid([entry], { key }), [paid(w.id)]);
     expect(await lateJobs(f)).toEqual([job]);
+  });
+}, 120_000);
+
+it('[AC-B2-09t#32] 同一批两张 alipay W8 各入队一次，payload 各指向自己的提现单', async () => {
+  const f = await s.setup();
+  const a = s.admin(f);
+  await withManualAdmin(a, async (h) => {
+    const who = await payee(a, h);
+    const first = await approved(a, h, who);
+    const second = await approved(a, h, who);
+    await expectItems(await h.manualPaid([entryOf(a, first), entryOf(a, second)]), [
+      paid(first.id),
+      paid(second.id),
+    ]);
+    const firstJob = await expectQueued(f, first.id);
+    const secondJob = await expectQueued(f, second.id);
+    expect(firstJob.id).not.toBe(secondJob.id);
+    expect(await lateJobs(f)).toHaveLength(2);
+  });
+}, 120_000);
+
+it('[AC-B2-09t#33] 消费 W8 真实任务，当前轮 active 时仍独立入队 round 1、2，各延迟一小时', async () => {
+  const f = await s.setup();
+  const a = s.admin(f);
+  await withManualAdmin(a, async (h) => {
+    const who = await payee(a, h);
+    const w = await approved(a, h, who);
+    await expectItems(await h.manualPaid([entryOf(a, w)]), [paid(w.id)]);
+    let current = await expectQueued(f, w.id);
+    expect(await runs(f)).toEqual([]);
+    for (const nextRound of [1, 2]) {
+      // Retain the active row while handling it: deleting it would hide a reused singletonKey.
+      const claimed = await sql<{ id: string }>`UPDATE pgboss.job
+        SET state = 'active', started_on = now()
+        WHERE name = 'payout-recon' AND id = ${current.id}::uuid AND state = 'created'
+        RETURNING id::text`.execute(f.h.observer);
+      expect(claimed.rows).toEqual([{ id: current.id }]);
+      await runLate(f, w.id, nextRound - 1, {
+        id: current.id,
+        queue: current.name,
+        name: current.data.name,
+        payload: current.data.payload,
+        attempt: 1,
+      });
+      const all = await lateJobs(f);
+      const next = all.filter((j) => j.data.payload['round'] === nextRound);
+      expect(next).toHaveLength(1);
+      expect(all).toHaveLength(nextRound + 1);
+      expect(next[0]!.id).not.toBe(current.id);
+      expect(next[0]!.data).toEqual({
+        name: 'late_paid_check',
+        payload: { app_id: f.appId, withdrawal_id: w.id, round: nextRound },
+      });
+      expect(
+        Math.abs(next[0]!.start_after.getTime() - next[0]!.created_on.getTime() - 3_600_000),
+      ).toBeLessThan(1000);
+      expect(await diffsOf(f, [w.id])).toEqual([]);
+      expect(await holdsOf(f, who.userId)).toEqual([]);
+      await sql`UPDATE pgboss.job SET state = 'completed', completed_on = now()
+        WHERE name = 'payout-recon' AND id = ${current.id}::uuid`.execute(f.h.observer);
+      current = next[0]!;
+      f.clock.set(new Date(f.clock.now().getTime() + 3_600_000));
+    }
   });
 }, 120_000);
 
