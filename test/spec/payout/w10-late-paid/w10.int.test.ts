@@ -42,7 +42,7 @@ import {
 
 const s = suite(true);
 
-it('[AC-B2-09u#1] alipay W10 恰一个无延迟任务，payload 三字段准确，与 PAID_API 的 xmin 相同；同键重放仍一个', async () => {
+it('[AC-B2-09u#1] alipay W10 恰一个无延迟任务，payload 三字段准确，与 PAID_API 状态变更事件的 xmin 相同；同键重放仍一个', async () => {
   const f = await s.setup();
   const a = s.admin(f);
   await withUnknownAdmin(a, async (h) => {
@@ -60,15 +60,18 @@ it('[AC-B2-09u#1] alipay W10 恰一个无延迟任务，payload 三字段准确�
     });
     const job = await expectQueued(f, w.id);
     expect(await lateJobs(f)).toEqual([job]);
-    // Before replay / any further write. W10 uses a SAVEPOINT: compare the actual row xmins,
-    // not merely a transaction argument recorded by a mock queue.
-    const versions = await sql<{ job_xmin: string; withdrawal_xmin: string }>`
-      SELECT j.xmin::text AS job_xmin, w.xmin::text AS withdrawal_xmin
-      FROM pgboss.job j CROSS JOIN app.withdrawals w
+    // Before replay / any further write. The withdrawal UPDATE has a subtransaction xmin.
+    // The PAID_API event is written outside that SAVEPOINT, on the same main transaction as
+    // the job; the observer's couli_app role has table-level SELECT on app.event_log.
+    const versions = await sql<{ job_xmin: string; event_xmin: string }>`
+      SELECT j.xmin::text AS job_xmin, e.xmin::text AS event_xmin
+      FROM pgboss.job j CROSS JOIN app.event_log e
       WHERE j.name = 'payout-recon' AND j.id = ${job.id}::uuid
-        AND w.app_id = ${f.appId} AND w.id = ${w.id}::uuid`.execute(f.h.observer);
+        AND e.app_id = ${f.appId} AND e.name = 'wallet.withdrawal_changed'
+        AND e.payload->'data'->>'withdrawal_id' = ${w.id}
+        AND e.payload->'data'->>'status' = 'PAID_API'`.execute(f.h.observer);
     expect(versions.rows).toHaveLength(1);
-    expect(versions.rows[0]!.job_xmin).toBe(versions.rows[0]!.withdrawal_xmin);
+    expect(versions.rows[0]!.job_xmin).toBe(versions.rows[0]!.event_xmin);
     const beforeReplay = await state(a);
     const replay = await h.resolve(w.id, body, { key });
     await answer(replay, 0);
