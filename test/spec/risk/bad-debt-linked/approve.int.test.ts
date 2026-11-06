@@ -2,12 +2,13 @@
 // the real approval (POST /admin/v1/bad-debt-writeoffs/{id}/approve on the admin entry) with members
 // of real SMS logins on the api entry (./kit.ts). Brief §10: same app, the written-off user excluded;
 // device = every device of the written-off user's sessions (revoked ones too) and every other user
-// with a session (revoked ones too) on one of them, never devices.user_id; one row per (user,
-// dimension); only when the BAD_DEBT_WRITEOFF voucher is written (not on CANCELLED, not when the
-// frozen check refuses); replays write nothing new; the marks are written on the approving
-// transaction. The id_no and payout_account hits are not built here (see the task output: the
-// schema keeps one verified identity and one current payout account per value and app); their
-// cross-app and non-verified counterparts are. Every test first asserts the table exists.
+// with a session (revoked ones too) on one of them, never devices.user_id (brief §11 widens it to the
+// same device_hash: ./history.int.test.ts); one row per (user, dimension); only when the
+// BAD_DEBT_WRITEOFF voucher is written (not on CANCELLED, not when the frozen check refuses);
+// replays write nothing new; the marks are written on the approving transaction. The id_no hit is
+// not built (realname_verified_id_no_hmac_key keeps one verified identity per value and app); its
+// cross-app and non-verified counterparts are here. The payout_account hits, reachable only through
+// history rows, are in ./history.int.test.ts. Every test first asserts the table exists.
 import {
   acquireTestRedis,
   createTestDatabase,

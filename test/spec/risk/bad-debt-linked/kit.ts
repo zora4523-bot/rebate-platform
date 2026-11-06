@@ -9,13 +9,15 @@
 // the login itself and devices.user_id stays NULL as in production), the admin entry of
 // ../../ledger/bad-debt-writeoffs/kit.ts withWriteoffAdmin (the real approval POST
 // /admin/v1/bad-debt-writeoffs/{id}/approve, step-up, idempotency, audit), both on one PostgreSQL
-// as couli_app and one Redis.
+// as couli_app and one Redis; an Alipay change goes through identity's real save (rebind), and a
+// reinstall is a second real POST /v1/devices with the same device_hash (a new devices row).
 // Synthetic (fixtures, never on the path under test): the verified real name, the current payout
 // account, the funds and the labor agreement of a member (as ../blocklist-device-scope/kit.ts
 // seeds them, with a chosen identity number and alipay logon id so two members can share one);
 // the negative balance (a plain ledger whose Clock stands on the day it went below 0) and the
 // PENDING candidate as the daily job would have generated it; an APPROVED withdrawal holding
-// frozen money; a one-shot fault on the INSERT into app.risk_linked_marks. All values are
+// frozen money; a bank card bound earlier and since changed away from (an is_current=false row,
+// pastCard); a one-shot fault on the INSERT into app.risk_linked_marks. All values are
 // synthetic. A missing table fails as an assertion (requireMarksTable) before anything reads it.
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
@@ -23,7 +25,15 @@ import { PostgresQueryCompiler, sql, type Kysely, type KyselyPlugin } from 'kyse
 import { expect } from 'vitest';
 import { createLedger } from '../../../../apps/api/src/modules/ledger/index.ts';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/index.ts';
-import { NAME, account, type Fixture, type Kit } from '../../identity/payout-account/kit.ts';
+import {
+  ALIPAY_CONTEXT,
+  BANK_CONTEXT,
+  NAME,
+  account,
+  service,
+  type Fixture,
+  type Kit,
+} from '../../identity/payout-account/kit.ts';
 import { phone } from '../../identity/sms-codes/kit.ts';
 import { seedWithdrawal } from '../../ledger/admin-adjustments/kit.ts';
 import {
@@ -200,6 +210,71 @@ export async function enrol(
     payee,
     login: (next) => smsLogin(kit, next, number),
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Payout account history (brief §11: every row of payout_accounts, is_current=false ones too).
+
+/** A synthetic 16-digit card number. */
+export function syntheticCard(): string {
+  const digits = Array.from(randomBytes(12), (byte) => String(byte % 10)).join('');
+  return `6222${digits}`;
+}
+
+/**
+ * The member's real Alipay binding change to `payee` through identity's save (B1-13e, BR-WDR-02):
+ * the old current row is kept with is_current=false. `p.payee` keeps the enrolled value.
+ */
+export async function rebind(kit: Kit, p: Person, payee: string): Promise<void> {
+  const payout = await service(kit);
+  const result = await kit.db.transaction().execute((trx) =>
+    payout.save(trx, {
+      appId: p.appId,
+      userId: p.userId,
+      alipayLogonId: payee,
+      payeeName: NAME,
+    }),
+  );
+  expect(result, '换绑支付宝（BR-WDR-02 允许）').toMatchObject({ code: 0 });
+}
+
+/**
+ * A bank card the member bound before and has since changed away from: a payout_accounts row with
+ * is_current=false, as a change leaves it (the bank-card save needs the vendor's verification).
+ */
+export async function pastCard(kit: Kit, p: Person, cardNo: string): Promise<void> {
+  await account(kit, { appId: p.appId, uid: p.userId } as Fixture, cardNo, {
+    method: 'bank_card',
+    current: false,
+  });
+}
+
+export interface Holder {
+  readonly user_id: string;
+  readonly is_current: boolean;
+}
+
+/** Holder order of holdersOf, for the expected side too. */
+export function byHolder(list: readonly Holder[]): Holder[] {
+  const key = (h: Holder) => `${h.user_id}|${String(h.is_current)}`;
+  return [...list].sort((x, y) => key(x).localeCompare(key(y)));
+}
+
+/** Every payout_accounts row of the app holding the value (fixture check), in byHolder order. */
+export async function holdersOf(
+  kit: Kit,
+  appId: string,
+  value: { readonly alipay: string } | { readonly card: string },
+): Promise<Holder[]> {
+  const column = 'alipay' in value ? sql.ref('alipay_hmac') : sql.ref('bank_card_hmac');
+  const digest =
+    'alipay' in value
+      ? kit.crypto.blindIndex(value.alipay, ALIPAY_CONTEXT)
+      : kit.crypto.blindIndex(value.card, BANK_CONTEXT);
+  const { rows } = await sql<Holder>`
+    SELECT user_id::text AS user_id, is_current FROM app.payout_accounts
+    WHERE app_id = ${appId} AND ${column} = ${digest}`.execute(kit.db);
+  return byHolder(rows);
 }
 
 // ---------------------------------------------------------------------------------------------
