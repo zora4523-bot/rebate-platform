@@ -30,7 +30,10 @@ export const PIXEL_TOLERANCE = 8;
 
 /**
  * Test-only mutation switch (DSX-50 acceptance: "改一个按钮圆角后，报告能标出该页"): a style that
- * changes the corner radius of every button. Off unless a case turns it on.
+ * changes the corner radius of every button. Off unless a case turns it on. The self-check
+ * compares the mutated screenshot with a reference taken in the same run, only inside the
+ * bounding box of the mutated button (a corner change would be diluted over the whole page), and
+ * never with the committed baseline (that comparison is report only).
  */
 export const MUTATION_STYLE_ID = 'visual-baseline-mutation';
 export const MUTATION_CSS =
@@ -56,10 +59,20 @@ export const BASELINE_DIR = serverPath(new URL('__baselines__/', HERE));
 export const REPORT_DIR = serverPath(new URL('../../../.tmp/visual-baseline/', HERE));
 
 /**
- * page: the regular comparison; mutation: with the mutation switch on; mutation-off: the same page
- * after switching it off again; stability: the second of two screenshots taken one after another.
+ * page: the regular comparison; mutation-reference: the unmutated screenshot of the mutation
+ * self-check against the baseline (report only); mutation: with the mutation switch on;
+ * mutation-off: the same page after switching it off again; stability: the second of two
+ * screenshots taken one after another.
  */
-export type Variant = 'page' | 'mutation' | 'mutation-off' | 'stability';
+export type Variant = 'page' | 'mutation-reference' | 'mutation' | 'mutation-off' | 'stability';
+
+/** A box in screenshot pixels (CSS pixels, origin at the top left corner of the screenshot). */
+export interface Region {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
 
 export interface VisualReportEntry {
   readonly page: string;
@@ -67,21 +80,33 @@ export interface VisualReportEntry {
   readonly surface: VisualPage['surface'];
   readonly theme: Theme;
   readonly variant: Variant;
+  /**
+   * baseline: compared with the committed __baselines__ file; run: compared with a screenshot
+   * taken earlier in the same case (referenceImage).
+   */
+  readonly comparedWith: 'baseline' | 'run';
+  /** Only the pixels inside this box were compared; null: the whole screenshot. */
+  readonly region: Region | null;
   /** File name under __baselines__/. */
   readonly baseline: string;
   readonly baselineFound: boolean;
   readonly width: number;
   readonly height: number;
+  /** Size of the committed baseline (comparedWith baseline only). */
   readonly baselineWidth: number | null;
   readonly baselineHeight: number | null;
   readonly diffPixels: number | null;
+  /** Pixels compared: the whole union of both sizes, or the region. */
   readonly totalPixels: number | null;
-  /** Differing pixels / all pixels × 100, rounded to 4 decimals; null without a baseline. */
+  /** Differing pixels / compared pixels × 100, rounded to 4 decimals; null without a baseline. */
   readonly diffPercent: number | null;
   readonly thresholdPercent: number;
   readonly overThreshold: boolean;
   /** Paths relative to the report directory. */
   readonly actualImage: string;
+  /** comparedWith run only: the reference screenshot of this case. */
+  readonly referenceImage: string | null;
+  /** Difference image (of the region when there is one). */
   readonly diffImage: string | null;
   /** stability only: difference between the two screenshots of this run. */
   readonly repeatDiffPercent: number | null;
@@ -309,9 +334,52 @@ function comparePixels(actual: ImageData, baseline: ImageData): Comparison {
   };
 }
 
-/** Compares two screenshots (PNG, base64). */
-export async function compareCaptures(actual: string, baseline: string): Promise<Comparison> {
-  return comparePixels(await decodePng(actual), await decodePng(baseline));
+/**
+ * The bounding box of an element in the pixels of capture(): the screenshot is of <body>, so the
+ * box is taken relative to the body's box, rounded outwards to whole pixels.
+ */
+export function regionOf(element: Element): Region {
+  const box = element.getBoundingClientRect();
+  const origin = document.body.getBoundingClientRect();
+  const left = Math.floor(box.left - origin.left);
+  const top = Math.floor(box.top - origin.top);
+  const right = Math.ceil(box.right - origin.left);
+  const bottom = Math.ceil(box.bottom - origin.top);
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+/** The part of an image inside the region (clipped to the image). */
+function crop(pixels: ImageData, region: Region): ImageData {
+  const left = Math.max(0, Math.floor(region.x));
+  const top = Math.max(0, Math.floor(region.y));
+  const right = Math.min(pixels.width, Math.ceil(region.x + region.width));
+  const bottom = Math.min(pixels.height, Math.ceil(region.y + region.height));
+  if (right <= left || bottom <= top) {
+    const size = `${pixels.width}×${pixels.height}`;
+    throw new Error(`region ${JSON.stringify(region)} lies outside the ${size} screenshot`);
+  }
+  const width = right - left;
+  const out = new ImageData(width, bottom - top);
+  for (let y = top; y < bottom; y += 1) {
+    const from = (y * pixels.width + left) * 4;
+    out.data.set(pixels.data.subarray(from, from + width * 4), (y - top) * width * 4);
+  }
+  return out;
+}
+
+/**
+ * Compares two screenshots (PNG, base64): over the whole images, or with a region only over the
+ * pixels inside it (the percentage is then of the region's pixels).
+ */
+export async function compareCaptures(
+  actual: string,
+  reference: string,
+  region: Region | null = null,
+): Promise<Comparison> {
+  const actualPixels = await decodePng(actual);
+  const referencePixels = await decodePng(reference);
+  if (region === null) return comparePixels(actualPixels, referencePixels);
+  return comparePixels(crop(actualPixels, region), crop(referencePixels, region));
 }
 
 /** The baseline (PNG, base64), or null when it is not in the repository. */
@@ -332,6 +400,24 @@ function variantDir(variant: Variant): string {
 
 function entryPath(variant: Variant, target: VisualPage, theme: Theme): string {
   return `${REPORT_DIR}${variantDir(variant)}/${target.id}-${theme}.json`;
+}
+
+/** File stem of the report images of one entry. */
+function imageStem(target: VisualPage, theme: Theme, variant: Variant): string {
+  return `${target.id}-${theme}${variant === 'page' ? '' : `.${variant}`}`;
+}
+
+/** Writes the entry file and keeps the entry for the summary. */
+async function writeEntry(
+  target: VisualPage,
+  entry: VisualReportEntry,
+): Promise<VisualReportEntry> {
+  await commands.writeFile(
+    entryPath(entry.variant, target, entry.theme),
+    `${JSON.stringify(entry, null, 2)}\n`,
+  );
+  results.push(entry);
+  return entry;
 }
 
 /** A report entry written earlier in this run, or null. */
@@ -359,7 +445,7 @@ export async function record(
   actual: string,
   repeatDiffPercent: number | null = null,
 ): Promise<VisualReportEntry> {
-  const stem = `${target.id}-${theme}${variant === 'page' ? '' : `.${variant}`}`;
+  const stem = imageStem(target, theme, variant);
   const actualImage = `images/${stem}.actual.png`;
   await commands.writeFile(`${REPORT_DIR}${actualImage}`, actual, 'base64');
   const actualPixels = await decodePng(actual);
@@ -372,12 +458,14 @@ export async function record(
     await commands.writeFile(`${REPORT_DIR}${diffImage}`, comparison.image, 'base64');
   }
   const diffPercent = comparison?.diffPercent ?? null;
-  const entry: VisualReportEntry = {
+  return writeEntry(target, {
     page: target.id,
     title: target.title,
     surface: target.surface,
     theme,
     variant,
+    comparedWith: 'baseline',
+    region: null,
     baseline: baselineFile(target, theme),
     baselineFound: baselinePixels !== null,
     width: actualPixels.width,
@@ -390,15 +478,61 @@ export async function record(
     thresholdPercent: THRESHOLD_PERCENT,
     overThreshold: diffPercent !== null && diffPercent > THRESHOLD_PERCENT,
     actualImage,
+    referenceImage: null,
     diffImage,
     repeatDiffPercent,
-  };
-  await commands.writeFile(
-    entryPath(variant, target, theme),
-    `${JSON.stringify(entry, null, 2)}\n`,
-  );
-  results.push(entry);
-  return entry;
+  });
+}
+
+/**
+ * Compares a screenshot with a reference screenshot of the same case (whole image, or only inside
+ * the region) and writes the entry, both screenshots and the difference image to the report. The
+ * committed baseline is not compared; baselineFound only tells whether it is in the repository.
+ */
+export async function recordRun(
+  target: VisualPage,
+  theme: Theme,
+  variant: Variant,
+  actual: string,
+  reference: string,
+  region: Region | null,
+): Promise<VisualReportEntry> {
+  const stem = imageStem(target, theme, variant);
+  const actualImage = `images/${stem}.actual.png`;
+  const referenceImage = `images/${stem}.reference.png`;
+  await commands.writeFile(`${REPORT_DIR}${actualImage}`, actual, 'base64');
+  await commands.writeFile(`${REPORT_DIR}${referenceImage}`, reference, 'base64');
+  const actualPixels = await decodePng(actual);
+  const comparison = await compareCaptures(actual, reference, region);
+  let diffImage: string | null = null;
+  if (comparison.diffPixels > 0) {
+    diffImage = `images/${stem}.diff.png`;
+    await commands.writeFile(`${REPORT_DIR}${diffImage}`, comparison.image, 'base64');
+  }
+  return writeEntry(target, {
+    page: target.id,
+    title: target.title,
+    surface: target.surface,
+    theme,
+    variant,
+    comparedWith: 'run',
+    region,
+    baseline: baselineFile(target, theme),
+    baselineFound: (await readBaseline(target, theme)) !== null,
+    width: actualPixels.width,
+    height: actualPixels.height,
+    baselineWidth: null,
+    baselineHeight: null,
+    diffPixels: comparison.diffPixels,
+    totalPixels: comparison.totalPixels,
+    diffPercent: comparison.diffPercent,
+    thresholdPercent: THRESHOLD_PERCENT,
+    overThreshold: comparison.diffPercent > THRESHOLD_PERCENT,
+    actualImage,
+    referenceImage,
+    diffImage,
+    repeatDiffPercent: null,
+  });
 }
 
 /** The baseline must exist; otherwise the case fails and names where this run's screenshot is. */
@@ -433,6 +567,18 @@ function percentText(value: number | null): string {
   return value === null ? '-' : `${value.toFixed(4)}%`;
 }
 
+function statusText(entry: VisualReportEntry): string {
+  if (entry.comparedWith === 'baseline' && !entry.baselineFound) return 'MISSING';
+  return entry.overThreshold ? 'OVER' : 'ok';
+}
+
+function comparedText(entry: VisualReportEntry): string {
+  if (entry.comparedWith === 'baseline') return 'vs baseline';
+  const { region } = entry;
+  if (region === null) return 'vs run reference';
+  return `vs run reference in ${region.width}×${region.height} at ${region.x},${region.y}`;
+}
+
 /** Summary of this file's entries: summary-<name>.json and a line per entry in summary-<name>.txt. */
 export async function writeSummary(name: string): Promise<void> {
   if (results.length === 0) return;
@@ -442,10 +588,15 @@ export async function writeSummary(name: string): Promise<void> {
   const missing = results
     .filter((entry) => entry.variant === 'page' && !entry.baselineFound)
     .map((entry) => `${entry.page}-${entry.theme}`);
+  // Self-checks (mutation and the like) over the threshold, apart from the regular comparisons.
+  const overInChecks = results
+    .filter((entry) => entry.variant !== 'page' && entry.overThreshold)
+    .map((entry) => `${entry.page}-${entry.theme} (${entry.variant})`);
   const summary = {
     thresholdPercent: THRESHOLD_PERCENT,
     overThreshold: over,
     missingBaseline: missing,
+    overThresholdInChecks: overInChecks,
     entries: results,
   };
   await commands.writeFile(
@@ -454,10 +605,11 @@ export async function writeSummary(name: string): Promise<void> {
   );
   const lines = results.map((entry) =>
     [
-      entry.baselineFound ? (entry.overThreshold ? 'OVER' : 'ok') : 'MISSING',
+      statusText(entry),
       entry.variant,
       `${entry.page}-${entry.theme}`,
       percentText(entry.diffPercent),
+      comparedText(entry),
     ].join('\t'),
   );
   await commands.writeFile(`${REPORT_DIR}summary-${name}.txt`, `${lines.join('\n')}\n`);

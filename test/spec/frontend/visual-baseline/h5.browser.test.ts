@@ -2,8 +2,8 @@
 // DSX-50: screenshot baseline comparison of the H5 key pages (规则、帮助、公告、收益明细、订单找回、
 // 消息、邀请), light and dark, at 375×844. Each page is mounted as in its own browser rule test
 // (shared fixtures: fake HTTP server or fake bridge, example data only). Report only: see
-// compare.ts. Also the mutation switch self-check, the two-screenshot stability check and the
-// report check.
+// compare.ts. Also the mutation switch self-check (against a reference screenshot of the same
+// run, inside the mutated button's box), the two-screenshot stability check and the report check.
 import { createElement, type ReactElement } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
@@ -57,6 +57,8 @@ import {
   leaveStableEnvironment,
   readEntry,
   record,
+  recordRun,
+  regionOf,
   setMutation,
   settle,
   writeSummary,
@@ -346,8 +348,11 @@ it(
   CASE_TIMEOUT,
 );
 
+// The self-check compares with a reference screenshot of this same run, never with the committed
+// baseline: that one is rendered on another machine and changes with the page, so asserting on it
+// would block merges. The baseline comparison of the reference is report only (it must exist).
 it(
-  '[AC-DSX-50-MUTATION#1] 变异开关打开（按钮圆角改为 50%）时订单找回页（浅色）差异超过 1% 且报告标出该页，关掉后回到 1% 以内',
+  '[AC-DSX-50-MUTATION#1] 变异开关打开（按钮圆角改为 50%）时订单找回页（浅色）提交按钮区域与同次运行的参照图差异超过 1% 且报告标出该页，关掉后与参照图差异小于 0.1%',
   async () => {
     await enterStableEnvironment({
       theme: 'light',
@@ -357,28 +362,59 @@ it(
     await openFindOrder();
     await quiet();
     const submit = page.getByRole('button', { name: /提交找回|^提交$/ });
+    await expect.element(submit, WAIT).not.toHaveStyle({ borderRadius: '50%' });
+    const region = regionOf(submit.element());
+    expect(region.width * region.height, '提交按钮的包围盒有面积').toBeGreaterThan(0);
+
+    const reference = await capture();
+    const baseline = await record(H5_FIND_ORDER, 'light', 'mutation-reference', reference);
+    expectBaseline(baseline);
 
     setMutation(true);
     await settle();
     await expect.element(submit, WAIT).toHaveStyle({ borderRadius: '50%' });
-    const mutated = await checkPage(H5_FIND_ORDER, 'light', 'mutation');
-    expect(mutated.diffPercent, '变异后该页的差异百分比').toBeGreaterThan(THRESHOLD_PERCENT);
+    expect(regionOf(submit.element()), '变异不改提交按钮的位置与大小').toEqual(region);
+    const mutated = await recordRun(
+      H5_FIND_ORDER,
+      'light',
+      'mutation',
+      await capture(),
+      reference,
+      region,
+    );
+    expect(mutated.diffPercent, '变异后提交按钮区域与参照图的差异百分比').toBeGreaterThan(
+      THRESHOLD_PERCENT,
+    );
     expect(mutated.overThreshold, '报告标出该页超过阈值').toBe(true);
     expect(await readEntry('mutation', H5_FIND_ORDER, 'light')).toMatchObject({
       page: 'h5-find-order',
       theme: 'light',
       variant: 'mutation',
+      comparedWith: 'run',
+      region,
       overThreshold: true,
     });
 
     setMutation(false);
     await settle();
     await expect.element(submit, WAIT).not.toHaveStyle({ borderRadius: '50%' });
-    const restored = await checkPage(H5_FIND_ORDER, 'light', 'mutation-off');
-    expect(restored.diffPercent, '关掉变异开关后的差异百分比').toBeLessThanOrEqual(
-      THRESHOLD_PERCENT,
+    const after = await capture();
+    const restored = await recordRun(
+      H5_FIND_ORDER,
+      'light',
+      'mutation-off',
+      after,
+      reference,
+      null,
+    );
+    expect(restored.diffPercent, '关掉变异开关后整页与参照图的差异百分比').toBeLessThan(
+      STABLE_PERCENT,
     );
     expect(restored.overThreshold).toBe(false);
+    const button = await compareCaptures(after, reference, region);
+    expect(button.diffPercent, '关掉变异开关后提交按钮区域与参照图的差异百分比').toBeLessThan(
+      THRESHOLD_PERCENT,
+    );
   },
   CASE_TIMEOUT,
 );
