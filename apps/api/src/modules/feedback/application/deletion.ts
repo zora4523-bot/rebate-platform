@@ -9,6 +9,7 @@
 // relative imports with `.ts`.
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
+import { deleteUserFeedback } from '../infra/feedback-store.ts';
 
 export interface FeedbackDeletionInput {
   readonly appId: string;
@@ -21,7 +22,7 @@ export async function deleteFeedbackForUser(
   trx: Transaction<DB>,
   input: FeedbackDeletionInput,
 ): Promise<void> {
-  void trx;
-  void input;
-  throw new Error('NotImplemented: deleteFeedbackForUser');
+  // `at` is not a filter: every record of the user goes, whatever its created_at (BR-ID-28).
+  // Re-entrant: a second call finds nothing to delete.
+  await deleteUserFeedback(trx, input.appId, input.userId);
 }
