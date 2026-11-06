@@ -132,6 +132,16 @@ const CASES: readonly PathCase[] = [
     check: kept('FAILED', false),
   },
   {
+    // 评审 r1 S1：重开要求新来的也是 API 源；导入源的成功不触发重开，缺端口也不抛错。
+    label: '入账后 API FAILED 之后同一单号以导入源报 SUCCEEDED（应扣佣金 400）：applied、duplicate',
+    seed: credited,
+    steps: [
+      { spec: api({ status: 'FAILED', deductionFen: 400n }), kind: 'applied' },
+      { spec: imported({ status: 'SUCCEEDED', deductionFen: 400n }), kind: 'duplicate' },
+    ],
+    check: kept('FAILED', false),
+  },
+  {
     label: '入账后 API FAILED 之后报 PROCESSING：applied、duplicate',
     seed: credited,
     steps: [
