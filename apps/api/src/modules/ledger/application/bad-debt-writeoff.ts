@@ -14,10 +14,14 @@
 //   consumer ledger.daily_check_done, event_id dailyCheckDoneEventId(app, D − 1)), it generates the
 //   candidates of D: account_balances with available_fen < 0, D − negative_since ≥
 //   ledger.bad_debt_days (no row: 90) and |available_fen| ≥ ledger.bad_debt_min_fen (no row: 0),
-//   no PENDING candidate of the account, the member not deleting or deleted. A candidate is
-//   PENDING with candidate_fen = −available_fen, the balance's negative_since, initiator_id null and
-//   created_at the Clock's now; nothing else is written (the partial unique index on PENDING rows
-//   makes a concurrent second insert a no-op).
+//   no PENDING candidate of the account, the member not deleting or deleted. That scan is only a
+//   prefilter: each account then gets its own transaction that locks the users row and then the
+//   balance row (ledger.lockBalances) and reads the deletion stage, available and negative_since
+//   again under those locks; only a balance still due by them gets a candidate. A candidate is
+//   PENDING with candidate_fen = −available_fen, the balance's negative_since (both as locked),
+//   initiator_id null and created_at the Clock's now; nothing else is written (the partial unique
+//   index on PENDING rows makes a concurrent second insert a no-op). One account's failure does
+//   not stop the others.
 // - Approval: one transaction under platform idempotency, users row then balance row locked
 //   (BR-WDR-07 order), then the candidate FOR UPDATE; the candidate and the balance are read again
 //   under the locks; the amount is −available at that moment. negative_since and payout's
@@ -55,10 +59,11 @@ import {
   negativeBalancesDue,
   pageBadDebtWriteoffs,
   type BadDebtWriteoffRow,
+  type NegativeBalanceRow,
 } from '../infra/bad-debt-writeoffs-store.ts';
 import { DAILY_CHECK_DONE_CONSUMER, dailyCheckDoneEventId } from './daily-check-schedule-done.ts';
 import { dailyCheckDayOf } from './daily-check-schedule.ts';
-import type { PostingEntry } from './ledger.ts';
+import type { AccountBalance, PostingEntry } from './ledger.ts';
 import type { Ledger } from './reverse.ts';
 
 /** bad_debt_writeoffs.status (contracts/enums/fund.yaml bad_debt_writeoff_status). */
@@ -93,6 +98,8 @@ export interface BadDebtCandidateTickDependencies {
   readonly clock: Clock;
   readonly logger: RootLogger;
   readonly ports: BadDebtWriteoffPorts;
+  /** The ledger's balance locks (the generation posts nothing). */
+  readonly ledger: Pick<Ledger, 'lockBalances'>;
   readonly isStopped: () => boolean;
 }
 
@@ -113,7 +120,63 @@ function nextStatus(
   return result.to;
 }
 
-/** The candidates of D for one app (D − 1's R3 already done). */
+/**
+ * BD1 eligibility of a balance read under its lock: available below 0, D − negative_since at least
+ * ledger.bad_debt_days and |available| at least ledger.bad_debt_min_fen.
+ */
+function dueForCandidate(
+  balance: AccountBalance,
+  thresholds: BadDebtThresholds,
+  day: string,
+): balance is AccountBalance & { readonly negative_since: string } {
+  if (balance.available_fen >= 0n || balance.negative_since === null) return false;
+  if (balance.available_fen > subFen(0n, thresholds.minFen)) return false;
+  return daysFrom(balance.negative_since, day) >= thresholds.days;
+}
+
+/**
+ * One account's candidate in its own transaction: the users row, then the balance row
+ * (BR-WDR-07 order, as the deletion flow and every posting take them), then the deletion stage,
+ * available and negative_since are read again under those locks and the eligibility is decided
+ * on them; the prefilter's snapshot only chose the account. True when a candidate was written.
+ */
+async function generateForAccount(
+  deps: BadDebtCandidateTickDependencies,
+  input: {
+    readonly appId: string;
+    readonly row: NegativeBalanceRow;
+    readonly thresholds: BadDebtThresholds;
+    readonly day: string;
+    readonly now: Date;
+    readonly status: BadDebtWriteoffStatus;
+  },
+): Promise<boolean> {
+  const { appId, row } = input;
+  return deps.db.transaction().execute(async (trx) => {
+    await deps.ports.lockUsersForUpdate(trx, { appId, userIds: [row.user_id] });
+    const balance = (await deps.ledger.lockBalances(trx, { appId, userIds: [row.user_id] })).find(
+      (locked) => locked.account_id === row.account_id,
+    );
+    if (balance === undefined) return false;
+    const closing = await deps.ports.closingUsers(trx, { appId, userIds: [row.user_id] });
+    if (closing.has(row.user_id)) return false;
+    if (!dueForCandidate(balance, input.thresholds, input.day)) return false;
+    return insertPendingWriteoff(trx, {
+      id: newUuidV7(input.now),
+      appId,
+      accountId: balance.account_id,
+      negativeSince: balance.negative_since,
+      candidateFen: subFen(0n, balance.available_fen),
+      status: input.status,
+      at: input.now,
+    });
+  });
+}
+
+/**
+ * The candidates of D for one app (D − 1's R3 already done). The scan and the deletion stages
+ * read before any lock are a prefilter only; each account is decided again under its locks.
+ */
 async function generateForApp(
   deps: BadDebtCandidateTickDependencies,
   appId: string,
@@ -137,16 +200,22 @@ async function generateForApp(
   for (const row of due) {
     if (deps.isStopped()) break;
     if (closing.has(row.user_id)) continue;
-    const inserted = await insertPendingWriteoff(deps.db, {
-      id: newUuidV7(now),
-      appId,
-      accountId: row.account_id,
-      negativeSince: row.negative_since,
-      candidateFen: subFen(0n, row.available_fen),
-      status,
-      at: now,
-    });
-    if (inserted) generated += 1;
+    try {
+      if (await generateForAccount(deps, { appId, row, thresholds, day, now, status })) {
+        generated += 1;
+      }
+    } catch (error: unknown) {
+      // One account's failure leaves the others' candidates; the next tick retries it.
+      deps.logger.warn(
+        {
+          app_id: appId,
+          account_id: row.account_id,
+          accounting_date: day,
+          error_name: error instanceof Error ? error.name : typeof error,
+        },
+        'ledger_bad_debt_candidate_failed',
+      );
+    }
   }
   return generated;
 }

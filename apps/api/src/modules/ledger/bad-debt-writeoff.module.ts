@@ -27,7 +27,7 @@ import {
   type AdminBadDebtWriteoffReadDeps,
   type BadDebtWriteoffPorts,
 } from './application/bad-debt-writeoff.ts';
-import type { Ledger } from './application/reverse.ts';
+import { createLedger, type Ledger } from './application/reverse.ts';
 import {
   AdminBadDebtWriteoffsController,
   BAD_DEBT_WRITEOFF_APPROVE_DEPS,
@@ -61,6 +61,8 @@ interface TickDependencies {
   readonly clock: Clock;
   readonly logger: RootLogger;
   readonly ports: BadDebtWriteoffPorts;
+  /** Balance locks only: the generation posts no voucher. */
+  readonly ledger: Pick<Ledger, 'lockBalances'>;
 }
 
 interface BadDebtWriteoffTimer {
@@ -132,6 +134,8 @@ export class LedgerBadDebtWriteoffModule {
               clock,
               logger: logger.child({ module: 'ledger', timer: TIMER }),
               ports: options.ports,
+              // Only lockBalances is used (the generation posts nothing): no bus, no recovery hook.
+              ledger: createLedger({ clock }),
             });
           },
         },
