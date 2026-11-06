@@ -15,7 +15,15 @@ paths:
   - 'apps/api/src/modules/admin/domain/audit-log-view.ts'
   - 'apps/api/src/modules/payout/payout.module.ts'
 test_paths:
+  - 'test/spec/payout/w10-late-paid/w10.int.test.ts'
   - 'test/spec/payout/w10-voucher-crosscheck/**'
+red_exempt_rows:
+  - file: test/spec/payout/w10-late-paid/w10.int.test.ts
+    test: '[AC-B2-09u#11] 贯通 W10 真实任务：历史账单已 succeeded，missing 分支准确复核'
+    reason: 'it.each 表拆分（D10-737，照 B1-05zc / D10-657）：所在块的标题模板与回调体与基线逐字相同，本行字面量同基线，只拆出须随 D10-703 改期望的 [AC-B2-09u#10] 行（已在 w10-voucher-crosscheck 写成新用例）；本行行为不变，在旧代码上照常为绿'
+  - file: test/spec/payout/w10-late-paid/w10.int.test.ts
+    test: '[AC-B2-09u#12] 贯通 W10 真实任务：历史账单已 succeeded，channel_order_id 分支准确复核'
+    reason: 'it.each 表拆分（D10-737，照 B1-05zc / D10-657）：所在块的标题模板与回调体与基线逐字相同，本行字面量同基线，只拆出须随 D10-703 改期望的 [AC-B2-09u#10] 行（已在 w10-voucher-crosscheck 写成新用例）；本行行为不变，在旧代码上照常为绿'
 impl: claude
 tester: codex
 accept:
