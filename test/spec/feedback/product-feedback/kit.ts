@@ -35,7 +35,7 @@ export const ROOT = new URL('../../../../', import.meta.url);
 export const PATH = '/v1/products/{product_key}/feedback';
 /** 2026-11-06 10:00 +08:00. */
 export const NOW = '2026-11-06T02:00:00.000Z';
-export const TRACE = 'b128p00000000000000000000000000a';
+export const TRACE = 'b128000000000000000000000000000a';
 /** feedback.daily_limit_per_device when the key is not configured (BR-ID-02 细则). */
 export const DEFAULT_DAILY_LIMIT = 20;
 export const PRODUCT_KEY = 'jd:synthetic-4001';
