@@ -13,7 +13,7 @@
 // - Replays write nothing new (unique (app_id, source_ref, user_id, dimension), ON CONFLICT DO
 //   NOTHING); created_at is the injected Clock's now. No plaintext and no HMAC is stored.
 import type { DB } from '@couli/db';
-import type { Transaction } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
 
 /** risk_linked_marks.dimension. */
@@ -36,9 +36,54 @@ export interface BadDebtLinkedMarkerOptions {
   readonly clock: Clock;
 }
 
+/**
+ * The linked members of `input.sourceUserId` in its app, one (user, dimension) per row, the
+ * written-off member excluded. UNION drops a repeated (user, dimension) within one dimension.
+ */
+function linkedMembers(input: BadDebtLinkedMarkInput) {
+  const { appId, sourceUserId } = input;
+  return sql`
+    SELECT other.user_id, 'id_no'::text AS dimension
+    FROM app.realname mine
+    JOIN app.realname other
+      ON other.app_id = mine.app_id AND other.id_no_hmac = mine.id_no_hmac
+    WHERE mine.app_id = ${appId} AND mine.user_id = ${sourceUserId}::uuid
+      AND mine.status = 'verified' AND other.status = 'verified'
+      AND other.user_id <> mine.user_id
+    UNION
+    SELECT other.user_id, 'device'::text AS dimension
+    FROM app.sessions mine
+    JOIN app.sessions other
+      ON other.app_id = mine.app_id AND other.device_id = mine.device_id
+    WHERE mine.app_id = ${appId} AND mine.user_id = ${sourceUserId}::uuid
+      AND other.user_id <> mine.user_id
+    UNION
+    SELECT other.user_id, 'payout_account'::text AS dimension
+    FROM app.payout_accounts mine
+    JOIN app.payout_accounts other
+      ON other.app_id = mine.app_id
+      AND (other.alipay_hmac = mine.alipay_hmac OR other.bank_card_hmac = mine.bank_card_hmac)
+    WHERE mine.app_id = ${appId} AND mine.user_id = ${sourceUserId}::uuid
+      AND mine.is_current AND other.is_current
+      AND other.user_id <> mine.user_id`;
+}
+
 export function createBadDebtLinkedMarker(
   options: BadDebtLinkedMarkerOptions,
 ): BadDebtLinkedMarker {
-  void options;
-  throw new Error('NotImplemented: createBadDebtLinkedMarker');
+  return {
+    async mark(trx, input) {
+      const at = options.clock.now();
+      // One statement on the caller's transaction: reads and the insert see the same snapshot;
+      // ordered by (user, dimension) so the identity follows a stable order.
+      await sql`
+        INSERT INTO app.risk_linked_marks
+          (app_id, user_id, source_user_id, source_ref, dimension, created_at)
+        SELECT ${input.appId}::text, linked.user_id, ${input.sourceUserId}::uuid,
+          ${input.sourceRef}::text, linked.dimension, ${at}::timestamptz
+        FROM (${linkedMembers(input)}) AS linked
+        ORDER BY linked.user_id, linked.dimension
+        ON CONFLICT (app_id, source_ref, user_id, dimension) DO NOTHING`.execute(trx);
+    },
+  };
 }
