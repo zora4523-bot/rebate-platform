@@ -29,6 +29,12 @@ export interface PriceTrend {
   readonly start_date: string | null;
   readonly window_days: 30;
   readonly source_key: PriceTrendSourceKey;
+  /**
+   * B1-29c (BR-WATCH-19 细则「商品详情价格走势的最常见价」): among the points' daily prices the
+   * one seen on the most days, compared exactly in fen; a tie goes to the price seen most
+   * recently. null when status = no_data. Optional only until the implementation fills it.
+   */
+  readonly mode_price_fen?: bigint | null;
 }
 
 /** One price_snapshot run as the trend needs it (a run: same price from first to last). */
