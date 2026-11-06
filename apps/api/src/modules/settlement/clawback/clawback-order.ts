@@ -1200,7 +1200,7 @@ export function createClawbackOrder(deps: ClawbackDependencies): ClawbackOrder {
       now,
     );
     if (answersRights) await closeAnsweredRights(trx, { kind: 'commission' }, order, now);
-    // TODO(规划/11 §4.2): 负向补差同事务发布 order.settle_adjusted（BR-FUND-09 细则「补差负向时发站内信并附原因」）— blocked on FU-SETTLE-ADJ-NOTIFY（D10-762，归 content）
+    // TODO(规划/11 §4.2): 负向补差同事务发布 order.settle_adjusted（BR-FUND-09 细则「补差负向时发站内信并附原因」）— blocked on FU-SETTLE-ADJ-NOTIFY 的 B 单（发布端，归 content，依赖本单合并；D10-762 / D10-773 / D10-774）
     logger.info(
       {
         app_id: appId,
