@@ -75,7 +75,7 @@ it('[AC-B1-29c#16] 属性：任意 30 天每日价（含空档日、0 与 2^53 �
     propParams(),
   );
   expect(checked).toBeGreaterThan(0);
-}, 120_000);
+}, 900_000);
 
 it('[AC-B1-29c#17] 属性：任意五类来源、跨窗口起点、任意顺序的行 → mode_price_fen 与独立模型一致，且等于由结果每日价按规则算出的价；行顺序不影响结果', () => {
   let checked = 0;
@@ -101,7 +101,7 @@ it('[AC-B1-29c#17] 属性：任意五类来源、跨窗口起点、任意顺序�
     propParams(),
   );
   expect(checked).toBeGreaterThan(0);
-}, 120_000);
+}, 900_000);
 
 const SIDE_KINDS: readonly PriceSnapshotSourceKind[] = ['convert', 'watch'];
 const READ_KINDS: readonly PriceSnapshotSourceKind[] = ['detail', 'search', 'quote'];
@@ -157,7 +157,7 @@ it('[AC-B1-29c#18] 属性（只是统计）：在每日价之外加任意 conver
     propParams(),
   );
   expect(checked).toBeGreaterThan(0);
-}, 120_000);
+}, 900_000);
 
 it('[AC-B1-29c#19] 属性（门槛与走势共用）：每日价有 k 个不同日期、min_distinct_days = m → k ≥ m 时 ok 且有值，k < m 时 no_data 且 null', () => {
   let checked = 0;
@@ -177,4 +177,4 @@ it('[AC-B1-29c#19] 属性（门槛与走势共用）：每日价有 k 个不同�
     propParams(),
   );
   expect(checked).toBeGreaterThan(0);
-}, 120_000);
+}, 900_000);

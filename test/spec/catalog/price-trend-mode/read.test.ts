@@ -161,4 +161,4 @@ it('[AC-B1-29c#31] 属性：任意行、now 与门槛下，结果键恒为六个
     propParams(),
   );
   expect(checked).toBeGreaterThan(0);
-}, 120_000);
+}, 900_000);

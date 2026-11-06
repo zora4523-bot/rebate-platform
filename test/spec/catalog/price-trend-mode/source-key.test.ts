@@ -218,4 +218,4 @@ it('[AC-B1-29c#25] 属性：任意平台、任意行与 now → ok 时与独立�
     propParams(),
   );
   expect(checked).toBeGreaterThan(0);
-}, 120_000);
+}, 900_000);

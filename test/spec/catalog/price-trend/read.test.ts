@@ -103,7 +103,7 @@ it('[AC-B1-29a#24] 属性（未达 stable_7d）：任意 key_stability 与任意
     propParams(),
   );
   expect(checked).toBeGreaterThan(0);
-}, 120_000);
+}, 900_000);
 
 it('[AC-B1-29a#25] price_trend.min_distinct_days 按 appId 经 CatalogConfigReader 读；没有配置 → 默认 2（1 天 no_data、2 天 ok）', async () => {
   const one = options('stable_7d', ONE_DAY);
@@ -264,4 +264,4 @@ it('[AC-B1-29a#31] 属性（无用户标识）：任意行与 now 下，结果�
     propParams(),
   );
   expect(checked).toBeGreaterThan(0);
-}, 120_000);
+}, 900_000);

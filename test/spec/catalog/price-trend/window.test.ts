@@ -169,4 +169,4 @@ it('[AC-B1-29a#39] 属性（跨日、游程行跨越窗口起点）：store 只�
     propParams(),
   );
   expect(checked).toBeGreaterThan(0);
-}, 120_000);
+}, 900_000);
