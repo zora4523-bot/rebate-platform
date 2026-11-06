@@ -4,7 +4,7 @@
 // (BR-FUND-24 ①「全程写 audit_logs」, ⑧).
 // - AA2 SUBMIT (from no row → APPROVED): B2-12c's one-step adminCreateAdjustment writes its form
 //   through the SUBMIT event; the form is APPROVED with its voucher ADJ:{adjust_id} written in the
-//   same transaction (a failing form insert after the voucher leaves neither).
+//   same transaction (the rollback of a failing form insert is pinned by B2-12c's own rule tests).
 // - A refused transition writes nothing: the state machine refusing SUBMIT; through the real entry,
 //   an APPROVED form taken to approve / reject (20902), a PENDING ACCOUNT_CLOSED form taken to the
 //   manual submission path (reversal → reverse_not_allowed; a new form for the member in deletion →
@@ -21,7 +21,6 @@ import { sql } from 'kysely';
 import { expect, it, vi } from 'vitest';
 import type * as AdjustmentMachine from '../../../../packages/domain/src/state-machines/admin-adjustment.gen.ts';
 import {
-  CREATE_ACTION,
   expectAdjusted,
   newForm,
   type AdminSent as CreateSent,
@@ -43,14 +42,12 @@ import {
   expectMentions,
   expectPrefilled,
   fixture,
-  formInsertFault,
   formNow,
   formsOf,
   invalid,
   markCleaned,
   member,
   moneyOf,
-  newIdemKey,
   pendingClosing,
   requestNow,
   seedPrefill,
@@ -254,48 +251,6 @@ it(
         [`ADJ:${done.row.adjust_id}`, done.row.voucher_id],
       ]);
       expect(await formsOf(f, userId)).toEqual([done.row]);
-      expect(await moneyOf(f, userId)).toEqual({ available: 2800n, frozen: 0n });
-    });
-  },
-  TIMEOUT,
-);
-
-it(
-  '[AC-B2-12d#32] 一步提交的单与凭证同一事务：写单（INSERT admin_adjustments）失败 → 50001，凭证、分录、余额、站内信、事件与审计全都不留；同一 key 重试后恰好一张 APPROVED 单与一张凭证，再重放不再生效',
-  async () => {
-    const f = fixture(s);
-    const userId = await member(f, { available: 3000n });
-    const { fault, plugin } = formInsertFault(userId);
-    await withClosingAdmin({ ...f, db: f.db.withPlugin(plugin) }, async (h) => {
-      const before = await trace(f);
-      const auditsBefore = await audits(f);
-      const key = newIdemKey();
-
-      const failed = await h.create(otherDecrease(userId, 200n), { key });
-      expect(fault.tripped, 'the form insert of this member ran in the submission').toBe(1);
-      await answer(failed, 50001);
-      expect(await trace(f), 'nothing of the failed submission remains').toEqual(before);
-      expect(await audits(f)).toEqual(auditsBefore);
-      expect(await adjustVouchers(f), 'the voucher rolled back with the form').toEqual([]);
-      expect(await formsOf(f, userId)).toEqual([]);
-      expect(await moneyOf(f, userId)).toEqual({ available: 3000n, frozen: 0n });
-
-      const retried = await h.create(otherDecrease(userId, 200n), { key });
-      const done = await expectAdjusted(
-        f,
-        asCreate(retried),
-        otherExpectation(h.maker, userId, 200n, 3000n),
-      );
-      expect(await formsOf(f, userId)).toEqual([done.row]);
-      expect((await adjustVouchers(f)).map((voucher) => voucher.uniq_key)).toEqual([
-        `ADJ:${done.row.adjust_id}`,
-      ]);
-      expect((await audits(f, CREATE_ACTION)).map((row) => row.admin_id)).toEqual([h.maker.id]);
-      const after = await trace(f);
-
-      const replay = await h.create(otherDecrease(userId, 200n), { key });
-      await answer(replay, 0, retried.json().data);
-      expect(await trace(f)).toEqual(after);
       expect(await moneyOf(f, userId)).toEqual({ available: 2800n, frozen: 0n });
     });
   },
