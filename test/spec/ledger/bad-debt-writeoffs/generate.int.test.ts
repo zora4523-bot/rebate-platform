@@ -5,6 +5,7 @@
 // 天数按例手算：negative_since 2026-11-20，2027-02-17 是第 89 天，2027-02-18 是第 90 天；2027-01-19 起到
 // 2027-02-18 是 30 天、到 2027-02-17 是 29 天；2027-01-20 起到 2027-02-18 是 29 天。
 // 每个用例都含一个骨架上必然落空的「应生成」断言。用例全部是顶层 it（资金测试路径，规划/11 §4.3）。
+// 第 2 轮（评审 r1 第 2 条）：#33 落在北京时间 00:00 前后、UTC 日期与北京日期不同的时刻，期望的会计日手写。
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
@@ -292,6 +293,45 @@ it(
       ]);
       expect(await candidates(b), 'B 要 120 天').toEqual([]);
       expect(await hasCandidate(b, mb)).toBe(false);
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-12f#33] 会计日按北京时间 00:00 日切（UTC 日期与北京日期不同的时刻）：北京 2026-11-20 00:30（UTC 11-19 16:30）变负的会员 negative_since 2026-11-20；2027-02-17T15:59Z（北京 02-17 23:59，第 89 天）不生成；2027-02-17T16:01Z（北京 02-18 00:01，UTC 仍是 02-17）R3（02-17）完成后生成，created_at 取该时刻；北京 2026-11-21 00:30（UTC 11-20 16:30）变负的只有 89 天，不生成',
+  async () => {
+    await inWorkerTime(createTestDatabase, async ({ db, withWorker }) => {
+      const f = workerFixture(db, '2027-02-17T15:59:00.000Z');
+      const early = await negativeMember(f, {
+        available: -800n,
+        since: '2026-11-20',
+        at: '2026-11-19T16:30:00.000Z',
+      });
+      const late = await negativeMember(f, {
+        available: -600n,
+        since: '2026-11-21',
+        at: '2026-11-20T16:30:00.000Z',
+      });
+      expect((await moneyOf(f, early)).negativeSince, '北京 11-20 00:30 变负').toBe('2026-11-20');
+      expect((await moneyOf(f, late)).negativeSince, '北京 11-21 00:30 变负').toBe('2026-11-21');
+      await r3Done(f, '2027-02-16');
+      await withWorker({ clock: f.clock }, async (worker) => {
+        await worker.quiet();
+        expect(await candidates(f), '北京 02-17 23:59 仍是第 89 天').toEqual([]);
+
+        f.clock.set('2027-02-17T16:01:00.000Z');
+        await r3Done(f, '2027-02-17');
+        expect(
+          await worker.tickUntil(() => hasCandidate(f, early)),
+          '北京 02-18 00:01 是第 90 天，应生成',
+        ).toBe(true);
+        await worker.quiet();
+      });
+      expect(await candidates(f)).toEqual([
+        generatedFor(early, { fen: 800n, since: '2026-11-20', at: '2027-02-17T16:01:00.000Z' }),
+      ]);
+      expect(await hasCandidate(f, late), '只负了 89 天').toBe(false);
     });
   },
   TIMEOUT,

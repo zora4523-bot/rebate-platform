@@ -6,7 +6,9 @@
 // filters status and user_id with AND (a user_id that names nothing is an empty page); page /
 // page_size ≤ 200 (a page past the last one is items=[]); total is the count of the filter set; a
 // value outside an enum or pattern is 20001 with data.fields naming the parameter; reading writes no
-// audit record. ⑪: the list is also the 人工追偿清单. Top-level it() only (规划/11 §4.3).
+// audit record. ⑪: the list is also the 人工追偿清单. Round 2 (review r1): negative_days across
+// the +08:00 midnight at instants whose UTC date differs, written out by hand (#35). Top-level it()
+// only (规划/11 §4.3).
 import { randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
 import {
@@ -188,5 +190,23 @@ it('[AC-B2-12f#28] 参数不合契约 → 20001 data.fields 指明参数：page_
       rowView(row, m, await moneyOf(f, m), { day: DAY, blocked: false }),
     ]);
     expect(await audits(f)).toEqual([]);
+  });
+});
+
+it('[AC-B2-12f#35] negative_days 按北京时间 00:00 日切：negative_since 2026-11-20 的候选单，2027-02-18T15:59:30Z（北京 02-18 23:59:30）列出 90 天；一分钟后 2027-02-18T16:00:30Z（北京 02-19 00:00:30，UTC 仍是 02-18）列出 91 天', async () => {
+  const f = fixture(s, '2027-02-18T15:59:30.000Z');
+  await withWriteoffAdmin(f, async (h) => {
+    const m = await negativeMember(f, { available: -800n, since: '2026-11-20' });
+    const row = await seedCandidate(f, m, { createdAt: new Date('2027-02-17T16:01:00.000Z') });
+    const money = await moneyOf(f, m);
+
+    const before = await pageOf(await h.list({}));
+    expect(before.items).toEqual([rowView(row, m, money, { day: '2027-02-18', blocked: false })]);
+    expect(before.items[0]).toMatchObject({ negative_since: '2026-11-20', negative_days: 90 });
+
+    f.clock.set('2027-02-18T16:00:30.000Z');
+    const after = await pageOf(await h.list({}));
+    expect(after.items).toEqual([rowView(row, m, money, { day: '2027-02-19', blocked: false })]);
+    expect(after.items[0]).toMatchObject({ negative_since: '2026-11-20', negative_days: 91 });
   });
 });

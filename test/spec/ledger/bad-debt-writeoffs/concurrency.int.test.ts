@@ -13,6 +13,7 @@ import {
   answer,
   approvalOf,
   badDebtVouchers,
+  balanceCache,
   candidateNow,
   conflict,
   credit,
@@ -37,12 +38,14 @@ it('[AC-B2-12f#22] 已处理的单再批准 → 20902 bad_debt_writeoff：已 AP
   await withWriteoffAdmin(f, async (h) => {
     const m = await negativeMember(f, { available: -800n, since: SINCE });
     const row = await seedCandidate(f, m);
+    const cache = await balanceCache(f);
     await expectWrittenOff(f, await h.approve(row.id), {
       row,
       m,
       adminId: h.writer.id,
       amount: 800n,
       frozen: 0n,
+      cache,
     });
     const old = await negativeMember(f, { available: -300n, since: SINCE });
     const approved = await seedCandidate(f, old, { status: 'APPROVED' });
@@ -65,6 +68,7 @@ it('[AC-B2-12f#23] 两个批准并发（不同账号、不同幂等键）在会�
     const m = await negativeMember(f, { available: -800n, since: SINCE });
     const row = await seedCandidate(f, m);
     const colleague = await h.caller([WRITEOFF]);
+    const cache = await balanceCache(f);
     const hold = await holdMember(f, m.userId);
     const first = track(h.approve(row.id, {}, { caller: h.writer }));
     const second = track(h.approve(row.id, {}, { caller: colleague }));
@@ -86,6 +90,7 @@ it('[AC-B2-12f#23] 两个批准并发（不同账号、不同幂等键）在会�
       adminId: winner.id,
       amount: 800n,
       frozen: 0n,
+      cache,
     });
     expect(await badDebtVouchers(f)).toHaveLength(1);
     expect((await everything(f)).audits).toHaveLength(1);
@@ -98,8 +103,16 @@ it('[AC-B2-12f#24] 同一 Idempotency-Key 同一请求体重放：原样返回�
     const m = await negativeMember(f, { available: -800n, since: SINCE });
     const row = await seedCandidate(f, m);
     const key = newKey();
+    const cache = await balanceCache(f);
     const sent = await h.approve(row.id, {}, { key });
-    await expectWrittenOff(f, sent, { row, m, adminId: h.writer.id, amount: 800n, frozen: 0n });
+    await expectWrittenOff(f, sent, {
+      row,
+      m,
+      adminId: h.writer.id,
+      amount: 800n,
+      frozen: 0n,
+      cache,
+    });
     await credit(f, m, -50n);
     const after = await everything(f);
 
@@ -126,6 +139,7 @@ it('[AC-B2-12f#25] 同一 key 的请求还在执行（排在会员锁后）时�
     const m = await negativeMember(f, { available: -800n, since: SINCE });
     const row = await seedCandidate(f, m);
     const key = newKey();
+    const cache = await balanceCache(f);
     const hold = await holdMember(f, m.userId);
     const first = track(h.approve(row.id, {}, { key }));
     try {
@@ -135,7 +149,14 @@ it('[AC-B2-12f#25] 同一 key 的请求还在执行（排在会员锁后）时�
       await hold.release();
     }
     const sent = await first.promise;
-    await expectWrittenOff(f, sent, { row, m, adminId: h.writer.id, amount: 800n, frozen: 0n });
+    await expectWrittenOff(f, sent, {
+      row,
+      m,
+      adminId: h.writer.id,
+      amount: 800n,
+      frozen: 0n,
+      cache,
+    });
     const replay = await h.approve(row.id, {}, { key });
     expect(replay.body).toBe(sent.body);
     expect((await approvalOf(replay)).written_off_fen).toBe(800);

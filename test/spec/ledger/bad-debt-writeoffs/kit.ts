@@ -31,6 +31,12 @@
 // one-shot fault in the admin entry's database handle. A fixture that cannot be built throws a plain
 // Error. Missing pieces fail as assertions (an unregistered admin route answers 404; a worker that
 // never generates leaves the table empty). No real user, payee or merchant data.
+// Round 2 (Codex rule-test review r1): a second-connection barrier holding only the member's
+// balance row (holdBalance, optionally after the users row), the backends a holder blocks
+// (blockedBehind, lockWaitOf, from pg_stat_activity and pg_blocking_pids), a watch on the admin
+// entry's handle that records its balance-row locking statements and can hold one back right after
+// it got the lock (pauseAfterBalanceLock), and reads of account_balances (version, platform rows)
+// and of each entry's balance_after_fen / account_version.
 import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -88,6 +94,7 @@ import {
   type AdjustFixture,
   type AuditRow,
   type MemberStatus,
+  type Tracked,
   type VoucherRow,
 } from '../admin-adjustments/kit.ts';
 import { contractPaths } from '../admin-recon-diffs/kit.ts';
@@ -209,6 +216,8 @@ export interface NegativeSeed {
   readonly blocked?: boolean;
   readonly status?: MemberStatus;
   readonly appId?: string;
+  /** The instant available went below 0 (default noon of `since`); the ledger stamps its day. */
+  readonly at?: string;
 }
 
 async function accountIdOf(f: AdjustFixture, userId: string): Promise<string> {
@@ -218,15 +227,16 @@ async function accountIdOf(f: AdjustFixture, userId: string): Promise<string> {
 }
 
 /**
- * A synthetic member whose available went below 0 at noon of `since` (on the plain ledger, its
- * Clock moved there and back) and is `available` now, with `frozen` held by an APPROVED withdrawal.
+ * A synthetic member whose available went below 0 at noon of `since` (or at `at`; on the plain
+ * ledger, its Clock moved there and back) and is `available` now, with `frozen` held by an
+ * APPROVED withdrawal.
  */
 export async function negativeMember(f: AdjustFixture, seed: NegativeSeed): Promise<Member> {
   const g = inApp(f, seed.appId ?? f.appId);
   const frozen = seed.frozen ?? 0n;
   if (seed.available >= 0n) throw new Error('kit: negativeMember needs available below 0');
   const saved = g.clock.now();
-  g.clock.set(noon(seed.since));
+  g.clock.set(seed.at ?? noon(seed.since));
   try {
     const userId = await member(g, {
       available: frozen,
@@ -282,13 +292,18 @@ export function debit(f: AdjustFixture, m: Member, amount: bigint, day?: string)
   return credit(f, m, -amount, day);
 }
 
-/** A REBATE_CREDIT of `amount` on a transaction that already holds the member's locks. */
+/**
+ * A REBATE_CREDIT of `amount` on a transaction that already holds the member's balance lock;
+ * returns its uniq_key (`uniqKey` when given).
+ */
 export async function creditOn(
   f: AdjustFixture,
   trx: Transaction<DB>,
   balance: AccountBalance,
   amount: bigint,
-): Promise<void> {
+  uniqKey?: string,
+): Promise<string> {
+  const key = uniqKey ?? `SEED:${randomUUID()}`;
   const line = (
     account: PostingEntry['account'],
     amountFen: bigint,
@@ -303,7 +318,7 @@ export async function creditOn(
   });
   await f.ledger.post(trx, {
     appId: balance.app_id,
-    uniqKey: `SEED:${randomUUID()}`,
+    uniqKey: key,
     bizType: 'TEST_SEED',
     bizId: randomUUID(),
     operator: 'system',
@@ -317,13 +332,21 @@ export async function creditOn(
       line({ ownerType: 'platform', subject: 'UNION_RECEIVABLE:taobao' }, amount, false),
     ],
   });
+  return key;
 }
 
 /**
- * WITHDRAW:RETURN of the member's withdrawal (frozen → available), as W3 leaves it when the
- * withdrawal is rejected; the withdrawal row itself is not touched (synthetic).
+ * WITHDRAW:RETURN of `amount` of the member's withdrawal (frozen → available) on a transaction
+ * that already holds the member's balance lock, as W3 leaves it when the withdrawal is rejected;
+ * the withdrawal row itself is not touched (synthetic).
  */
-export async function returnFrozen(f: AdjustFixture, m: Member, amount: bigint): Promise<void> {
+export async function returnFrozenOn(
+  f: AdjustFixture,
+  trx: Transaction<DB>,
+  m: Member,
+  balance: AccountBalance,
+  amount: bigint,
+): Promise<void> {
   if (m.withdrawalId === null) throw new Error('kit: the member has no withdrawal');
   const withdrawalId = m.withdrawalId;
   const [built] = buildVouchers('WITHDRAW:RETURN', {
@@ -332,31 +355,226 @@ export async function returnFrozen(f: AdjustFixture, m: Member, amount: bigint):
     withdraw_fen: amount,
   });
   if (built === undefined) throw new Error('kit: WITHDRAW:RETURN built no voucher');
+  await f.ledger.post(trx, {
+    appId: m.appId,
+    uniqKey: built.uniq_key,
+    bizType: 'withdrawal',
+    bizId: withdrawalId,
+    operator: 'system',
+    memo: null,
+    orderKey: null,
+    beneficiaryUserId: null,
+    role: null,
+    voucherKind: null,
+    entries: built.entries.map((entry) => ({
+      account: { ownerType: 'user', accountId: balance.account_id },
+      sub_account: entry.sub_account === 'frozen' ? 'frozen' : 'available',
+      amount_fen: entry.amount_fen,
+      ledger_type: entry.ledger_type,
+      sub_type: entry.sub_type,
+      income_type: null,
+    })),
+  });
+}
+
+/** returnFrozenOn in a transaction of its own (users row, then balance row). */
+export async function returnFrozen(f: AdjustFixture, m: Member, amount: bigint): Promise<void> {
   await f.db.transaction().execute(async (trx) => {
     await lockUsersForUpdate(trx, { appId: m.appId, userIds: [m.userId] });
     const [balance] = await f.ledger.lockBalances(trx, { appId: m.appId, userIds: [m.userId] });
     if (balance === undefined) throw new Error(`kit: ${m.userId} has no ledger account`);
-    await f.ledger.post(trx, {
-      appId: m.appId,
-      uniqKey: built.uniq_key,
-      bizType: 'withdrawal',
-      bizId: withdrawalId,
-      operator: 'system',
-      memo: null,
-      orderKey: null,
-      beneficiaryUserId: null,
-      role: null,
-      voucherKind: null,
-      entries: built.entries.map((entry) => ({
-        account: { ownerType: 'user', accountId: balance.account_id },
-        sub_account: entry.sub_account === 'frozen' ? 'frozen' : 'available',
-        amount_fen: entry.amount_fen,
-        ledger_type: entry.ledger_type,
-        sub_type: entry.sub_type,
-        income_type: null,
-      })),
-    });
+    await returnFrozenOn(f, trx, m, balance, amount);
   });
+}
+
+// ---------------------------------------------------------------------------------------------
+// The member's balance row held from the suite's one-connection holder pool.
+
+export interface BalanceHold {
+  /** The holder's backend pid. */
+  readonly pid: number;
+  /** True once the holder has the balance row (false when it ended first or after 10 s). */
+  untilLocked(timeoutMs?: number): Promise<boolean>;
+  /** Lets the holder run `beforeCommit` and commit; resolves when it has committed. */
+  release(): Promise<void>;
+}
+
+function within<T>(promise: Promise<T>, timeoutMs: number, otherwise: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(otherwise), timeoutMs);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * A transaction on the holder pool that takes the member's balance row through
+ * ledger.lockBalances (SELECT … FOR UPDATE OF ab) — and the users row before it only when
+ * `users` is set — then waits for release() and runs `beforeCommit` before it commits. Returns
+ * once the holder's pid is known; with the row free it gets the lock at once, otherwise it waits
+ * in PostgreSQL like any other writer.
+ */
+export async function holdBalance(
+  f: AdjustFixture,
+  m: Member,
+  beforeCommit?: (trx: Transaction<DB>, balance: AccountBalance) => Promise<void>,
+  options: { readonly users?: boolean } = {},
+): Promise<BalanceHold> {
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  let gotPid!: (pid: number) => void;
+  const pidReady = new Promise<number>((resolve) => {
+    gotPid = resolve;
+  });
+  let gotLock!: () => void;
+  const lockReady = new Promise<void>((resolve) => {
+    gotLock = resolve;
+  });
+  const done = f.s
+    .holder()
+    .transaction()
+    .execute(async (trx) => {
+      const result = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(trx);
+      gotPid(Number(result.rows[0]?.pid));
+      if (options.users === true) {
+        await lockUsersForUpdate(trx, { appId: m.appId, userIds: [m.userId] });
+      }
+      const [balance] = await f.ledger.lockBalances(trx, { appId: m.appId, userIds: [m.userId] });
+      if (balance === undefined) throw new Error(`kit: ${m.userId} has no ledger account`);
+      gotLock();
+      await gate;
+      if (beforeCommit !== undefined) await beforeCommit(trx, balance);
+    });
+  const ended = done.then(
+    () => null,
+    () => null,
+  );
+  const pid = await Promise.race([pidReady, ended]);
+  if (pid === null) {
+    await done;
+    throw new Error('kit: the holder ended before it started');
+  }
+  return {
+    pid,
+    untilLocked(timeoutMs = 10_000) {
+      return within(
+        Promise.race([lockReady.then(() => true), ended.then(() => false)]),
+        timeoutMs,
+        false,
+      );
+    },
+    async release() {
+      open();
+      await done;
+    },
+  };
+}
+
+/**
+ * The statements of the backends waiting on a lock that backend `pid` holds, polled until there is
+ * one ([] when a request ended first or after 10 s).
+ */
+export async function blockedBehind(
+  f: AdjustFixture,
+  pid: number,
+  pending: readonly Tracked<unknown>[],
+  timeoutMs = 10_000,
+): Promise<string[]> {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    const result = await sql<{ query: string }>`
+      SELECT query FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock'
+        AND ${pid}::int = ANY (pg_blocking_pids(pid))`.execute(f.db);
+    if (result.rows.length > 0) return result.rows.map((row) => row.query);
+    if (pending.some((request) => request.settled)) return [];
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return [];
+}
+
+/** The statement backend `pid` waits on a lock with, polled (null when it never waits in 10 s). */
+export async function lockWaitOf(
+  f: AdjustFixture,
+  pid: number,
+  timeoutMs = 10_000,
+): Promise<{ readonly query: string; readonly blockers: number } | null> {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    const result = await sql<{ query: string; blockers: number }>`
+      SELECT query, cardinality(pg_blocking_pids(pid)) AS blockers FROM pg_stat_activity
+      WHERE pid = ${pid}::int AND wait_event_type = 'Lock'`.execute(f.db);
+    const row = result.rows[0];
+    if (row !== undefined) return { query: row.query, blockers: Number(row.blockers) };
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return null;
+}
+
+/** A balance-row locking statement: account_balances … FOR UPDATE, not the NOWAIT re-lock. */
+export function isBalanceLock(text: string): boolean {
+  return (
+    /\baccount_balances\b/i.test(text) &&
+    /\bfor\s+update\b/i.test(text) &&
+    !/\bnowait\b/i.test(text)
+  );
+}
+
+export interface CacheRow {
+  readonly account_id: string;
+  readonly owner_type: string | null;
+  readonly subject: string | null;
+  readonly available_fen: bigint;
+  readonly frozen_fen: bigint;
+  readonly negative_since: string | null;
+  readonly version: bigint;
+}
+
+/** Every account_balances row of the app with its account's owner, by account_id. */
+export async function balanceCache(f: AdjustFixture, appId = f.appId): Promise<CacheRow[]> {
+  const result = await sql<CacheRow>`
+    SELECT ab.account_id, la.owner_type, la.subject, ab.available_fen, ab.frozen_fen,
+      to_char(ab.negative_since, 'YYYY-MM-DD') AS negative_since, ab.version
+    FROM app.account_balances ab
+    LEFT JOIN app.ledger_accounts la ON la.app_id = ab.app_id AND la.id = ab.account_id
+    WHERE ab.app_id = ${appId}
+    ORDER BY ab.account_id`.execute(f.db);
+  return result.rows;
+}
+
+/** The member's row of a balanceCache snapshot. */
+export function cacheRowOf(cache: readonly CacheRow[], m: Member): CacheRow {
+  const row = cache.find((item) => item.account_id === m.accountId);
+  if (row === undefined) throw new Error(`kit: no balance row of ${m.accountId}`);
+  return row;
+}
+
+export interface LineSnapshot {
+  readonly owner_type: string;
+  readonly subject: string;
+  readonly sub_account: string;
+  readonly amount_fen: bigint;
+  readonly balance_after_fen: bigint | null;
+  readonly account_version: bigint | null;
+}
+
+/** The entries of the app's voucher `uniqKey` with their snapshots, platform lines first. */
+export async function linesOf(
+  f: AdjustFixture,
+  uniqKey: string,
+  appId = f.appId,
+): Promise<LineSnapshot[]> {
+  const result = await sql<LineSnapshot>`
+    SELECT a.owner_type, a.subject, e.sub_account, e.amount_fen, e.balance_after_fen,
+      e.account_version
+    FROM app.ledger_entries e
+    JOIN app.ledger_vouchers v ON v.app_id = e.app_id AND v.id = e.voucher_id
+    JOIN app.ledger_accounts a ON a.app_id = e.app_id AND a.id = e.account_id
+    WHERE v.app_id = ${appId} AND v.uniq_key = ${uniqKey}
+    ORDER BY a.owner_type, a.subject, e.sub_account, e.amount_fen`.execute(f.db);
+  return result.rows;
 }
 
 export interface Money {
@@ -714,14 +932,35 @@ export interface Fault {
   tripped: number;
 }
 
-function faultPlugin(fault: Fault): KyselyPlugin {
+interface Pause {
+  readonly reached: () => void;
+  readonly gate: Promise<void>;
+}
+
+/** The admin entry's balance-row locking statements (isBalanceLock), and an optional pause. */
+interface LockWatch {
+  readonly issued: string[];
+  /** One-shot: the next such statement's result is held back until its gate opens. */
+  pause: Pause | null;
+}
+
+function faultPlugin(fault: Fault, watch: LockWatch): KyselyPlugin {
   const compiler = new PostgresQueryCompiler();
+  const held = new WeakMap<object, Pause>();
   return {
     transformQuery({ node, queryId }) {
-      const point = fault.point;
-      if (point === null) return node;
       const compiled = compiler.compileQuery(node, queryId);
       const text = compiled.sql;
+      if (isBalanceLock(text)) {
+        watch.issued.push(text);
+        const pause = watch.pause;
+        if (pause !== null) {
+          watch.pause = null;
+          held.set(queryId, pause);
+        }
+      }
+      const point = fault.point;
+      if (point === null) return node;
       const params = JSON.stringify(compiled.parameters, (_key, value: unknown) =>
         typeof value === 'bigint' ? value.toString() : value,
       );
@@ -737,10 +976,24 @@ function faultPlugin(fault: Fault): KyselyPlugin {
       }
       return node;
     },
-    async transformResult({ result }) {
+    async transformResult({ queryId, result }) {
+      const pause = held.get(queryId);
+      if (pause !== undefined) {
+        // The statement has run: this transaction holds the rows it locked while it waits here.
+        held.delete(queryId);
+        pause.reached();
+        await pause.gate;
+      }
       return result;
     },
   };
+}
+
+export interface PausedLock {
+  /** True once the entry's balance lock statement has returned and is held back. */
+  untilReached(pending: Tracked<unknown>, timeoutMs?: number): Promise<boolean>;
+  /** Lets the held-back statement's result through (and disarms the pause if never reached). */
+  resume(): void;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -785,6 +1038,13 @@ export interface ApproveOptions {
 
 export interface WriteoffAdmin {
   readonly fault: Fault;
+  /** The SQL of every balance-row locking statement the entry sent (isBalanceLock), in order. */
+  readonly balanceLocks: readonly string[];
+  /**
+   * One-shot: the entry's next balance-row locking statement runs, then its result is held back
+   * (its transaction keeps the lock) until resume().
+   */
+  pauseAfterBalanceLock(): PausedLock;
   /** An admin account of the fixture app with these permission points (or a super admin). */
   caller(permissions: readonly string[], options?: CallerOptions): Promise<AdminCaller>;
   /** A step-up token of the caller's account and admin session (tier sms by default). */
@@ -852,7 +1112,39 @@ export async function withWriteoffAdmin(
   const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const tokenKey = randomBytes(32);
   const fault: Fault = { point: null, tripped: 0 };
-  const store = f.db.withPlugin(faultPlugin(fault));
+  const watch: LockWatch = { issued: [], pause: null };
+  const store = f.db.withPlugin(faultPlugin(fault, watch));
+  const pauseAfterBalanceLock = (): PausedLock => {
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    let reached!: () => void;
+    const arrived = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const pause: Pause = { reached, gate };
+    watch.pause = pause;
+    return {
+      untilReached(pending, timeoutMs = 10_000) {
+        return within(
+          Promise.race([
+            arrived.then(() => true),
+            pending.promise.then(
+              () => false,
+              () => false,
+            ),
+          ]),
+          timeoutMs,
+          false,
+        );
+      },
+      resume() {
+        if (watch.pause === pause) watch.pause = null;
+        open();
+      },
+    };
+  };
   let app: HttpApp | undefined;
   try {
     app = await createHttpApp('admin', {
@@ -947,6 +1239,8 @@ export async function withWriteoffAdmin(
     });
     await run({
       fault,
+      balanceLocks: watch.issued,
+      pauseAfterBalanceLock,
       caller,
       stepUp,
       writer,
@@ -1161,7 +1455,12 @@ export async function expectApproveAudit(
  * `adminId` at the clock with written_off_fen `amount`; the row is the seed plus status, approver,
  * approved_at and its voucher; the one voucher `BADDEBT:{account_id}:{id}` on the clock's
  * accounting day whose entries are exactly the BAD_DEBT_WRITEOFF template's (debit BAD_DEBT, credit
- * USER_BALANCE.available) and balance; available 0, frozen as it was, negative_since cleared.
+ * USER_BALANCE.available) and balance; available 0, frozen as it was, negative_since cleared; the
+ * user line's balance_after_fen 0 and account_version the member's version now. With `cache` (the
+ * app's balanceCache before the request): the member's version is exactly the snapshot's plus
+ * `postedBefore` (other postings to the member after the snapshot, before the write-off) plus 1,
+ * no other account_balances row of the app changed, and there is no balance row of a platform
+ * account (BR-FUND-16: platform subjects have no real-time cache).
  */
 export async function expectWrittenOff(
   f: AdjustFixture,
@@ -1172,6 +1471,8 @@ export async function expectWrittenOff(
     readonly adminId: string;
     readonly amount: bigint;
     readonly frozen: bigint;
+    readonly cache?: readonly CacheRow[];
+    readonly postedBefore?: number;
   },
 ): Promise<CandidateRow> {
   const done = await approvalOf(sent);
@@ -1207,6 +1508,32 @@ export async function expectWrittenOff(
     'one write-off voucher of the account',
   ).toEqual([key]);
   expect(await moneyOf(g, e.m)).toEqual({ available: 0n, frozen: e.frozen, negativeSince: null });
+  const cacheNow = await balanceCache(g);
+  const version = cacheRowOf(cacheNow, e.m).version;
+  const userLines = (await linesOf(g, key)).filter((line) => line.owner_type === 'user');
+  expect(
+    userLines.map((line) => ({
+      balance_after_fen: line.balance_after_fen,
+      account_version: line.account_version,
+    })),
+    'the user line: balance_after_fen 0, account_version the balance row version',
+  ).toEqual([{ balance_after_fen: 0n, account_version: version }]);
+  if (e.cache !== undefined) {
+    const before = cacheRowOf(e.cache, e.m);
+    const expected = before.version + BigInt(e.postedBefore ?? 0) + 1n;
+    expect(version, 'account_balances.version: exactly one more for the write-off').toBe(expected);
+    expect(cacheNow, 'account_balances: only the member row changed').toEqual(
+      e.cache.map((item) =>
+        item.account_id === e.m.accountId
+          ? { ...item, available_fen: 0n, negative_since: null, version: expected }
+          : item,
+      ),
+    );
+    expect(
+      cacheNow.filter((item) => item.owner_type !== 'user'),
+      'no balance row of a platform account (BAD_DEBT has no real-time cache)',
+    ).toEqual([]);
+  }
   expect(done.writeoff).toEqual(
     rowView(
       now,
