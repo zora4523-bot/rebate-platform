@@ -1991,14 +1991,28 @@ function orderSyncWorker(
     const { clock, logger, events } = assembly;
     return {
       store: createImportStore({ appEnv: entry.appEnv, logger }),
-      rights: createRightsCommandPort({ clock, logger, events, clawback, rebate: port }),
+      rights: createRightsCommandPort({
+        clock,
+        logger,
+        events,
+        clawback,
+        rebate: port,
+        audit: createSystemAuditWriter({ clock, sensitiveKeys: SENSITIVE_KEYS }),
+      }),
     };
   };
   const rightsSync: NonNullable<OrdersWorkerOptions['rightsSync']> = (assembly) => {
     const { port, clawback } = wire(assembly);
     if (clawback === undefined) return undefined;
     const { clock, logger, events } = assembly;
-    return createRightsCommandPort({ clock, logger, events, clawback, rebate: port });
+    return createRightsCommandPort({
+      clock,
+      logger,
+      events,
+      clawback,
+      rebate: port,
+      audit: createSystemAuditWriter({ clock, sensitiveKeys: SENSITIVE_KEYS }),
+    });
   };
   const keyring = (): FieldCrypto | undefined => {
     if (entry === undefined) throw new Error('orders: the blacklist step needs the worker entry');

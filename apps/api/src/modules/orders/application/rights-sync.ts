@@ -2,7 +2,8 @@
 // 08 BR-FUND-01 / 02 / 06 / 08; orchestrator D10-645, D10-676). Rule tests:
 // test/spec/orders/taobao-rights-sync/**.
 // - Which platforms: those whose (governed) adapter has listRefunds (rights) / listPunishments
-//   (punish); registry.get throwing (no endpoint) counts as none. orders never compares platform
+//   (punish) and, when it declares rightsSources, a configured source behind them (Taobao without
+//   its 大淘客 order source has none); registry.get throwing (no endpoint) counts as none. orders never compares platform
 //   names. A platform without a source dispatches nothing and arms no timer.
 // - Gates as the increment scheduler: queryableAccount (D10-36), the offline breaker, site auth.
 // - rights increment stream (platform, account, 'rights', '-'): every 30 minutes one window from the
@@ -10,6 +11,7 @@
 //   later than now; job 'rights.window', singletonKey platform:account:kind:scene:window_start.
 // - rights rescan stream (platform, account, 'rights', 'rescan'): a 60-day pass a day in 3-hour
 //   windows (one window per 180-second tick), its own cursor; the increment cursor is never moved.
+//   A pass's head is fixed once set: a first window slower than a tick does not move the cursor.
 // - punish (platform, account, 'punish', '-'): every 30 minutes one 'punish.window' over
 //   [now − 30 days, now); no cursor is read or moved (order_rights_dedupe_key dedupes).
 // - The writer: one transaction per record: find the sub-order of (app, platform) → lockOrderKey →
@@ -47,6 +49,13 @@ export const RIGHTS_WINDOW_CAP_MS = 3 * 60 * MINUTE_MS;
 export const RIGHTS_RESCAN_DAYS = 60;
 /** 60 days in 3-hour windows is 480 windows a day: one every 180 seconds. */
 export const RIGHTS_RESCAN_TICK_MS = RIGHTS_WINDOW_CAP_MS / RIGHTS_RESCAN_DAYS;
+/**
+ * money r1 S2 ②: a pass keeps its own head. A cursor behind the moving head of the 60 days by less
+ * than one pass period (a day) is the pass still at work on its first windows (a window queued or
+ * slower than a tick), not a stale stream: it is left where it is, so the window's CAS from its
+ * window_start still hits once the job is done.
+ */
+export const RIGHTS_RESCAN_RESTART_SLACK_MS = DAY_MS;
 /** 02 §7.1: punishments can only be queried over the last 30 days. */
 export const PUNISH_LOOKBACK_DAYS = 30;
 
@@ -78,9 +87,15 @@ export interface RightsCursorStore {
   rewind(stream: RightsStream, expected: string | null, to: string): Promise<boolean>;
 }
 
-/** The governed adapters; a missing method means the platform has no such source. */
+/**
+ * The governed adapters; a missing method means the platform has no such source, and so does an
+ * adapter whose declared rightsSources says it cannot fetch as configured (money r1 S2 ①: Taobao
+ * without its 大淘客 order source keeps the methods, which then fail adapter_unimplemented).
+ */
 export interface RightsSyncRegistry {
-  get(platform: RegisteredPlatform): Pick<UnionAdapter, 'listRefunds' | 'listPunishments'>;
+  get(
+    platform: RegisteredPlatform,
+  ): Pick<UnionAdapter, 'listRefunds' | 'listPunishments' | 'rightsSources'>;
 }
 
 export interface RightsSyncSchedulerDeps {
@@ -131,17 +146,21 @@ interface Capability {
   readonly punishments: boolean;
 }
 
-/** What the platform's adapter offers; no adapter (registry.get throws) offers nothing. */
+/**
+ * What the platform's adapter offers: the method, and the source behind it when the adapter
+ * declares its rightsSources; no adapter (registry.get throws) offers nothing.
+ */
 function capabilityOf(registry: RightsSyncRegistry, platform: RegisteredPlatform): Capability {
-  let adapter: Pick<UnionAdapter, 'listRefunds' | 'listPunishments'>;
+  let adapter: ReturnType<RightsSyncRegistry['get']>;
   try {
     adapter = registry.get(platform);
   } catch {
     return { refunds: false, punishments: false };
   }
+  const sources = adapter.rightsSources;
   return {
-    refunds: typeof adapter.listRefunds === 'function',
-    punishments: typeof adapter.listPunishments === 'function',
+    refunds: typeof adapter.listRefunds === 'function' && (sources?.refunds ?? true),
+    punishments: typeof adapter.listPunishments === 'function' && (sources?.punishments ?? true),
   };
 }
 
@@ -325,10 +344,13 @@ export async function scheduleRightsRescan(deps: RightsSyncSchedulerDeps): Promi
     const rangeStartMs = nowMs - RIGHTS_RESCAN_DAYS * DAY_MS;
     const cursor = await deps.cursors.read(stream);
     const cursorMs = cursor === null ? null : parseInstantMs(cursor, 'cursor_at');
-    // A pass starts at the head of the 60 days: no cursor yet, a cursor older than the range, or
-    // a cursor without a whole window left before now (the increment stream covers that tail).
+    // A pass starts at the head of the 60 days: no cursor yet, a cursor older than the range by
+    // more than the slack (a pass under way trails the moving head by less), or a cursor without
+    // a whole window left before now (the increment stream covers that tail).
     const restart =
-      cursorMs === null || cursorMs < rangeStartMs || cursorMs + RIGHTS_WINDOW_CAP_MS > nowMs;
+      cursorMs === null ||
+      cursorMs < rangeStartMs - RIGHTS_RESCAN_RESTART_SLACK_MS ||
+      cursorMs + RIGHTS_WINDOW_CAP_MS > nowMs;
     const startMs = restart ? rangeStartMs : cursorMs;
     // Moved first, so the window's CAS from window_start hits; a stream with no row has nothing to
     // move (the window's advance inserts it). A lost CAS sends nothing this tick.

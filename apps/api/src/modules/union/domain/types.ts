@@ -583,6 +583,12 @@ export interface OrderQueryOpt {
  */
 export type RefundTimeBasis = 'refund_created' | 'settle' | 'refund_finished' | 'create' | 'update';
 
+/** B1-04zza: which rights sources an adapter can fetch from as configured. */
+export interface UnionRightsSources {
+  readonly refunds: boolean;
+  readonly punishments: boolean;
+}
+
 /** B1-04z: listRefunds options; cursor is the opaque nextCursor of the previous page. */
 export interface RefundQueryOpt {
   readonly cursor?: string;
@@ -652,6 +658,13 @@ export interface UnionAdapter {
    */
   readonly listRefundsMetering?: 'per_request';
   readonly listPunishmentsMetering?: 'per_request';
+  /**
+   * B1-04zza (money r1 S2 ①): whether listRefunds / listPunishments can fetch with the adapter as
+   * configured (e.g. Taobao only with its 大淘客 order source). Declared by an adapter whose
+   * methods exist even without a source (they then fail adapter_unimplemented); absent, the
+   * methods' presence is the answer. The governed wrapper passes it through.
+   */
+  readonly rightsSources?: UnionRightsSources;
   searchItems(q: SearchQuery, ctx: CallCtx): Promise<Page<UnionItem>>;
   getItem(ref: ItemRef, ctx: CallCtx): Promise<UnionItemDetail>;
   resolveLink(raw: string, ctx: CallCtx): Promise<ResolvedLink>;

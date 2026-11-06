@@ -247,7 +247,8 @@ export async function handleRightsWindow(
   const event = 'order_rights_sync_window';
   if (!(await windowOpen(win, fields, deps, event))) return;
   const adapter = deps.registry.get(win.platform);
-  const listRefunds = adapter.listRefunds;
+  // money r1 S2 ①: an adapter that declares no refund source as configured has none.
+  const listRefunds = adapter.rightsSources?.refunds === false ? undefined : adapter.listRefunds;
   if (listRefunds === undefined) {
     deps.logger?.error(fields, `${event}_no_source`);
     return;
@@ -299,7 +300,8 @@ export async function handlePunishWindow(
   const event = 'order_punish_sync_window';
   if (!(await windowOpen(win, fields, deps, event))) return;
   const adapter = deps.registry.get(win.platform);
-  const listPunishments = adapter.listPunishments;
+  const listPunishments =
+    adapter.rightsSources?.punishments === false ? undefined : adapter.listPunishments;
   if (listPunishments === undefined) {
     deps.logger?.error(fields, `${event}_no_source`);
     return;
