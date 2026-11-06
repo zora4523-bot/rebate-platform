@@ -3,6 +3,7 @@
 // settle_runs_part_outcome_check exists, is validated, and rejects every other pair on INSERT and on
 // UPDATE with 23514, leaving the row as it was; legal pairs and a publish's moves between them pass.
 import { createTestDatabase } from '@couli/db/testing';
+import { propRuns, propSeed } from '@couli/testing';
 import fc from 'fast-check';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 
@@ -24,6 +25,10 @@ import {
   type Outcome,
   type Pair,
 } from './kit.ts';
+
+// Each run is two round trips to the one-off database; PROP_RUNS still applies below this cap and
+// PROP_SEED always applies.
+const PAIR_RUNS = Math.min(propRuns(), 200);
 
 let h: Harness;
 beforeAll(async () => {
@@ -122,7 +127,7 @@ it(
           return true;
         },
       ),
-      { numRuns: 30 },
+      { numRuns: PAIR_RUNS, seed: propSeed() },
     );
   },
   TIMEOUT,
