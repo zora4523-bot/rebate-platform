@@ -14,8 +14,10 @@ import { EXPECTED, NOW, SHAPES, assembler, expectHint, requestOf, type Shape } f
 const NOW_MS = Date.parse(NOW);
 
 function options(card: UnlinkedCard, overrides: Partial<NormalizeOptions> = {}): NormalizeOptions {
+  // Prepared catalog cards always carry a product_key; a null one cannot match, so normalizeCard
+  // returns null and the test's not.toBeNull() assertion fails loudly instead of passing silently.
   return {
-    productKey: card.product_key,
+    productKey: card.product_key ?? '',
     nowMs: NOW_MS,
     maxAgeSec: 3600,
     loginToView: false,
@@ -41,7 +43,7 @@ const MATCH_TAGS = ['matched', 'relaxed', 'spec_unconfirmed', undefined] as cons
 
 describe.each(HINTS)('目录卡 price_spec_hint = %j', (hint) => {
   it.each(MATCH_TAGS)(
-    `[B1-05zh#17][BR-PROD-04][BR-AI-24] Agent 搜索卡照抄 ${String(hint)}，与条件标记 %s 无关`,
+    `[AC-B1-05zh#17][BR-PROD-04][BR-AI-24] Agent 搜索卡照抄 ${String(hint)}，与条件标记 %s 无关`,
     async (match) => {
       const patch =
         match === undefined
@@ -56,7 +58,7 @@ describe.each(HINTS)('目录卡 price_spec_hint = %j', (hint) => {
     },
   );
 
-  it(`[B1-05zh#18][BR-AI-11][BR-PROD-04] 游客 login_to_view 遮罩后仍照抄 ${String(hint)}`, async () => {
+  it(`[AC-B1-05zh#18][BR-AI-11][BR-PROD-04] 游客 login_to_view 遮罩后仍照抄 ${String(hint)}`, async () => {
     const card = await catalogCard('jd_sku', {
       price_spec_hint: hint,
       match_tag: 'spec_unconfirmed',
@@ -70,7 +72,7 @@ describe.each(HINTS)('目录卡 price_spec_hint = %j', (hint) => {
   });
 });
 
-it('[B1-05zh#19][BR-PROD-04] 目录卡缺 price_spec_hint（按契约读作 null）时 Agent 卡给 null，不自行改成 spec_uncertain', async () => {
+it('[AC-B1-05zh#19][BR-PROD-04] 目录卡缺 price_spec_hint（按契约读作 null）时 Agent 卡给 null，不自行改成 spec_uncertain', async () => {
   const card = await catalogCard('taobao', { match_tag: 'spec_unconfirmed' });
   expect(card).not.toHaveProperty('price_spec_hint');
   const out = normalizeCard(card, options(card));
@@ -80,7 +82,7 @@ it('[B1-05zh#19][BR-PROD-04] 目录卡缺 price_spec_hint（按契约读作 null
 });
 
 it.each(SHAPES)(
-  '[B1-05zh#20][BR-PROD-04] %s：目录出卡器的判定原样到 Agent 搜索卡（同一判定）',
+  '[AC-B1-05zh#20][BR-PROD-04] %s：目录出卡器的判定原样到 Agent 搜索卡（同一判定）',
   async (shape) => {
     const f = assembler();
     const prepared = await f.service.prepare(requestOf(shape, { entrySource: 'agent' }));

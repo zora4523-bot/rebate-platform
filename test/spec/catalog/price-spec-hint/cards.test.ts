@@ -21,7 +21,7 @@ import {
 describe.each(SHAPES)('卡片形态 %s', (shape: Shape) => {
   const expected = EXPECTED[shape];
 
-  it(`[B1-05zh#9][BR-PROD-04] ${shape} 搜索卡 price_spec_hint = ${String(expected)}，预备卡与登记后的卡相同`, async () => {
+  it(`[AC-B1-05zh#9][BR-PROD-04] ${shape} 搜索卡 price_spec_hint = ${String(expected)}，预备卡与登记后的卡相同`, async () => {
     const f = assembler();
     const prepared = await f.service.prepare(requestOf(shape));
     expectHint(prepared.card, expected);
@@ -41,7 +41,7 @@ describe.each(SHAPES)('卡片形态 %s', (shape: Shape) => {
     { scene: '淘礼金池（tlj_pool）', entrySource: 'tlj_pool', source: 'pool', stale: false },
     { scene: 'Agent 检索（agent）', entrySource: 'agent', source: 'search', stale: false },
   ] as const)(
-    `[B1-05zh#10][BR-PROD-04] ${shape} $scene：数据来源与 stale 不改变判定（${String(expected)}）`,
+    `[AC-B1-05zh#10][BR-PROD-04] ${shape} $scene：数据来源与 stale 不改变判定（${String(expected)}）`,
     async ({ entrySource, source, stale }) => {
       const f = assembler();
       const card = await f.service.assemble(
@@ -52,7 +52,7 @@ describe.each(SHAPES)('卡片形态 %s', (shape: Shape) => {
     },
   );
 
-  it(`[B1-05zh#11][BR-PROD-04] ${shape} 带来源链接的详情 / 复核卡（sourceLinkId）同一判定`, async () => {
+  it(`[AC-B1-05zh#11][BR-PROD-04] ${shape} 带来源链接的详情 / 复核卡（sourceLinkId）同一判定`, async () => {
     const f = assembler();
     f.entrySource.mockResolvedValue('pool');
     const card = await f.service.assemble(
@@ -62,7 +62,7 @@ describe.each(SHAPES)('卡片形态 %s', (shape: Shape) => {
     expectHint(card, expected);
   });
 
-  it(`[B1-05zh#12][BR-PROD-04] ${shape} 标题、券、价格不参与判定（无券、标题写明规格与「起」也一样）`, async () => {
+  it(`[AC-B1-05zh#12][BR-PROD-04] ${shape} 标题、券、价格不参与判定（无券、标题写明规格与「起」也一样）`, async () => {
     const f = assembler();
     const card = await f.service.assemble(
       requestOf(shape, {
@@ -78,7 +78,7 @@ describe.each(SHAPES)('卡片形态 %s', (shape: Shape) => {
     expectHint(card, expected);
   });
 
-  it(`[B1-05zh#13][BR-PROD-04] ${shape} 无返利卡（no_rebate）照样带同一判定`, async () => {
+  it(`[AC-B1-05zh#13][BR-PROD-04] ${shape} 无返利卡（no_rebate）照样带同一判定`, async () => {
     const f = assembler();
     f.quote.mockResolvedValue(noRebateQuote());
     const card = await f.service.assemble(requestOf(shape));
@@ -86,7 +86,7 @@ describe.each(SHAPES)('卡片形态 %s', (shape: Shape) => {
     expectHint(card, expected);
   });
 
-  it(`[B1-05zh#14][BR-PROD-04] ${shape} 经 catalog 统一出卡入口：检索（延后登记）与主动查询同一判定`, async () => {
+  it(`[AC-B1-05zh#14][BR-PROD-04] ${shape} 经 catalog 统一出卡入口：检索（延后登记）与主动查询同一判定`, async () => {
     const f = cardEntry();
     const retrieval = await f.entry.assemble({
       ...requestOf(shape, { entrySource: 'search' }),
@@ -108,7 +108,7 @@ describe.each(SHAPES)('卡片形态 %s', (shape: Shape) => {
   });
 });
 
-it('[B1-05zh#15][BR-PROD-04] 同一京东联盟条目（同带 itemId 与 skuId）：按卡片自身 product_key 的派生模式判定，不按条目字段猜', async () => {
+it('[AC-B1-05zh#15][BR-PROD-04] 同一京东联盟条目（同带 itemId 与 skuId）：按卡片自身 product_key 的派生模式判定，不按条目字段猜', async () => {
   const f = assembler();
   const item = itemOf('jd_sku');
   expect(itemOf('jd_item')).toEqual(item);
@@ -120,7 +120,7 @@ it('[B1-05zh#15][BR-PROD-04] 同一京东联盟条目（同带 itemId 与 skuId�
   expectHint(itemCard, 'spec_uncertain');
 });
 
-it('[B1-05zh#16][BR-PROD-04] 同一出卡器交替出不同形态的卡，每张各自判定，不沿用上一张', async () => {
+it('[AC-B1-05zh#16][BR-PROD-04] 同一出卡器交替出不同形态的卡，每张各自判定，不沿用上一张', async () => {
   const f = assembler();
   const hints: unknown[] = [];
   for (const shape of ['jd_sku', 'taobao', 'jd_sku', 'jd_item', 'pdd', 'jd_sku'] as const) {

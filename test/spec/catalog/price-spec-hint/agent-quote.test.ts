@@ -74,7 +74,7 @@ function productOf(cards: readonly UnnumberedCard[]): Record<string, unknown> {
 describe.each(SHAPES)('卡片形态 %s', (shape: Shape) => {
   const expected = EXPECTED[shape];
 
-  it(`[B1-05zh#21][BR-PROD-04] ${shape} 链接识别报价卡（resolve_link）带目录判定 ${String(expected)}`, async () => {
+  it(`[AC-B1-05zh#21][BR-PROD-04] ${shape} 链接识别报价卡（resolve_link）带目录判定 ${String(expected)}`, async () => {
     const f = fixture(shape);
     const outcome = await createLinkQuoteRunner(f.deps).run(candidate, context());
     expect(outcome.kind).toBe('ok');
@@ -84,7 +84,7 @@ describe.each(SHAPES)('卡片形态 %s', (shape: Shape) => {
     expectHint(product, expected);
   });
 
-  it(`[B1-05zh#22][BR-PROD-04] ${shape} get_rebate_quote（情境 product_key）报价卡带目录判定 ${String(expected)}`, async () => {
+  it(`[AC-B1-05zh#22][BR-PROD-04] ${shape} get_rebate_quote（情境 product_key）报价卡带目录判定 ${String(expected)}`, async () => {
     const f = fixture(shape);
     const key = f.product.ref.productKey;
     const outcome = await createRebateQuoteHandler(f.deps).run(
@@ -107,7 +107,7 @@ it.each([
   { shape: 'jd_sku', hint: 'price_from' },
   { shape: 'jd_item', hint: null },
 ] as const)(
-  '[B1-05zh#23][BR-PROD-04] Agent 报价卡照抄目录卡的值（$shape 目录卡给 $hint），不按平台自行重算',
+  '[AC-B1-05zh#23][BR-PROD-04] Agent 报价卡照抄目录卡的值（$shape 目录卡给 $hint），不按平台自行重算',
   async ({ shape, hint }) => {
     const f = fixture(shape, { price_spec_hint: hint });
     const viaRunner = await createLinkQuoteRunner(f.deps).run(candidate, context());

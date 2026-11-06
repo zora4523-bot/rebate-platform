@@ -15,19 +15,19 @@ function loose(platform: string, jdMode: unknown): PriceSpecHintInput {
   return { platform, jdMode } as unknown as PriceSpecHintInput;
 }
 
-it('[B1-05zh#1][BR-PROD-04] 京东 sku 模式（product_key 即 skuId，价格即该 SKU 的价）→ null', () => {
+it('[AC-B1-05zh#1][BR-PROD-04] 京东 sku 模式（product_key 即 skuId，价格即该 SKU 的价）→ null', () => {
   expect(priceSpecHintFor({ platform: 'jd', jdMode: 'sku' })).toBeNull();
 });
 
 it.each([
   { name: 'item 模式', input: { platform: 'jd', jdMode: 'item' } as PriceSpecHintInput },
   { name: '未配置模式（缺省即 item）', input: { platform: 'jd' } as PriceSpecHintInput },
-])('[B1-05zh#2][BR-PROD-04] 京东 $name → spec_uncertain（不是 null）', ({ input }) => {
+])('[AC-B1-05zh#2][BR-PROD-04] 京东 $name → spec_uncertain（不是 null）', ({ input }) => {
   expect(priceSpecHintFor(input)).toBe('spec_uncertain');
 });
 
 it.each(['taobao', 'pdd'])(
-  '[B1-05zh#3][BR-PROD-04] %s 商品级价无法对应规格 → spec_uncertain，与传入的京东模式无关',
+  '[AC-B1-05zh#3][BR-PROD-04] %s 商品级价无法对应规格 → spec_uncertain，与传入的京东模式无关',
   (platform) => {
     expect(priceSpecHintFor({ platform })).toBe('spec_uncertain');
     expect(priceSpecHintFor({ platform, jdMode: 'item' })).toBe('spec_uncertain');
@@ -37,7 +37,7 @@ it.each(['taobao', 'pdd'])(
 );
 
 it.each(['meituan', 'vip', 'douyin', 'eleme', 'kuaishou', 'suning', 'tmall'])(
-  '[B1-05zh#4][BR-PROD-04] 其余平台码 %s 一律 spec_uncertain（null 只给确知对应规格的价）',
+  '[AC-B1-05zh#4][BR-PROD-04] 其余平台码 %s 一律 spec_uncertain（null 只给确知对应规格的价）',
   (platform) => {
     expect(priceSpecHintFor({ platform })).toBe('spec_uncertain');
     expect(priceSpecHintFor({ platform, jdMode: 'sku' })).toBe('spec_uncertain');
@@ -45,13 +45,13 @@ it.each(['meituan', 'vip', 'douyin', 'eleme', 'kuaishou', 'suning', 'tmall'])(
 );
 
 it.each([['SKU'], ['Sku'], [' sku'], ['sku '], ['spu'], [''], [null], [1], [true]])(
-  '[B1-05zh#5][BR-PROD-04] 京东模式取值非法（%j）时不当 sku：spec_uncertain，不给 null',
+  '[AC-B1-05zh#5][BR-PROD-04] 京东模式取值非法（%j）时不当 sku：spec_uncertain，不给 null',
   (mode) => {
     expect(priceSpecHintFor(loose('jd', mode))).toBe('spec_uncertain');
   },
 );
 
-it('[B1-05zh#6][BR-PROD-04] 只看平台与京东模式：标题、规格文本、价格与区间字段都不改变判定', () => {
+it('[AC-B1-05zh#6][BR-PROD-04] 只看平台与京东模式：标题、规格文本、价格与区间字段都不改变判定', () => {
   const extras = {
     title: '伊利纯牛奶 250ml*24 盒 最低规格价',
     spec_text: '250ml*24',
@@ -73,7 +73,7 @@ it('[B1-05zh#6][BR-PROD-04] 只看平台与京东模式：标题、规格文本�
   expect(withExtras({ platform: 'jd', jdMode: 'sku' })).toBeNull();
 });
 
-it('[B1-05zh#7][BR-PROD-04] 同一输入多次调用结果相同，不留状态', () => {
+it('[AC-B1-05zh#7][BR-PROD-04] 同一输入多次调用结果相同，不留状态', () => {
   const sequence = [
     priceSpecHintFor({ platform: 'jd', jdMode: 'sku' }),
     priceSpecHintFor({ platform: 'taobao' }),
@@ -84,7 +84,7 @@ it('[B1-05zh#7][BR-PROD-04] 同一输入多次调用结果相同，不留状态'
   expect(sequence).toEqual([null, 'spec_uncertain', null, 'spec_uncertain', null]);
 });
 
-it('[B1-05zh#8][BR-PROD-04] 属性：任意平台码与模式取值，结果恰为「jd 且 sku → null，否则 spec_uncertain」，从不出 price_from', () => {
+it('[AC-B1-05zh#8][BR-PROD-04] 属性：任意平台码与模式取值，结果恰为「jd 且 sku → null，否则 spec_uncertain」，从不出 price_from', () => {
   const platformArb = fc.oneof(
     fc.constantFrom('jd', 'taobao', 'pdd', 'meituan', 'vip', 'douyin', 'tmall', 'JD', 'jd '),
     fc.string({ maxLength: 8 }),
