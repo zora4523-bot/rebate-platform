@@ -107,8 +107,10 @@ function container(): HTMLElement {
 async function quiet(marker: HTMLElement): Promise<void> {
   await expect.element(marker, WAIT).toHaveAttribute('data-pending', '0');
   await settle();
-  const moving = Array.from(document.querySelectorAll('[class]')).filter((node) =>
-    MOTION.test(node.getAttribute('class') ?? ''),
+  const moving = Array.from(document.querySelectorAll('[class]')).filter(
+    (node): node is HTMLElement | SVGElement =>
+      (node instanceof HTMLElement || node instanceof SVGElement) &&
+      MOTION.test(node.getAttribute('class') ?? ''),
   );
   for (const node of moving) await expect.element(node, WAIT).not.toHaveClass(MOTION);
   await expect.element(marker, WAIT).toHaveAttribute('data-pending', '0');
