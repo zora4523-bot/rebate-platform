@@ -1,0 +1,48 @@
+{
+  "risk_note": "Test only, one frozen test, its expectations unchanged (D10-327, approved by the orchestrator 2026-11-06 02:56 and 07:08). [AC-B2-09t#35] used to go red only through the 60 second test timeout when the late_paid_check judged waiting ahead of an already reported row; it now fails by assertion as soon as an enqueue is attempted, and restores the fixture's send afterwards. It is a separate green test-change because a changed test must be red on the old code and this one is green there by design (B2-09u red/1). No production code changed.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex via codex-run.sh, couli-runs/B2-09v/money-review-r1.json, static, read-only, no findings. Reviewed before the rebase."
+    },
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "A fresh Claude via claude-run.sh, couli-runs/B2-09v/claude-money-r1.json, static, no findings; checked that no expectation is weakened and the send restore does not leak into later tests. A spec-test review is refused by the tool for tester none, so the money type is used, as for B2-09o and B2-09r. The patch was written by Codex in B2-09u round 1 and left uncommitted; the author checked and committed it. Mutation run by the author and reverted: judging waiting ahead of the reported row turns #35 red by assertion in about 0.1 s, where it used to take the 60 s timeout; the current code keeps all 30 tests of the file green."
+    }
+  ],
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "1ad666da72dd1b44a16bac9710d60068c9f8d794"
+  },
+  "task": "B2-09v",
+  "spec_commit": "e01e41439436ad8144688a7b7fb46bbb47b57cf0",
+  "spec_ref": "b144fc0d07aeafb9503457ffd824056a6ac8e02d",
+  "red_tests": [],
+  "runs": [],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "637de2447302e76821b23600149d84fe39c7058a",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "1ad666da72dd1b44a16bac9710d60068c9f8d794",
+    "test/spec": "b4b9dde8c764198d898aaf49a362eb3df6f1960f",
+    "specs": "4e438a320cb0da577f7f5ef420f3aa5a7c15b9b6"
+  }
+}
