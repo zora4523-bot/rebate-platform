@@ -9,20 +9,39 @@
 //
 // Layout of every case: two executors on the same database, each with its own FixedClock — worker Y
 // on the harness clock (the one the credit writes credited_at with) and worker X on a FixedClock
-// SKEW_MS behind it (re-synced to that lag at the start of each of its deliveries). One run of two
+// SKEW_MS behind it (re-synced to that lag at the start of each of its deliveries). One run of
 // taobao batches: A (one order) finishes on Y; B (three orders) runs on X and is stopped by
 // settle.auto.enabled. The executors are built here (the frozen run-done kit's build() always uses the
 // harness clock); seeding, the credit, the switch map, resume (SB8) and the event reads come from
-// ../run-done/kit.ts unchanged. No beneficiary items are seeded (closed_at is not exercised).
+// ../run-done/kit.ts unchanged.
+//
+// Each of the three sources of the clamp is on its own the greatest instant in one case, so an
+// implementation that leaves that source out publishes one more part on a zero-credit continue:
+//   - order credited_at: AC#1 (B's first order is credited on X after A finished on Y);
+//   - batch finished_at: the finished_at case (A's order is credited, A finishes 20 s later, B's
+//     first execution credits nothing: its first item is skipped by a changed settlement seq);
+//   - obligation closed_at: the closed_at case (a beneficiary batch C closes an obligation on Y after
+//     A finished, then stops; B's first execution on X credits nothing). Obligations and their
+//     beneficiary items are seeded with the batch-executor kit's beneficiaryItem(); the executors
+//     here get a beneficiary port that closes the obligation the way B2-04q does (status done,
+//     closed_by R5a, closed_ref = the item id, closed_at = that executor's own clock).
+// Boundary (separate case, for the rule-test review): once the start is clamped to an instant of
+// the faster worker, the slow worker may move the last batch to DONE with finished_at at or before
+// that start. Its run is then DONE by the batch states, and the credits of that execution must
+// still be announced (part=2 done, BR-TEXT-09); the other cases move the clock past the lag before
+// the final DONE and do not depend on this.
+import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
 import { createTestDatabase } from '@couli/db/testing';
-import type { Transaction } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import { expect, it } from 'vitest';
 import { getAssetSnapshotStatus } from '../../../../apps/api/src/modules/ledger/index.ts';
 import { FixedClock, createRootLogger } from '../../../../apps/api/src/modules/platform/index.ts';
 import {
   createBatchExecutor,
   type BatchExecuteResult,
+  type BeneficiaryItemInput,
+  type BeneficiaryItemResult,
 } from '../../../../apps/api/src/modules/settlement/batch/executor/executor.ts';
 import type { SeededOrder } from '../credit/kit.ts';
 import {
@@ -44,6 +63,12 @@ const p = databaseFixture(createTestDatabase);
 const SKEW_MS = 30_000;
 /** Past the 10-second bound of the switch reads. */
 const SWITCH_STEP_MS = 11_000;
+/** finished_at case: time between A's last credit and A's DONE on Y. */
+const FINISH_GAP_MS = 20_000;
+/** closed_at case: time between A's DONE and the obligation's close on Y. */
+const CLOSE_GAP_MS = 5_000;
+/** Boundary case: wide enough that X still lies before A's finish when it completes B. */
+const WIDE_SKEW_MS = 120_000;
 
 interface Worker {
   /** The FixedClock injected into this executor. */
@@ -63,6 +88,42 @@ function rig(f: Fixture) {
   );
   /** Runs inside the credit call of that order (on its transaction), before the real credit. */
   const hooks = new Map<string, (trx: Transaction<DB>) => Promise<void>>();
+  /** Runs inside the credit call of that order, after the real credit returned. */
+  const afterHooks = new Map<string, () => Promise<void>>();
+  /** Runs inside the beneficiary call of that obligation, after it was closed. */
+  const closeHooks = new Map<string, () => Promise<void>>();
+
+  /**
+   * The beneficiary port as B2-04q completes an obligation, on the item transaction and with the
+   * executing worker's own clock: open → done, closed_by R5a, closed_ref = the item id.
+   */
+  async function closeObligation(
+    trx: Transaction<DB>,
+    input: BeneficiaryItemInput,
+    clock: FixedClock,
+  ): Promise<BeneficiaryItemResult> {
+    const closed = await trx
+      .withSchema('app')
+      .updateTable('beneficiary_credits')
+      .set({
+        status: 'done',
+        closed_by: 'R5a',
+        closed_ref: input.itemId,
+        closed_at: clock.now(),
+        row_version: sql<number>`row_version + 1`,
+      })
+      .where('app_id', '=', input.appId)
+      .where('beneficiary_credit_id', '=', input.beneficiaryCreditId)
+      .where('status', '=', 'open')
+      .executeTakeFirst();
+    if (closed.numUpdatedRows !== 1n) throw new Error('the obligation is not open');
+    const hook = closeHooks.get(input.beneficiaryCreditId);
+    if (hook !== undefined) {
+      closeHooks.delete(input.beneficiaryCreditId);
+      await hook();
+    }
+    return { result: 'credited', amountFen: 80n };
+  }
 
   /** lagMs 0: the harness clock itself; otherwise a FixedClock kept lagMs behind it. */
   function worker(lagMs: number): Worker {
@@ -80,12 +141,16 @@ function rig(f: Fixture) {
             hooks.delete(input.orderId);
             await hook(trx);
           }
-          return f.h.boot().credit(trx, input);
+          const answer = await f.h.boot().credit(trx, input);
+          const after = afterHooks.get(input.orderId);
+          if (after !== undefined) {
+            afterHooks.delete(input.orderId);
+            await after();
+          }
+          return answer;
         },
       },
-      creditBeneficiary: {
-        execute: () => Promise.reject(new Error('the skew tests seed no beneficiary item')),
-      },
+      creditBeneficiary: { execute: (trx, input) => closeObligation(trx, input, clock) },
       events: { publish: (trx, event) => f.write(trx, event) },
     });
     return {
@@ -112,7 +177,22 @@ function rig(f: Fixture) {
     f.clock.advanceMs(SWITCH_STEP_MS);
   }
 
-  return { worker, stopAfter, switchOff };
+  /** After the credit of `o` was written, the harness clock moves on by `ms`. */
+  function afterCredit(o: SeededOrder, ms: number): void {
+    afterHooks.set(o.orderId, async () => {
+      f.clock.advanceMs(ms);
+    });
+  }
+
+  /** Once the obligation is closed, settle.auto.enabled goes off: the run stops after it. */
+  function stopAfterClose(beneficiaryCreditId: string): void {
+    closeHooks.set(beneficiaryCreditId, async () => {
+      f.switches.set('settle.auto.enabled', false);
+      f.clock.advanceMs(SWITCH_STEP_MS);
+    });
+  }
+
+  return { worker, stopAfter, switchOff, afterCredit, stopAfterClose };
 }
 
 /** One delivery of `b` by `w`, with the outcome and the batch status it must leave. */
@@ -161,6 +241,55 @@ async function creditedAt(f: Fixture, o: SeededOrder): Promise<Date | null> {
     .where('order_id', '=', o.orderId)
     .executeTakeFirstOrThrow();
   return row.credited_at;
+}
+
+/** credited_at of an order that must have been credited, in ms. */
+async function creditedMs(f: Fixture, o: SeededOrder): Promise<number> {
+  const credited = await creditedAt(f, o);
+  if (credited === null) throw new Error('the order has no credited_at');
+  return credited.getTime();
+}
+
+/** finished_at of a batch that must be DONE, in ms. */
+async function finishedMs(f: Fixture, b: SeededBatch): Promise<number> {
+  const finished = (await f.stored(b)).finished_at;
+  if (finished === null) throw new Error('the batch has no finished_at');
+  return finished.getTime();
+}
+
+function obligation(f: Fixture, beneficiaryCreditId: string) {
+  return f.db
+    .selectFrom('beneficiary_credits')
+    .select(['status', 'closed_by', 'closed_ref', 'closed_at'])
+    .where('app_id', '=', f.appId)
+    .where('beneficiary_credit_id', '=', beneficiaryCreditId)
+    .executeTakeFirstOrThrow();
+}
+
+/** closed_at of an obligation that must have been closed, in ms. */
+async function closedMs(f: Fixture, beneficiaryCreditId: string): Promise<number> {
+  const closed = (await obligation(f, beneficiaryCreditId)).closed_at;
+  if (closed === null) throw new Error('the obligation has no closed_at');
+  return closed.getTime();
+}
+
+/** One run, one batch per group; `seqs` overrides the settlement seq an order item carries. */
+async function seedRunWith(
+  f: Fixture,
+  groups: readonly (readonly SeededOrder[])[],
+  seqs: ReadonlyMap<string, number>,
+): Promise<{ runId: string; batches: SeededBatch[] }> {
+  const runId = randomUUID();
+  const batches: SeededBatch[] = [];
+  for (const orders of groups) {
+    batches.push(await f.batch(orders, { settle_run_id: runId }, seqs));
+  }
+  return { runId, batches };
+}
+
+/** An order item whose seq no longer matches: the credit skips it (settlement_changed). */
+function staleSeq(o: SeededOrder): ReadonlyMap<string, number> {
+  return new Map([[o.orderId, o.seq + 1]]);
 }
 
 /** The run events of this app without the run id (checked to be `runId`), in publish order. */
@@ -215,6 +344,7 @@ async function floorOf(
   publisher: FixedClock,
   batches: readonly SeededBatch[],
   orders: readonly SeededOrder[],
+  obligations: readonly string[],
 ): Promise<number> {
   const instants = [publisher.now().getTime()];
   for (const b of batches) {
@@ -225,17 +355,27 @@ async function floorOf(
     const credited = await creditedAt(f, o);
     if (credited !== null) instants.push(credited.getTime());
   }
+  for (const id of obligations) {
+    const closed = (await obligation(f, id)).closed_at;
+    if (closed !== null) instants.push(closed.getTime());
+  }
   return Math.max(...instants);
 }
 
 it(
-  '[AC-B2-04zu#1][BR-FUND-04][BR-TEXT-09] 跨 worker 时钟落后不多发：批次 A 在 worker Y 上 DONE；批次 B 在时钟慢 Y 若干秒的 worker X 上入账一单后因 settle.auto.enabled 停住 → 恰一条 part=1 partial；开关恢复、续跑 B、处理下一单前开关再关、零入账回到 PARTIAL → 不发（A 与已入账的那单不算本次入账），run_done 仍只有 part=1，不出现 part=2；之后续跑到 DONE → 发 part=2 done',
+  '[AC-B2-04zu#1][BR-FUND-04][BR-TEXT-09] 跨 worker 时钟落后不多发（订单 credited_at 单独为最大值）：批次 A 在 worker Y 上 DONE；批次 B 在时钟慢 Y 若干秒的 worker X 上入账一单后因 settle.auto.enabled 停住 → 恰一条 part=1 partial；开关恢复、续跑 B、处理下一单前开关再关、零入账回到 PARTIAL → 不发（A 与已入账的那单不算本次入账），run_done 仍只有 part=1，不出现 part=2；之后续跑到 DONE → 发 part=2 done',
   async () => {
     const s = await setUp('skew-zero', SKEW_MS);
     const { f, r, x, runId, a, b, aOrders, bOrders } = s;
     await opening(s);
     const partial = f.runEvent(runId, 1, 'partial', 2);
     expect(await f.status(a)).toBe('DONE');
+    // 本例 credited_at 单独为最大值：B 第 1 单的入账晚于 A 的完成、A 那单的入账与发布方 X 的时钟。
+    const publisherAt = x.clock.now().getTime();
+    const creditedB = await creditedMs(f, nth(bOrders, 0));
+    expect(creditedB).toBeGreaterThan(await finishedMs(f, a));
+    expect(creditedB).toBeGreaterThan(await creditedMs(f, nth(aOrders, 0)));
+    expect(creditedB).toBeGreaterThan(publisherAt);
 
     // 续跑 B，处理第 2 单之前开关再次关闭：本次执行一笔都没入账。
     f.switchBackOn();
@@ -244,6 +384,9 @@ it(
     await delivered(f, x, b, 'partial');
     expect(await f.runDone()).toStrictEqual([partial]);
     expect(await published(f, runId)).toEqual({ part: 1, last_outcome: 'partial' });
+    const start = (await storedRun(f, runId)).part_started_at.getTime();
+    expect(start).toBeGreaterThanOrEqual(creditedB);
+    expect(start).toBeGreaterThanOrEqual(publisherAt);
     await creditedOnce(f, nth(aOrders, 0));
     await creditedOnce(f, nth(bOrders, 0));
     await untouched(f, nth(bOrders, 1));
@@ -397,7 +540,7 @@ it(
       const row = await storedRun(f, runId);
       expect(row).toMatchObject({ part, last_outcome: outcome });
       const start = row.part_started_at.getTime();
-      expect(start).toBeGreaterThanOrEqual(await floorOf(f, x.clock, [a, b], orders));
+      expect(start).toBeGreaterThanOrEqual(await floorOf(f, x.clock, [a, b], orders, []));
       expect(start).toBeGreaterThanOrEqual(x.clock.now().getTime());
       expect(start).toBeLessThanOrEqual(f.clock.now().getTime());
     }
@@ -417,6 +560,189 @@ it(
     await delivered(f, x, b, 'done');
     await clamped(3, 'done');
     for (const o of orders) await creditedOnce(f, o);
+  },
+  TIMEOUT,
+);
+
+/**
+ * One run of A (one order) and B (three orders, the first with a stale settlement seq); Y on the
+ * harness clock, X lagMs behind it.
+ */
+async function staleSetUp(tag: string, lagMs: number) {
+  const f = await fixture(p.db);
+  const r = rig(f);
+  const groups = await f.orderGroups(tag, [1, 3]);
+  const aOrders = at(groups, 0);
+  const bOrders = at(groups, 1);
+  const { runId, batches } = await seedRunWith(f, groups, staleSeq(nth(bOrders, 0)));
+  return {
+    f,
+    r,
+    y: r.worker(0),
+    x: r.worker(lagMs),
+    runId,
+    a: at(batches, 0),
+    b: at(batches, 1),
+    aOrders,
+    bOrders,
+  };
+}
+
+/**
+ * A credits its order on Y, the clock moves FINISH_GAP_MS on, A is DONE on Y (the run waits for B);
+ * B starts on X, its first item is skipped and the switch goes off → PARTIAL with nothing credited;
+ * part=1 partial is published by X for A's DONE. A.finished_at is then on its own the greatest
+ * instant: after A's credit, after X's clock, and no order of B has credited_at.
+ */
+async function finishedOpening(s: Awaited<ReturnType<typeof staleSetUp>>) {
+  const { f, r, x, y, a, b, runId, aOrders, bOrders } = s;
+  r.afterCredit(nth(aOrders, 0), FINISH_GAP_MS);
+  await delivered(f, y, a, 'done');
+  expect(await f.runDone()).toEqual([]);
+  r.stopAfter(nth(bOrders, 0));
+  await delivered(f, x, b, 'partial');
+  expect(await f.runDone()).toStrictEqual([f.runEvent(runId, 1, 'partial', 2)]);
+  expect(await f.itemOf(b, nth(bOrders, 0))).toMatchObject({
+    result: 'skipped',
+    skip_reason: 'settlement_changed',
+  });
+
+  const finished = await finishedMs(f, a);
+  const publisherAt = x.clock.now().getTime();
+  expect(finished).toBeGreaterThan(await creditedMs(f, nth(aOrders, 0)));
+  expect(finished).toBeGreaterThan(publisherAt);
+  for (const o of bOrders) expect(await creditedAt(f, o)).toBeNull();
+  return { finished, publisherAt, fastAt: f.clock.now().getTime() };
+}
+
+it(
+  '[AC-B2-04zu#1][AC-B2-04zu#4][BR-FUND-04][BR-TEXT-09] 批次 finished_at 单独为最大值：A 那单在 Y 上入账、稍后 A 才在 Y 上 DONE；B 在时钟慢 Y 若干秒的 X 上首单因结算记录 seq 已变被跳过、随即因开关停住，零入账 → 恰一条 part=1 partial（计入的是 A 的完成）；开关恢复、续跑 B 零入账再停住 → 不发 part=2（夹紧漏取 finished_at、只取时钟与 credited_at 时会把 A 的完成再算一次），起点不早于 A.finished_at 与发布方 X 的时钟',
+  async () => {
+    const s = await staleSetUp('skew-finished', SKEW_MS);
+    const { f, r, x, runId, a, b, aOrders, bOrders } = s;
+    const { finished, publisherAt, fastAt } = await finishedOpening(s);
+    const partial = f.runEvent(runId, 1, 'partial', 2);
+
+    f.switchBackOn();
+    await f.resume(b);
+    r.switchOff();
+    await delivered(f, x, b, 'partial');
+    expect(await f.runDone()).toStrictEqual([partial]);
+    const row = await storedRun(f, runId);
+    expect(row).toMatchObject({ part: 1, last_outcome: 'partial' });
+    const start = row.part_started_at.getTime();
+    expect(start).toBeGreaterThanOrEqual(finished);
+    expect(start).toBeGreaterThanOrEqual(publisherAt);
+    expect(start).toBeLessThanOrEqual(fastAt);
+
+    expect(await f.status(a)).toBe('DONE');
+    await creditedOnce(f, nth(aOrders, 0));
+    for (const o of bOrders) await untouched(f, o);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04zu#1][AC-B2-04zu#4][BR-FUND-04][BR-TEXT-09] 受益人补记 closed_at 单独为最大值：A 在 Y 上 DONE；稍后补记批次 C 在 Y 上完成一笔受益人义务（closed_at 取 Y 的时钟）后因开关停住为 PARTIAL；B 在时钟慢 Y 若干秒的 X 上首单被跳过、随即停住，零入账 → 恰一条 part=1 partial；开关恢复、续跑 B 零入账再停住 → 不发 part=2（夹紧漏取 closed_at、只取时钟、finished_at 与 credited_at 时会把 C 的那笔义务再算一次），起点不早于该义务的 closed_at',
+  async () => {
+    const f = await fixture(p.db);
+    const r = rig(f);
+    const groups = await f.orderGroups('skew-closed', [1, 3, 2]);
+    const aOrders = at(groups, 0);
+    const bOrders = at(groups, 1);
+    const held = at(groups, 2);
+    const { runId, batches } = await seedRunWith(
+      f,
+      [aOrders, [], bOrders],
+      staleSeq(nth(bOrders, 0)),
+    );
+    const a = at(batches, 0);
+    const c = at(batches, 1);
+    const b = at(batches, 2);
+    // C: two open first_credit obligations (direct of two other orders), one beneficiary item each.
+    const first = await f.beneficiaryItem(c, nth(held, 0), 'direct');
+    const second = await f.beneficiaryItem(c, nth(held, 1), 'direct');
+    const y = r.worker(0);
+    const x = r.worker(SKEW_MS);
+    const partial = f.runEvent(runId, 1, 'partial', 3);
+
+    await delivered(f, y, a, 'done');
+    f.clock.advanceMs(CLOSE_GAP_MS);
+    r.stopAfterClose(first.beneficiaryCreditId);
+    await delivered(f, y, c, 'partial');
+    expect(await f.runDone()).toEqual([]);
+
+    f.switchBackOn();
+    r.stopAfter(nth(bOrders, 0));
+    await delivered(f, x, b, 'partial');
+    expect(await f.runDone()).toStrictEqual([partial]);
+
+    // closed_at 单独为最大值：晚于 A 的完成、A 那单的入账与发布方 X 的时钟；B 没有入账。
+    const closed = await closedMs(f, first.beneficiaryCreditId);
+    const publisherAt = x.clock.now().getTime();
+    const fastAt = f.clock.now().getTime();
+    expect(closed).toBeGreaterThan(await finishedMs(f, a));
+    expect(closed).toBeGreaterThan(await creditedMs(f, nth(aOrders, 0)));
+    expect(closed).toBeGreaterThan(publisherAt);
+    for (const o of bOrders) expect(await creditedAt(f, o)).toBeNull();
+
+    f.switchBackOn();
+    await f.resume(b);
+    r.switchOff();
+    await delivered(f, x, b, 'partial');
+    expect(await f.runDone()).toStrictEqual([partial]);
+    const row = await storedRun(f, runId);
+    expect(row).toMatchObject({ part: 1, last_outcome: 'partial' });
+    const start = row.part_started_at.getTime();
+    expect(start).toBeGreaterThanOrEqual(closed);
+    expect(start).toBeGreaterThanOrEqual(publisherAt);
+    expect(start).toBeLessThanOrEqual(fastAt);
+
+    expect(await f.status(c)).toBe('PARTIAL');
+    expect(await f.item(c, first.beneficiaryCreditId)).toMatchObject({ result: 'credited' });
+    expect(await f.item(c, second.beneficiaryCreditId)).toMatchObject({ result: null });
+    expect(await obligation(f, first.beneficiaryCreditId)).toMatchObject({
+      status: 'done',
+      closed_by: 'R5a',
+      closed_ref: first.itemId,
+    });
+    expect(await obligation(f, second.beneficiaryCreditId)).toMatchObject({
+      status: 'open',
+      closed_at: null,
+    });
+    await creditedOnce(f, nth(aOrders, 0));
+    for (const o of bOrders) await untouched(f, o);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04zu#1][BR-FUND-04][BR-TEXT-09] 边界（供规则测试评审判断）：夹紧后慢时钟 worker 很快把最后一批置 DONE、finished_at 不晚于起点，仍按批次状态发 done——布局同 finished_at 一例而 X 落后更多；零入账续跑不发 part=2 之后，开关恢复、续跑 B 在 X 上入账余下两单并 DONE（不先让时钟走过偏差，X 此刻仍早于 A.finished_at）→ 恰发 part=2 done，run_done 共两条',
+  async () => {
+    const s = await staleSetUp('skew-boundary', WIDE_SKEW_MS);
+    const { f, r, x, runId, a, b, aOrders, bOrders } = s;
+    const { finished } = await finishedOpening(s);
+    const partial = f.runEvent(runId, 1, 'partial', 2);
+
+    f.switchBackOn();
+    await f.resume(b);
+    r.switchOff();
+    await delivered(f, x, b, 'partial');
+    expect(await f.runDone()).toStrictEqual([partial]);
+
+    // 续跑到 DONE：X 完成 B 的时刻仍早于 A 的完成，也就不晚于夹紧后的起点。
+    f.switchBackOn();
+    await f.resume(b);
+    await delivered(f, x, b, 'done');
+    expect(x.clock.now().getTime()).toBeLessThan(finished);
+    expect(await f.status(a)).toBe('DONE');
+    expect(await f.runDone()).toStrictEqual([partial, f.runEvent(runId, 2, 'done', 2)]);
+    expect(await published(f, runId)).toEqual({ part: 2, last_outcome: 'done' });
+
+    await creditedOnce(f, nth(aOrders, 0));
+    await untouched(f, nth(bOrders, 0));
+    await creditedOnce(f, nth(bOrders, 1));
+    await creditedOnce(f, nth(bOrders, 2));
   },
   TIMEOUT,
 );
