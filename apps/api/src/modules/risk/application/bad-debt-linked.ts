@@ -7,9 +7,15 @@
 //   hands the marker to ledger.
 // - Linked accounts, same app, the written-off user excluded, one row per (user, dimension):
 //   id_no: a verified realname with the written-off user's (verified) id_no_hmac;
-//   device: a session (revoked ones too) on any device of the written-off user's sessions (revoked
-//   ones too), never devices.user_id;
-//   payout_account: the written-off user's current payout account HMAC (per payout_accounts column).
+//   device: the devices of the written-off user's sessions (revoked ones too) are taken by
+//   device_hash (a reinstall registers a new devices row with the same hash); another user with a
+//   session (revoked ones too) on any devices row of the app with that hash; never devices.user_id;
+//   payout_account: any payout_accounts row of the written-off user and any row of another user
+//   (is_current=false history rows on both sides: only one member holds a value as current at a
+//   time) with the same alipay_hmac or the same bank_card_hmac.
+// - Index use: sessions by (app_id, user_id) and (app_id, device_id), devices by (app_id, id) and
+//   (app_id, device_hash), payout_accounts by (app_id, user_id), (app_id, alipay_hmac) and
+//   (app_id, bank_card_hmac) (the last four added by migration 0128).
 // - Replays write nothing new (unique (app_id, source_ref, user_id, dimension), ON CONFLICT DO
 //   NOTHING); created_at is the injected Clock's now. No plaintext and no HMAC is stored.
 import type { DB } from '@couli/db';
@@ -38,7 +44,8 @@ export interface BadDebtLinkedMarkerOptions {
 
 /**
  * The linked members of `input.sourceUserId` in its app, one (user, dimension) per row, the
- * written-off member excluded. UNION drops a repeated (user, dimension) within one dimension.
+ * written-off member excluded. UNION drops a repeated (user, dimension), so a member matched by
+ * both alipay_hmac and bank_card_hmac (or by several devices) gets one row per dimension.
  */
 function linkedMembers(input: BadDebtLinkedMarkInput) {
   const { appId, sourceUserId } = input;
@@ -53,18 +60,28 @@ function linkedMembers(input: BadDebtLinkedMarkInput) {
     UNION
     SELECT other.user_id, 'device'::text AS dimension
     FROM app.sessions mine
+    JOIN app.devices mine_device
+      ON mine_device.app_id = mine.app_id AND mine_device.id = mine.device_id
+    JOIN app.devices other_device
+      ON other_device.app_id = mine_device.app_id
+      AND other_device.device_hash = mine_device.device_hash
     JOIN app.sessions other
-      ON other.app_id = mine.app_id AND other.device_id = mine.device_id
+      ON other.app_id = other_device.app_id AND other.device_id = other_device.id
     WHERE mine.app_id = ${appId} AND mine.user_id = ${sourceUserId}::uuid
       AND other.user_id <> mine.user_id
     UNION
     SELECT other.user_id, 'payout_account'::text AS dimension
     FROM app.payout_accounts mine
     JOIN app.payout_accounts other
-      ON other.app_id = mine.app_id
-      AND (other.alipay_hmac = mine.alipay_hmac OR other.bank_card_hmac = mine.bank_card_hmac)
+      ON other.app_id = mine.app_id AND other.alipay_hmac = mine.alipay_hmac
     WHERE mine.app_id = ${appId} AND mine.user_id = ${sourceUserId}::uuid
-      AND mine.is_current AND other.is_current
+      AND other.user_id <> mine.user_id
+    UNION
+    SELECT other.user_id, 'payout_account'::text AS dimension
+    FROM app.payout_accounts mine
+    JOIN app.payout_accounts other
+      ON other.app_id = mine.app_id AND other.bank_card_hmac = mine.bank_card_hmac
+    WHERE mine.app_id = ${appId} AND mine.user_id = ${sourceUserId}::uuid
       AND other.user_id <> mine.user_id`;
 }
 

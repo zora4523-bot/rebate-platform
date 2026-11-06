@@ -11,9 +11,11 @@
 -- - id is a bigint identity (GENERATED ALWAYS: the identity sequence needs no grant).
 -- - user_id is the marked linked member, source_user_id the written-off member, source_ref the
 --   write-off candidate's id (app.bad_debt_writeoffs.id as text), dimension the link that matched:
---   id_no (same verified real name), device (a session on a device of the written-off member's
---   sessions) or payout_account (same current payout account). Only the dimension is kept: no
---   plaintext, no cipher and no HMAC.
+--   id_no (same verified real name), device (a session on a device row whose device_hash is that of
+--   a device of the written-off member's sessions; a reinstall registers a new row with the same
+--   hash) or payout_account (an alipay_hmac or bank_card_hmac shared by any payout_accounts rows of
+--   the two members, is_current=false history rows too). Only the dimension is kept: no plaintext,
+--   no cipher and no HMAC.
 -- - Unique (app_id, source_ref, user_id, dimension): a replayed approval or a second call of the
 --   writer inserts nothing new (ON CONFLICT DO NOTHING).
 -- - Both members are rows of app.users of the same app (foreign keys, no cascade); a member is
@@ -24,16 +26,26 @@
 -- - risk_linked_marks_app_id_user_id_idx serves the reads of one member's marks; the unique index
 --   serves the reads of one candidate's marks; source_user_id's foreign key is served by
 --   risk_linked_marks_app_id_source_user_id_idx.
+-- Lookup indexes for the writer's reads (brief §11): app.devices had no (app_id, device_hash)
+-- index, and app.payout_accounts only partial ones WHERE is_current, which do not serve the
+-- history rows. devices_app_id_device_hash_idx serves the device_hash join;
+-- payout_accounts_app_id_user_id_idx, payout_accounts_app_id_alipay_hmac_idx and
+-- payout_accounts_app_id_bank_card_hmac_idx serve one member's rows and the rows sharing an HMAC
+-- (all rows, current or not; NULL HMACs are left out). New named indexes only; no existing
+-- index, constraint or trigger changes.
 -- No trigger is added (db/AGENTS.md rule 8).
 --
 -- Grants: couli_app gets SELECT and INSERT only (append only: no UPDATE, DELETE or TRUNCATE).
 -- couli_readonly gets SELECT. No other role (couli_payout, couli_maint) gets any privilege.
 --
--- Timeouts: only a new, empty table with its constraints and indexes is created; the foreign keys
--- take a SHARE ROW EXCLUSIVE lock on app.users for an instant (no rows to validate); 5s lock wait so
--- a blocked deploy fails fast, 30s overall as a ceiling.
+-- Timeouts: a new, empty table with its constraints and indexes is created; the foreign keys take a
+-- SHARE ROW EXCLUSIVE lock on app.users for an instant (no rows to validate). The four lookup
+-- indexes are built in the migration's transaction (CONCURRENTLY is not possible there) and hold a
+-- SHARE lock on app.devices / app.payout_accounts while they build (writes wait; small before
+-- launch). 5s lock wait so a blocked deploy fails fast, 120s per statement as a ceiling for the
+-- index builds.
 SET LOCAL lock_timeout = '5s';
-SET LOCAL statement_timeout = '30s';
+SET LOCAL statement_timeout = '120s';
 
 CREATE TABLE app.risk_linked_marks (
   id bigint GENERATED ALWAYS AS IDENTITY,
@@ -62,3 +74,15 @@ CREATE INDEX risk_linked_marks_app_id_source_user_id_idx
 
 GRANT SELECT, INSERT ON app.risk_linked_marks TO couli_app;
 GRANT SELECT ON app.risk_linked_marks TO couli_readonly;
+
+CREATE INDEX devices_app_id_device_hash_idx ON app.devices (app_id, device_hash);
+
+CREATE INDEX payout_accounts_app_id_user_id_idx ON app.payout_accounts (app_id, user_id);
+
+CREATE INDEX payout_accounts_app_id_alipay_hmac_idx
+  ON app.payout_accounts (app_id, alipay_hmac)
+  WHERE alipay_hmac IS NOT NULL;
+
+CREATE INDEX payout_accounts_app_id_bank_card_hmac_idx
+  ON app.payout_accounts (app_id, bank_card_hmac)
+  WHERE bank_card_hmac IS NOT NULL;

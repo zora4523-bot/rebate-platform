@@ -9008,6 +9008,13 @@ CREATE INDEX device_registrations_device_created_idx ON app.device_registrations
 
 
 --
+-- Name: devices_app_id_device_hash_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX devices_app_id_device_hash_idx ON app.devices USING btree (app_id, device_hash);
+
+
+--
 -- Name: devices_app_id_id_key; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -9439,6 +9446,27 @@ CREATE UNIQUE INDEX payout_account_verify_attempts_inflight_key ON app.payout_ac
 --
 
 CREATE INDEX payout_account_verify_attempts_user_date_idx ON app.payout_account_verify_attempts USING btree (app_id, user_id, verify_date);
+
+
+--
+-- Name: payout_accounts_app_id_alipay_hmac_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_accounts_app_id_alipay_hmac_idx ON app.payout_accounts USING btree (app_id, alipay_hmac) WHERE (alipay_hmac IS NOT NULL);
+
+
+--
+-- Name: payout_accounts_app_id_bank_card_hmac_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_accounts_app_id_bank_card_hmac_idx ON app.payout_accounts USING btree (app_id, bank_card_hmac) WHERE (bank_card_hmac IS NOT NULL);
+
+
+--
+-- Name: payout_accounts_app_id_user_id_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_accounts_app_id_user_id_idx ON app.payout_accounts USING btree (app_id, user_id);
 
 
 --
