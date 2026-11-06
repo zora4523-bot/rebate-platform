@@ -1,8 +1,8 @@
 // Unit tests of the rescan position gauge's rendering (B1-01zzr): no database, a fake collect.
 import { describe, expect, it } from 'vitest';
-import type { WorkerMetricsSnapshot } from './collect.ts';
+import type { WorkerCollection, WorkerMetricsSnapshot } from './collect.ts';
 import { createMetricsRegistry } from './registry.ts';
-import { NON_SYNC_QUERY_KINDS, type WorkerCollection } from './rescan-position.ts';
+import { NON_SYNC_QUERY_KINDS } from './rescan-position.ts';
 
 const BARE: WorkerMetricsSnapshot = {
   queueFailed: {},

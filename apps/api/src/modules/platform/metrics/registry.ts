@@ -11,10 +11,9 @@
 import { performance } from 'node:perf_hooks';
 import type { EntryName } from '../entries.ts';
 import type { AutoPayoutDailySnapshot } from './auto-payout.ts';
-import type { WorkerMetricsSnapshot } from './collect.ts';
+import type { WorkerCollection, WorkerMetricsSnapshot } from './collect.ts';
 import type { FundMetricsSnapshot } from './fund.ts';
 import { pddServiceFeeMissingTotal } from './pdd-service-fee.ts';
-import type { WorkerCollection } from './rescan-position.ts';
 import { REVIEW_OVERDUE_GAUGE, type ReviewOverdueSnapshot } from './review-overdue.ts';
 import { WATER_LOW_GAUGE, type WaterLowSnapshot } from './water-low.ts';
 

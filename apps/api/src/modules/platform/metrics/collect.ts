@@ -9,7 +9,7 @@ import type { Clock } from '../clock/index.ts';
 import {
   NON_SYNC_QUERY_KINDS,
   collectRescanPositions,
-  type WorkerCollection,
+  type RescanPositionSnapshot,
 } from './rescan-position.ts';
 
 /** One scrape's values, keyed by the label value (queue name or platform). */
@@ -27,6 +27,14 @@ export interface WorkerMetricsSnapshot {
    * query_kind is not in the exclusion table (rescan / rights / manual, B1-01zzr).
    */
   readonly syncWatermarkLagSeconds: Readonly<Record<string, number>>;
+}
+
+/**
+ * What the worker's collect hands to the registry: the frozen B1-01zzh snapshot plus the rescan
+ * positions, optional so a bare WorkerMetricsSnapshot still renders (no rescan series).
+ */
+export interface WorkerCollection extends WorkerMetricsSnapshot {
+  readonly rescanPositionSeconds?: RescanPositionSnapshot;
 }
 
 /**

@@ -8,7 +8,6 @@
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
 import type { Clock } from '../clock/index.ts';
-import type { WorkerMetricsSnapshot } from './collect.ts';
 
 /** The query_kind values that are no sync stream: never counted in the watermark lag. */
 export type NonSyncQueryKind = 'rescan' | 'rights' | 'manual';
@@ -24,14 +23,6 @@ export interface RescanPositionSample {
 
 /** Every rescan position series of one scrape. */
 export type RescanPositionSnapshot = readonly RescanPositionSample[];
-
-/**
- * What the worker's collect hands to the registry: the frozen B1-01zzh snapshot plus the rescan
- * positions, optional so a bare WorkerMetricsSnapshot still renders (no rescan series).
- */
-export interface WorkerCollection extends WorkerMetricsSnapshot {
-  readonly rescanPositionSeconds?: RescanPositionSnapshot;
-}
 
 /** The query_kind of the rescan streams: the only streams of couli_sync_rescan_position_seconds. */
 export const RESCAN_QUERY_KIND = 'rescan';
